@@ -1116,7 +1116,7 @@ function showAt(repo, commit, path) {
   return shown.status === 0 ? shown.stdout : null;
 }
 
-export function lowFixProblems({ repo, ledgerPath, round, from, to }) {
+export function lowFixProblems({ repo, ledgerPath, round, from, to, mainRef }) {
   const problems = [];
   const verdictsPath = `${ledgerPath}/round-${round}/verdicts.jsonl`;
   const text = showAt(repo, to, verdictsPath);
@@ -1146,9 +1146,11 @@ export function lowFixProblems({ repo, ledgerPath, round, from, to }) {
   if (result.status !== 0) throw new Error(`GIT_FAILED git diff: ${result.stderr.trim()}`);
   const fields = result.stdout.split("\0");
   const changes = [];
+  const ownFiles = mainRef ? new Set(unreviewedFiles(repo, from, to, ledgerPath, mainRef)) : null;
   for (const entry of fields) {
     const match = /^(-|\d+)\t(-|\d+)\t([\s\S]+)$/.exec(entry);
     if (!match || match[3].startsWith(`${ledgerPath}/`)) continue;
+    if (ownFiles && !ownFiles.has(match[3])) continue;
     const lines = match[1] === "-" ? Infinity : Number(match[1]) + Number(match[2]);
     changes.push({ file: match[3], lines, added: match[1] === "-" ? 0 : Number(match[1]) });
   }
@@ -1264,6 +1266,54 @@ function changedOutside(repo, from, to, ledgerPath) {
   return result.stdout.split("\0").filter((file) => file && !file.startsWith(`${ledgerPath}/`));
 }
 
+function ownChangePrints(repo, commit, mainRef, ledgerPath, only) {
+  const base = gitStatus(["merge-base", mainRef, commit], repo);
+  if (base.status !== 0) return null;
+  const baseCommit = base.stdout.trim();
+  const names = gitStatus(["diff", "-z", "--no-renames", "--name-only", baseCommit, commit], repo);
+  if (names.status !== 0) return null;
+  const prints = new Map();
+  for (const file of names.stdout.split("\0")) {
+    if (!file || file.startsWith(`${ledgerPath}/`) || (only && !only.has(file))) continue;
+    if (file.includes("\uFFFD")) return null;
+    const diff = spawnSync(
+      "git",
+      [
+        "diff",
+        "-U0",
+        "--binary",
+        "--inter-hunk-context=0",
+        "--no-textconv",
+        "--no-ext-diff",
+        "--no-renames",
+        baseCommit,
+        commit,
+        "--",
+        `:(literal)${file}`,
+      ],
+      { cwd: repo, maxBuffer: 1 << 28 },
+    );
+    if (diff.status !== 0 || diff.stdout.length === 0) return null;
+    const stable = diff.stdout
+      .toString("latin1")
+      .split("\n")
+      .filter((line) => !line.startsWith("@@ ") && !line.startsWith("index "))
+      .join("\n");
+    prints.set(file, createHash("sha256").update(Buffer.from(stable, "latin1")).digest("hex"));
+  }
+  return prints;
+}
+
+export function unreviewedFiles(repo, from, to, ledgerPath, mainRef) {
+  const outside = changedOutside(repo, from, to, ledgerPath);
+  if (!mainRef || outside.length === 0) return outside;
+  const only = new Set(outside);
+  const reviewed = ownChangePrints(repo, from, mainRef, ledgerPath, only);
+  const current = ownChangePrints(repo, to, mainRef, ledgerPath, only);
+  if (!reviewed || !current) return outside;
+  return outside.filter((file) => reviewed.get(file) !== current.get(file)).sort();
+}
+
 export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnreviewed, acceptLow }) {
   const ledgerPath = `${REVIEWS_DIR}/${reviewKey({ pr })}`;
   const head = git(["rev-parse", "HEAD"], repo);
@@ -1279,10 +1329,20 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       round: point.round,
       from: point.from,
       to: point.head,
+      mainRef,
     });
     const problems = [...check.problems];
-    if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike)))
-      problems.push("files-differ");
+    if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike))) {
+      const legacy = lowFixProblems({
+        repo,
+        ledgerPath,
+        round: point.round,
+        from: point.from,
+        to: point.head,
+      });
+      if (legacy.problems.length > 0 || !sameList(point.files, legacy.files.map(maskSecretLike)))
+        problems.push("files-differ");
+    }
     if (
       check.problems.length === 0 &&
       !sameList(
@@ -1310,7 +1370,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
   else if (chainProblems.length > 0) problems.push(...chainProblems);
   else if (!isAncestor(complete.head, head)) problems.push(`not-ancestor ${complete.head}`);
   else {
-    outsideFiles = changedOutside(repo, complete.head, head, ledgerPath);
+    outsideFiles = unreviewedFiles(repo, complete.head, head, ledgerPath, mainRef);
     for (const file of outsideFiles) problems.push(`unreviewed ${printable(file)}`);
   }
   problems.push(...recordSecretProblems({ repo, ledgerPath, otherFiles: outsideFiles }));
@@ -1343,7 +1403,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
           .find(
             (record) =>
               gitStatus(["merge-base", "--is-ancestor", record.head, head], repo).status === 0 &&
-              changedOutside(repo, record.head, head, ledgerPath).length === 0,
+              unreviewedFiles(repo, record.head, head, ledgerPath, mainRef).length === 0,
           )
       : undefined;
   const ledgerFile = join(repo, ledgerPath, "usage.jsonl");
@@ -1361,7 +1421,14 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     else if (complete.by === "low-fix") reasons.push(`already-low-fixed round=${acceptLow}`);
     const check =
       reasons.length === 0
-        ? lowFixProblems({ repo, ledgerPath, round: acceptLow, from: complete.head, to: head })
+        ? lowFixProblems({
+            repo,
+            ledgerPath,
+            round: acceptLow,
+            from: complete.head,
+            to: head,
+            mainRef,
+          })
         : null;
     if (check) reasons.push(...check.problems);
     if (reasons.length === 0 && !ledgerMatchesHead()) reasons.push("ledger-differs-from-HEAD");
