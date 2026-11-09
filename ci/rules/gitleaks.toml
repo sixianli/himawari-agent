@@ -130,3 +130,11 @@ targetRules = ["generic-api-key"]
 paths = ['''(?:^|/)packages/platform-node/test/deepseek-web-provider\.unit\.test\.ts$''']
 regexTarget = "secret"
 regexes = ['''^abcdef123456$''']
+
+[[allowlists]]
+description = "PR 312 第 3 轮判断、PR 316 第 1 轮和 PR 319 第 1 轮复核记录里原样引用的 deepseek 测试假令牌（值见 regexes），只限这几个记录文件，按 ADR 0177 锚定到具体文件"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)\.agents/reviews/(?:pr-312/round-3/judgments\.md|pr-316/round-1/(?:deepseek-v4\.1-flash|glm-5\.3-flash)(?:\.prompt)?\.md|pr-319/round-1/glm-5\.3-flash\.md)$''']
+regexTarget = "secret"
+regexes = ['''^abcdef123456$''']

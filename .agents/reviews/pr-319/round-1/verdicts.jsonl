@@ -1,0 +1,10 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新白名单把“具体文件”扩大成“整类复核记录文件”，与 ADR 0177 和 Spec 的明文规定冲突", "valid": true, "class": "error", "severity": "medium-high", "trigger": "新白名单路径覆盖所有 PR 所有轮次的复核记录，与 ADR 0177 要求的锚定到具体文件不一致", "consequence": "安全白名单范围超出已批准文档；值仍精确锚定，不能藏不同值的真密钥", "modelSeverity": "中高"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "现有反向用例不能证明“目录级路径”会被拒绝，值反向用例也覆盖不到关键放宽", "valid": true, "class": "error", "severity": "low", "trigger": "日后有人把路径放宽到整个复核记录目录，原夹具里的兄弟文件放在目录外所以测试不失败", "consequence": "放宽不被测试拦下；当前配置本身已由 check:gitleaks 实跑核对", "modelSeverity": "中", "reason": "不影响现有输入的结果；值锚定缺口是全部 15 块白名单共有的既有写法，不是本 PR 引入"}
+{"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`description` 里重复写出了那个假令牌原文", "valid": true, "class": "better"}
+{"id": "ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "文件名字符类不含下划线等字符，“以后同类记录不再变红”的目标并不完整", "valid": false, "class": "better"}
+{"id": "ds-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`ci/toolchain-lock.json` 的新 sha256 是否与修改后的规则文件一致", "valid": false, "class": "better"}
+{"id": "glm-1", "model": "opencode-go/glm-5.3-flash", "quote": "路径正则比本仓库既有惯例宽", "valid": true, "class": "error", "severity": "low", "trigger": "同 ds-1", "consequence": "同 ds-1，值精确锚定兜底", "modelSeverity": "低"}
+{"id": "glm-2", "model": "opencode-go/glm-5.3-flash", "quote": "description 首次把假令牌原文写进配置文件", "valid": true, "class": "better"}
+{"id": "glm-3", "model": "opencode-go/glm-5.3-flash", "quote": "文件名字符类 `[A-Za-z0-9.-]+` 不含下划线等字符", "valid": false, "class": "better"}
+{"id": "glm-4", "model": "opencode-go/glm-5.3-flash", "quote": "作者声称「blocking=15，新命中全在 pr-312/round-3/judgments.md 和 pr-316/round-1/」", "valid": false, "class": "better"}
+{"id": "glm-5", "model": "opencode-go/glm-5.3-flash", "quote": "的 sha256「已同步」", "valid": false, "class": "better"}

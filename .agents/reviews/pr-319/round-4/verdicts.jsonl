@@ -1,0 +1,6 @@
+{"id": "r4-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "收窄后的白名单缺少“收窄后重新跑通 check:gitleaks”的记录，可能漏掉真实命中文件", "valid": false, "class": "error"}
+{"id": "r4-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "材料“已核对的事实”里的路径描述与代码不符", "valid": false, "class": "better"}
+{"id": "r4-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“以后复核记录再引用同一个假值不再变红”这个目标与实现、ADR 0177 矛盾", "valid": false, "class": "better"}
+{"id": "r4-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "白名单只匹配 `.md`，同轮 `verdicts.jsonl` 按要求会逐字引用模型答案，未来可能漏", "valid": false, "class": "error"}
+{"id": "r4-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "反向用例覆盖有缺口：没有针对 pr-312 / pr-319 分支的负例", "valid": true, "class": "better"}
+{"id": "r4-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`toolchain-lock.json` 的 sha256 没有单元测试独立验证，只靠运行期门禁", "valid": true, "class": "better"}
