@@ -86,9 +86,11 @@ export function gapBacklogPrefill(snapshot: GapCaseSnapshot): GapBacklogPrefill 
   };
 }
 
-function mask(text: string): string {
+export function maskForExport(text: string): string {
   return redactForEgress(text).text;
 }
+
+const mask = maskForExport;
 
 export interface GapExportCase {
   readonly id: string;
@@ -142,7 +144,7 @@ export class ProductionGapExport {
           continue;
         }
         const parsed: unknown = JSON.parse(text);
-        if (!isGapCaseSnapshot(parsed)) {
+        if (!isGapCaseSnapshot(parsed) || parsed.id !== mark.caseId) {
           skipped += 1;
           continue;
         }

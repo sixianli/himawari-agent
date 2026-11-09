@@ -19,6 +19,7 @@ import { ProductionObservation } from "../../apps/agent-service/src/production-o
 import {
   GAP_EXPORT_PATH,
   gapBacklogPrefill,
+  maskForExport,
   ProductionGapExport,
   registerGapExportRoute,
 } from "../../apps/agent-service/src/production-gap-export.ts";
@@ -440,9 +441,11 @@ describe("[PA-4] Muse gap cases", () => {
       await h.mark(first.id, true);
       const [row] = await h.marks.list(scope);
       expect(row).toBeDefined();
-      const { refs } = await h.repository.museIntake().clearAll(scope);
-      expect(refs).toContain(row?.snapshotRef);
+      await h.repository.museIntake().clearAll(scope);
       expect(await h.marks.list(scope)).toEqual([]);
+      expect(await h.repository.payloadStore(OWNER_ID, AGENT_ID).get(row?.snapshotRef ?? "")).toBe(
+        undefined,
+      );
     } finally {
       await h.app.close();
       await h.repository.close();
@@ -496,6 +499,84 @@ describe("[PA-4] Muse gap cases", () => {
     });
     expect(prefill.title).not.toContain("hunter2");
     expect(prefill.summary).not.toContain("hunter22222");
+  });
+
+  it("deletes the snapshot together with the mark row when unmarking, with no later release needed", async () => {
+    const h = await wired();
+    try {
+      const [first] = await h.cases();
+      if (!first) throw new Error("no case");
+      await h.mark(first.id, true);
+      const [row] = await h.marks.list(scope);
+      const ref = row?.snapshotRef ?? "";
+      expect(await h.repository.payloadStore(OWNER_ID, AGENT_ID).get(ref)).toBeDefined();
+      expect(await h.marks.unmark({ ...scope, caseId: first.id })).toBe(ref);
+      expect(await h.repository.payloadStore(OWNER_ID, AGENT_ID).get(ref)).toBeUndefined();
+    } finally {
+      await h.app.close();
+      await h.repository.close();
+    }
+  });
+
+  it("[negative] masks a card number before the text is cut, so a cut cannot leave a readable half", async () => {
+    const h = await wired();
+    try {
+      const candidates = await h.repository
+        .decisionLedger()
+        .readGapCandidates({ ...scope, start: START, end: END });
+      const first = candidates.find((candidate) => candidate.pairedMessageId === "mail-1");
+      if (!first) throw new Error("no candidate");
+      const text = `${"甲".repeat(285)}银行卡号 4111 1111 1111 1111 请核对`;
+      const ref = await h.seal.seal({ ...scope, text, at: IN_WINDOW });
+      const input = [{ ...first, museTitleRef: ref }];
+      const plain = await buildGapCases({ scope, candidates: input, seal: h.seal });
+      const masked = await buildGapCases({
+        scope,
+        candidates: input,
+        seal: h.seal,
+        mask: maskForExport,
+      });
+      expect(plain[0]?.museTitle).toContain("4111");
+      expect(masked[0]?.museTitle ?? "").not.toMatch(/4111|1111/u);
+    } finally {
+      await h.app.close();
+      await h.repository.close();
+    }
+  });
+
+  it("[negative] answers 500 with an empty body when every snapshot is unreadable, and skips a snapshot whose id does not match its mark", async () => {
+    const h = await wired();
+    try {
+      const auth = { authorization: `Bearer ${h.secret}` };
+      const refOf = (text: string) => h.seal.seal({ ...scope, text, at: IN_WINDOW });
+      await h.marks.mark({
+        ...scope,
+        caseId: "gap_aaaaaaaaaaaaaaaaaaaa",
+        snapshotRef: await refOf("{not json"),
+        at: IN_WINDOW,
+      });
+      const broken = await h.app.inject({ method: "GET", url: GAP_EXPORT_PATH, headers: auth });
+      expect(broken.statusCode).toBe(500);
+      expect(broken.body).toBe("");
+      const [first] = await h.cases();
+      if (!first) throw new Error("no case");
+      await h.mark(first.id, true);
+      const [good] = (await h.marks.list(scope)).filter((row) => row.caseId === first.id);
+      const goodText = await h.seal.open({ ...scope, ref: good?.snapshotRef ?? "" });
+      await h.marks.mark({
+        ...scope,
+        caseId: "gap_bbbbbbbbbbbbbbbbbbbb",
+        snapshotRef: await refOf(goodText ?? ""),
+        at: IN_WINDOW,
+      });
+      const mixed = await h.app.inject({ method: "GET", url: GAP_EXPORT_PATH, headers: auth });
+      expect(mixed.statusCode).toBe(200);
+      expect(mixed.json().cases.map((entry: { id: string }) => entry.id)).toEqual([first.id]);
+      expect(mixed.json().skipped).toBe(2);
+    } finally {
+      await h.app.close();
+      await h.repository.close();
+    }
   });
 
   it("[negative] skips a damaged snapshot instead of failing the whole export", async () => {

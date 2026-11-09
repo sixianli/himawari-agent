@@ -44,7 +44,7 @@ date: "2026-11-08"
 4. **稳定编号**：案例编号 = `gap_` + 邮件编号哈希的前 20 位十六进制（不含 Muse 条目编号：Andy 重新评价 Muse 条目会换条目编号，编号若含它，已加入 Backlog 的标记就对不上了），同一封邮件的案例永远是同一个编号，也不暴露邮件编号。
 5. **数据读取**：决策记录端口新增只读的 `readGapCandidates`（Muse 已提醒且配对的条目，连同对应的 Himawari 判断、评价、理由和读取记录）；案例在 `apps/agent-service/src/production-gap-cases.ts` 里按上面的规则筛选和归因，文字经现有的加密载荷读取。周报快照新增 `gap`（差距线，整周结束后才有）和 `gapCases`（案例，带是否已标记）。
 6. **“加入 Backlog”按钮只做标记**：命令 `proactive.gapcase.mark`（payload：案例编号、周的结束日、是否标记）。标记时服务端重算那一周的案例找到该编号，把案例快照加密存成载荷，在新表 `gap_case_marks`（迁移，主键 owner + agent + case_id）记一行；再点一次取消，删行并释放载荷。重复标记不重复写。
-7. **只读导出接口**：`GET /api/gap-cases/v1/export`，返回所有已标记案例，每条带稳定编号、周范围、归因标签，以及按仓库现有 Backlog 条目写法预填的 `title`、`summary`（背景）、`why`（为什么）、`origin`（来源案例）。鉴权复用 Muse 推送那一套：`Authorization: Bearer` 令牌（哈希后恒时比较，认证通过 30 次/分钟、认证失败 60 次/分钟限流）加外层 Cloudflare Access 服务令牌。限流和比较抽成 `BearerGate`，两处共用，不另写一套。令牌是单独一把：在 `runPolicy.museIntake` 里加可选的 `gapExportSecretRef`，用途 `gap-export`，这样 Muse 推送的令牌读不了导出。未鉴权返回 401 空体。某条标记读不出、解不开或结构不对时跳过该条，不让整个导出失败；导出体里的 `skipped` 写明跳过了几条，如果所有标记都读不出（多半是密钥或存储出了问题）就返回 500 而不是空清单。周报里某段 Muse 文字解不开时，只是那一段显示为没有留存，不影响整页和其他案例。预填文字先遮盖来源再拼装截断，避免敏感值被截断边界切开后漏遮。已知局限：取消标记或清除数据时，数据库已改而快照释放失败（或进程恰好在两步之间崩溃）会留下孤儿快照，沿用现有清除路径同样的先改库后释放写法，暂无待释放记录；案例候选读取有 1000 条硬上限，超过后清单静默截断（差距线不受影响）。“清除 Muse 数据”会一并取消所有已标记案例并释放它们的快照（用户说清除就必须真清除；三种语言的确认文案都写明）。导出里的 `origin` 周范围写到周的最后一天（窗口结束边界是排他的，减 1 毫秒再转日期）。输出前所有预填文字经 `sensitive-capture` 的出口遮盖（密码、验证码、银行卡号、证件号、机器密钥）。
+7. **只读导出接口**：`GET /api/gap-cases/v1/export`，返回所有已标记案例，每条带稳定编号、周范围、归因标签，以及按仓库现有 Backlog 条目写法预填的 `title`、`summary`（背景）、`why`（为什么）、`origin`（来源案例）。鉴权复用 Muse 推送那一套：`Authorization: Bearer` 令牌（哈希后恒时比较，认证通过 30 次/分钟、认证失败 60 次/分钟限流）加外层 Cloudflare Access 服务令牌。限流和比较抽成 `BearerGate`，两处共用，不另写一套。令牌是单独一把：在 `runPolicy.museIntake` 里加可选的 `gapExportSecretRef`，用途 `gap-export`，这样 Muse 推送的令牌读不了导出。未鉴权返回 401 空体。某条标记读不出、解不开或结构不对时跳过该条，不让整个导出失败；导出体里的 `skipped` 写明跳过了几条，如果所有标记都读不出（多半是密钥或存储出了问题）就返回 500 而不是空清单。周报里某段 Muse 文字解不开时，只是那一段显示为没有留存，不影响整页和其他案例。快照文字在标记时先遮盖再截断到 300/500 字，预填文字也先遮盖来源再拼装截断，避免敏感值被截断边界切开后漏遮；导出时快照里的编号必须和标记行的编号一致，不一致的跳过。取消标记和清除 Muse 数据时，标记行和它的快照载荷在同一个数据库事务里一起删（载荷和标记同在一个数据库文件里），不存在“行已删、快照还在”的窗口，之后调用方的释放只是空操作。已知局限：标记时先封快照、再写标记行，这两步之间进程崩溃会留下一个孤儿快照（窗口是两次相邻调用之间，写库抛错时会主动释放）；案例候选读取有 1000 条硬上限，超过后清单静默截断（差距线不受影响）。“清除 Muse 数据”会一并取消所有已标记案例并释放它们的快照（用户说清除就必须真清除；三种语言的确认文案都写明）。导出里的 `origin` 周范围写到周的最后一天（窗口结束边界是排他的，减 1 毫秒再转日期）。输出前所有预填文字经 `sensitive-capture` 的出口遮盖（密码、验证码、银行卡号、证件号、机器密钥）。
 8. **不新增任何发给模型或嵌入服务的请求**，所以不涉及统一出口、提示词目录和请求前缀冻结；也不动敏感识别规则。
 9. 界面用词按词表：“误扰率”是词表里的旧叫法，改称“多余提醒率”（对应“多余的提醒”）。
 
@@ -67,7 +67,7 @@ date: "2026-11-08"
 1. 在生产机密钥目录（权限 0700，文件 0600）放一个至少 32 字符的随机令牌，在 `/etc/himawari/config.json` 的 `secretReferences` 加 `{"ref":"gap-export","version":"v1","purpose":"gap-export","scope":"agent"}`（四项缺一不可），并在 `runPolicy.museIntake` 加 `"gapExportSecretRef":"gap-export"`。
 2. 在 Cloudflare 的 Zero Trust 里给路径 `api/gap-cases/v1/export`（主机 `himawari.siyi.win`）加一条 Service Auth 策略，并建一个 Service Token（名字写 `gap-export`），做法同 Muse 推送的 `muse-intake`（见 [Muse 自动接收运行手册](../runbooks/muse-intake-runbook.md)）。
 3. 把两样东西交给每周定时的开发会话：Cloudflare 的 `CF-Access-Client-Id` 和 `CF-Access-Client-Secret`，以及应用令牌。
-4. 实测：不带头请求被拦；只带 Cloudflare 两头返回 401 空体；三样都带返回 200 和 `{"schema":"himawari-gap-cases.v1","cases":[...]}`。
+4. 实测：不带头请求被拦；只带 Cloudflare 两头返回 401 空体；三样都带返回 200 和 `{"schema":"himawari-gap-cases.v1","generatedAt":"…","skipped":0,"cases":[...]}`。
 
 <a id="consequences"></a>
 

@@ -470,6 +470,9 @@ export class SqliteDecisionLedgerOperations {
       this.database
         .prepare("DELETE FROM gap_case_marks WHERE owner_id = ? AND agent_id = ? AND case_id = ?")
         .run(input.ownerId, input.agentId, input.caseId);
+      this.database
+        .prepare("DELETE FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ?")
+        .run(row.snapshotRef, input.ownerId, input.agentId);
       return row.snapshotRef;
     })();
   }

@@ -44,6 +44,7 @@ export async function buildGapCases(options: {
   readonly scope: ProactiveScope;
   readonly candidates: readonly GapCandidate[];
   readonly seal: ProactiveSealPort | undefined;
+  readonly mask?: (text: string) => string;
 }): Promise<readonly GapCase[]> {
   const firstPerMail = new Map<string, GapCandidate>();
   for (const candidate of options.candidates)
@@ -64,7 +65,9 @@ export async function buildGapCases(options: {
     if (ref === null || options.seal === undefined) return null;
     try {
       const text = await options.seal.open({ ...options.scope, ref });
-      return text === undefined ? null : clean(text, limit) || null;
+      return text === undefined
+        ? null
+        : clean(options.mask ? options.mask(text) : text, limit) || null;
     } catch {
       return null;
     }

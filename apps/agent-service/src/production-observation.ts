@@ -36,7 +36,7 @@ import {
   gatewayV2MessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import { buildGapCases } from "./production-gap-cases.js";
-import type { GapCaseSnapshot } from "./production-gap-export.js";
+import { type GapCaseSnapshot, maskForExport } from "./production-gap-export.js";
 
 export const PRODUCTION_OBSERVATION_OPERATIONS = Object.freeze([
   "proactive.weekly.read",
@@ -298,7 +298,10 @@ export class ProductionObservation {
     return snapshot;
   }
 
-  async #gapCases(window: { readonly start: string; readonly end: string }) {
+  async #gapCases(
+    window: { readonly start: string; readonly end: string },
+    mask?: (text: string) => string,
+  ) {
     const { ledger, scope, seal } = this.#options;
     return buildGapCases({
       scope,
@@ -308,6 +311,7 @@ export class ProductionObservation {
         end: window.end,
       }),
       seal,
+      ...(mask ? { mask } : {}),
     });
   }
 
@@ -320,7 +324,9 @@ export class ProductionObservation {
       return { resultRef: `gap-case-unmark:${payload.caseId}`, replayed: ref === null };
     }
     const window = resolveWindow({ end: payload.endDay, days: 7 });
-    const found = (await this.#gapCases(window)).find((item) => item.id === payload.caseId);
+    const found = (await this.#gapCases(window, maskForExport)).find(
+      (item) => item.id === payload.caseId,
+    );
     if (!found) invalid("GAP_CASE_NOT_FOUND");
     const at = this.#options.clock.now();
     const snapshot: GapCaseSnapshot = { ...found, weekStart: window.start, weekEnd: window.end };
