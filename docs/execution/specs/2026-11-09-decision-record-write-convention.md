@@ -23,7 +23,7 @@ date: "2026-11-09"
 
 ## 这份约定管什么
 
-决策记录是表 `decision_ledger` 的一行，种类有 `proactive`、`memory_candidate`、`consolidation`、`context_truncation`、`retrieval_degrade`、`external_read`。控制中心的“依据”抽屉（[ADR 0193](../../adr/0193-show-the-whole-chain-of-one-decision-record.md)）只读这些行，所以写入方写什么，Andy 就只能看到什么。新增写入决策记录的代码，必须照下面写。
+决策记录是表 `decision_ledger` 的一行，种类有 `proactive`、`memory_candidate`、`consolidation`、`context_truncation`、`retrieval_degrade`、`external_read`。控制中心的“依据”抽屉（[ADR 0195](../../adr/0195-show-the-whole-chain-of-one-decision-record.md)）只读这些行，所以写入方写什么，Andy 就只能看到什么。新增写入决策记录的代码，必须照下面写。
 
 <a id="fields"></a>
 
