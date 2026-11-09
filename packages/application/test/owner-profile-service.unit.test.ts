@@ -220,6 +220,37 @@ describe("owner profile composition", () => {
     expect(stored.map(({ text }) => text).join("\n")).not.toContain("明治");
   });
 
+  it("[PA-2] keeps a rule memory out of the block when it is superseded, expired or no longer active", async () => {
+    const base = memory("memory-sister", "rule", 950);
+    const attributes = base.attributes ?? DEFAULT_MEMORY_ATTRIBUTES;
+    const variants: ProductMemoryRecord[] = [
+      { ...base, attributes: { ...attributes, supersededBy: createMemoryId("memory-name") } },
+      { ...base, attributes: { ...attributes, validTo: "2026-10-01T00:00:00.000Z" } },
+      { ...base, status: "trashed" },
+      { ...base, status: "archived" },
+      { ...base, status: "deleted_verified" },
+    ];
+    for (const variant of variants) {
+      const { profile, stored } = service([variant]);
+      const result = await profile.compose({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        maxClassification: "sensitive",
+        now: NOW,
+      });
+      expect(result.memoryIds).not.toContain("memory-sister");
+      expect(stored.map(({ text }) => text).join("\n")).not.toContain("大阪");
+    }
+    const { profile } = service([base]);
+    const control = await profile.compose({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "sensitive",
+      now: NOW,
+    });
+    expect(control.memoryIds).toContain("memory-sister");
+  });
+
   it("leaves private facts out of a public request and marks public-only blocks public", async () => {
     const { profile } = service([
       ...records,

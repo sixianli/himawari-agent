@@ -21,6 +21,7 @@ date: "2026-11-09"
 - [F 盘点发现的问题](#findings)
 - [G 需要 Andy 确认的出处](#owner-confirm)
 - [H 没有扫到的地方](#not-scanned)
+- [I 生产只读查询的原始输出](#raw-output)
 
 <a id="scope"></a>
 
@@ -28,7 +29,7 @@ date: "2026-11-09"
 
 这是任务 P2-1 的产出：把 Himawari 现在对 Agent 有约束力的规矩，不管散落在代码、提示词、配置还是记忆里，列成一张清单。只盘点，没有改任何行为，也没有新增迁移。
 
-盘点依据是 2026-11-09 的 `main`（提交 `fd283e43`）。其他线程正在改相关代码（规则登记册、清理空壳操作），所以行号会漂移；每条都写了文件和函数名，行号只作参考。
+盘点依据是 2026-11-09 的 `main`（提交 `fd283e43`）。其他线程正在改相关代码（规则登记册、清理空壳操作），所以行号会漂移；每条都写了文件和函数名，行号只作参考。`npm run check:agent-rulebook-inventory`（`npm run check` 的一步）核对这份清单里的链接、锚点、测试文件名、测试编号和事故编号都真实存在。
 
 每条规则的列：
 
@@ -229,5 +230,29 @@ date: "2026-11-09"
 - 生产数据库里的 `rule` 类记忆元数据和生产配置的 `systemInstruction`：2026-11-09 经 Andy 同意只读，已读（见 C 节和 C-1）；配置文件的其余部分和记忆原话没有读。
 - Mac 上本地的记忆和设置：不在仓库，也没有读。
 - 项目记忆里的协调者规则（自主合并、复核方式等）：那是 Andy 对协调者和编码线程定的开发规矩，不是 Himawari 的 Agent 规则，没有计入。
+
+[↑ 回到阅读导航](#contents)
+
+<a id="raw-output"></a>
+
+## I 生产只读查询的原始输出
+
+2026-11-09 在 Andy 的 Mac 上运行 `bash scripts/operations/prod-read.sh rule-memories` 和 `bash scripts/operations/prod-read.sh system-instruction` 的输出，退出码都是 0。输出里没有密钥、令牌或密码类内容，所以原样记录，没有遮盖。C 节的表和 C-1 的原文就是从这里抄的，读者可以对照。
+
+`rule-memories`（只有元数据，没有记忆原话）：
+
+```json
+[
+ {"id":"memory:memory-capture:run:d4ab12a6-e560-41a7-aec0-e19a2ba2f4ba:0","status":"trashed","tentative":1,"classification":"private","importance_permille":700,"confidence_permille":950,"inference":0,"recorded_at":"2026-11-02T12:01:55.192Z","updated_at":"2026-11-02T12:02:28.206Z","valid_to":null,"superseded_by":null,"use_count":0},
+ {"id":"memory:memory-capture:run:2bd677b5-fd17-4875-880c-278c10833a29:0","status":"deleted_verified","tentative":1,"classification":"private","importance_permille":750,"confidence_permille":850,"inference":0,"recorded_at":"2026-11-01T14:59:33.381Z","updated_at":"2026-11-08T15:05:52.509Z","valid_to":null,"superseded_by":null,"use_count":0},
+ {"id":"memory:memory-capture:run:72d7e6aa-b977-4d49-ab51-447e8c018ee1:0","status":"deleted_verified","tentative":0,"classification":"private","importance_permille":700,"confidence_permille":850,"inference":0,"recorded_at":"2026-10-29T01:20:48.954Z","updated_at":"2026-11-06T12:31:28.627Z","valid_to":null,"superseded_by":null,"use_count":6}
+]
+```
+
+`system-instruction`（完整原文）：
+
+```text
+- 修改或删除文件前先确认路径和内容；会覆盖或删除大量内容的操作，先向用户说明。
+```
 
 [↑ 回到阅读导航](#contents)
