@@ -46,6 +46,21 @@ describe("words kept out of the search index", () => {
     );
   });
 
+  it("removes a repeated value even when its first sighting runs into punctuation or more text", () => {
+    const glued = maskForIndex("Wi-Fi 密码是sunflower。客人来了就告诉他 sunflower");
+    expect(glued).not.toContain("sunflower");
+    expect(maskForIndex("验证码是4829。刚才念的 4829 别外传")).not.toContain("4829");
+    expect(maskForIndex("password=hunter2x 之后只写 hunter2x")).not.toContain("hunter2x");
+  });
+
+  it("removes repeats only as whole words and never inside a masked placeholder", () => {
+    const placeholder = maskForIndex("验证码是1111，卡号 4111 1111 1111 1111");
+    expect(placeholder).toContain("尾号1111");
+    expect(placeholder).not.toContain("4111");
+    const contest = maskForIndex("密码是test，周末的 contest 别忘了");
+    expect(contest).toContain("contest");
+  });
+
   it("refuses a name the masking rules would change or that holds a secret-like part", () => {
     expect(isSafeToIndex("小葵")).toBe(true);
     expect(isSafeToIndex("Pixel 9")).toBe(true);

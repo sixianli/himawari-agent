@@ -14,17 +14,38 @@ export function looksLikeSecretToken(word: string): boolean {
   return value.length >= 8 && LETTER.test(value) && DIGIT.test(value);
 }
 
+const VALUE_SEPARATOR = /[\s=:：＝,，;；.。!！?？、"'“”‘’()（）【】「」]+/u;
+const PLACEHOLDER = /(\[[^[\]]*\])/u;
+const ASCII_WORD = /[A-Za-z0-9_]/u;
+
+function bareForms(value: string): readonly string[] {
+  const pieces = value.split(VALUE_SEPARATOR).filter((piece) => piece.length > 0);
+  return [value, pieces[0] ?? "", pieces.at(-1) ?? ""];
+}
+
+function wholeWordPattern(value: string): RegExp {
+  const before = ASCII_WORD.test(value[0] ?? "") ? "(?<![A-Za-z0-9_])" : "";
+  const after = ASCII_WORD.test(value.at(-1) ?? "") ? "(?![A-Za-z0-9_])" : "";
+  return new RegExp(`${before}${value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}${after}`, "gu");
+}
+
 export function maskForIndex(text: string): string {
   const values = [
     ...new Set(
       findSensitiveValues(text)
-        .map(({ value }) => value)
+        .flatMap(({ value }) => bareForms(value))
         .filter((value) => value.length >= SHORTEST_REMEMBERED_VALUE),
     ),
   ].sort((left, right) => right.length - left.length);
-  let masked = maskSensitiveText(text);
-  for (const value of values) masked = masked.split(value).join(" ");
-  return masked.replace(TOKEN_RUN, (run) => (looksLikeSecretToken(run) ? " " : run));
+  const patterns = values.map(wholeWordPattern);
+  return maskSensitiveText(text)
+    .split(PLACEHOLDER)
+    .map((part, index) => {
+      if (index % 2 === 1) return part;
+      const cleared = patterns.reduce((current, pattern) => current.replace(pattern, " "), part);
+      return cleared.replace(TOKEN_RUN, (run) => (looksLikeSecretToken(run) ? " " : run));
+    })
+    .join("");
 }
 
 export function isSafeToIndex(text: string): boolean {
