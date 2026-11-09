@@ -220,7 +220,6 @@ G51、G65 与 G75 分别只允许首次安装、2026-10-09 第二次部署及 20
 - test/qualification/sandbox-install-restart-http.mjs
 - test/qualification/sandbox-install-restart-model.mjs
 - test/qualification/sandbox-install-restart-probe.mjs
-- packages/memory-mem0/src/index.ts
 - packages/persistence-sqlite/src/product-state-repository.ts
 - packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts
 - packages/persistence-sqlite/src/sqlite-run-lifecycle-operations.ts
