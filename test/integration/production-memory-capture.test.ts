@@ -1314,7 +1314,7 @@ describe("production memory capture", () => {
     const other = listed.reminders[1]?.reminderId ?? "";
     const store = context.repository.memoryReminders();
     const scheduled = await store.read(other);
-    await store.update({
+    const dismissedNow = await store.update({
       id: other,
       expectedUpdatedAt: scheduled?.updatedAt ?? "",
       status: "dismissed",
@@ -1323,6 +1323,8 @@ describe("production memory capture", () => {
       dismissedAt: "2026-10-30T06:30:00.000Z",
       updatedAt: "2026-10-30T06:30:00.000Z",
     });
+    expect(dismissedNow).toBeTruthy();
+    expect(await store.read(other)).toMatchObject({ status: "dismissed" });
     await tool("cancel", { reminderId: other }, "call-after-dismiss");
     expect(await store.read(other)).toMatchObject({ status: "cancelled" });
     const stored = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);

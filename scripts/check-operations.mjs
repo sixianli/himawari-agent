@@ -83,20 +83,22 @@ function frontendSends(text, name) {
     const at = text.indexOf(literal, from);
     if (at < 0) return false;
     const before = text.slice(Math.max(0, at - 24), at);
-    if (!/\bmessage\(\s*$/.test(before) && !/\bmessageId\s*[:=]\s*$/.test(before)) return true;
+    if (!/(?<![.\w])message\(\s*$/.test(before) && !/\bmessageId\s*[:=]\s*$/.test(before))
+      return true;
     from = at + literal.length;
   }
 }
 
 function removedNameUsed(text, name) {
-  for (const quote of ['"', "'"]) {
+  for (const quote of ['"', "'", "`"]) {
     const literal = `${quote}${name}${quote}`;
     let from = 0;
     for (;;) {
       const at = text.indexOf(literal, from);
       if (at < 0) break;
       const before = text.slice(Math.max(0, at - 60), at);
-      if (!/\bmessage\(\s*$/.test(before) && !/\bmeasure\([^,()]*,\s*$/.test(before)) return true;
+      if (!/(?<![.\w])message\(\s*$/.test(before) && !/\bmeasure\([^,()]*,\s*$/.test(before))
+        return true;
       from = at + literal.length;
     }
   }
@@ -175,7 +177,8 @@ export function checkOperations(root = repositoryRoot) {
 
   const removedPath = path.join(root, REMOVED_LEDGER);
   let removed = [];
-  if (existsSync(removedPath)) {
+  if (!existsSync(removedPath)) errors.push("OPERATIONS_REMOVED_LEDGER_MISSING");
+  else {
     try {
       removed = Object.keys(JSON.parse(readFileSync(removedPath, "utf8")).removed ?? {});
     } catch {

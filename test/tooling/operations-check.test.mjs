@@ -25,9 +25,11 @@ function tree(files, ledger = {}) {
   const all = {
     "packages/gateway-contracts/src/contracts-v2.ts": contract,
     "ci/operations-pending.json": JSON.stringify({ operations: ledger }),
+    "ci/operations-removed.json": JSON.stringify({ removed: {} }),
     ...files,
   };
   for (const [file, text] of Object.entries(all)) {
+    if (text === null) continue;
     mkdirSync(join(root, dirname(file)), { recursive: true });
     writeFileSync(join(root, file), text);
   }
@@ -133,7 +135,13 @@ describe("operations check", () => {
     };
     const expected = [`OPERATION_REMOVED_STILL_USED ${name}`];
     const withFile = (file, text) => tree({ ...complete, ...removed, [file]: text });
-    for (const text of [`const m = { type: "${name}" };`, `send("${name}");`, `case "${name}":`])
+    for (const text of [
+      `const m = { type: "${name}" };`,
+      `send("${name}");`,
+      `case "${name}":`,
+      `rpc.message("${name}")`,
+      `{ type: \`${name}\` }`,
+    ])
       expect(
         checkOperations(withFile("packages/integration-github/test/github.test.ts", text)).errors,
       ).toEqual(expected);
@@ -146,6 +154,9 @@ describe("operations check", () => {
       ).errors,
     ).toEqual([]);
     expect(checkOperations(tree({ ...complete, ...removed })).errors).toEqual([]);
+    expect(
+      checkOperations(tree({ ...complete, "ci/operations-removed.json": null })).errors,
+    ).toEqual(["OPERATIONS_REMOVED_LEDGER_MISSING"]);
   });
 
   it("[P1-4] rejects a deleted operation or snapshot that returns to the contract", () => {
