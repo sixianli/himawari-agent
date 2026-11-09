@@ -15,7 +15,7 @@ import {
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   API_ERROR_MESSAGE_MAX,
   apiErrorText,
@@ -90,6 +90,9 @@ import {
   SHELL_LOG_NAME,
   SUBSTITUTES,
   secretLikeRules,
+  loadRegisteredTestValues,
+  registeredTestValuesFromToml,
+  setRegisteredTestValues,
   spentOf,
   substituteFor,
   summarizeEvents,
@@ -2646,7 +2649,7 @@ describe("opencode review merge gate", () => {
     const ledger = `${REVIEWS_DIR}/pr-7/usage.jsonl`;
     const writeLedger = (records) =>
       commit({ [ledger]: records.map((r) => `${JSON.stringify(r)}\n`).join("") }, "records");
-    const main = commit({ "code.txt": "base\n" }, "base");
+    const main = commit({ "code.txt": "base\n", "ci/rules/gitleaks.toml": "" }, "base");
     git("update-ref", "refs/remotes/origin/main", main);
     git("checkout", "--quiet", "-b", "feature");
     const reviewed = commit({ "code.txt": "feature\n" }, "feature");
@@ -4346,5 +4349,88 @@ describe("spend guard decisions", () => {
     } finally {
       if (saved !== undefined) process.env.HIMAWARI_SPEND_GUARD = saved;
     }
+  });
+});
+
+describe("[registered test values] records never carry the fixture values gitleaks already allows", () => {
+  const fakeValue = ["abcdef", "123456"].join("");
+  const nearMiss = ["abcdef", "123457"].join("");
+  const quote = "'''";
+  const toml = [
+    "[[allowlists]]",
+    `regexes = [${quote}^${fakeValue}$${quote}]`,
+    "[[allowlists]]",
+    `regexes = [${quote}^short$${quote}]`,
+    "[[allowlists]]",
+    `regexes = [${quote}^MIIEvR2T14TAILBO[A-Z]$${quote}]`,
+    "[[allowlists]]",
+    `regexes = [${quote}^sensitive-interceptions-clear-01$${quote}]`,
+    "[[allowlists]]",
+    `regexes = [${quote}^-----BEGIN PRIVATE KEY----- is used \\.\\.\\.\`${quote}]`,
+    "[[allowlists]]",
+    `regexes = [${quote}^0123456789abcdef\\.0123456789abcdef$${quote}]`,
+    "",
+  ].join("\n");
+
+  afterEach(() => setRegisteredTestValues([]));
+
+  it("reads only literal exact values of a safe length from the allowlist file", () => {
+    expect(registeredTestValuesFromToml(toml).sort()).toEqual(
+      [fakeValue, "0123456789abcdef.0123456789abcdef", "sensitive-interceptions-clear-01"].sort(),
+    );
+  });
+
+  it("masks the registered value in records and reports it, but not near misses or unregistered text", () => {
+    setRegisteredTestValues(registeredTestValuesFromToml(toml));
+    const text = `- 命中 \`token=${fakeValue}\`，另一个 token=${nearMiss}，还有 ${fakeValue} 两次`;
+    expect(secretLikeRules(text)).toContain("registered-test-value");
+    const masked = maskedRecordText(text);
+    expect(masked).not.toContain(fakeValue);
+    expect(masked).toContain("token=[已遮盖:registered-test-value]");
+    expect(masked).toContain(`token=${nearMiss}`);
+    expect(secretLikeRules(masked)).toEqual([]);
+    expect(secretLikeRules(`token=${nearMiss} 普通文字`)).toEqual([]);
+  });
+
+  it("does nothing when no value is registered, and keeps masking real secret shapes", () => {
+    expect(maskSecretLike(`token=${fakeValue}`)).toBe(`token=${fakeValue}`);
+    setRegisteredTestValues(registeredTestValuesFromToml(toml));
+    const real = ["gh", "p_", "A".repeat(24)].join("");
+    expect(maskSecretLike(real)).toBe("[已遮盖:github-token]");
+  });
+
+  it("gives the same bytes for the same text whatever order the values were registered in", () => {
+    const text = `a ${fakeValue} b ${fakeValue}`;
+    const expected = "a [已遮盖:registered-test-value] b [已遮盖:registered-test-value]";
+    setRegisteredTestValues(registeredTestValuesFromToml(toml));
+    expect(maskSecretLike(text)).toBe(expected);
+    setRegisteredTestValues([...registeredTestValuesFromToml(toml)].reverse());
+    expect(maskSecretLike(text)).toBe(expected);
+  });
+
+  it("reads the list from the given commit of the repository, and refuses when it cannot", () => {
+    const root = mkdtempSync(join(tmpdir(), "registered-values-"));
+    try {
+      const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+      execFileSync("git", ["init", "--quiet", "-b", "main", root]);
+      mkdirSync(join(root, "ci/rules"), { recursive: true });
+      writeFileSync(join(root, "ci/rules/gitleaks.toml"), toml);
+      git("add", ".");
+      git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "rules");
+      writeFileSync(join(root, "ci/rules/gitleaks.toml"), "");
+      expect(loadRegisteredTestValues(root, "HEAD")).toContain(fakeValue);
+      expect(() => loadRegisteredTestValues(root, "no-such-ref")).toThrow(
+        "REGISTERED_VALUES_UNREADABLE no-such-ref",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("finds the values the repository's own allowlist registers", () => {
+    const registered = loadRegisteredTestValues(process.cwd(), "HEAD");
+    expect(registered).toContain(fakeValue);
+    expect(registered).toContain(["MIIEvR2T14", "TAILBODY"].join(""));
+    expect(registered.every((value) => value.length >= 12)).toBe(true);
   });
 });

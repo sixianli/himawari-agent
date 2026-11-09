@@ -2448,17 +2448,48 @@ export const RECORD_SECRET_RULES = Object.freeze([
   ],
 ]);
 
+const REGISTERED_VALUE_RULE_ID = "registered-test-value";
+const REGISTERED_VALUE_MIN_LENGTH = 12;
+let registeredTestValues = [];
+
+export function setRegisteredTestValues(values) {
+  registeredTestValues = [...new Set(values)].sort(
+    (a, b) => b.length - a.length || (a < b ? -1 : 1),
+  );
+}
+
+export function registeredTestValuesFromToml(text) {
+  const values = new Set();
+  for (const match of text.matchAll(/^regexes\s*=\s*\[\s*\'\'\'\^([^\n]*?)\$\'\'\'\s*\]\s*$/gm)) {
+    const literal = match[1].replaceAll("\\.", ".");
+    if (literal.length >= REGISTERED_VALUE_MIN_LENGTH && /^[A-Za-z0-9_\-=.:/ ]+$/.test(literal))
+      values.add(literal);
+  }
+  return [...values];
+}
+
+export function loadRegisteredTestValues(repo, ref) {
+  const shown = gitStatus(["show", `${ref}:ci/rules/gitleaks.toml`], repo);
+  if (shown.status !== 0) throw new Error(`REGISTERED_VALUES_UNREADABLE ${ref}`);
+  return registeredTestValuesFromToml(shown.stdout);
+}
+
 export function maskSecretLike(text) {
   let masked = text;
+  for (const value of registeredTestValues)
+    masked = masked.replaceAll(value, `[已遮盖:${REGISTERED_VALUE_RULE_ID}]`);
   for (const [id, pattern] of RECORD_SECRET_RULES)
     masked = masked.replace(new RegExp(pattern.source, pattern.flags), `[已遮盖:${id}]`);
   return masked;
 }
 
 export function secretLikeRules(text) {
-  return RECORD_SECRET_RULES.filter(([, pattern]) =>
+  const rules = RECORD_SECRET_RULES.filter(([, pattern]) =>
     new RegExp(pattern.source, pattern.flags).test(text),
   ).map(([id]) => id);
+  if (registeredTestValues.some((value) => text.includes(value)))
+    rules.push(REGISTERED_VALUE_RULE_ID);
+  return rules;
 }
 
 export function maskedRecordText(text) {
@@ -2891,6 +2922,9 @@ async function main() {
     return;
   }
   if (options.assertReviewed) {
+    setRegisteredTestValues(
+      loadRegisteredTestValues(options.repo, options.mainRef ?? "origin/main"),
+    );
     const result = assertReviewed(options);
     for (const line of result.lines) console.log(line);
     if ((result.problems.length > 0 && !result.overridden) || result.lowFixRefused)
@@ -2906,6 +2940,7 @@ async function main() {
   if (unknownProvider) throw new Error(`ARG_INVALID --providers ${unknownProvider}`);
   const timeoutMs = options.timeoutMinutes * 60 * 1000;
   const commits = resolveCommits(options.repo, options);
+  setRegisteredTestValues(loadRegisteredTestValues(options.repo, commits.base ?? commits.head));
   const questions = reviewQuestions(questionsSource(options.repo, commits, options.questionsRef));
   const brief = recordText(readFileSync(options.brief, "utf8"));
   const prompts = Object.fromEntries(
