@@ -63,11 +63,11 @@ export function isSurfaceInstalled(
 ): boolean {
   if (surface.id === "health-deployment") return healthDependenciesAvailable;
   // Conversations use the separately composed Thread v3 gateway.
+  const operations = [...surface.queries, ...surface.mutations];
   return (
     surface.id === "threads" ||
-    [...surface.queries, ...surface.mutations].every((operation) =>
-      installedGatewayV2Operations.includes(operation),
-    )
+    (operations.length > 0 &&
+      operations.every((operation) => installedGatewayV2Operations.includes(operation)))
   );
 }
 
@@ -154,8 +154,8 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     route: "/tasks",
     sourceSpec: PROACTIVITY_SPEC,
     stableObjects: ["ScheduledJob", "TaskOccurrence", "Run", "Result", "BudgetReservation"],
-    queries: ["task.list", "task.detail"],
-    mutations: ["task.set_state", "github.monitor.set_state"],
+    queries: [],
+    mutations: ["github.monitor.set_state"],
     revisionControl: ["Task.revision", "githubMonitor.expectedRevision", "idempotencyKey"],
     authorization: {
       ownerAgentScope: true,
@@ -163,9 +163,9 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     },
     requiredUiStates: ALL_STATES,
     acceptanceIds: ["S3-A01", "S3-A03", "S3-A04", "S3-A05"],
-    contractStatus: "frozen",
-    integrationPolicy: "allowed",
-    blockers: [],
+    contractStatus: "missing",
+    integrationPolicy: "blocked",
+    blockers: ["没有实现者的操作已在 P1-4 删出约定，要做这个页面时重新定约定"],
     baselineEvidence: [
       "test/integration/qualification/evidence/s1-task15-control-center.json",
       "test/integration/qualification/evidence/s1-task22-github-read-only-monitor.json",
@@ -176,8 +176,8 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     route: "/inbox",
     sourceSpec: PROACTIVITY_SPEC,
     stableObjects: ["InboxItem", "Digest", "Result", "AttentionDecision"],
-    queries: ["inbox.list", "inbox.detail", "inbox.digest"],
-    mutations: ["settings.update"],
+    queries: [],
+    mutations: [],
     revisionControl: ["InboxItem.revision"],
     authorization: {
       ownerAgentScope: true,
@@ -185,17 +185,17 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     },
     requiredUiStates: ALL_STATES,
     acceptanceIds: ["S3-A01", "S3-A03", "S3-A04", "S3-A05"],
-    contractStatus: "frozen",
-    integrationPolicy: "allowed",
-    blockers: [],
+    contractStatus: "missing",
+    integrationPolicy: "blocked",
+    blockers: ["没有实现者的操作已在 P1-4 删出约定，要做这个页面时重新定约定"],
     baselineEvidence: ["test/integration/qualification/evidence/s1-task15-control-center.json"],
   },
   {
     id: "memory",
     route: "/memory",
     sourceSpec: FOUNDATION_SPEC,
-    stableObjects: ["Memory", "MemoryVersion", "MemoryProjection", "SourceProof"],
-    queries: ["memory.search", "memory.detail"],
+    stableObjects: ["Memory", "MemoryVersion", "SourceProof"],
+    queries: ["memory.overview.read"],
     mutations: ["memory.mutate"],
     revisionControl: ["Memory.revision", "idempotencyKey"],
     authorization: {
@@ -360,7 +360,7 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     route: "/trace",
     sourceSpec: FOUNDATION_SPEC,
     stableObjects: ["TraceEvent", "Run", "ActionIntent", "AuthorizationDecision", "Result"],
-    queries: ["trace.timeline", "trace.detail"],
+    queries: [],
     mutations: [],
     revisionControl: ["TraceEvent.sequence"],
     authorization: {
@@ -369,9 +369,9 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     },
     requiredUiStates: ALL_STATES,
     acceptanceIds: ["S3-A01", "S3-A03", "S3-A05"],
-    contractStatus: "frozen",
-    integrationPolicy: "allowed",
-    blockers: [],
+    contractStatus: "missing",
+    integrationPolicy: "blocked",
+    blockers: ["没有实现者的操作已在 P1-4 删出约定，要做这个页面时重新定约定"],
     baselineEvidence: ["test/integration/qualification/evidence/s1-task15-control-center.json"],
   },
   {
@@ -379,8 +379,8 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     route: "/settings",
     sourceSpec: CONTROL_CENTER_SPEC,
     stableObjects: ["ModelPolicy", "BudgetPolicy", "AttentionPolicy", "IntegrationSetting"],
-    queries: ["settings.read"],
-    mutations: ["settings.update"],
+    queries: [],
+    mutations: [],
     revisionControl: ["Settings.revision"],
     authorization: {
       ownerAgentScope: true,
@@ -388,9 +388,9 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     },
     requiredUiStates: ALL_STATES,
     acceptanceIds: ["S3-A01", "S3-A02", "S3-A04", "S3-A05"],
-    contractStatus: "frozen",
-    integrationPolicy: "allowed",
-    blockers: [],
+    contractStatus: "missing",
+    integrationPolicy: "blocked",
+    blockers: ["没有实现者的操作已在 P1-4 删出约定，要做这个页面时重新定约定"],
     baselineEvidence: [],
   },
   {
@@ -398,8 +398,8 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     route: "/sessions",
     sourceSpec: FOUNDATION_SPEC,
     stableObjects: ["Session", "Device", "AuthenticationEvent"],
-    queries: ["identity.sessions", "identity.session_detail"],
-    mutations: ["session.revoke"],
+    queries: [],
+    mutations: [],
     revisionControl: ["Session.revision", "idempotencyKey"],
     authorization: {
       ownerAgentScope: true,
@@ -420,7 +420,7 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     route: "/health",
     sourceSpec: PRODUCTION_SPEC,
     stableObjects: ["Deployment", "AuthorityLease", "ComponentHealth", "OperationCheckpoint"],
-    queries: ["health.status"],
+    queries: [],
     mutations: [],
     revisionControl: ["authorityEpoch", "fencingToken", "OperationCheckpoint.revision"],
     authorization: {

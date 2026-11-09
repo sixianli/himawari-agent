@@ -291,12 +291,12 @@ export class ProductionReminderWriter {
     const { ownerId, agentId } = this.#options.configuration;
     if (!reminder || reminder.ownerId !== ownerId || reminder.agentId !== agentId)
       throw new ReminderInputError("REMINDER_NOT_FOUND");
-    if (reminder.status !== "scheduled") return reminder;
+    if (reminder.status === "cancelled") return reminder;
     const now = this.#options.clock.now();
     const updated = await this.#options.reminders.update({
       id: reminder.id,
       expectedUpdatedAt: reminder.updatedAt,
-      status: "dismissed",
+      status: "cancelled",
       dueAt: reminder.dueAt,
       remindAt: reminder.remindAt,
       dismissedAt: now,

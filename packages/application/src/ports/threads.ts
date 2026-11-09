@@ -337,12 +337,6 @@ export interface ThreadRepositoryPort {
   projectSearch(input: ThreadSearchProjectionInput): Promise<void>;
   projectTitleSearch(input: ThreadTitleSearchProjectionInput): Promise<void>;
   search(query: ThreadSearchQuery): Promise<readonly ProductThread[]>;
-  rebuildSearch(
-    ownerId: OwnerId,
-    agentId: AgentId,
-    threadId: ThreadId,
-    projectionVersion: string,
-  ): Promise<number>;
   inspectDeletionImpact(
     ownerId: OwnerId,
     agentId: AgentId,
