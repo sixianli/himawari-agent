@@ -379,6 +379,7 @@ function toolProgressOutput(
 }
 
 const PI_CONTEXT_WINDOW_EXHAUSTED = "PI_CONTEXT_WINDOW_EXHAUSTED";
+const PI_REQUEST_TOOLS_DIVERGED = "PI_REQUEST_TOOLS_DIVERGED";
 const MIN_CONTEXT_ANSWER_TOKENS = 512;
 const BACKGROUND_COMMAND_MESSAGE_TYPE = "himawari.background.command";
 
@@ -432,7 +433,8 @@ function loggableModelFailure(errorMessage: string | undefined): string {
   const message = errorMessage ?? "";
   if (
     message.startsWith("Model invocation ") ||
-    message === "Model budget accounting is unavailable"
+    message === "Model budget accounting is unavailable" ||
+    message === PI_REQUEST_TOOLS_DIVERGED
   )
     return message;
   const status = /^(\d{3})(?:\s|:)/.exec(message)?.[1];
@@ -1600,7 +1602,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         await this.#historyWrites.get(request.runId);
         const replay = restored?.takeReplay();
         if (replay) return replay;
-        if (!context) return failedPiStream(model, "PI_REQUEST_TOOLS_DIVERGED");
+        if (!context) return failedPiStream(model, PI_REQUEST_TOOLS_DIVERGED);
         if (suspended || unknownTool)
           return failedPiStream(model, "Runtime tool reconciliation is required");
         if (toolProgress.blocked) {

@@ -564,7 +564,7 @@ function reviewedExceptions({ root, context, now, ruleIds }) {
   return loadReviewedExceptions({ root, context, now, ruleIds, dependencies });
 }
 
-function gitleaksGateExceptions({ root, context, now }) {
+export function gitleaksGateExceptions({ root, context, now }) {
   const exceptionPath = "ci/security-exceptions.json";
   const accepted =
     git(root, ["ls-tree", "-r", "--name-only", context.baseSha, "--", exceptionPath]).trim() ===

@@ -2149,6 +2149,7 @@ describe("Pi Agent Runtime adapter compatibility", () => {
   it.each([
     ["Model invocation admission was blocked", "Model invocation admission was blocked"],
     ["400: PRIVATE_PROVIDER_DATA", "provider_status_400"],
+    ["PI_REQUEST_TOOLS_DIVERGED", "PI_REQUEST_TOOLS_DIVERGED"],
     ["provider included an unsafe raw failure", "provider_message_withheld"],
   ])(
     "reports why the model stream failed without provider text: %s",

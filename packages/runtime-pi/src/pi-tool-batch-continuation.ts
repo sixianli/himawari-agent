@@ -3,6 +3,7 @@ import { type AssistantMessage, createAssistantMessageEventStream } from "@earen
 import {
   type AgentSession,
   type NewSessionOptions,
+  convertToLlm,
   type SessionEntry,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
@@ -45,10 +46,8 @@ export function capturePiToolBatch(
   if (entryIndex < 0) throw new Error("PI_CONTINUATION_BATCH_INVALID");
   const entries = branch.slice(0, entryIndex);
   if (
-    !isDeepStrictEqual(
-      withoutSystem(batchSessionManager(entries, "/").buildSessionContext().messages),
-      withoutSystem(messages.slice(0, index)),
-    )
+    modelVisible(batchSessionManager(entries, "/").buildSessionContext().messages) !==
+    modelVisible(messages.slice(0, index))
   )
     throw new Error("PI_CONTINUATION_PREFIX_INVALID");
   return checkedBatch({
@@ -63,8 +62,12 @@ export function capturePiToolBatch(
   });
 }
 
-function withoutSystem(messages: readonly PiMessages[number][]) {
-  return messages.filter((message) => message.role !== ("system" as string));
+function modelVisible(messages: PiMessages): string {
+  return JSON.stringify(
+    convertToLlm(messages)
+      .filter((message) => message.role !== "system")
+      .map(({ timestamp: _timestamp, ...message }) => message),
+  );
 }
 
 function runsInParallel(session: BatchSession, assistant: AssistantMessage): boolean {

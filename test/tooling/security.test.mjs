@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applySecurityExceptions,
   enumerateLockDependencies,
+  gitleaksGateExceptions,
   gitleaksHistoryScope,
   loadReviewedExceptions,
   parseGitleaksReport,
@@ -532,6 +533,49 @@ describe("受审阅的窄范围例外", () => {
 });
 
 describe("依赖升级后已接受的例外", () => {
+  it("Gitleaks 门禁读 base 例外时，同样跳过指向已移除依赖的条目", () => {
+    const directory = temporary();
+    const git = (...args) =>
+      execFileSync("git", ["-C", directory, ...args], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    git("init", "-q");
+    git("config", "user.name", "Security Fixture");
+    git("config", "user.email", "fixture@example.invalid");
+    mkdirSync(join(directory, "ci/rules"), { recursive: true });
+    cpSync(join(root, "ci/rules/semgrep.yml"), join(directory, "ci/rules/semgrep.yml"));
+    json(join(directory, "package-lock.json"), {
+      lockfileVersion: 3,
+      packages: {
+        "": { name: "fixture" },
+        "node_modules/example": {
+          version: "1.2.0",
+          resolved: "https://registry.npmjs.org/example/-/example-1.2.0.tgz",
+          integrity: "sha512-fixture",
+        },
+      },
+    });
+    json(join(directory, "ci/security-exceptions.json"), {
+      schemaVersion: 1,
+      exceptions: [
+        exception(),
+        exception({
+          id: "GHSA-dddd-eeee-ffff",
+          path: "node_modules/removed",
+          package: "removed",
+          version: "0.1.0",
+        }),
+      ],
+    });
+    git("add", ".");
+    git("commit", "-qm", "accepted policies");
+    const baseSha = git("rev-parse", "HEAD");
+    expect(
+      gitleaksGateExceptions({ root: directory, context: { baseSha }, now }).exceptions,
+    ).toEqual([]);
+  });
+
   it("只去掉指向锁文件里已不存在的依赖版本的例外，源码里的合成密钥例外保留", () => {
     const installed = [{ path: "node_modules/kept", name: "kept", version: "1.0.0" }];
     const entries = [

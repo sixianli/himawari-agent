@@ -62,6 +62,34 @@ function state() {
   return { session, messages, assistant };
 }
 describe("tool-batch persisted-state integrity", () => {
+  it("captures a batch after a message steered in during the run, which Pi stores with its own timestamp", () => {
+    const f = state();
+    const steered = {
+      role: "custom",
+      customType: "himawari.background_command",
+      content: "The background command finished.",
+      display: false,
+      timestamp: -5,
+    } as unknown as (typeof f.messages)[number];
+    f.messages.splice(1, 0, steered);
+    const sessionManager = SessionManager.inMemory("/workspace");
+    sessionManager.appendMessage(f.messages[0] as never);
+    sessionManager.appendCustomMessageEntry(
+      "himawari.background_command",
+      "The background command finished.",
+      false,
+    );
+    for (const message of f.messages.slice(2)) sessionManager.appendMessage(message as never);
+    const session = { sessionManager, agent: f.session.agent } as unknown as AgentSession;
+    const saved = capturePiToolBatch(session, "waiting", 3, PROMPT);
+    expect(
+      piToolBatchSessionManager(saved, PROMPT, "/workspace").buildSessionContext().messages,
+    ).toMatchObject([
+      { role: "user" },
+      { role: "custom", content: "The background command finished." },
+    ]);
+  });
+
   it("refuses to capture when the Pi session entries do not rebuild the messages before the batch", () => {
     const f = state();
     const sessionManager = f.session.sessionManager;
