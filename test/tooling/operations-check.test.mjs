@@ -126,6 +126,29 @@ describe("operations check", () => {
     ]);
   });
 
+  it("[P1-4] rejects a deleted operation that code or tests still use", () => {
+    const removed = {
+      "ci/operations-removed.json": JSON.stringify({ removed: { "session.revoke": "gone" } }),
+    };
+    const stale = {
+      ...complete,
+      ...removed,
+      "packages/integration-github/test/github.test.ts": `const m = { type: "${"session"}.revoke" };`,
+    };
+    expect(checkOperations(tree(stale)).errors).toEqual([
+      "OPERATION_REMOVED_STILL_USED session.revoke",
+    ]);
+    expect(checkOperations(tree({ ...complete, ...removed })).errors).toEqual([]);
+    const revived = {
+      ...complete,
+      "ci/operations-removed.json": JSON.stringify({ removed: { "demo.read": "gone" } }),
+    };
+    expect(checkOperations(tree(revived)).errors).toEqual([
+      "OPERATION_REMOVED_BUT_IN_CONTRACT demo.read",
+      "OPERATION_REMOVED_STILL_USED demo.read",
+    ]);
+  });
+
   it("passes on the real repository", () => {
     expect(checkOperations().errors).toEqual([]);
   });

@@ -1178,6 +1178,9 @@ describe("production memory capture", () => {
       status: "cancelled",
       dismissedAt: "2026-10-30T07:06:00.000Z",
     });
+    for (const action of ["dismiss", "snooze"] as const)
+      await expect(answer(action)).rejects.toThrow("MEMORY_REMINDER_CANCELLED");
+    expect(await reminders.read(reminderId)).toMatchObject({ status: "cancelled" });
     await expect(
       context.control.execute({
         ...envelope,

@@ -731,19 +731,13 @@ describe("GitHub monitor lifecycle commands", () => {
     ).resolves.toMatchObject({ resultRef: `github-monitor:${MONITOR_ID}:revision-2` });
     const nonGitHub = gatewayV2MessageSchema.parse({
       ...monitorCommand("revoke", 2),
-      type: "session.revoke",
-      payload: {
-        sessionId: "session-github",
-        deviceId: "device-github",
-        expectedRevision: 1,
-        recentAuthenticationRef: "authentication:github-owner",
-        reasonCode: "fixture",
-      },
-    }) as Extract<GatewayV2Command, { readonly type: "session.revoke" }>;
+      type: "grant.revoke",
+      payload: { grantId: "grant-github", expectedRevision: 1, reasonCode: "fixture" },
+    }) as Extract<GatewayV2Command, { readonly type: "grant.revoke" }>;
     await expect(controlPlane.execute({ authentication, command: nonGitHub })).resolves.toEqual({
       resultRef: "delegated:command",
       replayed: false,
     });
-    expect(delegated).toEqual(["session.revoke"]);
+    expect(delegated).toEqual(["grant.revoke"]);
   });
 });

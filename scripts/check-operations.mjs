@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const CONTRACT_FILE = "packages/gateway-contracts/src/contracts-v2.ts";
 export const PENDING_LEDGER = "ci/operations-pending.json";
+export const REMOVED_LEDGER = "ci/operations-removed.json";
 const FRONTEND_ROOT = "apps/control-center/src";
 const FRONTEND_EXCLUDED = [
   `${FRONTEND_ROOT}/app/control-center-inventory.ts`,
@@ -155,6 +156,28 @@ export function checkOperations(root = repositoryRoot) {
     }
   } else {
     errors.push("OPERATIONS_LEDGER_MISSING");
+  }
+
+  const removedPath = path.join(root, REMOVED_LEDGER);
+  let removed = [];
+  if (existsSync(removedPath)) {
+    try {
+      removed = Object.keys(JSON.parse(readFileSync(removedPath, "utf8")).removed ?? {});
+    } catch {
+      errors.push("OPERATIONS_REMOVED_LEDGER_UNREADABLE");
+    }
+  }
+  const contractText = readFileSync(contractPath, "utf8");
+  for (const name of removed) {
+    if (contractNames.has(name)) errors.push(`OPERATION_REMOVED_BUT_IN_CONTRACT ${name}`);
+    const escaped = name.replaceAll(".", "\\.");
+    const usage = new RegExp(
+      `(?:["']?type["']?\\s*(?:===|!==|:|=)\\s*|\\bcase\\s+)["']${escaped}["']`,
+    );
+    const used = [...backendTexts, ...frontendTexts, ...testTexts, contractText].some((text) =>
+      usage.test(text),
+    );
+    if (used) errors.push(`OPERATION_REMOVED_STILL_USED ${name}`);
   }
 
   const report = [];
