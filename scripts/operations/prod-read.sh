@@ -22,6 +22,7 @@ usage: prod-read.sh <query>
   columns <table>            column names of one table
   rows <table> <run-id>       rows of one table whose run_id or id column equals <run-id>
   rule-memories               metadata (no text) of the rule-category memories, all statuses, newest 500
+  gmail-decisions             metadata (no text) of the newest 100 Gmail decision records: outcome, rating, rule and memory counts, paired Muse entries
   system-instruction          the runPolicy.systemInstruction text of the production configuration
 TEXT
   exit 64
@@ -87,6 +88,20 @@ if (mode === "summary") {
   result = database
     .prepare(
       "SELECT id, status, tentative, classification, importance_permille, confidence_permille, inference, recorded_at, updated_at, valid_to, superseded_by, use_count FROM memory_records WHERE category = 'rule' ORDER BY recorded_at DESC, id LIMIT 500",
+    )
+    .all()
+    .map(shorten);
+} else if (mode === "gmail-decisions") {
+  result = database
+    .prepare(
+      "SELECT p.message_id, p.decision_id, p.outcome, p.skip_reason, p.owner_rating, p.processed_at, " +
+        "(SELECT count(*) FROM json_each(json_extract(d.inputs, '$.floorHits.\"' || p.message_id || '\"'))) AS rule_count, " +
+        "(SELECT count(*) FROM json_each(json_extract(d.inputs, '$.memoryByMail.\"' || p.message_id || '\"'))) AS memory_count, " +
+        "(SELECT count(*) FROM json_each(json_extract(d.inputs, '$.relatedByMail.\"' || p.message_id || '\"'))) AS related_count, " +
+        "(SELECT count(*) FROM muse_reference_entries e WHERE e.owner_id = p.owner_id AND e.agent_id = p.agent_id AND e.paired_message_id = p.message_id) AS muse_entries, " +
+        "(SELECT max(e.muse_reminded) FROM muse_reference_entries e WHERE e.owner_id = p.owner_id AND e.agent_id = p.agent_id AND e.paired_message_id = p.message_id) AS muse_reminded " +
+        "FROM proactive_processed_messages p JOIN decision_ledger d ON d.id = p.decision_id " +
+        "WHERE p.source = 'gmail' ORDER BY p.processed_at DESC, p.message_id LIMIT 100",
     )
     .all()
     .map(shorten);
@@ -203,6 +218,10 @@ case "$query" in
   rule-memories)
     [ "$#" -eq 0 ] || usage
     database_query rule-memories
+    ;;
+  gmail-decisions)
+    [ "$#" -eq 0 ] || usage
+    database_query gmail-decisions
     ;;
   system-instruction)
     [ "$#" -eq 0 ] || usage

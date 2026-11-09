@@ -1068,6 +1068,35 @@ export const messages = {
     "{a, select, merge {統合} supersede {置き換え} archive {アーカイブ} reflect {要約} other {整理}}",
   "decision.chain.repeated": "重複",
   "decision.chain.nodeCut": "この先にもあります",
+  "decision.email.open": "このメールを見る",
+  "decision.email.title": "メールの判断の詳細",
+  "decision.email.back": "戻る",
+  "decision.email.failed":
+    "このメールの判断の詳細を読み込めませんでした。後でもう一度お試しください。",
+  "decision.email.thisMail": "このメールで使用",
+  "decision.email.thisMailUsed": "このメールで使ったもの",
+  "decision.email.mailTitle": "このメールの判断",
+  "decision.email.noMail": "このメールの判断記録はありません。",
+  "decision.email.outcome":
+    "{o, select, act {対応が必要} know {知っておく価値あり} check {重要かもしれません。原文を確認} ignore {対応不要} skipped {このメールは読みませんでした} other {記録なし}}",
+  "decision.email.skip":
+    "{r, select, category {理由：メールの分類によりスキップ} sensitive {理由：機密メールのためスキップ} own_mail {理由：自分が送ったメールのためスキップ} other {理由：記録なし}}",
+  "decision.email.counts":
+    "該当ルール {rules} 件 · 使用した記憶 {memories} 件 · 関連メール {related} 通",
+  "decision.email.sameJudgment":
+    "以下の根拠は、このメールが含まれていた判断のものです（1回の判断で複数のメールを読むことがあります）。「このメールで使用」と付いたものは、このメール自身が使ったものです。",
+  "decision.email.week": "このメールが属する観察期間の補正数値",
+  "decision.email.weekWithheld": "この観察期間はまだ終わっていないため、割合は表示しません。",
+  "decision.email.muse": "Muse がこのメールにしたこと",
+  "decision.email.museNone": "Muse にこのメールの記録はありません。",
+  "decision.email.museReminded":
+    "{v, select, yes {Muse は通知しました} other {Muse は通知しませんでした}}",
+  "decision.email.museJudged": "{v, select, ok {適切} bad {不適切} other {未評価}}",
+  "decision.email.museRating": "あなたの評価：タイミング{timing}、内容{content}",
+  "decision.email.museCut": "Muse の記録が多いため、先頭の 20 件のみ表示します。",
+  "decision.email.compareTitle": "両者の比較",
+  "decision.email.compare":
+    "{c, select, both {両方が通知しました} museOnly {Muse だけが通知し、Himawari は通知しませんでした} himawariOnly {Himawari だけが通知し、Muse は通知しませんでした} bothSilent {どちらも通知しませんでした} noMuseEntry {Muse にこのメールの記録がないため比較できません} other {Himawari にこのメールの判断記録がないため比較できません}}",
   "proactive.metric.spoke": "自発的なリマインダーの総数",
   "proactive.metric.hits": "適切なリマインダー",
   "proactive.metric.misfires": "余計なリマインダー",

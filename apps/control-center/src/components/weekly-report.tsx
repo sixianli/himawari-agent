@@ -455,18 +455,169 @@ const emptyGroup = (group: Group): CalibrationGroupSummary => ({
   rates: { useful: null, unneeded: null, missed: null },
 });
 
+function GapLines({
+  gap,
+  message,
+  format,
+}: {
+  gap: NonNullable<ProactiveWeekly["report"]["gap"]>;
+  message: Message;
+  format: Format;
+}) {
+  return (
+    <>
+      {gap.lines.map((line) => (
+        <div key={line.line} className="weekly-gap-line">
+          <b>{message("weekly.gap.line", { l: line.line })}</b>
+          <span>{message("weekly.gap.mails", { n: format.count(line.mails) })}</span>
+          {line.verdict === "insufficient" ? (
+            <span>{message("weekly.gap.few", { n: line.mails })}</span>
+          ) : (
+            <>
+              <span>
+                {message("weekly.gap.rates", {
+                  muse: signedFree(line.muse?.value ?? null, format),
+                  himawari: signedFree(line.himawari?.value ?? null, format),
+                })}
+              </span>
+              {line.difference !== null && line.low !== null && line.high !== null ? (
+                <span>
+                  {message("weekly.gap.diff", {
+                    d: signedPercent(line.difference),
+                    low: signedPercent(line.low),
+                    high: signedPercent(line.high),
+                  })}
+                </span>
+              ) : null}
+              <span>
+                {message("weekly.gap.verdict", {
+                  v: line.verdict === "decided" ? line.direction : "none",
+                })}
+              </span>
+            </>
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function MuseBucketTiles({
+  muse,
+  message,
+  format,
+  mark,
+}: {
+  muse: ProactiveWeekly["report"]["muse"];
+  message: Message;
+  format: Format;
+  mark?: (typeof MUSE_BUCKETS)[number] | null;
+}) {
+  return (
+    <div className="weekly-tiles" data-count="5">
+      {MUSE_BUCKETS.map((bucket) => (
+        <div key={bucket} className="weekly-tile" data-mark={mark === bucket || undefined}>
+          <b>{format.count(muse.buckets[bucket])}</b>
+          <span>{message("weekly.muse.bucket", { b: bucket })}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function WeekGlance({
+  report,
+  message,
+  locale,
+  mark,
+}: {
+  report: ProactiveWeekly["report"];
+  message: Message;
+  locale: string;
+  mark: (typeof MUSE_BUCKETS)[number] | null;
+}) {
+  const format = formatter(locale);
+  const groups = new Map(report.groups.map((group) => [group.group, group]));
+  return (
+    <div className="mail-week">
+      <p className="weekly-window">
+        {message("weekly.window.range", {
+          start: format.day(report.startDay),
+          end: format.day(addDays(report.endDay, -1)),
+        })}
+      </p>
+      {report.ratesWithheld ? (
+        <p className="weekly-empty">{message("decision.email.weekWithheld")}</p>
+      ) : null}
+      <div className="mail-week-rows">
+        {DESCRIBED_GROUPS.map((name) => {
+          const group = groups.get(name) ?? emptyGroup(name);
+          const parts = report.ratesWithheld
+            ? null
+            : ratioParts(group, report.minimumSamples, message, format);
+          return (
+            <div key={name} className="weekly-type-card" data-group={name}>
+              <h3>{message("weekly.group", { g: name })}</h3>
+              <div className="weekly-metric">
+                <span>{message("weekly.type.column", { c: "total" })}</span>
+                <span>{format.count(group.total)}</span>
+              </div>
+              <div className="weekly-metric">
+                <span>{message("weekly.type.column", { c: "rated" })}</span>
+                <span>{format.count(group.rated)}</span>
+              </div>
+              {report.ratesWithheld ? null : parts ? (
+                parts.map((part) => (
+                  <div key={part.rating} className="weekly-metric">
+                    <span>{part.label}</span>
+                    <span>
+                      {part.value}
+                      <small>{part.range}</small>
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="weekly-metric" data-few>
+                  <span>{message("weekly.type.column", { c: "ratio" })}</span>
+                  <span>{message("weekly.few", { n: group.rated })}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <h3>{message("weekly.muse.title")}</h3>
+      {report.muse.entries === 0 ? (
+        <p className="weekly-empty">{message("weekly.muse.empty")}</p>
+      ) : (
+        <MuseBucketTiles muse={report.muse} message={message} format={format} mark={mark} />
+      )}
+      <h3>{message("weekly.gap.title")}</h3>
+      {report.gap === null ? (
+        <p className="weekly-empty">{message("weekly.gap.notFull")}</p>
+      ) : report.gap.lines.every((line) => line.mails === 0) ? (
+        <p className="weekly-empty">{message("weekly.gap.empty")}</p>
+      ) : (
+        <GapLines gap={report.gap} message={message} format={format} />
+      )}
+    </div>
+  );
+}
+
 export function WeeklyReport({
   proactive,
   weekly,
   message,
   locale,
   onRate,
+  onOpenMail,
 }: {
   proactive: ProactiveModel;
   weekly: ProactiveWeeklyAccess;
   message: Message;
   locale: string;
   onRate: () => void;
+  onOpenMail?: (messageId: string, endDay: string) => void;
 }) {
   const access = useRef(weekly);
   access.current = weekly;
@@ -1053,14 +1204,7 @@ export function WeeklyReport({
           <p className="weekly-empty">{message("weekly.muse.empty")}</p>
         ) : (
           <>
-            <div className="weekly-tiles" data-count="5">
-              {MUSE_BUCKETS.map((bucket) => (
-                <div key={bucket} className="weekly-tile">
-                  <b>{format.count(muse.buckets[bucket])}</b>
-                  <span>{message("weekly.muse.bucket", { b: bucket })}</span>
-                </div>
-              ))}
-            </div>
+            <MuseBucketTiles muse={muse} message={message} format={format} />
             <p className="weekly-muse-foot">
               <span>
                 {message("weekly.muse.unpaired")} <b>{format.count(muse.unpaired)}</b>
@@ -1092,38 +1236,7 @@ export function WeeklyReport({
           <p className="weekly-empty">{message("weekly.gap.empty")}</p>
         ) : (
           <>
-            {report.gap.lines.map((line) => (
-              <div key={line.line} className="weekly-gap-line">
-                <b>{message("weekly.gap.line", { l: line.line })}</b>
-                <span>{message("weekly.gap.mails", { n: format.count(line.mails) })}</span>
-                {line.verdict === "insufficient" ? (
-                  <span>{message("weekly.gap.few", { n: line.mails })}</span>
-                ) : (
-                  <>
-                    <span>
-                      {message("weekly.gap.rates", {
-                        muse: signedFree(line.muse?.value ?? null, format),
-                        himawari: signedFree(line.himawari?.value ?? null, format),
-                      })}
-                    </span>
-                    {line.difference !== null && line.low !== null && line.high !== null ? (
-                      <span>
-                        {message("weekly.gap.diff", {
-                          d: signedPercent(line.difference),
-                          low: signedPercent(line.low),
-                          high: signedPercent(line.high),
-                        })}
-                      </span>
-                    ) : null}
-                    <span>
-                      {message("weekly.gap.verdict", {
-                        v: line.verdict === "decided" ? line.direction : "none",
-                      })}
-                    </span>
-                  </>
-                )}
-              </div>
-            ))}
+            <GapLines gap={report.gap} message={message} format={format} />
             <p className="weekly-muse-foot">{message("weekly.gap.note")}</p>
           </>
         )}
@@ -1162,6 +1275,16 @@ export function WeeklyReport({
                     </p>
                     <p>{message("weekly.cases.rating", { r: item.ownerRating ?? "none" })}</p>
                   </div>
+                  {onOpenMail ? (
+                    <button
+                      type="button"
+                      className="weekly-case-open"
+                      data-open-mail={item.id}
+                      onClick={() => onOpenMail(item.messageId, report.endDay)}
+                    >
+                      {message("decision.email.open")}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="weekly-case-mark"

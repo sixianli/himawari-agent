@@ -196,6 +196,36 @@ export interface GapCandidate {
   readonly relatedMessagesForMail: number;
 }
 
+export const MAIL_TRACE_MUSE_LIMIT = 20;
+
+export interface MailTraceProcessed {
+  readonly decisionId: string;
+  readonly threadId: string;
+  readonly outcome: string;
+  readonly skipReason: string | null;
+  readonly ownerRating: DecisionRating | null;
+  readonly processedAt: string;
+}
+
+export interface MailTraceMuseEntry {
+  readonly entryId: string;
+  readonly museAt: string;
+  readonly museReminded: boolean;
+  readonly timingOk: boolean | null;
+  readonly contentOk: boolean | null;
+  readonly kind: string | null;
+  readonly state: string | null;
+  readonly titleRef: string | null;
+  readonly textRef: string | null;
+  readonly contentRef: string | null;
+  readonly textWithheld: boolean;
+}
+
+export interface MailTrace {
+  readonly processed: MailTraceProcessed | null;
+  readonly museEntries: readonly MailTraceMuseEntry[];
+}
+
 export interface DecisionLedgerScope {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
@@ -249,6 +279,7 @@ export interface DecisionLedgerPort {
   listMuse(
     input: DecisionLedgerScope & { readonly since: string; readonly limit: number },
   ): Promise<readonly MuseReferenceEntry[]>;
+  readMailTrace(input: DecisionLedgerScope & { readonly messageId: string }): Promise<MailTrace>;
   readGapCandidates(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;

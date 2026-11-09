@@ -13,6 +13,7 @@ const TITLE_LIMIT = 300;
 
 export interface GapCase {
   readonly id: string;
+  readonly messageId: string;
   readonly museAt: string;
   readonly museTitle: string | null;
   readonly museText: string | null;
@@ -27,7 +28,7 @@ export interface GapCase {
   readonly decidedAt: string;
 }
 
-function clean(text: string, limit: number): string {
+export function clean(text: string, limit: number): string {
   let kept = "";
   for (const character of text.replace(/\p{Cc}+/gu, " ").trim()) {
     if (kept.length + character.length > limit) break;
@@ -77,6 +78,7 @@ export async function buildGapCases(options: {
       const withheld = candidate.museTextWithheld;
       return {
         id: gapCaseId(candidate.pairedMessageId),
+        messageId: candidate.pairedMessageId,
         museAt: candidate.museAt,
         museTitle: withheld ? null : await open(candidate.museTitleRef, TITLE_LIMIT),
         museText: withheld

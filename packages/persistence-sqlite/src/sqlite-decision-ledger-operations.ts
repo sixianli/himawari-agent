@@ -8,11 +8,14 @@ import {
   type DecisionLedgerEntry,
   type DecisionLedgerPort,
   type DecisionLedgerWrite,
+  type DecisionRating,
   type DecisionRecordRead,
   type DecisionSignalEntry,
   type GapCandidate,
   type GapCaseMarkPort,
   type GapCaseMarkRow,
+  MAIL_TRACE_MUSE_LIMIT,
+  type MailTrace,
   type MuseReferenceEntry,
   type MuseReferenceWrite,
 } from "@himawari-agent/application/decision-ledger";
@@ -246,6 +249,8 @@ export class SqliteDecisionLedgerOperations {
         return this.gapUnmark(payload as MarkInput<"unmark">);
       case "decisionLedger.gapMarks":
         return this.gapMarks(payload as MarkInput<"list">);
+      case "decisionLedger.readMailTrace":
+        return this.readMailTrace(payload as Input<"readMailTrace">);
       case "decisionLedger.readGapCandidates":
         return this.readGapCandidates(payload as Input<"readGapCandidates">);
       default:
@@ -509,6 +514,64 @@ export class SqliteDecisionLedgerOperations {
          ORDER BY marked_at, case_id`,
       )
       .all(input.ownerId, input.agentId) as GapCaseMarkRow[];
+  }
+
+  private readMailTrace(input: Input<"readMailTrace">): MailTrace {
+    const processedRow = this.database
+      .prepare(
+        `SELECT decision_id AS decisionId, thread_id AS threadId, outcome, skip_reason AS skipReason,
+           owner_rating AS ownerRating, processed_at AS processedAt
+         FROM proactive_processed_messages
+         WHERE owner_id = ? AND agent_id = ? AND source = 'gmail' AND message_id = ?`,
+      )
+      .get(input.ownerId, input.agentId, input.messageId) as Record<string, unknown> | undefined;
+    const asText = (value: unknown) => (typeof value === "string" ? value : null);
+    const entries = this.database
+      .prepare(
+        `SELECT e.id AS entryId, e.muse_at AS museAt, e.muse_reminded AS museReminded,
+           e.timing_ok AS timingOk, e.content_ok AS contentOk, e.content_ref AS contentRef,
+           i.kind AS kind, i.state AS state, i.title_ref AS titleRef, i.text_ref AS textRef,
+           COALESCE(i.text_withheld, 0) AS textWithheld
+         FROM muse_reference_entries e
+         LEFT JOIN muse_intake_items i
+           ON i.owner_id = e.owner_id AND i.agent_id = e.agent_id
+          AND e.intake_item_key = i.kind || ':' || i.natural_key
+         WHERE e.owner_id = ? AND e.agent_id = ? AND e.paired_message_id = ?
+         ORDER BY e.muse_at, e.id LIMIT ?`,
+      )
+      .all(input.ownerId, input.agentId, input.messageId, MAIL_TRACE_MUSE_LIMIT) as Record<
+      string,
+      unknown
+    >[];
+    return Object.freeze({
+      processed: processedRow
+        ? Object.freeze({
+            decisionId: String(processedRow["decisionId"]),
+            threadId: String(processedRow["threadId"]),
+            outcome: String(processedRow["outcome"]),
+            skipReason: asText(processedRow["skipReason"]),
+            ownerRating: asText(processedRow["ownerRating"]) as DecisionRating | null,
+            processedAt: String(processedRow["processedAt"]),
+          })
+        : null,
+      museEntries: Object.freeze(
+        entries.map((row) =>
+          Object.freeze({
+            entryId: String(row["entryId"]),
+            museAt: String(row["museAt"]),
+            museReminded: row["museReminded"] === 1,
+            timingOk: row["timingOk"] === null ? null : row["timingOk"] === 1,
+            contentOk: row["contentOk"] === null ? null : row["contentOk"] === 1,
+            kind: asText(row["kind"]),
+            state: asText(row["state"]),
+            titleRef: asText(row["titleRef"]),
+            textRef: asText(row["textRef"]),
+            contentRef: asText(row["contentRef"]),
+            textWithheld: row["textWithheld"] === 1,
+          }),
+        ),
+      ),
+    });
   }
 
   private readGapCandidates(input: Input<"readGapCandidates">): readonly GapCandidate[] {

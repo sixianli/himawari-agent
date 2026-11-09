@@ -4,6 +4,7 @@ import {
   boundedString,
   ContractValidationError,
   enumeration,
+  gmailMessageId,
   type InferSchema,
   integer,
   literal,
@@ -63,6 +64,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.basis.snapshot",
   "decision.chain.read",
   "decision.chain.snapshot",
+  "decision.email.read",
+  "decision.email.snapshot",
   "memory.approval.respond",
   "memory.tidy.undo",
   "memory.reminder.respond",
@@ -843,6 +846,7 @@ const proactiveWeeklySnapshotSchema = object({
       gapCases: array(
         object({
           id: machineString,
+          messageId: gmailMessageId,
           museAt: timestamp,
           museTitle: nullable(proactiveTextSchema(300)),
           museText: nullable(proactiveTextSchema(500)),
@@ -1078,6 +1082,55 @@ const decisionChainSnapshotSchema = object({
         }),
       ),
     }),
+  }),
+});
+const decisionEmailQuerySchema = object({
+  ...envelope("query", "decision.email.read"),
+  payload: object({ messageId: gmailMessageId }),
+});
+const decisionEmailSnapshotSchema = object({
+  ...envelope("snapshot", "decision.email.snapshot"),
+  payload: object({
+    messageId: gmailMessageId,
+    mail: nullable(
+      object({
+        decisionId: machineString,
+        threadId: boundedString(256),
+        outcome: enumeration(["act", "know", "check", "ignore", "skipped"]),
+        skipReason: nullable(enumeration(["category", "sensitive", "own_mail"])),
+        processedAt: timestamp,
+        rating: nullable(enumeration(["useful", "unneeded", "missed"])),
+        decidedAt: nullable(timestamp),
+        ruleIds: nullable(array(boundedString(256))),
+        memoryIds: nullable(array(machineString)),
+        relatedMessages: nullable(integer(0)),
+      }),
+    ),
+    muse: object({
+      entries: array(
+        object({
+          entryId: machineString,
+          museAt: timestamp,
+          reminded: booleanValue,
+          kind: nullable(enumeration(["proactive", "scheduled"])),
+          state: nullable(enumeration(["delivered", "suppressed", "succeeded", "failed"])),
+          title: nullable(proactiveTextSchema(300)),
+          text: nullable(proactiveTextSchema(500)),
+          textWithheld: booleanValue,
+          timingOk: nullable(booleanValue),
+          contentOk: nullable(booleanValue),
+        }),
+      ),
+      truncated: booleanValue,
+    }),
+    comparison: enumeration([
+      "both",
+      "museOnly",
+      "himawariOnly",
+      "bothSilent",
+      "noMuseEntry",
+      "noHimawariRecord",
+    ]),
   }),
 });
 const memoryOverviewSnapshotSchema = object({
@@ -2151,6 +2204,8 @@ const schemasByType = {
   "memory.basis.snapshot": memoryBasisSnapshotSchema,
   "decision.chain.read": decisionChainQuerySchema,
   "decision.chain.snapshot": decisionChainSnapshotSchema,
+  "decision.email.read": decisionEmailQuerySchema,
+  "decision.email.snapshot": decisionEmailSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
   "memory.reminder.respond": memoryReminderRespondCommandSchema,

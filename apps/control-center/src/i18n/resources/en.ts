@@ -1068,6 +1068,34 @@ export const messages = {
     "{a, select, merge {Merged} supersede {Replaced} archive {Archived} reflect {Summarized} other {Tidied}}",
   "decision.chain.repeated": "repeated",
   "decision.chain.nodeCut": "more below",
+  "decision.email.open": "View this email",
+  "decision.email.title": "Email decision detail",
+  "decision.email.back": "Back",
+  "decision.email.failed": "Could not read this email's decision detail. Try again later.",
+  "decision.email.thisMail": "Used by this email",
+  "decision.email.thisMailUsed": "Used by this email",
+  "decision.email.mailTitle": "Judgment on this email",
+  "decision.email.noMail": "There is no judgment record for this email.",
+  "decision.email.outcome":
+    "{o, select, act {Needs you to act} know {Worth knowing} check {Might matter, read the original} ignore {Ignore} skipped {Email was not read} other {No record}}",
+  "decision.email.skip":
+    "{r, select, category {Reason: skipped by mail category} sensitive {Reason: skipped as sensitive} own_mail {Reason: skipped, sent by you} other {Reason: no record}}",
+  "decision.email.counts":
+    "{rules} rules hit · {memories} memories used · {related} related emails",
+  "decision.email.sameJudgment":
+    "The basis below belongs to the judgment this email was part of (one judgment can read several emails). Items marked “Used by this email” were used by this email itself.",
+  "decision.email.week": "Calibration for the period this email falls in",
+  "decision.email.weekWithheld": "This period has not ended yet, so ratios are not shown.",
+  "decision.email.muse": "What Muse did with this email",
+  "decision.email.museNone": "Muse has no entry for this email.",
+  "decision.email.museReminded":
+    "{v, select, yes {Muse reminded you} other {Muse did not remind you}}",
+  "decision.email.museJudged": "{v, select, ok {right} bad {wrong} other {not rated}}",
+  "decision.email.museRating": "Your rating: timing {timing}; content {content}",
+  "decision.email.museCut": "Muse has many entries; only the first 20 are shown.",
+  "decision.email.compareTitle": "Side by side",
+  "decision.email.compare":
+    "{c, select, both {Both reminded you} museOnly {Only Muse reminded you, Himawari did not} himawariOnly {Only Himawari reminded you, Muse did not} bothSilent {Neither reminded you} noMuseEntry {Muse has no entry for this email, so there is nothing to compare} other {Himawari has no judgment record for this email, so there is nothing to compare}}",
   "proactive.metric.spoke": "Total proactive reminders",
   "proactive.metric.hits": "Appropriate reminders",
   "proactive.metric.misfires": "Unneeded reminders",
