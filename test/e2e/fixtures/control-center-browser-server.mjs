@@ -312,79 +312,6 @@ const grants = new Map([
     },
   ],
 ]);
-const tasks = new Map([
-  [
-    "job-repository-monitor",
-    {
-      jobId: "job-repository-monitor",
-      revision: 3,
-      status: "active",
-      triggerType: "github_event",
-      timezone: "Asia/Tokyo",
-      nextRunAt: "2026-08-27T01:00:00.000Z",
-      occurrenceRef: "occurrence-repository-monitor-01",
-      occurrenceStatus: "budget_blocked",
-      runRef: "run-repository-monitor-01",
-      resultRef: null,
-      blockedReasonCode: "BUDGET_EXHAUSTED",
-      maxCostMicros: 10_000,
-      spentCostMicros: 10_000,
-      requestedAttention: "NOTIFY",
-      safetyFloor: "INBOX",
-      effectiveAttention: "NOTIFY",
-      deliveryRefs: ["delivery-repository-monitor-01"],
-      generatedAt: now,
-    },
-  ],
-  [
-    "job-daily-review",
-    {
-      jobId: "job-daily-review",
-      revision: 2,
-      status: "paused",
-      triggerType: "interval",
-      timezone: "Asia/Tokyo",
-      nextRunAt: null,
-      occurrenceRef: "occurrence-daily-review-01",
-      occurrenceStatus: "completed",
-      runRef: "run-daily-review-01",
-      resultRef: "result-daily-review-01",
-      blockedReasonCode: null,
-      maxCostMicros: 20_000,
-      spentCostMicros: 4_200,
-      requestedAttention: "DIGEST",
-      safetyFloor: "INBOX",
-      effectiveAttention: "DIGEST",
-      deliveryRefs: ["delivery-daily-review-01"],
-      generatedAt: now,
-    },
-  ],
-]);
-const inboxItems = new Map([
-  [
-    "inbox-01",
-    {
-      inboxItemId: "inbox-01",
-      revision: 2,
-      unread: true,
-      priority: 80,
-      attentionLevel: "INBOX",
-      resultRef: "result-daily-review-01",
-      sourceRefs: ["job:job-daily-review", "run:run-daily-review-01"],
-      duplicateKey: "daily-review-result",
-      createdAt: now,
-      generatedAt: now,
-    },
-  ],
-]);
-const digest = {
-  digestId: "digest-current",
-  windowStart: "2026-08-26T15:00:00.000Z",
-  windowEnd: "2026-08-27T15:00:00.000Z",
-  itemRefs: ["inbox-01"],
-  sourceResultRefs: ["result-daily-review-01"],
-  generatedAt: now,
-};
 const memories = new Map([
   [
     "memory-01",
@@ -427,69 +354,6 @@ const memories = new Map([
     },
   ],
 ]);
-const traces = new Map(
-  ["trace-01", "trace-02"].map((traceEventId, index) => [
-    traceEventId,
-    {
-      traceEventId,
-      sequence: index + 1,
-      eventType: index === 0 ? "model.completed" : "result.committed",
-      actorRef: "agent-01",
-      parentEventRef: index === 0 ? null : "trace-01",
-      causationRef: "event-run-01",
-      threadRef: "thread-main",
-      runRef: "run-01",
-      modelRef: "model:fixture-primary:v1",
-      providerRef: "fixture-provider",
-      authorizationRef: "grant-active",
-      capabilityRef: index === 0 ? null : "capability-update-approve",
-      costMicros: index === 0 ? 24 : 0,
-      retryAttempt: 0,
-      resultRef: "result-daily-review-01",
-      payloadRef: `payload:${traceEventId}`,
-      occurredAt: now,
-      generatedAt: now,
-    },
-  ]),
-);
-const sessions = new Map([
-  [
-    "session-01",
-    {
-      sessionId: "session-01",
-      sessionRevision: 2,
-      status: "active",
-      deviceId: "device-01",
-      deviceLabel: "Owner MacBook",
-      deviceStatus: "active",
-      authenticationRef: governanceAuthorizationRef,
-      firstAuthenticatedAt: now,
-      lastActiveAt: now,
-      recentAuthenticatedAt: now,
-      revokedAt: null,
-      generatedAt: now,
-    },
-  ],
-]);
-const settings = {
-  revision: 3,
-  primaryModelRef: "model:fixture-primary:v1",
-  fallbackModelRef: "model:fixture-fallback:v1",
-  globalBudgetMicros: 1_000_000,
-  spentBudgetMicros: 24,
-  defaultAttention: "INBOX",
-  digestTimezone: "Asia/Tokyo",
-  digestScheduleRef: "schedule-digest-01",
-  integrations: [
-    {
-      integrationRef: "github-app",
-      status: "blocked_credentials",
-      secretRefs: ["secret-ref-github-app"],
-      reasonCode: "CREDENTIALS_REQUIRED",
-    },
-  ],
-  generatedAt: now,
-};
 let cursorSequence = 1;
 let healthDegraded = false;
 
@@ -827,13 +691,7 @@ async function body(request) {
 function collectionCategory(type) {
   return {
     "thread.list": ["threads", ["thread-main", "thread-research"]],
-    "thread.timeline": ["messages", ["message-01", "message-02"]],
     "approval.list": ["approvals", ["approval-01"]],
-    "task.list": ["tasks", ["job-repository-monitor", "job-daily-review"]],
-    "inbox.list": ["inbox", ["inbox-01"]],
-    "memory.search": ["memories", ["memory-01", "memory-02"]],
-    "trace.timeline": ["trace", ["trace-01", "trace-02"]],
-    "identity.sessions": ["sessions", ["session-01"]],
   }[type];
 }
 
@@ -964,14 +822,6 @@ function memoryOverview() {
     ],
     pending: [],
     generatedAt: now,
-  };
-}
-
-function operationsSnapshot(type, payload) {
-  return {
-    ...envelope("snapshot", type),
-    messageId: `snapshot:${type}:${payload.revision ?? payload.sessionRevision ?? cursorSequence}`,
-    payload: { ...payload, generatedAt: now },
   };
 }
 
@@ -1190,26 +1040,6 @@ function reviewSnapshot() {
 
 function handleOperationsQuery(message, request) {
   switch (message.type) {
-    case "task.detail": {
-      const value = tasks.get(message.payload.jobId);
-      return value ? operationsSnapshot("task.snapshot", value) : null;
-    }
-    case "inbox.detail": {
-      const value = inboxItems.get(message.payload.inboxItemId);
-      return value ? operationsSnapshot("inbox.snapshot", value) : null;
-    }
-    case "inbox.digest":
-      return operationsSnapshot("digest.snapshot", digest);
-    case "memory.detail": {
-      const value = memories.get(message.payload.memoryId);
-      return value ? operationsSnapshot("memory.snapshot", value) : null;
-    }
-    case "trace.detail": {
-      const value = traces.get(message.payload.traceEventId);
-      return value ? operationsSnapshot("trace.snapshot", value) : null;
-    }
-    case "settings.read":
-      return operationsSnapshot("settings.snapshot", settings);
     case "memory.overview.read":
       return memoryFixture
         ? { ...envelope("snapshot", "memory.overview.snapshot"), payload: memoryOverview() }
@@ -1275,21 +1105,13 @@ function handleOperationsQuery(message, request) {
             },
           }
         : undefined;
-    case "identity.session_detail": {
-      const value = sessions.get(message.payload.sessionId);
-      return value ? operationsSnapshot("session.snapshot", value) : null;
-    }
     default:
       return undefined;
   }
 }
 
 function handleOperationsCommand(message) {
-  if (
-    !["task.set_state", "memory.mutate", "session.revoke", "settings.update"].includes(message.type)
-  ) {
-    return null;
-  }
+  if (message.type !== "memory.mutate") return null;
   const fingerprint = JSON.stringify({ type: message.type, payload: message.payload });
   const acceptedCommand = acceptedOperationsCommands.get(message.idempotencyKey);
   if (acceptedCommand) {
@@ -1302,24 +1124,11 @@ function handleOperationsCommand(message) {
     return { status: 403, body: { error: { code: "PORT_NOT_AUTHORITATIVE" } } };
   }
   let target;
-  if (message.type === "task.set_state") target = tasks.get(message.payload.jobId);
   if (message.type === "memory.mutate") target = memories.get(message.payload.memoryId);
-  if (message.type === "session.revoke") target = sessions.get(message.payload.sessionId);
-  if (message.type === "settings.update") target = settings;
   if (!target) return { status: 404, body: { error: { code: "PORT_NOT_FOUND" } } };
   const revision = target.sessionRevision ?? target.revision;
   if (message.payload.expectedRevision !== revision) {
     return { status: 409, body: { error: { code: "PORT_CONFLICT" } } };
-  }
-  if (message.type === "task.set_state") {
-    target.revision += 1;
-    target.status =
-      message.payload.action === "revoke"
-        ? "revoked"
-        : message.payload.action === "pause"
-          ? "paused"
-          : "active";
-    target.nextRunAt = target.status === "active" ? "2026-08-27T01:00:00.000Z" : null;
   }
   if (message.type === "memory.mutate") {
     target.revision += 1;
@@ -1331,15 +1140,6 @@ function handleOperationsCommand(message) {
           : "active";
     if (message.payload.action === "correct") target.contentRef = message.payload.contentRef;
   }
-  if (message.type === "session.revoke") {
-    if (message.payload.recentAuthenticationRef !== governanceAuthorizationRef) {
-      return { status: 403, body: { error: { code: "RECENT_AUTHENTICATION_REQUIRED" } } };
-    }
-    target.sessionRevision += 1;
-    target.status = "revoked";
-    target.revokedAt = now;
-  }
-  if (message.type === "settings.update") target.revision += 1;
   cursorSequence += 1;
   const result = { resultRef: `operation:${message.type}:${cursorSequence}`, replayed: false };
   acceptedOperationsCommands.set(message.idempotencyKey, { fingerprint, result });
@@ -1931,24 +1731,8 @@ async function handleRequest(request, response) {
         "grant.list",
         "grant.detail",
         "grant.revoke",
-        "task.list",
-        "task.detail",
-        "task.set_state",
         "github.monitor.set_state",
-        "inbox.list",
-        "inbox.detail",
-        "inbox.digest",
-        "memory.search",
-        "memory.detail",
         "memory.mutate",
-        "trace.timeline",
-        "trace.detail",
-        "settings.read",
-        "settings.update",
-        "identity.sessions",
-        "identity.session_detail",
-        "session.revoke",
-        "health.status",
         ...(memoryFixture
           ? [
               "memory.overview.read",
@@ -2264,41 +2048,6 @@ async function handleRequest(request, response) {
         return;
       }
       json(response, 200, operation);
-      return;
-    }
-    if (message.type === "health.status") {
-      json(response, 200, {
-        ...envelope("snapshot", "health.snapshot"),
-        payload: {
-          deploymentId: "deployment-01",
-          activeHost: "browser-fixture",
-          authorityEpoch: 1,
-          live: true,
-          ready: !healthDegraded,
-          status: healthDegraded ? "degraded" : "healthy",
-          componentRefs: ["sqlite", "worker", "identity"],
-          components: [
-            { componentRef: "sqlite", status: "healthy", reasonCode: null },
-            {
-              componentRef: "worker",
-              status: healthDegraded ? "degraded" : "healthy",
-              reasonCode: healthDegraded ? "WORKER_RECOVERING" : null,
-            },
-            { componentRef: "identity", status: "healthy", reasonCode: null },
-          ],
-          operationCheckpoints: [
-            {
-              operationRef: "upgrade-fixture-01",
-              kind: "upgrade",
-              phase: "readback",
-              revision: 4,
-              status: "completed",
-              readbackRef: "evidence:upgrade-fixture-01",
-            },
-          ],
-          generatedAt: now,
-        },
-      });
       return;
     }
     const [category, itemRefs] = collectionCategory(message.type) ?? ["threads", []];

@@ -1,0 +1,1 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "如果“策略检查”指整个 `scripts/ci/check-policy.mjs` 命令，这个说法不准确", "valid": true, "class": "error", "severity": "low", "trigger": "读者把 ADR 里“策略检查”读成整个命令", "consequence": "误以为 main.yml 的步骤级 if 也没人检查，只是文字范围过宽", "modelSeverity": "低"}

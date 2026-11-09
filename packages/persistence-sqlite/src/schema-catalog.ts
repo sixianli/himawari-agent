@@ -659,7 +659,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "memory_reminders",
     "MemoryReminderStorePort",
-    "one reminder per Memory, scheduled until dismissed; yearly ones roll forward",
+    "one reminder per Memory, scheduled until dismissed or cancelled; yearly ones roll forward",
     "metadata_only",
     "cascade with its Memory record",
   ),

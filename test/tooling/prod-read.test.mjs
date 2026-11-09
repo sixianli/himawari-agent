@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -172,6 +173,122 @@ describe("prod-read.sh", () => {
       const result = run(query);
       expect(result.code).toBe(0);
       expect(result.calls).toMatch(/\/usr\/bin\/(findmnt|df -h)\n$/);
+    }
+  });
+
+  it("lists rule-category memories as metadata only, running the script read-only", () => {
+    const result = run("rule-memories");
+    expect(result.code).toBe(0);
+    expect(result.calls).toContain("--no-warnings - rules");
+    expect(result.input).not.toContain("content_ref");
+    expect(result.input).toContain("{ readOnly: true }");
+    expect(result.input).toMatch(/LIMIT 500\b/);
+    expect(result.input).toContain("ORDER BY recorded_at DESC, id");
+    const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-db-"));
+    directories.push(directory);
+    const file = path.join(directory, "product.sqlite");
+    const database = new DatabaseSync(file);
+    database.exec(
+      "CREATE TABLE memory_records (id TEXT, status TEXT, tentative INTEGER, classification TEXT, importance_permille INTEGER, confidence_permille INTEGER, inference INTEGER, recorded_at TEXT, updated_at TEXT, valid_to TEXT, superseded_by TEXT, use_count INTEGER, category TEXT, content_ref TEXT)",
+    );
+    database.exec(
+      "INSERT INTO memory_records VALUES ('m1','active',0,'private',900,950,0,'2026-11-01','2026-11-01',NULL,NULL,2,'rule','secret-ref'), ('m2','active',0,'private',500,900,0,'2026-11-02','2026-11-02',NULL,NULL,0,'preference','other-ref')",
+    );
+    const insert = database.prepare(
+      "INSERT INTO memory_records VALUES (?,'active',0,'private',1,1,0,?,?,NULL,NULL,0,'rule','r')",
+    );
+    for (let index = 0; index < 501; index += 1) {
+      const stamp = "2026-12-" + String(index).padStart(4, "0");
+      insert.run("bulk" + index, stamp, stamp);
+    }
+    database.close();
+    const script = result.input.replace("/var/lib/himawari/state/data/product.sqlite", file);
+    const child = spawnSync(process.execPath, ["--no-warnings", "-", "rules"], {
+      input: script,
+      encoding: "utf8",
+    });
+    expect(child.status).toBe(0);
+    const rows = JSON.parse(child.stdout);
+    expect(rows).toHaveLength(500);
+    expect(rows[0].id).toBe("bulk500");
+    expect(rows.map((row) => row.id)).not.toContain("m1");
+    expect(child.stdout).not.toContain("secret-ref");
+  });
+
+  it("prints only the system instruction text of the production configuration", () => {
+    const result = run("system-instruction");
+    expect(result.code).toBe(0);
+    expect(result.calls).toContain("--no-warnings - /etc/himawari/config.json");
+    const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-cfg-"));
+    directories.push(directory);
+    const file = path.join(directory, "config.json");
+    writeFileSync(
+      file,
+      JSON.stringify({
+        runPolicy: { systemInstruction: "hello" },
+        secretReferences: { a: "token-value" },
+      }),
+    );
+    const child = spawnSync(process.execPath, ["--no-warnings", "-", file], {
+      input: result.input,
+      encoding: "utf8",
+    });
+    expect(child.status).toBe(0);
+    expect(child.stdout).toBe("hello\n");
+    writeFileSync(file, JSON.stringify({ runPolicy: {} }));
+    const missing = spawnSync(process.execPath, ["--no-warnings", "-", file], {
+      input: result.input,
+      encoding: "utf8",
+    });
+    expect(missing.status).not.toBe(0);
+    expect(missing.stdout).toBe("");
+    writeFileSync(
+      file,
+      JSON.stringify({ configuration: { runPolicy: { systemInstruction: "nested" } } }),
+    );
+    const nested = spawnSync(process.execPath, ["--no-warnings", "-", file], {
+      input: result.input,
+      encoding: "utf8",
+    });
+    expect(nested.status).not.toBe(0);
+    expect(nested.stdout).toBe("");
+    writeFileSync(file, "{ not json token-value");
+    const broken = spawnSync(process.execPath, ["--no-warnings", "-", file], {
+      input: result.input,
+      encoding: "utf8",
+    });
+    expect(broken.status).not.toBe(0);
+    expect(broken.stderr).toContain("PROD_READ_CONFIG_UNREADABLE");
+    expect(broken.stderr).not.toContain("token-value");
+    writeFileSync(file, JSON.stringify({ runPolicy: { systemInstruction: "hello" } }));
+    const link = path.join(directory, "link.json");
+    symlinkSync(file, link);
+    const linked = spawnSync(process.execPath, ["--no-warnings", "-", link], {
+      input: result.input,
+      encoding: "utf8",
+    });
+    expect(linked.status).not.toBe(0);
+    expect(linked.stderr).toContain("PROD_READ_CONFIG_UNSAFE");
+    expect(linked.stdout).toBe("");
+    chmodSync(file, 0o666);
+    const writable = spawnSync(process.execPath, ["--no-warnings", "-", file], {
+      input: result.input,
+      encoding: "utf8",
+    });
+    expect(writable.stderr).toContain("PROD_READ_CONFIG_UNSAFE");
+    const absent = spawnSync(
+      process.execPath,
+      ["--no-warnings", "-", path.join(directory, "absent.json")],
+      { input: result.input, encoding: "utf8" },
+    );
+    expect(absent.stderr.trim()).toBe("PROD_READ_CONFIG_UNREADABLE");
+  });
+
+  it("refuses arguments for the two new queries", () => {
+    for (const query of ["rule-memories", "system-instruction"]) {
+      const result = run(query, "extra");
+      expect(result.code).toBe(64);
+      expect(result.calls).toBe("");
     }
   });
 });

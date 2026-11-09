@@ -441,12 +441,12 @@ describe("HTTP Gateway contract and security boundary", () => {
         url: "/api/gateway/v2/queries",
         headers: requestHeaders(),
         payload: {
-          ...envelope("query", "inbox.list"),
+          ...envelope("query", "workspace.list"),
           schemaVersion: "gateway.v2",
           risk: "low",
           authorizationRef: null,
           authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
-          payload: { unreadOnly: false, afterCursor: null, limit: 10 },
+          payload: { afterCursor: null, limit: 10 },
         },
       });
       expect(response.statusCode).toBe(501);

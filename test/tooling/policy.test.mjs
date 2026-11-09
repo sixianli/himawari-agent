@@ -97,6 +97,7 @@ function workflow() {
         "github.event_name",
         "github.event.pull_request.number || github.ref",
         "github.event_name == 'push' && github.run_id || ''",
+        "github.event.action == 'edited' && 'edited' || ''",
       ]
         .map(githubExpression)
         .join("-"),
@@ -115,6 +116,13 @@ function workflow() {
             : {}),
           ...(check.id === "required"
             ? { name: "ci/required", if: githubExpression("always()") }
+            : {}),
+          ...(["browser", "coverage"].includes(check.id)
+            ? {
+                if: githubExpression(
+                  "github.event_name != 'pull_request' || github.event.pull_request.draft != true",
+                ),
+              }
             : {}),
           steps: [
             { uses: `actions/checkout@${checkout.sha}`, with: { "persist-credentials": false } },
@@ -400,6 +408,24 @@ describe("CI policy contract", () => {
       },
     ],
     [
+      "concurrency without the edited segment",
+      (value) => {
+        value.concurrency.group = value.concurrency.group.replace(
+          "-${{ github.event.action == 'edited' && 'edited' || '' }}",
+          "",
+        );
+      },
+    ],
+    [
+      "edited segment keyed by run id",
+      (value) => {
+        value.concurrency.group = value.concurrency.group.replace(
+          "&& 'edited' ||",
+          "&& github.run_id ||",
+        );
+      },
+    ],
+    [
       "missing job",
       (value) => {
         delete value.jobs.static;
@@ -446,9 +472,23 @@ describe("CI policy contract", () => {
       },
     ],
     [
-      "conditional coverage",
+      "other condition on coverage",
       (value) => {
         value.jobs.coverage.if = githubExpression("!github.event.pull_request.draft");
+      },
+    ],
+    [
+      "draft condition on policy",
+      (value) => {
+        value.jobs.policy.if = githubExpression(
+          "github.event_name != 'pull_request' || github.event.pull_request.draft != true",
+        );
+      },
+    ],
+    [
+      "missing draft condition on browser",
+      (value) => {
+        delete value.jobs.browser.if;
       },
     ],
     [
