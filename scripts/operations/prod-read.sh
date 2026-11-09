@@ -6,6 +6,7 @@ PROD_UNIT="himawari-prod.service"
 PROD_NODE="/opt/himawari/node/bin/node"
 PROD_DATABASE="/var/lib/himawari/state/data/product.sqlite"
 PROD_CONFIGURATION="/etc/himawari/config.json"
+PROD_SERVICE_UID="999"
 
 usage() {
   cat >&2 <<'TEXT'
@@ -82,7 +83,7 @@ if (mode === "summary") {
 } else if (mode === "columns") {
   requireTable(first);
   result = columnNames(first);
-} else if (mode === "rules") {
+} else if (mode === "rule-memories") {
   result = database
     .prepare(
       "SELECT id, status, tentative, classification, importance_permille, confidence_permille, inference, recorded_at, updated_at, valid_to, superseded_by, use_count FROM memory_records WHERE category = 'rule' ORDER BY recorded_at DESC, id LIMIT 500",
@@ -107,8 +108,9 @@ JS
 
 system_instruction_query() {
   ssh -o BatchMode=yes -o ConnectTimeout=20 "$PROD_TARGET" \
-    "cd /tmp && $PROD_NODE --no-warnings - $PROD_CONFIGURATION" <<'JS'
-const { openSync, fstatSync, readFileSync, closeSync, constants } = require("node:fs");
+    "cd /tmp && $PROD_NODE --no-warnings - $PROD_CONFIGURATION $PROD_SERVICE_UID" <<'JS'
+const { openSync, fstatSync, lstatSync, readFileSync, closeSync, constants } = require("node:fs");
+const path = require("node:path");
 const fail = (code) => {
   console.error(code);
   process.exit(1);
@@ -120,7 +122,18 @@ try {
   fail(error.code === "ELOOP" ? "PROD_READ_CONFIG_UNSAFE" : "PROD_READ_CONFIG_UNREADABLE");
 }
 const stat = fstatSync(descriptor);
-if (!stat.isFile() || (stat.mode & 0o022) !== 0) fail("PROD_READ_CONFIG_UNSAFE");
+const owners = [0, Number(process.argv[3])];
+const parent = lstatSync(path.dirname(process.argv[2]));
+if (
+  !stat.isFile() ||
+  stat.nlink !== 1 ||
+  (stat.mode & 0o077) !== 0 ||
+  !owners.includes(stat.uid) ||
+  !parent.isDirectory() ||
+  (parent.mode & 0o002) !== 0 ||
+  !owners.includes(parent.uid)
+)
+  fail("PROD_READ_CONFIG_UNSAFE");
 let configuration;
 try {
   configuration = JSON.parse(readFileSync(descriptor, "utf8"));
@@ -189,7 +202,7 @@ case "$query" in
     ;;
   rule-memories)
     [ "$#" -eq 0 ] || usage
-    database_query rules
+    database_query rule-memories
     ;;
   system-instruction)
     [ "$#" -eq 0 ] || usage

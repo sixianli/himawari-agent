@@ -1,13 +1,34 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  chownSync,
+  linkSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const script = path.resolve(import.meta.dirname, "../../scripts/operations/prod-read.sh");
+const migrations = path.resolve(
+  import.meta.dirname,
+  "../../packages/persistence-sqlite/src/migrations",
+);
 const runId = "run:9f2c41d07ab3e5681c0d4b7a2e9f5603";
 const directories = [];
+
+function readConfig(input, file, serviceUid = String(process.getuid())) {
+  return spawnSync(process.execPath, ["--no-warnings", "-", file, serviceUid], {
+    input,
+    encoding: "utf8",
+  });
+}
 
 afterEach(() => {
   for (const directory of directories.splice(0))
@@ -179,7 +200,7 @@ describe("prod-read.sh", () => {
   it("lists rule-category memories as metadata only, running the script read-only", () => {
     const result = run("rule-memories");
     expect(result.code).toBe(0);
-    expect(result.calls).toContain("--no-warnings - rules");
+    expect(result.calls).toContain("--no-warnings - rule-memories");
     expect(result.input).not.toContain("content_ref");
     expect(result.input).toContain("{ readOnly: true }");
     expect(result.input).toMatch(/LIMIT 500\b/);
@@ -188,22 +209,23 @@ describe("prod-read.sh", () => {
     directories.push(directory);
     const file = path.join(directory, "product.sqlite");
     const database = new DatabaseSync(file);
-    database.exec(
-      "CREATE TABLE memory_records (id TEXT, status TEXT, tentative INTEGER, classification TEXT, importance_permille INTEGER, confidence_permille INTEGER, inference INTEGER, recorded_at TEXT, updated_at TEXT, valid_to TEXT, superseded_by TEXT, use_count INTEGER, category TEXT, content_ref TEXT)",
-    );
-    database.exec(
-      "INSERT INTO memory_records VALUES ('m1','active',0,'private',900,950,0,'2026-11-01','2026-11-01',NULL,NULL,2,'rule','secret-ref'), ('m2','active',0,'private',500,900,0,'2026-11-02','2026-11-02',NULL,NULL,0,'preference','other-ref')",
-    );
+    for (const name of readdirSync(migrations)
+      .filter((entry) => entry.endsWith(".sql"))
+      .sort())
+      database.exec(readFileSync(path.join(migrations, name), "utf8"));
+    database.exec("PRAGMA foreign_keys = OFF");
     const insert = database.prepare(
-      "INSERT INTO memory_records VALUES (?,'active',0,'private',1,1,0,?,?,NULL,NULL,0,'rule','r')",
+      "INSERT INTO memory_records (id, owner_id, agent_id, revision, status, content_ref, classification, inference, confidence_permille, policy_version, updated_at, category, importance_permille, recorded_at, tentative, use_count) VALUES (?, 'o', 'a', 1, ?, ?, 'private', 0, 900, 'p', ?, ?, 900, ?, 0, 2)",
     );
+    insert.run("m1", "active", "secret-ref", "2026-11-01", "rule", "2026-11-01");
+    insert.run("m2", "active", "other-ref", "2026-11-02", "preference", "2026-11-02");
     for (let index = 0; index < 501; index += 1) {
       const stamp = "2026-12-" + String(index).padStart(4, "0");
-      insert.run("bulk" + index, stamp, stamp);
+      insert.run("bulk" + index, "active", "r", stamp, "rule", stamp);
     }
     database.close();
     const script = result.input.replace("/var/lib/himawari/state/data/product.sqlite", file);
-    const child = spawnSync(process.execPath, ["--no-warnings", "-", "rules"], {
+    const child = spawnSync(process.execPath, ["--no-warnings", "-", "rule-memories"], {
       input: script,
       encoding: "utf8",
     });
@@ -218,7 +240,7 @@ describe("prod-read.sh", () => {
   it("prints only the system instruction text of the production configuration", () => {
     const result = run("system-instruction");
     expect(result.code).toBe(0);
-    expect(result.calls).toContain("--no-warnings - /etc/himawari/config.json");
+    expect(result.calls).toContain("--no-warnings - /etc/himawari/config.json 999");
     const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-cfg-"));
     directories.push(directory);
     const file = path.join(directory, "config.json");
@@ -228,60 +250,71 @@ describe("prod-read.sh", () => {
         runPolicy: { systemInstruction: "hello" },
         secretReferences: { a: "token-value" },
       }),
+      { mode: 0o600 },
     );
-    const child = spawnSync(process.execPath, ["--no-warnings", "-", file], {
-      input: result.input,
-      encoding: "utf8",
-    });
+    const child = readConfig(result.input, file);
     expect(child.status).toBe(0);
     expect(child.stdout).toBe("hello\n");
     writeFileSync(file, JSON.stringify({ runPolicy: {} }));
-    const missing = spawnSync(process.execPath, ["--no-warnings", "-", file], {
-      input: result.input,
-      encoding: "utf8",
-    });
+    const missing = readConfig(result.input, file);
     expect(missing.status).not.toBe(0);
     expect(missing.stdout).toBe("");
     writeFileSync(
       file,
       JSON.stringify({ configuration: { runPolicy: { systemInstruction: "nested" } } }),
     );
-    const nested = spawnSync(process.execPath, ["--no-warnings", "-", file], {
-      input: result.input,
-      encoding: "utf8",
-    });
+    const nested = readConfig(result.input, file);
     expect(nested.status).not.toBe(0);
     expect(nested.stdout).toBe("");
     writeFileSync(file, "{ not json token-value");
-    const broken = spawnSync(process.execPath, ["--no-warnings", "-", file], {
-      input: result.input,
-      encoding: "utf8",
-    });
+    const broken = readConfig(result.input, file);
     expect(broken.status).not.toBe(0);
     expect(broken.stderr).toContain("PROD_READ_CONFIG_UNREADABLE");
     expect(broken.stderr).not.toContain("token-value");
     writeFileSync(file, JSON.stringify({ runPolicy: { systemInstruction: "hello" } }));
     const link = path.join(directory, "link.json");
     symlinkSync(file, link);
-    const linked = spawnSync(process.execPath, ["--no-warnings", "-", link], {
-      input: result.input,
-      encoding: "utf8",
-    });
+    const linked = readConfig(result.input, link);
     expect(linked.status).not.toBe(0);
     expect(linked.stderr).toContain("PROD_READ_CONFIG_UNSAFE");
     expect(linked.stdout).toBe("");
     chmodSync(file, 0o666);
-    const writable = spawnSync(process.execPath, ["--no-warnings", "-", file], {
-      input: result.input,
-      encoding: "utf8",
-    });
+    const writable = readConfig(result.input, file);
     expect(writable.stderr).toContain("PROD_READ_CONFIG_UNSAFE");
-    const absent = spawnSync(
-      process.execPath,
-      ["--no-warnings", "-", path.join(directory, "absent.json")],
-      { input: result.input, encoding: "utf8" },
-    );
+    chmodSync(file, 0o644);
+    expect(readConfig(result.input, file).stderr).toContain("PROD_READ_CONFIG_UNSAFE");
+    chmodSync(file, 0o600);
+    const twin = path.join(directory, "twin.json");
+    linkSync(file, twin);
+    expect(readConfig(result.input, file).stderr).toContain("PROD_READ_CONFIG_UNSAFE");
+    rmSync(twin);
+    expect(readConfig(result.input, file).stdout).toBe("hello\n");
+    chmodSync(directory, 0o777);
+    expect(readConfig(result.input, file).stderr).toContain("PROD_READ_CONFIG_UNSAFE");
+    chmodSync(directory, 0o770);
+    expect(readConfig(result.input, file).stdout).toBe("hello\n");
+    chmodSync(directory, 0o700);
+    const absent = readConfig(result.input, path.join(directory, "absent.json"));
     expect(absent.stderr.trim()).toBe("PROD_READ_CONFIG_UNREADABLE");
+  });
+
+  it("accepts only root or the service account as the owner of the configuration file", () => {
+    const result = run("system-instruction");
+    const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-owner-"));
+    directories.push(directory);
+    const file = path.join(directory, "config.json");
+    writeFileSync(file, JSON.stringify({ runPolicy: { systemInstruction: "hello" } }), {
+      mode: 0o600,
+    });
+    if (process.getuid() === 0) {
+      chownSync(file, 12345, 12345);
+      expect(readConfig(result.input, file, "999").stderr).toContain("PROD_READ_CONFIG_UNSAFE");
+      chownSync(file, 999, 999);
+      expect(readConfig(result.input, file, "999").stdout).toBe("hello\n");
+    } else {
+      const foreign = String(process.getuid() + 1);
+      expect(readConfig(result.input, file, foreign).stderr).toContain("PROD_READ_CONFIG_UNSAFE");
+    }
   });
 
   it("refuses arguments for the two new queries", () => {
