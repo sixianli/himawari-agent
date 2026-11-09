@@ -127,7 +127,7 @@ date: "2026-09-24"
 
 ### Linux Host 自身进程组的清理
 
-2026-10-04 按 [Claude reply-04](../../../.ci-output/handoff/2026-10-04-round2-s1-s4-d3-claude-reply-04.md) 修正 Host 被杀后 SRT 代理残留的缺口。上节任务组与 Host 自身组分别检查：Host 由 Worker 以 `detached: true` 启动，`PGID=SID=Host PID`；任务另建外层进程组。只查任务组不能证明 SRT 代理已经退出。
+2026-10-04 按 Claude reply-04（`.ci-output/handoff/2026-10-04-round2-s1-s4-d3-claude-reply-04.md`） 修正 Host 被杀后 SRT 代理残留的缺口。上节任务组与 Host 自身组分别检查：Host 由 Worker 以 `detached: true` 启动，`PGID=SID=Host PID`；任务另建外层进程组。只查任务组不能证明 SRT 代理已经退出。
 
 - Host 在 SRT `initialize()` 创建代理之前，使用现有 Node 启动非 detached 的同组清理进程。双方核对原 PID、启动时间、父子关系以及 PGID/SID；未就绪或意外退出就终止准备或任务。内部握手不改变 Agent–Worker 通道，也不增加持久字段。
 - 正常收尾仍由 SRT `cleanupAfterCommand()/reset()` 清理 bridge。Host 在清理进程就绪后解除对子进程和 IPC 的事件循环引用，使 Host 能自然退出；清理进程自己的 IPC 监听保持到原 Host 退出，不能在 reset 或结果发出后提前退出。
@@ -155,7 +155,7 @@ date: "2026-09-24"
 
 RSS 是 `/proc/<pid>/status` 的 `VmRSS`，表示进程当前驻留的内存，包括共享页；每次就绪及随后约 50、100、250 毫秒读回，表中使用每次的最大采样值，不表示连续峰值或独占内存。在已测条件下，新增准备耗时最大不到预算的 1%，不据此引入新的优化或预算。每个活动 Host 会多一个清理进程；并发负载、冷盘及生产硬件的成本尚未测量，不能直接把 RSS 相加当成机器额外占用。20 次停止后的 Host 组均独立读回为空。
 
-完整样本、候选 SHA-256、编译 JS 摘要、精确运行命令、源码指纹和清理读回见[清理进程成本报告](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/independent-s4/guardian-benchmark.json)及同目录 `guardian-benchmark-run.json`、`guardian-benchmark-validation.json`；Hermes 副本保留在 `/data/hermes/himawari/tool-audit-round2/r30/evidence/r64/independent-s4/`。
+完整样本、候选 SHA-256、编译 JS 摘要、精确运行命令、源码指纹和清理读回见清理进程成本报告（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/independent-s4/guardian-benchmark.json`）及同目录 `guardian-benchmark-run.json`、`guardian-benchmark-validation.json`；Hermes 副本保留在 `/data/hermes/himawari/tool-audit-round2/r30/evidence/r64/independent-s4/`。
 
 [返回阅读导航](#contents)
 

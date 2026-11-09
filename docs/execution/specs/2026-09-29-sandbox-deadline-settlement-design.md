@@ -14,7 +14,7 @@ date: "2026-09-29"
 
 工具按原期限退出并完成认证清理后，应把确定的超时错误交回原 Pi 批次；若直到原 Run 期限仍无法继续，则在所有资源确认释放后结束本轮，避免一直显示结果未确认。
 
-排查范围及必须成立的规则：[SOURCE: docs/execution/plans/2026-09-28-tool-execution-audit-plan.md]，见[工具执行排查计划](../plans/2026-09-28-tool-execution-audit-plan.md)。本设计已由 Claude 的 [reply-10](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-10.md) 和 [reply-11](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-11.md) 批准。实现与运行证据分开记录在[TE-09 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te09-verification.md)。
+排查范围及必须成立的规则：[SOURCE: docs/execution/plans/2026-09-28-tool-execution-audit-plan.md]，见[工具执行排查计划](../plans/2026-09-28-tool-execution-audit-plan.md)。本设计已由 Claude 的 reply-10（`.ci-output/handoff/2026-09-28-round2-claude-reply-10.md`） 和 reply-11（`.ci-output/handoff/2026-09-28-round2-claude-reply-11.md`） 批准。实现与运行证据分开记录在TE-09 验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/te09-verification.md`）。
 
 ## 范围与验收
 
@@ -37,7 +37,7 @@ Pi 继续负责工具批次及模型循环。Himawari 负责原期限、权限�
 
 ## 期限结果恢复的信任边界
 
-本节依据 Claude 的 [reply-12](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-12.md) 与修订后的 [reply-13](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-13.md)。普通结果恢复要求原工具执行期限尚未到达；期限失败本身发生在这个时间点之后，因此无法复用普通恢复的时间窗口。
+本节依据 Claude 的 reply-12（`.ci-output/handoff/2026-09-28-round2-claude-reply-12.md`） 与修订后的 reply-13（`.ci-output/handoff/2026-09-28-round2-claude-reply-13.md`）。普通结果恢复要求原工具执行期限尚未到达；期限失败本身发生在这个时间点之后，因此无法复用普通恢复的时间窗口。
 
 现有 `readResultRecovery` 和 `importResult` 增加内部可选用途 `recoveryPurpose: deadline_failure`。未指定用途时，普通恢复的期限与权限合同不变。指定用途也不授予执行权，不能导入普通成功、不能重跑工具或撤回已接受释放。
 
@@ -61,7 +61,7 @@ Run 表自身没有可信的原执行期限字段。沙箱 plan 保存原期限�
 4. 将 Run 与 checkpoint 写为 failed，checkpoint 原因码为 `RUN_EXECUTION_DEADLINE_EXCEEDED`。
 5. 同一事务释放该租约，并复用标准 Run 回执写入，保存 `command_results`、待发布的 `run.failed` 可靠事件、线程版本加一及对应网关事件。任一步失败则全部回滚；不产生可继续调用模型或工具的持久租约。
 
-按 [reply-15 B2](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-15.md) 与 [reply-19](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-19.md)，到期路径与普通状态转换共用回执写入函数，不复制 SQL。幂等键绑定 owner、agent、原 Run 和原期限，可靠事件引用已验证的冻结输入；重复调用不再写入通知或增加线程版本。网关事件的命令引用、线程版本与失败状态在同一次提交后可见，页面不依赖定时查询才发现结束。验证见 [B2 记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/b2-r21-verification.md)。
+按 reply-15 B2（`.ci-output/handoff/2026-09-28-round2-claude-reply-15.md`） 与 reply-19（`.ci-output/handoff/2026-09-28-round2-claude-reply-19.md`），到期路径与普通状态转换共用回执写入函数，不复制 SQL。幂等键绑定 owner、agent、原 Run 和原期限，可靠事件引用已验证的冻结输入；重复调用不再写入通知或增加线程版本。网关事件的命令引用、线程版本与失败状态在同一次提交后可见，页面不依赖定时查询才发现结束。验证见 B2 记录（`.ci-output/tool-execution-audit/2026-09-28/round2/b2-r21-verification.md`）。
 
 已取消、已完成或已失败的 Run 不复活。失效 authority、版本变化、活动租约、未释放的目录占用、缺少认证回执、控制屏障或其他未释放资源都拒绝收尾。收尾不消耗模型预算，不把未知预算或命令效果改成已知。
 
@@ -87,7 +87,7 @@ UNKNOWN 表示工具的操作效果无法确认。Pi 发出工具意图，Himawa
 
 真实产品场景覆盖默认 300 秒工具期限下的 Worker 交付、结束块保存后重启的恢复交付，以及测试夹具配置 90 秒原 Run 期限后的收尾；生产默认 900 秒不变。验证包括页面中文、进程退出、独立 SQLite 读回、签名释放、唯一模型消费、无重跑及不泄露部分输出。
 
-事务拒绝、版本竞争和回滚难以通过浏览器精确调度，使用既有真实 SQLite 测试同时覆盖直接驱动及 Worker 驱动。保留先失败后通过证据，随后执行受影响产品矩阵、完整 check 和 npm test、Runbook 核对及严格文档校验。各次结果、精确复跑命令和未验证范围以[验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te09-verification.md)为准；本文不代替运行结果。
+事务拒绝、版本竞争和回滚难以通过浏览器精确调度，使用既有真实 SQLite 测试同时覆盖直接驱动及 Worker 驱动。保留先失败后通过证据，随后执行受影响产品矩阵、完整 check 和 npm test、Runbook 核对及严格文档校验。各次结果、精确复跑命令和未验证范围以验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/te09-verification.md`）为准；本文不代替运行结果。
 
 删除计划中的 Run 标识还必须排除 NUL 字符。SQLite 的文本 `length` 与 `GLOB` 在 NUL 处停止，单靠长度和字符范围会把坏定位误当成合法的其他 Run；共享资源谓词先检查 NUL，无法归属的删除记录继续阻止资源缺席证明。Worker/direct 两条真实 SQLite 路径各覆盖末尾 NUL 和中间 NUL。
 

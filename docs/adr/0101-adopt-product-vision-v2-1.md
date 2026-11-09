@@ -34,7 +34,7 @@ date: "2026-10-28"
 
 v2.1 还把“本地优先”（local-first，数据的主副本放在用户自己的设备上）改成“自有优先、数据自持”（self-hosted，自托管：运行环境和数据由所有者控制，可以是自己租的服务器）。这和实际部署一致：生产运行在 Andy 自租的 Contabo 云主机上，经 Cloudflare 隧道对外提供 Himawari 网页。
 
-文档治理规则（[document-governance SOP](../../.claude/skills/document-governance/references/sop.md)）的文档类型里没有“愿景”这一类。PRD 回答“这一版做什么、为什么”，每版一份、会被新版取代；愿景要跨越所有版本。
+文档治理规则（document-governance SOP，`.claude/skills/document-governance/references/sop.md`，现已不在仓库里）的文档类型里没有“愿景”这一类。PRD 回答“这一版做什么、为什么”，每版一份、会被新版取代；愿景要跨越所有版本。
 
 <a id="decision"></a>
 

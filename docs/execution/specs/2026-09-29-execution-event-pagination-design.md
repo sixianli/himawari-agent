@@ -46,6 +46,6 @@ A1 将非 `RemoteExecutionBackendError` 的读取异常归为 `EXECUTION_ENVIRON
 
 验收包括：累计历史超限而单条合法；UTF-8 与字节边界；空尾页、缺页、错误版本；页内/跨页重复及不推进游标；中途失败；总期限；等待中取消和提前退出；环境轮询推进、未知错误与明确失败。精确故障窗口通过真实 UDS 的合同测试和受控环境操作测试覆盖，不用模拟传输绕过正文限制。
 
-真实安装必须在同一服务保留前置调用后连续读取 30 次，独立读回每次完成、认证释放和唯一模型消费，并保留完整报告、数据库和服务日志。已运行证据与可复跑命令见 [TE-11 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te11-verification.md)。该局部场景通过不代替整轮最终无筛选 Mac 产品资格及性能验收。
+真实安装必须在同一服务保留前置调用后连续读取 30 次，独立读回每次完成、认证释放和唯一模型消费，并保留完整报告、数据库和服务日志。已运行证据与可复跑命令见 TE-11 验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/te11-verification.md`）。该局部场景通过不代替整轮最终无筛选 Mac 产品资格及性能验收。
 
 升级操作参见[安装与启停](../../runbooks/install-start-stop-runbook.md#procedure)和[Hermes 升级](../../runbooks/hermes-control-center-upgrade-runbook.md#procedure)。协议变更没有数据库迁移，不授权生产升级或重启。
