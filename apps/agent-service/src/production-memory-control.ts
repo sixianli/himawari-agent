@@ -18,6 +18,7 @@ import {
   type ProductConfiguration,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
+  reviewMemoryVisible,
   type SensitiveMemoryApprovalStatePort,
   type SensitiveMemoryTopic,
 } from "@himawari-agent/application";
@@ -28,6 +29,7 @@ import {
   MEMORY_SENSITIVE_CATEGORY_NAMES,
   MEMORY_SOURCE_REF_MAX_LENGTH,
 } from "@himawari-agent/gateway-contracts";
+import { type DecisionChainMemoryView, readDecisionChain } from "./production-decision-chain.js";
 import {
   createProductionAutomaticMemory,
   protectedMemoryCandidates,
@@ -44,6 +46,7 @@ type Command<T extends GatewayV2Command["type"]> = Extract<GatewayV2Command, { t
 export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.overview.read",
   "memory.basis.read",
+  "decision.chain.read",
   "memory.approval.respond",
   "memory.mutate",
   "memory.tidy.undo",
@@ -319,23 +322,27 @@ export class ProductionMemoryControl {
     };
   }
 
-  async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
-    if (query.type === "memory.basis.read") return this.#basisChain(query);
-    if (query.type !== "memory.overview.read") throw new Error("MEMORY_OPERATION_NOT_INSTALLED");
+  async #memoryViews(
+    records: readonly ProductMemoryRecord[],
+    keepUnreadable: boolean,
+  ): Promise<
+    {
+      readonly record: ProductMemoryRecord;
+      readonly item: OverviewSnapshot["payload"]["memories"][number] | null;
+    }[]
+  > {
     const { ownerId, agentId } = this.options.configuration;
     const scope = this.#scope();
-    await this.#purgeExpiredTrash();
-    const records = [
-      ...(await this.options.state.listActive(ownerId, agentId)),
-      ...(await this.#inactive()),
-    ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     const pins = new Map(
       (await this.options.book.listProfilePins(scope)).map(({ memoryId, pinned }) => [
         memoryId,
         pinned ? ("on" as const) : ("off" as const),
       ]),
     );
-    const memories: OverviewSnapshot["payload"]["memories"][number][] = [];
+    const views: {
+      record: ProductMemoryRecord;
+      item: OverviewSnapshot["payload"]["memories"][number] | null;
+    }[] = [];
     const texts = new Map<string, Promise<string>>();
     const textOfRef = (ref: string) => {
       const cached = texts.get(ref);
@@ -366,10 +373,19 @@ export class ProductionMemoryControl {
       lookups: [...refsByThread].map(([threadId, refs]) => ({ threadId, refs: [...refs] })),
     });
     for (const memory of records) {
-      if (memory.status !== "active" && memory.status !== "archived" && memory.status !== "trashed")
+      if (
+        memory.status !== "active" &&
+        memory.status !== "archived" &&
+        memory.status !== "trashed"
+      ) {
+        if (keepUnreadable) views.push({ record: memory, item: null });
         continue;
+      }
       const text = await textOfRef(memory.contentRef);
-      if (!text) continue;
+      if (!text) {
+        if (keepUnreadable) views.push({ record: memory, item: null });
+        continue;
+      }
       const nodes: OverviewSnapshot["payload"]["memories"][number]["history"][number][] = [];
       for (const event of history.get(memory.id) ?? []) {
         const eventText = await textOfRef(event.contentRef);
@@ -384,32 +400,112 @@ export class ProductionMemoryControl {
           at: event.occurredAt,
         });
       }
-      memories.push({
-        memoryId: memory.id,
-        revision: memory.revision,
-        text,
-        dataClassification: memory.dataClassification,
-        topic: memory.attributes?.sensitiveTopic ?? null,
-        inference: memory.inference,
-        sourceThreadId: memory.sourceThreadId,
-        sourceMessageId: earliestSourceMessage(memory, sourceMessages),
-        sourceRefs: memory.sourceRefs.filter((ref) => ref.length <= MEMORY_SOURCE_REF_MAX_LENGTH),
-        updatedAt: memory.updatedAt,
-        supersededBy: memory.attributes?.supersededBy ?? null,
-        validTo: memory.attributes?.validTo ?? null,
-        tentative: memory.attributes?.tentative === true,
-        category: memory.attributes?.category ?? "other",
-        subCategory: memory.attributes?.subCategory ?? null,
-        status: memory.status,
-        recordedAt: memory.recordedAt ?? memory.updatedAt,
-        lastUsedAt: memory.lastUsedAt,
-        importBatchId: memory.attributes?.importBatchId ?? null,
-        importance: memory.attributes?.importancePermille ?? 0,
-        profilePin: pins.get(memory.id) ?? null,
-        stance: memory.attributes?.stance ?? null,
-        history: nodes,
+      views.push({
+        record: memory,
+        item: {
+          memoryId: memory.id,
+          revision: memory.revision,
+          text,
+          dataClassification: memory.dataClassification,
+          topic: memory.attributes?.sensitiveTopic ?? null,
+          inference: memory.inference,
+          sourceThreadId: memory.sourceThreadId,
+          sourceMessageId: earliestSourceMessage(memory, sourceMessages),
+          sourceRefs: memory.sourceRefs.filter((ref) => ref.length <= MEMORY_SOURCE_REF_MAX_LENGTH),
+          updatedAt: memory.updatedAt,
+          supersededBy: memory.attributes?.supersededBy ?? null,
+          validTo: memory.attributes?.validTo ?? null,
+          tentative: memory.attributes?.tentative === true,
+          category: memory.attributes?.category ?? "other",
+          subCategory: memory.attributes?.subCategory ?? null,
+          status: memory.status,
+          recordedAt: memory.recordedAt ?? memory.updatedAt,
+          lastUsedAt: memory.lastUsedAt,
+          importBatchId: memory.attributes?.importBatchId ?? null,
+          importance: memory.attributes?.importancePermille ?? 0,
+          profilePin: pins.get(memory.id) ?? null,
+          stance: memory.attributes?.stance ?? null,
+          history: nodes,
+        },
       });
     }
+    return views;
+  }
+
+  async #decisionChain(
+    query: Extract<GatewayV2Query, { type: "decision.chain.read" }>,
+  ): Promise<GatewayV2Snapshot> {
+    const { ledger, consolidation } = this.options;
+    if (!ledger || !consolidation)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "MEMORY_OPERATION_NOT_INSTALLED",
+      );
+    const scope = this.#scope();
+    return readDecisionChain(
+      {
+        scope,
+        ledger,
+        readBasisChain: (memoryId) =>
+          consolidation.store.readBasisChain({ ...scope, memoryId: memoryId as MemoryId }),
+        views: async (memoryIds) => {
+          const records = await this.options.state.readMany({
+            ...scope,
+            memoryIds: memoryIds as readonly MemoryId[],
+          });
+          const views = new Map<string, DecisionChainMemoryView>();
+          for (const { record, item } of await this.#memoryViews(records, true))
+            views.set(record.id, { record, item });
+          for (const id of memoryIds)
+            if (!views.has(id)) views.set(id, { record: undefined, item: null });
+          return views;
+        },
+        texts: async (memoryIds) => {
+          const records = await this.options.state.readMany({
+            ...scope,
+            memoryIds: memoryIds as readonly MemoryId[],
+          });
+          const texts = new Map<string, { text: string | null; hidden: boolean }>();
+          for (const record of records) {
+            if (
+              record.status === "deletion_pending" ||
+              record.status === "deleted_verified" ||
+              record.status === "trashed"
+            ) {
+              texts.set(record.id, { text: null, hidden: false });
+              continue;
+            }
+            if (!reviewMemoryVisible(record.dataClassification)) {
+              texts.set(record.id, { text: null, hidden: true });
+              continue;
+            }
+            texts.set(record.id, {
+              text: singleLine(await this.readText(record.contentRef).catch(() => "")) || null,
+              hidden: false,
+            });
+          }
+          return texts;
+        },
+        visible: reviewMemoryVisible,
+      },
+      query,
+    );
+  }
+
+  async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
+    if (query.type === "memory.basis.read") return this.#basisChain(query);
+    if (query.type === "decision.chain.read") return this.#decisionChain(query);
+    if (query.type !== "memory.overview.read") throw new Error("MEMORY_OPERATION_NOT_INSTALLED");
+    const { ownerId, agentId } = this.options.configuration;
+    const scope = this.#scope();
+    await this.#purgeExpiredTrash();
+    const records = [
+      ...(await this.options.state.listActive(ownerId, agentId)),
+      ...(await this.#inactive()),
+    ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const memories = (await this.#memoryViews(records, false)).flatMap(({ item }) =>
+      item ? [item] : [],
+    );
     const changes =
       (await this.options.consolidation?.store.listChanges({
         ownerId,

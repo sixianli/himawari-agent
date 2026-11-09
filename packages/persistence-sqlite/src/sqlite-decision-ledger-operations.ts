@@ -8,6 +8,7 @@ import {
   type DecisionLedgerEntry,
   type DecisionLedgerPort,
   type DecisionLedgerWrite,
+  type DecisionRecordRead,
   type DecisionSignalEntry,
   type GapCandidate,
   type GapCaseMarkPort,
@@ -223,6 +224,8 @@ export class SqliteDecisionLedgerOperations {
         return this.append(payload as Input<"append">);
       case "decisionLedger.list":
         return this.list(payload as Input<"list">);
+      case "decisionLedger.read":
+        return this.readOne(payload as Input<"read">);
       case "decisionLedger.rate":
         return this.rate(payload as Input<"rate">);
       case "decisionLedger.listReviewPool":
@@ -303,6 +306,27 @@ export class SqliteDecisionLedgerOperations {
         input.limit,
       )
       .map((row) => entryFromRow(row as Record<string, unknown>));
+  }
+
+  private readOne(input: Input<"read">): DecisionRecordRead | undefined {
+    if (
+      typeof input.decisionId !== "string" ||
+      input.decisionId.length < 1 ||
+      input.decisionId.length > 128
+    )
+      this.fail("PORT_INVALID_OPERATION", "Ledger decision id is invalid");
+    const row = this.database
+      .prepare(
+        `SELECT ${entryColumns} FROM decision_ledger
+         WHERE owner_id = ? AND agent_id = ? AND id = ?`,
+      )
+      .get(input.ownerId, input.agentId, input.decisionId) as Record<string, unknown> | undefined;
+    if (!row) return undefined;
+    const inputFields = Object.keys(JSON.parse(row["inputs"] as string) as object).sort();
+    return Object.freeze({
+      entry: entryFromRow(row),
+      inputFields: Object.freeze(inputFields),
+    });
   }
 
   private rate(input: Input<"rate">): boolean {
