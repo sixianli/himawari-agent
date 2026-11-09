@@ -2743,7 +2743,7 @@ describe("opencode review merge gate", () => {
     }
   });
 
-  it("[merge gate] fails on any other change after the review, including a merge of main", () => {
+  it("[merge gate] fails on any change after the review that is not just main arriving", () => {
     const f = fixture();
     try {
       f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
@@ -2810,6 +2810,39 @@ describe("opencode review merge gate", () => {
       mergeMain(f);
       expect(f.check().problems).toEqual([]);
       f.commit({ "code.txt": lines([0, "feature"], [5, "hand edit"]) }, "hand edit");
+      expect(f.check().problems).toEqual(["unreviewed code.txt"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] whitespace-only, mode-only and binary changes after the review are unreviewed", () => {
+    const f = fixture(lines(), lines([0, "feature"]));
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      moveMain(f, { "other.txt": "main moved\n" });
+      mergeMain(f);
+      expect(f.check().problems).toEqual([]);
+      f.commit({ "code.txt": lines([0, "feature "]) }, "trailing space");
+      expect(f.check().problems).toEqual(["unreviewed code.txt"]);
+      f.commit({ "code.txt": lines([0, "feature"]) }, "revert");
+      expect(f.check().problems).toEqual([]);
+      f.git("update-index", "--chmod=+x", "code.txt");
+      f.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "chmod");
+      expect(f.check().problems).toEqual(["unreviewed code.txt"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] a binary file changed after the review is unreviewed", () => {
+    const f = fixture("base\0one\n", "feature\0one\n");
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      moveMain(f, { "other.txt": "main moved\n" });
+      mergeMain(f);
+      expect(f.check().problems).toEqual([]);
+      f.commit({ "code.txt": "feature\0two\n" }, "binary changed");
       expect(f.check().problems).toEqual(["unreviewed code.txt"]);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
@@ -3157,6 +3190,43 @@ describe("opencode review merge gate", () => {
       expect(report).toContain(`  V1 deepseek-v4.1-flash：${verdict().quote}`);
       f.commit({ "code.txt": "again\n" }, "later change");
       expect(f.check().problems).toEqual(["unreviewed code.txt"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[low fix] counts only the PR's own files when main was merged after the review", () => {
+    const f = lowFixFixture();
+    try {
+      moveMain(f, { "other.txt": "main moved\n" });
+      mergeMain(f);
+      f.commit({ "code.txt": "fixed\n", "test/code.test.mjs": "check\n" }, "low fix");
+      const accepted = f.check({ acceptLow: 1 });
+      expect(accepted.overridden).toBe(true);
+      expect(accepted.lines.at(-1)).toMatch(/ files=code\.txt,test\/code\.test\.mjs$/);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[low fix] still accepts a record written before main-only files were left out", () => {
+    const f = lowFixFixture();
+    try {
+      moveMain(f, { "other.txt": "main moved\n" });
+      mergeMain(f);
+      f.commit({ "code.txt": "fixed\n", "test/code.test.mjs": "check\n" }, "low fix");
+      expect(f.check({ acceptLow: 1 }).overridden).toBe(true);
+      const edit = (extra) => {
+        const lines = readFileSync(join(f.repo, f.ledger), "utf8").trimEnd().split("\n");
+        const record = JSON.parse(lines.pop());
+        record.files = [...record.files, extra];
+        writeFileSync(join(f.repo, f.ledger), `${[...lines, JSON.stringify(record)].join("\n")}\n`);
+        f.commitLedgerOnDisk();
+      };
+      edit("other.txt");
+      expect(f.check().problems).toEqual([]);
+      edit("bogus.txt");
+      expect(f.check().problems).toEqual(["low-fix-invalid round=1 files-differ"]);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }

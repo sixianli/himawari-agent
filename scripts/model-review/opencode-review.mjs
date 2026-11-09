@@ -1275,23 +1275,28 @@ function ownChangePrints(repo, commit, mainRef, ledgerPath) {
   const prints = new Map();
   for (const file of names.stdout.split("\0")) {
     if (!file || file.startsWith(`${ledgerPath}/`)) continue;
+    if (file.includes("\uFFFD")) return null;
     const diff = gitStatus(
-      ["diff", "-U0", "--no-renames", baseCommit, commit, "--", `:(literal)${file}`],
+      [
+        "diff",
+        "-U0",
+        "--binary",
+        "--no-textconv",
+        "--no-ext-diff",
+        "--no-renames",
+        baseCommit,
+        commit,
+        "--",
+        `:(literal)${file}`,
+      ],
       repo,
     );
-    if (diff.status !== 0) return null;
-    const id = spawnSync("git", ["patch-id", "--stable"], {
-      cwd: repo,
-      input: diff.stdout,
-      encoding: "utf8",
-      maxBuffer: 1 << 28,
-    });
-    const fingerprint = id.status === 0 ? id.stdout.split(/\s/)[0] : "";
-    prints.set(
-      file,
-      fingerprint ||
-        `tree:${gitStatus(["ls-tree", commit, "--", `:(literal)${file}`], repo).stdout.trim()}`,
-    );
+    if (diff.status !== 0 || diff.stdout === "") return null;
+    const stable = diff.stdout
+      .split("\n")
+      .filter((line) => !line.startsWith("@@ ") && !line.startsWith("index "))
+      .join("\n");
+    prints.set(file, createHash("sha256").update(stable).digest("hex"));
   }
   return prints;
 }
@@ -1324,8 +1329,17 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       mainRef,
     });
     const problems = [...check.problems];
-    if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike)))
-      problems.push("files-differ");
+    if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike))) {
+      const legacy = lowFixProblems({
+        repo,
+        ledgerPath,
+        round: point.round,
+        from: point.from,
+        to: point.head,
+      });
+      if (legacy.problems.length > 0 || !sameList(point.files, legacy.files.map(maskSecretLike)))
+        problems.push("files-differ");
+    }
     if (
       check.problems.length === 0 &&
       !sameList(
