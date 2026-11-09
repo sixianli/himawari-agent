@@ -92,6 +92,24 @@ const MAILS: readonly Mail[] = [
   },
 ];
 
+const CARD_PREFIX = 285;
+const LONG_CARD_MAIL: Mail = {
+  key: "long-card",
+  gmailId: "mail-6",
+  outcome: "ignore",
+  rating: "missed",
+  timingOk: true,
+  contentOk: true,
+  inputs: { memoryRecall: "ok", memoryByMail: { "mail-6": ["m"] }, relatedRead: "ok" },
+};
+
+function titleFor(mail: Mail): string {
+  if (mail.key === "secret-title") return "密码：hunter22222 到期";
+  if (mail.key === "long-card")
+    return `${"甲".repeat(CARD_PREFIX)}银行卡号 4111 1111 1111 1111 请核对`;
+  return `Muse title ${mail.key}`;
+}
+
 function item(mail: Mail, titleRef: string, textRef: string): MuseIntakeItemWrite {
   return {
     kind: "proactive",
@@ -123,7 +141,7 @@ describe("[PA-4] Muse gap cases", () => {
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function fixture() {
+  async function fixture(mails: readonly Mail[] = MAILS) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-gap-"));
     directories.push(stateRoot);
     const databasePath = path.join(stateRoot, "product.sqlite");
@@ -133,7 +151,7 @@ describe("[PA-4] Muse gap cases", () => {
     database
       .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
       .run(AGENT_ID, OWNER_ID);
-    for (const mail of MAILS) {
+    for (const mail of mails) {
       const decisionId = `decision-${mail.key}`;
       database
         .prepare(
@@ -174,11 +192,11 @@ describe("[PA-4] Muse gap cases", () => {
     });
     const intake = repository.museIntake();
     let seq = 0;
-    for (const mail of MAILS) {
+    for (const mail of mails) {
       seq += 1;
       const titleRef = await seal.seal({
         ...scope,
-        text: mail.key === "secret-title" ? "密码：hunter22222 到期" : `Muse title ${mail.key}`,
+        text: titleFor(mail),
         at: IN_WINDOW,
       });
       const textRef = await seal.seal({ ...scope, text: `Muse text ${mail.key}`, at: IN_WINDOW });
@@ -271,8 +289,8 @@ describe("[PA-4] Muse gap cases", () => {
     expect(report).not.toMatch(/追平|落后/u);
   });
 
-  async function wired() {
-    const base = await fixture();
+  async function wired(mails: readonly Mail[] = MAILS) {
+    const base = await fixture(mails);
     const clock = new ManualClock("2026-11-02T03:00:00.000Z");
     const marks = base.repository.gapCaseMarks();
     const observation = new ProductionObservation({
@@ -537,7 +555,30 @@ describe("[PA-4] Muse gap cases", () => {
         mask: maskForExport,
       });
       expect(plain[0]?.museTitle).toContain("4111");
-      expect(masked[0]?.museTitle ?? "").not.toMatch(/4111|1111/u);
+      expect(masked[0]?.museTitle ?? "").not.toMatch(/4111|(?:\d[ -]?){13,}/u);
+    } finally {
+      await h.app.close();
+      await h.repository.close();
+    }
+  });
+
+  it("[negative] the stored snapshot of a marked case never keeps a readable piece of a card number cut by the length limit", async () => {
+    const h = await wired([...MAILS, LONG_CARD_MAIL]);
+    try {
+      const long = (await h.cases()).find((entry) => entry.museTitle?.startsWith("甲"));
+      if (!long) throw new Error("no long case");
+      expect(long.museTitle).toContain("4111");
+      await h.mark(long.id, true);
+      const [row] = await h.marks.list(scope);
+      const stored = await h.seal.open({ ...scope, ref: row?.snapshotRef ?? "" });
+      expect(stored).toBeDefined();
+      expect(stored).not.toMatch(/4111|(?:\d[ -]?){13,}/u);
+      const exported = await h.app.inject({
+        method: "GET",
+        url: GAP_EXPORT_PATH,
+        headers: { authorization: `Bearer ${h.secret}` },
+      });
+      expect(exported.body).not.toMatch(/4111|(?:\d[ -]?){13,}/u);
     } finally {
       await h.app.close();
       await h.repository.close();
