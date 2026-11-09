@@ -373,6 +373,33 @@ export const governanceMessages = [
   }),
   fixture("command", "sensitive.interceptions.clear", {}),
   fixture("query", "memory.overview.read", {}),
+  fixture("query", "memory.basis.read", { memoryId: "memory-insight" }),
+  fixture("snapshot", "memory.basis.snapshot", {
+    memoryId: "memory-insight",
+    nodes: [
+      {
+        memoryId: "memory-insight",
+        changeId: "memory-consolidation:agent-1:2026-11-01:c1",
+        action: "reflect",
+        changedAt: "2026-11-01T00:00:00.000Z",
+        decisionRecordId: "ledger:abc",
+        basisMemoryIds: ["memory-a", "memory-b"],
+        repeated: false,
+        truncated: false,
+      },
+      {
+        memoryId: "memory-a",
+        changeId: null,
+        action: null,
+        changedAt: null,
+        decisionRecordId: null,
+        basisMemoryIds: [],
+        repeated: false,
+        truncated: false,
+      },
+    ],
+    complete: true,
+  }),
   fixture("snapshot", "memory.overview.snapshot", {
     memories: [
       {

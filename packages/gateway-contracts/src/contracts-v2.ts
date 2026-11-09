@@ -60,6 +60,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "sensitive.interceptions.clear",
   "memory.overview.read",
   "memory.overview.snapshot",
+  "memory.basis.read",
+  "memory.basis.snapshot",
   "memory.approval.respond",
   "memory.tidy.undo",
   "memory.reminder.respond",
@@ -993,6 +995,29 @@ export const MEMORY_PROFILE_KINDS = [
 const memoryOverviewQuerySchema = object({
   ...envelope("query", "memory.overview.read"),
   payload: object({}),
+});
+const memoryBasisQuerySchema = object({
+  ...envelope("query", "memory.basis.read"),
+  payload: object({ memoryId: machineString }),
+});
+const memoryBasisSnapshotSchema = object({
+  ...envelope("snapshot", "memory.basis.snapshot"),
+  payload: object({
+    memoryId: machineString,
+    nodes: array(
+      object({
+        memoryId: machineString,
+        changeId: nullable(machineString),
+        action: nullable(enumeration(["merge", "supersede", "archive", "reflect"])),
+        changedAt: nullable(timestamp),
+        decisionRecordId: nullable(machineString),
+        basisMemoryIds: array(machineString),
+        repeated: booleanValue,
+        truncated: booleanValue,
+      }),
+    ),
+    complete: booleanValue,
+  }),
 });
 const memoryOverviewSnapshotSchema = object({
   ...envelope("snapshot", "memory.overview.snapshot"),
@@ -2365,6 +2390,8 @@ const schemasByType = {
   "sensitive.interceptions.clear": sensitiveInterceptionsClearCommandSchema,
   "memory.overview.read": memoryOverviewQuerySchema,
   "memory.overview.snapshot": memoryOverviewSnapshotSchema,
+  "memory.basis.read": memoryBasisQuerySchema,
+  "memory.basis.snapshot": memoryBasisSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
   "memory.reminder.respond": memoryReminderRespondCommandSchema,

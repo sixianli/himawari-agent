@@ -48,6 +48,8 @@ export type ModelInvocationUnknownReason =
   | "transport_unresolved"
   | "cancel_unresolved";
 
+export type ModelInvocationRecordedUnknownReason = ModelInvocationUnknownReason | "owner_lost";
+
 export interface ModelInvocationPermit {
   assertActive(): Promise<void>;
   markStarted(): Promise<void>;
@@ -92,7 +94,7 @@ export interface ModelInvocationIdentity {
   readonly settledAt: string | null;
   readonly releasedAt: string | null;
   readonly actualCostMicros: number | null;
-  readonly reasonCode: ModelInvocationUnknownReason | null;
+  readonly reasonCode: ModelInvocationRecordedUnknownReason | null;
 }
 
 export type ModelInvocationIdentityBlockReason =

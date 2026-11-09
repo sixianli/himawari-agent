@@ -6,7 +6,6 @@ import {
   type MemoryCategory,
   type MemoryConsolidationAction,
   type MemoryConsolidationChange,
-  type MemoryConsolidationLedgerMemories,
   type MemoryConsolidationStorePort,
   PORT_ERROR_CODES,
   type ProductMemoryRecord,
@@ -457,40 +456,57 @@ export class MemoryConsolidationService {
   ): Promise<MemoryConsolidationChange | undefined> {
     const generationId = await this.#options.generationFor(memory.id);
     if (!generationId) return undefined;
-    let saved: ProductMemoryRecord;
+    const changeId = this.#nextChangeId(id);
+    const createdAt = this.#options.now();
+    let recorded: MemoryConsolidationChange | undefined;
     try {
-      saved = await this.#options.memory.revise({
+      await this.#options.memory.revise({
         memoryId: memory.id,
         expectedRevision: memory.revision,
         generationId,
         ...change,
+        consolidation: (saved) => {
+          recorded = Object.freeze({
+            id: changeId,
+            consolidationId: id,
+            ownerId: memory.ownerId,
+            agentId: memory.agentId,
+            memoryId: memory.id,
+            relatedMemoryId,
+            action,
+            beforeRevision: memory.revision,
+            afterRevision: saved.revision,
+            beforeStatus: memory.status,
+            beforeSupersededBy: memory.attributes?.supersededBy ?? null,
+            beforeValidTo: memory.attributes?.validTo ?? null,
+            createdAt,
+            undoneAt: null,
+          });
+          const basisMemoryIds = relatedMemoryId ? [memory.id, relatedMemoryId] : [memory.id];
+          return {
+            change: recorded,
+            basisMemoryIds,
+            resultMemoryIds: relatedMemoryId ? [relatedMemoryId] : [],
+          };
+        },
       });
     } catch (error) {
-      if (error instanceof ApplicationPortError) return undefined;
+      if (
+        error instanceof ApplicationPortError &&
+        !(await this.#writeFailedAfterStaging(memory, recorded))
+      )
+        return undefined;
       throw error;
     }
-    return this.#record(
-      {
-        id: "",
-        consolidationId: id,
-        ownerId: memory.ownerId,
-        agentId: memory.agentId,
-        memoryId: memory.id,
-        relatedMemoryId,
-        action,
-        beforeRevision: memory.revision,
-        afterRevision: saved.revision,
-        beforeStatus: memory.status,
-        beforeSupersededBy: memory.attributes?.supersededBy ?? null,
-        beforeValidTo: memory.attributes?.validTo ?? null,
-        createdAt: this.#options.now(),
-        undoneAt: null,
-      },
-      {
-        memoryIds: relatedMemoryId ? [memory.id, relatedMemoryId] : [memory.id],
-        resultMemoryIds: relatedMemoryId ? [relatedMemoryId] : [],
-      },
-    );
+    return recorded;
+  }
+
+  async #writeFailedAfterStaging(
+    memory: ProductMemoryRecord,
+    staged: MemoryConsolidationChange | undefined,
+  ): Promise<boolean> {
+    if (!staged) return false;
+    return (await this.#options.state.read(memory.id))?.revision === memory.revision;
   }
 
   async #reflect(
@@ -518,7 +534,9 @@ export class MemoryConsolidationService {
       dataClassification,
       createdAt,
     });
-    const saved = await this.#options.memory.applyProposal(
+    const changeId = this.#nextChangeId(id);
+    let recorded: MemoryConsolidationChange | undefined;
+    await this.#options.memory.applyProposal(
       {
         decision: "create",
         memory: {
@@ -545,35 +563,37 @@ export class MemoryConsolidationService {
         },
       },
       generationId,
-    );
-    return this.#record(
-      {
-        id: "",
-        consolidationId: id,
-        ownerId: first.ownerId,
-        agentId: first.agentId,
-        memoryId: saved.id,
-        relatedMemoryId: first.id,
-        action: "reflect",
-        beforeRevision: null,
-        afterRevision: saved.revision,
-        beforeStatus: null,
-        beforeSupersededBy: null,
-        beforeValidTo: null,
-        createdAt,
-        undoneAt: null,
+      undefined,
+      (saved) => {
+        recorded = Object.freeze({
+          id: changeId,
+          consolidationId: id,
+          ownerId: first.ownerId,
+          agentId: first.agentId,
+          memoryId: saved.id,
+          relatedMemoryId: first.id,
+          action: "reflect",
+          beforeRevision: null,
+          afterRevision: saved.revision,
+          beforeStatus: null,
+          beforeSupersededBy: null,
+          beforeValidTo: null,
+          createdAt,
+          undoneAt: null,
+        });
+        const basisMemoryIds = basis.map(({ id: memoryId }) => memoryId);
+        return {
+          change: recorded,
+          basisMemoryIds,
+          resultMemoryIds: [saved.id],
+        };
       },
-      { memoryIds: basis.map(({ id: memoryId }) => memoryId), resultMemoryIds: [saved.id] },
     );
+    return recorded;
   }
 
-  async #record(
-    change: MemoryConsolidationChange,
-    ledgerMemories: MemoryConsolidationLedgerMemories,
-  ): Promise<MemoryConsolidationChange> {
+  #nextChangeId(consolidationId: string): string {
     this.#sequence += 1;
-    const frozen = Object.freeze({ ...change, id: `${change.consolidationId}:c${this.#sequence}` });
-    await this.#options.store.recordChange(frozen, ledgerMemories);
-    return frozen;
+    return `${consolidationId}:c${this.#sequence}`;
   }
 }

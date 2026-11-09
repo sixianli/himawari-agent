@@ -76,7 +76,7 @@ interface AllocationRow {
   readonly startedAt: string | null;
   readonly observedAt: string | null;
   readonly settledAt: string | null;
-  readonly reasonCode: "provider_unresolved" | "transport_unresolved" | "cancel_unresolved" | null;
+  readonly reasonCode: ModelBudgetAllocation["reasonCode"];
 }
 
 interface ParsedEnvelope {
@@ -659,7 +659,9 @@ export class SqliteModelBudgetOperations {
 
   markUnknownWithinTransaction(
     scope: SqliteModelBudgetScope,
-    input: ModelBudgetUnknownInput,
+    input: Omit<ModelBudgetUnknownInput, "reasonCode"> & {
+      readonly reasonCode: NonNullable<ModelBudgetAllocation["reasonCode"]>;
+    },
   ): ModelBudgetOperationResult {
     this.requireTransaction("Model budget unknown observation");
     this.assertCurrentAuthority(scope, input.observedAt);
@@ -1305,7 +1307,8 @@ export class SqliteModelBudgetOperations {
       reason !== null &&
       reason !== "provider_unresolved" &&
       reason !== "transport_unresolved" &&
-      reason !== "cancel_unresolved"
+      reason !== "cancel_unresolved" &&
+      reason !== "owner_lost"
     ) {
       return this.fail("PORT_INVALID_OPERATION", "Budget allocation reason is invalid");
     }

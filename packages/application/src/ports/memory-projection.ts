@@ -8,6 +8,7 @@ import type {
 import type { SensitiveMemoryTopic } from "./automatic-memory.js";
 import type { DataClassification, PayloadRef } from "./common.js";
 import type { DecisionLedgerWrite } from "./decision-ledger.js";
+import type { MemoryConsolidationWrite } from "./memory-consolidation.js";
 
 export const MEMORY_CATEGORIES = [
   "identity",
@@ -132,6 +133,7 @@ export interface ProductMemoryStatePort {
     readonly job: MemoryProjectionJob;
     readonly history?: MemoryHistoryNote;
     readonly ledger?: DecisionLedgerWrite;
+    readonly consolidation?: MemoryConsolidationWrite;
   }): Promise<ProductMemoryRecord>;
   listActive(ownerId: OwnerId, agentId: AgentId): Promise<readonly ProductMemoryRecord[]>;
   markUsed(memoryIds: readonly MemoryId[], usedAt: string): Promise<void>;

@@ -434,6 +434,24 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
         "run-b",
       ]);
       expect(byOutcome.get("reflect")?.inputs.resultMemoryIds).toEqual([`${result?.id}:insight:0`]);
+      const store = resource.repository.memoryConsolidation();
+      const stored = await store.listChanges({ ownerId: OWNER_ID, agentId: AGENT_ID, limit: 10 });
+      const basisOf = async (action: string) => {
+        const change = stored.find((entry) => entry.action === action);
+        if (!change) throw new Error(`${action} change missing`);
+        return [...(await store.readBasis(change.id))];
+      };
+      expect(await basisOf("merge")).toEqual(["daughter-old", "daughter-new"]);
+      expect(await basisOf("supersede")).toEqual(["coffee-old", "coffee-new"]);
+      expect(await basisOf("archive")).toEqual(["onigiri"]);
+      expect((await basisOf("reflect")).sort()).toEqual(["run-a", "run-b"]);
+      const reflectChain = await store.readBasisChain({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        memoryId: createMemoryId(`${result?.id}:insight:0`),
+      });
+      expect(reflectChain.basis.map(({ memoryId }) => memoryId).sort()).toEqual(["run-a", "run-b"]);
+      expect(reflectChain.ledgerId).toBe(byOutcome.get("reflect")?.id);
       expect(resource.prompts[0]).not.toContain("青霉素");
       expect((await resource.read("onigiri"))?.status).toBe("archived");
       expect((await resource.read("daughter-old"))?.status).toBe("archived");
