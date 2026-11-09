@@ -38,7 +38,7 @@ const DEEPSEEK_URL = (value) =>
   `await provider().fetch({ url: "https://user:pw@example.org/a?token=${value}" });\n`;
 
 const REVIEW_316_RECORD = ".agents/reviews/pr-316/round-1/glm-5.3-flash.md";
-const REVIEW_316_SIBLING = "docs/review-copy/pr-316/round-2/glm-5.3-flash.md";
+const REVIEW_316_SIBLING = ".agents/reviews/pr-316/round-2/glm-5.3-flash.md";
 const REVIEW_316_LINE = `- 命中 \`token=${["abcdef", "123456"].join("")}\`\n`;
 
 const REVIEW_274 = ".agents/reviews/pr-274/round-7/deepseek-v4.1-flash.md";
@@ -263,8 +263,8 @@ describe("gitleaks repository configuration", () => {
     ],
     [
       "review record any path",
-      "'''(?:^|/)\\.agents/reviews/pr-[0-9]+/round-[0-9]+/[A-Za-z0-9.-]+\\.md$'''",
-      "'''.*\\.md$'''",
+      "'''(?:^|/)\\.agents/reviews/(?:pr-312/round-3/judgments\\.md|pr-316/round-1/(?:deepseek-v4\\.1-flash|glm-5\\.3-flash)(?:\\.prompt)?\\.md|pr-319/round-1/glm-5\\.3-flash\\.md)$'''",
+      "'''(?:^|/)\\.agents/reviews/pr-[0-9]+/round-[0-9]+/[^/]+\\.md$'''",
     ],
     [
       "deepseek any value",
