@@ -485,7 +485,9 @@ describe("memory approval and management", () => {
     expect(
       document.querySelector<HTMLInputElement>("#settings .memory-drawer [role=switch]")?.disabled,
     ).toBe(true);
-    expect(text("#settings .memory-drawer")).toContain("敏感记忆不会每次都带上");
+    expect(text("#settings .memory-drawer")).toContain(
+      "事件、健康、财务和其他类的记忆只在相关时调出",
+    );
   });
 
   it("[MEM-CAT] lets the owner move a memory to another topic and offers none for sensitive ones", async () => {
@@ -1157,7 +1159,7 @@ describe("memory approval and management", () => {
     expect(document.querySelector(add)).toBeNull();
   });
 
-  it("[mask-not-block] marks a memory or reminder that holds a card number as sensitive and keeps the text as typed", async () => {
+  it("[mask-not-block][RULE-memory-visible] marks a memory or reminder that holds a card number as sensitive, keeps the text as typed and still lets a goal be pinned", async () => {
     await render();
     const memoryAdd = "#settings .memory-card[data-kind=add]";
     await click("#settings .memory-search-row", "添加");
@@ -1169,7 +1171,7 @@ describe("memory approval and management", () => {
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
     expect(document.querySelector<HTMLInputElement>(`${memoryAdd} [role=switch]`)?.disabled).toBe(
-      true,
+      false,
     );
     await click(memoryAdd, "保存");
     expect(protectText).toHaveBeenLastCalledWith(

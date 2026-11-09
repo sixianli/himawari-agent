@@ -2,7 +2,6 @@ import { createIdempotencyKey } from "@himawari-agent/domain";
 import type {
   AuthorityFence,
   ClockPort,
-  DataClassification,
   IdGeneratorPort,
   PayloadProtectorPort,
   PayloadStorePort,
@@ -31,7 +30,6 @@ export interface RunExecutionPolicy {
   readonly capabilities: ExecuteCoordinatedRunInput["context"]["capabilities"];
   readonly runtimeEnvironmentRef?: string;
   readonly capabilityHandleRefs: readonly string[];
-  readonly maxMemoryClassification: DataClassification;
   readonly memoryLimit: number;
   readonly maxSelectedMemories: number;
 }
@@ -45,7 +43,6 @@ interface FrozenRunInput {
 }
 
 const OPERATION_KEY = "run-execution-input:v1";
-const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
 
 export interface RunExecutionInputServiceOptions {
   readonly maximumRunDurationMs: number;
@@ -69,7 +66,6 @@ function assertPolicy(policy: RunExecutionPolicy): void {
     !policy.modelRef ||
     !policy.systemInstructionRef ||
     !policy.policyVersion ||
-    !CLASSIFICATIONS.includes(policy.maxMemoryClassification) ||
     !Number.isSafeInteger(policy.memoryLimit) ||
     policy.memoryLimit < 1 ||
     policy.memoryLimit > 1000 ||
@@ -188,7 +184,6 @@ export class RunExecutionInputService {
         memoryQueryTerms: [],
         memoryLimit: policy.memoryLimit,
         maxSelectedMemories: policy.maxSelectedMemories,
-        maxMemoryClassification: policy.maxMemoryClassification,
         capabilities: policy.capabilities,
         ...(policy.runtimeEnvironmentRef
           ? { runtimeEnvironmentRef: policy.runtimeEnvironmentRef }

@@ -147,7 +147,7 @@ describe("recall for the Gmail check", () => {
     ]);
   });
 
-  it("searches read-only with the check's threshold, without rules, and runs at most four at a time", async () => {
+  it("[RULE-memory-visible] searches read-only with the check's threshold, without rules, sensitive memories included, and runs at most four at a time", async () => {
     const active = { now: 0, peak: 0 };
     const seen: Record<string, unknown>[] = [];
     const recall = recallWith(async (input) => {
@@ -171,7 +171,7 @@ describe("recall for the Gmail check", () => {
         recordUse: false,
         minimumSimilarity: 0.45,
         excludeCategories: ["rule"],
-        policy: { limit: 3, allowedClassifications: ["public", "private"] },
+        policy: { limit: 3, allowedClassifications: ["public", "private", "sensitive"] },
       });
     expect(result.hits.get("mail-3")).toEqual([{ id: "m1", text: "text of ref-m1", score: 0.7 }]);
     expect(result.failedQueries).toBe(0);

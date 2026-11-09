@@ -75,12 +75,7 @@ const PINNABLE: ReadonlySet<string> = new Set([
   "project",
   "rule",
 ]);
-const pinBlock = (item: MemoryItem) =>
-  item.dataClassification === "sensitive" || item.topic
-    ? "sensitive"
-    : PINNABLE.has(item.category)
-      ? null
-      : "category";
+const pinBlock = (item: MemoryItem) => (PINNABLE.has(item.category) ? null : "category");
 
 function Chips<T extends string>({
   label,
@@ -2098,7 +2093,7 @@ function AddForm({
     category === "health" ||
     category === "finance" ||
     classificationWithIdentifiers(text, "private") === "sensitive";
-  const pinnable = PINNABLE.has(category) && !sensitive;
+  const pinnable = PINNABLE.has(category);
   const save = () =>
     void memory.create(text.trim(), category, sensitive, pinned && pinnable).then((ok) => {
       if (!ok) return;
@@ -2149,7 +2144,7 @@ function AddForm({
         </div>
         <small className="settings-note">
           {message("memory.page.pinHint", {
-            r: sensitive ? "sensitive" : pinnable ? "add" : "category",
+            r: pinnable ? "add" : "category",
           })}
         </small>
         <div className="actions">

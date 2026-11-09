@@ -105,6 +105,12 @@ export type {
 export type { ModelUsageObservation, ModelUsageStorePort } from "./ports/model-usage.js";
 export { usdCostsEqual, usdCostToMicros } from "./services/model-cost.js";
 export {
+  highestClassification,
+  isModelVisible,
+  modelVisibleCeiling,
+  modelVisibleClassifications,
+} from "./services/model-visibility.js";
+export {
   EGRESS_PLACEHOLDER_LEGEND,
   EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE,
 } from "./services/egress-legend.js";

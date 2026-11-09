@@ -248,10 +248,10 @@ function overview(
 }
 
 describe("[all decisions] which memories the review page may show", () => {
-  it("shows only public and private memories and hides sensitive, restricted and unknown ones", () => {
-    expect(reviewMemoryVisible("public")).toBe(true);
-    expect(reviewMemoryVisible("private")).toBe(true);
-    for (const other of ["sensitive", "restricted", "secret", "", "PRIVATE"])
+  it("[RULE-memory-visible] shows public, private and sensitive memories and hides restricted and unknown ones", () => {
+    for (const shown of ["public", "private", "sensitive"])
+      expect(reviewMemoryVisible(shown)).toBe(true);
+    for (const other of ["restricted", "secret", "", "PRIVATE"])
       expect(reviewMemoryVisible(other)).toBe(false);
   });
 

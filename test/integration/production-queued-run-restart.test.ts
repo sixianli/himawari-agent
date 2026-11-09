@@ -494,7 +494,6 @@ it.each([
           policies: [],
           capabilities: [],
           capabilityHandleRefs: coding ? [] : [handleRef],
-          maxMemoryClassification: "private",
           memoryLimit: 1,
           maxSelectedMemories: 0,
         }),

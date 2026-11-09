@@ -16,6 +16,7 @@ const request = {
 function fixture(due = true) {
   const now = { value: "2026-10-25T03:00:00.000Z" };
   const slots: string[] = [];
+  const scopes: string[] = [];
   const generate = vi.fn(
     async (_request: RuntimeRequest, _prompt: string, admitted: () => void) => {
       admitted();
@@ -25,13 +26,13 @@ function fixture(due = true) {
   const run = vi.fn(
     async (
       input: Parameters<ProductionMemoryConsolidation["start"]>[0] & {
-        search: (query: string, limit: number) => Promise<unknown>;
-        generate: (prompt: string) => Promise<string>;
+        search: (query: string, limit: number, dataClassification: string) => Promise<unknown>;
+        generate: (prompt: string, dataClassification: string) => Promise<string>;
       },
     ) => {
-      await input.search("a", 3);
-      await input.search("b", 3);
-      await input.generate("prompt");
+      await input.search("a", 3, "private");
+      await input.search("b", 3, "sensitive");
+      await input.generate("prompt", "sensitive");
       return { id: "c", modelCalled: true, changes: [] };
     },
   );
@@ -40,8 +41,9 @@ function fixture(due = true) {
     search: async () => [],
     assertActive: async () => {},
     generate,
-    embedWithin: async (_request, slot, operation) => {
+    embedWithin: async (scoped, slot, operation) => {
       slots.push(slot);
+      scopes.push(scoped.dataClassification);
       return operation();
     },
     onFailure: (error) => {
@@ -49,10 +51,10 @@ function fixture(due = true) {
     },
     now: () => now.value,
   });
-  return { consolidation, run, generate, slots, now };
+  return { consolidation, run, generate, slots, scopes, now };
 }
 
-it("tidies once per hour at most, with a fresh embedding slot per search and a private model call", async () => {
+it("[RULE-memory-visible] tidies once per hour at most, with a fresh embedding slot per search, each labelled with what it carries", async () => {
   const f = fixture();
   await f.consolidation.start(request);
   await f.consolidation.stop();
@@ -60,8 +62,9 @@ it("tidies once per hour at most, with a fresh embedding slot per search and a p
     "memory-consolidation-search-0:run-1",
     "memory-consolidation-search-1:run-1",
   ]);
+  expect(f.scopes).toEqual(["private", "sensitive"]);
   expect(f.generate).toHaveBeenCalledWith(
-    expect.objectContaining({ dataClassification: "private" }),
+    expect.objectContaining({ dataClassification: "sensitive" }),
     "prompt",
     expect.any(Function),
     "memory-consolidation",

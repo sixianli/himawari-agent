@@ -94,7 +94,7 @@ describe("file summary qualification configuration", () => {
     expect(embedding.secretRequirement).toEqual(descriptors.generation[0]?.secretRequirement);
     expect(descriptors.embedding.dimensions).toBe(config.memory.dimensions);
     expect(config.memory.storagePath.startsWith(`${config.stateRoot}/`)).toBe(true);
-    expect(config.runPolicy?.maxMemoryClassification).toBe("public");
+    expect(config.runPolicy?.retiredKeys).toBeUndefined();
   });
 
   it("rejects a vector dimension mismatch before model composition", async () => {

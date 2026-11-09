@@ -319,6 +319,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       timeZone: "Asia/Tokyo",
     });
     const prompts: string[] = [];
+    const labels: string[] = [];
     const run = (
       decide: (prompt: string) => Promise<string> | string = (prompt) => {
         const labels = labelsOf(prompt);
@@ -360,8 +361,9 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
         triggerRunId: "run-consolidation",
         search: (query, limit) =>
           provider.search({ ownerId: OWNER_ID, agentId: AGENT_ID, query, limit }),
-        generate: async (prompt) => {
+        generate: async (prompt, dataClassification) => {
           prompts.push(prompt);
+          labels.push(dataClassification);
           return decide(prompt);
         },
       });
@@ -380,10 +382,10 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
               : {}),
         })
       ).map(({ productMemoryId }) => productMemoryId as string);
-    return { repository, memory, consolidation, clock, prompts, run, read, searchable };
+    return { repository, memory, consolidation, clock, prompts, labels, run, read, searchable };
   }
 
-  it("merges duplicates, supersedes old facts, archives idle trivia and keeps insights tentative", async () => {
+  it("[RULE-memory-visible] merges duplicates, supersedes old facts, archives idle trivia, keeps insights tentative and reviews sensitive memories too", async () => {
     const resource = await fixture();
     try {
       const result = await resource.run();
@@ -452,7 +454,8 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       });
       expect(reflectChain.basis.map(({ memoryId }) => memoryId).sort()).toEqual(["run-a", "run-b"]);
       expect(reflectChain.ledgerId).toBe(byOutcome.get("reflect")?.id);
-      expect(resource.prompts[0]).not.toContain("青霉素");
+      expect(resource.prompts[0]).toContain("青霉素");
+      expect(resource.labels[0]).toBe("sensitive");
       expect((await resource.read("onigiri"))?.status).toBe("archived");
       expect((await resource.read("daughter-old"))?.status).toBe("archived");
       expect((await resource.read("coffee-old"))?.attributes).toMatchObject({

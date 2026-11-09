@@ -49,6 +49,7 @@ const TEXT: Record<string, string> = {
   "memory-allergy": "主人对青霉素过敏",
   "memory-public": "主人的博客地址是公开的",
   "memory-milk": "主人偏好明治乳制品",
+  "memory-sister": "主人的妹妹在大阪做护士",
 };
 
 function service(
@@ -175,6 +176,30 @@ describe("owner profile composition", () => {
     );
   });
 
+  it("[RULE-memory-visible] lets a sensitive relationship memory into the profile and marks the block sensitive", async () => {
+    const { profile, stored } = service([
+      ...records,
+      memory("memory-sister", "relationship", 900, { dataClassification: "sensitive" }),
+    ]);
+    const result = await profile.compose({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "sensitive",
+      now: NOW,
+    });
+    const block = result.blocks.find(({ kind }) => kind === "owner-profile");
+    expect(block?.memoryIds).toContain("memory-sister");
+    expect(block?.dataClassification).toBe("sensitive");
+    expect(stored.map(({ text }) => text).join("\n")).toContain("- 主人的妹妹在大阪做护士");
+    const capped = await profile.compose({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "private",
+      now: NOW,
+    });
+    expect(capped.memoryIds).not.toContain("memory-sister");
+  });
+
   it("[PA-2] never puts a tentative memory into the profile block, even an important one", async () => {
     const tentative = memory("memory-milk", "preference", 999);
     const { profile, stored } = service([
@@ -293,7 +318,7 @@ describe("owner profile composition", () => {
 });
 
 describe("owner agenda", () => {
-  it("lists the next seven days of reminders in the Owner's time zone", async () => {
+  it("[RULE-memory-visible] lists the next seven days of reminders in the Owner's time zone, sensitive ones included", async () => {
     const records = [
       memory("memory-trip", "event", 500),
       memory("memory-allergy", "health", 950, { dataClassification: "sensitive" }),
@@ -335,10 +360,11 @@ describe("owner agenda", () => {
     });
     expect(windows).toEqual([{ from: NOW, to: "2026-11-01T12:00:00.000Z" }]);
     const agenda = result.blocks.find(({ kind }) => kind === "owner-agenda");
-    expect(agenda?.memoryIds).toEqual(["memory-trip"]);
+    expect(agenda?.memoryIds).toEqual(["memory-trip", "memory-allergy"]);
+    expect(agenda?.dataClassification).toBe("sensitive");
     const text = stored.find(({ ref }) => ref === agenda?.payloadRef)?.text ?? "";
     expect(text).toContain("Asia/Shanghai");
     expect(text).toContain("15:00：主人这周在东京出差");
-    expect(text).not.toContain("青霉素");
+    expect(text).toContain("主人对青霉素过敏");
   });
 });

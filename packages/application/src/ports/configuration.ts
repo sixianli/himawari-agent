@@ -252,7 +252,7 @@ export interface RunPolicyConfiguration {
   readonly freezeThreadPrompts?: boolean;
   readonly memoryLimit: number;
   readonly maxSelectedMemories: number;
-  readonly maxMemoryClassification: DataClassification;
+  readonly retiredKeys?: readonly string[];
 }
 
 export interface AutomaticReviewConfiguration {

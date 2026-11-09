@@ -1,12 +1,15 @@
-import type {
-  DataClassification,
-  MemoryProviderProjectionPort,
-  MemoryTimeScope,
-  ProductMemoryRecord,
-  ProductMemoryStatePort,
-  RuntimeRequest,
-  RuntimeToolDescriptor,
-  RuntimeToolInvocation,
+import {
+  type DataClassification,
+  highestClassification,
+  isModelVisible,
+  type MemoryProviderProjectionPort,
+  type MemoryTimeScope,
+  modelVisibleClassifications,
+  type ProductMemoryRecord,
+  type ProductMemoryStatePort,
+  type RuntimeRequest,
+  type RuntimeToolDescriptor,
+  type RuntimeToolInvocation,
 } from "@himawari-agent/application";
 import { type MemoryEpisodeService, parseTimeScope } from "@himawari-agent/memory-engine";
 import {
@@ -17,12 +20,6 @@ import {
 } from "@himawari-agent/prompt-catalog";
 
 export const MEMORY_RECALL_CAPABILITY_REF = "memory.recall";
-const CLASSIFICATIONS: readonly DataClassification[] = [
-  "public",
-  "private",
-  "sensitive",
-  "restricted",
-];
 const DATE = /^\d{4}-\d{2}-\d{2}$/u;
 const DEFAULT_LIMIT = 6;
 
@@ -128,6 +125,13 @@ export class ProductionMemoryRecall {
   }
 
   async recall(invocation: RuntimeToolInvocation): Promise<unknown> {
+    return (await this.recallWithClassification(invocation)).output;
+  }
+
+  async recallWithClassification(invocation: RuntimeToolInvocation): Promise<{
+    readonly output: Record<string, unknown>;
+    readonly contentClassification: DataClassification;
+  }> {
     const input = argumentsOf(invocation);
     const timeZone = this.#options.timeZone ?? "UTC";
     const now = this.#options.now();
@@ -157,10 +161,8 @@ export class ProductionMemoryRecall {
           from: parsed?.from ?? null,
           to: parsed?.to ?? null,
         };
-    const allowed = CLASSIFICATIONS.slice(
-      0,
-      CLASSIFICATIONS.indexOf(invocation.dataClassification) + 1,
-    );
+    const allowed = modelVisibleClassifications();
+    const shown: DataClassification[] = [];
     const searchScope = {
       ...scope,
       includeHistory: scope.includeHistory || input.includeHistory,
@@ -214,12 +216,13 @@ export class ProductionMemoryRecall {
           !memory ||
           memory.status !== "active" ||
           memory.providerRecordId !== hit.providerRecordId ||
-          !allowed.includes(memory.dataClassification) ||
+          !isModelVisible(memory.dataClassification) ||
           (memory.attributes?.tentative === true) !== (wanted === "tentative")
         )
           continue;
         const text = await this.#options.readText(memory).catch(() => undefined);
         if (!text) continue;
+        shown.push(memory.dataClassification);
         const attributes = memory.attributes;
         const validTo = attributes?.validTo ?? null;
         rendered.push({
@@ -254,7 +257,11 @@ export class ProductionMemoryRecall {
           }),
         )
       : [];
-    return {
+    const contentClassification = highestClassification(invocation.dataClassification, [
+      ...shown,
+      ...episodes.map(({ episode }) => episode.dataClassification),
+    ]);
+    const output = {
       query: input.query,
       window: scope.from || scope.to ? { from: scope.from, to: scope.to, timeZone } : null,
       memories,
@@ -269,5 +276,6 @@ export class ProductionMemoryRecall {
           : TOOL_RESULT_RECALL_HISTORY.text,
       ...(tentativeCount > 0 ? { tentativeNote: TOOL_RESULT_RECALL_TENTATIVE.text } : {}),
     };
+    return { output, contentClassification };
   }
 }

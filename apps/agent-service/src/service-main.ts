@@ -655,6 +655,12 @@ export async function runAgentService(
         writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
     });
     const configuration = magpieModels.configuration;
+    for (const key of configuration.runPolicy?.retiredKeys ?? [])
+      writeServiceDiagnostic(errorOutput, {
+        component: "agent-service",
+        event: "configuration.key_retired",
+        key: `runPolicy.${key}`,
+      });
     const webEnabled =
       configuration.publicMode ||
       (configuration.identity?.kind === "built-in" && Boolean(configuration.http));
@@ -1926,7 +1932,7 @@ export async function runAgentService(
                       episodes: {
                         service: memoryEpisodes,
                         embedWithin: (request, slot, operation) =>
-                          embedWithin(request, slot, operation),
+                          embedWithin(request, slot, operation, request.dataClassification),
                         onFailure: (error) =>
                           writeServiceDiagnostic(errorOutput, {
                             component: "agent-service",
@@ -1948,7 +1954,7 @@ export async function runAgentService(
                             limit,
                           }),
                         embedWithin: (request, slot, operation) =>
-                          embedWithin(request, slot, operation),
+                          embedWithin(request, slot, operation, request.dataClassification),
                         onResult: (result) =>
                           writeServiceDiagnostic(errorOutput, {
                             component: "agent-service",

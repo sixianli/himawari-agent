@@ -154,7 +154,6 @@ export function createProductionRunPolicy(options: {
       capabilityHandleRefs: handles.map(({ ref }) => ref),
       memoryLimit: policy.memoryLimit,
       maxSelectedMemories: policy.maxSelectedMemories,
-      maxMemoryClassification: policy.maxMemoryClassification,
     });
   };
 }

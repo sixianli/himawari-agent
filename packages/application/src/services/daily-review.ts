@@ -4,6 +4,7 @@ import type {
   DecisionLedgerPort,
 } from "../ports/decision-ledger.js";
 import type { ProactiveRating, ProactiveScope } from "../ports/proactive-checks.js";
+import { isModelVisible } from "./model-visibility.js";
 import type { ProactiveOverview } from "./proactive-overview.js";
 import { startOfZonedDay } from "./proactive-rules.js";
 
@@ -133,7 +134,7 @@ export function selectDailyReview(input: {
 export type DailyReviewRating = ProactiveRating;
 
 export function reviewMemoryVisible(classification: string): boolean {
-  return classification === "public" || classification === "private";
+  return isModelVisible(classification);
 }
 
 export interface DailyReviewMemoryText {
