@@ -102,6 +102,6 @@ CI（每次推送后 GitHub Actions 自动跑的检查）从 2026-11-04 起在 H
 
 - [ADR 0160：CI 改在 Hermes 上的自托管 runner 运行](0160-self-hosted-runner-on-hermes.md)
 - [ADR 0171：Hermes 上跑两个常驻 runner](0171-two-runners-on-hermes.md)
-- [Hermes 自托管 runner 操作手册](../archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md)
+- [Hermes 自托管 runner 操作手册（已归档）](../archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md)
 
 [↑ 返回阅读导航](#contents)

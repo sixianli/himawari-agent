@@ -6,30 +6,71 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DOCS_DIRECTORY = "docs";
 const ARCHIVE_DIRECTORY = "docs/archive";
-const MARKDOWN_LINK = /\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+const INLINE_LINK =
+  /\]\(\s*(<[^>\n]*>|(?:\\.|[^()\s\\]|\([^()\s]*\))+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
+const REFERENCE_DEFINITION = /^[ \t>]*\[[^\]\n]+\]:[ \t]*(<[^>\n]*>|\S+)/gm;
 const EXPLICIT_ANCHOR = /<a id="([^"]+)"><\/a>/g;
-const HEADING = /^#{1,6}\s+(.+)$/gm;
-const FENCE = /^(```|~~~)[\s\S]*?^\1[^\n]*$/gm;
+const HEADING = /^#{1,6}[ \t]+(.+)$/gm;
+const FENCE_OPEN = /^[ \t>]*(`{3,}|~{3,})/;
 const INLINE_CODE = /`[^`\n]*`/g;
+const HEADING_LINK = /\[([^\]]*)\]\([^)]*\)/g;
 
 function headingSlug(text) {
   return text
+    .replace(HEADING_LINK, "$1")
     .trim()
     .toLowerCase()
     .replace(/[^\p{Letter}\p{Number}\s_-]/gu, "")
     .replace(/\s/g, "-");
 }
 
+function stripFences(text) {
+  const kept = [];
+  let open = null;
+  for (const line of text.split("\n")) {
+    if (open) {
+      const close = new RegExp(`^[ \\t>]*${open[0]}{${open.length},}[ \\t]*$`);
+      if (close.test(line)) open = null;
+      kept.push("");
+      continue;
+    }
+    const match = FENCE_OPEN.exec(line);
+    if (match && !(match[1][0] === "`" && line.slice(match[0].length).includes("`"))) {
+      open = match[1];
+      kept.push("");
+      continue;
+    }
+    kept.push(line);
+  }
+  return kept.join("\n");
+}
+
 function withoutCode(text) {
-  return text.replace(FENCE, "").replace(INLINE_CODE, "");
+  return stripFences(text).replace(INLINE_CODE, "");
 }
 
 function anchorsOf(text) {
-  const prose = text.replace(FENCE, "");
+  const prose = stripFences(text);
   const anchors = new Set();
   for (const match of prose.matchAll(EXPLICIT_ANCHOR)) anchors.add(match[1]);
-  for (const match of prose.matchAll(HEADING)) anchors.add(headingSlug(match[1]));
+  const seen = new Map();
+  for (const match of prose.matchAll(HEADING)) {
+    const slug = headingSlug(match[1]);
+    const count = seen.get(slug) ?? 0;
+    seen.set(slug, count + 1);
+    anchors.add(count === 0 ? slug : `${slug}-${count}`);
+  }
   return anchors;
+}
+
+function linkTargets(text) {
+  const targets = [];
+  for (const [, raw] of text.matchAll(INLINE_LINK)) targets.push(raw);
+  for (const [, raw] of text.matchAll(REFERENCE_DEFINITION)) targets.push(raw);
+  return targets.map((raw) => {
+    const inner = raw.startsWith("<") && raw.endsWith(">") ? raw.slice(1, -1) : raw;
+    return inner.replace(/\\(.)/g, "$1");
+  });
 }
 
 export function docsMarkdownFiles(root = repositoryRoot, directory = DOCS_DIRECTORY) {
@@ -66,14 +107,19 @@ export function checkDocsLinks({ root = repositoryRoot } = {}) {
   for (const file of docsMarkdownFiles(root)) {
     const text = withoutCode(readFileSync(path.join(root, file), "utf8"));
     const directory = path.dirname(path.join(root, file));
-    for (const [, target] of text.matchAll(MARKDOWN_LINK)) {
-      if (/^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
+    for (const target of linkTargets(text)) {
+      if (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith("//")) continue;
       checked += 1;
       const hash = target.indexOf("#");
       const relative = decode(hash === -1 ? target : target.slice(0, hash));
       const anchor = hash === -1 ? "" : decode(target.slice(hash + 1));
-      const destination = relative ? path.resolve(directory, relative) : path.join(root, file);
-      if (!existsSync(destination)) {
+      let destination = path.join(root, file);
+      if (relative)
+        destination = relative.startsWith("/")
+          ? path.join(root, relative)
+          : path.resolve(directory, relative);
+      const inside = path.relative(root, destination);
+      if (inside.startsWith("..") || path.isAbsolute(inside) || !existsSync(destination)) {
         errors.push(`DOCS_LINK_MISSING ${file} -> ${target}`);
         continue;
       }
