@@ -1,0 +1,11 @@
+{"id": "r1-d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "中-1【读代码证实】新分支没有截止时间条件", "valid": true, "class": "error", "severity": "low", "trigger": "运行诊断码已是 deadline 但截止时间未到", "consequence": "被反复列入待对账，每轮白跑一次，包装器与 settleExpired 的截止守卫挡下，不会误收尾；事故记录对该行为的归因不准", "modelSeverity": "中", "reason": "行为正确，只有说明不准和周期开销，无错误结果"}
+{"id": "r1-d2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "中-2【读代码证实】硬性安全约束“未决模型调用必须留给对账”没有反向测试", "valid": true, "class": "error", "severity": "medium-high", "trigger": "以后有人删掉新分支里的模型调用条件", "consequence": "unknown 等未决模型调用的运行被误收尾，现有测试全部仍通过", "modelSeverity": "中"}
+{"id": "r1-d3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "低-1【读代码证实】测试夹具与生产状态不完全一致", "valid": true, "class": "better"}
+{"id": "r1-d4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "低-2【读代码证实 + 推测】零记录分支把截止时间的可信度交给了调用方", "valid": true, "class": "better"}
+{"id": "r1-d5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "低-3【推测 + 文档核对】事故记录与代码表述不完全一致，且诊断码来源仍需确认", "valid": true, "class": "error", "severity": "low", "trigger": "后人照事故记录里“零命令记录”的说法去核对生产", "consequence": "核对口径偏松，只会多查，不会做错事", "modelSeverity": "低"}
+{"id": "r1-d6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "低-4【读代码证实】提交说明未登记“未覆盖的关键路径”", "valid": true, "class": "better"}
+{"id": "r1-g1", "model": "opencode-go/glm-5.3-flash", "quote": "**1.（中）测试夹具绕过了生产收尾包装器，生产侧前置条件零覆盖**", "valid": true, "class": "better"}
+{"id": "r1-g2", "model": "opencode-go/glm-5.3-flash", "quote": "**2.（低，但需明确回答材料的问题）「截止前不收尾」不由新分支保证**", "valid": true, "class": "error", "severity": "low", "trigger": "运行诊断码已是 deadline 但截止时间未到", "consequence": "被反复列出、事故记录归因不准，无错误结果", "modelSeverity": "低"}
+{"id": "r1-g3", "model": "opencode-go/glm-5.3-flash", "quote": "**3.（低）`settleExpired` 不检查后台占用，新分支扩大了暴露面**", "valid": true, "class": "better"}
+{"id": "r1-g4", "model": "opencode-go/glm-5.3-flash", "quote": "**4.（低）I-88 的「未确认」清单不完整，收尾可能依然落空**", "valid": true, "class": "error", "severity": "low", "trigger": "后人只按 I-88 查诊断码和模型调用状态", "consequence": "漏查资源释放条件，收尾可能落空，上线再被拦，拒绝而非错误结果", "modelSeverity": "低"}
+{"id": "r1-g5", "model": "opencode-go/glm-5.3-flash", "quote": "**5.（信息）「有未决模型调用的场景没有单独测试」确实是缺口**", "valid": true, "class": "error", "severity": "medium-high", "trigger": "以后有人删掉新分支里的模型调用条件", "consequence": "未决模型调用的运行被误收尾，现有测试仍通过", "modelSeverity": "信息"}

@@ -1,6 +1,7 @@
 import type {
   DecisionLedgerWrite,
   MemoryCategory,
+  MemoryConsolidationWrite,
   MemoryEpisode,
   MemoryEpisodeCandidate,
   MemoryEpisodeDocument,
@@ -26,6 +27,7 @@ import type {
 } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import { insertLedgerRow, validateLedgerWrite } from "./sqlite-decision-ledger-operations.ts";
+import { insertConsolidationWrite } from "./sqlite-memory-consolidation-operations.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 interface MemoryRow {
@@ -311,6 +313,7 @@ export class SqliteMemoryOperations {
             job: MemoryProjectionJob;
             history?: MemoryHistoryNote;
             ledger?: DecisionLedgerWrite;
+            consolidation?: MemoryConsolidationWrite;
           },
         );
       case "memory.listActive":
@@ -645,7 +648,14 @@ export class SqliteMemoryOperations {
     job: MemoryProjectionJob;
     history?: MemoryHistoryNote;
     ledger?: DecisionLedgerWrite;
+    consolidation?: MemoryConsolidationWrite;
   }): ProductMemoryRecord {
+    if (
+      input.consolidation &&
+      (input.consolidation.change.memoryId !== input.memory.id ||
+        input.consolidation.change.afterRevision !== input.memory.revision)
+    )
+      this.fail("PORT_INVALID_OPERATION", "Memory consolidation does not match the saved record");
     if (input.ledger) {
       const problem = validateLedgerWrite(input.ledger);
       if (problem) this.fail("PORT_INVALID_OPERATION", problem);
@@ -664,6 +674,8 @@ export class SqliteMemoryOperations {
         const saved = this.save(input);
         this.proposeJob({ job: input.job, requeueCompleted: false });
         if (input.ledger) insertLedgerRow(this.database, input.ledger);
+        if (input.consolidation)
+          insertConsolidationWrite(this.database, input.consolidation, this.fail);
         return saved;
       })
       .immediate();

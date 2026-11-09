@@ -37,10 +37,13 @@ import { ProductionReminderWriter, ReminderInputError } from "./production-remin
 type MemoryId = Parameters<ProductMemoryStatePort["read"]>[0];
 type GenerationId = Parameters<DurableMemoryService["delete"]>[1];
 type OverviewSnapshot = Extract<GatewayV2Snapshot, { type: "memory.overview.snapshot" }>;
+type BasisSnapshot = Extract<GatewayV2Snapshot, { type: "memory.basis.snapshot" }>;
+const BASIS_NODES_SHOWN = 200;
 type Command<T extends GatewayV2Command["type"]> = Extract<GatewayV2Command, { type: T }>;
 
 export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.overview.read",
+  "memory.basis.read",
   "memory.approval.respond",
   "memory.mutate",
   "memory.tidy.undo",
@@ -135,7 +138,7 @@ export class ProductionMemoryControl {
     readonly ledger?: DecisionLedgerPort;
     readonly profile?: Pick<OwnerProfileService, "outline">;
     readonly consolidation?: {
-      readonly store: Pick<MemoryConsolidationStorePort, "listChanges">;
+      readonly store: Pick<MemoryConsolidationStorePort, "listChanges" | "readBasisChain">;
       readonly undo: (changeId: string) => Promise<unknown>;
     };
     readonly reminders?: Pick<
@@ -272,7 +275,52 @@ export class ProductionMemoryControl {
     );
   }
 
+  async #basisChain(
+    query: Extract<GatewayV2Query, { type: "memory.basis.read" }>,
+  ): Promise<GatewayV2Snapshot> {
+    const { memoryId } = query.payload;
+    if (!this.options.consolidation)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "MEMORY_OPERATION_NOT_INSTALLED",
+      );
+    const { ownerId, agentId } = this.options.configuration;
+    const root = await this.options.consolidation.store.readBasisChain({
+      ownerId,
+      agentId,
+      memoryId: memoryId as MemoryId,
+    });
+    const nodes: BasisSnapshot["payload"]["nodes"][number][] = [];
+    const queued = [root];
+    let complete = true;
+    for (const node of queued) {
+      if (nodes.length >= BASIS_NODES_SHOWN) {
+        complete = false;
+        break;
+      }
+      nodes.push({
+        memoryId: node.memoryId,
+        changeId: node.change?.id ?? null,
+        action: node.change?.action ?? null,
+        changedAt: node.change?.createdAt ?? null,
+        decisionRecordId: node.ledgerId,
+        basisMemoryIds: node.basis.map((child) => child.memoryId),
+        repeated: node.repeated,
+        truncated: node.truncated,
+      });
+      queued.push(...node.basis);
+    }
+    if (nodes.some(({ truncated }) => truncated)) complete = false;
+    return {
+      ...query,
+      kind: "snapshot",
+      type: "memory.basis.snapshot",
+      payload: { memoryId, nodes, complete },
+    };
+  }
+
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
+    if (query.type === "memory.basis.read") return this.#basisChain(query);
     if (query.type !== "memory.overview.read") throw new Error("MEMORY_OPERATION_NOT_INSTALLED");
     const { ownerId, agentId } = this.options.configuration;
     const scope = this.#scope();

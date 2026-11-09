@@ -11,6 +11,7 @@ import type {
   ModelInvocationIdentityTransitionInput,
   ModelInvocationIdentityUnknownInput,
   ModelInvocationPricing,
+  ModelInvocationRecordedUnknownReason,
   ModelInvocationSource,
   ProductAuthorityFence,
   RunExecutionLeaseClaim,
@@ -39,6 +40,10 @@ const UNKNOWN_REASONS = [
   "transport_unresolved",
   "cancel_unresolved",
 ] as const;
+const RECORDED_UNKNOWN_REASONS: readonly ModelInvocationRecordedUnknownReason[] = [
+  ...UNKNOWN_REASONS,
+  "owner_lost",
+];
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 const MAX_TEXT = 512;
 
@@ -85,7 +90,7 @@ interface IdentityRow {
   readonly settledAt: string | null;
   readonly releasedAt: string | null;
   readonly actualCostMicros: number | null;
-  readonly reasonCode: (typeof UNKNOWN_REASONS)[number] | null;
+  readonly reasonCode: ModelInvocationRecordedUnknownReason | null;
 }
 
 interface ParsedEnvelope {
@@ -189,6 +194,13 @@ function unknownReason(
     throw new TypeError(`${name} is not a supported unknown reason`);
   }
   return result as ModelInvocationIdentityUnknownInput["reasonCode"];
+}
+
+function recordedUnknownReason(value: unknown, name: string): ModelInvocationRecordedUnknownReason {
+  const result = text(value, name, 32);
+  const reason = RECORDED_UNKNOWN_REASONS.find((candidate) => candidate === result);
+  if (reason === undefined) throw new TypeError(`${name} is not a recorded unknown reason`);
+  return reason;
 }
 
 function pricing(value: unknown, name: string): ModelInvocationPricing {
@@ -729,6 +741,61 @@ export class SqliteModelInvocationOperations {
     return this.toIdentity(updated);
   }
 
+  abandonOrphanedWithinTransaction(
+    scope: SqliteModelBudgetScope,
+    runId: ModelInvocationIdentity["runId"],
+    at: string,
+  ): void {
+    if (!this.database.inTransaction)
+      this.fail(
+        "PORT_INVALID_OPERATION",
+        "Orphaned model invocation takeover requires an active SQLite transaction",
+      );
+    this.assertCurrentAuthority(scope, at);
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM model_invocation_identities
+         WHERE owner_id = ? AND agent_id = ? AND run_id = ?
+           AND status IN ('reserved', 'started') AND authority_lease_id <> ?
+         ORDER BY logical_slot, sequence`,
+      )
+      .all(scope.ownerId, scope.agentId, runId, scope.authorityLease.leaseId)
+      .map((value) => this.parseRow(value));
+    for (const row of rows) {
+      const parent = { kind: this.budgetAccount(row), runId };
+      if (row.status === "reserved") {
+        this.budget.releaseReservedWithinTransaction(scope, {
+          parent,
+          operationKey: row.budgetOperationKey,
+          releasedAt: at,
+        });
+        this.database
+          .prepare(
+            `UPDATE model_invocation_identities
+             SET status = 'released', released_at = ?
+             WHERE owner_id = ? AND agent_id = ? AND run_id = ? AND invocation_id = ?
+               AND status = 'reserved'`,
+          )
+          .run(at, scope.ownerId, scope.agentId, runId, row.invocationId);
+        continue;
+      }
+      this.budget.markUnknownWithinTransaction(scope, {
+        parent,
+        operationKey: row.budgetOperationKey,
+        observedAt: at,
+        reasonCode: "owner_lost",
+      });
+      this.database
+        .prepare(
+          `UPDATE model_invocation_identities
+           SET status = 'unknown', observed_at = ?, reason_code = 'owner_lost'
+           WHERE owner_id = ? AND agent_id = ? AND run_id = ? AND invocation_id = ?
+             AND status = 'started'`,
+        )
+        .run(at, scope.ownerId, scope.agentId, runId, row.invocationId);
+    }
+  }
+
   private readSync(envelope: ParsedEnvelope): ModelInvocationIdentity | undefined {
     const runId = createRunId(machineText(envelope.input["runId"], "runId"));
     const invocationId = text(envelope.input["invocationId"], "invocationId");
@@ -892,7 +959,7 @@ export class SqliteModelInvocationOperations {
     const reasonCode =
       reasonValue === null || reasonValue === undefined
         ? null
-        : unknownReason(reasonValue, "reason_code");
+        : recordedUnknownReason(reasonValue, "reason_code");
     return {
       ownerId: text(row["owner_id"], "owner_id", 128),
       agentId: text(row["agent_id"], "agent_id", 128),
