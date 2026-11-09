@@ -2,75 +2,66 @@ import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { Lexer } from "marked";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DOCS_DIRECTORY = "docs";
 const ARCHIVE_DIRECTORY = "docs/archive";
-const INLINE_LINK =
-  /\]\(\s*(<[^>\n]*>|(?:\\.|[^()\s\\]|\([^()\s]*\))+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
-const REFERENCE_DEFINITION = /^[ \t>]*\[[^\]\n]+\]:[ \t]*(<[^>\n]*>|\S+)/gm;
-const EXPLICIT_ANCHOR = /<a id="([^"]+)"><\/a>/g;
-const HEADING = /^#{1,6}[ \t]+(.+)$/gm;
-const FENCE_OPEN = /^[ \t>]*(`{3,}|~{3,})/;
-const INLINE_CODE = /`[^`\n]*`/g;
+const EXPLICIT_ANCHOR = /<a id="([^"]+)">/g;
 const HEADING_LINK = /\[([^\]]*)\]\([^)]*\)/g;
+const HTML_TAG = /<[^>]*>/g;
 
 function headingSlug(text) {
   return text
     .replace(HEADING_LINK, "$1")
+    .replace(HTML_TAG, "")
     .trim()
     .toLowerCase()
     .replace(/[^\p{Letter}\p{Number}\s_-]/gu, "")
     .replace(/\s/g, "-");
 }
 
-function stripFences(text) {
-  const kept = [];
-  let open = null;
-  for (const line of text.split("\n")) {
-    if (open) {
-      const close = new RegExp(`^[ \\t>]*${open[0]}{${open.length},}[ \\t]*$`);
-      if (close.test(line)) open = null;
-      kept.push("");
-      continue;
-    }
-    const match = FENCE_OPEN.exec(line);
-    if (match && !(match[1][0] === "`" && line.slice(match[0].length).includes("`"))) {
-      open = match[1];
-      kept.push("");
-      continue;
-    }
-    kept.push(line);
+function walkTokens(tokens, visit) {
+  for (const token of tokens) {
+    visit(token);
+    if (token.tokens) walkTokens(token.tokens, visit);
+    if (token.items) walkTokens(token.items, visit);
+    if (token.type === "table")
+      for (const cell of [...token.header, ...token.rows.flat()]) walkTokens(cell.tokens, visit);
   }
-  return kept.join("\n");
 }
 
-function withoutCode(text) {
-  return stripFences(text).replace(INLINE_CODE, "");
+function lex(text) {
+  return new Lexer().lex(text);
 }
 
 function anchorsOf(text) {
-  const prose = stripFences(text);
   const anchors = new Set();
-  for (const match of prose.matchAll(EXPLICIT_ANCHOR)) anchors.add(match[1]);
-  const seen = new Map();
-  for (const match of prose.matchAll(HEADING)) {
-    const slug = headingSlug(match[1]);
-    const count = seen.get(slug) ?? 0;
-    seen.set(slug, count + 1);
-    anchors.add(count === 0 ? slug : `${slug}-${count}`);
-  }
+  const used = new Map();
+  walkTokens(lex(text), (token) => {
+    if (token.type === "html")
+      for (const match of token.raw.matchAll(EXPLICIT_ANCHOR)) anchors.add(match[1]);
+    if (token.type !== "heading") return;
+    const base = headingSlug(token.text);
+    let slug = base;
+    while (used.has(slug)) {
+      used.set(base, used.get(base) + 1);
+      slug = `${base}-${used.get(base)}`;
+    }
+    used.set(slug, 0);
+    anchors.add(slug);
+  });
   return anchors;
 }
 
 function linkTargets(text) {
-  const targets = [];
-  for (const [, raw] of text.matchAll(INLINE_LINK)) targets.push(raw);
-  for (const [, raw] of text.matchAll(REFERENCE_DEFINITION)) targets.push(raw);
-  return targets.map((raw) => {
-    const inner = raw.startsWith("<") && raw.endsWith(">") ? raw.slice(1, -1) : raw;
-    return inner.replace(/\\(.)/g, "$1");
+  const targets = new Set();
+  walkTokens(lex(text), (token) => {
+    if ((token.type === "link" || token.type === "image") && !token.raw.startsWith("[^"))
+      targets.add(token.href);
+    if (token.type === "def" && !token.tag.startsWith("^")) targets.add(token.href);
   });
+  return targets;
 }
 
 export function docsMarkdownFiles(root = repositoryRoot, directory = DOCS_DIRECTORY) {
@@ -105,7 +96,7 @@ export function checkDocsLinks({ root = repositoryRoot } = {}) {
     return anchorCache.get(absolute);
   };
   for (const file of docsMarkdownFiles(root)) {
-    const text = withoutCode(readFileSync(path.join(root, file), "utf8"));
+    const text = readFileSync(path.join(root, file), "utf8");
     const directory = path.dirname(path.join(root, file));
     for (const target of linkTargets(text)) {
       if (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith("//")) continue;

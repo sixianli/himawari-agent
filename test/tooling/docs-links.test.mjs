@@ -55,25 +55,28 @@ describe("docs link check", () => {
     expect(checkDocsLinks({ root })).toEqual({ checked: 0, errors: [] });
   });
 
-  it("ignores indented and quoted fenced blocks but not a fence-like inline span", () => {
+  it("ignores links inside any kind of code, including list fences and indented code", () => {
     const root = fixture({
       "docs/a.md":
-        "- 项\n  ```md\n  [x](nope.md)\n  ```\n> ```\n> [y](nope.md)\n> ```\n用 ```code``` 表示 [z](nope.md)\n",
+        "- ```\n  [x](nope.md)\n  ```\n后 [真](gone.md)\n\n> ```\n> [y](nope.md)\n> ```\n\n    [c](nope.md)\n\n`` [q](nope.md) ``\n\n用 ```code``` 表示 [z](nope2.md)\n",
     });
-    expect(checkDocsLinks({ root }).errors).toEqual(["DOCS_LINK_MISSING docs/a.md -> nope.md"]);
+    expect(checkDocsLinks({ root }).errors).toEqual([
+      "DOCS_LINK_MISSING docs/a.md -> gone.md",
+      "DOCS_LINK_MISSING docs/a.md -> nope2.md",
+    ]);
   });
 
   it("understands angle-bracket, parenthesised, escaped and titled targets", () => {
     const root = fixture({
       "docs/a.md":
-        "[1](<has space.md>) [2](b(1).md) [3](c\\(2\\).md) [4]( d.md ) [5](d.md 'title') [6](<gone one.md>)\n",
+        "[1](<has space.md>) [2](b(1).md) [3](c\\(2\\).md) [4]( d.md ) [5](d.md 'title') [6](d.md \"title\") [7](d.md (title)) [8](<gone one.md>)\n",
       "docs/has space.md": "",
       "docs/b(1).md": "",
       "docs/c(2).md": "",
       "docs/d.md": "",
     });
     expect(checkDocsLinks({ root })).toEqual({
-      checked: 6,
+      checked: 5,
       errors: ["DOCS_LINK_MISSING docs/a.md -> gone one.md"],
     });
   });
@@ -97,13 +100,29 @@ describe("docs link check", () => {
     ]);
   });
 
-  it("treats targets outside the repository as missing and root-relative ones as repo-relative", () => {
+  it("treats targets outside the repository as missing even when the file exists", () => {
+    const parent = mkdtempSync(join(tmpdir(), "docs-links-parent-"));
+    roots.push(parent);
+    mkdirSync(join(parent, "repo/docs"), { recursive: true });
+    writeFileSync(join(parent, "outside.md"), "");
+    writeFileSync(join(parent, "repo/docs/b.md"), "");
+    writeFileSync(
+      join(parent, "repo/docs/a.md"),
+      "[1](../../outside.md) [2](/docs/b.md) [3](//example.com/x)\n",
+    );
+    expect(checkDocsLinks({ root: join(parent, "repo") }).errors).toEqual([
+      "DOCS_LINK_MISSING docs/a.md -> ../../outside.md",
+    ]);
+  });
+
+  it("does not treat footnotes as links, follows multi-line definitions, and ignores anchors written in code", () => {
     const root = fixture({
-      "docs/a.md": "[1](../../outside.md) [2](/docs/b.md) [3](//example.com/x)\n",
-      "docs/b.md": "",
+      "docs/a.md":
+        '脚注[^1] [甲][r1] [跳](#fake) [真](#real)\n\n[^1]: 这是脚注正文\n[r1]:\n  gone.md\n\n`<a id="fake"></a>`\n\n<a id="real"></a>\n',
     });
     expect(checkDocsLinks({ root }).errors).toEqual([
-      "DOCS_LINK_MISSING docs/a.md -> ../../outside.md",
+      "DOCS_LINK_MISSING docs/a.md -> gone.md",
+      "DOCS_ANCHOR_MISSING docs/a.md -> #fake",
     ]);
   });
 
