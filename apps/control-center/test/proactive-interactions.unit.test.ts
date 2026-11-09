@@ -18,6 +18,7 @@ import { type MemoryOverview, useMemory } from "../src/memory.ts";
 import {
   type GmailOutcome,
   OPEN_SETTINGS,
+  type DecisionChain,
   type ProactiveOverview,
   type ProactiveReview,
   readLaunchIntent,
@@ -47,6 +48,13 @@ const configuration: ControlCenterRuntimeConfiguration = {
     "proactive.backoff.restore",
   ],
 };
+const chainConfiguration: ControlCenterRuntimeConfiguration = {
+  ...configuration,
+  installedGatewayV2Operations: [
+    ...(configuration.installedGatewayV2Operations ?? []),
+    "decision.chain.read",
+  ],
+};
 const catalogs = { "zh-CN": zh, en, ja } as const;
 let locale: keyof typeof catalogs = "zh-CN";
 const message = (id: MessageId, values?: Record<string, string | number>) =>
@@ -55,6 +63,8 @@ const query = vi.fn(),
   mutate = vi.fn(),
   assign = vi.fn();
 const client = { query, mutate } as unknown as GatewayClient;
+const openThread = vi.fn();
+let chainResult: DecisionChain | Error = new Error("unset");
 let container: HTMLDivElement,
   root: Root,
   proactive: ProactiveOverview,
@@ -309,8 +319,14 @@ function Page({ focus }: { focus: string | null }) {
   );
 }
 
-function Settings({ outcome }: { outcome: GmailOutcome | null }) {
-  const model = useProactive({ client, configuration, connected: true, refreshSignal: 0, assign });
+function Settings({ outcome, chain = false }: { outcome: GmailOutcome | null; chain?: boolean }) {
+  const model = useProactive({
+    client,
+    configuration: chain ? chainConfiguration : configuration,
+    connected: true,
+    refreshSignal: 0,
+    assign,
+  });
   if (!model) return null;
   return h(
     "div",
@@ -320,7 +336,16 @@ function Settings({ outcome }: { outcome: GmailOutcome | null }) {
       { id: "notifications" },
       h(ProactiveNotificationSettings, { proactive: model, locale, message }),
     ),
-    h("div", { id: "apps" }, h(ProactiveAppsSettings, { proactive: model, message, outcome })),
+    h(
+      "div",
+      { id: "apps" },
+      h(ProactiveAppsSettings, {
+        proactive: model,
+        message,
+        outcome,
+        onOpenThread: openThread,
+      }),
+    ),
     h("div", { id: "data" }, h(ProactiveDataSettings, { proactive: model, message })),
   );
 }
@@ -371,11 +396,15 @@ beforeEach(() => {
   review = reviewFixture();
   memory = memoryFixture();
   query.mockImplementation(async (request: { type: string }) =>
-    request.type === "proactive.overview.read"
-      ? { type: "proactive.overview.snapshot", payload: proactive }
-      : request.type === "proactive.review.read"
-        ? { type: "proactive.review.snapshot", payload: review }
-        : { type: "memory.overview.snapshot", payload: memory },
+    request.type === "decision.chain.read"
+      ? chainResult instanceof Error
+        ? Promise.reject(chainResult)
+        : { type: "decision.chain.snapshot", payload: chainResult }
+      : request.type === "proactive.overview.read"
+        ? { type: "proactive.overview.snapshot", payload: proactive }
+        : request.type === "proactive.review.read"
+          ? { type: "proactive.review.snapshot", payload: review }
+          : { type: "memory.overview.snapshot", payload: memory },
   );
   mutate.mockResolvedValue({ status: "accepted" });
   container = document.createElement("div");
@@ -876,5 +905,226 @@ describe("[PG-15] opening from a push or the Google callback", () => {
       gmail: null,
     });
     expect(replaceState).not.toHaveBeenCalled();
+  });
+});
+
+describe("[P1-3] the basis drawer of a decision record", () => {
+  const memoryItem = (
+    change: Partial<DecisionChain["memories"]["items"][number]>,
+  ): DecisionChain["memories"]["items"][number] => ({
+    memoryId: "memory-a",
+    state: "visible",
+    text: "我住在东京",
+    status: "active",
+    inference: false,
+    tentative: false,
+    usedByModel: true,
+    changedSinceDecision: false,
+    supersededBy: null,
+    source: {
+      threadId: "thread-1",
+      messageId: "message-1",
+      quote: "我搬到东京了",
+      refs: [],
+      importBatchId: null,
+      firstSourceDeleted: false,
+    },
+    basis: { nodes: [], complete: true },
+    ...change,
+  });
+  const chain = (change: Partial<DecisionChain> = {}): DecisionChain => ({
+    decisionId: "d-push",
+    decision: {
+      kind: "proactive",
+      decidedAt: "2026-11-04T02:45:00.000Z",
+      outcome: "pushed",
+      reasonCode: "URGENT",
+      rating: "useful",
+      ratedAt: "2026-11-04T02:50:00.000Z",
+    },
+    inputs: "recorded",
+    rules: {
+      state: "recorded",
+      items: [
+        {
+          ruleId: "floor_money_words",
+          origin: "built_in",
+          document: "ADR 0106 第 4 条",
+          mailCount: 2,
+        },
+        { ruleId: "floor_unknown", origin: null, document: null, mailCount: 1 },
+      ],
+    },
+    mails: { judged: 3, related: 2, relatedRead: "partial" },
+    memories: {
+      state: "recorded",
+      recall: "ok",
+      total: 4,
+      truncated: false,
+      items: [
+        memoryItem({}),
+        memoryItem({
+          memoryId: "memory-b",
+          text: "喜欢拉面",
+          inference: true,
+          basis: {
+            nodes: [
+              {
+                memoryId: "memory-b",
+                text: "喜欢拉面",
+                action: "merge",
+                changedAt: "2026-11-02T00:00:00.000Z",
+                basisMemoryIds: ["memory-c"],
+                repeated: false,
+                truncated: false,
+              },
+              {
+                memoryId: "memory-c",
+                text: "周五吃了拉面",
+                action: null,
+                changedAt: null,
+                basisMemoryIds: [],
+                repeated: false,
+                truncated: false,
+              },
+            ],
+            complete: true,
+          },
+        }),
+        memoryItem({
+          memoryId: "memory-s",
+          state: "hidden",
+          text: null,
+          source: { ...memoryItem({}).source, quote: null },
+        }),
+        memoryItem({ memoryId: "memory-gone", state: "missing", text: null, status: null }),
+      ],
+    },
+    ...change,
+  });
+  const openLog = async () => {
+    await act(async () => root.render(h(Settings, { outcome: null, chain: true })));
+    await flush();
+    await act(async () => {
+      document.querySelector<HTMLElement>("#apps .proactive-log-entry summary")?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await flush();
+  };
+  const rowButton = (row: string) =>
+    document.querySelector<HTMLButtonElement>(
+      `#apps .proactive-log-row:nth-of-type(${row}) .memory-link`,
+    );
+
+  it("shows the whole chain of one record, with every missing link saying no record", async () => {
+    chainResult = chain();
+    await openLog();
+    const first = [...document.querySelectorAll<HTMLButtonElement>("#apps .memory-link")].find(
+      (item) => item.textContent === "依据",
+    );
+    await act(async () => first?.click());
+    await flush();
+    expect(query.mock.calls.some(([request]) => request.type === "decision.chain.read")).toBe(true);
+    const drawer = text(".decision-chain");
+    expect(drawer).toContain("命中的规则");
+    expect(drawer).toContain("内置规则");
+    expect(drawer).toContain("ADR 0106 第 4 条");
+    expect(drawer).toContain("未登记的规则");
+    expect(drawer).toContain("判断了 3 封");
+    expect(drawer).toContain("关联邮件：只读到一部分");
+    expect(drawer).toContain("我住在东京");
+    expect(drawer).toContain("我搬到东京了");
+    expect(drawer).toContain("推断依据");
+    expect(drawer).toContain("周五吃了拉面");
+    expect(drawer).toContain("受限记忆，模型也看不到，内容不在这里显示");
+    expect(drawer).toContain("这条记忆已不存在");
+    expect(drawer).toContain("做对了");
+    await act(async () => {
+      [...document.querySelectorAll<HTMLButtonElement>(".decision-chain .memory-link")]
+        .find((item) => item.textContent === "看来源对话")
+        ?.click();
+    });
+    expect(openThread).toHaveBeenCalledWith("thread-1", "message-1");
+    expect(document.querySelector(".decision-chain")).toBeNull();
+  });
+
+  it("says no record for a section the record never kept, instead of leaving it blank", async () => {
+    chainResult = chain({
+      inputs: "not_recorded",
+      rules: { state: "not_recorded", items: [] },
+      mails: { judged: null, related: null, relatedRead: "not_recorded" },
+      memories: {
+        state: "not_recorded",
+        recall: "not_recorded",
+        total: 0,
+        truncated: false,
+        items: [],
+      },
+      decision: { ...chain().decision, rating: null, ratedAt: null },
+    });
+    await openLog();
+    await act(async () => rowButton("1")?.click());
+    await flush();
+    const drawer = text(".decision-chain");
+    expect(drawer.match(/无记录/gu)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    expect(drawer).toContain("还没评价");
+  });
+
+  it("closes and says the record was cleared when it is gone, and says it failed on any other error", async () => {
+    chainResult = Object.assign(new Error("PORT_NOT_FOUND"), { status: 404 });
+    await openLog();
+    await act(async () => rowButton("1")?.click());
+    await flush();
+    expect(document.querySelector(".decision-chain")).toBeNull();
+    expect(text("#apps .proactive-log")).toContain("这条记录已被清除");
+    chainResult = new Error("CONTROL_CENTER_REQUEST_REJECTED");
+    await act(async () => rowButton("1")?.click());
+    await flush();
+    expect(text(".decision-chain")).toContain("读取失败");
+    expect(document.querySelector(".decision-chain-memory")).toBeNull();
+  });
+
+  it("does not read the chain again, nor reset the drawer, when the page refreshes underneath it", async () => {
+    chainResult = chain();
+    await openLog();
+    await act(async () => rowButton("1")?.click());
+    await flush();
+    const reads = () =>
+      query.mock.calls.filter(([request]) => request.type === "decision.chain.read").length;
+    expect(reads()).toBe(1);
+    await click("#apps .proactive-log-row:nth-of-type(1)", "不该做");
+    expect(commands().some((command) => command.type === "proactive.decision.rate")).toBe(true);
+    expect(reads()).toBe(1);
+    expect(text(".decision-chain")).toContain("命中的规则");
+  });
+
+  it("does not say no record for a memory whose basis was cut off", async () => {
+    chainResult = chain({
+      memories: {
+        state: "recorded",
+        recall: "ok",
+        total: 1,
+        truncated: false,
+        items: [memoryItem({ inference: true, basis: { nodes: [], complete: false } })],
+      },
+    });
+    await openLog();
+    await act(async () => rowButton("1")?.click());
+    await flush();
+    const entry = text(".decision-chain-basis");
+    expect(entry).toContain("依据没读全");
+    expect(entry).not.toContain("无记录");
+  });
+
+  it("offers no basis button when the service does not install the read", async () => {
+    await act(async () => root.render(h(Settings, { outcome: null })));
+    await flush();
+    await act(async () => {
+      document.querySelector<HTMLElement>("#apps .proactive-log-entry summary")?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await flush();
+    expect(document.querySelectorAll("#apps .proactive-log-row").length).toBeGreaterThan(0);
+    expect(text("#apps .proactive-log")).not.toContain("依据");
   });
 });

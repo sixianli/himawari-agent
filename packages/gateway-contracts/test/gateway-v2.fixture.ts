@@ -373,6 +373,72 @@ export const governanceMessages = [
   }),
   fixture("command", "sensitive.interceptions.clear", {}),
   fixture("query", "memory.overview.read", {}),
+  fixture("query", "decision.chain.read", { decisionId: "proactive-decision:abc" }),
+  fixture("snapshot", "decision.chain.snapshot", {
+    decisionId: "proactive-decision:abc",
+    decision: {
+      kind: "proactive",
+      decidedAt: "2026-11-09T00:00:00.000Z",
+      outcome: "pushed",
+      reasonCode: "FLOOR_RAISED",
+      rating: "useful",
+      ratedAt: "2026-11-09T01:00:00.000Z",
+    },
+    inputs: "recorded",
+    rules: {
+      state: "recorded",
+      items: [
+        {
+          ruleId: "floor_important_sender",
+          origin: "owner_setting",
+          document: "ADR 0106 第 4 条",
+          mailCount: 1,
+        },
+      ],
+    },
+    mails: { judged: 2, related: 1, relatedRead: "ok" },
+    memories: {
+      state: "recorded",
+      recall: "ok",
+      total: 1,
+      truncated: false,
+      items: [
+        {
+          memoryId: "memory-insight",
+          state: "visible",
+          text: "示例记忆",
+          status: "active",
+          inference: true,
+          tentative: false,
+          usedByModel: true,
+          changedSinceDecision: false,
+          supersededBy: null,
+          source: {
+            threadId: "thread-1",
+            messageId: "message-1",
+            quote: "原话",
+            refs: ["payload:1"],
+            importBatchId: null,
+            firstSourceDeleted: false,
+          },
+          basis: {
+            nodes: [
+              {
+                memoryId: "memory-insight",
+                text: "示例记忆",
+                action: "reflect",
+                changedAt: "2026-11-01T00:00:00.000Z",
+                basisMemoryIds: ["memory-a"],
+                repeated: false,
+                truncated: false,
+              },
+            ],
+            complete: true,
+          },
+        },
+      ],
+    },
+  }),
   fixture("query", "memory.basis.read", { memoryId: "memory-insight" }),
   fixture("snapshot", "memory.basis.snapshot", {
     memoryId: "memory-insight",

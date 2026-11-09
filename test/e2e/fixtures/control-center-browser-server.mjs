@@ -1038,6 +1038,151 @@ function reviewSnapshot() {
   };
 }
 
+const decisionCounts = {
+  fetched: 3,
+  skipped: 0,
+  judged: 3,
+  act: 1,
+  know: 1,
+  check: 1,
+  ignore: 0,
+  floorRaised: 0,
+  pushed: 1,
+};
+function decisionFixtureRows() {
+  const row = (id, hour, verdict) => ({
+    id,
+    checkedAt: `2026-08-26T${hour}:00:00.000Z`,
+    verdict,
+    reasonCode: "FIXTURE",
+    counts: decisionCounts,
+    opened: false,
+    rating: null,
+  });
+  return [
+    row("decision-gmail-full", "09", "pushed"),
+    row("decision-gmail-old", "08", "silent"),
+    row("decision-gmail-gone", "07", "silent"),
+  ];
+}
+function decisionChainFixture(decisionId) {
+  const base = {
+    decisionId,
+    decision: {
+      kind: "proactive",
+      decidedAt: "2026-08-26T09:00:00.000Z",
+      outcome: decisionId === "decision-gmail-full" ? "pushed" : "silent",
+      reasonCode: "FIXTURE",
+      rating: decisionId === "decision-gmail-full" ? "useful" : null,
+      ratedAt: decisionId === "decision-gmail-full" ? "2026-08-26T09:30:00.000Z" : null,
+    },
+  };
+  if (decisionId === "decision-gmail-old")
+    return {
+      ...base,
+      inputs: "not_recorded",
+      rules: { state: "not_recorded", items: [] },
+      mails: { judged: null, related: null, relatedRead: "not_recorded" },
+      memories: {
+        state: "not_recorded",
+        recall: "not_recorded",
+        total: 0,
+        truncated: false,
+        items: [],
+      },
+    };
+  if (decisionId !== "decision-gmail-full") return null;
+  const noSource = {
+    threadId: null,
+    messageId: null,
+    quote: null,
+    refs: [],
+    importBatchId: null,
+    firstSourceDeleted: false,
+  };
+  const memory = (memoryId, change) => ({
+    memoryId,
+    state: "visible",
+    text: null,
+    status: "active",
+    inference: false,
+    tentative: false,
+    usedByModel: true,
+    changedSinceDecision: false,
+    supersededBy: null,
+    source: noSource,
+    basis: { nodes: [], complete: true },
+    ...change,
+  });
+  return {
+    ...base,
+    inputs: "recorded",
+    rules: {
+      state: "recorded",
+      items: [
+        {
+          ruleId: "floor_money_words",
+          origin: "built_in",
+          document: "ADR 0106 第 4 条",
+          mailCount: 2,
+        },
+        {
+          ruleId: "floor_important_sender",
+          origin: "owner_setting",
+          document: "ADR 0106 第 4 条",
+          mailCount: 1,
+        },
+      ],
+    },
+    mails: { judged: 3, related: 1, relatedRead: "ok" },
+    memories: {
+      state: "recorded",
+      recall: "ok",
+      total: 3,
+      truncated: false,
+      items: [
+        memory("memory-bank", {
+          text: "主人的房租每月 27 日从三井住友扣款",
+          source: {
+            ...noSource,
+            threadId: "thread-main",
+            messageId: "message-01",
+            quote: "房租每月 27 号扣",
+          },
+        }),
+        memory("memory-ramen", {
+          text: "主人常吃拉面",
+          inference: true,
+          basis: {
+            nodes: [
+              {
+                memoryId: "memory-ramen",
+                text: "主人常吃拉面",
+                action: "merge",
+                changedAt: "2026-08-20T00:00:00.000Z",
+                basisMemoryIds: ["memory-friday"],
+                repeated: false,
+                truncated: false,
+              },
+              {
+                memoryId: "memory-friday",
+                text: "周五晚上吃了拉面",
+                action: null,
+                changedAt: null,
+                basisMemoryIds: [],
+                repeated: false,
+                truncated: false,
+              },
+            ],
+            complete: true,
+          },
+        }),
+        memory("memory-medical", { state: "hidden", status: "active" }),
+      ],
+    },
+  };
+}
+
 function handleOperationsQuery(message, request) {
   switch (message.type) {
     case "memory.overview.read":
@@ -1071,13 +1216,22 @@ function handleOperationsQuery(message, request) {
               : weeklySnapshot(),
           }
         : undefined;
+    case "decision.chain.read": {
+      if (!memoryFixture) return undefined;
+      const chain = decisionChainFixture(message.payload.decisionId);
+      return chain ? { ...envelope("snapshot", "decision.chain.snapshot"), payload: chain } : null;
+    }
     case "proactive.overview.read":
       return memoryFixture
         ? {
             ...envelope("snapshot", "proactive.overview.snapshot"),
             payload: {
               source: "gmail",
-              connection: { status: "disconnected", account: null, connectedAt: null },
+              connection: /(^|;\s*)himawari-fixture-decisions=on(;|$)/.test(
+                request.headers.cookie ?? "",
+              )
+                ? { status: "connected", account: "andy@example.com", connectedAt: now }
+                : { status: "disconnected", account: null, connectedAt: null },
               enabled: true,
               quietHours: [],
               importantSenders: [],
@@ -1085,7 +1239,11 @@ function handleOperationsQuery(message, request) {
               backoff: [],
               insights: [],
               audit: { active: false, since: now, items: [], pending: 0 },
-              decisions: [],
+              decisions: /(^|;\s*)himawari-fixture-decisions=on(;|$)/.test(
+                request.headers.cookie ?? "",
+              )
+                ? decisionFixtureRows()
+                : [],
               metrics: { spoke: 12, hits: 7, misfires: 3, missed: 1, reviewed: 40 },
               generatedAt: now,
             },
@@ -1748,6 +1906,7 @@ async function handleRequest(request, response) {
               "proactive.review.read",
               "proactive.review.rate",
               "proactive.weekly.read",
+              "decision.chain.read",
             ]
           : []),
       ],

@@ -1,0 +1,4 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "本次只把 `0191-record...` 改成 `0194-record...`，但仓库里仍有两份 ADR 同时使用 `0192`", "valid": false, "reason": "0192 重复在 main 上早已存在，是另一个块的两份 ADR，不是本 PR 引入也不在协调者交代的范围；已报告协调者，不在本 PR 里改别人的 ADR 号"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 之间的相对链接和标题编号没有自动检查", "valid": true, "class": "better"}
+{"id": "glm-1", "model": "opencode-go/glm-5.3-flash", "quote": "docs/adr/0192 编号冲突仍在，编号门禁在本次提交后依然是红的", "valid": false, "reason": "同 ds-1，基准上已存在，属别的块"}
+{"id": "glm-2", "model": "opencode-go/glm-5.3-flash", "quote": "取号 0194 跳过了 0193，与治理规则「取最大编号加一」不一致", "valid": true, "class": "better"}
