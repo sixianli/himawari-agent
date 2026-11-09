@@ -73,8 +73,8 @@ date: "2026-10-31"
 ## 关联文档
 
 - [ADR 0080：快速模式下的文档治理](0080-document-governance-in-fast-mode.md)
-- [.claude/rules/owner-skills.md](../../.claude/rules/owner-skills.md)
-- [.claude/rules/document-governance.md](../../.claude/rules/document-governance.md)
+- 规则文件（`.claude/rules/owner-skills.md`，现已不在仓库里）
+- 规则文件（`.claude/rules/document-governance.md`，现已不在仓库里）
 - [案例 74：仓库里的规则和技能，云端线程到底读到了哪些](../engineering-casebook.md#case-cloud-thread-loading)
 
 [↑ 返回阅读导航](#contents)

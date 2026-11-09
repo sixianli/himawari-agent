@@ -8,7 +8,7 @@ date: "2026-09-29"
 
 # 前台工具输出复用加密分块保存设计
 
-**审阅状态：方案 B 已批准。用户于 2026-09-29 批准。** 本设计依据 Claude 的 [round2 reply-3](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-3.md)，补充而不替换已提交的 `77fb033` 结果丢失兜底。批准不等于实现完成：当前按 [reply-4](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-4.md) 的修订合同实施，恢复单位与离线就绪边界按 [reply-5](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-5.md) 和 [reply-6](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-6.md) 执行；验证完成前不视为交付。
+**审阅状态：方案 B 已批准。用户于 2026-09-29 批准。** 本设计依据 Claude 的 round2 reply-3（`.ci-output/handoff/2026-09-28-round2-claude-reply-3.md`），补充而不替换已提交的 `77fb033` 结果丢失兜底。批准不等于实现完成：当前按 reply-4（`.ci-output/handoff/2026-09-28-round2-claude-reply-4.md`） 的修订合同实施，恢复单位与离线就绪边界按 reply-5（`.ci-output/handoff/2026-09-28-round2-claude-reply-5.md`） 和 reply-6（`.ci-output/handoff/2026-09-28-round2-claude-reply-6.md`） 执行；验证完成前不视为交付。
 
 ## 阅读导航
 
@@ -48,7 +48,7 @@ Pi 固定版本为 `0.84.2`，继续提供 read、其他工具及原工具批次
 
 原 `result` IPC 仍在进程组停止、SRT reset、`control.finish()` 之后发送，负责最终清理事实。任务退出与资源释放分别核验。两条消息矛盾时按失败处理，不能选择较好的结果。 没有提前完成消息时，Worker 也必须从最终报告明确确认 stdio 已关闭，才可保存完整结束块和确定退出结果；宿主传输通道结束或主进程退出本身不足以证明输出完整。取消、期限和输出超限路径可以继续使用原路径，不必发送提前完成消息。
 
-按 [reply-7](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-7.md)，已收到最终 IPC 且与提前完成事实矛盾时，保存确定的 `SANDBOX_HOST_COMPLETION_CONTRADICTED` 错误，禁止恢复导入覆盖。交付时不携带原 stdout 引用，而给模型唯一说明：“SANDBOX_HOST_COMPLETION_CONTRADICTED：执行宿主报告的退出结果前后不一致，本次结果按失败处理，没有重新执行。工具可能已经运行，是否重做请先确认。”原 stdout Payload 与分块保留作诊断，不改写或删除。没有最终 IPC 的真实宿主崩溃不算矛盾，仍可核验并恢复完整结束块。命令与写入的效果披露限制不变，矛盾错误不能证明没有副作用。
+按 reply-7（`.ci-output/handoff/2026-09-28-round2-claude-reply-7.md`），已收到最终 IPC 且与提前完成事实矛盾时，保存确定的 `SANDBOX_HOST_COMPLETION_CONTRADICTED` 错误，禁止恢复导入覆盖。交付时不携带原 stdout 引用，而给模型唯一说明：“SANDBOX_HOST_COMPLETION_CONTRADICTED：执行宿主报告的退出结果前后不一致，本次结果按失败处理，没有重新执行。工具可能已经运行，是否重做请先确认。”原 stdout Payload 与分块保留作诊断，不改写或删除。没有最终 IPC 的真实宿主崩溃不算矛盾，仍可核验并恢复完整结束块。命令与写入的效果披露限制不变，矛盾错误不能证明没有副作用。
 
 按 R2-T12（2026-10-15）修正：结果矛盾的调用（`fixed_read` 除外，它保持 `not_applicable`）效果记为未知并带原因 `SANDBOX_HOST_COMPLETION_CONTRADICTED`；该失败与到期失败一样属于可交付的有界失败（`isSandboxBoundedToolFailure`），照常作为失败说明交付给模型，原 stdout 仍不交付。
 
@@ -60,7 +60,7 @@ Pi 固定版本为 `0.84.2`，继续提供 read、其他工具及原工具批次
 
 只保存正常前台原本保存的 stdout；不把基础设施 stderr 混入模型结果。收到提前完成信号后，立即保存剩余 stdout 和带 `termination` 的结束块，包括退出码、结束原因及 `taskProcessExited`，然后等待宿主清理。
 
-Claude 在 reply-4 撤回“只存一份”优化：原前提不成立，后台 operation 引用的是“任务已启动”的回执，并非 stdout。证据见[stop-3](../../../.ci-output/handoff/2026-09-28-codex-round2-stop-3.md)。正常 Worker 继续调用现有 `writeOutput()` 保存原始 stdout Payload，operation 引用方式不变。每次前台调用因此额外保存一份加密分块副本，并增加本机 RPC；成本必须纳入性能和存储报告。分块正文是 Base64 JSON，另有每块加密元数据；沿用的结束 artifact 还会重复保存最后一个 chunk 的 JSON，末块正文最多 32 KiB，因此不能把额外磁盘字节等同于一份原 stdout 的大小。现有分块键已按身份生成，后台读取游标及页面合同不变。
+Claude 在 reply-4 撤回“只存一份”优化：原前提不成立，后台 operation 引用的是“任务已启动”的回执，并非 stdout。证据见stop-3（`.ci-output/handoff/2026-09-28-codex-round2-stop-3.md`）。正常 Worker 继续调用现有 `writeOutput()` 保存原始 stdout Payload，operation 引用方式不变。每次前台调用因此额外保存一份加密分块副本，并增加本机 RPC；成本必须纳入性能和存储报告。分块正文是 Base64 JSON，另有每块加密元数据；沿用的结束 artifact 还会重复保存最后一个 chunk 的 JSON，末块正文最多 32 KiB，因此不能把额外磁盘字节等同于一份原 stdout 的大小。现有分块键已按身份生成，后台读取游标及页面合同不变。
 
 ## 恢复裁决与事务
 
@@ -72,7 +72,7 @@ Claude 在 reply-4 撤回“只存一份”优化：原前提不成立，后台 
 4. 没有可恢复原结果，且满足原 LOST 条件：通过 operation revision 比较写入结果丢失错误。
 5. 证据不明：不伪造结果，继续既有有限恢复、原期限和停止路径。
 
-按 [reply-24](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-24.md)，Job Host 的结束原因分为可恢复与合法但不可恢复两类。`exited` 加非空退出码、`deadline` 加空退出码保持原恢复规则；`cancelled`、`output_limit`、`resource_limit`、`host_failure` 必须先通过原身份绑定、摘要、连续分块、长度及任务已退出核验，再返回不可恢复，保留 UNKNOWN 或既有确定错误，不导入输出或重新执行，也不因合法结束原因关闭 Agent。后四种原因的退出码可为空或协议允许的整数：最终报告直接保留任务退出码，清理失败也可能在正常退出后改写为 `host_failure`。未知原因、矛盾字段、任务未退出、缺失或损坏分块继续拒绝；不得把完整性检查移到不可恢复返回之后。真实 Mac 上的完整服务和界面复验留到下一批 R1/B3，组件验证不能替代它。
+按 reply-24（`.ci-output/handoff/2026-09-28-round2-claude-reply-24.md`），Job Host 的结束原因分为可恢复与合法但不可恢复两类。`exited` 加非空退出码、`deadline` 加空退出码保持原恢复规则；`cancelled`、`output_limit`、`resource_limit`、`host_failure` 必须先通过原身份绑定、摘要、连续分块、长度及任务已退出核验，再返回不可恢复，保留 UNKNOWN 或既有确定错误，不导入输出或重新执行，也不因合法结束原因关闭 Agent。后四种原因的退出码可为空或协议允许的整数：最终报告直接保留任务退出码，清理失败也可能在正常退出后改写为 `host_failure`。未知原因、矛盾字段、任务未退出、缺失或损坏分块继续拒绝；不得把完整性检查移到不可恢复返回之后。真实 Mac 上的完整服务和界面复验留到下一批 R1/B3，组件验证不能替代它。
 
 LOST 要求已接受的释放证明、已认证任务启动并退出、缺少确定结果，以及原 Worker 尝试已确定不能再提交。合法 LOST 一旦写入，后来发现原输出也不能覆盖或再次交付，只能保留诊断证据。
 
@@ -84,11 +84,11 @@ LOST 要求已接受的释放证明、已认证任务启动并退出、缺少确
 
 ## 期限后的交付授权
 
-[reply-21](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-21.md) 批准新增内部只读方法 `SandboxExecutionPreparationPort.assertResultAuthority`。它复用 SQLite 的原回执、Grant/Handle 和能力生命周期核验，在一个读快照内验证原计划、Run 状态、当前 authority 与执行租约；不消费用量、不写状态、不返回输出。已有的执行前核验受执行期限约束，未启动预约授权只适用于 reserved，历史输出查询也不证明现在允许披露，因此不能代替这个方法。
+reply-21（`.ci-output/handoff/2026-09-28-round2-claude-reply-21.md`） 批准新增内部只读方法 `SandboxExecutionPreparationPort.assertResultAuthority`。它复用 SQLite 的原回执、Grant/Handle 和能力生命周期核验，在一个读快照内验证原计划、Run 状态、当前 authority 与执行租约；不消费用量、不写状态、不返回输出。已有的执行前核验受执行期限约束，未启动预约授权只适用于 reserved，历史输出查询也不证明现在允许披露，因此不能代替这个方法。
 
 工具执行期限前仍使用原实时披露检查。期限后每个现有交付检查点重新调用只读方法，包括解密后的最后一次检查；停止信号、Run 活跃性和 authority 摘要检查保留。SQLite 根据持久原回执的 `deadlineAt` 加共享的 `RECOVERY_SETTLE_WAIT_MS = 35000`，再与计划原 Run 期限取小；调用方回复期限只能进一步缩短。当前时间等于上界即拒绝。这里只豁免回执的执行期限，Grant/Handle 自身到期或撤销、Run 终态及权限代次变化仍拒绝普通输出和固定错误说明。
 
-Agent 与 SQLite 共用 application 包的余量常量；Worker 自身同名等待常量不在这次修改范围。`sandboxRecoveryReceipt` 用明确用途区分普通恢复、期限失败恢复和只读交付，原恢复与导入条件不变。本次不改数据库结构或 Agent–Worker 通信协议。测试边界及先红后绿证据见 [B1 验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/b1-r21-verification.md)。
+Agent 与 SQLite 共用 application 包的余量常量；Worker 自身同名等待常量不在这次修改范围。`sandboxRecoveryReceipt` 用明确用途区分普通恢复、期限失败恢复和只读交付，原恢复与导入条件不变。本次不改数据库结构或 Agent–Worker 通信协议。测试边界及先红后绿证据见 B1 验证（`.ci-output/tool-execution-audit/2026-09-28/round2/b1-r21-verification.md`）。
 
 ## 失败与竞争规则
 
@@ -111,7 +111,7 @@ Agent 与 SQLite 共用 application 包的余量常量；Worker 自身同名等�
 
 **Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也不能停止本轮；需要成对重启服务。生产启动器在任一进程退出时会自动成对重启。将来的 Mac 常驻启动器必须保持同样的合同。** 本轮不实现 Mac 启动器，也未执行 Hermes 现场验证。
 
-不受支持的单进程存活状态仍须保持结果安全：已保存结束块的结果可由 Agent 后台导入；没有结束块时不得抢先写 LOST。业务 HTTP 保留 `SERVICE_NOT_READY`，包括页面停止所需的前置 Payload 请求。已知限制的真实点击失败、trace 和 SQLite 证据见 [stop-5](../../../.ci-output/handoff/2026-09-28-codex-round2-stop-5.md)；reply-6 接受该限制，它不是本次要修复的 TE-08 缺陷。成对恢复后再核对唯一原结果或 LOST 和页面显示。
+不受支持的单进程存活状态仍须保持结果安全：已保存结束块的结果可由 Agent 后台导入；没有结束块时不得抢先写 LOST。业务 HTTP 保留 `SERVICE_NOT_READY`，包括页面停止所需的前置 Payload 请求。已知限制的真实点击失败、trace 和 SQLite 证据见 stop-5（`.ci-output/handoff/2026-09-28-codex-round2-stop-5.md`）；reply-6 接受该限制，它不是本次要修复的 TE-08 缺陷。成对恢复后再核对唯一原结果或 LOST 和页面显示。
 
 ## 剩余保证窗口
 
@@ -124,7 +124,7 @@ Agent 与 SQLite 共用 application 包的余量常量；Worker 自身同名等�
 
 ## 验收要求
 
-先写测试并确认目标缺口，再修改生产代码。证据保留在[第二轮审计目录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/README.md)，实施进度由[排查计划](../plans/2026-09-28-tool-execution-audit-plan.md)记录。[SOURCE: docs/execution/plans/2026-09-28-tool-execution-audit-plan.md]
+先写测试并确认目标缺口，再修改生产代码。证据保留在第二轮审计目录（`.ci-output/tool-execution-audit/2026-09-28/round2/README.md`），实施进度由[排查计划](../plans/2026-09-28-tool-execution-audit-plan.md)记录。[SOURCE: docs/execution/plans/2026-09-28-tool-execution-audit-plan.md]
 
 - 真实 Pi read 读取唯一内容，清理挂起后终止 Agent 加 Worker，修改源文件再重启。模型恰好收到一次修改前原内容；独立 SQLite 读回确认一次启动、一条确定 operation、一条交付 intent、释放未撤销、Run 完成。不重启对照也保留原结果。
 - 在结束块保存前后、reset 后、control.finish 前后、result IPC 前后，分别先杀 Worker 并按生产启动器顺序停止 Agent，或同时终止 Agent 加 Worker；然后成对重启。已保存结束块时恢复原结果；未保存时按兜底规则结束，不重复交付、不卡住。额外验证短暂 Worker 离线时业务 HTTP 拒绝服务、Run 不误终结或交付，成对重启后以唯一 LOST 完成。

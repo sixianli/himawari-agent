@@ -68,14 +68,14 @@ date: "2026-09-30"
 | 范围 | 保留证据与实际边界 |
 | --- | --- |
 | 产品可执行内容 | 冻结生产候选来源为 `3a65b9006b83d2a24bc7b2fbb1c1c831f239b841`。其后本批只增加 R2-L6 探针、测试和文档，产品可执行内容、依赖、CI 配置未改；生产部署仍须具体授权 |
-| Hermes 完整检查 | `3a65b90` 上第 1 层、第 3 层构建与五项目完整测试 5469/5469 通过；不筛选 Linux 产品路径 47 通过、0 失败、1 原可选性能对照跳过。原件见[最终代码证据](../../../.ci-output/handoff/2026-10-07-codex-round2-d4-a1-stop-01.md)。本批新增探针后的检查另外记录，不能把历史结果称为新版本全测 |
+| Hermes 完整检查 | `3a65b90` 上第 1 层、第 3 层构建与五项目完整测试 5469/5469 通过；不筛选 Linux 产品路径 47 通过、0 失败、1 原可选性能对照跳过。原件见最终代码证据（`.ci-output/handoff/2026-10-07-codex-round2-d4-a1-stop-01.md`）。本批新增探针后的检查另外记录，不能把历史结果称为新版本全测 |
 | 云端工具环境 | G47 的 bubblewrap 身份、版本和 AppArmor 检查通过，G50 的历史预检见下文。R2-L2 环境证据仍不能替代当次生产预检；本批不连接云服务器 |
 | 安装包 | 同一冻结 Linux x64 ABI127 候选，66607727 字节，SHA-256 `6cc0c9d8b273fa1e5c4b46d053f9b146ae9613506027feabd8b635a82ac7fbd3`；context 497 字节，SHA-256 `a2932641a699830b9826713cf6b10467c05c071656d5db0289732f768cb10f87`。包仍在 Hermes 本任务检出的 `.ci-output/r64-d4-rework-a1-final-01-product-build/`，尚未复制到云端 |
 | 最终版本检查 | 条目状态只取 `longtask.py status`。最终 Cfa 第十组三次与完整第1层通过，whole业务49通过/0失败/1原基线跳过、Vitest0；原外层因late opaque清理拒绝退出1，保留现场，[BL008](../../backlog/BL-20261007-008-同-账-号-不-可-读-进-程.md)保持open。源码提交推送ba2bcf6并获Claude独立approved；预算重置及主trace控制缺陷按实际范围关闭，见[最终证据](2026-09-28-tool-execution-audit-plan.md#r74-final-validation) |
-| Hermes 验收适配 | G59 唯一冻结命令已执行：Pi 22、网络 10 场景通过，实际安装前后摘要相同；报告保持非生产且未签署。原件见[G59 验收与清理报告](../../../.ci-output/handoff/2026-10-07-codex-round2-d4-a1-stop-02.md#evidence)。651264 字节历史空间差额已在该报告保留，不改写为全恢复 |
+| Hermes 验收适配 | G59 唯一冻结命令已执行：Pi 22、网络 10 场景通过，实际安装前后摘要相同；报告保持非生产且未签署。原件见G59 验收与清理报告（`.ci-output/handoff/2026-10-07-codex-round2-d4-a1-stop-02.md#evidence`）。651264 字节历史空间差额已在该报告保留，不改写为全恢复 |
 | 工具安装前提 | G53/G59 的 fd 10.5.0 与 is-number 7.0.0 固定输入和安装已通过原 32 场景。云端仍须在获准后按 P8 下载、核对并安装工具，使用云端现场 Bash、rg 和正式 Node 工具目录；Hermes 摘要不代表云端工具身份 |
 | 有限真实重启 | 已有 `--runtime` 只读入口在最终三次及完整P8中使用同实际安装，十断言、before/after/fresh摘要与原期限通过；未知占用、真实同库重启、不重放、可信释放与新准入有原件。原effect仍unknown/result仍null，新请求随后取消，没有第二次Bash执行；云端未执行或签署，见[最终证据](2026-09-28-tool-execution-audit-plan.md#r74-final-validation) |
-| 当前云操作清单 | [P0–P13 审阅稿](../../../.ci-output/production/2026-10-07-first-deploy-packet-01/README.md)仍待具体逐步授权。相同运输材料在Hermes新空目录的原artifact完整安装及七报告P8、11安装文件取证和原清理已通过（E20261008T094449-48ed2b），原三次控制失败保留。P6候选CLI doctor第二次严格加载0（E20261008T100042-26d55a），schema正确、ready=false；[原件](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/p6-doctor-02-full/)只证明scratch派生配置加载，没有init/服务/模型。26原身份gone、hyzh3 absent、清理0，225280B短差未知；原run01在doctor前控制失败且无fresh BEFORE保留。旧final04/central01保持历史原件；正式85路径漏传P5源码证明已在Hermes由同一材料检查先失败1、修正后通过0，记录 `E20261008T102918-e3116e`、`E20261008T102918-e5615a`。当前prep08为86正式+8 Hermes-only+11审阅、105成员读回0；central02四次完整稳定读取441份实际文件、442条SUMS，记录 `E20261008T102918-420065`。详见[P3运输遗漏及新冻结](../../backlog/BL-20261008-006-p3-正-式-运-输-遗-漏-p5.md#2026-10-08-修正后实际结果)；[BL001准备缺口](../../backlog/BL-20261007-001-首-次-部-署-清-单-的-准.md#2026-10-08-最终公开清单与集中材料读回)按reply-01关闭，不视为生产参数批准；正式Node官方SUMS、云端host/tool/UID/workspace、有限验收、签署、服务、秘密和付费均未执行；R2-L3/L4仍需用户决定 |
+| 当前云操作清单 | P0–P13 审阅稿（`.ci-output/production/2026-10-07-first-deploy-packet-01/README.md`）仍待具体逐步授权。相同运输材料在Hermes新空目录的原artifact完整安装及七报告P8、11安装文件取证和原清理已通过（E20261008T094449-48ed2b），原三次控制失败保留。P6候选CLI doctor第二次严格加载0（E20261008T100042-26d55a），schema正确、ready=false；原件（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/p6-doctor-02-full`）只证明scratch派生配置加载，没有init/服务/模型。26原身份gone、hyzh3 absent、清理0，225280B短差未知；原run01在doctor前控制失败且无fresh BEFORE保留。旧final04/central01保持历史原件；正式85路径漏传P5源码证明已在Hermes由同一材料检查先失败1、修正后通过0，记录 `E20261008T102918-e3116e`、`E20261008T102918-e5615a`。当前prep08为86正式+8 Hermes-only+11审阅、105成员读回0；central02四次完整稳定读取441份实际文件、442条SUMS，记录 `E20261008T102918-420065`。详见[P3运输遗漏及新冻结](../../backlog/BL-20261008-006-p3-正-式-运-输-遗-漏-p5.md#2026-10-08-修正后实际结果)；[BL001准备缺口](../../backlog/BL-20261007-001-首-次-部-署-清-单-的-准.md#2026-10-08-最终公开清单与集中材料读回)按reply-01关闭，不视为生产参数批准；正式Node官方SUMS、云端host/tool/UID/workspace、有限验收、签署、服务、秘密和付费均未执行；R2-L3/L4仍需用户决定 |
 
 安装与启停依照[安装 Runbook](../../runbooks/install-start-stop-runbook.md#live-state-preflight)。[SOURCE: docs/runbooks/install-start-stop-runbook.md] 每次使用前重新检查其静态合同和目标现场；静态检查通过不授权云操作。
 
@@ -91,7 +91,7 @@ date: "2026-09-30"
 
 ## 本次只读预检结果与下一项决定（2026-10-07）
 
-用户 G50 批准问询10后，冻结脚本在 `root@84.247.157.41` 执行一次，耗时 4.184 秒、SSH 退出码 0。主机为 `vmi3618928`，Ubuntu 24.04.5、Linux x86_64、内核 `6.8.0-142-generic`，4 核，检查时负载为 0，可用内存约 7.26 GiB、无交换空间。输出与退出结果见[本次预检原件](../../../.ci-output/production/2026-10-07-preflight-01/execution.json)，[独立读回](../../../.ci-output/production/2026-10-07-preflight-01/independent-readback.json)重新检查了输出摘要和各字段。
+用户 G50 批准问询10后，冻结脚本在 `root@84.247.157.41` 执行一次，耗时 4.184 秒、SSH 退出码 0。主机为 `vmi3618928`，Ubuntu 24.04.5、Linux x86_64、内核 `6.8.0-142-generic`，4 核，检查时负载为 0，可用内存约 7.26 GiB、无交换空间。输出与退出结果见本次预检原件（`.ci-output/production/2026-10-07-preflight-01/execution.json`），独立读回（`.ci-output/production/2026-10-07-preflight-01/independent-readback.json`）重新检查了输出摘要和各字段。
 
 | 候选对象 | 本次实际结果 | 对后续准备的影响 |
 | --- | --- | --- |
@@ -105,7 +105,7 @@ date: "2026-09-30"
 
 **G51已批准首次生产安装必要的有限主机能力验收例外，具体云操作尚未授权。** 产品配置要求沙箱资格绑定当前 hostId、runtimeDigest、runnerDigest、平台与安装字节。当前 `inspectSrtDependencies()` 明确保留 `productionSuitable: false`，检查依赖不能生成主机资格；管理员 CLI 也没有生成资格的入口。旧 Node26 探测只用于诊断，已有 Hermes 签署/启动流程则绑定旧主机、安装和签署者，不能照搬。
 
-原批准范围见[问询11](../../../.ci-output/handoff/2026-10-07-codex-round2-user-question-11.md)，现行规则见[ADR0052沿用的限定验收](../../adr/0052-third-production-host-acceptance-exception.md#first-install-acceptance)。先在 Hermes 验证适配流程，再提供冻结版本、目标、命令、资源和清理边界的生产操作清单；没有具体云端授权就不执行。普通项目测试和构建继续只在 Hermes，旧云测试环境保持，全部产品资格校验保留。
+原批准范围见问询11（`.ci-output/handoff/2026-10-07-codex-round2-user-question-11.md`），现行规则见[ADR0052沿用的限定验收](../../adr/0052-third-production-host-acceptance-exception.md#first-install-acceptance)。先在 Hermes 验证适配流程，再提供冻结版本、目标、命令、资源和清理边界的生产操作清单；没有具体云端授权就不执行。普通项目测试和构建继续只在 Hermes，旧云测试环境保持，全部产品资格校验保留。
 
 [返回导航](#reading-navigation)
 
@@ -125,7 +125,7 @@ date: "2026-09-30"
 | 顺序 | 准备与执行 | 授权和保留结果 |
 | --- | --- | --- |
 | 1：只读预检 | G50批准后执行一次冻结脚本，实际结果见[本次只读预检](#preflight-2026-10-07) | 本次读取授权已执行完；新的云连接或部署前重新检查包含在后续具体操作清单中授权 |
-| 2：具体部署方案 | 按 [P0–P13 审阅稿](../../../.ci-output/production/2026-10-07-first-deploy-packet-01/README.md)固定版本、安装目录、普通运行用户、配置、服务管理方式、能力资格处理及恢复条件；先处理 BL-20261007-005/006，再核对 Runbook 与原测试证据 | 准备可审阅脚本和配置中的非秘密部分，列出所有覆盖、创建、权限和服务效果；申请本次生产操作。任何目标身份或状态不明就停止 |
+| 2：具体部署方案 | 按 P0–P13 审阅稿（`.ci-output/production/2026-10-07-first-deploy-packet-01/README.md`）固定版本、安装目录、普通运行用户、配置、服务管理方式、能力资格处理及恢复条件；先处理 BL-20261007-005/006，再核对 Runbook 与原测试证据 | 准备可审阅脚本和配置中的非秘密部分，列出所有覆盖、创建、权限和服务效果；申请本次生产操作。任何目标身份或状态不明就停止 |
 | 3：安装与就绪 | 使用已在 Hermes 构建并检查的冻结候选，获准后核对并复制到云端新前缀；按批准顺序建用户、安装、初始化和注册服务。用户管理秘密与账号设置资料 | 云端不跑普通测试、构建或整套产品路径资格；只允许G51限定且本次清单明确授权的主机能力验收。真实工具资格未满足则不启动该工具。原测试账号及 `/srv/himawari-test/` 在部署前用 Claude 提供的清理脚本删除（G58），脚本运行前原样保留。本次首次部署中需要 root 的步骤（清理、安装 Node、注册和启动服务），由 Claude 在聊天里逐行说明脚本、用户逐步批准后用已有 root 密钥执行并读回（G63），不延用到以后的部署 |
 | 4：成对服务启动 | 按安装 Runbook 先 Worker 后 Agent，使用同包、同 state root、`--profile production`；核对双方 `service.ready`、本次身份和握手，再执行只读 `doctor`、`db status` | 具体启动、服务权限与生产配置属于本次生产授权；只绑定 loopback，不改 SSH、AppArmor、内核或防火墙设置。失败保留脱敏日志并停止，不猜恢复命令 |
 | 5：实际使用与测量 | 用户通过 SSH 隧道登录，用获准的虚构数据完成[响应时间测量](#response-time) | 先取得数据、生产密钥使用及付费额度的具体授权；保留服务端状态读回和用户侧计时，不自动重发失败请求 |
@@ -170,7 +170,7 @@ date: "2026-09-30"
 
 ### reply-09 的材料与验收裁定
 
-按[reply-09](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-09.md)，临时核对材料改为精确 `3a65b90` bundle、整份锁定 `node_modules`、原锁定 Python 和 Node、候选包及 context。整份依赖在打包前必须证明与锁文件一致，不用原六包子集、不预编译控制层、不在云端补装依赖。Hermes 从空目录按相同 `--artifact` 命令安装，准备工具后对新安装跑原六报告加 R2-L6；临时状态及自有进程只在本任务 scratch，不签发生产资格。
+按reply-09（`.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-09.md`），临时核对材料改为精确 `3a65b90` bundle、整份锁定 `node_modules`、原锁定 Python 和 Node、候选包及 context。整份依赖在打包前必须证明与锁文件一致，不用原六包子集、不预编译控制层、不在云端补装依赖。Hermes 从空目录按相同 `--artifact` 命令安装，准备工具后对新安装跑原六报告加 R2-L6；临时状态及自有进程只在本任务 scratch，不签发生产资格。
 
 SRT 实际 `/usr/bin/bwrap` 与 program/stdio 的 `/usr/local/libexec/bubblewrap-0.11.2/bwrap` 分别绑定真实版本、文件摘要和各自 AppArmor 规则。只有 program/stdio 保留 `>=0.11.2` 门槛，系统 bwrap 不新增相同版本或相同摘要要求。
 
@@ -186,9 +186,9 @@ rehearsal01/02/03分别因gzip读取顺序、未运输完整source mode、10解�
 
 ## 本次第二次部署的授权边界（2026-10-09）
 
-G65 仅批准第二次部署按首次相同限制重做主机能力验收，规则见 [SOURCE: docs/adr/0052-third-production-host-acceptance-exception.md#first-install-acceptance]。G66 选择冻结包经逐步说明、审阅后由 Claude 顺序执行，意外结果停止并保留现场。公开材料位于[第二次部署修订包](../../../.ci-output/production/2026-10-09-second-deploy-packet-02/README.md)。S0-DB 是用户运行的只读输入步骤，最终付费真实对话为 S10；Codex 不连接生产。2026-10-12 的 G75 把同样限制和执行方式扩大到第三次部署（上线 R2-L7、R2-L8、R2-U1、R2-U2，并在同一停服窗口处置 Run `run:c1284750-de9d-43dd-aee1-5474dc27539c`）；同日 G76 选择第三次部署像第二次一样再新建一条 90 天工作区授权（`coding.grantId` 换新编号，目录与权限范围不变，旧授权记录保留），以复用第二次已在生产跑通的签名、启动与读回流程。第三次部署的冻结包仍须用户单独批准。第四次及以后的部署仍需独立决定，普通测试与构建仍只在 Hermes。
+G65 仅批准第二次部署按首次相同限制重做主机能力验收，规则见 [SOURCE: docs/adr/0052-third-production-host-acceptance-exception.md#first-install-acceptance]。G66 选择冻结包经逐步说明、审阅后由 Claude 顺序执行，意外结果停止并保留现场。公开材料位于第二次部署修订包（`.ci-output/production/2026-10-09-second-deploy-packet-02/README.md`）。S0-DB 是用户运行的只读输入步骤，最终付费真实对话为 S10；Codex 不连接生产。2026-10-12 的 G75 把同样限制和执行方式扩大到第三次部署（上线 R2-L7、R2-L8、R2-U1、R2-U2，并在同一停服窗口处置 Run `run:c1284750-de9d-43dd-aee1-5474dc27539c`）；同日 G76 选择第三次部署像第二次一样再新建一条 90 天工作区授权（`coding.grantId` 换新编号，目录与权限范围不变，旧授权记录保留），以复用第二次已在生产跑通的签名、启动与读回流程。第三次部署的冻结包仍须用户单独批准。第四次及以后的部署仍需独立决定，普通测试与构建仍只在 Hermes。
 
-G67 选择沿用 `/var/lib/himawari/qualification-workspace`，用新编号 `directory:himawari-prod-workspace-20261009` 创建 90 天目录授权。原授权 `directory:himawari-prod-qualification` 已到期，保留原记录，不延长原记录或删除重建。这个决定只适用于本次授权替换；新授权不复活旧 Run、工具调用或资源租约，规则见[有效权限合同](../specs/2026-09-16-workspace-authorization-lifecycle-design.md#grants)。[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md#grants] 用户决定及裁定见 [reply-05](../../../.ci-output/handoff/2026-10-08-codex-prod-sandbox-reply-05.md)。
+G67 选择沿用 `/var/lib/himawari/qualification-workspace`，用新编号 `directory:himawari-prod-workspace-20261009` 创建 90 天目录授权。原授权 `directory:himawari-prod-qualification` 已到期，保留原记录，不延长原记录或删除重建。这个决定只适用于本次授权替换；新授权不复活旧 Run、工具调用或资源租约，规则见[有效权限合同](../specs/2026-09-16-workspace-authorization-lifecycle-design.md#grants)。[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md#grants] 用户决定及裁定见 reply-05（`.ci-output/handoff/2026-10-08-codex-prod-sandbox-reply-05.md`）。
 
 本次冻结包须按以下顺序实现，当前文字记录待生产执行的设计：
 
@@ -197,7 +197,7 @@ G67 选择沿用 `/var/lib/himawari/qualification-workspace`，用新编号 `dir
 3. S7 的数据库前检使用原配置在内存中的投影核对新授权，投影仅替换 `runPolicy.coding.grantId`，不提前改写原配置文件或原 snapshot。前检通过后，正式 `ExecStartPre` prepare 完成新签名和 snapshot 检查，再以一次原子配置替换同时发布新 `runPolicy.coding.grantId` 与新 `capabilityDeployment`。其余配置字段保持不变。新 snapshot 单独先发布；snapshot 与配置不是跨文件事务，中断时保留实际现场并停止。数据库授权创建和配置文件替换是两个步骤。
 4. S7/S8 独立读回新授权当前有效、允许 read，且目录 device/inode 与签名 snapshot 一致；读回原授权记录未变，原到期状态属于预期。首次切换检查不能变成长期开机时固定旧授权编号或冻结到期时间的限制；正式产品仍逐次检查真实授权。G65 主机能力验收继续只操作本次新建的虚构目录，不读取原工作目录内容。
 
-Hermes 的已安装产品演练已用公开 CLI 创建新编号，并在新配置和非生产签名 snapshot 下完成真实 HTTP Agent → Worker → JobHost → Pi read，11 项断言通过；旧过期行与 catalog 原字节未变。输入转换和首次切换守卫另覆盖两字段必须共同发布、错误输入拒绝及恢复库缺少新授权行。真实 read 演练没有运行生产固定路径的 prepare 或 systemd，生产 S7/S8 仍须独立读回。原始结果见[授权替换演练](../../../.ci-output/handoff/prod-second-evidence-06/reports/grant-installed03/installed-read/grant-renewal-report.json)。操作检查见[安装 Runbook 的已有目录授权替换](../../runbooks/install-start-stop-runbook.md#workspace-grant-replacement)。
+Hermes 的已安装产品演练已用公开 CLI 创建新编号，并在新配置和非生产签名 snapshot 下完成真实 HTTP Agent → Worker → JobHost → Pi read，11 项断言通过；旧过期行与 catalog 原字节未变。输入转换和首次切换守卫另覆盖两字段必须共同发布、错误输入拒绝及恢复库缺少新授权行。真实 read 演练没有运行生产固定路径的 prepare 或 systemd，生产 S7/S8 仍须独立读回。原始结果见授权替换演练（`.ci-output/handoff/prod-second-evidence-06/reports/grant-installed03/installed-read/grant-renewal-report.json`）。操作检查见[安装 Runbook 的已有目录授权替换](../../runbooks/install-start-stop-runbook.md#workspace-grant-replacement)。
 
 G68 要求修包期间保持停服。生产 S1 和 S2 已完成；原 S3 的备份 CLI 因生产没有 `backup-encryption` 用途而失败。G69 仅为这次部署改用停服原样复制：S3 在持有状态锁时复制 `data/product.sqlite` 和整个 `data/payload-ciphertext/` 树，S4 用新 CLI 迁移后再复制 Schema 50。两份副本均独立核对完整路径、字节数、SHA、数据库 integrity/foreign keys 及 migration ledger；任何 WAL/SHM 存在均停止。S4 另保留 data 外迁移前数据库副本。具体文件和恢复语义见[本次原样恢复点要求](../../runbooks/install-start-stop-runbook.md#second-deployment-raw-recovery)。[SOURCE: docs/runbooks/install-start-stop-runbook.md#second-deployment-raw-recovery]
 

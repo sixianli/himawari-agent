@@ -23,7 +23,7 @@ date: "2026-10-31"
 
 ## 背景
 
-[ADR 0080](0080-document-governance-in-fast-mode.md)（2026-10-26）定下：快速模式（`DELIVERY_MODE` 为 `fast`，只跑相关测试、`npm run check` 和 `npm run build`）也保留文档严格校验，`npm run check` 每次都跑 `npm run check:docs`（[scripts/check-docs-governance.mjs](../../scripts/check-docs-governance.mjs)，约 1 秒），只放过操作手册（Runbook）封存过期两类问题。它也是事故 I-06（提交 `51fe7f6` 改代码没重新封存操作手册，之后严格校验一直失败）的自动门槛。
+[ADR 0080](0080-document-governance-in-fast-mode.md)（2026-10-26）定下：快速模式（`DELIVERY_MODE` 为 `fast`，只跑相关测试、`npm run check` 和 `npm run build`）也保留文档严格校验，`npm run check` 每次都跑 `npm run check:docs`（scripts/check-docs-governance.mjs（`scripts/check-docs-governance.mjs`，现已不在仓库里），约 1 秒），只放过操作手册（Runbook）封存过期两类问题。它也是事故 I-06（提交 `51fe7f6` 改代码没重新封存操作手册，之后严格校验一直失败）的自动门槛。
 
 2026-10-31 00:42（日本时间），在删除 `.claude/skills/`（[ADR 0132](0132-owner-skills-from-the-claude-ai-account.md)）的同一线程里，Andy 要求删掉 `npm run check` 里的这一步。线程用选择卡说明了代价：按 [ADR 0107](0107-every-incident-gets-an-automatic-gate.md)，拆掉门槛后 I-06 要改回“缺门槛”。Andy 选了“删掉，I-06 改回缺门槛”。
 
@@ -56,7 +56,7 @@ date: "2026-10-31"
 
 - 每次提交少跑约 1 秒；文档校验出错不再挡提交。
 - 文档和代码重新可能悄悄脱节，就像 I-06 那次；只有手动跑技能的校验或切回完整模式时才会发现。
-- 规则文件 [.claude/rules/document-governance.md](../../.claude/rules/document-governance.md)、[.agents/instructions/delivery-mode.md](../../.agents/instructions/delivery-mode.md) 和 [AGENTS.md](../../AGENTS.md) 已改成“手动运行”。
+- 规则文件（`.claude/rules/document-governance.md`，现已不在仓库里）、[.agents/instructions/delivery-mode.md](../../.agents/instructions/delivery-mode.md) 和 [AGENTS.md](../../AGENTS.md) 已改成“手动运行”。
 
 [↑ 返回阅读导航](#contents)
 

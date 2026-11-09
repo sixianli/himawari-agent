@@ -477,7 +477,7 @@ Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请�
 
 #### 准备线程实测内存
 
-2026-10-03 在 Hermes r54 上，对 reply-03 返工前的 D19 源码进行五次独立运行，启用测试侧阶段诊断，每次只创建一个不接收输入且达到 `ready` 的预热线程。进程 RSS 增量中位数为 **110.910 MiB**，最大 **114.355 MiB**，低于当批 300 MiB 停止门槛；创建到 `ready` 中位数 1478.026ms、最大 1579.666ms。源码基座为 `11f1b7f` 加当批 D19 补丁，准确工作区摘要与逐次读回见[五次原始汇总](../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r54/final-idle-summary-v2.json)。该组测量不覆盖当前 60 秒期限和持续重试规则。
+2026-10-03 在 Hermes r54 上，对 reply-03 返工前的 D19 源码进行五次独立运行，启用测试侧阶段诊断，每次只创建一个不接收输入且达到 `ready` 的预热线程。进程 RSS 增量中位数为 **110.910 MiB**，最大 **114.355 MiB**，低于当批 300 MiB 停止门槛；创建到 `ready` 中位数 1478.026ms、最大 1579.666ms。源码基座为 `11f1b7f` 加当批 D19 补丁，准确工作区摘要与逐次读回见五次原始汇总（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r54/final-idle-summary-v2.json`）。该组测量不覆盖当前 60 秒期限和持续重试规则。
 
 | 观察项 | 最小（MiB） | 中位数（MiB） | 最大（MiB） |
 | --- | ---: | ---: | ---: |
