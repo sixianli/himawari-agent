@@ -22,7 +22,7 @@ permissions:
   contents: read
   pull-requests: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'push' && github.run_id || '' }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'push' && github.run_id || '' }}-${{ github.event.action == 'edited' && github.run_id || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 defaults:
   run:
@@ -191,6 +191,7 @@ jobs:
       macos: ${{ steps.identity.outputs.macos }}
   browser:
     name: browser / ${{ matrix.key }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
     runs-on: ${{ matrix.runner }}
     needs:
       - build
@@ -269,6 +270,7 @@ jobs:
           retention-days: 1
   coverage:
     name: coverage
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
     runs-on: ci-vps
     needs:
       - policy
