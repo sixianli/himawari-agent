@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdtemp, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  acquireStateRootLock,
   applyMigrations,
   createVerifiedMigrationSnapshot,
   type GovernedDeletionObjectType,
@@ -32,6 +31,7 @@ import { runInitializeCommand } from "./initialize-command.js";
 import { runMemoryCommand } from "./memory-command.js";
 import { runPushCommand } from "./push-command.js";
 import { runSandboxCommand } from "./sandbox-command.js";
+import { lockStoppedTarget } from "./stopped-target-lock.js";
 import { runThreadCommand } from "./thread-command.js";
 import { runWorkspaceCommand } from "./workspace-command.js";
 
@@ -329,9 +329,7 @@ async function migrate(
   if (confirmation !== "APPLY_MIGRATIONS") {
     throw new Error(ADMIN_CLI_ERROR_CODES.CONFIRMATION_REQUIRED);
   }
-  const lock = await acquireStateRootLock(configuration.stateRoot).catch(() => {
-    throw new Error(ADMIN_CLI_ERROR_CODES.TARGET_NOT_STOPPED);
-  });
+  const lock = await lockStoppedTarget(configuration.stateRoot);
   try {
     const migrations = await loadBundledMigrations();
     const database = openQualifiedDatabase(

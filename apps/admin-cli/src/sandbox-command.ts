@@ -1,10 +1,10 @@
 import path from "node:path";
 import {
-  acquireStateRootLock,
   SqliteSandboxReservationAdministration,
   SqliteUnconfirmedSandboxPurge,
 } from "@himawari-agent/persistence-sqlite";
 import { JsonFileConfigurationPort, writeServiceDiagnostic } from "@himawari-agent/platform-node";
+import { lockStoppedTarget } from "./stopped-target-lock.js";
 
 export async function runSandboxCommand(
   args: readonly string[],
@@ -89,9 +89,7 @@ export async function runSandboxCommand(
     stoppedServiceRequired: true,
     confirmation: digest,
   });
-  const lock = await acquireStateRootLock(configuration.stateRoot).catch(() => {
-    throw new Error("ADMIN_TARGET_NOT_STOPPED");
-  });
+  const lock = await lockStoppedTarget(configuration.stateRoot);
   try {
     const { deletedJobIds, counts } = records.purge(digest);
     return {
