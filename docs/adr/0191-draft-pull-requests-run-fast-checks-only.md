@@ -8,7 +8,7 @@ amends: "docs/adr/0176-ci-on-ovh-vps.md"
 date: "2026-11-09"
 ---
 
-# ADR 0190：草稿 PR 只跑快检查，标题修改不再取消在跑的 CI
+# ADR 0191：草稿 PR 只跑快检查，标题修改不再取消在跑的 CI
 
 <a id="contents"></a>
 
