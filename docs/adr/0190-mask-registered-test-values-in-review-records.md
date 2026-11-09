@@ -47,7 +47,7 @@ date: "2026-11-09"
 ## 决定
 
 1. **遮的是“已登记的测试假值”，不写死某一个值。** 复核脚本从 `ci/rules/gitleaks.toml` 读出所有用 `^…$` 锚定的精确值白名单（ADR 0177 第 2 条规定的形状）。只取长度不少于 12、且只含字母、数字和 `_-=.:/ ` 与空格（`\.` 当作 `.`）的字面值；字符类、带别的正则符号的、太短的都跳过。以后谁再给 Gitleaks 加了这个形状的精确值白名单（单行三单引号，`regexes` 只有一个元素），复核记录自动不再带出它；别的形状（字符类、含引号或汉字的整行、`regexTarget = "match"` 的固定开头、多行数组）不会被遮，仍靠 ADR 0177 的白名单块，也不报错，写 ADR 0177 的新块时按第 2 条的形状写。
-2. **读哪个版本。** 只在写记录的复核运行里读：`--base` 提交和 `origin/main` 两处清单的并集（这样 main 上在分支点之后新登记的值，写记录时也遮得到）。不从被复核的改动或工作区读，免得改动自己改掉清单；只有没有 `--base` 的方案讨论模式（`plan`、`plan-review`）退回从被复核的提交读。某个提交不存在就跳过它；提交存在但没有这个文件，以 `REGISTERED_VALUES_UNREADABLE` 停下，不静默不遮。`--assert-reviewed` 和 `--report` 不读这份清单。
+2. **读哪个版本。** 只在写记录的复核运行里读：`--base` 提交和 `origin/main` 两处清单的并集（这样 main 上在分支点之后新登记的值，写记录时也遮得到）。读的是本地的 `origin/main`，脚本不替人 fetch：复核前本地 `origin/main` 落后时，落后部分新登记的值遮不到，Gitleaks 照旧会报，按 ADR 0177 加块，所以复核前先 `git fetch origin main`。不从被复核的改动或工作区读，免得改动自己改掉清单；只有没有 `--base` 的方案讨论模式（`plan`、`plan-review`）退回从被复核的提交读。某个提交不存在就跳过它；提交存在但没有这个文件，以 `REGISTERED_VALUES_UNREADABLE` 停下，不静默不遮。`--assert-reviewed` 和 `--report` 不读这份清单。
 3. **遮盖写法。** 记录里出现这些值，一律换成 `[已遮盖:registered-test-value]`；先按 `RECORD_SECRET_RULES` 遮真密钥的形状，再遮登记值，一次正则替换（长的值优先），所以登记值嵌在真密钥里也遮不坏真密钥，同一段文字每次遮出的字节相同，与登记顺序无关。
 4. **已经提交的老记录不改。** 它们靠现有白名单（[ADR 0177](0177-gitleaks-exact-value-allowlist.md)、[PR 316](https://github.com/sixianli/himawari-agent/pull/316)、[PR 319](https://github.com/sixianli/himawari-agent/pull/319) 加的那几块）放行；改写已推送的历史违反项目规则。
 5. **ADR 0177 第 2 条以及它的白名单形状要求不变。** 只修正它“后果”里那一条：新记录由脚本遮盖，不再需要为引用假值而加新块。
