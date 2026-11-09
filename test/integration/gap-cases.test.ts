@@ -18,6 +18,7 @@ import { ManualClock } from "@himawari-agent/testing";
 import { ProductionObservation } from "../../apps/agent-service/src/production-observation.ts";
 import {
   GAP_EXPORT_PATH,
+  gapBacklogPrefill,
   ProductionGapExport,
   registerGapExportRoute,
 } from "../../apps/agent-service/src/production-gap-export.ts";
@@ -448,13 +449,66 @@ describe("[PA-4] Muse gap cases", () => {
     }
   });
 
+  it("[negative] one unreadable Muse payload leaves the page and the other cases working", async () => {
+    const h = await wired();
+    try {
+      const candidates = await h.repository
+        .decisionLedger()
+        .readGapCandidates({ ...scope, start: START, end: END });
+      const victim = candidates.find((candidate) => candidate.pairedMessageId === "mail-1");
+      if (!victim?.museTitleRef) throw new Error("no victim");
+      const brokenRef = victim.museTitleRef;
+      const flaky = {
+        ...h.seal,
+        open: async (input: { ref: string } & typeof scope) => {
+          if (input.ref === brokenRef) throw new Error("cannot decrypt");
+          return h.seal.open(input);
+        },
+      } as typeof h.seal;
+      const built = await buildGapCases({ scope, candidates, seal: flaky });
+      expect(built).toHaveLength(3);
+      expect(built.find((entry) => entry.id === gapCaseId("mail-1"))?.museTitle).toBeNull();
+      expect(built.filter((entry) => entry.museTitle !== null)).toHaveLength(2);
+    } finally {
+      await h.app.close();
+      await h.repository.close();
+    }
+  });
+
+  it("[negative] masks a password even when the cut would have split it", () => {
+    const filler = "甲".repeat(100);
+    const prefill = gapBacklogPrefill({
+      id: "gap_aaaaaaaaaaaaaaaaaaaa",
+      museAt: IN_WINDOW,
+      museTitle: `${filler}密码：hunter22222`,
+      museText: null,
+      museTextWithheld: false,
+      himawariOutcome: "ignore",
+      himawariReasonCode: "fixture",
+      himawariReason: null,
+      ownerRating: "missed",
+      attribution: "wrongJudgment",
+      memoryHits: 0,
+      relatedMessages: 0,
+      decidedAt: IN_WINDOW,
+      weekStart: START,
+      weekEnd: END,
+    });
+    expect(prefill.title).not.toContain("hunter2");
+    expect(prefill.summary).not.toContain("hunter22222");
+  });
+
   it("[negative] skips a damaged snapshot instead of failing the whole export", async () => {
     const h = await wired();
     try {
       const [first] = await h.cases();
       if (!first) throw new Error("no case");
       await h.mark(first.id, true);
-      for (const [index, text] of ["{not json", "null", "{}"].entries()) {
+      for (const [index, text] of [
+        "{not json",
+        "null",
+        '{"id":"x","museAt":"2026-10-29T03:00:00.000Z"}',
+      ].entries()) {
         const damagedRef = await h.seal.seal({ ...scope, text, at: IN_WINDOW });
         await h.marks.mark({
           ...scope,
@@ -470,6 +524,7 @@ describe("[PA-4] Muse gap cases", () => {
       });
       expect(response.statusCode).toBe(200);
       expect(response.json().cases.map((entry: { id: string }) => entry.id)).toEqual([first.id]);
+      expect(response.json().skipped).toBe(3);
     } finally {
       await h.app.close();
       await h.repository.close();

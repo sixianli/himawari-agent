@@ -44,15 +44,41 @@ function clip(text: string, limit: number): string {
   return [...text].slice(0, limit).join("");
 }
 
+const isText = (value: unknown): value is string => typeof value === "string";
+const isCount = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0;
+const isInstant = (value: unknown): value is string =>
+  isText(value) && !Number.isNaN(Date.parse(value));
+
+export function isGapCaseSnapshot(value: unknown): value is GapCaseSnapshot {
+  if (typeof value !== "object" || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return (
+    isText(item["id"]) &&
+    isInstant(item["museAt"]) &&
+    isInstant(item["weekStart"]) &&
+    isInstant(item["weekEnd"]) &&
+    isText(item["attribution"]) &&
+    Object.hasOwn(GAP_ATTRIBUTION_TEXT, item["attribution"]) &&
+    isText(item["himawariOutcome"]) &&
+    isCount(item["memoryHits"]) &&
+    isCount(item["relatedMessages"]) &&
+    (item["museTitle"] === null || isText(item["museTitle"])) &&
+    (item["himawariReason"] === null || isText(item["himawariReason"])) &&
+    (item["ownerRating"] === null || isText(item["ownerRating"]))
+  );
+}
+
 export function gapBacklogPrefill(snapshot: GapCaseSnapshot): GapBacklogPrefill {
-  const subject = snapshot.museTitle ?? "（Muse 的文字没有留存）";
+  const subject = mask(snapshot.museTitle ?? "（Muse 的文字没有留存）");
+  const reason = snapshot.himawariReason === null ? null : mask(snapshot.himawariReason);
   const attribution = GAP_ATTRIBUTION_TEXT[snapshot.attribution];
   const rating =
     snapshot.ownerRating === "missed" ? "你评了“该做没做”" : "Muse 的时机和内容你都评了对";
   return {
     title: clip(`让 Himawari 也能提醒 Muse 提醒过的这类邮件：${subject}`, 120),
     summary: clip(
-      `${jstDay(snapshot.museAt)}（日本时间）Muse 提醒了「${subject}」，Himawari 当时${outcomeText(snapshot.himawariOutcome)}。${rating}。归因：${attribution}。取回这封邮件的相关记忆 ${snapshot.memoryHits} 条，读到的相关往来邮件 ${snapshot.relatedMessages} 封。${snapshot.himawariReason ? `Himawari 当时给的理由：${snapshot.himawariReason}` : ""}`,
+      `${jstDay(snapshot.museAt)}（日本时间）Muse 提醒了「${subject}」，Himawari 当时${outcomeText(snapshot.himawariOutcome)}。${rating}。归因：${attribution}。取回这封邮件的相关记忆 ${snapshot.memoryHits} 条，读到的相关往来邮件 ${snapshot.relatedMessages} 封。${reason ? `Himawari 当时给的理由：${reason}` : ""}`,
       900,
     ),
     why: "追平 Muse 靠数据指出，不靠猜：这是校准周报“Muse 做对而 Himawari 没做到”的案例，补上这一类才能让命中率差缩小。",
@@ -75,6 +101,7 @@ export interface GapExportCase {
 export interface GapExportBody {
   readonly schema: typeof GAP_EXPORT_SCHEMA;
   readonly generatedAt: string;
+  readonly skipped: number;
   readonly cases: readonly GapExportCase[];
 }
 
@@ -106,11 +133,20 @@ export class ProductionGapExport {
   async export(): Promise<GapExportBody> {
     const marks = await this.#marks.list(this.#scope);
     const cases: GapExportCase[] = [];
+    let skipped = 0;
     for (const mark of marks) {
       try {
         const text = await this.#seal.open({ ...this.#scope, ref: mark.snapshotRef });
-        if (text === undefined) continue;
-        const snapshot = JSON.parse(text) as GapCaseSnapshot;
+        if (text === undefined) {
+          skipped += 1;
+          continue;
+        }
+        const parsed: unknown = JSON.parse(text);
+        if (!isGapCaseSnapshot(parsed)) {
+          skipped += 1;
+          continue;
+        }
+        const snapshot = parsed;
         const prefill = gapBacklogPrefill(snapshot);
         cases.push({
           id: mark.caseId,
@@ -125,15 +161,20 @@ export class ProductionGapExport {
           },
         });
       } catch {
-        continue;
+        skipped += 1;
       }
     }
-    return { schema: GAP_EXPORT_SCHEMA, generatedAt: this.#clock.now(), cases };
+    if (marks.length > 0 && cases.length === 0 && skipped === marks.length)
+      throw new Error("GAP_EXPORT_ALL_SNAPSHOTS_UNREADABLE");
+    return { schema: GAP_EXPORT_SCHEMA, generatedAt: this.#clock.now(), skipped, cases };
   }
 }
 
 export function registerGapExportRoute(app: FastifyInstance, gapExport: ProductionGapExport): void {
   void app.register(async (scope) => {
+    scope.setErrorHandler(async (_error, _request, reply) =>
+      reply.code(500).header("cache-control", "no-store").send(),
+    );
     scope.get(
       GAP_EXPORT_PATH,
       {

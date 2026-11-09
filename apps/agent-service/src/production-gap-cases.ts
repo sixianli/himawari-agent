@@ -62,8 +62,12 @@ export async function buildGapCases(options: {
     .slice(0, GAP_CASE_LIMIT);
   const open = async (ref: string | null, limit: number) => {
     if (ref === null || options.seal === undefined) return null;
-    const text = await options.seal.open({ ...options.scope, ref });
-    return text === undefined ? null : clean(text, limit) || null;
+    try {
+      const text = await options.seal.open({ ...options.scope, ref });
+      return text === undefined ? null : clean(text, limit) || null;
+    } catch {
+      return null;
+    }
   };
   return Promise.all(
     selected.map(async (candidate): Promise<GapCase> => {
