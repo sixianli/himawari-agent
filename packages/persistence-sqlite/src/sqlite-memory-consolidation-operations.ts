@@ -287,12 +287,13 @@ export class SqliteMemoryConsolidationOperations {
     const seen = new Set<string>();
     let nodes = 0;
     const walk = (memoryId: MemoryId, depth: number): MemoryBasisChainNode => {
-      const change = this.database
+      const changes = this.database
         .prepare(
           `${changeSelect} WHERE owner_id = ? AND agent_id = ? AND memory_id = ?
-          AND undone_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1`,
+          AND undone_at IS NULL ORDER BY created_at DESC, id DESC`,
         )
-        .get(input.ownerId, input.agentId, memoryId) as MemoryConsolidationChange | undefined;
+        .all(input.ownerId, input.agentId, memoryId) as MemoryConsolidationChange[];
+      const change = changes[0];
       if (!change)
         return Object.freeze({
           memoryId,
@@ -302,7 +303,9 @@ export class SqliteMemoryConsolidationOperations {
           repeated: false,
           truncated: false,
         });
-      const parents = this.readBasis(change.id).filter((id) => id !== memoryId);
+      const parents = [
+        ...new Set(changes.flatMap(({ id }) => this.readBasis(id)).filter((id) => id !== memoryId)),
+      ];
       if (seen.has(memoryId))
         return Object.freeze({
           memoryId,

@@ -1,0 +1,8 @@
+{"id": "r2-1", "quote": "一条记忆有多次整理改动时，依据链只沿「最近一次」，会丢掉更早的推断依据", "valid": true, "class": "error", "severity": "low", "trigger": "一条推断产生的记忆之后又被合并或作废，读取只取最近一次改动的依据", "consequence": "更早那次推断的基础记忆不出现在链里；数据仍在表里，只是读取不完整，不返回错误内容", "modelSeverity": "中", "reason": "模型判中，线程判低：边缘情形、不返回错误数据；已改为取全部未撤销改动的依据并集并补用例", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "r2-2", "quote": "依据记忆被治理删除后链路静默变短，`complete` 仍为真", "valid": true, "class": "better", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "r2-3", "quote": "`applyProposal` 接受整理写入参数，但 update 分支静默丢弃", "valid": true, "class": "error", "severity": "low", "trigger": "将来有调用方对 update 决定传整理回调", "consequence": "整理记录会被静默漏写；当前唯一调用方走 create，不会触发", "modelSeverity": "低", "reason": "已让 update 分支也透传", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "r2-4", "quote": "`#writeFailedAfterStaging` 的判定有时间窗，且没有任何测试覆盖", "valid": true, "class": "better", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "r2-5", "quote": "「节点上限下推到持久层」不完全准确，且持久层截断没有测试", "valid": true, "class": "better", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "r2-6", "quote": "ADR 说「两层推断的完整链」，实际用例是 reflect → merge", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 的人以为有两层推断用例", "consequence": "文档口径与测试不符，不影响行为", "modelSeverity": "低", "reason": "已改 ADR 措辞", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "r2-7", "quote": "整理改动编号可超过网关 `machineString` 的 128 字符（既有风险，新接口再次暴露）", "valid": true, "class": "better", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "r2-8", "quote": "回填不校验依据记忆的 Owner/Agent，写入路径校验", "valid": true, "class": "better", "model": "opencode-go/deepseek-v4.1-flash"}

@@ -889,7 +889,26 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
         ],
       });
       expect(chain.ledgerId).toMatch(/^ledger:/u);
-      expect(await list("consolidation")).toHaveLength(2);
+      await memory.revise({
+        memoryId: createMemoryId("memory-insight"),
+        expectedRevision: 1,
+        status: "archived",
+        generationId: GENERATION_ID,
+        consolidation: (saved) => ({
+          change: {
+            ...change(3, "memory-insight", "memory-a", "merge"),
+            afterRevision: saved.revision,
+          },
+          basisMemoryIds: ids("memory-insight", "memory-c"),
+          resultMemoryIds: ids("memory-a"),
+        }),
+      });
+      const later = await store.readBasisChain({
+        ...scope,
+        memoryId: createMemoryId("memory-insight"),
+      });
+      expect(later.basis.map(({ memoryId }) => memoryId).sort()).toEqual(["memory-b", "memory-c"]);
+      expect(await list("consolidation")).toHaveLength(3);
       const other = await store.readBasisChain({
         ownerId: createOwnerId("owner-other"),
         agentId: scope.agentId,

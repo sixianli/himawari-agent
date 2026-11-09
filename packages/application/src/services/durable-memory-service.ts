@@ -199,6 +199,7 @@ export class DurableMemoryService {
       generationId,
       historyNote("updated", proposal),
       ledger,
+      consolidation,
     );
     return saved;
   }
