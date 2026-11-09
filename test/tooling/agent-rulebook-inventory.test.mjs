@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -65,5 +65,16 @@ describe("agent rulebook inventory check", () => {
       "TEST_ID_MISSING PG-80",
       "TEST_ID_MISSING OM-5",
     ]);
+  });
+
+  it("checks ids with lowercase suffixes and does not follow symbolic links", () => {
+    const root = fixture("PA-2b PA-2c");
+    writeFileSync(join(root, "packages/demo/test/suffix.unit.test.ts"), "[PA-2b]\n");
+    const outside = mkdtempSync(join(tmpdir(), "rulebook-outside-"));
+    roots.push(outside);
+    mkdirSync(join(outside, "test"));
+    writeFileSync(join(outside, "test/linked.test.ts"), "[PA-2c]\n");
+    symlinkSync(join(outside, "test"), join(root, "packages/demo/linked"));
+    expect(checkInventory(root)).toEqual(["TEST_ID_MISSING PA-2c"]);
   });
 });
