@@ -658,6 +658,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0083_model_invocation_owner_lost.sql",
   },
+  {
+    sequence: 84,
+    name: "memory_consolidation_basis",
+    changeSet: "memory-consolidation-basis",
+    phase: "expand" as const,
+    file: "0084_memory_consolidation_basis.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

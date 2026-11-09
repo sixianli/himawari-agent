@@ -1,20 +1,23 @@
 import { createHash } from "node:crypto";
 import { insertLedgerRow } from "./sqlite-decision-ledger-operations.ts";
 import type {
+  MemoryBasisChainNode,
   MemoryConsolidationChange,
-  MemoryConsolidationLedgerMemories,
   MemoryConsolidationRun,
+  MemoryConsolidationWrite,
 } from "@himawari-agent/application";
-import type { AgentId, OwnerId } from "@himawari-agent/domain";
+import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { insertObservationEvent } from "./sqlite-observation-operations.ts";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/u;
-function consolidationLedgerId(changeId: string): string {
+export function consolidationLedgerId(changeId: string): string {
   return `ledger:${createHash("sha256").update(changeId).digest("hex").slice(0, 40)}`;
 }
 
+const MEMORY_BASIS_CHAIN_MAX_DEPTH = 8;
+const MEMORY_BASIS_CHAIN_MAX_NODES = 200;
 const ACTIONS = new Set(["merge", "supersede", "archive", "reflect"]);
 
 const runSelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId, day,
@@ -29,6 +32,84 @@ const changeSelect = `SELECT id, consolidation_id AS consolidationId, owner_id A
   before_status AS beforeStatus, before_superseded_by AS beforeSupersededBy,
   before_valid_to AS beforeValidTo, created_at AS createdAt, undone_at AS undoneAt
   FROM memory_consolidation_changes`;
+
+export function insertConsolidationWrite(
+  database: Database.Database,
+  write: MemoryConsolidationWrite,
+  fail: SqliteApplicationFailure,
+): void {
+  const { change, basisMemoryIds, resultMemoryIds } = write;
+  if (!ACTIONS.has(change.action) || change.undoneAt !== null)
+    fail("PORT_INVALID_OPERATION", "Memory consolidation change is invalid");
+  const basis = [...new Set(basisMemoryIds)];
+  if (basis.length === 0 || basis.length > 200)
+    fail("PORT_INVALID_OPERATION", "Memory consolidation basis is invalid");
+  const run = database
+    .prepare(
+      "SELECT status FROM memory_consolidation_runs WHERE id = ? AND owner_id = ? AND agent_id = ?",
+    )
+    .get(change.consolidationId, change.ownerId, change.agentId) as { status: string } | undefined;
+  if (run?.status !== "running") fail("PORT_CONFLICT", "Memory consolidation run is not running");
+  const owned = database
+    .prepare(
+      `SELECT COUNT(*) AS count FROM memory_records
+       WHERE owner_id = ? AND agent_id = ? AND id IN (${basis.map(() => "?").join(", ")})`,
+    )
+    .get(change.ownerId, change.agentId, ...basis) as { count: number };
+  if (owned.count !== basis.length)
+    fail("PORT_INVALID_OPERATION", "Memory consolidation basis is not in the change scope");
+  database
+    .prepare(
+      `INSERT INTO memory_consolidation_changes (
+        id, consolidation_id, owner_id, agent_id, memory_id, related_memory_id, action,
+        before_revision, after_revision, before_status, before_superseded_by,
+        before_valid_to, created_at, undone_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+    )
+    .run(
+      change.id,
+      change.consolidationId,
+      change.ownerId,
+      change.agentId,
+      change.memoryId,
+      change.relatedMemoryId,
+      change.action,
+      change.beforeRevision,
+      change.afterRevision,
+      change.beforeStatus,
+      change.beforeSupersededBy,
+      change.beforeValidTo,
+      change.createdAt,
+    );
+  const insertBasis = database.prepare(
+    "INSERT INTO memory_consolidation_change_basis (change_id, position, memory_id) VALUES (?, ?, ?)",
+  );
+  for (const [position, memoryId] of basis.entries())
+    insertBasis.run(change.id, position, memoryId);
+  database
+    .prepare("UPDATE memory_consolidation_runs SET change_count = change_count + 1 WHERE id = ?")
+    .run(change.consolidationId);
+  insertLedgerRow(database, {
+    id: consolidationLedgerId(change.id),
+    ownerId: change.ownerId,
+    agentId: change.agentId,
+    kind: "consolidation",
+    decidedAt: change.createdAt,
+    outcome: change.action,
+    reasonCode: `consolidation_${change.action}`,
+    subjectRef: change.memoryId,
+    inputs: {
+      memoryIds: basis,
+      ruleIds: [],
+      batchId: change.consolidationId,
+      resultMemoryIds: [...new Set(resultMemoryIds)],
+    },
+    reasonRef: null,
+    contentRef: null,
+    costMicros: 0,
+    durationMs: 0,
+  });
+}
 
 type RunRow = Omit<MemoryConsolidationRun, "modelCalled"> & { readonly modelCalled: number };
 
@@ -64,15 +145,16 @@ export class SqliteMemoryConsolidationOperations {
             finishedAt: string;
           },
         );
-      case "memoryConsolidation.recordChange":
-        return this.recordChange(
-          (payload as { change: MemoryConsolidationChange }).change,
-          (payload as { ledgerMemories?: MemoryConsolidationLedgerMemories }).ledgerMemories,
-        );
       case "memoryConsolidation.listChanges":
         return this.listChanges(payload as { ownerId: OwnerId; agentId: AgentId; limit: number });
       case "memoryConsolidation.readChange":
         return this.readChange((payload as { id: string }).id);
+      case "memoryConsolidation.readBasis":
+        return this.readBasis((payload as { changeId: string }).changeId);
+      case "memoryConsolidation.readBasisChain":
+        return this.readBasisChain(
+          payload as { ownerId: OwnerId; agentId: AgentId; memoryId: MemoryId },
+        );
       case "memoryConsolidation.markUndone":
         return this.markUndone(payload as { id: string; undoneAt: string });
       default:
@@ -159,81 +241,6 @@ export class SqliteMemoryConsolidationOperations {
       );
   }
 
-  private recordChange(
-    change: MemoryConsolidationChange,
-    ledgerMemories?: MemoryConsolidationLedgerMemories,
-  ): void {
-    this.assertDiskHeadroom();
-    if (!ACTIONS.has(change.action) || change.undoneAt !== null)
-      this.fail("PORT_INVALID_OPERATION", "Memory consolidation change is invalid");
-    const run = this.database
-      .prepare(
-        "SELECT status FROM memory_consolidation_runs WHERE id = ? AND owner_id = ? AND agent_id = ?",
-      )
-      .get(change.consolidationId, change.ownerId, change.agentId) as
-      | { status: string }
-      | undefined;
-    if (run?.status !== "running")
-      this.fail("PORT_CONFLICT", "Memory consolidation run is not running");
-    this.database.transaction(() => {
-      this.database
-        .prepare(
-          `INSERT INTO memory_consolidation_changes (
-          id, consolidation_id, owner_id, agent_id, memory_id, related_memory_id, action,
-          before_revision, after_revision, before_status, before_superseded_by,
-          before_valid_to, created_at, undone_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-        )
-        .run(
-          change.id,
-          change.consolidationId,
-          change.ownerId,
-          change.agentId,
-          change.memoryId,
-          change.relatedMemoryId,
-          change.action,
-          change.beforeRevision,
-          change.afterRevision,
-          change.beforeStatus,
-          change.beforeSupersededBy,
-          change.beforeValidTo,
-          change.createdAt,
-        );
-      this.database
-        .prepare(
-          "UPDATE memory_consolidation_runs SET change_count = change_count + 1 WHERE id = ?",
-        )
-        .run(change.consolidationId);
-      insertLedgerRow(this.database, {
-        id: consolidationLedgerId(change.id),
-        ownerId: change.ownerId,
-        agentId: change.agentId,
-        kind: "consolidation",
-        decidedAt: change.createdAt,
-        outcome: change.action,
-        reasonCode: `consolidation_${change.action}`,
-        subjectRef: change.memoryId,
-        inputs: {
-          memoryIds: [
-            ...new Set(
-              ledgerMemories?.memoryIds ?? [
-                change.memoryId,
-                ...(change.relatedMemoryId ? [change.relatedMemoryId] : []),
-              ],
-            ),
-          ],
-          ruleIds: [],
-          batchId: change.consolidationId,
-          resultMemoryIds: [...new Set(ledgerMemories?.resultMemoryIds ?? [])],
-        },
-        reasonRef: null,
-        contentRef: null,
-        costMicros: 0,
-        durationMs: 0,
-      });
-    })();
-  }
-
   private listChanges(input: {
     ownerId: OwnerId;
     agentId: AgentId;
@@ -258,6 +265,72 @@ export class SqliteMemoryConsolidationOperations {
       | MemoryConsolidationChange
       | undefined;
     return row ? Object.freeze(row) : undefined;
+  }
+
+  private readBasis(changeId: string): readonly MemoryId[] {
+    return Object.freeze(
+      (
+        this.database
+          .prepare(
+            "SELECT memory_id AS memoryId FROM memory_consolidation_change_basis WHERE change_id = ? ORDER BY position",
+          )
+          .all(changeId) as { memoryId: MemoryId }[]
+      ).map(({ memoryId }) => memoryId),
+    );
+  }
+
+  private readBasisChain(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    memoryId: MemoryId;
+  }): MemoryBasisChainNode {
+    const seen = new Set<string>();
+    let nodes = 0;
+    const walk = (memoryId: MemoryId, depth: number): MemoryBasisChainNode => {
+      const changes = this.database
+        .prepare(
+          `${changeSelect} WHERE owner_id = ? AND agent_id = ? AND memory_id = ?
+          AND undone_at IS NULL ORDER BY created_at DESC, id DESC`,
+        )
+        .all(input.ownerId, input.agentId, memoryId) as MemoryConsolidationChange[];
+      const change = changes[0];
+      if (!change)
+        return Object.freeze({
+          memoryId,
+          change: null,
+          ledgerId: null,
+          basis: Object.freeze([]),
+          repeated: false,
+          truncated: false,
+        });
+      const parents = [
+        ...new Set(changes.flatMap(({ id }) => this.readBasis(id)).filter((id) => id !== memoryId)),
+      ];
+      if (seen.has(memoryId))
+        return Object.freeze({
+          memoryId,
+          change: Object.freeze(change),
+          ledgerId: consolidationLedgerId(change.id),
+          basis: Object.freeze([]),
+          repeated: true,
+          truncated: false,
+        });
+      seen.add(memoryId);
+      nodes += 1;
+      const truncated =
+        (depth >= MEMORY_BASIS_CHAIN_MAX_DEPTH ||
+          nodes + parents.length > MEMORY_BASIS_CHAIN_MAX_NODES) &&
+        parents.length > 0;
+      return Object.freeze({
+        memoryId,
+        change: Object.freeze(change),
+        ledgerId: consolidationLedgerId(change.id),
+        basis: Object.freeze(truncated ? [] : parents.map((id) => walk(id, depth + 1))),
+        repeated: false,
+        truncated,
+      });
+    };
+    return walk(input.memoryId, 0);
   }
 
   private markUndone(input: { id: string; undoneAt: string }): boolean {

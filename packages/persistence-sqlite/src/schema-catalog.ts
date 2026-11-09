@@ -643,6 +643,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its Memory record or consolidation run",
   ),
   entry(
+    "memory_consolidation_change_basis",
+    "MemoryConsolidationStorePort",
+    "every Memory a tidy-up change was made from, in order: both Memories of a merge or supersede, all basis Memories of an inferred one",
+    "metadata_only",
+    "cascade with its change or its Memory record",
+  ),
+  entry(
     "authority_revision",
     "ProductStateRepositoryPort",
     "one counter raised by triggers on every grant, approval, authorization, capability and product state change",
