@@ -79,5 +79,6 @@ describe("words kept out of the search index", () => {
     expect(isSafeToIndex("[hunter2x]")).toBe(false);
     expect(maskForIndex("密码是[sunflower]，忘了就念 sunflower")).not.toContain("sunflower");
     expect(isSafeToIndex("密码是[hunter2]")).toBe(false);
+    expect(maskForIndex("密码：[由系统自动生成]，由系统自动生成")).not.toContain("由系统自动生成");
   });
 });
