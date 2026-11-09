@@ -1,10 +1,11 @@
-import type {
-  AgentId,
-  DurableMemoryService,
-  MemoryContentPort,
-  OwnerId,
-  ProactiveMemoryHit,
-  ProactiveMemoryRecall,
+import {
+  type AgentId,
+  type DurableMemoryService,
+  type MemoryContentPort,
+  modelVisibleClassifications,
+  type OwnerId,
+  type ProactiveMemoryHit,
+  type ProactiveMemoryRecall,
 } from "@himawari-agent/application";
 import type { MailEmbeddingContext } from "./production-run-memory.js";
 
@@ -48,7 +49,7 @@ export function createProactiveMemoryRecall(
                 excludeCategories: ["rule"],
                 policy: {
                   limit: options.hitsPerMail,
-                  allowedClassifications: ["public", "private"],
+                  allowedClassifications: modelVisibleClassifications(),
                 },
               }),
             );
@@ -59,6 +60,7 @@ export function createProactiveMemoryRecall(
                 text: await options.content.readText(memory.contentRef),
                 score,
                 ...(memory.attributes?.tentative === true ? { tentative: true } : {}),
+                dataClassification: memory.dataClassification,
               });
             if (texts.length > 0) hits.set(query.messageId, texts);
           } catch {

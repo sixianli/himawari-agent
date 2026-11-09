@@ -4,6 +4,7 @@ import {
   ContextFormationService,
   DurableMemoryService,
   type MemoryPort,
+  modelVisibleClassifications,
   type OwnerProfilePort,
   OwnerProfileService,
   SessionTraceRecorder,
@@ -223,7 +224,7 @@ export async function assembleContext(
           ownerId: request.ownerId,
           agentId: request.agentId,
           queryRef: request.queryRef,
-          policy: { limit: request.limit, allowedClassifications: ["public", "private"] },
+          policy: { limit: request.limit, allowedClassifications: modelVisibleClassifications() },
         })
       ).map(({ memory: found, score }) => ({
         id: found.id,
@@ -275,7 +276,6 @@ export async function assembleContext(
     memoryQueryTerms: indexTerms(item.prompt),
     memoryLimit: MEMORY_LIMIT,
     maxSelectedMemories: MAX_SELECTED_MEMORIES,
-    maxMemoryClassification: "private",
     capabilities: [],
     correlationId: `correlation-jarvis-${item.id}` as never,
     causationId: `cause-jarvis-${item.id}`,

@@ -13,7 +13,6 @@
     "systemInstruction": "按用户请求执行已授权任务。首次测量仅使用 read 读取获准虚构文件并回答指定内容。",
     "memoryLimit": 20,
     "maxSelectedMemories": 5,
-    "maxMemoryClassification": "private",
     "timeZone": "Asia/Shanghai",
     "coding": {
       "hostId": "himawari-prod-host",
@@ -62,7 +61,8 @@
       "version": "gateway-deepseek-v4.1-flash-20261007",
       "allowedDataClassifications": [
         "public",
-        "private"
+        "private",
+        "sensitive"
       ],
       "disclosure": "external_remote",
       "secretRef": "vercel-gateway",
@@ -103,7 +103,8 @@
       "version": "gateway-qwen3-embedding-8b-20261006",
       "allowedDataClassifications": [
         "public",
-        "private"
+        "private",
+        "sensitive"
       ],
       "disclosure": "external_remote",
       "secretRef": "vercel-gateway",

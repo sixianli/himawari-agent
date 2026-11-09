@@ -20,6 +20,7 @@ import type {
   RuntimeProjectionPort,
   RuntimeProjectionRequest,
 } from "../runtime-port.js";
+import { highestClassification, modelVisibleCeiling } from "./model-visibility.js";
 import { isRuntimeHistoryReference, RuntimeHistoryService } from "./runtime-history-service.js";
 
 const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
@@ -57,13 +58,20 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     this.assertScope(input);
     const envelope = await this.readEnvelope(input);
     const nativeHistory = envelope.runtimeHistory
-      ? await this.#history.load(envelope.runtimeHistory.reference, input.dataClassification)
+      ? await this.#history.load(envelope.runtimeHistory.reference, modelVisibleCeiling())
       : undefined;
-    const history = await this.readHistory(input, envelope, nativeHistory?.coveredRunIds);
+    const attachmentClassifications: DataClassification[] = [];
+    const history = await this.readHistory(
+      input,
+      envelope,
+      attachmentClassifications,
+      nativeHistory?.coveredRunIds,
+    );
     const images: { readonly mimeType: string; readonly data: string }[] = [];
     const prompt = await this.expandAttachments(
       input,
       await this.readText(input, envelope.prompt.payloadRef, "context prompt"),
+      attachmentClassifications,
       images,
     );
     const policyTexts = await Promise.all(
@@ -82,8 +90,16 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     await this.assertWorkerReferences(input);
     const workerBlocks = await this.readWorkerResults(input);
     const answerLocale = envelope.systemPolicyRefs.find(({ kind }) => kind === "answer-locale");
+    const contentClassification = highestClassification(input.dataClassification, [
+      ...(envelope.runtimeHistory ? [envelope.runtimeHistory.reference.dataClassification] : []),
+      ...envelope.history.map(({ dataClassification }) => dataClassification),
+      ...contextBlocks.map(({ dataClassification }) => dataClassification),
+      ...workerBlocks.map(({ dataClassification }) => dataClassification),
+      ...attachmentClassifications,
+    ]);
     return Object.freeze({
       systemInstruction,
+      contentClassification,
       ...(answerLocale ? { answerLocaleRef: answerLocale.ref } : {}),
       ...(nativeHistory ? { nativeHistory } : {}),
       coveredRunIds: [
@@ -275,6 +291,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
   private async readHistory(
     input: RuntimeProjectionRequest,
     envelope: ProductContextEnvelopeV1,
+    attachmentClassifications: DataClassification[],
     coveredRunIds: readonly RunId[] = [],
   ): Promise<{
     readonly messages: readonly RuntimeProjectionMessage[];
@@ -346,8 +363,12 @@ export class ContextProjectionService implements RuntimeProjectionPort {
         item.contentRef,
         "context history",
         item.dataClassification,
+        modelVisibleCeiling(),
       );
-      const content = item.role === "owner" ? await this.expandAttachments(input, stored) : stored;
+      const content =
+        item.role === "owner"
+          ? await this.expandAttachments(input, stored, attachmentClassifications)
+          : stored;
       if (item.role === "owner" || item.role === "agent") {
         projected.push({
           id: item.messageId,
@@ -403,6 +424,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
           block.payloadRef,
           "context block",
           block.dataClassification,
+          modelVisibleCeiling(),
         ),
         ...(block.sourceRef ? { sourceRef: block.sourceRef } : {}),
         dataClassification: block.dataClassification,
@@ -471,6 +493,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
   private async expandAttachments(
     input: RuntimeProjectionRequest,
     text: string,
+    classifications: DataClassification[],
     images?: { readonly mimeType: string; readonly data: string }[],
   ): Promise<string> {
     const tags = [...text.matchAll(ATTACHMENT_TAG)];
@@ -478,12 +501,23 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     const expanded = await Promise.all(
       tags.map(async ([tag, name, ref]) => {
         const payload = ref ? await this.#dependencies.payloads.get(ref as PayloadRef) : null;
+        const read = async (label: string) => {
+          const text = await this.readText(
+            input,
+            ref as PayloadRef,
+            label,
+            undefined,
+            modelVisibleCeiling(),
+          );
+          if (payload) classifications.push(payload.dataClassification);
+          return text;
+        };
         if (IMAGE_KIND.test(tag)) {
           if (!images) return `<image name="${name}"/>`;
           const image =
             payload?.contentType === IMAGE_CONTENT_TYPE
               ? IMAGE_DATA_URL.exec(
-                  await this.readText(input, ref as PayloadRef, "image").catch((error: unknown) => {
+                  await read("image").catch((error: unknown) => {
                     if (error instanceof ApplicationPortError) return "";
                     throw error;
                   }),
@@ -494,12 +528,10 @@ export class ContextProjectionService implements RuntimeProjectionPort {
         }
         const content =
           payload?.contentType === ATTACHMENT_CONTENT_TYPE
-            ? await this.readText(input, ref as PayloadRef, "attachment").catch(
-                (error: unknown) => {
-                  if (error instanceof ApplicationPortError) return UNREADABLE_ATTACHMENT;
-                  throw error;
-                },
-              )
+            ? await read("attachment").catch((error: unknown) => {
+                if (error instanceof ApplicationPortError) return UNREADABLE_ATTACHMENT;
+                throw error;
+              })
             : UNREADABLE_ATTACHMENT;
         return `<file name="${name}">\n${content}\n</file>`;
       }),
@@ -518,6 +550,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     ref: PayloadRef,
     label: string,
     expectedClassification?: DataClassification,
+    ceiling: DataClassification = input.dataClassification,
   ): Promise<string> {
     const payload = await this.#dependencies.payloads.get(ref);
     if (!payload) {
@@ -525,13 +558,12 @@ export class ContextProjectionService implements RuntimeProjectionPort {
         payloadRef: ref,
       });
     }
-    if (
-      CLASSIFICATION_RANK[payload.dataClassification] >
-      CLASSIFICATION_RANK[input.dataClassification]
-    ) {
+    if (CLASSIFICATION_RANK[payload.dataClassification] > CLASSIFICATION_RANK[ceiling]) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
-        `${label} Payload exceeds the Run data classification`,
+        ceiling === input.dataClassification
+          ? `${label} Payload exceeds the Run data classification`
+          : `${label} Payload exceeds what the model may see`,
         { payloadRef: ref },
       );
     }

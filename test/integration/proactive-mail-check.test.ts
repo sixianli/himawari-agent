@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   createProactiveSeal,
+  type DataClassification,
   type ModelDescriptor,
   type ModelInvocationEvent,
   type ProactiveMailCheckOptions,
@@ -14,13 +15,13 @@ import {
   readProactiveOverview,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
-import { findRelatedMail } from "@himawari-agent/platform-node";
 import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
+import { findRelatedMail } from "@himawari-agent/platform-node";
 import {
   DeterministicIdGenerator,
   DeterministicPayloadProtector,
@@ -192,6 +193,7 @@ describe("proactive Gmail check acceptance", () => {
     };
     const outputs = new Map<string, string>();
     const prompts: string[] = [];
+    const labels: string[] = [];
     const models: ScriptedModelPort[] = [];
     let scripted = new ScriptedModelPort([descriptor], []);
     const queued: ScriptedModelPort[] = [];
@@ -301,8 +303,9 @@ describe("proactive Gmail check acceptance", () => {
           return queued.shift() ?? scripted;
         },
         modelRef: MODEL_REF,
-        async prepare({ invocationId, prompt }) {
+        async prepare({ invocationId, prompt, dataClassification }) {
           prompts.push(prompt);
+          labels.push(dataClassification);
           const inputRef = `input-${invocationId}`;
           await writePayload(inputRef, prompt);
           for (const [ref, content] of outputs)
@@ -357,6 +360,7 @@ describe("proactive Gmail check acceptance", () => {
       service,
       overview,
       prompts,
+      labels,
       invocations,
       limits,
       readPayload,
@@ -1694,14 +1698,25 @@ describe("proactive Gmail check acceptance", () => {
     const recallOf = (
       byMail: Record<
         string,
-        readonly { id: string; text: string; score: number; tentative?: boolean }[]
+        readonly {
+          id: string;
+          text: string;
+          score: number;
+          tentative?: boolean;
+          dataClassification?: DataClassification;
+        }[]
       >,
       extra: { costMicros?: number; failedQueries?: number; seen?: string[] } = {},
     ): ProactiveMemoryRecall => ({
       async recall({ queries }) {
         extra.seen?.push(...queries.map(({ query }) => query));
         return {
-          hits: new Map(Object.entries(byMail)),
+          hits: new Map(
+            Object.entries(byMail).map(([mailId, hits]) => [
+              mailId,
+              hits.map((hit) => ({ dataClassification: "private" as const, ...hit })),
+            ]),
+          ),
           costMicros: extra.costMicros ?? 0,
           failedQueries: extra.failedQueries ?? 0,
         };
@@ -1784,6 +1799,62 @@ describe("proactive Gmail check acceptance", () => {
         usedMemoryIds: ["mem-milk"],
         tentativeMemoryIds: ["mem-milk"],
       });
+    });
+
+    it("[RULE-memory-visible] brings a sensitive memory to the judge and labels the call sensitive, without exposing the label in the prompt", async () => {
+      const allergy = {
+        id: "mem-allergy",
+        text: "主人对牛肉过敏。",
+        score: 0.6,
+        dataClassification: "sensitive" as const,
+      };
+      const h = await harness({ memory: recallOf({ "beef-promo": [beefHit, allergy] }) });
+      h.reader.items = [promo()];
+      h.script([{ id: "beef-promo", result: "ignore" }]);
+      await h.service.run();
+      expect(h.prompts[0]).toContain(
+        '{"mailId":"beef-promo","id":"mem-allergy","text":"主人对牛肉过敏。"}',
+      );
+      expect(h.prompts[0]).not.toContain("dataClassification");
+      expect(h.labels).toEqual(["sensitive"]);
+    });
+
+    it("[RULE-memory-visible] REVERSE: labels the call private when every memory is private", async () => {
+      const h = await harness({ memory: recallOf({ "beef-promo": [beefHit] }) });
+      h.reader.items = [promo()];
+      h.script([{ id: "beef-promo", result: "ignore" }]);
+      await h.service.run();
+      expect(h.labels).toEqual(["private"]);
+    });
+
+    it("[RULE-memory-visible] seals the reminder written from a sensitive memory as sensitive, and a private one as private", async () => {
+      const insightClassifications = (h: Awaited<ReturnType<typeof harness>>) =>
+        h
+          .query(
+            `SELECT p.classification AS classification FROM source_insights i
+            JOIN payloads p ON p.ref = i.content_ref`,
+          )
+          .map(({ classification }) => classification);
+      const allergy = {
+        id: "mem-allergy",
+        text: "主人对牛肉过敏。",
+        score: 0.6,
+        dataClassification: "sensitive" as const,
+      };
+      const sensitive = await harness({ memory: recallOf({ "beef-promo": [allergy] }) });
+      sensitive.reader.items = [
+        mail("beef-promo", { subject: "周末聚餐订了烤肉店", snippet: "周六晚上七点" }),
+      ];
+      sensitive.script([{ id: "beef-promo", result: "act", todo: "别买牛肉", priority: "medium" }]);
+      await sensitive.service.run();
+      expect(insightClassifications(sensitive)).toEqual(["sensitive"]);
+      const plain = await harness({ memory: recallOf({ "beef-promo": [beefHit] }) });
+      plain.reader.items = [
+        mail("beef-promo", { subject: "周末聚餐订了烤肉店", snippet: "周六晚上七点" }),
+      ];
+      plain.script([{ id: "beef-promo", result: "act", todo: "看看牛肉", priority: "medium" }]);
+      await plain.service.run();
+      expect(insightClassifications(plain)).toEqual(["private"]);
     });
 
     it("[PA-2] adds no tentative note and records no tentative ids when every memory is confirmed", async () => {

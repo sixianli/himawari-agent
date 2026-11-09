@@ -117,6 +117,7 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
     });
     const embedder = new TermEmbedder();
     const prompts: string[] = [];
+    const labels: string[] = [];
     const service = new MemoryEpisodeService({
       store: repository.memoryEpisodes(),
       threads: repository.threadRepository(),
@@ -149,14 +150,15 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
       timeZone: "Asia/Tokyo",
       now: () => now.value,
     });
-    const summarize = (prompt: string) => {
+    const summarize = (prompt: string, dataClassification: string) => {
       prompts.push(prompt);
+      labels.push(dataClassification);
       return Promise.resolve("主人晚上和老周在新宿吃烤肉，聊到老周换工作的事。");
     };
-    return { repository, service, embedder, prompts, summarize };
+    return { repository, service, embedder, prompts, labels, summarize };
   }
 
-  it("summarizes closed days once, skips the live day and keeps sensitive talk out of the prompt", async () => {
+  it("[RULE-memory-visible] summarizes closed days once, skips the live day and labels a summary of sensitive talk sensitive", async () => {
     const now = { value: "2026-10-25T02:30:00.000Z" };
     const resource = await fixture(now);
     try {
@@ -176,11 +178,22 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
         [SENSITIVE_THREAD_ID, "2026-10-22", 1, 1],
         [THREAD_ID, "2026-10-23", 1, 2],
       ]);
-      expect(due[0]?.lines).toEqual([]);
-      for (const segment of due) await resource.service.summarize(segment, resource.summarize);
-      expect(resource.prompts).toHaveLength(1);
-      expect(resource.prompts[0]).toContain("新宿吃烤肉");
-      expect(resource.prompts[0]).not.toContain("血压");
+      expect(due.map(({ dataClassification }) => dataClassification)).toEqual([
+        "sensitive",
+        "private",
+      ]);
+      const summaries = [];
+      for (const segment of due)
+        summaries.push(await resource.service.summarize(segment, resource.summarize));
+      expect(resource.prompts).toHaveLength(2);
+      expect(resource.prompts[0]).toContain("血压");
+      expect(resource.labels).toEqual(["sensitive", "private"]);
+      expect(summaries.map(({ dataClassification }) => dataClassification)).toEqual([
+        "sensitive",
+        "private",
+      ]);
+      expect(resource.prompts[1]).toContain("新宿吃烤肉");
+      expect(resource.prompts[1]).not.toContain("血压");
       expect(
         await resource.service.dueSegments({ ownerId: OWNER_ID, agentId: AGENT_ID, limit: 5 }),
       ).toEqual([]);

@@ -33,6 +33,7 @@ const texts: Record<string, string> = {
   "text-old": "主人用 iPhone 13",
   "text-new": "主人用 Pixel 9",
   "text-health": "主人对青霉素过敏",
+  "text-sealed": "受限内容",
 };
 
 function recall() {
@@ -43,6 +44,7 @@ function recall() {
     }),
     record("new", "private"),
     record("health", "sensitive"),
+    record("sealed", "restricted"),
   ];
   const search = vi.fn(async () =>
     records.map((memory) => ({
@@ -79,20 +81,25 @@ const call = (args: RuntimeToolInvocation["arguments"]): RuntimeToolInvocation =
   dataClassification: "private",
 });
 
-it("marks corrected memories as history and hides classifications above the run", async () => {
+it("[RULE-memory-visible] marks corrected memories as history, shows sensitive memories in a private run and never restricted ones", async () => {
   const f = recall();
-  const result = (await f.service.recall(call({ query: "我以前用什么手机" }))) as {
+  const { output, contentClassification } = await f.service.recallWithClassification(
+    call({ query: "我以前用什么手机" }),
+  );
+  const result = output as {
     memories: { text: string; current: boolean; correctedLater?: boolean }[];
   };
   expect(result.memories).toEqual([
     expect.objectContaining({ text: "主人用 iPhone 13", current: false, correctedLater: true }),
     expect.objectContaining({ text: "主人用 Pixel 9", current: true }),
+    expect.objectContaining({ text: "主人对青霉素过敏", current: true }),
   ]);
+  expect(contentClassification).toBe("sensitive");
   expect(f.search).toHaveBeenCalledWith(
     expect.objectContaining({ scope: expect.objectContaining({ includeHistory: true }) }),
   );
   expect(f.episodes).toHaveBeenCalledWith(
-    expect.objectContaining({ allowedClassifications: ["public", "private"] }),
+    expect.objectContaining({ allowedClassifications: ["public", "private", "sensitive"] }),
   );
   expect(f.slots).toEqual(["memory-recall", "memory-recall-tentative", "memory-recall-episodes"]);
 });
@@ -232,14 +239,32 @@ it("[PA-2] REVERSE: tentative memories take at most half of the requested slots 
   expect(f.search.mock.calls.length - searchCallsBefore).toBe(1);
 });
 
-it("[PA-2] REVERSE: a tentative memory above the run's data classification is not returned", async () => {
-  const f = recallWith([
+it("[PA-2][RULE-memory-visible] REVERSE: a restricted tentative memory is never returned, a sensitive one is", async () => {
+  const sealed = recallWith([
+    { id: "secret", text: "受限猜测", score: 9, tentative: true, classification: "restricted" },
+    { id: "fact", text: "事实", score: 1 },
+  ]);
+  const result = (await sealed.service.recall(call({ query: "x", limit: 4 }))) as RecallResult;
+  expect(result.memories.map(({ text }) => text)).toEqual(["事实"]);
+  expect(result).not.toHaveProperty("tentativeNote");
+  const sensitive = recallWith([
     { id: "secret", text: "敏感猜测", score: 9, tentative: true, classification: "sensitive" },
     { id: "fact", text: "事实", score: 1 },
   ]);
-  const result = (await f.service.recall(call({ query: "x", limit: 4 }))) as RecallResult;
-  expect(result.memories.map(({ text }) => text)).toEqual(["事实"]);
-  expect(result).not.toHaveProperty("tentativeNote");
+  const shown = await sensitive.service.recallWithClassification(call({ query: "x", limit: 4 }));
+  expect((shown.output as RecallResult).memories.map(({ text }) => text)).toEqual([
+    "事实",
+    "敏感猜测",
+  ]);
+  expect(shown.contentClassification).toBe("sensitive");
+});
+
+it("[RULE-memory-visible] reports the run's own classification when only private memories are shown", async () => {
+  const f = recallWith([{ id: "fact", text: "事实", score: 1 }]);
+  expect(
+    (await f.service.recallWithClassification(call({ query: "x", limit: 4 })))
+      .contentClassification,
+  ).toBe("private");
 });
 
 it("[PA-2] REVERSE: a failing tentative search never takes the confirmed results down with it", async () => {

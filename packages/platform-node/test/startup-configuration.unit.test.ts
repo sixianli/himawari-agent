@@ -949,7 +949,6 @@ it("validates the versioned Run policy and rejects inconsistent Memory bounds", 
     systemInstruction: "可信指令",
     memoryLimit: 10,
     maxSelectedMemories: 5,
-    maxMemoryClassification: "private",
   };
   expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.version).toBe(
     "policy-v1",
@@ -961,10 +960,23 @@ it("validates the versioned Run policy and rejects inconsistent Memory bounds", 
     systemInstruction: "可信指令",
     memoryLimit: 10,
     maxSelectedMemories: 5,
-    maxMemoryClassification: "private",
     allowUntrustedTools: true,
   };
   expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+});
+
+it("[RULE-memory-visible] accepts the retired maxMemoryClassification key without letting it limit Memory", () => {
+  const raw = config("/tmp/himawari-policy-config");
+  raw["runPolicy"] = {
+    version: "policy-v1",
+    systemInstruction: "可信指令",
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+    maxMemoryClassification: "public",
+  };
+  const policy = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy;
+  expect(policy?.retiredKeys).toEqual(["maxMemoryClassification"]);
+  expect(policy && "maxMemoryClassification" in policy).toBe(false);
 });
 
 it("parses private search without allowing a mixed directory grant", () => {
@@ -982,7 +994,6 @@ it("parses private search without allowing a mixed directory grant", () => {
     systemInstruction: "test",
     memoryLimit: 10,
     maxSelectedMemories: 1,
-    maxMemoryClassification: "private",
     publicSearch: route,
   };
   raw["runPolicy"] = policy;
@@ -1013,7 +1024,6 @@ it("parses ordered web providers and a fetch route without accepting unregistere
     systemInstruction: "test",
     memoryLimit: 10,
     maxSelectedMemories: 1,
-    maxMemoryClassification: "private",
   };
   raw["runPolicy"] = {
     ...policy,
@@ -1050,7 +1060,6 @@ it("[NL-11] lets a page fetch return up to 100 KiB while search keeps its own li
     systemInstruction: "test",
     memoryLimit: 10,
     maxSelectedMemories: 1,
-    maxMemoryClassification: "private",
   };
   raw["runPolicy"] = { ...policy, publicFetch: route };
   expect(
@@ -1078,7 +1087,6 @@ it("requires a configured web-provider secret for each provider that needs one",
     systemInstruction: "test",
     memoryLimit: 10,
     maxSelectedMemories: 1,
-    maxMemoryClassification: "private",
   };
   const references = raw["secretReferences"] as unknown[];
   raw["secretReferences"] = [
@@ -1129,7 +1137,6 @@ it("accepts a dedicated review model and rejects one the router could also selec
     systemInstruction: "可信指令",
     memoryLimit: 10,
     maxSelectedMemories: 5,
-    maxMemoryClassification: "private",
     automaticReview: review,
   };
   raw["runPolicy"] = policy;
@@ -1189,7 +1196,6 @@ it("accepts a TypeSafe decision model as the configured reviewer and rejects its
     systemInstruction: "可信指令",
     memoryLimit: 10,
     maxSelectedMemories: 5,
-    maxMemoryClassification: "private",
     automaticReview: review,
   };
   raw["runPolicy"] = policy;
@@ -1250,7 +1256,6 @@ describe("[R2-T2] coding route approval mode", () => {
       systemInstruction: "test",
       memoryLimit: 10,
       maxSelectedMemories: 1,
-      maxMemoryClassification: "private",
       coding: {
         hostId: "host",
         workerInstanceId: "worker",
@@ -1292,7 +1297,6 @@ it("[WP-7] accepts web push only with a web-push secret and an https or mailto s
     systemInstruction: "test",
     memoryLimit: 10,
     maxSelectedMemories: 1,
-    maxMemoryClassification: "private",
   };
   const references = raw["secretReferences"] as unknown[];
   raw["secretReferences"] = [
@@ -1335,7 +1339,6 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     systemInstruction: "test",
     memoryLimit: 10,
     maxSelectedMemories: 1,
-    maxMemoryClassification: "private",
   };
   const references = raw["secretReferences"] as unknown[];
   raw["secretReferences"] = [
@@ -1425,7 +1428,6 @@ it("accepts Muse intake only with a boolean switch and one secret whose purpose 
     systemInstruction: "test",
     memoryLimit: 10,
     maxSelectedMemories: 1,
-    maxMemoryClassification: "private",
   };
   const references = raw["secretReferences"] as unknown[];
   raw["secretReferences"] = [

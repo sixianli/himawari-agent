@@ -99,7 +99,6 @@ function request(sourceType: "user_message" | "schedule" | "external_event") {
     memoryQueryTerms: ["beef", "dinner"],
     memoryLimit: 10,
     maxSelectedMemories: 2,
-    maxMemoryClassification: "private" as const,
     capabilities: [
       {
         ref: "restaurant-search",

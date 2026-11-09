@@ -477,7 +477,6 @@ export function liveConfiguration(stateRoot: string, timeZone: string) {
       systemInstruction: LIVE_SYSTEM_INSTRUCTION,
       memoryLimit: MEMORY_LIMIT,
       maxSelectedMemories: MAX_SELECTED_MEMORIES,
-      maxMemoryClassification: "private" as const,
       coding: {
         ...route,
         grantId: "grant-jarvis-test",

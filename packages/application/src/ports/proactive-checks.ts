@@ -1,4 +1,5 @@
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
+import type { DataClassification } from "./common.js";
 
 export type ProactiveSource = "gmail";
 export type ProactiveResult = "act" | "know" | "check" | "ignore";
@@ -169,6 +170,7 @@ export interface ProactiveMemoryHit {
   readonly text: string;
   readonly score: number;
   readonly tentative?: boolean;
+  readonly dataClassification: DataClassification;
 }
 
 export interface ProactiveMemoryQuery {
@@ -399,7 +401,13 @@ export interface ProactiveStorePort {
 }
 
 export interface ProactiveSealPort {
-  seal(input: ProactiveScope & { readonly text: string; readonly at: string }): Promise<string>;
+  seal(
+    input: ProactiveScope & {
+      readonly text: string;
+      readonly at: string;
+      readonly dataClassification?: DataClassification;
+    },
+  ): Promise<string>;
   open(input: ProactiveScope & { readonly ref: string }): Promise<string | undefined>;
   release(input: ProactiveScope & { readonly refs: readonly string[] }): Promise<void>;
 }

@@ -98,18 +98,19 @@ export class ProductionMemoryConsolidation {
       ownerId: request.ownerId,
       agentId: request.agentId,
       triggerRunId: request.runId,
-      search: (query, limit) => {
+      search: (query, limit, dataClassification) => {
         const slot = `memory-consolidation-search-${searches++}:${request.runId}`;
-        const operation = () => this.#options.search(request, query, limit);
+        const scoped = { ...request, dataClassification };
+        const operation = () => this.#options.search(scoped, query, limit);
         return this.#options.embedWithin
-          ? this.#options.embedWithin(request, slot, operation)
+          ? this.#options.embedWithin(scoped, slot, operation)
           : operation();
       },
-      generate: async (prompt) => {
+      generate: async (prompt, dataClassification) => {
         if (this.#stopping) throw new Error("MEMORY_CONSOLIDATION_STOPPING");
         await this.#options.assertActive();
         return this.#options.generate(
-          { ...request, dataClassification: "private" },
+          { ...request, dataClassification },
           prompt,
           onAdmitted,
           "memory-consolidation",

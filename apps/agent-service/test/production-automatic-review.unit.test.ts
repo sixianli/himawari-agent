@@ -205,7 +205,6 @@ function configuration(configured: boolean): ProductConfiguration {
       systemInstruction: "fixture",
       memoryLimit: 1,
       maxSelectedMemories: 0,
-      maxMemoryClassification: "private",
       ...(configured ? { automaticReview: reviewConfiguration() } : {}),
     },
   };

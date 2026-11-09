@@ -388,6 +388,7 @@ export type RuntimeProjectionRequest = Pick<
 export interface RuntimeProjection extends RuntimeProjectionContext {
   readonly systemInstruction: string;
   readonly answerLocaleRef?: string;
+  readonly contentClassification?: DataClassification;
 }
 
 export interface RuntimeProjectionPort {
@@ -475,6 +476,7 @@ export interface RuntimeToolSettledResult {
   readonly errorCode: string | null;
   readonly externalActionId: string | null;
   readonly modelContent: string;
+  readonly contentClassification?: DataClassification;
 }
 
 export interface RuntimeToolSuspendedResult {

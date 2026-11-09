@@ -1334,7 +1334,7 @@ export const MESSAGE_SAMPLE_VALUES: Readonly<
   "memory.page.newSince": { count: 2 },
   "memory.page.topicNow": { topic: "偏好" },
   "memory.page.importanceValue": { value: 600, by: "model" },
-  "memory.page.pinHint": { r: "sensitive" },
+  "memory.page.pinHint": { r: "category" },
   "memory.page.pinDone": { on: "true" },
   "memory.page.topicDone": { c: "偏好" },
   "memory.page.pinFor": { text: "我住在东京" },

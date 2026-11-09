@@ -653,7 +653,6 @@ it("selects trusted Run policy and binds instruction content across configuratio
       systemInstruction: "可信系统指令",
       memoryLimit: 10,
       maxSelectedMemories: 5,
-      maxMemoryClassification: "private" as const,
     },
   };
   const source: RunExecutionSource = {
@@ -1480,6 +1479,7 @@ it("[PG-12] judges mail through the selected Pi transport with its own invocatio
     const authority = await invoker.prepare({
       invocationId: "proactive-model-1",
       prompt: "判断这些新邮件",
+      dataClassification: "private",
       deadlineAt: "2099-01-01T00:00:00.000Z",
     });
     expect(authority.runId).toBe("proactive:proactive-model-1");
@@ -1895,6 +1895,7 @@ it("[SI-2] files what an action review masked under its run's conversation, even
     const input = await invoker.prepare({
       invocationId: "review-masked",
       prompt: "这次动作要用的验证码 482910",
+      dataClassification: "private",
       deadlineAt: "2099-01-01T00:00:00.000Z",
     });
     await input.release();
