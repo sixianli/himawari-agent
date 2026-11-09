@@ -118,7 +118,7 @@ export interface ModelBudgetAllocation {
   readonly startedAt: string | null;
   readonly observedAt: string | null;
   readonly settledAt: string | null;
-  readonly reasonCode: "provider_unresolved" | "transport_unresolved" | "cancel_unresolved" | null;
+  readonly reasonCode: ModelBudgetUnknownInput["reasonCode"] | "owner_lost" | null;
 }
 
 export interface ModelBudgetSnapshot {

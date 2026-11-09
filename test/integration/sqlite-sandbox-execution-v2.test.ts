@@ -1057,7 +1057,33 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "rollback-gateway",
     "budget-unknown",
     "absent-before-deadline",
+    "deadline-code-no-records",
+    "deadline-code-before-deadline",
+    "deadline-code-model-reserved",
+    "deadline-code-model-started",
+    "deadline-code-model-unknown-provider",
+    "deadline-code-model-unknown-transport",
+    "deadline-code-model-unknown-cancel",
+    "deadline-code-model-unknown-cancel-tool-code",
+    "deadline-code-future-record",
+    "deadline-code-null-record",
+    "deadline-code-model-settled",
+    "deadline-code-model-released",
+    "deadline-code-environment-released",
+    "deadline-code-environment-unreleased",
+    "deadline-code-model-orphan-started",
+    "deadline-code-model-orphan-reserved",
+    "deadline-code-model-orphan-epoch-started",
+    "persisted-code-model-orphan-started",
+    "persisted-code-model-started",
+    "released-model-started",
+    "released-model-orphan-started",
   ] as const)("settles an expired unknown Run without dispatching: %s", async (scenario) => {
+    const modelScenario =
+      /^(deadline-code|persisted-code|released)-model-(orphan-(?:epoch-)?)?(reserved|started|unknown|settled|released)(?:-(provider|transport|cancel))?(-tool-code)?$/.exec(
+        scenario,
+      );
+    const orphan = modelScenario?.[2] !== undefined;
     const f = await openSandboxJournal();
     let repository: SqliteProductStateRepository | undefined;
     try {
@@ -1099,7 +1125,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           },
         );
       }
-      if (scenario === "environment")
+      if (scenario === "environment" || scenario.startsWith("deadline-code-environment-"))
         await opened.executionEnvironmentStore(OWNER_ID, AGENT_ID).reserve({
           authority: SERVICE_AUTHORITY,
           now: T1,
@@ -1158,16 +1184,165 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       f.database
         .prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?")
         .run(T1, runId);
-      now = ["before-deadline", "unreleased-before-deadline", "absent-before-deadline"].includes(
-        scenario,
-      )
+      now = [
+        "before-deadline",
+        "unreleased-before-deadline",
+        "absent-before-deadline",
+        "deadline-code-before-deadline",
+      ].includes(scenario)
         ? T1
         : T2;
-      if (scenario === "absent-before-deadline") {
+      if (scenario.startsWith("deadline-code") && !scenario.endsWith("-tool-code"))
+        f.database
+          .prepare(
+            "UPDATE run_coordination_checkpoints SET diagnostic_code='RUN_EXECUTION_DEADLINE_EXCEEDED'",
+          )
+          .run();
+      if (scenario.startsWith("persisted-code"))
+        f.database
+          .prepare(
+            "UPDATE run_coordination_checkpoints SET diagnostic_code='PERSISTED_EXECUTION_RECONCILIATION_REQUIRED'",
+          )
+          .run();
+      if (
+        scenario.startsWith("persisted-code") ||
+        scenario.startsWith("deadline-code-model-orphan-") ||
+        [
+          "absent-before-deadline",
+          "deadline-code-no-records",
+          "deadline-code-before-deadline",
+          "deadline-code-model-reserved",
+          "deadline-code-model-started",
+          "deadline-code-model-unknown-provider",
+          "deadline-code-model-unknown-transport",
+          "deadline-code-model-unknown-cancel",
+          "deadline-code-model-unknown-cancel-tool-code",
+          "deadline-code-model-settled",
+          "deadline-code-model-released",
+          "deadline-code-environment-released",
+          "deadline-code-environment-unreleased",
+        ].includes(scenario)
+      ) {
         f.database.pragma("foreign_keys = OFF");
         f.database.prepare("DELETE FROM sandbox_execution_records").run();
         f.database.prepare("DELETE FROM sandbox_admission_queue").run();
       }
+      if (modelScenario) {
+        const status = modelScenario[3] as string;
+        const reasonCode =
+          status === "unknown" ? `${modelScenario[4] ?? "provider"}_unresolved` : null;
+        const estimatedCostMicros = 169661;
+        const current = f.database
+          .prepare(
+            "SELECT id,deployment_id AS deploymentId,authority_epoch AS epoch,fencing_token AS token FROM authority_leases LIMIT 1",
+          )
+          .get() as { id: string; deploymentId: string; epoch: number; token: number };
+        const lease = orphan
+          ? modelScenario?.[2] === "orphan-epoch-"
+            ? { ...current, id: "previous-authority-lease", epoch: current.epoch + 1 }
+            : { ...current, id: "previous-authority-lease", token: current.token + 1 }
+          : current;
+        if (orphan)
+          f.database
+            .prepare(
+              "INSERT INTO authority_leases(id,owner_id,agent_id,deployment_id,holder_id,authority_epoch,fencing_token,acquired_at,expires_at,released_at) VALUES(?,?,?,?,'previous-holder',?,?,?,?,?)",
+            )
+            .run(
+              lease.id,
+              OWNER_ID,
+              AGENT_ID,
+              lease.deploymentId,
+              lease.epoch,
+              lease.token,
+              T1,
+              T1,
+              T1,
+            );
+        f.database
+          .prepare(
+            "INSERT INTO model_budget_accounts(owner_id,agent_id,account_id,parent_kind,run_id,data_classification,reserved_cost_micros,spent_cost_micros,status,revision) VALUES(?,?,?,'run',?,'private',?,0,?,1)",
+          )
+          .run(
+            OWNER_ID,
+            AGENT_ID,
+            `run:${runId}`,
+            runId,
+            ["reserved", "started", "unknown"].includes(status) ? estimatedCostMicros : 0,
+            status === "unknown" ? "reconcile_required" : "active",
+          );
+        f.database
+          .prepare(
+            `INSERT INTO model_budget_allocations(owner_id,agent_id,account_id,operation_key,model_ref,
+              data_classification,estimated_cost_micros,actual_cost_micros,status,reserved_at,started_at,
+              observed_at,settled_at,reason_code)
+            VALUES(?,?,?,'expiry-budget-operation','model-ref','private',?,?,?,?,?,?,?,?)`,
+          )
+          .run(
+            OWNER_ID,
+            AGENT_ID,
+            `run:${runId}`,
+            estimatedCostMicros,
+            status === "settled" ? 0 : null,
+            status,
+            T1,
+            ["reserved", "released"].includes(status) ? null : T1,
+            status === "unknown" ? T1 : null,
+            status === "settled" ? T1 : null,
+            reasonCode,
+          );
+        f.database
+          .prepare(
+            `INSERT INTO model_invocation_identities (
+              owner_id,agent_id,run_id,logical_slot,sequence,invocation_id,model_ref,provider,model,
+              data_classification,source,ordinal,pricing_input,pricing_output,pricing_cache_read,
+              pricing_cache_write,pricing_fingerprint,estimated_cost_micros,budget_account_id,
+              budget_operation_key,authority_lease_id,authority_deployment_id,authority_epoch,
+              authority_fencing_token,execution_lease_id,execution_expected_lease_revision,
+              execution_authority_lease_id,execution_authority_fencing_token,execution_deployment_id,
+              execution_authority_epoch,execution_fencing_token,execution_consumer_id,status,
+              reserved_at,started_at,observed_at,settled_at,released_at,actual_cost_micros,reason_code
+            ) VALUES (?,?,?,'main',1,'expiry-model-invocation','model-ref','provider','model',
+              'private','model-port',1,0,0,0,0,'fingerprint',?,?,'expiry-budget-operation',?,?,?,?,
+              'expiry-model-lease',0,?,?,?,?,?,'expiry-consumer',?,?,?,?,?,?,?,?)`,
+          )
+          .run(
+            OWNER_ID,
+            AGENT_ID,
+            runId,
+            estimatedCostMicros,
+            `run:${runId}`,
+            lease.id,
+            lease.deploymentId,
+            lease.epoch,
+            lease.token,
+            lease.id,
+            lease.token,
+            lease.deploymentId,
+            lease.epoch,
+            lease.token,
+            status,
+            T1,
+            ["reserved", "released"].includes(status) ? null : T1,
+            status === "unknown" ? T1 : null,
+            status === "settled" ? T1 : null,
+            status === "released" ? T1 : null,
+            status === "settled" ? 0 : null,
+            reasonCode,
+          );
+        f.database.pragma("foreign_keys = ON");
+      }
+      if (scenario === "deadline-code-environment-released")
+        f.database
+          .prepare(
+            "INSERT INTO execution_environment_release_receipts(environment_id,basis,stop_fence,accepted_at,proof_json,authority_json) SELECT environment_id,'create_not_dispatched',1,?,NULL,'{}' FROM execution_environments",
+          )
+          .run(T1);
+      if (scenario === "deadline-code-future-record")
+        f.database
+          .prepare(
+            "UPDATE sandbox_execution_records SET plan_json=json_set(plan_json,'$.originalDeadlineAt','2099-01-01T00:00:00.000Z')",
+          )
+          .run();
       if (scenario === "bash-own-deadline")
         f.database
           .prepare(
@@ -1251,6 +1426,16 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         intents: f.database
           .prepare("SELECT COUNT(*) AS count FROM sandbox_execution_intents")
           .get(),
+        models: f.database
+          .prepare(
+            "SELECT status,reason_code,settled_at,actual_cost_micros,estimated_cost_micros FROM model_invocation_identities ORDER BY invocation_id",
+          )
+          .all(),
+        budgetAccounts: f.database
+          .prepare(
+            "SELECT account_id,status,reserved_cost_micros,spent_cost_micros FROM model_budget_accounts ORDER BY account_id",
+          )
+          .all(),
       });
       const before = state();
       const recovery =
@@ -1296,6 +1481,18 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           "bash-own-deadline",
           "absent-before-deadline",
           "before-deadline",
+          "deadline-code-no-records",
+          "deadline-code-model-settled",
+          "deadline-code-model-released",
+          "deadline-code-model-unknown-provider",
+          "deadline-code-model-unknown-transport",
+          "deadline-code-model-unknown-cancel",
+          "deadline-code-environment-released",
+          "deadline-code-model-orphan-started",
+          "deadline-code-model-orphan-reserved",
+          "deadline-code-model-orphan-epoch-started",
+          "persisted-code-model-orphan-started",
+          "released-model-orphan-started",
         ].includes(scenario)
       ) {
         const dispatch = opened.runDispatch(
@@ -1329,6 +1526,69 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         });
         expect(after.journal).toEqual(before.journal);
         expect(after.intents).toEqual(before.intents);
+        if (orphan && modelScenario?.[3] === "started") {
+          expect(after.models).toEqual([
+            {
+              status: "unknown",
+              reason_code: "owner_lost",
+              settled_at: null,
+              actual_cost_micros: null,
+              estimated_cost_micros: 169661,
+            },
+          ]);
+          expect(after.budgetAccounts).toEqual([
+            {
+              account_id: `run:${runId}`,
+              status: "reconcile_required",
+              reserved_cost_micros: 169661,
+              spent_cost_micros: 0,
+            },
+          ]);
+          expect(
+            f.database
+              .prepare(
+                "SELECT status,reason_code,observed_at FROM model_budget_allocations ORDER BY operation_key",
+              )
+              .all(),
+          ).toEqual([{ status: "unknown", reason_code: "owner_lost", observed_at: now }]);
+        } else if (orphan) {
+          expect(after.models).toEqual([
+            {
+              status: "released",
+              reason_code: null,
+              settled_at: null,
+              actual_cost_micros: null,
+              estimated_cost_micros: 169661,
+            },
+          ]);
+          expect(after.budgetAccounts).toEqual([
+            {
+              account_id: `run:${runId}`,
+              status: "active",
+              reserved_cost_micros: 0,
+              spent_cost_micros: 0,
+            },
+          ]);
+        } else {
+          expect(after.models).toEqual(before.models);
+          expect(after.budgetAccounts).toEqual(before.budgetAccounts);
+        }
+        if (scenario.startsWith("deadline-code-model-unknown"))
+          expect(after.models).toEqual([
+            expect.objectContaining({
+              status: "unknown",
+              reason_code: expect.stringMatching(/^(provider|transport|cancel)_unresolved$/),
+              estimated_cost_micros: 169661,
+            }),
+          ]);
+        if (scenario.startsWith("deadline-code-model-unknown"))
+          expect(after.budgetAccounts).toEqual([
+            expect.objectContaining({
+              status: "reconcile_required",
+              reserved_cost_micros: 169661,
+              spent_cost_micros: 0,
+            }),
+          ]);
         expect.soft(after.thread).toEqual({
           ...before.thread,
           revision: before.thread.revision + 1,
@@ -1374,6 +1634,31 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         await expect(recovery.settleExpired(input)).resolves.toEqual({ settled: false });
         expect(state()).toEqual(before);
       } else {
+        if (
+          (scenario.startsWith("deadline-code-") ||
+            scenario.startsWith("persisted-code-") ||
+            scenario.startsWith("released-model-")) &&
+          scenario !== "deadline-code-before-deadline"
+        ) {
+          const dispatch = opened.runDispatch(
+            OWNER_ID,
+            AGENT_ID,
+            SERVICE_AUTHORITY.product,
+            SERVICE_AUTHORITY.lease,
+            "expiry-consumer",
+          );
+          if (scenario === "deadline-code-null-record")
+            f.database
+              .prepare(
+                "UPDATE sandbox_execution_records SET plan_json=json_remove(plan_json,'$.originalDeadlineAt')",
+              )
+              .run();
+          expect(await dispatch.listReconciliationRequired({ now, limit: 10 })).toEqual([]);
+          if (scenario === "deadline-code-null-record") {
+            await expect(recovery.settleExpired(input)).rejects.toThrow();
+            return;
+          }
+        }
         await expect(recovery.settleExpired(input)).rejects.toThrow();
         expect(state()).toEqual(before);
       }

@@ -16,6 +16,8 @@ import {
   type ProductAuthorityFence,
 } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
+import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
+import { SqliteModelInvocationOperations } from "./sqlite-model-invocation-operations.ts";
 import { QUEUED_TOOL_BATCH_SQL, readQueuedToolBatch } from "./sqlite-queued-tool-batch.ts";
 import { writeRunReceiptInTransaction } from "./sqlite-run-lifecycle-operations.ts";
 import { RUN_COMPLETION_RECOVERY_SQL } from "./sqlite-run-resource-guard.ts";
@@ -369,6 +371,7 @@ export class SqliteRunDispatchOperations {
         ownerId: this.scope.ownerId,
         agentId: this.scope.agentId,
         resourceNow: now,
+        authorityLeaseId: this.scope.authorityLease.leaseId,
         limit,
         afterRunId,
         throughRunId,
@@ -443,6 +446,7 @@ export class SqliteRunDispatchOperations {
             checkpointRevision,
             deadlineAt,
             resourceNow: at,
+            authorityLeaseId: this.scope.authorityLease.leaseId,
             frozenInputRef,
             frozenInputDigest,
           });
@@ -451,6 +455,24 @@ export class SqliteRunDispatchOperations {
             "PORT_CONFLICT",
             "Expired Run is not ready for authenticated settlement",
           );
+        new SqliteModelInvocationOperations(
+          this.database,
+          this.fail,
+          () => undefined,
+          new SqliteModelBudgetOperations(this.database, this.fail, () => undefined),
+        ).abandonOrphanedWithinTransaction(
+          {
+            ownerId: createOwnerId(this.scope.ownerId),
+            agentId: createAgentId(this.scope.agentId),
+            authority: this.scope.authority,
+            authorityLease: {
+              leaseId: createAuthorityLeaseId(this.scope.authorityLease.leaseId),
+              fencingToken: this.scope.authorityLease.fencingToken,
+            },
+          },
+          runId,
+          at,
+        );
         this.database
           .prepare(`INSERT INTO run_execution_leases (
         owner_id,agent_id,run_id,revision,authority_lease_id,deployment_id,authority_epoch,
