@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INVENTORY = "docs/agent-rulebook-inventory.md";
+const SELF_TEST = "test/tooling/agent-rulebook-inventory.test.mjs";
 const IGNORED = new Set(["node_modules", ".git", "dist", "coverage", ".ci-output"]);
 const TEST_ID = /\b(?:PG|OM|SI|PA|NAME|MEM|W)-[A-Z0-9]+\b/g;
 const INCIDENT_ID = /\bI-\d+\b/g;
@@ -12,10 +13,10 @@ const TEST_FILE = /`([^`\s]+\.(?:test|spec)\.[a-z]+)`/g;
 const LINK = /\]\(([^)\s]+)\)/g;
 
 function walk(directory, visit) {
-  for (const name of readdirSync(directory)) {
-    if (IGNORED.has(name)) continue;
-    const full = path.join(directory, name);
-    if (statSync(full).isDirectory()) walk(full, visit);
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (IGNORED.has(entry.name) || entry.isSymbolicLink()) continue;
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) walk(full, visit);
     else visit(full);
   }
 }
@@ -28,7 +29,8 @@ function collectTestFiles(root) {
   const files = [];
   walk(root, (full) => {
     const relative = path.relative(root, full).split(path.sep).join("/");
-    if (isTestPath(relative) && !relative.startsWith("docs/")) files.push(relative);
+    if (isTestPath(relative) && !relative.startsWith("docs/") && relative !== SELF_TEST)
+      files.push(relative);
   });
   return files;
 }
@@ -75,7 +77,8 @@ export function checkInventory(root) {
 
   const testIds = new Set(text.match(TEST_ID) ?? []);
   for (const id of testIds) {
-    if (!testTexts.some((content) => content.includes(id))) problems.push(`TEST_ID_MISSING ${id}`);
+    const exact = new RegExp(`(?<![A-Za-z0-9-])${id}(?![A-Za-z0-9-])`);
+    if (!testTexts.some((content) => exact.test(content))) problems.push(`TEST_ID_MISSING ${id}`);
   }
 
   const incidentsPath = path.join(root, "docs/incidents-and-gates.md");

@@ -54,4 +54,16 @@ describe("agent rulebook inventory check", () => {
       "INCIDENT_ID_MISSING I-999",
     ]);
   });
+
+  it("matches test ids exactly and ignores the check's own test file", () => {
+    const root = fixture("PG-1 PG-8 PG-80 OM-5");
+    writeFileSync(join(root, "packages/demo/test/other.unit.test.ts"), "[PG-10] [PG-800]\n");
+    mkdirSync(join(root, "test/tooling"), { recursive: true });
+    writeFileSync(join(root, "test/tooling/agent-rulebook-inventory.test.mjs"), "OM-5\n");
+    expect(checkInventory(root)).toEqual([
+      "TEST_ID_MISSING PG-1",
+      "TEST_ID_MISSING PG-80",
+      "TEST_ID_MISSING OM-5",
+    ]);
+  });
 });

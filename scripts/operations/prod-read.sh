@@ -130,7 +130,7 @@ if (
   (stat.mode & 0o077) !== 0 ||
   !owners.includes(stat.uid) ||
   !parent.isDirectory() ||
-  (parent.mode & 0o022) !== 0 ||
+  (parent.mode & 0o002) !== 0 ||
   !owners.includes(parent.uid)
 )
   fail("PROD_READ_CONFIG_UNSAFE");

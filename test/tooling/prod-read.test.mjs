@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  chownSync,
   linkSync,
   mkdtempSync,
   readdirSync,
@@ -239,7 +240,7 @@ describe("prod-read.sh", () => {
   it("prints only the system instruction text of the production configuration", () => {
     const result = run("system-instruction");
     expect(result.code).toBe(0);
-    expect(result.calls).toContain("--no-warnings - /etc/himawari/config.json");
+    expect(result.calls).toContain("--no-warnings - /etc/himawari/config.json 999");
     const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-cfg-"));
     directories.push(directory);
     const file = path.join(directory, "config.json");
@@ -290,12 +291,14 @@ describe("prod-read.sh", () => {
     expect(readConfig(result.input, file).stdout).toBe("hello\n");
     chmodSync(directory, 0o777);
     expect(readConfig(result.input, file).stderr).toContain("PROD_READ_CONFIG_UNSAFE");
+    chmodSync(directory, 0o770);
+    expect(readConfig(result.input, file).stdout).toBe("hello\n");
     chmodSync(directory, 0o700);
     const absent = readConfig(result.input, path.join(directory, "absent.json"));
     expect(absent.stderr.trim()).toBe("PROD_READ_CONFIG_UNREADABLE");
   });
 
-  it.skipIf(process.getuid() === 0)("refuses a configuration owned by another user", () => {
+  it("accepts only root or the service account as the owner of the configuration file", () => {
     const result = run("system-instruction");
     const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-owner-"));
     directories.push(directory);
@@ -303,8 +306,15 @@ describe("prod-read.sh", () => {
     writeFileSync(file, JSON.stringify({ runPolicy: { systemInstruction: "hello" } }), {
       mode: 0o600,
     });
-    const foreign = String(process.getuid() + 1);
-    expect(readConfig(result.input, file, foreign).stderr).toContain("PROD_READ_CONFIG_UNSAFE");
+    if (process.getuid() === 0) {
+      chownSync(file, 12345, 12345);
+      expect(readConfig(result.input, file, "999").stderr).toContain("PROD_READ_CONFIG_UNSAFE");
+      chownSync(file, 999, 999);
+      expect(readConfig(result.input, file, "999").stdout).toBe("hello\n");
+    } else {
+      const foreign = String(process.getuid() + 1);
+      expect(readConfig(result.input, file, foreign).stderr).toContain("PROD_READ_CONFIG_UNSAFE");
+    }
   });
 
   it("refuses arguments for the two new queries", () => {

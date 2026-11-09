@@ -220,7 +220,7 @@ describe("owner profile composition", () => {
     expect(stored.map(({ text }) => text).join("\n")).not.toContain("明治");
   });
 
-  it("[PA-2] keeps a rule memory out of the block when it is superseded, expired or no longer active", async () => {
+  it("[PA-2b] keeps a rule memory out of the block when it is superseded, expired or no longer active", async () => {
     const base = memory("memory-sister", "rule", 950);
     const attributes = base.attributes ?? DEFAULT_MEMORY_ATTRIBUTES;
     const variants: ProductMemoryRecord[] = [
@@ -249,6 +249,25 @@ describe("owner profile composition", () => {
       now: NOW,
     });
     expect(control.memoryIds).toContain("memory-sister");
+  });
+
+  it("[PA-2c] puts a sensitive rule into the block only when the request ceiling allows it", async () => {
+    const base = memory("memory-sister", "rule", 950);
+    const ask = async (
+      dataClassification: ProductMemoryRecord["dataClassification"],
+      maxClassification: "private" | "sensitive",
+    ) => {
+      const { profile } = service([{ ...base, dataClassification }]);
+      return profile.compose({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        maxClassification,
+        now: NOW,
+      });
+    };
+    expect((await ask("sensitive", "sensitive")).memoryIds).toContain("memory-sister");
+    expect((await ask("sensitive", "private")).memoryIds).not.toContain("memory-sister");
+    expect((await ask("restricted", "sensitive")).memoryIds).not.toContain("memory-sister");
   });
 
   it("leaves private facts out of a public request and marks public-only blocks public", async () => {
