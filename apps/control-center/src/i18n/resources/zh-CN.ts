@@ -967,7 +967,7 @@ export const messages = {
   "decision.chain.failed": "读取失败，稍后再试",
   "decision.chain.gone": "这条记录已被清除",
   "decision.chain.noRecord": "无记录",
-  "decision.chain.noText": "（内容已不在）",
+  "decision.chain.noText": "（内容不在这里显示）",
   "decision.chain.state":
     "{s, select, none {这次没有} not_recorded {无记录} not_applicable {这类记录不涉及} other {无记录}}",
   "decision.chain.decision": "判断",

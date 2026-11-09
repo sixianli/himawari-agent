@@ -1027,7 +1027,7 @@ export const messages = {
   "decision.chain.failed": "Couldn’t load. Try again later",
   "decision.chain.gone": "This record has been cleared",
   "decision.chain.noRecord": "No record",
-  "decision.chain.noText": "(content no longer available)",
+  "decision.chain.noText": "(content not shown here)",
   "decision.chain.state":
     "{s, select, none {None this time} not_recorded {No record} not_applicable {Not applicable to this record} other {No record}}",
   "decision.chain.decision": "Decision",

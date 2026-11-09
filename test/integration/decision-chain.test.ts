@@ -543,6 +543,33 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
     }
   });
 
+  it("[P1-3] shows a sensitive-tier memory with its text and original words, because the model sees it too", async () => {
+    const f = await fixture();
+    try {
+      await seedMemories(f, { sensitive: true });
+      f.sql((database) =>
+        database
+          .prepare(
+            "UPDATE memory_records SET classification = 'sensitive' WHERE id = 'memory-sensitive'",
+          )
+          .run(),
+      );
+      await recordGmail(
+        f.repository,
+        "gmail-sensitive-tier",
+        gmailInputs({ memoryIds: ["memory-sensitive"], memoryByMail: {}, usedMemoryIds: [] }),
+      );
+      const chain = await chainOf(f.control, "gmail-sensitive-tier");
+      expect(chain.memories.items[0]).toMatchObject({
+        state: "visible",
+        text: TEXTS["payload-sensitive"],
+        source: { quote: SENTINEL },
+      });
+    } finally {
+      await f.repository.close();
+    }
+  });
+
   it("[P1-3] says a row is not applicable to rules for kinds that write a reason code into rule ids", async () => {
     const f = await fixture();
     try {

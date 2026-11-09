@@ -1027,7 +1027,7 @@ export const messages = {
   "decision.chain.failed": "読み込めませんでした。後でもう一度お試しください",
   "decision.chain.gone": "この記録は消去されました",
   "decision.chain.noRecord": "記録なし",
-  "decision.chain.noText": "（内容はもうありません）",
+  "decision.chain.noText": "（内容はここには表示しません）",
   "decision.chain.state":
     "{s, select, none {今回はなし} not_recorded {記録なし} not_applicable {この種の記録には該当しません} other {記録なし}}",
   "decision.chain.decision": "判断",
