@@ -39,7 +39,6 @@ import {
   OPENCODE_KEPT_ENV,
   OPENCODE_LOCK_DIR,
   OPENCODE_VERSION,
-  opencodeBinary,
   opencodeChildEnv,
   opencodeEnv,
   opencodeInstallDir,
@@ -84,6 +83,7 @@ import {
   toolRequest,
   withScriptedReview,
 } from "./opencode-review.fixtures.mjs";
+import {
   completedCount,
   effectiveCost,
   GUARD_ENV,
