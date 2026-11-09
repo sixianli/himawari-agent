@@ -20,9 +20,9 @@ import { delimiter, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   binaryProblem,
+  CLIENT_KEY,
   creditReserve,
   floorDecision,
-  CLIENT_KEY,
   GATEWAY_PROVIDER_ID,
   getJson,
   groupId,
@@ -436,15 +436,40 @@ function npmCi(prefix, lockDir, binary) {
   if (!existsSync(binary)) throw new Error("OPENCODE_INSTALL_FAILED");
 }
 
+function installBesideThenRename(prefix, lockDir, binary, lock) {
+  const staging = `${prefix}.staging-${process.pid}-${randomBytes(4).toString("hex")}`;
+  try {
+    npmCi(staging, lockDir, join(staging, "node_modules", ".bin", "opencode"));
+    const stagedProblems = installedIntegrityProblems(staging, lock);
+    if (stagedProblems.length > 0)
+      throw new Error(`OPENCODE_INTEGRITY_MISMATCH ${prefix} ${stagedProblems.join(" | ")}`);
+    try {
+      renameSync(staging, prefix);
+    } catch {
+      if (!existsSync(binary)) {
+        rmSync(prefix, { recursive: true, force: true });
+        try {
+          renameSync(staging, prefix);
+        } catch (error) {
+          if (!existsSync(binary)) throw error;
+        }
+      }
+    }
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
 export function installOpencode({ prefix, lockDir = OPENCODE_LOCK_DIR }) {
   const lock = JSON.parse(readFileSync(join(lockDir, "package-lock.json"), "utf8"));
   const binary = join(prefix, "node_modules", ".bin", "opencode");
   const reused = existsSync(binary);
-  if (!reused) npmCi(prefix, lockDir, binary);
+  if (!reused) installBesideThenRename(prefix, lockDir, binary, lock);
   let problems = installedIntegrityProblems(prefix, lock);
   if (problems.length > 0 && reused) {
     process.stderr.write(`OPENCODE_REINSTALL ${prefix} ${problems.join(" | ")}\n`);
-    npmCi(prefix, lockDir, binary);
+    rmSync(prefix, { recursive: true, force: true });
+    installBesideThenRename(prefix, lockDir, binary, lock);
     problems = installedIntegrityProblems(prefix, lock);
   }
   if (problems.length > 0)
@@ -2533,7 +2558,7 @@ export function setRegisteredTestValues(values) {
 
 export function registeredTestValuesFromToml(text) {
   const values = new Set();
-  for (const match of text.matchAll(/^regexes\s*=\s*\[\s*\'\'\'\^([^\n]*?)\$\'\'\'\s*\]\s*$/gm)) {
+  for (const match of text.matchAll(/^regexes\s*=\s*\[\s*'''\^([^\n]*?)\$'''\s*\]\s*$/gm)) {
     const literal = match[1].replaceAll("\\.", ".");
     if (literal.length >= REGISTERED_VALUE_MIN_LENGTH && /^[A-Za-z0-9_\-=.:/ ]+$/.test(literal))
       values.add(literal);

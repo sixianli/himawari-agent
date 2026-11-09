@@ -418,7 +418,7 @@ describe("review delegation result check, hostile results", () => {
     withFixture((f) => {
       stage(f, { "code.txt": "sneaky\n" });
       commitAll(f, "touch code");
-      f.run(f.cloud, "revert", "--no-edit", "HEAD");
+      f.run(f.cloud, "-c", "user.name=t", "-c", "user.email=t@t", "revert", "--no-edit", "HEAD");
       stage(f, record(f));
       commitAll(f, "records");
       f.push();

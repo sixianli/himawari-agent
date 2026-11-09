@@ -116,6 +116,14 @@ regexTarget = "secret"
 regexes = ['''^-----BEGIN ENCRYPTED PRIVATE KEY-----`、`DSA PRIVATE KEY` ''']
 
 [[allowlists]]
+description = "PR 317 拆分测试文件的提交 206eb64e 里遮盖测试的假私钥开头标记（后面是重复的说明文字，没有密钥），只限这个测试文件；当前版本已改成 join 拼写"
+condition = "AND"
+targetRules = ["private-key"]
+paths = ['''(?:^|/)test/tooling/opencode-review-merge-gate\.test\.mjs$''']
+regexTarget = "secret"
+regexes = ['''^-----BEGIN PRIVATE KEY----- \$\{"说明"\.repeat\(5000\)\}''']
+
+[[allowlists]]
 description = "遮盖测试里用 join 拼出的假私钥结尾（MIIEvR2T14TAILBODY 后接 END 标记），只限这个测试文件"
 condition = "AND"
 targetRules = ["generic-api-key"]

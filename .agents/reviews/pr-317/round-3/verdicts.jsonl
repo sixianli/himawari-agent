@@ -1,0 +1,5 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "并发自愈可能删掉另一个进程刚装好的目录，第二次 rename 仍可能抛 ENOTEMPTY", "valid": true, "class": "error", "severity": "low", "trigger": "两个进程同时自愈同一个旧残留目录，一个删掉另一个刚装好的目录", "consequence": "其中一次运行报错，重跑即可；只在旧版安装被杀留下残留、又恰好并发时发生", "modelSeverity": "中", "reason": "需要旧残留加并发两个条件同时出现，后果是一次运行报错重跑能过，缓存是可重建的；不涉及数据丢失"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新 gitleaks 白名单没有端到端用例", "valid": true, "class": "better"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新白名单值没有结尾锚点，比“只那一种形式”宽", "valid": true, "class": "better"}
+{"id": "D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`catch (error)` 的 `error` 已不再使用，可能违反 lint", "valid": true, "class": "error", "severity": "low", "trigger": "跑 lint 时", "consequence": "只是一个未使用的绑定，格式检查在 Hermes 上已通过", "modelSeverity": "低"}
+{"id": "D5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "被强杀的安装会永久留下完整的 `<prefix>.staging-*` 目录", "valid": true, "class": "better"}
