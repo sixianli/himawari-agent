@@ -129,6 +129,11 @@ export interface DecisionLedgerEntry {
   readonly inferred: boolean | null;
 }
 
+export interface DecisionRecordRead {
+  readonly entry: DecisionLedgerEntry;
+  readonly inputFields: readonly string[];
+}
+
 interface MuseReferenceBase {
   readonly id: string;
   readonly ownerId: OwnerId;
@@ -205,6 +210,9 @@ export interface DecisionLedgerPort {
       readonly limit: number;
     },
   ): Promise<readonly DecisionLedgerEntry[]>;
+  read(
+    input: DecisionLedgerScope & { readonly decisionId: string },
+  ): Promise<DecisionRecordRead | undefined>;
   rate(
     input: DecisionLedgerScope & {
       readonly decisionId: string;

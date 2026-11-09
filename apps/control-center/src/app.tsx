@@ -634,6 +634,10 @@ function LocalizedControlCenterApp({
                 message={message}
                 outcome={launch.gmail}
                 locale={locale}
+                onOpenThread={(threadId, messageId) => {
+                  if (messageId) requestMessageFocus(threadId, messageId);
+                  navigate(routeForSurface("threads", { objectId: threadId, view: "content" }));
+                }}
               />
             ) : null}
           </>

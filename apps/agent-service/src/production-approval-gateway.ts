@@ -101,7 +101,8 @@ export function createProductionApprovalGateway(options: {
     clock,
     delegate: {
       query: (query) =>
-        query.type.startsWith("memory.") && options.memoryControl
+        (query.type.startsWith("memory.") || query.type.startsWith("decision.chain.")) &&
+        options.memoryControl
           ? options.memoryControl.query(query)
           : query.type.startsWith("push.") && options.webPushControl
             ? options.webPushControl.query(query)

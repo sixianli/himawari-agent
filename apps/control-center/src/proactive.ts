@@ -21,6 +21,10 @@ export type ProactiveReview = Extract<
   GatewayV2Snapshot,
   { type: "proactive.review.snapshot" }
 >["payload"];
+export type DecisionChain = Extract<
+  GatewayV2Snapshot,
+  { type: "decision.chain.snapshot" }
+>["payload"];
 export type ProactiveReviewItem = ProactiveReview["items"][number];
 export interface ProactiveReviewRating {
   readonly key: string;
@@ -56,6 +60,7 @@ export interface ProactiveModel {
   readonly overview: ProactiveOverview | null;
   readonly review: ProactiveReview | null;
   readonly weekly: ProactiveWeeklyAccess | null;
+  readonly readChain: ((decisionId: string) => Promise<DecisionChain>) | null;
   readonly failed: boolean;
   readonly busy: boolean;
   readonly respondInsight: (
@@ -90,6 +95,8 @@ export function useProactive(input: {
     configuration?.installedGatewayV2Operations?.includes("proactive.review.read") ?? false;
   const weeklyAvailable =
     configuration?.installedGatewayV2Operations?.includes("proactive.weekly.read") ?? false;
+  const chainAvailable =
+    configuration?.installedGatewayV2Operations?.includes("decision.chain.read") ?? false;
   const [overview, setOverview] = useState<ProactiveOverview | null>(null);
   const [review, setReview] = useState<ProactiveReview | null>(null);
   const [failed, setFailed] = useState(false);
@@ -190,10 +197,20 @@ export function useProactive(input: {
         },
       }
     : null;
+  const readChain = chainAvailable
+    ? async (decisionId: string) => {
+        const result = await client.query(
+          queryMessage(configuration, "decision.chain.read", { decisionId }),
+        );
+        if (result.type !== "decision.chain.snapshot") throw new Error("PROACTIVE_INVALID");
+        return result.payload;
+      }
+    : null;
   return {
     overview,
     review,
     weekly,
+    readChain,
     failed,
     busy,
     respondInsight: (insight, action, rating = null) =>
@@ -307,4 +324,11 @@ export function readLaunchIntent(
     settings: settings === "apps" ? "tools" : settings === "notifications" ? "notifications" : null,
     gmail: gmail === "connected" || gmail === "failed" || gmail === "denied" ? gmail : null,
   };
+}
+
+export function decisionChainGone(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.message === "PORT_NOT_FOUND" || (error as Error & { status?: unknown }).status === 404)
+  );
 }
