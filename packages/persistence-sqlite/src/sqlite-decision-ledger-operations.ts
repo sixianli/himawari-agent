@@ -1,14 +1,17 @@
 import {
+  type CalibrationRowsSnapshot,
   DECISION_CATEGORIES,
   DECISION_KINDS,
   DECISION_OUTCOMES,
   DECISION_RATINGS,
-  type CalibrationRowsSnapshot,
   type DecisionInputs,
   type DecisionLedgerEntry,
   type DecisionLedgerPort,
   type DecisionLedgerWrite,
   type DecisionSignalEntry,
+  type GapCandidate,
+  type GapCaseMarkPort,
+  type GapCaseMarkRow,
   type MuseReferenceEntry,
   type MuseReferenceWrite,
 } from "@himawari-agent/application/decision-ledger";
@@ -17,6 +20,8 @@ import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 type Input<TName extends keyof DecisionLedgerPort> = Parameters<DecisionLedgerPort[TName]>[0];
+
+type MarkInput<TName extends keyof GapCaseMarkPort> = Parameters<GapCaseMarkPort[TName]>[0];
 
 const MAX_IDS = 200;
 
@@ -232,6 +237,14 @@ export class SqliteDecisionLedgerOperations {
         return this.listSignals(payload as Input<"listSignals">);
       case "decisionLedger.readCalibrationRows":
         return this.readCalibrationRows(payload as Input<"readCalibrationRows">);
+      case "decisionLedger.gapMark":
+        return this.gapMark(payload as MarkInput<"mark">);
+      case "decisionLedger.gapUnmark":
+        return this.gapUnmark(payload as MarkInput<"unmark">);
+      case "decisionLedger.gapMarks":
+        return this.gapMarks(payload as MarkInput<"list">);
+      case "decisionLedger.readGapCandidates":
+        return this.readGapCandidates(payload as Input<"readGapCandidates">);
       default:
         return this.fail(
           "PORT_INVALID_OPERATION",
@@ -430,6 +443,101 @@ export class SqliteDecisionLedgerOperations {
         })[]
       ).map((row) => ({ ...row, detail: JSON.parse(row.detail) })),
     );
+  }
+
+  private gapMark(input: MarkInput<"mark">): boolean {
+    return (
+      Number(
+        this.database
+          .prepare(
+            `INSERT OR IGNORE INTO gap_case_marks (owner_id, agent_id, case_id, snapshot_ref, marked_at)
+             VALUES (?, ?, ?, ?, ?)`,
+          )
+          .run(input.ownerId, input.agentId, input.caseId, input.snapshotRef, input.at).changes,
+      ) === 1
+    );
+  }
+
+  private gapUnmark(input: MarkInput<"unmark">): string | null {
+    return this.database.transaction(() => {
+      const row = this.database
+        .prepare(
+          `SELECT snapshot_ref AS snapshotRef FROM gap_case_marks
+           WHERE owner_id = ? AND agent_id = ? AND case_id = ?`,
+        )
+        .get(input.ownerId, input.agentId, input.caseId) as { snapshotRef: string } | undefined;
+      if (row === undefined) return null;
+      this.database
+        .prepare("DELETE FROM gap_case_marks WHERE owner_id = ? AND agent_id = ? AND case_id = ?")
+        .run(input.ownerId, input.agentId, input.caseId);
+      this.database
+        .prepare("DELETE FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ?")
+        .run(row.snapshotRef, input.ownerId, input.agentId);
+      return row.snapshotRef;
+    })();
+  }
+
+  private gapMarks(input: MarkInput<"list">): readonly GapCaseMarkRow[] {
+    return this.database
+      .prepare(
+        `SELECT case_id AS caseId, snapshot_ref AS snapshotRef, marked_at AS markedAt
+         FROM gap_case_marks WHERE owner_id = ? AND agent_id = ?
+         ORDER BY marked_at, case_id`,
+      )
+      .all(input.ownerId, input.agentId) as GapCaseMarkRow[];
+  }
+
+  private readGapCandidates(input: Input<"readGapCandidates">): readonly GapCandidate[] {
+    if (!validTime(input.start) || !validTime(input.end) || input.start >= input.end)
+      this.fail("PORT_INVALID_OPERATION", "Gap window is invalid");
+    const rows = this.database
+      .prepare(
+        `SELECT e.id AS entryId, e.muse_at AS museAt, e.timing_ok AS timingOk,
+           e.content_ok AS contentOk, e.paired_message_id AS pairedMessageId,
+           e.content_ref AS museContentRef, i.title_ref AS museTitleRef, i.text_ref AS museTextRef,
+           COALESCE(i.text_withheld, 0) AS museTextWithheld,
+           d.id AS decisionId, p.outcome AS outcome, p.owner_rating AS ownerRating,
+           d.reason_code AS reasonCode, d.reason_ref AS reasonRef, d.checked_at AS decidedAt,
+           d.inputs AS inputs
+         FROM muse_reference_entries e
+         JOIN proactive_processed_messages p
+           ON p.owner_id = e.owner_id AND p.agent_id = e.agent_id
+          AND p.source = 'gmail' AND p.message_id = e.paired_message_id
+         JOIN decision_ledger d ON d.id = p.decision_id
+         LEFT JOIN muse_intake_items i
+           ON i.owner_id = e.owner_id AND i.agent_id = e.agent_id
+          AND e.intake_item_key = i.kind || ':' || i.natural_key
+         WHERE e.owner_id = ? AND e.agent_id = ? AND e.muse_at >= ? AND e.muse_at < ?
+           AND e.muse_reminded = 1 AND e.paired_message_id IS NOT NULL
+         ORDER BY e.muse_at, e.id LIMIT 1000`,
+      )
+      .all(input.ownerId, input.agentId, input.start, input.end) as Record<string, unknown>[];
+    return rows.map((row) => {
+      const inputs = JSON.parse(String(row["inputs"])) as DecisionInputs;
+      const messageId = String(row["pairedMessageId"]);
+      const asText = (value: unknown) => (typeof value === "string" ? value : null);
+      return Object.freeze({
+        entryId: String(row["entryId"]),
+        museAt: String(row["museAt"]),
+        timingOk: row["timingOk"] === null ? null : row["timingOk"] === 1,
+        contentOk: row["contentOk"] === null ? null : row["contentOk"] === 1,
+        pairedMessageId: messageId,
+        museTitleRef: asText(row["museTitleRef"]),
+        museTextRef: asText(row["museTextRef"]),
+        museContentRef: asText(row["museContentRef"]),
+        museTextWithheld: row["museTextWithheld"] === 1,
+        decisionId: String(row["decisionId"]),
+        outcome: String(row["outcome"]),
+        ownerRating: asText(row["ownerRating"]) as GapCandidate["ownerRating"],
+        reasonCode: String(row["reasonCode"]),
+        reasonRef: asText(row["reasonRef"]),
+        decidedAt: String(row["decidedAt"]),
+        relatedRead: asText(inputs.relatedRead),
+        memoryRecall: asText(inputs.memoryRecall),
+        memoryHitsForMail: inputs.memoryByMail?.[messageId]?.length ?? 0,
+        relatedMessagesForMail: inputs.relatedByMail?.[messageId]?.length ?? 0,
+      });
+    });
   }
 
   private listMuse(input: Input<"listMuse">): readonly MuseReferenceEntry[] {

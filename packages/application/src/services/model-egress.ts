@@ -34,6 +34,7 @@ export interface ModelEgressContext {
   readonly threadId: ThreadId | null;
   readonly source: SensitiveInterceptionSource;
   readonly purpose: string | null;
+  readonly redactionRuleset?: number;
 }
 
 export interface ModelEgressSighting {
@@ -222,6 +223,9 @@ class Exchange implements ModelEgressExchange {
         known: this.#known,
         table: this.table,
         trusted: this.#options.trusted ?? TRUSTED_PROMPT_TEXTS,
+        ...(this.#context?.redactionRuleset === undefined
+          ? {}
+          : { ruleset: this.#context.redactionRuleset }),
         ...(recording ? { observe: (seen: EgressRedactionSighting) => see(part, seen) } : {}),
       });
       for (const finding of result.findings)

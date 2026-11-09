@@ -308,6 +308,20 @@ export function summarizeDecisions(
   });
 }
 
+export function pairEntriesByMail(
+  entries: readonly MuseEntryRow[],
+): ReadonlyMap<string, MuseEntryRow> {
+  const byMail = new Map<string, MuseEntryRow>();
+  for (const entry of entries) {
+    if (entry.pairedMessageId === null) continue;
+    const key = entry.pairedMessageId;
+    const previous = byMail.get(key);
+    if (previous === undefined || (entry.museReminded && !previous.museReminded))
+      byMail.set(key, entry);
+  }
+  return byMail;
+}
+
 export function summarizeMuse(
   entries: readonly MuseEntryRow[],
   mailJudgments: ReadonlyMap<string, MailJudgment>,
@@ -315,13 +329,7 @@ export function summarizeMuse(
 ): MuseSummary {
   const reminded = entries.filter((entry) => entry.museReminded);
   const paired = entries.filter((entry) => entry.pairedMessageId !== null);
-  const byMail = new Map<string, MuseEntryRow>();
-  for (const entry of paired) {
-    const key = entry.pairedMessageId as string;
-    const previous = byMail.get(key);
-    if (previous === undefined || (entry.museReminded && !previous.museReminded))
-      byMail.set(key, entry);
-  }
+  const byMail = pairEntriesByMail(entries);
   const buckets = { both: 0, museOnly: 0, himawariOnly: 0, bothSilent: 0, noHimawariRecord: 0 };
   const ratings = { useful: 0, unneeded: 0, missed: 0, unrated: 0 };
   for (const [messageId, entry] of byMail) {
@@ -356,6 +364,190 @@ export function summarizeMuse(
     buckets,
     himawariRatingsOnPairedMails: ratings,
   };
+}
+
+export type GapLineName = "hitRate" | "disturbanceRate";
+export type GapDirection = "museHigher" | "himawariHigher" | "none";
+export type GapVerdict = "insufficient" | "inconclusive" | "decided";
+
+export interface GapSide {
+  readonly reminded: number;
+  readonly samples: number;
+  readonly rate: Proportion;
+}
+
+export interface GapLine {
+  readonly line: GapLineName;
+  readonly mails: number;
+  readonly muse: GapSide;
+  readonly himawari: GapSide;
+  readonly difference: number | null;
+  readonly low: number | null;
+  readonly high: number | null;
+  readonly verdict: GapVerdict;
+  readonly direction: GapDirection;
+}
+
+export interface GapSummary {
+  readonly pairedMails: number;
+  readonly ratedMails: number;
+  readonly unratedMails: number;
+  readonly lines: readonly [GapLine, GapLine];
+}
+
+export function mailTruth(judgment: MailJudgment): "shouldRemind" | "shouldNot" | null {
+  const attention = HIMAWARI_ATTENTION_OUTCOMES.includes(judgment.outcome);
+  if (attention && judgment.ownerRating === "useful") return "shouldRemind";
+  if (attention && judgment.ownerRating === "unneeded") return "shouldNot";
+  if (!attention && judgment.ownerRating === "missed") return "shouldRemind";
+  if (!attention && judgment.ownerRating === "useful") return "shouldNot";
+  return null;
+}
+
+export function pairedDifferenceInterval(
+  both: number,
+  museOnly: number,
+  himawariOnly: number,
+  neither: number,
+): { readonly difference: number; readonly low: number; readonly high: number } | null {
+  const n = both + museOnly + himawariOnly + neither;
+  if (n <= 0) return null;
+  const museRate = (both + museOnly) / n;
+  const himawariRate = (both + himawariOnly) / n;
+  const museInterval = wilsonInterval(both + museOnly, n);
+  const himawariInterval = wilsonInterval(both + himawariOnly, n);
+  if (museInterval === null || himawariInterval === null) return null;
+  const a = both;
+  const b = museOnly;
+  const c = himawariOnly;
+  const d = neither;
+  const product = (a + b) * (c + d) * (a + c) * (b + d);
+  const e = a * d - b * c;
+  const corrected = e > n / 2 ? e - n / 2 : e >= 0 ? 0 : e;
+  const phi = product === 0 ? 0 : corrected / Math.sqrt(product);
+  const difference = museRate - himawariRate;
+  const lowSpan = Math.sqrt(
+    Math.max(
+      0,
+      (museRate - museInterval.low) ** 2 +
+        (himawariInterval.high - himawariRate) ** 2 -
+        2 * phi * (museRate - museInterval.low) * (himawariInterval.high - himawariRate),
+    ),
+  );
+  const highSpan = Math.sqrt(
+    Math.max(
+      0,
+      (museInterval.high - museRate) ** 2 +
+        (himawariRate - himawariInterval.low) ** 2 -
+        2 * phi * (museInterval.high - museRate) * (himawariRate - himawariInterval.low),
+    ),
+  );
+  return {
+    difference,
+    low: Math.max(-1, difference - lowSpan),
+    high: Math.min(1, difference + highSpan),
+  };
+}
+
+function gapLine(
+  line: GapLineName,
+  mails: readonly { readonly museReminded: boolean; readonly himawariReminded: boolean }[],
+  minimumSamples: number,
+): GapLine {
+  const both = mails.filter((mail) => mail.museReminded && mail.himawariReminded).length;
+  const museOnly = mails.filter((mail) => mail.museReminded && !mail.himawariReminded).length;
+  const himawariOnly = mails.filter((mail) => !mail.museReminded && mail.himawariReminded).length;
+  const neither = mails.length - both - museOnly - himawariOnly;
+  const side = (reminded: number): GapSide => ({
+    reminded,
+    samples: mails.length,
+    rate: proportion(reminded, mails.length, minimumSamples),
+  });
+  const interval = pairedDifferenceInterval(both, museOnly, himawariOnly, neither);
+  const enough = mails.length >= minimumSamples && interval !== null;
+  const decided = enough && (interval.low > 0 || interval.high < 0);
+  return {
+    line,
+    mails: mails.length,
+    muse: side(both + museOnly),
+    himawari: side(both + himawariOnly),
+    difference: enough ? interval.difference : null,
+    low: enough ? interval.low : null,
+    high: enough ? interval.high : null,
+    verdict: !enough ? "insufficient" : decided ? "decided" : "inconclusive",
+    direction: decided ? (interval.difference > 0 ? "museHigher" : "himawariHigher") : "none",
+  };
+}
+
+export function summarizeGap(
+  entries: readonly MuseEntryRow[],
+  mailJudgments: ReadonlyMap<string, MailJudgment>,
+  minimumSamples = DEFAULT_MINIMUM_SAMPLES,
+): GapSummary {
+  const shouldRemind: { museReminded: boolean; himawariReminded: boolean }[] = [];
+  const shouldNot: { museReminded: boolean; himawariReminded: boolean }[] = [];
+  let paired = 0;
+  for (const [messageId, entry] of pairEntriesByMail(entries)) {
+    const judgment = mailJudgments.get(messageId);
+    if (judgment === undefined) continue;
+    paired += 1;
+    const truth = mailTruth(judgment);
+    if (truth === null) continue;
+    const mail = {
+      museReminded: entry.museReminded,
+      himawariReminded: HIMAWARI_ATTENTION_OUTCOMES.includes(judgment.outcome),
+    };
+    (truth === "shouldRemind" ? shouldRemind : shouldNot).push(mail);
+  }
+  const rated = shouldRemind.length + shouldNot.length;
+  return {
+    pairedMails: paired,
+    ratedMails: rated,
+    unratedMails: paired - rated,
+    lines: [
+      gapLine("hitRate", shouldRemind, minimumSamples),
+      gapLine("disturbanceRate", shouldNot, minimumSamples),
+    ],
+  };
+}
+
+export const GAP_ATTRIBUTIONS = [
+  "notRemembered",
+  "notRetrieved",
+  "wrongJudgment",
+  "notReadFully",
+] as const;
+export type GapAttribution = (typeof GAP_ATTRIBUTIONS)[number];
+
+export interface GapAttributionInput {
+  readonly relatedRead: string | null;
+  readonly memoryRecall: string | null;
+  readonly memoryHitsForMail: number;
+}
+
+export function attributeGap(input: GapAttributionInput): GapAttribution {
+  if (input.relatedRead === "partial" || input.relatedRead === "failed") return "notReadFully";
+  if (
+    input.memoryRecall === "off" ||
+    input.memoryRecall === "partial" ||
+    input.memoryRecall === "failed"
+  )
+    return "notRetrieved";
+  if (input.memoryRecall === "ok" && input.memoryHitsForMail === 0) return "notRemembered";
+  return "wrongJudgment";
+}
+
+export const GAP_ATTRIBUTION_LABELS: Readonly<Record<GapAttribution, string>> = Object.freeze({
+  notRemembered: "没记住",
+  notRetrieved: "没取到",
+  wrongJudgment: "判断错",
+  notReadFully: "没读全",
+});
+
+export function isGapCase(entry: MuseEntryRow, judgment: MailJudgment): boolean {
+  if (!entry.museReminded) return false;
+  if (HIMAWARI_ATTENTION_OUTCOMES.includes(judgment.outcome)) return false;
+  return (entry.timingOk === true && entry.contentOk === true) || judgment.ownerRating === "missed";
 }
 
 export function summarizeImplicit(
@@ -563,6 +755,52 @@ export interface HistoryRecord {
   };
 }
 
+const GAP_LINE_LABELS: Readonly<Record<GapLineName, string>> = Object.freeze({
+  hitRate: "命中率（该提醒的邮件里，这一方提醒了的占比）",
+  disturbanceRate: "多余提醒率（不该提醒的邮件里，这一方提醒了的占比）",
+});
+
+export function formatSignedPercent(value: number): string {
+  const percent = (value * 100).toFixed(1);
+  return value > 0 ? `+${percent}%` : `${percent}%`;
+}
+
+export function gapReportLines(gap: GapSummary, minimumSamples: number): string[] {
+  const lines: string[] = ["## Muse 差距线", ""];
+  lines.push(
+    `配对到 Himawari 判断的邮件 ${gap.pairedMails} 封，其中你评过的 ${gap.ratedMails} 封进差距线，没评过的 ${gap.unratedMails} 封只进案例清单。“该提醒/不该提醒”只按你对 Himawari 判断的评价定：提醒了且评“做对了”、没提醒且评“该做没做”算该提醒；提醒了且评“不该做”、没提醒且评“做对了”算不该提醒。差 = Muse − Himawari，区间是同一批邮件的配对差 95% 区间。`,
+    "",
+  );
+  for (const line of gap.lines) {
+    const label = GAP_LINE_LABELS[line.line];
+    if (line.verdict === "insufficient") {
+      lines.push(
+        `- ${label}：样本不足（配对且评过的邮件 ${line.mails} 封，少于 ${minimumSamples} 封），只看下面的案例，不下结论。`,
+      );
+      continue;
+    }
+    const diff =
+      line.difference === null || line.low === null || line.high === null
+        ? ""
+        : `；差 ${formatSignedPercent(line.difference)}（区间 ${formatSignedPercent(line.low)} 至 ${formatSignedPercent(line.high)}）`;
+    const conclusion =
+      line.verdict === "inconclusive"
+        ? "区间跨 0，分不出差别。"
+        : line.direction === "museHigher"
+          ? "Muse 的这个比例更高。"
+          : "Himawari 的这个比例更高。";
+    lines.push(
+      `- ${label}：Muse ${formatProportion(line.muse.rate)}；Himawari ${formatProportion(line.himawari.rate)}${diff}。${conclusion}`,
+    );
+  }
+  lines.push(
+    "",
+    "局限：评价只覆盖你愿意评的邮件，样本偏向你记过 Muse 条目且评过的邮件；记忆不和 Muse 比。",
+    "",
+  );
+  return lines;
+}
+
 export function buildReport({
   window,
   scope,
@@ -571,6 +809,7 @@ export function buildReport({
   implicit,
   minimumSamples,
   previous,
+  gap,
 }: {
   readonly window: CalibrationWindow;
   readonly scope: { readonly ownerId: string; readonly agentId: string };
@@ -579,6 +818,7 @@ export function buildReport({
   readonly implicit: ImplicitSummary;
   readonly minimumSamples: number;
   readonly previous?: HistoryRecord | undefined;
+  readonly gap?: GapSummary | undefined;
 }): string {
   const lines: string[] = [];
   lines.push(`# 校准周报：${window.label}`, "");
@@ -616,6 +856,7 @@ export function buildReport({
       "",
     );
   }
+  if (gap !== undefined) lines.push(...gapReportLines(gap, minimumSamples));
   lines.push("## 观察信号（不是打分）", "");
   lines.push(
     "这一节记不需要你动手评价就能看到的事：提醒有没有被点开、完成或静音后有没有撤销、邮件串里你有没有回复。它们是弱信号，不当作你的评价，不和上面的打分比例混在一起算，也不会用来自动改任何门槛。分母是这一周推送过提醒的决策。",

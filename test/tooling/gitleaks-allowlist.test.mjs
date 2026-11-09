@@ -61,7 +61,7 @@ describe("[I-gitleaks-allowlist] Gitleaks 白名单只放行已审阅的形式",
   });
 
   it("其余每条白名单都同时限定规则、文件路径和值的形状", () => {
-    expect(scoped).toHaveLength(13);
+    expect(scoped).toHaveLength(14);
     for (const block of scoped) {
       expect(block.condition).toBe("AND");
       expect(block.regexTarget).toBe("secret");
@@ -104,6 +104,7 @@ describe("[I-gitleaks-allowlist] Gitleaks 白名单只放行已审阅的形式",
       [["-----BEGIN", "PRIVATE KEY----- is used ...`"].join(" "), changeLast],
       [["-----BEGIN", "ENCRYPTED PRIVATE KEY-----`、`DSA PRIVATE KEY` "].join(" "), changeLast],
       [["MIIEvR2T14", "TAILBODY"].join(""), changeLast],
+      [["abcdef", "123456"].join(""), changeLast],
       [["abcdef", "123456"].join(""), changeLast],
     ].map(([sample, mutate], index) => [index, sample, mutate])) {
       expect(matches(scoped[index].regexes, sample)).toBe(true);

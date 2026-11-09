@@ -23,6 +23,7 @@ export interface ThreadPromptBundleIdentity {
   readonly modelRef: string;
   readonly thinkingLevel: string;
   readonly answerLocale: string | null;
+  readonly redactionRuleset?: number;
 }
 
 export interface ThreadPromptBundleScope {
@@ -87,6 +88,7 @@ export interface RuntimePromptBundleCandidate {
 
 export interface RuntimePromptBundle extends RuntimePromptBundleCandidate {
   readonly generation: number;
+  readonly redactionRuleset?: number;
 }
 
 export interface RuntimePromptBundleResolveInput {

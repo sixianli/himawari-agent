@@ -78,7 +78,6 @@ export function createProductionToolResultRecovery(options: {
   };
   return async (
     candidate: Pick<RunDispatchCandidate, "runId" | "ownerId" | "agentId">,
-    purpose?: { readonly recordUnrecoverable?: boolean },
   ): Promise<PreparedToolResultRecovery | undefined> => {
     if (candidate.ownerId !== ownerId || candidate.agentId !== agentId) return undefined;
     const saved = await checkpoints.read(candidate.runId);
@@ -156,7 +155,6 @@ export function createProductionToolResultRecovery(options: {
         admission = { ...admission, record: await options.recoverMissingResult(admission.record) };
       }
       if (
-        purpose?.recordUnrecoverable !== false &&
         saved.checkpoint.diagnosticCode === "RUNTIME_TOOL_RESULT_UNKNOWN" &&
         options.resultUnrecoverable &&
         admission.phase === "bound" &&

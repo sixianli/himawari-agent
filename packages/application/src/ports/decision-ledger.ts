@@ -5,6 +5,7 @@ import type {
   MuseEntryRow,
 } from "@himawari-agent/calibration";
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
+import type { ProactiveScope } from "./proactive-checks.js";
 
 export interface CalibrationRowsSnapshot {
   readonly decisions: readonly CalibrationDecisionRow[];
@@ -168,6 +169,28 @@ export interface MuseReferenceEntry {
   readonly recordedAt: string;
 }
 
+export interface GapCandidate {
+  readonly entryId: string;
+  readonly museAt: string;
+  readonly timingOk: boolean | null;
+  readonly contentOk: boolean | null;
+  readonly pairedMessageId: string;
+  readonly museTitleRef: string | null;
+  readonly museTextRef: string | null;
+  readonly museContentRef: string | null;
+  readonly museTextWithheld: boolean;
+  readonly decisionId: string;
+  readonly outcome: string;
+  readonly ownerRating: DecisionRating | null;
+  readonly reasonCode: string;
+  readonly reasonRef: string | null;
+  readonly decidedAt: string;
+  readonly relatedRead: string | null;
+  readonly memoryRecall: string | null;
+  readonly memoryHitsForMail: number;
+  readonly relatedMessagesForMail: number;
+}
+
 export interface DecisionLedgerScope {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
@@ -218,4 +241,28 @@ export interface DecisionLedgerPort {
   listMuse(
     input: DecisionLedgerScope & { readonly since: string; readonly limit: number },
   ): Promise<readonly MuseReferenceEntry[]>;
+  readGapCandidates(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly start: string;
+    readonly end: string;
+  }): Promise<readonly GapCandidate[]>;
+}
+
+export interface GapCaseMarkRow {
+  readonly caseId: string;
+  readonly snapshotRef: string;
+  readonly markedAt: string;
+}
+
+export interface GapCaseMarkPort {
+  mark(
+    input: ProactiveScope & {
+      readonly caseId: string;
+      readonly snapshotRef: string;
+      readonly at: string;
+    },
+  ): Promise<boolean>;
+  unmark(input: ProactiveScope & { readonly caseId: string }): Promise<string | null>;
+  list(input: ProactiveScope): Promise<readonly GapCaseMarkRow[]>;
 }

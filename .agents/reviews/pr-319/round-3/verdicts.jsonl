@@ -1,0 +1,4 @@
+{"id": "r3-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "最终代码不满足“以后复核记录再引用同一个假值不再变红”，且作者对路径范围的描述与最终代码不一致", "valid": false, "class": "better"}
+{"id": "r3-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "一块白名单塞进多个文件，与 ADR 0177 和规范“规则 + 单一路径 + 精确值 / 每块只认一个文件”不一致", "valid": false, "class": "better"}
+{"id": "r3-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "真实 gitleaks 正向夹具只覆盖新白名单中的一个文件，其他 alternation 拼错也会绿", "valid": true, "class": "error", "severity": "low", "trigger": "路径正则里某个分支写错（例如少个点），夹具没覆盖到，测试仍通过", "consequence": "main 上对应的记录文件会再次被报；check:gitleaks 本身仍会显性失败，不会放过真密钥", "modelSeverity": "低"}
+{"id": "r3-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "路径正则的 `(?:^|/)` 可以匹配任意前缀下的同名后缀", "valid": false, "class": "better"}
