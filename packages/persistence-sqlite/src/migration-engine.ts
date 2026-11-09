@@ -665,6 +665,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0084_memory_consolidation_basis.sql",
   },
+  {
+    sequence: 85,
+    name: "memory_reminder_cancelled",
+    changeSet: "memory-reminder-cancelled",
+    phase: "expand" as const,
+    file: "0085_memory_reminder_cancelled.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

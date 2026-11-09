@@ -296,7 +296,7 @@ export class ProductionReminderWriter {
     const updated = await this.#options.reminders.update({
       id: reminder.id,
       expectedUpdatedAt: reminder.updatedAt,
-      status: "dismissed",
+      status: "cancelled",
       dueAt: reminder.dueAt,
       remindAt: reminder.remindAt,
       dismissedAt: now,

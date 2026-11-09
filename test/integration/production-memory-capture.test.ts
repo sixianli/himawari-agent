@@ -1168,6 +1168,16 @@ describe("production memory capture", () => {
       dismissedAt: "2026-10-30T07:06:00.000Z",
     });
     expect((await overview(context.control)).reminders).toEqual([]);
+    await context.control.execute({
+      ...envelope,
+      kind: "command",
+      type: "memory.reminder.respond",
+      payload: { reminderId, action: "cancel" },
+    } as never);
+    expect(await reminders.read(reminderId)).toMatchObject({
+      status: "cancelled",
+      dismissedAt: "2026-10-30T07:06:00.000Z",
+    });
     await expect(
       context.control.execute({
         ...envelope,
@@ -1274,6 +1284,9 @@ describe("production memory capture", () => {
     const target = listed.reminders[0]?.reminderId ?? "";
     expect(await tool("cancel", { reminderId: target }, "call-cancel")).toMatchObject({
       cancelled: true,
+    });
+    expect(await context.repository.memoryReminders().read(target)).toMatchObject({
+      status: "cancelled",
     });
     expect(await upcoming()).toEqual([
       { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
@@ -1395,7 +1408,7 @@ describe("production memory capture", () => {
       payload: { reminderId, action: "cancel" },
     } as never);
     expect(await reminders.read(reminderId)).toMatchObject({
-      status: "dismissed",
+      status: "cancelled",
       dueAt: "2028-05-12T01:00:00.000Z",
     });
     expect((await overview(context.control)).upcoming).toEqual([]);

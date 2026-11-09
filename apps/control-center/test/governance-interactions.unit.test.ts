@@ -91,8 +91,7 @@ beforeEach(() => {
     storage,
   };
   query.mockImplementation(async (request) => {
-    if (request.type.endsWith(".detail") || request.type === "identity.session_detail")
-      return detail;
+    if (request.type.endsWith(".detail")) return detail;
     return {
       type: "collection.snapshot",
       payload: {

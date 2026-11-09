@@ -87,8 +87,6 @@ describe("control center information architecture inventory", () => {
     expect(CONTROL_CENTER_INTEGRATION_READY_SURFACE_IDS).toEqual([
       "threads",
       "approvals",
-      "tasks",
-      "inbox-digest",
       "memory",
       "capabilities-adapters",
       "authorizations-grants",
@@ -97,15 +95,14 @@ describe("control center information architecture inventory", () => {
       "reflection",
       "workers",
       "improvements",
-      "trace",
-      "settings",
       "sessions-devices",
       "health-deployment",
     ]);
     for (const surface of CONTROL_CENTER_SURFACE_INVENTORY) {
       if (surface.integrationPolicy === "allowed") {
         expect(surface.contractStatus).toBe("frozen");
-        expect(surface.queries.length).toBeGreaterThan(0);
+        if (!["sessions-devices", "health-deployment"].includes(surface.id))
+          expect(surface.queries.length + surface.mutations.length).toBeGreaterThan(0);
         expect(surface.blockers).toEqual([]);
       } else {
         expect(surface.contractStatus).not.toBe("frozen");

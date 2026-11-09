@@ -880,7 +880,9 @@ export class ProductionMemoryControl {
                 dismissedAt: null,
               }
             : {
-                status: "dismissed" as const,
+                status: (action === "cancel" ? "cancelled" : "dismissed") as
+                  | "cancelled"
+                  | "dismissed",
                 dueAt: reminder.dueAt,
                 remindAt: reminder.remindAt,
                 dismissedAt: now,
