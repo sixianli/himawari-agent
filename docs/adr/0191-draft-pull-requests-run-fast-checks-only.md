@@ -49,7 +49,7 @@ date: "2026-11-09"
 2. 汇总作业 `ci/required` 和汇总脚本不改。`aggregate.mjs` 只接受上游作业的结果为 `success`，被跳过的作业算未完成，所以草稿 PR 上的 `ci/required` 一定是失败的。这是有意的：草稿没有跑完整检查，不能显示为通过；`main-evidence.mjs` 只认结论为成功的 PR 运行，草稿的运行永远不会被当成 main 的证据。
 3. PR 从草稿改为正式（`ready_for_review` 事件）时，同一并发组里的草稿运行被取消，完整 CI 重新跑一遍。
 4. `edited` 事件的运行在并发组名里加上固定的 `edited` 标记，和推送、开启、转正式触发的运行互不取消；连续几次 `edited` 之间仍按同组处理，后一次会取消前一次，所以连续改标题最多只留一轮。非草稿 PR 上的 `edited` 运行完整检查（因为改目标分支时需要重新核对），草稿 PR 上的 `edited` 和其他草稿运行一样只跑快检查。
-5. `scripts/ci/check-policy.mjs` 把这个例外写成硬规则：只有 `browser` 和 `coverage` 两个作业可以带草稿条件，并且必须正好是上面那个条件（汇总作业 `ci/required` 原有的 `always()` 不变）；`policy`、`static`、`build`、`security` 带任何条件、这两个作业条件写错或缺失，策略检查都失败。策略检查除 `coverage` 的下载步骤和执行步骤（要求没有 `if`）外，不检查其他步骤级的 `if`，这是原有的缺口，本决定不处理。设计文档第 9 节同步改写。
+5. `scripts/ci/check-policy.mjs` 把这个例外写成硬规则：只有 `browser` 和 `coverage` 两个作业可以带草稿条件，并且必须正好是上面那个条件（汇总作业 `ci/required` 原有的 `always()` 不变）；`policy`、`static`、`build`、`security` 带任何条件、这两个作业条件写错或缺失，策略检查都失败。对 `ci.yml` 的策略检查，除 `coverage` 的下载步骤和执行步骤（要求没有 `if`）外，不检查其他步骤级的 `if`（`main.yml` 的步骤级 `if` 由 `main-workflow.mjs` 另行检查），这是原有的缺口，本决定不处理。设计文档第 9 节同步改写。
 
 没有使用 `github.event.changes.base`（`edited` 事件里表示目标分支改动的字段）：它的具体形状没有在本机核实，按“拿不准就走完整运行”处理，非草稿 PR 的 `edited` 事件一律完整运行。
 
