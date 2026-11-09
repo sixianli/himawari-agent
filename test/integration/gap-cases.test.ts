@@ -354,7 +354,11 @@ describe("[PA-4] Muse gap cases", () => {
         "why",
       ]);
       expect((await h.cases()).map((entry) => entry.id)).toContain(first.id);
+      const [markedRow] = await h.marks.list(scope);
+      const snapshotRef = markedRow?.snapshotRef ?? "";
+      expect(await h.repository.payloadStore(OWNER_ID, AGENT_ID).get(snapshotRef)).toBeDefined();
       await h.mark(first.id, false);
+      expect(await h.repository.payloadStore(OWNER_ID, AGENT_ID).get(snapshotRef)).toBeUndefined();
       const after = await h.app.inject({ method: "GET", url: GAP_EXPORT_PATH, headers: auth });
       expect(after.json().cases).toEqual([]);
       expect(await h.marks.list(scope)).toEqual([]);
