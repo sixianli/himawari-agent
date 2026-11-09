@@ -51,6 +51,7 @@ describe("memory reminder cancelled migration", () => {
       insertReminder.run("r-3", OWNER, AGENT, "m-cancelled", T0, T0, "cancelled", T0, T0, T0),
     ).toThrow();
 
+    database.pragma("foreign_keys = ON");
     const snapshot = await createVerifiedMigrationSnapshot(
       database,
       path.join(directory, "snapshot.sqlite"),
@@ -58,11 +59,39 @@ describe("memory reminder cancelled migration", () => {
     applyMigrations(database, migrations, { snapshot });
 
     const rows = database
-      .prepare("SELECT id, status, dismissed_at AS dismissedAt FROM memory_reminders ORDER BY id")
+      .prepare(
+        `SELECT id, owner_id AS ownerId, agent_id AS agentId, memory_id AS memoryId, due_at AS dueAt,
+          remind_at AS remindAt, repeat, status, dismissed_at AS dismissedAt,
+          created_at AS createdAt, updated_at AS updatedAt FROM memory_reminders ORDER BY id`,
+      )
       .all();
     expect(rows).toEqual([
-      { id: "r-1", status: "scheduled", dismissedAt: null },
-      { id: "r-2", status: "dismissed", dismissedAt: T0 },
+      {
+        id: "r-1",
+        ownerId: OWNER,
+        agentId: AGENT,
+        memoryId: "m-scheduled",
+        dueAt: T0,
+        remindAt: T0,
+        repeat: "none",
+        status: "scheduled",
+        dismissedAt: null,
+        createdAt: T0,
+        updatedAt: T0,
+      },
+      {
+        id: "r-2",
+        ownerId: OWNER,
+        agentId: AGENT,
+        memoryId: "m-dismissed",
+        dueAt: T0,
+        remindAt: T0,
+        repeat: "none",
+        status: "dismissed",
+        dismissedAt: T0,
+        createdAt: T0,
+        updatedAt: T0,
+      },
     ]);
     insertReminder.run("r-3", OWNER, AGENT, "m-cancelled", T0, T0, "cancelled", T0, T0, T0);
     expect(() =>
@@ -75,6 +104,16 @@ describe("memory reminder cancelled migration", () => {
       expect.arrayContaining(["memory_reminders_due_index", "memory_reminders_agenda_index"]),
     );
     expect(database.pragma("foreign_key_check(memory_reminders)")).toEqual([]);
+    const references = database.pragma("foreign_key_list(memory_reminders)") as {
+      table: string;
+      from: string;
+    }[];
+    expect(references.map(({ table, from }) => `${from}->${table}`).sort()).toEqual([
+      "agent_id->agents",
+      "memory_id->memory_records",
+      "owner_id->owners",
+    ]);
+    expect(database.pragma("foreign_keys", { simple: true })).toBe(1);
     database.close();
   });
 });

@@ -47,8 +47,8 @@ date: "2026-11-09"
 4. **新增检查 `npm run check:operations`**（`scripts/check-operations.mjs`，属于 `npm run check`）：对约定里每个查询和命令，要求同时有后端实现（`apps/*/src`、`packages/*/src` 里有它的字面量，生产安装名单本身不算）、调用方（`apps/control-center/src`、`scripts`、`apps/admin-cli/src` 里有人发送它，界面文案 id 不算）、测试（真正的测试文件里引用它，夹具不算）。缺一项就报红并写明缺哪项。生产安装名单（`PRODUCTION_*_OPERATIONS`）里出现约定里没有的名字也报红。
 5. **待接入名单 `ci/operations-pending.json`**：缺项但暂时保留的操作逐项登记，理由必须写明缺什么、为什么留着。名单里的操作一旦补齐，检查要求移出；名单外新增的缺项直接报红；名单里写了约定里没有的操作、或没写理由，都报红。名单目前登记 23 项，按理由分四组：自主建议、反思、委派、改进（`autonomy-gateway-adapter` 已实现但生产没装配、前端没有页面）；主机文件和工作区（`host-workspace-gateway-adapter`，同样情况）；已安装但前端没有入口的几项（`workspace.copy.*`、`memory.basis.read`、`proactive.audit.respond`）；`github.monitor.set_state`（`integration-github` 已实现，生产没装配）。这些是否整组删除，由 Andy 以后单独决定。
 6. **已删除名单 `ci/operations-removed.json`**：记下这次删出约定的 26 个名字。检查要求它们不得回到约定里，也不得在后端、前端、脚本和测试里再以 `type: "名字"`、`type === "名字"` 或 `case "名字"` 的形式出现，防止留下指向已删操作的残余引用（第 1 轮复核就发现过一处测试仍在用 `session.revoke`）。
-7. **页面状态**：任务、收件箱摘要、追踪、设置四个页面现在没有可用的约定，在清单里标为 `contractStatus: "missing"`、`integrationPolicy: "blocked"`；任务页面仍然保留 `github.monitor.set_state` 在待接入名单里。会话与设备页面靠原生设备入口显示，不受已安装名单限制。`isSurfaceInstalled` 要求页面至少有一个操作且全部已安装。
-8. **提醒的“取消”**：迁移 0085 给 `memory_reminders.status` 加入 `cancelled`；已取消的提醒只接受再次取消，忽略和稍后提醒会被拒绝（`MEMORY_REMINDER_CANCELLED`）。
+7. **页面状态**：任务、收件箱摘要、追踪、设置四个页面现在没有可用的约定，在清单里标为 `contractStatus: "missing"`、`integrationPolicy: "blocked"`；任务页面仍然保留 `github.monitor.set_state` 在待接入名单里。会话与设备页面靠原生设备入口显示，不受已安装名单限制。`isSurfaceInstalled` 对线程页直接返回真，对健康与部署页只看依赖是否可用，其余页面要求至少有一个操作且全部已安装。
+8. **提醒的“取消”**：迁移 0085 给 `memory_reminders.status` 加入 `cancelled`；已取消的提醒只接受再次取消，忽略和稍后提醒会被拒绝（`MEMORY_REMINDER_CANCELLED`）。模型工具 `reminder_cancel` 和网关的取消一样，也能把已忽略的提醒改成已取消。
 
 <a id="deletions"></a>
 
@@ -87,6 +87,8 @@ date: "2026-11-09"
 - 门槛（会自动拦下的测试）：
   - `npm run check:operations`：真实仓库零报红；`test/tooling/operations-check.test.mjs` 的 `[P1-4]` 用例带反向输入：缺后端、缺调用方（界面文案同名不算）、缺测试（夹具不算）、名单里的操作已齐全、名单项没理由或不在约定里、安装名单里有约定外的名字，都必须报红。
   - `test/integration/production-memory-capture.test.ts`：取消写 `cancelled`、忽略写 `dismissed`，两者可区分；年度提醒取消后不再顺延；`reminder_cancel` 工具同样写 `cancelled`。去掉这次修改时这些断言失败。
+  - `test/tooling/operations-check.test.mjs` 的已删除名单用例：已删操作以 `type:`、`case`、`send(...)` 等字面量残留、已删操作或回执回到约定都报红，界面文案 id 和计时标签不误报。
+  - `packages/persistence-sqlite/test/memory-reminder-cancelled-migration.contract.test.ts`：旧的待办和已忽略提醒整行保留，外键、索引、约束仍在。
   - `packages/persistence-sqlite/test/migration-engine.contract.test.ts` 等迁移测试：0085 能在旧库上应用，当前版本号是 85。
 - 不改变发给模型的请求开头：`reminder_cancel` 的名称、参数和说明文字都没变，只是执行后写的状态不同。
 - 迁移 0085 随下次上线生效；表里没有需要回填的数据。

@@ -88,6 +88,21 @@ function frontendSends(text, name) {
   }
 }
 
+function removedNameUsed(text, name) {
+  for (const quote of ['"', "'"]) {
+    const literal = `${quote}${name}${quote}`;
+    let from = 0;
+    for (;;) {
+      const at = text.indexOf(literal, from);
+      if (at < 0) break;
+      const before = text.slice(Math.max(0, at - 60), at);
+      if (!/\bmessage\(\s*$/.test(before) && !/\bmeasure\([^,()]*,\s*$/.test(before)) return true;
+      from = at + literal.length;
+    }
+  }
+  return false;
+}
+
 export function checkOperations(root = repositoryRoot) {
   const errors = [];
   const contractPath = path.join(root, CONTRACT_FILE);
@@ -168,14 +183,14 @@ export function checkOperations(root = repositoryRoot) {
     }
   }
   const contractText = readFileSync(contractPath, "utf8");
+  const listedNames = /GATEWAY_V2_MESSAGE_TYPES = \[([\s\S]*?)\] as const/.exec(contractText);
+  const allContractNames = new Set(
+    listedNames ? [...listedNames[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]) : [],
+  );
   for (const name of removed) {
-    if (contractNames.has(name)) errors.push(`OPERATION_REMOVED_BUT_IN_CONTRACT ${name}`);
-    const escaped = name.replaceAll(".", "\\.");
-    const usage = new RegExp(
-      `(?:["']?type["']?\\s*(?:===|!==|:|=)\\s*|\\bcase\\s+)["']${escaped}["']`,
-    );
+    if (allContractNames.has(name)) errors.push(`OPERATION_REMOVED_BUT_IN_CONTRACT ${name}`);
     const used = [...backendTexts, ...frontendTexts, ...testTexts, contractText].some((text) =>
-      usage.test(text),
+      removedNameUsed(text, name),
     );
     if (used) errors.push(`OPERATION_REMOVED_STILL_USED ${name}`);
   }

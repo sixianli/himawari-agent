@@ -1311,6 +1311,20 @@ describe("production memory capture", () => {
       { text: "我的卡号是 6222020200112233445", dueAt: "2026-10-30T01:00:00.000Z" },
       { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
     ]);
+    const other = listed.reminders[1]?.reminderId ?? "";
+    const store = context.repository.memoryReminders();
+    const scheduled = await store.read(other);
+    await store.update({
+      id: other,
+      expectedUpdatedAt: scheduled?.updatedAt ?? "",
+      status: "dismissed",
+      dueAt: scheduled?.dueAt ?? "",
+      remindAt: scheduled?.remindAt ?? "",
+      dismissedAt: "2026-10-30T06:30:00.000Z",
+      updatedAt: "2026-10-30T06:30:00.000Z",
+    });
+    await tool("cancel", { reminderId: other }, "call-after-dismiss");
+    expect(await store.read(other)).toMatchObject({ status: "cancelled" });
     const stored = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
     const cardMemory = stored.find(({ id }) => id.includes("call-card"));
     expect(cardMemory?.dataClassification).toBe("sensitive");

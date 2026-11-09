@@ -127,25 +127,39 @@ describe("operations check", () => {
   });
 
   it("[P1-4] rejects a deleted operation that code or tests still use", () => {
+    const name = `${"session"}.revoke`;
     const removed = {
-      "ci/operations-removed.json": JSON.stringify({ removed: { "session.revoke": "gone" } }),
+      "ci/operations-removed.json": JSON.stringify({ removed: { [name]: "gone" } }),
     };
-    const stale = {
-      ...complete,
-      ...removed,
-      "packages/integration-github/test/github.test.ts": `const m = { type: "${"session"}.revoke" };`,
-    };
-    expect(checkOperations(tree(stale)).errors).toEqual([
-      "OPERATION_REMOVED_STILL_USED session.revoke",
-    ]);
+    const expected = [`OPERATION_REMOVED_STILL_USED ${name}`];
+    const withFile = (file, text) => tree({ ...complete, ...removed, [file]: text });
+    for (const text of [`const m = { type: "${name}" };`, `send("${name}");`, `case "${name}":`])
+      expect(
+        checkOperations(withFile("packages/integration-github/test/github.test.ts", text)).errors,
+      ).toEqual(expected);
+    expect(
+      checkOperations(
+        withFile(
+          "apps/control-center/src/app/label.ts",
+          `message("${name}"); timings.measure(id, "${name}", run);`,
+        ),
+      ).errors,
+    ).toEqual([]);
     expect(checkOperations(tree({ ...complete, ...removed })).errors).toEqual([]);
+  });
+
+  it("[P1-4] rejects a deleted operation or snapshot that returns to the contract", () => {
     const revived = {
       ...complete,
-      "ci/operations-removed.json": JSON.stringify({ removed: { "demo.read": "gone" } }),
+      "ci/operations-removed.json": JSON.stringify({
+        removed: { "demo.read": "gone", "demo.snapshot": "gone" },
+      }),
     };
     expect(checkOperations(tree(revived)).errors).toEqual([
       "OPERATION_REMOVED_BUT_IN_CONTRACT demo.read",
       "OPERATION_REMOVED_STILL_USED demo.read",
+      "OPERATION_REMOVED_BUT_IN_CONTRACT demo.snapshot",
+      "OPERATION_REMOVED_STILL_USED demo.snapshot",
     ]);
   });
 
