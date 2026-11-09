@@ -269,6 +269,10 @@ export class MemoryEpisodeService {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
     readonly limit: number;
+    readonly within?: <T>(
+      dataClassification: DataClassification,
+      operation: () => Promise<T>,
+    ) => Promise<T>;
   }): Promise<number> {
     const embedder = this.#options.embedder;
     if (!embedder || input.limit <= 0) return 0;
@@ -281,6 +285,7 @@ export class MemoryEpisodeService {
     });
     let embedded = 0;
     for (const episode of episodes) {
+      if (!isModelVisible(episode.dataClassification)) continue;
       const text = await this.#options.readText({
         ownerId: input.ownerId,
         agentId: input.agentId,
@@ -292,7 +297,10 @@ export class MemoryEpisodeService {
         embedding: {
           model: embedder.model,
           dimensions: embedder.dimensions,
-          vector: await embedder.embed(`${episode.day}\n${text}`),
+          vector: await (input.within ?? ((_, operation) => operation()))(
+            episode.dataClassification,
+            () => embedder.embed(`${episode.day}\n${text}`),
+          ),
         },
       });
       embedded += 1;

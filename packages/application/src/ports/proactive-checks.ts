@@ -401,7 +401,13 @@ export interface ProactiveStorePort {
 }
 
 export interface ProactiveSealPort {
-  seal(input: ProactiveScope & { readonly text: string; readonly at: string }): Promise<string>;
+  seal(
+    input: ProactiveScope & {
+      readonly text: string;
+      readonly at: string;
+      readonly dataClassification?: DataClassification;
+    },
+  ): Promise<string>;
   open(input: ProactiveScope & { readonly ref: string }): Promise<string | undefined>;
   release(input: ProactiveScope & { readonly refs: readonly string[] }): Promise<void>;
 }

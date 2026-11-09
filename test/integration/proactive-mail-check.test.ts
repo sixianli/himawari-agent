@@ -15,13 +15,13 @@ import {
   readProactiveOverview,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
-import { findRelatedMail } from "@himawari-agent/platform-node";
 import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
+import { findRelatedMail } from "@himawari-agent/platform-node";
 import {
   DeterministicIdGenerator,
   DeterministicPayloadProtector,
@@ -1827,6 +1827,36 @@ describe("proactive Gmail check acceptance", () => {
       expect(h.labels).toEqual(["private"]);
     });
 
+    it("[RULE-memory-visible] seals the reminder written from a sensitive memory as sensitive, and a private one as private", async () => {
+      const insightClassifications = (h: Awaited<ReturnType<typeof harness>>) =>
+        h
+          .query(
+            `SELECT p.classification AS classification FROM source_insights i
+            JOIN payloads p ON p.ref = i.content_ref`,
+          )
+          .map(({ classification }) => classification);
+      const allergy = {
+        id: "mem-allergy",
+        text: "主人对牛肉过敏。",
+        score: 0.6,
+        dataClassification: "sensitive" as const,
+      };
+      const sensitive = await harness({ memory: recallOf({ "beef-promo": [allergy] }) });
+      sensitive.reader.items = [
+        mail("beef-promo", { subject: "周末聚餐订了烤肉店", snippet: "周六晚上七点" }),
+      ];
+      sensitive.script([{ id: "beef-promo", result: "act", todo: "别买牛肉", priority: "medium" }]);
+      await sensitive.service.run();
+      expect(insightClassifications(sensitive)).toEqual(["sensitive"]);
+      const plain = await harness({ memory: recallOf({ "beef-promo": [beefHit] }) });
+      plain.reader.items = [
+        mail("beef-promo", { subject: "周末聚餐订了烤肉店", snippet: "周六晚上七点" }),
+      ];
+      plain.script([{ id: "beef-promo", result: "act", todo: "看看牛肉", priority: "medium" }]);
+      await plain.service.run();
+      expect(insightClassifications(plain)).toEqual(["private"]);
+    });
+
     it("[PA-2] adds no tentative note and records no tentative ids when every memory is confirmed", async () => {
       const h = await harness({ memory: recallOf({ "beef-promo": [beefHit] }) });
       h.reader.items = [promo()];
@@ -2049,7 +2079,7 @@ describe("proactive Gmail check acceptance", () => {
           receivedAt: "2026-11-04T01:00:00.000Z",
         }),
       ];
-      h.script([{ id: "promise", result: "act", todo: "来月連絡する", priority: "low" }]);
+      h.script([{ id: "promise", result: "act", todo: "来月連絡する", priority: "medium" }]);
       await h.service.run();
       const insights = (await h.overview()).insights;
       expect(insights.find((entry) => entry.status === "replied")).toBeUndefined();

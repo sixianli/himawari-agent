@@ -10,14 +10,14 @@ export function createProactiveSeal(options: {
   readonly ids: IdGeneratorPort;
 }): ProactiveSealPort {
   return Object.freeze<ProactiveSealPort>({
-    async seal({ ownerId, agentId, text, at }) {
+    async seal({ ownerId, agentId, text, at, dataClassification = "private" }) {
       const ref = options.ids.next("proactive-payload");
       await options.payloads.put(
         await options.protector.protect({
           ownerId,
           agentId,
           ref,
-          dataClassification: "private",
+          dataClassification,
           contentType: CONTENT_TYPE,
           plaintext: new TextEncoder().encode(text),
           createdAt: at,

@@ -9,10 +9,11 @@ import {
   type CapabilityResourceCeiling,
   type ClockPort,
   type ConsumeCapabilityInvocationInput,
-  type DataClassification,
   capabilityLifecycleHasActiveAuthority,
+  type DataClassification,
   type ExecutionTransportPort,
   type GovernedCapabilityExecutionHandle,
+  highestClassification,
   type IdGeneratorPort,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -674,7 +675,10 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     let recorded = invocation.dataClassification;
     try {
       const { value, contentClassification } = await run(invocation);
-      recorded = contentClassification ?? recorded;
+      recorded = highestClassification(
+        invocation.dataClassification,
+        contentClassification ? [contentClassification] : [],
+      );
       const saved = await this.#writeJson(
         invocation,
         `runtime-tool-output:${key}`,

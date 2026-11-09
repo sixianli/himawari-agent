@@ -74,13 +74,15 @@ export class ProductionMemoryEpisodes {
   }
 
   async #summarize(request: RuntimeRequest, onAdmitted: () => void): Promise<void> {
-    await this.#within(request, "memory-episode-backfill", () =>
-      this.#options.service.backfillEmbeddings({
+    await this.#options.service
+      .backfillEmbeddings({
         ownerId: request.ownerId,
         agentId: request.agentId,
         limit: 1,
-      }),
-    ).catch(this.#options.onFailure);
+        within: (dataClassification, operation) =>
+          this.#within({ ...request, dataClassification }, "memory-episode-backfill", operation),
+      })
+      .catch(this.#options.onFailure);
     const segments = await this.#options.service.dueSegments({
       ownerId: request.ownerId,
       agentId: request.agentId,

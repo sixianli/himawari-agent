@@ -33,7 +33,11 @@ export function highestClassification(
   floor: DataClassification,
   values: Iterable<DataClassification>,
 ): DataClassification {
+  if (RANK[floor] === undefined) throw new TypeError("DATA_CLASSIFICATION_UNKNOWN");
   let highest = floor;
-  for (const value of values) if (RANK[value] > RANK[highest]) highest = value;
+  for (const value of values) {
+    if (RANK[value] === undefined) throw new TypeError("DATA_CLASSIFICATION_UNKNOWN");
+    if (RANK[value] > RANK[highest]) highest = value;
+  }
   return highest;
 }

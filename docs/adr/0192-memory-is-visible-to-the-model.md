@@ -56,7 +56,7 @@ Andy 在方案 v3 上对三件事拍板“A、B、C 我都同意”：
 1. **两套分级分开。**“模型能看到什么”由固定的模型可见上限决定，上限是 sensitive，写在代码里（`packages/application/src/services/model-visibility.ts` 的 `modelVisibleCeiling()`），不再可配置；restricted 永远不给模型。运行分级（run 的 `dataClassification`）仍只管工具、推送和日志，聊天运行照旧是 private。
 2. **配置项 `maxMemoryClassification` 退役。**配置里写了也接受但不生效，服务启动时记一行 `configuration.key_retired`。生产配置模板删掉这一项。
 3. **按实际送出的内容定请求的分级。**同一次运行里，发给模型的请求分级取这三者的最高值：运行分级、本轮上下文投影实际含有的最高分级（`RuntimeProjection.contentClassification`）、本轮工具结果报告的最高分级（`RuntimeToolSettledResult.contentClassification`，例如记忆检索工具返回了敏感记忆）。这个分级同时用于准入检查、存历史、存最终回答、存压缩摘要和运行记录（模型请求、回答、工具结果的留档），所以只含 private 内容的对话仍按 private 发送，能继续用名单只到 private 的服务方；含敏感内容的那一刻起按 sensitive 发送，名单不含 sensitive 的服务方会被拒绝，请求不发出。
-4. **派生内容取来源的最高分级。**记忆整理的推断、事件段和它的摘要、Gmail 检查带入的记忆、记忆检索工具的输出、档案块，都按它们所用记忆的最高分级标注和发送。主人消息里的附件（文件、图片）同样最多读到 sensitive，附件的分级算进这一轮的内容分级，不再因为高于运行分级显示成“读不出来”。
+4. **派生内容取来源的最高分级。**记忆整理的推断、事件段和它的摘要、Gmail 检查带入的记忆、记忆检索工具的输出、档案块，都按它们所用记忆的最高分级标注和发送。主人消息里的附件（文件、图片）同样最多读到 sensitive，附件的分级算进这一轮的内容分级，不再因为高于运行分级显示成“读不出来”。Gmail 检查根据敏感记忆写出的提醒，按这次判断的分级存档。事件段补算向量时，每一段按它自己的分级发给嵌入模型，restricted 的不算向量。遇到不认识的分级值时直接报错，不当作低分级处理。
 5. **固定显示（置顶）只看类别。**敏感记忆不再因为敏感而不能置顶；健康、财务、事件、其他四类仍不能置顶（[ADR 0112](0112-memory-page-carried-memories-and-topic-browsing.md) 的类别规则不变）。
 6. **生产的对话模型和嵌入模型名单加 sensitive**（Andy 的 A）。发出前的出口遮盖不变：密码、验证码等仍按 [ADR 0183](0183-mask-only-when-data-leaves-and-keep-the-original-inside.md) 遮盖后再发。
 
@@ -79,7 +79,7 @@ Andy 在方案 v3 上对三件事拍板“A、B、C 我都同意”：
   - 同一个文件里：记忆检索返回敏感记忆后，最终回答按 sensitive 存（去掉修复时存成 private，用例失败）；主人消息带 sensitive 附件时附件内容进入模型视野、这一轮按 sensitive 准入（去掉修复时附件显示为读不出来、分级仍是 private，用例失败）。
   - 各通道的单元和集成测试：记忆整理、事件段、Gmail 检查（`[RULE-memory-visible]`）、档案块、每日复盘、记忆检索、置顶。
 - 准入被拒时，记为这次运行失败，没有另记一条决策记录。
-- 还没做、留给后续 PR：全文索引和实体索引仍不收 sensitive 记忆（`LEXICAL_CLASSIFICATIONS`、`INDEXED_ENTITY_CLASSIFICATIONS`），事件段补嵌入时的分级标注；这两项在第 2 个 PR 和遮盖后建索引一起做。记忆的日期给模型（第 3 个 PR）、凭证占位符编号（第 4 个 PR）另做。
+- 还没做、留给后续 PR：全文索引和实体索引仍不收 sensitive 记忆（`LEXICAL_CLASSIFICATIONS`、`INDEXED_ENTITY_CLASSIFICATIONS`），在第 2 个 PR 和遮盖后建索引一起做。事件段补算向量已经按每段自己的分级标注（`packages/memory-engine/test/episode-backfill.unit.test.ts`）；sensitive 事件段目前没有检索词，不会被选去补算，第 2 个 PR 给它们建检索词后才会走到这一步。记忆的日期给模型（第 3 个 PR）、凭证占位符编号（第 4 个 PR）另做。
 - 对“只追加”规则（`.claude/rules/prompt-prefix.md` 第 4 条）的一次性影响：系统提示、工具定义和已存历史的字节不变，但老对话里以前因分级被挡在模型外面的 sensitive 历史消息，上线后第一轮会出现在历史中间，那个对话的请求开头变一次、缓存从那里起重算一次。Andy 2026-11-09 的原话：“做这个方案和后续开发的时候，不用去管以前的聊天记录，做得彻底一点。”所以不为此做迁移，规则文件第 4 条的例外里记了这一条。新对话不受影响。
 - 后续：本决定部分取代的旧说法，在原 ADR 里加了指向本文的说明，决定内容不改：ADR 0185 后果里“sensitive 记忆不进全文和实体索引、不带入档案块”的代价、ADR 0112 第 3 条“敏感记忆不能打开置顶”、ADR 0158 第 3 条“敏感和受限的不进邮件检查”。
 
