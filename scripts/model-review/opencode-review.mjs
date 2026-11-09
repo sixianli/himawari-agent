@@ -568,7 +568,7 @@ export const GIT_ENV = {
 export const GIT_KEPT_ENV = ["PATH", "HOME", "LANG", "TERM"];
 
 export function englishMessages(env) {
-  const ctype = env.LC_CTYPE ?? env.LC_ALL ?? env.LANG;
+  const ctype = [env.LC_ALL, env.LC_CTYPE, env.LANG].find((value) => value);
   return {
     ...(ctype === undefined ? {} : { LC_CTYPE: ctype }),
     LC_MESSAGES: "C",
@@ -684,7 +684,11 @@ export function installGitGuard(workRoot) {
     [
       "#!/bin/sh",
       `echo "$$" >> ${JSON.stringify(join(workRoot, SHELL_LOG_NAME))}`,
+      'ctype="$LC_ALL"',
+      'if [ -z "$ctype" ]; then ctype="$LC_CTYPE"; fi',
+      'if [ -z "$ctype" ]; then ctype="$LANG"; fi',
       "unset LC_ALL",
+      'if [ -n "$ctype" ]; then LC_CTYPE="$ctype"; export LC_CTYPE; fi',
       "export LC_MESSAGES=C",
       "export LANGUAGE=C",
       `exec ${JSON.stringify(realBash)} -r "$@"`,
