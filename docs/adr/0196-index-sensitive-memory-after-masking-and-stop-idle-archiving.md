@@ -52,7 +52,7 @@ Andy 在方案 v3 上同意的 C：“上线时一次性恢复因闲置被归档
 1. **词表、实体、事件段词表收 public、private、sensitive 三档**，restricted（受限）仍不收。
 2. **建词表之前先遮盖，再丢掉像密钥的词**（`maskForIndex`，在 `packages/sensitive-capture/src/secret-like.ts`）。
    - 先用出口遮盖的固定规则集、不带对话上下文（`maskSensitiveText`）遮盖：认得出的密码、验证码、卡号、证件号、密钥换成“[密码]”这类占位文字。
-   - 规则认出的值（`findSensitiveValues`），在同一段文字里再出现时也去掉。出口遮盖只在“密码：”后面那一处认出值，后面单独再写一次的同一个值认不出来（例如“Wi-Fi 密码：sunflower，客人来了就告诉他 sunflower”）。规则交出来的值常带着上下文：“密码是sunflower。客人来了”里认出的值是整段 `sunflower。客人来了`，`password=hunter2x` 认出的是整串。所以每个值除了原样，还按空白、等号、冒号和中英文标点切开，取第一段和最后一段（4 个字符以上）一起去掉。去掉时按整词匹配：值的首尾是英文字母、数字或下划线时，前后不能紧挨同类字符（`test` 不会删掉 `contest` 里的那段）；遮盖留下的方括号占位（例如“[银行卡 尾号1111]”）里面不动。
+   - 规则认出的值（`findSensitiveValues`），在同一段文字里再出现时也去掉。出口遮盖只在“密码：”后面那一处认出值，后面单独再写一次的同一个值认不出来（例如“Wi-Fi 密码：sunflower，客人来了就告诉他 sunflower”）。规则交出来的值常带着上下文：“密码是sunflower。客人来了”里认出的值是整段 `sunflower。客人来了`，`password=hunter2x` 认出的是整串。所以每个值除了原样，还取出其中每一段由英文字母、数字和常见符号组成的串（去掉首尾的句点、感叹号、问号，4 个字符以上）一起去掉；值里的中文后文不取，免得把正常的话从词表里删掉。去掉时按整词匹配：值的首尾是英文字母、数字或下划线时，前后不能紧挨同类字符（`test` 不会删掉 `contest` 里的那段）。只有遮盖自己留下的占位（`[密码]`、`[验证码]`、`[证件号]`、`[密钥]`、`[银行卡 尾号1111]` 这五种）里面不动，正文里普通的方括号照常检查。
    - 再按空白和标点切出英文数字串，整串像密钥的去掉，然后才拆词；拆完的每个词再查一遍。整串查是因为拆词会把 `abcd-efgh-ijkl-mnop-qrst-uvwx` 这类带分隔符的长串拆成几个短词，每段单看都不像密钥。
    - “像密钥”（`looksLikeSecretToken`）：6 位以上的纯数字、24 个字符以上的英文数字串、8 个字符以上同时有字母和数字的串。这道是给规则没认出来的格式兜底，例如关键词写在后面的“hunter22 是新密码”。代价是手机号、订单号、`iphone15` 这类词按词搜不到，按意思仍能搜到；不含英文字母的日期、时间（`2026-11-09`、`14:30:00`）不受影响；带 `T`、`Z` 的 ISO 时间戳（例如 `2026-11-09T10:00`）会被当成像密钥的串去掉，按词搜不到。纯字母的密码（例如关键词写在后面的 `sunflower`）兜不住，只能靠遮盖规则。
    - 这几步对三档都做，不只对 sensitive：词表是明文，private 记忆里的秘密同样不该写成明文。
@@ -88,7 +88,7 @@ GitHub 的密钥扫描在“已知服务方格式”之外另加两层兜底：�
 - 门槛（会自动拦下的测试）：
   - `test/integration/memory-consolidation.test.ts` 的 `[RULE-memory-visible]`：真实 SQLite 里敏感记忆按词“青霉素”能查到；正文里没有关键词、遮盖规则认不出的串 `x9Kq2mVb7Lp4Wz` 查不到（靠“像密钥”兜底）；敏感记忆的实体能读回；整理不再归档半年没用的记忆。
   - `test/integration/memory-episodes.test.ts` 的 `[RULE-memory-visible]`：敏感事件段按词能找到、只放行 private 时找不到、嵌入失败后能补算向量。
-  - `packages/memory-engine/test/hybrid-memory-provider.unit.test.ts`、`packages/sensitive-capture/test/secret-like.unit.test.ts`、`apps/agent-service/test/production-memory-evidence.unit.test.ts`：遮盖、重复出现的密码、关键词在后的密码、带分隔符的长串、卡号只留尾号、实体过滤。重复值的第一次出现紧贴标点或后文、验证码重复、`password=` 形式的重复、占位里的尾号、`contest` 不被误删也各有用例。去掉遮盖、去掉重复值处理、去掉切段、去掉整词匹配、去掉整串检查，各自至少有一条用例失败。
+  - `packages/memory-engine/test/hybrid-memory-provider.unit.test.ts`、`packages/sensitive-capture/test/secret-like.unit.test.ts`、`apps/agent-service/test/production-memory-evidence.unit.test.ts`：遮盖、重复出现的密码、关键词在后的密码、带分隔符的长串、卡号只留尾号、实体过滤。重复值的第一次出现紧贴标点、省略号或后文、秘密在值的中间段、验证码重复、`password=` 形式的重复、占位里的尾号、普通方括号里的秘密、`contest` 和中文后文不被误删也各有用例。去掉遮盖、去掉重复值处理、去掉取段、去掉整词匹配、把占位放宽成任意方括号、去掉整串检查，各自至少有一条用例失败。
   - `apps/admin-cli/test/memory-reindex-cli.unit.test.ts`：先报数、不确认不改；只恢复没被改过的闲置归档、不动合并归档；清空索引后这些记忆都在“待建索引”名单里；重跑恢复 0 条。
 - 上线步骤：停服务 → `himawari-admin backup create` → `himawari-admin memory reindex`（报数，把数量报给 Andy）→ 带 `--confirm` 再跑一次 → 启动服务。重建期间（约每秒一条）检索结果会少，几百条记忆约几分钟建完；重建要重算全部向量，嵌入费用按几百条短文本计，远低于 0.5 美元。
 - 词表里不再有手机号、长订单号、带数字的型号这类词，按词搜不到它们；按意思搜不受影响。

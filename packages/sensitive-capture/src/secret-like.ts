@@ -14,13 +14,16 @@ export function looksLikeSecretToken(word: string): boolean {
   return value.length >= 8 && LETTER.test(value) && DIGIT.test(value);
 }
 
-const VALUE_SEPARATOR = /[\s=:：＝,，;；.。!！?？、"'“”‘’()（）【】「」]+/u;
-const PLACEHOLDER = /(\[[^[\]]*\])/u;
+const PLACEHOLDER = /(\[(?:密码|验证码|证件号|密钥|银行卡 尾号\d{4})\])/u;
+const ASCII_PIECE = /[A-Za-z0-9_\-+/@#$%^&*~!?.]+/gu;
+const PIECE_EDGE_PUNCTUATION = /^[.!?]+|[.!?]+$/gu;
 const ASCII_WORD = /[A-Za-z0-9_]/u;
 
 function bareForms(value: string): readonly string[] {
-  const pieces = value.split(VALUE_SEPARATOR).filter((piece) => piece.length > 0);
-  return [value, pieces[0] ?? "", pieces.at(-1) ?? ""];
+  const pieces = (value.match(ASCII_PIECE) ?? []).map((piece) =>
+    piece.replace(PIECE_EDGE_PUNCTUATION, ""),
+  );
+  return [value, ...pieces];
 }
 
 function wholeWordPattern(value: string): RegExp {

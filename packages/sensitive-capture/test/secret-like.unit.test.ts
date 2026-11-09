@@ -51,6 +51,10 @@ describe("words kept out of the search index", () => {
     expect(glued).not.toContain("sunflower");
     expect(maskForIndex("验证码是4829。刚才念的 4829 别外传")).not.toContain("4829");
     expect(maskForIndex("password=hunter2x 之后只写 hunter2x")).not.toContain("hunter2x");
+    expect(maskForIndex("密码是sunflower…后来单独写 sunflower")).not.toContain("sunflower");
+    const middle = maskForIndex("密码是aaa。sunflower。bbb，客人来了就告诉他 sunflower 客人来了");
+    expect(middle).not.toContain("sunflower");
+    expect(middle).toContain("客人来了");
   });
 
   it("removes repeats only as whole words and never inside a masked placeholder", () => {
@@ -59,6 +63,10 @@ describe("words kept out of the search index", () => {
     expect(placeholder).not.toContain("4111");
     const contest = maskForIndex("密码是test，周末的 contest 别忘了");
     expect(contest).toContain("contest");
+    expect(maskForIndex("备注 [x9Kq2mVb7Lp4Wz]")).not.toContain("x9Kq2mVb7Lp4Wz");
+    expect(maskForIndex("Wi-Fi 密码：sunflower，备注[写 sunflower 的纸]")).not.toContain(
+      "sunflower",
+    );
   });
 
   it("refuses a name the masking rules would change or that holds a secret-like part", () => {
@@ -67,5 +75,6 @@ describe("words kept out of the search index", () => {
     expect(isSafeToIndex("密码：hunter22")).toBe(false);
     expect(isSafeToIndex("6222020200112233445")).toBe(false);
     expect(isSafeToIndex("备用 x9Kq2mVb7Lp4Wz")).toBe(false);
+    expect(isSafeToIndex("[hunter2x]")).toBe(false);
   });
 });
