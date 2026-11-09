@@ -136,4 +136,22 @@ describe("docs link check", () => {
       "DOCS_LINK_MISSING docs/a.md -> archive/missing.md",
     ]);
   });
+
+  it("checks links in table cells, list items, block quotes and images, and unreferenced definitions", () => {
+    const root = fixture({
+      "docs/a.md":
+        "| [h](g1.md) |\n| --- |\n| [c](g2.md) |\n\n- 项\n  - [n](g3.md)\n\n> [q](g4.md) ![i](g5.png)\n\n[^caret](g6.md)\n\n[d]: g7.md\n",
+    });
+    expect(checkDocsLinks({ root }).errors).toHaveLength(7);
+  });
+
+  it("keeps repository files whose names start with two dots and takes heading text without link syntax", () => {
+    const root = fixture({
+      "docs/a.md": "[1](..cache.md) [2](b.md#a-b-c) [3](b.md#x)\n",
+      "docs/..cache.md": "",
+      "docs/x.md": "",
+      "docs/b.md": "## [a [b] c](x.md)\n",
+    });
+    expect(checkDocsLinks({ root }).errors).toEqual(["DOCS_ANCHOR_MISSING docs/a.md -> b.md#x"]);
+  });
 });

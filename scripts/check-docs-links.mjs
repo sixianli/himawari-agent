@@ -8,13 +8,19 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const DOCS_DIRECTORY = "docs";
 const ARCHIVE_DIRECTORY = "docs/archive";
 const EXPLICIT_ANCHOR = /<a id="([^"]+)">/g;
-const HEADING_LINK = /\[([^\]]*)\]\([^)]*\)/g;
-const HTML_TAG = /<[^>]*>/g;
+
+function plainText(tokens) {
+  return tokens
+    .map((token) => {
+      if (token.type === "html") return "";
+      if (token.tokens) return plainText(token.tokens);
+      return token.text ?? token.raw;
+    })
+    .join("");
+}
 
 function headingSlug(text) {
   return text
-    .replace(HEADING_LINK, "$1")
-    .replace(HTML_TAG, "")
     .trim()
     .toLowerCase()
     .replace(/[^\p{Letter}\p{Number}\s_-]/gu, "")
@@ -35,14 +41,14 @@ function lex(text) {
   return new Lexer().lex(text);
 }
 
-function anchorsOf(text) {
+export function anchorsOf(text) {
   const anchors = new Set();
   const used = new Map();
   walkTokens(lex(text), (token) => {
     if (token.type === "html")
       for (const match of token.raw.matchAll(EXPLICIT_ANCHOR)) anchors.add(match[1]);
     if (token.type !== "heading") return;
-    const base = headingSlug(token.text);
+    const base = headingSlug(plainText(token.tokens));
     let slug = base;
     while (used.has(slug)) {
       used.set(base, used.get(base) + 1);
@@ -57,7 +63,7 @@ function anchorsOf(text) {
 function linkTargets(text) {
   const targets = new Set();
   walkTokens(lex(text), (token) => {
-    if ((token.type === "link" || token.type === "image") && !token.raw.startsWith("[^"))
+    if ((token.type === "link" || token.type === "image") && !/^!?\[\^[^\]]*\]$/.test(token.raw))
       targets.add(token.href);
     if (token.type === "def" && !token.tag.startsWith("^")) targets.add(token.href);
   });
@@ -110,7 +116,12 @@ export function checkDocsLinks({ root = repositoryRoot } = {}) {
           ? path.join(root, relative)
           : path.resolve(directory, relative);
       const inside = path.relative(root, destination);
-      if (inside.startsWith("..") || path.isAbsolute(inside) || !existsSync(destination)) {
+      if (
+        inside === ".." ||
+        inside.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(inside) ||
+        !existsSync(destination)
+      ) {
         errors.push(`DOCS_LINK_MISSING ${file} -> ${target}`);
         continue;
       }
