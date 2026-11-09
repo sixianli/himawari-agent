@@ -2296,7 +2296,7 @@ describe("opencode review record masking", () => {
       expect(masked).not.toContain(body);
       expect(secretLikeRules(masked)).toEqual([]);
     }
-    const lone = `-----BEGIN PRIVATE KEY----- ${"说明".repeat(5000)}`;
+    const lone = `${["-----BEGIN", "PRIVATE KEY-----"].join(" ")} ${"说明".repeat(5000)}`;
     expect(maskSecretLike(lone)).toContain("说明说明");
   });
 

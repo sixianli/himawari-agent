@@ -13,7 +13,7 @@ import {
 
 const policy = readJson(path.join(repositoryRoot, "ci/policy.json"));
 const toolchainLock = {
-  node: { baseline: "22.22.3", floor: "22.19.0" },
+  node: { baseline: "22.22.3" },
   npm: { version: "11.8.0" },
 };
 const context = {
@@ -52,7 +52,7 @@ function positive() {
       const bytes = kind === "artifact" ? archive(platform) : Buffer.from(`real ${kind} report`);
       return { path: `report.${kind}`, kind, bytes: bytes.length, sha256: sha256(bytes) };
     });
-    const artifacts = ["build", "test", "browser", "coverage"].includes(check.id)
+    const artifacts = ["build", "browser", "coverage"].includes(check.id)
       ? [
           {
             role: check.id === "build" ? "produced" : "consumed",
@@ -110,7 +110,7 @@ const run = (mutate) => {
   mutate(input);
   return aggregate(input);
 };
-const selected = (input, id = "test", key = "linux-x64") =>
+const selected = (input, id = "coverage", key = "default") =>
   input.reports.find((entry) => entry.result.checkId === id && entry.result.matrixKey === key);
 
 describe("complete-attempt gate", () => {
@@ -124,7 +124,7 @@ describe("complete-attempt gate", () => {
   it("accepts the complete positive control and emits a closed GateSummary", () => {
     const result = aggregate(positive());
     expect(result.status).toBe("passed");
-    expect(result.expected).toHaveLength(10);
+    expect(result.expected).toHaveLength(8);
     expect(result.failures).toEqual([]);
     expect(validateRecord("GateSummary", result)).toBe(result);
   });
@@ -329,7 +329,7 @@ describe("complete-attempt gate", () => {
       "missing report kind",
       (input) => {
         selected(input).result.reports = selected(input).result.reports.filter(
-          (report) => report.kind !== "junit",
+          (report) => report.kind !== "lcov",
         );
       },
     ],
@@ -348,7 +348,7 @@ describe("complete-attempt gate", () => {
     [
       "unbound build",
       (input) => {
-        selected(input, "build").result.artifacts = [];
+        selected(input, "build", "linux-x64").result.artifacts = [];
       },
     ],
     [
@@ -446,7 +446,7 @@ describe("complete-attempt gate", () => {
     }
     input.reports = readReportEnvelopes(directory);
     expect(aggregate(input).status).toBe("passed");
-    writeFileSync(path.join(directory, "test/linux-x64/report.json"), "tampered");
+    writeFileSync(path.join(directory, "coverage/default/report.json"), "tampered");
     input.reports = readReportEnvelopes(directory);
     expect(aggregate(input).status).toBe("failed");
   });

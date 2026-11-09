@@ -123,23 +123,14 @@ vi.mock("../../scripts/ci/build.mjs", () => ({
     };
   },
 }));
-vi.mock("../../scripts/ci/test.mjs", () => ({
-  runTests: async ({ output, artifact }) => {
-    const report = write(path.join(output, "tests.json"), { status: "passed" });
-    const junit = write(path.join(output, "tests.xml"), "<testsuites/>\n");
-    const projects = ["unit", "contracts", "integration", "e2e", "pi-compat"].map((id) => ({
-      id,
-      counts: count(),
-    }));
+vi.mock("../../scripts/ci/browser.mjs", () => ({
+  runBrowser: async ({ output, artifact, engine }) => {
+    const report = write(path.join(output, "browser.json"), { engine, status: "passed" });
     return {
       exitCode: state.exitCode,
       artifact: { path: artifact },
-      counts: { files: 5, executed: 5, passed: 5, failed: 0, skipped: 0 },
-      projects,
-      reports: [
-        { path: report, kind: "json" },
-        { path: junit, kind: "junit" },
-      ],
+      counts: count(),
+      reports: [{ path: report, kind: "json" }],
     };
   },
 }));
@@ -439,7 +430,7 @@ describe("publication admission is atomic and workflow-bound", { timeout: 30000 
         ))
           expect(step.if).toBe(githubExpression("always() && steps.publish.outcome == 'success'"));
       }
-      expect(publishers).toBe(name === "ci.yml" ? 8 : 6);
+      expect(publishers).toBe(6);
     }
   });
 });
@@ -542,23 +533,23 @@ describe(
       await entry("run.mjs", [
         ...common,
         "--check",
-        "test",
+        "browser",
         "--matrix",
-        platform(),
+        "chromium",
         "--output",
-        ".ci-output/test",
+        ".ci-output/browser",
         "--input",
         producerPath,
       ]);
       expect(
-        readJson(path.join(state.root, ".ci-output/test/result.json")).artifacts[0].sha256,
+        readJson(path.join(state.root, ".ci-output/browser/result.json")).artifacts[0].sha256,
       ).toBe(producer.artifacts[0].sha256);
       await entry("run.mjs", [
         ...common,
         "--check",
-        "test",
+        "browser",
         "--matrix",
-        platform(),
+        "chromium",
         "--output",
         ".ci-output/ambiguous",
         "--input",
@@ -571,9 +562,9 @@ describe(
       await entry("run.mjs", [
         ...common,
         "--check",
-        "test",
+        "browser",
         "--matrix",
-        platform(),
+        "chromium",
         "--output",
         ".ci-output/wrong-attempt",
         "--input",
@@ -582,13 +573,13 @@ describe(
       expect(process.stderr.write).toHaveBeenCalledWith(
         expect.stringContaining("CONTEXT_MISMATCH:attempt"),
       );
-      write(producerPath, { ...producer, checkId: "test" });
+      write(producerPath, { ...producer, checkId: "browser" });
       await entry("run.mjs", [
         ...common,
         "--check",
-        "test",
+        "browser",
         "--matrix",
-        platform(),
+        "chromium",
         "--output",
         ".ci-output/wrong-producer",
         "--input",
@@ -602,9 +593,9 @@ describe(
       await entry("run.mjs", [
         ...common,
         "--check",
-        "test",
+        "browser",
         "--matrix",
-        platform(),
+        "chromium",
         "--output",
         ".ci-output/tampered",
         "--input",

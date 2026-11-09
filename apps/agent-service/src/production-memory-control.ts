@@ -10,6 +10,7 @@ import {
   type MemoryHistoryEvent,
   type MemoryProjectionJobStatePort,
   type MemoryReminderStorePort,
+  type MemorySourceMessage,
   type OwnerProfileService,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -25,6 +26,7 @@ import {
   type GatewayV2Query,
   type GatewayV2Snapshot,
   MEMORY_SENSITIVE_CATEGORY_NAMES,
+  MEMORY_SOURCE_REF_MAX_LENGTH,
 } from "@himawari-agent/gateway-contracts";
 import {
   createProductionAutomaticMemory,
@@ -97,6 +99,20 @@ const singleLine = (text: string) =>
     .join("")
     .trim()
     .slice(0, 2000);
+
+function earliestSourceMessage(
+  memory: Pick<ProductMemoryRecord, "sourceThreadId" | "sourceRefs">,
+  messages: readonly MemorySourceMessage[],
+): string | null {
+  if (!memory.sourceThreadId) return null;
+  const refs = new Set(memory.sourceRefs);
+  const matching = messages
+    .filter(
+      ({ threadId, contentRef }) => threadId === memory.sourceThreadId && refs.has(contentRef),
+    )
+    .toSorted((left, right) => left.sequence - right.sequence);
+  return matching[0]?.messageId ?? null;
+}
 
 export class ProductionMemoryControl {
   private readonly options: {
@@ -290,6 +306,17 @@ export class ProductionMemoryControl {
         memoryIds: records.slice(index, index + HISTORY_BATCH).map(({ id }) => id),
       }))
         history.set(event.memoryId, [...(history.get(event.memoryId) ?? []), event]);
+    const refsByThread = new Map<string, Set<string>>();
+    for (const { sourceThreadId, sourceRefs } of records) {
+      if (!sourceThreadId) continue;
+      const refs = refsByThread.get(sourceThreadId) ?? new Set<string>();
+      for (const ref of sourceRefs) if (ref.length <= MEMORY_SOURCE_REF_MAX_LENGTH) refs.add(ref);
+      refsByThread.set(sourceThreadId, refs);
+    }
+    const sourceMessages = await this.options.book.findOwnerMessages({
+      ...scope,
+      lookups: [...refsByThread].map(([threadId, refs]) => ({ threadId, refs: [...refs] })),
+    });
     for (const memory of records) {
       if (memory.status !== "active" && memory.status !== "archived" && memory.status !== "trashed")
         continue;
@@ -317,7 +344,8 @@ export class ProductionMemoryControl {
         topic: memory.attributes?.sensitiveTopic ?? null,
         inference: memory.inference,
         sourceThreadId: memory.sourceThreadId,
-        sourceRefs: memory.sourceRefs.filter((ref) => ref.length <= 512),
+        sourceMessageId: earliestSourceMessage(memory, sourceMessages),
+        sourceRefs: memory.sourceRefs.filter((ref) => ref.length <= MEMORY_SOURCE_REF_MAX_LENGTH),
         updatedAt: memory.updatedAt,
         supersededBy: memory.attributes?.supersededBy ?? null,
         validTo: memory.attributes?.validTo ?? null,

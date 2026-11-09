@@ -575,7 +575,6 @@ describe("local shared-runner boundary", () => {
       "policy",
       "static",
       "build",
-      "test",
       "browser",
       "browser",
       "browser",
@@ -585,9 +584,7 @@ describe("local shared-runner boundary", () => {
     expect(
       calls.filter((entry) => entry.checkId === "browser").map((entry) => entry.matrixKey),
     ).toEqual(["chromium", "firefox", "webkit"]);
-    const consumers = calls.filter((entry) =>
-      ["test", "browser", "coverage"].includes(entry.checkId),
-    );
+    const consumers = calls.filter((entry) => ["browser", "coverage"].includes(entry.checkId));
     expect(new Set(consumers.map((entry) => entry.artifact)).size).toBe(1);
     expect(consumers[0].artifact).toContain("runtime.tar.gz");
     expect(calls.every((entry) => entry.hosted === false)).toBe(true);
@@ -598,7 +595,7 @@ describe("local shared-runner boundary", () => {
       enforcement: "not_configured",
     });
     expect(summary.pending.join(" ")).toContain("生产上线验收与 Owner 签署");
-    expect(summary.pending.join(" ")).toContain("Linux Node floor");
+    expect(summary.pending.join(" ")).not.toContain("Node floor");
     expect(existsSync(path.join(state.root, ".ci-output/local/local-summary.json"))).toBe(true);
   });
   it("fails local validation when the hosted publication guard rejects a successful build", async () => {
@@ -644,23 +641,20 @@ describe("local shared-runner boundary", () => {
     }
     state.calls = [];
     await runLocal({
-      check: "test",
+      check: "coverage",
       artifact: "/fixture/existing.tar.gz",
-      output: ".ci-output/local-test-artifact",
+      output: ".ci-output/local-coverage-artifact",
     });
-    expect(state.calls.map((entry) => entry.checkId)).toEqual(["test"]);
+    expect(state.calls.map((entry) => entry.checkId)).toEqual(["coverage"]);
     expect(state.calls[0].artifact).toBe("/fixture/existing.tar.gz");
-    state.calls = [];
-    await runLocal({ check: "test", output: ".ci-output/local-test-build" });
-    expect(state.calls.map((entry) => entry.checkId)).toEqual(["build", "test"]);
   });
   it("does not run artifact consumers after failed build and preserves failed check outcomes", async () => {
     state.fail = "build";
     const failedBuild = await runLocal();
     expect(failedBuild.status).toBe("failed");
-    expect(
-      state.calls.some((entry) => ["test", "browser", "coverage"].includes(entry.checkId)),
-    ).toBe(false);
+    expect(state.calls.some((entry) => ["browser", "coverage"].includes(entry.checkId))).toBe(
+      false,
+    );
     expect(state.calls.map((entry) => entry.checkId)).toEqual([
       "policy",
       "static",
@@ -678,6 +672,8 @@ describe("local shared-runner boundary", () => {
   });
   it("requires tools, local scope, valid context and a fresh output directory", async () => {
     await expect(runLocal({ check: "required" })).rejects.toThrow("UNSUPPORTED");
+    await expect(runLocal({ check: "test" })).rejects.toThrow("UNSUPPORTED");
+    await expect(runLocal({ check: "node-floor" })).rejects.toThrow("UNSUPPORTED");
     await expect(runLocal({ toolsDirectory: path.join(state.root, "missing") })).rejects.toThrow(
       "TOOLS_REQUIRED",
     );
@@ -701,7 +697,7 @@ describe("local shared-runner boundary", () => {
       (
         await localMain([
           "--check",
-          "test",
+          "coverage",
           "--output",
           ".ci-output/local-cli",
           "--tools",

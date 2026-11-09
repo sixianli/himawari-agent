@@ -383,6 +383,7 @@ export const governanceMessages = [
         topic: null,
         inference: false,
         sourceThreadId: "thread-01",
+        sourceMessageId: "message-01",
         sourceRefs: ["payload-01"],
         updatedAt: "2026-09-11T00:00:00.000Z",
         supersededBy: null,

@@ -16,6 +16,7 @@ import {
   timestamp,
 } from "./validation.js";
 
+export const MEMORY_SOURCE_REF_MAX_LENGTH = 512;
 export const GATEWAY_V2_SCHEMA_VERSION = "gateway.v2" as const;
 export const GATEWAY_V2_MESSAGE_TYPES = [
   "thread.message.submit",
@@ -1005,7 +1006,8 @@ const memoryOverviewSnapshotSchema = object({
         topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
         inference: booleanValue,
         sourceThreadId: nullable(machineString),
-        sourceRefs: array(boundedString(512)),
+        sourceMessageId: nullable(machineString),
+        sourceRefs: array(boundedString(MEMORY_SOURCE_REF_MAX_LENGTH)),
         updatedAt: timestamp,
         supersededBy: nullable(machineString),
         validTo: nullable(boundedString(32)),

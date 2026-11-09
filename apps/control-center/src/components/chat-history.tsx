@@ -10,6 +10,7 @@ import { formatBytes, splitDraft } from "../draft-attachments.js";
 import type { RunSummary } from "../execution-view.js";
 import { executionItems, isAnsweredRun, isNarration, isTerminalRun } from "../execution-view.js";
 import type { MessageId } from "../i18n/message-ids.js";
+import { takeMessageFocus } from "../message-focus.js";
 import { turnSources } from "../turn-summary.js";
 import { AnswerActions, AnswerSources, LineIcon, useCopied } from "./answer-footer.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
@@ -108,6 +109,23 @@ export function ChatHistory({
     if (following.current && scrollRef.current)
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [contentByRef, execution, liveTexts]);
+  const focusThreadId = detail?.payload.thread.threadId;
+  const focusMessages = detail?.payload.messages;
+  useEffect(() => {
+    void contentByRef;
+    if (!focusThreadId || !focusMessages) return;
+    const request = takeMessageFocus(focusThreadId);
+    if (!request) return;
+    const target = [
+      ...(scrollRef.current?.querySelectorAll<HTMLElement>("[data-message-id]") ?? []),
+    ].find((element) => element.dataset["messageId"] === request.messageId);
+    if (!target) return;
+    following.current = false;
+    setShowLatest(true);
+    target.scrollIntoView?.({ block: "center" });
+    target.dataset["focused"] = "true";
+    window.setTimeout(() => delete target.dataset["focused"], 2600);
+  }, [contentByRef, focusThreadId, focusMessages]);
   const outgoingKey = outgoing?.key;
   useEffect(() => {
     if (!outgoingKey || !scrollRef.current) return;
@@ -172,7 +190,11 @@ export function ChatHistory({
                 .filter((item) => item.role !== "agent")
                 .map((item) =>
                   item.role === "owner" ? (
-                    <div className="owner-turn" key={item.messageId}>
+                    <div
+                      className="owner-turn"
+                      key={item.messageId}
+                      data-message-id={item.messageId}
+                    >
                       <OwnerMessage content={contentByRef[item.contentRef]} readImage={readImage} />
                       <OwnerMessageMeta
                         text={ownerCopyText(contentByRef[item.contentRef])}

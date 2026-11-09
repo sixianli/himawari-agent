@@ -694,7 +694,7 @@ export const messages = {
   "memory.page.changed": "改过 {count} 次",
   "memory.page.source": "来源",
   "memory.page.origin":
-    "{o, select, owner {你手动添加} import {导入} deleted {来源对话已删除} other {整理记忆}}",
+    "{o, select, owner {你手动添加} import {导入} deleted {来源对话已删除} reminder {提醒创建，无原话} other {整理记忆}}",
   "memory.page.used": "上次用到",
   "memory.page.notUsed": "还没用到",
   "memory.page.history": "怎么变过来的",
@@ -809,6 +809,12 @@ export const messages = {
     "{k, select, created {记下} updated {补充了细节} edited {你改过} restored {换回} reaffirmed {又说了一次，意思没变} other {变化}}",
   "memory.page.quote": "你说：“{quote}”",
   "memory.page.sourceDeleted": "来源对话已删除",
+  "memory.page.jumpToQuote": "跳到原话",
+  "memory.page.sourceUnavailable": "来源已不可查",
+  "memory.page.sourceUnavailableCount": "有 {count} 条记忆的来源已不可查，找不回当初那句话",
+  "memory.page.importNoQuoteCount": "有 {count} 条记忆是导入的，没有原话可跳",
+  "memory.page.originImport":
+    "导入自 {source, select, codex {Codex} assistant {其他 AI} other {Himawari 导出文件}}",
   "memory.page.collapseHistory": "收起",
   "memory.page.flips":
     "变过 {changes} 次{again, plural, =0 {} other {，另外有 # 次说了同样的意思}}",
