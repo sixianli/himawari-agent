@@ -20,7 +20,7 @@ usage: prod-read.sh <query>
   tables                      table names of the product database
   columns <table>            column names of one table
   rows <table> <run-id>       rows of one table whose run_id or id column equals <run-id>
-  rule-memories               metadata (no text) of the rule-category memories, all statuses, at most 500
+  rule-memories               metadata (no text) of the rule-category memories, all statuses, newest 500
   system-instruction          the runPolicy.systemInstruction text of the production configuration
 TEXT
   exit 64
@@ -85,7 +85,7 @@ if (mode === "summary") {
 } else if (mode === "rules") {
   result = database
     .prepare(
-      "SELECT id, status, tentative, classification, importance_permille, confidence_permille, inference, recorded_at, updated_at, valid_to, superseded_by, use_count FROM memory_records WHERE category = 'rule' ORDER BY recorded_at LIMIT 500",
+      "SELECT id, status, tentative, classification, importance_permille, confidence_permille, inference, recorded_at, updated_at, valid_to, superseded_by, use_count FROM memory_records WHERE category = 'rule' ORDER BY recorded_at DESC, id LIMIT 500",
     )
     .all()
     .map(shorten);
@@ -108,11 +108,21 @@ JS
 system_instruction_query() {
   ssh -o BatchMode=yes -o ConnectTimeout=20 "$PROD_TARGET" \
     "cd /tmp && $PROD_NODE --no-warnings - $PROD_CONFIGURATION" <<'JS'
-const { readFileSync } = require("node:fs");
-const configuration = JSON.parse(readFileSync(process.argv[2], "utf8"));
-const policy = configuration.runPolicy;
-const text = policy?.systemInstruction;
-if (typeof text !== "string") throw new Error("PROD_READ_NO_SYSTEM_INSTRUCTION");
+const { readFileSync, lstatSync } = require("node:fs");
+const fail = (code) => {
+  console.error(code);
+  process.exit(1);
+};
+const stat = lstatSync(process.argv[2]);
+if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o022) !== 0) fail("PROD_READ_CONFIG_UNSAFE");
+let configuration;
+try {
+  configuration = JSON.parse(readFileSync(process.argv[2], "utf8"));
+} catch {
+  fail("PROD_READ_CONFIG_UNREADABLE");
+}
+const text = configuration?.runPolicy?.systemInstruction;
+if (typeof text !== "string") fail("PROD_READ_NO_SYSTEM_INSTRUCTION");
 console.log(text);
 JS
 }

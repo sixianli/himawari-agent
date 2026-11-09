@@ -146,7 +146,7 @@ date: "2026-11-09"
 | M-4 | 资格：只有状态有效、分类是公开或私密、当前有效、不是待确认、没被取代的记忆才进规则块；分类为敏感的规则永远不会注入 | [ADR 0185](adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)（敏感记忆不带入档案块）、[ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)（档案挑选规则） | `owner-profile-service.ts` 的 `PROFILE_CLASSIFICATIONS` | 硬 | 尚无 | PA-2（待确认不进档案）；`owner-profile-service.unit.test.ts` 的“puts rules first and groups important facts by section”（敏感记忆不进结果） |
 | M-5 | 主人在记忆页可以手动“每次对话都带”或“不带”某条记忆，覆盖自动选择 | [ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md) 盘点表 | `owner-profile-service.ts` 的 `pinned`、`choices` | 硬 | 尚无 | MEM-PIN |
 
-**记忆库里实际存了哪些规则，这份清单没有列。** 这些条目在生产数据库里，仓库读不到；读生产库按项目规矩要先问 Andy，所以没有读。需要的话：Andy 同意后，我用只读方式列出所有 `rule` 类记忆（条数、状态、记录日期、是否待确认，不含原话：记忆原话是加密的，只能在记忆页看），补进这一节。
+**记忆库里实际存了哪些规则，这份清单没有列。** 这些条目在生产数据库里，仓库读不到；读生产库按项目规矩要先问 Andy；Andy 已同意只读列出，待读取后补进这一节：所有 `rule` 类记忆的条数、状态、记录日期、是否待确认，最多 500 条（最新的），不含原话（记忆原话以密文存储，这个查询不读原话，只有记忆页和受控的后台流程会解密）。
 
 [↑ 回到阅读导航](#contents)
 
@@ -217,7 +217,7 @@ date: "2026-11-09"
 
 ## H 没有扫到的地方
 
-- 生产数据库里的记忆（`rule` 类）和生产配置文件：按项目规矩读生产数据要先问 Andy，所以没读。
+- 生产数据库里的记忆（`rule` 类）和生产配置文件：按项目规矩读生产数据要先问 Andy；Andy 已同意只读（2026-11-09），已获授权，待读取。
 - Mac 上本地的记忆和设置：不在仓库，也没有读。
 - 项目记忆里的协调者规则（自主合并、复核方式等）：那是 Andy 对协调者和编码线程定的开发规矩，不是 Himawari 的 Agent 规则，没有计入。
 
