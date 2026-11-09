@@ -66,18 +66,20 @@ describe("tool-batch persisted-state integrity", () => {
     const f = state();
     const steered = {
       role: "custom",
-      customType: "himawari.background_command",
+      customType: "himawari.background.command",
       content: "The background command finished.",
       display: false,
+      details: { taskRef: "task" },
       timestamp: -5,
     } as unknown as (typeof f.messages)[number];
     f.messages.splice(1, 0, steered);
     const sessionManager = SessionManager.inMemory("/workspace");
     sessionManager.appendMessage(f.messages[0] as never);
     sessionManager.appendCustomMessageEntry(
-      "himawari.background_command",
+      "himawari.background.command",
       "The background command finished.",
       false,
+      { taskRef: "task" },
     );
     for (const message of f.messages.slice(2)) sessionManager.appendMessage(message as never);
     const session = { sessionManager, agent: f.session.agent } as unknown as AgentSession;
@@ -88,6 +90,17 @@ describe("tool-batch persisted-state integrity", () => {
       { role: "user" },
       { role: "custom", content: "The background command finished." },
     ]);
+    const unstored = SessionManager.inMemory("/workspace");
+    for (const message of [f.messages[0], ...f.messages.slice(2)])
+      unstored.appendMessage(message as never);
+    expect(() =>
+      capturePiToolBatch(
+        { sessionManager: unstored, agent: f.session.agent } as unknown as AgentSession,
+        "waiting",
+        3,
+        PROMPT,
+      ),
+    ).toThrow("PI_CONTINUATION_PREFIX_INVALID");
   });
 
   it("refuses to capture when the Pi session entries do not rebuild the messages before the batch", () => {

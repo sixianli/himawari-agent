@@ -71,7 +71,7 @@ it("rejects invalid preparation budgets without starting work", async () => {
   ).rejects.toThrow("PI_PREPARATION_MEMORY_LIMIT");
 });
 
-it("[ADR-0198] refuses edit arguments that are not plain JSON before Pi prepares the edit", async () => {
+it("[ADR-0198] refuses edit arguments that are not plain JSON before Pi validates them", async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), "pi-prepare-json-"));
   try {
     const targetPath = path.join(cwd, "note.txt");

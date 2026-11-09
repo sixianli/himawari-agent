@@ -560,12 +560,25 @@ describe("依赖升级后已接受的例外", () => {
       schemaVersion: 1,
       exceptions: [
         exception(),
-        exception({
-          id: "GHSA-dddd-eeee-ffff",
-          path: "node_modules/removed",
+        {
+          kind: "published-synthetic-fixture",
+          id: "published-synthetic-fixture",
+          path: "runtime/node_modules/removed/test/token.test.ts",
           package: "removed",
           version: "0.1.0",
-        }),
+          packageLockPath: "node_modules/removed",
+          integrity: `sha512-${"A".repeat(86)}==`,
+          sourceUrl: "https://registry.npmjs.org/removed/-/removed-0.1.0.tgz",
+          archiveMember: "package/test/token.test.ts",
+          fileSha256: "e".repeat(64),
+          findings: [{ rule: "jwt-token", digest: "f".repeat(64), count: 1 }],
+          reason: "测试中构造的已移除依赖里的合成密钥例外。",
+          owner: "fixture-owner",
+          reviewReference: "https://github.com/example/repository/pull/1",
+          expiresAt: "2026-10-01T00:00:00Z",
+          sourceProofSha256: "d".repeat(64),
+          sourceReview: "测试中构造的来源审阅说明，只用于检查已移除依赖的过滤。",
+        },
       ],
     });
     git("add", ".");
