@@ -1,6 +1,5 @@
 import path from "node:path";
 import {
-  acquireStateRootLock,
   assertWritableSchema,
   LATEST_MIGRATION_SEQUENCE,
   openQualifiedDatabase,
@@ -8,6 +7,7 @@ import {
   restoreIdleArchivesAndClearMemoryIndex,
 } from "@himawari-agent/persistence-sqlite";
 import { JsonFileConfigurationPort, writeServiceDiagnostic } from "@himawari-agent/platform-node";
+import { lockStoppedTarget } from "./stopped-target-lock.js";
 
 const OPTIONS = ["--config", "--operator", "--confirm"] as const;
 
@@ -45,9 +45,7 @@ export async function runMemoryCommand(
   const configuration = await new JsonFileConfigurationPort(configurationPath).load();
   const scope = { ownerId: configuration.ownerId, agentId: configuration.agentId };
   const confirmation = `REINDEX_MEMORY_${configuration.agentId}`;
-  const lock = await acquireStateRootLock(configuration.stateRoot).catch(() => {
-    throw new Error(MEMORY_COMMAND_ERROR_CODES.TARGET_NOT_STOPPED);
-  });
+  const lock = await lockStoppedTarget(configuration.stateRoot);
   try {
     const database = openQualifiedDatabase(
       path.join(configuration.stateRoot, "data", "product.sqlite"),
