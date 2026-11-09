@@ -1071,7 +1071,18 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "deadline-code-model-released",
     "deadline-code-environment-released",
     "deadline-code-environment-unreleased",
+    "deadline-code-model-orphan-started",
+    "deadline-code-model-orphan-reserved",
+    "persisted-code-model-orphan-started",
+    "persisted-code-model-started",
+    "released-model-started",
+    "released-model-orphan-started",
   ] as const)("settles an expired unknown Run without dispatching: %s", async (scenario) => {
+    const modelScenario =
+      /^(deadline-code|persisted-code|released)-model-(orphan-)?(reserved|started|unknown|settled|released)(?:-(provider|transport|cancel))?(-tool-code)?$/.exec(
+        scenario,
+      );
+    const orphan = modelScenario?.[2] !== undefined;
     const f = await openSandboxJournal();
     let repository: SqliteProductStateRepository | undefined;
     try {
@@ -1186,7 +1197,15 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             "UPDATE run_coordination_checkpoints SET diagnostic_code='RUN_EXECUTION_DEADLINE_EXCEEDED'",
           )
           .run();
+      if (scenario.startsWith("persisted-code"))
+        f.database
+          .prepare(
+            "UPDATE run_coordination_checkpoints SET diagnostic_code='PERSISTED_EXECUTION_RECONCILIATION_REQUIRED'",
+          )
+          .run();
       if (
+        scenario.startsWith("persisted-code") ||
+        scenario.startsWith("deadline-code-model-orphan-") ||
         [
           "absent-before-deadline",
           "deadline-code-no-records",
@@ -1207,17 +1226,35 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         f.database.prepare("DELETE FROM sandbox_execution_records").run();
         f.database.prepare("DELETE FROM sandbox_admission_queue").run();
       }
-      if (scenario.startsWith("deadline-code-model-")) {
-        const [status, unknownReason = "provider"] = scenario
-          .slice("deadline-code-model-".length)
-          .split("-");
-        const reasonCode = status === "unknown" ? `${unknownReason}_unresolved` : null;
+      if (modelScenario) {
+        const status = modelScenario[3] as string;
+        const reasonCode =
+          status === "unknown" ? `${modelScenario[4] ?? "provider"}_unresolved` : null;
         const estimatedCostMicros = 169661;
-        const lease = f.database
+        const current = f.database
           .prepare(
             "SELECT id,deployment_id AS deploymentId,authority_epoch AS epoch,fencing_token AS token FROM authority_leases LIMIT 1",
           )
           .get() as { id: string; deploymentId: string; epoch: number; token: number };
+        const lease = orphan
+          ? { ...current, id: "previous-authority-lease", token: current.token + 1 }
+          : current;
+        if (orphan)
+          f.database
+            .prepare(
+              "INSERT INTO authority_leases(id,owner_id,agent_id,deployment_id,holder_id,authority_epoch,fencing_token,acquired_at,expires_at,released_at) VALUES(?,?,?,?,'previous-holder',?,?,?,?,?)",
+            )
+            .run(
+              lease.id,
+              OWNER_ID,
+              AGENT_ID,
+              lease.deploymentId,
+              lease.epoch,
+              lease.token,
+              T1,
+              T1,
+              T1,
+            );
         f.database
           .prepare(
             "INSERT INTO model_budget_accounts(owner_id,agent_id,account_id,parent_kind,run_id,data_classification,reserved_cost_micros,spent_cost_micros,status,revision) VALUES(?,?,?,'run',?,'private',?,0,?,1)",
@@ -1227,7 +1264,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             AGENT_ID,
             `run:${runId}`,
             runId,
-            status === "unknown" ? estimatedCostMicros : 0,
+            ["reserved", "started", "unknown"].includes(status) ? estimatedCostMicros : 0,
             status === "unknown" ? "reconcile_required" : "active",
           );
         f.database
@@ -1448,6 +1485,10 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           "deadline-code-model-unknown-transport",
           "deadline-code-model-unknown-cancel",
           "deadline-code-environment-released",
+          "deadline-code-model-orphan-started",
+          "deadline-code-model-orphan-reserved",
+          "persisted-code-model-orphan-started",
+          "released-model-orphan-started",
         ].includes(scenario)
       ) {
         const dispatch = opened.runDispatch(
@@ -1481,8 +1522,53 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         });
         expect(after.journal).toEqual(before.journal);
         expect(after.intents).toEqual(before.intents);
-        expect(after.models).toEqual(before.models);
-        expect(after.budgetAccounts).toEqual(before.budgetAccounts);
+        if (orphan && modelScenario?.[3] === "started") {
+          expect(after.models).toEqual([
+            {
+              status: "unknown",
+              reason_code: "owner_lost",
+              settled_at: null,
+              actual_cost_micros: null,
+              estimated_cost_micros: 169661,
+            },
+          ]);
+          expect(after.budgetAccounts).toEqual([
+            {
+              account_id: `run:${runId}`,
+              status: "reconcile_required",
+              reserved_cost_micros: 169661,
+              spent_cost_micros: 0,
+            },
+          ]);
+          expect(
+            f.database
+              .prepare(
+                "SELECT status,reason_code,observed_at FROM model_budget_allocations ORDER BY operation_key",
+              )
+              .all(),
+          ).toEqual([{ status: "unknown", reason_code: "owner_lost", observed_at: now }]);
+        } else if (orphan) {
+          expect(after.models).toEqual([
+            {
+              status: "released",
+              reason_code: null,
+              settled_at: null,
+              actual_cost_micros: null,
+              estimated_cost_micros: 169661,
+            },
+          ]);
+          expect(after.budgetAccounts).toEqual([
+            {
+              account_id: `run:${runId}`,
+              status: "active",
+              reserved_cost_micros: 0,
+              spent_cost_micros: 0,
+            },
+          ]);
+        } else {
+          expect(after.models).toEqual(before.models);
+          expect(after.budgetAccounts).toEqual(before.budgetAccounts);
+        }
         if (scenario.startsWith("deadline-code-model-unknown"))
           expect(after.models).toEqual([
             expect.objectContaining({
@@ -1545,7 +1631,9 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         expect(state()).toEqual(before);
       } else {
         if (
-          scenario.startsWith("deadline-code-") &&
+          (scenario.startsWith("deadline-code-") ||
+            scenario.startsWith("persisted-code-") ||
+            scenario.startsWith("released-model-")) &&
           scenario !== "deadline-code-before-deadline"
         ) {
           const dispatch = opened.runDispatch(

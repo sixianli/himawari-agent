@@ -46,16 +46,22 @@ export const SANDBOX_TOOL_RESULT_RECOVERY_SQL = `
   )
   AND (${RUN_RESOURCES_RELEASED_SQL})`;
 
+const LIVE_MODEL_INVOCATION_SQL = `
+  SELECT 1 FROM model_invocation_identities live
+  WHERE live.owner_id=r.owner_id AND live.agent_id=r.agent_id AND live.run_id=r.id
+    AND live.status IN ('reserved','started') AND live.authority_lease_id=@authorityLeaseId`;
+
 export const RUN_EXPIRED_RECONCILIATION_SQL = `
   r.status='reconciling_external_result'
   AND c.phase='reconciling_external_result'
   AND c.terminal_status IS NULL AND c.output_kind IS NULL
+  AND NOT EXISTS (${LIVE_MODEL_INVOCATION_SQL})
   AND (
     (c.diagnostic_code='RUNTIME_TOOL_RESULT_UNKNOWN' AND NOT (${SANDBOX_TOOL_RESULT_RECOVERY_SQL})
       AND NOT EXISTS (
         SELECT 1 FROM model_invocation_identities model
         WHERE model.owner_id=r.owner_id AND model.agent_id=r.agent_id AND model.run_id=r.id
-          AND model.status IN ('reserved','started','unknown')))
+          AND model.status='unknown'))
     OR (EXISTS (SELECT 1 FROM sandbox_execution_records expired
     WHERE expired.owner_id=r.owner_id AND expired.agent_id=r.agent_id AND expired.run_id=r.id
       AND json_extract(expired.plan_json,'$.originalDeadlineAt')<=@resourceNow)
@@ -63,12 +69,8 @@ export const RUN_EXPIRED_RECONCILIATION_SQL = `
     WHERE pending.owner_id=r.owner_id AND pending.agent_id=r.agent_id AND pending.run_id=r.id
       AND (json_extract(pending.plan_json,'$.originalDeadlineAt') IS NULL
         OR json_extract(pending.plan_json,'$.originalDeadlineAt')>@resourceNow)))
-    OR (c.diagnostic_code='RUN_EXECUTION_DEADLINE_EXCEEDED'
+    OR (c.diagnostic_code IN ('RUN_EXECUTION_DEADLINE_EXCEEDED','PERSISTED_EXECUTION_RECONCILIATION_REQUIRED','RUNTIME_ATTEMPT_INTERRUPTED','SERVICE_STOPPING','EXECUTION_LEASE_RENEWAL_FAILED')
       AND NOT EXISTS (SELECT 1 FROM sandbox_execution_records any_record
-        WHERE any_record.owner_id=r.owner_id AND any_record.agent_id=r.agent_id AND any_record.run_id=r.id)
-      AND NOT EXISTS (
-        SELECT 1 FROM model_invocation_identities model
-        WHERE model.owner_id=r.owner_id AND model.agent_id=r.agent_id AND model.run_id=r.id
-          AND model.status IN ('reserved','started')))
+        WHERE any_record.owner_id=r.owner_id AND any_record.agent_id=r.agent_id AND any_record.run_id=r.id))
   )
   AND (${RUN_RESOURCES_RELEASED_SQL})`;
