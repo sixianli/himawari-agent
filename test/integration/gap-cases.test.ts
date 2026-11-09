@@ -578,6 +578,8 @@ describe("[PA-4] Muse gap cases", () => {
         url: GAP_EXPORT_PATH,
         headers: { authorization: `Bearer ${h.secret}` },
       });
+      expect(exported.statusCode).toBe(200);
+      expect(exported.json().cases.map((entry: { id: string }) => entry.id)).toEqual([long.id]);
       expect(exported.body).not.toMatch(/4111|(?:\d[ -]?){13,}/u);
     } finally {
       await h.app.close();

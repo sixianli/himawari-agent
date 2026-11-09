@@ -320,7 +320,6 @@ export class ProductionObservation {
     if (!marks || !seal) invalid("GAP_MARKS_UNAVAILABLE");
     if (!payload.marked) {
       const ref = await marks.unmark({ ...scope, caseId: payload.caseId });
-      if (ref !== null) await seal.release({ ...scope, refs: [ref] });
       return { resultRef: `gap-case-unmark:${payload.caseId}`, replayed: ref === null };
     }
     const window = resolveWindow({ end: payload.endDay, days: 7 });
