@@ -5,6 +5,7 @@ PROD_TARGET="root@84.247.157.41"
 PROD_UNIT="himawari-prod.service"
 PROD_NODE="/opt/himawari/node/bin/node"
 PROD_DATABASE="/var/lib/himawari/state/data/product.sqlite"
+PROD_CONFIGURATION="/etc/himawari/config.json"
 
 usage() {
   cat >&2 <<'TEXT'
@@ -19,6 +20,8 @@ usage: prod-read.sh <query>
   tables                      table names of the product database
   columns <table>            column names of one table
   rows <table> <run-id>       rows of one table whose run_id or id column equals <run-id>
+  rule-memories               metadata (no text) of every memory in the rule category
+  system-instruction          the runPolicy.systemInstruction text of the production configuration
 TEXT
   exit 64
 }
@@ -79,6 +82,13 @@ if (mode === "summary") {
 } else if (mode === "columns") {
   requireTable(first);
   result = columnNames(first);
+} else if (mode === "rules") {
+  result = database
+    .prepare(
+      "SELECT id, status, tentative, classification, importance_permille, confidence_permille, inference, recorded_at, updated_at, valid_to, superseded_by, use_count FROM memory_records WHERE category = 'rule' ORDER BY recorded_at",
+    )
+    .all()
+    .map(shorten);
 } else if (mode === "rows") {
   requireTable(first);
   const columns = columnNames(first);
@@ -92,6 +102,18 @@ if (mode === "summary") {
   throw new Error("PROD_READ_UNKNOWN_MODE " + mode);
 }
 console.log(JSON.stringify(result, null, 1));
+JS
+}
+
+system_instruction_query() {
+  ssh -o BatchMode=yes -o ConnectTimeout=20 "$PROD_TARGET" \
+    "cd /tmp && $PROD_NODE --no-warnings - $PROD_CONFIGURATION" <<'JS'
+const { readFileSync } = require("node:fs");
+const configuration = JSON.parse(readFileSync(process.argv[2], "utf8"));
+const policy = configuration.runPolicy ?? configuration.configuration?.runPolicy;
+const text = policy?.systemInstruction;
+if (typeof text !== "string") throw new Error("PROD_READ_NO_SYSTEM_INSTRUCTION");
+console.log(text);
 JS
 }
 
@@ -147,6 +169,14 @@ case "$query" in
     require_match "$1" '^[a-z][a-z0-9_]{0,63}$' "table name"
     require_match "$2" '^[A-Za-z0-9:._-]{3,80}$' "run id"
     database_query rows "$1" "$2"
+    ;;
+  rule-memories)
+    [ "$#" -eq 0 ] || usage
+    database_query rules
+    ;;
+  system-instruction)
+    [ "$#" -eq 0 ] || usage
+    system_instruction_query
     ;;
   *)
     usage
