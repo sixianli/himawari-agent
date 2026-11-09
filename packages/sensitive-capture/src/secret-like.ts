@@ -18,6 +18,7 @@ const PLACEHOLDER = /(\[(?:密码|验证码|证件号|密钥|银行卡 尾号\d{
 const ASCII_PIECE = /[A-Za-z0-9_\-+/@#$%^&*~!?.]+/gu;
 const PIECE_EDGE_PUNCTUATION = /^[.!?]+|[.!?]+$/gu;
 const ASCII_WORD = /[A-Za-z0-9_]/u;
+const SQUARE_BRACKET = /[[\]]/gu;
 
 function bareForms(value: string): readonly string[] {
   const pieces = (value.match(ASCII_PIECE) ?? []).map((piece) =>
@@ -35,7 +36,7 @@ function wholeWordPattern(value: string): RegExp {
 export function maskForIndex(text: string): string {
   const values = [
     ...new Set(
-      findSensitiveValues(text)
+      [...findSensitiveValues(text), ...findSensitiveValues(text.replace(SQUARE_BRACKET, " "))]
         .flatMap(({ value }) => bareForms(value))
         .filter((value) => value.length >= SHORTEST_REMEMBERED_VALUE),
     ),

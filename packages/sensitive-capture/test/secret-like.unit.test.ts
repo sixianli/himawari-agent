@@ -55,6 +55,7 @@ describe("words kept out of the search index", () => {
     const middle = maskForIndex("密码是aaa。sunflower。bbb，客人来了就告诉他 sunflower 客人来了");
     expect(middle).not.toContain("sunflower");
     expect(middle).toContain("客人来了");
+    expect(maskForIndex("密码是sunflower。客人来了 后来客人来了")).toContain("后来客人来了");
   });
 
   it("removes repeats only as whole words and never inside a masked placeholder", () => {
@@ -76,5 +77,7 @@ describe("words kept out of the search index", () => {
     expect(isSafeToIndex("6222020200112233445")).toBe(false);
     expect(isSafeToIndex("备用 x9Kq2mVb7Lp4Wz")).toBe(false);
     expect(isSafeToIndex("[hunter2x]")).toBe(false);
+    expect(maskForIndex("密码是[sunflower]，忘了就念 sunflower")).not.toContain("sunflower");
+    expect(isSafeToIndex("密码是[hunter2]")).toBe(false);
   });
 });
