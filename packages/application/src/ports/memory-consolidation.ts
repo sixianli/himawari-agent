@@ -40,6 +40,21 @@ export interface MemoryConsolidationLedgerMemories {
   readonly resultMemoryIds: readonly MemoryId[];
 }
 
+export interface MemoryConsolidationWrite {
+  readonly change: MemoryConsolidationChange;
+  readonly basisMemoryIds: readonly MemoryId[];
+  readonly ledgerMemories: MemoryConsolidationLedgerMemories;
+}
+
+export interface MemoryBasisChainNode {
+  readonly memoryId: MemoryId;
+  readonly change: MemoryConsolidationChange | null;
+  readonly ledgerId: string | null;
+  readonly basis: readonly MemoryBasisChainNode[];
+  readonly repeated: boolean;
+  readonly truncated: boolean;
+}
+
 export interface MemoryConsolidationStorePort {
   begin(run: MemoryConsolidationRun): Promise<boolean>;
   lastCompleted(ownerId: OwnerId, agentId: AgentId): Promise<MemoryConsolidationRun | undefined>;
@@ -51,15 +66,17 @@ export interface MemoryConsolidationStorePort {
     readonly errorCode: string | null;
     readonly finishedAt: string;
   }): Promise<void>;
-  recordChange(
-    change: MemoryConsolidationChange,
-    ledgerMemories?: MemoryConsolidationLedgerMemories,
-  ): Promise<void>;
   listChanges(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
     readonly limit: number;
   }): Promise<readonly MemoryConsolidationChange[]>;
   readChange(id: string): Promise<MemoryConsolidationChange | undefined>;
+  readBasis(changeId: string): Promise<readonly MemoryId[]>;
+  readBasisChain(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly memoryId: MemoryId;
+  }): Promise<MemoryBasisChainNode>;
   markUndone(input: { readonly id: string; readonly undoneAt: string }): Promise<boolean>;
 }

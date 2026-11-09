@@ -651,6 +651,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0082_gap_case_marks.sql",
   },
+  {
+    sequence: 83,
+    name: "memory_consolidation_basis",
+    changeSet: "memory-consolidation-basis",
+    phase: "expand" as const,
+    file: "0083_memory_consolidation_basis.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

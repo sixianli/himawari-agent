@@ -5,6 +5,7 @@ import {
   type DataClassification,
   type DecisionLedgerWrite,
   type MemoryCategory,
+  type MemoryConsolidationWrite,
   type MemoryContentPort,
   type MemoryHistoryNote,
   type MemoryProjectionJob,
@@ -86,6 +87,8 @@ function historyNote(
   };
 }
 
+export type ConsolidationWriteFor = (saved: ProductMemoryRecord) => MemoryConsolidationWrite;
+
 export class DurableMemoryService {
   private readonly options: DurableMemoryServiceOptions;
 
@@ -97,6 +100,7 @@ export class DurableMemoryService {
     proposal: ProductMemoryProposal,
     generationId: MemoryGenerationId,
     ledger?: DecisionLedgerWrite,
+    consolidation?: ConsolidationWriteFor,
   ): Promise<ProductMemoryRecord> {
     if (proposal.decision === "unchanged") {
       const current = requireRecord(
@@ -153,6 +157,7 @@ export class DurableMemoryService {
         generationId,
         historyNote("created", proposal),
         ledger,
+        consolidation,
       );
       if (proposal.supersedes) await this.supersede(proposal.supersedes, saved, generationId);
       return saved;
@@ -285,6 +290,7 @@ export class DurableMemoryService {
     readonly status?: "active" | "archived";
     readonly attributes?: Partial<ProductMemoryAttributes>;
     readonly generationId: MemoryGenerationId;
+    readonly consolidation?: ConsolidationWriteFor;
   }): Promise<ProductMemoryRecord> {
     const current = requireRecord(await this.options.state.read(input.memoryId), input.memoryId);
     if (current.revision !== input.expectedRevision)
@@ -321,6 +327,9 @@ export class DurableMemoryService {
       current.revision,
       status === "active" ? "upsert" : "delete",
       input.generationId,
+      undefined,
+      undefined,
+      input.consolidation,
     );
   }
 
@@ -555,6 +564,7 @@ export class DurableMemoryService {
     generationId: MemoryGenerationId,
     history?: MemoryHistoryNote,
     ledger?: DecisionLedgerWrite,
+    consolidation?: ConsolidationWriteFor,
   ) {
     return this.options.state.saveWithProjection({
       memory,
@@ -562,6 +572,7 @@ export class DurableMemoryService {
       job: this.projectionJob(memory, operation, generationId),
       ...(history ? { history } : {}),
       ...(ledger ? { ledger } : {}),
+      ...(consolidation ? { consolidation: consolidation(memory) } : {}),
     });
   }
 

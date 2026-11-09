@@ -103,7 +103,14 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
       ) VALUES (?, ?, ?, 'private', 'sqlite_blob', X'00', ?, 'fixture', 'fixture-key',
         'active', ?, 'text/plain')`,
     );
-    for (const ref of ["payload-1", "payload-2", "payload-muse", "payload-note"])
+    for (const ref of [
+      "payload-1",
+      "payload-2",
+      "payload-3",
+      "payload-4",
+      "payload-muse",
+      "payload-note",
+    ])
       insertPayload.run(ref, OWNER_ID, AGENT_ID, `sha256:${ref}`, T0);
     database
       .prepare(
@@ -731,11 +738,36 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
         createdAt: T0,
         undoneAt: null,
       } as const;
-      await expect(
-        store.recordChange({ ...change, consolidationId: "consolidation-missing" }),
-      ).rejects.toThrow();
+      const revise = (consolidationId: string) =>
+        memory.revise({
+          memoryId: createMemoryId("memory-a"),
+          expectedRevision: 1,
+          status: "archived",
+          generationId: GENERATION_ID,
+          consolidation: (saved) => ({
+            change: { ...change, consolidationId, afterRevision: saved.revision },
+            basisMemoryIds: [createMemoryId("memory-a"), createMemoryId("memory-b")],
+            ledgerMemories: {
+              memoryIds: [createMemoryId("memory-a"), createMemoryId("memory-b")],
+              resultMemoryIds: [createMemoryId("memory-b")],
+            },
+          }),
+        });
+      await expect(revise("consolidation-missing")).rejects.toThrow();
       expect(await list("consolidation")).toEqual([]);
-      await store.recordChange(change);
+      expect(await repository.productMemoryState().read(createMemoryId("memory-a"))).toMatchObject({
+        status: "active",
+        revision: 1,
+      });
+      await revise("consolidation-1");
+      expect(await repository.productMemoryState().read(createMemoryId("memory-a"))).toMatchObject({
+        status: "archived",
+        revision: 2,
+      });
+      expect(await store.readBasis("consolidation-1:c1")).toEqual([
+        createMemoryId("memory-a"),
+        createMemoryId("memory-b"),
+      ]);
       expect(await list("consolidation")).toMatchObject([
         {
           kind: "consolidation",
@@ -744,6 +776,124 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           inputs: { memoryIds: ["memory-a", "memory-b"], ruleIds: [] },
         },
       ]);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[P1-2] writes memory change, change row, basis rows and decision record together or not at all, and reads the whole chain", async () => {
+    const { repository, memory, list } = await fixture();
+    try {
+      for (const [id, payload] of [
+        ["memory-a", "payload-1"],
+        ["memory-b", "payload-2"],
+        ["memory-c", "payload-3"],
+      ] as const)
+        await memory.applyProposal(proposal(id, payload), GENERATION_ID);
+      const store = repository.memoryConsolidation();
+      await store.begin({
+        id: "consolidation-1",
+        ...scope,
+        day: "2026-10-31",
+        triggerRunId: "run-1",
+        status: "running",
+        reviewedThrough: null,
+        modelCalled: false,
+        changeCount: 0,
+        errorCode: null,
+        startedAt: T0,
+        finishedAt: null,
+      });
+      const ids = (...names: string[]) => names.map((name) => createMemoryId(name));
+      const change = (
+        seq: number,
+        memoryId: string,
+        related: string | null,
+        action: "merge" | "supersede" | "archive" | "reflect",
+      ) =>
+        ({
+          id: `consolidation-1:c${seq}`,
+          consolidationId: "consolidation-1",
+          ...scope,
+          memoryId: createMemoryId(memoryId),
+          relatedMemoryId: related ? createMemoryId(related) : null,
+          action,
+          beforeRevision: 1,
+          afterRevision: 2,
+          beforeStatus: "active",
+          beforeSupersededBy: null,
+          beforeValidTo: null,
+          createdAt: T0,
+          undoneAt: null,
+        }) as const;
+      const archive = (basis: readonly string[], memoryId = "memory-b") =>
+        memory.revise({
+          memoryId: createMemoryId(memoryId),
+          expectedRevision: 1,
+          status: "archived",
+          generationId: GENERATION_ID,
+          consolidation: (saved) => ({
+            change: { ...change(1, memoryId, "memory-a", "merge"), afterRevision: saved.revision },
+            basisMemoryIds: ids(...basis),
+            ledgerMemories: { memoryIds: ids(...basis), resultMemoryIds: ids("memory-a") },
+          }),
+        });
+      await expect(archive(["memory-b", "memory-missing"])).rejects.toThrow();
+      expect(await repository.productMemoryState().read(createMemoryId("memory-b"))).toMatchObject({
+        status: "active",
+        revision: 1,
+      });
+      expect(await list("consolidation")).toEqual([]);
+      expect(await store.readChange("consolidation-1:c1")).toBeUndefined();
+      expect(await store.readBasis("consolidation-1:c1")).toEqual([]);
+      expect((await store.lastCompleted(scope.ownerId, scope.agentId)) ?? null).toBeNull();
+      await archive(["memory-b", "memory-a"]);
+      expect(await list("consolidation")).toHaveLength(1);
+      expect(await store.readBasis("consolidation-1:c1")).toEqual(ids("memory-b", "memory-a"));
+      await memory.applyProposal(
+        proposal("memory-insight", "payload-4"),
+        GENERATION_ID,
+        undefined,
+        (saved) => ({
+          change: {
+            ...change(2, "memory-insight", "memory-b", "reflect"),
+            beforeRevision: null,
+            afterRevision: saved.revision,
+          },
+          basisMemoryIds: ids("memory-b", "memory-c"),
+          ledgerMemories: {
+            memoryIds: ids("memory-b", "memory-c"),
+            resultMemoryIds: ids("memory-insight"),
+          },
+        }),
+      );
+      expect(await store.readBasis("consolidation-1:c2")).toEqual(ids("memory-b", "memory-c"));
+      const chain = await store.readBasisChain({
+        ...scope,
+        memoryId: createMemoryId("memory-insight"),
+      });
+      expect(chain).toMatchObject({
+        memoryId: "memory-insight",
+        change: { id: "consolidation-1:c2", action: "reflect" },
+        repeated: false,
+        truncated: false,
+        basis: [
+          {
+            memoryId: "memory-b",
+            change: { id: "consolidation-1:c1", action: "merge" },
+            basis: [{ memoryId: "memory-a", change: null, basis: [] }],
+          },
+          { memoryId: "memory-c", change: null, basis: [] },
+        ],
+      });
+      expect(chain.ledgerId).toMatch(/^ledger:/u);
+      expect(await list("consolidation")).toHaveLength(2);
+      const other = await store.readBasisChain({
+        ownerId: createOwnerId("owner-other"),
+        agentId: scope.agentId,
+        memoryId: createMemoryId("memory-insight"),
+      });
+      expect(other).toMatchObject({ change: null, basis: [] });
     } finally {
       await repository.close();
     }
