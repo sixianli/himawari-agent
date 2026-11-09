@@ -1432,11 +1432,17 @@ it("accepts Muse intake only with a boolean switch and one secret whose purpose 
     ...references,
     { ref: "muse-intake-secret", version: "v1", purpose: "muse-intake", scope: "agent" },
     { ref: "other-secret", version: "v1", purpose: "google-oauth-client", scope: "agent" },
+    { ref: "gap-export-secret", version: "v1", purpose: "gap-export", scope: "agent" },
   ];
   const museIntake = { enabled: true, secretRef: "muse-intake-secret" };
   raw["runPolicy"] = { ...policy, museIntake };
   expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.museIntake).toEqual(
     museIntake,
+  );
+  const withGapExport = { ...museIntake, gapExportSecretRef: "gap-export-secret" };
+  raw["runPolicy"] = { ...policy, museIntake: withGapExport };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.museIntake).toEqual(
+    withGapExport,
   );
   raw["runPolicy"] = { ...policy };
   expect(
@@ -1448,6 +1454,8 @@ it("accepts Muse intake only with a boolean switch and one secret whose purpose 
     { ...museIntake, secretRef: "other-secret" },
     { ...museIntake, secretRef: "missing-secret" },
     { ...museIntake, secret: "inline" },
+    { ...museIntake, gapExportSecretRef: "muse-intake-secret" },
+    { ...museIntake, gapExportSecretRef: "missing-secret" },
   ]) {
     raw["runPolicy"] = { ...policy, museIntake: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();

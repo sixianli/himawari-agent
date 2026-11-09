@@ -97,6 +97,7 @@ import {
   PRODUCTION_PROACTIVE_OPERATIONS,
   type ProductionProactive,
 } from "./production-proactive.js";
+import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
 import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
 import {
   PRODUCTION_MUSE_OPERATIONS,
@@ -193,6 +194,7 @@ export interface ProductionHttpCompositionOptions {
   };
   readonly proactive?: ProductionProactive;
   readonly museIntake?: ProductionMuseIntake;
+  readonly gapExport?: ProductionGapExport;
   readonly museControl?: ProductionMuseControl;
   readonly observation?: ProductionObservation;
   readonly configuration: ProductConfiguration;
@@ -1138,6 +1140,7 @@ export async function createProductionHttpComposition(
       ownerId,
     });
   if (options.museIntake) registerMuseIntakeRoute(app, options.museIntake);
+  if (options.gapExport) registerGapExportRoute(app, options.gapExport);
   registerAuthentication(app, csrf, recentAuthentication);
   const onCommandAccepted = options.onCommandAccepted;
   if (onCommandAccepted)

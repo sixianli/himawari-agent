@@ -525,6 +525,18 @@ export class SqliteMuseIntakeOperations {
         titleRef: string | null;
         textRef: string | null;
       }[];
+      const markRefs = this.database
+        .prepare(
+          `SELECT snapshot_ref AS snapshotRef FROM gap_case_marks WHERE owner_id = ? AND agent_id = ?`,
+        )
+        .all(input.ownerId, input.agentId) as { snapshotRef: string }[];
+      this.database
+        .prepare("DELETE FROM gap_case_marks WHERE owner_id = ? AND agent_id = ?")
+        .run(input.ownerId, input.agentId);
+      for (const { snapshotRef } of markRefs)
+        this.database
+          .prepare("DELETE FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ?")
+          .run(snapshotRef, input.ownerId, input.agentId);
       this.database
         .prepare(
           `DELETE FROM muse_reference_entries

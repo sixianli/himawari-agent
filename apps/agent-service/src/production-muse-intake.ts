@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
   type ClockPort,
   type IdGeneratorPort,
@@ -12,6 +12,7 @@ import {
   type ProactiveSealPort,
 } from "@himawari-agent/application";
 import type { FastifyInstance } from "fastify";
+import { BearerGate } from "./bearer-admission.js";
 import type { MuseChannelPushSource } from "./production-web-push.js";
 
 export const MUSE_INTAKE_PATH = "/api/muse-intake/v1/batch";
@@ -19,9 +20,6 @@ export const MUSE_INTAKE_BODY_LIMIT = 262_144;
 export const MUSE_INTAKE_MAX_ITEMS = 100;
 export const MUSE_INTAKE_MAX_TITLE = 300;
 export const MUSE_INTAKE_MAX_TEXT = 8_000;
-const AUTHORIZED_PER_MINUTE = 30;
-const UNAUTHORIZED_PER_MINUTE = 60;
-const WINDOW_MS = 60_000;
 
 const ENVELOPE_KEYS = ["sender_id", "batch_seq", "sent_at_utc", "cursor", "items"];
 const PROACTIVE_KEYS = [
@@ -409,9 +407,7 @@ export class ProductionMuseIntake {
   private readonly seal: ProactiveSealPort;
   private readonly ids: IdGeneratorPort;
   private readonly clock: ClockPort;
-  private readonly secretDigest: Buffer;
-  private readonly authorized: number[] = [];
-  private readonly unauthorized: number[] = [];
+  private readonly gate: BearerGate;
 
   constructor(options: {
     readonly scope: ProactiveScope;
@@ -421,28 +417,16 @@ export class ProductionMuseIntake {
     readonly clock: ClockPort;
     readonly secret: string;
   }) {
-    if (options.secret.length < 32) throw new Error("MUSE_INTAKE_SECRET_TOO_SHORT");
     this.scope = options.scope;
     this.store = options.store;
     this.seal = options.seal;
     this.ids = options.ids;
     this.clock = options.clock;
-    this.secretDigest = createHash("sha256").update(options.secret).digest();
+    this.gate = new BearerGate(options.clock, options.secret, 32, "MUSE_INTAKE_SECRET_TOO_SHORT");
   }
 
   admit(authorization: string | undefined): "ok" | "unauthorized" | "rate_limited" {
-    const now = Date.parse(this.clock.now());
-    const bearer = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
-    const matches = timingSafeEqual(
-      createHash("sha256").update(bearer).digest(),
-      this.secretDigest,
-    );
-    const window = matches ? this.authorized : this.unauthorized;
-    while (window.length > 0 && now - (window[0] as number) >= WINDOW_MS) window.shift();
-    if (window.length >= (matches ? AUTHORIZED_PER_MINUTE : UNAUTHORIZED_PER_MINUTE))
-      return "rate_limited";
-    window.push(now);
-    return matches ? "ok" : "unauthorized";
+    return this.gate.admit(authorization);
   }
 
   async ingest(body: unknown): Promise<MuseIntakeHttpResult> {
