@@ -131,6 +131,19 @@ describe("ADR number check", () => {
     expect(errors.some((error) => error.includes("0002-zero"))).toBe(false);
   });
 
+  it("treats a symlink to a regular file as no ADR and a link to it as missing; ignores URLs", () => {
+    const root = fixture(["0001-a.md"]);
+    writeFileSync(join(root, "docs/real.md"), "# ADR 0009：故意写错\n");
+    symlinkSync(join(root, "docs/real.md"), join(root, "docs/adr/0002-b.md"));
+    writeFileSync(
+      join(root, "docs/n.md"),
+      "[软链](adr/0002-b.md) https://github.com/x/y/blob/main/docs/adr/0077-away.md\n",
+    );
+    expect(checkAdrNumbers({ root }).errors).toEqual([
+      "ADR_LINK_MISSING docs/n.md -> adr/0002-b.md",
+    ]);
+  });
+
   it("passes on this repository", () => {
     expect(checkAdrNumbers().errors).toEqual([]);
   });

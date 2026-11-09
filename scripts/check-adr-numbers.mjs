@@ -34,6 +34,7 @@ const MARKDOWN_LINK = /\]\(([^)\s]+)\)/g;
 const EXPLICIT_ANCHOR = /<a id="([^"]+)"><\/a>/g;
 const HEADING = /^#{1,6}\s+(.+)$/gm;
 const ADR_PATH_MENTION = /docs\/adr\/\d{4}-[a-z0-9][a-z0-9-]*\.md/g;
+const EXTERNAL_URL = /https?:\/\/[^\s)>\]]+/g;
 const TITLE = /^#\s+(.+)$/m;
 const TITLE_NUMBER = /^ADR\s+(\d{4})(?!\d)/;
 
@@ -105,7 +106,7 @@ export function findAdrLinkProblems(root) {
       if (anchor && !anchorsOf(readFileSync(destination, "utf8")).has(anchor))
         errors.push(`ADR_LINK_ANCHOR_MISSING ${file} -> ${target}`);
     }
-    for (const mention of new Set(text.match(ADR_PATH_MENTION) ?? []))
+    for (const mention of new Set(text.replace(EXTERNAL_URL, "").match(ADR_PATH_MENTION) ?? []))
       if (!isRegularFile(path.join(root, mention)))
         errors.push(`ADR_PATH_MISSING ${file} -> ${mention}`);
   }
@@ -116,15 +117,15 @@ export function checkAdrNumbers({ root = repositoryRoot } = {}) {
   const directory = path.join(root, ADR_DIRECTORY);
   if (!existsSync(directory))
     return { errors: [`ADR_NUMBER_NO_DIRECTORY ${ADR_DIRECTORY} 不存在`], adrs: 0 };
-  const result = findAdrNumberProblems(readdirSync(directory));
+  const names = readdirSync(directory)
+    .filter((name) => name.endsWith(".md") && isRegularFile(path.join(directory, name)))
+    .sort();
+  const result = findAdrNumberProblems(names);
   if (result.adrs === 0)
     return {
       errors: [...result.errors, `ADR_NUMBER_NO_FILES ${ADR_DIRECTORY} 下没有 ADR`],
       adrs: 0,
     };
-  const names = readdirSync(directory)
-    .filter((name) => name.endsWith(".md") && isRegularFile(path.join(directory, name)))
-    .sort();
   const titles = names.map((name) => [name, readFileSync(path.join(directory, name), "utf8")]);
   return {
     errors: [...result.errors, ...findAdrTitleProblems(titles), ...findAdrLinkProblems(root)],
