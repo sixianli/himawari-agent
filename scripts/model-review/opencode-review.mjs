@@ -1639,13 +1639,17 @@ export function roundForRun({
     const recordedDigests = inRound
       .filter((record) => record.model === model && record.promptSha256)
       .map((record) => record.promptSha256);
+    const recordedFileDigests = inRound
+      .filter((record) => record.model === model && record.promptFileSha256)
+      .map((record) => record.promptFileSha256);
     const digest = createHash("sha256").update(prompts[model]).digest("hex");
     if (onDisk === null && recordedDigests.length === 0)
       throw new Error(`ROUND_CANNOT_VERIFY ${requested} ${model}`);
     if (
       (onDisk !== null &&
         onDisk !== maskSecretLike(prompts[model]) &&
-        onDisk !== maskSecretLike(prompts[model], { registeredValues: false })) ||
+        onDisk !== maskSecretLike(prompts[model], { registeredValues: false }) &&
+        !recordedFileDigests.includes(createHash("sha256").update(onDisk).digest("hex"))) ||
       recordedDigests.some((recorded) => recorded !== digest)
     )
       throw new Error(`ROUND_PROMPT_MISMATCH ${requested} ${model}`);
@@ -2486,10 +2490,10 @@ function registeredValuesPattern() {
 
 export function maskSecretLike(text, { registeredValues = true } = {}) {
   const registered = registeredValues ? registeredValuesPattern() : null;
-  let masked = registered ? text.replace(registered, `[已遮盖:${REGISTERED_VALUE_RULE_ID}]`) : text;
+  let masked = text;
   for (const [id, pattern] of RECORD_SECRET_RULES)
     masked = masked.replace(new RegExp(pattern.source, pattern.flags), `[已遮盖:${id}]`);
-  return masked;
+  return registered ? masked.replace(registered, `[已遮盖:${REGISTERED_VALUE_RULE_ID}]`) : masked;
 }
 
 export function registerTestValuesFromRefs(repo, refs) {
@@ -2503,12 +2507,9 @@ export function registerTestValuesFromRefs(repo, refs) {
 }
 
 export function secretLikeRules(text) {
-  const rules = RECORD_SECRET_RULES.filter(([, pattern]) =>
+  return RECORD_SECRET_RULES.filter(([, pattern]) =>
     new RegExp(pattern.source, pattern.flags).test(text),
   ).map(([id]) => id);
-  if (registeredTestValues.some((value) => text.includes(value)))
-    rules.push(REGISTERED_VALUE_RULE_ID);
-  return rules;
 }
 
 export function maskedRecordText(text) {
@@ -2937,12 +2938,10 @@ async function main() {
     defaultGateway: process.env.HIMAWARI_REVIEW_GATEWAY,
   });
   if (options.report) {
-    registerTestValuesFromRefs(options.repo, [options.mainRef ?? "origin/main"]);
     for (const line of reviewReport(options)) console.log(line);
     return;
   }
   if (options.assertReviewed) {
-    registerTestValuesFromRefs(options.repo, [options.mainRef ?? "origin/main"]);
     const result = assertReviewed(options);
     for (const line of result.lines) console.log(line);
     if ((result.problems.length > 0 && !result.overridden) || result.lowFixRefused)

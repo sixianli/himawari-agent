@@ -2691,19 +2691,20 @@ describe("opencode review merge gate", () => {
     }
   });
 
-  it("[merge gate] refuses a committed record that carries a registered test value, and accepts the masked form", () => {
+  it("[merge gate] leaves registered test values to gitleaks and does not refuse a record that carries one", () => {
     const quote = "'''";
     const value = ["abcdef", "123456"].join("");
     const f = fixture(`regexes = [${quote}^${value}$${quote}]\n`);
     try {
       registerTestValuesFromRefs(f.repo, ["origin/main"]);
       const path = `${REVIEWS_DIR}/pr-7/round-1/deepseek-v4.1-flash.md`;
-      const note = `- 命中 token=${value}\n`;
-      f.commit({ [path]: note }, "raw record");
+      f.commit(
+        { [path]: `- 命中 token=${value}\n` },
+        "record from before the value was registered",
+      );
       f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
-      expect(f.check().problems).toEqual([`record-secret-like ${path} registered-test-value`]);
-      f.commit({ [path]: maskedRecordText(note) }, "masked record");
       expect(f.check().problems).toEqual([]);
+      expect(maskedRecordText(`token=${value}`)).toBe("token=[已遮盖:registered-test-value]\n");
     } finally {
       setRegisteredTestValues([]);
       rmSync(f.root, { recursive: true, force: true });
@@ -3900,6 +3901,43 @@ describe("opencode review spending", () => {
     }
   });
 
+  it("[rerun round] accepts a prompt file whose digest the ledger recorded, even if the list of values changed since", () => {
+    const [, glm] = REVIEW_MODELS;
+    const first = ["abcdef", "123456"].join("");
+    const second = ["second-registered", "value"].join("-");
+    const prompt = `引用了 ${first} 和 ${second}\n`;
+    setRegisteredTestValues([first]);
+    const writtenThen = maskSecretLike(prompt);
+    const records = [
+      {
+        cost: 0.1,
+        round: 1,
+        model: glm,
+        head: "h",
+        outcome: "timeout",
+        promptSha256: createHash("sha256").update(prompt).digest("hex"),
+        promptFileSha256: createHash("sha256").update(writtenThen).digest("hex"),
+      },
+    ];
+    const run = (onDisk) =>
+      roundForRun({
+        records,
+        rounds: [1],
+        requested: 1,
+        models: [glm],
+        head: "h",
+        prompts: { [glm]: prompt },
+        promptsOnDisk: { [glm]: onDisk },
+      });
+    try {
+      setRegisteredTestValues([second]);
+      expect(run(writtenThen)).toBe(1);
+      expect(() => run(`${writtenThen}\n`)).toThrow(`ROUND_PROMPT_MISMATCH 1 ${glm}`);
+    } finally {
+      setRegisteredTestValues([]);
+    }
+  });
+
   it("[rerun round] accepts the masked prompt file that the run itself wrote, and refuses a changed one", () => {
     const [, glm] = REVIEW_MODELS;
     const prompt = `问题里引用了 ${fakeOpenAiKey} 这个值\n`;
@@ -4433,7 +4471,7 @@ describe("[registered test values] records never carry the fixture values gitlea
   it("masks the registered value in records and reports it, but not near misses or unregistered text", () => {
     setRegisteredTestValues(registeredTestValuesFromToml(toml));
     const text = `- 命中 \`token=${fakeValue}\`，另一个 token=${nearMiss}，还有 ${fakeValue} 两次`;
-    expect(secretLikeRules(text)).toContain("registered-test-value");
+    expect(secretLikeRules(text)).toEqual([]);
     const masked = maskedRecordText(text);
     expect(masked).not.toContain(fakeValue);
     expect(masked).toContain("token=[已遮盖:registered-test-value]");
@@ -4506,6 +4544,25 @@ describe("[registered test values] records never carry the fixture values gitlea
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("masks the longer of two overlapping registered values whole, whatever order they come in", () => {
+    const longer = `${fakeValue}-longer-suffix`;
+    for (const order of [
+      [fakeValue, longer],
+      [longer, fakeValue],
+    ]) {
+      setRegisteredTestValues(order);
+      expect(maskSecretLike(`a ${longer} b ${fakeValue}`)).toBe(
+        "a [已遮盖:registered-test-value] b [已遮盖:registered-test-value]",
+      );
+    }
+  });
+
+  it("masks real secret shapes first, so a registered value inside a real token cannot hide the rest", () => {
+    const real = ["gh", "p_", "A".repeat(24)].join("");
+    setRegisteredTestValues([real.slice(0, 16)]);
+    expect(maskSecretLike(`x ${real} y`)).toBe("x [已遮盖:github-token] y");
   });
 
   it("masks in one pass, so a registered value inside the replacement text cannot corrupt it", () => {
