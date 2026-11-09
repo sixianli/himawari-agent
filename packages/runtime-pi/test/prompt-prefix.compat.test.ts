@@ -231,6 +231,21 @@ class RulesetPromptBundles extends FrozenPromptBundles {
   }
 }
 
+class RenamedToolPromptBundles extends FrozenPromptBundles {
+  override async resolve(input: RuntimePromptBundleResolveInput): Promise<RuntimePromptBundle> {
+    const bundle = await super.resolve(input);
+    return {
+      ...bundle,
+      tools: JSON.stringify(
+        (JSON.parse(bundle.tools) as { name: string }[]).map((tool) => ({
+          ...tool,
+          name: `${tool.name}_renamed`,
+        })),
+      ),
+    };
+  }
+}
+
 function runRequest(runId: string): RuntimeRequest {
   return {
     ownerId: "owner-prefix",
@@ -283,6 +298,7 @@ async function conversation(
   reply: (index: number, body: string) => Reply,
   configure: (projection: ConversationProjection) => void = () => undefined,
   dependencies: Partial<PiAgentRuntimeAdapterDependencies> = {},
+  expectCompleted = true,
 ) {
   const server = await loopback(reply);
   const models = new ConfiguredPiModelBindingPort({
@@ -325,6 +341,7 @@ async function conversation(
     ...dependencies,
   });
   const requestsPerTurn: number[] = [];
+  const turnEvents: RuntimeEvent[][] = [];
   for (const [index, turn] of turns.entries()) {
     projection.turn = turn;
     const before = server.bodies.length;
@@ -334,10 +351,12 @@ async function conversation(
       modelRef: "loopback-primary",
     } as RuntimeRequest))
       events.push(event);
-    expect(events.at(-1)?.type, JSON.stringify(events.at(-1))).toBe("runtime.completed");
+    if (expectCompleted)
+      expect(events.at(-1)?.type, JSON.stringify(events.at(-1))).toBe("runtime.completed");
+    turnEvents.push(events);
     requestsPerTurn.push(server.bodies.length - before);
   }
-  return { bodies: server.bodies, requestsPerTurn, projection };
+  return { bodies: server.bodies, requestsPerTurn, projection, turnEvents };
 }
 
 const memoryBlock = (content: string, ref = "memory-1"): RuntimeProjectionContextBlock => ({
@@ -750,6 +769,21 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       ["run-prefix-2", { generation: 1, handleTools: 1 }],
       ["run-prefix-3", { generation: 1, handleTools: 1 }],
     ]);
+  });
+
+  it("[ADR-0198] sends nothing when the frozen tool names differ from the tools Pi can run", async () => {
+    const { bodies, turnEvents, projection } = await conversation(
+      THREE_TURNS.slice(0, 1),
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+      { promptBundles: new RenamedToolPromptBundles() },
+      false,
+    );
+    expect(bodies).toHaveLength(0);
+    expect(turnEvents[0]?.filter((event) => event.type === "runtime.failed")).toEqual([
+      expect.objectContaining({ errorCode: "PI_MODEL_ERROR" }),
+    ]);
+    expect(JSON.stringify(projection.saved)).toContain("PI_REQUEST_TOOLS_DIVERGED");
   });
 
   it("keeps the frozen tools unchanged when task tools come and go with a task handle", async () => {

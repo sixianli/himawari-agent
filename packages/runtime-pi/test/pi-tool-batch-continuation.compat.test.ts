@@ -165,6 +165,10 @@ describe("pinned Pi tool-batch continuation", () => {
         followup.messages.filter((m) => m.role === "toolResult").map((m) => m.toolCallId),
       ).toEqual(["confirmed", "waiting"]);
       expect(JSON.stringify(followup)).not.toContain("PRODUCT_SUSPENDED");
+      const before = (model.observed[0] as { transcript: unknown[] }).transcript;
+      const after = (model.observed[1] as { transcript: unknown[] }).transcript;
+      expect(before.length).toBeGreaterThan(1);
+      expect(JSON.stringify(after.slice(0, before.length))).toBe(JSON.stringify(before));
       expect(second.agent.state.messages.at(-1)).toMatchObject({
         role: "assistant",
         stopReason: "stop",

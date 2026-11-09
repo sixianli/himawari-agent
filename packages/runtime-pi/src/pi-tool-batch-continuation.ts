@@ -43,9 +43,17 @@ export function capturePiToolBatch(
     (entry) => entry.type === "message" && isDeepStrictEqual(entry.message, assistant),
   );
   if (entryIndex < 0) throw new Error("PI_CONTINUATION_BATCH_INVALID");
+  const entries = branch.slice(0, entryIndex);
+  if (
+    !isDeepStrictEqual(
+      withoutSystem(batchSessionManager(entries, "/").buildSessionContext().messages),
+      withoutSystem(messages.slice(0, index)),
+    )
+  )
+    throw new Error("PI_CONTINUATION_PREFIX_INVALID");
   return checkedBatch({
     version: PI_TOOL_BATCH_VERSION,
-    entries: branch.slice(0, entryIndex),
+    entries,
     systemPrompt,
     assistant,
     completedResults: messages.slice(index + 1) as PiToolResult[],
@@ -53,6 +61,10 @@ export function capturePiToolBatch(
     completedStreamOrdinal,
     ...(runsInParallel(session, assistant) ? { parallel: true as const } : {}),
   });
+}
+
+function withoutSystem(messages: readonly PiMessages[number][]) {
+  return messages.filter((message) => message.role !== ("system" as string));
 }
 
 function runsInParallel(session: BatchSession, assistant: AssistantMessage): boolean {

@@ -62,6 +62,16 @@ function state() {
   return { session, messages, assistant };
 }
 describe("tool-batch persisted-state integrity", () => {
+  it("refuses to capture when the Pi session entries do not rebuild the messages before the batch", () => {
+    const f = state();
+    const sessionManager = f.session.sessionManager;
+    f.messages.unshift({ role: "user", content: "Only in agent state", timestamp: -1 });
+    const session = { sessionManager, agent: f.session.agent } as unknown as AgentSession;
+    expect(() => capturePiToolBatch(session, "waiting", 3, PROMPT)).toThrow(
+      "PI_CONTINUATION_PREFIX_INVALID",
+    );
+  });
+
   it("freezes an independent transcript and restores it through a Pi session manager", async () => {
     const f = state();
     const saved = capturePiToolBatch(f.session, "waiting", 3, PROMPT);

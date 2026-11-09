@@ -25,6 +25,7 @@ import {
   validateSecurityExceptions,
   verifySyntheticProvenance,
 } from "../../scripts/ci/check-security.mjs";
+import { withoutRemovedDependencies } from "../../scripts/ci/security-exceptions.mjs";
 import { assertPublicArtifacts, redactText } from "../../scripts/ci/security-redaction.mjs";
 import { findBuildSecrets } from "../../scripts/ci/security-source.mjs";
 
@@ -531,6 +532,49 @@ describe("受审阅的窄范围例外", () => {
 });
 
 describe("依赖升级后已接受的例外", () => {
+  it("只去掉指向锁文件里已不存在的依赖版本的例外，源码里的合成密钥例外保留", () => {
+    const installed = [{ path: "node_modules/kept", name: "kept", version: "1.0.0" }];
+    const entries = [
+      {
+        kind: "advisory",
+        id: "a-kept",
+        path: "node_modules/kept",
+        package: "kept",
+        version: "1.0.0",
+      },
+      {
+        kind: "advisory",
+        id: "a-old",
+        path: "node_modules/kept",
+        package: "kept",
+        version: "0.9.0",
+      },
+      {
+        kind: "published-synthetic-fixture",
+        id: "f-kept",
+        packageLockPath: "node_modules/kept",
+        package: "kept",
+        version: "1.0.0",
+      },
+      {
+        kind: "published-synthetic-fixture",
+        id: "f-gone",
+        packageLockPath: "node_modules/gone",
+        package: "gone",
+        version: "1.0.0",
+      },
+      { kind: "synthetic-secret", id: "s-kept", path: "test/fixture.ts" },
+    ];
+    const filtered = withoutRemovedDependencies(
+      { schemaVersion: 1, exceptions: entries },
+      installed,
+    );
+    expect(filtered.exceptions.map(({ id }) => id)).toEqual(["a-kept", "f-kept", "s-kept"]);
+    expect(withoutRemovedDependencies({ schemaVersion: 1 }, installed)).toEqual({
+      schemaVersion: 1,
+    });
+  });
+
   it("base 里指向已从锁文件移除的依赖的例外不再生效，也不让检查出错；候选清单仍必须删掉它们", () => {
     const directory = temporary();
     const git = (...args) =>
