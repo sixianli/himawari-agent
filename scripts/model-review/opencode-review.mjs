@@ -364,7 +364,7 @@ export function summarizeEvents(jsonl) {
         tool: part.tool,
         input: part.state?.input,
         status: part.state?.status,
-        output: String(part.state?.output ?? part.state?.error ?? ""),
+        output: String(part.state?.output || part.state?.error || ""),
       });
     }
     if (event.type === "step_finish") {
@@ -583,7 +583,16 @@ export const GIT_ENV = {
   GIT_PAGER: "cat",
   PAGER: "cat",
 };
-export const GIT_KEPT_ENV = ["PATH", "HOME", "LANG", "LC_ALL", "TERM"];
+export const GIT_KEPT_ENV = ["PATH", "HOME", "LANG", "TERM"];
+
+export function englishMessages(env) {
+  const ctype = [env.LC_ALL, env.LC_CTYPE, env.LANG].find((value) => value);
+  return {
+    ...(ctype === undefined ? {} : { LC_CTYPE: ctype }),
+    LC_MESSAGES: "C",
+    LANGUAGE: "C",
+  };
+}
 export const REVIEW_CANARY_ENV = "REVIEW_CANARY";
 export const REVIEW_PARENT_CANARY_ENV = "REVIEW_PARENT_CANARY";
 export const OPENCODE_KEPT_ENV = [
@@ -592,7 +601,6 @@ export const OPENCODE_KEPT_ENV = [
   "USER",
   "LOGNAME",
   "LANG",
-  "LC_ALL",
   "LC_CTYPE",
   "TERM",
   "TMPDIR",
@@ -626,11 +634,35 @@ export function opencodeEnv(env) {
 }
 export const SHELL_LOG_NAME = "review-shell.log";
 
+export function opencodeChildEnv({ parentEnv, cwd, configPath, limitsPath, gitGuard, extraEnv }) {
+  const env = {
+    ...opencodeEnv(parentEnv),
+    ...extraEnv,
+    PWD: cwd,
+    OPENCODE_CONFIG: configPath,
+    OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+    [GUARD_ENV]: limitsPath,
+    XDG_CONFIG_HOME: gitGuard.configHome,
+    OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: String(OUTPUT_TOKEN_MAX),
+    GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS: "true",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_PAGER: "cat",
+    PAGER: "cat",
+    ...englishMessages(parentEnv),
+    PATH: `${gitGuard.binDir}${delimiter}${parentEnv.PATH ?? ""}`,
+    SHELL: gitGuard.shell,
+  };
+  delete env.LC_ALL;
+  if (!limitsPath) delete env[GUARD_ENV];
+  return env;
+}
+
 export function gitChildEnv(env) {
   const kept = Object.fromEntries(
     GIT_KEPT_ENV.filter((name) => env[name] !== undefined).map((name) => [name, env[name]]),
   );
-  return { ...kept, ...GIT_ENV };
+  return { ...kept, ...GIT_ENV, ...englishMessages(env) };
 }
 
 export function installGitGuard(workRoot) {
@@ -670,6 +702,13 @@ export function installGitGuard(workRoot) {
     [
       "#!/bin/sh",
       `echo "$$" >> ${JSON.stringify(join(workRoot, SHELL_LOG_NAME))}`,
+      'ctype="$LC_ALL"',
+      'if [ -z "$ctype" ]; then ctype="$LC_CTYPE"; fi',
+      'if [ -z "$ctype" ]; then ctype="$LANG"; fi',
+      "unset LC_ALL",
+      'if [ -n "$ctype" ]; then LC_CTYPE="$ctype"; export LC_CTYPE; fi',
+      "export LC_MESSAGES=C",
+      "export LANGUAGE=C",
       `exec ${JSON.stringify(realBash)} -r "$@"`,
       "",
     ].join("\n"),
@@ -728,23 +767,14 @@ function runOpencode({
       ],
       {
         cwd,
-        env: {
-          ...opencodeEnv(process.env),
-          PWD: cwd,
-          OPENCODE_CONFIG: configPath,
-          OPENCODE_DISABLE_PROJECT_CONFIG: "1",
-          ...(guardFiles ? { [GUARD_ENV]: guardFiles.limitsPath } : {}),
-          XDG_CONFIG_HOME: gitGuard.configHome,
-          OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: String(OUTPUT_TOKEN_MAX),
-          GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS: "true",
-          GIT_CONFIG_NOSYSTEM: "1",
-          GIT_CONFIG_GLOBAL: "/dev/null",
-          GIT_PAGER: "cat",
-          PAGER: "cat",
-          PATH: `${gitGuard.binDir}${delimiter}${process.env.PATH ?? ""}`,
-          SHELL: gitGuard.shell,
-          ...extraEnv,
-        },
+        env: opencodeChildEnv({
+          parentEnv: process.env,
+          cwd,
+          configPath,
+          limitsPath: guardFiles?.limitsPath,
+          gitGuard,
+          extraEnv,
+        }),
         stdio: ["ignore", "pipe", "pipe"],
         detached: true,
       },
@@ -2021,14 +2051,16 @@ function startProbeServer(probes) {
   });
 }
 
-export const REFUSAL_TEXTS = [
-  "The user has specified a rule which prevents you",
-  GIT_REFUSED,
-  ": restricted",
+export const REFUSAL_PATTERNS = [
+  /^The user has specified a rule which prevents you/,
+  new RegExp(`^${GIT_REFUSED} \\S`),
+  /^(?:\S*\/)?(?:ba)?sh: (line \d+: )?[^\n]*: restricted/,
 ];
 
 export function probeRefused(call) {
-  return REFUSAL_TEXTS.some((text) => String(call.output ?? "").includes(text));
+  return String(call.output ?? "")
+    .split("\n")
+    .some((line) => REFUSAL_PATTERNS.some((pattern) => pattern.test(line)));
 }
 
 export function projectInstructionLine(copy) {

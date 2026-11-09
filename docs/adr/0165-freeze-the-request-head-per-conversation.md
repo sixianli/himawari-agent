@@ -61,7 +61,7 @@ date: "2026-11-04"
 
    出口层接在系统提示末尾的占位符说明（`packages/runtime-pi/src/egress-context.ts`）不在冻结内容里，它是固定文字，每次请求照样接上。存取走 application 层的端口 `RuntimePromptBundlePort`（`packages/application/src/ports/thread-prompt-bundles.ts`），由 `ThreadPromptBundleService`（`packages/application/src/services/thread-prompt-bundle-service.ts`）实现。
 
-2. **冻结记录由哪些输入决定**：工具名的有序列表、模型（`modelRef`）、推理强度、回答语言偏好（上下文里 `answer-locale` 那条系统规则的 `ref`）。任何一项和冻结时不同，就换新一次（代数 generation 加一），并写 trace（运行的追踪事件）`prompt.bundle.invalidated`，带原因。只有提示词文字本身变了（上线了新文字、改了配置里的系统指令）**不换新**，老对话继续用冻结的那份，新对话才用新文字。
+2. **冻结记录由哪些输入决定**：工具名的有序列表、模型（`modelRef`）、推理强度、回答语言偏好（上下文里 `answer-locale` 那条系统规则的 `ref`）。任何一项和冻结时不同，就换新一次（代数 generation 加一），并写 trace（运行的追踪事件）`prompt.bundle.invalidated`，带原因。只有提示词文字本身变了（上线了新文字、改了配置里的系统指令）**不换新**，老对话继续用冻结的那份，新对话才用新文字。（[ADR 0188](0188-recognize-passwords-without-a-separator.md) 起，记录的 `identity_json` 还带发给模型的遮盖规则版本 `redactionRuleset`，它不参与是否换新的判断；换新时写当前版本。）
 
    **同名工具的参数结构变了也换新**（2026-11-05 Andy 拍板，见 [Andy 的拍板](#owner-decisions)）：工具名的有序列表不变时，`ThreadPromptBundleService` 再把冻结的工具数组和本轮拼出的工具数组按工具名逐个比 `parameters`（工具参数的 JSON Schema，即描述参数格式的标准结构），有一个不同就换新一次，原因是 `tool_schema_changed`。比较之前先去掉只是说明文字的关键字（`title`、`description`、`examples`、`$comment`），`required`（必填参数名的列表）按名字排序，再按键名排序序列化，所以：
    - 只改了参数的说明文字、标题，或者对象里键的先后顺序变了，**不换新**，和只改提示词文字一样，只有新对话才用新文字；
@@ -80,7 +80,7 @@ date: "2026-11-04"
    - 主键 `(owner_id, agent_id, thread_id, generation)`，外键指向 `threads`，对话删除时级联删除；
    - 系统提示和工具数组各存一个加密 payload（`payloads` 表里的加密内容，沿用现有的信封加密），列 `system_prompt_ref`、`tools_ref` 以 `ON DELETE RESTRICT` 指向 `payloads`，所以删除保护的外键检查（`sqlite-governed-deletion.ts` 的 `#payloadReferenced`）自动把它们算作“仍被引用”；对话删除时 `#threadPayloadRefs` 把这两列也列入要删的 payload；
    - 另记两份指纹（sha256），读出时核对，不一致就拒绝使用；
-   - `identity_json` 记第 2 条的四项输入，`origin` 记这一代是怎么来的（`new_thread`、`rollout`、`tool_set_changed`、`tool_missing`、`tool_schema_changed`、`model_changed`、`thinking_level_changed`、`answer_locale_changed`、`classification_lower`、`rebuild_requested`），`created_by_run_id` 记建它的运行；
+   - `identity_json` 记第 2 条的四项输入（另有 [ADR 0188](0188-recognize-passwords-without-a-separator.md) 的遮盖规则版本，不参与是否换新的判断），`origin` 记这一代是怎么来的（`new_thread`、`rollout`、`tool_set_changed`、`tool_missing`、`tool_schema_changed`、`model_changed`、`thinking_level_changed`、`answer_locale_changed`、`classification_lower`、`rebuild_requested`），`created_by_run_id` 记建它的运行；
    - 换新时旧记录标上 `superseded_at`，不删；
    - 部分唯一索引 `thread_prompt_bundles_one_current` 保证一个对话同时只有一份没被换掉的记录。同一对话第一次并发运行时，写入在一个 `BEGIN IMMEDIATE` 事务里重读最新代数，代数和调用方看到的不同就不写、把已有的那份交回，所以只会建一份；
    - 登记进 `packages/persistence-sqlite/src/schema-catalog.ts`。

@@ -312,12 +312,9 @@ export function createProductionRunComposition(options: ProductionRunComposition
       captureFinalAnswer: "pi.final_answer",
     },
   );
-  const prepareToolResultRecovery = createProductionToolResultRecovery({
+  const toolResultRecoveryParts = {
     ...(options.recoverMissingToolResult
       ? { recoverMissingResult: options.recoverMissingToolResult }
-      : {}),
-    ...(options.sandboxResultUnrecoverable
-      ? { resultUnrecoverable: options.sandboxResultUnrecoverable }
       : {}),
     ownerId,
     agentId,
@@ -327,7 +324,14 @@ export function createProductionRunComposition(options: ProductionRunComposition
     protector,
     clock,
     ids,
+  };
+  const prepareToolResultRecovery = createProductionToolResultRecovery({
+    ...toolResultRecoveryParts,
+    ...(options.sandboxResultUnrecoverable
+      ? { resultUnrecoverable: options.sandboxResultUnrecoverable }
+      : {}),
   });
+  const inspectToolResultRecovery = createProductionToolResultRecovery(toolResultRecoveryParts);
   const continuations = new RuntimeContinuationService({
     artifacts,
     payloads,
@@ -336,7 +340,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     ids,
     authorizeAuthorityChange: async (request, ref, previousAuthority) => {
       if (request.knownToolResult) {
-        const prepared = await prepareToolResultRecovery(request, { recordUnrecoverable: false });
+        const prepared = await inspectToolResultRecovery(request);
         return (
           prepared !== undefined &&
           prepared.binding.continuationRef === ref &&
@@ -757,5 +761,6 @@ export function createProductionRunComposition(options: ProductionRunComposition
     memoryEpisodes,
     memoryConsolidation,
     background,
+    inspectToolResultRecovery,
   });
 }
