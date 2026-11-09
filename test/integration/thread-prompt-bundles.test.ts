@@ -30,6 +30,7 @@ import {
   EnvelopePayloadProtector,
   InMemoryDevelopmentSecretSource,
 } from "@himawari-agent/platform-node";
+import { EGRESS_RULESET_CURRENT } from "@himawari-agent/sensitive-capture";
 import { afterEach, describe, expect, it } from "vitest";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
@@ -278,6 +279,57 @@ describe.each(["worker", "direct"] as const)("thread prompt bundles through %s",
     try {
       await resource.service.resolve(input("first", { hasHistory: true }));
       expect(resource.rows()).toEqual([expect.objectContaining({ origin: "rollout" })]);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  const rulesetOf = (resource: { count: (sql: string) => number }, generation: number) =>
+    resource.count(
+      `SELECT coalesce(json_extract(identity_json, '$.redactionRuleset'), 0)
+       FROM thread_prompt_bundles WHERE generation = ${generation}`,
+    );
+
+  it("[ADR-0188] gives a new conversation the current masking ruleset and an existing one the old ruleset", async () => {
+    const fresh = await fixture();
+    try {
+      const first = await fresh.service.resolve(input("first"));
+      expect(first?.redactionRuleset).toBe(EGRESS_RULESET_CURRENT);
+      expect(rulesetOf(fresh, 1)).toBe(EGRESS_RULESET_CURRENT);
+    } finally {
+      await fresh.repository.close();
+    }
+    const existing = await fixture();
+    try {
+      const first = await existing.service.resolve(input("first", { hasHistory: true }));
+      expect(first?.redactionRuleset).toBe(1);
+      expect(rulesetOf(existing, 1)).toBe(1);
+      const renewed = await existing.service.resolve(
+        input("second", { toolNames: ["read", "memory_recall", "web_search"] }),
+      );
+      expect(renewed?.generation).toBe(2);
+      expect(renewed?.redactionRuleset).toBe(EGRESS_RULESET_CURRENT);
+    } finally {
+      await existing.repository.close();
+    }
+  });
+
+  it("[ADR-0188] reads a bundle saved before the field existed as the old ruleset and does not renew it", async () => {
+    const resource = await fixture();
+    try {
+      await resource.service.resolve(input("first"));
+      const writer = openQualifiedDatabase(resource.databasePath);
+      try {
+        writer.exec(
+          "UPDATE thread_prompt_bundles SET identity_json = json_remove(identity_json, '$.redactionRuleset')",
+        );
+      } finally {
+        writer.close();
+      }
+      const again = await resource.service.resolve(input("second"));
+      expect(again).toMatchObject({ generation: 1, redactionRuleset: 1 });
+      expect(resource.rows()).toHaveLength(1);
+      expect(resource.traces).toEqual([]);
     } finally {
       await resource.repository.close();
     }

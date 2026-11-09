@@ -328,6 +328,16 @@ describe("locating masked values in the masked text", () => {
     expect(located?.spans.map(({ sighting }) => sighting.value)).toEqual(["abc12345", "Zx9qq88"]);
   });
 
+  it("applies the looser password forms only from ruleset 2 and keeps the strict form in both", () => {
+    const loose = "Wi-Fi 密码 abc12345，still password is Zx9qq88.";
+    expect(redactForEgress(loose, { ruleset: 1 }).text).toBe(loose);
+    expect(redactForEgress(loose, { ruleset: 2 }).text).toBe(redactForEgress(loose).text);
+    expect(redactForEgress(loose).text).not.toContain("abc12345");
+    const strict = "密码：hunter22abc";
+    expect(redactForEgress(strict, { ruleset: 1 }).text).toBe("密码：[密码]");
+    expect(redactForEgress(strict, { ruleset: 1 }).text).toBe(redactForEgress(strict).text);
+  });
+
   it("keeps the bytes of earlier messages when a later one repeats the value", () => {
     const history = ["我们聊聊家里的网络", "Wi-Fi 密码 abc12345"];
     const run = (messages: readonly string[]) => {

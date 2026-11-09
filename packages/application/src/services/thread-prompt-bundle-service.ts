@@ -1,6 +1,7 @@
+import type { ThreadId } from "@himawari-agent/domain";
+import { EGRESS_RULESET_CURRENT } from "@himawari-agent/sensitive-capture";
 import { sha256 as sha256Bytes } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
-import type { ThreadId } from "@himawari-agent/domain";
 import type { DataClassification } from "../ports/common.js";
 import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observability.js";
 import type { RunPayloadArtifactPort } from "../ports/run-payload-artifacts.js";
@@ -18,6 +19,7 @@ import type {
 import { canonicalAuthorizationSnapshot } from "./action-intent-snapshot.js";
 import type { RecordTraceInput } from "./session-trace-recorder.js";
 
+export const LEGACY_REDACTION_RULESET = 1;
 export const THREAD_PROMPT_BUNDLE_PIN_KEY = "thread-prompt-bundle-pin:v1";
 export const PROMPT_BUNDLE_INVALIDATED_EVENT = "prompt.bundle.invalidated";
 
@@ -233,7 +235,10 @@ export class ThreadPromptBundleService implements RuntimePromptBundlePort {
       ...scope,
       expectedLatestGeneration: latest?.generation ?? null,
       origin,
-      identity: input.identity,
+      identity: {
+        ...input.identity,
+        redactionRuleset: origin === "rollout" ? LEGACY_REDACTION_RULESET : EGRESS_RULESET_CURRENT,
+      },
       systemPrompt: await protect(
         candidate.systemPrompt,
         "text/plain",
@@ -253,7 +258,12 @@ export class ThreadPromptBundleService implements RuntimePromptBundlePort {
     const tools = await this.#readText(record, record.toolsRef);
     if (sha256(systemPrompt) !== record.systemPromptSha256 || sha256(tools) !== record.toolsSha256)
       throw new Error("RUNTIME_PROMPT_BUNDLE_FINGERPRINT_MISMATCH");
-    return Object.freeze({ generation: record.generation, systemPrompt, tools });
+    return Object.freeze({
+      generation: record.generation,
+      systemPrompt,
+      tools,
+      redactionRuleset: record.identity.redactionRuleset ?? LEGACY_REDACTION_RULESET,
+    });
   }
 
   async #readText(record: ThreadPromptBundleRecord, ref: string): Promise<string> {

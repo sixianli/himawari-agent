@@ -50,7 +50,11 @@ export interface EgressRedactionSighting {
   readonly value: string;
 }
 
+export const EGRESS_RULESET_FIRST_LOOSE_PASSWORDS = 2;
+export const EGRESS_RULESET_CURRENT = EGRESS_RULESET_FIRST_LOOSE_PASSWORDS;
+
 export interface EgressRedactionOptions {
+  readonly ruleset?: number;
   readonly tag?: (kind: EgressPlaceholderKind, value: string) => string;
   readonly known?: Map<string, string>;
   readonly table?: Map<string, string>;
@@ -261,6 +265,7 @@ export function redactForEgress(
   const rehearsal = redactUntrusted(view, {
     ...(options.known === undefined ? {} : { known: new Map(options.known) }),
     ...(options.tag === undefined ? {} : { tag: () => "aaaaaaaa" }),
+    ...(options.ruleset === undefined ? {} : { ruleset: options.ruleset }),
   }).text;
   if (restoredText(rehearsal, input, spans, filler) === undefined)
     return redactUntrusted(input, options);
@@ -342,10 +347,14 @@ function redactUntrusted(input: string, options: EgressRedactionOptions): Egress
       ? `${lead}${value}`
       : maskPassword(lead, value),
   );
-  for (const [looser, minimumLength] of [
-    [PASSWORD_WORDED_ASSIGNMENT, 4],
-    [PASSWORD_BARE_VALUE, 6],
-  ] as const)
+  const looserForms =
+    (options.ruleset ?? EGRESS_RULESET_CURRENT) >= EGRESS_RULESET_FIRST_LOOSE_PASSWORDS
+      ? ([
+          [PASSWORD_WORDED_ASSIGNMENT, 4],
+          [PASSWORD_BARE_VALUE, 6],
+        ] as const)
+      : [];
+  for (const [looser, minimumLength] of looserForms)
     text = text.replace(looser, (match, lead: string, raw: string) => {
       const value = raw.replace(PASSWORD_TRAILING_PUNCTUATION, "");
       if (value.length < minimumLength || !/\d/u.test(value) || NOT_A_PASSWORD_VALUE.test(value))

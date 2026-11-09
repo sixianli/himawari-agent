@@ -61,7 +61,7 @@ date: "2026-11-04"
 
    出口层接在系统提示末尾的占位符说明（`packages/runtime-pi/src/egress-context.ts`）不在冻结内容里，它是固定文字，每次请求照样接上。存取走 application 层的端口 `RuntimePromptBundlePort`（`packages/application/src/ports/thread-prompt-bundles.ts`），由 `ThreadPromptBundleService`（`packages/application/src/services/thread-prompt-bundle-service.ts`）实现。
 
-2. **冻结记录由哪些输入决定**：工具名的有序列表、模型（`modelRef`）、推理强度、回答语言偏好（上下文里 `answer-locale` 那条系统规则的 `ref`）。任何一项和冻结时不同，就换新一次（代数 generation 加一），并写 trace（运行的追踪事件）`prompt.bundle.invalidated`，带原因。只有提示词文字本身变了（上线了新文字、改了配置里的系统指令）**不换新**，老对话继续用冻结的那份，新对话才用新文字。
+2. **冻结记录由哪些输入决定**：工具名的有序列表、模型（`modelRef`）、推理强度、回答语言偏好（上下文里 `answer-locale` 那条系统规则的 `ref`）。任何一项和冻结时不同，就换新一次（代数 generation 加一），并写 trace（运行的追踪事件）`prompt.bundle.invalidated`，带原因。只有提示词文字本身变了（上线了新文字、改了配置里的系统指令）**不换新**，老对话继续用冻结的那份，新对话才用新文字。（[ADR 0188](0188-recognize-passwords-without-a-separator.md) 起，记录的 `identity_json` 还带发给模型的遮盖规则版本 `redactionRuleset`，它不参与是否换新的判断；换新时写当前版本。）
 
    **同名工具的参数结构变了也换新**（2026-11-05 Andy 拍板，见 [Andy 的拍板](#owner-decisions)）：工具名的有序列表不变时，`ThreadPromptBundleService` 再把冻结的工具数组和本轮拼出的工具数组按工具名逐个比 `parameters`（工具参数的 JSON Schema，即描述参数格式的标准结构），有一个不同就换新一次，原因是 `tool_schema_changed`。比较之前先去掉只是说明文字的关键字（`title`、`description`、`examples`、`$comment`），`required`（必填参数名的列表）按名字排序，再按键名排序序列化，所以：
    - 只改了参数的说明文字、标题，或者对象里键的先后顺序变了，**不换新**，和只改提示词文字一样，只有新对话才用新文字；

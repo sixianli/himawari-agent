@@ -205,6 +205,24 @@ class FrozenPromptBundles implements RuntimePromptBundlePort {
   }
 }
 
+class RulesetPromptBundles extends FrozenPromptBundles {
+  readonly #rulesets: readonly number[];
+
+  constructor(rulesets: readonly number[]) {
+    super();
+    this.#rulesets = rulesets;
+  }
+
+  override async resolve(input: RuntimePromptBundleResolveInput): Promise<RuntimePromptBundle> {
+    const bundle = await super.resolve(input);
+    return {
+      ...bundle,
+      redactionRuleset:
+        this.#rulesets[Math.min(this.resolved.length, this.#rulesets.length) - 1] ?? 2,
+    };
+  }
+}
+
 function runRequest(runId: string): RuntimeRequest {
   return {
     ownerId: "owner-prefix",
@@ -604,6 +622,44 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       ["reminder_set"],
       ["reminder_set"],
     ]);
+  });
+
+  const WIFI_TURNS: readonly Turn[] = [
+    { prompt: "家里 Wi-Fi 密码 abc12345，记一下", blocks: [ownerProfile] },
+    { prompt: "刚才那个是什么？", blocks: [ownerProfile] },
+    { prompt: "谢谢", blocks: [ownerProfile] },
+  ];
+
+  it("[ADR-0188] keeps an old conversation's bytes when the masking rules grow, because its bundle carries the old ruleset", async () => {
+    const { bodies } = await conversation(
+      WIFI_TURNS,
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+      { promptBundles: new RulesetPromptBundles([1, 1, 1]) },
+    );
+    expect(bodies.every((body) => body.includes("abc12345"))).toBe(true);
+    expect(findConversationBreak(bodies)).toBeNull();
+  });
+
+  it("[ADR-0188] masks the looser password form from the first turn in a new conversation", async () => {
+    const { bodies } = await conversation(
+      WIFI_TURNS,
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+      { promptBundles: new RulesetPromptBundles([2, 2, 2]) },
+    );
+    expect(bodies.join("")).not.toContain("abc12345");
+    expect(findConversationBreak(bodies)).toBeNull();
+  });
+
+  it("REVERSE: switching an old conversation to the new ruleset in the middle breaks its prefix", async () => {
+    const { bodies } = await conversation(
+      WIFI_TURNS,
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+      { promptBundles: new RulesetPromptBundles([1, 1, 2]) },
+    );
+    expect(findConversationBreak(bodies)).not.toBeNull();
   });
 
   it("REVERSE: the same change breaks the head when the conversation's prompt is not frozen", async () => {
