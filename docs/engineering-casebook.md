@@ -110,6 +110,7 @@ date: "2026-10-26"
   83. [沙箱升级后保护可能静默失效：升到 SRT 0.0.81，并要求启动命令里真的用上锁定的 seccomp 小程序](#case-srt-locked-seccomp-helper)
   84. [AI 代码复核一个 PR 花 0.79 美元：第 2 轮起只用一个模型，低严重度意见改完不再复核](#case-cheaper-code-review)
   85. [没人输入验证码，拦截记录里却天天有“验证码”：敏感信息检查把 Himawari 自己写的指令当成了外来内容](#case-trusted-prompt-text)
+  86. [底层 Agent 框架跨大版本升级：Pi 从 0.84.2 升到 1.5.0，老对话的缓存一个字节都没变](#case-pi-1-5-upgrade)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -135,7 +136,7 @@ date: "2026-10-26"
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction)、[自己写的指令不该被当成外来内容检查](#case-trusted-prompt-text)、[沙箱保护不能静默失效](#case-srt-locked-seccomp-helper) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes)、[所有模型请求只走一个出口](#case-model-egress-redaction)、[发给模型的内容只追加](#case-append-only-prefix) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes)、[所有模型请求只走一个出口](#case-model-egress-redaction)、[发给模型的内容只追加](#case-append-only-prefix)、[Pi 升到 1.5.0](#case-pi-1-5-upgrade) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
 | Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle)、[回答写完才整块出现](#case-streaming-answers) |
@@ -5421,6 +5422,42 @@ Anthropic 的插件按置信度过滤意见；我们不过滤，而是按严重�
 **面试 30 秒版**
 
 “我们在请求发给模型前做敏感信息遮盖，用的是业界通行的‘关键词加距离’规则。上线后发现它一直在遮我们自己写的指令：整理记忆的提示里‘验证码’和‘1000’挨得近，1000 被当成验证码遮掉了。Google 的词典排除和 Presidio 的允许清单排除的是被认出的值，但这里误报的来源是提供关键词的那段指令，所以我们排除的是这段文字本身：原地换成同样长度的填充字符再跑规则，外来内容之间的距离不变。复核中还发现第一版改了共享规则，能被一个特殊字符绕过，于是改成‘先空跑，有冲突就退回整段检查’。生产上正反验收都通过。”
+
+[返回目录](#contents)
+
+<a id="case-pi-1-5-upgrade"></a>
+
+## 案例 86：底层 Agent 框架跨大版本升级：Pi 从 0.84.2 升到 1.5.0，老对话的缓存一个字节都没变
+
+**背景与现象**
+Himawari 的模型调用、Agent 循环（模型一步步调用工具的那套流程）和内置工具都来自开源框架 Pi，固定在 0.84.2 已近三个月。直接把版本号改成 1.5.0 后，类型检查报 8 处错，Pi 兼容测试 405 条里 48 条失败（试升记录，见 [ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md)）。
+
+**根因**
+Pi 在 0.86 和 0.87 改了两处核心约定：发给模型的请求不再分开传系统提示和工具，而是放进 `role: "system"` 的消息里；会话历史以 SessionManager（Pi 管会话条目的对象）为准，给 `agent.state.messages` 赋值不再影响请求，`systemPrompt` 变成只读。Himawari 恰好在两处依赖旧约定：每次请求替换成按对话冻结的系统提示和工具；审批后续跑时直接给内部状态赋值来恢复历史。前者在 1.5.0 里会“静默不生效”，后者直接编译不过。
+
+**我们的方案**
+请求开头仍由 Himawari 决定，但交给 Pi 官方的 `normalizeContext` 生成；审批续跑改成 Pi 文档写明的做法，用保存的会话条目建 `SessionManager.inMemory(cwd, { id }, entries)`。快照升到 v3，旧快照明确报错，不悄悄执行。`check:prompt-prefix` 加两条反向用例：请求中间出现 system 消息判为破坏；打开 Pi 自动重试时失败的回答会被重发并删掉，用例必须失败。
+
+**方案讨论与备选**
+两个模型各自出方案、再审线程方案。放弃了三种做法：让 Pi 自己组装开头（它每轮按自己的规则重算提示分节，开头不再由我们控制）；快照只存消息再逐条写回（压缩摘要不能这样写回）；整套换成 pi-durable（官方标实验性，等于重写运行核心）。
+
+**业界主流做法**
+- ✅ Pi 官方 SDK 文档（`packages/coding-agent/docs/sdk.md`，v1.5.0）：“Restore external history by constructing the session with a manager containing those entries. Assigning `session.agent.state.messages` does not replace persisted context.”
+- ✅ OpenClaw `CHANGELOG/2026.5.22.md`：“internalize the former Pi agent runtime into OpenClaw”，并“disable the embedded pi-coding-agent runtime auto-retry so OpenClaw's own retry and failover loop does not replay failed tool calls through a nested SDK retry”。
+
+**对比与取舍**
+和 OpenClaw 一样关掉 Pi 的自动重试；不同的是我们继续用 Pi 的 Agent 循环，只在请求开头、审批和重试这三处保留自己的做法，代价是每次 Pi 升级都要重新核对这三处。
+
+**结果数据**
+- 同一份系统提示、工具和历史，分别用 0.84.2 和 1.5.0 生成请求体，关思考和 `high` 两种情况都逐字节相同，所以老对话的缓存不会断（ADR 0198“后果”一节）。
+- 升级后单元、契约、Pi 兼容三组测试 4690 条全过；相关集成测试 1566 条中 2 条失败，main 上同样失败，与升级无关。
+- 生产命中率变化：未测量（还没上线）。
+
+**相关 ADR/PR**
+[ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md)、[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)、PR #338。
+
+**面试 30 秒版**
+“我们的 Agent 跑在开源框架 Pi 上，跨大版本升级时 Pi 把系统提示改成放在消息里，并且会话历史只认它自己的会话管理器。我们按对话冻结请求开头来保证 KV 缓存命中，直接升级会让这层冻结静默失效。我按 Pi 官方文档把审批续跑改成用会话条目恢复，请求开头仍由我们生成再交给 Pi 的官方函数，并加了反向测试。最后用新旧两版生成同一请求做逐字节比对，证明老对话的缓存一个字节都没变。”
 
 [返回目录](#contents)
 

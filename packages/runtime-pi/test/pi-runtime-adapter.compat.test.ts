@@ -234,6 +234,9 @@ function streamingSessionFactory(
   };
 }
 
+const ONE_PIXEL_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
 function lastOwnerWords(messages: readonly unknown[]): string | undefined {
   const last = messages.at(-1) as { role?: string; content?: { type: string; text?: string }[] };
   if (last?.role !== "user") return undefined;
@@ -2236,7 +2239,7 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(JSON.stringify(projection.captures)).toContain("[MACHINE_SECRET_REDACTED]");
   });
 
-  it("runs the pinned Pi 0.84.2 session with its deterministic faux provider", async () => {
+  it("runs the pinned Pi 1.5.0 session with its deterministic faux provider", async () => {
     const piSpecifier: string = "@earendil-works/pi-coding-agent";
     const piEntry = fileURLToPath(import.meta.resolve(piSpecifier));
     const aiSpecifier = pathToFileURL(resolvePiAiEntry(piEntry)).href;
@@ -2258,7 +2261,7 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       fauxAssistantMessage(content: unknown, options?: unknown): unknown;
       fauxToolCall(name: string, input: unknown, options?: unknown): unknown;
     };
-    expect(pi.VERSION).toBe("0.84.2");
+    expect(pi.VERSION).toBe("1.5.0");
 
     const faux = ai.fauxProvider();
     let observedContext: unknown;
@@ -2282,7 +2285,7 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       ref: request.modelRef,
       provider: "faux",
       model: "faux-1",
-      version: "0.84.2-test",
+      version: "1.5.0-test",
       routingClass: "local",
       priority: 1,
       disclosure: "local_only",
@@ -2382,7 +2385,7 @@ it("[UI-17] sends the images of the current message to Pi as image content", asy
     prompt: {
       ...DEFAULT_CONTEXT.prompt,
       content: '对比一下\n\n<image name="a.png" index="1"/>',
-      images: [{ mimeType: "image/png", data: "iVBORw0KGgo=" }],
+      images: [{ mimeType: "image/png", data: ONE_PIXEL_PNG }],
     },
   });
   const adapter = new PiAgentRuntimeAdapter({
@@ -2402,7 +2405,7 @@ it("[UI-17] sends the images of the current message to Pi as image content", asy
   expect(context.messages.at(-1)?.content).toContainEqual({
     type: "image",
     mimeType: "image/png",
-    data: "iVBORw0KGgo=",
+    data: ONE_PIXEL_PNG,
   });
 });
 
@@ -3755,7 +3758,7 @@ it.each(["saved", "storage-failed"] as const)(
     if (mode === "saved")
       expect(snapshots[0]).toMatchObject({
         batch: {
-          version: "pi-tool-batch.v2",
+          version: "pi-tool-batch.v3",
           waitingToolCallId: "checkpoint-call",
           completedResults: [],
         },

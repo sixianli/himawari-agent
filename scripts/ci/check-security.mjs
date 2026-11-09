@@ -28,6 +28,7 @@ import {
   enumerateLockDependencies,
   loadReviewedExceptions,
   validateSecurityExceptions,
+  withoutRemovedDependencies,
 } from "./security-exceptions.mjs";
 import { applyMachineReview, loadOwnerReviewManifest } from "./security-owner-review.mjs";
 
@@ -568,16 +569,18 @@ function gitleaksGateExceptions({ root, context, now }) {
   const accepted =
     git(root, ["ls-tree", "-r", "--name-only", context.baseSha, "--", exceptionPath]).trim() ===
     exceptionPath
-      ? validateSecurityExceptions(
-          JSON.parse(git(root, ["show", `${context.baseSha}:${exceptionPath}`])),
-          {
-            now,
-            ruleIds: semgrepRuleIds(root),
-            dependencies: enumerateLockDependencies(
-              JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8")),
+      ? (() => {
+          const dependencies = enumerateLockDependencies(
+            JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8")),
+          );
+          return validateSecurityExceptions(
+            withoutRemovedDependencies(
+              JSON.parse(git(root, ["show", `${context.baseSha}:${exceptionPath}`])),
+              dependencies,
             ),
-          },
-        )
+            { now, ruleIds: semgrepRuleIds(root), dependencies },
+          );
+        })()
       : [];
   const ownerReview = loadOwnerReviewManifest({ root, context });
   return {

@@ -530,6 +530,50 @@ describe("受审阅的窄范围例外", () => {
   });
 });
 
+describe("依赖升级后已接受的例外", () => {
+  it("base 里指向已从锁文件移除的依赖的例外不再生效，也不让检查出错；候选清单仍必须删掉它们", () => {
+    const directory = temporary();
+    const git = (...args) =>
+      execFileSync("git", ["-C", directory, ...args], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    git("init", "-q");
+    git("config", "user.name", "Security Fixture");
+    git("config", "user.email", "fixture@example.invalid");
+    mkdirSync(join(directory, "ci"));
+    cpSync(join(root, "ci/policy.json"), join(directory, "ci/policy.json"));
+    cpSync(join(root, "ci/coverage-policy.json"), join(directory, "ci/coverage-policy.json"));
+    const removed = exception({
+      id: "GHSA-dddd-eeee-ffff",
+      path: "node_modules/removed",
+      package: "removed",
+      version: "0.1.0",
+    });
+    json(join(directory, "ci/security-exceptions.json"), {
+      schemaVersion: 1,
+      exceptions: [exception(), removed],
+    });
+    git("add", "ci");
+    git("commit", "-qm", "accepted policies");
+    const baseSha = git("rev-parse", "HEAD");
+    const load = () =>
+      loadReviewedExceptions({
+        root: directory,
+        context: { baseSha, initialization: false },
+        now,
+        ruleIds,
+        dependencies,
+      });
+    expect(() => load()).toThrow("SECURITY_EXCEPTION_DEPENDENCY_UNKNOWN");
+    json(join(directory, "ci/security-exceptions.json"), {
+      schemaVersion: 1,
+      exceptions: [exception()],
+    });
+    expect(load().exceptions).toEqual([exception()]);
+  });
+});
+
 describe("scanner报告失败语义", () => {
   it("PR 历史扫描拒绝把选项作为源码提交", () => {
     expect(() =>

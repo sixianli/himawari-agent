@@ -8,8 +8,8 @@ const ARTIFACTS = Object.freeze([
   "packages/coding-agent/dist/index.d.ts",
   "packages/agent/dist/index.js",
   "packages/ai/dist/index.js",
-  "packages/client/dist/index.js",
-  "packages/protocol/dist/index.js",
+  "packages/codemode/dist/index.js",
+  "packages/mcp/dist/index.js",
   "packages/tui/dist/index.js",
 ]);
 

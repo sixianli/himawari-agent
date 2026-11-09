@@ -9,9 +9,12 @@ import { describe, expect, it } from "vitest";
 import {
   capturePiToolBatch,
   type PiToolBatchContinuation,
+  piToolBatchSessionManager,
   restorePiToolBatch,
 } from "../src/pi-tool-batch-continuation.js";
 import { createFauxModelFixture } from "./faux-model-fixture.js";
+
+const FROZEN_PROMPT = "Himawari frozen prompt";
 
 describe("pinned Pi tool-batch continuation", () => {
   it("restores a multi-tool batch in a new session without another first model request", async () => {
@@ -25,7 +28,7 @@ describe("pinned Pi tool-batch continuation", () => {
     let approved = false;
     let saved: PiToolBatchContinuation | undefined;
     const sessions: Awaited<ReturnType<typeof createAgentSession>>["session"][] = [];
-    async function freshSession() {
+    async function freshSession(sessionManager = SessionManager.inMemory(process.cwd())) {
       const settingsManager = SettingsManager.inMemory(
         {
           compaction: { enabled: false },
@@ -60,7 +63,7 @@ describe("pinned Pi tool-batch continuation", () => {
           const session = sessions.at(-1);
           if (!session) throw new Error("Missing test session");
           if (!approved && id === "waiting") {
-            saved = capturePiToolBatch(session, id, 1);
+            saved = capturePiToolBatch(session, id, 1, FROZEN_PROMPT);
             session.agent.abort();
             throw new Error("PRODUCT_SUSPENDED");
           }
@@ -81,7 +84,7 @@ describe("pinned Pi tool-batch continuation", () => {
         customTools: [tool],
         settingsManager,
         resourceLoader,
-        sessionManager: SessionManager.inMemory(process.cwd()),
+        sessionManager,
       });
       sessions.push(session);
       return session;
@@ -94,8 +97,14 @@ describe("pinned Pi tool-batch continuation", () => {
       expect(model.observed).toHaveLength(1);
       first.dispose();
       approved = true;
-      const second = await freshSession();
       const snapshot = JSON.parse(JSON.stringify(saved)) as PiToolBatchContinuation;
+      expect(() =>
+        piToolBatchSessionManager(structuredClone(snapshot), "another prompt", process.cwd()),
+      ).toThrow("PI_CONTINUATION_SYSTEM_PROMPT_CHANGED");
+      const second = await freshSession(
+        piToolBatchSessionManager(snapshot, FROZEN_PROMPT, process.cwd()),
+      );
+      expect(second.agent.state.messages.filter((m) => m.role === "user")).toHaveLength(1);
       const completed = (value: PiToolBatchContinuation) => {
         const result = value.completedResults[0];
         if (!result) throw new Error("TEST_COMPLETED_RESULT_MISSING");
@@ -180,7 +189,10 @@ describe("pinned Pi tool-batch continuation", () => {
       releaseFirst = resolve;
     });
     const sessions: Awaited<ReturnType<typeof createAgentSession>>["session"][] = [];
-    async function freshSession(executionMode: "parallel" | "sequential") {
+    async function freshSession(
+      executionMode: "parallel" | "sequential",
+      sessionManager = SessionManager.inMemory(process.cwd()),
+    ) {
       const settingsManager = SettingsManager.inMemory(
         { compaction: { enabled: false }, retry: { enabled: false }, defaultTools: [] },
         { projectTrusted: false },
@@ -219,7 +231,7 @@ describe("pinned Pi tool-batch continuation", () => {
             ]);
           if (!approved && id === "waiting") {
             releaseFirst();
-            saved = capturePiToolBatch(session, id, 1);
+            saved = capturePiToolBatch(session, id, 1, FROZEN_PROMPT);
             session.agent.abort();
             throw new Error("PRODUCT_SUSPENDED");
           }
@@ -240,7 +252,7 @@ describe("pinned Pi tool-batch continuation", () => {
         customTools: [tool],
         settingsManager,
         resourceLoader,
-        sessionManager: SessionManager.inMemory(process.cwd()),
+        sessionManager,
       });
       sessions.push(session);
       return session;
@@ -265,7 +277,10 @@ describe("pinned Pi tool-batch continuation", () => {
       expect(() => restorePiToolBatch(sequential, unflagged)).toThrow(
         "PI_CONTINUATION_RESULTS_INVALID",
       );
-      const second = await freshSession("parallel");
+      const second = await freshSession(
+        "parallel",
+        piToolBatchSessionManager(snapshot, FROZEN_PROMPT, process.cwd()),
+      );
       const restored = restorePiToolBatch(second, snapshot);
       const providerStream = second.agent.streamFunction;
       second.agent.streamFunction = (model, context, options) => {
