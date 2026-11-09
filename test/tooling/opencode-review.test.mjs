@@ -6,6 +6,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -13,6 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   API_ERROR_MESSAGE_MAX,
@@ -881,6 +883,52 @@ describe("opencode install integrity", () => {
       rmSync(prefix, { recursive: true, force: true });
     }
   });
+
+  it("[opencode lock] two processes installing into the same fresh prefix both end up with a working binary", async () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-install-race-"));
+    try {
+      const prefix = join(root, "shared");
+      const script = fileURLToPath(
+        new URL("../../scripts/model-review/opencode-review.mjs", import.meta.url),
+      );
+      const runOne = () =>
+        new Promise((resolveRun) => {
+          const child = spawn(
+            process.execPath,
+            [
+              "--input-type=module",
+              "-e",
+              `import { installOpencode } from ${JSON.stringify(pathToFileURL(script).href)}; console.log(installOpencode({ prefix: ${JSON.stringify(prefix)} }));`,
+            ],
+            { stdio: ["ignore", "pipe", "pipe"] },
+          );
+          let out = "";
+          let err = "";
+          child.stdout.on("data", (chunk) => {
+            out += chunk;
+          });
+          child.stderr.on("data", (chunk) => {
+            err += chunk;
+          });
+          child.on("close", (status) => resolveRun({ status, out: out.trim(), err }));
+        });
+      const [first, second] = await Promise.all([runOne(), runOne()]);
+      expect([
+        first.status,
+        second.status,
+        first.err.includes("OPENCODE_INSTALL_FAILED"),
+        second.err.includes("OPENCODE_INSTALL_FAILED"),
+      ]).toEqual([0, 0, false, false]);
+      const binary = join(prefix, "node_modules", ".bin", "opencode");
+      expect([first.out, second.out]).toEqual([binary, binary]);
+      expect(execFileSync(binary, ["--version"], { encoding: "utf8" }).trim()).toBe(
+        OPENCODE_VERSION,
+      );
+      expect(readdirSync(root)).toEqual(["shared"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 300000);
 
   it("[opencode lock] installs the locked version and refuses a download that does not match", () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-install-"));
