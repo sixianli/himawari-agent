@@ -1276,7 +1276,8 @@ function ownChangePrints(repo, commit, mainRef, ledgerPath) {
   for (const file of names.stdout.split("\0")) {
     if (!file || file.startsWith(`${ledgerPath}/`)) continue;
     if (file.includes("\uFFFD")) return null;
-    const diff = gitStatus(
+    const diff = spawnSync(
+      "git",
       [
         "diff",
         "-U0",
@@ -1289,14 +1290,15 @@ function ownChangePrints(repo, commit, mainRef, ledgerPath) {
         "--",
         `:(literal)${file}`,
       ],
-      repo,
+      { cwd: repo, maxBuffer: 1 << 28 },
     );
-    if (diff.status !== 0 || diff.stdout === "") return null;
+    if (diff.status !== 0 || diff.stdout.length === 0) return null;
     const stable = diff.stdout
+      .toString("latin1")
       .split("\n")
       .filter((line) => !line.startsWith("@@ ") && !line.startsWith("index "))
       .join("\n");
-    prints.set(file, createHash("sha256").update(stable).digest("hex"));
+    prints.set(file, createHash("sha256").update(Buffer.from(stable, "latin1")).digest("hex"));
   }
   return prints;
 }

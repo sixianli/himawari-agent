@@ -2849,6 +2849,20 @@ describe("opencode review merge gate", () => {
     }
   });
 
+  it("[merge gate] a change between two invalid UTF-8 byte values is unreviewed", () => {
+    const f = fixture(lines(), Buffer.from([0x61, 0xff, 0x0a]));
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      moveMain(f, { "other.txt": "main moved\n" });
+      mergeMain(f);
+      expect(f.check().problems).toEqual([]);
+      f.commit({ "code.txt": Buffer.from([0x61, 0x80, 0x0a]) }, "other invalid byte");
+      expect(f.check().problems).toEqual(["unreviewed code.txt"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("[merge gate] resolving a conflict with a different result is unreviewed", () => {
     const f = fixture(lines(), lines([0, "feature"]));
     try {
