@@ -2863,6 +2863,19 @@ describe("opencode review merge gate", () => {
     }
   });
 
+  it("[merge gate] falls back to every changed file when the merge base cannot be found", () => {
+    const f = fixture(lines(), lines([0, "feature"]));
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      moveMain(f, { "other.txt": "main moved\n" });
+      mergeMain(f);
+      expect(f.check().problems).toEqual([]);
+      expect(f.check({ mainRef: "refs/none" }).problems).toContain("unreviewed other.txt");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("[merge gate] resolving a conflict with a different result is unreviewed", () => {
     const f = fixture(lines(), lines([0, "feature"]));
     try {

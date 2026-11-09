@@ -1266,7 +1266,7 @@ function changedOutside(repo, from, to, ledgerPath) {
   return result.stdout.split("\0").filter((file) => file && !file.startsWith(`${ledgerPath}/`));
 }
 
-function ownChangePrints(repo, commit, mainRef, ledgerPath) {
+function ownChangePrints(repo, commit, mainRef, ledgerPath, only) {
   const base = gitStatus(["merge-base", mainRef, commit], repo);
   if (base.status !== 0) return null;
   const baseCommit = base.stdout.trim();
@@ -1274,7 +1274,7 @@ function ownChangePrints(repo, commit, mainRef, ledgerPath) {
   if (names.status !== 0) return null;
   const prints = new Map();
   for (const file of names.stdout.split("\0")) {
-    if (!file || file.startsWith(`${ledgerPath}/`)) continue;
+    if (!file || file.startsWith(`${ledgerPath}/`) || (only && !only.has(file))) continue;
     if (file.includes("\uFFFD")) return null;
     const diff = spawnSync(
       "git",
@@ -1282,6 +1282,7 @@ function ownChangePrints(repo, commit, mainRef, ledgerPath) {
         "diff",
         "-U0",
         "--binary",
+        "--inter-hunk-context=0",
         "--no-textconv",
         "--no-ext-diff",
         "--no-renames",
@@ -1306,11 +1307,11 @@ function ownChangePrints(repo, commit, mainRef, ledgerPath) {
 export function unreviewedFiles(repo, from, to, ledgerPath, mainRef) {
   const outside = changedOutside(repo, from, to, ledgerPath);
   if (!mainRef || outside.length === 0) return outside;
-  const reviewed = ownChangePrints(repo, from, mainRef, ledgerPath);
-  const current = ownChangePrints(repo, to, mainRef, ledgerPath);
+  const only = new Set(outside);
+  const reviewed = ownChangePrints(repo, from, mainRef, ledgerPath, only);
+  const current = ownChangePrints(repo, to, mainRef, ledgerPath, only);
   if (!reviewed || !current) return outside;
-  const files = new Set([...reviewed.keys(), ...current.keys()]);
-  return [...files].filter((file) => reviewed.get(file) !== current.get(file)).sort();
+  return outside.filter((file) => reviewed.get(file) !== current.get(file)).sort();
 }
 
 export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnreviewed, acceptLow }) {
