@@ -146,7 +146,7 @@ date: "2026-11-09"
 | M-4 | 资格：只有状态有效、分类是公开或私密、当前有效、不是待确认、没被取代的记忆才进规则块；分类为敏感的规则永远不会注入 | [ADR 0185](adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)（敏感记忆不带入档案块）、[ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)（档案挑选规则） | `owner-profile-service.ts` 的 `PROFILE_CLASSIFICATIONS` | 硬 | 尚无 | PA-2（待确认不进档案）；`owner-profile-service.unit.test.ts` 的“puts rules first and groups important facts by section”（敏感记忆不进结果） |
 | M-5 | 主人在记忆页可以手动“每次对话都带”或“不带”某条记忆，覆盖自动选择 | [ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md) 盘点表 | `owner-profile-service.ts` 的 `pinned`、`choices` | 硬 | 尚无 | MEM-PIN |
 
-**记忆库里实际存了哪些规则，这份清单没有列。** 这些条目在生产数据库里，仓库读不到；读生产库按项目规矩要先问 Andy，所以没有读。需要的话：Andy 同意后，我用只读方式列出所有 `rule` 类记忆（条数、原话、立下的日期、是否待确认），补进这一节。
+**记忆库里实际存了哪些规则，这份清单没有列。** 这些条目在生产数据库里，仓库读不到；读生产库按项目规矩要先问 Andy；Andy 已同意只读列出，待读取后补进这一节：`rule` 类记忆的状态、记录日期、是否待确认，最多最新 500 条；超过 500 条时真实总数需另做计数查询，不含原话（记忆原话以密文存储，这个查询不读原话，只有记忆页和受控的后台流程会解密）。
 
 [↑ 回到阅读导航](#contents)
 
@@ -158,7 +158,7 @@ date: "2026-11-09"
 
 | 编号 | 原文 | 出处 | 生效位置 | 硬/软 | 规则类型（暂称） | 测试 |
 | --- | --- | --- | --- | --- | --- | --- |
-| C-1 | 生产配置的 `runPolicy.systemInstruction`（最长 16384 字节）：拼在固定身份提示词后面发给模型 | 仓库只有测试夹具的示例值，生产值在 `/etc/himawari/config.json`，待 Andy 授权读取后补全 | `production-run-policy.ts` 把它和 `chat.identity` 拼成系统提示 | 软（文字）；它是主人最直接的一处写规矩的口子 | 尚无 | 配置解析单元测试只验格式 |
+| C-1 | 生产配置的 `runPolicy.systemInstruction`（最长 16384 字节）：拼在固定身份提示词后面发给模型 | 仓库只有测试夹具的示例值，生产值在 `/etc/himawari/config.json`，Andy 已于 2026-11-09 授权只读，待读取后补全 | `production-run-policy.ts` 把它和 `chat.identity` 拼成系统提示 | 软（文字）；它是主人最直接的一处写规矩的口子 | 尚无 | 配置解析单元测试只验格式 |
 | C-2 | 主人的称呼：在设置里填，称呼主人时用它，对话里出现不同称呼时以最后出现的为准 | [ADR 0110](adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)、[ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md) | `owner-profile-service.ts` 规则块第一行；存在 `owner_preferences` | 硬（注入）+软（模型用不用） | 尚无 | NAME-1 |
 | C-3 | 界面语言、主题、强调色、对话用的模型和思考深度，服务器保存、各端同步 | [ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md)（I-16） | `owner_preferences`，带版本号 | 硬 | 尚无 | `test/integration/owner-settings-sync.test.ts` |
 | C-4 | 允许网页搜索开关 | [ADR 0110](adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)、I-29 一带 | 服务器设置；运行环境说明按它说明有没有搜索 | 硬 | 尚无 | I-29 的门槛用例 |
@@ -207,7 +207,7 @@ date: "2026-11-09"
 - 提示词规则：S-2、S-7、S-11 到 S-14、S-16 到 S-20、S-22 到 S-24。
 - 配置：C-1（生产配置里实际写了什么）、C-7（除冻结外的运行参数）。
 - S-8 的出处写“同 H-1 到 H-3”、S-9 写“同 H-6”，随被引用的规则走，不另计；H-6 的出处缺失，所以 S-9 也缺。
-- 记忆库里的 `rule` 类记忆：需要先授权读生产库，不在 19 条之内。
+- 记忆库里的 `rule` 类记忆：Andy 已授权只读（2026-11-09），待读取，不在 19 条之内。
 
 建议的做法：不逐条问。把上面这些编号发给 Andy，他能想起来的几条口述，其余标“无出处”，作为规则登记册（ADR 0106 第 4 条，另一个线程在做）的初始数据。
 
@@ -217,7 +217,7 @@ date: "2026-11-09"
 
 ## H 没有扫到的地方
 
-- 生产数据库里的记忆（`rule` 类）和生产配置文件：按项目规矩读生产数据要先问 Andy，所以没读。
+- 生产数据库里的记忆（`rule` 类）和生产配置文件：按项目规矩读生产数据要先问 Andy；Andy 已同意只读（2026-11-09），已获授权，待读取。
 - Mac 上本地的记忆和设置：不在仓库，也没有读。
 - 项目记忆里的协调者规则（自主合并、复核方式等）：那是 Andy 对协调者和编码线程定的开发规矩，不是 Himawari 的 Agent 规则，没有计入。
 
