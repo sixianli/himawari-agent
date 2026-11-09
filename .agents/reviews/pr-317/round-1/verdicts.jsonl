@@ -1,0 +1,8 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "两个 worker 可能同时进入 `installOpencode`，一个 `rmSync` 掉另一个正在 `npm ci` 的目录", "valid": true, "class": "error", "severity": "medium-high", "trigger": "CI 的隔离 HOME 里缓存是冷的，两个测试文件并行时同时安装", "consequence": "一个进程删掉另一个正在安装的目录，测试偶发失败", "modelSeverity": "中"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "拆分后事故门槛/规则文档仍指向旧测试文件", "valid": true, "class": "error", "severity": "low", "trigger": "读者按 I-76、I-77、I-86 找门槛用例", "consequence": "在旧文件里找不到部分用例，不影响检查本身", "modelSeverity": "低"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "作者“把 ADR 0181 改为 0189”的说法，在基准到 HEAD 的净 diff 里看不到", "valid": true, "class": "better"}
+{"id": "D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "拆分的“未丢用例”只有人工核对，没有会失败的反向检查", "valid": true, "class": "better"}
+{"id": "G1", "model": "opencode-go/glm-5.3-flash", "quote": "作者材料把不属于本 PR diff 的文档改动列成了本次改动", "valid": true, "class": "better"}
+{"id": "G2", "model": "opencode-go/glm-5.3-flash", "quote": "merge 带入的密钥样例改写语义等价，确认无断言含义变化（核实项，非问题）", "valid": false, "class": "error"}
+{"id": "G3", "model": "opencode-go/glm-5.3-flash", "quote": "「两个 worker 均分耗时」无法从代码核实", "valid": false, "class": "error"}
+{"id": "G4", "model": "opencode-go/glm-5.3-flash", "quote": "没有自动检查防止拆分丢测试；文档链接检查不覆盖 ADR", "valid": true, "class": "better"}

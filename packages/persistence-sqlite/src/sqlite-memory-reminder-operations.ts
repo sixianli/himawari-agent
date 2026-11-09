@@ -164,7 +164,7 @@ export class SqliteMemoryReminderOperations {
     if (
       !valid(input.dueAt) ||
       !valid(input.remindAt) ||
-      (input.status === "dismissed") !== (input.dismissedAt !== null)
+      (input.status === "scheduled") !== (input.dismissedAt === null)
     )
       this.fail("PORT_INVALID_OPERATION", "Memory reminder update is invalid");
     return (

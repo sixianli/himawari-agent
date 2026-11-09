@@ -11,7 +11,7 @@ export interface MemoryReminder extends MemoryReminderSchedule {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly memoryId: MemoryId;
-  readonly status: "scheduled" | "dismissed";
+  readonly status: "scheduled" | "dismissed" | "cancelled";
   readonly dismissedAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;

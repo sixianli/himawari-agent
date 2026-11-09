@@ -959,6 +959,11 @@ export class ProductionMemoryControl {
       const reminder = await this.options.reminders.read(reminderId);
       if (!reminder || reminder.ownerId !== ownerId || reminder.agentId !== agentId)
         throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_REMINDER_NOT_FOUND");
+      if (reminder.status === "cancelled" && action !== "cancel")
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "MEMORY_REMINDER_CANCELLED",
+        );
       const now = this.options.clock.now();
       const next =
         action === "snooze"
@@ -976,7 +981,9 @@ export class ProductionMemoryControl {
                 dismissedAt: null,
               }
             : {
-                status: "dismissed" as const,
+                status: (action === "cancel" ? "cancelled" : "dismissed") as
+                  | "cancelled"
+                  | "dismissed",
                 dueAt: reminder.dueAt,
                 remindAt: reminder.remindAt,
                 dismissedAt: now,

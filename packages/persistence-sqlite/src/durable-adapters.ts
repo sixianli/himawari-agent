@@ -1212,13 +1212,6 @@ export class SqliteDurableAdapters {
       projectSearch: (input) => this.context.write("thread.projectSearch", { input }),
       projectTitleSearch: (input) => this.context.write("thread.projectTitleSearch", { input }),
       search: (query) => this.context.read("thread.search", { query }),
-      rebuildSearch: (ownerId, agentId, threadId, projectionVersion) =>
-        this.context.write("thread.rebuildSearch", {
-          ownerId,
-          agentId,
-          threadId,
-          projectionVersion,
-        }),
       inspectDeletionImpact: (ownerId, agentId, threadId) =>
         this.context.read("thread.inspectDeletionImpact", { ownerId, agentId, threadId }),
       resolveDeletionTask: (input) => this.context.write("thread.resolveDeletionTask", { input }),

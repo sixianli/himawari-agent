@@ -1,0 +1,30 @@
+{
+  "removed": {
+    "digest.snapshot": "P1-4 删出约定，见 docs/adr/0192",
+    "health.snapshot": "P1-4 删出约定，见 docs/adr/0192",
+    "health.status": "P1-4 删出约定，见 docs/adr/0192",
+    "identity.session_detail": "P1-4 删出约定，见 docs/adr/0192",
+    "identity.sessions": "P1-4 删出约定，见 docs/adr/0192",
+    "inbox.detail": "P1-4 删出约定，见 docs/adr/0192",
+    "inbox.digest": "P1-4 删出约定，见 docs/adr/0192",
+    "inbox.list": "P1-4 删出约定，见 docs/adr/0192",
+    "inbox.snapshot": "P1-4 删出约定，见 docs/adr/0192",
+    "memory.detail": "P1-4 删出约定，见 docs/adr/0192",
+    "memory.search": "P1-4 删出约定，见 docs/adr/0192",
+    "memory.snapshot": "P1-4 删出约定，见 docs/adr/0192",
+    "session.revoke": "P1-4 删出约定，见 docs/adr/0192",
+    "session.snapshot": "P1-4 删出约定，见 docs/adr/0192",
+    "settings.read": "P1-4 删出约定，见 docs/adr/0192",
+    "settings.snapshot": "P1-4 删出约定，见 docs/adr/0192",
+    "settings.update": "P1-4 删出约定，见 docs/adr/0192",
+    "task.detail": "P1-4 删出约定，见 docs/adr/0192",
+    "task.list": "P1-4 删出约定，见 docs/adr/0192",
+    "task.set_state": "P1-4 删出约定，见 docs/adr/0192",
+    "task.snapshot": "P1-4 删出约定，见 docs/adr/0192",
+    "thread.checkpoint.request": "P1-4 删出约定，见 docs/adr/0192",
+    "thread.timeline": "P1-4 删出约定，见 docs/adr/0192",
+    "trace.detail": "P1-4 删出约定，见 docs/adr/0192",
+    "trace.snapshot": "P1-4 删出约定，见 docs/adr/0192",
+    "trace.timeline": "P1-4 删出约定，见 docs/adr/0192"
+  }
+}

@@ -23,6 +23,9 @@ import { integrationWorkerLimits, testWorkerCount } from "./test-concurrency.mjs
 
 const sorted = (values) => [...values].sort();
 const sameSet = (left, right) => JSON.stringify(sorted(left)) === JSON.stringify(sorted(right));
+const DRAFT_SKIPPED_CHECKS = ["browser", "coverage"];
+const DRAFT_SKIP_CONDITION =
+  "github.event_name != 'pull_request' || github.event.pull_request.draft != true";
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
@@ -383,12 +386,13 @@ export function validateWorkflow(policy, source, toolchain) {
     "github.event_name",
     "github.event.pull_request.number || github.ref",
     "github.event_name == 'push' && github.run_id || ''",
+    "github.event.action == 'edited' && 'edited' || ''",
   ]
     .map(githubExpression)
     .join("-");
   assert(
     workflow.concurrency.group === concurrencyGroup,
-    "Concurrency must identify the actual workflow, event, PR/ref, and unique push run",
+    "Concurrency must identify the actual workflow, event, PR/ref, and give push and edited runs their own group",
   );
   assert(
     workflow.concurrency["cancel-in-progress"] ===
@@ -430,6 +434,11 @@ export function validateWorkflow(policy, source, toolchain) {
       assert(
         job.name === "ci/required" && ["always()", githubExpression("always()")].includes(job.if),
         "required must use always() and ci/required",
+      );
+    else if (DRAFT_SKIPPED_CHECKS.includes(check.id))
+      assert(
+        job.if === githubExpression(DRAFT_SKIP_CONDITION),
+        `Only the draft condition may skip: ${check.id}`,
       );
     else assert(job.if === undefined, `Required job cannot be conditional: ${check.id}`);
     if (check.members.length > 1) {

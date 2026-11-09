@@ -1168,6 +1168,19 @@ describe("production memory capture", () => {
       dismissedAt: "2026-10-30T07:06:00.000Z",
     });
     expect((await overview(context.control)).reminders).toEqual([]);
+    await context.control.execute({
+      ...envelope,
+      kind: "command",
+      type: "memory.reminder.respond",
+      payload: { reminderId, action: "cancel" },
+    } as never);
+    expect(await reminders.read(reminderId)).toMatchObject({
+      status: "cancelled",
+      dismissedAt: "2026-10-30T07:06:00.000Z",
+    });
+    for (const action of ["dismiss", "snooze"] as const)
+      await expect(answer(action)).rejects.toThrow("MEMORY_REMINDER_CANCELLED");
+    expect(await reminders.read(reminderId)).toMatchObject({ status: "cancelled" });
     await expect(
       context.control.execute({
         ...envelope,
@@ -1275,6 +1288,9 @@ describe("production memory capture", () => {
     expect(await tool("cancel", { reminderId: target }, "call-cancel")).toMatchObject({
       cancelled: true,
     });
+    expect(await context.repository.memoryReminders().read(target)).toMatchObject({
+      status: "cancelled",
+    });
     expect(await upcoming()).toEqual([
       { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
     ]);
@@ -1295,6 +1311,22 @@ describe("production memory capture", () => {
       { text: "我的卡号是 6222020200112233445", dueAt: "2026-10-30T01:00:00.000Z" },
       { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
     ]);
+    const other = listed.reminders[1]?.reminderId ?? "";
+    const store = context.repository.memoryReminders();
+    const scheduled = await store.read(other);
+    const dismissedNow = await store.update({
+      id: other,
+      expectedUpdatedAt: scheduled?.updatedAt ?? "",
+      status: "dismissed",
+      dueAt: scheduled?.dueAt ?? "",
+      remindAt: scheduled?.remindAt ?? "",
+      dismissedAt: "2026-10-30T06:30:00.000Z",
+      updatedAt: "2026-10-30T06:30:00.000Z",
+    });
+    expect(dismissedNow).toBeTruthy();
+    expect(await store.read(other)).toMatchObject({ status: "dismissed" });
+    await tool("cancel", { reminderId: other }, "call-after-dismiss");
+    expect(await store.read(other)).toMatchObject({ status: "cancelled" });
     const stored = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
     const cardMemory = stored.find(({ id }) => id.includes("call-card"));
     expect(cardMemory?.dataClassification).toBe("sensitive");
@@ -1395,7 +1427,7 @@ describe("production memory capture", () => {
       payload: { reminderId, action: "cancel" },
     } as never);
     expect(await reminders.read(reminderId)).toMatchObject({
-      status: "dismissed",
+      status: "cancelled",
       dueAt: "2028-05-12T01:00:00.000Z",
     });
     expect((await overview(context.control)).upcoming).toEqual([]);

@@ -42,9 +42,9 @@ describe("production approval subscription", () => {
     const query = {
       schemaVersion: "gateway.v2" as const,
       kind: "query" as const,
-      type: "inbox.list" as const,
-      messageId: "inbox-query",
-      correlationId: "inbox-query",
+      type: "workspace.list" as const,
+      messageId: "workspace-query",
+      correlationId: "workspace-query",
       causationId: null,
       dataClassification: "private" as const,
       risk: "low" as const,
@@ -52,7 +52,7 @@ describe("production approval subscription", () => {
       scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
       authority,
       actor: { actorType: "owner" as const, actorId: OWNER_ID },
-      payload: { unreadOnly: false, afterCursor: null, limit: 100 },
+      payload: { afterCursor: null, limit: 100 },
     };
     try {
       await expect(gateway.request(authentication, query)).rejects.toMatchObject({
