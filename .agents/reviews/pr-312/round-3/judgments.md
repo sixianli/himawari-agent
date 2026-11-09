@@ -30,7 +30,7 @@ GITLEAKS_GATE_FAILED current=6523 commits=2548 excepted=54 blocking=3
 两件事分开看：
 
 1. **模型担心的风险不存在。** 三条命中里没有任何一条在 `.agents/reviews/pr-312/**`——本 PR 新增的复核记录一条都没触发密钥扫描。
-2. **这道门槛在 main 上本来就是红的，不是本 PR 造成的。** 命中的两个文件 `git diff origin/main..HEAD` 为空（和 main 逐字节相同），历史那一条在 `e5edb5469`（`git merge-base --is-ancestor` 证实是 origin/main 的祖先，2026-11-07 的提交）。为了不只靠推断，我把 `origin/main`（`1a3a1efe`）检出到一个 worktree 直接跑了一遍，输出是同样的三条命中：`GITLEAKS_GATE_FAILED current=6511 commits=2537 excepted=54 blocking=3`。两条都是明显的假阳性：一个是测试夹具里的网址 `https://user:pw@example.org/a?token=abcdef123456`，一个是遮盖函数自己的测试夹具 `` `-----BEGIN PRIVATE KEY----- ${"说明".repeat(5000)}` ``。
+2. **这道门槛在 main 上本来就是红的，不是本 PR 造成的。** 命中的两个文件 `git diff origin/main..HEAD` 为空（和 main 逐字节相同），历史那一条在 `e5edb5469`（`git merge-base --is-ancestor` 证实是 origin/main 的祖先，2026-11-07 的提交）。为了不只靠推断，我把 `origin/main`（`1a3a1efe`）检出到一个 worktree 直接跑了一遍，输出是同样的三条命中：`GITLEAKS_GATE_FAILED current=6511 commits=2537 excepted=54 blocking=3`。两条都是明显的假阳性：一个是测试夹具里的网址 `https://user:pw@example.org/a?token=abcdef123456`，一个是遮盖函数自己的测试夹具（私钥头那一行的固定文字，后面接 `${"说明".repeat(5000)}`；这里不照抄原文，否则复核账本自己会被 `record-secret-like` 挡下）。
 
 按门槛自己打印的办法，修法是在 `ci/rules/gitleaks.toml` 按路径加窄的白名单。那是 main 的事，而且是安全门槛的白名单，不该搭在一个无关 PR 里顺手改（远端已有一个 `fix/gitleaks-pr274-false-positives` 分支，但没有开着的 PR），所以本 PR 不动它，列进汇报让 Andy 定谁来修。
 
