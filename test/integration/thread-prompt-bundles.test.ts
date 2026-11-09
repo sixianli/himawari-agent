@@ -322,10 +322,28 @@ describe.each(["worker", "direct"] as const)("thread prompt bundles through %s",
         input("second", { request: { dataClassification: "public" } }),
       );
       expect(lowered).toMatchObject({ generation: 2, redactionRuleset: 1 });
+      expect(rulesetOf(resource, 2)).toBe(1);
       expect(resource.rows().map(({ origin }) => origin)).toEqual([
         "rollout",
         "classification_lower",
       ]);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[ADR-0188] upgrades the ruleset when the data classification drops together with a change to the tools", async () => {
+    const resource = await fixture();
+    try {
+      await resource.service.resolve(input("first", { hasHistory: true }));
+      const changed = await resource.service.resolve(
+        input("second", {
+          toolNames: ["read", "memory_recall", "web_search"],
+          request: { dataClassification: "public" },
+        }),
+      );
+      expect(changed).toMatchObject({ generation: 2, redactionRuleset: EGRESS_RULESET_CURRENT });
+      expect(rulesetOf(resource, 2)).toBe(EGRESS_RULESET_CURRENT);
     } finally {
       await resource.repository.close();
     }

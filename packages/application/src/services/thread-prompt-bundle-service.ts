@@ -244,7 +244,7 @@ export class ThreadPromptBundleService implements RuntimePromptBundlePort {
       origin,
       identity: {
         ...input.identity,
-        redactionRuleset: this.#rulesetFor(origin, latest),
+        redactionRuleset: this.#rulesetFor(origin, latest, input),
       },
       systemPrompt: await protect(
         candidate.systemPrompt,
@@ -263,9 +263,19 @@ export class ThreadPromptBundleService implements RuntimePromptBundlePort {
   #rulesetFor(
     origin: ThreadPromptBundleOrigin,
     latest: ThreadPromptBundleRecord | undefined,
+    input: RuntimePromptBundleResolveInput,
   ): number {
     if (origin === "rollout") return LEGACY_REDACTION_RULESET;
-    if (origin === "classification_lower" && latest) return storedRuleset(latest);
+    if (
+      origin === "classification_lower" &&
+      latest &&
+      sha256(input.candidate.systemPrompt) === latest.systemPromptSha256 &&
+      sha256(input.candidate.tools) === latest.toolsSha256 &&
+      latest.identity.modelRef === input.identity.modelRef &&
+      latest.identity.thinkingLevel === input.identity.thinkingLevel &&
+      latest.identity.answerLocale === input.identity.answerLocale
+    )
+      return storedRuleset(latest);
     return EGRESS_RULESET_CURRENT;
   }
 
