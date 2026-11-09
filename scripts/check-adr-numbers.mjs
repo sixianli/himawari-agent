@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, lstatSync, readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -28,17 +28,109 @@ export function findAdrNumberProblems(names) {
   return { errors, adrs: byNumber.size };
 }
 
+const DOCS_DIRECTORY = "docs";
+const ARCHIVE_DIRECTORY = "docs/archive";
+const MARKDOWN_LINK = /\]\(([^)\s]+)\)/g;
+const EXPLICIT_ANCHOR = /<a id="([^"]+)"><\/a>/g;
+const HEADING = /^#{1,6}\s+(.+)$/gm;
+const ADR_PATH_MENTION = /docs\/adr\/\d{4}-[a-z0-9][a-z0-9-]*\.md/g;
+const EXTERNAL_URL = /https?:\/\/[^\s)>\]]+/g;
+const TITLE = /^#\s+(.+)$/m;
+const TITLE_NUMBER = /^ADR\s+(\d{4})(?!\d)/;
+
+function headingSlug(text) {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{Letter}\p{Number}\s_-]/gu, "")
+    .replace(/\s/g, "-");
+}
+
+function anchorsOf(text) {
+  const anchors = new Set();
+  for (const match of text.matchAll(EXPLICIT_ANCHOR)) anchors.add(match[1]);
+  for (const match of text.matchAll(HEADING)) anchors.add(headingSlug(match[1]));
+  return anchors;
+}
+
+function markdownFiles(directory, root) {
+  const files = [];
+  for (const entry of readdirSync(path.join(root, directory)).sort()) {
+    const relative = `${directory}/${entry}`;
+    if (relative === ARCHIVE_DIRECTORY) continue;
+    if (lstatSync(path.join(root, relative)).isDirectory())
+      files.push(...markdownFiles(relative, root));
+    else if (entry.endsWith(".md") && !lstatSync(path.join(root, relative)).isSymbolicLink())
+      files.push(relative);
+  }
+  return files;
+}
+
+export function findAdrTitleProblems(files) {
+  const errors = [];
+  for (const [name, text] of files) {
+    const match = ADR_FILE.exec(name);
+    if (!match) continue;
+    const title = TITLE.exec(text)?.[1] ?? "";
+    const titleNumber = TITLE_NUMBER.exec(title)?.[1];
+    if (titleNumber !== match[1])
+      errors.push(
+        `ADR_NUMBER_TITLE ${ADR_DIRECTORY}/${name} 标题写的编号是 ${titleNumber ?? "（没有）"}，文件名编号是 ${match[1]}`,
+      );
+  }
+  return errors;
+}
+
+function isRegularFile(absolute) {
+  return existsSync(absolute) && lstatSync(absolute).isFile();
+}
+
+export function findAdrLinkProblems(root) {
+  const errors = [];
+  if (!existsSync(path.join(root, DOCS_DIRECTORY))) return errors;
+  for (const file of markdownFiles(DOCS_DIRECTORY, root)) {
+    const text = readFileSync(path.join(root, file), "utf8");
+    for (const [, target] of text.matchAll(MARKDOWN_LINK)) {
+      const [relative, anchor] = target.split("#");
+      if (!relative || /^[a-z][a-z0-9+.-]*:/i.test(relative)) continue;
+      const destination = path.resolve(path.dirname(path.join(root, file)), relative);
+      if (
+        path.basename(path.dirname(destination)) !== "adr" ||
+        !ADR_FILE.test(path.basename(destination))
+      )
+        continue;
+      if (!isRegularFile(path.join(destination))) {
+        errors.push(`ADR_LINK_MISSING ${file} -> ${target}`);
+        continue;
+      }
+      if (anchor && !anchorsOf(readFileSync(destination, "utf8")).has(anchor))
+        errors.push(`ADR_LINK_ANCHOR_MISSING ${file} -> ${target}`);
+    }
+    for (const mention of new Set(text.replace(EXTERNAL_URL, "").match(ADR_PATH_MENTION) ?? []))
+      if (!isRegularFile(path.join(root, mention)))
+        errors.push(`ADR_PATH_MISSING ${file} -> ${mention}`);
+  }
+  return errors;
+}
+
 export function checkAdrNumbers({ root = repositoryRoot } = {}) {
   const directory = path.join(root, ADR_DIRECTORY);
   if (!existsSync(directory))
     return { errors: [`ADR_NUMBER_NO_DIRECTORY ${ADR_DIRECTORY} 不存在`], adrs: 0 };
-  const result = findAdrNumberProblems(readdirSync(directory));
+  const names = readdirSync(directory)
+    .filter((name) => name.endsWith(".md") && isRegularFile(path.join(directory, name)))
+    .sort();
+  const result = findAdrNumberProblems(names);
   if (result.adrs === 0)
     return {
       errors: [...result.errors, `ADR_NUMBER_NO_FILES ${ADR_DIRECTORY} 下没有 ADR`],
       adrs: 0,
     };
-  return result;
+  const titles = names.map((name) => [name, readFileSync(path.join(directory, name), "utf8")]);
+  return {
+    errors: [...result.errors, ...findAdrTitleProblems(titles), ...findAdrLinkProblems(root)],
+    adrs: result.adrs,
+  };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
