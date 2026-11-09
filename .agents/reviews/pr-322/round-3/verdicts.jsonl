@@ -1,0 +1,6 @@
+{"id": "r3-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "清单解析只认一种写法，ADR/说明的“所有精确值自动生效”承诺过宽，存在漏遮", "valid": true, "class": "error", "severity": "low", "trigger": "有人读 ADR 以为任何形状的精确值白名单都会自动遮，而加了别的形状的块", "consequence": "该值照旧不被遮，Gitleaks 照旧报，按 ADR 0177 再加一块；不会给出错误结果", "modelSeverity": "中", "reason": "行为是不遮、不是错误结果，只是文档承诺过宽；已把 ADR 写明哪些形状生效、哪些不生效"}
+{"id": "r3-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "过度遮盖——把非密钥的登记值和账本结构字段也遮了", "valid": true, "class": "better"}
+{"id": "r3-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "全局可变清单 + 遮盖标记可能被二次命中", "valid": true, "class": "better"}
+{"id": "r3-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "文档与代码/材料不一致", "valid": true, "class": "error", "severity": "low", "trigger": "读说明文档的人按旧说法理解补跑规则和读取清单的来源", "consequence": "文档陈述与实际不符，不影响行为", "modelSeverity": "低"}
+{"id": "r3-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "测试缺口（合并门“不加载”这条没有直接覆盖）", "valid": true, "class": "better"}
+{"id": "r3-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "提交说明缺少 `Fast-mode-checks:`", "valid": true, "class": "better"}
