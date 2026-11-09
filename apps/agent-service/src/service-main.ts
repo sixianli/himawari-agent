@@ -48,6 +48,7 @@ import {
   ExecutionAdmissionUdsServer,
   ExecutionUdsError,
   failureReason,
+  GAP_EXPORT_SECRET_PURPOSE,
   GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
   MUSE_INTAKE_SECRET_PURPOSE,
   initializeStateRoot,
@@ -117,6 +118,7 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
+import { ProductionGapExport } from "./production-gap-export.js";
 import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
@@ -526,6 +528,7 @@ export async function runAgentService(
   let webPush: ProductionWebPush | undefined;
   let proactive: ProductionProactive | undefined;
   let museIntake: ProductionMuseIntake | undefined;
+  let gapExport: ProductionGapExport | undefined;
   let museControl: ProductionMuseControl | undefined;
   let observation: ProductionObservation | undefined;
   const webPushPresence = new WebPushPresence();
@@ -1682,6 +1685,31 @@ export async function runAgentService(
       } else if (museIntakeConfiguration?.enabled === true) {
         throw new Error("MUSE_INTAKE_RUNTIME_UNAVAILABLE");
       }
+      const gapExportRef = museIntakeConfiguration?.gapExportSecretRef;
+      const gapExportSecret =
+        museIntakeConfiguration?.enabled === true && gapExportRef !== undefined
+          ? configuration.secretReferences.find(
+              ({ ref, purpose }) => ref === gapExportRef && purpose === GAP_EXPORT_SECRET_PURPOSE,
+            )
+          : undefined;
+      if (gapExportSecret && protector) {
+        gapExport = new ProductionGapExport({
+          scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
+          marks: repository.gapCaseMarks(),
+          seal: createProactiveSeal({
+            payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
+            protector,
+            ids,
+          }),
+          clock,
+          secret: await hostModelSources(configuration).provider.resolve(
+            gapExportSecret.ref,
+            gapExportSecret.version,
+          ),
+        });
+      } else if (gapExportRef !== undefined && museIntakeConfiguration?.enabled === true) {
+        throw new Error("GAP_EXPORT_RUNTIME_UNAVAILABLE");
+      }
       const webPushConfiguration = configuration.runPolicy?.webPush;
       const webPushSecret = webPushConfiguration
         ? configuration.secretReferences.find(
@@ -1790,6 +1818,16 @@ export async function runAgentService(
         scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
         observation: repository.ledgerObservation(),
         ledger: repository.decisionLedger(),
+        marks: repository.gapCaseMarks(),
+        ...(protector
+          ? {
+              seal: createProactiveSeal({
+                payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
+                protector,
+                ids,
+              }),
+            }
+          : {}),
         clock,
         schedule: {
           configured: proactive !== undefined,
@@ -2026,6 +2064,7 @@ export async function runAgentService(
         webPush: { presence: webPushPresence, push: webPush },
         ...(proactive ? { proactive } : {}),
         ...(museIntake ? { museIntake } : {}),
+        ...(gapExport ? { gapExport } : {}),
         ...(museControl ? { museControl } : {}),
         ...(observation ? { observation } : {}),
         memory: {
