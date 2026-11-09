@@ -50,7 +50,11 @@ export interface EgressRedactionSighting {
   readonly value: string;
 }
 
+export const EGRESS_RULESET_FIRST_LOOSE_PASSWORDS = 2;
+export const EGRESS_RULESET_CURRENT = EGRESS_RULESET_FIRST_LOOSE_PASSWORDS;
+
 export interface EgressRedactionOptions {
+  readonly ruleset?: number;
   readonly tag?: (kind: EgressPlaceholderKind, value: string) => string;
   readonly known?: Map<string, string>;
   readonly table?: Map<string, string>;
@@ -65,8 +69,37 @@ const KNOWN_VALUE_MINIMUM_LENGTH = 6;
 const MACHINE_SECRET_MARKER = "[MACHINE_SECRET_REDACTED]";
 const MACHINE_SECRET_PLACEHOLDER = "[密钥]";
 
-const PASSWORD_ASSIGNMENT =
-  /((?:密码|密碼|口令|PIN\s?码|PIN\s?碼|安全码|安全碼|授权码|授權碼|パスワード|暗証番号|비밀번호|암호|비번|password|passwd|pwd)\s*(?:[:：=＝]|是|为|為|は)\s*)(?!\[)([^\s,，;；]+)/giu;
+const PASSWORD_ASCII_KEYWORDS = "PIN\\s?码|PIN\\s?碼|password|passwd|pwd";
+const PASSWORD_NON_ASCII_KEYWORDS =
+  "密码|密碼|口令|安全码|安全碼|授权码|授權碼|パスワード|暗証番号|비밀번호|암호|비번";
+const PASSWORD_KEYWORDS = `${PASSWORD_NON_ASCII_KEYWORDS}|${PASSWORD_ASCII_KEYWORDS}`;
+
+const PASSWORD_VALUE = "[^\\s,，;；]";
+
+const PASSWORD_ASSIGNMENT = new RegExp(
+  `((?:${PASSWORD_KEYWORDS})\\s*(?:[:：=＝]|是|为|為|は)\\s*)(?!\\[)(${PASSWORD_VALUE}+)`,
+  "giu",
+);
+
+const PASSWORD_LOOSE_VALUE = "[^\\s,;\\[\\]\\u0080-\\u{10FFFF}]";
+const PASSWORD_LOOSE_KEYWORDS = `(?:(?<![A-Za-z0-9_])(?:${PASSWORD_ASCII_KEYWORDS})|(?:${PASSWORD_NON_ASCII_KEYWORDS}))`;
+const PASSWORD_LOOSE_VALUE_START = "[^\\s,;\\[\\]\\u0080-\\u{10FFFF}\"'(]";
+const PASSWORD_VALUE_OPENING = `["'(]*`;
+
+const PASSWORD_WORDED_ASSIGNMENT = new RegExp(
+  `(${PASSWORD_LOOSE_KEYWORDS}(?:[ \\t]*(?:改成|改为|改為|设为|設為|换成|換成|는|은)|[ \\t]+(?:is|are|was)\\b)[ \\t]*${PASSWORD_VALUE_OPENING})(?=${PASSWORD_LOOSE_VALUE}*\\d)(${PASSWORD_LOOSE_VALUE_START}${PASSWORD_LOOSE_VALUE}{3,})`,
+  "giu",
+);
+
+const PASSWORD_BARE_VALUE = new RegExp(
+  `(${PASSWORD_LOOSE_KEYWORDS}[ \\t]+${PASSWORD_VALUE_OPENING})(?=${PASSWORD_LOOSE_VALUE}*\\d)(${PASSWORD_LOOSE_VALUE_START}${PASSWORD_LOOSE_VALUE}{5,})`,
+  "giu",
+);
+
+const PASSWORD_TRAILING_PUNCTUATION = /[.:)'"]+$/u;
+
+const NOT_A_PASSWORD_VALUE =
+  /^(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[T.\d:+\-Z]*)|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|v?\d+(?:\.\d+)+|https?:\/\/\S*|\/\S*|\d?[<>]\S*)$/iu;
 
 const VERIFICATION_CODE_KEYWORD =
   /(?:验证码|驗證碼|校验码|認証コード|確認コード|認証番号|ワンタイム|verification code|security code|login code|one[- ]time (?:pass)?(?:code|word)|passcode|\bOTP\b)/iu;
@@ -232,6 +265,7 @@ export function redactForEgress(
   const rehearsal = redactUntrusted(view, {
     ...(options.known === undefined ? {} : { known: new Map(options.known) }),
     ...(options.tag === undefined ? {} : { tag: () => "aaaaaaaa" }),
+    ...(options.ruleset === undefined ? {} : { ruleset: options.ruleset }),
   }).text;
   if (restoredText(rehearsal, input, spans, filler) === undefined)
     return redactUntrusted(input, options);
@@ -303,12 +337,30 @@ function redactUntrusted(input: string, options: EgressRedactionOptions): Egress
     tally(counts, "machine-secret");
   text = text.split(MACHINE_SECRET_MARKER).join(MACHINE_SECRET_PLACEHOLDER);
 
-  text = text.replace(PASSWORD_ASSIGNMENT, (_match, lead: string, value: string) => {
-    if (value === MACHINE_SECRET_PLACEHOLDER || value.startsWith("[")) return `${lead}${value}`;
+  const maskPassword = (lead: string, value: string) => {
     tally(counts, "password");
     see("password", "password-keyword", value);
     return `${lead}${mask("password", "密码", value, value, true)}`;
-  });
+  };
+  text = text.replace(PASSWORD_ASSIGNMENT, (_match, lead: string, value: string) =>
+    value === MACHINE_SECRET_PLACEHOLDER || value.startsWith("[")
+      ? `${lead}${value}`
+      : maskPassword(lead, value),
+  );
+  const looserForms =
+    (options.ruleset ?? EGRESS_RULESET_CURRENT) >= EGRESS_RULESET_FIRST_LOOSE_PASSWORDS
+      ? ([
+          [PASSWORD_WORDED_ASSIGNMENT, 4],
+          [PASSWORD_BARE_VALUE, 6],
+        ] as const)
+      : [];
+  for (const [looser, minimumLength] of looserForms)
+    text = text.replace(looser, (match, lead: string, raw: string) => {
+      const value = raw.replace(PASSWORD_TRAILING_PUNCTUATION, "");
+      if (value.length < minimumLength || !/\d/u.test(value) || NOT_A_PASSWORD_VALUE.test(value))
+        return match;
+      return `${maskPassword(lead, value)}${raw.slice(value.length)}`;
+    });
 
   text = text.replace(CN_ID_NUMBER, (match) => {
     if (!cnIdChecksumValid(match)) return match;

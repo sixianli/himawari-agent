@@ -33,6 +33,7 @@ import {
 import type {
   AgentRuntimePort,
   ModelDescriptor,
+  ModelEgress,
   ModelInvocationAdmissionResolver,
   ModelInvocationPermit,
   ModelInvocationPricing,
@@ -52,12 +53,6 @@ import type {
   RuntimeToolInvocation,
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
-import type { ModelEgress } from "@himawari-agent/application/runtime-port";
-import {
-  redactMachineSecrets,
-  isSensitiveFieldName,
-  isSensitiveQueryParameter,
-} from "@himawari-agent/sensitive-capture";
 import {
   CHAT_TOOL_GUIDELINES_HEADER,
   CHAT_TOOL_LOOP_REJECTED,
@@ -75,6 +70,11 @@ import {
   TOOL_POLICY_BLOCKED_REMINDER,
   TOOL_POLICY_BLOCKED_TASK_MANAGEMENT,
 } from "@himawari-agent/prompt-catalog";
+import {
+  isSensitiveFieldName,
+  isSensitiveQueryParameter,
+  redactMachineSecrets,
+} from "@himawari-agent/sensitive-capture";
 import { observeCacheFields } from "./cache-usage-observation.js";
 import { restoreModelStream, withPlaceholderLegend } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
@@ -904,6 +904,7 @@ async function admitPiStream(
   egress: ModelEgress,
   onAdmissionFailed?: PiAgentRuntimeAdapterDependencies["onModelAdmissionFailed"],
   usageRecording?: PiAgentRuntimeAdapterDependencies["usage"],
+  redactionRuleset?: number,
 ): Promise<AssistantMessageEventStream> {
   let permit: ModelInvocationPermit | undefined;
   let started = false;
@@ -1002,6 +1003,7 @@ async function admitPiStream(
       threadId: request.threadId,
       source: "chat",
       purpose: "chat",
+      ...(redactionRuleset === undefined ? {} : { redactionRuleset }),
     });
     const cacheFields = observeCacheFields(exchange.wrapFetch(options?.fetch ?? globalThis.fetch));
     withoutAmbientApiKey.fetch = cacheFields.fetch;
@@ -1562,6 +1564,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           this.#dependencies.egress,
           this.#dependencies.onModelAdmissionFailed,
           this.#dependencies.usage,
+          bundle?.redactionRuleset,
         );
       };
       this.#activeSessions.set(request.runId, session);

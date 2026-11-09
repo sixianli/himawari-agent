@@ -694,7 +694,7 @@ export const messages = {
   "memory.page.changed": "改过 {count} 次",
   "memory.page.source": "来源",
   "memory.page.origin":
-    "{o, select, owner {你手动添加} import {导入} deleted {来源对话已删除} other {整理记忆}}",
+    "{o, select, owner {你手动添加} import {导入} deleted {来源对话已删除} reminder {提醒创建，无原话} other {整理记忆}}",
   "memory.page.used": "上次用到",
   "memory.page.notUsed": "还没用到",
   "memory.page.history": "怎么变过来的",
@@ -809,6 +809,12 @@ export const messages = {
     "{k, select, created {记下} updated {补充了细节} edited {你改过} restored {换回} reaffirmed {又说了一次，意思没变} other {变化}}",
   "memory.page.quote": "你说：“{quote}”",
   "memory.page.sourceDeleted": "来源对话已删除",
+  "memory.page.jumpToQuote": "跳到原话",
+  "memory.page.sourceUnavailable": "来源已不可查",
+  "memory.page.sourceUnavailableCount": "有 {count} 条记忆的来源已不可查，找不回当初那句话",
+  "memory.page.importNoQuoteCount": "有 {count} 条记忆是导入的，没有原话可跳",
+  "memory.page.originImport":
+    "导入自 {source, select, codex {Codex} assistant {其他 AI} other {Himawari 导出文件}}",
   "memory.page.collapseHistory": "收起",
   "memory.page.flips":
     "变过 {changes} 次{again, plural, =0 {} other {，另外有 # 次说了同样的意思}}",
@@ -1058,8 +1064,9 @@ export const messages = {
   "muse.settings.paused": "已暂停",
   "muse.settings.clear": "清除 Muse 数据",
   "muse.settings.clearHint":
-    "删除自动收到的 Muse 条目和你对它们的评价；手动录入的 Muse 对照不受影响。",
-  "muse.settings.clearConfirm": "确定清除所有自动收到的 Muse 条目和对它们的评价吗？这不能撤销。",
+    "删除自动收到的 Muse 条目、你对它们的评价和已加入 Backlog 的案例标记；手动录入的 Muse 对照不受影响。",
+  "muse.settings.clearConfirm":
+    "确定清除所有自动收到的 Muse 条目、对它们的评价和已加入 Backlog 的案例标记吗？这不能撤销。",
   "muse.settings.cleared": "已清除。",
   "proactive.when.dueToday": "今天 {time} 截止",
   "proactive.line.allSkipped": "{count} 封新邮件，都是垃圾邮件，按规则跳过，没交给模型",
@@ -1176,6 +1183,37 @@ export const messages = {
   "weekly.muse.unpaired": "未配对条数",
   "weekly.muse.rate": "配对率",
   "weekly.muse.def": "配对率 = 能对上同一封邮件的条目 ÷ 这一周 Muse 对照条目总数。",
+  "weekly.gap.title": "Muse 差距线",
+  "weekly.gap.notFull": "本周尚未结束，差距线等这一周结束后再出。",
+  "weekly.gap.empty": "这一周没有配对且你评过的邮件，两条差距线都没有样本。",
+  "weekly.gap.note":
+    "只用配对到同一封邮件、且你评过 Himawari 判断的邮件。“该提醒”指你评了“做对了”的提醒或“该做没做”；“不该提醒”指你评了“不该做”或没提醒时评了“做对了”。差 = Muse − Himawari，区间是同一批邮件的配对差 95% 区间。样本偏向你愿意评的邮件，记忆不和 Muse 比。",
+  "weekly.gap.line":
+    "{l, select, hitRate {命中率（该提醒的邮件里，提醒了的占比）} other {多余提醒率（不该提醒的邮件里，提醒了的占比）}}",
+  "weekly.gap.mails": "配对且评过的邮件 {n} 封",
+  "weekly.gap.few": "样本不足（{n} 封），只看下面的案例，不下结论。",
+  "weekly.gap.rates": "Muse {muse}；Himawari {himawari}",
+  "weekly.gap.diff": "差 {d}（区间 {low} 至 {high}）",
+  "weekly.gap.verdict":
+    "{v, select, museHigher {Muse 的这个比例更高。} himawariHigher {Himawari 的这个比例更高。} other {区间跨 0，分不出差别。}}",
+  "weekly.cases.title": "Muse 做对而 Himawari 没做到",
+  "weekly.cases.empty": "这一周没有这样的案例。",
+  "weekly.cases.muse": "Muse 做了什么",
+  "weekly.cases.himawari": "Himawari 当时做了什么",
+  "weekly.cases.outcome":
+    "{o, select, ignore {判断为不用管，没提醒。} skipped {这封邮件被跳过，没有做判断。} other {没有提醒。}}",
+  "weekly.cases.attr":
+    "{a, select, notRemembered {没记住} notRetrieved {没取到} notReadFully {没读全} other {判断错}}",
+  "weekly.cases.rating":
+    "{r, select, missed {你的评价：该做没做} useful {你的评价：做对了} unneeded {你的评价：不该做} other {你还没评价}}",
+  "weekly.cases.memory": "取回这封邮件的相关记忆 {m} 条，读到的相关往来邮件 {r} 封。",
+  "weekly.cases.withheld": "Muse 的文字按规则没有留存。",
+  "weekly.cases.noText": "没有留存文字。",
+  "weekly.cases.noReason": "没有留存理由。",
+  "weekly.cases.note":
+    "归因由程序按这封邮件所在那次检查的读取记录判定，不是模型猜的。“没记住”只表示检索正常却一条都没取到，分不清是没存还是没匹配上。",
+  "weekly.cases.mark": "{on, select, yes {已加入 Backlog，再点一次取消} other {加入 Backlog}}",
+  "weekly.cases.markFailed": "没有成功，请再点一次。",
   "weekly.implicit.title": "观察信号 · 不是打分",
   "weekly.implicit.notFull": "本周尚未结束",
   "weekly.implicit.empty": "这一周没有推送过提醒的决策。",

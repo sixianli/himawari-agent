@@ -1,6 +1,7 @@
+import type { ThreadId } from "@himawari-agent/domain";
+import { EGRESS_RULESET_CURRENT } from "@himawari-agent/sensitive-capture";
 import { sha256 as sha256Bytes } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
-import type { ThreadId } from "@himawari-agent/domain";
 import type { DataClassification } from "../ports/common.js";
 import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observability.js";
 import type { RunPayloadArtifactPort } from "../ports/run-payload-artifacts.js";
@@ -17,6 +18,14 @@ import type {
 } from "../ports/thread-prompt-bundles.js";
 import { canonicalAuthorizationSnapshot } from "./action-intent-snapshot.js";
 import type { RecordTraceInput } from "./session-trace-recorder.js";
+
+export const LEGACY_REDACTION_RULESET = 1;
+function storedRuleset(record: ThreadPromptBundleRecord): number {
+  const stored = record.identity.redactionRuleset;
+  if (stored === undefined || !Number.isSafeInteger(stored) || stored < 1)
+    return LEGACY_REDACTION_RULESET;
+  return Math.min(stored, EGRESS_RULESET_CURRENT);
+}
 
 export const THREAD_PROMPT_BUNDLE_PIN_KEY = "thread-prompt-bundle-pin:v1";
 export const PROMPT_BUNDLE_INVALIDATED_EVENT = "prompt.bundle.invalidated";
@@ -233,7 +242,10 @@ export class ThreadPromptBundleService implements RuntimePromptBundlePort {
       ...scope,
       expectedLatestGeneration: latest?.generation ?? null,
       origin,
-      identity: input.identity,
+      identity: {
+        ...input.identity,
+        redactionRuleset: this.#rulesetFor(origin, latest, input),
+      },
       systemPrompt: await protect(
         candidate.systemPrompt,
         "text/plain",
@@ -248,12 +260,36 @@ export class ThreadPromptBundleService implements RuntimePromptBundlePort {
     });
   }
 
+  #rulesetFor(
+    origin: ThreadPromptBundleOrigin,
+    latest: ThreadPromptBundleRecord | undefined,
+    input: RuntimePromptBundleResolveInput,
+  ): number {
+    if (origin === "rollout") return LEGACY_REDACTION_RULESET;
+    if (
+      origin === "classification_lower" &&
+      latest &&
+      sha256(input.candidate.systemPrompt) === latest.systemPromptSha256 &&
+      sha256(input.candidate.tools) === latest.toolsSha256 &&
+      latest.identity.modelRef === input.identity.modelRef &&
+      latest.identity.thinkingLevel === input.identity.thinkingLevel &&
+      latest.identity.answerLocale === input.identity.answerLocale
+    )
+      return storedRuleset(latest);
+    return EGRESS_RULESET_CURRENT;
+  }
+
   async #open(record: ThreadPromptBundleRecord): Promise<RuntimePromptBundle> {
     const systemPrompt = await this.#readText(record, record.systemPromptRef);
     const tools = await this.#readText(record, record.toolsRef);
     if (sha256(systemPrompt) !== record.systemPromptSha256 || sha256(tools) !== record.toolsSha256)
       throw new Error("RUNTIME_PROMPT_BUNDLE_FINGERPRINT_MISMATCH");
-    return Object.freeze({ generation: record.generation, systemPrompt, tools });
+    return Object.freeze({
+      generation: record.generation,
+      systemPrompt,
+      tools,
+      redactionRuleset: storedRuleset(record),
+    });
   }
 
   async #readText(record: ThreadPromptBundleRecord, ref: string): Promise<string> {

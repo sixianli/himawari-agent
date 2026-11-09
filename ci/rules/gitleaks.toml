@@ -122,3 +122,11 @@ targetRules = ["generic-api-key"]
 paths = ['''(?:^|/)apps/agent-service/test/pi-coding-program\.unit\.test\.ts$''']
 regexTarget = "secret"
 regexes = ['''^MIIEvR2T14TAILBODY$''']
+
+[[allowlists]]
+description = "DeepSeek 网页提供方单元测试里网址查询串的假令牌，用来核对遮盖；只限这个测试文件（含提交 e5edb5469 里的同一行）"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)packages/platform-node/test/deepseek-web-provider\.unit\.test\.ts$''']
+regexTarget = "secret"
+regexes = ['''^abcdef123456$''']

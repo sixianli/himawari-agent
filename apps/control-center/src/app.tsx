@@ -50,6 +50,7 @@ import {
   useControlCenterIntl,
 } from "./i18n/runtime.js";
 import { useMemory } from "./memory.js";
+import { requestMessageFocus } from "./message-focus.js";
 import { useMuse } from "./muse.js";
 import { useSensitiveInterceptions } from "./sensitive-interceptions.js";
 import { useOwnerPreferenceSync } from "./owner-preferences.js";
@@ -448,9 +449,10 @@ function LocalizedControlCenterApp({
                   memory={memory}
                   message={message}
                   focus={memoryFocus}
-                  onOpenThread={(threadId) =>
-                    navigate(routeForSurface("threads", { objectId: threadId, view: "content" }))
-                  }
+                  onOpenThread={(threadId, messageId) => {
+                    if (messageId) requestMessageFocus(threadId, messageId);
+                    navigate(routeForSurface("threads", { objectId: threadId, view: "content" }));
+                  }}
                 />
               ) : (
                 <RemindersPage

@@ -1115,7 +1115,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     "/srv/gh-runner-2",
   ];
 
-  const installWithFailingRuleCheck = (nftCheck, extraSetup = []) => {
+  const installWithFailingRuleCheck = (nftCheck, extraSetup = [], stderrRedirect) => {
     const box = sandbox();
     box.fake("hostname", "echo ci-vps");
     box.fake(
@@ -1167,7 +1167,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       "echo config > /srv/gh-runner/runner/config.sh",
       "chmod 0755 /srv/gh-runner/runner/config.sh",
       ...extraSetup,
-      `bash "$real/scripts/install-runner.sh" > "${box.root}/stdout" 2> "${box.root}/stderr"`,
+      `bash "$real/scripts/install-runner.sh" > "${box.root}/stdout" ${stderrRedirect ?? `2> "${box.root}/stderr"`}`,
       'echo "rc=$?"',
       `for path in ${reported.join(" ")}; do`,
       '  if [ -d "$path" ]; then echo "$path=DIR"; elif [ -e "$path" ]; then echo "$path=$(cat "$path")"; else echo "$path=MISSING"; fi',
@@ -1189,6 +1189,31 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       : `namespace setup failed: ${result.status} ${result.stdout} ${result.stderr}`;
     return { box, result, state, stderr };
   };
+
+  it("puts every file back even when stderr cannot be written", () => {
+    const { box, result, state } = installWithFailingRuleCheck("exit 1", [], "2>&-");
+    expect(result.status).toBe(0);
+    expect(state.rc).toBe("1");
+    expect(state["/etc/systemd/system/gh-runner.service"]).toBe("old-unit");
+    expect(state["/etc/sudoers.d/91-gh-runner-control"]).toBe("old-sudoers");
+    expect(state["/srv/gh-runner-2"]).toBe("MISSING");
+    expect(box.calls()).toMatch(/^userdel gh-runner-2$/m);
+  });
+
+  it("puts every file back when stderr is a pipe nobody reads any more", () => {
+    const { box, result, state } = installWithFailingRuleCheck(
+      "exit 1",
+      [`mkfifo "$HOME/gone"`, `(exec 5< "$HOME/gone") & exec 3> "$HOME/gone"; wait`],
+      "2>&3",
+    );
+    expect(result.status).toBe(0);
+    expect(state.rc).not.toBe("0");
+    expect(state["/etc/systemd/system/gh-runner.service"]).toBe("old-unit");
+    expect(state["/etc/sudoers.d/91-gh-runner-control"]).toBe("old-sudoers");
+    expect(state["/etc/gh-runner/nft.rules"]).toBe("old-rules");
+    expect(state["/srv/gh-runner-2"]).toBe("MISSING");
+    expect(box.calls()).toMatch(/^userdel gh-runner-2$/m);
+  });
 
   it("keeps /srv/gh-runner/bin and files it did not install when the install succeeds", () => {
     const { result, state } = installWithFailingRuleCheck("exit 0", [
@@ -1219,6 +1244,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     expect(result.status).toBe(0);
     expect(state.rc).toBe(code);
     expect(stderr).toContain("INSTALL_FAILED");
+    if (code === "1") expect(stderr).toMatch(/INSTALL_STEP_FAILED line \d+ exit 1: return 1/);
     expect(stderr).not.toContain("RESTORE_INCOMPLETE");
     expect(stderr).not.toContain("command not found");
     expect(stderr).not.toContain("unbound variable");

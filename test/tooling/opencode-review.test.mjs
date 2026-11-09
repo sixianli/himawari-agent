@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   API_ERROR_MESSAGE_MAX,
@@ -50,6 +50,7 @@ import {
   OPENCODE_LOCK_DIR,
   OPENCODE_VERSION,
   opencodeBinary,
+  opencodeChildEnv,
   opencodeEnv,
   opencodeInstallDir,
   parseArgs,
@@ -105,6 +106,7 @@ import {
 import {
   completedCount,
   effectiveCost,
+  GUARD_ENV,
   guardDecision,
   ledgerTotal,
   noteCost,
@@ -446,6 +448,29 @@ describe("opencode review output", () => {
     expect(summary.usage.output).toBe(32000);
   });
 
+  it("reads a refusal out of the error field when the command printed nothing", () => {
+    const events = [
+      {
+        type: "tool_use",
+        part: {
+          tool: "bash",
+          state: {
+            input: { command: "git log -1 --output=../written.txt" },
+            status: "error",
+            output: "",
+            error: `${GIT_REFUSED} --output`,
+          },
+        },
+      },
+      { type: "text", part: { text: "done" } },
+    ]
+      .map((event) => JSON.stringify(event))
+      .join("\n");
+    const [call] = summarizeEvents(events).toolCalls;
+    expect(call.output).toBe(`${GIT_REFUSED} --output`);
+    expect(probeRefused(call)).toBe(true);
+  });
+
   it("adds up tokens across tool steps and keeps the final text", () => {
     const events = [
       {
@@ -760,6 +785,57 @@ describe("opencode review self-check", () => {
     expect(
       probeRefused({ status: "error", output: "/bin/bash: f: No such file or directory" }),
     ).toBe(false);
+    expect(
+      probeRefused({
+        status: "completed",
+        output: "The user has specified a rule which prevents you from doing that",
+      }),
+    ).toBe(true);
+    expect(
+      probeRefused({
+        status: "completed",
+        output: [
+          "commit 9d1e6de5de7535d8bb73061a702dcf5534747127",
+          "",
+          `    工具以 \`${GIT_REFUSED} records-path\` 拒绝`,
+          `    \`bash -r\` 的 \`: restricted\` 本来就出现在行中`,
+          "    The user has specified a rule which prevents you 这句话也一样",
+          "",
+          " .agents/reviews/pr-312/round-3/judgments.md | 60 ++++++",
+        ].join("\n"),
+      }),
+    ).toBe(false);
+    expect(
+      probeRefused({
+        status: "completed",
+        output: `1f16c11b fix(model-review): 自检只在不缩进的行里找 ${GIT_REFUSED} 这个字样\n`,
+      }),
+    ).toBe(false);
+    expect(
+      probeRefused({
+        status: "completed",
+        output: "1f16c11b fix: 别被提交标题里的 : restricted 骗了\n",
+      }),
+    ).toBe(false);
+    expect(
+      probeRefused({
+        status: "completed",
+        output:
+          "1f16c11b fix: The user has specified a rule which prevents you 也可能出现在标题里\n",
+      }),
+    ).toBe(false);
+    expect(
+      probeRefused({
+        status: "completed",
+        output: [
+          "commit aff8e4eebf86989c6d07890c3ad1197379363e2e",
+          "Author: f: restricted <nobody@example.org>",
+          "Date:   Sun Nov 8 16:30:00 2026 +0900",
+          "",
+          "    fix: 作者名也不该被当成 shell 的报错",
+        ].join("\n"),
+      }),
+    ).toBe(false);
   });
 
   it("fails when a write probe failed for an unrelated reason", () => {
@@ -988,7 +1064,36 @@ describe("opencode review installed guard", () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-guard-"));
     try {
       const copy = join(root, "repo");
-      execFileSync("git", ["clone", "--quiet", "--depth", "3", `file://${process.cwd()}`, copy]);
+      const isolatedGit = {
+        ...process.env,
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_CONFIG_SYSTEM: "/dev/null",
+        GIT_CONFIG_NOSYSTEM: "1",
+      };
+      execFileSync("git", ["clone", "--quiet", "--depth", "3", `file://${process.cwd()}`, copy], {
+        env: isolatedGit,
+      });
+      const blamed = join(copy, "AGENTS.md");
+      writeFileSync(blamed, `<a id="probe-commit"></a>\n${readFileSync(blamed, "utf8")}`);
+      execFileSync(
+        "git",
+        [
+          "-c",
+          "user.name=f: restricted",
+          "-c",
+          "user.email=nobody@example.org",
+          "-c",
+          "commit.gpgsign=false",
+          "commit",
+          "--quiet",
+          "--all",
+          "-m",
+          `${GIT_REFUSED} --output bash: line 1: x: restricted`,
+          "-m",
+          "The user has specified a rule which prevents you",
+        ],
+        { cwd: copy, env: isolatedGit },
+      );
       const guard = installGitGuard(root);
       const canary = `CANARY_${randomBytes(8).toString("hex")}`;
       const env = {
@@ -996,17 +1101,45 @@ describe("opencode review installed guard", () => {
         PATH: `${guard.binDir}:${process.env.PATH}`,
         REVIEW_TEST_CANARY: canary,
       };
-      const viaShell = (command) => {
+      const viaShell = (command, extraEnv = {}) => {
         const result = spawnSync(guard.shell, ["-c", command], {
           cwd: copy,
-          env,
+          env: { ...env, ...extraEnv },
           encoding: "utf8",
         });
         return { status: result.status, text: result.stdout + result.stderr };
       };
-      expect(viaShell('git log -1 "--output=../written.txt"').text).toContain(GIT_REFUSED);
-      expect(viaShell("git log -1 --oneline > written.txt").text).toContain("restricted");
-      expect(viaShell(`cd ${root}`).text).toContain("restricted");
+      const guardRefused = viaShell('git log -1 "--output=../written.txt"').text;
+      const redirectRefused = viaShell("git log -1 --oneline > written.txt").text;
+      const cdRefused = viaShell(`cd ${root}`).text;
+      expect(guardRefused).toContain(GIT_REFUSED);
+      expect(redirectRefused).toContain("restricted");
+      expect(cdRefused).toContain("restricted");
+      for (const output of [guardRefused, redirectRefused, cdRefused])
+        expect(probeRefused({ status: "completed", output })).toBe(true);
+      const localized = viaShell(`cd ${root}`, { LC_ALL: "ja_JP.UTF-8", LANG: "ja_JP.UTF-8" });
+      expect(probeRefused({ status: "completed", output: localized.text })).toBe(true);
+      const locale = viaShell("env", {
+        LC_ALL: "ja_JP.UTF-8",
+        LC_MESSAGES: "ja_JP.UTF-8",
+        LANGUAGE: "ja_JP",
+      }).text.split("\n");
+      expect(locale.some((line) => line.startsWith("LC_ALL="))).toBe(false);
+      expect(locale).toContain("LC_MESSAGES=C");
+      expect(locale).toContain("LANGUAGE=C");
+      expect(locale).toContain("LC_CTYPE=ja_JP.UTF-8");
+      const bare = viaShell("env", { LC_ALL: "", LC_CTYPE: "", LANG: "" }).text.split("\n");
+      expect(bare.filter((line) => line.startsWith("LC_CTYPE="))).toEqual(["LC_CTYPE="]);
+      for (const command of [
+        "git log -1 --oneline",
+        "git show --stat HEAD",
+        "git blame -L 1,1 -- AGENTS.md",
+        "git status --short",
+      ]) {
+        const allowedRun = viaShell(command);
+        expect(allowedRun.status).toBe(0);
+        expect(probeRefused({ status: "completed", output: allowedRun.text })).toBe(false);
+      }
       viaShell("export GIT_EXTERNAL_DIFF=touch; git diff HEAD~1 HEAD");
       viaShell(
         "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=diff.external GIT_CONFIG_VALUE_0=touch; git diff HEAD~1 HEAD",
@@ -1018,7 +1151,7 @@ describe("opencode review installed guard", () => {
       expect(viaShell("export GIT_EXTERNAL_DIFF=env; git diff HEAD~1 HEAD").text).not.toContain(
         canary,
       );
-      expect(readFileSync(join(root, SHELL_LOG_NAME), "utf8").trim().split("\n").length).toBe(6);
+      expect(readFileSync(join(root, SHELL_LOG_NAME), "utf8").trim().split("\n").length).toBe(13);
       const allowed = viaShell("git log -1 --format=%H");
       expect(allowed.status).toBe(0);
       expect(allowed.text.trim()).toMatch(/^[0-9a-f]{40}$/);
@@ -1051,6 +1184,101 @@ describe("opencode review installed guard", () => {
       XDG_DATA_HOME: "/data",
     });
     for (const name of OPENCODE_KEPT_ENV) expect(name).not.toMatch(/TOKEN|SECRET|KEY|PASS/);
+  });
+
+  it("[review env] extraEnv cannot take over the guard path, the shell or the config", () => {
+    const gitGuard = {
+      binDir: "/guard/bin",
+      shell: "/guard/shell/bash",
+      configHome: "/guard/home",
+    };
+    const env = opencodeChildEnv({
+      parentEnv: { PATH: "/usr/bin", HOME: "/h", LC_CTYPE: "zh_CN.UTF-8" },
+      cwd: "/work",
+      configPath: "/work/opencode.json",
+      limitsPath: "/work/limits.json",
+      gitGuard,
+      extraEnv: {
+        LC_CTYPE: "ja_JP.UTF-8",
+        PATH: "/attacker/bin",
+        SHELL: "/bin/bash",
+        OPENCODE_CONFIG: "/attacker/opencode.json",
+        XDG_CONFIG_HOME: "/attacker/home",
+        GIT_CONFIG_GLOBAL: "/attacker/gitconfig",
+        [GUARD_ENV]: "/attacker/limits.json",
+        REVIEW_TEST_MARKER: "kept",
+      },
+    });
+    expect(env.PATH).toBe(`/guard/bin${delimiter}/usr/bin`);
+    expect(env.SHELL).toBe("/guard/shell/bash");
+    expect(env.OPENCODE_CONFIG).toBe("/work/opencode.json");
+    expect(env.XDG_CONFIG_HOME).toBe("/guard/home");
+    expect(env.GIT_CONFIG_GLOBAL).toBe("/dev/null");
+    expect(env[GUARD_ENV]).toBe("/work/limits.json");
+    expect(env.LC_CTYPE).toBe("zh_CN.UTF-8");
+    expect(env.REVIEW_TEST_MARKER).toBe("kept");
+  });
+
+  it("[review env] extraEnv cannot supply the spend guard when the run has none", () => {
+    const env = opencodeChildEnv({
+      parentEnv: { PATH: "/usr/bin" },
+      cwd: "/work",
+      configPath: "/work/opencode.json",
+      limitsPath: undefined,
+      gitGuard: { binDir: "/guard/bin", shell: "/guard/shell/bash", configHome: "/guard/home" },
+      extraEnv: { [GUARD_ENV]: "/attacker/limits.json" },
+    });
+    expect(GUARD_ENV in env).toBe(false);
+  });
+
+  it("[review env] opencode and everything it starts report errors in English", () => {
+    const env = opencodeChildEnv({
+      parentEnv: {
+        PATH: "/usr/bin",
+        LANG: "ja_JP.UTF-8",
+        LC_ALL: "ja_JP.UTF-8",
+        LC_CTYPE: "ja_JP.UTF-8",
+      },
+      cwd: "/work",
+      configPath: "/work/opencode.json",
+      limitsPath: "/work/limits.json",
+      gitGuard: { binDir: "/guard/bin", shell: "/guard/shell/bash", configHome: "/guard/home" },
+      extraEnv: { LC_ALL: "ja_JP.UTF-8", LC_MESSAGES: "ja_JP.UTF-8", LANGUAGE: "ja_JP" },
+    });
+    expect("LC_ALL" in env).toBe(false);
+    expect(env.LC_MESSAGES).toBe("C");
+    expect(env.LANGUAGE).toBe("C");
+    expect(env.LANG).toBe("ja_JP.UTF-8");
+    expect(env.LC_CTYPE).toBe("ja_JP.UTF-8");
+  });
+
+  it("[review env] the character locale comes from LC_ALL, then LC_CTYPE, then LANG", () => {
+    const base = {
+      cwd: "/work",
+      configPath: "/work/opencode.json",
+      limitsPath: "/work/limits.json",
+      gitGuard: { binDir: "/guard/bin", shell: "/guard/shell/bash", configHome: "/guard/home" },
+      extraEnv: {},
+    };
+    const fromAll = opencodeChildEnv({
+      ...base,
+      parentEnv: { PATH: "/usr/bin", LC_ALL: "zh_CN.UTF-8" },
+    });
+    expect("LC_ALL" in fromAll).toBe(false);
+    expect(fromAll.LC_CTYPE).toBe("zh_CN.UTF-8");
+    expect(fromAll.LC_MESSAGES).toBe("C");
+    const fromNothing = opencodeChildEnv({ ...base, parentEnv: { PATH: "/usr/bin" } });
+    expect("LC_CTYPE" in fromNothing).toBe(false);
+    expect(fromNothing.LC_MESSAGES).toBe("C");
+    const ctypeOf = (parentEnv) =>
+      opencodeChildEnv({ ...base, parentEnv: { PATH: "/usr/bin", ...parentEnv } }).LC_CTYPE;
+    expect(ctypeOf({ LC_ALL: "zh_CN.UTF-8", LC_CTYPE: "ja_JP.UTF-8", LANG: "C" })).toBe(
+      "zh_CN.UTF-8",
+    );
+    expect(ctypeOf({ LC_CTYPE: "ja_JP.UTF-8", LANG: "C" })).toBe("ja_JP.UTF-8");
+    expect(ctypeOf({ LANG: "zh_CN.UTF-8" })).toBe("zh_CN.UTF-8");
+    expect(ctypeOf({ LC_ALL: "", LC_CTYPE: "", LANG: "zh_CN.UTF-8" })).toBe("zh_CN.UTF-8");
+    expect(ctypeOf({ LC_ALL: "", LC_CTYPE: "", LANG: "" })).toBe("");
   });
 
   it("[review env] the real self-check passes with secrets in the script's environment", () => {
@@ -1104,7 +1332,27 @@ describe("opencode review installed guard", () => {
       NODE_OPTIONS: "--require x",
       GIT_PAGER: "less",
     });
-    expect(env).toEqual({ PATH: "/bin", HOME: "/h", ...GIT_ENV });
+    expect(env).toEqual({
+      PATH: "/bin",
+      HOME: "/h",
+      ...GIT_ENV,
+      LC_MESSAGES: "C",
+      LANGUAGE: "C",
+    });
+  });
+
+  it("makes the real git report errors in English without losing the character locale", () => {
+    expect(gitChildEnv({ PATH: "/bin", LC_ALL: "", LANG: "ja_JP.UTF-8" }).LC_CTYPE).toBe(
+      "ja_JP.UTF-8",
+    );
+    expect(gitChildEnv({ PATH: "/bin", LANG: "ja_JP.UTF-8", LC_ALL: "ja_JP.UTF-8" })).toEqual({
+      PATH: "/bin",
+      LANG: "ja_JP.UTF-8",
+      ...GIT_ENV,
+      LC_CTYPE: "ja_JP.UTF-8",
+      LC_MESSAGES: "C",
+      LANGUAGE: "C",
+    });
   });
 });
 
@@ -2296,7 +2544,7 @@ describe("opencode review record masking", () => {
       expect(masked).not.toContain(body);
       expect(secretLikeRules(masked)).toEqual([]);
     }
-    const lone = `-----BEGIN PRIVATE KEY----- ${"说明".repeat(5000)}`;
+    const lone = `${["-----BEGIN", "PRIVATE KEY-----"].join(" ")} ${"说明".repeat(5000)}`;
     expect(maskSecretLike(lone)).toContain("说明说明");
   });
 

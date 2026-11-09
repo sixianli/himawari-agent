@@ -16,9 +16,9 @@ Himawari Agent 是一个自有优先、数据自持（运行环境和数据由�
 
 ## Toolchain
 
-- Node.js 要求：`>=22.19.0`
+- Node.js 要求：`>=22.22.3`
 - npm 锁定工具版本：`11.8.0`
-- CI 基线：Node.js `22.22.3`；最低兼容矩阵：`22.19.0`；Python：`3.12.10`
+- CI 基线：Node.js `22.22.3`（也是支持的最低版本，见 [ADR 0189](docs/adr/0189-drop-node-floor-and-fold-test-into-coverage.md)）；Python：`3.12.10`
 - TypeScript：`5.9.3`
 - Biome：`2.3.5`
 - Vitest：`4.1.9`
@@ -38,7 +38,7 @@ export PATH="$PWD/.ci-output/tools/bin:$PATH"
 
 > 2026-10-26 起 GitHub Actions（GitHub 自带的自动构建和测试服务）在仓库设置里关闭，CI 不再运行；质量门槛是快速模式的本地检查（相关测试、`npm run check`、`npm run build`），见 [ADR 0092](docs/adr/0092-pause-github-actions.md)。下面描述的是 CI 打开时的配置，文件保持不变，重新打开 Actions 即恢复。
 
-`ci/policy.json` 定义必需检查、矩阵和测试归属；`scripts/ci/run.mjs` 执行检查并记录身份、退出码、计数与文件摘要；`aggregate.mjs` 核对同一 run/attempt 的完整报告。GitHub 配置保存在 `.github/workflows/ci.yml`，完整集合是 policy、static、双平台 build/test、最低 Node、三个浏览器、coverage、security 和 `ci/required`。
+`ci/policy.json` 定义必需检查、矩阵和测试归属；`scripts/ci/run.mjs` 执行检查并记录身份、退出码、计数与文件摘要；`aggregate.mjs` 核对同一 run/attempt 的完整报告。GitHub 配置保存在 `.github/workflows/ci.yml`，完整集合是 policy、static、双平台 build（macOS 暂停）、三个浏览器、coverage（同时跑原 test 作业的测试）、security 和 `ci/required`。
 
 在固定工具环境下，本地入口为：
 
@@ -64,7 +64,7 @@ npm run ci:local -- --base "$CI_BASE"
 PLAYWRIGHT_BROWSERS_PATH="$PWD/.ci-output/browsers" .ci-output/tools/bin/node node_modules/playwright/cli.js install chromium firefox webkit
 ```
 
-`npm test` 准备一份当前平台归档，再依次执行 unit、contracts、integration、e2e、pi-compat。安装测试从归档安装到临时前缀，在源码目录外验证三个 binary；测试自身不构建。已有归档必须同时传入其 `--context`，来源、平台、ABI、依赖、迁移和内容摘要均重新核验。四类 scale/live 测试有独立资格 project，普通 integration 明确排除它们。
+`npm test` 准备一份当前平台归档，先带覆盖率执行 unit、contracts、tooling、integration，再执行 e2e、pi-compat（2026-11-08 起，见 [ADR 0189](docs/adr/0189-drop-node-floor-and-fold-test-into-coverage.md)）。安装测试从归档安装到临时前缀，在源码目录外验证三个 binary；测试自身不构建。已有归档必须同时传入其 `--context`，来源、平台、ABI、依赖、迁移和内容摘要均重新核验。四类 scale/live 测试有独立资格 project，普通 integration 明确排除它们。
 
 覆盖率采集 unit/contracts/tooling/integration，包含未被导入的生产 TS/TSX 和自有 CI 执行脚本。变更行至少 80%，变更函数的可定位分支至少 70%；各 workspace 四类指标使用目标分支接受的基线。首次引入仅免去不存在的历史基线比较，不放宽增量阈值。安全检查使用原有机器密钥扫描和固定 Gitleaks/Semgrep；缺报告、扫描不可用、到期例外或未豁免阻断发现均失败。按维护者要求，CI 不执行 npm 依赖漏洞查询；安全检查通过不代表依赖无已知漏洞。
 

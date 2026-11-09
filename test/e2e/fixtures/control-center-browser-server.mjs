@@ -846,6 +846,7 @@ function memoryOverview() {
     topic: null,
     inference: false,
     sourceThreadId: "thread-main",
+    sourceMessageId: "message-01",
     sourceRefs: [],
     updatedAt: "2026-10-28T10:21:00.000Z",
     supersededBy: null,
@@ -892,6 +893,10 @@ function memoryOverview() {
     item("memory-jst", "时间一律用日本时间", "preference"),
     item("memory-city", "主人住在东京都北区", "identity"),
     item("memory-job", "主人正在应聘 AI 应用工程师", "identity"),
+    item("memory-lost-source", "主人以前在大阪住过", "identity", {
+      sourceMessageId: null,
+      sourceRefs: ["payload:gone"],
+    }),
     item("memory-peikun", "陪坤是主人的前同事", "relationship"),
     item("memory-lilei", "李雷是主人的前同事", "relationship"),
   ];
@@ -1093,6 +1098,8 @@ function weeklySnapshot() {
         pairing: rate(40, 42),
         buckets: { both: 5, museOnly: 1, himawariOnly: 2, bothSilent: 31, noHimawariRecord: 1 },
       },
+      gap: null,
+      gapCases: [],
       implicit: {
         pushedDecisions: 12,
         otherDecisionEvents: 1,

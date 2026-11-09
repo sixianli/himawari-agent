@@ -28,21 +28,11 @@ const assert = (condition, message) => {
 };
 const unique = (values, label) =>
   assert(new Set(values).size === values.length, `Duplicate ${label}`);
-const jobIds = [
-  "policy",
-  "static",
-  "build",
-  "test",
-  "node-floor",
-  "browser",
-  "coverage",
-  "security",
-  "required",
-];
+const jobIds = ["policy", "static", "build", "browser", "coverage", "security", "required"];
 const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];
 export const chromiumInstall =
   ".ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium";
-const chromiumChecks = ["static", "test", "node-floor", "coverage"];
+const chromiumChecks = ["static", "coverage"];
 
 export function timeoutMinutesFor(checkId) {
   if (checkId === "required") return 15;
@@ -94,6 +84,94 @@ export function upgradeRunnerLabel(policy) {
   return upgraded;
 }
 
+const canonicalJson = (value) =>
+  JSON.stringify(value, (_key, entry) =>
+    entry && typeof entry === "object" && !Array.isArray(entry)
+      ? Object.fromEntries(Object.entries(entry).sort(([a], [b]) => a.localeCompare(b)))
+      : entry,
+  );
+
+const retiredTestChecks = [
+  {
+    id: "test",
+    needs: ["policy", "build"],
+    timeoutMinutes: 90,
+    members: [
+      { key: "linux-x64", runner: linuxRunnerLabel, os: "linux", arch: "x64", node: "22.22.3" },
+      {
+        key: "macos-arm64",
+        runner: "macos-15",
+        os: "darwin",
+        arch: "arm64",
+        node: "22.22.3",
+        paused: true,
+      },
+    ],
+    projects: ["unit", "contracts", "integration", "e2e", "pi-compat"],
+    outputs: ["json", "junit", "artifact"],
+  },
+  {
+    id: "node-floor",
+    needs: ["policy"],
+    timeoutMinutes: 90,
+    members: [
+      { key: "default", runner: linuxRunnerLabel, os: "linux", arch: "x64", node: "22.19.0" },
+    ],
+    projects: ["unit", "contracts", "integration", "e2e", "pi-compat"],
+    outputs: ["json", "junit"],
+  },
+];
+
+const ciVpsDefaultMember = {
+  key: "default",
+  runner: linuxRunnerLabel,
+  os: "linux",
+  arch: "x64",
+  node: "22.22.3",
+};
+
+const retiredShapeChecks = [
+  ...retiredTestChecks,
+  {
+    id: "coverage",
+    needs: ["policy", "build"],
+    timeoutMinutes: 60,
+    members: [ciVpsDefaultMember],
+    projects: ["unit", "contracts", "tooling", "integration"],
+    outputs: ["json", "lcov", "artifact"],
+  },
+  {
+    id: "required",
+    needs: ["policy", "static", "build", "test", "node-floor", "browser", "coverage", "security"],
+    timeoutMinutes: 15,
+    members: [ciVpsDefaultMember],
+    projects: [],
+    outputs: [],
+  },
+];
+
+export function upgradeRetiredTestChecks(policy) {
+  const checks = policy?.checks ?? [];
+  const retiredIds = retiredTestChecks.map((check) => check.id);
+  const retired =
+    sameSet(
+      checks.map((check) => check.id),
+      [...jobIds, ...retiredIds],
+    ) &&
+    retiredShapeChecks.every(
+      (expected) =>
+        canonicalJson(checks.find((check) => check.id === expected.id)) === canonicalJson(expected),
+    );
+  if (!retired) return policy;
+  const upgraded = structuredClone(policy);
+  upgraded.checks = upgraded.checks.filter((check) => !retiredIds.includes(check.id));
+  for (const check of upgraded.checks) {
+    check.needs = check.needs.filter((id) => !retiredIds.includes(id));
+    if (check.id === "coverage") check.projects = [...check.projects, "e2e", "pi-compat"];
+  }
+  return upgraded;
+}
+
 export function upgradeArtifactRetention(policy) {
   const retention = policy?.retentionDays;
   const accepted =
@@ -127,7 +205,7 @@ export function validatePolicy(
       policy.checks.map((check) => check.id),
       jobIds,
     ),
-    "Policy must declare exactly nine required jobs",
+    "Policy must declare exactly seven required jobs",
   );
   unique(
     policy.testProjects.map((project) => project.id),
@@ -184,8 +262,6 @@ export function validatePolicy(
     policy: [],
     static: ["policy"],
     build: ["policy"],
-    test: ["policy", "build"],
-    "node-floor": ["policy"],
     browser: ["build"],
     coverage: legacyCoverage ? ["policy"] : ["policy", "build"],
     security: ["policy"],
@@ -201,21 +277,21 @@ export function validatePolicy(
     unique(check.outputs, `${check.id} output`);
     assert(sameSet(check.needs, expectedNeeds[check.id]), `Unexpected policy DAG: ${check.id}`);
     assert(check.timeoutMinutes === timeoutMinutesFor(check.id), `Unexpected timeout: ${check.id}`);
-    const requiredProjects = ["test", "node-floor"].includes(check.id)
-      ? mainProjects.filter((id) => id !== "tooling")
-      : check.id === "coverage"
+    const requiredProjects =
+      check.id === "coverage"
         ? legacyCoverage
           ? ["unit", "contracts", "tooling"]
-          : coverageProjects
+          : mainProjects
         : check.id === "policy"
           ? ["tooling"]
           : [];
     assert(sameSet(check.projects, requiredProjects), `Incomplete project selection: ${check.id}`);
-    const requiredKeys = ["build", "test"].includes(check.id)
-      ? ["linux-x64", "macos-arm64"]
-      : check.id === "browser"
-        ? ["chromium", "firefox", "webkit"]
-        : ["default"];
+    const requiredKeys =
+      check.id === "build"
+        ? ["linux-x64", "macos-arm64"]
+        : check.id === "browser"
+          ? ["chromium", "firefox", "webkit"]
+          : ["default"];
     assert(
       sameSet(
         check.members.map((member) => member.key),
@@ -1018,7 +1094,9 @@ export function resolvePolicySource({
     ? git(["show", `${baseSha}:${policyPath}`])
     : readFileSync(path.join(root, policyPath), "utf8");
   const policy = validatePolicy(
-    upgradeArtifactRetention(upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes)))),
+    upgradeRetiredTestChecks(
+      upgradeArtifactRetention(upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes)))),
+    ),
     {
       allowLegacyCoverage: true,
       allowLegacyIntegration: true,
@@ -1038,7 +1116,7 @@ export function resolvePolicySource({
   }
   const collection = policy.checks.find((check) => check.id === "coverage");
   if (!collection.projects.includes("integration")) {
-    collection.projects = [...coverageProjects];
+    collection.projects = [...coverageProjects, "e2e", "pi-compat"];
     collection.needs = ["policy", "build"];
     collection.outputs = [...new Set([...collection.outputs, "artifact"])];
   }
@@ -1056,20 +1134,14 @@ export function resolvePolicySource({
 
 export function validateToolchain(policy, lock, packageManifest) {
   assert(lock.schemaVersion === 1, "Unknown toolchain schema");
-  assert(
-    /^\d+\.\d+\.\d+$/u.test(lock.node?.baseline) && /^\d+\.\d+\.\d+$/u.test(lock.node?.floor),
-    "Node versions must be exact",
-  );
+  assert(/^\d+\.\d+\.\d+$/u.test(lock.node?.baseline), "Node version must be exact");
   assert(
     packageManifest.packageManager === `npm@${lock.npm?.version}`,
     "npm identity differs from toolchain",
   );
   for (const check of policy.checks)
     for (const member of check.members)
-      assert(
-        member.node === (check.id === "node-floor" ? lock.node.floor : lock.node.baseline),
-        `Node identity drift: ${check.id}`,
-      );
+      assert(member.node === lock.node.baseline, `Node identity drift: ${check.id}`);
   assert(Array.isArray(lock.actions) && lock.actions.length > 0, "No locked Actions");
   unique(
     lock.actions.map((action) => action.repository),

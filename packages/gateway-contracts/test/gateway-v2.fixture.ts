@@ -279,6 +279,8 @@ export const governanceMessages = [
         pairing: null,
         buckets: { both: 1, museOnly: 0, himawariOnly: 0, bothSilent: 1, noHimawariRecord: 0 },
       },
+      gap: null,
+      gapCases: [],
       implicit: {
         pushedDecisions: 0,
         otherDecisionEvents: 0,
@@ -294,6 +296,11 @@ export const governanceMessages = [
   fixture("command", "proactive.observation.start", {
     startDay: "2026-11-02",
     recentAuthenticationRef: null,
+  }),
+  fixture("command", "proactive.gapcase.mark", {
+    caseId: "gap_0123456789abcdef0123",
+    endDay: "2026-11-09",
+    marked: true,
   }),
   fixture("query", "muse.overview.read", {}),
   fixture("snapshot", "muse.overview.snapshot", {
@@ -376,6 +383,7 @@ export const governanceMessages = [
         topic: null,
         inference: false,
         sourceThreadId: "thread-01",
+        sourceMessageId: "message-01",
         sourceRefs: ["payload-01"],
         updatedAt: "2026-09-11T00:00:00.000Z",
         supersededBy: null,

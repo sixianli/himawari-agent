@@ -8,14 +8,15 @@ import {
   integer,
   literal,
   machineString,
+  modelRefString,
   nullable,
   object,
   parseJson,
   type Schema,
   timestamp,
-  modelRefString,
 } from "./validation.js";
 
+export const MEMORY_SOURCE_REF_MAX_LENGTH = 512;
 export const GATEWAY_V2_SCHEMA_VERSION = "gateway.v2" as const;
 export const GATEWAY_V2_MESSAGE_TYPES = [
   "thread.message.submit",
@@ -50,6 +51,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.weekly.read",
   "proactive.weekly.snapshot",
   "proactive.observation.start",
+  "proactive.gapcase.mark",
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
@@ -869,6 +871,51 @@ const proactiveWeeklySnapshotSchema = object({
           noHimawariRecord: integer(0),
         }),
       }),
+      gapCases: array(
+        object({
+          id: machineString,
+          museAt: timestamp,
+          museTitle: nullable(proactiveTextSchema(300)),
+          museText: nullable(proactiveTextSchema(500)),
+          museTextWithheld: booleanValue,
+          himawariOutcome: machineString,
+          himawariReasonCode: machineString,
+          himawariReason: nullable(proactiveTextSchema(500)),
+          ownerRating: nullable(enumeration(["useful", "unneeded", "missed"])),
+          attribution: enumeration([
+            "notRemembered",
+            "notRetrieved",
+            "wrongJudgment",
+            "notReadFully",
+          ]),
+          memoryHits: integer(0),
+          relatedMessages: integer(0),
+          decidedAt: timestamp,
+          marked: booleanValue,
+        }),
+      ),
+      gap: nullable(
+        object({
+          pairedMails: integer(0),
+          ratedMails: integer(0),
+          unratedMails: integer(0),
+          lines: array(
+            object({
+              line: enumeration(["hitRate", "disturbanceRate"]),
+              mails: integer(0),
+              museReminded: integer(0),
+              himawariReminded: integer(0),
+              muse: calibrationRateSchema,
+              himawari: calibrationRateSchema,
+              difference: nullable(numberInRange(-1, 1)),
+              low: nullable(numberInRange(-1, 1)),
+              high: nullable(numberInRange(-1, 1)),
+              verdict: enumeration(["insufficient", "inconclusive", "decided"]),
+              direction: enumeration(["museHigher", "himawariHigher", "none"]),
+            }),
+          ),
+        }),
+      ),
       implicit: object({
         pushedDecisions: integer(0),
         otherDecisionEvents: integer(0),
@@ -884,6 +931,14 @@ const proactiveWeeklySnapshotSchema = object({
       }),
     }),
     generatedAt: timestamp,
+  }),
+});
+const proactiveGapCaseMarkCommandSchema = object({
+  ...commandEnvelope("proactive.gapcase.mark"),
+  payload: object({
+    caseId: machineString,
+    endDay: jstDaySchema,
+    marked: booleanValue,
   }),
 });
 const proactiveObservationStartCommandSchema = object({
@@ -951,7 +1006,8 @@ const memoryOverviewSnapshotSchema = object({
         topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
         inference: booleanValue,
         sourceThreadId: nullable(machineString),
-        sourceRefs: array(boundedString(512)),
+        sourceMessageId: nullable(machineString),
+        sourceRefs: array(boundedString(MEMORY_SOURCE_REF_MAX_LENGTH)),
         updatedAt: timestamp,
         supersededBy: nullable(machineString),
         validTo: nullable(boundedString(32)),
@@ -2300,6 +2356,7 @@ const schemasByType = {
   "proactive.weekly.read": proactiveWeeklyQuerySchema,
   "proactive.weekly.snapshot": proactiveWeeklySnapshotSchema,
   "proactive.observation.start": proactiveObservationStartCommandSchema,
+  "proactive.gapcase.mark": proactiveGapCaseMarkCommandSchema,
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,

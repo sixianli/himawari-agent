@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "node": {
     "baseline": "22.22.3",
-    "floor": "22.19.0",
     "license": {
       "identifier": "MIT",
       "url": "https://raw.githubusercontent.com/nodejs/node/v22.22.3/LICENSE",
@@ -26,25 +25,6 @@
           "filename": "node-v22.22.3-headers.tar.gz",
           "url": "https://nodejs.org/dist/v22.22.3/node-v22.22.3-headers.tar.gz",
           "sha256": "723b896d68a288e9877ea929538494afe8b5808f6fedc3358d2ad77307d1b393"
-        }
-      },
-      "22.19.0": {
-        "artifacts": {
-          "darwin-arm64": {
-            "filename": "node-v22.19.0-darwin-arm64.tar.gz",
-            "url": "https://nodejs.org/dist/v22.19.0/node-v22.19.0-darwin-arm64.tar.gz",
-            "sha256": "c59006db713c770d6ec63ae16cb3edc11f49ee093b5c415d667bb4f436c6526d"
-          },
-          "linux-x64": {
-            "filename": "node-v22.19.0-linux-x64.tar.gz",
-            "url": "https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-x64.tar.gz",
-            "sha256": "d36e56998220085782c0ca965f9d51b7726335aed2f5fc7321c6c0ad233aa96d"
-          }
-        },
-        "headers": {
-          "filename": "node-v22.19.0-headers.tar.gz",
-          "url": "https://nodejs.org/dist/v22.19.0/node-v22.19.0-headers.tar.gz",
-          "sha256": "183bdc17092336ad21e01a425d238e85db4ee077ae3caa0547ff1fbda07d9bd8"
         }
       }
     }
@@ -1219,7 +1199,7 @@
       },
       {
         "path": "ci/rules/gitleaks.toml",
-        "sha256": "60a8ccc9a50e29faf94465951d6ff618a240b56fb9f28bd720c185e945dcf6b9"
+        "sha256": "34c0d12a6955769d10a6eb45eee669ed20a8bd625c2bfe7127d02b78a61e65d7"
       },
       {
         "path": "ci/rules/fixtures/safe.fixture.ts",

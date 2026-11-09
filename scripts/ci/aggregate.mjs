@@ -26,7 +26,6 @@ const countsProblems = (counts) => {
   return problems;
 };
 
-/** Pure gate decision. artifacts contain independently measured file hashes, never worker claims. */
 export function aggregate({ policy, context, needs, reports, toolchainLock }) {
   validatePolicy(policy);
   validateRecord("Context", context);
@@ -102,7 +101,6 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
         fail(checkId, matrixKey, source, `Actual toolchain differs from matrix: ${field}`);
     if (result.toolchain.npm !== toolchainLock.npm.version)
       fail(checkId, matrixKey, source, "Actual npm differs from toolchain lock");
-    // The supported Node 22 baseline and floor both use ABI 127.
     if (result.toolchain.abi !== "127")
       fail(checkId, matrixKey, source, "Actual Node ABI differs from supported Node 22 ABI 127");
     const projectIds = result.projects.map((project) => project.id);
@@ -199,8 +197,8 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
     const entry = entries.get(id);
     if (!entry) continue;
     const { result, source } = entry;
-    if (["test", "browser", "coverage"].includes(check.id)) {
-      const platform = ["browser", "coverage"].includes(check.id) ? "linux-x64" : member.key;
+    if (["browser", "coverage"].includes(check.id)) {
+      const platform = "linux-x64";
       const matching = result.artifacts.filter(
         (artifact) => artifact.role === "consumed" && artifact.platform === platform,
       );
@@ -254,7 +252,6 @@ export function readReportEnvelopes(directory) {
       if (entry.isDirectory()) walk(filename);
       else if (entry.name === "result.json") {
         const result = readJson(filename);
-        // A malformed result is preserved for the gate's diagnostic, without trusting any paths in it.
         let artifacts = [];
         try {
           validateRecord("CheckResult", result);
@@ -266,7 +263,7 @@ export function readReportEnvelopes(directory) {
             return { path: report.path, sha256: sha256(bytes), bytes: bytes.length };
           });
         } catch {
-          /* The pure gate rejects malformed, missing, or unverifiable evidence. */
+          artifacts = [];
         }
         envelopes.push({ source: path.relative(directory, filename), result, artifacts });
       }

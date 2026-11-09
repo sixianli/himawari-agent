@@ -11,6 +11,7 @@ import type {
   CapabilityInvocationResultPort,
   CapabilityRegistryStorePort,
   ExecutionEnvironmentStorePort,
+  GapCaseMarkPort,
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
@@ -955,6 +956,7 @@ export class SqliteDurableAdapters {
       createImportBatch: (input) => this.context.write("memoryBook.createImportBatch", input),
       listImportBatches: (input) => this.context.read("memoryBook.listImportBatches", input),
       markImportUndone: (input) => this.context.write("memoryBook.markImportUndone", input),
+      findOwnerMessages: (input) => this.context.read("memoryBook.findOwnerMessages", input),
     });
   }
 
@@ -1006,6 +1008,14 @@ export class SqliteDurableAdapters {
     });
   }
 
+  gapCaseMarks(): GapCaseMarkPort {
+    return Object.freeze<GapCaseMarkPort>({
+      mark: (input) => this.context.write("decisionLedger.gapMark", input),
+      unmark: (input) => this.context.write("decisionLedger.gapUnmark", input),
+      list: (input) => this.context.read("decisionLedger.gapMarks", input),
+    });
+  }
+
   decisionLedger(): DecisionLedgerPort {
     return Object.freeze<DecisionLedgerPort>({
       append: (input) => this.context.write("decisionLedger.append", input),
@@ -1018,6 +1028,7 @@ export class SqliteDurableAdapters {
       listSignals: (input) => this.context.read("decisionLedger.listSignals", input),
       readCalibrationRows: (input) =>
         this.context.read("decisionLedger.readCalibrationRows", input),
+      readGapCandidates: (input) => this.context.read("decisionLedger.readGapCandidates", input),
     });
   }
 

@@ -54,7 +54,7 @@ date: "2026-09-03"
 ### 本 Spec 包含
 
 - 可在本地和 GitHub Actions 执行的同一组检查入口与政策。
-- Linux x64、macOS arm64、最低 Node 版本和三个浏览器引擎的确定性验证。
+- Linux x64、macOS arm64 和三个浏览器引擎的确定性验证（2026-11-08 起不再单独验证最低 Node 版本，见 [ADR 0189](../../adr/0189-drop-node-floor-and-fold-test-into-coverage.md)）。
 - 精确依赖、原生依赖构建、Pi 发布包、安装产物、证据摘要和输出隔离。
 - 格式、lint、类型、架构、需求映射、文档、覆盖率、安全扫描和门禁自身的负向验证。
 - PR、默认分支、周期检测、手动验证的触发规则和最小权限。
@@ -116,7 +116,7 @@ date: "2026-09-03"
 
 ### 2. 固定工具链并验证干净安装
 
-初始基线 Node 为 `22.22.3`，最低兼容版本为 `22.19.0`，npm 为仓库声明的 `11.8.0`。这些是选定版本，不声明为最新版本。Python 固定一个满足治理校验器要求的 3.10 以上精确版本。工具链变更必须在 PR 中重新验证，不能由 runner 自带版本决定。
+初始基线 Node 为 `22.22.3`，也是项目支持的最低版本（2026-11-08 起；原最低兼容版本 `22.19.0`，见 [ADR 0189](../../adr/0189-drop-node-floor-and-fold-test-into-coverage.md)），npm 为仓库声明的 `11.8.0`。这些是选定版本，不声明为最新版本。Python 固定一个满足治理校验器要求的 3.10 以上精确版本。工具链变更必须在 PR 中重新验证，不能由 runner 自带版本决定。
 
 主要 runner 使用 `ubuntu-24.04` x64 与 `macos-15` arm64。记录实际 runner image 版本。固定标签仍会收到镜像更新，不等于字节级固定 OS。目标 Mac/Hermes 的真实 OS、签名、权限与隔离由 S9 单独验证。
 
@@ -197,14 +197,12 @@ date: "2026-09-03"
 | `policy` | Ubuntu 基线 Node | checkout、政策和 workflow | 政策 schema、DAG、tool lock、例外、测试归属及 tooling tests 通过 |
 | `static` | Ubuntu 基线 Node | `policy` | `npm run check`、文档严格校验、actionlint 和差异检查通过 |
 | `build` | Linux x64、macOS arm64，共 2 项 | `policy`，各自干净安装 | 构建、原生探测、现有前端产物预算及内容清单通过 |
-| `test` | Linux x64、macOS arm64，共 2 项 | `policy` 和本平台 `build` | 五个主 project 非空、无失败，安装测试消费本次归档 |
-| `node-floor` | Ubuntu、Node `22.19.0` | `policy` | 单独干净安装、构建及五个主 project 通过 |
 | `browser` | Ubuntu，Chromium/Firefox/WebKit，共 3 项 | Linux `build` | 本次静态产物的关键交互、三语、键盘和自动无障碍检查通过 |
-| `coverage` | Ubuntu 基线 Node | `policy`、同次 Linux `build` | 受控的 unit/contracts/tooling/integration 覆盖率、增量与可比基线策略通过 |
+| `coverage` | Ubuntu 基线 Node | `policy`、同次 Linux `build` | 受控的 unit/contracts/tooling/integration 覆盖率、增量与可比基线策略通过；之后 e2e、pi-compat 两个 project 非空、无失败，安装测试消费本次归档（2026-11-08 起接手原 `test` 作业，原 `node-floor` 作业去掉，见 [ADR 0189](../../adr/0189-drop-node-floor-and-fold-test-into-coverage.md)） |
 | `security` | Ubuntu 基线 Node | `policy` | 密钥、依赖与静态安全分析全部完成且满足政策 |
 | `required` | Ubuntu | 上述全部 job 和矩阵结果 | 唯一显示名 `ci/required`，按第 8 节严格汇总 |
 
-相比仅 Chromium 的初步方案，本设计把三个已支持的浏览器引擎和声明的最低 Node 版本都纳入 PR。它们覆盖明确的兼容性边界，当前没有可靠变更影响分析可以证明某个 PR 无需执行。周期任务仍承担品牌浏览器版本发现、规模检测和持续依赖复扫。
+相比仅 Chromium 的初步方案，本设计把三个已支持的浏览器引擎纳入 PR（声明的最低 Node 版本原先也纳入，2026-11-08 起最低版本等于基线版本，不再单独验证）。它们覆盖明确的兼容性边界，当前没有可靠变更影响分析可以证明某个 PR 无需执行。周期任务仍承担品牌浏览器版本发现、规模检测和持续依赖复扫。
 
 `browser` 每个引擎使用独立 runner，避免现有固定 `4173` 端口冲突。复用 `qualify-control-center-browser.mjs` 的关键交互并补齐缺失断言，直接消费 `build` 的静态产物。页面异常、关键请求失败和自动 accessibility 阻断项均失败。报告保存引擎版本、locale、测试场景、遮盖 screenshot/trace；失败证据保留不能改变退出码。
 
@@ -212,7 +210,7 @@ fixture browser 验证不是生产 Gateway 测试。WebKit 不是 Safari 品牌�
 
 ### 6. 代码覆盖率与核心安全断言
 
-使用与 Vitest `4.1.9` 精确匹配的 coverage provider。覆盖率 job 对 unit/contracts/tooling/integration 的进程内测试计算门禁，显式 include 全部 `apps/*/src`、`packages/*/src` 的生产 TS/TSX 和 `scripts/ci` 的自有执行代码。排除仅限声明文件、明确生成物、测试夹具和原样引入的第三方工具；`packages/testing` 按测试夹具责任显式登记。独立进程 integration、浏览器与 Pi 上游包另行验证，不假装已合并它们的执行覆盖率。
+使用与 Vitest `4.1.9` 精确匹配的 coverage provider。覆盖率 job 对 unit/contracts/tooling/integration 的进程内测试计算门禁，显式 include 全部 `apps/*/src`、`packages/*/src` 的生产 TS/TSX 和 `scripts/ci` 的自有执行代码。排除仅限声明文件、明确生成物、测试夹具和原样引入的第三方工具；`packages/testing` 按测试夹具责任显式登记。独立进程 integration、浏览器与 Pi 上游包另行验证，不假装已合并它们的执行覆盖率。2026-11-08 起，覆盖率 job 在覆盖率调用结束后接着执行 e2e、pi-compat，覆盖率范围不变（[ADR 0189](../../adr/0189-drop-node-floor-and-fold-test-into-coverage.md)）。
 
 2026-09-14 用户批准扩大采集项目。coverage 必须核验并消费同次 Linux build 的归档和 context；缺失或身份不符时不得开始采集，最终汇总核对其消费摘要。报告必须包含四个项目的完整执行，缺项、失败或跳过均阻断。旧政策仅迁移这一固定的新增项目、构建依赖和归档报告要求，其他已接受合同保留；增量阈值按下述 2026-09-15 授权调整。旧基线与候选使用同一新策略测量，不能用未更新的三项目数字直接比较。
 
@@ -317,7 +315,7 @@ npm 下载和固定工具的 downloads/wheels 归档不再通过 cache Action �
 
 scale 使用固定数据形状、seed 和受控临时目录，输出本次 run 的报告，不写入 `test/integration/qualification/evidence`。比较性能时记录硬件、runner image、样本数和 p50/p95/p99/max；跨硬件变化只报告不可比，不能伪造退化结论。产品绝对目标沿用 S9，不重新定义。
 
-记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟、scale 60 分钟、汇总 5 分钟。超时是资源上限，不是实测性能承诺。完整报告和诊断 screenshot/trace 都只在 GitHub 上保留 1 天（2026-11-06 起，原为 30 天和 7 天，见 [ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)）；缺少保留能力要明确报告。
+记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟（2026-11-08 起没有 test 和 node-floor 作业）、scale 60 分钟、汇总 5 分钟；现行时限以 `ci/policy.json` 为准：build 和 browser 90 分钟，汇总 15 分钟，其余 60 分钟。超时是资源上限，不是实测性能承诺。完整报告和诊断 screenshot/trace 都只在 GitHub 上保留 1 天（2026-11-06 起，原为 30 天和 7 天，见 [ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)）；缺少保留能力要明确报告。
 
 公开仓库使用标准 GitHub 托管 runner 的 Actions 运行免费；仍需遵守并发、执行时间、存储和保留限制，不据此移除超时或扩大资源。更大规格 runner、付费服务或外部 provider 不因仓库公开而获得授权。
 

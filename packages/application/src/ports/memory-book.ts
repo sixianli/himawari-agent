@@ -6,6 +6,13 @@ export interface MemoryBookScope {
   readonly agentId: AgentId;
 }
 
+export interface MemorySourceMessage {
+  readonly contentRef: string;
+  readonly threadId: string;
+  readonly messageId: string;
+  readonly sequence: number;
+}
+
 export interface MemorySettings {
   readonly capturePaused: boolean;
   readonly updatedAt: string | null;
@@ -111,4 +118,9 @@ export interface MemoryBookStorePort {
   markImportUndone(
     input: MemoryBookScope & { readonly id: string; readonly undoneAt: string },
   ): Promise<boolean>;
+  findOwnerMessages(
+    input: MemoryBookScope & {
+      readonly lookups: readonly { readonly threadId: string; readonly refs: readonly string[] }[];
+    },
+  ): Promise<readonly MemorySourceMessage[]>;
 }

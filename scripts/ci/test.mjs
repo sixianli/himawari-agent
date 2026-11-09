@@ -17,6 +17,7 @@ export async function runTests({
   artifact,
   output,
   context,
+  projects: selection,
   remainingBudgetMs,
 } = {}) {
   const started = performance.now();
@@ -25,7 +26,7 @@ export async function runTests({
   await mkdir(path.dirname(destination), { recursive: true });
   await mkdir(destination, { recursive: false });
   const policy = resolvePolicySource({ root, base: context.baseSha }).policy;
-  const check = policy.checks.find((entry) => entry.id === "test");
+  const check = policy.checks.find((entry) => entry.id === "coverage");
   const budgetMs = Math.min(check.timeoutMinutes * 60_000, remainingBudgetMs ?? Infinity);
   if (!Number.isFinite(budgetMs) || budgetMs <= 0) throw new Error("CI_TEST_CHECK_TIMEOUT");
   const config = await import(pathToFileURL(path.join(root, "vitest.workspace.ts")).href);
@@ -50,7 +51,8 @@ export async function runTests({
         .filter(Boolean),
     ),
   ];
-  const selection = check.projects;
+  if (!selection?.length || selection.some((id) => !check.projects.includes(id)))
+    throw new Error("CI_TEST_PROJECT_SELECTION_INVALID");
   for (const id of selection) {
     const remaining = budgetMs - (performance.now() - started);
     if (remaining <= 0) throw new Error(`CI_TEST_CHECK_TIMEOUT:${id}`);
@@ -157,12 +159,13 @@ export async function testMain(
   { root = repositoryRoot, stdout = process.stdout, stderr = process.stderr } = {},
 ) {
   try {
-    const args = parseArguments(argv, ["--artifact", "--output", "--context"]);
+    const args = parseArguments(argv, ["--artifact", "--output", "--context", "--projects"]);
     const result = await runTests({
       root,
       artifact: args["--artifact"],
       output: args["--output"],
       context: JSON.parse(await readFile(args["--context"], "utf8")),
+      projects: args["--projects"]?.split(","),
     });
     stdout.write(`${JSON.stringify(result)}\n`);
     return result.exitCode;
