@@ -35,6 +35,24 @@ const positives: ReadonlyArray<readonly [string, string, string]> = [
   ["授权码", "授权码：abcd1234efgh", "授权码：[密码]"],
   ["日文暗証番号", "暗証番号：4829", "暗証番号：[密码]"],
   ["韩文密码", "비밀번호: hunter22", "비밀번호: [密码]"],
+  ["没有分隔符的密码", "Wi-Fi 密码 abc12345", "Wi-Fi 密码 [密码]"],
+  ["英文 is", "my password is abc12345", "my password is [密码]"],
+  ["英文 pwd 没有分隔符", "pwd hunter22abc", "pwd [密码]"],
+  ["纯数字密码", "password 123456", "password [密码]"],
+  ["密码改成", "密码改成 Zx9qq88", "密码改成 [密码]"],
+  ["日文没有分隔符", "パスワード abc12345", "パスワード [密码]"],
+  ["韩文密码是", "비밀번호는 abc12345", "비밀번호는 [密码]"],
+  ["中文后面跟着密码", "我的密码 abc12345", "我的密码 [密码]"],
+  ["句号收尾的值", "password is abc12345.", "password is [密码]."],
+  ["英文紧贴中文关键词", "wifi密码 abc12345", "wifi密码 [密码]"],
+  ["引号包住的值", 'password is "hunter22abc"', 'password is "[密码]"'],
+  ["像重定向的值仍要遮", "password is 12<3456", "password is [密码]"],
+  ["混合值只遮到非 ASCII 之前", "密码设为 abc12345中文", "密码设为 [密码]中文"],
+  ["are", "the password are abc12345", "the password are [密码]"],
+  ["was", "my password was abc12345", "my password was [密码]"],
+  ["改为", "密码改为 Zx9qq88", "密码改为 [密码]"],
+  ["韩文은", "비밀번호은 abc12345", "비밀번호은 [密码]"],
+  ["4 个字符的带词值", "password is a123", "password is [密码]"],
   [
     "OpenAI key",
     `key ${["sk", "proj", "abcdefghijklmnopqrstuvwxyz012345"].join("-")}`,
@@ -68,6 +86,31 @@ const negatives: readonly string[] = [
   "口令规则说明见下文",
   "授权码的有效期是多久",
   "12 位数字 123456789012 不是个人番号",
+  "the password is required",
+  "password is incorrect, try again",
+  "密码改成每月一次",
+  "密码管理器 1Password 很好用",
+  "密码 2026-11-08 更新",
+  "password v2.0.1 发布",
+  "密码 abc 很短",
+  "密码 a1b2c 太短",
+  "password is a1",
+  "密码 我已经用了3年",
+  "密码设为8位以上",
+  "1Password hunter22abc",
+  "notpassword abc12345",
+  "pwd\nabc12345",
+  "密码 https://example.com/reset?token=123456",
+  "password is 2026-11-08T10:30",
+  "密码 11/08/2026",
+  "password is (2026-11-08)",
+  'password is "https://example.com"',
+  'password is "/home/user1"',
+  "pwd 2>/dev/null",
+  "password is 123.",
+  'password is "a12',
+  "密码 'abc12",
+  "密码 12345.",
 ];
 
 describe("outbound redaction", () => {
@@ -276,6 +319,36 @@ describe("locating masked values in the masked text", () => {
     const github = ["ghp", "abcdefghijklmnopqrstuvwxyz0123"].join("_");
     const located = locateMaskedValues(`${github} 和 ${github}`);
     expect(located?.spans.map(({ sighting }) => sighting.value)).toEqual([github, github]);
+  });
+
+  it("locates the looser password forms and keeps what followed the value", () => {
+    const input = "Wi-Fi 密码 abc12345，still password is Zx9qq88.";
+    const located = locateMaskedValues(input);
+    expect(located?.text).toBe("Wi-Fi 密码 [密码]，still password is [密码].");
+    expect(located?.spans.map(({ sighting }) => sighting.value)).toEqual(["abc12345", "Zx9qq88"]);
+  });
+
+  it("applies the looser password forms only from ruleset 2 and keeps the strict form in both", () => {
+    const loose = "Wi-Fi 密码 abc12345，still password is Zx9qq88.";
+    expect(redactForEgress(loose, { ruleset: 1 }).text).toBe(loose);
+    expect(redactForEgress(loose, { ruleset: 2 }).text).toBe(redactForEgress(loose).text);
+    expect(redactForEgress(loose).text).not.toContain("abc12345");
+    const strict = "密码：hunter22abc";
+    expect(redactForEgress(strict, { ruleset: 1 }).text).toBe("密码：[密码]");
+    expect(redactForEgress(strict, { ruleset: 1 }).text).toBe(redactForEgress(strict).text);
+  });
+
+  it("keeps the bytes of earlier messages when a later one repeats the value", () => {
+    const history = ["我们聊聊家里的网络", "Wi-Fi 密码 abc12345"];
+    const run = (messages: readonly string[]) => {
+      const known = new Map<string, string>();
+      return messages.map((text) => redactForEgress(text, { tag, known }).text);
+    };
+    const earlier = run(history);
+    const later = run([...history, "好的，abc12345 记下了"]);
+    expect(earlier[1]).toContain("[密码#");
+    expect(later.slice(0, 2)).toEqual(earlier);
+    expect(later[2]).not.toContain("abc12345");
   });
 
   it("gives up instead of guessing when the text already holds a placeholder", () => {

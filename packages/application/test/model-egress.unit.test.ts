@@ -184,6 +184,39 @@ describe("chat completions", () => {
     expect(JSON.stringify(two.slice(0, one.length))).toBe(JSON.stringify(one));
   });
 
+  it("keeps an old conversation's history byte-identical under ruleset 1 and masks the looser form from ruleset 2", async () => {
+    const history = [
+      { role: "user", content: "家里 Wi-Fi 密码 abc12345，记一下" },
+      { role: "assistant", content: "好的" },
+    ];
+    const next = [...history, { role: "user", content: "谢谢" }];
+    const old = (messages: unknown[]) =>
+      send(
+        "/chat/completions",
+        { model: "m", messages },
+        {
+          exchange: egress().exchange({
+            ownerId: "owner-1",
+            agentId: "agent-1",
+            threadId: "thread-1",
+            source: "chat",
+            purpose: "chat",
+            redactionRuleset: 1,
+          } as unknown as ModelEgressContext),
+        },
+      );
+    const turnOne = await old(history);
+    const turnTwo = await old(next);
+    expect(JSON.stringify(turnOne.sent["messages"])).toContain("abc12345");
+    const sentOne = turnOne.sent["messages"] as unknown[];
+    expect(JSON.stringify((turnTwo.sent["messages"] as unknown[]).slice(0, sentOne.length))).toBe(
+      JSON.stringify(sentOne),
+    );
+    expect(JSON.stringify(turnOne.sent["messages"])).toBe(JSON.stringify(history));
+    const fresh = await send("/chat/completions", { model: "m", messages: history });
+    expect(fresh.raw).not.toContain("abc12345");
+  });
+
   it("gives the same placeholder to the same value across calls and keys", async () => {
     const a = await send("/chat/completions", body());
     const b = await send("/chat/completions", body());
