@@ -80,7 +80,7 @@ date: "2026-11-04"
    - 主键 `(owner_id, agent_id, thread_id, generation)`，外键指向 `threads`，对话删除时级联删除；
    - 系统提示和工具数组各存一个加密 payload（`payloads` 表里的加密内容，沿用现有的信封加密），列 `system_prompt_ref`、`tools_ref` 以 `ON DELETE RESTRICT` 指向 `payloads`，所以删除保护的外键检查（`sqlite-governed-deletion.ts` 的 `#payloadReferenced`）自动把它们算作“仍被引用”；对话删除时 `#threadPayloadRefs` 把这两列也列入要删的 payload；
    - 另记两份指纹（sha256），读出时核对，不一致就拒绝使用；
-   - `identity_json` 记第 2 条的四项输入，`origin` 记这一代是怎么来的（`new_thread`、`rollout`、`tool_set_changed`、`tool_missing`、`tool_schema_changed`、`model_changed`、`thinking_level_changed`、`answer_locale_changed`、`classification_lower`、`rebuild_requested`），`created_by_run_id` 记建它的运行；
+   - `identity_json` 记第 2 条的四项输入（另有 [ADR 0188](0188-recognize-passwords-without-a-separator.md) 的遮盖规则版本，不参与是否换新的判断），`origin` 记这一代是怎么来的（`new_thread`、`rollout`、`tool_set_changed`、`tool_missing`、`tool_schema_changed`、`model_changed`、`thinking_level_changed`、`answer_locale_changed`、`classification_lower`、`rebuild_requested`），`created_by_run_id` 记建它的运行；
    - 换新时旧记录标上 `superseded_at`，不删；
    - 部分唯一索引 `thread_prompt_bundles_one_current` 保证一个对话同时只有一份没被换掉的记录。同一对话第一次并发运行时，写入在一个 `BEGIN IMMEDIATE` 事务里重读最新代数，代数和调用方看到的不同就不写、把已有的那份交回，所以只会建一份；
    - 登记进 `packages/persistence-sqlite/src/schema-catalog.ts`。

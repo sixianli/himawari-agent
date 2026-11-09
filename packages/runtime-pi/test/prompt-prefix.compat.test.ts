@@ -652,7 +652,7 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(findConversationBreak(bodies)).toBeNull();
   });
 
-  it("REVERSE: switching an old conversation to the new ruleset in the middle breaks its prefix", async () => {
+  it("[ADR-0188] REVERSE: switching an old conversation to the new ruleset in the middle breaks its prefix", async () => {
     const { bodies } = await conversation(
       WIFI_TURNS,
       (index) => ({ text: `回答${index}` }),

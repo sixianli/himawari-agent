@@ -314,6 +314,23 @@ describe.each(["worker", "direct"] as const)("thread prompt bundles through %s",
     }
   });
 
+  it("[ADR-0188] keeps the old ruleset when only the data classification drops, because the prompt and tools stay the same", async () => {
+    const resource = await fixture();
+    try {
+      await resource.service.resolve(input("first", { hasHistory: true }));
+      const lowered = await resource.service.resolve(
+        input("second", { request: { dataClassification: "public" } }),
+      );
+      expect(lowered).toMatchObject({ generation: 2, redactionRuleset: 1 });
+      expect(resource.rows().map(({ origin }) => origin)).toEqual([
+        "rollout",
+        "classification_lower",
+      ]);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
   it("[ADR-0188] reads a bundle saved before the field existed as the old ruleset and does not renew it", async () => {
     const resource = await fixture();
     try {

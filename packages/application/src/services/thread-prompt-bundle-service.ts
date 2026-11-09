@@ -20,6 +20,13 @@ import { canonicalAuthorizationSnapshot } from "./action-intent-snapshot.js";
 import type { RecordTraceInput } from "./session-trace-recorder.js";
 
 export const LEGACY_REDACTION_RULESET = 1;
+function storedRuleset(record: ThreadPromptBundleRecord): number {
+  const stored = record.identity.redactionRuleset;
+  if (stored === undefined || !Number.isSafeInteger(stored) || stored < 1)
+    return LEGACY_REDACTION_RULESET;
+  return Math.min(stored, EGRESS_RULESET_CURRENT);
+}
+
 export const THREAD_PROMPT_BUNDLE_PIN_KEY = "thread-prompt-bundle-pin:v1";
 export const PROMPT_BUNDLE_INVALIDATED_EVENT = "prompt.bundle.invalidated";
 
@@ -237,7 +244,7 @@ export class ThreadPromptBundleService implements RuntimePromptBundlePort {
       origin,
       identity: {
         ...input.identity,
-        redactionRuleset: origin === "rollout" ? LEGACY_REDACTION_RULESET : EGRESS_RULESET_CURRENT,
+        redactionRuleset: this.#rulesetFor(origin, latest),
       },
       systemPrompt: await protect(
         candidate.systemPrompt,
@@ -253,6 +260,15 @@ export class ThreadPromptBundleService implements RuntimePromptBundlePort {
     });
   }
 
+  #rulesetFor(
+    origin: ThreadPromptBundleOrigin,
+    latest: ThreadPromptBundleRecord | undefined,
+  ): number {
+    if (origin === "rollout") return LEGACY_REDACTION_RULESET;
+    if (origin === "classification_lower" && latest) return storedRuleset(latest);
+    return EGRESS_RULESET_CURRENT;
+  }
+
   async #open(record: ThreadPromptBundleRecord): Promise<RuntimePromptBundle> {
     const systemPrompt = await this.#readText(record, record.systemPromptRef);
     const tools = await this.#readText(record, record.toolsRef);
@@ -262,7 +278,7 @@ export class ThreadPromptBundleService implements RuntimePromptBundlePort {
       generation: record.generation,
       systemPrompt,
       tools,
-      redactionRuleset: record.identity.redactionRuleset ?? LEGACY_REDACTION_RULESET,
+      redactionRuleset: storedRuleset(record),
     });
   }
 
