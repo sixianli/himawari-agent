@@ -1,0 +1,5 @@
+{"id": "R3-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1）低：资源占用被放大", "valid": true, "class": "error", "severity": "low", "trigger": "PR 里有超过 256MB 的改动文件，或 override 记录很多", "consequence": "子进程多、内存放大；超限时退回全量比较，多报而不是漏报", "modelSeverity": "低"}
+{"id": "R3-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2）低：`unreviewedFiles` 丢弃了 `outside`", "valid": true, "class": "error", "severity": "low", "trigger": "main 已先含与 PR 相同内容的文件", "consequence": "多报一次 unreviewed，要多复核一轮；不会漏报", "modelSeverity": "低"}
+{"id": "R3-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3）低：规则承诺的两条退回路径没有自动检查", "valid": true, "class": "error", "severity": "low", "trigger": "读测试的人", "consequence": "退回路径没有用例证明", "modelSeverity": "低"}
+{"id": "R3-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4）低：`\\uFFFD` 判定过宽", "valid": true, "class": "error", "severity": "low", "trigger": "文件名里真有合法的 U+FFFD 字符，或用户配置了 diff.interHunkContext", "consequence": "前者多报；后者上下文行进哈希，邻近行被 main 改时多报；都不会漏报", "modelSeverity": "低"}
+{"id": "R3-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 5）低/观察：合并 main 不再扫描其他 PR 记录目录里", "valid": true, "class": "better"}
