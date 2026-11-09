@@ -261,7 +261,7 @@ JSON、JUnit、LCOV、日志、截图和 trace 均按公开可读材料准备。
 
 ### 9. 触发、并发、权限与信任边界
 
-PR 使用 `pull_request`，在 opened、synchronize、reopened、ready_for_review 及影响目标分支的 edited 事件重新验证。初期 draft PR 也完整运行。默认分支使用 `main.yml` 接收 `push`，按下述条件选择 main 确认或调用完整 CI。完整 `ci.yml` 保留 PR、手动入口，并通过 `workflow_call` 供 main 回退复用。`workflow_dispatch` 只验证明确 ref/SHA，不自动发布。禁用工作流级路径过滤和以 skip 标记跳过必需检查的交付方式。
+PR 使用 `pull_request`，在 opened、synchronize、reopened、ready_for_review 及所有 edited 事件（改标题、正文或目标分支）重新验证。草稿 PR 只跑 policy、static、build、security，`browser` 和 `coverage` 在草稿上跳过，所以草稿上的 `ci/required` 按设计不通过，转为正式后重新完整运行（见 [ADR 0191](../../adr/0191-draft-pull-requests-run-fast-checks-only.md)）；`edited` 事件的运行不取消其他事件的运行，也不被它们取消，连续的 `edited` 之间后一次取消前一次。默认分支使用 `main.yml` 接收 `push`，按下述条件选择 main 确认或调用完整 CI。完整 `ci.yml` 保留 PR、手动入口，并通过 `workflow_call` 供 main 回退复用。`workflow_dispatch` 只验证明确 ref/SHA，不自动发布。禁用工作流级路径过滤和以 skip 标记跳过必需检查的交付方式。
 
 公开 fork PR 作为正常贡献入口。目标 Actions 设置为所有外部贡献者需批准运行（`all_external_contributors`）；Owner 先审阅当前提交，特别是 workflow、安装脚本、政策和汇总器变更，再批准相应运行。等待批准属于尚未执行，不能计作成功或自动豁免；批准运行不等于批准合并，之后仍执行完整矩阵。首次贡献者、重复外部贡献者及 Dependabot 的实际审批和只读 token 行为分别验收，不通过改用 `pull_request_target` 或提供写权限来消除等待。
 
