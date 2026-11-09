@@ -1,0 +1,5 @@
+{"id": "R2-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "指纹是对 `git diff` 的 **UTF-8 解码后的字符串**求 SHA-256", "valid": true, "class": "error", "severity": "medium-high", "trigger": "复核后把无 NUL 的非法 UTF-8 文本文件里的一个字节换成另一个非法字节", "consequence": "两侧解码后都是替换字符，指纹相同，改动绕过复核", "modelSeverity": "中"}
+{"id": "R2-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`--binary` 的补丁体可能是 `delta`", "valid": true, "class": "error", "severity": "low", "trigger": "同一二进制文件在 PR 和 main 两侧都改且合并仍干净（自定义合并驱动或冲突解决后选回 PR 版本）", "consequence": "指纹不一致，多报 unreviewed，不会放行", "modelSeverity": "低"}
+{"id": "R2-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "规则文字声称“二进制内容都参与比较”", "valid": true, "class": "error", "severity": "low", "trigger": "读规则的人", "consequence": "文字与代码的退回条件不完全一致", "modelSeverity": "低"}
+{"id": "R2-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新增用例覆盖了空白、权限、二进制", "valid": true, "class": "error", "severity": "low", "trigger": "缺少非法 UTF-8 内容用例", "consequence": "漏报没有测试证明", "modelSeverity": "低"}
+{"id": "R2-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`unreviewedFiles` 对每个文件起一个 git 进程", "valid": true, "class": "better"}
