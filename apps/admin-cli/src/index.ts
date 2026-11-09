@@ -29,6 +29,7 @@ import { runAccountCommand } from "./account-command.js";
 import { runCapabilitiesCommand } from "./capabilities-command.js";
 import { runDiagnoseCommand } from "./diagnose-command.js";
 import { runInitializeCommand } from "./initialize-command.js";
+import { runMemoryCommand } from "./memory-command.js";
 import { runPushCommand } from "./push-command.js";
 import { runSandboxCommand } from "./sandbox-command.js";
 import { runThreadCommand } from "./thread-command.js";
@@ -775,6 +776,10 @@ export async function runAdminCli(
     }
     if (arguments_[0] === "thread") {
       output.write(`${JSON.stringify(await runThreadCommand(arguments_, output))}\n`);
+      return 0;
+    }
+    if (arguments_[0] === "memory") {
+      output.write(`${JSON.stringify(await runMemoryCommand(arguments_, output))}\n`);
       return 0;
     }
     if (arguments_[0] === "sandbox") {

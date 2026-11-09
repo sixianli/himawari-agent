@@ -145,7 +145,7 @@ const DEFAULT_MEMORY_ATTRIBUTES: ProductMemoryAttributes = Object.freeze({
   supersededBy: null,
   evidenceVerified: false,
 });
-const INDEXED_ENTITY_CLASSIFICATIONS = new Set(["public", "private"]);
+const MODEL_VISIBLE_CLASSIFICATIONS = new Set(["public", "private", "sensitive"]);
 const CLASSIFICATIONS = new Set(["public", "private", "sensitive", "restricted"]);
 const MAXIMUM_ENTITIES = 16;
 const MAXIMUM_INDEX_TERMS = 512;
@@ -808,7 +808,7 @@ export class SqliteMemoryOperations {
             : undefined);
       if (history) this.insertHistory(input.memory, history, input.memory.updatedAt);
       this.database.prepare("DELETE FROM memory_entities WHERE memory_id = ?").run(input.memory.id);
-      if (INDEXED_ENTITY_CLASSIFICATIONS.has(input.memory.dataClassification)) {
+      if (MODEL_VISIBLE_CLASSIFICATIONS.has(input.memory.dataClassification)) {
         const insertEntity = this.database.prepare(
           "INSERT INTO memory_entities (memory_id, name) VALUES (?, ?) ON CONFLICT DO NOTHING",
         );
@@ -1019,7 +1019,7 @@ export class SqliteMemoryOperations {
           );
         if (
           document.terms.length > 0 &&
-          INDEXED_ENTITY_CLASSIFICATIONS.has(memory.dataClassification)
+          MODEL_VISIBLE_CLASSIFICATIONS.has(memory.dataClassification)
         )
           this.database
             .prepare("INSERT INTO memory_search_terms (rowid, terms) VALUES (?, ?)")
@@ -1258,7 +1258,7 @@ export class SqliteMemoryOperations {
           );
         if (
           document.terms.length > 0 &&
-          INDEXED_ENTITY_CLASSIFICATIONS.has(document.dataClassification)
+          MODEL_VISIBLE_CLASSIFICATIONS.has(document.dataClassification)
         )
           this.database
             .prepare("INSERT INTO memory_episode_terms (rowid, terms) VALUES (?, ?)")

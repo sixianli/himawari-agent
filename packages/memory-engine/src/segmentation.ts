@@ -1,3 +1,5 @@
+import { looksLikeSecretToken, maskForIndex } from "@himawari-agent/sensitive-capture";
+
 const segmenter = new Intl.Segmenter("zh", { granularity: "word" });
 const HAN = /\p{Script=Han}/u;
 const STOPWORDS = new Set([
@@ -107,6 +109,10 @@ export function indexTerms(text: string): string[] {
     terms.push(...hanBigrams(word));
   }
   return terms.slice(0, 512);
+}
+
+export function indexableTerms(text: string): string[] {
+  return indexTerms(maskForIndex(text)).filter((term) => !looksLikeSecretToken(term));
 }
 
 export function queryTerms(text: string): string[] {

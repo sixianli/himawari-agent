@@ -288,7 +288,7 @@ describe.each(["worker", "direct"] as const)("memory engine index through %s", (
             .prepare("SELECT count(*) FROM memory_search_terms WHERE memory_search_terms MATCH ?")
             .pluck()
             .get('"青霉素"'),
-        ).toBe(0);
+        ).toBe(1);
       } finally {
         database.close();
       }
@@ -297,7 +297,7 @@ describe.each(["worker", "direct"] as const)("memory engine index through %s", (
     }
   });
 
-  it("recalls by meaning, keyword and entity and skips expired and unembeddable sensitive facts", async () => {
+  it("[RULE-memory-visible] recalls by meaning, keyword and entity, skips expired facts and finds an unembedded sensitive fact by its words only when sensitive is allowed", async () => {
     const resource = await fixture();
     try {
       expect((await search(resource, "我女儿今年多大了？"))[0]).toBe("memory-engine-daughter");
@@ -305,7 +305,7 @@ describe.each(["worker", "direct"] as const)("memory engine index through %s", (
       expect((await search(resource, "hermes 在哪"))[0]).toBe("memory-engine-hermes");
       expect(await search(resource, "主人在东京吗")).not.toContain("memory-engine-expired");
       expect(await search(resource, "青霉素")).not.toContain("memory-engine-allergy");
-      expect(await search(resource, "青霉素", ["public", "private", "sensitive"])).not.toContain(
+      expect(await search(resource, "青霉素", ["public", "private", "sensitive"])).toContain(
         "memory-engine-allergy",
       );
     } finally {

@@ -701,7 +701,7 @@ export const messages = {
   "memory.page.now": "现在",
   "memory.page.useThis": "换回这个说法",
   "memory.page.editNote": "保存后，旧说法会移到“怎么变过来的”里，不会丢。",
-  "memory.page.archivedNote": "整理时判断为过时、重复或长期没用到，回答时不再用",
+  "memory.page.archivedNote": "整理时判断为过时或重复，回答时不再用",
   "memory.page.unarchive": "恢复使用",
   "memory.page.trashNote": "回答时不再用到；删除 7 天后自动彻底清除，之前都能恢复",
   "memory.page.recover": "恢复",
