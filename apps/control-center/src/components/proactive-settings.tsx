@@ -240,11 +240,13 @@ export function ProactiveAppsSettings({
   message,
   outcome,
   locale,
+  onOpenThread,
 }: {
   proactive: ProactiveModel;
   message: Message;
   outcome: GmailOutcome | null;
   locale?: string | undefined;
+  onOpenThread?: ((threadId: string, messageId?: string) => void) | undefined;
 }) {
   const overview = proactive.overview;
   const [confirming, setConfirming] = useState(false);
@@ -348,7 +350,12 @@ export function ProactiveAppsSettings({
             {message("proactive.log")}
           </summary>
           {logOpen ? (
-            <ProactiveDecisionLog proactive={proactive} message={message} locale={locale} />
+            <ProactiveDecisionLog
+              proactive={proactive}
+              message={message}
+              locale={locale}
+              onOpenThread={onOpenThread}
+            />
           ) : null}
         </details>
       )}
