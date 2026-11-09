@@ -1,0 +1,6 @@
+{"id": "r2-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "最终改动没有实现“以后复核记录再引用同一个假值不再变红”，作者的事实描述停留在旧提交", "valid": false, "class": "better"}
+{"id": "r2-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新白名单覆盖 6 种路径形态，但真实 gitleaks 测试只有 1 个正例和 1 个跨轮反例；同轮目录放宽不会被发现", "valid": true, "class": "error", "severity": "low", "trigger": "日后有人把路径放宽成同一轮目录下任意文件，夹具里没有同目录反例，测试不失败", "consequence": "放宽不被测试拦下；当前配置已由 check:gitleaks 实跑核对为只放行列出的文件", "modelSeverity": "中", "reason": "不影响现有输入的结果，只是日后放宽时的防回归覆盖不够；已补同目录反例和对应放宽用例"}
+{"id": "r2-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`gitleaks-allowlist.test.mjs` 新增样本与上一条重复，且该文件只核对值与块形状，不核对路径唯一性", "valid": false, "class": "better"}
+{"id": "r2-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "pr-319 的 `.prompt.md`、`judgments.md`、`verdicts.jsonl`、`usage.jsonl` 或 deepseek 答案若也原样引用了那个假令牌，检查仍会红", "valid": false, "class": "error"}
+{"id": "r2-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`ci/toolchain-lock.json` 的 sha256 是否真与当前 `gitleaks.toml` 一致", "valid": false, "class": "better"}
+{"id": "r2-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新增记录是否影响 `format:check` / `check:instruction-links` 等其它检查", "valid": false, "class": "better"}
