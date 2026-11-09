@@ -84,7 +84,7 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 
 ## 已知差距
 
-1. **压缩请求不共用原对话的开头（第 13 条）。**Pi 0.84.2 压缩时，把整段对话序列化成一条新的用户消息，系统提示换成它自己的 `SUMMARIZATION_SYSTEM_PROMPT`（安装后的 `@earendil-works/pi-coding-agent/dist/core/compaction/compaction.js`，`compact` 函数里组装压缩请求的那一段）。所以每次压缩，整段历史都按全价计算。要修，需要改压缩请求的组装方式，属于大改动，先出方案。
+1. **压缩请求不共用原对话的开头（第 13 条）。**Pi 1.5.0 压缩时，把整段对话序列化成一条新的用户消息，系统提示换成它自己的 `SUMMARIZATION_SYSTEM_PROMPT`（安装后的 `@earendil-works/pi-coding-agent/dist/core/compaction/compaction.js`，`compact` 函数里组装压缩请求的那一段）。所以每次压缩，整段历史都按全价计算。要修，需要改压缩请求的组装方式，属于大改动，先出方案。
 2. **同一对话会不会换服务方，还没核实（第 9 条）。**生产主用 Magpie，它带会话亲和头；`providerRouting.order` 只对 Vercel AI Gateway 生效，Magpie 不接受这个配置（`packages/runtime-pi/src/configured-model-binding.ts`）。会话亲和是否真的让同一对话落在同一处，要看 Magpie 的路由日志确认；不稳定的话，再决定要不要传固定的路由键。
 3. **低命中只写日志，不报警（见[怎么检查](#gates)）。**业界把命中率当可用性指标（S5）。可以并进上面任一项一起做。
 

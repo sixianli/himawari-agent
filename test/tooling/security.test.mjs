@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applySecurityExceptions,
   enumerateLockDependencies,
+  gitleaksGateExceptions,
   gitleaksHistoryScope,
   loadReviewedExceptions,
   parseGitleaksReport,
@@ -25,6 +26,7 @@ import {
   validateSecurityExceptions,
   verifySyntheticProvenance,
 } from "../../scripts/ci/check-security.mjs";
+import { withoutRemovedDependencies } from "../../scripts/ci/security-exceptions.mjs";
 import { assertPublicArtifacts, redactText } from "../../scripts/ci/security-redaction.mjs";
 import { findBuildSecrets } from "../../scripts/ci/security-source.mjs";
 
@@ -527,6 +529,149 @@ describe("受审阅的窄范围例外", () => {
         dependencies,
       }),
     ).toThrow();
+  });
+});
+
+describe("依赖升级后已接受的例外", () => {
+  it("Gitleaks 门禁读 base 例外时，同样跳过指向已移除依赖的条目", () => {
+    const directory = temporary();
+    const git = (...args) =>
+      execFileSync("git", ["-C", directory, ...args], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    git("init", "-q");
+    git("config", "user.name", "Security Fixture");
+    git("config", "user.email", "fixture@example.invalid");
+    mkdirSync(join(directory, "ci/rules"), { recursive: true });
+    cpSync(join(root, "ci/rules/semgrep.yml"), join(directory, "ci/rules/semgrep.yml"));
+    json(join(directory, "package-lock.json"), {
+      lockfileVersion: 3,
+      packages: {
+        "": { name: "fixture" },
+        "node_modules/example": {
+          version: "1.2.0",
+          resolved: "https://registry.npmjs.org/example/-/example-1.2.0.tgz",
+          integrity: "sha512-fixture",
+        },
+      },
+    });
+    json(join(directory, "ci/security-exceptions.json"), {
+      schemaVersion: 1,
+      exceptions: [
+        exception(),
+        {
+          kind: "published-synthetic-fixture",
+          id: "published-synthetic-fixture",
+          path: "runtime/node_modules/removed/test/token.test.ts",
+          package: "removed",
+          version: "0.1.0",
+          packageLockPath: "node_modules/removed",
+          integrity: `sha512-${"A".repeat(86)}==`,
+          sourceUrl: "https://registry.npmjs.org/removed/-/removed-0.1.0.tgz",
+          archiveMember: "package/test/token.test.ts",
+          fileSha256: "e".repeat(64),
+          findings: [{ rule: "jwt-token", digest: "f".repeat(64), count: 1 }],
+          reason: "测试中构造的已移除依赖里的合成密钥例外。",
+          owner: "fixture-owner",
+          reviewReference: "https://github.com/example/repository/pull/1",
+          expiresAt: "2026-10-01T00:00:00Z",
+          sourceProofSha256: "d".repeat(64),
+          sourceReview: "测试中构造的来源审阅说明，只用于检查已移除依赖的过滤。",
+        },
+      ],
+    });
+    git("add", ".");
+    git("commit", "-qm", "accepted policies");
+    const baseSha = git("rev-parse", "HEAD");
+    expect(
+      gitleaksGateExceptions({ root: directory, context: { baseSha }, now }).exceptions,
+    ).toEqual([]);
+  });
+
+  it("只去掉指向锁文件里已不存在的依赖版本的例外，源码里的合成密钥例外保留", () => {
+    const installed = [{ path: "node_modules/kept", name: "kept", version: "1.0.0" }];
+    const entries = [
+      {
+        kind: "advisory",
+        id: "a-kept",
+        path: "node_modules/kept",
+        package: "kept",
+        version: "1.0.0",
+      },
+      {
+        kind: "advisory",
+        id: "a-old",
+        path: "node_modules/kept",
+        package: "kept",
+        version: "0.9.0",
+      },
+      {
+        kind: "published-synthetic-fixture",
+        id: "f-kept",
+        packageLockPath: "node_modules/kept",
+        package: "kept",
+        version: "1.0.0",
+      },
+      {
+        kind: "published-synthetic-fixture",
+        id: "f-gone",
+        packageLockPath: "node_modules/gone",
+        package: "gone",
+        version: "1.0.0",
+      },
+      { kind: "synthetic-secret", id: "s-kept", path: "test/fixture.ts" },
+    ];
+    const filtered = withoutRemovedDependencies(
+      { schemaVersion: 1, exceptions: entries },
+      installed,
+    );
+    expect(filtered.exceptions.map(({ id }) => id)).toEqual(["a-kept", "f-kept", "s-kept"]);
+    expect(withoutRemovedDependencies({ schemaVersion: 1 }, installed)).toEqual({
+      schemaVersion: 1,
+    });
+  });
+
+  it("base 里指向已从锁文件移除的依赖的例外不再生效，也不让检查出错；候选清单仍必须删掉它们", () => {
+    const directory = temporary();
+    const git = (...args) =>
+      execFileSync("git", ["-C", directory, ...args], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    git("init", "-q");
+    git("config", "user.name", "Security Fixture");
+    git("config", "user.email", "fixture@example.invalid");
+    mkdirSync(join(directory, "ci"));
+    cpSync(join(root, "ci/policy.json"), join(directory, "ci/policy.json"));
+    cpSync(join(root, "ci/coverage-policy.json"), join(directory, "ci/coverage-policy.json"));
+    const removed = exception({
+      id: "GHSA-dddd-eeee-ffff",
+      path: "node_modules/removed",
+      package: "removed",
+      version: "0.1.0",
+    });
+    json(join(directory, "ci/security-exceptions.json"), {
+      schemaVersion: 1,
+      exceptions: [exception(), removed],
+    });
+    git("add", "ci");
+    git("commit", "-qm", "accepted policies");
+    const baseSha = git("rev-parse", "HEAD");
+    const load = () =>
+      loadReviewedExceptions({
+        root: directory,
+        context: { baseSha, initialization: false },
+        now,
+        ruleIds,
+        dependencies,
+      });
+    expect(() => load()).toThrow("SECURITY_EXCEPTION_DEPENDENCY_UNKNOWN");
+    json(join(directory, "ci/security-exceptions.json"), {
+      schemaVersion: 1,
+      exceptions: [exception()],
+    });
+    expect(load().exceptions).toEqual([exception()]);
   });
 });
 

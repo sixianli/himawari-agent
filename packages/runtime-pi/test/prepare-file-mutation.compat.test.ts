@@ -70,3 +70,26 @@ it("rejects invalid preparation budgets without starting work", async () => {
     preparePiFileMutation({ ...input, limits: { ...input.limits, maxMemoryBytes: 1048576 } }),
   ).rejects.toThrow("PI_PREPARATION_MEMORY_LIMIT");
 });
+
+it("[ADR-0198] refuses edit arguments that are not plain JSON before Pi validates them", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "pi-prepare-json-"));
+  try {
+    const targetPath = path.join(cwd, "note.txt");
+    await writeFile(targetPath, "one\n");
+    for (const extra of [undefined, 1n, new Map()])
+      await expect(
+        preparePiFileMutation({
+          limits: { maxWallTimeMs: 10000, maxCpuTimeMs: 10000, maxMemoryBytes: 268435456 },
+          tool: "write",
+          toolCallId: "not-json",
+          cwd,
+          targetPath,
+          before: Buffer.from("one\n"),
+          parameters: { path: "note.txt", content: "two\n", extra },
+        }),
+      ).rejects.toThrow("PI_TOOL_ARGUMENTS_INVALID");
+    expect(await readFile(targetPath, "utf8")).toBe("one\n");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

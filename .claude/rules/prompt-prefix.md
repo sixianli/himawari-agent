@@ -32,7 +32,7 @@ KV 缓存，也叫提示缓存（prompt cache），指模型服务方把“请�
 <a id="append-only"></a>
 ## 二、已经发出的内容
 
-4. **已经发给过模型的内容，不得改动、重排或删除，只能在末尾追加。**这包括系统提示、工具定义、历史里的每一条消息（用户的话、回答、工具调用、工具结果）。例外只有五种：第 6 条列出的换新；第 7 条那类只因执行句柄出现的工具，它们出现或消失的那一轮请求开头会变；第 12 条那种有 ADR 依据的、成批的压缩，以及将来按 ADR 实施的第 14 条清理；开发用的模型复核经 Magpie 调 CodeBuddy 时，CodeBuddy 以 11128 拒绝某段系统提示后，插件给它加逗号或挪进第一条用户消息再发（[ADR 0178](../../docs/adr/0178-review-model-calls-through-a-local-magpie.md#prompt-prefix-exception)，只影响复核脚本，不影响 Himawari）；[ADR 0193](../../docs/adr/0193-memory-is-visible-to-the-model.md#consequences) 上线后的第一轮，老对话里以前因分级被挡掉的 sensitive 历史消息会出现在历史中间，那个对话的请求开头变一次（Andy 2026-11-09 同意不顾旧聊天记录，只此一次）。
+4. **已经发给过模型的内容，不得改动、重排或删除，只能在末尾追加。**这包括系统提示、工具定义、历史里的每一条消息（用户的话、回答、工具调用、工具结果）。例外只有五种：第 6 条列出的换新；第 7 条那类只因执行句柄出现的工具，它们出现或消失的那一轮请求开头会变；第 12 条那种有 ADR 依据的、成批的压缩（Pi 在上下文溢出或回答被截断时追加的 `context_edit`，即把失败的那次回答从上下文里拿掉；Pi 的自动重试也会追加它，但 Himawari 关着自动重试，所以它只和压缩一起发生，算在压缩里，见 [ADR 0198](../../docs/adr/0198-upgrade-pi-to-1-5-0.md#decision)），以及将来按 ADR 实施的第 14 条清理；开发用的模型复核经 Magpie 调 CodeBuddy 时，CodeBuddy 以 11128 拒绝某段系统提示后，插件给它加逗号或挪进第一条用户消息再发（[ADR 0178](../../docs/adr/0178-review-model-calls-through-a-local-magpie.md#prompt-prefix-exception)，只影响复核脚本，不影响 Himawari）；[ADR 0193](../../docs/adr/0193-memory-is-visible-to-the-model.md#consequences) 上线后的第一轮，老对话里以前因分级被挡掉的 sensitive 历史消息会出现在历史中间，那个对话的请求开头变一次（Andy 2026-11-09 同意不顾旧聊天记录，只此一次）。
 5. **存历史时存实际发出去的那一条。**不得在存之前把它换成别的版本，例如去掉资料块、换回原话、缩短搜索结果。出口遮盖是唯一的例外：历史里存的是遮盖前的内容，每次发送时按确定的规则重新遮盖。遮盖密钥不变、前面的历史不变时，同一段内容每次遮出的字节相同。
 
 <a id="stable"></a>
@@ -71,7 +71,7 @@ KV 缓存，也叫提示缓存（prompt cache），指模型服务方把“请�
 <a id="gate"></a>
 ## 七、检查和监控
 
-- **阻断检查：**`npm run check:prompt-prefix`（属于 `npm run check` 的一步）。它用真实的 Pi 适配器和真实的出口遮盖，对本机回环服务跑多轮对话：包括工具调用、搜索结果、银行卡号遮盖、附件长文本、每轮变化的记忆和时间、运行环境说明只在变化时发，以及按对话冻结。换新的各种条件、运行中压缩后补发运行环境说明，由 `test/integration/thread-prompt-bundles.test.ts`、`packages/runtime-pi/test/runtime-environment-block.unit.test.ts` 和 `packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts` 覆盖，它们不在这一步里。每次都检查后一次请求是否以前一次请求开头：`messages` 逐字节比，其他字段按值比（`max_tokens` 除外）。它还带反向用例：改写历史里的用户消息、让系统提示带上每轮变化的值、关掉冻结，检查都必须报告失败。测试在 `packages/runtime-pi/test/prompt-prefix.compat.test.ts`，名字带 `[I-66]`。
+- **阻断检查：**`npm run check:prompt-prefix`（属于 `npm run check` 的一步）。它用真实的 Pi 适配器和真实的出口遮盖，对本机回环服务跑多轮对话：包括工具调用、搜索结果、银行卡号遮盖、附件长文本、每轮变化的记忆和时间、运行环境说明只在变化时发，以及按对话冻结。换新的各种条件、运行中压缩后补发运行环境说明，由 `test/integration/thread-prompt-bundles.test.ts`、`packages/runtime-pi/test/runtime-environment-block.unit.test.ts` 和 `packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts` 覆盖，它们不在这一步里。每次都检查后一次请求是否以前一次请求开头：`messages` 逐字节比，其他字段按值比（`max_tokens` 除外）。它还带反向用例：改写历史里的用户消息、让系统提示带上每轮变化的值、关掉冻结、请求中间出现 system 消息，检查都必须报告失败。另有两条用例：模型返回 503 时同一轮不会再发第二次请求、下一轮请求仍以第一轮请求开头（Himawari 关着 Pi 的自动重试；改设置把它打开，这条用例会失败，[ADR 0198](../../docs/adr/0198-upgrade-pi-to-1-5-0.md#decision) 实施时手动验证过，没有提交成自动用例）；冻结的工具名和 Pi 能执行的工具名不一致时，一次请求都不发。测试在 `packages/runtime-pi/test/prompt-prefix.compat.test.ts`，名字带 `[I-66]`。
 - **端到端：**`test/integration/production-http-composition-process.test.ts` 里的 `[PR-A]`、`[PR-B]` 用例，用真实服务和 SQLite，并在测试自建的 HTTPS 模型桩里收齐字节后抓取原始请求体来比对。
 - **生产监控：**
   - 对话的后续轮次请求（输入至少 1024 个 token、上游报告了缓存用量）命中率低于 50% 时，服务日志写一行 `cache.follow_up_low_hit`（阈值和命中率判断见 `packages/application/src/ports/model-usage.ts`，是否后续轮次见 `apps/agent-service/src/cache-hit-monitor.ts`）。不到 1024 个 token 的请求多数服务方本来就不缓存，不算异常。

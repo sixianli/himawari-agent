@@ -1,11 +1,15 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import {
   capturePiToolBatch,
+  inspectPiToolBatch,
   type PiToolBatchContinuation,
+  piToolBatchSessionManager,
   restorePiToolBatch,
 } from "../src/pi-tool-batch-continuation.ts";
+
+const PROMPT = "Keep authorization";
 
 function state() {
   const assistant: AssistantMessage = {
@@ -42,26 +46,87 @@ function state() {
     },
   ];
   const session = {
+    get sessionManager() {
+      const manager = SessionManager.inMemory("/workspace");
+      for (const message of messages)
+        if (message.role !== "custom") manager.appendMessage(message as never);
+      return manager;
+    },
     agent: {
       state: {
         messages,
-        systemPrompt: "Keep authorization",
         tools: [{ name: "read", executionMode: "sequential" }],
       },
     },
-  } as AgentSession;
+  } as unknown as AgentSession;
   return { session, messages, assistant };
 }
 describe("tool-batch persisted-state integrity", () => {
-  it("freezes an independent transcript and restores the original system instruction", async () => {
+  it("captures a batch after a message steered in during the run, which Pi stores with its own timestamp", () => {
     const f = state();
-    const saved = capturePiToolBatch(f.session, "waiting", 3);
+    const steered = {
+      role: "custom",
+      customType: "himawari.background.command",
+      content: "The background command finished.",
+      display: false,
+      details: { taskRef: "task" },
+      timestamp: -5,
+    } as unknown as (typeof f.messages)[number];
+    f.messages.splice(1, 0, steered);
+    const sessionManager = SessionManager.inMemory("/workspace");
+    sessionManager.appendMessage(f.messages[0] as never);
+    sessionManager.appendCustomMessageEntry(
+      "himawari.background.command",
+      "The background command finished.",
+      false,
+      { taskRef: "task" },
+    );
+    for (const message of f.messages.slice(2)) sessionManager.appendMessage(message as never);
+    const session = { sessionManager, agent: f.session.agent } as unknown as AgentSession;
+    const saved = capturePiToolBatch(session, "waiting", 3, PROMPT);
+    expect(
+      piToolBatchSessionManager(saved, PROMPT, "/workspace").buildSessionContext().messages,
+    ).toMatchObject([
+      { role: "user" },
+      { role: "custom", content: "The background command finished." },
+    ]);
+    const unstored = SessionManager.inMemory("/workspace");
+    for (const message of [f.messages[0], ...f.messages.slice(2)])
+      unstored.appendMessage(message as never);
+    expect(() =>
+      capturePiToolBatch(
+        { sessionManager: unstored, agent: f.session.agent } as unknown as AgentSession,
+        "waiting",
+        3,
+        PROMPT,
+      ),
+    ).toThrow("PI_CONTINUATION_PREFIX_INVALID");
+  });
+
+  it("refuses to capture when the Pi session entries do not rebuild the messages before the batch", () => {
+    const f = state();
+    const sessionManager = f.session.sessionManager;
+    f.messages.unshift({ role: "user", content: "Only in agent state", timestamp: -1 });
+    const session = { sessionManager, agent: f.session.agent } as unknown as AgentSession;
+    expect(() => capturePiToolBatch(session, "waiting", 3, PROMPT)).toThrow(
+      "PI_CONTINUATION_PREFIX_INVALID",
+    );
+  });
+
+  it("freezes an independent transcript and restores it through a Pi session manager", async () => {
+    const f = state();
+    const saved = capturePiToolBatch(f.session, "waiting", 3, PROMPT);
     f.assistant.content.splice(0);
-    f.session.agent.state.systemPrompt = "changed";
     expect(saved.assistant.content).toHaveLength(3);
+    expect(() => piToolBatchSessionManager(saved, "changed", "/workspace")).toThrow(
+      "PI_CONTINUATION_SYSTEM_PROMPT_CHANGED",
+    );
+    const manager = piToolBatchSessionManager(saved, PROMPT, "/workspace", { id: "restored" });
+    expect(manager.getSessionId()).toBe("restored");
+    expect(manager.buildSessionContext().messages).toEqual([
+      { role: "user", content: "Read both", timestamp: 0 },
+    ]);
     const restored = restorePiToolBatch(f.session, saved);
-    expect(f.session.agent.state.messages).toEqual(saved.prefix);
-    expect(f.session.agent.state.systemPrompt).toBe("Keep authorization");
     expect(restored.completedStreamOrdinal).toBe(3);
     const stream = restored.takeReplay();
     if (!stream) throw new Error("Missing one-shot replay");
@@ -81,7 +146,7 @@ describe("tool-batch persisted-state integrity", () => {
     "rejects invalid stream ordinal %s",
     (ordinal) => {
       const { session } = state();
-      expect(() => capturePiToolBatch(session, "waiting", ordinal)).toThrow(
+      expect(() => capturePiToolBatch(session, "waiting", ordinal, PROMPT)).toThrow(
         "PI_CONTINUATION_BATCH_INVALID",
       );
     },
@@ -91,18 +156,18 @@ describe("tool-batch persisted-state integrity", () => {
     (reason) => {
       const f = state();
       f.assistant.stopReason = reason;
-      expect(() => capturePiToolBatch(f.session, "waiting", 1)).toThrow(
+      expect(() => capturePiToolBatch(f.session, "waiting", 1, PROMPT)).toThrow(
         "PI_CONTINUATION_BATCH_INVALID",
       );
     },
   );
   it("rejects an absent assistant or a waiting call from another batch", () => {
     const f = state();
-    expect(() => capturePiToolBatch(f.session, "foreign", 1)).toThrow(
+    expect(() => capturePiToolBatch(f.session, "foreign", 1, PROMPT)).toThrow(
       "PI_CONTINUATION_BATCH_INVALID",
     );
     f.messages.splice(1);
-    expect(() => capturePiToolBatch(f.session, "waiting", 1)).toThrow(
+    expect(() => capturePiToolBatch(f.session, "waiting", 1, PROMPT)).toThrow(
       "PI_CONTINUATION_BATCH_INVALID",
     );
   });
@@ -110,39 +175,46 @@ describe("tool-batch persisted-state integrity", () => {
     const f = state();
     if (kind === "empty") f.messages.shift();
     else f.messages[0] = structuredClone(f.assistant);
-    expect(() => capturePiToolBatch(f.session, "waiting", 1)).toThrow(
+    expect(() => capturePiToolBatch(f.session, "waiting", 1, PROMPT)).toThrow(
       "PI_CONTINUATION_PREFIX_INVALID",
     );
   });
   it("rejects duplicate call identities even when result counts match", () => {
     const f = state();
     f.assistant.content.push({ type: "toolCall", id: "first", name: "read", arguments: {} });
-    expect(() => capturePiToolBatch(f.session, "waiting", 1)).toThrow(
+    expect(() => capturePiToolBatch(f.session, "waiting", 1, PROMPT)).toThrow(
       "PI_CONTINUATION_RESULTS_INVALID",
     );
   });
   it("requires every preceding result to belong to the matching completed tool", () => {
     const f = state();
     f.messages[2] = { role: "user", content: "unrelated", timestamp: 2 };
-    expect(() => capturePiToolBatch(f.session, "waiting", 1)).toThrow(
+    expect(() => capturePiToolBatch(f.session, "waiting", 1, PROMPT)).toThrow(
       "PI_CONTINUATION_RESULTS_INVALID",
     );
   });
-  it("refuses obsolete persisted versions without changing the target session", () => {
-    const f = state();
-    const saved = capturePiToolBatch(f.session, "waiting", 1);
-    const messages = structuredClone(f.messages);
-    expect(() =>
-      restorePiToolBatch(f.session, {
-        ...saved,
-        version: "pi-tool-batch.v1",
-      } as unknown as PiToolBatchContinuation),
-    ).toThrow("PI_CONTINUATION_VERSION_INVALID");
-    expect(f.messages).toEqual(messages);
-  });
+  it.each(["pi-tool-batch.v1", "pi-tool-batch.v2"])(
+    "refuses the obsolete %s snapshot on restore and skips it on inspection",
+    (version) => {
+      const f = state();
+      const saved = capturePiToolBatch(f.session, "waiting", 1, PROMPT);
+      const obsolete = { ...saved, version } as unknown as PiToolBatchContinuation;
+      expect(() => restorePiToolBatch(f.session, obsolete)).toThrow(
+        "PI_CONTINUATION_VERSION_INVALID",
+      );
+      expect(() => piToolBatchSessionManager(obsolete, PROMPT, "/workspace")).toThrow(
+        "PI_CONTINUATION_VERSION_INVALID",
+      );
+      expect(inspectPiToolBatch(obsolete)).toBeUndefined();
+      expect(inspectPiToolBatch(saved)?.waitingToolCallId).toBe("waiting");
+    },
+  );
   it("does not consume a result when a caller supplies a mismatched tool name", () => {
     const f = state();
-    const restored = restorePiToolBatch(f.session, capturePiToolBatch(f.session, "waiting", 1));
+    const restored = restorePiToolBatch(
+      f.session,
+      capturePiToolBatch(f.session, "waiting", 1, PROMPT),
+    );
     expect(() => restored.completedResult("first", "write")).toThrow(
       "PI_CONTINUATION_RESULT_TOOL_MISMATCH",
     );

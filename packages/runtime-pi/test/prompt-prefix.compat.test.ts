@@ -34,7 +34,10 @@ afterEach(async () => {
   );
 });
 
-type Reply = { readonly text: string } | { readonly tool: string; readonly input: string };
+type Reply =
+  | { readonly text: string }
+  | { readonly tool: string; readonly input: string }
+  | { readonly status: number };
 
 async function readBody(incoming: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -48,6 +51,11 @@ async function loopback(reply: (index: number, body: string) => Reply) {
     const raw = await readBody(incoming);
     const index = bodies.push(raw) - 1;
     const answer = reply(index, raw);
+    if ("status" in answer) {
+      response.writeHead(answer.status, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: { message: "overloaded", type: "server_error" } }));
+      return;
+    }
     response.writeHead(200, {
       "content-type": "text/event-stream",
       "x-magpie-model": `opencode-go/model-${index % 2}`,
@@ -223,6 +231,21 @@ class RulesetPromptBundles extends FrozenPromptBundles {
   }
 }
 
+class RenamedToolPromptBundles extends FrozenPromptBundles {
+  override async resolve(input: RuntimePromptBundleResolveInput): Promise<RuntimePromptBundle> {
+    const bundle = await super.resolve(input);
+    return {
+      ...bundle,
+      tools: JSON.stringify(
+        (JSON.parse(bundle.tools) as { name: string }[]).map((tool) => ({
+          ...tool,
+          name: `${tool.name}_renamed`,
+        })),
+      ),
+    };
+  }
+}
+
 function runRequest(runId: string): RuntimeRequest {
   return {
     ownerId: "owner-prefix",
@@ -275,6 +298,7 @@ async function conversation(
   reply: (index: number, body: string) => Reply,
   configure: (projection: ConversationProjection) => void = () => undefined,
   dependencies: Partial<PiAgentRuntimeAdapterDependencies> = {},
+  expectCompleted = true,
 ) {
   const server = await loopback(reply);
   const models = new ConfiguredPiModelBindingPort({
@@ -317,6 +341,7 @@ async function conversation(
     ...dependencies,
   });
   const requestsPerTurn: number[] = [];
+  const turnEvents: RuntimeEvent[][] = [];
   for (const [index, turn] of turns.entries()) {
     projection.turn = turn;
     const before = server.bodies.length;
@@ -326,10 +351,12 @@ async function conversation(
       modelRef: "loopback-primary",
     } as RuntimeRequest))
       events.push(event);
-    expect(events.at(-1)?.type, JSON.stringify(events.at(-1))).toBe("runtime.completed");
+    if (expectCompleted)
+      expect(events.at(-1)?.type, JSON.stringify(events.at(-1))).toBe("runtime.completed");
+    turnEvents.push(events);
     requestsPerTurn.push(server.bodies.length - before);
   }
-  return { bodies: server.bodies, requestsPerTurn, projection };
+  return { bodies: server.bodies, requestsPerTurn, projection, turnEvents };
 }
 
 const memoryBlock = (content: string, ref = "memory-1"): RuntimeProjectionContextBlock => ({
@@ -744,6 +771,21 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     ]);
   });
 
+  it("[ADR-0198] sends nothing when the frozen tool names differ from the tools Pi can run", async () => {
+    const { bodies, turnEvents, projection } = await conversation(
+      THREE_TURNS.slice(0, 1),
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+      { promptBundles: new RenamedToolPromptBundles() },
+      false,
+    );
+    expect(bodies).toHaveLength(0);
+    expect(turnEvents[0]?.filter((event) => event.type === "runtime.failed")).toEqual([
+      expect.objectContaining({ errorCode: "PI_MODEL_ERROR" }),
+    ]);
+    expect(JSON.stringify(projection.saved)).toContain("PI_REQUEST_TOOLS_DIVERGED");
+  });
+
   it("keeps the frozen tools unchanged when task tools come and go with a task handle", async () => {
     const bundles = new FrozenPromptBundles();
     const handles: unknown[] = [];
@@ -783,6 +825,84 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       ["run-prefix-1", { generation: 1, handleTools: 4 }],
       ["run-prefix-3", { generation: 1, handleTools: 4 }],
     ]);
+  });
+
+  it("[ADR-0198] never retries a failed attempt inside Pi, so no context_edit removes it from the next request", async () => {
+    const server = await loopback((index) =>
+      index === 1 ? { status: 503 } : { text: `回答 ${index}` },
+    );
+    const models = new ConfiguredPiModelBindingPort({
+      descriptors: [
+        {
+          ref: "loopback-primary",
+          routingClass: "primary",
+          priority: 1,
+          provider: "magpie",
+          model: "group/main",
+          version: "v1",
+          name: "loopback",
+          api: "openai-completions",
+          baseUrl: server.baseUrl,
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 100_000,
+          maxTokens: 4096,
+          capabilities: ["text", "tool_calling"],
+          disclosure: "external_remote",
+          allowedDataClassifications: ["public", "private"],
+          secretRequirement: {
+            secretRef: "k",
+            secretVersion: "v1",
+            purpose: "model-provider-auth",
+          },
+        },
+      ],
+      secretSource: { productionSuitable: true, resolve: async () => "loopback-fixture-key" },
+    });
+    const projection = new ConversationProjection();
+    const adapter = new PiAgentRuntimeAdapter({
+      egress: testModelEgress(),
+      projection,
+      tools: new SearchTools(),
+      models,
+      cwd: process.cwd(),
+      timeZone: "Asia/Tokyo",
+      now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      logicalSlot: (run, ordinal) => `${run.runId}:retry:${ordinal}`,
+    });
+    const outcomes: (string | undefined)[] = [];
+    for (const [index, turn] of THREE_TURNS.entries()) {
+      projection.turn = turn;
+      const events: RuntimeEvent[] = [];
+      for await (const event of adapter.run({
+        ...runRequest(`run-retry-${index + 1}`),
+        modelRef: "loopback-primary",
+      } as RuntimeRequest))
+        events.push(event);
+      outcomes.push(
+        events.find((event) => event.type === "runtime.failed")?.type ?? events.at(-1)?.type,
+      );
+    }
+    expect(outcomes).toEqual(["runtime.completed", "runtime.failed", "runtime.completed"]);
+    expect(server.bodies).toHaveLength(3);
+    expect(server.bodies.join("\n")).not.toContain("context_edit");
+    expect(findPrefixBreak(server.bodies[0] ?? "", server.bodies[2] ?? "")).toBeNull();
+  });
+
+  it("REVERSE: the checker reports a system message in the middle of a request", () => {
+    const body = (messages: unknown[]) => JSON.stringify({ model: "m", messages, stream: true });
+    const head = { role: "system", content: "frozen" };
+    const a = { role: "user", content: "a" };
+    const b = { role: "assistant", content: "b" };
+    expect(findPrefixBreak(body([head, a]), body([head, a, b]))).toBeNull();
+    expect(
+      findPrefixBreak(body([head, a]), body([head, a, b, { role: "system", content: "later" }])),
+    ).toMatchObject({ where: "mid-system-message", index: 3 });
+    expect(
+      findPrefixBreak(body([head, a]), body([head, a, { role: "developer", content: "later" }])),
+    ).toMatchObject({ where: "mid-system-message", index: 2 });
   });
 
   it("REVERSE: the checker reports a deleted, reordered or shortened history", () => {
