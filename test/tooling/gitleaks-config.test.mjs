@@ -40,6 +40,13 @@ const DEEPSEEK_URL = (value) =>
 const REVIEW_316_RECORD = ".agents/reviews/pr-316/round-1/glm-5.3-flash.md";
 const REVIEW_316_SIBLING = ".agents/reviews/pr-316/round-2/glm-5.3-flash.md";
 const REVIEW_316_SAME_ROUND_OTHER = ".agents/reviews/pr-316/round-1/other.md";
+const REVIEW_ALLOWED_RECORDS = [
+  ".agents/reviews/pr-312/round-3/judgments.md",
+  ".agents/reviews/pr-316/round-1/deepseek-v4.1-flash.md",
+  ".agents/reviews/pr-316/round-1/deepseek-v4.1-flash.prompt.md",
+  ".agents/reviews/pr-316/round-1/glm-5.3-flash.prompt.md",
+  ".agents/reviews/pr-319/round-1/glm-5.3-flash.md",
+];
 const REVIEW_316_LINE = `- 命中 \`token=${["abcdef", "123456"].join("")}\`\n`;
 
 const REVIEW_274 = ".agents/reviews/pr-274/round-7/deepseek-v4.1-flash.md";
@@ -60,6 +67,7 @@ const FIXTURES = {
   [REVIEW_316_RECORD]: REVIEW_316_LINE,
   [REVIEW_316_SIBLING]: REVIEW_316_LINE,
   [REVIEW_316_SAME_ROUND_OTHER]: REVIEW_316_LINE,
+  ...Object.fromEntries(REVIEW_ALLOWED_RECORDS.map((path) => [path, REVIEW_316_LINE])),
   [DEEPSEEK_TEST]: DEEPSEEK_URL("abcdef123456"),
   [DEEPSEEK_SIBLING_TEST]: DEEPSEEK_URL("abcdef123456"),
   "packages/platform-node/test/other-value.unit.test.ts": DEEPSEEK_URL("abcdef123457"),
@@ -209,6 +217,7 @@ describe("gitleaks repository configuration", () => {
           `${PUSH_TEST} generic-api-key`,
           `${DEEPSEEK_TEST} generic-api-key`,
           `${REVIEW_316_RECORD} generic-api-key`,
+          ...REVIEW_ALLOWED_RECORDS.map((path) => `${path} generic-api-key`),
           `${REVIEW_274} private-key`,
           `${KEY_TAIL_TEST} generic-api-key`,
         ].sort(),
