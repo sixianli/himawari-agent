@@ -968,10 +968,17 @@ describe("opencode install integrity", () => {
     }
   });
 
-  it("[opencode lock] two processes installing into the same fresh prefix both end up with a working binary", async () => {
+  it.each([
+    ["fresh", false],
+    ["leftover", true],
+  ])("[opencode lock] two processes installing into the same %s prefix both end up with a working binary", async (_name, leftover) => {
     const root = mkdtempSync(join(tmpdir(), "opencode-install-race-"));
     try {
       const prefix = join(root, "shared");
+      if (leftover) {
+        mkdirSync(join(prefix, "node_modules"), { recursive: true });
+        writeFileSync(join(prefix, "node_modules", "partial"), "half-installed");
+      }
       const script = fileURLToPath(
         new URL("../../scripts/model-review/opencode-review.mjs", import.meta.url),
       );

@@ -445,10 +445,14 @@ function installBesideThenRename(prefix, lockDir, binary, lock) {
       throw new Error(`OPENCODE_INTEGRITY_MISMATCH ${prefix} ${stagedProblems.join(" | ")}`);
     try {
       renameSync(staging, prefix);
-    } catch (error) {
+    } catch {
       if (!existsSync(binary)) {
         rmSync(prefix, { recursive: true, force: true });
-        renameSync(staging, prefix);
+        try {
+          renameSync(staging, prefix);
+        } catch (error) {
+          if (!existsSync(binary)) throw error;
+        }
       }
     }
   } finally {
