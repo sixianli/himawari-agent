@@ -33,6 +33,7 @@ const ARCHIVE_DIRECTORY = "docs/archive";
 const MARKDOWN_LINK = /\]\(([^)\s]+)\)/g;
 const EXPLICIT_ANCHOR = /<a id="([^"]+)"><\/a>/g;
 const HEADING = /^#{1,6}\s+(.+)$/gm;
+const ADR_PATH_MENTION = /docs\/adr\/\d{4}-[a-z0-9][a-z0-9-]*\.md/g;
 const TITLE = /^#\s+(.+)$/m;
 const TITLE_NUMBER = /^ADR\s+(\d{4})(?!\d)/;
 
@@ -79,6 +80,10 @@ export function findAdrTitleProblems(files) {
   return errors;
 }
 
+function isRegularFile(absolute) {
+  return existsSync(absolute) && lstatSync(absolute).isFile();
+}
+
 export function findAdrLinkProblems(root) {
   const errors = [];
   if (!existsSync(path.join(root, DOCS_DIRECTORY))) return errors;
@@ -93,13 +98,16 @@ export function findAdrLinkProblems(root) {
         !ADR_FILE.test(path.basename(destination))
       )
         continue;
-      if (!existsSync(destination)) {
+      if (!isRegularFile(path.join(destination))) {
         errors.push(`ADR_LINK_MISSING ${file} -> ${target}`);
         continue;
       }
       if (anchor && !anchorsOf(readFileSync(destination, "utf8")).has(anchor))
         errors.push(`ADR_LINK_ANCHOR_MISSING ${file} -> ${target}`);
     }
+    for (const mention of new Set(text.match(ADR_PATH_MENTION) ?? []))
+      if (!isRegularFile(path.join(root, mention)))
+        errors.push(`ADR_PATH_MISSING ${file} -> ${mention}`);
   }
   return errors;
 }
@@ -115,7 +123,7 @@ export function checkAdrNumbers({ root = repositoryRoot } = {}) {
       adrs: 0,
     };
   const names = readdirSync(directory)
-    .filter((name) => name.endsWith(".md"))
+    .filter((name) => name.endsWith(".md") && isRegularFile(path.join(directory, name)))
     .sort();
   const titles = names.map((name) => [name, readFileSync(path.join(directory, name), "utf8")]);
   return {

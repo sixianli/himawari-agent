@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -108,6 +108,27 @@ describe("ADR number check", () => {
       "ADR_LINK_ANCHOR_MISSING docs/execution/specs/s.md -> ../../adr/0001-a.md#不存在",
       "ADR_LINK_MISSING docs/execution/specs/s.md -> ../adr/0001-a.md",
     ]);
+  });
+
+  it("reports a written-out docs/adr path (superseded_by, SOURCE marker) that no longer exists", () => {
+    const root = fixture(["0001-a.md"]);
+    writeFileSync(
+      join(root, "docs/adr/0001-a.md"),
+      '---\nsuperseded_by: "docs/adr/0009-old.md"\n---\n# ADR 0001：a\n[SOURCE: docs/adr/0001-a.md] [SOURCE: docs/adr/0008-gone.md]\n',
+    );
+    expect(checkAdrNumbers({ root }).errors).toEqual([
+      "ADR_PATH_MISSING docs/adr/0001-a.md -> docs/adr/0009-old.md",
+      "ADR_PATH_MISSING docs/adr/0001-a.md -> docs/adr/0008-gone.md",
+    ]);
+  });
+
+  it("does not follow symbolic links in docs: skips a dangling or looping one instead of crashing", () => {
+    const root = fixture(["0001-a.md"]);
+    symlinkSync(join(root, "docs/missing"), join(root, "docs/dangling.md"));
+    symlinkSync(join(root, "docs"), join(root, "docs/loop"));
+    symlinkSync("/dev/zero", join(root, "docs/adr/0002-zero.md"));
+    const { errors } = checkAdrNumbers({ root });
+    expect(errors.some((error) => error.includes("0002-zero"))).toBe(false);
   });
 
   it("passes on this repository", () => {
