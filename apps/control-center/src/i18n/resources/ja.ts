@@ -1063,7 +1063,7 @@ export const messages = {
   "decision.chain.sourceDeleted": "元の会話は削除済み",
   "decision.chain.openSource": "元の会話を開く",
   "decision.chain.basis": "推測の根拠",
-  "decision.chain.basisCut": "根拠を読み切れていません（多すぎるか読み取りエラー）。一部のみ表示",
+  "decision.chain.basisCut": "根拠を読み切れていません（多すぎるか読み取りエラー）",
   "decision.chain.action":
     "{a, select, merge {統合} supersede {置き換え} archive {アーカイブ} reflect {要約} other {整理}}",
   "decision.chain.repeated": "重複",

@@ -662,7 +662,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         "gmail-reverse-supersede",
         gmailInputs({
           ruleIds: [odd],
-          floorHits: {},
+          floorHits: { "mail-1": [odd] },
           memoryIds: ["memory-sensitive"],
           memoryByMail: {},
           usedMemoryIds: [],
@@ -674,7 +674,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         supersededBy: { memoryId: "memory-b", text: null },
       });
       expect(JSON.stringify(chain)).not.toContain(TEXTS["payload-b"] as string);
-      expect(chain.rules.items[0]?.ruleId).toBe("rule with control");
+      expect(chain.rules.items[0]).toMatchObject({ ruleId: "rule with control", mailCount: 1 });
     } finally {
       await f.repository.close();
     }

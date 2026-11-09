@@ -221,8 +221,8 @@ export function DecisionChainDrawer({
               <h3>{message("decision.chain.rules")}</h3>
               {chain.rules.state === "recorded" ? (
                 <ul className="decision-chain-list">
-                  {chain.rules.items.map((rule) => (
-                    <li key={rule.ruleId}>
+                  {chain.rules.items.map((rule, index) => (
+                    <li key={`${rule.ruleId}:${index}`}>
                       <p>
                         {message("decision.chain.rule", { id: rule.ruleId })}
                         {` · ${message("decision.chain.origin", { o: rule.origin ?? "unknown" })}`}

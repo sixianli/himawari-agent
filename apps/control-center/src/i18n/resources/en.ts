@@ -1063,8 +1063,7 @@ export const messages = {
   "decision.chain.sourceDeleted": "Source conversation deleted",
   "decision.chain.openSource": "Open source conversation",
   "decision.chain.basis": "Inferred from",
-  "decision.chain.basisCut":
-    "Sources not fully read (too many, or a read error); only some are shown",
+  "decision.chain.basisCut": "Sources not fully read (too many, or a read error)",
   "decision.chain.action":
     "{a, select, merge {Merged} supersede {Replaced} archive {Archived} reflect {Summarized} other {Tidied}}",
   "decision.chain.repeated": "repeated",
