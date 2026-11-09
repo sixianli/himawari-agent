@@ -41,6 +41,7 @@ export interface ProactiveWeeklyAccess {
   }>;
   readonly identityMethod: () => Promise<"built-in" | "cloudflare-access" | null>;
   readonly start: (startDay: string, recentAuthenticationRef: string) => Promise<void>;
+  readonly markGapCase: (caseId: string, endDay: string, marked: boolean) => Promise<void>;
 }
 export interface ProactiveSettings {
   readonly enabled: boolean;
@@ -166,6 +167,16 @@ export function useProactive(input: {
               ? value.method
               : null
             : null;
+        },
+        markGapCase: async (caseId, endDay, marked) => {
+          await client.mutate(
+            commandMessage(
+              configuration,
+              "proactive.gapcase.mark",
+              { caseId, endDay, marked },
+              { risk: "low" },
+            ),
+          );
         },
         start: async (startDay, recentAuthenticationRef) => {
           await client.mutate(
