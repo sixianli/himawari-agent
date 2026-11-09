@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, lstatSync, readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -31,7 +31,6 @@ export function findAdrNumberProblems(names) {
 const DOCS_DIRECTORY = "docs";
 const ARCHIVE_DIRECTORY = "docs/archive";
 const MARKDOWN_LINK = /\]\(([^)\s]+)\)/g;
-const ADR_LINK_TARGET = /(?:^|\/)adr\/\d{4}-[a-z0-9][a-z0-9-]*\.md$/;
 const EXPLICIT_ANCHOR = /<a id="([^"]+)"><\/a>/g;
 const HEADING = /^#{1,6}\s+(.+)$/gm;
 const TITLE = /^#\s+(.+)$/m;
@@ -57,9 +56,10 @@ function markdownFiles(directory, root) {
   for (const entry of readdirSync(path.join(root, directory)).sort()) {
     const relative = `${directory}/${entry}`;
     if (relative === ARCHIVE_DIRECTORY) continue;
-    if (statSync(path.join(root, relative)).isDirectory())
+    if (lstatSync(path.join(root, relative)).isDirectory())
       files.push(...markdownFiles(relative, root));
-    else if (entry.endsWith(".md")) files.push(relative);
+    else if (entry.endsWith(".md") && !lstatSync(path.join(root, relative)).isSymbolicLink())
+      files.push(relative);
   }
   return files;
 }
@@ -86,9 +86,13 @@ export function findAdrLinkProblems(root) {
     const text = readFileSync(path.join(root, file), "utf8");
     for (const [, target] of text.matchAll(MARKDOWN_LINK)) {
       const [relative, anchor] = target.split("#");
-      if (!relative || /^[a-z][a-z0-9+.-]*:/i.test(relative) || !ADR_LINK_TARGET.test(relative))
-        continue;
+      if (!relative || /^[a-z][a-z0-9+.-]*:/i.test(relative)) continue;
       const destination = path.resolve(path.dirname(path.join(root, file)), relative);
+      if (
+        path.basename(path.dirname(destination)) !== "adr" ||
+        !ADR_FILE.test(path.basename(destination))
+      )
+        continue;
       if (!existsSync(destination)) {
         errors.push(`ADR_LINK_MISSING ${file} -> ${target}`);
         continue;
@@ -110,7 +114,9 @@ export function checkAdrNumbers({ root = repositoryRoot } = {}) {
       errors: [...result.errors, `ADR_NUMBER_NO_FILES ${ADR_DIRECTORY} 下没有 ADR`],
       adrs: 0,
     };
-  const names = readdirSync(directory).filter((name) => name.endsWith(".md"));
+  const names = readdirSync(directory)
+    .filter((name) => name.endsWith(".md"))
+    .sort();
   const titles = names.map((name) => [name, readFileSync(path.join(directory, name), "utf8")]);
   return {
     errors: [...result.errors, ...findAdrTitleProblems(titles), ...findAdrLinkProblems(root)],

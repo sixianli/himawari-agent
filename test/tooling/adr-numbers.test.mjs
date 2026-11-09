@@ -96,9 +96,14 @@ describe("ADR number check", () => {
       join(root, "docs/execution/specs/s.md"),
       "[好](../../adr/0001-a.md#结论) [旧名](../../adr/0003-old.md) [锚点](../../adr/0001-a.md#不存在) [错层](../adr/0001-a.md)\n",
     );
+    writeFileSync(
+      join(root, "docs/adr/0002-b.md"),
+      "# ADR 0002：标题\n\n[旧](0003-old.md) [好](0001-a.md#结论)\n",
+    );
     writeFileSync(join(root, "docs/archive/old.md"), "[旧](../adr/0009-gone.md)\n");
     const { errors } = checkAdrNumbers({ root });
     expect(errors).toEqual([
+      "ADR_LINK_MISSING docs/adr/0002-b.md -> 0003-old.md",
       "ADR_LINK_MISSING docs/execution/specs/s.md -> ../../adr/0003-old.md",
       "ADR_LINK_ANCHOR_MISSING docs/execution/specs/s.md -> ../../adr/0001-a.md#不存在",
       "ADR_LINK_MISSING docs/execution/specs/s.md -> ../adr/0001-a.md",
