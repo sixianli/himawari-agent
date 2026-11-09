@@ -1119,11 +1119,14 @@ describe("opencode review installed guard", () => {
         expect(probeRefused({ status: "completed", output })).toBe(true);
       const localized = viaShell(`cd ${root}`, { LC_ALL: "ja_JP.UTF-8", LANG: "ja_JP.UTF-8" });
       expect(probeRefused({ status: "completed", output: localized.text })).toBe(true);
-      const locale = viaShell('echo "[$LC_ALL]/[$LC_MESSAGES]"', {
+      const locale = viaShell("env", {
         LC_ALL: "ja_JP.UTF-8",
         LC_MESSAGES: "ja_JP.UTF-8",
-      });
-      expect(locale.text.trim()).toBe("[]/[C]");
+        LANGUAGE: "ja_JP",
+      }).text.split("\n");
+      expect(locale.some((line) => line.startsWith("LC_ALL="))).toBe(false);
+      expect(locale).toContain("LC_MESSAGES=C");
+      expect(locale).toContain("LANGUAGE=C");
       for (const command of [
         "git log -1 --oneline",
         "git show --stat HEAD",
@@ -1244,6 +1247,26 @@ describe("opencode review installed guard", () => {
     expect(env.LC_CTYPE).toBe("ja_JP.UTF-8");
   });
 
+  it("[review env] a parent that carries its character locale only in LC_ALL keeps it", () => {
+    const base = {
+      cwd: "/work",
+      configPath: "/work/opencode.json",
+      limitsPath: "/work/limits.json",
+      gitGuard: { binDir: "/guard/bin", shell: "/guard/shell/bash", configHome: "/guard/home" },
+      extraEnv: {},
+    };
+    const fromAll = opencodeChildEnv({
+      ...base,
+      parentEnv: { PATH: "/usr/bin", LC_ALL: "zh_CN.UTF-8" },
+    });
+    expect("LC_ALL" in fromAll).toBe(false);
+    expect(fromAll.LC_CTYPE).toBe("zh_CN.UTF-8");
+    expect(fromAll.LC_MESSAGES).toBe("C");
+    const fromNothing = opencodeChildEnv({ ...base, parentEnv: { PATH: "/usr/bin" } });
+    expect("LC_CTYPE" in fromNothing).toBe(false);
+    expect(fromNothing.LC_MESSAGES).toBe("C");
+  });
+
   it("[review env] the real self-check passes with secrets in the script's environment", () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-env-"));
     try {
@@ -1295,7 +1318,24 @@ describe("opencode review installed guard", () => {
       NODE_OPTIONS: "--require x",
       GIT_PAGER: "less",
     });
-    expect(env).toEqual({ PATH: "/bin", HOME: "/h", ...GIT_ENV });
+    expect(env).toEqual({
+      PATH: "/bin",
+      HOME: "/h",
+      ...GIT_ENV,
+      LC_MESSAGES: "C",
+      LANGUAGE: "C",
+    });
+  });
+
+  it("makes the real git report errors in English without losing the character locale", () => {
+    expect(gitChildEnv({ PATH: "/bin", LANG: "ja_JP.UTF-8", LC_ALL: "ja_JP.UTF-8" })).toEqual({
+      PATH: "/bin",
+      LANG: "ja_JP.UTF-8",
+      ...GIT_ENV,
+      LC_CTYPE: "ja_JP.UTF-8",
+      LC_MESSAGES: "C",
+      LANGUAGE: "C",
+    });
   });
 });
 

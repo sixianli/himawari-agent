@@ -565,7 +565,16 @@ export const GIT_ENV = {
   GIT_PAGER: "cat",
   PAGER: "cat",
 };
-export const GIT_KEPT_ENV = ["PATH", "HOME", "LANG", "LC_ALL", "TERM"];
+export const GIT_KEPT_ENV = ["PATH", "HOME", "LANG", "TERM"];
+
+export function englishMessages(env) {
+  const ctype = env.LC_CTYPE ?? env.LC_ALL ?? env.LANG;
+  return {
+    ...(ctype === undefined ? {} : { LC_CTYPE: ctype }),
+    LC_MESSAGES: "C",
+    LANGUAGE: "C",
+  };
+}
 export const REVIEW_CANARY_ENV = "REVIEW_CANARY";
 export const REVIEW_PARENT_CANARY_ENV = "REVIEW_PARENT_CANARY";
 export const OPENCODE_KEPT_ENV = [
@@ -574,7 +583,6 @@ export const OPENCODE_KEPT_ENV = [
   "USER",
   "LOGNAME",
   "LANG",
-  "LC_ALL",
   "LC_CTYPE",
   "TERM",
   "TMPDIR",
@@ -623,8 +631,7 @@ export function opencodeChildEnv({ parentEnv, cwd, configPath, limitsPath, gitGu
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_PAGER: "cat",
     PAGER: "cat",
-    LC_MESSAGES: "C",
-    LANGUAGE: "C",
+    ...englishMessages(parentEnv),
     PATH: `${gitGuard.binDir}${delimiter}${parentEnv.PATH ?? ""}`,
     SHELL: gitGuard.shell,
   };
@@ -637,7 +644,7 @@ export function gitChildEnv(env) {
   const kept = Object.fromEntries(
     GIT_KEPT_ENV.filter((name) => env[name] !== undefined).map((name) => [name, env[name]]),
   );
-  return { ...kept, ...GIT_ENV };
+  return { ...kept, ...GIT_ENV, ...englishMessages(env) };
 }
 
 export function installGitGuard(workRoot) {
@@ -679,6 +686,7 @@ export function installGitGuard(workRoot) {
       `echo "$$" >> ${JSON.stringify(join(workRoot, SHELL_LOG_NAME))}`,
       "unset LC_ALL",
       "export LC_MESSAGES=C",
+      "export LANGUAGE=C",
       `exec ${JSON.stringify(realBash)} -r "$@"`,
       "",
     ].join("\n"),
