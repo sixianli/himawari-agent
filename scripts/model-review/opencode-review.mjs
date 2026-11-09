@@ -1116,7 +1116,7 @@ function showAt(repo, commit, path) {
   return shown.status === 0 ? shown.stdout : null;
 }
 
-export function lowFixProblems({ repo, ledgerPath, round, from, to }) {
+export function lowFixProblems({ repo, ledgerPath, round, from, to, mainRef }) {
   const problems = [];
   const verdictsPath = `${ledgerPath}/round-${round}/verdicts.jsonl`;
   const text = showAt(repo, to, verdictsPath);
@@ -1146,9 +1146,11 @@ export function lowFixProblems({ repo, ledgerPath, round, from, to }) {
   if (result.status !== 0) throw new Error(`GIT_FAILED git diff: ${result.stderr.trim()}`);
   const fields = result.stdout.split("\0");
   const changes = [];
+  const ownFiles = mainRef ? new Set(unreviewedFiles(repo, from, to, ledgerPath, mainRef)) : null;
   for (const entry of fields) {
     const match = /^(-|\d+)\t(-|\d+)\t([\s\S]+)$/.exec(entry);
     if (!match || match[3].startsWith(`${ledgerPath}/`)) continue;
+    if (ownFiles && !ownFiles.has(match[3])) continue;
     const lines = match[1] === "-" ? Infinity : Number(match[1]) + Number(match[2]);
     changes.push({ file: match[3], lines, added: match[1] === "-" ? 0 : Number(match[1]) });
   }
@@ -1264,6 +1266,54 @@ function changedOutside(repo, from, to, ledgerPath) {
   return result.stdout.split("\0").filter((file) => file && !file.startsWith(`${ledgerPath}/`));
 }
 
+function ownChangePrints(repo, commit, mainRef, ledgerPath, only) {
+  const base = gitStatus(["merge-base", mainRef, commit], repo);
+  if (base.status !== 0) return null;
+  const baseCommit = base.stdout.trim();
+  const names = gitStatus(["diff", "-z", "--no-renames", "--name-only", baseCommit, commit], repo);
+  if (names.status !== 0) return null;
+  const prints = new Map();
+  for (const file of names.stdout.split("\0")) {
+    if (!file || file.startsWith(`${ledgerPath}/`) || (only && !only.has(file))) continue;
+    if (file.includes("\uFFFD")) return null;
+    const diff = spawnSync(
+      "git",
+      [
+        "diff",
+        "-U0",
+        "--binary",
+        "--inter-hunk-context=0",
+        "--no-textconv",
+        "--no-ext-diff",
+        "--no-renames",
+        baseCommit,
+        commit,
+        "--",
+        `:(literal)${file}`,
+      ],
+      { cwd: repo, maxBuffer: 1 << 28 },
+    );
+    if (diff.status !== 0 || diff.stdout.length === 0) return null;
+    const stable = diff.stdout
+      .toString("latin1")
+      .split("\n")
+      .filter((line) => !line.startsWith("@@ ") && !line.startsWith("index "))
+      .join("\n");
+    prints.set(file, createHash("sha256").update(Buffer.from(stable, "latin1")).digest("hex"));
+  }
+  return prints;
+}
+
+export function unreviewedFiles(repo, from, to, ledgerPath, mainRef) {
+  const outside = changedOutside(repo, from, to, ledgerPath);
+  if (!mainRef || outside.length === 0) return outside;
+  const only = new Set(outside);
+  const reviewed = ownChangePrints(repo, from, mainRef, ledgerPath, only);
+  const current = ownChangePrints(repo, to, mainRef, ledgerPath, only);
+  if (!reviewed || !current) return outside;
+  return outside.filter((file) => reviewed.get(file) !== current.get(file)).sort();
+}
+
 export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnreviewed, acceptLow }) {
   const ledgerPath = `${REVIEWS_DIR}/${reviewKey({ pr })}`;
   const head = git(["rev-parse", "HEAD"], repo);
@@ -1279,10 +1329,20 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       round: point.round,
       from: point.from,
       to: point.head,
+      mainRef,
     });
     const problems = [...check.problems];
-    if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike)))
-      problems.push("files-differ");
+    if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike))) {
+      const legacy = lowFixProblems({
+        repo,
+        ledgerPath,
+        round: point.round,
+        from: point.from,
+        to: point.head,
+      });
+      if (legacy.problems.length > 0 || !sameList(point.files, legacy.files.map(maskSecretLike)))
+        problems.push("files-differ");
+    }
     if (
       check.problems.length === 0 &&
       !sameList(
@@ -1310,7 +1370,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
   else if (chainProblems.length > 0) problems.push(...chainProblems);
   else if (!isAncestor(complete.head, head)) problems.push(`not-ancestor ${complete.head}`);
   else {
-    outsideFiles = changedOutside(repo, complete.head, head, ledgerPath);
+    outsideFiles = unreviewedFiles(repo, complete.head, head, ledgerPath, mainRef);
     for (const file of outsideFiles) problems.push(`unreviewed ${printable(file)}`);
   }
   problems.push(...recordSecretProblems({ repo, ledgerPath, otherFiles: outsideFiles }));
@@ -1343,7 +1403,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
           .find(
             (record) =>
               gitStatus(["merge-base", "--is-ancestor", record.head, head], repo).status === 0 &&
-              changedOutside(repo, record.head, head, ledgerPath).length === 0,
+              unreviewedFiles(repo, record.head, head, ledgerPath, mainRef).length === 0,
           )
       : undefined;
   const ledgerFile = join(repo, ledgerPath, "usage.jsonl");
@@ -1361,7 +1421,14 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     else if (complete.by === "low-fix") reasons.push(`already-low-fixed round=${acceptLow}`);
     const check =
       reasons.length === 0
-        ? lowFixProblems({ repo, ledgerPath, round: acceptLow, from: complete.head, to: head })
+        ? lowFixProblems({
+            repo,
+            ledgerPath,
+            round: acceptLow,
+            from: complete.head,
+            to: head,
+            mainRef,
+          })
         : null;
     if (check) reasons.push(...check.problems);
     if (reasons.length === 0 && !ledgerMatchesHead()) reasons.push("ledger-differs-from-HEAD");
@@ -1639,11 +1706,17 @@ export function roundForRun({
     const recordedDigests = inRound
       .filter((record) => record.model === model && record.promptSha256)
       .map((record) => record.promptSha256);
+    const recordedFileDigests = inRound
+      .filter((record) => record.model === model && record.promptFileSha256)
+      .map((record) => record.promptFileSha256);
     const digest = createHash("sha256").update(prompts[model]).digest("hex");
     if (onDisk === null && recordedDigests.length === 0)
       throw new Error(`ROUND_CANNOT_VERIFY ${requested} ${model}`);
     if (
-      (onDisk !== null && onDisk !== maskSecretLike(prompts[model])) ||
+      (onDisk !== null &&
+        onDisk !== maskSecretLike(prompts[model]) &&
+        onDisk !== maskSecretLike(prompts[model], { registeredValues: false }) &&
+        !recordedFileDigests.includes(createHash("sha256").update(onDisk).digest("hex"))) ||
       recordedDigests.some((recorded) => recorded !== digest)
     )
       throw new Error(`ROUND_PROMPT_MISMATCH ${requested} ${model}`);
@@ -2448,11 +2521,56 @@ export const RECORD_SECRET_RULES = Object.freeze([
   ],
 ]);
 
-export function maskSecretLike(text) {
+const REGISTERED_VALUE_RULE_ID = "registered-test-value";
+const REGISTERED_VALUE_MIN_LENGTH = 12;
+let registeredTestValues = [];
+
+export function setRegisteredTestValues(values) {
+  registeredTestValues = [...new Set(values)].sort(
+    (a, b) => b.length - a.length || (a < b ? -1 : 1),
+  );
+}
+
+export function registeredTestValuesFromToml(text) {
+  const values = new Set();
+  for (const match of text.matchAll(/^regexes\s*=\s*\[\s*\'\'\'\^([^\n]*?)\$\'\'\'\s*\]\s*$/gm)) {
+    const literal = match[1].replaceAll("\\.", ".");
+    if (literal.length >= REGISTERED_VALUE_MIN_LENGTH && /^[A-Za-z0-9_\-=.:/ ]+$/.test(literal))
+      values.add(literal);
+  }
+  return [...values];
+}
+
+export function loadRegisteredTestValues(repo, ref) {
+  const shown = gitStatus(["show", `${ref}:ci/rules/gitleaks.toml`], repo);
+  if (shown.status !== 0) throw new Error(`REGISTERED_VALUES_UNREADABLE ${ref}`);
+  return registeredTestValuesFromToml(shown.stdout);
+}
+
+function registeredValuesPattern() {
+  if (registeredTestValues.length === 0) return null;
+  return new RegExp(
+    registeredTestValues.map((value) => value.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")).join("|"),
+    "g",
+  );
+}
+
+export function maskSecretLike(text, { registeredValues = true } = {}) {
+  const registered = registeredValues ? registeredValuesPattern() : null;
   let masked = text;
   for (const [id, pattern] of RECORD_SECRET_RULES)
     masked = masked.replace(new RegExp(pattern.source, pattern.flags), `[已遮盖:${id}]`);
-  return masked;
+  return registered ? masked.replace(registered, `[已遮盖:${REGISTERED_VALUE_RULE_ID}]`) : masked;
+}
+
+export function registerTestValuesFromRefs(repo, refs) {
+  const values = [];
+  for (const ref of refs) {
+    if (gitStatus(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], repo).status !== 0)
+      continue;
+    values.push(...loadRegisteredTestValues(repo, ref));
+  }
+  setRegisteredTestValues(values);
 }
 
 export function secretLikeRules(text) {
@@ -2906,6 +3024,7 @@ async function main() {
   if (unknownProvider) throw new Error(`ARG_INVALID --providers ${unknownProvider}`);
   const timeoutMs = options.timeoutMinutes * 60 * 1000;
   const commits = resolveCommits(options.repo, options);
+  registerTestValuesFromRefs(options.repo, [commits.base ?? commits.head, "origin/main"]);
   const questions = reviewQuestions(questionsSource(options.repo, commits, options.questionsRef));
   const brief = recordText(readFileSync(options.brief, "utf8"));
   const prompts = Object.fromEntries(

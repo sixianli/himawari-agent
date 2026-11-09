@@ -1,0 +1,6 @@
+{"id": "r3-d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 中等 — “预热执行环境已释放”的正向用例造出了生产不可能出现的释放回执", "valid": true, "class": "better"}
+{"id": "r3-d2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 低 — 模型用例的外键父行实际没有被校验，unknown 场景的预算账号状态也不真实", "valid": true, "class": "better"}
+{"id": "r3-d3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 低 — 生产收尾包装器仍无测试；截止前候选会重复做昂贵工作", "valid": true, "class": "better"}
+{"id": "r3-g1", "model": "opencode-go/glm-5.3-flash", "quote": "复现数字与代码状态对不上", "valid": true, "class": "error", "severity": "low", "trigger": "后人想按 I-88 的通过条数复现", "consequence": "数字不符，不会误导做错事；作者已在 05e8764 改为 82", "modelSeverity": "低"}
+{"id": "r3-g2", "model": "opencode-go/glm-5.3-flash", "quote": "environment-released 收据在 FK 关闭期间插入，缺生产必需的父行", "valid": true, "class": "better"}
+{"id": "r3-g3", "model": "opencode-go/glm-5.3-flash", "quote": "生产收尾包装器无测试（作者已承认），且新分支「截止前不收尾」没有组件级直接用例", "valid": true, "class": "better"}

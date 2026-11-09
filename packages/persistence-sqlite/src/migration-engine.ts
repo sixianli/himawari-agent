@@ -653,10 +653,17 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 83,
+    name: "model_invocation_owner_lost",
+    changeSet: "model-invocation-owner-lost",
+    phase: "expand" as const,
+    file: "0083_model_invocation_owner_lost.sql",
+  },
+  {
+    sequence: 84,
     name: "memory_consolidation_basis",
     changeSet: "memory-consolidation-basis",
     phase: "expand" as const,
-    file: "0083_memory_consolidation_basis.sql",
+    file: "0084_memory_consolidation_basis.sql",
   },
 ] as const;
 
