@@ -276,6 +276,12 @@ describe("prod-read.sh", () => {
       encoding: "utf8",
     });
     expect(writable.stderr).toContain("PROD_READ_CONFIG_UNSAFE");
+    const absent = spawnSync(
+      process.execPath,
+      ["--no-warnings", "-", path.join(directory, "absent.json")],
+      { input: result.input, encoding: "utf8" },
+    );
+    expect(absent.stderr.trim()).toBe("PROD_READ_CONFIG_UNREADABLE");
   });
 
   it("refuses arguments for the two new queries", () => {

@@ -108,19 +108,26 @@ JS
 system_instruction_query() {
   ssh -o BatchMode=yes -o ConnectTimeout=20 "$PROD_TARGET" \
     "cd /tmp && $PROD_NODE --no-warnings - $PROD_CONFIGURATION" <<'JS'
-const { readFileSync, lstatSync } = require("node:fs");
+const { openSync, fstatSync, readFileSync, closeSync, constants } = require("node:fs");
 const fail = (code) => {
   console.error(code);
   process.exit(1);
 };
-const stat = lstatSync(process.argv[2]);
-if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o022) !== 0) fail("PROD_READ_CONFIG_UNSAFE");
+let descriptor;
+try {
+  descriptor = openSync(process.argv[2], constants.O_RDONLY | constants.O_NOFOLLOW);
+} catch (error) {
+  fail(error.code === "ELOOP" ? "PROD_READ_CONFIG_UNSAFE" : "PROD_READ_CONFIG_UNREADABLE");
+}
+const stat = fstatSync(descriptor);
+if (!stat.isFile() || (stat.mode & 0o022) !== 0) fail("PROD_READ_CONFIG_UNSAFE");
 let configuration;
 try {
-  configuration = JSON.parse(readFileSync(process.argv[2], "utf8"));
+  configuration = JSON.parse(readFileSync(descriptor, "utf8"));
 } catch {
   fail("PROD_READ_CONFIG_UNREADABLE");
 }
+closeSync(descriptor);
 const text = configuration?.runPolicy?.systemInstruction;
 if (typeof text !== "string") fail("PROD_READ_NO_SYSTEM_INSTRUCTION");
 console.log(text);
