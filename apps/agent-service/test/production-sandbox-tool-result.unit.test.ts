@@ -5,6 +5,7 @@ import type {
 } from "@himawari-agent/execution-contracts";
 import {
   SANDBOX_MEMORY_LIMIT,
+  SANDBOX_OUTPUT_LIMIT,
   SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
 } from "@himawari-agent/execution-contracts";
 import { describe, expect, it } from "vitest";
@@ -158,13 +159,16 @@ describe("sandbox failure output retention", () => {
     ).toBe(true);
   });
 
-  it("[I-84] reports the production memory limit to the model in decimal megabytes", () => {
+  it("[I-84] states every byte ceiling the way the limit constants are written", () => {
+    const ceiling = {
+      maxCpuTimeMs: 30_000,
+      maxMemoryBytes: SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
+      maxOutputBytes: 48 * 1024,
+    };
+    expect(sandboxCeilingExceededMessage(SANDBOX_MEMORY_LIMIT, ceiling)).toContain("内存 1024 MB");
+    expect(sandboxCeilingExceededMessage(SANDBOX_OUTPUT_LIMIT, ceiling)).toContain("输出 48 KB");
     expect(
-      sandboxCeilingExceededMessage(SANDBOX_MEMORY_LIMIT, {
-        maxCpuTimeMs: 30_000,
-        maxMemoryBytes: SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
-        maxOutputBytes: 2_000_000,
-      }),
-    ).toContain("内存 1073.7 MB");
+      sandboxCeilingExceededMessage(SANDBOX_OUTPUT_LIMIT, { ...ceiling, maxOutputBytes: 900 }),
+    ).toContain("输出 900 字节");
   });
 });

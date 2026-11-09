@@ -6156,6 +6156,21 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
                 : { exitCode: null, reasonCode: "resource_limit", taskProcessExited: true },
           });
         }
+        if (variant === "unrecoverable") {
+          const inspected = await make("authority-inspection").inspectToolResultRecovery({
+            runId,
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+          });
+          expect(inspected).toBeUndefined();
+          expect(
+            f.database
+              .prepare(
+                "SELECT COUNT(*) AS count FROM run_payload_artifacts WHERE run_id=? AND purpose='trace' AND operation_key LIKE 'sandbox-tool-result-unrecoverable:%'",
+              )
+              .get(runId),
+          ).toEqual({ count: 0 });
+        }
         const outcomes = ["competing", "coding-competing"].includes(variant)
           ? await Promise.all([
               make("first-recovery").dispatcher.pump(),
