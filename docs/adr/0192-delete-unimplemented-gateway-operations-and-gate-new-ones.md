@@ -98,6 +98,6 @@ date: "2026-11-09"
 
 ## 关联文档
 
-- [ADR 0191](0191-record-the-whole-basis-chain-of-a-memory-tidy-up.md)：`memory.basis.read` 的来源。
+- [ADR 0194](0194-record-the-whole-basis-chain-of-a-memory-tidy-up.md)：`memory.basis.read` 的来源。
 - [ADR 0143](0143-decision-ledger-for-model-gate-decisions.md)：决策记录（原“决策账本”）。
 - [产品愿景](../product-vision.md)：边界与可逆性优先于效率。
