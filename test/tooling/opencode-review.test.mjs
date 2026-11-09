@@ -1014,6 +1014,22 @@ describe("opencode install integrity", () => {
     }
   }, 300000);
 
+  it("[opencode lock] a leftover non-empty prefix without a binary is replaced by a fresh install", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-install-leftover-"));
+    try {
+      const prefix = join(root, "shared");
+      mkdirSync(join(prefix, "node_modules"), { recursive: true });
+      writeFileSync(join(prefix, "node_modules", "partial"), "half-installed");
+      const binary = installOpencode({ prefix });
+      expect(execFileSync(binary, ["--version"], { encoding: "utf8" }).trim()).toBe(
+        OPENCODE_VERSION,
+      );
+      expect(readdirSync(root)).toEqual(["shared"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 300000);
+
   it("[opencode lock] installs the locked version and refuses a download that does not match", () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-install-"));
     try {

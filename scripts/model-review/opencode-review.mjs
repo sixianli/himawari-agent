@@ -446,7 +446,10 @@ function installBesideThenRename(prefix, lockDir, binary, lock) {
     try {
       renameSync(staging, prefix);
     } catch (error) {
-      if (!existsSync(binary)) throw error;
+      if (!existsSync(binary)) {
+        rmSync(prefix, { recursive: true, force: true });
+        renameSync(staging, prefix);
+      }
     }
   } finally {
     rmSync(staging, { recursive: true, force: true });
