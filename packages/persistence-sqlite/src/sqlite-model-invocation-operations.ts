@@ -746,6 +746,12 @@ export class SqliteModelInvocationOperations {
     runId: ModelInvocationIdentity["runId"],
     at: string,
   ): void {
+    if (!this.database.inTransaction)
+      this.fail(
+        "PORT_INVALID_OPERATION",
+        "Orphaned model invocation takeover requires an active SQLite transaction",
+      );
+    this.assertCurrentAuthority(scope, at);
     const rows = this.database
       .prepare(
         `SELECT * FROM model_invocation_identities

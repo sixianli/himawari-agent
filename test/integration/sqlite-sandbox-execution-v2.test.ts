@@ -1073,13 +1073,14 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "deadline-code-environment-unreleased",
     "deadline-code-model-orphan-started",
     "deadline-code-model-orphan-reserved",
+    "deadline-code-model-orphan-epoch-started",
     "persisted-code-model-orphan-started",
     "persisted-code-model-started",
     "released-model-started",
     "released-model-orphan-started",
   ] as const)("settles an expired unknown Run without dispatching: %s", async (scenario) => {
     const modelScenario =
-      /^(deadline-code|persisted-code|released)-model-(orphan-)?(reserved|started|unknown|settled|released)(?:-(provider|transport|cancel))?(-tool-code)?$/.exec(
+      /^(deadline-code|persisted-code|released)-model-(orphan-(?:epoch-)?)?(reserved|started|unknown|settled|released)(?:-(provider|transport|cancel))?(-tool-code)?$/.exec(
         scenario,
       );
     const orphan = modelScenario?.[2] !== undefined;
@@ -1237,7 +1238,9 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           )
           .get() as { id: string; deploymentId: string; epoch: number; token: number };
         const lease = orphan
-          ? { ...current, id: "previous-authority-lease", token: current.token + 1 }
+          ? modelScenario?.[2] === "orphan-epoch-"
+            ? { ...current, id: "previous-authority-lease", epoch: current.epoch + 1 }
+            : { ...current, id: "previous-authority-lease", token: current.token + 1 }
           : current;
         if (orphan)
           f.database
@@ -1487,6 +1490,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           "deadline-code-environment-released",
           "deadline-code-model-orphan-started",
           "deadline-code-model-orphan-reserved",
+          "deadline-code-model-orphan-epoch-started",
           "persisted-code-model-orphan-started",
           "released-model-orphan-started",
         ].includes(scenario)
