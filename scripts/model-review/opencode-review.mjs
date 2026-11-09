@@ -1706,11 +1706,17 @@ export function roundForRun({
     const recordedDigests = inRound
       .filter((record) => record.model === model && record.promptSha256)
       .map((record) => record.promptSha256);
+    const recordedFileDigests = inRound
+      .filter((record) => record.model === model && record.promptFileSha256)
+      .map((record) => record.promptFileSha256);
     const digest = createHash("sha256").update(prompts[model]).digest("hex");
     if (onDisk === null && recordedDigests.length === 0)
       throw new Error(`ROUND_CANNOT_VERIFY ${requested} ${model}`);
     if (
-      (onDisk !== null && onDisk !== maskSecretLike(prompts[model])) ||
+      (onDisk !== null &&
+        onDisk !== maskSecretLike(prompts[model]) &&
+        onDisk !== maskSecretLike(prompts[model], { registeredValues: false }) &&
+        !recordedFileDigests.includes(createHash("sha256").update(onDisk).digest("hex"))) ||
       recordedDigests.some((recorded) => recorded !== digest)
     )
       throw new Error(`ROUND_PROMPT_MISMATCH ${requested} ${model}`);
@@ -2515,11 +2521,56 @@ export const RECORD_SECRET_RULES = Object.freeze([
   ],
 ]);
 
-export function maskSecretLike(text) {
+const REGISTERED_VALUE_RULE_ID = "registered-test-value";
+const REGISTERED_VALUE_MIN_LENGTH = 12;
+let registeredTestValues = [];
+
+export function setRegisteredTestValues(values) {
+  registeredTestValues = [...new Set(values)].sort(
+    (a, b) => b.length - a.length || (a < b ? -1 : 1),
+  );
+}
+
+export function registeredTestValuesFromToml(text) {
+  const values = new Set();
+  for (const match of text.matchAll(/^regexes\s*=\s*\[\s*\'\'\'\^([^\n]*?)\$\'\'\'\s*\]\s*$/gm)) {
+    const literal = match[1].replaceAll("\\.", ".");
+    if (literal.length >= REGISTERED_VALUE_MIN_LENGTH && /^[A-Za-z0-9_\-=.:/ ]+$/.test(literal))
+      values.add(literal);
+  }
+  return [...values];
+}
+
+export function loadRegisteredTestValues(repo, ref) {
+  const shown = gitStatus(["show", `${ref}:ci/rules/gitleaks.toml`], repo);
+  if (shown.status !== 0) throw new Error(`REGISTERED_VALUES_UNREADABLE ${ref}`);
+  return registeredTestValuesFromToml(shown.stdout);
+}
+
+function registeredValuesPattern() {
+  if (registeredTestValues.length === 0) return null;
+  return new RegExp(
+    registeredTestValues.map((value) => value.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")).join("|"),
+    "g",
+  );
+}
+
+export function maskSecretLike(text, { registeredValues = true } = {}) {
+  const registered = registeredValues ? registeredValuesPattern() : null;
   let masked = text;
   for (const [id, pattern] of RECORD_SECRET_RULES)
     masked = masked.replace(new RegExp(pattern.source, pattern.flags), `[已遮盖:${id}]`);
-  return masked;
+  return registered ? masked.replace(registered, `[已遮盖:${REGISTERED_VALUE_RULE_ID}]`) : masked;
+}
+
+export function registerTestValuesFromRefs(repo, refs) {
+  const values = [];
+  for (const ref of refs) {
+    if (gitStatus(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], repo).status !== 0)
+      continue;
+    values.push(...loadRegisteredTestValues(repo, ref));
+  }
+  setRegisteredTestValues(values);
 }
 
 export function secretLikeRules(text) {
@@ -2973,6 +3024,7 @@ async function main() {
   if (unknownProvider) throw new Error(`ARG_INVALID --providers ${unknownProvider}`);
   const timeoutMs = options.timeoutMinutes * 60 * 1000;
   const commits = resolveCommits(options.repo, options);
+  registerTestValuesFromRefs(options.repo, [commits.base ?? commits.head, "origin/main"]);
   const questions = reviewQuestions(questionsSource(options.repo, commits, options.questionsRef));
   const brief = recordText(readFileSync(options.brief, "utf8"));
   const prompts = Object.fromEntries(

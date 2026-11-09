@@ -1,0 +1,6 @@
+{"id": "r2-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "合并门会重新判红本 PR 已有的记录，文档给的“再提交遮盖版”并不能修好", "valid": true, "class": "error", "severity": "medium-high", "trigger": "值在记录写好之后才登记，合并门按新清单把已提交记录判红且不可豁免，而改写遮盖版救不了已提交的历史", "consequence": "合并被拒，补救办法写错", "modelSeverity": "高"}
+{"id": "r2-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "提取清单忽略 `paths`/`targetRules`/`regexTarget`，会误遮非密钥和跨文件的值", "valid": false, "class": "better"}
+{"id": "r2-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "补跑兼容只覆盖“从未遮过登记值”的旧存档，清单变化后仍报 `ROUND_PROMPT_MISMATCH`", "valid": true, "class": "error", "severity": "low", "trigger": "补跑某一轮，而旧存档写入后清单增删了出现在提示词里的值", "consequence": "补跑被拒绝报错，不会给出错误结果", "modelSeverity": "中", "reason": "拒绝而非错误结果；补跑本来少见"}
+{"id": "r2-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "先遮登记值再跑强规则，可能降低真密钥识别（推测）", "valid": true, "class": "error", "severity": "low", "trigger": "真密钥恰好以某个登记值为前缀", "consequence": "真密钥的后半段可能漏遮", "modelSeverity": "低"}
+{"id": "r2-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ref 不存在时静默跳过，清单格式不对时也不报错（fail-open）", "valid": true, "class": "better"}
+{"id": "r2-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "测试覆盖缺口", "valid": true, "class": "better"}
