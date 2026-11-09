@@ -181,6 +181,8 @@ describe("prod-read.sh", () => {
     expect(result.code).toBe(0);
     expect(result.calls).toContain("--no-warnings - rules");
     expect(result.input).not.toContain("content_ref");
+    expect(result.input).toContain("{ readOnly: true }");
+    expect(result.input).toContain("LIMIT 500");
     const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-db-"));
     directories.push(directory);
     const file = path.join(directory, "product.sqlite");
@@ -230,6 +232,13 @@ describe("prod-read.sh", () => {
     });
     expect(missing.status).not.toBe(0);
     expect(missing.stdout).toBe("");
+    writeFileSync(file, JSON.stringify({ configuration: { runPolicy: { systemInstruction: "nested" } } }));
+    const nested = spawnSync(process.execPath, ["--no-warnings", "-", file], {
+      input: result.input,
+      encoding: "utf8",
+    });
+    expect(nested.status).not.toBe(0);
+    expect(nested.stdout).toBe("");
   });
 
   it("refuses arguments for the two new queries", () => {

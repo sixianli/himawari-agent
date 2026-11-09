@@ -146,7 +146,7 @@ date: "2026-11-09"
 | M-4 | 资格：只有状态有效、分类是公开或私密、当前有效、不是待确认、没被取代的记忆才进规则块；分类为敏感的规则永远不会注入 | [ADR 0185](adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)（敏感记忆不带入档案块）、[ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)（档案挑选规则） | `owner-profile-service.ts` 的 `PROFILE_CLASSIFICATIONS` | 硬 | 尚无 | PA-2（待确认不进档案）；`owner-profile-service.unit.test.ts` 的“puts rules first and groups important facts by section”（敏感记忆不进结果） |
 | M-5 | 主人在记忆页可以手动“每次对话都带”或“不带”某条记忆，覆盖自动选择 | [ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md) 盘点表 | `owner-profile-service.ts` 的 `pinned`、`choices` | 硬 | 尚无 | MEM-PIN |
 
-**记忆库里实际存了哪些规则，这份清单没有列。** 这些条目在生产数据库里，仓库读不到；读生产库按项目规矩要先问 Andy，所以没有读。需要的话：Andy 同意后，我用只读方式列出所有 `rule` 类记忆（条数、原话、立下的日期、是否待确认），补进这一节。
+**记忆库里实际存了哪些规则，这份清单没有列。** 这些条目在生产数据库里，仓库读不到；读生产库按项目规矩要先问 Andy，所以没有读。需要的话：Andy 同意后，我用只读方式列出所有 `rule` 类记忆（条数、状态、记录日期、是否待确认，不含原话：记忆原话是加密的，只能在记忆页看），补进这一节。
 
 [↑ 回到阅读导航](#contents)
 
