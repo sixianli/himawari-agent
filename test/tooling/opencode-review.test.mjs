@@ -2629,7 +2629,7 @@ describe("opencode review merge gate", () => {
     reasoning: 1,
     ...extra,
   });
-  const fixture = () => {
+  const fixture = (baseText = "base\n", featureText = "feature\n") => {
     const root = mkdtempSync(join(tmpdir(), "opencode-merge-gate-"));
     const repo = join(root, "repo");
     const git = (...args) => execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
@@ -2646,10 +2646,10 @@ describe("opencode review merge gate", () => {
     const ledger = `${REVIEWS_DIR}/pr-7/usage.jsonl`;
     const writeLedger = (records) =>
       commit({ [ledger]: records.map((r) => `${JSON.stringify(r)}\n`).join("") }, "records");
-    const main = commit({ "code.txt": "base\n" }, "base");
+    const main = commit({ "code.txt": baseText }, "base");
     git("update-ref", "refs/remotes/origin/main", main);
     git("checkout", "--quiet", "-b", "feature");
-    const reviewed = commit({ "code.txt": "feature\n" }, "feature");
+    const reviewed = commit({ "code.txt": featureText }, "feature");
     const check = (extra = {}) => assertReviewed({ repo, pr: 7, mainRef: "origin/main", ...extra });
     return { root, repo, git, commit, writeLedger, main, reviewed, check, ledger };
   };
@@ -2767,7 +2767,63 @@ describe("opencode review merge gate", () => {
         "--no-edit",
         "origin/main",
       );
-      expect(f.check().problems).toEqual(["unreviewed docs/rule.md", "unreviewed other.txt"]);
+      expect(f.check().problems).toEqual(["unreviewed docs/rule.md"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  const mergeMain = (f) =>
+    f.git("-c", "user.name=t", "-c", "user.email=t@t", "merge", "--quiet", "--no-edit", "origin/main");
+  const moveMain = (f, files) => {
+    f.git("checkout", "--quiet", "main");
+    const ahead = f.commit(files, "main moved");
+    f.git("update-ref", "refs/remotes/origin/main", ahead);
+    f.git("checkout", "--quiet", "feature");
+  };
+  const lines = (...edits) => {
+    const base = Array.from({ length: 12 }, (_, i) => `line ${i + 1}`);
+    for (const [index, text] of edits) base[index] = text;
+    return `${base.join("\n")}\n`;
+  };
+
+  it("[merge gate] a clean merge of main does not need another review round", () => {
+    const f = fixture(lines(), lines([0, "feature"]));
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      moveMain(f, { "other.txt": "main moved\n", "code.txt": lines([11, "main edit"]) });
+      expect(f.check().problems).toEqual(["main-not-merged origin/main"]);
+      mergeMain(f);
+      const result = f.check();
+      expect(result.problems).toEqual([]);
+      expect(result.lines[0]).toMatch(/^REVIEW_CURRENT /);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] a merge that adds a hand edit, or a PR change after the merge, is still unreviewed", () => {
+    const f = fixture(lines(), lines([0, "feature"]));
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      moveMain(f, { "other.txt": "main moved\n" });
+      mergeMain(f);
+      expect(f.check().problems).toEqual([]);
+      f.commit({ "code.txt": lines([0, "feature"], [5, "hand edit"]) }, "hand edit");
+      expect(f.check().problems).toEqual(["unreviewed code.txt"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] resolving a conflict with a different result is unreviewed", () => {
+    const f = fixture(lines(), lines([0, "feature"]));
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      moveMain(f, { "code.txt": lines([0, "main version"]) });
+      expect(() => mergeMain(f)).toThrow();
+      f.commit({ "code.txt": lines([0, "resolved by hand"]) }, "resolved");
+      expect(f.check().problems).toEqual(["unreviewed code.txt"]);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -2834,7 +2890,7 @@ describe("opencode review merge gate", () => {
         { at: "t", mode: "override", cost: 0, head, quote: "合并", problems: [] },
       ]);
       const committed = f.check();
-      expect(committed.problems).toEqual(["unreviewed code.txt", "unreviewed other.txt"]);
+      expect(committed.problems).toEqual(["unreviewed code.txt"]);
       expect(committed.overridden).toBe(true);
       expect(committed.lines.at(-1)).toBe(`REVIEW_OVERRIDE quote=合并 recorded=${head}`);
     } finally {
