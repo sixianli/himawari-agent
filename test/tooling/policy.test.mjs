@@ -97,7 +97,7 @@ function workflow() {
         "github.event_name",
         "github.event.pull_request.number || github.ref",
         "github.event_name == 'push' && github.run_id || ''",
-        "github.event.action == 'edited' && github.run_id || ''",
+        "github.event.action == 'edited' && 'edited' || ''",
       ]
         .map(githubExpression)
         .join("-"),
@@ -405,6 +405,24 @@ describe("CI policy contract", () => {
       (value) => {
         value.concurrency.group =
           "github.workflow-github.event_name-github.event.pull_request.number-github.run_id";
+      },
+    ],
+    [
+      "concurrency without the edited segment",
+      (value) => {
+        value.concurrency.group = value.concurrency.group.replace(
+          "-${{ github.event.action == 'edited' && 'edited' || '' }}",
+          "",
+        );
+      },
+    ],
+    [
+      "edited segment keyed by run id",
+      (value) => {
+        value.concurrency.group = value.concurrency.group.replace(
+          "&& 'edited' ||",
+          "&& github.run_id ||",
+        );
       },
     ],
     [

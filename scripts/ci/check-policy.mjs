@@ -386,7 +386,7 @@ export function validateWorkflow(policy, source, toolchain) {
     "github.event_name",
     "github.event.pull_request.number || github.ref",
     "github.event_name == 'push' && github.run_id || ''",
-    "github.event.action == 'edited' && github.run_id || ''",
+    "github.event.action == 'edited' && 'edited' || ''",
   ]
     .map(githubExpression)
     .join("-");
