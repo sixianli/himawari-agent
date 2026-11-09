@@ -1643,7 +1643,9 @@ export function roundForRun({
     if (onDisk === null && recordedDigests.length === 0)
       throw new Error(`ROUND_CANNOT_VERIFY ${requested} ${model}`);
     if (
-      (onDisk !== null && onDisk !== maskSecretLike(prompts[model])) ||
+      (onDisk !== null &&
+        onDisk !== maskSecretLike(prompts[model]) &&
+        onDisk !== maskSecretLike(prompts[model], { registeredValues: false })) ||
       recordedDigests.some((recorded) => recorded !== digest)
     )
       throw new Error(`ROUND_PROMPT_MISMATCH ${requested} ${model}`);
@@ -2474,13 +2476,30 @@ export function loadRegisteredTestValues(repo, ref) {
   return registeredTestValuesFromToml(shown.stdout);
 }
 
-export function maskSecretLike(text) {
-  let masked = text;
-  for (const value of registeredTestValues)
-    masked = masked.replaceAll(value, `[已遮盖:${REGISTERED_VALUE_RULE_ID}]`);
+function registeredValuesPattern() {
+  if (registeredTestValues.length === 0) return null;
+  return new RegExp(
+    registeredTestValues.map((value) => value.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")).join("|"),
+    "g",
+  );
+}
+
+export function maskSecretLike(text, { registeredValues = true } = {}) {
+  const registered = registeredValues ? registeredValuesPattern() : null;
+  let masked = registered ? text.replace(registered, `[已遮盖:${REGISTERED_VALUE_RULE_ID}]`) : text;
   for (const [id, pattern] of RECORD_SECRET_RULES)
     masked = masked.replace(new RegExp(pattern.source, pattern.flags), `[已遮盖:${id}]`);
   return masked;
+}
+
+export function registerTestValuesFromRefs(repo, refs) {
+  const values = [];
+  for (const ref of refs) {
+    if (gitStatus(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], repo).status !== 0)
+      continue;
+    values.push(...loadRegisteredTestValues(repo, ref));
+  }
+  setRegisteredTestValues(values);
 }
 
 export function secretLikeRules(text) {
@@ -2918,13 +2937,12 @@ async function main() {
     defaultGateway: process.env.HIMAWARI_REVIEW_GATEWAY,
   });
   if (options.report) {
+    registerTestValuesFromRefs(options.repo, [options.mainRef ?? "origin/main"]);
     for (const line of reviewReport(options)) console.log(line);
     return;
   }
   if (options.assertReviewed) {
-    setRegisteredTestValues(
-      loadRegisteredTestValues(options.repo, options.mainRef ?? "origin/main"),
-    );
+    registerTestValuesFromRefs(options.repo, [options.mainRef ?? "origin/main"]);
     const result = assertReviewed(options);
     for (const line of result.lines) console.log(line);
     if ((result.problems.length > 0 && !result.overridden) || result.lowFixRefused)
@@ -2940,7 +2958,7 @@ async function main() {
   if (unknownProvider) throw new Error(`ARG_INVALID --providers ${unknownProvider}`);
   const timeoutMs = options.timeoutMinutes * 60 * 1000;
   const commits = resolveCommits(options.repo, options);
-  setRegisteredTestValues(loadRegisteredTestValues(options.repo, commits.base ?? commits.head));
+  registerTestValuesFromRefs(options.repo, [commits.base ?? commits.head, "origin/main"]);
   const questions = reviewQuestions(questionsSource(options.repo, commits, options.questionsRef));
   const brief = recordText(readFileSync(options.brief, "utf8"));
   const prompts = Object.fromEntries(

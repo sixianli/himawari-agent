@@ -91,6 +91,7 @@ import {
   SUBSTITUTES,
   secretLikeRules,
   loadRegisteredTestValues,
+  registerTestValuesFromRefs,
   registeredTestValuesFromToml,
   setRegisteredTestValues,
   spentOf,
@@ -2632,7 +2633,7 @@ describe("opencode review merge gate", () => {
     reasoning: 1,
     ...extra,
   });
-  const fixture = () => {
+  const fixture = (rules = "") => {
     const root = mkdtempSync(join(tmpdir(), "opencode-merge-gate-"));
     const repo = join(root, "repo");
     const git = (...args) => execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
@@ -2649,7 +2650,7 @@ describe("opencode review merge gate", () => {
     const ledger = `${REVIEWS_DIR}/pr-7/usage.jsonl`;
     const writeLedger = (records) =>
       commit({ [ledger]: records.map((r) => `${JSON.stringify(r)}\n`).join("") }, "records");
-    const main = commit({ "code.txt": "base\n", "ci/rules/gitleaks.toml": "" }, "base");
+    const main = commit({ "code.txt": "base\n", "ci/rules/gitleaks.toml": rules }, "base");
     git("update-ref", "refs/remotes/origin/main", main);
     git("checkout", "--quiet", "-b", "feature");
     const reviewed = commit({ "code.txt": "feature\n" }, "feature");
@@ -2686,6 +2687,25 @@ describe("opencode review merge gate", () => {
       );
       expect(f.check().problems).toEqual([]);
     } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] refuses a committed record that carries a registered test value, and accepts the masked form", () => {
+    const quote = "'''";
+    const value = ["abcdef", "123456"].join("");
+    const f = fixture(`regexes = [${quote}^${value}$${quote}]\n`);
+    try {
+      registerTestValuesFromRefs(f.repo, ["origin/main"]);
+      const path = `${REVIEWS_DIR}/pr-7/round-1/deepseek-v4.1-flash.md`;
+      const note = `- 命中 token=${value}\n`;
+      f.commit({ [path]: note }, "raw record");
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      expect(f.check().problems).toEqual([`record-secret-like ${path} registered-test-value`]);
+      f.commit({ [path]: maskedRecordText(note) }, "masked record");
+      expect(f.check().problems).toEqual([]);
+    } finally {
+      setRegisteredTestValues([]);
       rmSync(f.root, { recursive: true, force: true });
     }
   });
@@ -3850,6 +3870,36 @@ describe("opencode review spending", () => {
     expect(() => run("other brief")).toThrow(`ROUND_PROMPT_MISMATCH 1 ${glm}`);
   });
 
+  it("[rerun round] still accepts a prompt file written before the value was registered", () => {
+    const [, glm] = REVIEW_MODELS;
+    const value = ["abcdef", "123456"].join("");
+    const prompt = `问题里引用了 token=${value} 这个值\n`;
+    const digest = createHash("sha256").update(prompt).digest("hex");
+    const records = [
+      { cost: 0.1, round: 1, model: glm, head: "h", outcome: "timeout", promptSha256: digest },
+    ];
+    const run = (onDisk) =>
+      roundForRun({
+        records,
+        rounds: [1],
+        requested: 1,
+        models: [glm],
+        head: "h",
+        prompts: { [glm]: prompt },
+        promptsOnDisk: { [glm]: onDisk },
+      });
+    const writtenBefore = maskSecretLike(prompt);
+    setRegisteredTestValues([value]);
+    try {
+      expect(maskSecretLike(prompt)).not.toBe(writtenBefore);
+      expect(run(writtenBefore)).toBe(1);
+      expect(run(maskSecretLike(prompt))).toBe(1);
+      expect(() => run(`${writtenBefore}\n`)).toThrow(`ROUND_PROMPT_MISMATCH 1 ${glm}`);
+    } finally {
+      setRegisteredTestValues([]);
+    }
+  });
+
   it("[rerun round] accepts the masked prompt file that the run itself wrote, and refuses a changed one", () => {
     const [, glm] = REVIEW_MODELS;
     const prompt = `问题里引用了 ${fakeOpenAiKey} 这个值\n`;
@@ -4425,6 +4475,44 @@ describe("[registered test values] records never carry the fixture values gitlea
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("unions the lists of several commits, skips a commit that does not exist, and refuses one without the file", () => {
+    const root = mkdtempSync(join(tmpdir(), "registered-values-refs-"));
+    try {
+      const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+      execFileSync("git", ["init", "--quiet", "-b", "main", root]);
+      mkdirSync(join(root, "ci/rules"), { recursive: true });
+      const second = "second-registered-value";
+      const commit = (rules, message) => {
+        writeFileSync(join(root, "ci/rules/gitleaks.toml"), rules);
+        git("add", ".");
+        git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", message);
+        return git("rev-parse", "HEAD");
+      };
+      const older = commit(toml, "old");
+      const newer = commit(`regexes = [${quote}^${second}$${quote}]\n`, "new");
+      registerTestValuesFromRefs(root, [older, "no-such-ref", newer]);
+      expect(maskSecretLike(`${fakeValue} ${second}`)).toBe(
+        "[已遮盖:registered-test-value] [已遮盖:registered-test-value]",
+      );
+      registerTestValuesFromRefs(root, ["no-such-ref"]);
+      expect(maskSecretLike(`${fakeValue}`)).toBe(fakeValue);
+      git("rm", "--quiet", "ci/rules/gitleaks.toml");
+      git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "drop");
+      expect(() => registerTestValuesFromRefs(root, ["HEAD"])).toThrow(
+        "REGISTERED_VALUES_UNREADABLE HEAD",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("masks in one pass, so a registered value inside the replacement text cannot corrupt it", () => {
+    setRegisteredTestValues(["registered-te", fakeValue]);
+    expect(maskSecretLike(`x registered-te y ${fakeValue}`)).toBe(
+      "x [已遮盖:registered-test-value] y [已遮盖:registered-test-value]",
+    );
   });
 
   it("finds the values the repository's own allowlist registers", () => {

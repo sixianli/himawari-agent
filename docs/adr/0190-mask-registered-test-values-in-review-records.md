@@ -47,7 +47,7 @@ date: "2026-11-09"
 ## 决定
 
 1. **遮的是“已登记的测试假值”，不写死某一个值。** 复核脚本从 `ci/rules/gitleaks.toml` 读出所有用 `^…$` 锚定的精确值白名单（ADR 0177 第 2 条规定的形状）。只取长度不少于 12、且只含字母、数字和 `_-=.:/ ` 与空格（`\.` 当作 `.`）的字面值；字符类、带别的正则符号的、太短的都跳过。以后谁再给 Gitleaks 加了精确值白名单，复核记录自动不再带出它。
-2. **读哪个版本。** 复核时从 `--base` 提交里读，不从被复核的改动或工作区读，免得改动自己改掉清单；`--assert-reviewed` 从 `--main-ref`（默认 `origin/main`）读。读不到文件就以 `REGISTERED_VALUES_UNREADABLE` 停下，不静默不遮。
+2. **读哪个版本。** 复核时读 `--base` 提交和 `origin/main` 两处清单的并集（这样 main 上在分支点之后新登记的值，写记录时也遮得到）；`--assert-reviewed` 和 `--report` 读 `--main-ref`（默认 `origin/main`），两个子命令口径一致。不从被复核的改动或工作区读，免得改动自己改掉清单；只有没有 `--base` 的方案讨论模式（`plan`、`plan-review`）退回从被复核的提交读。某个提交不存在就跳过它（`--assert-reviewed` 照旧报 `main-ref-missing`）；提交存在但没有这个文件，以 `REGISTERED_VALUES_UNREADABLE` 停下，不静默不遮。
 3. **遮盖写法。** 记录里出现这些值，一律换成 `[已遮盖:registered-test-value]`，在其他规则之前执行；同一段文字每次遮出的字节相同，与登记顺序无关。`secretLikeRules` 也报这一条，所以合并门（`record-secret-like`）会拒绝带着这些值的新提交记录。
 4. **已经提交的老记录不改。** 它们靠现有白名单（[ADR 0177](0177-gitleaks-exact-value-allowlist.md)、[PR 316](https://github.com/sixianli/himawari-agent/pull/316)、[PR 319](https://github.com/sixianli/himawari-agent/pull/319) 加的那几块）放行；改写已推送的历史违反项目规则。
 5. **ADR 0177 第 2 条以及它的白名单形状要求不变。** 只修正它“后果”里那一条：新记录由脚本遮盖，不再需要为引用假值而加新块。
@@ -77,7 +77,9 @@ date: "2026-11-09"
 - 新复核记录不再带出已登记的假值，`check:gitleaks` 不会因它们再红。
 - 遮盖清单随 `ci/rules/gitleaks.toml` 走：白名单块被删掉，对应的值就不再被遮。
 - 同一个值在答案里被遮成 `[已遮盖:registered-test-value]`，复核人读记录时看不到原值，需要时去 `gitleaks.toml` 对照。
-- 判断文件 `verdicts.jsonl` 里的 `quote` 必须能在答案里逐字找到；答案和判断都经同一遮盖，所以仍然能对上。
+- 脚本只遮它自己写的提示词、答案、报错和账本。线程手写的 `judgments.md`、`verdicts.jsonl` 不会被自动遮盖：`quote` 要从遮盖后的答案复制才能逐字对上，也不要在判断里写出已登记的值，否则合并门以 `record-secret-like` 拒绝（改成遮盖写法再提交即可）。
+- 在同一个 PR 里新登记的值，要等该 PR 合并进 main 后才被遮；这个 PR 自己的记录若已带出它，按上一条手工改成 `[已遮盖:registered-test-value]`。
+- 补跑某一轮时，磁盘上旧的提示词存档若写于该值登记之前，仍按旧遮盖结果接受。
 
 [↑ 返回阅读导航](#contents)
 
