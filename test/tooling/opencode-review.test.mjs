@@ -74,6 +74,15 @@ import {
   wrapUpReason,
 } from "../../scripts/model-review/opencode-review.mjs";
 import {
+  completedCount,
+  effectiveCost,
+  GUARD_ENV,
+  guardDecision,
+  ledgerTotal,
+  noteCost,
+  SpendGuard,
+} from "../../scripts/model-review/spend-guard.mjs";
+import {
   expectAppendedTo,
   instructions,
   isWrapUp,
@@ -83,15 +92,6 @@ import {
   toolRequest,
   withScriptedReview,
 } from "./opencode-review.fixtures.mjs";
-import {
-  completedCount,
-  effectiveCost,
-  GUARD_ENV,
-  guardDecision,
-  ledgerTotal,
-  noteCost,
-  SpendGuard,
-} from "../../scripts/model-review/spend-guard.mjs";
 
 describe("opencode review configuration", () => {
   it("allows only reading tools and the git read commands in code review", () => {
