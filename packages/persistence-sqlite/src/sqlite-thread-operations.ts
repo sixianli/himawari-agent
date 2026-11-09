@@ -293,20 +293,6 @@ export class SqliteThreadOperations {
         );
       case "thread.search":
         return this.search((payload as { query: ThreadSearchQuery }).query);
-      case "thread.rebuildSearch": {
-        const input = payload as {
-          ownerId: OwnerId;
-          agentId: AgentId;
-          threadId: ThreadId;
-          projectionVersion: string;
-        };
-        return this.rebuildSearch(
-          input.ownerId,
-          input.agentId,
-          input.threadId,
-          input.projectionVersion,
-        );
-      }
       case "thread.inspectDeletionImpact": {
         const input = payload as { ownerId: OwnerId; agentId: AgentId; threadId: ThreadId };
         return this.inspectDeletionImpact(input.ownerId, input.agentId, input.threadId);
@@ -2088,34 +2074,5 @@ export class SqliteThreadOperations {
     return ids
       .map(({ threadId }) => this.read(query.ownerId, query.agentId, threadId as ThreadId))
       .filter((thread): thread is ProductThread => thread !== undefined);
-  }
-
-  private rebuildSearch(
-    ownerId: OwnerId,
-    agentId: AgentId,
-    threadId: ThreadId,
-    projectionVersion: string,
-  ): number {
-    this.assertDiskHeadroom();
-    if (!projectionVersion) this.fail("PORT_INVALID_OPERATION", "Projection version is required");
-    if (!this.read(ownerId, agentId, threadId)) {
-      this.fail("PORT_INVALID_OPERATION", "Search rebuild Thread is outside scope");
-    }
-    const transaction = this.database.transaction(() => {
-      const messages = this.database
-        .prepare(
-          `DELETE FROM thread_search_projection
-            WHERE owner_id = ? AND agent_id = ? AND thread_id = ? AND projection_version != ?`,
-        )
-        .run(ownerId, agentId, threadId, projectionVersion).changes;
-      const titles = this.database
-        .prepare(
-          `DELETE FROM thread_title_search_projection
-            WHERE owner_id = ? AND agent_id = ? AND thread_id = ? AND projection_version != ?`,
-        )
-        .run(ownerId, agentId, threadId, projectionVersion).changes;
-      return messages + titles;
-    });
-    return transaction.immediate();
   }
 }

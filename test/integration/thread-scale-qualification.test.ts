@@ -379,9 +379,6 @@ async function qualifyThreadScale() {
         resultRef: "payload-thread-scale-result",
       });
     });
-    const projectionRebuildTiming = await measure(100, async (index) =>
-      threadRepository.rebuildSearch(OWNER_ID, AGENT_ID, threadId(index), PROJECTION_VERSION),
-    );
     const events = await threadRepository.listGatewayEvents(OWNER_ID, AGENT_ID, null, 1000);
     const resumeCursor = events.at(Math.floor(events.length / 2))?.cursor ?? null;
     expect(events).toHaveLength(42);
@@ -438,12 +435,7 @@ async function qualifyThreadScale() {
       }),
     ).resolves.toHaveLength(100);
 
-    for (const timing of [
-      ...Object.values(queryTimings),
-      pinTiming,
-      forkTiming,
-      projectionRebuildTiming,
-    ]) {
+    for (const timing of [...Object.values(queryTimings), pinTiming, forkTiming]) {
       expect(timing.p95Ms).toBeLessThan(2_000);
     }
     expect(recoveryMs).toBeLessThan(120_000);
@@ -476,7 +468,6 @@ async function qualifyThreadScale() {
         ...queryTimings,
         pin: pinTiming,
         fork: forkTiming,
-        projectionRebuild: projectionRebuildTiming,
         normalRestartMs: recoveryMs,
       },
       resources: {
