@@ -155,6 +155,9 @@ export class SqliteThreadPromptBundleOperations {
       !validText(input.identity.modelRef, 256) ||
       !validText(input.identity.thinkingLevel, 64) ||
       (input.identity.answerLocale !== null && !validText(input.identity.answerLocale, 256)) ||
+      (input.identity.redactionRuleset !== undefined &&
+        (!Number.isSafeInteger(input.identity.redactionRuleset) ||
+          input.identity.redactionRuleset < 1)) ||
       (input.expectedLatestGeneration !== null &&
         (!Number.isSafeInteger(input.expectedLatestGeneration) ||
           input.expectedLatestGeneration < 1))
@@ -208,6 +211,9 @@ export class SqliteThreadPromptBundleOperations {
               modelRef: input.identity.modelRef,
               thinkingLevel: input.identity.thinkingLevel,
               answerLocale: input.identity.answerLocale,
+              ...(input.identity.redactionRuleset === undefined
+                ? {}
+                : { redactionRuleset: input.identity.redactionRuleset }),
             }),
             systemPrompt.ref,
             tools.ref,

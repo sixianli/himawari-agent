@@ -1,0 +1,4 @@
+{"id": "R5-D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "导致“提示和工具不变”的前提不成立，却仍沿用旧规则版本", "valid": true, "class": "error", "severity": "low", "trigger": "同一次运行里数据分级降低且工具集合也变了", "consequence": "请求开头已经变了，新记录却仍沿用旧遮盖规则，新消息里的宽松写法密码继续发出", "modelSeverity": "中低", "reason": "要同时满足分级降低和工具变化，罕见，且方向只是沿用 Andy 已接受的旧规则；仍改了：只有新旧提示、工具、模型、推理强度、语言都一致时才沿用，否则升到当前版本，补集成用例"}
+{"id": "R5-D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "两个分支没有自动检查", "valid": true, "class": "better", "reason": "读出校验的分支逻辑只有两行，补用例需要直接改库里的值，收益小，列给 Andy"}
+{"id": "R5-D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "静默退回当前版本", "valid": true, "class": "better", "reason": "按现在的调用路径不可达；新写法里分级降低且没有上一份记录时本来就取当前版本"}
+{"id": "R5-D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新用例只断言返回值，未断言新记录里持久化的", "valid": true, "class": "better", "reason": "已补 identity_json 里第 2 代版本的断言，并补了分级降低加工具变化的用例"}
