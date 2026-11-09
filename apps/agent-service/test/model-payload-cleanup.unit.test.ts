@@ -213,6 +213,7 @@ describe("[P0-5] model prompt and answer payloads left by auxiliary text calls",
       const authority = await model.prepare({
         invocationId: "mail-cleanup",
         prompt: "mail prompt",
+        dataClassification: "private",
         deadlineAt: "2099-01-01T00:00:00.000Z",
       });
       await authority.release();

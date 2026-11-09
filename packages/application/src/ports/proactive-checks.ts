@@ -1,4 +1,5 @@
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
+import type { DataClassification } from "./common.js";
 
 export type ProactiveSource = "gmail";
 export type ProactiveResult = "act" | "know" | "check" | "ignore";
@@ -169,6 +170,7 @@ export interface ProactiveMemoryHit {
   readonly text: string;
   readonly score: number;
   readonly tentative?: boolean;
+  readonly dataClassification?: DataClassification;
 }
 
 export interface ProactiveMemoryQuery {

@@ -20,6 +20,7 @@ import type {
   RuntimeProjectionPort,
   RuntimeProjectionRequest,
 } from "../runtime-port.js";
+import { highestClassification, modelVisibleCeiling } from "./model-visibility.js";
 import { isRuntimeHistoryReference, RuntimeHistoryService } from "./runtime-history-service.js";
 
 const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
@@ -57,7 +58,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     this.assertScope(input);
     const envelope = await this.readEnvelope(input);
     const nativeHistory = envelope.runtimeHistory
-      ? await this.#history.load(envelope.runtimeHistory.reference, input.dataClassification)
+      ? await this.#history.load(envelope.runtimeHistory.reference, modelVisibleCeiling())
       : undefined;
     const history = await this.readHistory(input, envelope, nativeHistory?.coveredRunIds);
     const images: { readonly mimeType: string; readonly data: string }[] = [];
@@ -82,8 +83,15 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     await this.assertWorkerReferences(input);
     const workerBlocks = await this.readWorkerResults(input);
     const answerLocale = envelope.systemPolicyRefs.find(({ kind }) => kind === "answer-locale");
+    const contentClassification = highestClassification(input.dataClassification, [
+      ...(envelope.runtimeHistory ? [envelope.runtimeHistory.reference.dataClassification] : []),
+      ...envelope.history.map(({ dataClassification }) => dataClassification),
+      ...contextBlocks.map(({ dataClassification }) => dataClassification),
+      ...workerBlocks.map(({ dataClassification }) => dataClassification),
+    ]);
     return Object.freeze({
       systemInstruction,
+      contentClassification,
       ...(answerLocale ? { answerLocaleRef: answerLocale.ref } : {}),
       ...(nativeHistory ? { nativeHistory } : {}),
       coveredRunIds: [
@@ -346,6 +354,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
         item.contentRef,
         "context history",
         item.dataClassification,
+        modelVisibleCeiling(),
       );
       const content = item.role === "owner" ? await this.expandAttachments(input, stored) : stored;
       if (item.role === "owner" || item.role === "agent") {
@@ -403,6 +412,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
           block.payloadRef,
           "context block",
           block.dataClassification,
+          modelVisibleCeiling(),
         ),
         ...(block.sourceRef ? { sourceRef: block.sourceRef } : {}),
         dataClassification: block.dataClassification,
@@ -518,6 +528,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     ref: PayloadRef,
     label: string,
     expectedClassification?: DataClassification,
+    ceiling: DataClassification = input.dataClassification,
   ): Promise<string> {
     const payload = await this.#dependencies.payloads.get(ref);
     if (!payload) {
@@ -525,13 +536,12 @@ export class ContextProjectionService implements RuntimeProjectionPort {
         payloadRef: ref,
       });
     }
-    if (
-      CLASSIFICATION_RANK[payload.dataClassification] >
-      CLASSIFICATION_RANK[input.dataClassification]
-    ) {
+    if (CLASSIFICATION_RANK[payload.dataClassification] > CLASSIFICATION_RANK[ceiling]) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
-        `${label} Payload exceeds the Run data classification`,
+        ceiling === input.dataClassification
+          ? `${label} Payload exceeds the Run data classification`
+          : `${label} Payload exceeds what the model may see`,
         { payloadRef: ref },
       );
     }

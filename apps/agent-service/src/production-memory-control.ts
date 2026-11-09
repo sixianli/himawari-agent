@@ -7,6 +7,7 @@ import {
   type MemoryCategory,
   type MemoryConsolidationStorePort,
   type MemoryExtractionAuditRecord,
+  isModelVisible,
   type MemoryHistoryEvent,
   type MemoryProjectionJobStatePort,
   type MemoryReminderStorePort,
@@ -950,7 +951,7 @@ export class ProductionMemoryControl {
         if (
           current.status !== "active" ||
           !PINNABLE_CATEGORIES.has(current.attributes?.category ?? "other") ||
-          (current.dataClassification !== "public" && current.dataClassification !== "private")
+          !isModelVisible(current.dataClassification)
         )
           throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_NOT_PINNABLE");
         await this.options.book.setProfilePin({

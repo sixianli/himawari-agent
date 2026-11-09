@@ -192,6 +192,7 @@ describe("proactive Gmail check acceptance", () => {
     };
     const outputs = new Map<string, string>();
     const prompts: string[] = [];
+    const labels: string[] = [];
     const models: ScriptedModelPort[] = [];
     let scripted = new ScriptedModelPort([descriptor], []);
     const queued: ScriptedModelPort[] = [];
@@ -301,8 +302,9 @@ describe("proactive Gmail check acceptance", () => {
           return queued.shift() ?? scripted;
         },
         modelRef: MODEL_REF,
-        async prepare({ invocationId, prompt }) {
+        async prepare({ invocationId, prompt, dataClassification }) {
           prompts.push(prompt);
+          labels.push(dataClassification);
           const inputRef = `input-${invocationId}`;
           await writePayload(inputRef, prompt);
           for (const [ref, content] of outputs)
@@ -357,6 +359,7 @@ describe("proactive Gmail check acceptance", () => {
       service,
       overview,
       prompts,
+      labels,
       invocations,
       limits,
       readPayload,
@@ -1784,6 +1787,32 @@ describe("proactive Gmail check acceptance", () => {
         usedMemoryIds: ["mem-milk"],
         tentativeMemoryIds: ["mem-milk"],
       });
+    });
+
+    it("[RULE-memory-visible] brings a sensitive memory to the judge and labels the call sensitive, without exposing the label in the prompt", async () => {
+      const allergy = {
+        id: "mem-allergy",
+        text: "主人对牛肉过敏。",
+        score: 0.6,
+        dataClassification: "sensitive" as const,
+      };
+      const h = await harness({ memory: recallOf({ "beef-promo": [beefHit, allergy] }) });
+      h.reader.items = [promo()];
+      h.script([{ id: "beef-promo", result: "ignore" }]);
+      await h.service.run();
+      expect(h.prompts[0]).toContain(
+        '{"mailId":"beef-promo","id":"mem-allergy","text":"主人对牛肉过敏。"}',
+      );
+      expect(h.prompts[0]).not.toContain("dataClassification");
+      expect(h.labels).toEqual(["sensitive"]);
+    });
+
+    it("[RULE-memory-visible] REVERSE: labels the call private when every memory is private", async () => {
+      const h = await harness({ memory: recallOf({ "beef-promo": [beefHit] }) });
+      h.reader.items = [promo()];
+      h.script([{ id: "beef-promo", result: "ignore" }]);
+      await h.service.run();
+      expect(h.labels).toEqual(["private"]);
     });
 
     it("[PA-2] adds no tentative note and records no tentative ids when every memory is confirmed", async () => {

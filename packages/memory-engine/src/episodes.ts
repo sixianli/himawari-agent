@@ -1,10 +1,12 @@
-import type {
-  DataClassification,
-  MemoryEpisode,
-  MemoryEpisodeStorePort,
-  MemoryTimeScope,
-  PayloadRef,
-  ThreadRepositoryPort,
+import {
+  type DataClassification,
+  highestClassification,
+  isModelVisible,
+  type MemoryEpisode,
+  type MemoryEpisodeStorePort,
+  type MemoryTimeScope,
+  type PayloadRef,
+  type ThreadRepositoryPort,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId, ProductThreadMessage, ThreadId } from "@himawari-agent/domain";
 import {
@@ -16,7 +18,6 @@ import type { Embedder } from "./embedding.js";
 import { instructedQuery } from "./embedding.js";
 import { indexTerms, queryTerms } from "./segmentation.js";
 
-const SUMMARIZABLE = new Set<DataClassification>(["public", "private"]);
 const DEFAULT_IDLE_MS = 2 * 3_600_000;
 const MAXIMUM_SEGMENT_MESSAGES = 120;
 const MAXIMUM_MESSAGE_CHARACTERS = 1500;
@@ -34,6 +35,7 @@ export interface EpisodeSegment {
   readonly lastSequence: number;
   readonly startedAt: string;
   readonly endedAt: string;
+  readonly dataClassification: DataClassification;
   readonly lines: readonly {
     readonly role: "owner" | "agent";
     readonly text: string;
@@ -148,14 +150,16 @@ export class MemoryEpisodeService {
         Date.parse(now) - Date.parse(last.committedAt) >= idleMs;
       if (!closed) continue;
       const lines: { role: "owner" | "agent"; text: string; committedAt: string }[] = [];
+      const included: DataClassification[] = [];
       for (const message of sameDay) {
-        if (message.role === "system" || !SUMMARIZABLE.has(message.dataClassification)) continue;
+        if (message.role === "system" || !isModelVisible(message.dataClassification)) continue;
         if (message.status !== "committed") continue;
         const text = await this.#options
           .readText({ ownerId: input.ownerId, agentId: input.agentId, ref: message.contentRef })
           .catch(() => undefined);
-        if (text?.trim())
-          lines.push({ role: message.role, text: text.trim(), committedAt: message.committedAt });
+        if (!text?.trim()) continue;
+        included.push(message.dataClassification);
+        lines.push({ role: message.role, text: text.trim(), committedAt: message.committedAt });
       }
       segments.push(
         Object.freeze({
@@ -167,6 +171,7 @@ export class MemoryEpisodeService {
           lastSequence: last.sequence,
           startedAt: first.committedAt,
           endedAt: last.committedAt,
+          dataClassification: highestClassification("private", included),
           lines: Object.freeze(lines),
         }),
       );
@@ -176,12 +181,12 @@ export class MemoryEpisodeService {
 
   async summarize(
     segment: EpisodeSegment,
-    generate: (prompt: string) => Promise<string>,
+    generate: (prompt: string, dataClassification: DataClassification) => Promise<string>,
   ): Promise<MemoryEpisode> {
     const summary =
       segment.lines.length === 0
         ? UNSUMMARIZED
-        : (await generate(episodeSummaryPrompt(segment)))
+        : (await generate(episodeSummaryPrompt(segment), segment.dataClassification))
             .replace(/^```[a-z]*\s*|\s*```$/giu, "")
             .trim()
             .slice(0, MAXIMUM_SUMMARY_CHARACTERS);
@@ -197,7 +202,7 @@ export class MemoryEpisodeService {
       startedAt: segment.startedAt,
       endedAt: segment.endedAt,
       text: summary,
-      dataClassification: "private",
+      dataClassification: segment.dataClassification,
       indexed: segment.lines.length > 0,
     });
   }
@@ -233,9 +238,7 @@ export class MemoryEpisodeService {
       agentId: input.agentId,
       embedding,
       terms: queryTerms(input.query),
-      allowedClassifications: input.allowedClassifications.filter((value) =>
-        SUMMARIZABLE.has(value),
-      ),
+      allowedClassifications: input.allowedClassifications.filter(isModelVisible),
       from: input.scope?.from ?? null,
       to: input.scope?.to ?? null,
       limit: Math.min(200, Math.max(20, input.limit * 4)),

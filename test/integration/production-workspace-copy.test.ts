@@ -107,7 +107,6 @@ it("persists Owner copy selection and rejects changed source authority through t
       systemInstruction: "",
       memoryLimit: 1,
       maxSelectedMemories: 1,
-      maxMemoryClassification: "private" as const,
       coding: {
         hostId: f.fileBinding.hostId,
         workerInstanceId: f.fileBinding.workerInstanceId,

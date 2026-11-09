@@ -35,6 +35,8 @@ import type {
   ProactiveVerdict,
 } from "../ports/proactive-checks.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
+import type { DataClassification } from "../ports/common.js";
+import { highestClassification } from "./model-visibility.js";
 import {
   type EgressRedactionSighting,
   findSensitiveValues,
@@ -71,6 +73,7 @@ export interface ProactiveModelInvoker {
     readonly invocationId: string;
     readonly prompt: string;
     readonly deadlineAt: string;
+    readonly dataClassification: DataClassification;
   }): Promise<ProactiveModelAuthority>;
   readOutput(payloadRef: string): Promise<string>;
   release(payloadRefs: readonly string[]): Promise<void>;
@@ -173,6 +176,7 @@ interface PromptMemory {
   readonly id: string;
   readonly text: string;
   readonly tentative?: true;
+  readonly dataClassification: DataClassification;
 }
 
 interface Judgement {
@@ -378,7 +382,19 @@ export function proactivePrompt(
   }).format(new Date(now));
   return [
     MAIL_JUDGMENT.text,
-    ...(memories.length > 0 ? [MAIL_JUDGMENT_MEMORIES_HEADER.text, JSON.stringify(memories)] : []),
+    ...(memories.length > 0
+      ? [
+          MAIL_JUDGMENT_MEMORIES_HEADER.text,
+          JSON.stringify(
+            memories.map(({ mailId, id, text, tentative }) => ({
+              mailId,
+              id,
+              text,
+              ...(tentative ? { tentative } : {}),
+            })),
+          ),
+        ]
+      : []),
     ...(memories.some(({ tentative }) => tentative) ? [MAIL_JUDGMENT_TENTATIVE_NOTE.text] : []),
     MAIL_JUDGMENT_ITEMS_HEADER.text,
     JSON.stringify(
@@ -1053,7 +1069,11 @@ export class ProactiveMailCheckService {
   ): Promise<JudgeOutcome> {
     const { model } = this.#options;
     const invocationId = this.#options.ids.next("proactive-model");
-    const authority = await model.prepare({ invocationId, prompt, deadlineAt });
+    const dataClassification = highestClassification(
+      "private",
+      promptMemories.map((memory) => memory.dataClassification),
+    );
+    const authority = await model.prepare({ invocationId, prompt, deadlineAt, dataClassification });
     trace.payloads.push({ ref: authority.inputRef, role: "model_input" });
     for (const { messageId } of batch) {
       trace.sourceIds.add(messageId);
@@ -1092,7 +1112,7 @@ export class ProactiveMailCheckService {
         runId: authority.runId,
         modelRef: model.modelRef,
         inputRef: authority.inputRef,
-        dataClassification: "private",
+        dataClassification,
         allowedDisclosureRef: authority.allowedDisclosureRef,
         secretHandleRefs: [...authority.secretHandleRefs],
         correlationId: invocationId as ModelInvocationRequest["correlationId"],
@@ -1198,6 +1218,7 @@ export class ProactiveMailCheckService {
           id: hit.id,
           text: hit.text.replace(/\s+/gu, " ").trim().slice(0, limits.charactersPerMemory),
           ...(hit.tentative ? { tentative: true as const } : {}),
+          dataClassification: hit.dataClassification ?? "private",
         })),
     );
   }

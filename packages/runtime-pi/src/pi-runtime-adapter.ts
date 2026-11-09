@@ -30,8 +30,10 @@ import {
   SettingsManager,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { highestClassification, isModelVisible } from "@himawari-agent/application/runtime-port";
 import type {
   AgentRuntimePort,
+  DataClassification,
   ModelDescriptor,
   ModelEgress,
   ModelInvocationAdmissionResolver,
@@ -1131,6 +1133,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
   readonly #activeSessions = new Map<RuntimeRequest["runId"], AgentSession>();
   readonly #cancelledRuns = new Set<RuntimeRequest["runId"]>();
   readonly #historyWrites = new Map<RuntimeRequest["runId"], Promise<unknown>>();
+  readonly #visibleClassification = new Map<RuntimeRequest["runId"], DataClassification>();
 
   constructor(dependencies: PiAgentRuntimeAdapterDependencies) {
     this.#dependencies = dependencies;
@@ -1149,7 +1152,27 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       if (this.#activeSessions.has(request.runId)) await this.cancel(request.runId);
       await producer.catch(() => undefined);
       this.#cancelledRuns.delete(request.runId);
+      this.#visibleClassification.delete(request.runId);
     }
+  }
+
+  #visibleOf(request: RuntimeRequest): DataClassification {
+    return this.#visibleClassification.get(request.runId) ?? request.dataClassification;
+  }
+
+  #raiseVisible(
+    runId: RuntimeRequest["runId"],
+    classification: DataClassification,
+    floor: DataClassification,
+  ): void {
+    if (!isModelVisible(classification)) throw new TypeError("RUNTIME_CONTENT_NOT_MODEL_VISIBLE");
+    this.#visibleClassification.set(
+      runId,
+      highestClassification(floor, [
+        classification,
+        this.#visibleClassification.get(runId) ?? floor,
+      ]),
+    );
   }
 
   async cancel(runId: RuntimeRequest["runId"]): Promise<void> {
@@ -1221,6 +1244,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       if (projection.prompt.content.trim().length === 0) {
         throw new TypeError("RUNTIME_PROJECTION_EMPTY_PROMPT");
       }
+      this.#raiseVisible(
+        request.runId,
+        projection.contentClassification ?? request.dataClassification,
+        request.dataClassification,
+      );
       const turn = turnPrompt(projection, this.#dependencies.timeZone ?? "UTC");
       const frozenDescriptors = descriptors.filter((descriptor) => !isHandleTool(descriptor));
       const handleDescriptors = descriptors.filter(isHandleTool);
@@ -1552,7 +1580,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           loopSummaryAttempted = true;
         }
         return admitPiStream(
-          request,
+          { ...request, dataClassification: this.#visibleOf(request) },
           binding,
           this.#dependencies.admission,
           model,
@@ -1589,7 +1617,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           const pending = (this.#historyWrites.get(request.runId) ?? Promise.resolve()).then(() =>
             this.#dependencies.projection.captureHistory?.({
               runId: request.runId,
-              dataClassification: request.dataClassification,
+              dataClassification: this.#visibleOf(request),
               coveredRunIds: projection.coveredRunIds ?? [],
               messages,
             }),
@@ -2010,6 +2038,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         throw new Error("RUNTIME_TOOL_SUSPENDED");
       }
       if (result.outcome === "result_unknown") reconciliation.unknown(invocation, result);
+      if (result.contentClassification)
+        this.#raiseVisible(request.runId, result.contentClassification, request.dataClassification);
       return {
         content: [{ type: "text", text: result.modelContent }],
         details: {

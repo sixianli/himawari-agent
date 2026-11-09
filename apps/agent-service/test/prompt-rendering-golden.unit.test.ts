@@ -210,7 +210,12 @@ describe("[PROMPT-GOLDEN] rendered prompts stay byte-identical while text moves 
     ).toMatchFileSnapshot(golden("memory.episode-summary"));
     await expect(
       proactivePrompt([mail("a"), mail("b")], "2026-11-04T01:00:00.000Z", "Asia/Tokyo", [
-        { mailId: "message-a", id: "memory-7", text: "主人用东京燃气，每月自动扣款。" },
+        {
+          mailId: "message-a",
+          id: "memory-7",
+          text: "主人用东京燃气，每月自动扣款。",
+          dataClassification: "private",
+        },
       ]),
     ).toMatchFileSnapshot(golden("mail.judgment"));
     await expect(QWEN3_MEMORY_QUERY_INSTRUCTION).toMatchFileSnapshot(

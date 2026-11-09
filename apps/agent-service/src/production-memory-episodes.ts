@@ -89,10 +89,11 @@ export class ProductionMemoryEpisodes {
     for (const [index, segment] of segments.entries()) {
       if (this.#stopping) return;
       await this.#options.assertActive();
-      await this.#within(request, `memory-episode-embed-${index}`, () =>
-        this.#options.service.summarize(segment, (prompt) =>
+      const scoped = { ...request, dataClassification: segment.dataClassification };
+      await this.#within(scoped, `memory-episode-embed-${index}`, () =>
+        this.#options.service.summarize(segment, (prompt, dataClassification) =>
           this.#options.generate(
-            { ...request, dataClassification: "private" },
+            { ...request, dataClassification },
             prompt,
             onAdmitted,
             `memory-episode-${index}`,

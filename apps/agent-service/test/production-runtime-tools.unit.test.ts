@@ -1464,8 +1464,14 @@ describe("[R2-T14] failed command output for the model", () => {
 
 it("answers recall from owner memory, replays the saved result and reports failures to the model", async () => {
   const f = fixture();
-  const recall = vi.fn(async () => ({ memories: [{ text: "主人最喜欢蓝色", current: true }] }));
-  const tools = new ProductionRuntimeTools({ ...f.options, memoryRecall: { recall } });
+  const recall = vi.fn(async () => ({
+    output: { memories: [{ text: "主人最喜欢蓝色", current: true }] },
+    contentClassification: "private" as const,
+  }));
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    memoryRecall: { recallWithClassification: recall },
+  });
   const definitions = await tools.listAuthorized(invocation.runId, [
     invocation.capabilityHandleRef,
   ]);
@@ -1497,7 +1503,9 @@ it("offers reminder tools last, runs them once per call and tells the model why 
   const run = vi.fn(async () => ({ created: true, reminderId: "reminder:a" }));
   const tools = new ProductionRuntimeTools({
     ...f.options,
-    memoryRecall: { recall: async () => ({}) },
+    memoryRecall: {
+      recallWithClassification: async () => ({ output: {}, contentClassification: "private" }),
+    },
     reminders: { run },
   });
   const names = (

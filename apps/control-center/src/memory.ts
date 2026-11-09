@@ -182,7 +182,7 @@ export function useMemory(input: {
         contentRef: await client.protectText(text, classification),
         category,
         subCategory: null,
-        pinned: pinned && classification !== "sensitive",
+        pinned,
       }));
     },
     setPaused: (paused) => send("memory.settings.set", () => ({ capturePaused: paused })),

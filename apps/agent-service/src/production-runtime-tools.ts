@@ -9,6 +9,7 @@ import {
   type CapabilityResourceCeiling,
   type ClockPort,
   type ConsumeCapabilityInvocationInput,
+  type DataClassification,
   capabilityLifecycleHasActiveAuthority,
   type ExecutionTransportPort,
   type GovernedCapabilityExecutionHandle,
@@ -304,7 +305,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly sandbox?: ProductionRuntimeSandbox;
   readonly managedTasks?: ProductionManagedTasks;
   readonly backgroundCommands?: BackgroundCommandLimits;
-  readonly memoryRecall?: Pick<ProductionMemoryRecall, "recall">;
+  readonly memoryRecall?: Pick<ProductionMemoryRecall, "recallWithClassification">;
   readonly reminders?: Pick<ProductionReminderTools, "run">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
@@ -600,7 +601,12 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     return this.#ownerScoped(
       invocation,
       "recall",
-      recall ? (call) => recall.recall(call) : undefined,
+      recall
+        ? async (call) => {
+            const { output, contentClassification } = await recall.recallWithClassification(call);
+            return { value: output, contentClassification };
+          }
+        : undefined,
       (error) => {
         const errorCode =
           error instanceof Error && error.message === "MEMORY_RECALL_INPUT_INVALID"
@@ -618,7 +624,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     return this.#ownerScoped(
       invocation,
       "reminder",
-      reminders ? (call) => reminders.run(call) : undefined,
+      reminders ? async (call) => ({ value: await reminders.run(call) }) : undefined,
       (error) => {
         const errorCode = error instanceof ReminderInputError ? error.code : "REMINDER_UNAVAILABLE";
         return {
@@ -636,7 +642,12 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   async #ownerScoped(
     invocation: RuntimeToolInvocation,
     marker: "recall" | "reminder",
-    run: ((call: RuntimeToolInvocation) => Promise<unknown>) | undefined,
+    run:
+      | ((call: RuntimeToolInvocation) => Promise<{
+          readonly value: unknown;
+          readonly contentClassification?: DataClassification;
+        }>)
+      | undefined,
     failure: (error: unknown) => { readonly errorCode: string; readonly note: string },
   ): Promise<RuntimeToolExecutionResult> {
     await this.#options.assertRunActive(invocation.runId);
@@ -660,9 +671,16 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     });
     if (previous) return (await this.#readJson(previous.payloadRef)) as RuntimeToolExecutionResult;
     let result: RuntimeToolExecutionResult;
+    let recorded = invocation.dataClassification;
     try {
-      const value = await run(invocation);
-      const saved = await this.#writeJson(invocation, `runtime-tool-output:${key}`, value);
+      const { value, contentClassification } = await run(invocation);
+      recorded = contentClassification ?? recorded;
+      const saved = await this.#writeJson(
+        invocation,
+        `runtime-tool-output:${key}`,
+        value,
+        recorded,
+      );
       result = {
         dispatchState: "accepted",
         outcome: "succeeded",
@@ -670,6 +688,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         errorCode: null,
         externalActionId: null,
         modelContent: JSON.stringify(value),
+        ...(recorded === invocation.dataClassification ? {} : { contentClassification: recorded }),
       };
     } catch (error) {
       await this.#options.assertRunActive(invocation.runId);
@@ -683,7 +702,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         modelContent: JSON.stringify({ error: errorCode, note }),
       };
     }
-    const committed = await this.#writeJson(invocation, resultKey, result);
+    const committed = await this.#writeJson(invocation, resultKey, result, recorded);
     return (await this.#readJson(committed.ref)) as RuntimeToolExecutionResult;
   }
   #codingTool(call: RuntimeToolInvocation) {
@@ -2285,8 +2304,19 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   }
 
-  #writeJson(invocation: RuntimeToolInvocation, operationKey: string, value: unknown) {
-    return this.#writeText(invocation, operationKey, JSON.stringify(value), "application/json");
+  #writeJson(
+    invocation: RuntimeToolInvocation,
+    operationKey: string,
+    value: unknown,
+    dataClassification: DataClassification = invocation.dataClassification,
+  ) {
+    return this.#writeText(
+      invocation,
+      operationKey,
+      JSON.stringify(value),
+      "application/json",
+      dataClassification,
+    );
   }
 
   async #writeText(
@@ -2294,12 +2324,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     operationKey: string,
     text: string,
     contentType: "application/json" | "text/plain" = "text/plain",
+    dataClassification: DataClassification = invocation.dataClassification,
   ) {
     const payload = await this.#options.protector.protect({
       ownerId: this.#options.ownerId,
       agentId: this.#options.agentId,
       ref: this.#options.ids.next("runtime-tool-record"),
-      dataClassification: invocation.dataClassification,
+      dataClassification,
       contentType,
       plaintext: new TextEncoder().encode(text),
       createdAt: this.#options.clock.now(),

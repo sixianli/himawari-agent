@@ -13,6 +13,7 @@ import {
   type ModelInvocationAdmissionDescriptor,
   type ModelInvocationAdmissionResolver,
   type ModelInvocationPermit,
+  modelVisibleClassifications,
   type PayloadStorePort,
   PORT_ERROR_CODES,
   type ProductConfiguration,
@@ -354,12 +355,7 @@ export function createProductionRunMemory(options: {
             queryRef: request.queryRef,
             policy: {
               limit: request.limit,
-              allowedClassifications: (
-                ["public", "private", "sensitive", "restricted"] as const
-              ).filter(
-                (_classification, index, all) =>
-                  index <= all.indexOf(request.dataClassification ?? "public"),
-              ),
+              allowedClassifications: modelVisibleClassifications(),
             },
           })
           .catch((error: unknown) => {
