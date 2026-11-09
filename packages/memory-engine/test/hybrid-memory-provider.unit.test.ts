@@ -118,11 +118,13 @@ describe("hybrid Memory provider", () => {
     await provider.upsert({
       memory: memory({ dataClassification: "sensitive" }),
       content:
-        "主人对青霉素过敏，网银密码是 Abc12345xyz，备用口令 x9Kq2mVb7Lp4Wz，手机号 13800138000，iPhone15 很好用",
+        "主人对青霉素过敏，Wi-Fi 密码：sunflower，客人来了就告诉他 sunflower；网银密码是 hunter22，忘了就翻 hunter22 那页；hunter33 是新密码；纸条上写着 x9Kq2mVb7Lp4Wz 和 abcd-efgh-ijkl-mnop-qrst-uvwx，手机号 13800138000，2026-11-09 复诊",
     });
     const terms = upserts[0]?.terms ?? [];
-    expect(terms).toEqual(expect.arrayContaining(["青霉素", "过敏", "iphone15"]));
-    expect(terms.join(" ")).not.toMatch(/abc12345xyz|x9kq2mvb7lp4wz|13800138000/u);
+    expect(terms).toEqual(expect.arrayContaining(["青霉素", "过敏", "纸条", "2026"]));
+    expect(terms.join(" ")).not.toMatch(
+      /sunflower|hunter|x9kq2mvb7lp4wz|abcd|efgh|uvwx|13800138000/u,
+    );
     expect(upserts[0]?.embedding).not.toBeNull();
   });
 

@@ -1,31 +1,49 @@
 import { describe, expect, it } from "vitest";
-import { isSafeToIndex, looksLikeSecretToken } from "../src/secret-like.ts";
+import { isSafeToIndex, looksLikeSecretToken, maskForIndex } from "../src/secret-like.ts";
 
 describe("words kept out of the search index", () => {
-  it("treats long letter-digit mixes, long digit runs and very long tokens as secrets", () => {
+  it("treats letter-digit mixes of 8 or more, long digit runs and very long tokens as secrets", () => {
     for (const word of [
       "x9Kq2mVb7Lp4Wz",
       "abc12345",
+      "hunter22",
       "AbCdEf1234567890GhIj",
       "13800138000",
       "482910",
       "dGhpcyBpcyBhIGxvbmcgdG9rZW4",
+      "abcd-efgh-ijkl-mnop-qrst-uvwx",
     ])
       expect(looksLikeSecretToken(word), word).toBe(true);
   });
 
-  it("keeps ordinary words, short numbers, product names and Chinese", () => {
+  it("keeps ordinary words, short numbers, dates, times and Chinese", () => {
     for (const word of [
-      "iphone15",
       "Pixel",
       "2026",
       "1111",
       "covid19",
+      "2026-11-09",
+      "14:30:00",
       "青霉素",
       "gpt-4o",
       "Hermes",
     ])
       expect(looksLikeSecretToken(word), word).toBe(false);
+  });
+
+  it("masks a password everywhere it repeats and drops whole secret-like runs before words are split", () => {
+    const masked = maskForIndex(
+      "网银密码是 hunter22，记不住就看 hunter22 那张纸；令牌 abcd-efgh-ijkl-mnop-qrst-uvwx；2026-11-09 去医院",
+    );
+    expect(masked).not.toMatch(/hunter22|abcd|uvwx/u);
+    expect(masked).toContain("2026-11-09");
+    expect(masked).toContain("去医院");
+    const card = maskForIndex("卡号 4111 1111 1111 1111");
+    expect(card).not.toContain("4111");
+    expect(card).toContain("尾号1111");
+    expect(maskForIndex("Wi-Fi 密码：sunflower，客人来了就告诉他 sunflower")).not.toContain(
+      "sunflower",
+    );
   });
 
   it("refuses a name the masking rules would change or that holds a secret-like part", () => {

@@ -90,7 +90,7 @@ const MEMORIES: ReadonlyArray<{
   },
   {
     id: "allergy",
-    text: "主人对青霉素过敏，医保卡备用口令 x9Kq2mVb7Lp4Wz",
+    text: "主人对青霉素过敏，医保卡背面抄着 x9Kq2mVb7Lp4Wz",
     at: "2026-10-20T00:00:00.000Z",
     classification: "sensitive",
     attributes: { category: "health", importancePermille: 950, entities: ["青霉素"] },

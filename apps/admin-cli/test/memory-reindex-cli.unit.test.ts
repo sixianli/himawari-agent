@@ -114,6 +114,7 @@ async function prepare() {
     ["memory-merged", "archived", 2],
     ["memory-edited-after", "archived", 4],
     ["memory-undone", "active", 5],
+    ["memory-undone-archived-again", "archived", 6],
     ["memory-kept", "active", 1],
   ] as const;
   for (const [id, status, revision] of memories) {
@@ -147,6 +148,16 @@ async function prepare() {
   change.run("change-merged", OWNER, AGENT, "memory-merged", "merge", 2, NOW, null);
   change.run("change-edited", OWNER, AGENT, "memory-edited-after", "archive", 3, NOW, null);
   change.run("change-undone", OWNER, AGENT, "memory-undone", "archive", 4, NOW, NOW);
+  change.run(
+    "change-undone-archived-again",
+    OWNER,
+    AGENT,
+    "memory-undone-archived-again",
+    "archive",
+    6,
+    NOW,
+    NOW,
+  );
   database
     .prepare(
       `INSERT INTO memory_search_index (memory_id, owner_id, agent_id, memory_revision, indexed_at)
@@ -218,8 +229,9 @@ describe("memory.reindex admin CLI", () => {
         { id: "memory-kept", status: "active", revision: 1 },
         { id: "memory-merged", status: "archived", revision: 2 },
         { id: "memory-undone", status: "active", revision: 5 },
+        { id: "memory-undone-archived-again", status: "archived", revision: 6 },
       ],
-      undone: ["change-idle", "change-undone"],
+      undone: ["change-idle", "change-undone", "change-undone-archived-again"],
       indexed: 0,
     });
 

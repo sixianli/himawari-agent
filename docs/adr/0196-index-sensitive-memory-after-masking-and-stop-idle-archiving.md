@@ -50,16 +50,19 @@ Andy 在方案 v3 上同意的 C：“上线时一次性恢复因闲置被归档
 ## 决定
 
 1. **词表、实体、事件段词表收 public、private、sensitive 三档**，restricted（受限）仍不收。
-2. **建词表之前先遮盖，再丢掉像密钥的词。**
-   - 遮盖用出口遮盖的固定规则集、不带对话上下文（`maskSensitiveText`），认得出的密码、验证码、卡号、证件号、密钥先换成“[密码]”这类占位文字，再拆词。
-   - 拆完的词再过一道 `looksLikeSecretToken`（`packages/sensitive-capture/src/secret-like.ts`）：6 位以上的纯数字、24 个字符以上的英文数字串、16 个字符以上同时有字母和数字的串、8 个字符以上且含 3 个以上数字的字母数字串，一律不进词表。这道是给“规则没认出来的密钥格式”兜底，代价是手机号、订单号这类词按词搜不到，按意思仍能搜到。
-   - 这两步对三档都做，不只对 sensitive：词表是明文，private 记忆里的秘密同样不该写成明文。
-3. **实体在记忆提取时过滤。**模型给出的实体名，如果遮盖规则会改动它，或者其中某一段像密钥，就丢掉（`isSafeToIndex`，在 `apps/agent-service/src/production-memory-capture.ts`）。存储层不做这一步：SQLite 在独立线程里直接跑源码，`@himawari-agent/sensitive-capture` 的入口在那里加载不了（`check:source-mode-imports` 管的同一类问题）。
+2. **建词表之前先遮盖，再丢掉像密钥的词**（`maskForIndex`，在 `packages/sensitive-capture/src/secret-like.ts`）。
+   - 先用出口遮盖的固定规则集、不带对话上下文（`maskSensitiveText`）遮盖：认得出的密码、验证码、卡号、证件号、密钥换成“[密码]”这类占位文字。
+   - 规则认出的值（`findSensitiveValues`），在同一段文字里再出现时也去掉。出口遮盖只在“密码：”后面那一处认出值，后面单独再写一次的同一个值认不出来（例如“Wi-Fi 密码：sunflower，客人来了就告诉他 sunflower”）。
+   - 再按空白和标点切出英文数字串，整串像密钥的去掉，然后才拆词；拆完的每个词再查一遍。整串查是因为拆词会把 `abcd-efgh-ijkl-mnop-qrst-uvwx` 这类带分隔符的长串拆成几个短词，每段单看都不像密钥。
+   - “像密钥”（`looksLikeSecretToken`）：6 位以上的纯数字、24 个字符以上的英文数字串、8 个字符以上同时有字母和数字的串。这道是给规则没认出来的格式兜底，例如关键词写在后面的“hunter22 是新密码”。代价是手机号、订单号、`iphone15` 这类词按词搜不到，按意思仍能搜到；日期、时间（不含字母）不受影响。纯字母的密码（例如关键词写在后面的 `sunflower`）兜不住，只能靠遮盖规则。
+   - 这几步对三档都做，不只对 sensitive：词表是明文，private 记忆里的秘密同样不该写成明文。
+3. **实体在记忆提取时过滤。**模型给出的实体名，如果上一条的处理会改动它，就丢掉（`isSafeToIndex`，在 `apps/agent-service/src/production-memory-capture.ts`）。这是目前唯一写入非空实体的地方，其余写入者（主人手动改记忆、提醒、整理产生的推断）都写空实体。存储层不做这一步：SQLite 在独立线程里直接跑源码，`@himawari-agent/sensitive-capture` 的入口在那里加载不了（`check:source-mode-imports` 管的同一类问题）；以后新增写实体的地方，要同样先过 `isSafeToIndex`。
 4. **停掉闲置归档。**记忆整理不再因为久没用到就归档；合并重复、新事实取代旧事实这两种归档保留。“归档”这个动作类型留在库里，因为旧记录还在用它。
 5. **一次性维护命令 `himawari-admin memory reindex --config <路径> --operator <人>`**，上线时在服务停止状态下运行：
    - 不带 `--confirm` 时只报数：要恢复的闲置归档条数、现有索引条数、在用记忆条数，并提示先备份（`himawari-admin backup create`）。
    - 带 `--confirm REINDEX_MEMORY_<agentId>` 时，在一个事务里：恢复“动作是闲置归档、没撤销过、之后没被改过（版本号仍等于归档后的版本）”的记忆，并把那条整理改动标为已撤销；合并重复产生的归档不动；然后清空这个 Agent 的记忆索引。
-   - 服务再启动时，按前提 5 的现有逻辑把所有没有索引的记忆重新排队，按新规则建词表和向量。重跑这个命令是安全的：第二次恢复 0 条，索引再清一次再建一次。
+   - 服务再启动时，按前提 5 的现有逻辑把所有没有索引的记忆重新排队，按新规则建词表和向量。配置校验要求必须有且只有一个嵌入模型（`packages/platform-node/src/strict-configuration.ts:1279`），所以这段重建循环在启用记忆的服务里一定会跑；全是确定性测试模型的配置不启用记忆，索引用不上。
+   - 重跑不会多恢复或误恢复（第二次恢复 0 条），但会再清一次索引：服务下次启动要把全部记忆的向量再算一遍，多花一次嵌入费用，期间检索结果变少。所以只在上线时跑一次。
    - 恢复不写“主人评价不需要”：这是 Andy 对整个功能的决定，不是他对某一条的评价。
 
 <a id="industry"></a>
@@ -83,12 +86,12 @@ GitHub 的密钥扫描在“已知服务方格式”之外另加两层兜底：�
 ## 后果
 
 - 门槛（会自动拦下的测试）：
-  - `test/integration/memory-consolidation.test.ts` 的 `[RULE-memory-visible]`：真实 SQLite 里敏感记忆按词“青霉素”能查到，正文里规则认不出的口令 `x9Kq2mVb7Lp4Wz` 查不到，敏感记忆的实体能读回；整理不再归档半年没用的记忆。
+  - `test/integration/memory-consolidation.test.ts` 的 `[RULE-memory-visible]`：真实 SQLite 里敏感记忆按词“青霉素”能查到；正文里没有关键词、遮盖规则认不出的串 `x9Kq2mVb7Lp4Wz` 查不到（靠“像密钥”兜底）；敏感记忆的实体能读回；整理不再归档半年没用的记忆。
   - `test/integration/memory-episodes.test.ts` 的 `[RULE-memory-visible]`：敏感事件段按词能找到、只放行 private 时找不到、嵌入失败后能补算向量。
-  - `packages/memory-engine/test/hybrid-memory-provider.unit.test.ts`、`packages/sensitive-capture/test/secret-like.unit.test.ts`、`apps/agent-service/test/production-memory-evidence.unit.test.ts`：遮盖和兜底规则、实体过滤。
+  - `packages/memory-engine/test/hybrid-memory-provider.unit.test.ts`、`packages/sensitive-capture/test/secret-like.unit.test.ts`、`apps/agent-service/test/production-memory-evidence.unit.test.ts`：遮盖、重复出现的密码、关键词在后的密码、带分隔符的长串、卡号只留尾号、实体过滤。去掉遮盖、去掉重复值处理、去掉整串检查，各自至少有一条用例失败。
   - `apps/admin-cli/test/memory-reindex-cli.unit.test.ts`：先报数、不确认不改；只恢复没被改过的闲置归档、不动合并归档；清空索引后这些记忆都在“待建索引”名单里；重跑恢复 0 条。
 - 上线步骤：停服务 → `himawari-admin backup create` → `himawari-admin memory reindex`（报数，把数量报给 Andy）→ 带 `--confirm` 再跑一次 → 启动服务。重建期间（约每秒一条）检索结果会少，几百条记忆约几分钟建完；重建要重算全部向量，嵌入费用按几百条短文本计，远低于 0.5 美元。
-- 词表里不再有手机号、长订单号这类词，按词搜不到它们；按意思搜不受影响。
+- 词表里不再有手机号、长订单号、带数字的型号这类词，按词搜不到它们；按意思搜不受影响。
 - 记忆页“已归档”的说明改为“整理时判断为过时或重复，回答时不再用”。
 - 记忆的日期给模型（第 3 个 PR）、凭证占位符编号（第 4 个 PR）另做。
 
