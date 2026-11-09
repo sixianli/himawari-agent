@@ -37,6 +37,10 @@ const DEEPSEEK_SIBLING_TEST = "packages/platform-node/test/other-web-provider.un
 const DEEPSEEK_URL = (value) =>
   `await provider().fetch({ url: "https://user:pw@example.org/a?token=${value}" });\n`;
 
+const REVIEW_316_RECORD = ".agents/reviews/pr-316/round-1/glm-5.3-flash.md";
+const REVIEW_316_SIBLING = "docs/review-copy/pr-316/round-2/glm-5.3-flash.md";
+const REVIEW_316_LINE = `- 命中 \`token=${["abcdef", "123456"].join("")}\`\n`;
+
 const REVIEW_274 = ".agents/reviews/pr-274/round-7/deepseek-v4.1-flash.md";
 const REVIEW_274_SIBLING = ".agents/reviews/pr-274/round-8/deepseek-v4.1-flash.md";
 const REVIEW_274_OTHER_TEXT = ".agents/reviews/pr-274/round-9/deepseek-v4.1-flash.md";
@@ -52,6 +56,8 @@ const keyTailLine = (tail) =>
   `["[R2-T14] key tail", \`${tail}\\n\${["-----END", "PRIVATE KEY-----\\n"].join(" ")}\`],\n`;
 
 const FIXTURES = {
+  [REVIEW_316_RECORD]: REVIEW_316_LINE,
+  [REVIEW_316_SIBLING]: REVIEW_316_LINE,
   [DEEPSEEK_TEST]: DEEPSEEK_URL("abcdef123456"),
   [DEEPSEEK_SIBLING_TEST]: DEEPSEEK_URL("abcdef123456"),
   "packages/platform-node/test/other-value.unit.test.ts": DEEPSEEK_URL("abcdef123457"),
@@ -76,6 +82,7 @@ const FIXTURES = {
 };
 
 const EXPECTED_WITH_REPOSITORY_CONFIG = [
+  `${REVIEW_316_SIBLING} generic-api-key`,
   `${DEEPSEEK_SIBLING_TEST} generic-api-key`,
   "packages/platform-node/test/other-value.unit.test.ts generic-api-key",
   `${REVIEW_274_SIBLING} private-key`,
@@ -198,6 +205,7 @@ describe("gitleaks repository configuration", () => {
           "test/tooling/gitleaks-allowlist.test.mjs generic-api-key",
           `${PUSH_TEST} generic-api-key`,
           `${DEEPSEEK_TEST} generic-api-key`,
+          `${REVIEW_316_RECORD} generic-api-key`,
           `${REVIEW_274} private-key`,
           `${KEY_TAIL_TEST} generic-api-key`,
         ].sort(),
@@ -252,6 +260,11 @@ describe("gitleaks repository configuration", () => {
       "deepseek any path",
       "'''(?:^|/)packages/platform-node/test/deepseek-web-provider\\.unit\\.test\\.ts$'''",
       "'''(?:^|/)packages/platform-node/test/.*\\.ts$'''",
+    ],
+    [
+      "review record any path",
+      "'''(?:^|/)\\.agents/reviews/pr-[0-9]+/round-[0-9]+/[A-Za-z0-9.-]+\\.md$'''",
+      "'''.*\\.md$'''",
     ],
     [
       "deepseek any value",
