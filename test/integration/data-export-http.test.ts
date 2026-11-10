@@ -104,6 +104,11 @@ describe("[P1-6] 网页导出接口", () => {
     const response = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
     expect(response.statusCode).toBe(200);
     expect(Number(response.headers["x-himawari-export-withheld"])).toBe(7);
+    const text = Object.values(unzipSync(new Uint8Array(response.rawPayload)))
+      .map((file) => Buffer.from(file).toString("utf8"))
+      .join("\n");
+    expect(text).not.toContain(SECRET_API_KEY);
+    expect(text).toContain("[已扣留:");
   });
 
   it("反向：没有登录、换了主人、跨站来源都被拒，且不返回任何数据", async () => {

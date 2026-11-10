@@ -720,7 +720,7 @@ export const messages = {
   "memory.page.sourceHelp":
     "{s, select, codex {选 Codex 的记忆文件（memory_summary.md、MEMORY.md）} assistant {让它把关于你的记忆列出来，再贴到这里} other {只认以前下载的 himawari-memories.json；新版导出的压缩包不能在这里导入}}",
   "memory.page.fileHelp":
-    "{s, select, codex {选 memory_summary.md、MEMORY.md，也可以加上你写给 Codex 的 AGENTS.md，可以多选。记忆文件在 Mac 的 ~/.codex/memories/，AGENTS.md 在 ~/.codex/；在选择文件的窗口里按 ⌘⇧G 输入路径就能进入隐藏文件夹。} other {选以前下载的 himawari-memories.json。现在的“导出全部记忆”给的是压缩包，只用于备份和换机（解压后用命令行导入），网页里不能导入。}}",
+    "{s, select, codex {选 memory_summary.md、MEMORY.md，也可以加上你写给 Codex 的 AGENTS.md，可以多选。记忆文件在 Mac 的 ~/.codex/memories/，AGENTS.md 在 ~/.codex/；在选择文件的窗口里按 ⌘⇧G 输入路径就能进入隐藏文件夹。} other {选以前下载的 himawari-memories.json。现在的“导出全部记忆”给的是压缩包，只用于备份和换机（解压后，用命令行导入里面的 himawari-export 文件夹），网页里不能导入。}}",
   "memory.page.aiStep1": "第 1 步：复制下面这段话，发给你在用的 AI。",
   "memory.page.aiPrompt":
     "请把你记住的关于我的所有信息逐条列出来，包括我的身份、偏好、习惯、正在做的事、身边的人，以及我对你提过的做事要求。每条一行，以“- ”开头，尽量用我当时的原话。不要列出密码、证件号、银行卡号这类信息。只列信息，不要加解释。",

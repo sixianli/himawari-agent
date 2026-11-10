@@ -763,7 +763,7 @@ export const messages = {
   "memory.page.sourceHelp":
     "{s, select, codex {Pick Codex memory files (memory_summary.md, MEMORY.md)} assistant {Ask it to list what it knows about you, then paste the answer} other {Only the himawari-memories.json downloaded earlier; the zip from the current export cannot be imported here}}",
   "memory.page.fileHelp":
-    "{s, select, codex {Pick memory_summary.md and MEMORY.md, and optionally your AGENTS.md. The files are in ~/.codex/memories/ and ~/.codex/ on your Mac; press ⌘⇧G in the file picker to type the path.} other {Pick a himawari-memories.json downloaded earlier. Export all memories now gives a zip for backup and moving machines (unzip it, then import with the command line), not importable here.}}",
+    "{s, select, codex {Pick memory_summary.md and MEMORY.md, and optionally your AGENTS.md. The files are in ~/.codex/memories/ and ~/.codex/ on your Mac; press ⌘⇧G in the file picker to type the path.} other {Pick a himawari-memories.json downloaded earlier. Export all memories now gives a zip for backup and moving machines (unzip it, then import the himawari-export folder inside with the command line), not importable here.}}",
   "memory.page.aiStep1": "Step 1: copy this message and send it to the AI you use.",
   "memory.page.aiPrompt":
     "List everything you remember about me, one item per line starting with “- ”: who I am, my preferences and habits, what I am working on, the people around me, and the rules I asked you to follow. Use my own words where you can. Leave out passwords, ID numbers and card numbers. List only the items, without explanations.",
@@ -788,7 +788,7 @@ export const messages = {
   "memory.page.download": "Download export",
   "memory.page.exportWorking": "Preparing the export…",
   "memory.page.exportDone":
-    "Exported {count} memories; {withheld} sensitive items were left as placeholders.",
+    "Exported {count} memories; {withheld} sensitive text places were left as placeholders.",
   "memory.page.exportFailed": "The export failed. Please try again later.",
   "capabilities.title": "Capabilities and adapters",
   "authorizations.title": "Authorizations and grants",
