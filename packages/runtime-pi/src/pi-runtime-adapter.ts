@@ -1707,7 +1707,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
                 this.#activeSessions.get(request.runId)?.agent.abort();
             },
             assertKnown: (toolCallId) => {
-              if (unknownTool || (suspended && !parallelToolsInFlight.has(toolCallId)))
+              if (
+                compacting ||
+                unknownTool ||
+                (suspended && !parallelToolsInFlight.has(toolCallId))
+              )
                 throw new Error("RUNTIME_TOOL_EXECUTION_STOPPED");
             },
             checkpoint: (invocation) =>
