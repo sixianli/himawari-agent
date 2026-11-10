@@ -13,7 +13,7 @@ export const GAP_EXPORT_PATH = "/api/gap-cases/v1/export";
 export const GAP_EXPORT_SCHEMA = "himawari-gap-cases.v1";
 const JST_OFFSET_MS = 9 * 3_600_000;
 
-export interface GapCaseSnapshot extends GapCase {
+export interface GapCaseSnapshot extends Omit<GapCase, "messageId"> {
   readonly weekStart: string;
   readonly weekEnd: string;
 }

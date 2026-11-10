@@ -45,8 +45,10 @@ function MemoryEntry({
   item,
   message,
   onOpenThread,
+  mine = false,
 }: {
   item: DecisionChainMemory;
+  mine?: boolean;
   message: Message;
   onOpenThread: (threadId: string, messageId?: string) => void;
 }) {
@@ -55,6 +57,7 @@ function MemoryEntry({
     item.status && item.status !== "active"
       ? message("decision.chain.status", { s: item.status })
       : null,
+    mine ? message("decision.email.thisMail") : null,
     item.usedByModel ? message("decision.chain.used") : null,
     item.tentative ? message("decision.chain.tentative") : null,
     item.inference ? message("decision.chain.inference") : null,
@@ -119,6 +122,125 @@ function MemoryEntry({
   );
 }
 
+export function DecisionChainBody({
+  chain,
+  message,
+  onOpenThread,
+  thisMail,
+}: {
+  chain: DecisionChain;
+  message: Message;
+  onOpenThread: (threadId: string, messageId?: string) => void;
+  thisMail?: { readonly ruleIds: ReadonlySet<string>; readonly memoryIds: ReadonlySet<string> };
+}) {
+  const { moment } = useLocaleFormat();
+  return (
+    <>
+      <dl className="memory-detail">
+        <dt>{message("decision.chain.decision")}</dt>
+        <dd>
+          {chain.decision.kind === "proactive"
+            ? message("proactive.verdict", { v: chain.decision.outcome })
+            : message("decision.chain.kind", { k: chain.decision.kind })}
+          {` · ${moment(chain.decision.decidedAt)}`}
+        </dd>
+        <dt>{message("decision.chain.rating")}</dt>
+        <dd>
+          {chain.decision.rating
+            ? `${message("proactive.rate", { r: chain.decision.rating })}${
+                chain.decision.ratedAt ? ` · ${moment(chain.decision.ratedAt)}` : ""
+              }`
+            : message("decision.chain.unrated")}
+        </dd>
+      </dl>
+      {chain.inputs === "not_recorded" ? (
+        <p className="decision-chain-note">{message("decision.chain.noRecord")}</p>
+      ) : null}
+      <section aria-label={message("decision.chain.rules")}>
+        <h3>{message("decision.chain.rules")}</h3>
+        {chain.rules.state === "recorded" ? (
+          <ul className="decision-chain-list">
+            {chain.rules.items.map((rule, index) => (
+              <li key={`${rule.ruleId}:${index}`}>
+                <p>
+                  {message("decision.chain.rule", { id: rule.ruleId })}
+                  {` · ${message("decision.chain.origin", { o: rule.origin ?? "unknown" })}`}
+                  {rule.document ? ` · ${rule.document}` : ""}
+                  {thisMail?.ruleIds.has(rule.ruleId)
+                    ? ` · ${message("decision.email.thisMail")}`
+                    : ""}
+                </p>
+                <small>
+                  {message("decision.chain.ruleMails", {
+                    count: rule.mailCount,
+                  })}
+                </small>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <SectionNote state={chain.rules.state} message={message} />
+        )}
+      </section>
+      {chain.mails ? (
+        <section aria-label={message("decision.chain.mails")}>
+          <h3>{message("decision.chain.mails")}</h3>
+          <p>
+            {chain.mails.judged === null
+              ? message("decision.chain.noRecord")
+              : message("decision.chain.judged", {
+                  count: chain.mails.judged,
+                })}
+            {chain.mails.related === null
+              ? ""
+              : ` · ${message("decision.chain.related", { count: chain.mails.related })}`}
+          </p>
+          <small>
+            {message("decision.chain.read", {
+              s: chain.mails.relatedRead,
+            })}
+          </small>
+        </section>
+      ) : null}
+      <section aria-label={message("decision.chain.memories")}>
+        <h3>{message("decision.chain.memories")}</h3>
+        {chain.memories.recall ? (
+          <small>
+            {message("decision.chain.recall", {
+              s: chain.memories.recall,
+            })}
+          </small>
+        ) : null}
+        {chain.memories.state === "recorded" ? (
+          <>
+            <ul className="decision-chain-list">
+              {chain.memories.items.map((item) => (
+                <MemoryEntry
+                  key={item.memoryId}
+                  item={item}
+                  mine={thisMail?.memoryIds.has(item.memoryId) ?? false}
+                  message={message}
+                  onOpenThread={onOpenThread}
+                />
+              ))}
+            </ul>
+            {chain.memories.truncated ? (
+              <small>
+                {message("decision.chain.memoriesCut", {
+                  shown: chain.memories.items.length,
+                  total: chain.memories.total,
+                })}
+              </small>
+            ) : null}
+          </>
+        ) : (
+          <SectionNote state={chain.memories.state} message={message} />
+        )}
+      </section>
+    </>
+  );
+}
+
 export function DecisionChainDrawer({
   decisionId,
   readChain,
@@ -134,7 +256,6 @@ export function DecisionChainDrawer({
   onGone: () => void;
   onClose: () => void;
 }) {
-  const { moment } = useLocaleFormat();
   const [loaded, setLoaded] = useState<Loaded>({ kind: "loading" });
   const panel = useRef<HTMLElement>(null);
   const close = useRef(onClose);
@@ -196,105 +317,7 @@ export function DecisionChainDrawer({
           </p>
         ) : null}
         {chain ? (
-          <>
-            <dl className="memory-detail">
-              <dt>{message("decision.chain.decision")}</dt>
-              <dd>
-                {chain.decision.kind === "proactive"
-                  ? message("proactive.verdict", { v: chain.decision.outcome })
-                  : message("decision.chain.kind", { k: chain.decision.kind })}
-                {` · ${moment(chain.decision.decidedAt)}`}
-              </dd>
-              <dt>{message("decision.chain.rating")}</dt>
-              <dd>
-                {chain.decision.rating
-                  ? `${message("proactive.rate", { r: chain.decision.rating })}${
-                      chain.decision.ratedAt ? ` · ${moment(chain.decision.ratedAt)}` : ""
-                    }`
-                  : message("decision.chain.unrated")}
-              </dd>
-            </dl>
-            {chain.inputs === "not_recorded" ? (
-              <p className="decision-chain-note">{message("decision.chain.noRecord")}</p>
-            ) : null}
-            <section aria-label={message("decision.chain.rules")}>
-              <h3>{message("decision.chain.rules")}</h3>
-              {chain.rules.state === "recorded" ? (
-                <ul className="decision-chain-list">
-                  {chain.rules.items.map((rule, index) => (
-                    <li key={`${rule.ruleId}:${index}`}>
-                      <p>
-                        {message("decision.chain.rule", { id: rule.ruleId })}
-                        {` · ${message("decision.chain.origin", { o: rule.origin ?? "unknown" })}`}
-                        {rule.document ? ` · ${rule.document}` : ""}
-                      </p>
-                      <small>
-                        {message("decision.chain.ruleMails", {
-                          count: rule.mailCount,
-                        })}
-                      </small>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <SectionNote state={chain.rules.state} message={message} />
-              )}
-            </section>
-            {chain.mails ? (
-              <section aria-label={message("decision.chain.mails")}>
-                <h3>{message("decision.chain.mails")}</h3>
-                <p>
-                  {chain.mails.judged === null
-                    ? message("decision.chain.noRecord")
-                    : message("decision.chain.judged", {
-                        count: chain.mails.judged,
-                      })}
-                  {chain.mails.related === null
-                    ? ""
-                    : ` · ${message("decision.chain.related", { count: chain.mails.related })}`}
-                </p>
-                <small>
-                  {message("decision.chain.read", {
-                    s: chain.mails.relatedRead,
-                  })}
-                </small>
-              </section>
-            ) : null}
-            <section aria-label={message("decision.chain.memories")}>
-              <h3>{message("decision.chain.memories")}</h3>
-              {chain.memories.recall ? (
-                <small>
-                  {message("decision.chain.recall", {
-                    s: chain.memories.recall,
-                  })}
-                </small>
-              ) : null}
-              {chain.memories.state === "recorded" ? (
-                <>
-                  <ul className="decision-chain-list">
-                    {chain.memories.items.map((item) => (
-                      <MemoryEntry
-                        key={item.memoryId}
-                        item={item}
-                        message={message}
-                        onOpenThread={onOpenThread}
-                      />
-                    ))}
-                  </ul>
-                  {chain.memories.truncated ? (
-                    <small>
-                      {message("decision.chain.memoriesCut", {
-                        shown: chain.memories.items.length,
-                        total: chain.memories.total,
-                      })}
-                    </small>
-                  ) : null}
-                </>
-              ) : (
-                <SectionNote state={chain.memories.state} message={message} />
-              )}
-            </section>
-          </>
+          <DecisionChainBody chain={chain} message={message} onOpenThread={onOpenThread} />
         ) : null}
       </aside>
     </>
