@@ -4,8 +4,8 @@ import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ConfiguredPiModelBindingPort,
-  getPiModelPresentation,
   type ConfiguredPiModelDescriptor,
+  getPiModelPresentation,
   type PiModelRuntime,
   type PiModelRuntimeFactory,
 } from "../src/index.js";
@@ -321,6 +321,24 @@ describe("ConfiguredPiModelBindingPort", () => {
           secretSource: { productionSuitable: true, resolve: async () => SECRET },
         }),
     ).toThrow(message);
+  });
+
+  it("[D7] registers no model with a prompt cache lifetime, so Pi never sends a cache warming request", async () => {
+    const binding = new ConfiguredPiModelBindingPort({
+      descriptors: [
+        {
+          ...modelDescriptor("primary"),
+          promptCache: { short: 300 },
+        } as ConfiguredPiModelDescriptor,
+      ],
+      secretSource: { productionSuitable: true, resolve: async () => SECRET },
+    });
+
+    const primary = await binding.resolve(PRIMARY_REF);
+
+    expect(primary.model).toBeDefined();
+    expect(primary.model).not.toHaveProperty("promptCache");
+    await binding.close();
   });
 
   it("works with the pinned Pi runtime without disk model discovery", async () => {

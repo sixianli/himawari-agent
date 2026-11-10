@@ -33,11 +33,6 @@ import {
   SettingsManager,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import {
-  highestClassification,
-  isModelVisible,
-  memoryDateNote,
-} from "@himawari-agent/application/runtime-port";
 import type {
   AgentRuntimePort,
   DataClassification,
@@ -61,6 +56,11 @@ import type {
   RuntimeToolDescriptor,
   RuntimeToolInvocation,
   RuntimeToolPort,
+} from "@himawari-agent/application/runtime-port";
+import {
+  highestClassification,
+  isModelVisible,
+  memoryDateNote,
 } from "@himawari-agent/application/runtime-port";
 import {
   CHAT_TOOL_GUIDELINES_HEADER,
@@ -1229,17 +1229,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     await this.#historyWrites.get(runId);
   }
 
-  async #continueForSteeredNotices(
-    session: AgentSession,
-    canContinue: () => boolean,
-  ): Promise<void> {
-    if (!this.#dependencies.tools.subscribeBackground) return;
-    while (canContinue() && session.agent.hasQueuedMessages()) {
-      await session.agent.continue();
-      await session.waitForIdle();
-    }
-  }
-
   private async produce(
     request: RuntimeRequest,
     emit: (event: RuntimeEvent) => Promise<void>,
@@ -1387,7 +1376,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         if (active.isStreaming)
           void active
             .sendCustomMessage(toolLoopStoppedMessage(), { deliverAs: "steer" })
-            .catch(() => active.agent.abort());
+            .catch(() => active.abort());
         else
           active.agent.steer({
             role: "custom",
@@ -1406,6 +1395,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         {
           compaction: { enabled: true },
           retry: { enabled: false, maxRetries: 0 },
+          cacheWarming: "streaming",
           defaultTools: [],
         },
         { projectTrusted: false },
@@ -1656,7 +1646,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           if (!session.isStreaming) return false;
           void session
             .sendCustomMessage(backgroundCommandMessage(notice), { deliverAs: "steer" })
-            .catch(() => session.agent.abort());
+            .catch(() => session.abort());
           return true;
         },
       );
@@ -1688,7 +1678,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             }),
           );
           this.#historyWrites.set(request.runId, pending);
-          void pending.catch(() => session.agent.abort());
+          void pending.catch(() => session.abort());
         }
 
         if (
@@ -1699,7 +1689,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         ) {
           const environment = runtimeEnvironmentAfterCompaction(session.messages, projection);
           if (environment)
-            session.agent.steer({ role: "custom", ...environment, timestamp: Date.now() });
+            void session
+              .sendCustomMessage(environment, { deliverAs: "steer" })
+              .catch(() => session.abort());
         }
 
         if (
@@ -1798,17 +1790,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               : {}),
           });
         await session.waitForIdle();
-        await eventChain;
-        await this.#continueForSteeredNotices(session, () => {
-          return (
-            !suspended &&
-            !unknownTool &&
-            !failed &&
-            !aborted &&
-            !toolProgress.blocked &&
-            !this.#cancelledRuns.has(request.runId)
-          );
-        });
         await eventChain;
         await this.#historyWrites.get(request.runId);
       } finally {
