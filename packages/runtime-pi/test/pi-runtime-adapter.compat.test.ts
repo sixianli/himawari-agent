@@ -4238,11 +4238,12 @@ it("[D7] pins Pi cache warming to streaming so a Pi upgrade cannot turn on idle 
     admission: async (scope) => allowAdmission(scope),
     logicalSlot: (_request, ordinal) => `warming:${ordinal}`,
     createSession: async (options) => {
+      modes.push(options.settingsManager?.getGlobalSettings().cacheWarming ?? "unset");
       modes.push(options.settingsManager?.getCacheWarmingMode() ?? "unset");
       return createAgentSession(options);
     },
   });
   const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
   expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
-  expect(modes).toEqual(["streaming"]);
+  expect(modes).toEqual(["streaming", "streaming"]);
 });

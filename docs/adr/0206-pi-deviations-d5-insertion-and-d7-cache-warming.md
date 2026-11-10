@@ -33,7 +33,7 @@ date: "2026-11-10"
 
 Pi 的出处都是锁定版本 `@earendil-works/pi-coding-agent@1.5.0` 包里的文件。
 
-1. `session.sendCustomMessage` 在会话运行中把消息交给底层队列：`dist/core/agent-session.js` 第 1875–1880 行，`else if (this.isStreaming && options?.triggerTurn !== false) { … this.agent.steer(appMessage); }`。所以运行中用它和直接调 `agent.steer` 是同一个队列、同一个时机。
+1. `session.sendCustomMessage` 在会话运行中把消息交给底层队列：`dist/core/agent-session.js` 第 1875–1880 行，`else if (this.isStreaming && options?.triggerTurn !== false) { … this.agent.steer(appMessage); }`。所以运行中用它和直接调 `agent.steer` 是同一个队列、同一个时机；`role: "custom"` 和 `timestamp` 由它自己补上（第 1863–1871 行），调用方只传 `customType`、`content`、`display`、`details`。
 2. 会话不在运行中、也没有 `triggerTurn` 时，`sendCustomMessage` 直接把消息写进会话历史：同一文件第 1897–1898 行 `else { this._appendCustomMessage(appMessage); }`。
 3. `session.isStreaming` 只在会话自己开的一轮里为真：第 1081–1083 行 `get isStreaming() { return this._isAgentRunActive; }`，`_isAgentRunActive` 只在 `_startRun` 里置真（第 1442 行）。审批续跑用的 `session.agent.continue()` 不经过 `_startRun`，所以续跑的那一轮里 `isStreaming` 为假，但底层 Agent 正在跑。
 4. 会话开的一轮会自己跑完排队的消息，但最后一次检查和收尾之间还隔着一次 `await`：`_startRun` 第 1467–1479 行在 `agent.prompt` 之后循环，`_handlePostAgentRun()` 返回 `this.agent.hasQueuedMessages()`（第 1582 行）时 `await this.agent.continue()`；没有 `agent_before_settle` 处理函数时 `_runBeforeSettleBoundary()` 再查一次 `this.agent.hasQueuedMessages()`（第 1586 行）。`_runBeforeSettleBoundary()` 返回后要经过一次 `await` 才回到 `_startRun` 退出循环，之后 `_emitAgentSettled()` 一开头才把 `_isAgentRunActive` 置假（第 696–698 行）。这一次 `await` 的间隙里送来的后台通知会进底层队列、没人再跑（GLM 互审指出，Pi 官方 `docs/sdk.md` 第 92 行也说 `agent_end` 之后“queued work can still follow”）。
@@ -48,7 +48,7 @@ Pi 的出处都是锁定版本 `@earendil-works/pi-coding-agent@1.5.0` 包里的
 ## 决定
 
 1. **压缩后补发运行环境说明改用 `session.sendCustomMessage(environment, { deliverAs: "steer" })`。**依据前提 1、5，时机不变。
-2. **“工具循环已停止”提示、后台命令通知插入失败时，以及存历史失败时，改用 `session.abort()`。**这几处都是不等待结果的回调，不会自己等自己；`session.abort()` 先标记“本轮要中止”，Pi 见到这个标记就不再自动续跑排队的消息（前提 6、4），只调底层 `agent.abort()` 时队列里若还有消息，Pi 可能再发一次请求。存历史失败的路径由 `pi-runtime-adapter.compat.test.ts` 的 “does not call the model when native history cannot be persisted”“does not execute a tool when saving its assistant request fails” 两条真实 Pi 用例覆盖。
+2. **“工具循环已停止”提示、后台命令通知插入失败时，以及存历史失败时，改用 `session.abort()`。**这几处都是不等待结果的回调，不会自己等自己；`session.abort()` 先标记“本轮要中止”，Pi 见到这个标记就不再自动续跑排队的消息（前提 6、4），只调底层 `agent.abort()` 时队列里若还有消息，Pi 可能再发一次请求。存历史失败会终止这一轮，由 `pi-runtime-adapter.compat.test.ts` 的 “does not call the model when native history cannot be persisted”“does not execute a tool when saving its assistant request fails” 两条真实 Pi 用例覆盖；“标记后 Pi 不再自动续跑”只有前提 6 的源码依据，没有单独的用例。
 3. **保留一轮结束后的补跑循环 `#continueForSteeredNotices`（`agent.hasQueuedMessages()` + `agent.continue()`）。**方案原打算删掉，前提是 Pi 自己会跑完排队消息；互审指出前提 4 里的那个间隙，删掉会让落在间隙里的后台通知丢失，而通知回调已经回报“送达”。会话层没有能查底层队列的接口（`session.pendingMessageCount` 只数用户的 `steer()`/`followUp()`，`dist/core/agent-session.js` 第 1972–1974 行），所以这处和审批续跑一样保留，并带着原来的停止条件（挂起、未知工具、失败、中止、工具循环卡住、取消时不续跑）。新增真实 Pi 用例 `[D5-NOTICE]`：后台结果在模型最后一次回答结束时（`agent_end`）才到，下一次请求仍看得到它。
 4. **审批续跑保留 `session.agent.continue()`，续跑那一轮里的“工具循环已停止”提示保留 `agent.steer`。**官方会话接口没有“不加新消息、接着跑”的写法，改成 `sendCustomMessage(..., { triggerTurn: true })` 要往对话里多塞一条合成消息，模型会看到它。续跑那一轮里 `isStreaming` 为假（前提 3），用 `sendCustomMessage` 会直接写进会话历史（前提 2），可能插在工具调用和它的结果之间，所以这一处跟着续跑一起保留。工具内部的 `agent.abort()` 按 ADR 0204 保留。
 5. **D7 这次只锁住设置。**`SettingsManager.inMemory` 显式写 `cacheWarming: "streaming"`，升到 1.5.1 时不被新默认值 `"idle"` 带走；新增用例 `[D7]` 锁住：Himawari 注册给 Pi 的模型都没有 `promptCache`，即使模型描述里带了这一项也不会传过去，所以不会出现没过预算的预热请求（前提 7、9）。空闲预热在“每次运行新建会话、跑完关掉”下跑不起来，不做。
