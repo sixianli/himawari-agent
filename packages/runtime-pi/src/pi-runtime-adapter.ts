@@ -952,6 +952,7 @@ async function admitPiStream(
   onAdmissionFailed?: PiAgentRuntimeAdapterDependencies["onModelAdmissionFailed"],
   usageRecording?: PiAgentRuntimeAdapterDependencies["usage"],
   redactionRuleset?: number,
+  usagePurpose: "chat" | "other" = "chat",
 ): Promise<AssistantMessageEventStream> {
   let permit: ModelInvocationPermit | undefined;
   let started = false;
@@ -1101,7 +1102,7 @@ async function admitPiStream(
           agentId: request.agentId,
           runId: request.runId,
           invocationId,
-          purpose: "chat",
+          purpose: usagePurpose,
           source: "agent-stream",
           provider: model.provider,
           model: model.id,
@@ -1618,9 +1619,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       let loopSummaryAttempted = false;
       let compacting = false;
       session.agent.streamFunction = async (model, requested, options) => {
+        const summaryContext = compacting ? himawariSummaryContext(requested) : undefined;
         const context =
-          (compacting ? himawariSummaryContext(requested) : undefined) ??
-          himawariRequestContext(requested, systemPrompt, requestTools);
+          summaryContext ?? himawariRequestContext(requested, systemPrompt, requestTools);
         await this.#historyWrites.get(request.runId);
         const replay = restored?.takeReplay();
         if (replay) return replay;
@@ -1645,6 +1646,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           this.#dependencies.onModelAdmissionFailed,
           this.#dependencies.usage,
           bundle?.redactionRuleset,
+          summaryContext ? "other" : "chat",
         );
       };
       this.#activeSessions.set(request.runId, session);

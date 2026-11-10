@@ -845,6 +845,7 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       { prompt: "第三问" },
     ];
     const failures: { code: string; message: string }[] = [];
+    const purposes: string[] = [];
     const { bodies, turnEvents } = await conversation(
       turns,
       (index, body) => {
@@ -855,8 +856,18 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       {
         promptBundles: new FrozenPromptBundles(),
         onModelStreamFailed: (_request, failure) => failures.push(failure),
+        usage: {
+          store: {
+            record: async (observation) => {
+              purposes.push(observation.purpose);
+            },
+          },
+          onFailure: () => undefined,
+        },
       },
     );
+    expect(purposes.filter((purpose) => purpose === "other").length).toBeGreaterThan(0);
+    expect(purposes.filter((purpose) => purpose === "chat").length).toBeGreaterThan(0);
     const summaries = bodies.filter((body) => body.includes("<conversation>"));
     expect(summaries.length).toBeGreaterThan(0);
     for (const summary of summaries) {
