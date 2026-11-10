@@ -144,6 +144,7 @@ async function createContext(
   fixture: ReturnType<typeof createFixture>,
   scenario?: { readonly previous: string; readonly current: string; readonly runState: unknown },
   runtimeEnvironment?: string,
+  memoryDates?: unknown,
 ): Promise<string> {
   const envelope = {
     schemaVersion: "context.v1" as const,
@@ -188,6 +189,7 @@ async function createContext(
         payloadRef: "payload-memory",
         sourceRef: "memory-source",
         dataClassification: "private" as const,
+        ...(memoryDates === undefined ? {} : { dates: memoryDates }),
       },
       ...(runtimeEnvironment === undefined
         ? []
@@ -285,6 +287,30 @@ describe("ContextProjectionService", () => {
     await expect(fixture.service.resolveProjection(request(contextRef))).rejects.toMatchObject({
       code: "PORT_INVALID_OPERATION",
     });
+  });
+
+  it("[MEMORY-DATE] carries a memory block's dates into the projection and refuses a malformed one", async () => {
+    const dates = { recordedAt: NOW, validFrom: "2026-01-01", validTo: null };
+    const fixture = createFixture();
+    const projection = await fixture.service.resolveProjection(
+      request(await createContext(fixture, undefined, undefined, dates)),
+    );
+    expect(projection.contextBlocks.find(({ ref }) => ref === "memory-projection")?.dates).toEqual(
+      dates,
+    );
+    for (const malformed of [
+      { recordedAt: "", validFrom: null, validTo: null },
+      { recordedAt: NOW, validFrom: 20260101, validTo: null },
+      { recordedAt: NOW, validFrom: null },
+      { ...dates, note: "改写" },
+    ]) {
+      const broken = createFixture();
+      await expect(
+        broken.service.resolveProjection(
+          request(await createContext(broken, undefined, undefined, malformed)),
+        ),
+      ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+    }
   });
 
   it("materializes one protected envelope without mixing policy or worker material into prompt", async () => {

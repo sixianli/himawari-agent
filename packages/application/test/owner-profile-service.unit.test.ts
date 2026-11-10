@@ -158,11 +158,11 @@ describe("owner profile composition", () => {
       [
         "主人档案（由已确认的长期记忆整理）：",
         "身份：",
-        "- 主人叫 Andy",
+        "- 主人叫 Andy（记于 2026-10-25）",
         "偏好：",
-        "- 主人早上喝美式咖啡",
+        "- 主人早上喝美式咖啡（记于 2026-10-25）",
         "人际关系：",
-        "- 主人的女儿叫小葵",
+        "- 主人的女儿叫小葵（记于 2026-10-25）",
       ].join("\n"),
     ]);
     expect(result.memoryIds).toEqual([
@@ -174,6 +174,47 @@ describe("owner profile composition", () => {
     expect(result.blocks.every(({ dataClassification }) => dataClassification === "private")).toBe(
       true,
     );
+  });
+
+  it("[MEMORY-DATE] dates every profile line in the configured time zone and leaves the rules undated", async () => {
+    const stored: string[] = [];
+    const profile = new OwnerProfileService({
+      state: {
+        listActive: async () => [
+          memory("memory-language", "rule", 900),
+          memory("memory-name", "identity", 900, { recordedAt: "2026-10-25T16:30:00.000Z" }),
+          memory("memory-trip", "identity", 900, {
+            attributes: {
+              ...DEFAULT_MEMORY_ATTRIBUTES,
+              category: "identity",
+              importancePermille: 900,
+              validFrom: "2026-10-20",
+            },
+          }),
+        ],
+      },
+      readText: async (record) => TEXT[record.id],
+      storeText: async ({ text }) => {
+        stored.push(text);
+      },
+      digest: (text) => `digest-${text.length}`,
+      timeZone: "Asia/Tokyo",
+    });
+    await profile.compose({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "private",
+      now: NOW,
+    });
+    expect(stored).toEqual([
+      "主人对 Himawari 的要求（主人亲口说过的，回答时遵守）：\n- 回答一律用简体中文",
+      [
+        "主人档案（由已确认的长期记忆整理）：",
+        "身份：",
+        "- 主人叫 Andy（记于 2026-10-26）",
+        "- 主人这周在东京出差（2026-10-20 至今）",
+      ].join("\n"),
+    ]);
   });
 
   it("[RULE-memory-visible] lets a sensitive relationship memory into the profile and marks the block sensitive", async () => {
@@ -286,7 +327,7 @@ describe("owner profile composition", () => {
   });
 
   it("stays within the character budget, keeping the most important lines", async () => {
-    const { profile } = service(records, 30);
+    const { profile } = service(records, 45);
     const result = await profile.compose({
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
@@ -324,9 +365,9 @@ describe("owner profile composition", () => {
     expect(outline.usage).toEqual({
       used: [
         TEXT["memory-language"],
-        TEXT["memory-name"],
-        TEXT["memory-daughter"],
-        TEXT["memory-snack"],
+        `${TEXT["memory-name"]}（记于 2026-10-25）`,
+        `${TEXT["memory-daughter"]}（记于 2026-10-25）`,
+        `${TEXT["memory-snack"]}（记于 2026-10-25）`,
       ]
         .map((text) => (text ?? "").length + 3)
         .reduce((sum, length) => sum + length, 0),
@@ -338,7 +379,7 @@ describe("owner profile composition", () => {
   it("[MEM-PIN] puts the Owner's picks ahead of automatic ones and reports what did not fit", async () => {
     const { profile } = service(
       [memory("memory-name", "identity", 900), memory("memory-snack", "preference", 400)],
-      12,
+      30,
       [["memory-snack", true]],
     );
     const outline = await profile.outline({

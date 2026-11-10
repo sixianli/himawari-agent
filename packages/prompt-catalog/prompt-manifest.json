@@ -368,6 +368,21 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "memory.date.ongoing": {
+    "sha256": "2e254e51b948538ef3e6edf6362cafe1b73eb1b2ed73e9f6dc9ca31a4fd72ac1",
+    "changedIn": "ADR 0199",
+    "reason": "记忆带日期给模型：自动带入和档案里每条记忆后面写记下的日期或生效时间段，按配置时区换算"
+  },
+  "memory.date.range": {
+    "sha256": "90254b3d8dcf1abb37e373f0c930a6b726a6e75a38930b66274d087e363f7110",
+    "changedIn": "ADR 0199",
+    "reason": "记忆带日期给模型：自动带入和档案里每条记忆后面写记下的日期或生效时间段，按配置时区换算"
+  },
+  "memory.date.recorded": {
+    "sha256": "42cee5815ef15c2fbeed4028f8ca2d9070589d45680472d38d7420aaeac242a5",
+    "changedIn": "ADR 0199",
+    "reason": "记忆带日期给模型：自动带入和档案里每条记忆后面写记下的日期或生效时间段，按配置时区换算"
+  },
   "memory.embedding-query-instruction": {
     "sha256": "b0879f0158c554edaf2803ca0e3415d0ff7769c6d1ba3ebb5b6253203fd385a8",
     "changedIn": "ADR 0161",

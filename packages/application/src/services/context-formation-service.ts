@@ -604,12 +604,13 @@ export class ContextFormationService implements ContextFormationPort {
             },
           ]
         : []),
-      ...selected.map(({ id, contentRef, sourceRef, dataClassification }) => ({
+      ...selected.map(({ id, contentRef, sourceRef, dataClassification, dates }) => ({
         kind: "memory" as const,
         ref: id,
         payloadRef: contentRef,
         sourceRef,
         dataClassification,
+        ...(dates ? { dates } : {}),
       })),
       ...request.capabilities.map(({ ref, summaryRef }) => ({
         kind: "capability-summary" as const,
