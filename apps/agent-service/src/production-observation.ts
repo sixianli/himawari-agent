@@ -319,7 +319,15 @@ export class ProductionObservation {
     const fields: ReadonlySet<string> = new Set(found?.inputFields ?? []);
     const inputs = found?.entry.inputs;
     const forMail = (field: "floorHits" | "memoryByMail" | "relatedByMail") =>
-      inputs && fields.has(field) ? [...new Set(inputs[field][messageId] ?? [])].sort() : null;
+      inputs && fields.has(field)
+        ? [
+            ...new Set(
+              (inputs[field][messageId] ?? []).map((id) =>
+                field === "floorHits" ? clean(id, 256) : id,
+              ),
+            ),
+          ].sort()
+        : null;
     const related = forMail("relatedByMail");
     const open = async (ref: string | null, limit: number) => {
       if (ref === null || seal === undefined) return null;

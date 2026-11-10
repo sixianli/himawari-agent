@@ -111,7 +111,7 @@ try {
   await caption("右边：那一周的校准数字和 Muse 对照结论");
   await page.locator(".mail-week").first().scrollIntoViewIfNeeded();
   await pause(4500);
-  await caption("每一环都能点到原始记录：这里跳到来源对话");
+  await caption("记忆能点到来源对话（规则和评价这一版只显示）");
   await page.getByRole("button", { name: "看来源对话" }).first().click();
   await page.waitForURL(/\/threads\//);
   await pause(3000);

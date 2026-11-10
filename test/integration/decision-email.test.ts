@@ -52,8 +52,11 @@ const MAILS: readonly Mail[] = [
     rating: "useful",
     inputs: {
       ruleIds: ["floor.money"],
-      floorHits: { "mail-both": ["floor.money", "floor.money"], "other-mail": ["floor.other"] },
-      memoryByMail: { "mail-both": ["memory-b", "memory-a"] },
+      floorHits: {
+        "mail-both": ["floor.money", "floor.money", "rule\nwith\tcontrol"],
+        "other-mail": ["floor.other"],
+      },
+      memoryByMail: { "mail-both": ["memory-b", "memory-a", "_memory-c"] },
       relatedByMail: { "mail-both": ["thread-x", "thread-y"] },
     },
     muse: "reminded",
@@ -277,8 +280,8 @@ describe("[P1-5] one mail's decision trace", () => {
         outcome: "act",
         skipReason: null,
         rating: "useful",
-        ruleIds: ["floor.money"],
-        memoryIds: ["memory-a", "memory-b"],
+        ruleIds: ["floor.money", "rule with control"],
+        memoryIds: ["_memory-c", "memory-a", "memory-b"],
         relatedMessages: 2,
       });
       expect(payload.muse.entries).toHaveLength(1);
@@ -337,6 +340,38 @@ describe("[P1-5] one mail's decision trace", () => {
       const over = await read(h, "mail-twentyone");
       expect(over.muse.entries).toHaveLength(20);
       expect(over.muse.truncated).toBe(true);
+    } finally {
+      await h.repository.close();
+    }
+  });
+
+  it("[negative] judges the comparison from every Muse entry, not only the 20 shown", async () => {
+    const h = await fixture();
+    try {
+      const contentRef = await h.seal.seal({ ...scope, text: "late", at: AT });
+      const write = (index: number) => {
+        const base = {
+          id: `late-${index}`,
+          ...scope,
+          museAt: `2026-10-29T03:${String(index).padStart(2, "0")}:00.000Z`,
+          noteRef: null,
+          pairedDecisionId: null,
+          pairedMessageId: "mail-himawari-only",
+          recordedAt: AT,
+        };
+        return h.repository
+          .decisionLedger()
+          .recordMuse(
+            index === 20
+              ? { ...base, museReminded: true, timingOk: true, contentOk: true, contentRef }
+              : { ...base, museReminded: false },
+          );
+      };
+      for (let index = 0; index < 21; index += 1) await write(index);
+      const payload = await read(h, "mail-himawari-only");
+      expect(payload.muse.entries).toHaveLength(20);
+      expect(payload.muse.truncated).toBe(true);
+      expect(payload.comparison).toBe("both");
     } finally {
       await h.repository.close();
     }

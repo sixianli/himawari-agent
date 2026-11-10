@@ -267,6 +267,18 @@ describe("prod-read.sh", () => {
         "INSERT INTO proactive_processed_messages (owner_id, agent_id, source, message_id, thread_id, decision_id, outcome, skip_reason, processed_at, owner_rating) VALUES ('o', 'a', 'gmail', ?, 't', 'd1', 'act', NULL, '2026-11-01T00:00:00.000Z', 'useful')",
       )
       .run("mail-a_1");
+    database
+      .prepare(
+        "INSERT INTO decision_ledger (id, owner_id, agent_id, kind, scenario, checked_at, counts, verdict, reason_code, inputs, cost_micros, duration_ms) VALUES ('d2', 'o', 'a', 'proactive', 'gmail', '2026-11-02T00:00:00.000Z', '{}', 'pushed', 'fixture', ?, 0, 0)",
+      )
+      .run(
+        JSON.stringify({ floorHits: { 'q"x': ["rule-1"] }, memoryByMail: {}, relatedByMail: {} }),
+      );
+    database
+      .prepare(
+        "INSERT INTO proactive_processed_messages (owner_id, agent_id, source, message_id, thread_id, decision_id, outcome, skip_reason, processed_at, owner_rating) VALUES ('o', 'a', 'gmail', 'q\"x', 't', 'd2', 'know', NULL, '2026-11-02T00:00:00.000Z', NULL)",
+      )
+      .run();
     database.close();
     const script = result.input.replace("/var/lib/himawari/state/data/product.sqlite", file);
     const child = spawnSync(process.execPath, ["--no-warnings", "-", "gmail-decisions"], {
@@ -275,8 +287,9 @@ describe("prod-read.sh", () => {
     });
     expect(child.status).toBe(0);
     const rows = JSON.parse(child.stdout);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.message_id === 'q"x')).toMatchObject({ rule_count: 1 });
+    expect(rows.find((row) => row.message_id === "mail-a_1")).toMatchObject({
       message_id: "mail-a_1",
       outcome: "act",
       owner_rating: "useful",
