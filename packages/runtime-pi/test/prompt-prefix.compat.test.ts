@@ -978,6 +978,50 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(failure?.message).toMatch(/^provider_(status_\d{3}|message_withheld)$/);
   });
 
+  it("[COMPACT-2] sends the summary request with the conversation's own tools, system prompt and history up to the cut", async () => {
+    const turns: Turn[] = [
+      { prompt: `第一问${"alpha bravo ".repeat(9000)}` },
+      { prompt: `第二问${"charlie delta ".repeat(9000)}` },
+      { prompt: "第三问" },
+    ];
+    const purposes: string[] = [];
+    const { bodies } = await conversation(
+      turns,
+      (index, body) => {
+        PROMPT_TOKENS = index === 1 ? 90_000 : 30_000;
+        return {
+          text: body.includes("Do NOT continue it") ? "摘要：已聊过。" : `回答${index}`,
+        };
+      },
+      () => undefined,
+      {
+        promptBundles: new FrozenPromptBundles(),
+        usage: {
+          store: {
+            record: async (observation) => {
+              purposes.push(observation.purpose);
+            },
+          },
+          onFailure: () => undefined,
+        },
+      },
+    );
+    const parsed = bodies.map((body) => JSON.parse(body));
+    const summaries = parsed.filter((body) =>
+      JSON.stringify(body.messages.at(-1)).includes("Do NOT continue it"),
+    );
+    expect(summaries).toHaveLength(1);
+    const summary = summaries[0];
+    const normal = parsed[1];
+    expect(summary.tools).toEqual(normal.tools);
+    expect(summary.messages.slice(0, -1)).toEqual(
+      normal.messages.slice(0, summary.messages.length - 1),
+    );
+    expect(summary.messages.at(-1)).toMatchObject({ role: "user" });
+    expect(JSON.stringify(summary)).not.toContain("<conversation>");
+    expect(purposes).toContain("other");
+  });
+
   it("keeps the frozen tools unchanged when task tools come and go with a task handle", async () => {
     const bundles = new FrozenPromptBundles();
     const handles: unknown[] = [];

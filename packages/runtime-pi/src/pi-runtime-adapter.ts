@@ -25,7 +25,10 @@ import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-option
 import {
   type AgentSession,
   type AgentSessionEvent,
+  buildSessionProjection,
   type ContextWithSystemEvent,
+  convertToLlm,
+  estimateTokens,
   type CreateAgentSessionOptions,
   type CreateAgentSessionResult,
   createAgentSession,
@@ -67,6 +70,7 @@ import {
 } from "@himawari-agent/application/runtime-port";
 import {
   CHAT_TOOL_GUIDELINES_HEADER,
+  COMPACTION_SUMMARY_INSTRUCTION,
   CHAT_TOOL_LOOP_REJECTED,
   CHAT_TOOL_LOOP_STOPPED,
   CHAT_TOOL_SNIPPETS_HEADER,
@@ -683,6 +687,50 @@ function himawariSummaryContext(requested: TranscriptContext): Context | undefin
     systemPrompt: first.content,
     tools: [],
     messages: rest.filter((message) => message.role !== "system"),
+  };
+}
+
+function compactionPrefixMessages(event: {
+  readonly reason: "manual" | "threshold" | "overflow";
+  readonly preparation: { readonly isSplitTurn: boolean; readonly firstKeptEntryId: string };
+  readonly branchEntries: Parameters<typeof buildSessionProjection>[0];
+}): Message[] | undefined {
+  if (event.reason === "overflow" || event.preparation.isSplitTurn) return undefined;
+  const { entries } = buildSessionProjection(event.branchEntries);
+  const cut = entries.findIndex(
+    (entry) => entry.sourceEntry.id === event.preparation.firstKeptEntryId,
+  );
+  if (cut <= 0) return undefined;
+  const prefix = entries.slice(0, cut).flatMap((entry) => entry.messages);
+  const messages = convertToLlm(prefix).filter((message) => message.role !== "system");
+  return messages.length > 0 ? messages : undefined;
+}
+
+const COMPACTION_REQUEST_ROOM_TOKENS = 4096;
+
+function sharedSummaryContext(
+  lastRequest: Context | undefined,
+  prefix: Message[] | undefined,
+  contextWindow: number,
+  maxTokens: number,
+): Context | undefined {
+  if (!lastRequest || !prefix) return undefined;
+  const history = lastRequest.messages.slice(0, prefix.length);
+  if (history.length !== prefix.length || !isDeepStrictEqual(history, prefix)) {
+    return undefined;
+  }
+  const estimated = history.reduce((total, message) => total + estimateTokens(message), 0);
+  if (estimated + COMPACTION_REQUEST_ROOM_TOKENS + maxTokens > contextWindow) return undefined;
+  return {
+    ...lastRequest,
+    messages: [
+      ...history,
+      {
+        role: "user",
+        content: COMPACTION_SUMMARY_INSTRUCTION.text,
+        timestamp: history.at(-1)?.timestamp ?? 0,
+      },
+    ],
   };
 }
 
@@ -1480,6 +1528,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         ),
         extensionFactories: [
           {
+            name: "himawari-compaction-prefix",
+            hidden: true,
+            factory: (pi: ExtensionAPI) => {
+              pi.on("session_before_compact", (event) => {
+                compactionPrefix = compactionPrefixMessages(event);
+                return undefined;
+              });
+            },
+          },
+          {
             name: "himawari-request-head",
             hidden: true,
             factory: (pi: ExtensionAPI) => {
@@ -1605,12 +1663,40 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       };
       let loopSummaryAttempted = false;
       let compacting = false;
+      let compactionPrefix: Message[] | undefined;
+      let lastRequest:
+        | { readonly context: Context; readonly options: SimpleStreamOptions | undefined }
+        | undefined;
       const governedRuntime = governedModelRuntime(
         binding.modelRuntime,
         async (model, requested, options, forward) => {
           const summaryContext = compacting ? himawariSummaryContext(requested) : undefined;
+          const shared =
+            summaryContext && lastRequest
+              ? sharedSummaryContext(
+                  lastRequest.context,
+                  compactionPrefix,
+                  model.contextWindow,
+                  options?.maxTokens ?? model.maxTokens,
+                )
+              : undefined;
           const context =
-            summaryContext ?? himawariRequestContext(requested, systemPrompt, requestTools);
+            shared ??
+            summaryContext ??
+            himawariRequestContext(requested, systemPrompt, requestTools);
+          if (!summaryContext && context) lastRequest = { context, options };
+          if (shared) {
+            const { cacheRetention: _dropped, ...rest } = options ?? {};
+            options = {
+              ...rest,
+              ...(lastRequest?.options?.cacheRetention === undefined
+                ? {}
+                : { cacheRetention: lastRequest.options.cacheRetention }),
+              ...(lastRequest?.options?.sessionId === undefined
+                ? {}
+                : { sessionId: lastRequest.options.sessionId }),
+            };
+          }
           await this.#historyWrites.get(request.runId);
           const replay = restored?.takeReplay();
           if (replay) return replay;
@@ -1719,6 +1805,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         if (event.type === "compaction_start") compacting = true;
         if (event.type === "compaction_end") {
           compacting = false;
+          compactionPrefix = undefined;
           if (event.result === undefined && !event.aborted && event.errorMessage)
             this.#dependencies.onModelStreamFailed?.(request, {
               code: "PI_COMPACTION_FAILED",

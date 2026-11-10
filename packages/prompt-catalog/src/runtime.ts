@@ -233,3 +233,46 @@ export const TOOL_POLICY_BLOCKED_OTHER = fixedPrompt({
   output: "free-text",
   text: "工具未执行：产品策略不允许本轮执行这项操作。不要重试，也不要换个工具做同一件事；告诉主人这一步没有做成。",
 });
+
+export const COMPACTION_SUMMARY_INSTRUCTION = fixedPrompt({
+  id: "runtime.compaction.summary-instruction",
+  purpose:
+    "压缩摘要请求末尾追加的一条用户消息：请求前面沿用原对话的工具、系统提示和历史，只靠这条消息说明要写结构化摘要、不要调用工具",
+  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
+  layer: "appended-message",
+  output: "free-text",
+  text: `The conversation above is being compacted. Do NOT continue it and do NOT call any tools. Reply with ONLY a structured context checkpoint summary that another LLM will use to continue the work.
+
+If the conversation starts with an earlier summary, keep all of its information, add the new progress, decisions and context, move finished items from "In Progress" to "Done", and update "Next Steps".
+
+Use this EXACT format:
+
+## Goal
+[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
+
+## Constraints & Preferences
+- [Any constraints, preferences, or requirements mentioned by user]
+- [Or "(none)" if none were mentioned]
+
+## Progress
+### Done
+- [x] [Completed tasks/changes]
+
+### In Progress
+- [ ] [Current work]
+
+### Blocked
+- [Issues preventing progress, if any]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale]
+
+## Next Steps
+1. [Ordered list of what should happen next]
+
+## Critical Context
+- [Any data, examples, or references needed to continue]
+- [Or "(none)" if not applicable]
+
+Keep each section concise. Preserve exact file paths, function names, and error messages.`,
+});
