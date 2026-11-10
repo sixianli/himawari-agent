@@ -2689,7 +2689,16 @@ it("[R2-L5] runs configured Gateway sessions without storing credentials in the 
   });
   try {
     const binding = await models.resolve("local-primary");
-    expect(binding.modelRuntime.hasConfiguredAuth("vercel-ai-gateway")).toBe(false);
+    expect(await binding.modelRuntime.checkAuth("vercel-ai-gateway")).toEqual({
+      type: "api_key",
+      source: "himawari-host-secret",
+    });
+    expect(binding.modelRuntime.hasConfiguredAuth("vercel-ai-gateway")).toBe(true);
+    expect(await binding.modelRuntime.getAuth(binding.model)).toBeUndefined();
+    expect(
+      (await binding.modelRuntime.getAuth(binding.model, { apiKey: FIXTURE_KEY }))?.auth.apiKey,
+    ).toBe(FIXTURE_KEY);
+    expect(secretReads).toEqual([]);
     const projection = new RecordingProjection();
     let admitted = false;
     const adapter = new PiAgentRuntimeAdapter({
@@ -2720,7 +2729,6 @@ it("[R2-L5] runs configured Gateway sessions without storing credentials in the 
       ["Bearer", "fixture-request-key"],
     ]);
     expect(projection.finalAnswers[0]?.text).toBe("凭据受控回答");
-    expect(binding.modelRuntime.hasConfiguredAuth("vercel-ai-gateway")).toBe(false);
     expect(await binding.modelRuntime.listCredentials()).toEqual([]);
   } finally {
     await models.close();
@@ -2737,7 +2745,10 @@ type CapturedModelRequest = {
   readonly body: string;
 };
 
-const VOLATILE_HEADER = /^(host|connection|content-length|user-agent|accept-encoding|accept-language|sec-fetch-mode|x-stainless-.*)$/u;
+const FIXTURE_KEY = "fixture-request-key";
+
+const VOLATILE_HEADER =
+  /^(host|connection|content-length|user-agent|accept-encoding|accept-language|sec-fetch-mode|x-stainless-.*)$/u;
 
 async function captureConfiguredModelRequest(options: {
   readonly provider: "vercel-ai-gateway" | "magpie";
@@ -2753,7 +2764,9 @@ async function captureConfiguredModelRequest(options: {
       const headers: Record<string, string> = {};
       for (const [name, value] of Object.entries(incoming.headers)) {
         if (VOLATILE_HEADER.test(name)) continue;
-        headers[name] = Array.isArray(value) ? value.join(", ") : (value ?? "");
+        const text = Array.isArray(value) ? value.join(", ") : (value ?? "");
+        headers[name] =
+          name === "authorization" && text === `Bearer ${FIXTURE_KEY}` ? "Bearer [fixture]" : text;
       }
       captured.push({
         method: incoming.method,
