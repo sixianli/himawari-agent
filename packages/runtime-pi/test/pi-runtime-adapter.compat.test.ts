@@ -4189,7 +4189,7 @@ it("[BG-2] delivers a background result before the next model call while the run
   expect(messageText(model.observed.at(-1))).toContain("7 passed");
 });
 
-it("[D5-NOTICE] lets Pi run a background result that arrives as the last answer ends, with no adapter-side continue", async () => {
+it("[D5-NOTICE] delivers a background result that arrives as the last answer ends", async () => {
   const model = await createFauxModelFixture("先回答一次", undefined, [], ["已经看到后台结果"]);
   const tools = new BackgroundRuntimeTools();
   const adapter = new PiAgentRuntimeAdapter({

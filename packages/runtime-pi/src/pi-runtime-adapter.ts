@@ -33,6 +33,11 @@ import {
   SettingsManager,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import {
+  highestClassification,
+  isModelVisible,
+  memoryDateNote,
+} from "@himawari-agent/application/runtime-port";
 import type {
   AgentRuntimePort,
   DataClassification,
@@ -56,11 +61,6 @@ import type {
   RuntimeToolDescriptor,
   RuntimeToolInvocation,
   RuntimeToolPort,
-} from "@himawari-agent/application/runtime-port";
-import {
-  highestClassification,
-  isModelVisible,
-  memoryDateNote,
 } from "@himawari-agent/application/runtime-port";
 import {
   CHAT_TOOL_GUIDELINES_HEADER,
@@ -1229,6 +1229,17 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     await this.#historyWrites.get(runId);
   }
 
+  async #continueForSteeredNotices(
+    session: AgentSession,
+    canContinue: () => boolean,
+  ): Promise<void> {
+    if (!this.#dependencies.tools.subscribeBackground) return;
+    while (canContinue() && session.agent.hasQueuedMessages()) {
+      await session.agent.continue();
+      await session.waitForIdle();
+    }
+  }
+
   private async produce(
     request: RuntimeRequest,
     emit: (event: RuntimeEvent) => Promise<void>,
@@ -1790,6 +1801,17 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               : {}),
           });
         await session.waitForIdle();
+        await eventChain;
+        await this.#continueForSteeredNotices(session, () => {
+          return (
+            !suspended &&
+            !unknownTool &&
+            !failed &&
+            !aborted &&
+            !toolProgress.blocked &&
+            !this.#cancelledRuns.has(request.runId)
+          );
+        });
         await eventChain;
         await this.#historyWrites.get(request.runId);
       } finally {
