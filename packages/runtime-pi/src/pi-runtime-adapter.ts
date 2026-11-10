@@ -666,6 +666,17 @@ function himawariRequestContext(
   };
 }
 
+function himawariSummaryContext(requested: TranscriptContext): Context | undefined {
+  if (getCurrentTools(requested.messages).length > 0) return undefined;
+  const [first, ...rest] = requested.messages;
+  if (first?.role !== "system" || typeof first.content !== "string") return undefined;
+  return {
+    systemPrompt: first.content,
+    tools: [],
+    messages: rest.filter((message) => message.role !== "system"),
+  };
+}
+
 function piSessionId(request: RuntimeRequest): string {
   return `himawari-${createHash("sha256")
     .update(
@@ -941,6 +952,7 @@ async function admitPiStream(
   onAdmissionFailed?: PiAgentRuntimeAdapterDependencies["onModelAdmissionFailed"],
   usageRecording?: PiAgentRuntimeAdapterDependencies["usage"],
   redactionRuleset?: number,
+  usagePurpose: "chat" | "other" = "chat",
 ): Promise<AssistantMessageEventStream> {
   let permit: ModelInvocationPermit | undefined;
   let started = false;
@@ -1090,7 +1102,7 @@ async function admitPiStream(
           agentId: request.agentId,
           runId: request.runId,
           invocationId,
-          purpose: "chat",
+          purpose: usagePurpose,
           source: "agent-stream",
           provider: model.provider,
           model: model.id,
@@ -1605,8 +1617,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       const originalStreamFunction = session.agent.streamFunction;
       restored = continuation ? restorePiToolBatch(session, continuation.batch) : undefined;
       let loopSummaryAttempted = false;
+      let compacting = false;
       session.agent.streamFunction = async (model, requested, options) => {
-        const context = himawariRequestContext(requested, systemPrompt, requestTools);
+        const summaryContext = compacting ? himawariSummaryContext(requested) : undefined;
+        const context =
+          summaryContext ?? himawariRequestContext(requested, systemPrompt, requestTools);
         await this.#historyWrites.get(request.runId);
         const replay = restored?.takeReplay();
         if (replay) return replay;
@@ -1631,6 +1646,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           this.#dependencies.onModelAdmissionFailed,
           this.#dependencies.usage,
           bundle?.redactionRuleset,
+          summaryContext ? "other" : "chat",
         );
       };
       this.#activeSessions.set(request.runId, session);
@@ -1646,6 +1662,15 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       );
 
       const unsubscribe = session.subscribe((event) => {
+        if (event.type === "compaction_start") compacting = true;
+        if (event.type === "compaction_end") {
+          compacting = false;
+          if (event.result === undefined && !event.aborted && event.errorMessage)
+            this.#dependencies.onModelStreamFailed?.(request, {
+              code: "PI_COMPACTION_FAILED",
+              message: loggableModelFailure(event.errorMessage),
+            });
+        }
         if (
           !suspended &&
           this.#dependencies.projection.captureHistory &&
