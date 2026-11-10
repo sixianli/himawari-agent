@@ -1618,7 +1618,9 @@ describe("production memory capture", () => {
     expect(byText("蓝色")).toMatchObject({ importance: 650, profilePin: null });
     expect(profiled()).toEqual(["我每天必须喝咖啡", "主人最喜欢的颜色是蓝色"]);
     expect(view.profileUsage).toEqual({
-      used: "我每天必须喝咖啡".length + 3 + "主人最喜欢的颜色是蓝色".length + 3,
+      used: [`我每天必须喝咖啡`, `主人最喜欢的颜色是蓝色`]
+        .map((text) => `${text}（记于 YYYY-MM-DD）`.length + 3)
+        .reduce((sum, length) => sum + length, 0),
       limit: 2000,
       queued: [],
     });

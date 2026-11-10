@@ -1,6 +1,7 @@
 import type { AgentId, OwnerId, RunId } from "@himawari-agent/domain";
 import { CHAT_TASK_BOUNDARY } from "@himawari-agent/prompt-catalog";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
+import { isMemoryDates } from "../ports/memory-dates.js";
 import {
   contextArtifactOperationKey,
   isProductContextRunState,
@@ -428,6 +429,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
         ),
         ...(block.sourceRef ? { sourceRef: block.sourceRef } : {}),
         dataClassification: block.dataClassification,
+        ...(block.dates ? { dates: block.dates } : {}),
       });
     }
     return Object.freeze(blocks);
@@ -770,6 +772,8 @@ function isContextEnvelope(value: unknown): value is ProductContextEnvelopeV1 {
         nonEmpty(item["ref"]) &&
         nonEmpty(item["payloadRef"]) &&
         (item["sourceRef"] === undefined || nonEmpty(item["sourceRef"])) &&
+        (item["dates"] === undefined ||
+          (item["kind"] === "memory" && isMemoryDates(item["dates"]))) &&
         classification(item["dataClassification"])
       );
     })

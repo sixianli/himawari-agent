@@ -1,3 +1,4 @@
+import type { MemoryDates } from "./memory-dates.js";
 import type {
   AgentId,
   MessageId,
@@ -70,6 +71,7 @@ export interface ProductContextBlock {
   readonly payloadRef: PayloadRef;
   readonly sourceRef?: string;
   readonly dataClassification: DataClassification;
+  readonly dates?: MemoryDates;
 }
 
 export interface ProductContextEnvelopeV1 {

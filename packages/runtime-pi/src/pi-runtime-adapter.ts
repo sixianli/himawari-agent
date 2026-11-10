@@ -33,7 +33,11 @@ import {
   SettingsManager,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { highestClassification, isModelVisible } from "@himawari-agent/application/runtime-port";
+import {
+  highestClassification,
+  isModelVisible,
+  memoryDateNote,
+} from "@himawari-agent/application/runtime-port";
 import type {
   AgentRuntimePort,
   DataClassification,
@@ -614,8 +618,8 @@ function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
       localTime: localTime(projection.prompt.occurredAt, timeZone),
       weekday: localWeekday(projection.prompt.occurredAt, timeZone),
     }),
-    ...blocks.map(contextBlockContent),
-    ...(environment ? [contextBlockContent(environment)] : []),
+    ...blocks.map((block) => contextBlockContent(block, timeZone)),
+    ...(environment ? [contextBlockContent(environment, timeZone)] : []),
     "</himawari-context>",
     "",
     "<owner-message>",
@@ -624,8 +628,12 @@ function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
   ].join("\n");
 }
 
-function contextBlockContent(block: RuntimeProjection["contextBlocks"][number]): string {
-  return `${contextBlockMarker(block)}\n${block.content}`;
+function contextBlockContent(
+  block: RuntimeProjection["contextBlocks"][number],
+  timeZone: string,
+): string {
+  const dated = block.dates ? memoryDateNote(block.dates, timeZone) : "";
+  return `${contextBlockMarker(block)}\n${block.content}${dated}`;
 }
 
 function sessionModelRuntime(binding: PiModelBinding): ModelRuntime {

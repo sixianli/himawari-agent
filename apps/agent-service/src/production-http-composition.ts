@@ -1052,6 +1052,9 @@ export async function createProductionHttpComposition(
           },
           storeText: async () => {},
           digest: (text) => createHash("sha256").update(text).digest("hex"),
+          ...(configuration.runPolicy?.timeZone
+            ? { timeZone: configuration.runPolicy.timeZone }
+            : {}),
         }),
         consolidation: {
           store: repository.memoryConsolidation(),

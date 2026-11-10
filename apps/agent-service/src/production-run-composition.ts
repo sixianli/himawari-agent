@@ -275,7 +275,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     },
     digest: (text) => createHash("sha256").update(text).digest("hex"),
     reminders: repository.memoryReminders(),
-    ...(options.memoryCapture?.timeZone ? { timeZone: options.memoryCapture.timeZone } : {}),
+    ...(options.timeZone ? { timeZone: options.timeZone } : {}),
   });
   const context = timings.methods(
     new ContextFormationService({

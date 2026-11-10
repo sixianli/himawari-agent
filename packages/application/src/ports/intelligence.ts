@@ -1,3 +1,4 @@
+import type { MemoryDates } from "./memory-dates.js";
 import type { AgentId, OwnerId, RunId, SessionId, ThreadId, TurnId } from "@himawari-agent/domain";
 import type { CorrelationId, DataClassification, JsonObject, PayloadRef } from "./common.js";
 import type { ProductContextBlockKind } from "./context-projection.js";
@@ -14,6 +15,7 @@ export interface MemoryRecord {
   readonly searchTerms: readonly string[];
   readonly dataClassification: DataClassification;
   readonly updatedAt: string;
+  readonly dates?: MemoryDates;
 }
 
 export interface MemoryCandidate extends MemoryRecord {
@@ -370,6 +372,7 @@ export interface RuntimeProjectionContextBlock {
   readonly sourceRef?: string;
   readonly dataClassification: DataClassification;
   readonly productRole?: "system";
+  readonly dates?: MemoryDates;
 }
 
 export type RuntimeProjectionRequest = Pick<
