@@ -25,7 +25,7 @@ describe("words kept out of the search index", () => {
       "2026-11-09",
       "14:30:00",
       "青霉素",
-      "gpt-4o",
+      "wi-fi6",
       "Hermes",
     ])
       expect(looksLikeSecretToken(word), word).toBe(false);
