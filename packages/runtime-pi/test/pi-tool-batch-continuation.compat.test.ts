@@ -104,7 +104,7 @@ describe("pinned Pi tool-batch continuation", () => {
       const second = await freshSession(
         piToolBatchSessionManager(snapshot, FROZEN_PROMPT, process.cwd()),
       );
-      expect(second.agent.state.messages.filter((m) => m.role === "user")).toHaveLength(1);
+      expect(second.messages.filter((m) => m.role === "user")).toHaveLength(1);
       const completed = (value: PiToolBatchContinuation) => {
         const result = value.completedResults[0];
         if (!result) throw new Error("TEST_COMPLETED_RESULT_MISSING");
@@ -169,7 +169,7 @@ describe("pinned Pi tool-batch continuation", () => {
       const after = (model.observed[1] as { transcript: unknown[] }).transcript;
       expect(before.length).toBeGreaterThan(1);
       expect(JSON.stringify(after.slice(0, before.length))).toBe(JSON.stringify(before));
-      expect(second.agent.state.messages.at(-1)).toMatchObject({
+      expect(second.messages.at(-1)).toMatchObject({
         role: "assistant",
         stopReason: "stop",
       });

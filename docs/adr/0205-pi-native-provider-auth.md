@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-11-10"
 ---
 
-# ADR 0204：模型服务方用 Pi 的原生认证声明，删除改写 hasConfiguredAuth 的 Proxy
+# ADR 0205：模型服务方用 Pi 的原生认证声明，删除改写 hasConfiguredAuth 的 Proxy
 
 <a id="contents"></a>
 

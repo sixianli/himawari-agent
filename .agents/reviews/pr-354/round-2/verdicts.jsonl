@@ -1,0 +1,3 @@
+{"id": "r2-ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新用例的「激活且并行」分支不是直接断言 `parallel === true`", "valid": true, "class": "better", "severity": "low", "trigger": "以后改 checkedBatch 的校验", "consequence": "失败信息不够直接；现在的用例能防住第 1 轮的问题", "modelSeverity": "低"}
+{"id": "r2-ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新实现把「名字是否活动」和「定义是否存在」拆成两次查询", "valid": true, "class": "better", "severity": "low", "trigger": "以后允许运行中增删工具", "consequence": "要重新评估；ADR 0204 前提 4 已写明", "modelSeverity": "低"}
+{"id": "r2-ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`getActiveToolNames()` 被无条件调用", "valid": false, "class": "error", "severity": "medium-high", "trigger": "", "consequence": "", "modelSeverity": "中（未核实）"}

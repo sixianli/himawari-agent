@@ -419,6 +419,9 @@ function fakeSessionFactory(
     let idle = Promise.resolve();
     return {
       session: {
+        get messages() {
+          return this.agent.state.messages;
+        },
         agent: {
           state: { messages: [] },
           abort() {},
@@ -2873,7 +2876,8 @@ describe("[D4] configured provider request bytes", () => {
       }
       const golden = await readGolden();
       expect(actual).toEqual(golden[provider]);
-      expect(actual.length).toBeGreaterThan(0);
+      expect(actual).toHaveLength(1);
+      expect(actual[0]?.body).toContain('"max_tokens":1024');
     },
   );
 
