@@ -332,7 +332,8 @@ describe("data admin CLI", () => {
         ])
       ).code,
     ).not.toBe(0);
-    await writeFile(target.passphraseFile, "short\n", { mode: 0o600 });
+    await chmod(target.passphraseFile, 0o600);
+    await writeFile(target.passphraseFile, "short\n");
     const refused = await run([
       "data",
       "import",

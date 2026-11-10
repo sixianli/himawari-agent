@@ -115,12 +115,26 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   };
   let replacedShortTexts = 0;
   const shortTextNumbers = new Map<string, number>();
+  const existingPlaceholderMax = (() => {
+    let highest = 0;
+    const scanned = JSON.stringify([
+      snapshot.entities,
+      snapshot.aliases,
+      snapshot.provenance,
+      snapshot.people,
+      snapshot.decisions,
+      snapshot.signals,
+    ]);
+    for (const match of scanned.matchAll(/\[已扣留:(\d+)\]/g))
+      highest = Math.max(highest, Number(match[1]));
+    return highest;
+  })();
   const safeString = (value: string): string => {
     if (!options.policy.hasSecret(value)) return value;
     replacedShortTexts += 1;
     let number = shortTextNumbers.get(value);
     if (number === undefined) {
-      number = shortTextNumbers.size + 1;
+      number = existingPlaceholderMax + shortTextNumbers.size + 1;
       shortTextNumbers.set(value, number);
     }
     return `[已扣留:${number}]`;

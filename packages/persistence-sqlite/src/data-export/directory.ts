@@ -12,10 +12,10 @@ export async function writePortableDirectory(
   files: PortableFiles,
 ): Promise<void> {
   const root = path.resolve(directory);
-  await mkdir(root, { recursive: true, mode: 0o700 });
-  const status = await lstat(root);
-  if (!status.isDirectory())
+  const existing = await lstat(root).catch(() => null);
+  if (existing !== null && !existing.isDirectory())
     throw new DataExportError(DATA_EXPORT_ERROR_CODES.PATH_UNSAFE, "输出目录不是普通目录");
+  await mkdir(root, { recursive: true, mode: 0o700 });
   if ((await readdir(root)).length !== 0)
     throw new DataExportError(DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY, "输出目录必须为空");
   await chmod(root, 0o700);

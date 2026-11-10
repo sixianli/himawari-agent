@@ -635,6 +635,8 @@ describe("data export: determinism and the directory", () => {
       )
       .all();
     expect(names).toHaveLength(2);
+    for (const { name } of names as { name: string }[]) expect(name).toMatch(/^\[已扣留:\d+\]$/);
+    expect(new Set((names as { name: string }[]).map(({ name }) => name)).size).toBe(2);
     const again = await exportOf(target);
     expect(decoder.decode(again.files.get("data/memories.jsonl"))).toBe(
       decoder.decode(files.get("data/memories.jsonl")),
@@ -645,7 +647,9 @@ describe("data export: determinism and the directory", () => {
     const { files } = await exportOf(source);
     const file = `${source.directory}/not-a-directory`;
     await writeFile(file, "x", { mode: 0o644 });
-    await expect(writePortableDirectory(file, files)).rejects.toBeDefined();
+    await expect(writePortableDirectory(file, files)).rejects.toMatchObject({
+      code: DATA_EXPORT_ERROR_CODES.PATH_UNSAFE,
+    });
     const link = `${source.directory}/link`;
     await mkdir(`${source.directory}/real`, { mode: 0o755 });
     await symlink(`${source.directory}/real`, link);
@@ -653,5 +657,45 @@ describe("data export: determinism and the directory", () => {
       code: DATA_EXPORT_ERROR_CODES.PATH_UNSAFE,
     });
     expect((await stat(`${source.directory}/real`)).mode & 0o777).toBe(0o755);
+  });
+  it("[P1-6] numbers new placeholders after the ones an imported database already holds", async () => {
+    const source = await seeded();
+    source.database
+      .prepare("INSERT INTO memory_entities (memory_id, name) VALUES ('m-plain', ?)")
+      .run(`密钥 ${SECRET_API_KEY}`);
+    const first = await exportOf(source);
+    const target = await side("renumber");
+    await importInto(target, first.files, { passphrase: PASSPHRASE });
+    target.database
+      .prepare("INSERT INTO memory_entities (memory_id, name) VALUES ('m-plain', ?)")
+      .run(`另一个密钥 ${OTHER_API_KEY}`);
+    const second = await exportOf(target);
+    const third = await side("renumber-again");
+    await importInto(third, second.files, { passphrase: PASSPHRASE });
+    const names = third.database
+      .prepare("SELECT name FROM memory_entities WHERE name LIKE '[已扣留:%' ORDER BY name")
+      .pluck()
+      .all();
+    expect(names).toEqual(["[已扣留:1]", "[已扣留:2]"]);
+  });
+
+  it("[P1-6] masks secrets in a signal detail and in the decision counts", async () => {
+    const source = await seeded();
+    source.database
+      .prepare(
+        `INSERT INTO decision_signals (id, owner_id, agent_id, decision_id, signal, occurred_at, delay_ms, detail, source_ref, recorded_at)
+        VALUES ('sig-2', ?, ?, 'd-proactive', 'opened', '2026-11-01T00:06:00.000Z', 360000, ?, 'open-2', '2026-11-01T00:06:01.000Z')`,
+      )
+      .run(
+        source.ownerId,
+        source.agentId,
+        JSON.stringify({ [`key-${SECRET_API_KEY}`]: `v-${SECRET_API_KEY}` }),
+      );
+    source.database
+      .prepare("UPDATE decision_ledger SET counts = ? WHERE id = 'd-proactive'")
+      .run(JSON.stringify({ [`k-${SECRET_API_KEY}`]: 1 }));
+    const { files } = await exportOf(source, { seal: false });
+    for (const [path, bytes] of files)
+      expect(decoder.decode(bytes), path).not.toContain(SECRET_API_KEY);
   });
 });
