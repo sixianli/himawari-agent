@@ -66,7 +66,7 @@ date: "2026-11-10"
 
 | 编号 | 原文 | 出处 | 生效位置 | 硬/软 | 规则类型（暂称） | 测试 |
 | --- | --- | --- | --- | --- | --- | --- |
-| H-1 | 命中主人的“重要发件人”名单（整个邮箱地址或域名）的邮件，判断结果不得低于“值得知道”；拿不准的强制改成“请看原信”。代码标识 `floor_important_sender` | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)；名单里每个发件人是 Andy 自己填的，各自的出处仓库内无记载；立这条规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `proactive-rules.ts` 的 `isImportantSender`、`floorHitIds`；名单存在 `proactive_settings.important_senders` | 硬 | 某人的事一定提醒 | `test/integration/proactive-mail-check.test.ts` 的 PG-8（夹具默认名单含 smbc.co.jp）、降频一组里“never backs off a floor-rule reminder” |
+| H-1 | 命中主人的“重要发件人”名单（整个邮箱地址或域名）的邮件，判断结果不得低于“值得知道”；拿不准的强制改成“请看原信”。代码标识 `floor_important_sender` | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)；名单里每个发件人是 Andy 自己填的，各自的来源仓库内无记载（Andy 2026-11-10 说想不起来） | `proactive-rules.ts` 的 `isImportantSender`、`floorHitIds`；名单存在 `proactive_settings.important_senders` | 硬 | 某人的事一定提醒 | `test/integration/proactive-mail-check.test.ts` 的 PG-8（夹具默认名单含 smbc.co.jp）、降频一组里“never backs off a floor-rule reminder” |
 | H-2 | 发件人域名是 go.jp、lg.jp、ac.jp、ed.jp（含子域名）的邮件，同 H-1 抬升。代码标识 `floor_public_domain`。名单写死在代码里，主人改不了 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md) | `proactive-rules.ts` 的 `PROACTIVE_PUBLIC_DOMAIN_SUFFIXES` | 硬 | 某类事一定提醒 | PG-4（lg.jp 域名） |
 | H-3 | 标题或摘要里有收费、扣款、付款、退款、账单、請求、引落、invoice、payment、refund 等中日英金钱词的邮件，同 H-1 抬升。代码标识 `floor_money_words`。词表写死在代码里 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md) | `proactive-rules.ts` 的 `MONEY_WORDS` | 硬 | 某类事一定提醒 | PG-9（“お引落し”）、PG-17、PG-18、OM-3 |
 | H-4 | 抬升的算法：判断是“要你做事”的不动；判断是“拿不准”或“请看原信”的一律改成“请看原信”；判断是“不用管”的改成“值得知道” | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md) | `proactive-rules.ts` 的 `applyFloor` | 硬 | 同 H-1 到 H-3 的共用算法 | PG-8（“请看原信”抬升） |
@@ -211,15 +211,15 @@ date: "2026-11-10"
 
 ## G 出处的最终处理（原待 Andy 确认）
 
-任务块写明“需要我介入的点：确认每条规则的出处”。能从仓库里找到 ADR 的，我已经填了；下面这 19 条是仓库查不到出处、或只能查到一半的。**Andy 2026-11-10 回复“都想不起来了”，所以这 19 条都按“无出处”处理：**表里没有 ADR 或事故号可引的部分，就是没有出处，以后有人想起来再补。
+任务块写明“需要我介入的点：确认每条规则的出处”。能从仓库里找到 ADR 的，我已经填了；下面这 19 条是仓库查不到出处、或只能查到一半的。**Andy 2026-11-10 回复“都想不起来了”，所以这 19 条里仓库查不到来源的部分，都按“无出处”处理；** 表里已有的 ADR、事故号和规格里的记载仍然保留，以后有人想起来再补。
 
 - 程序规则：H-1（名单里每个发件人各自的出处）、H-6、H-12（是哪次对话立的）。
 - 提示词规则：S-2、S-7、S-11 到 S-14、S-16 到 S-20、S-22 到 S-24。
 - 配置：C-1（原文已读，出处仓库内查不到）、C-7（除冻结外的运行参数）。
-- S-8 的出处写“同 H-1 到 H-3”、S-9 写“同 H-6”，随被引用的规则走，不另计：S-8 里重要发件人那部分同样无出处，S-9 随 H-6 无出处。
+- S-8 的出处写“同 H-1 到 H-3”、S-9 写“同 H-6”，随被引用的规则走，不另计：S-8 随 H-1 到 H-3 保留 ADR 0106，名单里具体发件人的来源无记载；S-9 随 H-6 无出处。
 - 记忆库里的 `rule` 类记忆：已读（见 C 节），3 条都已删除或在回收站，没有生效的，不在 19 条之内。
 
-这 19 条作为规则登记册（ADR 0106 第 4 条，另一个线程在做）的初始数据时，没有 ADR 或事故号可引的部分出处栏写“无出处”，已有的 ADR 和事故号保留（例如 H-1 的 ADR 0106、H-12 的 ADR 0179、C-7 的 ADR 0165、S-23 的 ADR 0122）。
+这 19 条里仓库查不到来源的部分，在规则登记册（另一个线程在做）里出处栏写“无出处”；已有的 ADR、事故号和规格记载保留（例如 H-1 的 ADR 0106、H-12 的 ADR 0179、C-7 的 ADR 0165、S-23 的 ADR 0122）。
 
 [↑ 回到阅读导航](#contents)
 
