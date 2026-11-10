@@ -1697,10 +1697,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           !event.aborted &&
           event.result !== undefined
         ) {
-          const environment = runtimeEnvironmentAfterCompaction(
-            session.messages,
-            projection,
-          );
+          const environment = runtimeEnvironmentAfterCompaction(session.messages, projection);
           if (environment)
             session.agent.steer({ role: "custom", ...environment, timestamp: Date.now() });
         }

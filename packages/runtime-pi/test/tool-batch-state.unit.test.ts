@@ -53,6 +53,7 @@ function state() {
       return manager;
     },
     messages,
+    getActiveToolNames: () => ["read"],
     getToolDefinition: (name: string) =>
       name === "read" ? { name: "read", executionMode: "sequential" } : undefined,
   } as unknown as AgentSession;
@@ -79,7 +80,12 @@ describe("tool-batch persisted-state integrity", () => {
       { taskRef: "task" },
     );
     for (const message of f.messages.slice(2)) sessionManager.appendMessage(message as never);
-    const session = { sessionManager, messages: f.session.messages, getToolDefinition: f.session.getToolDefinition } as unknown as AgentSession;
+    const session = {
+      sessionManager,
+      messages: f.session.messages,
+      getActiveToolNames: f.session.getActiveToolNames,
+      getToolDefinition: f.session.getToolDefinition,
+    } as unknown as AgentSession;
     const saved = capturePiToolBatch(session, "waiting", 3, PROMPT);
     expect(
       piToolBatchSessionManager(saved, PROMPT, "/workspace").buildSessionContext().messages,
@@ -92,7 +98,12 @@ describe("tool-batch persisted-state integrity", () => {
       unstored.appendMessage(message as never);
     expect(() =>
       capturePiToolBatch(
-        { sessionManager: unstored, messages: f.session.messages, getToolDefinition: f.session.getToolDefinition } as unknown as AgentSession,
+        {
+          sessionManager: unstored,
+          messages: f.session.messages,
+          getActiveToolNames: f.session.getActiveToolNames,
+          getToolDefinition: f.session.getToolDefinition,
+        } as unknown as AgentSession,
         "waiting",
         3,
         PROMPT,
@@ -100,11 +111,38 @@ describe("tool-batch persisted-state integrity", () => {
     ).toThrow("PI_CONTINUATION_PREFIX_INVALID");
   });
 
+  it("treats a registered but inactive parallel tool as sequential, like the active tool list does", () => {
+    const f = state();
+    const parallelRead = (name: string) =>
+      name === "read" ? { name: "read", executionMode: "parallel" } : undefined;
+    const inactive = {
+      sessionManager: f.session.sessionManager,
+      messages: f.session.messages,
+      getActiveToolNames: () => [],
+      getToolDefinition: parallelRead,
+    } as unknown as AgentSession;
+    expect(capturePiToolBatch(inactive, "waiting", 3, PROMPT).parallel).toBeUndefined();
+    const active = {
+      sessionManager: f.session.sessionManager,
+      messages: f.session.messages,
+      getActiveToolNames: () => ["read"],
+      getToolDefinition: parallelRead,
+    } as unknown as AgentSession;
+    expect(() => capturePiToolBatch(active, "waiting", 3, PROMPT)).toThrow(
+      "PI_CONTINUATION_RESULTS_INVALID",
+    );
+  });
+
   it("refuses to capture when the Pi session entries do not rebuild the messages before the batch", () => {
     const f = state();
     const sessionManager = f.session.sessionManager;
     f.messages.unshift({ role: "user", content: "Only in session messages", timestamp: -1 });
-    const session = { sessionManager, messages: f.session.messages, getToolDefinition: f.session.getToolDefinition } as unknown as AgentSession;
+    const session = {
+      sessionManager,
+      messages: f.session.messages,
+      getActiveToolNames: f.session.getActiveToolNames,
+      getToolDefinition: f.session.getToolDefinition,
+    } as unknown as AgentSession;
     expect(() => capturePiToolBatch(session, "waiting", 3, PROMPT)).toThrow(
       "PI_CONTINUATION_PREFIX_INVALID",
     );

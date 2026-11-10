@@ -24,7 +24,10 @@ export interface PiToolBatchContinuation {
   readonly parallel?: true;
 }
 
-type BatchSession = Pick<AgentSession, "sessionManager" | "messages" | "getToolDefinition">;
+type BatchSession = Pick<
+  AgentSession,
+  "sessionManager" | "messages" | "getActiveToolNames" | "getToolDefinition"
+>;
 
 export function capturePiToolBatch(
   session: BatchSession,
@@ -69,10 +72,11 @@ function modelVisible(messages: PiMessages): string {
 }
 
 function runsInParallel(session: BatchSession, assistant: AssistantMessage): boolean {
+  const active = new Set(session.getActiveToolNames());
   return assistant.content
     .filter((part) => part.type === "toolCall")
     .every((call) => {
-      const tool = session.getToolDefinition(call.name);
+      const tool = active.has(call.name) ? session.getToolDefinition(call.name) : undefined;
       return tool !== undefined && tool.executionMode !== "sequential";
     });
 }
