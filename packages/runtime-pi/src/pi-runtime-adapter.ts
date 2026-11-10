@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type {
   Api,
   AssistantMessage,
@@ -15,6 +16,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import {
   createAssistantMessageEventStream,
+  createInitialSystemMessage,
   getCurrentTools,
   getSupportedThinkingLevels,
   normalizeContext,
@@ -23,6 +25,7 @@ import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-option
 import {
   type AgentSession,
   type AgentSessionEvent,
+  type ContextWithSystemEvent,
   type CreateAgentSessionOptions,
   type CreateAgentSessionResult,
   createAgentSession,
@@ -33,11 +36,6 @@ import {
   SettingsManager,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import {
-  highestClassification,
-  isModelVisible,
-  memoryDateNote,
-} from "@himawari-agent/application/runtime-port";
 import type {
   AgentRuntimePort,
   DataClassification,
@@ -61,6 +59,11 @@ import type {
   RuntimeToolDescriptor,
   RuntimeToolInvocation,
   RuntimeToolPort,
+} from "@himawari-agent/application/runtime-port";
+import {
+  highestClassification,
+  isModelVisible,
+  memoryDateNote,
 } from "@himawari-agent/application/runtime-port";
 import {
   CHAT_TOOL_GUIDELINES_HEADER,
@@ -383,7 +386,7 @@ function toolProgressOutput(
 }
 
 const PI_CONTEXT_WINDOW_EXHAUSTED = "PI_CONTEXT_WINDOW_EXHAUSTED";
-const PI_REQUEST_TOOLS_DIVERGED = "PI_REQUEST_TOOLS_DIVERGED";
+const PI_REQUEST_HEAD_DIVERGED = "PI_REQUEST_HEAD_DIVERGED";
 const MIN_CONTEXT_ANSWER_TOKENS = 512;
 const BACKGROUND_COMMAND_MESSAGE_TYPE = "himawari.background.command";
 
@@ -438,7 +441,7 @@ function loggableModelFailure(errorMessage: string | undefined): string {
   if (
     message.startsWith("Model invocation ") ||
     message === "Model budget accounting is unavailable" ||
-    message === PI_REQUEST_TOOLS_DIVERGED
+    message === PI_REQUEST_HEAD_DIVERGED
   )
     return message;
   const status = /^(\d{3})(?:\s|:)/.exec(message)?.[1];
@@ -636,21 +639,40 @@ function contextBlockContent(
   return `${contextBlockMarker(block)}\n${block.content}${dated}`;
 }
 
+function frozenRequestTools(
+  messages: ContextWithSystemEvent["messages"],
+  frozenTools: Tool[] | undefined,
+): Tool[] | undefined {
+  const piTools = getCurrentTools(messages);
+  const tools = frozenTools ?? piTools.map(providerTool);
+  const declared = new Set(tools.map(({ name }) => name));
+  if (piTools.length !== declared.size || piTools.some(({ name }) => !declared.has(name)))
+    return undefined;
+  return tools;
+}
+
+function himawariRequestHead(
+  messages: ContextWithSystemEvent["messages"],
+  systemPrompt: string,
+  frozenTools: Tool[] | undefined,
+): ContextWithSystemEvent["messages"] | undefined {
+  const tools = frozenRequestTools(messages, frozenTools);
+  if (!tools) return undefined;
+  const head = createInitialSystemMessage(systemPrompt, tools);
+  return [...(head ? [head] : []), ...messages.filter((message) => message.role !== "system")];
+}
+
 function himawariRequestContext(
   requested: TranscriptContext,
   systemPrompt: string,
   frozenTools: Tool[] | undefined,
 ): Context | undefined {
-  const piTools = getCurrentTools(requested.messages);
-  const tools = frozenTools ?? piTools.map(providerTool);
-  const declared = new Set(tools.map(({ name }) => name));
-  if (piTools.length !== declared.size || piTools.some(({ name }) => !declared.has(name)))
-    return undefined;
-  return {
-    systemPrompt,
-    tools,
-    messages: requested.messages.filter((message) => message.role !== "system"),
-  };
+  const tools = frozenTools ?? getCurrentTools(requested.messages).map(providerTool);
+  const head = createInitialSystemMessage(systemPrompt, tools);
+  const [first, ...rest] = requested.messages;
+  if (!head || !isDeepStrictEqual(first, head)) return undefined;
+  if (rest.some((message) => message.role === "system")) return undefined;
+  return { systemPrompt, tools, messages: rest };
 }
 
 function himawariSummaryContext(requested: TranscriptContext): Context | undefined {
@@ -1458,6 +1480,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         ),
         extensionFactories: [
           {
+            name: "himawari-request-head",
+            hidden: true,
+            factory: (pi: ExtensionAPI) => {
+              pi.on("context_with_system", (event) => {
+                const messages = himawariRequestHead(event.messages, systemPrompt, requestTools);
+                return messages ? { messages } : undefined;
+              });
+            },
+          },
+          {
             name: "himawari-tool-outcomes",
             hidden: true,
             factory: (pi: ExtensionAPI) => {
@@ -1582,7 +1614,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           await this.#historyWrites.get(request.runId);
           const replay = restored?.takeReplay();
           if (replay) return replay;
-          if (!context) return failedPiStream(model, PI_REQUEST_TOOLS_DIVERGED);
+          if (!context) return failedPiStream(model, PI_REQUEST_HEAD_DIVERGED);
           if (suspended || unknownTool)
             return failedPiStream(model, "Runtime tool reconciliation is required");
           if (toolProgress.blocked) {

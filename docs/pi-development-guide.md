@@ -70,7 +70,7 @@ Andy 在 2026-11-10 要求写这份规范，原话是“让 AI coding agent 以�
 | [工具执行前拦截或改参数](#pattern-tool-call) | `tool_call` 事件返回 `{ block: true }` | 部分照官方，审批是[偏离 D2](#current-deviations) |
 | [改工具结果](#pattern-tool-result) | `tool_result` 事件返回补丁 | 照官方 |
 | [系统提示](#pattern-system-prompt) | 资源加载器给初始提示；`before_agent_start` 改 | 照官方 |
-| [每次请求前改上下文](#pattern-context) | `context` 改消息；`context_with_system` 接管整个请求开头 | 没用，见[偏离 D1](#current-deviations) |
+| [每次请求前改上下文](#pattern-context) | `context` 改消息；`context_with_system` 接管整个请求开头 | 用了：隐藏扩展 `himawari-request-head` 生成冻结开头，见[偏离 D1](#current-deviations) |
 | [看或改发给服务方的请求](#pattern-provider-hooks) | `before_provider_request`、`after_provider_response`、`before_provider_headers` | 照官方 |
 | [接模型服务方](#pattern-provider) | `registerProvider`，协议相同就复用 Pi 的流式实现；自定义取密钥时用完整 `Provider` 的原生认证（`createProvider` + `registerNativeProvider`） | 照官方；认证声明见 [ADR 0205](adr/0205-pi-native-provider-auth.md) |
 | [单次后台模型调用](#pattern-direct-call) | `modelRuntime.stream` / `ctx.modelRegistry.complete`，用 `fetch`、`onPayload` 选项 | 照官方 |
@@ -176,7 +176,7 @@ pi.on("tool_result", async (event, ctx) => {
 
 出处：`docs/extensions.md` 第 615 行“before_agent_start”；`docs/sdk.md` 第 32 行“`session.systemPrompt` is read-only”。
 
-Himawari 的写法：资源加载器的 `systemPromptOverride: () => frozenSystemPrompt` 给初始提示，不再在 `before_agent_start` 里重复返回（偏离 D6 已删除，[ADR 0208](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md)）；发出请求的开头仍由 D1 的请求函数换成冻结的那份，D1 改完后由 `context_with_system` 生成。
+Himawari 的写法：资源加载器的 `systemPromptOverride: () => frozenSystemPrompt` 给初始提示，不再在 `before_agent_start` 里重复返回（偏离 D6 已删除，[ADR 0208](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md)）；发出请求的开头由 `himawari-request-head` 扩展的 `context_with_system` 钩子生成（D1 第 3 步，[ADR 0208](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md#step-3-record)）。
 
 官方示例在 `event.systemPrompt` 后面拼“本轮”的额外说明（`docs/extensions.md` 第 615 行起），Himawari 不得照抄：每轮会变的内容放在最后一条用户消息里（[prompt-prefix 规则第一节](../.claude/rules/prompt-prefix.md#order)）。官方说明：改 `systemPromptOptions` 里的分节时，Pi 只追加一条补丁；直接返回 `systemPrompt` 会整段替换，换了就“a cache miss when it changes”。Himawari 的系统提示按对话冻结（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)），所以只用冻结的那一份，不每轮改。
 
@@ -345,7 +345,7 @@ SettingsManager.inMemory({
 
 | 编号 | 位置 | 做了什么 | 对应的官方写法 | 为什么没照官方 | 状态 |
 |---|---|---|---|---|---|
-| D1 | `pi-runtime-adapter.ts` 的 `governedModelRuntime`（每次运行的 `ModelRuntime` 代理，重写 `streamSimple`；原为 `session.agent.streamFunction = ...`） | 替换 Pi 每次请求模型的函数：换成冻结的系统提示和工具、准入和预算、出口遮盖、审批续跑时回放已有回答、识别压缩请求 | 请求开头用 `context_with_system`；准入、遮盖、还原放进注册的服务方（复用 `openai-completions`，外面包一层）；观察用 `before_provider_request` | [ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#options) 只比较了 `before_agent_start` 一条路，没比较 `context_with_system` 和服务方包装 | Andy 2026-11-10 同意方案，分三步实施，第 1 步（D6）、第 2 步（把 `streamFunction` 赋值改成每次运行的模型代理）已完成（[ADR 0208](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md#step-2-record)），第 3 步（开头走 `context_with_system`）未做 |
+| D1 | `pi-runtime-adapter.ts` 的 `governedModelRuntime`（每次运行的 `ModelRuntime` 代理，重写 `streamSimple`；原为 `session.agent.streamFunction = ...`） | 替换 Pi 每次请求模型的函数：换成冻结的系统提示和工具、准入和预算、出口遮盖、审批续跑时回放已有回答、识别压缩请求 | 请求开头用 `context_with_system`；准入、遮盖、还原放进注册的服务方（复用 `openai-completions`，外面包一层）；观察用 `before_provider_request` | [ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#options) 只比较了 `before_agent_start` 一条路，没比较 `context_with_system` 和服务方包装 | Andy 2026-11-10 同意方案，分三步实施，第 1 步（D6）、第 2 步（把 `streamFunction` 赋值改成每次运行的模型代理）已完成（[ADR 0208](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md#step-2-record)），第 3 步（开头走 `context_with_system`）已完成（[第 3 步记录](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md#step-3-record)）；准入、预算、遮盖还原、审批回放、拒发仍在每次运行的模型代理上 |
 | D2 | `pi-runtime-adapter.ts` 的 `createTool` 里调 `tools.preflight`、`reconciliation.suspend` | 权限判断和等审批写在工具的 `execute` 里，等审批时存快照、结束这次运行 | `tool_call` 拦截（`permission-gate.ts`） | 官方拦截只能在进程里当场等；审批要等几小时、服务可能重启（[ADR 0023](adr/0023-durable-hitl-execution.md)）。ADR 0023 写于 Pi 0.x，没写和 `tool_call` 的比较 | Andy 2026-11-10 批准保留（[ADR 0204](adr/0204-handle-pi-deviations-d2-d3-d5.md)） |
 | D3 | `pi-tool-batch-continuation.ts` | 审批后续跑：存会话条目和那次回答，续跑时回放 | 官方没有稳定写法；`pi-durable` 标为实验性 | [ADR 0023](adr/0023-durable-hitl-execution.md)、[ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#decision) | Andy 2026-11-10 批准保留（[ADR 0204](adr/0204-handle-pi-deviations-d2-d3-d5.md)） |
 | D4 | `configured-model-binding.ts` 的 `initializeRuntime`（原 `pi-runtime-adapter.ts` 的 `sessionModelRuntime`） | 已关闭：原来用 Proxy 改写 `hasConfiguredAuth`；现改为完整 `Provider` 的原生认证（`check` 回“已配置”、`resolve` 只从 `credential` 取密钥，来源唯一靠空凭据库），见 [ADR 0205](adr/0205-pi-native-provider-auth.md) | 完整 `Provider` 原生认证（`createProvider` + `registerNativeProvider`） | — | 已改回官方写法；升级 Pi 时重查 `[D4]` 测试 |

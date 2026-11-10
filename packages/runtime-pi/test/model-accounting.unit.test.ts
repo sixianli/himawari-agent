@@ -19,6 +19,7 @@ import {
   type PiModelBinding,
 } from "../src/pi-runtime-adapter.ts";
 import { testModelEgress } from "./helpers/model-egress.js";
+import { requestContextFor } from "./request-head.ts";
 
 const model: Model<Api> = {
   id: "accounting",
@@ -186,7 +187,7 @@ function fixture(chosenModel = model) {
           prompt: async () => {
             const stream = await governed.streamSimple(
               chosenModel,
-              { messages: [] },
+              (await requestContextFor(rawOptions as unknown as Record<string, unknown>)) as never,
               streamOptions,
             );
             for await (const event of stream) {
