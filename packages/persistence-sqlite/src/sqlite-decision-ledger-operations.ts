@@ -536,7 +536,7 @@ export class SqliteDecisionLedgerOperations {
            ON i.owner_id = e.owner_id AND i.agent_id = e.agent_id
           AND e.intake_item_key = i.kind || ':' || i.natural_key
          WHERE e.owner_id = ? AND e.agent_id = ? AND e.paired_message_id = ?
-         ORDER BY e.muse_at, e.id`,
+         ORDER BY e.muse_at, e.id LIMIT 1000`,
       )
       .all(input.ownerId, input.agentId, input.messageId) as Record<string, unknown>[];
     return Object.freeze({

@@ -56,7 +56,7 @@ const MAILS: readonly Mail[] = [
         "mail-both": ["floor.money", "floor.money", "rule\nwith\tcontrol"],
         "other-mail": ["floor.other"],
       },
-      memoryByMail: { "mail-both": ["memory-b", "memory-a", "_memory-c"] },
+      memoryByMail: { "mail-both": ["memory-b", "memory-a", "_memory-c", "memory\nctl"] },
       relatedByMail: { "mail-both": ["thread-x", "thread-y"] },
     },
     muse: "reminded",
@@ -75,6 +75,15 @@ const MAILS: readonly Mail[] = [
     gmailId: "mail-himawari-only",
     processed: true,
     outcome: "check",
+    rating: null,
+    inputs: { floorHits: {}, memoryByMail: {}, relatedByMail: {} },
+    muse: "none",
+  },
+  {
+    key: "prototype-key",
+    gmailId: "__proto__",
+    processed: true,
+    outcome: "know",
     rating: null,
     inputs: { floorHits: {}, memoryByMail: {}, relatedByMail: {} },
     muse: "none",
@@ -281,7 +290,7 @@ describe("[P1-5] one mail's decision trace", () => {
         skipReason: null,
         rating: "useful",
         ruleIds: ["floor.money", "rule with control"],
-        memoryIds: ["_memory-c", "memory-a", "memory-b"],
+        memoryIds: ["_memory-c", "memory ctl", "memory-a", "memory-b"],
         relatedMessages: 2,
       });
       expect(payload.muse.entries).toHaveLength(1);
@@ -340,6 +349,16 @@ describe("[P1-5] one mail's decision trace", () => {
       const over = await read(h, "mail-twentyone");
       expect(over.muse.entries).toHaveLength(20);
       expect(over.muse.truncated).toBe(true);
+    } finally {
+      await h.repository.close();
+    }
+  });
+
+  it("[negative] treats a mail id like __proto__ as having no recorded rules", async () => {
+    const h = await fixture();
+    try {
+      const payload = await read(h, "__proto__");
+      expect(payload.mail).toMatchObject({ ruleIds: [], memoryIds: [], relatedMessages: 0 });
     } finally {
       await h.repository.close();
     }

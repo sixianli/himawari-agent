@@ -38,6 +38,7 @@ import {
   type GatewayV2Snapshot,
   gatewayV2MessageSchema,
 } from "@himawari-agent/gateway-contracts";
+import { displayRuleId } from "./production-decision-chain.js";
 import { buildGapCases, clean } from "./production-gap-cases.js";
 import { type GapCaseSnapshot, maskForExport } from "./production-gap-export.js";
 
@@ -322,9 +323,12 @@ export class ProductionObservation {
       inputs && fields.has(field)
         ? [
             ...new Set(
-              (inputs[field][messageId] ?? []).map((id) =>
-                field === "floorHits" ? clean(id, 256) : id,
-              ),
+              (Object.hasOwn(inputs[field], messageId) && Array.isArray(inputs[field][messageId])
+                ? inputs[field][messageId]
+                : []
+              )
+                .map(displayRuleId)
+                .filter((id) => id.trim().length > 0),
             ),
           ].sort()
         : null;
