@@ -464,8 +464,8 @@ describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
         himawari: "node_modules/@himawari-agent/admin-cli/dist/main.js",
       },
       externalDependencies: {
-        "@earendil-works/pi-ai": "0.84.2",
-        "@earendil-works/pi-coding-agent": "0.84.2",
+        "@earendil-works/pi-ai": "1.5.0",
+        "@earendil-works/pi-coding-agent": "1.5.0",
         "@modelcontextprotocol/client": "2.0.0",
       },
     });

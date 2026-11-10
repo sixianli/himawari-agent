@@ -103,6 +103,8 @@ export type {
   ThreadPromptBundleIdentity,
 } from "./ports/thread-prompt-bundles.js";
 export type { ModelUsageObservation, ModelUsageStorePort } from "./ports/model-usage.js";
+export type { MemoryDates } from "./ports/memory-dates.js";
+export { memoryDateNote } from "./ports/memory-dates.js";
 export { usdCostsEqual, usdCostToMicros } from "./services/model-cost.js";
 export {
   highestClassification,

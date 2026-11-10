@@ -1,0 +1,6 @@
+{"id": "r1-ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 的“门槛”清单没有记录这次新增的页面行检查", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 的门槛清单", "consequence": "不知道记忆页行带日期由哪条用例守着", "modelSeverity": "低"}
+{"id": "r1-ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 后果句现在字面上不完整", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 后果", "consequence": "以为页面上不会出现日期", "modelSeverity": "低"}
+{"id": "r1-ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "E2E 假服务器夹具仍返回“无日期档案行”和旧的 used", "valid": true, "class": "better"}
+{"id": "r1-ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`[MEM-PIN]` 只断言“任意日期”，没有断言实际日期", "valid": true, "class": "error", "severity": "low", "trigger": "outline 取错日期来源或时区", "consequence": "集成用例不报错", "modelSeverity": "低"}
+{"id": "r1-glm-1", "model": "opencode-go/glm-5.3-flash", "quote": "outline 新行为（行文本带日期）在单元层没有直接断言", "valid": true, "class": "error", "severity": "low", "trigger": "outline 拼日期被改坏", "consequence": "单元层不报错，只靠集成测试", "modelSeverity": "低"}
+{"id": "r1-glm-2", "model": "opencode-go/glm-5.3-flash", "quote": "UI 侧 profile 行 fixture 仍是不带日期的文本", "valid": true, "class": "better"}

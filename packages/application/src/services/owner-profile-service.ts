@@ -8,6 +8,7 @@ import type {
   ProductMemoryRecord,
   ProductMemoryStatePort,
 } from "../ports/index.js";
+import { memoryDateNote, memoryDatesOf } from "../ports/memory-dates.js";
 import { highestClassification, modelVisibleCeiling } from "./model-visibility.js";
 
 export const OWNER_PROFILE_CHARACTER_BUDGET = 2000;
@@ -127,8 +128,20 @@ export class OwnerProfileService implements OwnerProfilePort {
     readonly now: string;
   }): Promise<OwnerProfileOutline> {
     const { rules, sections, usage } = await this.#select(input);
-    const line = ({ memory, text }: { memory: ProductMemoryRecord; text: string }) =>
-      Object.freeze({ memoryId: memory.id, text, updatedAt: memory.updatedAt });
+    const line = ({
+      memory,
+      text,
+      dateNote,
+    }: {
+      memory: ProductMemoryRecord;
+      text: string;
+      dateNote: string;
+    }) =>
+      Object.freeze({
+        memoryId: memory.id,
+        text: `${text}${dateNote}`,
+        updatedAt: memory.updatedAt,
+      });
     return Object.freeze({
       usage,
       rules: Object.freeze(rules.map(line)),
@@ -169,25 +182,32 @@ export class OwnerProfileService implements OwnerProfilePort {
     const limit = this.#options.characterBudget ?? OWNER_PROFILE_CHARACTER_BUDGET;
     let remaining = limit;
     const queued: MemoryId[] = [];
-    const take = async (memories: readonly ProductMemoryRecord[]) => {
-      const lines: { memory: ProductMemoryRecord; text: string }[] = [];
+    const take = async (memories: readonly ProductMemoryRecord[], dated: boolean) => {
+      const lines: { memory: ProductMemoryRecord; text: string; dateNote: string }[] = [];
       for (const memory of [...memories].sort(ownerFirst(pinned))) {
         const text = (await this.#options.readText(memory))?.replace(/\s+/gu, " ").trim();
         if (!text) continue;
-        if (text.length + 3 > remaining) {
+        const dateNote = dated
+          ? memoryDateNote(memoryDatesOf(memory), this.#options.timeZone ?? "UTC")
+          : "";
+        const length = text.length + dateNote.length + 3;
+        if (length > remaining) {
           queued.push(memory.id);
           continue;
         }
-        remaining -= text.length + 3;
-        lines.push({ memory, text });
+        remaining -= length;
+        lines.push({ memory, text, dateNote });
       }
       return lines;
     };
-    const rules = await take(eligible.filter((memory) => memory.attributes?.category === "rule"));
+    const rules = await take(
+      eligible.filter((memory) => memory.attributes?.category === "rule"),
+      false,
+    );
     const sections: {
       category: MemoryCategory;
       title: string;
-      lines: { memory: ProductMemoryRecord; text: string }[];
+      lines: { memory: ProductMemoryRecord; text: string; dateNote: string }[];
     }[] = [];
     const profileCandidates = eligible.filter(
       (memory) =>
@@ -198,6 +218,7 @@ export class OwnerProfileService implements OwnerProfilePort {
       profileCandidates.filter((memory) =>
         PROFILE_SECTIONS.some(([category]) => memory.attributes?.category === category),
       ),
+      true,
     );
     for (const [category, title] of PROFILE_SECTIONS) {
       const lines = chosen
@@ -293,7 +314,7 @@ export class OwnerProfileService implements OwnerProfilePort {
             "主人档案（由已确认的长期记忆整理）：",
             ...sections.flatMap(({ title, lines }) => [
               `${title}：`,
-              ...lines.map(({ text }) => `- ${text}`),
+              ...lines.map(({ text, dateNote }) => `- ${text}${dateNote}`),
             ]),
           ].join("\n"),
           sections.flatMap(({ lines }) => lines.map(({ memory }) => memory)),

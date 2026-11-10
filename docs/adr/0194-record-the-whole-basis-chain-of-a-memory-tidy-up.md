@@ -70,5 +70,6 @@ date: "2026-11-09"
 
 - [ADR 0143：决策记录](0143-decision-ledger-for-model-gate-decisions.md)
 - [产品愿景](../product-vision.md)
+- [ADR 0196：停掉闲置归档](0196-index-sensitive-memory-after-masking-and-stop-idle-archiving.md)：背景里列的“归档闲置”自 2026-11-09 起不再发生，旧的闲置归档记录仍按本决定可以追溯。
 
 [返回目录](#contents)

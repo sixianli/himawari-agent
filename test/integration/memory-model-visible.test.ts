@@ -391,6 +391,37 @@ describe("[RULE-memory-visible] what is stored as memory reaches the model", () 
     expect(body).not.toContain(SEALED);
   });
 
+  it("[MEMORY-DATE] writes the memory's date after it in the request, in the configured time zone", async () => {
+    const runId = createRunId("run-visible-dated");
+    const adapters = world();
+    const search = adapters.memory.search.bind(adapters.memory);
+    Object.assign(adapters.memory, {
+      search: async (request: Parameters<typeof search>[0]) =>
+        (await search(request)).map((memory) => ({
+          ...memory,
+          dates: { recordedAt: "2026-11-08T15:30:00.000Z", validFrom: null, validTo: null },
+        })),
+    });
+    const run = await formedRun(
+      runId,
+      [{ id: "memory-health", text: HEALTH, classification: "sensitive" }],
+      adapters,
+    );
+    const projected = await run.projection.resolveProjection(run.request);
+    expect(projected.contextBlocks.find(({ ref }) => ref === "memory-health")?.dates).toEqual({
+      recordedAt: "2026-11-08T15:30:00.000Z",
+      validFrom: null,
+      validTo: null,
+    });
+    const chat = await runChat({
+      allowed: ["public", "private", "sensitive"],
+      projection: { resolveProjection: async () => projected },
+      runId,
+    });
+    expect(chat.events.at(-1)?.type).toBe("runtime.completed");
+    expect(chat.bodies.join("\n")).toContain(`${HEALTH}（记于 2026-11-09）`);
+  });
+
   it("REVERSE: a model whose list stops at private refuses the call instead of sending the sensitive memory", async () => {
     const runId = createRunId("run-visible-refused");
     const run = await formedRun(runId, [

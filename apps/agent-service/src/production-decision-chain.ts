@@ -53,7 +53,7 @@ export interface DecisionChainDependencies {
   readonly visible: (classification: string) => boolean;
 }
 
-const displayRuleId = (ruleId: string) =>
+export const displayRuleId = (ruleId: string) =>
   [...ruleId]
     .map((character) => {
       const code = character.charCodeAt(0);

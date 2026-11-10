@@ -66,7 +66,7 @@ function contradictions(text: {
 }
 
 describe("[PROMPT-PI-TEXT] Himawari replaces only the Pi built-in tool text that contradicts it (ADR 0166)", () => {
-  it("C10: the Pi text we replace is still the Pi 0.84.2 original; a Pi upgrade that changes it fails here", () => {
+  it("C10: the Pi text we replace is still the Pi 1.5.0 original; a Pi upgrade that changes it fails here", () => {
     expect(piTextDrift(piOriginalText())).toEqual([]);
   });
 
@@ -80,7 +80,7 @@ describe("[PROMPT-PI-TEXT] Himawari replaces only the Pi built-in tool text that
     const properties = (bash.parameters as { properties: Record<string, { description?: string }> })
       .properties;
     expect(properties["timeout"]?.description).toBe(TOOL_BUILTIN_BASH_TIMEOUT.text);
-    expect(properties["command"]?.description).toBe("Bash command to execute");
+    expect(properties["command"]?.description).toBe("Shell command to execute");
     expect(
       contradictions({
         description: `${read.description}\n${bash.description}`,

@@ -1,6 +1,7 @@
 import {
   ApplicationPortError,
   type DataClassification,
+  isModelVisible,
   type MemoryIndexStorePort,
   type MemoryProviderHit,
   type MemoryProviderProjectionPort,
@@ -11,11 +12,10 @@ import {
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import { type Embedder, instructedQuery } from "./embedding.js";
 import { DEFAULT_FUSION_WEIGHTS, type FusionWeights, fuseCandidates } from "./fusion.js";
-import { indexTerms, queryTerms } from "./segmentation.js";
+import { indexableTerms, queryTerms } from "./segmentation.js";
 import { parseTimeScope } from "./time-scope.js";
 
 export const MEMORY_INDEX_RECORD_PREFIX = "memory-index:" as const;
-const LEXICAL_CLASSIFICATIONS = new Set<DataClassification>(["public", "private"]);
 const CANDIDATES_PER_SIGNAL = 50;
 
 export interface HybridMemoryProviderOptions {
@@ -82,8 +82,8 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     if (input.content.trim().length === 0)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_CONTENT_EMPTY");
     const { memory } = input;
-    const terms = LEXICAL_CLASSIFICATIONS.has(memory.dataClassification)
-      ? indexTerms([input.content, ...(memory.attributes?.entities ?? [])].join("\n"))
+    const terms = isModelVisible(memory.dataClassification)
+      ? indexableTerms([input.content, ...(memory.attributes?.entities ?? [])].join("\n"))
       : [];
     const base = {
       memoryId: memory.id,

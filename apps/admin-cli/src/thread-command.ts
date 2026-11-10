@@ -1,13 +1,13 @@
 import path from "node:path";
 import type { ThreadPromptBundleScope } from "@himawari-agent/application";
 import {
-  acquireStateRootLock,
   assertWritableSchema,
   LATEST_MIGRATION_SEQUENCE,
   openQualifiedDatabase,
   requestThreadPromptRebuild,
 } from "@himawari-agent/persistence-sqlite";
 import { JsonFileConfigurationPort, writeServiceDiagnostic } from "@himawari-agent/platform-node";
+import { lockStoppedTarget } from "./stopped-target-lock.js";
 
 const OPTIONS = ["--config", "--thread", "--reason", "--operator", "--confirm"] as const;
 
@@ -66,9 +66,7 @@ export async function runThreadCommand(
   });
   if (values.get("--confirm") !== confirmation)
     throw new Error(THREAD_COMMAND_ERROR_CODES.CONFIRMATION_REQUIRED);
-  const lock = await acquireStateRootLock(configuration.stateRoot).catch(() => {
-    throw new Error(THREAD_COMMAND_ERROR_CODES.TARGET_NOT_STOPPED);
-  });
+  const lock = await lockStoppedTarget(configuration.stateRoot);
   try {
     const database = openQualifiedDatabase(
       path.join(configuration.stateRoot, "data", "product.sqlite"),

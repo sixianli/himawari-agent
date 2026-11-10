@@ -28,13 +28,13 @@ date: "2026-08-25"
 
 此投影只汇总目前已有的持久 Run/Trace 事实，`effectSummary` 表达操作 outcome，不构成文件已回滚、资源已释放或整个任务树已停止的证明。已选择会话的红点与可用动作使用匹配 Run revision 的状态；其他会话仍使用原待审批查询。资源 journal 的停止/核验/清理、队列等待、文件发布细节、其他阶段计时与全部会话统一注意状态仍待接入，见[统一状态实施记录](archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-unified-state)。即使所有工具已经返回，单独的 `Run.cancelled` 也只证明取消决定已保存；缺少资源证明时统一状态仍为“结果未确认”，保留已知成功操作及原有再次停止/清理入口。本批不改变 Pi 工具协议，不升级数据库，也不增加执行或重放入口。
 
-用户提交仍对应产品 Turn/Run，Pi 内部 turn 是轮内执行步骤。可选模型由已配置、允许 private 数据的 generation descriptor 与 Pi 0.84.2 能力共同决定；`thread.message.submit_configured` 在 migration 0030 的 `runs.model_selection_json` 保存本次选择，后续仍由 RunExecutionInputService 冻结策略并执行原预算/披露/授权检查。界面中的下一轮选择不会改变活动 Run。停止复用 RunCoordinator；文本附件经既有 private Payload 发送，仅“执行”模式可用。
+用户提交仍对应产品 Turn/Run，Pi 内部 turn 是轮内执行步骤。可选模型由已配置、允许 private 数据的 generation descriptor 与 Pi 1.5.0 能力共同决定；`thread.message.submit_configured` 在 migration 0030 的 `runs.model_selection_json` 保存本次选择，后续仍由 RunExecutionInputService 冻结策略并执行原预算/披露/授权检查。界面中的下一轮选择不会改变活动 Run。停止复用 RunCoordinator；文本附件经既有 private Payload 发送，仅“执行”模式可用。
 
 本轮实际验收按用户要求限于本机版本；真实服务与真实模型资格需单独取得。具体设计见 [SOURCE: docs/archive/specs/2026-09-10-control-center-product-refactor-design.md]。
 
 ### 当前实现基线（2026-09-09）
 
-Pi `0.84.2` 管理模型与工具循环，模型侧工具执行委托现有 `RuntimeToolPort` 和 Worker。产品权威保存在调用回执、Grant/Handle、Run checkpoint、受保护 Payload 和 SQLite 作业观察中；没有独立的第二套工具身份或权限数据库。
+Pi `1.5.0` 管理模型与工具循环，模型侧工具执行委托现有 `RuntimeToolPort` 和 Worker。产品权威保存在调用回执、Grant/Handle、Run checkpoint、受保护 Payload 和 SQLite 作业观察中；没有独立的第二套工具身份或权限数据库。
 
 SRT `0.0.81` 已集中在 `packages/runtime-sandbox`，版本号只在 `packages/execution-contracts/src/sandbox-runtime-version.ts` 定义；Linux 上启动前必须用上锁定的 seccomp 小程序（按系统调用拦截的过滤器），否则拒绝启动（[ADR 0156](adr/0156-srt-0-0-81-with-a-locked-seccomp-helper.md)）。独立 Job Host、原子准入/启动 CAS、scope 解析、主机与运行产物复核、认证 Payload UDS、正式 Worker 组合以及启动恢复核查均有实现。scope 已支持文件 inspect/read 工作流及从现有 Grant targets 取得通用工具范围；Pi 七工具前台 runner 已接入显式合同，后台执行仍待后续阶段，MCP 不在本次交付范围。
 
@@ -187,7 +187,7 @@ testing → application + domain + product contracts
 
 根构建可以分别验证 Node 图、两类 contracts、两个服务、browser bundle 和 admin CLI。`build:browser` 在 Vite production build 后执行 `scripts/check-control-center-build.mjs`，机械验证外部 CSS/JS、en/ja locale code splitting、无 source map、无 inline script/style、无动态代码求值，以及 entry/总 gzip 预算；Fastify `GET /*` 只对非 `/api`、非 `/assets` 且 `Accept` 包含 `text/html` 的路径返回同源 SPA shell，未知 API 与非 HTML 请求仍为 404。`scripts/generate-artifact-manifest.mjs` 会在构建后生成 machine-readable manifest，固定根 manifest/lock SHA-256、每个 workspace 的内容 checksum，以及当次 browser artifacts 的路径、大小和 SHA-256；生成物位于忽略提交的 `dist/`，脚本和 checksum contract 才是当前受版本控制的稳定入口。
 
-`packages/runtime-pi` 直接固定 `@earendil-works/pi-coding-agent` 与 `@earendil-works/pi-ai` `0.84.2`；提交的 manifest 和 lockfile 不引用相邻的 `../pi-mono`。它只能从 `@himawari-agent/application/runtime-port` 导入 Agent Runtime request/event 类型，不能通过 application 根入口获得 Memory、Permission、Capability Registry 或持久化写端口。Pi `0.84.2` 的发布声明图在 TypeScript `NodeNext` 下包含上游 JSON import-attribute 与 optional provider 声明问题，因此本仓库启用 `skipLibCheck` 仅跳过第三方声明文件检查；Himawari 自有源码仍由 strict TypeScript 完整检查，并以 published package compatibility test 补足运行时证据。该隔离边界落实了产品自有 Pi 适配层决策：[SOURCE: docs/adr/0001-pi-runtime-adapter.md]
+`packages/runtime-pi` 直接固定 `@earendil-works/pi-coding-agent` 与 `@earendil-works/pi-ai` `1.5.0`；提交的 manifest 和 lockfile 不引用相邻的 `../pi-mono`。它只能从 `@himawari-agent/application/runtime-port` 导入 Agent Runtime request/event 类型，不能通过 application 根入口获得 Memory、Permission、Capability Registry 或持久化写端口。Pi 的发布声明图（0.84.2 时发现）在 TypeScript `NodeNext` 下包含上游 JSON import-attribute 与 optional provider 声明问题，因此本仓库启用 `skipLibCheck` 仅跳过第三方声明文件检查；Himawari 自有源码仍由 strict TypeScript 完整检查，并以 published package compatibility test 补足运行时证据。该隔离边界落实了产品自有 Pi 适配层决策：[SOURCE: docs/adr/0001-pi-runtime-adapter.md]
 
 ## Data Model
 
@@ -379,7 +379,7 @@ Agent 侧通过 Owner/Agent 绑定的 `CapabilityInvocationReceiptPort` 消费�
 
 Hermes candidate 继续要求 non-setuid `bubblewrap 0.11.2` 与 `prlimit >=2.38`。2026-09-04 经 Owner 授权，仅在机械盘专项目录中校验源码并构建了 `bubblewrap 0.11.2` 与 util-linux `2.42.3` 的 `prlimit`，没有替换系统软件或改动已有服务。临时真实进程探针确认了只读根、隔离网络和宿主敏感目录不可见；原生产参数暴露的用户命名空间与外层进程数限制问题已据此修正。后端现在显式创建用户命名空间，在隔离内通过受摘要和路径校验的 `prlimit` 施加进程数限制，并拒绝覆盖该辅助程序或已校验执行文件的挂载。2026-09-05 使用独立完整临时运行根的 shell/C 探针通过了不加进程数限制的对照、隔离内进程数拒绝、进程组清理和父进程退出清理四项验证。同日用摘要与当前工作区一致的 `isolation.ts` 在 Hermes 实机运行 Node 后端探针：正常 launch 退出 0；篡改的 `prlimit` 摘要和把 helper 放入可写 workspace 的绑定均被拒绝；取消和超时用例先确认 payload 已启动并持有 FIFO，再确认终止后 FIFO 到达 EOF，均以 `SIGTERM` 结束且无输出泄漏。运行根和工作目录始终限于 Owner 授权的机械盘专项目录。该轮使用已有 Node `26.1.0`，证据级别是 `node26-diagnostic-only`；它不是锁定 Node 22 安装产物、真实 capability、Worker 主程序或 Mac 同版本隔离的完整验收。当前没有安装或启用真实 capability，也没有把测试 direct-process fixture 当作生产隔离。`DeterministicRestaurantCapabilityPort` 与 `ScriptedExternalActionReconciliationPort` 仍只验证搜索、预订和对账产品语义；`ProductionExecutionWorker` 已定义 `execution.v2` 严格消息和精确 adapter/version/operation 注册边界，但实际服务入口仍缺少真实能力运行时注册。该边界落实受治理能力决策：[SOURCE: docs/adr/0008-governed-capability-registry.md] [SOURCE: docs/adr/0022-mac-tiered-command-sandbox.md]
 
-S6 主机文件与代码工作区使用产品自有 `HostDirectoryGrant`、文件 identity、prepare/execute/verify、受控 Trash、永久删除计划、WorkspaceSnapshot、change ownership、CommandProfile 和 CommitPreview；Pi coding tool 复用 pinned `0.84.2` 的 ToolDefinition 与结果形状。Gateway v2、Execution Worker 和 Control Center 已接通这些本地服务。工作区首次已有的 Owner 改动保持原归属；路径写权限本身不构成任务归属证明。纯任务路径必须由干净基线及受控写入的前后摘要共同证明，混合 Owner 改动无法安全分离时拒绝整文件暂存。`clean` 由冻结 HEAD、index blob 和实际文件字节/模式共同验证。
+S6 主机文件与代码工作区使用产品自有 `HostDirectoryGrant`、文件 identity、prepare/execute/verify、受控 Trash、永久删除计划、WorkspaceSnapshot、change ownership、CommandProfile 和 CommitPreview；Pi coding tool 复用 pinned `1.5.0` 的 ToolDefinition 与结果形状。Gateway v2、Execution Worker 和 Control Center 已接通这些本地服务。工作区首次已有的 Owner 改动保持原归属；路径写权限本身不构成任务归属证明。纯任务路径必须由干净基线及受控写入的前后摘要共同证明，混合 Owner 改动无法安全分离时拒绝整文件暂存。`clean` 由冻结 HEAD、index blob 和实际文件字节/模式共同验证。
 
 Git 暂存从已核验字节创建无 filter blob 与独立 index。CommitPreview 冻结 HEAD、branch、任务 tree、真实 Owner index 摘要和配置；`GitIndexTransaction` 先持久记录准备阶段及锁身份，再取得标准 `index.lock`。commit object、ref 的 expected-old 更新和 Owner index 的任务条目更新由同一事务负责，重启按 journal 中的旧/新摘要对账；后来的 Owner index 改变会阻止恢复覆盖。可执行 filter/textconv/merge driver/include/fsmonitor 配置 fail closed，hooks 禁用，push/PR/merge/release surface 不存在。永久删除批准绑定对象类型、identity 和内容 digest，执行前全量核对且逐项复核；原 inode 内容变化同样使批准失效。Node host path adapter 对写入路径仍不具备 descriptor-relative `openat` 的完整原子边界，在 Mac/Hermes 外层隔离通过前不能宣称任意并发文件系统写入下的安全资格。只读文件工具（`read`、`ls`、`find`、`grep`）已于 2026-10-14 改在可信主进程执行：Linux 上每一级目录都用 `/proc/self/fd/<父目录描述符>/<名称>` 加 `O_NOFOLLOW` 逐级打开并核对设备号与 inode，最后一级先 `lstat` 再以 `O_RDONLY | O_NOFOLLOW | O_NONBLOCK` 打开并 `fstat` 复核，检查和打开之间不留可被替换的空隙。Mac 没有 procfs，这四个工具在 Mac 上继续进沙箱；写入与命令仍走原沙箱路径。
 
@@ -425,13 +425,13 @@ primary、specialist、local 只选择对应 approved routing class；retryable 
 
 需要供应商凭证时，Router根据descriptor签发只绑定当前Owner、Agent、Run、invocation和deadline的opaque Secret Handle（只能引用、不能直接读取原值的凭据句柄）。`TrustedModelProviderAdapter`先验证Handle和预算准入，再在单次调用内解析凭据并交给Pi `options.apiKey`。共享Pi runtime不保存API Key；产品事件、Trace和配置不包含原值。每个物理请求只准入一次，`maxRetries: 0`，未知结果不得自动重发。
 
-Pi 0.84.2继续负责请求、SSE和工具参数解析。产品共用`gateway-observation.ts`读取克隆响应的计费元数据：模型身份、网关generationId、routing.finalProvider以及相同的usage.cost和gateway.cost。有效账单转换为整数微美元，由原模型调用事务结算；零费用有效，缺失、非法或矛盾费用保留unknown。Agent Loop、受保护ModelPort和标题都使用这项规则。观察器不替代Pi的正文或工具协议。
+Pi 1.5.0继续负责请求、SSE和工具参数解析。产品共用`gateway-observation.ts`读取克隆响应的计费元数据：模型身份、网关generationId、routing.finalProvider以及相同的usage.cost和gateway.cost。有效账单转换为整数微美元，由原模型调用事务结算；零费用有效，缺失、非法或矛盾费用保留unknown。Agent Loop、受保护ModelPort和标题都使用这项规则。观察器不替代Pi的正文或工具协议。
 
 `resolveConfiguredModelDescriptorSet()`仅把显式Vercel primary转换成Pi绑定；可选TypeSafe specialist仍使用自己的协议。`createAiGatewayMem0ProjectionAdapter()`把独立embedding descriptor交给Mem0已有SDK，不注册为Pi文本模型。生产main为Run、标题和记忆调用提供持久准入、冻结身份与逻辑槽；重启按原事务恢复，不能重写旧模型身份或重复发送。路由和费用契约见[迁移设计](execution/specs/2026-10-06-vercel-gateway-migration-design.md)。[SOURCE: docs/execution/specs/2026-10-06-vercel-gateway-migration-design.md] [SOURCE: docs/adr/0007-policy-controlled-model-routing.md]
 
 ### Pi Agent Runtime projection
 
-`packages/runtime-pi` 是唯一可以加载 `@earendil-works/pi-*` 包的 workspace。适配器内部直接使用固定版本的 `AgentSessionEvent`、`CreateAgentSessionOptions`、`ModelRuntime`、`Model`、`ToolDefinition` 和 `SessionManager` 类型；产品端口不暴露这些类型。published package compatibility test 验证 `0.84.2` 的导出和运行行为。每个 Run 都显式传入 product-selected model binding、结构化产品上下文和授权能力 Handle，并创建 `SessionManager.inMemory()`；Pi Session 只在该次执行中存在。
+`packages/runtime-pi` 是唯一可以加载 `@earendil-works/pi-*` 包的 workspace。适配器内部直接使用固定版本的 `AgentSessionEvent`、`CreateAgentSessionOptions`、`ModelRuntime`、`Model`、`ToolDefinition` 和 `SessionManager` 类型；产品端口不暴露这些类型。published package compatibility test 验证 `1.5.0` 的导出和运行行为。每个 Run 都显式传入 product-selected model binding、结构化产品上下文和授权能力 Handle，并创建 `SessionManager.inMemory()`；Pi Session 只在该次执行中存在。
 
 每次 Pi Session 重建都从 durable product history 与已接受 checkpoint 重新填充 `SessionManager`，而不是持久化或恢复 Pi 自有 Session 文件。compatibility matrix 以相同 Thread/Run/Session request 连续重建两次，验证产品 identity 与投影后的消息/compaction 语义一致；Pi entry identity 仍是适配器内部实现细节，不能替代 ThreadId、MessageId、TurnId 或 RunId。
 
@@ -477,7 +477,7 @@ Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请�
 
 #### 准备线程实测内存
 
-2026-10-03 在 Hermes r54 上，对 reply-03 返工前的 D19 源码进行五次独立运行，启用测试侧阶段诊断，每次只创建一个不接收输入且达到 `ready` 的预热线程。进程 RSS 增量中位数为 **110.910 MiB**，最大 **114.355 MiB**，低于当批 300 MiB 停止门槛；创建到 `ready` 中位数 1478.026ms、最大 1579.666ms。源码基座为 `11f1b7f` 加当批 D19 补丁，准确工作区摘要与逐次读回见[五次原始汇总](../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r54/final-idle-summary-v2.json)。该组测量不覆盖当前 60 秒期限和持续重试规则。
+2026-10-03 在 Hermes r54 上，对 reply-03 返工前的 D19 源码进行五次独立运行，启用测试侧阶段诊断，每次只创建一个不接收输入且达到 `ready` 的预热线程。进程 RSS 增量中位数为 **110.910 MiB**，最大 **114.355 MiB**，低于当批 300 MiB 停止门槛；创建到 `ready` 中位数 1478.026ms、最大 1579.666ms。源码基座为 `11f1b7f` 加当批 D19 补丁，准确工作区摘要与逐次读回见五次原始汇总（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r54/final-idle-summary-v2.json`）。该组测量不覆盖当前 60 秒期限和持续重试规则。
 
 | 观察项 | 最小（MiB） | 中位数（MiB） | 最大（MiB） |
 | --- | ---: | ---: | ---: |
@@ -610,7 +610,7 @@ Task 20的两份opt-in live测试仍要求单独凭据和具体付费授权，�
 
 ## CI 政策与证据边界
 
-仓库以 `ci/policy.json` 为必需检查集合的唯一声明，`check-policy.mjs` 核对固定 DAG、字面矩阵、Vitest 配置、所有测试文件归属与工具身份。主矩阵采用 Node `22.22.3`，它也是支持的最低版本，npm `11.8.0`，Python `3.12.10`。固定工具校验下载摘要，依赖先禁用 lifecycle scripts，再执行审核过的 SQLite 源码构建与内存读写探针；Pi 保持 published `0.84.2`，不读取相邻源码或个人 Skill。[SOURCE: docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md]
+仓库以 `ci/policy.json` 为必需检查集合的唯一声明，`check-policy.mjs` 核对固定 DAG、字面矩阵、Vitest 配置、所有测试文件归属与工具身份。主矩阵采用 Node `22.22.3`，它也是支持的最低版本，npm `11.8.0`，Python `3.12.10`。固定工具校验下载摘要，依赖先禁用 lifecycle scripts，再执行审核过的 SQLite 源码构建与内存读写探针；Pi 保持 published `1.5.0`，不读取相邻源码或个人 Skill。[SOURCE: docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md]
 
 `build.mjs` 生成当前平台独立 Node runtime、前端资源和归档。清单绑定来源、构建输入、OS/arch/ABI、文件模式和摘要、外部依赖闭包及 migration；安装、五项目测试和浏览器重新核验这份归档。安装测试从临时 prefix 和非源码 cwd 运行，取消内部构建和开发依赖补漏。浏览器仍使用合成 Gateway fixture；三语、键盘、可见焦点与自动无障碍检查不等同于最终 Gateway 组合、Safari 品牌或真实移动设备资格。资格脚本同时输出有界请求、响应、失败与主页面导航时间线，保留请求发起时的页面及主 frame 导航序号。URL 字段只含 origin 和 path，不采集请求头或正文；超限数量显式记录，页面异常另有保留上限。这些诊断不改变门禁错误分类。
 
@@ -644,7 +644,7 @@ Ubuntu coverage 作业通过显式 `initial-only` 选项，在合法初始化且
 
 HTTP 身份 Session ID 可以包含冒号；Pi SessionManager 只接受受限字符。适配层对版本化 Owner/Agent/Session/Thread 元组计算 SHA-256，生成稳定 Pi 内部 ID；数据库中的产品身份保持原值，重建仍由产品检查点负责。
 
-Pi 0.84.2 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适配层为当前 Session 提供只读 runtime view，使 `hasConfiguredAuth` 识别该模型声明的 Secret source；其他方法仍绑定原始 Pi runtime。此处不读取密钥，也不修改共享凭据库。每次物理请求仍由 `admitPiStream` 先检查权限和预算，再从主机 Secret source 读取密钥。Vercel兼容协议的本地HTTPS安装测试与本地 HTTP Pi 兼容测试分别验证该路径，不能把仅允许匿名认证的 faux provider 测试当作凭据接线证据。
+Pi 1.5.0 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适配层为当前 Session 提供只读 runtime view，使 `hasConfiguredAuth` 识别该模型声明的 Secret source；其他方法仍绑定原始 Pi runtime。此处不读取密钥，也不修改共享凭据库。每次物理请求仍由 `admitPiStream` 先检查权限和预算，再从主机 Secret source 读取密钥。Vercel兼容协议的本地HTTPS安装测试与本地 HTTP Pi 兼容测试分别验证该路径，不能把仅允许匿名认证的 faux provider 测试当作凭据接线证据。
 
 
 生成继续复用Pi ModelRuntime和AgentSession；embedding按G46使用精确锁定的Mem0 3.3.1 SDK。每个SDK物理embedding请求在原边界核对输入、模型、分类、原期限和取消，再预留预算、登记开始并解析单次凭据。响应必须给出4096维有限向量、模型身份和安全token用量；实际费用从`providerMetadata.gateway.cost`取得，若同时存在usage.cost则要求一致。最终异步权威检查返回后，在结算前再次核对取消和原期限。查询使用Run执行租约，投影使用领取租约；断连、缺失费用、到期和取消保持unknown预约，不用估价结算或重发。`pg@8.11.3`仍为精确直接依赖，构建继续独立导入实际SDK以核对依赖完整性。
@@ -658,7 +658,7 @@ Pi 0.84.2 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适
 - `apps/agent-service` 和 `apps/execution-worker` 已有正式 `main`、workspace `build/start`、production UDS client/server、信号 drain、稳定退出码、可重定位 Node runtime 和真实子进程测试；Agent Service 已打开持久 repository、读取后台恢复清单，并在支持的 provider 配置下接入 Model/Pi 与 Mem0 composition 的启动与关闭生命周期，公开模式现已组合 HTTP、身份、持久 Run、Pi、Memory projection consumer 和 Worker，并检查这些组件的 readiness；尚未安装或验收目标 launchd/systemd unit，GitHub 总组合与真实公共身份入口仍待验证。
 - `persistence-sqlite` 已实现真实 schema/migration、execution context、state-root lock、authority lease/deployment、原子 Product State transaction、claim 型 Outbox、持久 Gateway Read Model、Thread committed Gateway event、治理 mutation receipt、Run checkpoint、Thread distillation generation、后台 occurrence/lease/budget/blocker、identity binding/session/device、产品 Memory/projection job、敏感 Memory 审批 metadata、Payload envelope metadata、受治理删除、GitHub history retain/delete 状态机、加密同机 recovery point，以及停机加密 authority transfer。Payload cryptography 与外部 ciphertext file store 已实现，尚未接入全部产品正文路径。authority transfer 使用 authenticated streaming package、recipient/target KEK 两次 DEK rewrap、offline lock、inactive target、单调 epoch/fence 和 SQLite/authority file 双读 fail-closed；当前已有临时 fixture、安装后二进制演练及 Hermes 隔离目录中的 Linux 安装后资格测试，真实 Mac↔Hermes 双向迁移属于 Task 28。`mem0ai@3.3.1`按G46升级，旧3.1.7双平台结果只作历史记录，新版本Mac尚未检查；`memory-mem0` 已实现单条产品投影、检索删除与 provider ID round-trip，避免依赖批量 embedding 的全有或全无语义，并已把选定的 4096 维 Qwen embedding 通过 Mem0 的 OpenAI-compatible provider 接入 production memory composition。增量自动 Memory、秘密排除、敏感逐项审批与 Thread 稳定检查点已通过确定性 baseline；旧generation primary/fallback结果保留为历史，当前单primary迁移按独立验收规则检查；durable projection worker已接入主入口；真实摘要/提取质量仍需授权后的模型验证。`integration-github` 已实现只读 permission、webhook admission、receipt/occurrence 去重、mirror、coverage gap、capability deny 和 `gateway.v2` monitor lifecycle handler 的确定性边界；SQLite 已实现撤销后 retain/delete 的 durable adapter、retry/readback、关联 Task/Run/Trace/Inbox/summary 清理和受限 ciphertext file 删除。最终 Agent Service/Gateway 总组合仍属于 Tasks 27–30；真实 GitHub App 安装、权限 readback、外部 webhook 和线上模型仍未验证。`control-center` 已完成 Thread 与 Approval/Capability/Grant 权威旅程、多标签/离线/重开、浏览器 Payload/search/secret-reference 边界；Tasks/Attention、Memory/Trace/settings/device/health 领域页面和最终生产组合仍待后续 Tasks。`admin-cli` 已有 doctor、db status，以及受 offline lock/confirm 保护的 migration、backup、transfer 和 delete 命令。可重定位 Node artifact 包含 GitHub/Mem0/Pi 运行时包与锁定的外部依赖，因 native Node/SQLite 依赖仍须按平台分别构建和验收。
 - 默认 local composition 使用 `packages/testing` 的内存 State、Memory、Trace、Authorization、Scheduler、Delivery 和 Gateway read model；进程退出后数据丢失，且不提供跨进程 transaction、加密强度、高可用或灾难恢复。
-- Pi adapter 已通过 published `0.84.2` 与 local-source compatibility，但牛肉餐厅 E2E 使用确定性 Model/Capability，不调用真实模型、地图或预订供应商。
+- Pi adapter 已通过 published `1.5.0` 与 local-source compatibility，但牛肉餐厅 E2E 使用确定性 Model/Capability，不调用真实模型、地图或预订供应商。
 - Execution Worker 已具有真实 HTTP/JSON over UDS transport、boot-scoped authentication、严格 resource ceiling validation、deadline/progress limits 和 child-process crash/reconnect 证据。Node 能力运行时、Linux bubblewrap/prlimit launch、artifact verifier、MCP/API/program adapters 与版本切换已实现并通过非生产 fixture，但当前 Mac/Hermes 均未通过本地 program/stdio MCP 生产资格，也尚无 service-manager CPU/内存强制、签名 Mac helper、真实 capability binding/trust root ；主入口已接入基于当前授权 Handle 的 Worker 工具通道，结构化子任务执行仍需独立实现。
 - Session 删除的抽象 conformance 与 Thread/task/Memory/Payload 的真实 SQLite、ciphertext file 和受管 derived-artifact 删除路径均已验证；最终 Agent Service 组合仍需把所有正文生产者统一登记到这些受管路径，Memory provider cleanup 也仍依赖 durable projection worker 正常运行。
 - Thread 已通过 Chromium/WebKit、双确定性设备身份、服务/SQLite 重启、Pi Session 重建、summary/projection rebuild 和 1 万/20 万规模矩阵；这些本地证据未执行物理 macOS 重启、真实外部 IdP MFA 或实体移动设备 readback，不能据此声明正式平台或 production qualification。

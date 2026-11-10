@@ -1,3 +1,8 @@
+import {
+  getCurrentSystemPrompt,
+  getCurrentTools,
+  type TranscriptContext,
+} from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ModelDescriptor } from "@himawari-agent/application/runtime-port";
 import type { PiModelBinding, PiModelBindingPort } from "../src/pi-runtime-adapter.js";
@@ -8,17 +13,25 @@ interface FauxTool {
   readonly arguments: Record<string, unknown>;
 }
 
+export function observedRequest(context: unknown) {
+  const { messages } = context as TranscriptContext;
+  if (messages.slice(1).some((message) => message.role === "system"))
+    throw new Error("A system message after the request head reached the provider");
+  return {
+    systemPrompt: getCurrentSystemPrompt(messages),
+    tools: getCurrentTools(messages),
+    messages: messages.filter((message) => message.role !== "system"),
+    transcript: messages,
+  };
+}
+
 export async function createFauxModelFixture(
   answer: string,
   tool?: FauxTool | readonly FauxTool[],
   followingBatches: readonly (readonly FauxTool[])[] = [],
   laterAnswers: readonly string[] = [],
 ) {
-  const aiEntry = new URL(
-    "../node_modules/@earendil-works/pi-ai/dist/index.js",
-    import.meta.resolve("@earendil-works/pi-coding-agent"),
-  );
-  const ai = (await import(aiEntry.href)) as {
+  const ai = (await import("@earendil-works/pi-ai")) as unknown as {
     InMemoryCredentialStore: new () => unknown;
     fauxProvider(): {
       provider: unknown;
@@ -33,7 +46,7 @@ export async function createFauxModelFixture(
     ...(tool
       ? [
           (context: unknown) => {
-            observed.push(context);
+            observed.push(observedRequest(context));
             return ai.fauxAssistantMessage(
               (Array.isArray(tool) ? tool : [tool]).map((call) => ({ type: "toolCall", ...call })),
               { stopReason: "toolUse" },
@@ -42,14 +55,14 @@ export async function createFauxModelFixture(
         ]
       : []),
     ...followingBatches.map((batch) => (context: unknown) => {
-      observed.push(context);
+      observed.push(observedRequest(context));
       return ai.fauxAssistantMessage(
         batch.map((call) => ({ type: "toolCall", ...call })),
         { stopReason: "toolUse" },
       );
     }),
     ...[answer, ...laterAnswers].map((text) => (context: unknown) => {
-      observed.push(context);
+      observed.push(observedRequest(context));
       return ai.fauxAssistantMessage(text);
     }),
   ]);
@@ -63,7 +76,7 @@ export async function createFauxModelFixture(
     ref: "pi-local-test",
     provider: "faux",
     model: "faux-1",
-    version: "0.84.2-test",
+    version: "1.5.0-test",
     routingClass: "local",
     priority: 1,
     disclosure: "local_only",

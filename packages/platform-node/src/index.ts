@@ -5,6 +5,7 @@ export * from "./browser-thread-files.js";
 export * from "./browser-thread-search.js";
 export * from "./built-in-identity.js";
 export * from "./built-in-identity-routes.js";
+export * from "./export-text-policy.js";
 export * from "./candidate-workspace/index.js";
 export * from "./capabilities/directory-move-scope.js";
 export * from "./capabilities/index.js";

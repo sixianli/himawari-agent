@@ -2,15 +2,16 @@ import { readFileSync } from "node:fs";
 import {
   ApplicationPortError,
   type DecisionLedgerPort,
-  type GapCaseMarkPort,
   daysDue,
   dayWindow,
   type EarlierDayCounts,
   earliestStartDay,
   evaluateObservationDay,
+  type GapCaseMarkPort,
   jstToday,
   type LedgerObservationPort,
   latestByDay,
+  MAIL_TRACE_MUSE_LIMIT,
   type ObservationScope,
   PORT_ERROR_CODES,
   type ProactiveSchedule,
@@ -23,6 +24,8 @@ import {
   type GroupSummary,
   jstDayStart,
   type MuseSummary,
+  mailComparisonBucket,
+  pairEntriesByMail,
   resolveWindow,
   summarizeDecisions,
   summarizeGap,
@@ -35,11 +38,13 @@ import {
   type GatewayV2Snapshot,
   gatewayV2MessageSchema,
 } from "@himawari-agent/gateway-contracts";
-import { buildGapCases } from "./production-gap-cases.js";
+import { displayRuleId } from "./production-decision-chain.js";
+import { buildGapCases, clean } from "./production-gap-cases.js";
 import { type GapCaseSnapshot, maskForExport } from "./production-gap-export.js";
 
 export const PRODUCTION_OBSERVATION_OPERATIONS = Object.freeze([
   "proactive.weekly.read",
+  "decision.email.read",
   "proactive.observation.start",
   "proactive.gapcase.mark",
 ] as const);
@@ -63,7 +68,10 @@ export function readServiceRevision(
 export interface ProductionObservationOptions {
   readonly scope: ObservationScope;
   readonly observation: LedgerObservationPort;
-  readonly ledger: Pick<DecisionLedgerPort, "readCalibrationRows" | "readGapCandidates">;
+  readonly ledger: Pick<
+    DecisionLedgerPort,
+    "readCalibrationRows" | "readGapCandidates" | "readMailTrace" | "read"
+  >;
   readonly marks?: GapCaseMarkPort;
   readonly seal?: ProactiveSealPort;
   readonly clock: { now(): string };
@@ -177,6 +185,7 @@ export class ProductionObservation {
   }
 
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
+    if (query.type === "decision.email.read") return this.#emailTrace(query);
     if (query.type !== "proactive.weekly.read")
       throw new Error("OBSERVATION_OPERATION_NOT_INSTALLED");
     const { observation, scope } = this.#options;
@@ -294,6 +303,99 @@ export class ProductionObservation {
         generatedAt: now,
       },
     };
+    gatewayV2MessageSchema.parse(snapshot);
+    return snapshot;
+  }
+
+  async #emailTrace(
+    query: Extract<GatewayV2Query, { type: "decision.email.read" }>,
+  ): Promise<GatewayV2Snapshot> {
+    const { ledger, scope, seal } = this.#options;
+    const { messageId } = query.payload;
+    const trace = await ledger.readMailTrace({ ...scope, messageId });
+    const processed = trace.processed;
+    const found = processed
+      ? await ledger.read({ ...scope, decisionId: processed.decisionId })
+      : undefined;
+    const fields: ReadonlySet<string> = new Set(found?.inputFields ?? []);
+    const inputs = found?.entry.inputs;
+    const forMail = (field: "floorHits" | "memoryByMail" | "relatedByMail") =>
+      inputs && fields.has(field)
+        ? [
+            ...new Set(
+              (Object.hasOwn(inputs[field], messageId) && Array.isArray(inputs[field][messageId])
+                ? inputs[field][messageId]
+                : []
+              )
+                .map(displayRuleId)
+                .filter((id) => id.trim().length > 0),
+            ),
+          ].sort()
+        : null;
+    const related = forMail("relatedByMail");
+    const open = async (ref: string | null, limit: number) => {
+      if (ref === null || seal === undefined) return null;
+      try {
+        const text = await seal.open({ ...scope, ref });
+        return text === undefined ? null : clean(text, limit) || null;
+      } catch {
+        return null;
+      }
+    };
+    const entries = await Promise.all(
+      trace.museEntries.slice(0, MAIL_TRACE_MUSE_LIMIT).map(async (entry) => ({
+        entryId: entry.entryId,
+        museAt: entry.museAt,
+        reminded: entry.museReminded,
+        kind: entry.kind as "proactive" | "scheduled" | null,
+        state: entry.state as "delivered" | "suppressed" | "succeeded" | "failed" | null,
+        title: entry.textWithheld ? null : await open(entry.titleRef, 300),
+        text: entry.textWithheld ? null : await open(entry.textRef ?? entry.contentRef, 500),
+        textWithheld: entry.textWithheld,
+        timingOk: entry.timingOk,
+        contentOk: entry.contentOk,
+      })),
+    );
+    const museRows = trace.museEntries.map((entry) => ({
+      museReminded: entry.museReminded,
+      timingOk: entry.timingOk,
+      contentOk: entry.contentOk,
+      pairedMessageId: messageId,
+    }));
+    const paired = pairEntriesByMail(museRows).get(messageId);
+    const comparison = !processed
+      ? "noHimawariRecord"
+      : !paired
+        ? "noMuseEntry"
+        : mailComparisonBucket(paired, {
+            outcome: processed.outcome,
+            ownerRating: processed.ownerRating,
+          });
+    const snapshot = {
+      ...query,
+      kind: "snapshot",
+      type: "decision.email.snapshot",
+      actor: { actorType: "system", actorId: "agent-service" },
+      payload: {
+        messageId,
+        mail: processed
+          ? {
+              decisionId: processed.decisionId,
+              threadId: processed.threadId,
+              outcome: processed.outcome,
+              skipReason: processed.skipReason,
+              processedAt: processed.processedAt,
+              rating: processed.ownerRating,
+              decidedAt: found?.entry.decidedAt ?? null,
+              ruleIds: forMail("floorHits"),
+              memoryIds: forMail("memoryByMail"),
+              relatedMessages: related === null ? null : related.length,
+            }
+          : null,
+        muse: { entries, truncated: trace.museEntries.length > MAIL_TRACE_MUSE_LIMIT },
+        comparison,
+      },
+    } as GatewayV2Snapshot;
     gatewayV2MessageSchema.parse(snapshot);
     return snapshot;
   }

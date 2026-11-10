@@ -1,0 +1,3 @@
+{"id": "r1-ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "但 ADR 0111 的“不扫的内容”清单没有列这条豁免", "valid": true, "class": "error", "severity": "low", "trigger": "后来的人读 ADR 0111 决定 3，不知道检查脚本豁免了自己的测试文件", "consequence": "只是文档漏写，不会给出错误结果，也不会误导人做出有害操作", "modelSeverity": "低", "reason": "文档与代码不符按“会出错”；已在 ADR 0111 决定 3 补上这条豁免和“其他测试文件的示例数据也照扫”"}
+{"id": "r1-ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "提交信息里仍出现贵模型名，属于规则边界空白", "valid": false, "class": "better"}
+{"id": "r1-glm-1", "model": "opencode-go/glm-5.3-flash", "quote": "把这次的教训沉淀下来", "valid": true, "class": "better"}

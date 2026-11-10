@@ -2,6 +2,7 @@ import { existsSync, readdirSync, lstatSync, readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { anchorsOf } from "./check-docs-links.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ADR_DIRECTORY = "docs/adr";
@@ -31,27 +32,10 @@ export function findAdrNumberProblems(names) {
 const DOCS_DIRECTORY = "docs";
 const ARCHIVE_DIRECTORY = "docs/archive";
 const MARKDOWN_LINK = /\]\(([^)\s]+)\)/g;
-const EXPLICIT_ANCHOR = /<a id="([^"]+)"><\/a>/g;
-const HEADING = /^#{1,6}\s+(.+)$/gm;
 const ADR_PATH_MENTION = /docs\/adr\/\d{4}-[a-z0-9][a-z0-9-]*\.md/g;
 const EXTERNAL_URL = /https?:\/\/[^\s)>\]]+/g;
 const TITLE = /^#\s+(.+)$/m;
 const TITLE_NUMBER = /^ADR\s+(\d{4})(?!\d)/;
-
-function headingSlug(text) {
-  return text
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{Letter}\p{Number}\s_-]/gu, "")
-    .replace(/\s/g, "-");
-}
-
-function anchorsOf(text) {
-  const anchors = new Set();
-  for (const match of text.matchAll(EXPLICIT_ANCHOR)) anchors.add(match[1]);
-  for (const match of text.matchAll(HEADING)) anchors.add(headingSlug(match[1]));
-  return anchors;
-}
 
 function markdownFiles(directory, root) {
   const files = [];

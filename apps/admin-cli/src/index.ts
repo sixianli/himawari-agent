@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdtemp, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  acquireStateRootLock,
   applyMigrations,
   createVerifiedMigrationSnapshot,
   type GovernedDeletionObjectType,
@@ -27,10 +26,13 @@ import {
 } from "@himawari-agent/platform-node";
 import { runAccountCommand } from "./account-command.js";
 import { runCapabilitiesCommand } from "./capabilities-command.js";
+import { runDataCommand } from "./data-command.js";
 import { runDiagnoseCommand } from "./diagnose-command.js";
 import { runInitializeCommand } from "./initialize-command.js";
+import { runMemoryCommand } from "./memory-command.js";
 import { runPushCommand } from "./push-command.js";
 import { runSandboxCommand } from "./sandbox-command.js";
+import { lockStoppedTarget } from "./stopped-target-lock.js";
 import { runThreadCommand } from "./thread-command.js";
 import { runWorkspaceCommand } from "./workspace-command.js";
 
@@ -328,9 +330,7 @@ async function migrate(
   if (confirmation !== "APPLY_MIGRATIONS") {
     throw new Error(ADMIN_CLI_ERROR_CODES.CONFIRMATION_REQUIRED);
   }
-  const lock = await acquireStateRootLock(configuration.stateRoot).catch(() => {
-    throw new Error(ADMIN_CLI_ERROR_CODES.TARGET_NOT_STOPPED);
-  });
+  const lock = await lockStoppedTarget(configuration.stateRoot);
   try {
     const migrations = await loadBundledMigrations();
     const database = openQualifiedDatabase(
@@ -775,6 +775,14 @@ export async function runAdminCli(
     }
     if (arguments_[0] === "thread") {
       output.write(`${JSON.stringify(await runThreadCommand(arguments_, output))}\n`);
+      return 0;
+    }
+    if (arguments_[0] === "data") {
+      output.write(`${JSON.stringify(await runDataCommand(arguments_, output))}\n`);
+      return 0;
+    }
+    if (arguments_[0] === "memory") {
+      output.write(`${JSON.stringify(await runMemoryCommand(arguments_, output))}\n`);
       return 0;
     }
     if (arguments_[0] === "sandbox") {

@@ -758,6 +758,7 @@ describe("[P0-8] calibration report tab", () => {
         gapCases: [
           {
             id: "gap_aaaaaaaaaaaaaaaaaaaa",
+            messageId: "mail-aaa",
             museAt: "2026-11-01T00:00:00.000Z",
             museTitle: "发票到期",
             museText: "明天截止",
@@ -807,6 +808,7 @@ describe("[P0-8] calibration report tab", () => {
     const observing = observingFixture();
     const gapCase = {
       id: "gap_aaaaaaaaaaaaaaaaaaaa",
+      messageId: "mail-aaa",
       museAt: "2026-11-01T00:00:00.000Z",
       museTitle: "发票到期",
       museText: "明天截止",
@@ -851,6 +853,7 @@ describe("[P0-8] calibration report tab", () => {
         gapCases: [
           {
             id: "gap_bbbbbbbbbbbbbbbbbbbb",
+            messageId: "mail-bbb",
             museAt: "2026-11-01T00:00:00.000Z",
             museTitle: null,
             museText: null,
@@ -1148,5 +1151,279 @@ describe("[P0-8] calibration report tab", () => {
     expect(text("#apps")).toContain("提醒检查记录");
     for (const moved of ["主动提醒总次数", "恰当的提醒", "多余的提醒", "漏提醒（你查过的邮件里）"])
       expect(text("#apps")).not.toContain(moved);
+  });
+});
+
+describe("[P1-5] email decision detail page", () => {
+  const withMail = configurationWith([
+    ...baseOperations,
+    "proactive.weekly.read",
+    "decision.email.read",
+    "decision.chain.read",
+  ]);
+  const mailPayload = (change: Record<string, unknown> = {}) => ({
+    messageId: "mail-aaa",
+    mail: {
+      decisionId: "d-1",
+      threadId: "thread-aaa",
+      outcome: "ignore",
+      skipReason: null,
+      processedAt: "2026-11-01T00:00:00.000Z",
+      rating: "missed",
+      decidedAt: "2026-11-01T00:00:00.000Z",
+      ruleIds: ["floor_money_words"],
+      memoryIds: ["memory-a"],
+      relatedMessages: null,
+    },
+    muse: {
+      entries: [
+        {
+          entryId: "muse-1",
+          museAt: "2026-11-01T00:00:00.000Z",
+          reminded: true,
+          kind: "proactive",
+          state: "delivered",
+          title: "发票到期",
+          text: "明天截止",
+          textWithheld: false,
+          timingOk: true,
+          contentOk: null,
+        },
+      ],
+      truncated: false,
+    },
+    comparison: "museOnly",
+    ...change,
+  });
+  const chainPayload = {
+    decisionId: "d-1",
+    decision: {
+      kind: "proactive",
+      decidedAt: "2026-11-01T00:00:00.000Z",
+      outcome: "silent",
+      reasonCode: "fixture",
+      rating: "missed",
+      ratedAt: "2026-11-02T00:00:00.000Z",
+    },
+    inputs: "recorded",
+    rules: {
+      state: "recorded",
+      items: [
+        { ruleId: "floor_money_words", origin: "built_in", document: "ADR 0106", mailCount: 1 },
+        { ruleId: "floor_other", origin: null, document: null, mailCount: 1 },
+      ],
+    },
+    mails: { judged: 3, related: 2, relatedRead: "ok" },
+    memories: {
+      state: "recorded",
+      recall: "ok",
+      total: 2,
+      truncated: false,
+      items: ["memory-a", "memory-z"].map((memoryId) => ({
+        memoryId,
+        state: "visible",
+        text: `记忆 ${memoryId}`,
+        status: "active",
+        inference: false,
+        tentative: false,
+        usedByModel: true,
+        changedSinceDecision: false,
+        supersededBy: null,
+        source: {
+          threadId: `thread-${memoryId}`,
+          messageId: null,
+          quote: null,
+          refs: [],
+          importBatchId: null,
+          firstSourceDeleted: false,
+        },
+        basis: { nodes: [], complete: true },
+      })),
+    },
+  };
+  let mailResult: unknown;
+  let chainResult: unknown;
+  const openThread = vi.fn();
+
+  function MailPage({ configuration }: { configuration: ControlCenterRuntimeConfiguration }) {
+    const memoryModel = useMemory({ client, configuration, connected: true, refreshSignal: 0 });
+    const model = useProactive({ client, configuration, connected: true, refreshSignal: 0 });
+    if (!memoryModel || !model) return null;
+    return h(
+      "div",
+      { id: "page" },
+      h(RemindersPage, {
+        memory: memoryModel,
+        proactive: model,
+        locale,
+        message,
+        onOpenThread: openThread,
+      }),
+    );
+  }
+
+  beforeEach(() => {
+    openThread.mockReset();
+    mailResult = mailPayload();
+    chainResult = chainPayload;
+    const observing = observingFixture();
+    weekly = {
+      ...observing,
+      report: {
+        ...observing.report,
+        muse: {
+          ...observing.report.muse,
+          entries: 1,
+          reminded: 1,
+          pairedMails: 1,
+          buckets: { ...observing.report.muse.buckets, museOnly: 1 },
+        },
+        gapCases: [
+          {
+            id: "gap_aaaaaaaaaaaaaaaaaaaa",
+            messageId: "mail-aaa",
+            museAt: "2026-11-01T00:00:00.000Z",
+            museTitle: "发票到期",
+            museText: "明天截止",
+            museTextWithheld: false,
+            himawariOutcome: "ignore",
+            himawariReasonCode: "fixture",
+            himawariReason: null,
+            ownerRating: "missed",
+            attribution: "notReadFully",
+            memoryHits: 1,
+            relatedMessages: 0,
+            decidedAt: "2026-11-01T00:00:00.000Z",
+            marked: false,
+          },
+        ],
+      },
+    };
+    const base = query.getMockImplementation();
+    query.mockImplementation(async (request: { type: string }) => {
+      if (request.type === "decision.email.read") {
+        if (mailResult instanceof Error) throw mailResult;
+        return { type: "decision.email.snapshot", payload: mailResult };
+      }
+      if (request.type === "decision.chain.read") {
+        if (chainResult instanceof Error) throw chainResult;
+        return { type: "decision.chain.snapshot", payload: chainResult };
+      }
+      return base?.(request);
+    });
+  });
+
+  const openMail = async () => {
+    await act(async () =>
+      root.render(
+        h(
+          IntlProvider,
+          { locale, messages: catalogs[locale] },
+          h(MailPage, { configuration: withMail }),
+        ),
+      ),
+    );
+    await flush();
+    await openReport();
+    await click(document.querySelector<HTMLButtonElement>("#page .weekly-case-open"));
+  };
+  const sent = (type: string) =>
+    query.mock.calls.map(([request]) => request).filter((request) => request.type === type);
+
+  it("opens one page with the chain, the period's numbers and the Muse comparison for the mail", async () => {
+    await openMail();
+    expect(sent("decision.email.read").at(-1)?.payload).toEqual({ messageId: "mail-aaa" });
+    expect(sent("decision.chain.read").at(-1)?.payload).toEqual({ decisionId: "d-1" });
+    expect(sent("proactive.weekly.read").at(-1)?.payload).toEqual({ end: "2026-11-08" });
+    const page = text("#page .mail-decision");
+    expect(page).toContain("邮件决策详情");
+    expect(page).toContain("不用管");
+    expect(page).toContain("命中规则 1 条 · 用到记忆 1 条 · 相关邮件 无记录 封");
+    expect(page).toContain("ADR 0106 · 这封邮件用到");
+    expect(page).toContain("记忆 memory-a");
+    expect(page).toContain("发票到期 · 明天截止");
+    expect(page).toContain("只有 Muse 提醒了你，Himawari 没有");
+    expect(
+      document.querySelector('#page [data-column="compare"] .weekly-tile[data-mark]'),
+    ).not.toBeNull();
+    const mine = [...document.querySelectorAll("#page .decision-chain-memory")].filter((item) =>
+      item.textContent?.includes("这封邮件用到"),
+    );
+    expect(mine).toHaveLength(1);
+    expect(mine[0]?.textContent).toContain("记忆 memory-a");
+  });
+
+  it("lets every link of the chain open its source record, and goes back to the report", async () => {
+    await openMail();
+    const open = document.querySelector<HTMLButtonElement>(
+      "#page .decision-chain-memory .memory-link",
+    );
+    await click(open);
+    expect(openThread).toHaveBeenCalledWith("thread-memory-a", undefined);
+    await click(document.querySelector<HTMLButtonElement>("#page .mail-decision-head button"));
+    expect(document.querySelector("#page .mail-decision")).toBeNull();
+    expect(document.querySelector("#page .weekly-case-open")).not.toBeNull();
+  });
+
+  it("[negative] a mail without a judgment shows 'no record' everywhere and never reads a chain", async () => {
+    mailResult = mailPayload({
+      mail: null,
+      muse: { entries: [], truncated: false },
+      comparison: "noHimawariRecord",
+    });
+    await openMail();
+    const page = text("#page .mail-decision");
+    expect(page).toContain("没有这封邮件的判断记录。");
+    expect(page).toContain("Muse 没有这封邮件的条目。");
+    expect(page).toContain("Himawari 没有这封邮件的判断记录，无法对比");
+    expect(sent("decision.chain.read")).toHaveLength(0);
+    expect(document.querySelectorAll("#page .decision-chain-memory")).toHaveLength(0);
+  });
+
+  it("[negative] shows 'not recorded' for rules and memories of an old record instead of zero", async () => {
+    mailResult = mailPayload({
+      mail: {
+        ...(mailPayload().mail as object),
+        ruleIds: null,
+        memoryIds: null,
+        relatedMessages: null,
+      },
+    });
+    await openMail();
+    expect(text("#page .mail-decision")).toContain(
+      "命中规则 无记录 条 · 用到记忆 无记录 条 · 相关邮件 无记录 封",
+    );
+    expect(document.querySelectorAll("#page .decision-chain-memory").length).toBeGreaterThan(0);
+    expect(
+      [...document.querySelectorAll("#page .decision-chain-memory")].some((item) =>
+        item.textContent?.includes("这封邮件用到"),
+      ),
+    ).toBe(false);
+  });
+
+  it("[negative] says so when the mail cannot be read, and when its decision record was cleared", async () => {
+    mailResult = new Error("down");
+    await openMail();
+    expect(text("#page .mail-decision [role='alert']")).toContain("读取这封邮件的决策详情失败");
+  });
+
+  it("[negative] shows no button to open the page when the operation is not installed", async () => {
+    await render(withWeekly);
+    await openReport();
+    expect(document.querySelector("#page .weekly-case")).not.toBeNull();
+    expect(document.querySelector("#page .weekly-case-open")).toBeNull();
+  });
+
+  it("renders in English and Japanese too", async () => {
+    for (const [next, expected] of [
+      ["en", "Email decision detail"],
+      ["ja", "メールの判断の詳細"],
+    ] as const) {
+      locale = next;
+      await openMail();
+      expect(text("#page .mail-decision")).toContain(expected);
+      act(() => root.unmount());
+      root = createRoot(container);
+    }
   });
 });

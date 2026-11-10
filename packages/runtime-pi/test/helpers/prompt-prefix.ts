@@ -21,9 +21,20 @@ function messagesPrefixBytes(body: ParsedBody): string {
   return body.raw.slice(0, end - 1);
 }
 
+function midSystemMessage(body: ParsedBody): PrefixBreak | null {
+  const index = body.parsed.messages.findIndex(
+    (message, position) =>
+      position > 0 &&
+      ["system", "developer"].includes(String((message as { role?: unknown } | null)?.role)),
+  );
+  return index < 0 ? null : { where: "mid-system-message", index };
+}
+
 export function findPrefixBreak(previousRaw: string, nextRaw: string): PrefixBreak | null {
   const previous = parse(previousRaw);
   const next = parse(nextRaw);
+  const midSystem = midSystemMessage(previous) ?? midSystemMessage(next);
+  if (midSystem) return midSystem;
   for (const key of Object.keys(previous.parsed)) {
     if (key === "messages" || key === "max_tokens") continue;
     if (JSON.stringify(previous.parsed[key]) !== JSON.stringify(next.parsed[key]))

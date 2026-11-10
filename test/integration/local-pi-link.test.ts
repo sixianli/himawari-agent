@@ -35,8 +35,8 @@ async function fixture(localVersion = "0.84.2") {
     "packages/coding-agent/dist/index.d.ts",
     "packages/agent/dist/index.js",
     "packages/ai/dist/index.js",
-    "packages/client/dist/index.js",
-    "packages/protocol/dist/index.js",
+    "packages/codemode/dist/index.js",
+    "packages/mcp/dist/index.js",
     "packages/tui/dist/index.js",
   ]) {
     const path = join(localRoot, artifact);

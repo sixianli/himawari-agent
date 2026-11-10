@@ -1,11 +1,11 @@
 import type { GatewayV2Command, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 import { useCallback, useEffect, useState } from "react";
+import { accountRequest } from "./components/account-login.js";
 import {
   type ControlCenterRuntimeConfiguration,
   type GatewayClient,
   refreshRuntimeConfiguration,
 } from "./gateway-client.js";
-import { accountRequest } from "./components/account-login.js";
 import { commandMessage, queryMessage } from "./messages.js";
 
 export type ProactiveOverview = Extract<
@@ -37,8 +37,12 @@ export type ProactiveWeekly = Extract<
 export type ObservationDay = ProactiveWeekly["observation"]["days"][number];
 export type ObservationCheckItem = ObservationDay["checks"][number];
 export type CalibrationGroupSummary = ProactiveWeekly["report"]["groups"][number];
+export type DecisionEmail = Extract<
+  GatewayV2Snapshot,
+  { type: "decision.email.snapshot" }
+>["payload"];
 export interface ProactiveWeeklyAccess {
-  readonly read: () => Promise<ProactiveWeekly>;
+  readonly read: (end?: string | null) => Promise<ProactiveWeekly>;
   readonly recentAuthentication: () => Promise<{
     readonly reference: string | null;
     readonly csrfToken: string;
@@ -61,6 +65,7 @@ export interface ProactiveModel {
   readonly review: ProactiveReview | null;
   readonly weekly: ProactiveWeeklyAccess | null;
   readonly readChain: ((decisionId: string) => Promise<DecisionChain>) | null;
+  readonly readMail: ((messageId: string) => Promise<DecisionEmail>) | null;
   readonly failed: boolean;
   readonly busy: boolean;
   readonly respondInsight: (
@@ -97,6 +102,8 @@ export function useProactive(input: {
     configuration?.installedGatewayV2Operations?.includes("proactive.weekly.read") ?? false;
   const chainAvailable =
     configuration?.installedGatewayV2Operations?.includes("decision.chain.read") ?? false;
+  const mailAvailable =
+    configuration?.installedGatewayV2Operations?.includes("decision.email.read") ?? false;
   const [overview, setOverview] = useState<ProactiveOverview | null>(null);
   const [review, setReview] = useState<ProactiveReview | null>(null);
   const [failed, setFailed] = useState(false);
@@ -156,9 +163,9 @@ export function useProactive(input: {
     run(() => client.mutate(commandMessage(configuration, type, payload, { risk: "medium" })));
   const weekly: ProactiveWeeklyAccess | null = weeklyAvailable
     ? {
-        read: async () => {
+        read: async (end = null) => {
           const result = await client.query(
-            queryMessage(configuration, "proactive.weekly.read", { end: null }),
+            queryMessage(configuration, "proactive.weekly.read", { end }),
           );
           if (result.type !== "proactive.weekly.snapshot") throw new Error("PROACTIVE_INVALID");
           return result.payload;
@@ -206,11 +213,21 @@ export function useProactive(input: {
         return result.payload;
       }
     : null;
+  const readMail = mailAvailable
+    ? async (messageId: string) => {
+        const result = await client.query(
+          queryMessage(configuration, "decision.email.read", { messageId }),
+        );
+        if (result.type !== "decision.email.snapshot") throw new Error("PROACTIVE_INVALID");
+        return result.payload;
+      }
+    : null;
   return {
     overview,
     review,
     weekly,
     readChain,
+    readMail,
     failed,
     busy,
     respondInsight: (insight, action, rating = null) =>

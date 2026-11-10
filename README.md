@@ -22,7 +22,7 @@ Himawari Agent 是一个自有优先、数据自持（运行环境和数据由�
 - TypeScript：`5.9.3`
 - Biome：`2.3.5`
 - Vitest：`4.1.9`
-- `@earendil-works/pi-coding-agent`、`@earendil-works/pi-ai`：`0.84.2`
+- `@earendil-works/pi-coding-agent`、`@earendil-works/pi-ai`：`1.5.0`
 
 安装固定工具、锁文件依赖及审核过的 SQLite 原生绑定：
 
@@ -107,7 +107,7 @@ npm run install:node-runtime -- --prefix "$tmp_prefix"
 
 ## Local Pi source debugging
 
-正常安装和 CI 始终使用 published `0.84.2`：
+正常安装和 CI 始终使用 published `1.5.0`：
 
 ```bash
 npm ci --ignore-scripts

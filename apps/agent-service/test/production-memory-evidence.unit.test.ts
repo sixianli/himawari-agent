@@ -23,7 +23,7 @@ describe("memory evidence from the Owner's own words", () => {
     expect(quoteFromOwnerMessage("绿色", "绿色")).toBe(true);
   });
 
-  it("keeps verified candidates with their attributes and counts the rest", () => {
+  it("[RULE-memory-visible] keeps verified candidates with their attributes, drops names that look like secrets and counts the rest", () => {
     const parsed = parseMemoryCandidates({
       output: JSON.stringify({
         memories: [
@@ -35,7 +35,15 @@ describe("memory evidence from the Owner's own words", () => {
             confidence: 950,
             category: "relationship",
             importance: 1200,
-            entities: ["小葵", "小葵", " ", "Ｈｅｒｍｅｓ"],
+            entities: [
+              "小葵",
+              "小葵",
+              " ",
+              "Ｈｅｒｍｅｓ",
+              "x9Kq2mVb7Lp4Wz",
+              "6222020200112233445",
+              "密码：hunter22",
+            ],
             validFrom: "2026-11-01",
             quote: "另外我女儿叫小葵",
           },

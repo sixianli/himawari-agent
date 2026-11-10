@@ -4,18 +4,21 @@ import path from "node:path";
 import { createProactiveSeal, type MuseIntakeItemWrite } from "@himawari-agent/application";
 import { summarizeGap } from "@himawari-agent/calibration";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
+import type { GatewayV2Command } from "@himawari-agent/gateway-contracts";
 import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
-import { DeterministicIdGenerator, DeterministicPayloadProtector } from "@himawari-agent/testing";
-import { afterEach, describe, expect, it } from "vitest";
+import {
+  DeterministicIdGenerator,
+  DeterministicPayloadProtector,
+  ManualClock,
+} from "@himawari-agent/testing";
 import Fastify from "fastify";
-import type { GatewayV2Command } from "@himawari-agent/gateway-contracts";
-import { ManualClock } from "@himawari-agent/testing";
-import { ProductionObservation } from "../../apps/agent-service/src/production-observation.ts";
+import { afterEach, describe, expect, it } from "vitest";
+import { buildGapCases, gapCaseId } from "../../apps/agent-service/src/production-gap-cases.ts";
 import {
   GAP_EXPORT_PATH,
   gapBacklogPrefill,
@@ -23,7 +26,7 @@ import {
   ProductionGapExport,
   registerGapExportRoute,
 } from "../../apps/agent-service/src/production-gap-export.ts";
-import { buildGapCases, gapCaseId } from "../../apps/agent-service/src/production-gap-cases.ts";
+import { ProductionObservation } from "../../apps/agent-service/src/production-observation.ts";
 import { run } from "../../scripts/calibration-report/report.mjs";
 
 const OWNER_ID = createOwnerId("owner-gap");
@@ -424,6 +427,28 @@ describe("[PA-4] Muse gap cases", () => {
       expect((await h.cases()).map((entry) => entry.id).sort()).toEqual(before);
     } finally {
       await h.app.close();
+      await h.repository.close();
+    }
+  });
+
+  it("[negative] gives a case no mail id when the paired id is not a Gmail message id", async () => {
+    const h = await wired();
+    try {
+      const candidates = await h.repository
+        .decisionLedger()
+        .readGapCandidates({ ...scope, start: START, end: END });
+      const first = candidates.find((candidate) => candidate.pairedMessageId === "mail-1");
+      if (!first) throw new Error("no candidate");
+      const built = await buildGapCases({
+        scope,
+        candidates: [{ ...first, pairedMessageId: "not a gmail id!" }, ...candidates],
+        seal: h.seal,
+      });
+      expect(
+        built.find((entry) => entry.id === gapCaseId("not a gmail id!"))?.messageId,
+      ).toBeNull();
+      expect(built.find((entry) => entry.id === gapCaseId("mail-1"))?.messageId).toBe("mail-1");
+    } finally {
       await h.repository.close();
     }
   });

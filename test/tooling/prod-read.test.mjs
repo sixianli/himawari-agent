@@ -10,9 +10,9 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
 const script = path.resolve(import.meta.dirname, "../../scripts/operations/prod-read.sh");
@@ -237,6 +237,69 @@ describe("prod-read.sh", () => {
     expect(child.stdout).not.toContain("secret-ref");
   });
 
+  it("lists Gmail decision records as metadata only, running the script read-only", () => {
+    const result = run("gmail-decisions");
+    expect(result.code).toBe(0);
+    expect(result.calls).toContain("--no-warnings - gmail-decisions");
+    expect(result.input).toContain("{ readOnly: true }");
+    expect(result.input).toMatch(/LIMIT 100\b/);
+    const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-db-"));
+    directories.push(directory);
+    const file = path.join(directory, "product.sqlite");
+    const database = new DatabaseSync(file);
+    for (const name of readdirSync(migrations)
+      .filter((entry) => entry.endsWith(".sql"))
+      .sort())
+      database.exec(readFileSync(path.join(migrations, name), "utf8"));
+    database.exec("PRAGMA foreign_keys = OFF");
+    const inputs = JSON.stringify({
+      floorHits: { "mail-a_1": ["rule-1", "rule-2"] },
+      memoryByMail: { "mail-a_1": ["m1"] },
+      relatedByMail: {},
+    });
+    database
+      .prepare(
+        "INSERT INTO decision_ledger (id, owner_id, agent_id, kind, scenario, checked_at, counts, verdict, reason_code, inputs, cost_micros, duration_ms) VALUES (?, 'o', 'a', 'proactive', 'gmail', '2026-11-01T00:00:00.000Z', '{}', 'pushed', 'fixture', ?, 0, 0)",
+      )
+      .run("d1", inputs);
+    database
+      .prepare(
+        "INSERT INTO proactive_processed_messages (owner_id, agent_id, source, message_id, thread_id, decision_id, outcome, skip_reason, processed_at, owner_rating) VALUES ('o', 'a', 'gmail', ?, 't', 'd1', 'act', NULL, '2026-11-01T00:00:00.000Z', 'useful')",
+      )
+      .run("mail-a_1");
+    database
+      .prepare(
+        "INSERT INTO decision_ledger (id, owner_id, agent_id, kind, scenario, checked_at, counts, verdict, reason_code, inputs, cost_micros, duration_ms) VALUES ('d2', 'o', 'a', 'proactive', 'gmail', '2026-11-02T00:00:00.000Z', '{}', 'pushed', 'fixture', ?, 0, 0)",
+      )
+      .run(
+        JSON.stringify({ floorHits: { 'q"x': ["rule-1"] }, memoryByMail: {}, relatedByMail: {} }),
+      );
+    database
+      .prepare(
+        "INSERT INTO proactive_processed_messages (owner_id, agent_id, source, message_id, thread_id, decision_id, outcome, skip_reason, processed_at, owner_rating) VALUES ('o', 'a', 'gmail', 'q\"x', 't', 'd2', 'know', NULL, '2026-11-02T00:00:00.000Z', NULL)",
+      )
+      .run();
+    database.close();
+    const script = result.input.replace("/var/lib/himawari/state/data/product.sqlite", file);
+    const child = spawnSync(process.execPath, ["--no-warnings", "-", "gmail-decisions"], {
+      input: script,
+      encoding: "utf8",
+    });
+    expect(child.status).toBe(0);
+    const rows = JSON.parse(child.stdout);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.message_id === 'q"x')).toMatchObject({ rule_count: 1 });
+    expect(rows.find((row) => row.message_id === "mail-a_1")).toMatchObject({
+      message_id: "mail-a_1",
+      outcome: "act",
+      owner_rating: "useful",
+      rule_count: 2,
+      memory_count: 1,
+      related_count: 0,
+      muse_entries: 0,
+    });
+  });
+
   it("prints only the system instruction text of the production configuration", () => {
     const result = run("system-instruction");
     expect(result.code).toBe(0);
@@ -318,7 +381,7 @@ describe("prod-read.sh", () => {
   });
 
   it("refuses arguments for the two new queries", () => {
-    for (const query of ["rule-memories", "system-instruction"]) {
+    for (const query of ["rule-memories", "system-instruction", "gmail-decisions"]) {
       const result = run(query, "extra");
       expect(result.code).toBe(64);
       expect(result.calls).toBe("");

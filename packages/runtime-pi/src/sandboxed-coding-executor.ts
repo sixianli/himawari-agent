@@ -11,10 +11,8 @@ import {
   type GovernedPiCodingToolName,
 } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
+import { jsonToolArguments } from "./json-tool-arguments.js";
 
-/** Target-host entry only: the caller must already be inside the qualified
- * sandbox. Pi's search processes, path probes and output accumulator use local
- * I/O outside Operations. Never call this executor from the Agent process. */
 export async function executeSandboxedPiCodingTool(input: {
   readonly name: GovernedPiCodingToolName;
   readonly toolCallId: string;
@@ -51,7 +49,7 @@ export async function executeSandboxedPiCodingTool(input: {
     type: "toolCall",
     id: input.toolCallId,
     name: input.name,
-    arguments: input.parameters as Record<string, unknown>,
+    arguments: jsonToolArguments(input.parameters),
   });
   let lastDetails: unknown;
   let lastOutput = "";
@@ -67,8 +65,6 @@ export async function executeSandboxedPiCodingTool(input: {
       },
       {} as never,
     );
-    // The pinned Pi write tool labels UTF-16 string length as bytes. Keep Pi's
-    // execution and details, but report the UTF-8 length passed to governed I/O.
     const written = parameters as { content?: unknown; path?: unknown };
     const content =
       input.name === "write" &&
@@ -83,9 +79,6 @@ export async function executeSandboxedPiCodingTool(input: {
         : result.content;
     return { ...result, content, isError: false };
   } catch (error) {
-    // Pi reports a nonzero shell exit by throwing after shaping its output.
-    // Preserve that protected result (including the last truncation metadata),
-    // rather than silently discarding stderr or claiming empty success.
     const message = error instanceof Error ? error.message : "PI_TOOL_FAILED";
     return {
       content: [

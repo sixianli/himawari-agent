@@ -59,6 +59,17 @@ export const machineString: Schema<string> = {
   },
 };
 
+export const GMAIL_MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{1,256}$/u;
+
+export const gmailMessageId: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !GMAIL_MESSAGE_ID_PATTERN.test(input)) {
+      fail(path, "expected a 1-256 character Gmail message id");
+    }
+    return input;
+  },
+};
+
 export const modelRefString: Schema<string> = {
   parse(input, path = "$") {
     if (

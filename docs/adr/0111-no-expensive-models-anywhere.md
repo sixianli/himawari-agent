@@ -65,6 +65,7 @@ date: "2026-10-29"
    - 带厂商前缀的 `anthropic/…`、`openai/…`；
    - 不带前缀的 `claude-opus…`、`claude-sonnet…`、`claude-haiku…`、`claude-fable…`、`gpt-<数字>…`（直连厂商接口时的写法）。
    不扫的内容：`docs/` 下的文档（要记录历史）、`evals/*/history.jsonl`（历次评测的原始记录）、`node_modules`、`evidence` 目录、GitHub 链接里的 `/openai/codex` 这类路径和 `@anthropic-ai/sdk` 这类包名。
+   唯一被豁免的测试文件是检查脚本自己的测试 `test/tooling/expensive-models.test.mjs`（它必须写出贵模型名才能测试检查）。其他测试文件的示例数据也照扫，不要拿 `gpt-4o` 这类真实型号当普通词用，换成中性的词（例如 `wi-fi6`）。
 4. **换裁判后第一次跑评测前，先在线程里报费用。** 裁判换了，ADR 0103 的校准要重新过一遍（每轮开跑前自动校准 42 条样本），Andy 抽查过的“已校准”标记也要重新抽查。预计费用写在[后果](#consequences)里；超过 0.5 美元先在项目聊天问 Andy。
 
 “同价位的贵模型”没有逐家列名：其他厂商的旗舰模型（例如 Google Gemini Pro 一档）也不许用；新增任何模型名都要写进集中配置，并在 PR 里写出每百万 token 价格，和 DeepSeek V4.1 Flash 比。
