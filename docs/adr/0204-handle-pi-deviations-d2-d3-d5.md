@@ -69,7 +69,7 @@ date: "2026-11-10"
 ## 后果
 
 - D2、D3 不再是“待定”的偏离；新代码可以照它们的写法做审批续跑，但仍要走 ADR 0023 的流程。
-- D5 剩下的部分、D6、D7、D1、D4 仍不得照抄。
+- D5 剩下的部分、D6、D7、D1 仍不得照抄；D4 已由 [ADR 0205](0205-pi-native-provider-auth.md) 关闭，现在可以照它的写法做。
 - 读历史改走 `session.messages` 后，测试里的假会话也要有 `messages`（和 `getActiveToolNames`、`getToolDefinition`），已同步改；另加一条用例锁住“注册了但没激活的工具不算可并行”。
 
 <a id="references"></a>

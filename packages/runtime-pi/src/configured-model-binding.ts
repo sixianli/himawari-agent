@@ -1,15 +1,13 @@
 import {
   type Api,
+  type ApiKeyAuth,
+  createProvider,
   InMemoryCredentialStore,
   type Model,
   type ThinkingLevelMap,
 } from "@earendil-works/pi-ai";
-import type {
-  CreateModelRuntimeOptions,
-  ModelRuntime,
-  ProviderConfig,
-  ProviderModelConfig,
-} from "@earendil-works/pi-coding-agent";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
+import type { CreateModelRuntimeOptions, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type {
   ModelDescriptor,
   ModelInvocationPricing,
@@ -255,15 +253,31 @@ export function admissionCostForConfiguredPiModel(
   });
 }
 
-function providerModelConfig(
+const HOST_SECRET_SOURCE = "himawari-host-secret";
+
+function hostSecretAuth(): ApiKeyAuth {
+  return {
+    name: "Himawari host-managed model key",
+    check: async () => ({ type: "api_key", source: HOST_SECRET_SOURCE }),
+    resolve: async ({ credential }) => {
+      const key = credential?.type === "api_key" ? credential.key : undefined;
+      return typeof key === "string" && key.length > 0
+        ? { auth: { apiKey: key }, source: HOST_SECRET_SOURCE }
+        : undefined;
+    },
+  };
+}
+
+function providerModel(
   descriptor: ConfiguredPiModelDescriptor,
   baseUrl: string,
-): ProviderModelConfig {
+): Model<"openai-completions"> {
   const levelMap = thinkingLevelMap(descriptor);
   return {
     id: descriptor.model,
     name: descriptor.name,
     api: descriptor.api,
+    provider: descriptor.provider,
     baseUrl,
     reasoning: descriptor.reasoning,
     ...(levelMap === undefined ? {} : { thinkingLevelMap: levelMap }),
@@ -375,13 +389,18 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
       refreshOnCreate: false,
     });
     try {
-      runtime.registerProvider(first.provider, {
-        name: first.provider === "magpie" ? "Himawari Magpie" : "Himawari AI Gateway",
-        baseUrl,
-        api: first.api,
-        authHeader: true,
-        models: this.#descriptors.map((descriptor) => providerModelConfig(descriptor, baseUrl)),
-      } satisfies ProviderConfig);
+      const hostAuth = hostSecretAuth();
+      runtime.registerNativeProvider(
+        createProvider({
+          id: first.provider,
+          name: first.provider === "magpie" ? "Himawari Magpie" : "Himawari AI Gateway",
+          baseUrl,
+          auth: { apiKey: hostAuth },
+          models: this.#descriptors.map((descriptor) => providerModel(descriptor, baseUrl)),
+          api: openAICompletionsApi(),
+        }),
+      );
+      await runtime.refresh({ allowNetwork: false });
       for (const descriptor of this.#descriptors) {
         if (runtime.getModel(descriptor.provider, descriptor.model) === undefined) {
           throw new Error("PI_MODEL_NOT_REGISTERED");
