@@ -114,10 +114,16 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     };
   };
   let replacedShortTexts = 0;
+  const shortTextNumbers = new Map<string, number>();
   const safeString = (value: string): string => {
     if (!options.policy.hasSecret(value)) return value;
     replacedShortTexts += 1;
-    return `[已扣留:${sha256Hex(encoder.encode(value)).slice(0, 12)}]`;
+    let number = shortTextNumbers.get(value);
+    if (number === undefined) {
+      number = shortTextNumbers.size + 1;
+      shortTextNumbers.set(value, number);
+    }
+    return `[已扣留:${number}]`;
   };
   const safeOptional = (value: string | null): string | null =>
     value === null ? null : safeString(value);
@@ -126,7 +132,8 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     if (Array.isArray(value)) return value.map(safeJson);
     if (value !== null && typeof value === "object") {
       const result: { [key: string]: JsonValue } = {};
-      for (const [key, item] of Object.entries(value)) result[key] = safeJson(item as JsonValue);
+      for (const [key, item] of Object.entries(value))
+        result[safeString(key)] = safeJson(item as JsonValue);
       return result;
     }
     return value;
@@ -323,7 +330,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       kind: str(row["kind"]),
       scenario: optionalString(row["scenario"]),
       checkedAt: str(row["checked_at"]),
-      counts: JSON.parse(str(row["counts"])) as JsonValue,
+      counts: safeJson(JSON.parse(str(row["counts"])) as JsonValue),
       verdict: optionalString(row["verdict"]),
       outcome: optionalString(row["outcome"]),
       reasonCode: str(row["reason_code"]),
@@ -405,7 +412,8 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     {
       what: "含机密的实体名、人物名、别名、来源编号和决定记录里的短文字",
       count: replacedShortTexts,
-      reason: "已换成不可还原的占位（带原文哈希前 12 位，不同原文得到不同占位）；原文不进封存文件",
+      reason:
+        "已换成按出现顺序编号的占位（同一原文同一编号，不同原文不同编号）；这些是名称和编号，原文不保留，不进封存文件",
     },
     { what: "对话和消息", count: null, reason: "不属于本格式；记忆的来源对话编号也不导出" },
     { what: "每日摘要", count: null, reason: "属于对话，随对话一起，不在本格式内" },

@@ -137,7 +137,7 @@ export const SENSITIVE_GATE_CALLS = Object.freeze([
     calls: { containsRestrictedIdentifier: 1 },
     decision: KEEP,
     reason:
-      "数据导出：含机密的整段文字不进明文文件，原文只放进加密封存文件，明文层放遮盖后的文字或占位符",
+      "数据导出：含机密的整段文字不进明文文件；正文原文只放进加密封存文件，明文层放遮盖后的文字或占位符；短文字（名称、编号）只留编号占位",
   },
   {
     file: "packages/platform-node/src/files/pi-output-export.ts",

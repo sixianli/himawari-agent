@@ -312,6 +312,26 @@ describe("data admin CLI", () => {
     } finally {
       database.close();
     }
+    await chmod(target.passphraseFile, 0o700);
+    expect(
+      (
+        await run([
+          "data",
+          "import",
+          "--config",
+          target.configurationPath,
+          "--secret-dir",
+          target.secretDirectory,
+          "--from",
+          out,
+          "--passphrase-file",
+          target.passphraseFile,
+          "--dry-run",
+          "--operator",
+          "andy",
+        ])
+      ).code,
+    ).not.toBe(0);
     await writeFile(target.passphraseFile, "short\n", { mode: 0o600 });
     const refused = await run([
       "data",

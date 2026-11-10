@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { mkdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import {
   buildPortableExport,
   canonicalJson,
@@ -30,6 +30,7 @@ import {
   seedMemory,
 } from "./data-export-fixture.ts";
 
+const OTHER_API_KEY = `sk-proj-${"ZyXwVu9876543210"}TsRqPoNm`;
 const PASSPHRASE = "测试口令-correct horse battery staple";
 const NOW = "2026-11-10T00:00:00.000Z";
 const policy = createDataExportTextPolicy();
@@ -614,16 +615,18 @@ describe("data export: determinism and the directory", () => {
       "INSERT INTO memory_entities (memory_id, name) VALUES ('m-plain', ?)",
     );
     insertEntity.run(`密钥甲 ${SECRET_API_KEY}`);
-    insertEntity.run(`密钥乙 ${SECRET_API_KEY}Zz`);
+    insertEntity.run(`密钥甲 ${OTHER_API_KEY}`);
     const insertSource = db.prepare(
       "INSERT INTO memory_provenance (memory_id, source_type, source_id, source_deleted) VALUES ('m-plain', 'reference', ?, 0)",
     );
     insertSource.run(`id-${SECRET_API_KEY}`);
-    insertSource.run(`id-${SECRET_API_KEY}Yy`);
+    insertSource.run(`id-${OTHER_API_KEY}`);
     const { files, manifest } = await exportOf(source);
     expect(
       manifest.omitted.find(({ what }) => what.startsWith("含机密的实体名"))?.count,
     ).toBeGreaterThanOrEqual(4);
+    for (const [path, bytes] of files)
+      expect(decoder.decode(bytes), path).not.toContain(OTHER_API_KEY);
     const target = await side("distinct-secrets");
     await importInto(target, files, { passphrase: PASSPHRASE });
     const names = target.database
@@ -636,5 +639,19 @@ describe("data export: determinism and the directory", () => {
     expect(decoder.decode(again.files.get("data/memories.jsonl"))).toBe(
       decoder.decode(files.get("data/memories.jsonl")),
     );
+  });
+  it("[P1-6][reverse] an output path that is a file or a symlink is refused and not changed", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const file = `${source.directory}/not-a-directory`;
+    await writeFile(file, "x", { mode: 0o644 });
+    await expect(writePortableDirectory(file, files)).rejects.toBeDefined();
+    const link = `${source.directory}/link`;
+    await mkdir(`${source.directory}/real`, { mode: 0o755 });
+    await symlink(`${source.directory}/real`, link);
+    await expect(writePortableDirectory(link, files)).rejects.toMatchObject({
+      code: DATA_EXPORT_ERROR_CODES.PATH_UNSAFE,
+    });
+    expect((await stat(`${source.directory}/real`)).mode & 0o777).toBe(0o755);
   });
 });
