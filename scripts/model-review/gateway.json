@@ -24,10 +24,10 @@
     "opencode-go/deepseek-v4.1-flash": {
       "name": "DeepSeek V4.1 Flash",
       "members": [
-        "workbuddy-ai/deepseek-v4.1-flash-sg",
-        "opendesign/deepseek-v4.1-flash",
         "opencode-go/deepseek-v4.1-flash",
-        "opencode-go-2/deepseek-v4.1-flash"
+        "opencode-go-2/deepseek-v4.1-flash",
+        "workbuddy-ai/deepseek-v4.1-flash-sg",
+        "opendesign/deepseek-v4.1-flash"
       ],
       "context": 1000000,
       "output": 128000,
@@ -36,10 +36,10 @@
     "opencode-go/glm-5.3-flash": {
       "name": "GLM-5.3-Flash",
       "members": [
-        "workbuddy-ai/glm-5.3-flash",
-        "opendesign/glm-5.3-flash",
         "opencode-go/glm-5.3-flash",
-        "opencode-go-2/glm-5.3-flash"
+        "opencode-go-2/glm-5.3-flash",
+        "workbuddy-ai/glm-5.3-flash",
+        "opendesign/glm-5.3-flash"
       ],
       "context": 1000000,
       "output": 32000,

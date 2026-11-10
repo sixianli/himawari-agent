@@ -252,12 +252,12 @@ describe("review gateway configuration", () => {
       "group",
       "add",
       "review-deepseek-v4.1-flash",
-      "models=workbuddy-ai/deepseek-v4.1-flash-sg,opendesign/deepseek-v4.1-flash,opencode-go/deepseek-v4.1-flash,opencode-go-2/deepseek-v4.1-flash",
+      "models=opencode-go/deepseek-v4.1-flash,opencode-go-2/deepseek-v4.1-flash,workbuddy-ai/deepseek-v4.1-flash-sg,opendesign/deepseek-v4.1-flash",
       "routing=order",
       "stays=session",
     ]);
     expect(groupArgs(config, glm, { dropProviders: ["workbuddy-ai"] })[3]).toBe(
-      "models=opendesign/glm-5.3-flash,opencode-go/glm-5.3-flash,opencode-go-2/glm-5.3-flash",
+      "models=opencode-go/glm-5.3-flash,opencode-go-2/glm-5.3-flash,opendesign/glm-5.3-flash",
     );
     expect(groupArgs(config, glm, { dropProviders: ["workbuddy-ai", "opendesign"] })[3]).toBe(
       "models=opencode-go/glm-5.3-flash,opencode-go-2/glm-5.3-flash",
@@ -266,7 +266,8 @@ describe("review gateway configuration", () => {
       groupArgs(config, glm, { dropProviders: ["workbuddy-ai", "opendesign", "opencode-go"] })[3],
     ).toBe("models=opencode-go-2/glm-5.3-flash");
     expect(() =>
-      groupArgs(config, glm, { dropProviders: ["workbuddy-ai", "opendesign", "opencode-go", "opencode-go-2"],
+      groupArgs(config, glm, {
+        dropProviders: ["workbuddy-ai", "opendesign", "opencode-go", "opencode-go-2"],
       }),
     ).toThrow("GATEWAY_NO_MEMBERS");
   });
@@ -799,7 +800,7 @@ describe("review gateway round 4 fixes", () => {
     );
     expect(withProviders(emptyCustom)).toContain("providers.opendesign.custom");
     const typo = structuredClone(config.models);
-    typo[glm].members[1] = "opendesign/glm-5.3-flash-typo";
+    typo[glm].members[3] = "opendesign/glm-5.3-flash-typo";
     expect(gatewayConfigProblems({ ...config, models: typo }, REVIEW_MODELS)).toContain(
       `models.${glm}.custom`,
     );
