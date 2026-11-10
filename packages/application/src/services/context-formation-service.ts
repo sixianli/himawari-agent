@@ -27,6 +27,7 @@ import {
 import type { DecisionLedgerPort } from "../ports/decision-ledger.js";
 import type { ThreadDistillationStatePort, ThreadSummaryRecord } from "../ports/conversation.js";
 import type { MemoryCandidate, MemoryPort } from "../ports/intelligence.js";
+import { isMemoryDates } from "../ports/memory-dates.js";
 import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observability.js";
 import type { RunPayloadArtifactPort } from "../ports/run-payload-artifacts.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
@@ -784,6 +785,8 @@ function isProductContextEnvelopeV1(value: unknown): value is ProductContextEnve
         isNonEmptyText(item["ref"]) &&
         isNonEmptyText(item["payloadRef"]) &&
         (item["sourceRef"] === undefined || isNonEmptyText(item["sourceRef"])) &&
+        (item["dates"] === undefined ||
+          (item["kind"] === "memory" && isMemoryDates(item["dates"]))) &&
         isDataClassification(item["dataClassification"])
       );
     })

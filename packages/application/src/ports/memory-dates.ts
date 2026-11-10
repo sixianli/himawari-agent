@@ -23,10 +23,12 @@ function isDateText(value: unknown): value is string {
 }
 
 export function memoryDatesOf(memory: ProductMemoryRecord): MemoryDates {
+  const validFrom = memory.attributes?.validFrom ?? null;
+  const validTo = memory.attributes?.validTo ?? null;
   return Object.freeze({
-    recordedAt: memory.recordedAt ?? memory.updatedAt,
-    validFrom: memory.attributes?.validFrom ?? null,
-    validTo: memory.attributes?.validTo ?? null,
+    recordedAt: isDateText(memory.recordedAt) ? memory.recordedAt : memory.updatedAt,
+    validFrom: isDateText(validFrom) ? validFrom : null,
+    validTo: isDateText(validTo) ? validTo : null,
   });
 }
 

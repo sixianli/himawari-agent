@@ -4,6 +4,7 @@ import {
   DEFAULT_MEMORY_ATTRIBUTES,
   type MemoryCategory,
   memoryDateNote,
+  memoryDatesOf,
   OwnerProfileService,
   type ProductMemoryRecord,
 } from "../src/index.js";
@@ -226,6 +227,9 @@ describe("owner profile composition", () => {
     expect(memoryDateNote({ recordedAt, validFrom: "2026-11-09", validTo: null }, "UTC")).toBe(
       "（2026-11-09 起）",
     );
+    const broken = memory("memory-broken", "identity", 900, { recordedAt: "", validTo: "下个月" });
+    expect(memoryDatesOf(broken)).toEqual({ recordedAt: NOW, validFrom: null, validTo: null });
+    expect(memoryDateNote(memoryDatesOf(broken), "Asia/Tokyo")).toBe("（记于 2026-10-25）");
   });
 
   it("[RULE-memory-visible] lets a sensitive relationship memory into the profile and marks the block sensitive", async () => {
