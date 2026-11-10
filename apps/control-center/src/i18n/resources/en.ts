@@ -782,9 +782,14 @@ export const messages = {
     "Nothing to import was found. Check the file, or that you pasted the AI's answer.",
   "memory.page.importTooBig": "Each file must be under 200 KB; split it and import in parts.",
   "memory.page.importUnreadable": "The file could not be read or is not a Himawari export.",
-  "memory.page.exportTitle": "Export {count} (including archived and earlier wording)",
-  "memory.page.exportSensitive": "Include sensitive memories (health, money and similar)",
-  "memory.page.download": "Download JSON",
+  "memory.page.exportTitle": "Export all memories and decision records",
+  "memory.page.exportNote":
+    "You get one zip with per-item JSON Lines data and readable Markdown. Passwords, ID numbers and similar sensitive content stay as placeholders in the files; use the command line encrypted export to take them out in full.",
+  "memory.page.download": "Download export",
+  "memory.page.exportWorking": "Preparing the export…",
+  "memory.page.exportDone":
+    "Exported {count} memories; {withheld} sensitive items were left as placeholders.",
+  "memory.page.exportFailed": "The export failed. Please try again later.",
   "capabilities.title": "Capabilities and adapters",
   "authorizations.title": "Authorizations and grants",
   "trace.title": "Trace",

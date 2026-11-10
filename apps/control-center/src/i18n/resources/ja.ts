@@ -790,9 +790,15 @@ export const messages = {
     "取り込める内容が見つかりません。ファイルや貼り付けた内容を確認してください。",
   "memory.page.importTooBig": "1 ファイル 200 KB までです。分けて取り込んでください。",
   "memory.page.importUnreadable": "ファイルを読めないか、Himawari のエクスポートではありません。",
-  "memory.page.exportTitle": "{count} 件をエクスポート（アーカイブと変更履歴を含む）",
-  "memory.page.exportSensitive": "機微な記憶（健康・お金など）を含める",
-  "memory.page.download": "JSON をダウンロード",
+  "memory.page.exportTitle": "すべての記憶と判断記録をエクスポート",
+  "memory.page.exportNote":
+    "項目ごとの JSON Lines データと、そのまま読める Markdown を含む zip を受け取ります。パスワードや ID 番号などの機微な内容はプレースホルダーのままです。完全に持ち出すにはコマンドラインの暗号化エクスポートを使ってください。",
+  "memory.page.download": "エクスポートをダウンロード",
+  "memory.page.exportWorking": "エクスポートを作成しています…",
+  "memory.page.exportDone":
+    "記憶 {count} 件をエクスポートしました。機微な内容 {withheld} 件はプレースホルダーのままです。",
+  "memory.page.exportFailed":
+    "エクスポートに失敗しました。しばらくしてからもう一度お試しください。",
   "capabilities.title": "機能とアダプター",
   "authorizations.title": "認可と Grant",
   "trace.title": "トレース",

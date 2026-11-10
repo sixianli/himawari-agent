@@ -39,6 +39,7 @@ import type { SqliteProductStateRepository } from "@himawari-agent/persistence-s
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
   assertProductionSecretSource,
+  authenticateHttpRequest,
   BoundedJwksFetcher,
   BrowserTextPayloadReader,
   BrowserThreadFiles,
@@ -64,7 +65,6 @@ import {
   type ProductSessionAuthenticationServiceOptions,
   RuntimeHealthModel,
   RuntimeMetricsRegistry,
-  authenticateHttpRequest,
   registerBuiltInIdentityRoutes,
   registerIdentityAuthenticationRoutes,
   ScopedThreadSearchTokenizer,
@@ -78,26 +78,13 @@ import {
   PRODUCTION_APPROVAL_OPERATIONS,
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
+import { registerDataExportRoute } from "./production-data-export.js";
+import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
 } from "./production-memory-control.js";
-import {
-  PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
-  ProductionOwnerPreferencesControl,
-} from "./production-owner-preferences-control.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
-import {
-  PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
-  ProductionSensitiveInterceptionsControl,
-} from "./production-sensitive-interceptions-control.js";
-import {
-  PROACTIVE_GOOGLE_CALLBACK_PATH,
-  PROACTIVE_GOOGLE_START_PATH,
-  PRODUCTION_PROACTIVE_OPERATIONS,
-  type ProductionProactive,
-} from "./production-proactive.js";
-import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
 import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
 import {
   PRODUCTION_MUSE_OPERATIONS,
@@ -107,6 +94,20 @@ import {
   PRODUCTION_OBSERVATION_OPERATIONS,
   type ProductionObservation,
 } from "./production-observation.js";
+import {
+  PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
+  ProductionOwnerPreferencesControl,
+} from "./production-owner-preferences-control.js";
+import {
+  PROACTIVE_GOOGLE_CALLBACK_PATH,
+  PROACTIVE_GOOGLE_START_PATH,
+  PRODUCTION_PROACTIVE_OPERATIONS,
+  type ProductionProactive,
+} from "./production-proactive.js";
+import {
+  PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
+  ProductionSensitiveInterceptionsControl,
+} from "./production-sensitive-interceptions-control.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -1142,6 +1143,15 @@ export async function createProductionHttpComposition(
       sessionCookieName: httpConfiguration.sessionCookieName,
       ownerId,
     });
+  registerDataExportRoute(app, {
+    authentication,
+    sessionCookieName: httpConfiguration.sessionCookieName,
+    ownerId,
+    agentId,
+    databasePath: repository.databasePath,
+    protector: payloadProtector,
+    now: clock,
+  });
   if (options.museIntake) registerMuseIntakeRoute(app, options.museIntake);
   if (options.gapExport) registerGapExportRoute(app, options.gapExport);
   registerAuthentication(app, csrf, recentAuthentication);
