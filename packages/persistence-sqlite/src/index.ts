@@ -31,3 +31,4 @@ export * from "./sqlite-run-dispatch-operations.js";
 export * from "./sqlite-model-budget-operations.js";
 export * from "./sqlite-model-invocation-operations.js";
 export * from "./state-root-lock.js";
+export * from "./data-export/index.js";
