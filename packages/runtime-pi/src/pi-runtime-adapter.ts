@@ -25,10 +25,7 @@ import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-option
 import {
   type AgentSession,
   type AgentSessionEvent,
-  buildSessionProjection,
   type ContextWithSystemEvent,
-  convertToLlm,
-  estimateTokens,
   type CreateAgentSessionOptions,
   type CreateAgentSessionResult,
   createAgentSession,
@@ -70,7 +67,6 @@ import {
 } from "@himawari-agent/application/runtime-port";
 import {
   CHAT_TOOL_GUIDELINES_HEADER,
-  COMPACTION_SUMMARY_INSTRUCTION,
   CHAT_TOOL_LOOP_REJECTED,
   CHAT_TOOL_LOOP_STOPPED,
   CHAT_TOOL_SNIPPETS_HEADER,
@@ -92,6 +88,11 @@ import {
   redactMachineSecrets,
 } from "@himawari-agent/sensitive-capture";
 import { observeCacheFields } from "./cache-usage-observation.js";
+import {
+  compactionPrefixMessages,
+  sharedSummaryContext,
+  sharedSummaryOptions,
+} from "./compaction-prefix.js";
 import { restoreModelStream, withPlaceholderLegend } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
@@ -687,57 +688,6 @@ function himawariSummaryContext(requested: TranscriptContext): Context | undefin
     systemPrompt: first.content,
     tools: [],
     messages: rest.filter((message) => message.role !== "system"),
-  };
-}
-
-function compactionPrefixMessages(event: {
-  readonly reason: "manual" | "threshold" | "overflow";
-  readonly preparation: { readonly isSplitTurn: boolean; readonly firstKeptEntryId: string };
-  readonly branchEntries: Parameters<typeof buildSessionProjection>[0];
-}): Message[] | undefined {
-  if (event.reason !== "manual" && event.reason !== "threshold") return undefined;
-  if (event.preparation.isSplitTurn) return undefined;
-  const { entries } = buildSessionProjection(event.branchEntries);
-  const cut = entries.findIndex(
-    (entry) => entry.sourceEntry.id === event.preparation.firstKeptEntryId,
-  );
-  if (cut <= 0) return undefined;
-  const prefix = entries.slice(0, cut).flatMap((entry) => entry.messages);
-  const messages = convertToLlm(prefix).filter((message) => message.role !== "system");
-  return messages.length > 0 ? messages : undefined;
-}
-
-const COMPACTION_REQUEST_ROOM_TOKENS = 4096;
-
-function sharedSummaryContext(
-  lastRequest: Context | undefined,
-  prefix: Message[] | undefined,
-  contextWindow: number,
-  maxTokens: number,
-): Context | undefined {
-  if (!lastRequest || !prefix) return undefined;
-  const history = lastRequest.messages.slice(0, prefix.length);
-  if (history.length !== prefix.length || !isDeepStrictEqual(history, prefix)) {
-    return undefined;
-  }
-  const fixedChars =
-    (lastRequest.systemPrompt?.length ?? 0) +
-    JSON.stringify(lastRequest.tools ?? []).length +
-    COMPACTION_SUMMARY_INSTRUCTION.text.length;
-  const estimated =
-    history.reduce((total, message) => total + estimateTokens(message), 0) +
-    Math.ceil(fixedChars / 3);
-  if (estimated + COMPACTION_REQUEST_ROOM_TOKENS + maxTokens > contextWindow) return undefined;
-  return {
-    ...lastRequest,
-    messages: [
-      ...history,
-      {
-        role: "user",
-        content: COMPACTION_SUMMARY_INSTRUCTION.text,
-        timestamp: history.at(-1)?.timestamp ?? 0,
-      },
-    ],
   };
 }
 
@@ -1696,18 +1646,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             summaryContext ??
             himawariRequestContext(requested, systemPrompt, requestTools);
           if (!summaryContext && context) lastRequest = { context, options };
-          if (shared) {
-            const { cacheRetention: _dropped, sessionId: _droppedSession, ...rest } = options ?? {};
-            options = {
-              ...rest,
-              ...(lastRequest?.options?.cacheRetention === undefined
-                ? {}
-                : { cacheRetention: lastRequest.options.cacheRetention }),
-              ...(lastRequest?.options?.sessionId === undefined
-                ? {}
-                : { sessionId: lastRequest.options.sessionId }),
-            };
-          }
+          if (shared) options = sharedSummaryOptions(options, lastRequest?.options);
           await this.#historyWrites.get(request.runId);
           const replay = restored?.takeReplay();
           if (replay) return replay;
