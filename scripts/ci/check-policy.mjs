@@ -322,14 +322,16 @@ export function validatePolicy(
   return policy;
 }
 
-function requireReadPermissions(permissions, label, root = false) {
+function requireReadPermissions(permissions, label, root = false, allowArtifactDeletion = false) {
   assert(
     permissions && typeof permissions === "object" && !Array.isArray(permissions),
     `${label}: permissions must be explicit`,
   );
   assert(
     Object.entries(permissions).every(
-      ([key, value]) => ["contents", "actions", "pull-requests"].includes(key) && value === "read",
+      ([key, value]) =>
+        ["contents", "actions", "pull-requests"].includes(key) &&
+        (value === "read" || (allowArtifactDeletion && key === "actions" && value === "write")),
     ),
     `${label}: write or unknown permissions`,
   );
@@ -429,7 +431,8 @@ export function validateWorkflow(policy, source, toolchain) {
       !job.uses && !job.container && !job.environment && !job.secrets,
       `Unsupported execution boundary: ${check.id}`,
     );
-    if (job.permissions) requireReadPermissions(job.permissions, check.id);
+    if (job.permissions)
+      requireReadPermissions(job.permissions, check.id, false, check.id === "required");
     if (check.id === "required")
       assert(
         job.name === "ci/required" && ["always()", githubExpression("always()")].includes(job.if),
