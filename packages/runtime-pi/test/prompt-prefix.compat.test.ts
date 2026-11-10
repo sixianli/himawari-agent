@@ -68,7 +68,15 @@ async function loopback(reply: (index: number, body: string) => Reply) {
         id: `chatcmpl-${index}`,
         model: "group/main",
         choices: [{ index: 0, delta, ...(finish ? { finish_reason: finish } : {}) }],
-        ...(finish ? { usage: { prompt_tokens: PROMPT_TOKENS, completion_tokens: 5, total_tokens: PROMPT_TOKENS + 5 } } : {}),
+        ...(finish
+          ? {
+              usage: {
+                prompt_tokens: PROMPT_TOKENS,
+                completion_tokens: 5,
+                total_tokens: PROMPT_TOKENS + 5,
+              },
+            }
+          : {}),
       })}\n\n`;
     if ("tool" in answer) {
       response.write(
@@ -884,7 +892,9 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       },
       false,
     );
-    expect(failures.map((failure) => failure.code)).toContain("PI_COMPACTION_FAILED");
+    const failure = failures.find((item) => item.code === "PI_COMPACTION_FAILED");
+    expect(failure).toBeDefined();
+    expect(failure?.message).toMatch(/^provider_(status_\d{3}|message_withheld)$/);
   });
 
   it("keeps the frozen tools unchanged when task tools come and go with a task handle", async () => {

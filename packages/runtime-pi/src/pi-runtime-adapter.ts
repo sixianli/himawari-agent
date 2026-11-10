@@ -1618,9 +1618,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       let loopSummaryAttempted = false;
       let compacting = false;
       session.agent.streamFunction = async (model, requested, options) => {
-        const context = compacting
-          ? himawariSummaryContext(requested)
-          : himawariRequestContext(requested, systemPrompt, requestTools);
+        const context =
+          (compacting ? himawariSummaryContext(requested) : undefined) ??
+          himawariRequestContext(requested, systemPrompt, requestTools);
         await this.#historyWrites.get(request.runId);
         const replay = restored?.takeReplay();
         if (replay) return replay;
@@ -1666,7 +1666,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           if (event.result === undefined && !event.aborted && event.errorMessage)
             this.#dependencies.onModelStreamFailed?.(request, {
               code: "PI_COMPACTION_FAILED",
-              message: event.errorMessage,
+              message: loggableModelFailure(event.errorMessage),
             });
         }
         if (
