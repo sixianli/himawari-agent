@@ -1677,7 +1677,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           (event.type === "message_end" || event.type === "compaction_end")
         ) {
           const messages = structuredClone(
-            session.agent.state.messages.filter((message) => message.role !== "system"),
+            session.messages.filter((message) => message.role !== "system"),
           );
           const pending = (this.#historyWrites.get(request.runId) ?? Promise.resolve()).then(() =>
             this.#dependencies.projection.captureHistory?.({
@@ -1698,7 +1698,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           event.result !== undefined
         ) {
           const environment = runtimeEnvironmentAfterCompaction(
-            session.agent.state.messages,
+            session.messages,
             projection,
           );
           if (environment)
@@ -2006,7 +2006,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       const conflictOf =
         descriptor.definition === "builtin-coding" && ["write", "edit"].includes(descriptor.name)
           ? previousFileConflict(
-              this.#activeSessions.get(request.runId)?.agent.state.messages ?? [],
+              this.#activeSessions.get(request.runId)?.messages ?? [],
               request.runId,
               (parameters as Record<string, unknown>)["path"],
             )

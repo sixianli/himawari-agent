@@ -24,9 +24,7 @@ export interface PiToolBatchContinuation {
   readonly parallel?: true;
 }
 
-type BatchSession = Pick<AgentSession, "sessionManager"> & {
-  readonly agent: Pick<AgentSession["agent"], "state">;
-};
+type BatchSession = Pick<AgentSession, "sessionManager" | "messages" | "getToolDefinition">;
 
 export function capturePiToolBatch(
   session: BatchSession,
@@ -34,7 +32,7 @@ export function capturePiToolBatch(
   completedStreamOrdinal: number,
   systemPrompt: string,
 ): PiToolBatchContinuation {
-  const messages = session.agent.state.messages;
+  const messages = session.messages;
   const index = messages.findLastIndex((message) => message.role === "assistant");
   const assistant = messages[index];
   if (!assistant || assistant.role !== "assistant")
@@ -71,11 +69,10 @@ function modelVisible(messages: PiMessages): string {
 }
 
 function runsInParallel(session: BatchSession, assistant: AssistantMessage): boolean {
-  const tools = session.agent.state.tools;
   return assistant.content
     .filter((part) => part.type === "toolCall")
     .every((call) => {
-      const tool = tools.find(({ name }) => name === call.name);
+      const tool = session.getToolDefinition(call.name);
       return tool !== undefined && tool.executionMode !== "sequential";
     });
 }

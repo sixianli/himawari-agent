@@ -419,6 +419,9 @@ function fakeSessionFactory(
     let idle = Promise.resolve();
     return {
       session: {
+        get messages() {
+          return this.agent.state.messages;
+        },
         agent: {
           state: { messages: [] },
           abort() {},
