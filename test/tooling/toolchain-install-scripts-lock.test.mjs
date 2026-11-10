@@ -1,26 +1,54 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { validateInstallScriptReviews } from "../../scripts/ci/check-policy.mjs";
 
 const read = (path) => JSON.parse(readFileSync(new URL(`../../${path}`, import.meta.url), "utf8"));
 
-describe("[I-91] ci/toolchain-lock.json install-script reviews match package-lock.json", () => {
-  const lock = read("package-lock.json").packages;
-  const reviewed = read("ci/toolchain-lock.json").nativeDependencies;
+const packageLock = {
+  packages: {
+    "": {},
+    "node_modules/native": { version: "2.0.0", hasInstallScript: true },
+    "node_modules/plain": { version: "1.0.0" },
+  },
+};
+const review = (overrides = {}) => ({
+  nativeDependencies: [{ path: "node_modules/native", version: "2.0.0", ...overrides }],
+});
 
-  it("every reviewed entry points at a locked package with the same version and install script", () => {
-    for (const entry of reviewed) {
-      const locked = lock[entry.path];
-      expect(locked, `stale review entry: ${entry.path}`).toBeTruthy();
-      expect(locked.version, entry.path).toBe(entry.version);
-      expect(locked.hasInstallScript, entry.path).toBe(true);
-    }
+describe("[I-91] install-script reviews match package-lock.json", () => {
+  it("accepts the repository's real lock files", () => {
+    expect(
+      validateInstallScriptReviews(read("ci/toolchain-lock.json"), read("package-lock.json")),
+    ).toBe(true);
   });
 
-  it("every locked package with an install script has a review entry", () => {
-    const reviewedPaths = new Set(reviewed.map((entry) => entry.path));
-    for (const [path, locked] of Object.entries(lock)) {
-      if (locked.hasInstallScript)
-        expect(reviewedPaths.has(path), `unreviewed: ${path}`).toBe(true);
-    }
+  it("accepts matching fixtures", () => {
+    expect(validateInstallScriptReviews(review(), packageLock)).toBe(true);
+  });
+
+  it("rejects a review recorded for an older version", () => {
+    expect(() => validateInstallScriptReviews(review({ version: "1.52.0" }), packageLock)).toThrow(
+      /version differs/,
+    );
+  });
+
+  it("rejects a stale review whose package left the lock file", () => {
+    expect(() =>
+      validateInstallScriptReviews(review({ path: "node_modules/gone" }), packageLock),
+    ).toThrow(/missing from package-lock/);
+  });
+
+  it("rejects a review for a package without an install script", () => {
+    expect(() =>
+      validateInstallScriptReviews(review({ path: "node_modules/plain", version: "1.0.0" }), {
+        packages: packageLock.packages,
+      }),
+    ).toThrow(/without install script/);
+  });
+
+  it("rejects a locked install script that has no review", () => {
+    expect(() => validateInstallScriptReviews({ nativeDependencies: [] }, packageLock)).toThrow(
+      /not reviewed/,
+    );
   });
 });

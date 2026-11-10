@@ -68,6 +68,7 @@ it("policy入口在测试发现前拒绝质量工作流漏项", async () => {
     "ci/toolchain-lock.json",
     "ci/quality-policy.json",
     "package.json",
+    "package-lock.json",
     ".github/workflows/ci.yml",
     ".github/workflows/main.yml",
   ]) {
