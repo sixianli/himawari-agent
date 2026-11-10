@@ -1,0 +1,5 @@
+{"id": "r2-ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 0204 仍写着 D4 不得照抄，与 ADR 0205 已关闭 D4 矛盾", "valid": true, "class": "error", "severity": "medium-high", "trigger": "后续代理读 ADR 0204 第 72 行", "consequence": "按旧文回避已批准的 D4 写法", "modelSeverity": "中"}
+{"id": "r2-ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 0205 的“请求逐字节不变”比测试实际证明的更强", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 以为整条 HTTP 请求逐字节相同", "consequence": "夸大了测试证明的范围", "modelSeverity": "低"}
+{"id": "r2-ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "golden 测试可以在比较前改写自己的基准文件", "valid": true, "class": "error", "severity": "low", "trigger": "带 D4_WRITE_GOLDEN=1 跑测试", "consequence": "静默换掉旧写法录下的证据", "modelSeverity": "低"}
+{"id": "r2-ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "规范表 D4 行“对应的官方写法”写成了“同左”", "valid": true, "class": "error", "severity": "low", "trigger": "读规范表", "consequence": "该格没有写官方写法", "modelSeverity": "低"}
+{"id": "r2-ds-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`resolve` 不校验 credential 的类型/来源，只依赖凭据库为空", "valid": true, "class": "better"}
