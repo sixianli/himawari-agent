@@ -7,7 +7,7 @@ import {
 } from "@marcbachmann/cel-js";
 import { RULE_GATES, type RuleGate, ruleFields } from "./field-catalog.js";
 
-export const RULE_EXPRESSION_MAX_LENGTH = 262_144;
+export const RULE_EXPRESSION_MAX_LENGTH = 524_288;
 
 const ALLOWED_FUNCTIONS = new Set(["size", "exists", "all", "endsWith", "startsWith", "contains"]);
 const ALLOWED_BINARY = new Set(["==", "!=", "<", "<=", ">", ">=", "in", "+", "-"]);

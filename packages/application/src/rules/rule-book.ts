@@ -217,6 +217,7 @@ function quietPeriodExpression(period: QuietPeriod): string {
   const start = clockMinutes(period.start);
   const stop = clockMinutes(period.end);
   const days = celIntList(period.days);
+  if (start === stop) return "false";
   if (start < stop)
     return `local_weekday in ${days} && local_minutes >= ${start} && local_minutes < ${stop}`;
   return `(local_weekday in ${days} && local_minutes >= ${start}) || (local_previous_weekday in ${days} && local_minutes < ${stop})`;

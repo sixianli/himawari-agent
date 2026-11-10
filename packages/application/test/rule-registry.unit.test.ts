@@ -71,9 +71,15 @@ describe("rule registry", () => {
 
   it("[HR-1] builds a rule from the largest settings the store accepts without hitting a limit", () => {
     const tricky = 'é\\"\u0001/\u2028😀';
-    const senders = Array.from({ length: 200 }, (_, index) =>
-      `${tricky.repeat(40)}${index}`.slice(0, 254),
-    );
+    const senders = [
+      ...Array.from({ length: 100 }, (_, index) =>
+        `${String(index).padStart(3, "0")}${tricky.repeat(40)}`.slice(0, 254),
+      ),
+      ...Array.from({ length: 100 }, (_, index) =>
+        `${String(index).padStart(3, "0")}${"\u0001".repeat(254)}`.slice(0, 254),
+      ),
+    ];
+    expect(new Set(senders.map((sender) => sender.toLowerCase())).size).toBe(200);
     const rules = ruleBookFor({
       quietHours: Array.from({ length: 14 }, (_, index) => ({
         days: [0, 1, 2, 3, 4, 5, 6],
@@ -101,6 +107,24 @@ describe("rule registry", () => {
         )
         .hits.map(({ id }) => id),
     ).toEqual([RULE_IDS.quietHours]);
+  });
+
+  it("[HR-1] treats a quiet period whose start equals its end as never quiet", () => {
+    const rules = ruleBookFor({
+      quietHours: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "09:00", end: "09:00" }],
+      quietHoursRevision: 1,
+      importantSenders: [],
+      importantSendersRevision: 1,
+    });
+    const judge = new RuleJudge();
+    for (const minutes of [0, 540, 600, 1439])
+      expect(
+        judge.decide(
+          "mail_delivery",
+          { local_minutes: minutes, local_weekday: 1, local_previous_weekday: 0 },
+          rules,
+        ).hits,
+      ).toEqual([]);
   });
 
   it("[HR-1] does not run a retired rule and carries the revision of the rule that hit", () => {
