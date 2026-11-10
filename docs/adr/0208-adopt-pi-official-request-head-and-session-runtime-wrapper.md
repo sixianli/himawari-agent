@@ -90,8 +90,18 @@ Pi 官方对“委托内置实现”的写法是在自己的 `streamSimple` 里�
 - 摘要的凭据：Pi 在 `agent-session.js` 里把默认请求函数登记为属于传入的 `ModelRuntime`（就是我们的代理），摘要因此不再预先取凭据，凭据和以前一样由 `admitPiStream` 每次请求现取。
 - 代理：Pi 的 `dist` 里没有 `instanceof ModelRuntime`；方法用 `bind` 绑回原对象，私有字段不受影响。
 - 字节对比：`d4-golden-requests.json` 的黄金请求测试用真实 Pi 会话，改前改后都通过；`npm run check:prompt-prefix` 27 条通过。
-- 遗留（D7 打开前必须处理）：Pi 的缓存预热器拿到的就是传入的代理，预热请求会走准入、遮盖和预算，用途记为 chat，也会先消耗审批续跑的一次性回放；预热请求的开头在第 3 步之前仍是 Pi 自己的开头。生产目前没有模型配 `promptCache`，预热不会触发。打开前要给预热请求加标记、让回放只对主对话请求生效，并先完成第 3 步。
+- 遗留（D7 打开前必须处理）：Pi 的缓存预热器拿到的就是传入的代理，预热请求会走准入、遮盖和预算，用途记为 chat，也会先消耗审批续跑的一次性回放。生产目前没有模型配 `promptCache`，预热不会触发。打开前要给预热请求加标记，让回放只对主对话请求生效。第 3 步之后预热重放的开头就是冻结的开头。
 - 代理只重写 `streamSimple`；`stream`、`complete` 等其他入口仍转给共享的运行时，会话里没有扩展会调它们（`noExtensions`），后台调用 `pi-model-transport.ts` 自带遮盖，这一点和第 2 步之前相同。
+
+<a id="step-3-record"></a>
+
+## 第 3 步实施记录（2026-11-10）
+
+- 请求开头改由隐藏扩展 `himawari-request-head` 的 `context_with_system` 钩子生成：返回 `[createInitialSystemMessage(冻结系统提示, 冻结工具), ...去掉 system 消息的历史]`。Pi 的 `streamAssistantResponse`（`pi-agent-core/dist/agent-loop.js`）先跑这个钩子再 `normalizeContext`，所以请求函数、预热器拿到的都是冻结开头。工具名和 Pi 能执行的工具名不一致时，钩子不替换开头。
+- 代理在每次请求里核对：第 0 条是 system 消息，并且和 `createInitialSystemMessage(冻结系统提示, 冻结工具)` 逐字段深比较相等，其后没有 system 消息；不满足就一次请求都不发，失败消息是 `PI_REQUEST_HEAD_DIVERGED`（原 `PI_REQUEST_TOOLS_DIVERGED`；写进日志和历史的是这条消息，`runtime.failed` 的 `errorCode` 仍是 `PI_MODEL_ERROR`）。现在比的是整条开头，包括工具说明和参数，不只是名字；有冻结包时工具取冻结的，没有冻结包时工具取开头自带的，所以此时只核对系统提示。消息列表为空也不再发空请求，一并拒发。钩子出错、没注册或被改，Pi 会放行（出错只记录），所以拒发由代理这一侧保证。
+- 反向用例：`pi-runtime-adapter.compat.test.ts` 里开头提示被改、缺开头、开头之后又出现 system 消息，三种都零请求；`prompt-prefix.compat.test.ts` 的 `[D1]` 用例用旧版工具说明的冻结包，要求请求里是冻结的说明；另有 `[D1] sends nothing when Pi never runs the request-head hook`：用例里把钩子从已加载的扩展里摘掉，冻结包用旧版工具说明，要求零请求；手动把钩子改成什么都不返回，`packages/runtime-pi` 的 pi-compat 有 74 条失败。
+- 字节：`d4-golden-requests.json` 黄金请求（真实 Pi 会话）通过，`check:prompt-prefix` 28 条通过。
+- 到这里 D1 在“开头”一项已回到官方写法；准入、预算、遮盖还原、审批回放、拒发仍在每次运行的 `ModelRuntime` 代理上，这是官方没有对应写法的部分，沿用本 ADR 的批准。
 
 <a id="references"></a>
 

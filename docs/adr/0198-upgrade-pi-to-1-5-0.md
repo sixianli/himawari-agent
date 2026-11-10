@@ -47,7 +47,7 @@ Himawari 的模型调用、Agent 循环（模型一步步调用工具的那套�
 ## 决定
 
 1. **两个包固定为 1.5.0。**锁文件重新生成；只有 `packages/runtime-pi` 导入 Pi 的规则不变。
-2. **请求开头仍由 Himawari 决定，表达方式换成 Pi 的。**自定义的 `streamFunction` 收到 Pi 的 `TranscriptContext` 后，去掉 Pi 自己加的全部 system 消息，用冻结的系统提示、冻结的工具加上本轮执行句柄带来的工具，交给 `normalizeContext` 生成请求（前提 1、2）。出口遮盖的图例照旧追加在系统提示末尾。Pi 当前能执行的工具名必须和我们声明的工具名一致，不一致就不发这次请求（`PI_REQUEST_TOOLS_DIVERGED`）。
+2. **请求开头仍由 Himawari 决定，表达方式换成 Pi 的。**自定义的 `streamFunction` 收到 Pi 的 `TranscriptContext` 后，去掉 Pi 自己加的全部 system 消息，用冻结的系统提示、冻结的工具加上本轮执行句柄带来的工具，交给 `normalizeContext` 生成请求（前提 1、2）。出口遮盖的图例照旧追加在系统提示末尾。Pi 当前能执行的工具名必须和我们声明的工具名一致，不一致就不发这次请求（`PI_REQUEST_TOOLS_DIVERGED`（D1 第 3 步起改名 `PI_REQUEST_HEAD_DIVERGED`，见 [ADR 0208](0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md#step-3-record)））。
 3. **工具批次恢复改走 SessionManager。**审批挂起时，快照升到 `pi-tool-batch.v3`：存 Pi 会话里挂起那次回答之前的全部会话条目（不是消息列表），加上冻结的系统提示、那次回答和已完成的工具结果。续跑时用 `SessionManager.inMemory(cwd, { id }, entries)` 建会话（前提 3），这份条目是续跑时唯一的历史来源，不再按对话历史重建一遍；冻结的系统提示和当前的不一致就拒绝续跑（`PI_CONTINUATION_SYSTEM_PROMPT_CHANGED`）。不再给 `agent.state.messages`、`agent.state.systemPrompt` 赋值（前提 3、4）。
 4. **旧快照不兼容。**v2 快照续跑时报 `PI_CONTINUATION_VERSION_INVALID`；生产的工具结果恢复扫描遇到 v2 快照时跳过它，不让整个扫描出错（Andy 同意的第 2 条）。
 5. **存历史时去掉 system 消息。**Pi 1.5.0 的消息列表里带 system 消息，Himawari 的历史不存它们，原有的“历史里不许有 system 角色”的检查保留。

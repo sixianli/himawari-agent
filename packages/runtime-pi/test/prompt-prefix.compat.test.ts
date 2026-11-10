@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { createAgentSession } from "@earendil-works/pi-coding-agent";
 import type {
   RuntimeEvent,
   RuntimeProjection,
@@ -251,6 +252,21 @@ class RenamedToolPromptBundles extends FrozenPromptBundles {
         (JSON.parse(bundle.tools) as { name: string }[]).map((tool) => ({
           ...tool,
           name: `${tool.name}_renamed`,
+        })),
+      ),
+    };
+  }
+}
+
+class OlderToolDescriptionPromptBundles extends FrozenPromptBundles {
+  override async resolve(input: RuntimePromptBundleResolveInput): Promise<RuntimePromptBundle> {
+    const bundle = await super.resolve(input);
+    return {
+      ...bundle,
+      tools: JSON.stringify(
+        (JSON.parse(bundle.tools) as { name: string }[]).map((tool) => ({
+          ...tool,
+          description: `${tool.name} 的旧版说明`,
         })),
       ),
     };
@@ -833,6 +849,50 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     ]);
   });
 
+  it("[D1] sends the frozen tool declarations through Pi's request hook, not the live ones", async () => {
+    const { bodies } = await conversation(
+      THREE_TURNS,
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+      { promptBundles: new OlderToolDescriptionPromptBundles() },
+    );
+    expect(bodies).toHaveLength(THREE_TURNS.length);
+    expect(findConversationBreak(bodies)).toBeNull();
+    for (const body of bodies) {
+      const tools = JSON.parse(body).tools as {
+        function: { name: string; description: string };
+      }[];
+      expect(
+        tools.find((tool) => tool.function.name === "reminder_set")?.function.description,
+      ).toBe("reminder_set 的旧版说明");
+    }
+  });
+
+  it("[D1] sends nothing when Pi never runs the request-head hook", async () => {
+    const { bodies, turnEvents } = await conversation(
+      THREE_TURNS.slice(0, 1),
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+      {
+        promptBundles: new OlderToolDescriptionPromptBundles(),
+        createSession: (options) => {
+          const loaded = (
+            options.resourceLoader as unknown as {
+              getExtensions(): { extensions: { path: string }[] };
+            }
+          ).getExtensions();
+          loaded.extensions = loaded.extensions.filter(
+            (extension) => !extension.path.includes("himawari-request-head"),
+          );
+          return createAgentSession(options);
+        },
+      },
+      false,
+    );
+    expect(bodies).toHaveLength(0);
+    expect(turnEvents[0]?.filter((event) => event.type === "runtime.failed")).toHaveLength(1);
+  });
+
   it("[ADR-0198] sends nothing when the frozen tool names differ from the tools Pi can run", async () => {
     const { bodies, turnEvents, projection } = await conversation(
       THREE_TURNS.slice(0, 1),
@@ -845,7 +905,7 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(turnEvents[0]?.filter((event) => event.type === "runtime.failed")).toEqual([
       expect.objectContaining({ errorCode: "PI_MODEL_ERROR" }),
     ]);
-    expect(JSON.stringify(projection.saved)).toContain("PI_REQUEST_TOOLS_DIVERGED");
+    expect(JSON.stringify(projection.saved)).toContain("PI_REQUEST_HEAD_DIVERGED");
   });
 
   it("[COMPACT-1] lets Pi's automatic summary request out under frozen tools and keeps the next turn going", async () => {

@@ -10,6 +10,7 @@ import {
   type AssistantMessageEventStream,
   createAssistantMessageEventStream,
   type Model,
+  type TranscriptContext,
   validateToolArguments,
 } from "@earendil-works/pi-ai";
 import {
@@ -48,6 +49,7 @@ import {
 } from "../src/index.js";
 import { createFauxModelFixture } from "./faux-model-fixture.js";
 import { testModelEgress } from "./helpers/model-egress.js";
+import { requestContextFor } from "./request-head.ts";
 
 const NOW = "2026-08-25T10:00:00.000Z";
 type ProjectionContext = RuntimeProjection;
@@ -206,6 +208,7 @@ function streamingSessionFactory(
   observedTerminals: string[],
   streamModel: Model<Api> = ADMISSION_MODEL,
   streamOptions: unknown = {},
+  shapeContext: (head: TranscriptContext) => unknown = (head) => head,
 ) {
   return async (rawOptions: Readonly<Record<string, unknown>>) => {
     const governed = rawOptions["modelRuntime"] as {
@@ -225,7 +228,11 @@ function streamingSessionFactory(
         };
       },
       async prompt() {
-        const response = governed.streamSimple(streamModel, { messages: [] }, streamOptions);
+        const response = governed.streamSimple(
+          streamModel,
+          shapeContext(await requestContextFor(rawOptions)),
+          streamOptions,
+        );
         for await (const event of response) {
           if (event.type === "done") {
             observedTerminals.push("done");
@@ -521,12 +528,14 @@ function createAdmissionAdapter(
   resolveSecret?: () => Promise<string>,
   admissionExecutionLease?: ModelInvocationExecutionContext["executionLease"],
   usage?: PiAgentRuntimeAdapterDependencies["usage"],
+  shapeContext?: (head: TranscriptContext) => unknown,
 ) {
   const createSession = streamingSessionFactory(
     original,
     observedTerminals,
     streamModel,
     streamOptions,
+    shapeContext,
   );
   return new PiAgentRuntimeAdapter({
     egress: testModelEgress(),
@@ -614,6 +623,83 @@ describe("Pi stream admission accounting", () => {
     expect(providerCalls).toBe(0);
     expect(observedTerminals).toEqual(["error"]);
     expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
+  });
+
+  it.each([
+    [
+      "a leading system message whose prompt is not the frozen one",
+      (head: TranscriptContext) => ({
+        ...head,
+        messages: [
+          { ...(head.messages[0] as object), content: "Pi's own system prompt" },
+          ...head.messages.slice(1),
+        ],
+      }),
+    ],
+    [
+      "no leading system message",
+      (head: TranscriptContext) => ({ ...head, messages: head.messages.slice(1) }),
+    ],
+    [
+      "a second system message after the head",
+      (head: TranscriptContext) => ({
+        ...head,
+        messages: [...head.messages, { role: "system", content: "late" }],
+      }),
+    ],
+  ])("refuses to send a request with %s", async (_name, shape) => {
+    const observedTerminals: string[] = [];
+    let providerCalls = 0;
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => undefined,
+      markStarted: async () => undefined,
+      releaseReserved: async () => undefined,
+      settle: async () => undefined,
+      markUnknown: async () => undefined,
+    };
+    const adapter = createAdmissionAdapter(
+      permit,
+      () => {
+        providerCalls += 1;
+        return successfulOriginal();
+      },
+      observedTerminals,
+      ADMISSION_MODEL,
+      {},
+      undefined,
+      undefined,
+      undefined,
+      shape,
+    );
+
+    const events = await collect(adapter.run(request));
+    expect(providerCalls).toBe(0);
+    expect(observedTerminals).toEqual(["error"]);
+    expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
+  });
+
+  it("sends the request when the leading system message is the frozen head", async () => {
+    const observedTerminals: string[] = [];
+    let providerCalls = 0;
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => undefined,
+      markStarted: async () => undefined,
+      releaseReserved: async () => undefined,
+      settle: async () => undefined,
+      markUnknown: async () => undefined,
+    };
+    const adapter = createAdmissionAdapter(
+      permit,
+      () => {
+        providerCalls += 1;
+        return successfulOriginal();
+      },
+      observedTerminals,
+    );
+
+    await collect(adapter.run(request));
+    expect(providerCalls).toBe(1);
+    expect(observedTerminals).toEqual(["done"]);
   });
 
   it("rejects an admission gate bound to a different execution lease", async () => {
@@ -2163,7 +2249,7 @@ describe("Pi Agent Runtime adapter compatibility", () => {
   it.each([
     ["Model invocation admission was blocked", "Model invocation admission was blocked"],
     ["400: PRIVATE_PROVIDER_DATA", "provider_status_400"],
-    ["PI_REQUEST_TOOLS_DIVERGED", "PI_REQUEST_TOOLS_DIVERGED"],
+    ["PI_REQUEST_HEAD_DIVERGED", "PI_REQUEST_HEAD_DIVERGED"],
     ["provider included an unsafe raw failure", "provider_message_withheld"],
   ])(
     "reports why the model stream failed without provider text: %s",
