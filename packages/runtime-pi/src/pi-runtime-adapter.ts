@@ -1374,7 +1374,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         if (active.isStreaming)
           void active
             .sendCustomMessage(toolLoopStoppedMessage(), { deliverAs: "steer" })
-            .catch(() => active.agent.abort());
+            .catch(() => active.abort());
         else
           active.agent.steer({
             role: "custom",
@@ -1393,6 +1393,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         {
           compaction: { enabled: true },
           retry: { enabled: false, maxRetries: 0 },
+          cacheWarming: "streaming",
           defaultTools: [],
         },
         { projectTrusted: false },
@@ -1636,7 +1637,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           if (!session.isStreaming) return false;
           void session
             .sendCustomMessage(backgroundCommandMessage(notice), { deliverAs: "steer" })
-            .catch(() => session.agent.abort());
+            .catch(() => session.abort());
           return true;
         },
       );
@@ -1668,7 +1669,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             }),
           );
           this.#historyWrites.set(request.runId, pending);
-          void pending.catch(() => session.agent.abort());
+          void pending.catch(() => session.abort());
         }
 
         if (
@@ -1679,7 +1680,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         ) {
           const environment = runtimeEnvironmentAfterCompaction(session.messages, projection);
           if (environment)
-            session.agent.steer({ role: "custom", ...environment, timestamp: Date.now() });
+            void session
+              .sendCustomMessage(environment, { deliverAs: "steer" })
+              .catch(() => session.abort());
         }
 
         if (
