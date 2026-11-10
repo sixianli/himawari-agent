@@ -13,6 +13,7 @@ import {
   validateToolArguments,
 } from "@earendil-works/pi-ai";
 import {
+  createAgentSession,
   createBashToolDefinition,
   createReadToolDefinition,
 } from "@earendil-works/pi-coding-agent";
@@ -1656,21 +1657,22 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       });
       const adapter = createAdapter(projection, new RecordingRuntimeTools(), async (options) => {
         const created = await base(options);
-        const agent = created.session.agent as unknown as {
-          state: { messages: unknown[] };
-          steer: (message: unknown) => void;
+        const session = created.session as unknown as {
+          agent: { state: { messages: unknown[] } };
+          sendCustomMessage: (message: unknown, options: unknown) => Promise<void>;
         };
-        state = agent.state;
-        agent.steer = (message) => steered.push(message);
+        state = session.agent.state;
+        session.sendCustomMessage = async (message, options) => {
+          steered.push({ message, options });
+        };
         return created;
       });
       await collect(adapter.run(request));
       expect(steered).toHaveLength(expected);
       if (expected)
         expect(steered[0]).toMatchObject({
-          role: "custom",
-          customType: "himawari.runtime-environment",
-          display: false,
+          message: { customType: "himawari.runtime-environment", display: false },
+          options: { deliverAs: "steer" },
         });
       if (expected) expect(JSON.stringify(steered[0])).toContain("工作目录：/srv/demo。");
     },
@@ -4327,4 +4329,63 @@ it("[BG-2] delivers a background result before the next model call while the run
   expect(tools.delivered).toEqual([true]);
   expect(model.observed).toHaveLength(2);
   expect(messageText(model.observed.at(-1))).toContain("7 passed");
+});
+
+it("[D5-NOTICE] delivers a background result that arrives as the last answer ends", async () => {
+  const model = await createFauxModelFixture("先回答一次", undefined, [], ["已经看到后台结果"]);
+  const tools = new BackgroundRuntimeTools();
+  const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
+    projection: new RecordingProjection(),
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => new Date().toISOString(),
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `background:${ordinal}`,
+    createSession: async (options) => {
+      const created = await createAgentSession(options);
+      const stop = created.session.subscribe((event) => {
+        if (event.type !== "agent_end") return;
+        stop();
+        tools.finish("后台命令已结束。输出：3 passed");
+      });
+      return created;
+    },
+  });
+  const events = await collect(
+    adapter.run({
+      ...request,
+      modelRef: model.descriptor.ref,
+      executionDeadlineAt: new Date(Date.now() + 60_000).toISOString(),
+    }),
+  );
+  expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
+  expect(tools.delivered).toEqual([true]);
+  expect(model.observed).toHaveLength(2);
+  expect(messageText(model.observed.at(-1))).toContain("3 passed");
+  expect(messageText(model.observed.at(0))).not.toContain("3 passed");
+});
+
+it("[D7] pins Pi cache warming to streaming so a Pi upgrade cannot turn on idle warming", async () => {
+  const model = await createFauxModelFixture("好");
+  const modes: string[] = [];
+  const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
+    projection: new RecordingProjection(),
+    tools: new RecordingRuntimeTools(),
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => new Date().toISOString(),
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `warming:${ordinal}`,
+    createSession: async (options) => {
+      modes.push(options.settingsManager?.getGlobalSettings().cacheWarming ?? "unset");
+      modes.push(options.settingsManager?.getCacheWarmingMode() ?? "unset");
+      return createAgentSession(options);
+    },
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
+  expect(modes).toEqual(["streaming", "streaming"]);
 });

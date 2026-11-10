@@ -75,10 +75,10 @@ Andy 在 2026-11-10 要求写这份规范，原话是“让 AI coding agent 以�
 | [接模型服务方](#pattern-provider) | `registerProvider`，协议相同就复用 Pi 的流式实现；自定义取密钥时用完整 `Provider` 的原生认证（`createProvider` + `registerNativeProvider`） | 照官方；认证声明见 [ADR 0205](adr/0205-pi-native-provider-auth.md) |
 | [单次后台模型调用](#pattern-direct-call) | `modelRuntime.stream` / `ctx.modelRegistry.complete`，用 `fetch`、`onPayload` 选项 | 照官方 |
 | [压缩](#pattern-compaction) | 设置开关；`session_before_compact` 自己出摘要 | 用内置压缩；摘要请求经[偏离 D1](#current-deviations) 改开头 |
-| [运行中插消息](#pattern-steer) | `pi.sendMessage` / `session.sendCustomMessage`，`deliverAs` 选时机 | 部分绕到底层，见[偏离 D5](#current-deviations) |
+| [运行中插消息](#pattern-steer) | `pi.sendMessage` / `session.sendCustomMessage`，`deliverAs` 选时机 | 照官方；只有审批续跑那一轮绕到底层，见[偏离 D5](#current-deviations) |
 | [结束前补一步](#pattern-settle) | `agent_before_settle` 返回条目并要求续一轮 | 没用 |
-| [中止](#pattern-abort) | `session.abort()`；扩展里用 `ctx.signal` | 绕到底层，见[偏离 D5](#current-deviations) |
-| [重试、缓存预热等设置](#pattern-settings) | `SettingsManager.inMemory({...})` | 重试照官方；缓存预热没接预算和用量，见[偏离 D7](#current-deviations) |
+| [中止](#pattern-abort) | `session.abort()`；扩展里用 `ctx.signal` | 照官方；只有工具内部绕到底层，见[偏离 D5](#current-deviations) |
+| [重试、缓存预热等设置](#pattern-settings) | `SettingsManager.inMemory({...})` | 重试照官方；缓存预热锁在 `streaming`、模型不填缓存寿命，见[偏离 D7](#current-deviations) |
 
 <a id="pattern-session"></a>
 ### 建会话
@@ -323,6 +323,7 @@ pi.on("agent_before_settle", async (event, ctx) => {
 SettingsManager.inMemory({
   compaction: { enabled: true },
   retry: { enabled: false, maxRetries: 0 },
+  cacheWarming: "streaming",
 });
 ```
 
@@ -330,6 +331,7 @@ SettingsManager.inMemory({
 - 缓存预热（`cacheWarming`，Pi 定时补发一个只要 1 个输出 token 的请求，让服务方的缓存不过期）：1.5.0 默认 `"streaming"`，1.5.1 默认改成 `"idle"`，空闲时最多续 30 分钟。补发的请求会花钱。升级 Pi 时必须先看 `CHANGELOG.md` 里改了哪些默认值。
 - 预热要保留，不能因为 Himawari 管不到费用就关掉（Andy 2026-11-10）。官方的管法：模型配置写 `promptCache`（服务方缓存能存几秒，没写的模型不预热，`docs/models.md` 第 106 行）；每次预热前 Pi 发 `cache_warming_decision` 事件（`docs/extensions.md` 第 912 行），第 929 行原话“Return `{ action: "warm" }` or `{ action: "stop" }` to override”，Himawari 在这里按自己的预算决定；预热的用量 Pi 记成一条 `cache_warm` 会话条目并发出 `entry_appended` 事件（1.5.1 `dist/core/cache-warmer.js` 第 188 行）。Himawari 现在把 `entry_appended` 列为忽略的事件（`pi-runtime-adapter.ts` 的 `KNOWN_IGNORED_EVENTS`），用量表的来源也只有 `model-port`、`agent-stream` 两种（`packages/application/src/ports/model-usage.ts`），所以记预热用量要在 D7 的方案里一起改：事件映射（从忽略列表拿掉还要加处理分支，否则会报未知事件）、用量的类型、持久化校验和迁移里的 `CHECK`。预热请求由 Pi 直接重放上一次请求（1.5.0 `dist/core/cache-warmer.js` 第 238 行），不经过 Himawari 替换的请求函数，所以没有准入、预算和用量记录；但它沿用那次请求的选项（1.5.0 `dist/core/sdk.js` 第 199、269 行把选项原样存下），其中有 Himawari 传入的出口遮盖 `fetch` 和密钥，所以不会绕开遮盖。但这些 `fetch` 是为一次请求做的，例如走 Vercel 网关时只允许发一次，再发就报 `AI_GATEWAY_MULTIPLE_REQUESTS_FORBIDDEN`（`packages/runtime-pi/src/gateway-observation.ts`），预热重放会失败；D7 的方案要给预热单独准备能重复用、仍走遮盖的 `fetch`，并用“连续两次都遮盖、都带密钥”的测试锁住。
 - DeepSeek 不需要预热：缓存自动开启，不用之后“usually within a few hours to a few days”才清掉（<https://api-docs.deepseek.com/guides/kv_cache>）。Himawari 每次运行（处理一条用户消息的整个过程，中间可以多次请求模型）新建 Pi 会话、跑完关掉（`pi-runtime-adapter.ts` 的 `session.dispose()`），会话一关预热就停，所以两次运行之间的空闲预热现在跑不起来。
+- 现状（[ADR 0206](adr/0206-pi-deviations-d5-insertion-and-d7-cache-warming.md)）：Himawari 显式写 `cacheWarming: "streaming"`，升级 Pi 不会被新默认值带走；注册给 Pi 的模型都不填 `promptCache`，所以不预热，`configured-model-binding.compat.test.ts` 的 `[D7]` 用例锁住这一点。要加 5 分钟缓存的模型，先按上一条出整套方案（预算、遮盖、用量）。
 
 [↑ 回到阅读导航](#contents)
 
@@ -351,9 +353,9 @@ SettingsManager.inMemory({
 | D2 | `pi-runtime-adapter.ts` 的 `createTool` 里调 `tools.preflight`、`reconciliation.suspend` | 权限判断和等审批写在工具的 `execute` 里，等审批时存快照、结束这次运行 | `tool_call` 拦截（`permission-gate.ts`） | 官方拦截只能在进程里当场等；审批要等几小时、服务可能重启（[ADR 0023](adr/0023-durable-hitl-execution.md)）。ADR 0023 写于 Pi 0.x，没写和 `tool_call` 的比较 | Andy 2026-11-10 批准保留（[ADR 0204](adr/0204-handle-pi-deviations-d2-d3-d5.md)） |
 | D3 | `pi-tool-batch-continuation.ts` | 审批后续跑：存会话条目和那次回答，续跑时回放 | 官方没有稳定写法；`pi-durable` 标为实验性 | [ADR 0023](adr/0023-durable-hitl-execution.md)、[ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#decision) | Andy 2026-11-10 批准保留（[ADR 0204](adr/0204-handle-pi-deviations-d2-d3-d5.md)） |
 | D4 | `configured-model-binding.ts` 的 `initializeRuntime`（原 `pi-runtime-adapter.ts` 的 `sessionModelRuntime`） | 已关闭：原来用 Proxy 改写 `hasConfiguredAuth`；现改为完整 `Provider` 的原生认证（`check` 回“已配置”、`resolve` 只从 `credential` 取密钥，来源唯一靠空凭据库），见 [ADR 0205](adr/0205-pi-native-provider-auth.md) | 完整 `Provider` 原生认证（`createProvider` + `registerNativeProvider`） | — | 已改回官方写法；升级 Pi 时重查 `[D4]` 测试 |
-| D5 | `pi-runtime-adapter.ts` 里的 `agent.steer`、`agent.abort()`、`agent.continue()`、`agent.hasQueuedMessages()`（读历史和工具已在 2026-11-10 改成 `session.messages`、`session.getActiveToolNames`、`session.getToolDefinition`） | 绕过会话直接用底层 Agent | `session.sendCustomMessage`、`session.abort()`；`continue`、`hasQueuedMessages` 在 `docs/sdk.md` 里没有会话层接口，需要另查 | 工具内部不能等会话空闲，所以用底层中止；其余没有写下理由 | 插消息、接着跑的部分先出方案交 Andy（[ADR 0204](adr/0204-handle-pi-deviations-d2-d3-d5.md)） |
+| D5 | `pi-runtime-adapter.ts` 审批续跑的 `session.agent.continue()`、续跑那一轮里“工具循环已停止”提示的 `agent.steer`、一轮结束后的补跑循环（`agent.hasQueuedMessages()` + `agent.continue()`）、工具内部的 `agent.abort()`（读历史和工具、其余插消息和中止已在 2026-11-10 改成 `session.messages`、`session.getActiveToolNames`、`session.getToolDefinition`、`session.sendCustomMessage`、`session.abort()`） | 绕过会话直接用底层 Agent | 会话层没有“不加新消息、接着跑”和查底层队列的接口；`session.abort()` 会等会话空闲 | 续跑若改成 `sendCustomMessage(..., { triggerTurn: true })`，模型会多看到一条合成消息；续跑那一轮里会话不算运行中，`sendCustomMessage` 会直接写进历史；Pi 收尾前有一次 `await` 间隙，落进去的后台通知要补跑；工具里等不到会话空闲 | Andy 2026-11-10 批准保留（[ADR 0204](adr/0204-handle-pi-deviations-d2-d3-d5.md)、[ADR 0206](adr/0206-pi-deviations-d5-insertion-and-d7-cache-warming.md)） |
 | D6 | `pi-runtime-adapter.ts` 的 `himawari-system-prompt` 扩展 | `before_agent_start` 返回系统提示，D1 又在请求前换一次 | 二选一 | 跟着 D1 一起定 | 并入 D1 的方案 |
-| D7 | `pi-runtime-adapter.ts` 的 `SettingsManager.inMemory` 和模型配置 | 没设 `cacheWarming`，模型也没填 `promptCache`，所以从不预热；没接预热的预算判断和用量记录 | 模型填 `promptCache`；`cache_warming_decision` 按预算回 `warm` 或 `stop`；`cache_warm` 条目记进用量表（见[设置](#pattern-settings)） | 没有写下理由；1.5.1 默认值变了。Andy 2026-11-10 定预热要保留 | 照官方接，先出方案交 Andy |
+| D7 | `pi-runtime-adapter.ts` 的 `SettingsManager.inMemory` 和模型配置 | 已显式设 `cacheWarming: "streaming"`；模型都不填 `promptCache`，所以从不预热，也就没接预热的预算判断和用量记录 | 模型填 `promptCache`；`cache_warming_decision` 按预算回 `warm` 或 `stop`；`cache_warm` 条目记进用量表（见[设置](#pattern-settings)） | 生产只有长时间缓存的 DeepSeek，不需要预热；加 5 分钟缓存的模型之前必须先做整套 | 设置已锁定，整套等加短缓存模型时先出方案（[ADR 0206](adr/0206-pi-deviations-d5-insertion-and-d7-cache-warming.md)） |
 
 <a id="how-to-deviate"></a>
 ## 六、要偏离时怎么做
