@@ -55,7 +55,7 @@ afterEach(() => {
   for (const fixture of fixtures.splice(0)) rmSync(fixture, { recursive: true, force: true });
 });
 
-it("policy入口在测试发现前拒绝质量工作流漏项", async () => {
+function policyFixtureRoot() {
   const root = mkdtempSync(path.join(os.tmpdir(), "himawari-quality-policy-entry-"));
   fixtures.push(root);
   const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "pipe" });
@@ -68,18 +68,35 @@ it("policy入口在测试发现前拒绝质量工作流漏项", async () => {
     "ci/toolchain-lock.json",
     "ci/quality-policy.json",
     "package.json",
+    "package-lock.json",
     ".github/workflows/ci.yml",
     ".github/workflows/main.yml",
   ]) {
     mkdirSync(path.dirname(path.join(root, filename)), { recursive: true });
     copyFileSync(path.join(repositoryRoot, filename), path.join(root, filename));
   }
+  return root;
+}
+
+it("policy入口在测试发现前拒绝质量工作流漏项", async () => {
+  const root = policyFixtureRoot();
   const document = parse(
     readFileSync(path.join(repositoryRoot, ".github/workflows/quality.yml"), "utf8"),
   );
   delete document.jobs.dependencies;
   writeFileSync(path.join(root, ".github/workflows/quality.yml"), stringify(document));
   await expect(policyMain(["--root", root])).rejects.toThrow("CI_QUALITY_WORKFLOW_MISMATCH:jobs");
+});
+
+it("[I-91] policy入口拒绝与 package-lock.json 不符的安装脚本审阅记录", async () => {
+  const root = policyFixtureRoot();
+  const lockPath = path.join(root, "ci/toolchain-lock.json");
+  const toolchain = JSON.parse(readFileSync(lockPath, "utf8"));
+  toolchain.nativeDependencies[0].version = "0.0.1";
+  writeFileSync(lockPath, JSON.stringify(toolchain));
+  await expect(policyMain(["--root", root])).rejects.toThrow(
+    "Install-script review version differs from package-lock",
+  );
 });
 
 function workflow() {

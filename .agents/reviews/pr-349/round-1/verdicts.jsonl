@@ -1,0 +1,8 @@
+{"id": "r1-ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新增测试只挂在 `npm test` 的 tooling/coverage 项目下", "valid": true, "class": "error", "severity": "medium-high", "trigger": "下一次依赖升级后，只按快速模式跑 `npm run check`、不跑 `npm test`", "consequence": "两份锁文件不一致不会在本地暴露，合并后才在 CI 安装步骤变红，事故重演", "modelSeverity": "中"}
+{"id": "r1-ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新测试只比较版本和 `hasInstallScript`，没有比较 `scripts`/`reviewedFiles`", "valid": false, "class": "better"}
+{"id": "r1-ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新门槛没有反向/夹具用例", "valid": true, "class": "error", "severity": "low", "trigger": "改坏检查本身（例如漏掉版本比较）时没有测试会失败", "consequence": "检查悄悄失效，只能靠手工证据；没有错误结果", "modelSeverity": "低"}
+{"id": "r1-ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "I-91 的「发布包摘要与锁文件一致」说法不准确", "valid": true, "class": "error", "severity": "low", "trigger": "读事故行的人以为 `ci/toolchain-lock.json` 里有摘要可核对", "consequence": "只是措辞含糊，不会让人做错事", "modelSeverity": "低"}
+{"id": "r1-ds-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "fsevents 的 `scripts: {}` 与 `hasInstallScript: true` 矛盾", "valid": false, "class": "better"}
+{"id": "r1-glm-1", "model": "opencode-go/glm-5.3-flash", "quote": "本次改动只是把检查放进 `npm test`（CI coverage 任务）", "valid": true, "class": "error", "severity": "medium-high", "trigger": "同 r1-ds-1", "consequence": "同 r1-ds-1", "modelSeverity": "中"}
+{"id": "r1-glm-2", "model": "opencode-go/glm-5.3-flash", "quote": "新测试的判定条件与 `auditInstalledDependencies` 不完全一致", "valid": false, "class": "better"}
+{"id": "r1-glm-3", "model": "opencode-go/glm-5.3-flash", "quote": "2.21.0 发布包脚本内容的说法无法在本地核实", "valid": false, "class": "better"}
