@@ -636,19 +636,6 @@ function contextBlockContent(
   return `${contextBlockMarker(block)}\n${block.content}${dated}`;
 }
 
-function sessionModelRuntime(binding: PiModelBinding): ModelRuntime {
-  if (!binding.descriptor?.secretRequirement || !binding.resolveSecret) return binding.modelRuntime;
-  return new Proxy(binding.modelRuntime, {
-    get(target, property) {
-      if (property === "hasConfiguredAuth")
-        return (provider: string) =>
-          provider === binding.model.provider || target.hasConfiguredAuth(provider);
-      const value = Reflect.get(target, property, target);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
-}
-
 function himawariRequestContext(
   requested: TranscriptContext,
   systemPrompt: string,
@@ -1556,7 +1543,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         cwd: this.#dependencies.cwd,
         ...(this.#dependencies.agentDir ? { agentDir: this.#dependencies.agentDir } : {}),
         model: binding.model,
-        modelRuntime: sessionModelRuntime(binding),
+        modelRuntime: binding.modelRuntime,
         thinkingLevel: request.thinkingLevel ?? "off",
         noTools: "all",
         tools: descriptors.map(({ name }) => name),
