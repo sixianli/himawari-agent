@@ -1616,9 +1616,11 @@ describe("production memory capture", () => {
     expect(byText("跑步")).toMatchObject({ importance: 500, profilePin: null });
     expect(byText("咖啡")).toMatchObject({ importance: 500, profilePin: "on" });
     expect(byText("蓝色")).toMatchObject({ importance: 650, profilePin: null });
-    expect(profiled()).toEqual(["我每天必须喝咖啡", "主人最喜欢的颜色是蓝色"]);
+    const dated = (text: string) =>
+      expect.stringMatching(new RegExp(`^${text}（记于 2026-10-25）$`, "u"));
+    expect(profiled()).toEqual([dated("我每天必须喝咖啡"), dated("主人最喜欢的颜色是蓝色")]);
     expect(view.profileUsage).toEqual({
-      used: "我每天必须喝咖啡".length + 3 + "主人最喜欢的颜色是蓝色".length + 3,
+      used: profiled().reduce((sum, text) => sum + text.length + 3, 0),
       limit: 2000,
       queued: [],
     });
@@ -1636,7 +1638,8 @@ describe("production memory capture", () => {
     );
     view = await overview(context.control);
     expect(byText("蓝色").profilePin).toBe("off");
-    expect(profiled()).toEqual(["我每天必须喝咖啡"]);
+    expect(profiled()).toEqual([dated("我每天必须喝咖啡")]);
+    expect(view.profileUsage.used).toBe(profiled().reduce((sum, text) => sum + text.length + 3, 0));
     expect(view.lastViewedAt).toBeNull();
     await command(context.control, "memory.page.viewed", {}, "viewed-1");
     expect((await overview(context.control)).lastViewedAt).toBe(context.clock.value);
@@ -1794,7 +1797,9 @@ describe("production memory capture", () => {
       (await overview(context.control)).profile.flatMap(({ lines }) =>
         lines.map(({ text }) => text),
       );
-    expect(await profiled()).toContain("我每天必须喝咖啡");
+    const coffee = (lines: readonly string[]) =>
+      lines.some((text) => text.startsWith("我每天必须喝咖啡（记于 "));
+    expect(coffee(await profiled())).toBe(true);
     const preference = await find("咖啡");
     await command(
       context.control,
@@ -1802,7 +1807,7 @@ describe("production memory capture", () => {
       { memoryId: preference.memoryId, expectedRevision: preference.revision, category: "event" },
       "recategorize-event",
     );
-    expect(await profiled()).not.toContain("我每天必须喝咖啡");
+    expect(coffee(await profiled())).toBe(false);
     const eventMemory = await find("咖啡");
     expect(eventMemory).toMatchObject({ category: "event", profilePin: "on" });
     await command(

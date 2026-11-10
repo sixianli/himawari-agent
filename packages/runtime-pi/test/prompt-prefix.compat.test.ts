@@ -365,6 +365,7 @@ const memoryBlock = (content: string, ref = "memory-1"): RuntimeProjectionContex
   ref,
   content,
   dataClassification: "private",
+  dates: { recordedAt: "2026-10-27T16:30:00.000Z", validFrom: null, validTo: null },
 });
 
 const ownerProfile: RuntimeProjectionContextBlock = {
@@ -406,6 +407,46 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(bodies[1]).toContain("明天是否需要带伞");
     expect(bodies[1]).toContain("主人住在东京都北区");
     expect(bodies[2]).toContain("2026-11-02 09:50:00");
+  });
+
+  it("[MEMORY-DATE] writes each memory's date after it in the configured time zone and keeps later turns append-only", async () => {
+    const { bodies } = await conversation(
+      [
+        { prompt: "我住哪里", blocks: [memoryBlock("主人住在东京都北区。")] },
+        {
+          prompt: "我什么时候开始骑车",
+          blocks: [
+            {
+              ...memoryBlock("主人骑车通勤。", "memory-bike"),
+              dates: {
+                recordedAt: "2026-10-01T00:00:00.000Z",
+                validFrom: "2026-09-01",
+                validTo: null,
+              },
+            },
+          ],
+        },
+        {
+          prompt: "我以前在哪上班",
+          blocks: [
+            {
+              ...memoryBlock("主人在大阪上班。", "memory-osaka"),
+              dates: {
+                recordedAt: "2021-03-01T00:00:00.000Z",
+                validFrom: "2021-03-01",
+                validTo: "2024-08-31T15:00:00.000Z",
+              },
+            },
+          ],
+        },
+      ],
+      (index) => ({ text: `回答${index}` }),
+    );
+    expect(findConversationBreak(bodies)).toBeNull();
+    const last = (body: string) => JSON.stringify((JSON.parse(body).messages as unknown[]).at(-1));
+    expect(last(bodies[0] ?? "")).toContain("主人住在东京都北区。（记于 2026-10-28）");
+    expect(last(bodies[1] ?? "")).toContain("主人骑车通勤。（2026-09-01 至今）");
+    expect(last(bodies[2] ?? "")).toContain("主人在大阪上班。（2021-03-01 至 2024-09-01）");
   });
 
   it("[NAME-1] keeps the conversation append-only when the owner changes how to be addressed mid-conversation", async () => {

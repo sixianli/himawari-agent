@@ -119,3 +119,39 @@ export const MEMORY_CONSOLIDATION_FORMAT = fixedPrompt({
   output: "json",
   text: '只返回一个 JSON 对象，不要 Markdown 代码块：{"groups":[{"group":"g1","action":"duplicate|conflict|keep","keep":"M1","drop":"M2"}],"insights":[{"text":"...","category":"preference","basis":["M1","M3"]}]}',
 });
+
+export const MEMORY_DATE_RECORDED = templatePrompt({
+  id: "memory.date.recorded",
+  purpose: "自动带入和档案里每条记忆后面的日期：没有生效时间段时写这条记忆是哪天记下的",
+  usedBy: ["packages/application/src/ports/memory-dates.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [text("（记于 "), slot("date"), text("）")],
+});
+
+export const MEMORY_DATE_RANGE = templatePrompt({
+  id: "memory.date.range",
+  purpose: "自动带入和档案里每条记忆后面的日期：有生效时间段且已写明结束日期",
+  usedBy: ["packages/application/src/ports/memory-dates.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [text("（"), slot("from"), text(" 至 "), slot("to"), text("）")],
+});
+
+export const MEMORY_DATE_ONGOING = templatePrompt({
+  id: "memory.date.ongoing",
+  purpose: "自动带入和档案里每条记忆后面的日期：有生效时间段、到现在仍成立",
+  usedBy: ["packages/application/src/ports/memory-dates.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [text("（"), slot("from"), text(" 至今）")],
+});
+
+export const MEMORY_DATE_UPCOMING = templatePrompt({
+  id: "memory.date.upcoming",
+  purpose: "自动带入和档案里每条记忆后面的日期：记下时还没开始、没有结束日期",
+  usedBy: ["packages/application/src/ports/memory-dates.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [text("（"), slot("from"), text(" 起）")],
+});

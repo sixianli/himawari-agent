@@ -825,7 +825,7 @@ function memoryOverview() {
   };
 }
 
-function weeklySnapshot() {
+function weeklySnapshot(withMails = false) {
   const startDay = "2026-08-19";
   const day = (offset) =>
     new Date(Date.parse(`${startDay}T00:00:00.000Z`) + offset * 86_400_000)
@@ -948,8 +948,45 @@ function weeklySnapshot() {
         pairing: rate(40, 42),
         buckets: { both: 5, museOnly: 1, himawariOnly: 2, bothSilent: 31, noHimawariRecord: 1 },
       },
-      gap: null,
-      gapCases: [],
+      gap: withMails
+        ? {
+            pairedMails: 40,
+            ratedMails: 12,
+            unratedMails: 28,
+            lines: ["hitRate", "disturbanceRate"].map((line) => ({
+              line,
+              mails: 6,
+              museReminded: 4,
+              himawariReminded: 2,
+              muse: rate(4, 6),
+              himawari: rate(2, 6),
+              difference: 0.33,
+              low: -0.1,
+              high: 0.7,
+              verdict: "inconclusive",
+              direction: "none",
+            })),
+          }
+        : null,
+      gapCases: withMails
+        ? ["mail-fixture-full", "mail-fixture-old", "mail-fixture-nojudgment"].map((messageId) => ({
+            id: `gap_${messageId.replaceAll("-", "").slice(0, 20).padEnd(20, "0")}`,
+            messageId,
+            museAt: "2026-08-26T09:10:00.000Z",
+            museTitle: `Muse 提醒：${messageId}`,
+            museText: "请在周五前确认房租扣款",
+            museTextWithheld: false,
+            himawariOutcome: "ignore",
+            himawariReasonCode: "FIXTURE",
+            himawariReason: "看起来是普通通知",
+            ownerRating: "missed",
+            attribution: "notRemembered",
+            memoryHits: 0,
+            relatedMessages: 0,
+            decidedAt: "2026-08-26T09:00:00.000Z",
+            marked: false,
+          }))
+        : [],
       implicit: {
         pushedDecisions: 12,
         otherDecisionEvents: 1,
@@ -1183,6 +1220,51 @@ function decisionChainFixture(decisionId) {
   };
 }
 
+function decisionEmailFixture(messageId) {
+  const known = {
+    "mail-fixture-full": {
+      decisionId: "decision-gmail-full",
+      ruleIds: ["floor_money_words"],
+      memoryIds: ["memory-bank"],
+      relatedMessages: 1,
+    },
+    "mail-fixture-old": {
+      decisionId: "decision-gmail-old",
+      ruleIds: null,
+      memoryIds: null,
+      relatedMessages: null,
+    },
+  }[messageId];
+  const museEntry = {
+    entryId: `muse-${messageId}`,
+    museAt: "2026-08-26T09:10:00.000Z",
+    reminded: true,
+    kind: "proactive",
+    state: "delivered",
+    title: `Muse 提醒：${messageId}`,
+    text: "请在周五前确认房租扣款",
+    textWithheld: false,
+    timingOk: true,
+    contentOk: true,
+  };
+  return {
+    messageId,
+    mail: known
+      ? {
+          threadId: "thread-main",
+          outcome: "ignore",
+          skipReason: null,
+          processedAt: "2026-08-26T09:00:00.000Z",
+          rating: "missed",
+          decidedAt: "2026-08-26T09:00:00.000Z",
+          ...known,
+        }
+      : null,
+    muse: { entries: [museEntry], truncated: false },
+    comparison: known ? "museOnly" : "noHimawariRecord",
+  };
+}
+
 function handleOperationsQuery(message, request) {
   switch (message.type) {
     case "memory.overview.read":
@@ -1213,9 +1295,16 @@ function handleOperationsQuery(message, request) {
             ...envelope("snapshot", "proactive.weekly.snapshot"),
             payload: /(^|;\s*)himawari-fixture-weekly=unset(;|$)/.test(request.headers.cookie ?? "")
               ? unsetWeeklySnapshot()
-              : weeklySnapshot(),
+              : weeklySnapshot(
+                  /(^|;\s*)himawari-fixture-mail=on(;|$)/.test(request.headers.cookie ?? ""),
+                ),
           }
         : undefined;
+    case "decision.email.read": {
+      if (!memoryFixture) return undefined;
+      const email = decisionEmailFixture(message.payload.messageId);
+      return { ...envelope("snapshot", "decision.email.snapshot"), payload: email };
+    }
     case "decision.chain.read": {
       if (!memoryFixture) return undefined;
       const chain = decisionChainFixture(message.payload.decisionId);
@@ -1907,6 +1996,7 @@ async function handleRequest(request, response) {
               "proactive.review.rate",
               "proactive.weekly.read",
               "decision.chain.read",
+              "decision.email.read",
             ]
           : []),
       ],
