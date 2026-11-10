@@ -79,6 +79,20 @@ describe("rule book in the product store", () => {
     });
   });
 
+  it("[HR-1] refuses a sender with a lone surrogate that no rule expression could carry", async () => {
+    const { store } = await open();
+    await expect(
+      store.writeSettings({
+        ...scope,
+        enabled: true,
+        quietHours: NIGHT,
+        importantSenders: ["\ud800@example.com"],
+        now: T0,
+      }),
+    ).rejects.toThrow();
+    expect((await store.readSettings(scope)).importantSenders).toEqual([]);
+  });
+
   it("[HR-1] raises a rule's revision and records its history only when its value changes", async () => {
     const { stateRoot, store } = await open();
     await store.writeSettings({

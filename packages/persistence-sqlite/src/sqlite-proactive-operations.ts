@@ -273,7 +273,11 @@ export class SqliteProactiveOperations {
       ) ||
       input.importantSenders.length > 200 ||
       input.importantSenders.some(
-        (sender) => typeof sender !== "string" || sender.length < 1 || sender.length > 254,
+        (sender) =>
+            typeof sender !== "string" ||
+            sender.length < 1 ||
+            sender.length > 254 ||
+            /\p{Surrogate}/u.test(sender),
       )
     )
       this.invalid("Proactive settings are invalid");

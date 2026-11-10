@@ -178,6 +178,7 @@ export function importantSenderExpression(senders: readonly string[]): string {
   const entries = [
     ...new Set(
       senders
+        .filter((entry) => !/\p{Surrogate}/u.test(entry))
         .map((entry) => entry.trim().toLowerCase().replace(/^@/u, ""))
         .filter((entry) => entry.length > 0),
     ),
