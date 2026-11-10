@@ -2730,6 +2730,147 @@ it("[R2-L5] runs configured Gateway sessions without storing credentials in the 
   }
 });
 
+type CapturedModelRequest = {
+  readonly method: string | undefined;
+  readonly path: string | undefined;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: string;
+};
+
+const VOLATILE_HEADER = /^(host|connection|content-length|user-agent|accept-encoding|accept-language|sec-fetch-mode|x-stainless-.*)$/u;
+
+async function captureConfiguredModelRequest(options: {
+  readonly provider: "vercel-ai-gateway" | "magpie";
+  readonly maxTokens?: number;
+}): Promise<readonly CapturedModelRequest[]> {
+  const { createServer } = await import("node:http");
+  const { ConfiguredPiModelBindingPort } = await import("../src/index.js");
+  const captured: CapturedModelRequest[] = [];
+  const server = createServer((incoming, response) => {
+    const chunks: Buffer[] = [];
+    incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+    incoming.on("end", () => {
+      const headers: Record<string, string> = {};
+      for (const [name, value] of Object.entries(incoming.headers)) {
+        if (VOLATILE_HEADER.test(name)) continue;
+        headers[name] = Array.isArray(value) ? value.join(", ") : (value ?? "");
+      }
+      captured.push({
+        method: incoming.method,
+        path: incoming.url,
+        headers,
+        body: Buffer.concat(chunks).toString("utf8"),
+      });
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.end(
+        `data: ${JSON.stringify({ id: "local-completion", object: "chat.completion.chunk", model: "deepseek/deepseek-v4.1-flash", choices: [{ index: 0, delta: { role: "assistant", content: "凭据受控回答" }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: "local-completion", object: "chat.completion.chunk", model: "deepseek/deepseek-v4.1-flash", choices: [{ index: 0, delta: { provider_metadata: { gateway: { generationId: "gen:fixture", routing: { finalProvider: "morph" }, cost: "0" } } }, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: "0" } })}\n\ndata: [DONE]\n\n`,
+      );
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("LOCAL_PROVIDER_REQUIRED");
+  const models = new ConfiguredPiModelBindingPort({
+    descriptors: [
+      {
+        ref: "golden-primary",
+        model: "deepseek/deepseek-v4.1-flash",
+        provider: options.provider,
+        version: "v1",
+        name: "DeepSeek V4.1 Flash",
+        routingClass: "primary",
+        ...(options.provider === "vercel-ai-gateway"
+          ? { providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" as const } }
+          : {}),
+        priority: 1,
+        api: "openai-completions",
+        baseUrl: `http://127.0.0.1:${address.port}/v1`,
+        reasoning: true,
+        input: ["text"],
+        contextWindow: 8192,
+        maxTokens: options.maxTokens ?? 1024,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        capabilities: ["text", "structured_outputs"],
+        disclosure: "trusted_remote",
+        allowedDataClassifications: ["private"],
+        secretRequirement: {
+          secretRef: "fixture-key",
+          secretVersion: "v1",
+          purpose: "model-provider-auth",
+        },
+      },
+    ],
+    secretSource: { productionSuitable: true, resolve: async () => "fixture-request-key" },
+  });
+  try {
+    const adapter = new PiAgentRuntimeAdapter({
+      egress: testModelEgress(),
+      projection: new RecordingProjection(),
+      tools: new RecordingRuntimeTools(),
+      models,
+      cwd: process.cwd(),
+      now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      logicalSlot: (_request, ordinal) => `golden-pi:${ordinal}`,
+    });
+    const events = await collect(
+      adapter.run({
+        ...request,
+        modelRef: "golden-primary",
+        sessionId: fixtureIdentifier<RuntimeRequest["sessionId"]>("session:golden-request"),
+      }),
+    );
+    expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
+    return captured;
+  } finally {
+    await models.close();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+}
+
+describe("[D4] configured provider request bytes", () => {
+  const goldenPath = new URL("./fixtures/d4-golden-requests.json", import.meta.url);
+
+  async function readGolden(): Promise<Record<string, readonly CapturedModelRequest[]>> {
+    const { readFile } = await import("node:fs/promises");
+    return JSON.parse(await readFile(goldenPath, "utf8")) as Record<
+      string,
+      readonly CapturedModelRequest[]
+    >;
+  }
+
+  it.each(["magpie", "vercel-ai-gateway"] as const)(
+    "sends the same method, path, headers and body for %s as the recorded golden request",
+    async (provider) => {
+      const actual = await captureConfiguredModelRequest({ provider });
+      if (process.env["D4_WRITE_GOLDEN"] === "1") {
+        const { readFile, writeFile } = await import("node:fs/promises");
+        let existing: Record<string, unknown> = {};
+        try {
+          existing = JSON.parse(await readFile(goldenPath, "utf8")) as Record<string, unknown>;
+        } catch {
+          existing = {};
+        }
+        await writeFile(
+          goldenPath,
+          `${JSON.stringify({ ...existing, [provider]: actual }, null, 2)}\n`,
+        );
+      }
+      const golden = await readGolden();
+      expect(actual).toEqual(golden[provider]);
+      expect(actual.length).toBeGreaterThan(0);
+    },
+  );
+
+  it("fails the golden comparison when a model field that changes the request is altered", async () => {
+    const golden = await readGolden();
+    const altered = await captureConfiguredModelRequest({ provider: "magpie", maxTokens: 512 });
+    expect(altered).not.toEqual(golden["magpie"]);
+  });
+});
+
 it("preserves a denied tool call across native session restart and delivers only the new prompt", async () => {
   class HistoryProjection extends RecordingProjection {
     saved: readonly unknown[] = [];
