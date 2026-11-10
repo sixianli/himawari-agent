@@ -100,6 +100,8 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 
 涉及模型连接、提供方、路由、流式输出、模型运行时、Agent 循环（模型一步步调用工具的那套流程）、工具、会话或扩展，或者要改依赖、导入 `@earendil-works/pi-*` 包、查看 `pi-mono` 源码之前，先读 [Pi 优先与工作区约定](.agents/instructions/pi-and-workspace.md)。
 
+在 Pi 上加功能或改接入点（会话、工具、工具调用前后的拦截、系统提示、发给模型的请求、模型服务方、压缩、往运行中插消息、中止）之前，必须先读 [Pi 二次开发规范](docs/pi-development-guide.md)：官方有写法就照官方写；只有官方没有好写法或官方写法有缺陷时才能自己设计，而且要先出方案给 Andy 看，他同意后才能写进代码。规范里“现有的偏离”一节列出的写法不得照抄。决定见 [ADR 0203](docs/adr/0203-follow-pi-official-extension-patterns.md)。
+
 <a id="pushing-commits"></a>
 ## 推送提交
 

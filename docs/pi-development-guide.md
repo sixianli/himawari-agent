@@ -1,0 +1,357 @@
+---
+status: active
+supersedes: ""
+superseded_by: ""
+date: "2026-11-10"
+---
+
+# Pi 二次开发规范
+
+<a id="contents"></a>
+
+Himawari 的模型调用、Agent 循环（模型一步步调用工具的那套流程）、工具和会话都建在 Pi 上。Pi 是 Earendil 公司开源的 Agent 框架，官方仓库 <https://github.com/earendil-works/pi>，npm 包名以 `@earendil-works/pi-` 开头。这份规范写的是：在 Pi 上加功能、改行为时，每类需求官方推荐怎么写，以及什么情况下才允许不照官方写。
+
+Andy 在 2026-11-10 要求写这份规范，原话是“让 AI coding agent 以后在开发 Himawari agent 的时候有一个参考，避免它在开发的时候自己胡乱发挥”，并要求“附上官方推荐的一些写法。除非是官方自己也没有好的解决方案，或者他们自己有缺陷的时候，我们才根据需求灵活发挥，但是呢，这种灵活发挥的地方，要把方案做出来，然后给我看看”。对应的决定见 [ADR 0203](adr/0203-follow-pi-official-extension-patterns.md)。
+
+- [一、必须遵守的规则](#rules)
+- [二、怎样查官方写法](#how-to-look-up)
+- [三、每类需求的官方写法](#official-patterns)
+- [四、Himawari 自己负责的部分](#himawari-owned)
+- [五、现有的偏离（未经 Andy 批准，不得照抄或扩大）](#current-deviations)
+- [六、要偏离时怎么做](#how-to-deviate)
+
+<a id="rules"></a>
+## 一、必须遵守的规则
+
+1. **先查官方，再动手。**凡是动到会话、工具、工具调用前后的拦截、系统提示、发给模型的请求、模型服务方、压缩、往运行中插消息、中止，先读 Pi 官方文档和官方示例的原文（[怎样查](#how-to-look-up)），找到对应的官方写法。不得凭记忆、凭训练数据或凭二手文章决定写法。
+2. **官方有写法就照官方写。**[第三节](#official-patterns)列的是已经核对过的官方写法；新需求不在表里时，按第 1 条去查，查到了就照写，并把它补进表里。
+3. **只有两种情况允许不照官方写：**官方没有能满足需求的写法，或者官方写法有缺陷（例如等审批要等几个小时，而官方的拦截只能让进程一直挂着等，服务重启就丢了）。这时必须先按[第六节](#how-to-deviate)出方案，Andy 同意后才能写进代码和这份规范。
+4. **现有偏离不是范本。**[第五节](#current-deviations)列的是代码里已经存在、还没经 Andy 批准的偏离。新代码不得照抄它们，也不得在它们上面继续加东西；要动它们，先出方案。
+5. **只有 `packages/runtime-pi` 能导入 Pi。**这条来自 [Pi 优先与工作区约定](../.agents/instructions/pi-and-workspace.md#workspace-contract)：“只能在 `packages/runtime-pi` 中导入 `@earendil-works/pi-*` 包”。
+6. **发给模型的内容只追加。**任何写法都不能违反 [.claude/rules/prompt-prefix.md](../.claude/rules/prompt-prefix.md)。官方写法和这条冲突时（例如官方让 Pi 自己每轮重算系统提示），按第 3 条处理。
+
+<a id="how-to-look-up"></a>
+## 二、怎样查官方写法
+
+- **两个版本都看。**锁定版本写在 `packages/runtime-pi/package.json`（2026-11-10 是 1.5.0）；最新版本用 `npm view @earendil-works/pi-coding-agent version` 查（2026-11-10 是 1.5.1）。写代码以锁定版本的接口为准，同时读最新版本的文档：两者说法不同的地方，在方案或提交说明里写出来，升级 Pi 时一并处理。不读比锁定版本更老的文档。
+- **拿原文的方法。**npm 包里自带文档和示例，和发布版本逐字一致：
+
+  ```bash
+  mkdir -p "$SCRATCH/pi-docs" && cd "$SCRATCH/pi-docs"
+  npm pack @earendil-works/pi-coding-agent@1.5.1 @earendil-works/pi-agent-core@1.5.1 @earendil-works/pi-ai@1.5.1
+  for f in *.tgz; do mkdir -p "${f%.tgz}" && tar xzf "$f" -C "${f%.tgz}"; done
+  ```
+
+  `SCRATCH` 指会话自己的临时目录，不要解到仓库里。`pi-coding-agent` 包里有 `docs/`（官方文档）、`examples/extensions/`（扩展示例）、`examples/sdk/`（嵌入用法示例）；`pi-agent-core` 包的 `README.md` 讲底层 Agent 循环；`pi-ai` 包的 `README.md` 和 `dist/types.d.ts` 讲模型请求选项。在线版本在 <https://github.com/earendil-works/pi/tree/main/packages/coding-agent/docs>。
+- **最常用的几份：**
+  - `docs/extensions.md`：扩展能挂的全部事件和 `pi.*` 方法；
+  - `docs/sdk.md`：在自己的 Node 进程里嵌入 Pi（Himawari 就是这样用的）；
+  - `docs/custom-provider.md`：接模型服务方；
+  - `docs/compaction.md`：压缩；
+  - `docs/settings.md`：所有设置及默认值；
+  - `examples/extensions/` 下与需求同名或相近的示例，例如 `permission-gate.ts`（拦截危险命令）、`custom-compaction.ts`（自己写压缩摘要）、`tool-override.ts`（替换内置工具）、`provider-payload.ts`（看和改发给服务方的请求体）。
+- **引用时写清出处：**包名和版本、文件、行号或章节锚点，再引一句原话。另一个 Claude 的总结、项目记忆不算出处（[方案的前提](../.claude/rules/proposal-premises.md)）。
+
+<a id="official-patterns"></a>
+## 三、每类需求的官方写法
+
+下面的示例摘自官方文档或示例，删掉了原有注释；出处里的行号对应 `@earendil-works/pi-coding-agent@1.5.1` 包。Himawari 是“嵌入”用法：扩展不放在磁盘上，而是以 `extensionFactories`（扩展工厂函数，传给资源加载器的一组函数，每个函数收到 `pi` 对象并在上面挂事件）的形式交给 `DefaultResourceLoader`；示例里的 `pi.on(...)` 写在工厂函数里。
+
+| 需求 | 官方写法 | Himawari 现状 |
+|---|---|---|
+| [建会话](#pattern-session) | `createAgentSession` + 内存版设置和资源加载器 | 照官方 |
+| [恢复历史](#pattern-history) | 用装好条目的 `SessionManager` 建会话 | 照官方 |
+| [加工具、换内置工具的执行位置](#pattern-tools) | `customTools` / `pi.registerTool`；内置工具用 `create*ToolDefinition` 加 `operations` | 照官方 |
+| [工具执行前拦截或改参数](#pattern-tool-call) | `tool_call` 事件返回 `{ block: true }` | 部分照官方，审批是[偏离 D2](#current-deviations) |
+| [改工具结果](#pattern-tool-result) | `tool_result` 事件返回补丁 | 照官方 |
+| [系统提示](#pattern-system-prompt) | 资源加载器给初始提示；`before_agent_start` 改 | 照官方，但和[偏离 D1](#current-deviations) 重复 |
+| [每次请求前改上下文](#pattern-context) | `context` 改消息；`context_with_system` 接管整个请求开头 | 没用，见[偏离 D1](#current-deviations) |
+| [看或改发给服务方的请求](#pattern-provider-hooks) | `before_provider_request`、`after_provider_response`、`before_provider_headers` | 照官方 |
+| [接模型服务方](#pattern-provider) | `registerProvider`，协议相同就复用 Pi 的流式实现 | 照官方；凭据判断是[偏离 D4](#current-deviations) |
+| [单次后台模型调用](#pattern-direct-call) | `modelRuntime.stream` / `ctx.modelRegistry.complete`，用 `fetch`、`onPayload` 选项 | 照官方 |
+| [压缩](#pattern-compaction) | 设置开关；`session_before_compact` 自己出摘要 | 用内置压缩；摘要请求经[偏离 D1](#current-deviations) 改开头 |
+| [运行中插消息](#pattern-steer) | `pi.sendMessage` / `session.sendCustomMessage`，`deliverAs` 选时机 | 部分绕到底层，见[偏离 D5](#current-deviations) |
+| [结束前补一步](#pattern-settle) | `agent_before_settle` 返回条目并要求续一轮 | 没用 |
+| [中止](#pattern-abort) | `session.abort()`；扩展里用 `ctx.signal` | 绕到底层，见[偏离 D5](#current-deviations) |
+| [重试、缓存预热等设置](#pattern-settings) | `SettingsManager.inMemory({...})` | 重试照官方；缓存预热没显式关，见[偏离 D7](#current-deviations) |
+
+<a id="pattern-session"></a>
+### 建会话
+
+出处：`docs/sdk.md` 第 100 行起“Each boundary can be supplied explicitly”，示例 `examples/sdk/12-full-control.ts`。
+
+```typescript
+const settingsManager = SettingsManager.inMemory({
+  compaction: { enabled: false },
+  retry: { enabled: true, maxRetries: 2 },
+});
+const { session } = await createAgentSession({
+  cwd,
+  agentDir: "/tmp/my-agent",
+  model,
+  thinkingLevel: "off",
+  modelRuntime,
+  resourceLoader,
+  tools: ["read", "bash"],
+  sessionManager: SessionManager.inMemory(cwd),
+  settingsManager,
+});
+```
+
+Himawari 在 `packages/runtime-pi/src/pi-runtime-adapter.ts` 用 `DefaultResourceLoader` 并关掉磁盘上的扩展、技能、提示模板、主题和上下文文件（`noExtensions`、`noSkills` 等），自己的扩展从 `extensionFactories` 传入（`docs/sdk.md` 第 112 行“Inline extension factories can be supplied through `DefaultResourceLoader`”）。用完调用 `session.dispose()`。
+
+<a id="pattern-history"></a>
+### 恢复历史
+
+出处：`docs/sdk.md` 第 40 行：“`SessionManager` is authoritative for finalized model context. Restore external history by constructing the session with a manager containing those entries. Assigning `session.agent.state.messages` does not replace persisted context.”
+
+做法：`SessionManager.inMemory(cwd, { id }, entries)` 或先 `SessionManager.inMemory(cwd, { id })` 再 `appendMessage`、`appendCompaction`，然后把它传给 `createAgentSession`。不得给 `session.agent.state.messages` 赋值。
+
+<a id="pattern-tools"></a>
+### 加工具、换内置工具的执行位置
+
+出处：`docs/extensions.md` 第 2180 行“Custom Tools”、第 2391 行“Remote Execution”。内置工具的执行可以换成自己的实现（例如在沙箱里读文件），参数说明、截断和结果格式仍用 Pi 的：
+
+```typescript
+const localRead = createReadTool(cwd);
+pi.registerTool({
+  ...localRead,
+  async execute(id, params, signal, onUpdate, _ctx) {
+    const ssh = getSshConfig();
+    if (ssh) {
+      const operations: ReadOperations = {
+        readFile: (path) => sshReadBuffer(ssh, path),
+        access: (path) => sshExec(ssh, `test -r ${path}`).then(() => {}),
+      };
+      return createReadTool(cwd, { operations }).execute(id, params, signal, onUpdate);
+    }
+    return localRead.execute(id, params, signal, onUpdate);
+  },
+});
+```
+
+嵌入用法里用 `createAgentSession({ customTools, tools, noTools })` 传工具（`docs/sdk.md` 第 100 行起）。Himawari 的 `packages/runtime-pi/src/governed-coding-tools.ts` 用 `create*ToolDefinition` 加 `operations`，照的就是这个写法。长输出用 Pi 的 `truncateHead` / `truncateTail`（`docs/extensions.md` 第 2451 行“Output Truncation”）。
+
+<a id="pattern-tool-call"></a>
+### 工具执行前拦截或改参数
+
+出处：`docs/extensions.md` 第 973 行“tool_call”：“Fired after `tool_execution_start`, before the tool executes. **Can block.**”；示例 `examples/extensions/permission-gate.ts`。
+
+```typescript
+pi.on("tool_call", async (event, ctx) => {
+  if (event.toolName !== "bash") return undefined;
+  const command = event.input.command as string;
+  if (dangerousPatterns.some((p) => p.test(command))) {
+    return { block: true, reason: "Dangerous command blocked" };
+  }
+  return undefined;
+});
+```
+
+- `event.input` 可以就地改，改完不再校验（原话“No re-validation is performed after your mutation”）。
+- `{ block: true, terminate: true }` 让这一批工具结束后不再请求模型。
+- 被拦下的调用不会执行工具；要观察它，用 `tool_execution_end` 事件。
+- 这个钩子只能当场决定或当场等。要等人批准几个小时、服务中途可能重启的情况，官方没有可靠写法，见[偏离 D2](#current-deviations)。
+- 新增的“直接拒绝、不需要等人”的规则（例如硬规则），用这个钩子写，挂在一个隐藏的内联扩展里。
+
+<a id="pattern-tool-result"></a>
+### 改工具结果
+
+出处：`docs/extensions.md` 第 1040 行“tool_result”：“Handlers can return partial patches (`content`, `details`, `structuredContent`, `isError`, or `usage`); omitted fields keep their current values”。
+
+```typescript
+pi.on("tool_result", async (event, ctx) => {
+  return { isError: true };
+});
+```
+
+<a id="pattern-system-prompt"></a>
+### 系统提示
+
+出处：`docs/extensions.md` 第 615 行“before_agent_start”；`docs/sdk.md` 第 32 行“`session.systemPrompt` is read-only”。
+
+```typescript
+pi.on("before_agent_start", async (event, ctx) => {
+  return { systemPrompt: event.systemPrompt + "\n\nExtra instructions for this turn..." };
+});
+```
+
+官方说明：改 `systemPromptOptions` 里的分节时，Pi 只追加一条补丁；直接返回 `systemPrompt` 会整段替换，换了就“a cache miss when it changes”。Himawari 的系统提示按对话冻结（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)），所以只返回冻结的那一份，不每轮改。
+
+<a id="pattern-context"></a>
+### 每次请求前改上下文
+
+出处：`docs/extensions.md` 第 815 行“context”、第 829 行“context_with_system”。
+
+```typescript
+pi.on("context", async (event, ctx) => {
+  return { messages: event.messages.filter((m) => !shouldPrune(m)) };
+});
+
+pi.on("context_with_system", async (event, ctx) => {
+  const cut = findCutIndex(event.messages);
+  const head = getCurrentSystemMessage(event.messages.slice(0, cut));
+  return { messages: head ? [head, ...event.messages.slice(cut)] : event.messages.slice(cut) };
+});
+```
+
+`context` 收到的是去掉 system 消息的历史，只改历史；`context_with_system` 收到含开头 system 消息的完整列表，原话“The returned messages are sent as they are: this hook owns the prompt and tool declarations for the request”，规则是第 0 条必须是 system 消息。按 [prompt-prefix 规则](../.claude/rules/prompt-prefix.md#append-only)，这两个钩子都只能在末尾加，不能改已发过的内容。
+
+<a id="pattern-provider-hooks"></a>
+### 看或改发给服务方的请求
+
+出处：`docs/extensions.md` 第 864 行“before_provider_request”、第 883 行“after_provider_response”。
+
+```typescript
+pi.on("before_provider_request", (event, ctx) => {
+  console.log(JSON.stringify(event.payload, null, 2));
+});
+pi.on("after_provider_response", (event, ctx) => {
+  if (event.status === 429) console.log("rate limited", event.headers["retry-after"]);
+});
+```
+
+返回 `undefined` 不改请求体，返回别的值就替换。1.5.1 新增说明：对“接着上一次回答继续”的服务方（OpenAI Codex WebSocket、Anthropic 消息线程），请求体可能只含新增部分。
+
+<a id="pattern-provider"></a>
+### 接模型服务方
+
+出处：`docs/custom-provider.md` 第 7 行“Choose the smallest integration”、第 51 行“Register a compatible endpoint”、第 164 行“Reuse a supported streaming API”。
+
+```typescript
+pi.registerProvider("acme", {
+  name: "Acme AI",
+  baseUrl: "https://api.acme.example/v1",
+  apiKey: "$ACME_API_KEY",
+  api: "openai-completions",
+  models: [{ type: "chat", id: "acme-chat", name: "Acme Chat", reasoning: false, input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 8192 }],
+});
+```
+
+- 服务方协议和 Pi 已支持的一样（Magpie、Vercel AI Gateway 都是 OpenAI Chat Completions），就复用 Pi 的实现，原话“This is safer than copying a stream implementation because it preserves Pi’s message conversion, tool handling, usage accounting, cancellation, and compatibility behavior”。
+- 只有协议 Pi 不支持时才自己写 `streamSimple`（第 176 行“Implement `streamSimple` only when no existing API implementation can represent the service”），而且必须调用 `onPayload`、`onResponse`、`onProviderStreamEvent` 并传递中止信号（第 174 行起）。
+- 需要自定义取密钥方式时，用完整 `Provider` 的原生认证（第 126 行“Use native provider authentication when the integration needs stored credentials, custom resolution, ...”）。
+- 模型的 `promptCache` 不填，Pi 就不做缓存预热（第 149 行“Leave them unset to disable cache warming for that retention tier”）。
+
+Himawari 的写法在 `packages/runtime-pi/src/configured-model-binding.ts` 的 `initializeRuntime`：`ModelRuntime.create` 后 `registerProvider`，`api: "openai-completions"`。
+
+<a id="pattern-direct-call"></a>
+### 单次后台模型调用
+
+出处：`docs/extensions.md` 第 1224 行：“Use `ctx.modelRegistry.streamSimple(model, context, options)` ... or `complete(model, context, options)` ... Use these instead of `pi-ai/compat` streaming functions, which cannot see extension provider registrations.”；请求选项见 `@earendil-works/pi-ai@1.5.1` 的 `dist/types.d.ts`（`fetch`、`onPayload`、`onResponse`、`signal`）。
+
+整理记忆、判断邮件这类不在会话里的调用，Himawari 走 `packages/runtime-pi/src/pi-model-transport.ts`（`binding.modelRuntime.stream(...)`，用 `fetch` 选项包一层出口遮盖）。新的后台调用一律走这个入口，不得直接调 `ctx.modelRegistry.complete`，因为那样会跳过 Himawari 的准入、预算和出口遮盖。
+
+<a id="pattern-compaction"></a>
+### 压缩
+
+出处：`docs/compaction.md`；`docs/extensions.md` 第 534 行“session_before_compact”；示例 `examples/extensions/custom-compaction.ts`。
+
+```typescript
+pi.on("session_before_compact", async (event, ctx) => {
+  const { preparation, signal } = event;
+  const summary = await summarize(preparation.messagesToSummarize, preparation.turnPrefixMessages, signal);
+  return {
+    compaction: {
+      summary,
+      firstKeptEntryId: preparation.firstKeptEntryId,
+      tokensBefore: preparation.tokensBefore,
+    },
+  };
+});
+```
+
+- 什么时候压缩由设置决定：`contextTokens > contextWindow - reserveTokens`（`docs/compaction.md`“When It Triggers”）。
+- 要自己出摘要（例如让压缩请求沿用原对话的开头，见 [prompt-prefix 规则第 13 条](../.claude/rules/prompt-prefix.md#compaction)），用 `session_before_compact` 返回 `compaction`。官方示例里的 `ctx.modelRegistry.complete` 在 Himawari 里要换成 Himawari 自己的模型调用入口，理由见[单次后台模型调用](#pattern-direct-call)。
+- 返回 `{ cancel: true }` 取消这次压缩。
+
+<a id="pattern-steer"></a>
+### 运行中插消息
+
+出处：`docs/extensions.md` 第 1627 行“pi.sendMessage”；`docs/sdk.md` 第 62 行“Prompting”。
+
+```typescript
+pi.sendMessage(
+  { customType: "my-extension", content: "Message text", display: true },
+  { triggerTurn: true, deliverAs: "steer" },
+);
+```
+
+`deliverAs: "steer"` 在当前这轮工具跑完、下一次请求模型之前送达；`"followUp"` 等整轮结束；`"nextTurn"` 等下一次用户输入。会话外部用 `session.sendCustomMessage(message, options)`，用户消息用 `session.steer()` / `session.followUp()`。不得直接调 `session.agent.steer()`。
+
+<a id="pattern-settle"></a>
+### 结束前补一步
+
+出处：`docs/extensions.md` 第 663 行“agent_before_settle”：“the final actionable boundary: it can append session entries and request one continuation”。
+
+```typescript
+pi.on("agent_before_settle", async (event, ctx) => {
+  if (addedReviewReminder) return;
+  addedReviewReminder = true;
+  return {
+    entries: [...event.entries, { type: "custom_message", customType: "review-reminder",
+      content: "Review the final diff before replying.", display: false }],
+    continue: true,
+  };
+});
+```
+
+无条件返回 `continue: true` 会死循环，必须有条件。
+
+<a id="pattern-abort"></a>
+### 中止
+
+出处：`docs/sdk.md` 第 70 行：“`abort()` stops the active operation and waits for the session to become idle.”；`docs/extensions.md` 第 1230 行“ctx.signal”。
+
+会话外部用 `await session.abort()`。工具和扩展内部不能等会话空闲（会自己等自己），用传进来的 `signal` 或 `ctx.signal` 让正在做的事停下。
+
+<a id="pattern-settings"></a>
+### 重试、缓存预热等设置
+
+出处：`docs/settings.md`（全部设置和默认值）。
+
+```typescript
+SettingsManager.inMemory({
+  compaction: { enabled: true },
+  retry: { enabled: false, maxRetries: 0 },
+});
+```
+
+- 自动重试 Himawari 关着（[ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#decision) 第 7 条）。
+- 缓存预热（`cacheWarming`，Pi 定时补发一个只要 1 个输出 token 的请求，让服务方的缓存不过期）：1.5.0 默认 `"streaming"`，1.5.1 默认改成 `"idle"`，空闲时最多续 30 分钟。补发的请求会花钱。升级 Pi 时必须先看 `CHANGELOG.md` 里改了哪些默认值。
+
+[↑ 回到阅读导航](#contents)
+
+<a id="himawari-owned"></a>
+## 四、Himawari 自己负责的部分
+
+下面这些 Pi 不负责，由 Himawari 自己写（来自 [Pi 优先与工作区约定](../.agents/instructions/pi-and-workspace.md#pi-first-development-principle)）：权限与审批、数据分级与披露、密钥句柄和主机密钥来源、受保护的载荷、持久状态与审计、产品层面的模型选择和备选、预算执行，以及 Gateway、Worker、记忆的集成。
+
+这些功能接到 Pi 上时，接入点仍按[第三节](#official-patterns)的官方写法选：例如拦截用 `tool_call`，执行位置用 `operations`，观察请求用 `before_provider_request`。“这是 Himawari 自己的功能”不是绕开官方接入点的理由。
+
+<a id="current-deviations"></a>
+## 五、现有的偏离（未经 Andy 批准，不得照抄或扩大）
+
+2026-11-10 对照 1.5.1 文档核查的结果。每一条都要出方案交 Andy 定：要么改成官方写法，要么由 Andy 批准保留并写进 ADR。批准前，新代码不得照抄，也不得在上面加功能。状态改变时更新这张表。
+
+| 编号 | 位置 | 做了什么 | 对应的官方写法 | 为什么没照官方 | 状态 |
+|---|---|---|---|---|---|
+| D1 | `pi-runtime-adapter.ts` 的 `session.agent.streamFunction = ...` | 替换 Pi 每次请求模型的函数：换成冻结的系统提示和工具、准入和预算、出口遮盖、审批续跑时回放已有回答、识别压缩请求 | 请求开头用 `context_with_system`；准入、遮盖、还原放进注册的服务方（复用 `openai-completions`，外面包一层）；观察用 `before_provider_request` | [ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#options) 只比较了 `before_agent_start` 一条路，没比较 `context_with_system` 和服务方包装 | 待 Andy 定 |
+| D2 | `pi-runtime-adapter.ts` 的 `createTool` 里调 `tools.preflight`、`reconciliation.suspend` | 权限判断和等审批写在工具的 `execute` 里，等审批时存快照、结束这次运行 | `tool_call` 拦截（`permission-gate.ts`） | 官方拦截只能在进程里当场等；审批要等几小时、服务可能重启（[ADR 0023](adr/0023-durable-hitl-execution.md)）。ADR 0023 写于 Pi 0.x，没写和 `tool_call` 的比较 | 待 Andy 定 |
+| D3 | `pi-tool-batch-continuation.ts` | 审批后续跑：存会话条目和那次回答，续跑时回放 | 官方没有稳定写法；`pi-durable` 标为实验性 | [ADR 0023](adr/0023-durable-hitl-execution.md)、[ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#decision) | 待 Andy 定 |
+| D4 | `pi-runtime-adapter.ts` 的 `sessionModelRuntime` | 用 Proxy 改写 `hasConfiguredAuth`，让 Pi 以为已配好密钥 | 完整 `Provider` 的原生认证、自定义取密钥 | 密钥不进 Pi 的凭据库，每次请求才从主机取；理由只写在 [架构文档](architecture-v0.1.md)，没有 ADR | 待 Andy 定 |
+| D5 | `pi-runtime-adapter.ts` 里的 `agent.steer`、`agent.abort()`、读 `agent.state.messages` | 绕过会话直接用底层 Agent | `session.sendCustomMessage`、`session.abort()`、`session.messages` | 工具内部不能等会话空闲，所以用底层中止；其余没有写下理由 | 待 Andy 定 |
+| D6 | `pi-runtime-adapter.ts` 的 `himawari-system-prompt` 扩展 | `before_agent_start` 返回系统提示，D1 又在请求前换一次 | 二选一 | 跟着 D1 一起定 | 待 Andy 定 |
+| D7 | `pi-runtime-adapter.ts` 的 `SettingsManager.inMemory` | 没显式设 `cacheWarming`，靠模型没填 `promptCache` 才不预热 | 显式设 `cacheWarming: "off"` | 没有写下理由；1.5.1 默认值变了 | 待 Andy 定 |
+
+<a id="how-to-deviate"></a>
+## 六、要偏离时怎么做
+
+1. 写出前提：官方文档和示例的原文（包名、版本、文件、行号、原话），说明官方写法具体缺什么。
+2. 写出至少两个办法，其中一个必须是“照官方写，接受它的缺点”，比较各自的代价。
+3. 写清它会不会改变模型已经见过的请求开头（[prompt-prefix 规则第八节](../.claude/rules/prompt-prefix.md#before-you-change)）。
+4. 交 Andy 看。他同意后：新开一份 ADR 记下决定，在[第五节](#current-deviations)加一行，并加一条测试，让 Pi 升级后官方行为一变就失败。
+5. 升级 Pi 时，逐条重查第五节：新版本官方补上了的，改回官方写法。
+
+[↑ 回到阅读导航](#contents)
