@@ -33,6 +33,8 @@ date: "2026-11-10"
 
 ## 前提
 
+下面引用的文件行号取自 `@earendil-works/pi-coding-agent@1.5.1` 的包内文件；锁定的 1.5.0 包用 `npm pack` 取下来逐项核对过：前提 1–5 引用的 `context_with_system` 文档与 `emitContext`、摘要提示和 `streamFunction` 用法、`cacheWarmer.start` 在 1.5.0 里都存在且写法相同（行号可能差几行）。
+
 1. `context_with_system` 钩子拥有请求开头：`@earendil-works/pi-coding-agent@1.5.1` `docs/extensions.md` 第 831 行“The returned messages are sent as they are: this hook owns the prompt and tool declarations for the request.”（1.5.0 同）。
 2. 钩子出错不拦请求：`dist/core/extensions/runner.js` 的 `emitContext`，catch 只调用 `emitError`，继续用未改的消息。
 3. `before_agent_start` 强制的系统提示在钩子之后还会再投影一次：`docs/extensions.md` 第 844 行“a `systemPrompt` forced from `before_agent_start` is still projected onto the request afterwards.”
