@@ -809,6 +809,45 @@ function failedPiStream(model: Model<Api>, errorMessage: string): AssistantMessa
   return stream;
 }
 
+function deferredPiStream(
+  model: Model<Api>,
+  start: () => Promise<AssistantMessageEventStream>,
+): AssistantMessageEventStream {
+  const output = createAssistantMessageEventStream();
+  void (async () => {
+    try {
+      for await (const event of await start()) output.push(event);
+    } catch {
+      output.push(piErrorEvent(model, "Model request failed"));
+    } finally {
+      output.end();
+    }
+  })().catch(() => undefined);
+  return output;
+}
+
+function governedModelRuntime(
+  target: ModelRuntime,
+  govern: (
+    model: Model<Api>,
+    context: TranscriptContext,
+    options: SimpleStreamOptions | undefined,
+    forward: PiStreamFunction,
+  ) => Promise<AssistantMessageEventStream>,
+): ModelRuntime {
+  const forward: PiStreamFunction = (model, context, options) =>
+    target.streamSimple(model, context, options);
+  return new Proxy(target, {
+    get(runtime, property) {
+      if (property === "streamSimple")
+        return (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) =>
+          deferredPiStream(model, () => govern(model, context, options, forward));
+      const value = Reflect.get(runtime, property, runtime);
+      return typeof value === "function" ? value.bind(runtime) : value;
+    },
+  });
+}
+
 function relayAdmittedPiStream(
   stream: AssistantMessageEventStream,
   permit: ModelInvocationPermit,
@@ -921,7 +960,7 @@ function relayAdmittedPiStream(
     } finally {
       output.end();
     }
-  })();
+  })().catch(() => undefined);
   return output;
 }
 
@@ -1532,11 +1571,47 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         toolCheckpoints.set(key, ref);
         return ref;
       };
+      let loopSummaryAttempted = false;
+      let compacting = false;
+      const governedRuntime = governedModelRuntime(
+        binding.modelRuntime,
+        async (model, requested, options, forward) => {
+          const summaryContext = compacting ? himawariSummaryContext(requested) : undefined;
+          const context =
+            summaryContext ?? himawariRequestContext(requested, systemPrompt, requestTools);
+          await this.#historyWrites.get(request.runId);
+          const replay = restored?.takeReplay();
+          if (replay) return replay;
+          if (!context) return failedPiStream(model, PI_REQUEST_TOOLS_DIVERGED);
+          if (suspended || unknownTool)
+            return failedPiStream(model, "Runtime tool reconciliation is required");
+          if (toolProgress.blocked) {
+            if (loopSummaryAttempted) return failedPiStream(model, "PI_TOOL_LOOP_DETECTED");
+            loopSummaryAttempted = true;
+          }
+          return admitPiStream(
+            { ...request, dataClassification: this.#visibleOf(request) },
+            binding,
+            this.#dependencies.admission,
+            model,
+            context,
+            options,
+            ++streamOrdinal,
+            forward,
+            this.#dependencies.logicalSlot,
+            this.#dependencies.egress,
+            this.#dependencies.onModelAdmissionFailed,
+            this.#dependencies.usage,
+            bundle?.redactionRuleset,
+            summaryContext ? "other" : "chat",
+          );
+        },
+      );
       const created = await sessionFactory({
         cwd: this.#dependencies.cwd,
         ...(this.#dependencies.agentDir ? { agentDir: this.#dependencies.agentDir } : {}),
         model: binding.model,
-        modelRuntime: binding.modelRuntime,
+        modelRuntime: governedRuntime,
         thinkingLevel: request.thinkingLevel ?? "off",
         noTools: "all",
         tools: descriptors.map(({ name }) => name),
@@ -1595,41 +1670,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         settingsManager,
       });
       const session = created.session;
-      const originalStreamFunction = session.agent.streamFunction;
       restored = continuation ? restorePiToolBatch(session, continuation.batch) : undefined;
-      let loopSummaryAttempted = false;
-      let compacting = false;
-      session.agent.streamFunction = async (model, requested, options) => {
-        const summaryContext = compacting ? himawariSummaryContext(requested) : undefined;
-        const context =
-          summaryContext ?? himawariRequestContext(requested, systemPrompt, requestTools);
-        await this.#historyWrites.get(request.runId);
-        const replay = restored?.takeReplay();
-        if (replay) return replay;
-        if (!context) return failedPiStream(model, PI_REQUEST_TOOLS_DIVERGED);
-        if (suspended || unknownTool)
-          return failedPiStream(model, "Runtime tool reconciliation is required");
-        if (toolProgress.blocked) {
-          if (loopSummaryAttempted) return failedPiStream(model, "PI_TOOL_LOOP_DETECTED");
-          loopSummaryAttempted = true;
-        }
-        return admitPiStream(
-          { ...request, dataClassification: this.#visibleOf(request) },
-          binding,
-          this.#dependencies.admission,
-          model,
-          context,
-          options,
-          ++streamOrdinal,
-          originalStreamFunction,
-          this.#dependencies.logicalSlot,
-          this.#dependencies.egress,
-          this.#dependencies.onModelAdmissionFailed,
-          this.#dependencies.usage,
-          bundle?.redactionRuleset,
-          summaryContext ? "other" : "chat",
-        );
-      };
       this.#activeSessions.set(request.runId, session);
       const unsubscribeBackground = this.#dependencies.tools.subscribeBackground?.(
         request.runId,

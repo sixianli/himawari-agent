@@ -198,16 +198,26 @@ function assistantAnswer(): AssistantMessage {
 }
 
 function streamingSessionFactory(
-  original: (model: Model<Api>, context: unknown, options?: unknown) => AssistantMessageEventStream,
+  _original: (
+    model: Model<Api>,
+    context: unknown,
+    options?: unknown,
+  ) => AssistantMessageEventStream,
   observedTerminals: string[],
   streamModel: Model<Api> = ADMISSION_MODEL,
   streamOptions: unknown = {},
 ) {
-  return async () => {
+  return async (rawOptions: Readonly<Record<string, unknown>>) => {
+    const governed = rawOptions["modelRuntime"] as {
+      streamSimple: (
+        model: Model<Api>,
+        context: unknown,
+        options?: unknown,
+      ) => AssistantMessageEventStream;
+    };
     let listener: (event: FakePiEvent) => void = () => undefined;
-    const agent = { streamFunction: original };
     const session = {
-      agent,
+      agent: {},
       subscribe(next: (event: FakePiEvent) => void) {
         listener = next;
         return () => {
@@ -215,7 +225,7 @@ function streamingSessionFactory(
         };
       },
       async prompt() {
-        const response = await agent.streamFunction(streamModel, { messages: [] }, streamOptions);
+        const response = governed.streamSimple(streamModel, { messages: [] }, streamOptions);
         for await (const event of response) {
           if (event.type === "done") {
             observedTerminals.push("done");
@@ -426,9 +436,6 @@ function fakeSessionFactory(
         agent: {
           state: { messages: [] },
           abort() {},
-          streamFunction: async () => {
-            throw new Error("fake stream function was not configured");
-          },
         },
         subscribe(next: (event: FakePiEvent) => void) {
           listener = next;
@@ -528,7 +535,9 @@ function createAdmissionAdapter(
     models: {
       resolve: async () => ({
         model: ADMISSION_MODEL,
-        modelRuntime: {} as PiModelBinding["modelRuntime"],
+        modelRuntime: {
+          streamSimple: original,
+        } as unknown as PiModelBinding["modelRuntime"],
         descriptor:
           resolveSecret === undefined
             ? ADMISSION_DESCRIPTOR
@@ -3155,7 +3164,8 @@ it("does not call the model when native history cannot be persisted", async () =
   });
   const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
   expect(model.observed).toEqual([]);
-  expect(events.at(-1)?.type).not.toBe("runtime.completed");
+  expect(events.at(-1)?.type).toBe("runtime.failed");
+  expect(events.some((event) => event.type === "runtime.completed")).toBe(false);
 });
 
 it("does not execute a tool when saving its assistant request fails", async () => {

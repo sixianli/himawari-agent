@@ -51,7 +51,7 @@ date: "2026-11-10"
 分三步做，每步单独一个 PR：
 
 1. **D6：删掉 `himawari-system-prompt` 扩展。**资源加载器的 `systemPromptOverride` 已给了同一份提示；对话请求的替换函数不读 Pi 的系统开头，只读 Pi 声明的工具名做一致性检查；压缩请求的替换函数（`himawariSummaryContext`）读的是 Pi 传来的第一条 system 消息，那是 Pi 自带的摘要提示（前提 4），与 `before_agent_start` 无关。第 1 步完成：删除前后用 `prompt-prefix.compat.test.ts` 的 26 个多轮用例（含压缩和审批续跑）各抓一遍真实请求体，83 条请求体逐字节相同（`cmp` 无差异）。合入 D4（ADR 0205）之后又在合并后的代码上重做一次（此时多了 1 个用例）：27 个用例 84 条请求体与 `origin/main`（带扩展）逐字节相同。这两次都是一次性的手工对比，不是提交到仓库的自动检查；因为对话请求本来就不依赖 Pi 的开头，加回这个扩展也不会改变请求字节，所以没有“加回就失败”的反向用例，只加了一个普通防线用例：Pi 自己加的工作目录行不会漏进请求（它不是 D6 的反向用例；D6 没有自动反向保护，这一点已接受：加回扩展不会改变请求字节，保护 D6 之外的整条请求开头的是 `check:prompt-prefix`）。
-2. **D1 主体：不再给 `session.agent.streamFunction` 赋值。**替换函数里的全部职责（压缩识别、拒发条件、审批回放、准入、遮盖、用量、取密钥、网关）搬到每次运行新建的模型代理（在共享的 `binding.modelRuntime` 外包一层，只覆盖 `streamSimple`）的 `streamSimple` 上；`streamSimple` 同步返回输出流，准入在后台驱动；Pi 默认请求函数（预热、选项整理）留在外层。设置里显式 `cacheWarming: "off"`，等 D7 定了再开。工具一致性检查从只比名字改成比整条声明。
+2. **D1 主体：不再给 `session.agent.streamFunction` 赋值。**替换函数里的全部职责（压缩识别、拒发条件、审批回放、准入、遮盖、用量、取密钥、网关）搬到每次运行新建的模型代理（在共享的 `binding.modelRuntime` 外包一层，只覆盖 `streamSimple`）的 `streamSimple` 上；`streamSimple` 同步返回输出流，准入在后台驱动；Pi 默认请求函数（预热、选项整理）留在外层。设置里 `cacheWarming` 按 [ADR 0206](0206-pi-deviations-d5-insertion-and-d7-cache-warming.md) 锁在 `"streaming"`（没有模型配 `promptCache`，预热不会触发），打开预热等 D7 定了再做。工具一致性检查从只比名字改成比整条声明，放在第 3 步一起做，第 2 步仍只比名字。
 3. **请求开头改用 `context_with_system` 钩子生成**（`normalizeContext({systemPrompt, tools, messages: []})` 的第一条消息，与现在字节一致）；第 2 步的包装层校验开头等于冻结开头，不等就一次请求都不发。
 
 保留的偏离只剩一处：预算准入、出口遮盖、审批回放和“失败就不发”放在每次运行新建的 `ModelRuntime` 代理上。原因是官方钩子不能失败即拒发（前提 2），官方注册服务方里拿不到本次运行的状态（前提 6）。
@@ -78,6 +78,20 @@ Pi 官方对“委托内置实现”的写法是在自己的 `streamSimple` 里�
 - 第 2 步要先核对：`streamSimple` 同步返回在预热和摘要路径下可用；`model !== binding.model` 的对象身份检查在新接缝下仍成立；摘要的凭据解析路径变化后行为不变；代理不被 Pi 做 `instanceof` 检查。
 - D4 已由 [ADR 0205](0205-pi-native-provider-auth.md) 合并并删掉了 `sessionModelRuntime` 那个 Proxy；第 2 步要自己重建每次运行专属的模型代理，重建后用 D4 留下的 `packages/runtime-pi/test/fixtures/d4-golden-requests.json` 再逐字节对比一次请求。
 - 打开缓存预热（D7）时，预热请求会进包装层，要有标记区分。
+
+<a id="step-2-record"></a>
+
+## 第 2 步实施记录（2026-11-10）
+
+适配器不再给 `session.agent.streamFunction` 赋值，改为在建会话时传入每次运行专属的 `ModelRuntime` 代理（`governedModelRuntime`），只重写 `streamSimple`：准入、遮盖还原、审批续跑回放、识别压缩请求、拒发，原样搬进代理里；其余成员原样转给共享的 `binding.modelRuntime`。核对结果：
+
+- 同步返回：Pi 的默认请求函数（`sdk.js` 的 `streamFn`）和预热都同步使用 `streamSimple` 的返回值，所以代理用 `deferredPiStream` 先返回一条流，再在里面异步走准入；准入失败时流里只有一个错误事件，不抛异常。
+- 对象身份：`model !== binding.model` 的检查仍在 `admitPiStream` 里，测试覆盖。
+- 摘要的凭据：Pi 在 `agent-session.js` 里把默认请求函数登记为属于传入的 `ModelRuntime`（就是我们的代理），摘要因此不再预先取凭据，凭据和以前一样由 `admitPiStream` 每次请求现取。
+- 代理：Pi 的 `dist` 里没有 `instanceof ModelRuntime`；方法用 `bind` 绑回原对象，私有字段不受影响。
+- 字节对比：`d4-golden-requests.json` 的黄金请求测试用真实 Pi 会话，改前改后都通过；`npm run check:prompt-prefix` 27 条通过。
+- 遗留（D7 打开前必须处理）：Pi 的缓存预热器拿到的就是传入的代理，预热请求会走准入、遮盖和预算，用途记为 chat，也会先消耗审批续跑的一次性回放；预热请求的开头在第 3 步之前仍是 Pi 自己的开头。生产目前没有模型配 `promptCache`，预热不会触发。打开前要给预热请求加标记、让回放只对主对话请求生效，并先完成第 3 步。
+- 代理只重写 `streamSimple`；`stream`、`complete` 等其他入口仍转给共享的运行时，会话里没有扩展会调它们（`noExtensions`），后台调用 `pi-model-transport.ts` 自带遮盖，这一点和第 2 步之前相同。
 
 <a id="references"></a>
 

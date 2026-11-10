@@ -1,0 +1,10 @@
+{"id": "A1", "quote": "### 1. 中（当前未触发，开启预热后是高危）：预热路径拿不到新的 egress fetch/密钥，或会吃掉审批续跑的一次性回放", "valid": true, "class": "better", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "A2", "quote": "### 2. 中：只重写了 `streamSimple`，其余 `ModelRuntime` 成员原样转发，绕过面仍在", "valid": true, "class": "better", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "A3", "quote": "### 3. 中低：`deferredPiStream` 把未知异常吞成通用错误，丢失失败原因和 `onModelStreamFailed`", "valid": true, "class": "error", "severity": "low", "trigger": "start 或 govern 抛未知异常", "consequence": "诊断码变粗为通用错误，IIFE 缺 catch", "modelSeverity": "中低", "reason": "模型给“中低”，只影响错误路径诊断、请求字节不变，判低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "A4", "quote": "### 4. 中低：新接缝的专项自动检查不足，测试是“适配”而不是“新增”", "valid": true, "class": "better", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "A5", "quote": "### 5. 低：文档与代码/彼此不一致", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 0208 决定第 2 条和架构文档", "consequence": "文档写 cacheWarming off、整条声明比对、被替换的 streamFunction，与代码不符", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "A6", "quote": "### 6. 低（推测）：每次 `get` 返回新函数，Pi 若做函数身份比较会受影响", "valid": false, "class": "better", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "A7", "quote": "### 7. 低（推测）：扩展的 `ctx.modelRegistry.streamSimple` 可能传入 `Context`，被工具一致性检查拒绝", "valid": false, "class": "better", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "B1", "quote": "**1. 低 ｜ pi-runtime-adapter.ts:820-821 ｜ `deferredPiStream` 把 `govern` 内的异常统一压成 \"Model request failed\"，丢失具体诊断**", "valid": true, "class": "error", "severity": "low", "trigger": "govern 抛异常", "consequence": "同 A3", "modelSeverity": "低", "model": "opencode-go/glm-5.3-flash"}
+{"id": "B2", "quote": "**2. 低（风险备注，未核实）｜ pi-runtime-adapter.ts:840-848 ｜ 代理假设依赖未核实的 Pi dist 行为**", "valid": false, "class": "better", "model": "opencode-go/glm-5.3-flash"}
+{"id": "B3", "quote": "**3. 信息 ｜ pi-runtime-adapter.ts:1435 + ADR 0208:80/93 ｜ 预热请求一旦发生将首次进治理层，但无标记、用途记为 \"chat\"**", "valid": true, "class": "better", "model": "opencode-go/glm-5.3-flash"}
