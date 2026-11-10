@@ -1178,6 +1178,10 @@ export function validateInstallScriptReviews(toolchainLock, packageLock) {
       locked.hasInstallScript === true,
       `Install-script review for a package without install script: ${review.path}`,
     );
+    assert(
+      review.name === review.path.slice(review.path.lastIndexOf("node_modules/") + 13),
+      `Install-script review name differs from its path: ${review.path}`,
+    );
   }
   const reviewed = new Set(reviews.map((review) => review.path));
   for (const [packagePath, locked] of Object.entries(packages))

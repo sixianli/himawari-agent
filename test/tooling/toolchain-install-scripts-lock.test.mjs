@@ -12,7 +12,9 @@ const packageLock = {
   },
 };
 const review = (overrides = {}) => ({
-  nativeDependencies: [{ path: "node_modules/native", version: "2.0.0", ...overrides }],
+  nativeDependencies: [
+    { path: "node_modules/native", name: "native", version: "2.0.0", ...overrides },
+  ],
 });
 
 describe("[I-91] install-script reviews match package-lock.json", () => {
@@ -32,6 +34,12 @@ describe("[I-91] install-script reviews match package-lock.json", () => {
     );
   });
 
+  it("rejects a review whose package name differs from its path", () => {
+    expect(() => validateInstallScriptReviews(review({ name: "other" }), packageLock)).toThrow(
+      /name differs/,
+    );
+  });
+
   it("rejects a stale review whose package left the lock file", () => {
     expect(() =>
       validateInstallScriptReviews(review({ path: "node_modules/gone" }), packageLock),
@@ -40,9 +48,12 @@ describe("[I-91] install-script reviews match package-lock.json", () => {
 
   it("rejects a review for a package without an install script", () => {
     expect(() =>
-      validateInstallScriptReviews(review({ path: "node_modules/plain", version: "1.0.0" }), {
-        packages: packageLock.packages,
-      }),
+      validateInstallScriptReviews(
+        review({ path: "node_modules/plain", name: "plain", version: "1.0.0" }),
+        {
+          packages: packageLock.packages,
+        },
+      ),
     ).toThrow(/without install script/);
   });
 
