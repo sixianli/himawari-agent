@@ -10,7 +10,13 @@ import {
   DATA_EXPORT_PATH,
   registerDataExportRoute,
 } from "../../apps/agent-service/src/production-data-export.ts";
-import { openSide, SECRETS, type Side, seedEverything } from "./data-export-fixture.ts";
+import {
+  openSide,
+  SECRET_API_KEY,
+  SECRETS,
+  type Side,
+  seedEverything,
+} from "./data-export-fixture.ts";
 
 const open: Array<{ close: () => Promise<unknown> }> = [];
 
@@ -86,6 +92,18 @@ describe("[P1-6] 网页导出接口", () => {
       "utf8",
     );
     for (const secret of SECRETS) expect(everything).not.toContain(secret);
+  });
+
+  it("含机密的短文字（实体名等）换成占位符后，也计入响应头的处数", async () => {
+    const side = await openSide("http-short");
+    await seedEverything(side);
+    side.database
+      .prepare("INSERT INTO memory_entities (memory_id, name) VALUES ('m-plain', ?)")
+      .run(`密钥 ${SECRET_API_KEY}`);
+    const app = await service(side);
+    const response = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
+    expect(response.statusCode).toBe(200);
+    expect(Number(response.headers["x-himawari-export-withheld"])).toBe(7);
   });
 
   it("反向：没有登录、换了主人、跨站来源都被拒，且不返回任何数据", async () => {

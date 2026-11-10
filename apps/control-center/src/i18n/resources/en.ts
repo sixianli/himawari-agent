@@ -763,7 +763,7 @@ export const messages = {
   "memory.page.sourceHelp":
     "{s, select, codex {Pick Codex memory files (memory_summary.md, MEMORY.md)} assistant {Ask it to list what it knows about you, then paste the answer} other {Only the himawari-memories.json downloaded earlier; the zip from the current export cannot be imported here}}",
   "memory.page.fileHelp":
-    "{s, select, codex {Pick memory_summary.md and MEMORY.md, and optionally your AGENTS.md. The files are in ~/.codex/memories/ and ~/.codex/ on your Mac; press ⌘⇧G in the file picker to type the path.} other {Pick a himawari-memories.json downloaded earlier. Export all memories now gives a zip for backup and moving machines (imported with the command line), not importable here.}}",
+    "{s, select, codex {Pick memory_summary.md and MEMORY.md, and optionally your AGENTS.md. The files are in ~/.codex/memories/ and ~/.codex/ on your Mac; press ⌘⇧G in the file picker to type the path.} other {Pick a himawari-memories.json downloaded earlier. Export all memories now gives a zip for backup and moving machines (unzip it, then import with the command line), not importable here.}}",
   "memory.page.aiStep1": "Step 1: copy this message and send it to the AI you use.",
   "memory.page.aiPrompt":
     "List everything you remember about me, one item per line starting with “- ”: who I am, my preferences and habits, what I am working on, the people around me, and the rules I asked you to follow. Use my own words where you can. Leave out passwords, ID numbers and card numbers. List only the items, without explanations.",
@@ -781,11 +781,10 @@ export const messages = {
   "memory.page.importEmpty":
     "Nothing to import was found. Check the file, or that you pasted the AI's answer.",
   "memory.page.importTooBig": "Each file must be under 200 KB; split it and import in parts.",
-  "memory.page.importUnreadable":
-    "The file could not be read or is not an old Himawari JSON export.",
+  "memory.page.importUnreadable": "The file could not be read or is in the wrong format.",
   "memory.page.exportTitle": "Export all memories and decision records",
   "memory.page.exportNote":
-    "You get one zip with per-item JSON Lines data and readable Markdown. Passwords, ID numbers and similar secrets stay as placeholders; memories in the trash, and the original text of sensitive-topic memories such as health or money, are written to the files as they are, so keep the zip safe. Use the command line encrypted export to take the secrets out too.",
+    "You get one zip with per-item JSON Lines data and readable Markdown. Passwords, ID numbers and similar secrets stay as placeholders; memories in the trash and sensitive-topic memories such as health or money are exported too, and apart from the secrets their text is plain, so keep the zip safe. Use the command line encrypted export to take the secrets out too.",
   "memory.page.download": "Download export",
   "memory.page.exportWorking": "Preparing the export…",
   "memory.page.exportDone":
