@@ -176,7 +176,7 @@ pi.on("tool_result", async (event, ctx) => {
 
 出处：`docs/extensions.md` 第 615 行“before_agent_start”；`docs/sdk.md` 第 32 行“`session.systemPrompt` is read-only”。
 
-Himawari 的写法：资源加载器的 `systemPromptOverride: () => frozenSystemPrompt` 给初始提示，不再在 `before_agent_start` 里重复返回（偏离 D6 已删除，[ADR 0205](adr/0205-adopt-pi-official-request-head-and-session-runtime-wrapper.md)）；发出请求的开头仍由 D1 的请求函数换成冻结的那份，D1 改完后由 `context_with_system` 生成。
+Himawari 的写法：资源加载器的 `systemPromptOverride: () => frozenSystemPrompt` 给初始提示，不再在 `before_agent_start` 里重复返回（偏离 D6 已删除，[ADR 0208](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md)）；发出请求的开头仍由 D1 的请求函数换成冻结的那份，D1 改完后由 `context_with_system` 生成。
 
 官方示例在 `event.systemPrompt` 后面拼“本轮”的额外说明（`docs/extensions.md` 第 615 行起），Himawari 不得照抄：每轮会变的内容放在最后一条用户消息里（[prompt-prefix 规则第一节](../.claude/rules/prompt-prefix.md#order)）。官方说明：改 `systemPromptOptions` 里的分节时，Pi 只追加一条补丁；直接返回 `systemPrompt` 会整段替换，换了就“a cache miss when it changes”。Himawari 的系统提示按对话冻结（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)），所以只返回冻结的那一份，不每轮改。
 
@@ -343,12 +343,12 @@ SettingsManager.inMemory({
 
 | 编号 | 位置 | 做了什么 | 对应的官方写法 | 为什么没照官方 | 状态 |
 |---|---|---|---|---|---|
-| D1 | `pi-runtime-adapter.ts` 的 `session.agent.streamFunction = ...` | 替换 Pi 每次请求模型的函数：换成冻结的系统提示和工具、准入和预算、出口遮盖、审批续跑时回放已有回答、识别压缩请求 | 请求开头用 `context_with_system`；准入、遮盖、还原放进注册的服务方（复用 `openai-completions`，外面包一层）；观察用 `before_provider_request` | [ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#options) 只比较了 `before_agent_start` 一条路，没比较 `context_with_system` 和服务方包装 | Andy 2026-11-10 同意方案，分三步实施，第 1 步（D6）已完成（[ADR 0205](adr/0205-adopt-pi-official-request-head-and-session-runtime-wrapper.md)） |
+| D1 | `pi-runtime-adapter.ts` 的 `session.agent.streamFunction = ...` | 替换 Pi 每次请求模型的函数：换成冻结的系统提示和工具、准入和预算、出口遮盖、审批续跑时回放已有回答、识别压缩请求 | 请求开头用 `context_with_system`；准入、遮盖、还原放进注册的服务方（复用 `openai-completions`，外面包一层）；观察用 `before_provider_request` | [ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#options) 只比较了 `before_agent_start` 一条路，没比较 `context_with_system` 和服务方包装 | Andy 2026-11-10 同意方案，分三步实施，第 1 步（D6）已完成（[ADR 0208](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md)） |
 | D2 | `pi-runtime-adapter.ts` 的 `createTool` 里调 `tools.preflight`、`reconciliation.suspend` | 权限判断和等审批写在工具的 `execute` 里，等审批时存快照、结束这次运行 | `tool_call` 拦截（`permission-gate.ts`） | 官方拦截只能在进程里当场等；审批要等几小时、服务可能重启（[ADR 0023](adr/0023-durable-hitl-execution.md)）。ADR 0023 写于 Pi 0.x，没写和 `tool_call` 的比较 | Andy 2026-11-10 批准保留（[ADR 0204](adr/0204-handle-pi-deviations-d2-d3-d5.md)） |
 | D3 | `pi-tool-batch-continuation.ts` | 审批后续跑：存会话条目和那次回答，续跑时回放 | 官方没有稳定写法；`pi-durable` 标为实验性 | [ADR 0023](adr/0023-durable-hitl-execution.md)、[ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#decision) | Andy 2026-11-10 批准保留（[ADR 0204](adr/0204-handle-pi-deviations-d2-d3-d5.md)） |
 | D4 | `configured-model-binding.ts` 的 `initializeRuntime`（原 `pi-runtime-adapter.ts` 的 `sessionModelRuntime`） | 已关闭：原来用 Proxy 改写 `hasConfiguredAuth`；现改为完整 `Provider` 的原生认证（`check` 回“已配置”、`resolve` 只从 `credential` 取密钥，来源唯一靠空凭据库），见 [ADR 0205](adr/0205-pi-native-provider-auth.md) | 完整 `Provider` 原生认证（`createProvider` + `registerNativeProvider`） | — | 已改回官方写法；升级 Pi 时重查 `[D4]` 测试 |
 | D5 | `pi-runtime-adapter.ts` 里的 `agent.steer`、`agent.abort()`、`agent.continue()`、`agent.hasQueuedMessages()`（读历史和工具已在 2026-11-10 改成 `session.messages`、`session.getActiveToolNames`、`session.getToolDefinition`） | 绕过会话直接用底层 Agent | `session.sendCustomMessage`、`session.abort()`；`continue`、`hasQueuedMessages` 在 `docs/sdk.md` 里没有会话层接口，需要另查 | 工具内部不能等会话空闲，所以用底层中止；其余没有写下理由 | 插消息、接着跑的部分先出方案交 Andy（[ADR 0204](adr/0204-handle-pi-deviations-d2-d3-d5.md)） |
-| D6 | `pi-runtime-adapter.ts` 的 `himawari-system-prompt` 扩展（已删除） | `before_agent_start` 返回系统提示，D1 又在请求前换一次 | 二选一 | 扩展已删除，D1 仍保留；26 个用例的 83 条请求逐字节不变 | D6 已改回官方（[ADR 0205](adr/0205-adopt-pi-official-request-head-and-session-runtime-wrapper.md)） |
+| D6 | `pi-runtime-adapter.ts` 的 `himawari-system-prompt` 扩展（已删除） | `before_agent_start` 返回系统提示，D1 又在请求前换一次 | 二选一 | 扩展已删除，D1 仍保留；26 个用例的 83 条请求逐字节不变 | D6 已改回官方（[ADR 0208](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md)） |
 | D7 | `pi-runtime-adapter.ts` 的 `SettingsManager.inMemory` 和模型配置 | 没设 `cacheWarming`，模型也没填 `promptCache`，所以从不预热；没接预热的预算判断和用量记录 | 模型填 `promptCache`；`cache_warming_decision` 按预算回 `warm` 或 `stop`；`cache_warm` 条目记进用量表（见[设置](#pattern-settings)） | 没有写下理由；1.5.1 默认值变了。Andy 2026-11-10 定预热要保留 | 照官方接，先出方案交 Andy |
 
 <a id="how-to-deviate"></a>

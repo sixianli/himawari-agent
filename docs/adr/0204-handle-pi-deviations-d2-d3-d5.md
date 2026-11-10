@@ -62,7 +62,7 @@ date: "2026-11-10"
 ## 放弃的做法
 
 - **D5 一次全部换成 `session.sendCustomMessage`。**`sendCustomMessage` 在不在运行中、带不带 `triggerTurn` 时行为不同（1.5.0 `dist/core/agent-session.js` 第 1862–1900 行），会改变消息插进对话的时机，进而改变发给模型的内容，不能不出方案就改。
-- **D6 单独先改。**去掉请求函数里那次替换就是在改 D1；去掉 `before_agent_start` 会改变 Pi 会话里记下的系统提示，它被哪些路径用到（例如压缩）要和 D1 一起查清，本 ADR 没有查。后续：2026-11-10 已查清，D6 单独删除，见 [ADR 0205](0205-adopt-pi-official-request-head-and-session-runtime-wrapper.md#decision)。
+- **D6 单独先改。**去掉请求函数里那次替换就是在改 D1；去掉 `before_agent_start` 会改变 Pi 会话里记下的系统提示，它被哪些路径用到（例如压缩）要和 D1 一起查清，本 ADR 没有查。后续：2026-11-10 已查清，D6 单独删除，见 [ADR 0208](0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md#decision)。
 
 <a id="consequences"></a>
 

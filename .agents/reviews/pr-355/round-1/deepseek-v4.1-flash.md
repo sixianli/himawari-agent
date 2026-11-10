@@ -5,7 +5,7 @@
 ## 按严重度排列
 
 ### 1. 严重度：中 — 与已生效的 ADR 0204 直接冲突，且未声明取代
-**文件：行**：`docs/adr/0205-adopt-pi-official-request-head-and-session-runtime-wrapper.md:5,49`；`docs/adr/0204-handle-pi-deviations-d2-d3-d5.md:65,72`
+**文件：行**：`docs/adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md:5,49`；`docs/adr/0204-handle-pi-deviations-d2-d3-d5.md:65,72`
 
 **问题**：ADR 0204 明确把“D6 单独先改”列为放弃的做法；ADR 0205 却把“单独删除 D6”作为已完成的第一步，并在 front matter 写 `supersedes: ""`，没有声明取代或修订 ADR 0204。两份 ADR 同日、同为 `accepted`，结论互相矛盾。
 
@@ -59,7 +59,7 @@
 ---
 
 ### 4. 严重度：低 — 文档把“手工对比过”写成已完成的强证据
-**文件：行**：`docs/pi-development-guide.md:355`；`docs/adr/0205-adopt-pi-official-request-head-and-session-runtime-wrapper.md:73`
+**文件：行**：`docs/pi-development-guide.md:355`；`docs/adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md:73`
 
 **问题**：“请求逐字节不变”“第 1 步已有逐字节证据”在仓库里没有可复核的产物；而且 D6 行写“已改回官方”，但 D1 行仍明确说明 `session.agent.streamFunction = ...` 整包替换，请求开头仍不是官方生成。单看 D6 这句话成立，放在一起容易被读成“请求开头已照官方”。
 
@@ -73,7 +73,7 @@
 ---
 
 ### 5. 严重度：低 — ADR 前提引用的 Pi 版本与锁定版本不一致，且无法在仓库内核实
-**文件：行**：`docs/adr/0205-adopt-pi-official-request-head-and-session-runtime-wrapper.md:34`；`packages/runtime-pi/package.json:10-11`
+**文件：行**：`docs/adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md:34`；`packages/runtime-pi/package.json:10-11`
 
 **问题**：ADR 前提 1 引用 `@earendil-works/pi-coding-agent@1.5.1 docs/extensions.md`，仓库实际锁定 `1.5.0`；ADR 只说“1.5.0 同”，但仓库里没有 `node_modules`，无法核对 1.5.0 的 `docs/extensions.md`、`runner.js`、`compaction.js`、`agent-session.js` 原文。前提 4 的“分支摘要”也没有测试或代码证据。
 

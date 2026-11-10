@@ -1,6 +1,6 @@
 ## 复核结论（按严重度排列）
 
-### 中 · `docs/adr/0205-adopt-pi-official-request-head-and-session-runtime-wrapper.md:49`、`docs/pi-development-guide.md:355`
+### 中 · `docs/adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md:49`、`docs/pi-development-guide.md:355`
 **问题**：「删除前后 83 条请求体逐字节相同（`cmp` 无差异）」这一关键经验断言没有任何可复现的证据留在仓库里——没有金样请求体、没有对比脚本、没有运行记录。它被写进了 ADR（“第 1 步完成”的唯一证据）和规范 D6 行（“请求逐字节不变”），复核者无法验证。
 **证据**：ADR 第 49 行原文「删除前后用同一组 26 个多轮用例各抓一遍真实请求体，83 条请求体逐字节相同（`cmp` 无差异）」；仓库中 `.agents/reviews/topic-pi-official-request/round-2/deepseek-v4.1-flash.md` 在 diff 里只有 1 字节且未随 sparse checkout 检出，双模型复核记录也不完整。
 **建议**：把逐字节对比固化为可复现工件（如 `__request_golden__` 金样目录 + 测试，参照 ADR 0161 的做法），或在 ADR 附上可重跑的脚本与命令。

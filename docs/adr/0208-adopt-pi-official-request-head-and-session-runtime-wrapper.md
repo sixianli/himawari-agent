@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-11-10"
 ---
 
-# ADR 0205：模型请求改靠近 Pi 官方写法（D1、D6）
+# ADR 0208：模型请求改靠近 Pi 官方写法（D1、D6）
 
 <a id="contents"></a>
 
@@ -76,7 +76,7 @@ Pi 官方对“委托内置实现”的写法是在自己的 `streamSimple` 里�
 
 - 不改变模型已经见过的请求开头：第 1 步有一次性的逐字节对比证据（上面 26 个用例、83 条请求），第 2、3 步合并前同样要做新旧对比，并跑 `npm run check:prompt-prefix`。
 - 第 2 步要先核对：`streamSimple` 同步返回在预热和摘要路径下可用；`model !== binding.model` 的对象身份检查在新接缝下仍成立；摘要的凭据解析路径变化后行为不变；代理不被 Pi 做 `instanceof` 检查。
-- D4 的 PR 也会改 `sessionModelRuntime` 和服务方注册，谁先合并，另一方在其基础上更新后重新对比请求字节。
+- D4 已由 [ADR 0205](0205-pi-native-provider-auth.md) 合并并删掉了 `sessionModelRuntime` 那个 Proxy；第 2 步要自己重建每次运行专属的模型代理，重建后用 D4 留下的 `packages/runtime-pi/test/fixtures/d4-golden-requests.json` 再逐字节对比一次请求。
 - 打开缓存预热（D7）时，预热请求会进包装层，要有标记区分。
 
 <a id="references"></a>
