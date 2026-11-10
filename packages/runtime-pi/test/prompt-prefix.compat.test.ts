@@ -922,6 +922,7 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     ];
     const failures: { code: string; message: string }[] = [];
     const purposes: string[] = [];
+    const shared: boolean[] = [];
     const { bodies, turnEvents } = await conversation(
       turns,
       (index, body) => {
@@ -932,6 +933,7 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       {
         promptBundles: new FrozenPromptBundles(),
         onModelStreamFailed: (_request, failure) => failures.push(failure),
+        onCompactionSummaryRequest: (_request, summary) => shared.push(summary.sharedHead),
         usage: {
           store: {
             record: async (observation) => {
@@ -942,6 +944,7 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
         },
       },
     );
+    expect(shared).toContain(false);
     expect(purposes.filter((purpose) => purpose === "other").length).toBeGreaterThan(0);
     expect(purposes.filter((purpose) => purpose === "chat").length).toBeGreaterThan(0);
     const summaries = bodies.filter((body) => body.includes("<conversation>"));
@@ -1029,6 +1032,43 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(summary.messages.at(-1)).toMatchObject({ role: "user" });
     expect(JSON.stringify(summary)).not.toContain("<conversation>");
     expect(purposes).toContain("other");
+  });
+
+  it("[COMPACT-3] never runs a tool when the shared summary request comes back as a tool call, and reports the failed compaction", async () => {
+    const executed: string[] = [];
+    class CountingTools extends SearchTools {
+      override async execute(invocation: { readonly capabilityRef: string }) {
+        executed.push(invocation.capabilityRef);
+        return super.execute(invocation);
+      }
+    }
+    const turns: Turn[] = [
+      { prompt: `第一问${"alpha bravo ".repeat(9000)}` },
+      { prompt: `第二问${"charlie delta ".repeat(9000)}` },
+      { prompt: "第三问" },
+    ];
+    const failures: { code: string; message: string }[] = [];
+    const shared: boolean[] = [];
+    await conversation(
+      turns,
+      (index, body) => {
+        PROMPT_TOKENS = index === 1 ? 90_000 : 30_000;
+        if (body.includes("Do NOT continue it"))
+          return { tool: "reminder_set", input: '{"text":"x","due":"2026-11-06 15:00"}' };
+        return { text: `回答${index}` };
+      },
+      () => undefined,
+      {
+        promptBundles: new FrozenPromptBundles(),
+        tools: new CountingTools(),
+        onModelStreamFailed: (_request, failure) => failures.push(failure),
+        onCompactionSummaryRequest: (_request, summary) => shared.push(summary.sharedHead),
+      },
+      false,
+    );
+    expect(shared[0]).toBe(true);
+    expect(executed).toEqual([]);
+    expect(failures.map((failure) => failure.code)).toContain("PI_COMPACTION_FAILED");
   });
 
   it("keeps the frozen tools unchanged when task tools come and go with a task handle", async () => {
