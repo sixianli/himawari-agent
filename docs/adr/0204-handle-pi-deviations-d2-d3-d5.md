@@ -27,7 +27,7 @@ date: "2026-11-10"
 
 [ADR 0203](0203-follow-pi-official-extension-patterns.md) 把 2026-11-10 核查出的 7 处偏离 Pi 官方写法的地方登记在 [Pi 二次开发规范](../pi-development-guide.md#current-deviations) 的偏离表里，状态都是“待 Andy 定”。核查线程给 Andy 的建议是：“D2、D3 批准保留；D5、D6、D7 改回官方写法；D1、D4 先开方案线程”。Andy 2026-11-10 回“按建议”。
 
-动手读代码后发现两处和建议的前提不同：D6（系统提示设两次）的第二次就在 D1 替换的请求函数里，没法离开 D1 单独改；D5（绕过会话直接用底层 Agent）里，“往运行中插消息、接着跑”的几处决定了后台命令通知、工具循环停止提示、压缩后补发的运行环境说明在什么时候进入发给模型的内容，换写法会改变插入时机，属于大改动，要先出方案。这两点已在核查线程里告诉 Andy。
+动手读代码后发现两处和建议的前提不同：D6（系统提示设两次）的第二次就在 D1 替换的请求函数里，没法离开 D1 单独改（后来查清压缩路径后推翻，D6 已单独删除，见 [ADR 0208](0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md)）；D5（绕过会话直接用底层 Agent）里，“往运行中插消息、接着跑”的几处决定了后台命令通知、工具循环停止提示、压缩后补发的运行环境说明在什么时候进入发给模型的内容，换写法会改变插入时机，属于大改动，要先出方案。这两点已在核查线程里告诉 Andy。
 
 <a id="premises"></a>
 
@@ -69,7 +69,7 @@ date: "2026-11-10"
 ## 后果
 
 - D2、D3 不再是“待定”的偏离；新代码可以照它们的写法做审批续跑，但仍要走 ADR 0023 的流程。
-- D5 剩下的部分、D6、D7、D1 仍不得照抄；D4 已由 [ADR 0205](0205-pi-native-provider-auth.md) 关闭，现在可以照它的写法做。
+- D5 剩下的部分、D7、D1 仍不得照抄；D6 已按 [ADR 0208](0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md) 删除；D4 已由 [ADR 0205](0205-pi-native-provider-auth.md) 关闭，现在可以照它的写法做。
 - 读历史改走 `session.messages` 后，测试里的假会话也要有 `messages`（和 `getActiveToolNames`、`getToolDefinition`），已同步改；另加一条用例锁住“注册了但没激活的工具不算可并行”。
 
 <a id="references"></a>

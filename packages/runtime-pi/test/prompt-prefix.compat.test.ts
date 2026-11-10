@@ -738,7 +738,7 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     ]);
   });
 
-  it("[ADR-0208] never lets Pi's own working-directory line into the request head", async () => {
+  it("never lets Pi's own working-directory line into the request head", async () => {
     const { bodies } = await conversation(
       [{ prompt: "第一轮", blocks: [ownerProfile] }],
       (index) => ({ text: `回答${index}` }),
