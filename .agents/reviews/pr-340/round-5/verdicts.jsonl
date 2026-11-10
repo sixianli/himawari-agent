@@ -1,0 +1,6 @@
+{"id": "r5-ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 仍写着“按本次导出首次出现顺序编号”，与实现不一致", "valid": true, "class": "error", "severity": "low", "trigger": "照 ADR 理解编号规则", "consequence": "以为每次从 1 重排，实际接着已有最大编号；不会导致做错事", "modelSeverity": "中", "reason": "已修：ADR 和清单理由改成接着已有最大编号"}
+{"id": "r5-ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "编号扫描是手工枚举 6 个数组，只有实体名一处有回归用例", "valid": true, "class": "better"}
+{"id": "r5-ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "短口令用例的断言太弱，改完仍不能证明走的是“长度不足”分支", "valid": true, "class": "better"}
+{"id": "r5-ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`lstat` 吞掉所有错误，非 ENOENT 会以裸文件系统错误逃出", "valid": true, "class": "error", "severity": "low", "trigger": "输出路径的上级不可访问或链接循环", "consequence": "报原生文件系统错误而不是 PATH_UNSAFE，仍然拒绝写入", "modelSeverity": "低", "reason": "已修：只把 ENOENT 当不存在，其他错误报 PATH_UNSAFE"}
+{"id": "r5-ds-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "占位数字位数无上限，理论上可导出自己 import schema 拒绝的值", "valid": true, "class": "error", "severity": "low", "trigger": "库里被手动塞入几十位数字的占位", "consequence": "导出的包导入时被 Schema 整份拒绝，不写入", "modelSeverity": "低", "reason": "已修：扫描只认 1 到 6 位的编号；测试 ignores an absurdly long placeholder number"}
+{"id": "r5-ds-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "为扫描编号把整份元数据 `JSON.stringify` 一遍，增加峰值内存", "valid": true, "class": "better"}

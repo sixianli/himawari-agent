@@ -1289,11 +1289,37 @@ describe("memory approval and management", () => {
     const clicked = vi
       .spyOn(HTMLAnchorElement.prototype, "click")
       .mockImplementation(() => undefined);
+    const archive = vi.fn(
+      async () =>
+        new Response(new Uint8Array([80, 75]), {
+          status: 200,
+          headers: {
+            "content-disposition": 'attachment; filename="himawari-export-2026-11-02.zip"',
+            "x-himawari-export-memories": "5",
+            "x-himawari-export-withheld": "2",
+          },
+        }),
+    );
+    vi.stubGlobal("fetch", archive);
     await click("#settings .memory-footer", "导出全部记忆");
-    expect(text("#settings")).toContain("导出 2 条");
-    await click("#settings", "下载 JSON 文件");
+    expect(text("#settings")).toContain("导出全部记忆和决策记录");
+    expect(created).not.toHaveBeenCalled();
+    await click("#settings", "下载导出文件");
+    expect(archive).toHaveBeenCalledWith("/api/data-export/v1/archive", {
+      credentials: "same-origin",
+    });
     expect(created).toHaveBeenCalledTimes(1);
     expect(clicked).toHaveBeenCalledTimes(1);
+    expect(text("#settings")).toContain("已导出 5 条记忆；2 处敏感内容只留了占位符。");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 401 })),
+    );
+    await click("#settings", "下载导出文件");
+    expect(created).toHaveBeenCalledTimes(1);
+    expect(clicked).toHaveBeenCalledTimes(1);
+    expect(text("#settings")).toContain("导出失败，请稍后再试。");
+    expect(text("#settings")).not.toContain("已导出");
     clicked.mockRestore();
   });
 
