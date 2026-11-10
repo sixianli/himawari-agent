@@ -7,6 +7,7 @@ import {
   type DurableMemoryService,
   type DurableMemoryServiceOptions,
   type MemoryPort,
+  memoryDatesOf,
   type MemoryProjectionJob,
   type MemorySearchRequest,
   type ModelBudgetPort,
@@ -374,6 +375,7 @@ export function createProductionRunMemory(options: {
           searchTerms: [],
           dataClassification: memory.dataClassification,
           updatedAt: memory.updatedAt,
+          dates: memoryDatesOf(memory),
           score,
         }));
       });

@@ -1953,3 +1953,52 @@ it("[SI-2] files what an action review masked under its run's conversation, even
     await repository.close();
   }
 });
+
+it("[MEMORY-DATE] hands each selected memory's recorded date and validity range to context formation", async () => {
+  const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
+  const memory = createProductionRunMemory({
+    configuration,
+    projection: { bindEmbeddingBoundary: () => {} },
+    payloads: { get: async () => ({ dataClassification: "private" }) as never },
+    memory: {
+      search: async () =>
+        [
+          {
+            memory: {
+              id: "memory-dated",
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              contentRef: "payload-dated",
+              sourceRefs: ["message-dated"],
+              dataClassification: "private",
+              updatedAt: "2026-11-09T00:00:00.000Z",
+              recordedAt: "2026-10-01T00:00:00.000Z",
+              attributes: { validFrom: "2026-09-01", validTo: null },
+            },
+            providerRecordId: "provider-dated",
+            score: 0.9,
+          },
+        ] as never,
+    },
+    admission: async () => undefined,
+    budget: {} as never,
+    assertActive: async () => {},
+    now: () => "2026-11-10T00:00:00.000Z",
+  });
+  const found = await memory.search({
+    ownerId: configuration.ownerId,
+    agentId: configuration.agentId,
+    runId: "run-dated" as never,
+    executionLease: {} as never,
+    dataClassification: "private",
+    queryRef: "query" as never,
+    queryTerms: [],
+    limit: 3,
+  });
+  expect(found.map(({ id, dates }) => ({ id, dates }))).toEqual([
+    {
+      id: "memory-dated",
+      dates: { recordedAt: "2026-10-01T00:00:00.000Z", validFrom: "2026-09-01", validTo: null },
+    },
+  ]);
+});
