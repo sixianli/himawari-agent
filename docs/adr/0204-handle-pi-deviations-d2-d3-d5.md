@@ -47,7 +47,7 @@ date: "2026-11-10"
 1. **D2、D3 批准保留。**理由见前提 6；在 Pi 行为变化时会失败的测试见前提 5。升级 Pi 时这两条测试必须先过。
 2. **D5 读历史和工具的部分改成官方写法。**`pi-runtime-adapter.ts` 里读 `session.agent.state.messages` 的三处改成 `session.messages`；`pi-tool-batch-continuation.ts` 读消息改成 `session.messages`，判断工具能否并行改成先查 `session.getActiveToolNames()`、再看 `session.getToolDefinition(name)?.executionMode`。依据前提 2、3、4，行为不变。
 3. **D5 插消息、接着跑的部分先出方案。**`agent.steer`、`agent.continue()`、`agent.hasQueuedMessages()` 换成 `session.sendCustomMessage` 一类官方写法的方案，和 D7（缓存预热接预算和用量）合成一份，按 [和 OpenCode 协作](../../AGENTS.md#working-with-opencode) 的步骤出方案交 Andy，同意后再改代码。工具内部的 `agent.abort()` 暂时保留：工具在运行中不能等会话空闲，`session.abort()` 会等。
-4. **D6 并入 D1 的方案。**两者改的是同一处，分开定会互相矛盾。
+4. **D6 并入 D1 的方案。**当时两者改的是同一处，分开定会互相矛盾；后来查清压缩路径后推翻，D6 已按 [ADR 0208](0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md) 第 1 步单独删除。
 5. 偏离表的状态列按上面更新。
 
 <a id="industry"></a>

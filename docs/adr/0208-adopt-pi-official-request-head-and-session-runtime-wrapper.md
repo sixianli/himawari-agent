@@ -50,7 +50,7 @@ date: "2026-11-10"
 
 分三步做，每步单独一个 PR：
 
-1. **D6：删掉 `himawari-system-prompt` 扩展。**资源加载器的 `systemPromptOverride` 已给了同一份提示；对话请求的替换函数不读 Pi 的系统开头，只读 Pi 声明的工具名做一致性检查；压缩请求的替换函数（`himawariSummaryContext`）读的是 Pi 传来的第一条 system 消息，那是 Pi 自带的摘要提示（前提 4），与 `before_agent_start` 无关。第 1 步完成：删除前后用 `prompt-prefix.compat.test.ts` 的 26 个多轮用例（含压缩和审批续跑）各抓一遍真实请求体，83 条请求体逐字节相同（`cmp` 无差异）。合入 D4（ADR 0205）之后又在合并后的代码上重做一次（此时多了 1 个用例）：27 个用例 84 条请求体与 `origin/main`（带扩展）逐字节相同。这两次都是一次性的手工对比，不是提交到仓库的自动检查；因为对话请求本来就不依赖 Pi 的开头，加回这个扩展也不会改变请求字节，所以没有“加回就失败”的反向用例，只加了一个普通防线用例：Pi 自己加的工作目录行不会漏进请求（它不是 D6 的反向用例）。
+1. **D6：删掉 `himawari-system-prompt` 扩展。**资源加载器的 `systemPromptOverride` 已给了同一份提示；对话请求的替换函数不读 Pi 的系统开头，只读 Pi 声明的工具名做一致性检查；压缩请求的替换函数（`himawariSummaryContext`）读的是 Pi 传来的第一条 system 消息，那是 Pi 自带的摘要提示（前提 4），与 `before_agent_start` 无关。第 1 步完成：删除前后用 `prompt-prefix.compat.test.ts` 的 26 个多轮用例（含压缩和审批续跑）各抓一遍真实请求体，83 条请求体逐字节相同（`cmp` 无差异）。合入 D4（ADR 0205）之后又在合并后的代码上重做一次（此时多了 1 个用例）：27 个用例 84 条请求体与 `origin/main`（带扩展）逐字节相同。这两次都是一次性的手工对比，不是提交到仓库的自动检查；因为对话请求本来就不依赖 Pi 的开头，加回这个扩展也不会改变请求字节，所以没有“加回就失败”的反向用例，只加了一个普通防线用例：Pi 自己加的工作目录行不会漏进请求（它不是 D6 的反向用例；D6 没有自动反向保护，这一点已接受：加回扩展不会改变请求字节，保护 D6 之外的整条请求开头的是 `check:prompt-prefix`）。
 2. **D1 主体：不再给 `session.agent.streamFunction` 赋值。**替换函数里的全部职责（压缩识别、拒发条件、审批回放、准入、遮盖、用量、取密钥、网关）搬到每次运行新建的模型代理（在共享的 `binding.modelRuntime` 外包一层，只覆盖 `streamSimple`）的 `streamSimple` 上；`streamSimple` 同步返回输出流，准入在后台驱动；Pi 默认请求函数（预热、选项整理）留在外层。设置里显式 `cacheWarming: "off"`，等 D7 定了再开。工具一致性检查从只比名字改成比整条声明。
 3. **请求开头改用 `context_with_system` 钩子生成**（`normalizeContext({systemPrompt, tools, messages: []})` 的第一条消息，与现在字节一致）；第 2 步的包装层校验开头等于冻结开头，不等就一次请求都不发。
 
