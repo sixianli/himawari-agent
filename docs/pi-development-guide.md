@@ -267,7 +267,7 @@ pi.on("session_before_compact", async (event, ctx) => {
 ```
 
 - 什么时候压缩由设置决定：`contextTokens > contextWindow - reserveTokens`（`docs/compaction.md`“When It Triggers”）。
-- 要自己出摘要（例如让压缩请求沿用原对话的开头，见 [prompt-prefix 规则第 13 条](../.claude/rules/prompt-prefix.md#compaction)），用 `session_before_compact` 返回 `compaction`。官方示例里的 `ctx.modelRegistry.complete` 在 Himawari 里要换成 Himawari 自己的模型调用入口，理由见[单次后台模型调用](#pattern-direct-call)。
+- 让压缩请求沿用原对话的开头（[prompt-prefix 规则第 13 条](../.claude/rules/prompt-prefix.md#compaction)）已按 [ADR 0207](adr/0207-compaction-request-reuses-conversation-head.md) 做：`session_before_compact` 只观察、返回空，由模型运行库的包装改写 Pi 自己发出的摘要请求。真要自己出摘要，用 `session_before_compact` 返回 `compaction`；官方示例里的 `ctx.modelRegistry.complete` 在 Himawari 里要换成 Himawari 自己的模型调用入口，理由见[单次后台模型调用](#pattern-direct-call)。
 - 返回 `{ cancel: true }` 取消这次压缩。
 
 <a id="pattern-steer"></a>

@@ -19,6 +19,12 @@ import {
   PiAgentRuntimeAdapter,
   type PiAgentRuntimeAdapterDependencies,
 } from "../src/index.js";
+import type { Context, Message } from "@earendil-works/pi-ai";
+import {
+  approximateTokens,
+  sharedSummaryContext,
+  sharedSummaryOptions,
+} from "../src/compaction-prefix.js";
 import { allowAdmission, fixtureExecutionLease } from "./helpers/admission.js";
 import { testModelEgress } from "./helpers/model-egress.js";
 import { findConversationBreak, findPrefixBreak } from "./helpers/prompt-prefix.js";
@@ -916,6 +922,7 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     ];
     const failures: { code: string; message: string }[] = [];
     const purposes: string[] = [];
+    const shared: boolean[] = [];
     const { bodies, turnEvents } = await conversation(
       turns,
       (index, body) => {
@@ -926,6 +933,7 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       {
         promptBundles: new FrozenPromptBundles(),
         onModelStreamFailed: (_request, failure) => failures.push(failure),
+        onCompactionSummaryRequest: (_request, summary) => shared.push(summary.sharedHead),
         usage: {
           store: {
             record: async (observation) => {
@@ -936,6 +944,7 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
         },
       },
     );
+    expect(shared).toContain(false);
     expect(purposes.filter((purpose) => purpose === "other").length).toBeGreaterThan(0);
     expect(purposes.filter((purpose) => purpose === "chat").length).toBeGreaterThan(0);
     const summaries = bodies.filter((body) => body.includes("<conversation>"));
@@ -976,6 +985,90 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     const failure = failures.find((item) => item.code === "PI_COMPACTION_FAILED");
     expect(failure).toBeDefined();
     expect(failure?.message).toMatch(/^provider_(status_\d{3}|message_withheld)$/);
+  });
+
+  it("[COMPACT-2] sends the summary request with the conversation's own tools, system prompt and history up to the cut", async () => {
+    const turns: Turn[] = [
+      { prompt: `第一问${"alpha bravo ".repeat(9000)}` },
+      { prompt: `第二问${"charlie delta ".repeat(9000)}` },
+      { prompt: "第三问" },
+    ];
+    const purposes: string[] = [];
+    const { bodies } = await conversation(
+      turns,
+      (index, body) => {
+        PROMPT_TOKENS = index === 1 ? 90_000 : 30_000;
+        return {
+          text: body.includes("Do NOT continue it") ? "摘要：已聊过。" : `回答${index}`,
+        };
+      },
+      () => undefined,
+      {
+        promptBundles: new FrozenPromptBundles(),
+        usage: {
+          store: {
+            record: async (observation) => {
+              purposes.push(observation.purpose);
+            },
+          },
+          onFailure: () => undefined,
+        },
+      },
+    );
+    const parsed = bodies.map((body) => JSON.parse(body));
+    const summaries = parsed.filter((body) =>
+      JSON.stringify(body.messages.at(-1)).includes("Do NOT continue it"),
+    );
+    expect(summaries).toHaveLength(1);
+    const summary = summaries[0];
+    const normal = parsed[1];
+    expect(summary.tools).toEqual(normal.tools);
+    expect(summary.messages.slice(0, -1)).toEqual(
+      normal.messages.slice(0, summary.messages.length - 1),
+    );
+    const summaryText = JSON.stringify(summary.messages.slice(0, -1));
+    expect(summaryText).toContain("第一问");
+    expect(summaryText).not.toContain("第二问");
+    expect(summary.messages.at(-1)).toMatchObject({ role: "user" });
+    expect(JSON.stringify(summary)).not.toContain("<conversation>");
+    expect(purposes).toContain("other");
+  });
+
+  it("[COMPACT-3] never runs a tool when the shared summary request comes back as a tool call, and reports the failed compaction", async () => {
+    const executed: string[] = [];
+    class CountingTools extends SearchTools {
+      override async execute(invocation: { readonly capabilityRef: string }) {
+        executed.push(invocation.capabilityRef);
+        return super.execute(invocation);
+      }
+    }
+    const turns: Turn[] = [
+      { prompt: `第一问${"alpha bravo ".repeat(9000)}` },
+      { prompt: `第二问${"charlie delta ".repeat(9000)}` },
+      { prompt: "第三问" },
+    ];
+    const failures: { code: string; message: string }[] = [];
+    const shared: boolean[] = [];
+    await conversation(
+      turns,
+      (index, body) => {
+        PROMPT_TOKENS = index === 1 ? 90_000 : 30_000;
+        if (body.includes("Do NOT continue it"))
+          return { tool: "reminder_set", input: '{"text":"x","due":"2026-11-06 15:00"}' };
+        return { text: `回答${index}` };
+      },
+      () => undefined,
+      {
+        promptBundles: new FrozenPromptBundles(),
+        tools: new CountingTools(),
+        onModelStreamFailed: (_request, failure) => failures.push(failure),
+        onCompactionSummaryRequest: (_request, summary) => shared.push(summary.sharedHead),
+      },
+      false,
+    );
+    expect(shared[0]).toBe(true);
+    expect(executed).toEqual([]);
+    expect(failures.map((failure) => failure.code)).toContain("PI_COMPACTION_FAILED");
   });
 
   it("keeps the frozen tools unchanged when task tools come and go with a task handle", async () => {
@@ -1108,5 +1201,66 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(findPrefixBreak(body([a, b]), body([a, { ...b, content: "B" }, c]))).toMatchObject({
       index: 1,
     });
+  });
+});
+
+const compactUser = (text: string): Message => ({
+  role: "user",
+  content: [{ type: "text", text }],
+  timestamp: 1,
+});
+
+const compactLast = (messages: Message[], systemPrompt = "系统提示"): Context => ({
+  systemPrompt,
+  tools: [],
+  messages,
+});
+
+describe("[I-66] [COMPACT-2] sharing the conversation's head with the summary request", () => {
+  const prefix = [compactUser("第一问")];
+
+  it("appends the instruction after the same history, system prompt and tools", () => {
+    const context = compactLast([...prefix, compactUser("第二问")]);
+    const shared = sharedSummaryContext(context, prefix, 100_000, 4_000);
+    expect(shared?.systemPrompt).toBe(context.systemPrompt);
+    expect(shared?.tools).toBe(context.tools);
+    expect(shared?.messages.slice(0, 1)).toEqual(prefix);
+    expect(shared?.messages).toHaveLength(2);
+    expect(shared?.messages.at(-1)).toMatchObject({ role: "user" });
+  });
+
+  it("REVERSE: gives up when the history differs, is shorter, or there is no earlier request", () => {
+    expect(
+      sharedSummaryContext(compactLast([compactUser("别的")]), prefix, 100_000, 4_000),
+    ).toBeUndefined();
+    expect(sharedSummaryContext(compactLast([]), prefix, 100_000, 4_000)).toBeUndefined();
+    expect(sharedSummaryContext(undefined, prefix, 100_000, 4_000)).toBeUndefined();
+    expect(sharedSummaryContext(compactLast(prefix), undefined, 100_000, 4_000)).toBeUndefined();
+  });
+
+  it("REVERSE: gives up when the system prompt, tools and history do not fit the window", () => {
+    const big = [compactUser("汉".repeat(30_000))];
+    expect(sharedSummaryContext(compactLast(big), big, 100_000, 4_000)).toBeDefined();
+    expect(sharedSummaryContext(compactLast(big), big, 30_000, 4_000)).toBeUndefined();
+    const heavyPrompt = compactLast(prefix, "字".repeat(60_000));
+    expect(sharedSummaryContext(heavyPrompt, prefix, 50_000, 4_000)).toBeUndefined();
+  });
+
+  it("counts Chinese text as more tokens than ASCII of the same length", () => {
+    expect(approximateTokens("汉".repeat(1_000))).toBeGreaterThan(
+      approximateTokens("a".repeat(1_000)) * 2,
+    );
+  });
+
+  it("takes the session id and cache setting from the last normal request, not from Pi's summary call", () => {
+    expect(
+      sharedSummaryOptions(
+        { sessionId: "pi-fresh", cacheRetention: "none", maxTokens: 9 },
+        { sessionId: "himawari-1", cacheRetention: "long" },
+      ),
+    ).toEqual({ maxTokens: 9, sessionId: "himawari-1", cacheRetention: "long" });
+    expect(
+      sharedSummaryOptions({ sessionId: "pi-fresh", cacheRetention: "none" }, undefined),
+    ).toEqual({});
   });
 });

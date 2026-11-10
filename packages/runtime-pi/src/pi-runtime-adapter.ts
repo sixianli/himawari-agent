@@ -88,6 +88,11 @@ import {
   redactMachineSecrets,
 } from "@himawari-agent/sensitive-capture";
 import { observeCacheFields } from "./cache-usage-observation.js";
+import {
+  compactionPrefixMessages,
+  sharedSummaryContext,
+  sharedSummaryOptions,
+} from "./compaction-prefix.js";
 import { restoreModelStream, withPlaceholderLegend } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
@@ -208,6 +213,10 @@ export interface PiAgentRuntimeAdapterDependencies {
   readonly onModelAdmissionFailed?: (
     request: RuntimeRequest,
     failure: { readonly code: string; readonly reason: string | null },
+  ) => void;
+  readonly onCompactionSummaryRequest?: (
+    request: RuntimeRequest,
+    summary: { readonly sharedHead: boolean },
   ) => void;
   readonly onModelStreamFailed?: (
     request: RuntimeRequest,
@@ -1480,6 +1489,20 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         ),
         extensionFactories: [
           {
+            name: "himawari-compaction-prefix",
+            hidden: true,
+            factory: (pi: ExtensionAPI) => {
+              pi.on("session_before_compact", (event) => {
+                try {
+                  compactionPrefix = compactionPrefixMessages(event);
+                } catch {
+                  compactionPrefix = undefined;
+                }
+                return undefined;
+              });
+            },
+          },
+          {
             name: "himawari-request-head",
             hidden: true,
             factory: (pi: ExtensionAPI) => {
@@ -1605,12 +1628,28 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       };
       let loopSummaryAttempted = false;
       let compacting = false;
+      let compactionPrefix: Message[] | undefined;
+      let lastRequest:
+        | { readonly context: Context; readonly options: SimpleStreamOptions | undefined }
+        | undefined;
       const governedRuntime = governedModelRuntime(
         binding.modelRuntime,
         async (model, requested, options, forward) => {
           const summaryContext = compacting ? himawariSummaryContext(requested) : undefined;
+          const shared =
+            summaryContext && lastRequest
+              ? sharedSummaryContext(
+                  lastRequest.context,
+                  compactionPrefix,
+                  model.contextWindow,
+                  options?.maxTokens ?? model.maxTokens,
+                )
+              : undefined;
           const context =
-            summaryContext ?? himawariRequestContext(requested, systemPrompt, requestTools);
+            shared ??
+            summaryContext ??
+            himawariRequestContext(requested, systemPrompt, requestTools);
+          if (shared) options = sharedSummaryOptions(options, lastRequest?.options);
           await this.#historyWrites.get(request.runId);
           const replay = restored?.takeReplay();
           if (replay) return replay;
@@ -1621,6 +1660,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             if (loopSummaryAttempted) return failedPiStream(model, "PI_TOOL_LOOP_DETECTED");
             loopSummaryAttempted = true;
           }
+          if (!summaryContext) lastRequest = { context, options };
+          else
+            this.#dependencies.onCompactionSummaryRequest?.(request, {
+              sharedHead: shared !== undefined,
+            });
           return admitPiStream(
             { ...request, dataClassification: this.#visibleOf(request) },
             binding,
@@ -1663,7 +1707,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
                 this.#activeSessions.get(request.runId)?.agent.abort();
             },
             assertKnown: (toolCallId) => {
-              if (unknownTool || (suspended && !parallelToolsInFlight.has(toolCallId)))
+              if (
+                compacting ||
+                unknownTool ||
+                (suspended && !parallelToolsInFlight.has(toolCallId))
+              )
                 throw new Error("RUNTIME_TOOL_EXECUTION_STOPPED");
             },
             checkpoint: (invocation) =>
@@ -1719,6 +1767,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         if (event.type === "compaction_start") compacting = true;
         if (event.type === "compaction_end") {
           compacting = false;
+          compactionPrefix = undefined;
           if (event.result === undefined && !event.aborted && event.errorMessage)
             this.#dependencies.onModelStreamFailed?.(request, {
               code: "PI_COMPACTION_FAILED",

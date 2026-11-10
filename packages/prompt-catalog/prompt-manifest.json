@@ -408,6 +408,11 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "runtime.compaction.summary-instruction": {
+    "sha256": "c660e6ce3998ce2684fd7e656fea25ab7f2fca93db91c12d51742943f5bd82aa",
+    "changedIn": "ADR 0207",
+    "reason": "压缩第 2 步：压缩摘要请求沿用原对话的工具、系统提示和历史，末尾追加这条指令，要求只写结构化摘要、不调用工具"
+  },
   "thread.title": {
     "sha256": "a3434b07edffccd5317c05341559fe8550ba0a0d727d19802d6dd394641bbbce",
     "changedIn": "ADR 0161",
