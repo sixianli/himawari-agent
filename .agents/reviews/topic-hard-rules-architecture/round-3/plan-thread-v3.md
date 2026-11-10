@@ -1,0 +1,46 @@
+# 线程方案 v3：硬规则接入 Himawari——“所有对外动作都是工具，硬规则只在工具执行前检查”
+
+背景：v1/v2 方案（.agents/reviews/topic-hard-rules-architecture/ 下 round-1、round-2 已审过）建议“登记册 + 规则类型 + 业务层多个执行点 + Pi 只管聊天工具调用”。Andy 2026-11-10 提出要从架构角度统一：把所有规则放进 Pi 的 Agent 循环，在调用工具（例如“发推送”）之前生效。他强调邮件和“金额小于 100 不推送”只是例子，不要陷进具体功能。
+
+## 一、前提和来源
+
+| # | 前提 | 来源（原话） |
+|---|---|---|
+| P1 | 规则是硬性设定，写进程序、必定执行、每条有回归测试 | docs/product-vision.md:59 “规则本身写进程序、必定执行，每条都有回归测试守着” |
+| P2 | 偏好是数据，测试按类型写 | docs/adr/0163-*.md 决定 1、2 |
+| P3 | 新增“直接拒绝、不需要等人”的规则用 Pi tool_call 写，挂隐藏内联扩展 | docs/pi-development-guide.md 第三节“工具执行前拦截或改参数”：“新增的‘直接拒绝、不需要等人’的规则（例如硬规则），用这个钩子写，挂在一个隐藏的内联扩展里” |
+| P4 | tool_call 可就地改 event.input，改后不再校验；出错即拦 | Pi 1.5.x docs/extensions.md “tool_call”：“No re-validation is performed after your mutation” |
+| P5 | 审批（等人几小时）保留在工具 execute 里的现有写法（偏离 D2、D3 已批准保留） | docs/adr/0204（PR 354 已合 main），Andy 2026-11-10 “按建议” |
+| P6 | 邮件判断现在是单次模型调用，不是 Agent 循环 | packages/application/src/services/proactive-mail-check-service.ts:1073 `#judge`，用 `model.prepare` 一问一答 |
+| P7 | 主动检查由 Himawari 自己的定时器触发 | apps/agent-service/src/production-proactive.ts:194 `setInterval(() => void this.tick(), ...)` |
+| P8 | 浏览器推送由一个轮询循环产出：到期提醒、待审批、已完成的运行，不经模型 | apps/agent-service/src/production-web-push.ts `#collect`（约 314–360 行，kind: reminder / approval / run） |
+| P9 | 发给模型的内容只追加，会变的放最后一条消息 | .claude/rules/prompt-prefix.md 第 1–4 条 |
+
+## 二、原则
+
+Himawari 对外产生效果的每个动作都建模成一个工具（推送通知、发邮件、写记忆、建提醒、外部写操作……）。硬规则只描述“哪个工具、参数里哪个值、满足什么条件、结果是什么”。全系统只有一个检查函数 `rules.decide(工具名, 参数, 环境事实)`，结果四种：放行、拒绝、延后到某时、先问我；多条命中取最严（拒绝 > 先问我 > 延后 > 放行）。
+
+## 三、结构
+
+1. 登记册（沿用 v2）：裸 id、整数修订号、出处、只追加历史；规则 = 数据 `{tool, when: [{fact, op, value}], all|any, outcome}`，比较符固定一组（=、≠、<、≤、>、≥、in、在时间段内），不收正则或代码；每条自带 match / not_match 例子，加载时跑，不过不生效；程序按比较符自动补边界例子（等于阈值、值缺失）。
+2. 规则词汇 = 工具参数：程序只能检查参数和程序自己知道的事实（当前时间、时区、发起方是模型还是定时器）。所以工具的参数结构要显式带上规则会用到的值（例如推送工具带 category、amount、sender）。参数缺失时的默认结果由规则写明（例如“金额缺失 → 放行”），不能隐式。
+3. 检查点：
+   a. 模型发起的工具调用：Pi 官方 tool_call 钩子（隐藏内联扩展 himawari-rules）调 rules.decide。拒绝 → `{block:true, reason}`，reason 带规则 id 和一句话给模型；延后 → block 并由程序把这次调用按原参数排进延后队列，到点再执行（执行时不再经模型，但重新过一次 decide）；先问我 → 交给现有审批路径（P5，ActionPolicyService 加 ASK 效果）。
+   b. 非模型发起的动作（P8 的提醒到期、审批通知、运行完成通知；P7 的主动检查）：不经过 Pi 会话，所以 tool_call 管不到。方案：这些代码不直接调发送端口，而是调用同一个工具的执行入口 `executeTool(name, params, initiator="system")`，入口第一步调同一个 rules.decide。也就是“工具执行入口”是唯一真正的闸，Pi tool_call 是它在 Agent 循环里的官方触发方式。
+   c. 加一道自动检查（门槛）：工具实现之外的代码直接 import / 调用发送类端口（WebPushSenderPort、Gmail 发送、记忆写入端口等）就让 npm run check 失败。
+4. 邮件主动检查是否搬进 Pi 循环：可选，不是这个原则的前提。只要它最后通过“推送工具”的执行入口发出，规则就生效。搬进 Pi 循环（模型自己调推送工具）会增加 token（每次至少多一轮请求），作为独立方案另评。
+5. 模型看到规则：登记册派生的短列表（按工具分组、排序固定、不含时间），放最后一条用户消息、受数据分类上限，规则没变不重发。只用于让模型少撞墙，不是执行手段。
+6. 一句话变规则：模型只把话翻译成上面的数据，程序校验（原话是消息连续子串、参数合法、不能碰系统不变量），确认卡，生效。
+7. 系统不变量（审批、出口遮盖、沙箱）不在 Andy 的规则里，聊天规则不能放宽它们。
+8. 软偏好（语气、格式）不进登记册。
+
+## 四、和 v2 的差别
+
+v2 的四个“时点”（推送前、写记忆前、建提醒前、工具执行前）合并为一个：工具执行入口。规则写成“工具 + 参数条件”。
+
+## 五、待审的风险（作者自己想到的）
+
+- 延后：tool_call 只能当场 block，延后要程序排队重放，重放时参数和上下文可能过期。
+- 非模型发起的动作改走工具入口，会不会和 D2（权限判断在 execute 里）重复判断或顺序冲突（tool_call 先于 execute 运行，见 pi-development-guide“顺序”一条）。
+- 规则依赖模型填的参数（金额）：模型漏填或填错，规则跟着错。
+- 工具集合要保持稳定（prompt-prefix 第 7 条），新增推送工具等会让对话换新一次。
