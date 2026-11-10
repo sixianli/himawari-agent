@@ -527,6 +527,18 @@ describe("CI policy contract", () => {
       },
     ],
     [
+      "artifact deletion outside the gate job",
+      (value) => {
+        value.jobs.static.permissions = { contents: "read", actions: "write" };
+      },
+    ],
+    [
+      "gate job with contents write",
+      (value) => {
+        value.jobs.required.permissions = { contents: "write", actions: "write" };
+      },
+    ],
+    [
       "floating action",
       (value) => {
         value.jobs.policy.steps[0].uses = "actions/checkout@v4";
@@ -566,6 +578,11 @@ describe("CI policy contract", () => {
     const value = workflow();
     mutate(value);
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
+  });
+  it("accepts artifact deletion permission on the gate job only", () => {
+    const value = workflow();
+    value.jobs.required.permissions = { contents: "read", actions: "write" };
+    expect(() => validateWorkflow(policy, stringify(value), lock)).not.toThrow();
   });
   it.each(["static", "coverage"])(
     "rejects a %s job that runs browser tests without installing Chromium",

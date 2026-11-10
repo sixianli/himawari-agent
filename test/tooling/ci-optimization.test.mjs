@@ -123,3 +123,20 @@ it("main 工作流不能隐藏检查失败或关闭完整 CI 回退", () => {
     ),
   ).toThrow("runtime");
 });
+
+it("完整 CI 只在汇总通过后删除本次运行的报告产物，且写权限只给汇总 job", () => {
+  const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
+  const required = workflow.jobs.required;
+  expect(required.permissions).toEqual({
+    contents: "read",
+    actions: "write",
+    "pull-requests": "read",
+  });
+  const steps = required.steps;
+  const gate = steps.findIndex((step) => step.run?.includes("required.mjs"));
+  const removal = steps.findIndex((step) => step.run?.includes("delete-run-reports.mjs"));
+  expect(removal).toBeGreaterThan(gate);
+  expect(steps[removal].if).toBe("success()");
+  for (const [id, job] of Object.entries(workflow.jobs))
+    if (id !== "required") expect(JSON.stringify(job.permissions ?? {})).not.toContain("write");
+});

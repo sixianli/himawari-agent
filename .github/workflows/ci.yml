@@ -380,6 +380,10 @@ jobs:
     name: ci/required
     if: always()
     runs-on: ci-vps
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
     needs:
       - policy
       - static
@@ -422,3 +426,8 @@ jobs:
           path: .ci-output/gate/
           if-no-files-found: error
           retention-days: 1
+      - name: 汇总通过后删除本次运行的报告产物
+        if: success()
+        run: .ci-output/tools/bin/node scripts/ci/delete-run-reports.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
