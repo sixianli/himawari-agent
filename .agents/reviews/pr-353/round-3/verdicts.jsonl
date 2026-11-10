@@ -1,0 +1,2 @@
+{"id": "r3-ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“授权由这个端口负责”容易被读成已有授权实现", "valid": true, "class": "error", "severity": "low", "trigger": "以后接 resources 端口的代理读这句话", "consequence": "以为已有授权实现，接一个不严的实现后扩展路径上的代码被 Pi 加载", "modelSeverity": "低"}
+{"id": "r3-ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“仓库里还没有测试锁住这一点”当前为真，但没有门槛保证它保持为真", "valid": true, "class": "better", "severity": "low", "trigger": "以后有人补了测试", "consequence": "这句话过期，但不会让人做错事", "modelSeverity": "低"}
