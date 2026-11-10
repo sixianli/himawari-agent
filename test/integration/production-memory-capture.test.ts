@@ -1617,7 +1617,7 @@ describe("production memory capture", () => {
     expect(byText("咖啡")).toMatchObject({ importance: 500, profilePin: "on" });
     expect(byText("蓝色")).toMatchObject({ importance: 650, profilePin: null });
     const dated = (text: string) =>
-      expect.stringMatching(new RegExp(`^${text}（记于 \\d{4}-\\d{2}-\\d{2}）$`, "u"));
+      expect.stringMatching(new RegExp(`^${text}（记于 2026-10-25）$`, "u"));
     expect(profiled()).toEqual([dated("我每天必须喝咖啡"), dated("主人最喜欢的颜色是蓝色")]);
     expect(view.profileUsage).toEqual({
       used: profiled().reduce((sum, text) => sum + text.length + 3, 0),

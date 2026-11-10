@@ -76,7 +76,7 @@ Zep 把记忆交给模型时给每条事实带生效时间段，格式是 “FAC
 
 ## 后果
 
-- 不改模型已经见过的请求开头：日期只出现在最后一条用户消息的资料块里（前提 5、7）；同一条记忆每次算出的字节相同（前提 3，时区来自配置）。已经发出的历史里没有日期，不补。`packages/runtime-pi/test/prompt-prefix.compat.test.ts` 的 `[MEMORY-DATE]` 用例三轮对话分别带三种日期，检查每轮请求都以上一轮开头。
+- 不改模型已经见过的请求开头：发给模型时，日期只出现在最后一条用户消息的资料块里（前提 5、7）；同一条记忆每次算出的字节相同（前提 3，时区来自配置）。已经发出的历史里没有日期，不补。`packages/runtime-pi/test/prompt-prefix.compat.test.ts` 的 `[MEMORY-DATE]` 用例三轮对话分别带三种日期，检查每轮请求都以上一轮开头。
 - 档案每行多 14 到 25 个字（“（2027-01-01 起）”14 个字，“（记于 2026-11-09）”15 个字，起止日期都有的 25 个字），2000 字的上限里能放下的记忆少一些。记忆页列出的档案行按发给模型的样子带日期，所以页面上每行的字数（各加 3 个字的行首和换行）合起来就是“已用 N 字”。
 - `recordedAt` 为空的老记忆退回用 `updatedAt`，恢复归档时它会变，这条记忆的“记于”会变一次（只在最后一条消息里，不影响缓存）；和 recall 结果的做法相同。
 - 邮件判断（`proactive-mail-check-service.ts`）交给模型的记忆没有日期；记忆整理（`packages/memory-engine/src/consolidation.ts`）带的是另一种日期（取 UTC 日期，不按配置时区）。两处都是已知缺口，要做时另开改动，并按缓存规则评估后台请求字节的变化。
@@ -85,6 +85,7 @@ Zep 把记忆交给模型时给每条事实带生效时间段，格式是 “FAC
   - `test/integration/memory-model-visible.test.ts` `[MEMORY-DATE]`：上下文组装 → 信封 → 读回 → Pi 适配器 → 本机模型桩，请求里是“主人对青霉素过敏（记于 2026-11-09）”。
   - `test/integration/context-projection.test.ts` `[MEMORY-DATE]`：信封里的日期带到读回结果；六种形状不对的日期（包括“下个月”这类非日期文字）被拒绝。
   - `apps/agent-service/test/production-model-composition.unit.test.ts` `[MEMORY-DATE]`：生产的记忆查询把 `recordedAt`、生效时间段交出去。
+  - `test/integration/production-memory-capture.test.ts` `[MEM-PIN]`、`[MEM-CAT]`：记忆页列出的档案行带日期，各行字数加 3 的和等于“已用 N 字”。
   - `packages/application/test/owner-profile-service.unit.test.ts` `[MEMORY-DATE]`：档案行按东京时区带日期，“主人的要求”不带；开始日期晚于记下日期时写“起”，同一天写“至今”，按时区比较。
 
 <a id="references"></a>

@@ -377,6 +377,10 @@ describe("owner profile composition", () => {
       "preference",
       "relationship",
     ]);
+    expect(outline.rules.map(({ text }) => text)).toEqual([TEXT["memory-language"]]);
+    expect(outline.sections[0]?.lines.map(({ text }) => text)).toEqual([
+      `${TEXT["memory-name"]}（记于 2026-10-25）`,
+    ]);
     expect(outline.usage).toEqual({
       used: [
         TEXT["memory-language"],
