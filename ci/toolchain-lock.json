@@ -1104,33 +1104,9 @@
   },
   "nativeDependencies": [
     {
-      "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/@google/genai",
-      "name": "@google/genai",
-      "version": "1.52.0",
-      "scripts": {
-        "preinstall": "echo 'preinstall: no-op'"
-      },
-      "decision": "omit",
-      "reviewedFiles": {},
-      "reason": "preinstall 只输出 no-op；发布包已经包含运行产物，不执行该脚本。"
-    },
-    {
-      "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/protobufjs",
-      "name": "protobufjs",
-      "version": "7.6.5",
-      "scripts": {
-        "postinstall": "node scripts/postinstall"
-      },
-      "decision": "omit",
-      "reviewedFiles": {
-        "scripts/postinstall.js": "5af8463b97ee8e309b4a2111f9479bacdf0c180de0ca0155527679b1fc6d9e6c"
-      },
-      "reason": "postinstall 仅检查 versionScheme 并输出警告；发布包运行不依赖它。"
-    },
-    {
       "path": "node_modules/@google/genai",
       "name": "@google/genai",
-      "version": "1.52.0",
+      "version": "2.21.0",
       "scripts": {
         "preinstall": "echo 'preinstall: no-op'"
       },
