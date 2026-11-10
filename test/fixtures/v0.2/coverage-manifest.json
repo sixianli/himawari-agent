@@ -3,8 +3,8 @@
   "generatedFrom": "owner-reviewed S0 coverage matrix and active Plan acceptance tables",
   "prd": {
     "path": "docs/prd-v0.2.md",
-    "sha256": "c503dcd1a959238cebd482eb22a4b5a4e5a96eadcd2bf2c11be0b20ff9a37cde",
-    "markdownListClauseCount": 258
+    "sha256": "0e0041d094a04b45e559688aff4954d78da03c68893ddffa5157454fd218c9de",
+    "markdownListClauseCount": 269
   },
   "coverageSource": "docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md",
   "requirements": [
@@ -237,6 +237,10 @@
       "owner": "S1"
     },
     {
+      "id": "V02-RULE-13A",
+      "owner": "S1"
+    },
+    {
       "id": "V02-RULE-14",
       "owner": "S1"
     },
@@ -314,6 +318,10 @@
     },
     {
       "id": "V02-ACC-10",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-ACC-10A",
       "owner": "S1"
     },
     {

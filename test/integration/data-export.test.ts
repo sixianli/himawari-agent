@@ -1,0 +1,537 @@
+import { rm } from "node:fs/promises";
+import {
+  buildPortableExport,
+  canonicalJson,
+  checkMarkdownMapping,
+  DATA_EXPORT_ERROR_CODES,
+  DataExportError,
+  importPortableExport,
+  MANIFEST_FILE,
+  type PortableFiles,
+  parsePortable,
+  readPortableDirectory,
+  SEAL_ERROR_CODES,
+  SEALED_FILE,
+  sha256Hex,
+  unsealJson,
+  writePortableDirectory,
+} from "@himawari-agent/persistence-sqlite";
+import { createDataExportTextPolicy } from "@himawari-agent/platform-node";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  openSide,
+  SECRET_BANK_CARD,
+  SECRET_MAIL_BODY,
+  SECRET_PASSWORD,
+  SECRETS,
+  type Side,
+  seedEverything,
+} from "./data-export-fixture.ts";
+
+const PASSPHRASE = "测试口令-correct horse battery staple";
+const NOW = "2026-11-10T00:00:00.000Z";
+const policy = createDataExportTextPolicy();
+const sides: Side[] = [];
+const decoder = new TextDecoder();
+const encoder = new TextEncoder();
+
+afterEach(async () => {
+  for (const side of sides.splice(0)) {
+    side.database.close();
+    await rm(side.directory, { recursive: true, force: true });
+  }
+});
+
+async function side(suffix: string): Promise<Side> {
+  const created = await openSide(suffix);
+  sides.push(created);
+  return created;
+}
+
+async function seeded(): Promise<Side> {
+  const source = await side("source");
+  await seedEverything(source);
+  return source;
+}
+
+function exportOf(
+  from: Side,
+  options: { seal?: boolean; evidence?: boolean; textPolicy?: typeof policy } = {},
+) {
+  return buildPortableExport({
+    database: from.database,
+    scope: { ownerId: from.ownerId, agentId: from.agentId },
+    migrationSequence: from.migrationSequence,
+    protector: from.protector,
+    policy: options.textPolicy ?? policy,
+    now: () => NOW,
+    ...(options.seal === false ? {} : { sealPassphrase: PASSPHRASE }),
+    withEvidence: options.evidence ?? false,
+  });
+}
+
+function importInto(
+  target: Side,
+  files: PortableFiles,
+  options: { passphrase?: string; dryRun?: boolean } = {},
+) {
+  return importPortableExport(files, {
+    database: target.database,
+    scope: { ownerId: target.ownerId, agentId: target.agentId },
+    migrationSequence: target.migrationSequence,
+    protector: target.protector,
+    now: () => NOW,
+    ...(options.passphrase === undefined ? {} : { passphrase: options.passphrase }),
+    ...(options.dryRun === undefined ? {} : { dryRun: options.dryRun }),
+  });
+}
+
+function dataFiles(files: PortableFiles): [string, Uint8Array][] {
+  return [...files]
+    .filter(([path]) => path !== MANIFEST_FILE && path !== SEALED_FILE)
+    .sort(([a], [b]) => a.localeCompare(b));
+}
+
+function counts(target: Side): Record<string, number> {
+  const one = (table: string): number =>
+    target.database.prepare(`SELECT COUNT(*) FROM ${table}`).pluck().get() as number;
+  return {
+    memories: one("memory_records"),
+    history: one("memory_history_events"),
+    decisions: one("decision_ledger"),
+    signals: one("decision_signals"),
+    people: one("memory_people"),
+    batches: one("memory_import_batches"),
+    runs: one("memory_consolidation_runs"),
+    payloads: one("payloads"),
+  };
+}
+
+function rehash(
+  files: PortableFiles,
+  mutate: (path: string, bytes: Uint8Array) => Uint8Array,
+): PortableFiles {
+  const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE))) as {
+    files: { path: string; bytes: number; lines: number; sha256: string; role: string }[];
+  };
+  const next: PortableFiles = new Map();
+  for (const [path, bytes] of files)
+    next.set(path, path === MANIFEST_FILE ? bytes : mutate(path, bytes));
+  for (const entry of manifest.files) {
+    const bytes = next.get(entry.path) ?? new Uint8Array();
+    entry.bytes = bytes.byteLength;
+    entry.sha256 = sha256Hex(bytes);
+    if (entry.role === "data") entry.lines = [...bytes].filter((byte) => byte === 0x0a).length;
+  }
+  next.set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
+  return next;
+}
+
+describe("data export: round trip", () => {
+  it("[P1-6] exports, imports into an empty database and exports again with identical data", async () => {
+    const source = await seeded();
+    const first = await exportOf(source, { evidence: true });
+    const target = await side("target");
+    const report = await importInto(target, first.files, { passphrase: PASSPHRASE });
+    expect(report.skipped).toEqual({
+      memoriesWithoutOriginal: 0,
+      historyEventsWithoutOriginal: 0,
+      decisionTextsWithoutOriginal: 0,
+      evidenceNotImported: false,
+    });
+    const second = await exportOf(target, { evidence: true });
+    const left = dataFiles(first.files);
+    const right = dataFiles(second.files);
+    expect(right.map(([path]) => path)).toEqual(left.map(([path]) => path));
+    for (const [index, [path, bytes]] of left.entries())
+      expect(decoder.decode(right[index]?.[1]), path).toBe(decoder.decode(bytes));
+    const sealedA = await unsealJson(PASSPHRASE, first.files.get(SEALED_FILE) ?? new Uint8Array());
+    const sealedB = await unsealJson(PASSPHRASE, second.files.get(SEALED_FILE) ?? new Uint8Array());
+    expect(canonicalJson(sealedB)).toBe(canonicalJson(sealedA));
+    expect(first.manifest.counts.memories).toBe(8);
+    expect(first.manifest.counts.decisions).toBe(6);
+    expect(first.manifest.counts.sealedEvidenceRows).toBeGreaterThan(0);
+  });
+
+  it("[P1-6] keeps every version of a memory, the owner's rating and the signals", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source, { evidence: true });
+    const target = await side("target-detail");
+    await importInto(target, files, { passphrase: PASSPHRASE });
+    const memory = parsePortable(files, source.migrationSequence).memories.find(
+      ({ id }) => id === "m-plain",
+    );
+    expect(memory?.history.map(({ kind, content }) => [kind, content.text])).toEqual([
+      ["created", "喜欢喝咖啡"],
+      ["updated", "喜欢喝美式咖啡"],
+      ["reaffirmed", "喜欢喝无糖美式咖啡"],
+    ]);
+    expect(
+      target.database
+        .prepare("SELECT owner_rating, rated_at FROM decision_ledger WHERE id = 'd-proactive'")
+        .get(),
+    ).toEqual({ owner_rating: "useful", rated_at: "2026-11-03T00:00:00.000Z" });
+    expect(counts(target)["signals"]).toBe(1);
+    expect(counts(target)["history"]).toBeGreaterThanOrEqual(3);
+  });
+
+  it("[P1-6][reverse] a changed rating, a deleted line or a changed text makes the comparison fail", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source, { evidence: true });
+    const target = await side("target-reverse");
+    await importInto(target, files, { passphrase: PASSPHRASE });
+    target.database
+      .prepare("UPDATE decision_ledger SET owner_rating = 'unneeded' WHERE id = 'd-proactive'")
+      .run();
+    const changed = await exportOf(target, { evidence: true });
+    const original = decoder.decode(files.get("data/decisions.jsonl"));
+    expect(decoder.decode(changed.files.get("data/decisions.jsonl"))).not.toBe(original);
+    target.database
+      .prepare(
+        "DELETE FROM memory_history_events WHERE rowid = (SELECT MIN(rowid) FROM memory_history_events)",
+      )
+      .run();
+    const fewer = await exportOf(target, { evidence: true });
+    expect(decoder.decode(fewer.files.get("data/memories.jsonl"))).not.toBe(
+      decoder.decode(files.get("data/memories.jsonl")),
+    );
+  });
+
+  it("[P1-6] importing without the passphrase skips withheld memories and reports the count", async () => {
+    const source = await seeded();
+    const { files, manifest } = await exportOf(source, { evidence: true });
+    expect(manifest.withheld.memories).toBe(3);
+    const target = await side("target-nopass");
+    const report = await importInto(target, files);
+    expect(report.skipped.memoriesWithoutOriginal).toBe(3);
+    expect(report.skipped.evidenceNotImported).toBe(true);
+    expect(counts(target)["memories"]).toBe(5);
+    expect(
+      target.database.prepare("SELECT COUNT(*) FROM decision_ledger_payloads").pluck().get(),
+    ).toBe(0);
+  });
+
+  it("[P1-6] dry run writes nothing and a non-empty target is refused", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const target = await side("target-dry");
+    const before = counts(target);
+    const dry = await importInto(target, files, { passphrase: PASSPHRASE, dryRun: true });
+    expect(dry.dryRun).toBe(true);
+    expect(counts(target)).toEqual(before);
+    await importInto(target, files, { passphrase: PASSPHRASE });
+    await expect(importInto(target, files, { passphrase: PASSPHRASE })).rejects.toMatchObject({
+      code: DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY,
+    });
+  });
+
+  it("[P1-6] a wrong passphrase is refused before anything is written", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const target = await side("target-wrong");
+    await expect(importInto(target, files, { passphrase: "不对的口令" })).rejects.toMatchObject({
+      code: SEAL_ERROR_CODES.AUTHENTICATION_FAILED,
+    });
+    expect(counts(target)["memories"]).toBe(0);
+  });
+});
+
+describe("data export: manifest and files are checked before anything is written", () => {
+  const cases: readonly [string, (files: PortableFiles) => PortableFiles, string][] = [
+    [
+      "a changed byte in a data file",
+      (files) => {
+        const next = new Map(files);
+        const bytes = new Uint8Array(files.get("data/memories.jsonl") ?? []);
+        bytes[bytes.length - 3] = bytes[bytes.length - 3] === 0x61 ? 0x62 : 0x61;
+        next.set("data/memories.jsonl", bytes);
+        return next;
+      },
+      DATA_EXPORT_ERROR_CODES.FILE_HASH_MISMATCH,
+    ],
+    [
+      "a truncated data file",
+      (files) => {
+        const next = new Map(files);
+        next.set(
+          "data/decisions.jsonl",
+          (files.get("data/decisions.jsonl") ?? new Uint8Array()).slice(0, 100),
+        );
+        return next;
+      },
+      DATA_EXPORT_ERROR_CODES.FILE_HASH_MISMATCH,
+    ],
+    [
+      "a count that is one too many",
+      (files) => {
+        const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
+        manifest.counts.memories += 1;
+        return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
+      },
+      DATA_EXPORT_ERROR_CODES.FILE_COUNT_MISMATCH,
+    ],
+    [
+      "a line count in the file list that is one too many",
+      (files) => {
+        const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
+        const entry = manifest.files.find(
+          (file: { path: string }) => file.path === "data/memories.jsonl",
+        );
+        entry.lines += 1;
+        return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
+      },
+      DATA_EXPORT_ERROR_CODES.FILE_COUNT_MISMATCH,
+    ],
+    [
+      "a hash in the file list that was changed",
+      (files) => {
+        const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
+        manifest.files[0].sha256 = "0".repeat(64);
+        return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
+      },
+      DATA_EXPORT_ERROR_CODES.FILE_HASH_MISMATCH,
+    ],
+    [
+      "a file that the manifest does not list",
+      (files) => new Map(files).set("data/extra.jsonl", encoder.encode("{}\n")),
+      DATA_EXPORT_ERROR_CODES.FILE_LISTING_MISMATCH,
+    ],
+    [
+      "a listed file that is missing",
+      (files) => {
+        const next = new Map(files);
+        next.delete("data/people.jsonl");
+        return next;
+      },
+      DATA_EXPORT_ERROR_CODES.FILE_LISTING_MISMATCH,
+    ],
+    [
+      "a path that leaves the directory",
+      (files) => new Map(files).set("../escape.jsonl", encoder.encode("{}\n")),
+      DATA_EXPORT_ERROR_CODES.PATH_UNSAFE,
+    ],
+    [
+      "an unknown format version",
+      (files) => {
+        const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
+        manifest.format = "himawari.data-export.v2";
+        return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
+      },
+      DATA_EXPORT_ERROR_CODES.FORMAT_UNSUPPORTED,
+    ],
+    [
+      "a different migration number",
+      (files) => {
+        const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
+        manifest.migrationSequence += 1;
+        return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
+      },
+      DATA_EXPORT_ERROR_CODES.MIGRATION_MISMATCH,
+    ],
+    [
+      "a data line with a status the database does not have (hashes recomputed)",
+      (files) =>
+        rehash(files, (path, bytes) =>
+          path === "data/memories.jsonl"
+            ? encoder.encode(
+                decoder.decode(bytes).replace('"status":"active"', '"status":"exploded"'),
+              )
+            : bytes,
+        ),
+      DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+    ],
+    [
+      "a reference to a memory that is not in the file (hashes recomputed)",
+      (files) =>
+        rehash(files, (path, bytes) =>
+          path === "data/consolidations.jsonl"
+            ? encoder.encode(
+                decoder.decode(bytes).replace('"memoryId":"m-archived"', '"memoryId":"m-ghost"'),
+              )
+            : bytes,
+        ),
+      DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
+    ],
+  ];
+  for (const [name, mutate, code] of cases) {
+    it(`[P1-6][reverse] refuses ${name} and writes nothing`, async () => {
+      const source = await seeded();
+      const { files } = await exportOf(source);
+      const good = await side(`good-${code}`);
+      await importInto(good, files, { passphrase: PASSPHRASE });
+      const target = await side(`bad-${code}`);
+      const before = counts(target);
+      await expect(
+        importInto(target, mutate(files), { passphrase: PASSPHRASE }),
+      ).rejects.toMatchObject({ code });
+      expect(counts(target)).toEqual(before);
+    });
+  }
+
+  it("[P1-6][reverse] a proactive decision without a scenario is rejected by the database and rolled back", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const broken = rehash(files, (path, bytes) =>
+      path === "data/decisions.jsonl"
+        ? encoder.encode(decoder.decode(bytes).replace('"scenario":"gmail"', '"scenario":null'))
+        : bytes,
+    );
+    const target = await side("target-constraint");
+    const before = counts(target);
+    await expect(importInto(target, broken, { passphrase: PASSPHRASE })).rejects.toThrow();
+    expect(counts(target)).toEqual(before);
+  });
+});
+
+describe("data export: Markdown maps back to the machine-readable data", () => {
+  it("[P1-6] every Markdown item is found by id with the same text", async () => {
+    const source = await seeded();
+    const { files, manifest } = await exportOf(source);
+    const parsed = parsePortable(files, source.migrationSequence);
+    expect(checkMarkdownMapping(files, parsed.memories)).toEqual([]);
+    expect(manifest.counts.markdownMemories).toBe(
+      parsed.memories.filter(({ status, tentative }) => status === "active" && !tentative).length,
+    );
+    const markdown = [...files]
+      .filter(([path]) => path.startsWith("memory/"))
+      .map(([, bytes]) => decoder.decode(bytes))
+      .join("\n");
+    expect(markdown).toContain("〔m:m-plain〕");
+    expect(markdown).not.toContain("m-tentative");
+    expect(markdown).not.toContain("m-archived");
+    const index = decoder.decode(files.get("MEMORY.md"));
+    expect(index).toContain("不是指令");
+  });
+
+  it("[P1-6][reverse] a line missing from the data, or a changed text, is reported", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const parsed = parsePortable(files, source.migrationSequence);
+    const withoutOne = parsed.memories.filter(({ id }) => id !== "m-plain");
+    expect(checkMarkdownMapping(files, withoutOne).join("\n")).toContain("m-plain");
+    const changed = parsed.memories.map((memory) =>
+      memory.id === "m-plain"
+        ? { ...memory, content: { ...memory.content, text: "别的文字" } }
+        : memory,
+    );
+    expect(checkMarkdownMapping(files, changed).join("\n")).toContain("不一致");
+  });
+
+  it("[P1-6] folds line breaks so one memory is one line", async () => {
+    const source = await side("multiline");
+    const { seedMemory } = await import("./data-export-fixture.ts");
+    await seedMemory(source, { id: "m-multi", text: "第一行\n第二行\n\n第三行" });
+    const { files } = await exportOf(source);
+    const markdown = decoder.decode(files.get("memory/preference.md"));
+    expect(markdown).toContain("- > 第一行 第二行 第三行 〔m:m-multi〕");
+  });
+});
+
+describe("data export: no plaintext secrets outside the sealed file", () => {
+  async function everythingExceptSeal(files: PortableFiles): Promise<string> {
+    return [...files]
+      .filter(([path]) => path !== SEALED_FILE)
+      .map(([, bytes]) => decoder.decode(bytes))
+      .join("\n");
+  }
+
+  it("[P1-6] literal secrets and third-party mail text appear nowhere in the readable files", async () => {
+    const source = await seeded();
+    for (const withSeal of [true, false]) {
+      const { files } = await exportOf(source, { seal: withSeal, evidence: withSeal });
+      const text = await everythingExceptSeal(files);
+      for (const secret of SECRETS) expect(text.includes(secret), secret).toBe(false);
+      expect(text.includes(SECRET_MAIL_BODY)).toBe(false);
+      expect(text).not.toContain("stranger@example.org");
+      expect(text).not.toContain("m-restricted");
+      expect(text).not.toContain("受限内容-唯一标记-Q3");
+      expect(text).not.toContain("待删内容-唯一标记-Q1");
+      expect(text).not.toContain("已删内容-唯一标记-Q2");
+    }
+  });
+
+  it("[P1-6] topic-type sensitive memories stay readable while credentials are masked", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const memories = decoder.decode(files.get("data/memories.jsonl"));
+    expect(memories).toContain("最近在看牙科，下周复诊");
+    const parsed = parsePortable(files, source.migrationSequence);
+    const card = parsed.memories.find(({ id }) => id === "m-card");
+    expect(card?.content.withheld).toBe(true);
+    expect(card?.content.text).not.toContain(SECRET_BANK_CARD);
+    const passwordMemory = parsed.memories.find(({ id }) => id === "m-pass");
+    expect(passwordMemory?.content.text).not.toContain(SECRET_PASSWORD);
+  });
+
+  it("[P1-6] the sealed file holds the originals and is unreadable without the passphrase", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source, { evidence: true });
+    const sealed = files.get(SEALED_FILE) ?? new Uint8Array();
+    expect(decoder.decode(sealed)).not.toContain(SECRET_PASSWORD);
+    const opened = JSON.stringify(await unsealJson(PASSPHRASE, sealed));
+    expect(opened).toContain(SECRET_PASSWORD);
+    expect(opened).toContain(SECRET_MAIL_BODY);
+    await expect(unsealJson("错误口令", sealed)).rejects.toMatchObject({
+      code: SEAL_ERROR_CODES.AUTHENTICATION_FAILED,
+    });
+    const tampered = new Uint8Array(sealed);
+    tampered[tampered.length - 20] = (tampered[tampered.length - 20] ?? 0) ^ 0xff;
+    await expect(unsealJson(PASSPHRASE, tampered)).rejects.toMatchObject({
+      code: SEAL_ERROR_CODES.AUTHENTICATION_FAILED,
+    });
+  });
+
+  it("[P1-6][reverse] if masking is switched off the literal search finds the secrets", async () => {
+    const source = await seeded();
+    const passthrough = { rulesetVersion: 0, hasSecret: () => false, mask: (text: string) => text };
+    const { files } = await exportOf(source, { textPolicy: passthrough });
+    const text = await everythingExceptSeal(files);
+    expect(SECRETS.some((secret) => text.includes(secret))).toBe(true);
+  });
+
+  it("[P1-6] evidence cannot be exported without the seal", async () => {
+    const source = await seeded();
+    await expect(exportOf(source, { seal: false, evidence: true })).rejects.toBeInstanceOf(
+      DataExportError,
+    );
+  });
+});
+
+describe("data export: determinism and the directory", () => {
+  it("[P1-6] exporting the same database twice gives identical data files", async () => {
+    const source = await seeded();
+    const first = await exportOf(source);
+    const second = await exportOf(source);
+    for (const [path, bytes] of dataFiles(first.files))
+      expect(decoder.decode(second.files.get(path))).toBe(decoder.decode(bytes));
+  });
+
+  it("[P1-6][reverse] a timestamp inside a record would break it", async () => {
+    const source = await seeded();
+    const first = await exportOf(source);
+    source.database
+      .prepare(
+        "UPDATE memory_records SET updated_at = '2026-11-09T00:00:00.000Z' WHERE id = 'm-plain'",
+      )
+      .run();
+    const second = await exportOf(source);
+    expect(decoder.decode(second.files.get("data/memories.jsonl"))).not.toBe(
+      decoder.decode(first.files.get("data/memories.jsonl")),
+    );
+  });
+
+  it("[P1-6] writes an owner-only directory, reads it back, and refuses a non-empty output", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const directory = `${source.directory}/out`;
+    await writePortableDirectory(directory, files);
+    const read = await readPortableDirectory(directory);
+    expect([...read.keys()].sort()).toEqual([...files.keys()].sort());
+    const target = await side("target-dir");
+    await importInto(target, read, { passphrase: PASSPHRASE });
+    expect(counts(target)["memories"]).toBe(8);
+    await expect(writePortableDirectory(directory, files)).rejects.toMatchObject({
+      code: DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY,
+    });
+  });
+});

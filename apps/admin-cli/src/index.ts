@@ -26,6 +26,7 @@ import {
 } from "@himawari-agent/platform-node";
 import { runAccountCommand } from "./account-command.js";
 import { runCapabilitiesCommand } from "./capabilities-command.js";
+import { runDataCommand } from "./data-command.js";
 import { runDiagnoseCommand } from "./diagnose-command.js";
 import { runInitializeCommand } from "./initialize-command.js";
 import { runMemoryCommand } from "./memory-command.js";
@@ -774,6 +775,10 @@ export async function runAdminCli(
     }
     if (arguments_[0] === "thread") {
       output.write(`${JSON.stringify(await runThreadCommand(arguments_, output))}\n`);
+      return 0;
+    }
+    if (arguments_[0] === "data") {
+      output.write(`${JSON.stringify(await runDataCommand(arguments_, output))}\n`);
       return 0;
     }
     if (arguments_[0] === "memory") {
