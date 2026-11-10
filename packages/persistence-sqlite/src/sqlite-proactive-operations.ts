@@ -264,7 +264,7 @@ export class SqliteProactiveOperations {
     this.time(input.now);
     if (
       typeof input.enabled !== "boolean" ||
-      input.quietHours.length > 14 ||
+      input.quietHours.length > 8 ||
       input.quietHours.some(
         (period) =>
           !CLOCK.test(period.start) ||
@@ -346,7 +346,7 @@ export class SqliteProactiveOperations {
           owner_id, agent_id, rule_id, revision, parameters, status, source, updated_at
         ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
         ON CONFLICT (owner_id, agent_id, rule_id) DO UPDATE SET revision = excluded.revision,
-          parameters = excluded.parameters, source = excluded.source,
+          parameters = excluded.parameters, status = 'active', source = excluded.source,
           updated_at = excluded.updated_at`,
       )
       .run(input.ownerId, input.agentId, ruleId, revision, parameters, source, input.now);

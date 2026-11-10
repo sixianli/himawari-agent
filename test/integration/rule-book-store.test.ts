@@ -118,6 +118,59 @@ describe("rule book in the product store", () => {
     }
   });
 
+  it("[HR-1] puts a retired rule back to active when the owner saves it again", async () => {
+    const { stateRoot, store } = await open();
+    await store.writeSettings({
+      ...scope,
+      enabled: true,
+      quietHours: NIGHT,
+      importantSenders: ["bank.example"],
+      now: T0,
+    });
+    const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+    try {
+      database.prepare("UPDATE rule_book_rules SET status = 'retired'").run();
+    } finally {
+      database.close();
+    }
+    await store.writeSettings({
+      ...scope,
+      enabled: true,
+      quietHours: [{ days: [6, 0], start: "22:00", end: "08:00" }],
+      importantSenders: ["bank.example", "a@b.com"],
+      now: T1,
+    });
+    const check = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+    try {
+      expect(check.prepare("SELECT DISTINCT status FROM rule_book_rules").pluck().all()).toEqual([
+        "active",
+      ]);
+    } finally {
+      check.close();
+    }
+  });
+
+  it("[HR-1] refuses more quiet periods than the public interface allows", async () => {
+    const { store } = await open();
+    const period = { days: [0, 1, 2, 3, 4, 5, 6], start: "09:00", end: "10:00" };
+    await expect(
+      store.writeSettings({
+        ...scope,
+        enabled: true,
+        quietHours: Array.from({ length: 9 }, () => period),
+        importantSenders: [],
+        now: T0,
+      }),
+    ).rejects.toThrow();
+    await store.writeSettings({
+      ...scope,
+      enabled: true,
+      quietHours: Array.from({ length: 8 }, () => period),
+      importantSenders: [],
+      now: T0,
+    });
+  });
+
   it("[HR-1] reads the built-in quiet hours and no senders before anything is saved", async () => {
     const { store } = await open();
     expect(await store.readSettings(scope)).toEqual({

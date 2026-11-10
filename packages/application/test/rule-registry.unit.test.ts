@@ -87,7 +87,7 @@ describe("rule registry", () => {
     ];
     expect(new Set(senders.map((sender) => sender.toLowerCase())).size).toBe(200);
     const rules = ruleBookFor({
-      quietHours: Array.from({ length: 14 }, (_, index) => ({
+      quietHours: Array.from({ length: 8 }, (_, index) => ({
         days: [0, 1, 2, 3, 4, 5, 6],
         start: `${String(index).padStart(2, "0")}:00`,
         end: `${String(index + 1).padStart(2, "0")}:30`,
