@@ -128,8 +128,20 @@ export class OwnerProfileService implements OwnerProfilePort {
     readonly now: string;
   }): Promise<OwnerProfileOutline> {
     const { rules, sections, usage } = await this.#select(input);
-    const line = ({ memory, text }: { memory: ProductMemoryRecord; text: string }) =>
-      Object.freeze({ memoryId: memory.id, text, updatedAt: memory.updatedAt });
+    const line = ({
+      memory,
+      text,
+      dateNote,
+    }: {
+      memory: ProductMemoryRecord;
+      text: string;
+      dateNote: string;
+    }) =>
+      Object.freeze({
+        memoryId: memory.id,
+        text: `${text}${dateNote}`,
+        updatedAt: memory.updatedAt,
+      });
     return Object.freeze({
       usage,
       rules: Object.freeze(rules.map(line)),
