@@ -26,7 +26,10 @@ const NOW = "2026-11-02T00:44:00.000Z";
 const CARD = "4111 1111 1111 1111";
 const servers: Server[] = [];
 
+let PROMPT_TOKENS = 10;
+
 afterEach(async () => {
+  PROMPT_TOKENS = 10;
   await Promise.all(
     servers
       .splice(0)
@@ -65,7 +68,15 @@ async function loopback(reply: (index: number, body: string) => Reply) {
         id: `chatcmpl-${index}`,
         model: "group/main",
         choices: [{ index: 0, delta, ...(finish ? { finish_reason: finish } : {}) }],
-        ...(finish ? { usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } } : {}),
+        ...(finish
+          ? {
+              usage: {
+                prompt_tokens: PROMPT_TOKENS,
+                completion_tokens: 5,
+                total_tokens: PROMPT_TOKENS + 5,
+              },
+            }
+          : {}),
       })}\n\n`;
     if ("tool" in answer) {
       response.write(
@@ -825,6 +836,76 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       expect.objectContaining({ errorCode: "PI_MODEL_ERROR" }),
     ]);
     expect(JSON.stringify(projection.saved)).toContain("PI_REQUEST_TOOLS_DIVERGED");
+  });
+
+  it("[COMPACT-1] lets Pi's automatic summary request out under frozen tools and keeps the next turn going", async () => {
+    const turns: Turn[] = [
+      { prompt: `第一问${"alpha bravo ".repeat(9000)}` },
+      { prompt: `第二问${"charlie delta ".repeat(8000)}` },
+      { prompt: "第三问" },
+    ];
+    const failures: { code: string; message: string }[] = [];
+    const purposes: string[] = [];
+    const { bodies, turnEvents } = await conversation(
+      turns,
+      (index, body) => {
+        PROMPT_TOKENS = index === 1 ? 90_000 : 30_000;
+        return { text: body.includes("<conversation>") ? "摘要：已聊过。" : `回答${index}` };
+      },
+      () => undefined,
+      {
+        promptBundles: new FrozenPromptBundles(),
+        onModelStreamFailed: (_request, failure) => failures.push(failure),
+        usage: {
+          store: {
+            record: async (observation) => {
+              purposes.push(observation.purpose);
+            },
+          },
+          onFailure: () => undefined,
+        },
+      },
+    );
+    expect(purposes.filter((purpose) => purpose === "other").length).toBeGreaterThan(0);
+    expect(purposes.filter((purpose) => purpose === "chat").length).toBeGreaterThan(0);
+    const summaries = bodies.filter((body) => body.includes("<conversation>"));
+    expect(summaries.length).toBeGreaterThan(0);
+    for (const summary of summaries) {
+      const parsed = JSON.parse(summary);
+      expect(parsed.tools).toBeUndefined();
+      expect(parsed.messages[0]).toMatchObject({ role: "system" });
+      expect(parsed.messages[0].content).toContain("context summarization assistant");
+    }
+    expect(failures).toEqual([]);
+    expect(turnEvents.flat().some((event) => event.type === "runtime.compaction_proposed")).toBe(
+      true,
+    );
+  });
+
+  it("[COMPACT-1] reports a failed summary request instead of ignoring it", async () => {
+    const turns: Turn[] = [
+      { prompt: `第一问${"alpha bravo ".repeat(9000)}` },
+      { prompt: `第二问${"charlie delta ".repeat(8000)}` },
+      { prompt: "第三问" },
+    ];
+    const failures: { code: string; message: string }[] = [];
+    await conversation(
+      turns,
+      (index, body) => {
+        PROMPT_TOKENS = index === 1 ? 90_000 : 30_000;
+        if (body.includes("<conversation>")) return { status: 503 };
+        return { text: `回答${index}` };
+      },
+      () => undefined,
+      {
+        promptBundles: new FrozenPromptBundles(),
+        onModelStreamFailed: (_request, failure) => failures.push(failure),
+      },
+      false,
+    );
+    const failure = failures.find((item) => item.code === "PI_COMPACTION_FAILED");
+    expect(failure).toBeDefined();
+    expect(failure?.message).toMatch(/^provider_(status_\d{3}|message_withheld)$/);
   });
 
   it("keeps the frozen tools unchanged when task tools come and go with a task handle", async () => {
