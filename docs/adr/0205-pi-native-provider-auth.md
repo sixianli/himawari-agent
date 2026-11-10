@@ -71,7 +71,7 @@ Pi 自己的官方示例（1.5.1 `docs/extensions.md` 第 1987–2013 行）就�
 
 ## 后果
 
-- 发给网关的请求逐字节不变：改写前用旧写法录下 magpie 和 vercel-ai-gateway 各一份请求（`packages/runtime-pi/test/fixtures/d4-golden-requests.json`），改写后测试逐字节比对通过；故意改 `maxTokensField` 时比对失败。
+- 发给网关的请求体逐字节不变、非易变请求头一致（测试排除了易变的头，Authorization 的值换成占位）：改写前用旧写法录下 magpie 和 vercel-ai-gateway 各一份请求（`packages/runtime-pi/test/fixtures/d4-golden-requests.json`），改写后测试逐字节比对通过；故意改 `maxTokensField` 时比对失败。
 - 原生服务方整体替换了 Pi 内置的 `vercel-ai-gateway`：它从 `AI_GATEWAY_API_KEY` 环境变量取密钥的兜底没有了，测试断言设了该环境变量也取不到密钥。
 - 升级 Pi 时，如果 `AgentSession` 的检查或 `ApiKeyAuth.check` 的行为变了，`[D4]` 开头的测试会失败。
 
@@ -81,6 +81,7 @@ Pi 自己的官方示例（1.5.1 `docs/extensions.md` 第 1987–2013 行）就�
 
 - [Pi 二次开发规范](../pi-development-guide.md)
 - [ADR 0203：在 Pi 上加功能先照官方写法](0203-follow-pi-official-extension-patterns.md)
+- [ADR 0204：D2、D3、D5 的处理](0204-handle-pi-deviations-d2-d3-d5.md)
 - [架构文档](../architecture-v0.1.md)
 
 [↑ 回到阅读导航](#contents)

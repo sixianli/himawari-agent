@@ -260,7 +260,7 @@ function hostSecretAuth(): ApiKeyAuth {
     name: "Himawari host-managed model key",
     check: async () => ({ type: "api_key", source: HOST_SECRET_SOURCE }),
     resolve: async ({ credential }) => {
-      const key = credential?.key;
+      const key = credential?.type === "api_key" ? credential.key : undefined;
       return typeof key === "string" && key.length > 0
         ? { auth: { apiKey: key }, source: HOST_SECRET_SOURCE }
         : undefined;

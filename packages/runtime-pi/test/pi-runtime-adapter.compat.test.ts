@@ -2861,19 +2861,6 @@ describe("[D4] configured provider request bytes", () => {
     "sends the same method, path, headers and body for %s as the recorded golden request",
     async (provider) => {
       const actual = await captureConfiguredModelRequest({ provider });
-      if (process.env["D4_WRITE_GOLDEN"] === "1") {
-        const { readFile, writeFile } = await import("node:fs/promises");
-        let existing: Record<string, unknown> = {};
-        try {
-          existing = JSON.parse(await readFile(goldenPath, "utf8")) as Record<string, unknown>;
-        } catch {
-          existing = {};
-        }
-        await writeFile(
-          goldenPath,
-          `${JSON.stringify({ ...existing, [provider]: actual }, null, 2)}\n`,
-        );
-      }
       const golden = await readGolden();
       expect(actual).toEqual(golden[provider]);
       expect(actual).toHaveLength(1);
