@@ -761,16 +761,16 @@ export const messages = {
   "memory.page.event":
     "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} other {推測}}",
   "memory.page.imported":
-    "{source, select, codex {Codex} assistant {他の AI} other {Himawari のエクスポート}}から {count} 件インポート",
+    "{source, select, codex {Codex} assistant {他の AI} other {旧版 Himawari のエクスポート（JSON）}}から {count} 件インポート",
   "memory.page.goConfirm": "確認する",
   "memory.page.import": "記憶をインポート",
   "memory.page.export": "すべての記憶をエクスポート",
   "memory.page.sourceTitle":
     "{s, select, codex {Codex} assistant {ChatGPT・Claude など} other {Himawari のエクスポート}}",
   "memory.page.sourceHelp":
-    "{s, select, codex {Codex の記憶ファイル（memory_summary.md、MEMORY.md）を選択} assistant {あなたについての記憶を書き出してもらい、貼り付け} other {PC の移行や復元に}}",
+    "{s, select, codex {Codex の記憶ファイル（memory_summary.md、MEMORY.md）を選択} assistant {あなたについての記憶を書き出してもらい、貼り付け} other {以前保存した himawari-memories.json のみ。新しい zip はここでは取り込めません}}",
   "memory.page.fileHelp":
-    "{s, select, codex {memory_summary.md と MEMORY.md、必要なら AGENTS.md を選びます。Mac の ~/.codex/memories/ と ~/.codex/ にあります。ファイル選択で ⌘⇧G を押すとパスを入力できます。} other {「すべての記憶をエクスポート」で保存した himawari-memories.json を選びます。}}",
+    "{s, select, codex {memory_summary.md と MEMORY.md、必要なら AGENTS.md を選びます。Mac の ~/.codex/memories/ と ~/.codex/ にあります。ファイル選択で ⌘⇧G を押すとパスを入力できます。} other {以前保存した himawari-memories.json を選びます。いまの「すべての記憶をエクスポート」は zip で、バックアップと移行用（コマンドラインで取り込み）です。ここでは取り込めません。}}",
   "memory.page.aiStep1": "手順 1：次の文をコピーして、使っている AI に送ります。",
   "memory.page.aiPrompt":
     "あなたが覚えている私についての情報を、1 行 1 件、「- 」で始めてすべて書き出してください。私の身元、好み、習慣、取り組んでいること、周りの人、私が頼んだルールを含め、できるだけ私の言葉で。パスワード、身分証番号、カード番号は書かないでください。説明は不要です。",
@@ -789,10 +789,11 @@ export const messages = {
   "memory.page.importEmpty":
     "取り込める内容が見つかりません。ファイルや貼り付けた内容を確認してください。",
   "memory.page.importTooBig": "1 ファイル 200 KB までです。分けて取り込んでください。",
-  "memory.page.importUnreadable": "ファイルを読めないか、Himawari のエクスポートではありません。",
+  "memory.page.importUnreadable":
+    "ファイルを読めないか、旧版 Himawari の JSON エクスポートではありません。",
   "memory.page.exportTitle": "すべての記憶と判断記録をエクスポート",
   "memory.page.exportNote":
-    "項目ごとの JSON Lines データと、そのまま読める Markdown を含む zip を受け取ります。パスワードや ID 番号などの機微な内容はプレースホルダーのままです。完全に持ち出すにはコマンドラインの暗号化エクスポートを使ってください。",
+    "項目ごとの JSON Lines データと、そのまま読める Markdown を含む zip を受け取ります。パスワードや ID 番号などの秘密はプレースホルダーのままです。ごみ箱の記憶や、健康・お金など機微なテーマの記憶の本文はそのまま書き出されるので、zip を大切に保管してください。秘密も含めて持ち出すにはコマンドラインの暗号化エクスポートを使ってください。",
   "memory.page.download": "エクスポートをダウンロード",
   "memory.page.exportWorking": "エクスポートを作成しています…",
   "memory.page.exportDone":

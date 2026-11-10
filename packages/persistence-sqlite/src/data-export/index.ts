@@ -14,6 +14,7 @@ export {
   type PortableCounts,
   type PortableFiles,
   type PortableManifest,
+  SHORT_TEXT_OMISSION_LABEL,
   WITHHELD_PLACEHOLDER,
 } from "./types.js";
 export {

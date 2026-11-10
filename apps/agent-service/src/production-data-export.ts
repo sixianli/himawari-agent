@@ -5,6 +5,7 @@ import {
   LATEST_MIGRATION_SEQUENCE,
   openReadOnlyDatabase,
   type PortableFiles,
+  SHORT_TEXT_OMISSION_LABEL,
 } from "@himawari-agent/persistence-sqlite";
 import {
   authenticateHttpRequest,
@@ -103,7 +104,7 @@ export function registerDataExportRoute(
   options: ProductionDataExportOptions,
 ): void {
   let running = false;
-  app.get(DATA_EXPORT_PATH, async (request, reply) => {
+  app.get(DATA_EXPORT_PATH, { exposeHeadRoute: false }, async (request, reply) => {
     reply.header("cache-control", "no-store").header("referrer-policy", "no-referrer");
     const site = request.headers["sec-fetch-site"];
     if (site !== undefined && site !== "same-origin" && site !== "none")
@@ -126,21 +127,26 @@ export function registerDataExportRoute(
         });
         const archive = createStoredZip(result.files, result.manifest.exportedAt);
         const stamp = result.manifest.exportedAt.slice(0, 10);
-        const withheld =
+        const placeholders =
           result.manifest.withheld.texts +
-          result.manifest.withheld.memories +
-          result.manifest.withheld.decisions;
+          (result.manifest.omitted.find(({ what }) => what === SHORT_TEXT_OMISSION_LABEL)?.count ??
+            0);
         return reply
           .code(200)
           .header("content-type", "application/zip")
           .header("content-disposition", `attachment; filename="himawari-export-${stamp}.zip"`)
           .header("x-himawari-export-memories", String(result.manifest.counts.memories))
-          .header("x-himawari-export-withheld", String(withheld))
+          .header("x-himawari-export-withheld", String(placeholders))
           .send(Buffer.from(archive.buffer, archive.byteOffset, archive.byteLength));
       } finally {
         database.close();
       }
-    } catch {
+    } catch (error) {
+      const code =
+        error instanceof Error && /^[A-Z][A-Z0-9_]{2,63}$/.test(error.message)
+          ? error.message
+          : "DATA_EXPORT_FAILED";
+      request.log.warn({ code }, "data export failed");
       return reply.code(500).send();
     } finally {
       running = false;

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { crc32 } from "node:zlib";
 import { parsePortable, verifyIntegrity } from "@himawari-agent/persistence-sqlite";
 import Fastify from "fastify";
 import { unzipSync } from "fflate";
@@ -17,7 +18,7 @@ afterEach(async () => {
   await Promise.all(open.splice(0).map((app) => app.close()));
 });
 
-async function service(side: Side) {
+async function service(side: Side, protector: Side["protector"] = side.protector) {
   side.database.pragma("wal_checkpoint(TRUNCATE)");
   const app = Fastify();
   registerDataExportRoute(app, {
@@ -46,7 +47,7 @@ async function service(side: Side) {
     ownerId: side.ownerId,
     agentId: side.agentId,
     databasePath: path.join(side.directory, "product.sqlite"),
-    protector: side.protector,
+    protector,
     now: () => "2026-11-02T00:00:00.000Z",
   });
   open.push(app);
@@ -77,10 +78,9 @@ describe("[P1-6] 网页导出接口", () => {
     parsePortable(files, side.migrationSequence);
     expect(Number(response.headers["x-himawari-export-memories"])).toBe(manifest.counts.memories);
     expect(manifest.counts.memories).toBeGreaterThan(0);
-    const withheld =
-      manifest.withheld.texts + manifest.withheld.memories + manifest.withheld.decisions;
-    expect(withheld).toBeGreaterThan(0);
-    expect(Number(response.headers["x-himawari-export-withheld"])).toBe(withheld);
+    expect(manifest.withheld.memories).toBe(3);
+    expect(manifest.withheld.texts).toBe(6);
+    expect(Number(response.headers["x-himawari-export-withheld"])).toBe(6);
     expect(files.has("sealed/sealed.enc")).toBe(false);
     const everything = Buffer.concat([...files.values()].map((file) => Buffer.from(file))).toString(
       "utf8",
@@ -119,6 +119,55 @@ describe("[P1-6] 网页导出接口", () => {
       app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner }),
     ]);
     expect([first.statusCode, second.statusCode].toSorted()).toEqual([200, 429]);
+  });
+
+  it("生成失败（解密抛错）后标志复位，下一次请求照常成功", async () => {
+    const side = await openSide("http-reset");
+    await seedEverything(side);
+    let failures = 1;
+    const flaky = new Proxy(side.protector, {
+      get(target, property, receiver) {
+        if (property === "unprotect")
+          return async (...arguments_: Parameters<Side["protector"]["unprotect"]>) => {
+            if (failures-- > 0) throw new Error("DATA_EXPORT_PAYLOAD_UNAVAILABLE");
+            return target.unprotect(...arguments_);
+          };
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const app = await service(side, flaky);
+    const failed = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
+    expect(failed.statusCode).toBe(500);
+    expect(failed.rawPayload.byteLength).toBe(0);
+    const retried = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
+    expect(retried.statusCode).toBe(200);
+  });
+
+  it("只读 HEAD 请求不会触发生成", async () => {
+    const side = await openSide("http-head");
+    await seedEverything(side);
+    const app = await service(side);
+    const response = await app.inject({ method: "HEAD", url: DATA_EXPORT_PATH, headers: asOwner });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("压缩包头：UTF-8 标志、CRC 和中央目录偏移与内容一致", () => {
+    const content = new TextEncoder().encode("喜欢喝茶");
+    const archive = createStoredZip(
+      new Map([["memory/偏好.md", content]]),
+      "2026-11-02T00:00:00.000Z",
+    );
+    const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+    expect(view.getUint32(0, true)).toBe(0x04034b50);
+    expect(view.getUint16(6, true)).toBe(0x0800);
+    expect(view.getUint32(14, true)).toBe(crc32(content));
+    const endOffset = archive.byteLength - 22;
+    expect(view.getUint32(endOffset, true)).toBe(0x06054b50);
+    const directoryOffset = view.getUint32(endOffset + 16, true);
+    expect(view.getUint32(directoryOffset, true)).toBe(0x02014b50);
+    expect(view.getUint16(directoryOffset + 8, true)).toBe(0x0800);
+    expect(view.getUint32(directoryOffset + 16, true)).toBe(crc32(content));
+    expect(view.getUint32(directoryOffset + 42, true)).toBe(0);
   });
 
   it("压缩包写法：非 ASCII 文件名和内容都能被标准解压器还原", () => {
