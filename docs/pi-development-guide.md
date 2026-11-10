@@ -28,19 +28,24 @@ Andy 在 2026-11-10 要求写这份规范，原话是“让 AI coding agent 以�
 3. **只有两种情况允许不照官方写：**官方没有能满足需求的写法，或者官方写法有缺陷（例如等审批要等几个小时，而官方的拦截只能让进程一直挂着等，服务重启就丢了）。这时必须先按[第六节](#how-to-deviate)出方案，Andy 同意后才能写进代码和这份规范。
 4. **现有偏离不是范本。**[第五节](#current-deviations)列的是代码里已经存在、还没经 Andy 批准的偏离。新代码不得照抄它们，也不得在它们上面继续加东西；要动它们，先出方案。
 5. **只有 `packages/runtime-pi` 能导入 Pi。**这条来自 [Pi 优先与工作区约定](../.agents/instructions/pi-and-workspace.md#workspace-contract)：“只能在 `packages/runtime-pi` 中导入 `@earendil-works/pi-*` 包”。
-6. **发给模型的内容只追加。**任何写法都不能违反 [.claude/rules/prompt-prefix.md](../.claude/rules/prompt-prefix.md)。官方写法和这条冲突时（例如官方让 Pi 自己每轮重算系统提示），按第 3 条处理。
+6. **发给模型的内容只追加。**任何写法都不能违反 [.claude/rules/prompt-prefix.md](../.claude/rules/prompt-prefix.md)。官方写法和这条冲突时（例如官方让 Pi 自己每轮重算系统提示），按第 3 条处理。[第三节](#official-patterns)里标着“官方示例原样，Himawari 不得照抄”的代码只用来说明钩子长什么样。
+7. **照官方写不等于不用先出方案。**动到模型调用和路由、Agent 循环、权限和授权、记忆系统这类核心特性，即使用的是官方写法，仍按 [Andy 定的长期规则](../.claude/rules/owner-standing-rules.md#fixing-bugs-and-new-features)“大改动先出方案、讨论后再动工”，Andy 同意后才动工。
 
 <a id="how-to-look-up"></a>
 ## 二、怎样查官方写法
 
 - **两个版本都看。**锁定版本写在 `packages/runtime-pi/package.json`（2026-11-10 是 1.5.0）；最新版本用 `npm view @earendil-works/pi-coding-agent version` 查（2026-11-10 是 1.5.1）。写代码以锁定版本的接口为准，同时读最新版本的文档：两者说法不同的地方，在方案或提交说明里写出来，升级 Pi 时一并处理。不读比锁定版本更老的文档。
-- **拿原文的方法。**npm 包里自带文档和示例，和发布版本逐字一致：
+- **拿原文的方法。**npm 包里自带文档和示例，和发布版本逐字一致。锁定版本和最新版本各拉一份（下面以 2026-11-10 的 1.5.0 和 1.5.1 为例，动手时换成当时的版本号）：
 
   ```bash
   mkdir -p "$SCRATCH/pi-docs" && cd "$SCRATCH/pi-docs"
-  npm pack @earendil-works/pi-coding-agent@1.5.1 @earendil-works/pi-agent-core@1.5.1 @earendil-works/pi-ai@1.5.1
+  for v in 1.5.0 1.5.1; do
+    npm pack @earendil-works/pi-coding-agent@$v @earendil-works/pi-agent-core@$v @earendil-works/pi-ai@$v
+  done
   for f in *.tgz; do mkdir -p "${f%.tgz}" && tar xzf "$f" -C "${f%.tgz}"; done
   ```
+
+  `diff -r` 两个版本的 `docs/` 就能看出最新版改了哪些说法。
 
   `SCRATCH` 指会话自己的临时目录，不要解到仓库里。`pi-coding-agent` 包里有 `docs/`（官方文档）、`examples/extensions/`（扩展示例）、`examples/sdk/`（嵌入用法示例）；`pi-agent-core` 包的 `README.md` 讲底层 Agent 循环；`pi-ai` 包的 `README.md` 和 `dist/types.d.ts` 讲模型请求选项。在线版本在 <https://github.com/earendil-works/pi/tree/main/packages/coding-agent/docs>。
 - **最常用的几份：**
@@ -55,7 +60,7 @@ Andy 在 2026-11-10 要求写这份规范，原话是“让 AI coding agent 以�
 <a id="official-patterns"></a>
 ## 三、每类需求的官方写法
 
-下面的示例摘自官方文档或示例，删掉了原有注释；出处里的行号对应 `@earendil-works/pi-coding-agent@1.5.1` 包。Himawari 是“嵌入”用法：扩展不放在磁盘上，而是以 `extensionFactories`（扩展工厂函数，传给资源加载器的一组函数，每个函数收到 `pi` 对象并在上面挂事件）的形式交给 `DefaultResourceLoader`；示例里的 `pi.on(...)` 写在工厂函数里。
+下面的示例摘自官方文档或示例，删掉了原有注释；出处里的行号对应 `@earendil-works/pi-coding-agent@1.5.1` 包，写代码前按[怎样查](#how-to-look-up)再对一遍锁定版本。Himawari 是“嵌入”用法：自己的扩展以 `extensionFactories`（扩展工厂函数，传给资源加载器的一组函数，每个函数收到 `pi` 对象并在上面挂事件）的形式交给 `DefaultResourceLoader`；示例里的 `pi.on(...)` 写在工厂函数里。
 
 | 需求 | 官方写法 | Himawari 现状 |
 |---|---|---|
@@ -98,7 +103,7 @@ const { session } = await createAgentSession({
 });
 ```
 
-Himawari 在 `packages/runtime-pi/src/pi-runtime-adapter.ts` 用 `DefaultResourceLoader` 并关掉磁盘上的扩展、技能、提示模板、主题和上下文文件（`noExtensions`、`noSkills` 等），自己的扩展从 `extensionFactories` 传入（`docs/sdk.md` 第 112 行“Inline extension factories can be supplied through `DefaultResourceLoader`”）。用完调用 `session.dispose()`。
+Himawari 在 `packages/runtime-pi/src/pi-runtime-adapter.ts` 用 `DefaultResourceLoader` 并关掉 Pi 自动发现的扩展、技能、提示模板、主题和上下文文件（`noExtensions`、`noSkills` 等），自己的扩展从 `extensionFactories` 传入。适配器还接受经授权的磁盘路径（`additionalExtensionPaths`、`additionalSkillPaths`、`additionalPromptTemplatePaths`，来自 `resources` 端口）；2026-11-10 生产入口没有接这个端口，传的是空列表（`docs/sdk.md` 第 112 行“Inline extension factories can be supplied through `DefaultResourceLoader`”）。用完调用 `session.dispose()`。
 
 <a id="pattern-history"></a>
 ### 恢复历史
@@ -153,6 +158,7 @@ pi.on("tool_call", async (event, ctx) => {
 - 被拦下的调用不会执行工具；要观察它，用 `tool_execution_end` 事件。
 - 这个钩子只能当场决定或当场等。要等人批准几个小时、服务中途可能重启的情况，官方没有可靠写法，见[偏离 D2](#current-deviations)。
 - 新增的“直接拒绝、不需要等人”的规则（例如硬规则），用这个钩子写，挂在一个隐藏的内联扩展里。
+- 顺序：`tool_call` 先于工具的 `execute` 运行，在这里改了参数，Himawari 在 `execute` 里做的权限判断（[偏离 D2](#current-deviations)）看到的是改后的参数。
 
 <a id="pattern-tool-result"></a>
 ### 改工具结果
@@ -170,18 +176,20 @@ pi.on("tool_result", async (event, ctx) => {
 
 出处：`docs/extensions.md` 第 615 行“before_agent_start”；`docs/sdk.md` 第 32 行“`session.systemPrompt` is read-only”。
 
+Himawari 的写法（系统提示按对话冻结，每轮返回同一份字节）：
+
 ```typescript
-pi.on("before_agent_start", async (event, ctx) => {
-  return { systemPrompt: event.systemPrompt + "\n\nExtra instructions for this turn..." };
-});
+pi.on("before_agent_start", () => ({ systemPrompt: frozenSystemPrompt }));
 ```
 
-官方说明：改 `systemPromptOptions` 里的分节时，Pi 只追加一条补丁；直接返回 `systemPrompt` 会整段替换，换了就“a cache miss when it changes”。Himawari 的系统提示按对话冻结（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)），所以只返回冻结的那一份，不每轮改。
+官方示例在 `event.systemPrompt` 后面拼“本轮”的额外说明（`docs/extensions.md` 第 615 行起），Himawari 不得照抄：每轮会变的内容放在最后一条用户消息里（[prompt-prefix 规则第一节](../.claude/rules/prompt-prefix.md#order)）。官方说明：改 `systemPromptOptions` 里的分节时，Pi 只追加一条补丁；直接返回 `systemPrompt` 会整段替换，换了就“a cache miss when it changes”。Himawari 的系统提示按对话冻结（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)），所以只返回冻结的那一份，不每轮改。
 
 <a id="pattern-context"></a>
 ### 每次请求前改上下文
 
 出处：`docs/extensions.md` 第 815 行“context”、第 829 行“context_with_system”。
+
+**下面是官方示例原样，Himawari 不得照抄：**它按条件删掉、截掉已经发过的历史，违反 [prompt-prefix 规则第 4 条](../.claude/rules/prompt-prefix.md#append-only)。在 Himawari 里用这两个钩子，只能在列表末尾追加；要缩短历史只能走压缩。
 
 ```typescript
 pi.on("context", async (event, ctx) => {
@@ -195,7 +203,7 @@ pi.on("context_with_system", async (event, ctx) => {
 });
 ```
 
-`context` 收到的是去掉 system 消息的历史，只改历史；`context_with_system` 收到含开头 system 消息的完整列表，原话“The returned messages are sent as they are: this hook owns the prompt and tool declarations for the request”，规则是第 0 条必须是 system 消息。按 [prompt-prefix 规则](../.claude/rules/prompt-prefix.md#append-only)，这两个钩子都只能在末尾加，不能改已发过的内容。
+`context` 收到的是去掉 system 消息的历史，只改历史；`context_with_system` 收到含开头 system 消息的完整列表，原话“The returned messages are sent as they are: this hook owns the prompt and tool declarations for the request”，规则是第 0 条必须是 system 消息。
 
 <a id="pattern-provider-hooks"></a>
 ### 看或改发给服务方的请求
@@ -278,7 +286,7 @@ pi.sendMessage(
 );
 ```
 
-`deliverAs: "steer"` 在当前这轮工具跑完、下一次请求模型之前送达；`"followUp"` 等整轮结束；`"nextTurn"` 等下一次用户输入。会话外部用 `session.sendCustomMessage(message, options)`，用户消息用 `session.steer()` / `session.followUp()`。不得直接调 `session.agent.steer()`。
+`deliverAs: "steer"` 在当前这轮工具跑完、下一次请求模型之前送达；`"followUp"` 等整轮结束；`"nextTurn"` 等下一次用户输入。会话外部用 `session.sendCustomMessage(message, options)`，用户消息用 `session.steer()` / `session.followUp()`。不得直接调 `session.agent` 上的方法（`steer`、`continue`、`hasQueuedMessages` 等）或读写 `session.agent.state`，现有的这类调用见[偏离 D5](#current-deviations)。
 
 <a id="pattern-settle"></a>
 ### 结束前补一步
@@ -341,7 +349,7 @@ SettingsManager.inMemory({
 | D2 | `pi-runtime-adapter.ts` 的 `createTool` 里调 `tools.preflight`、`reconciliation.suspend` | 权限判断和等审批写在工具的 `execute` 里，等审批时存快照、结束这次运行 | `tool_call` 拦截（`permission-gate.ts`） | 官方拦截只能在进程里当场等；审批要等几小时、服务可能重启（[ADR 0023](adr/0023-durable-hitl-execution.md)）。ADR 0023 写于 Pi 0.x，没写和 `tool_call` 的比较 | 待 Andy 定 |
 | D3 | `pi-tool-batch-continuation.ts` | 审批后续跑：存会话条目和那次回答，续跑时回放 | 官方没有稳定写法；`pi-durable` 标为实验性 | [ADR 0023](adr/0023-durable-hitl-execution.md)、[ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#decision) | 待 Andy 定 |
 | D4 | `pi-runtime-adapter.ts` 的 `sessionModelRuntime` | 用 Proxy 改写 `hasConfiguredAuth`，让 Pi 以为已配好密钥 | 完整 `Provider` 的原生认证、自定义取密钥 | 密钥不进 Pi 的凭据库，每次请求才从主机取；理由只写在 [架构文档](architecture-v0.1.md)，没有 ADR | 待 Andy 定 |
-| D5 | `pi-runtime-adapter.ts` 里的 `agent.steer`、`agent.abort()`、读 `agent.state.messages` | 绕过会话直接用底层 Agent | `session.sendCustomMessage`、`session.abort()`、`session.messages` | 工具内部不能等会话空闲，所以用底层中止；其余没有写下理由 | 待 Andy 定 |
+| D5 | `pi-runtime-adapter.ts` 里的 `agent.steer`、`agent.abort()`、`agent.continue()`、`agent.hasQueuedMessages()`、读 `agent.state.messages`；`pi-tool-batch-continuation.ts` 读 `agent.state.tools` | 绕过会话直接用底层 Agent | `session.sendCustomMessage`、`session.abort()`、`session.messages`；`continue`、`hasQueuedMessages` 和读工具的执行方式（`executionMode`）在 `docs/sdk.md` 里没有会话层接口，需要另查 | 工具内部不能等会话空闲，所以用底层中止；其余没有写下理由 | 待 Andy 定 |
 | D6 | `pi-runtime-adapter.ts` 的 `himawari-system-prompt` 扩展 | `before_agent_start` 返回系统提示，D1 又在请求前换一次 | 二选一 | 跟着 D1 一起定 | 待 Andy 定 |
 | D7 | `pi-runtime-adapter.ts` 的 `SettingsManager.inMemory` | 没显式设 `cacheWarming`，靠模型没填 `promptCache` 才不预热 | 显式设 `cacheWarming: "off"` | 没有写下理由；1.5.1 默认值变了 | 待 Andy 定 |
 
