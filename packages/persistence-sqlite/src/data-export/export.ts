@@ -125,7 +125,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       snapshot.decisions,
       snapshot.signals,
     ]);
-    for (const match of scanned.matchAll(/\[已扣留:(\d+)\]/g))
+    for (const match of scanned.matchAll(/\[已扣留:(\d{1,6})\]/g))
       highest = Math.max(highest, Number(match[1]));
     return highest;
   })();
@@ -427,7 +427,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       what: "含机密的实体名、人物名、别名、来源编号和决定记录里的短文字",
       count: replacedShortTexts,
       reason:
-        "已换成按出现顺序编号的占位（同一原文同一编号，不同原文不同编号）；这些是名称和编号，原文不保留，不进封存文件",
+        "已换成编号占位（接着库里已有占位的最大编号往后排；同一原文同一编号，不同原文不同编号）；这些是名称和编号，原文不保留，不进封存文件",
     },
     { what: "对话和消息", count: null, reason: "不属于本格式；记忆的来源对话编号也不导出" },
     { what: "每日摘要", count: null, reason: "属于对话，随对话一起，不在本格式内" },

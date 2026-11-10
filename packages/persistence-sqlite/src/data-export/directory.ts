@@ -12,7 +12,10 @@ export async function writePortableDirectory(
   files: PortableFiles,
 ): Promise<void> {
   const root = path.resolve(directory);
-  const existing = await lstat(root).catch(() => null);
+  const existing = await lstat(root).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return null;
+    throw new DataExportError(DATA_EXPORT_ERROR_CODES.PATH_UNSAFE, "输出目录无法检查");
+  });
   if (existing !== null && !existing.isDirectory())
     throw new DataExportError(DATA_EXPORT_ERROR_CODES.PATH_UNSAFE, "输出目录不是普通目录");
   await mkdir(root, { recursive: true, mode: 0o700 });

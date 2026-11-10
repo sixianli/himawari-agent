@@ -698,4 +698,17 @@ describe("data export: determinism and the directory", () => {
     for (const [path, bytes] of files)
       expect(decoder.decode(bytes), path).not.toContain(SECRET_API_KEY);
   });
+  it("[P1-6] ignores an absurdly long placeholder number when numbering new ones", async () => {
+    const source = await seeded();
+    source.database
+      .prepare("INSERT INTO memory_entities (memory_id, name) VALUES ('m-plain', ?)")
+      .run(`[已扣留:${"9".repeat(40)}]`);
+    source.database
+      .prepare("INSERT INTO memory_entities (memory_id, name) VALUES ('m-plain', ?)")
+      .run(`密钥 ${SECRET_API_KEY}`);
+    const { files } = await exportOf(source, { seal: false });
+    const memories = decoder.decode(files.get("data/memories.jsonl"));
+    expect(memories).toContain("[已扣留:1]");
+    expect(() => parsePortable(files, source.migrationSequence)).not.toThrow();
+  });
 });
