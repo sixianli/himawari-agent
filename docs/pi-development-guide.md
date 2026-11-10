@@ -103,7 +103,7 @@ const { session } = await createAgentSession({
 });
 ```
 
-Himawari 在 `packages/runtime-pi/src/pi-runtime-adapter.ts` 用 `DefaultResourceLoader` 并关掉 Pi 自动发现的扩展、技能、提示模板、主题和上下文文件（`noExtensions`、`noSkills` 等），自己的扩展从 `extensionFactories` 传入。适配器还接受经授权的磁盘路径（`additionalExtensionPaths`、`additionalSkillPaths`、`additionalPromptTemplatePaths`，来自 `resources` 端口）；2026-11-10 生产入口没有接这个端口，传的是空列表（`docs/sdk.md` 第 112 行“Inline extension factories can be supplied through `DefaultResourceLoader`”）。用完调用 `session.dispose()`。
+Himawari 在 `packages/runtime-pi/src/pi-runtime-adapter.ts` 用 `DefaultResourceLoader` 并关掉 Pi 自动发现的扩展、技能、提示模板、主题和上下文文件（`noExtensions`、`noSkills` 等），自己的扩展从 `extensionFactories` 传入。适配器还接受 `resources` 端口给出的磁盘路径（`additionalExtensionPaths`、`additionalSkillPaths`、`additionalPromptTemplatePaths`）：授权由这个端口负责，适配器自己只检查路径非空、不重复；2026-11-10 生产入口没有接这个端口，传的是空列表（`docs/sdk.md` 第 112 行“Inline extension factories can be supplied through `DefaultResourceLoader`”）。用完调用 `session.dispose()`。
 
 <a id="pattern-history"></a>
 ### 恢复历史
@@ -158,7 +158,7 @@ pi.on("tool_call", async (event, ctx) => {
 - 被拦下的调用不会执行工具；要观察它，用 `tool_execution_end` 事件。
 - 这个钩子只能当场决定或当场等。要等人批准几个小时、服务中途可能重启的情况，官方没有可靠写法，见[偏离 D2](#current-deviations)。
 - 新增的“直接拒绝、不需要等人”的规则（例如硬规则），用这个钩子写，挂在一个隐藏的内联扩展里。
-- 顺序：`tool_call` 先于工具的 `execute` 运行，在这里改了参数，Himawari 在 `execute` 里做的权限判断（[偏离 D2](#current-deviations)）看到的是改后的参数。
+- 顺序：`tool_call` 先于工具的 `execute` 运行，官方原话“Mutations to `event.input` affect the actual tool execution”（`docs/extensions.md` 第 984 行），所以在这里改了参数，Himawari 在 `execute` 里做的权限判断（[偏离 D2](#current-deviations)）看到的是改后的参数。仓库里还没有测试锁住这一点，第一次在 `tool_call` 里改参数的改动要补上。
 
 <a id="pattern-tool-result"></a>
 ### 改工具结果
@@ -349,7 +349,7 @@ SettingsManager.inMemory({
 | D2 | `pi-runtime-adapter.ts` 的 `createTool` 里调 `tools.preflight`、`reconciliation.suspend` | 权限判断和等审批写在工具的 `execute` 里，等审批时存快照、结束这次运行 | `tool_call` 拦截（`permission-gate.ts`） | 官方拦截只能在进程里当场等；审批要等几小时、服务可能重启（[ADR 0023](adr/0023-durable-hitl-execution.md)）。ADR 0023 写于 Pi 0.x，没写和 `tool_call` 的比较 | 待 Andy 定 |
 | D3 | `pi-tool-batch-continuation.ts` | 审批后续跑：存会话条目和那次回答，续跑时回放 | 官方没有稳定写法；`pi-durable` 标为实验性 | [ADR 0023](adr/0023-durable-hitl-execution.md)、[ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#decision) | 待 Andy 定 |
 | D4 | `pi-runtime-adapter.ts` 的 `sessionModelRuntime` | 用 Proxy 改写 `hasConfiguredAuth`，让 Pi 以为已配好密钥 | 完整 `Provider` 的原生认证、自定义取密钥 | 密钥不进 Pi 的凭据库，每次请求才从主机取；理由只写在 [架构文档](architecture-v0.1.md)，没有 ADR | 待 Andy 定 |
-| D5 | `pi-runtime-adapter.ts` 里的 `agent.steer`、`agent.abort()`、`agent.continue()`、`agent.hasQueuedMessages()`、读 `agent.state.messages`；`pi-tool-batch-continuation.ts` 读 `agent.state.tools` | 绕过会话直接用底层 Agent | `session.sendCustomMessage`、`session.abort()`、`session.messages`；`continue`、`hasQueuedMessages` 和读工具的执行方式（`executionMode`）在 `docs/sdk.md` 里没有会话层接口，需要另查 | 工具内部不能等会话空闲，所以用底层中止；其余没有写下理由 | 待 Andy 定 |
+| D5 | `pi-runtime-adapter.ts` 里的 `agent.steer`、`agent.abort()`、`agent.continue()`、`agent.hasQueuedMessages()`、读 `agent.state.messages`；`pi-tool-batch-continuation.ts` 读 `agent.state.messages` 和 `agent.state.tools` | 绕过会话直接用底层 Agent | `session.sendCustomMessage`、`session.abort()`、`session.messages`；`continue`、`hasQueuedMessages` 和读工具的执行方式（`executionMode`）在 `docs/sdk.md` 里没有会话层接口，需要另查 | 工具内部不能等会话空闲，所以用底层中止；其余没有写下理由 | 待 Andy 定 |
 | D6 | `pi-runtime-adapter.ts` 的 `himawari-system-prompt` 扩展 | `before_agent_start` 返回系统提示，D1 又在请求前换一次 | 二选一 | 跟着 D1 一起定 | 待 Andy 定 |
 | D7 | `pi-runtime-adapter.ts` 的 `SettingsManager.inMemory` | 没显式设 `cacheWarming`，靠模型没填 `promptCache` 才不预热 | 显式设 `cacheWarming: "off"` | 没有写下理由；1.5.1 默认值变了 | 待 Andy 定 |
 
