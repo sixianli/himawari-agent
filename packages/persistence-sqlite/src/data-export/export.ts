@@ -110,6 +110,23 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       withheld: true,
     };
   };
+  const safeString = (value: string): string => {
+    if (!options.policy.hasSecret(value)) return value;
+    const masked = options.policy.mask(value);
+    return options.policy.hasSecret(masked) ? WITHHELD_PLACEHOLDER : masked;
+  };
+  const safeOptional = (value: string | null): string | null =>
+    value === null ? null : safeString(value);
+  const safeJson = (value: JsonValue): JsonValue => {
+    if (typeof value === "string") return safeString(value);
+    if (Array.isArray(value)) return value.map(safeJson);
+    if (value !== null && typeof value === "object") {
+      const result: { [key: string]: JsonValue } = {};
+      for (const [key, item] of Object.entries(value)) result[key] = safeJson(item as JsonValue);
+      return result;
+    }
+    return value;
+  };
   const requiredText = (
     ref: string,
     key: string,
@@ -121,6 +138,8 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   };
 
   const memoryIds = new Set(snapshot.memories.map((row) => str(row["id"])));
+  const keepMemoryRef = (id: string | null): string | null =>
+    id !== null && memoryIds.has(id) ? id : null;
   const personIds = new Set(snapshot.people.map((row) => str(row["id"])));
   const batchIds = new Set(snapshot.importBatches.map((row) => str(row["id"])));
   const history = group(snapshot.history, "memory_id");
@@ -135,7 +154,8 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     const id = str(row["id"]);
     const owner = { set: withheldOwners.memories, id };
     const events: JsonValue[] = [];
-    (history.get(id) ?? []).forEach((event, index) => {
+    (history.get(id) ?? []).forEach((event) => {
+      const index = events.length;
       const content = exportedText(
         str(event["content_ref"]),
         `memory/${id}/history/${index}/content`,
@@ -191,10 +211,10 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       history: events,
       provenance: (provenance.get(id) ?? []).map((source) => ({
         sourceType: str(source["source_type"]),
-        sourceId: str(source["source_id"]),
+        sourceId: safeString(str(source["source_id"])),
         sourceDeleted: flag(source["source_deleted"]),
       })),
-      entities: (entities.get(id) ?? []).map((entity) => str(entity["name"])),
+      entities: (entities.get(id) ?? []).map((entity) => safeString(str(entity["name"]))),
       personIds: (mentions.get(id) ?? [])
         .map((mention) => str(mention["person_id"]))
         .filter((person) => personIds.has(person)),
@@ -207,13 +227,13 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     const mergedInto = optionalString(row["merged_into"]);
     return {
       id,
-      name: str(row["name"]),
-      relation: optionalString(row["relation"]),
-      reverseRelation: optionalString(row["reverse_relation"]),
+      name: safeString(str(row["name"])),
+      relation: safeOptional(optionalString(row["relation"])),
+      reverseRelation: safeOptional(optionalString(row["reverse_relation"])),
       mergedInto: mergedInto !== null && personIds.has(mergedInto) ? mergedInto : null,
       createdAt: str(row["created_at"]),
       updatedAt: str(row["updated_at"]),
-      aliases: (aliases.get(id) ?? []).map((alias) => str(alias["alias"])),
+      aliases: (aliases.get(id) ?? []).map((alias) => safeString(str(alias["alias"]))),
     };
   });
 
@@ -241,7 +261,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
           beforeRevision: optionalNumber(change["before_revision"]),
           afterRevision: num(change["after_revision"]),
           beforeStatus: optionalString(change["before_status"]),
-          beforeSupersededBy: optionalString(change["before_superseded_by"]),
+          beforeSupersededBy: keepMemoryRef(optionalString(change["before_superseded_by"])),
           beforeValidTo: optionalString(change["before_valid_to"]),
           createdAt: str(change["created_at"]),
           undoneAt: optionalString(change["undone_at"]),
@@ -278,8 +298,8 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       signal: str(signal["signal"]),
       occurredAt: str(signal["occurred_at"]),
       delayMs: num(signal["delay_ms"]),
-      detail: JSON.parse(str(signal["detail"])) as JsonValue,
-      sourceRef: str(signal["source_ref"]),
+      detail: safeJson(JSON.parse(str(signal["detail"])) as JsonValue),
+      sourceRef: safeString(str(signal["source_ref"])),
       recordedAt: str(signal["recorded_at"]),
     }));
     decisionSignals += decisionSignalLines.length;
@@ -292,12 +312,12 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       verdict: optionalString(row["verdict"]),
       outcome: optionalString(row["outcome"]),
       reasonCode: str(row["reason_code"]),
-      subjectRef: optionalString(row["subject_ref"]),
-      inputs: JSON.parse(str(row["inputs"])) as JsonValue,
+      subjectRef: safeOptional(optionalString(row["subject_ref"])),
+      inputs: safeJson(JSON.parse(str(row["inputs"])) as JsonValue),
       reason: reasonRef === null ? null : exportedText(reasonRef, `decision/${id}/reason`, owner),
       content:
         contentRef === null ? null : exportedText(contentRef, `decision/${id}/content`, owner),
-      pushSourceKey: optionalString(row["push_source_key"]),
+      pushSourceKey: safeOptional(optionalString(row["push_source_key"])),
       costMicros: num(row["cost_micros"]),
       durationMs: num(row["duration_ms"]),
       ownerRating: optionalString(row["owner_rating"]),

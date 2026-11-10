@@ -7,6 +7,7 @@ import {
   LATEST_MIGRATION_SEQUENCE,
   openQualifiedDatabase,
   parsePortable,
+  SEALED_FILE,
   readPortableDirectory,
   verifyIntegrity,
   writePortableDirectory,
@@ -118,7 +119,7 @@ export async function runDataCommand(
       counts: manifest.counts,
       withheld: manifest.withheld,
       omitted: manifest.omitted,
-      sealed: files.has("sealed/sealed.enc"),
+      sealed: files.has(SEALED_FILE),
     });
   }
   const configurationPath = values.get("--config");

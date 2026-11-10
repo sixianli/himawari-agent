@@ -21,7 +21,7 @@ import {
 } from "./types.js";
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
-const MAXIMUM_LINE_BYTES = 8 * 1024 * 1024;
+const MAXIMUM_LINE_BYTES = 64 * 1024 * 1024;
 
 export interface ParsedMemory {
   readonly id: string;

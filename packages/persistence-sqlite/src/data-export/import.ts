@@ -59,6 +59,9 @@ const EMPTY_TARGET_TABLES = [
   "memory_people",
   "memory_import_batches",
   "memory_consolidation_runs",
+  "source_insights",
+  "proactive_processed_messages",
+  "muse_reference_entries",
 ] as const;
 
 function assertEmptyTarget(database: Database.Database, scope: ExportScope): void {
@@ -224,7 +227,7 @@ export async function importPortableExport(
     decisions: parsed.decisions.length,
     decisionSignals: parsed.decisions.reduce((total, { signals }) => total + signals.length, 0),
     markdownMemories: parsed.manifest.counts.markdownMemories,
-    sealedOriginals: parsed.manifest.counts.sealedOriginals,
+    sealedOriginals: options.passphrase === undefined ? 0 : parsed.manifest.counts.sealedOriginals,
     sealedEvidenceRows: evidence
       ? Object.values(evidence).reduce((total, rows) => total + rows.length, 0)
       : 0,
@@ -392,10 +395,11 @@ export async function importPortableExport(
         const generationId = `data-import-generation-${suffix}`;
         database
           .prepare(
-            `INSERT INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at)
-            VALUES (?, ?, ?, 1, 'open', ?, ?)`,
+            `INSERT INTO threads (
+              id, owner_id, agent_id, revision, status, created_at, updated_at, archived_at
+            ) VALUES (?, ?, ?, 1, 'open', ?, ?, ?)`,
           )
-          .run(threadId, ownerId, agentId, now, now);
+          .run(threadId, ownerId, agentId, now, now, now);
         database
           .prepare(
             `INSERT INTO thread_checkpoint_jobs (

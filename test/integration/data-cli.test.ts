@@ -269,4 +269,65 @@ describe("data admin CLI", () => {
     const inspected = await run(["data", "inspect", "--from", out]);
     expect(inspected.code).not.toBe(0);
   });
+  it("[P1-6] --dry-run validates an import without writing and a too-short passphrase is refused", async () => {
+    const source = await prepare("dry-source", true);
+    const out = path.join(source.root, "export");
+    await run([
+      "data",
+      "export",
+      "--config",
+      source.configurationPath,
+      "--secret-dir",
+      source.secretDirectory,
+      "--out",
+      out,
+      "--passphrase-file",
+      source.passphraseFile,
+      "--operator",
+      "andy",
+    ]);
+    const target = await prepare("dry-target", false);
+    const dry = await run([
+      "data",
+      "import",
+      "--config",
+      target.configurationPath,
+      "--secret-dir",
+      target.secretDirectory,
+      "--from",
+      out,
+      "--passphrase-file",
+      target.passphraseFile,
+      "--dry-run",
+      "--operator",
+      "andy",
+    ]);
+    expect(dry.code).toBe(0);
+    expect(JSON.parse(dry.lines.at(-1) ?? "{}").dryRun).toBe(true);
+    const database = openQualifiedDatabase(
+      path.join(target.root, "state", "data", "product.sqlite"),
+    );
+    try {
+      expect(database.prepare("SELECT COUNT(*) FROM memory_records").pluck().get()).toBe(0);
+    } finally {
+      database.close();
+    }
+    await writeFile(target.passphraseFile, "short\n", { mode: 0o600 });
+    const refused = await run([
+      "data",
+      "import",
+      "--config",
+      target.configurationPath,
+      "--secret-dir",
+      target.secretDirectory,
+      "--from",
+      out,
+      "--passphrase-file",
+      target.passphraseFile,
+      "--dry-run",
+      "--operator",
+      "andy",
+    ]);
+    expect(refused.code).not.toBe(0);
+  });
 });

@@ -20,12 +20,14 @@ import { createDataExportTextPolicy } from "@himawari-agent/platform-node";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   openSide,
+  SECRET_API_KEY,
   SECRET_BANK_CARD,
   SECRET_MAIL_BODY,
   SECRET_PASSWORD,
   SECRETS,
   type Side,
   seedEverything,
+  seedMemory,
 } from "./data-export-fixture.ts";
 
 const PASSPHRASE = "测试口令-correct horse battery staple";
@@ -531,6 +533,77 @@ describe("data export: determinism and the directory", () => {
     await importInto(target, read, { passphrase: PASSPHRASE });
     expect(counts(target)["memories"]).toBe(8);
     await expect(writePortableDirectory(directory, files)).rejects.toMatchObject({
+      code: DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY,
+    });
+  });
+  it("[P1-6] masks secrets that sit in names, source ids and decision inputs, not only in memory text", async () => {
+    const source = await seeded();
+    const db = source.database;
+    db.prepare("INSERT INTO memory_entities (memory_id, name) VALUES ('m-plain', ?)").run(
+      `密钥 ${SECRET_API_KEY}`,
+    );
+    db.prepare("INSERT INTO memory_person_aliases (person_id, alias) VALUES ('person-1', ?)").run(
+      `别名 ${SECRET_API_KEY}`,
+    );
+    db.prepare(
+      "INSERT INTO memory_provenance (memory_id, source_type, source_id, source_deleted) VALUES ('m-plain', 'reference', ?, 0)",
+    ).run(`id-${SECRET_API_KEY}`);
+    db.prepare(
+      "UPDATE decision_ledger SET inputs = ?, push_source_key = ? WHERE id = 'd-proactive'",
+    ).run(JSON.stringify({ note: `带密钥 ${SECRET_API_KEY}` }), `key-${SECRET_API_KEY}`);
+    const { files } = await exportOf(source, { seal: false });
+    for (const [path, bytes] of files)
+      expect(decoder.decode(bytes), path).not.toContain(SECRET_API_KEY);
+  });
+
+  it("[P1-6] keeps a withheld history event findable when an earlier event was dropped", async () => {
+    const source = await side("history-key");
+    await seedMemory(source, {
+      id: "m-hist",
+      text: "普通正文",
+      versions: [
+        { kind: "created", text: "第一版普通", at: "2026-11-01T01:00:00.000Z" },
+        {
+          kind: "updated",
+          text: `第二版含密码 ${SECRET_PASSWORD}`,
+          at: "2026-11-01T02:00:00.000Z",
+        },
+      ],
+    });
+    source.database
+      .prepare(
+        "UPDATE payloads SET lifecycle_state = 'deletion_pending' WHERE ref = 'payload-m-hist-h0'",
+      )
+      .run();
+    const { files } = await exportOf(source);
+    const target = await side("history-key-target");
+    const report = await importInto(target, files, { passphrase: PASSPHRASE });
+    expect(report.skipped.historyEventsWithoutOriginal).toBe(0);
+    expect(counts(target)["history"]).toBe(2);
+  });
+
+  it("[P1-6] leaves the placeholder thread archived so it is not listed as an active conversation", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const target = await side("thread-archived");
+    await importInto(target, files, { passphrase: PASSPHRASE });
+    const threads = target.database
+      .prepare("SELECT status, archived_at FROM threads WHERE id LIKE 'data-import-thread-%'")
+      .all() as { status: string; archived_at: string | null }[];
+    expect(threads).toHaveLength(1);
+    expect(threads[0]?.archived_at).not.toBeNull();
+  });
+
+  it("[P1-6][reverse] a target with leftover muse rows is not empty", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source, { evidence: true });
+    const target = await side("not-empty-evidence");
+    target.database
+      .prepare(
+        "INSERT INTO muse_reference_entries (id, owner_id, agent_id, muse_at, muse_reminded, recorded_at) VALUES ('muse-1', ?, ?, ?, 0, ?)",
+      )
+      .run(target.ownerId, target.agentId, NOW, NOW);
+    await expect(importInto(target, files, { passphrase: PASSPHRASE })).rejects.toMatchObject({
       code: DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY,
     });
   });

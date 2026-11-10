@@ -62,7 +62,7 @@ export const EXPORTED_TEXT_SCHEMA: JsonSchema = objectOf(
   {
     text: text(),
     classification: enumOf(CLASSIFICATIONS),
-    contentType: text(1, 128),
+    contentType: text(1, 512),
     withheld: { type: "boolean", const: true },
   },
   ["withheld"],
@@ -73,13 +73,13 @@ const nullableText: JsonSchema = nullable(EXPORTED_TEXT_SCHEMA);
 
 export const MEMORY_SCHEMA: JsonSchema = objectOf(
   {
-    id: text(1, 128),
+    id: text(1, 512),
     status: enumOf(["active", "archived", "trashed"]),
     revision: integer(0),
     classification: enumOf(CLASSIFICATIONS),
     inference: bool,
     confidencePermille: permille,
-    policyVersion: text(1, 128),
+    policyVersion: text(1, 512),
     updatedAt: timestamp,
     recordedAt: nullable(timestamp),
     lastUsedAt: nullable(timestamp),
@@ -88,13 +88,13 @@ export const MEMORY_SCHEMA: JsonSchema = objectOf(
     importancePermille: permille,
     validFrom: nullable(text(1, 40)),
     validTo: nullable(text(1, 40)),
-    supersededBy: nullable(text(1, 128)),
+    supersededBy: nullable(text(1, 512)),
     useCount: integer(0),
     evidenceVerified: bool,
     sensitiveTopic: nullable(enumOf(SENSITIVE_TOPICS)),
     tentative: bool,
     stance: nullable(text(1, 16)),
-    importBatchId: nullable(text(1, 128)),
+    importBatchId: nullable(text(1, 512)),
     content: EXPORTED_TEXT_SCHEMA,
     history: {
       type: "array",
@@ -110,13 +110,13 @@ export const MEMORY_SCHEMA: JsonSchema = objectOf(
     provenance: {
       type: "array",
       items: objectOf({
-        sourceType: text(1, 128),
+        sourceType: text(1, 512),
         sourceId: text(1, 512),
         sourceDeleted: bool,
       }),
     },
     entities: { type: "array", items: text(1, 64) },
-    personIds: { type: "array", items: text(1, 128) },
+    personIds: { type: "array", items: text(1, 512) },
     pin: nullable(objectOf({ pinned: bool, updatedAt: timestamp })),
   },
   [],
@@ -125,11 +125,11 @@ export const MEMORY_SCHEMA: JsonSchema = objectOf(
 
 export const PERSON_SCHEMA: JsonSchema = objectOf(
   {
-    id: text(1, 128),
+    id: text(1, 512),
     name: text(1, 64),
     relation: nullable(text(1, 32)),
     reverseRelation: nullable(text(1, 32)),
-    mergedInto: nullable(text(1, 128)),
+    mergedInto: nullable(text(1, 512)),
     createdAt: timestamp,
     updatedAt: timestamp,
     aliases: { type: "array", items: text(1, 64) },
@@ -140,7 +140,7 @@ export const PERSON_SCHEMA: JsonSchema = objectOf(
 
 export const IMPORT_BATCH_SCHEMA: JsonSchema = objectOf(
   {
-    id: text(1, 128),
+    id: text(1, 512),
     source: enumOf(["codex", "assistant", "himawari"]),
     itemCount: integer(1, 500),
     createdAt: timestamp,
@@ -152,31 +152,31 @@ export const IMPORT_BATCH_SCHEMA: JsonSchema = objectOf(
 
 export const CONSOLIDATION_SCHEMA: JsonSchema = objectOf(
   {
-    id: text(1, 128),
+    id: text(1, 512),
     day: text(10, 10),
     triggerRunId: text(1, 256),
     status: enumOf(["running", "completed", "failed"]),
     reviewedThrough: nullable(text(1, 64)),
     modelCalled: bool,
     changeCount: integer(0),
-    errorCode: nullable(text(1, 128)),
+    errorCode: nullable(text(1, 512)),
     startedAt: timestamp,
     finishedAt: nullable(timestamp),
     changes: {
       type: "array",
       items: objectOf({
-        id: text(1, 128),
-        memoryId: text(1, 128),
-        relatedMemoryId: nullable(text(1, 128)),
+        id: text(1, 512),
+        memoryId: text(1, 512),
+        relatedMemoryId: nullable(text(1, 512)),
         action: enumOf(["merge", "supersede", "archive", "reflect"]),
         beforeRevision: nullable(integer(1)),
         afterRevision: integer(1),
         beforeStatus: nullable(text(1, 64)),
-        beforeSupersededBy: nullable(text(1, 128)),
+        beforeSupersededBy: nullable(text(1, 512)),
         beforeValidTo: nullable(text(1, 64)),
         createdAt: timestamp,
         undoneAt: nullable(timestamp),
-        basis: { type: "array", items: text(1, 128) },
+        basis: { type: "array", items: text(1, 512) },
       }),
     },
   },
@@ -186,7 +186,7 @@ export const CONSOLIDATION_SCHEMA: JsonSchema = objectOf(
 
 export const DECISION_SCHEMA: JsonSchema = objectOf(
   {
-    id: text(1, 128),
+    id: text(1, 512),
     kind: enumOf([
       "proactive",
       "memory_candidate",
@@ -218,7 +218,7 @@ export const DECISION_SCHEMA: JsonSchema = objectOf(
     signals: {
       type: "array",
       items: objectOf({
-        id: text(1, 128),
+        id: text(1, 512),
         signal: enumOf(["opened", "undone", "replied"]),
         occurredAt: timestamp,
         delayMs: integer(0),
@@ -239,7 +239,7 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
     decisionPayloads: {
       type: "array",
       items: objectOf({
-        decisionId: text(1, 128),
+        decisionId: text(1, 512),
         sequence: integer(0, 1_000_000),
         role: enumOf(["model_input", "model_output"]),
         payload: payloadText,
@@ -248,7 +248,7 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
     sourceInsights: {
       type: "array",
       items: objectOf({
-        id: text(1, 128),
+        id: text(1, 512),
         source: enumOf(["gmail"]),
         threadId: text(1, 256),
         lastMessageId: text(1, 256),
@@ -258,12 +258,12 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
         dueAt: nullable(text(1, 64)),
         priority: nullable(enumOf(["high", "medium", "low"])),
         status: enumOf(["open", "replied", "done", "muted"]),
-        decisionId: text(1, 128),
+        decisionId: text(1, 512),
         ownerRating: nullable(enumOf(RATINGS)),
         pushSourceKey: nullable(text(1, 256)),
         createdAt: timestamp,
         updatedAt: timestamp,
-        pushClass: nullable(text(1, 128)),
+        pushClass: nullable(text(1, 512)),
       }),
     },
     processedMessages: {
@@ -272,7 +272,7 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
         source: enumOf(["gmail"]),
         messageId: text(1, 256),
         threadId: text(1, 256),
-        decisionId: text(1, 128),
+        decisionId: text(1, 512),
         outcome: enumOf(["act", "know", "check", "ignore", "skipped"]),
         skipReason: nullable(enumOf(["category", "sensitive", "own_mail"])),
         header: nullableText,
@@ -285,14 +285,14 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
     museEntries: {
       type: "array",
       items: objectOf({
-        id: text(1, 128),
+        id: text(1, 512),
         museAt: timestamp,
         museReminded: bool,
         timingOk: nullable(bool),
         contentOk: nullable(bool),
         content: nullableText,
         note: nullableText,
-        pairedDecisionId: nullable(text(1, 128)),
+        pairedDecisionId: nullable(text(1, 512)),
         intakeItemKey: nullable(text(3, 200)),
         recordedAt: timestamp,
         pairedMessageId: nullable(text(1, 256)),
@@ -362,7 +362,7 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
   omitted: {
     type: "array",
     items: objectOf({
-      what: text(1, 128),
+      what: text(1, 512),
       count: nullable(integer(0)),
       reason: text(1, 512),
     }),
