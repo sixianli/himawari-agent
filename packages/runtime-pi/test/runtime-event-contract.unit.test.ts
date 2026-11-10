@@ -96,7 +96,16 @@ function fixture(
     cwd: process.cwd(),
     now: () => now,
     logicalSlot: (_run, ordinal) => `slot-${ordinal}`,
-    models: { resolve: async () => ({ model, modelRuntime: {} as never }) },
+    models: {
+      resolve: async () => ({
+        model,
+        modelRuntime: {
+          streamSimple: () => {
+            throw new Error("Unexpected provider request");
+          },
+        } as never,
+      }),
+    },
     projection: {
       resolveProjection: async () => projection,
       capture,
@@ -110,9 +119,6 @@ function fixture(
         session: {
           agent: {
             abort,
-            streamFunction: async () => {
-              throw new Error("Unexpected provider request");
-            },
           },
           subscribe: (next: typeof listener) => {
             listener = next;

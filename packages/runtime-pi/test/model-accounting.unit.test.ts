@@ -92,7 +92,9 @@ function fixture(chosenModel = model) {
   }));
   const binding: PiModelBinding = {
     model: chosenModel,
-    modelRuntime: {} as never,
+    modelRuntime: {
+      streamSimple: (...args: unknown[]) => (original as (...a: unknown[]) => unknown)(...args),
+    } as never,
     descriptor: {
       ref: request.modelRef,
       provider: chosenModel.provider,
@@ -165,24 +167,28 @@ function fixture(chosenModel = model) {
         throw new Error("No tools expected");
       },
     },
-    createSession: async () => {
+    createSession: async (rawOptions) => {
       let listener = (_event: unknown) => {};
-      const agent = {
-        streamFunction: original as (
+      const governed = (rawOptions as unknown as { modelRuntime: unknown }).modelRuntime as {
+        streamSimple: (
           model: Model<Api>,
           context: { messages: [] },
           options: SimpleStreamOptions,
-        ) => ReturnType<typeof original> | Promise<ReturnType<typeof original>>,
+        ) => ReturnType<typeof original> | Promise<ReturnType<typeof original>>;
       };
       return {
         session: {
-          agent,
+          agent: {},
           subscribe: (next: typeof listener) => {
             listener = next;
             return () => {};
           },
           prompt: async () => {
-            const stream = await agent.streamFunction(chosenModel, { messages: [] }, streamOptions);
+            const stream = await governed.streamSimple(
+              chosenModel,
+              { messages: [] },
+              streamOptions,
+            );
             for await (const event of stream) {
               if (event.type === "done" || event.type === "error") {
                 terminals.push(event.type);

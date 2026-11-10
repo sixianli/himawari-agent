@@ -79,6 +79,19 @@ Pi 官方对“委托内置实现”的写法是在自己的 `streamSimple` 里�
 - D4 已由 [ADR 0205](0205-pi-native-provider-auth.md) 合并并删掉了 `sessionModelRuntime` 那个 Proxy；第 2 步要自己重建每次运行专属的模型代理，重建后用 D4 留下的 `packages/runtime-pi/test/fixtures/d4-golden-requests.json` 再逐字节对比一次请求。
 - 打开缓存预热（D7）时，预热请求会进包装层，要有标记区分。
 
+<a id="step-2-record"></a>
+
+## 第 2 步实施记录（2026-11-10）
+
+适配器不再给 `session.agent.streamFunction` 赋值，改为在建会话时传入每次运行专属的 `ModelRuntime` 代理（`governedModelRuntime`），只重写 `streamSimple`：准入、遮盖还原、审批续跑回放、识别压缩请求、拒发，原样搬进代理里；其余成员原样转给共享的 `binding.modelRuntime`。核对结果：
+
+- 同步返回：Pi 的默认请求函数（`sdk.js` 的 `streamFn`）和预热都同步使用 `streamSimple` 的返回值，所以代理用 `deferredPiStream` 先返回一条流，再在里面异步走准入；准入失败时流里只有一个错误事件，不抛异常。
+- 对象身份：`model !== binding.model` 的检查仍在 `admitPiStream` 里，测试覆盖。
+- 摘要的凭据：Pi 在 `agent-session.js` 里把默认请求函数登记为属于传入的 `ModelRuntime`（就是我们的代理），摘要因此不再预先取凭据，凭据和以前一样由 `admitPiStream` 每次请求现取。
+- 代理：Pi 的 `dist` 里没有 `instanceof ModelRuntime`；方法用 `bind` 绑回原对象，私有字段不受影响。
+- 字节对比：`d4-golden-requests.json` 的黄金请求测试用真实 Pi 会话，改前改后都通过；`npm run check:prompt-prefix` 27 条通过。
+- 遗留：第 3 步之前，Pi 的缓存预热器（D7）重放的是 Pi 自己的开头，不是冻结的开头；生产目前关着预热，打开前必须先完成第 3 步。
+
 <a id="references"></a>
 
 ## 关联文档
