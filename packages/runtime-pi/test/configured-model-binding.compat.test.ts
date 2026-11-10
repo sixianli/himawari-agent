@@ -4,8 +4,8 @@ import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ConfiguredPiModelBindingPort,
-  getPiModelPresentation,
   type ConfiguredPiModelDescriptor,
+  getPiModelPresentation,
   type PiModelRuntime,
   type PiModelRuntimeFactory,
 } from "../src/index.js";
@@ -62,19 +62,25 @@ class RecordingRuntime {
     return this.models.get(`${providerId}:${modelId}`);
   }
 
-  registerProvider(providerId: string, config: Readonly<Record<string, unknown>>): void {
-    this.registered.push({ providerId, config });
-    const models = config["models"];
-    if (!Array.isArray(models)) throw new Error("missing models");
+  registerNativeProvider(provider: {
+    readonly id: string;
+    readonly baseUrl?: string;
+    readonly auth?: unknown;
+    getModels(): readonly unknown[];
+  }): void {
+    const models = provider.getModels();
+    this.registered.push({
+      providerId: provider.id,
+      config: { baseUrl: provider.baseUrl, auth: provider.auth, models },
+    });
     for (const model of models) {
-      if (model === null || typeof model !== "object" || Array.isArray(model)) {
-        throw new Error("invalid model");
-      }
       const id = (model as Record<string, unknown>)["id"];
       if (typeof id !== "string") throw new Error("invalid model id");
-      this.models.set(`${providerId}:${id}`, model);
+      this.models.set(`${provider.id}:${id}`, model);
     }
   }
+
+  async refresh(): Promise<void> {}
 
   async setRuntimeApiKey(providerId: string, apiKey: string): Promise<void> {
     this.apiKeys.push({ providerId, value: apiKey });
@@ -323,6 +329,24 @@ describe("ConfiguredPiModelBindingPort", () => {
     ).toThrow(message);
   });
 
+  it("[D7] registers no model with a prompt cache lifetime, so Pi never sends a cache warming request", async () => {
+    const binding = new ConfiguredPiModelBindingPort({
+      descriptors: [
+        {
+          ...modelDescriptor("primary"),
+          promptCache: { short: 300 },
+        } as ConfiguredPiModelDescriptor,
+      ],
+      secretSource: { productionSuitable: true, resolve: async () => SECRET },
+    });
+
+    const primary = await binding.resolve(PRIMARY_REF);
+
+    expect(primary.model).toBeDefined();
+    expect(primary.model).not.toHaveProperty("promptCache");
+    await binding.close();
+  });
+
   it("works with the pinned Pi runtime without disk model discovery", async () => {
     const binding = new ConfiguredPiModelBindingPort({
       descriptors: descriptors(),
@@ -336,5 +360,36 @@ describe("ConfiguredPiModelBindingPort", () => {
     expect(same.model.id).toBe("deepseek/deepseek-v4.1-flash");
     expect(primary.modelRuntime).toBe(same.modelRuntime);
     await binding.close();
+  });
+  it("[D4] declares host-managed auth to the real Pi runtime without reading or storing the secret", async () => {
+    vi.stubEnv("AI_GATEWAY_API_KEY", "ambient-environment-value");
+    const reads: string[] = [];
+    const binding = new ConfiguredPiModelBindingPort({
+      descriptors: descriptors(),
+      secretSource: {
+        productionSuitable: true,
+        resolve: async (ref) => {
+          reads.push(ref);
+          return SECRET;
+        },
+      },
+    });
+    try {
+      const primary = await binding.resolve(PRIMARY_REF);
+      const runtime = primary.modelRuntime;
+      expect(runtime.hasConfiguredAuth("vercel-ai-gateway")).toBe(true);
+      expect(await runtime.checkAuth("vercel-ai-gateway")).toEqual({
+        type: "api_key",
+        source: "himawari-host-secret",
+      });
+      expect(primary.model.provider).toBe("vercel-ai-gateway");
+      expect(await runtime.getAuth(primary.model)).toBeUndefined();
+      expect((await runtime.getAuth(primary.model, { apiKey: SECRET }))?.auth.apiKey).toBe(SECRET);
+      expect(await runtime.listCredentials()).toEqual([]);
+      expect(reads).toEqual([]);
+    } finally {
+      await binding.close();
+      vi.unstubAllEnvs();
+    }
   });
 });

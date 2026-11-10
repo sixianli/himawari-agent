@@ -232,6 +232,7 @@ export function auditInstalledDependencies(
   }
   for (const [path, entry] of Object.entries(lock.packages)) {
     if (!path.includes("node_modules/") || installed.has(path)) continue;
+    if (entry.optional === true && entry.peer === true) continue;
     assert(
       entry.optional === true && !platformMatches(entry, platform, arch),
       `锁文件依赖没有安装: ${path}`,

@@ -10,9 +10,11 @@ import {
   type AssistantMessageEventStream,
   createAssistantMessageEventStream,
   type Model,
+  type TranscriptContext,
   validateToolArguments,
 } from "@earendil-works/pi-ai";
 import {
+  createAgentSession,
   createBashToolDefinition,
   createReadToolDefinition,
 } from "@earendil-works/pi-coding-agent";
@@ -47,6 +49,7 @@ import {
 } from "../src/index.js";
 import { createFauxModelFixture } from "./faux-model-fixture.js";
 import { testModelEgress } from "./helpers/model-egress.js";
+import { requestContextFor } from "./request-head.ts";
 
 const NOW = "2026-08-25T10:00:00.000Z";
 type ProjectionContext = RuntimeProjection;
@@ -197,16 +200,27 @@ function assistantAnswer(): AssistantMessage {
 }
 
 function streamingSessionFactory(
-  original: (model: Model<Api>, context: unknown, options?: unknown) => AssistantMessageEventStream,
+  _original: (
+    model: Model<Api>,
+    context: unknown,
+    options?: unknown,
+  ) => AssistantMessageEventStream,
   observedTerminals: string[],
   streamModel: Model<Api> = ADMISSION_MODEL,
   streamOptions: unknown = {},
+  shapeContext: (head: TranscriptContext) => unknown = (head) => head,
 ) {
-  return async () => {
+  return async (rawOptions: Readonly<Record<string, unknown>>) => {
+    const governed = rawOptions["modelRuntime"] as {
+      streamSimple: (
+        model: Model<Api>,
+        context: unknown,
+        options?: unknown,
+      ) => AssistantMessageEventStream;
+    };
     let listener: (event: FakePiEvent) => void = () => undefined;
-    const agent = { streamFunction: original };
     const session = {
-      agent,
+      agent: {},
       subscribe(next: (event: FakePiEvent) => void) {
         listener = next;
         return () => {
@@ -214,7 +228,11 @@ function streamingSessionFactory(
         };
       },
       async prompt() {
-        const response = await agent.streamFunction(streamModel, { messages: [] }, streamOptions);
+        const response = governed.streamSimple(
+          streamModel,
+          shapeContext(await requestContextFor(rawOptions)),
+          streamOptions,
+        );
         for await (const event of response) {
           if (event.type === "done") {
             observedTerminals.push("done");
@@ -419,12 +437,12 @@ function fakeSessionFactory(
     let idle = Promise.resolve();
     return {
       session: {
+        get messages() {
+          return this.agent.state.messages;
+        },
         agent: {
           state: { messages: [] },
           abort() {},
-          streamFunction: async () => {
-            throw new Error("fake stream function was not configured");
-          },
         },
         subscribe(next: (event: FakePiEvent) => void) {
           listener = next;
@@ -510,12 +528,14 @@ function createAdmissionAdapter(
   resolveSecret?: () => Promise<string>,
   admissionExecutionLease?: ModelInvocationExecutionContext["executionLease"],
   usage?: PiAgentRuntimeAdapterDependencies["usage"],
+  shapeContext?: (head: TranscriptContext) => unknown,
 ) {
   const createSession = streamingSessionFactory(
     original,
     observedTerminals,
     streamModel,
     streamOptions,
+    shapeContext,
   );
   return new PiAgentRuntimeAdapter({
     egress: testModelEgress(),
@@ -524,7 +544,9 @@ function createAdmissionAdapter(
     models: {
       resolve: async () => ({
         model: ADMISSION_MODEL,
-        modelRuntime: {} as PiModelBinding["modelRuntime"],
+        modelRuntime: {
+          streamSimple: original,
+        } as unknown as PiModelBinding["modelRuntime"],
         descriptor:
           resolveSecret === undefined
             ? ADMISSION_DESCRIPTOR
@@ -601,6 +623,83 @@ describe("Pi stream admission accounting", () => {
     expect(providerCalls).toBe(0);
     expect(observedTerminals).toEqual(["error"]);
     expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
+  });
+
+  it.each([
+    [
+      "a leading system message whose prompt is not the frozen one",
+      (head: TranscriptContext) => ({
+        ...head,
+        messages: [
+          { ...(head.messages[0] as object), content: "Pi's own system prompt" },
+          ...head.messages.slice(1),
+        ],
+      }),
+    ],
+    [
+      "no leading system message",
+      (head: TranscriptContext) => ({ ...head, messages: head.messages.slice(1) }),
+    ],
+    [
+      "a second system message after the head",
+      (head: TranscriptContext) => ({
+        ...head,
+        messages: [...head.messages, { role: "system", content: "late" }],
+      }),
+    ],
+  ])("refuses to send a request with %s", async (_name, shape) => {
+    const observedTerminals: string[] = [];
+    let providerCalls = 0;
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => undefined,
+      markStarted: async () => undefined,
+      releaseReserved: async () => undefined,
+      settle: async () => undefined,
+      markUnknown: async () => undefined,
+    };
+    const adapter = createAdmissionAdapter(
+      permit,
+      () => {
+        providerCalls += 1;
+        return successfulOriginal();
+      },
+      observedTerminals,
+      ADMISSION_MODEL,
+      {},
+      undefined,
+      undefined,
+      undefined,
+      shape,
+    );
+
+    const events = await collect(adapter.run(request));
+    expect(providerCalls).toBe(0);
+    expect(observedTerminals).toEqual(["error"]);
+    expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
+  });
+
+  it("sends the request when the leading system message is the frozen head", async () => {
+    const observedTerminals: string[] = [];
+    let providerCalls = 0;
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => undefined,
+      markStarted: async () => undefined,
+      releaseReserved: async () => undefined,
+      settle: async () => undefined,
+      markUnknown: async () => undefined,
+    };
+    const adapter = createAdmissionAdapter(
+      permit,
+      () => {
+        providerCalls += 1;
+        return successfulOriginal();
+      },
+      observedTerminals,
+    );
+
+    await collect(adapter.run(request));
+    expect(providerCalls).toBe(1);
+    expect(observedTerminals).toEqual(["done"]);
   });
 
   it("rejects an admission gate bound to a different execution lease", async () => {
@@ -1653,21 +1752,22 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       });
       const adapter = createAdapter(projection, new RecordingRuntimeTools(), async (options) => {
         const created = await base(options);
-        const agent = created.session.agent as unknown as {
-          state: { messages: unknown[] };
-          steer: (message: unknown) => void;
+        const session = created.session as unknown as {
+          agent: { state: { messages: unknown[] } };
+          sendCustomMessage: (message: unknown, options: unknown) => Promise<void>;
         };
-        state = agent.state;
-        agent.steer = (message) => steered.push(message);
+        state = session.agent.state;
+        session.sendCustomMessage = async (message, options) => {
+          steered.push({ message, options });
+        };
         return created;
       });
       await collect(adapter.run(request));
       expect(steered).toHaveLength(expected);
       if (expected)
         expect(steered[0]).toMatchObject({
-          role: "custom",
-          customType: "himawari.runtime-environment",
-          display: false,
+          message: { customType: "himawari.runtime-environment", display: false },
+          options: { deliverAs: "steer" },
         });
       if (expected) expect(JSON.stringify(steered[0])).toContain("工作目录：/srv/demo。");
     },
@@ -2149,7 +2249,7 @@ describe("Pi Agent Runtime adapter compatibility", () => {
   it.each([
     ["Model invocation admission was blocked", "Model invocation admission was blocked"],
     ["400: PRIVATE_PROVIDER_DATA", "provider_status_400"],
-    ["PI_REQUEST_TOOLS_DIVERGED", "PI_REQUEST_TOOLS_DIVERGED"],
+    ["PI_REQUEST_HEAD_DIVERGED", "PI_REQUEST_HEAD_DIVERGED"],
     ["provider included an unsafe raw failure", "provider_message_withheld"],
   ])(
     "reports why the model stream failed without provider text: %s",
@@ -2689,7 +2789,16 @@ it("[R2-L5] runs configured Gateway sessions without storing credentials in the 
   });
   try {
     const binding = await models.resolve("local-primary");
-    expect(binding.modelRuntime.hasConfiguredAuth("vercel-ai-gateway")).toBe(false);
+    expect(await binding.modelRuntime.checkAuth("vercel-ai-gateway")).toEqual({
+      type: "api_key",
+      source: "himawari-host-secret",
+    });
+    expect(binding.modelRuntime.hasConfiguredAuth("vercel-ai-gateway")).toBe(true);
+    expect(await binding.modelRuntime.getAuth(binding.model)).toBeUndefined();
+    expect(
+      (await binding.modelRuntime.getAuth(binding.model, { apiKey: FIXTURE_KEY }))?.auth.apiKey,
+    ).toBe(FIXTURE_KEY);
+    expect(secretReads).toEqual([]);
     const projection = new RecordingProjection();
     let admitted = false;
     const adapter = new PiAgentRuntimeAdapter({
@@ -2720,7 +2829,6 @@ it("[R2-L5] runs configured Gateway sessions without storing credentials in the 
       ["Bearer", "fixture-request-key"],
     ]);
     expect(projection.finalAnswers[0]?.text).toBe("凭据受控回答");
-    expect(binding.modelRuntime.hasConfiguredAuth("vercel-ai-gateway")).toBe(false);
     expect(await binding.modelRuntime.listCredentials()).toEqual([]);
   } finally {
     await models.close();
@@ -2728,6 +2836,140 @@ it("[R2-L5] runs configured Gateway sessions without storing credentials in the 
       server.close((error) => (error ? reject(error) : resolve())),
     );
   }
+});
+
+type CapturedModelRequest = {
+  readonly method: string | undefined;
+  readonly path: string | undefined;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: string;
+};
+
+const FIXTURE_KEY = "fixture-request-key";
+
+const VOLATILE_HEADER =
+  /^(host|connection|content-length|user-agent|accept-encoding|accept-language|sec-fetch-mode|x-stainless-.*)$/u;
+
+async function captureConfiguredModelRequest(options: {
+  readonly provider: "vercel-ai-gateway" | "magpie";
+  readonly maxTokens?: number;
+}): Promise<readonly CapturedModelRequest[]> {
+  const { createServer } = await import("node:http");
+  const { ConfiguredPiModelBindingPort } = await import("../src/index.js");
+  const captured: CapturedModelRequest[] = [];
+  const server = createServer((incoming, response) => {
+    const chunks: Buffer[] = [];
+    incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+    incoming.on("end", () => {
+      const headers: Record<string, string> = {};
+      for (const [name, value] of Object.entries(incoming.headers)) {
+        if (VOLATILE_HEADER.test(name)) continue;
+        const text = Array.isArray(value) ? value.join(", ") : (value ?? "");
+        headers[name] =
+          name === "authorization" && text === `Bearer ${FIXTURE_KEY}` ? "Bearer [fixture]" : text;
+      }
+      captured.push({
+        method: incoming.method,
+        path: incoming.url,
+        headers,
+        body: Buffer.concat(chunks).toString("utf8"),
+      });
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.end(
+        `data: ${JSON.stringify({ id: "local-completion", object: "chat.completion.chunk", model: "deepseek/deepseek-v4.1-flash", choices: [{ index: 0, delta: { role: "assistant", content: "凭据受控回答" }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: "local-completion", object: "chat.completion.chunk", model: "deepseek/deepseek-v4.1-flash", choices: [{ index: 0, delta: { provider_metadata: { gateway: { generationId: "gen:fixture", routing: { finalProvider: "morph" }, cost: "0" } } }, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: "0" } })}\n\ndata: [DONE]\n\n`,
+      );
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("LOCAL_PROVIDER_REQUIRED");
+  const models = new ConfiguredPiModelBindingPort({
+    descriptors: [
+      {
+        ref: "golden-primary",
+        model: "deepseek/deepseek-v4.1-flash",
+        provider: options.provider,
+        version: "v1",
+        name: "DeepSeek V4.1 Flash",
+        routingClass: "primary",
+        ...(options.provider === "vercel-ai-gateway"
+          ? { providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" as const } }
+          : {}),
+        priority: 1,
+        api: "openai-completions",
+        baseUrl: `http://127.0.0.1:${address.port}/v1`,
+        reasoning: true,
+        input: ["text"],
+        contextWindow: 8192,
+        maxTokens: options.maxTokens ?? 1024,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        capabilities: ["text", "structured_outputs"],
+        disclosure: "trusted_remote",
+        allowedDataClassifications: ["private"],
+        secretRequirement: {
+          secretRef: "fixture-key",
+          secretVersion: "v1",
+          purpose: "model-provider-auth",
+        },
+      },
+    ],
+    secretSource: { productionSuitable: true, resolve: async () => "fixture-request-key" },
+  });
+  try {
+    const adapter = new PiAgentRuntimeAdapter({
+      egress: testModelEgress(),
+      projection: new RecordingProjection(),
+      tools: new RecordingRuntimeTools(),
+      models,
+      cwd: process.cwd(),
+      now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      logicalSlot: (_request, ordinal) => `golden-pi:${ordinal}`,
+    });
+    const events = await collect(
+      adapter.run({
+        ...request,
+        modelRef: "golden-primary",
+        sessionId: fixtureIdentifier<RuntimeRequest["sessionId"]>("session:golden-request"),
+      }),
+    );
+    expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
+    return captured;
+  } finally {
+    await models.close();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+}
+
+describe("[D4] configured provider request bytes", () => {
+  const goldenPath = new URL("./fixtures/d4-golden-requests.json", import.meta.url);
+
+  async function readGolden(): Promise<Record<string, readonly CapturedModelRequest[]>> {
+    const { readFile } = await import("node:fs/promises");
+    return JSON.parse(await readFile(goldenPath, "utf8")) as Record<
+      string,
+      readonly CapturedModelRequest[]
+    >;
+  }
+
+  it.each(["magpie", "vercel-ai-gateway"] as const)(
+    "sends the same method, path, headers and body for %s as the recorded golden request",
+    async (provider) => {
+      const actual = await captureConfiguredModelRequest({ provider });
+      const golden = await readGolden();
+      expect(actual).toEqual(golden[provider]);
+      expect(actual).toHaveLength(1);
+      expect(actual[0]?.body).toContain('"max_tokens":1024');
+    },
+  );
+
+  it("fails the golden comparison when a model field that changes the request is altered", async () => {
+    const golden = await readGolden();
+    const altered = await captureConfiguredModelRequest({ provider: "magpie", maxTokens: 512 });
+    expect(altered).not.toEqual(golden["magpie"]);
+  });
 });
 
 it("preserves a denied tool call across native session restart and delivers only the new prompt", async () => {
@@ -3008,7 +3250,8 @@ it("does not call the model when native history cannot be persisted", async () =
   });
   const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
   expect(model.observed).toEqual([]);
-  expect(events.at(-1)?.type).not.toBe("runtime.completed");
+  expect(events.at(-1)?.type).toBe("runtime.failed");
+  expect(events.some((event) => event.type === "runtime.completed")).toBe(false);
 });
 
 it("does not execute a tool when saving its assistant request fails", async () => {
@@ -4182,4 +4425,63 @@ it("[BG-2] delivers a background result before the next model call while the run
   expect(tools.delivered).toEqual([true]);
   expect(model.observed).toHaveLength(2);
   expect(messageText(model.observed.at(-1))).toContain("7 passed");
+});
+
+it("[D5-NOTICE] delivers a background result that arrives as the last answer ends", async () => {
+  const model = await createFauxModelFixture("先回答一次", undefined, [], ["已经看到后台结果"]);
+  const tools = new BackgroundRuntimeTools();
+  const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
+    projection: new RecordingProjection(),
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => new Date().toISOString(),
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `background:${ordinal}`,
+    createSession: async (options) => {
+      const created = await createAgentSession(options);
+      const stop = created.session.subscribe((event) => {
+        if (event.type !== "agent_end") return;
+        stop();
+        tools.finish("后台命令已结束。输出：3 passed");
+      });
+      return created;
+    },
+  });
+  const events = await collect(
+    adapter.run({
+      ...request,
+      modelRef: model.descriptor.ref,
+      executionDeadlineAt: new Date(Date.now() + 60_000).toISOString(),
+    }),
+  );
+  expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
+  expect(tools.delivered).toEqual([true]);
+  expect(model.observed).toHaveLength(2);
+  expect(messageText(model.observed.at(-1))).toContain("3 passed");
+  expect(messageText(model.observed.at(0))).not.toContain("3 passed");
+});
+
+it("[D7] pins Pi cache warming to streaming so a Pi upgrade cannot turn on idle warming", async () => {
+  const model = await createFauxModelFixture("好");
+  const modes: string[] = [];
+  const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
+    projection: new RecordingProjection(),
+    tools: new RecordingRuntimeTools(),
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => new Date().toISOString(),
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `warming:${ordinal}`,
+    createSession: async (options) => {
+      modes.push(options.settingsManager?.getGlobalSettings().cacheWarming ?? "unset");
+      modes.push(options.settingsManager?.getCacheWarmingMode() ?? "unset");
+      return createAgentSession(options);
+    },
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
+  expect(modes).toEqual(["streaming", "streaming"]);
 });

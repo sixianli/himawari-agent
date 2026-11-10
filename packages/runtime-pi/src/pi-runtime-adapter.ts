@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type {
   Api,
   AssistantMessage,
@@ -15,6 +16,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import {
   createAssistantMessageEventStream,
+  createInitialSystemMessage,
   getCurrentTools,
   getSupportedThinkingLevels,
   normalizeContext,
@@ -23,6 +25,7 @@ import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-option
 import {
   type AgentSession,
   type AgentSessionEvent,
+  type ContextWithSystemEvent,
   type CreateAgentSessionOptions,
   type CreateAgentSessionResult,
   createAgentSession,
@@ -33,11 +36,6 @@ import {
   SettingsManager,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import {
-  highestClassification,
-  isModelVisible,
-  memoryDateNote,
-} from "@himawari-agent/application/runtime-port";
 import type {
   AgentRuntimePort,
   DataClassification,
@@ -61,6 +59,11 @@ import type {
   RuntimeToolDescriptor,
   RuntimeToolInvocation,
   RuntimeToolPort,
+} from "@himawari-agent/application/runtime-port";
+import {
+  highestClassification,
+  isModelVisible,
+  memoryDateNote,
 } from "@himawari-agent/application/runtime-port";
 import {
   CHAT_TOOL_GUIDELINES_HEADER,
@@ -383,7 +386,7 @@ function toolProgressOutput(
 }
 
 const PI_CONTEXT_WINDOW_EXHAUSTED = "PI_CONTEXT_WINDOW_EXHAUSTED";
-const PI_REQUEST_TOOLS_DIVERGED = "PI_REQUEST_TOOLS_DIVERGED";
+const PI_REQUEST_HEAD_DIVERGED = "PI_REQUEST_HEAD_DIVERGED";
 const MIN_CONTEXT_ANSWER_TOKENS = 512;
 const BACKGROUND_COMMAND_MESSAGE_TYPE = "himawari.background.command";
 
@@ -438,7 +441,7 @@ function loggableModelFailure(errorMessage: string | undefined): string {
   if (
     message.startsWith("Model invocation ") ||
     message === "Model budget accounting is unavailable" ||
-    message === PI_REQUEST_TOOLS_DIVERGED
+    message === PI_REQUEST_HEAD_DIVERGED
   )
     return message;
   const status = /^(\d{3})(?:\s|:)/.exec(message)?.[1];
@@ -636,17 +639,27 @@ function contextBlockContent(
   return `${contextBlockMarker(block)}\n${block.content}${dated}`;
 }
 
-function sessionModelRuntime(binding: PiModelBinding): ModelRuntime {
-  if (!binding.descriptor?.secretRequirement || !binding.resolveSecret) return binding.modelRuntime;
-  return new Proxy(binding.modelRuntime, {
-    get(target, property) {
-      if (property === "hasConfiguredAuth")
-        return (provider: string) =>
-          provider === binding.model.provider || target.hasConfiguredAuth(provider);
-      const value = Reflect.get(target, property, target);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
+function frozenRequestTools(
+  messages: ContextWithSystemEvent["messages"],
+  frozenTools: Tool[] | undefined,
+): Tool[] | undefined {
+  const piTools = getCurrentTools(messages);
+  const tools = frozenTools ?? piTools.map(providerTool);
+  const declared = new Set(tools.map(({ name }) => name));
+  if (piTools.length !== declared.size || piTools.some(({ name }) => !declared.has(name)))
+    return undefined;
+  return tools;
+}
+
+function himawariRequestHead(
+  messages: ContextWithSystemEvent["messages"],
+  systemPrompt: string,
+  frozenTools: Tool[] | undefined,
+): ContextWithSystemEvent["messages"] | undefined {
+  const tools = frozenRequestTools(messages, frozenTools);
+  if (!tools) return undefined;
+  const head = createInitialSystemMessage(systemPrompt, tools);
+  return [...(head ? [head] : []), ...messages.filter((message) => message.role !== "system")];
 }
 
 function himawariRequestContext(
@@ -654,16 +667,12 @@ function himawariRequestContext(
   systemPrompt: string,
   frozenTools: Tool[] | undefined,
 ): Context | undefined {
-  const piTools = getCurrentTools(requested.messages);
-  const tools = frozenTools ?? piTools.map(providerTool);
-  const declared = new Set(tools.map(({ name }) => name));
-  if (piTools.length !== declared.size || piTools.some(({ name }) => !declared.has(name)))
-    return undefined;
-  return {
-    systemPrompt,
-    tools,
-    messages: requested.messages.filter((message) => message.role !== "system"),
-  };
+  const tools = frozenTools ?? getCurrentTools(requested.messages).map(providerTool);
+  const head = createInitialSystemMessage(systemPrompt, tools);
+  const [first, ...rest] = requested.messages;
+  if (!head || !isDeepStrictEqual(first, head)) return undefined;
+  if (rest.some((message) => message.role === "system")) return undefined;
+  return { systemPrompt, tools, messages: rest };
 }
 
 function himawariSummaryContext(requested: TranscriptContext): Context | undefined {
@@ -822,6 +831,45 @@ function failedPiStream(model: Model<Api>, errorMessage: string): AssistantMessa
   return stream;
 }
 
+function deferredPiStream(
+  model: Model<Api>,
+  start: () => Promise<AssistantMessageEventStream>,
+): AssistantMessageEventStream {
+  const output = createAssistantMessageEventStream();
+  void (async () => {
+    try {
+      for await (const event of await start()) output.push(event);
+    } catch {
+      output.push(piErrorEvent(model, "Model request failed"));
+    } finally {
+      output.end();
+    }
+  })().catch(() => undefined);
+  return output;
+}
+
+function governedModelRuntime(
+  target: ModelRuntime,
+  govern: (
+    model: Model<Api>,
+    context: TranscriptContext,
+    options: SimpleStreamOptions | undefined,
+    forward: PiStreamFunction,
+  ) => Promise<AssistantMessageEventStream>,
+): ModelRuntime {
+  const forward: PiStreamFunction = (model, context, options) =>
+    target.streamSimple(model, context, options);
+  return new Proxy(target, {
+    get(runtime, property) {
+      if (property === "streamSimple")
+        return (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) =>
+          deferredPiStream(model, () => govern(model, context, options, forward));
+      const value = Reflect.get(runtime, property, runtime);
+      return typeof value === "function" ? value.bind(runtime) : value;
+    },
+  });
+}
+
 function relayAdmittedPiStream(
   stream: AssistantMessageEventStream,
   permit: ModelInvocationPermit,
@@ -934,7 +982,7 @@ function relayAdmittedPiStream(
     } finally {
       output.end();
     }
-  })();
+  })().catch(() => undefined);
   return output;
 }
 
@@ -1387,7 +1435,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         if (active.isStreaming)
           void active
             .sendCustomMessage(toolLoopStoppedMessage(), { deliverAs: "steer" })
-            .catch(() => active.agent.abort());
+            .catch(() => active.abort());
         else
           active.agent.steer({
             role: "custom",
@@ -1406,6 +1454,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         {
           compaction: { enabled: true },
           retry: { enabled: false, maxRetries: 0 },
+          cacheWarming: "streaming",
           defaultTools: [],
         },
         { projectTrusted: false },
@@ -1430,6 +1479,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           "promptTemplatePaths",
         ),
         extensionFactories: [
+          {
+            name: "himawari-request-head",
+            hidden: true,
+            factory: (pi: ExtensionAPI) => {
+              pi.on("context_with_system", (event) => {
+                const messages = himawariRequestHead(event.messages, systemPrompt, requestTools);
+                return messages ? { messages } : undefined;
+              });
+            },
+          },
           {
             name: "himawari-tool-outcomes",
             hidden: true,
@@ -1460,13 +1519,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
                 )
                   return { isError: true };
               });
-            },
-          },
-          {
-            name: "himawari-system-prompt",
-            hidden: true,
-            factory: (pi: ExtensionAPI) => {
-              pi.on("before_agent_start", () => ({ systemPrompt }));
             },
           },
           {
@@ -1551,11 +1603,47 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         toolCheckpoints.set(key, ref);
         return ref;
       };
+      let loopSummaryAttempted = false;
+      let compacting = false;
+      const governedRuntime = governedModelRuntime(
+        binding.modelRuntime,
+        async (model, requested, options, forward) => {
+          const summaryContext = compacting ? himawariSummaryContext(requested) : undefined;
+          const context =
+            summaryContext ?? himawariRequestContext(requested, systemPrompt, requestTools);
+          await this.#historyWrites.get(request.runId);
+          const replay = restored?.takeReplay();
+          if (replay) return replay;
+          if (!context) return failedPiStream(model, PI_REQUEST_HEAD_DIVERGED);
+          if (suspended || unknownTool)
+            return failedPiStream(model, "Runtime tool reconciliation is required");
+          if (toolProgress.blocked) {
+            if (loopSummaryAttempted) return failedPiStream(model, "PI_TOOL_LOOP_DETECTED");
+            loopSummaryAttempted = true;
+          }
+          return admitPiStream(
+            { ...request, dataClassification: this.#visibleOf(request) },
+            binding,
+            this.#dependencies.admission,
+            model,
+            context,
+            options,
+            ++streamOrdinal,
+            forward,
+            this.#dependencies.logicalSlot,
+            this.#dependencies.egress,
+            this.#dependencies.onModelAdmissionFailed,
+            this.#dependencies.usage,
+            bundle?.redactionRuleset,
+            summaryContext ? "other" : "chat",
+          );
+        },
+      );
       const created = await sessionFactory({
         cwd: this.#dependencies.cwd,
         ...(this.#dependencies.agentDir ? { agentDir: this.#dependencies.agentDir } : {}),
         model: binding.model,
-        modelRuntime: sessionModelRuntime(binding),
+        modelRuntime: governedRuntime,
         thinkingLevel: request.thinkingLevel ?? "off",
         noTools: "all",
         tools: descriptors.map(({ name }) => name),
@@ -1614,41 +1702,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         settingsManager,
       });
       const session = created.session;
-      const originalStreamFunction = session.agent.streamFunction;
       restored = continuation ? restorePiToolBatch(session, continuation.batch) : undefined;
-      let loopSummaryAttempted = false;
-      let compacting = false;
-      session.agent.streamFunction = async (model, requested, options) => {
-        const summaryContext = compacting ? himawariSummaryContext(requested) : undefined;
-        const context =
-          summaryContext ?? himawariRequestContext(requested, systemPrompt, requestTools);
-        await this.#historyWrites.get(request.runId);
-        const replay = restored?.takeReplay();
-        if (replay) return replay;
-        if (!context) return failedPiStream(model, PI_REQUEST_TOOLS_DIVERGED);
-        if (suspended || unknownTool)
-          return failedPiStream(model, "Runtime tool reconciliation is required");
-        if (toolProgress.blocked) {
-          if (loopSummaryAttempted) return failedPiStream(model, "PI_TOOL_LOOP_DETECTED");
-          loopSummaryAttempted = true;
-        }
-        return admitPiStream(
-          { ...request, dataClassification: this.#visibleOf(request) },
-          binding,
-          this.#dependencies.admission,
-          model,
-          context,
-          options,
-          ++streamOrdinal,
-          originalStreamFunction,
-          this.#dependencies.logicalSlot,
-          this.#dependencies.egress,
-          this.#dependencies.onModelAdmissionFailed,
-          this.#dependencies.usage,
-          bundle?.redactionRuleset,
-          summaryContext ? "other" : "chat",
-        );
-      };
       this.#activeSessions.set(request.runId, session);
       const unsubscribeBackground = this.#dependencies.tools.subscribeBackground?.(
         request.runId,
@@ -1656,7 +1710,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           if (!session.isStreaming) return false;
           void session
             .sendCustomMessage(backgroundCommandMessage(notice), { deliverAs: "steer" })
-            .catch(() => session.agent.abort());
+            .catch(() => session.abort());
           return true;
         },
       );
@@ -1677,7 +1731,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           (event.type === "message_end" || event.type === "compaction_end")
         ) {
           const messages = structuredClone(
-            session.agent.state.messages.filter((message) => message.role !== "system"),
+            session.messages.filter((message) => message.role !== "system"),
           );
           const pending = (this.#historyWrites.get(request.runId) ?? Promise.resolve()).then(() =>
             this.#dependencies.projection.captureHistory?.({
@@ -1688,7 +1742,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             }),
           );
           this.#historyWrites.set(request.runId, pending);
-          void pending.catch(() => session.agent.abort());
+          void pending.catch(() => session.abort());
         }
 
         if (
@@ -1697,12 +1751,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           !event.aborted &&
           event.result !== undefined
         ) {
-          const environment = runtimeEnvironmentAfterCompaction(
-            session.agent.state.messages,
-            projection,
-          );
+          const environment = runtimeEnvironmentAfterCompaction(session.messages, projection);
           if (environment)
-            session.agent.steer({ role: "custom", ...environment, timestamp: Date.now() });
+            void session
+              .sendCustomMessage(environment, { deliverAs: "steer" })
+              .catch(() => session.abort());
         }
 
         if (
@@ -2006,7 +2059,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       const conflictOf =
         descriptor.definition === "builtin-coding" && ["write", "edit"].includes(descriptor.name)
           ? previousFileConflict(
-              this.#activeSessions.get(request.runId)?.agent.state.messages ?? [],
+              this.#activeSessions.get(request.runId)?.messages ?? [],
               request.runId,
               (parameters as Record<string, unknown>)["path"],
             )

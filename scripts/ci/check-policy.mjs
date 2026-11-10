@@ -322,14 +322,16 @@ export function validatePolicy(
   return policy;
 }
 
-function requireReadPermissions(permissions, label, root = false) {
+function requireReadPermissions(permissions, label, root = false, allowArtifactDeletion = false) {
   assert(
     permissions && typeof permissions === "object" && !Array.isArray(permissions),
     `${label}: permissions must be explicit`,
   );
   assert(
     Object.entries(permissions).every(
-      ([key, value]) => ["contents", "actions", "pull-requests"].includes(key) && value === "read",
+      ([key, value]) =>
+        ["contents", "actions", "pull-requests"].includes(key) &&
+        (value === "read" || (allowArtifactDeletion && key === "actions" && value === "write")),
     ),
     `${label}: write or unknown permissions`,
   );
@@ -429,7 +431,8 @@ export function validateWorkflow(policy, source, toolchain) {
       !job.uses && !job.container && !job.environment && !job.secrets,
       `Unsupported execution boundary: ${check.id}`,
     );
-    if (job.permissions) requireReadPermissions(job.permissions, check.id);
+    if (job.permissions)
+      requireReadPermissions(job.permissions, check.id, false, check.id === "required");
     if (check.id === "required")
       assert(
         job.name === "ci/required" && ["always()", githubExpression("always()")].includes(job.if),
@@ -1164,6 +1167,32 @@ export function validateToolchain(policy, lock, packageManifest) {
   return true;
 }
 
+export function validateInstallScriptReviews(toolchainLock, packageLock) {
+  const packages = packageLock?.packages ?? {};
+  const reviews = toolchainLock?.nativeDependencies ?? [];
+  for (const review of reviews) {
+    const locked = packages[review.path];
+    assert(locked, `Install-script review for a package missing from package-lock: ${review.path}`);
+    assert(
+      locked.version === review.version,
+      `Install-script review version differs from package-lock: ${review.path}`,
+    );
+    assert(
+      locked.hasInstallScript === true,
+      `Install-script review for a package without install script: ${review.path}`,
+    );
+    assert(
+      review.name === review.path.slice(review.path.lastIndexOf("node_modules/") + 13),
+      `Install-script review name differs from its path: ${review.path}`,
+    );
+  }
+  const reviewed = new Set(reviews.map((review) => review.path));
+  for (const [packagePath, locked] of Object.entries(packages))
+    if (locked.hasInstallScript === true)
+      assert(reviewed.has(packagePath), `Install script is not reviewed: ${packagePath}`);
+  return true;
+}
+
 export function validateVitestProjects(policy, config) {
   validatePolicy(policy);
   const root = config?.test;
@@ -1249,6 +1278,7 @@ export async function main(argv = process.argv.slice(2)) {
   const proposed = validatePolicy(readJson(path.join(root, "ci/policy.json")));
   const lock = readJson(path.join(root, "ci/toolchain-lock.json"));
   validateToolchain(proposed, lock, readJson(path.join(root, "package.json")));
+  validateInstallScriptReviews(lock, readJson(path.join(root, "package-lock.json")));
   const workflow = path.resolve(root, args["--workflow"] ?? ".github/workflows/ci.yml");
   validateWorkflow(proposed, readFileSync(workflow, "utf8"), lock);
   validateMainWorkflow(readFileSync(path.join(root, ".github/workflows/main.yml"), "utf8"), lock);

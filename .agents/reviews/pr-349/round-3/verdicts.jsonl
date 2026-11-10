@@ -1,0 +1,4 @@
+{"id": "r3-ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "包名推导逻辑重复且硬编码 13，容易与另一处消费者漂移", "valid": true, "class": "better"}
+{"id": "r3-ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "本地入口没有校验审阅记录路径的基本形状和唯一性", "valid": true, "class": "better"}
+{"id": "r3-ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "I-91 门槛描述没有写新增的包名核对规则", "valid": true, "class": "error", "severity": "low", "trigger": "读事故行的人只看门槛描述", "consequence": "不知道包名也被核对；门槛实际更严，不会误导人做错事", "modelSeverity": "低"}
+{"id": "r3-ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新增 policy 用例依赖 `main` 的校验顺序", "valid": true, "class": "better"}
