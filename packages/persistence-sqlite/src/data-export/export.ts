@@ -64,6 +64,9 @@ function group(rows: readonly Row[], key: string): Map<string, Row[]> {
   return grouped;
 }
 
+const compareText = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
 export async function buildPortableExport(options: ExportOptions): Promise<ExportResult> {
   if (options.withEvidence === true && options.sealPassphrase === undefined)
     throw new DataExportError(DATA_EXPORT_ERROR_CODES.EVIDENCE_REQUIRES_SEAL);
@@ -110,10 +113,11 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       withheld: true,
     };
   };
+  let replacedShortTexts = 0;
   const safeString = (value: string): string => {
     if (!options.policy.hasSecret(value)) return value;
-    const masked = options.policy.mask(value);
-    return options.policy.hasSecret(masked) ? WITHHELD_PLACEHOLDER : masked;
+    replacedShortTexts += 1;
+    return `[已扣留:${sha256Hex(encoder.encode(value)).slice(0, 12)}]`;
   };
   const safeOptional = (value: string | null): string | null =>
     value === null ? null : safeString(value);
@@ -209,12 +213,21 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       importBatchId: batch !== null && batchIds.has(batch) ? batch : null,
       content: requiredText(str(row["content_ref"]), `memory/${id}/content`, owner),
       history: events,
-      provenance: (provenance.get(id) ?? []).map((source) => ({
-        sourceType: str(source["source_type"]),
-        sourceId: safeString(str(source["source_id"])),
-        sourceDeleted: flag(source["source_deleted"]),
-      })),
-      entities: (entities.get(id) ?? []).map((entity) => safeString(str(entity["name"]))),
+      provenance: (provenance.get(id) ?? [])
+        .map((source) => ({
+          sourceType: str(source["source_type"]),
+          sourceId: safeString(str(source["source_id"])),
+          sourceDeleted: flag(source["source_deleted"]),
+        }))
+        .sort((left, right) =>
+          compareText(
+            `${left.sourceType}\u0000${left.sourceId}`,
+            `${right.sourceType}\u0000${right.sourceId}`,
+          ),
+        ),
+      entities: (entities.get(id) ?? [])
+        .map((entity) => safeString(str(entity["name"])))
+        .sort(compareText),
       personIds: (mentions.get(id) ?? [])
         .map((mention) => str(mention["person_id"]))
         .filter((person) => personIds.has(person)),
@@ -233,7 +246,9 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       mergedInto: mergedInto !== null && personIds.has(mergedInto) ? mergedInto : null,
       createdAt: str(row["created_at"]),
       updatedAt: str(row["updated_at"]),
-      aliases: (aliases.get(id) ?? []).map((alias) => safeString(str(alias["alias"]))),
+      aliases: (aliases.get(id) ?? [])
+        .map((alias) => safeString(str(alias["alias"])))
+        .sort(compareText),
     };
   });
 
@@ -386,6 +401,11 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       what: "写入时原文已被删除的历史版本和引用原话",
       count: unavailableHistory.events + unavailableHistory.quotes,
       reason: "文字已按删除流程清除，无从导出",
+    },
+    {
+      what: "含机密的实体名、人物名、别名、来源编号和决定记录里的短文字",
+      count: replacedShortTexts,
+      reason: "已换成不可还原的占位（带原文哈希前 12 位，不同原文得到不同占位）；原文不进封存文件",
     },
     { what: "对话和消息", count: null, reason: "不属于本格式；记忆的来源对话编号也不导出" },
     { what: "每日摘要", count: null, reason: "属于对话，随对话一起，不在本格式内" },

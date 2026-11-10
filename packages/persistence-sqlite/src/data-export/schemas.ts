@@ -186,7 +186,7 @@ export const CONSOLIDATION_SCHEMA: JsonSchema = objectOf(
 
 export const DECISION_SCHEMA: JsonSchema = objectOf(
   {
-    id: text(1, 512),
+    id: text(1, 128),
     kind: enumOf([
       "proactive",
       "memory_candidate",
@@ -218,7 +218,7 @@ export const DECISION_SCHEMA: JsonSchema = objectOf(
     signals: {
       type: "array",
       items: objectOf({
-        id: text(1, 512),
+        id: text(1, 128),
         signal: enumOf(["opened", "undone", "replied"]),
         occurredAt: timestamp,
         delayMs: integer(0),
@@ -239,7 +239,7 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
     decisionPayloads: {
       type: "array",
       items: objectOf({
-        decisionId: text(1, 512),
+        decisionId: text(1, 128),
         sequence: integer(0, 1_000_000),
         role: enumOf(["model_input", "model_output"]),
         payload: payloadText,
@@ -248,7 +248,7 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
     sourceInsights: {
       type: "array",
       items: objectOf({
-        id: text(1, 512),
+        id: text(1, 128),
         source: enumOf(["gmail"]),
         threadId: text(1, 256),
         lastMessageId: text(1, 256),
@@ -258,7 +258,7 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
         dueAt: nullable(text(1, 64)),
         priority: nullable(enumOf(["high", "medium", "low"])),
         status: enumOf(["open", "replied", "done", "muted"]),
-        decisionId: text(1, 512),
+        decisionId: text(1, 128),
         ownerRating: nullable(enumOf(RATINGS)),
         pushSourceKey: nullable(text(1, 256)),
         createdAt: timestamp,
@@ -272,7 +272,7 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
         source: enumOf(["gmail"]),
         messageId: text(1, 256),
         threadId: text(1, 256),
-        decisionId: text(1, 512),
+        decisionId: text(1, 128),
         outcome: enumOf(["act", "know", "check", "ignore", "skipped"]),
         skipReason: nullable(enumOf(["category", "sensitive", "own_mail"])),
         header: nullableText,
@@ -285,14 +285,14 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
     museEntries: {
       type: "array",
       items: objectOf({
-        id: text(1, 512),
+        id: text(1, 128),
         museAt: timestamp,
         museReminded: bool,
         timingOk: nullable(bool),
         contentOk: nullable(bool),
         content: nullableText,
         note: nullableText,
-        pairedDecisionId: nullable(text(1, 512)),
+        pairedDecisionId: nullable(text(1, 128)),
         intakeItemKey: nullable(text(3, 200)),
         recordedAt: timestamp,
         pairedMessageId: nullable(text(1, 256)),

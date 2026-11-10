@@ -607,4 +607,34 @@ describe("data export: determinism and the directory", () => {
       code: DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY,
     });
   });
+  it("[P1-6] two different secrets in names and source ids stay distinct and round-trip", async () => {
+    const source = await seeded();
+    const db = source.database;
+    const insertEntity = db.prepare(
+      "INSERT INTO memory_entities (memory_id, name) VALUES ('m-plain', ?)",
+    );
+    insertEntity.run(`密钥甲 ${SECRET_API_KEY}`);
+    insertEntity.run(`密钥乙 ${SECRET_API_KEY}Zz`);
+    const insertSource = db.prepare(
+      "INSERT INTO memory_provenance (memory_id, source_type, source_id, source_deleted) VALUES ('m-plain', 'reference', ?, 0)",
+    );
+    insertSource.run(`id-${SECRET_API_KEY}`);
+    insertSource.run(`id-${SECRET_API_KEY}Yy`);
+    const { files, manifest } = await exportOf(source);
+    expect(
+      manifest.omitted.find(({ what }) => what.startsWith("含机密的实体名"))?.count,
+    ).toBeGreaterThanOrEqual(4);
+    const target = await side("distinct-secrets");
+    await importInto(target, files, { passphrase: PASSPHRASE });
+    const names = target.database
+      .prepare(
+        "SELECT name FROM memory_entities WHERE memory_id = 'm-plain' AND name LIKE '[已扣留:%'",
+      )
+      .all();
+    expect(names).toHaveLength(2);
+    const again = await exportOf(target);
+    expect(decoder.decode(again.files.get("data/memories.jsonl"))).toBe(
+      decoder.decode(files.get("data/memories.jsonl")),
+    );
+  });
 });

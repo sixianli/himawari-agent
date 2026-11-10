@@ -5,7 +5,7 @@ import { assertSafePath } from "./verify.js";
 
 const MAXIMUM_FILE_BYTES = 512 * 1024 * 1024;
 const MAXIMUM_FILES = 4096;
-const MAXIMUM_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
+const MAXIMUM_TOTAL_BYTES = 512 * 1024 * 1024;
 
 export async function writePortableDirectory(
   directory: string,
@@ -13,9 +13,12 @@ export async function writePortableDirectory(
 ): Promise<void> {
   const root = path.resolve(directory);
   await mkdir(root, { recursive: true, mode: 0o700 });
-  await chmod(root, 0o700);
+  const status = await lstat(root);
+  if (!status.isDirectory())
+    throw new DataExportError(DATA_EXPORT_ERROR_CODES.PATH_UNSAFE, "输出目录不是普通目录");
   if ((await readdir(root)).length !== 0)
     throw new DataExportError(DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY, "输出目录必须为空");
+  await chmod(root, 0o700);
   for (const [relative, bytes] of [...files].sort(([left], [right]) => left.localeCompare(right))) {
     assertSafePath(relative);
     const target = path.join(root, relative);

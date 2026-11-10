@@ -80,7 +80,7 @@ function parse(arguments_: readonly string[]): ParsedData {
 async function readPassphrase(file: string | undefined): Promise<string | undefined> {
   if (file === undefined) return undefined;
   const status = await lstat(file);
-  if (!status.isFile() || (status.mode & 0o077) !== 0)
+  if (!status.isFile() || (status.mode & 0o177) !== 0)
     throw new Error(DATA_COMMAND_ERROR_CODES.PASSPHRASE_FILE_UNSAFE);
   const text = (await readFile(file, "utf8")).replace(/\r?\n$/, "");
   if (text.length < 12) throw new Error(DATA_COMMAND_ERROR_CODES.ARGUMENT_INVALID);

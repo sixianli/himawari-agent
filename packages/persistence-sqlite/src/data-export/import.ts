@@ -469,7 +469,9 @@ export async function importPortableExport(
             entry.beforeRevision,
             entry.afterRevision,
             entry.beforeStatus,
-            entry.beforeSupersededBy,
+            entry.beforeSupersededBy !== null && importedMemoryIds.has(entry.beforeSupersededBy)
+              ? entry.beforeSupersededBy
+              : null,
             entry.beforeValidTo,
             entry.createdAt,
             entry.undoneAt,
