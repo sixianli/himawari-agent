@@ -355,7 +355,12 @@ const proactiveSendersSchema: Schema<readonly string[]> = {
     const senders = array(boundedString(320)).parse(input, path);
     if (
       senders.length > 200 ||
-      senders.some((sender) => !/^@?[^\s@]*@?[a-z0-9.-]+\.[a-z]{2,}$/i.test(sender))
+      senders.some(
+        (sender) =>
+          sender.length > 254 ||
+          /\p{Surrogate}/u.test(sender) ||
+          !/^@?[^\s@]*@?[a-z0-9.-]+\.[a-z]{2,}$/i.test(sender),
+      )
     )
       throw new ContractValidationError(path, "expected at most 200 addresses or domains");
     return senders;

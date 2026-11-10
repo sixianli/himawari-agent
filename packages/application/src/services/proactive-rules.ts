@@ -1,3 +1,6 @@
+import { RULE_IDS, type RuleRecord } from "../rules/rule-book.js";
+import { mailItemFacts } from "../rules/rule-book.js";
+import { RuleJudge } from "../rules/rule-judge.js";
 import type {
   ProactiveConfidence,
   ProactivePriority,
@@ -6,30 +9,16 @@ import type {
   ProactiveSourceItem,
 } from "../ports/proactive-checks.js";
 
-export const PROACTIVE_PUBLIC_DOMAIN_SUFFIXES = Object.freeze(["go.jp", "lg.jp", "ac.jp", "ed.jp"]);
-
-const MONEY_WORDS =
-  /收费|扣款|入账|付款|退款|账单|缴费|汇款|转账|还款|发票|請求|引落|引き落とし|振込|振り込み|入金|返金|支払|料金|決済|ご利用代金|\b(?:invoice|payment|refund|billing|bill|charged?|receipt|statement)\b/iu;
+const JUDGE = new RuleJudge();
 
 export function senderDomain(address: string): string {
   return address.slice(address.lastIndexOf("@") + 1).toLowerCase();
 }
 
-export function isImportantSender(address: string, senders: readonly string[]): boolean {
-  const lower = address.toLowerCase();
-  const domain = senderDomain(lower);
-  return senders.some((entry) => {
-    const wanted = entry.trim().toLowerCase().replace(/^@/u, "");
-    if (!wanted) return false;
-    if (wanted.includes("@")) return lower === wanted;
-    return domain === wanted || domain.endsWith(`.${wanted}`);
-  });
-}
-
 export const FLOOR_RULE_IDS = Object.freeze({
-  importantSender: "floor_important_sender",
-  publicDomain: "floor_public_domain",
-  moneyWords: "floor_money_words",
+  importantSender: RULE_IDS.importantSender,
+  publicDomain: RULE_IDS.publicDomain,
+  moneyWords: RULE_IDS.moneyWords,
 } as const);
 
 export type FloorRuleId = (typeof FLOOR_RULE_IDS)[keyof typeof FLOOR_RULE_IDS];
@@ -65,23 +54,31 @@ export function decisionRuleDefinition(ruleId: string): DecisionRuleDefinition |
 
 export function floorHitIds(
   item: ProactiveSourceItem,
-  senders: readonly string[],
+  rules: readonly RuleRecord[],
 ): readonly FloorRuleId[] {
-  const domain = senderDomain(item.fromAddress);
-  const hits: FloorRuleId[] = [];
-  if (isImportantSender(item.fromAddress, senders)) hits.push(FLOOR_RULE_IDS.importantSender);
-  if (
-    PROACTIVE_PUBLIC_DOMAIN_SUFFIXES.some(
-      (suffix) => domain === suffix || domain.endsWith(`.${suffix}`),
-    )
-  )
-    hits.push(FLOOR_RULE_IDS.publicDomain);
-  if (MONEY_WORDS.test(`${item.subject}\n${item.snippet}`)) hits.push(FLOOR_RULE_IDS.moneyWords);
-  return hits;
+  return JUDGE.decide("mail_item", mailItemFacts(item), rules)
+    .hits.filter(({ outcome }) => outcome === "raise_floor")
+    .map(({ id }) => id as FloorRuleId);
 }
 
-export function hitsFloor(item: ProactiveSourceItem, senders: readonly string[]): boolean {
-  return floorHitIds(item, senders).length > 0;
+export function quietEnd(
+  at: string,
+  rules: readonly RuleRecord[],
+  periods: readonly ProactiveQuietPeriod[],
+  timeZone: string,
+): string | null {
+  const local = zonedParts(at, timeZone);
+  const decision = JUDGE.decide(
+    "mail_delivery",
+    {
+      local_minutes: local.hour * 60 + local.minute,
+      local_weekday: local.weekday,
+      local_previous_weekday: (local.weekday + 6) % 7,
+    },
+    rules,
+  );
+  if (!decision.hits.some(({ outcome }) => outcome === "defer_to_quiet_hours")) return null;
+  return quietUntil(at, periods, timeZone);
 }
 
 export function applyFloor(

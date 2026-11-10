@@ -53,6 +53,15 @@ const COUNT_KEYS: readonly (keyof ProactiveCounts)[] = [
   "floorRaised",
   "pushed",
 ];
+const QUIET_HOURS_RULE_ID = "quiet_hours";
+const IMPORTANT_SENDER_RULE_ID = "floor_important_sender";
+const DEFAULT_QUIET_HOURS: readonly ProactiveQuietPeriod[] = Object.freeze([
+  Object.freeze({
+    days: Object.freeze([0, 1, 2, 3, 4, 5, 6]),
+    start: "23:00",
+    end: "07:00",
+  }),
+]);
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/u;
 
 const decisionColumns = `id, scenario, checked_at AS checkedAt, counts, verdict,
@@ -215,30 +224,38 @@ export class SqliteProactiveOperations {
   private readSettings(scope: ProactiveScope): ProactiveSettings {
     const row = this.database
       .prepare(
-        `SELECT enabled, quiet_hours AS quietHours, important_senders AS importantSenders,
-          updated_at AS updatedAt FROM proactive_settings WHERE owner_id = ? AND agent_id = ?`,
+        "SELECT enabled, updated_at AS updatedAt FROM proactive_settings WHERE owner_id = ? AND agent_id = ?",
       )
-      .get(scope.ownerId, scope.agentId) as
-      | { enabled: number; quietHours: string; importantSenders: string; updatedAt: string }
-      | undefined;
-    if (!row)
-      return Object.freeze({
-        enabled: false,
-        quietHours: Object.freeze([
-          Object.freeze({
-            days: Object.freeze([0, 1, 2, 3, 4, 5, 6]),
-            start: "23:00",
-            end: "07:00",
-          }),
-        ]),
-        importantSenders: Object.freeze([]),
-        updatedAt: null,
-      });
+      .get(scope.ownerId, scope.agentId) as { enabled: number; updatedAt: string } | undefined;
+    const rules = this.database
+      .prepare(
+        `SELECT rule_id AS ruleId, revision, parameters FROM rule_book_rules
+         WHERE owner_id = ? AND agent_id = ? AND status = 'active'`,
+      )
+      .all(scope.ownerId, scope.agentId) as {
+      ruleId: string;
+      revision: number;
+      parameters: string;
+    }[];
+    const quiet = rules.find(({ ruleId }) => ruleId === QUIET_HOURS_RULE_ID);
+    const senders = rules.find(({ ruleId }) => ruleId === IMPORTANT_SENDER_RULE_ID);
     return Object.freeze({
-      enabled: row.enabled === 1,
-      quietHours: Object.freeze(JSON.parse(row.quietHours) as ProactiveQuietPeriod[]),
-      importantSenders: Object.freeze(JSON.parse(row.importantSenders) as string[]),
-      updatedAt: row.updatedAt,
+      enabled: row?.enabled === 1,
+      quietHours: Object.freeze(
+        quiet
+          ? (JSON.parse(quiet.parameters) as { periods: ProactiveQuietPeriod[] }).periods
+          : DEFAULT_QUIET_HOURS,
+      ),
+      quietHoursRevision: quiet?.revision ?? 0,
+      importantSenders: Object.freeze(
+        senders
+          ? (JSON.parse(senders.parameters) as { senders: string[] }).senders.filter(
+              (sender) => !/\p{Surrogate}/u.test(sender),
+            )
+          : [],
+      ),
+      importantSendersRevision: senders?.revision ?? 0,
+      updatedAt: row?.updatedAt ?? null,
     });
   }
 
@@ -260,7 +277,11 @@ export class SqliteProactiveOperations {
       ) ||
       input.importantSenders.length > 200 ||
       input.importantSenders.some(
-        (sender) => typeof sender !== "string" || sender.length < 1 || sender.length > 254,
+        (sender) =>
+          typeof sender !== "string" ||
+          sender.length < 1 ||
+          sender.length > 254 ||
+          /\p{Surrogate}/u.test(sender),
       )
     )
       this.invalid("Proactive settings are invalid");
@@ -270,27 +291,30 @@ export class SqliteProactiveOperations {
         .get(input.ownerId, input.agentId) as { enabled: number } | undefined;
       this.database
         .prepare(
-          `INSERT INTO proactive_settings (
-          owner_id, agent_id, enabled, quiet_hours, important_senders, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          `INSERT INTO proactive_settings (owner_id, agent_id, enabled, updated_at)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT (owner_id, agent_id) DO UPDATE SET enabled = excluded.enabled,
-          quiet_hours = excluded.quiet_hours, important_senders = excluded.important_senders,
           updated_at = excluded.updated_at`,
         )
-        .run(
-          input.ownerId,
-          input.agentId,
-          input.enabled ? 1 : 0,
-          JSON.stringify(
-            input.quietHours.map(({ days, start, end }) => ({
-              days: [...days].sort((left, right) => left - right),
-              start,
-              end,
-            })),
-          ),
-          JSON.stringify(input.importantSenders),
-          input.now,
-        );
+        .run(input.ownerId, input.agentId, input.enabled ? 1 : 0, input.now);
+      this.writeRule(
+        input,
+        QUIET_HOURS_RULE_ID,
+        JSON.stringify({
+          periods: input.quietHours.map(({ days, start, end }) => ({
+            days: [...days].sort((left, right) => left - right),
+            start,
+            end,
+          })),
+        }),
+        "owner setting: quiet hours",
+      );
+      this.writeRule(
+        input,
+        IMPORTANT_SENDER_RULE_ID,
+        JSON.stringify({ senders: input.importantSenders }),
+        "owner setting: important senders",
+      );
       if ((before?.enabled === 1) !== input.enabled)
         insertObservationEvent(this.database, {
           ownerId: input.ownerId,
@@ -299,6 +323,40 @@ export class SqliteProactiveOperations {
           occurredAt: input.now,
         });
     })();
+  }
+
+  private writeRule(
+    input: Input<"writeSettings">,
+    ruleId: string,
+    parameters: string,
+    source: string,
+  ): void {
+    const current = this.database
+      .prepare(
+        "SELECT revision, parameters FROM rule_book_rules WHERE owner_id = ? AND agent_id = ? AND rule_id = ?",
+      )
+      .get(input.ownerId, input.agentId, ruleId) as
+      | { revision: number; parameters: string }
+      | undefined;
+    if (current && current.parameters === parameters) return;
+    const revision = (current?.revision ?? 0) + 1;
+    this.database
+      .prepare(
+        `INSERT INTO rule_book_rules (
+          owner_id, agent_id, rule_id, revision, parameters, status, source, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+        ON CONFLICT (owner_id, agent_id, rule_id) DO UPDATE SET revision = excluded.revision,
+          parameters = excluded.parameters, source = excluded.source,
+          updated_at = excluded.updated_at`,
+      )
+      .run(input.ownerId, input.agentId, ruleId, revision, parameters, source, input.now);
+    this.database
+      .prepare(
+        `INSERT INTO rule_book_history (
+          owner_id, agent_id, rule_id, revision, parameters, status, source, changed_at
+        ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
+      )
+      .run(input.ownerId, input.agentId, ruleId, revision, parameters, source, input.now);
   }
 
   private readConnection(input: Input<"readConnection">): ProactiveConnection | undefined {
