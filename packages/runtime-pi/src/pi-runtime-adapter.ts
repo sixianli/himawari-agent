@@ -1463,13 +1463,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             },
           },
           {
-            name: "himawari-system-prompt",
-            hidden: true,
-            factory: (pi: ExtensionAPI) => {
-              pi.on("before_agent_start", () => ({ systemPrompt }));
-            },
-          },
-          {
             name: "himawari-provider-observer",
             hidden: true,
             factory: (pi: ExtensionAPI) => {
