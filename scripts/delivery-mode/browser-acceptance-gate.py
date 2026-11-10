@@ -18,6 +18,8 @@ REQUIRED_SCENARIOS = (
     'accept-file-writing-progress',
     'accept-progress-without-state',
     'accept-memory-page',
+    'accept-memory-export',
+    'accept-export-requires-login',
     'accept-phone-layout',
     'accept-phone-send',
     'accept-after-restart',

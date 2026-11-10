@@ -10,8 +10,9 @@ const FILES = [
   "test/integration/data-export.test.ts",
   "test/integration/data-export-retrieval.test.ts",
   "test/integration/data-cli.test.ts",
+  "test/integration/data-export-http.test.ts",
 ];
-const REQUIRED = 40;
+const REQUIRED = 53;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(path.join(tmpdir(), "himawari-data-export-"));

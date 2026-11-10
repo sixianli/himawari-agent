@@ -3,6 +3,7 @@ export { readPortableDirectory, writePortableDirectory } from "./directory.js";
 export { buildPortableExport, type ExportOptions, type ExportResult } from "./export.js";
 export { type ImportOptions, type ImportReport, importPortableExport } from "./import.js";
 export { foldText, MEMORY_ID_PATTERN } from "./markdown.js";
+export { openReadOnlyDatabase } from "./read-only.js";
 export { FORMAT_VERSION, MANIFEST_FILE, SEALED_FILE } from "./schemas.js";
 export { SEAL_ERROR_CODES, SealError, sealJson, unsealJson } from "./seal.js";
 export {
@@ -13,6 +14,7 @@ export {
   type PortableCounts,
   type PortableFiles,
   type PortableManifest,
+  SHORT_TEXT_OMISSION_LABEL,
   WITHHELD_PLACEHOLDER,
 } from "./types.js";
 export {

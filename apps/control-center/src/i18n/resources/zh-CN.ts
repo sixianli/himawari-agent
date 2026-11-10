@@ -716,11 +716,11 @@ export const messages = {
   "memory.page.import": "导入记忆",
   "memory.page.export": "导出全部记忆",
   "memory.page.sourceTitle":
-    "{s, select, codex {Codex} assistant {ChatGPT、Claude 等其他 AI} other {Himawari 导出的文件}}",
+    "{s, select, codex {Codex} assistant {ChatGPT、Claude 等其他 AI} other {旧版 Himawari 导出的 JSON 文件}}",
   "memory.page.sourceHelp":
-    "{s, select, codex {选 Codex 的记忆文件（memory_summary.md、MEMORY.md）} assistant {让它把关于你的记忆列出来，再贴到这里} other {换电脑或恢复时用}}",
+    "{s, select, codex {选 Codex 的记忆文件（memory_summary.md、MEMORY.md）} assistant {让它把关于你的记忆列出来，再贴到这里} other {只认以前下载的 himawari-memories.json；新版导出的压缩包不能在这里导入}}",
   "memory.page.fileHelp":
-    "{s, select, codex {选 memory_summary.md、MEMORY.md，也可以加上你写给 Codex 的 AGENTS.md，可以多选。记忆文件在 Mac 的 ~/.codex/memories/，AGENTS.md 在 ~/.codex/；在选择文件的窗口里按 ⌘⇧G 输入路径就能进入隐藏文件夹。} other {选之前用“导出全部记忆”下载的 himawari-memories.json。}}",
+    "{s, select, codex {选 memory_summary.md、MEMORY.md，也可以加上你写给 Codex 的 AGENTS.md，可以多选。记忆文件在 Mac 的 ~/.codex/memories/，AGENTS.md 在 ~/.codex/；在选择文件的窗口里按 ⌘⇧G 输入路径就能进入隐藏文件夹。} other {选以前下载的 himawari-memories.json。现在的“导出全部记忆”给的是压缩包，只用于备份和换机（解压后，用命令行导入里面的 himawari-export 文件夹），网页里不能导入。}}",
   "memory.page.aiStep1": "第 1 步：复制下面这段话，发给你在用的 AI。",
   "memory.page.aiPrompt":
     "请把你记住的关于我的所有信息逐条列出来，包括我的身份、偏好、习惯、正在做的事、身边的人，以及我对你提过的做事要求。每条一行，以“- ”开头，尽量用我当时的原话。不要列出密码、证件号、银行卡号这类信息。只列信息，不要加解释。",
@@ -737,10 +737,14 @@ export const messages = {
   "memory.page.importDone": "已导入 {count} 条；在时间线里可以整批撤销",
   "memory.page.importEmpty": "没有找到可以导入的内容。确认选对了文件，或贴的是那个 AI 的回答。",
   "memory.page.importTooBig": "单个文件不能超过 200 KB，请拆开分几次导入。",
-  "memory.page.importUnreadable": "文件读不出来，或者不是 Himawari 导出的 JSON 文件。",
-  "memory.page.exportTitle": "导出 {count} 条（含已归档和更正历史）",
-  "memory.page.exportSensitive": "包含敏感记忆（健康、财务等）",
-  "memory.page.download": "下载 JSON 文件",
+  "memory.page.importUnreadable": "文件读不出来，或者格式不对。",
+  "memory.page.exportTitle": "导出全部记忆和决策记录",
+  "memory.page.exportNote":
+    "得到一个压缩包：里面有逐条的 JSON Lines 数据，也有能直接读的 Markdown。密码、证件号等机密只留占位符；回收站里的记忆，以及健康、财务等敏感主题的记忆也会导出，其中的正文除机密外是明文，请妥善保管。要连机密一起带走，请用命令行加密导出。",
+  "memory.page.download": "下载导出文件",
+  "memory.page.exportWorking": "正在生成导出文件……",
+  "memory.page.exportDone": "已导出 {count} 条记忆；{withheld} 处敏感内容只留了占位符。",
+  "memory.page.exportFailed": "导出失败，请稍后再试。",
   "capabilities.title": "能力与适配器",
   "authorizations.title": "授权与 Grant",
   "trace.title": "追踪",

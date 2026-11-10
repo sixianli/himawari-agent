@@ -16,8 +16,8 @@ import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platfor
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { installTestNodeRuntime, type TestNodeRuntime } from "../fixtures/node-runtime.ts";
 import { isAgentRequest } from "../fixtures/agent-request.ts";
+import { installTestNodeRuntime, type TestNodeRuntime } from "../fixtures/node-runtime.ts";
 import { readRequestBody } from "../fixtures/request-body.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -943,6 +943,27 @@ describe("production HTTP composition over a real installed process", { timeout:
       expect(detail.body).toMatchObject({
         payload: { thread: { revision: 2 }, runs: [{ status: "accepted" }] },
       });
+
+      const exportUrl = "/api/data-export/v1/archive";
+      const exported = await httpRequest(appAddress, exportUrl, {
+        headers: requestHeaders(token, cookie),
+      });
+      expect(exported.status).toBe(200);
+      expect(exported.headers.get("content-type")).toBe("application/zip");
+      expect(exported.headers.get("cache-control")).toBe("no-store");
+      expect(exported.raw.startsWith("PK")).toBe(true);
+      const anonymousExport = await httpRequest(appAddress, exportUrl, {
+        headers: requestHeaders(token),
+      });
+      expect(anonymousExport.status).toBe(401);
+      expect(anonymousExport.raw).toBe("");
+      const crossSiteExport = await httpRequest(appAddress, exportUrl, {
+        headers: {
+          ...Object.fromEntries(requestHeaders(token, cookie)),
+          "sec-fetch-site": "cross-site",
+        },
+      });
+      expect(crossSiteExport.status).toBe(403);
 
       const expiredToken = await signToken({
         issuedAt: Math.floor(Date.now() / 1000) - 600,

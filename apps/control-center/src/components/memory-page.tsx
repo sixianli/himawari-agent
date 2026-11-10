@@ -4,6 +4,7 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { requestDataExport } from "../data-export.js";
 import { DEFAULT_UI_LOCALE, useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import type { MemoryItem, MemoryModel, MemoryOverview } from "../memory.js";
@@ -2035,60 +2036,46 @@ function ImportPanel({
   );
 }
 
-function ExportPanel({
-  overview,
-  message,
-  onClose,
-}: {
-  overview: MemoryOverview;
-  message: Message;
-  onClose: () => void;
-}) {
-  const [sensitive, setSensitive] = useState(false);
-  const items = overview.memories.filter(
-    (item) =>
-      item.status !== "trashed" &&
-      !item.tentative &&
-      (sensitive || (item.dataClassification !== "sensitive" && !item.topic)),
-  );
-  const download = () => {
-    const body = JSON.stringify(
-      {
-        exportedAt: new Date().toISOString(),
-        memories: items.map((item) => ({
-          text: item.text,
-          category: item.category,
-          subCategory: item.subCategory,
-          sensitive: item.dataClassification === "sensitive" || item.topic !== null,
-          status: item.supersededBy ? "superseded" : item.status,
-          recordedAt: item.recordedAt,
-          lastUsedAt: item.lastUsedAt,
-        })),
-      },
-      null,
-      2,
-    );
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([body], { type: "application/json" }));
-    link.download = "himawari-memories.json";
-    link.click();
-    URL.revokeObjectURL(link.href);
+function ExportPanel({ message, onClose }: { message: Message; onClose: () => void }) {
+  const [state, setState] = useState<
+    | { readonly kind: "idle" }
+    | { readonly kind: "working" }
+    | { readonly kind: "done"; readonly memories: number; readonly withheld: number }
+    | { readonly kind: "failed" }
+  >({ kind: "idle" });
+  const download = async () => {
+    setState({ kind: "working" });
+    try {
+      const result = await requestDataExport();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(result.blob);
+      link.download = result.fileName;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      setState({ kind: "done", memories: result.memories, withheld: result.withheld });
+    } catch {
+      setState({ kind: "failed" });
+    }
   };
   return (
     <section className="memory-card" ref={reveal}>
-      <h4>{message("memory.page.exportTitle", { count: items.length })}</h4>
-      <label className="memory-check">
-        <input type="checkbox" checked={sensitive} onChange={() => setSensitive(!sensitive)} />
-        {message("memory.page.exportSensitive")}
-      </label>
+      <h4>{message("memory.page.exportTitle")}</h4>
+      <p>{message("memory.page.exportNote")}</p>
       <div className="actions">
-        <ActionButton disabled={!items.length} onClick={download}>
+        <ActionButton disabled={state.kind === "working"} onClick={download}>
           {message("memory.page.download")}
         </ActionButton>
         <ActionButton variant="quiet" onClick={onClose}>
           {message("memory.page.less")}
         </ActionButton>
       </div>
+      {state.kind === "working" ? <output>{message("memory.page.exportWorking")}</output> : null}
+      {state.kind === "done" ? (
+        <output>
+          {message("memory.page.exportDone", { count: state.memories, withheld: state.withheld })}
+        </output>
+      ) : null}
+      {state.kind === "failed" ? <p role="alert">{message("memory.page.exportFailed")}</p> : null}
     </section>
   );
 }
@@ -2300,7 +2287,7 @@ export function MemoryPage({
         />
       ) : null}
       {panel === "export" && overview ? (
-        <ExportPanel overview={overview} message={message} onClose={() => setPanel(null)} />
+        <ExportPanel message={message} onClose={() => setPanel(null)} />
       ) : null}
       {notice ? (
         <output className="memory-notice">

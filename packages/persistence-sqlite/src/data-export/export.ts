@@ -21,6 +21,7 @@ import {
   type PortableFiles,
   type PortableManifest,
   type PortableTextDependencies,
+  SHORT_TEXT_OMISSION_LABEL,
   WITHHELD_PLACEHOLDER,
 } from "./types.js";
 
@@ -424,7 +425,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       reason: "文字已按删除流程清除，无从导出",
     },
     {
-      what: "含机密的实体名、人物名、别名、来源编号和决定记录里的短文字",
+      what: SHORT_TEXT_OMISSION_LABEL,
       count: replacedShortTexts,
       reason:
         "已换成编号占位（接着库里已有占位的最大编号往后排；同一原文同一编号，不同原文不同编号）；这些是名称和编号，原文不保留，不进封存文件",
