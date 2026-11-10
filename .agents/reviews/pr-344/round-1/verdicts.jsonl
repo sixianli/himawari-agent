@@ -1,0 +1,7 @@
+{"id": "r1-ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新增例外在本提交的 CI 中不会生效", "valid": false, "class": "better"}
+{"id": "r1-ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "作者说的“现有 51 条”与当前文件不一致", "valid": false, "class": "better"}
+{"id": "r1-ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`sourceProofSha256` 和 `sourceReview` 没有任何使用方校验", "valid": false, "class": "better"}
+{"id": "r1-ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "命中行与理由是否逐条一致", "valid": false, "class": "better"}
+{"id": "r1-ds-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "60 条与生产实际应核对的 61 条", "valid": false, "class": "better"}
+{"id": "r1-glm-1", "model": "opencode-go/glm-5.3-flash", "quote": "本 PR 运行期间，这 42 条例外不生效", "valid": false, "class": "better"}
+{"id": "r1-glm-2", "model": "opencode-go/glm-5.3-flash", "quote": "`PUBLIC_FIXTURE_PACKAGE_SOURCE_CHANGED` 没有反向测试", "valid": false, "class": "better"}
