@@ -396,6 +396,29 @@ describe("product runtime event and tool contracts", () => {
       details: { reasonCode: "revoked", productOutcome: "failed", dispatchState: "not_sent" },
     });
   });
+  it("[COMPACT-3] refuses a tool execution between compaction_start and compaction_end, and allows it again afterwards", async () => {
+    let during: unknown;
+    let after: unknown;
+    const f = fixture(async (emit, options) => {
+      const tool = options.customTools?.[0];
+      if (!tool) throw new Error("Missing tool");
+      emit({ type: "compaction_start", reason: "threshold" } as never);
+      during = await tool
+        .execute("call-during", {}, undefined, undefined, {} as never)
+        .catch((error: unknown) => error);
+      emit({ type: "compaction_end", reason: "threshold", aborted: false } as never);
+      after = await tool
+        .execute("call-after", {}, undefined, undefined, {} as never)
+        .catch((error: unknown) => error);
+      finish(emit);
+    });
+    await f.run();
+    expect(String(during instanceof Error ? during.message : JSON.stringify(during))).toContain(
+      "RUNTIME_TOOL_EXECUTION_STOPPED",
+    );
+    expect(f.execute).toHaveBeenCalledTimes(1);
+    expect(after).not.toBeInstanceOf(Error);
+  });
   it.each([
     ["REMINDER_OWNER_SCOPE", "本轮不能设置或修改提醒"],
     ["MEMORY_RECALL_OWNER_SCOPE", "本轮不能查长期记忆"],
