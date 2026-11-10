@@ -1,9 +1,11 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { RULE_IDS } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import {
   applyMigrations,
+  createVerifiedMigrationSnapshot,
   loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
@@ -66,6 +68,55 @@ describe("rule book in the product store", () => {
       database.close();
     }
   }
+
+  it("[HR-1] reads back what the migration moved out of the old settings columns", async () => {
+    const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-rule-book-legacy-"));
+    directories.push(stateRoot);
+    const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+    const migrations = await loadBundledMigrations();
+    const sequence = migrations.findIndex(({ name }) => name === "rule_book");
+    applyMigrations(database, migrations.slice(0, sequence));
+    database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
+    database
+      .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+      .run(AGENT_ID, OWNER_ID);
+    database
+      .prepare(
+        "INSERT INTO proactive_settings (owner_id, agent_id, enabled, quiet_hours, important_senders, updated_at) VALUES (?, ?, 1, ?, ?, ?)",
+      )
+      .run(
+        OWNER_ID,
+        AGENT_ID,
+        '[{"days":[0,6],"start":"22:00","end":"07:30"}]',
+        JSON.stringify(["bank.example", "会社.jp", "\ud800@lone.example"]),
+        T0,
+      );
+    const snapshot = await createVerifiedMigrationSnapshot(
+      database,
+      path.join(stateRoot, "snapshot.sqlite"),
+    );
+    applyMigrations(database, migrations, { snapshot });
+    database.close();
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T0,
+    });
+    repositories.push(repository);
+    expect(await repository.proactive().readSettings(scope)).toMatchObject({
+      enabled: true,
+      quietHours: [{ days: [0, 6], start: "22:00", end: "07:30" }],
+      importantSenders: ["bank.example", "会社.jp"],
+    });
+    const rows = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+    try {
+      expect(
+        rows.prepare("SELECT rule_id FROM rule_book_rules ORDER BY rule_id").pluck().all(),
+      ).toEqual([RULE_IDS.importantSender, RULE_IDS.quietHours].sort());
+    } finally {
+      rows.close();
+    }
+  });
 
   it("[HR-1] reads the built-in quiet hours and no senders before anything is saved", async () => {
     const { store } = await open();
