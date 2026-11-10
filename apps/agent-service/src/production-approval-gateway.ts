@@ -25,29 +25,29 @@ import {
   type ProductionMemoryControl,
 } from "./production-memory-control.js";
 import {
+  PRODUCTION_MUSE_OPERATIONS,
+  type ProductionMuseControl,
+} from "./production-muse-intake-control.js";
+import {
+  PRODUCTION_OBSERVATION_OPERATIONS,
+  type ProductionObservation,
+} from "./production-observation.js";
+import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   type ProductionOwnerPreferencesControl,
 } from "./production-owner-preferences-control.js";
-import {
-  PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
-  type ProductionSensitiveInterceptionsControl,
-} from "./production-sensitive-interceptions-control.js";
 import {
   PRODUCTION_PROACTIVE_OPERATIONS,
   type ProductionProactive,
 } from "./production-proactive.js";
 import {
-  PRODUCTION_MUSE_OPERATIONS,
-  type ProductionMuseControl,
-} from "./production-muse-intake-control.js";
+  PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
+  type ProductionSensitiveInterceptionsControl,
+} from "./production-sensitive-interceptions-control.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
   type ProductionWebPushControl,
 } from "./production-web-push-control.js";
-import {
-  PRODUCTION_OBSERVATION_OPERATIONS,
-  type ProductionObservation,
-} from "./production-observation.js";
 import { PRODUCTION_COPY_OPERATIONS } from "./production-workspace-copies.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
 
@@ -106,7 +106,8 @@ export function createProductionApprovalGateway(options: {
           ? options.memoryControl.query(query)
           : query.type.startsWith("push.") && options.webPushControl
             ? options.webPushControl.query(query)
-            : query.type === "proactive.weekly.read" && options.observationControl
+            : (query.type === "proactive.weekly.read" || query.type === "decision.email.read") &&
+                options.observationControl
               ? options.observationControl.query(query)
               : query.type.startsWith("proactive.") && options.proactiveControl
                 ? options.proactiveControl.query(query)

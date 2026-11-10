@@ -322,6 +322,17 @@ export function pairEntriesByMail(
   return byMail;
 }
 
+export type MailComparisonBucket = "both" | "museOnly" | "himawariOnly" | "bothSilent";
+
+export function mailComparisonBucket(
+  entry: MuseEntryRow,
+  judgment: MailJudgment,
+): MailComparisonBucket {
+  const attention = HIMAWARI_ATTENTION_OUTCOMES.includes(judgment.outcome);
+  if (entry.museReminded) return attention ? "both" : "museOnly";
+  return attention ? "himawariOnly" : "bothSilent";
+}
+
 export function summarizeMuse(
   entries: readonly MuseEntryRow[],
   mailJudgments: ReadonlyMap<string, MailJudgment>,
@@ -338,9 +349,7 @@ export function summarizeMuse(
       buckets.noHimawariRecord += 1;
       continue;
     }
-    const attention = HIMAWARI_ATTENTION_OUTCOMES.includes(judgment.outcome);
-    if (entry.museReminded) buckets[attention ? "both" : "museOnly"] += 1;
-    else buckets[attention ? "himawariOnly" : "bothSilent"] += 1;
+    buckets[mailComparisonBucket(entry, judgment)] += 1;
     if (judgment.ownerRating === null) ratings.unrated += 1;
     else ratings[judgment.ownerRating] += 1;
   }

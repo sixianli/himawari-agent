@@ -7,7 +7,6 @@ import {
   MUSE_INTAKE_SENDER,
   MUSE_INTAKE_SOURCES,
   MUSE_INTAKE_STATES,
-  museIntakeItemKey,
   type MuseChannelState,
   type MuseChannelStatus,
   type MuseIntakeBatchOutcome,
@@ -15,6 +14,7 @@ import {
   type MuseIntakeItem,
   type MuseIntakeItemWrite,
   type MuseIntakePort,
+  museIntakeItemKey,
 } from "@himawari-agent/application/muse-intake";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.ts";
@@ -38,7 +38,7 @@ function nullableText(value: unknown, max: number): boolean {
   return value === null || text(value, 1, max);
 }
 
-const GMAIL_MESSAGE_ID = /^[A-Za-z0-9_-]{1,256}$/u;
+export const GMAIL_MESSAGE_ID = /^[A-Za-z0-9_-]{1,256}$/u;
 
 function gmailMessageId(value: unknown): boolean {
   return value === null || (typeof value === "string" && GMAIL_MESSAGE_ID.test(value));
