@@ -144,6 +144,13 @@ describe("rule book migration", () => {
         .run(T1),
     ).toThrow();
 
+    database.prepare("DELETE FROM agents WHERE id = 'agent-a'").run();
+    expect(
+      database
+        .prepare("SELECT COUNT(*) FROM rule_book_history WHERE agent_id = 'agent-a'")
+        .pluck()
+        .get(),
+    ).toBe(0);
     database.prepare("DELETE FROM owners WHERE id = 'owner-a'").run();
     expect(
       database
