@@ -1017,6 +1017,9 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(summary.messages.slice(0, -1)).toEqual(
       normal.messages.slice(0, summary.messages.length - 1),
     );
+    const summaryText = JSON.stringify(summary.messages.slice(0, -1));
+    expect(summaryText).toContain("第一问");
+    expect(summaryText).not.toContain("第二问");
     expect(summary.messages.at(-1)).toMatchObject({ role: "user" });
     expect(JSON.stringify(summary)).not.toContain("<conversation>");
     expect(purposes).toContain("other");

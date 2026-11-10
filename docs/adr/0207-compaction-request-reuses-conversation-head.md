@@ -45,10 +45,10 @@ Pi（Himawari 用的模型运行库）的自动压缩会另外发一次模型请
 ## 决定
 
 1. **用一个只观察的 `session_before_compact` 钩子算出摘要范围，不替换 Pi 的压缩流程。**钩子（内联扩展 `himawari-compaction-prefix`）用 `buildSessionProjection(branchEntries)` 取出切点（`firstKeptEntryId`）之前的全部消息，经 `convertToLlm` 转成发给模型的格式，去掉 system 消息（请求开头由 Himawari 自己的冻结开头提供）。只在 `reason` 是 threshold 或 manual、`isSplitTurn` 为假时处理；溢出（overflow）时上一次请求本身就可能超过窗口，拆分轮要另写一份“轮前缀”摘要，这两种都不处理，走 Pi 默认请求。
-2. **改写摘要请求，而不是自己发请求。**流函数包装发现压缩期间的无工具摘要请求时，若上一次普通请求的前几条历史消息和钩子算出的范围逐条完全相同，就把摘要请求换成：上一次普通请求的系统提示、完整工具定义（含执行句柄工具）、这几条历史消息，末尾追加一条用户消息（指令放进 `packages/prompt-catalog`，条目 `runtime.compaction.summary-instruction`），指令写明“不要继续对话、不要调用工具、只回复结构化摘要”。对不上、窗口放不下（估算输入加输出上限加 4096 余量超过窗口）、没有上一次普通请求，一律不改写，走 Pi 默认请求，不比现状差。
+2. **改写摘要请求，而不是自己发请求。**流函数包装发现压缩期间的无工具摘要请求时，若上一次普通请求的前几条历史消息和钩子算出的范围逐条完全相同，就把摘要请求换成：上一次普通请求的系统提示、完整工具定义（含执行句柄工具）、这几条历史消息，末尾追加一条用户消息（指令放进 `packages/prompt-catalog`，条目 `runtime.compaction.summary-instruction`），指令写明“不要继续对话、不要调用工具、只回复结构化摘要”。对不上、窗口放不下（估算输入（历史、系统提示、工具定义和指令）加输出上限加 4096 余量超过窗口）、没有上一次普通请求，一律不改写，走 Pi 默认请求，不比现状差。
 3. **请求参数和主对话一致。**会话编号沿用上一次普通请求的（Magpie 会话亲和）；不传 Pi 固定的 `cacheRetention: "none"`，改沿用上一次普通请求的设置；模型、推理强度、输出上限仍是 Pi 给的。仍走同一个 `admitPiStream`，预算准入、出口遮盖、窗口检查都照旧。
 4. **摘要请求的用量记为 `other`，不是 `chat`，**不混进对话缓存命中率告警；命中的缓存 token 记在用量表里，可以单独看压缩请求的命中情况。
-5. **测试：**`packages/runtime-pi/test/prompt-prefix.compat.test.ts` 的 `[COMPACT-2]`（属于 `npm run check:prompt-prefix`）：摘要请求的工具定义、系统提示和切点前的历史与上一次普通请求逐字节相同，末尾是指令；撤掉改写，这条用例失败。`[COMPACT-1]` 里的拆分轮用例覆盖“不改写、走默认请求”的退路。
+5. **测试：**`packages/runtime-pi/test/prompt-prefix.compat.test.ts` 的 `[COMPACT-2]`（属于 `npm run check:prompt-prefix`）：摘要请求的工具定义、系统提示和切点前的历史与上一次普通请求逐字节相同，末尾是指令；撤掉改写，这条用例失败。`[COMPACT-1]` 的两条用例里压缩没有被改写（具体退回原因未断言），所以间接覆盖“不改写、走默认请求”的退路；拆分轮、溢出、对不上、放不进窗口各自没有单独的用例，由 `sharedSummaryContext` 和钩子里的条件判断保证，这一点留作后续补测。
 
 <a id="industry"></a>
 

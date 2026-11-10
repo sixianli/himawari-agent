@@ -695,7 +695,8 @@ function compactionPrefixMessages(event: {
   readonly preparation: { readonly isSplitTurn: boolean; readonly firstKeptEntryId: string };
   readonly branchEntries: Parameters<typeof buildSessionProjection>[0];
 }): Message[] | undefined {
-  if (event.reason === "overflow" || event.preparation.isSplitTurn) return undefined;
+  if (event.reason !== "manual" && event.reason !== "threshold") return undefined;
+  if (event.preparation.isSplitTurn) return undefined;
   const { entries } = buildSessionProjection(event.branchEntries);
   const cut = entries.findIndex(
     (entry) => entry.sourceEntry.id === event.preparation.firstKeptEntryId,
@@ -719,7 +720,13 @@ function sharedSummaryContext(
   if (history.length !== prefix.length || !isDeepStrictEqual(history, prefix)) {
     return undefined;
   }
-  const estimated = history.reduce((total, message) => total + estimateTokens(message), 0);
+  const fixedChars =
+    (lastRequest.systemPrompt?.length ?? 0) +
+    JSON.stringify(lastRequest.tools ?? []).length +
+    COMPACTION_SUMMARY_INSTRUCTION.text.length;
+  const estimated =
+    history.reduce((total, message) => total + estimateTokens(message), 0) +
+    Math.ceil(fixedChars / 3);
   if (estimated + COMPACTION_REQUEST_ROOM_TOKENS + maxTokens > contextWindow) return undefined;
   return {
     ...lastRequest,
@@ -1532,7 +1539,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             hidden: true,
             factory: (pi: ExtensionAPI) => {
               pi.on("session_before_compact", (event) => {
-                compactionPrefix = compactionPrefixMessages(event);
+                try {
+                  compactionPrefix = compactionPrefixMessages(event);
+                } catch {
+                  compactionPrefix = undefined;
+                }
                 return undefined;
               });
             },
@@ -1686,7 +1697,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             himawariRequestContext(requested, systemPrompt, requestTools);
           if (!summaryContext && context) lastRequest = { context, options };
           if (shared) {
-            const { cacheRetention: _dropped, ...rest } = options ?? {};
+            const { cacheRetention: _dropped, sessionId: _droppedSession, ...rest } = options ?? {};
             options = {
               ...rest,
               ...(lastRequest?.options?.cacheRetention === undefined
