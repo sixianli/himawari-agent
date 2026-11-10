@@ -138,6 +138,10 @@ export interface ProductionRunCompositionOptions {
     request: RuntimeRequest,
     failure: { readonly code: string; readonly reason: string | null },
   ) => void;
+  readonly onCompactionSummaryRequest?: (
+    request: RuntimeRequest,
+    summary: { readonly sharedHead: boolean },
+  ) => void;
   readonly onModelStreamFailed?: (
     request: RuntimeRequest,
     failure: { readonly code: string; readonly message: string },
@@ -443,6 +447,9 @@ export function createProductionRunComposition(options: ProductionRunComposition
         }
       : {}),
     ...(options.onModelStreamFailed ? { onModelStreamFailed: options.onModelStreamFailed } : {}),
+    ...(options.onCompactionSummaryRequest
+      ? { onCompactionSummaryRequest: options.onCompactionSummaryRequest }
+      : {}),
     ...(options.onModelAdmissionFailed
       ? { onModelAdmissionFailed: options.onModelAdmissionFailed }
       : {}),

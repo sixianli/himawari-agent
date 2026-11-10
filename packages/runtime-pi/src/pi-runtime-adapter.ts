@@ -214,6 +214,10 @@ export interface PiAgentRuntimeAdapterDependencies {
     request: RuntimeRequest,
     failure: { readonly code: string; readonly reason: string | null },
   ) => void;
+  readonly onCompactionSummaryRequest?: (
+    request: RuntimeRequest,
+    summary: { readonly sharedHead: boolean },
+  ) => void;
   readonly onModelStreamFailed?: (
     request: RuntimeRequest,
     failure: { readonly code: string; readonly message: string },
@@ -1645,7 +1649,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             shared ??
             summaryContext ??
             himawariRequestContext(requested, systemPrompt, requestTools);
-          if (!summaryContext && context) lastRequest = { context, options };
           if (shared) options = sharedSummaryOptions(options, lastRequest?.options);
           await this.#historyWrites.get(request.runId);
           const replay = restored?.takeReplay();
@@ -1657,6 +1660,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             if (loopSummaryAttempted) return failedPiStream(model, "PI_TOOL_LOOP_DETECTED");
             loopSummaryAttempted = true;
           }
+          if (!summaryContext) lastRequest = { context, options };
+          else
+            this.#dependencies.onCompactionSummaryRequest?.(request, {
+              sharedHead: shared !== undefined,
+            });
           return admitPiStream(
             { ...request, dataClassification: this.#visibleOf(request) },
             binding,

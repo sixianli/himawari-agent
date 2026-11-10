@@ -1881,6 +1881,13 @@ export async function runAgentService(
             code: failure.code,
             ...(failure.reason === null ? {} : { reason: failure.reason }),
           }),
+        onCompactionSummaryRequest: (request, summary) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "compaction.summary_request",
+            runId: request.runId,
+            sharedHead: summary.sharedHead,
+          }),
         onModelStreamFailed: (request, failure) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",

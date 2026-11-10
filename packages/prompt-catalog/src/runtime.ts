@@ -238,7 +238,7 @@ export const COMPACTION_SUMMARY_INSTRUCTION = fixedPrompt({
   id: "runtime.compaction.summary-instruction",
   purpose:
     "压缩摘要请求末尾追加的一条用户消息：请求前面沿用原对话的工具、系统提示和历史，只靠这条消息说明要写结构化摘要、不要调用工具",
-  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
+  usedBy: ["packages/runtime-pi/src/compaction-prefix.ts"],
   layer: "appended-message",
   output: "free-text",
   text: `The conversation above is being compacted. Do NOT continue it and do NOT call any tools. Reply with ONLY a structured context checkpoint summary that another LLM will use to continue the work.

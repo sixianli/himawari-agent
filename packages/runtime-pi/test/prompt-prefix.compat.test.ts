@@ -19,6 +19,12 @@ import {
   PiAgentRuntimeAdapter,
   type PiAgentRuntimeAdapterDependencies,
 } from "../src/index.js";
+import type { Context, Message } from "@earendil-works/pi-ai";
+import {
+  approximateTokens,
+  sharedSummaryContext,
+  sharedSummaryOptions,
+} from "../src/compaction-prefix.js";
 import { allowAdmission, fixtureExecutionLease } from "./helpers/admission.js";
 import { testModelEgress } from "./helpers/model-egress.js";
 import { findConversationBreak, findPrefixBreak } from "./helpers/prompt-prefix.js";
@@ -1155,5 +1161,66 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(findPrefixBreak(body([a, b]), body([a, { ...b, content: "B" }, c]))).toMatchObject({
       index: 1,
     });
+  });
+});
+
+const compactUser = (text: string): Message => ({
+  role: "user",
+  content: [{ type: "text", text }],
+  timestamp: 1,
+});
+
+const compactLast = (messages: Message[], systemPrompt = "系统提示"): Context => ({
+  systemPrompt,
+  tools: [],
+  messages,
+});
+
+describe("[I-66] [COMPACT-2] sharing the conversation's head with the summary request", () => {
+  const prefix = [compactUser("第一问")];
+
+  it("appends the instruction after the same history, system prompt and tools", () => {
+    const context = compactLast([...prefix, compactUser("第二问")]);
+    const shared = sharedSummaryContext(context, prefix, 100_000, 4_000);
+    expect(shared?.systemPrompt).toBe(context.systemPrompt);
+    expect(shared?.tools).toBe(context.tools);
+    expect(shared?.messages.slice(0, 1)).toEqual(prefix);
+    expect(shared?.messages).toHaveLength(2);
+    expect(shared?.messages.at(-1)).toMatchObject({ role: "user" });
+  });
+
+  it("REVERSE: gives up when the history differs, is shorter, or there is no earlier request", () => {
+    expect(
+      sharedSummaryContext(compactLast([compactUser("别的")]), prefix, 100_000, 4_000),
+    ).toBeUndefined();
+    expect(sharedSummaryContext(compactLast([]), prefix, 100_000, 4_000)).toBeUndefined();
+    expect(sharedSummaryContext(undefined, prefix, 100_000, 4_000)).toBeUndefined();
+    expect(sharedSummaryContext(compactLast(prefix), undefined, 100_000, 4_000)).toBeUndefined();
+  });
+
+  it("REVERSE: gives up when the system prompt, tools and history do not fit the window", () => {
+    const big = [compactUser("汉".repeat(30_000))];
+    expect(sharedSummaryContext(compactLast(big), big, 100_000, 4_000)).toBeDefined();
+    expect(sharedSummaryContext(compactLast(big), big, 30_000, 4_000)).toBeUndefined();
+    const heavyPrompt = compactLast(prefix, "字".repeat(60_000));
+    expect(sharedSummaryContext(heavyPrompt, prefix, 50_000, 4_000)).toBeUndefined();
+  });
+
+  it("counts Chinese text as more tokens than ASCII of the same length", () => {
+    expect(approximateTokens("汉".repeat(1_000))).toBeGreaterThan(
+      approximateTokens("a".repeat(1_000)) * 2,
+    );
+  });
+
+  it("takes the session id and cache setting from the last normal request, not from Pi's summary call", () => {
+    expect(
+      sharedSummaryOptions(
+        { sessionId: "pi-fresh", cacheRetention: "none", maxTokens: 9 },
+        { sessionId: "himawari-1", cacheRetention: "long" },
+      ),
+    ).toEqual({ maxTokens: 9, sessionId: "himawari-1", cacheRetention: "long" });
+    expect(
+      sharedSummaryOptions({ sessionId: "pi-fresh", cacheRetention: "none" }, undefined),
+    ).toEqual({});
   });
 });
