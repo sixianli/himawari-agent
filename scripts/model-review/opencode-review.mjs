@@ -2025,35 +2025,41 @@ async function passthroughProbe({ binary, copy, workRoot, gitGuard, mode, gatewa
   }
 }
 
+export const FAILOVER_STATUSES = [500, 402, 429];
+
 async function failoverProbe({ workRoot, gateway }) {
-  const down = await startStatusServer(500);
-  const up = await startProbeServer([]);
-  let live = null;
-  try {
-    const model = REVIEW_MODELS[0];
-    live = await probeGateway({
-      gateway,
-      root: join(workRoot, "gateway-failover"),
-      upstreams: [probeUpstream("probe-down", down.port), probeUpstream("probe", up.port)],
-      members: { [model]: [`probe-down/${groupId(model)}`, `probe/${groupId(model)}`] },
-    });
-    const answer = await postJson(`${live.baseURL}/chat/completions`, {
-      model: `group/${groupName(model)}`,
-      stream: true,
-      max_tokens: 16,
-      messages: [{ role: "user", content: "failover probe" }],
-    });
-    const problems = [];
-    if (answer.status !== 200) problems.push(`GATEWAY_FAILOVER_STATUS ${answer.status}`);
-    if (answer.headers["x-magpie-provider"] !== "probe")
-      problems.push(`GATEWAY_FAILOVER_PROVIDER ${answer.headers["x-magpie-provider"] ?? "none"}`);
-    if (down.hits() === 0) problems.push("GATEWAY_FAILOVER_NOT_TRIED");
-    return problems;
-  } finally {
-    live?.stop();
-    await new Promise((resolveClose) => down.server.close(resolveClose));
-    await new Promise((resolveClose) => up.server.close(resolveClose));
+  const problems = [];
+  for (const status of FAILOVER_STATUSES) {
+    const down = await startStatusServer(status);
+    const up = await startProbeServer([]);
+    let live = null;
+    try {
+      const model = REVIEW_MODELS[0];
+      live = await probeGateway({
+        gateway,
+        root: join(workRoot, `gateway-failover-${status}`),
+        upstreams: [probeUpstream("probe-down", down.port), probeUpstream("probe", up.port)],
+        members: { [model]: [`probe-down/${groupId(model)}`, `probe/${groupId(model)}`] },
+      });
+      const answer = await postJson(`${live.baseURL}/chat/completions`, {
+        model: `group/${groupName(model)}`,
+        stream: true,
+        max_tokens: 16,
+        messages: [{ role: "user", content: "failover probe" }],
+      });
+      if (answer.status !== 200) problems.push(`GATEWAY_FAILOVER_STATUS ${status} ${answer.status}`);
+      if (answer.headers["x-magpie-provider"] !== "probe")
+        problems.push(
+          `GATEWAY_FAILOVER_PROVIDER ${status} ${answer.headers["x-magpie-provider"] ?? "none"}`,
+        );
+      if (down.hits() === 0) problems.push(`GATEWAY_FAILOVER_NOT_TRIED ${status}`);
+    } finally {
+      live?.stop();
+      await new Promise((resolveClose) => down.server.close(resolveClose));
+      await new Promise((resolveClose) => up.server.close(resolveClose));
+    }
   }
+  return problems;
 }
 
 function startProbeServer(probes) {

@@ -252,18 +252,22 @@ describe("review gateway configuration", () => {
       "group",
       "add",
       "review-deepseek-v4.1-flash",
-      "models=workbuddy-ai/deepseek-v4.1-flash-sg,opendesign/deepseek-v4.1-flash,opencode-go/deepseek-v4.1-flash",
+      "models=workbuddy-ai/deepseek-v4.1-flash-sg,opendesign/deepseek-v4.1-flash,opencode-go/deepseek-v4.1-flash,opencode-go-2/deepseek-v4.1-flash",
       "routing=order",
       "stays=session",
     ]);
     expect(groupArgs(config, glm, { dropProviders: ["workbuddy-ai"] })[3]).toBe(
-      "models=opendesign/glm-5.3-flash,opencode-go/glm-5.3-flash",
+      "models=opendesign/glm-5.3-flash,opencode-go/glm-5.3-flash,opencode-go-2/glm-5.3-flash",
     );
     expect(groupArgs(config, glm, { dropProviders: ["workbuddy-ai", "opendesign"] })[3]).toBe(
-      "models=opencode-go/glm-5.3-flash",
+      "models=opencode-go/glm-5.3-flash,opencode-go-2/glm-5.3-flash",
     );
+    expect(
+      groupArgs(config, glm, { dropProviders: ["workbuddy-ai", "opendesign", "opencode-go"] })[3],
+    ).toBe("models=opencode-go-2/glm-5.3-flash");
     expect(() =>
-      groupArgs(config, glm, { dropProviders: ["workbuddy-ai", "opendesign", "opencode-go"] }),
+      groupArgs(config, glm, { dropProviders: ["workbuddy-ai", "opendesign", "opencode-go", "opencode-go-2"],
+      }),
     ).toThrow("GATEWAY_NO_MEMBERS");
   });
 

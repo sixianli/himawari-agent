@@ -12,7 +12,13 @@
       "url": "https://amr-link.open-design.ai/v1",
       "models": ["deepseek-v4.1-flash", "glm-5.3-flash"]
     },
-    { "id": "opencode-go", "kind": "preset", "url": "https://opencode.ai/inference/go/v1" }
+    { "id": "opencode-go", "kind": "preset", "url": "https://opencode.ai/inference/go/v1" },
+    {
+      "id": "opencode-go-2",
+      "kind": "custom",
+      "url": "https://opencode.ai/inference/go/openai/v1",
+      "models": ["deepseek-v4.1-flash", "glm-5.3-flash"]
+    }
   ],
   "models": {
     "opencode-go/deepseek-v4.1-flash": {
@@ -20,7 +26,8 @@
       "members": [
         "workbuddy-ai/deepseek-v4.1-flash-sg",
         "opendesign/deepseek-v4.1-flash",
-        "opencode-go/deepseek-v4.1-flash"
+        "opencode-go/deepseek-v4.1-flash",
+        "opencode-go-2/deepseek-v4.1-flash"
       ],
       "context": 1000000,
       "output": 128000,
@@ -31,7 +38,8 @@
       "members": [
         "workbuddy-ai/glm-5.3-flash",
         "opendesign/glm-5.3-flash",
-        "opencode-go/glm-5.3-flash"
+        "opencode-go/glm-5.3-flash",
+        "opencode-go-2/glm-5.3-flash"
       ],
       "context": 1000000,
       "output": 32000,
