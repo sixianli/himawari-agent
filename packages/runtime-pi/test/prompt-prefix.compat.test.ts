@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { createAgentSession } from "@earendil-works/pi-coding-agent";
 import type {
   RuntimeEvent,
   RuntimeProjection,
@@ -865,6 +866,31 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
         tools.find((tool) => tool.function.name === "reminder_set")?.function.description,
       ).toBe("reminder_set 的旧版说明");
     }
+  });
+
+  it("[D1] sends nothing when Pi never runs the request-head hook", async () => {
+    const { bodies, turnEvents } = await conversation(
+      THREE_TURNS.slice(0, 1),
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+      {
+        promptBundles: new OlderToolDescriptionPromptBundles(),
+        createSession: (options) => {
+          const loaded = (
+            options.resourceLoader as unknown as {
+              getExtensions(): { extensions: { path: string }[] };
+            }
+          ).getExtensions();
+          loaded.extensions = loaded.extensions.filter(
+            (extension) => !extension.path.includes("himawari-request-head"),
+          );
+          return createAgentSession(options);
+        },
+      },
+      false,
+    );
+    expect(bodies).toHaveLength(0);
+    expect(turnEvents[0]?.filter((event) => event.type === "runtime.failed")).toHaveLength(1);
   });
 
   it("[ADR-0198] sends nothing when the frozen tool names differ from the tools Pi can run", async () => {
