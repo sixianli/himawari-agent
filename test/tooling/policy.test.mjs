@@ -428,7 +428,7 @@ describe("CI policy contract", () => {
       "concurrency without the edited segment",
       (value) => {
         value.concurrency.group = value.concurrency.group.replace(
-          "-${{ github.event.action == 'edited' && 'edited' || '' }}",
+          ["-$", "{{ github.event.action == 'edited' && 'edited' || '' }}"].join(""),
           "",
         );
       },

@@ -73,15 +73,7 @@ import {
   WRAP_UP_RESERVE_USD,
   wrapUpReason,
 } from "../../scripts/model-review/opencode-review.mjs";
-import {
-  completedCount,
-  effectiveCost,
-  GUARD_ENV,
-  guardDecision,
-  ledgerTotal,
-  noteCost,
-  SpendGuard,
-} from "../../scripts/model-review/spend-guard.mjs";
+import { GUARD_ENV } from "../../scripts/model-review/spend-guard.mjs";
 import {
   expectAppendedTo,
   instructions,
