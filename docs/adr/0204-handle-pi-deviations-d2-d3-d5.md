@@ -27,7 +27,7 @@ date: "2026-11-10"
 
 [ADR 0203](0203-follow-pi-official-extension-patterns.md) 把 2026-11-10 核查出的 7 处偏离 Pi 官方写法的地方登记在 [Pi 二次开发规范](../pi-development-guide.md#current-deviations) 的偏离表里，状态都是“待 Andy 定”。核查线程给 Andy 的建议是：“D2、D3 批准保留；D5、D6、D7 改回官方写法；D1、D4 先开方案线程”。Andy 2026-11-10 回“按建议”。
 
-动手读代码后发现两处和建议的前提不同：D6（系统提示设两次）的第二次就在 D1 替换的请求函数里，没法离开 D1 单独改；D5（绕过会话直接用底层 Agent）里，“往运行中插消息、接着跑”的几处决定了后台命令通知、工具循环停止提示、压缩后补发的运行环境说明在什么时候进入发给模型的内容，换写法会改变插入时机，属于大改动，要先出方案。这两点已在核查线程里告诉 Andy。
+动手读代码后发现两处和建议的前提不同：D6（系统提示设两次）的第二次就在 D1 替换的请求函数里，没法离开 D1 单独改（后来查清压缩路径后推翻，D6 已单独删除，见 [ADR 0208](0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md)）；D5（绕过会话直接用底层 Agent）里，“往运行中插消息、接着跑”的几处决定了后台命令通知、工具循环停止提示、压缩后补发的运行环境说明在什么时候进入发给模型的内容，换写法会改变插入时机，属于大改动，要先出方案。这两点已在核查线程里告诉 Andy。
 
 <a id="premises"></a>
 
@@ -47,7 +47,7 @@ date: "2026-11-10"
 1. **D2、D3 批准保留。**理由见前提 6；在 Pi 行为变化时会失败的测试见前提 5。升级 Pi 时这两条测试必须先过。
 2. **D5 读历史和工具的部分改成官方写法。**`pi-runtime-adapter.ts` 里读 `session.agent.state.messages` 的三处改成 `session.messages`；`pi-tool-batch-continuation.ts` 读消息改成 `session.messages`，判断工具能否并行改成先查 `session.getActiveToolNames()`、再看 `session.getToolDefinition(name)?.executionMode`。依据前提 2、3、4，行为不变。
 3. **D5 插消息、接着跑的部分先出方案。**`agent.steer`、`agent.continue()`、`agent.hasQueuedMessages()` 换成 `session.sendCustomMessage` 一类官方写法的方案，和 D7（缓存预热接预算和用量）合成一份，按 [和 OpenCode 协作](../../AGENTS.md#working-with-opencode) 的步骤出方案交 Andy，同意后再改代码。工具内部的 `agent.abort()` 暂时保留：工具在运行中不能等会话空闲，`session.abort()` 会等。
-4. **D6 并入 D1 的方案。**两者改的是同一处，分开定会互相矛盾。
+4. **D6 并入 D1 的方案。**当时两者改的是同一处，分开定会互相矛盾；后来查清压缩路径后推翻，D6 已按 [ADR 0208](0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md) 第 1 步单独删除。
 5. 偏离表的状态列按上面更新。
 
 <a id="industry"></a>
@@ -62,14 +62,14 @@ date: "2026-11-10"
 ## 放弃的做法
 
 - **D5 一次全部换成 `session.sendCustomMessage`。**`sendCustomMessage` 在不在运行中、带不带 `triggerTurn` 时行为不同（1.5.0 `dist/core/agent-session.js` 第 1862–1900 行），会改变消息插进对话的时机，进而改变发给模型的内容，不能不出方案就改。
-- **D6 单独先改。**去掉请求函数里那次替换就是在改 D1；去掉 `before_agent_start` 会改变 Pi 会话里记下的系统提示，它被哪些路径用到（例如压缩）要和 D1 一起查清，本 ADR 没有查。
+- **D6 单独先改。**去掉请求函数里那次替换就是在改 D1；去掉 `before_agent_start` 会改变 Pi 会话里记下的系统提示，它被哪些路径用到（例如压缩）要和 D1 一起查清，本 ADR 没有查。后续：2026-11-10 已查清，D6 单独删除，见 [ADR 0208](0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md#decision)。
 
 <a id="consequences"></a>
 
 ## 后果
 
 - D2、D3 不再是“待定”的偏离；新代码可以照它们的写法做审批续跑，但仍要走 ADR 0023 的流程。
-- D5 剩下的部分、D6、D7、D1 仍不得照抄；D4 已由 [ADR 0205](0205-pi-native-provider-auth.md) 关闭，现在可以照它的写法做。
+- D5 剩下的部分、D7、D1 仍不得照抄；D6 已按 [ADR 0208](0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md) 删除；D4 已由 [ADR 0205](0205-pi-native-provider-auth.md) 关闭，现在可以照它的写法做。
 - 读历史改走 `session.messages` 后，测试里的假会话也要有 `messages`（和 `getActiveToolNames`、`getToolDefinition`），已同步改；另加一条用例锁住“注册了但没激活的工具不算可并行”。
 
 <a id="references"></a>

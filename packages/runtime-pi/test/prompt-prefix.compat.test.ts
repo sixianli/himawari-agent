@@ -738,6 +738,16 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     ]);
   });
 
+  it("never lets Pi's own working-directory line into the request head", async () => {
+    const { bodies } = await conversation(
+      [{ prompt: "第一轮", blocks: [ownerProfile] }],
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+    );
+    expect(bodies[0]).toContain("Himawari");
+    expect(bodies[0]).not.toContain("Current working directory");
+  });
+
   const WIFI_TURNS: readonly Turn[] = [
     { prompt: "家里 Wi-Fi 密码 abc12345，记一下", blocks: [ownerProfile] },
     { prompt: "刚才那个是什么？", blocks: [ownerProfile] },
