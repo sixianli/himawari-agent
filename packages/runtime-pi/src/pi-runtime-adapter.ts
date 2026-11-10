@@ -666,6 +666,17 @@ function himawariRequestContext(
   };
 }
 
+function himawariSummaryContext(requested: TranscriptContext): Context | undefined {
+  if (getCurrentTools(requested.messages).length > 0) return undefined;
+  const [first, ...rest] = requested.messages;
+  if (first?.role !== "system" || typeof first.content !== "string") return undefined;
+  return {
+    systemPrompt: first.content,
+    tools: [],
+    messages: rest.filter((message) => message.role !== "system"),
+  };
+}
+
 function piSessionId(request: RuntimeRequest): string {
   return `himawari-${createHash("sha256")
     .update(
@@ -1605,8 +1616,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       const originalStreamFunction = session.agent.streamFunction;
       restored = continuation ? restorePiToolBatch(session, continuation.batch) : undefined;
       let loopSummaryAttempted = false;
+      let compacting = false;
       session.agent.streamFunction = async (model, requested, options) => {
-        const context = himawariRequestContext(requested, systemPrompt, requestTools);
+        const context = compacting
+          ? himawariSummaryContext(requested)
+          : himawariRequestContext(requested, systemPrompt, requestTools);
         await this.#historyWrites.get(request.runId);
         const replay = restored?.takeReplay();
         if (replay) return replay;
@@ -1646,6 +1660,15 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       );
 
       const unsubscribe = session.subscribe((event) => {
+        if (event.type === "compaction_start") compacting = true;
+        if (event.type === "compaction_end") {
+          compacting = false;
+          if (event.result === undefined && !event.aborted && event.errorMessage)
+            this.#dependencies.onModelStreamFailed?.(request, {
+              code: "PI_COMPACTION_FAILED",
+              message: event.errorMessage,
+            });
+        }
         if (
           !suspended &&
           this.#dependencies.projection.captureHistory &&
