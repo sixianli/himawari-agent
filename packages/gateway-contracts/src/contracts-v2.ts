@@ -846,7 +846,7 @@ const proactiveWeeklySnapshotSchema = object({
       gapCases: array(
         object({
           id: machineString,
-          messageId: gmailMessageId,
+          messageId: nullable(gmailMessageId),
           museAt: timestamp,
           museTitle: nullable(proactiveTextSchema(300)),
           museText: nullable(proactiveTextSchema(500)),
@@ -1102,14 +1102,14 @@ const decisionEmailSnapshotSchema = object({
         rating: nullable(enumeration(["useful", "unneeded", "missed"])),
         decidedAt: nullable(timestamp),
         ruleIds: nullable(array(boundedString(256))),
-        memoryIds: nullable(array(machineString)),
+        memoryIds: nullable(array(boundedString(256))),
         relatedMessages: nullable(integer(0)),
       }),
     ),
     muse: object({
       entries: array(
         object({
-          entryId: machineString,
+          entryId: boundedString(128),
           museAt: timestamp,
           reminded: booleanValue,
           kind: nullable(enumeration(["proactive", "scheduled"])),

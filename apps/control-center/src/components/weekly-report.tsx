@@ -1275,12 +1275,14 @@ export function WeeklyReport({
                     </p>
                     <p>{message("weekly.cases.rating", { r: item.ownerRating ?? "none" })}</p>
                   </div>
-                  {onOpenMail ? (
+                  {onOpenMail && item.messageId !== null ? (
                     <button
                       type="button"
                       className="weekly-case-open"
                       data-open-mail={item.id}
-                      onClick={() => onOpenMail(item.messageId, report.endDay)}
+                      onClick={() =>
+                        item.messageId !== null && onOpenMail(item.messageId, report.endDay)
+                      }
                     >
                       {message("decision.email.open")}
                     </button>

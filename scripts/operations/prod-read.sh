@@ -95,9 +95,9 @@ if (mode === "summary") {
   result = database
     .prepare(
       "SELECT p.message_id, p.decision_id, p.outcome, p.skip_reason, p.owner_rating, p.processed_at, " +
-        "(SELECT count(*) FROM json_each(json_extract(d.inputs, '$.floorHits.\"' || p.message_id || '\"'))) AS rule_count, " +
-        "(SELECT count(*) FROM json_each(json_extract(d.inputs, '$.memoryByMail.\"' || p.message_id || '\"'))) AS memory_count, " +
-        "(SELECT count(*) FROM json_each(json_extract(d.inputs, '$.relatedByMail.\"' || p.message_id || '\"'))) AS related_count, " +
+        "COALESCE((SELECT json_array_length(j.value) FROM json_each(d.inputs, '$.floorHits') j WHERE j.key = p.message_id), 0) AS rule_count, " +
+        "COALESCE((SELECT json_array_length(j.value) FROM json_each(d.inputs, '$.memoryByMail') j WHERE j.key = p.message_id), 0) AS memory_count, " +
+        "COALESCE((SELECT json_array_length(j.value) FROM json_each(d.inputs, '$.relatedByMail') j WHERE j.key = p.message_id), 0) AS related_count, " +
         "(SELECT count(*) FROM muse_reference_entries e WHERE e.owner_id = p.owner_id AND e.agent_id = p.agent_id AND e.paired_message_id = p.message_id) AS muse_entries, " +
         "(SELECT max(e.muse_reminded) FROM muse_reference_entries e WHERE e.owner_id = p.owner_id AND e.agent_id = p.agent_id AND e.paired_message_id = p.message_id) AS muse_reminded " +
         "FROM proactive_processed_messages p JOIN decision_ledger d ON d.id = p.decision_id " +

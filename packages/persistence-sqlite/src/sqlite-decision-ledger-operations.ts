@@ -14,7 +14,6 @@ import {
   type GapCandidate,
   type GapCaseMarkPort,
   type GapCaseMarkRow,
-  MAIL_TRACE_MUSE_LIMIT,
   type MailTrace,
   type MuseReferenceEntry,
   type MuseReferenceWrite,
@@ -537,12 +536,9 @@ export class SqliteDecisionLedgerOperations {
            ON i.owner_id = e.owner_id AND i.agent_id = e.agent_id
           AND e.intake_item_key = i.kind || ':' || i.natural_key
          WHERE e.owner_id = ? AND e.agent_id = ? AND e.paired_message_id = ?
-         ORDER BY e.muse_at, e.id LIMIT ?`,
+         ORDER BY e.muse_at, e.id`,
       )
-      .all(input.ownerId, input.agentId, input.messageId, MAIL_TRACE_MUSE_LIMIT) as Record<
-      string,
-      unknown
-    >[];
+      .all(input.ownerId, input.agentId, input.messageId) as Record<string, unknown>[];
     return Object.freeze({
       processed: processedRow
         ? Object.freeze({

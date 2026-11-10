@@ -251,7 +251,7 @@ describe("[P1-5] one mail's decision trace", () => {
         schedule: { configured: false, intervalMs: 0, perCheckMs: 0 },
         serviceRevision: "test",
       });
-    return { repository, observation };
+    return { repository, observation, seal, intake };
   }
 
   const query = (messageId: string) =>
@@ -292,6 +292,51 @@ describe("[P1-5] one mail's decision trace", () => {
         contentOk: true,
       });
       expect(payload.comparison).toBe("both");
+    } finally {
+      await h.repository.close();
+    }
+  });
+
+  it("[negative] reports truncation only when there are more than 20 Muse entries", async () => {
+    const h = await fixture();
+    try {
+      let sequence = 100;
+      const ingest = async (count: number, gmailId: string) => {
+        for (let index = 0; index < count; index += 1) {
+          const mail = { ...MAILS[0], key: `${gmailId}-${index}`, gmailId } as Mail;
+          const titleRef = await h.seal.seal({ ...scope, text: `title ${index}`, at: AT });
+          const textRef = await h.seal.seal({ ...scope, text: `text ${index}`, at: AT });
+          await h.intake.ingestBatch({
+            ...scope,
+            batchId: `batch-${gmailId}-${index}`,
+            senderId: "muse",
+            batchSeq: sequence + index,
+            sentAt: AT,
+            receivedAt: AT,
+            rejectedCount: 0,
+            droppedFieldCount: 0,
+            items: [intakeItem(mail, titleRef, textRef, false)],
+          });
+          await h.intake.rate({
+            ...scope,
+            kind: "proactive",
+            naturalKey: mail.key,
+            timingOk: true,
+            contentOk: true,
+            entryId: `rating-${mail.key}`,
+            now: AT,
+          });
+        }
+      };
+      await ingest(20, "mail-twenty");
+      sequence += 100;
+      await ingest(21, "mail-twentyone");
+      const twenty = await read(h, "mail-twenty");
+      expect(twenty.muse.entries).toHaveLength(20);
+      expect(twenty.muse.truncated).toBe(false);
+      const over = await read(h, "mail-twentyone");
+      expect(over.muse.entries).toHaveLength(20);
+      expect(over.muse.truncated).toBe(true);
     } finally {
       await h.repository.close();
     }

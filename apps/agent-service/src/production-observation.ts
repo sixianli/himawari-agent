@@ -331,7 +331,7 @@ export class ProductionObservation {
       }
     };
     const entries = await Promise.all(
-      trace.museEntries.map(async (entry) => ({
+      trace.museEntries.slice(0, MAIL_TRACE_MUSE_LIMIT).map(async (entry) => ({
         entryId: entry.entryId,
         museAt: entry.museAt,
         reminded: entry.museReminded,
@@ -380,7 +380,7 @@ export class ProductionObservation {
               relatedMessages: related === null ? null : related.length,
             }
           : null,
-        muse: { entries, truncated: trace.museEntries.length >= MAIL_TRACE_MUSE_LIMIT },
+        muse: { entries, truncated: trace.museEntries.length > MAIL_TRACE_MUSE_LIMIT },
         comparison,
       },
     } as GatewayV2Snapshot;
