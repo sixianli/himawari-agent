@@ -604,6 +604,14 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     const tuned = await h.overview();
     expect(tuned.quietHours).toEqual([{ days: [0, 6], start: "22:00", end: "08:00" }]);
     expect(tuned.importantSenders).toEqual(["teacher@school.example", "@city.shinjuku.lg.jp"]);
+    expect(() =>
+      h.command("proactive.settings.set", {
+        enabled: true,
+        quietHours: [{ days: [6, 0], start: "22:00", end: "08:00" }],
+        importantSenders: ["\ud800@school.example"],
+      }),
+    ).toThrow("importantSenders");
+    expect((await h.overview()).importantSenders).toEqual(tuned.importantSenders);
     expect(tuned.insights[0]?.rating).toBe("useful");
     expect(tuned.decisions[0]?.rating).toBe("useful");
     expect(tuned.metrics.hits).toBe(1);

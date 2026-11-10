@@ -67,6 +67,8 @@ describe("rule expression", () => {
       ["mail_delivery", "local_minutes % 2 == 0"],
       ["mail_delivery", "{'a': 1}.a == 1"],
       ["mail_delivery", "[1, 2][0] == 1"],
+      ["mail_item", '["x"].exists(v, text.matches("a"))'],
+      ["mail_delivery", '["x"].all(v, int(local_minutes) > 0)'],
     ];
     for (const [gate, source] of outsideWhitelist)
       expect(rejected(gate, source), source).toBe("not_allowed");

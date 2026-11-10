@@ -57,10 +57,7 @@ describe("rule registry", () => {
   });
 
   it("[HR-1] refuses a rule whose example is wrong, so a broken rule cannot become active", () => {
-    const [publicDomain] = BUILT_IN_RULES as readonly [
-      RuleRecord,
-      ...RuleRecord[],
-    ];
+    const [publicDomain] = BUILT_IN_RULES as readonly [RuleRecord, ...RuleRecord[]];
     const broken: RuleRecord = {
       ...publicDomain,
       examples: publicDomain.examples.map((example) => ({
@@ -69,9 +66,7 @@ describe("rule registry", () => {
       })),
     };
     expect(() => assertRuleExamples(broken)).toThrow(/例子不符/u);
-    expect(() =>
-      assertRuleExamples({ ...publicDomain, expression: "false" }),
-    ).toThrow(/例子不符/u);
+    expect(() => assertRuleExamples({ ...publicDomain, expression: "false" })).toThrow(/例子不符/u);
     expect(() =>
       assertRuleExamples({
         ...publicDomain,
@@ -87,15 +82,10 @@ describe("rule registry", () => {
         `${String(index).padStart(3, "0")}${tricky.repeat(40)}`.slice(0, 254),
       ),
       ...Array.from({ length: 100 }, (_, index) =>
-        `${String(index).padStart(3, "0")}${"\u0001".repeat(254)}`.slice(
-          0,
-          254,
-        ),
+        `${String(index).padStart(3, "0")}${"\u0001".repeat(254)}`.slice(0, 254),
       ),
     ];
-    expect(new Set(senders.map((sender) => sender.toLowerCase())).size).toBe(
-      200,
-    );
+    expect(new Set(senders.map((sender) => sender.toLowerCase())).size).toBe(200);
     const rules = ruleBookFor({
       quietHours: Array.from({ length: 14 }, (_, index) => ({
         days: [0, 1, 2, 3, 4, 5, 6],
@@ -138,16 +128,12 @@ describe("rule registry", () => {
       text: "",
       text_words: [],
     };
-    expect(
-      new RuleJudge().decide("mail_item", facts, [rule]).hits,
-    ).toHaveLength(1);
+    expect(new RuleJudge().decide("mail_item", facts, [rule]).hits).toHaveLength(1);
   });
 
   it("[HR-1] treats a quiet period whose start equals its end as never quiet", () => {
     const rules = ruleBookFor({
-      quietHours: [
-        { days: [0, 1, 2, 3, 4, 5, 6], start: "09:00", end: "09:00" },
-      ],
+      quietHours: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "09:00", end: "09:00" }],
       quietHoursRevision: 1,
       importantSenders: [],
       importantSendersRevision: 1,
@@ -179,9 +165,7 @@ describe("rule registry", () => {
     expect(judge.decide("mail_item", facts, [rule]).hits).toEqual([
       { id: RULE_IDS.importantSender, revision: 7, outcome: "raise_floor" },
     ]);
-    expect(
-      judge.decide("mail_item", facts, [{ ...rule, status: "retired" }]).hits,
-    ).toEqual([]);
+    expect(judge.decide("mail_item", facts, [{ ...rule, status: "retired" }]).hits).toEqual([]);
     expect(judge.decide("mail_delivery", facts, [rule]).hits).toEqual([]);
   });
 

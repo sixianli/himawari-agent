@@ -248,7 +248,11 @@ export class SqliteProactiveOperations {
       ),
       quietHoursRevision: quiet?.revision ?? 0,
       importantSenders: Object.freeze(
-        senders ? (JSON.parse(senders.parameters) as { senders: string[] }).senders : [],
+        senders
+          ? (JSON.parse(senders.parameters) as { senders: string[] }).senders.filter(
+              (sender) => !/\p{Surrogate}/u.test(sender),
+            )
+          : [],
       ),
       importantSendersRevision: senders?.revision ?? 0,
       updatedAt: row?.updatedAt ?? null,
@@ -274,10 +278,10 @@ export class SqliteProactiveOperations {
       input.importantSenders.length > 200 ||
       input.importantSenders.some(
         (sender) =>
-            typeof sender !== "string" ||
-            sender.length < 1 ||
-            sender.length > 254 ||
-            /\p{Surrogate}/u.test(sender),
+          typeof sender !== "string" ||
+          sender.length < 1 ||
+          sender.length > 254 ||
+          /\p{Surrogate}/u.test(sender),
       )
     )
       this.invalid("Proactive settings are invalid");
