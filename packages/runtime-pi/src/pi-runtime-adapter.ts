@@ -822,7 +822,7 @@ function deferredPiStream(
     } finally {
       output.end();
     }
-  })();
+  })().catch(() => undefined);
   return output;
 }
 
@@ -960,7 +960,7 @@ function relayAdmittedPiStream(
     } finally {
       output.end();
     }
-  })();
+  })().catch(() => undefined);
   return output;
 }
 

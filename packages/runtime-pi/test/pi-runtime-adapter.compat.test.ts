@@ -3164,7 +3164,8 @@ it("does not call the model when native history cannot be persisted", async () =
   });
   const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
   expect(model.observed).toEqual([]);
-  expect(events.at(-1)?.type).not.toBe("runtime.completed");
+  expect(events.at(-1)?.type).toBe("runtime.failed");
+  expect(events.some((event) => event.type === "runtime.completed")).toBe(false);
 });
 
 it("does not execute a tool when saving its assistant request fails", async () => {
