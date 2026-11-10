@@ -65,12 +65,13 @@ class RecordingRuntime {
   registerNativeProvider(provider: {
     readonly id: string;
     readonly baseUrl?: string;
+    readonly auth?: unknown;
     getModels(): readonly unknown[];
   }): void {
     const models = provider.getModels();
     this.registered.push({
       providerId: provider.id,
-      config: { baseUrl: provider.baseUrl, models },
+      config: { baseUrl: provider.baseUrl, auth: provider.auth, models },
     });
     for (const model of models) {
       const id = (model as Record<string, unknown>)["id"];

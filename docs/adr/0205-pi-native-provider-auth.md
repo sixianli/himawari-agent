@@ -45,7 +45,7 @@ Andy 2026-11-10 的原话：“基于 Pi 的二次开发必须先查 Pi 官方�
 ## 决定
 
 1. `ConfiguredPiModelBindingPort` 用 `createProvider` 构造完整服务方，用 `runtime.registerNativeProvider` 注册，注册后 `await runtime.refresh({ allowNetwork: false })`；流式实现复用官方的 `openAICompletionsApi()`。
-2. 服务方的 `auth.apiKey.check` 固定返回 `{ type: "api_key", source: "himawari-host-secret" }`，不读密钥、不碰网络。`resolve` 只在 Himawari 经 `apiKey` 选项传入密钥时原样返回，没有就返回 `undefined`。`resolve` 不向主机取密钥：Pi 在压缩、可用性刷新、缓存预热时也会调 `getAuth`，在那里取密钥会早于 Himawari 的准入。
+2. 服务方的 `auth.apiKey.check` 固定返回 `{ type: "api_key", source: "himawari-host-secret" }`，不读密钥、不碰网络。`resolve` 只从 `credential` 取密钥（类型必须是 `api_key`），没有就返回 `undefined`；来源唯一由第 4 条的空凭据库保证。`resolve` 不向主机取密钥：Pi 在压缩、可用性刷新、缓存预热时也会调 `getAuth`，在那里取密钥会早于 Himawari 的准入。
 3. 删除 `sessionModelRuntime` 的 Proxy。准入、取密钥、传 `apiKey` 的代码（`admitPiStream`）不动，顺序仍是先过权限和预算，再取密钥，再发请求。
 4. Pi 的凭据库必须保持为空：`resolve` 分不出显式传入的密钥和凭据库里的密钥，所以靠“凭据库为空”保证来源只有一个；测试断言 `listCredentials()` 为空。
 5. `check` 恒返回“已配置”，不给密钥来源加只查是否存在的接口（Andy 2026-11-10 通过协调者同意）。主机密钥取不到时，失败发生在准入之后，预留会释放，和原来的 Proxy 行为相同。
@@ -71,7 +71,7 @@ Pi 自己的官方示例（1.5.1 `docs/extensions.md` 第 1987–2013 行）就�
 
 ## 后果
 
-- 发给网关的请求体逐字节不变、非易变请求头一致（测试排除了易变的头，Authorization 的值换成占位）：改写前用旧写法录下 magpie 和 vercel-ai-gateway 各一份请求（`packages/runtime-pi/test/fixtures/d4-golden-requests.json`），改写后测试逐字节比对通过；故意改 `maxTokensField` 时比对失败。
+- 发给网关的请求体逐字节不变、非易变请求头一致（测试排除了易变的头，Authorization 的值换成占位）：改写前用旧写法录下 magpie 和 vercel-ai-gateway 各一份请求（`packages/runtime-pi/test/fixtures/d4-golden-requests.json`），改写后测试逐字节比对通过；故意改 `maxTokensField` 时比对失败是手工验证过的，仓库里的自动反向用例改的是 `maxTokens`（也会让比对失败）。
 - 原生服务方整体替换了 Pi 内置的 `vercel-ai-gateway`：它从 `AI_GATEWAY_API_KEY` 环境变量取密钥的兜底没有了，测试断言设了该环境变量也取不到密钥。
 - 升级 Pi 时，如果 `AgentSession` 的检查或 `ApiKeyAuth.check` 的行为变了，`[D4]` 开头的测试会失败。
 
