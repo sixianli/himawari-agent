@@ -103,7 +103,7 @@ const { session } = await createAgentSession({
 });
 ```
 
-Himawari 在 `packages/runtime-pi/src/pi-runtime-adapter.ts` 用 `DefaultResourceLoader` 并关掉 Pi 自动发现的扩展、技能、提示模板、主题和上下文文件（`noExtensions`、`noSkills` 等），自己的扩展从 `extensionFactories` 传入。适配器还接受 `resources` 端口给出的磁盘路径（`additionalExtensionPaths`、`additionalSkillPaths`、`additionalPromptTemplatePaths`）：2026-11-10 仓库里只有这个端口的接口定义，没有实现，生产入口也没有接，传的是空列表；适配器自己只检查路径非空、不重复，不检查路径在不在允许的目录里。扩展路径上的文件会被 Pi 当代码加载，所以以后接这个端口的改动必须先出方案，写清授权怎么做（`docs/sdk.md` 第 112 行“Inline extension factories can be supplied through `DefaultResourceLoader`”）。用完调用 `session.dispose()`。
+Himawari 在 `packages/runtime-pi/src/pi-runtime-adapter.ts` 用 `DefaultResourceLoader` 并关掉 Pi 自动发现的扩展、技能、提示模板、主题和上下文文件（`noExtensions`、`noSkills` 等），自己的扩展从 `extensionFactories` 传入。适配器还接受 `resources` 端口给出的磁盘路径（`additionalExtensionPaths`、`additionalSkillPaths`、`additionalPromptTemplatePaths`）：2026-11-10 仓库里只有这个端口的接口定义，没有实现，生产入口也没有接，传的是空列表；适配器自己只检查路径非空、不重复，不检查路径在不在允许的目录里。扩展路径上的文件会被 Pi 当代码加载，所以以后接这个端口的改动必须先出方案，写清授权怎么做：至少把路径解析成真实路径（跟随符号链接）后检查在允许的目录里、是普通文件、按真实路径去重，适配器侧再查一次（`docs/sdk.md` 第 112 行“Inline extension factories can be supplied through `DefaultResourceLoader`”）。用完调用 `session.dispose()`。
 
 <a id="pattern-history"></a>
 ### 恢复历史
@@ -328,8 +328,8 @@ SettingsManager.inMemory({
 
 - 自动重试 Himawari 关着（[ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#decision) 第 7 条）。
 - 缓存预热（`cacheWarming`，Pi 定时补发一个只要 1 个输出 token 的请求，让服务方的缓存不过期）：1.5.0 默认 `"streaming"`，1.5.1 默认改成 `"idle"`，空闲时最多续 30 分钟。补发的请求会花钱。升级 Pi 时必须先看 `CHANGELOG.md` 里改了哪些默认值。
-- 预热要保留，不能因为 Himawari 管不到费用就关掉（Andy 2026-11-10）。官方的管法：模型配置写 `promptCache`（服务方缓存能存几秒，没写的模型不预热，`docs/models.md` 第 106 行）；每次预热前 Pi 发 `cache_warming_decision` 事件，扩展回 `{ action: "stop" }` 就不续（`docs/extensions.md` 第 912 行），Himawari 在这里按自己的预算决定；预热的用量 Pi 记成一条 `cache_warm` 会话条目并发出 `entry_appended` 事件（1.5.1 `dist/core/cache-warmer.js` 第 188 行），Himawari 从这里记进自己的用量表。预热请求由 Pi 直接调服务方，不经过 Himawari 替换的请求函数（1.5.0 `dist/core/cache-warmer.js` 第 238 行），所以不能指望那里的准入和计费。
-- DeepSeek 不需要预热：缓存自动开启，不用之后“usually within a few hours to a few days”才清掉（<https://api-docs.deepseek.com/guides/kv_cache>）。Himawari 每轮新建 Pi 会话、跑完关掉（`pi-runtime-adapter.ts` 的 `session.dispose()`），会话一关预热就停，所以两轮之间的空闲预热现在跑不起来。
+- 预热要保留，不能因为 Himawari 管不到费用就关掉（Andy 2026-11-10）。官方的管法：模型配置写 `promptCache`（服务方缓存能存几秒，没写的模型不预热，`docs/models.md` 第 106 行）；每次预热前 Pi 发 `cache_warming_decision` 事件（`docs/extensions.md` 第 912 行），第 929 行原话“Return `{ action: "warm" }` or `{ action: "stop" }` to override”，Himawari 在这里按自己的预算决定；预热的用量 Pi 记成一条 `cache_warm` 会话条目并发出 `entry_appended` 事件（1.5.1 `dist/core/cache-warmer.js` 第 188 行）。Himawari 现在把 `entry_appended` 列为忽略的事件（`pi-runtime-adapter.ts` 的 `KNOWN_IGNORED_EVENTS`），用量表的来源也只有 `model-port`、`agent-stream` 两种（`packages/application/src/ports/model-usage.ts`），所以记预热用量要先扩展用量表，写进 D7 的方案。预热请求由 Pi 直接重放上一次请求（1.5.0 `dist/core/cache-warmer.js` 第 238 行），不经过 Himawari 替换的请求函数，所以没有准入、预算和用量记录；但它沿用那次请求的选项（1.5.0 `dist/core/sdk.js` 第 199、269 行把选项原样存下），其中有 Himawari 传入的出口遮盖 `fetch` 和密钥，所以照样遮盖、照样带密钥。
+- DeepSeek 不需要预热：缓存自动开启，不用之后“usually within a few hours to a few days”才清掉（<https://api-docs.deepseek.com/guides/kv_cache>）。Himawari 每次运行（处理一条用户消息的整个过程，中间可以多次请求模型）新建 Pi 会话、跑完关掉（`pi-runtime-adapter.ts` 的 `session.dispose()`），会话一关预热就停，所以两次运行之间的空闲预热现在跑不起来。
 
 [↑ 回到阅读导航](#contents)
 
