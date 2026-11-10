@@ -759,11 +759,11 @@ export const messages = {
   "memory.page.import": "Import memories",
   "memory.page.export": "Export all memories",
   "memory.page.sourceTitle":
-    "{s, select, codex {Codex} assistant {ChatGPT, Claude or another AI} other {A Himawari export}}",
+    "{s, select, codex {Codex} assistant {ChatGPT, Claude or another AI} other {An old Himawari export (JSON)}}",
   "memory.page.sourceHelp":
-    "{s, select, codex {Pick Codex memory files (memory_summary.md, MEMORY.md)} assistant {Ask it to list what it knows about you, then paste the answer} other {For a new computer or a restore}}",
+    "{s, select, codex {Pick Codex memory files (memory_summary.md, MEMORY.md)} assistant {Ask it to list what it knows about you, then paste the answer} other {Only the himawari-memories.json downloaded earlier; the zip from the current export cannot be imported here}}",
   "memory.page.fileHelp":
-    "{s, select, codex {Pick memory_summary.md and MEMORY.md, and optionally your AGENTS.md. The files are in ~/.codex/memories/ and ~/.codex/ on your Mac; press ⌘⇧G in the file picker to type the path.} other {Pick the himawari-memories.json downloaded with Export all memories.}}",
+    "{s, select, codex {Pick memory_summary.md and MEMORY.md, and optionally your AGENTS.md. The files are in ~/.codex/memories/ and ~/.codex/ on your Mac; press ⌘⇧G in the file picker to type the path.} other {Pick a himawari-memories.json downloaded earlier. Export all memories now gives a zip for backup and moving machines (unzip it, then import the himawari-export folder inside with the command line), not importable here.}}",
   "memory.page.aiStep1": "Step 1: copy this message and send it to the AI you use.",
   "memory.page.aiPrompt":
     "List everything you remember about me, one item per line starting with “- ”: who I am, my preferences and habits, what I am working on, the people around me, and the rules I asked you to follow. Use my own words where you can. Leave out passwords, ID numbers and card numbers. List only the items, without explanations.",
@@ -781,10 +781,15 @@ export const messages = {
   "memory.page.importEmpty":
     "Nothing to import was found. Check the file, or that you pasted the AI's answer.",
   "memory.page.importTooBig": "Each file must be under 200 KB; split it and import in parts.",
-  "memory.page.importUnreadable": "The file could not be read or is not a Himawari export.",
-  "memory.page.exportTitle": "Export {count} (including archived and earlier wording)",
-  "memory.page.exportSensitive": "Include sensitive memories (health, money and similar)",
-  "memory.page.download": "Download JSON",
+  "memory.page.importUnreadable": "The file could not be read or is in the wrong format.",
+  "memory.page.exportTitle": "Export all memories and decision records",
+  "memory.page.exportNote":
+    "You get one zip with per-item JSON Lines data and readable Markdown. Passwords, ID numbers and similar secrets stay as placeholders; memories in the trash and sensitive-topic memories such as health or money are exported too, and apart from the secrets their text is plain, so keep the zip safe. Use the command line encrypted export to take the secrets out too.",
+  "memory.page.download": "Download export",
+  "memory.page.exportWorking": "Preparing the export…",
+  "memory.page.exportDone":
+    "Exported {count} memories; {withheld} sensitive text places were left as placeholders.",
+  "memory.page.exportFailed": "The export failed. Please try again later.",
   "capabilities.title": "Capabilities and adapters",
   "authorizations.title": "Authorizations and grants",
   "trace.title": "Trace",

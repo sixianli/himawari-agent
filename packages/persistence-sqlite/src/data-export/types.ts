@@ -90,3 +90,6 @@ export class DataExportError extends Error {
     this.detail = detail;
   }
 }
+
+export const SHORT_TEXT_OMISSION_LABEL =
+  "含机密的实体名、人物名、别名、来源编号和决定记录里的短文字";

@@ -1,6 +1,6 @@
 import { execFile, execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, readFileSync } from "node:fs";
 import {
   appendFile,
   copyFile,
@@ -5490,6 +5490,8 @@ const RELEASE_ACCEPTANCE_SCENARIOS = [
   "accept-file-writing-progress",
   "accept-progress-without-state",
   "accept-memory-page",
+  "accept-memory-export",
+  "accept-export-requires-login",
   "accept-phone-layout",
   "accept-phone-send",
   "accept-after-restart",
@@ -5920,6 +5922,40 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(target(memory, UI.pageError)).toHaveCount(0);
       await newThread();
       await uiExpect(memory).toHaveCount(0, { timeout: 20_000 });
+    });
+    await scenario("accept-memory-export", async () => {
+      await target(target(page, UI.sidebarNavigation), UI.openMemory).click();
+      const memory = target(page, UI.memoryPage);
+      await uiExpect(memory.getByText(UI.memoryCount)).toBeVisible({ timeout: 30_000 });
+      await target(memory, UI.openExport).click();
+      const downloading = page.waitForEvent("download", { timeout: 60_000 });
+      await target(memory, UI.downloadExport).click();
+      const download = await downloading;
+      expect(download.suggestedFilename()).toMatch(/^himawari-export-\d{4}-\d{2}-\d{2}\.zip$/u);
+      const file = await download.path();
+      const head = readFileSync(file).subarray(0, 4);
+      expect([...head]).toEqual([0x50, 0x4b, 0x03, 0x04]);
+      await uiExpect(memory.getByText(UI.exportDone)).toBeVisible({ timeout: 30_000 });
+      await uiExpect(target(memory, UI.pageError)).toHaveCount(0);
+      await newThread();
+      await uiExpect(memory).toHaveCount(0, { timeout: 20_000 });
+    });
+    await scenario("accept-export-requires-login", async () => {
+      const stranger = await browser.newContext({ ignoreHTTPSErrors: true });
+      try {
+        const refused = await stranger.request.get(
+          `${installation.origin}/api/data-export/v1/archive`,
+        );
+        expect(refused.status()).toBe(401);
+        expect((await refused.body()).byteLength).toBe(0);
+        const allowed = await context.request.get(
+          `${installation.origin}/api/data-export/v1/archive`,
+        );
+        expect(allowed.status()).toBe(200);
+        expect(allowed.headers()["content-type"]).toBe("application/zip");
+      } finally {
+        await stranger.close();
+      }
     });
     await scenario("accept-phone-layout", async () => {
       const phoneContext = await browser.newContext({
