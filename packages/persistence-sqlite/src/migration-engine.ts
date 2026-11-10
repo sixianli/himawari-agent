@@ -672,6 +672,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0085_memory_reminder_cancelled.sql",
   },
+  {
+    sequence: 86,
+    name: "rule_book",
+    changeSet: "rule-book",
+    phase: "expand" as const,
+    file: "0086_rule_book.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

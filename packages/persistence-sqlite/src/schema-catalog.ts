@@ -792,9 +792,23 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "proactive_settings",
     "ProactiveStorePort",
-    "one row per Agent: the proactive check switch, quiet hours and the owner's important senders",
+    "one row per Agent: the proactive check switch",
     "metadata_only",
     "cascade with Owner or Agent deletion",
+  ),
+  entry(
+    "rule_book_rules",
+    "ProactiveStorePort",
+    "one row per Agent and rule: the owner's quiet hours and important senders as the current revision of a hard rule",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
+    "rule_book_history",
+    "ProactiveStorePort",
+    "append-only history of every revision of every rule in the rule book",
+    "metadata_only",
+    "retain with the Agent; update and deletion are forbidden while the Agent exists",
   ),
   entry(
     "proactive_connections",

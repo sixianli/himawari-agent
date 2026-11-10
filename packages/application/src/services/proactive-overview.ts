@@ -12,6 +12,7 @@ import type {
   ProactiveVerdict,
 } from "../ports/proactive-checks.js";
 import type { WebPushFeedback } from "../ports/web-push.js";
+import { ruleBookFor } from "../rules/rule-book.js";
 import {
   floorHitIds,
   fromAddressOf,
@@ -121,6 +122,7 @@ export async function readProactiveOverview(options: {
 }): Promise<ProactiveOverview> {
   const { scope, store, seal, now } = options;
   const settings = await store.readSettings(scope);
+  const rules = ruleBookFor(settings);
   const connection = await store.readConnection({ ...scope, source: options.source });
   const open = (ref: string) => seal.open({ ...scope, ref });
   const account = connection ? ((await open(connection.accountRef)) ?? null) : null;
@@ -151,7 +153,7 @@ export async function readProactiveOverview(options: {
             subject: content.subject ?? "",
             snippet: content.summary ?? "",
           } as ProactiveSourceItem,
-          settings.importantSenders,
+          rules,
         ).length > 0);
     if (!isReminderWorthy(insight.result, insight.priority, floor)) {
       if (insight.updatedAt >= auditSince)

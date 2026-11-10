@@ -25,6 +25,7 @@
     "@himawari-agent/gateway-contracts": "0.0.0",
     "@himawari-agent/prompt-catalog": "0.0.0",
     "@himawari-agent/sensitive-capture": "0.0.0",
+    "@marcbachmann/cel-js": "8.0.0",
     "@noble/hashes": "2.4.0"
   }
 }

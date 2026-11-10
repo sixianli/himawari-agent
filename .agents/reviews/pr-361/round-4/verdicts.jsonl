@@ -1,0 +1,8 @@
+{"id": "E1", "quote": "### 中：迁移后“从旧数据读回”的路径没有测试，规则 id 在三处各写一份，漂移时会静默回退默认值", "valid": true, "class": "error", "severity": "medium", "trigger": "迁移里的规则编号改名而持久层没改", "consequence": "读设置静默回到默认值，没有测试失败", "modelSeverity": "中", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "E2", "quote": "### 中：旧数据里的孤立代理项重要发件人会被静默丢弃，和“第 1 步不改变任何现有行为”的说明不一致", "valid": true, "class": "error", "severity": "medium", "trigger": "旧数据含孤立代理项的发件人，迁移后读设置", "consequence": "该发件人被丢弃，与“不改行为”说明不一致", "modelSeverity": "中", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "E3", "quote": "### 低：`writeRule` 更新时不管 `status`，未来“撤销/退休规则”会失效", "valid": true, "class": "better", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "E4", "quote": "### 低：`readSettings` 把“规则缺失/被退休”当成默认静默时段，而不是“没有静默”", "valid": true, "class": "better", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "E5", "quote": "### 低：只验证了删 Owner 的级联，没验证删 Agent；读取过滤分支也没有直接测试", "valid": true, "class": "better", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "E6", "quote": "### 低：历史只追加且无上限，删除重要发件人不会删除历史里的地址", "valid": true, "class": "better", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "E7", "quote": "### 低：文档仍有指向旧列/旧实现的过时说法", "valid": true, "class": "better", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "E8", "quote": "### 低：最大设置测试写 14 个静默时段，但真实网关只允许 8 个", "valid": true, "class": "better", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}

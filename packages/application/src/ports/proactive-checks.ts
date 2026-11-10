@@ -31,7 +31,9 @@ export interface ProactiveQuietPeriod {
 export interface ProactiveSettings {
   readonly enabled: boolean;
   readonly quietHours: readonly ProactiveQuietPeriod[];
+  readonly quietHoursRevision: number;
   readonly importantSenders: readonly string[];
+  readonly importantSendersRevision: number;
   readonly updatedAt: string | null;
 }
 

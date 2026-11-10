@@ -1,0 +1,5 @@
+{"id": "C1", "quote": "### 1.【中｜推测】主人可控的发件人字符串直接拼进 CEL，编译失败没有兜底，且失败时不记费用", "valid": true, "class": "error", "severity": "medium", "trigger": "在设置里存入带孤立代理项的发件人（网关正则放行）", "consequence": "cel 解析抛错，之后每次邮件检查失败", "modelSeverity": "中", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "C2", "quote": "### 2.【低｜证实】反向用例覆盖不全，ADR “改掉规则里一个词，对照测试就失败”不成立", "valid": true, "class": "error", "severity": "low", "trigger": "删掉词表里的一个词", "consequence": "2 万封随机邮件的对照测试仍然全过", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "C3", "quote": "### 3.【低｜证实】`writeRule` 更新时不清 `status`，`readSettings` 只认 active；参数 JSON 也不校验形状", "valid": true, "class": "better", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "C4", "quote": "### 4.【低｜证实】专用门槛 `check:rule-registry` 不包含迁移和 store 测试", "valid": true, "class": "better", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "C5", "quote": "### 5.【低｜证实，文档】ADR 0147 仍把 `hitsFloor` 写成现存的实现", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 0147 第 43 行", "consequence": "仍说 hitsFloor 是现存实现", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}

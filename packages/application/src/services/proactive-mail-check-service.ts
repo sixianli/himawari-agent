@@ -49,9 +49,10 @@ import {
   floorHitIds,
   senderDomain,
   keepOffReminderPage,
-  quietUntil,
+  quietEnd,
   startOfZonedDay,
 } from "./proactive-rules.js";
+import { type RuleRecord, ruleBookFor } from "../rules/rule-book.js";
 
 const LOOKBACK_MS = 3 * 24 * 3_600_000;
 const PUSH_WINDOW_MS = 48 * 3_600_000;
@@ -696,6 +697,7 @@ export class ProactiveMailCheckService {
         costMicros: 0,
         cursor: null,
         quietHours: [],
+        rules: [],
         floorHits: {},
       });
     const fresh = new Set(
@@ -802,10 +804,11 @@ export class ProactiveMailCheckService {
       fetched: items.length,
       skipped: processed.length,
     };
+    const rules = ruleBookFor(settings);
     const floorHits: Record<string, readonly string[]> = {};
     const settled = new Map<string, { readonly result: ProactiveResult; readonly sure: boolean }>();
     for (const item of candidates) {
-      const floorIds = item.sentByOwner ? [] : floorHitIds(item, settings.importantSenders);
+      const floorIds = item.sentByOwner ? [] : floorHitIds(item, rules);
       const floor = floorIds.length > 0;
       if (floor) floorHits[item.messageId] = floorIds;
       const judgement = judged.get(item.messageId);
@@ -902,7 +905,7 @@ export class ProactiveMailCheckService {
     );
     const verdict: ProactiveVerdict =
       counts.pushed > 0
-        ? quietUntil(startedAt, settings.quietHours, this.#options.timeZone)
+        ? quietEnd(startedAt, rules, settings.quietHours, this.#options.timeZone)
           ? "deferred"
           : "pushed"
         : (stop ?? "silent");
@@ -918,6 +921,7 @@ export class ProactiveMailCheckService {
       costMicros,
       cursor: leftover ? null : fetched.cursor,
       quietHours: settings.quietHours,
+      rules,
       floorHits,
     });
   }
@@ -1258,6 +1262,7 @@ export class ProactiveMailCheckService {
       costMicros: 0,
       cursor: null,
       quietHours: [],
+      rules: [],
       floorHits: {},
     });
   }
@@ -1275,6 +1280,7 @@ export class ProactiveMailCheckService {
       readonly costMicros: number;
       readonly cursor: string | null;
       readonly quietHours: ProactiveSettings["quietHours"];
+      readonly rules: readonly RuleRecord[];
       readonly floorHits: Readonly<Record<string, readonly string[]>>;
       readonly backoff?: readonly ProactiveBackoffWrite[];
     },
@@ -1283,7 +1289,12 @@ export class ProactiveMailCheckService {
     const pushing = input.insights.some(({ push }) => push);
     let push: { id: string; readyAt: string } | null = null;
     if (pushing) {
-      const quiet = quietUntil(input.startedAt, input.quietHours, this.#options.timeZone);
+      const quiet = quietEnd(
+        input.startedAt,
+        input.rules,
+        input.quietHours,
+        this.#options.timeZone,
+      );
       const readyAt = quiet ?? input.startedAt;
       const pending = quiet ? await store.pendingPush({ ...scope, readyAt }) : undefined;
       push = { id: pending?.id ?? ids.next("proactive-push"), readyAt };

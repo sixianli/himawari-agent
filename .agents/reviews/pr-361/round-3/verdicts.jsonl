@@ -1,0 +1,8 @@
+{"id": "D1", "quote": "### 1. 中：新增的“孤立代理项”校验没有同步到网关契约，I-73 同类", "valid": true, "class": "error", "severity": "medium", "trigger": "经 proactive.settings.set 提交带孤立代理项的发件人", "consequence": "网关放行，存储拒绝，用户看到保存失败", "modelSeverity": "中", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "D2", "quote": "### 2. 低-中：迁移原样复制旧发件人，新增写校验会拒绝迁移后的旧值", "valid": true, "class": "error", "severity": "low", "trigger": "旧库有含孤立代理项的发件人，迁移后连接 Gmail 把设置写回", "consequence": "存储拒绝，连接失败", "modelSeverity": "低-中", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "D3", "quote": "### 3. 低：规则历史没有单条删除或清空路径，误填的地址会长期保留", "valid": true, "class": "better", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "D4", "quote": "### 4. 低：文档仍指向已被迁移 0086 删除的列", "valid": true, "class": "better", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "D5", "quote": "### 5. 低：新增代码的缩进和同文件既有格式不一致，可能让 `format:check` 失败", "valid": true, "class": "error", "severity": "low", "trigger": "跑 format:check", "consequence": "格式不一致被拒", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "D6", "quote": "### 6. 中（未核实）：CEL 白名单对 `exists`/`all` 谓词的递归只取了 `args.slice(1)`，缺少反向用例", "valid": false, "class": "better", "modelSeverity": "中", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "D7", "quote": "### 7. 低（未核实）：求值步数没有上限，FAQ 只靠“当前表达式都由代码生成”", "valid": true, "class": "better", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "D8", "quote": "### 8. 低（未核实）：历史表的 Agent 删除路径没有直接用例", "valid": true, "class": "better", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}

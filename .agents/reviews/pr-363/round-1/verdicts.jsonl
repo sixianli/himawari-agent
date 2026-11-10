@@ -1,0 +1,7 @@
+{"id": "A1", "quote": "### 1. 中（条件性）：降低写入上限没有处理已经存在的 >8 段数据", "valid": false, "class": "better", "modelSeverity": "中", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "A2", "quote": "### 2. 中（条件性，面向第 4 步）：重新激活语义与读取路径不一致", "valid": true, "class": "better", "modelSeverity": "中", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "A3", "quote": "### 3. 低：作者第二条说法与代码机制不一致（行为结论基本成立）", "valid": true, "class": "better", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "B1", "quote": "**1. 中｜sqlite-proactive-operations.ts:341｜作者说法「writeRule 只在参数改变时才被调用（读写之间用修订号比较）」与代码不符**", "valid": true, "class": "better", "modelSeverity": "中", "model": "opencode-go/glm-5.3-flash"}
+{"id": "B2", "quote": "**2. 低｜提交 e83d5bb2 说明｜Fast-mode-checks 行没有记录基本检查**", "valid": true, "class": "better", "modelSeverity": "低", "model": "opencode-go/glm-5.3-flash"}
+{"id": "B3", "quote": "**3. 低｜docs/adr/0184-back-off-ignored-proactive-pushes.md:38｜正文仍引用已删除的列**", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 0184 第 38 行", "consequence": "句子前半仍说重要发件人在已删除的列里，与括号里的迁移说明矛盾，会让排查的人找错表", "modelSeverity": "低", "model": "opencode-go/glm-5.3-flash"}
+{"id": "B4", "quote": "**4. 信息｜sqlite-proactive-operations.ts:341｜退休规则 + 参数不变 = 保持退休，且 readSettings 回落默认值**", "valid": true, "class": "better", "modelSeverity": "信息", "model": "opencode-go/glm-5.3-flash"}
