@@ -35,7 +35,7 @@ date: "2026-11-08"
 
 ## 决定
 
-1. **“同一类”= 推送理由类型 + 发件人域名**，键形如 `due:service.example.com`。目前可降频的理由类型只有“到期提醒”（`due`）。键存在新列 `source_insights.push_class`，只在该提醒真的排进推送时写入（迁移 0081）。域名明文存放，和 `proactive_settings.important_senders` 同级，不存邮件地址、标题或正文。（迁移 0086 起，重要发件人改存 `rule_book_rules` 里的 `floor_important_sender` 规则，见 [ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md)。）
+1. **“同一类”= 推送理由类型 + 发件人域名**，键形如 `due:service.example.com`。目前可降频的理由类型只有“到期提醒”（`due`）。键存在新列 `source_insights.push_class`，只在该提醒真的排进推送时写入（迁移 0081）。域名明文存放，和重要发件人设置同级（迁移 0086 之前存在 `proactive_settings.important_senders`，之后存在 `rule_book_rules` 里的 `floor_important_sender` 规则，见 [ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md)），不存邮件地址、标题或正文。
 2. **地板规则命中的提醒不分类、不计数、不降频**：命中重要发件人、go.jp/lg.jp/ac.jp/ed.jp 或金钱词的提醒，`push_class` 为空，不进入下面的任何计算。
 3. **什么算一次“被忽略”**：这一类的一条推送，满足任一条：Andy 把对应提醒评为“不需要”；或推送发出满 24 小时仍没点开。一条推送只算一次，不管它带了几条同域名提醒（同一条推送里只要有一条被点开就算被点开，点开优先于“不需要”）；只数推送服务返回成功（2xx）、推送反馈表里有发送记录的推送，没有订阅或发送失败的不计。从最近一条往前数连续的被忽略数，遇到一条被点开的就停（计数清零）；发出不满 24 小时且未被评价的先不计。只数本台阶开始之后发出的推送。
 4. **降频台阶**（N = `runPolicy.proactive.backoffThreshold`，缺省 3，范围 0 到 10，0 表示关闭）：连续被忽略 N 次进入第 1 台阶：这一类最多每 24 小时推送 1 条；在第 1 台阶上再连续被忽略 N 次进入第 2 台阶：暂停推送，直到恢复。进入台阶的那次检查本身就被压（所以“第 N+1 次被降频”）。被压的提醒仍写进提醒页，不删任何规则。
