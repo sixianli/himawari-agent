@@ -363,4 +363,21 @@ describe("npm 发布包身份与 lifecycle", () => {
       "锁文件依赖没有安装",
     );
   });
+
+  it("允许没装的可选对等依赖，但拒绝没装的普通可选依赖", () => {
+    const fixture = npmFixture();
+    fixture.lock.packages["node_modules/optional-peer"] = {
+      version: "1.0.0",
+      optional: true,
+      peer: true,
+      dev: true,
+    };
+    fixture.save();
+    expect(auditInstalledDependencies(fixture.directory, fixture.toolchain).pi).toHaveLength(3);
+    delete fixture.lock.packages["node_modules/optional-peer"].peer;
+    fixture.save();
+    expect(() => auditInstalledDependencies(fixture.directory, fixture.toolchain)).toThrow(
+      "锁文件依赖没有安装",
+    );
+  });
 });
