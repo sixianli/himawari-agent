@@ -301,6 +301,8 @@ describe("ContextProjectionService", () => {
     for (const malformed of [
       { recordedAt: "", validFrom: null, validTo: null },
       { recordedAt: NOW, validFrom: 20260101, validTo: null },
+      { recordedAt: NOW, validFrom: "下个月", validTo: null },
+      { recordedAt: "2026-11-09 08:00", validFrom: null, validTo: null },
       { recordedAt: NOW, validFrom: null },
       { ...dates, note: "改写" },
     ]) {

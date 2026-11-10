@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MEMORY_ATTRIBUTES,
   type MemoryCategory,
+  memoryDateNote,
   OwnerProfileService,
   type ProductMemoryRecord,
 } from "../src/index.js";
@@ -215,6 +216,16 @@ describe("owner profile composition", () => {
         "- 主人这周在东京出差（2026-10-20 至今）",
       ].join("\n"),
     ]);
+    const recordedAt = "2026-11-08T15:30:00.000Z";
+    expect(
+      memoryDateNote({ recordedAt, validFrom: "2027-01-01", validTo: null }, "Asia/Tokyo"),
+    ).toBe("（2027-01-01 起）");
+    expect(
+      memoryDateNote({ recordedAt, validFrom: "2026-11-09", validTo: null }, "Asia/Tokyo"),
+    ).toBe("（2026-11-09 至今）");
+    expect(memoryDateNote({ recordedAt, validFrom: "2026-11-09", validTo: null }, "UTC")).toBe(
+      "（2026-11-09 起）",
+    );
   });
 
   it("[RULE-memory-visible] lets a sensitive relationship memory into the profile and marks the block sensitive", async () => {

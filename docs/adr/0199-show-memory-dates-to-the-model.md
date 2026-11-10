@@ -27,7 +27,7 @@ date: "2026-11-10"
 
 Andy 问过：搜出来的记忆交给模型时，模型怎么知道这条记忆是很久以前的，还是刚记下的？“存入记忆的内容必须能被模型看到”整体方案第 3 版（Andy 2026-11-09 同意）第 4 条定了做法：自动带入和档案里，每条记忆后面加日期，格式写死。这是那个方案的第 3 个 PR，前两个是 [ADR 0193](0193-memory-is-visible-to-the-model.md) 和 [ADR 0196](0196-index-sensitive-memory-after-masking-and-stop-idle-archiving.md)。
 
-模型拿到记忆有三条路：每轮自动带入的相关记忆（资料块），主人档案（按类别整理的一段文字），以及模型自己调用的 recall 工具（按需查询）。recall 的结果本来就带日期，前两条路没有。
+对话里模型拿到记忆有三条路：每轮自动带入的相关记忆（资料块），主人档案（按类别整理的一段文字），以及模型自己调用的 recall 工具（按需查询）。recall 的结果本来就带日期，前两条路没有。对话以外，后台的邮件判断和记忆整理也把记忆交给模型，它们不在本次范围内，见[后果](#consequences)。
 
 <a id="premises"></a>
 
@@ -48,11 +48,12 @@ Andy 问过：搜出来的记忆交给模型时，模型怎么知道这条记忆
 1. **格式写死，放在记忆正文后面：**
    - 没有生效时间段：`（记于 2026-11-09）`。
    - 有开始日期、到现在仍成立：`（2026-09-01 至今）`。
+   - 开始日期晚于记下的日期、没有结束日期（例如“下个月搬到杭州”）：`（2027-01-01 起）`。只看记下的日期，不看今天，所以同一条记忆的字节不随日子变；模型从本轮的当前时间自己判断它开始没有。
    - 开始和结束日期都有：`（2021-03-01 至 2024-08-31）`。只有结束日期时，开始日期用记下的日期。
    - 一律 `YYYY-MM-DD`，按配置里的时区（`runPolicy.timeZone`，没配时 UTC）换算；本来就是 `YYYY-MM-DD` 的日期原样用。不写“三天前”这类相对时间，因为它每天都变。
-   - 三段文字放在提示词目录（`packages/prompt-catalog/src/memory.ts` 的 `MEMORY_DATE_RECORDED`、`MEMORY_DATE_RANGE`、`MEMORY_DATE_ONGOING`），拼法在 `packages/application/src/ports/memory-dates.ts`。
+   - 四段文字放在提示词目录（`packages/prompt-catalog/src/memory.ts` 的 `MEMORY_DATE_RECORDED`、`MEMORY_DATE_RANGE`、`MEMORY_DATE_ONGOING`、`MEMORY_DATE_UPCOMING`），拼法在 `packages/application/src/ports/memory-dates.ts`。
 2. **“记于”用 `recordedAt`（第一次记下的时间），没有时退回 `updatedAt`**，和 recall 结果一致（前提 1、3）。
-3. **自动带入：**生产的记忆查询（`production-run-memory.ts`）把日期随候选记忆交给上下文组装；组装把它写进上下文信封（每轮保存的一份上下文清单）的记忆块；读回信封时校验日期的形状，只有记忆块能带，形状不对就拒绝；Pi 适配器拼资料块时按配置时区在正文后面加日期。
+3. **自动带入：**生产的记忆查询（`production-run-memory.ts`）把日期随候选记忆交给上下文组装；组装把它写进上下文信封（每轮保存的一份上下文清单）的记忆块；读回信封时校验日期的形状（`YYYY-MM-DD` 或带时区的完整时间，和记忆存储的校验一致），只有记忆块能带，形状不对就拒绝；Pi 适配器拼资料块时按配置时区在正文后面加日期。
 4. **档案：**档案里按类别列出的记忆每行后面加日期；“主人的要求”那一块不加，它是做事规则，不是会过时的事实。档案的字数上限连日期一起算，因为它限制的是实际发给模型的长度；记忆页“已用 N / 2000 字”因此包含日期的字数。
 5. **系统提示不改。**“记于”“至今”自己说得清，不需要另加说明；改系统提示只对新对话生效，还要单独换新。
 
@@ -76,13 +77,15 @@ Zep 把记忆交给模型时给每条事实带生效时间段，格式是 “FAC
 ## 后果
 
 - 不改模型已经见过的请求开头：日期只出现在最后一条用户消息的资料块里（前提 5、7）；同一条记忆每次算出的字节相同（前提 3，时区来自配置）。已经发出的历史里没有日期，不补。`packages/runtime-pi/test/prompt-prefix.compat.test.ts` 的 `[MEMORY-DATE]` 用例三轮对话分别带三种日期，检查每轮请求都以上一轮开头。
-- 档案每行多约 15 个字，2000 字的上限里能放下的记忆少一些。
+- 档案每行多 15 到 25 个字（“（记于 2026-11-09）”15 个字，起止日期都有的 25 个字），2000 字的上限里能放下的记忆少一些。记忆页列出的档案行不显示日期，但“已用 N 字”算上了日期。
+- `recordedAt` 为空的老记忆退回用 `updatedAt`，恢复归档时它会变，这条记忆的“记于”会变一次（只在最后一条消息里，不影响缓存）；和 recall 结果的做法相同。
+- 邮件判断（`proactive-mail-check-service.ts`）和记忆整理交给模型的记忆仍不带本格式的日期，是已知缺口，要做时另开改动。
 - 门槛（每条去掉对应修改都会失败，已实测）：
   - `packages/runtime-pi/test/prompt-prefix.compat.test.ts` `[MEMORY-DATE]`：真实 Pi 适配器发出的请求里，三种格式按东京时区换算（`2024-08-31T15:00Z` 写成 `2024-09-01`）。
   - `test/integration/memory-model-visible.test.ts` `[MEMORY-DATE]`：上下文组装 → 信封 → 读回 → Pi 适配器 → 本机模型桩，请求里是“主人对青霉素过敏（记于 2026-11-09）”。
-  - `test/integration/context-projection.test.ts` `[MEMORY-DATE]`：信封里的日期带到读回结果；四种形状不对的日期被拒绝。
+  - `test/integration/context-projection.test.ts` `[MEMORY-DATE]`：信封里的日期带到读回结果；六种形状不对的日期（包括“下个月”这类非日期文字）被拒绝。
   - `apps/agent-service/test/production-model-composition.unit.test.ts` `[MEMORY-DATE]`：生产的记忆查询把 `recordedAt`、生效时间段交出去。
-  - `packages/application/test/owner-profile-service.unit.test.ts` `[MEMORY-DATE]`：档案行按东京时区带日期，“主人的要求”不带。
+  - `packages/application/test/owner-profile-service.unit.test.ts` `[MEMORY-DATE]`：档案行按东京时区带日期，“主人的要求”不带；开始日期晚于记下日期时写“起”，同一天写“至今”，按时区比较。
 
 <a id="references"></a>
 

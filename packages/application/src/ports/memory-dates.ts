@@ -2,6 +2,7 @@ import {
   MEMORY_DATE_ONGOING,
   MEMORY_DATE_RANGE,
   MEMORY_DATE_RECORDED,
+  MEMORY_DATE_UPCOMING,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
 import type { ProductMemoryRecord } from "./memory-projection.js";
@@ -13,6 +14,13 @@ export interface MemoryDates {
 }
 
 const PLAIN_DATE = /^\d{4}-\d{2}-\d{2}$/u;
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
+
+function isDateText(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  if (PLAIN_DATE.test(value)) return !Number.isNaN(Date.parse(`${value}T00:00:00.000Z`));
+  return ISO_INSTANT.test(value) && !Number.isNaN(Date.parse(value));
+}
 
 export function memoryDatesOf(memory: ProductMemoryRecord): MemoryDates {
   return Object.freeze({
@@ -25,7 +33,6 @@ export function memoryDatesOf(memory: ProductMemoryRecord): MemoryDates {
 function localDate(value: string, timeZone: string): string {
   if (PLAIN_DATE.test(value)) return value;
   const instant = new Date(value);
-  if (Number.isNaN(instant.valueOf())) return value;
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",
@@ -41,21 +48,20 @@ export function memoryDateNote(dates: MemoryDates, timeZone: string): string {
   if (dates.validFrom === null && dates.validTo === null)
     return renderPrompt(MEMORY_DATE_RECORDED, { date: localDate(dates.recordedAt, timeZone) });
   const from = localDate(dates.validFrom ?? dates.recordedAt, timeZone);
-  return dates.validTo === null
-    ? renderPrompt(MEMORY_DATE_ONGOING, { from })
-    : renderPrompt(MEMORY_DATE_RANGE, { from, to: localDate(dates.validTo, timeZone) });
+  if (dates.validTo !== null)
+    return renderPrompt(MEMORY_DATE_RANGE, { from, to: localDate(dates.validTo, timeZone) });
+  return from > localDate(dates.recordedAt, timeZone)
+    ? renderPrompt(MEMORY_DATE_UPCOMING, { from })
+    : renderPrompt(MEMORY_DATE_ONGOING, { from });
 }
 
 export function isMemoryDates(value: unknown): value is MemoryDates {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
-  const optionalText = (field: unknown) =>
-    field === null || (typeof field === "string" && field.length > 0);
   return (
     Object.keys(record).length === 3 &&
-    typeof record["recordedAt"] === "string" &&
-    record["recordedAt"].length > 0 &&
-    optionalText(record["validFrom"]) &&
-    optionalText(record["validTo"])
+    isDateText(record["recordedAt"]) &&
+    (record["validFrom"] === null || isDateText(record["validFrom"])) &&
+    (record["validTo"] === null || isDateText(record["validTo"]))
   );
 }

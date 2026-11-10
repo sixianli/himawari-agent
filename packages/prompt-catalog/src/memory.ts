@@ -146,3 +146,12 @@ export const MEMORY_DATE_ONGOING = templatePrompt({
   output: "free-text",
   segments: [text("（"), slot("from"), text(" 至今）")],
 });
+
+export const MEMORY_DATE_UPCOMING = templatePrompt({
+  id: "memory.date.upcoming",
+  purpose: "自动带入和档案里每条记忆后面的日期：记下时还没开始、没有结束日期",
+  usedBy: ["packages/application/src/ports/memory-dates.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [text("（"), slot("from"), text(" 起）")],
+});

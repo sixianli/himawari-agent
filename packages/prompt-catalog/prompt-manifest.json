@@ -383,6 +383,11 @@
     "changedIn": "ADR 0199",
     "reason": "记忆带日期给模型：自动带入和档案里每条记忆后面写记下的日期或生效时间段，按配置时区换算"
   },
+  "memory.date.upcoming": {
+    "sha256": "ba91256903657b4eb7e7a44d9e30a3c51b847cc4a1caaedb1dbff42a927abdd5",
+    "changedIn": "ADR 0199",
+    "reason": "记下时还没开始的记忆写“起”，不写“至今”"
+  },
   "memory.embedding-query-instruction": {
     "sha256": "b0879f0158c554edaf2803ca0e3415d0ff7769c6d1ba3ebb5b6253203fd385a8",
     "changedIn": "ADR 0161",
