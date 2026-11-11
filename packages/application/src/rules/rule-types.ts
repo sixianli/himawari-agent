@@ -424,11 +424,8 @@ export function unreadablePushRule(
   registry: readonly RuleTypeDefinition[] = RULE_TYPES,
 ): boolean {
   if (row.status === "retired" || enforceableOwnerRule(row, registry) !== undefined) return false;
-  const type =
-    typeof row.parameters === "object" && row.parameters !== null
-      ? (row.parameters as Record<string, unknown>)["type"]
-      : undefined;
-  return registry.some(({ id, gate }) => id === type && gate === "push_delivery");
+  const text = typeof row.parameters === "string" ? row.parameters : JSON.stringify(row.parameters);
+  return registry.some(({ id, gate }) => gate === "push_delivery" && (text ?? "").includes(id));
 }
 
 export function enforceableOwnerRule(

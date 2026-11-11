@@ -76,6 +76,8 @@ const STANDING_MARKERS = [
   "from now on",
   "whenever",
   "must",
+].map(foldText);
+const QUIET_REQUEST_MARKERS = [
   "别提醒我",
   "不要提醒我",
   "别通知我",
@@ -90,6 +92,34 @@ const STANDING_MARKERS = [
   "do not notify me",
   "don't disturb me",
   "do not disturb me",
+].map(foldText);
+const RECURRING_TIME_MARKERS = [
+  "夜里",
+  "夜间",
+  "夜晚",
+  "晚上",
+  "半夜",
+  "深夜",
+  "凌晨",
+  "早上",
+  "每天",
+  "每晚",
+  "平时",
+  "周末",
+  "工作日",
+  "夜は",
+  "夜間",
+  "毎晩",
+  "毎日",
+  "平日",
+  "週末",
+  "overnight",
+  "at night",
+  "nights",
+  "evenings",
+  "weekends",
+  "weekdays",
+  "daily",
 ].map(foldText);
 const ONE_OFF_MARKERS = [
   "这封",
@@ -113,6 +143,21 @@ const ONE_OFF_MARKERS = [
   "今夜",
   "今晩",
   "right now",
+  "明天",
+  "明早",
+  "明晚",
+  "明日",
+  "暂时",
+  "目前",
+  "眼下",
+  "这几天",
+  "最近",
+  "先别",
+  "tomorrow",
+  "temporarily",
+  "for the time being",
+  "しばらく",
+  "明日は",
   "for now",
   "この",
   "今回",
@@ -364,10 +409,11 @@ export function isStandingQuote(quote: string): boolean {
     .filter((clause) => clause.length > 0)
     .some((clause) => {
       const rest = STANDING_STARTS.reduce((text, start) => text.replaceAll(start, " | "), clause);
-      return (
-        STANDING_MARKERS.some((marker) => containsMarker(rest, marker)) &&
-        !ONE_OFF_MARKERS.some((marker) => containsMarker(rest, marker))
-      );
+      const standing =
+        STANDING_MARKERS.some((marker) => containsMarker(rest, marker)) ||
+        (QUIET_REQUEST_MARKERS.some((marker) => containsMarker(rest, marker)) &&
+          RECURRING_TIME_MARKERS.some((marker) => containsMarker(rest, marker)));
+      return standing && !ONE_OFF_MARKERS.some((marker) => containsMarker(rest, marker));
     });
 }
 
