@@ -5,7 +5,8 @@ export const DEVICE_HARD_LIMIT_KEYS = [
   "device.perception.batch_records",
   "device.mirror.batch_items",
   "device.track.batch_points",
-  "device.prefetch.cache",
+  "device.prefetch.cache.entries",
+  "device.prefetch.cache.bytes",
   "perception.extract.max_chars",
   "device.nonce.retained",
 ] as const;
@@ -77,12 +78,20 @@ export const DEVICE_HARD_LIMITS: Readonly<Record<DeviceHardLimitKey, DeviceHardL
       maximum: 50_000,
       onExceed: "reject_batch",
     },
-    "device.prefetch.cache": {
-      key: "device.prefetch.cache",
+    "device.prefetch.cache.entries": {
+      key: "device.prefetch.cache.entries",
       unit: "entries",
       defaultValue: 20,
       minimum: 1,
       maximum: 500,
+      onExceed: "drop_oldest",
+    },
+    "device.prefetch.cache.bytes": {
+      key: "device.prefetch.cache.bytes",
+      unit: "bytes",
+      defaultValue: 204_800,
+      minimum: 1024,
+      maximum: 67_108_864,
       onExceed: "drop_oldest",
     },
     "perception.extract.max_chars": {

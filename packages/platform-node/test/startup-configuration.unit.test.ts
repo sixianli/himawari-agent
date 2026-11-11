@@ -1429,7 +1429,7 @@ it("[WP-7] accepts web push only with a web-push secret and an https or mailto s
   expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
 });
 
-it("[P1-1] parses the nine device hard limits with defaults and rejects unknown or out-of-range keys", () => {
+it("[P1-1] parses the ten device hard limits with defaults and rejects unknown or out-of-range keys", () => {
   const raw = config("/tmp/himawari-device-config");
   const policy = {
     version: "1",
