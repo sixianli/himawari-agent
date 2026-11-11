@@ -146,3 +146,11 @@ targetRules = ["generic-api-key"]
 paths = ['''(?:^|/)\.agents/reviews/(?:pr-312/round-3/judgments\.md|pr-316/round-1/(?:deepseek-v4\.1-flash|glm-5\.3-flash)(?:\.prompt)?\.md|pr-319/round-1/glm-5\.3-flash\.md)$''']
 regexTarget = "secret"
 regexes = ['''^abcdef123456$''']
+
+[[allowlists]]
+description = "本机向量模型出包脚本里固定的上游文件 SHA-256（文件路径为键），见 ADR 0224"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(?:^|/)scripts/embedding-models/build-artifact\.py$''']
+regexTarget = "line"
+regexes = ['''^\s*"[^"]+\.(?:onnx|onnx_data|json)": "[0-9a-f]{64}",?\s*$''']

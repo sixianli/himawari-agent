@@ -3,20 +3,19 @@ import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   type CapabilityDeploymentConfiguration,
-  isWebProviderId,
-  WEB_FETCH_MAXIMUM_BYTES,
-  WEB_PROVIDER_IDS,
-  WEB_PROVIDERS,
-  type WebProviderId,
   type ConfigurationPort,
-  type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredCompletionsGenerationModelDescriptor,
+  type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredModelDescriptor,
   type DataClassification,
+  findEmbeddingProfile,
+  GATEWAY_EMBEDDING_PROVIDER,
   type HttpConfiguration,
   type IdentityBootstrapConfiguration,
   type IdentityConfiguration,
   type IdentityCsrfConfiguration,
+  isWebProviderId,
+  LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
   type ModelProviderRouting,
   type ProductConfiguration,
@@ -24,9 +23,13 @@ import {
   type RunPolicyConfiguration,
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
+  WEB_FETCH_MAXIMUM_BYTES,
+  WEB_PROVIDER_IDS,
+  WEB_PROVIDERS,
+  type WebProviderId,
 } from "@himawari-agent/application";
-import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
+import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 
 export const CONFIGURATION_SCHEMA_VERSION = "himawari.configuration.v1" as const;
 
@@ -130,6 +133,13 @@ function absolutePath(value: unknown, field: string): string {
   if (!path.isAbsolute(candidate) || path.normalize(candidate) !== candidate) {
     throw invalid(field, "must be a normalized absolute path");
   }
+  return candidate;
+}
+
+function sha256Digest(value: unknown, field: string): string {
+  const candidate = string(value, field);
+  if (!/^[a-f0-9]{64}$/.test(candidate) || /^0{64}$/.test(candidate))
+    throw invalid(field, "must be a lowercase sha256 digest");
   return candidate;
 }
 
@@ -296,7 +306,7 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
               "providerRouting",
               "baseUrl",
             ]
-        : ["dimensions"]),
+        : ["dimensions", "artifactSha256"]),
     ],
     field,
   );
@@ -333,15 +343,30 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
       ...base,
       role: "embedding",
       dimensions: integer(input["dimensions"], `${field}.dimensions`, 1, 65_536),
+      ...(input["artifactSha256"] === undefined
+        ? {}
+        : { artifactSha256: sha256Digest(input["artifactSha256"], `${field}.artifactSha256`) }),
     };
-    if (descriptor.provider === "vercel-ai-gateway") {
-      if (descriptor.model !== "alibaba/qwen3-embedding-8b")
-        throw invalid(`${field}.model`, "must be alibaba/qwen3-embedding-8b");
-      if (descriptor.dimensions !== 4096 && descriptor.dimensions !== 1024)
-        throw invalid(`${field}.dimensions`, "must be 4096 or 1024");
-      if (descriptor.secretRef === null)
-        throw invalid(`${field}.secretRef`, "is required for AI Gateway");
-    }
+    const profiled =
+      descriptor.provider === LOCAL_ONNX_EMBEDDING_PROVIDER ||
+      descriptor.provider === GATEWAY_EMBEDDING_PROVIDER;
+    const profile = profiled ? findEmbeddingProfile(descriptor.provider, descriptor.model) : null;
+    if (profiled && !profile) throw invalid(`${field}.model`, "is not a known embedding profile");
+    if (profile && !profile.dimensions.includes(descriptor.dimensions))
+      throw invalid(`${field}.dimensions`, `must be one of ${profile.dimensions.join(", ")}`);
+    if (descriptor.provider === LOCAL_ONNX_EMBEDDING_PROVIDER) {
+      if (descriptor.disclosure !== "local_only")
+        throw invalid(`${field}.disclosure`, "must be local_only for local-onnx");
+      if (descriptor.secretRef !== null)
+        throw invalid(`${field}.secretRef`, "must be null for local-onnx");
+      if (Object.values(descriptor.cost).some((value) => value !== 0))
+        throw invalid(`${field}.cost`, "must be zero for local-onnx");
+      if (descriptor.artifactSha256 === undefined)
+        throw invalid(`${field}.artifactSha256`, "is required for local-onnx");
+    } else if (descriptor.artifactSha256 !== undefined)
+      throw invalid(`${field}.artifactSha256`, "is only supported for local-onnx");
+    if (descriptor.provider === GATEWAY_EMBEDDING_PROVIDER && descriptor.secretRef === null)
+      throw invalid(`${field}.secretRef`, "is required for AI Gateway");
     return Object.freeze(descriptor);
   }
   const api = string(input["api"], `${field}.api`);
@@ -1051,10 +1076,14 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     relatedCharactersPerMail,
     relatedCharactersPerRelatedMail,
     relatedRequestsPerCheck: optional("relatedRequestsPerCheck", 300, 1, 2_000),
-    memoryMinimumSimilarity:
-      input["memoryMinimumSimilarity"] === undefined
-        ? 0.45
-        : unitInterval(input["memoryMinimumSimilarity"], `${field}.memoryMinimumSimilarity`),
+    ...(input["memoryMinimumSimilarity"] === undefined
+      ? {}
+      : {
+          memoryMinimumSimilarity: unitInterval(
+            input["memoryMinimumSimilarity"],
+            `${field}.memoryMinimumSimilarity`,
+          ),
+        }),
   });
 }
 

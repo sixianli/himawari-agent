@@ -62,6 +62,7 @@ export type ConfiguredGenerationModelDescriptor =
 export interface ConfiguredEmbeddingModelDescriptor extends ConfiguredModelDescriptorBase {
   readonly role: "embedding";
   readonly dimensions: number;
+  readonly artifactSha256?: string;
 }
 
 export type ConfiguredModelDescriptor =
@@ -224,7 +225,7 @@ export interface ProactiveConfiguration {
   readonly relatedCharactersPerMail: number;
   readonly relatedCharactersPerRelatedMail: number;
   readonly relatedRequestsPerCheck: number;
-  readonly memoryMinimumSimilarity: number;
+  readonly memoryMinimumSimilarity?: number;
   readonly reviewBudgetSeconds: number;
   readonly reviewSecondsPerItem: number;
   readonly reviewSilentSharePermille: number;

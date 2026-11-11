@@ -525,6 +525,7 @@ export async function runAgentService(
   let httpClosing: Promise<void> | undefined;
   let governedMemory: ReturnType<typeof createProductionRunMemory> | undefined;
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
+  let requeueStaleMemoryVectors: () => Promise<void> = async () => {};
   let webPush: ProductionWebPush | undefined;
   let proactive: ProductionProactive | undefined;
   let museIntake: ProductionMuseIntake | undefined;
@@ -1182,21 +1183,25 @@ export async function runAgentService(
       durableMemory = memory;
       const memoryIndex = repository.memoryIndex();
       const embedder = memoryComposition.projection.embedder;
-      let afterMemoryId: Parameters<typeof memoryIndex.listUnindexed>[0]["afterMemoryId"] = null;
-      while (embedder) {
-        const unindexed = await memoryIndex.listUnindexed({
-          ownerId: configuration.ownerId,
-          agentId: configuration.agentId,
-          model: embedder.model,
-          dimensions: embedder.dimensions,
-          embeddableClassifications: memoryComposition.projection.embeddableClassifications,
-          afterMemoryId,
-          limit: 500,
-        });
-        if (unindexed.length === 0) break;
-        await memory.requeueProjection(unindexed);
-        afterMemoryId = unindexed.at(-1) ?? null;
-      }
+      const embeddableClassifications = memoryComposition.projection.embeddableClassifications;
+      requeueStaleMemoryVectors = async () => {
+        let afterMemoryId: Parameters<typeof memoryIndex.listUnindexed>[0]["afterMemoryId"] = null;
+        while (embedder) {
+          const unindexed = await memoryIndex.listUnindexed({
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+            model: embedder.model,
+            dimensions: embedder.dimensions,
+            embeddableClassifications,
+            afterMemoryId,
+            limit: 500,
+          });
+          if (unindexed.length === 0) break;
+          await memory.requeueProjection(unindexed);
+          afterMemoryId = unindexed.at(-1) ?? null;
+        }
+      };
+      if (!memoryComposition.localRuntime) await requeueStaleMemoryVectors();
       memoryWorker = new ProductionMemoryWorker({
         service: memory,
         assertActive: async () => {
@@ -1402,9 +1407,6 @@ export async function runAgentService(
                 );
               },
               embedder: memoryComposition.projection.embedder,
-              ...(memoryComposition.projection.queryInstruction
-                ? { queryInstruction: memoryComposition.projection.queryInstruction }
-                : {}),
               ...(configuration.runPolicy?.timeZone
                 ? { timeZone: configuration.runPolicy.timeZone }
                 : {}),
@@ -1500,6 +1502,57 @@ export async function runAgentService(
           : undefined;
       const consolidationProjection = memoryComposition.projection;
       runMemoryEpisodes = memoryEpisodes;
+      const localEmbedding = memoryComposition.localRuntime;
+      if (localEmbedding) {
+        const catchUpLocalVectors = async () => {
+          await requeueStaleMemoryVectors();
+          if (!memoryEpisodes) return;
+          for (;;) {
+            const embedded = await memoryEpisodes.backfillEmbeddings({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              limit: 100,
+              within: ({ dataClassification }, operation) =>
+                memory.embedForMaintenance(
+                  {
+                    deadlineAt: new Date(
+                      Date.parse(clock.now()) + configuration.deadlines.providerRequestMs,
+                    ).toISOString(),
+                    dataClassification,
+                  },
+                  operation,
+                ),
+            });
+            if (embedded === 0) break;
+          }
+        };
+        let caughtUp = false;
+        localEmbedding.observe((state, reasonCode) => {
+          const ready = state === "ready";
+          health?.observe({
+            name: "memory-embedding",
+            required: false,
+            status: ready ? "healthy" : "unavailable",
+            reasonCode: ready ? null : (reasonCode ?? `EMBEDDING_LOCAL_${state.toUpperCase()}`),
+          });
+          writeServiceDiagnostic(output, {
+            component: "agent-service",
+            event: "memory.embedding_local_state",
+            state,
+            ...(reasonCode === null ? {} : { code: reasonCode }),
+          });
+          if (!ready || caughtUp) return;
+          caughtUp = true;
+          void catchUpLocalVectors().catch((error: unknown) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "memory.embedding_catch_up_failed",
+              code: stableErrorCode(error),
+            }),
+          );
+        });
+        void localEmbedding.start();
+      }
       const proactiveConfiguration = configuration.runPolicy?.proactive;
       const proactiveSecret = proactiveConfiguration
         ? configuration.secretReferences.find(
@@ -1620,7 +1673,9 @@ export async function runAgentService(
                     },
                   },
                   embedForMailCheck: memory.embedForMailCheck,
-                  minimumSimilarity: proactiveConfiguration.memoryMinimumSimilarity,
+                  minimumSimilarity:
+                    proactiveConfiguration.memoryMinimumSimilarity ??
+                    memoryComposition.profile.proactiveMinimumSimilarity,
                   hitsPerMail: DEFAULT_PROACTIVE_MEMORY_LIMITS.perMail,
                   concurrency: 4,
                 }),

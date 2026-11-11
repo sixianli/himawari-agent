@@ -35,6 +35,14 @@ const GENERATION_ID = createMemoryGenerationId("generation-memory-consolidation"
 const DIMENSIONS = 32;
 
 class TermEmbedder implements Embedder {
+  embedQuery(query: string): Promise<Float32Array> {
+    return this.embed(query);
+  }
+
+  embedDocument(text: string): Promise<Float32Array> {
+    return this.embed(text);
+  }
+
   readonly model = "fixture-term-embedding";
   readonly dimensions = DIMENSIONS;
 

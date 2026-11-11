@@ -1,16 +1,24 @@
 import {
   ApplicationPortError,
+  EMBEDDING_PRIORITY_HEADER,
+  type EmbeddingPriority,
+  type EmbeddingProfile,
+  embeddingDocumentText,
+  embeddingQueryText,
+  GATEWAY_EMBEDDING_PROVIDER,
+  LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelEgress,
   type ModelEgressContext,
   type ModelInvocationUsage,
   PORT_ERROR_CODES,
+  QWEN3_EMBEDDING_8B_PROFILE,
   usdCostsEqual,
   usdCostToMicros,
 } from "@himawari-agent/application";
-import { MEMORY_EMBEDDING_QUERY_INSTRUCTION } from "@himawari-agent/prompt-catalog";
 
 export const AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1" as const;
-export const QWEN3_EMBEDDING_8B_MODEL = "alibaba/qwen3-embedding-8b" as const;
+export const LOCAL_ONNX_BASE_URL = "http://local-onnx.invalid/v1" as const;
+export const QWEN3_EMBEDDING_8B_MODEL = QWEN3_EMBEDDING_8B_PROFILE.model;
 export const QWEN3_EMBEDDING_8B_DIMENSIONS = 4096 as const;
 export const QWEN3_EMBEDDING_8B_VERSION = "catalog-2026-10-06" as const;
 export const QWEN3_EMBEDDING_8B_COST = Object.freeze({
@@ -20,15 +28,8 @@ export const QWEN3_EMBEDDING_8B_COST = Object.freeze({
   cacheWrite: 0,
 });
 
-export const QWEN3_MEMORY_QUERY_INSTRUCTION = MEMORY_EMBEDDING_QUERY_INSTRUCTION.text;
-
-export const QWEN3_MEMORY_MINIMUM_SIMILARITY = 0.6 as const;
-
-export function instructedQuery(instruction: string, query: string): string {
-  return `Instruct: ${instruction}\nQuery:${query}`;
-}
-
 export interface EmbeddingRequest {
+  readonly identity: string;
   readonly model: string;
   readonly input: string;
   readonly dimensions: number;
@@ -56,7 +57,8 @@ export type EmbeddingBoundary = (
 export interface Embedder {
   readonly model: string;
   readonly dimensions: number;
-  embed(text: string): Promise<Float32Array>;
+  embedQuery(query: string): Promise<Float32Array>;
+  embedDocument(text: string): Promise<Float32Array>;
 }
 
 function responseRecord(value: unknown): Readonly<Record<string, unknown>> | null {
@@ -109,6 +111,47 @@ export function gatewayEmbeddingUsage(
   });
 }
 
+export function localEmbeddingUsage(
+  response: EmbeddingResponse,
+  model: string,
+  dimensions: number,
+): ModelInvocationUsage {
+  if (response.model !== model) throw new Error("EMBEDDING_MODEL_MISMATCH");
+  if (
+    !Number.isSafeInteger(response.usage?.prompt_tokens) ||
+    response.usage.prompt_tokens < 1 ||
+    response.usage.total_tokens !== response.usage.prompt_tokens
+  )
+    throw new Error("EMBEDDING_USAGE_MISSING");
+  if (
+    !Array.isArray(response.data) ||
+    response.data.length !== 1 ||
+    response.data[0]?.index !== 0 ||
+    !Array.isArray(response.data[0].embedding) ||
+    response.data[0].embedding.length !== dimensions ||
+    !response.data[0].embedding.every(Number.isFinite)
+  )
+    throw new Error("EMBEDDING_VECTOR_INVALID");
+  const local = responseRecord(responseRecord(response.providerMetadata)?.["local"]);
+  if (local?.["runtime"] !== "onnxruntime-node" || response.usage.cost !== 0)
+    throw new Error("EMBEDDING_LOCAL_METADATA_MISSING");
+  return Object.freeze({
+    inputTokens: response.usage.prompt_tokens,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    reportedCostMicros: 0,
+  });
+}
+
+export function embeddingUsageFor(
+  provider: string,
+): (response: EmbeddingResponse, model: string, dimensions: number) => ModelInvocationUsage {
+  if (provider === LOCAL_ONNX_EMBEDDING_PROVIDER) return localEmbeddingUsage;
+  if (provider === GATEWAY_EMBEDDING_PROVIDER) return gatewayEmbeddingUsage;
+  throw new TypeError("MEMORY_EMBEDDING_PROVIDER_UNSUPPORTED");
+}
+
 export function normalizedVector(values: readonly number[]): Float32Array {
   const vector = Float32Array.from(values);
   let norm = 0;
@@ -132,29 +175,40 @@ function decodedEmbedding(value: unknown, dimensions: number): readonly number[]
   );
 }
 
-export interface GatewayEmbedderOptions {
+export interface EgressEmbedderOptions {
   readonly egress: ModelEgress;
   readonly egressContext?: ModelEgressContext;
   readonly baseUrl: string;
-  readonly model: string;
+  readonly profile: EmbeddingProfile;
+  readonly identity: string;
   readonly dimensions: number;
-  readonly apiKey: () => Promise<string>;
+  readonly apiKey?: () => Promise<string>;
   readonly fetch?: typeof fetch;
+  readonly admit?: (priority: EmbeddingPriority) => void;
 }
 
-export class GatewayEmbedder implements Embedder {
+export class EgressEmbedder implements Embedder {
   readonly model: string;
   readonly dimensions: number;
-  readonly #options: GatewayEmbedderOptions;
+  readonly profile: EmbeddingProfile;
+  readonly #options: EgressEmbedderOptions;
   #boundary: EmbeddingBoundary | undefined;
   #timeoutMs = 0;
 
-  constructor(options: GatewayEmbedderOptions) {
+  constructor(options: EgressEmbedderOptions) {
     if (!Number.isSafeInteger(options.dimensions) || options.dimensions < 1)
       throw new TypeError("EMBEDDING_DIMENSIONS_INVALID");
-    if (options.model.trim().length === 0) throw new TypeError("EMBEDDING_MODEL_REQUIRED");
-    this.model = options.model;
+    if (!options.profile.dimensions.includes(options.dimensions))
+      throw new TypeError("EMBEDDING_PROFILE_DIMENSIONS_UNSUPPORTED");
+    if (options.identity.trim().length === 0) throw new TypeError("EMBEDDING_MODEL_REQUIRED");
+    if (
+      (options.profile.provider === GATEWAY_EMBEDDING_PROVIDER) !==
+      (options.apiKey !== undefined)
+    )
+      throw new TypeError("EMBEDDING_API_KEY_POLICY");
+    this.model = options.identity;
     this.dimensions = options.dimensions;
+    this.profile = options.profile;
     this.#options = options;
   }
 
@@ -165,19 +219,29 @@ export class GatewayEmbedder implements Embedder {
     this.#timeoutMs = timeoutMs;
   }
 
-  async embed(text: string): Promise<Float32Array> {
+  embedQuery(query: string): Promise<Float32Array> {
+    return this.#embed(embeddingQueryText(this.profile, query), "interactive");
+  }
+
+  embedDocument(text: string): Promise<Float32Array> {
+    return this.#embed(embeddingDocumentText(this.profile, text), "background");
+  }
+
+  async #embed(text: string, priority: EmbeddingPriority): Promise<Float32Array> {
     const boundary = this.#boundary;
     if (!boundary)
       throw new ApplicationPortError(
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
         "EMBEDDING_BOUNDARY_REQUIRED",
       );
+    this.#options.admit?.(priority);
     const request: EmbeddingRequest = Object.freeze({
-      model: this.model,
+      identity: this.model,
+      model: this.profile.model,
       input: text,
       dimensions: this.dimensions,
     });
-    const response = await boundary(request, (options) => this.#send(request, options));
+    const response = await boundary(request, (options) => this.#send(request, priority, options));
     const embedding = response.data[0]?.embedding;
     if (!embedding || embedding.length !== this.dimensions)
       throw new Error("EMBEDDING_VECTOR_INVALID");
@@ -186,17 +250,21 @@ export class GatewayEmbedder implements Embedder {
 
   async #send(
     request: EmbeddingRequest,
+    priority: EmbeddingPriority,
     options: { readonly timeoutMs?: number; readonly signal?: AbortSignal } = {},
   ): Promise<EmbeddingResponse> {
     const timeout = AbortSignal.timeout(options.timeoutMs ?? this.#timeoutMs);
     const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
     const exchange = this.#options.egress.exchange(this.#options.egressContext);
+    const apiKey = this.#options.apiKey;
     const response = await exchange.wrapFetch(this.#options.fetch ?? fetch)(
       `${this.#options.baseUrl.replace(/\/+$/u, "")}/embeddings`,
       {
         method: "POST",
         headers: {
-          authorization: `Bearer ${await this.#options.apiKey()}`,
+          ...(apiKey === undefined
+            ? { [EMBEDDING_PRIORITY_HEADER]: priority }
+            : { authorization: `Bearer ${await apiKey()}` }),
           "content-type": "application/json",
         },
         body: JSON.stringify({

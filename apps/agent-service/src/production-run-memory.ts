@@ -5,13 +5,13 @@ import {
   type DurableMemoryService,
   type DurableMemoryServiceOptions,
   type MemoryPort,
-  memoryDatesOf,
   type MemoryProjectionJob,
   type MemorySearchRequest,
   type ModelBudgetPort,
   type ModelInvocationAdmissionDescriptor,
   type ModelInvocationAdmissionResolver,
   type ModelInvocationPermit,
+  memoryDatesOf,
   modelVisibleClassifications,
   type PayloadStorePort,
   PORT_ERROR_CODES,
@@ -21,7 +21,7 @@ import {
 import {
   type EmbeddingBoundary,
   type EmbeddingRequest,
-  gatewayEmbeddingUsage,
+  embeddingUsageFor,
 } from "@himawari-agent/memory-engine";
 
 const FIRST_EMBEDDING_ATTEMPT_MS = 3_000;
@@ -69,11 +69,20 @@ export interface MailEmbeddingContext {
   costMicros: number;
 }
 
+export interface MaintenanceEmbeddingContext {
+  readonly deadlineAt: string;
+  readonly dataClassification: NonNullable<MemorySearchRequest["dataClassification"]>;
+}
+
 export function createProductionRunMemory(options: {
   readonly configuration: ProductConfiguration;
   readonly memory: Pick<DurableMemoryService, "search">;
   readonly projection: {
-    bindEmbeddingBoundary(boundary: EmbeddingBoundary, timeoutMs: number): void;
+    bindEmbeddingBoundary(
+      boundary: EmbeddingBoundary,
+      timeoutMs: number,
+      searchCancelled?: () => boolean,
+    ): void;
   };
   readonly payloads: Pick<PayloadStorePort, "get">;
   readonly admission: ModelInvocationAdmissionResolver;
@@ -85,9 +94,14 @@ export function createProductionRunMemory(options: {
   project: NonNullable<DurableMemoryServiceOptions["project"]>;
   embedWithin: <T>(context: RunEmbeddingContext, operation: () => Promise<T>) => Promise<T>;
   embedForMailCheck: <T>(context: MailEmbeddingContext, operation: () => Promise<T>) => Promise<T>;
+  embedForMaintenance: <T>(
+    context: MaintenanceEmbeddingContext,
+    operation: () => Promise<T>,
+  ) => Promise<T>;
 } {
   const scope = new AsyncLocalStorage<MemorySearchRequest & { readonly embeddingSlot?: string }>();
   const mailScope = new AsyncLocalStorage<MailEmbeddingContext>();
+  const maintenanceScope = new AsyncLocalStorage<MaintenanceEmbeddingContext>();
   const projectionScope = new AsyncLocalStorage<{
     job: MemoryProjectionJob;
     memory: ProductMemoryRecord;
@@ -102,9 +116,14 @@ export function createProductionRunMemory(options: {
     const context = scope.getStore();
     const projection = projectionScope.getStore();
     const mail = mailScope.getStore();
+    const maintenance = maintenanceScope.getStore();
     context?.signal?.throwIfAborted();
     mail?.signal.throwIfAborted();
-    const deadline = context?.deadlineAt ?? projection?.job.claimExpiresAt ?? mail?.deadlineAt;
+    const deadline =
+      context?.deadlineAt ??
+      projection?.job.claimExpiresAt ??
+      mail?.deadlineAt ??
+      maintenance?.deadlineAt;
     if (!deadline || !Number.isFinite(Date.parse(deadline)))
       throw new Error("EMBEDDING_DEADLINE_REQUIRED");
     const remaining = () =>
@@ -116,8 +135,12 @@ export function createProductionRunMemory(options: {
     const classification =
       context?.dataClassification ??
       projection?.memory.dataClassification ??
-      (mail ? ("private" as const) : undefined);
-    if (!classification || (!projection && !mail && (!context?.runId || !context.executionLease)))
+      (mail ? ("private" as const) : undefined) ??
+      maintenance?.dataClassification;
+    if (
+      !classification ||
+      (!projection && !mail && !maintenance && (!context?.runId || !context.executionLease))
+    )
       throw new ApplicationPortError(
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
         "EMBEDDING_EXECUTION_CONTEXT_REQUIRED",
@@ -207,6 +230,21 @@ export function createProductionRunMemory(options: {
           mail.costMicros += descriptor.estimatedCostMicros;
         },
       };
+    } else if (maintenance && !context) {
+      if (descriptor.estimatedCostMicros !== 0)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          "EMBEDDING_MAINTENANCE_REQUIRES_FREE_MODEL",
+        );
+      permit = {
+        assertActive: options.assertActive,
+        markStarted: async () => {},
+        releaseReserved: async () => {},
+        settle: async (usage) => {
+          if (usage.reportedCostMicros !== 0) throw new Error("EMBEDDING_MAINTENANCE_COST_NONZERO");
+        },
+        markUnknown: async () => {},
+      };
     } else {
       if (!context?.runId) throw new Error("EMBEDDING_RUN_REQUIRED");
       const gate = await options.admission({ ...context, runId: context.runId });
@@ -252,12 +290,12 @@ export function createProductionRunMemory(options: {
       const timeout = AbortSignal.timeout(timeoutMs);
       const signal = context?.signal ? AbortSignal.any([context.signal, timeout]) : timeout;
       let response: Awaited<ReturnType<typeof send>>;
-      let usage: ReturnType<typeof gatewayEmbeddingUsage>;
+      let usage: ReturnType<ReturnType<typeof embeddingUsageFor>>;
       try {
         response = await send({ timeoutMs, signal });
         signal.throwIfAborted();
         if (remaining() <= 0) throw new Error("EMBEDDING_DEADLINE_EXCEEDED");
-        usage = gatewayEmbeddingUsage(
+        usage = embeddingUsageFor(descriptor.provider)(
           response,
           descriptor.model,
           options.configuration.memory.dimensions,
@@ -315,23 +353,29 @@ export function createProductionRunMemory(options: {
       throw error;
     }
   };
-  options.projection.bindEmbeddingBoundary(async (request, send) => {
-    if (projectionScope.getStore() || !scope.getStore()?.runId) return embedOnce(request, send, 1);
-    try {
-      return await embedOnce(request, send, 1, FIRST_EMBEDDING_ATTEMPT_MS);
-    } catch (error) {
-      if (!(error instanceof Error) || error.message !== EMBEDDING_ATTEMPT_TIMED_OUT) throw error;
-      options.diagnostic?.({
-        component: "agent-service",
-        event: "memory.embedding_retried",
-        afterMs: String(FIRST_EMBEDDING_ATTEMPT_MS),
-      });
-      return embedOnce(request, send, 2);
-    }
-  }, options.configuration.deadlines.providerRequestMs);
+  options.projection.bindEmbeddingBoundary(
+    async (request, send) => {
+      if (projectionScope.getStore() || !scope.getStore()?.runId)
+        return embedOnce(request, send, 1);
+      try {
+        return await embedOnce(request, send, 1, FIRST_EMBEDDING_ATTEMPT_MS);
+      } catch (error) {
+        if (!(error instanceof Error) || error.message !== EMBEDDING_ATTEMPT_TIMED_OUT) throw error;
+        options.diagnostic?.({
+          component: "agent-service",
+          event: "memory.embedding_retried",
+          afterMs: String(FIRST_EMBEDDING_ATTEMPT_MS),
+        });
+        return embedOnce(request, send, 2);
+      }
+    },
+    options.configuration.deadlines.providerRequestMs,
+    () => scope.getStore()?.signal?.aborted === true,
+  );
   return {
     project: (job, memory, operation) => projectionScope.run({ job, memory }, operation),
     embedForMailCheck: (context, operation) => mailScope.run(context, operation),
+    embedForMaintenance: (context, operation) => maintenanceScope.run(context, operation),
     embedWithin: (context, operation) =>
       scope.run(
         {

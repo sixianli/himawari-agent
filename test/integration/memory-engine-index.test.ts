@@ -29,6 +29,14 @@ const T0 = "2026-10-25T00:00:00.000Z";
 const DIMENSIONS = 16;
 
 class TermEmbedder implements Embedder {
+  embedQuery(query: string): Promise<Float32Array> {
+    return this.embed(query);
+  }
+
+  embedDocument(text: string): Promise<Float32Array> {
+    return this.embed(text);
+  }
+
   readonly model = "fixture-term-embedding";
   readonly dimensions = DIMENSIONS;
   calls = 0;

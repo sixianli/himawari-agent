@@ -260,6 +260,22 @@ def interpret_discovery(facts, instance, label=None):
     }
 
 
+EMBEDDING_TARGET_KEYS = {'ref', 'role', 'provider', 'model', 'version', 'allowedDataClassifications', 'disclosure', 'secretRef', 'capabilities', 'cost', 'dimensions', 'artifactSha256'}
+
+
+def embedding_target(target):
+    if target is None:
+        return 'null'
+    if not isinstance(target, dict) or not set(target) <= EMBEDDING_TARGET_KEYS or target.get('role') != 'embedding' or type(target.get('dimensions')) is not int or target['dimensions'] <= 0 or not all(isinstance(target.get(key), str) and target[key] for key in ('ref', 'provider', 'model', 'version')):
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    if target['provider'] == 'local-onnx' and (target.get('disclosure') != 'local_only' or target.get('secretRef') is not None or not re.fullmatch(r'[0-9a-f]{64}', str(target.get('artifactSha256')))):
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    encoded = json.dumps(target, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+    if "'" in encoded or '\\' in encoded:
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    return encoded
+
+
 def base_parameters(instance, commit, date, discovered):
     targets = instance['configTargets']
     label = discovered['LABEL']
@@ -280,6 +296,7 @@ def base_parameters(instance, commit, date, discovered):
         'TARGET_CONTEXT_WINDOW': targets['contextWindow'],
         'TARGET_MAX_TOKENS': targets['maxTokens'],
         'TARGET_PUBLIC_FETCH_BYTES': targets['publicFetchMaximumBytes'],
+        'TARGET_EMBEDDING_JSON': embedding_target(targets.get('embedding')),
         'STARTUP_READY_BUDGET_MS': startup_ready_budget(instance, git('show', commit + ':' + WORKER_SERVICE_MAIN)),
         'STARTUP_PHASE_BASELINE_MS': startup_phase_baseline(instance),
     }

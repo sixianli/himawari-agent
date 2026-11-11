@@ -1,5 +1,5 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { instructedQuery, QWEN3_MEMORY_QUERY_INSTRUCTION } from "@himawari-agent/memory-engine";
+import { embeddingQueryText, QWEN3_EMBEDDING_8B_PROFILE } from "@himawari-agent/application";
 import { parseProductConfiguration } from "@himawari-agent/platform-node";
 import {
   admissionCostForConfiguredPiModel,
@@ -153,7 +153,7 @@ describe("file summary qualification configuration", () => {
           authorized: true,
           body: {
             model: "alibaba/qwen3-embedding-8b",
-            input: instructedQuery(QWEN3_MEMORY_QUERY_INSTRUCTION, "图书角"),
+            input: embeddingQueryText(QWEN3_EMBEDDING_8B_PROFILE, "图书角"),
             dimensions: 4096,
             encoding_format: "base64",
           },

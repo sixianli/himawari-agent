@@ -79,6 +79,7 @@ READ_QUALIFIED_KERNEL = (
 )
 DOCUMENT_TOOLS_CHECK = 'if /usr/bin/python3 -I -c "import docx, openpyxl, pypdf, pdfminer, weasyprint, markdown" >/dev/null 2>&1 && /usr/bin/pandoc --version >/dev/null 2>&1 && /usr/bin/fc-list :lang=zh family 2>/dev/null | /usr/bin/grep -q "Noto Sans CJK" && /usr/bin/fc-list :lang=zh family 2>/dev/null | /usr/bin/grep -q "LXGW WenKai" && /usr/lib/himawari-document-python/bin/python -I -c "import weasyprint, pypdf; from weasyprint.text.ffi import harfbuzz_subset; assert weasyprint.__version__.split(chr(46))[0] == str(70) and harfbuzz_subset" >/dev/null 2>&1; then echo documentTools=ok; else echo documentTools=missing; fi'
 SANDBOX_LINKS_SCRIPT = (Path(__file__).resolve().parent / 'sandbox-command-links.py').read_text()
+EMBEDDING_ARTIFACT_SCRIPT = (Path(__file__).resolve().parent / 'embedding-artifact-check.py').read_text()
 SANDBOX_READ_ROOTS = re.compile(r'readOnlyToolchainPaths: \[(.*?)protectedPaths: \[', re.DOTALL)
 PROBE_UNIT_LINE = re.compile(r"^unit = '([A-Za-z0-9@._-]+\.service)'$", re.MULTILINE)
 
@@ -109,6 +110,12 @@ def source_base(packet):
     return json.loads(path.read_text()).get('SOURCE_BASE_COMMIT', '') if path.is_file() else ''
 
 
+def local_embedding_target(packet):
+    path = packet / 'packet-parameters.json'
+    target = json.loads(json.loads(path.read_text()).get('TARGET_EMBEDDING_JSON', 'null')) if path.is_file() else None
+    return target if isinstance(target, dict) and target.get('provider') == 'local-onnx' else None
+
+
 def sandbox_read_roots(packet):
     seal = (packet / 'signing' / 'cloud-seal.mjs').read_text()
     block = SANDBOX_READ_ROOTS.search(seal)
@@ -117,7 +124,7 @@ def sandbox_read_roots(packet):
     return re.findall(r'"(/[^"]*)"', block.group(1))
 
 
-def remote_script(binding, units=(), paths=(), roots=(), base=''):
+def remote_script(binding, units=(), paths=(), roots=(), base='', embedding=None):
     state_parent = str(Path(binding['paths']['stateRoot']).parent)
     mirror = str(Path(binding['paths']['stateRoot']) / 'authority.json')
     return '; '.join([
@@ -138,6 +145,7 @@ def remote_script(binding, units=(), paths=(), roots=(), base=''):
         '/usr/bin/python3 -I -c ' + shlex.quote(READ_NEXT_BOOT_KERNEL) + ' ' + ' '.join(shlex.quote(path) for path in (GRUB_CONFIG, GRUB_ENVIRONMENT, BOOT_DIRECTORY)),
         'echo "qualifiedKernel=$(/usr/bin/python3 -I -c ' + shlex.quote(READ_QUALIFIED_KERNEL) + ' ' + shlex.quote(str(Path(binding['service']['newQualificationEvidenceRoot']).parent)) + ')"',
         *(['if /usr/bin/git -C ' + shlex.quote(source_cache(binding)) + ' cat-file -e ' + shlex.quote(base + '^{commit}') + ' 2>/dev/null; then echo sourceCacheBase=present; else echo sourceCacheBase=absent; fi'] if base else []),
+        *(['/usr/bin/python3 -I -c ' + shlex.quote(EMBEDDING_ARTIFACT_SCRIPT) + ' ' + ' '.join(shlex.quote(value) for value in (binding['paths']['stateRoot'], embedding['model'], embedding['artifactSha256'])) + ' || echo embeddingArtifact=check-failed'] if embedding else []),
         '/usr/bin/python3 -I -c ' + shlex.quote(SANDBOX_LINKS_SCRIPT) + ' ' + ' '.join(shlex.quote(root) for root in roots) + ' || echo sandboxLinks=check-failed',
         *['echo ' + shlex.quote('probeUnit.' + unit) + '="$(/usr/bin/systemctl show -p LoadState --value ' + shlex.quote(unit) + ')"' for unit in units],
         *['if [ -e ' + shlex.quote(path) + ' ] || [ -L ' + shlex.quote(path) + ' ]; then echo ' + shlex.quote('targetPath.' + path + '=present') + '; else echo ' + shlex.quote('targetPath.' + path + '=absent') + '; fi' for path in paths],
@@ -162,7 +170,7 @@ def space(facts, size):
     return {'rootFree': free, 'predictedInstall': install, 'predictedFreeAfterInstall': free - install, 'needAfterInstall': ACCEPTANCE_ROOT_FREE_BYTES + ROOT_RESERVE_BYTES, 'measuredFromLastInstall': int(facts.get('lastInstallUsed') or 0) > 0}
 
 
-def checks(binding, facts, size, units=(), paths=(), base=''):
+def checks(binding, facts, size, units=(), paths=(), base='', embedding=None):
     needed = size * MINIMUM_FREE_FACTOR
     room = space(facts, size)
     authority = str(binding['authority']['authorityEpoch']) + ' ' + str(binding['authority']['fencingToken'])
@@ -182,6 +190,7 @@ def checks(binding, facts, size, units=(), paths=(), base=''):
         ('RUNNING_KERNEL_MATCHES_QUALIFICATION', bool(facts.get('runningKernel')) and facts.get('qualifiedKernel') == facts.get('runningKernel')),
         *([('SOURCE_CACHE_HAS_BASE', facts.get('sourceCacheBase') == 'present')] if base else []),
         ('SANDBOX_COMMAND_LINKS_REACHABLE', facts.get('sandboxLinks') == 'ok'),
+        *([('LOCAL_EMBEDDING_ARTIFACT_INSTALLED', facts.get('embeddingArtifact') == 'ok')] if embedding else []),
         *[('PROBE_UNIT_UNUSED ' + unit, facts.get('probeUnit.' + unit) == 'not-found') for unit in units],
         *[('TARGET_PATH_ABSENT ' + path, facts.get('targetPath.' + path) == 'absent') for path in paths],
     ]
@@ -190,14 +199,14 @@ def checks(binding, facts, size, units=(), paths=(), base=''):
 def main():
     packet = Path(sys.argv[1]).resolve()
     binding = json.loads((packet / 'inputs' / 'bindings.json').read_text())
-    units, paths, base = probe_units(packet, binding), target_paths(binding), source_base(packet)
-    child = subprocess.run(['ssh', *SSH_OPTIONS, 'root@' + binding['host']['address'], remote_script(binding, units, paths, sandbox_read_roots(packet), base)], capture_output=True, text=True, timeout=60, check=False)
+    units, paths, base, embedding = probe_units(packet, binding), target_paths(binding), source_base(packet), local_embedding_target(packet)
+    child = subprocess.run(['ssh', *SSH_OPTIONS, 'root@' + binding['host']['address'], remote_script(binding, units, paths, sandbox_read_roots(packet), base, embedding)], capture_output=True, text=True, timeout=180 if embedding else 60, check=False)
     if child.returncode != 0:
         print('PREFLIGHT_CHECK SSH failed exit=' + str(child.returncode) + ' ' + child.stderr.strip())
         return 1
     facts = dict(line.split('=', 1) for line in child.stdout.splitlines() if '=' in line)
     failed = False
-    results = checks(binding, facts, packet_bytes(packet), units, paths, base)
+    results = checks(binding, facts, packet_bytes(packet), units, paths, base, embedding)
     for name, passed in results:
         print('PREFLIGHT_CHECK ' + name + ' ' + ('passed' if passed else 'failed'))
         failed = failed or not passed
@@ -222,6 +231,8 @@ def main():
         print('PREFLIGHT_ROOT_SPACE after installing this release the root disk would have less than the 10 GiB production acceptance needs plus 1 GiB reserve; see what the cleanup would remove with: python3 ' + str(Path(__file__).resolve().parent / 'release-cleanup.py') + ' ' + str(packet) + ' plan')
     if any(name == 'SOURCE_CACHE_HAS_BASE' and not passed for name, passed in results):
         print('PREFLIGHT_SOURCE_BASE the source cache ' + source_cache(binding) + ' on the server does not hold ' + base + ', so this packet\'s incremental source bundle cannot be installed; nothing was uploaded; make a new packet that ships the whole history with: python3 ' + str(Path(__file__).resolve().parent / 'make-packet.py') + ' prepare --full-source')
+    if any(name == 'LOCAL_EMBEDDING_ARTIFACT_INSTALLED' and not passed for name, passed in results):
+        print('PREFLIGHT_EMBEDDING_ARTIFACT this release switches memory search to the local model ' + embedding['model'] + ', but ' + binding['paths']['stateRoot'] + '/models/' + embedding['model'] + '/' + embedding['artifactSha256'] + ' on the server is not a complete copy (' + facts.get('embeddingArtifact', 'no answer') + '); with the owner\'s approval build it with scripts/embedding-models/build-artifact.py and copy the whole directory there, owned by the service account, then rerun')
     if any(name in FROZEN_STATE_CHECKS and not passed for name, passed in results):
         print('PREFLIGHT_REFREEZE the production service restarted or changed after this packet was frozen; run: python3 ' + str(Path(__file__).resolve().parent / 'make-packet.py') + ' freeze ' + str(packet))
     return 1 if failed else 0

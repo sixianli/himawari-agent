@@ -8,7 +8,7 @@ import sys
 packet = Path(__file__).resolve().parents[1]
 source = (packet / 'systemd' / 'S7-switch-start-readback.py').read_text()
 function = next(node for node in ast.parse(source).body if isinstance(node, ast.FunctionDef) and node.name == 'static_root_configuration')
-namespace = {'copy': copy}
+namespace = {'copy': copy, 'json': json}
 exec(compile(ast.Module(body=[function], type_ignores=[]), 'S7-switch-start-readback.py', 'exec'), namespace)
 static_root_configuration = namespace['static_root_configuration']
 
@@ -35,6 +35,7 @@ original = {
     },
     'secretReferences': [{'ref': 'vercel-gateway', 'version': 'v1', 'purpose': 'model-gateway', 'scope': 'deployment:one'}],
     'modelDescriptors': [{'ref': '__PKT_MODEL_REF__', 'role': 'primary', 'contextWindow': __PKT_ORIGINAL_CONTEXT_WINDOW__, 'maxTokens': __PKT_ORIGINAL_MAX_TOKENS__, 'cost': {'input': 0.45, 'output': 1.8}}, {'ref': 'qwen-embedding', 'role': 'embedding', 'dimensions': 4096}],
+    'memory': {'dimensions': 4096, 'minimumSimilarity': 0.6},
     'capabilityDeployment': {'snapshotPath': '/fixture/snapshot', 'sha256': 'sha256:' + '1' * 64},
 }
 
@@ -45,6 +46,10 @@ wanted = copy.deepcopy(original)
 wanted['http']['staticRoot'] = new_static_root
 wanted['modelDescriptors'][0].update(contextWindow=__PKT_TARGET_CONTEXT_WINDOW__, maxTokens=__PKT_TARGET_MAX_TOKENS__)
 wanted['runPolicy']['publicFetch']['maximumBytes'] = __PKT_TARGET_PUBLIC_FETCH_BYTES__
+approved_embedding = json.loads('__PKT_TARGET_EMBEDDING_JSON__')
+if approved_embedding is not None:
+    wanted['modelDescriptors'][1] = approved_embedding
+    wanted['memory'] = {'dimensions': approved_embedding['dimensions']}
 if accepted != wanted:
     failures.append('SWITCH_EXPECTED_CONFIG_NOT_ONLY_APPROVED_FIELDS')
 if json.dumps(original, sort_keys=True) != before:
@@ -78,9 +83,12 @@ rejects('original model missing', '__PKT_LABEL_UPPER___SWITCH_ORIGINAL_MODEL_DES
 rejects('original budgets present', '__PKT_LABEL_UPPER___SWITCH_ORIGINAL_BUDGETS_PRESENT', lambda value: value.update(budgets={'global': {'limitUsd': 1}}))
 rejects('original fetch limit old', '__PKT_LABEL_UPPER___SWITCH_ORIGINAL_PUBLIC_FETCH_CHANGED', lambda value: value['runPolicy']['publicFetch'].update(maximumBytes=__PKT_ORIGINAL_PUBLIC_FETCH_BYTES__ - 1))
 rejects('original without fetch route', '__PKT_LABEL_UPPER___SWITCH_ORIGINAL_PUBLIC_FETCH_CHANGED', lambda value: value['runPolicy'].pop('publicFetch'))
+if approved_embedding is not None:
+    rejects('original embedding missing', '__PKT_LABEL_UPPER___SWITCH_ORIGINAL_EMBEDDING_DESCRIPTOR_CHANGED', lambda value: value['modelDescriptors'].pop(1))
+    rejects('original memory missing', '__PKT_LABEL_UPPER___SWITCH_ORIGINAL_EMBEDDING_DESCRIPTOR_CHANGED', lambda value: value.pop('memory'))
 
 if failures:
     for failure in failures:
         print('SWITCH_CONFIG_FIXTURE_FAILED ' + failure)
     sys.exit(1)
-print('SWITCH_CONFIG_FIXTURES_PASSED cases=9')
+print('SWITCH_CONFIG_FIXTURES_PASSED cases=' + str(9 if approved_embedding is None else 11))

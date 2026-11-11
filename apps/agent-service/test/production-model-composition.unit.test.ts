@@ -608,7 +608,7 @@ describe("production model composition", () => {
     await composition.close();
   });
 
-  it("[I-23] refuses to start memory search without a relevance threshold for the embedding model", async () => {
+  it("[I-23] refuses to start memory search for an embedding model without a calibrated relevance threshold", async () => {
     const base = selectedEmbeddingConfiguration(temporaryDirectory);
     const configuration = {
       ...base,
@@ -633,14 +633,14 @@ describe("production model composition", () => {
         ...options,
         configuration,
       }),
-    ).rejects.toThrow("MEMORY_MINIMUM_SIMILARITY_REQUIRED");
+    ).rejects.toThrow("EMBEDDING_PROFILE_UNKNOWN");
     const configured = await createProductionMemoryCompositionFromConfiguration({
       onVectorFailure: () => {},
       egress: testModelEgress(),
       ...options,
       configuration: {
-        ...configuration,
-        memory: { ...configuration.memory, minimumSimilarity: 0.7 },
+        ...base,
+        memory: { ...base.memory, minimumSimilarity: 0.7 },
       },
     });
     expect(configured.projection.minimumSimilarity).toBe(0.7);
@@ -850,6 +850,9 @@ it("propagates Run cancellation and remaining deadline to embedding and retains 
   const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
   let boundary: EmbeddingBoundary | undefined;
   const controller = new AbortController();
+  let searchCancelled: (() => boolean) | undefined;
+  const cancelledBefore: (boolean | null)[] = [];
+  const cancelledAfter: (boolean | null)[] = [];
   const now = "2026-09-06T00:00:00.000Z";
   const permit: ModelInvocationPermit = {
     assertActive: vi.fn(async () => {}),
@@ -867,18 +870,29 @@ it("propagates Run cancellation and remaining deadline to embedding and retains 
   const memory = createProductionRunMemory({
     configuration,
     projection: {
-      bindEmbeddingBoundary: (value) => {
+      bindEmbeddingBoundary: (value, _timeoutMs, cancelled) => {
         boundary = value;
+        searchCancelled = cancelled;
       },
     },
     payloads: { get: async () => ({ dataClassification: "private" }) as never },
     memory: {
       search: async () => {
         if (!boundary) throw new Error("BOUNDARY_MISSING");
-        await boundary(
-          { model: "alibaba/qwen3-embedding-8b", input: "query", dimensions: 4096 },
-          send,
-        );
+        cancelledBefore.push(searchCancelled?.() ?? null);
+        try {
+          await boundary(
+            {
+              identity: "fixture",
+              model: "alibaba/qwen3-embedding-8b",
+              input: "query",
+              dimensions: 4096,
+            },
+            send,
+          );
+        } finally {
+          cancelledAfter.push(searchCancelled?.() ?? null);
+        }
         return [];
       },
     },
@@ -909,6 +923,9 @@ it("propagates Run cancellation and remaining deadline to embedding and retains 
     memory.search({ ...request, signal: new AbortController().signal, deadlineAt: now }),
   ).rejects.toThrow("EMBEDDING_DEADLINE_EXCEEDED");
   expect(send).toHaveBeenCalledTimes(1);
+  expect(cancelledBefore).toEqual([false, false]);
+  expect(cancelledAfter).toEqual([true, false]);
+  expect(searchCancelled?.()).toBe(false);
 });
 
 it("gives a slow memory-search embedding three seconds, then asks once more under a new invocation", async () => {
@@ -970,7 +987,12 @@ it("gives a slow memory-search embedding three seconds, then asks once more unde
       search: async () => {
         if (!boundary) throw new Error("BOUNDARY_MISSING");
         await boundary(
-          { model: "alibaba/qwen3-embedding-8b", input: "query", dimensions: 4096 },
+          {
+            identity: "fixture",
+            model: "alibaba/qwen3-embedding-8b",
+            input: "query",
+            dimensions: 4096,
+          },
           send,
         );
         return [];
@@ -1069,7 +1091,12 @@ it("retries only unstarted projection reservations and never repeats an uncertai
       async () => {
         if (!boundary) throw new Error("BOUNDARY_MISSING");
         await boundary(
-          { model: "alibaba/qwen3-embedding-8b", input: "memory", dimensions: 4096 },
+          {
+            identity: "fixture",
+            model: "alibaba/qwen3-embedding-8b",
+            input: "memory",
+            dimensions: 4096,
+          },
           send,
         );
         return "provider-memory-1";
@@ -1553,7 +1580,12 @@ function embeddingAccountingFixture(mode: "query" | "projection", response: unkn
   const invoke = () => {
     if (!boundary) throw new Error("BOUNDARY_MISSING");
     return boundary(
-      { model: "alibaba/qwen3-embedding-8b", input: "memory", dimensions: 4096 },
+      {
+        identity: "fixture",
+        model: "alibaba/qwen3-embedding-8b",
+        input: "memory",
+        dimensions: 4096,
+      },
       send,
     );
   };

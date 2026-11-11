@@ -15,7 +15,6 @@ import {
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
 import type { Embedder } from "./embedding.js";
-import { instructedQuery } from "./embedding.js";
 import { indexableTerms, queryTerms } from "./segmentation.js";
 
 const DEFAULT_IDLE_MS = 2 * 3_600_000;
@@ -69,7 +68,6 @@ export interface MemoryEpisodeServiceOptions {
   readonly now: () => string;
   readonly timeZone?: string;
   readonly idleMs?: number;
-  readonly queryInstruction?: string;
   readonly onEmbeddingFailure?: (error: unknown) => void;
 }
 
@@ -223,11 +221,7 @@ export class MemoryEpisodeService {
         embedding = {
           model: embedder.model,
           dimensions: embedder.dimensions,
-          vector: await embedder.embed(
-            this.#options.queryInstruction === undefined
-              ? input.query
-              : instructedQuery(this.#options.queryInstruction, input.query),
-          ),
+          vector: await embedder.embedQuery(input.query),
         };
       } catch (error) {
         this.#options.onEmbeddingFailure?.(error);
@@ -298,7 +292,7 @@ export class MemoryEpisodeService {
           model: embedder.model,
           dimensions: embedder.dimensions,
           vector: await (input.within ?? ((_, operation) => operation()))(episode, () =>
-            embedder.embed(`${episode.day}\n${text}`),
+            embedder.embedDocument(`${episode.day}\n${text}`),
           ),
         },
       });
@@ -339,7 +333,7 @@ export class MemoryEpisodeService {
         embedding = {
           model: embedder.model,
           dimensions: embedder.dimensions,
-          vector: await embedder.embed(`${input.day}\n${input.text}`),
+          vector: await embedder.embedDocument(`${input.day}\n${input.text}`),
         };
       } catch (error) {
         this.#options.onEmbeddingFailure?.(error);

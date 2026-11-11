@@ -156,6 +156,43 @@ describe("data export: round trip", () => {
     expect(first.manifest.counts.sealedEvidenceRows).toBeGreaterThan(0);
   });
 
+  it("[P3-1] the search index and its vectors stay out of the export, sealed part included", async () => {
+    const source = await seeded();
+    const memoryId = source.database
+      .prepare("SELECT id FROM memory_records WHERE status = 'active' ORDER BY id LIMIT 1")
+      .pluck()
+      .get() as string;
+    const vector = Buffer.alloc(16);
+    for (const [index, value] of [0.123456, -0.654321, 0.987654, -0.246813].entries())
+      vector.writeFloatLE(value, index * 4);
+    const indexed = source.database
+      .prepare(
+        `INSERT INTO memory_search_index (memory_id, owner_id, agent_id, memory_revision,
+           embedding_model, embedding_dimensions, embedding, indexed_at)
+         SELECT id, owner_id, agent_id, revision, 'jina-fixture#1', 4, ?, ? FROM memory_records WHERE id = ?`,
+      )
+      .run(vector, NOW, memoryId);
+    source.database
+      .prepare("INSERT INTO memory_search_terms (rowid, terms) VALUES (?, 'zebrapluto')")
+      .run(indexed.lastInsertRowid);
+    const exported = await exportOf(source, { evidence: true });
+    const sealed = canonicalJson(
+      await unsealJson(PASSPHRASE, exported.files.get(SEALED_FILE) ?? new Uint8Array()),
+    );
+    const everything = Buffer.concat([
+      ...[...exported.files.values()].map((bytes) => Buffer.from(bytes)),
+      Buffer.from(sealed),
+    ]);
+    for (const form of [
+      vector,
+      Buffer.from(vector.toString("base64")),
+      Buffer.from(vector.toString("hex")),
+    ])
+      expect(everything.includes(form)).toBe(false);
+    expect(everything.includes(Buffer.from("zebrapluto"))).toBe(false);
+    expect(everything.includes(Buffer.from("jina-fixture#1"))).toBe(false);
+  });
+
   it("[P1-6] keeps every version of a memory, the owner's rating and the signals", async () => {
     const source = await seeded();
     const { files } = await exportOf(source, { evidence: true });

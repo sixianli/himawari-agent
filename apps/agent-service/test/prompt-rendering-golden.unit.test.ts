@@ -4,11 +4,8 @@ import {
   EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE,
   proactivePrompt,
 } from "@himawari-agent/application";
-import {
-  consolidationPrompt,
-  episodeSummaryPrompt,
-  QWEN3_MEMORY_QUERY_INSTRUCTION,
-} from "@himawari-agent/memory-engine";
+import { consolidationPrompt, episodeSummaryPrompt } from "@himawari-agent/memory-engine";
+import { MEMORY_EMBEDDING_QUERY_INSTRUCTION } from "@himawari-agent/prompt-catalog";
 import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -218,7 +215,7 @@ describe("[PROMPT-GOLDEN] rendered prompts stay byte-identical while text moves 
         },
       ]),
     ).toMatchFileSnapshot(golden("mail.judgment"));
-    await expect(QWEN3_MEMORY_QUERY_INSTRUCTION).toMatchFileSnapshot(
+    await expect(MEMORY_EMBEDDING_QUERY_INSTRUCTION.text).toMatchFileSnapshot(
       golden("memory.embedding-query-instruction"),
     );
   });

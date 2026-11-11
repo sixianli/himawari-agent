@@ -162,6 +162,66 @@ describe("strict product configuration", () => {
       ).toThrow();
   });
 
+  it("[P3-1] accepts a local ONNX embedding profile only with a pinned artifact, no secret and no cost", () => {
+    const artifactSha256 = "a".repeat(64);
+    const local = {
+      ref: "model-embedding",
+      role: "embedding",
+      provider: "local-onnx",
+      model: "jina-embeddings-v5-text-small-retrieval-int8",
+      version: "artifact-v1",
+      capabilities: ["embedding"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      dimensions: 1024,
+      allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
+      disclosure: "local_only",
+      secretRef: null,
+      artifactSha256,
+    };
+    const withEmbedding = (change: Record<string, unknown>) => {
+      const input = config(path.join(tmpdir(), "himawari-local-embedding"));
+      const models = input["modelDescriptors"] as Record<string, unknown>[];
+      input["modelDescriptors"] = [models[0], { ...local, ...change }];
+      input["memory"] = {
+        ...(input["memory"] as Record<string, unknown>),
+        dimensions: (change["dimensions"] as number | undefined) ?? 1024,
+      };
+      input["secretReferences"] = (input["secretReferences"] as Record<string, unknown>[]).filter(
+        ({ ref }) => ref !== "provider-embedding",
+      );
+      return input;
+    };
+    const parsed = parseProductConfiguration(withEmbedding({}), "2026-11-11T00:00:00.000Z");
+    expect(parsed.modelDescriptors.find(({ role }) => role === "embedding")).toMatchObject({
+      provider: "local-onnx",
+      artifactSha256,
+    });
+    for (const [change, reason] of [
+      [{ disclosure: "trusted_remote" }, "must be local_only"],
+      [{ secretRef: "provider-embedding" }, "must be null"],
+      [{ cost: { input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0 } }, "must be zero"],
+      [{ artifactSha256: undefined }, "is required for local-onnx"],
+      [{ artifactSha256: "A".repeat(64) }, "lowercase sha256"],
+      [{ model: "jina-embeddings-v5-text-small" }, "not a known embedding profile"],
+      [{ dimensions: 768 }, "must be one of 1024"],
+    ] as const)
+      expect(() =>
+        parseProductConfiguration(withEmbedding(change), "2026-11-11T00:00:00.000Z"),
+      ).toThrow(
+        expect.objectContaining({
+          details: expect.objectContaining({ reason: expect.stringContaining(reason) }),
+        }),
+      );
+    const gateway = config(path.join(tmpdir(), "himawari-local-embedding"));
+    const models = gateway["modelDescriptors"] as Record<string, unknown>[];
+    gateway["modelDescriptors"] = [models[0], { ...models[1], artifactSha256 }];
+    expect(() => parseProductConfiguration(gateway, "2026-11-11T00:00:00.000Z")).toThrow(
+      expect.objectContaining({
+        details: expect.objectContaining({ reason: "is only supported for local-onnx" }),
+      }),
+    );
+  });
+
   it("accepts a Magpie primary on a loopback address without gateway routing", () => {
     const input = config(path.join(tmpdir(), "himawari-magpie-primary"));
     const models = input["modelDescriptors"] as Record<string, unknown>[];
@@ -1361,7 +1421,6 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     relatedCharactersPerMail: 12_000,
     relatedCharactersPerRelatedMail: 2_000,
     relatedRequestsPerCheck: 300,
-    memoryMinimumSimilarity: 0.45,
     reviewBudgetSeconds: 120,
     reviewSecondsPerItem: 5,
     reviewSilentSharePermille: 500,

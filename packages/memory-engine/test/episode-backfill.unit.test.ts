@@ -46,7 +46,8 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
       embedder: {
         model: "fixture-embedder",
         dimensions: 2,
-        embed: async (text: string) => {
+        embedQuery: async () => new Float32Array([1, 0]),
+        embedDocument: async (text: string) => {
           embedded.push(text);
           return new Float32Array([1, 0]);
         },
