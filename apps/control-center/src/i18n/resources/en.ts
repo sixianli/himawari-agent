@@ -1481,7 +1481,8 @@ export const messages = {
   "weekly.goRate": "Rate them in “Reminders”",
   "weekly.prereview.title": "Model pre-rating agreement",
   "weekly.prereview.empty": "No decision this week has both a model pre-rating and your rating.",
-  "weekly.prereview.emptyCurrent": "No pre-rating this week from the current model and prompt version.",
+  "weekly.prereview.emptyCurrent":
+    "No pre-rating this week from the current model and prompt version.",
   "weekly.prereview.counts": "Pre-rated {rated} · model unsure {unsure} · you also rated {paired}",
   "weekly.prereview.gate":
     "{r, select, open {Past the bar on this week’s pairs} insufficient {Too few pairs this week to judge} below_threshold {Below the bar on this week’s pairs} other {No better than calling everything useful}}",

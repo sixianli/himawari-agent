@@ -1468,7 +1468,8 @@ export const messages = {
   "weekly.goRate": "「リマインダー」で採点する",
   "weekly.prereview.title": "モデル事前採点の一致率",
   "weekly.prereview.empty": "今週は、モデルの事前採点とあなたの採点が両方ある判断がありません。",
-  "weekly.prereview.emptyCurrent": "今週は現在のモデルとプロンプトの版による事前採点がまだありません。",
+  "weekly.prereview.emptyCurrent":
+    "今週は現在のモデルとプロンプトの版による事前採点がまだありません。",
   "weekly.prereview.counts":
     "事前採点 {rated} 件 · モデルが迷った {unsure} 件 · あなたも採点 {paired} 件",
   "weekly.prereview.gate":
