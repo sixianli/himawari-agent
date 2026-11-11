@@ -1274,11 +1274,28 @@ describe("[I-66] [COMPACT-2] sharing the conversation's head with the summary re
       ).getCompactionSettings(model).reserveTokens;
     const large = { provider: "deepseek", id: "v4.1-flash", contextWindow: 1_000_000 };
     expect(1_000_000 - resolve(large)).toBe(COMPACTION_TRIGGER_CAP_TOKENS);
-    expect(resolve({ provider: "deepseek", id: "other", contextWindow: 1_000_000 })).toBe(800_000);
+    const other = { provider: "deepseek", id: "other", contextWindow: 1_000_000 };
+    expect(
+      SettingsManager.inMemory(
+        { compaction: { enabled: true, modelOverrides: compactionModelOverrides(large) } },
+        { projectTrusted: false },
+      ).getCompactionSettings(other).reserveTokens,
+    ).toBe(16_384);
     const small = { provider: "x", id: "small", contextWindow: 128_000 };
     expect(compactionModelOverrides(small)).toEqual({});
     expect(resolve(small)).toBe(16_384);
     expect(compactionModelOverrides({ ...small, contextWindow: 0 })).toEqual({});
+    for (const window of [200_001, 210_000, 216_384]) {
+      expect(compactionModelOverrides({ ...small, contextWindow: window })).toEqual({});
+      expect(resolve({ ...small, contextWindow: window })).toBe(16_384);
+    }
+    expect(resolve({ ...small, contextWindow: 216_385 })).toBe(16_385);
+    const slashed = {
+      provider: "magpie",
+      id: "opencode-go/deepseek-v4.1-flash",
+      contextWindow: 1_000_000,
+    };
+    expect(1_000_000 - resolve(slashed)).toBe(COMPACTION_TRIGGER_CAP_TOKENS);
   });
 
   it("counts Chinese text as more tokens than ASCII of the same length", () => {

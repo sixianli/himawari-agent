@@ -73,6 +73,7 @@ export function sharedSummaryContext(
 }
 
 export const COMPACTION_TRIGGER_CAP_TOKENS = 200_000;
+const PI_DEFAULT_RESERVE_TOKENS = 16_384;
 
 export function compactionModelOverrides(model: {
   readonly provider: string;
@@ -80,6 +81,10 @@ export function compactionModelOverrides(model: {
   readonly contextWindow: number;
 }): Record<string, { reserveTokens: number }> {
   if (!Number.isSafeInteger(model.contextWindow) || model.contextWindow <= 0) return {};
-  const reserveTokens = model.contextWindow - COMPACTION_TRIGGER_CAP_TOKENS;
-  return reserveTokens > 0 ? { [`${model.provider}/${model.id}`]: { reserveTokens } } : {};
+  if (model.contextWindow - PI_DEFAULT_RESERVE_TOKENS <= COMPACTION_TRIGGER_CAP_TOKENS) return {};
+  return {
+    [`${model.provider}/${model.id}`]: {
+      reserveTokens: model.contextWindow - COMPACTION_TRIGGER_CAP_TOKENS,
+    },
+  };
 }
