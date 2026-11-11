@@ -6,11 +6,16 @@ import { afterEach, describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
 import {
   chromiumInstall,
+  DRAFT_SKIP_CONDITION,
   evaluateTestHygiene,
   inspectTestSource,
   parseTestHygieneBaseline,
   planTestInventory,
   main as policyMain,
+  REQUIRED_AFTER_ENTRY,
+  REQUIRED_CANCELLED,
+  REQUIRED_DRAFT,
+  REQUIRED_ENTRY_SCRIPT,
   resolvePolicySource,
   resolveTestHygieneBaseline,
   upgradeHostedRunnerPolicy,
@@ -113,13 +118,22 @@ const shareCollect = () => ({
   env: { CI_NEEDS: githubExpression("toJSON(needs)") },
   run: `${shareCommand} collect --to .ci-output/reports`,
 });
-const shareRemove = () => ({ if: "always()", run: `${shareCommand} remove` });
+const shareRemove = () => ({ if: REQUIRED_AFTER_ENTRY, run: `${shareCommand} remove` });
+const requiredEntry = () => ({
+  name: "草稿和被取消的运行直接判失败",
+  id: "entry",
+  env: {
+    CI_DRAFT: githubExpression(REQUIRED_DRAFT),
+    CI_CANCELLED: githubExpression(REQUIRED_CANCELLED),
+  },
+  run: REQUIRED_ENTRY_SCRIPT,
+});
 
 function workflow() {
   return {
     name: "CI",
     on: {
-      pull_request: { types: ["opened", "synchronize", "reopened", "ready_for_review", "edited"] },
+      pull_request: { types: ["opened", "synchronize", "reopened", "ready_for_review"] },
       workflow_call: { inputs: { base_sha: { required: false, type: "string" } } },
       workflow_dispatch: {},
     },
@@ -130,7 +144,6 @@ function workflow() {
         "github.event_name",
         "github.event.pull_request.number || github.ref",
         "github.event_name == 'push' && github.run_id || ''",
-        "github.event.action == 'edited' && 'edited' || ''",
       ]
         .map(githubExpression)
         .join("-"),
@@ -157,14 +170,9 @@ function workflow() {
                   ]),
                 ),
               }),
-          ...(["browser", "coverage"].includes(check.id)
-            ? {
-                if: githubExpression(
-                  "github.event_name != 'pull_request' || github.event.pull_request.draft != true",
-                ),
-              }
-            : {}),
+          ...(check.id === "required" ? {} : { if: githubExpression(DRAFT_SKIP_CONDITION) }),
           steps: [
+            ...(check.id === "required" ? [requiredEntry()] : []),
             { uses: `actions/checkout@${checkout.sha}`, with: { "persist-credentials": false } },
             {
               run:
@@ -438,21 +446,15 @@ describe("CI policy contract", () => {
       },
     ],
     [
-      "concurrency without the edited segment",
+      "edited events rerunning CI",
       (value) => {
-        value.concurrency.group = value.concurrency.group.replace(
-          ["-$", "{{ github.event.action == 'edited' && 'edited' || '' }}"].join(""),
-          "",
-        );
+        value.on.pull_request.types.push("edited");
       },
     ],
     [
-      "edited segment keyed by run id",
+      "concurrency with an extra segment",
       (value) => {
-        value.concurrency.group = value.concurrency.group.replace(
-          "&& 'edited' ||",
-          "&& github.run_id ||",
-        );
+        value.concurrency.group += "-x";
       },
     ],
     [
@@ -508,11 +510,46 @@ describe("CI policy contract", () => {
       },
     ],
     [
-      "draft condition on policy",
+      "missing draft condition on policy",
       (value) => {
-        value.jobs.policy.if = githubExpression(
-          "github.event_name != 'pull_request' || github.event.pull_request.draft != true",
-        );
+        delete value.jobs.policy.if;
+      },
+    ],
+    [
+      "other condition on security",
+      (value) => {
+        value.jobs.security.if = githubExpression("always()");
+      },
+    ],
+    [
+      "required without the entry check",
+      (value) => {
+        value.jobs.required.steps.shift();
+      },
+    ],
+    [
+      "required entry check after checkout",
+      (value) => {
+        const [entry, checkoutStep] = value.jobs.required.steps;
+        value.jobs.required.steps.splice(0, 2, checkoutStep, entry);
+      },
+    ],
+    [
+      "required entry check ignoring cancelled upstream",
+      (value) => {
+        value.jobs.required.steps[0].env.CI_CANCELLED = githubExpression("false");
+      },
+    ],
+    [
+      "required entry check that passes drafts",
+      (value) => {
+        value.jobs.required.steps[0].run = REQUIRED_ENTRY_SCRIPT.replace("exit 1; fi", "fi");
+      },
+    ],
+    [
+      "required removing the run directory after a failed entry check",
+      (value) => {
+        value.jobs.required.steps.find((step) => step.run?.endsWith(" remove")).if = "always()";
       },
     ],
     [
@@ -623,10 +660,15 @@ describe("CI policy contract", () => {
       with: { name: "d", path: ".ci-output/public/diagnostics/", "retention-days": 1 },
     });
     value.jobs.required.steps.push({
+      if: REQUIRED_AFTER_ENTRY,
       uses: upload,
       with: { name: "g", path: ".ci-output/gate/", "retention-days": 1 },
     });
     expect(() => validateWorkflow(policy, stringify(value), lock)).not.toThrow();
+    value.jobs.required.steps.at(-1).if = "always()";
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+      "Required uploads its gate only after the entry check passed",
+    );
   });
   it("accepts read-only permissions on the gate job", () => {
     const value = workflow();
