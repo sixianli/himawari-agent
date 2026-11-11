@@ -1804,6 +1804,23 @@ it("[P3-2] keeps the embedding error and marks the call unknown when settling a 
   );
 });
 
+it("[P3-2] keeps the embedding error when marking a failed projection embedding unknown fails", async () => {
+  const fixture = embeddingAccountingFixture("projection", {
+    ...gatewayEmbeddingResponse(),
+    data: [],
+  });
+  fixture.budget.markUnknown.mockRejectedValueOnce(new Error("UNKNOWN_REFUSED"));
+  const failure = await fixture.run().then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  expect(failure).toMatchObject({ message: "EMBEDDING_VECTOR_INVALID" });
+  expect(fixture.budget.settle).not.toHaveBeenCalled();
+  expect(fixture.diagnostics).toContainEqual(
+    expect.objectContaining({ event: "memory.embedding_unknown_failed", error: "UNKNOWN_REFUSED" }),
+  );
+});
+
 it("[P3-2] keeps the embedding error when both settling and marking a failed chat embedding unknown fail", async () => {
   const fixture = embeddingAccountingFixture("query", {
     ...gatewayEmbeddingResponse(),

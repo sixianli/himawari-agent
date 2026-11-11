@@ -276,6 +276,17 @@ export function createProductionRunMemory(options: {
       await permit.assertActive();
       return response;
     } catch (error) {
+      const markUnknownKeepingError = async () => {
+        try {
+          await permit.markUnknown("transport_unresolved");
+        } catch (unknown) {
+          options.diagnostic?.({
+            component: "agent-service",
+            event: "memory.embedding_unknown_failed",
+            error: unknown instanceof Error ? unknown.message : "EMBEDDING_UNKNOWN_FAILED",
+          });
+        }
+      };
       const runEmbedding = !projection && !mail;
       if (
         started &&
@@ -297,17 +308,9 @@ export function createProductionRunMemory(options: {
             event: "memory.embedding_settle_failed",
             error: accounting instanceof Error ? accounting.message : "EMBEDDING_SETTLE_FAILED",
           });
-          try {
-            await permit.markUnknown("transport_unresolved");
-          } catch (unknown) {
-            options.diagnostic?.({
-              component: "agent-service",
-              event: "memory.embedding_unknown_failed",
-              error: unknown instanceof Error ? unknown.message : "EMBEDDING_UNKNOWN_FAILED",
-            });
-          }
+          await markUnknownKeepingError();
         }
-      } else if (started && !settled) await permit.markUnknown("transport_unresolved");
+      } else if (started && !settled) await markUnknownKeepingError();
       else if (!started) await permit.releaseReserved();
       throw error;
     }

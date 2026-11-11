@@ -1817,6 +1817,7 @@ it.each(["connection loss", "missing cost", "budget exceeded"] as const)(
       if (failure === "budget exceeded") {
         expect(mainDiagnostics).toContain('"status":"402"');
         expect(mainDiagnostics).toContain('"gatewayErrorType":"quota_for_entity_exceeded"');
+        expect(mainDiagnostics).toContain("User budget exceeded");
       }
       await expect.poll(() => degradeRows().length).toBeGreaterThan(0);
       expect(degradeRows()).toEqual([
