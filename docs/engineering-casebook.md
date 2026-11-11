@@ -5602,7 +5602,7 @@ Himawari 的每个关键判断（读完邮件提醒没提醒、记忆存没存�
 
 **相关 ADR/PR**
 
-[ADR 0233](adr/0233-model-pre-rates-waiting-decisions.md)、PR #373、迁移 0091。
+[ADR 0237](adr/0237-model-pre-rates-waiting-decisions.md)、PR #373、迁移 0091。
 
 **面试 30 秒版**
 
