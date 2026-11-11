@@ -396,7 +396,7 @@
   },
   "mcp.propose-rule": {
     "sha256": "2669de4d02fd11cc4cc28cf72dae4001778e0c099bf170f9dfb70a3ac3983f4a",
-    "changedIn": "ADR 0225",
+    "changedIn": "ADR 0226",
     "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
   },
   "mcp.propose-rule-already-saved": {
@@ -411,7 +411,7 @@
   },
   "mcp.propose-rule-confirm": {
     "sha256": "d153dd78430f5378c306a6e9617749126904debeed3bb06131cca385034fa25e",
-    "changedIn": "ADR 0225",
+    "changedIn": "ADR 0226",
     "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
   },
   "mcp.propose-rule-declined": {

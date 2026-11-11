@@ -173,7 +173,7 @@ export function mcpProposalAnswer(
   answeredAt: number,
 ): McpProposalAnswer {
   if (action === "accept") return "accepted";
-  return answeredAt - askedAt < MCP_PROPOSAL_UNSEEN_ANSWER_MS ? "unseen" : "declined";
+  return answeredAt - askedAt >= MCP_PROPOSAL_UNSEEN_ANSWER_MS ? "declined" : "unseen";
 }
 
 export interface ProductionMcpReadOptions {
@@ -530,6 +530,7 @@ export class ProductionMcpRead {
     client: string,
     context: ServerContext,
   ): Promise<CallToolResult | InputRequiredResult> {
+    const received = Date.parse(this.#options.clock.now());
     const reason = normalizeProposalText(typeof args["reason"] === "string" ? args["reason"] : "");
     let parsed: { readonly type: string; readonly params: unknown; readonly summary: string };
     try {
@@ -570,7 +571,7 @@ export class ProductionMcpRead {
         state.tool !== "propose_rule" ||
         typeof state.proposalId !== "string" ||
         typeof state.client !== "string" ||
-        typeof state.askedAt !== "number" ||
+        !Number.isFinite(state.askedAt) ||
         state.argsHash !== argsHash
       )
         return proposalReply(MCP_PROPOSE_MEMORY_CHANGED.text, true);
@@ -597,11 +598,7 @@ export class ProductionMcpRead {
         const answer = inputResponse(context.mcpReq.inputResponses, MCP_PROPOSAL_CONFIRM_KEY);
         if (answer.kind !== "elicit")
           return await this.#askRuleConfirmation(rules, state, proposal, context);
-        const outcome = mcpProposalAnswer(
-          answer.action,
-          state.askedAt,
-          Date.parse(this.#options.clock.now()),
-        );
+        const outcome = mcpProposalAnswer(answer.action, state.askedAt, received);
         if (outcome === "unseen") return proposalReply(MCP_PROPOSE_NOT_SHOWN.text, true);
         if (outcome === "accepted") {
           await rules.accept(proposal);
@@ -717,7 +714,7 @@ export class ProductionMcpRead {
         state.tool !== "propose_memory" ||
         typeof state.proposalId !== "string" ||
         typeof state.client !== "string" ||
-        typeof state.askedAt !== "number" ||
+        !Number.isFinite(state.askedAt) ||
         state.argsHash !== argsHash
       )
         return proposalReply(MCP_PROPOSE_MEMORY_CHANGED.text, true);

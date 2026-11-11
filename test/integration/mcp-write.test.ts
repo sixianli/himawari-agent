@@ -511,6 +511,8 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(mcpProposalAnswer("decline", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS - 1)).toBe("unseen");
     expect(mcpProposalAnswer("cancel", 0, 10)).toBe("unseen");
     expect(mcpProposalAnswer("decline", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS)).toBe("declined");
+    expect(mcpProposalAnswer("decline", 0, Number.NaN)).toBe("unseen");
+    expect(mcpProposalAnswer("decline", 5_000, 0)).toBe("unseen");
     const f = await setup();
     const desktop = await f.connect({ answer: { action: "decline" }, answerAfterMs: 10 });
     const unseen = await f.propose(desktop, { text: COFFEE });
@@ -536,6 +538,25 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(later.content?.[0]?.text).toBe(MCP_PROPOSE_MEMORY_SAVED.text);
     expect(await f.external()).toHaveLength(1);
     expect((await f.decisions()).map(({ outcome }) => outcome)).toEqual(["kept"]);
+    const second = await f.raw(client, { arguments: { text: "主人讨厌下雨天" } });
+    const ignored = await f.raw(client, {
+      arguments: { text: "主人讨厌下雨天" },
+      requestState: second.requestState,
+      inputResponses: { [MCP_PROPOSAL_CONFIRM_KEY]: { action: "cancel" } },
+      answeredAfterMs: 0,
+    });
+    expect(ignored.content?.[0]?.text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    const refused = await f.raw(client, {
+      arguments: { text: "主人讨厌下雨天" },
+      requestState: second.requestState,
+      inputResponses: { [MCP_PROPOSAL_CONFIRM_KEY]: { action: "decline" } },
+    });
+    expect(refused.content?.[0]?.text).toBe(MCP_PROPOSE_MEMORY_DECLINED.text);
+    expect((await f.decisions()).map(({ outcome }) => outcome).sort()).toEqual([
+      "discarded",
+      "kept",
+    ]);
+    expect(await f.external()).toHaveLength(1);
   });
 
   it("refuses without a dialog when the client cannot show a confirmation form", async () => {
@@ -782,6 +803,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(saved.text).toBe(MCP_PROPOSE_RULE_SAVED.text);
     expect(f.elicitations).toHaveLength(1);
     const message = String(f.elicitations[0]?.["message"]);
+    expect(f.elicitations[0]?.["requestedSchema"]).toEqual({ type: "object", properties: {} });
     expect(message.startsWith(`让这条邮件长期规则生效？\n「${RULE.summary}」`)).toBe(true);
     for (const shown of [
       "claude-code（对方自称）",
