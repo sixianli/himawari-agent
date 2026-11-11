@@ -81,8 +81,6 @@ export const messages = {
   "chat.error.rateLimited": "模型服务当前限流。请稍后重试，或为下一轮选择其他已配置模型。",
   "chat.error.authFailed": "模型服务认证失败。请检查服务端的模型凭据和访问权限。",
   "chat.error.unavailable": "模型服务暂不可用。请稍后重试。",
-  "chat.error.contextMemoryUnavailable":
-    "查找相关记忆时，连接模型服务失败。本轮没有调用对话模型，也没有执行任何工具。",
   "chat.error.quotaExceeded":
     "模型服务的费用额度已用完，请求被拒绝了，不是网络问题。请在 Vercel 的 AI Gateway 预算里调高或取消上限，之后再试。",
   "chat.error.contextWindowExhausted":
@@ -831,6 +829,8 @@ export const messages = {
   "memory.page.carry.title": "每次对话都会带上的记忆",
   "memory.page.carry.summary": "{count} 条 · 已用 {used} / {limit} 字",
   "memory.page.carry.queued": "还有 {count} 条放不下",
+  "memory.page.carry.pinnedOver":
+    "你打开“每次对话都带上”的记忆共 {pinned} 字，比上限 {limit} 字多出 {over} 字。它们照样每次都带上，但其他记忆就放不进来了；关掉几条可以回到上限以内。",
   "memory.page.carry.open": "查看和调整",
   "memory.page.carry.meter": "已用字数",
   "memory.page.carry.note":

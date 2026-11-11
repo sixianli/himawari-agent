@@ -87,8 +87,6 @@ export const messages = {
   "chat.error.authFailed":
     "Model authentication failed. Check the server credentials and model access.",
   "chat.error.unavailable": "The model service is unavailable. Try again later.",
-  "chat.error.contextMemoryUnavailable":
-    "Looking up related memory failed because the model service connection failed. No chat model was called and no tool ran in this turn.",
   "chat.error.quotaExceeded":
     "The model service turned this request down because its spending limit is used up. This is not a network problem. Raise or remove the limit in the Vercel AI Gateway budgets, then try again.",
   "chat.error.contextWindowExhausted":
@@ -880,6 +878,8 @@ export const messages = {
   "memory.page.carry.title": "Brought into every conversation",
   "memory.page.carry.summary": "{count} memories · {used} of {limit} characters used",
   "memory.page.carry.queued": "{count} more do not fit",
+  "memory.page.carry.pinnedOver":
+    'The memories you set to "Bring into every conversation" take {pinned} characters, {over} over the {limit}-character limit. They are still brought in every time, but no other memory fits; turn a few off to get back under the limit.',
   "memory.page.carry.open": "View and adjust",
   "memory.page.carry.meter": "Characters used",
   "memory.page.carry.note":

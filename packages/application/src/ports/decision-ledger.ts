@@ -93,7 +93,21 @@ export interface DecisionInputs {
     readonly durationMs: number;
   };
   readonly relatedFailedSteps?: readonly string[];
+  readonly profileBudget?: ProfileBudget | null;
 }
+
+export interface ProfileBudget {
+  readonly limit: number;
+  readonly used: number;
+  readonly pinned: number;
+}
+
+export const PROFILE_BUDGET_EXCEEDED = "profile_budget_exceeded";
+export const PROFILE_PINNED_OVER_BUDGET = "profile_pinned_over_budget";
+export const PROFILE_TRUNCATION_REASONS = [
+  PROFILE_BUDGET_EXCEEDED,
+  PROFILE_PINNED_OVER_BUDGET,
+] as const;
 
 export interface DecisionLedgerWrite {
   readonly id: string;
@@ -238,6 +252,10 @@ export interface DecisionLedgerScope {
 
 export interface DecisionLedgerPort {
   append(write: DecisionLedgerWrite): Promise<void>;
+  appendIfChanged(input: {
+    readonly write: DecisionLedgerWrite;
+    readonly reasonCodes: readonly string[];
+  }): Promise<boolean>;
   list(
     input: DecisionLedgerScope & {
       readonly kind?: DecisionKind;

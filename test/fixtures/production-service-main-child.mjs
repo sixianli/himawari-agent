@@ -167,6 +167,11 @@ process.exitCode = await agent.runAgentService(process.argv.slice(2), output, pr
       configuration,
       secretSource: sources.provider,
       index: repository.memoryIndex(),
+      onVectorFailure: agent.retrievalDegradeRecorder({
+        ledger: repository.decisionLedger(),
+        now: () => new Date().toISOString(),
+        onFailure: () => {},
+      }),
       fetch: (url, init) =>
         fetch(
           String(url).startsWith(gatewayUrl)

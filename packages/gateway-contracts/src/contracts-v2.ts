@@ -1282,6 +1282,7 @@ const memoryOverviewSnapshotSchema = object({
     profileUsage: object({
       used: integer(0),
       limit: integer(1),
+      pinned: integer(0),
       queued: array(machineString),
     }),
     profile: array(

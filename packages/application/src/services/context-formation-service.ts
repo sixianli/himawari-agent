@@ -24,7 +24,12 @@ import {
   type ProductContextRunState,
   RUNTIME_ENVIRONMENT_BLOCK_REF,
 } from "../ports/context-projection.js";
-import type { DecisionLedgerPort } from "../ports/decision-ledger.js";
+import {
+  type DecisionLedgerPort,
+  PROFILE_BUDGET_EXCEEDED,
+  PROFILE_PINNED_OVER_BUDGET,
+  PROFILE_TRUNCATION_REASONS,
+} from "../ports/decision-ledger.js";
 import type { ThreadDistillationStatePort, ThreadSummaryRecord } from "../ports/conversation.js";
 import type { MemoryCandidate, MemoryPort } from "../ports/intelligence.js";
 import { isMemoryDates } from "../ports/memory-dates.js";
@@ -127,7 +132,7 @@ export interface ContextFormationServiceDependencies {
   readonly threads?: Pick<ThreadRepositoryPort, "readContextSnapshot">;
   readonly threadSummaries?: Pick<ThreadDistillationStatePort, "latestSummary">;
   readonly profile?: OwnerProfilePort;
-  readonly ledger?: Pick<DecisionLedgerPort, "append">;
+  readonly ledger?: Pick<DecisionLedgerPort, "append" | "appendIfChanged">;
 }
 
 export interface ContextFormationPort {
@@ -328,6 +333,39 @@ export class ContextFormationService implements ContextFormationPort {
           contentRef: null,
           costMicros: 0,
           durationMs: 0,
+        })
+        .catch(() => undefined);
+    }
+
+    const usage = profile.usage;
+    if (
+      this.dependencies.ledger &&
+      usage &&
+      (usage.queued.length > 0 || usage.pinned > usage.limit)
+    ) {
+      await this.dependencies.ledger
+        .appendIfChanged({
+          write: {
+            id: this.dependencies.ids.next("ledger"),
+            ownerId: request.ownerId,
+            agentId: request.agentId,
+            kind: "context_truncation",
+            decidedAt: this.dependencies.clock.now(),
+            outcome: "truncated",
+            reasonCode:
+              usage.pinned > usage.limit ? PROFILE_PINNED_OVER_BUDGET : PROFILE_BUDGET_EXCEEDED,
+            subjectRef: request.runId,
+            inputs: {
+              memoryIds: [...usage.queued].sort().slice(0, 200),
+              ruleIds: [],
+              profileBudget: { limit: usage.limit, used: usage.used, pinned: usage.pinned },
+            },
+            reasonRef: null,
+            contentRef: null,
+            costMicros: 0,
+            durationMs: 0,
+          },
+          reasonCodes: PROFILE_TRUNCATION_REASONS,
         })
         .catch(() => undefined);
     }
