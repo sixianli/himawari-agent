@@ -13,6 +13,7 @@ import {
   runRuleExamples,
 } from "./rule-book.js";
 import type { RuleBookVersion, RuleRef } from "./rule-ref.js";
+import { OWNER_RULE_ID_PREFIX, ownerRuleRecord } from "./rule-types.js";
 
 export const RULE_KINDS = [
   "important_sender",
@@ -20,8 +21,12 @@ export const RULE_KINDS = [
   "money_words",
   "quiet_hours",
   "amount_threshold",
+  "mail_must_notify",
+  "mail_read_whole_thread",
   "unknown",
 ] as const;
+
+const OWNER_RULE_KINDS: readonly RuleKind[] = ["mail_must_notify", "mail_read_whole_thread"];
 
 export type RuleKind = (typeof RULE_KINDS)[number];
 
@@ -117,6 +122,24 @@ function rebuild(
     return { rule, wording: { ...empty, values: BUILT_IN_RULE_VALUES[rule.id] ?? [] } };
   }
   if (!stored) return undefined;
+  if (OWNER_RULE_KINDS.includes(kind)) {
+    try {
+      const rule = ownerRuleRecord({
+        ruleId: stored.ruleId,
+        revision,
+        status: stored.status,
+        source: "ADR 0213；主人在对话里说的一句话",
+        parameters: stored.parameters,
+      });
+      const summary = stored.parameters["summary"];
+      return {
+        rule,
+        wording: { ...empty, values: typeof summary === "string" ? [summary] : [] },
+      };
+    } catch {
+      return undefined;
+    }
+  }
   if (kind === "important_sender") {
     const senders = stringList(stored.parameters["senders"]);
     if (!senders) return undefined;
@@ -162,11 +185,17 @@ function testStatus(rule: RuleRecord): RuleTestStatus {
   }
 }
 
+function ownerRuleKind(ruleId: string, stored: RuleBookVersion | undefined): RuleKind | undefined {
+  if (!ruleId.startsWith(OWNER_RULE_ID_PREFIX)) return undefined;
+  const type = stored?.parameters["type"];
+  return OWNER_RULE_KINDS.find((kind) => kind === type) ?? "unknown";
+}
+
 export function describeRuleVersion(
   ref: RuleRef,
   stored: RuleBookVersion | undefined,
 ): RuleVersionView {
-  const kind = ruleKindOf(ref.ruleId);
+  const kind = ownerRuleKind(ref.ruleId, stored) ?? ruleKindOf(ref.ruleId);
   const builtIn = kind === "public_domain" || kind === "money_words";
   const revision = ref.revision ?? stored?.revision ?? (builtIn ? 1 : null);
   const rebuilt = revision === null ? undefined : rebuild(kind, revision, stored);

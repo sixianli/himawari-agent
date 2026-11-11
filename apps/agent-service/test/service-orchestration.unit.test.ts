@@ -723,6 +723,7 @@ function web() {
     "productMemoryState",
     "memoryBook",
     "memoryReminders",
+    "ownerRules",
     "memoryProjectionJobs",
     "runPayloadArtifactPort",
     "capabilityStore",

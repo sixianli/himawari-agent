@@ -233,6 +233,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       },
       ledger: realLedger,
       onFailure: (error) => failures.push(error),
+      onSummariesFailed: (error) => failures.push(error),
     });
     const app = Fastify({ logger: false });
     registerMcpReadRoute(app, mcp);

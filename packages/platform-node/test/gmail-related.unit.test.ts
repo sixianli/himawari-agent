@@ -31,7 +31,7 @@ function item(id: string, overrides: Partial<ProactiveSourceItem> = {}): Proacti
   };
 }
 
-const limits = { perMail: 6, requestsPerCheck: 100 };
+const limits = { perMail: 6, requestsPerCheck: 100, wholeThreadPerMail: 50 };
 
 function mailbox(
   mails: readonly ProactiveSourceItem[],
@@ -204,7 +204,7 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
     );
     const result = await findRelatedMail({
       items: [item("now")],
-      limits: { perMail: 3, requestsPerCheck: 100 },
+      limits: { perMail: 3, requestsPerCheck: 100, wholeThreadPerMail: 50 },
       signal: new AbortController().signal,
       transport: mailbox([item("now"), ...thread]),
     });
@@ -213,6 +213,76 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
       "old-7",
       "old-8",
     ]);
+  });
+
+  it("[P2-3] reads the whole thread, later replies included, for a mail an owner rule names", async () => {
+    const thread = Array.from({ length: 9 }, (_, index) =>
+      item(`old-${index}`, {
+        threadId: "t-now",
+        receivedAt: `2026-10-0${index + 1}T00:00:00.000Z`,
+      }),
+    );
+    const later = item("later", { threadId: "t-now", receivedAt: "2026-11-02T00:00:00.000Z" });
+    const junk = item("junk", { threadId: "t-now", categories: ["spam"] });
+    const run = (wholeThreadPerMail: number) =>
+      findRelatedMail({
+        items: [item("now")],
+        limits: { perMail: 3, requestsPerCheck: 100, wholeThreadPerMail },
+        wholeThread: new Set(["now"]),
+        signal: new AbortController().signal,
+        transport: mailbox([item("now"), ...thread, later, junk]),
+      });
+    const full = await run(50);
+    expect(full.byMail.get("now")?.map(({ messageId }) => messageId)).toEqual([
+      ...thread.map(({ messageId }) => messageId),
+      "later",
+    ]);
+    expect(full.wholeThread?.get("now")).toEqual({
+      messageIds: [...thread.map(({ messageId }) => messageId), "later"],
+      complete: true,
+    });
+    const cut = await run(4);
+    expect(cut.wholeThread?.get("now")?.complete).toBe(false);
+    expect(cut.byMail.get("now")?.map(({ messageId }) => messageId)).toEqual([
+      "old-6",
+      "old-7",
+      "old-8",
+      "later",
+    ]);
+  });
+
+  it("[P2-3] REVERSE: reports the thread incomplete when the thread lookup fails, and leaves other mails at the usual limit", async () => {
+    const now = item("now");
+    const down = await findRelatedMail({
+      items: [now],
+      limits,
+      wholeThread: new Set(["now"]),
+      signal: new AbortController().signal,
+      transport: mailbox([now], { failThread: true }),
+    });
+    expect(down.wholeThread?.get("now")?.complete).not.toBe(true);
+    const gone = await findRelatedMail({
+      items: [now],
+      limits,
+      wholeThread: new Set(["now"]),
+      signal: new AbortController().signal,
+      transport: { ...mailbox([now]), thread: async () => undefined },
+    });
+    expect(gone.wholeThread?.get("now")?.complete).toBe(false);
+    const other = await findRelatedMail({
+      items: [item("now")],
+      limits: { perMail: 2, requestsPerCheck: 100, wholeThreadPerMail: 50 },
+      wholeThread: new Set(["elsewhere"]),
+      signal: new AbortController().signal,
+      transport: mailbox([
+        item("now"),
+        item("a", { threadId: "t-now", receivedAt: "2026-10-01T00:00:00.000Z" }),
+        item("b", { threadId: "t-now", receivedAt: "2026-10-02T00:00:00.000Z" }),
+        item("c", { threadId: "t-now", receivedAt: "2026-10-03T00:00:00.000Z" }),
+      ]),
+    });
+    expect(other.byMail.get("now")?.map(({ messageId }) => messageId)).toEqual(["b", "c"]);
+    expect(other.wholeThread?.size).toBe(0);
   });
 
   it("marks the mail failed and keeps going when one lookup throws or the budget runs out", async () => {
@@ -227,7 +297,7 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
     expect(down.failed.get("now")).toBe("thread");
     const tight = await findRelatedMail({
       items: [now, next],
-      limits: { perMail: 6, requestsPerCheck: 1 },
+      limits: { perMail: 6, requestsPerCheck: 1, wholeThreadPerMail: 50 },
       signal: new AbortController().signal,
       transport: mailbox([now, next]),
     });
