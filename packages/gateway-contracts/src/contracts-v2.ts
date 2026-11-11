@@ -765,6 +765,7 @@ const calibrationGroupSchema = enumeration([
   "retrieval_degrade",
   "external_read",
   "rule_review",
+  "memory_capture_failed",
 ]);
 const calibrationRateSchema = nullable(
   object({

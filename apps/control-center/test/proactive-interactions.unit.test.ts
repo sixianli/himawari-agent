@@ -604,6 +604,30 @@ describe("[PG-15] proactive reminders page", () => {
     expect(row?.textContent).not.toContain("外部程序读取记忆");
   });
 
+  it("[P3-5] names each failed memory capture by what happens next instead of waiting for approval", async () => {
+    review = {
+      ...review,
+      folded: {
+        total: 3,
+        items: (["capture_retrying", "capture_queued", "capture_gave_up"] as const).map((outcome) =>
+          reviewItem(`ledger:${outcome}`, { outcome, text: "" }),
+        ),
+      },
+    };
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    const section = "#page .proactive-review";
+    await click(section, "展开");
+    const rows = [...document.querySelectorAll<HTMLElement>(`${section} li`)];
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining("记忆抽取失败，已重试"),
+      expect.stringContaining("记忆抽取失败，下一轮补做"),
+      expect.stringContaining("这轮没记全"),
+    ]);
+    expect(text(section)).not.toContain("待你确认的记忆");
+    expect(text(section)).not.toContain("这里不显示原文");
+  });
+
   it("[P0-6] sends one rating, clears it on a second tap and leaves a reviewed mail alone", async () => {
     await act(async () => root.render(h(Page, { focus: null })));
     await flush();

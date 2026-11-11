@@ -341,6 +341,42 @@ describe("[P0-6] reading the daily review", () => {
     });
   });
 
+  it("[P3-5] shows a failed capture as not acted on, with no memory to read and no hidden text", async () => {
+    let reads = 0;
+    const review = await readDailyReview({
+      scope,
+      ledger: {
+        listReviewPool: async () =>
+          ["capture_retrying", "capture_queued", "capture_gave_up"].map((outcome) =>
+            entry({
+              id: outcome,
+              outcome,
+              reasonCode: "AI_GATEWAY_REQUEST_TIMEOUT",
+              subjectRef: "memory-capture:run-1",
+            }),
+          ),
+      },
+      overview: overview([]),
+      readMemoryText: async () => {
+        reads += 1;
+        return "should not be read";
+      },
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    expect(review.items).toEqual([]);
+    expect(review.folded.items.map(({ key }) => key).sort()).toEqual([
+      "ledger:capture_gave_up",
+      "ledger:capture_queued",
+      "ledger:capture_retrying",
+    ]);
+    for (const item of review.folded.items)
+      expect(item).toMatchObject({ acted: false, text: "", textHidden: false });
+    expect(reads).toBe(0);
+  });
+
   it("leaves out a silent check that judged no mail and keeps pushed ones", async () => {
     const review = await read(
       [

@@ -35,6 +35,7 @@ import type { ProductionBackgroundCommands } from "./production-background-comma
 import { ProductionBackgroundRuns } from "./production-background-runs.js";
 import {
   ProductionMemoryCapture,
+  type MemoryCaptureCall,
   type ProductionMemoryCaptureOptions,
 } from "./production-memory-capture.js";
 import {
@@ -85,6 +86,7 @@ export interface ProductionRunCompositionOptions {
       prompt: string,
       admission: ModelInvocationAdmissionPort,
       purpose?: string,
+      call?: MemoryCaptureCall,
     ) => Promise<string>;
     readonly episodes?: Pick<
       ProductionMemoryEpisodesOptions,
@@ -512,8 +514,9 @@ export function createProductionRunComposition(options: ProductionRunComposition
         clock,
         assertActive: () => authority.assertActive(),
         externalTag: () => options.egress.externalTag(),
-        generate: (request, prompt, onAdmitted) =>
-          auxiliaryMemoryGeneration(request, prompt, onAdmitted, "memory-capture"),
+        backlog: repository.memoryCaptureBacklog(),
+        generate: (request, prompt, onAdmitted, call) =>
+          auxiliaryMemoryGeneration(request, prompt, onAdmitted, "memory-capture", call),
         onAudit: memoryCaptureOptions.onAudit,
         onFailure: memoryCaptureOptions.onFailure,
       })
@@ -554,6 +557,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     prompt: string,
     onAdmitted: () => void,
     purpose: string,
+    call?: MemoryCaptureCall,
   ): Promise<string> {
     if (!memoryCaptureOptions) throw new Error("MEMORY_CAPTURE_MODEL_UNAVAILABLE");
     const gate = await admission(request);
@@ -583,6 +587,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
         },
       },
       purpose,
+      call,
     );
   }
   const titledRuntime = createProductionTitledRuntime({
