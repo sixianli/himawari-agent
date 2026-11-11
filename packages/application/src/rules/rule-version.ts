@@ -173,7 +173,7 @@ export function describeRuleVersion(
   return Object.freeze({
     ruleId: ref.ruleId,
     revision,
-    current: ref.revision === null,
+    current: ref.revision === null && rebuilt !== undefined,
     kind,
     origin: rebuilt?.rule.origin ?? null,
     source: rebuilt?.rule.source ?? null,

@@ -137,7 +137,7 @@ export async function readDecisionChain(
               : null,
             wording: view.wording
               ? {
-                  values: view.wording.values.map((value) => value.slice(0, 256)),
+                  values: view.wording.values.map((value) => displayRuleId(value).slice(0, 256)),
                   quietHours: view.wording.quietHours.map(({ days, start, end }) => ({
                     days: [...days],
                     start,

@@ -391,7 +391,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
           {
             ruleId: "floor_important_sender",
             revision: null,
-            current: true,
+            current: false,
             kind: "important_sender",
             origin: null,
             source: null,
@@ -405,7 +405,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
           {
             ruleId: "floor_unregistered_rule",
             revision: null,
-            current: true,
+            current: false,
             kind: "unknown",
             origin: null,
             source: null,
@@ -720,8 +720,10 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         wording: { values: [] },
         tests: { state: "passed", total: 1 },
       });
-      expect(items.find((item) => item.ruleId === "quiet_hours" && item.current)).toMatchObject({
-        revision: null,
+      expect(
+        items.find((item) => item.ruleId === "quiet_hours" && item.revision === null),
+      ).toMatchObject({
+        current: false,
         wording: null,
         tests: { state: "unavailable" },
       });
@@ -769,6 +771,52 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
           wording: { values: ["bank.example"] },
           tests: { state: "passed" },
         },
+      ]);
+    } finally {
+      await f.repository.close();
+    }
+  });
+
+  it("[P2-7] refuses an important sender with a control character and still reads a chain whose stored list has one", async () => {
+    const f = await fixture();
+    try {
+      await expect(
+        f.repository.proactive().writeSettings({
+          ...scope,
+          enabled: true,
+          quietHours: [],
+          importantSenders: ["bank\n.example"],
+          now: "2026-11-01T00:00:00.000Z",
+        }),
+      ).rejects.toThrow();
+      await f.repository.proactive().writeSettings({
+        ...scope,
+        enabled: true,
+        quietHours: [],
+        importantSenders: ["bank.example"],
+        now: "2026-11-01T00:00:00.000Z",
+      });
+      f.sql((database) => {
+        database
+          .prepare(
+            "UPDATE rule_book_rules SET parameters = ? WHERE rule_id = 'floor_important_sender'",
+          )
+          .run(JSON.stringify({ senders: ["bank\n.example"] }));
+      });
+      await recordGmail(
+        f.repository,
+        "gmail-control-sender",
+        gmailInputs({
+          ruleIds: ["floor_important_sender"],
+          floorHits: { "mail-1": ["floor_important_sender"] },
+          memoryIds: [],
+          memoryByMail: {},
+          usedMemoryIds: [],
+        }),
+      );
+      const chain = await chainOf(f.control, "gmail-control-sender");
+      expect(chain.rules.items).toMatchObject([
+        { ruleId: "floor_important_sender", current: true, wording: { values: ["bank .example"] } },
       ]);
     } finally {
       await f.repository.close();

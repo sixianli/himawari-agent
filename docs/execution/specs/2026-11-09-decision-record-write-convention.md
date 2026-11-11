@@ -36,7 +36,7 @@ date: "2026-11-09"
 
 | 字段 | 谁写 | 含义 |
 | --- | --- | --- |
-| `ruleIds` | `proactive` 写真正起了作用的规则，格式是“规则 id@修订号”（[ADR 0215](../../adr/0215-decision-record-points-at-the-rule-version.md)）；`rule_review` 只写规则 id，抽屉显示当前版本；`memory_candidate` 写空数组，丢弃原因只放 `reasonCode`；其他种类写空数组，抽屉显示“这类记录不涉及” | 规则 id 必须是规则手册里的 id |
+| `ruleIds` | `proactive` 写真正起了作用的规则，格式是“规则 id@修订号”（[ADR 0215](../../adr/0215-decision-record-points-at-the-rule-version.md)），只有底线命中的规则不在这次检查的规则手册里时才写裸 id，抽屉对它显示“这一版的规则内容查不到”；`rule_review` 只写规则 id，抽屉显示当前版本；`memory_candidate` 写空数组，丢弃原因只放 `reasonCode`；其他种类写空数组，抽屉显示“这类记录不涉及” | 规则 id 必须是规则手册里的 id |
 | `floorHits` | `proactive` | 每封邮件命中的规则编号 |
 | `memoryIds` | 所有种类 | 实际放进上下文或被这次判断用到的记忆编号，不得只写数量 |
 | `memoryByMail`、`usedMemoryIds`、`tentativeMemoryIds` | `proactive` | 每封邮件对应的记忆、模型实际用到的记忆、待确认的记忆；其他种类现在没有这三个键，所以不会显示“模型用到了” |

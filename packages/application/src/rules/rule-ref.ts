@@ -4,7 +4,8 @@ export interface RuleRef {
 }
 
 export function ruleRef(ruleId: string, revision: number): string {
-  return `${ruleId.slice(0, 240)}@${revision}`;
+  if (ruleId.length > 240) throw new RangeError("Rule id is longer than 240 characters");
+  return `${ruleId}@${revision}`;
 }
 
 export function parseRuleRef(value: string): RuleRef {
