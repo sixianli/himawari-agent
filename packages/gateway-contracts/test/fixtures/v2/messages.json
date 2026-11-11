@@ -87,7 +87,8 @@
       "memoryId": "memory-01",
       "action": "correct",
       "expectedRevision": 2,
-      "contentRef": "payload-memory-correction-01"
+      "contentRef": "payload-memory-correction-01",
+      "historyId": null
     }
   },
   {
