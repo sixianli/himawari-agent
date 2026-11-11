@@ -1537,6 +1537,7 @@ function embeddingAccountingFixture(mode: "query" | "projection", response: unkn
     markUnknown: vi.fn(async () => undefined),
   };
   const send = vi.fn(async () => response as EmbeddingResponse);
+  const diagnostics: Readonly<Record<string, string>>[] = [];
   const request: MemorySearchRequest = {
     ownerId: configuration.ownerId,
     agentId: configuration.agentId,
@@ -1574,6 +1575,7 @@ function embeddingAccountingFixture(mode: "query" | "projection", response: unkn
     budget: budget as never,
     assertActive: async () => undefined,
     now: () => time.now,
+    diagnostic: (event) => diagnostics.push(event),
   });
   const run =
     mode === "query"
@@ -1598,6 +1600,7 @@ function embeddingAccountingFixture(mode: "query" | "projection", response: unkn
     controller,
     permit,
     budget,
+    diagnostics,
     time,
     ledger: mode === "query" ? permit : budget,
   };
@@ -1792,11 +1795,31 @@ it("[P3-2] keeps the embedding error and marks the call unknown when settling a 
     () => undefined,
     (error: unknown) => error,
   );
-  expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).not.toBe("SETTLE_REFUSED");
+  expect(failure).toMatchObject({ message: "EMBEDDING_VECTOR_INVALID" });
   expect(fixture.permit.settle).toHaveBeenCalledTimes(1);
   expect(fixture.permit.markUnknown).toHaveBeenCalledWith("transport_unresolved");
   expect(fixture.permit.releaseReserved).not.toHaveBeenCalled();
+  expect(fixture.diagnostics).toContainEqual(
+    expect.objectContaining({ event: "memory.embedding_settle_failed", error: "SETTLE_REFUSED" }),
+  );
+});
+
+it("[P3-2] keeps the embedding error when both settling and marking a failed chat embedding unknown fail", async () => {
+  const fixture = embeddingAccountingFixture("query", {
+    ...gatewayEmbeddingResponse(),
+    data: [],
+  });
+  fixture.permit.settle.mockRejectedValueOnce(new Error("SETTLE_REFUSED"));
+  fixture.permit.markUnknown.mockRejectedValueOnce(new Error("UNKNOWN_REFUSED"));
+  const failure = await fixture.run().then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  expect(failure).toMatchObject({ message: "EMBEDDING_VECTOR_INVALID" });
+  expect(fixture.permit.markUnknown).toHaveBeenCalledWith("transport_unresolved");
+  expect(fixture.diagnostics).toContainEqual(
+    expect.objectContaining({ event: "memory.embedding_unknown_failed", error: "UNKNOWN_REFUSED" }),
+  );
 });
 
 async function sensitiveInterceptionRepository(ownerId: string, agentId: string) {
