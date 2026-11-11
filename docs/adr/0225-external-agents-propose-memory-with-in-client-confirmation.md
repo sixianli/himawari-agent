@@ -109,7 +109,7 @@ date: "2026-11-11"
 - 信任范围：拿到写令牌的人，如果自己就是客户端，可以自己回答确认框。所以写令牌只该放在 Andy 自己用的客户端里；它和只读令牌分开，可以单独撤销。
 - 服务重启会让正在等确认的提议失效：旧的 `requestState` 验不过签名，客户端收到错误，需要重新提议。
 - 只在交互会话里有确认框；Claude Code 的非交互模式不弹框，这时按决定 6 拒绝。
-- 提议规则（`propose_rule`）等 P2-3 合并后另开 PR 和 ADR。
+- 提议规则（`propose_rule`）等 P2-3 合并后另开 PR 和 ADR。后续：已由 [ADR 0226](0226-external-agents-propose-rules-through-the-rule-proposal-flow.md) 实现。
 - 测试：
   - `test/integration/mcp-write.test.ts` 用真实 SQLite、真实记忆服务和官方 SDK 客户端：只读令牌看不到写工具、老版本连接看不到写工具；确认后保存，并能被 `find_memories` 找到；拒绝、取消、没勾选都不写；客户端不支持确认框时不写；并发和重复重发只写一条；同一提议同时收到保存和拒绝只记一种结论（把读取放慢制造竞争，去掉排队这条用例会失败）；看不见的字符先去掉再算长度；参数键序不同算同一提议；篡改过的状态被拒；状态拿去配别的内容回「内容变了」；硬删除后重放不会复活；拒绝记录写不进去时回错误；每日回顾和校准的处理。
   - `test/integration/memory-source-report.test.ts`：报表认出 `external`，前缀和网页一致。
