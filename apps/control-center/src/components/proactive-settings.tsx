@@ -260,7 +260,7 @@ export function ProactiveAppsSettings({
       {outcome ? (
         <output
           className="proactive-outcome"
-          data-tone={outcome === "connected" ? undefined : "warn"}
+          data-tone={outcome === "connected" || outcome === "demo" ? undefined : "warn"}
         >
           {message("proactive.apps.outcome", { o: outcome })}
         </output>

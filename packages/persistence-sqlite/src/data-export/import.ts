@@ -48,6 +48,7 @@ interface Sealed {
     readonly sourceInsights: readonly Record<string, unknown>[];
     readonly processedMessages: readonly Record<string, unknown>[];
     readonly museEntries: readonly Record<string, unknown>[];
+    readonly prereviews: readonly Record<string, unknown>[];
   } | null;
 }
 
@@ -611,6 +612,33 @@ function writeEvidence(
       row["intakeItemKey"],
       row["recordedAt"],
       row["pairedMessageId"],
+    );
+  const prereview = database.prepare(
+    `INSERT INTO decision_prereviews (id, owner_id, agent_id, decision_id, mail_source, message_id, calibration_group, category, status, rating, confidence_permille, history_conflict, failure_code, model_ref, prompt_id, text_digest, data_classification, cost_micros, duration_ms, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const row of evidence.prereviews)
+    prereview.run(
+      row["id"],
+      ownerId,
+      agentId,
+      row["decisionId"],
+      row["mailSource"],
+      row["messageId"],
+      row["group"],
+      row["category"],
+      row["status"],
+      row["rating"],
+      row["confidencePermille"],
+      bit(row["historyConflict"]),
+      row["failureCode"],
+      row["modelRef"],
+      row["promptId"],
+      row["textDigest"],
+      row["dataClassification"],
+      row["costMicros"],
+      row["durationMs"],
+      row["createdAt"],
     );
 }
 

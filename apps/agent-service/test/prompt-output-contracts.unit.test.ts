@@ -55,6 +55,7 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseMemoryCandidates: capture.parseMemoryCandidates,
   parseJudgements: application.parseJudgements,
   parseAutomaticReviewDecision: application.parseAutomaticReviewDecision,
+  parsePrereview: application.parsePrereview,
 };
 
 const NOT_COVERED = new Set(["memory.consolidation", "memory.consolidation.format"]);
@@ -78,7 +79,9 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         .filter((entry) => !NOT_COVERED.has(entry.id))
         .map(({ id }) => id)
         .sort(),
-    ).toEqual(["mail.judgment", "memory.capture", "review.typesafe-questions"].sort());
+    ).toEqual(
+      ["mail.judgment", "memory.capture", "review.prereview", "review.typesafe-questions"].sort(),
+    );
   });
 
   it("memory capture: accepts the JSON the prompt asks for, also inside a Markdown fence", () => {

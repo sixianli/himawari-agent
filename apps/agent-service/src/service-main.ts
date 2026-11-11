@@ -18,6 +18,7 @@ import {
   modelUsagePurpose,
   modelVisibleClassifications,
   type ProductConfiguration,
+  prereviewPromptId,
   RemoteExecutionBackend,
   type RuntimeRequest,
   recoverSandboxExecutionsAtStartup,
@@ -44,6 +45,8 @@ import {
   assertProductionSecretSource,
   BoundedJwksFetcher,
   CloudflareAccessJwtVerifier,
+  createDemoGoogleOAuth,
+  createDemoMailReader,
   createGmailReader,
   createGoogleOAuth,
   createWebPushSender,
@@ -128,6 +131,7 @@ import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./productio
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
+  PREREVIEW_MAX_OUTPUT_TOKENS,
   PROACTIVE_MAX_OUTPUT_TOKENS,
   ProductionProactive,
   proactiveCostEstimator,
@@ -1627,10 +1631,11 @@ export async function runAgentService(
         void localEmbedding.start();
       }
       const proactiveConfiguration = configuration.runPolicy?.proactive;
-      const proactiveSecret = proactiveConfiguration
+      const proactiveGmail = proactiveConfiguration?.gmail;
+      const proactiveSecret = proactiveGmail
         ? configuration.secretReferences.find(
             ({ ref, purpose }) =>
-              ref === proactiveConfiguration.gmail.clientSecretRef &&
+              ref === proactiveGmail.clientSecretRef &&
               purpose === GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
           )
         : undefined;
@@ -1644,7 +1649,9 @@ export async function runAgentService(
         agentId: configuration.agentId,
       };
       const proactiveStore =
-        proactiveConfiguration && proactiveSecret && proactiveDescriptor
+        proactiveConfiguration &&
+        (proactiveSecret || proactiveConfiguration.demoInbox) &&
+        proactiveDescriptor
           ? repository.proactive()
           : undefined;
       const proactiveSeal =
@@ -1657,19 +1664,22 @@ export async function runAgentService(
           : undefined;
       if (
         proactiveConfiguration &&
-        proactiveSecret &&
+        (proactiveSecret || proactiveConfiguration.demoInbox) &&
         proactiveDescriptor &&
         proactiveStore &&
         proactiveSeal
       ) {
-        const oauth = createGoogleOAuth({
-          clientId: proactiveConfiguration.gmail.clientId,
-          clientSecret: await hostModelSources(configuration).provider.resolve(
-            proactiveSecret.ref,
-            proactiveSecret.version,
-          ),
-          redirectUri: proactiveRedirectUri(configuration.publicOrigin),
-        });
+        const demoInbox = proactiveConfiguration.demoInbox;
+        const oauth = demoInbox
+          ? createDemoGoogleOAuth()
+          : createGoogleOAuth({
+              clientId: requireValue(proactiveGmail).clientId,
+              clientSecret: await hostModelSources(configuration).provider.resolve(
+                requireValue(proactiveSecret).ref,
+                requireValue(proactiveSecret).version,
+              ),
+              redirectUri: proactiveRedirectUri(configuration.publicOrigin),
+            });
         const feedbackStore = repository.webPush();
         const reviewPayloads = repository.payloadStore(
           configuration.ownerId,
@@ -1758,7 +1768,9 @@ export async function runAgentService(
           ownerRules: repository.ownerRules(),
           seal: proactiveSeal,
           oauth,
-          reader: createGmailReader({ oauth }),
+          reader: demoInbox
+            ? createDemoMailReader({ now: () => clock.now(), timeZone: proactiveTimeZone })
+            : createGmailReader({ oauth }),
           readAccount: (accessToken) => readGmailAccount({ accessToken }),
           ledger: repository.decisionLedger(),
           readMemoryText: readReviewText,
@@ -1774,7 +1786,9 @@ export async function runAgentService(
               return undefined;
             if (!reviewMemoryVisible(record.dataClassification)) return { text: "", hidden: true };
             const text = await readReviewText(record.contentRef);
-            return text === undefined ? undefined : { text, hidden: false };
+            return text === undefined
+              ? undefined
+              : { text, hidden: false, dataClassification: record.dataClassification };
           },
           ...(memory && durableMemory && protector && repository
             ? ((recallProtector, recallPayloads) => ({
@@ -1830,6 +1844,33 @@ export async function runAgentService(
             proactiveDescriptor.cost,
             PROACTIVE_MAX_OUTPUT_TOKENS,
           ),
+          readMemoryClassification: async (ref) =>
+            (await reviewPayloads.get(ref).catch(() => undefined))?.dataClassification,
+          prereview: {
+            store: repository.reviewPrereview(),
+            model: modelComposition.composition.proactiveModel(proactiveConfiguration.modelRef, {
+              maxOutputTokens: PREREVIEW_MAX_OUTPUT_TOKENS,
+              requestTimeoutMs: proactiveConfiguration.reviewPrereview.requestTimeoutMs,
+              purpose: "review-prereview",
+            }),
+            digest: (text) => createHash("sha256").update(text, "utf8").digest("hex"),
+            estimateCostMicros: proactiveCostEstimator(
+              proactiveDescriptor.cost,
+              PREREVIEW_MAX_OUTPUT_TOKENS,
+            ),
+          },
+          onPrereview: (result) => {
+            if (result.attempted > 0 || result.failures.length > 0)
+              writeServiceDiagnostic(errorOutput, {
+                component: "agent-service",
+                event: "proactive.prereviewed",
+                attempted: result.attempted,
+                recorded: result.recorded,
+                failed: result.failures.length,
+                stoppedBy: result.stoppedBy,
+                ...(result.failures[0] ? { code: result.failures[0].slice(0, 120) } : {}),
+              });
+          },
           feedback: (sentFrom) =>
             feedbackStore.listFeedback({
               ...proactiveScope,
@@ -2163,6 +2204,25 @@ export async function runAgentService(
           perCheckMs: configuration.runPolicy?.proactive?.perCheckMs ?? 0,
         },
         serviceRevision: readServiceRevision(),
+        ...(configuration.runPolicy?.proactive
+          ? ((settings, modelRef) => ({
+              prereview: {
+                version: {
+                  modelRef,
+                  promptId: prereviewPromptId((text) =>
+                    createHash("sha256").update(text, "utf8").digest("hex"),
+                  ),
+                },
+                agreementPermille: settings.reduction.hiddenAgreementPermille,
+                confidencePermille: settings.reduction.confidencePermille,
+                reductionEnabled: settings.enabled && settings.reduction.enabled,
+                auditPermille: settings.reduction.auditPermille,
+              },
+            }))(
+              configuration.runPolicy.proactive.reviewPrereview,
+              configuration.runPolicy.proactive.modelRef,
+            )
+          : {}),
         onFailure: (error) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
@@ -2645,4 +2705,9 @@ export async function runAgentService(
     });
     return 1;
   }
+}
+
+function requireValue<T>(value: T | undefined): T {
+  if (value === undefined) throw new Error("PROACTIVE_CONFIGURATION_INCOMPLETE");
+  return value;
 }

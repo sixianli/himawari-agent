@@ -1,4 +1,4 @@
-import type { AgentId, DeploymentId, OwnerId } from "@himawari-agent/domain";
+import type { AgentId, DeploymentId, DemoLocale, OwnerId } from "@himawari-agent/domain";
 import type { DataClassification } from "./common.js";
 import type { ModelProviderRouting } from "./intelligence.js";
 import type { WebProviderId } from "./web-providers.js";
@@ -223,7 +223,8 @@ export interface ProactiveGmailConfiguration {
 
 export interface ProactiveConfiguration {
   readonly modelRef: string;
-  readonly gmail: ProactiveGmailConfiguration;
+  readonly gmail?: ProactiveGmailConfiguration;
+  readonly demoInbox?: DemoLocale;
   readonly intervalMs: number;
   readonly perCheckMs: number;
   readonly dailyCostMicros: number;
@@ -241,8 +242,26 @@ export interface ProactiveConfiguration {
   readonly reviewBudgetSeconds: number;
   readonly reviewSecondsPerItem: number;
   readonly reviewSilentSharePermille: number;
+  readonly reviewPrereview: ReviewPrereviewConfiguration;
   readonly reviewMemoryUnusedDays: number;
   readonly backoffThreshold: number;
+}
+
+export interface ReviewPrereviewConfiguration {
+  readonly enabled: boolean;
+  readonly dailyLimit: number;
+  readonly dailyCostMicros: number;
+  readonly perRun: number;
+  readonly requestTimeoutMs: number;
+  readonly historyDays: number;
+  readonly historyMinimum: number;
+  readonly reduction: {
+    readonly enabled: boolean;
+    readonly hiddenAgreementPermille: number;
+    readonly confidencePermille: number;
+    readonly auditPermille: number;
+    readonly windowDays: number;
+  };
 }
 
 export interface MuseIntakeConfiguration {

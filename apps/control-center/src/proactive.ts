@@ -323,7 +323,7 @@ export function reminderFocusOf(event: Event): string | null {
   return typeof detail === "string" ? detail : null;
 }
 
-export type GmailOutcome = "connected" | "failed" | "denied";
+export type GmailOutcome = "connected" | "failed" | "denied" | "demo";
 export interface LaunchIntent {
   readonly reminder: string | null;
   readonly settings: SettingsTab | null;
@@ -347,7 +347,10 @@ export function readLaunchIntent(
   return {
     reminder: reminder && LAUNCH_ID.test(reminder) ? reminder : null,
     settings: settings === "apps" ? "tools" : settings === "notifications" ? "notifications" : null,
-    gmail: gmail === "connected" || gmail === "failed" || gmail === "denied" ? gmail : null,
+    gmail:
+      gmail === "connected" || gmail === "failed" || gmail === "denied" || gmail === "demo"
+        ? gmail
+        : null,
   };
 }
 
