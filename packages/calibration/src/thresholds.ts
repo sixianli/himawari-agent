@@ -613,7 +613,7 @@ export function thresholdReport({
     lines.push(`## ${analysis.gate.label}（${analysis.gate.key}）`, "");
     const skipped = [
       analysis.unrated > 0 ? `未评价 ${analysis.unrated} 条` : null,
-      analysis.notGated > 0 ? `不由门槛决定 ${analysis.notGated} 条` : null,
+      analysis.notGated > 0 ? `不由这个门槛决定 ${analysis.notGated} 条` : null,
       analysis.ambiguous > 0
         ? `已评价的低于门槛但暂存 ${analysis.ambiguous} 条（${Object.entries(
             analysis.ambiguousRatings,
