@@ -60,6 +60,10 @@ jobs:
           retention-days: 1
   full:
     needs: plan
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
     if: always() && (needs.plan.result != 'success' || needs.plan.outputs.mode != 'light')
     uses: ./.github/workflows/ci.yml
   confirm:
