@@ -9,6 +9,7 @@ import {
   type MemoryConsolidationStorePort,
   type MemoryExtractionAuditRecord,
   isModelVisible,
+  modelVisibleCeiling,
   type MemoryHistoryEvent,
   type MemoryProjectionJobStatePort,
   type MemoryReminderStorePort,
@@ -637,7 +638,7 @@ export class ProductionMemoryControl {
     const outline = await this.options.profile?.outline({
       ownerId,
       agentId,
-      maxClassification: "private",
+      maxClassification: modelVisibleCeiling(),
       now: this.options.clock.now(),
     });
     const lines = (items: readonly { memoryId: string; text: string; updatedAt: string }[]) =>
@@ -783,6 +784,7 @@ export class ProductionMemoryControl {
         profileUsage: {
           used: outline?.usage.used ?? 0,
           limit: outline?.usage.limit ?? 0,
+          pinned: outline?.usage.pinned ?? 0,
           queued: [...(outline?.usage.queued ?? [])],
         },
         generatedAt: now,

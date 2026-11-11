@@ -886,6 +886,8 @@ export const messages = {
   "memory.page.carry.title": "毎回の会話に持っていく記憶",
   "memory.page.carry.summary": "{count} 件 · {limit} 字中 {used} 字を使用",
   "memory.page.carry.queued": "ほかに {count} 件が入りきりません",
+  "memory.page.carry.pinnedOver":
+    "「毎回の会話に持っていく」をオンにした記憶が {pinned} 字あり、上限 {limit} 字を {over} 字超えています。これらは毎回そのまま持っていきますが、ほかの記憶は入りません。いくつかオフにすると上限内に戻ります。",
   "memory.page.carry.open": "見る・調整する",
   "memory.page.carry.meter": "使用中の文字数",
   "memory.page.carry.note":
