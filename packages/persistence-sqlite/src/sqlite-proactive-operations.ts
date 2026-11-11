@@ -646,19 +646,20 @@ export class SqliteProactiveOperations {
   ): boolean {
     const count = (value: unknown) =>
       value === undefined || (Number.isSafeInteger(value) && (value as number) >= 0);
-    if (inputs.summaryRead === undefined)
-      return [
-        inputs.summaryInjected,
-        inputs.summaryIds,
-        inputs.summaryDays,
-        inputs.summaryCharacters,
-        inputs.summaryGenerated,
-      ].every((value) => value === undefined);
+    const others = [
+      inputs.summaryInjected,
+      inputs.summaryIds,
+      inputs.summaryDays,
+      inputs.summaryCharacters,
+      inputs.summaryGenerated,
+    ];
+    if (inputs.summaryRead === undefined) return others.every((value) => value === undefined);
+    if (others.some((value) => value === undefined)) return false;
     const summaryIds = inputs.summaryIds ?? [];
     const summaryDays = inputs.summaryDays ?? [];
     const hasSummaryIds = summaryIds.length > 0;
     return (
-      (inputs.summaryInjected === undefined || typeof inputs.summaryInjected === "boolean") &&
+      typeof inputs.summaryInjected === "boolean" &&
       ids(summaryIds, MAX_INPUT_IDS) &&
       ids(summaryDays, 31) &&
       summaryDays.every((day) => /^\d{4}-\d{2}-\d{2}$/u.test(day)) &&

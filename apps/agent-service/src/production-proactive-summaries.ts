@@ -33,28 +33,36 @@ export function createProactiveRecentSummaries(
   return Object.freeze<ProactiveRecentSummaries>({
     async catchUp({ days, limit, deadlineAt, signal, generate }) {
       if (await options.capturePaused()) return { generated: 0, costMicros: 0, failed: false };
-      const { fromDay } = options.episodes.recentDays(days);
+      const { fromDay, toDay } = options.episodes.recentDays(days);
       const segments = (
         await options.episodes.dueSegments({ ...scope, activeWithinDays: days, limit: limit * 4 })
       )
         .filter(
-          ({ day, dataClassification }) => day >= fromDay && allowed.includes(dataClassification),
+          ({ day, dataClassification }) =>
+            day >= fromDay && day <= toDay && allowed.includes(dataClassification),
         )
         .slice(0, limit);
-      const context: MailEmbeddingContext = { deadlineAt, signal, costMicros: 0 };
       let generated = 0;
+      let costMicros = 0;
       for (const segment of segments) {
-        if (signal.aborted) return { generated, costMicros: context.costMicros, failed: true };
-        try {
-          await options.embedForMailCheck(context, () =>
-            options.episodes.summarize(segment, generate),
+        if (signal.aborted) return { generated, costMicros, failed: true };
+        const context: MailEmbeddingContext = {
+          deadlineAt,
+          signal,
+          dataClassification: segment.dataClassification,
+          costMicros: 0,
+        };
+        const failed = await options
+          .embedForMailCheck(context, () => options.episodes.summarize(segment, generate))
+          .then(
+            () => false,
+            () => true,
           );
-          generated += 1;
-        } catch {
-          return { generated, costMicros: context.costMicros, failed: true };
-        }
+        costMicros += context.costMicros;
+        if (failed) return { generated, costMicros, failed: true };
+        generated += 1;
       }
-      return { generated, costMicros: context.costMicros, failed: false };
+      return { generated, costMicros, failed: false };
     },
     async recent({ days, limit }) {
       const found = await options.episodes.recent({

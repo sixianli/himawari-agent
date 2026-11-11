@@ -3287,6 +3287,8 @@ describe("proactive Gmail check acceptance", () => {
         { summaryInjected: false },
         { summaryInjected: true, summaryIds: [] },
         { summaryRead: undefined },
+        { summaryIds: undefined, summaryInjected: undefined },
+        { summaryGenerated: undefined },
       ]) {
         n += 1;
         await expect(

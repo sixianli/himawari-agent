@@ -107,8 +107,6 @@ export function episodeSummaryPrompt(segment: EpisodeSegment): string {
   ].join("\n");
 }
 
-const MAXIMUM_RECENT_ROWS = 100;
-
 export class MemoryEpisodeService {
   readonly #options: MemoryEpisodeServiceOptions;
 
@@ -219,7 +217,7 @@ export class MemoryEpisodeService {
       agentId: input.agentId,
       ...this.recentDays(input.days),
       allowedClassifications: allowed,
-      limit: MAXIMUM_RECENT_ROWS,
+      limit: Math.min(100, input.limit * 4),
     });
     const summaries: RecentDaySummary[] = [];
     let partial = false;
@@ -235,7 +233,8 @@ export class MemoryEpisodeService {
       summaries.push(Object.freeze({ episode, text: text.trim() }));
       if (summaries.length >= input.limit) break;
     }
-    if (episodes.length >= MAXIMUM_RECENT_ROWS && summaries.length < input.limit) partial = true;
+    if (episodes.length >= Math.min(100, input.limit * 4) && summaries.length < input.limit)
+      partial = true;
     return { summaries, partial };
   }
 

@@ -1119,7 +1119,7 @@ function decisionChainFixture(decisionId) {
       ...base,
       inputs: "not_recorded",
       rules: { state: "not_recorded", items: [] },
-      mails: { judged: null, related: null, relatedRead: "not_recorded" },
+      mails: { judged: null, related: null, relatedRead: "not_recorded", summaries: null },
       memories: {
         state: "not_recorded",
         recall: "not_recorded",
@@ -1171,7 +1171,7 @@ function decisionChainFixture(decisionId) {
         },
       ],
     },
-    mails: { judged: 3, related: 1, relatedRead: "ok" },
+    mails: { judged: 3, related: 1, relatedRead: "ok", summaries: { count: 2, read: "ok" } },
     memories: {
       state: "recorded",
       recall: "ok",

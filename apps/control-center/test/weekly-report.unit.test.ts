@@ -1213,7 +1213,7 @@ describe("[P1-5] email decision detail page", () => {
         { ruleId: "floor_other", origin: null, document: null, mailCount: 1 },
       ],
     },
-    mails: { judged: 3, related: 2, relatedRead: "ok" },
+    mails: { judged: 3, related: 2, relatedRead: "ok", summaries: null },
     memories: {
       state: "recorded",
       recall: "ok",
