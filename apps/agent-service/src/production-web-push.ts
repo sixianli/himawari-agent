@@ -414,6 +414,7 @@ export class ProductionWebPush {
     const visible = this.#options.presence.anyVisible(now);
     const contents = new Map<string, Content>();
     const gated = new Map<string, boolean>();
+    const decisions = new Map<string, PushGateDecision>();
     for (const entry of due) {
       const { item } = entry;
       if (Date.parse(now) >= Date.parse(item.expiresAt)) {
@@ -431,7 +432,7 @@ export class ProductionWebPush {
         await this.#record(entry, now, "expired", null);
         continue;
       }
-      if (await this.#deferred(entry.item, now, gated)) continue;
+      if (await this.#deferred(entry.item, now, gated, decisions)) continue;
       if (visible) {
         await this.#record(entry, now, "suppressed", null);
         continue;
@@ -444,6 +445,7 @@ export class ProductionWebPush {
     item: WebPushOutboxItem,
     now: string,
     gated: Map<string, boolean>,
+    decisions: Map<string, PushGateDecision>,
   ): Promise<boolean> {
     const known = gated.get(item.sourceKey);
     if (known !== undefined) return known;
@@ -453,17 +455,20 @@ export class ProductionWebPush {
       gated.set(item.sourceKey, false);
       return false;
     }
-    let decision: PushGateDecision;
-    try {
-      const rules = await this.#options.readPushRules();
-      decision = (this.#options.gate ?? DEFAULT_GATE).decide({
-        pushClass,
-        now,
-        timeZone: this.#options.timeZone ?? "UTC",
-        rules,
-      });
-    } catch {
-      decision = { action: "deliver", failed: true };
+    let decision = decisions.get(pushClass);
+    if (decision === undefined) {
+      try {
+        const rules = await this.#options.readPushRules();
+        decision = (this.#options.gate ?? DEFAULT_GATE).decide({
+          pushClass,
+          now,
+          timeZone: this.#options.timeZone ?? "UTC",
+          rules,
+        });
+      } catch {
+        decision = { action: "deliver", failed: true };
+      }
+      decisions.set(pushClass, decision);
     }
     if (decision.action === "deliver") {
       if (decision.failed) this.#options.onGateFailure?.({ sourceKey: item.sourceKey });

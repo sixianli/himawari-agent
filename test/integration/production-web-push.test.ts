@@ -648,6 +648,30 @@ describe("[WP-3] web push dispatch", () => {
     expect(context.failures).toEqual([]);
   });
 
+  it("[HR-4] judges a push class once per round, however many pushes of that class are due", async () => {
+    const context = await setup();
+    let reads = 0;
+    const push = context.create({
+      timeZone: "Asia/Tokyo",
+      readPushRules: async () => {
+        reads += 1;
+        return context.rules.read();
+      },
+    });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    context.rules.write("owner:night", NIGHT_JST);
+    await push.tick();
+    context.setClock(NIGHT);
+    context.finishRun("run-a", "completed", at(NIGHT, -5));
+    context.finishRun("run-b", "failed", at(NIGHT, -4));
+    reads = 0;
+    await push.tick();
+    expect(reads).toBe(1);
+    expect(context.rules.ledger()).toHaveLength(2);
+    expect(context.sender.requests).toEqual([]);
+  });
+
   it("[HR-4] releases held pushes at once when the rule is withdrawn", async () => {
     const context = await setup();
     const push = context.create({ timeZone: "Asia/Tokyo", readPushRules: context.rules.read });
