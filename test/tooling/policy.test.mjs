@@ -119,6 +119,11 @@ const shareCollect = () => ({
   run: `${shareCommand} collect --to .ci-output/reports`,
 });
 const shareRemove = () => ({ if: REQUIRED_AFTER_ENTRY, run: `${shareCommand} remove` });
+const gateUpload = () => ({
+  if: REQUIRED_AFTER_ENTRY,
+  uses: `actions/upload-artifact@${lock.actions.find((entry) => entry.repository === "actions/upload-artifact").sha}`,
+  with: { name: "g", path: ".ci-output/gate/", "retention-days": 1 },
+});
 const requiredEntry = () => ({
   name: "草稿和被取消的运行直接判失败",
   id: "entry",
@@ -181,7 +186,9 @@ function workflow() {
                   : "node scripts/ci/run.mjs",
             },
             ...(["browser", "coverage"].includes(check.id) ? [buildFetch()] : []),
-            ...(check.id === "required" ? [shareCollect(), shareRemove()] : [sharePut(check)]),
+            ...(check.id === "required"
+              ? [shareCollect(), gateUpload(), shareRemove()]
+              : [sharePut(check)]),
             ...(["static", "coverage"].includes(check.id) ? [{ run: chromiumInstall }] : []),
           ],
         },
@@ -665,17 +672,22 @@ describe("CI policy contract", () => {
       uses: upload,
       with: { name: "d", path: ".ci-output/public/diagnostics/", "retention-days": 1 },
     });
-    value.jobs.required.steps.push({
-      if: REQUIRED_AFTER_ENTRY,
-      uses: upload,
-      with: { name: "g", path: ".ci-output/gate/", "retention-days": 1 },
-    });
     expect(() => validateWorkflow(policy, stringify(value), lock)).not.toThrow();
-    value.jobs.required.steps.at(-1).if = "always()";
+    const gate = value.jobs.required.steps.find((step) => step.uses === upload);
+    gate.if = "always()";
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
       "Required runs nothing after a failed entry check",
     );
-    delete value.jobs.required.steps.at(-1).if;
+    delete gate.if;
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+      "Required uploads its gate even when the gate fails",
+    );
+  });
+  it("rejects a gate job without its gate upload", () => {
+    const value = workflow();
+    value.jobs.required.steps = value.jobs.required.steps.filter(
+      (step) => !step.uses?.startsWith("actions/upload-artifact@"),
+    );
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
       "Required uploads its gate even when the gate fails",
     );

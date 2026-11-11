@@ -543,10 +543,11 @@ export function validateWorkflow(policy, source, toolchain) {
           .every((step) => step.if === undefined || step.if === REQUIRED_AFTER_ENTRY),
         "Required runs nothing after a failed entry check",
       );
+      const gateUploads = job.steps.filter((step) =>
+        /^actions\/upload-artifact@/u.test(step.uses ?? ""),
+      );
       assert(
-        job.steps
-          .filter((step) => /^actions\/upload-artifact@/u.test(step.uses ?? ""))
-          .every((step) => step.if === REQUIRED_AFTER_ENTRY),
+        gateUploads.length === 1 && gateUploads[0].if === REQUIRED_AFTER_ENTRY,
         "Required uploads its gate even when the gate fails, but only after the entry check passed",
       );
     } else {
