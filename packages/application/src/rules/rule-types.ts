@@ -244,6 +244,7 @@ function parsePushQuiet(value: unknown): PushQuietParameters {
     if (
       !Array.isArray(days) ||
       days.length === 0 ||
+      days.length > 7 ||
       !days.every((day) => Number.isInteger(day) && day >= 0 && day <= 6)
     )
       invalid("days 必须是 0（星期日）到 6（星期六）的整数列表");
@@ -271,6 +272,7 @@ function parsePushQuiet(value: unknown): PushQuietParameters {
     if (
       !Array.isArray(rawClasses) ||
       rawClasses.length === 0 ||
+      rawClasses.length > PUSH_QUIET_CLASSES.length ||
       !rawClasses.every((item) => (PUSH_QUIET_CLASSES as readonly unknown[]).includes(item))
     )
       invalid(`classes 只能从 ${PUSH_QUIET_CLASSES.join("、")} 里选`);
@@ -415,6 +417,18 @@ export function ownerRuleRecord(
     invalid("这条规则按现在的参数不会命中任何情形，不会生效");
   assertRuleExamples(rule);
   return rule;
+}
+
+export function unreadablePushRule(
+  row: OwnerRuleRow,
+  registry: readonly RuleTypeDefinition[] = RULE_TYPES,
+): boolean {
+  if (row.status === "retired" || enforceableOwnerRule(row, registry) !== undefined) return false;
+  const type =
+    typeof row.parameters === "object" && row.parameters !== null
+      ? (row.parameters as Record<string, unknown>)["type"]
+      : undefined;
+  return registry.some(({ id, gate }) => id === type && gate === "push_delivery");
 }
 
 export function enforceableOwnerRule(

@@ -11,14 +11,14 @@ import {
   claimFromRunExecutionLease,
   createProactiveSeal,
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
-  OwnerProfileService,
   DurableMemoryService,
-  enforceableOwnerRule,
   ExecutionLiveFeed,
+  enforceableOwnerRule,
   type IdGeneratorPort,
   MemoryCheckupService,
   modelUsagePurpose,
   modelVisibleClassifications,
+  OwnerProfileService,
   type ProductConfiguration,
   prereviewPromptId,
   RemoteExecutionBackend,
@@ -27,6 +27,7 @@ import {
   recoverSandboxJobsAtStartup,
   reviewCapacity,
   reviewMemoryVisible,
+  unreadablePushRule,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
 import {
@@ -115,6 +116,7 @@ import {
   type ProductionMemoryComposition,
 } from "./production-memory-composition.js";
 import { quoteRefOfMemory } from "./production-memory-consolidation.js";
+import { findSourceMessageIds } from "./production-memory-control.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
@@ -140,15 +142,14 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
-import { findSourceMessageIds } from "./production-memory-control.js";
+import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
+import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import {
   createProductionRealEval,
   createRealEvalModel,
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
-import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
-import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -2389,6 +2390,7 @@ export async function startTenantRuntime(
                 includeRetired: false,
               })
             ).flatMap((row) => {
+              if (unreadablePushRule(row)) throw new Error("PUSH_RULE_UNREADABLE");
               const rule = enforceableOwnerRule(row);
               return rule?.gate === "push_delivery" ? [rule] : [];
             }),

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { assertRuleExamples } from "../src/rules/rule-book.js";
 import { RuleJudge } from "../src/rules/rule-judge.js";
-import { ownerRuleRecord, RuleTypeError, writableRuleType } from "../src/rules/rule-types.js";
+import {
+  ownerRuleRecord,
+  RuleTypeError,
+  unreadablePushRule,
+  writableRuleType,
+} from "../src/rules/rule-types.js";
 import { PushGate, pushClassOf, pushDeliveryFacts } from "../src/services/web-push-gate.js";
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
@@ -105,5 +110,38 @@ describe("[rule-type:push_quiet_hours]", () => {
     ["unknown key", { periods: [{ days: ALL_DAYS, start: "23:00", end: "07:00" }], extra: 1 }],
   ])("REVERSE: rejects %s", (_name, params) => {
     expect(() => record({ ...NIGHT, params })).toThrow(RuleTypeError);
+  });
+
+  it("refuses day and class lists longer than the real ones", () => {
+    const longDays = {
+      periods: [{ days: [0, 1, 2, 3, 4, 5, 6, 0], start: "23:00", end: "07:00" }],
+    };
+    expect(() => record({ ...NIGHT, params: longDays })).toThrow(RuleTypeError);
+    const longClasses = {
+      ...NIGHT.params,
+      classes: ["run_result", "mail_reminder", "scheduled_reminder", "run_result"],
+    };
+    expect(() => record({ ...NIGHT, params: longClasses })).toThrow(RuleTypeError);
+  });
+
+  it("[HR-4] tells a stored push rule it cannot read from a healthy one, a retired one and a mail rule", () => {
+    const row = (parameters: unknown, status: "active" | "retired" = "active") => ({
+      ruleId: "owner:night",
+      revision: 1,
+      status,
+      source: "chat:thread-1",
+      parameters,
+    });
+    expect(unreadablePushRule(row(NIGHT))).toBe(false);
+    expect(
+      unreadablePushRule(
+        row({ ...NIGHT, params: { periods: [{ days: [0], start: "25:00", end: "07:00" }] } }),
+      ),
+    ).toBe(true);
+    expect(unreadablePushRule(row({ ...NIGHT, params: { periods: [] } }, "retired"))).toBe(false);
+    expect(
+      unreadablePushRule(row({ type: "mail_must_notify", summary: "x", params: { phrases: [] } })),
+    ).toBe(false);
+    expect(unreadablePushRule(row("not an object"))).toBe(false);
   });
 });

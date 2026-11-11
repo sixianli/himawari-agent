@@ -827,7 +827,7 @@
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
   },
   "tools.rule-set": {
-    "sha256": "e3e0bd2d27f8addc9696e40fe5f88301c0eb53afa39e9f285e3a47686fa18bff",
+    "sha256": "a0aed3b342008931f34d0ca0c9c71bcdebc62ea086e969ddface5ce0ce1bf5ae",
     "changedIn": "ADR 0242",
     "reason": "硬规则第 4 步：rule_set 增加 push_quiet_hours 规则类型（夜里指定类别的推送等到静默结束再发）",
     "emphasis": {
