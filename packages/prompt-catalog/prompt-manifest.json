@@ -155,9 +155,7 @@
     "reason": "W-14：“用户”改“主人”；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线",
     "emphasis": {
       "kind": "not-tone",
-      "phrases": [
-        "必须用到原值"
-      ],
+      "phrases": ["必须用到原值"],
       "reason": "说的是某项操作本身需要原值，不是强调语气"
     }
   },
@@ -167,9 +165,7 @@
     "reason": "W-14：“用户”改“主人”；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线",
     "emphasis": {
       "kind": "not-tone",
-      "phrases": [
-        "必须用到原值"
-      ],
+      "phrases": ["必须用到原值"],
       "reason": "说的是某项操作本身需要原值，不是强调语气"
     }
   },
@@ -514,10 +510,7 @@
     "reason": "密码、密钥、证件号码、银行卡号改标 sensitive 而不是 restricted；一次性验证码不记录",
     "emphasis": {
       "kind": "hard-condition",
-      "phrases": [
-        "必须填 existingMemoryId",
-        "每条都必须填"
-      ],
+      "phrases": ["必须填 existingMemoryId", "每条都必须填"],
       "evidence": [
         "apps/agent-service/src/production-memory-capture.ts#(requestedDecision !== \"create\" && existing === null)",
         "apps/agent-service/src/production-memory-capture.ts#const evidenceRejected"
@@ -781,9 +774,7 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变",
     "emphasis": {
       "kind": "hard-condition",
-      "phrases": [
-        "目标必须不存在"
-      ],
+      "phrases": ["目标必须不存在"],
       "evidence": [
         "packages/platform-node/src/capabilities/directory-move-scope.ts#HOST_FILE_TARGET_EXISTS"
       ],
@@ -856,11 +847,7 @@
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果",
     "emphasis": {
       "kind": "not-tone",
-      "phrases": [
-        "以后……一律……",
-        "……必须提醒我",
-        "“以后”“一律”“必须”"
-      ],
+      "phrases": ["以后……一律……", "……必须提醒我", "“以后”“一律”“必须”"],
       "reason": "这几处是在举主人原话的例子、说明 quote 要带哪些字样，不是对模型加重语气"
     }
   },
