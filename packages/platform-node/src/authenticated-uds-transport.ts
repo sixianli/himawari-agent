@@ -79,11 +79,6 @@ export interface AuthenticatedUdsHttpResponse {
   readonly body: Buffer;
 }
 
-interface SocketIdentity {
-  readonly dev: number;
-  readonly ino: number;
-}
-
 function errorCode(
   overrides: AuthenticatedUdsErrorCodeOverrides | undefined,
   key: keyof typeof AUTHENTICATED_UDS_ERROR_CODES,
@@ -184,11 +179,78 @@ async function withAbsoluteTimeout<T>(
   }
 }
 
+export function maximumUnixSocketPathBytes(): number {
+  return process.platform === "darwin" ? 103 : 107;
+}
+
+export function assertUnixSocketPathLength(socketPath: string): void {
+  const maximum = maximumUnixSocketPathBytes();
+  if (Buffer.byteLength(socketPath, "utf8") > maximum)
+    throw new TypeError(`Authenticated UDS socket path exceeds ${maximum} bytes`);
+}
+
+export interface UnixSocketIdentity {
+  readonly dev: number;
+  readonly ino: number;
+}
+
+export async function prepareUnixSocketPath(
+  socketPath: string,
+  errorCodes?: AuthenticatedUdsErrorCodeOverrides,
+): Promise<void> {
+  assertUnixSocketPathLength(socketPath);
+  await mkdir(path.dirname(socketPath), { recursive: true, mode: 0o700 });
+  await chmod(path.dirname(socketPath), 0o700);
+  try {
+    const existing = await lstat(socketPath);
+    if (
+      !existing.isSocket() ||
+      (typeof process.getuid === "function" && existing.uid !== process.getuid()) ||
+      (await socketAcceptsConnections(socketPath))
+    ) {
+      throw errorFor(errorCodes, "SOCKET_EXISTS", 500);
+    }
+    const unchanged = await lstat(socketPath);
+    if (unchanged.dev !== existing.dev || unchanged.ino !== existing.ino) {
+      throw errorFor(errorCodes, "SOCKET_REPLACED", 500);
+    }
+    await unlink(socketPath);
+  } catch (error) {
+    if (error instanceof AuthenticatedUdsTransportError) throw error;
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
+export async function sealUnixSocket(socketPath: string): Promise<UnixSocketIdentity> {
+  await chmod(socketPath, 0o600);
+  const stats = await lstat(socketPath);
+  return { dev: stats.dev, ino: stats.ino };
+}
+
+export async function assertUnixSocketUnreplaced(
+  socketPath: string,
+  expected: UnixSocketIdentity | null,
+  errorCodes?: AuthenticatedUdsErrorCodeOverrides,
+): Promise<void> {
+  const current = await lstat(socketPath);
+  if (!expected || current.dev !== expected.dev || current.ino !== expected.ino) {
+    throw errorFor(errorCodes, "SOCKET_REPLACED", 500);
+  }
+}
+
+export async function removeUnixSocketFile(socketPath: string): Promise<void> {
+  try {
+    await unlink(socketPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
 export class AuthenticatedUdsServer {
   readonly socketPath: string;
   private readonly options: AuthenticatedUdsServerOptions;
   private server: http.Server | null = null;
-  private socketIdentity: SocketIdentity | null = null;
+  private socketIdentity: UnixSocketIdentity | null = null;
 
   constructor(options: AuthenticatedUdsServerOptions) {
     if (!path.isAbsolute(options.runtimeDirectory)) {
@@ -215,35 +277,14 @@ export class AuthenticatedUdsServer {
     }
     this.options = options;
     this.socketPath = path.join(options.runtimeDirectory, socketName);
-    // macOS sun_path has 104 bytes including NUL; Linux has 108. Node
-    // can silently truncate an oversized address, so reject before binding.
-    const maximumSocketPathBytes = process.platform === "darwin" ? 103 : 107;
-    if (Buffer.byteLength(this.socketPath, "utf8") > maximumSocketPathBytes)
-      throw new TypeError(`Authenticated UDS socket path exceeds ${maximumSocketPathBytes} bytes`);
+    assertUnixSocketPathLength(this.socketPath);
   }
 
   async start(): Promise<void> {
     if (this.server) return;
     await mkdir(this.options.runtimeDirectory, { recursive: true, mode: 0o700 });
     await chmod(this.options.runtimeDirectory, 0o700);
-    try {
-      const existing = await lstat(this.socketPath);
-      if (
-        !existing.isSocket() ||
-        (typeof process.getuid === "function" && existing.uid !== process.getuid()) ||
-        (await socketAcceptsConnections(this.socketPath))
-      ) {
-        throw errorFor(this.options.errorCodes, "SOCKET_EXISTS", 500);
-      }
-      const unchanged = await lstat(this.socketPath);
-      if (unchanged.dev !== existing.dev || unchanged.ino !== existing.ino) {
-        throw errorFor(this.options.errorCodes, "SOCKET_REPLACED", 500);
-      }
-      await unlink(this.socketPath);
-    } catch (error) {
-      if (error instanceof AuthenticatedUdsTransportError) throw error;
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
+    await prepareUnixSocketPath(this.socketPath, this.options.errorCodes);
 
     const server = http.createServer((request, response) => {
       void this.handle(request, response);
@@ -263,29 +304,21 @@ export class AuthenticatedUdsServer {
       server.once("listening", onListening);
       server.listen(this.socketPath);
     });
-    await chmod(this.socketPath, 0o600);
-    const stats = await lstat(this.socketPath);
-    this.socketIdentity = { dev: stats.dev, ino: stats.ino };
+    this.socketIdentity = await sealUnixSocket(this.socketPath);
     this.server = server;
   }
 
   async stop(): Promise<void> {
     const server = this.server;
     if (!server) return;
-    const current = await lstat(this.socketPath);
-    const expected = this.socketIdentity;
-    if (!expected || current.dev !== expected.dev || current.ino !== expected.ino) {
-      throw errorFor(this.options.errorCodes, "SOCKET_REPLACED", 500);
-    }
+    await assertUnixSocketUnreplaced(this.socketPath, this.socketIdentity, this.options.errorCodes);
     this.server = null;
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
       server.closeAllConnections();
     });
     try {
-      await unlink(this.socketPath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      await removeUnixSocketFile(this.socketPath);
     } finally {
       this.socketIdentity = null;
     }

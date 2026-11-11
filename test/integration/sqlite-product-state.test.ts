@@ -387,6 +387,32 @@ describe("SQLite product-state transaction boundary", () => {
     });
   });
 
+  it("[MU-A] lets an injected shared budget cap read threads and gives them back on close", async () => {
+    let held = 0;
+    let peak = 0;
+    const budget = {
+      tryAcquire: () => {
+        if (held >= 1) return false;
+        held += 1;
+        peak = Math.max(peak, held);
+        return true;
+      },
+      release: () => {
+        held -= 1;
+      },
+    };
+    const { repository } = await integrationRepository("budget", {
+      stateRoot: "unused",
+      readThreadBudget: budget,
+    });
+    for (let round = 0; round < 8; round += 1)
+      await Promise.all(Array.from({ length: 6 }, () => repository.readAuthorityRevision()));
+    expect(repository.readWorkerCount).toBeLessThanOrEqual(2);
+    expect(peak).toBe(1);
+    await repository.close();
+    expect(held).toBe(0);
+  });
+
   it("keeps answering reads while one slow read occupies a read worker", async () => {
     const { repository } = await integrationRepository("slow-read", {
       stateRoot: "unused",
