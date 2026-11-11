@@ -1044,6 +1044,7 @@ export const messages = {
   "decision.chain.kind":
     "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {External read} rule_review {Hard rule review} other {Other}}",
   "decision.chain.rules": "Rules hit",
+  "decision.chain.reviewRules": "Rules waiting for review",
   "decision.chain.rule":
     "{id, select, floor_important_sender {Never miss important mail: sender is on your important list} floor_public_domain {Never miss important mail: from a government or school domain} floor_money_words {Never miss important mail: money-related words in the message} other {{id}}}",
   "decision.chain.origin":

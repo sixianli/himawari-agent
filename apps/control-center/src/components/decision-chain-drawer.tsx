@@ -134,6 +134,9 @@ export function DecisionChainBody({
   thisMail?: { readonly ruleIds: ReadonlySet<string>; readonly memoryIds: ReadonlySet<string> };
 }) {
   const { moment } = useLocaleFormat();
+  const rulesHeading = message(
+    chain.decision.kind === "rule_review" ? "decision.chain.reviewRules" : "decision.chain.rules",
+  );
   return (
     <>
       <dl className="memory-detail">
@@ -156,8 +159,8 @@ export function DecisionChainBody({
       {chain.inputs === "not_recorded" ? (
         <p className="decision-chain-note">{message("decision.chain.noRecord")}</p>
       ) : null}
-      <section aria-label={message("decision.chain.rules")}>
-        <h3>{message("decision.chain.rules")}</h3>
+      <section aria-label={rulesHeading}>
+        <h3>{rulesHeading}</h3>
         {chain.rules.state === "recorded" ? (
           <ul className="decision-chain-list">
             {chain.rules.items.map((rule, index) => (
@@ -170,11 +173,13 @@ export function DecisionChainBody({
                     ? ` · ${message("decision.email.thisMail")}`
                     : ""}
                 </p>
-                <small>
-                  {message("decision.chain.ruleMails", {
-                    count: rule.mailCount,
-                  })}
-                </small>
+                {chain.mails ? (
+                  <small>
+                    {message("decision.chain.ruleMails", {
+                      count: rule.mailCount,
+                    })}
+                  </small>
+                ) : null}
               </li>
             ))}
           </ul>

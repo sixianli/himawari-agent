@@ -385,6 +385,27 @@ describe("rule memory review", () => {
     database.close();
   });
 
+  it("[P2-2] permanently deleting a rule memory whose rule already waits for review adds nothing", async () => {
+    const { database } = await openMigrated();
+    addMemory(database, "m-rule", "rule");
+    link(database, "r-edit", "m-rule");
+    database
+      .prepare(
+        "UPDATE memory_records SET status = 'trashed', revision = 2, updated_at = ? WHERE id = 'm-rule'",
+      )
+      .run(T1);
+    database.prepare("DELETE FROM memory_records WHERE id = 'm-rule'").run();
+    expect(rule(database, "r-edit")).toMatchObject({ revision: 2, status: "needs_review" });
+    expect(history(database, "r-edit")).toHaveLength(2);
+    expect(
+      database
+        .prepare("SELECT reason_code FROM decision_ledger WHERE kind = 'rule_review'")
+        .pluck()
+        .all(),
+    ).toEqual(["memory_removed"]);
+    database.close();
+  });
+
   it.each([
     ["agents", AGENT],
     ["owners", OWNER],

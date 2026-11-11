@@ -1087,6 +1087,25 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     expect(drawer).toContain("还没评价");
   });
 
+  it("[P2-2] titles the rules of a hard rule review as waiting for review and counts no mail", async () => {
+    chainResult = chain({
+      decision: { ...chain().decision, kind: "rule_review", outcome: "needs_review" },
+      rules: {
+        state: "recorded",
+        items: [{ ruleId: "quiet_hours", origin: null, document: null, mailCount: 0 }],
+      },
+      mails: null,
+    });
+    await openLog();
+    await act(async () => rowButton("1")?.click());
+    await flush();
+    const drawer = text(".decision-chain");
+    expect(drawer).toContain("待重审的规则");
+    expect(drawer).toContain("quiet_hours");
+    expect(drawer).not.toContain("命中的规则");
+    expect(drawer).not.toContain("封邮件");
+  });
+
   it("closes and says the record was cleared when it is gone, and says it failed on any other error", async () => {
     chainResult = Object.assign(new Error("PORT_NOT_FOUND"), { status: 404 });
     await openLog();

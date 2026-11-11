@@ -918,6 +918,7 @@ export const MESSAGE_IDS = [
   "decision.chain.unrated",
   "decision.chain.kind",
   "decision.chain.rules",
+  "decision.chain.reviewRules",
   "decision.chain.rule",
   "decision.chain.origin",
   "decision.chain.ruleMails",
