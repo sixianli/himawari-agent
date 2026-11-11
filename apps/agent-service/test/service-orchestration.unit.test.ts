@@ -34,6 +34,7 @@ const boundary = vi.hoisted(() => ({
   http: vi.fn(),
   runs: vi.fn(),
   memoryWorker: vi.fn(),
+  durableMemory: vi.fn(),
   events: [] as string[],
 }));
 vi.mock("@himawari-agent/platform-node", async (original) => ({
@@ -72,11 +73,20 @@ vi.mock("@himawari-agent/persistence-sqlite", async (original) => ({
   readSqliteRuntimeStatus: boundary.status,
   SqliteProductStateRepository: { open: boundary.open },
 }));
-vi.mock("@himawari-agent/application", async (original) => ({
-  ...(await original<object>()),
-  recoverSandboxJobsAtStartup: boundary.recoverJobs,
-  recoverSandboxExecutionsAtStartup: boundary.recoverExecutions,
-}));
+vi.mock("@himawari-agent/application", async (original) => {
+  const actual = await original<typeof import("@himawari-agent/application")>();
+  return {
+    ...actual,
+    DurableMemoryService: class extends actual.DurableMemoryService {
+      constructor(options: ConstructorParameters<typeof actual.DurableMemoryService>[0]) {
+        super(options);
+        boundary.durableMemory(options);
+      }
+    },
+    recoverSandboxJobsAtStartup: boundary.recoverJobs,
+    recoverSandboxExecutionsAtStartup: boundary.recoverExecutions,
+  };
+});
 vi.mock("../src/production-model-composition.js", () => ({
   createProductionModelCompositionFromConfiguration: boundary.modelComposition,
 }));
@@ -711,6 +721,7 @@ function web() {
     repository[key] = vi.fn(() => port);
   const memory = {
     projection: {},
+    dedupeSameSource: false,
     bindEmbeddingBoundary: vi.fn(),
     descriptor: configuration.modelDescriptors[1],
     close: vi.fn(async () => {
@@ -814,6 +825,9 @@ describe("web service composition and readiness", () => {
     await settle();
     const runOptions = boundary.runs.mock.calls[0]?.[0];
     const modelOptions = boundary.modelComposition.mock.calls[0]?.[0];
+    expect(boundary.durableMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ dedupeSameSource: false }),
+    );
     expect(modelOptions.admission).toEqual(expect.any(Function));
     expect(
       await modelOptions.admission({

@@ -262,6 +262,13 @@ describe("hybrid Memory provider relevance cutoff", () => {
     ])
       expect(() => provider(relevance)).toThrow("MEMORY_RELEVANCE_TUNING_INVALID");
   });
+
+  it("refuses a per-call floor that is not a finite number from 0 to 1", async () => {
+    for (const minimumSimilarity of [Number.NaN, -0.1, 1.1])
+      await expect(
+        provider().search({ ...query, relevanceCutoff: true, minimumSimilarity }),
+      ).rejects.toThrow("MEMORY_MINIMUM_SIMILARITY_INVALID");
+  });
 });
 
 describe("Gateway embedder", () => {

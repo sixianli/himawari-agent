@@ -171,6 +171,8 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     const now = this.#options.now();
     const scope = input.scope ?? parseTimeScope(input.query, now, this.#options.timeZone);
     const minimumSimilarity = input.minimumSimilarity ?? this.#options.minimumSimilarity ?? 0;
+    if (!Number.isFinite(minimumSimilarity) || minimumSimilarity < 0 || minimumSimilarity > 1)
+      throw new RangeError("MEMORY_MINIMUM_SIMILARITY_INVALID");
     const relevance = this.relevance;
     const result = await this.#options.index.search({
       ownerId: input.ownerId,

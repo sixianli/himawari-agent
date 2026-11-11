@@ -54,8 +54,9 @@ function measure(cutoff: boolean) {
   let found = 0;
   let returned = 0;
   let correct = 0;
+  let unrelatedQueriesWithMemory = 0;
+  let unrelatedMemories = 0;
   for (const query of dataset.queries) {
-    if (query.expected.length === 0) continue;
     const hits = fuseCandidates(result(query.text), {
       now: dataset.today,
       limit: SELECTED_LIMIT,
@@ -69,12 +70,22 @@ function measure(cutoff: boolean) {
           }
         : {}),
     }).map(({ memoryId }) => memoryId as string);
+    if (query.expected.length === 0) {
+      if (hits.length > 0) unrelatedQueriesWithMemory += 1;
+      unrelatedMemories += hits.length;
+      continue;
+    }
     expected += query.expected.length;
     found += query.expected.filter((id) => hits.includes(id)).length;
     returned += hits.length;
     correct += hits.filter((id) => query.expected.includes(id)).length;
   }
-  return { recall: found / expected, precision: correct / returned };
+  return {
+    recall: found / expected,
+    precision: correct / returned,
+    unrelatedQueriesWithMemory,
+    unrelatedMemories,
+  };
 }
 
 describe("[P3-3] relevance cutoff on the recorded retrieval evaluation", () => {
@@ -83,6 +94,8 @@ describe("[P3-3] relevance cutoff on the recorded retrieval evaluation", () => {
     const after = measure(true);
     expect(after.precision).toBeGreaterThan(before.precision);
     expect(before.recall - after.recall).toBeLessThanOrEqual(0.02);
+    expect(after.unrelatedQueriesWithMemory).toBeLessThanOrEqual(before.unrelatedQueriesWithMemory);
+    expect(after.unrelatedMemories).toBeLessThanOrEqual(before.unrelatedMemories);
   });
 
   it("REVERSE: a cutoff at the vector floor with no keyword or entity bonus loses far more recall", () => {
