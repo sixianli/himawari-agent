@@ -8,6 +8,7 @@ import type {
   WebPushSendRequest,
   WebPushSendResult,
 } from "@himawari-agent/application";
+import { enforceableOwnerRule } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import {
   applyMigrations,
@@ -202,8 +203,50 @@ describe("[WP-3] web push dispatch", () => {
         expiresAt,
         finalRisk: risk,
       } as unknown as ApprovalRequest);
+    const rules = {
+      write(ruleId: string, parameters: unknown, status: "active" | "retired" = "active") {
+        const database = openQualifiedDatabase(file);
+        try {
+          database
+            .prepare(
+              `INSERT INTO rule_book_rules (
+                owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id,
+                updated_at
+              ) VALUES (?, ?, ?, 1, ?, ?, 'test', NULL, ?)
+              ON CONFLICT (owner_id, agent_id, rule_id) DO UPDATE SET
+                revision = revision + 1, parameters = excluded.parameters,
+                status = excluded.status, updated_at = excluded.updated_at`,
+            )
+            .run(OWNER_ID, AGENT_ID, ruleId, JSON.stringify(parameters), status, clock);
+        } finally {
+          database.close();
+        }
+      },
+      read: async () =>
+        (await repository.ownerRules().list({ ...scope, includeRetired: false })).flatMap((row) => {
+          const rule = enforceableOwnerRule(row);
+          return rule?.gate === "push_delivery" ? [rule] : [];
+        }),
+      outbox(prefix: string, heldOnly = false) {
+        const database = openQualifiedDatabase(file);
+        try {
+          return database
+            .prepare(
+              `SELECT defer_until AS deferUntil, expires_at AS expiresAt, defer_rule_refs AS refs
+               FROM web_push_outbox
+               WHERE source_key LIKE ? || '%' AND (? = 0 OR defer_until IS NOT NULL)`,
+            )
+            .get(prefix, heldOnly ? 1 : 0) as
+            | { deferUntil: string | null; expiresAt: string; refs: string | null }
+            | undefined;
+        } finally {
+          database.close();
+        }
+      },
+    };
     return {
       store,
+      rules,
       sender,
       presence,
       failures,
@@ -463,5 +506,170 @@ describe("[WP-3] web push dispatch", () => {
       navigate: `${ORIGIN}/`,
     });
     expect((await context.store.listSubscriptions(scope))[0]?.lastDeliveredAt).toBe(START);
+  });
+  const NIGHT_JST = {
+    type: "push_quiet_hours",
+    summary: "夜里别提醒我",
+    params: { periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }] },
+  };
+  const BEFORE_NIGHT = "2026-11-11T14:00:00.000Z";
+  const NIGHT = "2026-11-11T14:30:00.000Z";
+  const MORNING = "2026-11-11T22:00:00.000Z";
+
+  it("[HR-4] holds a task result until the owner's quiet hours end, writes the deferral once, then sends it to every device", async () => {
+    const context = await setup();
+    const deferCalls: string[] = [];
+    const counted = {
+      ...context.store,
+      deferItem: (...input: Parameters<typeof context.store.deferItem>) => {
+        deferCalls.push(input[0].sourceKey);
+        return context.store.deferItem(...input);
+      },
+    };
+    const push = context.create({
+      store: counted,
+      timeZone: "Asia/Tokyo",
+      readPushRules: context.rules.read,
+    });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    await context.subscribe("laptop", "en");
+    context.rules.write("owner:night", NIGHT_JST);
+    await push.tick();
+    context.setClock(NIGHT);
+    context.finishRun("run-night", "completed", at(NIGHT, -5));
+    await push.tick();
+    await push.tick();
+    context.setClock(at(NIGHT, 3_000));
+    await push.tick();
+    expect(context.sender.requests).toEqual([]);
+    expect(deferCalls).toHaveLength(1);
+    expect(context.rules.outbox("run:")).toMatchObject({
+      deferUntil: MORNING,
+      refs: JSON.stringify(["owner:night@1"]),
+    });
+    context.setClock(MORNING);
+    await push.tick();
+    await push.tick();
+    expect(
+      context.sender
+        .notifications()
+        .map(({ notification }) => notification["title"])
+        .sort(),
+    ).toEqual(["Done", "已完成"]);
+    expect(context.failures).toEqual([]);
+  });
+
+  it("[HR-4] REVERSE: sends the same task result at once when no rule is set, and never holds an approval", async () => {
+    const context = await setup();
+    const push = context.create({ timeZone: "Asia/Tokyo", readPushRules: context.rules.read });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    await push.tick();
+    context.setClock(NIGHT);
+    context.finishRun("run-plain", "completed", at(NIGHT, -5));
+    await push.tick();
+    expect(context.sender.requests).toHaveLength(1);
+
+    context.rules.write("owner:night", NIGHT_JST);
+    context.approval("a-night", "high", at(NIGHT, 3_600));
+    context.finishRun("run-held", "failed", at(NIGHT, -4));
+    context.setClock(at(NIGHT, 20));
+    await push.tick();
+    const titles = context.sender.notifications().map(({ notification }) => notification["title"]);
+    expect(titles).toEqual(["已完成", "等你审批 · 高风险"]);
+    expect(context.rules.outbox("run:")).toBeDefined();
+  });
+
+  it("[HR-4] releases held pushes at once when the rule is withdrawn", async () => {
+    const context = await setup();
+    const push = context.create({ timeZone: "Asia/Tokyo", readPushRules: context.rules.read });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    context.rules.write("owner:night", NIGHT_JST);
+    await push.tick();
+    context.setClock(NIGHT);
+    context.finishRun("run-night", "completed", at(NIGHT, -5));
+    await push.tick();
+    expect(context.sender.requests).toEqual([]);
+    context.setClock(at(NIGHT, 600));
+    context.rules.write("owner:night", NIGHT_JST, "retired");
+    expect(context.rules.outbox("run:")?.deferUntil).toBeNull();
+    await push.tick();
+    expect(context.sender.requests).toHaveLength(1);
+  });
+
+  it("[HR-4] sends a device that subscribed during the hold only when the hold ends", async () => {
+    const context = await setup();
+    const push = context.create({ timeZone: "Asia/Tokyo", readPushRules: context.rules.read });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    context.rules.write("owner:night", NIGHT_JST);
+    await push.tick();
+    context.setClock(NIGHT);
+    context.finishRun("run-night", "completed", at(NIGHT, -5));
+    await push.tick();
+    context.setClock(at(NIGHT, 600));
+    await context.subscribe("tablet", "en");
+    await push.tick();
+    expect(context.sender.requests).toEqual([]);
+    context.setClock(MORNING);
+    await push.tick();
+    expect(context.sender.notifications().map(({ endpoint }) => endpoint.split("/").pop())).toEqual(
+      ["phone", "tablet"],
+    );
+  });
+
+  it("[HR-4] lets the owner's own reminder be held only when the rule names it, and keeps the held reminder alive past its six hours", async () => {
+    const context = await setup();
+    const push = context.create({ timeZone: "Asia/Tokyo", readPushRules: context.rules.read });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    context.rules.write("owner:night", NIGHT_JST);
+    await push.tick();
+    context.setClock(NIGHT);
+    context.reminder("r-night", "private");
+    context.reminders[0] = { ...context.reminders[0], remindAt: NIGHT } as MemoryReminder;
+    await push.tick();
+    expect(context.sender.requests).toHaveLength(1);
+
+    context.rules.write("owner:night", {
+      ...NIGHT_JST,
+      params: { ...NIGHT_JST.params, classes: ["scheduled_reminder"] },
+    });
+    context.reminder("r-held", "private");
+    context.reminders[1] = { ...context.reminders[1], remindAt: at(NIGHT, 60) } as MemoryReminder;
+    context.setClock(at(NIGHT, 120));
+    await push.tick();
+    expect(context.sender.requests).toHaveLength(1);
+    const held = context.rules.outbox("reminder:", true);
+    expect(held?.deferUntil).toBe(MORNING);
+    expect(Date.parse(held?.expiresAt ?? "")).toBeGreaterThanOrEqual(
+      Date.parse(MORNING) + 3_600_000,
+    );
+    context.setClock(MORNING);
+    await push.tick();
+    expect(context.sender.requests).toHaveLength(2);
+  });
+
+  it("[HR-4] REVERSE: a rule store that fails never stops pushes, and the failure is reported", async () => {
+    const context = await setup();
+    const reported: string[] = [];
+    const push = context.create({
+      timeZone: "Asia/Tokyo",
+      readPushRules: async () => {
+        throw new Error("rule store down");
+      },
+      onGateFailure: ({ sourceKey }) => reported.push(sourceKey),
+    });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    await push.tick();
+    context.setClock(NIGHT);
+    context.finishRun("run-night", "completed", at(NIGHT, -5));
+    await push.tick();
+    expect(context.sender.requests).toHaveLength(1);
+    expect(reported).toHaveLength(1);
+    expect(context.failures).toEqual([]);
   });
 });

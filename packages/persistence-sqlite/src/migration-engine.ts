@@ -721,6 +721,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0092_real_eval.sql",
   },
+  {
+    sequence: 93,
+    name: "web_push_gate",
+    changeSet: "web-push-gate",
+    phase: "expand" as const,
+    file: "0093_web_push_gate.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =
