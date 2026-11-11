@@ -242,10 +242,7 @@ describe("hard rule review after a rule memory changes", () => {
   it("[P2-2] reaffirming the same text, or changing a memory no rule points to, leaves every rule alone", async () => {
     const { memory, database } = await seeded();
     try {
-      await memory.applyProposal(
-        { decision: "unchanged", memoryId: RULE_MEMORY },
-        GENERATION_ID,
-      );
+      await memory.applyProposal({ decision: "unchanged", memoryId: RULE_MEMORY }, GENERATION_ID);
       await memory.applyProposal(
         {
           decision: "update",
