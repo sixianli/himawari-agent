@@ -543,6 +543,29 @@ export function maskSensitiveText(input: string): string {
   return redactForEgress(input).text;
 }
 
+function sequenceTag(index: number): string {
+  return [...index.toString(26).padStart(8, "0")]
+    .map((digit) => String.fromCharCode(97 + Number.parseInt(digit, 26)))
+    .join("");
+}
+
+export function maskSensitiveTexts(inputs: readonly string[]): string[] {
+  const tags = new Map<string, string>();
+  const options: EgressRedactionOptions = {
+    known: new Map<string, string>(),
+    tag: (kind, identity) => {
+      const key = `${kind}\u0000${identity}`;
+      const existing = tags.get(key);
+      if (existing !== undefined) return existing;
+      const created = sequenceTag(tags.size);
+      tags.set(key, created);
+      return created;
+    },
+  };
+  for (const input of inputs) redactForEgress(input, options);
+  return inputs.map((input) => redactForEgress(input, options).text);
+}
+
 export class EgressRedactionError extends Error {
   readonly code = "EGRESS_REDACTION_INCOMPLETE" as const;
   constructor() {

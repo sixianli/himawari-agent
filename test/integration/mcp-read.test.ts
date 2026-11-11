@@ -65,7 +65,9 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function setup(options: { readonly failRecall?: boolean } = {}) {
+  async function setup(
+    options: { readonly failRecall?: boolean; readonly failLedger?: boolean } = {},
+  ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-mcp-read-"));
     directories.push(stateRoot);
     const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
@@ -173,14 +175,19 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
             deadlineAt: context.deadlineAt,
             aborted: context.signal.aborted,
           });
-          const result = await operation();
           context.costMicros += 7;
-          return result;
+          return operation();
         },
         reminders: (windowMs) => writer.list(windowMs),
         settings: () => settingsStore.readSettings(scope),
       },
-      ledger: repository.decisionLedger(),
+      ledger: options.failLedger
+        ? {
+            append: async () => {
+              throw new Error("LEDGER_WRITE_DOWN");
+            },
+          }
+        : repository.decisionLedger(),
       onFailure: (error) => failures.push(error),
     });
     const app = Fastify({ logger: false });
@@ -333,19 +340,17 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(found.text).not.toContain("VECTOR_INDEX_DOWN");
     const [row] = await f.ledger();
     expect(row).toMatchObject({ reasonCode: "find_memories_failed", outcome: "read" });
+    expect(row?.costMicros).toBeGreaterThan(0);
     expect(f.failures.length).toBeGreaterThan(0);
   });
 
-  it("does not register the route without a configured secret", async () => {
-    const app = Fastify({ logger: false });
-    closers.push(() => app.close());
-    await app.ready();
-    const response = await app.inject({
-      method: "POST",
-      url: MCP_READ_PATH,
-      headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
-      payload: "{}",
-    });
-    expect(response.statusCode).toBe(404);
+  it("withholds the result when the read cannot be recorded", async () => {
+    const f = await setup({ failLedger: true });
+    const client = await f.connect("modern");
+    const found = await f.call(client, "today_context");
+    expect(found.result.isError).toBe(true);
+    expect(found.text).not.toContain("牙医");
+    expect(found.text).not.toContain("LEDGER_WRITE_DOWN");
+    expect(f.failures.length).toBeGreaterThan(0);
   });
 });

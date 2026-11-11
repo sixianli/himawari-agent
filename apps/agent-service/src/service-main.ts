@@ -1757,8 +1757,6 @@ export async function runAgentService(
               code: stableErrorCode(error),
             }),
         });
-      } else if (mcpReadConfiguration) {
-        throw new Error("MCP_READ_RUNTIME_UNAVAILABLE");
       }
       const webPushConfiguration = configuration.runPolicy?.webPush;
       const webPushSecret = webPushConfiguration
@@ -2116,6 +2114,8 @@ export async function runAgentService(
         };
       };
       const activeDurableMemory = durableMemory;
+      if (configuration.runPolicy?.mcpRead !== undefined && !mcpRead)
+        throw new Error("MCP_READ_RUNTIME_UNAVAILABLE");
       http = await createProductionHttpComposition({
         live,
         webPush: { presence: webPushPresence, push: webPush },

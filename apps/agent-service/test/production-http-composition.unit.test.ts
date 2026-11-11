@@ -31,6 +31,7 @@ import {
   type ProductionHttpCompositionSecretSources,
   ProductionThreadGatewayAccessPolicy,
 } from "../src/production-http-composition.js";
+import { MCP_READ_PATH } from "../src/production-mcp-read.js";
 import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
 
 const ORIGIN = "https://agent.example.test";
@@ -308,6 +309,17 @@ describe("production HTTP composition", () => {
         },
       });
       expect(bootstrap.statusCode).toBe(201);
+      const mcpRead = await composition.app.inject({
+        method: "POST",
+        url: MCP_READ_PATH,
+        headers: {
+          host: "agent.example.test",
+          authorization: ["Bearer", "m".repeat(40)].join(" "),
+          "content-type": "application/json",
+        },
+        payload: { jsonrpc: "2.0", id: 1, method: "tools/list" },
+      });
+      expect(mcpRead.statusCode).toBe(404);
 
       const session = await composition.app.inject({
         method: "POST",

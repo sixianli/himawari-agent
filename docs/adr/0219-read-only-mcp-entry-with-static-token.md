@@ -54,11 +54,11 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - 新配置项 `runPolicy.mcpRead.secretRef`，密钥用途写 `mcp-read`，写法和 Muse 推送入口的 `museIntake.secretRef` 一样。
    - 密钥不少于 32 个字符；限流照 `BearerGate` 的规则，每分钟最多 30 次有效请求、60 次无效请求。
    - 没带令牌或令牌错时回 401，并带上 `WWW-Authenticate: Bearer`，请求不进入 MCP，也不写库；超过限流回 429。
-   - 没有配置这个密钥时，路由不注册。
+   - 没有配置这个密钥时，路由不注册。配置了却建不起这个入口（例如记忆功能没开）时，服务启动失败（`MCP_READ_RUNTIME_UNAVAILABLE`），不会悄悄不注册。
    - 上线到公网时，在 Cloudflare 上给这条路径加一条服务令牌策略，做法和 Muse 推送入口一样。这样有两层鉴权，任何一层失效，另一层仍挡着。这一步属于生产改动，要等 Andy 同意。
    - 不实现 OAuth 2.1 授权服务。理由见前提 1–3：鉴权本身不是规范的必选项，而 Claude Code 和 Codex 都支持带固定令牌头。
 2. **协议用官方 SDK 的 `createMcpHandler`。** 它按 2026-07-28 版服务；还没升级的客户端发来的老版本请求，由它自带的无状态兼容方式接住。
-   - 路径是 `POST /api/mcp/v1`，挂在现有的 Fastify 上。Fastify 的请求先转成标准的 Web `Request`，交给 `handler.fetch`，再把返回结果写回 Fastify 的响应。
+   - 路径是 `/api/mcp/v1`，挂在现有的 Fastify 上。工具调用走 `POST`；同一路径也接 `GET` 和 `DELETE`，同样先过鉴权，再交给 SDK 按规范处理。Fastify 的请求先转成标准的 Web `Request`，交给 `handler.fetch`，再把返回结果写回 Fastify 的响应。
    - 不新增依赖 `@modelcontextprotocol/node`。它要额外引入 Hono 一套框架，而 `handler.fetch` 本来就是官方提供的标准入口。
 3. **三个只读工具，列出时顺序固定，都标为只读（`readOnlyHint`）。**
    - **`find_memories`（按问题找记忆）**：直接调用聊天里 `recall` 工具用的 `ProductionMemoryRecall`，只返回模型能看到的那几档记忆。为它新加了一个不属于任何一轮对话的入口 `recallOutsideRun`。
@@ -66,14 +66,17 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - **`today_context`（今日上下文）**：返回主人所在时区的今天日期、现在的时间，以及 48 小时内的提醒。提醒复用 `ProductionReminderWriter.list` 来取，它加了一个时间窗口参数。近一两天的对话摘要等任务 P3-6 合并后再加。
    - **`rule_book`（规则手册）**：返回 `ruleBookFor(settings)` 列出的每条规则，包括编号、版本、作用在哪一步、结果、来源、状态。主人自己设的规则还带上设置值，即重要发件人名单和静默时段。
      - 不返回规则的表达式。理由是 [ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md) 原话 “用户在界面看到的是试算例子，不是代码”。
-4. **返回给外部之前，先遮掉敏感内容。** 返回值里每一段文字都先经过 `maskSensitiveText` 再发出去。这个函数来自专门识别敏感内容的包 `@himawari-agent/sensitive-capture`，遮的范围和 Himawari 自己发给模型的出口一样：密钥、密码、验证码、银行卡号、证件号。
+4. **返回给外部之前，先遮掉敏感内容。** 返回值里的全部文字一起交给新加的 `maskSensitiveTexts` 遮好再发出去。这个函数在专门识别敏感内容的包 `@himawari-agent/sensitive-capture`，内部调用 `redactForEgress`，和 Himawari 自己发给模型的出口用同一套规则：机器密钥、密码、验证码、银行卡号、证件号。
+   - 一次返回里先过一遍所有文字，记下认出的密码、验证码，再遮第二遍。这样同一个密码在一段里被点名、在另一段里单独出现时，两处都遮掉，和模型出口记住已点名值的做法一致。占位符带本次返回内的序号（例如 `[密码#aaaaaaaa]`），不含原值的任何信息。
+   - 和模型出口不同的地方：模型出口遮完后发现还有机器密钥会整条扣下不发；这里 `redactForEgress` 本身已经把机器密钥换成占位符（出口检查 `check:egress-redaction` 只允许敏感包和出口模块直接调用它，所以多段文字的遮法放在敏感包里），所以不再另做一遍。
    - 外部 agent 会把这些内容转发给它自己用的模型，而这一段路不经过 Himawari 的出口，所以遮盖要在这里先做。
 5. **每次外部读取都写一条决策记录**，类别是 `external_read`，结果是 `read`。
    - `reasonCode` 写工具名；读取失败时写 `<工具名>_failed`。
    - `subjectRef` 写 `mcp-client:<客户端名>`。客户端名先取 2026-07-28 版请求自带的客户端信息；老版本请求不带这项，就取 User-Agent 请求头的开头一段。两者都只是对方自己报的名字。
-   - `inputs.memoryIds` 只写返回给对方的记忆编号，不写正文（依据 `docs/execution/specs/2026-11-09-decision-record-write-convention.md`）。
+   - `inputs.memoryIds` 只写这次返回了正文的那些记忆的编号（返回给对方的内容里不带编号），不写正文（依据 `docs/execution/specs/2026-11-09-decision-record-write-convention.md`）。
    - `ruleIds` 写空数组：静默时段规则还没有登记在 `DECISION_RULE_CATALOG` 里，而依据抽屉对这一类记录本来就显示「这类记录不涉及」。
-   - `costMicros` 写这次算问题向量花的钱。
+   - `costMicros` 写这次算问题向量花的钱；读取中途失败时，也写失败前已经花掉的钱。
+   - 决策记录写不进去时，这次读取按失败处理：不把内容交给对方，只回工具错误。这样「每次外部读取都有一条记录」始终成立。
 6. **工具说明文字登记进提示词目录**，编号是 `mcp.find-memories`、`mcp.today-context`、`mcp.rule-book`、`mcp.tool-result-failed`。Himawari 自己发给模型的请求一个字节都不变。
 
 [返回阅读导航](#contents)
@@ -108,7 +111,10 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
 - 测试：
   - `test/integration/mcp-read.test.ts` 用真实的 SQLite、真实的记忆检索和官方 SDK 客户端，新旧两版协议都连一遍。
   - 正向：三个工具都能列出、能调通，并且写了决策记录。
-  - 反向：没带令牌或令牌错时回 401 且不写记录；不相关的问题返回空；72 小时后的提醒不出现；密码不原样出现；读取失败时作为工具错误返回并记一条失败记录；没配置密钥时路由不存在。
+  - 反向：没带令牌或令牌错时回 401 且不写记录；不相关的问题返回空；72 小时后的提醒不出现；密码不原样出现；读取失败时作为工具错误返回并记一条带已花费用的失败记录；决策记录写不进去时不交出内容。
+  - `apps/agent-service/test/production-mcp-read.unit.test.ts`：同一个密码先点名、后单独出现，或先单独出现、后点名，都遮掉。
+  - `apps/agent-service/test/production-http-composition.unit.test.ts`：真实的 HTTP 组装里没配这个入口时，`/api/mcp/v1` 回 404。
+  - `packages/platform-node/test/startup-configuration.unit.test.ts`：`runPolicy.mcpRead` 只接受一把用途是 `mcp-read` 的密钥。
   - `apps/agent-service/test/production-mail-embedding.unit.test.ts` 覆盖不属于任何一轮对话的嵌入入口。
 
 [返回阅读导航](#contents)

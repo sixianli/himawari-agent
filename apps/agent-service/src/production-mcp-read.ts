@@ -14,7 +14,7 @@ import {
   MCP_TOOL_RULE_BOOK,
   MCP_TOOL_TODAY_CONTEXT,
 } from "@himawari-agent/prompt-catalog";
-import { maskSensitiveText } from "@himawari-agent/sensitive-capture";
+import { maskSensitiveTexts } from "@himawari-agent/sensitive-capture";
 import {
   type CallToolResult,
   CLIENT_INFO_META_KEY,
@@ -70,20 +70,34 @@ export interface ProductionMcpReadOptions {
 interface ToolOutcome {
   readonly output: Record<string, unknown>;
   readonly memoryIds: readonly string[];
-  readonly costMicros: number;
 }
 
-function maskDeep(value: unknown): unknown {
-  if (typeof value === "string") return maskSensitiveText(value);
-  if (Array.isArray(value)) return value.map(maskDeep);
+interface ReadCost {
+  costMicros: number;
+}
+
+function mapStrings(value: unknown, map: (text: string) => string): unknown {
+  if (typeof value === "string") return map(value);
+  if (Array.isArray(value)) return value.map((entry) => mapStrings(entry, map));
   if (value !== null && typeof value === "object")
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
         key,
-        maskDeep(entry),
+        mapStrings(entry, map),
       ]),
     );
   return value;
+}
+
+export function maskForExternalRead(value: unknown): unknown {
+  const texts: string[] = [];
+  mapStrings(value, (text) => {
+    texts.push(text);
+    return text;
+  });
+  const masked = maskSensitiveTexts(texts);
+  let next = 0;
+  return mapStrings(value, () => masked[next++] ?? "");
 }
 
 function localDay(instant: string, timeZone: string): string {
@@ -96,9 +110,9 @@ function localDay(instant: string, timeZone: string): string {
 }
 
 function ruleParameters(rule: RuleRecord, settings: ProactiveSettings): Record<string, unknown> {
-  if (rule.origin !== "owner_setting") return {};
-  if (rule.gate === "mail_delivery") return { quietHours: settings.quietHours };
-  return { importantSenders: settings.importantSenders };
+  if (rule.id === "quiet_hours") return { quietHours: settings.quietHours };
+  if (rule.id === "floor_important_sender") return { importantSenders: settings.importantSenders };
+  return {};
 }
 
 function clientNameOf(envelope: unknown, userAgent: string | null): string {
@@ -142,7 +156,7 @@ export class ProductionMcpRead {
       name: McpReadToolName,
       description: string,
       inputSchema: Record<string, unknown>,
-      run: (args: JsonObject, signal: AbortSignal) => Promise<ToolOutcome>,
+      run: (args: JsonObject, signal: AbortSignal, cost: ReadCost) => Promise<ToolOutcome>,
     ) =>
       server.registerTool(
         name,
@@ -174,7 +188,7 @@ export class ProductionMcpRead {
         required: ["query"],
         additionalProperties: false,
       },
-      (args, signal) => this.#findMemories(args, signal),
+      (args, signal, cost) => this.#findMemories(args, signal, cost),
     );
     register(
       "today_context",
@@ -196,49 +210,56 @@ export class ProductionMcpRead {
     client: string,
     args: JsonObject,
     signal: AbortSignal,
-    run: (args: JsonObject, signal: AbortSignal) => Promise<ToolOutcome>,
+    run: (args: JsonObject, signal: AbortSignal, cost: ReadCost) => Promise<ToolOutcome>,
   ): Promise<CallToolResult> {
     const started = Date.parse(this.#options.clock.now());
-    let outcome: ToolOutcome | undefined;
+    const cost: ReadCost = { costMicros: 0 };
+    let delivered: { readonly text: string; readonly memoryIds: readonly string[] } | undefined;
     try {
-      outcome = await run(args, signal);
-      return {
-        content: [{ type: "text", text: JSON.stringify(maskDeep(outcome.output)) }],
+      const outcome = await run(args, signal, cost);
+      delivered = {
+        text: JSON.stringify(maskForExternalRead(outcome.output)),
+        memoryIds: outcome.memoryIds,
       };
     } catch (error) {
       this.#options.onFailure(error);
-      return { content: [{ type: "text", text: MCP_TOOL_RESULT_FAILED.text }], isError: true };
-    } finally {
-      await this.#record(name, client, outcome, started);
     }
+    try {
+      await this.#record(name, client, delivered?.memoryIds, cost.costMicros, started);
+    } catch (error) {
+      this.#options.onFailure(error);
+      delivered = undefined;
+    }
+    return delivered
+      ? { content: [{ type: "text", text: delivered.text }] }
+      : { content: [{ type: "text", text: MCP_TOOL_RESULT_FAILED.text }], isError: true };
   }
 
   async #record(
     name: McpReadToolName,
     client: string,
-    outcome: ToolOutcome | undefined,
+    memoryIds: readonly string[] | undefined,
+    costMicros: number,
     started: number,
   ): Promise<void> {
     const decidedAt = this.#options.clock.now();
-    await this.#options.ledger
-      .append({
-        id: `ledger:${randomUUID()}`,
-        ...this.#options.scope,
-        kind: "external_read",
-        decidedAt,
-        outcome: "read",
-        reasonCode: outcome ? name : `${name}_failed`,
-        subjectRef: `mcp-client:${client}`,
-        inputs: { memoryIds: outcome?.memoryIds ?? [], ruleIds: [] },
-        reasonRef: null,
-        contentRef: null,
-        costMicros: outcome?.costMicros ?? 0,
-        durationMs: Math.max(0, Date.parse(decidedAt) - started),
-      })
-      .catch(this.#options.onFailure);
+    await this.#options.ledger.append({
+      id: `ledger:${randomUUID()}`,
+      ...this.#options.scope,
+      kind: "external_read",
+      decidedAt,
+      outcome: "read",
+      reasonCode: memoryIds ? name : `${name}_failed`,
+      subjectRef: `mcp-client:${client}`,
+      inputs: { memoryIds: memoryIds ?? [], ruleIds: [] },
+      reasonRef: null,
+      contentRef: null,
+      costMicros,
+      durationMs: Math.max(0, Date.parse(decidedAt) - started),
+    });
   }
 
-  async #findMemories(args: JsonObject, signal: AbortSignal): Promise<ToolOutcome> {
+  async #findMemories(args: JsonObject, signal: AbortSignal, cost: ReadCost): Promise<ToolOutcome> {
     const context: MailEmbeddingContext = {
       deadlineAt: new Date(
         Date.parse(this.#options.clock.now()) + this.#options.requestTimeoutMs,
@@ -246,10 +267,14 @@ export class ProductionMcpRead {
       signal,
       costMicros: 0,
     };
-    const result = await this.#options.sources.recall(args, (_slot, operation) =>
-      this.#options.sources.embedOutsideRun(context, operation),
-    );
-    return { output: result.output, memoryIds: result.memoryIds, costMicros: context.costMicros };
+    try {
+      const result = await this.#options.sources.recall(args, (_slot, operation) =>
+        this.#options.sources.embedOutsideRun(context, operation),
+      );
+      return { output: result.output, memoryIds: result.memoryIds };
+    } finally {
+      cost.costMicros = context.costMicros;
+    }
   }
 
   async #todayContext(): Promise<ToolOutcome> {
@@ -269,7 +294,6 @@ export class ProductionMcpRead {
         ...(listed.more ? { more: true } : {}),
       },
       memoryIds: listed.reminders.map(({ memoryId }) => memoryId),
-      costMicros: 0,
     };
   }
 
@@ -289,7 +313,6 @@ export class ProductionMcpRead {
         })),
       },
       memoryIds: [],
-      costMicros: 0,
     };
   }
 }
