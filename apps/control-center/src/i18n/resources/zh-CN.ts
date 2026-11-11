@@ -638,6 +638,7 @@ export const messages = {
   "memory.profile.goal": "长期目标",
   "memory.profile.project": "进行中的事",
   "memory.tidyKept": "（保留：{text}）",
+  "memory.tidyOther": "（另一条：{text}）",
   "memory.undo": "撤销",
   "memory.undone": "已撤销",
   "memory.reminderTitle": "提醒",
@@ -709,7 +710,7 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {全部变化} new {新记住} drop {不记和删除} tidy {整理记忆} correct {更正} other {导入}}",
   "memory.page.event":
-    "{e, select, new {新记住} dropped {已不记} deleted {已删除} correct {更正} import {导入} merge {合并重复} supersede {取代旧说法} archive {归档} other {新推测}}",
+    "{e, select, new {新记住} dropped {已不记} deleted {已删除} correct {更正} import {导入} merge {合并重复} supersede {取代旧说法} archive {归档} hold {发现说法不一} other {新推测}}",
   "memory.page.imported":
     "从 {source, select, codex {Codex} assistant {其他 AI} other {Himawari 导出文件}} 导入 {count} 条",
   "memory.page.goConfirm": "去确认",
@@ -1052,7 +1053,7 @@ export const messages = {
   "decision.chain.basis": "推断依据",
   "decision.chain.basisCut": "依据没读全（太多或读取出错）",
   "decision.chain.action":
-    "{a, select, merge {合并} supersede {取代} archive {归档} reflect {归纳} other {整理}}",
+    "{a, select, merge {合并} supersede {取代} archive {归档} reflect {归纳} hold {发现说法不一} other {整理}}",
   "decision.chain.repeated": "重复出现",
   "decision.chain.nodeCut": "后面还有",
   "decision.email.open": "查看这封邮件",

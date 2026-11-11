@@ -119,6 +119,7 @@ import {
 import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
+import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -130,7 +131,6 @@ import {
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
-import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
@@ -1783,6 +1783,7 @@ export async function runAgentService(
           : undefined;
       if (mcpReadConfiguration && mcpIdentity) {
         const settingsStore = repository.proactive();
+        const ownerRuleStore = repository.ownerRules();
         mcpRead = new ProductionMcpRead({
           scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
           clock,
@@ -1829,6 +1830,12 @@ export async function runAgentService(
               settingsStore.readSettings({
                 ownerId: configuration.ownerId,
                 agentId: configuration.agentId,
+              }),
+            ownerRules: () =>
+              ownerRuleStore.list({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                includeRetired: false,
               }),
             ...(memoryEpisodes
               ? {

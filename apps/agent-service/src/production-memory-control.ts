@@ -669,6 +669,7 @@ export class ProductionMemoryControl {
       if (!text) continue;
       tidyUps.push({
         changeId: change.id,
+        memoryId: change.memoryId,
         action: change.action,
         text,
         relatedText: await textOf(change.relatedMemoryId),

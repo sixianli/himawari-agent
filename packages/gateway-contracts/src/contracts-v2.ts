@@ -990,7 +990,7 @@ const memoryBasisSnapshotSchema = object({
       object({
         memoryId: machineString,
         changeId: nullable(machineString),
-        action: nullable(enumeration(["merge", "supersede", "archive", "reflect"])),
+        action: nullable(enumeration(["merge", "supersede", "archive", "reflect", "hold"])),
         changedAt: nullable(timestamp),
         decisionRecordId: nullable(machineString),
         basisMemoryIds: array(machineString),
@@ -1127,7 +1127,7 @@ const decisionChainSnapshotSchema = object({
               object({
                 memoryId: machineString,
                 text: nullable(boundedString(500)),
-                action: nullable(enumeration(["merge", "supersede", "archive", "reflect"])),
+                action: nullable(enumeration(["merge", "supersede", "archive", "reflect", "hold"])),
                 changedAt: nullable(timestamp),
                 basisMemoryIds: array(machineString),
                 repeated: booleanValue,
@@ -1234,7 +1234,8 @@ const memoryOverviewSnapshotSchema = object({
     tidyUps: array(
       object({
         changeId: machineString,
-        action: enumeration(["merge", "supersede", "archive", "reflect"]),
+        memoryId: machineString,
+        action: enumeration(["merge", "supersede", "archive", "reflect", "hold"]),
         text: boundedString(2000),
         relatedText: nullable(boundedString(2000)),
         createdAt: timestamp,
