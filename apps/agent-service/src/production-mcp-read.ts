@@ -4,6 +4,7 @@ import type {
   DecisionLedgerPort,
   DecisionLedgerWrite,
   JsonObject,
+  OwnerIdentityStatePort,
   ProactiveSettings,
   RuleRecord,
   StoredOwnerRule,
@@ -21,12 +22,25 @@ import {
   MCP_PROPOSE_MEMORY_FAILED,
   MCP_PROPOSE_MEMORY_INVALID,
   MCP_PROPOSE_MEMORY_NOT_READY,
-  MCP_PROPOSE_MEMORY_SAVE_LABEL,
   MCP_PROPOSE_MEMORY_SAVED,
   MCP_PROPOSE_MEMORY_SENSITIVE_NOTE,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
+  MCP_PROPOSE_NOT_SHOWN,
+  MCP_PROPOSE_RULE_ALREADY_SAVED,
+  MCP_PROPOSE_RULE_CONDITIONS,
+  MCP_PROPOSE_RULE_CONFIRM,
+  MCP_PROPOSE_RULE_DECLINED,
+  MCP_PROPOSE_RULE_FAILED,
+  MCP_PROPOSE_RULE_INVALID,
+  MCP_PROPOSE_RULE_KIND_NOTIFY,
+  MCP_PROPOSE_RULE_KIND_WHOLE_THREAD,
+  MCP_PROPOSE_RULE_NOT_READY,
+  MCP_PROPOSE_RULE_REPLAY,
+  MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE,
+  MCP_PROPOSE_RULE_SAVED,
   MCP_TOOL_FIND_MEMORIES,
   MCP_TOOL_PROPOSE_MEMORY,
+  MCP_TOOL_PROPOSE_RULE,
   MCP_TOOL_RESULT_FAILED,
   MCP_TOOL_RULE_BOOK,
   MCP_TOOL_TODAY_CONTEXT,
@@ -51,7 +65,7 @@ import {
   type ServerContext,
 } from "@modelcontextprotocol/server";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { BearerGate } from "./bearer-admission.js";
+import { AdmissionWindows } from "./bearer-admission.js";
 import {
   EXTERNAL_PROPOSAL_CATEGORIES,
   EXTERNAL_PROPOSAL_TEXT_MAXIMUM,
@@ -61,17 +75,26 @@ import {
   normalizeProposalText,
   proposalClassification,
 } from "./production-mcp-memory-writer.js";
+import {
+  EXTERNAL_RULE_REASON_MAXIMUM,
+  EXTERNAL_RULE_TYPES,
+  type ExternalRuleProposal,
+  type ExternalRuleType,
+} from "./production-mcp-rule-writer.js";
 import type { RecallResult } from "./production-memory-recall.js";
+import type { RulePreview } from "./production-owner-rules.js";
 import type { ListedReminder } from "./production-reminder-writer.js";
 import type { MailEmbeddingContext } from "./production-run-memory.js";
 
 export const MCP_READ_PATH = "/api/mcp/v1";
 export const MCP_READ_BODY_LIMIT = 65_536;
-export const MCP_READ_SECRET_MINIMUM_LENGTH = 32;
+const MCP_ACCESS_OWNER_NOT_BOUND = Object.freeze({ code: "MCP_ACCESS_OWNER_NOT_BOUND" });
+
+export const MCP_ACCESS_ASSERTION_HEADER = "cf-access-jwt-assertion";
 export const MCP_READ_TOOL_NAMES = ["find_memories", "today_context", "rule_book"] as const;
-export const MCP_WRITE_TOOL_NAMES = ["propose_memory"] as const;
+export const MCP_WRITE_TOOL_NAMES = ["propose_memory", "propose_rule"] as const;
 export const MCP_PROPOSAL_CONFIRM_KEY = "confirm";
-export const MCP_PROPOSAL_SAVE_FIELD = "save";
+export const MCP_PROPOSAL_UNSEEN_ANSWER_MS = 1_500;
 export const MCP_PROPOSAL_STATE_TTL_SECONDS = 600;
 const WRITE_ACCESS = "himawari:write";
 const READ_ACCESS = "himawari:read";
@@ -116,26 +139,55 @@ export interface McpMemoryProposals {
   readonly decline: (proposal: ExternalMemoryProposal, started: number) => Promise<void>;
 }
 
+export interface McpRuleProposals {
+  readonly preview: (input: {
+    readonly type: string;
+    readonly params: unknown;
+    readonly summary: string;
+  }) => Promise<RulePreview>;
+  readonly decided: (proposalId: string) => Promise<boolean>;
+  readonly accept: (proposal: ExternalRuleProposal) => Promise<string>;
+}
+
 export interface McpWriteAccess {
-  readonly secret: string;
   readonly proposals: McpMemoryProposals;
+  readonly rules: McpRuleProposals;
+}
+
+export interface McpAccessVerifier {
+  readonly verify: (assertion: string) => Promise<{ readonly externalSubjectRef: string }>;
 }
 
 export type McpAdmission =
   | { readonly status: "ok"; readonly authInfo: AuthInfo }
-  | { readonly status: "unauthorized" | "rate_limited" };
+  | { readonly status: "unauthorized" | "rate_limited" | "unavailable" };
 
 interface ProposalState {
-  readonly tool: "propose_memory";
+  readonly tool: "propose_memory" | "propose_rule";
   readonly proposalId: string;
   readonly argsHash: string;
   readonly client: string;
+  readonly askedAt: number;
+}
+
+type ProposalTicket = Omit<ProposalState, "askedAt">;
+
+export type McpProposalAnswer = "accepted" | "declined" | "unseen";
+
+export function mcpProposalAnswer(
+  action: "accept" | "decline" | "cancel",
+  askedAt: number,
+  answeredAt: number,
+): McpProposalAnswer {
+  if (!(answeredAt - askedAt >= MCP_PROPOSAL_UNSEEN_ANSWER_MS)) return "unseen";
+  return action === "accept" ? "accepted" : "declined";
 }
 
 export interface ProductionMcpReadOptions {
   readonly scope: Pick<DecisionLedgerWrite, "ownerId" | "agentId">;
   readonly clock: ClockPort;
-  readonly secret: string;
+  readonly access: McpAccessVerifier;
+  readonly owners: Pick<OwnerIdentityStatePort, "readBySubject">;
   readonly write?: McpWriteAccess;
   readonly timeZone: string;
   readonly requestTimeoutMs: number;
@@ -291,31 +343,16 @@ function elicitationSupported(envelope: unknown): boolean {
 
 export class ProductionMcpRead {
   readonly #options: ProductionMcpReadOptions;
-  readonly #gate: BearerGate;
+  readonly #windows: AdmissionWindows;
   readonly handler: McpHttpHandler;
 
-  readonly #writeGate: BearerGate | undefined;
   readonly #stateCodec: RequestStateCodec<ProposalState>;
   readonly #deciding = new Map<string, Promise<void>>();
+  readonly #decidedRules = new Map<string, { readonly until: number; readonly saved: boolean }>();
 
   constructor(options: ProductionMcpReadOptions) {
     this.#options = options;
-    this.#gate = new BearerGate(
-      options.clock,
-      options.secret,
-      MCP_READ_SECRET_MINIMUM_LENGTH,
-      "MCP_READ_SECRET_TOO_SHORT",
-    );
-    if (options.write && options.write.secret === options.secret)
-      throw new Error("MCP_WRITE_SECRET_REUSED");
-    this.#writeGate = options.write
-      ? new BearerGate(
-          options.clock,
-          options.write.secret,
-          MCP_READ_SECRET_MINIMUM_LENGTH,
-          "MCP_WRITE_SECRET_TOO_SHORT",
-        )
-      : undefined;
+    this.#windows = new AdmissionWindows(options.clock);
     this.#stateCodec = createRequestStateCodec<ProposalState>({
       key: randomBytes(32),
       ttlSeconds: MCP_PROPOSAL_STATE_TTL_SECONDS,
@@ -326,12 +363,36 @@ export class ProductionMcpRead {
     });
   }
 
-  admit(authorization: string | undefined): McpAdmission {
-    const writing = this.#writeGate?.matches(authorization) === true;
-    const status = (writing ? this.#writeGate : this.#gate)?.admit(authorization) ?? "unauthorized";
-    if (status !== "ok") return { status };
-    const access = writing ? WRITE_ACCESS : READ_ACCESS;
-    return { status, authInfo: { token: "", clientId: access, scopes: [access] } };
+  async admit(assertion: string | undefined): Promise<McpAdmission> {
+    let subject: string | undefined;
+    let rejection: unknown;
+    if (assertion) {
+      let verified: string | undefined;
+      try {
+        verified = (await this.#options.access.verify(assertion)).externalSubjectRef;
+      } catch (error) {
+        rejection = error;
+      }
+      if (verified !== undefined) {
+        let binding: Awaited<ReturnType<OwnerIdentityStatePort["readBySubject"]>>;
+        try {
+          binding = await this.#options.owners.readBySubject(verified);
+        } catch (error) {
+          if (this.#windows.admit(true) === "rate_limited") return { status: "rate_limited" };
+          this.#options.onFailure(error);
+          return { status: "unavailable" };
+        }
+        if (binding?.ownerId === this.#options.scope.ownerId && binding.status === "active")
+          subject = verified;
+        else rejection = MCP_ACCESS_OWNER_NOT_BOUND;
+      }
+    }
+    const status = this.#windows.admit(subject !== undefined);
+    if (status === "unauthorized" && assertion) this.#options.onFailure(rejection);
+    if (status !== "ok" || subject === undefined)
+      return { status: status === "ok" ? "unauthorized" : status };
+    const scopes = this.#options.write ? [READ_ACCESS, WRITE_ACCESS] : [READ_ACCESS];
+    return { status, authInfo: { token: "", clientId: subject, scopes } };
   }
 
   #server(context: McpRequestContext): McpServer {
@@ -428,7 +489,206 @@ export class ProductionMcpRead {
             handlerContext,
           ),
       );
+    const rules = this.#options.write?.rules;
+    if (
+      rules &&
+      context.era === "modern" &&
+      context.authInfo?.scopes.includes(WRITE_ACCESS) === true
+    ) {
+      const list = { type: "array", items: { type: "string" } };
+      server.registerTool(
+        "propose_rule",
+        {
+          description: MCP_TOOL_PROPOSE_RULE.text,
+          inputSchema: fromJsonSchema<JsonObject>({
+            type: "object",
+            properties: {
+              type: { type: "string", enum: [...EXTERNAL_RULE_TYPES] },
+              params: {
+                type: "object",
+                properties: {
+                  senderDomains: list,
+                  senderAddresses: list,
+                  phrases: list,
+                  words: list,
+                  excludePhrases: list,
+                },
+                additionalProperties: false,
+              },
+              summary: { type: "string", minLength: 1 },
+              reason: { type: "string", minLength: 1 },
+            },
+            required: ["type", "params", "summary", "reason"],
+            additionalProperties: false,
+          } as never),
+          annotations: {
+            readOnlyHint: false,
+            destructiveHint: false,
+            idempotentHint: false,
+            openWorldHint: false,
+          },
+        },
+        async (args: JsonObject, handlerContext) =>
+          this.#proposeRule(
+            rules,
+            args,
+            clientNameOf(handlerContext.mcpReq.envelope, userAgent),
+            handlerContext,
+          ),
+      );
+    }
     return server;
+  }
+
+  async #proposeRule(
+    rules: McpRuleProposals,
+    args: JsonObject,
+    client: string,
+    context: ServerContext,
+  ): Promise<CallToolResult | InputRequiredResult> {
+    const received = Date.parse(this.#options.clock.now());
+    const reason = normalizeProposalText(typeof args["reason"] === "string" ? args["reason"] : "");
+    let parsed: { readonly type: string; readonly params: unknown; readonly summary: string };
+    try {
+      parsed = parseOwnerRuleParameters({
+        type: args["type"],
+        params: args["params"],
+        summary: typeof args["summary"] === "string" ? args["summary"].trim() : args["summary"],
+      });
+    } catch {
+      return proposalReply(MCP_PROPOSE_RULE_INVALID.text, true);
+    }
+    if (
+      reason.length === 0 ||
+      [...reason].length > EXTERNAL_RULE_REASON_MAXIMUM ||
+      !(EXTERNAL_RULE_TYPES as readonly string[]).includes(parsed.type)
+    )
+      return proposalReply(MCP_PROPOSE_RULE_INVALID.text, true);
+    const argsHash = createHash("sha256")
+      .update(JSON.stringify(["propose_rule", parsed.type, parsed.params, parsed.summary, reason]))
+      .digest("hex");
+    const state = context.mcpReq.requestState<ProposalState>();
+    try {
+      if (state === undefined) {
+        if (!elicitationSupported(context.mcpReq.envelope))
+          return proposalReply(MCP_PROPOSE_MEMORY_UNSUPPORTED.text, true);
+        if (!(await this.#options.write?.proposals.ready()))
+          return proposalReply(MCP_PROPOSE_RULE_NOT_READY.text, true);
+        return await this.#askRuleConfirmation(
+          rules,
+          { tool: "propose_rule", proposalId: randomUUID(), argsHash, client },
+          { ...parsed, type: parsed.type as ExternalRuleType, reason, client },
+          context,
+        );
+      }
+      if (
+        typeof state !== "object" ||
+        state === null ||
+        state.tool !== "propose_rule" ||
+        typeof state.proposalId !== "string" ||
+        typeof state.client !== "string" ||
+        !Number.isFinite(state.askedAt) ||
+        state.argsHash !== argsHash
+      )
+        return proposalReply(MCP_PROPOSE_MEMORY_CHANGED.text, true);
+      const proposal: ExternalRuleProposal = {
+        proposalId: state.proposalId,
+        type: parsed.type as ExternalRuleType,
+        params: parsed.params,
+        summary: parsed.summary,
+        reason,
+        client: state.client,
+      };
+      return await this.#oneAtATime(state.proposalId, async () => {
+        const now = Date.now();
+        for (const [proposalId, { until }] of this.#decidedRules)
+          if (until <= now) this.#decidedRules.delete(proposalId);
+        const remembered = this.#decidedRules.get(proposal.proposalId);
+        if (remembered)
+          return proposalReply(
+            remembered.saved ? MCP_PROPOSE_RULE_ALREADY_SAVED.text : MCP_PROPOSE_RULE_DECLINED.text,
+            false,
+          );
+        if (await rules.decided(proposal.proposalId))
+          return proposalReply(MCP_PROPOSE_RULE_ALREADY_SAVED.text, false);
+        const answer = inputResponse(context.mcpReq.inputResponses, MCP_PROPOSAL_CONFIRM_KEY);
+        if (answer.kind !== "elicit")
+          return await this.#askRuleConfirmation(rules, state, proposal, context);
+        const outcome = mcpProposalAnswer(answer.action, state.askedAt, received);
+        if (outcome === "unseen") return proposalReply(MCP_PROPOSE_NOT_SHOWN.text, true);
+        if (outcome === "accepted") {
+          await rules.accept(proposal);
+          this.#decidedRules.set(proposal.proposalId, {
+            until: Date.now() + MCP_PROPOSAL_STATE_TTL_SECONDS * 1000,
+            saved: true,
+          });
+          return proposalReply(MCP_PROPOSE_RULE_SAVED.text, false);
+        }
+        this.#decidedRules.set(proposal.proposalId, {
+          until: now + MCP_PROPOSAL_STATE_TTL_SECONDS * 1000,
+          saved: false,
+        });
+        return proposalReply(MCP_PROPOSE_RULE_DECLINED.text, false);
+      });
+    } catch (error) {
+      this.#options.onFailure(error);
+      return proposalReply(MCP_PROPOSE_RULE_FAILED.text, true);
+    }
+  }
+
+  async #askRuleConfirmation(
+    rules: McpRuleProposals,
+    ticket: ProposalTicket,
+    proposal: Pick<ExternalRuleProposal, "type" | "params" | "summary" | "reason" | "client">,
+    context: ServerContext,
+  ): Promise<InputRequiredResult> {
+    const preview = await rules.preview(proposal);
+    const params = (preview.params ?? {}) as Record<string, unknown>;
+    const listed = (key: string) => {
+      const value = params[key];
+      return Array.isArray(value) && value.length > 0 ? value.join("、") : "—";
+    };
+    return inputRequired({
+      inputRequests: {
+        [MCP_PROPOSAL_CONFIRM_KEY]: inputRequired.elicit({
+          message: renderPrompt(MCP_PROPOSE_RULE_CONFIRM, {
+            client: proposal.client,
+            summary: preview.summary,
+            kind:
+              preview.type === "mail_must_notify"
+                ? MCP_PROPOSE_RULE_KIND_NOTIFY.text
+                : MCP_PROPOSE_RULE_KIND_WHOLE_THREAD.text,
+            conditions: renderPrompt(MCP_PROPOSE_RULE_CONDITIONS, {
+              senderDomains: listed("senderDomains"),
+              senderAddresses: listed("senderAddresses"),
+              phrases: listed("phrases"),
+              words: listed("words"),
+              excludePhrases: listed("excludePhrases"),
+            }),
+            replay: preview.replay
+              ? renderPrompt(MCP_PROPOSE_RULE_REPLAY, {
+                  days: String(preview.replay.days),
+                  checked: String(preview.replay.mailsChecked),
+                  hit: String(preview.replay.mailsHit),
+                  changed: String(preview.replay.changed),
+                })
+              : MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE.text,
+            reason: proposal.reason,
+          }),
+          requestedSchema: { type: "object", properties: {} },
+        }),
+      },
+      requestState: await this.#stateCodec.mint(
+        {
+          tool: ticket.tool,
+          proposalId: ticket.proposalId,
+          argsHash: ticket.argsHash,
+          client: ticket.client,
+          askedAt: Date.parse(this.#options.clock.now()),
+        },
+        context,
+      ),
+    });
   }
 
   async #proposeMemory(
@@ -470,6 +730,7 @@ export class ProductionMcpRead {
         state.tool !== "propose_memory" ||
         typeof state.proposalId !== "string" ||
         typeof state.client !== "string" ||
+        !Number.isFinite(state.askedAt) ||
         state.argsHash !== argsHash
       )
         return proposalReply(MCP_PROPOSE_MEMORY_CHANGED.text, true);
@@ -485,7 +746,9 @@ export class ProductionMcpRead {
         if (decided === "declined") return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
         const answer = inputResponse(context.mcpReq.inputResponses, MCP_PROPOSAL_CONFIRM_KEY);
         if (answer.kind !== "elicit") return await this.#askConfirmation(state, proposal, context);
-        if (answer.action === "accept" && answer.content?.[MCP_PROPOSAL_SAVE_FIELD] === true) {
+        const outcome = mcpProposalAnswer(answer.action, state.askedAt, started);
+        if (outcome === "unseen") return proposalReply(MCP_PROPOSE_NOT_SHOWN.text, true);
+        if (outcome === "accepted") {
           await proposals.keep(proposal, started);
           return proposalReply(MCP_PROPOSE_MEMORY_SAVED.text, false);
         }
@@ -514,7 +777,7 @@ export class ProductionMcpRead {
   }
 
   async #askConfirmation(
-    state: ProposalState,
+    ticket: ProposalTicket,
     proposal: Pick<ExternalMemoryProposal, "text" | "category" | "client">,
     context: ServerContext,
   ): Promise<InputRequiredResult> {
@@ -528,19 +791,19 @@ export class ProductionMcpRead {
             sensitive: sensitive ? MCP_PROPOSE_MEMORY_SENSITIVE_NOTE.text : "",
             text: proposal.text,
           }),
-          requestedSchema: {
-            type: "object",
-            properties: {
-              [MCP_PROPOSAL_SAVE_FIELD]: {
-                type: "boolean",
-                title: MCP_PROPOSE_MEMORY_SAVE_LABEL.text,
-              },
-            },
-            required: [MCP_PROPOSAL_SAVE_FIELD],
-          },
+          requestedSchema: { type: "object", properties: {} },
         }),
       },
-      requestState: await this.#stateCodec.mint(state, context),
+      requestState: await this.#stateCodec.mint(
+        {
+          tool: ticket.tool,
+          proposalId: ticket.proposalId,
+          argsHash: ticket.argsHash,
+          client: ticket.client,
+          askedAt: Date.parse(this.#options.clock.now()),
+        },
+        context,
+      ),
     });
   }
 
@@ -766,15 +1029,15 @@ export function registerMcpReadRoute(app: FastifyInstance, mcp: ProductionMcpRea
       url: MCP_READ_PATH,
       bodyLimit: MCP_READ_BODY_LIMIT,
       onRequest: async (request, reply) => {
-        const gate = mcp.admit(request.headers.authorization);
+        const header = request.headers[MCP_ACCESS_ASSERTION_HEADER];
+        const gate = await mcp.admit(typeof header === "string" ? header : undefined);
         if (gate.status === "ok") {
           admitted.set(request, gate.authInfo);
           return;
         }
         return reply
-          .code(gate.status === "unauthorized" ? 401 : 429)
+          .code(gate.status === "unauthorized" ? 401 : gate.status === "unavailable" ? 503 : 429)
           .header("cache-control", "no-store")
-          .header("www-authenticate", 'Bearer realm="himawari"')
           .send();
       },
       handler: async (request, reply) =>

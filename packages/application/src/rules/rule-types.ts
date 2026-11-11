@@ -75,7 +75,7 @@ function entries(value: unknown, key: string): readonly string[] {
   const seen = new Set<string>();
   for (const entry of value) {
     if (typeof entry !== "string") invalid(`${key} 里只能是文字`);
-    if (/[\p{Surrogate}\p{Cc}\p{Cf}]/u.test(entry)) invalid(`${key} 里有不可见字符`);
+    if (/[\p{Surrogate}\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(entry)) invalid(`${key} 里有不可见字符`);
     const folded = foldText(entry.trim());
     const minimum = PHRASE_KEYS.has(key) ? PHRASE_MIN : 1;
     const length = Array.from(folded).length;

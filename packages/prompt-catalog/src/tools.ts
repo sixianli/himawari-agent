@@ -301,7 +301,7 @@ export const MCP_TOOL_PROPOSE_MEMORY = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tools",
   output: "free-text",
-  text: "向主人提议在 Himawari 里新存一条长期记忆。调用后主人会在你所在的客户端里看到确认框，主人勾选保存并提交才会存下；拒绝、取消或超时都不会存。text 写一条完整、单独看也能懂的事实或偏好；category 选最贴近的分类。只能在能弹出确认框的交互会话里使用。「以后每次都怎样做」这类规则不要用这个工具提。",
+  text: "向主人提议在 Himawari 里新存一条长期记忆。调用后主人会在你所在的客户端里看到确认框，主人在确认框里选同意才会存下；拒绝、取消或超时都不会存。text 写一条完整、单独看也能懂的事实或偏好；category 选最贴近的分类。只能在能弹出确认框的交互会话里使用。「以后每次都怎样做」这类规则不要用这个工具提。",
 });
 
 export const MCP_PROPOSE_MEMORY_CONFIRM = templatePrompt({
@@ -311,13 +311,15 @@ export const MCP_PROPOSE_MEMORY_CONFIRM = templatePrompt({
   layer: "tool-result",
   output: "free-text",
   segments: [
+    text(
+      "把下面这条存进 Himawari 的长期记忆？同意（Accept）就保存，拒绝（Decline）就不存。\n▍对方提议的原文（只占这一行）：",
+    ),
+    slot("text"),
+    text("\n\n提议方："),
     slot("client"),
-    text("（对方自称）提议在 Himawari 里新存一条长期记忆。\n分类："),
+    text("（对方自称）；分类："),
     slot("category"),
     slot("sensitive"),
-    text("\n\n"),
-    slot("text"),
-    text("\n\n勾选「保存」并提交才会存下；拒绝或取消就不存。"),
   ],
 });
 
@@ -328,15 +330,6 @@ export const MCP_PROPOSE_MEMORY_SENSITIVE_NOTE = fixedPrompt({
   layer: "tool-result",
   output: "free-text",
   text: "\n这条含敏感内容，会按敏感记忆加密保存。",
-});
-
-export const MCP_PROPOSE_MEMORY_SAVE_LABEL = fixedPrompt({
-  id: "mcp.propose-memory-save-label",
-  purpose: "外部提议记忆的确认框里，勾选项的标题",
-  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
-  layer: "tool-result",
-  output: "free-text",
-  text: "保存这条记忆",
 });
 
 export const MCP_PROPOSE_MEMORY_SAVED = fixedPrompt({
@@ -364,6 +357,26 @@ export const MCP_PROPOSE_MEMORY_DECLINED = fixedPrompt({
   layer: "tool-result",
   output: "free-text",
   text: "主人没有同意，这条记忆没有保存。除非主人再次要求，不要重复提议同样的内容。",
+});
+
+export const MCP_PROPOSE_RULE_NOT_READY = fixedPrompt({
+  id: "mcp.propose-rule-not-ready",
+  purpose:
+    "规则提议时 Himawari 的记忆册还没准备好（规则生效要写规则类记忆），返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "Himawari 的记忆功能还没准备好，规则要连同出处一起记下，所以这次没有生效。",
+});
+
+export const MCP_PROPOSE_NOT_SHOWN = fixedPrompt({
+  id: "mcp.propose-not-shown",
+  purpose:
+    "确认框发出后几乎立刻就收到回答（客户端没显示确认框或自动回答了）时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "确认框发出后几乎立刻就收到了回答，主人不可能这么快看完：可能是这个客户端没有把确认框显示出来（Claude 桌面 App 目前就是这样），也可能是客户端设置了自动回答确认框。所以这次什么都没有写进 Himawari，不算主人同意也不算主人拒绝。请告诉主人：关掉自动回答，或在终端里的 Claude Code 里再提一次，亲手确认。",
 });
 
 export const MCP_PROPOSE_MEMORY_UNSUPPORTED = fixedPrompt({
@@ -409,4 +422,149 @@ export const MCP_PROPOSE_MEMORY_FAILED = fixedPrompt({
   layer: "tool-result",
   output: "free-text",
   text: "这次没能保存，请稍后再试；不要告诉主人已经存好了。",
+});
+
+export const MCP_TOOL_PROPOSE_RULE = fixedPrompt({
+  id: "mcp.propose-rule",
+  purpose:
+    "对外 MCP 写工具 propose_rule 的描述：外部 agent 提议一条邮件长期规则，主人在客户端确认后才生效",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "向主人提议在 Himawari 里立一条邮件长期规则，由程序每次检查邮件时执行。只有两种：mail_must_notify（这类邮件一定提醒主人并推送）和 mail_read_whole_thread（这类邮件判断前先读完整个邮件串）。params 写匹配条件：senderDomains 发件域名、senderAddresses 发件地址、phrases 词语、words 英文整词、excludePhrases 排除词；senderDomains、senderAddresses、phrases、words 至少给一项，只给 excludePhrases 不算；summary 用一句话写这条规则做什么；reason 写为什么提，主人说过的原话就照抄。调用后主人会在你所在的客户端里看到确认框，看到近 30 天会命中几封邮件，选同意才会生效；拒绝或取消就不生效。只能在能弹出确认框的交互会话里使用。",
+});
+
+export const MCP_PROPOSE_RULE_CONFIRM = templatePrompt({
+  id: "mcp.propose-rule-confirm",
+  purpose: "外部 agent 提议邮件长期规则时，客户端确认框里给主人看的说明",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  segments: [
+    text(
+      "让下面这条邮件长期规则生效？同意（Accept）就生效，之后可以在 Himawari 记忆页的「长期规则」里撤销；拒绝（Decline）就不生效。\n▍对方提议的规则（只占这一行）：",
+    ),
+    slot("summary"),
+    text("\n▍对方给的理由（只占这一行）："),
+    slot("reason"),
+    text("\n\n提议方："),
+    slot("client"),
+    text("（对方自称）\n做法："),
+    slot("kind"),
+    text("\n条件：\n"),
+    slot("conditions"),
+    text("\n\n"),
+    slot("replay"),
+  ],
+});
+
+export const MCP_PROPOSE_RULE_KIND_NOTIFY = fixedPrompt({
+  id: "mcp.propose-rule-kind-notify",
+  purpose: "确认框里 mail_must_notify 这种规则的说明",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "命中的邮件一定提醒你并推送到手机",
+});
+
+export const MCP_PROPOSE_RULE_KIND_WHOLE_THREAD = fixedPrompt({
+  id: "mcp.propose-rule-kind-whole-thread",
+  purpose: "确认框里 mail_read_whole_thread 这种规则的说明",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "命中的邮件先读完整个邮件串再判断，读不全就交给你看",
+});
+
+export const MCP_PROPOSE_RULE_CONDITIONS = templatePrompt({
+  id: "mcp.propose-rule-conditions",
+  purpose: "确认框里列出规则匹配条件的格式",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  segments: [
+    text("发件域名："),
+    slot("senderDomains"),
+    text("\n发件地址："),
+    slot("senderAddresses"),
+    text("\n词语："),
+    slot("phrases"),
+    text("\n英文整词："),
+    slot("words"),
+    text("\n排除词："),
+    slot("excludePhrases"),
+  ],
+});
+
+export const MCP_PROPOSE_RULE_REPLAY = templatePrompt({
+  id: "mcp.propose-rule-replay",
+  purpose: "确认框里规则在近期邮件上的回放数字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  segments: [
+    text("估计：近 "),
+    slot("days"),
+    text(" 天判断过的 "),
+    slot("checked"),
+    text(" 封邮件里，会命中 "),
+    slot("hit"),
+    text(" 封，其中 "),
+    slot("changed"),
+    text(" 封的处理会改变。"),
+  ],
+});
+
+export const MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE = fixedPrompt({
+  id: "mcp.propose-rule-replay-unavailable",
+  purpose: "规则回放算不出来时，确认框里的说明",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这次没能在近期邮件上试算，看不到会命中几封。",
+});
+
+export const MCP_PROPOSE_RULE_SAVED = fixedPrompt({
+  id: "mcp.propose-rule-saved",
+  purpose: "主人确认后规则已生效，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "主人已确认，这条规则已在 Himawari 生效，下一次检查邮件起执行。",
+});
+
+export const MCP_PROPOSE_RULE_ALREADY_SAVED = fixedPrompt({
+  id: "mcp.propose-rule-already-saved",
+  purpose: "同一次规则提议重发时，告诉外部 agent 之前已经处理过",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这次提议之前已经生效过，没有重复处理；主人之后撤销的，不会因为这次重发恢复。",
+});
+
+export const MCP_PROPOSE_RULE_DECLINED = fixedPrompt({
+  id: "mcp.propose-rule-declined",
+  purpose: "主人拒绝或取消规则提议时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "主人没有同意，这条规则没有生效。除非主人再次要求，不要重复提议同样的规则。",
+});
+
+export const MCP_PROPOSE_RULE_INVALID = fixedPrompt({
+  id: "mcp.propose-rule-invalid",
+  purpose: "提议的规则参数不合法时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "规则参数不合法，没有生效：type 只能是两种之一；params 里 senderDomains、senderAddresses、phrases、words 至少给一项（只给 excludePhrases 不算），每项最多 64 字（phrases、excludePhrases 每项至少 2 字）、每列最多 32 项，不能用正则或不可见字符；summary 1 到 200 字且不换行；reason 1 到 200 字。",
+});
+
+export const MCP_PROPOSE_RULE_FAILED = fixedPrompt({
+  id: "mcp.propose-rule-failed",
+  purpose: "让提议的规则生效时出错，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这次没能让规则生效，请稍后再试；不要告诉主人已经生效了。",
 });

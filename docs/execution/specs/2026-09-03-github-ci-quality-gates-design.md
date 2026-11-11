@@ -126,7 +126,7 @@ date: "2026-09-03"
 
 2026-11-06 起 CI 不再使用 GitHub 缓存，每个任务都从锁定的下载地址重新下载并校验，以免产生 GitHub 存储费（[ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)）。每次仍执行锁文件安装；不跨平台传递 `node_modules`。
 
-汇总作业 `ci/required` 核对通过后，删除本次运行本次尝试的全部 `report-` 产物（含各消费者复制的构建归档），只保留 `gate-` 汇总结论和 1 天的失败诊断；汇总失败时不删。只有该作业有 `actions: write` 权限（[ADR 0201](../../adr/0201-delete-run-reports-after-gate-passes.md)）。
+汇总作业 `ci/required` 核对通过后，删除本次运行本次尝试的全部 `report-` 产物（含各消费者复制的构建归档），只保留 `gate-` 汇总结论和 1 天的失败诊断；汇总失败时不删。`ci.yml` 里只有该作业有 `actions: write` 权限（[ADR 0201](../../adr/0201-delete-run-reports-after-gate-passes.md)）。`main.yml` 的 `full` 作业以可复用工作流（被别的工作流整个调用的工作流）的方式调用 `ci.yml`，被调用的工作流拿不到超过调用方的权限，所以 `full` 必须正好授予 `contents: read`、`actions: write`、`pull-requests: read`，否则整轮在启动前失败（事故 I-93）；`npm run check:ci-policy` 核对这一点。
 
 文档治理运行依赖放在仓库内的固定工具目录，保留上游 Skill 来源、许可依据、完整依赖闭包和内容摘要。采用原始 `validate_docs.py`、其导入模块及必需资源，不另写文档规则。更新由显式同步工具整体完成，CI 只读验证。来源或许可未明确时该任务未完成，不能静默跳过文档检查。
 
@@ -271,7 +271,7 @@ PR 记录 head SHA、base SHA 和实际 tested merge SHA，不擅自将 checkout
 
 同一 PR 的更新可取消较旧 CI。concurrency key 包含 workflow、event 和 PR/ref，避免不同 workflow 相互取消。默认分支交付记录使用唯一 run key，不取消前一个已开始的构建验证。矩阵 `fail-fast: false` 保留完整诊断，不降低总体失败条件。
 
-默认 `GITHUB_TOKEN` 只有 `contents: read`，checkout 使用 `persist-credentials: false`。确有 artifact 元数据读取需要的 job 单独申请 `actions: read`。不配置 write、`id-token: write` 或生产 Secret。Action 固定完整提交 SHA；工具下载验证摘要，直接调用锁定本地 executable，不让 `npx` 自动安装未知最新版。
+默认 `GITHUB_TOKEN` 只有 `contents: read`，checkout 使用 `persist-credentials: false`。确有 artifact 元数据读取需要的 job 单独申请 `actions: read`。除上文汇总作业和 `main.yml` 的 `full` 调用作业的 `actions: write` 外，不配置 write、`id-token: write` 或生产 Secret。Action 固定完整提交 SHA；工具下载验证摘要，直接调用锁定本地 executable，不让 `npx` 自动安装未知最新版。
 
 不使用 `pull_request_target` 执行 PR 代码，不通过有写权限的 `workflow_run` 接收并执行不可信产物。PR 标题、分支和其他用户输入通过环境变量传给受控参数解析，不直接拼接进 shell。报告始终按数据解析，禁止执行其中命令或解包路径穿越条目。
 

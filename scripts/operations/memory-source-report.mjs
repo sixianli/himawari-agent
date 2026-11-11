@@ -21,6 +21,7 @@ const STATE_EXPRESSION = `
     WHEN m.import_batch_id IS NOT NULL THEN 'import'
     WHEN m.id LIKE 'memory:owner:%' THEN 'owner'
     WHEN m.id LIKE 'memory:mcp:%' THEN 'external'
+    WHEN m.id LIKE 'memory:rule:mcp:%' THEN 'external'
     WHEN m.source_thread_id IS NOT NULL THEN
       CASE WHEN EXISTS (
         SELECT 1 FROM memory_provenance p

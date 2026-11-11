@@ -1,32 +1,32 @@
 import { createHash } from "node:crypto";
 import {
   ApplicationPortError,
+  type ClockPort,
   type DurableMemoryService,
-  PORT_ERROR_CODES,
+  enforceableOwnerRule,
   foldText,
   type MemoryBookStorePort,
-  type OwnerRuleStorePort,
-  ownerRuleRecord,
   OWNER_RULE_ID_PREFIX,
   OWNER_RULE_SUMMARY_LIMIT,
+  type OwnerRuleReplayResult,
+  type OwnerRuleStorePort,
+  ownerRuleRecord,
   type PayloadProtectorPort,
   type PayloadStorePort,
+  PORT_ERROR_CODES,
   type ProductConfiguration,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
-  type RuleRecord,
+  parseOwnerRuleParameters,
   RULE_TYPES,
+  type RuleRecord,
   RuleTypeError,
   type RuntimeToolDescriptor,
   type RuntimeToolInvocation,
-  writableRuleType,
-  enforceableOwnerRule,
-  parseOwnerRuleParameters,
-  validRuleSummary,
-  type ClockPort,
   type StoredOwnerRule,
   type ThreadRepositoryPort,
-  type OwnerRuleReplayResult,
+  validRuleSummary,
+  writableRuleType,
 } from "@himawari-agent/application";
 import { TOOL_RULE_LIST, TOOL_RULE_SET, TOOL_RULE_UNDO } from "@himawari-agent/prompt-catalog";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
@@ -132,7 +132,6 @@ export type OwnerRuleErrorCode =
   | "RULE_PARAMETERS_INVALID"
   | "RULE_NOT_FOUND"
   | "RULE_MEMORY_NOT_READY"
-  | "RULE_TEXT_REFUSED"
   | "RULE_LIMIT_REACHED"
   | "RULE_NOT_EXPLICIT"
   | "RULE_UNAVAILABLE";
@@ -246,6 +245,15 @@ interface Proposal {
   readonly summary: string;
   readonly quote: string;
   readonly threadId: string | null;
+  readonly source?: string;
+}
+
+export interface RulePreview {
+  readonly type: string;
+  readonly params: unknown;
+  readonly summary: string;
+  readonly trials: readonly RuleTrial[];
+  readonly replay: RuleReplay | null;
 }
 
 export interface ProductionOwnerRuleWriterOptions {
@@ -397,8 +405,7 @@ export class ProductionOwnerRuleWriter {
         }),
       );
     const payload = await this.#options.payloads.get(ref);
-    if (!payload || payload.dataClassification === "restricted")
-      throw new OwnerRuleError("RULE_TEXT_REFUSED");
+    if (!payload) throw new OwnerRuleError("RULE_UNAVAILABLE");
     return payload.dataClassification;
   }
 
@@ -519,7 +526,7 @@ export class ProductionOwnerRuleWriter {
         ...this.#scope(),
         ruleId,
         parameters: { type: parsed.type, params: parsed.params, summary: parsed.summary },
-        source: `chat:${proposal.threadId ?? "none"}`.slice(0, 256),
+        source: (proposal.source ?? `chat:${proposal.threadId ?? "none"}`).slice(0, 256),
         sourceMemoryId: memoryId,
         now: this.#options.clock.now(),
       })
@@ -559,6 +566,26 @@ export class ProductionOwnerRuleWriter {
     });
   }
 
+  async preview(input: {
+    readonly type: string;
+    readonly params: unknown;
+    readonly summary: string;
+  }): Promise<RulePreview> {
+    const draft = this.#draft(input.type, input.params, input.summary);
+    const parsed = parseOwnerRuleParameters({
+      type: input.type,
+      params: input.params,
+      summary: input.summary.trim(),
+    });
+    return Object.freeze({
+      type: parsed.type,
+      params: parsed.params,
+      summary: parsed.summary,
+      trials: trialsOf(draft),
+      replay: await this.#replay(draft),
+    });
+  }
+
   async create(input: {
     readonly key: string;
     readonly quote: string;
@@ -567,6 +594,7 @@ export class ProductionOwnerRuleWriter {
     readonly params: unknown;
     readonly summary: string;
     readonly threadId: string | null;
+    readonly source?: string;
   }): Promise<RuleReceipt> {
     const quote = input.quote.trim();
     const summary = input.summary.trim();
@@ -604,6 +632,7 @@ export class ProductionOwnerRuleWriter {
       summary,
       quote,
       threadId: input.threadId,
+      ...(input.source === undefined ? {} : { source: input.source }),
     };
     const explicit =
       !input.inferred && isStandingQuote(quote) && (await this.#ownerSaid(input.threadId, quote));
@@ -644,6 +673,11 @@ export class ProductionOwnerRuleWriter {
     if (text === undefined) throw new OwnerRuleError("RULE_NOT_FOUND");
     const proposal = JSON.parse(text) as Proposal;
     return this.#activate(proposal, null);
+  }
+
+  async storedFor(key: string): Promise<boolean> {
+    const ruleId = `${OWNER_RULE_ID_PREFIX}${hash(key).slice(0, 24)}`;
+    return (await this.#options.rules.read({ ...this.#scope(), ruleId })) !== undefined;
   }
 
   async list(): Promise<readonly ListedOwnerRule[]> {

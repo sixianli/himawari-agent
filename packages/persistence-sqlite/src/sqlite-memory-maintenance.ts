@@ -9,11 +9,13 @@ export interface MemoryReindexPlan {
   readonly idleArchivesToRestore: number;
   readonly indexedMemories: number;
   readonly activeMemories: number;
+  readonly embeddedEpisodes: number;
 }
 
 export interface MemoryReindexResult {
   readonly restored: number;
   readonly clearedIndexRows: number;
+  readonly clearedEpisodeVectors: number;
 }
 
 const IDLE_ARCHIVES = `SELECT c.id AS changeId, c.memory_id AS memoryId, c.after_revision AS revision
@@ -42,6 +44,12 @@ export function planMemoryReindex(
       database,
       `SELECT COUNT(*) FROM memory_records
         WHERE owner_id = @ownerId AND agent_id = @agentId AND status = 'active'`,
+      scope,
+    ),
+    embeddedEpisodes: count(
+      database,
+      `SELECT COUNT(*) FROM memory_episodes
+        WHERE owner_id = @ownerId AND agent_id = @agentId AND embedding IS NOT NULL`,
       scope,
     ),
   });
@@ -74,6 +82,12 @@ export function restoreIdleArchivesAndClearMemoryIndex(
     const clearedIndexRows = database
       .prepare("DELETE FROM memory_search_index WHERE owner_id = ? AND agent_id = ?")
       .run(input.ownerId, input.agentId).changes;
-    return Object.freeze({ restored, clearedIndexRows });
+    const clearedEpisodeVectors = database
+      .prepare(
+        `UPDATE memory_episodes SET embedding_model = NULL, embedding_dimensions = NULL, embedding = NULL
+          WHERE owner_id = ? AND agent_id = ? AND embedding IS NOT NULL`,
+      )
+      .run(input.ownerId, input.agentId).changes;
+    return Object.freeze({ restored, clearedIndexRows, clearedEpisodeVectors });
   })();
 }

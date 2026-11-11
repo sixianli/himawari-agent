@@ -8,3 +8,4 @@ export {
   GMAIL_MESSAGE_ID_PATTERN,
   modelRefString,
 } from "./validation.js";
+export * from "./memory-source.js";
