@@ -446,7 +446,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(output.recentDays.map(({ day }) => day)).toEqual(["2026-11-10"]);
     expect(output.recentDaysComplete).toBe(false);
     expect(f.summaryFailures.map((error) => (error as Error).message)).toEqual([
-      "MCP_READ_SUMMARY_TEXT_UNREADABLE",
+      "MCP_READ_SUMMARIES_INCOMPLETE",
     ]);
     expect(f.failures).toEqual([]);
     const [row] = await f.ledger();

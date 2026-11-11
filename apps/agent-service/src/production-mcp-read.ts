@@ -98,7 +98,7 @@ const SUMMARIES_FAILED: SummaryRead = Object.freeze({
   read: "failed",
 });
 
-const SUMMARY_TEXT_UNREADABLE = "MCP_READ_SUMMARY_TEXT_UNREADABLE";
+const SUMMARIES_INCOMPLETE = "MCP_READ_SUMMARIES_INCOMPLETE";
 
 const SUMMARIES_NOT_TRIED: SummaryRead = Object.freeze({
   ids: [],
@@ -354,7 +354,7 @@ export class ProductionMcpRead {
         days: TODAY_CONTEXT_SUMMARY_DAYS,
         limit: TODAY_CONTEXT_SUMMARY_LIMIT,
       });
-      if (found.partial) this.#options.onSummariesFailed(new Error(SUMMARY_TEXT_UNREADABLE));
+      if (found.partial) this.#options.onSummariesFailed(new Error(SUMMARIES_INCOMPLETE));
       const recentDays = found.summaries.map(({ day, text }) => ({ day, text }));
       return {
         output: { recentDays, ...(found.partial ? { recentDaysComplete: false } : {}) },
