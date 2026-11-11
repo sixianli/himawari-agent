@@ -496,6 +496,14 @@ export function validateWorkflow(policy, source, toolchain) {
       !job.steps.some((step) => /^actions\/download-artifact@/u.test(step.uses ?? "")),
       `Jobs must take reports and builds from the runner share, not GitHub artifacts: ${check.id}`,
     );
+    const uploadPath =
+      check.id === "required" ? ".ci-output/gate/" : ".ci-output/public/diagnostics/";
+    assert(
+      job.steps
+        .filter((step) => /^actions\/upload-artifact@/u.test(step.uses ?? ""))
+        .every((step) => step.with?.path === uploadPath && step.with?.["retention-days"] === 1),
+      `Jobs may upload only ${uploadPath} to GitHub for one day: ${check.id}`,
+    );
     if (check.id === "required") {
       assert(
         job.steps.some(

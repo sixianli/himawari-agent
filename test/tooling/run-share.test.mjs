@@ -100,7 +100,7 @@ describe("job 之间经 CI 服务器传文件", () => {
     );
   });
 
-  it("复制中途出错时也不留下半份文件", async () => {
+  it("复制后核对出错时也不留下半份文件", async () => {
     const digest = await put({
       root,
       run,
@@ -191,6 +191,20 @@ describe("job 之间经 CI 服务器传文件", () => {
       await expect(main(["collect", "--to", path.join(base, "c")], env)).rejects.toThrow(
         "CI_SHARE_COLLECT_INPUT_REQUIRED",
       );
+      const errors = [];
+      const write = process.stderr.write;
+      process.stderr.write = (text) => errors.push(String(text));
+      try {
+        const needs = { browser: { outputs: { chromium: "a".repeat(64) } } };
+        const summary = await main(["collect", "--to", path.join(base, "c")], {
+          ...env,
+          CI_NEEDS: JSON.stringify(needs),
+        });
+        expect(summary).toBe("CI_SHARE_COLLECT 0\nCI_SHARE_MISSING:browser-chromium");
+      } finally {
+        process.stderr.write = write;
+      }
+      expect(errors).toEqual(["CI_SHARE_COLLECT_MISSING CI_SHARE_MISSING:browser-chromium\n"]);
     } finally {
       process.umask(previous);
     }

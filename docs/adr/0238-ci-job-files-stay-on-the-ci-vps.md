@@ -61,7 +61,7 @@ CI（持续集成，每次推送后自动跑的检查）的七个作业之间要
    - `remove`：汇总作业最后一步，`if: always()`，不论成败都删掉本次运行的目录。
 2. **摘要走作业输出，不走 GitHub 产物。**每个作业成员把自己报告的摘要写进作业输出（键是成员名，例如 `linux-x64`、`chromium`、`default`）；`browser`、`coverage` 用 `needs.build.outputs.linux-x64` 取构建，汇总作业用整个 `needs` 收报告。摘要是 64 个十六进制字符，GitHub 只存这几十字节。
 3. **GitHub 上只留很小的东西：**汇总结论 `gate-`（几 KB，`main.yml` 的 `main-evidence.mjs` 要读）和失败时的诊断 `diagnostic-`（几 MB，保存 1 天）。不用 `actions/cache`、不用付费 runner、不开 GitHub 付费存储或预算。
-4. **任何作业都不再有写权限。**[ADR 0201](0201-delete-run-reports-after-gate-passes.md) 给汇总作业的 `actions: write` 收回；`scripts/ci/delete-run-reports.mjs`、`scripts/ci/artifact-output.mjs` 删除；`main.yml` 调用完整 CI 的 `full` 作业不再单独授予权限，沿用工作流级的只读权限。`scripts/ci/check-policy.mjs` 把这些写成硬规则：任何作业带写权限、用 `actions/download-artifact`、少了或多了存取步骤、作业输出和成员对不上，都失败；`scripts/ci/main-workflow.mjs` 拒绝 `full` 带权限。
+4. **任何作业都不再有写权限。**[ADR 0201](0201-delete-run-reports-after-gate-passes.md) 给汇总作业的 `actions: write` 收回；`scripts/ci/delete-run-reports.mjs`、`scripts/ci/artifact-output.mjs` 删除；`main.yml` 调用完整 CI 的 `full` 作业不再单独授予权限，沿用工作流级的只读权限。`scripts/ci/check-policy.mjs` 把这些写成硬规则：任何作业带写权限、用 `actions/download-artifact`、上传诊断目录（汇总作业是 `.ci-output/gate/`）以外的东西或保存超过 1 天、少了或多了存取步骤、作业输出和成员对不上，都失败；`scripts/ci/main-workflow.mjs` 拒绝 `full` 带权限。
 5. **两个 runner 共用这个目录，用一个专门的组隔开其他账号。**这修改了 [ADR 0176](0176-ci-on-ovh-vps.md) 里“每个 runner 只能写自己的三个目录”的隔离：
    - 安装脚本建系统组 `gh-ci-share`，建目录 `/srv/gh-runner-share`（属主 root、组 `gh-ci-share`、权限 `2770`，即组内可读写、新建的子目录自动继承组）。
    - 两个 runner 的服务用 `SupplementaryGroups=gh-ci-share` 拿到这个组（账号本身仍然只属于自己的组，安装脚本对“账号有多余的组”的检查不变），`ReadWritePaths` 加上这个目录，`HIMAWARI_CI_SHARE` 环境变量告诉脚本目录在哪。
@@ -89,7 +89,7 @@ CI（持续集成，每次推送后自动跑的检查）的七个作业之间要
 - CI VPS 磁盘每轮多占约 300 MB，汇总作业结束就删；最坏情况（汇总一直没跑完）每小时清理删掉 6 小时前的目录。任务开始前已有的 16 GiB 可用空间下限照样挡住磁盘不够的情况。
 - 两个 runner 的任务都能读写整个共享目录，所以一个任务能读、改、删共享目录里任何一轮运行的文件，不只是本轮的。仓库私有、只有 Andy 和他的代理线程推送，这和 [ADR 0176](0176-ci-on-ovh-vps.md) 接受“同一个 runner 上的任务互相能改”是同一个理由；摘要核对能发现文件在存和取之间被改，但挡不住有意改摘要的任务。
 - 只有 CI VPS 上的 runner 能跑这套 CI：作业要靠 `HIMAWARI_CI_SHARE` 和共享目录，换到 GitHub 托管的 runner 上会以 `CI_SHARE_ROOT_REQUIRED` 失败。这是有意的：Andy 不在 GitHub 上花钱。
-- 重跑一律重跑整轮（GitHub 的 “Re-run all jobs”）。“只重跑失败的作业”会换新的尝试号，但已成功的上游作业不重跑，新尝试号的目录里没有它们的文件，取构建或收报告时以 `CI_SHARE_MISSING` 失败；这和以前一样：汇总脚本 `scripts/ci/aggregate.mjs` 本来就要求每份报告的尝试号等于本次尝试号，不符时报 “rerun the complete workflow”。
+- 重跑一律重跑整轮（GitHub 的 “Re-run all jobs”）。“只重跑失败的作业”会换新的尝试号，但已成功的上游作业不重跑，新尝试号的目录里没有它们的文件：取构建的作业以 `CI_SHARE_MISSING` 失败，汇总作业收报告时列出缺失、由 `required.mjs` 判为失败；这和以前一样：汇总脚本 `scripts/ci/aggregate.mjs` 本来就要求每份报告的尝试号等于本次尝试号，不符时报 “rerun the complete workflow”。
 - 合并后要在 CI VPS 上运行一次安装脚本，才会有组和目录（运维手册写了原样命令）；装好之前，CI 会在第一个存文件的步骤以 `CI_SHARE_ROOT_REQUIRED` 失败。
 - `quality.yml` 仍然下载 `report-` 产物，但它按 [ADR 0176](0176-ci-on-ovh-vps.md) 停用；重新启用时要改成从共享目录取。
 

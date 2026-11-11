@@ -48,6 +48,7 @@ const lock = {
   actions: [
     checkout,
     { repository: "actions/download-artifact", sha: "d3f86a106a0bac45b974a628896c90dbdf5c8093" },
+    { repository: "actions/upload-artifact", sha: "ea165f8d65b6e75b540449e92b4886f43607fa02" },
   ],
 };
 const fixtures = [];
@@ -599,6 +600,33 @@ describe("CI policy contract", () => {
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
       `Jobs must take reports and builds from the runner share, not GitHub artifacts: ${id}`,
     );
+  });
+  it.each([
+    ["static", ".ci-output/public/reports/", 1],
+    ["static", ".ci-output/public/", 1],
+    ["static", ".ci-output/public/diagnostics/", 7],
+    ["required", ".ci-output/reports/", 1],
+    ["required", ".ci-output/public/diagnostics/", 1],
+  ])("rejects a %s upload of %s kept %s days", (id, uploadPath, days) => {
+    const value = workflow();
+    value.jobs[id].steps.push({
+      uses: `actions/upload-artifact@${lock.actions.find((entry) => entry.repository === "actions/upload-artifact").sha}`,
+      with: { name: "x", path: uploadPath, "retention-days": days },
+    });
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(`Jobs may upload only`);
+  });
+  it("accepts one-day diagnostics uploads and the gate upload", () => {
+    const value = workflow();
+    const upload = `actions/upload-artifact@${lock.actions.find((entry) => entry.repository === "actions/upload-artifact").sha}`;
+    value.jobs.static.steps.push({
+      uses: upload,
+      with: { name: "d", path: ".ci-output/public/diagnostics/", "retention-days": 1 },
+    });
+    value.jobs.required.steps.push({
+      uses: upload,
+      with: { name: "g", path: ".ci-output/gate/", "retention-days": 1 },
+    });
+    expect(() => validateWorkflow(policy, stringify(value), lock)).not.toThrow();
   });
   it("accepts read-only permissions on the gate job", () => {
     const value = workflow();

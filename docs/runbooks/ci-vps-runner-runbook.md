@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:e5704cc7ababcebecb21a2d65dfae8c989357250b8c2d70bd0a41cd928908bf3"
+contract_sha256: "sha256:f49586e37cfcff6a7b2f6e802d6cc5727f1ab35af95791c0769678dbe56b6c7b"
 supersedes: "docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md"
 superseded_by: ""
 date: "2026-11-07"
@@ -257,8 +257,9 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 | 任务装浏览器时要 root | 看是否用了 `playwright install --with-deps` | 准备脚本已装好浏览器的系统库，workflow 里去掉 `--with-deps`；Playwright 升级后重新运行 `prepare-vps.sh`（先把里面的版本号改成新的）。 |
 | CI 作业在“放进 CI 服务器”或“取构建”步骤失败，报 `CI_SHARE_ROOT_REQUIRED` 或 `CI_SHARE_ROOT_INVALID` | `stat -c '%a %U %G' /srv/gh-runner-share`；`systemctl show gh-runner.service -p SupplementaryGroups -p Environment` | 共享目录或组没装：先 `pause-runners.sh`，再重新运行 `install-runner.sh`，最后 `resume-runners.sh`。 |
 | 一个 runner 取另一个 runner 放的文件时报 `EACCES`（没有权限） | `stat -c '%a %U %G' /srv/gh-runner-share` 应为 `2770 root gh-ci-share`；`ls -ld /srv/gh-runner-share/*` 的组都应是 `gh-ci-share` | 共享目录的 setgid 位（让子目录继承组的权限位）丢了：先 `pause-runners.sh`，重新运行 `install-runner.sh`，删掉组不对的运行目录，再 `resume-runners.sh`。 |
-| 报 `CI_SHARE_DIGEST_MISMATCH:<名字>` 或 `CI_SHARE_MISSING:<名字>` | 看同一轮里那个上游作业有没有成功；`ls -la /srv/gh-runner-share/<运行号-尝试号>/` | 上游没跑完、或用了“只重跑失败的作业”，都是缺失，重跑整轮（Re-run all jobs）；摘要不符说明文件在存和取之间被改了，保留现场、先报告。 |
+| 报 `CI_SHARE_DIGEST_MISMATCH:<名字>` 或 `CI_SHARE_MISSING:<名字>` | 看同一轮里那个上游作业有没有成功；`ls -la /srv/gh-runner-share/<运行号-尝试号>/` | 上游没跑完、或用了“只重跑失败的作业”，都是缺失，重跑整轮（Re-run all jobs）；摘要不符说明文件在存和取之间被改了，先报告。共享目录里的文件在这一轮 `ci/required` 结束时已被删掉，能留下的只有作业日志：放文件的作业日志里有 `CI_SHARE_PUT <名字> <摘要>`，汇总日志里有 `CI_SHARE_COLLECT_MISSING`，记下运行号和这两行。 |
 | `gh-runner-nft.service` 失败，runner 服务起不来 | `systemctl status gh-runner-nft.service`；`sudo -n nft -c -f /etc/gh-runner/nft.rules` | 规则文件坏了就重新运行 `install-runner.sh` 生成。 |
+| 安装脚本以退出码 71 拒绝（`refusing to take over`；注意 `prepare-vps.sh` 的 71 是另一件事） | `getent group gh-ci-share`；`ls -la /srv/gh-runner-share` | 组不存在而共享目录已存在，安装脚本不接管别人建的目录。先查清目录是谁建的、里面有什么；确认没用后手动移走（不要用 `uninstall-runner.sh all`，它会删掉这个目录），再重新运行安装脚本。 |
 | 安装脚本以退出码 70 拒绝 | 输出里点名的服务 | 有 runner 服务在运行；先在 Mac 上运行 `pause-runners.sh`，装完再 `resume-runners.sh`。 |
 | bwrap 报 `Operation not permitted` 或 `setting up uid map` | `sysctl -n kernel.apparmor_restrict_unprivileged_userns`；`sudo aa-status \| grep bwrap` | `/etc/apparmor.d/bwrap` 没加载或被改过。重新运行 `prepare-vps.sh`；不要关掉全局开关。 |
 | 两个任务同时跑时任务被系统杀掉或测试变慢、超时 | `cat /sys/fs/cgroup/gh.slice/gh-runners.slice/memory.events`（systemd 按名字里的 `-` 把它放在 `gh.slice` 下面） 看 `oom_kill`；`systemctl show gh-runners.slice -p MemoryCurrent` | 合计 20 GB 不够用的迹象。记录下来报告 Andy，由 Andy 决定是否改为只跑一个 runner；不自行调高上限。 |
