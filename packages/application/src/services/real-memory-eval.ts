@@ -126,7 +126,7 @@ function chineseNumber(value: string): number | null {
 }
 
 const PART_OF_DAY = /(凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|夜里|夜裡|半夜|深夜|午夜)\s*$/u;
-const AFTER_HOUR = /^\s*(钟|鐘|整|半|[0-9〇零一二三四五六七八九十]+\s*分)/u;
+const AFTER_HOUR = /^\s*(钟|鐘|整|半|[0-9〇零一二三四五六七八九十几幾]+\s*分)/u;
 
 function oneMeansHour(text: string, start: number, end: number): boolean {
   return (

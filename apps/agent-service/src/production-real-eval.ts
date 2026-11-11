@@ -1,5 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import {
   type DecisionLedgerPort,
@@ -94,7 +104,7 @@ interface InProgressRun {
   readonly capMicros: number;
 }
 
-function inProgressRun(text: string): InProgressRun | undefined {
+function inProgressRun(text: string, now: string): InProgressRun | undefined {
   let value: Partial<InProgressRun>;
   try {
     value = JSON.parse(text) as Partial<InProgressRun>;
@@ -109,6 +119,7 @@ function inProgressRun(text: string): InProgressRun | undefined {
     typeof value.startedAt !== "string" ||
     !Number.isFinite(Date.parse(value.startedAt)) ||
     new Date(value.startedAt).toISOString() !== value.startedAt ||
+    Date.parse(value.startedAt) > Date.parse(now) ||
     (value.trigger !== "manual" && value.trigger !== "weekly") ||
     !Number.isSafeInteger(value.capMicros) ||
     (value.capMicros ?? -1) < 0
@@ -141,9 +152,10 @@ export async function readUnfinishedRealEvals(
     if (!found) continue;
     const text = await readFile(file, "utf8").catch(missing);
     if (text === undefined) continue;
-    const run = inProgressRun(text) ?? {
+    if (found.mtimeMs > Date.parse(now)) await utimes(file, new Date(now), new Date(now));
+    const run = inProgressRun(text, now) ?? {
       runId: "",
-      startedAt: new Date(found.mtimeMs).toISOString(),
+      startedAt: new Date(Math.min(found.mtimeMs, Date.parse(now))).toISOString(),
       trigger: "weekly" as const,
       capMicros: weeklyCapMicros,
     };

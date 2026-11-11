@@ -141,6 +141,7 @@ describe("[P4-5] generated questions are untrusted", () => {
     expect(leaksAnswer("我一点都不喜欢什么？", ["主人一点也不喜欢香菜"])).toBe(false);
     expect(leaksAnswer("我下午一点做什么？", ["主人 1 点起床"])).toBe(true);
     expect(leaksAnswer("我一点钟做什么？", ["主人 1:00 午睡"])).toBe(true);
+    expect(leaksAnswer("我一点几分出门？", ["主人 1:05 出门"])).toBe(true);
     expect(leaksAnswer("我一点半做什么？", ["主人一点也不想做事"])).toBe(false);
   });
 

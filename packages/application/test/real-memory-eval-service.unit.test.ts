@@ -146,6 +146,7 @@ function harness(options: {
   readonly recallEstimateMicros?: number;
   readonly failAnswer?: boolean;
   readonly questionOutput?: string;
+  readonly unreadable?: string;
 }): Harness {
   const store = new MemoryStore();
   if (options.addQuestion === "duplicate") store.addQuestion = async () => false;
@@ -211,7 +212,10 @@ function harness(options: {
     maxSelectedMemories: 2,
     recallEstimateMicros: options.recallEstimateMicros ?? 0,
     listMemories: async () => state.memories,
-    readMemoryText: async (record) => sourceOf(record)?.text,
+    readMemoryText: async (record) => {
+      if (record.id === options.unreadable) throw new Error("DECRYPT_FAILED");
+      return sourceOf(record)?.text;
+    },
     readQuote: async (record) => sourceOf(record)?.quote,
     storeQuestion: async ({ text }) => {
       const ref = `question:${stored++}`;
@@ -397,6 +401,22 @@ describe("[P4-5] real memory eval run", () => {
     expect(test.discarded).toEqual(["question:0", "question:1"]);
     expect(test.payloads.size).toBe(0);
     expect(retried.summary).toMatchObject({ undiscarded: [] });
+  });
+
+  it("skips a memory whose text cannot be read or has no source and asks about the rest", async () => {
+    const test = harness({
+      memories: [memory("aaa-missing"), memory("coffee"), memory("flight")],
+      unreadable: "coffee",
+    });
+    const first = await test.service.run("weekly", { ...LIMITS, newMemoriesPerRun: 2 });
+    expect(first.outcome).toBe("completed");
+    expect(first.summary).toMatchObject({
+      rejected: { source_missing: 1, source_unreadable: 1 },
+      declined: ["aaa-missing@1", "coffee@1"],
+    });
+    const second = await test.service.run("weekly", { ...LIMITS, newMemoriesPerRun: 2 });
+    expect(second.outcome).toBe("completed");
+    expect(test.store.questions.map(({ memoryId }) => memoryId)).toContain("flight");
   });
 
   it("does not ask again about a memory version the bank already holds", async () => {

@@ -647,6 +647,45 @@ describe("[P4-5] real eval leftovers", () => {
     expect(await readdir(directory)).toEqual([]);
   });
 
+  it("treats a marker dated in the future as unreadable and lets it expire", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-real-eval-"));
+    directories.push(directory);
+    const marker = path.join(directory, `${REAL_EVAL_IN_PROGRESS_PREFIX}future.json`);
+    await writeFile(
+      marker,
+      JSON.stringify({
+        runId: "run-future",
+        startedAt: at(365 * REAL_EVAL_INTERVAL_MS),
+        trigger: "weekly",
+        capMicros: 1,
+      }),
+    );
+    const future = new Date(Date.parse(NOW) + 365 * REAL_EVAL_INTERVAL_MS);
+    await utimes(marker, future, future);
+    const limits: number[] = [];
+    const tick = (now: string) =>
+      new ProductionRealEval({
+        configuration,
+        scope: { ownerId: "owner", agentId: "agent" } as never,
+        store: { listRuns: async () => [] },
+        service: {
+          run: async (_trigger, input) => {
+            limits.push(input.capMicros);
+            return { runId: "run-2", outcome: "completed", costMicros: 1, summary: {}, sample: [] };
+          },
+        },
+        sampleDirectory: directory,
+        now: () => now,
+      }).tick();
+    await tick(at(2 * REAL_EVAL_RETRY_MS));
+    expect(limits).toEqual([]);
+    await tick(at(2 * REAL_EVAL_RETRY_MS + REAL_EVAL_INTERVAL_MS - 1));
+    expect(limits).toEqual([]);
+    await tick(at(2 * REAL_EVAL_RETRY_MS + REAL_EVAL_INTERVAL_MS));
+    expect(limits).toEqual([500_000]);
+    expect(await readdir(directory)).toEqual([]);
+  });
+
   it("removes week-old markers while the evaluation is off", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "himawari-real-eval-"));
     directories.push(directory);

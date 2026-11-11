@@ -208,6 +208,18 @@ export class RealMemoryEvalService {
       return result.output;
     };
 
+    const readSource = async (memory: ProductMemoryRecord) => {
+      try {
+        return {
+          text: await deps.readMemoryText(memory),
+          quote: await deps.readQuote(memory),
+          unreadable: false,
+        };
+      } catch {
+        return { text: undefined, quote: undefined, unreadable: true };
+      }
+    };
+
     try {
       const recentRuns = await deps.store.listRuns({
         ...deps.scope,
@@ -248,12 +260,14 @@ export class RealMemoryEvalService {
         startedAt,
         limits.newMemoriesPerRun,
       )) {
-        const text = await deps.readMemoryText(memory);
-        const quote = await deps.readQuote(memory);
-        if (text === undefined || quote === undefined) {
-          rejected["source_missing"] = (rejected["source_missing"] ?? 0) + 1;
+        const source = await readSource(memory);
+        if (source.text === undefined || source.quote === undefined) {
+          const reason = source.unreadable ? "source_unreadable" : "source_missing";
+          rejected[reason] = (rejected[reason] ?? 0) + 1;
+          declined.push(declinedKey(memory.id, memory.revision));
           continue;
         }
+        const { text, quote } = source;
         const output = await call(
           questionPrompt({ memory: text, quote }),
           QUESTION_OUTPUT_TOKENS,
@@ -316,9 +330,12 @@ export class RealMemoryEvalService {
       const profile = await deps.profile();
       for (const { question, panel } of pending) {
         const memory = byId.get(question.memoryId);
-        const questionText = await deps.readQuestion(question.questionRef);
-        const text = memory ? await deps.readMemoryText(memory) : undefined;
-        const quote = memory ? await deps.readQuote(memory) : undefined;
+        const questionText = await deps
+          .readQuestion(question.questionRef)
+          .catch((): undefined => undefined);
+        const { text, quote } = memory
+          ? await readSource(memory)
+          : { text: undefined, quote: undefined };
         if (!memory || questionText === undefined || text === undefined || quote === undefined) {
           unanswerable += 1;
           continue;
