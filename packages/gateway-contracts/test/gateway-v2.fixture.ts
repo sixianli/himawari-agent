@@ -578,6 +578,7 @@ export const governanceMessages = [
     tidyUps: [
       {
         changeId: "memory-consolidation:agent-01:2026-09-11:c1",
+        memoryId: "memory-02",
         action: "merge",
         text: "主人的女儿叫小葵",
         relatedText: "主人的女儿名叫小葵",

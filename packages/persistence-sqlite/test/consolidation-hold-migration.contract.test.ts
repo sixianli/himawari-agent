@@ -41,12 +41,16 @@ function dump(database: Database) {
     ),
     schemaNames: database
       .prepare(
-        `SELECT type, name, tbl_name FROM sqlite_master
+        `SELECT type, name, tbl_name, sql FROM sqlite_master
          WHERE tbl_name IN (${TABLES.map(() => "?").join(", ")})
-           AND type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_autoindex%'
+           AND name NOT LIKE 'sqlite_autoindex%'
          ORDER BY name`,
       )
-      .all(...TABLES),
+      .all(...TABLES)
+      .map((row) => {
+        const entry = row as { sql: string | null };
+        return { ...entry, sql: entry.sql?.replace(/\s+/gu, " ").replace(/, 'hold'/gu, "") };
+      }),
   };
 }
 

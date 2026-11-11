@@ -1735,8 +1735,8 @@ function TimelineTab({
     change?: number;
     show?: () => void;
   };
-  const pending = new Set(
-    overview.memories.filter((item) => item.tentative).map((item) => item.text),
+  const waiting = new Set(
+    overview.memories.filter((item) => item.tentative).map((item) => item.memoryId),
   );
   const everything: Event[] = [
     ...memoryHeads(overview.memories).flatMap((head) =>
@@ -1779,10 +1779,11 @@ function TimelineTab({
         text: item.text,
         note: item.relatedText ? message("memory.tidyKept", { text: item.relatedText }) : "",
         undone: item.undone,
-        ...(item.action === "hold" && !pending.has(item.text)
+        ...(item.action === "hold" && !waiting.has(item.memoryId)
           ? {}
           : { undo: () => void memory.undoTidy(item) }),
-        confirm: item.action === "reflect" || item.action === "hold",
+        confirm:
+          (item.action === "reflect" || item.action === "hold") && waiting.has(item.memoryId),
       }),
     ),
     ...overview.imports.map(
@@ -1848,7 +1849,7 @@ function TimelineTab({
                   {message("memory.undo")}
                 </ActionButton>
               ) : null}
-              {event.confirm && pending.has(event.text) ? (
+              {event.confirm ? (
                 <ActionButton variant="quiet" onClick={onConfirm}>
                   {message("memory.page.goConfirm")}
                 </ActionButton>

@@ -758,7 +758,7 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {すべて} new {新規} drop {覚えない・削除} tidy {記憶の整理} correct {訂正} other {インポート}}",
   "memory.page.event":
-    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} hold {確認待ち} other {推測}}",
+    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} hold {食い違いを発見} other {推測}}",
   "memory.page.imported":
     "{source, select, codex {Codex} assistant {他の AI} other {Himawari のエクスポート}}から {count} 件インポート",
   "memory.page.goConfirm": "確認する",
@@ -1097,7 +1097,7 @@ export const messages = {
   "decision.chain.basis": "推測の根拠",
   "decision.chain.basisCut": "根拠を読み切れていません（多すぎるか読み取りエラー）",
   "decision.chain.action":
-    "{a, select, merge {統合} supersede {置き換え} archive {アーカイブ} reflect {要約} hold {確認待ち} other {整理}}",
+    "{a, select, merge {統合} supersede {置き換え} archive {アーカイブ} reflect {要約} hold {食い違いを発見} other {整理}}",
   "decision.chain.repeated": "重複",
   "decision.chain.nodeCut": "この先にもあります",
   "decision.email.open": "このメールを見る",

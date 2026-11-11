@@ -1229,6 +1229,7 @@ const memoryOverviewSnapshotSchema = object({
     tidyUps: array(
       object({
         changeId: machineString,
+        memoryId: machineString,
         action: enumeration(["merge", "supersede", "archive", "reflect", "hold"]),
         text: boundedString(2000),
         relatedText: nullable(boundedString(2000)),

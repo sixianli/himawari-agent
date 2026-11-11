@@ -774,6 +774,19 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
           ["hold", "consolidation_hold", "pet-new", ["pet-new", "pet-old"], ["pet-new"]],
         ].sort(),
       );
+      const pool = await resource.repository.decisionLedger().listReviewPool({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        since: "1970-01-01T00:00:00.000Z",
+        ratedSince: "2026-10-25T00:00:00.000Z",
+        limit: 50,
+      });
+      expect(
+        pool
+          .filter(({ kind, outcome }) => kind === "consolidation" && outcome === "hold")
+          .map(({ subjectRef }) => subjectRef)
+          .sort(),
+      ).toEqual(["milk-new", "pet-new"]);
       await resource.memory.runProjectionBatch(50);
       expect(await resource.searchable("出差便利店牛奶")).not.toContain("milk-new");
       expect(await resource.searchable("出差便利店牛奶", "only")).toContain("milk-new");
