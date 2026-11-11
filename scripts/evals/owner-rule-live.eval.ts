@@ -5,6 +5,7 @@ import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { describe, expect, it } from "vitest";
 import {
   isStandingQuote,
+  quotesWholeClauses,
   ownerRuleToolDescriptors,
 } from "../../apps/agent-service/src/production-owner-rules.ts";
 import { ownerRuleRecord } from "../../packages/application/src/rules/rule-types.ts";
@@ -17,6 +18,7 @@ const GATEWAY = process.env["EVAL_BASE_URL"] ?? "https://opencode.ai/inference/g
 const MODELS = (process.env["EVAL_MODELS"] ?? "deepseek-v4.1-flash,glm-5.3-flash").split(",");
 const RUNS = Number(process.env["EVAL_RUNS"] ?? "3");
 const CAP_USD = Number(process.env["EVAL_CONFIRM_COST"] ?? "0");
+const MINIMUM_PASS_SHARE = Number(process.env["EVAL_MINIMUM_PASS_SHARE"] ?? "1");
 const OUTPUT_DIRECTORY = process.env["EVAL_OUT"] ?? "evals/owner-rule";
 const PRICES: Record<string, { input: number; output: number; cacheRead: number }> = {
   "deepseek-v4.1-flash": { input: 0.15e-6, output: 0.6e-6, cacheRead: 0.003e-6 },
@@ -143,11 +145,11 @@ function grade(item: Case, message: Record<string, unknown>): Omit<Outcome, "mod
     return { caseId: item.id, pass: false, reasons: ["参数不是 JSON"], call: calls[0] };
   }
   if (args["type"] !== item.expect) reasons.push(`type=${String(args["type"])}`);
-  if (item.expect === "soft")
-    return { caseId: item.id, pass: !reasons.length, reasons, call: args };
   const quote = String(args["quote"] ?? "");
   if (args["inferred"] !== false) reasons.push("标成了推断");
-  if (!item.sentence.includes(quote)) reasons.push("quote 不是原话");
+  if (!quotesWholeClauses(item.sentence, quote)) reasons.push("quote 不是主人原话里的整句");
+  if (item.expect === "soft")
+    return { caseId: item.id, pass: !reasons.length, reasons, call: args };
   if (!isStandingQuote(quote)) reasons.push("quote 没有表示一直有效的字样");
   let rule: ReturnType<typeof ownerRuleRecord>;
   try {
@@ -206,5 +208,7 @@ describe("owner rule live eval", () => {
       `${JSON.stringify({ gateway: GATEWAY, runs: RUNS, spentUsd, summary, outcomes }, null, 2)}\n`,
     );
     console.log(JSON.stringify({ spentUsd, summary }, null, 2));
+    for (const { model, passed, total } of summary)
+      expect(passed / total, model).toBeGreaterThanOrEqual(MINIMUM_PASS_SHARE);
   });
 });

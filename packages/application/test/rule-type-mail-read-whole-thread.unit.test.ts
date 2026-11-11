@@ -94,6 +94,9 @@ describe("[rule-type:mail_read_whole_thread]", () => {
     ).toThrow(RuleTypeError);
     expect(() => record({ ...REFUND, params: { phrases: ["退"] } })).toThrow(RuleTypeError);
     expect(() => record({ ...REFUND, params: { phrases: ["返‮金"] } })).toThrow(RuleTypeError);
+    expect(() => record({ ...REFUND, summary: "退款\u2028整串" })).toThrow(RuleTypeError);
+    expect(() => record({ ...REFUND, summary: "😀".repeat(101) })).toThrow(RuleTypeError);
+    expect(record({ ...REFUND, summary: "😀".repeat(100) }).id).toBe("owner:refund");
   });
 
   it("matches the same mail the judge sees through the generated expression", () => {

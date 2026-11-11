@@ -21,6 +21,7 @@ import {
   writableRuleType,
   enforceableOwnerRule,
   parseOwnerRuleParameters,
+  validRuleSummary,
   type ClockPort,
   type StoredOwnerRule,
   type ThreadRepositoryPort,
@@ -45,7 +46,7 @@ const QUOTE_LIMIT = 500;
 const QUOTE_MINIMUM = 4;
 const CLAUSE_BREAK = /[\n\r。！？!?；;，,、…：:]+/u;
 const OWNER_MESSAGES_CHECKED = 6;
-const MESSAGES_SCANNED = 24;
+const MESSAGES_SCANNED = 200;
 const SET_ARGUMENTS = ["quote", "inferred", "type", "params", "summary"];
 const ACTIVE_RULE_LIMIT = 32;
 const STANDING_MARKERS = [
@@ -73,6 +74,25 @@ const STANDING_MARKERS = [
   "from now on",
   "whenever",
   "must",
+].map(foldText);
+const ONE_OFF_MARKERS = [
+  "这封",
+  "这一封",
+  "这条",
+  "这次",
+  "这回",
+  "本次",
+  "今天",
+  "今晚",
+  "この",
+  "今回",
+  "今日",
+  "this one",
+  "this time",
+  "this email",
+  "this mail",
+  "today",
+  "tonight",
 ].map(foldText);
 
 type MemoryId = ProductMemoryRecord["id"];
@@ -205,7 +225,7 @@ interface Proposal {
 export interface ProductionOwnerRuleWriterOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
   readonly rules: OwnerRuleStorePort;
-  readonly memory: Pick<DurableMemoryService, "applyProposal" | "archive">;
+  readonly memory: Pick<DurableMemoryService, "applyProposal" | "archive" | "recover">;
   readonly book: Pick<MemoryBookStorePort, "latestGeneration">;
   readonly threads: Pick<ThreadRepositoryPort, "read" | "listMessages">;
   readonly payloads: PayloadStorePort;
@@ -231,7 +251,10 @@ function trialsOf(rule: RuleRecord): readonly RuleTrial[] {
 
 export function isStandingQuote(quote: string): boolean {
   const folded = foldText(quote);
-  return STANDING_MARKERS.some((marker) => folded.includes(marker));
+  return (
+    STANDING_MARKERS.some((marker) => folded.includes(marker)) &&
+    !ONE_OFF_MARKERS.some((marker) => folded.includes(marker))
+  );
 }
 
 function clausesOf(text: string): readonly string[] {
@@ -239,6 +262,11 @@ function clausesOf(text: string): readonly string[] {
     .split(CLAUSE_BREAK)
     .map((clause) => clause.replace(/\s+/gu, ""))
     .filter((clause) => clause.length > 0);
+}
+
+export function quotesWholeClauses(text: string, quote: string): boolean {
+  const wanted = clausesOf(quote);
+  return Array.from(wanted.join("")).length >= QUOTE_MINIMUM && saysWholeClauses(text, wanted);
 }
 
 function saysWholeClauses(text: string, quote: readonly string[]): boolean {
@@ -305,14 +333,12 @@ export class ProductionOwnerRuleWriter {
       Math.max(0, thread.messageWatermark - MESSAGES_SCANNED),
       MESSAGES_SCANNED,
     );
-    const wanted = clausesOf(quote);
-    if (Array.from(wanted.join("")).length < QUOTE_MINIMUM) return false;
     const owners = messages
       .filter(({ role, status }) => role === "owner" && status === "committed")
       .slice(-OWNER_MESSAGES_CHECKED);
     for (const message of owners) {
       const text = await this.#readText(message.contentRef);
-      if (text !== undefined && saysWholeClauses(text, wanted)) return true;
+      if (text !== undefined && quotesWholeClauses(text, quote)) return true;
     }
     return false;
   }
@@ -349,7 +375,7 @@ export class ProductionOwnerRuleWriter {
     const memoryId = `memory:rule:${input.key}` as MemoryId;
     const contentRef = `memory-content:rule:${input.key}`;
     const classification = await this.#writeText(contentRef, input.text);
-    await this.#options.memory.applyProposal(
+    const written = await this.#options.memory.applyProposal(
       {
         decision: "create",
         memory: {
@@ -375,6 +401,8 @@ export class ProductionOwnerRuleWriter {
       },
       generation,
     );
+    if (written.status === "archived" || written.status === "trashed")
+      await this.#options.memory.recover(memoryId, generation);
     return memoryId;
   }
 
@@ -453,6 +481,21 @@ export class ProductionOwnerRuleWriter {
         await this.#archiveMemory(memoryId);
         throw error;
       });
+    const stored =
+      outcome === "replayed"
+        ? await this.#options.rules.read({ ...this.#scope(), ruleId })
+        : undefined;
+    if (stored?.status === "retired") {
+      const revived = await this.#options.rules.setStatus({
+        ...this.#scope(),
+        ruleId,
+        status: "active",
+        expectedRevision: stored.revision,
+        reason: "owner_confirmed",
+        now: this.#options.clock.now(),
+      });
+      if (!revived) throw new OwnerRuleError("RULE_UNAVAILABLE");
+    }
     return Object.freeze({
       status: "active",
       ruleId,
@@ -481,8 +524,7 @@ export class ProductionOwnerRuleWriter {
     if (quote.length === 0 || quote.length > QUOTE_LIMIT || /\p{Surrogate}/u.test(quote))
       throw new OwnerRuleError("RULE_INPUT_INVALID", "quote");
     if (input.type === SOFT_TYPE) {
-      if (summary.length === 0 || Array.from(summary).length > OWNER_RULE_SUMMARY_LIMIT)
-        throw new OwnerRuleError("RULE_INPUT_INVALID", "summary");
+      if (!validRuleSummary(summary)) throw new OwnerRuleError("RULE_INPUT_INVALID", "summary");
       if (input.inferred || !(await this.#ownerSaid(input.threadId, quote)))
         throw new OwnerRuleError("RULE_NOT_EXPLICIT", "偏好只记主人的原话");
       const memoryId = await this.#writeMemory({
@@ -523,7 +565,13 @@ export class ProductionOwnerRuleWriter {
       summary,
     });
     const proposalId = `rule-proposal:${hash(
-      JSON.stringify([this.#scope().ownerId, normalized.type, normalized.params]),
+      JSON.stringify([
+        this.#scope().ownerId,
+        normalized.type,
+        normalized.params,
+        normalized.summary,
+        quote,
+      ]),
     ).slice(0, 32)}`;
     await this.#writeText(proposalId, JSON.stringify(proposal));
     return Object.freeze({
@@ -621,18 +669,19 @@ export class ProductionOwnerRuleWriter {
     const current = await this.#options.rules.read({ ...this.#scope(), ruleId });
     if (!current) throw new OwnerRuleError("RULE_NOT_FOUND");
     const { type, summary } = summaryOf(current.parameters);
-    if (current.status !== "retired") {
+    if (current.sourceMemoryId) await this.#archiveMemory(current.sourceMemoryId as MemoryId);
+    const latest = await this.#options.rules.read({ ...this.#scope(), ruleId });
+    if (latest && latest.status !== "retired") {
       const changed = await this.#options.rules.setStatus({
         ...this.#scope(),
         ruleId,
         status: "retired",
-        expectedRevision: current.revision,
+        expectedRevision: latest.revision,
         reason: "owner_undo",
         now: this.#options.clock.now(),
       });
       if (!changed) throw new OwnerRuleError("RULE_UNAVAILABLE");
     }
-    if (current.sourceMemoryId) await this.#archiveMemory(current.sourceMemoryId as MemoryId);
     return Object.freeze({
       ruleId,
       type,

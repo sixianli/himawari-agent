@@ -1851,6 +1851,7 @@ describe("production memory capture", () => {
     for (const [name, args] of [
       ["not said", { quote: "订阅相关的以后必须提醒我" }],
       ["fragment of a one-off sentence", { quote: "必须提醒我" }],
+      ["whole one-off clause", { quote: "这封必须提醒我" }],
       ["no standing words", { quote: "入管局相关的邮件" }],
       ["inferred", { quote: sentence, inferred: true }],
     ] as const) {
@@ -1862,7 +1863,12 @@ describe("production memory capture", () => {
       expect(proposed["proposalId"], name).toMatch(/^rule-proposal:[0-9a-f]{32}$/u);
       proposals.add(proposed["proposalId"]);
     }
-    expect(proposals.size).toBe(1);
+    expect(proposals.size).toBe(5);
+    const again = await set(
+      { quote: "必须提醒我", params: { senderDomains: ["moj.go.jp"] } },
+      "call-fragment-again",
+    );
+    expect(proposals.has(again["proposalId"])).toBe(true);
     await expect(
       set({ quote: sentence, summary: "入管局\n一律提醒", params: immigration }, "call-newline"),
     ).rejects.toMatchObject({ code: "RULE_PARAMETERS_INVALID" });
@@ -1878,6 +1884,23 @@ describe("production memory capture", () => {
       "confirm-1",
     );
     expect(await listed()).toHaveLength(2);
+    const confirmed = (await listed()).find(({ ruleId }) => ruleId !== created["ruleId"]);
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: confirmed?.ruleId, action: "undo" },
+      "undo-confirmed",
+    );
+    expect(await listed()).toHaveLength(1);
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: proposal["proposalId"], action: "confirm" },
+      "confirm-again",
+    );
+    expect((await listed()).find(({ ruleId }) => ruleId === confirmed?.ruleId)?.status).toBe(
+      "active",
+    );
 
     const soft = await tool(
       "rule.set",

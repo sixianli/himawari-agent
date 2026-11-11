@@ -245,6 +245,15 @@ export interface OwnerRuleParameters {
   readonly summary: string;
 }
 
+export function validRuleSummary(summary: string): boolean {
+  const trimmed = summary.trim();
+  return (
+    trimmed.length > 0 &&
+    trimmed.length <= OWNER_RULE_SUMMARY_LIMIT &&
+    !/[\p{Surrogate}\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(trimmed)
+  );
+}
+
 export function parseOwnerRuleParameters(
   value: unknown,
   registry: readonly RuleTypeDefinition[] = RULE_TYPES,
@@ -255,12 +264,7 @@ export function parseOwnerRuleParameters(
   const type = record["type"];
   const summary = record["summary"];
   if (typeof type !== "string") invalid("规则参数缺少类型");
-  if (
-    typeof summary !== "string" ||
-    summary.trim().length === 0 ||
-    summary.trim().length > OWNER_RULE_SUMMARY_LIMIT ||
-    /[\p{Surrogate}\p{Cc}\p{Cf}]/u.test(summary.trim())
-  )
+  if (typeof summary !== "string" || !validRuleSummary(summary))
     invalid(`规则说明必须是 1 到 ${OWNER_RULE_SUMMARY_LIMIT} 个字，不能有换行或不可见字符`);
   const definition = ruleType(type, registry);
   const params = definition.parse(record["params"]);
