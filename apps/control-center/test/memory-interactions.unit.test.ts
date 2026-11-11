@@ -1105,6 +1105,7 @@ describe("memory approval and management", () => {
           relatedText: "主人的女儿名叫小葵",
           createdAt: "2026-10-25T12:00:00.000Z",
           undone: false,
+          undoable: true,
         },
       ],
       imports: [
@@ -1223,6 +1224,7 @@ describe("memory approval and management", () => {
           relatedText: "主人平时喝明治的牛奶",
           createdAt: "2026-10-25T12:00:00.000Z",
           undone: false,
+          undoable: true,
         },
         {
           changeId: "memory-consolidation:agent:2026-10-25:c2",
@@ -1232,6 +1234,7 @@ describe("memory approval and management", () => {
           relatedText: "主人家里养着一只柴犬",
           createdAt: "2026-10-25T12:00:01.000Z",
           undone: false,
+          undoable: true,
         },
       ],
     };
@@ -1259,6 +1262,63 @@ describe("memory approval and management", () => {
       type: "memory.tidy.undo",
       payload: { changeId: "memory-consolidation:agent:2026-10-25:c1" },
     });
+  });
+
+  it("[P3-8-undo] shows no undo button on a change whose memory was edited afterwards, says why, and keeps the undone label", async () => {
+    overview = {
+      ...overview,
+      memories: [
+        memoryItem("m-city", "主人住在上海", { category: "identity", revision: 3 }),
+        memoryItem("m-job", "主人是工程师", { category: "identity" }),
+      ],
+      tidyUps: [
+        {
+          changeId: "tidy-edited",
+          memoryId: "m-city",
+          action: "merge",
+          text: "主人住在上海",
+          relatedText: null,
+          createdAt: "2026-10-25T12:00:00.000Z",
+          undone: false,
+          undoable: false,
+        },
+        {
+          changeId: "tidy-fresh",
+          memoryId: "m-job",
+          action: "merge",
+          text: "主人是工程师",
+          relatedText: null,
+          createdAt: "2026-10-25T12:00:01.000Z",
+          undone: false,
+          undoable: true,
+        },
+        {
+          changeId: "tidy-done",
+          memoryId: "m-job",
+          action: "merge",
+          text: "主人是工程师",
+          relatedText: null,
+          createdAt: "2026-10-25T12:00:02.000Z",
+          undone: true,
+          undoable: false,
+        },
+      ],
+    };
+    await render();
+    await tab("变化记录");
+    const row = (content: string, index = 0) =>
+      [...document.querySelectorAll("#settings .memory-day p")].filter(
+        (line) => line.textContent?.startsWith("合并重复") && line.textContent.includes(content),
+      )[index];
+    const buttons = (line: Element | undefined) =>
+      [...(line?.querySelectorAll("button") ?? [])].map((item) => item.textContent);
+    expect(buttons(row("主人住在上海"))).toEqual([]);
+    expect(row("主人住在上海")?.textContent).toContain("这条记忆之后又改过，不能撤销");
+    expect(buttons(row("主人是工程师", 1))).toEqual(["撤销"]);
+    expect(row("主人是工程师", 1)?.textContent).not.toContain("不能撤销");
+    expect(buttons(row("主人是工程师", 0))).toEqual([]);
+    expect(row("主人是工程师", 0)?.textContent).toContain("已撤销");
+    expect(row("主人是工程师", 0)?.textContent).not.toContain("不能撤销");
   });
 
   it("[MP-8] answers due reminders and cancels an upcoming one", async () => {
@@ -1548,6 +1608,7 @@ describe("memory approval and management", () => {
           relatedText: "主人在上海住",
           createdAt: "2026-10-25T12:00:00.000Z",
           undone: false,
+          undoable: true,
         },
       ],
       imports: [

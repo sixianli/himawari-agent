@@ -1240,6 +1240,7 @@ const memoryOverviewSnapshotSchema = object({
         relatedText: nullable(boundedString(2000)),
         createdAt: timestamp,
         undone: booleanValue,
+        undoable: booleanValue,
       }),
     ),
     reminders: array(

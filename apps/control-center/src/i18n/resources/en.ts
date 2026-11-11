@@ -683,6 +683,8 @@ export const messages = {
   "memory.tidyOther": "(the other one: {text})",
   "memory.undo": "Undo",
   "memory.undone": "Undone",
+  "memory.undoLocked":
+    "This memory was edited afterwards, so this can no longer be undone; restore an older version from its history instead",
   "memory.reminderTitle": "Reminder",
   "memory.reminderDue": "Due {time}",
   "memory.reminderDismiss": "Don't remind again",
