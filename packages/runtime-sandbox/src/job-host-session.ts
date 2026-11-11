@@ -3,7 +3,6 @@ import { type SandboxHostSteps, sandboxHostStepsSchema } from "@himawari-agent/e
 import {
   authenticateJobHostEnvelope,
   decodeJobHostOutput,
-  forkJobHost,
   JOB_HOST_RESULT_REASONS,
   jobHostResultNetwork,
   jobHostResultResources,
@@ -25,6 +24,7 @@ import {
   parseJobHostRun,
   parseJobHostSessionRequest,
 } from "./job-host-protocol.ts";
+import { forkLocalJobHost, type JobHostLauncher } from "./job-host-transport.ts";
 
 export type JobHostRunInput = Omit<JobHostRun, "sequence">;
 
@@ -80,10 +80,13 @@ interface ActiveCommand {
 
 const isFlag = (value: unknown): value is boolean => typeof value === "boolean";
 
-export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSession {
+export function prepareSandboxJobSession(
+  value: JobHostRequest,
+  launcher: JobHostLauncher = forkLocalJobHost,
+): SandboxJobSession {
   const request = parseJobHostSessionRequest(value);
   const sessionId = randomUUID();
-  const child = forkJobHost(request);
+  const child = launcher(request);
   let diagnostic: JobHostDiagnostic | undefined;
   let supervision: JobHostSupervision | null = null;
   let lastMessageTick = performance.now();
@@ -116,12 +119,9 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
     resolveResult = resolve;
   });
   const force = () => {
-    if (!childExited && !ended && child.pid)
-      try {
-        process.kill(-child.pid, "SIGKILL");
-      } catch {}
+    if (!childExited && !ended) child.killGroup();
   };
-  child.once("exit", () => {
+  child.onceExit(() => {
     childExited = true;
   });
   const send = (message: Record<string, unknown>) => {
@@ -134,9 +134,7 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
           sequence: ++workerSequence,
           observedAt: new Date().toISOString(),
         },
-        (error) => {
-          if (error) force();
-        },
+        force,
       );
   };
   const cancel = (reason: "cancelled" | "deadline" | "host_failure") => {
@@ -301,8 +299,8 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
       if (!allowed) cancel("cancelled");
     })();
   };
-  child.stderr?.on("data", () => {});
-  child.on("message", (value: unknown) => {
+  child.onStderr(() => {});
+  child.onMessage((value: unknown) => {
     if (!value || typeof value !== "object" || !("type" in value)) {
       fail();
       return;
@@ -404,11 +402,11 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
       forceTimer ??= setTimeout(force, request.cleanupTimeoutMs);
     } else fail();
   });
-  child.once("error", () => {
+  child.onceError(() => {
     rejectReady(new Error("JOB_HOST_START_FAILED"));
     force();
   });
-  child.once("close", () => {
+  child.onceClose(() => {
     ended = true;
     clearInterval(supervisionTimer);
     clearTimeout(sessionTimer);
