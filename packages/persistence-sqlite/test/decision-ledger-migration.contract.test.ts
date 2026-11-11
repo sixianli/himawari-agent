@@ -158,6 +158,9 @@ describe("decision ledger migration 0069", () => {
       expect(() => insert("proactive", "kept", "silent", "gmail")).toThrow();
       expect(() => insert("memory_candidate", "kept", "silent", null)).toThrow();
       expect(() => insert("external_read", "kept", null, null)).toThrow();
+      expect(() => insert("rule_review", "needs_review", null, null)).not.toThrow();
+      expect(() => insert("rule_review", "kept", null, null)).toThrow();
+      expect(() => insert("memory_candidate", "needs_review", null, null)).toThrow();
       expect(() => insert("unknown_kind", "kept", null, null)).toThrow();
     } finally {
       database.close();

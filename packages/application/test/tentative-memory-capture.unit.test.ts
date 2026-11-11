@@ -1,3 +1,4 @@
+import { MEMORY_AUTO_COMMIT_GATE } from "@himawari-agent/calibration";
 import type { MemoryGenerationId, MemoryId } from "@himawari-agent/domain";
 import { describe, expect, it } from "vitest";
 import type {
@@ -157,5 +158,15 @@ describe("[PA-2] low-confidence candidates are kept as tentative memories", () =
     expect(result.committedMemoryIds).toEqual(["memory:generation-1:0"]);
     expect(result.tentativeMemoryIds).toEqual([]);
     expect((proposals[0] as { memory: object }).memory).not.toHaveProperty("attributes");
+  });
+
+  it("[P4-4] auto-commits exactly from the registered threshold", async () => {
+    const at = MEMORY_AUTO_COMMIT_GATE.defaultThreshold;
+    const below = await capture([candidate({ confidencePermille: at - 1 })]);
+    expect(below.result.committedMemoryIds).toEqual([]);
+    expect(below.result.tentativeMemoryIds).toEqual(["memory:generation-1:0"]);
+    const onLine = await capture([candidate({ confidencePermille: at })]);
+    expect(onLine.result.committedMemoryIds).toEqual(["memory:generation-1:0"]);
+    expect(onLine.result.tentativeMemoryIds).toEqual([]);
   });
 });

@@ -534,6 +534,7 @@ const proactiveReviewKinds = [
   "context_truncation",
   "retrieval_degrade",
   "external_read",
+  "rule_review",
   "mail",
 ] as const;
 const proactiveReviewItemSchema = object({
@@ -763,6 +764,7 @@ const calibrationGroupSchema = enumeration([
   "context_truncation",
   "retrieval_degrade",
   "external_read",
+  "rule_review",
 ]);
 const calibrationRateSchema = nullable(
   object({
@@ -1018,6 +1020,7 @@ const decisionChainSnapshotSchema = object({
         "context_truncation",
         "retrieval_degrade",
         "external_read",
+        "rule_review",
       ]),
       decidedAt: timestamp,
       outcome: boundedString(64),
@@ -1167,6 +1170,7 @@ const memoryOverviewSnapshotSchema = object({
         stance: nullable(boundedString(16)),
         history: array(
           object({
+            historyId: integer(1),
             kind: enumeration(MEMORY_HISTORY_KIND_NAMES),
             text: boundedString(2000),
             stance: nullable(boundedString(16)),
@@ -1430,9 +1434,11 @@ const memoryMutationPayloadSchema = object({
     "recover",
     "pin",
     "unpin",
+    "restore_version",
   ]),
   expectedRevision: integer(0),
   contentRef: nullable(machineString),
+  historyId: nullable(integer(1)),
 });
 
 export const mutateMemoryCommandSchema = object({
@@ -1447,6 +1453,12 @@ export const mutateMemoryCommandSchema = object({
         throw new ContractValidationError(
           `${path}.contentRef`,
           "must be present only for a correction",
+        );
+      }
+      if ((payload.action === "restore_version") !== (payload.historyId !== null)) {
+        throw new ContractValidationError(
+          `${path}.historyId`,
+          "must be present only for restoring a version",
         );
       }
       return payload;

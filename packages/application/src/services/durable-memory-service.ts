@@ -263,6 +263,44 @@ export class DurableMemoryService {
     );
   }
 
+  async restoreVersion(input: {
+    readonly memoryId: MemoryId;
+    readonly expectedRevision: number;
+    readonly contentRef: string;
+    readonly stance: string | null;
+    readonly generationId: MemoryGenerationId;
+  }): Promise<ProductMemoryRecord> {
+    const current = requireRecord(await this.options.state.read(input.memoryId), input.memoryId);
+    if (current.revision !== input.expectedRevision)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        `Memory ${input.memoryId} changed since it was read`,
+        { memoryId: input.memoryId },
+      );
+    const attributes = current.attributes ?? DEFAULT_MEMORY_ATTRIBUTES;
+    if (current.status !== "active" || attributes.supersededBy !== null)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        `Memory ${input.memoryId} is not the current wording`,
+      );
+    return this.saveWithProjection(
+      nextRecord(
+        current,
+        {
+          contentRef: input.contentRef,
+          inference: false,
+          confidencePermille: 1000,
+          attributes: { ...attributes, stance: input.stance },
+        },
+        this.options.now(),
+      ),
+      current.revision,
+      "upsert",
+      input.generationId,
+      { kind: "restored", sourceThreadId: null },
+    );
+  }
+
   async confirm(
     memoryId: MemoryId,
     generationId: MemoryGenerationId,

@@ -596,6 +596,39 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
     }
   });
 
+  it("[P2-2] lists the hard rule a rule review record points at", async () => {
+    const f = await fixture();
+    try {
+      await f.ledger.append({
+        id: "ledger:rule-review",
+        ...scope,
+        kind: "rule_review",
+        decidedAt: DECIDED_AT,
+        outcome: "needs_review",
+        reasonCode: "memory_edited",
+        subjectRef: "floor_important_sender",
+        inputs: {
+          memoryIds: ["memory-a"],
+          ruleIds: ["floor_important_sender"],
+          batchId: null,
+          resultMemoryIds: [],
+        },
+        reasonRef: null,
+        contentRef: null,
+        costMicros: 0,
+        durationMs: 0,
+      });
+      const chain = await chainOf(f.control, "ledger:rule-review");
+      expect(chain.rules).toMatchObject({
+        state: "recorded",
+        items: [{ ruleId: "floor_important_sender", mailCount: 0 }],
+      });
+      expect(chain.mails).toBeNull();
+    } finally {
+      await f.repository.close();
+    }
+  });
+
   it("[P1-3] caps the memories shown and says so", async () => {
     const f = await fixture();
     try {

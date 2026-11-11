@@ -103,6 +103,7 @@ export interface MemoryHistoryNote {
 }
 
 export interface MemoryHistoryEvent {
+  readonly id: number;
   readonly memoryId: MemoryId;
   readonly kind: MemoryHistoryKind;
   readonly contentRef: PayloadRef;
@@ -147,6 +148,11 @@ export interface ProductMemoryStatePort {
     readonly agentId: AgentId;
     readonly memoryIds: readonly MemoryId[];
   }): Promise<readonly MemoryHistoryEvent[]>;
+  readHistory(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly id: number;
+  }): Promise<MemoryHistoryEvent | undefined>;
 }
 
 export interface MemoryProjectionJobStatePort {
