@@ -609,8 +609,8 @@ describe("[PG-15] proactive reminders page", () => {
       ...review,
       folded: {
         total: 3,
-        items: (["capture_retrying", "capture_queued", "capture_gave_up"] as const).map(
-          (outcome) => reviewItem(`ledger:${outcome}`, { outcome, text: "" }),
+        items: (["capture_retrying", "capture_queued", "capture_gave_up"] as const).map((outcome) =>
+          reviewItem(`ledger:${outcome}`, { outcome, text: "" }),
         ),
       },
     };

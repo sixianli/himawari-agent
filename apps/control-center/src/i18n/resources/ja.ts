@@ -1022,10 +1022,11 @@ export const messages = {
   "dailyReview.tag.captureQueued": "記憶の抽出に失敗、次の発言で再試行",
   "dailyReview.tag.captureGaveUp": "このターンは記憶できなかった",
   "dailyReview.captureRetrying":
-    "このターンから記憶を抽出するモデル呼び出しが一度失敗し、その場でもう一度試しました",
+    "このターンの記憶の抽出または保存が一度失敗し、その場でもう一度試しました",
   "dailyReview.captureQueued":
     "このターンの記憶の抽出がうまくいかなかったため、次にメッセージを送ったときに再試行します",
-  "dailyReview.captureGaveUp": "このターンは 3 回再試行しても抽出できず、これ以上は試しません",
+  "dailyReview.captureGaveUp":
+    "このターンは 3 回再試行しても抽出できなかったか、抽出した内容を 2 回とも保存できなかったため、これ以上は試しません",
   "dailyReview.hidden": "本文はここには表示しません",
   "dailyReview.fetched": "メール {count} 通を確認",
   "dailyReview.allFine": "このページは問題なし",
@@ -1344,7 +1345,7 @@ export const messages = {
   "weekly.group":
     "{g, select, proactive_pushed {メールを読んで通知した} proactive_silent {メールを読んで通知しなかった} memory_skipped {システムが保存しないと判断した記憶} memory_kept {保存した記憶} consolidation {記憶の整理} memory_pending {確認待ちの記憶} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索が働かなかった} rule_review {ハードルールの再確認待ち} memory_capture_failed {記憶の抽出に失敗} other {外部プログラムによる記憶の読み取り}}",
   "weekly.groupInfo":
-    "{g, select, proactive_pushed {Himawari は 15 分ごとに新着メールを読みます。読んだ後に通知した回です。} rule_review {ハードルールはあなたの言葉から作られます。元の記憶が変更・置き換え・削除されると、ルールは再確認待ちになり、その記録です。} memory_capture_failed {毎ターンの後、あなたの言葉から覚えることを抽出します。これはそのモデル呼び出しが失敗した回で、失敗ごとに 1 件です。後で成功したターンには別に保存・未保存の記録があります。} other {Himawari は 15 分ごとに新着メールを読みます。読んだ後、通知が必要なものがなかった回です。}}",
+    "{g, select, proactive_pushed {Himawari は 15 分ごとに新着メールを読みます。読んだ後に通知した回です。} rule_review {ハードルールはあなたの言葉から作られます。元の記憶が変更・置き換え・削除されると、ルールは再確認待ちになり、その記録です。} memory_capture_failed {毎ターンの後、あなたの言葉から覚えることを抽出します。これは抽出または保存が失敗した回で、失敗ごとに 1 件です。後で成功したターンには別に保存・未保存の記録があります。} other {Himawari は 15 分ごとに新着メールを読みます。読んだ後、通知が必要なものがなかった回です。}}",
   "weekly.rate":
     "{k, select, proactive_pushed_useful {通知は正しかった} proactive_pushed_unneeded {通知すべきではなかった} proactive_silent_useful {通知しないのが正しかった} proactive_silent_missed {通知すべきだった} memory_skipped_useful {保存しないのが正しかった} memory_skipped_missed {保存すべきだった} memory_kept_useful {正しく保存した} memory_kept_unneeded {保存すべきではなかった} consolidation_useful {整理は正しかった} consolidation_unneeded {整理すべきではなかった} memory_capture_failed_useful {失ったものはない} memory_capture_failed_missed {覚えるべきことを逃した} other_useful {正しかった} other_unneeded {やるべきではなかった} other {やるべきだった}}",
   "weekly.ratio": "{pct}（{k}/{n}）",

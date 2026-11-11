@@ -793,21 +793,24 @@ export class ProductionMemoryCapture {
     const plan = await this.#plan(request, request.runId, request.threadId);
     if (!plan) return;
     const { backlog } = this.options;
+    let parsed: ParsedMemoryCandidates;
     try {
-      await this.#attempt(plan, onAdmitted, {
+      parsed = await this.#extract(plan, onAdmitted, {
         invocationId: `memory-capture:${request.runId}`,
         retryToolCall: backlog === undefined,
       });
-      return;
     } catch (first) {
       if (!backlog) throw first;
       this.#busy.add(plan.generationId);
       try {
-        await this.#retryTurn(plan, request, backlog, first);
+        const retried = await this.#retryTurn(plan, request, backlog, first);
+        if (retried) await this.#save(plan, retried);
       } finally {
         this.#busy.delete(plan.generationId);
       }
+      return;
     }
+    await this.#save(plan, parsed);
   }
 
   async #retryTurn(
@@ -815,7 +818,7 @@ export class ProductionMemoryCapture {
     request: RuntimeRequest,
     backlog: MemoryCaptureBacklogPort,
     first: unknown,
-  ): Promise<void> {
+  ): Promise<ParsedMemoryCandidates | undefined> {
     const queue = (lastErrorCode: string) =>
       backlog.enqueue({
         generationId: plan.generationId,
@@ -831,11 +834,11 @@ export class ProductionMemoryCapture {
     this.options.onFailure(first);
     if (!SAME_TURN_RETRYABLE_CAPTURE_ERRORS.has(firstCode)) {
       await this.#recordFailure(plan, "capture_queued", firstCode, "turn:1");
-      return;
+      return undefined;
     }
     await this.#recordFailure(plan, "capture_retrying", firstCode, "turn:1");
     try {
-      await this.#attempt(plan, () => {}, {
+      return await this.#extract(plan, () => {}, {
         invocationId: `memory-capture:${request.runId}:retry`,
         retryToolCall: false,
       });
@@ -845,11 +848,25 @@ export class ProductionMemoryCapture {
       await this.#recordFailure(plan, "capture_queued", secondCode, "turn:2");
       throw second;
     }
-    await backlog.remove(plan.generationId);
   }
 
-  async #attempt(plan: CapturePlan, onAdmitted: () => void, call: MemoryCaptureCall) {
-    await this.#commit(plan, await this.#extract(plan, onAdmitted, call));
+  async #save(plan: CapturePlan, parsed: ParsedMemoryCandidates): Promise<void> {
+    const { backlog } = this.options;
+    try {
+      await this.#commit(plan, parsed);
+    } catch (first) {
+      if (!backlog) throw first;
+      this.options.onFailure(first);
+      await this.#recordFailure(plan, "capture_retrying", captureErrorCode(first), "save:1");
+      try {
+        await this.#commit(plan, parsed);
+      } catch (second) {
+        await backlog.remove(plan.generationId);
+        await this.#recordFailure(plan, "capture_gave_up", captureErrorCode(second), "save:2");
+        throw second;
+      }
+    }
+    await backlog?.remove(plan.generationId);
   }
 
   async #replayOne(request: RuntimeRequest, onAdmitted: () => void): Promise<void> {
@@ -868,8 +885,9 @@ export class ProductionMemoryCapture {
         await backlog.remove(entry.generationId);
         return;
       }
+      let parsed: ParsedMemoryCandidates;
       try {
-        await this.#attempt(plan, onAdmitted, {
+        parsed = await this.#extract(plan, onAdmitted, {
           invocationId: `memory-capture:${request.runId}:backlog`,
           retryToolCall: false,
         });
@@ -891,7 +909,7 @@ export class ProductionMemoryCapture {
         );
         throw error;
       }
-      await backlog.remove(entry.generationId);
+      await this.#save(plan, parsed);
     } finally {
       this.#busy.delete(entry.generationId);
     }

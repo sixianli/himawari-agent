@@ -666,7 +666,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "memory_capture_backlog",
     "MemoryCaptureBacklogPort",
-    "one row per turn whose memory capture failed twice, replayed on a later turn and removed once it succeeds or is given up after three replays; ids and an error code only, no text",
+    "one row per turn whose memory capture model call failed, kept from the first failure, replayed on a later turn and removed once its result is saved, given up after three replays, or given up when the result cannot be saved twice; ids and an error code only, no text",
     "metadata_only",
     "cascade with its thread, Owner or Agent deletion",
   ),
