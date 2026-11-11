@@ -24,6 +24,7 @@ import {
   type ProductMemoryStatePort,
   reviewMemoryVisible,
   type SensitiveMemoryApprovalStatePort,
+  type UnitOfWorkPort,
   type SensitiveMemoryTopic,
 } from "@himawari-agent/application";
 import {
@@ -162,6 +163,7 @@ export class ProductionMemoryControl {
     readonly state: ProductMemoryStatePort;
     readonly jobs: Pick<MemoryProjectionJobStatePort, "listByMemory">;
     readonly approvals: SensitiveMemoryApprovalStatePort;
+    readonly unitOfWork: UnitOfWorkPort;
     readonly memory: Pick<
       DurableMemoryService,
       | "applyProposal"
@@ -1053,10 +1055,12 @@ export class ProductionMemoryControl {
         readSourceText: (ref) => this.readText(ref),
         onAudit: this.options.onAudit,
       });
-      const committed = await resolver.resolveSensitive(
-        resolution === "edited"
-          ? { requestId, resolution, editedText: editedText ?? "" }
-          : { requestId, resolution },
+      const committed = await this.options.unitOfWork.run(() =>
+        resolver.resolveSensitive(
+          resolution === "edited"
+            ? { requestId, resolution, editedText: editedText ?? "" }
+            : { requestId, resolution },
+        ),
       );
       return { resultRef: committed ?? requestId, replayed: false };
     }

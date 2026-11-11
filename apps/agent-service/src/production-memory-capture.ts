@@ -32,6 +32,7 @@ import {
   type ThreadDistillationStatePort,
   type ThreadDistillationWork,
   type ThreadRepositoryPort,
+  type UnitOfWorkPort,
 } from "@himawari-agent/application";
 import { localDayStart } from "@himawari-agent/memory-engine";
 import { MEMORY_CAPTURE, TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
@@ -670,6 +671,7 @@ export interface ProductionMemoryCaptureOptions {
     call: MemoryCaptureCall,
   ) => Promise<string>;
   readonly backlog?: MemoryCaptureBacklogPort;
+  readonly unitOfWork: UnitOfWorkPort;
   readonly ledger?: DecisionLedgerPort;
   readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   readonly onFailure: (error: unknown) => void;
@@ -693,6 +695,8 @@ const REPLAY_NOT_ATTEMPTED_ERRORS: ReadonlySet<string> = new Set([
 ]);
 
 const UNKNOWN_CAPTURE_ERROR = "MEMORY_CAPTURE_FAILED";
+const SAVE_PENDING_CODE = "MEMORY_CAPTURE_SAVE_PENDING";
+const SAVE_ATTEMPTS_PER_TURN = 2;
 
 export function captureErrorCode(error: unknown): string {
   const code =
@@ -866,17 +870,62 @@ export class ProductionMemoryCapture {
 
   async #save(plan: CapturePlan, parsed: ParsedMemoryCandidates): Promise<void> {
     const { backlog } = this.options;
-    try {
+    if (!backlog) {
       await this.#commit(plan, parsed);
-    } catch (error) {
-      if (!backlog) throw error;
-      await this.#recordFailure(plan, "capture_gave_up", captureErrorCode(error), "save").catch(
-        this.options.onFailure,
-      );
-      await this.#settle(plan.generationId);
-      throw error;
+      return;
     }
-    if (backlog) await this.#settle(plan.generationId);
+    if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) {
+      await this.#commit(plan, parsed);
+      await this.#settle(plan.generationId);
+      return;
+    }
+    const owned = !this.#busy.has(plan.generationId);
+    if (owned) this.#busy.add(plan.generationId);
+    try {
+      if (!(await backlog.has(plan.generationId)))
+        await backlog.enqueue({
+          generationId: plan.generationId,
+          ownerId: plan.request.ownerId,
+          agentId: plan.request.agentId,
+          threadId: plan.threadId,
+          sourceRunId: plan.sourceRunId,
+          lastErrorCode: SAVE_PENDING_CODE,
+          createdAt: this.options.clock.now(),
+        });
+      let failure: unknown;
+      for (let attempt = 1; attempt <= SAVE_ATTEMPTS_PER_TURN; attempt += 1) {
+        try {
+          await this.#commit(plan, parsed);
+          return;
+        } catch (error) {
+          failure = error;
+          if (
+            await backlog.has(plan.generationId).then(
+              (queued) => !queued,
+              () => false,
+            )
+          )
+            return;
+        }
+      }
+      const code = captureErrorCode(failure);
+      const attempts = await backlog.recordAttempt({
+        generationId: plan.generationId,
+        errorCode: code,
+        updatedAt: this.options.clock.now(),
+      });
+      const gaveUp = attempts >= MEMORY_CAPTURE_BACKLOG_MAX_ATTEMPTS;
+      if (gaveUp) await backlog.remove(plan.generationId).catch(this.options.onFailure);
+      await this.#recordFailure(
+        plan,
+        gaveUp ? "capture_gave_up" : "capture_queued",
+        code,
+        `save:${attempts}`,
+      ).catch(this.options.onFailure);
+      throw failure;
+    } finally {
+      if (owned) this.#busy.delete(plan.generationId);
+    }
   }
 
   async #settle(generationId: string): Promise<void> {
@@ -1186,21 +1235,50 @@ export class ProductionMemoryCapture {
   }
 
   async #commit(plan: CapturePlan, parsed: ParsedMemoryCandidates): Promise<void> {
-    const { audit, input } = plan;
-    for (let index = 0; index < parsed.unverifiedEvidence; index += 1) audit("evidence_unverified");
-    for (let index = 0; index < parsed.invalidCandidates; index += 1) audit("candidate_invalid");
-    if (parsed.returnedNone) audit("nothing_to_remember");
-    if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) return;
-    const service = createProductionAutomaticMemory({
-      ...this.options,
-      extract: async () => parsed.candidates,
-      readSourceText: async () => plan.message,
-      onAudit: this.options.onAudit,
-    });
-    await service.processCommittedRun({
-      ...input,
-      explicitRememberCandidateOrdinal: parsed.explicitOrdinal,
-      rejectedCandidates: parsed.rejectedCandidates,
-    });
+    const { input } = plan;
+    const audits: MemoryExtractionAuditRecord[] = [];
+    const note = (outcome: MemoryExtractionAuditRecord["outcome"]) =>
+      audits.push({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        threadId: input.threadId,
+        sourceRef: input.sourceRef,
+        generationId: input.generationId,
+        policyVersion: input.policyVersion,
+        modelDescriptorRef: input.modelDescriptorRef,
+        candidateOrdinal: null,
+        classification: input.sourceClassification,
+        outcome,
+        secretFindings: [],
+        occurredAt: this.options.clock.now(),
+      });
+    for (let index = 0; index < parsed.unverifiedEvidence; index += 1) note("evidence_unverified");
+    for (let index = 0; index < parsed.invalidCandidates; index += 1) note("candidate_invalid");
+    if (parsed.returnedNone) note("nothing_to_remember");
+    if (parsed.candidates.length > 0 || parsed.rejectedCandidates.length > 0) {
+      const service = createProductionAutomaticMemory({
+        ...this.options,
+        extract: async () => parsed.candidates,
+        readSourceText: async () => plan.message,
+        onAudit: (record) => {
+          audits.push(record);
+        },
+      });
+      const { backlog } = this.options;
+      await this.options.unitOfWork.run(async () => {
+        await service.processCommittedRun({
+          ...input,
+          explicitRememberCandidateOrdinal: parsed.explicitOrdinal,
+          rejectedCandidates: parsed.rejectedCandidates,
+        });
+        await backlog?.remove(plan.generationId);
+      });
+    }
+    for (const record of audits)
+      try {
+        this.options.onAudit(record);
+      } catch (error) {
+        this.options.onFailure(error);
+      }
   }
 }

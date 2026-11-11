@@ -1046,13 +1046,13 @@ export const messages = {
     "This hard rule came from something you said; that memory changed. The rule still applies and waits for you to have a look",
   "dailyReview.tag.captureRetrying": "Memory capture failed, retried",
   "dailyReview.tag.captureQueued": "Memory capture failed, retrying next turn",
-  "dailyReview.tag.captureGaveUp": "Not fully saved from this turn",
+  "dailyReview.tag.captureGaveUp": "Not saved from this turn",
   "dailyReview.captureRetrying":
     "The model call that picks memories from this turn failed once; the system tried again right away",
   "dailyReview.captureQueued":
     "Picking memories from this turn did not work; the system will try again when you next send a message",
   "dailyReview.captureGaveUp":
-    "Picking memories from this turn still failed after 3 more tries, or what was picked could not be fully saved (some of it may be saved); the system stopped trying",
+    "Picking or saving memories from this turn still failed after 3 tries, so nothing from this turn was saved; the system stopped trying",
   "dailyReview.hidden": "Text not shown here",
   "dailyReview.fetched": "Checked {count, plural, one {# email} other {# emails}}",
   "dailyReview.allFine": "This page is all fine",
