@@ -221,6 +221,23 @@ class LocalEmbeddingArtifactPreflightTest(unittest.TestCase):
             target.rename(renamed)
             self.assertEqual(embedding_artifact.problem(str(state), self.MODEL, extra_sha, '1024'), 'manifest-shape')
 
+    def test_p3_1_a_manifest_digest_that_is_not_hex_and_an_incomplete_packet_target_are_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state, target, sha = self.install(Path(directory))
+            manifest = json.loads((target / 'manifest.json').read_text())
+            manifest['files']['model.onnx'] = 'Z' * 64
+            (target / 'manifest.json').write_text(json.dumps(manifest) + '\n')
+            changed = embedding_artifact.digest(target / 'manifest.json')
+            target.rename(target.parent / changed)
+            self.assertEqual(embedding_artifact.problem(str(state), self.MODEL, changed, '1024'), 'manifest-shape')
+            packet = Path(directory) / 'packet'
+            packet.mkdir()
+            (packet / 'packet-parameters.json').write_text(json.dumps({'TARGET_EMBEDDING_JSON': json.dumps({'provider': 'local-onnx', 'model': self.MODEL})}))
+            with self.assertRaisesRegex(SystemExit, 'not a complete local embedding target'):
+                preflight.local_embedding_target(packet)
+            (packet / 'packet-parameters.json').write_text(json.dumps({'TARGET_EMBEDDING_JSON': json.dumps({'provider': 'local-onnx', 'model': self.MODEL, 'artifactSha256': sha, 'dimensions': 1024})}))
+            self.assertEqual(preflight.local_embedding_target(packet)['dimensions'], 1024)
+
     def test_a_model_directory_reached_through_a_link_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             state, target, sha = self.install(Path(directory))

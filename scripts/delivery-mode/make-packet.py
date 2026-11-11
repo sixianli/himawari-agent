@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -282,11 +283,11 @@ def embedding_target(target):
     if dimensions is None or type(target['dimensions']) is not int or target['dimensions'] not in dimensions:
         refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
     cost, capabilities, classifications = target['cost'], target['capabilities'], target['allowedDataClassifications']
-    if not isinstance(cost, dict) or set(cost) != {'input', 'output', 'cacheRead', 'cacheWrite'} or any(type(value) not in (int, float) or not value >= 0 for value in cost.values()):
+    if not isinstance(cost, dict) or set(cost) != {'input', 'output', 'cacheRead', 'cacheWrite'} or any(type(value) not in (int, float) or not math.isfinite(value) or value < 0 for value in cost.values()):
         refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
-    if not isinstance(capabilities, list) or 'embedding' not in capabilities or not all(isinstance(value, str) and value for value in capabilities):
+    if not isinstance(capabilities, list) or 'embedding' not in capabilities or not all(isinstance(value, str) and reference.fullmatch(value) for value in capabilities) or len(set(capabilities)) != len(capabilities):
         refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
-    if not isinstance(classifications, list) or not classifications or not set(classifications) <= {'public', 'private', 'sensitive', 'restricted'} or not all(isinstance(value, str) for value in classifications):
+    if not isinstance(classifications, list) or not classifications or not set(classifications) <= {'public', 'private', 'sensitive', 'restricted'} or not all(isinstance(value, str) for value in classifications) or len(set(classifications)) != len(classifications):
         refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
     if target['disclosure'] not in ('local_only', 'trusted_remote', 'external_remote'):
         refuse('PACKET_EMBEDDING_TARGET_INVALID', target)

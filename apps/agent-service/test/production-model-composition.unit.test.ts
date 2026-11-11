@@ -939,6 +939,11 @@ it("[P3-2] a memory tool search whose Run lost its execution lease while embeddi
   let searchCancelled: ((error: unknown) => boolean) | undefined;
   const now = "2026-09-06T00:00:00.000Z";
   let leaseHeld = true;
+  const leaseError = () =>
+    new ApplicationPortError(
+      PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+      "Run execution lease is no longer active",
+    );
   const permit: ModelInvocationPermit = {
     assertActive: vi.fn(async () => {
       if (!leaseHeld)
@@ -948,7 +953,9 @@ it("[P3-2] a memory tool search whose Run lost its execution lease while embeddi
         );
     }),
     markStarted: vi.fn(async () => {}),
-    releaseReserved: vi.fn(async () => {}),
+    releaseReserved: vi.fn(async () => {
+      if (!leaseHeld) throw leaseError();
+    }),
     settle: vi.fn(async () => {}),
     markUnknown: vi.fn(async () => {}),
   };

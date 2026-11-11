@@ -106,8 +106,16 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
     ];
     expect(await run(1)).toBe(1);
     expect(attached).toEqual(["ep-fine", "ep-next"]);
+    listed = [
+      episode("ep-broken", "private"),
+      episode("ep-broken-2", "private"),
+      episode("ep-broken-3", "private"),
+      episode("ep-after-three", "private"),
+    ];
+    expect(await run(1)).toBe(1);
+    expect(attached).toEqual(["ep-fine", "ep-next", "ep-after-three"]);
     listed = [episode("ep-broken", "private")];
     await expect(run()).rejects.toThrow("EMBEDDING_LOCAL_INPUT_LENGTH");
-    expect(attached).toEqual(["ep-fine", "ep-next"]);
+    expect(attached).toEqual(["ep-fine", "ep-next", "ep-after-three"]);
   });
 });

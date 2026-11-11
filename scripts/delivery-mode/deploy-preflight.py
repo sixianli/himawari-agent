@@ -113,7 +113,11 @@ def source_base(packet):
 def local_embedding_target(packet):
     path = packet / 'packet-parameters.json'
     target = json.loads(json.loads(path.read_text()).get('TARGET_EMBEDDING_JSON', 'null')) if path.is_file() else None
-    return target if isinstance(target, dict) and target.get('provider') == 'local-onnx' else None
+    if not isinstance(target, dict) or target.get('provider') != 'local-onnx':
+        return None
+    if not isinstance(target.get('model'), str) or not isinstance(target.get('artifactSha256'), str) or type(target.get('dimensions')) is not int:
+        raise SystemExit('PREFLIGHT_CHECK packet-parameters.json TARGET_EMBEDDING_JSON is not a complete local embedding target; rebuild the packet with make-packet.py')
+    return target
 
 
 def sandbox_read_roots(packet):

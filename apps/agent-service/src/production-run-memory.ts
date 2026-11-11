@@ -370,7 +370,16 @@ export function createProductionRunMemory(options: {
           await markUnknownKeepingError();
         }
       } else if (started && !settled) await markUnknownKeepingError();
-      else if (!started) await permit.releaseReserved();
+      else if (!started)
+        try {
+          await permit.releaseReserved();
+        } catch (release) {
+          options.diagnostic?.({
+            component: "agent-service",
+            event: "memory.embedding_release_failed",
+            error: release instanceof Error ? release.message : "EMBEDDING_RELEASE_FAILED",
+          });
+        }
       throw error;
     }
   };
