@@ -1,0 +1,12 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "去重路径会让 `storedFor` 的防重放兜底失效，与 ADR 0226 决定 4 的承诺不一致", "valid": true, "class": "error", "severity": "medium-high", "trigger": "同参数已有规则时外部提议生效、标记丢失、主人撤销后重放旧确认", "consequence": "撤销的规则被旧确认恢复", "modelSeverity": "中"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "规则已生效后标记写失败，却返回“没有生效”", "valid": true, "class": "error", "severity": "low", "trigger": "confirm 成功后载荷写入报错", "consequence": "规则已生效却告诉对方没生效", "modelSeverity": "中低", "reason": "只在载荷库写失败时出现，规则本身状态正确"}
+{"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "外部规则记忆在记忆来源页/报表中被归为“整理记忆产生的”", "valid": true, "class": "error", "severity": "low", "trigger": "外部提议的规则生效后打开记忆页", "consequence": "规则类记忆显示为整理记忆产生的", "modelSeverity": "低"}
+{"id": "ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "外部错误提示文字与实际参数校验不一致", "valid": true, "class": "error", "severity": "low", "trigger": "外部 agent 提交 1 个字的词语", "consequence": "提示说合法，实际被拒", "modelSeverity": "低"}
+{"id": "ds-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`propose_rule` 的“服务未准备好”检查用的是记忆提议写入器", "valid": false, "class": "error"}
+{"id": "ds-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "预览回放可被反复触发", "valid": true, "class": "better"}
+{"id": "ds-7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 说来源写 `mcp:`，但去重路径不会更新来源", "valid": true, "class": "error", "severity": "low", "trigger": "同参数已有规则时外部提议生效", "consequence": "ADR 说法和行为不一致", "modelSeverity": "低"}
+{"id": "glm-1", "model": "opencode-go/glm-5.3-flash", "quote": "回给外部 agent 的「参数不合法」文本说「每项 1 到 64 字」，但解析器对 `phrases`/`excludePhrases` 的下限是 2 字", "valid": true, "class": "error", "severity": "low", "trigger": "提交 1 个字的词语", "consequence": "提示和校验不一致", "modelSeverity": "低"}
+{"id": "glm-2", "model": "opencode-go/glm-5.3-flash", "quote": "规则流程的失败分支全部没有测试覆盖", "valid": true, "class": "better"}
+{"id": "glm-3", "model": "opencode-go/glm-5.3-flash", "quote": "`argsHash` 直接 `JSON.stringify(parsed.params)`，靠 `parseMailMatch` 的固定键序和排序来保证稳定", "valid": true, "class": "better"}
+{"id": "glm-4", "model": "opencode-go/glm-5.3-flash", "quote": "MCP 路径走到 `#activate` 的 `same` 分支（含 `reconfirm`）没有任何测试", "valid": true, "class": "better"}
+{"id": "glm-6", "model": "opencode-go/glm-5.3-flash", "quote": "规则提议的「就绪」检查借用 memory 写入器的 `proposals.ready()`", "valid": false, "class": "better"}

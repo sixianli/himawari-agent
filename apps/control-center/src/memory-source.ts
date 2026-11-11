@@ -3,6 +3,7 @@ import type { MemoryItem } from "./memory.js";
 
 export {
   EXTERNAL_PROPOSAL_MEMORY_PREFIX,
+  EXTERNAL_RULE_MEMORY_PREFIX,
   type MemorySourceState,
   memorySourceState,
 } from "@himawari-agent/gateway-contracts";

@@ -618,6 +618,7 @@ export const MESSAGE_IDS = [
   "memory.tidyOther",
   "memory.undo",
   "memory.undone",
+  "memory.undoLocked",
   "memory.reminderTitle",
   "memory.reminderDue",
   "memory.reminderDismiss",

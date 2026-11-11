@@ -102,6 +102,7 @@ import {
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
 import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
+import { ProductionMcpRuleWriter } from "./production-mcp-rule-writer.js";
 import {
   createProductionMemoryCompositionFromConfiguration,
   type ProductionMemoryComposition,
@@ -122,6 +123,7 @@ import {
 import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
+import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -134,7 +136,6 @@ import { findSourceMessageIds } from "./production-memory-control.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
-import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
@@ -1348,21 +1349,20 @@ export async function runAgentService(
         writer: reminderWriter,
         ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
       });
-      const ownerRuleTools = new ProductionOwnerRuleTools(
-        new ProductionOwnerRuleWriter({
-          configuration,
-          rules: repository.ownerRules(),
-          memory: durableMemory,
-          memories: repository.productMemoryState(),
-          book: repository.memoryBook(),
-          threads: repository.threadRepository(),
-          payloads,
-          protector: recallProtector,
-          clock: { now: () => clock.now() },
-          replay: (rule) =>
-            proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
-        }),
-      );
+      const ownerRuleWriter = new ProductionOwnerRuleWriter({
+        configuration,
+        rules: repository.ownerRules(),
+        memory: durableMemory,
+        memories: repository.productMemoryState(),
+        book: repository.memoryBook(),
+        threads: repository.threadRepository(),
+        payloads,
+        protector: recallProtector,
+        clock: { now: () => clock.now() },
+        replay: (rule) =>
+          proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
+      });
+      const ownerRuleTools = new ProductionOwnerRuleTools(ownerRuleWriter);
       const tools = new ProductionRuntimeTools({
         memoryRecall,
         reminders: reminderTools,
@@ -1879,6 +1879,7 @@ export async function runAgentService(
         : undefined;
       if (mcpReadSecret) {
         const settingsStore = repository.proactive();
+        const ownerRuleStore = repository.ownerRules();
         const secretProvider = hostModelSources(configuration).provider;
         mcpRead = new ProductionMcpRead({
           scope: {
@@ -1901,6 +1902,19 @@ export async function runAgentService(
                     protector: recallProtector,
                     clock: { now: () => clock.now() },
                   }),
+                  rules: new ProductionMcpRuleWriter({
+                    configuration,
+                    rules: ownerRuleWriter,
+                    payloads,
+                    protector: recallProtector,
+                    clock: { now: () => clock.now() },
+                    onFailure: (error) =>
+                      writeServiceDiagnostic(errorOutput, {
+                        component: "agent-service",
+                        event: "mcp-rule.marker-failed",
+                        code: stableErrorCode(error),
+                      }),
+                  }),
                 },
               }
             : {}),
@@ -1915,6 +1929,12 @@ export async function runAgentService(
               settingsStore.readSettings({
                 ownerId: configuration.ownerId,
                 agentId: configuration.agentId,
+              }),
+            ownerRules: () =>
+              ownerRuleStore.list({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                includeRetired: false,
               }),
             ...(memoryEpisodes
               ? {

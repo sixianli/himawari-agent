@@ -690,6 +690,8 @@ export const messages = {
   "memory.tidyOther": "（もう一方：{text}）",
   "memory.undo": "元に戻す",
   "memory.undone": "元に戻しました",
+  "memory.undoLocked":
+    "この記憶はその後に変更されたため元に戻せません。履歴から以前の版を復元してください",
   "memory.reminderTitle": "リマインダー",
   "memory.reminderDue": "予定：{time}",
   "memory.reminderDismiss": "今後通知しない",

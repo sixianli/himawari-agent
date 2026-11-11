@@ -1732,6 +1732,7 @@ function TimelineTab({
     note?: string;
     undone?: boolean;
     undo?: () => void;
+    locked?: boolean;
     confirm?: boolean;
     change?: number;
     show?: () => void;
@@ -1784,9 +1785,11 @@ function TimelineTab({
             })
           : "",
         undone: item.undone,
-        ...(item.action === "hold" && !waiting.has(item.memoryId)
-          ? {}
-          : { undo: () => void memory.undoTidy(item) }),
+        ...(!item.undone && !item.undoable
+          ? { locked: true }
+          : item.action === "hold" && !waiting.has(item.memoryId)
+            ? {}
+            : { undo: () => void memory.undoTidy(item) }),
         confirm:
           (item.action === "reflect" || item.action === "hold") && waiting.has(item.memoryId),
       }),
@@ -1849,6 +1852,8 @@ function TimelineTab({
               </span>
               {event.undone ? (
                 <small>{message("memory.undone")}</small>
+              ) : event.locked ? (
+                <small>{message("memory.undoLocked")}</small>
               ) : event.undo ? (
                 <ActionButton variant="quiet" disabled={memory.busy} onClick={event.undo}>
                   {message("memory.undo")}

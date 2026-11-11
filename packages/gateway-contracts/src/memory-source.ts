@@ -1,5 +1,6 @@
 export const REMINDER_SOURCE_PREFIX = "memory-content:reminder:";
 export const EXTERNAL_PROPOSAL_MEMORY_PREFIX = "memory:mcp:";
+export const EXTERNAL_RULE_MEMORY_PREFIX = "memory:rule:mcp:";
 
 export type MemorySourceState =
   | "jump"
@@ -23,7 +24,11 @@ export interface MemorySourceFacts {
 export function memorySourceState(item: MemorySourceFacts): MemorySourceState {
   if (item.importBatchId) return "import";
   if (item.memoryId.startsWith("memory:owner:")) return "owner";
-  if (item.memoryId.startsWith(EXTERNAL_PROPOSAL_MEMORY_PREFIX)) return "external";
+  if (
+    item.memoryId.startsWith(EXTERNAL_PROPOSAL_MEMORY_PREFIX) ||
+    item.memoryId.startsWith(EXTERNAL_RULE_MEMORY_PREFIX)
+  )
+    return "external";
   if (item.sourceThreadId) {
     if (item.sourceMessageId) return "jump";
     return item.sourceRefs.length > 0 &&

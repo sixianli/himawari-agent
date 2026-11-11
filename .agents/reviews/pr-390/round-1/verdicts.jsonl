@@ -1,0 +1,8 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 中：给冻结的 `gateway.v2` 快照增加必填字段，会造成新旧前端/后端互不兼容", "valid": true, "class": "better"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 中：真正的服务端组装点没有自动检查", "valid": true, "class": "error", "severity": "medium-high", "trigger": "生产端取值写错（取错记录、恒为 true）时现有测试都不会失败", "consequence": "界面又会显示注定失败的撤销按钮；已改：在 test/integration/decision-chain.test.ts 加经 ProductionMemoryControl.query 的用例，整理后 undoable 为 true、改记忆后为 false，把生产端改成恒 true 时用例失败", "modelSeverity": "中"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 低：按钮仍可能失败，提示语把失败原因说成唯一的“之后又改过”", "valid": true, "class": "better"}
+{"id": "D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. 低：ADR 0220 的按钮条件与代码不一致", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 0220 第 5 条的人以为按钮仍只看是否待确认", "consequence": "文档与代码不一致；已改 ADR 并通过文档校验无新增错误", "modelSeverity": "低", "reason": "只是文档表述过时，不影响运行"}
+{"id": "G1", "model": "opencode-go/glm-5.3-flash", "quote": "### 1.（中低）`undoable` 的生产端没有任何自动化检查——I-73 的教训在此重演", "valid": true, "class": "error", "severity": "medium-high", "trigger": "与 D2 同一件事：生产端取值没有自动检查", "consequence": "同 D2，已用同一个用例修复并做反向验证", "modelSeverity": "中低"}
+{"id": "G2", "model": "opencode-go/glm-5.3-flash", "quote": "### 2.（低）`undoable: true` 并不保证撤销成功，按钮仍可能失败", "valid": true, "class": "better"}
+{"id": "G3", "model": "opencode-go/glm-5.3-flash", "quote": "### 3.（低，属仓库既有模式）合约严格校验使任何版本错配都会整页失效", "valid": true, "class": "better"}
+{"id": "G4", "model": "opencode-go/glm-5.3-flash", "quote": "### 4.（信息）作者对问题陈述有一处小的不准确", "valid": false, "class": "better", "reason": "信息类，不是缺陷；hold 且已不待确认时本就无按钮，本 PR 保持该行为"}
