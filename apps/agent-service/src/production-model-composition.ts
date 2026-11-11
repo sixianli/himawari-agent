@@ -128,7 +128,7 @@ export interface ProductionModelComposition {
     limits: {
       readonly maxOutputTokens: number;
       readonly requestTimeoutMs: number;
-      readonly purpose?: "mail-judgment" | "review-prereview";
+      readonly purpose?: ModelUsagePurpose;
     },
   ): ProactiveModelInvoker;
   readonly piModels: PiModelBindingPort;
@@ -502,7 +502,7 @@ export function createProductionModelComposition(
     limits: {
       readonly maxOutputTokens: number;
       readonly requestTimeoutMs: number;
-      readonly purpose?: "mail-judgment" | "review-prereview";
+      readonly purpose?: ModelUsagePurpose;
     },
   ): ProactiveModelInvoker => {
     const descriptor = options.descriptors.find((item) => item.ref === modelRef);
@@ -538,16 +538,22 @@ export function createProductionModelComposition(
           content: prompt,
           occurredAt: options.clock.now(),
         });
-        const handle = descriptor.secretRequirement
-          ? await options.handles.issueHandle({
-              ownerId: options.ownerId,
-              agentId: options.agentId,
-              runId,
-              ...descriptor.secretRequirement,
-              scopeRef: invocationId,
-              expiresAt: deadlineAt,
-            })
-          : undefined;
+        let handle: Awaited<ReturnType<typeof options.handles.issueHandle>> | undefined;
+        try {
+          handle = descriptor.secretRequirement
+            ? await options.handles.issueHandle({
+                ownerId: options.ownerId,
+                agentId: options.agentId,
+                runId,
+                ...descriptor.secretRequirement,
+                scopeRef: invocationId,
+                expiresAt: deadlineAt,
+              })
+            : undefined;
+        } catch (error) {
+          await payloadBoundary.release([inputRef]).catch(() => undefined);
+          throw error;
+        }
         return Object.freeze({
           runId,
           inputRef,

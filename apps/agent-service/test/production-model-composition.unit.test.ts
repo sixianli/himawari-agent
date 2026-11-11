@@ -1650,6 +1650,39 @@ it("[PG-12] judges mail through the selected Pi transport with its own invocatio
   }
 });
 
+it("[P4-5] releases the stored prompt when a proactive call cannot get its secret handle", async () => {
+  const adapters = createReferenceAdapterSet();
+  const prepared = compositionOptions(adapters, {
+    runtimeFactory: { create: async () => new RecordingRuntime() as unknown as PiModelRuntime },
+  });
+  const released: string[][] = [];
+  const release = adapters.payload.delete.bind(adapters.payload);
+  vi.spyOn(adapters.payload, "delete").mockImplementation(async (ref) => {
+    released.push([ref]);
+    return release(ref);
+  });
+  vi.spyOn(prepared.options.handles, "issueHandle").mockRejectedValue(new Error("HANDLE_FAILED"));
+  const composition = createProductionModelComposition(prepared.options);
+  try {
+    const invoker = composition.proactiveModel(primaryModel.ref, {
+      maxOutputTokens: 256,
+      requestTimeoutMs: 60_000,
+    });
+    await expect(
+      invoker.prepare({
+        invocationId: "handle-fails",
+        prompt: "判断这些新邮件",
+        dataClassification: "private",
+        deadlineAt: "2099-01-01T00:00:00.000Z",
+      }),
+    ).rejects.toThrow("HANDLE_FAILED");
+    expect(released).toHaveLength(1);
+    expect(await adapters.payload.get(released[0]?.[0] as never)).toBeUndefined();
+  } finally {
+    await composition.close();
+  }
+});
+
 function embeddingAccountingFixture(mode: "query" | "projection", response: unknown) {
   const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
   let boundary: EmbeddingBoundary | undefined;

@@ -1,6 +1,7 @@
 export * from "./background.js";
 export * from "./chat.js";
 export * from "./entry.js";
+export * from "./eval.js";
 export * from "./mail.js";
 export * from "./memory.js";
 export * from "./review.js";

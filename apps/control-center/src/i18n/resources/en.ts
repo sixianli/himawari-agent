@@ -760,13 +760,13 @@ export const messages = {
     "Imported {count} from {source, select, codex {Codex} assistant {another AI} other {a Himawari export}}",
   "memory.page.goConfirm": "Review",
   "memory.page.import": "Import memories",
-  "memory.page.export": "Export all memories",
+  "memory.page.export": "Export memories and rules",
   "memory.page.sourceTitle":
     "{s, select, codex {Codex} assistant {ChatGPT, Claude or another AI} other {An old Himawari export (JSON)}}",
   "memory.page.sourceHelp":
     "{s, select, codex {Pick Codex memory files (memory_summary.md, MEMORY.md)} assistant {Ask it to list what it knows about you, then paste the answer} other {Only the himawari-memories.json downloaded earlier; the zip from the current export cannot be imported here}}",
   "memory.page.fileHelp":
-    "{s, select, codex {Pick memory_summary.md and MEMORY.md, and optionally your AGENTS.md. The files are in ~/.codex/memories/ and ~/.codex/ on your Mac; press ⌘⇧G in the file picker to type the path.} other {Pick a himawari-memories.json downloaded earlier. Export all memories now gives a zip for backup and moving machines (unzip it, then import the himawari-export folder inside with the command line), not importable here.}}",
+    "{s, select, codex {Pick memory_summary.md and MEMORY.md, and optionally your AGENTS.md. The files are in ~/.codex/memories/ and ~/.codex/ on your Mac; press ⌘⇧G in the file picker to type the path.} other {Pick a himawari-memories.json downloaded earlier. Export memories and rules now gives a zip for backup and moving machines (unzip it, then import the himawari-export folder inside with the command line), not importable here.}}",
   "memory.page.aiStep1": "Step 1: copy this message and send it to the AI you use.",
   "memory.page.aiPrompt":
     "List everything you remember about me, one item per line starting with “- ”: who I am, my preferences and habits, what I am working on, the people around me, and the rules I asked you to follow. Use my own words where you can. Leave out passwords, ID numbers and card numbers. List only the items, without explanations.",
@@ -785,14 +785,23 @@ export const messages = {
     "Nothing to import was found. Check the file, or that you pasted the AI's answer.",
   "memory.page.importTooBig": "Each file must be under 200 KB; split it and import in parts.",
   "memory.page.importUnreadable": "The file could not be read or is in the wrong format.",
-  "memory.page.exportTitle": "Export all memories and decision records",
+  "memory.page.exportTitle": "Export memories, standing rules and decision records",
   "memory.page.exportNote":
-    "You get one zip with per-item JSON Lines data and readable Markdown. Passwords, ID numbers and similar secrets stay as placeholders; memories in the trash and sensitive-topic memories such as health or money are exported too, and apart from the secrets their text is plain, so keep the zip safe. Use the command line encrypted export to take the secrets out too.",
+    "You get one zip with per-item JSON Lines data and readable Markdown; standing rules come with their sources and change history, readable in RULES.md. Passwords, ID numbers and similar secrets stay as placeholders; memories in the trash and sensitive-topic memories such as health or money are exported too, and apart from the secrets their text is plain, so keep the zip safe. Use the command line encrypted export to take the secrets out too.",
   "memory.page.download": "Download export",
   "memory.page.exportWorking": "Preparing the export…",
   "memory.page.exportDone":
-    "Exported {count} memories; {withheld} sensitive text places were left as placeholders.",
+    "Exported {count} memories and {rules} standing rules in force; {withheld} sensitive text places were left as placeholders.",
   "memory.page.exportFailed": "The export failed. Please try again later.",
+  "memory.page.chatExport": "Export chats",
+  "memory.page.chatExportTitle": "Export all chats",
+  "memory.page.chatExportNote":
+    "You get one zip: data/threads.jsonl holds every conversation as data, and chats/ has one readable Markdown file per conversation. Passwords, ID numbers and other secrets are left as placeholders. Conversations in the trash are exported too, and apart from secrets their text is plain, so keep the file safe. Attachments come only as a list (name, size, type), not the files themselves. Chats can be taken away but not imported back. To take the secrets too, use the encrypted export on the command line.",
+  "memory.page.chatDownload": "Download chats",
+  "memory.page.chatExportDone":
+    "Exported {threads, plural, one {# conversation} other {# conversations}} and {messages, plural, one {# message} other {# messages}}; {withheld, plural, one {# message with a secret was left as a placeholder} other {# messages with secrets were left as placeholders}}.",
+  "memory.page.chatExportTooLarge":
+    "There are too many chats to export from the web in one go. Please export on the server with the command line (himawari-admin data export-chats).",
   "capabilities.title": "Capabilities and adapters",
   "authorizations.title": "Authorizations and grants",
   "trace.title": "Trace",

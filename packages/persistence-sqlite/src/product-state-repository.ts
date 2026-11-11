@@ -42,6 +42,7 @@ import type {
   MuseIntakePort,
   LedgerObservationPort,
   ModelUsageStorePort,
+  RealEvalStorePort,
   WebPushStorePort,
   MemoryBookStorePort,
   MemoryIndexStorePort,
@@ -591,6 +592,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   modelUsage(): ModelUsageStorePort {
     return this.durable.modelUsage();
+  }
+
+  realEval(): RealEvalStorePort {
+    return this.durable.realEval();
   }
 
   gapCaseMarks(): GapCaseMarkPort {
