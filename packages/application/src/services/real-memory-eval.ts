@@ -88,12 +88,64 @@ function numbers(value: string): Set<string> {
   return new Set(value.normalize("NFKC").match(/\d{2,}/gu) ?? []);
 }
 
+const CHINESE_DIGITS: Readonly<Record<string, number>> = {
+  〇: 0,
+  零: 0,
+  一: 1,
+  二: 2,
+  两: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+};
+
+const DATE_UNITS: Readonly<Record<string, string>> = {
+  號: "号",
+  日: "号",
+  點: "时",
+  点: "时",
+  時: "时",
+};
+
+function chineseNumber(value: string): number | null {
+  if (/^\d+$/u.test(value)) return Number(value);
+  const tenAt = value.indexOf("十");
+  if (tenAt === -1)
+    return [...value].reduce<number | null>((total, char) => {
+      const digit = CHINESE_DIGITS[char];
+      return total === null || digit === undefined ? null : total * 10 + digit;
+    }, 0);
+  const tens = tenAt === 0 ? 1 : CHINESE_DIGITS[value.slice(0, tenAt)];
+  const rest = value.slice(tenAt + 1);
+  const ones = rest === "" ? 0 : CHINESE_DIGITS[rest];
+  return tens === undefined || ones === undefined ? null : tens * 10 + ones;
+}
+
+function dateTokens(value: string): Set<string> {
+  const tokens = new Set<string>();
+  for (const match of value
+    .normalize("NFKC")
+    .matchAll(/([0-9〇零一二两三四五六七八九十]+)\s*([年月日号號点點时時])/gu)) {
+    const amount = chineseNumber(match[1] ?? "");
+    const unit = match[2] ?? "";
+    if (amount === null) continue;
+    tokens.add(`${amount}${DATE_UNITS[unit] ?? unit}`);
+  }
+  return tokens;
+}
+
 export function leaksAnswer(question: string, sources: readonly string[]): boolean {
   const asked = ngrams(question, LEAK_NGRAM);
   const askedNumbers = numbers(question);
+  const askedDates = dateTokens(question);
   return sources.some((source) => {
     for (const gram of ngrams(source, LEAK_NGRAM)) if (asked.has(gram)) return true;
     for (const value of numbers(source)) if (askedNumbers.has(value)) return true;
+    for (const token of dateTokens(source)) if (askedDates.has(token)) return true;
     return false;
   });
 }
@@ -286,8 +338,13 @@ export class RealEvalBudget {
       throw new RealEvalBudgetExceededError();
   }
 
+  ensureRemaining(): void {
+    if (this.#spentMicros >= this.#limitMicros) throw new RealEvalBudgetExceededError();
+  }
+
   record(actualMicros: number): void {
     this.#spentMicros += Math.max(0, actualMicros);
+    if (this.#spentMicros > this.#limitMicros) throw new RealEvalBudgetExceededError();
   }
 }
 

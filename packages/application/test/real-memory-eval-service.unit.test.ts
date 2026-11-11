@@ -126,6 +126,9 @@ class MemoryStore implements RealEvalStorePort {
 interface Harness {
   readonly store: MemoryStore;
   readonly prompts: string[];
+  readonly recalls: string[];
+  readonly payloads: Map<string, string>;
+  readonly discarded: string[];
   memories: ProductMemoryRecord[];
   service: RealMemoryEvalService;
 }
@@ -135,16 +138,27 @@ function harness(options: {
   readonly answer?: (question: string) => string;
   readonly judge?: string;
   readonly decisions?: readonly CalibrationDecisionRow[];
+  readonly estimateMicros?: number;
+  readonly answerCostMicros?: number;
+  readonly addQuestion?: "duplicate" | "throw";
 }): Harness {
   const store = new MemoryStore();
+  if (options.addQuestion === "duplicate") store.addQuestion = async () => false;
+  if (options.addQuestion === "throw")
+    store.addQuestion = async () => {
+      throw new Error("SQLITE_BUSY");
+    };
   const prompts: string[] = [];
+  const recalls: string[] = [];
+  const discarded: string[] = [];
   const payloads = new Map<string, string>();
+  let stored = 0;
   let tick = 0;
   let id = 0;
   const sourceOf = (record: ProductMemoryRecord) => SOURCES[String(record.id)];
   const model: RealEvalModel = {
     modelRef: "eval-model",
-    estimateMicros: () => 100,
+    estimateMicros: () => options.estimateMicros ?? 100,
     async generate({ prompt }) {
       prompts.push(prompt);
       const data = JSON.parse(prompt.slice(prompt.lastIndexOf("\n") + 1)) as Record<
@@ -159,7 +173,7 @@ function harness(options: {
         const question = String(data["question"]);
         return {
           output: options.answer ? options.answer(question) : defaultAnswer(question),
-          costMicros: 100,
+          costMicros: options.answerCostMicros ?? 100,
         };
       }
       if (prompt.startsWith(REAL_EVAL_JUDGE.text))
@@ -170,6 +184,9 @@ function harness(options: {
   const state: Harness = {
     store,
     prompts,
+    recalls,
+    payloads,
+    discarded,
     memories: options.memories,
     service: undefined as unknown as RealMemoryEvalService,
   };
@@ -185,12 +202,17 @@ function harness(options: {
     readMemoryText: async (record) => sourceOf(record)?.text,
     readQuote: async (record) => sourceOf(record)?.quote,
     storeQuestion: async ({ text }) => {
-      const ref = `question:${payloads.size}`;
+      const ref = `question:${stored++}`;
       payloads.set(ref, text);
       return ref;
     },
     readQuestion: async (ref) => payloads.get(ref),
+    discardQuestion: async (ref) => {
+      discarded.push(ref);
+      payloads.delete(ref);
+    },
     recall: async (question) => {
+      recalls.push(question);
       const hit = Object.entries(SOURCES).find(
         ([, source]) => (source.question as { question: unknown }).question === question,
       );
@@ -296,11 +318,13 @@ describe("[P4-5] real memory eval run", () => {
       retired: number;
     };
     expect(summary.retired).toBe(2);
+    expect(test.discarded).toEqual(retired.map(({ questionRef }) => questionRef));
+    expect(retired.every(({ questionRef }) => !test.payloads.has(questionRef))).toBe(true);
     expect(summary.scores["fixed"]).toMatchObject({ samples: 1 });
     expect(summary.scores["fresh"]).toMatchObject({ samples: 1 });
   });
 
-  it("drops leaking questions and does not ask again about a memory the model declined", async () => {
+  it("drops leaking questions and does not ask again about a rejected memory version", async () => {
     const test = harness({ memories: [memory("leaky"), memory("shy")] });
     const first = await test.service.run("weekly", LIMITS);
     expect(test.store.questions).toHaveLength(0);
@@ -311,9 +335,41 @@ describe("[P4-5] real memory eval run", () => {
 
     const asked = test.prompts.length;
     await test.service.run("weekly", LIMITS);
-    const second = test.prompts.slice(asked);
-    expect(second.some((prompt) => prompt.includes("我不吃香菜"))).toBe(false);
-    expect(second.some((prompt) => prompt.includes("小橘子豆豆"))).toBe(true);
+    expect(test.prompts.slice(asked)).toEqual([]);
+
+    test.memories = [memory("leaky", { revision: 2 }), memory("shy")];
+    await test.service.run("weekly", LIMITS);
+    const third = test.prompts.slice(asked);
+    expect(third.some((prompt) => prompt.includes("小橘子豆豆"))).toBe(true);
+    expect(third.some((prompt) => prompt.includes("我不吃香菜"))).toBe(false);
+  });
+
+  it("deletes the stored question text when the bank does not keep the question", async () => {
+    const duplicate = harness({ memories: [memory("coffee")], addQuestion: "duplicate" });
+    const kept = await duplicate.service.run("manual", LIMITS);
+    expect(kept.outcome).toBe("completed");
+    expect(duplicate.discarded).toEqual(["question:0", "question:1"]);
+    expect(duplicate.payloads.size).toBe(0);
+
+    const failing = harness({ memories: [memory("coffee")], addQuestion: "throw" });
+    const failed = await failing.service.run("manual", LIMITS);
+    expect(failed.outcome).toBe("failed");
+    expect(failing.discarded).toEqual(["question:0"]);
+    expect(failing.payloads.size).toBe(0);
+  });
+
+  it("answers this week's new questions before the fixed panel", async () => {
+    const test = harness({ memories: [memory("coffee")] });
+    await test.service.run("weekly", LIMITS);
+    test.memories = [memory("coffee"), memory("flight")];
+    test.recalls.length = 0;
+    await test.service.run("weekly", LIMITS);
+    expect(test.recalls).toEqual([
+      "我下个月去哪儿出差？",
+      "我同事下个月去哪儿出差？",
+      "我早上习惯喝什么？",
+      "我妹妹早上喝什么？",
+    ]);
   });
 
   it("stops at the spending cap and still records the run", async () => {
@@ -324,6 +380,30 @@ describe("[P4-5] real memory eval run", () => {
     expect(report.costMicros).toBeLessThanOrEqual(450);
     expect(test.store.runs).toHaveLength(1);
     expect(test.store.runs[0]?.outcome).toBe("budget_exceeded");
+    const summary = report.summary as { items: number; unanswered: number };
+    expect(summary.items + summary.unanswered).toBe(4);
+    expect(summary.unanswered).toBeGreaterThan(0);
+  });
+
+  it("stops at once when a call costs more than its estimate", async () => {
+    const test = harness({
+      memories: [memory("coffee"), memory("flight")],
+      estimateMicros: 1,
+      answerCostMicros: 1_000,
+    });
+    const report = await test.service.run("weekly", { capMicros: 500, newMemoriesPerRun: 10 });
+    expect(report.outcome).toBe("budget_exceeded");
+    const answers = test.prompts.filter((prompt) => prompt.startsWith(REAL_EVAL_ANSWER.text));
+    expect(answers).toHaveLength(1);
+    expect(report.costMicros).toBe(2 * 100 + 10 + 1_000);
+  });
+
+  it("counts retrieval cost and does not search once the cap is used up", async () => {
+    const test = harness({ memories: [memory("coffee")], estimateMicros: 0 });
+    const report = await test.service.run("weekly", { capMicros: 100, newMemoriesPerRun: 10 });
+    expect(report.outcome).toBe("budget_exceeded");
+    expect(test.recalls).toEqual([]);
+    expect(report.costMicros).toBe(100);
   });
 
   it("records a failed run without the error text", async () => {
@@ -348,6 +428,7 @@ describe("[P4-5] real memory eval run", () => {
       readQuote: async () => "我早上只喝燕麦拿铁，不加糖",
       storeQuestion: async () => "ref",
       readQuestion: async () => undefined,
+      discardQuestion: async () => undefined,
       recall: async () => ({ memories: [], costMicros: 0 }),
       profile: async () => ({ memoryIds: [], texts: [], dataClassification: "public" as const }),
     });

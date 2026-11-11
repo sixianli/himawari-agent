@@ -79,6 +79,7 @@ export interface RealMemoryEvalDependencies {
     readonly createdAt: string;
   }) => Promise<string>;
   readonly readQuestion: (ref: string) => Promise<string | undefined>;
+  readonly discardQuestion: (ref: string) => Promise<void>;
   readonly recall: (question: string) => Promise<RealEvalRecall>;
   readonly profile: () => Promise<RealEvalProfile>;
   readonly decisions?: () => Promise<readonly CalibrationDecisionRow[]>;
@@ -103,7 +104,7 @@ export interface RealEvalSampleItem {
 export const QUESTION_OUTPUT_TOKENS = 400;
 export const ANSWER_OUTPUT_TOKENS = 300;
 export const JUDGE_OUTPUT_TOKENS = 100;
-export const RECENT_RUNS_FOR_DECLINES = 52;
+export const RECENT_RUNS_FOR_DECLINES = 520;
 
 export interface RealEvalRunReport {
   readonly runId: string;
@@ -155,6 +156,8 @@ export class RealMemoryEvalService {
     let judged = 0;
     let fastPath = 0;
     let unanswerable = 0;
+    let unanswered = 0;
+    let planned = 0;
     let outcome: RealEvalRunOutcome = "completed";
     let failure: string | null = null;
 
@@ -190,10 +193,12 @@ export class RealMemoryEvalService {
             reason,
             at: startedAt,
           });
+          await deps.discardQuestion(question.questionRef);
           retired += 1;
         } else active.push(question);
       }
-      const pending: PendingItem[] = active.map((question) => ({ question, panel: "fixed" }));
+      const pending: PendingItem[] = [];
+      planned = active.length;
       const skip = declinedFromRuns(
         await deps.store.listRuns({ ...deps.scope, limit: RECENT_RUNS_FOR_DECLINES }),
       );
@@ -221,8 +226,7 @@ export class RealMemoryEvalService {
         const generated = parseGeneratedQuestion(output, { memory: text, quote });
         if ("rejected" in generated) {
           rejected[generated.rejected] = (rejected[generated.rejected] ?? 0) + 1;
-          if (generated.rejected === "declined")
-            declined.push(declinedKey(memory.id, memory.revision));
+          declined.push(declinedKey(memory.id, memory.revision));
           continue;
         }
         const entries: [RealEvalItemKind, string][] = [[generated.kind, generated.question]];
@@ -230,18 +234,31 @@ export class RealMemoryEvalService {
           entries.push(["abstain", generated.abstainQuestion]);
         for (const [kind, questionText] of entries) {
           const createdAt = deps.now();
+          const questionRef = await deps.storeQuestion({
+            memory,
+            kind,
+            text: questionText,
+            createdAt,
+          });
           const question = {
             id: deps.newId(),
             memoryId: memory.id,
             memoryRevision: memory.revision,
             kind,
-            questionRef: await deps.storeQuestion({ memory, kind, text: questionText, createdAt }),
+            questionRef,
             questionModel: deps.model.modelRef,
             promptSha256: deps.promptSha256,
             createdAt,
           };
-          if (await deps.store.addQuestion({ ...deps.scope, question })) {
+          let stored = false;
+          try {
+            stored = await deps.store.addQuestion({ ...deps.scope, question });
+          } finally {
+            if (!stored) await deps.discardQuestion(questionRef);
+          }
+          if (stored) {
             added += 1;
+            planned += 1;
             pending.push({
               question: { ...question, retiredAt: null, retiredReason: null },
               panel: "fresh",
@@ -249,6 +266,7 @@ export class RealMemoryEvalService {
           }
         }
       }
+      pending.push(...active.map((question) => ({ question, panel: "fixed" as const })));
 
       const profile = await deps.profile();
       for (const { question, panel } of pending) {
@@ -261,6 +279,7 @@ export class RealMemoryEvalService {
           continue;
         }
         const abstain = question.kind === "abstain";
+        budget.ensureRemaining();
         const recall = await deps.recall(questionText);
         budget.record(recall.costMicros);
         const inProfile = new Set(profile.memoryIds);
@@ -318,8 +337,13 @@ export class RealMemoryEvalService {
           });
       }
     } catch (error) {
-      if (error instanceof RealEvalBudgetExceededError) outcome = "budget_exceeded";
-      else {
+      if (error instanceof RealEvalBudgetExceededError) {
+        outcome = "budget_exceeded";
+        unanswered = Math.max(
+          0,
+          planned - scored.length - unanswerable - (rejected["judge_invalid"] ?? 0),
+        );
+      } else {
         outcome = "failed";
         failure = error instanceof Error ? error.name : "unknown";
       }
@@ -341,6 +365,7 @@ export class RealMemoryEvalService {
       judged,
       fastPath,
       unanswerable,
+      unanswered,
       rejected,
       declined,
       ...(failure === null ? {} : { failure }),

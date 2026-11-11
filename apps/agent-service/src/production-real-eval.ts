@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmod, mkdir, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   type DecisionLedgerPort,
@@ -32,26 +32,52 @@ import { maskForExport } from "./production-gap-export.js";
 
 export const REAL_EVAL_TICK_MS = 60 * 60 * 1000;
 export const REAL_EVAL_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+export const REAL_EVAL_RETRY_MS = 24 * 60 * 60 * 1000;
+export const REAL_EVAL_SAMPLE_TTL_MS = REAL_EVAL_INTERVAL_MS;
 export const REAL_EVAL_SAMPLE_SIZE = 30;
 export const REAL_EVAL_SAMPLE_FILE = "latest-sample.json";
 export const DECISION_EVAL_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
 const MAX_OUTPUT_BYTES = 64 * 1024;
 
+type RunTiming = Pick<RealEvalRunRecord, "startedAt" | "trigger" | "outcome" | "costMicros">;
+
+function startedWithin(run: RunTiming, now: string, windowMs: number): boolean {
+  return Date.parse(now) - Date.parse(run.startedAt) < windowMs;
+}
+
+export function realEvalSpentMicros(runs: readonly RunTiming[], now: string): number {
+  return runs
+    .filter((run) => startedWithin(run, now, REAL_EVAL_INTERVAL_MS))
+    .reduce((total, { costMicros }) => total + Math.max(0, costMicros), 0);
+}
+
 export function dueRealEvalTrigger(
   mode: RealEvalConfiguration["mode"],
-  runs: readonly Pick<RealEvalRunRecord, "startedAt" | "trigger" | "outcome">[],
+  runs: readonly RunTiming[],
   now: string,
 ): RealEvalTrigger | null {
   if (mode === "off") return null;
+  if (runs.some((run) => startedWithin(run, now, REAL_EVAL_RETRY_MS))) return null;
   if (mode === "once")
     return runs.some(({ trigger, outcome }) => trigger === "manual" && outcome !== "failed")
       ? null
       : "manual";
-  const latest = runs.reduce<number | null>((newest, { startedAt }) => {
-    const at = Date.parse(startedAt);
-    return newest === null || at > newest ? at : newest;
-  }, null);
-  return latest === null || Date.parse(now) - latest >= REAL_EVAL_INTERVAL_MS ? "weekly" : null;
+  return runs.some(
+    (run) => run.outcome !== "failed" && startedWithin(run, now, REAL_EVAL_INTERVAL_MS),
+  )
+    ? null
+    : "weekly";
+}
+
+export async function expireRealEvalSample(directory: string, now: string): Promise<boolean> {
+  const file = path.join(directory, REAL_EVAL_SAMPLE_FILE);
+  const found = await stat(file).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (!found || Date.parse(now) - found.mtimeMs < REAL_EVAL_SAMPLE_TTL_MS) return false;
+  await rm(file, { force: true });
+  return true;
 }
 
 export function createRealEvalModel(options: {
@@ -218,11 +244,15 @@ export class ProductionRealEval {
 
   async #tick(): Promise<void> {
     const { configuration, store, service } = this.#options;
+    const now = this.#options.now();
+    await expireRealEvalSample(this.#options.sampleDirectory, now);
     const runs = await store.listRuns({ ...this.#options.scope, limit: 520 });
-    const trigger = dueRealEvalTrigger(configuration.mode, runs, this.#options.now());
+    const trigger = dueRealEvalTrigger(configuration.mode, runs, now);
     if (trigger === null) return;
+    const remaining = configuration.weeklyCapMicros - realEvalSpentMicros(runs, now);
+    if (remaining <= 0) return;
     const report = await service.run(trigger, {
-      capMicros: configuration.weeklyCapMicros,
+      capMicros: remaining,
       newMemoriesPerRun: configuration.newMemoriesPerRun,
       sampleSize: trigger === "manual" ? REAL_EVAL_SAMPLE_SIZE : 0,
     });
@@ -238,7 +268,7 @@ export interface ProductionRealEvalDependencies {
   readonly memoryLimit: number;
   readonly store: RealEvalStorePort;
   readonly state: Pick<ProductMemoryStatePort, "listActive" | "listHistory">;
-  readonly payloads: Pick<PayloadStorePort, "get" | "put">;
+  readonly payloads: Pick<PayloadStorePort, "get" | "put" | "delete">;
   readonly protector: Pick<PayloadProtectorPort, "protect" | "unprotect">;
   readonly memory: Pick<DurableMemoryService, "search">;
   readonly embed: <T>(context: MailEmbeddingContext, operation: () => Promise<T>) => Promise<T>;
@@ -302,6 +332,9 @@ export function createProductionRealEval(deps: ProductionRealEvalDependencies): 
       return ref;
     },
     readQuestion: readText,
+    discardQuestion: async (ref) => {
+      await deps.payloads.delete(ref as PayloadRef);
+    },
     decisions: async () => {
       const end = deps.now();
       const rows = await deps.ledger.readCalibrationRows({

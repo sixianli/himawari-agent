@@ -128,6 +128,16 @@ describe("[P4-5] generated questions are untrusted", () => {
     expect(leaksAnswer("我哪一年搬到大阪的？", ["主人 2019 年搬到大阪。"])).toBe(false);
   });
 
+  it("treats a date or hour written in Chinese or Arabic numerals as the same value", () => {
+    const source = ["主人十二月三日飞大阪"];
+    expect(leaksAnswer("我 12 月要去哪里？", source)).toBe(true);
+    expect(leaksAnswer("我3号飞哪里？", source)).toBe(true);
+    expect(leaksAnswer("我下个月哪天飞大阪？", source)).toBe(false);
+    expect(leaksAnswer("我早上七点做什么？", ["主人每天 7:00 跑步，七点出门"])).toBe(true);
+    expect(leaksAnswer("我二十三号做什么？", ["主人 23 日体检"])).toBe(true);
+    expect(leaksAnswer("我十一月做什么？", ["主人 12 月体检"])).toBe(false);
+  });
+
   it("rejects kinds outside the allowed set and malformed output", () => {
     expect(parseGeneratedQuestion('{"question":"我爱喝什么？","kind":"secret"}', sources)).toEqual({
       rejected: "kind_invalid",
@@ -254,6 +264,12 @@ describe("[P4-5] spending cap", () => {
     budget.record(450_000);
     expect(() => budget.reserve(100_000)).toThrow(RealEvalBudgetExceededError);
     expect(budget.spentMicros).toBe(450_000);
+    expect(() => budget.record(60_000)).toThrow(RealEvalBudgetExceededError);
+    expect(budget.spentMicros).toBe(510_000);
+    expect(() => budget.ensureRemaining()).toThrow(RealEvalBudgetExceededError);
+    const exact = new RealEvalBudget(100);
+    exact.record(100);
+    expect(() => exact.ensureRemaining()).toThrow(RealEvalBudgetExceededError);
     expect(() => new RealEvalBudget(0)).toThrow("REAL_EVAL_BUDGET_INVALID");
   });
 });

@@ -279,6 +279,9 @@ describe.each(["worker", "direct"] as const)("[P4-5] real memory eval through %s
         return ref;
       },
       readQuestion: async (ref) => resource.content.values.get(ref),
+      discardQuestion: async (ref) => {
+        resource.content.values.delete(ref);
+      },
       recall: async (question) => {
         const found = await resource.memory.search({
           ownerId: OWNER_ID,
