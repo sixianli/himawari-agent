@@ -382,6 +382,28 @@ describe("publication admission is atomic and workflow-bound", { timeout: 30000 
       publish({ root: state.root, input, output: ".ci-output/bad-public", artifacts: "drop" }),
     ).rejects.toThrow("CI_PUBLIC_ARTIFACTS_INVALID");
   });
+  it("CLI passes --artifacts through and rejects it for quality or with an unknown value", async () => {
+    const { input } = reportFixture({ "runtime.tar.gz": ["artifact", "synthetic archive"] });
+    state.mockAdmission = true;
+    const run = async (output, extra, source = input) => {
+      process.exitCode = 0;
+      await entry("publish.mjs", ["--input", source, "--output", output, ...extra]);
+      return process.exitCode ?? 0;
+    };
+    expect(await run(".ci-output/cli-omit", ["--artifacts", "omit"])).toBe(0);
+    expect(existsSync(path.join(state.root, ".ci-output/cli-omit/reports/runtime.tar.gz"))).toBe(
+      false,
+    );
+    expect(existsSync(path.join(state.root, ".ci-output/cli-omit/reports/result.json"))).toBe(true);
+    expect(await run(".ci-output/cli-drop", ["--artifacts", "drop"])).toBe(1);
+    const quality = path.join(state.root, ".ci-output/quality-input");
+    write(path.join(quality, "quality.json"), { observations: [], commands: [] });
+    expect(
+      await run(".ci-output/cli-quality", ["--mode", "quality", "--artifacts", ""], quality),
+    ).toBe(1);
+    expect(existsSync(path.join(state.root, ".ci-output/cli-quality"))).toBe(false);
+    process.exitCode = 0;
+  });
   it("CLI obtains verified Python explicitly and never relies on an inherited interpreter", async () => {
     const { input } = reportFixture({ "runtime.tar.gz": ["artifact", "synthetic archive"] });
     state.mockAdmission = true;

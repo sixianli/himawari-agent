@@ -1156,6 +1156,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     "/srv/gh-runner/home",
     "/srv/gh-runner-2",
     "/srv/gh-runner-share",
+    "/srv/gh-runner-share/43003101968-1",
   ];
 
   const installWithFailingRuleCheck = (nftCheck, extraSetup = [], stderrRedirect) => {
@@ -1278,6 +1279,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     expect(result.status).toBe(0);
     expect(state.rc).toBe("0");
     expect(state["/srv/gh-runner-share"]).toBe("DIR");
+    expect(state["/srv/gh-runner-share/43003101968-1"]).toBe("DIR");
     expect(box.calls()).not.toMatch(/^group(add|del) /m);
   });
 
@@ -1341,6 +1343,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       "/srv/gh-runner/home": "MISSING",
       "/srv/gh-runner-2": "MISSING",
       "/srv/gh-runner-share": "MISSING",
+      "/srv/gh-runner-share/43003101968-1": "MISSING",
     });
   });
 });

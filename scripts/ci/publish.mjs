@@ -185,7 +185,7 @@ export async function main(argv = process.argv.slice(2)) {
     ? verifyInstalledTools({ directory: args["--tools"] }).executables.python
     : undefined;
   if (args["--mode"] === "quality") {
-    if (args["--artifacts"]) throw new Error("CI_PUBLIC_ARTIFACTS_INVALID");
+    if (args["--artifacts"] !== undefined) throw new Error("CI_PUBLIC_ARTIFACTS_INVALID");
     return publishQuality({ input: args["--input"], output: args["--output"], python });
   }
   if (args["--mode"] && args["--mode"] !== "check") throw new Error("CI_PUBLIC_MODE_INVALID");
