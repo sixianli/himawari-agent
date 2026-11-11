@@ -528,7 +528,9 @@ export class ProductionMemoryControl {
           return texts;
         },
         visible: reviewMemoryVisible,
-        ...(ownerRules ? { ownerRuleSummary: (ruleId: string) => ownerRules.describe(ruleId) } : {}),
+        ...(ownerRules
+          ? { ownerRuleSummary: (ruleId: string) => ownerRules.describe(ruleId) }
+          : {}),
       },
       query,
     );

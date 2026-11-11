@@ -99,6 +99,7 @@ export const messages = {
   "step.search": "ウェブ検索",
   "step.recall": "記憶を確認",
   "step.reminder": "リマインダーを操作",
+  "step.rule": "常設ルールを操作",
   "step.fetch": "ウェブページ表示",
   "step.read": "ファイル読み込み",
   "step.write": "ファイル書き込み",
@@ -882,6 +883,26 @@ export const messages = {
   "memory.page.changeNo": "{n} 回目の変更",
   "memory.page.seeAllChanges": "この記憶の変更をすべて見る",
   "memory.page.confirmTitle": "確認が必要 · {count} 件",
+  "rules.title": "常設ルール · {count} 件",
+  "rules.note":
+    "これらのルールはモデルの記憶ではなく、プログラムが必ず守ります。取り消すと次のメール確認から適用されません。",
+  "rules.type":
+    "{t, select, mail_must_notify {必ず通知} mail_read_whole_thread {スレッド全体を先に読む} other {その他のルール}}",
+  "rules.needsReview": "元の記憶が変わったため再確認待ち（適用は継続中）",
+  "rules.notEnforced": "このルールを読み取れないため、いまは適用していません",
+  "rules.reconfirm": "再確認",
+  "rules.undo": "取り消す",
+  "rules.receipt.label": "常設ルールの控え",
+  "rules.receipt.status":
+    "{s, select, active {常設ルールにしました} proposed {ルールの提案です。「適用」を押すと有効になります} soft {好みとして記録しました（プログラムでは強制しません）} undone {取り消しました} other {常設ルール}}",
+  "rules.receipt.trials": "試算",
+  "rules.receipt.trial": "{hit, select, true {該当する} other {該当しない}}：{from} · {subject}",
+  "rules.receipt.replay":
+    "過去 {days} 日の再計算：判断済みのメール {checked} 件のうちルールに該当するのは {hit} 件で、そのうち {changed} 件は「対応不要」か「知っておけば十分」だったものが確認待ちに変わります。そのうち「役に立った」と評価したものは {useful} 件です。",
+  "rules.receipt.replayNote":
+    "再計算は当時保存した内容で行います。「対応不要」と判断したメールは差出人と件名しか残っていないため、件数は推定で、多めにも少なめにもなりえます。",
+  "rules.receipt.replayNone": "今回は再計算ができませんでしたが、ルールは有効になっています。",
+  "rules.receipt.confirm": "適用",
   "memory.page.carry.title": "毎回の会話に持っていく記憶",
   "memory.page.carry.summary": "{count} 件 · {limit} 字中 {used} 字を使用",
   "memory.page.carry.queued": "ほかに {count} 件が入りきりません",
