@@ -1,0 +1,7 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "规则条件的显示值和实际保存/匹配值不一致", "valid": true, "class": "error", "severity": "low", "trigger": "外部 agent 在规则条件里放 U+2028", "consequence": "确认框显示空格，实际保存和匹配的是行分隔符", "modelSeverity": "低（偏中低）"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新增 auto-accept 用例没验证", "valid": true, "class": "better", "modelSeverity": "低"}
+{"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "自动同意用例没有直接检查 rule 类记忆记录", "valid": true, "class": "better", "modelSeverity": "低"}
+{"id": "ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 的“每个值各占一行”和确认框的“同意就保存”略宽于代码", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 0225/0226", "consequence": "以为客户端名、分类也各占一行", "modelSeverity": "低（文档/文案）"}
+{"id": "glm-1", "model": "opencode-go/glm-5.3-flash", "quote": "五个条件列表里的 excludePhrases 没有用例", "valid": true, "class": "better", "modelSeverity": "低"}
+{"id": "glm-2", "model": "opencode-go/glm-5.3-flash", "quote": "「主人没看到确认框就不算同意」这句原理总结强于代码实际保证", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR", "consequence": "以为等满 1.5 秒的自动回答也会被挡住", "modelSeverity": "低"}
+{"id": "glm-3", "model": "opencode-go/glm-5.3-flash", "quote": "「对方写不出一行看起来像固定说明的文字」略过头", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR", "consequence": "以为对方完全写不出固定说明的字样", "modelSeverity": "低"}

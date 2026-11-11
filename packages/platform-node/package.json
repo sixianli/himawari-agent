@@ -18,10 +18,12 @@
     "@himawari-agent/gateway-contracts": "0.0.0",
     "@himawari-agent/prompt-catalog": "0.0.0",
     "@himawari-agent/sensitive-capture": "0.0.0",
+    "@huggingface/tokenizers": "0.2.0",
     "@modelcontextprotocol/client": "2.0.0",
     "fastify": "5.12.1",
     "html-to-text": "9.0.5",
     "jose": "6.2.10",
+    "onnxruntime-node": "1.30.0",
     "otpauth": "9.5.2",
     "undici": "8.10.2",
     "web-push": "3.6.7"

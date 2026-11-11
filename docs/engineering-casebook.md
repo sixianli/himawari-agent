@@ -112,6 +112,7 @@ date: "2026-10-26"
   85. [没人输入验证码，拦截记录里却天天有“验证码”：敏感信息检查把 Himawari 自己写的指令当成了外来内容](#case-trusted-prompt-text)
   86. [底层 Agent 框架跨大版本升级：Pi 从 0.84.2 升到 1.5.0，老对话的缓存一个字节都没变](#case-pi-1-5-upgrade)
   88. [三路检索合并后怎么划“相关”的线：RRF 分数划不了线，用相似度加少量加分，权重和余量用评测扫出来](#case-relevance-cutoff)
+  90. [让模型替主人先打一遍分，什么时候才敢少给主人看：一致率按区间下限算，还要比瞎猜准](#case-model-prereview)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -137,7 +138,7 @@ date: "2026-10-26"
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction)、[自己写的指令不该被当成外来内容检查](#case-trusted-prompt-text)、[沙箱保护不能静默失效](#case-srt-locked-seccomp-helper) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes)、[所有模型请求只走一个出口](#case-model-egress-redaction)、[发给模型的内容只追加](#case-append-only-prefix)、[Pi 升到 1.5.0](#case-pi-1-5-upgrade) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes)、[所有模型请求只走一个出口](#case-model-egress-redaction)、[发给模型的内容只追加](#case-append-only-prefix)、[Pi 升到 1.5.0](#case-pi-1-5-upgrade)、[模型预评什么时候能少给主人看](#case-model-prereview) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
 | Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle)、[回答写完才整块出现](#case-streaming-answers) |
@@ -1179,11 +1180,15 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 [ADR 0081](adr/0081-isolated-instance-per-person.md)；Idea `docs/ideas/IDEA-20261026-001-per-person-isolated-himawari.md`；Backlog `docs/backlog/BL-20261026-003-isolated-instance-per-person.md`；评估文档 <https://claude.ai/artifact/77cUajUv5MWWHHMH8m2g1N>；[PR #37](https://github.com/sixianli/himawari-agent/pull/37)。
 
+**后续（2026-11-11）**
+
+重新评估后，Andy 定了两个前提：生产机只有一台、不多花服务器钱，目标是 10 到 20 人。每人一套实例大概率放不下（推断，没有实测），所以 [ADR 0234](adr/0234-one-program-per-person-database-file.md) 取代了 ADR 0083，改成一个程序、每人一个数据库文件、每人一个专属执行账号；模型用 Andy 已有的套餐（对话模型按 ADR 0117 的顺序，可能先用 CodeBuddy 免费额度）、不用 Vercel 的 key，每人每月上限由 Andy 在管理页配置。上面“先选 silo”的取舍是当时单机、两三个熟人的前提下做的；放弃的理由是内存和磁盘要乘以人数，代价是隔离从“结构上分开”降为“三道防线加系统账号”，并接受主程序崩了所有人一起断。结果数据还没有：量机器是开工第一步。
+
 **后续（2026-10-26）**
 
 评估 iOS App 时决定 Andy 的手机也走 Cloudflare 入口，所以 [ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md) 取代了 ADR 0081，只改了“Andy 自己继续走 ssh 隧道”这一句，其余决定不变。详见[案例 21](#case-mobile-client)。
 
-**面试 30 秒版**
+**面试 30 秒版（2026-10 的版本；现行做法见上面 2026-11-11 的后续）**
 
 “个人 Agent 要分享给家人朋友，各自的记忆必须隔离。我先盘点代码：数据库每张表已经带主人 ID，单用户写死在配置、登录、密钥和后台任务。对照 AWS 的 silo / pool 模型，我没有马上改成一个实例分用户，因为漏一个过滤条件就会泄露别人的记忆；先给每人起一个独立实例，前面用 Cloudflare Access 只放行邀请的邮箱，不开放注册，避免陌生人刷爆模型费用。用户超过五人再迁到 pool，先写隔离测试。”
 
@@ -2821,11 +2826,15 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 
 **相关 ADR/PR**
 
-PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，没有新 ADR。改成本机模型这一步 Andy 2026-10-28 决定以后再做，记为 [BL-20261028-008](backlog/BL-20261028-008-local-memory-embedding.md)，动手时另写 ADR。
+PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，没有新 ADR。改成本机模型这一步 Andy 2026-10-28 决定以后再做，记为 [BL-20261028-008](archive/backlog/BL-20261028-008-local-memory-embedding.md)，动手时另写 ADR。
 
 **面试 30 秒版**
 
 “用户看到‘找到 0 条记忆’也花了 1.4 秒。我没有猜，用生产库里已有的时间点把这一步拆成五段，发现 88% 是一次向量化网络请求。看响应头才知道，东京的请求被网关转到悉尼，再去美国的供应商，绕了两段跨洋路。能在代码里改的，是照 OpenAI SDK 的做法改用 base64 返回格式，数值逐位相同，生产机上实测从 1.05 秒降到 0.77 秒。绕路本身是网关路由，根治只能在本机算向量，小模型 90 毫秒，但准确度和内存是产品取舍，我把数据摆给产品负责人来选。”
+
+**后续（2026-11-11）：改在本机算向量（P3-1）**
+
+候选报告比较了三个能在生产机 CPU 上跑的模型，Andy 选了 jina-embeddings-v5-text-small-retrieval 的 int8 量化版。按 [ADR 0224](adr/0224-memory-embedding-runs-on-the-host.md)，向量在服务进程里用 ONNX Runtime 计算，外网 Qwen3-8B 保留为可选；每个嵌入模型登记成一份档案，门槛跟着模型走，换模型只改配置。本机请求仍走统一出口，遮盖和记账不漏。合成评测集真实代码路径实测（门槛 0.30，数字出自 ADR 0224）：主评测集命中 90%（网关 8B 在 0.6 门槛下 80%），留出集 70%；查询中位数约 35 毫秒，加载约 3.7 秒，进程多占约 1.35 GB。生产上线后的中位数未测量。代价是许可为 CC BY-NC 4.0，对外收费前要换成 Apache 2.0 的 Qwen3-0.6B（已登记好档案）。检索索引的威胁模型另写在 [记忆检索索引的威胁模型](memory-index-threat-model.md)。
 
 [返回目录](#contents)
 
@@ -5555,6 +5564,57 @@ Pi 在 0.86 和 0.87 改了两处核心约定：发给模型的请求不再分�
 **面试 30 秒版**
 
 “我们的记忆检索是向量、关键词、实体三路，用 RRF 合并。只有向量路有门槛，一个关键词撞上就会带出无关记忆。最直观的做法是在 RRF 分数上划线，但 RRF 只看名次，离线一扫就是断崖：要么什么都挡不住，要么召回从 77% 掉到 49%。我改成用唯一能跨查询比较的余弦相似度做底，关键词和实体只补有上限的少量分数。权重和余量是把三路原始候选录下来、离线扫几百组参数定的，取稳定区域的中间值。原本最优的余量 0.03 离召回标准线只差 0.1 个点，嵌入每次有 0.01 的抖动，所以退到 0.05。结果准确率从 85.4% 升到 89.1%，召回不降；完成标准和一个反向用例都写进了测试。”
+
+[返回目录](#contents)
+
+<a id="case-model-prereview"></a>
+
+## 案例 90：让模型替主人先打一遍分，什么时候才敢少给主人看：一致率按区间下限算，还要比瞎猜准
+
+**背景与现象**
+
+Himawari 的每个关键判断（读完邮件提醒没提醒、记忆存没存、整理记忆对不对）都写一条决策记录，Andy 在「每天打分」里逐条评“有用 / 不需要 / 漏了”，周报按这些打分算出各类判断的准确度。产品愿景写明，Andy 的审核带宽是实际瓶颈（`docs/product-vision.md:196`）。实施清单 P4-8 要求：先让模型给每条待打分的决策预评，预评不能写进 Andy 的打分；模型和 Andy 足够一致时，「每天打分」只给他看模型拿不准的。
+
+**根因**
+
+这不是 bug，难点在“什么时候能信模型”：样本少时，10 条全对也显示 100%；而且如果 Andy 在某类判断里本来就 95% 评“有用”，模型只要全评“有用”就有 95% 一致，看起来很准，其实什么都没学到。
+
+**我们的方案**
+
+- 预评单独一张表 `decision_prereviews`，不许改，只随所属决策或邮件记录删除；Andy 的打分仍只在原来的列里，发给模型的请求里也不带他的打分。
+- 一致率只看会被隐藏的那部分：模型评“有用”、把握不低于 800（满分 1000）、且和 Andy 以往打分不冲突。这部分的一致比例按 Wilson 区间下限不低于 90%，而且要高于“全当有用”这种猜法（Andy 评“有用”的比例的 Wilson 上限），才算过门槛。
+- 自动减少默认关闭；打开后，隐藏前再核对一次文字摘要，文字变了就不隐藏；按条目哈希固定留 20% 给 Andy 抽查，好让一致率在隐藏开始后还能继续更新。
+- 每天最多 50 次调用，尝试次数和费用从表里数，重启不会重置；失败也记一行带费用，24 小时内不重试。
+- 周报脚本和网页周报都显示每类判断的预评数、拿不准数、配对数、一致率和区间、kappa（扣掉碰巧一致之后的一致程度）、门槛结论。
+
+**方案讨论与备选**
+
+- 把预评写成决策记录的新列：省一张表，但写错列就会冒充 Andy 的打分，放弃。
+- 用点估计做门槛：样本少时形同虚设，放弃。
+- 隐藏后不留抽查：一致率会冻结在开启那一刻，模型变差也看不出来，放弃。
+- 配对时再核对文字摘要：要在读周报时重读全部原文，暂不做；只在隐藏前核对，写进 ADR。
+
+**业界主流做法**
+
+- ✅ [Zheng 等，Judging LLM-as-a-Judge](https://arxiv.org/abs/2306.05685)：用模型当裁判之前，先量它和人的一致率，原文：“achieving over 80% agreement, the same level of agreement between humans”。
+- ✅ [维基百科：二项比例置信区间](https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval)：Wilson 区间“can be safely employed with small samples and skewed observations”。
+
+**对比与取舍**
+
+和论文一样，先用人打过分的样本量出一致率再决定信不信模型；不同的是，我们不看整体一致率，只看“会被隐藏”的那部分，并且要求比“全当有用”更准，因为隐藏错的代价是 Andy 看不到本该纠正的判断。代价是门槛更难过：90% 门槛下至少要 35 对才可能过。
+
+**结果数据**
+
+- 门槛最少配对数 35：`packages/calibration/src/prereview.ts` 的 `minimumPairsToPass(900)`，单元测试覆盖。
+- 生产上的一致率、隐藏条数：未测量（自动减少默认关闭，还没上线）。
+
+**相关 ADR/PR**
+
+[ADR 0237](adr/0237-model-pre-rates-waiting-decisions.md)、PR #373、迁移 0091。
+
+**面试 30 秒版**
+
+“主人每天要给 agent 的判断打分，我让模型先预评一遍，想在一致率够高时少给他看。难点是一致率会骗人：样本少时 10/10 也是 100%，主人本来 95% 评‘有用’时模型全评‘有用’也有 95%。所以门槛用 Wilson 区间下限，还必须高于‘全当有用’的上限，只算会被隐藏的那部分；隐藏后固定留 20% 抽查，让一致率持续更新。预评单独存表，绝不进主人的打分。”
 
 [返回目录](#contents)
 

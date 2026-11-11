@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   ApplicationPortError,
   createProactiveSeal,
+  DEFAULT_REVIEW_PREREVIEW,
   DurableMemoryService,
   type MemoryCheckupPair,
   MemoryCheckupService,
@@ -47,6 +48,14 @@ const WEDNESDAY_NOON_JST = "2026-11-11T03:00:00.000Z";
 const MONDAY_JST = "2026-11-08T15:00:00.000Z";
 
 class TermEmbedder implements Embedder {
+  embedQuery(query: string): Promise<Float32Array> {
+    return this.embed(query);
+  }
+
+  embedDocument(text: string): Promise<Float32Array> {
+    return this.embed(text);
+  }
+
   readonly model = "fixture-term-embedding";
   readonly dimensions = DIMENSIONS;
 
@@ -161,6 +170,7 @@ const proactiveConfiguration = (budgetSeconds: number): ProactiveConfiguration =
   reviewSecondsPerItem: 5,
   reviewSilentSharePermille: 500,
   reviewMemoryUnusedDays: 90,
+  reviewPrereview: DEFAULT_REVIEW_PREREVIEW,
   backoffThreshold: 3,
   wholeThreadMailsPerMail: 50,
   wholeThreadCharactersPerMail: 60_000,

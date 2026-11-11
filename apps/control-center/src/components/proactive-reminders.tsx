@@ -511,7 +511,11 @@ export function ProactiveReviewSection({
     wasDone.current = { page: current, done: rowsDone };
     if (finishedHere && current < pages - 1) setPage(current + 1);
   }, [rowsDone, current, pages]);
-  if (!review || (review.items.length === 0 && review.folded.total === 0)) return null;
+  if (
+    !review ||
+    (review.items.length === 0 && review.folded.total === 0 && review.hiddenByModel === 0)
+  )
+    return null;
   const unrated = rows.filter(({ rating, checkup }) => checkup === null && rating === null);
   const rate = (ratings: readonly ProactiveReviewRating[]) =>
     !proactive.busy && void proactive.rateReview(ratings);
@@ -530,6 +534,11 @@ export function ProactiveReviewSection({
       </div>
       {!folded && review.notSampled > 0 ? (
         <p className="settings-note">{message("dailyReview.note")}</p>
+      ) : null}
+      {!folded && review.hiddenByModel > 0 ? (
+        <p className="settings-note proactive-review-hidden">
+          {message("dailyReview.hiddenByModel", { count: review.hiddenByModel })}
+        </p>
       ) : null}
       <ul className="proactive-review-list">
         {rows.map((item) =>

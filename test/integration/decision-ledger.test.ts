@@ -1064,7 +1064,11 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
       const embedder: Embedder = {
         model: "fixture-embedding",
         dimensions: 4,
-        async embed() {
+        async embedQuery() {
+          if (embedders.broken) throw new Error("embedding down");
+          return new Float32Array([1, 0, 0, 0]);
+        },
+        async embedDocument() {
           if (embedders.broken) throw new Error("embedding down");
           return new Float32Array([1, 0, 0, 0]);
         },

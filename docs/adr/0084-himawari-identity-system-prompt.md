@@ -77,3 +77,9 @@ date: "2026-10-26"
 - 后续：[ADR 0166](0166-prompt-wording-batch-1-system-and-tools.md) 按 Andy 2026-11-05 的决定，把 Pi 的 read 说明和用法规则、bash 说明和 `timeout` 参数说明换成目录里的中文条目，去掉 bash 的 `PI_*` 用法规则；第 2 条“工具简介和用法规则没有改写”从那时起只对其余工具成立。
 
 [返回目录](#contents)
+
+<a id="multi-user-follow-up"></a>
+
+## 2026-11-11 后续：多人使用
+
+[ADR 0234](0234-one-program-per-person-database-file.md) 取代 ADR 0083，多人改成一个程序、每人一个数据库文件。第 4 条“主人的名字不写进身份说明、统一称主人”的结论不变：每人那一份的主人是他自己，名字由他自己的记忆提供，所以身份说明不用按人改。

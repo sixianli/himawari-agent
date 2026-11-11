@@ -31,11 +31,14 @@ import {
   MCP_PROPOSE_MEMORY_DECLINED,
   MCP_PROPOSE_MEMORY_FAILED,
   MCP_PROPOSE_MEMORY_INVALID,
+  MCP_PROPOSE_MEMORY_NOT_READY,
   MCP_PROPOSE_MEMORY_SAVED,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
+  MCP_PROPOSE_NOT_SHOWN,
   MCP_PROPOSE_RULE_ALREADY_SAVED,
   MCP_PROPOSE_RULE_DECLINED,
   MCP_PROPOSE_RULE_INVALID,
+  MCP_PROPOSE_RULE_NOT_READY,
   MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE,
   MCP_PROPOSE_RULE_SAVED,
 } from "@himawari-agent/prompt-catalog";
@@ -51,10 +54,11 @@ import {
 } from "../../apps/agent-service/src/production-mcp-memory-writer.ts";
 import {
   MCP_PROPOSAL_CONFIRM_KEY,
-  MCP_PROPOSAL_SAVE_FIELD,
+  MCP_PROPOSAL_UNSEEN_ANSWER_MS,
   MCP_READ_PATH,
   MCP_READ_TOOL_NAMES,
   MCP_WRITE_TOOL_NAMES,
+  mcpProposalAnswer,
   ProductionMcpRead,
   registerMcpReadRoute,
 } from "../../apps/agent-service/src/production-mcp-read.ts";
@@ -82,10 +86,15 @@ const COFFEE = "主人每天早上只喝无糖的燕麦拿铁";
 const embedder: Embedder = {
   model: "fixture-embedding",
   dimensions: 2,
-  async embed(text: string) {
+  async embedQuery(text: string) {
+    return new Float32Array(text.includes("拿铁") ? [1, 0] : [0, 1]);
+  },
+  async embedDocument(text: string) {
     return new Float32Array(text.includes("拿铁") ? [1, 0] : [0, 1]);
   },
 };
+
+const HUMAN_ANSWER_MS = 3_000;
 
 type Answer =
   | { action: "accept"; content: Record<string, string | number | boolean | string[]> }
@@ -115,6 +124,8 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       readonly slowDecisionRead?: boolean;
       readonly readOnly?: boolean;
       readonly failRuleMarker?: boolean;
+      readonly slowDecidedMs?: number;
+      readonly notReady?: boolean;
       readonly replay?: boolean;
     } = {},
   ) {
@@ -288,6 +299,25 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       clock,
       onFailure: (error) => failures.push(error),
     });
+    let slowReads = 0;
+    const slowDecided = <T extends object>(target: T): T =>
+      options.slowDecidedMs === undefined && !options.notReady
+        ? target
+        : new Proxy(target, {
+            get(inner, key) {
+              const value = Reflect.get(inner, key, inner);
+              if (typeof value !== "function") return value;
+              if (key === "ready" && options.notReady) return async () => false;
+              if (key !== "decided" || options.slowDecidedMs === undefined)
+                return value.bind(inner);
+              return async (proposalId: string) => {
+                const found = await value.call(inner, proposalId);
+                slowReads += 1;
+                clock.advance(options.slowDecidedMs ?? 0);
+                return found;
+              };
+            },
+          });
     const access = await createMcpAccess(() => new Date(clock.now()));
     const owners = repository.ownerIdentityState();
     await owners.bindFirstOwner({
@@ -300,7 +330,11 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       clock,
       access: access.verifier,
       owners,
-      ...(options.readOnly ? {} : { write: { proposals: writer, rules: ruleProposals } }),
+      ...(options.readOnly
+        ? {}
+        : {
+            write: { proposals: slowDecided(writer), rules: slowDecided(ruleProposals) },
+          }),
       timeZone: TIME_ZONE,
       requestTimeoutMs: 30_000,
       sources: {
@@ -329,6 +363,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         readonly autoFulfill?: boolean;
         readonly name?: string;
         readonly elicitationCapability?: unknown;
+        readonly answerAfterMs?: number;
       } = {},
     ) => {
       const era = input.era ?? "modern";
@@ -346,7 +381,8 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       if (input.elicitation !== false)
         client.setRequestHandler("elicitation/create", async (request) => {
           elicitations.push(request.params as Record<string, unknown>);
-          return input.answer ?? { action: "accept", content: { [MCP_PROPOSAL_SAVE_FIELD]: true } };
+          clock.advance(input.answerAfterMs ?? HUMAN_ANSWER_MS);
+          return input.answer ?? { action: "accept", content: {} };
         });
       await client.connect(
         new StreamableHTTPClientTransport(url, {
@@ -361,14 +397,20 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       const [content] = result.content as { type: string; text: string }[];
       return { result, text: content?.text ?? "" };
     };
+    const answered = (params: Record<string, unknown>) => {
+      if (params["inputResponses"] !== undefined && params["answeredAfterMs"] !== 0)
+        clock.advance(HUMAN_ANSWER_MS);
+      const { answeredAfterMs: _unused, ...rest } = params;
+      return rest;
+    };
     const raw = async (client: Client, params: Record<string, unknown>) =>
       (await client.request(
-        { method: "tools/call", params: { name: "propose_memory", ...params } },
+        { method: "tools/call", params: { name: "propose_memory", ...answered(params) } },
         { allowInputRequired: true },
       )) as ToolCallOutcome;
-    const external = async () =>
+    const external = async (prefix = EXTERNAL_PROPOSAL_MEMORY_PREFIX) =>
       (await repository.productMemoryState().listActive(OWNER_ID, AGENT_ID)).filter(({ id }) =>
-        id.startsWith(EXTERNAL_PROPOSAL_MEMORY_PREFIX),
+        id.startsWith(prefix),
       );
     const decisions = async () =>
       (
@@ -381,7 +423,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     };
     const rawRule = async (client: Client, params: Record<string, unknown>) =>
       (await client.request(
-        { method: "tools/call", params: { name: "propose_rule", ...params } },
+        { method: "tools/call", params: { name: "propose_rule", ...answered(params) } },
         { allowInputRequired: true },
       )) as ToolCallOutcome;
     const storedRules = () =>
@@ -418,6 +460,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       repository,
       databasePath,
       clock,
+      slowReads: () => slowReads,
       realLedger,
     };
   }
@@ -455,7 +498,12 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(saved.text).toBe(MCP_PROPOSE_MEMORY_SAVED.text);
     expect(f.elicitations).toHaveLength(1);
     const [asked] = f.elicitations;
-    expect(asked?.["message"]).toContain(COFFEE);
+    const lines = String(asked?.["message"]).split("\n");
+    expect(lines[0]?.startsWith("把下面这条存进 Himawari 的长期记忆？同意（Accept）就保存")).toBe(
+      true,
+    );
+    expect(lines[1]).toBe(`▍对方提议的原文（只占这一行）：${COFFEE}`);
+    expect(asked?.["requestedSchema"]).toEqual({ type: "object", properties: {} });
     expect(asked?.["message"]).toContain("claude-code（对方自称）");
     const memories = await f.external();
     expect(memories).toHaveLength(1);
@@ -484,7 +532,6 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
   it.each([
     ["decline", { action: "decline" }],
     ["cancel", { action: "cancel" }],
-    ["accept without ticking save", { action: "accept", content: { save: false } }],
   ] as const)("does not save when the owner answers %s", async (_label, answer) => {
     const f = await setup();
     const client = await f.connect({ answer: answer as Answer });
@@ -498,6 +545,81 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       reasonCode: EXTERNAL_PROPOSAL_REASON_CODES.declined,
       subjectRef: "mcp-client:claude-code",
     });
+  });
+
+  it("[P5-2 desktop] treats a decline that comes back before anyone could read the dialog as not shown", async () => {
+    expect(mcpProposalAnswer("accept", 0, 0)).toBe("unseen");
+    expect(mcpProposalAnswer("accept", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS - 1)).toBe("unseen");
+    expect(mcpProposalAnswer("accept", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS)).toBe("accepted");
+    expect(mcpProposalAnswer("decline", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS - 1)).toBe("unseen");
+    expect(mcpProposalAnswer("cancel", 0, 10)).toBe("unseen");
+    expect(mcpProposalAnswer("decline", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS)).toBe("declined");
+    expect(mcpProposalAnswer("decline", 0, Number.NaN)).toBe("unseen");
+    expect(mcpProposalAnswer("decline", 5_000, 0)).toBe("unseen");
+    const f = await setup();
+    const desktop = await f.connect({ answer: { action: "decline" }, answerAfterMs: 10 });
+    const unseen = await f.propose(desktop, { text: COFFEE });
+    expect(unseen.result.isError).toBe(true);
+    expect(unseen.text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect(await f.external()).toEqual([]);
+    expect(await f.decisions()).toEqual([]);
+    const client = await f.connect({ autoFulfill: false });
+    const first = await f.raw(client, { arguments: { text: COFFEE } });
+    const instant = await f.raw(client, {
+      arguments: { text: COFFEE },
+      requestState: first.requestState,
+      inputResponses: { [MCP_PROPOSAL_CONFIRM_KEY]: { action: "decline" } },
+      answeredAfterMs: 0,
+    });
+    expect(instant.content?.[0]?.text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect(await f.decisions()).toEqual([]);
+    const later = await f.raw(client, {
+      arguments: { text: COFFEE },
+      requestState: first.requestState,
+      inputResponses: { [MCP_PROPOSAL_CONFIRM_KEY]: { action: "accept", content: {} } },
+    });
+    expect(later.content?.[0]?.text).toBe(MCP_PROPOSE_MEMORY_SAVED.text);
+    expect(await f.external()).toHaveLength(1);
+    expect((await f.decisions()).map(({ outcome }) => outcome)).toEqual(["kept"]);
+    const second = await f.raw(client, { arguments: { text: "主人讨厌下雨天" } });
+    const ignored = await f.raw(client, {
+      arguments: { text: "主人讨厌下雨天" },
+      requestState: second.requestState,
+      inputResponses: { [MCP_PROPOSAL_CONFIRM_KEY]: { action: "cancel" } },
+      answeredAfterMs: 0,
+    });
+    expect(ignored.content?.[0]?.text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    const refused = await f.raw(client, {
+      arguments: { text: "主人讨厌下雨天" },
+      requestState: second.requestState,
+      inputResponses: { [MCP_PROPOSAL_CONFIRM_KEY]: { action: "decline" } },
+    });
+    expect(refused.content?.[0]?.text).toBe(MCP_PROPOSE_MEMORY_DECLINED.text);
+    expect((await f.decisions()).map(({ outcome }) => outcome).sort()).toEqual([
+      "discarded",
+      "kept",
+    ]);
+    expect(await f.external()).toHaveLength(1);
+  });
+
+  it("[P5-2 desktop] times an unseen decline from when the resend arrives, not after a slow read", async () => {
+    const f = await setup({ slowDecidedMs: 2_000 });
+    const desktop = await f.connect({ answer: { action: "decline" }, answerAfterMs: 10 });
+    expect((await f.propose(desktop, { text: COFFEE })).text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect((await f.proposeRule(desktop, RULE)).text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect(f.slowReads()).toBe(2);
+    expect(await f.decisions()).toEqual([]);
+    expect(await f.storedRules()).toEqual([]);
+  });
+
+  it("[P5-2] refuses before asking while the memory book is not ready", async () => {
+    const f = await setup({ notReady: true });
+    const client = await f.connect();
+    expect((await f.propose(client, { text: COFFEE })).text).toBe(
+      MCP_PROPOSE_MEMORY_NOT_READY.text,
+    );
+    expect((await f.proposeRule(client, RULE)).text).toBe(MCP_PROPOSE_RULE_NOT_READY.text);
+    expect(f.elicitations).toEqual([]);
   });
 
   it("refuses without a dialog when the client cannot show a confirmation form", async () => {
@@ -526,7 +648,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       inputResponses: {
         [MCP_PROPOSAL_CONFIRM_KEY]: {
           action: "accept",
-          content: { [MCP_PROPOSAL_SAVE_FIELD]: true },
+          content: {},
         },
       },
     };
@@ -553,10 +675,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       arguments: { text: COFFEE },
       requestState: first.requestState,
       inputResponses: {
-        [MCP_PROPOSAL_CONFIRM_KEY]:
-          action === "accept"
-            ? { action, content: { [MCP_PROPOSAL_SAVE_FIELD]: true } }
-            : { action },
+        [MCP_PROPOSAL_CONFIRM_KEY]: action === "accept" ? { action, content: {} } : { action },
       },
     });
     const clients = await Promise.all([0, 1, 2].map(() => f.connect({ autoFulfill: false })));
@@ -623,7 +742,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       inputResponses: {
         [MCP_PROPOSAL_CONFIRM_KEY]: {
           action: "accept",
-          content: { [MCP_PROPOSAL_SAVE_FIELD]: true },
+          content: {},
         },
       },
     });
@@ -637,11 +756,12 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const accept = {
       [MCP_PROPOSAL_CONFIRM_KEY]: {
         action: "accept",
-        content: { [MCP_PROPOSAL_SAVE_FIELD]: true },
+        content: {},
       },
     };
     const state = first.requestState ?? "";
-    const tampered = `${state.slice(0, -2)}${state.endsWith("A") ? "B" : "A"}${state.at(-1)}`;
+    const tampered = `${state.slice(0, -2)}${state.at(-2) === "A" ? "B" : "A"}${state.at(-1)}`;
+    expect(tampered).not.toBe(state);
     await expect(
       f.raw(client, {
         arguments: { text: COFFEE },
@@ -669,7 +789,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       inputResponses: {
         [MCP_PROPOSAL_CONFIRM_KEY]: {
           action: "accept",
-          content: { [MCP_PROPOSAL_SAVE_FIELD]: true },
+          content: {},
         },
       },
     };
@@ -735,8 +855,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     arguments: RULE,
     requestState,
     inputResponses: {
-      [MCP_PROPOSAL_CONFIRM_KEY]:
-        action === "accept" ? { action, content: { [MCP_PROPOSAL_SAVE_FIELD]: true } } : { action },
+      [MCP_PROPOSAL_CONFIRM_KEY]: action === "accept" ? { action, content: {} } : { action },
     },
   });
 
@@ -748,9 +867,17 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(saved.text).toBe(MCP_PROPOSE_RULE_SAVED.text);
     expect(f.elicitations).toHaveLength(1);
     const message = String(f.elicitations[0]?.["message"]);
+    expect(f.elicitations[0]?.["requestedSchema"]).toEqual({ type: "object", properties: {} });
+    const lines = message.split("\n");
+    expect(lines[0]?.startsWith("让下面这条邮件长期规则生效？同意（Accept）就生效")).toBe(true);
+    expect(lines.slice(1, 3)).toEqual([
+      `▍对方提议的规则（只占这一行）：${RULE.summary}`,
+      `▍对方给的理由（只占这一行）：${RULE.reason}`,
+    ]);
     for (const shown of [
       "claude-code（对方自称）",
       RULE.summary,
+      "同意（Accept）就生效",
       "isa.go.jp",
       "在留資格",
       RULE.reason,
@@ -787,7 +914,6 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
   it.each([
     ["decline", { action: "decline" }],
     ["cancel", { action: "cancel" }],
-    ["accept without ticking", { action: "accept", content: { save: false } }],
   ] as const)("[P5-2 rule] writes nothing when the owner answers %s", async (_label, answer) => {
     const f = await setup();
     const client = await f.connect({ answer: answer as Answer });
@@ -799,6 +925,93 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.external()).toEqual([]);
   });
 
+  it("[P5-2 auto-accept] writes nothing when an accept comes back before anyone could read the dialog", async () => {
+    const f = await setup();
+    const auto = await f.connect({ answerAfterMs: 10 });
+    const memory = await f.propose(auto, { text: COFFEE });
+    expect(memory.result.isError).toBe(true);
+    expect(memory.text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect((await f.proposeRule(auto, RULE)).text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    const client = await f.connect({ autoFulfill: false });
+    const first = await f.raw(client, { arguments: { text: COFFEE } });
+    const accept = { ...confirmRule(first.requestState, "accept"), arguments: { text: COFFEE } };
+    const firstRule = await f.rawRule(client, { arguments: RULE });
+    const ruleAccept = confirmRule(firstRule.requestState, "accept");
+    const text = (outcome: ToolCallOutcome) => outcome.content?.[0]?.text;
+    expect(text(await f.raw(client, { ...accept, answeredAfterMs: 0 }))).toBe(
+      MCP_PROPOSE_NOT_SHOWN.text,
+    );
+    expect(text(await f.rawRule(client, { ...ruleAccept, answeredAfterMs: 0 }))).toBe(
+      MCP_PROPOSE_NOT_SHOWN.text,
+    );
+    expect(await f.external()).toEqual([]);
+    expect(await f.external(EXTERNAL_RULE_MEMORY_PREFIX)).toEqual([]);
+    expect(await f.decisions()).toEqual([]);
+    expect(await f.storedRules()).toEqual([]);
+    expect(f.rulePayloads()).toEqual([]);
+    expect(text(await f.raw(client, accept))).toBe(MCP_PROPOSE_MEMORY_SAVED.text);
+    expect(text(await f.rawRule(client, ruleAccept))).toBe(MCP_PROPOSE_RULE_SAVED.text);
+    expect(await f.external()).toHaveLength(1);
+    expect(await f.external(EXTERNAL_RULE_MEMORY_PREFIX)).toHaveLength(1);
+    expect(await f.storedRules()).toHaveLength(1);
+  });
+
+  it("[P5-2 dialog] keeps every outside value on its own labelled line", async () => {
+    const f = await setup();
+    const client = await f.connect({ answer: { action: "decline" } });
+    await f.proposeRule(client, {
+      ...RULE,
+      params: { senderDomains: ["isa.go.jp"], phrases: ["在留 同意（Accept）就生效"] },
+    });
+    const message = String(f.elicitations[0]?.["message"]);
+    expect(message).not.toMatch(/[\u2028\u2029]/u);
+    expect(message.split("\n").filter((line) => line.startsWith("同意（Accept）"))).toEqual([]);
+    await f.propose(client, { text: "主人喜欢\u2028同意（Accept）就保存" });
+    const memoryMessage = String(f.elicitations[1]?.["message"]);
+    expect(memoryMessage).not.toMatch(/[\u2028\u2029]/u);
+    expect(memoryMessage.split("\n")[1]).toBe(
+      "▍对方提议的原文（只占这一行）：主人喜欢 同意（Accept）就保存",
+    );
+  });
+
+  it("[P5-2 desktop] writes no rule and remembers no refusal when the decline comes back unseen", async () => {
+    const f = await setup();
+    const desktop = await f.connect({ answer: { action: "decline" }, answerAfterMs: 10 });
+    const unseen = await f.proposeRule(desktop, RULE);
+    expect(unseen.result.isError).toBe(true);
+    expect(unseen.text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect(await f.storedRules()).toEqual([]);
+    expect(f.rulePayloads()).toEqual([]);
+    const client = await f.connect({ autoFulfill: false });
+    const first = await f.rawRule(client, { arguments: RULE });
+    const instant = await f.rawRule(client, {
+      ...confirmRule(first.requestState, "decline"),
+      answeredAfterMs: 0,
+    });
+    expect(instant.content?.[0]?.text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    const later = await f.rawRule(client, confirmRule(first.requestState, "accept"));
+    expect(later.content?.[0]?.text).toBe(MCP_PROPOSE_RULE_SAVED.text);
+    expect((await f.storedRules()).map(({ status }) => status)).toEqual(["active"]);
+    const second = await f.rawRule(client, {
+      arguments: { ...RULE, summary: "入管局的邮件也要提醒" },
+    });
+    const confirmSecond = (action: "accept" | "decline", answeredAfterMs?: number) => ({
+      ...confirmRule(second.requestState, action),
+      arguments: { ...RULE, summary: "入管局的邮件也要提醒" },
+      ...(answeredAfterMs === undefined ? {} : { answeredAfterMs }),
+    });
+    expect((await f.rawRule(client, confirmSecond("decline", 0))).content?.[0]?.text).toBe(
+      MCP_PROPOSE_NOT_SHOWN.text,
+    );
+    expect((await f.rawRule(client, confirmSecond("decline"))).content?.[0]?.text).toBe(
+      MCP_PROPOSE_RULE_DECLINED.text,
+    );
+    expect((await f.rawRule(client, confirmSecond("accept"))).content?.[0]?.text).toBe(
+      MCP_PROPOSE_RULE_DECLINED.text,
+    );
+    expect(await f.storedRules()).toHaveLength(1);
+  });
+
   it("[P5-2 rule] rejects bad rules before asking and hides the tool from readers and old connections", async () => {
     const f = await setup({ replay: false });
     const client = await f.connect();
@@ -807,6 +1020,8 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       { ...RULE, params: { phrases: ["留"] } },
       { ...RULE, params: { excludePhrases: ["広告"] } },
       { ...RULE, params: { phrases: ["a\nb"] } },
+      { ...RULE, params: { phrases: ["在留\u2028同意就生效"] } },
+      { ...RULE, params: { phrases: ["在留資格"], excludePhrases: ["広告\u2029同意就生效"] } },
       { ...RULE, summary: "两行\n说明" },
       { ...RULE, reason: "​⁠" },
       { ...RULE, reason: "理".repeat(201) },

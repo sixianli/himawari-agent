@@ -162,6 +162,66 @@ describe("strict product configuration", () => {
       ).toThrow();
   });
 
+  it("[P3-1] accepts a local ONNX embedding profile only with a pinned artifact, no secret and no cost", () => {
+    const artifactSha256 = "a".repeat(64);
+    const local = {
+      ref: "model-embedding",
+      role: "embedding",
+      provider: "local-onnx",
+      model: "jina-embeddings-v5-text-small-retrieval-int8",
+      version: "artifact-v1",
+      capabilities: ["embedding"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      dimensions: 1024,
+      allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
+      disclosure: "local_only",
+      secretRef: null,
+      artifactSha256,
+    };
+    const withEmbedding = (change: Record<string, unknown>) => {
+      const input = config(path.join(tmpdir(), "himawari-local-embedding"));
+      const models = input["modelDescriptors"] as Record<string, unknown>[];
+      input["modelDescriptors"] = [models[0], { ...local, ...change }];
+      input["memory"] = {
+        ...(input["memory"] as Record<string, unknown>),
+        dimensions: (change["dimensions"] as number | undefined) ?? 1024,
+      };
+      input["secretReferences"] = (input["secretReferences"] as Record<string, unknown>[]).filter(
+        ({ ref }) => ref !== "provider-embedding",
+      );
+      return input;
+    };
+    const parsed = parseProductConfiguration(withEmbedding({}), "2026-11-11T00:00:00.000Z");
+    expect(parsed.modelDescriptors.find(({ role }) => role === "embedding")).toMatchObject({
+      provider: "local-onnx",
+      artifactSha256,
+    });
+    for (const [change, reason] of [
+      [{ disclosure: "trusted_remote" }, "must be local_only"],
+      [{ secretRef: "provider-embedding" }, "must be null"],
+      [{ cost: { input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0 } }, "must be zero"],
+      [{ artifactSha256: undefined }, "is required for local-onnx"],
+      [{ artifactSha256: "A".repeat(64) }, "lowercase sha256"],
+      [{ model: "jina-embeddings-v5-text-small" }, "not a known embedding profile"],
+      [{ dimensions: 768 }, "must be one of 1024"],
+    ] as const)
+      expect(() =>
+        parseProductConfiguration(withEmbedding(change), "2026-11-11T00:00:00.000Z"),
+      ).toThrow(
+        expect.objectContaining({
+          details: expect.objectContaining({ reason: expect.stringContaining(reason) }),
+        }),
+      );
+    const gateway = config(path.join(tmpdir(), "himawari-local-embedding"));
+    const models = gateway["modelDescriptors"] as Record<string, unknown>[];
+    gateway["modelDescriptors"] = [models[0], { ...models[1], artifactSha256 }];
+    expect(() => parseProductConfiguration(gateway, "2026-11-11T00:00:00.000Z")).toThrow(
+      expect.objectContaining({
+        details: expect.objectContaining({ reason: "is only supported for local-onnx" }),
+      }),
+    );
+  });
+
   it("accepts memory retrieval tuning only as non-negative numbers below 1 and a boolean dedupe switch", () => {
     const withRetrieval = (retrieval: unknown) => {
       const input = config(path.join(tmpdir(), "himawari-memory-retrieval"));
@@ -1401,12 +1461,45 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     wholeThreadCharactersPerMail: 60_000,
     ruleReplayDays: 30,
     ruleReplayMailsPerOutcome: 300,
-    memoryMinimumSimilarity: 0.45,
     reviewBudgetSeconds: 120,
     reviewSecondsPerItem: 5,
     reviewSilentSharePermille: 500,
+    reviewPrereview: {
+      enabled: true,
+      dailyLimit: 50,
+      dailyCostMicros: 100_000,
+      perRun: 10,
+      requestTimeoutMs: 30_000,
+      historyDays: 28,
+      historyMinimum: 20,
+      reduction: {
+        enabled: false,
+        hiddenAgreementPermille: 900,
+        confidencePermille: 800,
+        auditPermille: 200,
+        windowDays: 28,
+      },
+    },
     reviewMemoryUnusedDays: 90,
     backoffThreshold: 3,
+  });
+  raw["runPolicy"] = {
+    ...policy,
+    proactive: {
+      ...proactive,
+      reviewPrereview: {
+        dailyLimit: 20,
+        reduction: { enabled: true, hiddenAgreementPermille: 950 },
+      },
+    },
+  };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive
+      ?.reviewPrereview,
+  ).toMatchObject({
+    enabled: true,
+    dailyLimit: 20,
+    reduction: { enabled: true, hiddenAgreementPermille: 950, auditPermille: 200 },
   });
   raw["runPolicy"] = {
     ...policy,
@@ -1453,6 +1546,12 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, reviewSecondsPerItem: 0 },
     { ...proactive, reviewSilentSharePermille: 1_001 },
     { ...proactive, reviewSilentSharePermille: -1 },
+    { ...proactive, reviewPrereview: { dailyLimit: 0 } },
+    { ...proactive, reviewPrereview: { enabled: "yes" } },
+    { ...proactive, reviewPrereview: { unknown: 1 } },
+    { ...proactive, reviewPrereview: { reduction: { auditPermille: 0 } } },
+    { ...proactive, reviewPrereview: { reduction: { hiddenAgreementPermille: 1_000 } } },
+    { ...proactive, reviewPrereview: { reduction: { threshold: 900 } } },
     { ...proactive, reviewMemoryUnusedDays: 6 },
     { ...proactive, reviewMemoryUnusedDays: 3_651 },
     { ...proactive, backoffThreshold: 11 },
@@ -1464,6 +1563,41 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, ruleReplayDays: 0 },
     { ...proactive, ruleReplayMailsPerOutcome: 0 },
     { ...proactive, relatedCharactersPerMail: 300, relatedCharactersPerRelatedMail: 400 },
+  ]) {
+    raw["runPolicy"] = { ...policy, proactive: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});
+
+it("[P6-demo] accepts a fake inbox in place of Gmail, in one of the offered languages, and never both at once", () => {
+  const raw = config("/tmp/himawari-demo-inbox-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const references = raw["secretReferences"] as unknown[];
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "google-oauth", version: "v1", purpose: "google-oauth-client", scope: "agent" },
+  ];
+  const gmail = {
+    clientId: "123-abc.apps.googleusercontent.com",
+    clientSecretRef: "google-oauth",
+  };
+  for (const locale of ["ja", "en"]) {
+    raw["runPolicy"] = { ...policy, proactive: { modelRef: "model-primary", demoInbox: locale } };
+    const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive;
+    expect(parsed?.demoInbox).toBe(locale);
+    expect(parsed).not.toHaveProperty("gmail");
+  }
+  for (const invalid of [
+    { modelRef: "model-primary" },
+    { modelRef: "model-primary", gmail, demoInbox: "ja" },
+    { modelRef: "model-primary", demoInbox: "zh-CN" },
+    { modelRef: "model-primary", demoInbox: "" },
+    { modelRef: "model-primary", demoInbox: true },
   ]) {
     raw["runPolicy"] = { ...policy, proactive: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
