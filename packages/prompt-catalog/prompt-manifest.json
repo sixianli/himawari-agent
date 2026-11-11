@@ -350,9 +350,9 @@
     "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
   },
   "mcp.propose-memories": {
-    "sha256": "16da99049109b588d4a9016aa63407b2d830dc1cd5c55be1f32479c88352b092",
+    "sha256": "ecf372fcb5f0d15fa387d5fbb4fa13d369e69d4b5958e7e3bad04c9b9ab4d91d",
     "changedIn": "ADR 0228",
-    "reason": "P5-3: batch result reports items replaced by a later item with the same key"
+    "reason": "P5-3: batch result notes which mistakes reject the whole call"
   },
   "mcp.propose-memories-result": {
     "sha256": "026254c2eb0ddcf54e2cd12d7e39597d85e77e4a4bbab7b0f2b83ecb296bac0f",

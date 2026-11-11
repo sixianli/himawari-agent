@@ -1716,4 +1716,30 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.external()).toEqual([]);
     expect((await f.pending()).map(({ id }) => id)).toHaveLength(1);
   });
+
+  it("[P5-3] does not link a proposal to a memory the owner just undid, and a key moves to waiting text it already matches", async () => {
+    const f = await setup();
+    const web = control(f);
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    await f.propose(muse, { text: PARK });
+    await f.propose(muse, { text: RAIN });
+    const [park, rain] = await f.pending();
+    const cache = {};
+    const started = Date.parse(NOW);
+    const first = await f.writer.keep(park?.id ?? "", { batchId: "batch-a", started }, cache);
+    await web.command("memory.external.undo", { batchId: "batch-a" }, "undo-a");
+    const second = await f.writer.keep(
+      rain?.id ?? "",
+      { batchId: "batch-b", started, editedText: PARK },
+      cache,
+    );
+    expect(second).not.toBe(first);
+    expect((await f.external()).map(({ id }) => id)).toEqual([second]);
+    await f.propose(muse, { text: COFFEE, key: "muse:memory/drink" });
+    await f.propose(muse, { text: "主人每天喝两杯咖啡" });
+    await f.propose(muse, { text: "主人每天喝两杯咖啡", key: "muse:memory/drink" });
+    const waiting = await f.pending();
+    expect(waiting.map(({ sourceKey }) => sourceKey)).toEqual([null, "muse:memory/drink"]);
+    expect(waiting).toHaveLength(2);
+  });
 });

@@ -45,7 +45,7 @@ function valid(value: string): boolean {
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
 
-const PROPOSAL_ID_MAXIMUM = 64;
+const PROPOSAL_ID_MAXIMUM = 40;
 
 function record(row: Row): ExternalMemoryProposalRecord {
   return Object.freeze({ ...row });
@@ -117,8 +117,46 @@ export class SqliteExternalMemoryProposalOperations {
             AND status <> 'superseded'`,
         )
         .get(input.ownerId, input.agentId, input.textSha256) as Row | undefined;
+      const replaced =
+        input.sourceKey === null
+          ? []
+          : (
+              this.database
+                .prepare(
+                  `SELECT id FROM external_memory_proposals
+                  WHERE owner_id = ? AND agent_id = ? AND source_key = ? AND status = 'pending'
+                    AND text_sha256 <> ?
+                  ORDER BY received_at, id`,
+                )
+                .all(input.ownerId, input.agentId, input.sourceKey, input.textSha256) as {
+                id: string;
+              }[]
+            ).map(({ id }) => id);
+      const supersede = (by: string) => {
+        const statement = this.database.prepare(
+          `UPDATE external_memory_proposals SET status = 'superseded', decided_at = ?,
+            superseded_by = ?
+          WHERE id = ? AND owner_id = ? AND agent_id = ? AND status = 'pending'`,
+        );
+        for (const id of replaced)
+          statement.run(input.receivedAt, by, id, input.ownerId, input.agentId);
+      };
       if (existing) {
         const known = record(existing);
+        if (known.status === "pending") {
+          supersede(known.id);
+          if (known.sourceKey === null && input.sourceKey !== null)
+            this.database
+              .prepare(
+                `UPDATE external_memory_proposals SET source_key = ?
+                WHERE id = ? AND owner_id = ? AND agent_id = ?`,
+              )
+              .run(input.sourceKey, known.id, input.ownerId, input.agentId);
+        }
+        const keyed =
+          known.status === "pending" && known.sourceKey === null && input.sourceKey !== null
+            ? { ...known, sourceKey: input.sourceKey }
+            : known;
         const raised =
           known.status === "pending" &&
           known.dataClassification === "private" &&
@@ -135,24 +173,12 @@ export class SqliteExternalMemoryProposalOperations {
           this.dropPayload(unused, input);
         return {
           proposal: raised
-            ? { ...known, dataClassification: "sensitive", contentRef: input.contentRef }
-            : known,
+            ? { ...keyed, dataClassification: "sensitive", contentRef: input.contentRef }
+            : keyed,
           created: false,
-          superseded: [],
+          superseded: known.status === "pending" ? replaced : [],
         };
       }
-      const replaced =
-        input.sourceKey === null
-          ? []
-          : (
-              this.database
-                .prepare(
-                  `SELECT id FROM external_memory_proposals
-                  WHERE owner_id = ? AND agent_id = ? AND source_key = ? AND status = 'pending'
-                  ORDER BY received_at, id`,
-                )
-                .all(input.ownerId, input.agentId, input.sourceKey) as { id: string }[]
-            ).map(({ id }) => id);
       this.database
         .prepare(
           `INSERT INTO external_memory_proposals (
@@ -174,13 +200,7 @@ export class SqliteExternalMemoryProposalOperations {
           input.dataClassification,
           input.receivedAt,
         );
-      const supersede = this.database.prepare(
-        `UPDATE external_memory_proposals SET status = 'superseded', decided_at = ?,
-          superseded_by = ?
-        WHERE id = ? AND owner_id = ? AND agent_id = ? AND status = 'pending'`,
-      );
-      for (const id of replaced)
-        supersede.run(input.receivedAt, input.id, id, input.ownerId, input.agentId);
+      supersede(input.id);
       const created = this.read({ ownerId: input.ownerId, agentId: input.agentId, id: input.id });
       if (!created) return this.fail("PORT_NOT_FOUND", "External Memory proposal not found");
       return { proposal: created, created: true, superseded: replaced };

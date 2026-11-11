@@ -147,9 +147,11 @@ export interface McpProposalReceipt {
 
 export interface McpMemoryProposals {
   readonly ready: () => Promise<boolean>;
-  readonly submit: (
-    input: ExternalProposalSubmission,
-  ) => Promise<{ readonly proposal: McpProposalReceipt; readonly created: boolean }>;
+  readonly submit: (input: ExternalProposalSubmission) => Promise<{
+    readonly proposal: McpProposalReceipt;
+    readonly created: boolean;
+    readonly superseded: readonly string[];
+  }>;
   readonly read: (proposalId: string) => Promise<McpProposalReceipt | undefined>;
   readonly decided: (proposalId: string) => Promise<ExternalProposalDecision | undefined>;
   readonly keep: (proposalId: string, input: ExternalProposalDecisionInput) => Promise<string>;
@@ -814,6 +816,7 @@ export class ProductionMcpRead {
       return proposalReply(MCP_PROPOSE_MEMORY_INVALID.text, true);
     try {
       const results: Record<string, unknown>[] = [];
+      const replaced = new Set<string>();
       for (const [index, raw] of items.entries()) {
         const parsed =
           raw !== null && typeof raw === "object" && !Array.isArray(raw)
@@ -823,12 +826,13 @@ export class ProductionMcpRead {
           results.push({ index, status: parsed });
           continue;
         }
-        const { proposal } = await proposals.submit({
+        const { proposal, superseded } = await proposals.submit({
           proposalId: randomUUID(),
           ...parsed,
           client,
           subjectRef,
         });
+        for (const id of superseded) replaced.add(id);
         results.push({
           index,
           status:
@@ -845,7 +849,7 @@ export class ProductionMcpRead {
         if (
           result["status"] === "pending" &&
           typeof result["proposalId"] === "string" &&
-          (await proposals.read(result["proposalId"]))?.status === "superseded"
+          replaced.has(result["proposalId"])
         )
           result["status"] = "replaced";
       return proposalReply(

@@ -123,7 +123,7 @@ function ledgerId(
 
 export interface ExternalProposalDigestCache {
   digests?: Map<string, string>;
-  created?: number;
+  memoryChanges?: number;
 }
 
 export interface ProductionMcpMemoryWriterOptions {
@@ -141,7 +141,7 @@ export interface ProductionMcpMemoryWriterOptions {
 export class ProductionMcpMemoryWriter {
   readonly #options: ProductionMcpMemoryWriterOptions;
   #queue: Promise<void> = Promise.resolve();
-  #created = 0;
+  #memoryChanges = 0;
 
   constructor(options: ProductionMcpMemoryWriterOptions) {
     this.#options = options;
@@ -156,15 +156,19 @@ export class ProductionMcpMemoryWriter {
     return (await this.#options.book.latestGeneration(this.#scope())) !== undefined;
   }
 
-  async submit(
-    input: ExternalProposalSubmission,
-  ): Promise<{ readonly proposal: ExternalMemoryProposalRecord; readonly created: boolean }> {
+  async submit(input: ExternalProposalSubmission): Promise<{
+    readonly proposal: ExternalMemoryProposalRecord;
+    readonly created: boolean;
+    readonly superseded: readonly string[];
+  }> {
     return this.#serially(() => this.#submit(input));
   }
 
-  async #submit(
-    input: ExternalProposalSubmission,
-  ): Promise<{ readonly proposal: ExternalMemoryProposalRecord; readonly created: boolean }> {
+  async #submit(input: ExternalProposalSubmission): Promise<{
+    readonly proposal: ExternalMemoryProposalRecord;
+    readonly created: boolean;
+    readonly superseded: readonly string[];
+  }> {
     const receivedAt = this.#options.clock.now();
     await this.#dropExpiredDiscardedText();
     const text = normalizeProposalText(input.text);
@@ -211,7 +215,11 @@ export class ProductionMcpMemoryWriter {
           );
       }
     }
-    return { proposal: submitted.proposal, created: submitted.created };
+    return {
+      proposal: submitted.proposal,
+      created: submitted.created,
+      superseded: submitted.superseded,
+    };
   }
 
   async decided(proposalId: string): Promise<ExternalProposalDecision | undefined> {
@@ -253,7 +261,11 @@ export class ProductionMcpMemoryWriter {
       if (proposalHasMachineSecret(text))
         throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
       const digests = await this.#digests(digestCache);
-      const same = digests.get(proposalTextDigest(text));
+      const linked = digests.get(proposalTextDigest(text));
+      const same =
+        linked && (await this.#options.state.read(linked as MemoryId))?.status === "active"
+          ? linked
+          : undefined;
       if (same) {
         await this.#commit(proposal, same, input);
         return same;
@@ -312,9 +324,9 @@ export class ProductionMcpMemoryWriter {
       }
       await this.#appendOnce(write);
       await this.#decideCommitted(proposal, memoryId, input);
-      if (!stored) this.#created += 1;
+      if (!stored) this.#memoryChanges += 1;
       digests.set(proposalTextDigest(text), memoryId);
-      if (digestCache) digestCache.created = this.#created;
+      if (digestCache) digestCache.memoryChanges = this.#memoryChanges;
       return memoryId;
     });
   }
@@ -388,14 +400,19 @@ export class ProductionMcpMemoryWriter {
     readonly items: readonly (ExternalMemoryProposalRecord & { readonly text: string })[];
     readonly total: number;
   }> {
-    await this.dropExpiredDiscardedText();
-    const { items, total } = await this.#options.proposals.listPending({ ...this.#scope(), limit });
-    return {
-      items: await Promise.all(
-        items.map(async (item) => ({ ...item, text: await this.readText(item) })),
-      ),
-      total,
-    };
+    return this.#serially(async () => {
+      await this.#dropExpiredDiscardedText();
+      const { items, total } = await this.#options.proposals.listPending({
+        ...this.#scope(),
+        limit,
+      });
+      return {
+        items: await Promise.all(
+          items.map(async (item) => ({ ...item, text: await this.readText(item) })),
+        ),
+        total,
+      };
+    });
   }
 
   async listBatches(limit: number) {
@@ -423,6 +440,7 @@ export class ProductionMcpMemoryWriter {
           memoryId.endsWith(`:${batchId}`)
         )
           await trash(memoryId);
+      this.#memoryChanges += 1;
       return this.#options.proposals.reopenBatch({ ...this.#scope(), batchId });
     });
   }
@@ -476,11 +494,11 @@ export class ProductionMcpMemoryWriter {
   }
 
   async #digests(cache?: ExternalProposalDigestCache): Promise<Map<string, string>> {
-    if (cache?.digests && cache.created === this.#created) return cache.digests;
+    if (cache?.digests && cache.memoryChanges === this.#memoryChanges) return cache.digests;
     const digests = await this.#activeDigests();
     if (cache) {
       cache.digests = digests;
-      cache.created = this.#created;
+      cache.memoryChanges = this.#memoryChanges;
     }
     return digests;
   }
