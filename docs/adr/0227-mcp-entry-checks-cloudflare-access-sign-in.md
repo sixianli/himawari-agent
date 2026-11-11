@@ -68,7 +68,7 @@ Andy 2026-11-11 在任务 P5-3 的线程里同意的做法是：三个客户端�
    - 能登录这个 Access 应用的只有 Andy 本人，由 Access 策略保证；源站另外核对凭证主体是绑定的主人（决定 1），所以 Access 策略哪天配宽了，别人登录进来也读不到记忆。Cloudflare 的凭证说明写 `sub` 是 “The ID of the user. This value is unique to an email address per account.”（<https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/>），即同一账号里按邮箱定，不按应用定，所以网页登录绑定的主体和 MCP 凭证的主体应是同一个摘要。这一点页面没有明说「跨应用相同」，要在 Hermes 上实测确认（列在后果一节）。
    - 每次写入仍要 Andy 确认：在客户端里弹框确认（ADR 0225），或者到 Himawari 里确认（ADR 0228）。所以不用再给每个客户端发一把单独的写令牌。
 4. **限流数值不变，但改成全入口共用一份。** 有效请求每分钟 30 次，无效请求每分钟 60 次，计数逻辑抽成 `AdmissionWindows`，和 `BearerGate` 共用。原来读、写两把令牌各有一份 30 次的额度；现在所有客户端共用同一份 30 次，`propose_memory` 确认来回的每次请求也算在里面。
-   - 凭证校验在限流计数之前做（要先知道算有效还是无效）。为了不让伪造的凭证借此反复触发公钥下载，`CloudflareAccessJwtVerifier` 距上次尝试下载公钥集不到 30 秒就不再下载（不管上次成功还是失败、也不管是不是遇到了不认识的公钥编号 `kid`），这时有缓存就用缓存，没有就直接按校验失败处理；同一时刻也只发一次下载。这和 jose 库（本项目校验 JWT 用的开源库）自带的远程公钥集的做法一样（`cooldownDuration` 默认 30000 毫秒，见 `node_modules/jose/dist/types/jwks/remote.d.ts`）。网页登录用的是同一个类，一起受益；代价是 Cloudflare 换公钥后，最多晚 30 秒认新公钥。
+   - 凭证校验在限流计数之前做（要先知道算有效还是无效）。为了不让伪造的凭证借此反复触发公钥下载，`CloudflareAccessJwtVerifier` 遇到不认识的公钥编号（`kid`）时，距上次尝试下载公钥集不到 30 秒就不再下载，继续用未过期的缓存；上次下载失败、手里又没有未过期的缓存时，30 秒内直接按校验失败处理，不再下载；同一时刻只发一次下载，下载进行中，缓存里认识的公钥照常校验，不用等它。过期的缓存一律不用。这和 jose 库（本项目校验 JWT 用的开源库）自带的远程公钥集的做法一样（`cooldownDuration` 默认 30000 毫秒，见 `node_modules/jose/dist/types/jwks/remote.d.ts`）。网页登录用的是同一个类，一起受益；代价是 Cloudflare 换公钥后，最多晚 30 秒认新公钥。
 5. **401 不再带自定义 `WWW-Authenticate` 头。** 授权服务器的发现交给 Cloudflare（前提 6）。
 6. **`requestState` 的签名密钥不变。** 它本来就是进程启动时随机生成的，不从令牌派生（ADR 0225 决定 2）。原来绑定的「令牌种类」改为凭证主体的摘要（`externalSubjectRef`）。
 
@@ -115,8 +115,8 @@ Andy 2026-11-11 在任务 P5-3 的线程里同意的做法是：三个客户端�
 - **来源只能靠客户端自称。** 所有客户端都以 Andy 本人登录，凭证主体相同，所以「这条提议来自哪个客户端」仍然只能靠客户端自报的名字。ADR 0228 在界面上把它标成「自称」。
 - **P5-1 的固定令牌没有上线过**，所以不用迁移生产配置或撤销旧令牌。
 - **测试：**
-  - `test/integration/mcp-read.test.ts`、`test/integration/mcp-write.test.ts` 用真实的 `CloudflareAccessJwtVerifier`，用测试密钥签发的凭证连接。拒绝用例覆盖：没有凭证、只带旧的 Bearer 令牌、别的密钥签的、audience 不对、过期、不是绑定的主人；每一种都检查 401 不带 `WWW-Authenticate` 头，带了凭证的那几种各记一次失败。把校验换成「有凭证就放行」，或者去掉主人核对，拒绝用例会失败（已手动验证）。另有一条限流用例：60 次无效凭证之后回 429，429 不记日志，有效登录照常可用。
-  - `packages/platform-node/test/identity-gateway.unit.test.ts` 检查公钥下载冷却：50 个并发请求带不认识的 `kid`，30 秒内只下载一次，满 30 秒后再下载一次；下载失败后 30 秒内的 20 次校验不再下载，满 30 秒后再试并成功。去掉冷却，这两条用例会失败（已手动验证）。
+  - `test/integration/mcp-read.test.ts`、`test/integration/mcp-write.test.ts` 用真实的 `CloudflareAccessJwtVerifier`，用测试密钥签发的凭证连接。拒绝用例覆盖：没有凭证、只带旧的 Bearer 令牌、别的密钥签的、audience 不对、过期、不是绑定的主人（另有两条：绑定已停用、绑定属于别的主人）；每一种都检查 401 不带 `WWW-Authenticate` 头，带了凭证的那几种各记一次失败。把校验换成「有凭证就放行」，或者去掉主人核对，拒绝用例会失败（已手动验证）。另有一条限流用例：60 次无效凭证之后回 429，429 不记日志，有效登录照常可用。
+  - `packages/platform-node/test/identity-gateway.unit.test.ts` 检查公钥下载冷却：50 个并发请求带不认识的 `kid`，30 秒内只下载一次，满 30 秒后再下载一次；下载失败后 30 秒内的 20 次校验不再下载，满 30 秒后再试并成功；缓存过期又下载失败时不用过期缓存；强制下载进行中，认识的公钥照常校验。换回改动前的写法，这几条用例会失败（已手动验证）。
   - `packages/platform-node/test/startup-configuration.unit.test.ts` 检查新配置：只接受 `audience` 和 `proposals: true`；旧的 `secretRef`、`writeSecretRef` 被拒；完全没有身份配置、或身份配置是内置登录时启动拒绝；`audience` 和网页登录的相同时启动拒绝。
   - `apps/agent-service/test/production-http-composition.unit.test.ts` 在真实组装里走一遍：不带凭证回 401，带凭证能调工具。
   - `test/integration/production-http-composition-process.test.ts` 用安装好的真实服务进程，从配置文件一路走到 `/api/mcp/v1`：网页登录 audience 的凭证回 401，不是绑定主人的凭证回 401，MCP 自己 audience 的主人凭证能调工具；配置不写 `proposals` 时工具列表里没有 `propose_memory`，写 `proposals: true` 时有。把启动组装改成用网页登录的 audience，或者不论配置都打开写工具，对应用例会失败（已手动验证）。

@@ -129,6 +129,7 @@ export class CloudflareAccessJwtVerifier {
   private cached: { readonly jwks: JSONWebKeySet; readonly expiresAt: number } | undefined;
   private lastFetchStartedAt: number | undefined;
   private pendingFetch: Promise<JSONWebKeySet> | undefined;
+  private lastFetchFailed = false;
 
   constructor(options: CloudflareAccessJwtVerifierOptions) {
     const issuer = new URL(options.issuer);
@@ -220,12 +221,11 @@ export class CloudflareAccessJwtVerifier {
 
   private async getJwks(observedAt: Date, forceRefresh: boolean): Promise<JSONWebKeySet> {
     const now = observedAt.valueOf();
+    const fresh = this.cached && this.cached.expiresAt > now ? this.cached.jwks : undefined;
+    if (fresh && (!forceRefresh || this.withinRefreshCooldown(now))) return fresh;
     if (this.pendingFetch) return this.pendingFetch;
-    if (this.withinRefreshCooldown(now)) {
-      if (this.cached) return this.cached.jwks;
+    if (!fresh && this.lastFetchFailed && this.withinRefreshCooldown(now))
       throw new IdentityGatewayError(IDENTITY_GATEWAY_ERROR_CODES.JWKS_INVALID);
-    }
-    if (!forceRefresh && this.cached && this.cached.expiresAt > now) return this.cached.jwks;
     this.pendingFetch = this.fetchJwks(now).finally(() => {
       this.pendingFetch = undefined;
     });
@@ -241,9 +241,11 @@ export class CloudflareAccessJwtVerifier {
 
   private async fetchJwks(now: number): Promise<JSONWebKeySet> {
     this.lastFetchStartedAt = now;
+    this.lastFetchFailed = true;
     const fetched = validateJwks(
       await this.options.jwksFetcher.fetch(new URL(this.options.jwksUrl)),
     );
+    this.lastFetchFailed = false;
     this.cached = {
       jwks: fetched,
       expiresAt: now + (this.options.cacheMilliseconds ?? 300_000),

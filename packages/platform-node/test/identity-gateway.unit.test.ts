@@ -304,6 +304,70 @@ describe("Cloudflare Access JWT verification", () => {
     expect(fetches).toBe(2);
   });
 
+  it("never verifies with an expired JWKS cache after a failed refresh", async () => {
+    let fetches = 0;
+    let available = true;
+    let now = NOW;
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      cacheMilliseconds: 1_000,
+      jwksFetcher: {
+        async fetch() {
+          fetches += 1;
+          if (!available) throw new Error("JWKS_DOWN");
+          return firstJwks;
+        },
+      },
+      now: () => now,
+    });
+    const known = await token({ expiresAt: Math.floor(NOW.valueOf() / 1000) + 600 });
+    await expect(verifier.verify(known)).resolves.toMatchObject({ issuer: ISSUER });
+    available = false;
+    now = new Date(NOW.valueOf() + 40_000);
+    await expect(verifier.verify(known)).rejects.toMatchObject({
+      code: IDENTITY_GATEWAY_ERROR_CODES.ASSERTION_INVALID,
+    });
+    now = new Date(NOW.valueOf() + 50_000);
+    await expect(verifier.verify(known)).rejects.toMatchObject({
+      code: IDENTITY_GATEWAY_ERROR_CODES.ASSERTION_INVALID,
+    });
+    expect(fetches).toBe(2);
+  });
+
+  it("keeps verifying known keys from a fresh cache while a forced refresh is still downloading", async () => {
+    let fetches = 0;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let now = NOW;
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      jwksFetcher: {
+        async fetch() {
+          fetches += 1;
+          if (fetches > 1) await gate;
+          return firstJwks;
+        },
+      },
+      now: () => now,
+    });
+    const known = await token({});
+    await verifier.verify(known);
+    now = new Date(NOW.valueOf() + 30_000);
+    const forced = verifier.verify(await token({ key: secondPrivateKey, kid: "key-02" }));
+    await vi.waitFor(() => expect(fetches).toBe(2));
+    await expect(verifier.verify(known)).resolves.toMatchObject({ issuer: ISSUER });
+    release();
+    await expect(forced).rejects.toMatchObject({
+      code: IDENTITY_GATEWAY_ERROR_CODES.ASSERTION_INVALID,
+    });
+  });
+
   it.each([
     ["wrong issuer", { issuer: "https://wrong.example" }],
     ["wrong audience", { audience: "wrong-audience" }],

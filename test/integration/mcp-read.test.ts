@@ -79,6 +79,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       readonly failReminders?: boolean;
       readonly loseTodaySummary?: boolean;
       readonly withoutSummaries?: boolean;
+      readonly binding?: { readonly status?: "disabled"; readonly ownerId?: string };
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-mcp-read-"));
@@ -285,7 +286,14 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       scope,
       clock,
       access: access.verifier,
-      owners,
+      owners: {
+        readBySubject: async (externalSubjectRef) => {
+          const binding = await owners.readBySubject(externalSubjectRef);
+          return binding && options.binding
+            ? ({ ...binding, ...options.binding } as typeof binding)
+            : binding;
+        },
+      },
       timeZone: TIME_ZONE,
       requestTimeoutMs: 30_000,
       sources: {
@@ -652,6 +660,16 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       Array.from({ length: 7 }, () => expect.objectContaining({ code: expect.any(String) })),
     );
     expect(f.failures[3]).toEqual({ code: "MCP_ACCESS_OWNER_NOT_BOUND" });
+  });
+
+  it.each([
+    ["a disabled binding", { status: "disabled" as const }],
+    ["a binding for another owner", { ownerId: "owner-someone-else" }],
+  ])("rejects the bound subject when it has %s", async (_label, binding) => {
+    const f = await setup({ binding });
+    await expect(f.connect("modern")).rejects.toThrow();
+    expect(f.failures).toEqual([{ code: "MCP_ACCESS_OWNER_NOT_BOUND" }]);
+    expect(await f.ledger()).toEqual([]);
   });
 
   it("answers 429 after 60 rejected assertions a minute, logs only the 401s, and still serves a valid sign-in", async () => {
