@@ -49,11 +49,12 @@ date: "2026-11-10"
 
 ## 先看结论
 
-- 一共盘出 54 条：程序硬规则 16 条、提示词软规则 25 条、记忆规则机制 5 条、配置和设置 8 条（逐条在后面的表里）。
+- 一共盘出 57 条：程序硬规则 19 条、提示词软规则 25 条、记忆规则机制 5 条、配置和设置 8 条（逐条在后面的表里）。
 - 真正“必定执行”的主人规矩只有 Gmail 系统主动提醒那一块。聊天里的规矩几乎都是软的。
 - Andy 举的例子“涉及退款的邮件必须看整个邮件串再决定”，现在不是一条按退款触发的规则：代码里“退款”只是金钱词，命中后把邮件抬到“值得知道”（H-3）；读整个邮件串是对所有邮件都做的（H-15），模型读了之后怎么判仍是软的。这个想法最早出现在 [ADR 0159](adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md) 的已知限制里：“退款、预订是否办结需要整个邮件串，留给第二阶段”。
+- 自 [ADR 0213](adr/0213-owner-sentence-becomes-a-standing-rule.md) 起，主人可以在对话里把这类要求立成长期规则（H-17、H-18），由程序执行；上面说的是没有立规则时的默认行为。
 - 生产库里的 `rule` 类记忆只有 3 条，全都已删除或在回收站；生产配置的 `systemInstruction` 只有一行（见 [C](#memory-rules) 和 C-1）。
-- 没有任何一条规则带“出处”字段。出处只能从 ADR、事故号和规格里倒推；54 条里有 19 条的出处仓库内查不到或只能查到一半（见 [G](#owner-confirm)）。
+- 没有任何一条规则带“出处”字段。出处只能从 ADR、事故号和规格里倒推；57 条里有 19 条的出处仓库内查不到或只能查到一半（见 [G](#owner-confirm)）。
 - 同一条规则在代码和提示词里各写一份的有 4 处，其中 2 处已经对不上（见 [F](#findings)）。
 
 [↑ 回到阅读导航](#contents)
@@ -82,6 +83,9 @@ date: "2026-11-10"
 | H-14 | 提醒时间的换算：有钟点的最多提前 1 小时提醒（离现在不到 1 小时的马上发），只有日期的当天早上 9 点提醒，两年以后的拒绝，每年的日子顺延到下一次 | [ADR 0166](adr/0166-prompt-wording-batch-1-system-and-tools.md)（提前 1 小时是有意的、每年顺延）、[ADR 0150](adr/0150-let-the-model-set-list-and-cancel-reminders.md)（已过去和超过两年的拒绝） | `apps/agent-service/src/production-memory-capture.ts` 的 `DATE_ONLY_REMIND_HOUR`、`MAXIMUM_REMINDER_HORIZON` | 硬 | 尚无（提醒时间换算） | `apps/agent-service/test/production-memory-evidence.unit.test.ts`；`prompt-wording.unit.test.ts` 的 C6 W-09 |
 | H-15 | 每封邮件判断前，先读同一件事以前的往来邮件（同一串对话、同标题同一批人，或同一个订单号、预约号、案件号），按时间排好交给模型；在费用和请求预算内对所有待判邮件都做（本次已花到每日费用上限时不找），不是按“退款”之类的词触发 | [ADR 0180](adr/0180-gmail-check-reads-earlier-mail-about-the-same-matter.md)；起因是 [ADR 0159](adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md) 已知限制写的“退款、预订是否办结需要整个邮件串，留给第二阶段” | `proactive-mail-check-service.ts` 的 `#related`，上限见 C-8 | 硬（读不读由程序定；读了怎么判由模型） | 尚无 | `proactive-mail-check.test.ts` 的 `[PA-1]` 一组 |
 | H-16 | “已回复”按邮件串算：只有该串最新一封自己发的邮件已被模型判为“不用管”且有把握、本次和数据库里都没有更晚的邮件时，才把该串待处理提醒标成已回复；产生了新提醒的用新提醒替换旧提醒 | [ADR 0159](adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md) 决定第 7 条 | `proactive-mail-check-service.ts` 的 `#repliedThreads`（本次取到的邮件）；数据库里更晚的邮件由 `sqlite-proactive-operations.ts` 标记已回复的 SQL 条件挡住 | 硬 | 尚无 | PG-5、OM-1、OM-2、OM-14、OM-15 |
+| H-17 | 主人立的“一定提醒”规则（类型 `mail_must_notify`）：发件域名、地址、词语或英文整词命中、且不含排除词的邮件，模型判“不用管”“值得知道”或“请看原信”都改成“请看原信”并推送；判“要你做事”的不动；当天模型额度用完、没有判断时直接交给主人看并推送。词语在主题和正文里找，统一全半角和大小写 | [ADR 0213](adr/0213-owner-sentence-becomes-a-standing-rule.md) | `rules/rule-types.ts` 的 `RULE_TYPES`；`proactive-mail-check-service.ts` 里 `mustNotifyHitIds` 之后的强制分支 | 硬 | 某类事一定提醒 | `rule-type-mail-must-notify.unit.test.ts`、`proactive-mail-check.test.ts` 的 `[P2-3]` 一组 |
+| H-18 | 主人立的“先读完整个邮件串”规则（类型 `mail_read_whole_thread`）：命中的邮件读同一串里的全部往来（含后来的回复，上限见 C-8 旁的 `wholeThreadMailsPerMail`、`wholeThreadCharactersPerMail`）；读不全或读取失败（包括找不到这个邮件串）就改成“请看原信”并推送；模型判“要你做事”的不动，因为那已经交给主人；当天模型额度用完、没有判断时，命中的邮件同样直接交给主人看 | [ADR 0213](adr/0213-owner-sentence-becomes-a-standing-rule.md) | `gmail-related.ts` 的 `findRelatedMail`（`wholeThread`）；`proactive-mail-check-service.ts` 的 `threadUnread` | 硬（读不读、读不全怎么办由程序定；读全了怎么判由模型） | 某类事先查清再判断 | `rule-type-mail-read-whole-thread.unit.test.ts`、`gmail-related.unit.test.ts` 的 `[P2-3]`、`proactive-mail-check.test.ts` 的 `[P2-3]` 一组 |
+| H-19 | 整理记忆判到两条记忆说法不一样时，只有模型判“新说法明确取代旧说法”、新条说得更晚、并且新条的把握不低于自动存入门槛（同 H-13），才作废旧条（门槛取 `packages/calibration/src/thresholds.ts` 的 `MEMORY_AUTO_COMMIT_GATE`，和 H-13 同一份）；其余一律让两条里说得更晚的那条进“待确认”、较早那条照常生效，并写一条 `hold` 决策记录；主人确认后两条都留，有过 `hold` 的一对以后不再互相作为整理对象（仍可能一起作为第三条新记忆的邻居，但只执行涉及那条新记忆的判断） | [ADR 0220](adr/0220-consolidation-conflicts-wait-for-the-owner.md) | `packages/memory-engine/src/consolidation.ts`（`replace` 分支和 `hold`） | 硬 | 尚无（记忆整理门槛） | `test/integration/memory-consolidation.test.ts` 的 P3-8 |
 
 [↑ 回到阅读导航](#contents)
 
@@ -146,7 +150,7 @@ date: "2026-11-10"
 | --- | --- | --- | --- | --- | --- | --- |
 | M-1 | 产生：每条主人消息之后，由模型判断有没有“对 Himawari 的要求”，有就写成 `rule` 类候选。主人明确说“以后都这样”才标明确；只是这一次的纠正，或模型自己从对话里看出的习惯，标不明确，“先作为待确认的规矩，再出现一次或主人确认后才生效” | [ADR 0163](adr/0163-owner-preferences-as-data-run-by-tested-rule-types.md) 背景；愿景 v2.2 附录第 10 条 | `memory.capture` 提示词；转正逻辑在 `durable-memory-service.ts`（重复出现或 `confirm` 时 `tentative` 改为 false） | 软（是否判成规则由模型决定；转正是程序） | 尚无 | `tentative-memory-capture.unit.test.ts` |
 | M-2 | 注入：每轮把有效的 `rule` 记忆放进“主人的要求”资料块，标记为“回答时照做；主人本轮另有说法时以本轮为准” | [愿景](product-vision.md) 附录第 10 条记着这条的缺口 | `owner-profile-service.ts` 的 `compose`；标记在 `chat.turn.owner-rules-marker` | 软（块是程序放的，模型是否照做是概率） | 尚无 | `owner-profile-service.unit.test.ts` |
-| M-3 | 预算：规则和档案共用 2000 字，规则先取，放不下的排进“排队”列表，那一轮模型就看不到它 | 同 M-2（愿景附录第 10 条原话：“与档案共用的 2000 字预算有没有超”） | `owner-profile-service.ts` 的 `OWNER_PROFILE_CHARACTER_BUDGET` 和 `take` | 硬（程序会丢） | 尚无 | `owner-profile-service.unit.test.ts` 的“stays within the character budget” |
+| M-3 | 预算：规则和档案共用 2000 字。主人打开“每次对话都带上”的记忆先占字数、永不挤掉（它们本身就超过上限时照放，并在记忆页提示）；其余的规则在前、档案在后，放不下的挤掉，那一轮模型看不到。有条目被挤掉时写一条“上下文截断”决策记录（只写编号），同一组被挤掉只记一次 | 同 M-2（愿景附录第 10 条原话：“与档案共用的 2000 字预算有没有超”）、[ADR 0214](adr/0214-record-profile-truncation-and-keep-pinned-memories.md) | `owner-profile-service.ts` 的 `OWNER_PROFILE_CHARACTER_BUDGET` 和 `#select`；`context-formation-service.ts` 写记录 | 硬（程序会丢） | 尚无 | `owner-profile-service.unit.test.ts` 的“stays within the character budget”和 `[P2-5]`；`decision-ledger.test.ts` 的 `[P2-5]` |
 | M-4 | 资格：只有状态有效、当前有效、不是待确认、没被取代的记忆才进规则块；分类不得高于本次请求的上限，也不得高于模型可见上限（[ADR 0193](adr/0193-memory-is-visible-to-the-model.md) 起是敏感：公开、私有、敏感的规则会注入，受限的不会） | [ADR 0193](adr/0193-memory-is-visible-to-the-model.md)（模型可见上限）、[ADR 0185](adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)（密码、密钥标敏感）、[ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)（档案挑选规则） | `owner-profile-service.ts` 的 `#select`（用 `CLASSIFICATION_RANK` 和 `model-visibility.ts` 的 `modelVisibleCeiling`） | 硬 | 尚无 | PA-2（待确认不进档案）、PA-2b（被取代、过期、非生效状态不进）、PA-2c（敏感规则只在请求上限允许时进，受限的不进） |
 | M-5 | 主人在记忆页可以手动“每次对话都带”或“不带”某条记忆，覆盖自动选择 | [ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md) 盘点表 | `owner-profile-service.ts` 的 `pinned`、`choices` | 硬 | 尚无 | MEM-PIN |
 
@@ -177,7 +181,7 @@ date: "2026-11-10"
 | C-5 | 系统主动提醒总开关、静默时段、重要发件人名单、Gmail 连接 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md) | 总开关在表 `proactive_settings`；静默时段、重要发件人在表 `rule_book_rules`，改动加修订号并写进只追加的 `rule_book_history`（迁移 0086，[ADR 0209](adr/0209-rule-book-with-cel-expressions-and-judge.md)） | 硬 | 静默时段、某人的事一定提醒 | PG-7 |
 | C-6 | 推送通知开关和通知种类，按设备分开 | [ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md) | 推送设置，按设备保存 | 硬 | 尚无 | I-39 一带的界面用例 |
 | C-7 | 运行参数：`maxSelectedMemories`、`maxMemoryClassification`（最多把哪一档分类的记忆交给模型）、`memoryLimit`、`timeZone`、`freezeThreadPrompts` | [ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)（冻结）；其余部分立规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `packages/platform-node/src/strict-configuration.ts` 的 `parseRunPolicy` | 硬 | 尚无 | `startup-configuration.unit.test.ts` |
-| C-8 | Gmail 检查的运行参数：`intervalMs`（缺省 15 分钟）、`dailyCostMicros`、`backoffThreshold`、`memoryMinimumSimilarity`（缺省 0.45）、正文和往来邮件的字数上限、审查预算 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)、[ADR 0184](adr/0184-back-off-ignored-proactive-pushes.md) | `strict-configuration.ts` 的 `parseProactive` | 硬 | 每天提醒的上限（部分） | `startup-configuration.unit.test.ts` |
+| C-8 | Gmail 检查的运行参数：`intervalMs`（缺省 15 分钟）、`dailyCostMicros`、`backoffThreshold`、`memoryMinimumSimilarity`（缺省取当前嵌入模型档案里系统主动提醒用的门槛，见 [ADR 0224](adr/0224-memory-embedding-runs-on-the-host.md)）、正文和往来邮件的字数上限、审查预算 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)、[ADR 0184](adr/0184-back-off-ignored-proactive-pushes.md) | `strict-configuration.ts` 的 `parseProactive` | 硬 | 每天提醒的上限（部分） | `startup-configuration.unit.test.ts` |
 
 [↑ 回到阅读导航](#contents)
 

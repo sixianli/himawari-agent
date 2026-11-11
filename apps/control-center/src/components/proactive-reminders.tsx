@@ -6,6 +6,7 @@ import {
   type ProactiveDecision,
   type ProactiveGroup,
   type ProactiveInsight,
+  type ProactiveCheckupAction,
   type ProactiveModel,
   type ProactiveOverview,
   type ProactiveRating,
@@ -333,7 +334,13 @@ function reviewTag(item: ProactiveReviewItem): MessageId {
           ? "dailyReview.tag.skippedMemory"
           : item.outcome === "kept"
             ? "dailyReview.tag.keptMemory"
-            : "dailyReview.tag.pendingMemory"
+            : item.outcome === "capture_retrying"
+              ? "dailyReview.tag.captureRetrying"
+              : item.outcome === "capture_queued"
+                ? "dailyReview.tag.captureQueued"
+                : item.outcome === "capture_gave_up"
+                  ? "dailyReview.tag.captureGaveUp"
+                  : "dailyReview.tag.pendingMemory"
         : item.kind === "consolidation"
           ? "dailyReview.tag.consolidation"
           : item.kind === "context_truncation"
@@ -351,6 +358,12 @@ function reviewText(item: ProactiveReviewItem, message: Message): string {
   if (item.kind === "proactive" && item.fetched !== null)
     return message("dailyReview.fetched", { count: item.fetched });
   if (item.kind === "rule_review") return message("dailyReview.ruleReview");
+  if (item.kind === "memory_candidate" && item.outcome === "capture_retrying")
+    return message("dailyReview.captureRetrying");
+  if (item.kind === "memory_candidate" && item.outcome === "capture_queued")
+    return message("dailyReview.captureQueued");
+  if (item.kind === "memory_candidate" && item.outcome === "capture_gave_up")
+    return message("dailyReview.captureGaveUp");
   return "";
 }
 
@@ -389,6 +402,90 @@ function ReviewRow({
   );
 }
 
+const CHECKUP_REASON: Readonly<Record<string, MessageId>> = {
+  conflict: "dailyReview.checkup.reason.conflict",
+  unused: "dailyReview.checkup.reason.unused",
+  low_confidence: "dailyReview.checkup.reason.lowConfidence",
+  source_unavailable: "dailyReview.checkup.reason.sourceUnavailable",
+};
+const CHECKUP_DONE: Readonly<Record<string, MessageId>> = {
+  confirm: "dailyReview.checkup.done.confirm",
+  delete: "dailyReview.checkup.done.delete",
+  merge: "dailyReview.checkup.done.merge",
+};
+
+function CheckupRow({
+  item,
+  unusedDays,
+  busy,
+  message,
+  onAct,
+}: {
+  item: ProactiveReviewItem;
+  unusedDays: number;
+  busy: boolean;
+  message: Message;
+  onAct: (action: ProactiveCheckupAction, keep?: string | null) => void;
+}) {
+  const checkup = item.checkup;
+  if (!checkup) return null;
+  const reason = CHECKUP_REASON[checkup.reason] ?? "dailyReview.checkup.reason.unused";
+  const text = item.text || (item.textHidden ? message("dailyReview.hidden") : "");
+  const pair = checkup.relatedMemoryId !== null;
+  const related = checkup.relatedText || message("dailyReview.hidden");
+  const done = checkup.action ? CHECKUP_DONE[checkup.action] : undefined;
+  return (
+    <li data-checkup={checkup.reason}>
+      <span className="proactive-review-tag">{message(reason, { days: unusedDays })}</span>
+      <span className="proactive-review-text proactive-checkup-text">
+        {pair ? (
+          <>
+            <span>{message("dailyReview.checkup.newer", { text })}</span>
+            <span>{message("dailyReview.checkup.older", { text: related })}</span>
+          </>
+        ) : (
+          text
+        )}
+      </span>
+      <span className="proactive-checkup-actions">
+        {done ? (
+          <>
+            <span className="proactive-review-tag">{message(done)}</span>
+            <ActionButton variant="quiet" disabled={busy} onClick={() => onAct("undo")}>
+              {message("dailyReview.checkup.undo")}
+            </ActionButton>
+          </>
+        ) : pair ? (
+          <>
+            <ActionButton variant="secondary" disabled={busy} onClick={() => onAct("confirm")}>
+              {message("dailyReview.checkup.keepBoth")}
+            </ActionButton>
+            <ActionButton
+              variant="secondary"
+              disabled={busy}
+              onClick={() => onAct("merge", checkup.memoryId)}
+            >
+              {message("dailyReview.checkup.replace")}
+            </ActionButton>
+            <ActionButton variant="quiet" disabled={busy} onClick={() => onAct("delete")}>
+              {message("dailyReview.checkup.deleteNewer")}
+            </ActionButton>
+          </>
+        ) : (
+          <>
+            <ActionButton variant="secondary" disabled={busy} onClick={() => onAct("confirm")}>
+              {message("dailyReview.checkup.confirm")}
+            </ActionButton>
+            <ActionButton variant="quiet" disabled={busy} onClick={() => onAct("delete")}>
+              {message("dailyReview.checkup.delete")}
+            </ActionButton>
+          </>
+        )}
+      </span>
+    </li>
+  );
+}
+
 export function ProactiveReviewSection({
   proactive,
   message,
@@ -405,15 +502,21 @@ export function ProactiveReviewSection({
   const pages = Math.max(1, Math.ceil(list.length / REVIEW_PAGE_SIZE));
   const current = Math.min(page, pages - 1);
   const rows = list.slice(current * REVIEW_PAGE_SIZE, (current + 1) * REVIEW_PAGE_SIZE);
-  const rowsDone = rows.length > 0 && rows.every(({ rating }) => rating !== null);
+  const rowsDone =
+    rows.length > 0 &&
+    rows.every((item) => (item.checkup ? item.checkup.action !== null : item.rating !== null));
   const wasDone = useRef({ page: -1, done: false });
   useEffect(() => {
     const finishedHere = rowsDone && wasDone.current.page === current && !wasDone.current.done;
     wasDone.current = { page: current, done: rowsDone };
     if (finishedHere && current < pages - 1) setPage(current + 1);
   }, [rowsDone, current, pages]);
-  if (!review || (review.items.length === 0 && review.folded.total === 0)) return null;
-  const unrated = rows.filter(({ rating }) => rating === null);
+  if (
+    !review ||
+    (review.items.length === 0 && review.folded.total === 0 && review.hiddenByModel === 0)
+  )
+    return null;
+  const unrated = rows.filter(({ rating, checkup }) => checkup === null && rating === null);
   const rate = (ratings: readonly ProactiveReviewRating[]) =>
     !proactive.busy && void proactive.rateReview(ratings);
   return (
@@ -432,17 +535,35 @@ export function ProactiveReviewSection({
       {!folded && review.notSampled > 0 ? (
         <p className="settings-note">{message("dailyReview.note")}</p>
       ) : null}
+      {!folded && review.hiddenByModel > 0 ? (
+        <p className="settings-note proactive-review-hidden">
+          {message("dailyReview.hiddenByModel", { count: review.hiddenByModel })}
+        </p>
+      ) : null}
       <ul className="proactive-review-list">
-        {rows.map((item) => (
-          <ReviewRow
-            key={item.key}
-            item={item}
-            busy={proactive.busy}
-            message={message}
-            locale={locale}
-            onRate={(rating) => rate([{ key: item.key, rating }])}
-          />
-        ))}
+        {rows.map((item) =>
+          item.checkup ? (
+            <CheckupRow
+              key={item.key}
+              item={item}
+              unusedDays={review.memoryUnusedDays}
+              busy={proactive.busy}
+              message={message}
+              onAct={(action, keep) =>
+                !proactive.busy && void proactive.actCheckup(item.key, action, keep ?? null)
+              }
+            />
+          ) : (
+            <ReviewRow
+              key={item.key}
+              item={item}
+              busy={proactive.busy}
+              message={message}
+              locale={locale}
+              onRate={(rating) => rate([{ key: item.key, rating }])}
+            />
+          ),
+        )}
       </ul>
       <div className="proactive-review-foot">
         <ActionButton

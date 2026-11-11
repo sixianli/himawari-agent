@@ -13,7 +13,9 @@ import {
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
+import { MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isAgentRequest } from "../fixtures/agent-request.ts";
@@ -78,8 +80,6 @@ const answerFailedRead = (response: ServerResponse) => () => {
   if (!response.headersSent) response.writeHead(500);
   response.end();
 };
-
-const agentGenerationRequests = () => providerRequests.filter(isAgentRequest).length;
 
 type HttpResult = {
   readonly status: number;
@@ -433,6 +433,7 @@ function rawConfiguration(): Record<string, unknown> {
 async function signToken(
   options: {
     readonly issuer?: string;
+    readonly audience?: string;
     readonly subject?: string;
     readonly issuedAt?: number;
     readonly expiresAt?: number;
@@ -442,7 +443,7 @@ async function signToken(
   return new SignJWT({})
     .setProtectedHeader({ alg: "RS256", kid: "production-process-key" })
     .setIssuer(options.issuer ?? `https://127.0.0.1:${providerPort}`)
-    .setAudience(audience)
+    .setAudience(options.audience ?? audience)
     .setSubject(options.subject ?? subject)
     .setIssuedAt(options.issuedAt ?? now)
     .setExpirationTime(options.expiresAt ?? now + 300)
@@ -1727,153 +1728,123 @@ it("[R2-L5] executes authenticated HTTP requests and persists gateway costs afte
 }, 90_000);
 
 it.each(["connection loss", "missing cost", "budget exceeded"] as const)(
-  "[R2-L5] retains one unknown embedding after %s and restart while the service keeps serving",
+  "[P3-2] answers with the memory found by keywords and writes one retrieval fallback record after %s",
   async (failure) => {
     const service = await openInstalledMain();
-    const threadId = "thread-memory-connection-lost";
+    const threadId = "thread-memory-fallback";
+    const capture = (memories: readonly object[]) => (input: Readonly<Record<string, unknown>>) =>
+      JSON.stringify(input["messages"]).includes(MEMORY_CAPTURE.text.slice(0, 24))
+        ? { text: JSON.stringify({ memories }) }
+        : { text: "安装后的持久回答" };
+    const degradeRows = () => {
+      const database = openQualifiedDatabase(databasePath);
+      try {
+        return database
+          .prepare(
+            "SELECT outcome, reason_code AS reasonCode FROM decision_ledger WHERE kind = 'retrieval_degrade'",
+          )
+          .all();
+      } finally {
+        database.close();
+      }
+    };
     try {
-      await service.command("thread.create", "memory-lost-create", {
+      await service.command("thread.create", "memory-fallback-create", {
         threadId,
         answerLocale: "zh-CN",
-        resultRef: await service.upload("memory-lost-create-payload", "create"),
+        resultRef: await service.upload("memory-fallback-create-payload", "create"),
       });
-      const generationRequestsBefore = agentGenerationRequests();
-      const embeddingRequestsBefore = providerRequests.filter(
-        ({ path: route }) => route === "/v1/embeddings",
-      ).length;
+      chatReply = capture([
+        {
+          kind: "durable_fact",
+          decision: "create",
+          text: "主人的牙医是樱井医生",
+          classification: "private",
+          confidence: 950,
+          explicit: true,
+          category: "relationship",
+          quote: "请记住，我的牙医是樱井医生",
+        },
+      ]);
+      expect(
+        (await submitTurn(service, threadId, "memory-fallback-learn", "请记住，我的牙医是樱井医生"))
+          .run?.status,
+      ).toBe("completed");
+      await expect
+        .poll(
+          () => {
+            const database = openQualifiedDatabase(databasePath);
+            try {
+              return database
+                .prepare(
+                  "SELECT count(*) AS indexed FROM memory_search_index WHERE embedding IS NOT NULL",
+                )
+                .get();
+            } finally {
+              database.close();
+            }
+          },
+          { timeout: 30_000 },
+        )
+        .toEqual({ indexed: 1 });
+      expect(degradeRows()).toEqual([]);
+
+      chatReply = capture([]);
       dropEmbeddingConnections = failure === "connection loss";
       embeddingCostAvailable = failure !== "missing cost";
       rejectEmbeddingsOverBudget = failure === "budget exceeded";
-      const failureCode =
-        failure === "budget exceeded"
-          ? "CONTEXT_MEMORY_QUOTA_EXCEEDED"
-          : "CONTEXT_MEMORY_UNAVAILABLE";
       mainDiagnostics = "";
-      await service.submit({
+      const embeddingRequestsBefore = providerRequests.filter(
+        ({ path: route }) => route === "/v1/embeddings",
+      ).length;
+      const start = providerRequests.length;
+      const recalled = await submitTurn(
+        service,
         threadId,
-        expectedRevision: 1,
-        name: "memory-lost-first",
-        runId: "run:memory-lost-first",
-        content: "读取 x.txt 文件内容给我",
-      });
-      const failed = await waitForRunToLeaveExecution(service, threadId, "run:memory-lost-first");
+        "memory-fallback-recall",
+        "我的牙医叫什么来着？",
+      );
       dropEmbeddingConnections = false;
       embeddingCostAvailable = true;
       rejectEmbeddingsOverBudget = false;
-      expect(failed.run?.status).toBe("failed");
-      expect(providerRequests.filter(({ path: route }) => route === "/v1/embeddings").length).toBe(
-        embeddingRequestsBefore + 1,
-      );
-      expect(service.running().main.exitCode).toBeNull();
-      const ready = await httpRequest(service.running().address, "/health/ready");
-      expect(ready.status).toBe(200);
-      expect(ready.body).toMatchObject({ status: "ready" });
-      expect(agentGenerationRequests()).toBe(generationRequestsBefore);
-      const execution = await service.query("thread.execution", {
-        threadId,
-        runId: "run:memory-lost-first",
-        afterSequence: 0,
-        limit: 100,
-      });
-      expect(execution.status).toBe(200);
-      const records = (
-        execution.body as {
-          payload: { records: Array<{ kind: string; phase: string; text: string }> };
-        }
-      ).payload.records;
-      expect(records).toContainEqual(
-        expect.objectContaining({
-          kind: "status",
-          phase: "failed",
-          text: failureCode,
-        }),
-      );
+      expect(recalled.run?.status).toBe("completed");
+      await service.readAnswer(recalled.detail, "run:memory-fallback-recall");
+      expect(
+        providerRequests.filter(({ path: route }) => route === "/v1/embeddings").length,
+      ).toBeGreaterThan(embeddingRequestsBefore);
+      const answered = agentRequests(start);
+      expect(answered.length).toBeGreaterThan(0);
+      expect(lastMessage(answered[0] as (typeof answered)[number])).toContain("樱井医生");
+      expect(mainDiagnostics).toContain('"event":"memory.embedding_failed"');
       if (failure === "budget exceeded") {
-        expect(mainDiagnostics).toContain('"event":"memory.embedding_failed"');
         expect(mainDiagnostics).toContain('"status":"402"');
         expect(mainDiagnostics).toContain('"gatewayErrorType":"quota_for_entity_exceeded"');
         expect(mainDiagnostics).toContain("User budget exceeded");
       }
-      expect(records.some((record) => record.kind === "tool")).toBe(false);
+      await expect.poll(() => degradeRows().length).toBeGreaterThan(0);
+      expect(degradeRows()).toEqual([
+        { outcome: "degraded", reasonCode: "vector_search_unavailable" },
+      ]);
       const database = openQualifiedDatabase(databasePath);
       try {
         expect(
           database
             .prepare(
-              "SELECT phase, terminal_status AS terminalStatus, diagnostic_code AS diagnosticCode FROM run_coordination_checkpoints WHERE run_id = ?",
+              "SELECT source, status FROM model_invocation_identities WHERE run_id = ? AND source = 'embedding'",
             )
-            .get("run:memory-lost-first"),
-        ).toEqual({
-          phase: "failed",
-          terminalStatus: "failed",
-          diagnosticCode: failureCode,
-        });
+            .all("run:memory-fallback-recall"),
+        ).toEqual([{ source: "embedding", status: "settled" }]);
         expect(
           database
-            .prepare(
-              "SELECT source, status, reason_code AS reasonCode FROM model_invocation_identities WHERE run_id = ?",
-            )
-            .all("run:memory-lost-first"),
-        ).toEqual([{ source: "embedding", status: "unknown", reasonCode: "transport_unresolved" }]);
+            .prepare("SELECT status FROM model_budget_accounts WHERE account_id = ?")
+            .get("run:run:memory-fallback-recall"),
+        ).toEqual({ status: "active" });
       } finally {
         database.close();
       }
-      const callsBeforeRestart = providerRequests.filter(({ path: route }) =>
-        route.startsWith("/v1/"),
-      ).length;
-      await service.restart();
-      expect(providerRequests.filter(({ path: route }) => route.startsWith("/v1/")).length).toBe(
-        callsBeforeRestart,
-      );
-      const restoredDatabase = openQualifiedDatabase(databasePath);
-      try {
-        const invocation = restoredDatabase
-          .prepare(
-            "SELECT source, status, actual_cost_micros AS actualCostMicros, budget_account_id AS accountId FROM model_invocation_identities WHERE run_id = ?",
-          )
-          .all("run:memory-lost-first");
-        expect(invocation).toEqual([
-          {
-            source: "embedding",
-            status: "unknown",
-            actualCostMicros: null,
-            accountId: "run:run:memory-lost-first",
-          },
-        ]);
-        const account = restoredDatabase
-          .prepare(
-            "SELECT spent_cost_micros AS spentCostMicros, status FROM model_budget_accounts WHERE account_id = ?",
-          )
-          .get("run:run:memory-lost-first");
-        expect(account).toMatchObject({ spentCostMicros: 0, status: "reconcile_required" });
-        const retained = path.resolve(".ci-output/r2-l5-http", path.basename(stateRoot));
-        await mkdir(retained, { recursive: true });
-        await writeFile(
-          path.join(retained, "unknown-after-restart.json"),
-          JSON.stringify({ failure, invocation, account, callsBeforeRestart }, null, 2),
-        );
-      } finally {
-        restoredDatabase.close();
-      }
-
-      const revision = (failed.detail.body as { payload: { thread: { revision: number } } }).payload
-        .thread.revision;
-      await service.submit({
-        threadId,
-        expectedRevision: revision,
-        name: "memory-lost-second",
-        runId: "run:memory-lost-second",
-        content: "再试一次",
-      });
-      const completed = await waitForRunToLeaveExecution(
-        service,
-        threadId,
-        "run:memory-lost-second",
-      );
-      expect(completed.run?.status).toBe("completed");
-      await service.readAnswer(completed.detail, "run:memory-lost-second");
       expect(service.running().main.exitCode).toBeNull();
     } finally {
+      chatReply = undefined;
       dropEmbeddingConnections = false;
       embeddingCostAvailable = true;
       rejectEmbeddingsOverBudget = false;
@@ -2110,6 +2081,94 @@ async function systemInstructionChange(runPolicy: Record<string, unknown>) {
     await service.stop();
   }
 }
+
+it("[P5-3] checks the MCP entry against its own Cloudflare Access audience, not the web sign-in audience", async () => {
+  const mcpAudience = "mcp-access-audience-production-process";
+  const service = await openInstalledMain({ runPolicy: { mcpRead: { audience: mcpAudience } } });
+  try {
+    const call = async (assertion?: string) =>
+      httpRequest(service.running().address, "/api/mcp/v1", {
+        ...jsonRequestBody({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "today_context", arguments: {} },
+        }),
+        headers: {
+          accept: "application/json, text/event-stream",
+          "mcp-protocol-version": "2025-06-18",
+          ...(assertion ? { "cf-access-jwt-assertion": assertion } : {}),
+        },
+      });
+    const bare = await call();
+    expect(bare.status).toBe(401);
+    expect(bare.headers.get("www-authenticate")).toBeNull();
+    const webAudience = await call(await signToken());
+    expect(webAudience.status).toBe(401);
+    const notOwner = await call(
+      await signToken({ audience: mcpAudience, subject: "someone-else-in-the-access-team" }),
+    );
+    expect(notOwner.status).toBe(401);
+    const served = await call(await signToken({ audience: mcpAudience }));
+    expect(served.status).toBe(200);
+    expect(served.raw).toContain(String(new Date().getUTCFullYear()));
+  } finally {
+    await service.stop();
+  }
+}, 120_000);
+
+async function installedMcpToolNames(address: string, assertion: string): Promise<string[]> {
+  const client = new Client(
+    { name: "claude-code", version: "2.1.400" },
+    {
+      versionNegotiation: { mode: { pin: "2026-07-28" } },
+      capabilities: { elicitation: { form: {} } },
+    },
+  );
+  await client.connect(
+    new StreamableHTTPClientTransport(new URL("/api/mcp/v1", address), {
+      fetch: async (input, init) => {
+        const headers = new Headers(init?.headers);
+        headers.set("cf-access-jwt-assertion", assertion);
+        const target = new URL(input instanceof Request ? input.url : String(input));
+        const result = await httpRequest(address, `${target.pathname}${target.search}`, {
+          method: init?.method ?? "GET",
+          headers,
+          ...(typeof init?.body === "string" ? { body: init.body } : {}),
+        });
+        return new Response(result.status === 204 ? null : result.raw, {
+          status: result.status,
+          headers: result.headers,
+        });
+      },
+    }),
+  );
+  try {
+    return (await client.listTools()).tools.map((tool) => tool.name).sort();
+  } finally {
+    await client.close();
+  }
+}
+
+it("[P5-3] shows the memory proposal tool only when runPolicy.mcpRead.proposals is on", async () => {
+  const mcpAudience = "mcp-access-audience-production-process";
+  for (const proposals of [false, true]) {
+    const service = await openInstalledMain({
+      runPolicy: { mcpRead: { audience: mcpAudience, ...(proposals ? { proposals } : {}) } },
+    });
+    try {
+      const names = await installedMcpToolNames(
+        service.running().address,
+        await signToken({ audience: mcpAudience }),
+      );
+      expect(names).toContain("today_context");
+      expect(names.includes("propose_memory")).toBe(proposals);
+      expect(names.includes("propose_rule")).toBe(proposals);
+    } finally {
+      await service.stop();
+    }
+  }
+}, 240_000);
 
 it("[PR-B] keeps the request head byte-identical when the configured system instruction changes between turns", async () => {
   const { first, second, rows } = await systemInstructionChange({});

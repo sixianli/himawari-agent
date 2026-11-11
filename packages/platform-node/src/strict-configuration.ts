@@ -3,22 +3,24 @@ import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   type CapabilityDeploymentConfiguration,
-  isWebProviderId,
-  WEB_FETCH_MAXIMUM_BYTES,
-  WEB_PROVIDER_IDS,
-  WEB_PROVIDERS,
-  type WebProviderId,
   type ConfigurationPort,
-  type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredCompletionsGenerationModelDescriptor,
+  type ConfiguredEmbeddingModelDescriptor,
+  type ConfiguredMemoryRetrieval,
   type ConfiguredModelDescriptor,
   type DataClassification,
+  DEFAULT_REVIEW_PREREVIEW,
+  findEmbeddingProfile,
+  GATEWAY_EMBEDDING_PROVIDER,
   type HttpConfiguration,
   type IdentityBootstrapConfiguration,
   type IdentityConfiguration,
   type IdentityCsrfConfiguration,
+  isWebProviderId,
+  LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
   type ModelProviderRouting,
+  type ProactiveConfiguration,
   type ProductConfiguration,
   REAL_EVAL_MODES,
   REAL_EVAL_WEEKLY_CAP_MICROS_MAXIMUM,
@@ -27,9 +29,13 @@ import {
   type RunPolicyConfiguration,
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
+  WEB_FETCH_MAXIMUM_BYTES,
+  WEB_PROVIDER_IDS,
+  WEB_PROVIDERS,
+  type WebProviderId,
 } from "@himawari-agent/application";
-import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
+import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 
 export const CONFIGURATION_SCHEMA_VERSION = "himawari.configuration.v1" as const;
 
@@ -121,6 +127,27 @@ function nonNegativeNumber(value: unknown, field: string): number {
   return value;
 }
 
+function memoryRetrieval(value: unknown): ConfiguredMemoryRetrieval | undefined {
+  if (value === undefined) return undefined;
+  const field = "configuration.memory.retrieval";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    ["keywordWeight", "entityWeight", "cutoffMargin", "dedupeSameSource"],
+    field,
+  );
+  const parsed: Record<string, number | boolean> = {};
+  for (const key of ["keywordWeight", "entityWeight", "cutoffMargin"] as const) {
+    if (input[key] === undefined) continue;
+    const value = unitInterval(input[key], `${field}.${key}`);
+    if (value >= 1) throw invalid(`${field}.${key}`, "must be at least 0 and below 1");
+    parsed[key] = value;
+  }
+  if (input["dedupeSameSource"] !== undefined)
+    parsed["dedupeSameSource"] = boolean(input["dedupeSameSource"], `${field}.dedupeSameSource`);
+  return Object.freeze(parsed) as ConfiguredMemoryRetrieval;
+}
+
 function unitInterval(value: unknown, field: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
     throw invalid(field, "must be a finite number from 0 to 1");
@@ -133,6 +160,13 @@ function absolutePath(value: unknown, field: string): string {
   if (!path.isAbsolute(candidate) || path.normalize(candidate) !== candidate) {
     throw invalid(field, "must be a normalized absolute path");
   }
+  return candidate;
+}
+
+function sha256Digest(value: unknown, field: string): string {
+  const candidate = string(value, field);
+  if (!/^[a-f0-9]{64}$/.test(candidate) || /^0{64}$/.test(candidate))
+    throw invalid(field, "must be a lowercase sha256 digest");
   return candidate;
 }
 
@@ -299,7 +333,7 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
               "providerRouting",
               "baseUrl",
             ]
-        : ["dimensions"]),
+        : ["dimensions", "artifactSha256"]),
     ],
     field,
   );
@@ -336,15 +370,30 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
       ...base,
       role: "embedding",
       dimensions: integer(input["dimensions"], `${field}.dimensions`, 1, 65_536),
+      ...(input["artifactSha256"] === undefined
+        ? {}
+        : { artifactSha256: sha256Digest(input["artifactSha256"], `${field}.artifactSha256`) }),
     };
-    if (descriptor.provider === "vercel-ai-gateway") {
-      if (descriptor.model !== "alibaba/qwen3-embedding-8b")
-        throw invalid(`${field}.model`, "must be alibaba/qwen3-embedding-8b");
-      if (descriptor.dimensions !== 4096 && descriptor.dimensions !== 1024)
-        throw invalid(`${field}.dimensions`, "must be 4096 or 1024");
-      if (descriptor.secretRef === null)
-        throw invalid(`${field}.secretRef`, "is required for AI Gateway");
-    }
+    const profiled =
+      descriptor.provider === LOCAL_ONNX_EMBEDDING_PROVIDER ||
+      descriptor.provider === GATEWAY_EMBEDDING_PROVIDER;
+    const profile = profiled ? findEmbeddingProfile(descriptor.provider, descriptor.model) : null;
+    if (profiled && !profile) throw invalid(`${field}.model`, "is not a known embedding profile");
+    if (profile && !profile.dimensions.includes(descriptor.dimensions))
+      throw invalid(`${field}.dimensions`, `must be one of ${profile.dimensions.join(", ")}`);
+    if (descriptor.provider === LOCAL_ONNX_EMBEDDING_PROVIDER) {
+      if (descriptor.disclosure !== "local_only")
+        throw invalid(`${field}.disclosure`, "must be local_only for local-onnx");
+      if (descriptor.secretRef !== null)
+        throw invalid(`${field}.secretRef`, "must be null for local-onnx");
+      if (Object.values(descriptor.cost).some((value) => value !== 0))
+        throw invalid(`${field}.cost`, "must be zero for local-onnx");
+      if (descriptor.artifactSha256 === undefined)
+        throw invalid(`${field}.artifactSha256`, "is required for local-onnx");
+    } else if (descriptor.artifactSha256 !== undefined)
+      throw invalid(`${field}.artifactSha256`, "is only supported for local-onnx");
+    if (descriptor.provider === GATEWAY_EMBEDDING_PROVIDER && descriptor.secretRef === null)
+      throw invalid(`${field}.secretRef`, "is required for AI Gateway");
     return Object.freeze(descriptor);
   }
   const api = string(input["api"], `${field}.api`);
@@ -999,9 +1048,15 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       "relatedCharactersPerMail",
       "relatedCharactersPerRelatedMail",
       "relatedRequestsPerCheck",
+      "wholeThreadMailsPerMail",
+      "wholeThreadCharactersPerMail",
+      "ruleReplayDays",
+      "ruleReplayMailsPerOutcome",
       "reviewBudgetSeconds",
       "reviewSecondsPerItem",
       "reviewSilentSharePermille",
+      "reviewPrereview",
+      "reviewMemoryUnusedDays",
       "backoffThreshold",
     ],
     field,
@@ -1035,6 +1090,17 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       `${field}.relatedCharactersPerMail`,
       "must not be smaller than relatedCharactersPerRelatedMail",
     );
+  const wholeThreadCharactersPerMail = optional(
+    "wholeThreadCharactersPerMail",
+    60_000,
+    200,
+    400_000,
+  );
+  if (wholeThreadCharactersPerMail < relatedCharactersPerRelatedMail)
+    throw invalid(
+      `${field}.wholeThreadCharactersPerMail`,
+      "must not be smaller than relatedCharactersPerRelatedMail",
+    );
   return Object.freeze({
     modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
     gmail: Object.freeze({
@@ -1044,6 +1110,8 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     reviewBudgetSeconds: optional("reviewBudgetSeconds", 120, 10, 3_600),
     reviewSecondsPerItem: optional("reviewSecondsPerItem", 5, 1, 60),
     reviewSilentSharePermille: optional("reviewSilentSharePermille", 500, 0, 1_000),
+    reviewPrereview: parseReviewPrereview(input["reviewPrereview"], `${field}.reviewPrereview`),
+    reviewMemoryUnusedDays: optional("reviewMemoryUnusedDays", 90, 7, 3_650),
     backoffThreshold: optional("backoffThreshold", 3, 0, 10),
     intervalMs: optional("intervalMs", 900_000, 60_000, 86_400_000),
     perCheckMs: optional("perCheckMs", 180_000, 10_000, 900_000),
@@ -1054,10 +1122,111 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     relatedCharactersPerMail,
     relatedCharactersPerRelatedMail,
     relatedRequestsPerCheck: optional("relatedRequestsPerCheck", 300, 1, 2_000),
-    memoryMinimumSimilarity:
-      input["memoryMinimumSimilarity"] === undefined
-        ? 0.45
-        : unitInterval(input["memoryMinimumSimilarity"], `${field}.memoryMinimumSimilarity`),
+    wholeThreadMailsPerMail: optional("wholeThreadMailsPerMail", 50, 1, 200),
+    wholeThreadCharactersPerMail,
+    ruleReplayDays: optional("ruleReplayDays", 30, 1, 365),
+    ruleReplayMailsPerOutcome: optional("ruleReplayMailsPerOutcome", 300, 10, 5_000),
+    ...(input["memoryMinimumSimilarity"] === undefined
+      ? {}
+      : {
+          memoryMinimumSimilarity: unitInterval(
+            input["memoryMinimumSimilarity"],
+            `${field}.memoryMinimumSimilarity`,
+          ),
+        }),
+  });
+}
+
+function parseReviewPrereview(
+  value: unknown,
+  field: string,
+): ProactiveConfiguration["reviewPrereview"] {
+  const input = value === undefined ? {} : record(value, field);
+  rejectUnknown(
+    input,
+    [
+      "enabled",
+      "dailyLimit",
+      "dailyCostMicros",
+      "perRun",
+      "requestTimeoutMs",
+      "historyDays",
+      "historyMinimum",
+      "reduction",
+    ],
+    field,
+  );
+  const reductionField = `${field}.reduction`;
+  const reduction =
+    input["reduction"] === undefined ? {} : record(input["reduction"], reductionField);
+  rejectUnknown(
+    reduction,
+    ["enabled", "hiddenAgreementPermille", "confidencePermille", "auditPermille", "windowDays"],
+    reductionField,
+  );
+  const number = (
+    source: JsonRecord,
+    at: string,
+    key: string,
+    fallback: number,
+    minimum: number,
+    maximum: number,
+  ) =>
+    source[key] === undefined ? fallback : integer(source[key], `${at}.${key}`, minimum, maximum);
+  const flag = (source: JsonRecord, at: string, key: string, fallback: boolean) =>
+    source[key] === undefined ? fallback : boolean(source[key], `${at}.${key}`);
+  const defaults = DEFAULT_REVIEW_PREREVIEW;
+  const off = defaults.reduction;
+  return Object.freeze({
+    enabled: flag(input, field, "enabled", defaults.enabled),
+    dailyLimit: number(input, field, "dailyLimit", defaults.dailyLimit, 1, 500),
+    dailyCostMicros: number(
+      input,
+      field,
+      "dailyCostMicros",
+      defaults.dailyCostMicros,
+      1,
+      10_000_000,
+    ),
+    perRun: number(input, field, "perRun", defaults.perRun, 1, 50),
+    requestTimeoutMs: number(
+      input,
+      field,
+      "requestTimeoutMs",
+      defaults.requestTimeoutMs,
+      5_000,
+      300_000,
+    ),
+    historyDays: number(input, field, "historyDays", defaults.historyDays, 1, 366),
+    historyMinimum: number(input, field, "historyMinimum", defaults.historyMinimum, 1, 100_000),
+    reduction: Object.freeze({
+      enabled: flag(reduction, reductionField, "enabled", off.enabled),
+      hiddenAgreementPermille: number(
+        reduction,
+        reductionField,
+        "hiddenAgreementPermille",
+        off.hiddenAgreementPermille,
+        500,
+        999,
+      ),
+      confidencePermille: number(
+        reduction,
+        reductionField,
+        "confidencePermille",
+        off.confidencePermille,
+        0,
+        1_000,
+      ),
+      auditPermille: number(
+        reduction,
+        reductionField,
+        "auditPermille",
+        off.auditPermille,
+        1,
+        1_000,
+      ),
+      windowDays: number(reduction, reductionField, "windowDays", off.windowDays, 1, 366),
+    }),
   });
 }
 
@@ -1078,6 +1247,16 @@ function parseMuseIntake(value: unknown): NonNullable<RunPolicyConfiguration["mu
           ),
         }),
   });
+}
+
+function parseMcpRead(value: unknown): NonNullable<RunPolicyConfiguration["mcpRead"]> {
+  const field = "configuration.runPolicy.mcpRead";
+  const input = record(value, field);
+  rejectUnknown(input, ["audience", "proposals"], field);
+  const audience = safeReference(input["audience"], `${field}.audience`);
+  if (input["proposals"] === undefined) return Object.freeze({ audience });
+  if (input["proposals"] !== true) throw invalid(`${field}.proposals`, "must be true when present");
+  return Object.freeze({ audience, proposals: true as const });
 }
 
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
@@ -1147,6 +1326,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "proactive",
       "museIntake",
       "realEval",
+      "mcpRead",
     ],
     "configuration.runPolicy",
   );
@@ -1187,6 +1367,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["museIntake"] === undefined
       ? {}
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
+    ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
     ...(input["freezeThreadPrompts"] === undefined
@@ -1317,9 +1498,10 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const memory = record(input["memory"], "configuration.memory");
   rejectUnknown(
     memory,
-    ["adapter", "version", "storagePath", "dimensions", "minimumSimilarity"],
+    ["adapter", "version", "storagePath", "dimensions", "minimumSimilarity", "retrieval"],
     "configuration.memory",
   );
+  const retrieval = memoryRetrieval(memory["retrieval"]);
   const minimumSimilarity =
     memory["minimumSimilarity"] === undefined
       ? undefined
@@ -1433,6 +1615,20 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const runPolicy =
     input["runPolicy"] === undefined ? undefined : parseRunPolicy(input["runPolicy"]);
   assertWebProviderSecretReferences(runPolicy, secretReferences);
+  if (runPolicy?.mcpRead && (!identity || identity.kind === "built-in"))
+    throw invalid(
+      "configuration.runPolicy.mcpRead",
+      "requires configuration.identity to use Cloudflare Access",
+    );
+  if (
+    runPolicy?.mcpRead &&
+    identity?.kind !== "built-in" &&
+    identity?.audience === runPolicy.mcpRead.audience
+  )
+    throw invalid(
+      "configuration.runPolicy.mcpRead.audience",
+      "must differ from configuration.identity.audience",
+    );
   if (runPolicy?.webPush)
     assertIdentitySecretReference(
       secretReferences,
@@ -1533,6 +1729,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       storagePath: memoryPath,
       dimensions: memoryDimensions,
       ...(minimumSimilarity === undefined ? {} : { minimumSimilarity }),
+      ...(retrieval === undefined ? {} : { retrieval }),
     }),
     repositoryAllowlistRefs: stringArray(
       input["repositoryAllowlistRefs"],

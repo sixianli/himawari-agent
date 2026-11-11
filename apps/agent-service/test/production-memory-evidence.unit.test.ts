@@ -117,7 +117,9 @@ describe("memory evidence from the Owner's own words", () => {
         sourceRef: "payload-owner",
         sourceClassification: "private",
         existingIds: new Set(["memory-tentative", "memory-formal"]),
-        tentativeTexts: new Map([["memory-tentative", "主人偏好明治乳制品"]]),
+        tentativeMemories: new Map([
+          ["memory-tentative", { text: "主人偏好明治乳制品", category: "preference" }],
+        ]),
         ownerMessage,
       });
 
@@ -145,6 +147,26 @@ describe("memory evidence from the Owner's own words", () => {
       },
     );
 
+    it("[P4-7] marks confirmations of a tentative memory with the category it ends up in", () => {
+      expect(
+        parse("unchanged", "好家里只喝明治的牛奶", "memory-tentative").candidates[0]
+          ?.confirmsTentativeCategory,
+      ).toBe("preference");
+      for (const decision of ["update", "merge"])
+        expect(
+          parse(decision, "好家里只喝明治的牛奶", "memory-tentative").candidates[0]
+            ?.confirmsTentativeCategory,
+        ).toBe("other");
+    });
+
+    it("[P4-7] REVERSE: a candidate on a formal memory is not marked as a confirmation", () => {
+      for (const decision of ["unchanged", "update", "merge"]) {
+        const [candidate] = parse(decision, "好家里只喝明治的牛奶", "memory-formal").candidates;
+        expect(candidate).toBeDefined();
+        expect(candidate).not.toHaveProperty("confirmsTentativeCategory");
+      }
+    });
+
     it("REVERSE: rejects a real Owner quote that has nothing to do with the tentative memory", () => {
       const coffee = parseMemoryCandidates({
         output: JSON.stringify({
@@ -163,7 +185,9 @@ describe("memory evidence from the Owner's own words", () => {
         sourceRef: "payload-owner",
         sourceClassification: "private",
         existingIds: new Set(["memory-tentative"]),
-        tentativeTexts: new Map([["memory-tentative", "主人喜欢喝咖啡"]]),
+        tentativeMemories: new Map([
+          ["memory-tentative", { text: "主人喜欢喝咖啡", category: "preference" }],
+        ]),
         ownerMessage: "明天下午开会，顺便取一下快递",
       });
       expect(coffee.candidates).toEqual([]);

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type {
   ThreadExecutionRecord,
   ThreadExecutionState,
@@ -62,8 +63,10 @@ export function ExecutionProcess({
   message,
   connection,
   onPreview,
+  renderToolCard,
 }: {
   onPreview?: ((preview: ContentPreviewValue) => void) | undefined;
+  renderToolCard?: ((name: string, output: string) => ReactNode) | undefined;
   run: RunSummary;
   records: readonly ThreadExecutionRecord[];
   state?: ThreadExecutionState | undefined;
@@ -528,6 +531,9 @@ export function ExecutionProcess({
                     )}
                   </div>
                 </details>
+                {item.kind === "tool" && item.output && outcome === "ok"
+                  ? renderToolCard?.(item.name, item.output)
+                  : null}
               </li>
             );
           })}

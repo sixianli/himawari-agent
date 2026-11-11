@@ -43,6 +43,14 @@ class TermEmbedder implements Embedder {
   readonly model = "fixture-term-embedding";
   readonly dimensions = DIMENSIONS;
 
+  embedQuery(query: string): Promise<Float32Array> {
+    return this.embed(query);
+  }
+
+  embedDocument(text: string): Promise<Float32Array> {
+    return this.embed(text);
+  }
+
   async embed(text: string): Promise<Float32Array> {
     const vector = new Float32Array(DIMENSIONS);
     for (const term of indexTerms(text)) {

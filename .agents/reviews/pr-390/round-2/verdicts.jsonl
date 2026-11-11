@@ -1,0 +1,3 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 中低：新增必填字段会让新旧版本混用时整个记忆页解析失败，而不只是按钮", "valid": true, "class": "better"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 低：ADR 说“按钮完全由 undoable 决定”，界面仍保留 hold 的 waiting 特判", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 的人以为按钮完全由 undoable 决定，而 hold 已不待确认时界面仍不给按钮", "consequence": "文档表述不全；已在 ADR 补上这一句", "modelSeverity": "低"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 低：`undoneAt` 分支没有反向用例", "valid": true, "class": "error", "severity": "low", "trigger": "有人删掉 isConsolidationUndoable 里的 undoneAt 条件", "consequence": "已撤销的整理改动可能被报为可撤销；已补用例，删掉该条件时用例失败（已反向验证）", "modelSeverity": "低"}

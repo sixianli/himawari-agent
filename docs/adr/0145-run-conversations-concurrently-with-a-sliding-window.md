@@ -62,3 +62,9 @@ date: "2026-11-01"
 ## 关联文档
 
 [ADR 0131](0131-read-lane-separate-readonly-connection.md)、[案例 80](../engineering-casebook.md#case-concurrent-dispatch)、[事故清单 I-60](../incidents-and-gates.md)。
+
+<a id="multi-user-follow-up"></a>
+
+## 2026-11-11 后续：多人使用
+
+[ADR 0234](0234-one-program-per-person-database-file.md) 之后，并发上限分两级：全机一个总数，每人一个上限，并给 Andy 留一个保底名额；本 ADR 决定 5 的默认值 3 对 Andy 单人仍成立，多人的全机和每人上限数字按生产机的实测结果另定，测量出来之前不改 3。其余决定不变。

@@ -4,6 +4,7 @@ type StepKind =
   | "search"
   | "recall"
   | "reminder"
+  | "rule"
   | "fetch"
   | "read"
   | "write"
@@ -26,6 +27,9 @@ const kinds: Readonly<Record<string, StepKind>> = {
   reminder_set: "reminder",
   reminder_list: "reminder",
   reminder_cancel: "reminder",
+  rule_set: "rule",
+  rule_list: "rule",
+  rule_undo: "rule",
   read: "read",
   write: "write",
   edit: "edit",
@@ -74,15 +78,17 @@ export function toolStepSummary(name: string, input: string): { id: MessageId; t
       ? field(args, "query")
       : kind === "reminder"
         ? field(args, "text")
-        : kind === "fetch"
-          ? hostName(field(args, "url"))
-          : kind === "find" || kind === "grep"
-            ? field(args, "pattern")
-            : ["read", "write", "edit", "list", "move"].includes(kind)
-              ? baseName(field(args, "path"))
-              : kind === "other"
-                ? name
-                : "";
+        : kind === "rule"
+          ? field(args, "summary")
+          : kind === "fetch"
+            ? hostName(field(args, "url"))
+            : kind === "find" || kind === "grep"
+              ? field(args, "pattern")
+              : ["read", "write", "edit", "list", "move"].includes(kind)
+                ? baseName(field(args, "path"))
+                : kind === "other"
+                  ? name
+                  : "";
   return { id: `step.${kind}` as MessageId, target };
 }
 

@@ -87,8 +87,6 @@ export const messages = {
   "chat.error.authFailed":
     "Model authentication failed. Check the server credentials and model access.",
   "chat.error.unavailable": "The model service is unavailable. Try again later.",
-  "chat.error.contextMemoryUnavailable":
-    "Looking up related memory failed because the model service connection failed. No chat model was called and no tool ran in this turn.",
   "chat.error.quotaExceeded":
     "The model service turned this request down because its spending limit is used up. This is not a network problem. Raise or remove the limit in the Vercel AI Gateway budgets, then try again.",
   "chat.error.contextWindowExhausted":
@@ -97,6 +95,7 @@ export const messages = {
   "step.search": "Searching the web",
   "step.recall": "Checking memory",
   "step.reminder": "Working on reminders",
+  "step.rule": "Working on standing rules",
   "step.fetch": "Opening a web page",
   "step.read": "Reading a file",
   "step.write": "Writing a file",
@@ -681,8 +680,11 @@ export const messages = {
   "memory.profile.goal": "Long-term goals",
   "memory.profile.project": "In progress",
   "memory.tidyKept": "(kept: {text})",
+  "memory.tidyOther": "(the other one: {text})",
   "memory.undo": "Undo",
   "memory.undone": "Undone",
+  "memory.undoLocked":
+    "This memory was edited afterwards, so this can no longer be undone; restore an older version from its history instead",
   "memory.reminderTitle": "Reminder",
   "memory.reminderDue": "Due {time}",
   "memory.reminderDismiss": "Don't remind again",
@@ -737,7 +739,7 @@ export const messages = {
   "memory.page.changed": "Changed {count}×",
   "memory.page.source": "Source",
   "memory.page.origin":
-    "{o, select, owner {Added by you} import {Imported} deleted {Source conversation deleted} reminder {Created from a reminder, no original sentence} other {Memory tidy-up}}",
+    "{o, select, owner {Added by you} external {Proposed by an outside agent, saved after you confirmed} import {Imported} deleted {Source conversation deleted} reminder {Created from a reminder, no original sentence} other {Memory tidy-up}}",
   "memory.page.used": "Last used",
   "memory.page.notUsed": "Not used yet",
   "memory.page.history": "How it changed",
@@ -753,7 +755,7 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {All changes} new {New} drop {Dropped and deleted} tidy {Memory tidy-ups} correct {Corrections} other {Imports}}",
   "memory.page.event":
-    "{e, select, new {New} dropped {Dropped} deleted {Deleted} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} other {Guess}}",
+    "{e, select, new {New} dropped {Dropped} deleted {Deleted} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} hold {Found differing statements} other {Guess}}",
   "memory.page.imported":
     "Imported {count} from {source, select, codex {Codex} assistant {another AI} other {a Himawari export}}",
   "memory.page.goConfirm": "Review",
@@ -877,9 +879,32 @@ export const messages = {
   "memory.page.changeNo": "Change {n}",
   "memory.page.seeAllChanges": "See every change to this memory",
   "memory.page.confirmTitle": "Needs your answer · {count}",
+  "rules.title": "Standing rules · {count}",
+  "rules.note":
+    "These rules are enforced by code, not by the model remembering them. Undo one and the next mail check stops using it.",
+  "rules.type":
+    "{t, select, mail_must_notify {Always notify} mail_read_whole_thread {Read the whole thread first} other {Other rule}}",
+  "rules.needsReview": "Its source memory changed; confirm it again (still enforced)",
+  "rules.notEnforced": "This rule can't be read, so it isn't enforced for now",
+  "rules.reconfirm": "Confirm again",
+  "rules.undo": "Undo",
+  "rules.receipt.label": "Standing rule receipt",
+  "rules.receipt.status":
+    "{s, select, active {Saved as a standing rule} proposed {Suggested rule; it takes effect only when you tap Apply} soft {Saved as a preference; not enforced by code} undone {Undone} other {Standing rule}}",
+  "rules.receipt.trials": "Trial run",
+  "rules.receipt.trial":
+    "{hit, select, true {Would match} other {Would not match}}: {from} · {subject}",
+  "rules.receipt.replay":
+    'Replay of the last {days} days: re-checked {checked} decided mails; the rule matches {hit}, and {changed} of them were "ignore" or "good to know" and {kind, select, mail_read_whole_thread {would now be judged after reading the whole thread, or handed to you if it cannot be read} other {would now ask you to look}}. You rated {useful} of those as useful.',
+  "rules.receipt.replayNote":
+    "The replay uses what was stored at the time. Ignored mails only kept the sender and subject, so the numbers are estimates and may be too high or too low.",
+  "rules.receipt.replayNone": "The replay couldn't run this time; the rule is in effect anyway.",
+  "rules.receipt.confirm": "Apply",
   "memory.page.carry.title": "Brought into every conversation",
   "memory.page.carry.summary": "{count} memories · {used} of {limit} characters used",
   "memory.page.carry.queued": "{count} more do not fit",
+  "memory.page.carry.pinnedOver":
+    'The memories you set to "Bring into every conversation" take {pinned} characters, {over} over the {limit}-character limit. They are still brought in every time, but no other memory fits; turn a few off to get back under the limit.',
   "memory.page.carry.open": "View and adjust",
   "memory.page.carry.meter": "Characters used",
   "memory.page.carry.note":
@@ -1003,6 +1028,8 @@ export const messages = {
   "dailyReview.count": "{count, plural, one {# item} other {# items}} today",
   "dailyReview.countLeft":
     "{count, plural, one {# item} other {# items}} today, {left} more not picked",
+  "dailyReview.hiddenByModel":
+    "{count, plural, one {# more item was} other {# more items were}} pre-rated useful by the model with confidence, so the reduction you turned on left {count, plural, one {it} other {them}} out this time",
   "dailyReview.note": "Items not picked may show up tomorrow, and drop off after 7 days.",
   "dailyReview.tag.pushed": "Read mail and reminded you",
   "dailyReview.tag.silent": "Read mail, no reminder",
@@ -1017,6 +1044,15 @@ export const messages = {
   "dailyReview.tag.ruleReview": "Hard rule waiting for review",
   "dailyReview.ruleReview":
     "This hard rule came from something you said; that memory changed. The rule still applies and waits for you to have a look",
+  "dailyReview.tag.captureRetrying": "Memory capture failed, retried",
+  "dailyReview.tag.captureQueued": "Memory capture failed, retrying next turn",
+  "dailyReview.tag.captureGaveUp": "Not fully saved from this turn",
+  "dailyReview.captureRetrying":
+    "The model call that picks memories from this turn failed once; the system tried again right away",
+  "dailyReview.captureQueued":
+    "Picking memories from this turn did not work; the system will try again when you next send a message",
+  "dailyReview.captureGaveUp":
+    "Picking memories from this turn still failed after 3 more tries, or what was picked could not be fully saved (some of it may be saved); the system stopped trying",
   "dailyReview.hidden": "Text not shown here",
   "dailyReview.fetched": "Checked {count, plural, one {# email} other {# emails}}",
   "dailyReview.allFine": "This page is all fine",
@@ -1026,6 +1062,21 @@ export const messages = {
   "dailyReview.folded": "Other decisions · {count}",
   "dailyReview.expand": "Show",
   "dailyReview.back": "Back",
+  "dailyReview.checkup.reason.conflict": "Two memories disagree",
+  "dailyReview.checkup.reason.unused": "Not used in {days} days",
+  "dailyReview.checkup.reason.lowConfidence": "Himawari isn't sure about it",
+  "dailyReview.checkup.reason.sourceUnavailable": "Source can no longer be found",
+  "dailyReview.checkup.newer": "New: {text}",
+  "dailyReview.checkup.older": "Old: {text}",
+  "dailyReview.checkup.confirm": "It's right",
+  "dailyReview.checkup.keepBoth": "Keep both",
+  "dailyReview.checkup.replace": "Replace the old one",
+  "dailyReview.checkup.delete": "Delete",
+  "dailyReview.checkup.deleteNewer": "Delete the new one",
+  "dailyReview.checkup.done.confirm": "Confirmed",
+  "dailyReview.checkup.done.delete": "Deleted",
+  "dailyReview.checkup.done.merge": "Replaced",
+  "dailyReview.checkup.undo": "Undo",
   "proactive.log.range": "Last 30 days · {days, plural, one {# day} other {# days}} recorded",
   "proactive.log.empty":
     "No checks yet. After Gmail is connected, a line is added every 15 minutes.",
@@ -1043,19 +1094,31 @@ export const messages = {
   "decision.chain.rating": "Your rating",
   "decision.chain.unrated": "Not rated yet",
   "decision.chain.kind":
-    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {External read} rule_review {Hard rule review} other {Other}}",
+    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {Outside program read memories} rule_review {Hard rule review} other {Other}}",
   "decision.chain.rules": "Rules hit",
   "decision.chain.reviewRules": "Rules waiting for review",
   "decision.chain.rule":
-    "{id, select, floor_important_sender {Never miss important mail: sender is on your important list} floor_public_domain {Never miss important mail: from a government or school domain} floor_money_words {Never miss important mail: money-related words in the message} other {{id}}}",
+    "{k, select, important_sender {Never miss important mail: sender is on your important list} public_domain {Never miss important mail: from a government or school domain} money_words {Never miss important mail: money-related words in the message} quiet_hours {Quiet hours: no notifications now, sent when quiet hours end} amount_threshold {Small amounts: no notification for mail below the threshold} mail_must_notify {Your rule: always tell you about this kind of mail} mail_read_whole_thread {Your rule: read the whole thread before deciding} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {Set by you} built_in {Built-in rule} other {Unregistered rule}}",
   "decision.chain.ruleMails": "Hit {count, plural, one {# email} other {# emails}}",
+  "decision.chain.ruleNeedsReview": "Needs review",
+  "decision.chain.ruleQuote": "Your words: {text}",
+  "decision.chain.ruleWording":
+    "{k, select, important_sender {{empty, select, yes {Important list is empty} other {Important list: {text}}}} public_domain {Domain endings: {text}} money_words {Words: {text}} quiet_hours {{empty, select, yes {No quiet hours set} other {Hours: {text}}}} amount_threshold {Threshold: {text}} other {{text}}}",
+  "decision.chain.ruleWordingMissing": "The content of this version cannot be found",
+  "decision.chain.ruleSource": "Source: {source} · version {revision}",
+  "decision.chain.ruleCurrent": "Only the rule name was recorded; showing the current version",
+  "decision.chain.ruleTests":
+    "{s, select, passed {Tests: all {total} examples pass} failed {Tests: example {at} of {total} does not match} none {Tests: this rule has no examples} other {Tests: unavailable}}",
+  "decision.chain.listSeparator": ", ",
   "decision.chain.mails": "Emails read",
   "decision.chain.judged": "{count, plural, one {# email} other {# emails}} judged",
   "decision.chain.related": "{count, plural, one {# related email} other {# related emails}}",
   "decision.chain.read":
     "{s, select, off {Related emails: off} ok {Related emails: fully read} partial {Related emails: partly read} failed {Related emails: read failed} other {Related emails: no record}}",
+  "decision.chain.summaries":
+    "{s, select, off {Last two days of chat summaries: not read this time} ok {Last two days of chat summaries: {count, plural, one {# included} other {# included}}} partial {Last two days of chat summaries: {count, plural, one {# included} other {# included}}, may be incomplete} failed {Last two days of chat summaries: read failed} other {Last two days of chat summaries: no record}}",
   "decision.chain.memories": "Memories used",
   "decision.chain.recall":
     "{s, select, off {Memory lookup: off} ok {Memory lookup: normal} partial {Memory lookup: partial} failed {Memory lookup: failed} other {Memory lookup: no record}}",
@@ -1075,7 +1138,7 @@ export const messages = {
   "decision.chain.basis": "Inferred from",
   "decision.chain.basisCut": "Sources not fully read (too many, or a read error)",
   "decision.chain.action":
-    "{a, select, merge {Merged} supersede {Replaced} archive {Archived} reflect {Summarized} other {Tidied}}",
+    "{a, select, merge {Merged} supersede {Replaced} archive {Archived} reflect {Summarized} hold {Found differing statements} other {Tidied}}",
   "decision.chain.repeated": "repeated",
   "decision.chain.nodeCut": "more below",
   "decision.email.open": "View this email",
@@ -1345,11 +1408,11 @@ export const messages = {
   "weekly.type.how4":
     "The range is a 95% Wilson interval: worked out from how many you rated, the true ratio falls inside it with 95% confidence. The more you rate, the narrower it gets.",
   "weekly.group":
-    "{g, select, proactive_pushed {Read mail and reminded you} proactive_silent {Read mail, no reminder} memory_skipped {Memories the system chose not to save} memory_kept {Saved memories} consolidation {Memory tidy-up} memory_pending {Memories awaiting your confirmation} context_truncation {Older content left out of an answer} retrieval_degrade {Memory search did not work} rule_review {Hard rule waiting for review} other {Memory read by an outside program}}",
+    "{g, select, proactive_pushed {Read mail and reminded you} proactive_silent {Read mail, no reminder} memory_skipped {Memories the system chose not to save} memory_kept {Saved memories} consolidation {Memory tidy-up} memory_pending {Memories awaiting your confirmation} context_truncation {Older content left out of an answer} retrieval_degrade {Memory search did not work} rule_review {Hard rule waiting for review} memory_capture_failed {Memory capture failed} other {Memory read by an outside program}}",
   "weekly.groupInfo":
-    "{g, select, proactive_pushed {Himawari reads new mail every 15 minutes; these are the reads after which it reminded you.} rule_review {Hard rules come from things you told Himawari; when that memory is edited, replaced or deleted the rule is marked as waiting for review, and these are those records.} other {Himawari reads new mail every 15 minutes; these are the reads after which nothing needed a reminder.}}",
+    "{g, select, proactive_pushed {Himawari reads new mail every 15 minutes; these are the reads after which it reminded you.} rule_review {Hard rules come from things you told Himawari; when that memory is edited, replaced or deleted the rule is marked as waiting for review, and these are those records.} memory_capture_failed {After each turn the system picks what to remember from your words; these are the times picking or saving failed, one record per failure. A turn that later succeeds also gets its own saved or not-saved record.} other {Himawari reads new mail every 15 minutes; these are the reads after which nothing needed a reminder.}}",
   "weekly.rate":
-    "{k, select, proactive_pushed_useful {Right to remind} proactive_pushed_unneeded {Shouldn’t have reminded} proactive_silent_useful {Right to stay silent} proactive_silent_missed {Should have reminded} memory_skipped_useful {Right not to save} memory_skipped_missed {Should have saved} memory_kept_useful {Saved correctly} memory_kept_unneeded {Shouldn’t have saved} consolidation_useful {Right tidy-up} consolidation_unneeded {Shouldn’t have tidied} other_useful {Right call} other_unneeded {Shouldn’t have done it} other {Should have done it}}",
+    "{k, select, proactive_pushed_useful {Right to remind} proactive_pushed_unneeded {Shouldn’t have reminded} proactive_silent_useful {Right to stay silent} proactive_silent_missed {Should have reminded} memory_skipped_useful {Right not to save} memory_skipped_missed {Should have saved} memory_kept_useful {Saved correctly} memory_kept_unneeded {Shouldn’t have saved} consolidation_useful {Right tidy-up} consolidation_unneeded {Shouldn’t have tidied} memory_capture_failed_useful {Nothing was lost} memory_capture_failed_missed {Lost something worth keeping} other_useful {Right call} other_unneeded {Shouldn’t have done it} other {Should have done it}}",
   "weekly.ratio": "{pct} ({k}/{n})",
   "weekly.interval": "95% range {low}–{high}",
   "weekly.few": "Too few rated ({n})",
@@ -1416,6 +1479,24 @@ export const messages = {
   "weekly.implicit.def":
     "These three signals are what can be observed without you rating anything. They are observations only: they are not your ratings, they are never mixed into the rating shares above, and they never change any threshold automatically. The denominator is this week's decisions that sent a reminder; repeats of the same signal on one decision count once.",
   "weekly.goRate": "Rate them in “Reminders”",
+  "weekly.prereview.title": "Model pre-rating agreement",
+  "weekly.prereview.empty": "No decision this week has both a model pre-rating and your rating.",
+  "weekly.prereview.emptyCurrent":
+    "No pre-rating this week from the current model and prompt version.",
+  "weekly.prereview.counts": "Pre-rated {rated} · model unsure {unsure} · you also rated {paired}",
+  "weekly.prereview.gate":
+    "{r, select, open {Past the bar on this week’s pairs} insufficient {Too few pairs this week to judge} below_threshold {Below the bar on this week’s pairs} other {No better than calling everything useful}}",
+  "weekly.prereview.audit": "Of the confident “useful” calls, you also said useful {k}/{n}",
+  "weekly.prereview.otherVersions":
+    "{n} more pre-ratings came from an older model or prompt version and are left out.",
+  "weekly.prereview.reductionOn":
+    "Auto-reduction is on: for types past the bar, daily rating shows only items the model is unsure about or that conflict with your past ratings, plus a random {audit} for spot checks.",
+  "weekly.prereview.reductionOff":
+    "Auto-reduction is off: daily rating still shows every decision waiting for you.",
+  "weekly.prereview.def":
+    "The model rates each decision waiting for you first (useful / not needed / missed). These are stored separately and never written into your rating. Agreement is the share of items you also rated where the model and you agree.",
+  "weekly.prereview.gateDef":
+    "The bar: among confident (at least {confidence}) “useful” calls, the 95% Wilson lower bound of agreement must be at least {agreement} and above simply calling everything useful; at least {n} pairs are needed to pass.",
   "sensitive.title": "Blocked sensitive information",
   "sensitive.count": "{count, plural, one {# record} other {# records}}",
   "sensitive.none": "Nothing sensitive has been blocked yet",
@@ -1454,6 +1535,7 @@ export const messages = {
   "sensitive.purpose.memory-consolidation": "merging memories",
   "sensitive.purpose.mail-judgment": "email check",
   "sensitive.purpose.action-review": "action review",
+  "sensitive.purpose.review-prereview": "model pre-rating",
   "sensitive.purpose.other": "other",
   "sensitive.maskedOnce": "{time} hidden once",
   "sensitive.maskedMany":

@@ -1,0 +1,2 @@
+{"id": "r3-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`propose_rule` 的工具说明仍允许“只给 excludePhrases”", "valid": true, "class": "error", "severity": "medium-high", "trigger": "外部 agent 照工具说明只给 excludePhrases", "consequence": "调用被拒，说明和校验相反", "modelSeverity": "中"}
+{"id": "r3-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "缺少 `excludePhrases` 单独出现时的反向用例", "valid": true, "class": "error", "severity": "low", "trigger": "以后把 excludePhrases 也算成条件", "consequence": "测试仍通过", "modelSeverity": "低"}

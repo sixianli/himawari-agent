@@ -62,6 +62,7 @@ export type ConfiguredGenerationModelDescriptor =
 export interface ConfiguredEmbeddingModelDescriptor extends ConfiguredModelDescriptorBase {
   readonly role: "embedding";
   readonly dimensions: number;
+  readonly artifactSha256?: string;
 }
 
 export type ConfiguredModelDescriptor =
@@ -75,6 +76,14 @@ export interface ConfiguredMemoryDescriptor {
   readonly storagePath: string;
   readonly dimensions: number;
   readonly minimumSimilarity?: number;
+  readonly retrieval?: ConfiguredMemoryRetrieval;
+}
+
+export interface ConfiguredMemoryRetrieval {
+  readonly keywordWeight?: number;
+  readonly entityWeight?: number;
+  readonly cutoffMargin?: number;
+  readonly dedupeSameSource?: boolean;
 }
 
 export interface ConcurrencyConfiguration {
@@ -224,11 +233,34 @@ export interface ProactiveConfiguration {
   readonly relatedCharactersPerMail: number;
   readonly relatedCharactersPerRelatedMail: number;
   readonly relatedRequestsPerCheck: number;
-  readonly memoryMinimumSimilarity: number;
+  readonly wholeThreadMailsPerMail: number;
+  readonly wholeThreadCharactersPerMail: number;
+  readonly ruleReplayDays: number;
+  readonly ruleReplayMailsPerOutcome: number;
+  readonly memoryMinimumSimilarity?: number;
   readonly reviewBudgetSeconds: number;
   readonly reviewSecondsPerItem: number;
   readonly reviewSilentSharePermille: number;
+  readonly reviewPrereview: ReviewPrereviewConfiguration;
+  readonly reviewMemoryUnusedDays: number;
   readonly backoffThreshold: number;
+}
+
+export interface ReviewPrereviewConfiguration {
+  readonly enabled: boolean;
+  readonly dailyLimit: number;
+  readonly dailyCostMicros: number;
+  readonly perRun: number;
+  readonly requestTimeoutMs: number;
+  readonly historyDays: number;
+  readonly historyMinimum: number;
+  readonly reduction: {
+    readonly enabled: boolean;
+    readonly hiddenAgreementPermille: number;
+    readonly confidencePermille: number;
+    readonly auditPermille: number;
+    readonly windowDays: number;
+  };
 }
 
 export interface MuseIntakeConfiguration {
@@ -249,10 +281,16 @@ export interface RealEvalConfiguration {
   readonly requestTimeoutMs: number;
 }
 
+export interface McpReadConfiguration {
+  readonly audience: string;
+  readonly proposals?: true;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
   readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
+  readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;

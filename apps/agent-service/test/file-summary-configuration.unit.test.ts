@@ -1,18 +1,17 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { instructedQuery, QWEN3_MEMORY_QUERY_INSTRUCTION } from "@himawari-agent/memory-engine";
+import { embeddingQueryText, QWEN3_EMBEDDING_8B_PROFILE } from "@himawari-agent/application";
 import { parseProductConfiguration } from "@himawari-agent/platform-node";
 import {
   admissionCostForConfiguredPiModel,
   ConfiguredPiModelBindingPort,
   type ConfiguredPiModelDescriptor,
 } from "@himawari-agent/runtime-pi";
-import { inMemoryMemoryIndex } from "@himawari-agent/testing";
+import { inMemoryMemoryIndex, testModelEgress } from "@himawari-agent/testing";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { describe, expect, it, vi } from "vitest";
 import { createProductionMemoryCompositionFromConfiguration } from "../src/production-memory-composition.js";
 import { resolveConfiguredModelDescriptorSet } from "../src/production-model-composition.js";
 import { embeddingAdmissionDescriptor } from "../src/production-run-memory.js";
-import { testModelEgress } from "@himawari-agent/testing";
 
 const fixture = new URL("../../../test/integration/fixtures/file-summary/", import.meta.url);
 
@@ -114,6 +113,7 @@ describe("file summary qualification configuration", () => {
     const requests: { url: string; authorized: boolean; body: unknown }[] = [];
     try {
       const memory = await createProductionMemoryCompositionFromConfiguration({
+        onVectorFailure: () => {},
         egress: testModelEgress(),
         configuration: {
           ...config,
@@ -152,13 +152,83 @@ describe("file summary qualification configuration", () => {
           authorized: true,
           body: {
             model: "alibaba/qwen3-embedding-8b",
-            input: instructedQuery(QWEN3_MEMORY_QUERY_INSTRUCTION, "图书角"),
+            input: embeddingQueryText(QWEN3_EMBEDDING_8B_PROFILE, "图书角"),
             dimensions: 4096,
             encoding_format: "base64",
           },
         },
       ]);
       expect(resolve).toHaveBeenCalledExactlyOnceWith("vercel-ai-gateway-api-key", "v1");
+      await memory.close();
+    } finally {
+      await rm(stateRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("carries memory.retrieval settings and the unknown-relevance report into the memory engine", async () => {
+    const config = await configuration();
+    const stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-config-`);
+    const index = inMemoryMemoryIndex();
+    const unknown = vi.fn();
+    try {
+      const memory = await createProductionMemoryCompositionFromConfiguration({
+        egress: testModelEgress(),
+        configuration: {
+          ...config,
+          stateRoot,
+          memory: {
+            ...config.memory,
+            storagePath: `${stateRoot}/data/memory`,
+            retrieval: { keywordWeight: 0.2, cutoffMargin: 0.1, dedupeSameSource: false },
+          },
+        },
+        secretSource: {
+          kind: "macos-keychain",
+          productionSuitable: true,
+          resolve: async () => "offline-fixture-provider-value",
+        },
+        index: {
+          ...index,
+          search: async () => ({
+            vector: [],
+            lexical: [
+              {
+                memoryId: "memory-without-vector" as never,
+                revision: 1,
+                importancePermille: 500,
+                confidencePermille: 1000,
+                updatedAt: "2026-11-11T00:00:00.000Z",
+                lastUsedAt: null,
+                signal: 1,
+                startsAt: "2026-11-11T00:00:00.000Z",
+                endsAt: null,
+                current: true,
+              },
+            ],
+            entity: [],
+            vectorEngine: "javascript",
+          }),
+        },
+        fetch: async () => new Response("unavailable", { status: 503 }),
+        onVectorFailure: () => {},
+        onRelevanceUnknown: unknown,
+      });
+      memory.bindEmbeddingBoundary((_request, send) => send(), 1000);
+      expect(memory.dedupeSameSource).toBe(false);
+      expect(memory.projection.relevance).toEqual({
+        keywordWeight: 0.2,
+        entityWeight: 0.15,
+        cutoffMargin: 0.1,
+      });
+      const hits = await memory.projection.search({
+        ownerId: config.ownerId,
+        agentId: config.agentId,
+        query: "图书角",
+        limit: 1,
+        relevanceCutoff: true,
+      });
+      expect(hits).toHaveLength(1);
+      expect(unknown).toHaveBeenCalledWith(1, { ownerId: config.ownerId, agentId: config.agentId });
       await memory.close();
     } finally {
       await rm(stateRoot, { recursive: true, force: true });

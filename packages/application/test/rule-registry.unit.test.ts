@@ -16,7 +16,8 @@ import {
 } from "../src/rules/rule-book.js";
 import { RuleExpressionError } from "../src/rules/rule-expression.js";
 import { RuleJudge } from "../src/rules/rule-judge.js";
-import { DECISION_RULE_CATALOG, suppressPushHits } from "../src/services/proactive-rules.js";
+import { ruleKindOf } from "../src/rules/rule-version.js";
+import { suppressPushHits } from "../src/services/proactive-rules.js";
 
 const DEFAULT_SETTINGS = {
   quietHours: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }],
@@ -47,14 +48,10 @@ describe("rule registry", () => {
     }
   });
 
-  it("[HR-1] keeps rule ids unique and every id the decision record can name in the registry with the same origin", () => {
+  it("[HR-1] keeps rule ids unique and gives every rule in the book a known kind", () => {
     const rules = ruleBookFor(DEFAULT_SETTINGS);
     expect(new Set(rules.map(({ id }) => id)).size).toBe(rules.length);
-    for (const [id, definition] of Object.entries(DECISION_RULE_CATALOG)) {
-      const rule = rules.find((candidate) => candidate.id === id);
-      expect(rule, id).toBeDefined();
-      expect(rule?.origin).toBe(definition.origin);
-    }
+    for (const rule of rules) expect(ruleKindOf(rule.id), rule.id).not.toBe("unknown");
     expect(rules.map(({ id }) => id)).toEqual([
       RULE_IDS.importantSender,
       RULE_IDS.publicDomain,
@@ -111,7 +108,9 @@ describe("rule registry", () => {
           sender_address: "a@b.c",
           sender_domain: "b.c",
           text: "",
+          content_folded: "",
           text_words: [],
+          content_words: [],
           amount_state: "missing",
           amount_minor: 0,
           amount_currency: "",
@@ -136,7 +135,9 @@ describe("rule registry", () => {
       sender_address: "a@example.com",
       sender_domain: "example.com",
       text: "",
+      content_folded: "",
       text_words: [],
+      content_words: [],
       amount_state: "missing",
       amount_minor: 0,
       amount_currency: "",
@@ -172,7 +173,9 @@ describe("rule registry", () => {
       sender_address: "a@example.com",
       sender_domain: "example.com",
       text: "",
+      content_folded: "",
       text_words: [],
+      content_words: [],
       amount_state: "missing",
       amount_minor: 0,
       amount_currency: "",
@@ -191,7 +194,9 @@ describe("rule registry", () => {
       sender_address: "a@example.com",
       sender_domain: "example.com",
       text: "",
+      content_folded: "",
       text_words: [],
+      content_words: [],
       amount_state: "missing",
       amount_minor: 0,
       amount_currency: "",

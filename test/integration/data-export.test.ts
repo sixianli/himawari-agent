@@ -60,7 +60,11 @@ async function seeded(): Promise<Side> {
 
 function exportOf(
   from: Side,
-  options: { seal?: boolean; evidence?: boolean; textPolicy?: typeof policy } = {},
+  options: {
+    seal?: boolean;
+    evidence?: boolean;
+    textPolicy?: typeof policy;
+  } = {},
 ) {
   return buildPortableExport({
     database: from.database,
@@ -108,6 +112,7 @@ function counts(target: Side): Record<string, number> {
     batches: one("memory_import_batches"),
     runs: one("memory_consolidation_runs"),
     payloads: one("payloads"),
+    prereviews: one("decision_prereviews"),
   };
 }
 
@@ -116,7 +121,13 @@ function rehash(
   mutate: (path: string, bytes: Uint8Array) => Uint8Array,
 ): PortableFiles {
   const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE))) as {
-    files: { path: string; bytes: number; lines: number; sha256: string; role: string }[];
+    files: {
+      path: string;
+      bytes: number;
+      lines: number;
+      sha256: string;
+      role: string;
+    }[];
   };
   const next: PortableFiles = new Map();
   for (const [path, bytes] of files)
@@ -157,6 +168,53 @@ describe("data export: round trip", () => {
     expect(first.manifest.counts.sealedEvidenceRows).toBeGreaterThan(0);
   });
 
+  it("[P3-1] the search index and its vectors stay out of the export, sealed part included", async () => {
+    const source = await seeded();
+    const memoryId = source.database
+      .prepare("SELECT id FROM memory_records WHERE status = 'active' ORDER BY id LIMIT 1")
+      .pluck()
+      .get() as string;
+    const vector = Buffer.alloc(16);
+    for (const [index, value] of [0.123456, -0.654321, 0.987654, -0.246813].entries())
+      vector.writeFloatLE(value, index * 4);
+    const indexed = source.database
+      .prepare(
+        `INSERT INTO memory_search_index (memory_id, owner_id, agent_id, memory_revision,
+           embedding_model, embedding_dimensions, embedding, indexed_at)
+         SELECT id, owner_id, agent_id, revision, 'jina-fixture#1', 4, ?, ? FROM memory_records WHERE id = ?`,
+      )
+      .run(vector, NOW, memoryId);
+    source.database
+      .prepare("INSERT INTO memory_search_terms (rowid, terms) VALUES (?, 'zebrapluto')")
+      .run(indexed.lastInsertRowid);
+    expect(indexed.changes).toBe(1);
+    expect(
+      source.database
+        .prepare(
+          `SELECT embedding FROM memory_search_index WHERE rowid = ?
+             AND rowid IN (SELECT rowid FROM memory_search_terms WHERE memory_search_terms MATCH 'zebrapluto')`,
+        )
+        .pluck()
+        .get(indexed.lastInsertRowid),
+    ).toEqual(vector);
+    const exported = await exportOf(source, { evidence: true });
+    const sealed = canonicalJson(
+      await unsealJson(PASSPHRASE, exported.files.get(SEALED_FILE) ?? new Uint8Array()),
+    );
+    const everything = Buffer.concat([
+      ...[...exported.files.values()].map((bytes) => Buffer.from(bytes)),
+      Buffer.from(sealed),
+    ]);
+    for (const form of [
+      vector,
+      Buffer.from(vector.toString("base64")),
+      Buffer.from(vector.toString("hex")),
+    ])
+      expect(everything.includes(form)).toBe(false);
+    expect(everything.includes(Buffer.from("zebrapluto"))).toBe(false);
+    expect(everything.includes(Buffer.from("jina-fixture#1"))).toBe(false);
+  });
+
   it("[P1-6] keeps every version of a memory, the owner's rating and the signals", async () => {
     const source = await seeded();
     const { files } = await exportOf(source, { evidence: true });
@@ -177,6 +235,37 @@ describe("data export: round trip", () => {
     ).toEqual({ owner_rating: "useful", rated_at: "2026-11-03T00:00:00.000Z" });
     expect(counts(target)["signals"]).toBe(1);
     expect(counts(target)["history"]).toBeGreaterThanOrEqual(3);
+  });
+
+  it("[P4-8] carries model pre-ratings through export and import without touching the owner's rating", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source, { evidence: true });
+    const target = await side("target-prereview");
+    await importInto(target, files, { passphrase: PASSPHRASE });
+    const read = (from: Side) =>
+      from.database
+        .prepare(
+          `SELECT id, decision_id, message_id, calibration_group, status, rating,
+            confidence_permille, history_conflict, failure_code, cost_micros, text_digest
+          FROM decision_prereviews ORDER BY id`,
+        )
+        .all();
+    expect(read(target)).toEqual(read(source));
+    expect(read(target)).toHaveLength(3);
+    expect(
+      target.database
+        .prepare("SELECT owner_rating FROM decision_ledger WHERE id = 'd-candidate'")
+        .pluck()
+        .get(),
+    ).toBeNull();
+  });
+
+  it("[P4-8][reverse] pre-ratings are not imported without the passphrase", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source, { evidence: true });
+    const target = await side("target-prereview-nopass");
+    await importInto(target, files);
+    expect(counts(target)["prereviews"]).toBe(0);
   });
 
   it("[P1-6][reverse] a changed rating, a deleted line or a changed text makes the comparison fail", async () => {

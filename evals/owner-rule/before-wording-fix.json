@@ -1,0 +1,624 @@
+{
+  "gateway": "https://opencode.ai/inference/go/v1",
+  "runs": 3,
+  "spentUsd": 0.007882631999999999,
+  "summary": [
+    {
+      "model": "deepseek-v4.1-flash",
+      "passed": 13,
+      "total": 15,
+      "byCase": {
+        "refund-whole-thread": "3/3",
+        "immigration-notify": "2/3",
+        "subscription-notify": "2/3",
+        "one-off-not-a-rule": "3/3",
+        "tone-is-soft": "3/3"
+      },
+      "usage": {
+        "prompt": 33888,
+        "cached": 30464,
+        "completion": 5163,
+        "calls": 15
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "passed": 13,
+      "total": 15,
+      "byCase": {
+        "refund-whole-thread": "2/3",
+        "immigration-notify": "2/3",
+        "subscription-notify": "3/3",
+        "one-off-not-a-rule": "3/3",
+        "tone-is-soft": "3/3"
+      },
+      "usage": {
+        "prompt": 32160,
+        "cached": 11968,
+        "completion": 1584,
+        "calls": 15
+      }
+    }
+  ],
+  "outcomes": [
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "caseId": "refund-whole-thread",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "quote": "涉及退款的邮件以后必须看整个邮件串再判断",
+        "inferred": false,
+        "type": "mail_read_whole_thread",
+        "summary": "涉及退款的邮件，必须先读完整个邮件串的全部往来再判断，读不全就交给主人自己看",
+        "params": {
+          "phrases": [
+            "退款",
+            "退费",
+            "退費",
+            "退货",
+            "退貨",
+            "退单",
+            "退單",
+            "返金",
+            "返品",
+            "返済",
+            "退款申请",
+            "refund request",
+            "cancellation and refund"
+          ],
+          "words": ["refund", "refunds", "refunded", "reimbursement", "chargeback"]
+        }
+      }
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "caseId": "immigration-notify",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "quote": "日本入管局相关的邮件以后必须通知我",
+        "inferred": false,
+        "type": "mail_must_notify",
+        "summary": "与日本出入国在留管理庁（入管局）相关的邮件一律提醒我并推送到手机",
+        "params": {
+          "senderDomains": ["isa.go.jp", "moj.go.jp"],
+          "phrases": [
+            "入管",
+            "出入国在留管理庁",
+            "在留",
+            "在留資格",
+            "在留カード",
+            "ビザ",
+            "visa",
+            "签证",
+            "永住",
+            "入国管理局"
+          ],
+          "excludePhrases": ["メルマガ", "newsletter"]
+        }
+      }
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "caseId": "subscription-notify",
+      "pass": false,
+      "reasons": ["误中：Weekly newsletter"],
+      "call": {
+        "quote": "订阅相关的必须提醒我",
+        "inferred": false,
+        "type": "mail_must_notify",
+        "summary": "收到订阅相关的邮件就提醒我，并推送到手机",
+        "params": {
+          "phrases": [
+            "订阅",
+            "續訂",
+            "续订",
+            "定阅",
+            "subscription",
+            "subscribe",
+            "resubscribe",
+            "サブスク",
+            "定期購読",
+            "継続課金"
+          ]
+        }
+      }
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "caseId": "one-off-not-a-rule",
+      "pass": true,
+      "reasons": [],
+      "call": null
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "caseId": "tone-is-soft",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "quote": "以后回答我的时候短一点，别用表格",
+        "inferred": false,
+        "type": "soft",
+        "summary": "回答尽量简短，不使用表格"
+      }
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "caseId": "refund-whole-thread",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "quote": "涉及退款的邮件以后必须看整个邮件串再判断",
+        "inferred": false,
+        "type": "mail_read_whole_thread",
+        "summary": "涉及退款/退款的邮件，判断前必须读完同一邮件串的全部往来，读不全就交给你自己看。",
+        "params": {
+          "phrases": [
+            "退款",
+            "退钱",
+            "退货",
+            "退費",
+            "退费",
+            "返金",
+            "払い戻し",
+            "返品",
+            "refund",
+            "chargeback"
+          ],
+          "excludePhrases": ["newsletter", "メルマガ", "配信停止"]
+        }
+      }
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "caseId": "immigration-notify",
+      "pass": false,
+      "reasons": ["漏：ビザ更新の件"],
+      "call": {
+        "quote": "日本入管局相关的邮件以后必须通知我",
+        "inferred": false,
+        "type": "mail_must_notify",
+        "summary": "与日本入管局（出入国在留管理庁）相关的邮件一律提醒主人并推送到手机",
+        "params": {
+          "senderDomains": ["isa.go.jp", "moj.go.jp"],
+          "phrases": [
+            "入管",
+            "入管局",
+            "出入国在留管理庁",
+            "出入国管理局",
+            "在留資格",
+            "在留カード",
+            "在留期間更新",
+            "在留更新",
+            "永住許可"
+          ],
+          "words": ["immigration"]
+        }
+      }
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "caseId": "subscription-notify",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "quote": "订阅相关的必须提醒我",
+        "inferred": false,
+        "type": "mail_must_notify",
+        "summary": "与订阅相关的邮件一律提醒主人，并推送到手机",
+        "params": {
+          "phrases": [
+            "订阅",
+            "訂閱",
+            "サブスク",
+            "定期購読",
+            "定期購入",
+            "継続課金",
+            "自動更新",
+            "续费",
+            "續訂"
+          ],
+          "words": ["subscription", "subscriptions", "subscribe", "renewal", "renew"]
+        }
+      }
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "caseId": "one-off-not-a-rule",
+      "pass": true,
+      "reasons": [],
+      "call": null
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "caseId": "tone-is-soft",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "quote": "以后回答我的时候短一点，别用表格",
+        "inferred": false,
+        "type": "soft",
+        "summary": "回答保持简短，不用表格",
+        "params": {}
+      }
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 3,
+      "caseId": "refund-whole-thread",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "quote": "涉及退款的邮件以后必须看整个邮件串再判断",
+        "inferred": false,
+        "type": "mail_read_whole_thread",
+        "summary": "涉及退款的邮件，判断前先读完同一邮件串里的全部往来，读不全就交给你自己看",
+        "params": {
+          "phrases": [
+            "退款",
+            "退費",
+            "退费",
+            "退货",
+            "退款",
+            "返金",
+            "払い戻し",
+            "払戻",
+            "返品",
+            "refund",
+            "reimbursement"
+          ],
+          "words": ["refund", "refunds", "refunded"]
+        }
+      }
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 3,
+      "caseId": "immigration-notify",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "quote": "日本入管局相关的邮件以后必须通知我",
+        "inferred": false,
+        "type": "mail_must_notify",
+        "summary": "收到日本入管局（出入国在留管理厅）相关的邮件时，一定提醒并推送到手机。",
+        "params": {
+          "senderDomains": ["isa.go.jp", "moj.go.jp"],
+          "phrases": [
+            "入管",
+            "入国管理局",
+            "出入国在留管理",
+            "在留申請",
+            "在留カード",
+            "在留資格",
+            "在留期限",
+            "更新申請",
+            "永住許可"
+          ]
+        }
+      }
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 3,
+      "caseId": "subscription-notify",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "quote": "订阅相关的必须提醒我",
+        "inferred": false,
+        "type": "mail_must_notify",
+        "summary": "与订阅有关的邮件一律提醒主人并推送到手机",
+        "params": {
+          "phrases": [
+            "订阅",
+            "サブスク",
+            "購読",
+            "subscription",
+            "定期購入",
+            "継続課金",
+            "续费",
+            "更新のご案内"
+          ],
+          "words": ["subscription", "subscribe", "renewal"]
+        }
+      }
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 3,
+      "caseId": "one-off-not-a-rule",
+      "pass": true,
+      "reasons": [],
+      "call": null
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 3,
+      "caseId": "tone-is-soft",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "quote": "以后回答我的时候短一点，别用表格",
+        "inferred": false,
+        "type": "soft",
+        "summary": "回答简短一些，不用表格"
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 1,
+      "caseId": "refund-whole-thread",
+      "pass": false,
+      "reasons": ["参数被拒：规则参数必须是对象"],
+      "call": {
+        "inferred": false,
+        "quote": "涉及退款的邮件以后必须看整个邮件串再判断",
+        "summary": "涉及退款的邮件，判断前必须读完同一邮件串里的全部往来，读不全就交给主人自己看。",
+        "type": "mail_read_whole_thread"
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 1,
+      "caseId": "immigration-notify",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "inferred": false,
+        "params": {
+          "phrases": [
+            "入国管理局",
+            "出入国在留管理庁",
+            "入管",
+            "在留",
+            "Immigration",
+            "immigration"
+          ],
+          "senderDomains": ["isa.go.jp", "imami-moj.go.jp", "moj.go.jp"]
+        },
+        "quote": "日本入管局相关的邮件以后必须通知我",
+        "summary": "凡来自日本入管局（出入国在留管理庁/法务省）或提到入管、在留、immigration 的邮件，一律提醒主人并推送到手机。",
+        "type": "mail_must_notify"
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 1,
+      "caseId": "subscription-notify",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "inferred": false,
+        "params": {
+          "phrases": [
+            "订阅",
+            "订阅成功",
+            "订阅到期",
+            "续订",
+            "自动续费",
+            "subscription",
+            "サブスク",
+            "サブスクリプション",
+            "自動更新",
+            "継続課金"
+          ]
+        },
+        "quote": "订阅相关的必须提醒我",
+        "summary": "凡是订阅相关（订阅、续费、自动扣费等）的邮件，一定提醒主人并推送到手机",
+        "type": "mail_must_notify"
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 1,
+      "caseId": "one-off-not-a-rule",
+      "pass": true,
+      "reasons": [],
+      "call": null
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 1,
+      "caseId": "tone-is-soft",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "inferred": false,
+        "quote": "以后回答我的时候短一点，别用表格",
+        "summary": "回答尽量简短，不使用表格",
+        "type": "soft"
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 2,
+      "caseId": "refund-whole-thread",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "inferred": false,
+        "params": {
+          "phrases": ["退款", "refund", "返金", "返品", "返金額"]
+        },
+        "quote": "涉及退款的邮件以后必须看整个邮件串再判断",
+        "summary": "涉及退款的邮件，判断前必须读完同一邮件串里的全部往来，读不全就交给主人自己看",
+        "type": "mail_read_whole_thread"
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 2,
+      "caseId": "immigration-notify",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "inferred": false,
+        "params": {
+          "phrases": [
+            "入国管理局",
+            "出入国在留管理庁",
+            "入管局",
+            "在留",
+            "在留カード",
+            "在留資格",
+            "Immigration",
+            "immigration",
+            "Residence Card",
+            "COE",
+            "Certificate of Eligibility"
+          ],
+          "senderDomains": ["immi-moj.go.jp", "moj.go.jp"]
+        },
+        "quote": "日本入管局相关的邮件以后必须通知我",
+        "summary": "凡是日本入管局（出入国在留管理庁）发来的或内容涉及入管、在留资格的邮件，一律提醒并推送到手机",
+        "type": "mail_must_notify"
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 2,
+      "caseId": "subscription-notify",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "inferred": false,
+        "params": {
+          "excludePhrases": ["newsletter", "メルマガ", "新闻邮件", "电子报"],
+          "phrases": [
+            "订阅",
+            "subscription",
+            "サブスク",
+            "サブスクリプション",
+            "续费",
+            "自动续订",
+            "auto-renew"
+          ]
+        },
+        "quote": "订阅相关的必须提醒我",
+        "summary": "凡是订阅相关（订阅、续费、自动扣款等）的邮件，一定提醒主人并推送到手机。",
+        "type": "mail_must_notify"
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 2,
+      "caseId": "one-off-not-a-rule",
+      "pass": true,
+      "reasons": [],
+      "call": null
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 2,
+      "caseId": "tone-is-soft",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "inferred": false,
+        "quote": "以后回答我的时候短一点，别用表格",
+        "summary": "回答尽量简短，不使用表格",
+        "type": "soft"
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 3,
+      "caseId": "refund-whole-thread",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "inferred": false,
+        "params": {
+          "phrases": ["退款", "refund", "返金", "返款", "払い戻し"]
+        },
+        "summary": "涉及退款的邮件，判断前必须读完同一邮件串的全部往来，读不全就交给主人自己看。",
+        "type": "mail_read_whole_thread",
+        "quote": "涉及退款的邮件以后必须看整个邮件串再判断"
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 3,
+      "caseId": "immigration-notify",
+      "pass": false,
+      "reasons": ["漏：在留期間更新許可申請について", "漏：ビザ更新の件"],
+      "call": {
+        "inferred": false,
+        "params": {
+          "phrases": [
+            "入国管理局",
+            "出入国在留管理庁",
+            "入管局",
+            "在留資格",
+            "在留カード",
+            "Immigration Services Agency",
+            "immigration"
+          ],
+          "senderDomains": ["immi-moj.go.jp", "moj.go.jp"]
+        },
+        "summary": "凡日本入管局（出入国在留管理庁/法務省）发来的邮件一律提醒主人并推送手机",
+        "type": "mail_must_notify",
+        "quote": "日本入管局相关的邮件以后必须通知我"
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 3,
+      "caseId": "subscription-notify",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "inferred": false,
+        "params": {
+          "excludePhrases": ["newsletter", "メルマガ", "订阅确认", "退订"],
+          "phrases": [
+            "订阅",
+            "サブスク",
+            "subscription",
+            "续费",
+            "自動更新",
+            "auto-renew",
+            "renewal"
+          ]
+        },
+        "quote": "订阅相关的必须提醒我",
+        "summary": "凡是订阅相关（订阅、续费、自动更新等）的邮件，一定提醒主人并推送到手机。",
+        "type": "mail_must_notify"
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 3,
+      "caseId": "one-off-not-a-rule",
+      "pass": true,
+      "reasons": [],
+      "call": null
+    },
+    {
+      "model": "glm-5.3-flash",
+      "run": 3,
+      "caseId": "tone-is-soft",
+      "pass": true,
+      "reasons": [],
+      "call": {
+        "inferred": false,
+        "quote": "以后回答我的时候短一点，别用表格",
+        "summary": "回答保持简短，不使用表格",
+        "type": "soft"
+      }
+    }
+  ]
+}

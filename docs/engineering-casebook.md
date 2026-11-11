@@ -112,6 +112,8 @@ date: "2026-10-26"
   85. [没人输入验证码，拦截记录里却天天有“验证码”：敏感信息检查把 Himawari 自己写的指令当成了外来内容](#case-trusted-prompt-text)
   86. [底层 Agent 框架跨大版本升级：Pi 从 0.84.2 升到 1.5.0，老对话的缓存一个字节都没变](#case-pi-1-5-upgrade)
   87. [记忆评测全是合成题：改用主人确认过的记忆和原话自动出题、判分，每周跑一次](#case-real-memory-eval)
+  88. [三路检索合并后怎么划“相关”的线：RRF 分数划不了线，用相似度加少量加分，权重和余量用评测扫出来](#case-relevance-cutoff)
+  90. [让模型替主人先打一遍分，什么时候才敢少给主人看：一致率按区间下限算，还要比瞎猜准](#case-model-prereview)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -133,11 +135,11 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction)、[自己写的指令不该被当成外来内容检查](#case-trusted-prompt-text)、[沙箱保护不能静默失效](#case-srt-locked-seccomp-helper) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes)、[所有模型请求只走一个出口](#case-model-egress-redaction)、[发给模型的内容只追加](#case-append-only-prefix)、[Pi 升到 1.5.0](#case-pi-1-5-upgrade) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes)、[所有模型请求只走一个出口](#case-model-egress-redaction)、[发给模型的内容只追加](#case-append-only-prefix)、[Pi 升到 1.5.0](#case-pi-1-5-upgrade)、[模型预评什么时候能少给主人看](#case-model-prereview) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
 | Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle)、[回答写完才整块出现](#case-streaming-answers) |
@@ -269,6 +271,14 @@ date: "2026-10-26"
 **面试 30 秒版**
 
 “上线后发现记忆检索接好了，但根本没有写入路径，库一直是空的。教训是要用端到端测试从‘说一句话’验证到‘新对话里想起来’，而不是分别测读和写。修复时把敏感信息做成确认卡，并让提炼异步执行、不拖慢回答。”
+
+**后续（2026-11-11，P3-5）：写入失败不再无声无息**
+
+- 现象：写入路径有了，但提炼这次后台模型调用一失败，就只写一条审计，什么都没记，也不再试（[I-63](incidents-and-gates.md#incidents)：模型说“记住了”，库里却没有）。原来的出口层重试只认 `AI_GATEWAY_TOOL_CALL_UNSUPPORTED` 一个错误码。
+- 做法（[ADR 0222](adr/0222-retry-and-queue-failed-memory-capture.md)）：可能是偶发的错误（超时、限流、上游不可用、JSON 不合法、登记生成时的写冲突等）同轮用同一份提示词字节重试一次；第一次失败就先把这一轮写进持久的待补队列（防止重试途中进程重启丢失），再失败就留给下一轮补做，补 3 次仍失败才放弃。补做沿用原来的生成编号，记忆 id 不变。模型已经给出结果、开始写记忆之后失败的，不重试也不补做，只写一条“放弃”记录：存是逐条写的，第一次可能已经写进一部分，换一份结果再存会重复写，用同一份结果再存又会把“取代旧记忆没做完”当成成功（复核第 2、3 轮先后指出）。每次失败都写一条决策记录，主人能在每日评价和周报里看到并评价“漏没漏”。
+- 业界做法：✅ Anthropic 和 OpenAI 的官方 SDK 对超时、限流和 5xx 默认重试 2 次（两份 README 的 “Retries” 一节，原话“Certain errors will be automatically retried 2 times by default”）；本项目同轮只多试一次，因为后面还有队列兜底。
+- 取舍：同一轮运行已经结束时重试拿不到模型准入，这一轮直接排队，不拖住回答结束。
+- 结果数据：`npm run check:memory-capture-retry` 的 19 条 `[P3-5]` 测试通过；去掉重试、入队、补做、放弃或决策记录中任何一段，都有测试失败（实施时逐一试过）。生产效果未测量。
 
 [返回目录](#contents)
 
@@ -1171,11 +1181,15 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 [ADR 0081](adr/0081-isolated-instance-per-person.md)；Idea `docs/ideas/IDEA-20261026-001-per-person-isolated-himawari.md`；Backlog `docs/backlog/BL-20261026-003-isolated-instance-per-person.md`；评估文档 <https://claude.ai/artifact/77cUajUv5MWWHHMH8m2g1N>；[PR #37](https://github.com/sixianli/himawari-agent/pull/37)。
 
+**后续（2026-11-11）**
+
+重新评估后，Andy 定了两个前提：生产机只有一台、不多花服务器钱，目标是 10 到 20 人。每人一套实例大概率放不下（推断，没有实测），所以 [ADR 0234](adr/0234-one-program-per-person-database-file.md) 取代了 ADR 0083，改成一个程序、每人一个数据库文件、每人一个专属执行账号；模型用 Andy 已有的套餐（对话模型按 ADR 0117 的顺序，可能先用 CodeBuddy 免费额度）、不用 Vercel 的 key，每人每月上限由 Andy 在管理页配置。上面“先选 silo”的取舍是当时单机、两三个熟人的前提下做的；放弃的理由是内存和磁盘要乘以人数，代价是隔离从“结构上分开”降为“三道防线加系统账号”，并接受主程序崩了所有人一起断。结果数据还没有：量机器是开工第一步。
+
 **后续（2026-10-26）**
 
 评估 iOS App 时决定 Andy 的手机也走 Cloudflare 入口，所以 [ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md) 取代了 ADR 0081，只改了“Andy 自己继续走 ssh 隧道”这一句，其余决定不变。详见[案例 21](#case-mobile-client)。
 
-**面试 30 秒版**
+**面试 30 秒版（2026-10 的版本；现行做法见上面 2026-11-11 的后续）**
 
 “个人 Agent 要分享给家人朋友，各自的记忆必须隔离。我先盘点代码：数据库每张表已经带主人 ID，单用户写死在配置、登录、密钥和后台任务。对照 AWS 的 silo / pool 模型，我没有马上改成一个实例分用户，因为漏一个过滤条件就会泄露别人的记忆；先给每人起一个独立实例，前面用 Cloudflare Access 只放行邀请的邮箱，不开放注册，避免陌生人刷爆模型费用。用户超过五人再迁到 pool，先写隔离测试。”
 
@@ -2813,11 +2827,15 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 
 **相关 ADR/PR**
 
-PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，没有新 ADR。改成本机模型这一步 Andy 2026-10-28 决定以后再做，记为 [BL-20261028-008](backlog/BL-20261028-008-local-memory-embedding.md)，动手时另写 ADR。
+PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，没有新 ADR。改成本机模型这一步 Andy 2026-10-28 决定以后再做，记为 [BL-20261028-008](archive/backlog/BL-20261028-008-local-memory-embedding.md)，动手时另写 ADR。
 
 **面试 30 秒版**
 
 “用户看到‘找到 0 条记忆’也花了 1.4 秒。我没有猜，用生产库里已有的时间点把这一步拆成五段，发现 88% 是一次向量化网络请求。看响应头才知道，东京的请求被网关转到悉尼，再去美国的供应商，绕了两段跨洋路。能在代码里改的，是照 OpenAI SDK 的做法改用 base64 返回格式，数值逐位相同，生产机上实测从 1.05 秒降到 0.77 秒。绕路本身是网关路由，根治只能在本机算向量，小模型 90 毫秒，但准确度和内存是产品取舍，我把数据摆给产品负责人来选。”
+
+**后续（2026-11-11）：改在本机算向量（P3-1）**
+
+候选报告比较了三个能在生产机 CPU 上跑的模型，Andy 选了 jina-embeddings-v5-text-small-retrieval 的 int8 量化版。按 [ADR 0224](adr/0224-memory-embedding-runs-on-the-host.md)，向量在服务进程里用 ONNX Runtime 计算，外网 Qwen3-8B 保留为可选；每个嵌入模型登记成一份档案，门槛跟着模型走，换模型只改配置。本机请求仍走统一出口，遮盖和记账不漏。合成评测集真实代码路径实测（门槛 0.30，数字出自 ADR 0224）：主评测集命中 90%（网关 8B 在 0.6 门槛下 80%），留出集 70%；查询中位数约 35 毫秒，加载约 3.7 秒，进程多占约 1.35 GB。生产上线后的中位数未测量。代价是许可为 CC BY-NC 4.0，对外收费前要换成 Apache 2.0 的 Qwen3-0.6B（已登记好档案）。检索索引的威胁模型另写在 [记忆检索索引的威胁模型](memory-index-threat-model.md)。
 
 [返回目录](#contents)
 
@@ -3197,7 +3215,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 - `npm run eval:jarvis:live` 不带 `--confirm-cost=<美元>` 就拒跑，并打印上一轮完整跑的实际花费，方便先报预计费用、等 Andy 同意。跑的过程中，花费到上限就停。
 - 开跑前先发 1 个 token 的请求试探网关，被拒就不跑，并贴出网关原文。
 - 请 Andy 删掉按人的用户预算，改成按 key 设：评测 key 单独封顶，生产 key 放宽（[ADR 0109](adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md)）。
-- 生产这次只记下 `transport_unresolved`，看不出是额度被拒。现在嵌入失败会写一行带 HTTP 状态和网关原文的 `memory.embedding_failed` 日志；402 单独记成 `CONTEXT_MEMORY_QUOTA_EXCEEDED` 或 `PI_MODEL_QUOTA_EXCEEDED`，网页用三语告诉主人是额度用完了，不是网络不通。
+- 生产这次只记下 `transport_unresolved`，看不出是额度被拒。现在嵌入失败会写一行带 HTTP 状态和网关原文的 `memory.embedding_failed` 日志；402 单独记成 `CONTEXT_MEMORY_QUOTA_EXCEEDED` 或 `PI_MODEL_QUOTA_EXCEEDED`，网页用三语告诉主人是额度用完了，不是网络不通。后续（2026-11-11，[ADR 0223](adr/0223-chat-memory-lookup-falls-back-to-keywords.md)）：聊天时嵌入失败不再让整轮失败，改为按关键词和实体继续找记忆，`CONTEXT_MEMORY_QUOTA_EXCEEDED` 和对应网页说明已删，嵌入的 402 只在 `memory.embedding_failed` 日志里记下。
 - 给 Andy 的对比结论改为不再花钱：用官方价目表和已经跑完的第 1 组数据给推荐。Andy 决定先不换。
 - 换被测模型的开关已删掉：Andy 在 13:31 定下任何场景都不调用 Claude、OpenAI 等贵模型，评测只测生产用的 DeepSeek V4.1 Flash。
 
@@ -5574,11 +5592,150 @@ Pi 在 0.86 和 0.87 改了两处核心约定：发给模型的请求不再分�
 
 **相关 ADR/PR**
 
-[ADR 0219](adr/0219-real-memory-eval-sets.md)、PR #378、[ADR 0115](adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)（检索评测，改为对照）、[案例 78](#case-memory-capture-eval)、[案例 39](#case-jarvis-test-evals)。
+[ADR 0239](adr/0239-real-memory-eval-sets.md)、PR #378、[ADR 0115](adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)（检索评测，改为对照）、[案例 78](#case-memory-capture-eval)、[案例 39](#case-jarvis-test-evals)。
 
 **面试 30 秒版**
 
 “我们的记忆评测原来全是合成题，题和代码出自同一个人，天然偏向现有实现。我改成在生产上直接用主人确认过的记忆出题：标准答案就是主人当时的原话，模型只写题干，题干要过泄题检查，连汉字日期和阿拉伯数字的对应都查。多数题还配一道问不存在的事的拒答题，测会不会编造。作答走和对话一样的检索，回答包含原话就直接判对，其余交低价模型判分。每周最多花 0.5 美元，按 7 天累计挡在代码里。复核时还抓到我自己引入的一个外键冲突，补了真实数据库的回归测试。”
+
+[返回目录](#contents)
+
+<a id="case-relevance-cutoff"></a>
+
+## 案例 88：三路检索合并后怎么划“相关”的线：RRF 分数划不了线，用相似度加少量加分，权重和余量用评测扫出来
+
+**背景与现象**
+
+[案例 57](#case-memory-relevance-threshold) 给向量一路加了相似度门槛（聊天 0.6），但 Himawari 的记忆检索有三路：向量（按意思找，余弦相似度 0 到 1）、关键词（SQLite 全文检索的 bm25 打分，bm25 是按词频和文档长度算的经典关键词相关度）、实体（记忆里记下的人名、地名出现在这句话里）。三路结果用 RRF（Reciprocal Rank Fusion，倒数排名融合：每路按名次给 `1/(60+名次)` 分再相加）合并后取前 5 条。关键词和实体两路没有任何门槛，一个词撞上，再不相关的记忆也会带出来。
+
+2026-11-11 在仓库评测集（24 条合成记忆、40 句相关问题、48 句无关问题）上实跑，生产门槛下准确率（带上的记忆里该带的比例）85.4%。错带的 7 条全部只被关键词找到，和问题的相似度只有 0.28 到 0.59，例如问“我住在哪里”带出“主人的母亲住在成都”。同时，同一句原话派生出的几条几乎一样的记忆会一起出现，挤占名额。
+
+任务的完成标准由 Andy 定、不许改：准确率上升，recall@5（每句取 5 条时，该找到的记忆被找到的比例）下降不超过 2 个百分点。
+
+**根因**
+
+1. 只有向量路有门槛（`sqlite-memory-operations.ts` 只按相似度过滤向量候选），关键词和实体候选直接进融合。
+2. 最直观的修法是“在融合后的 RRF 分数上划一条线”，但 RRF 只保留名次、丢掉了分数本身：一条只被关键词找到、排第 1 的记忆，和一条只被向量找到、排第 1 的记忆，RRF 分数完全一样，都是 `1/61`。离线复算证实这条线是断崖：线设在单路第 1 名的 1.1 倍以下，什么都挡不住（准确率还是 85.4%）；设到 1.2 倍，召回一下子从 77.4% 掉到 49.1%。中间没有可调的地方。
+
+**我们的方案**
+
+核心思路：截断只认一个能跨查询比较的分数，也就是余弦相似度；关键词和实体命中只补一点分，不单独决定去留。排序仍用 RRF 乘重要度、新近程度等加成，截断只决定“留不留”。
+
+1. **相关分公式。** `相关分 = 相似度 + 关键词权重 × (这条的 bm25 / 本句最高的 bm25) + 实体权重 × (是否命中实体，0 或 1)`。相关分低于“本次检索的向量门槛 − 截断余量”就不带。
+   - 关键词分按本句最高分归一，因为 bm25 没有上限、不同句子之间不可比；归一后它最多加满一个权重，不会喧宾夺主。
+   - 向量门槛以上的记忆，相关分一定过线，所以向量路的行为完全不变；Gmail 检查的门槛是 0.45，截断线自动跟着变，不用另配。
+   - 加成（重要度、新近程度）不参与截断，否则重要度低、时间旧但真正相关的记忆会被隐性挡掉。
+2. **让每个候选都有相似度。** 只被关键词或实体找到的候选，原来没有相似度。存储层用索引里已存的向量补算余弦相似度（sqlite-vec 引擎用 `vec_distance_cosine`，纯 JS 引擎读向量自己算），不多发一次嵌入请求。
+3. **相似度未知时不截。** 查询向量失败（只剩关键词和实体两路）或这条记忆本身没有向量时，没有唯一可校准的信号，截了会让降级的回答拿不到记忆，所以保持原行为，只记一行诊断日志。
+4. **门槛线和权重怎么定（本案例的重点）：**
+   - **先录候选、离线扫参数。** 评测脚本在门槛 0 时把每句话三路的原始候选（含相似度）存下来。之后几百组参数都在本机离线复算，不再调模型，扫描本身零费用。每次实跑评测 112 次向量请求，约 0.0001 美元。
+   - **扫三个旋钮：** 关键词权重和实体权重各取 0、0.05、0.1、0.15、0.2，截断线取 0.55 到 0.65。
+   - **看到的规律：** 关键词权重是决定性的。关键词权重为 0、只靠相似度时，线放在 0.55 召回也只有 64.2%，放在 0.6 只有 50.9%。原因是评测集里大量正确记忆只被一个关键词或人名找到，相似度又低于 0.6（例如直接问人名“我妻子叫什么”）。关键词权重到 0.15，召回就回到 77.4%。实体权重在 0.05 到 0.15 之间结果几乎一样，取 0.15 和关键词对称，留出余量给真实数据里更多的人名问题。
+   - **不取单点，取稳定区域的中间。** 关键词、实体权重在 0.15 到 0.2、截断余量在 0.02 到 0.06 这一片都满足完成标准，默认值取在中间，降低在 24 条记忆上过拟合的风险。
+   - **余量为什么是 0.05 而不是更激进的 0.03。** 第一次离线扫描里余量 0.03 准确率可到 95.2%，召回 75.5%，只降 1.9 个点，离“最多降 2 个点”只差 0.1。随后实跑发现：同一个向量模型两次返回的相似度会差约 0.01，0.03 在第二次实跑上准确率只到 93%。贴着标准线的参数会被嵌入的小抖动推过线，所以选 0.05：两次独立实跑召回都不降，准确率都上升。
+   - **剩下挡不住的那一句。** “把刚才那段改成日语”带出“主人在准备日语 N2 考试”，相似度 0.586，离门槛只差 0.014。任何不伤召回的线都挡不住它，诚实记下，留给重排模型（待办 BL-20261029-003）。
+5. **同源去重。** Andy 选的定义是：来源有交集，**且**内容几乎相同才算重复。“几乎相同”是规范化（统一全半角、大小写，去掉空白标点）后完全相同，或相邻三字组的 Dice 系数（两段文字共有的三字组占比）不低于 0.9。短于 8 个字的只认完全相同。两条里的数字串（含正负号、中文数字）只要不同就不算重复，因为只差一个日期或金额的是两条事实。被跳过的名额由后面的候选补上。
+6. **门槛做成测试。** 录下的候选存成仓库里的 fixture（测试固定数据），`npm test` 离线复算三件事：默认参数下准确率上升、召回下降不超过 2 个点、无关问题带出不增加。另有一条反向用例：如果有人把关键词和实体加分去掉、只认向量门槛，召回会掉超过 2 个点，测试必须失败。
+
+复用与自有：检索、融合和截断都是 Himawari 自研记忆引擎（[案例 1](#case-memory-engine)）的部分，Pi 不负责记忆，本次没有涉及 Pi 的模块。
+
+**方案讨论与备选**
+
+方案先让两个外部模型（DeepSeek、GLM，经 OpenCode）在不看我们结论的情况下各自出方案，再审我们的方案，费用 0.35 美元。
+
+- **相关分截断，RRF 排序不变（选用）。** 好处：唯一跨查询可比的分数做门槛，向量路不变，不加请求、不改表。代价：权重和余量要靠评测选，换向量模型时要和门槛一起重新校准。
+- **只认相似度达到向量门槛，关键词和实体只参与排序（DeepSeek 提出）。** 最简单，准确率 100%，但召回从 77.4% 掉到 50.9%，不满足完成标准。否决。
+- **相似度达到门槛，或命中两路以上且相似度不低于 0.45（GLM 提出）。** 召回 52.8%。否决，原因同上。
+- **直接在 RRF 分数上划线。** 断崖，见根因。否决。
+- **Weaviate 式按每路最小最大归一后加权。** 每路都把本句最好的一条归一成 1，一句话只有一条关键词命中时，再无关也是满分，正好挡不住本次要挡的情况。否决。
+- **加重排模型。** 效果最好，但每轮多一次模型调用和延迟，属于改检索架构，超出本次范围，已有待办。
+- **只按来源去重（同源只留一条）。** 同一句话拆出的“妻子叫苏晴”“女儿叫小禾”会丢一条。否决。
+
+外部模型审核还带来了几处采纳的修改：整理记忆时找旧记忆的那次检索不截断（它要找的正是可能重复、需要合并的旧记忆），去重放在截取名额和记“最近使用”之前，以及数字保护。
+
+**业界主流做法**
+
+- ✅ Microsoft Azure AI Search《Hybrid search scoring (RRF)》（<https://learn.microsoft.com/en-us/azure/search/hybrid-search-ranking>）：RRF 分数“Upper limit is bounded by the number of queries being fused, with each query contributing a maximum of approximately `1/k`”，也就是融合的路数不同，分数尺度就不同，不能拿一条固定的线去切。
+- ✅ Elastic《Semantic precision with minimum score》（<https://www.elastic.co/search-labs/blog/semantic-precision-minimum-score>）：最低分只加在语义检索那一路，“the `min_score` is only applied to the semantic retriever”；理由之一是“The lack of BM25 score contribution can cause the document to be discarded by the `min_score threshold`”。
+- ✅ Weaviate《Hybrid search》（<https://docs.weaviate.io/weaviate/concepts/search/hybrid-search>）：relativeScoreFusion 是“The highest value becomes 1, the lowest value becomes 0”；rankedFusion 是“each object is scored according to its position in the results”。
+- 📎 Anthropic《Introducing Contextual Retrieval》（<https://www.anthropic.com/news/contextual-retrieval>）：向量加 BM25 优于单用向量，重排能进一步减少检索失败（引文见[案例 57](#case-memory-relevance-threshold)）。
+
+**对比与取舍**
+
+相同点：和 Elastic 一样，门槛只认语义那一路的分数，因为只有它能跨查询比较；和 Azure、Weaviate 一样用 RRF 合并排序。不同点：Elastic 让关键词结果完全不受门槛约束，我们的评测证明那样挡不住“一个关键词撞上”的无关记忆；而只认语义门槛又会丢掉大量只被人名、关键词找到的正确记忆。所以取中间：相似度做底，关键词和实体只补有上限的少量分数，补多少由评测扫出来。放弃的是：参数和向量模型绑定，换模型（P3-1 正在做）要用同一套评测重新校准；“相关”在界面上的定义随之从“相似度过门槛”改成“相关分过截断线”，界面设计指南同步修改。
+
+**结果数据**
+
+| | 相关问题命中 | recall@5 | 准确率 | 无关问题带出 |
+| --- | --- | --- | --- | --- |
+| 截断前（门槛 0.6） | 80% | 77.4% | 85.4% | 2.1%（1 句） |
+| 截断后（默认 0.15 / 0.15 / 0.05） | 80% | 77.4% | 89.1% | 2.1%（1 句） |
+| 只认向量门槛（备选，离线） | 57.5% | 50.9% | 100% | 0% |
+| RRF 线设在单路第 1 名的 1.2 倍（备选，离线） | 55% | 49.1% | 96.3% | 0% |
+
+- 截断后一行是 2026-11-11 在提交 b0fdbde1 上实跑、记在 `evals/memory-retrieval/history.jsonl` 里的结果。备选两行是同一份录下的候选离线复算的结果（`/mnt/project-files/p3-3-fusion/sweep-result.txt`）。
+- 费用：每次实跑评测 0.000112 美元；参数扫描 0 美元；方案讨论 0.35 美元；合并前的代码复核到第 3 轮累计 0.48 美元。
+- 延迟：补算相似度只多读一次索引里已存的向量，没有新的模型请求，未测量。
+- 合并前代码复核三轮里查出的真问题，都补了在旧代码上会失败的测试，包括：`memory.recall` 名额满时，已确认的记忆替不下与它重复的待确认记忆；离线门槛测试原先没管无关问题。
+
+**相关 ADR/PR**
+
+[ADR 0221](adr/0221-memory-retrieval-relevance-cutoff-and-same-source-dedupe.md)（本决定）；[ADR 0115](adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)（向量门槛和评测集）；PR #375；方案讨论记录在 `.agents/reviews/topic-p3-3-fusion-cutoff/`，代码复核记录在 `.agents/reviews/pr-375/`；[案例 1](#case-memory-engine)、[案例 57](#case-memory-relevance-threshold)。
+
+**面试 30 秒版**
+
+“我们的记忆检索是向量、关键词、实体三路，用 RRF 合并。只有向量路有门槛，一个关键词撞上就会带出无关记忆。最直观的做法是在 RRF 分数上划线，但 RRF 只看名次，离线一扫就是断崖：要么什么都挡不住，要么召回从 77% 掉到 49%。我改成用唯一能跨查询比较的余弦相似度做底，关键词和实体只补有上限的少量分数。权重和余量是把三路原始候选录下来、离线扫几百组参数定的，取稳定区域的中间值。原本最优的余量 0.03 离召回标准线只差 0.1 个点，嵌入每次有 0.01 的抖动，所以退到 0.05。结果准确率从 85.4% 升到 89.1%，召回不降；完成标准和一个反向用例都写进了测试。”
+
+[返回目录](#contents)
+
+<a id="case-model-prereview"></a>
+
+## 案例 90：让模型替主人先打一遍分，什么时候才敢少给主人看：一致率按区间下限算，还要比瞎猜准
+
+**背景与现象**
+
+Himawari 的每个关键判断（读完邮件提醒没提醒、记忆存没存、整理记忆对不对）都写一条决策记录，Andy 在「每天打分」里逐条评“有用 / 不需要 / 漏了”，周报按这些打分算出各类判断的准确度。产品愿景写明，Andy 的审核带宽是实际瓶颈（`docs/product-vision.md:196`）。实施清单 P4-8 要求：先让模型给每条待打分的决策预评，预评不能写进 Andy 的打分；模型和 Andy 足够一致时，「每天打分」只给他看模型拿不准的。
+
+**根因**
+
+这不是 bug，难点在“什么时候能信模型”：样本少时，10 条全对也显示 100%；而且如果 Andy 在某类判断里本来就 95% 评“有用”，模型只要全评“有用”就有 95% 一致，看起来很准，其实什么都没学到。
+
+**我们的方案**
+
+- 预评单独一张表 `decision_prereviews`，不许改，只随所属决策或邮件记录删除；Andy 的打分仍只在原来的列里，发给模型的请求里也不带他的打分。
+- 一致率只看会被隐藏的那部分：模型评“有用”、把握不低于 800（满分 1000）、且和 Andy 以往打分不冲突。这部分的一致比例按 Wilson 区间下限不低于 90%，而且要高于“全当有用”这种猜法（Andy 评“有用”的比例的 Wilson 上限），才算过门槛。
+- 自动减少默认关闭；打开后，隐藏前再核对一次文字摘要，文字变了就不隐藏；按条目哈希固定留 20% 给 Andy 抽查，好让一致率在隐藏开始后还能继续更新。
+- 每天最多 50 次调用，尝试次数和费用从表里数，重启不会重置；失败也记一行带费用，24 小时内不重试。
+- 周报脚本和网页周报都显示每类判断的预评数、拿不准数、配对数、一致率和区间、kappa（扣掉碰巧一致之后的一致程度）、门槛结论。
+
+**方案讨论与备选**
+
+- 把预评写成决策记录的新列：省一张表，但写错列就会冒充 Andy 的打分，放弃。
+- 用点估计做门槛：样本少时形同虚设，放弃。
+- 隐藏后不留抽查：一致率会冻结在开启那一刻，模型变差也看不出来，放弃。
+- 配对时再核对文字摘要：要在读周报时重读全部原文，暂不做；只在隐藏前核对，写进 ADR。
+
+**业界主流做法**
+
+- ✅ [Zheng 等，Judging LLM-as-a-Judge](https://arxiv.org/abs/2306.05685)：用模型当裁判之前，先量它和人的一致率，原文：“achieving over 80% agreement, the same level of agreement between humans”。
+- ✅ [维基百科：二项比例置信区间](https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval)：Wilson 区间“can be safely employed with small samples and skewed observations”。
+
+**对比与取舍**
+
+和论文一样，先用人打过分的样本量出一致率再决定信不信模型；不同的是，我们不看整体一致率，只看“会被隐藏”的那部分，并且要求比“全当有用”更准，因为隐藏错的代价是 Andy 看不到本该纠正的判断。代价是门槛更难过：90% 门槛下至少要 35 对才可能过。
+
+**结果数据**
+
+- 门槛最少配对数 35：`packages/calibration/src/prereview.ts` 的 `minimumPairsToPass(900)`，单元测试覆盖。
+- 生产上的一致率、隐藏条数：未测量（自动减少默认关闭，还没上线）。
+
+**相关 ADR/PR**
+
+[ADR 0237](adr/0237-model-pre-rates-waiting-decisions.md)、PR #373、迁移 0091。
+
+**面试 30 秒版**
+
+“主人每天要给 agent 的判断打分，我让模型先预评一遍，想在一致率够高时少给他看。难点是一致率会骗人：样本少时 10/10 也是 100%，主人本来 95% 评‘有用’时模型全评‘有用’也有 95%。所以门槛用 Wilson 区间下限，还必须高于‘全当有用’的上限，只算会被隐藏的那部分；隐藏后固定留 20% 抽查，让一致率持续更新。预评单独存表，绝不进主人的打分。”
 
 [返回目录](#contents)
 

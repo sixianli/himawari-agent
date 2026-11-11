@@ -37,6 +37,14 @@ const MESSAGES = [
 ] as const;
 
 class TermEmbedder implements Embedder {
+  embedQuery(query: string): Promise<Float32Array> {
+    return this.embed(query);
+  }
+
+  embedDocument(text: string): Promise<Float32Array> {
+    return this.embed(text);
+  }
+
   readonly model = "fixture-term-embedding";
   readonly dimensions = DIMENSIONS;
   fail = false;
@@ -208,6 +216,90 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
     }
   });
 
+  it("[P3-6] lists the recent day summaries by local day, newest first, and rejects bad input", async () => {
+    const now = { value: "2026-10-25T02:30:00.000Z" };
+    const resource = await fixture(now);
+    try {
+      for (const segment of await resource.service.dueSegments({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        limit: 5,
+      }))
+        await resource.service.summarize(segment, resource.summarize);
+      now.value = "2026-10-23T16:00:00.000Z";
+      const recent = await resource.service.recent({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        days: 2,
+        allowedClassifications: ["public", "private", "sensitive", "restricted"],
+        limit: 10,
+      });
+      expect(recent.partial).toBe(false);
+      expect(recent.summaries.map(({ episode }) => episode.day)).toEqual(["2026-10-23"]);
+      expect(recent.summaries[0]?.text).toContain("新宿吃烤肉");
+      const privateOnly = await resource.service.recent({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        days: 3,
+        allowedClassifications: ["private"],
+        limit: 10,
+      });
+      expect(privateOnly.summaries.map(({ episode }) => episode.day)).toEqual(["2026-10-23"]);
+      const withSensitive = await resource.service.recent({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        days: 3,
+        allowedClassifications: ["private", "sensitive"],
+        limit: 10,
+      });
+      expect(withSensitive.summaries.map(({ episode }) => episode.day)).toEqual([
+        "2026-10-23",
+        "2026-10-22",
+      ]);
+      const store = resource.repository.memoryEpisodes();
+      for (const bad of [
+        {
+          fromDay: "2026-10-24",
+          toDay: "2026-10-23",
+          allowedClassifications: ["private"],
+          limit: 5,
+        },
+        {
+          fromDay: "2026/10/23",
+          toDay: "2026-10-23",
+          allowedClassifications: ["private"],
+          limit: 5,
+        },
+        {
+          fromDay: "2026-10-22",
+          toDay: "2026-10-23",
+          allowedClassifications: ["secret"],
+          limit: 5,
+        },
+        {
+          fromDay: "2026-10-22",
+          toDay: "2026-10-23",
+          allowedClassifications: ["private"],
+          limit: 0,
+        },
+      ])
+        await expect(
+          store.listDaySummaries({ ownerId: OWNER_ID, agentId: AGENT_ID, ...bad } as never),
+        ).rejects.toThrow(/invalid/u);
+      for (const activeSince of ["2026-10-23", "yesterday", 5])
+        await expect(
+          store.listUnsummarized({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            activeSince,
+            limit: 5,
+          } as never),
+        ).rejects.toThrow(/activeSince is invalid/u);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
   it("finds an episode by meaning and words inside the asked window only", async () => {
     const now = { value: "2026-10-25T02:30:00.000Z" };
     const resource = await fixture(now);
@@ -275,6 +367,47 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
     }
   });
 
+  it("[P3-1] lists summaries without a vector strictly after a position, ordered by creation time and then id", async () => {
+    const now = { value: "2026-10-25T02:30:00.000Z" };
+    const resource = await fixture(now);
+    try {
+      resource.embedder.fail = true;
+      const segments = await resource.service.dueSegments({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        limit: 5,
+      });
+      for (const [index, segment] of segments.entries()) {
+        now.value = new Date(Date.parse("2026-10-25T02:30:00.000Z") + index * 60_000).toISOString();
+        await resource.service.summarize(segment, resource.summarize);
+      }
+      const episodes = resource.repository.memoryEpisodes();
+      const unembedded = {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        model: resource.embedder.model,
+        dimensions: resource.embedder.dimensions,
+        limit: 5,
+      };
+      const all = await episodes.listUnembedded(unembedded);
+      const [first, second] = all;
+      if (!first || !second) throw new Error("two pending summaries");
+      expect(first.createdAt < second.createdAt).toBe(true);
+      const ids = async (after: { createdAt: string; id: string }) =>
+        (await episodes.listUnembedded({ ...unembedded, after })).map(({ id }) => id);
+      const rest = all.slice(1).map(({ id }) => id);
+      expect(await ids({ createdAt: first.createdAt, id: first.id })).toEqual(rest);
+      expect(await ids({ createdAt: first.createdAt, id: "\uffff" })).toEqual(rest);
+      expect(await ids({ createdAt: first.createdAt, id: "" })).toEqual(all.map(({ id }) => id));
+      expect(await ids({ createdAt: second.createdAt, id: second.id })).toEqual(rest.slice(1));
+      await expect(
+        episodes.listUnembedded({ ...unembedded, after: { createdAt: 1, id: first.id } as never }),
+      ).rejects.toThrow("position");
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
   it("stores a summary without a vector when embedding fails and backfills it later", async () => {
     const now = { value: "2026-10-25T02:30:00.000Z" };
     const resource = await fixture(now);
@@ -287,6 +420,29 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
       });
       if (!segment) throw new Error("segment");
       await resource.service.summarize(segment, resource.summarize);
+      const unembedded = {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        model: resource.embedder.model,
+        dimensions: resource.embedder.dimensions,
+        limit: 5,
+      };
+      const [pending] = await resource.repository.memoryEpisodes().listUnembedded(unembedded);
+      if (!pending) throw new Error("pending");
+      expect(
+        await resource.repository.memoryEpisodes().listUnembedded({
+          ...unembedded,
+          after: { createdAt: pending.createdAt, id: pending.id },
+        }),
+      ).toEqual([]);
+      expect(
+        (
+          await resource.repository.memoryEpisodes().listUnembedded({
+            ...unembedded,
+            after: { createdAt: pending.createdAt, id: "" },
+          })
+        ).map(({ id }) => id),
+      ).toEqual([pending.id]);
       resource.embedder.fail = false;
       expect(
         await resource.service.backfillEmbeddings({

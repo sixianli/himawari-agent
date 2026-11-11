@@ -16,6 +16,7 @@ if (!Number.isInteger(port) || port < 0 || port > 65535)
 const now = "2026-08-27T00:00:00.000Z";
 const executionQualification = process.env.HIMAWARI_EXECUTION_FIXTURE === "1";
 const memoryFixture = process.env.HIMAWARI_MEMORY_FIXTURE === "1";
+const pinnedCharacters = Number(process.env.HIMAWARI_PROFILE_PINNED_CHARACTERS ?? "0");
 const executionRecords = new Map();
 const executionStates = new Map();
 let executionEnvironment;
@@ -811,7 +812,12 @@ function memoryOverview() {
     capturePaused: false,
     manualAddReady: true,
     lastViewedAt: "2026-10-28T12:00:00.000Z",
-    profileUsage: { used: 118, limit: 2000, queued: ["memory-coffee"] },
+    profileUsage: {
+      used: Math.max(118, pinnedCharacters),
+      limit: 2000,
+      pinned: pinnedCharacters,
+      queued: ["memory-coffee"],
+    },
     profile: [
       { kind: "identity", lines: lines(["memory-city", "memory-job"]) },
       {
@@ -1008,6 +1014,54 @@ function weeklySnapshot(withMails = false) {
           },
         ],
       },
+      prereview: {
+        agreementPermille: 900,
+        confidencePermille: 800,
+        reductionEnabled: false,
+        auditPermille: 200,
+        minimumPairs: 35,
+        otherVersions: withMails ? 2 : 0,
+        groups: withMails
+          ? [
+              {
+                group: "proactive_silent",
+                prereviewed: 40,
+                unsure: 6,
+                paired: 30,
+                agreement: rate(27, 30),
+                kappa: 0.61,
+                balancedAccuracy: 0.8,
+                ownerUseful: rate(25, 30),
+                hidden: rate(20, 22),
+                confusion: [
+                  { model: "useful", owner: "useful", count: 24 },
+                  { model: "useful", owner: "missed", count: 2 },
+                  { model: "missed", owner: "useful", count: 1 },
+                  { model: "missed", owner: "missed", count: 3 },
+                ],
+                gate: { open: false, reason: "insufficient", requiredAgreement: 0.97 },
+              },
+            ]
+          : [
+              "proactive_pushed",
+              "proactive_silent",
+              "memory_skipped",
+              "memory_kept",
+              "consolidation",
+            ].map((group) => ({
+              group,
+              prereviewed: 0,
+              unsure: 0,
+              paired: 0,
+              agreement: null,
+              kappa: null,
+              balancedAccuracy: null,
+              ownerUseful: null,
+              hidden: null,
+              confusion: [],
+              gate: null,
+            })),
+      },
     },
     generatedAt: now,
   };
@@ -1033,7 +1087,7 @@ function unsetWeeklySnapshot() {
   };
 }
 
-function reviewSnapshot() {
+function reviewSnapshot(prereviewHidden = 0) {
   const texts = [
     "我最近想吃牛肉，下周去大阪出差的时候想顺便找一家评价不错的烤肉店，最好是靠近车站的",
     "明天下午三点去银行办理住民税的缴纳手续",
@@ -1062,15 +1116,45 @@ function reviewSnapshot() {
       textHidden: false,
       category: null,
       fetched: kind === "proactive" ? 12 : null,
+      checkup: null,
     };
   };
+  const checkup = (index, reason, related) => ({
+    key: `checkup:fixture-c-${index}`,
+    source: "checkup",
+    kind: "checkup",
+    outcome: "pending",
+    decidedAt: "2026-08-24T15:00:00.000Z",
+    acted: false,
+    rating: null,
+    text: texts[index % texts.length],
+    textHidden: false,
+    category: null,
+    fetched: null,
+    checkup: {
+      reason,
+      action: null,
+      memoryId: `memory:fixture-c-${index}`,
+      relatedMemoryId: related ? `memory:fixture-c-${index}-old` : null,
+      relatedText: related ? texts[(index + 1) % texts.length] : "",
+      keptMemoryId: null,
+    },
+  });
   return {
     day: now,
     capacity: 24,
     sampled: 24,
     notSampled: 9,
-    items: Array.from({ length: 24 }, (_, index) => item(index, false)),
+    items: [
+      item(0, false),
+      checkup(0, "conflict", true),
+      item(1, false),
+      checkup(1, "unused", false),
+      ...Array.from({ length: 20 }, (_, index) => item(index + 2, false)),
+    ],
     folded: { total: 7, items: Array.from({ length: 7 }, (_, index) => item(index, true)) },
+    memoryUnusedDays: 90,
+    hiddenByModel: prereviewHidden,
     generatedAt: now,
   };
 }
@@ -1119,7 +1203,7 @@ function decisionChainFixture(decisionId) {
       ...base,
       inputs: "not_recorded",
       rules: { state: "not_recorded", items: [] },
-      mails: { judged: null, related: null, relatedRead: "not_recorded" },
+      mails: { judged: null, related: null, relatedRead: "not_recorded", summaries: null },
       memories: {
         state: "not_recorded",
         recall: "not_recorded",
@@ -1159,19 +1243,57 @@ function decisionChainFixture(decisionId) {
       items: [
         {
           ruleId: "floor_money_words",
+          revision: 1,
+          current: false,
+          kind: "money_words",
           origin: "built_in",
-          document: "ADR 0106 第 4 条",
+          source: "ADR 0106 第 4 条；ADR 0209",
+          status: "active",
+          changedAt: null,
+          memory: null,
+          wording: { values: ["账单", "扣款", "invoice"], quietHours: [], amount: null },
+          tests: { state: "passed", total: 5, failedAt: null },
           mailCount: 2,
         },
         {
           ruleId: "floor_important_sender",
+          revision: 2,
+          current: false,
+          kind: "important_sender",
           origin: "owner_setting",
-          document: "ADR 0106 第 4 条",
+          source: "ADR 0106 第 4 条；主人的设置“重要发件人”",
+          status: "needs_review",
+          changedAt: "2026-11-02T01:00:00.000Z",
+          memory: {
+            memoryId: "memory-rule-bank",
+            state: "visible",
+            text: "银行来的信一律提醒我",
+          },
+          wording: { values: ["smbc.example"], quietHours: [], amount: null },
+          tests: { state: "failed", total: 3, failedAt: 2 },
           mailCount: 1,
+        },
+        {
+          ruleId: "quiet_hours",
+          revision: 1,
+          current: false,
+          kind: "quiet_hours",
+          origin: "owner_setting",
+          source: "ADR 0106；主人的设置“静默时段”",
+          status: "active",
+          changedAt: "2026-11-01T01:00:00.000Z",
+          memory: null,
+          wording: {
+            values: [],
+            quietHours: [{ days: [1, 2, 3, 4, 5], start: "23:00", end: "07:00" }],
+            amount: null,
+          },
+          tests: { state: "passed", total: 4, failedAt: null },
+          mailCount: 0,
         },
       ],
     },
-    mails: { judged: 3, related: 1, relatedRead: "ok" },
+    mails: { judged: 3, related: 1, relatedRead: "ok", summaries: { count: 2, read: "ok" } },
     memories: {
       state: "recorded",
       recall: "ok",
@@ -1286,7 +1408,11 @@ function handleOperationsQuery(message, request) {
       return memoryFixture
         ? {
             ...envelope("snapshot", "proactive.review.snapshot"),
-            payload: reviewSnapshot(),
+            payload: reviewSnapshot(
+              /(^|;\s*)himawari-fixture-prereview=on(;|$)/.test(request.headers.cookie ?? "")
+                ? 3
+                : 0,
+            ),
           }
         : undefined;
     case "proactive.weekly.read":
@@ -1994,6 +2120,7 @@ async function handleRequest(request, response) {
               "sensitive.interceptions.clear",
               "proactive.review.read",
               "proactive.review.rate",
+              "proactive.review.checkup",
               "proactive.weekly.read",
               "decision.chain.read",
               "decision.email.read",

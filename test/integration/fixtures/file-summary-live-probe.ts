@@ -203,6 +203,7 @@ export async function qualifyFileSummary() {
       if (!content) content = await readFile(new URL("project-brief.txt", fixture), "utf8");
       embeddingFetch = globalThis.fetch;
       memory = await createProductionMemoryCompositionFromConfiguration({
+        onVectorFailure: () => {},
         egress: testModelEgress(),
         configuration: {
           ...configuration,

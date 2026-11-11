@@ -2,19 +2,17 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import {
   ApplicationPortError,
-  CONTEXT_MEMORY_QUOTA_EXCEEDED,
-  CONTEXT_MEMORY_UNAVAILABLE,
+  type DataClassification,
   type DurableMemoryService,
   type DurableMemoryServiceOptions,
   type MemoryPort,
-  memoryDatesOf,
-  type DataClassification,
   type MemoryProjectionJob,
   type MemorySearchRequest,
   type ModelBudgetPort,
   type ModelInvocationAdmissionDescriptor,
   type ModelInvocationAdmissionResolver,
   type ModelInvocationPermit,
+  memoryDatesOf,
   modelVisibleClassifications,
   type PayloadStorePort,
   PORT_ERROR_CODES,
@@ -24,7 +22,7 @@ import {
 import {
   type EmbeddingBoundary,
   type EmbeddingRequest,
-  gatewayEmbeddingUsage,
+  embeddingUsageFor,
 } from "@himawari-agent/memory-engine";
 
 const FIRST_EMBEDDING_ATTEMPT_MS = 3_000;
@@ -73,11 +71,20 @@ export interface MailEmbeddingContext {
   costMicros: number;
 }
 
+export interface MaintenanceEmbeddingContext {
+  readonly deadlineAt: string;
+  readonly dataClassification: NonNullable<MemorySearchRequest["dataClassification"]>;
+}
+
 export function createProductionRunMemory(options: {
   readonly configuration: ProductConfiguration;
   readonly memory: Pick<DurableMemoryService, "search">;
   readonly projection: {
-    bindEmbeddingBoundary(boundary: EmbeddingBoundary, timeoutMs: number): void;
+    bindEmbeddingBoundary(
+      boundary: EmbeddingBoundary,
+      timeoutMs: number,
+      searchCancelled?: (error: unknown) => boolean,
+    ): void;
   };
   readonly payloads: Pick<PayloadStorePort, "get">;
   readonly admission: ModelInvocationAdmissionResolver;
@@ -89,18 +96,43 @@ export function createProductionRunMemory(options: {
   project: NonNullable<DurableMemoryServiceOptions["project"]>;
   embedWithin: <T>(context: RunEmbeddingContext, operation: () => Promise<T>) => Promise<T>;
   embedForMailCheck: <T>(context: MailEmbeddingContext, operation: () => Promise<T>) => Promise<T>;
+  embedForMaintenance: <T>(
+    context: MaintenanceEmbeddingContext,
+    operation: () => Promise<T>,
+  ) => Promise<T>;
+  embedForExternalRead: <T>(
+    context: MailEmbeddingContext,
+    operation: () => Promise<T>,
+  ) => Promise<T>;
 } {
   const scope = new AsyncLocalStorage<MemorySearchRequest & { readonly embeddingSlot?: string }>();
-  const providerFailedSearches = new WeakMap<
-    MemorySearchRequest,
-    typeof CONTEXT_MEMORY_UNAVAILABLE | typeof CONTEXT_MEMORY_QUOTA_EXCEEDED
-  >();
   const mailScope = new AsyncLocalStorage<MailEmbeddingContext>();
+  const maintenanceScope = new AsyncLocalStorage<MaintenanceEmbeddingContext>();
   const projectionScope = new AsyncLocalStorage<{
     job: MemoryProjectionJob;
     memory: ProductMemoryRecord;
   }>();
   const descriptor = embeddingAdmissionDescriptor(options.configuration);
+  const diagnose = (event: Readonly<Record<string, string>>) => {
+    try {
+      options.diagnostic?.(event);
+    } catch {
+      return;
+    }
+  };
+  const leaseLost = new WeakSet<object>();
+  const whileHeld = async <T>(step: Promise<T>): Promise<T> => {
+    try {
+      return await step;
+    } catch (error) {
+      if (
+        error instanceof ApplicationPortError &&
+        error.code === PORT_ERROR_CODES.NOT_AUTHORITATIVE
+      )
+        leaseLost.add(error);
+      throw error;
+    }
+  };
   const embedOnce = async (
     request: EmbeddingRequest,
     send: Parameters<EmbeddingBoundary>[1],
@@ -110,9 +142,14 @@ export function createProductionRunMemory(options: {
     const context = scope.getStore();
     const projection = projectionScope.getStore();
     const mail = mailScope.getStore();
+    const maintenance = maintenanceScope.getStore();
     context?.signal?.throwIfAborted();
     mail?.signal.throwIfAborted();
-    const deadline = context?.deadlineAt ?? projection?.job.claimExpiresAt ?? mail?.deadlineAt;
+    const deadline =
+      context?.deadlineAt ??
+      projection?.job.claimExpiresAt ??
+      mail?.deadlineAt ??
+      maintenance?.deadlineAt;
     if (!deadline || !Number.isFinite(Date.parse(deadline)))
       throw new Error("EMBEDDING_DEADLINE_REQUIRED");
     const remaining = () =>
@@ -124,8 +161,12 @@ export function createProductionRunMemory(options: {
     const classification =
       context?.dataClassification ??
       projection?.memory.dataClassification ??
-      (mail ? (mail.dataClassification ?? ("private" as const)) : undefined);
-    if (!classification || (!projection && !mail && (!context?.runId || !context.executionLease)))
+      (mail ? (mail.dataClassification ?? "private") : undefined) ??
+      maintenance?.dataClassification;
+    if (
+      !classification ||
+      (!projection && !mail && !maintenance && (!context?.runId || !context.executionLease))
+    )
       throw new ApplicationPortError(
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
         "EMBEDDING_EXECUTION_CONTEXT_REQUIRED",
@@ -215,6 +256,21 @@ export function createProductionRunMemory(options: {
           mail.costMicros += descriptor.estimatedCostMicros;
         },
       };
+    } else if (maintenance && !context) {
+      if (descriptor.estimatedCostMicros !== 0)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          "EMBEDDING_MAINTENANCE_REQUIRES_FREE_MODEL",
+        );
+      permit = {
+        assertActive: options.assertActive,
+        markStarted: async () => {},
+        releaseReserved: async () => {},
+        settle: async (usage) => {
+          if (usage.reportedCostMicros !== 0) throw new Error("EMBEDDING_MAINTENANCE_COST_NONZERO");
+        },
+        markUnknown: async () => {},
+      };
     } else {
       if (!context?.runId) throw new Error("EMBEDDING_RUN_REQUIRED");
       const gate = await options.admission({ ...context, runId: context.runId });
@@ -223,21 +279,23 @@ export function createProductionRunMemory(options: {
           PORT_ERROR_CODES.NOT_AUTHORITATIVE,
           "EMBEDDING_ADMISSION_REQUIRED",
         );
-      const admitted = await gate.begin({
-        modelRef: descriptor.ref,
-        provider: descriptor.provider,
-        model: descriptor.model,
-        modelVersion: descriptor.version,
-        dataClassification: classification,
-        logicalSlot:
-          ordinal === 1
-            ? (context.embeddingSlot ?? "context-memory-search:v1")
-            : `${context.embeddingSlot ?? "context-memory-search:v1"}:attempt:${ordinal}`,
-        source: "embedding",
-        ordinal,
-        estimatedCostMicros: descriptor.estimatedCostMicros,
-        pricing: descriptor.pricing,
-      });
+      const admitted = await whileHeld(
+        gate.begin({
+          modelRef: descriptor.ref,
+          provider: descriptor.provider,
+          model: descriptor.model,
+          modelVersion: descriptor.version,
+          dataClassification: classification,
+          logicalSlot:
+            ordinal === 1
+              ? (context.embeddingSlot ?? "context-memory-search:v1")
+              : `${context.embeddingSlot ?? "context-memory-search:v1"}:attempt:${ordinal}`,
+          source: "embedding",
+          ordinal,
+          estimatedCostMicros: descriptor.estimatedCostMicros,
+          pricing: descriptor.pricing,
+        }),
+      );
       if (admitted.disposition !== "fresh")
         throw new ApplicationPortError(
           PORT_ERROR_CODES.CONFLICT,
@@ -248,10 +306,10 @@ export function createProductionRunMemory(options: {
     let started = false;
     let settled = false;
     try {
-      await permit.assertActive();
+      await whileHeld(permit.assertActive());
       context?.signal?.throwIfAborted();
       if (remaining() <= 0) throw new Error("EMBEDDING_DEADLINE_EXCEEDED");
-      await permit.markStarted();
+      await whileHeld(permit.markStarted());
       started = true;
       const timeoutMs = Math.max(
         1,
@@ -260,12 +318,12 @@ export function createProductionRunMemory(options: {
       const timeout = AbortSignal.timeout(timeoutMs);
       const signal = context?.signal ? AbortSignal.any([context.signal, timeout]) : timeout;
       let response: Awaited<ReturnType<typeof send>>;
-      let usage: ReturnType<typeof gatewayEmbeddingUsage>;
+      let usage: ReturnType<ReturnType<typeof embeddingUsageFor>>;
       try {
         response = await send({ timeoutMs, signal });
         signal.throwIfAborted();
         if (remaining() <= 0) throw new Error("EMBEDDING_DEADLINE_EXCEEDED");
-        usage = gatewayEmbeddingUsage(
+        usage = embeddingUsageFor(descriptor.provider)(
           response,
           descriptor.model,
           options.configuration.memory.dimensions,
@@ -273,54 +331,92 @@ export function createProductionRunMemory(options: {
       } catch (error) {
         if (attemptMs !== undefined && timeout.aborted && !context?.signal?.aborted)
           throw new Error(EMBEDDING_ATTEMPT_TIMED_OUT);
-        if (context && !context.signal?.aborted)
-          providerFailedSearches.set(context, embeddingFailureCode(error));
-        options.diagnostic?.(embeddingFailureDiagnostic(error));
+        diagnose(embeddingFailureDiagnostic(error));
         throw error;
       }
-      await permit.assertActive();
+      await whileHeld(permit.assertActive());
       signal.throwIfAborted();
       if (remaining() <= 0) throw new Error("EMBEDDING_DEADLINE_EXCEEDED");
       await permit.settle(usage);
       settled = true;
-      await permit.assertActive();
+      await whileHeld(permit.assertActive());
       return response;
     } catch (error) {
+      const markUnknownKeepingError = async () => {
+        try {
+          await permit.markUnknown("transport_unresolved");
+        } catch (unknown) {
+          diagnose({
+            component: "agent-service",
+            event: "memory.embedding_unknown_failed",
+            error: unknown instanceof Error ? unknown.message : "EMBEDDING_UNKNOWN_FAILED",
+          });
+        }
+      };
+      const runEmbedding = !projection && !mail;
       if (
         started &&
         !settled &&
-        error instanceof Error &&
-        error.message === EMBEDDING_ATTEMPT_TIMED_OUT
-      )
-        await permit.settle({
-          inputTokens: EMBEDDING_INPUT_LIMIT,
-          outputTokens: 0,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
-          reportedCostMicros: descriptor.estimatedCostMicros,
-        });
-      else if (started && !settled) await permit.markUnknown("transport_unresolved");
-      else if (!started) await permit.releaseReserved();
+        ((error instanceof Error && error.message === EMBEDDING_ATTEMPT_TIMED_OUT) ||
+          (runEmbedding && !context?.signal?.aborted))
+      ) {
+        try {
+          await permit.settle({
+            inputTokens: EMBEDDING_INPUT_LIMIT,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            reportedCostMicros: descriptor.estimatedCostMicros,
+          });
+        } catch (accounting) {
+          diagnose({
+            component: "agent-service",
+            event: "memory.embedding_settle_failed",
+            error: accounting instanceof Error ? accounting.message : "EMBEDDING_SETTLE_FAILED",
+          });
+          await markUnknownKeepingError();
+        }
+      } else if (started && !settled) await markUnknownKeepingError();
+      else if (!started)
+        try {
+          await permit.releaseReserved();
+        } catch (release) {
+          diagnose({
+            component: "agent-service",
+            event: "memory.embedding_release_failed",
+            error: release instanceof Error ? release.message : "EMBEDDING_RELEASE_FAILED",
+          });
+        }
       throw error;
     }
   };
-  options.projection.bindEmbeddingBoundary(async (request, send) => {
-    if (projectionScope.getStore() || !scope.getStore()?.runId) return embedOnce(request, send, 1);
-    try {
-      return await embedOnce(request, send, 1, FIRST_EMBEDDING_ATTEMPT_MS);
-    } catch (error) {
-      if (!(error instanceof Error) || error.message !== EMBEDDING_ATTEMPT_TIMED_OUT) throw error;
-      options.diagnostic?.({
-        component: "agent-service",
-        event: "memory.embedding_retried",
-        afterMs: String(FIRST_EMBEDDING_ATTEMPT_MS),
-      });
-      return embedOnce(request, send, 2);
-    }
-  }, options.configuration.deadlines.providerRequestMs);
+  options.projection.bindEmbeddingBoundary(
+    async (request, send) => {
+      if (projectionScope.getStore() || !scope.getStore()?.runId)
+        return embedOnce(request, send, 1);
+      try {
+        return await embedOnce(request, send, 1, FIRST_EMBEDDING_ATTEMPT_MS);
+      } catch (error) {
+        if (!(error instanceof Error) || error.message !== EMBEDDING_ATTEMPT_TIMED_OUT) throw error;
+        diagnose({
+          component: "agent-service",
+          event: "memory.embedding_retried",
+          afterMs: String(FIRST_EMBEDDING_ATTEMPT_MS),
+        });
+        return embedOnce(request, send, 2);
+      }
+    },
+    options.configuration.deadlines.providerRequestMs,
+    (error) =>
+      scope.getStore()?.signal?.aborted === true ||
+      mailScope.getStore()?.signal.aborted === true ||
+      (typeof error === "object" && error !== null && leaseLost.has(error)),
+  );
   return {
     project: (job, memory, operation) => projectionScope.run({ job, memory }, operation),
     embedForMailCheck: (context, operation) => mailScope.run(context, operation),
+    embedForMaintenance: (context, operation) => maintenanceScope.run(context, operation),
+    embedForExternalRead: (context, operation) => mailScope.run(context, operation),
     embedWithin: (context, operation) =>
       scope.run(
         {
@@ -351,23 +447,15 @@ export function createProductionRunMemory(options: {
           "MEMORY_QUERY_CLASSIFICATION_MISMATCH",
         );
       return scope.run(request, async () => {
-        const found = await options.memory
-          .search({
-            ownerId: request.ownerId,
-            agentId: request.agentId,
-            queryRef: request.queryRef,
-            policy: {
-              limit: request.limit,
-              allowedClassifications: modelVisibleClassifications(),
-            },
-          })
-          .catch((error: unknown) => {
-            const failure = providerFailedSearches.get(request);
-            if (!failure) throw error;
-            throw new ApplicationPortError(PORT_ERROR_CODES.PROVIDER_FAILURE, failure);
-          });
-        const failure = providerFailedSearches.get(request);
-        if (failure) throw new ApplicationPortError(PORT_ERROR_CODES.PROVIDER_FAILURE, failure);
+        const found = await options.memory.search({
+          ownerId: request.ownerId,
+          agentId: request.agentId,
+          queryRef: request.queryRef,
+          policy: {
+            limit: request.limit,
+            allowedClassifications: modelVisibleClassifications(),
+          },
+        });
         return found.map(({ memory, score }) => ({
           id: memory.id,
           ownerId: memory.ownerId,
@@ -389,8 +477,8 @@ function embeddingFailureCode(error: unknown) {
   return error instanceof ApplicationPortError &&
     (error.details["status"] === "402" ||
       error.details["gatewayErrorType"] === "quota_for_entity_exceeded")
-    ? CONTEXT_MEMORY_QUOTA_EXCEEDED
-    : CONTEXT_MEMORY_UNAVAILABLE;
+    ? "quota_exceeded"
+    : "unavailable";
 }
 
 function embeddingFailureDiagnostic(error: unknown): Readonly<Record<string, string>> {

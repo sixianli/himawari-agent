@@ -1,0 +1,3 @@
+{"id": "F1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 中：真实存储错误里的 `PORT_` / `SQLITE_` / `DECISION_` 代码会被丢成 `unknown`", "valid": true, "class": "error", "severity": "low", "trigger": "存储层抛出带 code 字段的 ApplicationPortError", "consequence": "失败记录的原因写成 unknown 而不是错误代码；记录、费用和退避都不受影响", "modelSeverity": "中", "reason": "只影响失败原因这一条诊断文字，不影响记录、费用、上限和退避"}
+{"id": "F2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低：作者第 3 条“写结果失败时仍写入一行带费用的失败记录”只在 `recordFailure` 也成功时成立", "valid": true, "class": "error", "severity": "low", "trigger": "record 和 recordFailure 都失败", "consequence": "没有失败行，只在内存里退避；ADR 已写明，缺测试", "modelSeverity": "低"}
+{"id": "F3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低：针对新前缀白名单没有真正会失败的反向用例", "valid": true, "class": "better"}

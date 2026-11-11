@@ -688,10 +688,38 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 88,
+    name: "memory_capture_backlog",
+    changeSet: "memory-capture-backlog",
+    phase: "expand" as const,
+    file: "0088_memory_capture_backlog.sql",
+  },
+  {
+    sequence: 89,
+    name: "consolidation_hold",
+    changeSet: "consolidation-hold",
+    phase: "expand" as const,
+    file: "0089_consolidation_hold.sql",
+  },
+  {
+    sequence: 90,
+    name: "memory_checkup",
+    changeSet: "memory-checkup",
+    phase: "expand" as const,
+    file: "0090_memory_checkup.sql",
+  },
+  {
+    sequence: 91,
+    name: "decision_prereviews",
+    changeSet: "decision-prereviews",
+    phase: "expand" as const,
+    file: "0091_decision_prereviews.sql",
+  },
+  {
+    sequence: 92,
     name: "real_eval",
     changeSet: "real-eval",
     phase: "expand" as const,
-    file: "0088_real_eval.sql",
+    file: "0092_real_eval.sql",
   },
 ] as const;
 

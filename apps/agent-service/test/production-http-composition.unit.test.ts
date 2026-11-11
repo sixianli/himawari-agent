@@ -31,7 +31,13 @@ import {
   type ProductionHttpCompositionSecretSources,
   ProductionThreadGatewayAccessPolicy,
 } from "../src/production-http-composition.js";
+import {
+  MCP_READ_PATH,
+  ProductionMcpRead,
+  type ProductionMcpReadOptions,
+} from "../src/production-mcp-read.js";
 import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
+import { createMcpAccess } from "./fixtures/mcp-access.js";
 
 const ORIGIN = "https://agent.example.test";
 const ISSUER = "https://team.cloudflareaccess.com";
@@ -308,6 +314,17 @@ describe("production HTTP composition", () => {
         },
       });
       expect(bootstrap.statusCode).toBe(201);
+      const mcpRead = await composition.app.inject({
+        method: "POST",
+        url: MCP_READ_PATH,
+        headers: {
+          host: "agent.example.test",
+          authorization: ["Bearer", "m".repeat(40)].join(" "),
+          "content-type": "application/json",
+        },
+        payload: { jsonrpc: "2.0", id: 1, method: "tools/list" },
+      });
+      expect(mcpRead.statusCode).toBe(404);
 
       const session = await composition.app.inject({
         method: "POST",
@@ -834,6 +851,90 @@ describe("production HTTP composition", () => {
         },
       });
       expect(revokedSession.statusCode).toBe(401);
+    } finally {
+      await composition.close();
+      await repository.close();
+    }
+  });
+
+  it("[P5-3] serves the MCP read entry through the real composition only with a Cloudflare Access assertion", async () => {
+    const paths = await fixture();
+    const config = configuration(paths);
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: paths.stateRoot,
+      databasePath: paths.databasePath,
+      minimumFreeBytes: 0,
+      now: () => NOW.toISOString(),
+    });
+    const access = await createMcpAccess(() => new Date(NOW));
+    const recorded: string[] = [];
+    const scope = {
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+    } as unknown as ProductionMcpReadOptions["scope"];
+    const owners = repository.ownerIdentityState();
+    await owners.bindFirstOwner({
+      ownerId: scope.ownerId,
+      externalSubjectRef: await access.ownerSubjectRef(),
+      boundAt: NOW.toISOString(),
+    });
+    const mcpRead = new ProductionMcpRead({
+      scope,
+      clock: { now: () => NOW.toISOString() },
+      access: access.verifier,
+      owners,
+      timeZone: "Asia/Tokyo",
+      requestTimeoutMs: 5_000,
+      sources: {
+        recall: async () => ({ output: {}, contentClassification: "public", memoryIds: [] }),
+        embedOutsideRun: (_context, operation) => operation(),
+        reminders: async () => ({ reminders: [], more: false }),
+        settings: () => repository.proactive().readSettings(scope),
+      },
+      ledger: {
+        append: async (write) => {
+          recorded.push(write.reasonCode);
+        },
+      },
+      onFailure: () => undefined,
+      onSummariesFailed: () => undefined,
+    });
+    const composition = await createProductionHttpComposition({
+      configuration: config,
+      repository,
+      authority: () => authority(config),
+      secretSources: secretSources(),
+      jwksFetcher: { fetch: async () => ({ keys: [] }) },
+      identityFetcher: { fetch: async () => ({}) },
+      now: () => new Date(NOW),
+      mcpRead,
+    });
+    try {
+      const call = (assertion?: string) =>
+        composition.app.inject({
+          method: "POST",
+          url: MCP_READ_PATH,
+          headers: {
+            host: "agent.example.test",
+            accept: "application/json, text/event-stream",
+            "content-type": "application/json",
+            "mcp-protocol-version": "2025-06-18",
+            ...(assertion ? { "cf-access-jwt-assertion": assertion } : {}),
+          },
+          payload: {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "today_context", arguments: {} },
+          },
+        });
+      const denied = await call();
+      expect(denied.statusCode).toBe(401);
+      expect(recorded).toEqual([]);
+      const served = await call(await access.sign());
+      expect(served.statusCode).toBe(200);
+      expect(served.body).toContain("2026");
+      expect(recorded).toEqual(["today_context"]);
     } finally {
       await composition.close();
       await repository.close();

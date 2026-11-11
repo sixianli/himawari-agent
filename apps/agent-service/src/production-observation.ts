@@ -16,6 +16,7 @@ import {
   PORT_ERROR_CODES,
   type ProactiveSchedule,
   type ProactiveSealPort,
+  parseRuleRef,
   summarizeObservation,
 } from "@himawari-agent/application";
 import {
@@ -32,6 +33,13 @@ import {
   summarizeImplicit,
   summarizeMuse,
 } from "@himawari-agent/calibration";
+import {
+  DEFAULT_PREREVIEW_AGREEMENT_PERMILLE,
+  DEFAULT_PREREVIEW_AUDIT_PERMILLE,
+  DEFAULT_PREREVIEW_CONFIDENCE_PERMILLE,
+  minimumPairsToPass,
+  summarizePrereviewWeek,
+} from "@himawari-agent/calibration/prereview";
 import {
   type GatewayV2Command,
   type GatewayV2Query,
@@ -79,6 +87,13 @@ export interface ProductionObservationOptions {
   readonly serviceRevision: string;
   readonly tickMs?: number;
   readonly onFailure?: (error: unknown) => void;
+  readonly prereview?: {
+    readonly version?: { readonly modelRef: string; readonly promptId: string };
+    readonly agreementPermille: number;
+    readonly confidencePermille: number;
+    readonly reductionEnabled: boolean;
+    readonly auditPermille: number;
+  };
 }
 
 function invalid(reason: string): never {
@@ -217,6 +232,17 @@ export class ProductionObservation {
     );
     const gap = summarizeGap(rows.entries, new Map(rows.mailJudgments), DEFAULT_MINIMUM_SAMPLES);
     const implicit = summarizeImplicit(rows.decisions, rows.signals, DEFAULT_MINIMUM_SAMPLES);
+    const prereviewSettings = this.#options.prereview ?? {
+      agreementPermille: DEFAULT_PREREVIEW_AGREEMENT_PERMILLE,
+      confidencePermille: DEFAULT_PREREVIEW_CONFIDENCE_PERMILLE,
+      reductionEnabled: false,
+      auditPermille: DEFAULT_PREREVIEW_AUDIT_PERMILLE,
+    };
+    const prereview = summarizePrereviewWeek(
+      rows.prereviews,
+      prereviewSettings,
+      this.#options.prereview?.version,
+    );
     const summary = start
       ? summarizeObservation({ start, checks: await observation.listChecks(scope), now })
       : null;
@@ -299,6 +325,27 @@ export class ProductionObservation {
               rate: complete ? item.rate : null,
             })),
           },
+          prereview: {
+            agreementPermille: prereviewSettings.agreementPermille,
+            confidencePermille: prereviewSettings.confidencePermille,
+            reductionEnabled: prereviewSettings.reductionEnabled,
+            auditPermille: prereviewSettings.auditPermille,
+            minimumPairs: minimumPairsToPass(prereviewSettings.agreementPermille),
+            otherVersions: prereview.otherVersions,
+            groups: prereview.groups.map((group) => ({
+              group: group.group,
+              prereviewed: group.prereviewed,
+              unsure: group.unsure,
+              paired: group.paired,
+              agreement: complete ? group.agreement : null,
+              kappa: complete ? group.kappa : null,
+              balancedAccuracy: complete ? group.balancedAccuracy : null,
+              ownerUseful: complete ? group.ownerUseful : null,
+              hidden: complete ? group.hidden : null,
+              confusion: group.confusion.map((cell) => ({ ...cell })),
+              gate: complete ? { ...group.gate } : null,
+            })),
+          },
         },
         generatedAt: now,
       },
@@ -319,18 +366,18 @@ export class ProductionObservation {
       : undefined;
     const fields: ReadonlySet<string> = new Set(found?.inputFields ?? []);
     const inputs = found?.entry.inputs;
+    const mailValues = (map: Readonly<Record<string, readonly string[]>> | undefined) =>
+      map && Object.hasOwn(map, messageId) && Array.isArray(map[messageId]) ? map[messageId] : [];
+    const tidy = (values: readonly string[]) =>
+      [...new Set(values.map(displayRuleId).filter((id) => id.trim().length > 0))].sort();
     const forMail = (field: "floorHits" | "memoryByMail" | "relatedByMail") =>
-      inputs && fields.has(field)
-        ? [
-            ...new Set(
-              (Object.hasOwn(inputs[field], messageId) && Array.isArray(inputs[field][messageId])
-                ? inputs[field][messageId]
-                : []
-              )
-                .map(displayRuleId)
-                .filter((id) => id.trim().length > 0),
-            ),
-          ].sort()
+      inputs && fields.has(field) ? tidy(mailValues(inputs[field])) : null;
+    const rulesForMail =
+      inputs && (fields.has("floorHits") || fields.has("ruleHits"))
+        ? tidy([
+            ...mailValues(inputs.floorHits),
+            ...mailValues(inputs.ruleHits).map((ref) => parseRuleRef(ref).ruleId),
+          ])
         : null;
     const related = forMail("relatedByMail");
     const open = async (ref: string | null, limit: number) => {
@@ -387,7 +434,7 @@ export class ProductionObservation {
               processedAt: processed.processedAt,
               rating: processed.ownerRating,
               decidedAt: found?.entry.decidedAt ?? null,
-              ruleIds: forMail("floorHits"),
+              ruleIds: rulesForMail,
               memoryIds: forMail("memoryByMail"),
               relatedMessages: related === null ? null : related.length,
             }

@@ -3,8 +3,10 @@ import {
   ApplicationPortError,
   type ClockPort,
   type DailyReview,
+  type DataClassification,
   type DecisionLedgerPort,
   type IdGeneratorPort,
+  type MemoryCheckupService,
   PORT_ERROR_CODES,
   type ProactiveConfiguration,
   type ProactiveDecision,
@@ -14,14 +16,23 @@ import {
   type ProactiveModelInvoker,
   type ProactiveOverview,
   type ProactiveRating,
+  type ProactiveRecentSummaries,
   type ProactiveScope,
   type ProactiveSealPort,
   type ProactiveSourceReader,
+  type OwnerRuleStorePort,
+  OwnerRuleReplay,
+  type OwnerRuleReplayResult,
+  type RuleRecord,
   type ProactiveStorePort,
   parseReviewKey,
   type DailyReviewMemoryText,
+  listDailyReviewSubjects,
+  type PrereviewRunResult,
   readDailyReview,
   readProactiveOverview,
+  ReviewPrereviewService,
+  type ReviewPrereviewStorePort,
   type WebPushFeedback,
 } from "@himawari-agent/application";
 import type {
@@ -40,6 +51,7 @@ export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
   "proactive.audit.respond",
   "proactive.review.read",
   "proactive.review.rate",
+  "proactive.review.checkup",
   "proactive.source.manage",
   "proactive.backoff.restore",
 ] as const);
@@ -47,6 +59,7 @@ export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
 export const PROACTIVE_GOOGLE_START_PATH = "/api/proactive/v1/google/start";
 export const PROACTIVE_GOOGLE_CALLBACK_PATH = "/api/proactive/v1/google/callback";
 export const PROACTIVE_MAX_OUTPUT_TOKENS = 4096;
+export const PREREVIEW_MAX_OUTPUT_TOKENS = 1024;
 
 const STATE_TTL_MS = 10 * 60_000;
 const MAX_PENDING_STATES = 20;
@@ -72,7 +85,12 @@ export function proactiveCostEstimator(
 }
 
 function clean(text: string, limit: number): string {
-  return [...text.replace(/\p{Cc}+/gu, " ").trim()].slice(0, limit).join("");
+  let clipped = "";
+  for (const character of text.replace(/\p{Cc}+/gu, " ").trim()) {
+    if (clipped.length + character.length > limit) break;
+    clipped += character;
+  }
+  return clipped;
 }
 
 function normalizeSender(sender: string): string {
@@ -129,15 +147,26 @@ export interface ProductionProactiveOptions {
   readonly configuration: ProactiveConfiguration;
   readonly timeZone: string;
   readonly store: ProactiveStorePort;
+  readonly ownerRules?: Pick<OwnerRuleStorePort, "list">;
   readonly seal: ProactiveSealPort;
   readonly oauth: GoogleOAuth;
   readonly reader: ProactiveSourceReader;
   readonly readAccount: (accessToken: string) => Promise<string>;
   readonly model: ProactiveModelInvoker;
   readonly memory?: ProactiveMemoryRecall;
+  readonly recentSummaries?: ProactiveRecentSummaries;
   readonly ledger: Pick<DecisionLedgerPort, "listReviewPool" | "rateMany">;
   readonly readMemoryText: (ref: string) => Promise<string | undefined>;
   readonly readMemory?: (memoryId: string) => Promise<DailyReviewMemoryText | undefined>;
+  readonly readMemoryClassification?: (ref: string) => Promise<DataClassification | undefined>;
+  readonly prereview?: {
+    readonly store: ReviewPrereviewStorePort;
+    readonly model: ProactiveModelInvoker;
+    readonly digest: (text: string) => string;
+    readonly estimateCostMicros: (prompt: string) => number;
+  };
+  readonly onPrereview?: (result: PrereviewRunResult) => void;
+  readonly checkup?: Pick<MemoryCheckupService, "week" | "act" | "undo">;
   readonly estimateCostMicros: (prompt: string) => number;
   readonly feedback: (sentFrom: string) => Promise<readonly WebPushFeedback[]>;
   readonly clock: ClockPort;
@@ -152,6 +181,7 @@ export type ProactiveAuthorizationOutcome = "connected" | "denied" | "failed";
 export class ProductionProactive {
   readonly #options: ProductionProactiveOptions;
   readonly #service: ProactiveMailCheckService;
+  readonly #prereview: ReviewPrereviewService | undefined;
   readonly #states = new Map<string, { readonly owner: string; readonly expiresAt: number }>();
   #timer: ReturnType<typeof setInterval> | undefined;
   #running: Promise<void> | undefined;
@@ -165,6 +195,8 @@ export class ProductionProactive {
       reader: options.reader,
       model: options.model,
       ...(options.memory ? { memory: options.memory } : {}),
+      ...(options.ownerRules ? { ownerRuleStore: options.ownerRules } : {}),
+      ...(options.recentSummaries ? { recentSummaries: options.recentSummaries } : {}),
       limits: {
         perCheckMs: options.configuration.perCheckMs,
         dailyCostMicros: options.configuration.dailyCostMicros,
@@ -184,9 +216,41 @@ export class ProductionProactive {
         requestsPerCheck: options.configuration.relatedRequestsPerCheck,
         charactersPerRelated: options.configuration.relatedCharactersPerRelatedMail,
         charactersPerMail: options.configuration.relatedCharactersPerMail,
+        wholeThreadPerMail: options.configuration.wholeThreadMailsPerMail,
+        wholeThreadCharactersPerMail: options.configuration.wholeThreadCharactersPerMail,
       },
       ...(options.onMasked ? { onMasked: options.onMasked } : {}),
     });
+    const prereview = options.prereview;
+    this.#prereview = prereview
+      ? new ReviewPrereviewService({
+          scope: options.scope,
+          store: prereview.store,
+          model: prereview.model,
+          settings: options.configuration.reviewPrereview,
+          timeZone: options.timeZone,
+          clock: options.clock,
+          digest: prereview.digest,
+          estimateCostMicros: prereview.estimateCostMicros,
+          subjects: async () => listDailyReviewSubjects(await this.#reviewSources()),
+        })
+      : undefined;
+  }
+
+  async #reviewSources() {
+    const options = this.#options;
+    return {
+      scope: options.scope,
+      ledger: options.ledger,
+      overview: await this.overview(),
+      readMemoryText: options.readMemoryText,
+      ...(options.readMemory ? { readMemory: options.readMemory } : {}),
+      ...(options.readMemoryClassification
+        ? { readMemoryClassification: options.readMemoryClassification }
+        : {}),
+      timeZone: options.timeZone,
+      now: options.clock.now(),
+    };
   }
 
   start(): void {
@@ -209,10 +273,37 @@ export class ProductionProactive {
         if (decision) this.#options.onDecision?.(decision);
       })
       .catch(this.#options.onFailure)
+      .then(async () => {
+        await this.prereview();
+      })
       .finally(() => {
         this.#running = undefined;
       });
     return this.#running;
+  }
+
+  async prereview(): Promise<PrereviewRunResult | undefined> {
+    if (!this.#prereview) return undefined;
+    try {
+      const result = await this.#prereview.run();
+      this.#options.onPrereview?.(result);
+      return result;
+    } catch (error) {
+      this.#options.onFailure(error);
+      return undefined;
+    }
+  }
+
+  async replayRule(rule: RuleRecord): Promise<OwnerRuleReplayResult> {
+    return new OwnerRuleReplay({
+      scope: this.#options.scope,
+      store: this.#options.store,
+      seal: this.#options.seal,
+      readModelInput: (ref) => this.#options.model.readOutput(ref),
+      clock: this.#options.clock,
+      days: this.#options.configuration.ruleReplayDays,
+      mailsPerOutcome: this.#options.configuration.ruleReplayMailsPerOutcome,
+    }).replay(rule);
   }
 
   async readDecisionModelIo(
@@ -305,18 +396,34 @@ export class ProductionProactive {
     });
   }
 
-  async review(): Promise<DailyReview> {
+  async review(options: { readonly strict?: boolean } = {}): Promise<DailyReview> {
+    const week = this.#options.checkup?.week();
+    const checkup = !week
+      ? []
+      : options.strict
+        ? await week
+        : await week.catch((error: unknown) => {
+            this.#options.onFailure(error);
+            return [];
+          });
+    const prereview = this.#prereview;
     return readDailyReview({
-      scope: this.#options.scope,
-      ledger: this.#options.ledger,
-      overview: await this.overview(),
-      readMemoryText: this.#options.readMemoryText,
-      ...(this.#options.readMemory ? { readMemory: this.#options.readMemory } : {}),
-      timeZone: this.#options.timeZone,
-      now: this.#options.clock.now(),
+      ...(await this.#reviewSources()),
+      ...(prereview
+        ? {
+            hideByModel: (candidates) =>
+              options.strict
+                ? prereview.hiddenByModel(candidates)
+                : prereview.hiddenByModel(candidates).catch((error: unknown) => {
+                    this.#options.onFailure(error);
+                    return new Set<string>();
+                  }),
+          }
+        : {}),
       budgetSeconds: this.#options.configuration.reviewBudgetSeconds,
       secondsPerItem: this.#options.configuration.reviewSecondsPerItem,
       silentShare: this.#options.configuration.reviewSilentSharePermille,
+      checkup,
     });
   }
 
@@ -326,6 +433,9 @@ export class ProductionProactive {
       const item = (entry: DailyReview["items"][number]) => ({
         ...entry,
         text: clean(entry.text, 200),
+        checkup: entry.checkup
+          ? { ...entry.checkup, relatedText: clean(entry.checkup.relatedText, 200) }
+          : null,
       });
       return {
         ...query,
@@ -337,8 +447,10 @@ export class ProductionProactive {
           capacity: review.capacity,
           sampled: review.sampled,
           notSampled: review.notSampled,
+          hiddenByModel: review.hiddenByModel,
           items: review.items.map(item),
           folded: { total: review.folded.total, items: review.folded.items.map(item) },
+          memoryUnusedDays: this.#options.configuration.reviewMemoryUnusedDays,
           generatedAt: this.#options.clock.now(),
         },
       };
@@ -493,7 +605,11 @@ export class ProductionProactive {
         const mailRatings: { messageId: string; rating: ProactiveRating | null }[] = [];
         for (const { key, rating } of command.payload.ratings) {
           const parsed = parseReviewKey(key);
-          if (!parsed || (parsed.source === "mail" && rating === "unneeded"))
+          if (
+            !parsed ||
+            parsed.source === "checkup" ||
+            (parsed.source === "mail" && rating === "unneeded")
+          )
             throw new ApplicationPortError(
               PORT_ERROR_CODES.INVALID_OPERATION,
               "PROACTIVE_REVIEW_KEY_INVALID",
@@ -524,6 +640,33 @@ export class ProductionProactive {
           resultRef: `proactive-review-rated:${ledgerRatings.length + mailRatings.length}`,
           replayed: false,
         };
+      }
+      case "proactive.review.checkup": {
+        const checkup = this.#options.checkup;
+        if (!checkup) throw new Error("PROACTIVE_OPERATION_NOT_INSTALLED");
+        const { key, action, keep } = command.payload;
+        const parsed = parseReviewKey(key);
+        if (parsed?.source !== "checkup")
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "PROACTIVE_REVIEW_KEY_INVALID",
+          );
+        if (action === "undo") {
+          await checkup.undo(parsed.id);
+          return { resultRef: key, replayed: false };
+        }
+        const shown = (await this.review({ strict: true })).items.some((item) => item.key === key);
+        if (!shown)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "PROACTIVE_REVIEW_BUDGET_USED",
+          );
+        await checkup.act({
+          id: parsed.id,
+          action,
+          keep: keep as Parameters<MemoryCheckupService["act"]>[0]["keep"],
+        });
+        return { resultRef: key, replayed: false };
       }
       case "proactive.backoff.restore": {
         const restored = await store.restoreBackoff({

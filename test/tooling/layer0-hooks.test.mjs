@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -43,6 +43,12 @@ function fixture() {
     root,
     "scripts/check-boundaries.mjs",
     "console.error('BOUNDARY_STUB_RAN');\nprocess.exit(0);\n",
+  );
+  write(root, "scripts/check-format.mjs", "console.error('FORMAT_STUB_RAN');\nprocess.exit(0);\n");
+  write(
+    root,
+    "scripts/scan-machine-secrets.mjs",
+    "console.error('SECRETS_STUB_RAN');\nprocess.exit(0);\n",
   );
   write(root, "DELIVERY_MODE", "fast\n");
   write(
@@ -146,7 +152,94 @@ describe("Layer 0 hooks from the repository", () => {
     const pushed = tryGit(root, "push", "-q", "origin", "main");
     expect(pushed.status).toBe(0);
     expect(pushed.stderr).toContain("BOUNDARY_STUB_RAN");
+    expect(pushed.stderr).toContain("FORMAT_STUB_RAN");
+    expect(pushed.stderr).toContain("SECRETS_STUB_RAN");
   });
+
+  it("runs the same format check at push as npm run format:check", () => {
+    const scripts = JSON.parse(
+      readFileSync(path.join(repositoryRoot, "package.json"), "utf8"),
+    ).scripts;
+    expect(scripts["format:check"]).toBe("node scripts/check-format.mjs");
+    expect(scripts["check:secrets"]).toBe("node scripts/scan-machine-secrets.mjs");
+  });
+
+  const formatRoot = (entry) => {
+    const root = mkdtempSync(path.join(tmpdir(), "format-check-"));
+    roots.push(root);
+    mkdirSync(path.join(root, "scripts"));
+    cpSync(
+      path.join(repositoryRoot, "scripts/check-format.mjs"),
+      path.join(root, "scripts/check-format.mjs"),
+    );
+    if (entry) write(root, "node_modules/@biomejs/biome/bin/biome", entry);
+    return root;
+  };
+  const runFormat = (root) =>
+    spawnSync(process.execPath, [path.join(root, "scripts/check-format.mjs")], {
+      encoding: "utf8",
+    });
+
+  it("runs the installed biome on the whole repository and passes its exit code on", () => {
+    const passing = formatRoot(
+      "require('node:fs').writeFileSync('args.txt', process.argv.slice(2).join(' '));\n",
+    );
+    expect(runFormat(passing).status).toBe(0);
+    expect(readFileSync(path.join(passing, "args.txt"), "utf8")).toBe("format .");
+    const failing = formatRoot("process.exit(3);\n");
+    expect(runFormat(failing).status).toBe(3);
+  });
+
+  it("formats hand-kept eval data but not the JSON the eval scripts write", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "format-evals-"));
+    roots.push(root);
+    cpSync(path.join(repositoryRoot, "biome.json"), path.join(root, "biome.json"));
+    const loose = '{"a":[1,\n2]}\n';
+    write(root, "evals/owner-rule/result.json", loose);
+    write(root, "evals/memory-capture/partial-A-0.json", loose);
+    write(root, "evals/memory-capture/2026-11-11T02-36-25-792Z.json", loose);
+    const biome = path.join(repositoryRoot, "node_modules/@biomejs/biome/bin/biome");
+    const generated = spawnSync(process.execPath, [biome, "format", "."], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    expect(generated.status).toBe(0);
+    write(root, "evals/memory-retrieval/dataset.json", loose);
+    const kept = spawnSync(process.execPath, [biome, "format", "."], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    expect(kept.status).not.toBe(0);
+  });
+
+  it("refuses the format check when biome is not installed", () => {
+    const run = runFormat(formatRoot(null));
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("FORMAT_CHECK_UNAVAILABLE");
+  });
+
+  for (const [script, code] of [
+    ["scripts/check-format.mjs", "PUSH_FORMAT_CHECK_FAILED"],
+    ["scripts/scan-machine-secrets.mjs", "PUSH_SECRET_SCAN_FAILED"],
+  ]) {
+    it(`refuses at push when ${script} fails or is missing`, () => {
+      const failing = fixture();
+      write(failing, script, "console.error('found a problem');\nprocess.exit(1);\n");
+      git(failing, "add", "-A");
+      commitChange(failing);
+      publishBase(failing);
+      const refused = tryGit(failing, "push", "-q", "origin", "main");
+      expect(refused.status).not.toBe(0);
+      expect(refused.stderr).toContain(code);
+      const missing = fixture();
+      git(missing, "rm", "-q", "-f", script);
+      commitChange(missing);
+      publishBase(missing);
+      const absent = tryGit(missing, "push", "-q", "origin", "main");
+      expect(absent.status).not.toBe(0);
+      expect(absent.stderr).toContain(code);
+    });
+  }
 
   it("refuses at push when the boundary check script is missing", () => {
     const root = fixture();

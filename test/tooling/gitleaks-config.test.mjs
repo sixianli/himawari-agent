@@ -63,6 +63,12 @@ const REVIEW_274_PROSE = `1. ${PEM_BEGIN} is used ...\`${PADDING}${PEM_END}\n2. 
 const keyTailLine = (tail) =>
   `["[R2-T14] key tail", \`${tail}\\n\${["-----END", "PRIVATE KEY-----\\n"].join(" ")}\`],\n`;
 
+const TOKENIZER_DIGEST = [
+  "aeb13307a71acd8fe81861d94ad54ab6",
+  "89df773318809eed3cbe794b4492dae4",
+].join("");
+const TOKENIZER_DIGEST_LINE = (digest) => `            "tokenizer.json": "${digest}",\n`;
+
 const FIXTURES = {
   [REVIEW_316_RECORD]: REVIEW_316_LINE,
   [REVIEW_316_SIBLING]: REVIEW_316_LINE,
@@ -89,6 +95,9 @@ const FIXTURES = {
   "apps/agent-service/test/other-push.unit.test.ts": `const SECRET = JSON.stringify({ deviceKey: "${PUSH_DEVICE}", encryptionKey: KEY });\n`,
   [PUSH_SIBLING_TEST]: `const SECRET = JSON.stringify({ deviceKey: "${PUSH_SIBLING}", encryptionKey: KEY });\n`,
   "test/fixtures/digest-map.json": `{\n  "packages/application/src/ports/recent-authentication.ts": "${hex("digest-4")}"\n}\n`,
+  "scripts/embedding-models/build-artifact.py": TOKENIZER_DIGEST_LINE(TOKENIZER_DIGEST),
+  "scripts/embedding-models/other-artifact.py": TOKENIZER_DIGEST_LINE(TOKENIZER_DIGEST),
+  "scripts/embedding-models/build-artifact-copy.py": TOKENIZER_DIGEST_LINE(TOKENIZER_DIGEST),
 };
 
 const EXPECTED_WITH_REPOSITORY_CONFIG = [
@@ -107,6 +116,8 @@ const EXPECTED_WITH_REPOSITORY_CONFIG = [
   `${EVIDENCE}/mixed.json generic-api-key`,
   `${EVIDENCE}/token.json github-pat`,
   "test/fixtures/digest-map.json generic-api-key",
+  "scripts/embedding-models/other-artifact.py generic-api-key",
+  "scripts/embedding-models/build-artifact-copy.py generic-api-key",
 ].sort();
 
 function gitleaksOnPath(version) {
@@ -220,6 +231,7 @@ describe("gitleaks repository configuration", () => {
           ...REVIEW_ALLOWED_RECORDS.map((path) => `${path} generic-api-key`),
           `${REVIEW_274} private-key`,
           `${KEY_TAIL_TEST} generic-api-key`,
+          "scripts/embedding-models/build-artifact.py generic-api-key",
         ].sort(),
       );
   }, 120000);

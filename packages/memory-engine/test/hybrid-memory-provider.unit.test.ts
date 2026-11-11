@@ -1,17 +1,24 @@
-import type {
-  MemoryIndexDocument,
-  MemoryIndexStorePort,
-  ProductMemoryRecord,
+import {
+  type EmbeddingProfile,
+  type MemoryIndexDocument,
+  type MemoryIndexStorePort,
+  type ProductMemoryRecord,
+  QWEN3_EMBEDDING_8B_PROFILE,
 } from "@himawari-agent/application";
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import { describe, expect, it, vi } from "vitest";
-import { type Embedder, GatewayEmbedder, normalizedVector } from "../src/embedding.ts";
+import { EgressEmbedder, type Embedder, normalizedVector } from "../src/embedding.ts";
 import { HybridMemoryProvider, memoryIndexRecordId } from "../src/hybrid-memory-provider.ts";
 import { testModelEgress } from "./helpers/model-egress.js";
 
 const ownerId = "owner-01" as OwnerId;
 const agentId = "agent-01" as AgentId;
 const now = "2026-10-25T00:00:00.000Z";
+const FIXTURE_PROFILE: EmbeddingProfile = {
+  ...QWEN3_EMBEDDING_8B_PROFILE,
+  model: "fixture-embedding",
+  dimensions: [3],
+};
 
 function memory(overrides: Partial<ProductMemoryRecord> = {}): ProductMemoryRecord {
   return {
@@ -79,7 +86,11 @@ function embedder(fail = false): Embedder {
   return {
     model: "fixture-embedding",
     dimensions: 3,
-    embed: vi.fn(async () => {
+    embedQuery: vi.fn(async () => {
+      if (fail) throw new Error("EMBEDDING_DOWN");
+      return normalizedVector([1, 2, 2]);
+    }),
+    embedDocument: vi.fn(async () => {
       if (fail) throw new Error("EMBEDDING_DOWN");
       return normalizedVector([1, 2, 2]);
     }),
@@ -198,6 +209,84 @@ describe("hybrid Memory provider", () => {
   });
 });
 
+describe("hybrid Memory provider relevance cutoff", () => {
+  const found = (id: string, signal: number, similarity: number) => ({
+    memoryId: id as MemoryId,
+    revision: 1,
+    importancePermille: 500,
+    confidencePermille: 900,
+    updatedAt: now,
+    lastUsedAt: null,
+    signal,
+    similarity,
+    startsAt: now,
+    endsAt: null,
+    current: true,
+  });
+  function provider(
+    relevance?: ConstructorParameters<typeof HybridMemoryProvider>[0]["relevance"],
+  ) {
+    const { port } = index();
+    port.search = vi.fn(async () => ({
+      vector: [found("close", 0.62, 0.62)],
+      lexical: [found("keyword-only", 5, 0.38), found("near-floor", 1, 0.48)],
+      entity: [],
+      vectorEngine: "sqlite-vec" as const,
+    }));
+    return new HybridMemoryProvider({
+      index: port,
+      embedder: embedder(),
+      embeddableClassifications: ["public", "private"],
+      now: () => now,
+      minimumSimilarity: 0.6,
+      ...(relevance === undefined ? {} : { relevance }),
+    });
+  }
+  const ids = (hits: readonly { readonly productMemoryId: string }[]) =>
+    hits.map(({ productMemoryId }) => productMemoryId).sort();
+  const query = { ownerId, agentId, query: "我住在哪里", limit: 5 };
+
+  it("cuts only when the caller asks, using the floor of that call minus the margin", async () => {
+    expect(ids(await provider().search(query))).toEqual(["close", "keyword-only", "near-floor"]);
+    expect(ids(await provider().search({ ...query, relevanceCutoff: true }))).toEqual(["close"]);
+    expect(
+      ids(await provider().search({ ...query, relevanceCutoff: true, minimumSimilarity: 0.45 })),
+    ).toEqual(["close", "keyword-only", "near-floor"]);
+  });
+
+  it("uses the configured weights and margin", async () => {
+    expect(
+      ids(
+        await provider({ keywordWeight: 0.15, entityWeight: 0.15, cutoffMargin: 0.08 }).search({
+          ...query,
+          relevanceCutoff: true,
+        }),
+      ),
+    ).toEqual(["close", "keyword-only"]);
+  });
+
+  it("refuses negative, non-finite or out-of-range tuning", () => {
+    for (const relevance of [
+      { keywordWeight: -0.1, entityWeight: 0.15, cutoffMargin: 0.03 },
+      { keywordWeight: 0.15, entityWeight: Number.NaN, cutoffMargin: 0.03 },
+      { keywordWeight: 0.15, entityWeight: 0.15, cutoffMargin: 1 },
+    ])
+      expect(() => provider(relevance)).toThrow("MEMORY_RELEVANCE_TUNING_INVALID");
+  });
+
+  it("refuses a per-call floor outside 0 to 1 before asking for an embedding, and accepts 1 like the Gmail setting", async () => {
+    const checked = provider();
+    for (const minimumSimilarity of [Number.NaN, -0.1, 1.1])
+      await expect(
+        checked.search({ ...query, relevanceCutoff: true, minimumSimilarity }),
+      ).rejects.toThrow("MEMORY_MINIMUM_SIMILARITY_INVALID");
+    expect(checked.embedder?.embedQuery).not.toHaveBeenCalled();
+    await expect(
+      provider().search({ ...query, relevanceCutoff: true, minimumSimilarity: 1 }),
+    ).resolves.toBeDefined();
+  });
+});
+
 describe("Gateway embedder", () => {
   it("redacts sensitive values before the text leaves for the embedding provider", async () => {
     const fetch = vi.fn(
@@ -210,16 +299,19 @@ describe("Gateway embedder", () => {
           }),
         ),
     );
-    const client = new GatewayEmbedder({
+    const client = new EgressEmbedder({
       egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
-      model: "fixture-embedding",
+      profile: FIXTURE_PROFILE,
+      identity: "fixture-embedding#test",
       dimensions: 3,
       apiKey: async () => "fixture-value",
       fetch,
     });
     client.bindBoundary((_request, send) => send({ timeoutMs: 50 }), 1000);
-    await client.embed("验证码 482910，卡号 4111 1111 1111 1111，订单 20261101123456，山田太郎");
+    await client.embedDocument(
+      "验证码 482910，卡号 4111 1111 1111 1111，订单 20261101123456，山田太郎",
+    );
     const sent = JSON.parse(
       String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body),
     );
@@ -230,15 +322,16 @@ describe("Gateway embedder", () => {
 
   it("refuses to call the provider before a governed boundary is bound", async () => {
     const fetch = vi.fn();
-    const client = new GatewayEmbedder({
+    const client = new EgressEmbedder({
       egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
-      model: "fixture-embedding",
+      profile: FIXTURE_PROFILE,
+      identity: "fixture-embedding#test",
       dimensions: 3,
       apiKey: async () => "fixture-value",
       fetch,
     });
-    await expect(client.embed("你好")).rejects.toThrow("EMBEDDING_BOUNDARY_REQUIRED");
+    await expect(client.embedDocument("你好")).rejects.toThrow("EMBEDDING_BOUNDARY_REQUIRED");
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -253,23 +346,29 @@ describe("Gateway embedder", () => {
           }),
         ),
     );
-    const client = new GatewayEmbedder({
+    const client = new EgressEmbedder({
       egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1/",
-      model: "fixture-embedding",
+      profile: FIXTURE_PROFILE,
+      identity: "fixture-embedding#test",
       dimensions: 3,
       apiKey: async () => "fixture-value",
       fetch,
     });
     const boundary = vi.fn((_request, send) => send({ timeoutMs: 50 }));
     client.bindBoundary(boundary, 1000);
-    expect(Array.from(await client.embed("你好"))).toEqual([
+    expect(Array.from(await client.embedDocument("你好"))).toEqual([
       expect.closeTo(0.6),
       0,
       expect.closeTo(0.8),
     ]);
     expect(boundary).toHaveBeenCalledWith(
-      { model: "fixture-embedding", input: "你好", dimensions: 3 },
+      {
+        identity: "fixture-embedding#test",
+        model: "fixture-embedding",
+        input: "你好",
+        dimensions: 3,
+      },
       expect.any(Function),
     );
     expect(fetch).toHaveBeenCalledWith(
@@ -282,10 +381,11 @@ describe("Gateway embedder", () => {
     const values = Float32Array.from([3, 0, 4]);
     const encoded = Buffer.from(values.buffer).toString("base64");
     const bodies: unknown[] = [];
-    const client = new GatewayEmbedder({
+    const client = new EgressEmbedder({
       egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
-      model: "fixture-embedding",
+      profile: FIXTURE_PROFILE,
+      identity: "fixture-embedding#test",
       dimensions: 3,
       apiKey: async () => "fixture-value",
       fetch: async (_input, init) => {
@@ -305,7 +405,7 @@ describe("Gateway embedder", () => {
       seen.push(response.data[0]?.embedding);
       return response;
     }, 1000);
-    expect(Array.from(await client.embed("你好"))).toEqual([
+    expect(Array.from(await client.embedDocument("你好"))).toEqual([
       expect.closeTo(0.6),
       0,
       expect.closeTo(0.8),
@@ -317,10 +417,11 @@ describe("Gateway embedder", () => {
   });
 
   it("rejects a base64 vector whose length does not match the dimensions", async () => {
-    const client = new GatewayEmbedder({
+    const client = new EgressEmbedder({
       egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
-      model: "fixture-embedding",
+      profile: FIXTURE_PROFILE,
+      identity: "fixture-embedding#test",
       dimensions: 3,
       apiKey: async () => "fixture-value",
       fetch: async () =>
@@ -338,27 +439,29 @@ describe("Gateway embedder", () => {
         ),
     });
     client.bindBoundary((_request, send) => send(), 1000);
-    await expect(client.embed("你好")).rejects.toThrow("EMBEDDING_VECTOR_INVALID");
+    await expect(client.embedDocument("你好")).rejects.toThrow("EMBEDDING_VECTOR_INVALID");
   });
 
   it("reports a provider HTTP failure", async () => {
-    const client = new GatewayEmbedder({
+    const client = new EgressEmbedder({
       egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
-      model: "fixture-embedding",
+      profile: FIXTURE_PROFILE,
+      identity: "fixture-embedding#test",
       dimensions: 3,
       apiKey: async () => "fixture-value",
       fetch: async () => new Response("{}", { status: 503 }),
     });
     client.bindBoundary((_request, send) => send(), 1000);
-    await expect(client.embed("你好")).rejects.toThrow("EMBEDDING_HTTP_FAILURE");
+    await expect(client.embedDocument("你好")).rejects.toThrow("EMBEDDING_HTTP_FAILURE");
   });
 
   it("keeps the gateway's refusal reason when a budget rejects the request", async () => {
-    const client = new GatewayEmbedder({
+    const client = new EgressEmbedder({
       egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
-      model: "fixture-embedding",
+      profile: FIXTURE_PROFILE,
+      identity: "fixture-embedding#test",
       dimensions: 3,
       apiKey: async () => "fixture-value",
       fetch: async () =>
@@ -373,7 +476,7 @@ describe("Gateway embedder", () => {
         ),
     });
     client.bindBoundary((_request, send) => send(), 1000);
-    await expect(client.embed("你好")).rejects.toMatchObject({
+    await expect(client.embedDocument("你好")).rejects.toMatchObject({
       message: "EMBEDDING_HTTP_FAILURE",
       details: {
         status: "402",

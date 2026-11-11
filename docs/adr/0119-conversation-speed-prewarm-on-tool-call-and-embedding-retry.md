@@ -103,6 +103,6 @@ date: "2026-10-30"
 - [ADR 0117：Magpie 经自有订阅路由模型](0117-magpie-routes-models-through-owned-subscriptions.md)
 - [事故与门槛清单](../incidents-and-gates.md)
 - [工程案例库：案例 63](../engineering-casebook.md#case-conversation-speed)
-- [Backlog BL-20261028-008：本机向量模型](../backlog/BL-20261028-008-local-memory-embedding.md)
+- [Backlog BL-20261028-008：本机向量模型](../archive/backlog/BL-20261028-008-local-memory-embedding.md)
 
 [↑ 返回阅读导航](#contents)

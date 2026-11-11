@@ -66,7 +66,17 @@ function createService(
       clock: adapters.clock,
       ids: adapters.ids,
       ...(threadSummaries ? { threadSummaries } : {}),
-      ...(ledger ? { ledger } : {}),
+      ...(ledger
+        ? {
+            ledger: {
+              append: (write: DecisionLedgerWrite) => ledger.append(write),
+              appendIfChanged: async ({ write }: { readonly write: DecisionLedgerWrite }) => {
+                await ledger.append(write);
+                return true;
+              },
+            },
+          }
+        : {}),
     }),
   };
 }

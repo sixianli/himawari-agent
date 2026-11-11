@@ -1,4 +1,5 @@
 import {
+  ApplicationPortError,
   type DataClassification,
   highestClassification,
   isModelVisible,
@@ -15,7 +16,6 @@ import {
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
 import type { Embedder } from "./embedding.js";
-import { instructedQuery } from "./embedding.js";
 import { indexableTerms, queryTerms } from "./segmentation.js";
 
 const DEFAULT_IDLE_MS = 2 * 3_600_000;
@@ -25,6 +25,26 @@ const MAXIMUM_TRANSCRIPT_CHARACTERS = 16000;
 const MAXIMUM_SUMMARY_CHARACTERS = 1200;
 const RRF_K = 60;
 const UNSUMMARIZED = "（这段对话只含敏感内容，没有做摘要）";
+
+const EPISODES_LISTED_PAST_LIMIT = 3;
+const FIRST_EMBEDDING_RETRY_MS = 3_600_000;
+const LONGEST_EMBEDDING_RETRY_MS = 24 * 3_600_000;
+const REMEMBERED_EMBEDDING_FAILURES = 10_000;
+const SUMMARY_EMBEDDING_FAILURES = new Set([
+  "EMBEDDING_LOCAL_INPUT_LENGTH",
+  "EMBEDDING_VECTOR_INVALID",
+]);
+const SUMMARY_REJECTION_STATUSES = new Set(["413", "422"]);
+
+function summaryFailure(error: unknown): "this-summary" | "maybe-this-summary" | undefined {
+  if (!(error instanceof Error)) return undefined;
+  if (SUMMARY_EMBEDDING_FAILURES.has(error.message)) return "this-summary";
+  if (!(error instanceof ApplicationPortError) || error.message !== "EMBEDDING_HTTP_FAILURE")
+    return undefined;
+  const status = error.details["status"] ?? "";
+  if (SUMMARY_REJECTION_STATUSES.has(status)) return "this-summary";
+  return status === "400" ? "maybe-this-summary" : undefined;
+}
 
 export interface EpisodeSegment {
   readonly ownerId: OwnerId;
@@ -69,8 +89,12 @@ export interface MemoryEpisodeServiceOptions {
   readonly now: () => string;
   readonly timeZone?: string;
   readonly idleMs?: number;
-  readonly queryInstruction?: string;
   readonly onEmbeddingFailure?: (error: unknown) => void;
+}
+
+export interface RecentDaySummary {
+  readonly episode: MemoryEpisode;
+  readonly text: string;
 }
 
 export function localDay(instant: string, timeZone = "UTC"): string {
@@ -104,6 +128,11 @@ export function episodeSummaryPrompt(segment: EpisodeSegment): string {
 
 export class MemoryEpisodeService {
   readonly #options: MemoryEpisodeServiceOptions;
+  readonly #embeddingRetries = new Map<
+    string,
+    { readonly notBefore: number; readonly failures: number }
+  >();
+  readonly #embeddingsInFlight = new Set<string>();
 
   constructor(options: MemoryEpisodeServiceOptions) {
     this.#options = options;
@@ -112,6 +141,8 @@ export class MemoryEpisodeService {
   async dueSegments(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
+    readonly activeWithinDays?: number;
+    readonly signal?: AbortSignal;
     readonly limit: number;
   }): Promise<readonly EpisodeSegment[]> {
     const now = this.#options.now();
@@ -121,10 +152,18 @@ export class MemoryEpisodeService {
     const watermarks = await this.#options.store.listUnsummarized({
       ownerId: input.ownerId,
       agentId: input.agentId,
+      ...(input.activeWithinDays === undefined
+        ? {}
+        : {
+            activeSince: new Date(
+              Date.parse(now) -
+                (Math.max(1, Math.floor(input.activeWithinDays)) * 24 + 1) * 3_600_000,
+            ).toISOString(),
+          }),
       limit: Math.min(100, Math.max(input.limit * 4, input.limit)),
     });
     for (const watermark of watermarks) {
-      if (segments.length >= input.limit) break;
+      if (segments.length >= input.limit || input.signal?.aborted) break;
       const messages = (
         await this.#options.threads.listMessages(
           input.ownerId,
@@ -149,7 +188,11 @@ export class MemoryEpisodeService {
         sameDay.length >= MAXIMUM_SEGMENT_MESSAGES ||
         Date.parse(now) - Date.parse(last.committedAt) >= idleMs;
       if (!closed) continue;
-      const lines: { role: "owner" | "agent"; text: string; committedAt: string }[] = [];
+      const lines: {
+        role: "owner" | "agent";
+        text: string;
+        committedAt: string;
+      }[] = [];
       const included: DataClassification[] = [];
       for (const message of sameDay) {
         if (message.role === "system" || !isModelVisible(message.dataClassification)) continue;
@@ -177,6 +220,51 @@ export class MemoryEpisodeService {
       );
     }
     return segments;
+  }
+
+  recentDays(days: number): { readonly fromDay: string; readonly toDay: string } {
+    const toDay = localDay(this.#options.now(), this.#options.timeZone);
+    const span = Math.max(1, Math.floor(days));
+    const fromDay = new Date(Date.parse(`${toDay}T00:00:00.000Z`) - (span - 1) * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    return { fromDay, toDay };
+  }
+
+  async recent(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly days: number;
+    readonly allowedClassifications: readonly DataClassification[];
+    readonly limit: number;
+  }): Promise<{ readonly summaries: readonly RecentDaySummary[]; readonly partial: boolean }> {
+    const allowed = input.allowedClassifications.filter(isModelVisible);
+    if (input.days < 1 || input.limit < 1 || allowed.length === 0)
+      return { summaries: [], partial: false };
+    const episodes = await this.#options.store.listDaySummaries({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      ...this.recentDays(input.days),
+      allowedClassifications: allowed,
+      limit: Math.min(100, input.limit * 4),
+    });
+    const summaries: RecentDaySummary[] = [];
+    let partial = false;
+    for (const episode of episodes) {
+      const text = await this.#options
+        .readText({ ownerId: input.ownerId, agentId: input.agentId, ref: episode.contentRef })
+        .catch(() => undefined);
+      if (text === undefined || text.trim().length === 0) {
+        partial = true;
+        continue;
+      }
+      if (text === UNSUMMARIZED) continue;
+      summaries.push(Object.freeze({ episode, text: text.trim() }));
+      if (summaries.length >= input.limit) break;
+    }
+    if (episodes.length >= Math.min(100, input.limit * 4) && summaries.length < input.limit)
+      partial = true;
+    return { summaries, partial };
   }
 
   async summarize(
@@ -223,11 +311,7 @@ export class MemoryEpisodeService {
         embedding = {
           model: embedder.model,
           dimensions: embedder.dimensions,
-          vector: await embedder.embed(
-            this.#options.queryInstruction === undefined
-              ? input.query
-              : instructedQuery(this.#options.queryInstruction, input.query),
-          ),
+          vector: await embedder.embedQuery(input.query),
         };
       } catch (error) {
         this.#options.onEmbeddingFailure?.(error);
@@ -276,35 +360,94 @@ export class MemoryEpisodeService {
   }): Promise<number> {
     const embedder = this.#options.embedder;
     if (!embedder || input.limit <= 0) return 0;
-    const episodes = await this.#options.store.listUnembedded({
-      ownerId: input.ownerId,
-      agentId: input.agentId,
-      model: embedder.model,
-      dimensions: embedder.dimensions,
-      limit: Math.min(100, input.limit),
-    });
+    const position = [input.ownerId, input.agentId, embedder.model, embedder.dimensions].join(
+      "\u0000",
+    );
+    const pageSize = Math.min(100, input.limit + EPISODES_LISTED_PAST_LIMIT);
+    let after: { createdAt: string; id: string } | undefined;
     let embedded = 0;
-    for (const episode of episodes) {
-      if (!isModelVisible(episode.dataClassification)) continue;
-      const text = await this.#options.readText({
+    let failure: { readonly error: unknown } | undefined;
+    const uncertain: {
+      key: string;
+      retry: { readonly notBefore: number; readonly failures: number } | undefined;
+    }[] = [];
+    pages: for (;;) {
+      const episodes = await this.#options.store.listUnembedded({
         ownerId: input.ownerId,
         agentId: input.agentId,
-        ref: episode.contentRef,
+        model: embedder.model,
+        dimensions: embedder.dimensions,
+        ...(after ? { after } : {}),
+        limit: pageSize,
       });
-      if (!text) continue;
-      await this.#options.store.attachEmbedding({
-        episodeId: episode.id,
-        embedding: {
-          model: embedder.model,
-          dimensions: embedder.dimensions,
-          vector: await (input.within ?? ((_, operation) => operation()))(episode, () =>
-            embedder.embed(`${episode.day}\n${text}`),
-          ),
-        },
-      });
-      embedded += 1;
+      for (const episode of episodes) {
+        after = { createdAt: episode.createdAt, id: episode.id };
+        if (!isModelVisible(episode.dataClassification)) continue;
+        const key = `${position}\u0000${episode.id}`;
+        const retry = this.#embeddingRetries.get(key);
+        if (this.#embeddingsInFlight.has(key)) continue;
+        const now = Date.parse(this.#options.now());
+        if (retry && retry.notBefore > now && retry.notBefore - now <= LONGEST_EMBEDDING_RETRY_MS)
+          continue;
+        this.#embeddingsInFlight.add(key);
+        try {
+          const text = await this.#options.readText({
+            ownerId: input.ownerId,
+            agentId: input.agentId,
+            ref: episode.contentRef,
+          });
+          if (!text) continue;
+          let vector: Float32Array;
+          try {
+            vector = await (input.within ?? ((_, operation) => operation()))(episode, () =>
+              embedder.embedDocument(`${episode.day}\n${text}`),
+            );
+          } catch (error) {
+            const kind = summaryFailure(error);
+            if (!kind) throw error;
+            failure ??= { error };
+            if (kind === "this-summary") this.#waitBeforeRetrying(key, retry);
+            else uncertain.push({ key, retry });
+            continue;
+          }
+          await this.#options.store.attachEmbedding({
+            episodeId: episode.id,
+            embedding: {
+              model: embedder.model,
+              dimensions: embedder.dimensions,
+              vector,
+            },
+          });
+          this.#embeddingRetries.delete(key);
+        } finally {
+          this.#embeddingsInFlight.delete(key);
+        }
+        embedded += 1;
+        if (embedded >= input.limit) break pages;
+      }
+      if (episodes.length < pageSize) break;
     }
+    if (embedded > 0) for (const { key, retry } of uncertain) this.#waitBeforeRetrying(key, retry);
+    if (failure && embedded === 0) throw failure.error;
     return embedded;
+  }
+
+  #waitBeforeRetrying(
+    key: string,
+    retry: { readonly notBefore: number; readonly failures: number } | undefined,
+  ): void {
+    const failures = (retry?.failures ?? 0) + 1;
+    this.#embeddingRetries.delete(key);
+    this.#embeddingRetries.set(key, {
+      failures,
+      notBefore:
+        Date.parse(this.#options.now()) +
+        Math.min(FIRST_EMBEDDING_RETRY_MS * 2 ** (failures - 1), LONGEST_EMBEDDING_RETRY_MS),
+    });
+    for (const oldest of this.#embeddingRetries.keys()) {
+      if (this.#embeddingRetries.size <= REMEMBERED_EMBEDDING_FAILURES) break;
+      this.#embeddingRetries.delete(oldest);
+    }
   }
 
   async #record(input: {
@@ -339,7 +482,7 @@ export class MemoryEpisodeService {
         embedding = {
           model: embedder.model,
           dimensions: embedder.dimensions,
-          vector: await embedder.embed(`${input.day}\n${input.text}`),
+          vector: await embedder.embedDocument(`${input.day}\n${input.text}`),
         };
       } catch (error) {
         this.#options.onEmbeddingFailure?.(error);

@@ -19,6 +19,7 @@ import {
   type ProductMemoryStatePort,
 } from "../ports/index.js";
 import type { AgentId, MemoryGenerationId, MemoryId, OwnerId } from "@himawari-agent/domain";
+import { dropSameSourceDuplicates } from "./same-source-dedupe.js";
 
 export interface DurableMemoryServiceOptions {
   readonly state: ProductMemoryStatePort;
@@ -29,6 +30,7 @@ export interface DurableMemoryServiceOptions {
   readonly now: () => string;
   readonly maximumProjectionAttempts?: number;
   readonly projectionLeaseMs?: number;
+  readonly dedupeSameSource?: boolean;
   readonly project?: (
     job: MemoryProjectionJob,
     memory: ProductMemoryRecord,
@@ -424,6 +426,7 @@ export class DurableMemoryService {
       ...(input.minimumSimilarity === undefined
         ? {}
         : { minimumSimilarity: input.minimumSimilarity }),
+      relevanceCutoff: true,
       ...(input.includeTentative === true ? { includeTentative: true } : {}),
     });
     const productRecords = await this.options.state.readMany({
@@ -436,7 +439,7 @@ export class DurableMemoryService {
     const allowedSources = input.policy.allowedSourceRefs
       ? new Set(input.policy.allowedSourceRefs)
       : null;
-    const selected = providerHits
+    const ranked = providerHits
       .flatMap((hit) => {
         const memory = records.get(hit.productMemoryId);
         if (
@@ -455,8 +458,22 @@ export class DurableMemoryService {
       })
       .sort(
         (left, right) => right.score - left.score || left.memory.id.localeCompare(right.memory.id),
-      )
-      .slice(0, input.policy.limit);
+      );
+    const selected =
+      this.options.dedupeSameSource !== false
+        ? (
+            await dropSameSourceDuplicates(
+              ranked.map((hit) => ({
+                ...hit,
+                id: hit.memory.id,
+                sourceRefs: hit.memory.sourceRefs,
+                contentRef: hit.memory.contentRef,
+              })),
+              input.policy.limit,
+              (contentRef) => this.options.content.readText(contentRef),
+            )
+          ).map(({ memory, providerRecordId, score }) => ({ memory, providerRecordId, score }))
+        : ranked.slice(0, input.policy.limit);
     if (input.recordUse !== false)
       await this.options.state.markUsed(
         selected.map(({ memory }) => memory.id),

@@ -1,5 +1,7 @@
 import {
   ApplicationPortError,
+  autoCommitThreshold,
+  type CaptureGates,
   type DataClassification,
   type DurableMemoryService,
   highestClassification,
@@ -30,6 +32,15 @@ import {
 } from "@himawari-agent/prompt-catalog";
 import { localDay } from "./episodes.js";
 import { indexTerms } from "./segmentation.js";
+
+export function isConsolidationUndoable(
+  change: Pick<MemoryConsolidationChange, "afterRevision" | "undoneAt">,
+  memory: Pick<ProductMemoryRecord, "revision"> | undefined,
+): boolean {
+  return (
+    change.undoneAt === null && memory !== undefined && memory.revision === change.afterRevision
+  );
+}
 
 export const MEMORY_CONSOLIDATION_POLICY_VERSION = "memory-consolidation:v1";
 const MAXIMUM_FRESH = 20;
@@ -68,6 +79,7 @@ export interface MemoryConsolidationServiceOptions {
   }) => Promise<string>;
   readonly now: () => string;
   readonly timeZone?: string;
+  readonly gates?: CaptureGates;
 }
 
 export interface MemoryConsolidationResult {
@@ -91,7 +103,7 @@ interface Group {
 
 interface Decision {
   readonly group: string;
-  readonly action: "duplicate" | "conflict" | "keep";
+  readonly action: "duplicate" | "replace" | "conflict";
   readonly keep: string | null;
   readonly drop: string | null;
 }
@@ -102,8 +114,12 @@ interface Insight {
   readonly basis: readonly string[];
 }
 
+function statedAt(memory: ProductMemoryRecord): string {
+  return memory.attributes?.validFrom ?? memory.recordedAt ?? memory.updatedAt;
+}
+
 function day(memory: ProductMemoryRecord): string {
-  return (memory.attributes?.validFrom ?? memory.recordedAt ?? memory.updatedAt).slice(0, 10);
+  return statedAt(memory).slice(0, 10);
 }
 
 export function consolidationPrompt(groups: readonly Group[], fresh: readonly Reviewed[]): string {
@@ -139,7 +155,8 @@ function parse(
     const item = raw as Record<string, unknown>;
     const group = typeof item["group"] === "string" ? groups.get(item["group"]) : undefined;
     const action = item["action"];
-    if (!group || (action !== "duplicate" && action !== "conflict")) continue;
+    if (!group || (action !== "duplicate" && action !== "replace" && action !== "conflict"))
+      continue;
     const members = new Set([group.fresh.label, ...group.neighbours.map(({ label }) => label)]);
     const keep = typeof item["keep"] === "string" ? item["keep"] : null;
     const drop = typeof item["drop"] === "string" ? item["drop"] : null;
@@ -272,7 +289,11 @@ export class MemoryConsolidationService {
         return value;
       };
       const groups = new Map<string, Group>();
-      const paired = new Set<string>();
+      const paired = new Set(
+        (await this.#options.store.listHeldPairs({ ownerId, agentId })).map((pair) =>
+          [...pair].sort().join("\n"),
+        ),
+      );
       const freshReviewed: Reviewed[] = [];
       for (const memory of fresh) {
         const current = await reviewed(memory);
@@ -347,12 +368,36 @@ export class MemoryConsolidationService {
           const drop = labels.get(decision.drop ?? "");
           if (!keep || !drop || touched.has(keep.memory.id) || touched.has(drop.memory.id))
             continue;
-          const change =
-            decision.action === "duplicate"
-              ? await this.#revise(id, "merge", drop.memory, keep.memory.id, { status: "archived" })
-              : await this.#supersede(id, drop.memory, keep.memory);
+          if (decision.action === "duplicate") {
+            const change = await this.#revise(id, "merge", drop.memory, keep.memory.id, {
+              status: "archived",
+            });
+            if (!change) continue;
+            touched.add(drop.memory.id);
+            changes.push(change);
+            continue;
+          }
+          const [older, newer] =
+            statedAt(keep.memory) < statedAt(drop.memory) ? [keep, drop] : [drop, keep];
+          if (
+            decision.action === "replace" &&
+            newer === keep &&
+            statedAt(older.memory) < statedAt(newer.memory) &&
+            newer.memory.confidencePermille >=
+              autoCommitThreshold(newer.memory.attributes?.category ?? null, this.#options.gates)
+          ) {
+            const change = await this.#supersede(id, older.memory, newer.memory);
+            if (!change) continue;
+            touched.add(older.memory.id);
+            changes.push(change);
+            continue;
+          }
+          const change = await this.#revise(id, "hold", newer.memory, older.memory.id, {
+            attributes: { tentative: true },
+          });
           if (!change) continue;
-          touched.add(drop.memory.id);
+          touched.add(newer.memory.id);
+          touched.add(older.memory.id);
           changes.push(change);
         }
         for (const [index, insight] of insights.entries()) {
@@ -396,7 +441,7 @@ export class MemoryConsolidationService {
     if (change.undoneAt !== null)
       throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Consolidation change undone");
     const memory = await this.#options.state.read(change.memoryId);
-    if (!memory || memory.revision !== change.afterRevision)
+    if (!memory || !isConsolidationUndoable(change, memory))
       throw new ApplicationPortError(
         PORT_ERROR_CODES.CONFLICT,
         "MEMORY_CHANGED_AFTER_CONSOLIDATION",
@@ -415,7 +460,9 @@ export class MemoryConsolidationService {
               validTo: change.beforeValidTo,
             },
           }
-        : { status: change.action === "reflect" ? "archived" : "active" }),
+        : change.action === "hold"
+          ? { attributes: { tentative: false } }
+          : { status: change.action === "reflect" ? "archived" : "active" }),
     });
     const undoneAt = this.#options.now();
     if (!(await this.#options.store.markUndone({ id: change.id, undoneAt })))
@@ -473,7 +520,8 @@ export class MemoryConsolidationService {
           return {
             change: recorded,
             basisMemoryIds,
-            resultMemoryIds: relatedMemoryId ? [relatedMemoryId] : [],
+            resultMemoryIds:
+              action === "hold" ? [memory.id] : relatedMemoryId ? [relatedMemoryId] : [],
           };
         },
       });
