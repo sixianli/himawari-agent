@@ -539,7 +539,7 @@ export const governanceMessages = [
         ],
       },
     ],
-    profileUsage: { used: 14, limit: 2000, queued: [] },
+    profileUsage: { used: 14, limit: 2000, pinned: 0, queued: [] },
     lastViewedAt: "2026-09-10T00:00:00.000Z",
     profile: [
       {

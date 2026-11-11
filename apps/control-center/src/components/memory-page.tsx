@@ -1293,6 +1293,15 @@ function CarryCard({
           {message(open ? "memory.page.less" : "memory.page.carry.open")}
         </ActionButton>
       </div>
+      {usage.pinned > usage.limit ? (
+        <p className="settings-note" data-testid="memory-carry-pinned-over">
+          {message("memory.page.carry.pinnedOver", {
+            pinned: usage.pinned,
+            limit: usage.limit,
+            over: usage.pinned - usage.limit,
+          })}
+        </p>
+      ) : null}
       <meter
         className="memory-carry-meter"
         min={0}
