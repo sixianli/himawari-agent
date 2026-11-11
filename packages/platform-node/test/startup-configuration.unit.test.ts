@@ -1464,8 +1464,12 @@ it("accepts Muse intake only with a boolean switch and one secret whose purpose 
   }
 });
 
-it("[P4-5] accepts a real memory eval with a private-capable model and a weekly cap of at most 0.5 USD", () => {
+it("[P4-5] accepts a real memory eval with a model that may see private and sensitive data and a weekly cap of at most 0.5 USD", () => {
   const raw = config("/tmp/himawari-real-eval-config");
+  const descriptors = raw["modelDescriptors"] as Record<string, unknown>[];
+  const primary = descriptors.find(({ ref }) => ref === "model-primary");
+  if (!primary) throw new Error("fixture model missing");
+  primary["allowedDataClassifications"] = ["public", "private", "sensitive"];
   const policy = {
     version: "1",
     systemInstruction: "test",
@@ -1497,4 +1501,11 @@ it("[P4-5] accepts a real memory eval with a private-capable model and a weekly 
     raw["runPolicy"] = { ...policy, realEval: invalid };
     expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow();
   }
+  primary["allowedDataClassifications"] = ["public", "private"];
+  raw["runPolicy"] = { ...policy, realEval };
+  expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: expect.objectContaining({ field: "configuration.runPolicy.realEval.modelRef" }),
+    }),
+  );
 });

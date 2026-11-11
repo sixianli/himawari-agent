@@ -8,6 +8,7 @@ import {
   type DurableMemoryServiceOptions,
   type MemoryPort,
   memoryDatesOf,
+  type DataClassification,
   type MemoryProjectionJob,
   type MemorySearchRequest,
   type ModelBudgetPort,
@@ -68,6 +69,7 @@ export interface RunEmbeddingContext {
 export interface MailEmbeddingContext {
   readonly deadlineAt: string;
   readonly signal: AbortSignal;
+  readonly dataClassification?: DataClassification;
   costMicros: number;
 }
 
@@ -122,7 +124,7 @@ export function createProductionRunMemory(options: {
     const classification =
       context?.dataClassification ??
       projection?.memory.dataClassification ??
-      (mail ? ("private" as const) : undefined);
+      (mail ? (mail.dataClassification ?? ("private" as const)) : undefined);
     if (!classification || (!projection && !mail && (!context?.runId || !context.executionLease)))
       throw new ApplicationPortError(
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,

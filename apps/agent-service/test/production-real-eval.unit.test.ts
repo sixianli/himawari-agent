@@ -255,6 +255,44 @@ describe("[P4-5] real eval model calls", () => {
     ).rejects.toBeInstanceOf(RealEvalModelError);
     expect(released).toEqual([["input:call-1"]]);
   });
+
+  it("refuses a completed call whose cost is missing or not a whole number", async () => {
+    for (const costMicros of [37.5, undefined, -1]) {
+      const model = createRealEvalModel({
+        modelRef: "eval-model",
+        invoker: () =>
+          invoker(
+            (invocationId) => [
+              { type: "model.output", invocationId, payloadRef: "out-1", text: "{}" },
+              { type: "model.completed", invocationId, costMicros },
+            ],
+            [],
+          ),
+        cost,
+        requestTimeoutMs: 1_000,
+        now: () => NOW,
+      });
+      await expect(
+        model.generate({
+          invocationId: "call-1",
+          prompt: "judge",
+          maxOutputTokens: 100,
+          dataClassification: "private",
+        }),
+      ).rejects.toMatchObject({ code: "COST_INVALID" });
+    }
+  });
+
+  it("estimates input by UTF-8 bytes so a token count cannot exceed it", () => {
+    const model = createRealEvalModel({
+      modelRef: "eval-model",
+      invoker: () => invoker(() => [], []),
+      cost,
+      requestTimeoutMs: 1_000,
+      now: () => NOW,
+    });
+    expect(model.estimateMicros("燕麦", 100)).toBe(6 * 1 + 200 * 2);
+  });
 });
 
 describe("[P4-5] real eval timer", () => {
@@ -294,7 +332,15 @@ describe("[P4-5] real eval timer", () => {
           run: async (trigger, limits) => {
             runs.push(trigger);
             expect(limits).toMatchObject({ capMicros: 500_000 - 120_000, sampleSize: 30 });
-            return { runId: "run-1", outcome: "completed", costMicros: 1, summary: {}, sample: [] };
+            const report = {
+              runId: "run-1",
+              outcome: "completed" as const,
+              costMicros: 1,
+              summary: {},
+              sample: [],
+            };
+            await limits.writeSample?.(report);
+            return report;
           },
         },
         sampleDirectory: path.join(directory, "real-eval"),

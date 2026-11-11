@@ -75,6 +75,20 @@ describe("embedding for the Gmail check", () => {
     expect(context.costMicros).toBeGreaterThan(0);
   });
 
+  it("[P4-5] uses the classification the caller names and refuses one the model may not see", async () => {
+    const { memory, embed } = build();
+    const context = {
+      deadlineAt: LATER,
+      signal: new AbortController().signal,
+      dataClassification: "sensitive" as const,
+      costMicros: 0,
+    };
+    await expect(memory.embedForMailCheck(context, async () => embed())).rejects.toThrow(
+      "EMBEDDING_REQUEST_OUTSIDE_POLICY",
+    );
+    expect(context.costMicros).toBe(0);
+  });
+
   it("still refuses to embed outside a run, a projection job or a Gmail check", async () => {
     const { embed } = build();
     await expect(embed()).rejects.toThrow();

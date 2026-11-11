@@ -19,6 +19,7 @@ import {
   type RealEvalRecalledMemory,
   type RealEvalRunRecord,
   type RealEvalRunReport,
+  type RealEvalSampleReport,
   type RealEvalScope,
   type RealEvalStorePort,
   type RealEvalTrigger,
@@ -27,7 +28,6 @@ import {
 import { REAL_EVAL_QUESTION } from "@himawari-agent/prompt-catalog";
 import { quoteRefOfMemory } from "./production-memory-consolidation.js";
 import type { MailEmbeddingContext } from "./production-run-memory.js";
-import { proactiveCostEstimator } from "./production-proactive.js";
 import { maskForExport } from "./production-gap-export.js";
 
 export const REAL_EVAL_TICK_MS = 60 * 60 * 1000;
@@ -103,7 +103,11 @@ export function createRealEvalModel(options: {
   return {
     modelRef: options.modelRef,
     estimateMicros: (prompt, maxOutputTokens) =>
-      proactiveCostEstimator(options.cost, maxOutputTokens * 2)(prompt),
+      Math.ceil(
+        new TextEncoder().encode(prompt).byteLength *
+          Math.max(options.cost.input, options.cost.cacheRead, options.cost.cacheWrite) +
+          maxOutputTokens * 2 * options.cost.output,
+      ),
     async generate({ invocationId, prompt, maxOutputTokens, dataClassification }) {
       const model = invokerFor(maxOutputTokens);
       const deadlineAt = new Date(
@@ -147,7 +151,11 @@ export function createRealEvalModel(options: {
             }
           }
           if (event.type === "model.completed") {
-            costMicros = Number.isSafeInteger(event.costMicros) ? Math.max(0, event.costMicros) : 0;
+            if (!Number.isSafeInteger(event.costMicros) || event.costMicros < 0) {
+              failure = "COST_INVALID";
+              break;
+            }
+            costMicros = event.costMicros;
             completed = true;
             break;
           }
@@ -174,7 +182,7 @@ export class RealEvalModelError extends Error {
 
 export async function writeRealEvalSample(
   directory: string,
-  report: RealEvalRunReport,
+  report: RealEvalSampleReport,
 ): Promise<string> {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await chmod(directory, 0o700);
@@ -251,12 +259,19 @@ export class ProductionRealEval {
     if (trigger === null) return;
     const remaining = configuration.weeklyCapMicros - realEvalSpentMicros(runs, now);
     if (remaining <= 0) return;
+    const sampleDirectory = this.#options.sampleDirectory;
     const report = await service.run(trigger, {
       capMicros: remaining,
       newMemoriesPerRun: configuration.newMemoriesPerRun,
-      sampleSize: trigger === "manual" ? REAL_EVAL_SAMPLE_SIZE : 0,
+      ...(trigger === "manual"
+        ? {
+            sampleSize: REAL_EVAL_SAMPLE_SIZE,
+            writeSample: async (sample: RealEvalSampleReport) => {
+              await writeRealEvalSample(sampleDirectory, sample);
+            },
+          }
+        : { sampleSize: 0 }),
     });
-    if (trigger === "manual") await writeRealEvalSample(this.#options.sampleDirectory, report);
     this.#options.onRun?.(report, trigger);
   }
 }
@@ -360,8 +375,8 @@ export function createProductionRealEval(deps: ProductionRealEvalDependencies): 
         ),
       };
     },
-    recall: async (question) => {
-      const context = timeout();
+    recall: async (question, dataClassification) => {
+      const context = { ...timeout(), dataClassification };
       const found = await deps.embed(context, () =>
         deps.memory.search({
           ...scope,

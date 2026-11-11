@@ -1479,11 +1479,12 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     if (
       !descriptor ||
       descriptor.role === "embedding" ||
-      !descriptor.allowedDataClassifications.includes("private")
+      !descriptor.allowedDataClassifications.includes("private") ||
+      !descriptor.allowedDataClassifications.includes("sensitive")
     )
       throw invalid(
         "configuration.runPolicy.realEval.modelRef",
-        "must name a configured generation model that accepts private data",
+        "must name a configured generation model that accepts private and sensitive data",
       );
   }
   const review = runPolicy?.automaticReview;

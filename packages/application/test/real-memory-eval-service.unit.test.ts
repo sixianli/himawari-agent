@@ -127,6 +127,7 @@ interface Harness {
   readonly store: MemoryStore;
   readonly prompts: string[];
   readonly recalls: string[];
+  readonly recallClassifications: string[];
   readonly payloads: Map<string, string>;
   readonly discarded: string[];
   memories: ProductMemoryRecord[];
@@ -153,6 +154,7 @@ function harness(options: {
     };
   const prompts: string[] = [];
   const recalls: string[] = [];
+  const recallClassifications: string[] = [];
   const discarded: string[] = [];
   const payloads = new Map<string, string>();
   let stored = 0;
@@ -192,6 +194,7 @@ function harness(options: {
     store,
     prompts,
     recalls,
+    recallClassifications,
     payloads,
     discarded,
     memories: options.memories,
@@ -219,8 +222,9 @@ function harness(options: {
       discarded.push(ref);
       payloads.delete(ref);
     },
-    recall: async (question) => {
+    recall: async (question, dataClassification) => {
       recalls.push(question);
+      recallClassifications.push(dataClassification);
       const hit = Object.entries(SOURCES).find(
         ([, source]) => (source.question as { question: unknown }).question === question,
       );
@@ -394,6 +398,26 @@ describe("[P4-5] real memory eval run", () => {
     const report = await test.service.run("weekly", { capMicros: 150, newMemoriesPerRun: 10 });
     expect(report.outcome).toBe("budget_exceeded");
     expect(test.recalls).toEqual([]);
+  });
+
+  it("records the run as failed when the owner's sample cannot be written", async () => {
+    const test = harness({ memories: [memory("coffee")] });
+    const report = await test.service.run("manual", {
+      ...LIMITS,
+      sampleSize: 30,
+      writeSample: async () => {
+        throw new Error("ENOSPC 燕麦");
+      },
+    });
+    expect(report.outcome).toBe("failed");
+    expect(test.store.runs[0]).toMatchObject({ outcome: "failed", summary: { failure: "Error" } });
+    expect(JSON.stringify(test.store.runs[0])).not.toContain("燕麦");
+  });
+
+  it("searches with the classification of the memory behind the question", async () => {
+    const test = harness({ memories: [memory("coffee", { dataClassification: "sensitive" })] });
+    await test.service.run("manual", LIMITS);
+    expect(test.recallClassifications).toEqual(["sensitive", "sensitive"]);
   });
 
   it("answers this week's new questions before the fixed panel", async () => {

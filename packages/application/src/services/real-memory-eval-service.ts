@@ -81,15 +81,24 @@ export interface RealMemoryEvalDependencies {
   }) => Promise<string>;
   readonly readQuestion: (ref: string) => Promise<string | undefined>;
   readonly discardQuestion: (ref: string) => Promise<void>;
-  readonly recall: (question: string) => Promise<RealEvalRecall>;
+  readonly recall: (
+    question: string,
+    dataClassification: DataClassification,
+  ) => Promise<RealEvalRecall>;
   readonly profile: () => Promise<RealEvalProfile>;
   readonly decisions?: () => Promise<readonly CalibrationDecisionRow[]>;
 }
+
+export type RealEvalSampleReport = Pick<
+  RealEvalRunReport,
+  "runId" | "outcome" | "costMicros" | "sample"
+>;
 
 export interface RealEvalRunLimits {
   readonly capMicros: number;
   readonly newMemoriesPerRun: number;
   readonly sampleSize?: number;
+  readonly writeSample?: (report: RealEvalSampleReport) => Promise<void>;
 }
 
 export interface RealEvalSampleItem {
@@ -295,7 +304,7 @@ export class RealMemoryEvalService {
         budget.reserve(deps.recallEstimateMicros);
         let recall: RealEvalRecall;
         try {
-          recall = await deps.recall(questionText);
+          recall = await deps.recall(questionText, memory.dataClassification);
         } catch (error) {
           budget.absorb(deps.recallEstimateMicros);
           throw error;
@@ -367,6 +376,14 @@ export class RealMemoryEvalService {
         failure = error instanceof Error ? error.name : "unknown";
       }
     }
+
+    if (limits.writeSample)
+      try {
+        await limits.writeSample({ runId, outcome, costMicros: budget.spentMicros, sample });
+      } catch (error) {
+        outcome = "failed";
+        failure = error instanceof Error ? error.name : "unknown";
+      }
 
     let decisions: readonly DecisionEvalGroup[] | null = null;
     if (deps.decisions && outcome !== "failed")
