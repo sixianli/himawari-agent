@@ -32,6 +32,7 @@ export const EXTERNAL_PROPOSAL_PENDING_CONTENT_PREFIX = "memory-content:mcp-prop
 export const EXTERNAL_PROPOSAL_POLICY_VERSION = "memory-mcp:v1";
 export const EXTERNAL_PROPOSAL_NORMALIZATION = "mcp-text:v1";
 export const EXTERNAL_PROPOSAL_TEXT_MAXIMUM = 2000;
+export const EXTERNAL_PROPOSAL_SUBJECT_MAXIMUM = 128;
 export const EXTERNAL_PROPOSAL_KEY_MAXIMUM = 200;
 export const EXTERNAL_PROPOSAL_REJECTED_TEXT_DAYS = 30;
 export const EXTERNAL_PROPOSAL_CATEGORIES = [
@@ -100,6 +101,10 @@ function sensitiveTopicFor(category: ExternalProposalCategory): SensitiveMemoryT
   return category === "health" || category === "finance" ? category : "other";
 }
 
+export function externalProposalBatchId(idempotencyKey: string): string {
+  return `batch-${createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 32)}`;
+}
+
 export function externalProposalMemoryId(proposalId: string, batchId: string | null): string {
   return batchId === null
     ? `${EXTERNAL_PROPOSAL_MEMORY_PREFIX}${proposalId}`
@@ -130,7 +135,7 @@ export interface ProductionMcpMemoryWriterOptions {
 
 export class ProductionMcpMemoryWriter {
   readonly #options: ProductionMcpMemoryWriterOptions;
-  readonly #deciding = new Map<string, Promise<void>>();
+  #queue: Promise<void> = Promise.resolve();
 
   constructor(options: ProductionMcpMemoryWriterOptions) {
     this.#options = options;
@@ -148,8 +153,14 @@ export class ProductionMcpMemoryWriter {
   async submit(
     input: ExternalProposalSubmission,
   ): Promise<{ readonly proposal: ExternalMemoryProposalRecord; readonly created: boolean }> {
+    return this.#serially(() => this.#submit(input));
+  }
+
+  async #submit(
+    input: ExternalProposalSubmission,
+  ): Promise<{ readonly proposal: ExternalMemoryProposalRecord; readonly created: boolean }> {
     const receivedAt = this.#options.clock.now();
-    await this.dropExpiredRejectedText();
+    await this.dropExpiredDiscardedText();
     const text = normalizeProposalText(input.text);
     const textSha256 = proposalTextDigest(text);
     const dataClassification = proposalClassification(text, input.category);
@@ -162,7 +173,10 @@ export class ProductionMcpMemoryWriter {
     const submitted = await this.#options.proposals.submit({
       ...scope,
       id: input.proposalId,
-      subjectRef: input.subjectRef,
+      subjectRef:
+        input.subjectRef.length >= 1 && input.subjectRef.length <= EXTERNAL_PROPOSAL_SUBJECT_MAXIMUM
+          ? input.subjectRef
+          : `sha256:${createHash("sha256").update(input.subjectRef).digest("hex")}`,
       client: input.client,
       sourceKey: input.sourceKey,
       textSha256,
@@ -173,9 +187,15 @@ export class ProductionMcpMemoryWriter {
         known?.dataClassification === "sensitive" ? "sensitive" : dataClassification,
       receivedAt,
     });
-    if (submitted.created) {
+    if (submitted.created || submitted.proposal.status === "pending") {
       await this.#appendOnce(
-        this.#ledgerWrite(submitted.proposal, null, "pending", null, Date.parse(receivedAt)),
+        this.#ledgerWrite(
+          submitted.proposal,
+          null,
+          "pending",
+          null,
+          Date.parse(submitted.proposal.receivedAt),
+        ),
       );
       for (const id of submitted.superseded) {
         const replaced = await this.#options.proposals.read({ ...scope, id });
@@ -211,20 +231,33 @@ export class ProductionMcpMemoryWriter {
     );
   }
 
-  async keep(proposalId: string, input: ExternalProposalDecisionInput): Promise<string> {
-    return this.#oneAtATime(proposalId, async () => {
+  async keep(
+    proposalId: string,
+    input: ExternalProposalDecisionInput,
+    existing?: Map<string, string>,
+  ): Promise<string> {
+    return this.#serially(async () => {
       const proposal = await this.#pending(proposalId);
       if (proposal.status === "committed" && proposal.memoryId) return proposal.memoryId;
       if (proposal.status !== "pending")
         throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "MCP_PROPOSAL_ALREADY_DECIDED");
       const text = normalizeProposalText(input.editedText ?? (await this.readText(proposal)));
-      if (text.length === 0 || [...text].length > EXTERNAL_PROPOSAL_TEXT_MAXIMUM)
+      if (text.length === 0 || text.length > EXTERNAL_PROPOSAL_TEXT_MAXIMUM)
         throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
       if (proposalHasMachineSecret(text))
         throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
+      const digests = existing ?? (await this.#activeDigests());
+      const same = digests.get(proposalTextDigest(text));
+      if (same) {
+        await this.#commit(proposal, same, input);
+        return same;
+      }
       const memoryId = externalProposalMemoryId(proposal.id, input.batchId) as MemoryId;
       const write = this.#ledgerWrite(proposal, input.batchId, "kept", memoryId, input.started);
-      if (!(await this.#options.state.read(memoryId))) {
+      const stored = await this.#options.state.read(memoryId);
+      if (stored && stored.status !== "active" && stored.status !== "archived")
+        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "MCP_PROPOSAL_MEMORY_REMOVED");
+      if (!stored) {
         const contentRef = `${EXTERNAL_PROPOSAL_CONTENT_PREFIX}${proposal.id}${
           input.batchId === null ? "" : `:${input.batchId}`
         }`;
@@ -272,42 +305,42 @@ export class ProductionMcpMemoryWriter {
         );
       }
       await this.#appendOnce(write);
-      await this.#options.proposals.decide({
-        ...this.#scope(),
-        id: proposal.id,
-        status: "committed",
-        decidedAt: this.#options.clock.now(),
-        batchId: input.batchId,
-        memoryId,
-      });
+      await this.#decideCommitted(proposal, memoryId, input);
+      digests.set(proposalTextDigest(text), memoryId);
       return memoryId;
     });
   }
 
-  async keepAsExisting(
-    proposalId: string,
+  async #commit(
+    proposal: ExternalMemoryProposalRecord,
     memoryId: string,
     input: ExternalProposalDecisionInput,
   ): Promise<void> {
-    await this.#oneAtATime(proposalId, async () => {
-      const proposal = await this.#pending(proposalId);
-      if (proposal.status !== "pending") return;
-      await this.#appendOnce(
-        this.#ledgerWrite(proposal, input.batchId, "kept", memoryId, input.started),
-      );
-      await this.#options.proposals.decide({
-        ...this.#scope(),
-        id: proposal.id,
-        status: "committed",
-        decidedAt: this.#options.clock.now(),
-        batchId: input.batchId,
-        memoryId: memoryId as MemoryId,
-      });
+    await this.#appendOnce(
+      this.#ledgerWrite(proposal, input.batchId, "kept", memoryId, input.started),
+    );
+    await this.#decideCommitted(proposal, memoryId, input);
+  }
+
+  async #decideCommitted(
+    proposal: ExternalMemoryProposalRecord,
+    memoryId: string,
+    input: ExternalProposalDecisionInput,
+  ): Promise<void> {
+    const decided = await this.#options.proposals.decide({
+      ...this.#scope(),
+      id: proposal.id,
+      status: "committed",
+      decidedAt: this.#options.clock.now(),
+      batchId: input.batchId,
+      memoryId: memoryId as MemoryId,
     });
+    if (!decided)
+      throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "MCP_PROPOSAL_ALREADY_DECIDED");
   }
 
   async decline(proposalId: string, input: ExternalProposalDecisionInput): Promise<boolean> {
-    return this.#oneAtATime(proposalId, async () => {
+    return this.#serially(async () => {
       const proposal = await this.#pending(proposalId);
       if (proposal.status === "rejected") {
         await this.#appendOnce(
@@ -332,11 +365,22 @@ export class ProductionMcpMemoryWriter {
     });
   }
 
+  async pendingSummary(limit: number): Promise<{
+    readonly items: readonly Pick<ExternalMemoryProposalRecord, "id" | "dataClassification">[];
+    readonly total: number;
+  }> {
+    const { items, total } = await this.#options.proposals.listPending({ ...this.#scope(), limit });
+    return {
+      items: items.map(({ id, dataClassification }) => ({ id, dataClassification })),
+      total,
+    };
+  }
+
   async listPending(limit: number): Promise<{
     readonly items: readonly (ExternalMemoryProposalRecord & { readonly text: string })[];
     readonly total: number;
   }> {
-    await this.dropExpiredRejectedText();
+    await this.dropExpiredDiscardedText();
     const { items, total } = await this.#options.proposals.listPending({ ...this.#scope(), limit });
     return {
       items: await Promise.all(
@@ -387,16 +431,16 @@ export class ProductionMcpMemoryWriter {
           else failed += 1;
           continue;
         }
-        const text = normalizeProposalText(item.editedText ?? (await this.readText(proposal)));
         existing ??= await this.#activeDigests();
-        const same = existing.get(proposalTextDigest(text));
-        if (same) await this.keepAsExisting(item.proposalId, same, { batchId, started });
-        else
-          await this.keep(item.proposalId, {
+        await this.keep(
+          item.proposalId,
+          {
             batchId,
             started,
             ...(item.editedText === null ? {} : { editedText: item.editedText }),
-          });
+          },
+          existing,
+        );
         decided += 1;
       } catch (error) {
         firstError ??= error;
@@ -422,8 +466,8 @@ export class ProductionMcpMemoryWriter {
     return digests;
   }
 
-  async dropExpiredRejectedText(): Promise<number> {
-    return this.#options.proposals.dropRejectedText({
+  async dropExpiredDiscardedText(): Promise<number> {
+    return this.#options.proposals.dropDiscardedText({
       ...this.#scope(),
       decidedBefore: new Date(
         Date.parse(this.#options.clock.now()) - EXTERNAL_PROPOSAL_REJECTED_TEXT_DAYS * DAY_MS,
@@ -438,19 +482,13 @@ export class ProductionMcpMemoryWriter {
     return proposal;
   }
 
-  async #oneAtATime<T>(proposalId: string, work: () => Promise<T>): Promise<T> {
-    const previous = this.#deciding.get(proposalId) ?? Promise.resolve();
-    const current = previous.then(work, work);
-    const settled = current.then(
+  async #serially<T>(work: () => Promise<T>): Promise<T> {
+    const current = this.#queue.then(work, work);
+    this.#queue = current.then(
       () => undefined,
       () => undefined,
     );
-    this.#deciding.set(proposalId, settled);
-    try {
-      return await current;
-    } finally {
-      if (this.#deciding.get(proposalId) === settled) this.#deciding.delete(proposalId);
-    }
+    return current;
   }
 
   async #appendOnce(write: DecisionLedgerWrite): Promise<void> {

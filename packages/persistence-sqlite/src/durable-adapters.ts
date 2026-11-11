@@ -1000,8 +1000,8 @@ export class SqliteDurableAdapters {
       listBatch: (input) => this.context.read("externalMemoryProposal.listBatch", input),
       listBatches: (input) => this.context.read("externalMemoryProposal.listBatches", input),
       reopenBatch: (input) => this.context.write("externalMemoryProposal.reopenBatch", input),
-      dropRejectedText: (input) =>
-        this.context.write("externalMemoryProposal.dropRejectedText", input),
+      dropDiscardedText: (input) =>
+        this.context.write("externalMemoryProposal.dropDiscardedText", input),
     });
   }
 

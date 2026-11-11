@@ -52,6 +52,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   EXTERNAL_PROPOSAL_MEMORY_PREFIX,
   EXTERNAL_PROPOSAL_TEXT_MAXIMUM,
+  externalProposalBatchId,
   normalizeProposalText,
   ProductionMcpMemoryWriter,
 } from "../../apps/agent-service/src/production-mcp-memory-writer.ts";
@@ -902,6 +903,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     await f.propose(keep, { text: COFFEE });
     const decline = await f.connect({ answer: { action: "decline" } });
     await f.propose(decline, { text: "主人讨厌下雨天" });
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    await f.propose(muse, { text: PARK, key: "muse:memory/park" });
+    await f.propose(muse, { text: `${PARK}和代代木公园`, key: "muse:memory/park" });
     const database = openQualifiedDatabase(f.databasePath);
     const rows = database
       .prepare(CALIBRATION_SQL.decisions)
@@ -925,6 +929,16 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(kept).toBeDefined();
     expect(reviewed).toContain(`ledger:${keptDecision?.id}`);
     expect(reviewed).not.toContain(`ledger:${declinedDecision?.id}`);
+    const waitingRows = (await f.ledgerRows()).filter(({ reasonCode }) =>
+      (
+        [
+          EXTERNAL_PROPOSAL_REASON_CODES.pending,
+          EXTERNAL_PROPOSAL_REASON_CODES.superseded,
+        ] as string[]
+      ).includes(reasonCode),
+    );
+    expect(waitingRows).toHaveLength(5);
+    for (const row of waitingRows) expect(reviewed).not.toContain(`ledger:${row.id}`);
   });
 
   const RULE = {
@@ -1351,6 +1365,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await found(muse, "拿铁")).not.toContain("燕麦拿铁");
     const [coffee, park, rain] = sent.parsed.results.map(({ proposalId }) => proposalId ?? "");
     const edited = "主人周末常去井之头恩赐公园散步";
+    const firstKey = `external-batch-1-${"x".repeat(111)}`;
+    const first = externalProposalBatchId(firstKey);
+    const second = externalProposalBatchId("external-batch-2");
     await web.command(
       "memory.external.respond",
       {
@@ -1360,13 +1377,13 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
           { proposalId: rain, decision: "reject", editedText: null },
         ],
       },
-      "external-batch-1",
+      firstKey,
     );
     const saved = await f.external();
     expect(saved.map(({ id }) => id).sort()).toEqual(
       [
-        `${EXTERNAL_PROPOSAL_MEMORY_PREFIX}${coffee}:external-batch-1`,
-        `${EXTERNAL_PROPOSAL_MEMORY_PREFIX}${park}:external-batch-1`,
+        `${EXTERNAL_PROPOSAL_MEMORY_PREFIX}${coffee}:${first}`,
+        `${EXTERNAL_PROPOSAL_MEMORY_PREFIX}${park}:${first}`,
       ].sort(),
     );
     expect(await Promise.all(saved.map(({ contentRef }) => f.readText(contentRef)))).toEqual(
@@ -1375,7 +1392,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const after = await web.overview();
     expect(after.externalProposals.total).toBe(0);
     expect(after.externalProposals.batches).toEqual([
-      { batchId: "external-batch-1", decidedAt: NOW, committed: 2, rejected: 1 },
+      { batchId: first, decidedAt: NOW, committed: 2, rejected: 1 },
     ]);
     expect((await f.decisions()).map(({ outcome }) => outcome).sort()).toEqual([
       "discarded",
@@ -1392,11 +1409,11 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       .command(
         "memory.external.respond",
         { items: [{ proposalId: coffee, decision: "reject", editedText: null }] },
-        "external-batch-1",
+        firstKey,
       )
       .catch(() => undefined);
     expect(await f.external()).toHaveLength(2);
-    await web.command("memory.external.undo", { batchId: "external-batch-1" }, "undo-1");
+    await web.command("memory.external.undo", { batchId: first }, "undo-1");
     expect(await f.external()).toEqual([]);
     expect((await web.overview()).externalProposals.total).toBe(3);
     await web.command(
@@ -1405,7 +1422,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       "external-batch-2",
     );
     expect((await f.external()).map(({ id }) => id)).toEqual([
-      `${EXTERNAL_PROPOSAL_MEMORY_PREFIX}${coffee}:external-batch-2`,
+      `${EXTERNAL_PROPOSAL_MEMORY_PREFIX}${coffee}:${second}`,
     ]);
     await expect(
       web.command("memory.external.undo", { batchId: "external-batch-9" }, "undo-9"),
@@ -1523,9 +1540,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       "external-batch-rain",
     );
     f.clock.advance(29 * 86_400_000);
-    expect(await f.writer.dropExpiredRejectedText()).toBe(0);
+    expect(await f.writer.dropExpiredDiscardedText()).toBe(0);
     f.clock.advance(2 * 86_400_000);
-    expect(await f.writer.dropExpiredRejectedText()).toBe(1);
+    expect(await f.writer.dropExpiredDiscardedText()).toBe(1);
     const later = await f.connect({ elicitation: false, name: "muse" });
     expect(await f.writer.read(waiting?.id ?? "")).toMatchObject({
       status: "rejected",
@@ -1533,6 +1550,109 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     });
     expect(await f.payloads.get(waiting?.contentRef ?? "")).toBeUndefined();
     expect((await f.propose(later, { text: RAIN })).text).toBe(MCP_PROPOSE_MEMORY_DECLINED.text);
+    expect(await f.payloads.get(waiting?.contentRef ?? "")).toBeUndefined();
     expect(await f.writer.reopenBatch("external-batch-rain")).toEqual([]);
+  });
+
+  it("[P5-3] drops the text of a replaced proposal after 30 days unless the same text is waiting again", async () => {
+    const f = await setup();
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    await f.propose(muse, { text: PARK, key: "muse:memory/park" });
+    const [old] = await f.pending();
+    f.clock.advance(1_000);
+    await f.propose(muse, { text: RAIN, key: "muse:memory/park" });
+    f.clock.advance(1_000);
+    await f.propose(muse, { text: COFFEE, key: "muse:memory/coffee" });
+    f.clock.advance(1_000);
+    await f.propose(muse, { text: "主人每天只喝一杯咖啡", key: "muse:memory/coffee" });
+    await f.propose(muse, { text: COFFEE });
+    const waitingCoffee = (await f.pending()).find((proposal) => proposal.sourceKey === null);
+    f.clock.advance(31 * 86_400_000);
+    expect(await f.writer.dropExpiredDiscardedText()).toBe(2);
+    expect(await f.writer.read(old?.id ?? "")).toMatchObject({
+      status: "superseded",
+      contentRef: null,
+    });
+    expect(await f.payloads.get(old?.contentRef ?? "")).toBeUndefined();
+    expect(waitingCoffee).toBeDefined();
+    expect(await f.writer.readText(waitingCoffee ?? { contentRef: null })).toBe(COFFEE);
+    expect((await f.pending()).map(({ id }) => id)).toHaveLength(3);
+  });
+
+  it("[P5-3] counts proposal text the way the memory page does, and refuses secrets in the key", async () => {
+    const f = await setup();
+    const web = control(f);
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    const wide = "😀".repeat(1001);
+    expect([...wide].length).toBeLessThan(2000);
+    expect((await f.propose(muse, { text: wide })).text).toBe(MCP_PROPOSE_MEMORY_INVALID.text);
+    expect((await f.propose(muse, { text: "😀".repeat(1000) })).text).toContain("待确认");
+    expect(
+      (await f.propose(muse, { text: PARK, key: `muse:gh${"p_"}${"x".repeat(24)}` })).text,
+    ).toBe(MCP_PROPOSE_MEMORY_SECRET.text);
+    const overview = await web.overview();
+    expect(overview.externalProposals.items.map(({ text }) => text)).toEqual(["😀".repeat(1000)]);
+    expect(overview.externalProposals.items.every(({ text }) => text.length <= 2000)).toBe(true);
+  });
+
+  it("[P5-3] raises a waiting proposal to sensitive when the same text comes back as health", async () => {
+    const f = await setup();
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    const text = "主人每晚十点吃降压药";
+    await f.propose(muse, { text, category: "other" });
+    expect((await f.pending())[0]?.dataClassification).toBe("private");
+    await f.propose(muse, { text, category: "health" });
+    const [waiting] = await f.pending();
+    expect(waiting?.dataClassification).toBe("sensitive");
+    await f.writer.respond(
+      [{ proposalId: waiting?.id ?? "", decision: "keep", editedText: null }],
+      "external-batch-health",
+    );
+    expect((await f.external()).map(({ dataClassification }) => dataClassification)).toEqual([
+      "sensitive",
+    ]);
+  });
+
+  it("[P5-3] saves one memory when two waiting proposals are edited to the same text, and the client dialog links to an existing memory too", async () => {
+    const f = await setup();
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    await f.propose(muse, { text: PARK });
+    await f.propose(muse, { text: RAIN });
+    const [park, rain] = await f.pending();
+    await f.writer.respond(
+      [
+        { proposalId: park?.id ?? "", decision: "keep", editedText: COFFEE },
+        { proposalId: rain?.id ?? "", decision: "keep", editedText: COFFEE },
+      ],
+      "external-batch-same-edit",
+    );
+    const saved = await f.external();
+    expect(saved).toHaveLength(1);
+    expect(await f.writer.read(rain?.id ?? "")).toMatchObject({
+      status: "committed",
+      memoryId: saved[0]?.id,
+    });
+    const claude = await f.connect();
+    await f.propose(claude, { text: `${COFFEE}。` });
+    await f.writer.submit({
+      proposalId: "proposal-dialog-same",
+      text: "主人每天喝燕麦拿铁",
+      category: "preference",
+      client: "claude-code",
+      subjectRef: "x".repeat(300),
+      sourceKey: null,
+    });
+    const linked = await f.writer.keep("proposal-dialog-same", {
+      batchId: null,
+      started: Date.parse(NOW),
+      editedText: COFFEE,
+    });
+    expect(linked).toBe(saved[0]?.id);
+    expect(
+      (await f.external()).filter(({ id }) => id === "memory:mcp:proposal-dialog-same"),
+    ).toEqual([]);
+    expect((await f.writer.read("proposal-dialog-same"))?.subjectRef).toMatch(
+      /^sha256:[0-9a-f]{64}$/u,
+    );
   });
 });

@@ -88,7 +88,7 @@ export interface ExternalMemoryProposalStorePort {
   reopenBatch(
     input: ExternalMemoryProposalScope & { readonly batchId: string },
   ): Promise<readonly string[]>;
-  dropRejectedText(
+  dropDiscardedText(
     input: ExternalMemoryProposalScope & { readonly decidedBefore: string },
   ): Promise<number>;
 }

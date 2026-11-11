@@ -309,7 +309,7 @@ export const MCP_TOOL_PROPOSE_MEMORIES = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tools",
   output: "free-text",
-  text: "一次向主人提议多条长期记忆（最多 50 条），适合定时把你那边新记下的内容搬给 Himawari。每条都先存进「待确认」，主人之后在 Himawari 里确认了才会保存，确认前 Himawari 不会用它们；这个工具不弹确认框。每条的 text、category、key 和 propose_memory 的意思相同。结果按顺序逐条列出：pending 是已存进待确认，already_saved 是同样的内容已经保存过，declined_before 是主人拒绝过同样的内容，invalid 是正文为空、超过 2000 字或分类不对，secret 是正文里像有密码、密钥或令牌。同样的内容只会存一条，可以放心重发。",
+  text: "一次向主人提议多条长期记忆（最多 50 条），适合定时把你那边新记下的内容搬给 Himawari。每条都先存进「待确认」，主人之后在 Himawari 里确认了才会保存，确认前 Himawari 不会用它们；这个工具不弹确认框。每条的 text、category、key 和 propose_memory 的意思相同。结果按顺序逐条列出：pending 是已存进待确认，already_saved 是同样的内容已经保存过，declined_before 是主人拒绝过同样的内容，invalid 是正文为空、超过 2000 字或分类不对，secret 是正文或 key 里像有密码、密钥或令牌。同样的内容只会存一条，可以放心重发。",
 });
 
 export const MCP_PROPOSE_MEMORY_CONFIRM = templatePrompt({
@@ -385,11 +385,11 @@ export const MCP_PROPOSE_MEMORY_PENDING = templatePrompt({
 
 export const MCP_PROPOSE_MEMORY_SECRET = fixedPrompt({
   id: "mcp.propose-memory-secret",
-  purpose: "提议的正文里像有密码、密钥或令牌时，返回给外部 agent 的文字",
+  purpose: "提议的正文或 key 里像有密码、密钥或令牌时，返回给外部 agent 的文字",
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tool-result",
   output: "free-text",
-  text: "没有保存：正文里像有密码、密钥或令牌，这类内容不能存进记忆。请去掉后再提议。",
+  text: "没有保存：正文或 key 里像有密码、密钥或令牌，这类内容不能存进记忆。请去掉后再提议。",
 });
 
 export const MCP_PROPOSE_MEMORIES_RESULT = fixedPrompt({

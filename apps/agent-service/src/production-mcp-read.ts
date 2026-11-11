@@ -766,7 +766,7 @@ export class ProductionMcpRead {
     const sourceKey = typeof key === "string" ? normalizeProposalText(key) : null;
     if (
       text.length === 0 ||
-      [...text].length > EXTERNAL_PROPOSAL_TEXT_MAXIMUM ||
+      text.length > EXTERNAL_PROPOSAL_TEXT_MAXIMUM ||
       !(EXTERNAL_PROPOSAL_CATEGORIES as readonly string[]).includes(category) ||
       (key !== undefined &&
         (sourceKey === null ||
@@ -774,7 +774,11 @@ export class ProductionMcpRead {
           [...sourceKey].length > EXTERNAL_PROPOSAL_KEY_MAXIMUM))
     )
       return "invalid";
-    if (proposalHasMachineSecret(text)) return "secret";
+    if (
+      proposalHasMachineSecret(text) ||
+      (sourceKey !== null && proposalHasMachineSecret(sourceKey))
+    )
+      return "secret";
     return { text, category, sourceKey };
   }
 

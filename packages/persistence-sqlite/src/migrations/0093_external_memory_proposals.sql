@@ -23,7 +23,7 @@ CREATE TABLE external_memory_proposals (
   superseded_by TEXT REFERENCES external_memory_proposals(id) ON DELETE SET NULL,
   CHECK ((status = 'pending') = (decided_at IS NULL)),
   CHECK (memory_id IS NULL OR status = 'committed'),
-  CHECK (content_ref IS NOT NULL OR status = 'rejected'),
+  CHECK (content_ref IS NOT NULL OR status IN ('rejected', 'superseded')),
   CHECK (superseded_by IS NULL OR status = 'superseded'),
   CHECK (batch_id IS NULL OR status IN ('committed', 'rejected'))
 ) STRICT;

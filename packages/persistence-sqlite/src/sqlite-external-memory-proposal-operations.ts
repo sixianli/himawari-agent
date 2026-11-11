@@ -88,8 +88,8 @@ export class SqliteExternalMemoryProposalOperations {
         return this.listBatches(payload as Scope & { limit: number });
       case "externalMemoryProposal.reopenBatch":
         return this.reopenBatch(payload as Scope & { batchId: string });
-      case "externalMemoryProposal.dropRejectedText":
-        return this.dropRejectedText(payload as Scope & { decidedBefore: string });
+      case "externalMemoryProposal.dropDiscardedText":
+        return this.dropDiscardedText(payload as Scope & { decidedBefore: string });
       default:
         return this.fail(
           "PORT_INVALID_OPERATION",
@@ -109,7 +109,36 @@ export class SqliteExternalMemoryProposalOperations {
             AND status <> 'superseded'`,
         )
         .get(input.ownerId, input.agentId, input.textSha256) as Row | undefined;
-      if (existing) return { proposal: record(existing), created: false, superseded: [] };
+      if (existing) {
+        const known = record(existing);
+        const contentRef = input.contentRef;
+        if (
+          contentRef !== null &&
+          known.contentRef !== contentRef &&
+          !this.contentInUse(contentRef)
+        )
+          this.database
+            .prepare("DELETE FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ?")
+            .run(contentRef, input.ownerId, input.agentId);
+        if (
+          known.status === "pending" &&
+          known.dataClassification === "private" &&
+          input.dataClassification === "sensitive"
+        ) {
+          this.database
+            .prepare(
+              `UPDATE external_memory_proposals SET classification = 'sensitive'
+              WHERE id = ? AND owner_id = ? AND agent_id = ? AND status = 'pending'`,
+            )
+            .run(known.id, input.ownerId, input.agentId);
+          return {
+            proposal: { ...known, dataClassification: "sensitive" },
+            created: false,
+            superseded: [],
+          };
+        }
+        return { proposal: known, created: false, superseded: [] };
+      }
       const replaced =
         input.sourceKey === null
           ? []
@@ -272,14 +301,22 @@ export class SqliteExternalMemoryProposalOperations {
     })();
   }
 
-  private dropRejectedText(input: Scope & { decidedBefore: string }): number {
+  private contentInUse(contentRef: string): boolean {
+    return (
+      this.database
+        .prepare("SELECT 1 FROM external_memory_proposals WHERE content_ref = ? LIMIT 1")
+        .get(contentRef) !== undefined
+    );
+  }
+
+  private dropDiscardedText(input: Scope & { decidedBefore: string }): number {
     if (!valid(input.decidedBefore))
       this.fail("PORT_INVALID_OPERATION", "External Memory proposal time is invalid");
     return this.database.transaction(() => {
       const rows = this.database
         .prepare(
           `SELECT id, content_ref AS contentRef FROM external_memory_proposals
-          WHERE owner_id = ? AND agent_id = ? AND status = 'rejected'
+          WHERE owner_id = ? AND agent_id = ? AND status IN ('rejected', 'superseded')
             AND content_ref IS NOT NULL AND decided_at < ?`,
         )
         .all(input.ownerId, input.agentId, input.decidedBefore) as {

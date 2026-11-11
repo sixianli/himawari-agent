@@ -34,7 +34,10 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
 import { type DecisionChainMemoryView, readDecisionChain } from "./production-decision-chain.js";
-import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
+import {
+  externalProposalBatchId,
+  type ProductionMcpMemoryWriter,
+} from "./production-mcp-memory-writer.js";
 import {
   createProductionAutomaticMemory,
   protectedMemoryCandidates,
@@ -197,7 +200,7 @@ export class ProductionMemoryControl {
     readonly timeZone?: string;
     readonly externalProposals?: Pick<
       ProductionMcpMemoryWriter,
-      "listPending" | "listBatches" | "listBatch" | "reopenBatch" | "respond"
+      "listPending" | "pendingSummary" | "listBatches" | "listBatch" | "reopenBatch" | "respond"
     >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
@@ -377,7 +380,11 @@ export class ProductionMemoryControl {
         limit: TIDY_UPS_SHOWN,
       })) ?? [];
     const due = await this.#dueReminders();
-    const external = await this.#externalProposals();
+    const external = (await this.options.externalProposals?.pendingSummary(
+      EXTERNAL_PROPOSALS_SHOWN,
+    )) ?? { total: 0, items: [] };
+    const externalBatches =
+      (await this.options.externalProposals?.listBatches(EXTERNAL_BATCHES_SHOWN)) ?? [];
     return JSON.stringify([
       active.map(({ id, revision }) => [id, revision, historyCount.get(id) ?? 0]),
       pending.map(({ id }) => id),
@@ -391,8 +398,8 @@ export class ProductionMemoryControl {
       imports.map(({ id, undoneAt }) => [id, undoneAt]),
       pins.map(({ memoryId, pinned, updatedAt }) => [memoryId, pinned, updatedAt]),
       external.total,
-      external.items.map(({ proposalId }) => proposalId),
-      external.batches.map(({ batchId, decidedAt }) => [batchId, decidedAt]),
+      external.items.map(({ id, dataClassification }) => [id, dataClassification]),
+      externalBatches.map(({ batchId, decidedAt }) => [batchId, decidedAt]),
     ]);
   }
 
@@ -1055,8 +1062,9 @@ export class ProductionMemoryControl {
     const writer = this.#externalWriter();
     for (const { editedText } of command.payload.items)
       if (editedText !== null) this.assertStorable(editedText);
-    await writer.respond(command.payload.items, command.idempotencyKey);
-    return { resultRef: command.idempotencyKey, replayed: false };
+    const batchId = externalProposalBatchId(command.idempotencyKey);
+    await writer.respond(command.payload.items, batchId);
+    return { resultRef: batchId, replayed: false };
   }
 
   async #externalUndo(command: Command<"memory.external.undo">) {
