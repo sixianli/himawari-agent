@@ -5,6 +5,7 @@ decision_status: accepted
 supersedes: docs/adr/0080-document-governance-in-fast-mode.md
 superseded_by: ""
 date: "2026-10-31"
+amended_by: "docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md"
 ---
 
 # ADR 0133：删除仓库里的文档自动校验，改为用技能手动运行
