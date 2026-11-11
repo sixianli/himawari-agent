@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   findSensitiveValues,
   locateMaskedValues,
+  maskSensitiveTextGroups,
   maskSensitiveTexts,
   redactForEgress,
 } from "../src/index.js";
@@ -388,5 +389,30 @@ describe("[P5-1] masking several texts that leave together", () => {
       "明天上午十点去牙医复诊",
       "周六去京都",
     ]);
+  });
+});
+
+describe("[P5-A] masking texts in ordered groups", () => {
+  const value = "Sunflower-8841";
+  const named = `家里 Wi-Fi 密码：${value}`;
+  const bare = `路由器背面贴着 ${value}`;
+
+  it("masks inside a group in any order and in later groups once named", () => {
+    expect(
+      maskSensitiveTextGroups([[bare, named]])
+        .flat()
+        .join("\n"),
+    ).not.toContain(value);
+    expect(
+      maskSensitiveTextGroups([[named], [bare]])
+        .flat()
+        .join("\n"),
+    ).not.toContain(value);
+  });
+
+  it("REVERSE: an earlier group is not changed by a value named in a later group", () => {
+    const [first] = maskSensitiveTextGroups([[bare], [named]]);
+    expect(first).toEqual([bare]);
+    expect(first).toEqual(maskSensitiveTextGroups([[bare]])[0]);
   });
 });

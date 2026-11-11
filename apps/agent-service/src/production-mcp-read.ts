@@ -1,10 +1,12 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type {
   ClockPort,
+  DataClassification,
   DecisionLedgerPort,
   DecisionLedgerWrite,
   JsonObject,
   OwnerIdentityStatePort,
+  OwnerProfileOutline,
   ProactiveSettings,
   RuleRecord,
   StoredOwnerRule,
@@ -42,11 +44,15 @@ import {
   MCP_TOOL_PROPOSE_MEMORY,
   MCP_TOOL_PROPOSE_RULE,
   MCP_TOOL_RESULT_FAILED,
+  MCP_SERVER_INSTRUCTIONS,
+  MCP_START_HERE_OMITTED,
+  MCP_START_HERE_RULES_NOTE,
   MCP_TOOL_RULE_BOOK,
+  MCP_TOOL_START_HERE,
   MCP_TOOL_TODAY_CONTEXT,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
-import { maskSensitiveTexts } from "@himawari-agent/sensitive-capture";
+import { maskSensitiveTextGroups } from "@himawari-agent/sensitive-capture";
 import {
   type AuthInfo,
   type CallToolResult,
@@ -91,7 +97,12 @@ export const MCP_READ_BODY_LIMIT = 65_536;
 const MCP_ACCESS_OWNER_NOT_BOUND = Object.freeze({ code: "MCP_ACCESS_OWNER_NOT_BOUND" });
 
 export const MCP_ACCESS_ASSERTION_HEADER = "cf-access-jwt-assertion";
-export const MCP_READ_TOOL_NAMES = ["find_memories", "today_context", "rule_book"] as const;
+export const MCP_READ_TOOL_NAMES = [
+  "start_here",
+  "find_memories",
+  "today_context",
+  "rule_book",
+] as const;
 export const MCP_WRITE_TOOL_NAMES = ["propose_memory", "propose_rule"] as const;
 export const MCP_PROPOSAL_CONFIRM_KEY = "confirm";
 export const MCP_PROPOSAL_UNSEEN_ANSWER_MS = 1_500;
@@ -101,6 +112,10 @@ const READ_ACCESS = "himawari:read";
 export const TODAY_CONTEXT_REMINDER_WINDOW_MS = 48 * 3_600_000;
 export const TODAY_CONTEXT_SUMMARY_DAYS = 2;
 export const TODAY_CONTEXT_SUMMARY_LIMIT = 8;
+export const START_HERE_RULES_CHARACTER_BUDGET = 1_200;
+export const AUTO_FIND_LIMIT = 3;
+const START_HERE_MEMORY_ID_LIMIT = 200;
+export const START_HERE_DEFAULT_CEILING: DataClassification = "private";
 const SERVER_NAME = "himawari";
 const SERVER_VERSION = "1.0.0";
 const CLIENT_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}/u;
@@ -122,6 +137,7 @@ export interface McpReadSources {
   }>;
   readonly settings: () => Promise<ProactiveSettings>;
   readonly ownerRules?: () => Promise<readonly StoredOwnerRule[]>;
+  readonly profile?: (maxClassification: DataClassification) => Promise<OwnerProfileOutline>;
   readonly summaries?: (input: { readonly days: number; readonly limit: number }) => Promise<{
     readonly summaries: readonly {
       readonly id: string;
@@ -190,6 +206,7 @@ export interface ProductionMcpReadOptions {
   readonly owners: Pick<OwnerIdentityStatePort, "readBySubject">;
   readonly write?: McpWriteAccess;
   readonly timeZone: string;
+  readonly readCeiling?: DataClassification;
   readonly requestTimeoutMs: number;
   readonly sources: McpReadSources;
   readonly ledger: Pick<DecisionLedgerPort, "append">;
@@ -245,14 +262,32 @@ function mapStrings(value: unknown, map: (text: string) => string): unknown {
 }
 
 export function maskForExternalRead(value: unknown): unknown {
-  const texts: string[] = [];
-  mapStrings(value, (text) => {
-    texts.push(text);
-    return text;
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    return maskFields([value])[0];
+  const entries = Object.entries(value as Record<string, unknown>);
+  const masked = maskFields(entries.map(([, entry]) => entry));
+  return Object.fromEntries(entries.map(([key], index) => [key, masked[index]]));
+}
+
+function maskFields(fields: readonly unknown[]): unknown[] {
+  const groups = fields.map((field) => {
+    const texts: string[] = [];
+    mapStrings(field, (text) => {
+      texts.push(text);
+      return text;
+    });
+    return texts;
   });
-  const masked = maskSensitiveTexts(texts);
-  let next = 0;
-  return mapStrings(value, () => masked[next++] ?? "");
+  const masked = maskSensitiveTextGroups(groups);
+  return fields.map((field, index) => {
+    let next = 0;
+    const group = masked[index] ?? [];
+    return mapStrings(field, () => group[next++] ?? "");
+  });
+}
+
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function localDay(instant: string, timeZone: string): string {
@@ -400,6 +435,7 @@ export class ProductionMcpRead {
     const server = new McpServer(
       { name: SERVER_NAME, version: SERVER_VERSION },
       {
+        instructions: MCP_SERVER_INSTRUCTIONS.text,
         requestState: { verify: this.#stateCodec.verify },
         inputRequired: { legacyShim: false },
       },
@@ -428,6 +464,12 @@ export class ProductionMcpRead {
           ),
       );
     register(
+      "start_here",
+      MCP_TOOL_START_HERE.text,
+      { type: "object", properties: {}, additionalProperties: false },
+      (_args, _signal, trace) => this.#startHere(trace),
+    );
+    register(
       "find_memories",
       MCP_TOOL_FIND_MEMORIES.text,
       {
@@ -437,6 +479,7 @@ export class ProductionMcpRead {
           from: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
           to: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
           limit: { type: "integer", minimum: 1, maximum: 10 },
+          auto: { type: "boolean" },
         },
         required: ["query"],
         additionalProperties: false,
@@ -834,7 +877,7 @@ export class ProductionMcpRead {
       this.#options.onFailure(error);
     }
     const summaries =
-      name === "today_context" && this.#options.sources.summaries
+      (name === "today_context" || name === "start_here") && this.#options.sources.summaries
         ? (delivered?.summaries ?? (trace.summariesTried ? SUMMARIES_FAILED : SUMMARIES_NOT_TRIED))
         : undefined;
     try {
@@ -891,6 +934,19 @@ export class ProductionMcpRead {
     signal: AbortSignal,
     trace: ReadTrace,
   ): Promise<ToolOutcome> {
+    const { auto, ...recallArgs } = args;
+    if (auto !== undefined && typeof auto !== "boolean") throw new Error("MCP_FIND_AUTO_INVALID");
+    const requested = recallArgs["limit"];
+    const forwarded: JsonObject =
+      auto === true
+        ? {
+            ...recallArgs,
+            limit:
+              typeof requested === "number"
+                ? Math.min(requested, AUTO_FIND_LIMIT)
+                : AUTO_FIND_LIMIT,
+          }
+        : recallArgs;
     const context: MailEmbeddingContext = {
       deadlineAt: new Date(
         Date.parse(this.#options.clock.now()) + this.#options.requestTimeoutMs,
@@ -899,9 +955,19 @@ export class ProductionMcpRead {
       costMicros: 0,
     };
     try {
-      const result = await this.#options.sources.recall(args, (_slot, operation) =>
+      const result = await this.#options.sources.recall(forwarded, (_slot, operation) =>
         this.#options.sources.embedOutsideRun(context, operation),
       );
+      const empty =
+        auto === true &&
+        Array.isArray(result.output["memories"]) &&
+        result.output["memories"].length === 0 &&
+        Array.isArray(result.output["conversations"]) &&
+        result.output["conversations"].length === 0;
+      if (empty) {
+        const { note: _note, tentativeNote: _tentativeNote, ...rest } = result.output;
+        return { output: rest, memoryIds: result.memoryIds };
+      }
       return { output: result.output, memoryIds: result.memoryIds };
     } finally {
       trace.costMicros = context.costMicros;
@@ -921,7 +987,10 @@ export class ProductionMcpRead {
         limit: TODAY_CONTEXT_SUMMARY_LIMIT,
       });
       if (found.partial) this.#options.onSummariesFailed(new Error(SUMMARIES_INCOMPLETE));
-      const recentDays = found.summaries.map(({ day, text }) => ({ day, text }));
+      const ordered = [...found.summaries].sort(
+        (a, b) => compareText(a.day, b.day) || compareText(a.id, b.id),
+      );
+      const recentDays = ordered.map(({ day, text }) => ({ day, text }));
       return {
         output: { recentDays, ...(found.partial ? { recentDaysComplete: false } : {}) },
         read: {
@@ -946,17 +1015,85 @@ export class ProductionMcpRead {
         today: localDay(now, this.#options.timeZone),
         timeZone: this.#options.timeZone,
         now,
-        reminders: listed.reminders.map((reminder) => ({
-          text: reminder.text,
-          dueAt: reminder.dueAt,
-          remindAt: reminder.remindAt,
-          repeat: reminder.repeat,
-        })),
+        reminders: [...listed.reminders]
+          .sort(
+            (a, b) =>
+              compareText(a.dueAt, b.dueAt) ||
+              compareText(a.remindAt ?? "", b.remindAt ?? "") ||
+              compareText(a.text, b.text) ||
+              compareText(a.memoryId, b.memoryId),
+          )
+          .map((reminder) => ({
+            text: reminder.text,
+            dueAt: reminder.dueAt,
+            remindAt: reminder.remindAt,
+            repeat: reminder.repeat,
+          })),
         ...(listed.more ? { more: true } : {}),
         ...recent.output,
       },
       memoryIds: listed.reminders.map(({ memoryId }) => memoryId),
       ...(recent.read ? { summaries: recent.read } : {}),
+    };
+  }
+
+  async #startHere(trace: ReadTrace): Promise<ToolOutcome> {
+    const ceiling = this.#options.readCeiling ?? START_HERE_DEFAULT_CEILING;
+    const outline = await this.#options.sources.profile?.(ceiling);
+    const requirements = (outline?.rules ?? []).map(({ text }) => text);
+    const sections = (outline?.sections ?? []).map(({ title, lines }) => ({
+      title,
+      items: lines.map(({ text }) => text),
+    }));
+    const omittedProfile = outline?.usage.queued.length ?? 0;
+    const versionBase = JSON.stringify([requirements, sections]);
+    const profile = {
+      version: createHash("sha256").update(versionBase).digest("hex").slice(0, 12),
+      requirements,
+      sections,
+      ...(omittedProfile > 0
+        ? { omitted: renderPrompt(MCP_START_HERE_OMITTED, { count: String(omittedProfile) }) }
+        : {}),
+    };
+    const owned = this.#options.sources.ownerRules
+      ? [...(await this.#options.sources.ownerRules())].sort((a, b) =>
+          compareText(a.ruleId, b.ruleId),
+        )
+      : [];
+    const summaries = owned.flatMap((row) => {
+      const summary = enforcedOwnerRule(row)?.summary.replace(/\s+/gu, " ").trim();
+      return summary ? [summary] : [];
+    });
+    const kept: string[] = [];
+    let remaining = START_HERE_RULES_CHARACTER_BUDGET;
+    for (const summary of summaries) {
+      const length = [...summary].length + 3;
+      if (length > remaining) break;
+      remaining -= length;
+      kept.push(summary);
+    }
+    const omittedRules = summaries.length - kept.length;
+    const rules = {
+      note: MCP_START_HERE_RULES_NOTE.text,
+      items: kept,
+      ...(omittedRules > 0
+        ? { omitted: renderPrompt(MCP_START_HERE_OMITTED, { count: String(omittedRules) }) }
+        : {}),
+    };
+    const today = await this.#todayContext(trace);
+    const memoryIds = [
+      ...new Set([
+        ...(outline?.rules ?? []).map(({ memoryId }) => memoryId as string),
+        ...(outline?.sections ?? []).flatMap(({ lines }) =>
+          lines.map(({ memoryId }) => memoryId as string),
+        ),
+        ...today.memoryIds,
+      ]),
+    ].slice(0, START_HERE_MEMORY_ID_LIMIT);
+    return {
+      output: { profile, rules, today: today.output },
+      memoryIds,
+      ...(today.summaries ? { summaries: today.summaries } : {}),
     };
   }
 

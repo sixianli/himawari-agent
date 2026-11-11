@@ -2186,6 +2186,8 @@ export async function startTenantRuntime(
       if (mcpReadConfiguration && mcpIdentity) {
         const settingsStore = repository.proactive();
         const ownerRuleStore = repository.ownerRules();
+        const profileState = repository.productMemoryState();
+        const profilePins = repository.memoryBook();
         mcpRead = new ProductionMcpRead({
           scope: {
             ownerId: configuration.ownerId,
@@ -2248,6 +2250,36 @@ export async function startTenantRuntime(
               settingsStore.readSettings({
                 ownerId: configuration.ownerId,
                 agentId: configuration.agentId,
+              }),
+            profile: (maxClassification) =>
+              new OwnerProfileService({
+                state: profileState,
+                pins: profilePins,
+                readText: async (record) => {
+                  const payload = await payloads.get(record.contentRef);
+                  if (!payload || payload.contentType !== "text/plain") return undefined;
+                  try {
+                    return new TextDecoder("utf-8", { fatal: true }).decode(
+                      await recallProtector.unprotect({
+                        ownerId: configuration.ownerId,
+                        agentId: configuration.agentId,
+                        payload,
+                      }),
+                    );
+                  } catch {
+                    return undefined;
+                  }
+                },
+                storeText: async () => undefined,
+                digest: (text) => createHash("sha256").update(text).digest("hex"),
+                ...(configuration.runPolicy?.timeZone
+                  ? { timeZone: configuration.runPolicy.timeZone }
+                  : {}),
+              }).outline({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                maxClassification,
+                now: clock.now(),
               }),
             ownerRules: () =>
               ownerRuleStore.list({

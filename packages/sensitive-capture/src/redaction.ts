@@ -568,6 +568,27 @@ export function maskSensitiveTexts(inputs: readonly string[]): string[] {
   );
 }
 
+export function maskSensitiveTextGroups(groups: readonly (readonly string[])[]): string[][] {
+  const tags = new Map<string, string>();
+  const options: EgressRedactionOptions = {
+    known: new Map<string, string>(),
+    tag: (kind, identity) => {
+      const key = `${kind}\u0000${identity}`;
+      const existing = tags.get(key);
+      if (existing !== undefined) return existing;
+      const created = sequenceTag(tags.size);
+      tags.set(key, created);
+      return created;
+    },
+  };
+  return groups.map((group) => {
+    for (const input of group) redactForEgress(input, options);
+    return group.map((input) =>
+      redactForEgress(input, options).text.replace(EGRESS_PLACEHOLDER_PATTERN, "[$1]"),
+    );
+  });
+}
+
 export class EgressRedactionError extends Error {
   readonly code = "EGRESS_REDACTION_INCOMPLETE" as const;
   constructor() {
