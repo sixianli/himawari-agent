@@ -2,6 +2,7 @@ import { type JsonValue, sha256Hex } from "./canonical.js";
 import { foldText } from "./markdown.js";
 import {
   assertRuleHistory,
+  assertRuleIdentifiers,
   checkRulesMarkdown,
   enforcedRuleCount,
   type PortableRule,
@@ -283,8 +284,6 @@ function parseLines<T>(
   return out;
 }
 
-const RULE_ID_CHARACTERS = /^[A-Za-z0-9_:-]+$/u;
-
 function unique(ids: readonly string[], what: string): Set<string> {
   const seen = new Set<string>();
   for (const id of ids) {
@@ -369,14 +368,7 @@ export function parsePortable(
     "规则",
   );
   for (const rule of rules) {
-    if (!RULE_ID_CHARACTERS.test(rule.ruleId))
-      throw new DataExportError(
-        DATA_EXPORT_ERROR_CODES.LINE_INVALID,
-        `规则编号不对：${rule.ruleId}`,
-      );
-    for (const version of [rule, ...rule.history])
-      if (version.sourceMemoryId !== null && /[\r\n〔〕]/u.test(version.sourceMemoryId))
-        broken(`规则 ${rule.ruleId} 的来源记忆编号`);
+    assertRuleIdentifiers(rule);
     assertRuleHistory(rule);
     for (const version of [rule, ...rule.history]) {
       if (version.sourceMemoryId !== null && !memoryIds.has(version.sourceMemoryId))

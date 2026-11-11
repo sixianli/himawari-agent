@@ -433,6 +433,25 @@ describe("data export: a tampered rule book is refused before anything is writte
         }),
       DATA_EXPORT_ERROR_CODES.LINE_INVALID,
     ],
+    [
+      "a rule id with characters that would break the sealed keys",
+      (files) =>
+        editRuleLine(files, "quiet_hours", (rule) => {
+          rule["ruleId"] = "quiet_hours/history/1";
+        }),
+      DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+    ],
+    [
+      "a source memory id with brackets",
+      (files) =>
+        editRuleLine(files, "owner:refund-thread", (rule) => {
+          rule["sourceMemoryId"] = "m-〔x〕";
+          const history = rule["history"] as { sourceMemoryId: unknown }[];
+          const last = history.at(-1);
+          if (last) last.sourceMemoryId = "m-〔x〕";
+        }),
+      DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
+    ],
   ];
   for (const [name, mutate, code] of cases) {
     it(`[P1-6][reverse] refuses ${name} and writes nothing`, async () => {
@@ -513,6 +532,20 @@ describe("data export: a tampered rule book is refused before anything is writte
     const target = await side("rules-reseal-number");
     await expect(importInto(target, tampered, PASSPHRASE)).rejects.toMatchObject({
       code: DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH,
+    });
+  });
+
+  it("[P1-6][reverse] a stored rule id the import would refuse stops the export", async () => {
+    const source = await side("rules-bad-id");
+    await seedMemory(source, { id: "m-only", text: "喜欢喝茶" });
+    writeRuleVersion(source, {
+      ruleId: "quiet_hours/history/1",
+      parameters: { periods: [] },
+      source: "ADR 0106；主人的设置“静默时段”",
+      at: "2026-11-01T00:00:00.000Z",
+    });
+    await expect(exportOf(source)).rejects.toMatchObject({
+      code: DATA_EXPORT_ERROR_CODES.LINE_INVALID,
     });
   });
 

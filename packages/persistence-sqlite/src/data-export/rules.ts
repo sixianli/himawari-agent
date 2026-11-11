@@ -246,7 +246,9 @@ export function checkRulesMarkdown(
   const byRule = new Map<string, string[]>();
   for (const line of listed) {
     const id = RULE_LINE.exec(line)?.[1] ?? "";
-    byRule.set(id, [...(byRule.get(id) ?? []), line]);
+    const bucket = byRule.get(id);
+    if (bucket === undefined) byRule.set(id, [line]);
+    else bucket.push(line);
   }
   for (const rule of rules) {
     const lines = byRule.get(rule.ruleId) ?? [];
@@ -260,6 +262,19 @@ export function checkRulesMarkdown(
   if (listed.length !== rules.length)
     return `${RULES_INDEX_FILE} 里有 data/rules.jsonl 之外的规则行`;
   return null;
+}
+
+const RULE_ID_CHARACTERS = /^[A-Za-z0-9_:-]+$/u;
+
+export function assertRuleIdentifiers(rule: PortableRule): void {
+  if (!RULE_ID_CHARACTERS.test(rule.ruleId))
+    throw new DataExportError(DATA_EXPORT_ERROR_CODES.LINE_INVALID, `规则编号不对：${rule.ruleId}`);
+  for (const version of [rule, ...rule.history])
+    if (version.sourceMemoryId !== null && /[\r\n〔〕]/u.test(version.sourceMemoryId))
+      throw new DataExportError(
+        DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
+        `规则 ${rule.ruleId} 的来源记忆编号不对`,
+      );
 }
 
 export function assertRuleHistory(rule: PortableRule): void {

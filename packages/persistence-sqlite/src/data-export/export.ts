@@ -4,6 +4,7 @@ import { canonicalJson, type JsonValue, jsonLines, sha256Hex } from "./canonical
 import { type MarkdownMemory, renderMemoryMarkdown } from "./markdown.js";
 import {
   assertRuleHistory,
+  assertRuleIdentifiers,
   enforcedRuleCount,
   type PortableRule,
   type PortableRuleVersion,
@@ -454,6 +455,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       ...ruleParameters(row["parameters"], ruleParametersKey(ruleId), ruleId),
       history,
     };
+    assertRuleIdentifiers(rule);
     assertRuleHistory(rule);
     return rule;
   });

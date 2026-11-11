@@ -711,7 +711,7 @@ function writeEvidence(
     `INSERT INTO decision_prereviews (id, owner_id, agent_id, decision_id, mail_source, message_id, calibration_group, category, status, rating, confidence_permille, history_conflict, failure_code, model_ref, prompt_id, text_digest, data_classification, cost_micros, duration_ms, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
-  for (const row of evidence.prereviews)
+  for (const row of evidence.prereviews ?? [])
     prereview.run(
       row["id"],
       ownerId,
