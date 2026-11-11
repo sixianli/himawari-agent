@@ -278,6 +278,15 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
         await expect(
           store.listDaySummaries({ ownerId: OWNER_ID, agentId: AGENT_ID, ...bad } as never),
         ).rejects.toThrow(/invalid/u);
+      for (const activeSince of ["2026-10-23", "yesterday", 5])
+        await expect(
+          store.listUnsummarized({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            activeSince,
+            limit: 5,
+          } as never),
+        ).rejects.toThrow(/activeSince is invalid/u);
     } finally {
       await resource.repository.close();
     }

@@ -107,6 +107,8 @@ export function episodeSummaryPrompt(segment: EpisodeSegment): string {
   ].join("\n");
 }
 
+const MAXIMUM_RECENT_ROWS = 100;
+
 export class MemoryEpisodeService {
   readonly #options: MemoryEpisodeServiceOptions;
 
@@ -117,6 +119,7 @@ export class MemoryEpisodeService {
   async dueSegments(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
+    readonly activeWithinDays?: number;
     readonly limit: number;
   }): Promise<readonly EpisodeSegment[]> {
     const now = this.#options.now();
@@ -126,6 +129,14 @@ export class MemoryEpisodeService {
     const watermarks = await this.#options.store.listUnsummarized({
       ownerId: input.ownerId,
       agentId: input.agentId,
+      ...(input.activeWithinDays === undefined
+        ? {}
+        : {
+            activeSince: new Date(
+              Date.parse(now) -
+                (Math.max(1, Math.floor(input.activeWithinDays)) * 24 + 1) * 3_600_000,
+            ).toISOString(),
+          }),
       limit: Math.min(100, Math.max(input.limit * 4, input.limit)),
     });
     for (const watermark of watermarks) {
@@ -208,7 +219,7 @@ export class MemoryEpisodeService {
       agentId: input.agentId,
       ...this.recentDays(input.days),
       allowedClassifications: allowed,
-      limit: Math.min(100, input.limit * 2),
+      limit: MAXIMUM_RECENT_ROWS,
     });
     const summaries: RecentDaySummary[] = [];
     let partial = false;
@@ -224,6 +235,7 @@ export class MemoryEpisodeService {
       summaries.push(Object.freeze({ episode, text: text.trim() }));
       if (summaries.length >= input.limit) break;
     }
+    if (episodes.length >= MAXIMUM_RECENT_ROWS && summaries.length < input.limit) partial = true;
     return { summaries, partial };
   }
 

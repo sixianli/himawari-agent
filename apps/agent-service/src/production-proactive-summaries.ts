@@ -34,7 +34,9 @@ export function createProactiveRecentSummaries(
     async catchUp({ days, limit, deadlineAt, signal, generate }) {
       if (await options.capturePaused()) return { generated: 0, costMicros: 0, failed: false };
       const { fromDay } = options.episodes.recentDays(days);
-      const segments = (await options.episodes.dueSegments({ ...scope, limit: limit * 4 }))
+      const segments = (
+        await options.episodes.dueSegments({ ...scope, activeWithinDays: days, limit: limit * 4 })
+      )
         .filter(
           ({ day, dataClassification }) => day >= fromDay && allowed.includes(dataClassification),
         )

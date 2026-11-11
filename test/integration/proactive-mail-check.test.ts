@@ -204,6 +204,7 @@ describe("proactive Gmail check acceptance", () => {
     };
     const outputs = new Map<string, string>();
     const prompts: string[] = [];
+    const deadlines: string[] = [];
     const labels: string[] = [];
     const models: ScriptedModelPort[] = [];
     let scripted = new ScriptedModelPort([descriptor], []);
@@ -318,8 +319,9 @@ describe("proactive Gmail check acceptance", () => {
           return queued.shift() ?? scripted;
         },
         modelRef: MODEL_REF,
-        async prepare({ invocationId, prompt, dataClassification }) {
+        async prepare({ invocationId, prompt, deadlineAt, dataClassification }) {
           prompts.push(prompt);
+          deadlines.push(deadlineAt);
           labels.push(dataClassification);
           const inputRef = `input-${invocationId}`;
           await writePayload(inputRef, prompt);
@@ -380,6 +382,7 @@ describe("proactive Gmail check acceptance", () => {
       service,
       overview,
       prompts,
+      deadlines,
       labels,
       invocations,
       limits,
@@ -3031,6 +3034,131 @@ describe("proactive Gmail check acceptance", () => {
       expect(
         h.query("SELECT COUNT(*) AS n FROM memory_episodes WHERE source = 'day_summary'")[0],
       ).toEqual({ n: 1 });
+    });
+
+    function chatTurn(
+      h: Harness,
+      world: World,
+      input: {
+        threadId: string;
+        sequence: number;
+        role: "owner" | "agent";
+        text: string;
+        at: string;
+      },
+    ) {
+      thread(h, input.threadId);
+      const ref = `${input.threadId}-${input.sequence}`;
+      h.exec(
+        `INSERT INTO payloads (
+          ref, owner_id, agent_id, classification, storage_kind, ciphertext, content_digest,
+          encryption_algorithm, key_ref, lifecycle_state, created_at, content_type
+        ) VALUES (?, ?, ?, 'private', 'sqlite_blob', X'00', ?, 'fixture', 'fixture-key',
+          'active', ?, 'text/plain')`,
+        ref,
+        OWNER_ID,
+        AGENT_ID,
+        `sha256:${ref}`,
+        input.at,
+      );
+      world.texts.set(ref, input.text);
+      h.exec(
+        `INSERT INTO thread_messages (
+          id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+          classification, committed_at
+        ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'private', ?)`,
+        `message-${ref}`,
+        OWNER_ID,
+        AGENT_ID,
+        input.threadId,
+        input.sequence,
+        input.role,
+        ref,
+        input.at,
+      );
+    }
+
+    it("still reaches yesterday's conversation when many old conversations were never summarized", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world) });
+      const w = world.current as World;
+      for (let index = 0; index < 15; index += 1)
+        chatTurn(h, w, {
+          threadId: `stale-${String(index).padStart(2, "0")}`,
+          sequence: 1,
+          role: "owner",
+          text: `很久以前的话 ${index}`,
+          at: `2026-10-01T0${index % 10}:00:00.000Z`,
+        });
+      chatTurn(h, w, {
+        threadId: "chat-yesterday",
+        sequence: 1,
+        role: "owner",
+        text: "十月的电费我已经交了",
+        at: "2026-11-03T03:00:00.000Z",
+      });
+      h.reader.items = [mail("bill", { subject: "電気料金のお知らせ" })];
+      h.scriptRaw("completed", "主人说十月的电费已经交了。");
+      h.script([{ id: "bill", result: "ignore" }]);
+      await h.service.run();
+      expect(h.prompts[0]).toContain("十月的电费我已经交了");
+      expect(h.prompts.some((prompt) => prompt.includes("很久以前的话"))).toBe(false);
+      expect(h.prompts.at(-1)).toContain("主人说十月的电费已经交了。");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({ summaryGenerated: 1, summaryInjected: true });
+    });
+
+    it("gives the catch-up call a quarter of the check time and still judges when it fails", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world) });
+      chatTurn(h, world.current as World, {
+        threadId: "chat-yesterday",
+        sequence: 1,
+        role: "owner",
+        text: "十月的电费我已经交了",
+        at: "2026-11-03T03:00:00.000Z",
+      });
+      const startedAt = Date.parse(h.clock.now());
+      h.reader.items = [mail("bill", { subject: "電気料金のお知らせ" })];
+      h.scriptRaw({ failedWith: "MODEL_ROUTE_UNAVAILABLE" });
+      h.script([{ id: "bill", result: "ignore" }]);
+      await h.service.run();
+      expect(h.invocations()).toBe(2);
+      expect(Date.parse(h.deadlines[0] as string) - startedAt).toBe(45_000);
+      expect(Date.parse(h.deadlines[1] as string) - startedAt).toBe(180_000);
+      expect(h.prompts[1]).not.toContain(HEADER);
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({
+        summaryGenerated: 0,
+        summaryInjected: false,
+        summaryRead: "partial",
+      });
+      expect(h.query("SELECT COUNT(*) AS n FROM memory_episodes")[0]).toEqual({ n: 0 });
+    });
+
+    it("REVERSE: neither reads nor generates summaries once the day's spending limit is used up", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({
+        recentSummaries: summariesFor(world),
+        dailyCostMicros: 1_000,
+        cost: 1_000,
+      });
+      h.reader.items = [mail("first", { snippet: "随便聊聊" })];
+      h.script([{ id: "first", result: "ignore" }]);
+      await h.service.run();
+      const before = { ...(world.current as World).calls };
+      h.clock.advance(15 * 60_000);
+      chatTurn(h, world.current as World, {
+        threadId: "chat-yesterday",
+        sequence: 1,
+        role: "owner",
+        text: "十月的电费我已经交了",
+        at: "2026-11-03T03:00:00.000Z",
+      });
+      h.reader.items = [mail("second", { snippet: "今度ランチ行こう" })];
+      await h.service.run();
+      expect(world.current?.calls).toEqual(before);
+      expect(h.invocations()).toBe(1);
     });
 
     it("REVERSE: does not summarize anything while the owner has paused memory", async () => {

@@ -1294,14 +1294,15 @@ export class ProactiveMailCheckService {
     if (limits.days < 1 || limits.perCheck < 1 || limits.characters < 1) return [];
     if (limits.catchUpPerCheck > 0) {
       try {
-        const catchUpSignal = AbortSignal.any([
-          signal,
-          AbortSignal.timeout(Math.floor(this.#options.limits.perCheckMs / 4)),
-        ]);
+        const catchUpMs = Math.floor(this.#options.limits.perCheckMs / 4);
+        const catchUpSignal = AbortSignal.any([signal, AbortSignal.timeout(catchUpMs)]);
+        const catchUpDeadlineAt = new Date(
+          Math.min(Date.parse(deadlineAt), Date.parse(this.#options.clock.now()) + catchUpMs),
+        ).toISOString();
         const caught = await source.catchUp({
           days: limits.days,
           limit: limits.catchUpPerCheck,
-          deadlineAt,
+          deadlineAt: catchUpDeadlineAt,
           signal: catchUpSignal,
           generate: async (prompt, dataClassification) => {
             if (
@@ -1311,7 +1312,13 @@ export class ProactiveMailCheckService {
               this.#options.limits.dailyCostMicros
             )
               throw new Error("PROACTIVE_SUMMARY_DAILY_CAP");
-            const call = await this.#invoke(prompt, dataClassification, deadlineAt, signal, trace);
+            const call = await this.#invoke(
+              prompt,
+              dataClassification,
+              catchUpDeadlineAt,
+              catchUpSignal,
+              trace,
+            );
             budget.costMicros += call.costMicros;
             if (call.failure) throw new Error(call.failure);
             if (!call.completed || call.truncated) throw new Error("PROACTIVE_SUMMARY_INCOMPLETE");

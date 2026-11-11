@@ -656,12 +656,13 @@ export class SqliteProactiveOperations {
       ].every((value) => value === undefined);
     const summaryIds = inputs.summaryIds ?? [];
     const summaryDays = inputs.summaryDays ?? [];
+    const hasSummaryIds = summaryIds.length > 0;
     return (
       (inputs.summaryInjected === undefined || typeof inputs.summaryInjected === "boolean") &&
       ids(summaryIds, MAX_INPUT_IDS) &&
       ids(summaryDays, 31) &&
       summaryDays.every((day) => /^\d{4}-\d{2}-\d{2}$/u.test(day)) &&
-      (inputs.summaryInjected ?? false) === summaryIds.length > 0 &&
+      (inputs.summaryInjected ?? false) === hasSummaryIds &&
       count(inputs.summaryCharacters) &&
       count(inputs.summaryGenerated) &&
       ["off", "ok", "partial", "failed"].includes(inputs.summaryRead ?? "off")

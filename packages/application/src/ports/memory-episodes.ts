@@ -68,6 +68,7 @@ export interface MemoryEpisodeStorePort {
   listUnsummarized(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
+    readonly activeSince?: string;
     readonly limit: number;
   }): Promise<readonly MemoryEpisodeThreadWatermark[]>;
   listDaySummaries(input: {
