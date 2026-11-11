@@ -49,6 +49,7 @@ date: "2026-11-11"
 ## 决定
 
 1. **新工具 `propose_rule`，出现条件和 `propose_memory` 一样**：只给写令牌、只在 2026-07-28 版连接上注册、客户端没声明表单确认就拒绝、提议状态的签名和有效期、同一提议按编号排队，全部沿用 ADR 0225 决定 1 到 3。
+   - 2026-11-11 起：其中「只给写令牌」由 [ADR 0227](0227-mcp-entry-checks-cloudflare-access-sign-in.md) 决定 1、3 取代。入口只认 Cloudflare Access 凭证并核对是绑定的主人，`propose_rule` 和 `propose_memory` 一样由配置 `runPolicy.mcpRead.proposals` 打开。本条原文保留不改。
    - 参数：`type`（前提 1 的两种之一）；`params`（`senderDomains` 发件域名、`senderAddresses` 发件地址、`phrases` 词语、`words` 英文整词、`excludePhrases` 排除词，五个字符串列表）；`summary`（一句话的规则说明）；`reason`（对方为什么提，例如 Andy 在那个客户端里说过的原话）。
    - 参数校验用 P2-3 同一个 `parseOwnerRuleParameters`；`reason` 按 ADR 0225 的规则去掉看不见的字符后要 1 到 200 个字符。不合格的直接回「参数不合法」，不弹框。
 2. **第一次调用只校验、不写。** 写入器新加 `preview`：只校验参数，算出试算例子和近 30 天的回放数字（P2-3 已有的回放），不存提议。确认框里给 Andy 看：对方自称的客户端名、规则说明、做法（一定提醒并推送，或先读完整个邮件串）、五项条件、回放数字（写明是估计；算不出来时直说看不到）、对方给的理由，一个勾选框「让这条规则生效」。

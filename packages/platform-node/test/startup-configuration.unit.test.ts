@@ -1470,70 +1470,109 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
   }
 });
 
-it("[P5-1] accepts the MCP read entry only with one secret whose purpose is mcp-read", () => {
-  const raw = config("/tmp/himawari-mcp-read-config");
+it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own audience and no shared secret", () => {
+  const raw = config("/tmp/himawari-mcp-access-config");
   const policy = {
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
     maxSelectedMemories: 1,
   };
-  const references = raw["secretReferences"] as unknown[];
+  const accessIdentity = {
+    issuer: "https://team.cloudflareaccess.com",
+    audience: "access-audience-v1",
+    jwksUrl: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
+    jwksCacheMilliseconds: 300_000,
+    jwksTimeoutMilliseconds: 2_000,
+    jwksMaximumBodyBytes: 65_536,
+    clockToleranceSeconds: 30,
+    identityLookupTimeoutMilliseconds: 2_000,
+    identityLookupMaximumBodyBytes: 65_536,
+    recentAuthentication: { maximumAgeMilliseconds: 900_000, clockSkewMilliseconds: 30_000 },
+    bootstrap: {
+      enabled: true,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      tokenSecretRef: "identity-bootstrap",
+    },
+    csrf: { keySecretRef: "identity-csrf", ttlMilliseconds: 1_800_000 },
+  };
   raw["secretReferences"] = [
-    ...references,
-    { ref: "mcp-read-secret", version: "v1", purpose: "mcp-read", scope: "agent" },
-    { ref: "other-secret", version: "v1", purpose: "google-oauth-client", scope: "agent" },
+    ...(raw["secretReferences"] as unknown[]),
+    { ref: "identity-bootstrap", version: "v1", purpose: "identity-bootstrap", scope: "agent" },
+    { ref: "identity-csrf", version: "v1", purpose: "identity-csrf", scope: "agent" },
   ];
-  const mcpRead = { secretRef: "mcp-read-secret" };
-  raw["runPolicy"] = { ...policy, mcpRead };
-  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead).toEqual(
-    mcpRead,
-  );
+  raw["http"] = {
+    listenHost: "127.0.0.1",
+    listenPort: 8787,
+    staticRoot: path.join("/tmp/himawari-mcp-access-config", "browser"),
+    sessionCookieName: "himawari_session",
+    maximumBodyBytes: 262_144,
+    maximumStaticAssetBytes: 8 * 1024 * 1024,
+    heartbeatMilliseconds: 15_000,
+  };
+  raw["identity"] = accessIdentity;
+  for (const mcpRead of [
+    { audience: "mcp-access-audience" },
+    { audience: "mcp-access-audience", proposals: true },
+  ]) {
+    raw["runPolicy"] = { ...policy, mcpRead };
+    expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead).toEqual(
+      mcpRead,
+    );
+  }
   raw["runPolicy"] = { ...policy };
   expect(
     parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead,
   ).toBeUndefined();
   for (const invalid of [
     {},
-    { secretRef: "other-secret" },
-    { secretRef: "missing-secret" },
-    { ...mcpRead, secret: "inline" },
-    "mcp-read-secret",
+    { secretRef: "mcp-read-secret" },
+    { audience: "mcp-access-audience", secretRef: "mcp-read-secret" },
+    { audience: "mcp-access-audience", writeSecretRef: "mcp-write-secret" },
+    { audience: "mcp-access-audience", proposals: false },
+    { audience: "mcp access audience" },
+    "mcp-access-audience",
   ]) {
     raw["runPolicy"] = { ...policy, mcpRead: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
-});
-
-it("[P5-2] accepts an MCP write secret only when it is a separate mcp-write secret", () => {
-  const raw = config("/tmp/himawari-mcp-write-config");
-  const policy = {
-    version: "1",
-    systemInstruction: "test",
-    memoryLimit: 10,
-    maxSelectedMemories: 1,
-  };
-  const references = raw["secretReferences"] as unknown[];
-  raw["secretReferences"] = [
-    ...references,
-    { ref: "mcp-read-secret", version: "v1", purpose: "mcp-read", scope: "agent" },
-    { ref: "mcp-write-secret", version: "v1", purpose: "mcp-write", scope: "agent" },
-    { ref: "other-secret", version: "v1", purpose: "google-oauth-client", scope: "agent" },
-  ];
-  const mcpRead = { secretRef: "mcp-read-secret", writeSecretRef: "mcp-write-secret" };
-  raw["runPolicy"] = { ...policy, mcpRead };
-  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead).toEqual(
-    mcpRead,
+  const webAudience = (raw["identity"] as { audience: string }).audience;
+  raw["runPolicy"] = { ...policy, mcpRead: { audience: webAudience } };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: {
+        field: "configuration.runPolicy.mcpRead.audience",
+        reason: "must differ from configuration.identity.audience",
+      },
+    }),
   );
-  for (const invalid of [
-    { secretRef: "mcp-read-secret", writeSecretRef: "mcp-read-secret" },
-    { secretRef: "mcp-read-secret", writeSecretRef: "other-secret" },
-    { secretRef: "mcp-read-secret", writeSecretRef: "missing-secret" },
-    { secretRef: "mcp-read-secret", writeSecretRef: 1 },
-  ]) {
-    raw["runPolicy"] = { ...policy, mcpRead: invalid };
-    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
-  }
+  raw["runPolicy"] = { ...policy, mcpRead: { audience: "mcp-access-audience" } };
+  const withoutIdentity = { ...raw };
+  delete withoutIdentity["http"];
+  delete withoutIdentity["identity"];
+  expect(() => parseProductConfiguration(withoutIdentity, "2026-09-06T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: {
+        field: "configuration.runPolicy.mcpRead",
+        reason: "requires configuration.identity to use Cloudflare Access",
+      },
+    }),
+  );
+  raw["identity"] = {
+    kind: "built-in",
+    sessionIdleMilliseconds: 86_400_000,
+    sessionAbsoluteMilliseconds: 604_800_000,
+    recentAuthentication: { maximumAgeMilliseconds: 900_000, clockSkewMilliseconds: 30_000 },
+    csrf: { keySecretRef: "identity-csrf", ttlMilliseconds: 1_800_000 },
+  };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: {
+        field: "configuration.runPolicy.mcpRead",
+        reason: "requires configuration.identity to use Cloudflare Access",
+      },
+    }),
+  );
 });
 
 it("accepts Muse intake only with a boolean switch and one secret whose purpose is muse-intake", () => {
