@@ -287,6 +287,14 @@ export function DecisionChainBody({
               s: chain.mails.relatedRead,
             })}
           </small>
+          {chain.mails.summaries ? (
+            <small>
+              {message("decision.chain.summaries", {
+                s: chain.mails.summaries.read,
+                count: chain.mails.summaries.count,
+              })}
+            </small>
+          ) : null}
         </section>
       ) : null}
       <section aria-label={message("decision.chain.memories")}>

@@ -1007,7 +1007,12 @@ describe("[P1-3] the basis drawer of a decision record", () => {
         },
       ],
     },
-    mails: { judged: 3, related: 2, relatedRead: "partial" },
+    mails: {
+      judged: 3,
+      related: 2,
+      relatedRead: "partial",
+      summaries: { count: 2, read: "ok" },
+    },
     memories: {
       state: "recorded",
       recall: "ok",
@@ -1094,6 +1099,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     expect(drawer.split("只记了规则名，显示的是现在的版本").length).toBe(2);
     expect(drawer).toContain("判断了 3 封");
     expect(drawer).toContain("关联邮件：只读到一部分");
+    expect(drawer).toContain("最近两天的对话摘要：带了 2 段");
     expect(drawer).toContain("我住在东京");
     expect(drawer).toContain("我搬到东京了");
     expect(drawer).toContain("推断依据");
@@ -1114,7 +1120,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     chainResult = chain({
       inputs: "not_recorded",
       rules: { state: "not_recorded", items: [] },
-      mails: { judged: null, related: null, relatedRead: "not_recorded" },
+      mails: { judged: null, related: null, relatedRead: "not_recorded", summaries: null },
       memories: {
         state: "not_recorded",
         recall: "not_recorded",
@@ -1129,6 +1135,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     await flush();
     const drawer = text(".decision-chain");
     expect(drawer.match(/无记录/gu)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    expect(drawer).not.toContain("对话摘要");
     expect(drawer).toContain("还没评价");
   });
 

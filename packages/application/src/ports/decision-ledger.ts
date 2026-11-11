@@ -93,6 +93,12 @@ export interface DecisionInputs {
     readonly durationMs: number;
   };
   readonly relatedFailedSteps?: readonly string[];
+  readonly summaryInjected?: boolean;
+  readonly summaryIds?: readonly string[];
+  readonly summaryDays?: readonly string[];
+  readonly summaryCharacters?: number;
+  readonly summaryRead?: "off" | "ok" | "partial" | "failed";
+  readonly summaryGenerated?: number;
   readonly profileBudget?: ProfileBudget | null;
 }
 

@@ -1066,6 +1066,8 @@ export const messages = {
   "decision.chain.related": "{count, plural, one {# related email} other {# related emails}}",
   "decision.chain.read":
     "{s, select, off {Related emails: off} ok {Related emails: fully read} partial {Related emails: partly read} failed {Related emails: read failed} other {Related emails: no record}}",
+  "decision.chain.summaries":
+    "{s, select, off {Last two days of chat summaries: not read this time} ok {Last two days of chat summaries: {count, plural, one {# included} other {# included}}} partial {Last two days of chat summaries: {count, plural, one {# included} other {# included}}, may be incomplete} failed {Last two days of chat summaries: read failed} other {Last two days of chat summaries: no record}}",
   "decision.chain.memories": "Memories used",
   "decision.chain.recall":
     "{s, select, off {Memory lookup: off} ok {Memory lookup: normal} partial {Memory lookup: partial} failed {Memory lookup: failed} other {Memory lookup: no record}}",

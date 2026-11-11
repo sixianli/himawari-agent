@@ -42,6 +42,7 @@ date: "2026-11-09"
 | `memoryByMail`、`usedMemoryIds`、`tentativeMemoryIds` | `proactive` | 每封邮件对应的记忆、模型实际用到的记忆、待确认的记忆；其他种类现在没有这三个键，所以不会显示“模型用到了” |
 | `memoryRecall` | `proactive` | 找记忆的状态：`off`、`ok`、`partial`、`failed` |
 | `sourceIds`、`relatedByMail`、`relatedRead` | `proactive` | 判断了哪些邮件、关联了哪些邮件、读关联邮件是否完整 |
+| `summaryInjected`、`summaryIds`、`summaryDays`、`summaryCharacters`、`summaryRead`、`summaryGenerated` | `proactive`，只在 Gmail 检查接上了对话日摘要读取时写，六项一起写或一起不写 | 是否真的把最近两天的对话日摘要发给了模型、发了哪些段、哪几天、多少字、读取状态（`off`、`ok`、`partial`、`failed`）、这次补生成了几段（[ADR 0216](../../adr/0216-gmail-check-reads-recent-day-summaries.md)） |
 
 <a id="rules"></a>
 

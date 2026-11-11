@@ -125,6 +125,7 @@ import {
   proactiveRedirectUri,
 } from "./production-proactive.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
+import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -1645,6 +1646,24 @@ export async function runAgentService(
                   concurrency: 4,
                 }),
               }))(protector, repository.payloadStore(configuration.ownerId, configuration.agentId))
+            : {}),
+          ...(memory && memoryEpisodes && repository
+            ? ((book) => ({
+                recentSummaries: createProactiveRecentSummaries({
+                  ownerId: configuration.ownerId,
+                  agentId: configuration.agentId,
+                  episodes: memoryEpisodes,
+                  allowedClassifications: proactiveDescriptor.allowedDataClassifications,
+                  capturePaused: () =>
+                    book
+                      .readSettings({
+                        ownerId: configuration.ownerId,
+                        agentId: configuration.agentId,
+                      })
+                      .then(({ capturePaused }) => capturePaused),
+                  embedForMailCheck: memory.embedForMailCheck,
+                }),
+              }))(repository.memoryBook())
             : {}),
           model: modelComposition.composition.proactiveModel(proactiveConfiguration.modelRef, {
             maxOutputTokens: PROACTIVE_MAX_OUTPUT_TOKENS,

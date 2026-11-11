@@ -1239,7 +1239,7 @@ describe("[P1-5] email decision detail page", () => {
         },
       ],
     },
-    mails: { judged: 3, related: 2, relatedRead: "ok" },
+    mails: { judged: 3, related: 2, relatedRead: "ok", summaries: null },
     memories: {
       state: "recorded",
       recall: "ok",
