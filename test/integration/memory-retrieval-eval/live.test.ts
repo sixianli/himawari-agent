@@ -3,7 +3,12 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DurableMemoryService, type MemoryCategory } from "@himawari-agent/application";
+import {
+  DurableMemoryService,
+  type MemoryCategory,
+  type MemoryIndexSearchResult,
+  type MemoryIndexStorePort,
+} from "@himawari-agent/application";
 import {
   createAgentId,
   createMemoryGenerationId,
@@ -87,6 +92,23 @@ class CachedEmbedder implements Embedder {
     }
     return vector;
   }
+}
+
+function recordingIndex(
+  index: MemoryIndexStorePort,
+  recorded: Map<string, MemoryIndexSearchResult>,
+): MemoryIndexStorePort {
+  return {
+    upsert: (document) => index.upsert(document),
+    delete: (memoryId) => index.delete(memoryId),
+    clearScope: (ownerId, agentId) => index.clearScope(ownerId, agentId),
+    listUnindexed: (input) => index.listUnindexed(input),
+    search: async (input) => {
+      const result = await index.search(input);
+      if (input.minimumSimilarity === 0) recorded.set(input.queryText, result);
+      return result;
+    },
+  };
 }
 
 async function repositoryFor(dataset: Dataset, stateRoot: string) {
@@ -179,6 +201,7 @@ describe.skipIf(!LIVE)("memory retrieval live evaluation", () => {
       const embedder = new CachedEmbedder(gateway);
       const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-memory-retrieval-eval-"));
       const repository = await repositoryFor(dataset, stateRoot);
+      const candidates = new Map<string, MemoryIndexSearchResult>();
       try {
         const texts = new Map(
           dataset.memories.map((memory) => [`payload-${memory.id}`, memory.text]),
@@ -195,7 +218,7 @@ describe.skipIf(!LIVE)("memory retrieval live evaluation", () => {
             state: repository.productMemoryState(),
             jobs: repository.memoryProjectionJobs(),
             provider: new HybridMemoryProvider({
-              index: repository.memoryIndex(),
+              index: recordingIndex(repository.memoryIndex(), candidates),
               embedder,
               embeddableClassifications: ["public", "private"],
               queryInstruction: QWEN3_MEMORY_QUERY_INSTRUCTION,
@@ -292,6 +315,10 @@ describe.skipIf(!LIVE)("memory retrieval live evaluation", () => {
         };
         await writeFile(path.join(output, "round.json"), `${JSON.stringify(round, null, 2)}\n`);
         await writeFile(path.join(output, "outcomes.json"), `${JSON.stringify(runs, null, 2)}\n`);
+        await writeFile(
+          path.join(output, "candidates.json"),
+          `${JSON.stringify(Object.fromEntries(candidates), null, 2)}\n`,
+        );
         expect(usage.requests).toBeGreaterThan(0);
       } finally {
         await repository.close();
