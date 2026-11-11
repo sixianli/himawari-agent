@@ -1122,6 +1122,37 @@ describe("production memory capture", () => {
     expect((await overview(context.control)).pending).toEqual([]);
   });
 
+  it("[P3-5] sends no approval audit record when the approval's transaction is rolled back", async () => {
+    const context = await setup(
+      "我月薪三万。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950,"quote":"我月薪三万"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const [pending] = (await overview(context.control)).pending;
+    if (!pending) throw new Error("pending");
+    const options = (
+      context.control as unknown as {
+        options: ConstructorParameters<typeof ProductionMemoryControl>[0];
+      }
+    ).options;
+    const sent: MemoryExtractionAuditRecord[] = [];
+    const rolledBack = new ProductionMemoryControl({
+      ...options,
+      onAudit: (record) => sent.push(record),
+      unitOfWork: {
+        run: (work) =>
+          options.unitOfWork.run(async () => {
+            await work();
+            throw new Error("COMMIT_LOST");
+          }),
+      },
+    });
+    await expect(respond(rolledBack, pending.requestId, "approved")).rejects.toThrow("COMMIT_LOST");
+    expect(sent).toEqual([]);
+    expect(await activeMemories(context)).toEqual([]);
+  });
+
   it("[mask-not-block] tells the model to mark passwords, keys, identity and card numbers sensitive and to skip one-time codes", () => {
     const prompt = memoryCapturePrompt("记住我的密码是 abc12345", [], null, null, null);
     expect(prompt).toContain("证件号码、银行卡或账户号码、密码、密钥用 sensitive");

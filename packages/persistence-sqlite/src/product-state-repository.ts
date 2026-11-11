@@ -198,6 +198,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
   private closed = false;
   private readonly scopes = new AsyncLocalStorage<TransactionScope>();
   private scopeGate: Promise<void> | undefined;
+  private scopeBroken = false;
   private readonly scopeTimeoutMs: number;
   private readonly onSlowScope: ((operation: SqliteSlowOperation) => void) | undefined;
   private queuedWriters = 0;
@@ -768,6 +769,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
       return this.context.request<TResult>(operation, payload);
     }
     while (this.scopeGate) await this.scopeGate;
+    this.assertScopeUsable();
     this.queuedWriters += 1;
     this.maxObservedQueuedWriters = Math.max(this.maxObservedQueuedWriters, this.queuedWriters);
     try {
@@ -775,6 +777,15 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     } finally {
       this.queuedWriters -= 1;
     }
+  }
+
+  private assertScopeUsable(): void {
+    if (this.scopeBroken)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        "A transaction could not be rolled back; the write lane is closed",
+        { reason: "TRANSACTION_ROLLBACK_UNCONFIRMED" },
+      );
   }
 
   private assertScopeOpen(scope: TransactionScope): void {
@@ -799,13 +810,13 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     }
     const requestedAt = performance.now();
     while (this.scopeGate) await this.scopeGate;
+    this.assertScopeUsable();
     let release: () => void = () => undefined;
     this.scopeGate = new Promise<void>((resolve) => {
       release = resolve;
     });
     const scope: TransactionScope = { ended: false };
     const startedAt = performance.now();
-    let rollbackConfirmed = true;
     let timer: NodeJS.Timeout | undefined;
     try {
       await this.context.request("transaction.begin", {});
@@ -837,16 +848,14 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
       try {
         await this.context.request("transaction.rollback", {});
       } catch {
-        rollbackConfirmed = false;
+        this.scopeBroken = true;
       }
       throw error;
     } finally {
       scope.ended = true;
       if (timer) clearTimeout(timer);
-      if (rollbackConfirmed) {
-        this.scopeGate = undefined;
-        release();
-      }
+      this.scopeGate = undefined;
+      release();
       const totalMs = Math.round(performance.now() - requestedAt);
       if (this.onSlowScope && totalMs >= SLOW_SCOPE_MILLISECONDS) {
         const runMs = Math.round(performance.now() - startedAt);

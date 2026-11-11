@@ -1042,6 +1042,7 @@ export class ProductionMemoryControl {
           throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
         this.assertStorable(editedText);
       }
+      const buffered: MemoryExtractionAuditRecord[] = [];
       const resolver = createProductionAutomaticMemory({
         product: this.options.memory,
         approvals: this.options.approvals,
@@ -1053,7 +1054,9 @@ export class ProductionMemoryControl {
         ...(this.options.ledger ? { ledger: this.options.ledger } : {}),
         extract: async () => [],
         readSourceText: (ref) => this.readText(ref),
-        onAudit: this.options.onAudit,
+        onAudit: (record) => {
+          buffered.push(record);
+        },
       });
       const committed = await this.options.unitOfWork.run(() =>
         resolver.resolveSensitive(
@@ -1062,6 +1065,7 @@ export class ProductionMemoryControl {
             : { requestId, resolution },
         ),
       );
+      for (const record of buffered) this.options.onAudit(record);
       return { resultRef: committed ?? requestId, replayed: false };
     }
     if (command.type === "memory.reminder.create") {

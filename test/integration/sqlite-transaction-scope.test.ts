@@ -183,6 +183,27 @@ describe.each(["worker", "direct"] as const)(
   },
 );
 
+describe("[P3-5] transaction scope when the database worker is lost", () => {
+  useSqliteContractExecution("worker");
+
+  it("refuses later writes with an error instead of leaving them waiting forever", async () => {
+    const { repository, backlog, unitOfWork, enqueue } = await prepare();
+    const lost = unitOfWork.run(async () => {
+      await enqueue(backlog, "a");
+      await (repository as unknown as { context: { close(): Promise<void> } }).context.close();
+    });
+    await expect(lost).rejects.toBeDefined();
+    const outcome = await Promise.race([
+      enqueue(backlog, "b").then(
+        () => "written",
+        (error: unknown) => error,
+      ),
+      pause(1500).then(() => "waiting"),
+    ]);
+    expect(outcome).toMatchObject({ details: { reason: "TRANSACTION_ROLLBACK_UNCONFIRMED" } });
+  });
+});
+
 describe("[P3-5] transaction scope when SQLite rolls the transaction back by itself", () => {
   it("refuses every later operation without running it, and refuses to commit", async () => {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-transaction-abort-"));
