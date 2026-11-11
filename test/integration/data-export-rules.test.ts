@@ -404,27 +404,23 @@ describe("data export: a tampered rule book is refused before anything is writte
       DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
     ],
     [
-      "a RULES.md whose rule line says something else",
+      "a RULES.md that points a rule at another source memory",
       (files) =>
         rehash(files, (path, text) =>
-          path === "RULES.md"
-            ? text
-                .split("\n")
-                .map((line) =>
-                  line.includes("〔r:quiet_hours〕") ? line.replace("23:00", "21:00") : line,
-                )
-                .join("\n")
-            : text,
+          path === "RULES.md" ? text.replace("〔m:m-plain〕", "〔m:m-other〕") : text,
         ),
       DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
     ],
     [
-      "a RULES.md with a wrong total",
+      "rule parameters that are not in the form the writers produce",
       (files) =>
-        rehash(files, (path, text) =>
-          path === "RULES.md" ? text.replace("共 5 条存下来的规则", "共 4 条存下来的规则") : text,
-        ),
-      DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
+        editRuleLine(files, "quiet_hours", (rule) => {
+          rule["parameters"] = ` ${String(rule["parameters"])}`;
+          const history = rule["history"] as { parameters: unknown }[];
+          const last = history.at(-1);
+          if (last) last.parameters = rule["parameters"];
+        }),
+      DATA_EXPORT_ERROR_CODES.LINE_INVALID,
     ],
   ];
   for (const [name, mutate, code] of cases) {
@@ -437,6 +433,37 @@ describe("data export: a tampered rule book is refused before anything is writte
       expect(target.database.prepare("SELECT COUNT(*) FROM memory_records").pluck().get()).toBe(0);
     });
   }
+
+  it("[P1-6] RULES.md wording from another version is accepted as long as the markers match", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const reworded = rehash(files, (path, text) =>
+      path === "RULES.md"
+        ? text
+            .replace("共 5 条存下来的规则", "一共存了 5 条规则")
+            .replace("静默时段：这段时间不推送，结束后合并成一条", "静默时段")
+        : text,
+    );
+    const target = await side("rules-reworded");
+    const report = await importInto(target, reworded, PASSPHRASE);
+    expect(report.imported.rules).toBe(5);
+  });
+
+  it("[P1-6][reverse] parameters longer than the export limit stop the export", async () => {
+    const source = await side("rules-too-long");
+    await seedMemory(source, { id: "m-only", text: "喜欢喝茶" });
+    writeRuleVersion(source, {
+      ruleId: "floor_important_sender",
+      parameters: {
+        senders: Array.from({ length: 1100 }, (_, index) => `${"a".repeat(230)}${index}.example`),
+      },
+      source: "ADR 0106；主人的设置“重要发件人”",
+      at: "2026-11-01T00:00:00.000Z",
+    });
+    await expect(exportOf(source)).rejects.toMatchObject({
+      code: DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+    });
+  });
 
   it("[P1-6][reverse] a sealed original that no longer matches the rule's history is refused", async () => {
     const source = await seeded();

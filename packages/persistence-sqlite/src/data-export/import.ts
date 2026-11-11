@@ -3,7 +3,7 @@ import type { PayloadRecord } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
 import type { JsonValue } from "./canonical.js";
 import { validateAgainst } from "./schema.js";
-import { SEALED_FILE, SEALED_SCHEMA } from "./schemas.js";
+import { RULE_PARAMETERS_MAXIMUM_LENGTH, SEALED_FILE, SEALED_SCHEMA } from "./schemas.js";
 import {
   assertRuleHistory,
   enforcedRuleCount,
@@ -238,6 +238,11 @@ export async function importPortableExport(
     if (version.withheld !== true) return version;
     const parameters = sealed?.originals[key];
     if (parameters === undefined) return null;
+    if ([...parameters].length > RULE_PARAMETERS_MAXIMUM_LENGTH)
+      throw new DataExportError(
+        DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH,
+        `规则 ${ruleId} 的原文超过上限`,
+      );
     const restored = { ...version, parameters } as T;
     const problem = storedRuleProblem(ruleId, restored);
     if (problem !== null) throw new DataExportError(DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH, problem);

@@ -235,6 +235,7 @@ export const DECISION_SCHEMA: JsonSchema = objectOf(
 
 const RULE_STATUSES = ["active", "needs_review", "retired"] as const;
 export const RULE_PARAMETERS_MAXIMUM_LENGTH = 262_144;
+export const MAXIMUM_LINE_BYTES = 64 * 1024 * 1024;
 
 const ruleVersionFields = {
   revision: integer(1),
@@ -263,7 +264,7 @@ export const RULE_SCHEMA: JsonSchema = objectOf(
     },
   },
   ["withheld"],
-  "规则手册里存下来的一条规则：当前版本加全部修订历史（历史最后一版就是当前版本）。parameters 是规则参数在库里存的 JSON 原文（逐字保留，用 JSON 解析即可读）；表达式由程序按参数生成，所以不导出表达式。withheld 为 true 时参数里有机密，parameters 是遮盖后的 JSON，原文在密封文件里（key 为 rule/<ruleId>/parameters 和 rule/<ruleId>/history/<revision>/parameters）。产品自带的规则随版本发布，不在这里。",
+  "规则手册里存下来的一条规则：当前版本加全部修订历史（历史最后一版就是当前版本）。parameters 是规则参数在库里存的 JSON 原文（逐字保留，用 JSON 解析即可读）；表达式由程序按参数生成，所以不导出表达式。withheld 为 true 时参数里有机密，或者库里存的原文不是写规则的程序会写出的形式（例如带重复的键），parameters 是遮盖后的 JSON，原文在密封文件里（key 为 rule/<ruleId>/parameters 和 rule/<ruleId>/history/<revision>/parameters）。产品自带的规则随版本发布，不在这里。",
 );
 
 const payloadText = EXPORTED_TEXT_SCHEMA;

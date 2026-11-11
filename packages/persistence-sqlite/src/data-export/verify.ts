@@ -16,6 +16,7 @@ import {
   FORMAT_VERSION,
   IMPORT_BATCH_SCHEMA,
   MANIFEST_FILE,
+  MAXIMUM_LINE_BYTES,
   MANIFEST_SCHEMA,
   MEMORY_SCHEMA,
   PERSON_SCHEMA,
@@ -27,11 +28,9 @@ import {
   type PortableCounts,
   type PortableFiles,
   type PortableManifest,
-  WITHHELD_PLACEHOLDER,
 } from "./types.js";
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
-const MAXIMUM_LINE_BYTES = 64 * 1024 * 1024;
 
 export interface ParsedMemory {
   readonly id: string;
@@ -373,6 +372,11 @@ export function parsePortable(
       if (version.sourceMemoryId !== null && !memoryIds.has(version.sourceMemoryId))
         broken(`规则 ${rule.ruleId} 第 ${version.revision} 版的来源记忆`);
       if (version.withheld === true) continue;
+      if (JSON.stringify(JSON.parse(version.parameters)) !== version.parameters)
+        throw new DataExportError(
+          DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+          `规则 ${rule.ruleId} 第 ${version.revision} 版的参数不是写规则的程序会写出的形式`,
+        );
       const problem = storedRuleProblem(rule.ruleId, version);
       if (problem !== null)
         throw new DataExportError(DATA_EXPORT_ERROR_CODES.LINE_INVALID, problem);
@@ -383,7 +387,6 @@ export function parsePortable(
       ? undefined
       : decoder.decode(files.get(RULES_INDEX_FILE)),
     rules,
-    WITHHELD_PLACEHOLDER,
   );
   if (rulesProblem !== null)
     throw new DataExportError(DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN, rulesProblem);

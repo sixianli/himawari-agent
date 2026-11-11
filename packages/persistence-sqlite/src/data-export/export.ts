@@ -16,6 +16,7 @@ import {
   FORMAT_VERSION,
   INDEX_FILE,
   MANIFEST_FILE,
+  MAXIMUM_LINE_BYTES,
   RULE_PARAMETERS_MAXIMUM_LENGTH,
   SCHEMA_FILES,
   SEALED_FILE,
@@ -410,7 +411,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   ): { parameters: string; withheld?: true } => {
     const parameters = str(raw);
     const parsed = JSON.parse(parameters) as JsonValue;
-    if (parameters.length > RULE_PARAMETERS_MAXIMUM_LENGTH)
+    if ([...parameters].length > RULE_PARAMETERS_MAXIMUM_LENGTH)
       throw new DataExportError(
         DATA_EXPORT_ERROR_CODES.LINE_INVALID,
         `规则 ${ruleId} 的参数超过 ${RULE_PARAMETERS_MAXIMUM_LENGTH} 个字符`,
@@ -478,12 +479,14 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   put(DATA_FILES.importBatches, "data", jsonLines(batchLines), batchLines.length);
   put(DATA_FILES.consolidations, "data", jsonLines(consolidationLines), consolidationLines.length);
   put(DATA_FILES.decisions, "data", jsonLines(decisionLines), decisionLines.length);
-  put(
-    DATA_FILES.rules,
-    "data",
-    jsonLines(ruleLines as unknown as readonly JsonValue[]),
-    ruleLines.length,
-  );
+  const rulesText = jsonLines(ruleLines as unknown as readonly JsonValue[]);
+  for (const [index, line] of rulesText.split("\n").entries())
+    if (line.length > MAXIMUM_LINE_BYTES)
+      throw new DataExportError(
+        DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+        `规则 ${ruleLines[index]?.ruleId ?? ""} 连同历史超过单行上限`,
+      );
+  put(DATA_FILES.rules, "data", rulesText, ruleLines.length);
   for (const { path, schema } of SCHEMA_FILES)
     put(path, "schema", `${JSON.stringify(schema, null, 2)}\n`, 0);
   const markdown = renderMemoryMarkdown(memoryLines as unknown as readonly MarkdownMemory[]);

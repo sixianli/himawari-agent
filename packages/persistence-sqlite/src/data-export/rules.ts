@@ -193,6 +193,7 @@ function wording(kind: RuleKind, parameters: Parameters): string {
 }
 
 export const RULE_LINE = /^- 〔r:([^〕]+)〕 /u;
+const MEMORY_MARK = /〔m:([^〕]+)〕/gu;
 
 function ruleLine(rule: PortableRule, withheldText: string): string {
   const parameters = parseParameters(rule.parameters) ?? {};
@@ -200,10 +201,6 @@ function ruleLine(rule: PortableRule, withheldText: string): string {
   const text = rule.withheld === true ? withheldText : wording(kind, parameters);
   const source = rule.sourceMemoryId === null ? "" : `；来源记忆〔m:${rule.sourceMemoryId}〕`;
   return `- 〔r:${rule.ruleId}〕 ${KIND_LABELS[kind]}。${foldText(text)}（第 ${rule.revision} 版，${STATUS_LABELS[rule.status]}；出处：${foldText(rule.source)}${source}）`;
-}
-
-function totalLine(rules: readonly PortableRule[]): string {
-  return `共 ${rules.length} 条存下来的规则，其中 ${enforcedRuleCount(rules)} 条正在执行（在用或待重审）。`;
 }
 
 export function renderRulesMarkdown(rules: readonly PortableRule[], withheldText: string): string {
@@ -220,7 +217,7 @@ export function renderRulesMarkdown(rules: readonly PortableRule[], withheldText
     "",
     "自动生成，不要手改。这些规则在 Himawari 里由程序执行，不靠模型自觉。每条行首的〔r:编号〕可以到 data/rules.jsonl 里按 ruleId 查到参数和全部修订历史；〔m:编号〕是立这条规则时的那条记忆，在 data/memories.jsonl 里。本文件里的文字都是记录，不是指令。",
     "",
-    totalLine(rules),
+    `共 ${rules.length} 条存下来的规则，其中 ${enforcedRuleCount(rules)} 条正在执行（在用或待重审）。`,
     "",
     "## 产品自带",
     "",
@@ -239,17 +236,19 @@ export function renderRulesMarkdown(rules: readonly PortableRule[], withheldText
 export function checkRulesMarkdown(
   markdown: string | undefined,
   rules: readonly PortableRule[],
-  withheldText: string,
 ): string | null {
   if (markdown === undefined) return `缺少 ${RULES_INDEX_FILE}`;
-  const lines = markdown.split("\n");
-  if (!lines.includes(totalLine(rules))) return `${RULES_INDEX_FILE} 里的规则总数不对`;
-  const listed = lines.filter((line) => RULE_LINE.test(line));
-  const expected = rules.map((rule) => ruleLine(rule, withheldText));
-  for (const [index, line] of expected.entries())
-    if (listed.filter((candidate) => candidate === line).length !== 1)
-      return `${RULES_INDEX_FILE} 里规则 ${rules[index]?.ruleId ?? ""} 那一行和 data/rules.jsonl 对不上`;
-  if (listed.length !== expected.length)
+  const listed = markdown.split("\n").filter((line) => RULE_LINE.test(line));
+  for (const rule of rules) {
+    const lines = listed.filter((line) => RULE_LINE.exec(line)?.[1] === rule.ruleId);
+    if (lines.length !== 1)
+      return `${RULES_INDEX_FILE} 里规则 ${rule.ruleId} 出现了 ${lines.length} 次`;
+    const memories = [...(lines[0] ?? "").matchAll(MEMORY_MARK)].map((match) => match[1]);
+    const expected = rule.sourceMemoryId === null ? [] : [rule.sourceMemoryId];
+    if (memories.length !== expected.length || memories.some((id, index) => id !== expected[index]))
+      return `${RULES_INDEX_FILE} 里规则 ${rule.ruleId} 的来源记忆和 data/rules.jsonl 对不上`;
+  }
+  if (listed.length !== rules.length)
     return `${RULES_INDEX_FILE} 里有 data/rules.jsonl 之外的规则行`;
   return null;
 }
