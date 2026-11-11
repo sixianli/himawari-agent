@@ -246,15 +246,18 @@ function slugOf(title: string | null): string {
   return cut === "" ? "untitled" : cut;
 }
 
-function quote(text: string): string {
-  return text
-    .split(/\r?\n/u)
-    .map((line) => (line === "" ? ">" : `> ${line}`))
-    .join("\n");
+function fenced(text: string): string {
+  const longest = Math.max(0, ...[...text.matchAll(/`+/gu)].map((run) => run[0].length));
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  return `${fence}\n${text.replace(/\r\n?/gu, "\n")}\n${fence}`;
+}
+
+function plainLine(text: string): string {
+  return text.replace(/[[\]<>`]/gu, " ");
 }
 
 function renderThread(thread: ChatThreadLine): string {
-  const title = thread.title === null ? "（没有标题）" : foldText(thread.title.text);
+  const title = thread.title === null ? "（没有标题）" : plainLine(foldText(thread.title.text));
   const lines = [
     `# ${title === "" ? "（没有标题）" : title}`,
     "",
@@ -271,12 +274,12 @@ function renderThread(thread: ChatThreadLine): string {
     lines.push(
       `## ${message.sequence}. ${ROLE_LABELS[message.role] ?? message.role} · ${message.committedAt}${STATUS_LABELS[message.status] ?? ""}${message.withheld === true ? "（含机密，已遮盖）" : ""}`,
       "",
-      quote(message.text),
+      fenced(message.text),
       "",
     );
     for (const attachment of message.attachments)
       lines.push(
-        `- 附件：${foldText(attachment.name)}（${attachment.kind}，${attachment.bytes} 字节，文件本体未导出）`,
+        `- 附件：${plainLine(foldText(attachment.name))}（${attachment.kind}，${attachment.bytes} 字节，文件本体未导出）`,
       );
     if (message.attachments.length > 0) lines.push("");
   }
@@ -444,7 +447,7 @@ export async function buildChatExport(options: ChatExportOptions): Promise<ChatE
       `共 ${threadLines.length} 个对话、${messageTotal} 条消息（进行中、已归档和回收站里的对话都在；正在删除和已删除的不在）。`,
       "",
       ...threadLines.map((thread) => {
-        const label = foldText(thread.title?.text ?? "（没有标题）").replace(/[[\]]/gu, " ");
+        const label = plainLine(foldText(thread.title?.text ?? "（没有标题）"));
         return `- [${label === "" ? "（没有标题）" : label}](${thread.file})：${thread.messages.length} 条，${thread.createdAt.slice(0, 10)}`;
       }),
       "",

@@ -143,7 +143,7 @@ describe("chat export", () => {
     expect(threads.find((thread) => thread.id === "t-3")?.title).toBeNull();
     const markdown = decoder.decode(files.get(first.file));
     expect(markdown).toContain("周末骑行计划");
-    expect(markdown).toContain("> 周末想骑车去海边");
+    expect(markdown).toContain("```\n周末想骑车去海边");
     expect(markdown).toContain("回答没有写完");
     expect(decoder.decode(files.get("CHATS.md"))).toContain("共 3 个对话、6 条消息");
     expect(verifyChatExport(files, s.migrationSequence).counts.messages).toBe(6);
@@ -286,6 +286,24 @@ describe("chat export", () => {
     const [thread] = jsonl(files) as [ThreadRow];
     expect(thread.messages[0]?.attachments[0]?.name.length).toBeLessThanOrEqual(1000);
     expect(verifyChatExport(files, s.migrationSequence).counts.attachments).toBe(1);
+  });
+
+  it("[多人7] message text is fenced so links, images and html are never rendered by a Markdown reader (negative case)", async () => {
+    const s = await side("markdown-fence");
+    const hostile =
+      "看 ![x](https://evil.example/p.png) 和 <img src=x onerror=1> 还有 ```` 四个反引号";
+    await seedThread(s, "t-1", {
+      title: "标题 ![y](https://evil.example/t.png) <b>",
+      messages: [{ text: hostile }],
+    });
+    const { files } = await exportOf(s);
+    const [thread] = jsonl(files) as [ThreadRow];
+    const markdown = decoder.decode(files.get(thread.file));
+    expect(markdown).toContain(`\`\`\`\`\`\n${hostile}\n\`\`\`\`\``);
+    const head = markdown.split("\n")[0] ?? "";
+    expect(head).not.toMatch(/[[\]<>`]/u);
+    expect(decoder.decode(files.get("CHATS.md"))).not.toContain("![");
+    expect(verifyChatExport(files, s.migrationSequence).counts.threads).toBe(1);
   });
 
   it("[多人7] a very long title still produces an export that verifies", async () => {
