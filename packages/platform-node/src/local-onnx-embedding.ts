@@ -247,6 +247,7 @@ export class LocalOnnxEmbeddingRuntime {
   #model: LocalOnnxModel | undefined;
   #loading: Promise<void> | undefined;
   #draining = false;
+  #drained: Promise<void> = Promise.resolve();
 
   constructor(options: LocalOnnxEmbeddingRuntimeOptions) {
     if (options.profile.provider !== LOCAL_ONNX_EMBEDDING_PROVIDER)
@@ -283,11 +284,22 @@ export class LocalOnnxEmbeddingRuntime {
   readonly fetch = async (input: unknown, init?: RequestInit): Promise<Response> => {
     const href =
       typeof input === "string" ? input : input instanceof URL ? input.href : String(input);
-    if (!new URL(href).pathname.endsWith("/embeddings") || init?.method !== "POST")
+    if (
+      !URL.canParse(href) ||
+      !new URL(href).pathname.endsWith("/embeddings") ||
+      init?.method !== "POST"
+    )
       return errorResponse(404, "local_route_unknown");
     if (typeof init.body !== "string") return errorResponse(400, "local_body_invalid");
-    const body = JSON.parse(init.body) as Record<string, unknown>;
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(init.body) as Record<string, unknown>;
+    } catch {
+      return errorResponse(400, "local_body_invalid");
+    }
     if (
+      typeof body !== "object" ||
+      body === null ||
       body["model"] !== this.#options.profile.model ||
       body["dimensions"] !== this.#options.dimensions ||
       typeof body["input"] !== "string"
@@ -319,6 +331,7 @@ export class LocalOnnxEmbeddingRuntime {
       item.signal?.removeEventListener("abort", item.onAbort);
       item.reject(failure("EMBEDDING_LOCAL_CLOSED"));
     }
+    await this.#drained;
     const model = this.#model;
     this.#model = undefined;
     await model?.close();
@@ -403,6 +416,10 @@ export class LocalOnnxEmbeddingRuntime {
   async #drain(): Promise<void> {
     if (this.#draining) return;
     this.#draining = true;
+    let finished: () => void = () => {};
+    this.#drained = new Promise((resolve) => {
+      finished = resolve;
+    });
     try {
       for (let item = this.#pending.shift(); item; item = this.#pending.shift()) {
         item.signal?.removeEventListener("abort", item.onAbort);
@@ -420,6 +437,7 @@ export class LocalOnnxEmbeddingRuntime {
           if (ids.length === 0 || ids.length > MAXIMUM_INPUT_TOKENS)
             throw failure("EMBEDDING_LOCAL_INPUT_LENGTH");
           const vector = await model.run(ids);
+          item.signal?.throwIfAborted();
           if (vector.length !== this.#options.dimensions || !vector.every(Number.isFinite))
             throw failure("EMBEDDING_VECTOR_INVALID");
           item.resolve({ vector, tokens: ids.length });
@@ -429,6 +447,7 @@ export class LocalOnnxEmbeddingRuntime {
       }
     } finally {
       this.#draining = false;
+      finished();
     }
   }
 }

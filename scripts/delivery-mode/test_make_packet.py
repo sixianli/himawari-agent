@@ -566,12 +566,33 @@ class DerivedExpectationsTest(RenderedPacket):
         self.assertEqual(unchanged['memory'], original['memory'])
 
     def test_p3_1_an_embedding_target_outside_the_local_policy_is_refused(self):
-        valid = {'ref': 'local-embedding', 'role': 'embedding', 'provider': 'local-onnx', 'model': 'm', 'version': 'v', 'disclosure': 'local_only', 'secretRef': None, 'dimensions': 1024, 'artifactSha256': 'a' * 64}
+        valid = {'ref': 'local-embedding', 'role': 'embedding', 'provider': 'local-onnx', 'model': 'jina-embeddings-v5-text-small-retrieval-int8', 'version': 'v', 'allowedDataClassifications': ['public', 'private'], 'disclosure': 'local_only', 'secretRef': None, 'capabilities': ['embedding'], 'cost': {'input': 0, 'output': 0, 'cacheRead': 0, 'cacheWrite': 0}, 'dimensions': 1024, 'artifactSha256': 'a' * 64}
+        gateway = {**{key: value for key, value in valid.items() if key != 'artifactSha256'}, 'provider': 'vercel-ai-gateway', 'model': 'alibaba/qwen3-embedding-8b', 'disclosure': 'external_remote', 'secretRef': 'vercel-gateway', 'dimensions': 4096}
         self.assertEqual(packet_maker.embedding_target(None), 'null')
         self.assertEqual(json.loads(packet_maker.embedding_target(valid)), valid)
-        for change in ({'secretRef': 'vercel-gateway'}, {'disclosure': 'external_remote'}, {'artifactSha256': 'short'}, {'role': 'primary'}, {'dimensions': 0}, {'unknown': 1}, {'model': "it's"}):
-            with self.subTest(change=change), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_EMBEDDING_TARGET_INVALID'):
-                packet_maker.embedding_target({**valid, **change})
+        self.assertEqual(json.loads(packet_maker.embedding_target(gateway)), gateway)
+        missing_cost = {key: value for key, value in valid.items() if key != 'cost'}
+        for candidate in (
+            {**valid, 'secretRef': 'vercel-gateway'}, {**valid, 'disclosure': 'external_remote'}, {**valid, 'artifactSha256': 'short'},
+            {**valid, 'artifactSha256': '0' * 64}, {**valid, 'role': 'primary'}, {**valid, 'dimensions': 0}, {**valid, 'dimensions': 768},
+            {**valid, 'unknown': 1}, {**valid, 'model': "it's"}, {**valid, 'model': 'unknown-model'}, missing_cost,
+            {**valid, 'cost': {**valid['cost'], 'input': 1}}, {**valid, 'capabilities': ['text']},
+            {**gateway, 'artifactSha256': 'a' * 64}, {**gateway, 'secretRef': None}, {**gateway, 'dimensions': 768},
+        ):
+            with self.subTest(candidate=candidate), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_EMBEDDING_TARGET_INVALID'):
+                packet_maker.embedding_target(candidate)
+
+    def test_p3_1_packet_embedding_profiles_match_the_runtime_profiles(self):
+        source = (HERE.parents[1] / 'packages/application/src/embedding-profiles.ts').read_text()
+        found = {}
+        for block in re.findall(r'Object\.freeze\(\{(.*?)\}\)', source, re.S):
+            model = re.search(r'model: "([^"]+)"', block)
+            provider = re.search(r'provider: (\w+)', block)
+            dims = re.search(r'dimensions: Object\.freeze\(\[([\d, ]+)\]\)', block)
+            if model and provider and dims:
+                name = {'GATEWAY_EMBEDDING_PROVIDER': 'vercel-ai-gateway', 'LOCAL_ONNX_EMBEDDING_PROVIDER': 'local-onnx'}[provider.group(1)]
+                found[(name, model.group(1))] = tuple(int(value) for value in dims.group(1).split(','))
+        self.assertEqual(found, packet_maker.EMBEDDING_PROFILES)
 
 
 class HermesCommandTest(unittest.TestCase):

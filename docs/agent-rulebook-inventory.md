@@ -177,7 +177,7 @@ date: "2026-11-10"
 | C-5 | 系统主动提醒总开关、静默时段、重要发件人名单、Gmail 连接 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md) | 总开关在表 `proactive_settings`；静默时段、重要发件人在表 `rule_book_rules`，改动加修订号并写进只追加的 `rule_book_history`（迁移 0086，[ADR 0209](adr/0209-rule-book-with-cel-expressions-and-judge.md)） | 硬 | 静默时段、某人的事一定提醒 | PG-7 |
 | C-6 | 推送通知开关和通知种类，按设备分开 | [ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md) | 推送设置，按设备保存 | 硬 | 尚无 | I-39 一带的界面用例 |
 | C-7 | 运行参数：`maxSelectedMemories`、`maxMemoryClassification`（最多把哪一档分类的记忆交给模型）、`memoryLimit`、`timeZone`、`freezeThreadPrompts` | [ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)（冻结）；其余部分立规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `packages/platform-node/src/strict-configuration.ts` 的 `parseRunPolicy` | 硬 | 尚无 | `startup-configuration.unit.test.ts` |
-| C-8 | Gmail 检查的运行参数：`intervalMs`（缺省 15 分钟）、`dailyCostMicros`、`backoffThreshold`、`memoryMinimumSimilarity`（缺省 0.45）、正文和往来邮件的字数上限、审查预算 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)、[ADR 0184](adr/0184-back-off-ignored-proactive-pushes.md) | `strict-configuration.ts` 的 `parseProactive` | 硬 | 每天提醒的上限（部分） | `startup-configuration.unit.test.ts` |
+| C-8 | Gmail 检查的运行参数：`intervalMs`（缺省 15 分钟）、`dailyCostMicros`、`backoffThreshold`、`memoryMinimumSimilarity`（缺省取当前嵌入模型档案里系统主动提醒用的门槛，见 [ADR 0224](adr/0224-memory-embedding-runs-on-the-host.md)）、正文和往来邮件的字数上限、审查预算 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)、[ADR 0184](adr/0184-back-off-ignored-proactive-pushes.md) | `strict-configuration.ts` 的 `parseProactive` | 硬 | 每天提醒的上限（部分） | `startup-configuration.unit.test.ts` |
 
 [↑ 回到阅读导航](#contents)
 

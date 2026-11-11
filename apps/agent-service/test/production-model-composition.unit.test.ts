@@ -9,7 +9,11 @@ import type {
   ModelInvocationPermit,
   RunExecutionSource,
 } from "@himawari-agent/application";
-import { ModelInvocationAdmissionService } from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  ModelInvocationAdmissionService,
+  PORT_ERROR_CODES,
+} from "@himawari-agent/application";
 import type { EmbeddingBoundary, EmbeddingResponse } from "@himawari-agent/memory-engine";
 import {
   applyMigrations,
@@ -850,7 +854,8 @@ it("propagates Run cancellation and remaining deadline to embedding and retains 
   const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
   let boundary: EmbeddingBoundary | undefined;
   const controller = new AbortController();
-  let searchCancelled: (() => boolean) | undefined;
+  let searchCancelled: ((error: unknown) => boolean) | undefined;
+  const providerDown = new Error("PROVIDER_DOWN");
   const cancelledBefore: (boolean | null)[] = [];
   const cancelledAfter: (boolean | null)[] = [];
   const now = "2026-09-06T00:00:00.000Z";
@@ -879,7 +884,7 @@ it("propagates Run cancellation and remaining deadline to embedding and retains 
     memory: {
       search: async () => {
         if (!boundary) throw new Error("BOUNDARY_MISSING");
-        cancelledBefore.push(searchCancelled?.() ?? null);
+        cancelledBefore.push(searchCancelled?.(providerDown) ?? null);
         try {
           await boundary(
             {
@@ -891,7 +896,7 @@ it("propagates Run cancellation and remaining deadline to embedding and retains 
             send,
           );
         } finally {
-          cancelledAfter.push(searchCancelled?.() ?? null);
+          cancelledAfter.push(searchCancelled?.(providerDown) ?? null);
         }
         return [];
       },
@@ -925,7 +930,81 @@ it("propagates Run cancellation and remaining deadline to embedding and retains 
   expect(send).toHaveBeenCalledTimes(1);
   expect(cancelledBefore).toEqual([false, false]);
   expect(cancelledAfter).toEqual([true, false]);
-  expect(searchCancelled?.()).toBe(false);
+  expect(searchCancelled?.(providerDown)).toBe(false);
+});
+
+it("[P3-2] a memory tool search whose Run lost its execution lease while embedding leaves no retrieval-degrade record", async () => {
+  const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
+  let boundary: EmbeddingBoundary | undefined;
+  let searchCancelled: ((error: unknown) => boolean) | undefined;
+  const now = "2026-09-06T00:00:00.000Z";
+  let leaseHeld = true;
+  const permit: ModelInvocationPermit = {
+    assertActive: vi.fn(async () => {
+      if (!leaseHeld)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          "Run execution lease is no longer active",
+        );
+    }),
+    markStarted: vi.fn(async () => {}),
+    releaseReserved: vi.fn(async () => {}),
+    settle: vi.fn(async () => {}),
+    markUnknown: vi.fn(async () => {}),
+  };
+  const memory = createProductionRunMemory({
+    configuration,
+    projection: {
+      bindEmbeddingBoundary: (value, _timeoutMs, cancelled) => {
+        boundary = value;
+        searchCancelled = cancelled;
+      },
+    },
+    payloads: { get: async () => undefined },
+    memory: { search: async () => [] },
+    admission: async () => ({ begin: async () => ({ disposition: "fresh", permit }) }) as never,
+    budget: {} as never,
+    assertActive: async () => {},
+    now: () => now,
+  });
+  const recorded: boolean[] = [];
+  const toolSearch = (send: () => Promise<never>) =>
+    memory.embedWithin(
+      {
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        runId: "run-tool-embedding" as never,
+        executionLease: {} as never,
+        deadlineAt: "2026-09-06T00:00:05.000Z",
+        dataClassification: "private",
+        slot: "memory-recall:call-1",
+      },
+      async () => {
+        if (!boundary || !searchCancelled) throw new Error("BOUNDARY_MISSING");
+        try {
+          await boundary(
+            {
+              identity: "fixture",
+              model: "alibaba/qwen3-embedding-8b",
+              input: "query",
+              dimensions: 4096,
+            },
+            send,
+          );
+        } catch (error) {
+          recorded.push(!searchCancelled(error));
+        }
+      },
+    );
+  leaseHeld = false;
+  await toolSearch(async () => {
+    throw new Error("SEND_AFTER_LEASE_LOST");
+  });
+  leaseHeld = true;
+  await toolSearch(async () => {
+    throw new ApplicationPortError(PORT_ERROR_CODES.PROVIDER_FAILURE, "EMBEDDING_HTTP_FAILURE");
+  });
+  expect(recorded).toEqual([false, true]);
 });
 
 it("gives a slow memory-search embedding three seconds, then asks once more under a new invocation", async () => {

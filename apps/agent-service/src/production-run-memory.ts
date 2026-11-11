@@ -81,7 +81,7 @@ export function createProductionRunMemory(options: {
     bindEmbeddingBoundary(
       boundary: EmbeddingBoundary,
       timeoutMs: number,
-      searchCancelled?: () => boolean,
+      searchCancelled?: (error: unknown) => boolean,
     ): void;
   };
   readonly payloads: Pick<PayloadStorePort, "get">;
@@ -370,7 +370,9 @@ export function createProductionRunMemory(options: {
       }
     },
     options.configuration.deadlines.providerRequestMs,
-    () => scope.getStore()?.signal?.aborted === true,
+    (error) =>
+      scope.getStore()?.signal?.aborted === true ||
+      (error instanceof ApplicationPortError && error.code === PORT_ERROR_CODES.NOT_AUTHORITATIVE),
   );
   return {
     project: (job, memory, operation) => projectionScope.run({ job, memory }, operation),

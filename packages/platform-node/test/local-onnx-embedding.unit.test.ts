@@ -69,7 +69,10 @@ async function installFixture(
 
 function runtimeFor(
   installed: { stateRoot: string; artifactSha256: string },
-  options: { readonly load?: LocalOnnxLoader; readonly maximumPending?: number } = {},
+  options: {
+    readonly load?: LocalOnnxLoader;
+    readonly maximumPending?: number;
+  } = {},
 ) {
   return new LocalOnnxEmbeddingRuntime({
     stateRoot: installed.stateRoot,
@@ -217,6 +220,73 @@ describe("local ONNX embedding runtime", () => {
     await busy;
     expect(ran).toEqual(["busy"]);
     expect(runtime.pending).toBe(0);
+  });
+
+  it("[P3-1] closing waits for the inference in flight, and a caller who gave up during it gets no vector", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const events: string[] = [];
+    const runtime = runtimeFor(await installFixture(), {
+      load: async () => ({
+        tokenize: (text) => [...text].map((character) => character.codePointAt(0) ?? 0),
+        run: async () => {
+          events.push("run-started");
+          await gate;
+          events.push("run-finished");
+          return new Float32Array(1024).fill(1);
+        },
+        close: async () => {
+          events.push("model-closed");
+        },
+      }),
+    });
+    await runtime.start();
+    const controller = new AbortController();
+    const running = runtime.fetch("http://local-onnx.invalid/v1/embeddings", {
+      ...request("busy"),
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    controller.abort(new Error("caller gave up"));
+    const closing = runtime.close();
+    await Promise.resolve();
+    expect(events).toEqual(["run-started"]);
+    release();
+    await expect(running).rejects.toThrow("caller gave up");
+    await closing;
+    expect(events).toEqual(["run-started", "run-finished", "model-closed"]);
+  });
+
+  it("[P3-1] REVERSE: answers a malformed request with an error response and refuses an input beyond 8192 tokens", async () => {
+    const runtime = runtimeFor(await installFixture(), {
+      load: async () => ({
+        tokenize: (text) => [...text].map((character) => character.codePointAt(0) ?? 0),
+        run: async () => new Float32Array(1024).fill(1),
+        close: async () => {},
+      }),
+    });
+    await runtime.start();
+    const url = "http://local-onnx.invalid/v1/embeddings";
+    const bad = await runtime.fetch(url, {
+      ...request("x"),
+      body: "{not json",
+    });
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toMatchObject({
+      error: { type: "local_body_invalid" },
+    });
+    const nullBody = await runtime.fetch(url, {
+      ...request("x"),
+      body: "null",
+    });
+    expect(nullBody.status).toBe(400);
+    expect((await runtime.fetch("not a url", request("x"))).status).toBe(404);
+    await expect(runtime.fetch(url, request("a".repeat(8193)))).rejects.toThrow(
+      "EMBEDDING_LOCAL_INPUT_LENGTH",
+    );
+    expect((await runtime.fetch(url, request("a".repeat(8192)))).status).toBe(200);
   });
 
   it("[P3-1] the artifact build script pins the same upstream files as each local profile", () => {

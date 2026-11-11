@@ -147,7 +147,11 @@ export class MemoryEpisodeService {
         sameDay.length >= MAXIMUM_SEGMENT_MESSAGES ||
         Date.parse(now) - Date.parse(last.committedAt) >= idleMs;
       if (!closed) continue;
-      const lines: { role: "owner" | "agent"; text: string; committedAt: string }[] = [];
+      const lines: {
+        role: "owner" | "agent";
+        text: string;
+        committedAt: string;
+      }[] = [];
       const included: DataClassification[] = [];
       for (const message of sameDay) {
         if (message.role === "system" || !isModelVisible(message.dataClassification)) continue;
@@ -278,6 +282,7 @@ export class MemoryEpisodeService {
       limit: Math.min(100, input.limit),
     });
     let embedded = 0;
+    let failure: { readonly error: unknown } | undefined;
     for (const episode of episodes) {
       if (!isModelVisible(episode.dataClassification)) continue;
       const text = await this.#options.readText({
@@ -286,18 +291,26 @@ export class MemoryEpisodeService {
         ref: episode.contentRef,
       });
       if (!text) continue;
+      let vector: Float32Array;
+      try {
+        vector = await (input.within ?? ((_, operation) => operation()))(episode, () =>
+          embedder.embedDocument(`${episode.day}\n${text}`),
+        );
+      } catch (error) {
+        failure ??= { error };
+        continue;
+      }
       await this.#options.store.attachEmbedding({
         episodeId: episode.id,
         embedding: {
           model: embedder.model,
           dimensions: embedder.dimensions,
-          vector: await (input.within ?? ((_, operation) => operation()))(episode, () =>
-            embedder.embedDocument(`${episode.day}\n${text}`),
-          ),
+          vector,
         },
       });
       embedded += 1;
     }
+    if (failure && embedded === 0) throw failure.error;
     return embedded;
   }
 

@@ -49,13 +49,13 @@ date: "2026-11-11"
 
 ## 决定
 
-1. **嵌入模型按“档案”登记。**新增 `packages/application/src/embedding-profiles.ts`，每个可用的嵌入模型一份档案：服务方（`local-onnx` 或 `vercel-ai-gateway`）、模型名、支持的维度、取向量的方式、查询和文档前缀（登记在 `packages/prompt-catalog`）、聊天和主动检查各自校准过的门槛、许可、上游仓库和固定的版本号。现在登记四份：网关上的 Qwen3-Embedding-8B（原来的，门槛 0.6 / 0.45）、本机 jina v5 small int8（0.30 / 0.20）、本机 Qwen3-Embedding-0.6B int8（0.52 / 0.47）、本机 EmbeddingGemma 2（0.78 / 0.74）。配置写的服务方加模型名找不到档案，或维度不在档案里，启动就拒绝（`EMBEDDING_PROFILE_UNKNOWN`、`EMBEDDING_PROFILE_DIMENSIONS_UNSUPPORTED`）。切换模型只改配置里那一条嵌入模型描述，门槛自动跟着换；配置里显式写的门槛仍然优先。
+1. **嵌入模型按“档案”登记。**新增 `packages/application/src/embedding-profiles.ts`，每个可用的嵌入模型一份档案：服务方（`local-onnx` 或 `vercel-ai-gateway`）、模型名、支持的维度、取向量的方式、查询和文档前缀（登记在 `packages/prompt-catalog`）、聊天和主动检查各自校准过的门槛、许可、上游仓库和固定的版本号。现在登记四份：网关上的 Qwen3-Embedding-8B（原来的，门槛 0.6 / 0.45）、本机 jina v5 small int8（0.30 / 0.20）、本机 Qwen3-Embedding-0.6B int8（0.52 / 0.47）、本机 EmbeddingGemma 2（0.78 / 0.74）。配置写的服务方加模型名找不到档案，或维度不在档案里，启动就拒绝（`EMBEDDING_PROFILE_UNKNOWN`、`EMBEDDING_PROFILE_DIMENSIONS_UNSUPPORTED`）。切换模型只改配置里那一条嵌入模型描述，门槛自动跟着换；配置里显式写的门槛仍然优先。这取代 [ADR 0115](0115-memory-search-relevance-threshold-and-retrieval-eval.md) 第 1 条里“换成其他向量模型又没配门槛时拒绝启动（`MEMORY_MINIMUM_SIMILARITY_REQUIRED`）”这一半：门槛改由档案提供，那个错误码已删除；Qwen3-8B 的 0.6 门槛不变。
 2. **生产默认用本机 jina int8，外网 Qwen3-8B 保留为可选。**本机模型在服务进程里用 `onnxruntime-node` 1.30.0 加 `@huggingface/tokenizers` 0.2.0 计算，不另开进程或端口，不需要显卡。本机配置必须是 `disclosure: local_only`、`secretRef: null`、费用全为 0，并带 `artifactSha256`。
 3. **本机模型照样走统一出口。**本机运行时对外是一个 `fetch` 函数，地址是 `http://local-onnx.invalid/v1/embeddings`，由 `EgressEmbedder` 用同一个 `wrapFetch` 包住；遮盖、记账和网关请求是同一段代码。本机请求按 0 成本记账，回应里必须带 `providerMetadata.local.runtime = "onnxruntime-node"`。
 4. **模型文件固定版本、带校验。**模型文件放在 `<stateRoot>/models/<模型名>/<artifactSha256>/`，里面有 `manifest.json`（列出每个文件的 sha256）和模型、分词器文件；`artifactSha256` 是 `manifest.json` 的 sha256，写在配置里。加载前逐个核对哈希、拒绝符号链接。文件由 `scripts/embedding-models/build-artifact.py` 从固定版本号的上游下载、按通道做 int8 量化后生成，jina 这份的 `artifactSha256` 是 `dcf55698530d735cf4ab00ddd4406e88ff74b09de204a6a4c1e2c7078e753366`。往测试机或生产机放模型文件之前先问 Andy。
 5. **向量身份带上配方。**索引里记的模型名是 `模型名#哈希前 16 位`，哈希覆盖前缀和取向量方式、维度、`artifactSha256` 和遮盖规则版本。任一项变了，旧向量自动算“没建索引”，后台按新身份重算。
-6. **模型在后台加载，加载好之前只用关键词和实体。**状态有 `idle`、`loading`、`ready`、`failed`、`closed`；没到 `ready` 时嵌入报 `EMBEDDING_LOCAL_NOT_READY`，检索退回关键词和实体（同 [ADR 0223](0223-chat-memory-lookup-falls-back-to-keywords.md)）。第一次到 `ready` 后，把记忆排回待建索引并补算向量。请求排一个有上限的队（默认 64 个），聊天的查询排在后台补算前面；调用方放弃了的请求直接出队；单条输入超过 8192 个 token 就拒绝。健康检查多一项非必需的 `memory-embedding`。
-7. **上线脚本支持换嵌入模型。**实例配置 `configTargets.embedding` 写目标嵌入描述，出包时生成 `TARGET_EMBEDDING_JSON`；切换检查和维护脚本只允许把唯一那条嵌入描述整条换成它、把 `memory.dimensions` 改成它的维度，并去掉旧模型的门槛覆盖值，别的配置字段一处不许动。目标是本机模型时，上线前检查（`deploy-preflight.py`）会在生产机上逐个核对模型目录和哈希，不全就停。清理旧版本时不碰 `models/` 目录。
+6. **模型在后台加载，加载好之前只用关键词和实体。**状态有 `idle`、`loading`、`ready`、`failed`、`closed`；没到 `ready` 时嵌入报 `EMBEDDING_LOCAL_NOT_READY`，检索退回关键词和实体（同 [ADR 0223](0223-chat-memory-lookup-falls-back-to-keywords.md)）。第一次到 `ready` 后，把记忆排回待建索引并补算向量。请求排一个有上限的队（默认 64 个），聊天的查询排在后台补算前面；调用方放弃了的请求还在排队时直接出队，已经在算的算完后不返回向量；关闭时先等正在算的那一条算完再释放模型；单条输入超过 8192 个 token 就拒绝。补算每日摘要时，某一条算不出来（例如超长）就跳过它、接着算后面的，一页里一条都没算成才报错。健康检查多一项非必需的 `memory-embedding`。
+7. **上线脚本支持换嵌入模型。**实例配置 `configTargets.embedding` 写目标嵌入描述，出包时生成 `TARGET_EMBEDDING_JSON`；切换检查和维护脚本只允许把唯一那条嵌入描述整条换成它、把 `memory.dimensions` 改成它的维度，并去掉旧模型的门槛覆盖值，别的配置字段一处不许动。出包时目标描述按和服务启动相同的条件核对：键要齐、服务方加模型名必须是已登记的档案、维度在档案里、本机模型的哈希不能全为 0、只有本机模型能带 `artifactSha256`、网关模型必须有密钥引用。目标是本机模型时，上线前检查（`deploy-preflight.py`）会在生产机上逐个核对模型目录和哈希，不全就停。清理旧版本时不碰 `models/` 目录。
 8. **重建索引一并清空每日摘要的向量。**`memory reindex` 管理命令在清空记忆索引的同时，把 `memory_episodes` 的向量列置空，计划和结果里报告条数。
 9. **检索索引的威胁模型**写在 [记忆检索索引的威胁模型](../memory-index-threat-model.md)：索引从明文派生，防备份和导出泄露，不防本机入侵。
 
@@ -83,16 +83,19 @@ date: "2026-11-11"
 - **上线：**生产机要先放好模型目录（约 600 MB，属于“往生产机放模型文件”，要 Andy 同意），上线包配置里写 `configTargets.embedding`；没放好时上线前检查会停。回滚到旧版本会恢复旧配置，回到网关模型，同样要重算一次向量。
 - **内存：**常驻多约 1.35 GB（生产机当时可用约 6.6 GB）。
 - **每日摘要：**`memory_episodes` 的向量补算只看有关键词条目的摘要（`JOIN memory_episode_terms`）。没有关键词条目的是只含 sensitive 内容、本来就不进索引的摘要，这是有意的，这次不改。
+- **遮盖用的固定文字清单多了一条：**EmbeddingGemma 的查询前缀 `task: search result | query: ` 有 29 个字符，按 [KV 缓存规则第 11 条](../../.claude/rules/prompt-prefix.md#deterministic)进了出口遮盖的固定文字清单（不少于 24 个字符的提示词片段）。老对话的历史里恰好原样出现这段文字、并且旁边有会被认成敏感信息的内容时，这个对话的请求开头会变一次。其余对话不受影响。
 - **依赖：**新增 `onnxruntime-node` 1.30.0 和 `@huggingface/tokenizers` 0.2.0，版本写死；出包时只保留当前平台的 ONNX Runtime 二进制，去掉 CUDA 和 TensorRT 的部分。
 
 <a id="verification"></a>
 
 ## 验证
 
-- `packages/platform-node/test/local-onnx-embedding.unit.test.ts`：用一个 263 KB 的测试模型（`test/fixtures/local-onnx-embedding/`，由 `scripts/embedding-models/make-test-fixture.py` 生成）断网加载并回答嵌入请求；反向：文件哈希不对、`manifest.json` 哈希不对或写的是别的模型、经符号链接的目录，都拒绝加载；聊天查询排在后台补算前面、超过队列上限拒绝、调用方放弃的请求出队；上游下载脚本和 TypeScript 档案的仓库、版本号、维度一致。
+- `packages/platform-node/test/local-onnx-embedding.unit.test.ts`：用一个 263 KB 的测试模型（`test/fixtures/local-onnx-embedding/`，由 `scripts/embedding-models/make-test-fixture.py` 生成）断网加载并回答嵌入请求；反向：文件哈希不对、`manifest.json` 哈希不对或写的是别的模型、经符号链接的目录，都拒绝加载；聊天查询排在后台补算前面、超过队列上限拒绝、调用方放弃的请求出队、正在算时放弃的不返回向量、关闭时等正在算的那条算完；上游下载脚本和 TypeScript 档案的仓库、版本号、维度一致。
 - `apps/agent-service/test/local-embedding-composition.unit.test.ts`：本机配置断网也能按向量找到记忆，模型看到的是遮盖后的输入；反向：同样断网时网关模型按向量什么也找不到；加载中退回关键词；每份档案都能通过配置、组装和准入；文件、前缀或遮盖规则变了，向量身份跟着变；运行已取消时不写检索降级记录、真正失败时写一条。
+- `apps/agent-service/test/production-model-composition.unit.test.ts`：聊天检索的运行取消信号传到嵌入；模型调用记忆工具时运行已失去执行权（嵌入准入报 `NOT_AUTHORITATIVE`），也不写检索降级记录，嵌入服务真出错时照样写。
+- `packages/memory-engine/test/episode-backfill.unit.test.ts`：一条每日摘要算不出向量时，其余照常补算；一页全失败时报错。
 - `packages/platform-node/test/startup-configuration.unit.test.ts`：本机配置必须 `local_only`、无密钥、0 成本、带 `artifactSha256`，每种违规都按原因拒绝。
-- `scripts/delivery-mode/test_make_packet.py`、`test_deploy.py`、`test_release_cleanup.py`：切换检查只换嵌入描述和维度；目标不合规时出包拒绝；上线前检查在模型目录不全时停；清理不碰 `models/`。
+- `scripts/delivery-mode/test_make_packet.py`、`test_deploy.py`、`test_release_cleanup.py`：切换检查只换嵌入描述和维度；目标不合规（缺键、未登记的档案、维度不对、全 0 哈希、网关带哈希或缺密钥等）时出包拒绝，出包脚本里的档案清单和 TypeScript 档案一致；上线前检查在模型目录不全时停；清理不碰 `models/`。
 - `apps/admin-cli/test/memory-reindex-cli.unit.test.ts`：重建索引报告并清空每日摘要的向量。
 - 备份和导出：见 [威胁模型文档的“自动检查”一节](../memory-index-threat-model.md#checks)。
 

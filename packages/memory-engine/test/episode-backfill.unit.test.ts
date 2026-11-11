@@ -69,4 +69,42 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
     expect(attached).toEqual(["ep-health", "ep-coffee"]);
     expect(embedded.some((text) => text.includes("ep-secret"))).toBe(false);
   });
+
+  it("[P3-1] one summary that cannot be embedded does not hold back the others; a page of only failures still fails", async () => {
+    const attached: string[] = [];
+    let listed = [episode("ep-broken", "private"), episode("ep-fine", "private")];
+    const store = {
+      listUnembedded: async () => listed,
+      attachEmbedding: async ({ episodeId }: { episodeId: string }) => {
+        attached.push(episodeId);
+      },
+    } as unknown as MemoryEpisodeStorePort;
+    const service = new MemoryEpisodeService({
+      store,
+      threads: { listMessages: async () => [] } as never,
+      readText: async ({ ref }) => `text of ${ref}`,
+      storeText: async () => undefined,
+      embedder: {
+        model: "fixture-embedder",
+        dimensions: 2,
+        embedQuery: async () => new Float32Array([1, 0]),
+        embedDocument: async (text: string) => {
+          if (text.includes("ep-broken")) throw new Error("EMBEDDING_LOCAL_INPUT_LENGTH");
+          return new Float32Array([1, 0]);
+        },
+      },
+      now: () => "2026-11-09T00:00:00.000Z",
+    });
+    const run = () =>
+      service.backfillEmbeddings({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        limit: 5,
+      });
+    expect(await run()).toBe(1);
+    expect(attached).toEqual(["ep-fine"]);
+    listed = [episode("ep-broken", "private")];
+    await expect(run()).rejects.toThrow("EMBEDDING_LOCAL_INPUT_LENGTH");
+    expect(attached).toEqual(["ep-fine"]);
+  });
 });

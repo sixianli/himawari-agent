@@ -260,15 +260,31 @@ def interpret_discovery(facts, instance, label=None):
     }
 
 
-EMBEDDING_TARGET_KEYS = {'ref', 'role', 'provider', 'model', 'version', 'allowedDataClassifications', 'disclosure', 'secretRef', 'capabilities', 'cost', 'dimensions', 'artifactSha256'}
+EMBEDDING_TARGET_KEYS = {'ref', 'role', 'provider', 'model', 'version', 'allowedDataClassifications', 'disclosure', 'secretRef', 'capabilities', 'cost', 'dimensions'}
+EMBEDDING_PROFILES = {
+    ('vercel-ai-gateway', 'alibaba/qwen3-embedding-8b'): (4096, 1024),
+    ('local-onnx', 'jina-embeddings-v5-text-small-retrieval-int8'): (1024,),
+    ('local-onnx', 'qwen3-embedding-0.6b-int8'): (1024,),
+    ('local-onnx', 'embeddinggemma-2-fp32'): (768,),
+}
 
 
 def embedding_target(target):
     if target is None:
         return 'null'
-    if not isinstance(target, dict) or not set(target) <= EMBEDDING_TARGET_KEYS or target.get('role') != 'embedding' or type(target.get('dimensions')) is not int or target['dimensions'] <= 0 or not all(isinstance(target.get(key), str) and target[key] for key in ('ref', 'provider', 'model', 'version')):
+    if not isinstance(target, dict) or target.get('role') != 'embedding' or not all(isinstance(target.get(key), str) and target[key] for key in ('ref', 'provider', 'model', 'version')):
         refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
-    if target['provider'] == 'local-onnx' and (target.get('disclosure') != 'local_only' or target.get('secretRef') is not None or not re.fullmatch(r'[0-9a-f]{64}', str(target.get('artifactSha256')))):
+    local = target['provider'] == 'local-onnx'
+    if set(target) != EMBEDDING_TARGET_KEYS | ({'artifactSha256'} if local else set()):
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    dimensions = EMBEDDING_PROFILES.get((target['provider'], target['model']))
+    if dimensions is None or type(target['dimensions']) is not int or target['dimensions'] not in dimensions:
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    if not isinstance(target['cost'], dict) or set(target['cost']) != {'input', 'output', 'cacheRead', 'cacheWrite'} or not isinstance(target['capabilities'], list) or 'embedding' not in target['capabilities'] or not isinstance(target['allowedDataClassifications'], list) or not target['allowedDataClassifications']:
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    if local and (target['disclosure'] != 'local_only' or target['secretRef'] is not None or any(value != 0 for value in target['cost'].values()) or not re.fullmatch(r'[0-9a-f]{64}', str(target['artifactSha256'])) or set(target['artifactSha256']) == {'0'}):
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    if target['provider'] == 'vercel-ai-gateway' and not (isinstance(target['secretRef'], str) and target['secretRef']):
         refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
     encoded = json.dumps(target, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
     if "'" in encoded or '\\' in encoded:

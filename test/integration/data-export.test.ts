@@ -59,7 +59,11 @@ async function seeded(): Promise<Side> {
 
 function exportOf(
   from: Side,
-  options: { seal?: boolean; evidence?: boolean; textPolicy?: typeof policy } = {},
+  options: {
+    seal?: boolean;
+    evidence?: boolean;
+    textPolicy?: typeof policy;
+  } = {},
 ) {
   return buildPortableExport({
     database: from.database,
@@ -115,7 +119,13 @@ function rehash(
   mutate: (path: string, bytes: Uint8Array) => Uint8Array,
 ): PortableFiles {
   const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE))) as {
-    files: { path: string; bytes: number; lines: number; sha256: string; role: string }[];
+    files: {
+      path: string;
+      bytes: number;
+      lines: number;
+      sha256: string;
+      role: string;
+    }[];
   };
   const next: PortableFiles = new Map();
   for (const [path, bytes] of files)
@@ -175,6 +185,16 @@ describe("data export: round trip", () => {
     source.database
       .prepare("INSERT INTO memory_search_terms (rowid, terms) VALUES (?, 'zebrapluto')")
       .run(indexed.lastInsertRowid);
+    expect(indexed.changes).toBe(1);
+    expect(
+      source.database
+        .prepare(
+          `SELECT embedding FROM memory_search_index WHERE rowid = ?
+             AND rowid IN (SELECT rowid FROM memory_search_terms WHERE memory_search_terms MATCH 'zebrapluto')`,
+        )
+        .pluck()
+        .get(indexed.lastInsertRowid),
+    ).toEqual(vector);
     const exported = await exportOf(source, { evidence: true });
     const sealed = canonicalJson(
       await unsealJson(PASSPHRASE, exported.files.get(SEALED_FILE) ?? new Uint8Array()),

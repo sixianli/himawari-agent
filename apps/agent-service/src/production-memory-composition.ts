@@ -48,7 +48,7 @@ export interface ProductionMemoryComposition {
   bindEmbeddingBoundary(
     boundary: EmbeddingBoundary,
     timeoutMs: number,
-    searchCancelled?: () => boolean,
+    searchCancelled?: (error: unknown) => boolean,
   ): void;
   close(): Promise<void>;
 }
@@ -134,7 +134,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
   } else throw new TypeError("MEMORY_EMBEDDING_PROVIDER_UNSUPPORTED");
   const minimumSimilarity =
     options.configuration.memory.minimumSimilarity ?? profile.chatMinimumSimilarity;
-  let searchCancelled = () => false;
+  let searchCancelled: (error: unknown) => boolean = () => false;
   const projection = new HybridMemoryProvider({
     index: options.index,
     embedder,
@@ -145,7 +145,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
       ? { timeZone: options.configuration.runPolicy.timeZone }
       : {}),
     onVectorFailure: (error, scope) => {
-      if (!searchCancelled()) options.onVectorFailure(error, scope);
+      if (!searchCancelled(error)) options.onVectorFailure(error, scope);
     },
   });
   return Object.freeze({
@@ -157,7 +157,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
     bindEmbeddingBoundary: (
       boundary: EmbeddingBoundary,
       timeoutMs: number,
-      cancelled?: () => boolean,
+      cancelled?: (error: unknown) => boolean,
     ) => {
       embedder.bindBoundary(boundary, timeoutMs);
       if (cancelled) searchCancelled = cancelled;
