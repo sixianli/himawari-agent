@@ -2893,7 +2893,7 @@ describe("production memory capture", () => {
     await capture.stop();
   });
 
-  it("[P3-5] records a turn whose result could not be saved, without asking the model again or queueing it", async () => {
+  it("[P3-5] retries a turn whose checkpoint could not be registered, since nothing was saved yet", async () => {
     const context = await setup(P3_5_MESSAGE, P3_5_MEMORY);
     context.outputs.push(P3_5_MEMORY);
     const options = optionsOf(context);
@@ -2912,6 +2912,38 @@ describe("production memory capture", () => {
     await capture.stop();
     expect(context.calls.map(({ invocationId }) => invocationId)).toEqual([
       "memory-capture:run-memory-capture",
+      "memory-capture:run-memory-capture:retry",
+    ]);
+    expect((await activeMemories(context)).map(({ id }) => id)).toEqual([
+      "memory:memory-capture:run-memory-capture:0",
+    ]);
+    expect(
+      (await captureFailures(context)).map(({ outcome, reasonCode }) => [outcome, reasonCode]),
+    ).toEqual([["capture_retrying", "PORT_CONFLICT"]]);
+    expect(backlogRows(context)).toEqual([]);
+  });
+
+  const failingWrites = (context: Awaited<ReturnType<typeof setup>>) => {
+    const options = optionsOf(context);
+    return {
+      ...options,
+      payloads: {
+        ...options.payloads,
+        put: async () => {
+          throw new Error("PORT_CONFLICT");
+        },
+      },
+    } as ConstructorParameters<typeof ProductionMemoryCapture>[0];
+  };
+
+  it("[P3-5] records a turn whose memories could not be written, without asking the model again or queueing it", async () => {
+    const context = await setup(P3_5_MESSAGE, P3_5_MEMORY);
+    context.outputs.push(P3_5_MEMORY);
+    const capture = new ProductionMemoryCapture(failingWrites(context));
+    await capture.start(context.request);
+    await capture.stop();
+    expect(context.calls.map(({ invocationId }) => invocationId)).toEqual([
+      "memory-capture:run-memory-capture",
     ]);
     expect(await activeMemories(context)).toEqual([]);
     expect(
@@ -2921,35 +2953,47 @@ describe("production memory capture", () => {
     expect(context.failures).toHaveLength(1);
   });
 
-  it("[P3-5] gives up a replayed turn whose result cannot be saved, instead of asking the model again", async () => {
+  it("[P3-5] gives up a replayed turn whose memories cannot be written, and does not replay it again when the row could not be removed", async () => {
     const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
     context.outputs.push(new Error("AI_GATEWAY_REQUEST_TIMEOUT"));
     await context.capture.start(context.request);
     await context.capture.stop();
-    await context.turn("owner", "今天第二轮，随便聊聊。", "run-save-fails");
-    context.outputs.push('{"memories":[]}', P3_5_MEMORY);
-    const options = optionsOf(context);
+    const options = failingWrites(context);
+    const backlog = options.backlog;
+    if (!backlog) throw new Error("backlog");
+    let removeFailures = 1;
     const capture = new ProductionMemoryCapture({
       ...options,
-      generations: {
-        request: async () => {
-          throw new Error("PORT_CONFLICT");
+      backlog: {
+        ...backlog,
+        enqueue: (entry) => backlog.enqueue(entry),
+        oldest: (query) => backlog.oldest(query),
+        recordAttempt: (attempt) => backlog.recordAttempt(attempt),
+        remove: async (generationId) => {
+          removeFailures -= 1;
+          if (removeFailures >= 0) throw new Error("PORT_UNAVAILABLE");
+          return backlog.remove(generationId);
         },
       },
     });
+    await context.turn("owner", "今天第二轮，随便聊聊。", "run-save-fails");
+    context.outputs.push('{"memories":[]}', P3_5_MEMORY);
     await capture.start(context.requestFor("run-save-fails"));
+    await context.turn("owner", "今天第三轮，随便聊聊。", "run-after");
+    context.outputs.push('{"memories":[]}');
+    await capture.start(context.requestFor("run-after"));
     await capture.stop();
     expect(context.calls.map(({ invocationId }) => invocationId).slice(2)).toEqual([
       "memory-capture:run-save-fails",
       "memory-capture:run-save-fails:backlog",
+      "memory-capture:run-after",
     ]);
     expect(await activeMemories(context)).toEqual([]);
     expect(backlogRows(context)).toEqual([]);
     expect(
       (await captureFailures(context))
         .filter(({ reasonCode }) => reasonCode === "PORT_CONFLICT")
-        .map(({ outcome }) => outcome)
-        .toSorted(),
+        .map(({ outcome }) => outcome),
     ).toEqual(["capture_gave_up"]);
   });
 

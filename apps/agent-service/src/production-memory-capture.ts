@@ -719,6 +719,7 @@ export class ProductionMemoryCapture {
   readonly #pending = new Map<string, { work: Promise<void>; admitted: Promise<void> }>();
   readonly #captured = new Set<string>();
   readonly #busy = new Set<string>();
+  readonly #abandoned = new Set<string>();
   #stopping = false;
   private readonly options: ProductionMemoryCaptureOptions;
 
@@ -795,7 +796,7 @@ export class ProductionMemoryCapture {
     const { backlog } = this.options;
     let parsed: ParsedMemoryCandidates;
     try {
-      parsed = await this.#extract(plan, onAdmitted, {
+      parsed = await this.#prepare(plan, onAdmitted, {
         invocationId: `memory-capture:${request.runId}`,
         retryToolCall: backlog === undefined,
       });
@@ -838,7 +839,7 @@ export class ProductionMemoryCapture {
     }
     await this.#recordFailure(plan, "capture_retrying", firstCode, "turn:1");
     try {
-      return await this.#extract(plan, () => {}, {
+      return await this.#prepare(plan, () => {}, {
         invocationId: `memory-capture:${request.runId}:retry`,
         retryToolCall: false,
       });
@@ -856,7 +857,11 @@ export class ProductionMemoryCapture {
       await this.#commit(plan, parsed);
     } catch (error) {
       if (!backlog) throw error;
-      await backlog.remove(plan.generationId).catch(this.options.onFailure);
+      this.#abandoned.add(plan.generationId);
+      await backlog
+        .remove(plan.generationId)
+        .then(() => this.#abandoned.delete(plan.generationId))
+        .catch(this.options.onFailure);
       await this.#recordFailure(plan, "capture_gave_up", captureErrorCode(error), "save").catch(
         this.options.onFailure,
       );
@@ -876,6 +881,11 @@ export class ProductionMemoryCapture {
     if (!entry || this.#busy.has(entry.generationId)) return;
     this.#busy.add(entry.generationId);
     try {
+      if (this.#abandoned.has(entry.generationId)) {
+        await backlog.remove(entry.generationId);
+        this.#abandoned.delete(entry.generationId);
+        return;
+      }
       const plan = await this.#plan(request, entry.sourceRunId, entry.threadId);
       if (!plan || plan.generationId !== entry.generationId) {
         await backlog.remove(entry.generationId);
@@ -883,7 +893,7 @@ export class ProductionMemoryCapture {
       }
       let parsed: ParsedMemoryCandidates;
       try {
-        parsed = await this.#extract(plan, onAdmitted, {
+        parsed = await this.#prepare(plan, onAdmitted, {
           invocationId: `memory-capture:${request.runId}:backlog`,
           retryToolCall: false,
         });
@@ -1103,13 +1113,15 @@ export class ProductionMemoryCapture {
     }
   }
 
-  async #commit(plan: CapturePlan, parsed: ParsedMemoryCandidates): Promise<void> {
-    const { audit, input, owner } = plan;
+  async #prepare(
+    plan: CapturePlan,
+    onAdmitted: () => void,
+    call: MemoryCaptureCall,
+  ): Promise<ParsedMemoryCandidates> {
+    const parsed = await this.#extract(plan, onAdmitted, call);
+    const { owner } = plan;
     const { ownerId, agentId } = plan.request;
-    for (let index = 0; index < parsed.unverifiedEvidence; index += 1) audit("evidence_unverified");
-    for (let index = 0; index < parsed.invalidCandidates; index += 1) audit("candidate_invalid");
-    if (parsed.returnedNone) audit("nothing_to_remember");
-    if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) return;
+    if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) return parsed;
     await this.options.assertActive();
     if (parsed.candidates.length > 0)
       await this.options.generations.request({
@@ -1141,6 +1153,15 @@ export class ProductionMemoryCapture {
         requestedAt: this.options.clock.now(),
         errorCode: null,
       });
+    return parsed;
+  }
+
+  async #commit(plan: CapturePlan, parsed: ParsedMemoryCandidates): Promise<void> {
+    const { audit, input } = plan;
+    for (let index = 0; index < parsed.unverifiedEvidence; index += 1) audit("evidence_unverified");
+    for (let index = 0; index < parsed.invalidCandidates; index += 1) audit("candidate_invalid");
+    if (parsed.returnedNone) audit("nothing_to_remember");
+    if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) return;
     const service = createProductionAutomaticMemory({
       ...this.options,
       extract: async () => parsed.candidates,

@@ -10,7 +10,7 @@ const FILES = [
   "test/integration/production-memory-capture.test.ts",
   "packages/persistence-sqlite/test/memory-capture-backlog-migration.contract.test.ts",
 ];
-const REQUIRED = 17;
+const REQUIRED = 18;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(path.join(tmpdir(), "himawari-memory-capture-retry-"));
