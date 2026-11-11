@@ -40,19 +40,19 @@ import {
   MCP_PROPOSE_RULE_REPLAY,
   MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE,
   MCP_PROPOSE_RULE_SAVED,
+  MCP_SERVER_INSTRUCTIONS,
+  MCP_START_HERE_OMITTED,
+  MCP_START_HERE_RULES_NOTE,
   MCP_TOOL_FIND_MEMORIES,
   MCP_TOOL_PROPOSE_MEMORY,
   MCP_TOOL_PROPOSE_RULE,
   MCP_TOOL_RESULT_FAILED,
-  MCP_SERVER_INSTRUCTIONS,
-  MCP_START_HERE_OMITTED,
-  MCP_START_HERE_RULES_NOTE,
   MCP_TOOL_RULE_BOOK,
   MCP_TOOL_START_HERE,
   MCP_TOOL_TODAY_CONTEXT,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
-import { maskSensitiveTextGroups } from "@himawari-agent/sensitive-capture";
+import { maskSensitiveTexts } from "@himawari-agent/sensitive-capture";
 import {
   type AuthInfo,
   type CallToolResult,
@@ -262,28 +262,14 @@ function mapStrings(value: unknown, map: (text: string) => string): unknown {
 }
 
 export function maskForExternalRead(value: unknown): unknown {
-  if (value === null || typeof value !== "object" || Array.isArray(value))
-    return maskFields([value])[0];
-  const entries = Object.entries(value as Record<string, unknown>);
-  const masked = maskFields(entries.map(([, entry]) => entry));
-  return Object.fromEntries(entries.map(([key], index) => [key, masked[index]]));
-}
-
-function maskFields(fields: readonly unknown[]): unknown[] {
-  const groups = fields.map((field) => {
-    const texts: string[] = [];
-    mapStrings(field, (text) => {
-      texts.push(text);
-      return text;
-    });
-    return texts;
+  const texts: string[] = [];
+  mapStrings(value, (text) => {
+    texts.push(text);
+    return text;
   });
-  const masked = maskSensitiveTextGroups(groups);
-  return fields.map((field, index) => {
-    let next = 0;
-    const group = masked[index] ?? [];
-    return mapStrings(field, () => group[next++] ?? "");
-  });
+  const masked = maskSensitiveTexts(texts);
+  let next = 0;
+  return mapStrings(value, () => masked[next++] ?? "");
 }
 
 function compareText(a: string, b: string): number {

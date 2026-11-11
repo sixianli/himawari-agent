@@ -30,27 +30,22 @@ describe("[P5-1] masking what an external MCP read returns", () => {
   });
 });
 
-describe("[P5-A] masking field by field", () => {
-  const named = `家里 Wi-Fi 密码：${WIFI_VALUE}`;
-  const bare = `路由器背面贴着 ${WIFI_VALUE}`;
+describe("[P5-A] masking across the fields of one response", () => {
+  const code = "482910";
 
-  it("masks the same bytes in a field whatever the later fields hold", () => {
-    const alone = maskForExternalRead({ profile: [bare], today: ["明天开会"] });
-    const withLater = maskForExternalRead({ profile: [bare], today: ["明天开会", named] });
-    expect(JSON.stringify((withLater as Record<string, unknown>)["profile"])).toBe(
-      JSON.stringify((alone as Record<string, unknown>)["profile"]),
+  it("masks a value everywhere in start_here when only one field names it", () => {
+    const masked = JSON.stringify(
+      maskForExternalRead({
+        profile: { sections: [{ items: [`备用手机尾号提示 ${code}`] }] },
+        rules: { items: [] },
+        today: { reminders: [{ text: `${code} 是验证码` }] },
+      }),
     );
+    expect(masked).not.toContain(code);
   });
 
-  it("masks a value in a later field once an earlier field has named it", () => {
-    const masked = JSON.stringify(maskForExternalRead({ first: [named], later: [bare] }));
-    expect(masked).not.toContain(WIFI_VALUE);
-  });
-
-  it("REVERSE: a text with nothing sensitive in an earlier field is not masked by a later field", () => {
-    const masked = maskForExternalRead({ first: ["明天开会"], later: [named] }) as {
-      first: string[];
-    };
-    expect(masked.first).toEqual(["明天开会"]);
+  it("REVERSE: a response that names nothing sensitive keeps every field as it is", () => {
+    const value = { profile: { items: ["住在东京"] }, today: { reminders: [{ text: "开会" }] } };
+    expect(maskForExternalRead(value)).toEqual(value);
   });
 });
