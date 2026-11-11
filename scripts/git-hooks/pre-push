@@ -5,3 +5,11 @@ node "$root/scripts/check-boundaries.mjs" >&2 || {
   echo "PUSH_BOUNDARY_CHECK_FAILED npm run check:boundaries 失败或脚本缺失，推送被拦下" >&2
   exit 1
 }
+node "$root/scripts/check-format.mjs" >&2 || {
+  echo "PUSH_FORMAT_CHECK_FAILED npm run format:check 失败或脚本缺失，推送被拦下" >&2
+  exit 1
+}
+node "$root/scripts/scan-machine-secrets.mjs" >&2 || {
+  echo "PUSH_SECRET_SCAN_FAILED npm run check:secrets 失败或脚本缺失，推送被拦下" >&2
+  exit 1
+}

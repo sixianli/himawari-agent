@@ -44,6 +44,12 @@ function fixture() {
     "scripts/check-boundaries.mjs",
     "console.error('BOUNDARY_STUB_RAN');\nprocess.exit(0);\n",
   );
+  write(root, "scripts/check-format.mjs", "console.error('FORMAT_STUB_RAN');\nprocess.exit(0);\n");
+  write(
+    root,
+    "scripts/scan-machine-secrets.mjs",
+    "console.error('SECRETS_STUB_RAN');\nprocess.exit(0);\n",
+  );
   write(root, "DELIVERY_MODE", "fast\n");
   write(
     root,
@@ -146,7 +152,32 @@ describe("Layer 0 hooks from the repository", () => {
     const pushed = tryGit(root, "push", "-q", "origin", "main");
     expect(pushed.status).toBe(0);
     expect(pushed.stderr).toContain("BOUNDARY_STUB_RAN");
+    expect(pushed.stderr).toContain("FORMAT_STUB_RAN");
+    expect(pushed.stderr).toContain("SECRETS_STUB_RAN");
   });
+
+  for (const [script, code] of [
+    ["scripts/check-format.mjs", "PUSH_FORMAT_CHECK_FAILED"],
+    ["scripts/scan-machine-secrets.mjs", "PUSH_SECRET_SCAN_FAILED"],
+  ]) {
+    it(`refuses at push when ${script} fails or is missing`, () => {
+      const failing = fixture();
+      write(failing, script, "console.error('found a problem');\nprocess.exit(1);\n");
+      git(failing, "add", "-A");
+      commitChange(failing);
+      publishBase(failing);
+      const refused = tryGit(failing, "push", "-q", "origin", "main");
+      expect(refused.status).not.toBe(0);
+      expect(refused.stderr).toContain(code);
+      const missing = fixture();
+      git(missing, "rm", "-q", "-f", script);
+      commitChange(missing);
+      publishBase(missing);
+      const absent = tryGit(missing, "push", "-q", "origin", "main");
+      expect(absent.status).not.toBe(0);
+      expect(absent.stderr).toContain(code);
+    });
+  }
 
   it("refuses at push when the boundary check script is missing", () => {
     const root = fixture();

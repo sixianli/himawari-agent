@@ -54,20 +54,8 @@
         "type": "mail_read_whole_thread",
         "summary": "涉及退款的邮件，判断前一定读完同一邮件串里的全部往来；读不全就交给主人自己看。",
         "params": {
-          "phrases": [
-            "退款",
-            "退钱",
-            "返金",
-            "払い戻し",
-            "払戻",
-            "返還"
-          ],
-          "words": [
-            "refund",
-            "refunds",
-            "refunded",
-            "chargeback"
-          ]
+          "phrases": ["退款", "退钱", "返金", "払い戻し", "払戻", "返還"],
+          "words": ["refund", "refunds", "refunded", "chargeback"]
         }
       }
     },
@@ -83,9 +71,7 @@
         "type": "mail_must_notify",
         "summary": "收到日本出入国在留管理厅（入管局）相关的邮件时一定提醒并推送到手机。",
         "params": {
-          "senderDomains": [
-            "isa.go.jp"
-          ],
+          "senderDomains": ["isa.go.jp"],
           "phrases": [
             "出入国在留管理庁",
             "出入国在留管理局",
@@ -127,14 +113,7 @@
             "サブスクリプション",
             "定期購読"
           ],
-          "words": [
-            "subscription",
-            "subscriptions",
-            "subscribe",
-            "subscribed",
-            "renewal",
-            "renew"
-          ]
+          "words": ["subscription", "subscriptions", "subscribe", "subscribed", "renewal", "renew"]
         }
       }
     },
@@ -171,22 +150,8 @@
         "type": "mail_read_whole_thread",
         "summary": "涉及退款的邮件，判断前一定读完同一邮件串里的全部往来；读不全就交给我自己看。",
         "params": {
-          "phrases": [
-            "退款",
-            "退费",
-            "退費",
-            "退钱",
-            "退錢",
-            "返金",
-            "払い戻し",
-            "返品"
-          ],
-          "words": [
-            "refund",
-            "refunds",
-            "reimbursement",
-            "chargeback"
-          ],
+          "phrases": ["退款", "退费", "退費", "退钱", "退錢", "返金", "払い戻し", "返品"],
+          "words": ["refund", "refunds", "reimbursement", "chargeback"],
           "excludePhrases": []
         }
       }
@@ -203,9 +168,7 @@
         "type": "mail_must_notify",
         "summary": "日本出入国在留管理厅（入管局）相关的邮件一律提醒我并推送到手机",
         "params": {
-          "senderDomains": [
-            "isa.go.jp"
-          ],
+          "senderDomains": ["isa.go.jp"],
           "phrases": [
             "出入国在留管理庁",
             "出入国在留管理局",
@@ -217,9 +180,7 @@
             "在留手続",
             "在留申請"
           ],
-          "words": [
-            "immigration"
-          ]
+          "words": ["immigration"]
         }
       }
     },
@@ -235,20 +196,8 @@
         "type": "mail_must_notify",
         "summary": "凡是和订阅（含日文サブスク、定期購読、継続課金，英文 subscription）相关的邮件，一律提醒并推送到手机。",
         "params": {
-          "phrases": [
-            "订阅",
-            "訂閱",
-            "サブスク",
-            "定期購読",
-            "継続課金",
-            "サブスクリプション"
-          ],
-          "words": [
-            "subscription",
-            "subscriptions",
-            "subscribe",
-            "renewal"
-          ]
+          "phrases": ["订阅", "訂閱", "サブスク", "定期購読", "継続課金", "サブスクリプション"],
+          "words": ["subscription", "subscriptions", "subscribe", "renewal"]
         }
       }
     },
@@ -285,22 +234,8 @@
         "type": "mail_read_whole_thread",
         "summary": "涉及退款的邮件，先读完同一邮件串里的全部往来再判断，读不全就交给你自己看。",
         "params": {
-          "phrases": [
-            "退款",
-            "退費",
-            "退钱",
-            "返金",
-            "払い戻し",
-            "返品",
-            "返済"
-          ],
-          "words": [
-            "refund",
-            "refunds",
-            "refunded",
-            "reimbursement",
-            "chargeback"
-          ]
+          "phrases": ["退款", "退費", "退钱", "返金", "払い戻し", "返品", "返済"],
+          "words": ["refund", "refunds", "refunded", "reimbursement", "chargeback"]
         }
       }
     },
@@ -316,10 +251,7 @@
         "type": "mail_must_notify",
         "summary": "收到日本出入国在留管理厅（入管局）相关的邮件时一定通知我，并推送到手机。",
         "params": {
-          "senderDomains": [
-            "isa.go.jp",
-            "moj.go.jp"
-          ],
+          "senderDomains": ["isa.go.jp", "moj.go.jp"],
           "phrases": [
             "出入国在留管理厅",
             "出入国在留管理庁",
@@ -338,13 +270,8 @@
             "签证",
             "在留"
           ],
-          "words": [
-            "immigration"
-          ],
-          "excludePhrases": [
-            "メルマガ",
-            "newsletter"
-          ]
+          "words": ["immigration"],
+          "excludePhrases": ["メルマガ", "newsletter"]
         }
       }
     },
@@ -370,17 +297,8 @@
             "自動更新",
             "订阅更新"
           ],
-          "words": [
-            "subscription",
-            "subscriptions",
-            "subscribe",
-            "renewal"
-          ],
-          "excludePhrases": [
-            "newsletter",
-            "メルマガ",
-            "メールマガジン"
-          ]
+          "words": ["subscription", "subscriptions", "subscribe", "renewal"],
+          "excludePhrases": ["newsletter", "メルマガ", "メールマガジン"]
         }
       }
     },
@@ -414,13 +332,7 @@
       "call": {
         "inferred": false,
         "params": {
-          "phrases": [
-            "退款",
-            "返金",
-            "refund",
-            "返金額",
-            "返金手続き"
-          ]
+          "phrases": ["退款", "返金", "refund", "返金額", "返金手続き"]
         },
         "quote": "涉及退款的邮件以后必须看整个邮件串再判断",
         "summary": "涉及退款的邮件，判断前必须读完同一邮件串里的全部往来",
@@ -446,10 +358,7 @@
             "Immigration Services Agency",
             "immigration"
           ],
-          "senderDomains": [
-            "immi-moj.go.jp",
-            "moj.go.jp"
-          ]
+          "senderDomains": ["immi-moj.go.jp", "moj.go.jp"]
         },
         "quote": "日本入管局相关的邮件以后必须通知我",
         "summary": "凡日本入管局（出入国在留管理庁）相关邮件，一律提醒主人并推送到手机",
@@ -465,13 +374,7 @@
       "call": {
         "inferred": false,
         "params": {
-          "excludePhrases": [
-            "退订",
-            "取消订阅",
-            "unsubscribe",
-            "newsletter",
-            "メルマガ"
-          ],
+          "excludePhrases": ["退订", "取消订阅", "unsubscribe", "newsletter", "メルマガ"],
           "phrases": [
             "订阅",
             "サブスク",
@@ -517,17 +420,8 @@
       "call": {
         "inferred": false,
         "params": {
-          "excludePhrases": [
-            "unsubscribe",
-            "退订"
-          ],
-          "phrases": [
-            "退款",
-            "返金",
-            "refund",
-            "返款",
-            "退费"
-          ]
+          "excludePhrases": ["unsubscribe", "退订"],
+          "phrases": ["退款", "返金", "refund", "返款", "退费"]
         },
         "quote": "涉及退款的邮件以后必须看整个邮件串再判断",
         "summary": "凡涉及退款的邮件，先读完同一邮件串的全部往来再判断，读不全就交给主人自己看。",
@@ -552,10 +446,7 @@
             "Immigration",
             "immigration"
           ],
-          "senderDomains": [
-            "immi-moj.go.jp",
-            "moj.go.jp"
-          ]
+          "senderDomains": ["immi-moj.go.jp", "moj.go.jp"]
         },
         "quote": "日本入管局相关的邮件以后必须通知我",
         "summary": "凡是日本入管局（出入国在留管理庁/入国管理局）相关的邮件，一律提醒主人并推送到手机。",
@@ -567,16 +458,11 @@
       "run": 2,
       "caseId": "subscription-notify",
       "pass": false,
-      "reasons": [
-        "标成了推断"
-      ],
+      "reasons": ["标成了推断"],
       "call": {
         "inferred": true,
         "params": {
-          "excludePhrases": [
-            "unsubscribe",
-            "配信停止"
-          ],
+          "excludePhrases": ["unsubscribe", "配信停止"],
           "phrases": [
             "订阅",
             "续订",
@@ -623,17 +509,8 @@
       "call": {
         "inferred": false,
         "params": {
-          "excludePhrases": [
-            "unsubscribe",
-            "退订"
-          ],
-          "phrases": [
-            "退款",
-            "返金",
-            "refund",
-            "返款",
-            "退费"
-          ]
+          "excludePhrases": ["unsubscribe", "退订"],
+          "phrases": ["退款", "返金", "refund", "返款", "退费"]
         },
         "quote": "涉及退款的邮件以后必须看整个邮件串再判断",
         "summary": "涉及退款的邮件，判断前必须读完同一邮件串里的全部往来，读不全就交给主人自己看。",
@@ -657,10 +534,7 @@
             "Immigration",
             "immigration"
           ],
-          "senderDomains": [
-            "immi-moj.go.jp",
-            "moj.go.jp"
-          ]
+          "senderDomains": ["immi-moj.go.jp", "moj.go.jp"]
         },
         "quote": "日本入管局相关的邮件以后必须通知我",
         "summary": "凡是日本入管局（出入国在留管理庁/管理局）发来的或内容相关的邮件，一律提醒并推送到手机",
@@ -676,19 +550,8 @@
       "call": {
         "inferred": false,
         "params": {
-          "excludePhrases": [
-            "退订",
-            "unsubscribe",
-            "配信停止"
-          ],
-          "phrases": [
-            "订阅",
-            "订阅成功",
-            "订阅确认",
-            "subscription",
-            "サブスク",
-            "登録完了"
-          ]
+          "excludePhrases": ["退订", "unsubscribe", "配信停止"],
+          "phrases": ["订阅", "订阅成功", "订阅确认", "subscription", "サブスク", "登録完了"]
         },
         "quote": "订阅相关的必须提醒我",
         "summary": "凡是订阅相关的邮件（订阅确认、订阅成功、订阅通知等）都提醒主人并推送到手机",
