@@ -326,7 +326,6 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
         now: () => T0,
         memoryIdFor: (generation, ordinal) => createMemoryId(`memory-${generation}-${ordinal}`),
         approvalIdFor: (generation, ordinal) => `approval-${generation}-${ordinal}`,
-        automaticConfidencePermille: 850,
       });
 
       const resultByCase = new Map<
