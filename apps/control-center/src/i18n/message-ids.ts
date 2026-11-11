@@ -668,6 +668,7 @@ export const MESSAGE_IDS = [
   "memory.page.history",
   "memory.page.now",
   "memory.page.useThis",
+  "memory.page.restoreVersion",
   "memory.page.editNote",
   "memory.page.archivedNote",
   "memory.page.unarchive",

@@ -35,6 +35,7 @@ export interface MemoryModel {
   readonly correct: (item: MemoryItem, text: string) => Promise<boolean>;
   readonly remove: (item: MemoryItem) => Promise<boolean>;
   readonly restore: (item: MemoryItem) => Promise<boolean>;
+  readonly restoreVersion: (item: MemoryItem, historyId: number) => Promise<boolean>;
   readonly recover: (item: MemoryItem) => Promise<boolean>;
   readonly confirm: (item: MemoryItem) => Promise<boolean>;
   readonly setCategory: (item: MemoryItem, category: MemoryCategory) => Promise<boolean>;
@@ -143,6 +144,7 @@ export function useMemory(input: {
       action,
       expectedRevision: item.revision,
       contentRef: null,
+      historyId: null,
     }));
   return {
     overview,
@@ -174,9 +176,18 @@ export function useMemory(input: {
         action: "correct",
         expectedRevision: item.revision,
         contentRef: await client.protectText(text, item.dataClassification),
+        historyId: null,
       })),
     remove: (item) => mutate(item, "delete"),
     restore: (item) => mutate(item, "restore"),
+    restoreVersion: (item, historyId) =>
+      send("memory.mutate", () => ({
+        memoryId: item.memoryId,
+        action: "restore_version",
+        expectedRevision: item.revision,
+        contentRef: null,
+        historyId,
+      })),
     recover: (item) => mutate(item, "recover"),
     confirm: (item) => mutate(item, "confirm"),
     setCategory: (item, category) =>

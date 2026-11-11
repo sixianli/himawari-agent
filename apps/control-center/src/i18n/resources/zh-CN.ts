@@ -701,6 +701,7 @@ export const messages = {
   "memory.page.history": "怎么变过来的",
   "memory.page.now": "现在",
   "memory.page.useThis": "换回这个说法",
+  "memory.page.restoreVersion": "恢复到这一版",
   "memory.page.editNote": "保存后，旧说法会移到“怎么变过来的”里，不会丢。",
   "memory.page.archivedNote": "整理时判断为过时或重复，回答时不再用",
   "memory.page.unarchive": "恢复使用",
