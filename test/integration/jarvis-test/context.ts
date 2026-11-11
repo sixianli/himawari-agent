@@ -38,6 +38,14 @@ const GENERATION_ID = createMemoryGenerationId("generation-jarvis-test");
 const HASH_DIMENSIONS = 256;
 
 class TermHashEmbedder implements Embedder {
+  embedQuery(query: string): Promise<Float32Array> {
+    return this.embed(query);
+  }
+
+  embedDocument(text: string): Promise<Float32Array> {
+    return this.embed(text);
+  }
+
   readonly model = "jarvis-test-term-hash";
   readonly dimensions = HASH_DIMENSIONS;
 

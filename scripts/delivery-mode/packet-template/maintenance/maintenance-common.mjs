@@ -339,6 +339,17 @@ export const originalModelLimits = Object.freeze({ contextWindow: __PKT_ORIGINAL
 export const approvedModelLimits = Object.freeze({ contextWindow: __PKT_TARGET_CONTEXT_WINDOW__, maxTokens: __PKT_TARGET_MAX_TOKENS__ });
 export const originalPublicFetchBytes = __PKT_ORIGINAL_PUBLIC_FETCH_BYTES__;
 export const approvedPublicFetchBytes = __PKT_TARGET_PUBLIC_FETCH_BYTES__;
+export const approvedEmbeddingDescriptor = Object.freeze(__PKT_TARGET_EMBEDDING_JSON__);
+
+function applyApprovedEmbedding(configuration) {
+  if (approvedEmbeddingDescriptor === null) return;
+  const positions = Array.isArray(configuration.modelDescriptors) ? configuration.modelDescriptors.flatMap((entry, index) => (entry?.role === "embedding" ? [index] : [])) : [];
+  assert(positions.length === 1 && configuration.memory && typeof configuration.memory === "object", "__PKT_LABEL_UPPER___MAINTENANCE_ORIGINAL_EMBEDDING_DESCRIPTOR_CHANGED");
+  configuration.modelDescriptors[positions[0]] = structuredClone(approvedEmbeddingDescriptor);
+  configuration.memory.dimensions = approvedEmbeddingDescriptor.dimensions;
+  delete configuration.memory.minimumSimilarity;
+  if (configuration.runPolicy?.proactive && typeof configuration.runPolicy.proactive === "object") delete configuration.runPolicy.proactive.memoryMinimumSimilarity;
+}
 
 export function staticRootConfiguration(original) {
   assert(original.http && typeof original.http === "object" && original.http.staticRoot === oldStaticRoot, "__PKT_LABEL_UPPER___MAINTENANCE_ORIGINAL_STATIC_ROOT_CHANGED");
@@ -350,6 +361,7 @@ export function staticRootConfiguration(original) {
   configuration.http.staticRoot = newStaticRoot;
   Object.assign(configuration.modelDescriptors.find((entry) => entry?.ref === approvedModelRef), approvedModelLimits);
   configuration.runPolicy.publicFetch.maximumBytes = approvedPublicFetchBytes;
+  applyApprovedEmbedding(configuration);
   return configuration;
 }
 

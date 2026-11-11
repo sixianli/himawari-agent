@@ -26,6 +26,7 @@ export * from "./files/workspace-copy-publication.js";
 export * from "./host-secret-source.js";
 export * from "./http-gateway-server.js";
 export * from "./identity-gateway.js";
+export * from "./local-onnx-embedding.js";
 export * from "./payload-protector.js";
 export * from "./payload-uds-transport.js";
 export * from "./public-web-egress.js";
