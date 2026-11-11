@@ -8,7 +8,7 @@ date: "2026-11-11"
 
 # Himawari 的身体：iPhone、Apple Watch、Mac 和随身麦克风的详细设计
 
-状态：等 Andy 看。他同意之前不写代码。两份 ADR（[ADR 0229](../../adr/0229-native-apple-clients-and-device-api.md)、[ADR 0230](../../adr/0230-perception-records-and-memories-inferred-from-perception.md)）定“做什么、为什么”，这份文档定“做成什么样”：接口、表、新出现的值、检查和验收。它不写到“改哪个文件的哪一行”，那是之后实施计划的事。
+状态：Andy 2026-11-11 已同意开工。两份 ADR（[ADR 0229](../../adr/0229-native-apple-clients-and-device-api.md)、[ADR 0230](../../adr/0230-perception-records-and-memories-inferred-from-perception.md)）定“做什么、为什么”，这份文档定“做成什么样”：接口、表、新出现的值、检查和验收。它不写到“改哪个文件的哪一行”，那是之后实施计划的事。
 
 <a id="contents"></a>
 
@@ -882,7 +882,7 @@ Mac App 的构建和测试属于苹果客户端的例外（在 Andy 的 Mac 上�
 
 到用上那天再问 Andy，不提前花：
 
-- 苹果开发者计划 99 美元/年（真机装包和推送都要它）。
+- 苹果开发者计划 99 美元/年，每年续。先不开：头几步用 Andy 自己的 Apple ID 免费装到他的手机上（装上的 App 据二手资料每 7 天过期，要重装）；做到苹果推送那一步再请他开。
 - 评测的模型费（预计超过 0.5 美元时先报）。
 - 第三方转文字约 2 美元/月（只有某种语言实测明显更准时才提）。
 - 随身麦克风约 89 美元。

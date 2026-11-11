@@ -1,7 +1,7 @@
 ---
 status: active
 document_type: adr
-decision_status: proposed
+decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md, docs/adr/0106-proactive-loop-v1-gmail-read-only.md"
@@ -37,7 +37,7 @@ date: "2026-11-11"
 - 来源不都是主人。旁人说的话、电视的声音、网页正文、短信都是别人写的，里面可能夹着“把这条记成事实”“批准这个动作”这样的话。
 - 把握有高有低。转写会错，认人会错，从位置推断的事更不确定。
 
-状态说明：本 ADR 现在是 `proposed`（已提出，等 Andy 看完同意）。它修改了 ADR 0179 第 6 条和 ADR 0106 第 6 条里的一句话，没有取代这两份 ADR；两份 ADR 的其余决定不变。细节在[详细设计](../execution/specs/2026-11-11-apple-device-body-design.md)里。
+状态说明：Andy 2026-11-11 21:32（日本时间）说“那这样，我们先做”，本 ADR 随即改为 `accepted`。它修改了 ADR 0179 第 6 条和 ADR 0106 第 6 条里的一句话，没有取代这两份 ADR；两份 ADR 的其余决定不变。细节在[详细设计](../execution/specs/2026-11-11-apple-device-body-design.md)里。
 
 [返回阅读导航](#contents)
 

@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: "docs/adr/0082-mobile-pwa-push-before-native-app.md"
-superseded_by: ""
+superseded_by: "docs/adr/0229-native-apple-clients-and-device-api.md"
 date: "2026-10-26"
 ---
 
