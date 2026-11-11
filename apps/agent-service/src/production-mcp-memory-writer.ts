@@ -36,7 +36,7 @@ export const EXTERNAL_PROPOSAL_CATEGORIES = [
   "other",
 ] as const satisfies readonly MemoryCategory[];
 const EXTERNAL_PROPOSAL_IMPORTANCE = 500;
-const INVISIBLE_FORMATTING = /[\p{Cc}​-‏‪-‮⁠-⁩﻿]/gu;
+const INVISIBLE_FORMATTING = /[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/gu;
 
 export type ExternalProposalCategory = (typeof EXTERNAL_PROPOSAL_CATEGORIES)[number];
 
@@ -182,13 +182,7 @@ export class ProductionMcpMemoryWriter {
       },
     };
     const write = this.#ledgerWrite(proposal, "kept", memoryId, started);
-    try {
-      await this.#options.memory.applyProposal(proposalRecord, generation, write);
-    } catch (error) {
-      if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.CONFLICT)
-        throw error;
-      await this.#options.memory.applyProposal(proposalRecord, generation, write);
-    }
+    await this.#options.memory.applyProposal(proposalRecord, generation, write);
     if (!(await this.#options.ledger.read({ ...this.#scope(), decisionId: write.id })))
       await this.#options.ledger.append(write);
     return memoryId;

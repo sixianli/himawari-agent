@@ -41,7 +41,7 @@ date: "2026-11-11"
 4. Claude Code 在 2026-07-28 版连接上声明表单确认。来源 <https://code.claude.com/docs/en/mcp>「Elicitation modes Claude Code declares」原话 “Claude Code declares `elicitation: {form: {}, url: {}}` on … Connections that use protocol revision 2026-07-28”；表单模式 “Claude Code shows a dialog with form fields defined by the server”。
 5. 官方 SDK `@modelcontextprotocol/server` 2.0.0 默认不校验 `requestState`，老版本连接默认由「兼容垫片」改用旧方式主动发请求，可以关掉。来源 `node_modules/@modelcontextprotocol/server/dist/createMcpHandler-CLhGwQTn.d.mts` 原话 “The SDK applies no integrity protection by default”；“`false` disables the shim: an `input_required` return on a 2025-era request fails loudly”。
 6. 新建记忆的现成写法遇到同编号、同内容会直接返回已有那条。来源 `packages/application/src/services/durable-memory-service.ts` 的 `applyProposal`，以及 `production-memory-control.ts` 的 `#create` 用 `id: memory:owner:${command.idempotencyKey}`。
-7. 决策记录的 `memory_candidate` 类已经允许 `kept`、`discarded` 两种结果，不用改表。来源 `packages/application/src/ports/decision-ledger.ts` 原话 `memory_candidate: ["kept", "discarded", "pending_approval"],`。
+7. 决策记录的 `memory_candidate` 类已经允许 `kept`、`discarded` 两种结果，不用改表。来源 `packages/application/src/ports/decision-ledger.ts` 里 `memory_candidate` 的结果列表，开头两项原话 `"kept",`、`"discarded",`。
 
 [返回阅读导航](#contents)
 
@@ -56,19 +56,19 @@ date: "2026-11-11"
 2. **确认按 2026-07-28 版的多轮请求做，不用旧的服务端主动请求。**
    - 第一次调用：服务端规范化正文，生成一个新的提议编号，回「需要输入」：一张表单，正文、分类、对方自称的客户端名都写在说明里，只有一个勾选框「保存这条记忆」。
    - 客户端带着 Andy 的答案和原样的 `requestState` 重发。只有「提交」并且勾了保存，才写记忆；拒绝、取消、提交但没勾，都算没同意，只记一条拒绝的决策记录。
-   - `requestState` 用官方 SDK 的 `createRequestStateCodec` 加 HMAC，有效期 10 分钟，绑定工具名和令牌种类。签名密钥在进程启动时随机生成 32 字节，不从令牌派生，所以拿到令牌的人也伪造不了状态。代价是服务重启后正在等确认的提议失效，重新提议即可（生产是单进程）。
+   - `requestState` 用官方 SDK 的 `createRequestStateCodec` 加 HMAC，有效期 10 分钟，绑定调用的方法名（`tools/call`）和令牌种类；工具名、提议编号和参数哈希写在签了名的状态里，重发时逐项核对。签名密钥在进程启动时随机生成 32 字节，不从令牌派生，所以拿到令牌的人也伪造不了状态。代价是服务重启后正在等确认的提议失效，重新提议即可（生产是单进程）。
    - SDK 选项里关掉兼容垫片（`legacyShim: false`），老版本连接上不注册写工具。
 3. **同一个提议只写一次。**
    - 记忆编号是 `memory:mcp:<提议编号>`，正文存在 `memory-content:mcp:<提议编号>`。
    - 重发时先看决策记录里这个提议是否已有「保存」或「拒绝」，再看记忆本身是否存在（包括已删除、回收站里的）；有结论就直接回已有结论，不再写。
    - `requestState` 里存了正文和分类的哈希（按固定字段顺序算）；重发时参数和状态不符，回「内容变了」，不写。
-   - 两个重发同时到达时，后到的那个撞上记忆主键冲突，重读一次即可。
+   - 同一个提议的重发在服务里按提议编号排队，一次只处理一个：前一个做完决定，后一个才去查「已决定」。所以同时收到「保存」和「拒绝」时，只有先处理的那个生效，后面的都回已有结论。这只在一个进程里成立；签名密钥本来就只在这个进程里有效，服务重启后旧状态全部失效，所以不会有两个进程处理同一个提议。
 4. **决策记录。** 类别 `memory_candidate`。保存记 `kept`、原因码 `mcp_proposal_kept`、`subjectRef` 是记忆编号；拒绝记 `discarded`、原因码 `mcp_proposal_declined`、`subjectRef` 是 `mcp-client:<客户端名>`。正文不进决策记录（`contentRef` 为空）。
    - 拒绝写不进决策记录时，回工具错误，不说「已拒绝」。
    - 每日回顾显示保存的那条，跳过主人拒绝的，和主人在网页上拒绝的提议同样处理。
    - 自动记忆的校准（统计自动记忆门槛准不准的样本）排除这两种原因码：这些记忆不是 Himawari 自己判断要记的，混进去会让统计失真。
 5. **正文和分类。**
-   - 正文先规范化：NFC，把控制字符、零宽字符和双向排版字符换成空格，合并连续空格，去掉首尾空白；规范化后要 1 到 2000 个字符。确认框、存储和哈希都用规范化后的同一份。
+   - 正文先规范化：NFC，把控制字符、Unicode 格式字符（零宽字符、双向排版字符、软连字符这类看不见的字符，即 `\p{Cf}`）、落单的代理项（不成对的 UTF-16 半个字符，存储时会变成替换字符，所以先去掉，确认框和存下的正文才一致）和行、段分隔符换成空格，合并连续空格，去掉首尾空白；规范化后要 1 到 2000 个字符。确认框、存储和哈希都用规范化后的同一份。工具参数说明里不写长度上限，长度只按规范化后的正文算，否则一段原文超长、规范化后合格的正文会被 SDK 先挡掉，拿不到说明。
    - 分类只能选九种之一（身份、偏好、关系、目标、项目、健康、财务、事件、其他），不能选「规则」：规则走另一条路。
    - 健康、财务两类按敏感记忆保存；其他类别正文里有证件号这类标识时，也按敏感保存，判断交给 `@himawari-agent/sensitive-capture` 的 `classificationWithIdentifiers`。确认框里会提示「会按敏感记忆保存」。
    - 重要度固定 500，置信度 1000，不是推断。
@@ -111,7 +111,7 @@ date: "2026-11-11"
 - 只在交互会话里有确认框；Claude Code 的非交互模式不弹框，这时按决定 6 拒绝。
 - 提议规则（`propose_rule`）等 P2-3 合并后另开 PR 和 ADR。
 - 测试：
-  - `test/integration/mcp-write.test.ts` 用真实 SQLite、真实记忆服务和官方 SDK 客户端：只读令牌看不到写工具、老版本连接看不到写工具；确认后保存，并能被 `find_memories` 找到；拒绝、取消、没勾选都不写；客户端不支持确认框时不写；并发和重复重发只写一条；参数键序不同算同一提议；篡改过的状态被拒；状态拿去配别的内容回「内容变了」；硬删除后重放不会复活；拒绝记录写不进去时回错误；每日回顾和校准的处理。
+  - `test/integration/mcp-write.test.ts` 用真实 SQLite、真实记忆服务和官方 SDK 客户端：只读令牌看不到写工具、老版本连接看不到写工具；确认后保存，并能被 `find_memories` 找到；拒绝、取消、没勾选都不写；客户端不支持确认框时不写；并发和重复重发只写一条；同一提议同时收到保存和拒绝只记一种结论（把读取放慢制造竞争，去掉排队这条用例会失败）；看不见的字符先去掉再算长度；参数键序不同算同一提议；篡改过的状态被拒；状态拿去配别的内容回「内容变了」；硬删除后重放不会复活；拒绝记录写不进去时回错误；每日回顾和校准的处理。
   - `test/integration/memory-source-report.test.ts`：报表认出 `external`，前缀和网页一致。
   - `apps/control-center/test/memory-source.unit.test.ts`：网页把这类记忆的来源显示为外部提议，不算「来源已不可查」。
   - `packages/platform-node/test/startup-configuration.unit.test.ts`：`writeSecretRef` 只接受一把用途是 `mcp-write`、和只读令牌不同的密钥。

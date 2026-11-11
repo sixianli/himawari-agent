@@ -26,6 +26,7 @@ import {
   MCP_PROPOSE_MEMORY_CHANGED,
   MCP_PROPOSE_MEMORY_DECLINED,
   MCP_PROPOSE_MEMORY_FAILED,
+  MCP_PROPOSE_MEMORY_INVALID,
   MCP_PROPOSE_MEMORY_SAVED,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
 } from "@himawari-agent/prompt-catalog";
@@ -35,6 +36,8 @@ import Fastify from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   EXTERNAL_PROPOSAL_MEMORY_PREFIX,
+  EXTERNAL_PROPOSAL_TEXT_MAXIMUM,
+  normalizeProposalText,
   ProductionMcpMemoryWriter,
 } from "../../apps/agent-service/src/production-mcp-memory-writer.ts";
 import {
@@ -92,7 +95,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function setup(options: { readonly failDecline?: boolean } = {}) {
+  async function setup(
+    options: { readonly failDecline?: boolean; readonly slowDecisionRead?: boolean } = {},
+  ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-mcp-write-"));
     directories.push(stateRoot);
     const databasePath = path.join(stateRoot, "product.sqlite");
@@ -180,7 +185,15 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const writer = new ProductionMcpMemoryWriter({
       configuration: scope,
       memory,
-      state: repository.productMemoryState(),
+      state: options.slowDecisionRead
+        ? {
+            read: async (id) => {
+              const found = await repository.productMemoryState().read(id);
+              await new Promise((resolve) => setTimeout(resolve, 100));
+              return found;
+            },
+          }
+        : repository.productMemoryState(),
       book: repository.memoryBook(),
       ledger: options.failDecline
         ? {
@@ -189,7 +202,16 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
               throw new Error("LEDGER_WRITE_DOWN");
             },
           }
-        : realLedger,
+        : options.slowDecisionRead
+          ? {
+              read: async (input) => {
+                const found = await realLedger.read(input);
+                await new Promise((resolve) => setTimeout(resolve, 100));
+                return found;
+              },
+              append: (write) => realLedger.append(write),
+            }
+          : realLedger,
       payloads,
       protector: adapters.payloadProtector,
       clock,
@@ -403,6 +425,54 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(third.content?.[0]?.text).toBe(MCP_PROPOSE_MEMORY_ALREADY_SAVED.text);
     expect(await f.external()).toHaveLength(1);
     expect(await f.decisions()).toHaveLength(1);
+  });
+
+  it("records exactly one outcome when a save and a decline for one proposal arrive together", async () => {
+    const f = await setup({ slowDecisionRead: true });
+    const client = await f.connect({ autoFulfill: false });
+    const first = await f.raw(client, { arguments: { text: COFFEE } });
+    const answer = (action: "accept" | "decline") => ({
+      arguments: { text: COFFEE },
+      requestState: first.requestState,
+      inputResponses: {
+        [MCP_PROPOSAL_CONFIRM_KEY]:
+          action === "accept"
+            ? { action, content: { [MCP_PROPOSAL_SAVE_FIELD]: true } }
+            : { action },
+      },
+    });
+    const clients = await Promise.all([0, 1, 2].map(() => f.connect({ autoFulfill: false })));
+    const outcomes = await Promise.all([
+      f.raw(client, answer("accept")),
+      f.raw(clients[0] ?? client, answer("decline")),
+      f.raw(clients[1] ?? client, answer("accept")),
+      f.raw(clients[2] ?? client, answer("decline")),
+    ]);
+    const rows = await f.decisions();
+    expect(rows).toHaveLength(1);
+    const kept = rows[0]?.outcome === "kept";
+    expect(await f.external()).toHaveLength(kept ? 1 : 0);
+    const final = kept ? MCP_PROPOSE_MEMORY_ALREADY_SAVED.text : MCP_PROPOSE_MEMORY_DECLINED.text;
+    expect(outcomes.slice(1).map((outcome) => outcome.content?.[0]?.text)).toEqual([
+      final,
+      final,
+      final,
+    ]);
+  });
+
+  it("removes invisible formatting before checking the length and showing the text", async () => {
+    expect(normalizeProposalText("a\u00adb\u061cc\u2028d\u2029e\u180ef\ud800g😀")).toBe(
+      "a b c d e f g😀",
+    );
+    const f = await setup();
+    const client = await f.connect({ autoFulfill: false });
+    const padded = `${"咖".repeat(EXTERNAL_PROPOSAL_TEXT_MAXIMUM)}${"\u200b".repeat(50)}`;
+    const first = await f.raw(client, { arguments: { text: padded } });
+    expect(first.resultType).toBe("input_required");
+    const tooLong = await f.raw(client, {
+      arguments: { text: "咖".repeat(EXTERNAL_PROPOSAL_TEXT_MAXIMUM + 1) },
+    });
+    expect(tooLong.content?.[0]?.text).toBe(MCP_PROPOSE_MEMORY_INVALID.text);
   });
 
   it("treats the same arguments in a different key order as the same proposal", async () => {

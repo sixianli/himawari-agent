@@ -210,6 +210,7 @@ export class ProductionMcpRead {
 
   readonly #writeGate: BearerGate | undefined;
   readonly #stateCodec: RequestStateCodec<ProposalState>;
+  readonly #deciding = new Map<string, Promise<void>>();
 
   constructor(options: ProductionMcpReadOptions) {
     this.#options = options;
@@ -320,7 +321,7 @@ export class ProductionMcpRead {
           inputSchema: fromJsonSchema<JsonObject>({
             type: "object",
             properties: {
-              text: { type: "string", minLength: 1, maxLength: EXTERNAL_PROPOSAL_TEXT_MAXIMUM },
+              text: { type: "string", minLength: 1 },
               category: { type: "string", enum: [...EXTERNAL_PROPOSAL_CATEGORIES] },
             },
             required: ["text"],
@@ -391,20 +392,37 @@ export class ProductionMcpRead {
         category,
         client,
       };
-      const decided = await proposals.decided(state.proposalId);
-      if (decided === "kept") return proposalReply(MCP_PROPOSE_MEMORY_ALREADY_SAVED.text, false);
-      if (decided === "declined") return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
-      const answer = inputResponse(context.mcpReq.inputResponses, MCP_PROPOSAL_CONFIRM_KEY);
-      if (answer.kind !== "elicit") return await this.#askConfirmation(state, proposal, context);
-      if (answer.action === "accept" && answer.content?.[MCP_PROPOSAL_SAVE_FIELD] === true) {
-        await proposals.keep(proposal, started);
-        return proposalReply(MCP_PROPOSE_MEMORY_SAVED.text, false);
-      }
-      await proposals.decline(proposal, started);
-      return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
+      return await this.#oneAtATime(state.proposalId, async () => {
+        const decided = await proposals.decided(proposal.proposalId);
+        if (decided === "kept") return proposalReply(MCP_PROPOSE_MEMORY_ALREADY_SAVED.text, false);
+        if (decided === "declined") return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
+        const answer = inputResponse(context.mcpReq.inputResponses, MCP_PROPOSAL_CONFIRM_KEY);
+        if (answer.kind !== "elicit") return await this.#askConfirmation(state, proposal, context);
+        if (answer.action === "accept" && answer.content?.[MCP_PROPOSAL_SAVE_FIELD] === true) {
+          await proposals.keep(proposal, started);
+          return proposalReply(MCP_PROPOSE_MEMORY_SAVED.text, false);
+        }
+        await proposals.decline(proposal, started);
+        return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
+      });
     } catch (error) {
       this.#options.onFailure(error);
       return proposalReply(MCP_PROPOSE_MEMORY_FAILED.text, true);
+    }
+  }
+
+  async #oneAtATime<T>(proposalId: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.#deciding.get(proposalId) ?? Promise.resolve();
+    const current = previous.then(work, work);
+    const settled = current.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.#deciding.set(proposalId, settled);
+    try {
+      return await current;
+    } finally {
+      if (this.#deciding.get(proposalId) === settled) this.#deciding.delete(proposalId);
     }
   }
 
