@@ -87,3 +87,9 @@ date: "2026-09-25"
 - [详细 Spec](../execution/specs/2026-09-24-isolated-tool-execution-design.md)：[SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md]
 - [实施 Plan](../execution/plans/2026-09-24-isolated-tool-execution-plan.md)：[SOURCE: docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md]
 - 工作区合同：[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
+
+<a id="multi-user-follow-up"></a>
+
+## 2026-11-11 后续：多人使用
+
+[ADR 0234](0234-one-program-per-person-database-file.md) 第 4 条给每个人的执行账号加内存、CPU、进程数的硬上限和目录磁盘配额。本 ADR 说资源上限“由运行时强制”，而[安装运行手册](../runbooks/install-start-stop-runbook.md)写的是采样不能证明硬配额；两处以运行手册为准，硬上限由 [ADR 0234](0234-one-program-per-person-database-file.md) 的实现补上。本 ADR 的决定不变。

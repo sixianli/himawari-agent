@@ -1179,6 +1179,10 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 [ADR 0081](adr/0081-isolated-instance-per-person.md)；Idea `docs/ideas/IDEA-20261026-001-per-person-isolated-himawari.md`；Backlog `docs/backlog/BL-20261026-003-isolated-instance-per-person.md`；评估文档 <https://claude.ai/artifact/77cUajUv5MWWHHMH8m2g1N>；[PR #37](https://github.com/sixianli/himawari-agent/pull/37)。
 
+**后续（2026-11-11）**
+
+重新评估后，Andy 定了两个前提：生产机只有一台、不多花服务器钱，目标是 10 到 20 人。每人一套实例放不下，所以 [ADR 0234](adr/0234-one-program-per-person-database-file.md) 取代了 ADR 0083，改成一个程序、每人一个数据库文件、每人一个专属执行账号；模型全走 Andy 的 OpenCode Go 套餐、不用 Vercel key，每人每月上限由 Andy 在管理页配置。上面“先选 silo”的取舍是当时单机、两三个熟人的前提下做的；放弃的理由是内存和磁盘要乘以人数，代价是隔离从“结构上分开”降为“三道防线加系统账号”，并接受主程序崩了所有人一起断。结果数据还没有：量机器是开工第一步。
+
 **后续（2026-10-26）**
 
 评估 iOS App 时决定 Andy 的手机也走 Cloudflare 入口，所以 [ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md) 取代了 ADR 0081，只改了“Andy 自己继续走 ssh 隧道”这一句，其余决定不变。详见[案例 21](#case-mobile-client)。
