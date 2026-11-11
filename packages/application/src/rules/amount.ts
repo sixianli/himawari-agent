@@ -28,10 +28,6 @@ const CURRENCY_EXPONENTS: Readonly<Record<string, number>> = Object.freeze({
   KWD: 3,
 });
 
-export function currencyCodes(): readonly string[] {
-  return Object.keys(CURRENCY_EXPONENTS);
-}
-
 export function currencyExponent(currency: string): number | undefined {
   return Object.hasOwn(CURRENCY_EXPONENTS, currency) ? CURRENCY_EXPONENTS[currency] : undefined;
 }

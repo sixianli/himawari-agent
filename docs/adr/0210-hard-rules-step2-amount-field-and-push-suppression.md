@@ -49,12 +49,12 @@ date: "2026-11-11"
 ## 决定
 
 1. **金额字段。**邮件判断的输出每封可选带 `"amount":{"value":"100.00","currency":"CNY","confidence":"sure|unsure"}`，只在 act、know、check 里有明确主金额时写。提示词说明追加在 `MAIL_JUDGMENT` 固定文字的末尾（邮件数据和当前时间仍在最后）。程序按固定的币种小数位表（JPY、KRW、VND 0 位；CNY、USD、EUR、GBP、HKD、TWD、SGD、AUD、CAD 2 位；KWD 3 位）把十进制字符串换成整数最小单位，不让模型换算。币种不在表里、格式不对（负数、千分位、指数、超过 15 位）、小数位超过币种、超出安全整数，一律当没有金额。正文被截断、没取到或根本没有时，不管模型怎么写，置信度强制降为不确定。
-2. **字段目录给 `mail_item` 加三个永远存在的字段：**`amount_state`（`known`、`uncertain`、`missing`）、`amount_minor`（整数，不是 `known` 时固定为 0）、`amount_currency`（没有金额时为空文字）。“缺失”是字段的值，不是字段缺席，所以 ADR 0209 的“缺字段报错”不变；这就是“字段缺失怎么算”的答案：金额读不出来时，任何金额规则都不命中，邮件照常推送。注册检查（`assertRuleShape`，由 `assertRuleExamples` 调用）拒绝引用 `amount_minor` 或 `amount_currency` 却没有要求 `amount_state == "known"` 的规则，除了看文字，还会用“金额缺失”和“金额不确定”（每个币种各一份）的事实把规则算一遍，命中就拒绝，所以 `amount_minor < 1000 || amount_state == "known"` 这类写法进不来。
-3. **结果加一种 `suppress_push`**（这封不进推送，仍在提醒页），只允许 `mail_item` 闸门用；每个闸门允许的结果有固定表（`mail_item`：`raise_floor`、`suppress_push`；`mail_delivery`：`defer_to_quiet_hours`），注册检查拒绝对不上的。命中地板规则的邮件不会被 `suppress_push` 拦下：地板规则命中就是“不能被降级”。
+2. **字段目录给 `mail_item` 加三个永远存在的字段：**`amount_state`（`known`、`uncertain`、`missing`）、`amount_minor`（整数，不是 `known` 时固定为 0）、`amount_currency`（没有金额时为空文字）。“缺失”是字段的值，不是字段缺席，所以 ADR 0209 的“缺字段报错”不变；这就是“字段缺失怎么算”的答案：金额读不出来时，任何金额规则都不命中，邮件照常推送。裁判（`RuleJudge`）在代码里保证：表达式里出现任何 `amount_*` 字段的规则，只有在 `amount_state` 是 `known` 时才会被计算，否则直接跳过、不算命中，不管表达式怎么写（`amount_state != "known"` 这类写法也不会命中读不出金额的邮件）。这是程序保证，不靠规则作者写对，也不靠文字检查。
+3. **结果加一种 `suppress_push`**（这封不进推送，仍在提醒页），只允许 `mail_item` 闸门用；每个闸门允许的结果有固定表（`mail_item`：`raise_floor`、`suppress_push`；`mail_delivery`：`defer_to_quiet_hours`），注册检查（`assertRuleShape`）拒绝对不上的。命中地板规则的邮件不会被 `suppress_push` 拦下：地板规则命中就是“不能被降级”。
 4. **邮件检查在创建推送时问裁判。**对每条本会进推送、且不是地板规则命中的提醒，用判断出的金额问一次裁判；命中 `suppress_push` 的不进推送、也不计入这次的推送数，提醒仍显示。命中的规则 id 和修订号（`规则id@修订号`，排序后）写进决策记录输入的新字段 `ruleHits`（按邮件 id 分组，旧记录没有这个字段，读出来是空），只记改变结果的命中，原有的 `floorHits`、`ruleIds` 不变。
 5. **金额门槛规则生成器。**`amountThresholdRule({currency, minor})`：表达式由代码生成，固定带 `amount_state == "known" && amount_currency == "…"`，自带例子（低于门槛命中；正好等于、高于、币种不同、金额不确定、没有金额都不命中）。本步不接设置界面，只有测试和以后的第 4 步会创建它；邮件检查服务通过选项 `ownerRules` 接收额外的规则（第 4 步会把它接到存储），构造时对每条规则跑一遍例子检查。
 6. **静默时段只剩一份实现。**删掉 `AttentionPolicyService` 里没人用的静默窗口（`quietHours` 配置、`isQuietHours`、`quiet_hours` 降级）；邮件的静默延后继续是规则手册加 `quietEnd`，行为不变。
-7. **门槛：**`npm run check:rule-registry`（金额换算、字段永远存在、门槛规则正反向例子、注册检查拒绝不带 `known` 的金额规则和不对口的结果）、`npm run check:prompt-catalog`（更新 `mail.judgment` 的 golden 和清单）、`test/integration/proactive-mail-check.test.ts` 里的 `[HR-2]` 用例（正向：小额被拦、提醒页仍在、`ruleHits` 写入；反向：不确定、缺失、他币种、正好等于门槛、币种不认识、数值乱写、没有正文、正文被截断、地板规则命中、没有规则时，都照常推送）。
+7. **门槛：**`npm run check:rule-registry`（金额换算、字段永远存在、门槛规则正反向例子、裁判跳过未知金额下的金额规则（含各种绕过写法的反向用例），注册检查拒绝不对口的结果）、`npm run check:prompt-catalog`（更新 `mail.judgment` 的 golden 和清单）、`test/integration/proactive-mail-check.test.ts` 里的 `[HR-2]` 用例（正向：小额被拦、提醒页仍在、`ruleHits` 写入；反向：不确定、缺失、他币种、正好等于门槛、币种不认识、数值乱写、没有正文、正文被截断、地板规则命中、没有规则时，都照常推送）。
 
 [返回阅读导航](#contents)
 
@@ -95,6 +95,7 @@ date: "2026-11-11"
 - 决策记录输入多了可选的 `ruleHits`，旧记录读出来是空对象；写入时有数量和长度校验，程序端写入前去重并最多留 16 条。本步只在决策记录里记，网页的决策链和邮件详情还不展示它，展示留到第 4 步。
 - `suppress_push` 现在也会作用于主人自己发出的邮件的提醒（它们不走地板规则）；是否该排除，第 4 步接设置时再定。
 - `ProactiveMailCheckService` 多了选项 `ownerRules`，第 4 步把它接到存储，并在那时加上求值次数上限（ADR 0209 已写明）。
+- `amountThresholdRule` 现在固定用一个规则 id，第 4 步给不同币种、门槛建多条规则时要自己给 id。
 - 通知闸门的其余部分（五类推送统一、出站延后）和对应的规则留给第 4 步。
 - 愿景和 ADR 0209 中“通知闸门”的说法，以本 ADR 的范围为准。
 

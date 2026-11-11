@@ -1,4 +1,4 @@
-import { currencyCodes, currencyExponent, type MailAmount, MISSING_AMOUNT } from "./amount.js";
+import { currencyExponent, type MailAmount, MISSING_AMOUNT } from "./amount.js";
 import type { RuleGate } from "./field-catalog.js";
 import { compileRuleExpression, type RuleFacts } from "./rule-expression.js";
 
@@ -330,31 +330,15 @@ const GATE_OUTCOMES: Readonly<Record<RuleGate, readonly RuleOutcome[]>> = Object
   mail_delivery: Object.freeze(["defer_to_quiet_hours"] as const),
 });
 
-const AMOUNT_FIELD = /\bamount_(?:minor|currency)\b/u;
+const AMOUNT_FIELD = /\bamount_(?:state|minor|currency)\b/u;
 
-function unreadableAmountFacts(): readonly RuleFacts[] {
-  const item = { fromAddress: "a@b.com", subject: "x", snippet: "" };
-  return [
-    mailItemFacts(item),
-    ...["", ...currencyCodes()].map((currency) =>
-      mailItemFacts(item, { state: "uncertain", minor: 0, currency }),
-    ),
-  ];
+export function usesAmountFields(rule: Pick<RuleRecord, "expression">): boolean {
+  return AMOUNT_FIELD.test(rule.expression);
 }
 
 export function assertRuleShape(rule: RuleRecord): void {
   if (!GATE_OUTCOMES[rule.gate].includes(rule.outcome))
     throw new Error(`规则 ${rule.id} 的结果 ${rule.outcome} 不能用在闸门 ${rule.gate} 上`);
-  const bare = rule.expression.replace(/"(?:[^"\\]|\\.)*"/gu, '""');
-  if (!AMOUNT_FIELD.test(bare)) return;
-  if (!/\bamount_state\s*==\s*"known"/u.test(rule.expression))
-    throw new Error(
-      `规则 ${rule.id} 用了金额却没有要求 amount_state == "known"，金额读不出来时会误判`,
-    );
-  const compiled = compileRuleExpression(rule.gate, rule.expression);
-  for (const facts of unreadableAmountFacts())
-    if (compiled.evaluate(facts))
-      throw new Error(`规则 ${rule.id} 在金额缺失或不确定时命中了，金额读不出来时必须不命中`);
 }
 
 export function assertRuleExamples(rule: RuleRecord): void {

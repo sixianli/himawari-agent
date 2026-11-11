@@ -248,41 +248,52 @@ describe("rule registry", () => {
     expect(rule.outcome).toBe("suppress_push");
   });
 
-  it("[HR-2] refuses an amount rule that does not require a known amount, and an outcome the gate cannot take", () => {
+  it("[HR-2] refuses an outcome the gate cannot take and a threshold that cannot be built", () => {
     const rule = amountThresholdRule({ currency: "JPY", minor: 1000 }, 1, "测试");
-    expect(() => assertRuleShape({ ...rule, expression: "amount_minor < 1000" })).toThrow(
-      /amount_state/u,
-    );
-    expect(() =>
-      assertRuleShape({
-        ...rule,
-        expression: 'amount_currency == "JPY" && amount_state == "missing"',
-      }),
-    ).toThrow(/amount_state/u);
     expect(() => assertRuleShape({ ...rule, outcome: "defer_to_quiet_hours" })).toThrow(/闸门/u);
     expect(() => assertRuleShape({ ...rule, gate: "mail_delivery" })).toThrow(/闸门/u);
     expect(() => amountThresholdRule({ currency: "XYZ", minor: 1 }, 1, "测试")).toThrow(/币种/u);
     expect(() => amountThresholdRule({ currency: "JPY", minor: -1 }, 1, "测试")).toThrow(/整数/u);
-    expect(() =>
-      assertRuleShape({ ...rule, expression: 'text.contains("amount_minor") && size(text) > 0' }),
-    ).not.toThrow();
   });
 
-  it("[HR-2] refuses an amount rule that hits when the amount is missing or unsure, even if it mentions known", () => {
+  it("[HR-2] never runs a rule that reads an amount field unless the amount is known, whatever the expression says", () => {
     const rule = amountThresholdRule({ currency: "JPY", minor: 1000 }, 1, "测试");
-    for (const expression of [
+    const judge = new RuleJudge();
+    const expressions = [
       'amount_minor < 1000 || amount_state == "known"',
       'amount_state == "known" || amount_minor < 1000',
-      'amount_state == "known" && amount_minor < 1000 || amount_currency == ""',
       '!(amount_state == "known" && amount_minor >= 1000)',
-    ])
-      expect(() => assertRuleShape({ ...rule, expression }), expression).toThrow(/必须不命中/u);
-    expect(() =>
-      assertRuleShape({
-        ...rule,
-        expression: 'amount_state == "known" && amount_currency == "USD" && amount_minor < 5',
-      }),
-    ).not.toThrow();
+      'amount_state == "known" && amount_minor < 1000 || text.contains("invoice")',
+      'amount_state == "uncertain"',
+      'amount_state != "known"',
+      'amount_state == "missing" && text.contains("Invoice")',
+      "amount_state == 'uncertain'",
+      'amount_currency == ""',
+      "text_words.all(w, size(w) > 100) || amount_minor == 0",
+    ];
+    const unreadable = [
+      mailItemFacts(ITEM),
+      mailItemFacts(ITEM, { state: "uncertain", minor: 500, currency: "JPY" }),
+    ];
+    for (const expression of expressions)
+      for (const facts of unreadable)
+        expect(
+          judge.decide("mail_item", facts, [{ ...rule, expression }]).hits,
+          `${expression} ${JSON.stringify(facts)}`,
+        ).toEqual([]);
+    expect(
+      judge.decide(
+        "mail_item",
+        mailItemFacts(ITEM, { state: "known", minor: 5, currency: "JPY" }),
+        [
+          {
+            ...rule,
+            expression:
+              'amount_state == "known" && amount_minor < 1000 || text.contains("Invoice")',
+          },
+        ],
+      ).hits,
+    ).toHaveLength(1);
   });
 
   it("[HR-2] refuses an amount that only overflows after the decimals are added, and a limit with no room for an example", () => {
