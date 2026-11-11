@@ -152,5 +152,5 @@ description = "本机向量模型出包脚本里固定的上游文件 SHA-256（
 targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''(?:^|/)scripts/embedding-models/build-artifact\.py$''']
-regexTarget = "line"
-regexes = ['''^\s*"[^"]+\.(?:onnx|onnx_data|json)": "[0-9a-f]{64}",?\s*$''']
+regexTarget = "secret"
+regexes = ['''^[0-9a-f]{64}$''']
