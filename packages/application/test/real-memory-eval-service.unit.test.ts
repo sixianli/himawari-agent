@@ -434,8 +434,24 @@ describe("[P4-5] real memory eval run", () => {
       unreadable: broken,
     });
     const report = await test.service.run("weekly", { ...LIMITS, newMemoriesPerRun: 1 });
-    expect(report.summary).toMatchObject({ rejected: { source_unreadable: 4 } });
+    expect(report.summary).toMatchObject({
+      rejected: { source_unreadable: 4 },
+      unreadable: ["a1@1", "a2@1", "a3@1", "a4@1"],
+    });
     expect(test.store.questions).toEqual([]);
+  });
+
+  it("reads memories that could not be read last time after the others", async () => {
+    const broken = ["a1", "a2", "a3", "a4"];
+    const test = harness({
+      memories: [...broken.map((id) => memory(id)), memory("coffee")],
+      unreadable: broken,
+    });
+    await test.service.run("weekly", { ...LIMITS, newMemoriesPerRun: 1 });
+    expect(test.store.questions).toEqual([]);
+    const second = await test.service.run("weekly", { ...LIMITS, newMemoriesPerRun: 1 });
+    expect(test.store.questions.map(({ memoryId }) => memoryId)).toContain("coffee");
+    expect(second.summary).toMatchObject({ unreadable: ["a1@1", "a2@1", "a3@1", "a4@1"] });
   });
 
   it("counts a question as unanswerable when its text or source cannot be read while answering", async () => {

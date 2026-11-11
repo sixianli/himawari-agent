@@ -142,6 +142,65 @@ function inProgressRun(text: string, now: string): InProgressRun | undefined {
   };
 }
 
+async function readMarker(
+  file: string,
+  now: string,
+  weeklyCapMicros: number,
+  recordedRunIds: ReadonlySet<string>,
+): Promise<RunTiming | undefined> {
+  const found = await stat(file).catch(missing);
+  if (!found) return undefined;
+  const text = await readFile(file, "utf8").catch(missing);
+  if (text === undefined) return undefined;
+  if (found.mtimeMs > Date.parse(now)) {
+    const reset = await utimes(file, new Date(now), new Date(now)).then(
+      () => true,
+      () => false,
+    );
+    if (!reset) {
+      const removed = await rm(file, { force: true }).then(
+        () => true,
+        () => false,
+      );
+      return removed
+        ? undefined
+        : { startedAt: now, trigger: "weekly", outcome: "failed", costMicros: weeklyCapMicros };
+    }
+  }
+  const run = inProgressRun(text, now) ?? {
+    runId: "",
+    startedAt: new Date(Math.min(found.mtimeMs, Date.parse(now))).toISOString(),
+    trigger: "weekly" as const,
+    capMicros: weeklyCapMicros,
+  };
+  const { startedAt } = run;
+  if (
+    recordedRunIds.has(run.runId) ||
+    Date.parse(now) - Date.parse(startedAt) >= REAL_EVAL_INTERVAL_MS
+  ) {
+    await rm(file, { force: true });
+    return undefined;
+  }
+  return { startedAt, trigger: run.trigger, outcome: "failed", costMicros: run.capMicros };
+}
+
+async function unreadableMarker(
+  file: string,
+  now: string,
+  weeklyCapMicros: number,
+): Promise<RunTiming | undefined> {
+  const found = await stat(file).catch(() => undefined);
+  if (!found) return undefined;
+  const age = Date.parse(now) - found.mtimeMs;
+  if (age < 0 || age >= REAL_EVAL_INTERVAL_MS) return undefined;
+  return {
+    startedAt: new Date(found.mtimeMs).toISOString(),
+    trigger: "weekly",
+    outcome: "failed",
+    costMicros: weeklyCapMicros,
+  };
+}
+
 export async function readUnfinishedRealEvals(
   directory: string,
   now: string,
@@ -154,53 +213,13 @@ export async function readUnfinishedRealEvals(
     if (!name.startsWith(REAL_EVAL_IN_PROGRESS_PREFIX)) continue;
     const file = path.join(directory, name);
     if (name.endsWith(".tmp")) {
-      await rm(file, { force: true });
+      await rm(file, { force: true }).catch(() => undefined);
       continue;
     }
-    const found = await stat(file).catch(missing);
-    if (!found) continue;
-    const text = await readFile(file, "utf8").catch(missing);
-    if (text === undefined) continue;
-    if (found.mtimeMs > Date.parse(now)) {
-      const reset = await utimes(file, new Date(now), new Date(now)).then(
-        () => true,
-        () => false,
-      );
-      if (!reset) {
-        const removed = await rm(file, { force: true }).then(
-          () => true,
-          () => false,
-        );
-        if (!removed)
-          unfinished.push({
-            startedAt: now,
-            trigger: "weekly",
-            outcome: "failed",
-            costMicros: weeklyCapMicros,
-          });
-        continue;
-      }
-    }
-    const run = inProgressRun(text, now) ?? {
-      runId: "",
-      startedAt: new Date(Math.min(found.mtimeMs, Date.parse(now))).toISOString(),
-      trigger: "weekly" as const,
-      capMicros: weeklyCapMicros,
-    };
-    const { startedAt } = run;
-    if (
-      recordedRunIds.has(run.runId) ||
-      Date.parse(now) - Date.parse(startedAt) >= REAL_EVAL_INTERVAL_MS
-    ) {
-      await rm(file, { force: true });
-      continue;
-    }
-    unfinished.push({
-      startedAt,
-      trigger: run.trigger,
-      outcome: "failed",
-      costMicros: run.capMicros,
-    });
+    const run = await readMarker(file, now, weeklyCapMicros, recordedRunIds).catch(() =>
+      unreadableMarker(file, now, weeklyCapMicros),
+    );
+    if (run) unfinished.push(run);
   }
   return unfinished;
 }

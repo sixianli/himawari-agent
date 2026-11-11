@@ -18,6 +18,7 @@ import {
   REAL_EVAL_SAMPLE_FILE,
   RealEvalModelError,
   RealEvalSampleExpiry,
+  readUnfinishedRealEvals,
   realEvalSpentMicros,
   writeRealEvalSample,
 } from "../src/production-real-eval.js";
@@ -550,7 +551,6 @@ describe("[P4-5] real eval leftovers", () => {
       '{"startedAt":',
       '{"startedAt":"2026-11-08","trigger":"weekly","capMicros":5}',
       '{"startedAt":"2026-11-08T00:00:00.000Z","trigger":"weekly","capMicros":-5}',
-      '{"runId":"run-zero","startedAt":"2026-11-08T00:00:00.000Z","trigger":"weekly","capMicros":0}',
     ]) {
       const file = path.join(directory, `${REAL_EVAL_IN_PROGRESS_PREFIX}${text.length}.json`);
       await writeFile(file, text);
@@ -564,6 +564,62 @@ describe("[P4-5] real eval leftovers", () => {
     expect(
       (await readdir(directory)).filter((name) => name.startsWith(REAL_EVAL_IN_PROGRESS_PREFIX)),
     ).toEqual([]);
+  });
+
+  it("counts a marker with no allowance as having spent the whole weekly cap", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-real-eval-"));
+    directories.push(directory);
+    const file = path.join(directory, `${REAL_EVAL_IN_PROGRESS_PREFIX}zero.json`);
+    await writeFile(
+      file,
+      JSON.stringify({
+        runId: "run-zero",
+        startedAt: at(-REAL_EVAL_RETRY_MS),
+        trigger: "weekly",
+        capMicros: 0,
+      }),
+    );
+    const written = new Date(Date.parse(NOW) - REAL_EVAL_RETRY_MS);
+    await utimes(file, written, written);
+    expect(await readUnfinishedRealEvals(directory, NOW, 500_000)).toEqual([
+      {
+        startedAt: written.toISOString(),
+        trigger: "weekly",
+        outcome: "failed",
+        costMicros: 500_000,
+      },
+    ]);
+  });
+
+  it("counts a marker it cannot read as spent and still checks the rest", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-real-eval-"));
+    directories.push(directory);
+    const stuck = path.join(directory, `${REAL_EVAL_IN_PROGRESS_PREFIX}stuck.json`);
+    await mkdir(stuck);
+    const written = new Date(Date.parse(NOW) - REAL_EVAL_RETRY_MS);
+    await utimes(stuck, written, written);
+    const fine = path.join(directory, `${REAL_EVAL_IN_PROGRESS_PREFIX}zz.json`);
+    await writeFile(
+      fine,
+      JSON.stringify({
+        runId: "run-fine",
+        startedAt: at(-REAL_EVAL_RETRY_MS),
+        trigger: "weekly",
+        capMicros: 7,
+      }),
+    );
+    expect(await readUnfinishedRealEvals(directory, NOW, 500_000)).toEqual([
+      {
+        startedAt: written.toISOString(),
+        trigger: "weekly",
+        outcome: "failed",
+        costMicros: 500_000,
+      },
+      { startedAt: at(-REAL_EVAL_RETRY_MS), trigger: "weekly", outcome: "failed", costMicros: 7 },
+    ]);
+    expect(await readUnfinishedRealEvals(directory, at(REAL_EVAL_INTERVAL_MS), 500_000)).toEqual(
+      [],
+    );
   });
 
   it("keeps the marker of an earlier unfinished run when a new run starts", async () => {

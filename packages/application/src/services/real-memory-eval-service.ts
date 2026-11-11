@@ -147,6 +147,13 @@ function declinedFromRuns(
   return keys;
 }
 
+function unreadableOfLatestRun(
+  runs: readonly { readonly summary: Readonly<Record<string, unknown>> }[],
+): string[] {
+  const keys = runs[0]?.summary["unreadable"];
+  return Array.isArray(keys) ? keys.filter((key): key is string => typeof key === "string") : [];
+}
+
 function undiscardedOfRuns(
   runs: readonly { readonly summary: Readonly<Record<string, unknown>> }[],
 ): string[] {
@@ -174,6 +181,7 @@ export class RealMemoryEvalService {
     const rejected: Record<string, number> = {};
     const declined: string[] = [];
     const undiscarded: string[] = [];
+    const unreadable: string[] = [];
     const scored: ScoredItem[] = [];
     const sample: RealEvalSampleItem[] = [];
     let retired = 0;
@@ -255,18 +263,27 @@ export class RealMemoryEvalService {
         (record) => !skip.has(declinedKey(record.id, record.revision)),
       );
       const banked = new Set(active.map(({ memoryId }) => memoryId));
+      const deferred = new Set(unreadableOfLatestRun(recentRuns));
+      const ordered = pickNewMemories(candidates, banked, startedAt, candidates.length);
+      const queue = [
+        ...ordered.filter((record) => !deferred.has(declinedKey(record.id, record.revision))),
+        ...ordered.filter((record) => deferred.has(declinedKey(record.id, record.revision))),
+      ];
+      const attempted = new Set<string>();
       let asked = 0;
       let reads = 0;
-      for (const memory of pickNewMemories(candidates, banked, startedAt, candidates.length)) {
+      for (const memory of queue) {
         if (
           asked >= limits.newMemoriesPerRun ||
           reads >= limits.newMemoriesPerRun * SOURCE_READS_PER_SLOT
         )
           break;
         reads += 1;
+        attempted.add(declinedKey(memory.id, memory.revision));
         const source = await readSource(memory);
         if (source.unreadable) {
           rejected["source_unreadable"] = (rejected["source_unreadable"] ?? 0) + 1;
+          unreadable.push(declinedKey(memory.id, memory.revision));
           continue;
         }
         asked += 1;
@@ -333,6 +350,12 @@ export class RealMemoryEvalService {
           }
         }
       }
+      for (const key of deferred)
+        if (
+          !attempted.has(key) &&
+          candidates.some((record) => declinedKey(record.id, record.revision) === key)
+        )
+          unreadable.push(key);
       pending.push(...active.map((question) => ({ question, panel: "fixed" as const })));
 
       const profile = await deps.profile();
@@ -454,6 +477,7 @@ export class RealMemoryEvalService {
       rejected,
       declined,
       undiscarded,
+      unreadable,
       ...(failure === null ? {} : { failure }),
     };
     await deps.store.recordRun({
