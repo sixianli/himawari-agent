@@ -340,9 +340,9 @@
     "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
   },
   "mcp.today-context": {
-    "sha256": "cdaf59f7b6c3d7cff2bdcf9aef00628f5237612d6b4bbdd7485c5abefed62325",
+    "sha256": "565ffbea5f0f81a0e65a96e44c3e79561409ea58078fb9603d2a0ab94a5a59d2",
     "changedIn": "ADR 0219",
-    "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
+    "reason": "今日上下文加上今天和昨天的对话摘要（P3-6 合并后接上）"
   },
   "mcp.tool-result-failed": {
     "sha256": "881b14437ad5dc2a42e6495240f40abeb4ff7d101bdd908e34f147560eb556ed",

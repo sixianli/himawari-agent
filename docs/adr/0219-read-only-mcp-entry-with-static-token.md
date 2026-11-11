@@ -79,6 +79,11 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - `costMicros` 写这次算问题向量花的钱；读取中途失败时，也写失败前已经花掉的钱（找记忆时两路检索都结束后才报失败，所以另一路的嵌入费也算在内）。
    - 决策记录写不进去时，这次读取按失败处理：不把内容交给对方，只回工具错误。这样「每次外部读取都有一条记录」始终成立。
 6. **工具说明文字登记进提示词目录**，编号是 `mcp.find-memories`、`mcp.today-context`、`mcp.rule-book`、`mcp.tool-result-failed`。Himawari 自己发给模型的请求一个字节都不变。
+7. **（2026-11-11 补，P3-6 合并后）`today_context` 带上今天和昨天的对话摘要。**
+   - 用 [ADR 0216](0216-gmail-check-reads-recent-day-summaries.md) 新加的 `MemoryEpisodeService.recent`，按主人时区取今天和昨天的日摘要，最多 8 段，只取模型可见的分级。只读已经生成的摘要，不补生成，所以外部读取不花模型的钱。
+   - 返回字段是 `recentDays`（每段的日期和正文）；有摘要没读到时多一个 `recentDaysComplete: false`。摘要正文和其他文字一起遮盖。
+   - 摘要读取失败不挡提醒：照常返回日期和提醒，`recentDays` 为空并标 `recentDaysComplete: false`。
+   - 决策记录按 ADR 0216 决定 6 写 `summary` 六项：`summaryIds`、`summaryDays`、`summaryCharacters`、`summaryRead`（`ok`、`partial`、`failed`）、`summaryInjected`（是否真的交给了对方）、`summaryGenerated` 固定为 0。通用的决策记录写入（`insertLedgerRow`）原来只落四个键，这次让它在 `external_read` 记录上也落这六项，校验和 Gmail 检查共用同一个函数 `summaryInputsValid`；别的类别带这六项一律拒绝。
 
 [返回阅读导航](#contents)
 
@@ -107,7 +112,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
 ## 后果
 
 - 每次 `find_memories` 都要算一次问题向量，会产生嵌入费用，和聊天里找记忆一样。这笔费用记在那条决策记录上，没有单独的每日上限；有限流兜底，每分钟最多 30 次。
-- 「今日上下文」暂时不含近一两天的对话摘要，要等任务 P3-6 合并后另开 PR 加上。
+- 「今日上下文」的近两天对话摘要已在 P3-6 合并后补上，见决定 7。
 - 写操作和确认框（2026-07-28 版的多轮请求，结果标为「需要输入」）不在这一步里做。
 - 测试：
   - `test/integration/mcp-read.test.ts` 用真实的 SQLite、真实的记忆检索和官方 SDK 客户端，新旧两版协议都连一遍。

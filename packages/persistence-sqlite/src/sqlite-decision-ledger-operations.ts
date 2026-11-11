@@ -39,6 +39,46 @@ function text(value: unknown, min: number, max: number): value is string {
   return typeof value === "string" && value.length >= min && value.length <= max;
 }
 
+const SUMMARY_READS = ["off", "ok", "partial", "failed"];
+
+export function summaryInputsValid(
+  inputs: {
+    readonly summaryInjected?: unknown;
+    readonly summaryIds?: unknown;
+    readonly summaryDays?: unknown;
+    readonly summaryCharacters?: unknown;
+    readonly summaryRead?: unknown;
+    readonly summaryGenerated?: unknown;
+  },
+  maxIds: number,
+): boolean {
+  const ids = (value: unknown, max: number): value is readonly string[] =>
+    Array.isArray(value) &&
+    value.length <= max &&
+    value.every((item) => text(item, 1, 256)) &&
+    new Set(value).size === value.length;
+  const count = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= 0;
+  const others = [
+    inputs.summaryInjected,
+    inputs.summaryIds,
+    inputs.summaryDays,
+    inputs.summaryCharacters,
+    inputs.summaryGenerated,
+  ];
+  if (inputs.summaryRead === undefined) return others.every((value) => value === undefined);
+  return (
+    typeof inputs.summaryInjected === "boolean" &&
+    ids(inputs.summaryIds, maxIds) &&
+    ids(inputs.summaryDays, 31) &&
+    inputs.summaryDays.every((day) => /^\d{4}-\d{2}-\d{2}$/u.test(day)) &&
+    inputs.summaryInjected === inputs.summaryIds.length > 0 &&
+    count(inputs.summaryCharacters) &&
+    count(inputs.summaryGenerated) &&
+    typeof inputs.summaryRead === "string" &&
+    SUMMARY_READS.includes(inputs.summaryRead)
+  );
+}
+
 function idList(value: unknown): value is readonly string[] {
   return (
     Array.isArray(value) &&
@@ -69,6 +109,11 @@ export function validateLedgerWrite(write: DecisionLedgerWrite): string | null {
     (write.inputs.resultMemoryIds !== undefined && !idList(write.inputs.resultMemoryIds))
   )
     return "Decision ledger inputs are invalid";
+  if (
+    !summaryInputsValid(write.inputs, MAX_IDS) ||
+    (write.inputs.summaryRead !== undefined && write.kind !== "external_read")
+  )
+    return "Decision ledger summary inputs are invalid";
   const budget = write.inputs.profileBudget ?? null;
   if (
     budget !== null &&
@@ -135,6 +180,16 @@ export function insertLedgerRow(database: Database.Database, write: DecisionLedg
         batchId: write.inputs.batchId ?? null,
         resultMemoryIds: write.inputs.resultMemoryIds ?? [],
         ...(write.inputs.profileBudget ? { profileBudget: write.inputs.profileBudget } : {}),
+        ...(write.inputs.summaryRead === undefined
+          ? {}
+          : {
+              summaryInjected: write.inputs.summaryInjected,
+              summaryIds: write.inputs.summaryIds,
+              summaryDays: write.inputs.summaryDays,
+              summaryCharacters: write.inputs.summaryCharacters,
+              summaryRead: write.inputs.summaryRead,
+              summaryGenerated: write.inputs.summaryGenerated,
+            }),
       }),
       write.reasonRef,
       write.contentRef,

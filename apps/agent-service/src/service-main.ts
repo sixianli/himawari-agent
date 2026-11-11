@@ -14,6 +14,7 @@ import {
   ExecutionLiveFeed,
   type IdGeneratorPort,
   modelUsagePurpose,
+  modelVisibleClassifications,
   type ProductConfiguration,
   RemoteExecutionBackend,
   type RuntimeRequest,
@@ -1783,6 +1784,27 @@ export async function runAgentService(
                 ownerId: configuration.ownerId,
                 agentId: configuration.agentId,
               }),
+            ...(memoryEpisodes
+              ? {
+                  summaries: async ({ days, limit }: { days: number; limit: number }) => {
+                    const found = await memoryEpisodes.recent({
+                      ownerId: configuration.ownerId,
+                      agentId: configuration.agentId,
+                      days,
+                      limit,
+                      allowedClassifications: modelVisibleClassifications(),
+                    });
+                    return {
+                      partial: found.partial,
+                      summaries: found.summaries.map(({ episode, text }) => ({
+                        id: episode.id,
+                        day: episode.day,
+                        text,
+                      })),
+                    };
+                  },
+                }
+              : {}),
           },
           ledger: repository.decisionLedger(),
           onFailure: (error) =>

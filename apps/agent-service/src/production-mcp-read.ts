@@ -34,6 +34,8 @@ export const MCP_READ_BODY_LIMIT = 65_536;
 export const MCP_READ_SECRET_MINIMUM_LENGTH = 32;
 export const MCP_READ_TOOL_NAMES = ["find_memories", "today_context", "rule_book"] as const;
 export const TODAY_CONTEXT_REMINDER_WINDOW_MS = 48 * 3_600_000;
+export const TODAY_CONTEXT_SUMMARY_DAYS = 2;
+export const TODAY_CONTEXT_SUMMARY_LIMIT = 8;
 const SERVER_NAME = "himawari";
 const SERVER_VERSION = "1.0.0";
 const CLIENT_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}/u;
@@ -54,6 +56,14 @@ export interface McpReadSources {
     readonly more: boolean;
   }>;
   readonly settings: () => Promise<ProactiveSettings>;
+  readonly summaries?: (input: { readonly days: number; readonly limit: number }) => Promise<{
+    readonly summaries: readonly {
+      readonly id: string;
+      readonly day: string;
+      readonly text: string;
+    }[];
+    readonly partial: boolean;
+  }>;
 }
 
 export interface ProductionMcpReadOptions {
@@ -67,10 +77,25 @@ export interface ProductionMcpReadOptions {
   readonly onFailure: (error: unknown) => void;
 }
 
+interface SummaryRead {
+  readonly ids: readonly string[];
+  readonly days: readonly string[];
+  readonly characters: number;
+  readonly read: "ok" | "partial" | "failed";
+}
+
 interface ToolOutcome {
   readonly output: Record<string, unknown>;
   readonly memoryIds: readonly string[];
+  readonly summaries?: SummaryRead;
 }
+
+const SUMMARIES_FAILED: SummaryRead = Object.freeze({
+  ids: [],
+  days: [],
+  characters: 0,
+  read: "failed",
+});
 
 interface ReadCost {
   costMicros: number;
@@ -214,18 +239,29 @@ export class ProductionMcpRead {
   ): Promise<CallToolResult> {
     const started = Date.parse(this.#options.clock.now());
     const cost: ReadCost = { costMicros: 0 };
-    let delivered: { readonly text: string; readonly memoryIds: readonly string[] } | undefined;
+    let delivered:
+      | {
+          readonly text: string;
+          readonly memoryIds: readonly string[];
+          readonly summaries?: SummaryRead;
+        }
+      | undefined;
     try {
       const outcome = await run(args, signal, cost);
       delivered = {
         text: JSON.stringify(maskForExternalRead(outcome.output)),
         memoryIds: outcome.memoryIds,
+        ...(outcome.summaries ? { summaries: outcome.summaries } : {}),
       };
     } catch (error) {
       this.#options.onFailure(error);
     }
+    const summaries =
+      name === "today_context" && this.#options.sources.summaries
+        ? (delivered?.summaries ?? SUMMARIES_FAILED)
+        : undefined;
     try {
-      await this.#record(name, client, delivered?.memoryIds, cost.costMicros, started);
+      await this.#record(name, client, delivered?.memoryIds, summaries, cost.costMicros, started);
     } catch (error) {
       this.#options.onFailure(error);
       delivered = undefined;
@@ -239,6 +275,7 @@ export class ProductionMcpRead {
     name: McpReadToolName,
     client: string,
     memoryIds: readonly string[] | undefined,
+    summaries: SummaryRead | undefined,
     costMicros: number,
     started: number,
   ): Promise<void> {
@@ -251,7 +288,20 @@ export class ProductionMcpRead {
       outcome: "read",
       reasonCode: memoryIds ? name : `${name}_failed`,
       subjectRef: `mcp-client:${client}`,
-      inputs: { memoryIds: memoryIds ?? [], ruleIds: [] },
+      inputs: {
+        memoryIds: memoryIds ?? [],
+        ruleIds: [],
+        ...(summaries
+          ? {
+              summaryInjected: memoryIds !== undefined && summaries.ids.length > 0,
+              summaryIds: memoryIds ? summaries.ids : [],
+              summaryDays: memoryIds ? summaries.days : [],
+              summaryCharacters: memoryIds ? summaries.characters : 0,
+              summaryRead: memoryIds ? summaries.read : "failed",
+              summaryGenerated: 0,
+            }
+          : {}),
+      },
       reasonRef: null,
       contentRef: null,
       costMicros,
@@ -277,9 +327,37 @@ export class ProductionMcpRead {
     }
   }
 
+  async #recentDays(): Promise<{
+    readonly output: Record<string, unknown>;
+    readonly read?: SummaryRead;
+  }> {
+    const source = this.#options.sources.summaries;
+    if (!source) return { output: {} };
+    try {
+      const found = await source({
+        days: TODAY_CONTEXT_SUMMARY_DAYS,
+        limit: TODAY_CONTEXT_SUMMARY_LIMIT,
+      });
+      const recentDays = found.summaries.map(({ day, text }) => ({ day, text }));
+      return {
+        output: { recentDays, ...(found.partial ? { recentDaysComplete: false } : {}) },
+        read: {
+          ids: found.summaries.map(({ id }) => id),
+          days: [...new Set(found.summaries.map(({ day }) => day))],
+          characters: found.summaries.reduce((total, { text }) => total + [...text].length, 0),
+          read: found.partial ? "partial" : "ok",
+        },
+      };
+    } catch (error) {
+      this.#options.onFailure(error);
+      return { output: { recentDays: [], recentDaysComplete: false }, read: SUMMARIES_FAILED };
+    }
+  }
+
   async #todayContext(): Promise<ToolOutcome> {
     const now = this.#options.clock.now();
     const listed = await this.#options.sources.reminders(TODAY_CONTEXT_REMINDER_WINDOW_MS);
+    const recent = await this.#recentDays();
     return {
       output: {
         today: localDay(now, this.#options.timeZone),
@@ -292,8 +370,10 @@ export class ProductionMcpRead {
           repeat: reminder.repeat,
         })),
         ...(listed.more ? { more: true } : {}),
+        ...recent.output,
       },
       memoryIds: listed.reminders.map(({ memoryId }) => memoryId),
+      ...(recent.read ? { summaries: recent.read } : {}),
     };
   }
 

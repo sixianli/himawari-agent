@@ -14,13 +14,14 @@ import type {
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
 import { recordDecisionSignal } from "./decision-signals.ts";
-import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import {
   applyBackoffWrites,
   listBackoff,
   previewBackoff,
   restoreBackoff,
 } from "./proactive-push-backoff.ts";
+import { summaryInputsValid } from "./sqlite-decision-ledger-operations.ts";
+import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { insertObservationEvent } from "./sqlite-observation-operations.ts";
 
 type Input<TName extends keyof ProactiveStorePort> = Parameters<ProactiveStorePort[TName]>[0];
@@ -655,37 +656,6 @@ export class SqliteProactiveOperations {
     );
   }
 
-  private summaryInputsValid(
-    inputs: Input<"record">["inputs"],
-    ids: (value: unknown, max: number) => boolean,
-  ): boolean {
-    const count = (value: unknown) =>
-      value === undefined || (Number.isSafeInteger(value) && (value as number) >= 0);
-    const others = [
-      inputs.summaryInjected,
-      inputs.summaryIds,
-      inputs.summaryDays,
-      inputs.summaryCharacters,
-      inputs.summaryGenerated,
-    ];
-    if (inputs.summaryRead === undefined) return others.every((value) => value === undefined);
-    if (others.some((value) => value === undefined)) return false;
-    const summaryIds = inputs.summaryIds ?? [];
-    const summaryDays = inputs.summaryDays ?? [];
-    const hasSummaryIds = summaryIds.length > 0;
-    return (
-      typeof inputs.summaryInjected === "boolean" &&
-      ids(summaryIds, MAX_INPUT_IDS) &&
-      ids(summaryDays, 31) &&
-      summaryDays.every((day) => /^\d{4}-\d{2}-\d{2}$/u.test(day)) &&
-      (inputs.summaryInjected ?? false) === hasSummaryIds &&
-      count(inputs.summaryCharacters) &&
-      count(inputs.summaryGenerated) &&
-      typeof inputs.summaryRead === "string" &&
-      ["off", "ok", "partial", "failed"].includes(inputs.summaryRead)
-    );
-  }
-
   private validateInputs(input: Input<"record">) {
     const { inputs, modelPayloads } = input;
     const ids = (value: unknown, max: number) =>
@@ -709,7 +679,7 @@ export class SqliteProactiveOperations {
         ([messageId, list]) => messageId.length < 1 || messageId.length > 256 || !ids(list, 16),
       ) ||
       !this.relatedInputsValid(inputs, ids) ||
-      !this.summaryInputsValid(inputs, ids) ||
+      !summaryInputsValid(inputs, MAX_INPUT_IDS) ||
       typeof floorHits !== "object" ||
       floorHits === null ||
       Object.keys(floorHits).length > MAX_INPUT_IDS ||
