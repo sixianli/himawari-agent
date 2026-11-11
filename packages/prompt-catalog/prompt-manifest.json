@@ -295,9 +295,9 @@
     }
   },
   "mail.judgment": {
-    "sha256": "dd071684d7a54f911fc2888ac4fdd2b1aa624d0062e172bf1c961478719d1372",
-    "changedIn": "PA-1",
-    "reason": "邮件判断前给模型同一件事的往来邮件：新增 related、relatedUnavailable 两条说明（相关邮件按时间排在每封邮件的数据里，读取失败时提示证据不足判 check）",
+    "sha256": "6828d0988462d4e491a4b7036b8a1f0fc3985ec859ddf79d6a2d10fdedc55f99",
+    "changedIn": "HR-2",
+    "reason": "邮件判断可选写主金额 amount（value、currency、confidence），供主人的金额规则使用；追加在固定文字末尾，不改前面的字节",
     "emphasis": {
       "kind": "deferred",
       "batch": "第 3 批 W-06、W-11/W-19",

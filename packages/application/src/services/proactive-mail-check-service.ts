@@ -51,8 +51,10 @@ import {
   keepOffReminderPage,
   quietEnd,
   startOfZonedDay,
+  suppressPushHits,
 } from "./proactive-rules.js";
-import { type RuleRecord, ruleBookFor } from "../rules/rule-book.js";
+import { type MailAmount, parseMailAmount } from "../rules/amount.js";
+import { assertRuleExamples, type RuleRecord, ruleBookFor } from "../rules/rule-book.js";
 
 const LOOKBACK_MS = 3 * 24 * 3_600_000;
 const PUSH_WINDOW_MS = 48 * 3_600_000;
@@ -104,6 +106,7 @@ export interface ProactiveMailCheckOptions {
   readonly relatedLimits?: Partial<ProactiveRelatedServiceLimits>;
   readonly onMasked?: (sightings: readonly EgressRedactionSighting[]) => void;
   readonly backoff?: Partial<ProactiveBackoffSettings>;
+  readonly ownerRules?: readonly RuleRecord[];
 }
 
 export const DEFAULT_PROACTIVE_BACKOFF: ProactiveBackoffSettings = Object.freeze({
@@ -188,6 +191,7 @@ interface Judgement {
   readonly dueAt: string | null;
   readonly priority: ProactivePriority | null;
   readonly usedMemoryIds: readonly string[];
+  readonly amount: MailAmount;
 }
 
 type Stop = "capped" | "capped_daily" | "failed" | null;
@@ -458,13 +462,18 @@ function salvagedEntries(output: string): readonly Record<string, unknown>[] | u
   return entries;
 }
 
+function bodyReadInFull(item: ProactiveSourceItem): boolean {
+  return item.body !== null && !item.bodyTruncated;
+}
+
 export function parseJudgements(
   output: string,
   items: readonly ProactiveSourceItem[],
+  bodyComplete: (item: ProactiveSourceItem) => boolean = bodyReadInFull,
 ): ReadonlyMap<string, Judgement> | undefined {
   const entries = completeEntries(output);
   if (entries === undefined) return undefined;
-  const wanted = new Set(items.map(({ messageId }) => messageId));
+  const byId = new Map(items.map((item) => [item.messageId, item]));
   const judgements = new Map<string, Judgement>();
   for (const entry of entries) {
     const id = entry["id"];
@@ -472,12 +481,14 @@ export function parseJudgements(
     const confidence = entry["confidence"];
     if (
       typeof id !== "string" ||
-      !wanted.has(id) ||
+      !byId.has(id) ||
       judgements.has(id) ||
       !["act", "know", "check", "ignore"].includes(result as string) ||
       !["sure", "unsure"].includes(confidence as string)
     )
       continue;
+    const item = byId.get(id);
+    if (item === undefined) continue;
     const priority =
       typeof entry["priority"] === "string" ? entry["priority"].trim().toLowerCase() : null;
     const used = entry["usedMemoryIds"];
@@ -490,6 +501,10 @@ export function parseJudgements(
       todo: plainModelText(typeof entry["todo"] === "string" ? entry["todo"] : "", 200),
       reason: plainModelText(typeof entry["reason"] === "string" ? entry["reason"] : "", 200),
       dueAt: instant(entry["dueAt"]),
+      amount: parseMailAmount(
+        ["act", "know", "check"].includes(result as string) ? entry["amount"] : undefined,
+        bodyComplete(item),
+      ),
       priority: ["high", "medium", "low"].includes(priority as string)
         ? (priority as ProactivePriority)
         : null,
@@ -502,6 +517,7 @@ export class ProactiveMailCheckService {
   readonly #options: ProactiveMailCheckOptions;
 
   constructor(options: ProactiveMailCheckOptions) {
+    for (const rule of options.ownerRules ?? []) assertRuleExamples(rule);
     this.#options = options;
   }
 
@@ -699,6 +715,7 @@ export class ProactiveMailCheckService {
         quietHours: [],
         rules: [],
         floorHits: {},
+        ruleHits: {},
       });
     const fresh = new Set(
       await store.unprocessed({
@@ -804,8 +821,9 @@ export class ProactiveMailCheckService {
       fetched: items.length,
       skipped: processed.length,
     };
-    const rules = ruleBookFor(settings);
+    const rules = [...ruleBookFor(settings), ...(this.#options.ownerRules ?? [])];
     const floorHits: Record<string, readonly string[]> = {};
+    const ruleHits: Record<string, readonly string[]> = {};
     const settled = new Map<string, { readonly result: ProactiveResult; readonly sure: boolean }>();
     for (const item of candidates) {
       const floorIds = item.sentByOwner ? [] : floorHitIds(item, rules);
@@ -883,6 +901,11 @@ export class ProactiveMailCheckService {
         dueAt !== null &&
         Date.parse(dueAt) - Date.parse(startedAt) <= PUSH_WINDOW_MS &&
         Date.parse(startedAt) - Date.parse(dueAt) <= OVERDUE_PUSH_MS;
+      const wantsPush = dueSoon || (final.result === "check" && floor);
+      const suppressing =
+        wantsPush && !floor ? suppressPushHits(item, judgement.amount, rules) : [];
+      if (suppressing.length > 0) ruleHits[item.messageId] = [...suppressing].sort();
+      const push = wantsPush && suppressing.length === 0;
       insights.push({
         item,
         result: final.result,
@@ -893,8 +916,8 @@ export class ProactiveMailCheckService {
         basis: "model",
         dueAt,
         priority,
-        push: dueSoon || (final.result === "check" && floor),
-        pushClass: dueSoon && !floor ? proactivePushClass(item.fromAddress) : null,
+        push,
+        pushClass: push && dueSoon && !floor ? proactivePushClass(item.fromAddress) : null,
         dataClassification: judgedClassification.get(item.messageId) ?? "private",
       });
     }
@@ -923,6 +946,7 @@ export class ProactiveMailCheckService {
       quietHours: settings.quietHours,
       rules,
       floorHits,
+      ruleHits,
     });
   }
 
@@ -1157,7 +1181,13 @@ export class ProactiveMailCheckService {
     }
     if (failure) return { judgements: undefined, costMicros, failure };
     if (!completed) return { judgements: undefined, costMicros, failure: "MODEL_NOT_COMPLETED" };
-    const judgements = parseJudgements(output, batch);
+    const perMail = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits }.perMail;
+    const judgements = parseJudgements(output, batch, (item) => {
+      const json = proactiveMailView(item, perMail).json;
+      return (
+        json["bodyTruncated"] !== true && json["bodyUnavailable"] !== true && item.body !== null
+      );
+    });
     if (judgements) {
       const injected = new Set(promptMemories.map(({ id }) => id));
       for (const { usedMemoryIds } of judgements.values())
@@ -1264,6 +1294,7 @@ export class ProactiveMailCheckService {
       quietHours: [],
       rules: [],
       floorHits: {},
+      ruleHits: {},
     });
   }
 
@@ -1282,6 +1313,7 @@ export class ProactiveMailCheckService {
       readonly quietHours: ProactiveSettings["quietHours"];
       readonly rules: readonly RuleRecord[];
       readonly floorHits: Readonly<Record<string, readonly string[]>>;
+      readonly ruleHits: Readonly<Record<string, readonly string[]>>;
       readonly backoff?: readonly ProactiveBackoffWrite[];
     },
   ): Promise<ProactiveDecision> {
@@ -1343,6 +1375,7 @@ export class ProactiveMailCheckService {
       ruleIds: [...new Set(Object.values(input.floorHits).flat())].sort(),
       sourceIds: [...trace.sourceIds],
       floorHits: input.floorHits,
+      ruleHits: input.ruleHits,
       memoryInjected: trace.memoryIds.size > 0,
       memoryIds: [...trace.memoryIds],
       usedMemoryIds: [...trace.usedMemoryIds],

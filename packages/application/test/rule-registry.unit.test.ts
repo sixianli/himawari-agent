@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { MISSING_AMOUNT, parseMailAmount, toMinorUnits } from "../src/rules/amount.js";
 import { RULE_GATES } from "../src/rules/field-catalog.js";
 import {
+  amountThresholdRule,
   assertRuleExamples,
   BUILT_IN_RULES,
   importantSenderRule,
+  assertRuleShape,
+  mailItemFacts,
   quietHoursRule,
   RULE_IDS,
   type RuleRecord,
@@ -19,6 +23,8 @@ const DEFAULT_SETTINGS = {
   importantSenders: [],
   importantSendersRevision: 0,
 };
+
+const ITEM = { fromAddress: "a@b.com", subject: "Invoice due", snippet: "" };
 
 describe("rule registry", () => {
   it("[HR-1] gives every rule a source, a gate of the catalog, a valid expression, and examples that hit and do not hit", () => {
@@ -105,6 +111,9 @@ describe("rule registry", () => {
           sender_domain: "b.c",
           text: "",
           text_words: [],
+          amount_state: "missing",
+          amount_minor: 0,
+          amount_currency: "",
         },
         rules,
       ),
@@ -127,6 +136,9 @@ describe("rule registry", () => {
       sender_domain: "example.com",
       text: "",
       text_words: [],
+      amount_state: "missing",
+      amount_minor: 0,
+      amount_currency: "",
     };
     expect(new RuleJudge().decide("mail_item", facts, [rule]).hits).toHaveLength(1);
   });
@@ -160,6 +172,9 @@ describe("rule registry", () => {
       sender_domain: "example.com",
       text: "",
       text_words: [],
+      amount_state: "missing",
+      amount_minor: 0,
+      amount_currency: "",
     };
     const judge = new RuleJudge();
     expect(judge.decide("mail_item", facts, [rule]).hits).toEqual([
@@ -172,5 +187,84 @@ describe("rule registry", () => {
   it("[HR-1] never lets a user rule set the outcome of another gate: quiet hours only defer", () => {
     expect(quietHoursRule([], 1).outcome).toBe("defer_to_quiet_hours");
     expect(importantSenderRule([], 1).outcome).toBe("raise_floor");
+  });
+
+  it("[HR-2] turns a decimal string into minor units with a fixed currency table and refuses what it cannot read", () => {
+    expect(toMinorUnits("1000", "JPY")).toBe(1000);
+    expect(toMinorUnits("12.34", "USD")).toBe(1234);
+    expect(toMinorUnits("12.3", "CNY")).toBe(1230);
+    expect(toMinorUnits("1.234", "KWD")).toBe(1234);
+    expect(toMinorUnits("12.345", "USD")).toBeUndefined();
+    expect(toMinorUnits("1000.5", "JPY")).toBeUndefined();
+    expect(toMinorUnits("5", "XYZ")).toBeUndefined();
+    expect(toMinorUnits("-5", "USD")).toBeUndefined();
+    expect(toMinorUnits("1,000", "USD")).toBeUndefined();
+    expect(toMinorUnits("1e3", "USD")).toBeUndefined();
+    expect(toMinorUnits("9".repeat(16), "USD")).toBeUndefined();
+    expect(toMinorUnits(100, "USD")).toBeUndefined();
+  });
+
+  it("[HR-2] reads a model amount as known only when it is sure and the body was read in full", () => {
+    const raw = { value: "100.00", currency: "cny", confidence: "sure" };
+    expect(parseMailAmount(raw, true)).toEqual({ state: "known", minor: 10000, currency: "CNY" });
+    expect(parseMailAmount(raw, false).state).toBe("uncertain");
+    expect(parseMailAmount({ ...raw, confidence: "unsure" }, true).state).toBe("uncertain");
+    expect(parseMailAmount({ ...raw, currency: "XYZ" }, true)).toEqual(MISSING_AMOUNT);
+    expect(parseMailAmount({ ...raw, value: "abc" }, true)).toEqual(MISSING_AMOUNT);
+    expect(parseMailAmount(undefined, true)).toEqual(MISSING_AMOUNT);
+    expect(parseMailAmount("100", true)).toEqual(MISSING_AMOUNT);
+    expect(parseMailAmount([], true)).toEqual(MISSING_AMOUNT);
+  });
+
+  it("[HR-2] always supplies the three amount fields, as missing when the model gave none", () => {
+    expect(mailItemFacts(ITEM)).toMatchObject({
+      amount_state: "missing",
+      amount_minor: 0,
+      amount_currency: "",
+    });
+    expect(mailItemFacts(ITEM, { state: "known", minor: 500, currency: "JPY" })).toMatchObject({
+      amount_state: "known",
+      amount_minor: 500,
+      amount_currency: "JPY",
+    });
+    expect(mailItemFacts(ITEM, { state: "uncertain", minor: 500, currency: "JPY" })).toMatchObject({
+      amount_state: "uncertain",
+      amount_minor: 0,
+      amount_currency: "JPY",
+    });
+  });
+
+  it("[HR-2] hits a small known amount only: boundary, other currency, unsure and missing amounts do not hit", () => {
+    const rule = amountThresholdRule({ currency: "JPY", minor: 1000 }, 1, "测试");
+    assertRuleExamples(rule);
+    const judge = new RuleJudge();
+    const hit = (amount: Parameters<typeof mailItemFacts>[1]) =>
+      judge.decide("mail_item", mailItemFacts(ITEM, amount), [rule]).hits.length === 1;
+    expect(hit({ state: "known", minor: 999, currency: "JPY" })).toBe(true);
+    expect(hit({ state: "known", minor: 1000, currency: "JPY" })).toBe(false);
+    expect(hit({ state: "known", minor: 1, currency: "USD" })).toBe(false);
+    expect(hit({ state: "uncertain", minor: 1, currency: "JPY" })).toBe(false);
+    expect(hit(undefined)).toBe(false);
+    expect(rule.outcome).toBe("suppress_push");
+  });
+
+  it("[HR-2] refuses an amount rule that does not require a known amount, and an outcome the gate cannot take", () => {
+    const rule = amountThresholdRule({ currency: "JPY", minor: 1000 }, 1, "测试");
+    expect(() => assertRuleShape({ ...rule, expression: "amount_minor < 1000" })).toThrow(
+      /amount_state/u,
+    );
+    expect(() =>
+      assertRuleShape({
+        ...rule,
+        expression: 'amount_currency == "JPY" && amount_state == "missing"',
+      }),
+    ).toThrow(/amount_state/u);
+    expect(() => assertRuleShape({ ...rule, outcome: "defer_to_quiet_hours" })).toThrow(/闸门/u);
+    expect(() => assertRuleShape({ ...rule, gate: "mail_delivery" })).toThrow(/闸门/u);
+    expect(() => amountThresholdRule({ currency: "XYZ", minor: 1 }, 1, "测试")).toThrow(/币种/u);
+    expect(() => amountThresholdRule({ currency: "JPY", minor: -1 }, 1, "测试")).toThrow(/整数/u);
+    expect(() =>
+      assertRuleShape({ ...rule, expression: 'text.contains("amount_minor") && size(text) > 0' }),
+    ).not.toThrow();
   });
 });

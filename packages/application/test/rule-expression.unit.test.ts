@@ -11,6 +11,9 @@ const MAIL = {
   sender_domain: "corp.example.com",
   text: "Invoice for 引落 \n see attached",
   text_words: ["invoice", "for", "see", "attached"],
+  amount_state: "missing",
+  amount_minor: 0,
+  amount_currency: "",
 };
 const TIME = { local_minutes: 1400, local_weekday: 2, local_previous_weekday: 1 };
 

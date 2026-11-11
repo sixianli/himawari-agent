@@ -23,7 +23,6 @@ const defaultPolicy: AttentionPolicyConfig = {
   duplicateWindowMs: 60_000,
   rateLimitWindowMs: 60_000,
   maxImmediateDeliveries: 10,
-  quietHours: null,
   authorizedInterruptRefs: ["grant-interrupt-critical"],
 };
 
@@ -105,27 +104,6 @@ describe("Task 15 centralized Attention Policy", () => {
     expect(mismatched.record.decision).toMatchObject({
       level: "NOTIFY",
       interruptAuthorizationRef: null,
-    });
-  });
-
-  it("downgrades normal notification during quiet hours but preserves an authorized interrupt", async () => {
-    const { service } = fixture({
-      quietHours: { startMinute: 23 * 60, endMinute: 7 * 60, utcOffsetMinutes: 0 },
-    });
-    const notification = await service.evaluate(candidate("quiet-notify", 75, 90));
-    const interrupt = await service.evaluate(
-      candidate("quiet-interrupt", 95, 95, {
-        interruptAuthorizationRef: "grant-interrupt-critical",
-      }),
-    );
-
-    expect(notification.record.decision).toMatchObject({
-      level: "DIGEST",
-      reasonCode: "quiet_hours",
-    });
-    expect(interrupt.record.decision).toMatchObject({
-      level: "INTERRUPT",
-      reasonCode: "authorized_urgent_result",
     });
   });
 

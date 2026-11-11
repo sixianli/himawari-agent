@@ -109,7 +109,6 @@ function service(
       duplicateWindowMs: 60_000,
       rateLimitWindowMs: 60_000,
       maxImmediateDeliveries: 10,
-      quietHours: null,
       authorizedInterruptRefs: [],
     },
   });
