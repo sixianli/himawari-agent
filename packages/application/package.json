@@ -15,6 +15,7 @@
     "./sensitive-interceptions": "./src/ports/sensitive-interceptions.ts",
     "./model-usage": "./src/ports/model-usage.ts",
     "./decision-ledger": "./src/ports/decision-ledger.ts",
+    "./rule-ref": "./src/rules/rule-ref.ts",
     "./muse-intake": "./src/ports/muse-intake.ts",
     "./ledger-observation": "./src/ports/ledger-observation.ts"
   },

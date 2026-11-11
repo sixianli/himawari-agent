@@ -41,6 +41,7 @@ export interface OwnerProfileBlock {
 export interface OwnerProfile {
   readonly blocks: readonly OwnerProfileBlock[];
   readonly memoryIds: readonly MemoryId[];
+  readonly usage?: OwnerProfileUsage;
 }
 
 export interface OwnerProfileLine {
@@ -52,7 +53,15 @@ export interface OwnerProfileLine {
 export interface OwnerProfileUsage {
   readonly used: number;
   readonly limit: number;
+  readonly pinned: number;
   readonly queued: readonly MemoryId[];
+}
+
+interface ProfileLine {
+  readonly memory: ProductMemoryRecord;
+  readonly text: string;
+  readonly dateNote: string;
+  readonly length: number;
 }
 
 export interface OwnerProfileOutline {
@@ -180,46 +189,53 @@ export class OwnerProfileService implements OwnerProfilePort {
     );
     const eligible = valid.filter((memory) => choices.get(memory.id) !== false);
     const limit = this.#options.characterBudget ?? OWNER_PROFILE_CHARACTER_BUDGET;
-    let remaining = limit;
-    const queued: MemoryId[] = [];
-    const take = async (memories: readonly ProductMemoryRecord[], dated: boolean) => {
-      const lines: { memory: ProductMemoryRecord; text: string; dateNote: string }[] = [];
+    const read = async (memories: readonly ProductMemoryRecord[], dated: boolean) => {
+      const lines: ProfileLine[] = [];
       for (const memory of [...memories].sort(ownerFirst(pinned))) {
         const text = (await this.#options.readText(memory))?.replace(/\s+/gu, " ").trim();
         if (!text) continue;
         const dateNote = dated
           ? memoryDateNote(memoryDatesOf(memory), this.#options.timeZone ?? "UTC")
           : "";
-        const length = text.length + dateNote.length + 3;
-        if (length > remaining) {
-          queued.push(memory.id);
-          continue;
-        }
-        remaining -= length;
-        lines.push({ memory, text, dateNote });
+        lines.push({ memory, text, dateNote, length: text.length + dateNote.length + 3 });
       }
       return lines;
     };
-    const rules = await take(
+    const ruleLines = await read(
       eligible.filter((memory) => memory.attributes?.category === "rule"),
       false,
     );
-    const sections: {
-      category: MemoryCategory;
-      title: string;
-      lines: { memory: ProductMemoryRecord; text: string; dateNote: string }[];
-    }[] = [];
-    const profileCandidates = eligible.filter(
-      (memory) =>
-        pinned.has(memory.id) ||
-        (memory.attributes?.importancePermille ?? 0) >= PROFILE_MINIMUM_IMPORTANCE,
-    );
-    const chosen = await take(
-      profileCandidates.filter((memory) =>
-        PROFILE_SECTIONS.some(([category]) => memory.attributes?.category === category),
+    const factLines = await read(
+      eligible.filter(
+        (memory) =>
+          (pinned.has(memory.id) ||
+            (memory.attributes?.importancePermille ?? 0) >= PROFILE_MINIMUM_IMPORTANCE) &&
+          PROFILE_SECTIONS.some(([category]) => memory.attributes?.category === category),
       ),
       true,
     );
+    const pinnedUsed = [...ruleLines, ...factLines]
+      .filter(({ memory }) => pinned.has(memory.id))
+      .reduce((sum, { length }) => sum + length, 0);
+    let remaining = limit - pinnedUsed;
+    const queued: MemoryId[] = [];
+    const fit = (lines: readonly ProfileLine[]) =>
+      lines.filter(({ memory, length }) => {
+        if (pinned.has(memory.id)) return true;
+        if (length > remaining) {
+          queued.push(memory.id);
+          return false;
+        }
+        remaining -= length;
+        return true;
+      });
+    const rules = fit(ruleLines);
+    const chosen = fit(factLines);
+    const sections: {
+      category: MemoryCategory;
+      title: string;
+      lines: ProfileLine[];
+    }[] = [];
     for (const [category, title] of PROFILE_SECTIONS) {
       const lines = chosen
         .filter(({ memory }) => memory.attributes?.category === category)
@@ -229,6 +245,7 @@ export class OwnerProfileService implements OwnerProfilePort {
     const usage = Object.freeze({
       used: limit - remaining,
       limit,
+      pinned: pinnedUsed,
       queued: Object.freeze(queued),
     });
     return { rules, sections, eligible: valid, usage };
@@ -278,7 +295,7 @@ export class OwnerProfileService implements OwnerProfilePort {
     readonly maxClassification: DataClassification;
     readonly now: string;
   }): Promise<OwnerProfile> {
-    const { rules, sections, eligible } = await this.#select(input);
+    const { rules, sections, eligible, usage } = await this.#select(input);
     const agenda = await this.#agenda(input, eligible);
     const blocks: OwnerProfileBlock[] = [];
     const name =
@@ -335,6 +352,7 @@ export class OwnerProfileService implements OwnerProfilePort {
     return Object.freeze({
       blocks: Object.freeze(blocks),
       memoryIds: Object.freeze(blocks.flatMap(({ memoryIds }) => memoryIds)),
+      usage,
     });
   }
 

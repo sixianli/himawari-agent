@@ -1,0 +1,3 @@
+{"id": "R2-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "记忆页的用量与真正发给模型的档案用了不同的分级上限", "valid": true, "class": "error", "severity": "medium-high", "trigger": "主人置顶一条敏感的人际记忆", "consequence": "它进了档案块却不算进记忆页用量，超限时记忆页不提示；已改为同一分级上限并补集成用例（改前失败）", "modelSeverity": "中"}
+{"id": "R2-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "验收第 4 条的字面条件与实现不一致", "valid": false, "class": "error", "reason": "queued 非空说明全部候选的字数之和超过了上限（fit 只在放不下时排队），这正是“档案超出字数”；used 小于上限只是因为后面更短的条目被放进去了，验收口径与实现一致"}
+{"id": "R2-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "没有能区分旧排序的自动检查", "valid": true, "class": "error", "severity": "low", "trigger": "把排序改回 checked_at DESC, id DESC", "consequence": "原有用例照样通过；已补同一时间、编号倒序的用例，改回旧排序时实测失败", "modelSeverity": "低"}

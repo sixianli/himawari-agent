@@ -1399,6 +1399,12 @@ describe("production memory capture", () => {
     expect((await tentativeState()).attributes?.tentative).toBe(true);
     await round("run-pa2-3", "我又买了明治的牛奶", unchanged("我又买了明治的牛奶"));
     expect((await tentativeState()).attributes?.tentative).not.toBe(true);
+    const confirmed = (await context.ledgerEntries()).filter(
+      ({ reasonCode }) => reasonCode === "tentative_confirmed",
+    );
+    expect(confirmed.map(({ outcome, category }) => [outcome, category])).toEqual([
+      ["kept", created.attributes?.category],
+    ]);
     expect(context.failures).toEqual([]);
   });
 
@@ -2058,6 +2064,7 @@ describe("production memory capture", () => {
     expect(view.profileUsage).toEqual({
       used: profiled().reduce((sum, text) => sum + text.length + 3, 0),
       limit: 2000,
+      pinned: (profiled()[0] ?? "").length + 3,
       queued: [],
     });
     const blue = byText("蓝色");
@@ -2143,6 +2150,12 @@ describe("production memory capture", () => {
       (await overview(context.control)).memories.find(({ text }) => text.includes("妹妹"))
         ?.profilePin,
     ).toBe("on");
+    const pinnedView = await overview(context.control);
+    const sisterLine = pinnedView.profile
+      .flatMap(({ lines }) => lines.map(({ text }) => text))
+      .find((text) => text.startsWith("主人的妹妹在大阪做护士"));
+    expect(sisterLine).toBeDefined();
+    expect(pinnedView.profileUsage.pinned).toBe((sisterLine ?? "").length + 3);
   });
 
   it("[MEM-CAT] moves a memory to another topic and keeps everything else", async () => {
