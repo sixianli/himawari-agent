@@ -964,6 +964,28 @@ describe("[P0-8] calibration report tab", () => {
     expect(text("#page .weekly-muse-foot")).toContain("配对率 95.2%（40/42）");
   });
 
+  it("[P3-5] asks whether a failed memory capture lost anything, in its own words", async () => {
+    const reported = reportedFixture();
+    weekly = {
+      ...reported,
+      report: {
+        ...reported.report,
+        groups: [
+          ...reported.report.groups,
+          group("memory_capture_failed", 7, 5, 1, ["useful", "missed"]),
+        ],
+      },
+    };
+    await render();
+    await openReport();
+    await click(button("#page .weekly-report", "其他判断 · 2 类 · 展开"));
+    const row = text('#page .weekly-table tr[data-group="memory_capture_failed"]');
+    expect(row).toContain("没漏掉什么83.3%（5/6）");
+    expect(row).toContain("漏了该记的16.7%（1/6）");
+    expect(row).not.toContain("做对了");
+    expect(row).not.toContain("该做没做");
+  });
+
   it("[P0-11] shows observed signals in their own card, apart from the rating rows", async () => {
     weekly = {
       ...weekly,
