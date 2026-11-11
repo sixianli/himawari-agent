@@ -254,16 +254,17 @@ export class RealMemoryEvalService {
         (record) => !skip.has(declinedKey(record.id, record.revision)),
       );
       const banked = new Set(active.map(({ memoryId }) => memoryId));
-      for (const memory of pickNewMemories(
-        candidates,
-        banked,
-        startedAt,
-        limits.newMemoriesPerRun,
-      )) {
+      let asked = 0;
+      for (const memory of pickNewMemories(candidates, banked, startedAt, candidates.length)) {
+        if (asked >= limits.newMemoriesPerRun) break;
         const source = await readSource(memory);
+        if (source.unreadable) {
+          rejected["source_unreadable"] = (rejected["source_unreadable"] ?? 0) + 1;
+          continue;
+        }
+        asked += 1;
         if (source.text === undefined || source.quote === undefined) {
-          const reason = source.unreadable ? "source_unreadable" : "source_missing";
-          rejected[reason] = (rejected[reason] ?? 0) + 1;
+          rejected["source_missing"] = (rejected["source_missing"] ?? 0) + 1;
           declined.push(declinedKey(memory.id, memory.revision));
           continue;
         }

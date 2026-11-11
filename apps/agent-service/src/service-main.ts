@@ -1704,13 +1704,17 @@ export async function runAgentService(
               readText: async (record) => {
                 const payload = await realEvalPayloads.get(record.contentRef);
                 if (!payload || payload.contentType !== "text/plain") return undefined;
-                return new TextDecoder("utf-8", { fatal: true }).decode(
-                  await realEvalProtector.unprotect({
-                    ownerId: configuration.ownerId,
-                    agentId: configuration.agentId,
-                    payload,
-                  }),
-                );
+                try {
+                  return new TextDecoder("utf-8", { fatal: true }).decode(
+                    await realEvalProtector.unprotect({
+                      ownerId: configuration.ownerId,
+                      agentId: configuration.agentId,
+                      payload,
+                    }),
+                  );
+                } catch {
+                  return undefined;
+                }
               },
               storeText: async ({ ref, text }) => keep(ref, text),
               digest: (text) => createHash("sha256").update(text).digest("hex"),

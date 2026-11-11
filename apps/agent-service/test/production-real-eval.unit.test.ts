@@ -703,6 +703,18 @@ describe("[P4-5] real eval leftovers", () => {
     });
   });
 
+  it("lets a sample whose time is in the future expire a week after it was first seen", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-real-eval-"));
+    directories.push(directory);
+    const file = path.join(directory, REAL_EVAL_SAMPLE_FILE);
+    await writeFile(file, "{}\n");
+    const future = new Date(Date.parse(NOW) + 365 * REAL_EVAL_INTERVAL_MS);
+    await utimes(file, future, future);
+    expect(await expireRealEvalSample(directory, NOW)).toBe(false);
+    expect(await expireRealEvalSample(directory, at(REAL_EVAL_INTERVAL_MS - 1))).toBe(false);
+    expect(await expireRealEvalSample(directory, at(REAL_EVAL_INTERVAL_MS))).toBe(true);
+  });
+
   it("keeps expiring the sample while the evaluation is off", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "himawari-real-eval-"));
     directories.push(directory);

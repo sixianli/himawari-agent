@@ -147,6 +147,7 @@ function harness(options: {
   readonly failAnswer?: boolean;
   readonly questionOutput?: string;
   readonly unreadable?: string;
+  readonly questionUnreadable?: boolean;
 }): Harness {
   const store = new MemoryStore();
   if (options.addQuestion === "duplicate") store.addQuestion = async () => false;
@@ -222,7 +223,10 @@ function harness(options: {
       payloads.set(ref, text);
       return ref;
     },
-    readQuestion: async (ref) => payloads.get(ref),
+    readQuestion: async (ref) => {
+      if (options.questionUnreadable) throw new Error("DECRYPT_FAILED");
+      return payloads.get(ref);
+    },
     discardQuestion: async (ref) => {
       if (options.discardFails) throw new Error("SQLITE_BUSY");
       discarded.push(ref);
@@ -403,20 +407,47 @@ describe("[P4-5] real memory eval run", () => {
     expect(retried.summary).toMatchObject({ undiscarded: [] });
   });
 
-  it("skips a memory whose text cannot be read or has no source and asks about the rest", async () => {
-    const test = harness({
+  it("skips a memory whose text cannot be read without using its slot and asks again later", async () => {
+    const options: { memories: ProductMemoryRecord[]; unreadable?: string } = {
       memories: [memory("aaa-missing"), memory("coffee"), memory("flight")],
       unreadable: "coffee",
-    });
+    };
+    const test = harness(options);
     const first = await test.service.run("weekly", { ...LIMITS, newMemoriesPerRun: 2 });
     expect(first.outcome).toBe("completed");
     expect(first.summary).toMatchObject({
       rejected: { source_missing: 1, source_unreadable: 1 },
-      declined: ["aaa-missing@1", "coffee@1"],
+      declined: ["aaa-missing@1"],
     });
-    const second = await test.service.run("weekly", { ...LIMITS, newMemoriesPerRun: 2 });
-    expect(second.outcome).toBe("completed");
     expect(test.store.questions.map(({ memoryId }) => memoryId)).toContain("flight");
+    expect(test.store.questions.map(({ memoryId }) => memoryId)).not.toContain("coffee");
+
+    delete options.unreadable;
+    await test.service.run("weekly", { ...LIMITS, newMemoriesPerRun: 2 });
+    expect(test.store.questions.map(({ memoryId }) => memoryId)).toContain("coffee");
+  });
+
+  it("counts a question as unanswerable when its text or source cannot be read while answering", async () => {
+    const options: {
+      memories: ProductMemoryRecord[];
+      unreadable?: string;
+      questionUnreadable?: boolean;
+    } = { memories: [memory("coffee"), memory("flight")] };
+    const test = harness(options);
+    await test.service.run("weekly", LIMITS);
+    const banked = test.store.questions.length;
+
+    options.unreadable = "coffee";
+    const sourceFails = await test.service.run("weekly", LIMITS);
+    expect(sourceFails.outcome).toBe("completed");
+    const coffee = test.store.questions.filter(({ memoryId }) => memoryId === "coffee").length;
+    expect(sourceFails.summary).toMatchObject({ unanswerable: coffee, items: banked - coffee });
+
+    delete options.unreadable;
+    options.questionUnreadable = true;
+    const questionFails = await test.service.run("weekly", LIMITS);
+    expect(questionFails.outcome).toBe("completed");
+    expect(questionFails.summary).toMatchObject({ unanswerable: banked, items: 0 });
   });
 
   it("does not ask again about a memory version the bank already holds", async () => {

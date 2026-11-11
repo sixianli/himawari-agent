@@ -92,6 +92,10 @@ export async function expireRealEvalSample(directory: string, now: string): Prom
       await rm(path.join(directory, name), { force: true });
   const file = path.join(directory, REAL_EVAL_SAMPLE_FILE);
   const found = await stat(file).catch(missing);
+  if (found && found.mtimeMs > Date.parse(now)) {
+    await utimes(file, new Date(now), new Date(now));
+    return false;
+  }
   if (!found || Date.parse(now) - found.mtimeMs < REAL_EVAL_SAMPLE_TTL_MS) return false;
   await rm(file, { force: true });
   return true;
@@ -152,7 +156,16 @@ export async function readUnfinishedRealEvals(
     if (!found) continue;
     const text = await readFile(file, "utf8").catch(missing);
     if (text === undefined) continue;
-    if (found.mtimeMs > Date.parse(now)) await utimes(file, new Date(now), new Date(now));
+    if (found.mtimeMs > Date.parse(now)) {
+      const reset = await utimes(file, new Date(now), new Date(now)).then(
+        () => true,
+        () => false,
+      );
+      if (!reset) {
+        await rm(file, { force: true }).catch(() => undefined);
+        continue;
+      }
+    }
     const run = inProgressRun(text, now) ?? {
       runId: "",
       startedAt: new Date(Math.min(found.mtimeMs, Date.parse(now))).toISOString(),
@@ -567,7 +580,7 @@ export function createProductionRealEval(deps: ProductionRealEvalDependencies): 
       );
       const memories: RealEvalRecalledMemory[] = [];
       for (const { memory } of found) {
-        const text = await readText(memory.contentRef);
+        const text = await readText(memory.contentRef).catch((): undefined => undefined);
         if (text !== undefined)
           memories.push({ id: memory.id, text, dataClassification: memory.dataClassification });
       }
