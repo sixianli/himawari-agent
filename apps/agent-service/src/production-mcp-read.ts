@@ -113,6 +113,7 @@ interface ProposalState {
   readonly tool: "propose_memory";
   readonly proposalId: string;
   readonly argsHash: string;
+  readonly client: string;
 }
 
 export interface ProductionMcpReadOptions {
@@ -373,7 +374,7 @@ export class ProductionMcpRead {
         if (!(await proposals.ready()))
           return proposalReply(MCP_PROPOSE_MEMORY_NOT_READY.text, true);
         return await this.#askConfirmation(
-          { tool: "propose_memory", proposalId: randomUUID(), argsHash },
+          { tool: "propose_memory", proposalId: randomUUID(), argsHash, client },
           { text, category, client },
           context,
         );
@@ -383,6 +384,7 @@ export class ProductionMcpRead {
         state === null ||
         state.tool !== "propose_memory" ||
         typeof state.proposalId !== "string" ||
+        typeof state.client !== "string" ||
         state.argsHash !== argsHash
       )
         return proposalReply(MCP_PROPOSE_MEMORY_CHANGED.text, true);
@@ -390,7 +392,7 @@ export class ProductionMcpRead {
         proposalId: state.proposalId,
         text,
         category,
-        client,
+        client: state.client,
       };
       return await this.#oneAtATime(state.proposalId, async () => {
         const decided = await proposals.decided(proposal.proposalId);

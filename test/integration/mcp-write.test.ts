@@ -249,11 +249,12 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         readonly elicitation?: boolean;
         readonly answer?: Answer;
         readonly autoFulfill?: boolean;
+        readonly name?: string;
       } = {},
     ) => {
       const era = input.era ?? "modern";
       const client = new Client(
-        { name: "claude-code", version: "2.1.400" },
+        { name: input.name ?? "claude-code", version: "2.1.400" },
         {
           ...(era === "modern" ? { versionNegotiation: { mode: { pin: "2026-07-28" } } } : {}),
           capabilities: input.elicitation === false ? {} : { elicitation: { form: {} } },
@@ -452,12 +453,32 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(rows).toHaveLength(1);
     const kept = rows[0]?.outcome === "kept";
     expect(await f.external()).toHaveLength(kept ? 1 : 0);
-    const final = kept ? MCP_PROPOSE_MEMORY_ALREADY_SAVED.text : MCP_PROPOSE_MEMORY_DECLINED.text;
-    expect(outcomes.slice(1).map((outcome) => outcome.content?.[0]?.text)).toEqual([
-      final,
-      final,
-      final,
-    ]);
+    const texts = outcomes.map((outcome) => outcome.content?.[0]?.text).sort();
+    expect(texts).toEqual(
+      kept
+        ? [
+            MCP_PROPOSE_MEMORY_ALREADY_SAVED.text,
+            MCP_PROPOSE_MEMORY_ALREADY_SAVED.text,
+            MCP_PROPOSE_MEMORY_ALREADY_SAVED.text,
+            MCP_PROPOSE_MEMORY_SAVED.text,
+          ].sort()
+        : Array(4).fill(MCP_PROPOSE_MEMORY_DECLINED.text),
+    );
+  });
+
+  it("records the client name the owner saw in the dialog, not the one on the answer", async () => {
+    const f = await setup();
+    const client = await f.connect({ autoFulfill: false });
+    const first = await f.raw(client, { arguments: { text: COFFEE } });
+    const other = await f.connect({ autoFulfill: false, name: "another-agent" });
+    const declined = await f.raw(other, {
+      arguments: { text: COFFEE },
+      requestState: first.requestState,
+      inputResponses: { [MCP_PROPOSAL_CONFIRM_KEY]: { action: "decline" } },
+    });
+    expect(declined.content?.[0]?.text).toBe(MCP_PROPOSE_MEMORY_DECLINED.text);
+    const [row] = await f.decisions();
+    expect(row?.subjectRef).toBe("mcp-client:claude-code");
   });
 
   it("removes invisible formatting before checking the length and showing the text", async () => {
