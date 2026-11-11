@@ -2163,6 +2163,7 @@ it("[P5-3] shows the memory proposal tool only when runPolicy.mcpRead.proposals 
       );
       expect(names).toContain("today_context");
       expect(names.includes("propose_memory")).toBe(proposals);
+      expect(names.includes("propose_rule")).toBe(proposals);
     } finally {
       await service.stop();
     }

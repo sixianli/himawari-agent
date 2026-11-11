@@ -55,7 +55,7 @@ Andy 2026-11-11 在任务 P5-3 的线程里同意的做法是：三个客户端�
 
 ## 决定
 
-1. **`/api/mcp/v1` 只认 Cloudflare Access 凭证。** 请求头 `Cf-Access-Jwt-Assertion` 里的凭证用现成的 `CloudflareAccessJwtVerifier` 校验：issuer 和公钥地址沿用 `configuration.identity`，audience 用这个入口自己那个 Access 应用的值。凭证通过校验后，还要核对凭证主体就是 Himawari 已绑定的主人：用凭证主体的摘要（`externalSubjectRef`）查网页登录时绑定的主人记录，记录属于本实例的主人且状态是 active 才放行。没有凭证、签名不对、audience 不对、过期、不是绑定的主人，都回 401，不写决策台账。读主人绑定记录时数据库出错，回 503，记 `mcp-read.failed`，不算一次无效登录。带了凭证却没通过的，服务日志记一行 `mcp-read.failed`（只有错误码，不含凭证内容；不是主人时错误码是 `MCP_ACCESS_OWNER_NOT_BOUND`）；被限流挡下的不记，所以由校验失败产生的这类日志每分钟最多 60 行（工具出错等别的原因也写同名日志，不在这 60 行里）。固定令牌（`Authorization: Bearer`）不再被接受。
+1. **`/api/mcp/v1` 只认 Cloudflare Access 凭证。** 请求头 `Cf-Access-Jwt-Assertion` 里的凭证用现成的 `CloudflareAccessJwtVerifier` 校验：issuer 和公钥地址沿用 `configuration.identity`，audience 用这个入口自己那个 Access 应用的值。凭证通过校验后，还要核对凭证主体就是 Himawari 已绑定的主人：用凭证主体的摘要（`externalSubjectRef`）查网页登录时绑定的主人记录，记录属于本实例的主人且状态是 active 才放行。没有凭证、签名不对、audience 不对、过期、不是绑定的主人，都回 401，不写决策台账。读主人绑定记录时数据库出错，回 503，记 `mcp-read.failed`，不算一次无效登录，计入有效请求的 30 次额度（超过就回 429，日志也就停了）。带了凭证却没通过的，服务日志记一行 `mcp-read.failed`（只有错误码，不含凭证内容；不是主人时错误码是 `MCP_ACCESS_OWNER_NOT_BOUND`）；被限流挡下的不记，所以由校验失败产生的这类日志每分钟最多 60 行（工具出错等别的原因也写同名日志，不在这 60 行里）。固定令牌（`Authorization: Bearer`）不再被接受。
    - 取代 ADR 0219 决定 1 里「固定令牌认证」的部分，以及 ADR 0225 决定 1「写操作用单独的令牌」、ADR 0226 决定 1 里「只给写令牌」的部分。
    - 理由：三个客户端里有两个连不上固定令牌（前提 2、3）。一个入口只保留一套认证，也和「生产入口只一道 Cloudflare 门」一致（前提 5）。
 2. **配置改成 `runPolicy.mcpRead: { audience, proposals? }`。**
@@ -115,11 +115,11 @@ Andy 2026-11-11 在任务 P5-3 的线程里同意的做法是：三个客户端�
 - **来源只能靠客户端自称。** 所有客户端都以 Andy 本人登录，凭证主体相同，所以「这条提议来自哪个客户端」仍然只能靠客户端自报的名字。ADR 0228 在界面上把它标成「自称」。
 - **P5-1 的固定令牌没有上线过**，所以不用迁移生产配置或撤销旧令牌。
 - **测试：**
-  - `test/integration/mcp-read.test.ts`、`test/integration/mcp-write.test.ts` 用真实的 `CloudflareAccessJwtVerifier`，用测试密钥签发的凭证连接。拒绝用例覆盖：没有凭证、只带旧的 Bearer 令牌、别的密钥签的、audience 不对、过期、不是绑定的主人（另有两条：绑定已停用、绑定属于别的主人）；每一种都检查 401 不带 `WWW-Authenticate` 头，带了凭证的那几种各记一次失败。把校验换成「有凭证就放行」，或者去掉主人核对，拒绝用例会失败（已手动验证）。另有一条限流用例：60 次无效凭证之后回 429，429 不记日志，有效登录照常可用。
+  - `test/integration/mcp-read.test.ts`、`test/integration/mcp-write.test.ts` 用真实的 `CloudflareAccessJwtVerifier`，用测试密钥签发的凭证连接。拒绝用例覆盖：没有凭证、只带旧的 Bearer 令牌、别的密钥签的、audience 不对、过期、不是绑定的主人（另有两条：绑定已停用、绑定属于别的主人，只检查连接被拒并记 `MCP_ACCESS_OWNER_NOT_BOUND`）；直接发请求的那几种检查 401 不带 `WWW-Authenticate` 头，带了凭证的那几种各记一次失败。把校验换成「有凭证就放行」，或者去掉主人核对，拒绝用例会失败（已手动验证）。另有限流用例：60 次无效凭证之后回 429，429 不记日志，有效登录照常可用；30 次有效请求之后回 429，此时无效凭证仍回 401。
   - `packages/platform-node/test/identity-gateway.unit.test.ts` 检查公钥下载冷却：50 个并发请求带不认识的 `kid`，30 秒内只下载一次，满 30 秒后再下载一次；下载失败后 30 秒内的 20 次校验不再下载，满 30 秒后再试并成功；缓存过期又下载失败时不用过期缓存；强制下载进行中，认识的公钥照常校验。换回改动前的写法，这几条用例会失败（已手动验证）。
   - `packages/platform-node/test/startup-configuration.unit.test.ts` 检查新配置：只接受 `audience` 和 `proposals: true`；旧的 `secretRef`、`writeSecretRef` 被拒；完全没有身份配置、或身份配置是内置登录时启动拒绝；`audience` 和网页登录的相同时启动拒绝。
   - `apps/agent-service/test/production-http-composition.unit.test.ts` 在真实组装里走一遍：不带凭证回 401，带凭证能调工具。
-  - `test/integration/production-http-composition-process.test.ts` 用安装好的真实服务进程，从配置文件一路走到 `/api/mcp/v1`：网页登录 audience 的凭证回 401，不是绑定主人的凭证回 401，MCP 自己 audience 的主人凭证能调工具；配置不写 `proposals` 时工具列表里没有 `propose_memory`，写 `proposals: true` 时有（`propose_rule` 跟它同进同出，由 `test/integration/mcp-write.test.ts` 覆盖）。把启动组装改成用网页登录的 audience，或者不论配置都打开写工具，对应用例会失败（已手动验证）。
+  - `test/integration/production-http-composition-process.test.ts` 用安装好的真实服务进程，从配置文件一路走到 `/api/mcp/v1`：网页登录 audience 的凭证回 401，不是绑定主人的凭证回 401，MCP 自己 audience 的主人凭证能调工具；配置不写 `proposals` 时工具列表里没有 `propose_memory`，写 `proposals: true` 时有，`propose_rule` 也一样。把启动组装改成用网页登录的 audience，或者不论配置都打开写工具，对应用例会失败（已手动验证）。
 
 [返回阅读导航](#contents)
 

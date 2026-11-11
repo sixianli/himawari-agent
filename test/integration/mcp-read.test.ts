@@ -674,7 +674,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(await f.ledger()).toEqual([]);
   });
 
-  it("answers 503, not 401, when the owner binding cannot be read, and does not count it as a bad sign-in", async () => {
+  it("answers 503, not 401, when the owner binding cannot be read, and limits it like a signed-in request", async () => {
     const f = await setup({ failBinding: true });
     const post = async () =>
       fetch(f.url, {
@@ -686,8 +686,29 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
       });
-    for (let attempt = 0; attempt < 61; attempt += 1) expect((await post()).status).toBe(503);
-    expect(f.failures).toHaveLength(61);
+    for (let attempt = 0; attempt < 30; attempt += 1) expect((await post()).status).toBe(503);
+    expect((await post()).status).toBe(429);
+    expect(f.failures).toHaveLength(30);
+  });
+
+  it("answers 429 after 30 signed-in requests a minute, without using up the rejected-request allowance", async () => {
+    const f = await setup();
+    const post = async (assertion: string) =>
+      (
+        await fetch(f.url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json, text/event-stream",
+            "cf-access-jwt-assertion": assertion,
+          },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+        })
+      ).status;
+    const owner = await f.access.sign();
+    for (let attempt = 0; attempt < 30; attempt += 1) expect(await post(owner)).not.toBe(429);
+    expect(await post(owner)).toBe(429);
+    expect(await post(await f.access.signWithForeignKey())).toBe(401);
   });
 
   it("answers 429 after 60 rejected assertions a minute, logs only the 401s, and still serves a valid sign-in", async () => {

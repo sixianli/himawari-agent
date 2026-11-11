@@ -364,6 +364,7 @@ export class ProductionMcpRead {
         try {
           binding = await this.#options.owners.readBySubject(verified);
         } catch (error) {
+          if (this.#windows.admit(true) === "rate_limited") return { status: "rate_limited" };
           this.#options.onFailure(error);
           return { status: "unavailable" };
         }

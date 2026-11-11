@@ -128,6 +128,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
   - `packages/sensitive-capture/test/redaction.unit.test.ts`：`maskSensitiveTexts` 不论顺序都遮掉点名过的值，同一段文字的遮法不受无关内容影响。
   - `packages/platform-node/test/startup-configuration.unit.test.ts`：`runPolicy.mcpRead` 只接受一把用途是 `mcp-read` 的密钥。后续：[ADR 0225](0225-external-agents-propose-memory-with-in-client-confirmation.md) 加的写令牌 `writeSecretRef` 只接受一把用途是 `mcp-write`、和只读令牌不同的密钥，同一个测试文件覆盖。
   - `apps/agent-service/test/production-mail-embedding.unit.test.ts` 覆盖不属于任何一轮对话的嵌入入口。
+  - 2026-11-11 起：上面几条里关于令牌的测试已按 [ADR 0227](0227-mcp-entry-checks-cloudflare-access-sign-in.md) 改成校验 Cloudflare Access 凭证，`runPolicy.mcpRead` 也改成 `{ audience, proposals? }`，旧的密钥配置会被拒绝。以上原文保留不改。
 
 [返回阅读导航](#contents)
 
