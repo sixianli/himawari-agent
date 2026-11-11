@@ -54,7 +54,7 @@ date: "2026-11-11"
    - 理由：ADR 0219 按「只读」发出的令牌，升级后不该悄悄变成能写。依据「边界与可逆性」原则。
    - 两把令牌各有一个 `BearerGate`，各自限流。
 2. **确认按 2026-07-28 版的多轮请求做，不用旧的服务端主动请求。**
-   - 第一次调用：服务端规范化正文，生成一个新的提议编号，回「需要输入」：一张表单，正文、分类、对方自称的客户端名都写在说明里，只有一个勾选框「保存这条记忆」。
+   - 第一次调用：服务端规范化正文，生成一个新的提议编号，回「需要输入」：一张表单，正文、分类、对方自称的客户端名都写在说明里，只有一个勾选框「保存这条记忆」。后续（2026-11-11，Hermes 实机验收后 Andy 选定）：去掉勾选框，确认框不带字段，同意（Accept）就保存、拒绝（Decline）不保存；说明里把正文放在第一行，避免 Claude Code 折叠成“+N more lines”。原因是验收时 Andy 两次想拒绝却勾上后按了 Accept，多一步勾选反而让人点错。另外，Claude 桌面 App 的 Code 标签声明支持确认框，却不显示它，约 10 毫秒后就自动回拒绝（[anthropics/claude-code#105334](https://github.com/anthropics/claude-code/issues/105334)，原话 “No dialog appears. About 10 ms later the client retries the call with: `"inputResponses": {"airavata_input": {"action": "decline"}}`”）。所以确认请求发出后不到 1.5 秒（`MCP_PROPOSAL_UNSEEN_ANSWER_MS`）就回来的拒绝或取消，由 `mcpProposalAnswer` 判为 `unseen`：什么都不写、不记拒绝、不记为已拒绝，回「没显示出来」（`mcp.propose-not-shown`）；同一个确认状态之后仍可以真正同意或拒绝。P5-3 接待确认时直接用这个判定结果。
    - 客户端带着 Andy 的答案和原样的 `requestState` 重发。只有「提交」并且勾了保存，才写记忆；拒绝、取消、提交但没勾，都算没同意，只记一条拒绝的决策记录。
    - `requestState` 用官方 SDK 的 `createRequestStateCodec` 加 HMAC，有效期 10 分钟，绑定调用的方法名（`tools/call`）和令牌种类；工具名、提议编号、参数哈希和确认框里显示的客户端名写在签了名的状态里，重发时核对前三项，决策记录用状态里的客户端名，不用重发时对方报的名字。签名密钥在进程启动时随机生成 32 字节，不从令牌派生，所以拿到令牌的人也伪造不了状态。代价是服务重启后正在等确认的提议失效，重新提议即可（生产是单进程）。
    - SDK 选项里关掉兼容垫片（`legacyShim: false`），老版本连接上不注册写工具。

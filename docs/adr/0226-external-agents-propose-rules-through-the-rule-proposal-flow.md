@@ -51,7 +51,7 @@ date: "2026-11-11"
 1. **新工具 `propose_rule`，出现条件和 `propose_memory` 一样**：只给写令牌、只在 2026-07-28 版连接上注册、客户端没声明表单确认就拒绝、提议状态的签名和有效期、同一提议按编号排队，全部沿用 ADR 0225 决定 1 到 3。
    - 参数：`type`（前提 1 的两种之一）；`params`（`senderDomains` 发件域名、`senderAddresses` 发件地址、`phrases` 词语、`words` 英文整词、`excludePhrases` 排除词，五个字符串列表）；`summary`（一句话的规则说明）；`reason`（对方为什么提，例如 Andy 在那个客户端里说过的原话）。
    - 参数校验用 P2-3 同一个 `parseOwnerRuleParameters`；`reason` 按 ADR 0225 的规则去掉看不见的字符后要 1 到 200 个字符。不合格的直接回「参数不合法」，不弹框。
-2. **第一次调用只校验、不写。** 写入器新加 `preview`：只校验参数，算出试算例子和近 30 天的回放数字（P2-3 已有的回放），不存提议。确认框里给 Andy 看：对方自称的客户端名、规则说明、做法（一定提醒并推送，或先读完整个邮件串）、五项条件、回放数字（写明是估计；算不出来时直说看不到）、对方给的理由，一个勾选框「让这条规则生效」。
+2. **第一次调用只校验、不写。** 写入器新加 `preview`：只校验参数，算出试算例子和近 30 天的回放数字（P2-3 已有的回放），不存提议。确认框里给 Andy 看：对方自称的客户端名、规则说明、做法（一定提醒并推送，或先读完整个邮件串）、五项条件、回放数字（写明是估计；算不出来时直说看不到）、对方给的理由，一个勾选框「让这条规则生效」。后续（2026-11-11，Hermes 实机验收后 Andy 选定）：去掉勾选框，确认框不带字段，同意（Accept）就保存、拒绝（Decline）不保存；说明里把正文放在第一行，避免 Claude Code 折叠成“+N more lines”。原因是验收时 Andy 两次想拒绝却勾上后按了 Accept，多一步勾选反而让人点错。另外，Claude 桌面 App 的 Code 标签声明支持确认框，却不显示它，约 10 毫秒后就自动回拒绝（[anthropics/claude-code#105334](https://github.com/anthropics/claude-code/issues/105334)，原话 “No dialog appears. About 10 ms later the client retries the call with: `"inputResponses": {"airavata_input": {"action": "decline"}}`”）。所以确认请求发出后不到 1.5 秒（`MCP_PROPOSAL_UNSEEN_ANSWER_MS`）就回来的拒绝或取消，由 `mcpProposalAnswer` 判为 `unseen`：什么都不写、不记拒绝、不记为已拒绝，回「没显示出来」（`mcp.propose-not-shown`）；同一个确认状态之后仍可以真正同意或拒绝。P5-3 接待确认时直接用这个判定结果。
 3. **Andy 勾选并提交后，才走 P2-3 的流程。** 先 `create`（标为推断，所以一定只存成提议，见前提 2、3），紧接着 `confirm` 这条提议，规则和规则类记忆由 P2-3 的 `#activate` 写入。拒绝、取消、提交但没勾，什么都不写：不存提议、不写规则、不写记忆。
    - 规则来源写 `mcp:<客户端名>`，不写 P2-3 的 `chat:<对话>`，规则手册里看得出是外部提议的。写入器的 `create` 多一个可选的 `source`，存在提议里，`#activate` 优先用它。
    - 规则类记忆的正文是「外部 agent「客户端名」提议：理由」加一行规则说明。
