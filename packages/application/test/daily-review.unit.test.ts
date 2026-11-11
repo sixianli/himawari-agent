@@ -762,5 +762,37 @@ describe("[P4-6] memory checkup in the daily review", () => {
       checkup: [checkup("other", null)],
     });
     expect(withoutCheckup.items.map(({ key }) => key)).toContain("ledger:hold");
+    const sharedOld = entry({
+      id: "hold-shared",
+      kind: "consolidation",
+      outcome: "hold",
+      inputs: {
+        ...entry({}).inputs,
+        memoryIds: ["other-new", "old"],
+        resultMemoryIds: ["other-new"],
+      },
+    });
+    const sharing = await readDailyReview({
+      scope,
+      ledger: { listReviewPool: async () => [hold, sharedOld] },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "牛奶", hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+      checkup: [
+        {
+          ...checkup("pair", null),
+          memoryId: "new" as never,
+          relatedMemoryId: "old" as never,
+          reason: "conflict",
+        },
+      ],
+    });
+    const sharingKeys = sharing.items.map(({ key }) => key);
+    expect(sharingKeys).not.toContain("ledger:hold");
+    expect(sharingKeys).toContain("ledger:hold-shared");
   });
 });

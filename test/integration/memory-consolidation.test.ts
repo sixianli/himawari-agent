@@ -878,6 +878,20 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       expect(await resource.searchable("出差便利店牛奶", "only")).toContain("milk-new");
       const pet = result?.changes.find(({ memoryId }) => memoryId === "pet-new");
       if (!pet) throw new Error("pet hold missing");
+      const newestFirst = [...(result?.changes ?? [])]
+        .filter(({ action }) => action === "hold")
+        .sort(
+          (left, right) =>
+            right.createdAt.localeCompare(left.createdAt) ||
+            (right.id < left.id ? -1 : right.id > left.id ? 1 : 0),
+        )
+        .map(({ memoryId, relatedMemoryId }) => [memoryId, relatedMemoryId]);
+      expect(newestFirst).toHaveLength(2);
+      expect(
+        await resource.repository
+          .memoryConsolidation()
+          .listHeldPairs({ ownerId: OWNER_ID, agentId: AGENT_ID, openOnly: true }),
+      ).toEqual(newestFirst);
       resource.clock.value = "2026-10-25T09:00:00.000Z";
       await resource.consolidation.undo(pet.id);
       expect((await resource.read("pet-new"))?.attributes?.tentative).not.toBe(true);

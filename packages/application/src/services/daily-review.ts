@@ -290,9 +290,10 @@ export async function readDailyReview(options: {
     limit: DAILY_REVIEW_POOL_LIMIT,
   });
   const checks = new Map(overview.decisions.map((decision) => [decision.id, decision]));
-  const checkupMemoryIds = new Set<string>(
+  const pairKey = (ids: Iterable<string>) => [...new Set(ids)].sort().join("\u0000");
+  const checkupPairs = new Set<string>(
     (options.checkup ?? []).flatMap(({ reason, memoryId, relatedMemoryId }) =>
-      reason === "conflict" ? [memoryId, ...(relatedMemoryId ? [relatedMemoryId] : [])] : [],
+      reason === "conflict" && relatedMemoryId ? [pairKey([memoryId, relatedMemoryId])] : [],
     ),
   );
   const candidates = new Map<
@@ -307,9 +308,7 @@ export async function readDailyReview(options: {
     if (
       entry.kind === "consolidation" &&
       entry.outcome === "hold" &&
-      [...entry.inputs.memoryIds, ...entry.inputs.resultMemoryIds].some((id) =>
-        checkupMemoryIds.has(id),
-      )
+      checkupPairs.has(pairKey([...entry.inputs.memoryIds, ...entry.inputs.resultMemoryIds]))
     )
       continue;
     const check = entry.kind === "proactive" ? checks.get(entry.id) : undefined;

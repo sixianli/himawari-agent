@@ -109,6 +109,16 @@ describe("memory checkup migration", () => {
         )
         .run(OWNER, AGENT, T0, T0),
     ).toThrow();
+    expect(() =>
+      database
+        .prepare(
+          `INSERT INTO memory_checkup_items (id, owner_id, agent_id, week_start, memory_id,
+            reason, action, kept_memory_id, before_state, handled_at, created_at)
+           VALUES ('c-8', ?, ?, '2026-11-22T15:00:00.000Z', 'm-1', 'unused', NULL, 'm-1',
+             NULL, NULL, ?)`,
+        )
+        .run(OWNER, AGENT, T0),
+    ).toThrow();
     database.prepare("DELETE FROM memory_records WHERE id = 'm-2'").run();
     expect(
       database
