@@ -57,7 +57,6 @@ async function process(
     approvals: {} as never,
     audit: { record: async (record) => void audit.push(record) },
     readSourceText: async () => sourceText,
-    isTentative: async () => false,
     now: () => "2026-11-05T00:00:00.000Z",
     memoryIdFor: (generation, ordinal) => `memory:${generation}:${ordinal}` as MemoryId,
     approvalIdFor: (generation, ordinal) => `approval:${generation}:${ordinal}`,

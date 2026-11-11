@@ -323,8 +323,6 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
           if (text === undefined) throw new Error(`Source ${ref} not found`);
           return text;
         },
-        isTentative: async ({ memoryId }) =>
-          (await repository.productMemoryState().read(memoryId))?.attributes?.tentative === true,
         now: () => T0,
         memoryIdFor: (generation, ordinal) => createMemoryId(`memory-${generation}-${ordinal}`),
         approvalIdFor: (generation, ordinal) => `approval-${generation}-${ordinal}`,

@@ -48,10 +48,7 @@ const input = {
 
 async function capture(
   candidates: readonly ExtractedMemoryCandidate[],
-  {
-    tentativeIds = [],
-    gates,
-  }: { readonly tentativeIds?: readonly string[]; readonly gates?: CaptureGates } = {},
+  { gates }: { readonly gates?: CaptureGates } = {},
 ) {
   const audit: MemoryExtractionAuditRecord[] = [];
   const ledger: DecisionLedgerWrite[] = [];
@@ -75,7 +72,6 @@ async function capture(
     audit: { record: async (record) => void audit.push(record) },
     ledger: { append: async (write: DecisionLedgerWrite) => void ledger.push(write) } as never,
     readSourceText: async () => "好家里只喝明治的牛奶",
-    isTentative: async ({ memoryId }) => tentativeIds.includes(memoryId),
     ...(gates ? { gates } : {}),
     now: () => "2026-11-08T00:00:00.000Z",
     memoryIdFor: (generation, ordinal) => `memory:${generation}:${ordinal}` as MemoryId,
@@ -198,11 +194,19 @@ const withCategory = (
     ...overrides,
   });
 
-const reaffirm = (category: string | null, confidencePermille: number) =>
+const reaffirm = (
+  category: string | null,
+  confidencePermille: number,
+  confirmsTentativeCategory?: string,
+  decision: ExtractedMemoryCandidate["decision"] = "unchanged",
+) =>
   withCategory(category, {
-    decision: "unchanged",
+    decision,
     existingMemoryId: "memory-tentative" as MemoryId,
     confidencePermille,
+    ...(confirmsTentativeCategory === undefined
+      ? {}
+      : { confirmsTentativeCategory: confirmsTentativeCategory as never }),
   });
 
 describe("[P4-7] capture thresholds are configured per category", () => {
@@ -258,7 +262,7 @@ describe("[P4-7] capture thresholds are configured per category", () => {
     ]);
   });
 
-  it("the confirm gate decides reaffirmations of tentative memories, not the auto-commit gate", async () => {
+  it("the confirm gate decides every confirmation of a tentative memory, not the auto-commit gate", async () => {
     const gates: CaptureGates = {
       autoCommit: { ...MEMORY_AUTO_COMMIT_GATE, defaultThreshold: 950 },
       confirmTentative: {
@@ -267,16 +271,39 @@ describe("[P4-7] capture thresholds are configured per category", () => {
         byCategory: { health: 900 },
       },
     };
-    const { result, ledger, proposals } = await capture(
-      [reaffirm("goal", 800), reaffirm("health", 800)],
-      { gates, tentativeIds: ["memory-tentative"] },
+    const { result, ledger } = await capture(
+      [
+        reaffirm("goal", 800, "goal"),
+        reaffirm("health", 800, "health"),
+        reaffirm("goal", 800, "goal", "update"),
+        reaffirm("goal", 800, "goal", "merge"),
+      ],
+      { gates },
     );
-    expect(result.committedMemoryIds).toEqual(["memory-tentative"]);
-    expect(proposals).toEqual([expect.objectContaining({ decision: "unchanged" })]);
+    expect(result.committedMemoryIds).toEqual([
+      "memory-tentative",
+      "memory-tentative",
+      "memory-tentative",
+    ]);
     expect(ledger.map(({ outcome, reasonCode }) => [outcome, reasonCode])).toEqual([
       ["kept", "tentative_confirmed"],
       ["discarded", "confirm_below_threshold"],
+      ["kept", "tentative_confirmed"],
+      ["kept", "tentative_confirmed"],
     ]);
+  });
+
+  it("REVERSE: the confirmed memory's own category picks the threshold, not the category the model claims", async () => {
+    const gates: CaptureGates = {
+      ...DEFAULT_CAPTURE_GATES,
+      confirmTentative: {
+        ...MEMORY_TENTATIVE_CONFIRM_GATE,
+        byCategory: { health: 950, preference: 600 },
+      },
+    };
+    const { result, ledger } = await capture([reaffirm("preference", 800, "health")], { gates });
+    expect(result.committedMemoryIds).toEqual([]);
+    expect(ledger.map(({ reasonCode }) => reasonCode)).toEqual(["confirm_below_threshold"]);
   });
 
   it("REVERSE: reaffirming a formal memory still uses the auto-commit gate", async () => {
@@ -289,6 +316,13 @@ describe("[P4-7] capture thresholds are configured per category", () => {
     expect(ledger.map(({ reasonCode }) => reasonCode)).toEqual(["confidence_below_threshold"]);
   });
 
+  it("replaying the same confirmation writes the same decision record", async () => {
+    const first = await capture([reaffirm("goal", 900, "goal")]);
+    const second = await capture([reaffirm("goal", 900, "goal")]);
+    expect(second.ledger).toEqual(first.ledger);
+    expect(first.ledger.map(({ reasonCode }) => reasonCode)).toEqual(["tentative_confirmed"]);
+  });
+
   it("with the default configuration every category behaves exactly as the single 850 threshold did", async () => {
     for (const category of [...THRESHOLD_CATEGORIES, null]) {
       const below = await capture([withCategory(category, { confidencePermille: 849 })]);
@@ -297,14 +331,20 @@ describe("[P4-7] capture thresholds are configured per category", () => {
       const onLine = await capture([withCategory(category, { confidencePermille: 850 })]);
       expect(onLine.result.committedMemoryIds).toEqual(["memory:generation-1:0"]);
       expect(onLine.result.tentativeMemoryIds).toEqual([]);
-      for (const tentativeIds of [[], ["memory-tentative"]]) {
-        const weak = await capture([reaffirm(category, 849)], { tentativeIds });
+      for (const confirms of [undefined, category ?? "other"]) {
+        const weak = await capture([reaffirm(category, 849, confirms)]);
         expect(weak.result.committedMemoryIds).toEqual([]);
         expect(weak.proposals).toEqual([]);
         expect(weak.audit.map(({ outcome }) => outcome)).toEqual(["confidence_below_threshold"]);
-        const strong = await capture([reaffirm(category, 850)], { tentativeIds });
+        expect(weak.ledger.map(({ reasonCode }) => reasonCode)).toEqual([
+          confirms === undefined ? "confidence_below_threshold" : "confirm_below_threshold",
+        ]);
+        const strong = await capture([reaffirm(category, 850, confirms)]);
         expect(strong.result.committedMemoryIds).toEqual(["memory-tentative"]);
         expect(strong.audit.map(({ outcome }) => outcome)).toEqual(["auto_committed"]);
+        expect(strong.ledger.map(({ reasonCode }) => reasonCode)).toEqual([
+          confirms === undefined ? "auto_committed" : "tentative_confirmed",
+        ]);
       }
     }
   });

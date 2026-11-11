@@ -34,11 +34,6 @@ export interface AutomaticMemoryServiceOptions {
   readonly audit: MemoryExtractionAuditPort;
   readonly ledger?: DecisionLedgerPort;
   readonly readSourceText: (sourceRef: string) => Promise<string>;
-  readonly isTentative: (input: {
-    readonly ownerId: CommittedRunMemoryInput["ownerId"];
-    readonly agentId: CommittedRunMemoryInput["agentId"];
-    readonly memoryId: MemoryId;
-  }) => Promise<boolean>;
   readonly gates?: CaptureGates;
   readonly now: () => string;
   readonly memoryIdFor: (generationId: MemoryGenerationId, candidateOrdinal: number) => MemoryId;
@@ -183,22 +178,14 @@ export class AutomaticMemoryService {
         );
         continue;
       }
-      const confirmsTentative =
-        candidate.decision === "unchanged" &&
-        candidate.existingMemoryId !== null &&
-        (await this.options.isTentative({
-          ownerId: input.ownerId,
-          agentId: input.agentId,
-          memoryId: candidate.existingMemoryId,
-        }));
+      const confirmsTentative = candidate.confirmsTentativeCategory !== undefined;
       const gates = this.options.gates ?? DEFAULT_CAPTURE_GATES;
       if (
         !explicitlyApproved &&
         candidate.confidencePermille <
-          thresholdFor(
-            confirmsTentative ? gates.confirmTentative : gates.autoCommit,
-            candidate.attributes?.category ?? null,
-          )
+          (candidate.confirmsTentativeCategory === undefined
+            ? thresholdFor(gates.autoCommit, candidate.attributes?.category ?? null)
+            : thresholdFor(gates.confirmTentative, candidate.confirmsTentativeCategory))
       ) {
         if (canBeKeptTentatively(candidate)) {
           const { supersedes: _dropped, ...rest } = candidate;
