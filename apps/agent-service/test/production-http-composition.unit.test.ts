@@ -37,6 +37,7 @@ import {
   type ProductionMcpReadOptions,
 } from "../src/production-mcp-read.js";
 import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
+import { createMcpAccess } from "./fixtures/mcp-access.js";
 
 const ORIGIN = "https://agent.example.test";
 const ISSUER = "https://team.cloudflareaccess.com";
@@ -856,7 +857,7 @@ describe("production HTTP composition", () => {
     }
   });
 
-  it("[P5-1] serves the MCP read entry through the real composition with only its bearer token", async () => {
+  it("[P5-3] serves the MCP read entry through the real composition only with a Cloudflare Access assertion", async () => {
     const paths = await fixture();
     const config = configuration(paths);
     const repository = await SqliteProductStateRepository.open({
@@ -865,16 +866,23 @@ describe("production HTTP composition", () => {
       minimumFreeBytes: 0,
       now: () => NOW.toISOString(),
     });
-    const secret = "m".repeat(40);
+    const access = await createMcpAccess(() => new Date(NOW));
     const recorded: string[] = [];
     const scope = {
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
     } as unknown as ProductionMcpReadOptions["scope"];
+    const owners = repository.ownerIdentityState();
+    await owners.bindFirstOwner({
+      ownerId: scope.ownerId,
+      externalSubjectRef: await access.ownerSubjectRef(),
+      boundAt: NOW.toISOString(),
+    });
     const mcpRead = new ProductionMcpRead({
       scope,
       clock: { now: () => NOW.toISOString() },
-      secret,
+      access: access.verifier,
+      owners,
       timeZone: "Asia/Tokyo",
       requestTimeoutMs: 5_000,
       sources: {
@@ -902,7 +910,7 @@ describe("production HTTP composition", () => {
       mcpRead,
     });
     try {
-      const call = (authorization?: string) =>
+      const call = (assertion?: string) =>
         composition.app.inject({
           method: "POST",
           url: MCP_READ_PATH,
@@ -911,7 +919,7 @@ describe("production HTTP composition", () => {
             accept: "application/json, text/event-stream",
             "content-type": "application/json",
             "mcp-protocol-version": "2025-06-18",
-            ...(authorization ? { authorization } : {}),
+            ...(assertion ? { "cf-access-jwt-assertion": assertion } : {}),
           },
           payload: {
             jsonrpc: "2.0",
@@ -923,7 +931,7 @@ describe("production HTTP composition", () => {
       const denied = await call();
       expect(denied.statusCode).toBe(401);
       expect(recorded).toEqual([]);
-      const served = await call(["Bearer", secret].join(" "));
+      const served = await call(await access.sign());
       expect(served.statusCode).toBe(200);
       expect(served.body).toContain("2026");
       expect(recorded).toEqual(["today_context"]);

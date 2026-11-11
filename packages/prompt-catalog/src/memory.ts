@@ -111,10 +111,60 @@ export const MEMORY_CONVERSATION_REVIEW_DAY = templatePrompt({
 export const MEMORY_EMBEDDING_QUERY_INSTRUCTION = fixedPrompt({
   id: "memory.embedding-query-instruction",
   purpose: "向量检索时加在查询前面的指令；改它会让已存的向量和新查询对不上",
-  usedBy: ["packages/memory-engine/src/embedding.ts"],
+  usedBy: ["packages/application/src/embedding-profiles.ts"],
   layer: "embedding",
   output: "free-text",
   text: "Given a question from the owner of a personal assistant, retrieve the remembered facts about the owner that help answer it" as const,
+});
+
+export const MEMORY_EMBEDDING_QUERY_QWEN3 = templatePrompt({
+  id: "memory.embedding-query.qwen3",
+  purpose: "Qwen3 向量模型算查询向量时的输入格式；改它会让已存的向量和新查询对不上",
+  usedBy: ["packages/application/src/embedding-profiles.ts"],
+  layer: "embedding",
+  output: "free-text",
+  segments: [
+    text("Instruct: "),
+    text(MEMORY_EMBEDDING_QUERY_INSTRUCTION.text),
+    text("\nQuery:"),
+    slot("query"),
+  ],
+});
+
+export const MEMORY_EMBEDDING_QUERY_JINA = templatePrompt({
+  id: "memory.embedding-query.jina-v5",
+  purpose: "jina v5 向量模型算查询向量时加的前缀；改它会让已存的向量和新查询对不上",
+  usedBy: ["packages/application/src/embedding-profiles.ts"],
+  layer: "embedding",
+  output: "free-text",
+  segments: [text("Query: "), slot("query")],
+});
+
+export const MEMORY_EMBEDDING_DOCUMENT_JINA = templatePrompt({
+  id: "memory.embedding-document.jina-v5",
+  purpose: "jina v5 向量模型算记忆和对话片段向量时加的前缀；改它要重算全部向量",
+  usedBy: ["packages/application/src/embedding-profiles.ts"],
+  layer: "embedding",
+  output: "free-text",
+  segments: [text("Document: "), slot("text")],
+});
+
+export const MEMORY_EMBEDDING_QUERY_GEMMA = templatePrompt({
+  id: "memory.embedding-query.gemma",
+  purpose: "EmbeddingGemma 算查询向量时加的前缀；改它会让已存的向量和新查询对不上",
+  usedBy: ["packages/application/src/embedding-profiles.ts"],
+  layer: "embedding",
+  output: "free-text",
+  segments: [text("task: search result"), text(" | query: "), slot("query")],
+});
+
+export const MEMORY_EMBEDDING_DOCUMENT_GEMMA = templatePrompt({
+  id: "memory.embedding-document.gemma",
+  purpose: "EmbeddingGemma 算记忆和对话片段向量时加的前缀；改它要重算全部向量",
+  usedBy: ["packages/application/src/embedding-profiles.ts"],
+  layer: "embedding",
+  output: "free-text",
+  segments: [text("title: none | text: "), slot("text")],
 });
 
 export const MEMORY_EPISODE_SUMMARY_INTRO = templatePrompt({

@@ -506,6 +506,55 @@ describe("encrypted same-host SQLite recovery points", () => {
     ).toEqual([]);
   });
 
+  it("[P3-1] keeps the memory search index only inside the encrypted backup and never copies local model files", async () => {
+    const source = await fixture();
+    const vector = Buffer.alloc(16);
+    for (const [index, value] of [0.123456, -0.654321, 0.987654, -0.246813].entries())
+      vector.writeFloatLE(value, index * 4);
+    const term = "zebrapluto";
+    const database = openQualifiedDatabase(source.databasePath);
+    database
+      .prepare(
+        `INSERT INTO memory_records (id, owner_id, agent_id, revision, status, content_ref,
+           classification, inference, confidence_permille, policy_version, updated_at)
+         VALUES ('memory-indexed', ?, ?, 1, 'active', 'payload-recovery-point', 'private', 0, 900,
+           'memory-capture:v2', ?)`,
+      )
+      .run(OWNER_ID, AGENT_ID, CREATED_AT);
+    const indexed = database
+      .prepare(
+        `INSERT INTO memory_search_index (memory_id, owner_id, agent_id, memory_revision,
+           embedding_model, embedding_dimensions, embedding, indexed_at)
+         VALUES ('memory-indexed', ?, ?, 1, 'jina-embeddings-v5-text-small-retrieval-int8#fixture', 4, ?, ?)`,
+      )
+      .run(OWNER_ID, AGENT_ID, vector, CREATED_AT);
+    database
+      .prepare("INSERT INTO memory_search_terms (rowid, terms) VALUES (?, ?)")
+      .run(indexed.lastInsertRowid, term);
+    database.close();
+    const modelDirectory = path.join(source.stateRoot, "models", "jina", "a".repeat(64));
+    await mkdir(modelDirectory, { recursive: true });
+    await writeFile(path.join(modelDirectory, "model.onnx"), "local-model-weights-sentinel");
+
+    const backupId = createBackupId("backup-memory-index");
+    await source.adapter.create(recoveryState(backupId));
+    const backupDirectory = path.join(source.stateRoot, "recovery-points", backupId);
+    const names = await readdir(backupDirectory, { recursive: true });
+    const files = await Promise.all(
+      names.map(async (name) => {
+        const filename = path.join(backupDirectory, name);
+        return readFile(filename).catch(() => Buffer.alloc(0));
+      }),
+    );
+    const serialized = Buffer.concat(files);
+    expect(serialized.includes(vector)).toBe(false);
+    expect(serialized.includes(Buffer.from(term))).toBe(false);
+    expect(serialized.includes(Buffer.from("local-model-weights-sentinel"))).toBe(false);
+    expect(names.some((name) => name.includes("models"))).toBe(false);
+    const plain = await readFile(source.databasePath);
+    expect(plain.includes(vector)).toBe(true);
+  });
+
   it("retains a runtime checkpoint and worker reference across encrypted backup restore", async () => {
     const source = await fixture();
     await seedRuntimeCheckpoint(source.databasePath, source.protector);

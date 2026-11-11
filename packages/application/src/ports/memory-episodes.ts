@@ -59,6 +59,7 @@ export interface MemoryEpisodeStorePort {
     readonly agentId: AgentId;
     readonly model: string;
     readonly dimensions: number;
+    readonly after?: { readonly createdAt: string; readonly id: string };
     readonly limit: number;
   }): Promise<readonly MemoryEpisode[]>;
   attachEmbedding(input: {

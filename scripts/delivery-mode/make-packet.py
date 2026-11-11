@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -260,6 +261,57 @@ def interpret_discovery(facts, instance, label=None):
     }
 
 
+EMBEDDING_TARGET_KEYS = {'ref', 'role', 'provider', 'model', 'version', 'allowedDataClassifications', 'disclosure', 'secretRef', 'capabilities', 'cost', 'dimensions'}
+EMBEDDING_PROFILES = {
+    ('vercel-ai-gateway', 'alibaba/qwen3-embedding-8b'): (4096, 1024),
+    ('local-onnx', 'jina-embeddings-v5-text-small-retrieval-int8'): (1024,),
+    ('local-onnx', 'qwen3-embedding-0.6b-int8'): (1024,),
+    ('local-onnx', 'embeddinggemma-2-fp32'): (768,),
+}
+
+
+def finite_non_negative(value):
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(float(value)) and value >= 0
+    except OverflowError:
+        return False
+
+
+def embedding_target(target):
+    if target is None:
+        return 'null'
+    reference = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}')
+    if not isinstance(target, dict) or target.get('role') != 'embedding' or not all(isinstance(target.get(key), str) and reference.fullmatch(target[key]) for key in ('ref', 'provider', 'model', 'version')):
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    local = target['provider'] == 'local-onnx'
+    if set(target) != EMBEDDING_TARGET_KEYS | ({'artifactSha256'} if local else set()):
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    dimensions = EMBEDDING_PROFILES.get((target['provider'], target['model']))
+    if dimensions is None or type(target['dimensions']) is not int or target['dimensions'] not in dimensions:
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    cost, capabilities, classifications = target['cost'], target['capabilities'], target['allowedDataClassifications']
+    if not isinstance(cost, dict) or set(cost) != {'input', 'output', 'cacheRead', 'cacheWrite'} or not all(finite_non_negative(value) for value in cost.values()):
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    if not isinstance(capabilities, list) or 'embedding' not in capabilities or not all(isinstance(value, str) and reference.fullmatch(value) for value in capabilities) or len(set(capabilities)) != len(capabilities):
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    if not isinstance(classifications, list) or not classifications or not all(isinstance(value, str) for value in classifications) or not set(classifications) <= {'public', 'private', 'sensitive', 'restricted'} or len(set(classifications)) != len(classifications):
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    if target['disclosure'] not in ('local_only', 'trusted_remote', 'external_remote'):
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    if target['secretRef'] is not None and not (isinstance(target['secretRef'], str) and reference.fullmatch(target['secretRef'])):
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    if local and (target['disclosure'] != 'local_only' or target['secretRef'] is not None or any(value != 0 for value in cost.values()) or not isinstance(target['artifactSha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', target['artifactSha256']) or set(target['artifactSha256']) == {'0'}):
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    if target['provider'] == 'vercel-ai-gateway' and target['secretRef'] is None:
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    encoded = json.dumps(target, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+    if "'" in encoded or '\\' in encoded:
+        refuse('PACKET_EMBEDDING_TARGET_INVALID', target)
+    return encoded
+
+
 def base_parameters(instance, commit, date, discovered):
     targets = instance['configTargets']
     label = discovered['LABEL']
@@ -280,6 +332,7 @@ def base_parameters(instance, commit, date, discovered):
         'TARGET_CONTEXT_WINDOW': targets['contextWindow'],
         'TARGET_MAX_TOKENS': targets['maxTokens'],
         'TARGET_PUBLIC_FETCH_BYTES': targets['publicFetchMaximumBytes'],
+        'TARGET_EMBEDDING_JSON': embedding_target(targets.get('embedding')),
         'STARTUP_READY_BUDGET_MS': startup_ready_budget(instance, git('show', commit + ':' + WORKER_SERVICE_MAIN)),
         'STARTUP_PHASE_BASELINE_MS': startup_phase_baseline(instance),
     }

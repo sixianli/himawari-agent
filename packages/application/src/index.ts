@@ -1,3 +1,4 @@
+export * from "./embedding-profiles.js";
 export * from "./ports/index.js";
 export * from "./rules/index.js";
 export * from "./services/index.js";

@@ -66,6 +66,7 @@ import {
 import { ProductionMemoryRecall } from "../../apps/agent-service/src/production-memory-recall.ts";
 import { ProductionOwnerRuleWriter } from "../../apps/agent-service/src/production-owner-rules.ts";
 import { ProductionReminderWriter } from "../../apps/agent-service/src/production-reminder-writer.ts";
+import { createMcpAccess } from "../../apps/agent-service/test/fixtures/mcp-access.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-mcp-write");
@@ -75,15 +76,16 @@ const GENERATION_ID = createMemoryGenerationId("generation-mcp-write");
 const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
 const NOW = "2026-11-11T03:00:00.000Z";
 const SINCE = "1970-01-01T00:00:00.000Z";
-const READ_SECRET = "mcp-read-test-secret-0123456789abcdef";
-const WRITE_SECRET = "mcp-write-test-secret-0123456789abcdef";
 const TIME_ZONE = "Asia/Tokyo";
 const COFFEE = "主人每天早上只喝无糖的燕麦拿铁";
 
 const embedder: Embedder = {
   model: "fixture-embedding",
   dimensions: 2,
-  async embed(text: string) {
+  async embedQuery(text: string) {
+    return new Float32Array(text.includes("拿铁") ? [1, 0] : [0, 1]);
+  },
+  async embedDocument(text: string) {
     return new Float32Array(text.includes("拿铁") ? [1, 0] : [0, 1]);
   },
 };
@@ -114,6 +116,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     options: {
       readonly failDecline?: boolean;
       readonly slowDecisionRead?: boolean;
+      readonly readOnly?: boolean;
       readonly failRuleMarker?: boolean;
       readonly replay?: boolean;
     } = {},
@@ -288,11 +291,19 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       clock,
       onFailure: (error) => failures.push(error),
     });
+    const access = await createMcpAccess(() => new Date(clock.now()));
+    const owners = repository.ownerIdentityState();
+    await owners.bindFirstOwner({
+      ownerId: OWNER_ID,
+      externalSubjectRef: await access.ownerSubjectRef(),
+      boundAt: clock.now(),
+    });
     const mcp = new ProductionMcpRead({
       scope,
       clock,
-      secret: READ_SECRET,
-      write: { secret: WRITE_SECRET, proposals: writer, rules: ruleProposals },
+      access: access.verifier,
+      owners,
+      ...(options.readOnly ? {} : { write: { proposals: writer, rules: ruleProposals } }),
       timeZone: TIME_ZONE,
       requestTimeoutMs: 30_000,
       sources: {
@@ -316,7 +327,6 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const connect = async (
       input: {
         readonly era?: "legacy" | "modern";
-        readonly secret?: string;
         readonly elicitation?: boolean;
         readonly answer?: Answer;
         readonly autoFulfill?: boolean;
@@ -343,7 +353,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         });
       await client.connect(
         new StreamableHTTPClientTransport(url, {
-          requestInit: { headers: { authorization: `Bearer ${input.secret ?? WRITE_SECRET}` } },
+          requestInit: { headers: { "cf-access-jwt-assertion": await access.sign() } },
         }),
       );
       closers.push(() => client.close());
@@ -415,12 +425,13 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     };
   }
 
-  it("shows the write tool only to the write token on a modern connection", async () => {
-    const f = await setup();
-    const reader = await f.connect({ secret: READ_SECRET });
+  it("shows the write tool only when proposals are turned on, and only on a modern connection", async () => {
+    const readOnly = await setup({ readOnly: true });
+    const reader = await readOnly.connect();
     expect((await reader.listTools()).tools.map(({ name }) => name)).toEqual([
       ...MCP_READ_TOOL_NAMES,
     ]);
+    const f = await setup();
     const writer = await f.connect();
     const tools = (await writer.listTools()).tools;
     expect(tools.map(({ name }) => name)).toEqual([
@@ -818,7 +829,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       expect(refused, JSON.stringify(args)).toBe(true);
     }
     expect(f.elicitations).toEqual([]);
-    const reader = await f.connect({ secret: READ_SECRET });
+    const reader = await (await setup({ readOnly: true })).connect();
     await expect(reader.callTool({ name: "propose_rule", arguments: RULE })).rejects.toThrow();
     const legacy = await f.connect({ era: "legacy" });
     await expect(legacy.callTool({ name: "propose_rule", arguments: RULE })).rejects.toThrow();

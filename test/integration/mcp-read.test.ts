@@ -32,6 +32,7 @@ import {
 } from "../../apps/agent-service/src/production-mcp-read.ts";
 import { ProductionMemoryRecall } from "../../apps/agent-service/src/production-memory-recall.ts";
 import { ProductionReminderWriter } from "../../apps/agent-service/src/production-reminder-writer.ts";
+import { createMcpAccess } from "../../apps/agent-service/test/fixtures/mcp-access.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-mcp-read");
@@ -41,7 +42,6 @@ const GENERATION_ID = createMemoryGenerationId("generation-mcp-read");
 const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
 const NOW = "2026-11-11T03:00:00.000Z";
 const SINCE = "1970-01-01T00:00:00.000Z";
-const SECRET = "mcp-read-test-secret-0123456789abcdef";
 const TIME_ZONE = "Asia/Tokyo";
 const DENTIST = "明天上午十点去牙医复诊";
 const WIFI = "家里 Wi-Fi 密码：Sunflower-8841";
@@ -54,11 +54,18 @@ const TOPICS = ["牙医", "Wi-Fi", "京都"];
 const embedder: Embedder = {
   model: "fixture-embedding",
   dimensions: 4,
-  async embed(text: string) {
-    const hits = TOPICS.map((topic) => (text.includes(topic) ? 1 : 0));
-    return new Float32Array([...hits, hits.some(Boolean) ? 0 : 1]);
+  async embedQuery(text: string) {
+    return topicVector(text);
+  },
+  async embedDocument(text: string) {
+    return topicVector(text);
   },
 };
+
+function topicVector(text: string): Float32Array {
+  const hits = TOPICS.map((topic) => (text.includes(topic) ? 1 : 0));
+  return new Float32Array([...hits, hits.some(Boolean) ? 0 : 1]);
+}
 
 type Era = "legacy" | "modern";
 
@@ -79,6 +86,8 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       readonly failReminders?: boolean;
       readonly loseTodaySummary?: boolean;
       readonly withoutSummaries?: boolean;
+      readonly binding?: { readonly status?: "disabled"; readonly ownerId?: string };
+      readonly failBinding?: boolean;
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-mcp-read-"));
@@ -274,10 +283,26 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     const failures: unknown[] = [];
     const summaryFailures: unknown[] = [];
     const settingsStore = repository.proactive();
+    const access = await createMcpAccess(() => new Date(clock.now()));
+    const owners = repository.ownerIdentityState();
+    await owners.bindFirstOwner({
+      ownerId: OWNER_ID,
+      externalSubjectRef: await access.ownerSubjectRef(),
+      boundAt: clock.now(),
+    });
     const mcp = new ProductionMcpRead({
       scope,
       clock,
-      secret: SECRET,
+      access: access.verifier,
+      owners: {
+        readBySubject: async (externalSubjectRef) => {
+          if (options.failBinding) throw new Error("OWNER_BINDING_STORE_DOWN");
+          const binding = await owners.readBySubject(externalSubjectRef);
+          return binding && options.binding
+            ? ({ ...binding, ...options.binding } as typeof binding)
+            : binding;
+        },
+      },
       timeZone: TIME_ZONE,
       requestTimeoutMs: 30_000,
       sources: {
@@ -335,14 +360,16 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     const url = new URL(
       `http://127.0.0.1:${(app.server.address() as AddressInfo).port}${MCP_READ_PATH}`,
     );
-    const connect = async (era: Era, secret: string = SECRET) => {
+    const connect = async (era: Era, assertion?: string) => {
       const client = new Client(
         { name: `mcp-read-test-${era}`, version: "1.0.0" },
         era === "modern" ? { versionNegotiation: { mode: { pin: "2026-07-28" } } } : {},
       );
       await client.connect(
         new StreamableHTTPClientTransport(url, {
-          requestInit: { headers: { authorization: `Bearer ${secret}` } },
+          requestInit: {
+            headers: { "cf-access-jwt-assertion": assertion ?? (await access.sign()) },
+          },
         }),
       );
       closers.push(() => client.close());
@@ -362,6 +389,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     return {
       url,
       connect,
+      access,
       call,
       ledger,
       recordFields,
@@ -587,7 +615,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(row).toMatchObject({ reasonCode: "rule_book", outcome: "read" });
   });
 
-  it("rejects requests without the token or with a wrong one, and records nothing", async () => {
+  it("rejects requests without a valid Cloudflare Access assertion, and records nothing", async () => {
     const f = await setup();
     const bare = await fetch(f.url, {
       method: "POST",
@@ -598,10 +626,117 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
     });
     expect(bare.status).toBe(401);
-    expect(bare.headers.get("www-authenticate")).toMatch(/^Bearer/u);
-    await expect(f.connect("legacy", "wrong-secret-0123456789abcdef0123456789")).rejects.toThrow();
-    await expect(f.connect("modern", "wrong-secret-0123456789abcdef0123456789")).rejects.toThrow();
+    expect(bare.headers.get("www-authenticate")).toBeNull();
+    const withBearer = await fetch(f.url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        authorization: ["Bearer", "m".repeat(40)].join(" "),
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    });
+    expect(withBearer.status).toBe(401);
+    expect(withBearer.headers.get("www-authenticate")).toBeNull();
+    for (const assertion of [
+      await f.access.signWithForeignKey(),
+      await f.access.sign({ audience: "another-app" }),
+      await f.access.sign({ expiresInSeconds: -120 }),
+      await f.access.sign({ subject: "someone-else-in-the-access-team" }),
+    ]) {
+      const rejected = await fetch(f.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "cf-access-jwt-assertion": assertion,
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      });
+      expect(rejected.status).toBe(401);
+      expect(rejected.headers.get("www-authenticate")).toBeNull();
+    }
+    await expect(f.connect("legacy", await f.access.signWithForeignKey())).rejects.toThrow();
+    await expect(
+      f.connect("modern", await f.access.sign({ audience: "another-app" })),
+    ).rejects.toThrow();
+    await expect(
+      f.connect("modern", await f.access.sign({ expiresInSeconds: -120 })),
+    ).rejects.toThrow();
     expect(await f.ledger()).toEqual([]);
+    expect(f.failures).toHaveLength(7);
+    expect(f.failures).toEqual(
+      Array.from({ length: 7 }, () => expect.objectContaining({ code: expect.any(String) })),
+    );
+    expect(f.failures[3]).toEqual({ code: "MCP_ACCESS_OWNER_NOT_BOUND" });
+  });
+
+  it.each([
+    ["a disabled binding", { status: "disabled" as const }],
+    ["a binding for another owner", { ownerId: "owner-someone-else" }],
+  ])("rejects the bound subject when it has %s", async (_label, binding) => {
+    const f = await setup({ binding });
+    await expect(f.connect("modern")).rejects.toThrow();
+    expect(f.failures).toEqual([{ code: "MCP_ACCESS_OWNER_NOT_BOUND" }]);
+    expect(await f.ledger()).toEqual([]);
+  });
+
+  it("answers 503, not 401, when the owner binding cannot be read, and limits it like a signed-in request", async () => {
+    const f = await setup({ failBinding: true });
+    const post = async () =>
+      fetch(f.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "cf-access-jwt-assertion": await f.access.sign(),
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      });
+    for (let attempt = 0; attempt < 30; attempt += 1) expect((await post()).status).toBe(503);
+    expect((await post()).status).toBe(429);
+    expect(f.failures).toHaveLength(30);
+  });
+
+  it("answers 429 after 30 signed-in requests a minute, without using up the rejected-request allowance", async () => {
+    const f = await setup();
+    const post = async (assertion: string) =>
+      (
+        await fetch(f.url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json, text/event-stream",
+            "cf-access-jwt-assertion": assertion,
+          },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+        })
+      ).status;
+    const owner = await f.access.sign();
+    for (let attempt = 0; attempt < 30; attempt += 1) expect(await post(owner)).not.toBe(429);
+    expect(await post(owner)).toBe(429);
+    expect(await post(await f.access.signWithForeignKey())).toBe(401);
+  });
+
+  it("answers 429 after 60 rejected assertions a minute, logs only the 401s, and still serves a valid sign-in", async () => {
+    const f = await setup();
+    const forged = await f.access.signWithForeignKey();
+    const post = () =>
+      fetch(f.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "cf-access-jwt-assertion": forged,
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      });
+    for (let attempt = 0; attempt < 60; attempt += 1) expect((await post()).status).toBe(401);
+    const limited = await post();
+    expect(limited.status).toBe(429);
+    expect(f.failures).toHaveLength(60);
+    const modern = await f.connect("modern");
+    expect((await modern.listTools()).tools.length).toBeGreaterThan(0);
   });
 
   it("answers a failed read as a tool error and records it as failed", async () => {

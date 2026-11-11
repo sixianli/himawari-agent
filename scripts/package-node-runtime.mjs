@@ -29,6 +29,24 @@ const internalRoots = [
   "packages/runtime-sandbox",
 ];
 
+const NATIVE_BINARY_ROOTS = Object.freeze({ "onnxruntime-node": ["bin", "napi-v6"] });
+
+export function keepsNativeBinary(
+  packageName,
+  relative,
+  platform = process.platform,
+  arch = process.arch,
+) {
+  const root = NATIVE_BINARY_ROOTS[packageName];
+  if (!root) return true;
+  const parts = relative.split(path.sep);
+  if (parts.length <= root.length || root.some((part, index) => parts[index] !== part)) return true;
+  if (parts[root.length] !== platform) return false;
+  if (parts.length === root.length + 1) return true;
+  if (parts[root.length + 1] !== arch) return false;
+  return !/providers_(?:cuda|tensorrt)/u.test(parts.at(-1) ?? "");
+}
+
 export async function packageNodeRuntime({
   root = repositoryRoot,
   buildRoot = path.join(root, "dist/node-build"),
@@ -201,6 +219,7 @@ export async function packageNodeRuntime({
         filter(source) {
           const relative = path.relative(located.root, source);
           if (relative.split(path.sep).includes("node_modules")) return false;
+          if (!keepsNativeBinary(item.name, relative)) return false;
           if (lstatSync(source).isSymbolicLink()) {
             const resolved = realpathSync(source);
             const modulesRoot = realpathSync(path.join(repositoryRoot, "node_modules"));
