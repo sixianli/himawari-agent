@@ -82,8 +82,8 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
 7. **（2026-11-11 补，P3-6 合并后）`today_context` 带上今天和昨天的对话摘要。**
    - 用 [ADR 0216](0216-gmail-check-reads-recent-day-summaries.md) 新加的 `MemoryEpisodeService.recent`，按主人时区取今天和昨天的日摘要，最多 8 段，只取模型可见的分级。只读已经生成的摘要，不补生成，所以外部读取不花模型的钱。
    - 返回字段是 `recentDays`（每段的日期和正文）；有摘要没读到时多一个 `recentDaysComplete: false`。摘要正文和其他文字一起遮盖。
-   - 摘要读取失败不挡提醒：照常返回日期和提醒，`recentDays` 为空并标 `recentDaysComplete: false`。服务日志写 `mcp-read.summaries-failed`，不写整次失败的 `mcp-read.failed`。没接上摘要读取（对话摘要没启用）时不返回 `recentDays`。
-   - 决策记录按 ADR 0216 决定 6 写 `summary` 六项：`summaryIds`、`summaryDays`、`summaryCharacters`、`summaryRead`（`ok`、`partial`、`failed`；提醒先读失败、摘要还没读时记 `off`）、`summaryInjected`（是否真的交给了对方）、`summaryGenerated` 固定为 0。通用的决策记录写入（`insertLedgerRow`）原来只落四个键，这次让它在 `external_read` 记录上也落这六项，校验和 Gmail 检查共用同一个函数 `summaryInputsValid`；别的类别带这六项一律拒绝。
+   - 摘要读取失败不挡提醒：照常返回日期和提醒，`recentDays` 为空并标 `recentDaysComplete: false`。服务日志写 `mcp-read.summaries-failed`，不写整次失败的 `mcp-read.failed`；只有部分摘要正文读不到时也写这条，错误码是 `MCP_READ_SUMMARY_TEXT_UNREADABLE`。决策记录里这六项只在输入字段里，「依据」抽屉不显示。没接上摘要读取（对话摘要没启用）时不返回 `recentDays`。
+   - 决策记录按 ADR 0216 决定 6 写 `summary` 六项：`summaryIds`、`summaryDays`、`summaryCharacters`、`summaryRead`（`ok`、`partial`、`failed`；提醒先读失败、摘要还没读时记 `off`）、`summaryInjected`（是否真的交给了对方）、`summaryGenerated` 固定为 0。通用的决策记录写入（`insertLedgerRow`）原来只落四个键，这次让它在 `external_read` 记录上也落这六项，校验和 Gmail 检查共用同一个函数 `summaryInputsValid`；别的类别带这六项、或只带其中一部分，一律拒绝，`insertLedgerRow` 自己也拒绝（记忆整理直接调用它）。
 
 [返回阅读导航](#contents)
 

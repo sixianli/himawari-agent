@@ -117,7 +117,10 @@ export function validateLedgerWrite(write: DecisionLedgerWrite): string | null {
 }
 
 export function insertLedgerRow(database: Database.Database, write: DecisionLedgerWrite): void {
-  if (write.inputs.summaryRead !== undefined && write.kind !== "external_read")
+  if (
+    !summaryInputsValid(write.inputs, MAX_IDS) ||
+    (write.inputs.summaryRead !== undefined && write.kind !== "external_read")
+  )
     throw new Error("Decision ledger summary inputs are invalid");
   database
     .prepare(

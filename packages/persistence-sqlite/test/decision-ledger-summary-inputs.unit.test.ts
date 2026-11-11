@@ -31,7 +31,11 @@ async function database() {
   return opened;
 }
 
-function write(id: string, kind: "external_read" | "consolidation") {
+function write(
+  id: string,
+  kind: "external_read" | "consolidation",
+  summary: Record<string, unknown> = SUMMARY,
+) {
   return {
     id,
     ownerId: "o" as OwnerId,
@@ -41,7 +45,7 @@ function write(id: string, kind: "external_read" | "consolidation") {
     outcome: kind === "external_read" ? "read" : "merge",
     reasonCode: kind === "external_read" ? "today_context" : "merge",
     subjectRef: null,
-    inputs: { memoryIds: [], ruleIds: [], ...SUMMARY },
+    inputs: { memoryIds: [], ruleIds: [], ...summary },
     reasonRef: null,
     contentRef: null,
     costMicros: 0,
@@ -57,6 +61,21 @@ describe("[P5-1] recent-summary inputs on the direct ledger insert", () => {
       expect(() => insertLedgerRow(opened, write("consolidation", "consolidation"))).toThrow(
         "Decision ledger summary inputs are invalid",
       );
+      expect(() =>
+        insertLedgerRow(
+          opened,
+          write("consolidation-partial", "consolidation", {
+            summaryIds: ["episode-1"],
+            summaryDays: ["2026-11-10"],
+          }),
+        ),
+      ).toThrow("Decision ledger summary inputs are invalid");
+      expect(() =>
+        insertLedgerRow(
+          opened,
+          write("external-partial", "external_read", { summaryIds: ["episode-1"] }),
+        ),
+      ).toThrow("Decision ledger summary inputs are invalid");
       const rows = opened.prepare("SELECT id, inputs FROM decision_ledger ORDER BY id").all() as {
         id: string;
         inputs: string;

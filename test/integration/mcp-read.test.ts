@@ -78,6 +78,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       readonly failSummaries?: boolean;
       readonly failReminders?: boolean;
       readonly loseTodaySummary?: boolean;
+      readonly withoutSummaries?: boolean;
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-mcp-read-"));
@@ -243,23 +244,27 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
           return writer.list(windowMs);
         },
         settings: () => settingsStore.readSettings(scope),
-        summaries: async ({ days, limit }) => {
-          if (options.failSummaries) throw new Error("SUMMARY_STORE_DOWN");
-          const found = await episodes.recent({
-            ...scope,
-            days,
-            limit,
-            allowedClassifications: ["public", "private", "sensitive"],
-          });
-          return {
-            partial: found.partial,
-            summaries: found.summaries.map(({ episode, text }) => ({
-              id: episode.id,
-              day: episode.day,
-              text,
-            })),
-          };
-        },
+        ...(options.withoutSummaries
+          ? {}
+          : {
+              summaries: async ({ days, limit }: { days: number; limit: number }) => {
+                if (options.failSummaries) throw new Error("SUMMARY_STORE_DOWN");
+                const found = await episodes.recent({
+                  ...scope,
+                  days,
+                  limit,
+                  allowedClassifications: ["public", "private", "sensitive"],
+                });
+                return {
+                  partial: found.partial,
+                  summaries: found.summaries.map(({ episode, text }) => ({
+                    id: episode.id,
+                    day: episode.day,
+                    text,
+                  })),
+                };
+              },
+            }),
       },
       ledger: options.failLedger
         ? {
@@ -300,7 +305,19 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       const [content] = result.content as { type: string; text: string }[];
       return { result, text: content?.text ?? "" };
     };
-    return { url, connect, call, ledger, embeddingContexts, failures, summaryFailures, writer };
+    const recordFields = async (decisionId: string) =>
+      (await repository.decisionLedger().read({ ...scope, decisionId }))?.inputFields ?? [];
+    return {
+      url,
+      connect,
+      call,
+      ledger,
+      recordFields,
+      embeddingContexts,
+      failures,
+      summaryFailures,
+      writer,
+    };
   }
 
   it.each(["legacy", "modern"] as const)(
@@ -428,6 +445,10 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     };
     expect(output.recentDays.map(({ day }) => day)).toEqual(["2026-11-10"]);
     expect(output.recentDaysComplete).toBe(false);
+    expect(f.summaryFailures.map((error) => (error as Error).message)).toEqual([
+      "MCP_READ_SUMMARY_TEXT_UNREADABLE",
+    ]);
+    expect(f.failures).toEqual([]);
     const [row] = await f.ledger();
     expect(row?.inputs).toMatchObject({
       summaryInjected: true,
@@ -435,6 +456,22 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       summaryDays: ["2026-11-10"],
       summaryRead: "partial",
     });
+  });
+
+  it("leaves the days out and records no summary inputs when summaries are not set up", async () => {
+    const f = await setup({ withoutSummaries: true });
+    const client = await f.connect("modern");
+    const today = await f.call(client, "today_context");
+    expect(today.result.isError).not.toBe(true);
+    const output = JSON.parse(today.text) as Record<string, unknown>;
+    expect(output).not.toHaveProperty("recentDays");
+    expect(output).not.toHaveProperty("recentDaysComplete");
+    expect(output["reminders"]).toBeDefined();
+    const [row] = await f.ledger();
+    expect(row?.reasonCode).toBe("today_context");
+    expect(row?.inputs.summaryRead).toBe("off");
+    const stored = await f.recordFields(row?.id ?? "");
+    expect(stored.some((field) => field.startsWith("summary"))).toBe(false);
   });
 
   it("records the summaries as not tried when the reminders fail first", async () => {
