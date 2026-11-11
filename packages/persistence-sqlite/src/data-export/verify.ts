@@ -27,6 +27,7 @@ import {
   type PortableCounts,
   type PortableFiles,
   type PortableManifest,
+  WITHHELD_PLACEHOLDER,
 } from "./types.js";
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -382,6 +383,7 @@ export function parsePortable(
       ? undefined
       : decoder.decode(files.get(RULES_INDEX_FILE)),
     rules,
+    WITHHELD_PLACEHOLDER,
   );
   if (rulesProblem !== null)
     throw new DataExportError(DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN, rulesProblem);

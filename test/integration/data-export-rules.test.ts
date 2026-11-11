@@ -7,6 +7,7 @@ import {
   MANIFEST_FILE,
   type PortableFiles,
   SEALED_FILE,
+  sealJson,
   sha256Hex,
   unsealJson,
 } from "@himawari-agent/persistence-sqlite";
@@ -297,6 +298,52 @@ describe("data export: the rule book travels with the memories", () => {
     const report = await importInto(target, files, PASSPHRASE);
     expect(report.imported.rules).toBe(0);
   });
+
+  it("[P1-6] the largest important-sender list the settings accept still round-trips byte for byte", async () => {
+    const source = await side("rules-large");
+    await seedMemory(source, { id: "m-only", text: "喜欢喝茶" });
+    const senders = Array.from(
+      { length: 200 },
+      (_, index) =>
+        `${"a".repeat(60)}.${"b".repeat(60)}.${"c".repeat(60)}.sender${index}.example.com`,
+    );
+    writeRuleVersion(source, {
+      ruleId: "floor_important_sender",
+      parameters: { senders },
+      source: "ADR 0106；主人的设置“重要发件人”",
+      at: "2026-11-01T00:00:00.000Z",
+    });
+    const stored = source.database
+      .prepare("SELECT parameters FROM rule_book_rules WHERE rule_id = 'floor_important_sender'")
+      .pluck()
+      .get() as string;
+    expect(stored.length).toBeGreaterThan(40_000);
+    const { files } = await exportOf(source);
+    const target = await side("rules-large-target");
+    await importInto(target, files, PASSPHRASE);
+    expect(ruleRows(target)).toEqual(ruleRows(source));
+  });
+
+  it("[P1-6] stored parameters that are not in the writers' own JSON form travel only in the sealed file", async () => {
+    const source = await side("rules-uneven");
+    await seedMemory(source, { id: "m-only", text: "喜欢喝茶" });
+    writeRuleVersion(source, {
+      ruleId: "floor_important_sender",
+      parameters: { senders: ["bank.example"] },
+      source: "ADR 0106；主人的设置“重要发件人”",
+      at: "2026-11-01T00:00:00.000Z",
+    });
+    const uneven = '{"senders":["hidden.example"],"senders":["bank.example"]}';
+    source.database.exec("DROP TRIGGER rule_book_history_no_update");
+    source.database.prepare("UPDATE rule_book_rules SET parameters = ?").run(uneven);
+    source.database.prepare("UPDATE rule_book_history SET parameters = ?").run(uneven);
+    const { files, manifest } = await exportOf(source);
+    expect(manifest.withheld.rules).toBe(1);
+    expect(decoder.decode(files.get("data/rules.jsonl"))).not.toContain("hidden.example");
+    const target = await side("rules-uneven-target");
+    await importInto(target, files, PASSPHRASE);
+    expect(ruleRows(target)).toEqual(ruleRows(source));
+  });
 });
 
 describe("data export: a tampered rule book is refused before anything is written", () => {
@@ -356,6 +403,29 @@ describe("data export: a tampered rule book is refused before anything is writte
         ),
       DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
     ],
+    [
+      "a RULES.md whose rule line says something else",
+      (files) =>
+        rehash(files, (path, text) =>
+          path === "RULES.md"
+            ? text
+                .split("\n")
+                .map((line) =>
+                  line.includes("〔r:quiet_hours〕") ? line.replace("23:00", "21:00") : line,
+                )
+                .join("\n")
+            : text,
+        ),
+      DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
+    ],
+    [
+      "a RULES.md with a wrong total",
+      (files) =>
+        rehash(files, (path, text) =>
+          path === "RULES.md" ? text.replace("共 5 条存下来的规则", "共 4 条存下来的规则") : text,
+        ),
+      DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
+    ],
   ];
   for (const [name, mutate, code] of cases) {
     it(`[P1-6][reverse] refuses ${name} and writes nothing`, async () => {
@@ -367,6 +437,50 @@ describe("data export: a tampered rule book is refused before anything is writte
       expect(target.database.prepare("SELECT COUNT(*) FROM memory_records").pluck().get()).toBe(0);
     });
   }
+
+  it("[P1-6][reverse] a sealed original that no longer matches the rule's history is refused", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const sealed = (await unsealJson(PASSPHRASE, files.get(SEALED_FILE) ?? new Uint8Array())) as {
+      originals: Record<string, string>;
+    };
+    sealed.originals["rule/owner:build-key/parameters"] = JSON.stringify(
+      ownerRuleParameters("mail_must_notify", { phrases: ["发票"] }, "发票一定提醒"),
+    );
+    const resealed = await sealJson(PASSPHRASE, sealed);
+    const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE))) as {
+      files: { path: string; bytes: number; sha256: string }[];
+    };
+    for (const entry of manifest.files)
+      if (entry.path === SEALED_FILE) {
+        entry.bytes = resealed.byteLength;
+        entry.sha256 = sha256Hex(resealed);
+      }
+    const tampered: PortableFiles = new Map(files);
+    tampered.set(SEALED_FILE, resealed);
+    tampered.set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
+    const target = await side("rules-reseal");
+    await expect(importInto(target, tampered, PASSPHRASE)).rejects.toMatchObject({
+      code: DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
+    });
+    expect(target.database.prepare("SELECT COUNT(*) FROM rule_book_rules").pluck().get()).toBe(0);
+  });
+
+  it("[P1-6][reverse] a target with leftover rule history is not empty", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const target = await side("rules-leftover-history");
+    target.database
+      .prepare(
+        `INSERT INTO rule_book_history (owner_id, agent_id, rule_id, revision, parameters, status,
+          source, changed_at) VALUES (?, ?, 'quiet_hours', 1, '{"periods":[]}', 'active', 'x', ?)`,
+      )
+      .run(target.ownerId, target.agentId, NOW);
+    await expect(importInto(target, files, PASSPHRASE)).rejects.toMatchObject({
+      code: DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY,
+      detail: "rule_book_history",
+    });
+  });
 
   it("[P1-6][reverse] a target that already has a rule is not empty", async () => {
     const source = await seeded();

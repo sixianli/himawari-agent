@@ -234,13 +234,14 @@ export const DECISION_SCHEMA: JsonSchema = objectOf(
 );
 
 const RULE_STATUSES = ["active", "needs_review", "retired"] as const;
+export const RULE_PARAMETERS_MAXIMUM_LENGTH = 262_144;
 
 const ruleVersionFields = {
   revision: integer(1),
   status: enumOf(RULE_STATUSES),
   source: text(1, 256),
   sourceMemoryId: nullable(text(1, 128)),
-  parameters: text(2, 16_384),
+  parameters: text(2, RULE_PARAMETERS_MAXIMUM_LENGTH),
   withheld: { type: "boolean", const: true },
 } as const;
 

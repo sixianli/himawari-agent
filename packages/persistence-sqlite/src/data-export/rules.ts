@@ -202,6 +202,10 @@ function ruleLine(rule: PortableRule, withheldText: string): string {
   return `- 〔r:${rule.ruleId}〕 ${KIND_LABELS[kind]}。${foldText(text)}（第 ${rule.revision} 版，${STATUS_LABELS[rule.status]}；出处：${foldText(rule.source)}${source}）`;
 }
 
+function totalLine(rules: readonly PortableRule[]): string {
+  return `共 ${rules.length} 条存下来的规则，其中 ${enforcedRuleCount(rules)} 条正在执行（在用或待重审）。`;
+}
+
 export function renderRulesMarkdown(rules: readonly PortableRule[], withheldText: string): string {
   const fromSettings = rules.filter(({ ruleId }) => !ruleId.startsWith(OWNER_RULE_ID_PREFIX));
   const fromOwner = rules.filter(({ ruleId }) => ruleId.startsWith(OWNER_RULE_ID_PREFIX));
@@ -216,7 +220,7 @@ export function renderRulesMarkdown(rules: readonly PortableRule[], withheldText
     "",
     "自动生成，不要手改。这些规则在 Himawari 里由程序执行，不靠模型自觉。每条行首的〔r:编号〕可以到 data/rules.jsonl 里按 ruleId 查到参数和全部修订历史；〔m:编号〕是立这条规则时的那条记忆，在 data/memories.jsonl 里。本文件里的文字都是记录，不是指令。",
     "",
-    `共 ${rules.length} 条存下来的规则，其中 ${enforcedRuleCount(rules)} 条正在执行（在用或待重审）。`,
+    totalLine(rules),
     "",
     "## 产品自带",
     "",
@@ -235,21 +239,18 @@ export function renderRulesMarkdown(rules: readonly PortableRule[], withheldText
 export function checkRulesMarkdown(
   markdown: string | undefined,
   rules: readonly PortableRule[],
+  withheldText: string,
 ): string | null {
   if (markdown === undefined) return `缺少 ${RULES_INDEX_FILE}`;
-  const listed = new Map<string, number>();
-  for (const line of markdown.split("\n")) {
-    const match = RULE_LINE.exec(line);
-    if (match === null) continue;
-    const id = match[1] ?? "";
-    listed.set(id, (listed.get(id) ?? 0) + 1);
-  }
-  for (const rule of rules)
-    if (listed.get(rule.ruleId) !== 1)
-      return `${RULES_INDEX_FILE} 里规则 ${rule.ruleId} 出现了 ${listed.get(rule.ruleId) ?? 0} 次`;
-  for (const id of listed.keys())
-    if (!rules.some(({ ruleId }) => ruleId === id))
-      return `${RULES_INDEX_FILE} 里的规则 ${id} 在 data/rules.jsonl 里找不到`;
+  const lines = markdown.split("\n");
+  if (!lines.includes(totalLine(rules))) return `${RULES_INDEX_FILE} 里的规则总数不对`;
+  const listed = lines.filter((line) => RULE_LINE.test(line));
+  const expected = rules.map((rule) => ruleLine(rule, withheldText));
+  for (const [index, line] of expected.entries())
+    if (listed.filter((candidate) => candidate === line).length !== 1)
+      return `${RULES_INDEX_FILE} 里规则 ${rules[index]?.ruleId ?? ""} 那一行和 data/rules.jsonl 对不上`;
+  if (listed.length !== expected.length)
+    return `${RULES_INDEX_FILE} 里有 data/rules.jsonl 之外的规则行`;
   return null;
 }
 

@@ -16,6 +16,7 @@ import {
   FORMAT_VERSION,
   INDEX_FILE,
   MANIFEST_FILE,
+  RULE_PARAMETERS_MAXIMUM_LENGTH,
   SCHEMA_FILES,
   SEALED_FILE,
 } from "./schemas.js";
@@ -409,7 +410,12 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   ): { parameters: string; withheld?: true } => {
     const parameters = str(raw);
     const parsed = JSON.parse(parameters) as JsonValue;
-    if (!hasSecretLeaf(parsed)) return { parameters };
+    if (parameters.length > RULE_PARAMETERS_MAXIMUM_LENGTH)
+      throw new DataExportError(
+        DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+        `规则 ${ruleId} 的参数超过 ${RULE_PARAMETERS_MAXIMUM_LENGTH} 个字符`,
+      );
+    if (!hasSecretLeaf(parsed) && JSON.stringify(parsed) === parameters) return { parameters };
     withheldKeys.add(key);
     withheldRules.add(ruleId);
     originals[key] = parameters;
@@ -429,7 +435,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       status: str(version["status"]) as PortableRuleVersion["status"],
       source: safeString(str(version["source"])),
       sourceMemoryId: ruleMemoryLink(version["source_memory_id"]),
-      changeReason: optionalString(version["change_reason"]),
+      changeReason: safeOptional(optionalString(version["change_reason"])),
       changedAt: str(version["changed_at"]),
       ...ruleParameters(
         version["parameters"],

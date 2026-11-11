@@ -5,6 +5,7 @@ import type { JsonValue } from "./canonical.js";
 import { validateAgainst } from "./schema.js";
 import { SEALED_FILE, SEALED_SCHEMA } from "./schemas.js";
 import {
+  assertRuleHistory,
   enforcedRuleCount,
   type PortableRule,
   type PortableRuleVersion,
@@ -71,6 +72,7 @@ const EMPTY_TARGET_TABLES = [
   "proactive_processed_messages",
   "muse_reference_entries",
   "rule_book_rules",
+  "rule_book_history",
 ] as const;
 
 function assertEmptyTarget(database: Database.Database, scope: ExportScope): void {
@@ -252,6 +254,7 @@ export async function importPortableExport(
       rulesWithout += 1;
       continue;
     }
+    assertRuleHistory({ ...current, history: history as PortableRuleVersion[] });
     rulePlans.push({
       rule: { ...current, sourceMemoryId: keptMemoryLink(current.sourceMemoryId) },
       history: (history as PortableRuleVersion[]).map((version) => ({
