@@ -3,9 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  ApplicationPortError,
   createProactiveSeal,
-  DEFAULT_REVIEW_PREREVIEW,
   type DataClassification,
+  DEFAULT_REVIEW_PREREVIEW,
   type ModelInvocationEvent,
   type ModelInvocationRequest,
   type ProactiveModelInvoker,
@@ -382,7 +383,7 @@ describe("[P4-8] model pre-rating in the running service", () => {
       record: (input) => store.record(input),
       recordFailure: (input) => store.recordFailure(input),
       ownerHistory: async () => {
-        throw new Error("disk read failed for 我想记住的事");
+        throw new Error("EIO");
       },
     });
     const result = await h.service({}, broken).prereview();
@@ -413,19 +414,30 @@ describe("[P4-8] model pre-rating in the running service", () => {
       listPairs: (input) => store.listPairs(input),
       recordFailure: (input) => store.recordFailure(input),
       record: async () => {
-        throw new Error("SQLITE_BUSY");
+        throw new ApplicationPortError("PORT_CONFLICT", "SQLite writer remained busy");
       },
     });
     const result = await h.service({}, broken).prereview();
-    expect(result?.failures).toEqual(["PREREVIEW_STORE_FAILED:SQLITE_BUSY"]);
+    expect(result?.failures).toEqual(["PREREVIEW_STORE_FAILED:PORT_CONFLICT"]);
     expect(h.rows()).toEqual([
       expect.objectContaining({
         decisionId: "write-down",
         status: "failed",
-        failureCode: "PREREVIEW_STORE_FAILED:SQLITE_BUSY",
+        failureCode: "PREREVIEW_STORE_FAILED:PORT_CONFLICT",
         costMicros: 300,
       }),
     ]);
+    await h.skipped("disk-full", "想记住的另一件事", NOV_4_10AM_JST);
+    const down = (store: ReviewPrereviewStorePort): ReviewPrereviewStorePort => ({
+      ...broken(store),
+      recordFailure: async () => {
+        throw new Error("ENOSPC");
+      },
+    });
+    const both = h.service({}, down);
+    expect((await both.prereview())?.failures).toEqual(["PREREVIEW_STORE_FAILED:PORT_CONFLICT"]);
+    expect(h.rows()).toHaveLength(1);
+    expect(await both.prereview()).toMatchObject({ attempted: 0 });
   });
 
   it("[P4-8] with reduction on and the bar passed, hides only confident items whose text is unchanged, keeping the audit sample and unsure ones", async () => {

@@ -7,9 +7,9 @@ import {
   DEFAULT_PREREVIEW_HISTORY_DAYS,
   DEFAULT_PREREVIEW_HISTORY_MINIMUM,
   historyConflict,
+  PREREVIEW_GROUPS,
   type PrereviewPair,
   type PrereviewRating,
-  PREREVIEW_GROUPS,
   prereviewOptions,
   summarizePrereviewAgreement,
   wouldHide,
@@ -97,13 +97,14 @@ export function parsePrereview(
   return { rating, confidencePermille: rating === "unsure" ? 0 : confidence };
 }
 
+const FAILURE_CODE =
+  /^(MODEL|PREREVIEW|PORT|SQLITE|DECISION)_[A-Z0-9_]{1,80}(:[A-Z0-9_.-]{1,40})?$/u;
+
 function failureCode(error: unknown): string {
+  const code = typeof error === "object" && error !== null ? Reflect.get(error, "code") : undefined;
   const message = error instanceof Error ? error.message : "";
-  return /^(MODEL|PREREVIEW|PORT|SQLITE|DECISION)_[A-Z0-9_]{1,80}(:[A-Z0-9_.-]{1,40})?$/u.test(
-    message,
-  )
-    ? message
-    : "unknown";
+  if (typeof code === "string" && FAILURE_CODE.test(code)) return code;
+  return FAILURE_CODE.test(message) ? message : "unknown";
 }
 
 export function prereviewPromptId(digest: (text: string) => string): string {
