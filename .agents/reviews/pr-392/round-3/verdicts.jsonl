@@ -1,6 +1,6 @@
 {"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "1.5 秒判定只排除了读库时间，没有排除请求进入 handler 之前的排队；ADR 的「不含服务端排队」说法过宽", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR；或网络往返加 HTTP 排队超过 1.5 秒", "consequence": "秒回拒绝被记成真拒绝（和本 PR 之前一样）", "modelSeverity": "中", "reason": "代码按设计在工具开始处理时计时；问题是 ADR 措辞过宽。网络和 HTTP 排队超过 1.5 秒时退回本 PR 之前的行为，不会多写东西，按低处理，改 ADR 措辞"}
 {"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 里仍有「没勾选」的旧说法，ADR 0226 规则确认还写成「保存」", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR", "consequence": "文字和代码不一致", "modelSeverity": "低"}
 {"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "慢读取用例本身也没有断言 Proxy 真的生效", "valid": true, "class": "error", "severity": "low", "trigger": "以后包装失效", "consequence": "用例不再证明计时起点", "modelSeverity": "低"}
-{"id": "ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "验收脚本的 serve/report 路径没有自动检查", "valid": true, "class": "improvement", "modelSeverity": "低"}
+{"id": "ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "验收脚本的 serve/report 路径没有自动检查", "valid": true, "class": "better", "modelSeverity": "低"}
 {"id": "ds-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "测试 Proxy 对所有用例都生效，而不只在 slowDecidedMs 设置时", "valid": true, "class": "error", "severity": "low", "trigger": "以后依赖方法引用", "consequence": "测试行为不一致", "modelSeverity": "信息/低"}
-{"id": "ds-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "确认框把不可信的提议正文放在最前面，正文里可以出现「」和与固定说明相似的文字", "valid": true, "class": "improvement", "modelSeverity": "低"}
+{"id": "ds-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "确认框把不可信的提议正文放在最前面，正文里可以出现「」和与固定说明相似的文字", "valid": true, "class": "better", "modelSeverity": "低"}
