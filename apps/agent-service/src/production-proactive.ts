@@ -74,7 +74,12 @@ export function proactiveCostEstimator(
 }
 
 function clean(text: string, limit: number): string {
-  return [...text.replace(/\p{Cc}+/gu, " ").trim()].slice(0, limit).join("");
+  let clipped = "";
+  for (const character of text.replace(/\p{Cc}+/gu, " ").trim()) {
+    if (clipped.length + character.length > limit) break;
+    clipped += character;
+  }
+  return clipped;
 }
 
 function normalizeSender(sender: string): string {

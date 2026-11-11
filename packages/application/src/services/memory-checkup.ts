@@ -286,11 +286,10 @@ export class MemoryCheckupService {
       await apply();
     } catch (error) {
       const restored = await this.#restore(item.id).then(
-        () => undefined,
-        (restoreError: unknown) => restoreError,
+        () => true,
+        () => false,
       );
-      if (restored !== undefined)
-        throw new AggregateError([error, restored], "MEMORY_CHECKUP_RESTORE_FAILED");
+      if (!restored) refuse("conflict", "MEMORY_CHECKUP_RESTORE_FAILED");
       throw error;
     }
     return this.#item(item.id);

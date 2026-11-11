@@ -290,6 +290,49 @@ describe("[all decisions] which memories the review page may show", () => {
     expect(review.items[0]?.text).toBe("😀".repeat(100));
   });
 
+  it("[P4-6] never splits a character in two at the length limit", async () => {
+    const review = await readDailyReview({
+      scope,
+      ledger: {
+        listReviewPool: async () => [entry({ id: "kept", outcome: "kept", subjectRef: "m" })],
+      },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: `a${"😀".repeat(200)}`, hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    expect(review.items[0]?.text).toBe(`a${"😀".repeat(99)}`);
+  });
+
+  it("[P4-6] keeps a consolidation of several long memories within the contract length", async () => {
+    const review = await readDailyReview({
+      scope,
+      ledger: {
+        listReviewPool: async () => [
+          entry({
+            id: "merge",
+            kind: "consolidation",
+            outcome: "merge",
+            inputs: { ...entry({}).inputs, memoryIds: ["a", "b"], resultMemoryIds: ["c"] },
+          }),
+        ],
+      },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "😀".repeat(100), hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    const text = review.items[0]?.text ?? "";
+    expect(text.length).toBeGreaterThan(150);
+    expect(text.length).toBeLessThanOrEqual(200);
+  });
+
   it("hides the whole consolidation when any memory in it may not be shown", async () => {
     const review = await readDailyReview({
       scope,

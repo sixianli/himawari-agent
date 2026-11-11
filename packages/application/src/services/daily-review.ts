@@ -319,12 +319,14 @@ export async function readDailyReview(options: {
             const clipped = (memory: DailyReviewMemoryText) =>
               clipTo(memory.text, shown.length > 1 ? PART_LIMIT : TEXT_LIMIT);
             const oldText = olds.flatMap((memory) => (memory ? [clipped(memory)] : [])).join(" + ");
-            text =
+            text = clipTo(
               next === undefined
                 ? oldText
                 : oldText === ""
                   ? clipped(next)
-                  : `${oldText} → ${clipped(next)}`;
+                  : `${oldText} → ${clipped(next)}`,
+              TEXT_LIMIT,
+            );
           }
         }
         return {
