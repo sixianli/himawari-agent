@@ -188,11 +188,13 @@ function StanceChart({ chart, message }: { chart: MemoryStanceChart; message: Me
 }
 
 function MemoryHistory({
+  head,
   chain,
   memory,
   message,
   onOpenThread,
 }: {
+  head: MemoryItem;
   chain: readonly MemoryHistoryNode[];
   memory: MemoryModel;
   message: Message;
@@ -256,6 +258,15 @@ function MemoryHistory({
                   onClick={() => void memory.restore(node.record)}
                 >
                   {message("memory.page.useThis")}
+                </button>
+              ) : node.versionRestorable ? (
+                <button
+                  type="button"
+                  className="memory-link"
+                  disabled={memory.busy}
+                  onClick={() => void memory.restoreVersion(head, node.historyId)}
+                >
+                  {message("memory.page.restoreVersion")}
                 </button>
               ) : null}
             </div>
@@ -577,6 +588,7 @@ function MemoryDetail({
               <dt>{message("memory.page.history")}</dt>
               <dd>
                 <MemoryHistory
+                  head={item}
                   chain={chain}
                   memory={memory}
                   message={message}

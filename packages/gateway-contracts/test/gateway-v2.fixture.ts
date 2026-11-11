@@ -527,6 +527,7 @@ export const governanceMessages = [
         stance: "喜欢蓝色",
         history: [
           {
+            historyId: 1,
             kind: "created",
             text: "主人最喜欢的颜色是蓝色",
             stance: "喜欢蓝色",
