@@ -232,6 +232,10 @@ export interface ProactiveConfiguration {
   readonly relatedCharactersPerMail: number;
   readonly relatedCharactersPerRelatedMail: number;
   readonly relatedRequestsPerCheck: number;
+  readonly wholeThreadMailsPerMail: number;
+  readonly wholeThreadCharactersPerMail: number;
+  readonly ruleReplayDays: number;
+  readonly ruleReplayMailsPerOutcome: number;
   readonly memoryMinimumSimilarity: number;
   readonly reviewBudgetSeconds: number;
   readonly reviewSecondsPerItem: number;

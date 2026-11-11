@@ -24,6 +24,7 @@ import type {
   MemoryProjectionJobStatePort,
   MemoryCaptureBacklogPort,
   MemoryReminderStorePort,
+  OwnerRuleStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
@@ -960,6 +961,15 @@ export class SqliteDurableAdapters {
       listImportBatches: (input) => this.context.read("memoryBook.listImportBatches", input),
       markImportUndone: (input) => this.context.write("memoryBook.markImportUndone", input),
       findOwnerMessages: (input) => this.context.read("memoryBook.findOwnerMessages", input),
+    });
+  }
+
+  ownerRules(): OwnerRuleStorePort {
+    return Object.freeze<OwnerRuleStorePort>({
+      list: (input) => this.context.read("ownerRule.list", input),
+      read: (input) => this.context.read("ownerRule.read", input),
+      create: (input) => this.context.write("ownerRule.create", input),
+      setStatus: (input) => this.context.write("ownerRule.setStatus", input),
     });
   }
 

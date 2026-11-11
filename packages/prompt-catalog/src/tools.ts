@@ -222,6 +222,42 @@ export const TOOL_RESULT_REMINDER_SET = fixedPrompt({
   text: "告诉主人 due 是事情的时间，remindAt 是会在什么时候提醒，两个时间都照结果原样说。",
 });
 
+export const TOOL_RULE_SET = fixedPrompt({
+  id: "tools.rule-set",
+  purpose: "rule_set 工具的描述：主人立常设规矩时把一句话译成规则参数",
+  usedBy: ["apps/agent-service/src/production-owner-rules.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "把主人立下的常设规矩记成长期规则。只在主人说的是以后一直有效的要求时使用（例如“以后……一律……”“……必须提醒我”“……都要……”）；只针对这一次的话（例如“这封先不用管”“今天别提醒我”）不要使用。quote 照抄主人原话里表达这条规矩的那一句，不改字，要包含“以后”“一律”“必须”这类表示一直有效的字样；inferred 填 true 表示这是你从对话里推断出的、主人没有明说的规矩，只会生成提议，要主人点头才生效；type 填 soft 时只记主人的原话，inferred 填 false。type 选规则类型：mail_must_notify 是某类邮件一定提醒主人并推送到手机；mail_read_whole_thread 是某类邮件判断前一定读完同一邮件串里的全部往来，读不全就交给主人自己看；都不合适或者是语气、格式、回答长短这类偏好时填 soft，只记成给你参考的偏好，不由程序强制执行。params 写匹配条件：senderDomains 是发件域名（含子域名，例如 isa.go.jp），senderAddresses 是完整发件地址，phrases 是邮件主题或正文里出现的词（不分大小写和全半角，中日英各写常见说法），words 是英文整词（只算完整单词）；英文词写进 words 而不是 phrases，否则 subscribe 会误中 unsubscribe；同一个机构或事情要列出正式名称、简称和常见变体（例如出入国在留管理庁、出入国在留管理局、入管）；mail_must_notify 和 mail_read_whole_thread 至少写一项，不要写正则。excludePhrases 是出现了就不算的词，用来去掉明显不相干的一类邮件（例如付费订阅规则排除“newsletter”“メルマガ”这类资讯邮件）。summary 用一句话写这条规则做什么，给主人看。返回里有试算例子和在历史邮件上的回放结果，照实告诉主人；status 是 proposed 时说明还要主人确认。主人随时可以撤销。",
+});
+
+export const TOOL_RULE_LIST = fixedPrompt({
+  id: "tools.rule-list",
+  purpose: "rule_list 工具的描述",
+  usedBy: ["apps/agent-service/src/production-owner-rules.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "列出主人立下的、正在生效的长期规则（含 ruleId、说明、状态）。主人问有哪些规矩，或要撤销某条前使用。只读。",
+});
+
+export const TOOL_RULE_UNDO = fixedPrompt({
+  id: "tools.rule-undo",
+  purpose: "rule_undo 工具的描述",
+  usedBy: ["apps/agent-service/src/production-owner-rules.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "撤销主人的一条长期规则，撤销后立即不再执行，记录保留。ruleId 取自 rule_set 或 rule_list 的返回；不确定是哪一条时先用 rule_list，不要猜。",
+});
+
+export const TOOL_RESULT_RULE_REJECTED = fixedPrompt({
+  id: "tool-result.rule-rejected",
+  purpose: "记规则失败：参数不对、类型不能用或服务不可用",
+  usedBy: ["apps/agent-service/src/production-runtime-tools.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这次没有记成规则，原因见 error。不要说已记下或已撤销，如实告诉主人；参数不对时改正后可以再试一次。",
+});
+
 export const MCP_TOOL_FIND_MEMORIES = fixedPrompt({
   id: "mcp.find-memories",
   purpose: "对外 MCP 工具 find_memories 的描述：外部 agent 按问题找主人的记忆",
@@ -233,11 +269,11 @@ export const MCP_TOOL_FIND_MEMORIES = fixedPrompt({
 
 export const MCP_TOOL_TODAY_CONTEXT = fixedPrompt({
   id: "mcp.today-context",
-  purpose: "对外 MCP 工具 today_context 的描述：今天的日期、时区和近期提醒",
+  purpose: "对外 MCP 工具 today_context 的描述：今天的日期、时区、近期提醒和近两天的对话摘要",
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tools",
   output: "free-text",
-  text: "取主人今天的上下文：主人所在时区的今天日期、现在时间，以及接下来 48 小时内的提醒。开始一项和主人日程有关的工作前使用。只读。",
+  text: "取主人今天的上下文：主人所在时区的今天日期、现在时间、接下来 48 小时内的提醒，以及今天和昨天的对话摘要（recentDays，每天一段或几段；recentDaysComplete 为 false 时表示有摘要没读到）。开始一项和主人日程有关的工作前使用。只读。",
 });
 
 export const MCP_TOOL_RULE_BOOK = fixedPrompt({

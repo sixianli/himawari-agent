@@ -95,6 +95,7 @@ export const messages = {
   "step.search": "Searching the web",
   "step.recall": "Checking memory",
   "step.reminder": "Working on reminders",
+  "step.rule": "Working on standing rules",
   "step.fetch": "Opening a web page",
   "step.read": "Reading a file",
   "step.write": "Writing a file",
@@ -876,6 +877,27 @@ export const messages = {
   "memory.page.changeNo": "Change {n}",
   "memory.page.seeAllChanges": "See every change to this memory",
   "memory.page.confirmTitle": "Needs your answer · {count}",
+  "rules.title": "Standing rules · {count}",
+  "rules.note":
+    "These rules are enforced by code, not by the model remembering them. Undo one and the next mail check stops using it.",
+  "rules.type":
+    "{t, select, mail_must_notify {Always notify} mail_read_whole_thread {Read the whole thread first} other {Other rule}}",
+  "rules.needsReview": "Its source memory changed; confirm it again (still enforced)",
+  "rules.notEnforced": "This rule can't be read, so it isn't enforced for now",
+  "rules.reconfirm": "Confirm again",
+  "rules.undo": "Undo",
+  "rules.receipt.label": "Standing rule receipt",
+  "rules.receipt.status":
+    "{s, select, active {Saved as a standing rule} proposed {Suggested rule; it takes effect only when you tap Apply} soft {Saved as a preference; not enforced by code} undone {Undone} other {Standing rule}}",
+  "rules.receipt.trials": "Trial run",
+  "rules.receipt.trial":
+    "{hit, select, true {Would match} other {Would not match}}: {from} · {subject}",
+  "rules.receipt.replay":
+    'Replay of the last {days} days: re-checked {checked} decided mails; the rule matches {hit}, and {changed} of them were "ignore" or "good to know" and {kind, select, mail_read_whole_thread {would now be judged after reading the whole thread, or handed to you if it cannot be read} other {would now ask you to look}}. You rated {useful} of those as useful.',
+  "rules.receipt.replayNote":
+    "The replay uses what was stored at the time. Ignored mails only kept the sender and subject, so the numbers are estimates and may be too high or too low.",
+  "rules.receipt.replayNone": "The replay couldn't run this time; the rule is in effect anyway.",
+  "rules.receipt.confirm": "Apply",
   "memory.page.carry.title": "Brought into every conversation",
   "memory.page.carry.summary": "{count} memories · {used} of {limit} characters used",
   "memory.page.carry.queued": "{count} more do not fit",
@@ -1057,7 +1079,7 @@ export const messages = {
   "decision.chain.rules": "Rules hit",
   "decision.chain.reviewRules": "Rules waiting for review",
   "decision.chain.rule":
-    "{k, select, important_sender {Never miss important mail: sender is on your important list} public_domain {Never miss important mail: from a government or school domain} money_words {Never miss important mail: money-related words in the message} quiet_hours {Quiet hours: no notifications now, sent when quiet hours end} amount_threshold {Small amounts: no notification for mail below the threshold} other {{id}}}",
+    "{k, select, important_sender {Never miss important mail: sender is on your important list} public_domain {Never miss important mail: from a government or school domain} money_words {Never miss important mail: money-related words in the message} quiet_hours {Quiet hours: no notifications now, sent when quiet hours end} amount_threshold {Small amounts: no notification for mail below the threshold} mail_must_notify {Your rule: always tell you about this kind of mail} mail_read_whole_thread {Your rule: read the whole thread before deciding} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {Set by you} built_in {Built-in rule} other {Unregistered rule}}",
   "decision.chain.ruleMails": "Hit {count, plural, one {# email} other {# emails}}",

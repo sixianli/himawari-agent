@@ -9,7 +9,11 @@ import {
   createOwnerId,
   createThreadId,
 } from "@himawari-agent/domain";
-import { type Embedder, HybridMemoryProvider } from "@himawari-agent/memory-engine";
+import {
+  type Embedder,
+  HybridMemoryProvider,
+  MemoryEpisodeService,
+} from "@himawari-agent/memory-engine";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -42,6 +46,8 @@ const TIME_ZONE = "Asia/Tokyo";
 const DENTIST = "明天上午十点去牙医复诊";
 const WIFI = "家里 Wi-Fi 密码：Sunflower-8841";
 const TRIP = "周六去京都看红叶";
+const YESTERDAY = "昨天和主人商量了京都红叶行程，主人说民宿门禁密码：Maple-7712";
+const OLDER = "三天前主人整理了书架";
 
 const TOPICS = ["牙医", "Wi-Fi", "京都"];
 
@@ -66,7 +72,14 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
   });
 
   async function setup(
-    options: { readonly failRecall?: boolean; readonly failLedger?: boolean } = {},
+    options: {
+      readonly failRecall?: boolean;
+      readonly failLedger?: boolean;
+      readonly failSummaries?: boolean;
+      readonly failReminders?: boolean;
+      readonly loseTodaySummary?: boolean;
+      readonly withoutSummaries?: boolean;
+    } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-mcp-read-"));
     directories.push(stateRoot);
@@ -143,6 +156,53 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     await writer.create({ key: "wifi", text: WIFI, due: "2026-11-12T20:00", repeat: "none" });
     await writer.create({ key: "trip", text: TRIP, due: "2026-11-13T13:00", repeat: "none" });
     await memory.runProjectionBatch(10);
+    const episodeStore = repository.memoryEpisodes();
+    const seedSummary = async (id: string, day: string, text: string, sequence: number) => {
+      const contentRef = `payload:episode:${id}` as Parameters<typeof payloads.get>[0];
+      await payloads.put(
+        await adapters.payloadProtector.protect({
+          ...scope,
+          ref: contentRef,
+          contentType: "text/plain",
+          dataClassification: "private",
+          plaintext: new TextEncoder().encode(text),
+          createdAt: NOW,
+        }),
+      );
+      await episodeStore.upsert({
+        id,
+        ...scope,
+        threadId: THREAD_ID,
+        day,
+        source: "day_summary",
+        contentRef,
+        dataClassification: "private",
+        firstSequence: sequence,
+        lastSequence: sequence,
+        startedAt: `${day}T01:00:00.000Z`,
+        endedAt: `${day}T02:00:00.000Z`,
+        createdAt: NOW,
+        terms: [],
+        embedding: null,
+      });
+    };
+    await seedSummary("episode-older", "2026-11-08", OLDER, 1);
+    await seedSummary("episode-yesterday", "2026-11-10", YESTERDAY, 2);
+    if (options.loseTodaySummary) await seedSummary("episode-today-lost", "2026-11-11", "lost", 3);
+    const episodes = new MemoryEpisodeService({
+      store: episodeStore,
+      threads: repository.threadRepository(),
+      readText: async ({ ref }) => {
+        if (ref === "payload:episode:episode-today-lost") throw new Error("SUMMARY_TEXT_GONE");
+        return readText(ref);
+      },
+      storeText: async () => {
+        throw new Error("SUMMARY_WRITE_NOT_EXPECTED");
+      },
+      embedder: null,
+      now: () => clock.now(),
+      timeZone: TIME_ZONE,
+    });
     const recall = new ProductionMemoryRecall({
       ...scope,
       provider: {
@@ -161,6 +221,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     });
     const embeddingContexts: { deadlineAt: string; aborted: boolean }[] = [];
     const failures: unknown[] = [];
+    const summaryFailures: unknown[] = [];
     const settingsStore = repository.proactive();
     const mcp = new ProductionMcpRead({
       scope,
@@ -178,8 +239,32 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
           context.costMicros += 7;
           return operation();
         },
-        reminders: (windowMs) => writer.list(windowMs),
+        reminders: async (windowMs) => {
+          if (options.failReminders) throw new Error("REMINDER_STORE_DOWN");
+          return writer.list(windowMs);
+        },
         settings: () => settingsStore.readSettings(scope),
+        ...(options.withoutSummaries
+          ? {}
+          : {
+              summaries: async ({ days, limit }: { days: number; limit: number }) => {
+                if (options.failSummaries) throw new Error("SUMMARY_STORE_DOWN");
+                const found = await episodes.recent({
+                  ...scope,
+                  days,
+                  limit,
+                  allowedClassifications: ["public", "private", "sensitive"],
+                });
+                return {
+                  partial: found.partial,
+                  summaries: found.summaries.map(({ episode, text }) => ({
+                    id: episode.id,
+                    day: episode.day,
+                    text,
+                  })),
+                };
+              },
+            }),
       },
       ledger: options.failLedger
         ? {
@@ -189,6 +274,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
           }
         : repository.decisionLedger(),
       onFailure: (error) => failures.push(error),
+      onSummariesFailed: (error) => summaryFailures.push(error),
     });
     const app = Fastify({ logger: false });
     registerMcpReadRoute(app, mcp);
@@ -219,7 +305,19 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       const [content] = result.content as { type: string; text: string }[];
       return { result, text: content?.text ?? "" };
     };
-    return { url, connect, call, ledger, embeddingContexts, failures, writer };
+    const recordFields = async (decisionId: string) =>
+      (await repository.decisionLedger().read({ ...scope, decisionId }))?.inputFields ?? [];
+    return {
+      url,
+      connect,
+      call,
+      ledger,
+      recordFields,
+      embeddingContexts,
+      failures,
+      summaryFailures,
+      writer,
+    };
   }
 
   it.each(["legacy", "modern"] as const)(
@@ -288,12 +386,108 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(texts).toContain(DENTIST);
     expect(texts).not.toContain(TRIP);
     expect(today.text).not.toContain("Sunflower-8841");
+    const recentDays = (JSON.parse(today.text) as { recentDays: { day: string; text: string }[] })
+      .recentDays;
+    expect(recentDays.map(({ day }) => day)).toEqual(["2026-11-10"]);
+    expect(recentDays[0]?.text).toContain("京都红叶行程");
+    expect(today.text).not.toContain("Maple-7712");
+    expect(today.text).not.toContain(OLDER);
+    expect(today.text).not.toContain("recentDaysComplete");
     const [row] = await f.ledger();
     expect(row).toMatchObject({ reasonCode: "today_context", outcome: "read" });
     expect([...(row?.inputs.memoryIds ?? [])].sort()).toEqual([
       "memory:reminder:dentist",
       "memory:reminder:wifi",
     ]);
+    expect(row?.inputs).toMatchObject({
+      summaryInjected: true,
+      summaryIds: ["episode-yesterday"],
+      summaryDays: ["2026-11-10"],
+      summaryCharacters: [...YESTERDAY].length,
+      summaryRead: "ok",
+      summaryGenerated: 0,
+    });
+  });
+
+  it("still gives today's reminders when the summaries cannot be read, and records that", async () => {
+    const f = await setup({ failSummaries: true });
+    const client = await f.connect("modern");
+    const today = await f.call(client, "today_context");
+    expect(today.result.isError).not.toBe(true);
+    const output = JSON.parse(today.text) as {
+      reminders: { text: string }[];
+      recentDays: unknown[];
+      recentDaysComplete?: boolean;
+    };
+    expect(output.reminders.map(({ text }) => text)).toContain(DENTIST);
+    expect(output.recentDays).toEqual([]);
+    expect(output.recentDaysComplete).toBe(false);
+    expect(today.text).not.toContain("SUMMARY_STORE_DOWN");
+    expect(f.summaryFailures).toHaveLength(1);
+    expect(f.failures).toEqual([]);
+    const [row] = await f.ledger();
+    expect(row?.reasonCode).toBe("today_context");
+    expect(row?.inputs).toMatchObject({
+      summaryInjected: false,
+      summaryIds: [],
+      summaryRead: "failed",
+    });
+  });
+
+  it("marks the days incomplete when one summary's text is gone, and records it as partial", async () => {
+    const f = await setup({ loseTodaySummary: true });
+    const client = await f.connect("modern");
+    const today = await f.call(client, "today_context");
+    expect(today.result.isError).not.toBe(true);
+    const output = JSON.parse(today.text) as {
+      recentDays: { day: string; text: string }[];
+      recentDaysComplete?: boolean;
+    };
+    expect(output.recentDays.map(({ day }) => day)).toEqual(["2026-11-10"]);
+    expect(output.recentDaysComplete).toBe(false);
+    expect(f.summaryFailures.map((error) => (error as Error).message)).toEqual([
+      "MCP_READ_SUMMARIES_INCOMPLETE",
+    ]);
+    expect(f.failures).toEqual([]);
+    const [row] = await f.ledger();
+    expect(row?.inputs).toMatchObject({
+      summaryInjected: true,
+      summaryIds: ["episode-yesterday"],
+      summaryDays: ["2026-11-10"],
+      summaryRead: "partial",
+    });
+  });
+
+  it("leaves the days out and records no summary inputs when summaries are not set up", async () => {
+    const f = await setup({ withoutSummaries: true });
+    const client = await f.connect("modern");
+    const today = await f.call(client, "today_context");
+    expect(today.result.isError).not.toBe(true);
+    const output = JSON.parse(today.text) as Record<string, unknown>;
+    expect(output).not.toHaveProperty("recentDays");
+    expect(output).not.toHaveProperty("recentDaysComplete");
+    expect(output["reminders"]).toBeDefined();
+    const [row] = await f.ledger();
+    expect(row?.reasonCode).toBe("today_context");
+    expect(row?.inputs.summaryRead).toBe("off");
+    const stored = await f.recordFields(row?.id ?? "");
+    expect(stored.some((field) => field.startsWith("summary"))).toBe(false);
+  });
+
+  it("records the summaries as not tried when the reminders fail first", async () => {
+    const f = await setup({ failReminders: true });
+    const client = await f.connect("modern");
+    const today = await f.call(client, "today_context");
+    expect(today.result.isError).toBe(true);
+    expect(today.text).not.toContain("REMINDER_STORE_DOWN");
+    const [row] = await f.ledger();
+    expect(row?.reasonCode).toBe("today_context_failed");
+    expect(row?.inputs).toMatchObject({
+      summaryInjected: false,
+      summaryIds: [],
+      summaryRead: "off",
+    });
+    expect(f.summaryFailures).toEqual([]);
   });
 
   it("lists the rule book with each rule's id, revision and origin but not its expression", async () => {

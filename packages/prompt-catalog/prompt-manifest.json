@@ -340,9 +340,9 @@
     "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
   },
   "mcp.today-context": {
-    "sha256": "cdaf59f7b6c3d7cff2bdcf9aef00628f5237612d6b4bbdd7485c5abefed62325",
+    "sha256": "565ffbea5f0f81a0e65a96e44c3e79561409ea58078fb9603d2a0ab94a5a59d2",
     "changedIn": "ADR 0219",
-    "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
+    "reason": "今日上下文加上今天和昨天的对话摘要（P3-6 合并后接上）"
   },
   "mcp.tool-result-failed": {
     "sha256": "881b14437ad5dc2a42e6495240f40abeb4ff7d101bdd908e34f147560eb556ed",
@@ -508,6 +508,11 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "tool-result.rule-rejected": {
+    "sha256": "d4eb6b5e8fa4d894cbd5960165eb2032dffcdf1965023c325c8218f320e0cd80",
+    "changedIn": "ADR 0213",
+    "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
+  },
   "tools.authorized": {
     "sha256": "e2bf668e954070fb41a107317b84ba9f5fc433f2a1b9a37b148f62fc76787fab",
     "changedIn": "ADR 0166",
@@ -645,6 +650,26 @@
     "sha256": "052bba8325aa7a15c5bfa6afce2e0085d2c1e198b68889285b05339f72690794",
     "changedIn": "ADR 0166",
     "reason": "W-09、W-13：写明有钟点的最多提前 1 小时、只有日期的当天 9 点（Andy 2026-11-05 定 D8）；失败时怎么说只留在身份说明里；复核第 2 轮：写明 yearly 的过去日期会顺延到下一次，不会被拒绝（reminderSchedule）"
+  },
+  "tools.rule-list": {
+    "sha256": "48d1f94df986c4b6321a1979dfb9907b32a17c0e0602bb56ef319c62011883e9",
+    "changedIn": "ADR 0213",
+    "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
+  },
+  "tools.rule-set": {
+    "sha256": "f62529b980811148f549896178580e077ccfe36cffb99db03067fc1e8e0147aa",
+    "changedIn": "ADR 0213",
+    "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果",
+    "emphasis": {
+      "kind": "not-tone",
+      "phrases": ["以后……一律……", "……必须提醒我", "“以后”“一律”“必须”"],
+      "reason": "这几处是在举主人原话的例子、说明 quote 要带哪些字样，不是对模型加重语气"
+    }
+  },
+  "tools.rule-undo": {
+    "sha256": "6b86761eeba8793f4420ba7cb691b4656871582ff885a8947726e4a8cd883e32",
+    "changedIn": "ADR 0213",
+    "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
   },
   "tools.save-copy": {
     "sha256": "2879603873a5ef9ce44fdfd844c6acfae39553b7544968c48f722756f619e076",

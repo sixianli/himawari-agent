@@ -14,6 +14,7 @@ import {
   ExecutionLiveFeed,
   type IdGeneratorPort,
   modelUsagePurpose,
+  modelVisibleClassifications,
   type ProductConfiguration,
   RemoteExecutionBackend,
   type RuntimeRequest,
@@ -127,6 +128,7 @@ import {
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
+import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
@@ -1318,9 +1320,25 @@ export async function runAgentService(
         writer: reminderWriter,
         ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
       });
+      const ownerRuleTools = new ProductionOwnerRuleTools(
+        new ProductionOwnerRuleWriter({
+          configuration,
+          rules: repository.ownerRules(),
+          memory: durableMemory,
+          memories: repository.productMemoryState(),
+          book: repository.memoryBook(),
+          threads: repository.threadRepository(),
+          payloads,
+          protector: recallProtector,
+          clock: { now: () => clock.now() },
+          replay: (rule) =>
+            proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
+        }),
+      );
       const tools = new ProductionRuntimeTools({
         memoryRecall,
         reminders: reminderTools,
+        ownerRules: ownerRuleTools,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -1601,6 +1619,7 @@ export async function runAgentService(
           configuration: proactiveConfiguration,
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
           store: proactiveStore,
+          ownerRules: repository.ownerRules(),
           seal: proactiveSeal,
           oauth,
           reader: createGmailReader({ oauth }),
@@ -1783,12 +1802,39 @@ export async function runAgentService(
                 ownerId: configuration.ownerId,
                 agentId: configuration.agentId,
               }),
+            ...(memoryEpisodes
+              ? {
+                  summaries: async ({ days, limit }: { days: number; limit: number }) => {
+                    const found = await memoryEpisodes.recent({
+                      ownerId: configuration.ownerId,
+                      agentId: configuration.agentId,
+                      days,
+                      limit,
+                      allowedClassifications: modelVisibleClassifications(),
+                    });
+                    return {
+                      partial: found.partial,
+                      summaries: found.summaries.map(({ episode, text }) => ({
+                        id: episode.id,
+                        day: episode.day,
+                        text,
+                      })),
+                    };
+                  },
+                }
+              : {}),
           },
           ledger: repository.decisionLedger(),
           onFailure: (error) =>
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
               event: "mcp-read.failed",
+              code: stableErrorCode(error),
+            }),
+          onSummariesFailed: (error) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "mcp-read.summaries-failed",
               code: stableErrorCode(error),
             }),
         });

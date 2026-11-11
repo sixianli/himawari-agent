@@ -28,9 +28,20 @@ export const RULE_FIELD_CATALOG: Readonly<Record<RuleGate, readonly RuleFieldDef
         description: "邮件主题、换行、摘要连起来的原文",
       }),
       Object.freeze({
+        name: "content_folded",
+        type: "string",
+        description:
+          "邮件主题、换行、正文（读不到正文时用摘要）连起来，先做 Unicode NFKC 规整（全角半角统一）再转成小写",
+      }),
+      Object.freeze({
         name: "text_words",
         type: "list<string>",
         description: "text 里每一段连续的英文字母、数字、下划线，转成小写",
+      }),
+      Object.freeze({
+        name: "content_words",
+        type: "list<string>",
+        description: "content_folded 里每一段连续的英文字母、数字、下划线，去掉重复",
       }),
       Object.freeze({
         name: "amount_state",

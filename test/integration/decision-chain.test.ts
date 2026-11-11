@@ -651,6 +651,51 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
     }
   });
 
+  it("[P5-1] keeps the recent-summary fields of an external read readable, without a mail section", async () => {
+    const f = await fixture();
+    try {
+      await f.ledger.append({
+        id: "ledger:external-read",
+        ...scope,
+        kind: "external_read",
+        decidedAt: DECIDED_AT,
+        outcome: "read",
+        reasonCode: "today_context",
+        subjectRef: "mcp-client:test",
+        inputs: {
+          memoryIds: [],
+          ruleIds: [],
+          summaryInjected: true,
+          summaryIds: ["episode:day_summary:thread-a:1"],
+          summaryDays: ["2026-11-04"],
+          summaryCharacters: 40,
+          summaryRead: "ok",
+          summaryGenerated: 0,
+        },
+        reasonRef: null,
+        contentRef: null,
+        costMicros: 0,
+        durationMs: 0,
+      });
+      const found = await f.ledger.read({ ...scope, decisionId: "ledger:external-read" });
+      expect(found?.inputFields).toEqual(
+        expect.arrayContaining([
+          "summaryCharacters",
+          "summaryDays",
+          "summaryGenerated",
+          "summaryIds",
+          "summaryInjected",
+          "summaryRead",
+        ]),
+      );
+      const chain = await chainOf(f.control, "ledger:external-read");
+      expect(chain.mails).toBeNull();
+      expect(chain.rules).toEqual({ state: "not_applicable", items: [] });
+    } finally {
+      await f.repository.close();
+    }
+  });
+
   it("[P1-3] says a row is not applicable to rules for kinds that write a reason code into rule ids", async () => {
     const f = await fixture();
     try {

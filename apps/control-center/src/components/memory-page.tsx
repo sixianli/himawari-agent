@@ -33,6 +33,7 @@ import { MailDecisionPage } from "./mail-decision-page.js";
 import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
 import { MuseReference } from "./muse-reference.js";
 import { ActionButton, Dropdown, EmptyState } from "./primitives.js";
+import { OwnerRulesSection } from "./rule-receipt.js";
 import {
   clock,
   dayAndClock,
@@ -2249,6 +2250,7 @@ export function MemoryPage({
         <AddForm memory={memory} message={message} notify={notify} onDone={() => setPanel(null)} />
       ) : null}
       <ConfirmSection memory={memory} message={message} />
+      <OwnerRulesSection memory={memory} message={message} />
       <div role="tablist" className="memory-tabs" aria-label={message("nav.memory")}>
         {tabs.map((item) => (
           <button

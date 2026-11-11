@@ -1019,6 +1019,10 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       "relatedCharactersPerMail",
       "relatedCharactersPerRelatedMail",
       "relatedRequestsPerCheck",
+      "wholeThreadMailsPerMail",
+      "wholeThreadCharactersPerMail",
+      "ruleReplayDays",
+      "ruleReplayMailsPerOutcome",
       "reviewBudgetSeconds",
       "reviewSecondsPerItem",
       "reviewSilentSharePermille",
@@ -1055,6 +1059,17 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       `${field}.relatedCharactersPerMail`,
       "must not be smaller than relatedCharactersPerRelatedMail",
     );
+  const wholeThreadCharactersPerMail = optional(
+    "wholeThreadCharactersPerMail",
+    60_000,
+    200,
+    400_000,
+  );
+  if (wholeThreadCharactersPerMail < relatedCharactersPerRelatedMail)
+    throw invalid(
+      `${field}.wholeThreadCharactersPerMail`,
+      "must not be smaller than relatedCharactersPerRelatedMail",
+    );
   return Object.freeze({
     modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
     gmail: Object.freeze({
@@ -1074,6 +1089,10 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     relatedCharactersPerMail,
     relatedCharactersPerRelatedMail,
     relatedRequestsPerCheck: optional("relatedRequestsPerCheck", 300, 1, 2_000),
+    wholeThreadMailsPerMail: optional("wholeThreadMailsPerMail", 50, 1, 200),
+    wholeThreadCharactersPerMail,
+    ruleReplayDays: optional("ruleReplayDays", 30, 1, 365),
+    ruleReplayMailsPerOutcome: optional("ruleReplayMailsPerOutcome", 300, 10, 5_000),
     memoryMinimumSimilarity:
       input["memoryMinimumSimilarity"] === undefined
         ? 0.45

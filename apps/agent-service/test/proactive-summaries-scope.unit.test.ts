@@ -28,7 +28,7 @@ async function filesUsing(pattern: RegExp): Promise<string[]> {
   return hits.sort();
 }
 
-describe("[P3-6] recent conversation summaries reach only the Gmail check", () => {
+describe("[P3-6] recent conversation summaries reach only the Gmail check and the external read entry", () => {
   it("keeps the summary block, the reader and its wiring out of the chat path", async () => {
     expect(await filesUsing(/MAIL_JUDGMENT_RECENT_SUMMARIES_HEADER/u)).toEqual([
       "packages/application/src/services/proactive-mail-check-service.ts",
@@ -43,6 +43,11 @@ describe("[P3-6] recent conversation summaries reach only the Gmail check", () =
       "packages/memory-engine/src/episodes.ts",
       "packages/persistence-sqlite/src/durable-adapters.ts",
       "packages/persistence-sqlite/src/sqlite-memory-operations.ts",
+    ]);
+    expect(await filesUsing(/\.recent\(\{/u)).toEqual([
+      "apps/agent-service/src/production-proactive-summaries.ts",
+      "apps/agent-service/src/service-main.ts",
+      "packages/application/src/services/proactive-mail-check-service.ts",
     ]);
     expect(await filesUsing(/recentSummaries/u)).toEqual([
       "apps/agent-service/src/production-proactive.ts",
