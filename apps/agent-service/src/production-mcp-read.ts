@@ -646,9 +646,7 @@ export class ProductionMcpRead {
     const params = (preview.params ?? {}) as Record<string, unknown>;
     const listed = (key: string) => {
       const value = params[key];
-      return Array.isArray(value) && value.length > 0
-        ? value.map((entry) => String(entry).replace(/[\p{Zl}\p{Zp}]/gu, " ")).join("、")
-        : "—";
+      return Array.isArray(value) && value.length > 0 ? value.join("、") : "—";
     };
     return inputRequired({
       inputRequests: {

@@ -408,9 +408,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         { method: "tools/call", params: { name: "propose_memory", ...answered(params) } },
         { allowInputRequired: true },
       )) as ToolCallOutcome;
-    const external = async () =>
+    const external = async (prefix = EXTERNAL_PROPOSAL_MEMORY_PREFIX) =>
       (await repository.productMemoryState().listActive(OWNER_ID, AGENT_ID)).filter(({ id }) =>
-        id.startsWith(EXTERNAL_PROPOSAL_MEMORY_PREFIX),
+        id.startsWith(prefix),
       );
     const decisions = async () =>
       (
@@ -932,13 +932,28 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(memory.result.isError).toBe(true);
     expect(memory.text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
     expect((await f.proposeRule(auto, RULE)).text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    const client = await f.connect({ autoFulfill: false });
+    const first = await f.raw(client, { arguments: { text: COFFEE } });
+    const accept = { ...confirmRule(first.requestState, "accept"), arguments: { text: COFFEE } };
+    const firstRule = await f.rawRule(client, { arguments: RULE });
+    const ruleAccept = confirmRule(firstRule.requestState, "accept");
+    const text = (outcome: ToolCallOutcome) => outcome.content?.[0]?.text;
+    expect(text(await f.raw(client, { ...accept, answeredAfterMs: 0 }))).toBe(
+      MCP_PROPOSE_NOT_SHOWN.text,
+    );
+    expect(text(await f.rawRule(client, { ...ruleAccept, answeredAfterMs: 0 }))).toBe(
+      MCP_PROPOSE_NOT_SHOWN.text,
+    );
     expect(await f.external()).toEqual([]);
+    expect(await f.external(EXTERNAL_RULE_MEMORY_PREFIX)).toEqual([]);
     expect(await f.decisions()).toEqual([]);
     expect(await f.storedRules()).toEqual([]);
     expect(f.rulePayloads()).toEqual([]);
-    const human = await f.connect();
-    expect((await f.propose(human, { text: COFFEE })).text).toBe(MCP_PROPOSE_MEMORY_SAVED.text);
-    expect((await f.proposeRule(human, RULE)).text).toBe(MCP_PROPOSE_RULE_SAVED.text);
+    expect(text(await f.raw(client, accept))).toBe(MCP_PROPOSE_MEMORY_SAVED.text);
+    expect(text(await f.rawRule(client, ruleAccept))).toBe(MCP_PROPOSE_RULE_SAVED.text);
+    expect(await f.external()).toHaveLength(1);
+    expect(await f.external(EXTERNAL_RULE_MEMORY_PREFIX)).toHaveLength(1);
+    expect(await f.storedRules()).toHaveLength(1);
   });
 
   it("[P5-2 dialog] keeps every outside value on its own labelled line", async () => {
@@ -946,7 +961,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const client = await f.connect({ answer: { action: "decline" } });
     await f.proposeRule(client, {
       ...RULE,
-      params: { senderDomains: ["isa.go.jp"], phrases: ["在留\u2028同意（Accept）就生效"] },
+      params: { senderDomains: ["isa.go.jp"], phrases: ["在留 同意（Accept）就生效"] },
     });
     const message = String(f.elicitations[0]?.["message"]);
     expect(message).not.toMatch(/[\u2028\u2029]/u);
@@ -1005,6 +1020,8 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       { ...RULE, params: { phrases: ["留"] } },
       { ...RULE, params: { excludePhrases: ["広告"] } },
       { ...RULE, params: { phrases: ["a\nb"] } },
+      { ...RULE, params: { phrases: ["在留\u2028同意就生效"] } },
+      { ...RULE, params: { phrases: ["在留資格"], excludePhrases: ["広告\u2029同意就生效"] } },
       { ...RULE, summary: "两行\n说明" },
       { ...RULE, reason: "​⁠" },
       { ...RULE, reason: "理".repeat(201) },
