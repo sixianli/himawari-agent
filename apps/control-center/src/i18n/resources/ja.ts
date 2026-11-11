@@ -1037,6 +1037,8 @@ export const messages = {
   "dailyReview.title": "毎日の採点",
   "dailyReview.count": "今日 {count} 件",
   "dailyReview.countLeft": "今日 {count} 件、ほかに {left} 件は選ばれていません",
+  "dailyReview.hiddenByModel":
+    "ほかに {count} 件は、モデルの事前採点で「役に立った」と自信を持って判断されたため、あなたが有効にした削減設定により今回は表示していません",
   "dailyReview.note": "選ばれなかったものは明日また出ることがあり、7 日たつと出なくなります。",
   "dailyReview.tag.pushed": "メールを読んで通知した",
   "dailyReview.tag.silent": "メールを読んで通知しなかった",
@@ -1230,7 +1232,7 @@ export const messages = {
     "切断すると Google 側の許可を取り消し、メールから抜き出した対応事項と要点をすべて削除します。切断しますか？",
   "proactive.apps.disconnected": "切断し、Google 側の許可も取り消しました。",
   "proactive.apps.outcome":
-    "{o, select, connected {Gmail に接続しました。最初の確認をすぐに始めます。} denied {Google の画面で許可されなかったため、接続していません。} other {接続できませんでした。もう一度お試しください。}}",
+    "{o, select, connected {Gmail に接続しました。最初の確認をすぐに始めます。} denied {Google の画面で許可されなかったため、接続していません。} demo {体験版ではサンプルの受信トレイを使うため、ご自身のメールには接続できません。サンプルの受信トレイは準備できています。} other {接続できませんでした。もう一度お試しください。}}",
   "proactive.apps.what": "Himawari が読むものと送り先",
   "proactive.apps.what1":
     "メールを読むだけ。アーカイブ・ラベル付け・返信はしません。新着メールを判断するとき、同じ件のこれまでのやり取り（アーカイブ済みや自分が送ったメールを含む）も探して、あわせてモデルに送ります",
@@ -1473,6 +1475,25 @@ export const messages = {
   "weekly.implicit.def":
     "この 3 つのシグナルは、あなたが評価しなくても観察できることです。観察だけで、あなたの評価としては扱わず、上の評価の割合と混ぜて計算せず、しきい値を自動で変えることにも使いません。分母は今週、通知を送った判断です。同じ判断に同じシグナルが何度あっても 1 回と数えます。",
   "weekly.goRate": "「リマインダー」で採点する",
+  "weekly.prereview.title": "モデル事前採点の一致率",
+  "weekly.prereview.empty": "今週は、モデルの事前採点とあなたの採点が両方ある判断がありません。",
+  "weekly.prereview.emptyCurrent":
+    "今週は現在のモデルとプロンプトの版による事前採点がまだありません。",
+  "weekly.prereview.counts":
+    "事前採点 {rated} 件 · モデルが迷った {unsure} 件 · あなたも採点 {paired} 件",
+  "weekly.prereview.gate":
+    "{r, select, open {今週の組では基準を満たした} insufficient {今週は件数が足りず判断できません} below_threshold {今週の組では一致率が基準未満} other {「全部役に立った」と当てるのと変わりません}}",
+  "weekly.prereview.audit": "自信のある「役に立った」のうち、あなたも役に立ったと評価 {k}/{n}",
+  "weekly.prereview.otherVersions":
+    "ほかに {n} 件は古いモデルまたはプロンプトの版によるもので、上の比率に含めません。",
+  "weekly.prereview.reductionOn":
+    "自動削減はオン：基準を満たした種類では、「毎日の採点」にモデルが迷ったものや過去の採点と食い違うものだけを出し、さらに {audit} を抜き取りで残します。",
+  "weekly.prereview.reductionOff":
+    "自動削減はオフ：「毎日の採点」には採点待ちの判断をすべて表示します。",
+  "weekly.prereview.def":
+    "モデルは採点待ちの判断を先に採点します（役に立った / 不要 / 見落とし）。これは別に保存し、あなたの採点には書き込みません。一致率は、あなたも採点したもののうちモデルと一致した割合です。",
+  "weekly.prereview.gateDef":
+    "基準：自信（{confidence} 以上）のある「役に立った」のうち、一致率の 95% Wilson 下限が {agreement} 以上で、かつ「全部役に立った」と当てるより高いこと。通過には少なくとも {n} 組が必要です。",
   "sensitive.title": "機密情報のブロック記録",
   "sensitive.count": "{count} 件の記録",
   "sensitive.none": "機密情報をブロックした記録はまだありません",
@@ -1511,6 +1532,7 @@ export const messages = {
   "sensitive.purpose.memory-consolidation": "記憶の統合",
   "sensitive.purpose.mail-judgment": "メールの判定",
   "sensitive.purpose.action-review": "操作の確認",
+  "sensitive.purpose.review-prereview": "モデルの事前採点",
   "sensitive.purpose.other": "その他",
   "sensitive.maskedOnce": "{time} 1 回隠しました",
   "sensitive.maskedMany": "{time} 最初に隠し、その後の {later} 回の送信でも隠しました",

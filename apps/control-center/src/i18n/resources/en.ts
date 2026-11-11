@@ -1037,6 +1037,8 @@ export const messages = {
   "dailyReview.count": "{count, plural, one {# item} other {# items}} today",
   "dailyReview.countLeft":
     "{count, plural, one {# item} other {# items}} today, {left} more not picked",
+  "dailyReview.hiddenByModel":
+    "{count, plural, one {# more item was} other {# more items were}} pre-rated useful by the model with confidence, so the reduction you turned on left {count, plural, one {it} other {them}} out this time",
   "dailyReview.note": "Items not picked may show up tomorrow, and drop off after 7 days.",
   "dailyReview.tag.pushed": "Read mail and reminded you",
   "dailyReview.tag.silent": "Read mail, no reminder",
@@ -1231,7 +1233,7 @@ export const messages = {
     "Disconnecting revokes access at Google and deletes every to-do and key point extracted from your mail. Disconnect?",
   "proactive.apps.disconnected": "Disconnected, and access was revoked at Google.",
   "proactive.apps.outcome":
-    "{o, select, connected {Gmail connected. The first check starts now.} denied {You didn’t allow access on the Google page, so nothing was connected.} other {Connecting didn’t work. Please try again.}}",
+    "{o, select, connected {Gmail connected. The first check starts now.} denied {You didn’t allow access on the Google page, so nothing was connected.} demo {This trial uses a sample inbox, so your own mailbox can’t be connected. The sample inbox is ready.} other {Connecting didn’t work. Please try again.}}",
   "proactive.apps.what": "What Himawari reads and who receives it",
   "proactive.apps.what1":
     "Read-only; never archives, labels or replies. To judge a new mail it also looks up earlier mail about the same matter (including archived mail and mail you sent) and sends that to the model too",
@@ -1486,6 +1488,24 @@ export const messages = {
   "weekly.implicit.def":
     "These three signals are what can be observed without you rating anything. They are observations only: they are not your ratings, they are never mixed into the rating shares above, and they never change any threshold automatically. The denominator is this week's decisions that sent a reminder; repeats of the same signal on one decision count once.",
   "weekly.goRate": "Rate them in “Reminders”",
+  "weekly.prereview.title": "Model pre-rating agreement",
+  "weekly.prereview.empty": "No decision this week has both a model pre-rating and your rating.",
+  "weekly.prereview.emptyCurrent":
+    "No pre-rating this week from the current model and prompt version.",
+  "weekly.prereview.counts": "Pre-rated {rated} · model unsure {unsure} · you also rated {paired}",
+  "weekly.prereview.gate":
+    "{r, select, open {Past the bar on this week’s pairs} insufficient {Too few pairs this week to judge} below_threshold {Below the bar on this week’s pairs} other {No better than calling everything useful}}",
+  "weekly.prereview.audit": "Of the confident “useful” calls, you also said useful {k}/{n}",
+  "weekly.prereview.otherVersions":
+    "{n} more pre-ratings came from an older model or prompt version and are left out.",
+  "weekly.prereview.reductionOn":
+    "Auto-reduction is on: for types past the bar, daily rating shows only items the model is unsure about or that conflict with your past ratings, plus a random {audit} for spot checks.",
+  "weekly.prereview.reductionOff":
+    "Auto-reduction is off: daily rating still shows every decision waiting for you.",
+  "weekly.prereview.def":
+    "The model rates each decision waiting for you first (useful / not needed / missed). These are stored separately and never written into your rating. Agreement is the share of items you also rated where the model and you agree.",
+  "weekly.prereview.gateDef":
+    "The bar: among confident (at least {confidence}) “useful” calls, the 95% Wilson lower bound of agreement must be at least {agreement} and above simply calling everything useful; at least {n} pairs are needed to pass.",
   "sensitive.title": "Blocked sensitive information",
   "sensitive.count": "{count, plural, one {# record} other {# records}}",
   "sensitive.none": "Nothing sensitive has been blocked yet",
@@ -1524,6 +1544,7 @@ export const messages = {
   "sensitive.purpose.memory-consolidation": "merging memories",
   "sensitive.purpose.mail-judgment": "email check",
   "sensitive.purpose.action-review": "action review",
+  "sensitive.purpose.review-prereview": "model pre-rating",
   "sensitive.purpose.other": "other",
   "sensitive.maskedOnce": "{time} hidden once",
   "sensitive.maskedMany":

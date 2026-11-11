@@ -24,6 +24,7 @@ import type {
   MemoryProjectionJobStatePort,
   MemoryCaptureBacklogPort,
   MemoryCheckupStorePort,
+  ReviewPrereviewStorePort,
   MemoryReminderStorePort,
   OwnerRuleStorePort,
   ModelBudgetPort,
@@ -973,6 +974,18 @@ export class SqliteDurableAdapters {
       recordAction: (input) => this.context.write("memoryCheckup.recordAction", input),
       recordUndo: (input) => this.context.write("memoryCheckup.recordUndo", input),
       listConfirmedSince: (input) => this.context.read("memoryCheckup.listConfirmedSince", input),
+    });
+  }
+
+  reviewPrereview(): ReviewPrereviewStorePort {
+    return Object.freeze<ReviewPrereviewStorePort>({
+      listDone: (input) => this.context.read("reviewPrereview.listDone", input),
+      listRecentFailures: (input) => this.context.read("reviewPrereview.listRecentFailures", input),
+      countSince: (input) => this.context.read("reviewPrereview.countSince", input),
+      ownerHistory: (input) => this.context.read("reviewPrereview.ownerHistory", input),
+      listPairs: (input) => this.context.read("reviewPrereview.listPairs", input),
+      record: (input) => this.context.write("reviewPrereview.record", input),
+      recordFailure: (input) => this.context.write("reviewPrereview.recordFailure", input),
     });
   }
 

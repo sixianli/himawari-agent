@@ -1,4 +1,11 @@
 export { canonicalJson, sha256Hex } from "./canonical.js";
+export {
+  buildDemoPack,
+  DEMO_PACK_ERROR_CODES,
+  type DemoPackOptions,
+  demoMemoryId,
+  demoPersonId,
+} from "./demo-pack.js";
 export { type ReadLimits, readPortableDirectory, writePortableDirectory } from "./directory.js";
 export { buildPortableExport, type ExportOptions, type ExportResult } from "./export.js";
 export { type ImportOptions, type ImportReport, importPortableExport } from "./import.js";
