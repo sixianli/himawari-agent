@@ -1254,7 +1254,7 @@ export const messages = {
   "weekly.groupInfo":
     "{g, select, proactive_pushed {Himawari 每 15 分钟读一次新邮件；这一行是读完后提醒了你的那几次。} rule_review {Himawari 的硬规则来自你说过的话；那条记忆被改动、取代或删除后，规则标“待重审”，这一行是这类记录。} memory_capture_failed {每轮对话后系统会从你的话里抽取要记住的内容；这一行是抽取的模型调用失败的那几次，每次失败一条，补做成功的那轮另有“已存”或“没存”记录。} other {Himawari 每 15 分钟读一次新邮件；这一行是读完觉得都不用提醒你的那几次。}}",
   "weekly.rate":
-    "{k, select, proactive_pushed_useful {提醒得对} proactive_pushed_unneeded {不该提醒} proactive_silent_useful {不提醒是对的} proactive_silent_missed {该提醒没提醒} memory_skipped_useful {不存是对的} memory_skipped_missed {该存没存} memory_kept_useful {存对了} memory_kept_unneeded {不该存} consolidation_useful {整理得对} consolidation_unneeded {不该整理} other_useful {做对了} other_unneeded {不该做} other {该做没做}}",
+    "{k, select, proactive_pushed_useful {提醒得对} proactive_pushed_unneeded {不该提醒} proactive_silent_useful {不提醒是对的} proactive_silent_missed {该提醒没提醒} memory_skipped_useful {不存是对的} memory_skipped_missed {该存没存} memory_kept_useful {存对了} memory_kept_unneeded {不该存} consolidation_useful {整理得对} consolidation_unneeded {不该整理} memory_capture_failed_useful {没漏掉什么} memory_capture_failed_missed {漏了该记的} other_useful {做对了} other_unneeded {不该做} other {该做没做}}",
   "weekly.ratio": "{pct}（{k}/{n}）",
   "weekly.interval": "区间 {low}–{high}",
   "weekly.few": "样本不足（{n} 条）",

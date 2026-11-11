@@ -1346,7 +1346,7 @@ export const messages = {
   "weekly.groupInfo":
     "{g, select, proactive_pushed {Himawari は 15 分ごとに新着メールを読みます。読んだ後に通知した回です。} rule_review {ハードルールはあなたの言葉から作られます。元の記憶が変更・置き換え・削除されると、ルールは再確認待ちになり、その記録です。} memory_capture_failed {毎ターンの後、あなたの言葉から覚えることを抽出します。これはそのモデル呼び出しが失敗した回で、失敗ごとに 1 件です。後で成功したターンには別に保存・未保存の記録があります。} other {Himawari は 15 分ごとに新着メールを読みます。読んだ後、通知が必要なものがなかった回です。}}",
   "weekly.rate":
-    "{k, select, proactive_pushed_useful {通知は正しかった} proactive_pushed_unneeded {通知すべきではなかった} proactive_silent_useful {通知しないのが正しかった} proactive_silent_missed {通知すべきだった} memory_skipped_useful {保存しないのが正しかった} memory_skipped_missed {保存すべきだった} memory_kept_useful {正しく保存した} memory_kept_unneeded {保存すべきではなかった} consolidation_useful {整理は正しかった} consolidation_unneeded {整理すべきではなかった} other_useful {正しかった} other_unneeded {やるべきではなかった} other {やるべきだった}}",
+    "{k, select, proactive_pushed_useful {通知は正しかった} proactive_pushed_unneeded {通知すべきではなかった} proactive_silent_useful {通知しないのが正しかった} proactive_silent_missed {通知すべきだった} memory_skipped_useful {保存しないのが正しかった} memory_skipped_missed {保存すべきだった} memory_kept_useful {正しく保存した} memory_kept_unneeded {保存すべきではなかった} consolidation_useful {整理は正しかった} consolidation_unneeded {整理すべきではなかった} memory_capture_failed_useful {失ったものはない} memory_capture_failed_missed {覚えるべきことを逃した} other_useful {正しかった} other_unneeded {やるべきではなかった} other {やるべきだった}}",
   "weekly.ratio": "{pct}（{k}/{n}）",
   "weekly.interval": "区間 {low}–{high}",
   "weekly.few": "件数不足（{n} 件）",

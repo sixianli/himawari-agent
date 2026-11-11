@@ -2758,7 +2758,7 @@ describe("production memory capture", () => {
       {
         generationId: "memory-capture:run-memory-capture",
         attempts: 0,
-        lastErrorCode: "AI_GATEWAY_PROVIDER_UNAVAILABLE",
+        lastErrorCode: "AI_GATEWAY_REQUEST_TIMEOUT",
       },
     ]);
     expect(
@@ -2891,5 +2891,102 @@ describe("production memory capture", () => {
     ]);
     release();
     await capture.stop();
+  });
+
+  it("[P3-5] retries a turn whose result could not be saved, and keeps the memory", async () => {
+    const context = await setup(P3_5_MESSAGE, P3_5_MEMORY);
+    context.outputs.push(P3_5_MEMORY);
+    const options = optionsOf(context);
+    let failures = 1;
+    const capture = new ProductionMemoryCapture({
+      ...options,
+      generations: {
+        request: async (work) => {
+          failures -= 1;
+          if (failures >= 0) throw new Error("PORT_CONFLICT");
+          return options.generations.request(work);
+        },
+      },
+    });
+    await capture.start(context.request);
+    await capture.stop();
+    expect(context.calls.map(({ invocationId }) => invocationId)).toEqual([
+      "memory-capture:run-memory-capture",
+      "memory-capture:run-memory-capture:retry",
+    ]);
+    expect((await activeMemories(context)).map(({ id }) => id)).toEqual([
+      "memory:memory-capture:run-memory-capture:0",
+    ]);
+    expect(
+      (await captureFailures(context)).map(({ outcome, reasonCode }) => [outcome, reasonCode]),
+    ).toEqual([["capture_retrying", "PORT_CONFLICT"]]);
+    expect(backlogRows(context)).toEqual([]);
+  });
+
+  it("[P3-5] keeps a queued turn and counts the try when saving its replayed result fails", async () => {
+    const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    context.outputs.push(new Error("AI_GATEWAY_REQUEST_TIMEOUT"));
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", "今天第二轮，随便聊聊。", "run-save-fails");
+    context.outputs.push('{"memories":[]}', P3_5_MEMORY);
+    const options = optionsOf(context);
+    const capture = new ProductionMemoryCapture({
+      ...options,
+      generations: {
+        request: async () => {
+          throw new Error("PORT_CONFLICT");
+        },
+      },
+    });
+    await capture.start(context.requestFor("run-save-fails"));
+    await capture.stop();
+    expect(context.calls.at(-1)?.invocationId).toBe("memory-capture:run-save-fails:backlog");
+    expect(await activeMemories(context)).toEqual([]);
+    expect(backlogRows(context)).toEqual([
+      {
+        generationId: "memory-capture:run-memory-capture",
+        attempts: 1,
+        lastErrorCode: "PORT_CONFLICT",
+      },
+    ]);
+    expect(
+      (await captureFailures(context)).filter(({ reasonCode }) => reasonCode === "PORT_CONFLICT"),
+    ).toEqual([expect.objectContaining({ outcome: "capture_queued" })]);
+  });
+
+  it("[P3-5] does not replay a turn that another run is still retrying", async () => {
+    const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    let release = () => {};
+    let retrying = false;
+    const options = optionsOf(context);
+    const capture = new ProductionMemoryCapture({
+      ...options,
+      generate: async (request, prompt, onAdmitted, call) => {
+        if (call.invocationId.endsWith(":retry")) {
+          retrying = true;
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          throw new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE");
+        }
+        return options.generate(request, prompt, onAdmitted, call);
+      },
+    });
+    await capture.start(context.request);
+    while (!retrying) await new Promise((resolve) => setTimeout(resolve, 5));
+    await context.turn("owner", "另一个对话里随便聊聊。", "run-parallel");
+    context.outputs.push('{"memories":[]}', P3_5_MEMORY);
+    await capture.start(context.requestFor("run-parallel"));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(context.calls.map(({ invocationId }) => invocationId)).not.toContain(
+      "memory-capture:run-parallel:backlog",
+    );
+    release();
+    await capture.stop();
+    expect(await activeMemories(context)).toEqual([]);
+    expect(backlogRows(context)).toEqual([
+      expect.objectContaining({ generationId: "memory-capture:run-memory-capture", attempts: 0 }),
+    ]);
   });
 });
