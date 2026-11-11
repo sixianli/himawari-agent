@@ -909,6 +909,7 @@ export class SqliteDurableAdapters {
       markUsed: (memoryIds, usedAt) => this.context.write("memory.markUsed", { memoryIds, usedAt }),
       appendHistory: (input) => this.context.write("memory.appendHistory", input),
       listHistory: (input) => this.context.read("memory.listHistory", input),
+      readHistory: (input) => this.context.read("memory.readHistory", input),
     });
   }
 

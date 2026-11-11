@@ -743,6 +743,7 @@ export const messages = {
   "memory.page.history": "How it changed",
   "memory.page.now": "Now",
   "memory.page.useThis": "Use this wording",
+  "memory.page.restoreVersion": "Restore this version",
   "memory.page.editNote": "After saving, the old wording moves to How it changed.",
   "memory.page.archivedNote": "Archived during a tidy-up; not used in answers",
   "memory.page.unarchive": "Use again",
