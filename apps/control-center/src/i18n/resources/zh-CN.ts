@@ -830,6 +830,8 @@ export const messages = {
   "memory.page.carry.title": "每次对话都会带上的记忆",
   "memory.page.carry.summary": "{count} 条 · 已用 {used} / {limit} 字",
   "memory.page.carry.queued": "还有 {count} 条放不下",
+  "memory.page.carry.pinnedOver":
+    "你打开“每次对话都带上”的记忆共 {pinned} 字，比上限 {limit} 字多出 {over} 字。它们照样每次都带上，但其他记忆就放不进来了；关掉几条可以回到上限以内。",
   "memory.page.carry.open": "查看和调整",
   "memory.page.carry.meter": "已用字数",
   "memory.page.carry.note":

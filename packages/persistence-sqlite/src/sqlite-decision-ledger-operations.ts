@@ -67,6 +67,19 @@ export function validateLedgerWrite(write: DecisionLedgerWrite): string | null {
     (write.inputs.resultMemoryIds !== undefined && !idList(write.inputs.resultMemoryIds))
   )
     return "Decision ledger inputs are invalid";
+  const budget = write.inputs.profileBudget ?? null;
+  if (
+    budget !== null &&
+    (write.kind !== "context_truncation" ||
+      !Number.isSafeInteger(budget.limit) ||
+      budget.limit < 1 ||
+      !Number.isSafeInteger(budget.used) ||
+      budget.used < 0 ||
+      !Number.isSafeInteger(budget.pinned) ||
+      budget.pinned < 0 ||
+      budget.pinned > budget.used)
+  )
+    return "Decision ledger profile budget is invalid";
   if (
     !Number.isSafeInteger(write.costMicros) ||
     write.costMicros < 0 ||
@@ -119,6 +132,7 @@ export function insertLedgerRow(database: Database.Database, write: DecisionLedg
         ruleIds: write.inputs.ruleIds,
         batchId: write.inputs.batchId ?? null,
         resultMemoryIds: write.inputs.resultMemoryIds ?? [],
+        ...(write.inputs.profileBudget ? { profileBudget: write.inputs.profileBudget } : {}),
       }),
       write.reasonRef,
       write.contentRef,
@@ -154,6 +168,7 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
     relatedRead?: "off" | "ok" | "partial" | "failed";
     relatedStats?: DecisionInputs["relatedStats"];
     relatedFailedSteps?: readonly string[];
+    profileBudget?: DecisionInputs["profileBudget"];
   };
   return Object.freeze({
     ...(row as unknown as DecisionLedgerEntry),
@@ -210,6 +225,7 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
         },
       ),
       relatedFailedSteps: Object.freeze([...(inputs.relatedFailedSteps ?? [])]),
+      profileBudget: inputs.profileBudget ? Object.freeze({ ...inputs.profileBudget }) : null,
     }),
   });
 }
@@ -233,6 +249,8 @@ export class SqliteDecisionLedgerOperations {
     switch (operation) {
       case "decisionLedger.append":
         return this.append(payload as Input<"append">);
+      case "decisionLedger.appendIfChanged":
+        return this.appendIfChanged(payload as Input<"appendIfChanged">);
       case "decisionLedger.list":
         return this.list(payload as Input<"list">);
       case "decisionLedger.read":
@@ -296,6 +314,41 @@ export class SqliteDecisionLedgerOperations {
     const problem = validateLedgerWrite(write);
     if (problem) this.fail("PORT_INVALID_OPERATION", problem);
     insertLedgerRow(this.database, write);
+  }
+
+  private appendIfChanged(input: Input<"appendIfChanged">): boolean {
+    this.assertDiskHeadroom();
+    const { write, reasonCodes } = input;
+    const problem = validateLedgerWrite(write);
+    if (problem) this.fail("PORT_INVALID_OPERATION", problem);
+    if (
+      !Array.isArray(reasonCodes) ||
+      reasonCodes.length < 1 ||
+      reasonCodes.length > 16 ||
+      !reasonCodes.every((code) => text(code, 1, 64)) ||
+      !reasonCodes.includes(write.reasonCode)
+    )
+      this.fail("PORT_INVALID_OPERATION", "Decision ledger reason codes are invalid");
+    return this.database.transaction(() => {
+      const latest = this.database
+        .prepare(
+          `SELECT reason_code AS reasonCode, inputs FROM decision_ledger
+           WHERE owner_id = ? AND agent_id = ? AND kind = ?
+             AND reason_code IN (SELECT value FROM json_each(?))
+           ORDER BY checked_at DESC, id DESC LIMIT 1`,
+        )
+        .get(write.ownerId, write.agentId, write.kind, JSON.stringify(reasonCodes)) as
+        | { reasonCode: string; inputs: string }
+        | undefined;
+      if (latest?.reasonCode === write.reasonCode) {
+        const before = (JSON.parse(latest.inputs) as { memoryIds?: readonly string[] }).memoryIds;
+        const now = write.inputs.memoryIds;
+        if (before?.length === now.length && new Set([...before, ...now]).size === now.length)
+          return false;
+      }
+      insertLedgerRow(this.database, write);
+      return true;
+    })();
   }
 
   private list(input: Input<"list">): readonly DecisionLedgerEntry[] {

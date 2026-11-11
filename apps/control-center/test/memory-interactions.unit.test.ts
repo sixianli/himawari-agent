@@ -217,7 +217,7 @@ beforeEach(() => {
       }),
     ],
     profile: [],
-    profileUsage: { used: 0, limit: 2000, queued: [] },
+    profileUsage: { used: 0, limit: 2000, pinned: 0, queued: [] },
     lastViewedAt: null,
     pending: [
       {
@@ -428,7 +428,7 @@ describe("memory approval and management", () => {
           topic: "health",
         }),
       ],
-      profileUsage: { used: 1980, limit: 2000, queued: ["memory-tea"] },
+      profileUsage: { used: 1980, limit: 2000, pinned: 0, queued: ["memory-tea"] },
       profile: [
         {
           kind: "preference",

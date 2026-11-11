@@ -16,6 +16,7 @@ if (!Number.isInteger(port) || port < 0 || port > 65535)
 const now = "2026-08-27T00:00:00.000Z";
 const executionQualification = process.env.HIMAWARI_EXECUTION_FIXTURE === "1";
 const memoryFixture = process.env.HIMAWARI_MEMORY_FIXTURE === "1";
+const pinnedCharacters = Number(process.env.HIMAWARI_PROFILE_PINNED_CHARACTERS ?? "0");
 const executionRecords = new Map();
 const executionStates = new Map();
 let executionEnvironment;
@@ -811,7 +812,12 @@ function memoryOverview() {
     capturePaused: false,
     manualAddReady: true,
     lastViewedAt: "2026-10-28T12:00:00.000Z",
-    profileUsage: { used: 118, limit: 2000, queued: ["memory-coffee"] },
+    profileUsage: {
+      used: Math.max(118, pinnedCharacters),
+      limit: 2000,
+      pinned: pinnedCharacters,
+      queued: ["memory-coffee"],
+    },
     profile: [
       { kind: "identity", lines: lines(["memory-city", "memory-job"]) },
       {

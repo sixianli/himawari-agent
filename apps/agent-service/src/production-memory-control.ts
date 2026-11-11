@@ -701,6 +701,7 @@ export class ProductionMemoryControl {
         profileUsage: {
           used: outline?.usage.used ?? 0,
           limit: outline?.usage.limit ?? 0,
+          pinned: outline?.usage.pinned ?? 0,
           queued: [...(outline?.usage.queued ?? [])],
         },
         generatedAt: now,

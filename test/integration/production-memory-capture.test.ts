@@ -1622,6 +1622,7 @@ describe("production memory capture", () => {
     expect(view.profileUsage).toEqual({
       used: profiled().reduce((sum, text) => sum + text.length + 3, 0),
       limit: 2000,
+      pinned: (profiled()[0] ?? "").length + 3,
       queued: [],
     });
     const blue = byText("蓝色");
