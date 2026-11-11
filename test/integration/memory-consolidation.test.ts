@@ -67,6 +67,7 @@ const MEMORIES: ReadonlyArray<{
   readonly classification: "private" | "sensitive";
   readonly attributes: Partial<ProductMemoryAttributes>;
   readonly confidence?: number;
+  readonly later?: true;
 }> = [
   {
     id: "coffee-old",
@@ -181,6 +182,14 @@ const MEMORIES: ReadonlyArray<{
     attributes: { category: "other", subCategory: "宠物", importancePermille: 500 },
     confidence: 800,
   },
+  {
+    id: "milk-weekend",
+    text: "主人周末在家喝燕麦奶",
+    at: "2026-10-25T10:00:00.000Z",
+    classification: "private",
+    attributes: { category: "preference", subCategory: "饮品", importancePermille: 500 },
+    later: true,
+  },
 ];
 
 const QUOTES: Readonly<Record<string, string>> = {
@@ -291,8 +300,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       maximumProjectionAttempts: 3,
       projectionLeaseMs: 10_000,
     });
-    for (const item of MEMORIES) {
-      clock.value = item.at;
+    const create = async (item: (typeof MEMORIES)[number]) => {
       await memory.applyProposal(
         {
           decision: "create",
@@ -321,7 +329,17 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
         },
         GENERATION_ID,
       );
+    };
+    for (const item of MEMORIES.filter(({ later }) => !later)) {
+      clock.value = item.at;
+      await create(item);
     }
+    const addLater = async (id: string) => {
+      const item = MEMORIES.find((entry) => entry.id === id && entry.later);
+      if (!item) throw new Error(`No later memory ${id}`);
+      await create(item);
+      await memory.runProjectionBatch(50);
+    };
     clock.value = "2026-10-25T03:00:00.000Z";
     await memory.runProjectionBatch(50);
     const jobs = repository.memoryProjectionJobs();
@@ -452,6 +470,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       read,
       searchable,
       indexed,
+      addLater,
     };
   }
 
@@ -805,8 +824,18 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       await expect(resource.consolidation.undo(milkHold?.id ?? "")).rejects.toThrow(
         "MEMORY_CHANGED_AFTER_CONSOLIDATION",
       );
+      resource.clock.value = "2026-10-25T10:00:00.000Z";
+      await resource.addLater("milk-weekend");
       resource.clock.value = "2026-10-26T03:00:00.000Z";
+      let together = false;
       const again = await resource.run((prompt) => {
+        const named = labelsOf(prompt);
+        const group = (id: string) =>
+          groupOf(prompt, named.get(MEMORIES.find((item) => item.id === id)?.text ?? "") ?? "");
+        together =
+          group("milk-weekend") !== undefined &&
+          group("milk-new") === group("milk-weekend") &&
+          group("milk-old") === group("milk-weekend");
         const labels = labelsOf(prompt);
         const label = (id: string) =>
           labels.get(MEMORIES.find((item) => item.id === id)?.text ?? "") ?? "";
@@ -825,6 +854,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
           insights: [],
         });
       });
+      expect(together).toBe(true);
       expect(
         again?.changes.filter(({ memoryId }) =>
           ["milk-new", "milk-old", "pet-new", "pet-old"].includes(memoryId),

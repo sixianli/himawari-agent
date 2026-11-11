@@ -686,6 +686,7 @@ export const messages = {
   "memory.profile.goal": "長期目標",
   "memory.profile.project": "進行中のこと",
   "memory.tidyKept": "（残した方：{text}）",
+  "memory.tidyOther": "（もう一方：{text}）",
   "memory.undo": "元に戻す",
   "memory.undone": "元に戻しました",
   "memory.reminderTitle": "リマインダー",

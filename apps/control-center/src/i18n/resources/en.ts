@@ -679,6 +679,7 @@ export const messages = {
   "memory.profile.goal": "Long-term goals",
   "memory.profile.project": "In progress",
   "memory.tidyKept": "(kept: {text})",
+  "memory.tidyOther": "(the other one: {text})",
   "memory.undo": "Undo",
   "memory.undone": "Undone",
   "memory.reminderTitle": "Reminder",

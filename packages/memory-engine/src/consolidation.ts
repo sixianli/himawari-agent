@@ -280,12 +280,11 @@ export class MemoryConsolidationService {
         return value;
       };
       const groups = new Map<string, Group>();
-      const held = new Set(
+      const paired = new Set(
         (await this.#options.store.listHeldPairs({ ownerId, agentId })).map((pair) =>
           [...pair].sort().join("\n"),
         ),
       );
-      const paired = new Set(held);
       const freshReviewed: Reviewed[] = [];
       for (const memory of fresh) {
         const current = await reviewed(memory);
@@ -358,13 +357,7 @@ export class MemoryConsolidationService {
         for (const decision of decisions) {
           const keep = labels.get(decision.keep ?? "");
           const drop = labels.get(decision.drop ?? "");
-          if (
-            !keep ||
-            !drop ||
-            touched.has(keep.memory.id) ||
-            touched.has(drop.memory.id) ||
-            held.has([keep.memory.id, drop.memory.id].sort().join("\n"))
-          )
+          if (!keep || !drop || touched.has(keep.memory.id) || touched.has(drop.memory.id))
             continue;
           if (decision.action === "duplicate") {
             const change = await this.#revise(id, "merge", drop.memory, keep.memory.id, {

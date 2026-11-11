@@ -637,6 +637,7 @@ export const messages = {
   "memory.profile.goal": "长期目标",
   "memory.profile.project": "进行中的事",
   "memory.tidyKept": "（保留：{text}）",
+  "memory.tidyOther": "（另一条：{text}）",
   "memory.undo": "撤销",
   "memory.undone": "已撤销",
   "memory.reminderTitle": "提醒",

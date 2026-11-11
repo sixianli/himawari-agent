@@ -1246,6 +1246,10 @@ describe("memory approval and management", () => {
       [...(row(content)?.querySelectorAll("button") ?? [])].map((item) => item.textContent);
     expect(buttons("主人出差时喝便利店的牛奶")).toEqual(["撤销", "去确认"]);
     expect(buttons("主人家里改养了一只橘猫")).toEqual([]);
+    expect(row("主人出差时喝便利店的牛奶")?.textContent).toContain(
+      "（另一条：主人平时喝明治的牛奶）",
+    );
+    expect(row("主人出差时喝便利店的牛奶")?.textContent).not.toContain("保留");
     await act(async () =>
       [...(row("主人出差时喝便利店的牛奶")?.querySelectorAll("button") ?? [])]
         .find((item) => item.textContent === "撤销")

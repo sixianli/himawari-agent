@@ -1777,7 +1777,11 @@ function TimelineTab({
         type: "tidy",
         kind: item.action,
         text: item.text,
-        note: item.relatedText ? message("memory.tidyKept", { text: item.relatedText }) : "",
+        note: item.relatedText
+          ? message(item.action === "hold" ? "memory.tidyOther" : "memory.tidyKept", {
+              text: item.relatedText,
+            })
+          : "",
         undone: item.undone,
         ...(item.action === "hold" && !waiting.has(item.memoryId)
           ? {}
