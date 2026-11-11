@@ -357,6 +357,53 @@ describe("publication admission is atomic and workflow-bound", { timeout: 30000 
     ).rejects.toThrow("REPORT_CHANGED");
     expect(existsSync(path.join(state.root, ".ci-output/tampered"))).toBe(false);
   });
+  it("omits the build archive when asked and keeps it by default", async () => {
+    const { input } = reportFixture({ "runtime.tar.gz": ["artifact", "synthetic archive"] });
+    state.mockAdmission = true;
+    const omitted = await publish({
+      root: state.root,
+      input,
+      output: ".ci-output/omit-public",
+      artifacts: "omit",
+    });
+    expect(omitted.reports.map((report) => report.kind)).not.toContain("artifact");
+    expect(existsSync(path.join(state.root, ".ci-output/omit-public/reports/runtime.tar.gz"))).toBe(
+      false,
+    );
+    expect(existsSync(path.join(state.root, ".ci-output/omit-public/reports/details.json"))).toBe(
+      true,
+    );
+    const kept = await publish({ root: state.root, input, output: ".ci-output/keep-public" });
+    expect(kept.reports.map((report) => report.kind)).toContain("artifact");
+    expect(existsSync(path.join(state.root, ".ci-output/keep-public/reports/runtime.tar.gz"))).toBe(
+      true,
+    );
+    await expect(
+      publish({ root: state.root, input, output: ".ci-output/bad-public", artifacts: "drop" }),
+    ).rejects.toThrow("CI_PUBLIC_ARTIFACTS_INVALID");
+  });
+  it("CLI passes --artifacts through and rejects it for quality or with an unknown value", async () => {
+    const { input } = reportFixture({ "runtime.tar.gz": ["artifact", "synthetic archive"] });
+    state.mockAdmission = true;
+    const run = async (output, extra, source = input) => {
+      process.exitCode = 0;
+      await entry("publish.mjs", ["--input", source, "--output", output, ...extra]);
+      return process.exitCode ?? 0;
+    };
+    expect(await run(".ci-output/cli-omit", ["--artifacts", "omit"])).toBe(0);
+    expect(existsSync(path.join(state.root, ".ci-output/cli-omit/reports/runtime.tar.gz"))).toBe(
+      false,
+    );
+    expect(existsSync(path.join(state.root, ".ci-output/cli-omit/reports/result.json"))).toBe(true);
+    expect(await run(".ci-output/cli-drop", ["--artifacts", "drop"])).toBe(1);
+    const quality = path.join(state.root, ".ci-output/quality-input");
+    write(path.join(quality, "quality.json"), { observations: [], commands: [] });
+    expect(
+      await run(".ci-output/cli-quality", ["--mode", "quality", "--artifacts", ""], quality),
+    ).toBe(1);
+    expect(existsSync(path.join(state.root, ".ci-output/cli-quality"))).toBe(false);
+    process.exitCode = 0;
+  });
   it("CLI obtains verified Python explicitly and never relies on an inherited interpreter", async () => {
     const { input } = reportFixture({ "runtime.tar.gz": ["artifact", "synthetic archive"] });
     state.mockAdmission = true;
@@ -500,21 +547,56 @@ describe(
       await entry("context.mjs", []);
       expect(process.exitCode).toBe(1);
     });
-    it("artifact CLI appends only the platform's immutable numeric ID and rejects absent output", async () => {
+    it("share CLI publishes a report under this run, hands its digest to GITHUB_OUTPUT, and rejects tampering", async () => {
+      const share = path.join(state.root, "share");
+      mkdirSync(share);
       const output = path.join(state.root, "github-output");
+      vi.stubEnv("HIMAWARI_CI_SHARE", share);
+      vi.stubEnv("GITHUB_RUN_ID", "41");
+      vi.stubEnv("GITHUB_RUN_ATTEMPT", "2");
       vi.stubEnv("GITHUB_OUTPUT", output);
-      vi.stubEnv("CI_MATRIX", "linux-x64");
-      vi.stubEnv("CI_ARTIFACT_ID", "123");
-      await entry("artifact-output.mjs", []);
-      expect(readFileSync(output, "utf8")).toBe("linux=123\n");
-      vi.stubEnv("CI_MATRIX", "macos-arm64");
-      vi.stubEnv("CI_ARTIFACT_ID", "456");
-      await entry("artifact-output.mjs", []);
-      expect(readFileSync(output, "utf8")).toBe("linux=123\nmacos=456\n");
-      vi.stubEnv("GITHUB_OUTPUT", "");
-      await entry("artifact-output.mjs", []);
+      const from = path.join(state.root, "published");
+      mkdirSync(path.join(from, "nested"), { recursive: true });
+      writeFileSync(path.join(from, "nested/result.json"), "{}\n");
+      await entry("run-share.mjs", [
+        "put",
+        "--name",
+        "build-linux-x64",
+        "--from",
+        from,
+        "--output-key",
+        "linux-x64",
+      ]);
+      const [, digest] = readFileSync(output, "utf8").trim().split("=");
+      expect(digest).toMatch(/^[0-9a-f]{64}$/u);
+      expect(
+        readFileSync(path.join(share, "41-2/build-linux-x64/nested/result.json"), "utf8"),
+      ).toBe("{}\n");
+      await entry("run-share.mjs", [
+        "get",
+        "--name",
+        "build-linux-x64",
+        "--digest",
+        digest,
+        "--to",
+        path.join(state.root, "copy"),
+      ]);
+      expect(readFileSync(path.join(state.root, "copy/nested/result.json"), "utf8")).toBe("{}\n");
+      writeFileSync(path.join(share, "41-2/build-linux-x64/nested/result.json"), "[]\n");
+      await entry("run-share.mjs", [
+        "get",
+        "--name",
+        "build-linux-x64",
+        "--digest",
+        digest,
+        "--to",
+        path.join(state.root, "tampered"),
+      ]);
       expect(process.exitCode).toBe(1);
-      expect(readFileSync(output, "utf8")).not.toContain("undefined");
+      expect(existsSync(path.join(state.root, "tampered"))).toBe(false);
+      process.exitCode = 0;
+      await entry("run-share.mjs", ["remove"]);
+      expect(existsSync(path.join(share, "41-2"))).toBe(false);
     });
     it("run CLI builds once, verifies producer identity and rejects altered or ambiguous transfers", async () => {
       const common = ["--tools", path.join(state.root, "tools"), "--base", context.baseSha];

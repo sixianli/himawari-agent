@@ -2,6 +2,9 @@ RUNNER_IDS="1 2"
 RUNNER_HOST=ci-vps
 RUNNER_LABEL=ci-vps
 RUNNER_CONTROLLER=ubuntu
+RUNNER_SHARE_ROOT=/srv/gh-runner-share
+RUNNER_SHARE_GROUP=gh-ci-share
+RUNNER_SHARE_KEEP_MINUTES=360
 
 runner_select() {
   case "$1" in
@@ -48,7 +51,9 @@ render_runner_unit() {
   sed -e "s|@USER@|$RUNNER_USER|g" \
     -e "s|@ROOT@|$RUNNER_ROOT|g" \
     -e "s|@NAME@|$RUNNER_NAME|g" \
-    -e "s|@OTHER_ROOT@|$RUNNER_OTHER_ROOT|g" "$2"
+    -e "s|@OTHER_ROOT@|$RUNNER_OTHER_ROOT|g" \
+    -e "s|@SHARE@|$RUNNER_SHARE_ROOT|g" \
+    -e "s|@SHARE_GROUP@|$RUNNER_SHARE_GROUP|g" "$2"
 }
 
 runner_firewall_rules() {
@@ -112,6 +117,10 @@ record_created_account() {
   printf '%s\n' "$2" >> "$1/created-accounts"
 }
 
+record_created_group() {
+  printf '%s\n' "$2" >> "$1/created-groups"
+}
+
 record_newly_enabled_units() {
   local backup=$1 unit
   shift
@@ -121,7 +130,7 @@ record_newly_enabled_units() {
 }
 
 restore_install_paths() {
-  local backup=$1 state index path user unit failed=""
+  local backup=$1 state index path user group unit failed=""
   if [ -f "$backup/enabled-units" ]; then
     while read -r unit; do
       systemctl disable --now "$unit" || failed="$failed unit:$unit"
@@ -152,6 +161,12 @@ restore_install_paths() {
     while read -r path; do
       rm -rf -- "$path" || failed="$failed $path"
     done < "$backup/created-paths"
+  fi
+  if [ -f "$backup/created-groups" ]; then
+    while read -r group; do
+      getent group "$group" > /dev/null || continue
+      groupdel "$group" || failed="$failed group:$group"
+    done < "$backup/created-groups"
   fi
   [ -z "$failed" ] && return 0
   echo "RESTORE_INCOMPLETE could not put back:$failed (copies are in $backup)" >&2

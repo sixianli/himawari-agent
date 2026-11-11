@@ -67,7 +67,15 @@ async function stagedPublication(output, root, prepare) {
   }
 }
 
-export async function publish({ input, output, root = repositoryRoot, sentinels = [], python }) {
+export async function publish({
+  input,
+  output,
+  root = repositoryRoot,
+  sentinels = [],
+  python,
+  artifacts = "keep",
+}) {
+  if (!["keep", "omit"].includes(artifacts)) throw new Error("CI_PUBLIC_ARTIFACTS_INVALID");
   return stagedPublication(output, root, async (directory) => {
     const result = validateRecord("CheckResult", readJson(path.join(input, "result.json")));
     const reports = path.join(directory, "reports");
@@ -80,6 +88,7 @@ export async function publish({ input, output, root = repositoryRoot, sentinels 
       const source = existingInside(input, report.path);
       if (fileSha256(source) !== report.sha256)
         throw new Error(`CI_PUBLIC_SOURCE_CHANGED:${report.path}`);
+      if (report.kind === "artifact" && artifacts === "omit") continue;
       const diagnostic = /\.(?:png|jpe?g|webp|zip)$/u.test(report.path);
       const target = path.join(diagnostic ? diagnostics : reports, report.path);
       mkdirSync(path.dirname(target), { recursive: true });
@@ -170,15 +179,22 @@ export async function publish({ input, output, root = repositoryRoot, sentinels 
 }
 
 export async function main(argv = process.argv.slice(2)) {
-  const args = parseArguments(argv, ["--input", "--output", "--mode", "--tools"]);
+  const args = parseArguments(argv, ["--input", "--output", "--mode", "--tools", "--artifacts"]);
   if (!args["--input"] || !args["--output"]) throw new Error("CI_PUBLIC_INPUT_REQUIRED");
   const python = args["--tools"]
     ? verifyInstalledTools({ directory: args["--tools"] }).executables.python
     : undefined;
-  if (args["--mode"] === "quality")
+  if (args["--mode"] === "quality") {
+    if (args["--artifacts"] !== undefined) throw new Error("CI_PUBLIC_ARTIFACTS_INVALID");
     return publishQuality({ input: args["--input"], output: args["--output"], python });
+  }
   if (args["--mode"] && args["--mode"] !== "check") throw new Error("CI_PUBLIC_MODE_INVALID");
-  return publish({ input: args["--input"], output: args["--output"], python });
+  return publish({
+    input: args["--input"],
+    output: args["--output"],
+    python,
+    artifacts: args["--artifacts"] ?? "keep",
+  });
 }
 
 export async function publishQuality({

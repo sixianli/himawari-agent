@@ -75,6 +75,8 @@ export async function runMainChecks({ root = process.cwd(), context, decision })
       path.join(root, ".ci-output/main-public", checkId),
       "--tools",
       toolsDirectory,
+      "--artifacts",
+      "omit",
     ]);
     if (results[checkId].status !== "passed") throw new Error(`MAIN_CHECK_FAILED:${checkId}`);
   }
