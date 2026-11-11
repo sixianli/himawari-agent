@@ -3,6 +3,7 @@ import { foldText } from "./markdown.js";
 import { validateAgainst } from "./schema.js";
 import {
   CONSOLIDATION_SCHEMA,
+  CONVERSATION_REVIEW_SCHEMA,
   DATA_FILES,
   DECISION_SCHEMA,
   FORMAT_VERSION,
@@ -118,6 +119,25 @@ export interface ParsedConsolidation {
   }[];
 }
 
+export interface ParsedConversationReview {
+  readonly id: string;
+  readonly day: string;
+  readonly status: string;
+  readonly attempts: number;
+  readonly errorCode: string | null;
+  readonly startedAt: string;
+  readonly finishedAt: string | null;
+  readonly undoneAt: string | null;
+  readonly changes: readonly {
+    readonly memoryId: string;
+    readonly action: string;
+    readonly afterRevision: number;
+    readonly beforeSupersededBy: string | null;
+    readonly beforeValidTo: string | null;
+    readonly createdAt: string;
+  }[];
+}
+
 export interface ParsedDecision {
   readonly id: string;
   readonly kind: string;
@@ -156,6 +176,7 @@ export interface ParsedPortable {
   readonly people: readonly ParsedPerson[];
   readonly importBatches: readonly ParsedBatch[];
   readonly consolidations: readonly ParsedConsolidation[];
+  readonly conversationReviews: readonly ParsedConversationReview[];
   readonly decisions: readonly ParsedDecision[];
 }
 
@@ -300,6 +321,11 @@ export function parsePortable(
     DATA_FILES.consolidations,
     CONSOLIDATION_SCHEMA,
   );
+  const conversationReviews = parseLines<ParsedConversationReview>(
+    files,
+    DATA_FILES.conversationReviews,
+    CONVERSATION_REVIEW_SCHEMA,
+  );
   const decisions = parseLines<ParsedDecision>(files, DATA_FILES.decisions, DECISION_SCHEMA);
   const memoryIds = unique(
     memories.map(({ id }) => id),
@@ -326,6 +352,15 @@ export function parsePortable(
     "整理改动",
   );
   unique(
+    conversationReviews.map(({ id }) => id),
+    "回看对话",
+  );
+  for (const review of conversationReviews)
+    unique(
+      review.changes.map(({ memoryId }) => memoryId),
+      `回看对话 ${review.id} 的改动`,
+    );
+  unique(
     decisions.flatMap(({ signals }) => signals.map(({ id }) => id)),
     "决策信号",
   );
@@ -350,6 +385,13 @@ export function parsePortable(
         broken(`整理改动 ${change.id} 的相关记忆`);
       for (const id of change.basis) if (!memoryIds.has(id)) broken(`整理改动 ${change.id} 的依据`);
     }
+  for (const review of conversationReviews)
+    for (const change of review.changes) {
+      if (!memoryIds.has(change.memoryId))
+        broken(`回看对话 ${review.id} 改动的记忆 ${change.memoryId}`);
+      if (change.beforeSupersededBy !== null && !memoryIds.has(change.beforeSupersededBy))
+        broken(`回看对话 ${review.id} 改动前的 supersededBy`);
+    }
   void decisionIds;
   const actual: PortableCounts = {
     memories: memories.length,
@@ -358,6 +400,11 @@ export function parsePortable(
     importBatches: importBatches.length,
     consolidations: consolidations.length,
     consolidationChanges: consolidations.reduce((total, { changes }) => total + changes.length, 0),
+    conversationReviews: conversationReviews.length,
+    conversationReviewChanges: conversationReviews.reduce(
+      (total, { changes }) => total + changes.length,
+      0,
+    ),
     decisions: decisions.length,
     decisionSignals: decisions.reduce((total, { signals }) => total + signals.length, 0),
     markdownMemories: manifest.counts.markdownMemories,
@@ -389,7 +436,15 @@ export function parsePortable(
       DATA_EXPORT_ERROR_CODES.FILE_COUNT_MISMATCH,
       `Markdown 条数 ${markdownCount}，清单写 ${manifest.counts.markdownMemories}`,
     );
-  return { manifest, memories, people, importBatches, consolidations, decisions };
+  return {
+    manifest,
+    memories,
+    people,
+    importBatches,
+    consolidations,
+    conversationReviews,
+    decisions,
+  };
 }
 
 const MARKDOWN_ITEM = /^- > (.*) 〔m:([^〕]+)〕$/u;

@@ -156,6 +156,38 @@ describe("data export: round trip", () => {
     expect(first.manifest.counts.sealedEvidenceRows).toBeGreaterThan(0);
   });
 
+  it("[DREAM][P1-6] carries conversation reviews and their changes, without conversation ids", async () => {
+    const source = await seeded();
+    const first = await exportOf(source);
+    expect(first.manifest.counts.conversationReviews).toBe(2);
+    expect(first.manifest.counts.conversationReviewChanges).toBe(3);
+    const lines = decoder.decode(first.files.get("data/conversation-reviews.jsonl"));
+    expect(lines).not.toMatch(/episode-1|message-1|thread-review|payload-review-output/u);
+    expect(lines).not.toContain("m-pending");
+    const target = await side("reviews");
+    const report = await importInto(target, first.files, { passphrase: PASSPHRASE });
+    expect(report.imported.conversationReviews).toBe(2);
+    expect(report.imported.conversationReviewChanges).toBe(3);
+    const rows = target.database
+      .prepare(
+        `SELECT r.id, r.status, r.attempts, r.output_ref, t.archived_at IS NOT NULL AS archived,
+          (SELECT COUNT(*) FROM memory_conversation_review_changes c WHERE c.review_id = r.id) AS changes
+        FROM memory_conversation_reviews r JOIN threads t ON t.id = r.thread_id ORDER BY r.id`,
+      )
+      .all();
+    expect(rows).toEqual([
+      {
+        id: "review-1",
+        status: "completed",
+        attempts: 1,
+        output_ref: null,
+        archived: 1,
+        changes: 3,
+      },
+      { id: "review-2", status: "gave_up", attempts: 3, output_ref: null, archived: 1, changes: 0 },
+    ]);
+  });
+
   it("[P1-6] keeps every version of a memory, the owner's rating and the signals", async () => {
     const source = await seeded();
     const { files } = await exportOf(source, { evidence: true });
@@ -350,6 +382,18 @@ describe("data export: manifest and files are checked before anything is written
           path === "data/consolidations.jsonl"
             ? encoder.encode(
                 decoder.decode(bytes).replace('"memoryId":"m-archived"', '"memoryId":"m-ghost"'),
+              )
+            : bytes,
+        ),
+      DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
+    ],
+    [
+      "a conversation review change on a memory that is not in the file (hashes recomputed)",
+      (files) =>
+        rehash(files, (path, bytes) =>
+          path === "data/conversation-reviews.jsonl"
+            ? encoder.encode(
+                decoder.decode(bytes).replace('"memoryId":"m-plain"', '"memoryId":"m-ghost"'),
               )
             : bytes,
         ),

@@ -55,6 +55,7 @@ const memory = {
   profile: [],
   pending: [],
   tidyUps: [],
+  conversationReviews: [],
   reminders: [],
   upcoming: [],
   people: [],

@@ -235,6 +235,7 @@ beforeEach(() => {
       },
     ],
     tidyUps: [],
+    conversationReviews: [],
     reminders: [],
     upcoming: [],
     people: [],
@@ -1319,6 +1320,70 @@ describe("memory approval and management", () => {
     expect(buttons(row("主人是工程师", 0))).toEqual([]);
     expect(row("主人是工程师", 0)?.textContent).toContain("已撤销");
     expect(row("主人是工程师", 0)?.textContent).not.toContain("不能撤销");
+  });
+
+  it("[DREAM] shows each conversation review batch, sends the batch undo, and locks a batch changed later", async () => {
+    overview = {
+      ...overview,
+      memories: [
+        memoryItem("m-german", "主人在学德语", {
+          history: [
+            {
+              historyId: 1,
+              kind: "created",
+              text: "主人在学德语",
+              stance: null,
+              quote: "我最近每天晚上学一小时德语",
+              sourceThreadId: "thread-1",
+              sourceDeleted: false,
+              at: "2026-10-29T01:00:00.000Z",
+            },
+          ],
+        }),
+        memoryItem("m-city", "主人住在东京都北区"),
+      ],
+      conversationReviews: [
+        {
+          reviewId: "review-open",
+          finishedAt: "2026-10-29T01:00:00.000Z",
+          undone: false,
+          undoable: true,
+          changes: [
+            { memoryId: "m-german", action: "created" },
+            { memoryId: "m-city", action: "superseded" },
+          ],
+        },
+        {
+          reviewId: "review-locked",
+          finishedAt: "2026-10-28T01:00:00.000Z",
+          undone: false,
+          undoable: false,
+          changes: [{ memoryId: "m-city", action: "confirmed" }],
+        },
+      ],
+    };
+    await render();
+    await tab("变化记录");
+    const rows = [...document.querySelectorAll("#settings .memory-day p")].filter((line) =>
+      line.textContent?.includes("回看了一段对话"),
+    );
+    expect(rows).toHaveLength(2);
+    const open = rows.find((line) => line.textContent?.includes("新记住 1 条"));
+    expect(open?.textContent).toContain("取代旧说法 1 条");
+    expect(open?.textContent).toContain("新记住：主人在学德语（原话：我最近每天晚上学一小时德语）");
+    expect(open?.textContent).toContain("不再成立：主人住在东京都北区");
+    const locked = rows.find((line) => line !== open);
+    expect(locked?.textContent).toContain("这条记忆之后又改过，不能撤销");
+    expect(locked?.querySelectorAll("button")).toHaveLength(0);
+    await act(async () =>
+      [...(open?.querySelectorAll("button") ?? [])]
+        .find((item) => item.textContent === "撤销")
+        ?.click(),
+    );
+    expect(lastCommand()).toMatchObject({
+      type: "memory.conversationReview.undo",
+      payload: { reviewId: "review-open" },
+    });
   });
 
   it("[MP-8] answers due reminders and cancels an upcoming one", async () => {

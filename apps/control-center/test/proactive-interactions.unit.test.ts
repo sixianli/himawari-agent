@@ -16,9 +16,9 @@ import { messages as ja } from "../src/i18n/resources/ja.ts";
 import { messages as zh } from "../src/i18n/resources/zh-CN.ts";
 import { type MemoryOverview, useMemory } from "../src/memory.ts";
 import {
+  type DecisionChain,
   type GmailOutcome,
   OPEN_SETTINGS,
-  type DecisionChain,
   type ProactiveOverview,
   type ProactiveReview,
   readLaunchIntent,
@@ -292,6 +292,7 @@ function memoryFixture(): MemoryOverview {
     profile: [],
     pending: [],
     tidyUps: [],
+    conversationReviews: [],
     reminders: [],
     upcoming: [
       {

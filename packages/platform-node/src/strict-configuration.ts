@@ -4,9 +4,10 @@ import path from "node:path";
 import {
   type CapabilityDeploymentConfiguration,
   type ConfigurationPort,
-  type ConfiguredMemoryRetrieval,
   type ConfiguredCompletionsGenerationModelDescriptor,
+  type ConfiguredConversationReview,
   type ConfiguredEmbeddingModelDescriptor,
+  type ConfiguredMemoryRetrieval,
   type ConfiguredModelDescriptor,
   type DataClassification,
   type HttpConfiguration,
@@ -138,6 +139,29 @@ function memoryRetrieval(value: unknown): ConfiguredMemoryRetrieval | undefined 
   if (input["dedupeSameSource"] !== undefined)
     parsed["dedupeSameSource"] = boolean(input["dedupeSameSource"], `${field}.dedupeSameSource`);
   return Object.freeze(parsed) as ConfiguredMemoryRetrieval;
+}
+
+const CONVERSATION_REVIEW_LIMITS = {
+  maximumSegmentsPerDay: [0, 50],
+  maximumSourceCharacters: [1000, 200000],
+  maximumRelatedMemories: [0, 200],
+  maximumNewMemoriesPerDay: [0, 100],
+  maximumOutputTokens: [256, 8192],
+} as const;
+
+function conversationReview(value: unknown): ConfiguredConversationReview | undefined {
+  if (value === undefined) return undefined;
+  const field = "configuration.memory.conversationReview";
+  const input = record(value, field);
+  rejectUnknown(input, ["enabled", ...Object.keys(CONVERSATION_REVIEW_LIMITS)], field);
+  const parsed: Record<string, number | boolean> = {};
+  if (input["enabled"] !== undefined)
+    parsed["enabled"] = boolean(input["enabled"], `${field}.enabled`);
+  for (const [key, [minimum, maximum]] of Object.entries(CONVERSATION_REVIEW_LIMITS)) {
+    if (input[key] === undefined) continue;
+    parsed[key] = integer(input[key], `${field}.${key}`, minimum, maximum);
+  }
+  return Object.freeze(parsed) as ConfiguredConversationReview;
 }
 
 function unitInterval(value: unknown, field: string): number {
@@ -1346,10 +1370,19 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const memory = record(input["memory"], "configuration.memory");
   rejectUnknown(
     memory,
-    ["adapter", "version", "storagePath", "dimensions", "minimumSimilarity", "retrieval"],
+    [
+      "adapter",
+      "version",
+      "storagePath",
+      "dimensions",
+      "minimumSimilarity",
+      "retrieval",
+      "conversationReview",
+    ],
     "configuration.memory",
   );
   const retrieval = memoryRetrieval(memory["retrieval"]);
+  const conversationReviewSettings = conversationReview(memory["conversationReview"]);
   const minimumSimilarity =
     memory["minimumSimilarity"] === undefined
       ? undefined
@@ -1552,6 +1585,9 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       dimensions: memoryDimensions,
       ...(minimumSimilarity === undefined ? {} : { minimumSimilarity }),
       ...(retrieval === undefined ? {} : { retrieval }),
+      ...(conversationReviewSettings === undefined
+        ? {}
+        : { conversationReview: conversationReviewSettings }),
     }),
     repositoryAllowlistRefs: stringArray(
       input["repositoryAllowlistRefs"],

@@ -184,6 +184,32 @@ export const CONSOLIDATION_SCHEMA: JsonSchema = objectOf(
   "一次整理（把相近的记忆合并、取代、归档，或把有冲突的新记忆标为待你确认），带每次改动和依据的记忆编号。",
 );
 
+export const CONVERSATION_REVIEW_SCHEMA: JsonSchema = objectOf(
+  {
+    id: text(1, 300),
+    day: text(10, 10),
+    status: enumOf(["running", "completed", "failed", "gave_up"]),
+    attempts: integer(1, 100),
+    errorCode: nullable(text(1, 128)),
+    startedAt: timestamp,
+    finishedAt: nullable(timestamp),
+    undoneAt: nullable(timestamp),
+    changes: {
+      type: "array",
+      items: objectOf({
+        memoryId: text(1, 512),
+        action: enumOf(["created", "superseded", "confirmed"]),
+        afterRevision: integer(1),
+        beforeSupersededBy: nullable(text(1, 512)),
+        beforeValidTo: nullable(text(1, 64)),
+        createdAt: timestamp,
+      }),
+    },
+  },
+  [],
+  "一次回看对话（后台重读一段过去的对话，补记新记忆、标出被取代的旧记忆、确认待确认的记忆），带这次改动了哪些记忆；来源对话和消息的编号不导出。",
+);
+
 export const DECISION_SCHEMA: JsonSchema = objectOf(
   {
     id: text(1, 128),
@@ -334,6 +360,8 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       importBatches: integer(0),
       consolidations: integer(0),
       consolidationChanges: integer(0),
+      conversationReviews: integer(0),
+      conversationReviewChanges: integer(0),
       decisions: integer(0),
       decisionSignals: integer(0),
       markdownMemories: integer(0),
@@ -347,6 +375,8 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       "importBatches",
       "consolidations",
       "consolidationChanges",
+      "conversationReviews",
+      "conversationReviewChanges",
       "decisions",
       "decisionSignals",
       "markdownMemories",
@@ -373,6 +403,7 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
 export const SCHEMA_FILES: readonly { readonly path: string; readonly schema: JsonSchema }[] =
   Object.freeze([
     { path: "schema/consolidations.schema.json", schema: CONSOLIDATION_SCHEMA },
+    { path: "schema/conversation-reviews.schema.json", schema: CONVERSATION_REVIEW_SCHEMA },
     { path: "schema/decisions.schema.json", schema: DECISION_SCHEMA },
     { path: "schema/evidence.schema.json", schema: EVIDENCE_SCHEMA },
     { path: "schema/import-batches.schema.json", schema: IMPORT_BATCH_SCHEMA },
@@ -386,6 +417,7 @@ export const DATA_FILES = Object.freeze({
   people: "data/people.jsonl",
   importBatches: "data/import-batches.jsonl",
   consolidations: "data/consolidations.jsonl",
+  conversationReviews: "data/conversation-reviews.jsonl",
   decisions: "data/decisions.jsonl",
 } as const);
 

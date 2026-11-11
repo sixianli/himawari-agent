@@ -76,6 +76,16 @@ export interface ConfiguredMemoryDescriptor {
   readonly dimensions: number;
   readonly minimumSimilarity?: number;
   readonly retrieval?: ConfiguredMemoryRetrieval;
+  readonly conversationReview?: ConfiguredConversationReview;
+}
+
+export interface ConfiguredConversationReview {
+  readonly enabled?: boolean;
+  readonly maximumSegmentsPerDay?: number;
+  readonly maximumSourceCharacters?: number;
+  readonly maximumRelatedMemories?: number;
+  readonly maximumNewMemoriesPerDay?: number;
+  readonly maximumOutputTokens?: number;
 }
 
 export interface ConfiguredMemoryRetrieval {
@@ -182,7 +192,9 @@ export interface FileReadRouteConfiguration {
 
 export type PublicSearchRouteConfiguration = (
   | FileReadRouteConfiguration
-  | (Omit<FileReadRouteConfiguration, "grantId"> & { readonly scopeSource: "private_temp" })
+  | (Omit<FileReadRouteConfiguration, "grantId"> & {
+      readonly scopeSource: "private_temp";
+    })
 ) &
   WebProviderRouteConfiguration;
 

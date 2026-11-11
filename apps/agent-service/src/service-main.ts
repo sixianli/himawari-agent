@@ -108,6 +108,7 @@ import {
   type ProductionMemoryComposition,
 } from "./production-memory-composition.js";
 import { quoteRefOfMemory } from "./production-memory-consolidation.js";
+import { DEFAULT_CONVERSATION_REVIEW_SETTINGS } from "./production-memory-conversation-review.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
@@ -2240,6 +2241,44 @@ export async function runAgentService(
                       },
                     }
                   : {}),
+                conversationReview: {
+                  settings: () => ({
+                    ...DEFAULT_CONVERSATION_REVIEW_SETTINGS,
+                    ...configuration.memory.conversationReview,
+                  }),
+                  search: (request, query, limit) =>
+                    embedWithin(
+                      request,
+                      `memory-conversation-review-search:${request.runId}`,
+                      () =>
+                        consolidationProjection.search({
+                          ownerId: request.ownerId,
+                          agentId: request.agentId,
+                          query,
+                          limit,
+                          includeTentative: true,
+                        }),
+                      request.dataClassification,
+                    ),
+                  onResult: (result) =>
+                    writeServiceDiagnostic(errorOutput, {
+                      component: "agent-service",
+                      event: "memory-conversation-review.completed",
+                      changes: result.changes.length,
+                      ...Object.fromEntries(
+                        Object.entries(result.skipped).map(([reason, count]) => [
+                          `skipped_${reason}`,
+                          count,
+                        ]),
+                      ),
+                    }),
+                  onFailure: (error) =>
+                    writeServiceDiagnostic(errorOutput, {
+                      component: "agent-service",
+                      event: "memory-conversation-review.failed",
+                      code: stableErrorCode(error),
+                    }),
+                },
                 generate: (request, prompt, gate, purpose = "memory-capture", call) => {
                   const generateText = modelComposition?.composition.generateText;
                   if (!generateText) throw new Error("MEMORY_CAPTURE_MODEL_UNAVAILABLE");
@@ -2247,7 +2286,7 @@ export async function runAgentService(
                     purpose: modelUsagePurpose(purpose),
                     invocationId: call?.invocationId ?? `${purpose}:${request.runId}`,
                     ...(call ? { retryToolCall: call.retryToolCall } : {}),
-                    maxOutputTokens: 1024,
+                    maxOutputTokens: call?.maxOutputTokens ?? 1024,
                     reasoningOutputTokens: 4096,
                     disableThinking: true,
                     requestTimeoutMs: 45000,

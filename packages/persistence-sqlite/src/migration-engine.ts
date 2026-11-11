@@ -707,6 +707,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0090_memory_checkup.sql",
   },
+  {
+    sequence: 91,
+    name: "memory_conversation_review",
+    changeSet: "memory-conversation-review",
+    phase: "expand" as const,
+    file: "0091_memory_conversation_review.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

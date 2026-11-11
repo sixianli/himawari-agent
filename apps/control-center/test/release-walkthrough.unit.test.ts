@@ -49,6 +49,7 @@ const memoryOverview = {
   lastViewedAt: null,
   pending: [],
   tidyUps: [],
+  conversationReviews: [],
   reminders: [],
   upcoming: [],
   people: [],

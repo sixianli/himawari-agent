@@ -678,6 +678,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its Memory record or with Owner or Agent deletion",
   ),
   entry(
+    "memory_conversation_reviews",
+    "MemoryConversationReviewStorePort",
+    "one row per finished conversation segment the daily review read, in summary order; ids, status, attempts and a protected payload reference to the model output so a retry reuses it",
+    "metadata_only",
+    "cascade with its thread, Owner or Agent deletion",
+  ),
+  entry(
+    "memory_conversation_review_changes",
+    "MemoryConversationReviewStorePort",
+    "one row per Memory a conversation review created, superseded or confirmed, with the revision it left and the fields needed to undo the whole review",
+    "metadata_only",
+    "cascade with its review or its Memory record",
+  ),
+  entry(
     "memory_settings",
     "MemoryBookStorePort",
     "one row per Agent; the Owner pauses or resumes new memories",

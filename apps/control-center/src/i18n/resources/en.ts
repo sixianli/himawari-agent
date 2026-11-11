@@ -755,7 +755,12 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {All changes} new {New} drop {Dropped and deleted} tidy {Memory tidy-ups} correct {Corrections} other {Imports}}",
   "memory.page.event":
-    "{e, select, new {New} dropped {Dropped} deleted {Deleted} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} hold {Found differing statements} other {Guess}}",
+    "{e, select, new {New} dropped {Dropped} deleted {Deleted} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} hold {Found differing statements} review {Conversation review} other {Guess}}",
+  "memory.page.reviewed":
+    "Reviewed a conversation: {created} new, {superseded} replaced, {confirmed} confirmed",
+  "memory.page.reviewItem":
+    "{action, select, created {New} superseded {No longer true} other {Confirmed}}: {text}",
+  "memory.page.reviewQuote": " (said: {quote})",
   "memory.page.imported":
     "Imported {count} from {source, select, codex {Codex} assistant {another AI} other {a Himawari export}}",
   "memory.page.goConfirm": "Review",

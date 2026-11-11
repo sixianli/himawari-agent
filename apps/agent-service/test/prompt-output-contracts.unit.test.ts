@@ -4,6 +4,7 @@ import type { PromptEntry } from "@himawari-agent/prompt-catalog";
 import * as catalog from "@himawari-agent/prompt-catalog";
 import { describe, expect, it } from "vitest";
 import * as capture from "../src/production-memory-capture.js";
+import * as review from "../src/production-memory-conversation-review.js";
 
 const message = "我下周三要去大阪出差，记得提醒我前一天订酒店。";
 const memory = {
@@ -53,6 +54,7 @@ const isEntry = (value: unknown): value is PromptEntry =>
 
 const PARSERS: Readonly<Record<string, unknown>> = {
   parseMemoryCandidates: capture.parseMemoryCandidates,
+  parseConversationReview: review.parseConversationReview,
   parseJudgements: application.parseJudgements,
   parseAutomaticReviewDecision: application.parseAutomaticReviewDecision,
 };
@@ -78,7 +80,14 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         .filter((entry) => !NOT_COVERED.has(entry.id))
         .map(({ id }) => id)
         .sort(),
-    ).toEqual(["mail.judgment", "memory.capture", "review.typesafe-questions"].sort());
+    ).toEqual(
+      [
+        "mail.judgment",
+        "memory.capture",
+        "memory.conversation-review",
+        "review.typesafe-questions",
+      ].sort(),
+    );
   });
 
   it("memory capture: accepts the JSON the prompt asks for, also inside a Markdown fence", () => {

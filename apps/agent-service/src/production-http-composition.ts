@@ -34,7 +34,7 @@ import {
   ThreadQueryService,
 } from "@himawari-agent/application";
 import type { ThreadExecutionEnvironment } from "@himawari-agent/gateway-contracts";
-import { MemoryConsolidationService } from "@himawari-agent/memory-engine";
+import { MemoryConsolidationService, undoConversationReview } from "@himawari-agent/memory-engine";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
@@ -80,13 +80,12 @@ import {
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerDataExportRoute } from "./production-data-export.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
+import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
 } from "./production-memory-control.js";
-import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
-import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
 import {
   PRODUCTION_MUSE_OPERATIONS,
@@ -100,6 +99,7 @@ import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   ProductionOwnerPreferencesControl,
 } from "./production-owner-preferences-control.js";
+import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
   PROACTIVE_GOOGLE_START_PATH,
@@ -1065,6 +1065,23 @@ export async function createProductionHttpComposition(
         consolidation: {
           store: repository.memoryConsolidation(),
           undo: (changeId) => memoryTidyUp?.undo(changeId) ?? Promise.resolve(),
+        },
+        conversationReviews: {
+          store: repository.memoryConversationReviews(),
+          undo: (reviewId) =>
+            options.memory
+              ? undoConversationReview(
+                  {
+                    store: repository.memoryConversationReviews(),
+                    state: repository.productMemoryState(),
+                    memory: options.memory.service,
+                    generationFor: async (memoryId) =>
+                      (await memoryJobs.listByMemory(memoryId)).at(-1)?.generationId,
+                    now: clock,
+                  },
+                  reviewId,
+                )
+              : Promise.resolve(),
         },
         reminders: repository.memoryReminders(),
         ownerRules: new ProductionOwnerRuleWriter({
