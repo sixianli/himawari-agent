@@ -365,9 +365,9 @@
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
   },
   "mcp.propose-memory-invalid": {
-    "sha256": "1055448d6bdeefee2ab27a51cdc722bb0860738ddeb7a27cb4b3562a970812bf",
+    "sha256": "ccf6a2eefb200610b1c79f34493464cedb334dfee56d3bcf75e8af28e2248804",
     "changedIn": "ADR 0225",
-    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+    "reason": "分类不在允许范围时也回这句，文字写明两种原因"
   },
   "mcp.propose-memory-not-ready": {
     "sha256": "ebf3736df2154401f6f92fb69bcbd973ee4a114582ec0d13253462fb9c919507",

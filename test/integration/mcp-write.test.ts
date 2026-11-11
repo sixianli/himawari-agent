@@ -251,6 +251,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         readonly answer?: Answer;
         readonly autoFulfill?: boolean;
         readonly name?: string;
+        readonly elicitationCapability?: unknown;
       } = {},
     ) => {
       const era = input.era ?? "modern";
@@ -258,7 +259,10 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         { name: input.name ?? "claude-code", version: "2.1.400" },
         {
           ...(era === "modern" ? { versionNegotiation: { mode: { pin: "2026-07-28" } } } : {}),
-          capabilities: input.elicitation === false ? {} : { elicitation: { form: {} } },
+          capabilities:
+            input.elicitation === false
+              ? {}
+              : { elicitation: (input.elicitationCapability ?? { form: {} }) as never },
           ...(input.autoFulfill === false ? { inputRequired: { autoFulfill: false } } : {}),
         },
       );
@@ -393,6 +397,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const refused = await f.propose(client, { text: COFFEE });
     expect(refused.result.isError).toBe(true);
     expect(refused.text).toBe(MCP_PROPOSE_MEMORY_UNSUPPORTED.text);
+    await expect(f.connect({ elicitationCapability: [] })).rejects.toThrow();
+    const today = await client.callTool({ name: "today_context", arguments: {} });
+    expect(today.isError).not.toBe(true);
     expect(await f.external()).toEqual([]);
     expect(await f.decisions()).toEqual([]);
   });

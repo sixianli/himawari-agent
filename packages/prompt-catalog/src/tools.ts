@@ -386,11 +386,11 @@ export const MCP_PROPOSE_MEMORY_CHANGED = fixedPrompt({
 
 export const MCP_PROPOSE_MEMORY_INVALID = fixedPrompt({
   id: "mcp.propose-memory-invalid",
-  purpose: "提议的正文为空或太长时，返回给外部 agent 的文字",
+  purpose: "提议的正文为空或太长、或分类不在允许范围时，返回给外部 agent 的文字",
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tool-result",
   output: "free-text",
-  text: "text 去掉不可见字符后为空或超过 2000 字，没有保存。",
+  text: "没有保存：text 去掉不可见字符后为空或超过 2000 字，或 category 不是允许的九种之一。",
 });
 
 export const MCP_PROPOSE_MEMORY_NOT_READY = fixedPrompt({

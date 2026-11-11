@@ -235,7 +235,8 @@ function elicitationSupported(envelope: unknown): boolean {
       : undefined;
   if (capabilities === null || typeof capabilities !== "object") return false;
   const elicitation = (capabilities as Record<string, unknown>)["elicitation"];
-  if (elicitation === null || typeof elicitation !== "object") return false;
+  if (elicitation === null || typeof elicitation !== "object" || Array.isArray(elicitation))
+    return false;
   const modes = Object.keys(elicitation);
   return modes.length === 0 || modes.includes("form");
 }
