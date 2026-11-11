@@ -4,10 +4,31 @@ import { githubExpression as expression, linuxRunnerLabel } from "./contracts.mj
 const assert = (value, code) => {
   if (!value) throw new Error(`MAIN_WORKFLOW:${code}`);
 };
-export function validateMainWorkflow(source, lock) {
+const sameEntries = (actual, expected) =>
+  JSON.stringify(Object.entries(actual ?? {}).sort()) ===
+  JSON.stringify(Object.entries(expected).sort());
+const permissionRank = { none: 0, read: 1, write: 2 };
+const parseWorkflow = (source) => {
   const document = parseDocument(source, { uniqueKeys: true, maxAliasCount: 0 });
   assert(!document.errors.length, "YAML");
-  const w = document.toJS({ maxAliasCount: 0 });
+  return document.toJS({ maxAliasCount: 0 });
+};
+
+export function validateCallerGrantsCalledPermissions(mainSource, ciSource) {
+  const main = parseWorkflow(mainSource);
+  const ci = parseWorkflow(ciSource);
+  const granted = main.jobs?.full?.permissions ?? main.permissions ?? {};
+  const requested = [ci.permissions, ...Object.values(ci.jobs ?? {}).map((job) => job.permissions)];
+  for (const permissions of requested)
+    for (const [scope, level] of Object.entries(permissions ?? {}))
+      assert(
+        (permissionRank[granted[scope]] ?? 0) >= (permissionRank[level] ?? 3),
+        `full-grants-${scope}-${level}`,
+      );
+  return { scopes: Object.keys(granted).length };
+}
+export function validateMainWorkflow(source, lock) {
+  const w = parseWorkflow(source);
   assert(JSON.stringify(w.on) === JSON.stringify({ push: { branches: ["main"] } }), "events");
   assert(
     JSON.stringify(w.permissions) ===
@@ -30,8 +51,7 @@ export function validateMainWorkflow(source, lock) {
   );
   assert(!full.secrets && !full.with, "full-inputs");
   assert(
-    JSON.stringify(full.permissions) ===
-      JSON.stringify({ contents: "read", actions: "write", "pull-requests": "read" }),
+    sameEntries(full.permissions, { contents: "read", actions: "write", "pull-requests": "read" }),
     "full-permissions",
   );
   assert(
