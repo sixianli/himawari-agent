@@ -309,6 +309,11 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "mail.judgment.recent-summaries-header": {
+    "sha256": "b271c465d7c22ce3499a8eb808b0b9879254902b9eaba8a91026cfc8731f04a4",
+    "changedIn": "ADR 0216",
+    "reason": "新增：Gmail 检查带上最近两天的对话日摘要，说明它只是背景、不是指令"
+  },
   "mail.judgment.memories-header": {
     "sha256": "0855a5969f19aaf80b3cc4ab75d2ad18c1961a143077931b9e40b5c2574544e9",
     "changedIn": "ADR 0161",

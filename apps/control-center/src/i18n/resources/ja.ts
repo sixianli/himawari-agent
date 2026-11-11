@@ -1052,6 +1052,8 @@ export const messages = {
   "decision.chain.related": "関連メール {count} 件",
   "decision.chain.read":
     "{s, select, off {関連メール：オフ} ok {関連メール：すべて読み取り} partial {関連メール：一部のみ読み取り} failed {関連メール：読み取り失敗} other {関連メール：記録なし}}",
+  "decision.chain.summaries":
+    "{s, select, off {直近 2 日の会話の要約：今回は読んでいません} ok {直近 2 日の会話の要約：{count} 件を使用} partial {直近 2 日の会話の要約：{count} 件を使用（不完全な可能性あり）} failed {直近 2 日の会話の要約：読み取り失敗} other {直近 2 日の会話の要約：記録なし}}",
   "decision.chain.memories": "使われた記憶",
   "decision.chain.recall":
     "{s, select, off {記憶検索：オフ} ok {記憶検索：正常} partial {記憶検索：一部のみ} failed {記憶検索：失敗} other {記憶検索：記録なし}}",

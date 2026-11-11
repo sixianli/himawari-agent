@@ -73,6 +73,11 @@ export interface MemoryEpisodeServiceOptions {
   readonly onEmbeddingFailure?: (error: unknown) => void;
 }
 
+export interface RecentDaySummary {
+  readonly episode: MemoryEpisode;
+  readonly text: string;
+}
+
 export function localDay(instant: string, timeZone = "UTC"): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -177,6 +182,49 @@ export class MemoryEpisodeService {
       );
     }
     return segments;
+  }
+
+  recentDays(days: number): { readonly fromDay: string; readonly toDay: string } {
+    const toDay = localDay(this.#options.now(), this.#options.timeZone);
+    const span = Math.max(1, Math.floor(days));
+    const fromDay = new Date(Date.parse(`${toDay}T00:00:00.000Z`) - (span - 1) * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    return { fromDay, toDay };
+  }
+
+  async recent(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly days: number;
+    readonly allowedClassifications: readonly DataClassification[];
+    readonly limit: number;
+  }): Promise<{ readonly summaries: readonly RecentDaySummary[]; readonly partial: boolean }> {
+    const allowed = input.allowedClassifications.filter(isModelVisible);
+    if (input.days < 1 || input.limit < 1 || allowed.length === 0)
+      return { summaries: [], partial: false };
+    const episodes = await this.#options.store.listDaySummaries({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      ...this.recentDays(input.days),
+      allowedClassifications: allowed,
+      limit: Math.min(100, input.limit * 2),
+    });
+    const summaries: RecentDaySummary[] = [];
+    let partial = false;
+    for (const episode of episodes) {
+      const text = await this.#options
+        .readText({ ownerId: input.ownerId, agentId: input.agentId, ref: episode.contentRef })
+        .catch(() => undefined);
+      if (text === undefined || text.trim().length === 0) {
+        partial = true;
+        continue;
+      }
+      if (text === UNSUMMARIZED) continue;
+      summaries.push(Object.freeze({ episode, text: text.trim() }));
+      if (summaries.length >= input.limit) break;
+    }
+    return { summaries, partial };
   }
 
   async summarize(

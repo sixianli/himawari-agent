@@ -990,6 +990,8 @@ export const messages = {
   "decision.chain.related": "关联邮件 {count} 封",
   "decision.chain.read":
     "{s, select, off {关联邮件：没开启} ok {关联邮件：读取完整} partial {关联邮件：只读到一部分} failed {关联邮件：读取失败} other {关联邮件：无记录}}",
+  "decision.chain.summaries":
+    "{s, select, off {最近两天的对话摘要：这次没读} ok {最近两天的对话摘要：带了 {count} 段} partial {最近两天的对话摘要：带了 {count} 段，可能不全} failed {最近两天的对话摘要：读取失败} other {最近两天的对话摘要：无记录}}",
   "decision.chain.memories": "用到的记忆",
   "decision.chain.recall":
     "{s, select, off {找记忆：没开启} ok {找记忆：正常} partial {找记忆：只找到一部分} failed {找记忆：失败} other {找记忆：无记录}}",

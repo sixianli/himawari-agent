@@ -397,7 +397,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
           { ruleId: "floor_unregistered_rule", origin: null, document: null, mailCount: 1 },
         ],
       });
-      expect(chain.mails).toEqual({ judged: 2, related: 2, relatedRead: "ok" });
+      expect(chain.mails).toEqual({ judged: 2, related: 2, relatedRead: "ok", summaries: null });
       expect(chain.memories).toMatchObject({
         state: "recorded",
         recall: "ok",
@@ -452,6 +452,61 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
     }
   });
 
+  it("[P3-6] lists how many recent chat summaries a Gmail check sent and whether the read was whole", async () => {
+    const f = await fixture();
+    try {
+      await recordGmail(
+        f.repository,
+        "gmail-summaries",
+        gmailInputs({
+          summaryInjected: true,
+          summaryIds: ["episode:day_summary:thread-a:1", "episode:day_summary:thread-b:4"],
+          summaryDays: ["2026-11-03", "2026-11-04"],
+          summaryCharacters: 120,
+          summaryRead: "partial",
+          summaryGenerated: 1,
+        }),
+      );
+      await recordGmail(
+        f.repository,
+        "gmail-no-summaries",
+        gmailInputs({
+          summaryInjected: false,
+          summaryIds: [],
+          summaryDays: [],
+          summaryCharacters: 0,
+          summaryRead: "off",
+          summaryGenerated: 0,
+        }),
+      );
+      expect((await chainOf(f.control, "gmail-summaries")).mails?.summaries).toEqual({
+        count: 2,
+        read: "partial",
+      });
+      expect((await chainOf(f.control, "gmail-no-summaries")).mails?.summaries).toEqual({
+        count: 0,
+        read: "off",
+      });
+      const [entry] = (
+        await f.ledger.list({
+          ...scope,
+          kind: "proactive",
+          since: "2026-11-01T00:00:00.000Z",
+          limit: 10,
+        })
+      ).filter(({ id }) => id === "gmail-summaries");
+      expect(entry?.inputs).toMatchObject({
+        summaryInjected: true,
+        summaryDays: ["2026-11-03", "2026-11-04"],
+        summaryCharacters: 120,
+        summaryRead: "partial",
+        summaryGenerated: 1,
+      });
+    } finally {
+      await f.repository.close();
+    }
+  });
+
   it("[P1-3] shows 'not recorded' for every section of a Gmail row whose inputs were never written, never 'none'", async () => {
     const f = await fixture();
     try {
@@ -462,7 +517,12 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
       const chain = await chainOf(f.control, "gmail-old");
       expect(chain.inputs).toBe("not_recorded");
       expect(chain.rules).toEqual({ state: "not_recorded", items: [] });
-      expect(chain.mails).toEqual({ judged: null, related: null, relatedRead: "not_recorded" });
+      expect(chain.mails).toEqual({
+        judged: null,
+        related: null,
+        relatedRead: "not_recorded",
+        summaries: null,
+      });
       expect(chain.memories).toMatchObject({
         state: "not_recorded",
         recall: "not_recorded",

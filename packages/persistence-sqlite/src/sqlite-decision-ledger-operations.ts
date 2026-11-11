@@ -154,6 +154,12 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
     relatedRead?: "off" | "ok" | "partial" | "failed";
     relatedStats?: DecisionInputs["relatedStats"];
     relatedFailedSteps?: readonly string[];
+    summaryInjected?: boolean;
+    summaryIds?: readonly string[];
+    summaryDays?: readonly string[];
+    summaryCharacters?: number;
+    summaryRead?: "off" | "ok" | "partial" | "failed";
+    summaryGenerated?: number;
   };
   return Object.freeze({
     ...(row as unknown as DecisionLedgerEntry),
@@ -210,6 +216,12 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
         },
       ),
       relatedFailedSteps: Object.freeze([...(inputs.relatedFailedSteps ?? [])]),
+      summaryInjected: inputs.summaryInjected ?? false,
+      summaryIds: Object.freeze([...(inputs.summaryIds ?? [])]),
+      summaryDays: Object.freeze([...(inputs.summaryDays ?? [])]),
+      summaryCharacters: inputs.summaryCharacters ?? 0,
+      summaryRead: inputs.summaryRead ?? "off",
+      summaryGenerated: inputs.summaryGenerated ?? 0,
     }),
   });
 }

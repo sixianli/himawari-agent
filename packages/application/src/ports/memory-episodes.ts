@@ -70,4 +70,12 @@ export interface MemoryEpisodeStorePort {
     readonly agentId: AgentId;
     readonly limit: number;
   }): Promise<readonly MemoryEpisodeThreadWatermark[]>;
+  listDaySummaries(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly fromDay: string;
+    readonly toDay: string;
+    readonly allowedClassifications: readonly DataClassification[];
+    readonly limit: number;
+  }): Promise<readonly MemoryEpisode[]>;
 }

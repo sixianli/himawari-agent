@@ -1125,6 +1125,7 @@ export class SqliteDurableAdapters {
       listUnembedded: (input) => this.context.read("memoryEpisode.listUnembedded", input),
       attachEmbedding: (input) => this.context.write("memoryEpisode.attachEmbedding", input),
       listUnsummarized: (input) => this.context.read("memoryEpisode.listUnsummarized", input),
+      listDaySummaries: (input) => this.context.read("memoryEpisode.listDaySummaries", input),
     });
   }
 

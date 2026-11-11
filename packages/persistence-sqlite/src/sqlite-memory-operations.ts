@@ -435,6 +435,17 @@ export class SqliteMemoryOperations {
         return this.listUnsummarized(
           payload as { ownerId: OwnerId; agentId: AgentId; limit: number },
         );
+      case "memoryEpisode.listDaySummaries":
+        return this.listDaySummaries(
+          payload as {
+            ownerId: OwnerId;
+            agentId: AgentId;
+            fromDay: string;
+            toDay: string;
+            allowedClassifications: readonly string[];
+            limit: number;
+          },
+        );
       case "memoryIndex.listUnindexed":
         return this.listUnindexed(
           payload as {
@@ -1402,6 +1413,48 @@ export class SqliteMemoryOperations {
           ORDER BY e.created_at, e.id LIMIT @limit`,
         )
         .all(input) as EpisodeRow[]
+    ).map((row) => this.episodeFromRow(row));
+  }
+
+  private listDaySummaries(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    fromDay: string;
+    toDay: string;
+    allowedClassifications: readonly string[];
+    limit: number;
+  }): readonly MemoryEpisode[] {
+    if (
+      typeof input.fromDay !== "string" ||
+      typeof input.toDay !== "string" ||
+      !DAY.test(input.fromDay) ||
+      !DAY.test(input.toDay) ||
+      input.fromDay > input.toDay ||
+      !Number.isSafeInteger(input.limit) ||
+      input.limit < 1 ||
+      input.limit > 100 ||
+      !Array.isArray(input.allowedClassifications) ||
+      input.allowedClassifications.some((value) => !CLASSIFICATIONS.has(value))
+    ) {
+      this.fail("PORT_INVALID_OPERATION", "Memory day summary listing input is invalid");
+    }
+    return (
+      this.database
+        .prepare(
+          `SELECT ${episodeColumns} FROM memory_episodes e
+          WHERE e.owner_id = @ownerId AND e.agent_id = @agentId
+            AND e.day BETWEEN @fromDay AND @toDay AND e.source = 'day_summary'
+            AND e.classification IN (SELECT value FROM json_each(@classifications))
+          ORDER BY e.day DESC, e.ended_at DESC, e.id ASC LIMIT @limit`,
+        )
+        .all({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          fromDay: input.fromDay,
+          toDay: input.toDay,
+          classifications: JSON.stringify(input.allowedClassifications),
+          limit: input.limit,
+        }) as EpisodeRow[]
     ).map((row) => this.episodeFromRow(row));
   }
 
