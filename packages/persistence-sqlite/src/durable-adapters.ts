@@ -936,6 +936,7 @@ export class SqliteDurableAdapters {
       readChange: (id) => this.context.read("memoryConsolidation.readChange", { id }),
       readBasis: (changeId) => this.context.read("memoryConsolidation.readBasis", { changeId }),
       readBasisChain: (input) => this.context.read("memoryConsolidation.readBasisChain", input),
+      readDerived: (input) => this.context.read("memoryConsolidation.readDerived", input),
       markUndone: (input) => this.context.write("memoryConsolidation.markUndone", input),
     });
   }

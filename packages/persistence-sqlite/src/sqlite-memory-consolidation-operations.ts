@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { insertLedgerRow } from "./sqlite-decision-ledger-operations.ts";
 import type {
+  DerivedMemories,
   MemoryBasisChainNode,
   MemoryConsolidationChange,
   MemoryConsolidationRun,
@@ -111,7 +112,9 @@ export function insertConsolidationWrite(
   });
 }
 
-type RunRow = Omit<MemoryConsolidationRun, "modelCalled"> & { readonly modelCalled: number };
+type RunRow = Omit<MemoryConsolidationRun, "modelCalled"> & {
+  readonly modelCalled: number;
+};
 
 export class SqliteMemoryConsolidationOperations {
   private readonly database: Database.Database;
@@ -155,6 +158,10 @@ export class SqliteMemoryConsolidationOperations {
         return this.readBasis((payload as { changeId: string }).changeId);
       case "memoryConsolidation.readBasisChain":
         return this.readBasisChain(
+          payload as { ownerId: OwnerId; agentId: AgentId; memoryId: MemoryId },
+        );
+      case "memoryConsolidation.readDerived":
+        return this.readDerived(
           payload as { ownerId: OwnerId; agentId: AgentId; memoryId: MemoryId },
         );
       case "memoryConsolidation.markUndone":
@@ -221,7 +228,11 @@ export class SqliteMemoryConsolidationOperations {
           agentId: current.agentId,
           kind: "consolidation_failed",
           occurredAt: input.finishedAt,
-          detail: { runId: input.id, day: current.day, errorCode: input.errorCode },
+          detail: {
+            runId: input.id,
+            day: current.day,
+            errorCode: input.errorCode,
+          },
         });
         this.database.prepare("DELETE FROM memory_consolidation_runs WHERE id = ?").run(input.id);
       })();
@@ -275,7 +286,10 @@ export class SqliteMemoryConsolidationOperations {
             WHERE owner_id = ? AND agent_id = ? AND action = 'hold' AND related_memory_id IS NOT NULL
             ORDER BY id`,
           )
-          .all(input.ownerId, input.agentId) as { memoryId: MemoryId; relatedMemoryId: MemoryId }[]
+          .all(input.ownerId, input.agentId) as {
+          memoryId: MemoryId;
+          relatedMemoryId: MemoryId;
+        }[]
       ).map(({ memoryId, relatedMemoryId }) => Object.freeze([memoryId, relatedMemoryId] as const)),
     );
   }
@@ -351,6 +365,46 @@ export class SqliteMemoryConsolidationOperations {
       });
     };
     return walk(input.memoryId, 0);
+  }
+
+  private readDerived(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    memoryId: MemoryId;
+  }): DerivedMemories {
+    const children = this.database.prepare(
+      `SELECT DISTINCT change.memory_id AS memoryId
+      FROM memory_consolidation_change_basis basis
+      JOIN memory_consolidation_changes change ON change.id = basis.change_id
+      WHERE basis.memory_id = ? AND change.owner_id = ? AND change.agent_id = ?
+        AND change.action = 'reflect' AND change.undone_at IS NULL AND change.memory_id <> basis.memory_id
+      ORDER BY change.memory_id`,
+    );
+    const seen = new Set<string>([input.memoryId]);
+    const found: MemoryId[] = [];
+    let frontier: MemoryId[] = [input.memoryId];
+    let truncated = false;
+    for (let depth = 0; frontier.length > 0; depth += 1) {
+      const next: MemoryId[] = [];
+      for (const memoryId of frontier)
+        for (const { memoryId: child } of children.all(memoryId, input.ownerId, input.agentId) as {
+          memoryId: MemoryId;
+        }[]) {
+          if (seen.has(child)) continue;
+          if (
+            depth >= MEMORY_BASIS_CHAIN_MAX_DEPTH ||
+            found.length >= MEMORY_BASIS_CHAIN_MAX_NODES
+          ) {
+            truncated = true;
+            continue;
+          }
+          seen.add(child);
+          found.push(child);
+          next.push(child);
+        }
+      frontier = next;
+    }
+    return Object.freeze({ memoryIds: Object.freeze(found), truncated });
   }
 
   private markUndone(input: { id: string; undoneAt: string }): boolean {
