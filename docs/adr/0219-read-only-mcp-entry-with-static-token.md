@@ -84,6 +84,10 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - 返回字段是 `recentDays`（每段的日期和正文）；有摘要没读到时多一个 `recentDaysComplete: false`。摘要正文和其他文字一起遮盖。
    - 摘要读取失败不挡提醒：照常返回日期和提醒，`recentDays` 为空并标 `recentDaysComplete: false`。服务日志写 `mcp-read.summaries-failed`，不写整次失败的 `mcp-read.failed`；摘要不完整（部分正文读不到，或候选太多被截断）时也写这条，错误码是 `MCP_READ_SUMMARIES_INCOMPLETE`。决策记录里这六项只在输入字段里，「依据」抽屉不显示。没接上摘要读取（对话摘要没启用）时不返回 `recentDays`。
    - 决策记录按 ADR 0216 决定 6 写 `summary` 六项：`summaryIds`、`summaryDays`、`summaryCharacters`、`summaryRead`（`ok`、`partial`、`failed`；提醒先读失败、摘要还没读时记 `off`）、`summaryInjected`（是否真的交给了对方）、`summaryGenerated` 固定为 0。通用的决策记录写入（`insertLedgerRow`）原来只落四个键，这次让它在 `external_read` 记录上也落这六项，校验和 Gmail 检查共用同一个函数 `summaryInputsValid`；别的类别带这六项、或只带其中一部分，一律拒绝，`insertLedgerRow` 自己也拒绝（记忆整理直接调用它）。
+8. **（2026-11-11 补，P2-3 合并后）`rule_book` 也列出主人在对话里立的长期规则。**
+   - [ADR 0213](0213-owner-sentence-becomes-a-standing-rule.md) 决定 4 把这些规则存在 `rule_book_rules`，编号以 `owner:` 开头；Gmail 检查每次都读它们并执行。外部程序替主人做判断时同样要知道这些规矩，所以 `rule_book` 在内置规则之后按编号顺序列出生效中和待重新确认的主人规则，不列已撤销的。
+   - 每条带编号、版本、出处、状态、类型、一句话说明，以及是否正在执行（`enforced`）。能执行的再带作用在哪一步、结果和参数（发件域名、词语这些）；参数不合法或类型不认识的，和规则列表一样标 `enforced: false`，不给参数。
+   - 和内置规则一样不给表达式，返回内容整体遮盖。
 
 [返回阅读导航](#contents)
 
