@@ -305,10 +305,12 @@ describe("chat export", () => {
     const markdown = decoder.decode(files.get(thread.file));
     expect(markdown).toContain(`\`\`\`\`\`\n${hostile}\n\`\`\`\`\``);
     const attachmentLine = markdown.split("\n").find((line) => line.startsWith("- 附件：")) ?? "";
+    expect(attachmentLine).toContain("a.png");
     expect(attachmentLine).not.toMatch(/[[\]<>`]/u);
     const head = markdown.split("\n")[0] ?? "";
     expect(head).not.toMatch(/[[\]<>`]/u);
     const index = decoder.decode(files.get("CHATS.md"));
+    expect(index).toContain(thread.file);
     expect(index).not.toContain("![");
     expect(index).not.toMatch(/<b>|`/u);
     expect(verifyChatExport(files, s.migrationSequence).counts.threads).toBe(1);
