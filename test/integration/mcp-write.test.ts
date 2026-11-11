@@ -119,6 +119,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       readonly failDecline?: boolean;
       readonly slowDecisionRead?: boolean;
       readonly failRuleMarker?: boolean;
+      readonly slowDecidedMs?: number;
       readonly replay?: boolean;
     } = {},
   ) {
@@ -292,11 +293,28 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       clock,
       onFailure: (error) => failures.push(error),
     });
+    const slowDecided = <T extends object>(target: T): T =>
+      new Proxy(target, {
+        get(inner, key) {
+          const value = Reflect.get(inner, key, inner);
+          if (typeof value !== "function") return value;
+          if (key !== "decided" || options.slowDecidedMs === undefined) return value.bind(inner);
+          return async (proposalId: string) => {
+            const found = await value.call(inner, proposalId);
+            clock.advance(options.slowDecidedMs ?? 0);
+            return found;
+          };
+        },
+      });
     const mcp = new ProductionMcpRead({
       scope,
       clock,
       secret: READ_SECRET,
-      write: { secret: WRITE_SECRET, proposals: writer, rules: ruleProposals },
+      write: {
+        secret: WRITE_SECRET,
+        proposals: slowDecided(writer),
+        rules: slowDecided(ruleProposals),
+      },
       timeZone: TIME_ZONE,
       requestTimeoutMs: 30_000,
       sources: {
@@ -557,6 +575,15 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       "kept",
     ]);
     expect(await f.external()).toHaveLength(1);
+  });
+
+  it("[P5-2 desktop] times an unseen decline from when the resend arrives, not after a slow read", async () => {
+    const f = await setup({ slowDecidedMs: 2_000 });
+    const desktop = await f.connect({ answer: { action: "decline" }, answerAfterMs: 10 });
+    expect((await f.propose(desktop, { text: COFFEE })).text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect((await f.proposeRule(desktop, RULE)).text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect(await f.decisions()).toEqual([]);
+    expect(await f.storedRules()).toEqual([]);
   });
 
   it("refuses without a dialog when the client cannot show a confirmation form", async () => {
@@ -874,6 +901,24 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const later = await f.rawRule(client, confirmRule(first.requestState, "accept"));
     expect(later.content?.[0]?.text).toBe(MCP_PROPOSE_RULE_SAVED.text);
     expect((await f.storedRules()).map(({ status }) => status)).toEqual(["active"]);
+    const second = await f.rawRule(client, {
+      arguments: { ...RULE, summary: "入管局的邮件也要提醒" },
+    });
+    const confirmSecond = (action: "accept" | "decline", answeredAfterMs?: number) => ({
+      ...confirmRule(second.requestState, action),
+      arguments: { ...RULE, summary: "入管局的邮件也要提醒" },
+      ...(answeredAfterMs === undefined ? {} : { answeredAfterMs }),
+    });
+    expect((await f.rawRule(client, confirmSecond("decline", 0))).content?.[0]?.text).toBe(
+      MCP_PROPOSE_NOT_SHOWN.text,
+    );
+    expect((await f.rawRule(client, confirmSecond("decline"))).content?.[0]?.text).toBe(
+      MCP_PROPOSE_RULE_DECLINED.text,
+    );
+    expect((await f.rawRule(client, confirmSecond("accept"))).content?.[0]?.text).toBe(
+      MCP_PROPOSE_RULE_DECLINED.text,
+    );
+    expect(await f.storedRules()).toHaveLength(1);
   });
 
   it("[P5-2 rule] rejects bad rules before asking and hides the tool from readers and old connections", async () => {

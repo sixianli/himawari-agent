@@ -363,7 +363,7 @@ export const MCP_PROPOSE_NOT_SHOWN = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tool-result",
   output: "free-text",
-  text: "确认框发出后几乎立刻就收到了拒绝，主人不可能这么快看完，应该是这个客户端没有把确认框显示出来（Claude 桌面 App 目前就是这样），所以这次什么都没有写进 Himawari，也不算主人拒绝。请告诉主人：可以在终端里的 Claude Code 里再提一次。",
+  text: "确认框发出后几乎立刻就收到了拒绝或取消，主人不可能这么快看完，应该是这个客户端没有把确认框显示出来（Claude 桌面 App 目前就是这样），所以这次什么都没有写进 Himawari，也不算主人拒绝。请告诉主人：可以在终端里的 Claude Code 里再提一次。",
 });
 
 export const MCP_PROPOSE_MEMORY_UNSUPPORTED = fixedPrompt({

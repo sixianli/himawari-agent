@@ -390,7 +390,7 @@
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
   },
   "mcp.propose-not-shown": {
-    "sha256": "a91dc996f055194dc37b5b0d4a0d8136ca3f499122b24498d4888d0000ff2699",
+    "sha256": "a4b3e6f70b007e8d2bdeb4c02e9ba45c8c5d9d028114fe00d1dd8b444a635655",
     "changedIn": "ADR 0225",
     "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
   },
