@@ -1714,14 +1714,30 @@ for (const mode of ["query", "projection"] as const) {
       name: "nonfinite vector",
       change: { data: [{ index: 0, embedding: Array.from({ length: 4096 }, () => Number.NaN) }] },
     },
-  ])("[R2-L5] retains unknown embedding $name for " + mode, async ({ change }) => {
-    const fixture = embeddingAccountingFixture(mode, { ...gatewayEmbeddingResponse(), ...change });
-    await expect(fixture.run()).rejects.toThrow();
-    expect(fixture.send).toHaveBeenCalledTimes(1);
-    expect(fixture.ledger.markUnknown).toHaveBeenCalledTimes(1);
-    expect(fixture.ledger.settle).not.toHaveBeenCalled();
-    expect(fixture.ledger.releaseReserved).not.toHaveBeenCalled();
-  });
+  ])(
+    mode === "query"
+      ? "[P3-2] settles a chat embedding with $name at the estimate so the Run can still answer"
+      : "[R2-L5] retains unknown embedding $name for projection",
+    async ({ change }) => {
+      const fixture = embeddingAccountingFixture(mode, {
+        ...gatewayEmbeddingResponse(),
+        ...change,
+      });
+      await expect(fixture.run()).rejects.toThrow();
+      expect(fixture.send).toHaveBeenCalledTimes(1);
+      expect(fixture.ledger.releaseReserved).not.toHaveBeenCalled();
+      if (mode === "query") {
+        expect(fixture.permit.markUnknown).not.toHaveBeenCalled();
+        expect(fixture.permit.settle).toHaveBeenCalledTimes(1);
+        expect(fixture.permit.settle).toHaveBeenCalledWith(
+          expect.objectContaining({ inputTokens: 16384, outputTokens: 0 }),
+        );
+      } else {
+        expect(fixture.ledger.markUnknown).toHaveBeenCalledTimes(1);
+        expect(fixture.ledger.settle).not.toHaveBeenCalled();
+      }
+    },
+  );
 }
 
 it("[R2-L5] retains unknown embedding when cancellation occurs before final settlement", async () => {
@@ -1736,7 +1752,7 @@ it("[R2-L5] retains unknown embedding when cancellation occurs before final sett
 });
 
 it.each(["cancel", "deadline"] as const)(
-  "[R2-L5] retains unknown embedding when %s occurs during the final authority check",
+  "[R2-L5][P3-2] keeps a cancelled chat embedding unknown and settles a late one at the estimate when %s occurs during the final authority check",
   async (ending) => {
     const fixture = embeddingAccountingFixture("query", gatewayEmbeddingResponse());
     fixture.permit.assertActive
@@ -1749,8 +1765,15 @@ it.each(["cancel", "deadline"] as const)(
       ending === "cancel" ? "RUN_CANCELLED_DURING_CHECK" : "EMBEDDING_DEADLINE_EXCEEDED",
     );
     expect(fixture.send).toHaveBeenCalledTimes(1);
-    expect(fixture.permit.markUnknown).toHaveBeenCalledWith("transport_unresolved");
-    expect(fixture.permit.settle).not.toHaveBeenCalled();
+    if (ending === "cancel") {
+      expect(fixture.permit.markUnknown).toHaveBeenCalledWith("transport_unresolved");
+      expect(fixture.permit.settle).not.toHaveBeenCalled();
+    } else {
+      expect(fixture.permit.markUnknown).not.toHaveBeenCalled();
+      expect(fixture.permit.settle).toHaveBeenCalledWith(
+        expect.objectContaining({ inputTokens: 16384, outputTokens: 0 }),
+      );
+    }
     expect(fixture.permit.releaseReserved).not.toHaveBeenCalled();
   },
 );

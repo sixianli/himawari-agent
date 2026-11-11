@@ -88,8 +88,6 @@ export const messages = {
   "chat.error.authFailed":
     "モデルサービスの認証に失敗しました。サーバーの認証情報とアクセス権限を確認してください。",
   "chat.error.unavailable": "モデルサービスを現在利用できません。後で再試行してください。",
-  "chat.error.contextMemoryUnavailable":
-    "関連する記憶の検索中にモデルサービスへの接続に失敗しました。このターンでは対話モデルを呼び出しておらず、ツールも実行していません。",
   "chat.error.quotaExceeded":
     "モデルサービスの利用上限に達したため、リクエストが拒否されました。ネットワークの問題ではありません。Vercel AI Gateway の予算で上限を引き上げるか解除してから、もう一度お試しください。",
   "chat.error.contextWindowExhausted":

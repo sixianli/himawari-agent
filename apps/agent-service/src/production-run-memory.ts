@@ -2,8 +2,6 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import {
   ApplicationPortError,
-  CONTEXT_MEMORY_QUOTA_EXCEEDED,
-  CONTEXT_MEMORY_UNAVAILABLE,
   type DurableMemoryService,
   type DurableMemoryServiceOptions,
   type MemoryPort,
@@ -89,10 +87,6 @@ export function createProductionRunMemory(options: {
   embedForMailCheck: <T>(context: MailEmbeddingContext, operation: () => Promise<T>) => Promise<T>;
 } {
   const scope = new AsyncLocalStorage<MemorySearchRequest & { readonly embeddingSlot?: string }>();
-  const providerFailedSearches = new WeakMap<
-    MemorySearchRequest,
-    typeof CONTEXT_MEMORY_UNAVAILABLE | typeof CONTEXT_MEMORY_QUOTA_EXCEEDED
-  >();
   const mailScope = new AsyncLocalStorage<MailEmbeddingContext>();
   const projectionScope = new AsyncLocalStorage<{
     job: MemoryProjectionJob;
@@ -271,8 +265,6 @@ export function createProductionRunMemory(options: {
       } catch (error) {
         if (attemptMs !== undefined && timeout.aborted && !context?.signal?.aborted)
           throw new Error(EMBEDDING_ATTEMPT_TIMED_OUT);
-        if (context && !context.signal?.aborted)
-          providerFailedSearches.set(context, embeddingFailureCode(error));
         options.diagnostic?.(embeddingFailureDiagnostic(error));
         throw error;
       }
@@ -284,11 +276,12 @@ export function createProductionRunMemory(options: {
       await permit.assertActive();
       return response;
     } catch (error) {
+      const runEmbedding = !projection && !mail;
       if (
         started &&
         !settled &&
-        error instanceof Error &&
-        error.message === EMBEDDING_ATTEMPT_TIMED_OUT
+        ((error instanceof Error && error.message === EMBEDDING_ATTEMPT_TIMED_OUT) ||
+          (runEmbedding && !context?.signal?.aborted))
       )
         await permit.settle({
           inputTokens: EMBEDDING_INPUT_LIMIT,
@@ -349,23 +342,15 @@ export function createProductionRunMemory(options: {
           "MEMORY_QUERY_CLASSIFICATION_MISMATCH",
         );
       return scope.run(request, async () => {
-        const found = await options.memory
-          .search({
-            ownerId: request.ownerId,
-            agentId: request.agentId,
-            queryRef: request.queryRef,
-            policy: {
-              limit: request.limit,
-              allowedClassifications: modelVisibleClassifications(),
-            },
-          })
-          .catch((error: unknown) => {
-            const failure = providerFailedSearches.get(request);
-            if (!failure) throw error;
-            throw new ApplicationPortError(PORT_ERROR_CODES.PROVIDER_FAILURE, failure);
-          });
-        const failure = providerFailedSearches.get(request);
-        if (failure) throw new ApplicationPortError(PORT_ERROR_CODES.PROVIDER_FAILURE, failure);
+        const found = await options.memory.search({
+          ownerId: request.ownerId,
+          agentId: request.agentId,
+          queryRef: request.queryRef,
+          policy: {
+            limit: request.limit,
+            allowedClassifications: modelVisibleClassifications(),
+          },
+        });
         return found.map(({ memory, score }) => ({
           id: memory.id,
           ownerId: memory.ownerId,
@@ -387,8 +372,8 @@ function embeddingFailureCode(error: unknown) {
   return error instanceof ApplicationPortError &&
     (error.details["status"] === "402" ||
       error.details["gatewayErrorType"] === "quota_for_entity_exceeded")
-    ? CONTEXT_MEMORY_QUOTA_EXCEEDED
-    : CONTEXT_MEMORY_UNAVAILABLE;
+    ? "quota_exceeded"
+    : "unavailable";
 }
 
 function embeddingFailureDiagnostic(error: unknown): Readonly<Record<string, string>> {

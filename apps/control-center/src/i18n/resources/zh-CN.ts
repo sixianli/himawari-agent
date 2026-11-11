@@ -81,8 +81,6 @@ export const messages = {
   "chat.error.rateLimited": "模型服务当前限流。请稍后重试，或为下一轮选择其他已配置模型。",
   "chat.error.authFailed": "模型服务认证失败。请检查服务端的模型凭据和访问权限。",
   "chat.error.unavailable": "模型服务暂不可用。请稍后重试。",
-  "chat.error.contextMemoryUnavailable":
-    "查找相关记忆时，连接模型服务失败。本轮没有调用对话模型，也没有执行任何工具。",
   "chat.error.quotaExceeded":
     "模型服务的费用额度已用完，请求被拒绝了，不是网络问题。请在 Vercel 的 AI Gateway 预算里调高或取消上限，之后再试。",
   "chat.error.contextWindowExhausted":

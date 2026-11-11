@@ -74,7 +74,6 @@ export const MESSAGE_IDS = [
   "chat.error.rateLimited",
   "chat.error.authFailed",
   "chat.error.unavailable",
-  "chat.error.contextMemoryUnavailable",
   "chat.error.contextWindowExhausted",
   "chat.error.quotaExceeded",
   "chat.error.failed",
