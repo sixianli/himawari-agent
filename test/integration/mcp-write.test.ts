@@ -26,13 +26,15 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  MCP_PROPOSE_MEMORIES_RESULT,
   MCP_PROPOSE_MEMORY_ALREADY_SAVED,
   MCP_PROPOSE_MEMORY_CHANGED,
   MCP_PROPOSE_MEMORY_DECLINED,
   MCP_PROPOSE_MEMORY_FAILED,
   MCP_PROPOSE_MEMORY_INVALID,
-  MCP_PROPOSE_MEMORY_NOT_READY,
+  MCP_PROPOSE_MEMORY_PENDING,
   MCP_PROPOSE_MEMORY_SAVED,
+  MCP_PROPOSE_MEMORY_SECRET,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
   MCP_PROPOSE_NOT_SHOWN,
   MCP_PROPOSE_RULE_ALREADY_SAVED,
@@ -41,6 +43,7 @@ import {
   MCP_PROPOSE_RULE_NOT_READY,
   MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE,
   MCP_PROPOSE_RULE_SAVED,
+  renderPrompt,
 } from "@himawari-agent/prompt-catalog";
 import { createReferenceAdapterSet, ManualClock } from "@himawari-agent/testing";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
@@ -67,6 +70,7 @@ import {
   EXTERNAL_RULE_MEMORY_PREFIX,
   ProductionMcpRuleWriter,
 } from "../../apps/agent-service/src/production-mcp-rule-writer.ts";
+import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import { ProductionMemoryRecall } from "../../apps/agent-service/src/production-memory-recall.ts";
 import { ProductionOwnerRuleWriter } from "../../apps/agent-service/src/production-owner-rules.ts";
 import { ProductionReminderWriter } from "../../apps/agent-service/src/production-reminder-writer.ts";
@@ -223,14 +227,17 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
               await new Promise((resolve) => setTimeout(resolve, 100));
               return found;
             },
+            listActive: (ownerId, agentId) =>
+              repository.productMemoryState().listActive(ownerId, agentId),
           }
         : repository.productMemoryState(),
       book: repository.memoryBook(),
       ledger: options.failDecline
         ? {
             read: (input) => realLedger.read(input),
-            append: async () => {
-              throw new Error("LEDGER_WRITE_DOWN");
+            append: async (write) => {
+              if (write.id.endsWith(":declined")) throw new Error("LEDGER_WRITE_DOWN");
+              return realLedger.append(write);
             },
           }
         : options.slowDecisionRead
@@ -243,6 +250,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
               append: (write) => realLedger.append(write),
             }
           : realLedger,
+      proposals: repository.externalMemoryProposals(),
       payloads,
       protector: adapters.payloadProtector,
       clock,
@@ -412,10 +420,18 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       (await repository.productMemoryState().listActive(OWNER_ID, AGENT_ID)).filter(({ id }) =>
         id.startsWith(prefix),
       );
-    const decisions = async () =>
+    const ledgerRows = async () =>
       (
         await realLedger.list({ ...scope, kind: "memory_candidate", since: SINCE, limit: 100 })
       ).filter(({ reasonCode }) => reasonCode.startsWith("mcp_proposal_"));
+    const decisions = async () =>
+      (await ledgerRows()).filter(
+        ({ reasonCode }) =>
+          reasonCode === EXTERNAL_PROPOSAL_REASON_CODES.kept ||
+          reasonCode === EXTERNAL_PROPOSAL_REASON_CODES.declined,
+      );
+    const pending = async () =>
+      (await repository.externalMemoryProposals().listPending({ ...scope, limit: 1000 })).items;
     const proposeRule = async (client: Client, args: Record<string, unknown>) => {
       const result = await client.callTool({ name: "propose_rule", arguments: args });
       const [content] = result.content as { type: string; text: string }[];
@@ -453,6 +469,11 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       raw,
       external,
       decisions,
+      ledgerRows,
+      pending,
+      writer,
+      payloads,
+      protector: adapters.payloadProtector,
       elicitations,
       failures,
       memory,
@@ -529,25 +550,52 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(JSON.stringify(found.content)).toContain("燕麦拿铁");
   });
 
-  it.each([
-    ["decline", { action: "decline" }],
-    ["cancel", { action: "cancel" }],
-  ] as const)("does not save when the owner answers %s", async (_label, answer) => {
+  it("does not save when the owner declines, and never asks about the same text again", async () => {
     const f = await setup();
-    const client = await f.connect({ answer: answer as Answer });
+    const client = await f.connect({ answer: { action: "decline" } });
     const declined = await f.propose(client, { text: COFFEE });
     expect(declined.result.isError).not.toBe(true);
     expect(declined.text).toBe(MCP_PROPOSE_MEMORY_DECLINED.text);
     expect(await f.external()).toEqual([]);
+    expect(await f.pending()).toEqual([]);
     const [row] = await f.decisions();
     expect(row).toMatchObject({
       outcome: "discarded",
       reasonCode: EXTERNAL_PROPOSAL_REASON_CODES.declined,
       subjectRef: "mcp-client:claude-code",
     });
+    const other = await f.connect({ name: "muse", elicitation: false });
+    const again = await f.propose(other, { text: ` ${COFFEE}\u200b` });
+    expect(again.text).toBe(MCP_PROPOSE_MEMORY_DECLINED.text);
+    expect(f.elicitations).toHaveLength(1);
+    expect(await f.pending()).toEqual([]);
   });
 
-  it("[P5-2 desktop] treats a decline that comes back before anyone could read the dialog as not shown", async () => {
+  it("[P5-3] keeps the proposal waiting for the owner in Himawari when the dialog is dismissed", async () => {
+    const f = await setup();
+    const client = await f.connect({ answer: { action: "cancel" } });
+    const dismissed = await f.propose(client, { text: COFFEE, category: "preference" });
+    expect(dismissed.result.isError).not.toBe(true);
+    const [waiting] = await f.pending();
+    expect(waiting).toMatchObject({
+      status: "pending",
+      client: "claude-code",
+      category: "preference",
+    });
+    expect(dismissed.text).toBe(
+      renderPrompt(MCP_PROPOSE_MEMORY_PENDING, {
+        proposalId: waiting?.id ?? "",
+        receivedAt: waiting?.receivedAt ?? "",
+      }),
+    );
+    expect(await f.external()).toEqual([]);
+    expect(await f.decisions()).toEqual([]);
+    expect((await f.ledgerRows()).map(({ outcome, reasonCode }) => [outcome, reasonCode])).toEqual([
+      ["pending_approval", EXTERNAL_PROPOSAL_REASON_CODES.pending],
+    ]);
+  });
+
+  it("[P5-2 desktop][P5-3] keeps a decline that comes back before anyone could read the dialog waiting in Himawari", async () => {
     expect(mcpProposalAnswer("accept", 0, 0)).toBe("unseen");
     expect(mcpProposalAnswer("accept", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS - 1)).toBe("unseen");
     expect(mcpProposalAnswer("accept", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS)).toBe("accepted");
@@ -559,8 +607,14 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const f = await setup();
     const desktop = await f.connect({ answer: { action: "decline" }, answerAfterMs: 10 });
     const unseen = await f.propose(desktop, { text: COFFEE });
-    expect(unseen.result.isError).toBe(true);
-    expect(unseen.text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect(unseen.result.isError).not.toBe(true);
+    const [waiting] = await f.pending();
+    expect(unseen.text).toBe(
+      renderPrompt(MCP_PROPOSE_MEMORY_PENDING, {
+        proposalId: waiting?.id ?? "",
+        receivedAt: waiting?.receivedAt ?? "",
+      }),
+    );
     expect(await f.external()).toEqual([]);
     expect(await f.decisions()).toEqual([]);
     const client = await f.connect({ autoFulfill: false });
@@ -571,8 +625,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       inputResponses: { [MCP_PROPOSAL_CONFIRM_KEY]: { action: "decline" } },
       answeredAfterMs: 0,
     });
-    expect(instant.content?.[0]?.text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect(instant.content?.[0]?.text).toBe(unseen.text);
     expect(await f.decisions()).toEqual([]);
+    expect(await f.pending()).toHaveLength(1);
     const later = await f.raw(client, {
       arguments: { text: COFFEE },
       requestState: first.requestState,
@@ -588,7 +643,13 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       inputResponses: { [MCP_PROPOSAL_CONFIRM_KEY]: { action: "cancel" } },
       answeredAfterMs: 0,
     });
-    expect(ignored.content?.[0]?.text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    const [rain] = await f.pending();
+    expect(ignored.content?.[0]?.text).toBe(
+      renderPrompt(MCP_PROPOSE_MEMORY_PENDING, {
+        proposalId: rain?.id ?? "",
+        receivedAt: rain?.receivedAt ?? "",
+      }),
+    );
     const refused = await f.raw(client, {
       arguments: { text: "主人讨厌下雨天" },
       requestState: second.requestState,
@@ -605,34 +666,55 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
   it("[P5-2 desktop] times an unseen decline from when the resend arrives, not after a slow read", async () => {
     const f = await setup({ slowDecidedMs: 2_000 });
     const desktop = await f.connect({ answer: { action: "decline" }, answerAfterMs: 10 });
-    expect((await f.propose(desktop, { text: COFFEE })).text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    const memory = await f.propose(desktop, { text: COFFEE });
+    const [waiting] = await f.pending();
+    expect(memory.text).toBe(
+      renderPrompt(MCP_PROPOSE_MEMORY_PENDING, {
+        proposalId: waiting?.id ?? "",
+        receivedAt: waiting?.receivedAt ?? "",
+      }),
+    );
     expect((await f.proposeRule(desktop, RULE)).text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
     expect(f.slowReads()).toBe(2);
     expect(await f.decisions()).toEqual([]);
     expect(await f.storedRules()).toEqual([]);
   });
 
-  it("[P5-2] refuses before asking while the memory book is not ready", async () => {
+  it("[P5-2][P5-3] keeps a memory proposal waiting without asking while the memory book is not ready", async () => {
     const f = await setup({ notReady: true });
     const client = await f.connect();
-    expect((await f.propose(client, { text: COFFEE })).text).toBe(
-      MCP_PROPOSE_MEMORY_NOT_READY.text,
-    );
+    const waiting = await f.propose(client, { text: COFFEE });
+    expect(waiting.result.isError).not.toBe(true);
+    expect(await f.pending()).toHaveLength(1);
     expect((await f.proposeRule(client, RULE)).text).toBe(MCP_PROPOSE_RULE_NOT_READY.text);
     expect(f.elicitations).toEqual([]);
   });
 
-  it("refuses without a dialog when the client cannot show a confirmation form", async () => {
+  it("[P5-3] keeps the proposal waiting for the owner when the client cannot show a dialog, and answers resends the same way", async () => {
     const f = await setup();
-    const client = await f.connect({ elicitation: false });
-    const refused = await f.propose(client, { text: COFFEE });
-    expect(refused.result.isError).toBe(true);
-    expect(refused.text).toBe(MCP_PROPOSE_MEMORY_UNSUPPORTED.text);
+    const client = await f.connect({ elicitation: false, name: "muse" });
+    const first = await f.propose(client, { text: COFFEE });
+    expect(first.result.isError).not.toBe(true);
+    const [waiting] = await f.pending();
+    expect(waiting).toMatchObject({ status: "pending", client: "muse", category: "other" });
+    expect(first.text).toBe(
+      renderPrompt(MCP_PROPOSE_MEMORY_PENDING, {
+        proposalId: waiting?.id ?? "",
+        receivedAt: waiting?.receivedAt ?? "",
+      }),
+    );
+    f.clock.advance(60_000);
+    const again = await f.propose(client, { text: `${COFFEE}  ` });
+    expect(again.text).toBe(first.text);
+    const otherName = await f.connect({ elicitation: false, name: "codex" });
+    expect((await f.propose(otherName, { text: COFFEE })).text).toBe(first.text);
+    expect(await f.pending()).toHaveLength(1);
     await expect(f.connect({ elicitationCapability: [] })).rejects.toThrow();
     const today = await client.callTool({ name: "today_context", arguments: {} });
     expect(today.isError).not.toBe(true);
     expect(await f.external()).toEqual([]);
     expect(await f.decisions()).toEqual([]);
+    expect(f.elicitations).toEqual([]);
   });
 
   it("saves one memory however many times the confirmed retry is resent, even concurrently", async () => {
@@ -925,12 +1007,17 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.external()).toEqual([]);
   });
 
-  it("[P5-2 auto-accept] writes nothing when an accept comes back before anyone could read the dialog", async () => {
+  it("[P5-2 auto-accept][P5-3] saves nothing when an accept comes back before anyone could read the dialog", async () => {
     const f = await setup();
     const auto = await f.connect({ answerAfterMs: 10 });
     const memory = await f.propose(auto, { text: COFFEE });
-    expect(memory.result.isError).toBe(true);
-    expect(memory.text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect(memory.result.isError).not.toBe(true);
+    const [waiting] = await f.pending();
+    const pendingText = renderPrompt(MCP_PROPOSE_MEMORY_PENDING, {
+      proposalId: waiting?.id ?? "",
+      receivedAt: waiting?.receivedAt ?? "",
+    });
+    expect(memory.text).toBe(pendingText);
     expect((await f.proposeRule(auto, RULE)).text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
     const client = await f.connect({ autoFulfill: false });
     const first = await f.raw(client, { arguments: { text: COFFEE } });
@@ -938,9 +1025,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const firstRule = await f.rawRule(client, { arguments: RULE });
     const ruleAccept = confirmRule(firstRule.requestState, "accept");
     const text = (outcome: ToolCallOutcome) => outcome.content?.[0]?.text;
-    expect(text(await f.raw(client, { ...accept, answeredAfterMs: 0 }))).toBe(
-      MCP_PROPOSE_NOT_SHOWN.text,
-    );
+    expect(text(await f.raw(client, { ...accept, answeredAfterMs: 0 }))).toBe(pendingText);
     expect(text(await f.rawRule(client, { ...ruleAccept, answeredAfterMs: 0 }))).toBe(
       MCP_PROPOSE_NOT_SHOWN.text,
     );
@@ -1172,5 +1257,282 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       arguments: reordered,
     });
     expect(confirmed.content?.[0]?.text).toBe(MCP_PROPOSE_RULE_SAVED.text);
+  });
+
+  const envelope = {
+    schemaVersion: "gateway.v2",
+    messageId: "message",
+    correlationId: "correlation",
+    causationId: null,
+    dataClassification: "private",
+    risk: "medium",
+    authorizationRef: null,
+    scope,
+    authority: { deploymentId: "deployment", authorityEpoch: 1, fencingToken: 1 },
+    actor: { actorType: "owner", actorId: OWNER_ID },
+  };
+  const control = (f: Awaited<ReturnType<typeof setup>>) => {
+    const memoryControl = new ProductionMemoryControl({
+      configuration: scope,
+      state: f.repository.productMemoryState(),
+      jobs: f.repository.memoryProjectionJobs(),
+      approvals: f.repository.sensitiveMemoryApprovals(),
+      memory: f.memory,
+      book: f.repository.memoryBook(),
+      payloads: f.payloads,
+      protector: f.protector,
+      clock: f.clock,
+      externalProposals: f.writer,
+      onAudit: () => {},
+    });
+    return {
+      command: (type: string, payload: unknown, key: string) =>
+        memoryControl.execute({
+          ...envelope,
+          idempotencyKey: key,
+          kind: "command",
+          type,
+          payload,
+        } as never),
+      overview: async () => {
+        const snapshot = await memoryControl.query({
+          ...envelope,
+          kind: "query",
+          type: "memory.overview.read",
+          payload: {},
+        } as never);
+        if (snapshot.type !== "memory.overview.snapshot") throw new Error("snapshot");
+        return snapshot.payload;
+      },
+    };
+  };
+  const batch = async (client: Client, items: unknown[]) => {
+    const result = await client.callTool({ name: "propose_memories", arguments: { items } });
+    const [content] = result.content as { type: string; text: string }[];
+    return {
+      result,
+      parsed: JSON.parse(content?.text ?? "{}") as {
+        note: string;
+        results: { index: number; status: string; proposalId?: string }[];
+      },
+    };
+  };
+  const PARK = "主人周末常去井之头公园散步";
+  const RAIN = "主人讨厌下雨天";
+  const found = async (client: Client, query: string) =>
+    JSON.stringify(
+      (await client.callTool({ name: "find_memories", arguments: { query } })).content,
+    );
+
+  it("[P5-3] the owner saves, edits and rejects waiting proposals in Himawari, and can undo the batch", async () => {
+    const f = await setup();
+    const web = control(f);
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    const sent = await batch(muse, [
+      { text: COFFEE, category: "preference", key: "muse:memory/coffee" },
+      { text: PARK },
+      { text: RAIN },
+    ]);
+    expect(sent.result.isError).not.toBe(true);
+    expect(sent.parsed.note).toBe(MCP_PROPOSE_MEMORIES_RESULT.text);
+    expect(sent.parsed.results.map(({ status }) => status)).toEqual([
+      "pending",
+      "pending",
+      "pending",
+    ]);
+    const before = await web.overview();
+    expect(before.externalProposals.total).toBe(3);
+    expect(before.externalProposals.items.map(({ text, client }) => [text, client])).toEqual([
+      [COFFEE, "muse"],
+      [PARK, "muse"],
+      [RAIN, "muse"],
+    ]);
+    await f.memory.runProjectionBatch(10);
+    expect(await found(muse, "拿铁")).not.toContain("燕麦拿铁");
+    const [coffee, park, rain] = sent.parsed.results.map(({ proposalId }) => proposalId ?? "");
+    const edited = "主人周末常去井之头恩赐公园散步";
+    await web.command(
+      "memory.external.respond",
+      {
+        items: [
+          { proposalId: coffee, decision: "keep", editedText: null },
+          { proposalId: park, decision: "keep", editedText: edited },
+          { proposalId: rain, decision: "reject", editedText: null },
+        ],
+      },
+      "external-batch-1",
+    );
+    const saved = await f.external();
+    expect(saved.map(({ id }) => id).sort()).toEqual(
+      [
+        `${EXTERNAL_PROPOSAL_MEMORY_PREFIX}${coffee}:external-batch-1`,
+        `${EXTERNAL_PROPOSAL_MEMORY_PREFIX}${park}:external-batch-1`,
+      ].sort(),
+    );
+    expect(await Promise.all(saved.map(({ contentRef }) => f.readText(contentRef)))).toEqual(
+      expect.arrayContaining([COFFEE, edited]),
+    );
+    const after = await web.overview();
+    expect(after.externalProposals.total).toBe(0);
+    expect(after.externalProposals.batches).toEqual([
+      { batchId: "external-batch-1", decidedAt: NOW, committed: 2, rejected: 1 },
+    ]);
+    expect((await f.decisions()).map(({ outcome }) => outcome).sort()).toEqual([
+      "discarded",
+      "kept",
+      "kept",
+    ]);
+    await f.memory.runProjectionBatch(10);
+    expect(await found(muse, "拿铁")).toContain("燕麦拿铁");
+    expect((await f.propose(muse, { text: RAIN })).text).toBe(MCP_PROPOSE_MEMORY_DECLINED.text);
+    expect((await f.propose(muse, { text: COFFEE })).text).toBe(
+      MCP_PROPOSE_MEMORY_ALREADY_SAVED.text,
+    );
+    await web
+      .command(
+        "memory.external.respond",
+        { items: [{ proposalId: coffee, decision: "reject", editedText: null }] },
+        "external-batch-1",
+      )
+      .catch(() => undefined);
+    expect(await f.external()).toHaveLength(2);
+    await web.command("memory.external.undo", { batchId: "external-batch-1" }, "undo-1");
+    expect(await f.external()).toEqual([]);
+    expect((await web.overview()).externalProposals.total).toBe(3);
+    await web.command(
+      "memory.external.respond",
+      { items: [{ proposalId: coffee, decision: "keep", editedText: null }] },
+      "external-batch-2",
+    );
+    expect((await f.external()).map(({ id }) => id)).toEqual([
+      `${EXTERNAL_PROPOSAL_MEMORY_PREFIX}${coffee}:external-batch-2`,
+    ]);
+    await expect(
+      web.command("memory.external.undo", { batchId: "external-batch-9" }, "undo-9"),
+    ).rejects.toThrow("MEMORY_EXTERNAL_BATCH_NOT_FOUND");
+  });
+
+  it("[P5-3] links a waiting proposal to an existing memory with the same text instead of saving a copy", async () => {
+    const f = await setup();
+    const web = control(f);
+    const claude = await f.connect();
+    expect((await f.propose(claude, { text: COFFEE })).text).toBe(MCP_PROPOSE_MEMORY_SAVED.text);
+    const [first] = await f.external();
+    const writer = f.writer;
+    const { proposal } = await writer.submit({
+      proposalId: "proposal-same-text",
+      text: `${COFFEE}。`,
+      category: "other",
+      client: "muse",
+      subjectRef: "subject",
+      sourceKey: null,
+    });
+    expect(proposal.status).toBe("pending");
+    await writer.respond(
+      [{ proposalId: "proposal-same-text", decision: "keep", editedText: COFFEE }],
+      "external-batch-same",
+    );
+    expect((await f.external()).map(({ id }) => id)).toEqual([first?.id]);
+    expect(await writer.read("proposal-same-text")).toMatchObject({
+      status: "committed",
+      memoryId: first?.id,
+    });
+    expect((await web.overview()).externalProposals.total).toBe(0);
+  });
+
+  it("[P5-3] replaces a waiting proposal when the same key brings new text, and counts each batch item on its own", async () => {
+    const f = await setup();
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    const secret = `主人的令牌是 gh${"p_"}${"x".repeat(24)}`;
+    const first = await batch(muse, [
+      { text: "主人每天喝两杯咖啡", key: "muse:memory/coffee" },
+      { text: "   " },
+      { text: secret },
+      { text: "主人每天喝两杯咖啡" },
+    ]);
+    expect(first.parsed.results.map(({ status }) => status)).toEqual([
+      "pending",
+      "invalid",
+      "secret",
+      "pending",
+    ]);
+    expect(first.parsed.results[3]?.proposalId).toBe(first.parsed.results[0]?.proposalId);
+    expect((await f.propose(muse, { text: secret })).text).toBe(MCP_PROPOSE_MEMORY_SECRET.text);
+    f.clock.advance(1_000);
+    const second = await batch(muse, [{ text: "主人每天只喝一杯咖啡", key: "muse:memory/coffee" }]);
+    const waiting = await f.pending();
+    expect(waiting.map(({ id }) => id)).toEqual([second.parsed.results[0]?.proposalId]);
+    expect(await f.writer.read(first.parsed.results[0]?.proposalId ?? "")).toMatchObject({
+      status: "superseded",
+      supersededBy: second.parsed.results[0]?.proposalId,
+    });
+    expect((await f.ledgerRows()).map(({ reasonCode }) => reasonCode).sort()).toEqual(
+      [
+        EXTERNAL_PROPOSAL_REASON_CODES.pending,
+        EXTERNAL_PROPOSAL_REASON_CODES.pending,
+        EXTERNAL_PROPOSAL_REASON_CODES.superseded,
+      ].sort(),
+    );
+    const fifty = await batch(
+      muse,
+      Array.from({ length: 50 }, (_unused, index) => ({ text: `主人的第 ${index} 条习惯` })),
+    );
+    expect(fifty.parsed.results.filter(({ status }) => status === "pending")).toHaveLength(50);
+    const tooMany = await muse.callTool({
+      name: "propose_memories",
+      arguments: { items: Array.from({ length: 51 }, (_unused, index) => ({ text: `${index}` })) },
+    });
+    expect(tooMany.isError).toBe(true);
+    expect(await f.pending()).toHaveLength(51);
+    expect(await f.external()).toEqual([]);
+  });
+
+  it("[P5-3] keeps waiting text out of every memory the model can read", async () => {
+    const f = await setup();
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    const marker = "主人的暗号是紫色独角兽";
+    await f.propose(muse, { text: marker, key: "muse:memory/marker" });
+    await f.memory.runProjectionBatch(10);
+    expect(await f.external()).toEqual([]);
+    expect(await f.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID)).toEqual([]);
+    expect(await found(muse, "暗号")).not.toContain("独角兽");
+    const today = await muse.callTool({ name: "today_context", arguments: {} });
+    expect(JSON.stringify(today.content)).not.toContain("独角兽");
+    const database = openQualifiedDatabase(f.databasePath);
+    try {
+      const [proposal] = await f.pending();
+      expect(
+        database
+          .prepare("SELECT COUNT(*) FROM memory_records WHERE content_ref = ?")
+          .pluck()
+          .get(proposal?.contentRef),
+      ).toBe(0);
+      expect(database.prepare("SELECT COUNT(*) FROM memory_search_index").pluck().get()).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("[P5-3] drops the text of a rejected proposal after 30 days but keeps blocking the same text", async () => {
+    const f = await setup();
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    await f.propose(muse, { text: RAIN });
+    const [waiting] = await f.pending();
+    await f.writer.respond(
+      [{ proposalId: waiting?.id ?? "", decision: "reject", editedText: null }],
+      "external-batch-rain",
+    );
+    f.clock.advance(29 * 86_400_000);
+    expect(await f.writer.dropExpiredRejectedText()).toBe(0);
+    f.clock.advance(2 * 86_400_000);
+    expect(await f.writer.dropExpiredRejectedText()).toBe(1);
+    const later = await f.connect({ elicitation: false, name: "muse" });
+    expect(await f.writer.read(waiting?.id ?? "")).toMatchObject({
+      status: "rejected",
+      contentRef: null,
+    });
+    expect(await f.payloads.get(waiting?.contentRef ?? "")).toBeUndefined();
+    expect((await f.propose(later, { text: RAIN })).text).toBe(MCP_PROPOSE_MEMORY_DECLINED.text);
+    expect(await f.writer.reopenBatch("external-batch-rain")).toEqual([]);
   });
 });

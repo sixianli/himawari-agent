@@ -81,13 +81,13 @@ import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
 import { registerDataExportRoute } from "./production-data-export.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
+import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
+import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
 } from "./production-memory-control.js";
-import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
-import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
 import {
   PRODUCTION_MUSE_OPERATIONS,
@@ -101,6 +101,7 @@ import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   ProductionOwnerPreferencesControl,
 } from "./production-owner-preferences-control.js";
+import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
   PROACTIVE_GOOGLE_START_PATH,
@@ -192,6 +193,7 @@ export interface ProductionHttpCompositionOptions {
       | "recover"
       | "archive"
     >;
+    readonly externalProposals?: ProductionMcpMemoryWriter;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
   readonly webPush?: {
@@ -1089,6 +1091,9 @@ export async function createProductionHttpComposition(
         clock: { now: clock },
         ...(configuration.runPolicy?.timeZone
           ? { timeZone: configuration.runPolicy.timeZone }
+          : {}),
+        ...(options.memory.externalProposals
+          ? { externalProposals: options.memory.externalProposals }
           : {}),
         onAudit: options.memory.onAudit,
       })

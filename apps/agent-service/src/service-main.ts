@@ -11,13 +11,13 @@ import {
   claimFromRunExecutionLease,
   createProactiveSeal,
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
-  OwnerProfileService,
   DurableMemoryService,
   ExecutionLiveFeed,
   type IdGeneratorPort,
   MemoryCheckupService,
   modelUsagePurpose,
   modelVisibleClassifications,
+  OwnerProfileService,
   type ProductConfiguration,
   prereviewPromptId,
   RemoteExecutionBackend,
@@ -113,6 +113,7 @@ import {
   type ProductionMemoryComposition,
 } from "./production-memory-composition.js";
 import { quoteRefOfMemory } from "./production-memory-consolidation.js";
+import { findSourceMessageIds } from "./production-memory-control.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
@@ -138,15 +139,14 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
-import { findSourceMessageIds } from "./production-memory-control.js";
+import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
+import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import {
   createProductionRealEval,
   createRealEvalModel,
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
-import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
-import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -2068,6 +2068,17 @@ export async function runAgentService(
       } else if (gapExportRef !== undefined && museIntakeConfiguration?.enabled === true) {
         throw new Error("GAP_EXPORT_RUNTIME_UNAVAILABLE");
       }
+      const externalProposals = new ProductionMcpMemoryWriter({
+        configuration,
+        memory: durableMemory,
+        state: repository.productMemoryState(),
+        book: repository.memoryBook(),
+        ledger: repository.decisionLedger(),
+        proposals: repository.externalMemoryProposals(),
+        payloads,
+        protector: recallProtector,
+        clock: { now: () => clock.now() },
+      });
       const mcpReadConfiguration = configuration.runPolicy?.mcpRead;
       const mcpIdentity =
         configuration.identity && configuration.identity.kind !== "built-in"
@@ -2101,16 +2112,7 @@ export async function runAgentService(
           ...(mcpReadConfiguration.proposals
             ? {
                 write: {
-                  proposals: new ProductionMcpMemoryWriter({
-                    configuration,
-                    memory: durableMemory,
-                    state: repository.productMemoryState(),
-                    book: repository.memoryBook(),
-                    ledger: repository.decisionLedger(),
-                    payloads,
-                    protector: recallProtector,
-                    clock: { now: () => clock.now() },
-                  }),
+                  proposals: externalProposals,
                   rules: new ProductionMcpRuleWriter({
                     configuration,
                     rules: ownerRuleWriter,
@@ -2580,6 +2582,7 @@ export async function runAgentService(
         ...(observation ? { observation } : {}),
         memory: {
           service: activeDurableMemory,
+          externalProposals,
           onAudit: (record) => {
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",

@@ -1,20 +1,19 @@
-import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
 import {
   ApplicationPortError,
   type ClockPort,
   classificationRank,
   type DecisionLedgerPort,
   type DurableMemoryService,
+  isModelVisible,
   type MemoryBookStorePort,
   type MemoryCategory,
   type MemoryConsolidationStorePort,
   type MemoryExtractionAuditRecord,
-  isModelVisible,
-  modelVisibleCeiling,
   type MemoryHistoryEvent,
   type MemoryProjectionJobStatePort,
   type MemoryReminderStorePort,
   type MemorySourceMessage,
+  modelVisibleCeiling,
   type OwnerProfileService,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -33,7 +32,9 @@ import {
   MEMORY_SENSITIVE_CATEGORY_NAMES,
   MEMORY_SOURCE_REF_MAX_LENGTH,
 } from "@himawari-agent/gateway-contracts";
+import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
 import { type DecisionChainMemoryView, readDecisionChain } from "./production-decision-chain.js";
+import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import {
   createProductionAutomaticMemory,
   protectedMemoryCandidates,
@@ -66,6 +67,8 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.person.respond",
   "memory.import.commit",
   "memory.import.undo",
+  "memory.external.respond",
+  "memory.external.undo",
 ] as const);
 const PINNABLE_CATEGORIES: ReadonlySet<MemoryCategory> = new Set([
   "identity",
@@ -88,6 +91,8 @@ const OWNER_POLICY_VERSION = "memory-owner:v1";
 const OWNER_RULE_IMPORTANCE = 800;
 const OWNER_MEMORY_IMPORTANCE = 500;
 const IMPORT_POLICY_VERSION = "memory-import:v1";
+const EXTERNAL_PROPOSALS_SHOWN = 100;
+const EXTERNAL_BATCHES_SHOWN = 10;
 
 function sensitiveTopicFor(category: MemoryCategory): SensitiveMemoryTopic {
   return category === "health" || category === "finance" ? category : "other";
@@ -190,6 +195,10 @@ export class ProductionMemoryControl {
     readonly protector: PayloadProtectorPort;
     readonly clock: ClockPort;
     readonly timeZone?: string;
+    readonly externalProposals?: Pick<
+      ProductionMcpMemoryWriter,
+      "listPending" | "listBatches" | "listBatch" | "reopenBatch" | "respond"
+    >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
 
@@ -368,6 +377,7 @@ export class ProductionMemoryControl {
         limit: TIDY_UPS_SHOWN,
       })) ?? [];
     const due = await this.#dueReminders();
+    const external = await this.#externalProposals();
     return JSON.stringify([
       active.map(({ id, revision }) => [id, revision, historyCount.get(id) ?? 0]),
       pending.map(({ id }) => id),
@@ -380,7 +390,35 @@ export class ProductionMemoryControl {
       suggestions.map(({ id }) => id),
       imports.map(({ id, undoneAt }) => [id, undoneAt]),
       pins.map(({ memoryId, pinned, updatedAt }) => [memoryId, pinned, updatedAt]),
+      external.total,
+      external.items.map(({ proposalId }) => proposalId),
+      external.batches.map(({ batchId, decidedAt }) => [batchId, decidedAt]),
     ]);
+  }
+
+  async #externalProposals() {
+    const writer = this.options.externalProposals;
+    if (!writer) return { total: 0, items: [], batches: [] };
+    const { items, total } = await writer.listPending(EXTERNAL_PROPOSALS_SHOWN);
+    return {
+      total,
+      items: items.map(({ id, text, category, dataClassification, client, receivedAt }) => ({
+        proposalId: id,
+        text,
+        category,
+        dataClassification,
+        client,
+        receivedAt,
+      })),
+      batches: (await writer.listBatches(EXTERNAL_BATCHES_SHOWN)).map(
+        ({ batchId, decidedAt, committed, rejected }) => ({
+          batchId,
+          decidedAt,
+          committed,
+          rejected,
+        }),
+      ),
+    };
   }
 
   async #dueReminders() {
@@ -820,6 +858,7 @@ export class ProductionMemoryControl {
       createdAt,
       undone: undoneAt !== null,
     }));
+    const externalProposals = await this.#externalProposals();
     const { capturePaused, lastViewedAt } = await this.options.book.readSettings(scope);
     const manualAddReady = (await this.options.book.latestGeneration(scope)) !== undefined;
     return {
@@ -830,6 +869,7 @@ export class ProductionMemoryControl {
         memories,
         profile,
         pending,
+        externalProposals,
         tidyUps,
         reminders,
         upcoming,
@@ -1001,12 +1041,53 @@ export class ProductionMemoryControl {
     return { resultRef: batchId, replayed: false };
   }
 
+  #externalWriter() {
+    const writer = this.options.externalProposals;
+    if (!writer)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "MEMORY_OPERATION_NOT_INSTALLED",
+      );
+    return writer;
+  }
+
+  async #externalRespond(command: Command<"memory.external.respond">) {
+    const writer = this.#externalWriter();
+    for (const { editedText } of command.payload.items)
+      if (editedText !== null) this.assertStorable(editedText);
+    await writer.respond(command.payload.items, command.idempotencyKey);
+    return { resultRef: command.idempotencyKey, replayed: false };
+  }
+
+  async #externalUndo(command: Command<"memory.external.undo">) {
+    const writer = this.#externalWriter();
+    const { batchId } = command.payload;
+    const members = await writer.listBatch(batchId);
+    if (members.length === 0)
+      throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_EXTERNAL_BATCH_NOT_FOUND");
+    for (const { memoryId } of members) {
+      if (memoryId === null) continue;
+      const memory = await this.options.state.read(memoryId);
+      if (
+        memory &&
+        memoryId.startsWith(`memory:mcp:`) &&
+        memoryId.endsWith(`:${batchId}`) &&
+        (memory.status === "active" || memory.status === "archived")
+      )
+        await this.options.memory.trash(memory.id, await this.#generationFor(memory.id));
+    }
+    await writer.reopenBatch(batchId);
+    return { resultRef: batchId, replayed: false };
+  }
+
   async execute(command: GatewayV2Command): Promise<{ resultRef: string; replayed: boolean }> {
     this.assertOwner(command);
     if (command.type === "memory.create") return this.#create(command);
     if (command.type === "memory.category.set") return this.#setCategory(command);
     if (command.type === "memory.import.commit") return this.#importCommit(command);
     if (command.type === "memory.import.undo") return this.#importUndo(command);
+    if (command.type === "memory.external.respond") return this.#externalRespond(command);
+    if (command.type === "memory.external.undo") return this.#externalUndo(command);
     if (command.type === "memory.settings.set") {
       await this.options.book.writeSettings({
         ...this.#scope(),

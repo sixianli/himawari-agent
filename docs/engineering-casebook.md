@@ -113,6 +113,7 @@ date: "2026-10-26"
   86. [底层 Agent 框架跨大版本升级：Pi 从 0.84.2 升到 1.5.0，老对话的缓存一个字节都没变](#case-pi-1-5-upgrade)
   87. [记忆评测全是合成题：改用主人确认过的记忆和原话自动出题、判分，每周跑一次](#case-real-memory-eval)
   88. [三路检索合并后怎么划“相关”的线：RRF 分数划不了线，用相似度加少量加分，权重和余量用评测扫出来](#case-relevance-cutoff)
+  89. [其他 agent 往记忆里写东西，确认框弹不出来怎么办：先存成“待确认”，主人在自己的界面里批](#case-external-memory-proposals)
   90. [让模型替主人先打一遍分，什么时候才敢少给主人看：一致率按区间下限算，还要比瞎猜准](#case-model-prereview)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
@@ -135,7 +136,7 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval)、[其他 agent 写记忆先待确认](#case-external-memory-proposals) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction)、[自己写的指令不该被当成外来内容检查](#case-trusted-prompt-text)、[沙箱保护不能静默失效](#case-srt-locked-seccomp-helper) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
@@ -5685,6 +5686,57 @@ Pi 在 0.86 和 0.87 改了两处核心约定：发给模型的请求不再分�
 **面试 30 秒版**
 
 “我们的记忆检索是向量、关键词、实体三路，用 RRF 合并。只有向量路有门槛，一个关键词撞上就会带出无关记忆。最直观的做法是在 RRF 分数上划线，但 RRF 只看名次，离线一扫就是断崖：要么什么都挡不住，要么召回从 77% 掉到 49%。我改成用唯一能跨查询比较的余弦相似度做底，关键词和实体只补有上限的少量分数。权重和余量是把三路原始候选录下来、离线扫几百组参数定的，取稳定区域的中间值。原本最优的余量 0.03 离召回标准线只差 0.1 个点，嵌入每次有 0.01 的抖动，所以退到 0.05。结果准确率从 85.4% 升到 89.1%，召回不降；完成标准和一个反向用例都写进了测试。”
+
+[返回目录](#contents)
+
+<a id="case-external-memory-proposals"></a>
+
+## 案例 89：其他 agent 往记忆里写东西，确认框弹不出来怎么办：先存成“待确认”，主人在自己的界面里批
+
+**背景与现象**
+
+Andy 想让 Muse（他的另一个 agent）、Claude Code 和 Claude App 通过 MCP（Model Context Protocol，让 agent 调用外部工具的开放协议）往 Himawari 里写记忆。P5-2 先做了“在客户端里弹确认框，主人点同意才保存”（ADR 0225）。实测发现两个问题：Claude 桌面 App 声明支持确认框却不显示，约 10 毫秒后自动回拒绝（[anthropics/claude-code#105334](https://github.com/anthropics/claude-code/issues/105334)）；Muse 这类后台 agent 根本没有界面。结果是这些客户端提的记忆要么被当成“主人拒绝了”，要么什么都没留下。
+
+**根因**
+
+确认这一步放在了客户端里，而客户端能不能弹框、弹了主人能不能看到，Himawari 控制不了。MCP 规范也不保证客户端会显示确认框或带着答案重发（ADR 0228 前提 2）。
+
+**我们的方案**
+
+- 新表 `external_memory_proposals`（迁移 0093）：第一次调用就存一条“待确认”的提议，正文加密存在 payload（Himawari 存加密正文的表）里，不进记忆表、不进检索索引，模型读不到。
+- 客户端能弹框、主人点了同意就直接保存；点了拒绝记为已拒绝；弹不出来、取消、不到 1.5 秒就回来的回答（看不到框的客户端）一律留在“待确认”。
+- 主人在 Himawari 网页上批量保存、改字后保存、拒绝，整批可以撤销；保存时正文和已有记忆相同的，只挂到那条记忆上，不存第二份。
+- 按正文去重（不按客户端）：已保存的回“已经保存过”，拒绝过的回“拒绝过”；拒绝的正文 30 天后删掉，只留摘要继续挡住同样的话。同一个 `key`（客户端给这条记忆起的固定名字）送来新正文时，替换旧的待确认提议。
+- 新增批量工具 `propose_memories`，一次 1–50 条，每条单独返回状态，给 Muse 这种一次要交很多条的 agent 用。
+
+**方案讨论与备选**
+
+- 用已有的“tentative（暂定）记忆”当待确认：模型能看到，违反“确认后才存”，放弃。
+- 复用敏感记忆的审批表：字段对不上，两种审批会在界面上被一键一起点掉，放弃。
+- 待确认 30 天自动过期：等于悄悄丢掉主人的数据，放弃。
+- 把“取消”当拒绝（P5-2 原做法）：规范里取消是“没做选择”，当成拒绝会让同样的话以后再也提不进来，放弃。
+
+**业界主流做法**
+
+- ✅ [MCP 规范 2026-07-28 版，Tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)：“there SHOULD always be a human in the loop with the ability to deny tool invocations”。
+- ✅ [Claude 帮助中心：导入和导出记忆](https://support.claude.com/en/articles/12123587-import-and-export-your-memory-from-claude)：导入的记忆直接保存，事后在记忆面板里查看和删除。
+
+**对比与取舍**
+
+和 MCP 规范一样坚持“人来把关”，但不依赖客户端弹框，把确认挪到 Himawari 自己的界面里异步做，任何客户端都适用。比 Claude 的导入更严：确认前模型完全看不到。代价是主人要多做一步批量确认，所以做了批量保存和整批撤销。
+
+**结果数据**
+
+- `test/integration/mcp-write.test.ts` 34 条通过；反向验证：把“取消”改回拒绝、关掉按正文去重、提交时直接保存，分别让 1、7、1 条用例失败（2026-11-11 本线程实跑）。
+- 生产上的待确认条数、确认耗时：未测量（还没上线）。
+
+**相关 ADR/PR**
+
+[ADR 0228](adr/0228-external-memory-proposals-wait-for-owner-confirmation.md)（部分取代 [ADR 0225](adr/0225-external-agents-propose-memory-with-in-client-confirmation.md) 决定 2、3、6）、迁移 0093、PR #389（同一任务的 Cloudflare 登录部分）。
+
+**面试 30 秒版**
+
+“我让别的 agent 通过 MCP 往个人 agent 的记忆里写东西，最初是在客户端弹确认框。结果 Claude 桌面 App 不显示确认框、10 毫秒后自动回拒绝，后台 agent 根本没有界面。根因是确认放在了我控制不了的客户端里。我改成第一次调用就存成‘待确认’，模型完全看不到，主人在自己的网页上批量确认、可以整批撤销；按正文去重，拒绝过的话不会再来烦他。”
 
 [返回目录](#contents)
 

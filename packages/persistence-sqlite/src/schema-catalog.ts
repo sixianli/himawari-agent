@@ -671,6 +671,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its thread, Owner or Agent deletion",
   ),
   entry(
+    "external_memory_proposals",
+    "ExternalMemoryProposalStorePort",
+    "memories other agents proposed through MCP: pending until the owner saves or rejects them in Himawari, with a digest of the normalized text for de-duplication, the confirmation batch and the Memory it became; never read into any model request",
+    "payload_reference",
+    "cascade with Owner or Agent deletion; the text of a rejected proposal is dropped after 30 days and only the digest is kept",
+  ),
+  entry(
     "memory_checkup_items",
     "MemoryCheckupStorePort",
     "one row per Memory picked for a week's checkup: the reason, the owner's confirm, delete or merge with the state before it so it can be undone",

@@ -155,7 +155,9 @@
     "reason": "W-14：“用户”改“主人”；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线",
     "emphasis": {
       "kind": "not-tone",
-      "phrases": ["必须用到原值"],
+      "phrases": [
+        "必须用到原值"
+      ],
       "reason": "说的是某项操作本身需要原值，不是强调语气"
     }
   },
@@ -165,7 +167,9 @@
     "reason": "W-14：“用户”改“主人”；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线",
     "emphasis": {
       "kind": "not-tone",
-      "phrases": ["必须用到原值"],
+      "phrases": [
+        "必须用到原值"
+      ],
       "reason": "说的是某项操作本身需要原值，不是强调语气"
     }
   },
@@ -349,10 +353,20 @@
     "changedIn": "ADR 0219",
     "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
   },
+  "mcp.propose-memories": {
+    "sha256": "07c236b6e57ca1b02029bcb56234123e47d1a080a815662e3402a3e6393728b6",
+    "changedIn": "ADR 0228",
+    "reason": "P5-3: external memory proposals wait as pending until the owner confirms in Himawari; batch propose_memories"
+  },
+  "mcp.propose-memories-result": {
+    "sha256": "026254c2eb0ddcf54e2cd12d7e39597d85e77e4a4bbab7b0f2b83ecb296bac0f",
+    "changedIn": "ADR 0228",
+    "reason": "P5-3: external memory proposals wait as pending until the owner confirms in Himawari; batch propose_memories"
+  },
   "mcp.propose-memory": {
-    "sha256": "5c10a166b812efb777a14cd3843a13c0fcc627d9810f84d2f5618a52296833b1",
-    "changedIn": "ADR 0225",
-    "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
+    "sha256": "71097efb7312054b44b1d2981ebe2e99286a24d10eba18682c54abd7554fe461",
+    "changedIn": "ADR 0228",
+    "reason": "P5-3: external memory proposals wait as pending until the owner confirms in Himawari; batch propose_memories"
   },
   "mcp.propose-memory-already-saved": {
     "sha256": "f213567f4ace8b14f14d2f753e32498763ecc2f9008501e2c1a9ee51aaf37921",
@@ -384,15 +398,20 @@
     "changedIn": "ADR 0225",
     "reason": "分类不在允许范围时也回这句，文字写明两种原因"
   },
-  "mcp.propose-memory-not-ready": {
-    "sha256": "ebf3736df2154401f6f92fb69bcbd973ee4a114582ec0d13253462fb9c919507",
-    "changedIn": "ADR 0225",
-    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  "mcp.propose-memory-pending": {
+    "sha256": "89d36079e60b5c4a4bfc6f0b1b486373678ae8e82c8e11b0bcb35f59c506e734",
+    "changedIn": "ADR 0228",
+    "reason": "P5-3: external memory proposals wait as pending until the owner confirms in Himawari; batch propose_memories"
   },
   "mcp.propose-memory-saved": {
     "sha256": "844d784b588aa8650d685b823ae424e4775c2bc2c8a741d1c31d8dabc1b7db57",
     "changedIn": "ADR 0225",
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-secret": {
+    "sha256": "a8b0a16dc082e66ea0fd9a535dc320670937decf26b87c128b48d607fd1c00a5",
+    "changedIn": "ADR 0228",
+    "reason": "P5-3: external memory proposals wait as pending until the owner confirms in Himawari; batch propose_memories"
   },
   "mcp.propose-memory-sensitive-note": {
     "sha256": "24fdfe018d1226955839819b48347679a90e9d16cb6428a70ab5746c15854779",
@@ -495,7 +514,10 @@
     "reason": "密码、密钥、证件号码、银行卡号改标 sensitive 而不是 restricted；一次性验证码不记录",
     "emphasis": {
       "kind": "hard-condition",
-      "phrases": ["必须填 existingMemoryId", "每条都必须填"],
+      "phrases": [
+        "必须填 existingMemoryId",
+        "每条都必须填"
+      ],
       "evidence": [
         "apps/agent-service/src/production-memory-capture.ts#(requestedDecision !== \"create\" && existing === null)",
         "apps/agent-service/src/production-memory-capture.ts#const evidenceRejected"
@@ -759,7 +781,9 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变",
     "emphasis": {
       "kind": "hard-condition",
-      "phrases": ["目标必须不存在"],
+      "phrases": [
+        "目标必须不存在"
+      ],
       "evidence": [
         "packages/platform-node/src/capabilities/directory-move-scope.ts#HOST_FILE_TARGET_EXISTS"
       ],
@@ -832,7 +856,11 @@
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果",
     "emphasis": {
       "kind": "not-tone",
-      "phrases": ["以后……一律……", "……必须提醒我", "“以后”“一律”“必须”"],
+      "phrases": [
+        "以后……一律……",
+        "……必须提醒我",
+        "“以后”“一律”“必须”"
+      ],
       "reason": "这几处是在举主人原话的例子、说明 quote 要带哪些字样，不是对模型加重语气"
     }
   },

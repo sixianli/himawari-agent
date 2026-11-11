@@ -430,6 +430,11 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       reason:
         "已换成编号占位（接着库里已有占位的最大编号往后排；同一原文同一编号，不同原文不同编号）；这些是名称和编号，原文不保留，不进封存文件",
     },
+    {
+      what: "其他 agent 通过 MCP 提议的记忆（待确认、已拒绝、被替换的提议）",
+      count: snapshot.externalProposals,
+      reason: "本版导出格式还不含这张表；已确认保存的会作为普通记忆导出",
+    },
     { what: "对话和消息", count: null, reason: "不属于本格式；记忆的来源对话编号也不导出" },
     { what: "每日摘要", count: null, reason: "属于对话，随对话一起，不在本格式内" },
     {
