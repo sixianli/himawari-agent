@@ -89,6 +89,7 @@ export function createStoredZip(
     if (offset > maximumBytes) throw new RangeError(DATA_EXPORT_TOO_LARGE);
   }
   const directoryBytes = directory.reduce((sum, part) => sum + part.byteLength, 0);
+  if (offset + directoryBytes + 22 > maximumBytes) throw new RangeError(DATA_EXPORT_TOO_LARGE);
   const end = new DataView(new ArrayBuffer(22));
   end.setUint32(0, 0x06054b50, true);
   end.setUint16(8, entries.length, true);

@@ -1,4 +1,5 @@
-import { lstat, readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assertWritableSchema,
@@ -138,13 +139,29 @@ export async function runDataCommand(
     let declaredFormat: unknown;
     try {
       const manifestPath = path.join(from, "manifest.json");
-      const manifestStat = await lstat(manifestPath).catch(() => undefined);
-      if (manifestStat && (!manifestStat.isFile() || manifestStat.size > 16 * 1024 * 1024))
-        throw new DataExportError(
-          DATA_EXPORT_ERROR_CODES.PATH_UNSAFE,
-          "manifest.json 不是普通文件或太大",
-        );
-      const peeked = manifestStat ? await readFile(manifestPath, "utf8") : "";
+      const handle = await open(manifestPath, constants.O_RDONLY | constants.O_NOFOLLOW).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return undefined;
+          throw new DataExportError(
+            DATA_EXPORT_ERROR_CODES.PATH_UNSAFE,
+            "manifest.json 打不开或是符号链接",
+          );
+        },
+      );
+      let peeked = "";
+      if (handle) {
+        try {
+          const manifestStat = await handle.stat();
+          if (!manifestStat.isFile() || manifestStat.size > 128 * 1024 * 1024)
+            throw new DataExportError(
+              DATA_EXPORT_ERROR_CODES.PATH_UNSAFE,
+              "manifest.json 不是普通文件或太大",
+            );
+          peeked = await handle.readFile("utf8");
+        } finally {
+          await handle.close();
+        }
+      }
       declaredFormat = peeked
         ? (JSON.parse(peeked) as { format?: unknown } | null)?.format
         : undefined;
