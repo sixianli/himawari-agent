@@ -982,3 +982,4 @@ export function sameMeasurement(left: HistoryRecord, right: HistoryRecord): bool
     JSON.stringify(left.implicit) === JSON.stringify(right.implicit)
   );
 }
+export * from "./thresholds.ts";

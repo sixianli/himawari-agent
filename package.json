@@ -96,6 +96,7 @@
     "eval:jarvis:trend": "node scripts/jarvis-test/trend.mjs",
     "eval:memory-retrieval": "node scripts/memory-retrieval-eval/live.mjs",
     "report:calibration": "node scripts/calibration-report/report.mjs",
+    "report:thresholds": "node scripts/calibration-report/thresholds.mjs",
     "check:instruction-links": "node scripts/check-instruction-links.mjs",
     "check:docs-links": "node scripts/check-docs-links.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/docs-links.test.mjs"
   },

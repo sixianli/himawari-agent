@@ -1,3 +1,4 @@
+import { MEMORY_AUTO_COMMIT_GATE, thresholdFor } from "@himawari-agent/calibration";
 import type { MemoryGenerationId, MemoryId } from "@himawari-agent/domain";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
@@ -163,7 +164,9 @@ export class AutomaticMemoryService {
       }
       if (
         !explicitlyApproved &&
-        candidate.confidencePermille < (this.options.automaticConfidencePermille ?? 850)
+        candidate.confidencePermille <
+          (this.options.automaticConfidencePermille ??
+            thresholdFor(MEMORY_AUTO_COMMIT_GATE, candidate.attributes?.category ?? null))
       ) {
         if (canBeKeptTentatively(candidate)) {
           const { supersedes: _dropped, ...rest } = candidate;
