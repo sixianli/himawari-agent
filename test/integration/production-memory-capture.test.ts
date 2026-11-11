@@ -1961,6 +1961,35 @@ describe("production memory capture", () => {
     expect(isStandingQuote("从今天开始，以后每次收到入管局的邮件都必须提醒我")).toBe(true);
     expect(isStandingQuote("刚才那封必须提醒我")).toBe(false);
     expect(isStandingQuote("这封必须提醒我")).toBe(false);
+    expect(isStandingQuote("这封先不用管，以后再说")).toBe(false);
+    expect(isStandingQuote("今天先这样，以后再看")).toBe(false);
+    expect(isStandingQuote("今天起每次都提醒我")).toBe(true);
+    expect(isStandingQuote("From now on, always tell me about refunds")).toBe(true);
+    expect(isStandingQuote("please pass the mustard")).toBe(false);
+    expect(isStandingQuote("nevertheless send it")).toBe(false);
+
+    await context.memory.archive(
+      created["memoryId"] as never,
+      (await context.repository.memoryBook().latestGeneration({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+      } as never)) as never,
+    );
+    expect((await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.status).toBe(
+      "needs_review",
+    );
+    expect(
+      await set(
+        { quote: sentence, summary: "入管局来信要提醒", params: immigration },
+        "call-same-params",
+      ),
+    ).toMatchObject({ status: "active", ruleId: created["ruleId"], replayed: true });
+    expect((await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.status).toBe(
+      "active",
+    );
+    expect(
+      await context.repository.productMemoryState().read(created["memoryId"] as never),
+    ).toMatchObject({ status: "active" });
 
     await command(
       context.control,
@@ -1983,6 +2012,33 @@ describe("production memory capture", () => {
         "undo-missing",
       ),
     ).rejects.toThrow("RULE_NOT_FOUND");
+
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: confirmed?.ruleId, action: "undo" },
+      "undo-confirmed-again",
+    );
+    await context.memory.delete(
+      revived?.sourceMemoryId as never,
+      (await context.repository.memoryBook().latestGeneration({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+      } as never)) as never,
+    );
+    await expect(
+      command(
+        context.control,
+        "memory.rule.respond",
+        { target: proposal["proposalId"], action: "confirm" },
+        "confirm-after-delete",
+      ),
+    ).rejects.toThrow("RULE_UNAVAILABLE");
+    expect(
+      (await context.repository.productMemoryState().read(revived?.sourceMemoryId as never))
+        ?.status,
+    ).toBe("deletion_pending");
+    expect(await listed()).toEqual([]);
   });
 
   it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {

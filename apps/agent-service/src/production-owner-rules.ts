@@ -100,6 +100,25 @@ const ONE_OFF_MARKERS = [
   "this message",
   "today",
   "tonight",
+  "再说",
+  "再看",
+  "再讲",
+  "再议",
+  "改天",
+  "回头",
+  "あとで",
+  "later",
+  "we'll see",
+].map(foldText);
+const STANDING_STARTS = [
+  "从今天起",
+  "从今天开始",
+  "今天起",
+  "今天开始",
+  "今日から",
+  "今日以降",
+  "starting today",
+  "from today",
 ].map(foldText);
 
 type MemoryId = ProductMemoryRecord["id"];
@@ -257,12 +276,25 @@ function trialsOf(rule: RuleRecord): readonly RuleTrial[] {
   });
 }
 
+function containsMarker(clause: string, marker: string): boolean {
+  if (!/^[a-z' ]+$/u.test(marker))
+    return clause.replace(/\s+/gu, "").includes(marker.replace(/\s+/gu, ""));
+  const words = marker.trim().split(/\s+/u).join("\\s+");
+  return new RegExp(`(?<![a-z'])${words}(?![a-z'])`, "u").test(clause);
+}
+
 export function isStandingQuote(quote: string): boolean {
-  return clausesOf(quote).some(
-    (clause) =>
-      STANDING_MARKERS.some((marker) => clause.includes(marker.replace(/\s+/gu, ""))) &&
-      !ONE_OFF_MARKERS.some((marker) => clause.includes(marker.replace(/\s+/gu, ""))),
-  );
+  return foldText(quote)
+    .split(CLAUSE_BREAK)
+    .map((clause) => clause.replace(/\s+/gu, " ").trim())
+    .filter((clause) => clause.length > 0)
+    .some((clause) => {
+      const rest = STANDING_STARTS.reduce((text, start) => text.replaceAll(start, " | "), clause);
+      return (
+        STANDING_MARKERS.some((marker) => containsMarker(rest, marker)) &&
+        !ONE_OFF_MARKERS.some((marker) => containsMarker(rest, marker))
+      );
+    });
 }
 
 function clausesOf(text: string): readonly string[] {
@@ -382,6 +414,10 @@ export class ProductionOwnerRuleWriter {
     if (!generation) throw new OwnerRuleError("RULE_MEMORY_NOT_READY");
     const memoryId = `memory:rule:${input.key}` as MemoryId;
     const contentRef = `memory-content:rule:${input.key}`;
+    if (await this.#options.memories.read(memoryId)) {
+      await this.#reviveMemory(memoryId);
+      return memoryId;
+    }
     const classification = await this.#writeText(contentRef, input.text);
     await this.#options.memory.applyProposal(
       {
@@ -409,7 +445,6 @@ export class ProductionOwnerRuleWriter {
       },
       generation,
     );
-    await this.#reviveMemory(memoryId);
     return memoryId;
   }
 
@@ -454,7 +489,8 @@ export class ProductionOwnerRuleWriter {
     const same = existing.find(
       (row) => row.ruleId !== ruleId && sameRule(row.parameters, parsed.type, parsed.params),
     );
-    if (same)
+    if (same) {
+      await this.reconfirm(same.ruleId);
       return Object.freeze({
         status: "active",
         ruleId: same.ruleId,
@@ -467,6 +503,9 @@ export class ProductionOwnerRuleWriter {
         replay: replayed,
         replayed: true,
       });
+    }
+    const prior = await this.#options.rules.read({ ...this.#scope(), ruleId });
+    if (prior?.sourceMemoryId) await this.#reviveMemory(prior.sourceMemoryId as MemoryId);
     if (!existing.some((row) => row.ruleId === ruleId) && existing.length >= ACTIVE_RULE_LIMIT)
       throw new OwnerRuleError("RULE_LIMIT_REACHED", String(ACTIVE_RULE_LIMIT));
     const memoryId = await this.#writeMemory({
@@ -501,7 +540,10 @@ export class ProductionOwnerRuleWriter {
         reason: "owner_confirmed",
         now: this.#options.clock.now(),
       });
-      if (!revived) throw new OwnerRuleError("RULE_UNAVAILABLE");
+      if (!revived) {
+        await this.#archiveMemory(memoryId);
+        throw new OwnerRuleError("RULE_UNAVAILABLE");
+      }
     }
     return Object.freeze({
       status: "active",

@@ -1,6 +1,7 @@
 {
   "gateway": "https://opencode.ai/inference/go/v1",
   "runs": 3,
+  "minimumPassShare": 1,
   "spentUsd": 0.006527685999999998,
   "summary": [
     {

@@ -209,7 +209,18 @@ describe("owner rule live eval", () => {
     mkdirSync(OUTPUT_DIRECTORY, { recursive: true });
     writeFileSync(
       path.join(OUTPUT_DIRECTORY, "result.json"),
-      `${JSON.stringify({ gateway: GATEWAY, runs: RUNS, spentUsd, summary, outcomes }, null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          gateway: GATEWAY,
+          runs: RUNS,
+          minimumPassShare: MINIMUM_PASS_SHARE,
+          spentUsd,
+          summary,
+          outcomes,
+        },
+        null,
+        2,
+      )}\n`,
     );
     console.log(JSON.stringify({ spentUsd, summary }, null, 2));
     for (const { model, passed, total } of summary)
