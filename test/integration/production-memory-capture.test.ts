@@ -1846,8 +1846,11 @@ describe("production memory capture", () => {
       replayed: true,
     });
 
+    await context.turn("owner", "这封必须提醒我，别的不用", null);
+    const proposals = new Set<unknown>();
     for (const [name, args] of [
       ["not said", { quote: "订阅相关的以后必须提醒我" }],
+      ["fragment of a one-off sentence", { quote: "必须提醒我" }],
       ["no standing words", { quote: "入管局相关的邮件" }],
       ["inferred", { quote: sentence, inferred: true }],
     ] as const) {
@@ -1857,7 +1860,12 @@ describe("production memory capture", () => {
       );
       expect(proposed, name).toMatchObject({ status: "proposed", ruleId: null });
       expect(proposed["proposalId"], name).toMatch(/^rule-proposal:[0-9a-f]{32}$/u);
+      proposals.add(proposed["proposalId"]);
     }
+    expect(proposals.size).toBe(1);
+    await expect(
+      set({ quote: sentence, summary: "入管局\n一律提醒", params: immigration }, "call-newline"),
+    ).rejects.toMatchObject({ code: "RULE_PARAMETERS_INVALID" });
     expect((await listed()).map(({ ruleId }) => ruleId)).toEqual([created["ruleId"]]);
     const proposal = await set(
       { quote: sentence, inferred: true, params: { phrases: ["在留カード"] } },
@@ -1877,6 +1885,13 @@ describe("production memory capture", () => {
       "call-soft",
     );
     expect(soft).toMatchObject({ status: "soft", ruleId: null });
+    await expect(
+      tool(
+        "rule.set",
+        { quote: sentence, inferred: true, type: "soft", summary: "主人喜欢长篇回答" },
+        "call-soft-inferred",
+      ),
+    ).rejects.toMatchObject({ code: "RULE_NOT_EXPLICIT" });
     expect(
       await context.repository.productMemoryState().read(soft["memoryId"] as never),
     ).toMatchObject({ attributes: { category: "preference" } });

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
+  ApplicationPortError,
   type DurableMemoryService,
+  PORT_ERROR_CODES,
   foldText,
   type MemoryBookStorePort,
   type OwnerRuleStorePort,
@@ -40,6 +42,8 @@ const SOFT_TYPE = "soft";
 const RULE_POLICY_VERSION = "owner-rule:v1";
 const RULE_IMPORTANCE = 900;
 const QUOTE_LIMIT = 500;
+const QUOTE_MINIMUM = 4;
+const CLAUSE_BREAK = /[\n\r。！？!?；;，,、…：:]+/u;
 const OWNER_MESSAGES_CHECKED = 6;
 const MESSAGES_SCANNED = 24;
 const SET_ARGUMENTS = ["quote", "inferred", "type", "params", "summary"];
@@ -84,6 +88,7 @@ export type OwnerRuleErrorCode =
   | "RULE_MEMORY_NOT_READY"
   | "RULE_TEXT_REFUSED"
   | "RULE_LIMIT_REACHED"
+  | "RULE_NOT_EXPLICIT"
   | "RULE_UNAVAILABLE";
 
 export class OwnerRuleError extends Error {
@@ -213,10 +218,6 @@ function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function comparable(value: string): string {
-  return foldText(value).replace(/\s+/gu, "");
-}
-
 function trialsOf(rule: RuleRecord): readonly RuleTrial[] {
   return rule.examples.map((example) => {
     const text = String(example.facts["text"] ?? "");
@@ -228,9 +229,23 @@ function trialsOf(rule: RuleRecord): readonly RuleTrial[] {
   });
 }
 
-function standing(quote: string): boolean {
+export function isStandingQuote(quote: string): boolean {
   const folded = foldText(quote);
   return STANDING_MARKERS.some((marker) => folded.includes(marker));
+}
+
+function clausesOf(text: string): readonly string[] {
+  return foldText(text)
+    .split(CLAUSE_BREAK)
+    .map((clause) => clause.replace(/\s+/gu, ""))
+    .filter((clause) => clause.length > 0);
+}
+
+function saysWholeClauses(text: string, quote: readonly string[]): boolean {
+  const clauses = clausesOf(text);
+  for (let start = 0; start + quote.length <= clauses.length; start += 1)
+    if (quote.every((clause, index) => clauses[start + index] === clause)) return true;
+  return false;
 }
 
 function sameRule(parameters: unknown, type: string, params: unknown): boolean {
@@ -290,14 +305,14 @@ export class ProductionOwnerRuleWriter {
       Math.max(0, thread.messageWatermark - MESSAGES_SCANNED),
       MESSAGES_SCANNED,
     );
-    const wanted = comparable(quote);
-    if (wanted.length === 0) return false;
+    const wanted = clausesOf(quote);
+    if (Array.from(wanted.join("")).length < QUOTE_MINIMUM) return false;
     const owners = messages
       .filter(({ role, status }) => role === "owner" && status === "committed")
       .slice(-OWNER_MESSAGES_CHECKED);
     for (const message of owners) {
       const text = await this.#readText(message.contentRef);
-      if (text !== undefined && comparable(text).includes(wanted)) return true;
+      if (text !== undefined && saysWholeClauses(text, wanted)) return true;
     }
     return false;
   }
@@ -425,14 +440,19 @@ export class ProductionOwnerRuleWriter {
       category: "rule",
       threadId: proposal.threadId,
     });
-    const outcome = await this.#options.rules.create({
-      ...this.#scope(),
-      ruleId,
-      parameters: { type: parsed.type, params: parsed.params, summary: parsed.summary },
-      source: `chat:${proposal.threadId ?? "none"}`.slice(0, 256),
-      sourceMemoryId: memoryId,
-      now: this.#options.clock.now(),
-    });
+    const outcome = await this.#options.rules
+      .create({
+        ...this.#scope(),
+        ruleId,
+        parameters: { type: parsed.type, params: parsed.params, summary: parsed.summary },
+        source: `chat:${proposal.threadId ?? "none"}`.slice(0, 256),
+        sourceMemoryId: memoryId,
+        now: this.#options.clock.now(),
+      })
+      .catch(async (error: unknown) => {
+        await this.#archiveMemory(memoryId);
+        throw error;
+      });
     return Object.freeze({
       status: "active",
       ruleId,
@@ -463,6 +483,8 @@ export class ProductionOwnerRuleWriter {
     if (input.type === SOFT_TYPE) {
       if (summary.length === 0 || Array.from(summary).length > OWNER_RULE_SUMMARY_LIMIT)
         throw new OwnerRuleError("RULE_INPUT_INVALID", "summary");
+      if (input.inferred || !(await this.#ownerSaid(input.threadId, quote)))
+        throw new OwnerRuleError("RULE_NOT_EXPLICIT", "偏好只记主人的原话");
       const memoryId = await this.#writeMemory({
         key: input.key,
         text: `${quote}\n${summary}`,
@@ -493,9 +515,16 @@ export class ProductionOwnerRuleWriter {
       threadId: input.threadId,
     };
     const explicit =
-      !input.inferred && standing(quote) && (await this.#ownerSaid(input.threadId, quote));
+      !input.inferred && isStandingQuote(quote) && (await this.#ownerSaid(input.threadId, quote));
     if (explicit) return this.#activate(proposal, replayed);
-    const proposalId = `rule-proposal:${hash(input.key).slice(0, 32)}`;
+    const normalized = parseOwnerRuleParameters({
+      type: input.type,
+      params: input.params,
+      summary,
+    });
+    const proposalId = `rule-proposal:${hash(
+      JSON.stringify([this.#scope().ownerId, normalized.type, normalized.params]),
+    ).slice(0, 32)}`;
     await this.#writeText(proposalId, JSON.stringify(proposal));
     return Object.freeze({
       status: "proposed",
@@ -570,6 +599,22 @@ export class ProductionOwnerRuleWriter {
     });
   }
 
+  async #archiveMemory(memoryId: MemoryId): Promise<void> {
+    const generation = await this.#options.book.latestGeneration(this.#scope());
+    if (!generation) throw new OwnerRuleError("RULE_MEMORY_NOT_READY");
+    try {
+      await this.#options.memory.archive(memoryId, generation);
+    } catch (error) {
+      if (
+        error instanceof ApplicationPortError &&
+        (error.code === PORT_ERROR_CODES.INVALID_OPERATION ||
+          error.code === PORT_ERROR_CODES.NOT_FOUND)
+      )
+        return;
+      throw new OwnerRuleError("RULE_UNAVAILABLE", "规则记忆没能归档，请再撤销一次");
+    }
+  }
+
   async undo(ruleId: string): Promise<ListedOwnerRule> {
     if (!ruleId.startsWith(OWNER_RULE_ID_PREFIX) || ruleId.length > 64)
       throw new OwnerRuleError("RULE_NOT_FOUND");
@@ -586,14 +631,8 @@ export class ProductionOwnerRuleWriter {
         now: this.#options.clock.now(),
       });
       if (!changed) throw new OwnerRuleError("RULE_UNAVAILABLE");
-      if (current.sourceMemoryId) {
-        const generation = await this.#options.book.latestGeneration(this.#scope());
-        if (generation)
-          await this.#options.memory
-            .archive(current.sourceMemoryId as MemoryId, generation)
-            .catch(() => undefined);
-      }
     }
+    if (current.sourceMemoryId) await this.#archiveMemory(current.sourceMemoryId as MemoryId);
     return Object.freeze({
       ruleId,
       type,

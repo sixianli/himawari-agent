@@ -121,6 +121,7 @@ describe("[P2-3] standing rules on the web page", () => {
     expect(text).toContain("会命中：info@mail.isa.go.jp · Hello");
     expect(text).toContain("不会命中：nobody@unmatched.example · Lunch on Friday");
     expect(text).toContain("重算了 120 封");
+    expect(text).toContain("现在会改成要你看");
     expect(text).toContain("规则命中 3 封");
     expect(text).toContain("你评过“有用”的有 1 封");
     expect(text).toContain("在留カード");
@@ -174,6 +175,18 @@ describe("[P2-3] standing rules on the web page", () => {
       }),
     );
     expect(container.textContent).toBe("");
+  });
+
+  it("says a whole-thread rule reads the thread first instead of claiming every hit now asks you", async () => {
+    await show(
+      h(RuleReceiptCard, {
+        output: JSON.stringify({ ...active, type: "mail_read_whole_thread" }),
+        memory: { respondRule: vi.fn(async () => true), busy: false },
+        message,
+      }),
+    );
+    expect(container.textContent).toContain("以后会先读完整个邮件串再判断");
+    expect(container.textContent).not.toContain("现在会改成要你看");
   });
 
   it("lists rules with a review mark and reconfirm only where the source memory changed", async () => {

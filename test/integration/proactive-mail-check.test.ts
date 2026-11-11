@@ -2746,6 +2746,29 @@ describe("proactive Gmail check acceptance", () => {
       expect(entry?.inputs.ruleIds).toContain("owner:immigration");
     });
 
+    it("still hands a ruled mail to the owner after the daily model limit, and leaves unruled mail waiting", async () => {
+      const h = await harness({ storedOwnerRules: true, dailyCostMicros: 1_000, cost: 1_000 });
+      await write(h, "owner:immigration", immigration);
+      h.reader.items = [mail("first", { snippet: "随便聊聊" })];
+      h.script([{ id: "first", result: "ignore" }]);
+      await h.service.run();
+      h.clock.advance(15 * 60_000);
+      h.reader.items = [
+        mail("isa", { from: "no-reply@isa.go.jp", fromAddress: "no-reply@isa.go.jp" }),
+        mail("chat", { snippet: "今度ランチ行こう" }),
+      ];
+      const capped = await h.service.run();
+      expect(h.invocations()).toBe(1);
+      expect(capped).toMatchObject({ verdict: "pushed", reasonCode: "DAILY_LIMIT" });
+      expect((await h.overview()).insights).toEqual([
+        expect.objectContaining({ result: "check", basis: "daily_limit", pushed: true }),
+      ]);
+      const rows = await ledgerRows(h);
+      expect(rows.map((row) => row.inputs.ruleHits)).toContainEqual({
+        isa: ["owner:immigration@1"],
+      });
+    });
+
     it("REVERSE: leaves unrelated mail to the model, and stops enforcing a retired rule at the next check without a restart", async () => {
       const h = await harness({ storedOwnerRules: true });
       await write(h, "owner:immigration", immigration);

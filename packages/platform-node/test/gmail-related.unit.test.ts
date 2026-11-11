@@ -261,6 +261,14 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
       transport: mailbox([now], { failThread: true }),
     });
     expect(down.wholeThread?.get("now")?.complete).not.toBe(true);
+    const gone = await findRelatedMail({
+      items: [now],
+      limits,
+      wholeThread: new Set(["now"]),
+      signal: new AbortController().signal,
+      transport: { ...mailbox([now]), thread: async () => undefined },
+    });
+    expect(gone.wholeThread?.get("now")?.complete).toBe(false);
     const other = await findRelatedMail({
       items: [item("now")],
       limits: { perMail: 2, requestsPerCheck: 100, wholeThreadPerMail: 50 },

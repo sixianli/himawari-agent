@@ -843,7 +843,7 @@ export const messages = {
   "rules.receipt.trials": "试算",
   "rules.receipt.trial": "{hit, select, true {会命中} other {不会命中}}：{from} · {subject}",
   "rules.receipt.replay":
-    "近 {days} 天回放：重算了 {checked} 封已判断过的邮件，规则命中 {hit} 封，其中 {changed} 封原来判为“不用管”或“知道就好”、现在会改成要你看；这些里你评过“有用”的有 {useful} 封。",
+    "近 {days} 天回放：重算了 {checked} 封已判断过的邮件，规则命中 {hit} 封，其中 {changed} 封原来判为“不用管”或“知道就好”、{kind, select, mail_read_whole_thread {以后会先读完整个邮件串再判断，读不全就交给你看} other {现在会改成要你看}}；这些里你评过“有用”的有 {useful} 封。",
   "rules.receipt.replayNote":
     "回放用当时存下的内容重算。判为“不用管”的邮件只存了发件人和标题，所以结果是估计，可能偏多也可能偏少。",
   "rules.receipt.replayNone": "这次没能做历史回放，规则已照常生效。",

@@ -1361,6 +1361,10 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     relatedCharactersPerMail: 12_000,
     relatedCharactersPerRelatedMail: 2_000,
     relatedRequestsPerCheck: 300,
+    wholeThreadMailsPerMail: 50,
+    wholeThreadCharactersPerMail: 60_000,
+    ruleReplayDays: 30,
+    ruleReplayMailsPerOutcome: 300,
     memoryMinimumSimilarity: 0.45,
     reviewBudgetSeconds: 120,
     reviewSecondsPerItem: 5,
@@ -1414,6 +1418,10 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, backoffThreshold: -1 },
     { ...proactive, relatedMailsPerMail: 51 },
     { ...proactive, relatedRequestsPerCheck: 0 },
+    { ...proactive, wholeThreadMailsPerMail: 0 },
+    { ...proactive, wholeThreadCharactersPerMail: 1_000 },
+    { ...proactive, ruleReplayDays: 0 },
+    { ...proactive, ruleReplayMailsPerOutcome: 0 },
     { ...proactive, relatedCharactersPerMail: 300, relatedCharactersPerRelatedMail: 400 },
   ]) {
     raw["runPolicy"] = { ...policy, proactive: invalid };

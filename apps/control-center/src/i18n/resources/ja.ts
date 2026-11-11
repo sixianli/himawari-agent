@@ -899,7 +899,7 @@ export const messages = {
   "rules.receipt.trials": "試算",
   "rules.receipt.trial": "{hit, select, true {該当する} other {該当しない}}：{from} · {subject}",
   "rules.receipt.replay":
-    "過去 {days} 日の再計算：判断済みのメール {checked} 件のうちルールに該当するのは {hit} 件で、そのうち {changed} 件は「対応不要」か「知っておけば十分」だったものが確認待ちに変わります。そのうち「役に立った」と評価したものは {useful} 件です。",
+    "過去 {days} 日の再計算：判断済みのメール {checked} 件のうちルールに該当するのは {hit} 件で、そのうち {changed} 件は「対応不要」か「知っておけば十分」だったもので、{kind, select, mail_read_whole_thread {今後はスレッド全体を読んでから判断し、読み切れなければ確認待ちにします} other {確認待ちに変わります}}。そのうち「役に立った」と評価したものは {useful} 件です。",
   "rules.receipt.replayNote":
     "再計算は当時保存した内容で行います。「対応不要」と判断したメールは差出人と件名しか残っていないため、件数は推定で、多めにも少なめにもなりえます。",
   "rules.receipt.replayNone": "今回は再計算ができませんでしたが、ルールは有効になっています。",

@@ -894,7 +894,7 @@ export const messages = {
   "rules.receipt.trial":
     "{hit, select, true {Would match} other {Would not match}}: {from} · {subject}",
   "rules.receipt.replay":
-    'Replay of the last {days} days: re-checked {checked} decided mails; the rule matches {hit}, and {changed} of them were "ignore" or "good to know" and would now ask you to look. You rated {useful} of those as useful.',
+    'Replay of the last {days} days: re-checked {checked} decided mails; the rule matches {hit}, and {changed} of them were "ignore" or "good to know" and {kind, select, mail_read_whole_thread {would now be judged after reading the whole thread, or handed to you if it cannot be read} other {would now ask you to look}}. You rated {useful} of those as useful.',
   "rules.receipt.replayNote":
     "The replay uses what was stored at the time. Ignored mails only kept the sender and subject, so the numbers are estimates and may be too high or too low.",
   "rules.receipt.replayNone": "The replay couldn't run this time; the rule is in effect anyway.",

@@ -884,7 +884,19 @@ export class ProactiveMailCheckService {
       if (floor) floorHits[item.messageId] = floorIds;
       const judgement = judged.get(item.messageId);
       if (!judgement) {
-        if (stop === "capped_daily" && floor) {
+        const ruled =
+          stop === "capped_daily" && !item.sentByOwner
+            ? [...(wholeThreadHits.get(item.messageId) ?? []), ...mustNotifyHitIds(item, rules)]
+            : [];
+        if (ruled.length > 0) {
+          ruleHits[item.messageId] = [...new Set(ruled)].sort().slice(0, 16);
+          floorHits[item.messageId] = [
+            ...new Set([...floorIds, ...ruled.map((ref) => ref.replace(/@\d+$/u, ""))]),
+          ]
+            .sort()
+            .slice(0, 16);
+        }
+        if (stop === "capped_daily" && (floor || ruled.length > 0)) {
           processed.push({
             ...this.#base(item),
             outcome: "check",
@@ -936,7 +948,9 @@ export class ProactiveMailCheckService {
         ruleHits[item.messageId] = [...new Set(enforced)].sort().slice(0, 16);
         floorHits[item.messageId] = [
           ...new Set([...floorIds, ...enforced.map((ref) => ref.replace(/@\d+$/u, ""))]),
-        ].slice(0, 16);
+        ]
+          .sort()
+          .slice(0, 16);
       }
       if (final.raised) counts.floorRaised += 1;
       counts[final.result] += 1;
@@ -990,7 +1004,8 @@ export class ProactiveMailCheckService {
         dueAt,
         priority,
         push,
-        pushClass: push && dueSoon && !floor ? proactivePushClass(item.fromAddress) : null,
+        pushClass:
+          push && dueSoon && !floor && !mustNotify ? proactivePushClass(item.fromAddress) : null,
         dataClassification: judgedClassification.get(item.messageId) ?? "private",
       });
     }

@@ -14,6 +14,7 @@ export const OWNER_RULE_ID_PREFIX = "owner:";
 export const OWNER_RULE_LIST_LIMIT = 32;
 export const OWNER_RULE_ENTRY_LIMIT = 64;
 export const OWNER_RULE_SUMMARY_LIMIT = 200;
+export const OWNER_RULE_STORED_LIMIT = 16_384;
 
 export type RuleTypeErrorCode =
   | "RULE_TYPE_UNKNOWN"
@@ -257,17 +258,15 @@ export function parseOwnerRuleParameters(
   if (
     typeof summary !== "string" ||
     summary.trim().length === 0 ||
-    Array.from(summary).length > OWNER_RULE_SUMMARY_LIMIT ||
-    /\p{Surrogate}/u.test(summary)
+    summary.trim().length > OWNER_RULE_SUMMARY_LIMIT ||
+    /[\p{Surrogate}\p{Cc}\p{Cf}]/u.test(summary.trim())
   )
-    invalid(`规则说明必须是 1 到 ${OWNER_RULE_SUMMARY_LIMIT} 个字`);
+    invalid(`规则说明必须是 1 到 ${OWNER_RULE_SUMMARY_LIMIT} 个字，不能有换行或不可见字符`);
   const definition = ruleType(type, registry);
-  return Object.freeze({
-    type,
-    params: definition.parse(record["params"]),
-    summary: summary.trim(),
-    definition,
-  });
+  const params = definition.parse(record["params"]);
+  if (JSON.stringify({ type, params, summary: summary.trim() }).length > OWNER_RULE_STORED_LIMIT)
+    invalid("规则参数太长，请减少条目");
+  return Object.freeze({ type, params, summary: summary.trim(), definition });
 }
 
 export function ownerRuleRecord(

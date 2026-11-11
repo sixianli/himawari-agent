@@ -139,13 +139,14 @@ export async function findRelatedMail(input: {
     let step = "thread";
     try {
       if (!budget.take()) throw new RelatedStop("budget");
-      for (const message of (await transport.thread(item.threadId)) ?? []) {
+      const listed = await transport.thread(item.threadId);
+      for (const message of listed ?? []) {
         known.set(message.messageId, message);
         add(message);
         if (message.messageId !== item.messageId && !message.categories.includes("spam"))
           threadMessages.push(message);
       }
-      threadRead = true;
+      threadRead = listed !== undefined;
       step = "subject";
       const subject = normalizeSubject(item.subject);
       if (Array.from(subject).length >= MIN_SUBJECT_CHARACTERS && counterparts(item).length > 0) {

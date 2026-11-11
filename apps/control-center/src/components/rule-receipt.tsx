@@ -122,6 +122,7 @@ export function RuleReceiptCard({
             <>
               <p className="settings-note">
                 {message("rules.receipt.replay", {
+                  kind: receipt.type,
                   days: receipt.replay.days,
                   checked: receipt.replay.mailsChecked,
                   hit: receipt.replay.mailsHit,
