@@ -30,6 +30,7 @@ import { redactForEgress } from "@himawari-agent/sensitive-capture";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  type MemoryCaptureCall,
   memoryCapturePrompt,
   ProductionMemoryCapture,
   parseMemoryCandidates,
@@ -197,6 +198,7 @@ describe("production memory capture", () => {
     const audits: MemoryExtractionAuditRecord[] = [];
     const failures: unknown[] = [];
     const prompts: string[] = [];
+    const calls: MemoryCaptureCall[] = [];
     const outputs: (string | Error)[] = [output];
     const relevant: string[] = [];
     const capture = new ProductionMemoryCapture({
@@ -220,8 +222,10 @@ describe("production memory capture", () => {
         },
       },
       threads: {
-        read: async () => ({ messageWatermark: messages.length }) as never,
-        listMessages: async () => messages,
+        listMessages: async (_owner, _agent, _thread, afterSequence, limit) =>
+          messages.filter(({ sequence }) => sequence > afterSequence).slice(0, limit),
+        readCommittedMessagesByIds: async ({ messageIds }) =>
+          messages.filter(({ id }) => messageIds.includes(id)),
       },
       generations: repository.threadDistillationState(),
       state: repository.productMemoryState(),
@@ -231,14 +235,16 @@ describe("production memory capture", () => {
       reminders: repository.memoryReminders(),
       book: repository.memoryBook(),
       ledger: repository.decisionLedger(),
+      backlog: repository.memoryCaptureBacklog(),
       timeZone: "Asia/Shanghai",
       payloads,
       protector: adapters.payloadProtector,
       clock: { now: () => T0 },
       assertActive: async () => {},
       externalTag: async () => captureTag,
-      generate: async (_request, prompt, onAdmitted) => {
+      generate: async (_request, prompt, onAdmitted, call) => {
         prompts.push(prompt);
+        calls.push(call);
         onAdmitted();
         const next = outputs.shift() ?? '{"memories":[]}';
         if (next instanceof Error) throw next;
@@ -356,6 +362,7 @@ describe("production memory capture", () => {
       audits,
       failures,
       prompts,
+      calls,
     };
   }
 
@@ -1067,10 +1074,14 @@ describe("production memory capture", () => {
 
   it("reports an invalid model response without writing Memory", async () => {
     const context = await setup("我叫 Andy。", "好的，我记住了。");
+    context.outputs.push("好的，我记住了。");
     await context.capture.start(context.request);
     await context.capture.stop();
-    expect(context.failures).toHaveLength(1);
-    expect(context.audits.map(({ outcome }) => outcome)).toEqual(["extraction_failed"]);
+    expect(context.failures).toHaveLength(2);
+    expect(context.audits.map(({ outcome }) => outcome)).toEqual([
+      "extraction_failed",
+      "extraction_failed",
+    ]);
     expect(
       await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID),
     ).toHaveLength(0);
@@ -2212,5 +2223,248 @@ describe("production memory capture", () => {
         .filter(({ importBatchId }) => importBatchId === "memory-import-sensitive-1")
         .map(({ dataClassification }) => dataClassification),
     ).toEqual(["sensitive"]);
+  });
+
+  const P3_5_MESSAGE = "我超想出去玩，周末去哪儿都行";
+  const P3_5_MEMORY = JSON.stringify({
+    memories: [
+      {
+        kind: "durable_fact",
+        decision: "create",
+        text: "主人很喜欢出去玩",
+        classification: "private",
+        confidence: 900,
+        category: "preference",
+        subCategory: "社交",
+        quote: "我超想出去玩，周末去哪儿都行",
+      },
+    ],
+  });
+  const captureFailures = async (context: Awaited<ReturnType<typeof setup>>) =>
+    (await context.ledgerEntries())
+      .filter(({ outcome }) => outcome.startsWith("capture_"))
+      .toSorted((left, right) => left.id.localeCompare(right.id))
+      .map(({ outcome, reasonCode, subjectRef, ownerRating, inputs }) => ({
+        outcome,
+        reasonCode,
+        subjectRef,
+        ownerRating,
+        ruleIds: inputs.ruleIds,
+      }));
+  const failureOutcomes = async (context: Awaited<ReturnType<typeof setup>>) =>
+    (await captureFailures(context)).map(({ outcome }) => outcome).toSorted();
+  const backlogRows = (context: Awaited<ReturnType<typeof setup>>) => {
+    let rows: unknown[] = [];
+    context.sql((database) => {
+      rows = database
+        .prepare(
+          "SELECT generation_id AS generationId, attempts, last_error_code AS lastErrorCode FROM memory_capture_backlog",
+        )
+        .all();
+    });
+    return rows;
+  };
+  const optionsOf = (context: Awaited<ReturnType<typeof setup>>) =>
+    (
+      context.capture as unknown as {
+        options: ConstructorParameters<typeof ProductionMemoryCapture>[0];
+      }
+    ).options;
+  const nextTurn = async (
+    context: Awaited<ReturnType<typeof setup>>,
+    runId: string,
+    outputs: readonly (string | Error)[],
+  ) => {
+    await context.turn("owner", `今天第 ${runId} 轮，随便聊聊。`, runId);
+    context.outputs.push(...outputs);
+    const capture = new ProductionMemoryCapture(optionsOf(context));
+    await capture.start(context.requestFor(runId));
+    await capture.stop();
+  };
+  const activeMemories = (context: Awaited<ReturnType<typeof setup>>) =>
+    context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+
+  it("[P3-5] retries a failed capture once in the same turn and keeps the memory", async () => {
+    const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    context.outputs.push(P3_5_MEMORY);
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.calls).toEqual([
+      { invocationId: "memory-capture:run-memory-capture", retryToolCall: false },
+      { invocationId: "memory-capture:run-memory-capture:retry", retryToolCall: false },
+    ]);
+    expect(context.prompts[1]).toBe(context.prompts[0]);
+    expect((await activeMemories(context)).map(({ id }) => id)).toEqual([
+      "memory:memory-capture:run-memory-capture:0",
+    ]);
+    expect(await captureFailures(context)).toEqual([
+      {
+        outcome: "capture_retrying",
+        reasonCode: "AI_GATEWAY_PROVIDER_UNAVAILABLE",
+        subjectRef: "memory-capture:run-memory-capture",
+        ownerRating: null,
+        ruleIds: [],
+      },
+    ]);
+    expect(backlogRows(context)).toEqual([]);
+  });
+
+  it("[P3-5] retries an answer that is not valid JSON and records the failure", async () => {
+    const context = await setup(P3_5_MESSAGE, "好的，我记住了。");
+    context.outputs.push(P3_5_MEMORY);
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.calls).toHaveLength(2);
+    expect(await activeMemories(context)).toHaveLength(1);
+    expect(
+      (await captureFailures(context)).map(({ outcome, reasonCode }) => [outcome, reasonCode]),
+    ).toEqual([["capture_retrying", "MEMORY_CAPTURE_RESPONSE_INVALID"]]);
+    expect(backlogRows(context)).toEqual([]);
+  });
+
+  it("[P3-5] queues a turn that fails twice and replays it on the next turn", async () => {
+    const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    context.outputs.push(new Error("AI_GATEWAY_REQUEST_TIMEOUT"));
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.calls).toHaveLength(2);
+    expect(await activeMemories(context)).toEqual([]);
+    expect(backlogRows(context)).toEqual([
+      {
+        generationId: "memory-capture:run-memory-capture",
+        attempts: 0,
+        lastErrorCode: "AI_GATEWAY_PROVIDER_UNAVAILABLE",
+      },
+    ]);
+    expect(
+      (await captureFailures(context))
+        .map(({ outcome, reasonCode }) => [outcome, reasonCode])
+        .toSorted(),
+    ).toEqual([
+      ["capture_queued", "AI_GATEWAY_REQUEST_TIMEOUT"],
+      ["capture_retrying", "AI_GATEWAY_PROVIDER_UNAVAILABLE"],
+    ]);
+
+    await nextTurn(context, "run-next", ['{"memories":[]}', P3_5_MEMORY]);
+    expect(context.calls.slice(2)).toEqual([
+      { invocationId: "memory-capture:run-next", retryToolCall: false },
+      { invocationId: "memory-capture:run-next:backlog", retryToolCall: false },
+    ]);
+    expect(context.prompts[3]).toContain(P3_5_MESSAGE);
+    expect((await activeMemories(context)).map(({ id }) => id)).toEqual([
+      "memory:memory-capture:run-memory-capture:0",
+    ]);
+    expect(backlogRows(context)).toEqual([]);
+    expect(
+      (await context.ledgerEntries()).filter(({ outcome }) => outcome === "kept"),
+    ).toHaveLength(1);
+  });
+
+  it("[P3-5] gives up on a queued turn after three failed replays", async () => {
+    const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    context.outputs.push(new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    for (const [index, runId] of ["run-a", "run-b", "run-c"].entries()) {
+      await nextTurn(context, runId, ['{"memories":[]}', "不是 JSON"]);
+      expect(backlogRows(context)).toEqual(
+        index < 2
+          ? [
+              {
+                generationId: "memory-capture:run-memory-capture",
+                attempts: index + 1,
+                lastErrorCode: "MEMORY_CAPTURE_RESPONSE_INVALID",
+              },
+            ]
+          : [],
+      );
+    }
+    expect(await failureOutcomes(context)).toEqual([
+      "capture_gave_up",
+      "capture_queued",
+      "capture_queued",
+      "capture_queued",
+      "capture_retrying",
+    ]);
+    await nextTurn(context, "run-d", ['{"memories":[]}']);
+    expect(context.calls.at(-1)?.invocationId).toBe("memory-capture:run-d");
+    expect(await activeMemories(context)).toEqual([]);
+  });
+
+  it("[P3-5] does not retry an error that would repeat, but still queues the turn", async () => {
+    const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_OUTPUT_TRUNCATED"));
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.calls).toHaveLength(1);
+    expect(
+      (await captureFailures(context)).map(({ outcome, reasonCode }) => [outcome, reasonCode]),
+    ).toEqual([["capture_queued", "AI_GATEWAY_OUTPUT_TRUNCATED"]]);
+    expect(backlogRows(context)).toHaveLength(1);
+  });
+
+  it("[P3-5] keeps a queued turn while memory is paused and replays it after resuming", async () => {
+    const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    context.outputs.push(new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await command(context.control, "memory.settings.set", { capturePaused: true });
+    await nextTurn(context, "run-paused", []);
+    expect(context.calls).toHaveLength(2);
+    expect(backlogRows(context)).toHaveLength(1);
+    await command(context.control, "memory.settings.set", { capturePaused: false }, "resume");
+    await nextTurn(context, "run-resumed", ['{"memories":[]}', P3_5_MEMORY]);
+    expect(await activeMemories(context)).toHaveLength(1);
+    expect(backlogRows(context)).toEqual([]);
+  });
+
+  it("[P3-5] does not replay a turn from a conversation in the trash, and forgets it once the conversation is deleted", async () => {
+    const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    context.outputs.push(new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    context.sql((database) =>
+      database.prepare("UPDATE threads SET status = 'trashed' WHERE id = ?").run(THREAD_ID),
+    );
+    const replay = new ProductionMemoryCapture(optionsOf(context));
+    await replay.start(context.requestFor("run-memory-capture-other"));
+    await replay.stop();
+    expect(context.calls).toHaveLength(2);
+    expect(backlogRows(context)).toHaveLength(1);
+    context.sql((database) => {
+      database.pragma("foreign_keys = ON");
+      database.prepare("DELETE FROM threads WHERE id = ?").run(THREAD_ID);
+    });
+    expect(backlogRows(context)).toEqual([]);
+  });
+
+  it("[P3-5] keeps a turn queued from its first failure, before the same-turn retry ends", async () => {
+    const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    let release = () => {};
+    const options = optionsOf(context);
+    let seen: unknown[] = [];
+    const capture = new ProductionMemoryCapture({
+      ...options,
+      generate: async (request, prompt, onAdmitted, call) => {
+        if (call.invocationId.endsWith(":retry")) {
+          seen = backlogRows(context);
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          throw new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE");
+        }
+        return options.generate(request, prompt, onAdmitted, call);
+      },
+    });
+    await capture.start(context.request);
+    while (seen.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(seen).toEqual([
+      {
+        generationId: "memory-capture:run-memory-capture",
+        attempts: 0,
+        lastErrorCode: "AI_GATEWAY_PROVIDER_UNAVAILABLE",
+      },
+    ]);
+    release();
+    await capture.stop();
   });
 });

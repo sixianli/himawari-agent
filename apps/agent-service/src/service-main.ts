@@ -1978,12 +1978,13 @@ export async function runAgentService(
                       },
                     }
                   : {}),
-                generate: (request, prompt, gate, purpose = "memory-capture") => {
+                generate: (request, prompt, gate, purpose = "memory-capture", call) => {
                   const generateText = modelComposition?.composition.generateText;
                   if (!generateText) throw new Error("MEMORY_CAPTURE_MODEL_UNAVAILABLE");
                   return generateText(request, prompt, gate, {
                     purpose: modelUsagePurpose(purpose),
-                    invocationId: `${purpose}:${request.runId}`,
+                    invocationId: call?.invocationId ?? `${purpose}:${request.runId}`,
+                    ...(call ? { retryToolCall: call.retryToolCall } : {}),
                     maxOutputTokens: 1024,
                     reasoningOutputTokens: 4096,
                     disableThinking: true,

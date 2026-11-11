@@ -41,13 +41,32 @@ export type DecisionKind = (typeof DECISION_KINDS)[number];
 export type LedgerWriteKind = Exclude<DecisionKind, "proactive">;
 
 export const DECISION_OUTCOMES = {
-  memory_candidate: ["kept", "discarded", "pending_approval"],
+  memory_candidate: [
+    "kept",
+    "discarded",
+    "pending_approval",
+    "capture_retrying",
+    "capture_queued",
+    "capture_gave_up",
+  ],
   consolidation: ["merge", "supersede", "archive", "reflect"],
   context_truncation: ["truncated"],
   retrieval_degrade: ["degraded"],
   external_read: ["read"],
   rule_review: ["needs_review"],
 } as const satisfies Record<LedgerWriteKind, readonly string[]>;
+
+export const MEMORY_CAPTURE_FAILURE_OUTCOMES = [
+  "capture_retrying",
+  "capture_queued",
+  "capture_gave_up",
+] as const;
+
+export type MemoryCaptureFailureOutcome = (typeof MEMORY_CAPTURE_FAILURE_OUTCOMES)[number];
+
+export function isMemoryCaptureFailure(outcome: string | null): boolean {
+  return (MEMORY_CAPTURE_FAILURE_OUTCOMES as readonly (string | null)[]).includes(outcome);
+}
 
 export type DecisionOutcome = (typeof DECISION_OUTCOMES)[LedgerWriteKind][number];
 
