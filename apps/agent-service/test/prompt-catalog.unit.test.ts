@@ -378,6 +378,12 @@ describe("[PROMPT-CATALOG] every prompt sent to a model lives in the catalog", (
       `PROMPT_MANIFEST_STALE ${first.id}`,
     );
     expect(manifestProblems([first], {})).toContain(`PROMPT_MANIFEST_MISSING ${first.id}`);
+    expect(
+      manifestProblems([first], {
+        [first.id]: { sha256: digest(first), changedIn: "ADR 0226", reason: "x" },
+        "mcp.removed-entry": { sha256: digest(first), changedIn: "ADR 0226", reason: "x" },
+      }),
+    ).toEqual(["PROMPT_MANIFEST_UNKNOWN mcp.removed-entry"]);
   });
 
   it("REVERSE: reports a system prompt that carries a date or an unlisted slot", () => {

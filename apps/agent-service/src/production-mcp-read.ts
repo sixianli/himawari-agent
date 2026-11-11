@@ -179,8 +179,8 @@ export function mcpProposalAnswer(
   askedAt: number,
   answeredAt: number,
 ): McpProposalAnswer {
-  if (action === "accept") return "accepted";
-  return answeredAt - askedAt >= MCP_PROPOSAL_UNSEEN_ANSWER_MS ? "declined" : "unseen";
+  if (!(answeredAt - askedAt >= MCP_PROPOSAL_UNSEEN_ANSWER_MS)) return "unseen";
+  return action === "accept" ? "accepted" : "declined";
 }
 
 export interface ProductionMcpReadOptions {
@@ -646,7 +646,9 @@ export class ProductionMcpRead {
     const params = (preview.params ?? {}) as Record<string, unknown>;
     const listed = (key: string) => {
       const value = params[key];
-      return Array.isArray(value) && value.length > 0 ? value.join("、") : "—";
+      return Array.isArray(value) && value.length > 0
+        ? value.map((entry) => String(entry).replace(/[\p{Zl}\p{Zp}]/gu, " ")).join("、")
+        : "—";
     };
     return inputRequired({
       inputRequests: {

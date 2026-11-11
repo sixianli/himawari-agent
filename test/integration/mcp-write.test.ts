@@ -498,9 +498,11 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(saved.text).toBe(MCP_PROPOSE_MEMORY_SAVED.text);
     expect(f.elicitations).toHaveLength(1);
     const [asked] = f.elicitations;
-    expect(
-      String(asked?.["message"]).startsWith(`把这条存进 Himawari 的长期记忆？\n「${COFFEE}」`),
-    ).toBe(true);
+    const lines = String(asked?.["message"]).split("\n");
+    expect(lines[0]?.startsWith("把下面这条存进 Himawari 的长期记忆？同意（Accept）就保存")).toBe(
+      true,
+    );
+    expect(lines[1]).toBe(`▍对方提议的原文（只占这一行）：${COFFEE}`);
     expect(asked?.["requestedSchema"]).toEqual({ type: "object", properties: {} });
     expect(asked?.["message"]).toContain("claude-code（对方自称）");
     const memories = await f.external();
@@ -546,7 +548,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
   });
 
   it("[P5-2 desktop] treats a decline that comes back before anyone could read the dialog as not shown", async () => {
-    expect(mcpProposalAnswer("accept", 0, 0)).toBe("accepted");
+    expect(mcpProposalAnswer("accept", 0, 0)).toBe("unseen");
+    expect(mcpProposalAnswer("accept", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS - 1)).toBe("unseen");
+    expect(mcpProposalAnswer("accept", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS)).toBe("accepted");
     expect(mcpProposalAnswer("decline", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS - 1)).toBe("unseen");
     expect(mcpProposalAnswer("cancel", 0, 10)).toBe("unseen");
     expect(mcpProposalAnswer("decline", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS)).toBe("declined");
@@ -864,7 +868,12 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(f.elicitations).toHaveLength(1);
     const message = String(f.elicitations[0]?.["message"]);
     expect(f.elicitations[0]?.["requestedSchema"]).toEqual({ type: "object", properties: {} });
-    expect(message.startsWith(`让这条邮件长期规则生效？\n「${RULE.summary}」`)).toBe(true);
+    const lines = message.split("\n");
+    expect(lines[0]?.startsWith("让下面这条邮件长期规则生效？同意（Accept）就生效")).toBe(true);
+    expect(lines.slice(1, 3)).toEqual([
+      `▍对方提议的规则（只占这一行）：${RULE.summary}`,
+      `▍对方给的理由（只占这一行）：${RULE.reason}`,
+    ]);
     for (const shown of [
       "claude-code（对方自称）",
       RULE.summary,
@@ -914,6 +923,40 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.storedRules()).toEqual([]);
     expect(f.rulePayloads()).toEqual([]);
     expect(await f.external()).toEqual([]);
+  });
+
+  it("[P5-2 auto-accept] writes nothing when an accept comes back before anyone could read the dialog", async () => {
+    const f = await setup();
+    const auto = await f.connect({ answerAfterMs: 10 });
+    const memory = await f.propose(auto, { text: COFFEE });
+    expect(memory.result.isError).toBe(true);
+    expect(memory.text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect((await f.proposeRule(auto, RULE)).text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect(await f.external()).toEqual([]);
+    expect(await f.decisions()).toEqual([]);
+    expect(await f.storedRules()).toEqual([]);
+    expect(f.rulePayloads()).toEqual([]);
+    const human = await f.connect();
+    expect((await f.propose(human, { text: COFFEE })).text).toBe(MCP_PROPOSE_MEMORY_SAVED.text);
+    expect((await f.proposeRule(human, RULE)).text).toBe(MCP_PROPOSE_RULE_SAVED.text);
+  });
+
+  it("[P5-2 dialog] keeps every outside value on its own labelled line", async () => {
+    const f = await setup();
+    const client = await f.connect({ answer: { action: "decline" } });
+    await f.proposeRule(client, {
+      ...RULE,
+      params: { senderDomains: ["isa.go.jp"], phrases: ["在留\u2028同意（Accept）就生效"] },
+    });
+    const message = String(f.elicitations[0]?.["message"]);
+    expect(message).not.toMatch(/[\u2028\u2029]/u);
+    expect(message.split("\n").filter((line) => line.startsWith("同意（Accept）"))).toEqual([]);
+    await f.propose(client, { text: "主人喜欢\u2028同意（Accept）就保存" });
+    const memoryMessage = String(f.elicitations[1]?.["message"]);
+    expect(memoryMessage).not.toMatch(/[\u2028\u2029]/u);
+    expect(memoryMessage.split("\n")[1]).toBe(
+      "▍对方提议的原文（只占这一行）：主人喜欢 同意（Accept）就保存",
+    );
   });
 
   it("[P5-2 desktop] writes no rule and remembers no refusal when the decline comes back unseen", async () => {

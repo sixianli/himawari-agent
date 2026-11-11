@@ -350,9 +350,9 @@
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
   },
   "mcp.propose-memory-confirm": {
-    "sha256": "21bdb97b71700b0abe4e5903e0657084060a5db2e3df7c47de2f4d413604a672",
+    "sha256": "ee51e4882c0877e49bf648ecbe7c3ebf90d24401230b3752e447cdfc71b411b9",
     "changedIn": "ADR 0225",
-    "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
+    "reason": "P5-2: outside values each on a labelled line; instant accepts count as not shown"
   },
   "mcp.propose-memory-declined": {
     "sha256": "09487ef998b0959cc71d2384cf31e80b3700b8607be4ebad0ba7b060e30b5440",
@@ -390,9 +390,9 @@
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
   },
   "mcp.propose-not-shown": {
-    "sha256": "a4b3e6f70b007e8d2bdeb4c02e9ba45c8c5d9d028114fe00d1dd8b444a635655",
+    "sha256": "6f1bec1a70571e773c1f0b6ddb65a2289e1d56dd643660c6458cfe28dbd02794",
     "changedIn": "ADR 0225",
-    "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
+    "reason": "P5-2: outside values each on a labelled line; instant accepts count as not shown"
   },
   "mcp.propose-rule": {
     "sha256": "2669de4d02fd11cc4cc28cf72dae4001778e0c099bf170f9dfb70a3ac3983f4a",
@@ -410,9 +410,9 @@
     "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
   },
   "mcp.propose-rule-confirm": {
-    "sha256": "d153dd78430f5378c306a6e9617749126904debeed3bb06131cca385034fa25e",
+    "sha256": "249cc6ec7907eaba353278e7abe3747050dbd83841e16a4d919c0bd8679c2e7e",
     "changedIn": "ADR 0226",
-    "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
+    "reason": "P5-2: outside values each on a labelled line; instant accepts count as not shown"
   },
   "mcp.propose-rule-declined": {
     "sha256": "f7d63533b82ab6f1f0ec205d335b15c232371a988bb2b429045c515e4862ae40",
