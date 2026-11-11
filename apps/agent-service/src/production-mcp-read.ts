@@ -21,6 +21,7 @@ import {
   MCP_PROPOSE_MEMORY_CONFIRM,
   MCP_PROPOSE_MEMORY_DECLINED,
   MCP_PROPOSE_MEMORY_FAILED,
+  MCP_PROPOSE_MEMORY_FULL,
   MCP_PROPOSE_MEMORY_INVALID,
   MCP_PROPOSE_MEMORY_PENDING,
   MCP_PROPOSE_MEMORY_SAVED,
@@ -252,6 +253,10 @@ interface ReadTrace {
 
 function isAlreadyDecided(error: unknown): boolean {
   return error instanceof Error && error.message === "MCP_PROPOSAL_ALREADY_DECIDED";
+}
+
+function isPendingFull(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("EXTERNAL_MEMORY_PROPOSAL_PENDING_FULL");
 }
 
 function mapStrings(value: unknown, map: (text: string) => string): unknown {
@@ -826,12 +831,20 @@ export class ProductionMcpRead {
           results.push({ index, status: parsed });
           continue;
         }
-        const { proposal, superseded } = await proposals.submit({
-          proposalId: randomUUID(),
-          ...parsed,
-          client,
-          subjectRef,
-        });
+        let submitted: Awaited<ReturnType<McpMemoryProposals["submit"]>>;
+        try {
+          submitted = await proposals.submit({
+            proposalId: randomUUID(),
+            ...parsed,
+            client,
+            subjectRef,
+          });
+        } catch (error) {
+          if (!isPendingFull(error)) throw error;
+          results.push({ index, status: "full" });
+          continue;
+        }
+        const { proposal, superseded } = submitted;
         for (const id of superseded) replaced.add(id);
         results.push({
           index,
@@ -941,6 +954,7 @@ export class ProductionMcpRead {
         return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
       });
     } catch (error) {
+      if (isPendingFull(error)) return proposalReply(MCP_PROPOSE_MEMORY_FULL.text, true);
       this.#options.onFailure(error);
       return proposalReply(MCP_PROPOSE_MEMORY_FAILED.text, true);
     }

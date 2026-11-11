@@ -47,6 +47,8 @@ function valid(value: string): boolean {
 
 const PROPOSAL_ID_MAXIMUM = 40;
 
+const EXTERNAL_PROPOSAL_PENDING_MAXIMUM = 1000;
+
 const CATEGORIES: ReadonlySet<string> = new Set([
   "identity",
   "preference",
@@ -108,7 +110,13 @@ export class SqliteExternalMemoryProposalOperations {
       case "externalMemoryProposal.listBatches":
         return this.listBatches(payload as Scope & { limit: number });
       case "externalMemoryProposal.reopenBatch":
-        return this.reopenBatch(payload as Scope & { batchId: string; reopen: readonly string[] });
+        return this.reopenBatch(
+          payload as Scope & {
+            batchId: string;
+            reopen: readonly string[];
+            trashed: readonly string[];
+          },
+        );
       case "externalMemoryProposal.dropDiscardedText":
         return this.dropDiscardedText(payload as Scope & { decidedBefore: string });
       default:
@@ -135,6 +143,26 @@ export class SqliteExternalMemoryProposalOperations {
       !CLASSIFICATIONS.has(input.dataClassification)
     )
       this.fail("PORT_INVALID_OPERATION", "External Memory proposal is invalid");
+    const seen =
+      this.database
+        .prepare(
+          `SELECT 1 FROM external_memory_proposals
+          WHERE owner_id = ? AND agent_id = ? AND text_sha256 = ? AND status <> 'superseded'`,
+        )
+        .get(input.ownerId, input.agentId, input.textSha256) !== undefined;
+    if (
+      !seen &&
+      (this.database
+        .prepare(
+          `SELECT COUNT(*) FROM external_memory_proposals
+          WHERE owner_id = ? AND agent_id = ? AND status = 'pending'`,
+        )
+        .pluck()
+        .get(input.ownerId, input.agentId) as number) >= EXTERNAL_PROPOSAL_PENDING_MAXIMUM
+    ) {
+      if (!this.contentInUse(input.contentRef)) this.dropPayload(input.contentRef, input);
+      this.fail("PORT_CONFLICT", "EXTERNAL_MEMORY_PROPOSAL_PENDING_FULL");
+    }
     return this.database.transaction((): ExternalMemoryProposalSubmitResult => {
       const existing = this.database
         .prepare(
@@ -142,6 +170,14 @@ export class SqliteExternalMemoryProposalOperations {
             AND status <> 'superseded'`,
         )
         .get(input.ownerId, input.agentId, input.textSha256) as Row | undefined;
+      const hold = (target: string): void => {
+        this.database
+          .prepare(
+            `INSERT INTO external_memory_proposal_unkeyed (proposal_id, client) VALUES (?, ?)
+            ON CONFLICT (proposal_id, client) DO NOTHING`,
+          )
+          .run(target, input.client);
+      };
       const claim = (target: string): string[] => {
         if (input.sourceKey === null) return [];
         const previous = this.database
@@ -160,40 +196,34 @@ export class SqliteExternalMemoryProposalOperations {
             DO UPDATE SET proposal_id = excluded.proposal_id`,
           )
           .run(input.ownerId, input.agentId, input.client, input.sourceKey, target);
-        const candidates = (
-          this.database
-            .prepare(
-              `SELECT id FROM external_memory_proposals
-              WHERE owner_id = ? AND agent_id = ? AND status = 'pending' AND id <> ?
-                AND (id = ? OR (client = ? AND source_key = ?))
-              ORDER BY received_at, id`,
-            )
-            .all(
-              input.ownerId,
-              input.agentId,
-              target,
-              previous ?? null,
-              input.client,
-              input.sourceKey,
-            ) as {
-            id: string;
-          }[]
-        ).map(({ id }) => id);
+        const candidates = previous === undefined ? [] : [previous];
         const retire = this.database.prepare(
           `UPDATE external_memory_proposals SET status = 'superseded', decided_at = ?,
             superseded_by = ?
           WHERE id = ? AND owner_id = ? AND agent_id = ? AND status = 'pending'
-            AND NOT EXISTS (SELECT 1 FROM external_memory_proposal_keys WHERE proposal_id = ?)`,
+            AND NOT EXISTS (SELECT 1 FROM external_memory_proposal_keys WHERE proposal_id = ?)
+            AND NOT EXISTS (
+              SELECT 1 FROM external_memory_proposal_unkeyed WHERE proposal_id = ? AND client <> ?
+            )`,
         );
         return candidates.filter(
           (id) =>
-            retire.run(input.receivedAt, target, id, input.ownerId, input.agentId, id).changes ===
-            1,
+            retire.run(
+              input.receivedAt,
+              target,
+              id,
+              input.ownerId,
+              input.agentId,
+              id,
+              id,
+              input.client,
+            ).changes === 1,
         );
       };
       if (existing) {
         const known = record(existing);
         const replaced = claim(known.id);
+        if (known.status === "pending" && input.sourceKey === null) hold(known.id);
         if (known.status === "pending") {
           if (known.sourceKey === null && input.sourceKey !== null && known.client === input.client)
             this.database
@@ -259,6 +289,7 @@ export class SqliteExternalMemoryProposalOperations {
           input.dataClassification,
           input.receivedAt,
         );
+      if (input.sourceKey === null) hold(input.id);
       const replaced = claim(input.id);
       const created = this.read({ ownerId: input.ownerId, agentId: input.agentId, id: input.id });
       if (!created) return this.fail("PORT_NOT_FOUND", "External Memory proposal not found");
@@ -362,10 +393,14 @@ export class SqliteExternalMemoryProposalOperations {
   }
 
   private reopenBatch(
-    input: Scope & { batchId: string; reopen: readonly string[] },
+    input: Scope & {
+      batchId: string;
+      reopen: readonly string[];
+      trashed: readonly string[];
+    },
   ): readonly string[] {
     this.assertDiskHeadroom();
-    if (!Array.isArray(input.reopen))
+    if (!Array.isArray(input.reopen) || !Array.isArray(input.trashed))
       this.fail("PORT_INVALID_OPERATION", "External Memory proposal batch is invalid");
     const wanted = new Set(input.reopen);
     return this.database.transaction(() => {
@@ -380,6 +415,19 @@ export class SqliteExternalMemoryProposalOperations {
         status: string;
         contentRef: string | null;
       }[];
+      const linked = this.database.prepare(
+        `SELECT id, status, content_ref AS contentRef FROM external_memory_proposals
+        WHERE owner_id = ? AND agent_id = ? AND status = 'committed' AND memory_id = ?
+        ORDER BY received_at, id`,
+      );
+      const followers = input.trashed.flatMap(
+        (memoryId) =>
+          linked.all(input.ownerId, input.agentId, memoryId) as {
+            id: string;
+            status: string;
+            contentRef: string | null;
+          }[],
+      );
       const reopen = this.database.prepare(
         `UPDATE external_memory_proposals SET status = 'pending', decided_at = NULL,
           batch_id = NULL, memory_id = NULL
@@ -390,12 +438,17 @@ export class SqliteExternalMemoryProposalOperations {
         WHERE id = ? AND owner_id = ? AND agent_id = ?`,
       );
       const reopened: string[] = [];
+      for (const member of followers)
+        if (!reopened.includes(member.id) && member.contentRef !== null) {
+          reopen.run(member.id, input.ownerId, input.agentId);
+          reopened.push(member.id);
+        }
       for (const member of members) {
+        if (reopened.includes(member.id)) continue;
         if (wanted.has(member.id) && member.contentRef !== null) {
           reopen.run(member.id, input.ownerId, input.agentId);
           reopened.push(member.id);
-        } else if (member.status === "committed")
-          detach.run(member.id, input.ownerId, input.agentId);
+        } else detach.run(member.id, input.ownerId, input.agentId);
       }
       return reopened;
     })();

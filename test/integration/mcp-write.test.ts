@@ -34,6 +34,7 @@ import {
   MCP_PROPOSE_MEMORY_INVALID,
   MCP_PROPOSE_MEMORY_PENDING,
   MCP_PROPOSE_MEMORY_SAVED,
+  MCP_PROPOSE_MEMORY_FULL,
   MCP_PROPOSE_MEMORY_SECRET,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
   MCP_PROPOSE_NOT_SHOWN,
@@ -1585,6 +1586,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect((await f.propose(later, { text: RAIN })).text).toBe(MCP_PROPOSE_MEMORY_DECLINED.text);
     expect(await f.payloads.get(waiting?.contentRef ?? "")).toBeUndefined();
     expect(await f.writer.reopenBatch("external-batch-rain")).toEqual([]);
+    expect(await f.writer.listBatch("external-batch-rain")).toEqual([]);
   });
 
   it("[P5-3] drops the text of a replaced proposal after 30 days unless the same text is waiting again", async () => {
@@ -1876,5 +1878,94 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     await expect(
       web.command("memory.external.respond", { items }, "respond-second"),
     ).rejects.toThrow("MCP_PROPOSAL_ALREADY_DECIDED");
+  });
+
+  it("[P5-3] undoing a batch reopens every proposal hung on the memories it moves to the trash", async () => {
+    const f = await setup();
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    await f.propose(muse, { text: PARK });
+    await f.propose(muse, { text: RAIN });
+    await f.propose(muse, { text: "主人周末常去公园" });
+    const [park, rain, walk] = await f.pending();
+    await f.writer.respond(
+      [
+        { proposalId: park?.id ?? "", decision: "keep", editedText: COFFEE },
+        { proposalId: rain?.id ?? "", decision: "keep", editedText: COFFEE },
+      ],
+      "external-batch-first",
+    );
+    await f.writer.respond(
+      [{ proposalId: walk?.id ?? "", decision: "keep", editedText: COFFEE }],
+      "external-batch-second",
+    );
+    expect(await f.external()).toHaveLength(1);
+    await f.writer.undoBatch("external-batch-first", async () => undefined);
+    expect((await f.pending()).map(({ id }) => id).sort()).toEqual(
+      [park?.id, rain?.id, walk?.id].sort(),
+    );
+    expect(await f.writer.listBatch("external-batch-first")).toEqual([]);
+    expect(await f.writer.listBatch("external-batch-second")).toEqual([]);
+  });
+
+  it("[P5-3] text the owner reopened by undo is not replaced when its old key moves on", async () => {
+    const f = await setup();
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    await f.propose(muse, { text: PARK, key: "memory/walk" });
+    const [park] = await f.pending();
+    await f.writer.respond(
+      [{ proposalId: park?.id ?? "", decision: "keep", editedText: null }],
+      "external-batch-walk",
+    );
+    await f.propose(muse, { text: RAIN, key: "memory/walk" });
+    await f.writer.undoBatch("external-batch-walk", async () => undefined);
+    await f.propose(muse, { text: "主人周末常去公园", key: "memory/walk" });
+    const waiting = await f.pending();
+    expect(waiting.map(({ id }) => id)).toContain(park?.id);
+    expect(waiting).toHaveLength(2);
+  });
+
+  it("[P5-3] a key update from one client does not replace text another client sent without a key", async () => {
+    const f = await setup();
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    const claude = await f.connect({ elicitation: false, name: "claude-code" });
+    await f.propose(muse, { text: PARK });
+    await f.propose(claude, { text: PARK, key: "memory/walk" });
+    await f.propose(claude, { text: RAIN, key: "memory/walk" });
+    expect((await f.pending()).length).toBe(2);
+  });
+
+  it("[P5-3] stops taking new text once 1000 proposals wait, without leaving its text behind", async () => {
+    const f = await setup();
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    await f.propose(muse, { text: PARK });
+    const [park] = await f.pending();
+    const database = openQualifiedDatabase(f.databasePath);
+    try {
+      const insert = database.prepare(
+        `INSERT INTO external_memory_proposals (
+          id, owner_id, agent_id, subject_ref, client, source_key, text_sha256, normalization,
+          content_ref, category, classification, status, received_at
+        ) SELECT ?, owner_id, agent_id, subject_ref, client, NULL, ?, normalization, content_ref,
+          category, classification, 'pending', received_at
+        FROM external_memory_proposals WHERE id = ?`,
+      );
+      for (let index = 1; index < 1000; index += 1)
+        insert.run(`filler-${String(index)}`, index.toString(16).padStart(64, "0"), park?.id ?? "");
+    } finally {
+      database.close();
+    }
+    const payloadsBefore = () => {
+      const opened = openQualifiedDatabase(f.databasePath);
+      try {
+        return opened.prepare("SELECT COUNT(*) FROM payloads").pluck().get();
+      } finally {
+        opened.close();
+      }
+    };
+    const before = payloadsBefore();
+    expect((await f.propose(muse, { text: RAIN })).text).toBe(MCP_PROPOSE_MEMORY_FULL.text);
+    const sent = await batch(muse, [{ text: RAIN }, { text: PARK }]);
+    expect(sent.parsed.results.map(({ status }) => status)).toEqual(["full", "pending"]);
+    expect(payloadsBefore()).toBe(before);
   });
 });

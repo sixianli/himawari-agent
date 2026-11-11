@@ -34,6 +34,9 @@ export const EXTERNAL_PROPOSAL_NORMALIZATION = "mcp-text:v1";
 export const EXTERNAL_PROPOSAL_TEXT_MAXIMUM = 2000;
 export const EXTERNAL_PROPOSAL_SUBJECT_MAXIMUM = 128;
 export const EXTERNAL_PROPOSAL_KEY_MAXIMUM = 200;
+export const EXTERNAL_PROPOSAL_ID_MAXIMUM = 40;
+
+const CLASSIFICATION_RANK: readonly string[] = ["public", "private", "sensitive", "restricted"];
 export const EXTERNAL_PROPOSAL_REJECTED_TEXT_DAYS = 30;
 export const EXTERNAL_PROPOSAL_CATEGORIES = [
   "identity",
@@ -180,6 +183,8 @@ export class ProductionMcpMemoryWriter {
       !(EXTERNAL_PROPOSAL_CATEGORIES as readonly string[]).includes(input.category) ||
       input.client.length < 1 ||
       input.client.length > 64 ||
+      input.proposalId.length < 1 ||
+      input.proposalId.length > EXTERNAL_PROPOSAL_ID_MAXIMUM ||
       (sourceKey !== null &&
         (sourceKey.length === 0 ||
           [...sourceKey].length > EXTERNAL_PROPOSAL_KEY_MAXIMUM ||
@@ -280,9 +285,12 @@ export class ProductionMcpMemoryWriter {
       const same =
         linked &&
         existing?.status === "active" &&
-        (existing.dataClassification !== "private" ||
-          (proposal.dataClassification === "private" &&
-            proposalClassification(text, proposal.category) === "private"))
+        CLASSIFICATION_RANK.indexOf(existing.dataClassification) >=
+          CLASSIFICATION_RANK.indexOf(
+            proposal.dataClassification === "sensitive"
+              ? "sensitive"
+              : proposalClassification(text, proposal.category),
+          )
           ? linked
           : undefined;
       if (same) {
@@ -449,6 +457,7 @@ export class ProductionMcpMemoryWriter {
         ...this.#scope(),
         batchId,
         reopen: members.map(({ id }) => id),
+        trashed: [],
       });
     });
   }
@@ -461,6 +470,7 @@ export class ProductionMcpMemoryWriter {
       const members = await this.#options.proposals.listBatch({ ...this.#scope(), batchId });
       if (members.length === 0) return undefined;
       const reopen: string[] = [];
+      const trashed: string[] = [];
       for (const member of members) {
         if (member.status === "rejected") reopen.push(member.id);
         else if (
@@ -468,11 +478,17 @@ export class ProductionMcpMemoryWriter {
           member.memoryId === externalProposalMemoryId(member.id, batchId)
         ) {
           await trash(member.memoryId);
+          trashed.push(member.memoryId);
           reopen.push(member.id);
         }
       }
       this.#memoryChanges += 1;
-      return this.#options.proposals.reopenBatch({ ...this.#scope(), batchId, reopen });
+      return this.#options.proposals.reopenBatch({
+        ...this.#scope(),
+        batchId,
+        reopen,
+        trashed,
+      });
     });
   }
 

@@ -685,6 +685,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its proposal or with Owner or Agent deletion",
   ),
   entry(
+    "external_memory_proposal_unkeyed",
+    "ExternalMemoryProposalStorePort",
+    "which MCP clients sent a waiting proposal's text without a fixed key; a key moving away from that text does not replace it while another client still holds it this way",
+    "metadata_only",
+    "cascade with its proposal",
+  ),
+  entry(
     "memory_checkup_items",
     "MemoryCheckupStorePort",
     "one row per Memory picked for a week's checkup: the reason, the owner's confirm, delete or merge with the state before it so it can be undone",

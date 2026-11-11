@@ -350,9 +350,9 @@
     "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
   },
   "mcp.propose-memories": {
-    "sha256": "ecf372fcb5f0d15fa387d5fbb4fa13d369e69d4b5958e7e3bad04c9b9ab4d91d",
+    "sha256": "080bc6592a1259763616998aae1985943fc63b536344662e926b7d9372bc72ca",
     "changedIn": "ADR 0228",
-    "reason": "P5-3: batch result notes which mistakes reject the whole call"
+    "reason": "P5-3: batch result adds full when 1000 proposals already wait"
   },
   "mcp.propose-memories-result": {
     "sha256": "026254c2eb0ddcf54e2cd12d7e39597d85e77e4a4bbab7b0f2b83ecb296bac0f",
@@ -388,6 +388,11 @@
     "sha256": "28480733c9fd66bc1bfa812cb263314aa3f377f93f4bc8a0bd8b43b8994bc3dd",
     "changedIn": "ADR 0225",
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-full": {
+    "sha256": "080823a2ef4e07215ea0f24dd66db7eba3bcd6520f9051b963b3e63fdb4b5580",
+    "changedIn": "ADR 0228",
+    "reason": "P5-3: reply when 1000 proposals already wait for the owner"
   },
   "mcp.propose-memory-invalid": {
     "sha256": "ccf6a2eefb200610b1c79f34493464cedb334dfee56d3bcf75e8af28e2248804",

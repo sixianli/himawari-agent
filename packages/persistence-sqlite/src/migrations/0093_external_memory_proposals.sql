@@ -60,3 +60,9 @@ CREATE TABLE external_memory_proposal_keys (
 
 CREATE INDEX external_memory_proposal_keys_proposal_index
   ON external_memory_proposal_keys(proposal_id);
+
+CREATE TABLE external_memory_proposal_unkeyed (
+  proposal_id TEXT NOT NULL REFERENCES external_memory_proposals(id) ON DELETE CASCADE,
+  client TEXT NOT NULL CHECK (length(client) BETWEEN 1 AND 64),
+  PRIMARY KEY (proposal_id, client)
+) STRICT;
