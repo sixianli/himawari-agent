@@ -285,7 +285,12 @@ export class MemoryCheckupService {
     try {
       await apply();
     } catch (error) {
-      await this.#restore(item.id).catch(() => undefined);
+      const restored = await this.#restore(item.id).then(
+        () => undefined,
+        (restoreError: unknown) => restoreError,
+      );
+      if (restored !== undefined)
+        throw new AggregateError([error, restored], "MEMORY_CHECKUP_RESTORE_FAILED");
       throw error;
     }
     return this.#item(item.id);
@@ -331,7 +336,7 @@ export class MemoryCheckupService {
           generationId: await generationFor(drop.id),
         });
       const keep = keepId ? await state.read(keepId) : undefined;
-      if (merged && before.keepTentative && live(keep) && keep.attributes?.tentative !== true)
+      if (before.keepTentative && live(keep) && keep.attributes?.tentative !== true)
         await memory.revise({
           memoryId: keep.id,
           expectedRevision: keep.revision,

@@ -191,7 +191,7 @@ export class SqliteMemoryCheckupOperations {
       this.database
         .prepare(
           `UPDATE memory_checkup_items SET action = ?, kept_memory_id = ?, before_state = ?,
-            handled_at = ?
+            handled_at = ?, undone_at = NULL
           WHERE id = ? AND owner_id = ? AND agent_id = ? AND action IS NULL`,
         )
         .run(
@@ -207,6 +207,7 @@ export class SqliteMemoryCheckupOperations {
   }
 
   private recordUndo(input: Scope & { id: string; undoneAt: string }): boolean {
+    this.assertDiskHeadroom();
     if (!valid(input.undoneAt))
       this.fail("PORT_INVALID_OPERATION", "Memory checkup undo is invalid");
     return (

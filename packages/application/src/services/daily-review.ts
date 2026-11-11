@@ -198,14 +198,16 @@ export function parseReviewKey(
 const TEXT_LIMIT = 200;
 
 function clipTo(text: string, limit: number): string {
-  return [
-    ...text
-      .replace(/\p{Cc}+/gu, " ")
-      .replace(/[\u202A-\u202E\u2066-\u2069]/gu, "")
-      .trim(),
-  ]
-    .slice(0, limit)
-    .join("");
+  const cleaned = text
+    .replace(/\p{Cc}+/gu, " ")
+    .replace(/[\u202A-\u202E\u2066-\u2069]/gu, "")
+    .trim();
+  let clipped = "";
+  for (const character of cleaned) {
+    if (clipped.length + character.length > limit) break;
+    clipped += character;
+  }
+  return clipped;
 }
 
 function clip(text: string): string {

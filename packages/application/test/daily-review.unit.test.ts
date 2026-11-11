@@ -273,6 +273,23 @@ describe("[all decisions] which memories the review page may show", () => {
     expect(review.items[0]?.text).toBe("牛肉123");
   });
 
+  it("[P4-6] keeps text with characters outside the basic plane within the contract length", async () => {
+    const review = await readDailyReview({
+      scope,
+      ledger: {
+        listReviewPool: async () => [entry({ id: "kept", outcome: "kept", subjectRef: "m" })],
+      },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "😀".repeat(300), hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    expect(review.items[0]?.text).toBe("😀".repeat(100));
+  });
+
   it("hides the whole consolidation when any memory in it may not be shown", async () => {
     const review = await readDailyReview({
       scope,
