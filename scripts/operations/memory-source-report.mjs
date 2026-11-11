@@ -9,6 +9,7 @@ export const SOURCE_STATES = Object.freeze([
   "unavailable",
   "import",
   "owner",
+  "external",
   "deleted",
   "tidy",
 ]);
@@ -19,6 +20,7 @@ const STATE_EXPRESSION = `
   CASE
     WHEN m.import_batch_id IS NOT NULL THEN 'import'
     WHEN m.id LIKE 'memory:owner:%' THEN 'owner'
+    WHEN m.id LIKE 'memory:mcp:%' THEN 'external'
     WHEN m.source_thread_id IS NOT NULL THEN
       CASE WHEN EXISTS (
         SELECT 1 FROM memory_provenance p
@@ -64,6 +66,7 @@ export function renderCounts(counts) {
     unavailable: "来源已不可查",
     import: "导入的，没有原话",
     owner: "手动添加的",
+    external: "外部 agent 提议、主人确认的",
     deleted: "来源对话已删除",
     tidy: "整理记忆产生的",
   };
