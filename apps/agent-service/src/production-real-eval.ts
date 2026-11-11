@@ -266,6 +266,7 @@ export interface ProductionRealEvalDependencies {
   readonly scope: RealEvalScope;
   readonly maxSelectedMemories: number;
   readonly memoryLimit: number;
+  readonly recallEstimateMicros: number;
   readonly store: RealEvalStorePort;
   readonly state: Pick<ProductMemoryStatePort, "listActive" | "listHistory">;
   readonly payloads: Pick<PayloadStorePort, "get" | "put" | "delete">;
@@ -307,6 +308,7 @@ export function createProductionRealEval(deps: ProductionRealEvalDependencies): 
     now: deps.now,
     newId: deps.newId,
     maxSelectedMemories: deps.maxSelectedMemories,
+    recallEstimateMicros: deps.recallEstimateMicros,
     promptSha256: createHash("sha256")
       .update(JSON.stringify(REAL_EVAL_QUESTION.segments))
       .digest("hex"),

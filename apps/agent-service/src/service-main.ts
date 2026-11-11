@@ -126,6 +126,7 @@ import { ProductionObservation, readServiceRevision } from "./production-observa
 import {
   createProductionRealEval,
   createRealEvalModel,
+  expireRealEvalSample,
   type ProductionRealEval,
 } from "./production-real-eval.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
@@ -1685,6 +1686,11 @@ export async function runAgentService(
           scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
           memoryLimit: configuration.runPolicy?.memoryLimit ?? 1,
           maxSelectedMemories: configuration.runPolicy?.maxSelectedMemories ?? 0,
+          recallEstimateMicros: configuration.modelDescriptors.some(
+            ({ role }) => role === "embedding",
+          )
+            ? embeddingAdmissionDescriptor(configuration).estimatedCostMicros
+            : 0,
           store: repository.realEval(),
           state: repository.productMemoryState(),
           payloads: realEvalPayloads,
@@ -1743,7 +1749,17 @@ export async function runAgentService(
               code: stableErrorCode(error),
             }),
         });
-      }
+      } else
+        void expireRealEvalSample(
+          path.join(configuration.stateRoot, "real-eval"),
+          clock.now(),
+        ).catch((error: unknown) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "real-eval.failed",
+            code: stableErrorCode(error),
+          }),
+        );
       const museIntakeConfiguration = configuration.runPolicy?.museIntake;
       const museIntakeSecret =
         museIntakeConfiguration?.enabled === true

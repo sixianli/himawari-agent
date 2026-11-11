@@ -69,6 +69,7 @@ export interface RealMemoryEvalDependencies {
   readonly newId: () => string;
   readonly promptSha256: string;
   readonly maxSelectedMemories: number;
+  readonly recallEstimateMicros: number;
   readonly listMemories: () => Promise<readonly ProductMemoryRecord[]>;
   readonly readMemoryText: (record: ProductMemoryRecord) => Promise<string | undefined>;
   readonly readQuote: (record: ProductMemoryRecord) => Promise<string | undefined>;
@@ -166,13 +167,20 @@ export class RealMemoryEvalService {
       maxOutputTokens: number,
       classification: DataClassification,
     ) => {
-      budget.reserve(deps.model.estimateMicros(prompt, maxOutputTokens));
-      const result = await deps.model.generate({
-        invocationId: deps.newId(),
-        prompt,
-        maxOutputTokens,
-        dataClassification: classification,
-      });
+      const estimate = deps.model.estimateMicros(prompt, maxOutputTokens);
+      budget.reserve(estimate);
+      let result: Awaited<ReturnType<RealEvalModel["generate"]>>;
+      try {
+        result = await deps.model.generate({
+          invocationId: deps.newId(),
+          prompt,
+          maxOutputTokens,
+          dataClassification: classification,
+        });
+      } catch (error) {
+        budget.absorb(estimate);
+        throw error;
+      }
       budget.record(result.costMicros);
       return result.output;
     };
@@ -193,7 +201,6 @@ export class RealMemoryEvalService {
             reason,
             at: startedAt,
           });
-          await deps.discardQuestion(question.questionRef);
           retired += 1;
         } else active.push(question);
       }
@@ -226,7 +233,8 @@ export class RealMemoryEvalService {
         const generated = parseGeneratedQuestion(output, { memory: text, quote });
         if ("rejected" in generated) {
           rejected[generated.rejected] = (rejected[generated.rejected] ?? 0) + 1;
-          declined.push(declinedKey(memory.id, memory.revision));
+          if (generated.rejected !== "response_invalid")
+            declined.push(declinedKey(memory.id, memory.revision));
           continue;
         }
         const entries: [RealEvalItemKind, string][] = [[generated.kind, generated.question]];
@@ -256,7 +264,11 @@ export class RealMemoryEvalService {
           } finally {
             if (!stored) await deps.discardQuestion(questionRef);
           }
-          if (stored) {
+          if (!stored) {
+            rejected["already_banked"] = (rejected["already_banked"] ?? 0) + 1;
+            const key = declinedKey(memory.id, memory.revision);
+            if (!declined.includes(key)) declined.push(key);
+          } else {
             added += 1;
             planned += 1;
             pending.push({
@@ -280,7 +292,14 @@ export class RealMemoryEvalService {
         }
         const abstain = question.kind === "abstain";
         budget.ensureRemaining();
-        const recall = await deps.recall(questionText);
+        budget.reserve(deps.recallEstimateMicros);
+        let recall: RealEvalRecall;
+        try {
+          recall = await deps.recall(questionText);
+        } catch (error) {
+          budget.absorb(deps.recallEstimateMicros);
+          throw error;
+        }
         budget.record(recall.costMicros);
         const inProfile = new Set(profile.memoryIds);
         const recalled = recall.memories

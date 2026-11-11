@@ -141,6 +141,9 @@ function harness(options: {
   readonly estimateMicros?: number;
   readonly answerCostMicros?: number;
   readonly addQuestion?: "duplicate" | "throw";
+  readonly recallEstimateMicros?: number;
+  readonly failAnswer?: boolean;
+  readonly questionOutput?: string;
 }): Harness {
   const store = new MemoryStore();
   if (options.addQuestion === "duplicate") store.addQuestion = async () => false;
@@ -167,10 +170,14 @@ function harness(options: {
       >;
       if (prompt.startsWith(REAL_EVAL_QUESTION.text)) {
         const source = Object.values(SOURCES).find(({ quote }) => quote === data["quote"]);
-        return { output: JSON.stringify(source?.question), costMicros: 100 };
+        return {
+          output: options.questionOutput ?? JSON.stringify(source?.question),
+          costMicros: 100,
+        };
       }
       if (prompt.startsWith(REAL_EVAL_ANSWER.text)) {
         const question = String(data["question"]);
+        if (options.failAnswer) throw new Error("RATE_LIMITED");
         return {
           output: options.answer ? options.answer(question) : defaultAnswer(question),
           costMicros: options.answerCostMicros ?? 100,
@@ -198,6 +205,7 @@ function harness(options: {
     newId: () => `id-${++id}`,
     promptSha256: "a".repeat(64),
     maxSelectedMemories: 2,
+    recallEstimateMicros: options.recallEstimateMicros ?? 0,
     listMemories: async () => state.memories,
     readMemoryText: async (record) => sourceOf(record)?.text,
     readQuote: async (record) => sourceOf(record)?.quote,
@@ -318,8 +326,6 @@ describe("[P4-5] real memory eval run", () => {
       retired: number;
     };
     expect(summary.retired).toBe(2);
-    expect(test.discarded).toEqual(retired.map(({ questionRef }) => questionRef));
-    expect(retired.every(({ questionRef }) => !test.payloads.has(questionRef))).toBe(true);
     expect(summary.scores["fixed"]).toMatchObject({ samples: 1 });
     expect(summary.scores["fresh"]).toMatchObject({ samples: 1 });
   });
@@ -356,6 +362,38 @@ describe("[P4-5] real memory eval run", () => {
     expect(failed.outcome).toBe("failed");
     expect(failing.discarded).toEqual(["question:0"]);
     expect(failing.payloads.size).toBe(0);
+  });
+
+  it("does not ask again about a memory version the bank already holds", async () => {
+    const test = harness({ memories: [memory("coffee")], addQuestion: "duplicate" });
+    await test.service.run("weekly", LIMITS);
+    const asked = test.prompts.length;
+    const second = await test.service.run("weekly", LIMITS);
+    expect(test.prompts.slice(asked)).toEqual([]);
+    expect((second.summary as { rejected: Record<string, number> }).rejected).toEqual({});
+  });
+
+  it("asks again after a reply that was not valid output", async () => {
+    const test = harness({ memories: [memory("coffee")], questionOutput: "not json" });
+    await test.service.run("weekly", LIMITS);
+    const second = await test.service.run("weekly", LIMITS);
+    expect((second.summary as { rejected: Record<string, number> }).rejected).toEqual({
+      response_invalid: 1,
+    });
+  });
+
+  it("charges the estimate of a call that failed", async () => {
+    const test = harness({ memories: [memory("coffee")], failAnswer: true });
+    const report = await test.service.run("weekly", LIMITS);
+    expect(report.outcome).toBe("failed");
+    expect(report.costMicros).toBe(100 + 10 + 100);
+  });
+
+  it("does not search when the remaining budget cannot cover the search estimate", async () => {
+    const test = harness({ memories: [memory("coffee")], recallEstimateMicros: 60 });
+    const report = await test.service.run("weekly", { capMicros: 150, newMemoriesPerRun: 10 });
+    expect(report.outcome).toBe("budget_exceeded");
+    expect(test.recalls).toEqual([]);
   });
 
   it("answers this week's new questions before the fixed panel", async () => {
@@ -423,6 +461,7 @@ describe("[P4-5] real memory eval run", () => {
       newId: () => "fixed-id",
       promptSha256: "a".repeat(64),
       maxSelectedMemories: 2,
+      recallEstimateMicros: 0,
       listMemories: async () => test.memories,
       readMemoryText: async () => "主人早上只喝燕麦拿铁，不加糖",
       readQuote: async () => "我早上只喝燕麦拿铁，不加糖",

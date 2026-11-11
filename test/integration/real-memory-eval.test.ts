@@ -5,6 +5,7 @@ import {
   DurableMemoryService,
   type MemoryContentPort,
   modelVisibleClassifications,
+  type PayloadRef,
   type RealEvalModel,
   RealMemoryEvalService,
 } from "@himawari-agent/application";
@@ -269,6 +270,7 @@ describe.each(["worker", "direct"] as const)("[P4-5] real memory eval through %s
       newId: () => `real-eval-${++sequence}`,
       promptSha256: "c".repeat(64),
       maxSelectedMemories: 3,
+      recallEstimateMicros: 0,
       listMemories: () => resource.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID),
       readMemoryText: async (record) => resource.content.values.get(record.contentRef),
       readQuote: async (record) => MEMORIES.find(({ id }) => id === record.id)?.quote,
@@ -280,6 +282,7 @@ describe.each(["worker", "direct"] as const)("[P4-5] real memory eval through %s
       },
       readQuestion: async (ref) => resource.content.values.get(ref),
       discardQuestion: async (ref) => {
+        await resource.repository.payloadStore(OWNER_ID, AGENT_ID).delete(ref as PayloadRef);
         resource.content.values.delete(ref);
       },
       recall: async (question) => {
@@ -355,6 +358,38 @@ describe.each(["worker", "direct"] as const)("[P4-5] real memory eval through %s
     } finally {
       connection.close();
     }
+  });
+
+  it("retires questions of a revised memory on real storage and banks new ones without failing", async () => {
+    const resource = await fixture();
+    const { model } = stubModel((question) =>
+      question.includes("妹妹") || question.includes("同事") ? "我没有这条记忆。" : "你去大阪。",
+    );
+    const evaluator = service(resource, model);
+    await evaluator.run("weekly", { capMicros: 500_000, newMemoriesPerRun: 10 });
+    const connection = openQualifiedDatabase(resource.databasePath);
+    try {
+      connection
+        .prepare("UPDATE memory_records SET revision = revision + 1 WHERE id = ?")
+        .run("latte");
+    } finally {
+      connection.close();
+    }
+    const second = await evaluator.run("weekly", { capMicros: 500_000, newMemoriesPerRun: 10 });
+
+    expect(second.outcome).toBe("completed");
+    expect(second.summary).toMatchObject({ retired: 2, added: 2 });
+    const questions = await resource.repository
+      .realEval()
+      .listQuestions({ ownerId: OWNER_ID, agentId: AGENT_ID });
+    const retired = questions.filter(({ retiredAt }) => retiredAt !== null);
+    expect(retired.map(({ memoryId, memoryRevision }) => `${memoryId}@${memoryRevision}`)).toEqual([
+      "latte@1",
+      "latte@1",
+    ]);
+    const payloads = resource.repository.payloadStore(OWNER_ID, AGENT_ID);
+    for (const { questionRef } of retired)
+      expect(await payloads.get(questionRef as PayloadRef)).toBeDefined();
   });
 
   it("counts a made-up answer to a question about something never said as wrong", async () => {

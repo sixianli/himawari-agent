@@ -127,6 +127,8 @@ function chineseNumber(value: string): number | null {
 
 function dateTokens(value: string): Set<string> {
   const tokens = new Set<string>();
+  for (const match of value.normalize("NFKC").matchAll(/(\d{1,2})\s*:\s*\d{2}/gu))
+    tokens.add(`${Number(match[1])}时`);
   for (const match of value
     .normalize("NFKC")
     .matchAll(/([0-9〇零一二两三四五六七八九十]+)\s*([年月日号號点點时時])/gu)) {
@@ -336,6 +338,10 @@ export class RealEvalBudget {
   reserve(estimateMicros: number): void {
     if (this.#spentMicros + Math.max(0, estimateMicros) > this.#limitMicros)
       throw new RealEvalBudgetExceededError();
+  }
+
+  absorb(micros: number): void {
+    this.#spentMicros += Math.max(0, micros);
   }
 
   ensureRemaining(): void {
