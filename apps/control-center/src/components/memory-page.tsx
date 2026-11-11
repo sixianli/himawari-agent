@@ -2074,7 +2074,12 @@ function ExportPanel({ message, onClose }: { message: Message; onClose: () => vo
   const [state, setState] = useState<
     | { readonly kind: "idle" }
     | { readonly kind: "working" }
-    | { readonly kind: "done"; readonly memories: number; readonly withheld: number }
+    | {
+        readonly kind: "done";
+        readonly memories: number;
+        readonly rules: number;
+        readonly withheld: number;
+      }
     | { readonly kind: "failed" }
   >({ kind: "idle" });
   const download = async () => {
@@ -2086,7 +2091,12 @@ function ExportPanel({ message, onClose }: { message: Message; onClose: () => vo
       link.download = result.fileName;
       link.click();
       URL.revokeObjectURL(link.href);
-      setState({ kind: "done", memories: result.memories, withheld: result.withheld });
+      setState({
+        kind: "done",
+        memories: result.memories,
+        rules: result.rules,
+        withheld: result.withheld,
+      });
     } catch {
       setState({ kind: "failed" });
     }
@@ -2106,7 +2116,11 @@ function ExportPanel({ message, onClose }: { message: Message; onClose: () => vo
       {state.kind === "working" ? <output>{message("memory.page.exportWorking")}</output> : null}
       {state.kind === "done" ? (
         <output>
-          {message("memory.page.exportDone", { count: state.memories, withheld: state.withheld })}
+          {message("memory.page.exportDone", {
+            count: state.memories,
+            rules: state.rules,
+            withheld: state.withheld,
+          })}
         </output>
       ) : null}
       {state.kind === "failed" ? <p role="alert">{message("memory.page.exportFailed")}</p> : null}
