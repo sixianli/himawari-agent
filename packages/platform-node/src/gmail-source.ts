@@ -1,9 +1,9 @@
-import { isDemoMailboxToken } from "./demo-mailbox-token.js";
 import type {
   ProactiveFetchResult,
   ProactiveSourceItem,
   ProactiveSourceReader,
 } from "@himawari-agent/application";
+import { isDemoMailboxToken } from "./demo-mailbox-token.js";
 import { extractGmailBody, type GmailPart } from "./gmail-body.js";
 import { findRelatedMail } from "./gmail-related.js";
 
@@ -143,6 +143,7 @@ export function createGoogleOAuth(options: GoogleOAuthOptions): GoogleOAuth {
       return access;
     },
     async revoke(value) {
+      if (isDemoMailboxToken(value)) return true;
       const response = await send(GOOGLE_REVOKE_ENDPOINT, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },

@@ -3,14 +3,18 @@ import {
   ApplicationPortError,
   type ClockPort,
   type DailyReview,
+  type DailyReviewMemoryText,
   type DecisionLedgerPort,
   type IdGeneratorPort,
   type MemoryCheckupService,
+  OwnerRuleReplay,
+  type OwnerRuleReplayResult,
+  type OwnerRuleStorePort,
   PORT_ERROR_CODES,
   type ProactiveConfiguration,
   type ProactiveDecision,
-  ProactiveMailCheckService,
   type ProactiveMailCheckOptions,
+  ProactiveMailCheckService,
   type ProactiveMemoryRecall,
   type ProactiveModelInvoker,
   type ProactiveOverview,
@@ -19,13 +23,9 @@ import {
   type ProactiveScope,
   type ProactiveSealPort,
   type ProactiveSourceReader,
-  type OwnerRuleStorePort,
-  OwnerRuleReplay,
-  type OwnerRuleReplayResult,
-  type RuleRecord,
   type ProactiveStorePort,
   parseReviewKey,
-  type DailyReviewMemoryText,
+  type RuleRecord,
   readDailyReview,
   readProactiveOverview,
   type WebPushFeedback,
@@ -39,8 +39,9 @@ import {
   DEMO_MAILBOX_ACCOUNT,
   DEMO_MAILBOX_SETTINGS_RETURN,
   demoMailboxToken,
-  isDemoMailboxToken,
+  demoMailboxTokenLocale,
   type GoogleOAuth,
+  isDemoMailboxToken,
 } from "@himawari-agent/platform-node";
 import type { ProactivePushSource } from "./production-web-push.js";
 
@@ -232,29 +233,39 @@ export class ProductionProactive {
     const demoInbox = this.#options.configuration.demoInbox;
     if (!demoInbox) return;
     const existing = await store.readConnection({ ...scope, source: "gmail" });
-    if (existing?.status === "connected") {
-      const token = await seal.open({ ...scope, ref: existing.tokenRef });
-      if (token !== undefined && isDemoMailboxToken(token)) return;
-    }
     const settings = await store.readSettings(scope);
-    if (!existing && !options.restore && settings.updatedAt !== null) return;
+    if (existing) {
+      const token = await seal.open({ ...scope, ref: existing.tokenRef });
+      if (token === undefined) {
+        if (!options.restore) return;
+      } else if (!isDemoMailboxToken(token)) return;
+      else if (existing.status === "connected" && demoMailboxTokenLocale(token) === demoInbox)
+        return;
+    } else if (!options.restore && settings.updatedAt !== null) return;
     const now = clock.now();
-    const released = await store.saveConnection({
+    const accountRef = await seal.seal({ ...scope, text: DEMO_MAILBOX_ACCOUNT, at: now });
+    const tokenRef = await seal.seal({
       ...scope,
-      connection: {
-        source: "gmail",
-        accountRef: await seal.seal({ ...scope, text: DEMO_MAILBOX_ACCOUNT, at: now }),
-        tokenRef: await seal.seal({
-          ...scope,
-          text: demoMailboxToken(demoInbox, now),
-          at: now,
-        }),
-        cursor: null,
-        status: "connected",
-        connectedAt: now,
-        updatedAt: now,
-      },
+      text: demoMailboxToken(demoInbox, now),
+      at: now,
     });
+    const released = await store
+      .saveConnection({
+        ...scope,
+        connection: {
+          source: "gmail",
+          accountRef,
+          tokenRef,
+          cursor: null,
+          status: "connected",
+          connectedAt: now,
+          updatedAt: now,
+        },
+      })
+      .catch(async (error: unknown) => {
+        await seal.release({ ...scope, refs: [accountRef, tokenRef] }).catch(() => undefined);
+        throw error;
+      });
     if (released.length > 0) await seal.release({ ...scope, refs: released });
     await store.writeSettings({ ...scope, ...settings, enabled: true, now });
   }
