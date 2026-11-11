@@ -280,7 +280,7 @@ function containsMarker(clause: string, marker: string): boolean {
   if (!/^[a-z' ]+$/u.test(marker))
     return clause.replace(/\s+/gu, "").includes(marker.replace(/\s+/gu, ""));
   const words = marker.trim().split(/\s+/u).join("\\s+");
-  return new RegExp(`(?<![a-z'])${words}(?![a-z'])`, "u").test(clause);
+  return new RegExp(`(?<![a-z0-9_'])${words}(?![a-z0-9_'])`, "u").test(clause);
 }
 
 export function isStandingQuote(quote: string): boolean {
@@ -504,10 +504,10 @@ export class ProductionOwnerRuleWriter {
         replayed: true,
       });
     }
-    const prior = await this.#options.rules.read({ ...this.#scope(), ruleId });
-    if (prior?.sourceMemoryId) await this.#reviveMemory(prior.sourceMemoryId as MemoryId);
     if (!existing.some((row) => row.ruleId === ruleId) && existing.length >= ACTIVE_RULE_LIMIT)
       throw new OwnerRuleError("RULE_LIMIT_REACHED", String(ACTIVE_RULE_LIMIT));
+    const prior = await this.#options.rules.read({ ...this.#scope(), ruleId });
+    if (prior?.sourceMemoryId) await this.#reviveMemory(prior.sourceMemoryId as MemoryId);
     const memoryId = await this.#writeMemory({
       key: proposal.key,
       text: `${proposal.quote}\n${parsed.summary}`,
@@ -531,7 +531,7 @@ export class ProductionOwnerRuleWriter {
       outcome === "replayed"
         ? await this.#options.rules.read({ ...this.#scope(), ruleId })
         : undefined;
-    if (stored?.status === "retired") {
+    if (stored && stored.status !== "active") {
       const revived = await this.#options.rules.setStatus({
         ...this.#scope(),
         ruleId,
@@ -667,7 +667,9 @@ export class ProductionOwnerRuleWriter {
     const current = await this.#options.rules.read({ ...this.#scope(), ruleId });
     if (!current || current.status === "retired") throw new OwnerRuleError("RULE_NOT_FOUND");
     if (enforceableOwnerRule(current) === undefined) throw new OwnerRuleError("RULE_UNAVAILABLE");
-    if (current.sourceMemoryId) await this.#reviveMemory(current.sourceMemoryId as MemoryId);
+    const revivedMemory = current.sourceMemoryId
+      ? await this.#reviveMemory(current.sourceMemoryId as MemoryId)
+      : false;
     const changed =
       current.status === "needs_review"
         ? await this.#options.rules.setStatus({
@@ -679,7 +681,10 @@ export class ProductionOwnerRuleWriter {
             now: this.#options.clock.now(),
           })
         : current;
-    if (!changed) throw new OwnerRuleError("RULE_UNAVAILABLE");
+    if (!changed) {
+      if (revivedMemory) await this.#archiveMemory(current.sourceMemoryId as MemoryId);
+      throw new OwnerRuleError("RULE_UNAVAILABLE");
+    }
     const { type, summary } = summaryOf(changed.parameters);
     return Object.freeze({
       ruleId,
@@ -691,14 +696,15 @@ export class ProductionOwnerRuleWriter {
     });
   }
 
-  async #reviveMemory(memoryId: MemoryId): Promise<void> {
+  async #reviveMemory(memoryId: MemoryId): Promise<boolean> {
     const record = await this.#options.memories.read(memoryId);
-    if (record?.status === "active") return;
+    if (record?.status === "active") return false;
     if (record?.status !== "archived" && record?.status !== "trashed")
       throw new OwnerRuleError("RULE_UNAVAILABLE", "这条规则的出处记忆已删除，请重新说一遍");
     const generation = await this.#options.book.latestGeneration(this.#scope());
     if (!generation) throw new OwnerRuleError("RULE_MEMORY_NOT_READY");
     await this.#options.memory.recover(memoryId, generation);
+    return true;
   }
 
   async #archiveMemory(memoryId: MemoryId): Promise<void> {

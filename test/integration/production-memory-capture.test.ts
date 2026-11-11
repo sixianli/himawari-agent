@@ -1928,6 +1928,28 @@ describe("production memory capture", () => {
     expect(
       await context.repository.productMemoryState().read(revived?.sourceMemoryId as never),
     ).toMatchObject({ status: "active" });
+    await context.memory.archive(
+      revived?.sourceMemoryId as never,
+      (await context.repository.memoryBook().latestGeneration({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+      } as never)) as never,
+    );
+    expect((await listed()).find(({ ruleId }) => ruleId === confirmed?.ruleId)?.status).toBe(
+      "needs_review",
+    );
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: proposal["proposalId"], action: "confirm" },
+      "confirm-needs-review",
+    );
+    expect((await listed()).find(({ ruleId }) => ruleId === confirmed?.ruleId)?.status).toBe(
+      "active",
+    );
+    expect(
+      await context.repository.productMemoryState().read(revived?.sourceMemoryId as never),
+    ).toMatchObject({ status: "active" });
 
     const soft = await tool(
       "rule.set",
@@ -1984,6 +2006,8 @@ describe("production memory capture", () => {
     expect(isStandingQuote("From now on, always tell me about refunds")).toBe(true);
     expect(isStandingQuote("please pass the mustard")).toBe(false);
     expect(isStandingQuote("nevertheless send it")).toBe(false);
+    expect(isStandingQuote("use must2fa for the login")).toBe(false);
+    expect(isStandingQuote("check never_x logs")).toBe(false);
 
     await context.memory.archive(
       created["memoryId"] as never,
