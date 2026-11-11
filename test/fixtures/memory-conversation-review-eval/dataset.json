@@ -86,7 +86,7 @@
           "id": "m-trip",
           "recordedOn": "2026-10-20",
           "text": "主人下个月要去京都旅行",
-          "tentative": "event",
+          "tentative": false,
           "category": "identity",
           "confidence": 900
         }
@@ -142,7 +142,7 @@
           "id": "m-milk",
           "recordedOn": "2026-10-01",
           "text": "主人平时喝明治的牛奶",
-          "tentative": "preference",
+          "tentative": false,
           "category": "identity",
           "confidence": 900
         }
@@ -387,7 +387,7 @@
           "id": "m-coffee",
           "recordedOn": "2026-09-01",
           "text": "主人喝咖啡不加糖",
-          "tentative": "preference",
+          "tentative": false,
           "category": "identity",
           "confidence": 900
         }

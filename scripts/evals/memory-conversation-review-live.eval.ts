@@ -13,7 +13,8 @@ const MODEL = process.env["EVAL_MODEL"] ?? "deepseek/deepseek-v4.1-flash";
 const RUNS = Number(process.env["EVAL_RUNS"] ?? "1");
 const CAP_USD = Number(process.env["EVAL_CONFIRM_COST"] ?? "0");
 const OUTPUT_DIRECTORY = process.env["EVAL_OUT"] ?? "evals/memory-conversation-review";
-const MAXIMUM_OUTPUT_TOKENS = Number(process.env["EVAL_MAX_OUTPUT_TOKENS"] ?? "4096");
+const MAXIMUM_OUTPUT_TOKENS = Number(process.env["EVAL_MAX_OUTPUT_TOKENS"] ?? "1024");
+const THINKING = process.env["EVAL_THINKING"] === "enabled";
 
 interface Item {
   id: string;
@@ -49,6 +50,10 @@ interface Outcome {
 const dataset = JSON.parse(
   readFileSync("test/fixtures/memory-conversation-review-eval/dataset.json", "utf8"),
 ) as { day: string; timeZone: string; items: Item[] };
+for (const item of dataset.items)
+  for (const entry of item.existing)
+    if (typeof entry.tentative !== "boolean")
+      throw new Error(`EVAL_DATASET_INVALID：${item.id} 的 ${entry.id} tentative 不是布尔值`);
 const REVIEW_DAY = new Date(Date.parse(`${dataset.day}T12:00:00.000Z`) + 86_400_000)
   .toISOString()
   .slice(0, 10);
@@ -76,6 +81,7 @@ async function chat(prompt: string): Promise<any> {
         temperature: 0,
         max_tokens: MAXIMUM_OUTPUT_TOKENS,
         messages: [{ role: "user", content: prompt }],
+        ...(THINKING ? {} : { thinking: { type: "disabled" } }),
       }),
     }).catch((error: Error) => error);
     if (response instanceof Error) {
@@ -190,6 +196,10 @@ function score(item: Item, outcome: Outcome) {
     (id) => !item.expect.supersedes.includes(id),
   ).length;
   const confirmHits = item.expect.confirms.filter((id) => outcome.confirmed.includes(id)).length;
+  const extraConfirms = outcome.confirmed.filter((id) => !item.expect.confirms.includes(id)).length;
+  const forbiddenSupersedes = outcome.superseded.filter((id) =>
+    item.expect.forbidSupersede.includes(id),
+  ).length;
   const expected =
     item.expect.creates.length + item.expect.supersedes.length + item.expect.confirms.length;
   const hits = createHits + supersedeHits + confirmHits;
@@ -198,7 +208,14 @@ function score(item: Item, outcome: Outcome) {
     hits,
     extraCreates,
     wrongSupersedes,
-    pass: hits === expected && extraCreates === 0 && wrongSupersedes === 0 && !outcome.error,
+    extraConfirms,
+    forbiddenSupersedes,
+    pass:
+      hits === expected &&
+      extraCreates === 0 &&
+      wrongSupersedes === 0 &&
+      extraConfirms === 0 &&
+      !outcome.error,
   };
 }
 
@@ -231,8 +248,9 @@ describe.skipIf(!(CAP_USD > 0 || FLAT_RATE))("回看对话评测（真实模型�
       runs.push(results);
     }
     const summary = runs.map((results) => {
-      const total = (key: "expected" | "hits" | "extraCreates" | "wrongSupersedes") =>
-        results.reduce((sum, { score: value }) => sum + value[key], 0);
+      const total = (
+        key: "expected" | "hits" | "extraCreates" | "wrongSupersedes" | "extraConfirms",
+      ) => results.reduce((sum, { score: value }) => sum + value[key], 0);
       const negatives = results.filter(({ outcome }) => outcome.group === "none");
       return {
         items: results.length,
@@ -240,8 +258,12 @@ describe.skipIf(!(CAP_USD > 0 || FLAT_RATE))("回看对话评测（真实模型�
         recall: total("hits") / Math.max(1, total("expected")),
         extraCreates: total("extraCreates"),
         wrongSupersedes: total("wrongSupersedes"),
+        extraConfirms: total("extraConfirms"),
         negativesClean: negatives.filter(
-          ({ outcome }) => outcome.created.length === 0 && outcome.superseded.length === 0,
+          ({ outcome }) =>
+            outcome.created.length === 0 &&
+            outcome.superseded.length === 0 &&
+            outcome.confirmed.length === 0,
         ).length,
         negatives: negatives.length,
         errors: results.filter(({ outcome }) => outcome.error).length,

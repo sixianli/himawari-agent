@@ -81,7 +81,7 @@ export const DEFAULT_CONVERSATION_REVIEW_SETTINGS: ConversationReviewSettings = 
   maximumSourceCharacters: 16000,
   maximumRelatedMemories: 30,
   maximumNewMemoriesPerDay: 5,
-  maximumOutputTokens: 4096,
+  maximumOutputTokens: 1024,
 });
 
 function digest(...parts: readonly string[]): string {
