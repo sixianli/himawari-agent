@@ -282,15 +282,24 @@ export function createProductionRunMemory(options: {
         !settled &&
         ((error instanceof Error && error.message === EMBEDDING_ATTEMPT_TIMED_OUT) ||
           (runEmbedding && !context?.signal?.aborted))
-      )
-        await permit.settle({
-          inputTokens: EMBEDDING_INPUT_LIMIT,
-          outputTokens: 0,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
-          reportedCostMicros: descriptor.estimatedCostMicros,
-        });
-      else if (started && !settled) await permit.markUnknown("transport_unresolved");
+      ) {
+        try {
+          await permit.settle({
+            inputTokens: EMBEDDING_INPUT_LIMIT,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            reportedCostMicros: descriptor.estimatedCostMicros,
+          });
+        } catch (accounting) {
+          options.diagnostic?.({
+            component: "agent-service",
+            event: "memory.embedding_settle_failed",
+            error: accounting instanceof Error ? accounting.message : "EMBEDDING_SETTLE_FAILED",
+          });
+          await permit.markUnknown("transport_unresolved");
+        }
+      } else if (started && !settled) await permit.markUnknown("transport_unresolved");
       else if (!started) await permit.releaseReserved();
       throw error;
     }

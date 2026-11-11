@@ -1819,14 +1819,9 @@ it.each(["connection loss", "missing cost", "budget exceeded"] as const)(
         expect(mainDiagnostics).toContain('"gatewayErrorType":"quota_for_entity_exceeded"');
       }
       await expect.poll(() => degradeRows().length).toBeGreaterThan(0);
-      expect(new Set(degradeRows().map((row) => JSON.stringify(row)))).toEqual(
-        new Set([
-          JSON.stringify({
-            outcome: "degraded",
-            reasonCode: "vector_search_unavailable",
-          }),
-        ]),
-      );
+      expect(degradeRows()).toEqual([
+        { outcome: "degraded", reasonCode: "vector_search_unavailable" },
+      ]);
       const database = openQualifiedDatabase(databasePath);
       try {
         expect(

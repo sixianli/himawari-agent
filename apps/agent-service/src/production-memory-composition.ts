@@ -30,7 +30,7 @@ export interface ProductionMemoryCompositionOptions {
   readonly secretSource: HostProviderSecretSource;
   readonly index: MemoryIndexStorePort;
   readonly fetch?: typeof fetch;
-  readonly onVectorFailure?: HybridMemoryProviderOptions["onVectorFailure"];
+  readonly onVectorFailure: NonNullable<HybridMemoryProviderOptions["onVectorFailure"]>;
 }
 
 export interface ProductionMemoryComposition {
@@ -106,7 +106,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
     ...(options.configuration.runPolicy?.timeZone
       ? { timeZone: options.configuration.runPolicy.timeZone }
       : {}),
-    ...(options.onVectorFailure === undefined ? {} : { onVectorFailure: options.onVectorFailure }),
+    onVectorFailure: options.onVectorFailure,
   });
   return Object.freeze({
     descriptor: resolveConfiguredModelDescriptorSet(options.configuration).embedding,

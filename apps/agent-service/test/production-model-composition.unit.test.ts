@@ -498,6 +498,7 @@ describe("production model composition", () => {
     const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
     const resolvedSecrets: string[] = [];
     const composition = await createProductionMemoryCompositionFromConfiguration({
+      onVectorFailure: () => {},
       egress: testModelEgress(),
       configuration,
       secretSource: {
@@ -548,6 +549,7 @@ describe("production model composition", () => {
     };
     const memoryIndex = inMemoryMemoryIndex();
     const composition = await createProductionMemoryCompositionFromConfiguration({
+      onVectorFailure: () => {},
       egress: testModelEgress(),
       configuration,
       secretSource: {
@@ -626,12 +628,14 @@ describe("production model composition", () => {
     };
     await expect(
       createProductionMemoryCompositionFromConfiguration({
+        onVectorFailure: () => {},
         egress: testModelEgress(),
         ...options,
         configuration,
       }),
     ).rejects.toThrow("MEMORY_MINIMUM_SIMILARITY_REQUIRED");
     const configured = await createProductionMemoryCompositionFromConfiguration({
+      onVectorFailure: () => {},
       egress: testModelEgress(),
       ...options,
       configuration: {
@@ -1777,6 +1781,23 @@ it.each(["cancel", "deadline"] as const)(
     expect(fixture.permit.releaseReserved).not.toHaveBeenCalled();
   },
 );
+
+it("[P3-2] keeps the embedding error and marks the call unknown when settling a failed chat embedding fails", async () => {
+  const fixture = embeddingAccountingFixture("query", {
+    ...gatewayEmbeddingResponse(),
+    data: [],
+  });
+  fixture.permit.settle.mockRejectedValueOnce(new Error("SETTLE_REFUSED"));
+  const failure = await fixture.run().then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).not.toBe("SETTLE_REFUSED");
+  expect(fixture.permit.settle).toHaveBeenCalledTimes(1);
+  expect(fixture.permit.markUnknown).toHaveBeenCalledWith("transport_unresolved");
+  expect(fixture.permit.releaseReserved).not.toHaveBeenCalled();
+});
 
 async function sensitiveInterceptionRepository(ownerId: string, agentId: string) {
   const stateRoot = path.join(temporaryDirectory, "sensitive-state");
