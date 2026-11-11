@@ -200,7 +200,7 @@ export class ProductionMemoryControl {
     readonly timeZone?: string;
     readonly externalProposals?: Pick<
       ProductionMcpMemoryWriter,
-      "listPending" | "pendingSummary" | "listBatches" | "listBatch" | "reopenBatch" | "respond"
+      "listPending" | "pendingSummary" | "listBatches" | "undoBatch" | "respond"
     >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
@@ -1070,21 +1070,13 @@ export class ProductionMemoryControl {
   async #externalUndo(command: Command<"memory.external.undo">) {
     const writer = this.#externalWriter();
     const { batchId } = command.payload;
-    const members = await writer.listBatch(batchId);
-    if (members.length === 0)
-      throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_EXTERNAL_BATCH_NOT_FOUND");
-    for (const { memoryId } of members) {
-      if (memoryId === null) continue;
+    const reopened = await writer.undoBatch(batchId, async (memoryId) => {
       const memory = await this.options.state.read(memoryId);
-      if (
-        memory &&
-        memoryId.startsWith(`memory:mcp:`) &&
-        memoryId.endsWith(`:${batchId}`) &&
-        (memory.status === "active" || memory.status === "archived")
-      )
+      if (memory && (memory.status === "active" || memory.status === "archived"))
         await this.options.memory.trash(memory.id, await this.#generationFor(memory.id));
-    }
-    await writer.reopenBatch(batchId);
+    });
+    if (reopened === undefined)
+      throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_EXTERNAL_BATCH_NOT_FOUND");
     return { resultRef: batchId, replayed: false };
   }
 

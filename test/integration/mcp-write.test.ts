@@ -309,24 +309,27 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       onFailure: (error) => failures.push(error),
     });
     let slowReads = 0;
+    const hooks: { afterDecided?: (() => Promise<void>) | undefined } = {};
     const slowDecided = <T extends object>(target: T): T =>
-      options.slowDecidedMs === undefined && !options.notReady
-        ? target
-        : new Proxy(target, {
-            get(inner, key) {
-              const value = Reflect.get(inner, key, inner);
-              if (typeof value !== "function") return value;
-              if (key === "ready" && options.notReady) return async () => false;
-              if (key !== "decided" || options.slowDecidedMs === undefined)
-                return value.bind(inner);
-              return async (proposalId: string) => {
-                const found = await value.call(inner, proposalId);
-                slowReads += 1;
-                clock.advance(options.slowDecidedMs ?? 0);
-                return found;
-              };
-            },
-          });
+      new Proxy(target, {
+        get(inner, key) {
+          const value = Reflect.get(inner, key, inner);
+          if (typeof value !== "function") return value;
+          if (key === "ready" && options.notReady) return async () => false;
+          if (key !== "decided") return value.bind(inner);
+          return async (proposalId: string) => {
+            const found = await value.call(inner, proposalId);
+            if (options.slowDecidedMs !== undefined) {
+              slowReads += 1;
+              clock.advance(options.slowDecidedMs);
+            }
+            const after = hooks.afterDecided;
+            hooks.afterDecided = undefined;
+            await after?.();
+            return found;
+          };
+        },
+      });
     const access = await createMcpAccess(() => new Date(clock.now()));
     const owners = repository.ownerIdentityState();
     await owners.bindFirstOwner({
@@ -373,6 +376,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         readonly name?: string;
         readonly elicitationCapability?: unknown;
         readonly answerAfterMs?: number;
+        readonly beforeAnswer?: () => Promise<void>;
       } = {},
     ) => {
       const era = input.era ?? "modern";
@@ -391,6 +395,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         client.setRequestHandler("elicitation/create", async (request) => {
           elicitations.push(request.params as Record<string, unknown>);
           clock.advance(input.answerAfterMs ?? HUMAN_ANSWER_MS);
+          await input.beforeAnswer?.();
           return input.answer ?? { action: "accept", content: {} };
         });
       await client.connect(
@@ -460,6 +465,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       }
     };
     return {
+      hooks,
       connect,
       propose,
       proposeRule,
@@ -1490,6 +1496,21 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         EXTERNAL_PROPOSAL_REASON_CODES.superseded,
       ].sort(),
     );
+    const twice = await batch(muse, [
+      { text: "主人的车是白色的", key: "muse:memory/car" },
+      { text: "主人的车是银色的", key: "muse:memory/car" },
+    ]);
+    expect(twice.parsed.results.map(({ status }) => status)).toEqual(["replaced", "pending"]);
+    await f.writer.respond(
+      [
+        {
+          proposalId: second.parsed.results[0]?.proposalId ?? "",
+          decision: "reject",
+          editedText: null,
+        },
+      ],
+      "external-batch-reject-coffee",
+    );
     const fifty = await batch(
       muse,
       Array.from({ length: 50 }, (_unused, index) => ({ text: `主人的第 ${index} 条习惯` })),
@@ -1501,6 +1522,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     });
     expect(tooMany.isError).toBe(true);
     expect(await f.pending()).toHaveLength(51);
+    expect(await f.writer.read(second.parsed.results[0]?.proposalId ?? "")).toMatchObject({
+      status: "rejected",
+    });
     expect(await f.external()).toEqual([]);
   });
 
@@ -1604,6 +1628,8 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     await f.propose(muse, { text, category: "health" });
     const [waiting] = await f.pending();
     expect(waiting?.dataClassification).toBe("sensitive");
+    expect((await f.payloads.get(waiting?.contentRef ?? ""))?.dataClassification).toBe("sensitive");
+    expect(await f.writer.readText(waiting ?? { contentRef: null })).toBe(text);
     await f.writer.respond(
       [{ proposalId: waiting?.id ?? "", decision: "keep", editedText: null }],
       "external-batch-health",
@@ -1654,5 +1680,40 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect((await f.writer.read("proposal-dialog-same"))?.subjectRef).toMatch(
       /^sha256:[0-9a-f]{64}$/u,
     );
+  });
+
+  it("[P5-3] tells the client what really happened when the owner decided in Himawari while the dialog was open", async () => {
+    const f = await setup();
+    const web = control(f);
+    const decideOnWeb = (decision: "keep" | "reject", key: string) => async () => {
+      f.hooks.afterDecided = async () => {
+        const [waiting] = await f.pending();
+        await web.command(
+          "memory.external.respond",
+          { items: [{ proposalId: waiting?.id ?? "", decision, editedText: null }] },
+          key,
+        );
+      };
+    };
+    const declining = await f.connect({
+      answer: { action: "decline" },
+      beforeAnswer: decideOnWeb("keep", "web-keep"),
+    });
+    expect((await f.propose(declining, { text: PARK })).text).toBe(
+      MCP_PROPOSE_MEMORY_ALREADY_SAVED.text,
+    );
+    expect(await f.external()).toHaveLength(1);
+    const accepting = await f.connect({ beforeAnswer: decideOnWeb("reject", "web-reject") });
+    expect((await f.propose(accepting, { text: RAIN })).text).toBe(
+      MCP_PROPOSE_MEMORY_DECLINED.text,
+    );
+    expect(await f.external()).toHaveLength(1);
+    await web.command(
+      "memory.external.undo",
+      { batchId: externalProposalBatchId("web-keep") },
+      "undo-web-keep",
+    );
+    expect(await f.external()).toEqual([]);
+    expect((await f.pending()).map(({ id }) => id)).toHaveLength(1);
   });
 });

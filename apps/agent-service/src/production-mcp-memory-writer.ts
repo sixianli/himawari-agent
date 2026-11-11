@@ -121,6 +121,11 @@ function ledgerId(
     : `ledger:mcp-proposal:${proposalId}:${batchId}:${decision}`;
 }
 
+export interface ExternalProposalDigestCache {
+  digests?: Map<string, string>;
+  created?: number;
+}
+
 export interface ProductionMcpMemoryWriterOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
   readonly memory: Pick<DurableMemoryService, "applyProposal">;
@@ -136,6 +141,7 @@ export interface ProductionMcpMemoryWriterOptions {
 export class ProductionMcpMemoryWriter {
   readonly #options: ProductionMcpMemoryWriterOptions;
   #queue: Promise<void> = Promise.resolve();
+  #created = 0;
 
   constructor(options: ProductionMcpMemoryWriterOptions) {
     this.#options = options;
@@ -160,16 +166,17 @@ export class ProductionMcpMemoryWriter {
     input: ExternalProposalSubmission,
   ): Promise<{ readonly proposal: ExternalMemoryProposalRecord; readonly created: boolean }> {
     const receivedAt = this.#options.clock.now();
-    await this.dropExpiredDiscardedText();
+    await this.#dropExpiredDiscardedText();
     const text = normalizeProposalText(input.text);
     const textSha256 = proposalTextDigest(text);
     const dataClassification = proposalClassification(text, input.category);
     const scope = this.#scope();
     const contentRef = `${EXTERNAL_PROPOSAL_PENDING_CONTENT_PREFIX}${createHash("sha256")
-      .update(`${scope.ownerId}\u0000${scope.agentId}\u0000${textSha256}`)
+      .update(
+        `${scope.ownerId}\u0000${scope.agentId}\u0000${dataClassification}\u0000${textSha256}`,
+      )
       .digest("hex")}`;
-    const known = await this.#options.payloads.get(contentRef);
-    if (!known) await this.#storeText(contentRef, text, dataClassification);
+    await this.#storeText(contentRef, text, dataClassification);
     const submitted = await this.#options.proposals.submit({
       ...scope,
       id: input.proposalId,
@@ -183,8 +190,7 @@ export class ProductionMcpMemoryWriter {
       normalization: EXTERNAL_PROPOSAL_NORMALIZATION,
       contentRef,
       category: input.category,
-      dataClassification:
-        known?.dataClassification === "sensitive" ? "sensitive" : dataClassification,
+      dataClassification,
       receivedAt,
     });
     if (submitted.created || submitted.proposal.status === "pending") {
@@ -234,7 +240,7 @@ export class ProductionMcpMemoryWriter {
   async keep(
     proposalId: string,
     input: ExternalProposalDecisionInput,
-    existing?: Map<string, string>,
+    digestCache?: ExternalProposalDigestCache,
   ): Promise<string> {
     return this.#serially(async () => {
       const proposal = await this.#pending(proposalId);
@@ -246,7 +252,7 @@ export class ProductionMcpMemoryWriter {
         throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
       if (proposalHasMachineSecret(text))
         throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
-      const digests = existing ?? (await this.#activeDigests());
+      const digests = await this.#digests(digestCache);
       const same = digests.get(proposalTextDigest(text));
       if (same) {
         await this.#commit(proposal, same, input);
@@ -306,7 +312,9 @@ export class ProductionMcpMemoryWriter {
       }
       await this.#appendOnce(write);
       await this.#decideCommitted(proposal, memoryId, input);
+      if (!stored) this.#created += 1;
       digests.set(proposalTextDigest(text), memoryId);
+      if (digestCache) digestCache.created = this.#created;
       return memoryId;
     });
   }
@@ -399,7 +407,24 @@ export class ProductionMcpMemoryWriter {
   }
 
   async reopenBatch(batchId: string) {
-    return this.#options.proposals.reopenBatch({ ...this.#scope(), batchId });
+    return this.#serially(() => this.#options.proposals.reopenBatch({ ...this.#scope(), batchId }));
+  }
+
+  async undoBatch(
+    batchId: string,
+    trash: (memoryId: MemoryId) => Promise<void>,
+  ): Promise<readonly string[] | undefined> {
+    return this.#serially(async () => {
+      const members = await this.#options.proposals.listBatch({ ...this.#scope(), batchId });
+      if (members.length === 0) return undefined;
+      for (const { memoryId } of members)
+        if (
+          memoryId?.startsWith(EXTERNAL_PROPOSAL_MEMORY_PREFIX) &&
+          memoryId.endsWith(`:${batchId}`)
+        )
+          await trash(memoryId);
+      return this.#options.proposals.reopenBatch({ ...this.#scope(), batchId });
+    });
   }
 
   async respond(
@@ -411,7 +436,7 @@ export class ProductionMcpMemoryWriter {
     batchId: string,
   ): Promise<{ readonly decided: number; readonly failed: number }> {
     const started = Date.parse(this.#options.clock.now());
-    let existing: Map<string, string> | undefined;
+    const digestCache: ExternalProposalDigestCache = {};
     let decided = 0;
     let failed = 0;
     let firstError: unknown;
@@ -431,7 +456,6 @@ export class ProductionMcpMemoryWriter {
           else failed += 1;
           continue;
         }
-        existing ??= await this.#activeDigests();
         await this.keep(
           item.proposalId,
           {
@@ -439,7 +463,7 @@ export class ProductionMcpMemoryWriter {
             started,
             ...(item.editedText === null ? {} : { editedText: item.editedText }),
           },
-          existing,
+          digestCache,
         );
         decided += 1;
       } catch (error) {
@@ -451,10 +475,25 @@ export class ProductionMcpMemoryWriter {
     return { decided, failed };
   }
 
+  async #digests(cache?: ExternalProposalDigestCache): Promise<Map<string, string>> {
+    if (cache?.digests && cache.created === this.#created) return cache.digests;
+    const digests = await this.#activeDigests();
+    if (cache) {
+      cache.digests = digests;
+      cache.created = this.#created;
+    }
+    return digests;
+  }
+
   async #activeDigests(): Promise<Map<string, string>> {
     const { ownerId, agentId } = this.#scope();
     const digests = new Map<string, string>();
     for (const memory of await this.#options.state.listActive(ownerId, agentId)) {
+      if (
+        memory.attributes?.tentative === true ||
+        (memory.attributes?.supersededBy ?? null) !== null
+      )
+        continue;
       const payload = await this.#options.payloads.get(memory.contentRef);
       if (!payload || payload.contentType !== "text/plain") continue;
       const text = new TextDecoder().decode(
@@ -467,6 +506,10 @@ export class ProductionMcpMemoryWriter {
   }
 
   async dropExpiredDiscardedText(): Promise<number> {
+    return this.#serially(() => this.#dropExpiredDiscardedText());
+  }
+
+  async #dropExpiredDiscardedText(): Promise<number> {
     return this.#options.proposals.dropDiscardedText({
       ...this.#scope(),
       decidedBefore: new Date(

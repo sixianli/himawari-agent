@@ -68,7 +68,7 @@ export function readSnapshot(
       );
       const externalProposals = count(
         `SELECT COUNT(*) FROM external_memory_proposals
-          WHERE owner_id = @ownerId AND agent_id = @agentId`,
+          WHERE owner_id = @ownerId AND agent_id = @agentId AND status <> 'committed'`,
       );
       const history = all(
         `SELECT memory_id, kind, content_ref, stance, quote_ref, source_deleted, occurred_at

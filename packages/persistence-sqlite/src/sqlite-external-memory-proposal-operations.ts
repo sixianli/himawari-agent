@@ -45,6 +45,8 @@ function valid(value: string): boolean {
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
 
+const PROPOSAL_ID_MAXIMUM = 64;
+
 function record(row: Row): ExternalMemoryProposalRecord {
   return Object.freeze({ ...row });
 }
@@ -100,7 +102,13 @@ export class SqliteExternalMemoryProposalOperations {
 
   private submit(input: ExternalMemoryProposalSubmission): ExternalMemoryProposalSubmitResult {
     this.assertDiskHeadroom();
-    if (!DIGEST.test(input.textSha256) || !valid(input.receivedAt) || input.contentRef === null)
+    if (
+      !DIGEST.test(input.textSha256) ||
+      !valid(input.receivedAt) ||
+      input.contentRef === null ||
+      input.id.length < 1 ||
+      input.id.length > PROPOSAL_ID_MAXIMUM
+    )
       this.fail("PORT_INVALID_OPERATION", "External Memory proposal is invalid");
     return this.database.transaction((): ExternalMemoryProposalSubmitResult => {
       const existing = this.database
@@ -111,33 +119,27 @@ export class SqliteExternalMemoryProposalOperations {
         .get(input.ownerId, input.agentId, input.textSha256) as Row | undefined;
       if (existing) {
         const known = record(existing);
-        const contentRef = input.contentRef;
-        if (
-          contentRef !== null &&
-          known.contentRef !== contentRef &&
-          !this.contentInUse(contentRef)
-        )
-          this.database
-            .prepare("DELETE FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ?")
-            .run(contentRef, input.ownerId, input.agentId);
-        if (
+        const raised =
           known.status === "pending" &&
           known.dataClassification === "private" &&
-          input.dataClassification === "sensitive"
-        ) {
+          input.dataClassification === "sensitive";
+        if (raised)
           this.database
             .prepare(
-              `UPDATE external_memory_proposals SET classification = 'sensitive'
+              `UPDATE external_memory_proposals SET classification = 'sensitive', content_ref = ?
               WHERE id = ? AND owner_id = ? AND agent_id = ? AND status = 'pending'`,
             )
-            .run(known.id, input.ownerId, input.agentId);
-          return {
-            proposal: { ...known, dataClassification: "sensitive" },
-            created: false,
-            superseded: [],
-          };
-        }
-        return { proposal: known, created: false, superseded: [] };
+            .run(input.contentRef, known.id, input.ownerId, input.agentId);
+        const unused = raised ? known.contentRef : input.contentRef;
+        if (unused !== null && known.contentRef !== input.contentRef && !this.contentInUse(unused))
+          this.dropPayload(unused, input);
+        return {
+          proposal: raised
+            ? { ...known, dataClassification: "sensitive", contentRef: input.contentRef }
+            : known,
+          created: false,
+          superseded: [],
+        };
       }
       const replaced =
         input.sourceKey === null
@@ -299,6 +301,12 @@ export class SqliteExternalMemoryProposalOperations {
       for (const id of ids) reopen.run(id, input.ownerId, input.agentId);
       return ids;
     })();
+  }
+
+  private dropPayload(contentRef: string, scope: Scope): void {
+    this.database
+      .prepare("DELETE FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ?")
+      .run(contentRef, scope.ownerId, scope.agentId);
   }
 
   private contentInUse(contentRef: string): boolean {

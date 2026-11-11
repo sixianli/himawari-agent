@@ -248,6 +248,10 @@ interface ReadTrace {
   summariesTried: boolean;
 }
 
+function isAlreadyDecided(error: unknown): boolean {
+  return error instanceof Error && error.message === "MCP_PROPOSAL_ALREADY_DECIDED";
+}
+
 function mapStrings(value: unknown, map: (text: string) => string): unknown {
   if (typeof value === "string") return map(value);
   if (Array.isArray(value)) return value.map((entry) => mapStrings(entry, map));
@@ -782,6 +786,13 @@ export class ProductionMcpRead {
     return { text, category, sourceKey };
   }
 
+  async #settledReply(proposalId: string): Promise<CallToolResult> {
+    const decided = await this.#options.write?.proposals?.decided(proposalId);
+    if (decided === "kept") return proposalReply(MCP_PROPOSE_MEMORY_ALREADY_SAVED.text, false);
+    if (decided === "declined") return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
+    return proposalReply(MCP_PROPOSE_MEMORY_CHANGED.text, true);
+  }
+
   #pendingReply(proposal: McpProposalReceipt): CallToolResult {
     return proposalReply(
       renderPrompt(MCP_PROPOSE_MEMORY_PENDING, {
@@ -802,7 +813,7 @@ export class ProductionMcpRead {
     if (items.length === 0 || items.length > MCP_PROPOSE_MEMORIES_MAXIMUM)
       return proposalReply(MCP_PROPOSE_MEMORY_INVALID.text, true);
     try {
-      const results: JsonObject[] = [];
+      const results: Record<string, unknown>[] = [];
       for (const [index, raw] of items.entries()) {
         const parsed =
           raw !== null && typeof raw === "object" && !Array.isArray(raw)
@@ -830,6 +841,13 @@ export class ProductionMcpRead {
           receivedAt: proposal.receivedAt,
         });
       }
+      for (const result of results)
+        if (
+          result["status"] === "pending" &&
+          typeof result["proposalId"] === "string" &&
+          (await proposals.read(result["proposalId"]))?.status === "superseded"
+        )
+          result["status"] = "replaced";
       return proposalReply(
         JSON.stringify({ note: MCP_PROPOSE_MEMORIES_RESULT.text, results }),
         false,
@@ -906,10 +924,16 @@ export class ProductionMcpRead {
         const outcome = mcpProposalAnswer(answer.action, state.askedAt, started);
         if (outcome === "unseen" || answer.action === "cancel") return this.#pendingReply(proposal);
         if (outcome === "accepted") {
-          await proposals.keep(proposalId, { batchId: null, started });
+          try {
+            await proposals.keep(proposalId, { batchId: null, started });
+          } catch (error) {
+            if (!isAlreadyDecided(error)) throw error;
+            return this.#settledReply(proposalId);
+          }
           return proposalReply(MCP_PROPOSE_MEMORY_SAVED.text, false);
         }
-        await proposals.decline(proposalId, { batchId: null, started });
+        if (!(await proposals.decline(proposalId, { batchId: null, started })))
+          return this.#settledReply(proposalId);
         return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
       });
     } catch (error) {
