@@ -113,6 +113,13 @@ export function createProductionRunMemory(options: {
     memory: ProductMemoryRecord;
   }>();
   const descriptor = embeddingAdmissionDescriptor(options.configuration);
+  const diagnose = (event: Readonly<Record<string, string>>) => {
+    try {
+      options.diagnostic?.(event);
+    } catch {
+      return;
+    }
+  };
   const leaseLost = new WeakSet<object>();
   const whileHeld = async <T>(step: Promise<T>): Promise<T> => {
     try {
@@ -324,7 +331,7 @@ export function createProductionRunMemory(options: {
       } catch (error) {
         if (attemptMs !== undefined && timeout.aborted && !context?.signal?.aborted)
           throw new Error(EMBEDDING_ATTEMPT_TIMED_OUT);
-        options.diagnostic?.(embeddingFailureDiagnostic(error));
+        diagnose(embeddingFailureDiagnostic(error));
         throw error;
       }
       await whileHeld(permit.assertActive());
@@ -339,7 +346,7 @@ export function createProductionRunMemory(options: {
         try {
           await permit.markUnknown("transport_unresolved");
         } catch (unknown) {
-          options.diagnostic?.({
+          diagnose({
             component: "agent-service",
             event: "memory.embedding_unknown_failed",
             error: unknown instanceof Error ? unknown.message : "EMBEDDING_UNKNOWN_FAILED",
@@ -362,7 +369,7 @@ export function createProductionRunMemory(options: {
             reportedCostMicros: descriptor.estimatedCostMicros,
           });
         } catch (accounting) {
-          options.diagnostic?.({
+          diagnose({
             component: "agent-service",
             event: "memory.embedding_settle_failed",
             error: accounting instanceof Error ? accounting.message : "EMBEDDING_SETTLE_FAILED",
@@ -374,7 +381,7 @@ export function createProductionRunMemory(options: {
         try {
           await permit.releaseReserved();
         } catch (release) {
-          options.diagnostic?.({
+          diagnose({
             component: "agent-service",
             event: "memory.embedding_release_failed",
             error: release instanceof Error ? release.message : "EMBEDDING_RELEASE_FAILED",
@@ -391,7 +398,7 @@ export function createProductionRunMemory(options: {
         return await embedOnce(request, send, 1, FIRST_EMBEDDING_ATTEMPT_MS);
       } catch (error) {
         if (!(error instanceof Error) || error.message !== EMBEDDING_ATTEMPT_TIMED_OUT) throw error;
-        options.diagnostic?.({
+        diagnose({
           component: "agent-service",
           event: "memory.embedding_retried",
           afterMs: String(FIRST_EMBEDDING_ATTEMPT_MS),

@@ -379,6 +379,29 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
       });
       if (!segment) throw new Error("segment");
       await resource.service.summarize(segment, resource.summarize);
+      const unembedded = {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        model: resource.embedder.model,
+        dimensions: resource.embedder.dimensions,
+        limit: 5,
+      };
+      const [pending] = await resource.repository.memoryEpisodes().listUnembedded(unembedded);
+      if (!pending) throw new Error("pending");
+      expect(
+        await resource.repository.memoryEpisodes().listUnembedded({
+          ...unembedded,
+          after: { createdAt: pending.createdAt, id: pending.id },
+        }),
+      ).toEqual([]);
+      expect(
+        (
+          await resource.repository.memoryEpisodes().listUnembedded({
+            ...unembedded,
+            after: { createdAt: pending.createdAt, id: "" },
+          })
+        ).map(({ id }) => id),
+      ).toEqual([pending.id]);
       resource.embedder.fail = false;
       expect(
         await resource.service.backfillEmbeddings({

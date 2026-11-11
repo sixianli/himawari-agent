@@ -1485,6 +1485,7 @@ export class SqliteMemoryOperations {
     agentId: AgentId;
     model: string;
     dimensions: number;
+    after?: { createdAt: string; id: string };
     limit: number;
   }): readonly MemoryEpisode[] {
     if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100) {
@@ -1498,9 +1499,18 @@ export class SqliteMemoryOperations {
           WHERE e.owner_id = @ownerId AND e.agent_id = @agentId
             AND (e.embedding_model IS NULL OR e.embedding_model != @model
               OR e.embedding_dimensions != @dimensions)
+            AND (@afterCreatedAt IS NULL OR (e.created_at, e.id) > (@afterCreatedAt, @afterId))
           ORDER BY e.created_at, e.id LIMIT @limit`,
         )
-        .all(input) as EpisodeRow[]
+        .all({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          model: input.model,
+          dimensions: input.dimensions,
+          afterCreatedAt: input.after?.createdAt ?? null,
+          afterId: input.after?.id ?? null,
+          limit: input.limit,
+        }) as EpisodeRow[]
     ).map((row) => this.episodeFromRow(row));
   }
 

@@ -583,6 +583,7 @@ class DerivedExpectationsTest(RenderedPacket):
             {**gateway, 'disclosure': 'public'}, {**gateway, 'secretRef': 'bad ref'},
             {**valid, 'allowedDataClassifications': ['private', 'private']}, {**valid, 'capabilities': ['embedding', 'embedding']},
             {**valid, 'capabilities': ['embedding', 'image input']}, {**gateway, 'cost': {**gateway['cost'], 'input': float('inf')}},
+            {**gateway, 'cost': {**gateway['cost'], 'input': 10 ** 400}}, {**valid, 'allowedDataClassifications': ['private', ['nested']]},
         ):
             with self.subTest(candidate=candidate), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_EMBEDDING_TARGET_INVALID'):
                 packet_maker.embedding_target(candidate)

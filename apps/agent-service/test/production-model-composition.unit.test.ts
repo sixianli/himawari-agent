@@ -973,6 +973,9 @@ it("[P3-2] a memory tool search whose Run lost its execution lease while embeddi
     budget: {} as never,
     assertActive: async () => {},
     now: () => now,
+    diagnostic: () => {
+      throw new Error("LOG_SINK_DOWN");
+    },
   });
   const recorded: boolean[] = [];
   const toolSearch = (send: () => Promise<never>) =>

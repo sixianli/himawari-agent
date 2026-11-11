@@ -25,7 +25,7 @@ const MAXIMUM_SUMMARY_CHARACTERS = 1200;
 const RRF_K = 60;
 const UNSUMMARIZED = "（这段对话只含敏感内容，没有做摘要）";
 
-const EPISODES_LISTED_PAST_LIMIT = 3;
+const FAILED_EMBEDDINGS_PER_BACKFILL = 3;
 
 export interface EpisodeSegment {
   readonly ownerId: OwnerId;
@@ -109,6 +109,7 @@ export function episodeSummaryPrompt(segment: EpisodeSegment): string {
 
 export class MemoryEpisodeService {
   readonly #options: MemoryEpisodeServiceOptions;
+  readonly #backfillResumesAfter = new Map<string, { createdAt: string; id: string }>();
 
   constructor(options: MemoryEpisodeServiceOptions) {
     this.#options = options;
@@ -336,43 +337,63 @@ export class MemoryEpisodeService {
   }): Promise<number> {
     const embedder = this.#options.embedder;
     if (!embedder || input.limit <= 0) return 0;
-    const episodes = await this.#options.store.listUnembedded({
-      ownerId: input.ownerId,
-      agentId: input.agentId,
-      model: embedder.model,
-      dimensions: embedder.dimensions,
-      limit: Math.min(100, input.limit + EPISODES_LISTED_PAST_LIMIT),
-    });
+    const position = [input.ownerId, input.agentId, embedder.model, embedder.dimensions].join(
+      "\u0000",
+    );
+    const pageSize = Math.min(100, input.limit + FAILED_EMBEDDINGS_PER_BACKFILL);
+    let after = this.#backfillResumesAfter.get(position);
+    let wrapped = after === undefined;
     let embedded = 0;
+    let failed = 0;
     let failure: { readonly error: unknown } | undefined;
-    for (const episode of episodes) {
-      if (embedded >= input.limit) break;
-      if (!isModelVisible(episode.dataClassification)) continue;
-      const text = await this.#options.readText({
+    pages: for (;;) {
+      const episodes = await this.#options.store.listUnembedded({
         ownerId: input.ownerId,
         agentId: input.agentId,
-        ref: episode.contentRef,
+        model: embedder.model,
+        dimensions: embedder.dimensions,
+        ...(after ? { after } : {}),
+        limit: pageSize,
       });
-      if (!text) continue;
-      let vector: Float32Array;
-      try {
-        vector = await (input.within ?? ((_, operation) => operation()))(episode, () =>
-          embedder.embedDocument(`${episode.day}\n${text}`),
-        );
-      } catch (error) {
-        failure ??= { error };
-        continue;
+      for (const episode of episodes) {
+        after = { createdAt: episode.createdAt, id: episode.id };
+        if (!isModelVisible(episode.dataClassification)) continue;
+        const text = await this.#options.readText({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          ref: episode.contentRef,
+        });
+        if (!text) continue;
+        let vector: Float32Array;
+        try {
+          vector = await (input.within ?? ((_, operation) => operation()))(episode, () =>
+            embedder.embedDocument(`${episode.day}\n${text}`),
+          );
+        } catch (error) {
+          failure ??= { error };
+          failed += 1;
+          if (failed >= FAILED_EMBEDDINGS_PER_BACKFILL) break pages;
+          continue;
+        }
+        await this.#options.store.attachEmbedding({
+          episodeId: episode.id,
+          embedding: {
+            model: embedder.model,
+            dimensions: embedder.dimensions,
+            vector,
+          },
+        });
+        embedded += 1;
+        if (embedded >= input.limit) break pages;
       }
-      await this.#options.store.attachEmbedding({
-        episodeId: episode.id,
-        embedding: {
-          model: embedder.model,
-          dimensions: embedder.dimensions,
-          vector,
-        },
-      });
-      embedded += 1;
+      if (episodes.length < pageSize) {
+        after = undefined;
+        if (wrapped) break;
+        wrapped = true;
+      }
     }
+    if (after) this.#backfillResumesAfter.set(position, after);
+    else this.#backfillResumesAfter.delete(position);
     if (failure && embedded === 0) throw failure.error;
     return embedded;
   }

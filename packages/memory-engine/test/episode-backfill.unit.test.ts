@@ -70,11 +70,27 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
     expect(embedded.some((text) => text.includes("ep-secret"))).toBe(false);
   });
 
-  it("[P3-1] one summary that cannot be embedded does not hold back the others; a page of only failures still fails", async () => {
+  it("[P3-1] summaries that cannot be embedded never hold back the ones after them, and each call tries at most three of them", async () => {
     const attached: string[] = [];
-    let listed = [episode("ep-broken", "private"), episode("ep-fine", "private")];
+    const tried: string[] = [];
+    let stored: MemoryEpisode[] = [];
     const store = {
-      listUnembedded: async () => listed,
+      listUnembedded: async ({
+        after,
+        limit,
+      }: {
+        after?: { createdAt: string; id: string };
+        limit: number;
+      }) =>
+        stored
+          .filter((item) => !attached.includes(item.id))
+          .filter(
+            (item) =>
+              !after ||
+              item.createdAt > after.createdAt ||
+              (item.createdAt === after.createdAt && item.id > after.id),
+          )
+          .slice(0, limit),
       attachEmbedding: async ({ episodeId }: { episodeId: string }) => {
         attached.push(episodeId);
       },
@@ -89,33 +105,31 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
         dimensions: 2,
         embedQuery: async () => new Float32Array([1, 0]),
         embedDocument: async (text: string) => {
-          if (text.includes("ep-broken")) throw new Error("EMBEDDING_LOCAL_INPUT_LENGTH");
+          tried.push(text.slice(text.indexOf("payload-") + 8));
+          if (text.includes("broken")) throw new Error("EMBEDDING_LOCAL_INPUT_LENGTH");
           return new Float32Array([1, 0]);
         },
       },
       now: () => "2026-11-09T00:00:00.000Z",
     });
-    const run = (limit = 5) =>
+    const run = (limit = 1) =>
       service.backfillEmbeddings({ ownerId: OWNER_ID, agentId: AGENT_ID, limit });
-    expect(await run(1)).toBe(1);
-    expect(attached).toEqual(["ep-fine"]);
-    listed = [
-      episode("ep-broken", "private"),
-      episode("ep-next", "private"),
-      episode("ep-later", "private"),
-    ];
-    expect(await run(1)).toBe(1);
-    expect(attached).toEqual(["ep-fine", "ep-next"]);
-    listed = [
-      episode("ep-broken", "private"),
-      episode("ep-broken-2", "private"),
-      episode("ep-broken-3", "private"),
-      episode("ep-after-three", "private"),
-    ];
-    expect(await run(1)).toBe(1);
-    expect(attached).toEqual(["ep-fine", "ep-next", "ep-after-three"]);
-    listed = [episode("ep-broken", "private")];
+    stored = ["a-broken", "b-fine"].map((id) => episode(id, "private"));
+    expect(await run()).toBe(1);
+    expect(attached).toEqual(["b-fine"]);
+    stored = ["c-broken", "d-broken", "e-broken", "f-broken", "g-broken", "h-fine", "i-fine"].map(
+      (id) => episode(id, "private"),
+    );
+    attached.length = 0;
+    tried.length = 0;
     await expect(run()).rejects.toThrow("EMBEDDING_LOCAL_INPUT_LENGTH");
-    expect(attached).toEqual(["ep-fine", "ep-next", "ep-after-three"]);
+    expect(tried).toEqual(["c-broken", "d-broken", "e-broken"]);
+    expect(await run()).toBe(1);
+    expect(tried.slice(3)).toEqual(["f-broken", "g-broken", "h-fine"]);
+    expect(await run(100)).toBe(1);
+    expect(attached).toEqual(["h-fine", "i-fine"]);
+    expect(tried.slice(6)).toEqual(["i-fine", "c-broken", "d-broken", "e-broken"]);
+    stored = [];
+    expect(await run(100)).toBe(0);
   });
 });

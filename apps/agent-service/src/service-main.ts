@@ -79,6 +79,7 @@ import {
 } from "@himawari-agent/runtime-pi";
 import { monitorFollowUpCacheHits } from "./cache-hit-monitor.js";
 import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
+import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
@@ -1547,7 +1548,16 @@ export async function runAgentService(
             if (embedded === 0) break;
           }
         };
-        let caughtUp = false;
+        const catchUp = createLocalVectorCatchUp({
+          run: catchUpLocalVectors,
+          failed: (error, retryInMs) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "memory.embedding_catch_up_failed",
+              code: stableErrorCode(error),
+              retryInMs: String(retryInMs),
+            }),
+        });
         localEmbedding.observe((state, reasonCode) => {
           const ready = state === "ready";
           health?.observe({
@@ -1562,15 +1572,7 @@ export async function runAgentService(
             state,
             ...(reasonCode === null ? {} : { code: reasonCode }),
           });
-          if (!ready || caughtUp) return;
-          caughtUp = true;
-          void catchUpLocalVectors().catch((error: unknown) =>
-            writeServiceDiagnostic(errorOutput, {
-              component: "agent-service",
-              event: "memory.embedding_catch_up_failed",
-              code: stableErrorCode(error),
-            }),
-          );
+          catchUp.observe(ready);
         });
         void localEmbedding.start();
       }
