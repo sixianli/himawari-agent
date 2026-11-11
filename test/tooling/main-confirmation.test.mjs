@@ -12,9 +12,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-// Mock expensive process boundaries; keep orchestration, report admission,
-// artifact resolution, hashing and test-result validation real.
-const state = vi.hoisted(() => ({ calls: [], fail: "", outcome: {}, report: "passed" }));
+const state = vi.hoisted(() => ({
+  calls: [],
+  fail: "",
+  outcome: {},
+  report: "passed",
+  publishArgs: [],
+}));
 vi.mock("../../scripts/ci/main-evidence.mjs", () => ({
   main: async () => {
     state.calls.push("evidence");
@@ -49,6 +53,7 @@ vi.mock("../../scripts/ci/publish.mjs", async (original) => ({
   ...(await original()),
   main: async (args) => {
     state.calls.push(`publish:${path.basename(args[1])}`);
+    state.publishArgs.push(args);
   },
 }));
 vi.mock("../../scripts/ci/execute.mjs", async (original) => ({
@@ -83,6 +88,7 @@ const readPublic = (name) =>
 beforeEach(() => {
   root = realpathSync(mkdtempSync(path.join(tmpdir(), "main-confirmation-")));
   Object.assign(state, { calls: [], fail: "", outcome: {}, report: "passed", process: undefined });
+  state.publishArgs = [];
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
@@ -109,6 +115,10 @@ it("先重新验证资格，再构建、扫描新产物并执行安装服务测�
     smoke: { files: 1, executed: 4, passed: 4, failed: 0, skipped: 0 },
   });
   expect(readPublic("summary.json")).toEqual(result);
+  expect(state.publishArgs.map((args) => args.slice(-2))).toEqual([
+    ["--artifacts", "omit"],
+    ["--artifacts", "omit"],
+  ]);
   expect(readPublic("smoke.json").testResults[0].assertionResults).toHaveLength(4);
   expect(state.process.command).toBe(process.execPath);
   expect(state.process.args).toContain("test/integration/installable-node-services.test.ts");

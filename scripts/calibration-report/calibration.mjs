@@ -1,11 +1,16 @@
 import { execFileSync } from "node:child_process";
 import process from "node:process";
 import { readCalibrationRows } from "@himawari-agent/calibration";
+import { readPrereviewWeek } from "@himawari-agent/calibration/prereview";
 
 export * from "@himawari-agent/calibration";
+export * from "@himawari-agent/calibration/prereview";
 
 export function readWindow(database, scope) {
-  return database.transaction(() => readCalibrationRows(database, scope))();
+  return database.transaction(() => ({
+    ...readCalibrationRows(database, scope),
+    prereviews: readPrereviewWeek(database, scope),
+  }))();
 }
 
 export function findScopes(database) {

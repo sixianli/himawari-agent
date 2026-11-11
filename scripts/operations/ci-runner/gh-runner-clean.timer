@@ -1,10 +1,10 @@
 [Unit]
-Description=Daily cleanup of old GitHub Actions runner work directories and logs
+Description=Hourly cleanup of old GitHub Actions runner work directories, logs and leftover run files
 
 [Timer]
-OnCalendar=daily
+OnCalendar=hourly
 Persistent=true
-RandomizedDelaySec=30m
+RandomizedDelaySec=5m
 
 [Install]
 WantedBy=timers.target

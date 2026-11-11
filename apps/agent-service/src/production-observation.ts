@@ -15,8 +15,8 @@ import {
   type ObservationScope,
   PORT_ERROR_CODES,
   type ProactiveSchedule,
-  parseRuleRef,
   type ProactiveSealPort,
+  parseRuleRef,
   summarizeObservation,
 } from "@himawari-agent/application";
 import {
@@ -33,6 +33,13 @@ import {
   summarizeImplicit,
   summarizeMuse,
 } from "@himawari-agent/calibration";
+import {
+  DEFAULT_PREREVIEW_AGREEMENT_PERMILLE,
+  DEFAULT_PREREVIEW_AUDIT_PERMILLE,
+  DEFAULT_PREREVIEW_CONFIDENCE_PERMILLE,
+  minimumPairsToPass,
+  summarizePrereviewWeek,
+} from "@himawari-agent/calibration/prereview";
 import {
   type GatewayV2Command,
   type GatewayV2Query,
@@ -80,6 +87,13 @@ export interface ProductionObservationOptions {
   readonly serviceRevision: string;
   readonly tickMs?: number;
   readonly onFailure?: (error: unknown) => void;
+  readonly prereview?: {
+    readonly version?: { readonly modelRef: string; readonly promptId: string };
+    readonly agreementPermille: number;
+    readonly confidencePermille: number;
+    readonly reductionEnabled: boolean;
+    readonly auditPermille: number;
+  };
 }
 
 function invalid(reason: string): never {
@@ -218,6 +232,17 @@ export class ProductionObservation {
     );
     const gap = summarizeGap(rows.entries, new Map(rows.mailJudgments), DEFAULT_MINIMUM_SAMPLES);
     const implicit = summarizeImplicit(rows.decisions, rows.signals, DEFAULT_MINIMUM_SAMPLES);
+    const prereviewSettings = this.#options.prereview ?? {
+      agreementPermille: DEFAULT_PREREVIEW_AGREEMENT_PERMILLE,
+      confidencePermille: DEFAULT_PREREVIEW_CONFIDENCE_PERMILLE,
+      reductionEnabled: false,
+      auditPermille: DEFAULT_PREREVIEW_AUDIT_PERMILLE,
+    };
+    const prereview = summarizePrereviewWeek(
+      rows.prereviews,
+      prereviewSettings,
+      this.#options.prereview?.version,
+    );
     const summary = start
       ? summarizeObservation({ start, checks: await observation.listChecks(scope), now })
       : null;
@@ -298,6 +323,27 @@ export class ProductionObservation {
               events: item.events,
               medianDelayMs: item.medianDelayMs,
               rate: complete ? item.rate : null,
+            })),
+          },
+          prereview: {
+            agreementPermille: prereviewSettings.agreementPermille,
+            confidencePermille: prereviewSettings.confidencePermille,
+            reductionEnabled: prereviewSettings.reductionEnabled,
+            auditPermille: prereviewSettings.auditPermille,
+            minimumPairs: minimumPairsToPass(prereviewSettings.agreementPermille),
+            otherVersions: prereview.otherVersions,
+            groups: prereview.groups.map((group) => ({
+              group: group.group,
+              prereviewed: group.prereviewed,
+              unsure: group.unsure,
+              paired: group.paired,
+              agreement: complete ? group.agreement : null,
+              kappa: complete ? group.kappa : null,
+              balancedAccuracy: complete ? group.balancedAccuracy : null,
+              ownerUseful: complete ? group.ownerUseful : null,
+              hidden: complete ? group.hidden : null,
+              confusion: group.confusion.map((cell) => ({ ...cell })),
+              gate: complete ? { ...group.gate } : null,
             })),
           },
         },
