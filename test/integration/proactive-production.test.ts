@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -627,11 +628,16 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     });
     await new Promise<void>((resolve) => google.listen(0, "127.0.0.1", resolve));
     closers.push(() => new Promise<void>((resolve) => google.close(() => resolve())));
-    const browser = await chromium.launch(
-      process.env["HIMAWARI_CHROMIUM_PATH"]
-        ? { executablePath: process.env["HIMAWARI_CHROMIUM_PATH"] }
-        : {},
-    );
+    const bundled = "/opt/pw-browsers/chromium";
+    const configuredPath = process.env["HIMAWARI_CHROMIUM_PATH"] || undefined;
+    const browser = await chromium
+      .launch(configuredPath ? { executablePath: configuredPath } : {})
+      .catch((error: unknown) => {
+        const missing =
+          error instanceof Error && error.message.includes("Executable doesn't exist");
+        if (configuredPath || !missing || !existsSync(bundled)) throw error;
+        return chromium.launch({ executablePath: bundled });
+      });
     closers.push(() => browser.close());
     const context = await browser.newContext();
     await context.addCookies([
