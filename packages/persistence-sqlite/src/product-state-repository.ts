@@ -859,14 +859,16 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
       const totalMs = Math.round(performance.now() - requestedAt);
       if (this.onSlowScope && totalMs >= SLOW_SCOPE_MILLISECONDS) {
         const runMs = Math.round(performance.now() - startedAt);
-        this.onSlowScope({
-          lane: "write",
-          operation: "transaction.scope",
-          totalMs,
-          queueWaitMs: totalMs - runMs,
-          runMs,
-          queuedBehind: 0,
-        });
+        try {
+          this.onSlowScope({
+            lane: "write",
+            operation: "transaction.scope",
+            totalMs,
+            queueWaitMs: totalMs - runMs,
+            runMs,
+            queuedBehind: 0,
+          });
+        } catch {}
       }
     }
   }

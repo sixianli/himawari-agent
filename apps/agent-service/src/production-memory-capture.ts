@@ -915,7 +915,7 @@ export class ProductionMemoryCapture {
         updatedAt: this.options.clock.now(),
       });
       const gaveUp = attempts >= MEMORY_CAPTURE_BACKLOG_MAX_ATTEMPTS;
-      if (gaveUp) await backlog.remove(plan.generationId).catch(this.options.onFailure);
+      if (gaveUp) await this.#settle(plan.generationId);
       await this.#recordFailure(
         plan,
         gaveUp ? "capture_gave_up" : "capture_queued",
@@ -953,7 +953,10 @@ export class ProductionMemoryCapture {
     if (!entry || this.#busy.has(entry.generationId)) return;
     this.#busy.add(entry.generationId);
     try {
-      if (this.#settled.has(entry.generationId)) {
+      if (
+        this.#settled.has(entry.generationId) ||
+        entry.attempts >= MEMORY_CAPTURE_BACKLOG_MAX_ATTEMPTS
+      ) {
         await backlog.remove(entry.generationId);
         this.#settled.delete(entry.generationId);
         return;
@@ -978,7 +981,7 @@ export class ProductionMemoryCapture {
           updatedAt: this.options.clock.now(),
         });
         const gaveUp = attempts >= MEMORY_CAPTURE_BACKLOG_MAX_ATTEMPTS;
-        if (gaveUp) await backlog.remove(entry.generationId);
+        if (gaveUp) await this.#settle(entry.generationId);
         await this.#recordFailure(
           plan,
           gaveUp ? "capture_gave_up" : "capture_queued",

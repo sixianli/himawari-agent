@@ -247,6 +247,15 @@ describe("[P3-5] transaction scope when SQLite rolls the transaction back by its
     expect(database.prepare("SELECT count(*) AS n FROM memory_capture_backlog").get()).toEqual({
       n: 0,
     });
+    expect(() =>
+      operations.execute("memoryCaptureBacklog.enqueue", {
+        entry: { ...entry, generationId: "c" },
+      }),
+    ).toThrowError(expect.objectContaining({ details: { reason: "TRANSACTION_ABORTED" } }));
+    expect(database.prepare("SELECT count(*) AS n FROM memory_capture_backlog").get()).toEqual({
+      n: 0,
+    });
+    operations.execute("transaction.rollback", {});
     operations.execute("transaction.begin", {});
     database.exec("ROLLBACK");
     expect(() => operations.execute("transaction.commit", {})).toThrowError(

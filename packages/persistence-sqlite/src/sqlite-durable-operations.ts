@@ -525,9 +525,10 @@ export class SqliteDurableOperations {
   }
 
   private transactionScopeOpen = false;
+  private transactionScopeLost = false;
 
   private transactionScopeAborted(): never {
-    this.transactionScopeOpen = false;
+    this.transactionScopeLost = true;
     return this.fail("PORT_CONFLICT", "The transaction scope was rolled back", {
       reason: "TRANSACTION_ABORTED",
     });
@@ -539,16 +540,18 @@ export class SqliteDurableOperations {
         if (this.database.inTransaction)
           this.fail("PORT_INVALID_OPERATION", "A transaction scope is already open");
         this.database.exec("BEGIN IMMEDIATE");
+        this.transactionScopeLost = false;
         this.transactionScopeOpen = true;
         return null;
       case "transaction.commit":
-        if (!this.transactionScopeOpen || !this.database.inTransaction)
+        if (this.transactionScopeLost || !this.transactionScopeOpen || !this.database.inTransaction)
           this.transactionScopeAborted();
         this.transactionScopeOpen = false;
         this.database.exec("COMMIT");
         return null;
       case "transaction.rollback":
         this.transactionScopeOpen = false;
+        this.transactionScopeLost = false;
         if (this.database.inTransaction) this.database.exec("ROLLBACK");
         return null;
       default:
@@ -559,6 +562,7 @@ export class SqliteDurableOperations {
   execute(operation: string, payload: unknown): unknown {
     const scoped = this.executeTransactionScope(operation);
     if (scoped !== undefined) return scoped;
+    if (this.transactionScopeLost) this.transactionScopeAborted();
     if (this.transactionScopeOpen && !this.database.inTransaction) this.transactionScopeAborted();
     const value = this.executeUnscoped(operation, payload);
     if (this.transactionScopeOpen && !this.database.inTransaction) this.transactionScopeAborted();

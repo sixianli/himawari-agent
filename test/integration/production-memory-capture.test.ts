@@ -3240,6 +3240,29 @@ describe("production memory capture", () => {
     expect(await activeMemories(context)).toEqual([]);
   });
 
+  it("[P3-5] does not ask the model again for a turn that was given up when its queued row could not be removed", async () => {
+    const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    context.outputs.push(new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    for (const runId of ["run-a", "run-b"])
+      await nextTurn(context, runId, ['{"memories":[]}', "不是 JSON"]);
+    const removing = removeFailingOnce(context, 1);
+    await context.turn("owner", "今天 run-c 轮，随便聊聊。", "run-c");
+    context.outputs.push('{"memories":[]}', "不是 JSON");
+    const failing = new ProductionMemoryCapture(removing.options);
+    await failing.start(context.requestFor("run-c"));
+    await failing.stop();
+    expect(backlogRows(context).map((row) => (row as { attempts: number }).attempts)).toEqual([3]);
+    const before = context.calls.length;
+    await nextTurn(context, "run-d", ['{"memories":[]}']);
+    expect(context.calls.slice(before)).toEqual([
+      { invocationId: "memory-capture:run-d", retryToolCall: false },
+    ]);
+    expect(backlogRows(context)).toEqual([]);
+    expect(await activeMemories(context)).toEqual([]);
+  });
+
   it("[P3-5] does not retry an error that would repeat, but still queues the turn", async () => {
     const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_OUTPUT_TRUNCATED"));
     await context.capture.start(context.request);
