@@ -70,7 +70,7 @@ def production_facts(running='eleventh', date='2026-10-26', public_fetch=102400,
 def static_root_configuration(packet):
     source = (packet / 'systemd' / 'S7-switch-start-readback.py').read_text()
     function = next(node for node in ast.parse(source).body if isinstance(node, ast.FunctionDef) and node.name == 'static_root_configuration')
-    namespace = {'copy': copy}
+    namespace = {'copy': copy, 'json': json}
     exec(compile(ast.Module(body=[function], type_ignores=[]), 'S7-switch-start-readback.py', 'exec'), namespace)
     return namespace['static_root_configuration']
 
@@ -541,6 +541,64 @@ class DerivedExpectationsTest(RenderedPacket):
                 self.assertEqual(switched['http']['staticRoot'], '/opt/himawari/releases/2026-10-26-twelfth/share/control-center')
                 fixtures = subprocess.run([sys.executable, '-I', str(packet / 'systemd' / 'verify-switch-config-fixtures.py'), shutil.which('node')], capture_output=True, text=True, check=False)
                 self.assertEqual(fixtures.returncode, 0, fixtures.stdout + fixtures.stderr)
+
+    def test_p3_1_an_approved_embedding_switch_replaces_only_the_embedding_and_its_dimensions(self):
+        target = {'ref': 'local-embedding', 'role': 'embedding', 'provider': 'local-onnx', 'model': 'jina-embeddings-v5-text-small-retrieval-int8', 'version': 'onnx-int8-v1', 'allowedDataClassifications': ['public', 'private', 'sensitive'], 'disclosure': 'local_only', 'secretRef': None, 'capabilities': ['embedding'], 'cost': {'input': 0, 'output': 0, 'cacheRead': 0, 'cacheWrite': 0}, 'dimensions': 1024, 'artifactSha256': 'd' * 64}
+        packet = self.render(TARGET_EMBEDDING_JSON=packet_maker.embedding_target(target))
+        original = production_config(TWELFTH['OLD_PREFIX'], TWELFTH['ORIGINAL_PUBLIC_FETCH_BYTES'], TWELFTH['ORIGINAL_CONTEXT_WINDOW'], TWELFTH['ORIGINAL_MAX_TOKENS'])
+        original['modelDescriptors'].append({'ref': 'qwen-embedding', 'role': 'embedding', 'provider': 'vercel-ai-gateway', 'model': 'alibaba/qwen3-embedding-8b', 'dimensions': 4096, 'secretRef': 'vercel-gateway'})
+        original['memory'] = {'adapter': 'mem0-oss', 'dimensions': 4096, 'minimumSimilarity': 0.6}
+        original['runPolicy']['proactive'] = {'modelRef': 'deepseek-primary', 'memoryMinimumSimilarity': 0.45}
+        switched = static_root_configuration(packet)(original)
+        self.assertEqual(switched['modelDescriptors'][1], target)
+        self.assertEqual(switched['modelDescriptors'][0]['ref'], 'deepseek-primary')
+        self.assertEqual(switched['memory'], {'adapter': 'mem0-oss', 'dimensions': 1024})
+        self.assertEqual(switched['runPolicy']['proactive'], {'modelRef': 'deepseek-primary'})
+        fixtures = subprocess.run([sys.executable, '-I', str(packet / 'systemd' / 'verify-switch-config-fixtures.py'), shutil.which('node')], capture_output=True, text=True, check=False)
+        self.assertEqual(fixtures.returncode, 0, fixtures.stdout + fixtures.stderr)
+        self.assertIn('cases=11', fixtures.stdout)
+        without = copy.deepcopy(original)
+        without['modelDescriptors'].pop()
+        with self.assertRaisesRegex(RuntimeError, 'TWELFTH_SWITCH_ORIGINAL_EMBEDDING_DESCRIPTOR_CHANGED'):
+            static_root_configuration(packet)(without)
+        unchanged = static_root_configuration(self.render())(copy.deepcopy(original))
+        self.assertEqual(unchanged['modelDescriptors'][1], original['modelDescriptors'][1])
+        self.assertEqual(unchanged['memory'], original['memory'])
+
+    def test_p3_1_an_embedding_target_outside_the_local_policy_is_refused(self):
+        valid = {'ref': 'local-embedding', 'role': 'embedding', 'provider': 'local-onnx', 'model': 'jina-embeddings-v5-text-small-retrieval-int8', 'version': 'v', 'allowedDataClassifications': ['public', 'private'], 'disclosure': 'local_only', 'secretRef': None, 'capabilities': ['embedding'], 'cost': {'input': 0, 'output': 0, 'cacheRead': 0, 'cacheWrite': 0}, 'dimensions': 1024, 'artifactSha256': 'a' * 64}
+        gateway = {**{key: value for key, value in valid.items() if key != 'artifactSha256'}, 'provider': 'vercel-ai-gateway', 'model': 'alibaba/qwen3-embedding-8b', 'disclosure': 'external_remote', 'secretRef': 'vercel-gateway', 'dimensions': 4096}
+        self.assertEqual(packet_maker.embedding_target(None), 'null')
+        self.assertEqual(json.loads(packet_maker.embedding_target(valid)), valid)
+        self.assertEqual(json.loads(packet_maker.embedding_target(gateway)), gateway)
+        missing_cost = {key: value for key, value in valid.items() if key != 'cost'}
+        for candidate in (
+            {**valid, 'secretRef': 'vercel-gateway'}, {**valid, 'disclosure': 'external_remote'}, {**valid, 'artifactSha256': 'short'},
+            {**valid, 'artifactSha256': '0' * 64}, {**valid, 'role': 'primary'}, {**valid, 'dimensions': 0}, {**valid, 'dimensions': 768},
+            {**valid, 'unknown': 1}, {**valid, 'model': "it's"}, {**valid, 'model': 'unknown-model'}, missing_cost,
+            {**valid, 'cost': {**valid['cost'], 'input': 1}}, {**valid, 'capabilities': ['text']},
+            {**gateway, 'artifactSha256': 'a' * 64}, {**gateway, 'secretRef': None}, {**gateway, 'dimensions': 768},
+            {**valid, 'artifactSha256': int('1' * 64)}, {**valid, 'version': 'has space'}, {**valid, 'allowedDataClassifications': ['secret']},
+            {**valid, 'capabilities': ['embedding', 3]}, {**gateway, 'cost': {**gateway['cost'], 'input': -1}}, {**gateway, 'cost': {**gateway['cost'], 'input': True}},
+            {**gateway, 'disclosure': 'public'}, {**gateway, 'secretRef': 'bad ref'},
+            {**valid, 'allowedDataClassifications': ['private', 'private']}, {**valid, 'capabilities': ['embedding', 'embedding']},
+            {**valid, 'capabilities': ['embedding', 'image input']}, {**gateway, 'cost': {**gateway['cost'], 'input': float('inf')}},
+            {**gateway, 'cost': {**gateway['cost'], 'input': 10 ** 400}}, {**valid, 'allowedDataClassifications': ['private', ['nested']]},
+        ):
+            with self.subTest(candidate=candidate), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_EMBEDDING_TARGET_INVALID'):
+                packet_maker.embedding_target(candidate)
+
+    def test_p3_1_packet_embedding_profiles_match_the_runtime_profiles(self):
+        source = (HERE.parents[1] / 'packages/application/src/embedding-profiles.ts').read_text()
+        found = {}
+        for block in re.findall(r'Object\.freeze\(\{(.*?)\}\)', source, re.S):
+            model = re.search(r'model: "([^"]+)"', block)
+            provider = re.search(r'provider: (\w+)', block)
+            dims = re.search(r'dimensions: Object\.freeze\(\[([\d, ]+)\]\)', block)
+            if model and provider and dims:
+                name = {'GATEWAY_EMBEDDING_PROVIDER': 'vercel-ai-gateway', 'LOCAL_ONNX_EMBEDDING_PROVIDER': 'local-onnx'}[provider.group(1)]
+                found[(name, model.group(1))] = tuple(int(value) for value in dims.group(1).split(','))
+        self.assertEqual(found, packet_maker.EMBEDDING_PROFILES)
 
 
 class HermesCommandTest(unittest.TestCase):

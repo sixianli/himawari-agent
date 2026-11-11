@@ -62,6 +62,7 @@ export const ALLOWED_EGRESS_FILES = Object.freeze(
   new Map([
     ["packages/runtime-pi/src/pi-model-transport.ts", ["model stream call"]],
     ["packages/memory-engine/src/embedding.ts", ["embeddings request"]],
+    ["packages/platform-node/src/local-onnx-embedding.ts", ["embeddings request"]],
     [
       "packages/application/src/services/model-egress.ts",
       ["embeddings request", "chat completions request"],

@@ -158,6 +158,16 @@ def static_root_configuration(original):
     expected['http']['staticRoot'] = '/opt/himawari/releases/__PKT_DATE__-__PKT_LABEL__/share/control-center'
     next(entry for entry in expected['modelDescriptors'] if isinstance(entry, dict) and entry.get('ref') == '__PKT_MODEL_REF__').update(contextWindow=__PKT_TARGET_CONTEXT_WINDOW__, maxTokens=__PKT_TARGET_MAX_TOKENS__)
     expected['runPolicy']['publicFetch']['maximumBytes'] = __PKT_TARGET_PUBLIC_FETCH_BYTES__
+    approved_embedding = json.loads('__PKT_TARGET_EMBEDDING_JSON__')
+    if approved_embedding is not None:
+        positions = [index for index, entry in enumerate(expected.get('modelDescriptors') or []) if isinstance(entry, dict) and entry.get('role') == 'embedding']
+        if len(positions) != 1 or not isinstance(expected.get('memory'), dict):
+            raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_ORIGINAL_EMBEDDING_DESCRIPTOR_CHANGED')
+        expected['modelDescriptors'][positions[0]] = approved_embedding
+        expected['memory']['dimensions'] = approved_embedding['dimensions']
+        expected['memory'].pop('minimumSimilarity', None)
+        if isinstance(expected['runPolicy'].get('proactive'), dict):
+            expected['runPolicy']['proactive'].pop('memoryMinimumSimilarity', None)
     return expected
 static_root_config = static_root_configuration(original_configuration)
 static_root_config_bytes = (json.dumps(static_root_config, indent=2, ensure_ascii=False) + '\n').encode()

@@ -1135,6 +1135,17 @@
       "reason": "可选 Darwin 包含预编译 fsevents.node；发布 manifest 没有安装命令，也没有 binding.gyp。"
     },
     {
+      "path": "node_modules/onnxruntime-node",
+      "name": "onnxruntime-node",
+      "version": "1.30.0",
+      "scripts": {
+        "postinstall": "node ./script/install"
+      },
+      "decision": "omit",
+      "reviewedFiles": {},
+      "reason": "postinstall 只在需要 CUDA 或 TensorRT 时下载额外的 GPU 执行库；发布包已经带着各平台的 CPU 二进制（bin/napi-v6），Himawari 只用 CPU，不执行该脚本，出包时只留当前平台的 CPU 二进制（ADR 0224）。"
+    },
+    {
       "path": "node_modules/playwright/node_modules/fsevents",
       "name": "fsevents",
       "version": "2.3.2",
@@ -1175,7 +1186,7 @@
       },
       {
         "path": "ci/rules/gitleaks.toml",
-        "sha256": "e7c9ced73fd3e213f5236c771d3f615f5352c4081c9fa717ff24f42617a76450"
+        "sha256": "56a358c4eb13123fa799397e32db05a0ad7e48edc7258b5173e7129073f9a9c4"
       },
       {
         "path": "ci/rules/fixtures/safe.fixture.ts",

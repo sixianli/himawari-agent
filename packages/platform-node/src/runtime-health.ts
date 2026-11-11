@@ -59,6 +59,15 @@ export class RuntimeHealthModel {
       );
     }
     this.#dependencies.set(
+      "memory-embedding",
+      Object.freeze({
+        name: "memory-embedding",
+        required: false,
+        status: "healthy",
+        reasonCode: null,
+      }),
+    );
+    this.#dependencies.set(
       "model-provider",
       Object.freeze({
         name: "model-provider",

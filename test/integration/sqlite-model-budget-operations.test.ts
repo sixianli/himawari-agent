@@ -1494,7 +1494,12 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
             search: async () => {
               if (!boundary) throw new Error("BOUNDARY_MISSING");
               await boundary(
-                { model: "alibaba/qwen3-embedding-8b", input: "query", dimensions: 4 },
+                {
+                  identity: "fixture",
+                  model: "alibaba/qwen3-embedding-8b",
+                  input: "query",
+                  dimensions: 4,
+                },
                 send as never,
               );
               return [];

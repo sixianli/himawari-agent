@@ -10,7 +10,7 @@ import {
   type ProductMemoryRecord,
 } from "@himawari-agent/application";
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
-import { type Embedder, instructedQuery } from "./embedding.js";
+import type { Embedder } from "./embedding.js";
 import { DEFAULT_FUSION_WEIGHTS, type FusionWeights, fuseCandidates } from "./fusion.js";
 import {
   DEFAULT_RELEVANCE_TUNING,
@@ -39,7 +39,6 @@ export interface HybridMemoryProviderOptions {
     error: unknown,
     scope: { readonly ownerId: OwnerId; readonly agentId: AgentId },
   ) => void;
-  readonly queryInstruction?: string;
   readonly timeZone?: string;
 }
 
@@ -79,10 +78,6 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     return this.#options.relevance ?? DEFAULT_RELEVANCE_TUNING;
   }
 
-  get queryInstruction(): string | undefined {
-    return this.#options.queryInstruction;
-  }
-
   get timeZone(): string | undefined {
     return this.#options.timeZone;
   }
@@ -115,7 +110,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
         embedding = {
           model: embedder.model,
           dimensions: embedder.dimensions,
-          vector: await embedder.embed(input.content),
+          vector: await embedder.embedDocument(input.content),
         };
       } catch (error) {
         await this.#options.index.upsert({
@@ -161,11 +156,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
         embedding = {
           model: embedder.model,
           dimensions: embedder.dimensions,
-          vector: await embedder.embed(
-            this.#options.queryInstruction === undefined
-              ? input.query
-              : instructedQuery(this.#options.queryInstruction, input.query),
-          ),
+          vector: await embedder.embedQuery(input.query),
         };
       } catch (error) {
         this.#options.onVectorFailure?.(error, { ownerId: input.ownerId, agentId: input.agentId });

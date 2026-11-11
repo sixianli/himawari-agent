@@ -1,0 +1,2 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`propose_rule` 的“未就绪”分支返回记忆专用文案，且该分支没有测试", "valid": true, "class": "error", "severity": "low", "trigger": "记忆册还没准备好时提议规则", "consequence": "对方 agent 收到“记忆功能没准备好、没有保存”，不知道规则没生效", "modelSeverity": "低"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "manifest 的合并一致性没有专门的自动检查，`UNKNOWN` 没有反向用例", "valid": true, "class": "better", "modelSeverity": "低"}

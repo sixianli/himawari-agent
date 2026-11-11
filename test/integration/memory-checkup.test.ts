@@ -47,6 +47,14 @@ const WEDNESDAY_NOON_JST = "2026-11-11T03:00:00.000Z";
 const MONDAY_JST = "2026-11-08T15:00:00.000Z";
 
 class TermEmbedder implements Embedder {
+  embedQuery(query: string): Promise<Float32Array> {
+    return this.embed(query);
+  }
+
+  embedDocument(text: string): Promise<Float32Array> {
+    return this.embed(text);
+  }
+
   readonly model = "fixture-term-embedding";
   readonly dimensions = DIMENSIONS;
 
