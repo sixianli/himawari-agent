@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 const TAG = "[I-66]";
 const FILES = ["packages/runtime-pi/test/prompt-prefix.compat.test.ts"];
 const REQUIRED = 8;
+const REQUIRED_NAMES = ["[COMPACT-1]", "[COMPACT-2]", "[COMPACT-3]", "[COMPACT-4]"];
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(path.join(tmpdir(), "himawari-prompt-prefix-"));
@@ -44,7 +45,16 @@ try {
     console.error(
       `PROMPT_PREFIX_TESTS_MISSING 需要至少 ${REQUIRED} 条 ${TAG} 测试通过，实际 ${passed.length} 条`,
     );
-  const ok = run.status === 0 && failed.length === 0 && passed.length >= REQUIRED;
+  const missingNames = REQUIRED_NAMES.filter(
+    (name) => !passed.some((test) => test.fullName.includes(name)),
+  );
+  for (const name of missingNames)
+    console.error(`PROMPT_PREFIX_TESTS_MISSING 没有通过的 ${name} 测试`);
+  const ok =
+    run.status === 0 &&
+    failed.length === 0 &&
+    passed.length >= REQUIRED &&
+    missingNames.length === 0;
   console.log(`PROMPT_PREFIX ${ok ? "passed" : "failed"} (${passed.length} 条通过)`);
   process.exitCode = ok ? 0 : 1;
 } finally {
