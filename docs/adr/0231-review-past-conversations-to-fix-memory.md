@@ -79,11 +79,11 @@ Himawari 现在有两个环节写记忆，但没有一个环节拿“对话”�
 8. **整批撤销。** `memory_conversation_review_changes` 记下这一批改了哪些记忆、动作（created、superseded、confirmed）、改后的修订号、改前的 `supersededBy` 和 `validTo`。
    - 先记后写：写记忆之前，先按这次回看的快照记下“打算改哪些记忆”和改前的值（这时改后的修订号为空）；写完、写失败时、下次重试开始时，按记忆的实际状态补上修订号，没发生的删掉。这样写到一半失败也不会留下不在任何批次里的记忆，重试也不会把已改过的值当成改前的值。新增的记忆在写之前还不存在，所以这张表不对记忆表用外键，改用删除触发器，记忆被删时一并删掉改动行。
    - 撤销（网关命令 `memory.conversationReview.undo`，`packages/memory-engine/src/conversation-review.ts`）只对已完成或已放弃的批次开放，进行中或失败待重试的批次不显示、不能撤销。新增的归档、被取代的恢复原状、确认的改回待确认；只要有一条记忆在回看之后又被别人改过，整批不能撤销，界面显示“锁定”而不是按钮。
-   - 撤销中途失败可以接着做：改回每条记忆之前先记下改回后应有的修订号（`undone_revision`，改回固定把修订号加 1，结果不同再更正），再点撤销时跳过已改回的。
-   - “取代是否发生”只认被本批新建的记忆取代，别处的取代不算进本批。新记忆已保存、取代没做就中断时，重试会补做取代：`DurableMemoryService.applyProposal` 遇到同一提案已存在时也执行 `supersedes`（每轮记忆抽取共用这一处）。
+   - 撤销中途失败可以接着做：改回每条记忆之前先记下改回后应有的修订号（`undone_revision`，改回固定把修订号加 1），再点撤销时跳过已改回的。“已改回”要修订号相同、实际状态也对（新建的已归档、被取代的恢复成改前值、确认的回到待确认），所以改回失败后别人的修改不会被当成已改回。
+   - “取代是否发生”只认被本批新建的记忆取代，别处的取代不算进本批。新记忆已保存、取代没做就中断时，重试会补做取代：`DurableMemoryService.applyProposal` 遇到同一提案已存在时也执行 `supersedes`（每轮记忆抽取共用这一处）；取代方自己已失效或已被取代时不取代。已知空隙：回看中断后主人把旧记忆恢复，下一次重试仍会再取代它（可撤销），另行决定。
    - 已知空隙：检查修订号和写库之间没有锁，主人恰好在这几毫秒里改了那条旧记忆时，它仍会被标成已取代（可撤销）。根治要给每轮抽取共用的 `applyProposal` 加按修订号写，另行决定。
 9. **记忆页。** “整理记忆”筛选里显示回看批次：这一批新记住、取代、确认了几条，每条带记忆正文和原话，一个整批撤销按钮。
-10. **配置。** `configuration.memory.conversationReview` 下的 `enabled`（缺省开）、`maximumSegmentsPerDay`（3）、`maximumSourceCharacters`（16000）、`maximumRelatedMemories`（30）、`maximumNewMemoriesPerDay`（5）、`maximumOutputTokens`（1024），都有上下限检查，不写死。
+10. **配置。** `configuration.memory.conversationReview` 下的 `enabled`（缺省开）、`maximumSegmentsPerDay`（3）、`maximumSourceCharacters`（16000）、`maximumRelatedMemories`（30）、`maximumNewMemoriesPerDay`（5）、`maximumOutputTokens`（4096：DeepSeek V4.1 Flash 的推理也算在输出额度里，20 段评测中推理占输出的 89%，1024 时 4 段被截断成无效 JSON），都有上下限检查，不写死。
 11. **数据导出。** 两张新表进导出格式（`data/conversation-reviews.jsonl`），导入时挂到导入建的占位对话上；来源对话、段落和消息的编号不导出，和记忆的来源对话编号不导出一致。
 
 [↑ 返回阅读导航](#contents)
@@ -116,6 +116,7 @@ Himawari 现在有两个环节写记忆，但没有一个环节拿“对话”�
 - 正面：跨轮才说完整的事能补记；过时的记忆会被新说法取代；每一批都能在记忆页看到原话并整批撤销。
 - 负面：每天多几次后台模型调用，按变更清单估计每月约 0.06 到 0.18 美元（DeepSeek Flash）。模型输出的加密副本在对话删除后不会跟着删，和现有候选输出一样，留给以后的清理任务。
 - 新增两张表（迁移号在改表排队放行时确定）。
+- 真实模型评测（2026-11-11，OpenCode Go 套餐的 DeepSeek V4.1 Flash，20 段对话各 1 次，`scripts/evals/memory-conversation-review-live.eval.ts`）：输出上限 4096 时 19/20 通过，该记、该取代、该确认的 14 项全部做到，9 段不该有改动的全部没动，没有取代错记忆；唯一不过的是“出差时随便喝便利店牛奶”被多记成一条情境记忆（没有取代原来的偏好）。平均每段输入约 1900 token、输出约 800 token（其中约 700 是推理）。
 
 <a id="references"></a>
 

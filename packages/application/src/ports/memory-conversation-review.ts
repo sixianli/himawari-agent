@@ -86,20 +86,27 @@ export const UNDOABLE_REVIEW_STATUSES: ReadonlySet<MemoryConversationReviewStatu
   "gave_up",
 ]);
 
-export function isReviewChangeUndone(
-  change: Pick<MemoryConversationReviewChange, "undoneRevision">,
-  memory: Pick<ProductMemoryRecord, "revision"> | undefined,
-): boolean {
-  return (
-    memory !== undefined &&
-    change.undoneRevision !== null &&
-    memory.revision === change.undoneRevision
-  );
+type UndoChange = Pick<
+  MemoryConversationReviewChange,
+  "action" | "afterRevision" | "undoneRevision" | "beforeSupersededBy" | "beforeValidTo"
+>;
+type UndoMemory = Pick<ProductMemoryRecord, "revision" | "status" | "attributes">;
+
+export function isReviewChangeUndone(change: UndoChange, memory: UndoMemory | undefined): boolean {
+  if (memory === undefined || change.undoneRevision === null) return false;
+  if (memory.revision !== change.undoneRevision) return false;
+  if (change.action === "created") return memory.status === "archived";
+  if (change.action === "superseded")
+    return (
+      (memory.attributes?.supersededBy ?? null) === change.beforeSupersededBy &&
+      (memory.attributes?.validTo ?? null) === change.beforeValidTo
+    );
+  return memory.attributes?.tentative === true;
 }
 
 export function isReviewChangeUndoable(
-  change: Pick<MemoryConversationReviewChange, "afterRevision" | "undoneRevision">,
-  memory: Pick<ProductMemoryRecord, "revision"> | undefined,
+  change: UndoChange,
+  memory: UndoMemory | undefined,
 ): boolean {
   return (
     memory !== undefined &&

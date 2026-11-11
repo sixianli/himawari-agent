@@ -13,7 +13,7 @@ const MODEL = process.env["EVAL_MODEL"] ?? "deepseek/deepseek-v4.1-flash";
 const RUNS = Number(process.env["EVAL_RUNS"] ?? "1");
 const CAP_USD = Number(process.env["EVAL_CONFIRM_COST"] ?? "0");
 const OUTPUT_DIRECTORY = process.env["EVAL_OUT"] ?? "evals/memory-conversation-review";
-const MAXIMUM_OUTPUT_TOKENS = 1024;
+const MAXIMUM_OUTPUT_TOKENS = Number(process.env["EVAL_MAX_OUTPUT_TOKENS"] ?? "4096");
 
 interface Item {
   id: string;
@@ -55,7 +55,7 @@ const REVIEW_DAY = new Date(Date.parse(`${dataset.day}T12:00:00.000Z`) + 86_400_
 
 let prices = { input: 0, output: 0, cacheRead: 0 };
 let spentUsd = 0;
-const usage = { prompt: 0, cached: 0, completion: 0, calls: 0, truncated: 0 };
+const usage = { prompt: 0, cached: 0, completion: 0, reasoning: 0, calls: 0, truncated: 0 };
 
 // biome-ignore lint/suspicious/noExplicitAny: the model gateway response is parsed JSON of unchecked shape
 async function chat(prompt: string): Promise<any> {
@@ -69,6 +69,7 @@ async function chat(prompt: string): Promise<any> {
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${process.env["EVAL_API_KEY"] ?? "proxy-injected"}`,
+        "x-opencode-session": `himawari-conversation-review-eval-${MODEL}`,
       },
       body: JSON.stringify({
         model: MODEL,
@@ -89,6 +90,7 @@ async function chat(prompt: string): Promise<any> {
       usage.prompt += input;
       usage.cached += cached;
       usage.completion += completion;
+      usage.reasoning += body.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
       usage.calls += 1;
       if (body.choices?.[0]?.finish_reason === "length") usage.truncated += 1;
       spentUsd +=

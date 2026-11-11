@@ -397,7 +397,7 @@ describe("[DREAM] daily conversation review", () => {
     const kyoto = (await resource.active()).find(({ text }) => text.includes("京都"));
     expect(kyoto?.record.attributes?.tentative ?? false).toBe(false);
     expect((await resource.read("osaka"))?.attributes?.supersededBy).toBe(kyoto?.record.id);
-    expect(resource.calls[0]?.maxOutputTokens).toBe(1024);
+    expect(resource.calls[0]?.maxOutputTokens).toBe(4096);
 
     const reviewId = result?.reviewId ?? "";
     await resource.undo(reviewId);
@@ -567,6 +567,96 @@ describe("[DREAM] daily conversation review", () => {
     const created = result?.changes.find(({ action }) => action === "created");
     expect((await resource.read("osaka"))?.attributes?.supersededBy ?? null).toBeNull();
     expect((await resource.read(created?.memoryId ?? ""))?.status).toBe("archived");
+  });
+
+  it("[DREAM] REVERSE: does not count someone else's edit as an undo that already happened", async () => {
+    const resource = await setup({
+      lines: PLAN_CHANGE,
+      seeds: [OSAKA],
+      outputs: [JSON.stringify({ memories: [SUPERSEDE] })],
+    });
+    const [result] = await resource.review.runDue(resource.request);
+    const reviewId = result?.reviewId ?? "";
+    const created = result?.changes.find(({ action }) => action === "created");
+    const racing = {
+      revise: async (request: Parameters<DurableMemoryService["revise"]>[0]) => {
+        if (request.memoryId === created?.memoryId)
+          await resource.memory.revise({
+            memoryId: request.memoryId,
+            expectedRevision: request.expectedRevision,
+            generationId: SEED_GENERATION,
+            attributes: { importancePermille: 900 },
+          });
+        return resource.memory.revise(request);
+      },
+    };
+    const options = {
+      store: resource.repository.memoryConversationReviews(),
+      state: resource.repository.productMemoryState(),
+      generationFor: async (memoryId: ProductMemoryRecord["id"]) =>
+        (await resource.repository.memoryProjectionJobs().listByMemory(memoryId)).at(-1)
+          ?.generationId,
+      now: () => resource.clock.value,
+    };
+    await expect(
+      undoConversationReview({ ...options, memory: racing }, reviewId),
+    ).rejects.toThrow();
+    await expect(
+      undoConversationReview({ ...options, memory: resource.memory }, reviewId),
+    ).rejects.toThrow("MEMORY_CHANGED_AFTER_REVIEW");
+    expect((await resource.read(created?.memoryId ?? ""))?.status).toBe("active");
+    expect((await options.store.read(reviewId))?.undoneAt).toBeNull();
+  });
+
+  it("[DREAM] REVERSE: does not record a replacement made by a memory outside the batch", async () => {
+    const resource = await setup({
+      lines: PLAN_CHANGE,
+      seeds: [OSAKA, { id: "osaka-other", text: "主人下周三去神户出差", at: OLD_DAY }],
+      outputs: [JSON.stringify({ memories: [SUPERSEDE] })],
+      failSettles: 2,
+    });
+    await expect(resource.review.runDue(resource.request)).rejects.toThrow("SETTLE_LOST");
+    const osaka = await resource.read("osaka");
+    await resource.memory.revise({
+      memoryId: createMemoryId("osaka"),
+      expectedRevision: osaka?.revision ?? 0,
+      generationId: SEED_GENERATION,
+      attributes: { supersededBy: createMemoryId("osaka-other") },
+    });
+    await resource.review.runDue(resource.request);
+    const changes = await resource.repository
+      .memoryConversationReviews()
+      .listChanges(conversationReviewId("episode:day_summary:thread-conversation-review:1"));
+    expect(changes.map(({ action }) => action)).toEqual(["created"]);
+  });
+
+  it("[DREAM] REVERSE: a memory that was itself replaced does not replace another", async () => {
+    const resource = await setup({ lines: PLAN_CHANGE, seeds: [OSAKA], outputs: [] });
+    const memory = (id: string) => ({
+      id: createMemoryId(id),
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      contentRef: "payload-osaka",
+      dataClassification: "private" as const,
+      sourceThreadId: THREAD_ID,
+      sourceRefs: [`source-${id}`],
+      inference: false,
+      confidencePermille: 950,
+      policyVersion: "memory-policy-seed",
+    });
+    await resource.memory.applyProposal(
+      { decision: "create", memory: memory("kyoto") },
+      SEED_GENERATION,
+    );
+    await resource.memory.applyProposal(
+      { decision: "create", memory: memory("nara"), supersedes: createMemoryId("kyoto") },
+      SEED_GENERATION,
+    );
+    await resource.memory.applyProposal(
+      { decision: "create", memory: memory("kyoto"), supersedes: createMemoryId("osaka") },
+      SEED_GENERATION,
+    );
+    expect((await resource.read("osaka"))?.attributes?.supersededBy ?? null).toBeNull();
   });
 
   it("[DREAM] finishes a replacement when the new memory was saved before a crash", async () => {

@@ -92,7 +92,7 @@
         }
       ],
       "expect": {
-        "creates": [],
+        "creates": [["取消"]],
         "supersedes": ["m-trip"],
         "confirms": [],
         "forbidSupersede": []

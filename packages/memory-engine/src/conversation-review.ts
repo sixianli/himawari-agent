@@ -59,7 +59,7 @@ export async function undoConversationReview(
       memoryId: memory.id,
       undoneRevision: expected,
     });
-    const revised = await options.memory.revise({
+    await options.memory.revise({
       memoryId: memory.id,
       expectedRevision: memory.revision,
       generationId,
@@ -74,12 +74,6 @@ export async function undoConversationReview(
             }
           : { attributes: { tentative: true } }),
     });
-    if (revised.revision !== expected)
-      await options.store.markChangeUndone({
-        reviewId: review.id,
-        memoryId: memory.id,
-        undoneRevision: revised.revision,
-      });
   }
   const undoneAt = options.now();
   if (!(await options.store.markUndone({ id: review.id, undoneAt })))

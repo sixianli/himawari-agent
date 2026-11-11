@@ -549,7 +549,9 @@ export class DurableMemoryService {
       current.status !== "active" ||
       current.ownerId !== replacement.ownerId ||
       current.agentId !== replacement.agentId ||
-      (current.attributes?.supersededBy ?? null) !== null
+      (current.attributes?.supersededBy ?? null) !== null ||
+      replacement.status !== "active" ||
+      (replacement.attributes?.supersededBy ?? null) !== null
     )
       return;
     const attributes = current.attributes ?? DEFAULT_MEMORY_ATTRIBUTES;
