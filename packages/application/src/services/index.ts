@@ -50,6 +50,8 @@ export * from "./proactive-overview.js";
 export * from "./proactive-rules.js";
 export * from "./proactive-seal.js";
 export * from "./product-thread-gateway-adapter.js";
+export * from "./real-memory-eval.js";
+export * from "./real-memory-eval-service.js";
 export * from "./recent-authentication-service.js";
 export * from "./reflection-service.js";
 export * from "./reliable-event-publisher.js";

@@ -524,6 +524,36 @@ describe("SQLite governed deletion", () => {
     expect(payloadCount("payload-memory-quote")).toBe(0);
   });
 
+  it("[P4-5] deleting a Memory also removes its real eval questions and their sealed text", async () => {
+    const resource = await fixture();
+    const database = openQualifiedDatabase(resource.databasePath);
+    insertPayload(database, { ref: "payload-eval-question" });
+    insertPayload(database, { ref: "payload-eval-abstain" });
+    database
+      .prepare(
+        `INSERT INTO real_eval_questions (
+          id, owner_id, agent_id, memory_id, memory_revision, kind, question_ref,
+          question_model, prompt_sha256, created_at
+        ) VALUES
+          ('q-fact', ?, ?, 'memory-retained', 0, 'fact', 'payload-eval-question', 'eval-model', ?, ?),
+          ('q-abstain', ?, ?, 'memory-retained', 0, 'abstain', 'payload-eval-abstain', 'eval-model', ?, ?)`,
+      )
+      .run(OWNER_ID, AGENT_ID, "a".repeat(64), T0, OWNER_ID, AGENT_ID, "a".repeat(64), T0);
+    database.close();
+    const payloadCount = (ref: string) =>
+      scalar(resource.databasePath, "SELECT COUNT(*) FROM payloads WHERE ref = ?", ref);
+    expect(payloadCount("payload-eval-question")).toBe(1);
+
+    const memory = await resource.adapter.deleteImmediately({
+      objectType: "memory",
+      objectId: "memory-retained",
+    });
+    expect(memory.lifecycle).toBe("deleted_verified");
+    expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM real_eval_questions")).toBe(0);
+    expect(payloadCount("payload-eval-question")).toBe(0);
+    expect(payloadCount("payload-eval-abstain")).toBe(0);
+  });
+
   it("persists Memory provider cleanup and rejects deleting a referenced Payload directly", async () => {
     const resource = await fixture();
     const database = openQualifiedDatabase(resource.databasePath);
