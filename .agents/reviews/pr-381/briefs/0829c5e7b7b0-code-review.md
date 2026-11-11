@@ -1,6 +1,6 @@
 # PR 381 第 3 轮：按第 2 轮意见的修改
 
-上一轮复核的提交是 432fe4b8。本轮只看之后这一个提交（逐条判断见 `.agents/reviews/pr-381/round-2/judgments.md`）：
+上一轮复核的提交是 432fe4b8。本轮看之后的修改提交 78e2289b，以及随后合入 main 的合并提交（冲突只在 `production-run-memory.ts` 的分类取值、`prompt-rendering-golden.unit.test.ts` 的快照，main 新增了外部读取可带分类）（逐条判断见 `.agents/reviews/pr-381/round-2/judgments.md`）：
 
 - `packages/memory-engine/src/episodes.ts`：补算多取 3 条候选，成功数到 limit 或失败满 3 条就停。
 - `apps/agent-service/src/production-run-memory.ts`：`whileHeld` 只把执行权检查（准入 begin、assertActive、markStarted）抛出的 `NOT_AUTHORITATIVE` 放进 `leaseLost`；取消判断另认 MCP 读取的 `mailScope` 信号。
