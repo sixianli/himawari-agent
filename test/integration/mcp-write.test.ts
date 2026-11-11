@@ -55,6 +55,7 @@ import {
   externalProposalBatchId,
   normalizeProposalText,
   ProductionMcpMemoryWriter,
+  proposalTextDigest,
 } from "../../apps/agent-service/src/production-mcp-memory-writer.ts";
 import {
   MCP_PROPOSAL_CONFIRM_KEY,
@@ -1634,9 +1635,10 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       [{ proposalId: waiting?.id ?? "", decision: "keep", editedText: null }],
       "external-batch-health",
     );
-    expect((await f.external()).map(({ dataClassification }) => dataClassification)).toEqual([
-      "sensitive",
-    ]);
+    const [saved] = await f.external();
+    expect(saved?.dataClassification).toBe("sensitive");
+    expect(saved?.attributes?.category).toBe("health");
+    expect(saved?.attributes?.sensitiveTopic).toBe("health");
   });
 
   it("[P5-3] saves one memory when two waiting proposals are edited to the same text, and the client dialog links to an existing memory too", async () => {
@@ -1741,5 +1743,17 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const waiting = await f.pending();
     expect(waiting.map(({ sourceKey }) => sourceKey)).toEqual([null, "muse:memory/drink"]);
     expect(waiting).toHaveLength(2);
+    const database = openQualifiedDatabase(f.databasePath);
+    try {
+      expect(
+        database
+          .prepare(
+            "SELECT status, superseded_by AS supersededBy FROM external_memory_proposals WHERE text_sha256 = ?",
+          )
+          .get(proposalTextDigest(COFFEE)),
+      ).toEqual({ status: "superseded", supersededBy: waiting[1]?.id });
+    } finally {
+      database.close();
+    }
   });
 });

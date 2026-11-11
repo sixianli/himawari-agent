@@ -321,12 +321,12 @@ export class ProductionMcpMemoryWriter {
           generation,
           write,
         );
+        this.#memoryChanges += 1;
+        digests.set(proposalTextDigest(text), memoryId);
+        if (digestCache) digestCache.memoryChanges = this.#memoryChanges;
       }
       await this.#appendOnce(write);
       await this.#decideCommitted(proposal, memoryId, input);
-      if (!stored) this.#memoryChanges += 1;
-      digests.set(proposalTextDigest(text), memoryId);
-      if (digestCache) digestCache.memoryChanges = this.#memoryChanges;
       return memoryId;
     });
   }

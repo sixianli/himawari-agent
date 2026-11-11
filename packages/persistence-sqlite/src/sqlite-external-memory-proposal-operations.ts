@@ -164,16 +164,22 @@ export class SqliteExternalMemoryProposalOperations {
         if (raised)
           this.database
             .prepare(
-              `UPDATE external_memory_proposals SET classification = 'sensitive', content_ref = ?
+              `UPDATE external_memory_proposals SET classification = 'sensitive', content_ref = ?,
+                category = ?
               WHERE id = ? AND owner_id = ? AND agent_id = ? AND status = 'pending'`,
             )
-            .run(input.contentRef, known.id, input.ownerId, input.agentId);
+            .run(input.contentRef, input.category, known.id, input.ownerId, input.agentId);
         const unused = raised ? known.contentRef : input.contentRef;
         if (unused !== null && known.contentRef !== input.contentRef && !this.contentInUse(unused))
           this.dropPayload(unused, input);
         return {
           proposal: raised
-            ? { ...keyed, dataClassification: "sensitive", contentRef: input.contentRef }
+            ? {
+                ...keyed,
+                dataClassification: "sensitive",
+                contentRef: input.contentRef,
+                category: input.category,
+              }
             : keyed,
           created: false,
           superseded: known.status === "pending" ? replaced : [],
