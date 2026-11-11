@@ -1069,7 +1069,7 @@ function unsetWeeklySnapshot() {
   };
 }
 
-function reviewSnapshot() {
+function reviewSnapshot(prereviewHidden = 0) {
   const texts = [
     "我最近想吃牛肉，下周去大阪出差的时候想顺便找一家评价不错的烤肉店，最好是靠近车站的",
     "明天下午三点去银行办理住民税的缴纳手续",
@@ -1136,7 +1136,7 @@ function reviewSnapshot() {
     ],
     folded: { total: 7, items: Array.from({ length: 7 }, (_, index) => item(index, true)) },
     memoryUnusedDays: 90,
-    hiddenByModel: 0,
+    hiddenByModel: prereviewHidden,
     generatedAt: now,
   };
 }
@@ -1390,7 +1390,11 @@ function handleOperationsQuery(message, request) {
       return memoryFixture
         ? {
             ...envelope("snapshot", "proactive.review.snapshot"),
-            payload: reviewSnapshot(),
+            payload: reviewSnapshot(
+              /(^|;\s*)himawari-fixture-prereview=on(;|$)/.test(request.headers.cookie ?? "")
+                ? 3
+                : 0,
+            ),
           }
         : undefined;
     case "proactive.weekly.read":

@@ -107,6 +107,7 @@ function counts(target: Side): Record<string, number> {
     batches: one("memory_import_batches"),
     runs: one("memory_consolidation_runs"),
     payloads: one("payloads"),
+    prereviews: one("decision_prereviews"),
   };
 }
 
@@ -176,6 +177,37 @@ describe("data export: round trip", () => {
     ).toEqual({ owner_rating: "useful", rated_at: "2026-11-03T00:00:00.000Z" });
     expect(counts(target)["signals"]).toBe(1);
     expect(counts(target)["history"]).toBeGreaterThanOrEqual(3);
+  });
+
+  it("[P4-8] carries model pre-ratings through export and import without touching the owner's rating", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source, { evidence: true });
+    const target = await side("target-prereview");
+    await importInto(target, files, { passphrase: PASSPHRASE });
+    const read = (from: Side) =>
+      from.database
+        .prepare(
+          `SELECT id, decision_id, message_id, calibration_group, status, rating,
+            confidence_permille, history_conflict, failure_code, cost_micros, text_digest
+          FROM decision_prereviews ORDER BY id`,
+        )
+        .all();
+    expect(read(target)).toEqual(read(source));
+    expect(read(target)).toHaveLength(3);
+    expect(
+      target.database
+        .prepare("SELECT owner_rating FROM decision_ledger WHERE id = 'd-candidate'")
+        .pluck()
+        .get(),
+    ).toBeNull();
+  });
+
+  it("[P4-8][reverse] pre-ratings are not imported without the passphrase", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source, { evidence: true });
+    const target = await side("target-prereview-nopass");
+    await importInto(target, files);
+    expect(counts(target)["prereviews"]).toBe(0);
   });
 
   it("[P1-6][reverse] a changed rating, a deleted line or a changed text makes the comparison fail", async () => {
