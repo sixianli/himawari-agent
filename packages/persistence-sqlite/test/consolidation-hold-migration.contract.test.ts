@@ -216,6 +216,16 @@ describe("consolidation hold migration", () => {
   it("[P3-8] still rejects a consolidation action it does not know", async () => {
     const { database } = await openMigrated();
     expect(() => insertHold(database, "pending")).toThrow(/CHECK/u);
+    expect(() =>
+      database
+        .prepare(
+          `INSERT INTO decision_ledger (id, owner_id, agent_id, kind, checked_at, counts, outcome, reason_code,
+            subject_ref, inputs, cost_micros, duration_ms)
+           VALUES ('d-pending', ?, ?, 'consolidation', ?, '{}', 'pending', 'consolidation_pending',
+            'memory-new', '{"memoryIds":[],"ruleIds":[]}', 0, 0)`,
+        )
+        .run(OWNER, AGENT, T0),
+    ).toThrow(/CHECK/u);
     database.close();
   });
 });
