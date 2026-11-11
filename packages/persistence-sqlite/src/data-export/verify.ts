@@ -1,5 +1,13 @@
 import { type JsonValue, sha256Hex } from "./canonical.js";
 import { foldText } from "./markdown.js";
+import {
+  assertRuleHistory,
+  checkRulesMarkdown,
+  enforcedRuleCount,
+  type PortableRule,
+  RULES_INDEX_FILE,
+  storedRuleProblem,
+} from "./rules.js";
 import { validateAgainst } from "./schema.js";
 import {
   CONSOLIDATION_SCHEMA,
@@ -11,6 +19,7 @@ import {
   MANIFEST_SCHEMA,
   MEMORY_SCHEMA,
   PERSON_SCHEMA,
+  RULE_SCHEMA,
 } from "./schemas.js";
 import {
   DATA_EXPORT_ERROR_CODES,
@@ -157,6 +166,7 @@ export interface ParsedPortable {
   readonly importBatches: readonly ParsedBatch[];
   readonly consolidations: readonly ParsedConsolidation[];
   readonly decisions: readonly ParsedDecision[];
+  readonly rules: readonly PortableRule[];
 }
 
 export function assertSafePath(path: string): void {
@@ -301,6 +311,7 @@ export function parsePortable(
     CONSOLIDATION_SCHEMA,
   );
   const decisions = parseLines<ParsedDecision>(files, DATA_FILES.decisions, DECISION_SCHEMA);
+  const rules = parseLines<PortableRule>(files, DATA_FILES.rules, RULE_SCHEMA);
   const memoryIds = unique(
     memories.map(({ id }) => id),
     "记忆",
@@ -351,6 +362,29 @@ export function parsePortable(
       for (const id of change.basis) if (!memoryIds.has(id)) broken(`整理改动 ${change.id} 的依据`);
     }
   void decisionIds;
+  unique(
+    rules.map(({ ruleId }) => ruleId),
+    "规则",
+  );
+  for (const rule of rules) {
+    assertRuleHistory(rule);
+    for (const version of [rule, ...rule.history]) {
+      if (version.sourceMemoryId !== null && !memoryIds.has(version.sourceMemoryId))
+        broken(`规则 ${rule.ruleId} 第 ${version.revision} 版的来源记忆`);
+      if (version.withheld === true) continue;
+      const problem = storedRuleProblem(rule.ruleId, version);
+      if (problem !== null)
+        throw new DataExportError(DATA_EXPORT_ERROR_CODES.LINE_INVALID, problem);
+    }
+  }
+  const rulesProblem = checkRulesMarkdown(
+    files.get(RULES_INDEX_FILE) === undefined
+      ? undefined
+      : decoder.decode(files.get(RULES_INDEX_FILE)),
+    rules,
+  );
+  if (rulesProblem !== null)
+    throw new DataExportError(DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN, rulesProblem);
   const actual: PortableCounts = {
     memories: memories.length,
     memoryHistoryEvents: memories.reduce((total, { history }) => total + history.length, 0),
@@ -361,6 +395,9 @@ export function parsePortable(
     decisions: decisions.length,
     decisionSignals: decisions.reduce((total, { signals }) => total + signals.length, 0),
     markdownMemories: manifest.counts.markdownMemories,
+    rules: rules.length,
+    enforcedRules: enforcedRuleCount(rules),
+    ruleHistoryVersions: rules.reduce((total, { history }) => total + history.length, 0),
     sealedOriginals: manifest.counts.sealedOriginals,
     sealedEvidenceRows: manifest.counts.sealedEvidenceRows,
   };
@@ -389,7 +426,7 @@ export function parsePortable(
       DATA_EXPORT_ERROR_CODES.FILE_COUNT_MISMATCH,
       `Markdown 条数 ${markdownCount}，清单写 ${manifest.counts.markdownMemories}`,
     );
-  return { manifest, memories, people, importBatches, consolidations, decisions };
+  return { manifest, memories, people, importBatches, consolidations, decisions, rules };
 }
 
 const MARKDOWN_ITEM = /^- > (.*) 〔m:([^〕]+)〕$/u;

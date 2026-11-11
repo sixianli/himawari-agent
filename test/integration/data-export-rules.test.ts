@@ -1,0 +1,388 @@
+import { rm } from "node:fs/promises";
+import {
+  buildPortableExport,
+  DATA_EXPORT_ERROR_CODES,
+  DataExportError,
+  importPortableExport,
+  MANIFEST_FILE,
+  type PortableFiles,
+  SEALED_FILE,
+  sha256Hex,
+  unsealJson,
+} from "@himawari-agent/persistence-sqlite";
+import { createDataExportTextPolicy } from "@himawari-agent/platform-node";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  openSide,
+  ownerRuleParameters,
+  RULE_SECRET_PHRASE,
+  type Side,
+  seedEverything,
+  seedMemory,
+  writeRuleVersion,
+} from "./data-export-fixture.ts";
+
+const PASSPHRASE = "测试口令-correct horse battery staple";
+const NOW = "2026-11-10T00:00:00.000Z";
+const policy = createDataExportTextPolicy();
+const sides: Side[] = [];
+const decoder = new TextDecoder();
+const encoder = new TextEncoder();
+
+afterEach(async () => {
+  for (const side of sides.splice(0)) {
+    side.database.close();
+    await rm(side.directory, { recursive: true, force: true });
+  }
+});
+
+async function side(suffix: string): Promise<Side> {
+  const created = await openSide(suffix);
+  sides.push(created);
+  return created;
+}
+
+async function seeded(): Promise<Side> {
+  const source = await side("rules-source");
+  await seedEverything(source);
+  return source;
+}
+
+function exportOf(from: Side, seal = true) {
+  return buildPortableExport({
+    database: from.database,
+    scope: { ownerId: from.ownerId, agentId: from.agentId },
+    migrationSequence: from.migrationSequence,
+    protector: from.protector,
+    policy,
+    now: () => NOW,
+    ...(seal ? { sealPassphrase: PASSPHRASE } : {}),
+  });
+}
+
+function importInto(target: Side, files: PortableFiles, passphrase?: string) {
+  return importPortableExport(files, {
+    database: target.database,
+    scope: { ownerId: target.ownerId, agentId: target.agentId },
+    migrationSequence: target.migrationSequence,
+    protector: target.protector,
+    now: () => NOW,
+    ...(passphrase === undefined ? {} : { passphrase }),
+  });
+}
+
+function ruleRows(from: Side) {
+  return {
+    rules: from.database
+      .prepare(
+        `SELECT rule_id, revision, parameters, status, source, source_memory_id, updated_at
+        FROM rule_book_rules ORDER BY rule_id`,
+      )
+      .all(),
+    history: from.database
+      .prepare(
+        `SELECT rule_id, revision, parameters, status, source, source_memory_id, change_reason,
+          changed_at
+        FROM rule_book_history ORDER BY rule_id, revision`,
+      )
+      .all(),
+  };
+}
+
+function readable(files: PortableFiles): string {
+  return [...files]
+    .filter(([path]) => path !== SEALED_FILE)
+    .map(([, bytes]) => decoder.decode(bytes))
+    .join("\n");
+}
+
+function rehash(
+  files: PortableFiles,
+  mutate: (path: string, text: string) => string,
+): PortableFiles {
+  const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE))) as {
+    files: { path: string; bytes: number; lines: number; sha256: string; role: string }[];
+  };
+  const next: PortableFiles = new Map();
+  for (const [path, bytes] of files)
+    next.set(
+      path,
+      path === MANIFEST_FILE || path === SEALED_FILE
+        ? bytes
+        : encoder.encode(mutate(path, decoder.decode(bytes))),
+    );
+  for (const entry of manifest.files) {
+    const bytes = next.get(entry.path) ?? new Uint8Array();
+    entry.bytes = bytes.byteLength;
+    entry.sha256 = sha256Hex(bytes);
+    if (entry.role === "data") entry.lines = [...bytes].filter((byte) => byte === 0x0a).length;
+  }
+  next.set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
+  return next;
+}
+
+function editRuleLine(
+  files: PortableFiles,
+  ruleId: string,
+  edit: (rule: Record<string, unknown>) => void,
+): PortableFiles {
+  return rehash(files, (path, text) => {
+    if (path !== "data/rules.jsonl") return text;
+    return text
+      .split("\n")
+      .map((line) => {
+        if (line === "") return line;
+        const rule = JSON.parse(line) as Record<string, unknown>;
+        if (rule["ruleId"] !== ruleId) return line;
+        edit(rule);
+        return JSON.stringify(rule);
+      })
+      .join("\n");
+  });
+}
+
+describe("data export: the rule book travels with the memories", () => {
+  it("[P1-6] exports every stored rule with its full history and imports it byte for byte", async () => {
+    const source = await seeded();
+    const { files, manifest } = await exportOf(source);
+    expect(manifest.format).toBe("himawari.data-export.v2");
+    expect(manifest.counts.rules).toBe(5);
+    expect(manifest.counts.ruleHistoryVersions).toBe(7);
+    const target = await side("rules-target");
+    const report = await importInto(target, files, PASSPHRASE);
+    expect(report.imported.rules).toBe(5);
+    expect(report.skipped.rulesWithoutOriginal).toBe(0);
+    const before = ruleRows(source);
+    const after = ruleRows(target);
+    const linkKept = (rows: readonly unknown[]) =>
+      rows.map((row) => {
+        const value = row as Record<string, unknown>;
+        return value["source_memory_id"] === "m-verified"
+          ? { ...value, source_memory_id: null }
+          : value;
+      });
+    expect(after.rules).toEqual(linkKept(before.rules));
+    expect(after.history).toEqual(linkKept(before.history));
+    const again = await exportOf(target);
+    expect(decoder.decode(again.files.get("data/rules.jsonl"))).toBe(
+      decoder.decode(files.get("data/rules.jsonl")),
+    );
+    expect(decoder.decode(again.files.get("RULES.md"))).toBe(decoder.decode(files.get("RULES.md")));
+  });
+
+  it("[P1-6] RULES.md lists each stored rule once with its wording, state and source memory", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const markdown = decoder.decode(files.get("RULES.md"));
+    const ids = [...markdown.matchAll(/^- 〔r:([^〕]+)〕 /gmu)].map((match) => match[1]);
+    expect(ids.sort()).toEqual([
+      "floor_important_sender",
+      "owner:build-key",
+      "owner:refund-thread",
+      "owner:subscription",
+      "quiet_hours",
+    ]);
+    const line = (id: string) => markdown.split("\n").find((text) => text.includes(`〔r:${id}〕`));
+    expect(line("owner:refund-thread")).toContain("涉及退款的邮件先读完整个邮件串");
+    expect(line("owner:refund-thread")).toContain("〔m:m-plain〕");
+    expect(line("owner:subscription")).toContain("已撤销");
+    expect(line("floor_important_sender")).toContain("boss@example.com");
+    expect(line("floor_important_sender")).toContain("第 2 版");
+    expect(line("quiet_hours")).toContain("23:00–07:00");
+    expect(markdown).toContain("共 5 条存下来的规则，其中 4 条正在执行");
+    expect(markdown).toContain("内置 floor_public_domain");
+  });
+
+  it("[P1-6] a rule whose source memory was not exported keeps the rule and drops the link", async () => {
+    const source = await seeded();
+    const { files, manifest } = await exportOf(source);
+    const line = decoder
+      .decode(files.get("data/rules.jsonl"))
+      .split("\n")
+      .find((text) => text.includes('"owner:subscription"'));
+    expect(JSON.parse(line ?? "{}").sourceMemoryId).toBeNull();
+    expect(
+      manifest.omitted.find(({ what }) => what === "规则出处里指向未导出记忆的链接")?.count,
+    ).toBe(3);
+  });
+
+  it("[P1-6] a secret inside a rule is masked, kept in the sealed file and restored with the passphrase", async () => {
+    const source = await seeded();
+    const { files, manifest } = await exportOf(source);
+    expect(readable(files)).not.toContain(RULE_SECRET_PHRASE);
+    expect(manifest.withheld.rules).toBe(1);
+    const sealed = (await unsealJson(PASSPHRASE, files.get(SEALED_FILE) ?? new Uint8Array())) as {
+      originals: Record<string, string>;
+    };
+    expect(sealed.originals["rule/owner:build-key/parameters"]).toContain(RULE_SECRET_PHRASE);
+    const target = await side("rules-secret");
+    await importInto(target, files, PASSPHRASE);
+    const stored = target.database
+      .prepare("SELECT parameters FROM rule_book_rules WHERE rule_id = 'owner:build-key'")
+      .pluck()
+      .get() as string;
+    expect(stored).toBe(
+      source.database
+        .prepare("SELECT parameters FROM rule_book_rules WHERE rule_id = 'owner:build-key'")
+        .pluck()
+        .get(),
+    );
+    expect(JSON.parse(stored).params.phrases).toEqual([RULE_SECRET_PHRASE]);
+  });
+
+  it("[P1-6] without the passphrase the withheld rule is skipped and counted, the others are imported", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const target = await side("rules-nopass");
+    const report = await importInto(target, files);
+    expect(report.skipped.rulesWithoutOriginal).toBe(1);
+    expect(report.imported.rules).toBe(4);
+    expect(
+      target.database
+        .prepare("SELECT COUNT(*) FROM rule_book_rules WHERE rule_id = 'owner:build-key'")
+        .pluck()
+        .get(),
+    ).toBe(0);
+  });
+
+  it("[P1-6] a rule put on review by its memory keeps that state and reason after the round trip", async () => {
+    const source = await side("rules-review");
+    await seedMemory(source, {
+      id: "m-rule-visa",
+      text: "入管局的邮件以后必须通知我",
+      category: "rule",
+    });
+    writeRuleVersion(source, {
+      ruleId: "owner:immigration",
+      parameters: ownerRuleParameters(
+        "mail_must_notify",
+        { senderDomains: ["moj.go.jp"] },
+        "入管局的邮件一定提醒",
+      ),
+      source: "ADR 0213；主人在对话里说的一句话",
+      sourceMemoryId: "m-rule-visa",
+      reason: "owner_sentence",
+      at: "2026-11-03T04:00:00.000Z",
+    });
+    source.database
+      .prepare("UPDATE memory_records SET status = 'archived', updated_at = ? WHERE id = ?")
+      .run("2026-11-04T00:00:00.000Z", "m-rule-visa");
+    const { files } = await exportOf(source);
+    const target = await side("rules-review-target");
+    await importInto(target, files, PASSPHRASE);
+    expect(ruleRows(target)).toEqual(ruleRows(source));
+    expect(
+      target.database
+        .prepare("SELECT status, revision FROM rule_book_rules WHERE rule_id = 'owner:immigration'")
+        .get(),
+    ).toEqual({ status: "needs_review", revision: 2 });
+    expect(
+      target.database
+        .prepare(
+          "SELECT change_reason FROM rule_book_history WHERE rule_id = 'owner:immigration' AND revision = 2",
+        )
+        .pluck()
+        .get(),
+    ).toBe("memory_removed");
+  });
+
+  it("[P1-6] an instance without any stored rule still exports and imports, with zero rules", async () => {
+    const source = await side("rules-empty");
+    await seedMemory(source, { id: "m-only", text: "喜欢喝茶" });
+    const { files, manifest } = await exportOf(source);
+    expect(manifest.counts.rules).toBe(0);
+    expect(decoder.decode(files.get("data/rules.jsonl"))).toBe("");
+    expect(decoder.decode(files.get("RULES.md"))).toContain("共 0 条存下来的规则");
+    const target = await side("rules-empty-target");
+    const report = await importInto(target, files, PASSPHRASE);
+    expect(report.imported.rules).toBe(0);
+  });
+});
+
+describe("data export: a tampered rule book is refused before anything is written", () => {
+  const cases: [string, (files: PortableFiles) => PortableFiles, string][] = [
+    [
+      "rule parameters the rule type does not accept",
+      (files) =>
+        editRuleLine(files, "owner:refund-thread", (rule) => {
+          const parameters = JSON.parse(String(rule["parameters"])) as {
+            params: { phrases: string[] };
+          };
+          parameters.params.phrases = ["退"];
+          rule["parameters"] = JSON.stringify(parameters);
+          const history = rule["history"] as { parameters: unknown }[];
+          const last = history.at(-1);
+          if (last) last.parameters = rule["parameters"];
+        }),
+      DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+    ],
+    [
+      "a history without the current version",
+      (files) =>
+        editRuleLine(files, "floor_important_sender", (rule) => {
+          (rule["history"] as unknown[]).pop();
+        }),
+      DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
+    ],
+    [
+      "a source memory that is not in the export",
+      (files) =>
+        editRuleLine(files, "owner:refund-thread", (rule) => {
+          rule["sourceMemoryId"] = "m-missing";
+          const history = rule["history"] as { sourceMemoryId: unknown }[];
+          const last = history.at(-1);
+          if (last) last.sourceMemoryId = "m-missing";
+        }),
+      DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
+    ],
+    [
+      "a built-in rule smuggled into the data",
+      (files) =>
+        editRuleLine(files, "quiet_hours", (rule) => {
+          rule["ruleId"] = "floor_public_domain";
+        }),
+      DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+    ],
+    [
+      "a RULES.md that is missing a rule",
+      (files) =>
+        rehash(files, (path, text) =>
+          path === "RULES.md"
+            ? text
+                .split("\n")
+                .filter((line) => !line.includes("〔r:quiet_hours〕"))
+                .join("\n")
+            : text,
+        ),
+      DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
+    ],
+  ];
+  for (const [name, mutate, code] of cases) {
+    it(`[P1-6][reverse] refuses ${name} and writes nothing`, async () => {
+      const source = await seeded();
+      const { files } = await exportOf(source);
+      const target = await side(`rules-tamper-${code}`);
+      await expect(importInto(target, mutate(files), PASSPHRASE)).rejects.toMatchObject({ code });
+      expect(target.database.prepare("SELECT COUNT(*) FROM rule_book_rules").pluck().get()).toBe(0);
+      expect(target.database.prepare("SELECT COUNT(*) FROM memory_records").pluck().get()).toBe(0);
+    });
+  }
+
+  it("[P1-6][reverse] a target that already has a rule is not empty", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const target = await side("rules-not-empty");
+    writeRuleVersion(target, {
+      ruleId: "quiet_hours",
+      parameters: { periods: [] },
+      source: "ADR 0106；主人的设置“静默时段”",
+      at: "2026-11-01T00:00:00.000Z",
+    });
+    const failure = await importInto(target, files, PASSPHRASE).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(DataExportError);
+    expect(failure).toMatchObject({
+      code: DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY,
+      detail: "rule_book_rules",
+    });
+  });
+});

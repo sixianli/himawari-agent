@@ -951,6 +951,7 @@ describe("production HTTP composition over a real installed process", { timeout:
       expect(exported.headers.get("content-type")).toBe("application/zip");
       expect(exported.headers.get("cache-control")).toBe("no-store");
       expect(exported.raw.startsWith("PK")).toBe(true);
+      expect(exported.headers.get("x-himawari-export-rules")).toMatch(/^\d+$/u);
       const anonymousExport = await httpRequest(appAddress, exportUrl, {
         headers: requestHeaders(token),
       });

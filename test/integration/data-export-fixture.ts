@@ -349,4 +349,120 @@ export async function seedEverything(side: Side): Promise<void> {
     `INSERT INTO muse_reference_entries (id, owner_id, agent_id, muse_at, muse_reminded, timing_ok, content_ok, content_ref, paired_decision_id, recorded_at)
     VALUES ('muse-1', ?, ?, ?, 1, 1, 1, ?, 'd-proactive', ?)`,
   ).run(side.ownerId, side.agentId, T0, museContent, T0);
+  await seedRules(side);
+}
+
+export const RULE_SECRET_PHRASE = SECRET_API_KEY.toLowerCase();
+
+interface RuleVersionSeed {
+  readonly ruleId: string;
+  readonly parameters: Record<string, unknown>;
+  readonly status?: "active" | "retired";
+  readonly source: string;
+  readonly sourceMemoryId?: string | null;
+  readonly reason?: string | null;
+  readonly at: string;
+}
+
+export function writeRuleVersion(side: Side, seed: RuleVersionSeed): void {
+  const db = side.database;
+  db.prepare(
+    `INSERT INTO rule_book_rules (
+      owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, updated_at
+    ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
+    ON CONFLICT (owner_id, agent_id, rule_id) DO UPDATE SET revision = revision + 1,
+      parameters = excluded.parameters, status = excluded.status, source = excluded.source,
+      source_memory_id = excluded.source_memory_id, updated_at = excluded.updated_at`,
+  ).run(
+    side.ownerId,
+    side.agentId,
+    seed.ruleId,
+    JSON.stringify(seed.parameters),
+    seed.status ?? "active",
+    seed.source,
+    seed.sourceMemoryId ?? null,
+    seed.at,
+  );
+  db.prepare(
+    `INSERT INTO rule_book_history (
+      owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id,
+      change_reason, changed_at
+    ) SELECT owner_id, agent_id, rule_id, revision, parameters, status, source,
+      source_memory_id, ?, updated_at
+    FROM rule_book_rules WHERE owner_id = ? AND agent_id = ? AND rule_id = ?`,
+  ).run(seed.reason ?? null, side.ownerId, side.agentId, seed.ruleId);
+}
+
+export function ownerRuleParameters(
+  type: "mail_must_notify" | "mail_read_whole_thread",
+  params: Record<string, readonly string[]>,
+  summary: string,
+): Record<string, unknown> {
+  return { type, params, summary };
+}
+
+export async function seedRules(side: Side): Promise<void> {
+  writeRuleVersion(side, {
+    ruleId: "quiet_hours",
+    parameters: { periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }] },
+    source: "ADR 0106；主人的设置“静默时段”",
+    at: "2026-11-01T03:00:00.000Z",
+  });
+  writeRuleVersion(side, {
+    ruleId: "floor_important_sender",
+    parameters: { senders: ["smbc.co.jp"] },
+    source: "ADR 0106 第 4 条；主人的设置“重要发件人”",
+    at: "2026-11-01T03:00:00.000Z",
+  });
+  writeRuleVersion(side, {
+    ruleId: "floor_important_sender",
+    parameters: { senders: ["boss@example.com", "smbc.co.jp"] },
+    source: "ADR 0106 第 4 条；主人的设置“重要发件人”",
+    at: "2026-11-02T03:00:00.000Z",
+  });
+  writeRuleVersion(side, {
+    ruleId: "owner:refund-thread",
+    parameters: ownerRuleParameters(
+      "mail_read_whole_thread",
+      { phrases: ["退款"], words: ["refund"] },
+      "涉及退款的邮件先读完整个邮件串",
+    ),
+    source: "ADR 0213；主人在对话里说的一句话",
+    sourceMemoryId: "m-plain",
+    reason: "owner_sentence",
+    at: "2026-11-03T03:00:00.000Z",
+  });
+  const subscription = ownerRuleParameters(
+    "mail_must_notify",
+    { phrases: ["续费"], excludePhrases: ["广告"] },
+    "订阅续费的邮件一定提醒",
+  );
+  writeRuleVersion(side, {
+    ruleId: "owner:subscription",
+    parameters: subscription,
+    source: "ADR 0213；主人在对话里说的一句话",
+    sourceMemoryId: "m-verified",
+    reason: "owner_sentence",
+    at: "2026-11-03T05:00:00.000Z",
+  });
+  writeRuleVersion(side, {
+    ruleId: "owner:subscription",
+    parameters: subscription,
+    status: "retired",
+    source: "ADR 0213；主人在对话里说的一句话",
+    sourceMemoryId: "m-verified",
+    reason: "owner_undo",
+    at: "2026-11-05T00:00:00.000Z",
+  });
+  writeRuleVersion(side, {
+    ruleId: "owner:build-key",
+    parameters: ownerRuleParameters(
+      "mail_must_notify",
+      { phrases: [RULE_SECRET_PHRASE] },
+      "提到构建密钥的邮件一定提醒",
+    ),
+    source: "ADR 0213；主人在对话里说的一句话",
+    reason: "owner_sentence",
+    at: "2026-11-03T06:00:00.000Z",
+  });
 }

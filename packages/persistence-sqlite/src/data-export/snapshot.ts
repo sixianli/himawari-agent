@@ -23,6 +23,8 @@ export interface PortableSnapshot {
   readonly sourceInsights: readonly Row[];
   readonly processedMessages: readonly Row[];
   readonly museEntries: readonly Row[];
+  readonly rules: readonly Row[];
+  readonly ruleHistory: readonly Row[];
   readonly payloads: ReadonlyMap<string, PayloadRecord | { readonly unavailable: true }>;
   readonly omittedMemories: number;
   readonly restrictedMemories: number;
@@ -163,6 +165,17 @@ export function readSnapshot(
             ORDER BY muse_at, id`,
           )
         : [];
+      const rules = all(
+        `SELECT rule_id, revision, parameters, status, source, source_memory_id, updated_at
+        FROM rule_book_rules WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY rule_id`,
+      );
+      const ruleHistory = all(
+        `SELECT rule_id, revision, parameters, status, source, source_memory_id, change_reason,
+          changed_at
+        FROM rule_book_history WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY rule_id, revision`,
+      );
       const refs = new Set<string>();
       for (const row of [
         ...memories,
@@ -253,6 +266,8 @@ export function readSnapshot(
         sourceInsights,
         processedMessages,
         museEntries,
+        rules,
+        ruleHistory,
         payloads,
         omittedMemories,
         restrictedMemories,

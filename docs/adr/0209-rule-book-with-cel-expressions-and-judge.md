@@ -119,5 +119,6 @@ date: "2026-11-10"
 - [ADR 0083](0083-isolated-instance-per-person-with-owner-entry.md)：每人一个实例。
 - [ADR 0204](0204-handle-pi-deviations-d2-d3-d5.md)：“先问我”接现有审批，第 3 步用。
 - [.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md)：发给模型的内容只追加。
+- [ADR 0232](0232-rule-book-joins-the-data-export.md)：规则手册进入数据导出（后续）。
 
 [返回阅读导航](#contents)

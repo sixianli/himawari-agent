@@ -103,5 +103,6 @@ date: "2026-11-11"
 - [ADR 0143](0143-decision-ledger-for-model-gate-decisions.md)：决策记录。
 - [ADR 0165](0165-freeze-the-request-head-per-conversation.md)：系统提示和工具按对话冻结。
 - [Agent 规则清单](../agent-rulebook-inventory.md)：M-1 到 M-3 是规则类记忆的现状。
+- [ADR 0232](0232-rule-book-joins-the-data-export.md)：规则手册进入数据导出（后续）。
 
 [返回阅读导航](#contents)

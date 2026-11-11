@@ -4,6 +4,7 @@ export interface DataExportResult {
   readonly blob: Blob;
   readonly fileName: string;
   readonly memories: number;
+  readonly rules: number;
   readonly withheld: number;
 }
 
@@ -23,6 +24,7 @@ export async function requestDataExport(
     blob: await response.blob(),
     fileName,
     memories: count("x-himawari-export-memories"),
+    rules: count("x-himawari-export-rules"),
     withheld: count("x-himawari-export-withheld"),
   };
 }
