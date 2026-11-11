@@ -11,6 +11,7 @@ import {
   type ProactiveModelInvoker,
   prereviewAuditPicked,
   type ReviewPrereviewConfiguration,
+  type ReviewPrereviewStorePort,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import {
@@ -147,7 +148,10 @@ describe("[P4-8] model pre-rating in the running service", () => {
     };
     const failures: unknown[] = [];
     const ledger = repository.decisionLedger();
-    const service = (settings: Settings = {}) =>
+    const service = (
+      settings: Settings = {},
+      wrapStore: (store: ReviewPrereviewStorePort) => ReviewPrereviewStorePort = (store) => store,
+    ) =>
       new ProductionProactive({
         scope,
         configuration: {
@@ -188,7 +192,7 @@ describe("[P4-8] model pre-rating in the running service", () => {
         readMemoryText: async (ref) => texts.get(ref),
         readMemoryClassification: async (ref) => classifications.get(ref),
         prereview: {
-          store: repository.reviewPrereview(),
+          store: wrapStore(repository.reviewPrereview()),
           model,
           digest: sha256,
           estimateCostMicros: () => 100,
@@ -364,6 +368,38 @@ describe("[P4-8] model pre-rating in the running service", () => {
     h.clock.advance(120_000);
     expect(await h.service().prereview()).toMatchObject({ attempted: 1 });
     expect(h.rows().filter(({ status }) => status === "failed")).toHaveLength(2);
+  });
+
+  it("[P4-8] still stores the attempt and its cost when reading history fails after the model answered", async () => {
+    const h = await setup();
+    await h.skipped("history-down", "想记住的事", NOV_4_10AM_JST);
+    const broken = (store: ReviewPrereviewStorePort): ReviewPrereviewStorePort => ({
+      ...store,
+      listDone: (input) => store.listDone(input),
+      listRecentFailures: (input) => store.listRecentFailures(input),
+      countSince: (input) => store.countSince(input),
+      listPairs: (input) => store.listPairs(input),
+      record: (input) => store.record(input),
+      recordFailure: (input) => store.recordFailure(input),
+      ownerHistory: async () => {
+        throw new Error("disk read failed for 我想记住的事");
+      },
+    });
+    const result = await h.service({}, broken).prereview();
+    expect(result).toMatchObject({ attempted: 1, recorded: 0 });
+    expect(result?.failures).toEqual(["PREREVIEW_STORE_FAILED:unknown"]);
+    expect(h.rows()).toEqual([
+      expect.objectContaining({
+        decisionId: "history-down",
+        status: "failed",
+        failureCode: "PREREVIEW_STORE_FAILED:unknown",
+        costMicros: 300,
+      }),
+    ]);
+    expect(await h.service({ dailyLimit: 1 }).prereview()).toMatchObject({
+      attempted: 0,
+      stoppedBy: "daily_limit",
+    });
   });
 
   it("[P4-8] with reduction on and the bar passed, hides only confident items whose text is unchanged, keeping the audit sample and unsure ones", async () => {

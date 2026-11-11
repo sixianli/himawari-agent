@@ -840,7 +840,10 @@ export function WeeklyReport({
           message("weekly.prereview.gateDef", {
             agreement: format.percent(report.prereview.agreementPermille / 1000),
             confidence: format.percent(report.prereview.confidencePermille / 1000),
-            n: format.count(report.prereview.minimumPairs),
+            n:
+              report.prereview.minimumPairs === null
+                ? "—"
+                : format.count(report.prereview.minimumPairs),
           }),
           report.prereview.reductionEnabled
             ? message("weekly.prereview.reductionOn", {
@@ -868,6 +871,9 @@ export function WeeklyReport({
   };
 
   const openCell = days.find((item) => item.day === openDay) ?? null;
+  const prereviewGroups = report.prereview.groups.filter(
+    (item) => item.prereviewed > 0 || item.paired > 0,
+  );
   const cellIndex = (day: string) => (startDay ? daysBetween(startDay, day) : 0);
   const detailTitle = (item: ObservationDay) =>
     [
@@ -1385,11 +1391,11 @@ export function WeeklyReport({
 
       <section className="weekly-card" aria-label={message("weekly.prereview.title")}>
         <CardHead title={message("weekly.prereview.title")} infoKey="prereview" info={infoButton} />
-        {report.prereview.groups.length === 0 ? (
+        {prereviewGroups.length === 0 ? (
           <p className="weekly-empty">{message("weekly.prereview.empty")}</p>
         ) : (
           <div className="weekly-tiles" data-count="3">
-            {report.prereview.groups.map((item) => (
+            {prereviewGroups.map((item) => (
               <div key={item.group} className="weekly-tile" data-prereview-group={item.group}>
                 <b>
                   {item.agreement?.enough && item.agreement.value !== null

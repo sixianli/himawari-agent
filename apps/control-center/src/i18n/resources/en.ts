@@ -1483,7 +1483,7 @@ export const messages = {
   "weekly.prereview.empty": "No decision this week has both a model pre-rating and your rating.",
   "weekly.prereview.counts": "Pre-rated {rated} · model unsure {unsure} · you also rated {paired}",
   "weekly.prereview.gate":
-    "{r, select, open {Past the bar: only unsure items need you} insufficient {Too few pairs to judge} below_threshold {Agreement below the bar} other {No better than calling everything useful}}",
+    "{r, select, open {Past the bar on this week’s pairs} insufficient {Too few pairs this week to judge} below_threshold {Below the bar on this week’s pairs} other {No better than calling everything useful}}",
   "weekly.prereview.audit": "Of the confident “useful” calls, you also said useful {k}/{n}",
   "weekly.prereview.otherVersions":
     "{n} more pre-ratings came from an older model or prompt version and are left out.",

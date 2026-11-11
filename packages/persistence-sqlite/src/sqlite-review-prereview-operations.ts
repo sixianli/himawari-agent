@@ -245,7 +245,8 @@ export class SqliteReviewPrereviewOperations {
             ${OWNER_RATING} AS ownerRating
           ${JOINED}
           WHERE p.owner_id = ? AND p.agent_id = ? AND p.status = 'done'
-            AND p.model_ref = ? AND p.prompt_id = ? AND p.created_at >= ?
+            AND p.model_ref = ? AND p.prompt_id = ?
+            AND COALESCE(d.checked_at, m.processed_at) >= ?
           ORDER BY p.created_at, p.id`,
         )
         .all(input.ownerId, input.agentId, input.modelRef, input.promptId, input.since) as {

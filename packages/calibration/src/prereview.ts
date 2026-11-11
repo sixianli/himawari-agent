@@ -275,11 +275,14 @@ export interface PrereviewWeekSummary {
 export function summarizePrereviewWeek(
   rows: readonly PrereviewWeekRow[],
   options: PrereviewGateOptions,
+  version?: { readonly modelRef: string; readonly promptId: string },
 ): PrereviewWeekSummary {
-  const latest = rows.reduce<PrereviewWeekRow | undefined>(
-    (found, row) => (found === undefined || row.createdAt >= found.createdAt ? row : found),
-    undefined,
-  );
+  const latest =
+    version ??
+    rows.reduce<PrereviewWeekRow | undefined>(
+      (found, row) => (found === undefined || row.createdAt >= found.createdAt ? row : found),
+      undefined,
+    );
   const current = latest
     ? rows.filter((row) => row.modelRef === latest.modelRef && row.promptId === latest.promptId)
     : [];
@@ -324,7 +327,7 @@ export function prereviewReportLines(summary: PrereviewWeekSummary): string[] {
   for (const row of summary.groups) {
     const required =
       row.gate.requiredAgreement === null
-        ? `至少要 ${minimumPairsToPass(summary.options.agreementPermille)} 对全对`
+        ? `至少要 ${minimumPairsToPass(summary.options.agreementPermille) ?? "无限"} 对全对`
         : `这么多对至少要 ${percent(row.gate.requiredAgreement)}`;
     lines.push(
       `| ${groupLabel(row.group)} | ${row.prereviewed} | ${row.unsure} | ${row.paired} | ${formatProportion(row.agreement)} | ${row.kappa === null ? "—" : row.kappa.toFixed(2)} | ${percent(row.balancedAccuracy)} | ${formatProportion(row.hidden)} | ${GATE_TEXT[row.gate.reason]}（${required}） |`,
@@ -352,8 +355,11 @@ export function prereviewReportLines(summary: PrereviewWeekSummary): string[] {
   return lines;
 }
 
-export function minimumPairsToPass(agreementPermille: number): number {
-  for (let samples = 1; samples <= 10_000; samples += 1)
-    if (minimumAgreementToPass(samples, agreementPermille) !== null) return samples;
-  return Number.POSITIVE_INFINITY;
+export function minimumPairsToPass(agreementPermille: number): number | null {
+  const threshold = agreementPermille / 1000;
+  for (let samples = 1; samples <= 100_000; samples += 1) {
+    const interval = wilsonInterval(samples, samples);
+    if (interval !== null && interval.low >= threshold) return samples;
+  }
+  return null;
 }

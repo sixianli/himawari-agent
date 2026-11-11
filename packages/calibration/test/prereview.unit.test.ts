@@ -4,10 +4,13 @@ import {
   acceptsPrereview,
   historyConflict,
   minimumAgreementToPass,
+  minimumPairsToPass,
   type PrereviewPair,
+  type PrereviewWeekRow,
   type PrereviewRating,
   prereviewGate,
   summarizePrereviewAgreement,
+  summarizePrereviewWeek,
   wouldHide,
 } from "../src/prereview.js";
 import { proportion } from "../src/index.js";
@@ -141,5 +144,47 @@ describe("model prereview agreement", () => {
 
   it("does not open without a baseline to beat", () => {
     expect(prereviewGate(proportion(100, 100, 1), proportion(0, 0, 1), 900).open).toBe(false);
+  });
+});
+
+describe("[P4-8] weekly agreement and its bar", () => {
+  const row = (modelRef: string, promptId: string, createdAt: string): PrereviewWeekRow => ({
+    group: "memory_skipped",
+    model: "useful",
+    confidencePermille: 950,
+    historyConflict: false,
+    owner: "useful",
+    modelRef,
+    promptId,
+    createdAt,
+  });
+
+  it("compares the version the service runs now, even when a newer one is in the window", () => {
+    const rows = [
+      row("model-a", "prompt-1", "2026-11-02T00:00:00.000Z"),
+      row("model-a", "prompt-1", "2026-11-03T00:00:00.000Z"),
+      row("model-b", "prompt-2", "2026-11-04T00:00:00.000Z"),
+    ];
+    const pinned = summarizePrereviewWeek(rows, options, {
+      modelRef: "model-a",
+      promptId: "prompt-1",
+    });
+    expect(pinned.version).toEqual({ modelRef: "model-a", promptId: "prompt-1" });
+    expect(pinned.otherVersions).toBe(1);
+    expect(summarizePrereviewWeek(rows, options).version).toEqual({
+      modelRef: "model-b",
+      promptId: "prompt-2",
+    });
+  });
+
+  it("gives a finite minimum number of pairs for every bar the configuration accepts", () => {
+    expect(minimumPairsToPass(900)).toBe(35);
+    const strictest = minimumPairsToPass(999);
+    expect(strictest).not.toBeNull();
+    expect(Number.isSafeInteger(strictest)).toBe(true);
+  });
+
+  it("[negative] has no finite number of pairs for a 100% bar", () => {
+    expect(minimumPairsToPass(1000)).toBeNull();
   });
 });

@@ -88,6 +88,7 @@ export interface ProductionObservationOptions {
   readonly tickMs?: number;
   readonly onFailure?: (error: unknown) => void;
   readonly prereview?: {
+    readonly version?: { readonly modelRef: string; readonly promptId: string };
     readonly agreementPermille: number;
     readonly confidencePermille: number;
     readonly reductionEnabled: boolean;
@@ -237,7 +238,11 @@ export class ProductionObservation {
       reductionEnabled: false,
       auditPermille: DEFAULT_PREREVIEW_AUDIT_PERMILLE,
     };
-    const prereview = summarizePrereviewWeek(rows.prereviews, prereviewSettings);
+    const prereview = summarizePrereviewWeek(
+      rows.prereviews,
+      prereviewSettings,
+      this.#options.prereview?.version,
+    );
     const summary = start
       ? summarizeObservation({ start, checks: await observation.listChecks(scope), now })
       : null;

@@ -1371,7 +1371,7 @@ export const messages = {
   "weekly.prereview.empty": "这一周还没有模型预评过、你也打过分的决策。",
   "weekly.prereview.counts": "预评 {rated} 条 · 模型拿不准 {unsure} 条 · 你也评过 {paired} 条",
   "weekly.prereview.gate":
-    "{r, select, open {已过门槛：可以只给你看拿不准的} insufficient {对数不够，还不能判断} below_threshold {一致率没到门槛} other {没比“全当有用”猜得更准}}",
+    "{r, select, open {按这一周的配对已过门槛} insufficient {这一周对数不够，还不能判断} below_threshold {按这一周的配对，一致率没到门槛} other {没比“全当有用”猜得更准}}",
   "weekly.prereview.audit": "模型有把握评“有用”的里，你也评有用 {k}/{n}",
   "weekly.prereview.otherVersions": "另有 {n} 条预评来自旧的模型或提示词版本，不进上面的比例。",
   "weekly.prereview.reductionOn":

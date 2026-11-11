@@ -1177,7 +1177,7 @@ function parseReviewPrereview(
         "hiddenAgreementPermille",
         off.hiddenAgreementPermille,
         500,
-        1_000,
+        999,
       ),
       confidencePermille: number(
         reduction,

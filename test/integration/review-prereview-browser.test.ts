@@ -134,7 +134,7 @@ describe("[P4-8] model pre-rating on the real page", () => {
       await uiExpect(card.locator('[data-prereview-group="proactive_silent"]')).toContainText(
         "90.0%（27/30）",
       );
-      await uiExpect(card).toContainText("对数不够，还不能判断");
+      await uiExpect(card).toContainText("这一周对数不够，还不能判断");
       await uiExpect(card).toContainText("另有 2 条预评来自旧的模型或提示词版本");
       await uiExpect(card).toContainText("自动减少没有开启");
     } finally {

@@ -1491,7 +1491,7 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, reviewPrereview: { enabled: "yes" } },
     { ...proactive, reviewPrereview: { unknown: 1 } },
     { ...proactive, reviewPrereview: { reduction: { auditPermille: 0 } } },
-    { ...proactive, reviewPrereview: { reduction: { hiddenAgreementPermille: 1_001 } } },
+    { ...proactive, reviewPrereview: { reduction: { hiddenAgreementPermille: 1_000 } } },
     { ...proactive, reviewPrereview: { reduction: { threshold: 900 } } },
     { ...proactive, reviewMemoryUnusedDays: 6 },
     { ...proactive, reviewMemoryUnusedDays: 3_651 },

@@ -18,6 +18,7 @@ import {
   modelUsagePurpose,
   modelVisibleClassifications,
   type ProductConfiguration,
+  prereviewPromptId,
   RemoteExecutionBackend,
   type RuntimeRequest,
   recoverSandboxExecutionsAtStartup,
@@ -2134,14 +2135,23 @@ export async function runAgentService(
         },
         serviceRevision: readServiceRevision(),
         ...(configuration.runPolicy?.proactive
-          ? ((settings) => ({
+          ? ((settings, modelRef) => ({
               prereview: {
+                version: {
+                  modelRef,
+                  promptId: prereviewPromptId((text) =>
+                    createHash("sha256").update(text, "utf8").digest("hex"),
+                  ),
+                },
                 agreementPermille: settings.reduction.hiddenAgreementPermille,
                 confidencePermille: settings.reduction.confidencePermille,
                 reductionEnabled: settings.enabled && settings.reduction.enabled,
                 auditPermille: settings.reduction.auditPermille,
               },
-            }))(configuration.runPolicy.proactive.reviewPrereview)
+            }))(
+              configuration.runPolicy.proactive.reviewPrereview,
+              configuration.runPolicy.proactive.modelRef,
+            )
           : {}),
         onFailure: (error) =>
           writeServiceDiagnostic(errorOutput, {

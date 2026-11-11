@@ -1471,7 +1471,7 @@ export const messages = {
   "weekly.prereview.counts":
     "事前採点 {rated} 件 · モデルが迷った {unsure} 件 · あなたも採点 {paired} 件",
   "weekly.prereview.gate":
-    "{r, select, open {基準を満たした：迷った分だけ表示できます} insufficient {件数が足りず判断できません} below_threshold {一致率が基準未満} other {「全部役に立った」と当てるのと変わりません}}",
+    "{r, select, open {今週の組では基準を満たした} insufficient {今週は件数が足りず判断できません} below_threshold {今週の組では一致率が基準未満} other {「全部役に立った」と当てるのと変わりません}}",
   "weekly.prereview.audit": "自信のある「役に立った」のうち、あなたも役に立ったと評価 {k}/{n}",
   "weekly.prereview.otherVersions":
     "ほかに {n} 件は古いモデルまたはプロンプトの版によるもので、上の比率に含めません。",

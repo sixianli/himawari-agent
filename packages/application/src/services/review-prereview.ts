@@ -9,6 +9,7 @@ import {
   historyConflict,
   type PrereviewPair,
   type PrereviewRating,
+  PREREVIEW_GROUPS,
   prereviewOptions,
   summarizePrereviewAgreement,
   wouldHide,
@@ -96,6 +97,16 @@ export function parsePrereview(
   return { rating, confidencePermille: rating === "unsure" ? 0 : confidence };
 }
 
+function failureCode(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  return /^[A-Z][A-Z0-9_:.-]{0,100}$/u.test(message) ? message : "unknown";
+}
+
+export function prereviewPromptId(digest: (text: string) => string): string {
+  const options = JSON.stringify(PREREVIEW_GROUPS.map((group) => [group, prereviewOptions(group)]));
+  return `${REVIEW_PREREVIEW.id}@${digest(`${REVIEW_PREREVIEW.text}\n${options}`).slice(0, 12)}`;
+}
+
 export function prereviewAuditPicked(seed: string, key: string, auditPermille: number): boolean {
   return reviewHash(`prereview-audit|${seed}|${key}`) % 1000 < auditPermille;
 }
@@ -142,7 +153,7 @@ export class ReviewPrereviewService {
   }
 
   get promptId(): string {
-    return `${REVIEW_PREREVIEW.id}@${this.#options.digest(REVIEW_PREREVIEW.text).slice(0, 12)}`;
+    return prereviewPromptId(this.#options.digest);
   }
 
   async run(): Promise<PrereviewRunResult> {
@@ -210,7 +221,7 @@ export class ReviewPrereviewService {
       const id = `review-prereview:${this.#options.digest(subject.key).slice(0, 16)}:${startedAt}`;
       const result = await this.#invoke(id, startedAt, subject, prompt).catch((error: unknown) => ({
         reply: undefined,
-        failure: `PREREVIEW_FAILED:${error instanceof Error ? error.message : "unknown"}`,
+        failure: `PREREVIEW_FAILED:${failureCode(error)}`,
         costMicros: 0,
         durationMs: Math.max(0, Date.parse(clock.now()) - startedAt),
       }));
@@ -249,10 +260,14 @@ export class ReviewPrereviewService {
         });
         recorded += 1;
       } catch (error) {
-        this.#storeFailedAt.set(subject.key, nowMs);
-        failures.push(
-          `PREREVIEW_STORE_FAILED:${error instanceof Error ? error.message : "unknown"}`,
-        );
+        const failure = `PREREVIEW_STORE_FAILED:${failureCode(error)}`;
+        failures.push(failure);
+        if (result.reply !== undefined)
+          await store
+            .recordFailure({ ...attempt, failureCode: failure.slice(0, 128) })
+            .then(() => undefined)
+            .catch(() => this.#storeFailedAt.set(subject.key, nowMs));
+        else this.#storeFailedAt.set(subject.key, nowMs);
       }
     }
     return { attempted, recorded, failures, stoppedBy: "done" };

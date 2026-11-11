@@ -953,7 +953,7 @@ const proactiveWeeklySnapshotSchema = object({
         confidencePermille: integer(0, 1000),
         reductionEnabled: booleanValue,
         auditPermille: integer(0, 1000),
-        minimumPairs: integer(1),
+        minimumPairs: nullable(integer(1)),
         otherVersions: integer(0),
         groups: array(
           object({

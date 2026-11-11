@@ -1065,13 +1065,38 @@ describe("[P0-8] calibration report tab", () => {
     const card = text('#page [aria-label="模型预评一致率"]');
     expect(card).toContain("90.0%（27/30）读完邮件没提醒");
     expect(card).toContain("预评 40 条 · 模型拿不准 6 条 · 你也评过 30 条");
-    expect(card).toContain("对数不够，还不能判断");
+    expect(card).toContain("这一周对数不够，还不能判断");
     expect(card).toContain("模型有把握评“有用”的里，你也评有用 20/22");
     expect(card).toContain("另有 3 条预评来自旧的模型或提示词版本");
     expect(card).toContain("另随机留 20.0% 抽查");
   });
 
   it("[P4-8] [negative] shows no agreement number when nothing was pre-rated and says reduction is off", async () => {
+    const empty = (
+      [
+        "proactive_pushed",
+        "proactive_silent",
+        "memory_skipped",
+        "memory_kept",
+        "consolidation",
+      ] as const
+    ).map((group) => ({
+      group,
+      prereviewed: 0,
+      unsure: 0,
+      paired: 0,
+      agreement: null,
+      kappa: null,
+      balancedAccuracy: null,
+      ownerUseful: null,
+      hidden: null,
+      confusion: [],
+      gate: null,
+    }));
+    weekly = {
+      ...weekly,
+      report: { ...weekly.report, prereview: { ...weekly.report.prereview, groups: empty } },
+    };
     await render();
     await openReport();
     expect(text('#page [aria-label="模型预评一致率"]')).toBe(

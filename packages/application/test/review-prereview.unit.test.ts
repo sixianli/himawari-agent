@@ -4,6 +4,7 @@ import {
   parsePrereview,
   prereviewAuditPicked,
   prereviewPrompt,
+  prereviewPromptId,
 } from "../src/services/review-prereview.js";
 
 describe("[P4-8] model prereview prompt", () => {
@@ -76,5 +77,21 @@ describe("[P4-8] audit sample", () => {
     const small = new Set(keys.filter((key) => prereviewAuditPicked("o:a", key, 100)));
     const large = new Set(keys.filter((key) => prereviewAuditPicked("o:a", key, 200)));
     expect([...small].every((key) => large.has(key))).toBe(true);
+  });
+});
+
+describe("[P4-8] prompt version", () => {
+  const plain = (text: string) => text;
+
+  it("covers the fixed text and the rating options offered to the model", () => {
+    const id = prereviewPromptId(plain);
+    expect(id.startsWith(`${REVIEW_PREREVIEW.id}@`)).toBe(true);
+    const seen: string[] = [];
+    prereviewPromptId((text) => {
+      seen.push(text);
+      return "0".repeat(64);
+    });
+    expect(seen[0]?.startsWith(REVIEW_PREREVIEW.text)).toBe(true);
+    expect(seen[0]).toContain('["memory_kept",["useful","unneeded","unsure"]]');
   });
 });
