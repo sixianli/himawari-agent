@@ -143,6 +143,7 @@ export function registerDataExportRoute(
           .header("content-type", "application/zip")
           .header("content-disposition", `attachment; filename="himawari-export-${stamp}.zip"`)
           .header("x-himawari-export-memories", String(result.manifest.counts.memories))
+          .header("x-himawari-export-rules", String(result.manifest.counts.enforcedRules))
           .header("x-himawari-export-withheld", String(placeholders))
           .send(Buffer.from(archive.buffer, archive.byteOffset, archive.byteLength));
       } finally {
