@@ -477,15 +477,20 @@ export class ProductionWebPush {
         lifeEnd,
       ),
     ).toISOString();
-    const stored = await store.deferItem({
-      ownerId,
-      agentId,
-      sourceKey: item.sourceKey,
-      deferUntil: decision.until,
-      expiresAt,
-      ruleRefs: decision.ruleRefs,
-      now,
-    });
+    let stored = false;
+    try {
+      stored = await store.deferItem({
+        ownerId,
+        agentId,
+        sourceKey: item.sourceKey,
+        deferUntil: decision.until,
+        expiresAt,
+        ruleRefs: decision.ruleRefs,
+        now,
+      });
+    } catch {
+      this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
+    }
     gated.set(item.sourceKey, stored);
     return stored;
   }

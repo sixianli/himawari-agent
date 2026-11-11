@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   WebPushAttempt,
   WebPushAttemptStatus,
@@ -10,7 +11,6 @@ import type {
   WebPushStorePort,
   WebPushSubscription,
 } from "@himawari-agent/application";
-import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import { recordDecisionSignal } from "./decision-signals.ts";
 import { insertLedgerRow } from "./sqlite-decision-ledger-operations.ts";
@@ -408,40 +408,45 @@ export class SqliteWebPushOperations {
       new Set(input.ruleRefs).size !== input.ruleRefs.length
     )
       this.fail("PORT_INVALID_OPERATION", "Web push deferral rule references are invalid");
-    const stored =
-      this.database
-        .prepare(
-          `UPDATE web_push_outbox SET defer_until = ?, defer_rule_refs = ?, expires_at = ?
-           WHERE owner_id = ? AND agent_id = ? AND source_key = ?`,
-        )
-        .run(
-          input.deferUntil,
-          JSON.stringify([...input.ruleRefs].sort()),
-          input.expiresAt,
-          input.ownerId,
-          input.agentId,
-          input.sourceKey,
-        ).changes > 0;
-    if (!stored) return false;
+    const refs = [...input.ruleRefs].sort();
     const digest = createHash("sha256")
       .update(JSON.stringify([input.ownerId, input.agentId, input.sourceKey, input.deferUntil]))
       .digest("hex");
-    insertLedgerRow(this.database, {
-      id: `web-push-${digest}`,
-      ownerId: input.ownerId,
-      agentId: input.agentId,
-      kind: "web_push",
-      decidedAt: input.now,
-      outcome: "deferred",
-      reasonCode: "push_quiet_hours",
-      subjectRef: input.sourceKey,
-      inputs: { memoryIds: [], ruleIds: [...input.ruleRefs].sort() },
-      reasonRef: null,
-      contentRef: null,
-      costMicros: 0,
-      durationMs: 0,
-    });
-    return true;
+    return this.database
+      .transaction(() => {
+        const stored =
+          this.database
+            .prepare(
+              `UPDATE web_push_outbox SET defer_until = ?, defer_rule_refs = ?, expires_at = ?
+             WHERE owner_id = ? AND agent_id = ? AND source_key = ?`,
+            )
+            .run(
+              input.deferUntil,
+              JSON.stringify(refs),
+              input.expiresAt,
+              input.ownerId,
+              input.agentId,
+              input.sourceKey,
+            ).changes > 0;
+        if (!stored) return false;
+        insertLedgerRow(this.database, {
+          id: `web-push-${digest}`,
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          kind: "web_push",
+          decidedAt: input.now,
+          outcome: "deferred",
+          reasonCode: "push_quiet_hours",
+          subjectRef: input.sourceKey,
+          inputs: { memoryIds: [], ruleIds: refs },
+          reasonRef: null,
+          contentRef: null,
+          costMicros: 0,
+          durationMs: 0,
+        });
+        return true;
+      })
+      .immediate();
   }
 
   private recordAttempt(input: Input<"recordAttempt">): boolean {

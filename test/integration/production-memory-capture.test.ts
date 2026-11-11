@@ -1863,6 +1863,50 @@ describe("production memory capture", () => {
     ).toMatchObject({ status: "active", dataClassification: "sensitive" });
   });
 
+  it('[HR-4] turns "夜里别提醒我" into an enforced push_quiet_hours rule through the rule tool, and refuses periods that are not times', async () => {
+    const sentence = "夜里别提醒我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const set = (args: Record<string, unknown>, id: string) =>
+      context.ruleTools.run({
+        runId: createRunId("run-rule-tool"),
+        toolCallId: id,
+        capabilityRef: "rule.set",
+        capabilityHandleRef: null,
+        arguments: {
+          inferred: false,
+          type: "push_quiet_hours",
+          summary: "夜里 23 点到早上 7 点，任务完成和邮件提醒等到早上再推",
+          quote: sentence,
+          ...args,
+        },
+        dataClassification: "private",
+        context: { threadId: THREAD_ID },
+      } as never) as Promise<Record<string, unknown>>;
+    const night = { periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }] };
+    const created = await set({ params: night }, "call-night");
+    expect(created).toMatchObject({ status: "active", type: "push_quiet_hours", replayed: false });
+    expect((created["trials"] as { hit: boolean }[]).some(({ hit }) => hit)).toBe(true);
+    expect((created["trials"] as { hit: boolean }[]).some(({ hit }) => !hit)).toBe(true);
+    const stored = await context.repository.ownerRules().read({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      ruleId: created["ruleId"] as string,
+    } as never);
+    expect(stored).toMatchObject({ status: "active" });
+    await expect(
+      set({ params: { periods: [{ days: [0], start: "25:00", end: "07:00" }] } }, "call-bad-time"),
+    ).rejects.toMatchObject({ code: "RULE_PARAMETERS_INVALID" });
+    await expect(set({ params: { periods: [] } }, "call-no-period")).rejects.toMatchObject({
+      code: "RULE_PARAMETERS_INVALID",
+    });
+  });
+
   it("[P2-3] turns the owner's standing sentence into an enforced rule, keeps inferred ones as proposals, and undoes one from the page", async () => {
     const sentence = "日本入管局相关的邮件以后必须通知我";
     const context = await setup(
@@ -2054,6 +2098,10 @@ describe("production memory capture", () => {
     expect(isStandingQuote("刚才那封必须提醒我")).toBe(false);
     expect(isStandingQuote("这封必须提醒我")).toBe(false);
     expect(isStandingQuote("这封先不用管，以后再说")).toBe(false);
+    expect(isStandingQuote("夜里别提醒我")).toBe(true);
+    expect(isStandingQuote("今晚别提醒我")).toBe(false);
+    expect(isStandingQuote("这次别提醒我")).toBe(false);
+    expect(isStandingQuote("提醒我")).toBe(false);
     expect(isStandingQuote("今天先这样，以后再看")).toBe(false);
     expect(isStandingQuote("今天起每次都提醒我")).toBe(true);
     expect(isStandingQuote("From now on, always tell me about refunds")).toBe(true);

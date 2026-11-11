@@ -227,6 +227,14 @@ describe("[WP-3] web push dispatch", () => {
           const rule = enforceableOwnerRule(row);
           return rule?.gate === "push_delivery" ? [rule] : [];
         }),
+      exec(statement: string) {
+        const database = openQualifiedDatabase(file);
+        try {
+          database.exec(statement);
+        } finally {
+          database.close();
+        }
+      },
       ledger() {
         const database = openQualifiedDatabase(file);
         try {
@@ -612,6 +620,32 @@ describe("[WP-3] web push dispatch", () => {
     expect(context.rules.ledger().map(({ subjectRef }) => subjectRef)).toEqual([
       "run:run-held:failed",
     ]);
+  });
+
+  it("[HR-4] REVERSE: a deferral whose decision record cannot be written is rolled back, and the push is sent at once with a failure report", async () => {
+    const context = await setup();
+    const reported: string[] = [];
+    const push = context.create({
+      timeZone: "Asia/Tokyo",
+      readPushRules: context.rules.read,
+      onGateFailure: ({ sourceKey }) => reported.push(sourceKey),
+    });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    context.rules.write("owner:night", NIGHT_JST);
+    await push.tick();
+    context.rules.exec(
+      `CREATE TRIGGER block_web_push_record BEFORE INSERT ON decision_ledger
+       WHEN NEW.kind = 'web_push' BEGIN SELECT RAISE(ABORT, 'LEDGER_BLOCKED'); END`,
+    );
+    context.setClock(NIGHT);
+    context.finishRun("run-night", "completed", at(NIGHT, -5));
+    await push.tick();
+    expect(context.rules.outbox("run:")?.deferUntil).toBeNull();
+    expect(context.rules.ledger()).toEqual([]);
+    expect(context.sender.requests).toHaveLength(1);
+    expect(reported).toEqual([expect.stringMatching(/^run:/)]);
+    expect(context.failures).toEqual([]);
   });
 
   it("[HR-4] releases held pushes at once when the rule is withdrawn", async () => {
