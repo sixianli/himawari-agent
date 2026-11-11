@@ -1369,6 +1369,7 @@ export const messages = {
   "weekly.goRate": "去「提醒」打分",
   "weekly.prereview.title": "模型预评一致率",
   "weekly.prereview.empty": "这一周还没有模型预评过、你也打过分的决策。",
+  "weekly.prereview.emptyCurrent": "这一周还没有当前这一版模型和提示词做的预评。",
   "weekly.prereview.counts": "预评 {rated} 条 · 模型拿不准 {unsure} 条 · 你也评过 {paired} 条",
   "weekly.prereview.gate":
     "{r, select, open {按这一周的配对已过门槛} insufficient {这一周对数不够，还不能判断} below_threshold {按这一周的配对，一致率没到门槛} other {没比“全当有用”猜得更准}}",

@@ -1246,6 +1246,7 @@ export const MESSAGE_IDS = [
   "weekly.goRate",
   "weekly.prereview.title",
   "weekly.prereview.empty",
+  "weekly.prereview.emptyCurrent",
   "weekly.prereview.counts",
   "weekly.prereview.gate",
   "weekly.prereview.audit",

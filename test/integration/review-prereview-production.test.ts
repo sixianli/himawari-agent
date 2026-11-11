@@ -402,6 +402,32 @@ describe("[P4-8] model pre-rating in the running service", () => {
     });
   });
 
+  it("[P4-8] stores a failed attempt with its cost when writing the result fails", async () => {
+    const h = await setup();
+    await h.skipped("write-down", "想记住的事", NOV_4_10AM_JST);
+    const broken = (store: ReviewPrereviewStorePort): ReviewPrereviewStorePort => ({
+      listDone: (input) => store.listDone(input),
+      listRecentFailures: (input) => store.listRecentFailures(input),
+      countSince: (input) => store.countSince(input),
+      ownerHistory: (input) => store.ownerHistory(input),
+      listPairs: (input) => store.listPairs(input),
+      recordFailure: (input) => store.recordFailure(input),
+      record: async () => {
+        throw new Error("SQLITE_BUSY");
+      },
+    });
+    const result = await h.service({}, broken).prereview();
+    expect(result?.failures).toEqual(["PREREVIEW_STORE_FAILED:SQLITE_BUSY"]);
+    expect(h.rows()).toEqual([
+      expect.objectContaining({
+        decisionId: "write-down",
+        status: "failed",
+        failureCode: "PREREVIEW_STORE_FAILED:SQLITE_BUSY",
+        costMicros: 300,
+      }),
+    ]);
+  });
+
   it("[P4-8] with reduction on and the bar passed, hides only confident items whose text is unchanged, keeping the audit sample and unsure ones", async () => {
     const h = await setup();
     const start = Date.parse(NOV_4_10AM_JST);

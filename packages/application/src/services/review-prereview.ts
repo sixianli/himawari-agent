@@ -99,7 +99,11 @@ export function parsePrereview(
 
 function failureCode(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
-  return /^[A-Z][A-Z0-9_:.-]{0,100}$/u.test(message) ? message : "unknown";
+  return /^(MODEL|PREREVIEW|PORT|SQLITE|DECISION)_[A-Z0-9_]{1,80}(:[A-Z0-9_.-]{1,40})?$/u.test(
+    message,
+  )
+    ? message
+    : "unknown";
 }
 
 export function prereviewPromptId(digest: (text: string) => string): string {

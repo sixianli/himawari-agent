@@ -1392,7 +1392,13 @@ export function WeeklyReport({
       <section className="weekly-card" aria-label={message("weekly.prereview.title")}>
         <CardHead title={message("weekly.prereview.title")} infoKey="prereview" info={infoButton} />
         {prereviewGroups.length === 0 ? (
-          <p className="weekly-empty">{message("weekly.prereview.empty")}</p>
+          <p className="weekly-empty">
+            {message(
+              report.prereview.otherVersions > 0
+                ? "weekly.prereview.emptyCurrent"
+                : "weekly.prereview.empty",
+            )}
+          </p>
         ) : (
           <div className="weekly-tiles" data-count="3">
             {prereviewGroups.map((item) => (

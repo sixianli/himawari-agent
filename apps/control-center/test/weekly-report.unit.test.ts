@@ -1071,6 +1071,43 @@ describe("[P0-8] calibration report tab", () => {
     expect(card).toContain("另随机留 20.0% 抽查");
   });
 
+  it("[P4-8] [negative] says no pre-rating from the current version when only older versions exist", async () => {
+    const empty = (
+      [
+        "proactive_pushed",
+        "proactive_silent",
+        "memory_skipped",
+        "memory_kept",
+        "consolidation",
+      ] as const
+    ).map((group) => ({
+      group,
+      prereviewed: 0,
+      unsure: 0,
+      paired: 0,
+      agreement: null,
+      kappa: null,
+      balancedAccuracy: null,
+      ownerUseful: null,
+      hidden: null,
+      confusion: [],
+      gate: null,
+    }));
+    weekly = {
+      ...weekly,
+      report: {
+        ...weekly.report,
+        prereview: { ...weekly.report.prereview, otherVersions: 4, groups: empty },
+      },
+    };
+    await render();
+    await openReport();
+    const onlyOld = text('#page [aria-label="模型预评一致率"]');
+    expect(onlyOld).toContain("这一周还没有当前这一版模型和提示词做的预评。");
+    expect(onlyOld).toContain("另有 4 条预评来自旧的模型或提示词版本");
+    expect(onlyOld).not.toContain("这一周还没有模型预评过");
+  });
+
   it("[P4-8] [negative] shows no agreement number when nothing was pre-rated and says reduction is off", async () => {
     const empty = (
       [
