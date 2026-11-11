@@ -233,11 +233,11 @@ export const MCP_TOOL_FIND_MEMORIES = fixedPrompt({
 
 export const MCP_TOOL_TODAY_CONTEXT = fixedPrompt({
   id: "mcp.today-context",
-  purpose: "对外 MCP 工具 today_context 的描述：今天的日期、时区和近期提醒",
+  purpose: "对外 MCP 工具 today_context 的描述：今天的日期、时区、近期提醒和近两天的对话摘要",
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tools",
   output: "free-text",
-  text: "取主人今天的上下文：主人所在时区的今天日期、现在时间，以及接下来 48 小时内的提醒。开始一项和主人日程有关的工作前使用。只读。",
+  text: "取主人今天的上下文：主人所在时区的今天日期、现在时间、接下来 48 小时内的提醒，以及今天和昨天的对话摘要（recentDays，每天一段或几段；recentDaysComplete 为 false 时表示有摘要没读到）。开始一项和主人日程有关的工作前使用。只读。",
 });
 
 export const MCP_TOOL_RULE_BOOK = fixedPrompt({
