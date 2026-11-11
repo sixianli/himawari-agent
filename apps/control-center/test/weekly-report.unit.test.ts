@@ -1226,7 +1226,7 @@ describe("[P1-5] email decision detail page", () => {
         {
           ruleId: "floor_other",
           revision: null,
-          current: true,
+          current: false,
           kind: "unknown",
           origin: null,
           source: null,

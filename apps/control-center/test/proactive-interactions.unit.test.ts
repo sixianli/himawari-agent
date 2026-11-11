@@ -966,7 +966,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
         {
           ruleId: "floor_money_words",
           revision: 1,
-          current: false,
+          current: true,
           kind: "money_words",
           origin: "built_in",
           source: "ADR 0106 第 4 条；ADR 0209",
@@ -994,7 +994,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
         {
           ruleId: "floor_unknown",
           revision: null,
-          current: true,
+          current: false,
           kind: "unknown",
           origin: null,
           source: null,
@@ -1091,6 +1091,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     expect(drawer).toContain("这一版的规则内容查不到");
     expect(drawer).toContain("测试：查不到");
     expect(drawer).toContain("只记了规则名，显示的是现在的版本");
+    expect(drawer.split("只记了规则名，显示的是现在的版本").length).toBe(2);
     expect(drawer).toContain("判断了 3 封");
     expect(drawer).toContain("关联邮件：只读到一部分");
     expect(drawer).toContain("我住在东京");

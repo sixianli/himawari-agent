@@ -290,7 +290,10 @@ export class SqliteProactiveOperations {
           sender.length < 1 ||
           sender.length > 254 ||
           /\p{Surrogate}/u.test(sender) ||
-          /\p{Cc}/u.test(sender),
+          [...sender].some((character) => {
+            const code = character.charCodeAt(0);
+            return code < 0x20 || code === 0x7f;
+          }),
       )
     )
       this.invalid("Proactive settings are invalid");

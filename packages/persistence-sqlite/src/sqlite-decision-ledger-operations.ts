@@ -361,7 +361,7 @@ export class SqliteDecisionLedgerOperations {
        FROM rule_book_history
        WHERE owner_id = ? AND agent_id = ? AND rule_id = ? AND revision = ?`,
     );
-    const versions: Record<string, RuleBookVersion> = {};
+    const versions: Record<string, RuleBookVersion> = Object.create(null);
     for (const ref of new Set(refs)) {
       const { ruleId, revision } = parseRuleRef(ref);
       const found = (

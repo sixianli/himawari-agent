@@ -698,7 +698,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         f.repository,
         "gmail-defaults",
         gmailInputs({
-          ruleIds: ["floor_important_sender@0", "quiet_hours", "quiet_hours@0"],
+          ruleIds: ["__proto__", "floor_important_sender@0", "quiet_hours", "quiet_hours@0"],
           floorHits: {},
           memoryIds: [],
           memoryByMail: {},
@@ -726,6 +726,11 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         current: false,
         wording: null,
         tests: { state: "unavailable" },
+      });
+      expect(items.find((item) => item.ruleId === "__proto__")).toMatchObject({
+        kind: "unknown",
+        current: false,
+        wording: null,
       });
     } finally {
       await f.repository.close();
@@ -793,9 +798,13 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         ...scope,
         enabled: true,
         quietHours: [],
-        importantSenders: ["bank.example"],
+        importantSenders: ["bank.example", "x\u0080y.example"],
         now: "2026-11-01T00:00:00.000Z",
       });
+      expect((await f.repository.proactive().readSettings(scope)).importantSenders).toEqual([
+        "bank.example",
+        "x\u0080y.example",
+      ]);
       f.sql((database) => {
         database
           .prepare(
