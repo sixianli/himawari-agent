@@ -879,6 +879,25 @@ describe("production memory capture", () => {
     });
     expect(record?.contentRef).toBe(own?.contentRef);
     expect(record).toMatchObject({ inference: false, confidencePermille: 1000 });
+    await viaGateway(
+      context.control,
+      "memory.mutate",
+      {
+        ...{ memoryId: old.memoryId, action: "delete", contentRef: null, historyId: null },
+        expectedRevision: replaced.revision,
+      },
+      "trash-old",
+    );
+    const restoredHead = await state.read(head.memoryId as never);
+    await expect(
+      restoreVersion(
+        context.control,
+        head.memoryId,
+        restoredHead?.revision ?? 0,
+        replaced.history[1]?.historyId ?? 0,
+        "restore-trashed",
+      ),
+    ).rejects.toThrow("MEMORY_VERSION_NOT_FOUND");
   });
 
   it("[P3-7] copies a less sensitive earlier wording at the current memory's level", async () => {

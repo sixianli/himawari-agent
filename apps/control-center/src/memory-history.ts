@@ -94,6 +94,7 @@ export function memoryChain(
       restorable,
       versionRestorable:
         headCurrent &&
+        entry.record.status === "active" &&
         !restorable &&
         entry.node.historyId > 0 &&
         entry.node.kind !== "reaffirmed" &&

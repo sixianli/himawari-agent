@@ -704,6 +704,12 @@ describe("memory approval and management", () => {
       { ...current, supersededBy: "memory-next" },
     ])
       expect(memoryChain(gone, [gone]).some((item) => item.versionRestorable)).toBe(false);
+    const trashed = memoryItem("memory-old", "主人住在杭州", {
+      status: "trashed",
+      supersededBy: current.memoryId,
+      history: [node("created", "主人住在温州", "温州", "2026-10-20T12:00:00.000Z")],
+    });
+    expect(memoryChain(current, [trashed, current])[0]).toMatchObject({ versionRestorable: false });
   });
 
   it("[MH-2] keeps the folded list without lanes when the old changes have no stance", async () => {

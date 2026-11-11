@@ -254,7 +254,13 @@ export class ProductionMemoryControl {
       seen.add(next);
       const record = await this.options.state.read(next);
       const { ownerId, agentId } = this.options.configuration;
-      if (!record || record.ownerId !== ownerId || record.agentId !== agentId) return false;
+      if (
+        !record ||
+        record.ownerId !== ownerId ||
+        record.agentId !== agentId ||
+        record.status !== "active"
+      )
+        return false;
       next = (record.attributes?.supersededBy ?? null) as MemoryId | null;
     }
     return false;
