@@ -2,6 +2,7 @@ import type { MailAmount } from "../rules/amount.js";
 import { RULE_IDS, type RuleRecord } from "../rules/rule-book.js";
 import { mailItemFacts } from "../rules/rule-book.js";
 import { RuleJudge } from "../rules/rule-judge.js";
+import { ruleRef } from "../rules/rule-ref.js";
 import type {
   ProactiveConfidence,
   ProactivePriority,
@@ -24,35 +25,6 @@ export const FLOOR_RULE_IDS = Object.freeze({
 
 export type FloorRuleId = (typeof FLOOR_RULE_IDS)[keyof typeof FLOOR_RULE_IDS];
 
-export type DecisionRuleOrigin = "owner_setting" | "built_in";
-
-export interface DecisionRuleDefinition {
-  readonly origin: DecisionRuleOrigin;
-  readonly document: string;
-}
-
-export const DECISION_RULE_CATALOG: Readonly<Record<FloorRuleId, DecisionRuleDefinition>> =
-  Object.freeze({
-    [FLOOR_RULE_IDS.importantSender]: Object.freeze({
-      origin: "owner_setting",
-      document: "ADR 0106 第 4 条",
-    }),
-    [FLOOR_RULE_IDS.publicDomain]: Object.freeze({
-      origin: "built_in",
-      document: "ADR 0106 第 4 条",
-    }),
-    [FLOOR_RULE_IDS.moneyWords]: Object.freeze({
-      origin: "built_in",
-      document: "ADR 0106 第 4 条",
-    }),
-  });
-
-export function decisionRuleDefinition(ruleId: string): DecisionRuleDefinition | undefined {
-  return Object.hasOwn(DECISION_RULE_CATALOG, ruleId)
-    ? DECISION_RULE_CATALOG[ruleId as FloorRuleId]
-    : undefined;
-}
-
 export function floorHitIds(
   item: ProactiveSourceItem,
   rules: readonly RuleRecord[],
@@ -69,7 +41,7 @@ function outcomeHits(
 ): readonly string[] {
   const hits = JUDGE.decide("mail_item", mailItemFacts(item), rules)
     .hits.filter(({ outcome }) => outcome === wanted)
-    .map(({ id, revision }) => `${id}@${revision}`.slice(0, 256));
+    .map(({ id, revision }) => ruleRef(id, revision));
   return [...new Set(hits)].sort().slice(0, 16);
 }
 
@@ -94,16 +66,15 @@ export function suppressPushHits(
 ): readonly string[] {
   const hits = JUDGE.decide("mail_item", mailItemFacts(item, amount), rules)
     .hits.filter(({ outcome }) => outcome === "suppress_push")
-    .map(({ id, revision }) => `${id}@${revision}`.slice(0, 256));
+    .map(({ id, revision }) => ruleRef(id, revision));
   return [...new Set(hits)].sort().slice(0, 16);
 }
 
-export function quietEnd(
+export function quietHitRefs(
   at: string,
   rules: readonly RuleRecord[],
-  periods: readonly ProactiveQuietPeriod[],
   timeZone: string,
-): string | null {
+): readonly string[] {
   const local = zonedParts(at, timeZone);
   const decision = JUDGE.decide(
     "mail_delivery",
@@ -114,8 +85,33 @@ export function quietEnd(
     },
     rules,
   );
-  if (!decision.hits.some(({ outcome }) => outcome === "defer_to_quiet_hours")) return null;
+  return decision.hits
+    .filter(({ outcome }) => outcome === "defer_to_quiet_hours")
+    .map(({ id, revision }) => ruleRef(id, revision));
+}
+
+export function quietEnd(
+  at: string,
+  rules: readonly RuleRecord[],
+  periods: readonly ProactiveQuietPeriod[],
+  timeZone: string,
+): string | null {
+  if (quietHitRefs(at, rules, timeZone).length === 0) return null;
   return quietUntil(at, periods, timeZone);
+}
+
+export function floorHitRefs(
+  floorHits: Readonly<Record<string, readonly string[]>>,
+  rules: readonly RuleRecord[],
+): readonly string[] {
+  const refs = new Set<string>();
+  for (const id of new Set(Object.values(floorHits).flat())) {
+    const rule = rules.find(
+      (candidate) => candidate.id === id && candidate.outcome === "raise_floor",
+    );
+    refs.add(rule ? ruleRef(rule.id, rule.revision) : id);
+  }
+  return [...refs];
 }
 
 export function applyFloor(

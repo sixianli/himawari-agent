@@ -424,13 +424,25 @@ export const governanceMessages = [
       items: [
         {
           ruleId: "floor_important_sender",
+          revision: 2,
+          current: false,
+          kind: "important_sender",
           origin: "owner_setting",
-          document: "ADR 0106 第 4 条",
+          source: "ADR 0106 第 4 条；主人的设置“重要发件人”",
+          status: "needs_review",
+          changedAt: "2026-11-08T00:00:00.000Z",
+          memory: { memoryId: "memory-rule", state: "visible", text: "银行的信一律提醒我" },
+          wording: {
+            values: ["bank.example"],
+            quietHours: [{ days: [1, 2], start: "23:00", end: "07:00" }],
+            amount: { currency: "JPY", minor: 1000 },
+          },
+          tests: { state: "failed", total: 3, failedAt: 2 },
           mailCount: 1,
         },
       ],
     },
-    mails: { judged: 2, related: 1, relatedRead: "ok" },
+    mails: { judged: 2, related: 1, relatedRead: "ok", summaries: { count: 2, read: "ok" } },
     memories: {
       state: "recorded",
       recall: "ok",
@@ -539,7 +551,7 @@ export const governanceMessages = [
         ],
       },
     ],
-    profileUsage: { used: 14, limit: 2000, queued: [] },
+    profileUsage: { used: 14, limit: 2000, pinned: 0, queued: [] },
     lastViewedAt: "2026-09-10T00:00:00.000Z",
     profile: [
       {

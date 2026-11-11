@@ -86,6 +86,7 @@ import {
 } from "./production-memory-control.js";
 import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
+import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
 import {
   PRODUCTION_MUSE_OPERATIONS,
@@ -199,6 +200,7 @@ export interface ProductionHttpCompositionOptions {
   readonly proactive?: ProductionProactive;
   readonly museIntake?: ProductionMuseIntake;
   readonly gapExport?: ProductionGapExport;
+  readonly mcpRead?: ProductionMcpRead;
   readonly museControl?: ProductionMuseControl;
   readonly observation?: ProductionObservation;
   readonly configuration: ProductConfiguration;
@@ -1171,6 +1173,7 @@ export async function createProductionHttpComposition(
   });
   if (options.museIntake) registerMuseIntakeRoute(app, options.museIntake);
   if (options.gapExport) registerGapExportRoute(app, options.gapExport);
+  if (options.mcpRead) registerMcpReadRoute(app, options.mcpRead);
   registerAuthentication(app, csrf, recentAuthentication);
   const onCommandAccepted = options.onCommandAccepted;
   if (onCommandAccepted)

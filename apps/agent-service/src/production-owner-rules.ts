@@ -661,12 +661,6 @@ export class ProductionOwnerRuleWriter {
     });
   }
 
-  async describe(ruleId: string): Promise<string | undefined> {
-    if (!ruleId.startsWith(OWNER_RULE_ID_PREFIX) || ruleId.length > 64) return undefined;
-    const current = await this.#options.rules.read({ ...this.#scope(), ruleId });
-    return current ? summaryOf(current.parameters).summary : undefined;
-  }
-
   async reconfirm(ruleId: string): Promise<ListedOwnerRule> {
     if (!ruleId.startsWith(OWNER_RULE_ID_PREFIX) || ruleId.length > 64)
       throw new OwnerRuleError("RULE_NOT_FOUND");

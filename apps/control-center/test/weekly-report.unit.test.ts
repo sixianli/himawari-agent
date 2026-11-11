@@ -964,6 +964,28 @@ describe("[P0-8] calibration report tab", () => {
     expect(text("#page .weekly-muse-foot")).toContain("配对率 95.2%（40/42）");
   });
 
+  it("[P3-5] asks whether a failed memory capture lost anything, in its own words", async () => {
+    const reported = reportedFixture();
+    weekly = {
+      ...reported,
+      report: {
+        ...reported.report,
+        groups: [
+          ...reported.report.groups,
+          group("memory_capture_failed", 7, 5, 1, ["useful", "missed"]),
+        ],
+      },
+    };
+    await render();
+    await openReport();
+    await click(button("#page .weekly-report", "其他判断 · 2 类 · 展开"));
+    const row = text('#page .weekly-table tr[data-group="memory_capture_failed"]');
+    expect(row).toContain("没漏掉什么83.3%（5/6）");
+    expect(row).toContain("漏了该记的16.7%（1/6）");
+    expect(row).not.toContain("做对了");
+    expect(row).not.toContain("该做没做");
+  });
+
   it("[P0-11] shows observed signals in their own card, apart from the rating rows", async () => {
     weekly = {
       ...weekly,
@@ -1209,11 +1231,37 @@ describe("[P1-5] email decision detail page", () => {
     rules: {
       state: "recorded",
       items: [
-        { ruleId: "floor_money_words", origin: "built_in", document: "ADR 0106", mailCount: 1 },
-        { ruleId: "floor_other", origin: null, document: null, mailCount: 1 },
+        {
+          ruleId: "floor_money_words",
+          revision: 1,
+          current: false,
+          kind: "money_words",
+          origin: "built_in",
+          source: "ADR 0106",
+          status: "active",
+          changedAt: null,
+          memory: null,
+          wording: { values: ["invoice"], quietHours: [], amount: null },
+          tests: { state: "passed", total: 5, failedAt: null },
+          mailCount: 1,
+        },
+        {
+          ruleId: "floor_other",
+          revision: null,
+          current: false,
+          kind: "unknown",
+          origin: null,
+          source: null,
+          status: null,
+          changedAt: null,
+          memory: null,
+          wording: null,
+          tests: { state: "unavailable", total: 0, failedAt: null },
+          mailCount: 1,
+        },
       ],
     },
-    mails: { judged: 3, related: 2, relatedRead: "ok" },
+    mails: { judged: 3, related: 2, relatedRead: "ok", summaries: null },
     memories: {
       state: "recorded",
       recall: "ok",
@@ -1339,7 +1387,8 @@ describe("[P1-5] email decision detail page", () => {
     expect(page).toContain("邮件决策详情");
     expect(page).toContain("不用管");
     expect(page).toContain("命中规则 1 条 · 用到记忆 1 条 · 相关邮件 无记录 封");
-    expect(page).toContain("ADR 0106 · 这封邮件用到");
+    expect(page).toContain("内置规则 · 这封邮件用到");
+    expect(page).toContain("出处：ADR 0106 · 第 1 版");
     expect(page).toContain("记忆 memory-a");
     expect(page).toContain("发票到期 · 明天截止");
     expect(page).toContain("只有 Muse 提醒了你，Himawari 没有");

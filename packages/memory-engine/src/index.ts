@@ -1,5 +1,6 @@
 export * from "./embedding.js";
 export * from "./fusion.js";
+export * from "./relevance.js";
 export * from "./hybrid-memory-provider.js";
 export * from "./segmentation.js";
 export * from "./time-scope.js";

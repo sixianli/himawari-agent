@@ -196,6 +196,33 @@ export interface ProactiveMemoryRecall {
 
 export type ProactiveMemoryRecallStatus = "off" | "ok" | "partial" | "failed";
 
+export interface ProactiveRecentSummary {
+  readonly id: string;
+  readonly day: string;
+  readonly text: string;
+  readonly dataClassification: DataClassification;
+}
+
+export interface ProactiveRecentSummaries {
+  catchUp(input: {
+    readonly days: number;
+    readonly limit: number;
+    readonly deadlineAt: string;
+    readonly signal: AbortSignal;
+    readonly generate: (prompt: string, dataClassification: DataClassification) => Promise<string>;
+  }): Promise<{
+    readonly generated: number;
+    readonly costMicros: number;
+    readonly failed: boolean;
+  }>;
+  recent(input: {
+    readonly days: number;
+    readonly limit: number;
+  }): Promise<{ readonly summaries: readonly ProactiveRecentSummary[]; readonly partial: boolean }>;
+}
+
+export type ProactiveSummaryReadStatus = "off" | "ok" | "partial" | "failed";
+
 export type ProactiveRelatedReadStatus = "off" | "ok" | "partial" | "failed";
 
 export interface ProactiveRelatedStats {
@@ -220,6 +247,12 @@ export interface ProactiveCheckInputs {
   readonly relatedRead?: ProactiveRelatedReadStatus;
   readonly relatedStats?: ProactiveRelatedStats;
   readonly relatedFailedSteps?: readonly string[];
+  readonly summaryInjected?: boolean;
+  readonly summaryIds?: readonly string[];
+  readonly summaryDays?: readonly string[];
+  readonly summaryCharacters?: number;
+  readonly summaryRead?: ProactiveSummaryReadStatus;
+  readonly summaryGenerated?: number;
 }
 
 export type ProactiveBackoffStage = 0 | 1 | 2;

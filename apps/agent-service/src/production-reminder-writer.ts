@@ -124,6 +124,7 @@ export interface CreatedReminder {
 
 export interface ListedReminder {
   readonly reminderId: string;
+  readonly memoryId: string;
   readonly text: string;
   readonly dueAt: string;
   readonly remindAt: string;
@@ -256,12 +257,14 @@ export class ProductionReminderWriter {
     };
   }
 
-  async list(): Promise<{ readonly reminders: readonly ListedReminder[]; readonly more: boolean }> {
+  async list(
+    windowMs: number = LIST_WINDOW_MS,
+  ): Promise<{ readonly reminders: readonly ListedReminder[]; readonly more: boolean }> {
     const now = this.#options.clock.now();
     const upcoming = await this.#options.reminders.listUpcoming({
       ...this.#scope(),
       from: now,
-      to: new Date(Date.parse(now) + LIST_WINDOW_MS).toISOString(),
+      to: new Date(Date.parse(now) + windowMs).toISOString(),
       limit: LISTED + 1,
     });
     const listed: ListedReminder[] = [];
@@ -270,6 +273,7 @@ export class ProductionReminderWriter {
       if (text === undefined) continue;
       listed.push({
         reminderId: reminder.id,
+        memoryId: reminder.memoryId,
         text,
         dueAt: reminder.dueAt,
         remindAt: reminder.remindAt,

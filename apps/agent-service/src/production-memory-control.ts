@@ -9,6 +9,7 @@ import {
   type MemoryConsolidationStorePort,
   type MemoryExtractionAuditRecord,
   isModelVisible,
+  modelVisibleCeiling,
   type MemoryHistoryEvent,
   type MemoryProjectionJobStatePort,
   type MemoryReminderStorePort,
@@ -127,7 +128,7 @@ function earliestSourceMessage(
 
 export type OwnerRuleControl = Pick<
   ProductionOwnerRuleWriter,
-  "list" | "undo" | "confirm" | "reconfirm" | "describe"
+  "list" | "undo" | "confirm" | "reconfirm"
 >;
 
 export class ProductionMemoryControl {
@@ -558,7 +559,7 @@ export class ProductionMemoryControl {
   async #decisionChain(
     query: Extract<GatewayV2Query, { type: "decision.chain.read" }>,
   ): Promise<GatewayV2Snapshot> {
-    const { ledger, consolidation, ownerRules } = this.options;
+    const { ledger, consolidation } = this.options;
     if (!ledger || !consolidation)
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
@@ -610,9 +611,6 @@ export class ProductionMemoryControl {
           return texts;
         },
         visible: reviewMemoryVisible,
-        ...(ownerRules
-          ? { ownerRuleSummary: (ruleId: string) => ownerRules.describe(ruleId) }
-          : {}),
       },
       query,
     );
@@ -681,7 +679,7 @@ export class ProductionMemoryControl {
     const outline = await this.options.profile?.outline({
       ownerId,
       agentId,
-      maxClassification: "private",
+      maxClassification: modelVisibleCeiling(),
       now: this.options.clock.now(),
     });
     const lines = (items: readonly { memoryId: string; text: string; updatedAt: string }[]) =>
@@ -827,6 +825,7 @@ export class ProductionMemoryControl {
         profileUsage: {
           used: outline?.usage.used ?? 0,
           limit: outline?.usage.limit ?? 0,
+          pinned: outline?.usage.pinned ?? 0,
           queued: [...(outline?.usage.queued ?? [])],
         },
         generatedAt: now,

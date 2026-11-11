@@ -56,6 +56,10 @@ const MAILS: readonly Mail[] = [
         "mail-both": ["floor.money", "floor.money", "rule\nwith\tcontrol"],
         "other-mail": ["floor.other"],
       },
+      ruleHits: {
+        "mail-both": ["suppress_small_amount@3"],
+        "other-mail": ["suppress_other@1"],
+      },
       memoryByMail: { "mail-both": ["memory-b", "memory-a", "_memory-c", "memory\nctl"] },
       relatedByMail: { "mail-both": ["thread-x", "thread-y"] },
     },
@@ -289,7 +293,7 @@ describe("[P1-5] one mail's decision trace", () => {
         outcome: "act",
         skipReason: null,
         rating: "useful",
-        ruleIds: ["floor.money", "rule with control"],
+        ruleIds: ["floor.money", "rule with control", "suppress_small_amount"],
         memoryIds: ["_memory-c", "memory ctl", "memory-a", "memory-b"],
         relatedMessages: 2,
       });

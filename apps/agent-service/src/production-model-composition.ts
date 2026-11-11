@@ -141,6 +141,7 @@ export interface AuxiliaryTextOptions {
   readonly requestTimeoutMs: number;
   readonly errorPrefix: string;
   readonly disableThinking?: boolean;
+  readonly retryToolCall?: boolean;
 }
 
 export interface ProductionModelCompositionFromConfigurationOptions
@@ -630,7 +631,11 @@ export function createProductionModelComposition(
     try {
       return await generateTextOnce(request, prompt, gate, text);
     } catch (error) {
-      if (!(error instanceof Error) || error.message !== "AI_GATEWAY_TOOL_CALL_UNSUPPORTED")
+      if (
+        text.retryToolCall === false ||
+        !(error instanceof Error) ||
+        error.message !== "AI_GATEWAY_TOOL_CALL_UNSUPPORTED"
+      )
         throw error;
       return generateTextOnce(request, prompt, gate, {
         ...text,

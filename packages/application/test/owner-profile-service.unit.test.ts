@@ -419,6 +419,7 @@ describe("owner profile composition", () => {
         .map((text) => (text ?? "").length + 3)
         .reduce((sum, length) => sum + length, 0),
       limit: 2000,
+      pinned: `${TEXT["memory-snack"]}（记于 2026-10-25）`.length + 3,
       queued: [],
     });
   });
@@ -441,6 +442,71 @@ describe("owner profile composition", () => {
     expect(outline.usage.queued).toEqual(["memory-name"]);
   });
 
+  it("[P2-5] never drops a pinned memory to make room for rules and reports only unpinned ones", async () => {
+    const { profile } = service(
+      [
+        memory("memory-language", "rule", 900),
+        memory("memory-name", "identity", 900),
+        memory("memory-snack", "preference", 400),
+        memory("memory-allergy", "preference", 400),
+      ],
+      60,
+      [
+        ["memory-snack", true],
+        ["memory-allergy", true],
+      ],
+    );
+    const request = {
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "private" as const,
+      now: NOW,
+    };
+    const composed = await profile.compose(request);
+    expect(composed.memoryIds).toEqual(expect.arrayContaining(["memory-snack", "memory-allergy"]));
+    expect(composed.usage?.queued).toEqual(["memory-language", "memory-name"]);
+    expect(composed.usage?.used).toBe(composed.usage?.pinned);
+    expect(composed.usage?.used).toBeLessThanOrEqual(60);
+  });
+
+  it("[P2-5] keeps every pinned memory when they alone exceed the limit", async () => {
+    const { profile } = service(
+      [
+        memory("memory-name", "identity", 900),
+        memory("memory-snack", "preference", 400),
+        memory("memory-allergy", "preference", 400),
+      ],
+      10,
+      [
+        ["memory-snack", true],
+        ["memory-allergy", true],
+      ],
+    );
+    const composed = await profile.compose({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "private",
+      now: NOW,
+    });
+    expect(composed.memoryIds).toEqual(expect.arrayContaining(["memory-snack", "memory-allergy"]));
+    expect(composed.memoryIds).not.toContain("memory-name");
+    expect(composed.usage?.pinned).toBeGreaterThan(10);
+    expect(composed.usage?.used).toBe(composed.usage?.pinned);
+    expect(composed.usage?.queued).toEqual(["memory-name"]);
+  });
+
+  it("[P2-5] reverse: reports nothing dropped when everything fits", async () => {
+    const { profile } = service(records, undefined, [["memory-snack", true]]);
+    const composed = await profile.compose({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "private",
+      now: NOW,
+    });
+    expect(composed.usage?.queued).toEqual([]);
+    expect(composed.usage?.used).toBeLessThanOrEqual(composed.usage?.limit ?? 0);
+  });
+
   it("returns no blocks when nothing qualifies", async () => {
     const { profile, stored } = service([memory("memory-snack", "preference", 400)]);
     expect(
@@ -450,7 +516,7 @@ describe("owner profile composition", () => {
         maxClassification: "private",
         now: NOW,
       }),
-    ).toEqual({ blocks: [], memoryIds: [] });
+    ).toMatchObject({ blocks: [], memoryIds: [] });
     expect(stored).toEqual([]);
   });
 });
