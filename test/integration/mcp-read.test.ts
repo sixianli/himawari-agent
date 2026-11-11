@@ -954,6 +954,22 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       expect(texts.some((text) => text.includes("Wi-Fi"))).toBe(false);
     });
 
+    it("says there may be more reminders when the scan ends before enough eligible ones are found", async () => {
+      const f = await setup();
+      for (let index = 0; index < 201; index += 1)
+        await f.writer.create({
+          key: `crowd-${index}`,
+          text: `家里 Wi-Fi 密码：Crowd-${index}-abc`,
+          due: `2026-11-12T${String(Math.floor(index / 60) + 4).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}`,
+          repeat: "none",
+        });
+      const client = await f.connect("modern");
+      const output = JSON.parse((await f.call(client, "start_here")).text) as {
+        today: { more?: boolean };
+      };
+      expect(output.today.more).toBe(true);
+    });
+
     it("keeps the profile version free of masked secrets", async () => {
       const versionFor = async (secret: string) => {
         const f = await setup();

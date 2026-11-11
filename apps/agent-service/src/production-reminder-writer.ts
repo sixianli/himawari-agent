@@ -291,7 +291,10 @@ export class ProductionReminderWriter {
     }
     return {
       reminders: listed,
-      more: ceiling === undefined ? upcoming.length > LISTED : eligibleAfterListed,
+      more:
+        ceiling === undefined
+          ? upcoming.length > LISTED
+          : eligibleAfterListed || upcoming.length >= CEILING_SCAN_LIMIT,
     };
   }
 
