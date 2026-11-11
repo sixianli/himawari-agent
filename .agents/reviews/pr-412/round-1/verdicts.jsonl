@@ -1,0 +1,5 @@
+{"id": "d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新增的共享函数没有自己的自动检查，三条反向路径都未被直接覆盖", "valid": false, "class": "better"}
+{"id": "d2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "六个原有测试的选择优先级发生变化，不再是纯重构", "valid": false, "class": "better"}
+{"id": "d3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "回退判断依赖 Playwright 的英文错误串，比较脆弱", "valid": false, "class": "better"}
+{"id": "g1", "model": "opencode-go/glm-5.3-flash", "quote": "回退判定依赖 Playwright 英文报错文案", "valid": false, "class": "better"}
+{"id": "g2", "model": "opencode-go/glm-5.3-flash", "quote": "默认浏览器与预装浏览器并存时，所用二进制改变", "valid": false, "class": "better"}
