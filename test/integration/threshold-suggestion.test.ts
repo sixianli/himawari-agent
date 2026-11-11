@@ -133,7 +133,7 @@ describe("[P4-4] threshold suggestion", () => {
     expect(overall?.enough).toBe(false);
     expect(overall?.suggestions).toEqual([]);
     expect(sink.text()).toContain(
-      `样本不足：已评价并由门槛决定的有 20 条，需要至少 ${result.required} 条，不给建议值。`,
+      `样本不足：已评价、由这个门槛决定的有 20 条，需要至少 ${result.required} 条，不给建议值。`,
     );
     expect(sink.text()).not.toContain("建议门槛");
   });
@@ -255,7 +255,7 @@ describe("[P4-4] threshold suggestion", () => {
       `--db=${databasePath}`,
     ]);
     expect(stdout).toContain("# 门槛建议值");
-    expect(stdout).toContain("样本不足：已评价并由门槛决定的有 1 条");
+    expect(stdout).toContain("样本不足：已评价、由这个门槛决定的有 1 条");
   });
 
   it("leaves tentatively kept candidates out because a rating cannot say whether to auto-commit them", async () => {
@@ -316,7 +316,9 @@ describe("[P4-4] threshold suggestion", () => {
         decidedAt: "2026-11-05T03:00:00.000Z",
       })),
     ];
-    const analysis = analyzeGate(gate, rows, { required: 5, missCostRatios: [1] });
+    const strict = analyzeGate(gate, rows, { required: 5 }).overall;
+    expect([strict.samples, strict.adjustable, strict.enough]).toEqual([10, 4, false]);
+    const analysis = analyzeGate(gate, rows, { required: 4, missCostRatios: [1] });
     expect(analysis.overall.mixedCurrent).toBe(true);
     expect(analysis.overall.currentPoint).toMatchObject({
       threshold: 850,
@@ -340,7 +342,7 @@ describe("[P4-4] threshold suggestion", () => {
       scope: { ownerId: "o", agentId: "a" },
       analyses: [analysis],
       ungated: [],
-      required: 5,
+      required: 4,
       widthLimit: 0.1,
     });
     expect(report).toContain(
@@ -348,6 +350,24 @@ describe("[P4-4] threshold suggestion", () => {
     );
     expect(report).toContain("### 分类 health（现在的门槛 950）");
     expect(analysis.categories.map((segment) => segment.segment)).toEqual(["health"]);
+  });
+
+  it("replays against what actually happened, not the registry's current value", () => {
+    const row = {
+      id: "old",
+      kind: "memory_candidate",
+      outcome: "kept",
+      reasonCode: "auto_committed",
+      ownerRating: "unneeded",
+      category: "preference",
+      score: 800,
+      decidedAt: "2026-11-05T03:00:00.000Z",
+    };
+    const flips = analyzeGate(MEMORY_AUTO_COMMIT_GATE, [row], { required: 1, missCostRatios: [1] })
+      .overall.suggestions[0]?.flips;
+    expect(flips).toMatchObject([
+      { id: "old", before: true, after: false, change: "unneededBlocked" },
+    ]);
   });
 
   it("checks an explicitly named owner and agent exist", async () => {

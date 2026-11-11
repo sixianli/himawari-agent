@@ -94,6 +94,7 @@ export interface ThresholdSample {
   readonly outcome: string;
   readonly rating: string;
   readonly truth: ThresholdTruth;
+  readonly acted: boolean;
   readonly currentThreshold: number;
 }
 
@@ -166,6 +167,7 @@ export function gateSamples(
       outcome: row.outcome,
       rating: row.ownerRating,
       truth,
+      acted: gate.positiveOutcomes.includes(row.outcome),
       currentThreshold: thresholdFor(gate, row.category),
     });
   }
@@ -276,7 +278,7 @@ export function replay(
   pinned: PinnedThreshold = NOTHING_PINNED,
 ): readonly ReplayFlip[] {
   return samples.flatMap((sample) => {
-    const before = sample.score >= sample.currentThreshold;
+    const before = sample.acted;
     const after = sample.score >= (pinned(sample) ?? threshold);
     if (before === after) return [];
     return [
@@ -339,6 +341,7 @@ export interface SegmentAnalysis {
   readonly current: number;
   readonly mixedCurrent: boolean;
   readonly samples: number;
+  readonly adjustable: number;
   readonly required: number;
   readonly enough: boolean;
   readonly currentPoint: CurvePoint;
@@ -368,7 +371,8 @@ function analyzeSegment(
   missCostRatios: readonly number[],
   pinned: PinnedThreshold,
 ): SegmentAnalysis {
-  const enough = samples.length >= required;
+  const adjustable = samples.filter((sample) => pinned(sample) === null).length;
+  const enough = adjustable >= required;
   const candidates = thresholdCandidates(samples, gate.scoreMax, current);
   const curve = candidates.map((threshold) => curvePoint(samples, threshold, required, pinned));
   const suggestions = enough
@@ -384,6 +388,7 @@ function analyzeSegment(
     current,
     mixedCurrent: samples.some((sample) => sample.currentThreshold !== current),
     samples: samples.length,
+    adjustable,
     required,
     enough,
     currentPoint: livePoint(samples, current, required),
@@ -518,7 +523,7 @@ function segmentLines(segment: SegmentAnalysis): string[] {
   const lines = [`### ${title}（${current}）`, ""];
   if (!segment.enough) {
     lines.push(
-      `样本不足：已评价并由门槛决定的有 ${segment.samples} 条，需要至少 ${segment.required} 条，不给建议值。`,
+      `样本不足：已评价、由这个门槛决定的有 ${segment.adjustable} 条，需要至少 ${segment.required} 条，不给建议值。`,
       "",
     );
     return lines;
@@ -597,7 +602,7 @@ export function thresholdReport({
         ? `已评价的低于门槛但暂存 ${analysis.ambiguous} 条（${Object.entries(
             analysis.ambiguousRatings,
           )
-            .sort(([left], [right]) => left.localeCompare(right))
+            .sort(([left], [right]) => (left < right ? -1 : 1))
             .map(([rating, count]) => `评「${RATING_NAMES[rating] ?? rating}」${count} 条`)
             .join("、")}；评价只说明该不该留下，说明不了该不该直接存入）`
         : null,
