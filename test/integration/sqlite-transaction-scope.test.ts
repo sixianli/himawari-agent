@@ -102,6 +102,19 @@ describe.each(["worker", "direct"] as const)(
       ]);
     });
 
+    it("lets a scope in progress finish and commit before closing the repository", async () => {
+      const { repository, backlog, unitOfWork, enqueue } = await prepare();
+      const scoped = unitOfWork.run(async () => {
+        await enqueue(backlog, "a");
+        await pause(150);
+        await enqueue(backlog, "b");
+      });
+      await pause(50);
+      const closing = repository.close();
+      await expect(scoped).resolves.toBeUndefined();
+      await closing;
+    });
+
     it("rolls every write of the scope back when it throws, and the next write is not affected", async () => {
       const { backlog, unitOfWork, enqueue } = await prepare();
       await expect(

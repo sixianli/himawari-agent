@@ -732,6 +732,8 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   async close(): Promise<void> {
     if (this.closed) return;
+    while (this.scopeGate) await this.scopeGate;
+    if (this.closed) return;
     this.closed = true;
     try {
       await Promise.all(this.readStarts);
