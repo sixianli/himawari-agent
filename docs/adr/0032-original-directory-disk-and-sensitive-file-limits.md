@@ -92,4 +92,4 @@ date: "2026-09-25"
 
 ## 2026-11-11 后续：多人使用
 
-[ADR 0234](0234-one-program-per-person-database-file.md) 第 4 条给每个人的执行账号加内存、CPU、进程数的硬上限和目录磁盘配额。本 ADR 说资源上限“由运行时强制”，而[安装运行手册](../runbooks/install-start-stop-runbook.md)写的是采样不能证明硬配额；两处以运行手册为准，硬上限由 [ADR 0234](0234-one-program-per-person-database-file.md) 的实现补上。对其他人的执行账号，ADR 0234 第 4 条要求按人做目录磁盘配额，实现必须做成硬上限，这是对本 ADR“非硬性磁盘保护”取舍的例外；生产机文件系统能否按目录设硬配额还没核实，做不到时不给别人开通。其余决定不变。
+[ADR 0234](0234-one-program-per-person-database-file.md) 第 4 条给每个人的执行账号加内存、CPU、进程数的硬上限和目录磁盘配额。本 ADR 说 CPU、内存、进程数“由运行时强制”，而[安装运行手册](../runbooks/install-start-stop-runbook.md)说的是进程采样不能证明硬配额；两者是两件事，运行时是否已有 cgroups 一类的硬限制要按实现核对，ADR 0234 要求的硬上限由 [ADR 0234](0234-one-program-per-person-database-file.md) 的实现补上。对其他人的执行账号，ADR 0234 第 4 条要求按人做目录磁盘配额，实现必须做成硬上限，这是对本 ADR“非硬性磁盘保护”取舍的例外；生产机文件系统能否按目录设硬配额还没核实，做不到时不给别人开通。其余决定不变。
