@@ -18,6 +18,12 @@ describe("[P5-2] memory source of external proposals", () => {
       status: "active",
     };
     expect(memorySourceState(external as never)).toBe("external");
+    expect(memorySourceState({ ...base, memoryId: "memory:rule:mcp:proposal-2" } as never)).toBe(
+      "external",
+    );
+    expect(memorySourceState({ ...base, memoryId: "memory:rule:owner-chat" } as never)).toBe(
+      "tidy",
+    );
     expect(memorySourceCounts([external] as never)).toEqual({
       unavailable: 0,
       importedWithoutQuote: 0,

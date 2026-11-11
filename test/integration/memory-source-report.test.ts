@@ -39,6 +39,16 @@ describe("[P1-1] memory source report", () => {
     expect(await read("apps/agent-service/src/production-mcp-memory-writer.ts")).toContain(
       `EXTERNAL_PROPOSAL_MEMORY_PREFIX = "${EXTERNAL_PREFIX}"`,
     );
+    const EXTERNAL_RULE_PREFIX = /EXTERNAL_RULE_MEMORY_PREFIX = "([^"]+)"/.exec(
+      await read("apps/control-center/src/memory-source.ts"),
+    )?.[1];
+    expect(EXTERNAL_RULE_PREFIX).toBe("memory:rule:mcp:");
+    expect(await read("scripts/operations/memory-source-report.mjs")).toContain(
+      `LIKE '${EXTERNAL_RULE_PREFIX}%'`,
+    );
+    expect(await read("apps/agent-service/src/production-mcp-rule-writer.ts")).toContain(
+      `EXTERNAL_RULE_MEMORY_PREFIX = "${EXTERNAL_RULE_PREFIX}"`,
+    );
     expect(await read("scripts/operations/memory-source-report.mjs")).toContain(
       `NOT LIKE '${REMINDER_SOURCE_PREFIX}%'`,
     );
@@ -91,6 +101,7 @@ describe("[P1-1] memory source report", () => {
       "d5",
       "d6",
       "e1",
+      "e2",
     ])
       payload(ref);
     database
@@ -113,6 +124,7 @@ describe("[P1-1] memory source report", () => {
     memory("memory:import:b1:0", "m4", null);
     memory("memory:owner:1", "m5", null);
     memory("memory:mcp:proposal-1", "e1", null);
+    memory("memory:rule:mcp:proposal-2", "e2", null);
     memory("memory:lost-thread", "m6", null);
     memory("memory:tidy", "m7", null);
     memory("memory:trashed", "m8", "t1", "trashed");
@@ -172,13 +184,13 @@ describe("[P1-1] memory source report", () => {
     const counts = countSources(database);
     database.close();
     expect(counts).toEqual({
-      total: 14,
+      total: 15,
       jump: 1,
       reminder: 2,
       unavailable: 6,
       import: 1,
       owner: 1,
-      external: 1,
+      external: 2,
       deleted: 1,
       tidy: 1,
     });
