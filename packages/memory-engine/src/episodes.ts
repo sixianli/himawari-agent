@@ -25,6 +25,8 @@ const MAXIMUM_SUMMARY_CHARACTERS = 1200;
 const RRF_K = 60;
 const UNSUMMARIZED = "（这段对话只含敏感内容，没有做摘要）";
 
+const FAILED_EPISODES_SKIPPED_PER_PASS = 3;
+
 export interface EpisodeSegment {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
@@ -279,11 +281,13 @@ export class MemoryEpisodeService {
       agentId: input.agentId,
       model: embedder.model,
       dimensions: embedder.dimensions,
-      limit: Math.min(100, input.limit),
+      limit: Math.min(100, input.limit + FAILED_EPISODES_SKIPPED_PER_PASS),
     });
     let embedded = 0;
+    let failed = 0;
     let failure: { readonly error: unknown } | undefined;
     for (const episode of episodes) {
+      if (embedded >= input.limit || failed >= FAILED_EPISODES_SKIPPED_PER_PASS) break;
       if (!isModelVisible(episode.dataClassification)) continue;
       const text = await this.#options.readText({
         ownerId: input.ownerId,
@@ -298,6 +302,7 @@ export class MemoryEpisodeService {
         );
       } catch (error) {
         failure ??= { error };
+        failed += 1;
         continue;
       }
       await this.#options.store.attachEmbedding({

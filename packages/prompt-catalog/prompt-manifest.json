@@ -424,7 +424,7 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "memory.embedding-query.gemma": {
-    "sha256": "012d81f9dc3c3eff17b8473c99ea99dabac0eafda5612b063c837d28b5f3faba",
+    "sha256": "9a3bfa38fd74ee425a29bf9481a0fc70e50838bb6ad02c8c14b24f4c7c3fcff5",
     "changedIn": "ADR 0224",
     "reason": "新增：本机向量模型档案的查询和文档前缀；8B 的查询格式从代码搬进目录，文字不变"
   },

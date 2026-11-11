@@ -80,7 +80,7 @@ export const MEMORY_EMBEDDING_QUERY_GEMMA = templatePrompt({
   usedBy: ["packages/application/src/embedding-profiles.ts"],
   layer: "embedding",
   output: "free-text",
-  segments: [text("task: search result | query: "), slot("query")],
+  segments: [text("task: search result"), text(" | query: "), slot("query")],
 });
 
 export const MEMORY_EMBEDDING_DOCUMENT_GEMMA = templatePrompt({

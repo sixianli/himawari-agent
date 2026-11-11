@@ -578,6 +578,9 @@ class DerivedExpectationsTest(RenderedPacket):
             {**valid, 'unknown': 1}, {**valid, 'model': "it's"}, {**valid, 'model': 'unknown-model'}, missing_cost,
             {**valid, 'cost': {**valid['cost'], 'input': 1}}, {**valid, 'capabilities': ['text']},
             {**gateway, 'artifactSha256': 'a' * 64}, {**gateway, 'secretRef': None}, {**gateway, 'dimensions': 768},
+            {**valid, 'artifactSha256': int('1' * 64)}, {**valid, 'version': 'has space'}, {**valid, 'allowedDataClassifications': ['secret']},
+            {**valid, 'capabilities': ['embedding', 3]}, {**gateway, 'cost': {**gateway['cost'], 'input': -1}}, {**gateway, 'cost': {**gateway['cost'], 'input': True}},
+            {**gateway, 'disclosure': 'public'}, {**gateway, 'secretRef': 'bad ref'},
         ):
             with self.subTest(candidate=candidate), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_EMBEDDING_TARGET_INVALID'):
                 packet_maker.embedding_target(candidate)

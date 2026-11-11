@@ -95,16 +95,19 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
       },
       now: () => "2026-11-09T00:00:00.000Z",
     });
-    const run = () =>
-      service.backfillEmbeddings({
-        ownerId: OWNER_ID,
-        agentId: AGENT_ID,
-        limit: 5,
-      });
-    expect(await run()).toBe(1);
+    const run = (limit = 5) =>
+      service.backfillEmbeddings({ ownerId: OWNER_ID, agentId: AGENT_ID, limit });
+    expect(await run(1)).toBe(1);
     expect(attached).toEqual(["ep-fine"]);
+    listed = [
+      episode("ep-broken", "private"),
+      episode("ep-next", "private"),
+      episode("ep-later", "private"),
+    ];
+    expect(await run(1)).toBe(1);
+    expect(attached).toEqual(["ep-fine", "ep-next"]);
     listed = [episode("ep-broken", "private")];
     await expect(run()).rejects.toThrow("EMBEDDING_LOCAL_INPUT_LENGTH");
-    expect(attached).toEqual(["ep-fine"]);
+    expect(attached).toEqual(["ep-fine", "ep-next"]);
   });
 });

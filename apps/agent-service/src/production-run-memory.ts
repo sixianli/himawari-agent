@@ -111,6 +111,19 @@ export function createProductionRunMemory(options: {
     memory: ProductMemoryRecord;
   }>();
   const descriptor = embeddingAdmissionDescriptor(options.configuration);
+  const leaseLost = new WeakSet<object>();
+  const whileHeld = async <T>(step: Promise<T>): Promise<T> => {
+    try {
+      return await step;
+    } catch (error) {
+      if (
+        error instanceof ApplicationPortError &&
+        error.code === PORT_ERROR_CODES.NOT_AUTHORITATIVE
+      )
+        leaseLost.add(error);
+      throw error;
+    }
+  };
   const embedOnce = async (
     request: EmbeddingRequest,
     send: Parameters<EmbeddingBoundary>[1],
@@ -257,21 +270,23 @@ export function createProductionRunMemory(options: {
           PORT_ERROR_CODES.NOT_AUTHORITATIVE,
           "EMBEDDING_ADMISSION_REQUIRED",
         );
-      const admitted = await gate.begin({
-        modelRef: descriptor.ref,
-        provider: descriptor.provider,
-        model: descriptor.model,
-        modelVersion: descriptor.version,
-        dataClassification: classification,
-        logicalSlot:
-          ordinal === 1
-            ? (context.embeddingSlot ?? "context-memory-search:v1")
-            : `${context.embeddingSlot ?? "context-memory-search:v1"}:attempt:${ordinal}`,
-        source: "embedding",
-        ordinal,
-        estimatedCostMicros: descriptor.estimatedCostMicros,
-        pricing: descriptor.pricing,
-      });
+      const admitted = await whileHeld(
+        gate.begin({
+          modelRef: descriptor.ref,
+          provider: descriptor.provider,
+          model: descriptor.model,
+          modelVersion: descriptor.version,
+          dataClassification: classification,
+          logicalSlot:
+            ordinal === 1
+              ? (context.embeddingSlot ?? "context-memory-search:v1")
+              : `${context.embeddingSlot ?? "context-memory-search:v1"}:attempt:${ordinal}`,
+          source: "embedding",
+          ordinal,
+          estimatedCostMicros: descriptor.estimatedCostMicros,
+          pricing: descriptor.pricing,
+        }),
+      );
       if (admitted.disposition !== "fresh")
         throw new ApplicationPortError(
           PORT_ERROR_CODES.CONFLICT,
@@ -282,10 +297,10 @@ export function createProductionRunMemory(options: {
     let started = false;
     let settled = false;
     try {
-      await permit.assertActive();
+      await whileHeld(permit.assertActive());
       context?.signal?.throwIfAborted();
       if (remaining() <= 0) throw new Error("EMBEDDING_DEADLINE_EXCEEDED");
-      await permit.markStarted();
+      await whileHeld(permit.markStarted());
       started = true;
       const timeoutMs = Math.max(
         1,
@@ -310,12 +325,12 @@ export function createProductionRunMemory(options: {
         options.diagnostic?.(embeddingFailureDiagnostic(error));
         throw error;
       }
-      await permit.assertActive();
+      await whileHeld(permit.assertActive());
       signal.throwIfAborted();
       if (remaining() <= 0) throw new Error("EMBEDDING_DEADLINE_EXCEEDED");
       await permit.settle(usage);
       settled = true;
-      await permit.assertActive();
+      await whileHeld(permit.assertActive());
       return response;
     } catch (error) {
       const markUnknownKeepingError = async () => {
@@ -376,7 +391,8 @@ export function createProductionRunMemory(options: {
     options.configuration.deadlines.providerRequestMs,
     (error) =>
       scope.getStore()?.signal?.aborted === true ||
-      (error instanceof ApplicationPortError && error.code === PORT_ERROR_CODES.NOT_AUTHORITATIVE),
+      mailScope.getStore()?.signal.aborted === true ||
+      (typeof error === "object" && error !== null && leaseLost.has(error)),
   );
   return {
     project: (job, memory, operation) => projectionScope.run({ job, memory }, operation),

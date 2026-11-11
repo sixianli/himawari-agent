@@ -1004,7 +1004,24 @@ it("[P3-2] a memory tool search whose Run lost its execution lease while embeddi
   await toolSearch(async () => {
     throw new ApplicationPortError(PORT_ERROR_CODES.PROVIDER_FAILURE, "EMBEDDING_HTTP_FAILURE");
   });
-  expect(recorded).toEqual([false, true]);
+  await toolSearch(async () => {
+    throw new ApplicationPortError(
+      PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+      "EMBEDDING_BOUNDARY_REQUIRED",
+    );
+  });
+  const mailController = new AbortController();
+  await memory.embedForExternalRead(
+    { deadlineAt: "2026-09-06T00:00:05.000Z", signal: mailController.signal, costMicros: 0 },
+    async () => {
+      if (!searchCancelled) throw new Error("BOUNDARY_MISSING");
+      const failure = new Error("TRANSPORT_CLOSED");
+      recorded.push(!searchCancelled(failure));
+      mailController.abort(new Error("CLIENT_GONE"));
+      recorded.push(!searchCancelled(failure));
+    },
+  );
+  expect(recorded).toEqual([false, true, true, true, false]);
 });
 
 it("gives a slow memory-search embedding three seconds, then asks once more under a new invocation", async () => {

@@ -199,13 +199,27 @@ class LocalEmbeddingArtifactPreflightTest(unittest.TestCase):
     def test_a_complete_copy_passes_and_each_kind_of_damage_is_named(self):
         with tempfile.TemporaryDirectory() as directory:
             state, target, sha = self.install(Path(directory))
-            self.assertIsNone(embedding_artifact.problem(str(state), self.MODEL, sha))
-            self.assertEqual(embedding_artifact.problem(str(state), self.MODEL, 'e' * 64), 'missing')
-            self.assertEqual(embedding_artifact.problem(str(state), '../escape', sha), 'target-invalid')
+            self.assertIsNone(embedding_artifact.problem(str(state), self.MODEL, sha, '1024'))
+            self.assertEqual(embedding_artifact.problem(str(state), self.MODEL, 'e' * 64, '1024'), 'missing')
+            self.assertEqual(embedding_artifact.problem(str(state), '../escape', sha, '1024'), 'target-invalid')
             (target / 'tokenizer_config.json').write_bytes(b'{}')
-            self.assertEqual(embedding_artifact.problem(str(state), self.MODEL, sha), 'file-digest:tokenizer_config.json')
+            self.assertEqual(embedding_artifact.problem(str(state), self.MODEL, sha, '1024'), 'file-digest:tokenizer_config.json')
             (target / 'tokenizer_config.json').unlink()
-            self.assertEqual(embedding_artifact.problem(str(state), self.MODEL, sha), 'missing-file:tokenizer_config.json')
+            self.assertEqual(embedding_artifact.problem(str(state), self.MODEL, sha, '1024'), 'missing-file:tokenizer_config.json')
+
+    def test_p3_1_a_copy_the_service_would_refuse_is_refused_before_the_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state, target, sha = self.install(Path(directory))
+            self.assertEqual(embedding_artifact.problem(str(state), self.MODEL, sha, '768'), 'manifest-dimensions')
+            self.assertEqual(embedding_artifact.problem(str(state), self.MODEL, sha, 'x'), 'target-invalid')
+            manifest = json.loads((target / 'manifest.json').read_text())
+            (target / 'extra.bin').write_bytes(b'x')
+            manifest['files']['extra.bin'] = embedding_artifact.digest(target / 'extra.bin')
+            (target / 'manifest.json').write_text(json.dumps(manifest) + '\n')
+            extra_sha = embedding_artifact.digest(target / 'manifest.json')
+            renamed = target.parent / extra_sha
+            target.rename(renamed)
+            self.assertEqual(embedding_artifact.problem(str(state), self.MODEL, extra_sha, '1024'), 'manifest-shape')
 
     def test_a_model_directory_reached_through_a_link_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -213,11 +227,11 @@ class LocalEmbeddingArtifactPreflightTest(unittest.TestCase):
             linked = Path(directory) / 'linked'
             linked.mkdir()
             (linked / 'models').symlink_to(state / 'models')
-            self.assertEqual(embedding_artifact.problem(str(linked), self.MODEL, sha), 'symlink')
+            self.assertEqual(embedding_artifact.problem(str(linked), self.MODEL, sha, '1024'), 'symlink')
 
     def test_preflight_checks_the_artifact_only_when_the_release_switches_to_a_local_model(self):
         facts = dict(line.split('=', 1) for line in GOOD_FACTS.splitlines())
-        target = {'provider': 'local-onnx', 'model': self.MODEL, 'artifactSha256': 'f' * 64}
+        target = {'provider': 'local-onnx', 'model': self.MODEL, 'artifactSha256': 'f' * 64, 'dimensions': 1024}
         self.assertNotIn('LOCAL_EMBEDDING_ARTIFACT_INSTALLED', [name for name, passed in preflight.checks(BINDING, facts, 1000)])
         self.assertNotIn('embedding-artifact', preflight.remote_script(BINDING))
         failed = [name for name, passed in preflight.checks(BINDING, facts, 1000, embedding=target) if not passed]
@@ -225,7 +239,7 @@ class LocalEmbeddingArtifactPreflightTest(unittest.TestCase):
         facts['embeddingArtifact'] = 'ok'
         self.assertEqual([name for name, passed in preflight.checks(BINDING, facts, 1000, embedding=target) if not passed], [])
         script = preflight.remote_script(BINDING, embedding=target)
-        self.assertIn('/var/lib/himawari/state ' + self.MODEL + ' ' + 'f' * 64 + ' || echo embeddingArtifact=check-failed', script)
+        self.assertIn('/var/lib/himawari/state ' + self.MODEL + ' ' + 'f' * 64 + ' 1024 || echo embeddingArtifact=check-failed', script)
 
     def test_the_target_comes_from_the_packet_parameters(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -233,7 +247,7 @@ class LocalEmbeddingArtifactPreflightTest(unittest.TestCase):
             self.assertIsNone(preflight.local_embedding_target(packet))
             (packet / 'packet-parameters.json').write_text(json.dumps({'TARGET_EMBEDDING_JSON': 'null'}))
             self.assertIsNone(preflight.local_embedding_target(packet))
-            target = {'provider': 'local-onnx', 'model': self.MODEL, 'artifactSha256': 'f' * 64}
+            target = {'provider': 'local-onnx', 'model': self.MODEL, 'artifactSha256': 'f' * 64, 'dimensions': 1024}
             (packet / 'packet-parameters.json').write_text(json.dumps({'TARGET_EMBEDDING_JSON': json.dumps(target)}))
             self.assertEqual(preflight.local_embedding_target(packet), target)
             (packet / 'packet-parameters.json').write_text(json.dumps({'TARGET_EMBEDDING_JSON': json.dumps({**target, 'provider': 'vercel-ai-gateway'})}))
