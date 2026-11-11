@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmod, mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   type DecisionLedgerPort,
@@ -36,6 +36,7 @@ export const REAL_EVAL_RETRY_MS = 24 * 60 * 60 * 1000;
 export const REAL_EVAL_SAMPLE_TTL_MS = REAL_EVAL_INTERVAL_MS;
 export const REAL_EVAL_SAMPLE_SIZE = 30;
 export const REAL_EVAL_SAMPLE_FILE = "latest-sample.json";
+export const REAL_EVAL_IN_PROGRESS_FILE = "in-progress.json";
 export const DECISION_EVAL_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
 const MAX_OUTPUT_BYTES = 64 * 1024;
 
@@ -69,15 +70,88 @@ export function dueRealEvalTrigger(
     : "weekly";
 }
 
+function missing(error: unknown): undefined {
+  if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+  throw error;
+}
+
 export async function expireRealEvalSample(directory: string, now: string): Promise<boolean> {
+  const names = (await readdir(directory).catch(missing)) ?? [];
+  for (const name of names)
+    if (name.startsWith(`${REAL_EVAL_SAMPLE_FILE}.`) && name.endsWith(".tmp"))
+      await rm(path.join(directory, name), { force: true });
   const file = path.join(directory, REAL_EVAL_SAMPLE_FILE);
-  const found = await stat(file).catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
-  });
+  const found = await stat(file).catch(missing);
   if (!found || Date.parse(now) - found.mtimeMs < REAL_EVAL_SAMPLE_TTL_MS) return false;
   await rm(file, { force: true });
   return true;
+}
+
+interface InProgressRun {
+  readonly startedAt: string;
+  readonly trigger: RealEvalTrigger;
+  readonly capMicros: number;
+}
+
+export async function readUnfinishedRealEval(directory: string): Promise<RunTiming | undefined> {
+  const text = await readFile(path.join(directory, REAL_EVAL_IN_PROGRESS_FILE), "utf8").catch(
+    missing,
+  );
+  if (text === undefined) return undefined;
+  const value = JSON.parse(text) as Partial<InProgressRun>;
+  if (
+    typeof value.startedAt !== "string" ||
+    !Number.isFinite(Date.parse(value.startedAt)) ||
+    (value.trigger !== "manual" && value.trigger !== "weekly") ||
+    !Number.isSafeInteger(value.capMicros)
+  )
+    throw new Error("REAL_EVAL_IN_PROGRESS_INVALID");
+  return {
+    startedAt: value.startedAt,
+    trigger: value.trigger,
+    outcome: "failed",
+    costMicros: Math.max(0, value.capMicros ?? 0),
+  };
+}
+
+async function markRealEvalStarted(directory: string, run: InProgressRun): Promise<void> {
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await writeFile(path.join(directory, REAL_EVAL_IN_PROGRESS_FILE), `${JSON.stringify(run)}\n`, {
+    mode: 0o600,
+  });
+}
+
+export class RealEvalSampleExpiry {
+  readonly #directory: string;
+  readonly #now: () => string;
+  readonly #onFailure: ((error: unknown) => void) | undefined;
+  #timer: ReturnType<typeof setInterval> | undefined;
+
+  constructor(options: {
+    readonly directory: string;
+    readonly now: () => string;
+    readonly onFailure?: (error: unknown) => void;
+  }) {
+    this.#directory = options.directory;
+    this.#now = options.now;
+    this.#onFailure = options.onFailure;
+  }
+
+  start(): void {
+    if (this.#timer) return;
+    const check = () =>
+      void expireRealEvalSample(this.#directory, this.#now()).catch((error: unknown) =>
+        this.#onFailure?.(error),
+      );
+    this.#timer = setInterval(check, REAL_EVAL_TICK_MS);
+    this.#timer.unref?.();
+    check();
+  }
+
+  async stop(): Promise<void> {
+    if (this.#timer) clearInterval(this.#timer);
+    this.#timer = undefined;
+  }
 }
 
 export function createRealEvalModel(options: {
@@ -202,8 +276,13 @@ export async function writeRealEvalSample(
       memory: maskForExport(item.memory),
     })),
   };
-  await writeFile(temporary, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
-  await rename(temporary, file);
+  try {
+    await writeFile(temporary, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
+    await rename(temporary, file);
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
   return file;
 }
 
@@ -253,13 +332,20 @@ export class ProductionRealEval {
   async #tick(): Promise<void> {
     const { configuration, store, service } = this.#options;
     const now = this.#options.now();
-    await expireRealEvalSample(this.#options.sampleDirectory, now);
-    const runs = await store.listRuns({ ...this.#options.scope, limit: 520 });
+    const sampleDirectory = this.#options.sampleDirectory;
+    await expireRealEvalSample(sampleDirectory, now).catch((error: unknown) =>
+      this.#options.onFailure?.(error),
+    );
+    const unfinished = await readUnfinishedRealEval(sampleDirectory);
+    const runs = [
+      ...(await store.listRuns({ ...this.#options.scope, limit: 520 })),
+      ...(unfinished ? [unfinished] : []),
+    ];
     const trigger = dueRealEvalTrigger(configuration.mode, runs, now);
     if (trigger === null) return;
     const remaining = configuration.weeklyCapMicros - realEvalSpentMicros(runs, now);
     if (remaining <= 0) return;
-    const sampleDirectory = this.#options.sampleDirectory;
+    await markRealEvalStarted(sampleDirectory, { startedAt: now, trigger, capMicros: remaining });
     const report = await service.run(trigger, {
       capMicros: remaining,
       newMemoriesPerRun: configuration.newMemoriesPerRun,
@@ -272,6 +358,7 @@ export class ProductionRealEval {
           }
         : { sampleSize: 0 }),
     });
+    await rm(path.join(sampleDirectory, REAL_EVAL_IN_PROGRESS_FILE), { force: true });
     this.#options.onRun?.(report, trigger);
   }
 }

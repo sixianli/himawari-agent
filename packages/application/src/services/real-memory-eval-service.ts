@@ -271,7 +271,10 @@ export class RealMemoryEvalService {
           try {
             stored = await deps.store.addQuestion({ ...deps.scope, question });
           } finally {
-            if (!stored) await deps.discardQuestion(questionRef);
+            if (!stored)
+              await deps.discardQuestion(questionRef).catch(() => {
+                rejected["discard_failed"] = (rejected["discard_failed"] ?? 0) + 1;
+              });
           }
           if (!stored) {
             rejected["already_banked"] = (rejected["already_banked"] ?? 0) + 1;

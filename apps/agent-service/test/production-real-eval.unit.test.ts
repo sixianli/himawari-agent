@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type {
@@ -6,16 +6,18 @@ import type {
   RealEvalRunReport,
   RealEvalTrigger,
 } from "@himawari-agent/application";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createRealEvalModel,
   dueRealEvalTrigger,
   expireRealEvalSample,
   ProductionRealEval,
+  REAL_EVAL_IN_PROGRESS_FILE,
   REAL_EVAL_INTERVAL_MS,
   REAL_EVAL_RETRY_MS,
   REAL_EVAL_SAMPLE_FILE,
   RealEvalModelError,
+  RealEvalSampleExpiry,
   realEvalSpentMicros,
   writeRealEvalSample,
 } from "../src/production-real-eval.js";
@@ -394,5 +396,114 @@ describe("[P4-5] real eval timer", () => {
     release();
     await first;
     expect(started).toBe(1);
+  });
+});
+
+describe("[P4-5] real eval leftovers", () => {
+  const configuration = {
+    mode: "weekly" as const,
+    modelRef: "eval-model",
+    weeklyCapMicros: 500_000,
+    newMemoriesPerRun: 10,
+    requestTimeoutMs: 1_000,
+  };
+
+  it("removes leftover temporary sample files and keeps running when the cleanup fails", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-real-eval-"));
+    directories.push(directory);
+    await writeFile(path.join(directory, `${REAL_EVAL_SAMPLE_FILE}.run-0.tmp`), "{}");
+    expect(await expireRealEvalSample(directory, NOW)).toBe(false);
+    expect(await readdir(directory)).toEqual([]);
+
+    const stuck = path.join(directory, REAL_EVAL_SAMPLE_FILE);
+    await mkdir(path.join(stuck, "inside"), { recursive: true });
+    const old = new Date(Date.parse(NOW) - REAL_EVAL_INTERVAL_MS);
+    await utimes(stuck, old, old);
+    const failures: unknown[] = [];
+    let ran = 0;
+    await new ProductionRealEval({
+      configuration,
+      scope: { ownerId: "owner", agentId: "agent" } as never,
+      store: { listRuns: async () => [] },
+      service: {
+        run: async () => {
+          ran += 1;
+          return { runId: "run-1", outcome: "completed", costMicros: 1, summary: {}, sample: [] };
+        },
+      },
+      sampleDirectory: directory,
+      now: () => NOW,
+      onFailure: (error) => failures.push(error),
+    }).tick();
+    expect(failures).toHaveLength(1);
+    expect(ran).toBe(1);
+  });
+
+  it("counts a run that never got recorded as having spent its whole allowance", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-real-eval-"));
+    directories.push(directory);
+    const limits: number[] = [];
+    let recordFails = true;
+    const timer = new ProductionRealEval({
+      configuration,
+      scope: { ownerId: "owner", agentId: "agent" } as never,
+      store: { listRuns: async () => [] },
+      service: {
+        run: async (_trigger, input) => {
+          limits.push(input.capMicros);
+          if (recordFails) throw new Error("SQLITE_FULL");
+          return { runId: "run-2", outcome: "completed", costMicros: 1, summary: {}, sample: [] };
+        },
+      },
+      sampleDirectory: directory,
+      now: () => NOW,
+      onFailure: () => undefined,
+    });
+    await timer.tick();
+    expect(
+      JSON.parse(await readFile(path.join(directory, REAL_EVAL_IN_PROGRESS_FILE), "utf8")),
+    ).toMatchObject({
+      startedAt: NOW,
+      trigger: "weekly",
+      capMicros: 500_000,
+    });
+    await timer.tick();
+    expect(limits).toEqual([500_000]);
+
+    recordFails = false;
+    const later = new ProductionRealEval({
+      configuration,
+      scope: { ownerId: "owner", agentId: "agent" } as never,
+      store: { listRuns: async () => [] },
+      service: {
+        run: async (_trigger, input) => {
+          limits.push(input.capMicros);
+          return { runId: "run-3", outcome: "completed", costMicros: 1, summary: {}, sample: [] };
+        },
+      },
+      sampleDirectory: directory,
+      now: () => at(REAL_EVAL_INTERVAL_MS),
+    });
+    await later.tick();
+    expect(limits).toEqual([500_000, 500_000]);
+    await expect(stat(path.join(directory, REAL_EVAL_IN_PROGRESS_FILE))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("keeps expiring the sample while the evaluation is off", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-real-eval-"));
+    directories.push(directory);
+    await mkdir(directory, { recursive: true });
+    const file = path.join(directory, REAL_EVAL_SAMPLE_FILE);
+    await writeFile(file, "{}\n");
+    const written = new Date(Date.parse(NOW) - REAL_EVAL_INTERVAL_MS);
+    await utimes(file, written, written);
+    const expiry = new RealEvalSampleExpiry({ directory, now: () => NOW });
+    expiry.start();
+    await expiry.stop();
+    await vi.waitFor(async () => {
+      await expect(stat(file)).rejects.toMatchObject({ code: "ENOENT" });
+    });
   });
 });

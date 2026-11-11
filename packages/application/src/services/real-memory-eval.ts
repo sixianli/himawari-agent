@@ -134,7 +134,7 @@ function dateTokens(value: string): Set<string> {
     .matchAll(/([0-9〇零一二两三四五六七八九十]+)\s*([年月日号號点點时時])/gu)) {
     const amount = chineseNumber(match[1] ?? "");
     const unit = match[2] ?? "";
-    if (amount === null) continue;
+    if (amount === null || (match[1] === "一" && (unit === "点" || unit === "點"))) continue;
     tokens.add(`${amount}${DATE_UNITS[unit] ?? unit}`);
   }
   return tokens;

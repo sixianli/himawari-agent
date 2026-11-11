@@ -1479,12 +1479,24 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     if (
       !descriptor ||
       descriptor.role === "embedding" ||
+      descriptor.api !== "openai-completions" ||
       !descriptor.allowedDataClassifications.includes("private") ||
       !descriptor.allowedDataClassifications.includes("sensitive")
     )
       throw invalid(
         "configuration.runPolicy.realEval.modelRef",
-        "must name a configured generation model that accepts private and sensitive data",
+        "must name a configured openai-completions generation model that accepts private and sensitive data",
+      );
+    if (
+      realEval.mode !== "off" &&
+      modelDescriptors.some(
+        ({ role, allowedDataClassifications }) =>
+          role === "embedding" && !allowedDataClassifications.includes("sensitive"),
+      )
+    )
+      throw invalid(
+        "configuration.runPolicy.realEval.mode",
+        "needs an embedding model that accepts sensitive data",
       );
   }
   const review = runPolicy?.automaticReview;

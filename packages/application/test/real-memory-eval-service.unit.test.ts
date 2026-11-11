@@ -142,6 +142,7 @@ function harness(options: {
   readonly estimateMicros?: number;
   readonly answerCostMicros?: number;
   readonly addQuestion?: "duplicate" | "throw";
+  readonly discardFails?: boolean;
   readonly recallEstimateMicros?: number;
   readonly failAnswer?: boolean;
   readonly questionOutput?: string;
@@ -219,6 +220,7 @@ function harness(options: {
     },
     readQuestion: async (ref) => payloads.get(ref),
     discardQuestion: async (ref) => {
+      if (options.discardFails) throw new Error("SQLITE_BUSY");
       discarded.push(ref);
       payloads.delete(ref);
     },
@@ -366,6 +368,20 @@ describe("[P4-5] real memory eval run", () => {
     expect(failed.outcome).toBe("failed");
     expect(failing.discarded).toEqual(["question:0"]);
     expect(failing.payloads.size).toBe(0);
+  });
+
+  it("keeps going and still skips the version when the unkept question text cannot be deleted", async () => {
+    const test = harness({
+      memories: [memory("coffee")],
+      addQuestion: "duplicate",
+      discardFails: true,
+    });
+    const report = await test.service.run("weekly", LIMITS);
+    expect(report.outcome).toBe("completed");
+    expect(report.summary).toMatchObject({
+      rejected: { already_banked: 2, discard_failed: 2 },
+      declined: ["coffee@1"],
+    });
   });
 
   it("does not ask again about a memory version the bank already holds", async () => {

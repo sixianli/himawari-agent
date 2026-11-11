@@ -1501,6 +1501,48 @@ it("[P4-5] accepts a real memory eval with a model that may see private and sens
     raw["runPolicy"] = { ...policy, realEval: invalid };
     expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow();
   }
+  const embedding = descriptors.find(({ ref }) => ref === "model-embedding");
+  if (!embedding) throw new Error("fixture embedding missing");
+  embedding["allowedDataClassifications"] = ["public", "private"];
+  raw["runPolicy"] = { ...policy, realEval };
+  expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: expect.objectContaining({ field: "configuration.runPolicy.realEval.mode" }),
+    }),
+  );
+  raw["runPolicy"] = { ...policy, realEval: { ...realEval, mode: "off" } };
+  expect(parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z").runPolicy?.realEval?.mode).toBe(
+    "off",
+  );
+  embedding["allowedDataClassifications"] = ["public", "private", "sensitive", "restricted"];
+  descriptors.push({
+    ref: "model-specialist",
+    role: "specialist",
+    provider: "typesafe",
+    model: "jev-latest",
+    modelVersion: "jev-1.13.0",
+    version: "snapshot-1",
+    priority: 2,
+    name: "Jev reviewer",
+    api: "typesafe-systemone",
+    capabilities: ["text"],
+    cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+    allowedDataClassifications: ["private", "sensitive"],
+    disclosure: "external_remote",
+    secretRef: "provider-specialist",
+  });
+  (raw["secretReferences"] as Record<string, unknown>[]).push({
+    ref: "provider-specialist",
+    version: "v1",
+    purpose: "model-auth",
+    scope: "model-specialist",
+  });
+  raw["runPolicy"] = { ...policy, realEval: { ...realEval, modelRef: "model-specialist" } };
+  expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: expect.objectContaining({ field: "configuration.runPolicy.realEval.modelRef" }),
+    }),
+  );
   primary["allowedDataClassifications"] = ["public", "private"];
   raw["runPolicy"] = { ...policy, realEval };
   expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow(

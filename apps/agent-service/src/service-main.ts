@@ -126,8 +126,8 @@ import { ProductionObservation, readServiceRevision } from "./production-observa
 import {
   createProductionRealEval,
   createRealEvalModel,
-  expireRealEvalSample,
   type ProductionRealEval,
+  RealEvalSampleExpiry,
 } from "./production-real-eval.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
@@ -538,7 +538,7 @@ export async function runAgentService(
   let gapExport: ProductionGapExport | undefined;
   let museControl: ProductionMuseControl | undefined;
   let observation: ProductionObservation | undefined;
-  let realEval: ProductionRealEval | undefined;
+  let realEval: ProductionRealEval | RealEvalSampleExpiry | undefined;
   const webPushPresence = new WebPushPresence();
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
@@ -1750,16 +1750,16 @@ export async function runAgentService(
             }),
         });
       } else
-        void expireRealEvalSample(
-          path.join(configuration.stateRoot, "real-eval"),
-          clock.now(),
-        ).catch((error: unknown) =>
-          writeServiceDiagnostic(errorOutput, {
-            component: "agent-service",
-            event: "real-eval.failed",
-            code: stableErrorCode(error),
-          }),
-        );
+        realEval = new RealEvalSampleExpiry({
+          directory: path.join(configuration.stateRoot, "real-eval"),
+          now: () => clock.now(),
+          onFailure: (error) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "real-eval.failed",
+              code: stableErrorCode(error),
+            }),
+        });
       const museIntakeConfiguration = configuration.runPolicy?.museIntake;
       const museIntakeSecret =
         museIntakeConfiguration?.enabled === true
