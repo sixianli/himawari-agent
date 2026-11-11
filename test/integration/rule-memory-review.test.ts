@@ -243,7 +243,7 @@ describe("hard rule review after a rule memory changes", () => {
     const { memory, database } = await seeded();
     try {
       await memory.applyProposal(
-        { decision: "unchanged", memoryId: RULE_MEMORY, sourceRefs: [], policyVersion: "p" },
+        { decision: "unchanged", memoryId: RULE_MEMORY },
         GENERATION_ID,
       );
       await memory.applyProposal(
@@ -304,6 +304,31 @@ describe("hard rule review after a rule memory changes", () => {
           .get(RULE),
       ).toEqual({ status: "active", memoryId: RULE_MEMORY });
       expect(reviews(database)).toHaveLength(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("[P2-2] saving the same settings again does not count as the owner having reviewed the rule", async () => {
+    const { memory, database, repository } = await seeded();
+    try {
+      await memory.correct({
+        memoryId: RULE_MEMORY,
+        contentRef: "payload-v2",
+        sourceRef: "message-fix",
+        generationId: GENERATION_ID,
+      });
+      const store = repository.proactive();
+      const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
+      const waiting = await store.readSettings(scope);
+      await store.writeSettings({
+        ...scope,
+        enabled: false,
+        quietHours: waiting.quietHours,
+        importantSenders: waiting.importantSenders,
+        now: T1,
+      });
+      expect(ruleState(database, RULE)).toEqual({ status: "needs_review", revision: 2 });
     } finally {
       database.close();
     }

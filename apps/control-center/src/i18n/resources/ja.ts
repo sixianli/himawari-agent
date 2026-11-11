@@ -1014,6 +1014,9 @@ export const messages = {
   "dailyReview.tag.truncation": "回答に入れなかった古い内容",
   "dailyReview.tag.degrade": "記憶検索が働かなかった",
   "dailyReview.tag.externalRead": "外部プログラムによる記憶の読み取り",
+  "dailyReview.tag.ruleReview": "ハードルールの再確認待ち",
+  "dailyReview.ruleReview":
+    "このハードルールはあなたの言葉から作られました。元の記憶が変わりました。ルールはそのまま適用され、確認を待っています",
   "dailyReview.hidden": "本文はここには表示しません",
   "dailyReview.fetched": "メール {count} 通を確認",
   "dailyReview.allFine": "このページは問題なし",
@@ -1329,9 +1332,9 @@ export const messages = {
   "weekly.type.how4":
     "区間は 95% Wilson 区間です。採点した件数から出した範囲で、本当の割合は 95% の確かさでこの中に入ります。採点が多いほど狭くなります。",
   "weekly.group":
-    "{g, select, proactive_pushed {メールを読んで通知した} proactive_silent {メールを読んで通知しなかった} memory_skipped {システムが保存しないと判断した記憶} memory_kept {保存した記憶} consolidation {記憶の整理} memory_pending {確認待ちの記憶} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索が働かなかった} other {外部プログラムによる記憶の読み取り}}",
+    "{g, select, proactive_pushed {メールを読んで通知した} proactive_silent {メールを読んで通知しなかった} memory_skipped {システムが保存しないと判断した記憶} memory_kept {保存した記憶} consolidation {記憶の整理} memory_pending {確認待ちの記憶} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索が働かなかった} rule_review {ハードルールの再確認待ち} other {外部プログラムによる記憶の読み取り}}",
   "weekly.groupInfo":
-    "{g, select, proactive_pushed {Himawari は 15 分ごとに新着メールを読みます。読んだ後に通知した回です。} other {Himawari は 15 分ごとに新着メールを読みます。読んだ後、通知が必要なものがなかった回です。}}",
+    "{g, select, proactive_pushed {Himawari は 15 分ごとに新着メールを読みます。読んだ後に通知した回です。} rule_review {ハードルールはあなたの言葉から作られます。元の記憶が変更・置き換え・削除されると、ルールは再確認待ちになり、その記録です。} other {Himawari は 15 分ごとに新着メールを読みます。読んだ後、通知が必要なものがなかった回です。}}",
   "weekly.rate":
     "{k, select, proactive_pushed_useful {通知は正しかった} proactive_pushed_unneeded {通知すべきではなかった} proactive_silent_useful {通知しないのが正しかった} proactive_silent_missed {通知すべきだった} memory_skipped_useful {保存しないのが正しかった} memory_skipped_missed {保存すべきだった} memory_kept_useful {正しく保存した} memory_kept_unneeded {保存すべきではなかった} consolidation_useful {整理は正しかった} consolidation_unneeded {整理すべきではなかった} other_useful {正しかった} other_unneeded {やるべきではなかった} other {やるべきだった}}",
   "weekly.ratio": "{pct}（{k}/{n}）",

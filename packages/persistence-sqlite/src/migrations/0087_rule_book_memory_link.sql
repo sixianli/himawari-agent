@@ -359,3 +359,44 @@ BEGIN
   WHERE source_memory_id = OLD.id AND owner_id = OLD.owner_id AND agent_id = OLD.agent_id
     AND status = 'active';
 END;
+
+CREATE TRIGGER memory_rule_needs_review_on_delete BEFORE DELETE ON memory_records
+WHEN OLD.category = 'rule'
+  AND EXISTS (SELECT 1 FROM agents WHERE id = OLD.agent_id)
+  AND EXISTS (SELECT 1 FROM owners WHERE id = OLD.owner_id)
+  AND EXISTS (
+    SELECT 1 FROM rule_book_rules
+    WHERE source_memory_id = OLD.id AND owner_id = OLD.owner_id AND agent_id = OLD.agent_id
+      AND status = 'active'
+  )
+BEGIN
+  INSERT INTO rule_book_history (
+    owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id,
+    change_reason, changed_at
+  )
+  SELECT owner_id, agent_id, rule_id, revision + 1, parameters, 'needs_review', source,
+    source_memory_id,
+    'memory_removed',
+    strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  FROM rule_book_rules
+  WHERE source_memory_id = OLD.id AND owner_id = OLD.owner_id AND agent_id = OLD.agent_id
+    AND status = 'active';
+  INSERT INTO decision_ledger (
+    id, owner_id, agent_id, kind, checked_at, counts, outcome, reason_code, subject_ref, inputs,
+    cost_micros, duration_ms
+  )
+  SELECT 'rule-review:' || lower(hex(randomblob(12))), owner_id, agent_id, 'rule_review',
+    strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), '{}', 'needs_review',
+    'memory_removed',
+    rule_id,
+    json_object('memoryIds', json_array(OLD.id), 'ruleIds', json_array(rule_id),
+      'batchId', NULL, 'resultMemoryIds', json_array()),
+    0, 0
+  FROM rule_book_rules
+  WHERE source_memory_id = OLD.id AND owner_id = OLD.owner_id AND agent_id = OLD.agent_id
+    AND status = 'active';
+  UPDATE rule_book_rules SET status = 'needs_review', revision = revision + 1,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  WHERE source_memory_id = OLD.id AND owner_id = OLD.owner_id AND agent_id = OLD.agent_id
+    AND status = 'active';
+END;

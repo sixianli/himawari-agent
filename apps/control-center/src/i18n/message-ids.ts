@@ -892,6 +892,8 @@ export const MESSAGE_IDS = [
   "dailyReview.tag.truncation",
   "dailyReview.tag.degrade",
   "dailyReview.tag.externalRead",
+  "dailyReview.tag.ruleReview",
+  "dailyReview.ruleReview",
   "dailyReview.hidden",
   "dailyReview.fetched",
   "dailyReview.allFine",

@@ -21,7 +21,33 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
 });
 
-async function openMigrated() {
+const LEDGER_TABLES = [
+  "decision_ledger",
+  "decision_signals",
+  "proactive_push_backoff",
+  "source_insights",
+  "proactive_processed_messages",
+  "decision_ledger_payloads",
+  "muse_reference_entries",
+] as const;
+
+function dumpLedgerTables(database: ReturnType<typeof openQualifiedDatabase>) {
+  return {
+    ...Object.fromEntries(
+      LEDGER_TABLES.map((table) => [table, database.prepare(`SELECT * FROM ${table}`).all()]),
+    ),
+    schemaNames: database
+      .prepare(
+        `SELECT type, name, tbl_name FROM sqlite_master
+         WHERE tbl_name IN (${LEDGER_TABLES.map(() => "?").join(", ")})
+           AND type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_autoindex%'
+         ORDER BY name`,
+      )
+      .all(...LEDGER_TABLES),
+  };
+}
+
+async function openMigrated(seedLedger = true) {
   const directory = await mkdtemp(path.join(tmpdir(), "himawari-rule-review-"));
   directories.push(directory);
   const database = openQualifiedDatabase(path.join(directory, "product.sqlite"));
@@ -46,24 +72,62 @@ async function openMigrated() {
     insertRule.run(OWNER, AGENT, ruleId, T0);
     insertHistory.run(OWNER, AGENT, ruleId, T0);
   }
-  database
-    .prepare(
-      `INSERT INTO decision_ledger (id, owner_id, agent_id, kind, checked_at, counts, outcome, reason_code, inputs, cost_micros, duration_ms)
-       VALUES ('d-old', ?, ?, 'external_read', ?, '{}', 'read', 'seed', '{"memoryIds":[],"ruleIds":[]}', 0, 0)`,
-    )
-    .run(OWNER, AGENT, T0);
-  database
-    .prepare(
-      `INSERT INTO decision_signals (id, owner_id, agent_id, decision_id, signal, occurred_at, delay_ms, detail, source_ref, recorded_at)
-       VALUES ('sig-1', ?, ?, 'd-old', 'opened', ?, 5, '{}', 'ref-1', ?)`,
-    )
-    .run(OWNER, AGENT, "2026-11-01T00:00:01.000Z", "2026-11-01T00:00:02.000Z");
-  database
-    .prepare(
-      `INSERT INTO proactive_push_backoff (owner_id, agent_id, class_key, stage, since_at, step_decision_id, ignored_count, updated_at)
-       VALUES (?, ?, 'c', 1, ?, 'd-old', 3, ?)`,
-    )
-    .run(OWNER, AGENT, T0, T0);
+  if (seedLedger) {
+    database
+      .prepare(
+        `INSERT INTO payloads (ref, owner_id, agent_id, classification, storage_kind, ciphertext,
+          content_digest, encryption_algorithm, key_ref, lifecycle_state, created_at, content_type)
+         VALUES ('payload-x', ?, ?, 'private', 'sqlite_blob', X'00', 'sha256:x', 'fixture', 'fixture-key', 'active', ?, 'text/plain')`,
+      )
+      .run(OWNER, AGENT, T0);
+    database
+      .prepare(
+        `INSERT INTO decision_ledger (id, owner_id, agent_id, kind, checked_at, counts, outcome, reason_code, inputs, cost_micros, duration_ms)
+         VALUES ('d-old', ?, ?, 'external_read', ?, '{}', 'read', 'seed', '{"memoryIds":[],"ruleIds":[]}', 0, 0)`,
+      )
+      .run(OWNER, AGENT, T0);
+    database
+      .prepare(
+        `INSERT INTO decision_signals (id, owner_id, agent_id, decision_id, signal, occurred_at, delay_ms, detail, source_ref, recorded_at)
+         VALUES ('sig-1', ?, ?, 'd-old', 'opened', ?, 5, '{}', 'ref-1', ?)`,
+      )
+      .run(OWNER, AGENT, "2026-11-01T00:00:01.000Z", "2026-11-01T00:00:02.000Z");
+    database
+      .prepare(
+        `INSERT INTO proactive_push_backoff (owner_id, agent_id, class_key, stage, since_at, step_decision_id, ignored_count, updated_at)
+         VALUES (?, ?, 'c', 1, ?, 'd-old', 3, ?)`,
+      )
+      .run(OWNER, AGENT, T0, T0);
+    database
+      .prepare(
+        `INSERT INTO source_insights (id, owner_id, agent_id, source, thread_id, last_message_id, result,
+          floor_raised, content_ref, due_at, priority, status, decision_id, owner_rating, push_source_key,
+          created_at, updated_at, push_class)
+         VALUES ('si-1', ?, ?, 'gmail', 't-1', 'm-1', 'act', 1, 'payload-x', ?, 'high', 'open', 'd-old', 'useful', 'k-1', ?, ?, 'pc')`,
+      )
+      .run(OWNER, AGENT, T1, T0, T0);
+    database
+      .prepare(
+        `INSERT INTO proactive_processed_messages (owner_id, agent_id, source, message_id, thread_id,
+          decision_id, outcome, skip_reason, header_ref, processed_at, reviewed_at, owner_rating, received_at)
+         VALUES (?, ?, 'gmail', 'm-1', 't-1', 'd-old', 'act', NULL, 'payload-x', ?, ?, 'missed', ?)`,
+      )
+      .run(OWNER, AGENT, T0, T1, T0);
+    database
+      .prepare(
+        `INSERT INTO decision_ledger_payloads (decision_id, sequence, role, payload_ref)
+         VALUES ('d-old', 0, 'model_input', 'payload-x')`,
+      )
+      .run();
+    database
+      .prepare(
+        `INSERT INTO muse_reference_entries (id, owner_id, agent_id, muse_at, muse_reminded, timing_ok,
+          content_ok, content_ref, note_ref, paired_decision_id, intake_item_key, recorded_at, paired_message_id)
+         VALUES ('muse-1', ?, ?, ?, 1, 1, 1, 'payload-x', 'payload-x', 'd-old', 'intake-1', ?, 'm-1')`,
+      )
+      .run(OWNER, AGENT, T0, T0);
+  }
+  const before = dumpLedgerTables(database);
   database.pragma("foreign_keys = ON");
   const snapshot = await createVerifiedMigrationSnapshot(
     database,
@@ -71,11 +135,11 @@ async function openMigrated() {
   );
   applyMigrations(database, migrations, { snapshot });
   database.pragma("foreign_keys = OFF");
-  return database;
+  return { database, before };
 }
 
 function addMemory(
-  database: Awaited<ReturnType<typeof openMigrated>>,
+  database: ReturnType<typeof openQualifiedDatabase>,
   id: string,
   category: string,
 ) {
@@ -89,7 +153,7 @@ function addMemory(
 }
 
 function link(
-  database: Awaited<ReturnType<typeof openMigrated>>,
+  database: ReturnType<typeof openQualifiedDatabase>,
   ruleId: string,
   memoryId: string,
 ) {
@@ -98,7 +162,7 @@ function link(
     .run(memoryId, ruleId);
 }
 
-function rule(database: Awaited<ReturnType<typeof openMigrated>>, ruleId: string) {
+function rule(database: ReturnType<typeof openQualifiedDatabase>, ruleId: string) {
   return database
     .prepare(
       "SELECT revision, status, source_memory_id AS memoryId, updated_at AS updatedAt FROM rule_book_rules WHERE rule_id = ?",
@@ -111,7 +175,7 @@ function rule(database: Awaited<ReturnType<typeof openMigrated>>, ruleId: string
   };
 }
 
-function history(database: Awaited<ReturnType<typeof openMigrated>>, ruleId: string) {
+function history(database: ReturnType<typeof openQualifiedDatabase>, ruleId: string) {
   return database
     .prepare(
       `SELECT revision, status, source_memory_id AS memoryId, change_reason AS reason, changed_at AS changedAt
@@ -122,7 +186,8 @@ function history(database: Awaited<ReturnType<typeof openMigrated>>, ruleId: str
 
 describe("rule memory review", () => {
   it("[P2-2] keeps existing rules and history when the link columns are added", async () => {
-    const database = await openMigrated();
+    const { database, before } = await openMigrated();
+    expect(dumpLedgerTables(database)).toEqual(before);
     expect(rule(database, "r-edit")).toEqual({
       revision: 1,
       status: "active",
@@ -185,7 +250,7 @@ describe("rule memory review", () => {
   ])(
     "[P2-2] a rule memory that is %s puts its hard rule into review",
     async (_name, sql, reason) => {
-      const database = await openMigrated();
+      const { database } = await openMigrated();
       addMemory(database, "m-rule", "rule");
       addMemory(database, "m-new", "rule");
       link(database, "r-edit", "m-rule");
@@ -226,7 +291,7 @@ describe("rule memory review", () => {
   );
 
   it("[P2-2] leaves rules alone for changes that do not touch the rule memory's meaning", async () => {
-    const database = await openMigrated();
+    const { database } = await openMigrated();
     addMemory(database, "m-rule", "rule");
     addMemory(database, "m-unrelated", "rule");
     addMemory(database, "m-pref", "preference");
@@ -262,7 +327,7 @@ describe("rule memory review", () => {
   });
 
   it("[P2-2] puts a rule into review once and keeps it there when the memory comes back", async () => {
-    const database = await openMigrated();
+    const { database } = await openMigrated();
     addMemory(database, "m-rule", "rule");
     link(database, "r-edit", "m-rule");
     database
@@ -290,4 +355,79 @@ describe("rule memory review", () => {
     ).toBe(1);
     database.close();
   });
+
+  it("[P2-2] permanently deleting a rule memory also puts its rule into review", async () => {
+    const { database } = await openMigrated();
+    addMemory(database, "m-rule", "rule");
+    addMemory(database, "m-pref", "preference");
+    addMemory(database, "m-unrelated", "rule");
+    link(database, "r-edit", "m-rule");
+    link(database, "r-other", "m-pref");
+    database.prepare("DELETE FROM memory_records WHERE id = 'm-unrelated'").run();
+    database.prepare("DELETE FROM memory_records WHERE id = 'm-pref'").run();
+    expect(rule(database, "r-edit").status).toBe("active");
+    expect(rule(database, "r-other").status).toBe("active");
+    database.prepare("DELETE FROM memory_records WHERE id = 'm-rule'").run();
+    expect(rule(database, "r-edit")).toMatchObject({
+      revision: 2,
+      status: "needs_review",
+      memoryId: "m-rule",
+    });
+    expect(history(database, "r-edit")).toMatchObject([
+      { revision: 1, status: "active" },
+      { revision: 2, status: "needs_review", memoryId: "m-rule", reason: "memory_removed" },
+    ]);
+    expect(
+      database
+        .prepare("SELECT reason_code, subject_ref FROM decision_ledger WHERE kind = 'rule_review'")
+        .all(),
+    ).toEqual([{ reason_code: "memory_removed", subject_ref: "r-edit" }]);
+    database.close();
+  });
+
+  it.each([
+    ["agents", AGENT],
+    ["owners", OWNER],
+  ] as const)(
+    "[P2-2] deleting the %s after a rule memory was removed leaves no rule rows behind",
+    async (table, id) => {
+      const { database } = await openMigrated(false);
+      addMemory(database, "m-rule", "rule");
+      link(database, "r-edit", "m-rule");
+      database.pragma("foreign_keys = ON");
+      database.prepare("DELETE FROM memory_records WHERE id = 'm-rule'").run();
+      expect(rule(database, "r-edit").status).toBe("needs_review");
+      database.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
+      for (const leftover of ["rule_book_rules", "rule_book_history", "decision_ledger"])
+        expect(database.prepare(`SELECT COUNT(*) FROM ${leftover}`).pluck().get(), leftover).toBe(
+          0,
+        );
+      expect(database.pragma("foreign_key_check")).toEqual([]);
+      database.close();
+    },
+  );
+
+  it.each([
+    ["agents", AGENT],
+    ["owners", OWNER],
+  ] as const)(
+    "[P2-2] deleting the %s together with a linked rule memory is not blocked by the review triggers",
+    async (table, id) => {
+      const { database } = await openMigrated(false);
+      addMemory(database, "m-rule", "rule");
+      link(database, "r-edit", "m-rule");
+      database.pragma("foreign_keys = ON");
+      database.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
+      for (const leftover of [
+        "rule_book_rules",
+        "rule_book_history",
+        "decision_ledger",
+        "memory_records",
+      ])
+        expect(database.prepare(`SELECT COUNT(*) FROM ${leftover}`).pluck().get(), leftover).toBe(
+          0,
+        );
+      database.close();
+    },
+  );
 });

@@ -1013,6 +1013,9 @@ export const messages = {
   "dailyReview.tag.truncation": "Older content left out of an answer",
   "dailyReview.tag.degrade": "Memory search did not work",
   "dailyReview.tag.externalRead": "Memory read by an outside program",
+  "dailyReview.tag.ruleReview": "Hard rule waiting for review",
+  "dailyReview.ruleReview":
+    "This hard rule came from something you said; that memory changed. The rule still applies and waits for you to have a look",
   "dailyReview.hidden": "Text not shown here",
   "dailyReview.fetched": "Checked {count, plural, one {# email} other {# emails}}",
   "dailyReview.allFine": "This page is all fine",
@@ -1340,9 +1343,9 @@ export const messages = {
   "weekly.type.how4":
     "The range is a 95% Wilson interval: worked out from how many you rated, the true ratio falls inside it with 95% confidence. The more you rate, the narrower it gets.",
   "weekly.group":
-    "{g, select, proactive_pushed {Read mail and reminded you} proactive_silent {Read mail, no reminder} memory_skipped {Memories the system chose not to save} memory_kept {Saved memories} consolidation {Memory tidy-up} memory_pending {Memories awaiting your confirmation} context_truncation {Older content left out of an answer} retrieval_degrade {Memory search did not work} other {Memory read by an outside program}}",
+    "{g, select, proactive_pushed {Read mail and reminded you} proactive_silent {Read mail, no reminder} memory_skipped {Memories the system chose not to save} memory_kept {Saved memories} consolidation {Memory tidy-up} memory_pending {Memories awaiting your confirmation} context_truncation {Older content left out of an answer} retrieval_degrade {Memory search did not work} rule_review {Hard rule waiting for review} other {Memory read by an outside program}}",
   "weekly.groupInfo":
-    "{g, select, proactive_pushed {Himawari reads new mail every 15 minutes; these are the reads after which it reminded you.} other {Himawari reads new mail every 15 minutes; these are the reads after which nothing needed a reminder.}}",
+    "{g, select, proactive_pushed {Himawari reads new mail every 15 minutes; these are the reads after which it reminded you.} rule_review {Hard rules come from things you told Himawari; when that memory is edited, replaced or deleted the rule is marked as waiting for review, and these are those records.} other {Himawari reads new mail every 15 minutes; these are the reads after which nothing needed a reminder.}}",
   "weekly.rate":
     "{k, select, proactive_pushed_useful {Right to remind} proactive_pushed_unneeded {Shouldn’t have reminded} proactive_silent_useful {Right to stay silent} proactive_silent_missed {Should have reminded} memory_skipped_useful {Right not to save} memory_skipped_missed {Should have saved} memory_kept_useful {Saved correctly} memory_kept_unneeded {Shouldn’t have saved} consolidation_useful {Right tidy-up} consolidation_unneeded {Shouldn’t have tidied} other_useful {Right call} other_unneeded {Shouldn’t have done it} other {Should have done it}}",
   "weekly.ratio": "{pct} ({k}/{n})",
