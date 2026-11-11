@@ -113,6 +113,6 @@ Andy 在 2026-11-11 定了两点：明说“以后/一律/必须”的直接生�
 - [ADR 0180](0180-gmail-check-reads-earlier-mail-about-the-same-matter.md)：邮件检查读以前的往来邮件。
 - [ADR 0165](0165-freeze-the-request-head-per-conversation.md)：系统提示和工具按对话冻结。
 - [Agent 规则清单](../agent-rulebook-inventory.md)：H-15（读以前的往来邮件）、H-17、H-18（本 ADR 新增的两种规则）。
-- [ADR 0232](0232-rule-book-joins-the-data-export.md)：规则手册进入数据导出（后续）。
+- [ADR 0233](0233-rule-book-joins-the-data-export.md)：规则手册进入数据导出（后续）。
 
 [返回阅读导航](#contents)
