@@ -425,7 +425,7 @@
     "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
   },
   "mcp.propose-rule-invalid": {
-    "sha256": "382189dff8d958f7907758d77b4b52393ea8afc4d1be27b058e2641d88e9ce17",
+    "sha256": "c795670a623eae066ddf50f0540542102237962901af3c0795ddc550b319323f",
     "changedIn": "ADR 0226",
     "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
   },

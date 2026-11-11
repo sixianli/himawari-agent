@@ -1,0 +1,5 @@
+{"id": "r2-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "测试没有核对真实生产出来的记忆编号（I-73 同类问题）", "valid": true, "class": "error", "severity": "medium-high", "trigger": "以后改了 EXTERNAL_RULE_KEY_PREFIX 或 memory:rule: 前缀", "consequence": "记忆页把外部规则记忆归错类而测试仍通过", "modelSeverity": "中"}
+{"id": "r2-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 0186 的分类定义没有同步新前缀", "valid": true, "class": "error", "severity": "low", "trigger": "只读 ADR 0186", "consequence": "漏掉规则类记忆的外部分类", "modelSeverity": "低"}
+{"id": "r2-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "「列表顺序不同算同一提议」这条测试实际没有改变列表顺序", "valid": true, "class": "error", "severity": "low", "trigger": "参数解析不再对列表排序", "consequence": "测试仍通过，重发被当成内容变了", "modelSeverity": "低"}
+{"id": "r2-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`MCP_PROPOSE_RULE_INVALID` 的「至少给一项条件」仍与实现不完全一致", "valid": true, "class": "error", "severity": "low", "trigger": "只给 excludePhrases", "consequence": "提示说合法，实际被拒", "modelSeverity": "低"}
+{"id": "r2-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`#decidedRules` 的过期清理是惰性的，但不会无界增长", "valid": true, "class": "better"}

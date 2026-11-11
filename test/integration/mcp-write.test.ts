@@ -60,6 +60,7 @@ import {
 } from "../../apps/agent-service/src/production-mcp-read.ts";
 import {
   EXTERNAL_RULE_DECISION_PREFIX,
+  EXTERNAL_RULE_MEMORY_PREFIX,
   ProductionMcpRuleWriter,
 } from "../../apps/agent-service/src/production-mcp-rule-writer.ts";
 import { ProductionMemoryRecall } from "../../apps/agent-service/src/production-memory-recall.ts";
@@ -753,6 +754,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const [row] = rows;
     expect(row).toMatchObject({ status: "active", source: "mcp:claude-code" });
     expect(row?.ruleId).toMatch(/^owner:[0-9a-f]{24}$/u);
+    expect(row?.sourceMemoryId?.startsWith(EXTERNAL_RULE_MEMORY_PREFIX)).toBe(true);
     const ruleMemory = await f.repository.productMemoryState().read(row?.sourceMemoryId as never);
     expect(ruleMemory).toMatchObject({ status: "active", attributes: { category: "rule" } });
     expect(await f.readText(ruleMemory?.contentRef ?? "")).toBe(
@@ -930,11 +932,15 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
   it("[P5-2 rule] treats the same conditions in a different key and list order as the same proposal", async () => {
     const f = await setup();
     const client = await f.connect({ autoFulfill: false });
-    const first = await f.rawRule(client, { arguments: RULE });
+    const listed = {
+      ...RULE,
+      params: { senderDomains: ["isa.go.jp", "moj.go.jp"], phrases: ["在留資格", "在留カード"] },
+    };
+    const first = await f.rawRule(client, { arguments: listed });
     const reordered = {
       reason: RULE.reason,
       summary: RULE.summary,
-      params: { phrases: ["在留資格"], senderDomains: ["isa.go.jp"] },
+      params: { phrases: ["在留カード", "在留資格"], senderDomains: ["moj.go.jp", "isa.go.jp"] },
       type: RULE.type,
     };
     const confirmed = await f.rawRule(client, {
