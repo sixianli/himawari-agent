@@ -64,7 +64,7 @@ date: "2026-11-11"
 3. 现行决定留了重新评估的条件。来源 `docs/adr/0089-web-push-only-owner-entry.md` 决定第 7 条原话：“原生 App 只在下面任一条件出现时重新评估：需要锁屏小组件、灵动岛、Siri 深度整合或后台感知这类网页做不到的能力”。
 4. 原生 App 在前台开始录音后可以在后台一直录；网页应用做不到。来源苹果技术支持在开发者论坛的回答 <https://developer.apple.com/forums/thread/776949> 原话：“we allow apps that start an audio recording session in the foreground to continue recording indefinitely in the background.”（这句话线程读到过，另一个模型复核时被验证页挡住，动工前再核一次。）
 5. 服务器现在只接受浏览器里同源页面发来的修改请求。来源 `packages/platform-node/src/http-gateway-server.ts:261` 原话：`header(request, "sec-fetch-site") !== "same-origin"`，不满足就拒绝。
-6. 已经有不经过浏览器的入口先例：固定令牌加 Cloudflare 服务令牌（Cloudflare 发给程序用的一对编号和密钥，带在请求头里就能通过登录门）。来源 `docs/adr/0219-read-only-mcp-entry-with-static-token.md` 决定第 1 条原话：“上线到公网时，在 Cloudflare 上给这条路径加一条服务令牌策略，做法和 Muse 推送入口一样。这样有两层鉴权”。
+6. 已经有不经过浏览器的入口先例：Muse 推送入口用 Cloudflare 服务令牌（Cloudflare 发给程序用的一对编号和密钥，带在请求头里就能通过登录门）加应用自己的密钥。来源 `docs/adr/0162-receive-muse-data-through-a-service-token-and-an-app-secret.md` 决定第 1 条原话：“两层认证。边缘层用 Cloudflare Access 的服务令牌（Service Auth 策略，请求头 `CF-Access-Client-Id` 与 `CF-Access-Client-Secret`）”“应用层再要求 `Authorization: Bearer <应用密钥>`”。MCP 入口早先也是这个做法（ADR 0219），现已由 ADR 0227 改成只认 Cloudflare Access 的登录凭证，不拿它当先例。
 7. 网页收服务器消息用的是一条带编号、带心跳、能断线续传的事件流。来源 `packages/platform-node/src/http-gateway-server.ts:194` `SSE_CONTENT_TYPE = "text/event-stream; charset=utf-8"`；`:1115` `request.query.afterCursor ?? header(request, "last-event-id")`；`:428` `heartbeatFrame`。
 8. 这条事件流每发一个事件都重新核对身份。来源同文件 `:463`、`:497` 原话：`readonly revalidate: () => Promise<void>;`、`await input.revalidate();`。
 9. 工具集合一变，老对话下一轮会重建一次请求开头。来源 `packages/application/src/services/thread-prompt-bundle-service.ts:89` 原话：`if (!sameNames(record.identity.toolNames, identity.toolNames)) return "tool_set_changed";`。
@@ -75,8 +75,8 @@ date: "2026-11-11"
 14. 苹果系统自带 HTTP/3，不通时自动退回。来源苹果技术说明 TN3102 原话：“you will see the protocol fall back to `h2` or `http1.1`”。
 15. 多通道比单条连接在后台有大传输时快。来源开源项目 Cindy（提交 `58169050`）`docs/agent-net-plan.md` 第 2.1 节的实测：空闲时两种方式延迟都是 44 毫秒；后台有大传输时单条连接形态涨到 246 毫秒，多通道 51 到 74 毫秒。这是它在一台 Mac 上的模拟链路，不是 Himawari 的实测。
 16. HTTP 请求签名有现成标准。来源 RFC 9421 <https://www.rfc-editor.org/rfc/rfc9421.html> 原话：“This document describes a mechanism for creating, encoding, and verifying digital signatures or message authentication codes over components of an HTTP message.”参数 `created`：“Creation time as a UNIX timestamp value of type Integer.”`nonce`：“A random unique value generated for this signature as a String value.”算法名 `ecdsa-p256-sha256`。
-17. 现在的规则不许在 MacBook 上做任何构建。来源 `.agents/instructions/test-and-production-hosts.md` 第 8 行原话：“绝不在用户的 MacBook 上运行 Himawari 测试：不做构建，不跑 `npm run check`、`npm test`、任何 Vitest 项目或产品路径资格验证。”
-18. 每个人一个独立实例。来源 `docs/adr/0083-isolated-instance-per-person-with-owner-entry.md` 标题原话：“每人一个独立的 Himawari 实例，只邀请、不开放注册”。
+17. 本 ADR 之前的规则不许在 MacBook 上做任何构建（这一句已按决定第 8 条随本 ADR 改写，下面引的是改写前的原话）。来源 `.agents/instructions/test-and-production-hosts.md` 第 8 行改写前的原话：“绝不在用户的 MacBook 上运行 Himawari 测试：不做构建，不跑 `npm run check`、`npm test`、任何 Vitest 项目或产品路径资格验证。”
+18. 每个人一个只属于自己的 Himawari；一套程序、一个网址、每人一个数据库文件。来源 `docs/adr/0234-one-program-per-person-database-file.md` 决定第 2 条原话：“只跑一套程序，每人一个数据库文件。”第 5 条原话：“登录：一个网址、一个 Cloudflare Access 应用，名单里放所有受邀邮箱。”（它取代了 ADR 0083 的“每人一个独立实例”。）
 
 未核实、所以本 ADR 不依赖的：苹果安全芯片（Secure Enclave）里生成的密钥不能导出，这一点线程没读到原文；TestFlight 的人数和有效期、不公开上架、日本的第三方应用商店，线程读的是搜索结果摘录。它们列在详细设计的[还没核实的事](../execution/specs/2026-11-11-apple-device-body-design.md#unverified)里，动工前读原文。
 
@@ -90,23 +90,23 @@ date: "2026-11-11"
 
 依据的原则：愿景原则 5（多感知是同一个 Agent 的感官）和原则 6（感知当下、把事办成）。它和原则 2（边界与可逆性）之间的取舍是：给服务器多开一个写入口，换来设备能力；用每台设备自己的密钥、逐台吊销、动作走现有审批来守住边界。
 
-1. **做原生客户端，一共四样设备。** iPhone、Apple Watch、Mac 各有原生 App，随身麦克风经蓝牙接到 iPhone 或 Mac。它们是正式客户端，不是实验。苹果开发者计划（99 美元/年，每年续）先不开：头几步用 Andy 自己的 Apple ID 免费装到他的手机上，做到苹果推送那一步、确认离不开它时再请 Andy 开（Andy 2026-11-11：“我们先做，等需要我开的时候，我再开”）。
+1. **做原生客户端，一共四样设备。** iPhone、Apple Watch、Mac 各有原生 App，是三种要配对的设备；随身麦克风经蓝牙接到 iPhone 或 Mac，它没有自己的密钥，不单独配对，算那台设备上的一个采集来源。它们是正式客户端，不是实验。苹果开发者计划（99 美元/年，每年续）先不开：头几步用 Andy 自己的 Apple ID 免费装到他的手机上，做到苹果推送那一步、确认离不开它时再请 Andy 开（Andy 2026-11-11：“我们先做，等需要我开的时候，我再开”）。
 2. **设备是身体，大脑只在服务器。** 设备负责采集、显示和执行；记忆、规则、决策记录、调用大模型做判断，只在服务器。设备上可以有只读缓存（最近的对话、记忆页的副本），不放第二份可写的记忆。这样四样设备和网页上永远是同一个 Himawari。
 3. **聊天和语音用原生界面做，不常用的页面嵌网页。** 聊天主界面、输入框、语音对话用苹果原生界面。记忆页、规则、设置、用量明细嵌现有网页，保证和电脑上一致。嵌入的网页用设备凭据向服务器换一个短期的网页会话，不自己保管长期凭据。
 4. **设备走单独的一组接口 `/api/device/v1/`，不经过浏览器那套同源检查。**
-   - 每台设备配对时在自己的安全芯片里生成一把 P-256 密钥，服务器只存公钥。配对由 Andy 在已登录的网页上发起（网页显示一个 10 分钟有效、只能用一次的配对码），设备扫码后，Andy 还要在网页上对着设备名点一次确认，设备才可用。
+   - 每台设备配对时在自己的安全芯片里生成两把 P-256 密钥：设备密钥（平时签请求）和确认密钥（每次用都要面容或解锁，给高风险审批和换网页会话用）。服务器只存两把的公钥。配对由 Andy 在已登录的网页上发起（网页显示一个 10 分钟有效、只能用一次的配对码），设备扫码后，Andy 还要在网页上对着设备名点一次确认，设备才可用。
    - 单次请求按 RFC 9421 用这把密钥签名，覆盖方法、主机名、路径、查询参数、正文摘要，带创建时间和一次性随机值，服务器拒绝过期和重复的签名。
    - 交给苹果系统代传的文件可能拖几天才发出，不能用这种限时的签名；它们用另一种上传凭据：事先向服务器申请，绑定设备和文件摘要，只在上传路径上有效，只能用一次。
    - 可以在网页上逐台吊销，立即生效：这台设备的连接最迟在下一次心跳时被掐断，设备上的本地缓存被清掉。
-   - Cloudflare 那一层给这组路径配服务令牌，和 Muse、MCP 入口同样的做法（前提 6）。服务令牌是几台设备共用的，只当进门的第一道门，不当设备身份。
-   - 设备能调用的命令是一张白名单（发消息、回答审批、提交感知记录、回报动作结果等），不是网页能做的全部。
+   - Cloudflare 那一层给这组路径配服务令牌，和 Muse 推送入口同样的做法（前提 6）。服务令牌是几台设备共用的，只当进门的第一道门，不当设备身份。
+   - 设备能调用的命令是一张白名单（发消息、回答审批、提交感知记录、回报动作结果等），不是网页能做的全部。App 里嵌的网页要另换一个短期网页会话，换的时候必须用确认密钥签（主人本人当场解锁）；所以只拿到设备密钥、主人不在场时，做不了改规则、删记忆、导出这些事。
    - 不采纳“让 App 伪造浏览器请求头走现有接口”：那等于把同源检查变成客户端自称。
 5. **连接用 HTTP/3 多通道，传输层做成可以整个换掉。**
    - 一条一直开着的连接：下行是现有事件流（前提 7）原样接上来，上行每条消息各走一条通道。回答的文字和审批走高优先级通道，照片、音频、屏幕走低优先级通道。
    - 断线续传沿用事件编号；设备发的每条消息带唯一编号，服务器只认一次；心跳间隔由服务器下发；连接有最长寿命；编号太旧时整份重新取。
    - 连接建立时验证一次设备签名，之后像现有事件流一样持续核对设备是否仍有效（前提 8）。
    - 设备只收到和它有关的事件。
-   - 动工第一步在 Andy 的手机上实测三种方式：HTTP/3、单条 WebSocket（对照）、手机直连生产机的 QUIC。直连要在生产机开一个对外的 UDP 端口，属于改权限边界，只有实测明显更快时才拿数字来问 Andy。同一步测出生产机离日本一个来回多少毫秒。
+   - 动工第一步在 Andy 的手机上实测三种方式：HTTP/3、单条 WebSocket（对照）、手机直连生产机的 QUIC；另外测一遍现有网页作基线。直连要在生产机开一个对外的 UDP 端口，属于改权限边界，只有实测明显更快时才拿数字来问 Andy。同一步测出生产机离日本一个来回多少毫秒。
    - 连接不在时：感知记录攒成文件交给系统代传（前提 12）；服务器找设备走苹果推送。
 6. **提醒改走苹果推送，网页推送留给浏览器。**
    - 三种推送类型：主人看得见的通知（优先级 10）、刷新小组件、刷新锁屏实时活动。有时效的事不依赖后台静默推送（前提 11）。
@@ -123,7 +123,7 @@ date: "2026-11-11"
    - 不用 Bark，不用 Telegram 机器人（第 2 条的后半）。
    - 推送规则（第 5 条）对两条通道都适用：锁屏上显示多少内容、正在看 Himawari 时不推、同一件事不重复推、通知固定文字按设备语言。苹果推送的内容经苹果的服务器，所以锁屏规则里“敏感或受限的只显示一句提示”同样适用于它。
    - 网页里“按住说话”保留；iPhone 快捷指令问 Himawari 的入口由原生 App 的 Siri 入口代替（第 6 条）。
-10. **给别人用：同一份代码，按发布渠道出不同的包。** Andy 自己用开发者账号直接装，带全部能力；家人朋友走 TestFlight；公开发布走 App Store 或只凭链接安装的不公开上架，只带审核通得过的那部分；Mac 端官网直接下载。哪个包带哪些感官由编译开关定。别人的包多一步：填自己那个实例的地址或扫码配对（前提 18）。
+10. **给别人用：同一份代码，按发布渠道出不同的包。** Andy 自己用开发者账号直接装，带全部能力；家人朋友走 TestFlight；公开发布走 App Store 或只凭链接安装的不公开上架，只带审核通得过的那部分；Mac 端官网直接下载。哪个包带哪些感官由编译开关定。别人的包和 Andy 的一样靠扫码配对：二维码里带服务器地址，所有人共用一个网址，服务器按设备找到是谁（前提 18）。
 
 [返回阅读导航](#contents)
 
@@ -164,7 +164,7 @@ date: "2026-11-11"
   - 每年 99 美元；TestFlight 的包每 90 天要发新版（未核实的数字，见前提末尾）。
   - 苹果推送的内容经过苹果的服务器，所以沿用锁屏规则，正文不放进推送。
 - 未验证：HTTP/3 经 Cloudflare 在 Wi-Fi 和蜂窝切换时连接断不断；Cloudflare 到生产机那一段会不会让大传输挡住回答；在听的时候后台连接能不能一直保持；手表能不能自己直连服务器。都在详细设计的真机清单里。
-- 随这份 ADR 一起改的文档：ADR 0089 已标成被取代；`AGENTS.md`、`.agents/instructions/test-and-production-hosts.md`、`.agents/instructions/delivery-mode.md` 按决定第 8 条改写（已随本 ADR 的提交改好，合并后生效）。`docs/runbooks/` 下两份操作手册里“Mac 只用来编辑、审查、提交”的句子等切回完整模式时重新封存，在那之前以指令文件为准。
+- 随这份 ADR 一起改的文档：ADR 0089 已标成被取代；`AGENTS.md`、`.agents/instructions/test-and-production-hosts.md`、`.agents/instructions/delivery-mode.md` 按决定第 8 条改写（已随本 ADR 的提交改好，合并后生效）。`docs/runbooks/` 下两份操作手册里不许在 MacBook 上构建和跑测试的句子（`test-host-operations-runbook.md` 的“Mac 只用来编辑、审查、提交”，`agent-tooling-runbook.md` 的同类句子）等切回完整模式时重新封存，在那之前以指令文件为准。更早的 ADR 里“开发 Mac 不跑测试、不做构建”的说法（ADR 0041 到 0047、0056、0063、0073、0092 等）对服务器端照旧成立；对苹果客户端，以本 ADR 决定第 8 条为准。
 - 工程案例：做完第一批（地基）后写进案例库，题目是“为什么从‘不做原生 App’改成四样设备”。
 
 [返回阅读导航](#contents)
@@ -174,8 +174,8 @@ date: "2026-11-11"
 ## 关联文档
 
 - [SOURCE: docs/adr/0089-web-push-only-owner-entry.md]
-- [SOURCE: docs/adr/0083-isolated-instance-per-person-with-owner-entry.md]
-- [SOURCE: docs/adr/0219-read-only-mcp-entry-with-static-token.md]
+- [SOURCE: docs/adr/0234-one-program-per-person-database-file.md]
+- [SOURCE: docs/adr/0162-receive-muse-data-through-a-service-token-and-an-app-secret.md]
 - [SOURCE: docs/adr/0165-freeze-the-request-head-per-conversation.md]
 - [SOURCE: docs/adr/0230-perception-records-and-memories-inferred-from-perception.md]
 - [SOURCE: docs/execution/specs/2026-11-11-apple-device-body-design.md]
