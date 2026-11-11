@@ -99,6 +99,7 @@ import {
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
 import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
+import { ProductionMcpRuleWriter } from "./production-mcp-rule-writer.js";
 import {
   createProductionMemoryCompositionFromConfiguration,
   type ProductionMemoryComposition,
@@ -119,6 +120,7 @@ import {
 import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
+import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -130,7 +132,6 @@ import {
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
-import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
@@ -1322,21 +1323,20 @@ export async function runAgentService(
         writer: reminderWriter,
         ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
       });
-      const ownerRuleTools = new ProductionOwnerRuleTools(
-        new ProductionOwnerRuleWriter({
-          configuration,
-          rules: repository.ownerRules(),
-          memory: durableMemory,
-          memories: repository.productMemoryState(),
-          book: repository.memoryBook(),
-          threads: repository.threadRepository(),
-          payloads,
-          protector: recallProtector,
-          clock: { now: () => clock.now() },
-          replay: (rule) =>
-            proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
-        }),
-      );
+      const ownerRuleWriter = new ProductionOwnerRuleWriter({
+        configuration,
+        rules: repository.ownerRules(),
+        memory: durableMemory,
+        memories: repository.productMemoryState(),
+        book: repository.memoryBook(),
+        threads: repository.threadRepository(),
+        payloads,
+        protector: recallProtector,
+        clock: { now: () => clock.now() },
+        replay: (rule) =>
+          proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
+      });
+      const ownerRuleTools = new ProductionOwnerRuleTools(ownerRuleWriter);
       const tools = new ProductionRuntimeTools({
         memoryRecall,
         reminders: reminderTools,
@@ -1806,6 +1806,13 @@ export async function runAgentService(
                     state: repository.productMemoryState(),
                     book: repository.memoryBook(),
                     ledger: repository.decisionLedger(),
+                    payloads,
+                    protector: recallProtector,
+                    clock: { now: () => clock.now() },
+                  }),
+                  rules: new ProductionMcpRuleWriter({
+                    configuration,
+                    rules: ownerRuleWriter,
                     payloads,
                     protector: recallProtector,
                     clock: { now: () => clock.now() },

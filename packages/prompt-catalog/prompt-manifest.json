@@ -309,11 +309,6 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
-  "mail.judgment.recent-summaries-header": {
-    "sha256": "b271c465d7c22ce3499a8eb808b0b9879254902b9eaba8a91026cfc8731f04a4",
-    "changedIn": "ADR 0216",
-    "reason": "新增：Gmail 检查带上最近两天的对话日摘要，说明它只是背景、不是指令"
-  },
   "mail.judgment.memories-header": {
     "sha256": "0855a5969f19aaf80b3cc4ab75d2ad18c1961a143077931b9e40b5c2574544e9",
     "changedIn": "ADR 0161",
@@ -323,6 +318,11 @@
     "sha256": "351200ddf56708c8764296d3d10fac05ab979ffddbf6a37f8c86237fad9d01de",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "mail.judgment.recent-summaries-header": {
+    "sha256": "b271c465d7c22ce3499a8eb808b0b9879254902b9eaba8a91026cfc8731f04a4",
+    "changedIn": "ADR 0216",
+    "reason": "新增：Gmail 检查带上最近两天的对话日摘要，说明它只是背景、不是指令"
   },
   "mail.judgment.tentative-note": {
     "sha256": "72da4d7216f9b1ee3fe8dd3258d4e3f8882c900d814c4f8fc3e0035a0ae3ac16",
@@ -393,6 +393,71 @@
     "sha256": "a3d8fe861d4f444acab308f0055ce1e578653e3053aa118f2e7737e3a1086837",
     "changedIn": "ADR 0225",
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-rule": {
+    "sha256": "c86a664794a1c993b77c7ad50619d8073fc20664a55596dc1698a033a0c18baf",
+    "changedIn": "ADR 0226",
+    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+  },
+  "mcp.propose-rule-already-saved": {
+    "sha256": "b0bdf793b3eb3c2e5d65b0ba7421058931ffd5cae56179b7227d3c195e6ba0db",
+    "changedIn": "ADR 0226",
+    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+  },
+  "mcp.propose-rule-conditions": {
+    "sha256": "60062d6e622ce8542f804165454543ab646430a226742ede526cf8a78bf58014",
+    "changedIn": "ADR 0226",
+    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+  },
+  "mcp.propose-rule-confirm": {
+    "sha256": "9185685310b5ada11aaaa847a9e053a167374c97fc1d5ebae622cf99c2135ab8",
+    "changedIn": "ADR 0226",
+    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+  },
+  "mcp.propose-rule-declined": {
+    "sha256": "f7d63533b82ab6f1f0ec205d335b15c232371a988bb2b429045c515e4862ae40",
+    "changedIn": "ADR 0226",
+    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+  },
+  "mcp.propose-rule-failed": {
+    "sha256": "5e6b969035cbbdf4356e663171321df0d2e95f37af922fc7372a5a5e80126032",
+    "changedIn": "ADR 0226",
+    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+  },
+  "mcp.propose-rule-invalid": {
+    "sha256": "796420b201db74a9817af63750ed87385046086030d6004314397d8563bb49e7",
+    "changedIn": "ADR 0226",
+    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+  },
+  "mcp.propose-rule-kind-notify": {
+    "sha256": "9a910450bd6cba2115dab9712f13e7f7eb00d8f7beed381422cad06b7241ccdd",
+    "changedIn": "ADR 0226",
+    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+  },
+  "mcp.propose-rule-kind-whole-thread": {
+    "sha256": "073e483d843712db6b12a160adf3b259728250899b96eac54f993ecf2eae2bcc",
+    "changedIn": "ADR 0226",
+    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+  },
+  "mcp.propose-rule-replay": {
+    "sha256": "9faa6a9c14254b11618039f1509eed8e9c06cf743c1a6cb7b5000766ca21254c",
+    "changedIn": "ADR 0226",
+    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+  },
+  "mcp.propose-rule-replay-unavailable": {
+    "sha256": "5780fc4fa25ea4f93b5c77c27d56ef308387c04777b8564eed9ea6740c5a5940",
+    "changedIn": "ADR 0226",
+    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+  },
+  "mcp.propose-rule-save-label": {
+    "sha256": "331a1ffe47d2aa22f28ab2ad2c2fa294d945d12314870a48c23f1e1897f39c97",
+    "changedIn": "ADR 0226",
+    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+  },
+  "mcp.propose-rule-saved": {
+    "sha256": "b373b9b511e1b25da9e688f7d92b23caaa598d16b263520992ff5f9ba9440dee",
+    "changedIn": "ADR 0226",
+    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
   },
   "mcp.rule-book": {
     "sha256": "df131609c5e20c4560f5cdfa4cfa38fd276880ccf0cb6bd945141609eb998df5",

@@ -7,7 +7,7 @@ import type {
   ProactiveSettings,
   RuleRecord,
 } from "@himawari-agent/application";
-import { ruleBookFor } from "@himawari-agent/application";
+import { parseOwnerRuleParameters, ruleBookFor } from "@himawari-agent/application";
 import {
   MCP_PROPOSE_MEMORY_ALREADY_SAVED,
   MCP_PROPOSE_MEMORY_CHANGED,
@@ -20,8 +20,21 @@ import {
   MCP_PROPOSE_MEMORY_SAVED,
   MCP_PROPOSE_MEMORY_SENSITIVE_NOTE,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
+  MCP_PROPOSE_RULE_ALREADY_SAVED,
+  MCP_PROPOSE_RULE_CONDITIONS,
+  MCP_PROPOSE_RULE_CONFIRM,
+  MCP_PROPOSE_RULE_DECLINED,
+  MCP_PROPOSE_RULE_FAILED,
+  MCP_PROPOSE_RULE_INVALID,
+  MCP_PROPOSE_RULE_KIND_NOTIFY,
+  MCP_PROPOSE_RULE_KIND_WHOLE_THREAD,
+  MCP_PROPOSE_RULE_REPLAY,
+  MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE,
+  MCP_PROPOSE_RULE_SAVE_LABEL,
+  MCP_PROPOSE_RULE_SAVED,
   MCP_TOOL_FIND_MEMORIES,
   MCP_TOOL_PROPOSE_MEMORY,
+  MCP_TOOL_PROPOSE_RULE,
   MCP_TOOL_RESULT_FAILED,
   MCP_TOOL_RULE_BOOK,
   MCP_TOOL_TODAY_CONTEXT,
@@ -56,7 +69,14 @@ import {
   normalizeProposalText,
   proposalClassification,
 } from "./production-mcp-memory-writer.js";
+import {
+  EXTERNAL_RULE_REASON_MAXIMUM,
+  EXTERNAL_RULE_TYPES,
+  type ExternalRuleProposal,
+  type ExternalRuleType,
+} from "./production-mcp-rule-writer.js";
 import type { RecallResult } from "./production-memory-recall.js";
+import type { RulePreview } from "./production-owner-rules.js";
 import type { ListedReminder } from "./production-reminder-writer.js";
 import type { MailEmbeddingContext } from "./production-run-memory.js";
 
@@ -64,7 +84,7 @@ export const MCP_READ_PATH = "/api/mcp/v1";
 export const MCP_READ_BODY_LIMIT = 65_536;
 export const MCP_READ_SECRET_MINIMUM_LENGTH = 32;
 export const MCP_READ_TOOL_NAMES = ["find_memories", "today_context", "rule_book"] as const;
-export const MCP_WRITE_TOOL_NAMES = ["propose_memory"] as const;
+export const MCP_WRITE_TOOL_NAMES = ["propose_memory", "propose_rule"] as const;
 export const MCP_PROPOSAL_CONFIRM_KEY = "confirm";
 export const MCP_PROPOSAL_SAVE_FIELD = "save";
 export const MCP_PROPOSAL_STATE_TTL_SECONDS = 600;
@@ -110,9 +130,20 @@ export interface McpMemoryProposals {
   readonly decline: (proposal: ExternalMemoryProposal, started: number) => Promise<void>;
 }
 
+export interface McpRuleProposals {
+  readonly preview: (input: {
+    readonly type: string;
+    readonly params: unknown;
+    readonly summary: string;
+  }) => Promise<RulePreview>;
+  readonly decided: (proposalId: string) => Promise<boolean>;
+  readonly accept: (proposal: ExternalRuleProposal) => Promise<string>;
+}
+
 export interface McpWriteAccess {
   readonly secret: string;
   readonly proposals: McpMemoryProposals;
+  readonly rules: McpRuleProposals;
 }
 
 export type McpAdmission =
@@ -120,7 +151,7 @@ export type McpAdmission =
   | { readonly status: "unauthorized" | "rate_limited" };
 
 interface ProposalState {
-  readonly tool: "propose_memory";
+  readonly tool: "propose_memory" | "propose_rule";
   readonly proposalId: string;
   readonly argsHash: string;
   readonly client: string;
@@ -249,6 +280,7 @@ export class ProductionMcpRead {
   readonly #writeGate: BearerGate | undefined;
   readonly #stateCodec: RequestStateCodec<ProposalState>;
   readonly #deciding = new Map<string, Promise<void>>();
+  readonly #declinedRules = new Map<string, number>();
 
   constructor(options: ProductionMcpReadOptions) {
     this.#options = options;
@@ -380,7 +412,191 @@ export class ProductionMcpRead {
             handlerContext,
           ),
       );
+    const rules = this.#options.write?.rules;
+    if (
+      rules &&
+      context.era === "modern" &&
+      context.authInfo?.scopes.includes(WRITE_ACCESS) === true
+    ) {
+      const list = { type: "array", items: { type: "string" } };
+      server.registerTool(
+        "propose_rule",
+        {
+          description: MCP_TOOL_PROPOSE_RULE.text,
+          inputSchema: fromJsonSchema<JsonObject>({
+            type: "object",
+            properties: {
+              type: { type: "string", enum: [...EXTERNAL_RULE_TYPES] },
+              params: {
+                type: "object",
+                properties: {
+                  senderDomains: list,
+                  senderAddresses: list,
+                  phrases: list,
+                  words: list,
+                  excludePhrases: list,
+                },
+                additionalProperties: false,
+              },
+              summary: { type: "string", minLength: 1 },
+              reason: { type: "string", minLength: 1 },
+            },
+            required: ["type", "params", "summary", "reason"],
+            additionalProperties: false,
+          } as never),
+          annotations: {
+            readOnlyHint: false,
+            destructiveHint: false,
+            idempotentHint: false,
+            openWorldHint: false,
+          },
+        },
+        async (args: JsonObject, handlerContext) =>
+          this.#proposeRule(
+            rules,
+            args,
+            clientNameOf(handlerContext.mcpReq.envelope, userAgent),
+            handlerContext,
+          ),
+      );
+    }
     return server;
+  }
+
+  async #proposeRule(
+    rules: McpRuleProposals,
+    args: JsonObject,
+    client: string,
+    context: ServerContext,
+  ): Promise<CallToolResult | InputRequiredResult> {
+    const reason = normalizeProposalText(typeof args["reason"] === "string" ? args["reason"] : "");
+    let parsed: { readonly type: string; readonly params: unknown; readonly summary: string };
+    try {
+      parsed = parseOwnerRuleParameters({
+        type: args["type"],
+        params: args["params"],
+        summary: typeof args["summary"] === "string" ? args["summary"].trim() : args["summary"],
+      });
+    } catch {
+      return proposalReply(MCP_PROPOSE_RULE_INVALID.text, true);
+    }
+    if (
+      reason.length === 0 ||
+      [...reason].length > EXTERNAL_RULE_REASON_MAXIMUM ||
+      !(EXTERNAL_RULE_TYPES as readonly string[]).includes(parsed.type)
+    )
+      return proposalReply(MCP_PROPOSE_RULE_INVALID.text, true);
+    const argsHash = createHash("sha256")
+      .update(JSON.stringify(["propose_rule", parsed.type, parsed.params, parsed.summary, reason]))
+      .digest("hex");
+    const state = context.mcpReq.requestState<ProposalState>();
+    try {
+      if (state === undefined) {
+        if (!elicitationSupported(context.mcpReq.envelope))
+          return proposalReply(MCP_PROPOSE_MEMORY_UNSUPPORTED.text, true);
+        if (!(await this.#options.write?.proposals.ready()))
+          return proposalReply(MCP_PROPOSE_MEMORY_NOT_READY.text, true);
+        return await this.#askRuleConfirmation(
+          rules,
+          { tool: "propose_rule", proposalId: randomUUID(), argsHash, client },
+          { ...parsed, type: parsed.type as ExternalRuleType, reason, client },
+          context,
+        );
+      }
+      if (
+        typeof state !== "object" ||
+        state === null ||
+        state.tool !== "propose_rule" ||
+        typeof state.proposalId !== "string" ||
+        typeof state.client !== "string" ||
+        state.argsHash !== argsHash
+      )
+        return proposalReply(MCP_PROPOSE_MEMORY_CHANGED.text, true);
+      const proposal: ExternalRuleProposal = {
+        proposalId: state.proposalId,
+        type: parsed.type as ExternalRuleType,
+        params: parsed.params,
+        summary: parsed.summary,
+        reason,
+        client: state.client,
+      };
+      return await this.#oneAtATime(state.proposalId, async () => {
+        const now = Date.now();
+        for (const [proposalId, until] of this.#declinedRules)
+          if (until <= now) this.#declinedRules.delete(proposalId);
+        if (this.#declinedRules.has(proposal.proposalId))
+          return proposalReply(MCP_PROPOSE_RULE_DECLINED.text, false);
+        if (await rules.decided(proposal.proposalId))
+          return proposalReply(MCP_PROPOSE_RULE_ALREADY_SAVED.text, false);
+        const answer = inputResponse(context.mcpReq.inputResponses, MCP_PROPOSAL_CONFIRM_KEY);
+        if (answer.kind !== "elicit")
+          return await this.#askRuleConfirmation(rules, state, proposal, context);
+        if (answer.action === "accept" && answer.content?.[MCP_PROPOSAL_SAVE_FIELD] === true) {
+          await rules.accept(proposal);
+          return proposalReply(MCP_PROPOSE_RULE_SAVED.text, false);
+        }
+        this.#declinedRules.set(proposal.proposalId, now + MCP_PROPOSAL_STATE_TTL_SECONDS * 1000);
+        return proposalReply(MCP_PROPOSE_RULE_DECLINED.text, false);
+      });
+    } catch (error) {
+      this.#options.onFailure(error);
+      return proposalReply(MCP_PROPOSE_RULE_FAILED.text, true);
+    }
+  }
+
+  async #askRuleConfirmation(
+    rules: McpRuleProposals,
+    state: ProposalState,
+    proposal: Pick<ExternalRuleProposal, "type" | "params" | "summary" | "reason" | "client">,
+    context: ServerContext,
+  ): Promise<InputRequiredResult> {
+    const preview = await rules.preview(proposal);
+    const params = (preview.params ?? {}) as Record<string, unknown>;
+    const listed = (key: string) => {
+      const value = params[key];
+      return Array.isArray(value) && value.length > 0 ? value.join("、") : "—";
+    };
+    return inputRequired({
+      inputRequests: {
+        [MCP_PROPOSAL_CONFIRM_KEY]: inputRequired.elicit({
+          message: renderPrompt(MCP_PROPOSE_RULE_CONFIRM, {
+            client: proposal.client,
+            summary: preview.summary,
+            kind:
+              preview.type === "mail_must_notify"
+                ? MCP_PROPOSE_RULE_KIND_NOTIFY.text
+                : MCP_PROPOSE_RULE_KIND_WHOLE_THREAD.text,
+            conditions: renderPrompt(MCP_PROPOSE_RULE_CONDITIONS, {
+              senderDomains: listed("senderDomains"),
+              senderAddresses: listed("senderAddresses"),
+              phrases: listed("phrases"),
+              words: listed("words"),
+              excludePhrases: listed("excludePhrases"),
+            }),
+            replay: preview.replay
+              ? renderPrompt(MCP_PROPOSE_RULE_REPLAY, {
+                  days: String(preview.replay.days),
+                  checked: String(preview.replay.mailsChecked),
+                  hit: String(preview.replay.mailsHit),
+                  changed: String(preview.replay.changed),
+                })
+              : MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE.text,
+            reason: proposal.reason,
+          }),
+          requestedSchema: {
+            type: "object",
+            properties: {
+              [MCP_PROPOSAL_SAVE_FIELD]: {
+                type: "boolean",
+                title: MCP_PROPOSE_RULE_SAVE_LABEL.text,
+              },
+            },
+            required: [MCP_PROPOSAL_SAVE_FIELD],
+          },
+        }),
+      },
+      requestState: await this.#stateCodec.mint(state, context),
+    });
   }
 
   async #proposeMemory(
