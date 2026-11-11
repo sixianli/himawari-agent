@@ -172,18 +172,28 @@ function ownerRuleEntry(row: StoredOwnerRule): Record<string, unknown> {
     source: row.source,
     status: row.status,
     enforced: rule !== undefined,
-    ...(typeof stored["type"] === "string" ? { type: stored["type"] } : {}),
-    ...(typeof stored["summary"] === "string" ? { summary: stored["summary"] } : {}),
-    ...(enforced ? { parameters: enforced.params } : {}),
+    ...(enforced
+      ? { type: enforced.type, summary: enforced.summary, parameters: enforced.params }
+      : {
+          ...(typeof stored["type"] === "string" ? { type: stored["type"] } : {}),
+          ...(typeof stored["summary"] === "string" ? { summary: stored["summary"] } : {}),
+        }),
   };
 }
 
-function enforcedOwnerRule(
-  row: StoredOwnerRule,
-): { readonly rule: RuleRecord; readonly params: unknown } | undefined {
+function enforcedOwnerRule(row: StoredOwnerRule):
+  | {
+      readonly rule: RuleRecord;
+      readonly type: string;
+      readonly summary: string;
+      readonly params: unknown;
+    }
+  | undefined {
   try {
     const rule = enforceableOwnerRule(row);
-    return rule ? { rule, params: parseOwnerRuleParameters(row.parameters).params } : undefined;
+    if (!rule) return undefined;
+    const parsed = parseOwnerRuleParameters(row.parameters);
+    return { rule, type: parsed.type, summary: parsed.summary, params: parsed.params };
   } catch {
     return undefined;
   }

@@ -335,7 +335,7 @@
     "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
   },
   "mcp.rule-book": {
-    "sha256": "5ec53f58db364245bc5ed5b0762a8f978236cb0f0a5858c8a3e2389084df6d2c",
+    "sha256": "8dc6b13916a990e83cd27454ff3f5154b23f9982ab6ee070d95b6f19731ac758",
     "changedIn": "ADR 0219",
     "reason": "规则手册也列出主人在对话里立的长期规则（ADR 0213）"
   },

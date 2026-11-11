@@ -124,7 +124,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         "2026-11-11T02:00:00.000Z",
         {
           type: "mail_must_notify",
-          summary: "日本入管局相关的邮件一律提醒",
+          summary: " 日本入管局相关的邮件一律提醒 ",
           params: { senderDomains: ["@ISA.go.jp "] },
         },
       ],

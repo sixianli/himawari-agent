@@ -1,0 +1,4 @@
+{"id": "r2-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "因此作者说的 r1-6 修改没有自动用例锁住。", "valid": true, "class": "better"}
+{"id": "r2-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`npm run check` 的 `check:steps` 没有跑 `test/integration/mcp-read.test.ts`", "valid": false, "class": "error"}
+{"id": "r2-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "实际 `owner:empty`、`owner:unknown` 这类 `enforced: false` 的规则没有 `parameters`", "valid": true, "class": "error", "severity": "low", "trigger": "外部模型读工具说明", "consequence": "以为每条主人规则都有参数", "modelSeverity": "低"}
+{"id": "r2-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`type` 和 `summary` 直接取 `row.parameters` 的原始字段", "valid": true, "class": "error", "severity": "low", "trigger": "库里存了未归一化的说明", "consequence": "对外说明和执行用的不一致", "modelSeverity": "低"}
