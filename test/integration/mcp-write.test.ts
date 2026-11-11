@@ -113,6 +113,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     options: {
       readonly failDecline?: boolean;
       readonly slowDecisionRead?: boolean;
+      readonly failRuleMarker?: boolean;
       readonly replay?: boolean;
     } = {},
   ) {
@@ -270,9 +271,21 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const ruleProposals = new ProductionMcpRuleWriter({
       configuration: scope,
       rules: ownerRules,
-      payloads,
+      payloads: options.failRuleMarker
+        ? {
+            ...payloads,
+            get: (ref) => payloads.get(ref),
+            delete: (ref) => payloads.delete(ref),
+            put: async (payload) => {
+              if (payload.ref.startsWith(EXTERNAL_RULE_DECISION_PREFIX))
+                throw new Error("PAYLOAD_DISK_FULL");
+              return payloads.put(payload);
+            },
+          }
+        : payloads,
       protector: adapters.payloadProtector,
       clock,
+      onFailure: (error) => failures.push(error),
     });
     const mcp = new ProductionMcpRead({
       scope,
@@ -781,6 +794,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const client = await f.connect();
     for (const args of [
       { ...RULE, params: {} },
+      { ...RULE, params: { phrases: ["留"] } },
       { ...RULE, params: { phrases: ["a\nb"] } },
       { ...RULE, summary: "两行\n说明" },
       { ...RULE, reason: "​⁠" },
@@ -869,5 +883,64 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       );
       if (!kept) expect(f.rulePayloads()).toEqual([]);
     }
+  });
+
+  it("[P5-2 rule] reports a rule as active when only the marker could not be written, and still refuses a second activation", async () => {
+    const f = await setup({ failRuleMarker: true });
+    const client = await f.connect({ autoFulfill: false });
+    const first = await f.rawRule(client, { arguments: RULE });
+    const retry = confirmRule(first.requestState, "accept");
+    const saved = await f.rawRule(client, retry);
+    expect(saved.isError).not.toBe(true);
+    expect(saved.content?.[0]?.text).toBe(MCP_PROPOSE_RULE_SAVED.text);
+    expect(f.failures).not.toEqual([]);
+    const [row] = await f.storedRules();
+    expect(row?.status).toBe("active");
+    await f.ownerRules.undo(row?.ruleId ?? "");
+    const replayed = await f.rawRule(client, retry);
+    expect(replayed.content?.[0]?.text).toBe(MCP_PROPOSE_RULE_ALREADY_SAVED.text);
+    expect((await f.storedRules()).map(({ status }) => status)).toEqual(["retired"]);
+  });
+
+  it("[P5-2 rule] reuses an existing rule with the same conditions and an old confirmation cannot bring it back after undo", async () => {
+    const f = await setup();
+    const client = await f.connect({ autoFulfill: false });
+    const accept = async (args: typeof RULE) => {
+      const first = await f.rawRule(client, { arguments: args });
+      const retry = { ...confirmRule(first.requestState, "accept"), arguments: args };
+      expect((await f.rawRule(client, retry)).content?.[0]?.text).toBe(MCP_PROPOSE_RULE_SAVED.text);
+      return retry;
+    };
+    await accept(RULE);
+    const again = await accept({ ...RULE, reason: "主人又说了一遍：入管局的邮件都要提醒" });
+    const rows = await f.storedRules();
+    expect(rows).toHaveLength(1);
+    await f.ownerRules.undo(rows[0]?.ruleId ?? "");
+    const database = openQualifiedDatabase(f.databasePath);
+    database
+      .prepare("DELETE FROM payloads WHERE ref LIKE ?")
+      .run(`${EXTERNAL_RULE_DECISION_PREFIX}%`);
+    database.close();
+    expect((await f.rawRule(client, again)).content?.[0]?.text).toBe(
+      MCP_PROPOSE_RULE_ALREADY_SAVED.text,
+    );
+    expect((await f.storedRules()).map(({ status }) => status)).toEqual(["retired"]);
+  });
+
+  it("[P5-2 rule] treats the same conditions in a different key and list order as the same proposal", async () => {
+    const f = await setup();
+    const client = await f.connect({ autoFulfill: false });
+    const first = await f.rawRule(client, { arguments: RULE });
+    const reordered = {
+      reason: RULE.reason,
+      summary: RULE.summary,
+      params: { phrases: ["在留資格"], senderDomains: ["isa.go.jp"] },
+      type: RULE.type,
+    };
+    const confirmed = await f.rawRule(client, {
+      ...confirmRule(first.requestState, "accept"),
+      arguments: reordered,
+    });
+    expect(confirmed.content?.[0]?.text).toBe(MCP_PROPOSE_RULE_SAVED.text);
   });
 });

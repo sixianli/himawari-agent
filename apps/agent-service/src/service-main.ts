@@ -1816,6 +1816,12 @@ export async function runAgentService(
                     payloads,
                     protector: recallProtector,
                     clock: { now: () => clock.now() },
+                    onFailure: (error) =>
+                      writeServiceDiagnostic(errorOutput, {
+                        component: "agent-service",
+                        event: "mcp-rule.marker-failed",
+                        code: stableErrorCode(error),
+                      }),
                   }),
                 },
               }

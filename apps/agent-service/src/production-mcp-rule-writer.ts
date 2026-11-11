@@ -9,6 +9,7 @@ import {
 import type { ProductionOwnerRuleWriter, RulePreview } from "./production-owner-rules.js";
 
 export const EXTERNAL_RULE_KEY_PREFIX = "mcp:";
+export const EXTERNAL_RULE_MEMORY_PREFIX = "memory:rule:mcp:";
 export const EXTERNAL_RULE_DECISION_PREFIX = "rule-decision:mcp:";
 export const EXTERNAL_RULE_SOURCE_PREFIX = "mcp:";
 export const EXTERNAL_RULE_REASON_MAXIMUM = 200;
@@ -31,6 +32,7 @@ export interface ProductionMcpRuleWriterOptions {
   readonly payloads: PayloadStorePort;
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
+  readonly onFailure: (error: unknown) => void;
 }
 
 export function externalRuleQuote(client: string, reason: string): string {
@@ -93,7 +95,7 @@ export class ProductionMcpRuleWriter {
       );
     } catch (error) {
       if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.DUPLICATE)
-        throw error;
+        this.#options.onFailure(error);
     }
     return active.ruleId;
   }

@@ -280,7 +280,7 @@ export class ProductionMcpRead {
   readonly #writeGate: BearerGate | undefined;
   readonly #stateCodec: RequestStateCodec<ProposalState>;
   readonly #deciding = new Map<string, Promise<void>>();
-  readonly #declinedRules = new Map<string, number>();
+  readonly #decidedRules = new Map<string, { readonly until: number; readonly saved: boolean }>();
 
   constructor(options: ProductionMcpReadOptions) {
     this.#options = options;
@@ -522,10 +522,14 @@ export class ProductionMcpRead {
       };
       return await this.#oneAtATime(state.proposalId, async () => {
         const now = Date.now();
-        for (const [proposalId, until] of this.#declinedRules)
-          if (until <= now) this.#declinedRules.delete(proposalId);
-        if (this.#declinedRules.has(proposal.proposalId))
-          return proposalReply(MCP_PROPOSE_RULE_DECLINED.text, false);
+        for (const [proposalId, { until }] of this.#decidedRules)
+          if (until <= now) this.#decidedRules.delete(proposalId);
+        const remembered = this.#decidedRules.get(proposal.proposalId);
+        if (remembered)
+          return proposalReply(
+            remembered.saved ? MCP_PROPOSE_RULE_ALREADY_SAVED.text : MCP_PROPOSE_RULE_DECLINED.text,
+            false,
+          );
         if (await rules.decided(proposal.proposalId))
           return proposalReply(MCP_PROPOSE_RULE_ALREADY_SAVED.text, false);
         const answer = inputResponse(context.mcpReq.inputResponses, MCP_PROPOSAL_CONFIRM_KEY);
@@ -533,9 +537,16 @@ export class ProductionMcpRead {
           return await this.#askRuleConfirmation(rules, state, proposal, context);
         if (answer.action === "accept" && answer.content?.[MCP_PROPOSAL_SAVE_FIELD] === true) {
           await rules.accept(proposal);
+          this.#decidedRules.set(proposal.proposalId, {
+            until: Date.now() + MCP_PROPOSAL_STATE_TTL_SECONDS * 1000,
+            saved: true,
+          });
           return proposalReply(MCP_PROPOSE_RULE_SAVED.text, false);
         }
-        this.#declinedRules.set(proposal.proposalId, now + MCP_PROPOSAL_STATE_TTL_SECONDS * 1000);
+        this.#decidedRules.set(proposal.proposalId, {
+          until: now + MCP_PROPOSAL_STATE_TTL_SECONDS * 1000,
+          saved: false,
+        });
         return proposalReply(MCP_PROPOSE_RULE_DECLINED.text, false);
       });
     } catch (error) {

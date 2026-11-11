@@ -553,7 +553,7 @@ export const MCP_PROPOSE_RULE_INVALID = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tool-result",
   output: "free-text",
-  text: "规则参数不合法，没有生效：type 只能是两种之一；params 至少给一项条件，每项 1 到 64 字、每列最多 32 项，不能用正则或不可见字符；summary 1 到 200 字且不换行；reason 1 到 200 字。",
+  text: "规则参数不合法，没有生效：type 只能是两种之一；params 至少给一项条件，每项最多 64 字（phrases、excludePhrases 每项至少 2 字）、每列最多 32 项，不能用正则或不可见字符；summary 1 到 200 字且不换行；reason 1 到 200 字。",
 });
 
 export const MCP_PROPOSE_RULE_FAILED = fixedPrompt({
