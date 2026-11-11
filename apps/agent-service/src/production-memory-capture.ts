@@ -719,7 +719,7 @@ export class ProductionMemoryCapture {
   readonly #pending = new Map<string, { work: Promise<void>; admitted: Promise<void> }>();
   readonly #captured = new Set<string>();
   readonly #busy = new Set<string>();
-  readonly #abandoned = new Set<string>();
+  readonly #settled = new Set<string>();
   #stopping = false;
   private readonly options: ProductionMemoryCaptureOptions;
 
@@ -857,17 +857,27 @@ export class ProductionMemoryCapture {
       await this.#commit(plan, parsed);
     } catch (error) {
       if (!backlog) throw error;
-      this.#abandoned.add(plan.generationId);
-      await backlog
-        .remove(plan.generationId)
-        .then(() => this.#abandoned.delete(plan.generationId))
-        .catch(this.options.onFailure);
       await this.#recordFailure(plan, "capture_gave_up", captureErrorCode(error), "save").catch(
         this.options.onFailure,
       );
+      await this.#settle(plan.generationId);
       throw error;
     }
-    await backlog?.remove(plan.generationId);
+    if (backlog) await this.#settle(plan.generationId);
+  }
+
+  async #settle(generationId: string): Promise<void> {
+    try {
+      await this.options.backlog?.remove(generationId);
+      this.#settled.delete(generationId);
+    } catch (error) {
+      this.#settled.add(generationId);
+      if (this.#settled.size > 1000) {
+        const oldest = this.#settled.values().next().value;
+        if (oldest !== undefined) this.#settled.delete(oldest);
+      }
+      this.options.onFailure(error);
+    }
   }
 
   async #replayOne(request: RuntimeRequest, onAdmitted: () => void): Promise<void> {
@@ -881,9 +891,9 @@ export class ProductionMemoryCapture {
     if (!entry || this.#busy.has(entry.generationId)) return;
     this.#busy.add(entry.generationId);
     try {
-      if (this.#abandoned.has(entry.generationId)) {
+      if (this.#settled.has(entry.generationId)) {
         await backlog.remove(entry.generationId);
-        this.#abandoned.delete(entry.generationId);
+        this.#settled.delete(entry.generationId);
         return;
       }
       const plan = await this.#plan(request, entry.sourceRunId, entry.threadId);
