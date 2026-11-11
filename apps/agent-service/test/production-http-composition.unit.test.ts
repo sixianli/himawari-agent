@@ -1,4 +1,4 @@
-import { lstat, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
@@ -1320,6 +1320,32 @@ describe("production HTTP startup rejection contracts", () => {
       }
     } finally {
       await repository.close();
+    }
+  });
+  it("[MU-A] refuses a socket directory that already exists with open permissions and leaves it untouched", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-mu-open-"));
+    roots.push(directory);
+    await chmod(directory, 0o755);
+    const { repository, create } = await unixComposition(path.join(directory, "web.sock"));
+    try {
+      const composition = await create();
+      await expect(composition.listen()).rejects.toThrow(/private directory/u);
+      await composition.close();
+      expect((await stat(directory)).mode & 0o777).toBe(0o755);
+    } finally {
+      await repository.close();
+    }
+  });
+  it("[MU-A] rejects a relative or non-normalized unix socket path", async () => {
+    for (const socketPath of ["web.sock", `${tmpdir()}/a/../web.sock`]) {
+      const { repository, create } = await unixComposition(socketPath);
+      try {
+        await expect(create()).rejects.toMatchObject({
+          code: "PRODUCTION_HTTP_CONFIGURATION_INCOMPLETE",
+        });
+      } finally {
+        await repository.close();
+      }
     }
   });
   it("[MU-A] rejects a unix socket path over the platform limit before binding", async () => {

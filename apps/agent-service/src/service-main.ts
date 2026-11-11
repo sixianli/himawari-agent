@@ -39,7 +39,7 @@ import {
 import { MemoryConsolidationService, MemoryEpisodeService } from "@himawari-agent/memory-engine";
 import {
   inspectDeploymentAuthorityReadOnly,
-  type SqliteReadThreadBudget,
+  type SqliteExtraReadThreadBudget,
   SqliteProductStateRepository,
   sqliteLibraryVersion,
 } from "@himawari-agent/persistence-sqlite";
@@ -536,7 +536,7 @@ function waitForTerminationOrAuthorityLoss(
 
 export interface TenantRuntimeShared {
   readonly piFilePreparationPool?: ReturnType<typeof createPiFilePreparationPool>;
-  readonly readThreadBudget?: SqliteReadThreadBudget;
+  readonly extraReadThreadBudget?: SqliteExtraReadThreadBudget;
 }
 
 export interface TenantExecutionWorkerLauncher {
@@ -850,8 +850,8 @@ export async function startTenantRuntime(
     repository = await SqliteProductStateRepository.open({
       stateRoot: configuration.stateRoot,
       databasePath: path.join(layout.data, "product.sqlite"),
-      ...(input.shared?.readThreadBudget
-        ? { readThreadBudget: input.shared.readThreadBudget }
+      ...(input.shared?.extraReadThreadBudget
+        ? { extraReadThreadBudget: input.shared.extraReadThreadBudget }
         : {}),
       onSlowOperation: (operation) =>
         writeServiceDiagnostic(errorOutput, {
@@ -2920,14 +2920,29 @@ export async function startTenantRuntime(
         let timer: NodeJS.Timeout | undefined;
         const deadline = new Promise<never>((_, reject) => {
           timer = setTimeout(
-            () => reject(new Error(TENANT_RUNTIME_ERROR_CODES.STOP_TIMEOUT)),
+            () =>
+              reject(
+                Object.assign(new Error(TENANT_RUNTIME_ERROR_CODES.STOP_TIMEOUT), {
+                  code: TENANT_RUNTIME_ERROR_CODES.STOP_TIMEOUT,
+                }),
+              ),
             timeoutMs,
           );
         });
         return Promise.race([shutdown, deadline]).finally(() => clearTimeout(timer));
       },
       onAuthorityLost: (handler: (error: unknown) => void) => {
-        void authorityLoss.then(() => handler(authorityLossError));
+        void authorityLoss.then(() => {
+          try {
+            handler(authorityLossError);
+          } catch (error) {
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "authority.lost_handler_failed",
+              code: stableErrorCode(error),
+            });
+          }
+        });
       },
     } satisfies TenantRuntimeHandle);
   } catch (error) {

@@ -1221,10 +1221,10 @@ describe("[MU-A] one tenant runtime started and stopped as a handle", () => {
     const shared = { prepare: vi.fn(), close: vi.fn() };
     const handle = await startTenantRuntime(
       tenantInput({
-        shared: { readThreadBudget: budget, piFilePreparationPool: shared as never },
+        shared: { extraReadThreadBudget: budget, piFilePreparationPool: shared as never },
       }),
     );
-    expect(boundary.open.mock.calls[0]?.[0]).toMatchObject({ readThreadBudget: budget });
+    expect(boundary.open.mock.calls[0]?.[0]).toMatchObject({ extraReadThreadBudget: budget });
     expect(boundary.sandbox.mock.calls.length).toBe(1);
     const prepare = boundary.sandbox.mock.calls[0]?.[0].createPiFilePreparation();
     expect(prepare).toBe(shared.prepare);
@@ -1264,13 +1264,30 @@ describe("[MU-A] one tenant runtime started and stopped as a handle", () => {
     expect(repository.close).toHaveBeenCalledOnce();
     expect(stdout).not.toContain('"event":"service.ready"');
   });
-  it("bounds stop() with the given timeout when a dependency never finishes closing", async () => {
-    boundary.admissionStop.mockImplementation(() => new Promise<void>(() => undefined));
+  it("bounds stop() with the given timeout, and a later stop() waits for the same shutdown without closing twice", async () => {
+    let release: () => void = () => undefined;
+    boundary.admissionStop.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
     const handle = await startTenantRuntime(tenantInput());
     const stopping = handle.stop(500);
     const outcome = expect(stopping).rejects.toThrow(TENANT_RUNTIME_ERROR_CODES.STOP_TIMEOUT);
     await vi.advanceTimersByTimeAsync(600);
     await outcome;
+    let finished = false;
+    const again = handle.stop().then(() => {
+      finished = true;
+    });
+    await settle();
+    expect(finished).toBe(false);
+    release();
+    await again;
+    expect(finished).toBe(true);
+    expect(boundary.admissionStop).toHaveBeenCalledOnce();
+    expect(repository.close).toHaveBeenCalledOnce();
   });
   it("starts, stops and starts again without leaving the first runtime's resources behind", async () => {
     for (let round = 0; round < 3; round += 1) {

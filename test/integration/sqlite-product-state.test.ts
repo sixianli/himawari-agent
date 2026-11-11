@@ -403,7 +403,7 @@ describe("SQLite product-state transaction boundary", () => {
     };
     const { repository } = await integrationRepository("budget", {
       stateRoot: "unused",
-      readThreadBudget: budget,
+      extraReadThreadBudget: budget,
     });
     for (let round = 0; round < 8; round += 1)
       await Promise.all(Array.from({ length: 6 }, () => repository.readAuthorityRevision()));
@@ -411,6 +411,54 @@ describe("SQLite product-state transaction boundary", () => {
     expect(peak).toBe(1);
     await repository.close();
     expect(held).toBe(0);
+  });
+
+  it("[MU-A] gives the extra read thread budget back when the repository closes while one is still starting", async () => {
+    let held = 0;
+    const budget = {
+      tryAcquire: () => {
+        held += 1;
+        return true;
+      },
+      release: () => {
+        held -= 1;
+      },
+    };
+    const { repository } = await integrationRepository("budget-close", {
+      stateRoot: "unused",
+      extraReadThreadBudget: budget,
+    });
+    const reads = Array.from({ length: 6 }, () => repository.readAuthorityRevision());
+    await repository.close();
+    await Promise.allSettled(reads);
+    expect(held).toBe(0);
+  });
+
+  it("[MU-A] still releases the state root lock when the budget refuses to give a thread back", async () => {
+    let throwOnRelease = false;
+    const budget = {
+      tryAcquire: () => true,
+      release: () => {
+        if (throwOnRelease) throw new Error("BUDGET_RELEASE_FAILED");
+      },
+    };
+    const { repository, stateRoot, databasePath } = await integrationRepository("budget-throw", {
+      stateRoot: "unused",
+      extraReadThreadBudget: budget,
+      qualification: { holdBeforeReadMs: 50 },
+    });
+    const deadline = performance.now() + 20_000;
+    while (repository.readWorkerCount < 2 && performance.now() < deadline)
+      await Promise.all(Array.from({ length: 6 }, () => repository.readAuthorityRevision()));
+    expect(repository.readWorkerCount).toBeGreaterThan(1);
+    throwOnRelease = true;
+    await expect(repository.close()).rejects.toThrow("BUDGET_RELEASE_FAILED");
+    const reopened = await SqliteProductStateRepository.open({
+      stateRoot,
+      databasePath,
+      minimumFreeBytes: 0,
+    });
+    await reopened.close();
   });
 
   it("keeps answering reads while one slow read occupies a read worker", async () => {

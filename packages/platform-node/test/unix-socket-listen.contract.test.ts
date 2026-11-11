@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { lstat, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import http from "node:http";
 import type net from "node:net";
 import os from "node:os";
@@ -66,16 +66,47 @@ describe("[MU-A] unix socket listening helpers shared by the web service", () =>
       ],
       { stdio: ["ignore", "pipe", "ignore"] },
     );
-    await new Promise((resolve) => child.stdout.once("data", resolve));
-    await expect(prepareUnixSocketPath(socketPath)).rejects.toMatchObject({
-      message: AUTHENTICATED_UDS_ERROR_CODES.SOCKET_EXISTS,
-    });
-    const exited = new Promise((resolve) => child.once("exit", resolve));
-    child.kill("SIGKILL");
-    await exited;
+    try {
+      await new Promise((resolve) => child.stdout.once("data", resolve));
+      await expect(prepareUnixSocketPath(socketPath)).rejects.toMatchObject({
+        message: AUTHENTICATED_UDS_ERROR_CODES.SOCKET_EXISTS,
+      });
+    } finally {
+      const exited = new Promise((resolve) => child.once("exit", resolve));
+      child.kill("SIGKILL");
+      await exited;
+    }
     expect((await lstat(socketPath)).isSocket()).toBe(true);
     await prepareUnixSocketPath(socketPath);
     await expect(lstat(socketPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects a relative or non-normalized path before touching any directory", async () => {
+    await expect(prepareUnixSocketPath("web.sock")).rejects.toThrow(/absolute and normalized/u);
+    const directory = await root();
+    await expect(prepareUnixSocketPath(`${directory}/a/../web.sock`)).rejects.toThrow(
+      /absolute and normalized/u,
+    );
+    await expect(prepareUnixSocketPath(`${directory}//web.sock`)).rejects.toThrow(
+      /absolute and normalized/u,
+    );
+  });
+
+  it("does not change the mode of an existing directory unless it is asked to adopt it", async () => {
+    const directory = await root();
+    await chmod(directory, 0o755);
+    const socketPath = path.join(directory, "web.sock");
+    await expect(
+      prepareUnixSocketPath(socketPath, { adoptExistingDirectory: false }),
+    ).rejects.toThrow(/private directory/u);
+    expect((await stat(directory)).mode & 0o777).toBe(0o755);
+    await chmod(directory, 0o700);
+    await expect(
+      prepareUnixSocketPath(socketPath, { adoptExistingDirectory: false }),
+    ).resolves.toBeUndefined();
+    await chmod(directory, 0o755);
+    await prepareUnixSocketPath(socketPath);
+    expect((await stat(directory)).mode & 0o777).toBe(0o700);
   });
 
   it("refuses to replace a regular file at the socket path", async () => {

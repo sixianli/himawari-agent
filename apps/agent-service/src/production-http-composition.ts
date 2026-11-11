@@ -1231,9 +1231,15 @@ export async function createProductionHttpComposition(
         searchIndexer.start();
         return address;
       }
-      await prepareUnixSocketPath(unixSocketPath);
+      await prepareUnixSocketPath(unixSocketPath, { adoptExistingDirectory: false });
       await app.listen({ path: unixSocketPath });
-      unixSocketIdentity = await sealUnixSocket(unixSocketPath);
+      try {
+        unixSocketIdentity = await sealUnixSocket(unixSocketPath);
+      } catch (error) {
+        await app.close().catch(() => undefined);
+        await removeUnixSocketFile(unixSocketPath).catch(() => undefined);
+        throw error;
+      }
       searchIndexer.start();
       return unixSocketPath;
     },

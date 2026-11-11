@@ -194,13 +194,32 @@ export interface UnixSocketIdentity {
   readonly ino: number;
 }
 
+export interface PrepareUnixSocketPathOptions {
+  readonly errorCodes?: AuthenticatedUdsErrorCodeOverrides;
+  readonly adoptExistingDirectory?: boolean;
+}
+
 export async function prepareUnixSocketPath(
   socketPath: string,
-  errorCodes?: AuthenticatedUdsErrorCodeOverrides,
+  options: PrepareUnixSocketPathOptions = {},
 ): Promise<void> {
+  const errorCodes = options.errorCodes;
+  if (!path.isAbsolute(socketPath) || path.normalize(socketPath) !== socketPath)
+    throw new TypeError("Unix socket path must be absolute and normalized");
   assertUnixSocketPathLength(socketPath);
-  await mkdir(path.dirname(socketPath), { recursive: true, mode: 0o700 });
-  await chmod(path.dirname(socketPath), 0o700);
+  const directory = path.dirname(socketPath);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  if (options.adoptExistingDirectory === false) {
+    const info = await lstat(directory);
+    if (
+      !info.isDirectory() ||
+      (typeof process.getuid === "function" && info.uid !== process.getuid()) ||
+      (info.mode & 0o077) !== 0
+    )
+      throw new TypeError("Unix socket directory must be a private directory owned by the service");
+  } else {
+    await chmod(directory, 0o700);
+  }
   try {
     const existing = await lstat(socketPath);
     if (
@@ -284,7 +303,9 @@ export class AuthenticatedUdsServer {
     if (this.server) return;
     await mkdir(this.options.runtimeDirectory, { recursive: true, mode: 0o700 });
     await chmod(this.options.runtimeDirectory, 0o700);
-    await prepareUnixSocketPath(this.socketPath, this.options.errorCodes);
+    await prepareUnixSocketPath(this.socketPath, {
+      ...(this.options.errorCodes ? { errorCodes: this.options.errorCodes } : {}),
+    });
 
     const server = http.createServer((request, response) => {
       void this.handle(request, response);
