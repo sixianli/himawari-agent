@@ -141,7 +141,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     });
     await writer.create({ key: "dentist", text: DENTIST, due: "2026-11-12T10:00", repeat: "none" });
     await writer.create({ key: "wifi", text: WIFI, due: "2026-11-12T20:00", repeat: "none" });
-    await writer.create({ key: "trip", text: TRIP, due: "2026-11-15T09:00", repeat: "none" });
+    await writer.create({ key: "trip", text: TRIP, due: "2026-11-13T13:00", repeat: "none" });
     await memory.runProjectionBatch(10);
     const recall = new ProductionMemoryRecall({
       ...scope,
