@@ -82,7 +82,10 @@ const COFFEE = "主人每天早上只喝无糖的燕麦拿铁";
 const embedder: Embedder = {
   model: "fixture-embedding",
   dimensions: 2,
-  async embed(text: string) {
+  async embedQuery(text: string) {
+    return new Float32Array(text.includes("拿铁") ? [1, 0] : [0, 1]);
+  },
+  async embedDocument(text: string) {
     return new Float32Array(text.includes("拿铁") ? [1, 0] : [0, 1]);
   },
 };

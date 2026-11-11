@@ -54,11 +54,18 @@ const TOPICS = ["牙医", "Wi-Fi", "京都"];
 const embedder: Embedder = {
   model: "fixture-embedding",
   dimensions: 4,
-  async embed(text: string) {
-    const hits = TOPICS.map((topic) => (text.includes(topic) ? 1 : 0));
-    return new Float32Array([...hits, hits.some(Boolean) ? 0 : 1]);
+  async embedQuery(text: string) {
+    return topicVector(text);
+  },
+  async embedDocument(text: string) {
+    return topicVector(text);
   },
 };
+
+function topicVector(text: string): Float32Array {
+  const hits = TOPICS.map((topic) => (text.includes(topic) ? 1 : 0));
+  return new Float32Array([...hits, hits.some(Boolean) ? 0 : 1]);
+}
 
 type Era = "legacy" | "modern";
 

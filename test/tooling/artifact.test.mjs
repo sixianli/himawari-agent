@@ -30,7 +30,7 @@ import {
   verifyArtifactMain,
   verifyExtractedArtifact,
 } from "../../scripts/ci/verify-artifact.mjs";
-import { packageNodeRuntime } from "../../scripts/package-node-runtime.mjs";
+import { keepsNativeBinary, packageNodeRuntime } from "../../scripts/package-node-runtime.mjs";
 
 const directories = [];
 const python = process.env.HIMAWARI_CI_PYTHON;
@@ -927,5 +927,25 @@ describe("same-artifact verification", () => {
     }
     expect((await lstat(blocked)).mode & 0o777).toBe(0o644);
     expect(await readFile(blocked)).toEqual(bytes);
+  });
+});
+
+describe("[P3-1] ONNX Runtime binaries kept in the runtime package", () => {
+  it("keeps only the current platform and architecture and drops the GPU providers", () => {
+    const keep = (relative) =>
+      keepsNativeBinary("onnxruntime-node", relative.split("/").join(path.sep), "linux", "x64");
+    expect(keep("bin/napi-v6/linux/x64/onnxruntime_binding.node")).toBe(true);
+    expect(keep("bin/napi-v6/linux/x64/libonnxruntime.so.1")).toBe(true);
+    expect(keep("bin/napi-v6/linux")).toBe(true);
+    expect(keep("bin/napi-v6/linux/arm64/onnxruntime_binding.node")).toBe(false);
+    expect(keep("bin/napi-v6/darwin/arm64/onnxruntime_binding.node")).toBe(false);
+    expect(keep("bin/napi-v6/win32")).toBe(false);
+    expect(keep("bin/napi-v6/linux/x64/libonnxruntime_providers_cuda.so")).toBe(false);
+    expect(keep("bin/napi-v6/linux/x64/libonnxruntime_providers_tensorrt.so")).toBe(false);
+    expect(keep("dist/index.js")).toBe(true);
+    expect(keep("package.json")).toBe(true);
+    expect(keepsNativeBinary("other-package", "bin/napi-v6/win32/x.node", "linux", "x64")).toBe(
+      true,
+    );
   });
 });

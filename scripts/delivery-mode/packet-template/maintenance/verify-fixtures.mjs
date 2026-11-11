@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
-import { oldPrefix, newPrefix, strictCapabilityKeys, verifyHistoryUnchanged, compareHistoryRows, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities, upgradeResultExpectation } from "./maintenance-common.mjs";
+import { oldPrefix, newPrefix, strictCapabilityKeys, verifyHistoryUnchanged, compareHistoryRows, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities, upgradeResultExpectation } from "./maintenance-common.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 
 const require = createRequire(path.join(process.cwd(), "package.json"));
@@ -29,12 +29,16 @@ assert(typeof process.env.HIMAWARI_TEST_TEMP_ROOT === "string", "FIXTURE_OWNED_T
 const plan = { decisionRef: "G90", routeKey: "coding", grantId: "directory:himawari-prod-workspace-20261015", canonicalPath: "/var/lib/himawari/workspace", subdirectories: ["files", "repos"] };
 const fourthPlan = { decisionRef: "G90", routeKey: "coding", oldGrantId: "directory:himawari-prod-workspace-20261012", oldCanonicalPath: "/var/lib/himawari/qualification-workspace", newGrantId: plan.grantId, canonicalPath: plan.canonicalPath, subdirectories: ["files", "repos"], durationDays: 90 };
 const expectedWebRoute = (capabilityRef, maximumBytes) => ({ scopeSource: "private_temp", hostId: "host:one", workerInstanceId: "worker:one", capabilityRef, capabilityVersion: "1.0.0", maximumBytes, providers: ["exa-public", "deepseek"], providerSecrets: { deepseek: "deepseek-web" } });
-const original = { ownerId: "owner:one", agentId: "agent:one", deploymentId: "deployment:one", stateRoot: "/fixture/state", http: { host: "127.0.0.1", port: 8787, staticRoot: oldStaticRoot }, runPolicy: { maxWallTimeMs: 1500, systemInstruction: "只在授权目录内工作。", coding: { hostId: "host:one", workerInstanceId: "worker:one", grantId: plan.grantId, capabilityRef: "himawari.pi-coding", capabilityVersion: "1.0.0", maximumBytes: 49152, enabledTools: ["read", "write", "edit", "bash", "find", "grep", "ls"], approval: "workspace_auto" }, publicSearch: expectedWebRoute("himawari.public-search", 4096), publicFetch: expectedWebRoute("himawari.public-fetch", __PKT_ORIGINAL_PUBLIC_FETCH_BYTES__) }, secretReferences: [{ ref: "vercel-gateway", version: "v1", purpose: "model-gateway", scope: "deployment:one" }, { ref: "deepseek-web", version: "v1", purpose: "web-provider", scope: "himawari-prod-deployment" }], modelDescriptors: [{ ref: "__PKT_MODEL_REF__", role: "primary", contextWindow: __PKT_ORIGINAL_CONTEXT_WINDOW__, maxTokens: __PKT_ORIGINAL_MAX_TOKENS__, cost: { input: 0.45, output: 1.8 } }, { ref: "qwen-embedding", role: "embedding", dimensions: 4096 }], capabilityDeployment: { snapshotPath: "/fixture/snapshot", sha256: `sha256:${"1".repeat(64)}` } };
+const original = { ownerId: "owner:one", agentId: "agent:one", deploymentId: "deployment:one", stateRoot: "/fixture/state", http: { host: "127.0.0.1", port: 8787, staticRoot: oldStaticRoot }, runPolicy: { maxWallTimeMs: 1500, systemInstruction: "只在授权目录内工作。", coding: { hostId: "host:one", workerInstanceId: "worker:one", grantId: plan.grantId, capabilityRef: "himawari.pi-coding", capabilityVersion: "1.0.0", maximumBytes: 49152, enabledTools: ["read", "write", "edit", "bash", "find", "grep", "ls"], approval: "workspace_auto" }, publicSearch: expectedWebRoute("himawari.public-search", 4096), publicFetch: expectedWebRoute("himawari.public-fetch", __PKT_ORIGINAL_PUBLIC_FETCH_BYTES__) }, secretReferences: [{ ref: "vercel-gateway", version: "v1", purpose: "model-gateway", scope: "deployment:one" }, { ref: "deepseek-web", version: "v1", purpose: "web-provider", scope: "himawari-prod-deployment" }], modelDescriptors: [{ ref: "__PKT_MODEL_REF__", role: "primary", contextWindow: __PKT_ORIGINAL_CONTEXT_WINDOW__, maxTokens: __PKT_ORIGINAL_MAX_TOKENS__, cost: { input: 0.45, output: 1.8 } }, { ref: "qwen-embedding", role: "embedding", dimensions: 4096 }], memory: { dimensions: 4096 }, capabilityDeployment: { snapshotPath: "/fixture/snapshot", sha256: `sha256:${"1".repeat(64)}` } };
 const originalBefore = JSON.stringify(original);
 const staticConfiguration = staticRootConfiguration(original);
 const expectedStaticConfiguration = { ...structuredClone(original), http: { ...structuredClone(original.http), staticRoot: newStaticRoot } };
 Object.assign(expectedStaticConfiguration.modelDescriptors[0], { contextWindow: __PKT_TARGET_CONTEXT_WINDOW__, maxTokens: __PKT_TARGET_MAX_TOKENS__ });
 expectedStaticConfiguration.runPolicy.publicFetch.maximumBytes = __PKT_TARGET_PUBLIC_FETCH_BYTES__;
+if (approvedEmbeddingDescriptor !== null) {
+  expectedStaticConfiguration.modelDescriptors[1] = structuredClone(approvedEmbeddingDescriptor);
+  expectedStaticConfiguration.memory.dimensions = approvedEmbeddingDescriptor.dimensions;
+}
 assert.deepEqual(staticConfiguration, expectedStaticConfiguration, "STATIC_ROOT_CONFIGURATION_SHAPE_CHANGED");
 assert.deepEqual(Object.keys(staticConfiguration), Object.keys(original), "STATIC_ROOT_CONFIGURATION_KEY_ORDER_CHANGED");
 assert.deepEqual(Object.keys(staticConfiguration.modelDescriptors[0]), Object.keys(original.modelDescriptors[0]), "STATIC_ROOT_CONFIGURATION_MODEL_KEY_ORDER_CHANGED");
@@ -70,7 +74,9 @@ rejectAll("configurationRejections", preparedConfiguration, [
   ["http field added", "__PKT_LABEL_UPPER___MAINTENANCE_UNAPPROVED_CONFIG_FIELD_CHANGED", (value) => { value.http.cors = "*"; }],
   ["context window kept old", "__PKT_LABEL_UPPER___MAINTENANCE_UNAPPROVED_CONFIG_FIELD_CHANGED", (value) => { value.modelDescriptors[0].contextWindow = __PKT_TARGET_CONTEXT_WINDOW__ + 1; }],
   ["output limit other value", "__PKT_LABEL_UPPER___MAINTENANCE_UNAPPROVED_CONFIG_FIELD_CHANGED", (value) => { value.modelDescriptors[0].maxTokens = __PKT_TARGET_MAX_TOKENS__ + 1; }],
-  ["embedding model changed", "__PKT_LABEL_UPPER___MAINTENANCE_UNAPPROVED_CONFIG_FIELD_CHANGED", (value) => { value.modelDescriptors[1].dimensions = 1024; }],
+  ["embedding model changed", "__PKT_LABEL_UPPER___MAINTENANCE_UNAPPROVED_CONFIG_FIELD_CHANGED", (value) => { value.modelDescriptors[1].dimensions = 777; }],
+  ["embedding model renamed", "__PKT_LABEL_UPPER___MAINTENANCE_UNAPPROVED_CONFIG_FIELD_CHANGED", (value) => { value.modelDescriptors[1].model = "other-embedding"; }],
+  ["memory dimensions changed", "__PKT_LABEL_UPPER___MAINTENANCE_UNAPPROVED_CONFIG_FIELD_CHANGED", (value) => { value.memory.dimensions = 777; }],
   ["model cost changed", "__PKT_LABEL_UPPER___MAINTENANCE_UNAPPROVED_CONFIG_FIELD_CHANGED", (value) => { value.modelDescriptors[0].cost.output = 0; }],
   ["fetch limit kept old", "__PKT_LABEL_UPPER___MAINTENANCE_UNAPPROVED_CONFIG_FIELD_CHANGED", (value) => { value.runPolicy.publicFetch.maximumBytes = __PKT_TARGET_PUBLIC_FETCH_BYTES__ - 1; }],
   ["budgets added", "__PKT_LABEL_UPPER___MAINTENANCE_UNAPPROVED_CONFIG_FIELD_CHANGED", (value) => { value.budgets = {}; }],
@@ -87,6 +93,10 @@ rejectAll("configurationOriginalRejections", original, [
   ["original output limit old", "__PKT_LABEL_UPPER___MAINTENANCE_ORIGINAL_MODEL_DESCRIPTOR_CHANGED", (value) => { value.modelDescriptors[0].maxTokens = __PKT_ORIGINAL_MAX_TOKENS__ - 1; }],
   ["original fetch limit old", "__PKT_LABEL_UPPER___MAINTENANCE_ORIGINAL_PUBLIC_FETCH_CHANGED", (value) => { value.runPolicy.publicFetch.maximumBytes = __PKT_ORIGINAL_PUBLIC_FETCH_BYTES__ - 1; }],
   ["original without fetch route", "__PKT_LABEL_UPPER___MAINTENANCE_ORIGINAL_PUBLIC_FETCH_CHANGED", (value) => { delete value.runPolicy.publicFetch; }],
+], (value) => configurationStage(value, preparedConfiguration));
+if (approvedEmbeddingDescriptor !== null) rejectAll("configurationEmbeddingOriginalRejections", original, [
+  ["original embedding missing", "__PKT_LABEL_UPPER___MAINTENANCE_ORIGINAL_EMBEDDING_DESCRIPTOR_CHANGED", (value) => { value.modelDescriptors.pop(); }],
+  ["original memory missing", "__PKT_LABEL_UPPER___MAINTENANCE_ORIGINAL_EMBEDDING_DESCRIPTOR_CHANGED", (value) => { delete value.memory; }],
 ], (value) => configurationStage(value, preparedConfiguration));
 
 const startupBinding = { identity: { deploymentId: "deployment:one", ownerId: "owner:one", agentId: "agent:one" }, authority: { authorityEpoch: 3, fencingToken: 7 } };

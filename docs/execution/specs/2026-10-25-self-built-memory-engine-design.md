@@ -116,6 +116,7 @@ date: "2026-10-25"
 ## 嵌入
 
 - 继续用 Qwen3-Embedding-8B（Vercel AI Gateway，OpenAI 兼容接口 `POST /v1/embeddings`）。Pi 没有嵌入能力，产品自带一个最小的嵌入客户端，只发 `model`、`input`、`dimensions` 三个字段。
+  - 2026-11-11 起默认改为在本机算向量（jina-embeddings-v5-text-small 的 int8 量化版），Qwen3-Embedding-8B 保留为可选，见 [ADR 0224](../../adr/0224-memory-embedding-runs-on-the-host.md)。
 - 每次物理请求照旧走模型准入、预算预留、开始标记和结算，网关返回的用量和费用必须齐全。
 - 维度由配置的 `modelDescriptors.embedding.dimensions` 和 `memory.dimensions` 决定，允许 1024 或 4096，默认保持 4096。官方没有公布 1024 维的分数，Andy 不希望效果变差：阶段一在评测集上对比 4096 和 1024 两档，并实测网关确实返回 1024 维，确认没有损失才改配置降维。索引行记录模型和维度，配置变了会自动重建索引。
 

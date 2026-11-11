@@ -538,10 +538,35 @@
     "changedIn": "ADR 0199",
     "reason": "记下时还没开始的记忆写“起”，不写“至今”"
   },
+  "memory.embedding-document.gemma": {
+    "sha256": "84be7719ef41e08e33e4c31b994051754926de5a28e0fa227575887ac6f8c9f8",
+    "changedIn": "ADR 0224",
+    "reason": "新增：本机向量模型档案的查询和文档前缀；8B 的查询格式从代码搬进目录，文字不变"
+  },
+  "memory.embedding-document.jina-v5": {
+    "sha256": "b76d0ffb97fd0a2de4bcfe50ef28eaaf68eeb14a4a7acf30a1941bce082dd60a",
+    "changedIn": "ADR 0224",
+    "reason": "新增：本机向量模型档案的查询和文档前缀；8B 的查询格式从代码搬进目录，文字不变"
+  },
   "memory.embedding-query-instruction": {
     "sha256": "b0879f0158c554edaf2803ca0e3415d0ff7769c6d1ba3ebb5b6253203fd385a8",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "memory.embedding-query.gemma": {
+    "sha256": "9a3bfa38fd74ee425a29bf9481a0fc70e50838bb6ad02c8c14b24f4c7c3fcff5",
+    "changedIn": "ADR 0224",
+    "reason": "新增：本机向量模型档案的查询和文档前缀；8B 的查询格式从代码搬进目录，文字不变"
+  },
+  "memory.embedding-query.jina-v5": {
+    "sha256": "50369a4c83ecd4b195f57baf111253299a74df29d023cbf15b99aee035dd2a65",
+    "changedIn": "ADR 0224",
+    "reason": "新增：本机向量模型档案的查询和文档前缀；8B 的查询格式从代码搬进目录，文字不变"
+  },
+  "memory.embedding-query.qwen3": {
+    "sha256": "e2da718cd14c65184fcb9b66bc95ac59558671c3fda4e1f094b3e6e2e576f3bf",
+    "changedIn": "ADR 0224",
+    "reason": "新增：本机向量模型档案的查询和文档前缀；8B 的查询格式从代码搬进目录，文字不变"
   },
   "memory.episode-summary": {
     "sha256": "2e37567fb5e7eca7a069cf2ef91008f490284c6edbb45698cb4ef76003bfef86",
