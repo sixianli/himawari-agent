@@ -160,6 +160,12 @@ export async function readDecisionChain(
           ? new Set(Object.values(inputs.relatedByMail).flat()).size
           : null,
         relatedRead: readState(fields, "relatedRead", inputs.relatedRead),
+        summaries: fields.has("summaryRead")
+          ? {
+              count: new Set(inputs.summaryIds ?? []).size,
+              read: inputs.summaryRead ?? "off",
+            }
+          : null,
       }
     : null;
 

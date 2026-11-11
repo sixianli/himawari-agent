@@ -442,7 +442,7 @@ export const governanceMessages = [
         },
       ],
     },
-    mails: { judged: 2, related: 1, relatedRead: "ok" },
+    mails: { judged: 2, related: 1, relatedRead: "ok", summaries: { count: 2, read: "ok" } },
     memories: {
       state: "recorded",
       recall: "ok",

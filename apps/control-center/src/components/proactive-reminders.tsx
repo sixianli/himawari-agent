@@ -333,7 +333,13 @@ function reviewTag(item: ProactiveReviewItem): MessageId {
           ? "dailyReview.tag.skippedMemory"
           : item.outcome === "kept"
             ? "dailyReview.tag.keptMemory"
-            : "dailyReview.tag.pendingMemory"
+            : item.outcome === "capture_retrying"
+              ? "dailyReview.tag.captureRetrying"
+              : item.outcome === "capture_queued"
+                ? "dailyReview.tag.captureQueued"
+                : item.outcome === "capture_gave_up"
+                  ? "dailyReview.tag.captureGaveUp"
+                  : "dailyReview.tag.pendingMemory"
         : item.kind === "consolidation"
           ? "dailyReview.tag.consolidation"
           : item.kind === "context_truncation"
@@ -351,6 +357,12 @@ function reviewText(item: ProactiveReviewItem, message: Message): string {
   if (item.kind === "proactive" && item.fetched !== null)
     return message("dailyReview.fetched", { count: item.fetched });
   if (item.kind === "rule_review") return message("dailyReview.ruleReview");
+  if (item.kind === "memory_candidate" && item.outcome === "capture_retrying")
+    return message("dailyReview.captureRetrying");
+  if (item.kind === "memory_candidate" && item.outcome === "capture_queued")
+    return message("dailyReview.captureQueued");
+  if (item.kind === "memory_candidate" && item.outcome === "capture_gave_up")
+    return message("dailyReview.captureGaveUp");
   return "";
 }
 

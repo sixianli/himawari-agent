@@ -765,6 +765,7 @@ const calibrationGroupSchema = enumeration([
   "retrieval_degrade",
   "external_read",
   "rule_review",
+  "memory_capture_failed",
 ]);
 const calibrationRateSchema = nullable(
   object({
@@ -1082,6 +1083,12 @@ const decisionChainSnapshotSchema = object({
         judged: nullable(integer(0)),
         related: nullable(integer(0)),
         relatedRead: decisionChainReadState,
+        summaries: nullable(
+          object({
+            count: integer(0),
+            read: enumeration(["off", "ok", "partial", "failed"]),
+          }),
+        ),
       }),
     ),
     memories: object({

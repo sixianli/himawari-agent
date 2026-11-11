@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import {
   ApplicationPortError,
+  type DataClassification,
   type DurableMemoryService,
   type DurableMemoryServiceOptions,
   type MemoryPort,
@@ -66,6 +67,7 @@ export interface RunEmbeddingContext {
 export interface MailEmbeddingContext {
   readonly deadlineAt: string;
   readonly signal: AbortSignal;
+  readonly dataClassification?: DataClassification;
   costMicros: number;
 }
 
@@ -152,7 +154,7 @@ export function createProductionRunMemory(options: {
     const classification =
       context?.dataClassification ??
       projection?.memory.dataClassification ??
-      (mail ? ("private" as const) : undefined) ??
+      (mail ? (mail.dataClassification ?? "private") : undefined) ??
       maintenance?.dataClassification;
     if (
       !classification ||

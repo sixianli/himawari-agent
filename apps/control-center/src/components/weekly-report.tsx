@@ -49,6 +49,7 @@ const MAIN_GROUPS: readonly Group[] = [
   "memory_kept",
   "consolidation",
 ];
+const OWN_RATE_LABELS: readonly Group[] = [...MAIN_GROUPS, "memory_capture_failed"];
 const DESCRIBED_GROUPS: readonly Group[] = ["proactive_pushed", "proactive_silent"];
 const MUSE_BUCKETS = [
   "both",
@@ -421,14 +422,14 @@ function ratioParts(
   format: Format,
 ) {
   if (group.rated < minimumSamples) return null;
-  const main = MAIN_GROUPS.includes(group.group);
+  const labelled = OWN_RATE_LABELS.includes(group.group);
   const parts = group.applicable.flatMap((rating: Rating) => {
     const rate = group.rates[rating];
     if (!rate?.enough || rate.value === null || rate.low === null || rate.high === null) return [];
     return [
       {
         rating,
-        label: message("weekly.rate", { k: `${main ? group.group : "other"}_${rating}` }),
+        label: message("weekly.rate", { k: `${labelled ? group.group : "other"}_${rating}` }),
         value: message("weekly.ratio", {
           pct: format.percent(rate.value),
           k: format.count(rate.successes),

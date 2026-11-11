@@ -43,6 +43,7 @@ const GOLDEN_NAMES = [
   "chat.runtime-environment.plain",
   "chat.runtime-environment.search",
   "mail.judgment",
+  "mail.judgment.recent-summaries",
   "memory.capture",
   "memory.consolidation",
   "memory.embedding-query-instruction",
@@ -224,6 +225,31 @@ describe("[PROMPT-GOLDEN] rendered prompts stay byte-identical while text moves 
         },
       ]),
     ).toMatchFileSnapshot(golden("mail.judgment"));
+    await expect(
+      proactivePrompt(
+        [mail("a")],
+        "2026-11-04T01:00:00.000Z",
+        "Asia/Tokyo",
+        [
+          {
+            mailId: "message-a",
+            id: "memory-7",
+            text: "主人用东京燃气，每月自动扣款。",
+            dataClassification: "private",
+          },
+        ],
+        undefined,
+        new Map(),
+        [
+          {
+            id: "episode:day_summary:thread-1:1",
+            day: "2026-11-03",
+            text: "主人说十月的电费已经交过了。",
+            dataClassification: "private",
+          },
+        ],
+      ),
+    ).toMatchFileSnapshot(golden("mail.judgment.recent-summaries"));
     await expect(MEMORY_EMBEDDING_QUERY_INSTRUCTION.text).toMatchFileSnapshot(
       golden("memory.embedding-query-instruction"),
     );

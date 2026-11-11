@@ -655,6 +655,37 @@ export class SqliteProactiveOperations {
     );
   }
 
+  private summaryInputsValid(
+    inputs: Input<"record">["inputs"],
+    ids: (value: unknown, max: number) => boolean,
+  ): boolean {
+    const count = (value: unknown) =>
+      value === undefined || (Number.isSafeInteger(value) && (value as number) >= 0);
+    const others = [
+      inputs.summaryInjected,
+      inputs.summaryIds,
+      inputs.summaryDays,
+      inputs.summaryCharacters,
+      inputs.summaryGenerated,
+    ];
+    if (inputs.summaryRead === undefined) return others.every((value) => value === undefined);
+    if (others.some((value) => value === undefined)) return false;
+    const summaryIds = inputs.summaryIds ?? [];
+    const summaryDays = inputs.summaryDays ?? [];
+    const hasSummaryIds = summaryIds.length > 0;
+    return (
+      typeof inputs.summaryInjected === "boolean" &&
+      ids(summaryIds, MAX_INPUT_IDS) &&
+      ids(summaryDays, 31) &&
+      summaryDays.every((day) => /^\d{4}-\d{2}-\d{2}$/u.test(day)) &&
+      (inputs.summaryInjected ?? false) === hasSummaryIds &&
+      count(inputs.summaryCharacters) &&
+      count(inputs.summaryGenerated) &&
+      typeof inputs.summaryRead === "string" &&
+      ["off", "ok", "partial", "failed"].includes(inputs.summaryRead)
+    );
+  }
+
   private validateInputs(input: Input<"record">) {
     const { inputs, modelPayloads } = input;
     const ids = (value: unknown, max: number) =>
@@ -678,6 +709,7 @@ export class SqliteProactiveOperations {
         ([messageId, list]) => messageId.length < 1 || messageId.length > 256 || !ids(list, 16),
       ) ||
       !this.relatedInputsValid(inputs, ids) ||
+      !this.summaryInputsValid(inputs, ids) ||
       typeof floorHits !== "object" ||
       floorHits === null ||
       Object.keys(floorHits).length > MAX_INPUT_IDS ||
@@ -763,6 +795,16 @@ export class SqliteProactiveOperations {
               durationMs: 0,
             },
             relatedFailedSteps: input.inputs.relatedFailedSteps ?? [],
+            ...(input.inputs.summaryRead === undefined
+              ? {}
+              : {
+                  summaryInjected: input.inputs.summaryInjected ?? false,
+                  summaryIds: input.inputs.summaryIds ?? [],
+                  summaryDays: input.inputs.summaryDays ?? [],
+                  summaryCharacters: input.inputs.summaryCharacters ?? 0,
+                  summaryRead: input.inputs.summaryRead,
+                  summaryGenerated: input.inputs.summaryGenerated ?? 0,
+                }),
           }),
           decision.pushSourceKey,
           decision.costMicros,

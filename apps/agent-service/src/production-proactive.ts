@@ -14,6 +14,7 @@ import {
   type ProactiveModelInvoker,
   type ProactiveOverview,
   type ProactiveRating,
+  type ProactiveRecentSummaries,
   type ProactiveScope,
   type ProactiveSealPort,
   type ProactiveSourceReader,
@@ -135,6 +136,7 @@ export interface ProductionProactiveOptions {
   readonly readAccount: (accessToken: string) => Promise<string>;
   readonly model: ProactiveModelInvoker;
   readonly memory?: ProactiveMemoryRecall;
+  readonly recentSummaries?: ProactiveRecentSummaries;
   readonly ledger: Pick<DecisionLedgerPort, "listReviewPool" | "rateMany">;
   readonly readMemoryText: (ref: string) => Promise<string | undefined>;
   readonly readMemory?: (memoryId: string) => Promise<DailyReviewMemoryText | undefined>;
@@ -165,6 +167,7 @@ export class ProductionProactive {
       reader: options.reader,
       model: options.model,
       ...(options.memory ? { memory: options.memory } : {}),
+      ...(options.recentSummaries ? { recentSummaries: options.recentSummaries } : {}),
       limits: {
         perCheckMs: options.configuration.perCheckMs,
         dailyCostMicros: options.configuration.dailyCostMicros,

@@ -1017,6 +1017,15 @@ export const messages = {
   "dailyReview.tag.ruleReview": "Hard rule waiting for review",
   "dailyReview.ruleReview":
     "This hard rule came from something you said; that memory changed. The rule still applies and waits for you to have a look",
+  "dailyReview.tag.captureRetrying": "Memory capture failed, retried",
+  "dailyReview.tag.captureQueued": "Memory capture failed, retrying next turn",
+  "dailyReview.tag.captureGaveUp": "Not fully saved from this turn",
+  "dailyReview.captureRetrying":
+    "The model call that picks memories from this turn failed once; the system tried again right away",
+  "dailyReview.captureQueued":
+    "Picking memories from this turn did not work; the system will try again when you next send a message",
+  "dailyReview.captureGaveUp":
+    "Picking memories from this turn still failed after 3 more tries, or what was picked could not be fully saved (some of it may be saved); the system stopped trying",
   "dailyReview.hidden": "Text not shown here",
   "dailyReview.fetched": "Checked {count, plural, one {# email} other {# emails}}",
   "dailyReview.allFine": "This page is all fine",
@@ -1066,6 +1075,8 @@ export const messages = {
   "decision.chain.related": "{count, plural, one {# related email} other {# related emails}}",
   "decision.chain.read":
     "{s, select, off {Related emails: off} ok {Related emails: fully read} partial {Related emails: partly read} failed {Related emails: read failed} other {Related emails: no record}}",
+  "decision.chain.summaries":
+    "{s, select, off {Last two days of chat summaries: not read this time} ok {Last two days of chat summaries: {count, plural, one {# included} other {# included}}} partial {Last two days of chat summaries: {count, plural, one {# included} other {# included}}, may be incomplete} failed {Last two days of chat summaries: read failed} other {Last two days of chat summaries: no record}}",
   "decision.chain.memories": "Memories used",
   "decision.chain.recall":
     "{s, select, off {Memory lookup: off} ok {Memory lookup: normal} partial {Memory lookup: partial} failed {Memory lookup: failed} other {Memory lookup: no record}}",
@@ -1355,11 +1366,11 @@ export const messages = {
   "weekly.type.how4":
     "The range is a 95% Wilson interval: worked out from how many you rated, the true ratio falls inside it with 95% confidence. The more you rate, the narrower it gets.",
   "weekly.group":
-    "{g, select, proactive_pushed {Read mail and reminded you} proactive_silent {Read mail, no reminder} memory_skipped {Memories the system chose not to save} memory_kept {Saved memories} consolidation {Memory tidy-up} memory_pending {Memories awaiting your confirmation} context_truncation {Older content left out of an answer} retrieval_degrade {Memory search did not work} rule_review {Hard rule waiting for review} other {Memory read by an outside program}}",
+    "{g, select, proactive_pushed {Read mail and reminded you} proactive_silent {Read mail, no reminder} memory_skipped {Memories the system chose not to save} memory_kept {Saved memories} consolidation {Memory tidy-up} memory_pending {Memories awaiting your confirmation} context_truncation {Older content left out of an answer} retrieval_degrade {Memory search did not work} rule_review {Hard rule waiting for review} memory_capture_failed {Memory capture failed} other {Memory read by an outside program}}",
   "weekly.groupInfo":
-    "{g, select, proactive_pushed {Himawari reads new mail every 15 minutes; these are the reads after which it reminded you.} rule_review {Hard rules come from things you told Himawari; when that memory is edited, replaced or deleted the rule is marked as waiting for review, and these are those records.} other {Himawari reads new mail every 15 minutes; these are the reads after which nothing needed a reminder.}}",
+    "{g, select, proactive_pushed {Himawari reads new mail every 15 minutes; these are the reads after which it reminded you.} rule_review {Hard rules come from things you told Himawari; when that memory is edited, replaced or deleted the rule is marked as waiting for review, and these are those records.} memory_capture_failed {After each turn the system picks what to remember from your words; these are the times picking or saving failed, one record per failure. A turn that later succeeds also gets its own saved or not-saved record.} other {Himawari reads new mail every 15 minutes; these are the reads after which nothing needed a reminder.}}",
   "weekly.rate":
-    "{k, select, proactive_pushed_useful {Right to remind} proactive_pushed_unneeded {Shouldn’t have reminded} proactive_silent_useful {Right to stay silent} proactive_silent_missed {Should have reminded} memory_skipped_useful {Right not to save} memory_skipped_missed {Should have saved} memory_kept_useful {Saved correctly} memory_kept_unneeded {Shouldn’t have saved} consolidation_useful {Right tidy-up} consolidation_unneeded {Shouldn’t have tidied} other_useful {Right call} other_unneeded {Shouldn’t have done it} other {Should have done it}}",
+    "{k, select, proactive_pushed_useful {Right to remind} proactive_pushed_unneeded {Shouldn’t have reminded} proactive_silent_useful {Right to stay silent} proactive_silent_missed {Should have reminded} memory_skipped_useful {Right not to save} memory_skipped_missed {Should have saved} memory_kept_useful {Saved correctly} memory_kept_unneeded {Shouldn’t have saved} consolidation_useful {Right tidy-up} consolidation_unneeded {Shouldn’t have tidied} memory_capture_failed_useful {Nothing was lost} memory_capture_failed_missed {Lost something worth keeping} other_useful {Right call} other_unneeded {Shouldn’t have done it} other {Should have done it}}",
   "weekly.ratio": "{pct} ({k}/{n})",
   "weekly.interval": "95% range {low}–{high}",
   "weekly.few": "Too few rated ({n})",

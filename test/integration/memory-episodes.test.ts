@@ -216,6 +216,90 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
     }
   });
 
+  it("[P3-6] lists the recent day summaries by local day, newest first, and rejects bad input", async () => {
+    const now = { value: "2026-10-25T02:30:00.000Z" };
+    const resource = await fixture(now);
+    try {
+      for (const segment of await resource.service.dueSegments({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        limit: 5,
+      }))
+        await resource.service.summarize(segment, resource.summarize);
+      now.value = "2026-10-23T16:00:00.000Z";
+      const recent = await resource.service.recent({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        days: 2,
+        allowedClassifications: ["public", "private", "sensitive", "restricted"],
+        limit: 10,
+      });
+      expect(recent.partial).toBe(false);
+      expect(recent.summaries.map(({ episode }) => episode.day)).toEqual(["2026-10-23"]);
+      expect(recent.summaries[0]?.text).toContain("新宿吃烤肉");
+      const privateOnly = await resource.service.recent({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        days: 3,
+        allowedClassifications: ["private"],
+        limit: 10,
+      });
+      expect(privateOnly.summaries.map(({ episode }) => episode.day)).toEqual(["2026-10-23"]);
+      const withSensitive = await resource.service.recent({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        days: 3,
+        allowedClassifications: ["private", "sensitive"],
+        limit: 10,
+      });
+      expect(withSensitive.summaries.map(({ episode }) => episode.day)).toEqual([
+        "2026-10-23",
+        "2026-10-22",
+      ]);
+      const store = resource.repository.memoryEpisodes();
+      for (const bad of [
+        {
+          fromDay: "2026-10-24",
+          toDay: "2026-10-23",
+          allowedClassifications: ["private"],
+          limit: 5,
+        },
+        {
+          fromDay: "2026/10/23",
+          toDay: "2026-10-23",
+          allowedClassifications: ["private"],
+          limit: 5,
+        },
+        {
+          fromDay: "2026-10-22",
+          toDay: "2026-10-23",
+          allowedClassifications: ["secret"],
+          limit: 5,
+        },
+        {
+          fromDay: "2026-10-22",
+          toDay: "2026-10-23",
+          allowedClassifications: ["private"],
+          limit: 0,
+        },
+      ])
+        await expect(
+          store.listDaySummaries({ ownerId: OWNER_ID, agentId: AGENT_ID, ...bad } as never),
+        ).rejects.toThrow(/invalid/u);
+      for (const activeSince of ["2026-10-23", "yesterday", 5])
+        await expect(
+          store.listUnsummarized({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            activeSince,
+            limit: 5,
+          } as never),
+        ).rejects.toThrow(/activeSince is invalid/u);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
   it("finds an episode by meaning and words inside the asked window only", async () => {
     const now = { value: "2026-10-25T02:30:00.000Z" };
     const resource = await fixture(now);

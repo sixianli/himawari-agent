@@ -470,7 +470,18 @@ export class SqliteMemoryOperations {
         );
       case "memoryEpisode.listUnsummarized":
         return this.listUnsummarized(
-          payload as { ownerId: OwnerId; agentId: AgentId; limit: number },
+          payload as { ownerId: OwnerId; agentId: AgentId; activeSince?: string; limit: number },
+        );
+      case "memoryEpisode.listDaySummaries":
+        return this.listDaySummaries(
+          payload as {
+            ownerId: OwnerId;
+            agentId: AgentId;
+            fromDay: string;
+            toDay: string;
+            allowedClassifications: readonly string[];
+            limit: number;
+          },
         );
       case "memoryIndex.listUnindexed":
         return this.listUnindexed(
@@ -1493,6 +1504,48 @@ export class SqliteMemoryOperations {
     ).map((row) => this.episodeFromRow(row));
   }
 
+  private listDaySummaries(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    fromDay: string;
+    toDay: string;
+    allowedClassifications: readonly string[];
+    limit: number;
+  }): readonly MemoryEpisode[] {
+    if (
+      typeof input.fromDay !== "string" ||
+      typeof input.toDay !== "string" ||
+      !DAY.test(input.fromDay) ||
+      !DAY.test(input.toDay) ||
+      input.fromDay > input.toDay ||
+      !Number.isSafeInteger(input.limit) ||
+      input.limit < 1 ||
+      input.limit > 100 ||
+      !Array.isArray(input.allowedClassifications) ||
+      input.allowedClassifications.some((value) => !CLASSIFICATIONS.has(value))
+    ) {
+      this.fail("PORT_INVALID_OPERATION", "Memory day summary listing input is invalid");
+    }
+    return (
+      this.database
+        .prepare(
+          `SELECT ${episodeColumns} FROM memory_episodes e
+          WHERE e.owner_id = @ownerId AND e.agent_id = @agentId
+            AND e.day BETWEEN @fromDay AND @toDay AND e.source = 'day_summary'
+            AND e.classification IN (SELECT value FROM json_each(@classifications))
+          ORDER BY e.day DESC, e.ended_at DESC, e.id ASC LIMIT @limit`,
+        )
+        .all({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          fromDay: input.fromDay,
+          toDay: input.toDay,
+          classifications: JSON.stringify(input.allowedClassifications),
+          limit: input.limit,
+        }) as EpisodeRow[]
+    ).map((row) => this.episodeFromRow(row));
+  }
+
   private attachEpisodeEmbedding(input: {
     episodeId: string;
     embedding: MemoryIndexEmbedding;
@@ -1520,10 +1573,19 @@ export class SqliteMemoryOperations {
   private listUnsummarized(input: {
     ownerId: OwnerId;
     agentId: AgentId;
+    activeSince?: string;
     limit: number;
   }): readonly MemoryEpisodeThreadWatermark[] {
     if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100) {
       this.fail("PORT_INVALID_OPERATION", "Memory episode listing limit must be between 1 and 100");
+    }
+    if (
+      input.activeSince !== undefined &&
+      (typeof input.activeSince !== "string" ||
+        !Number.isFinite(Date.parse(input.activeSince)) ||
+        new Date(Date.parse(input.activeSince)).toISOString() !== input.activeSince)
+    ) {
+      this.fail("PORT_INVALID_OPERATION", "Memory episode listing activeSince is invalid");
     }
     return this.database
       .prepare(
@@ -1538,9 +1600,15 @@ export class SqliteMemoryOperations {
           GROUP BY thread_id) m ON m.thread_id = t.id
         WHERE t.owner_id = @ownerId AND t.agent_id = @agentId AND t.status = 'open'
           AND m.last_sequence > summarizedThrough
+          AND (@activeSince IS NULL OR m.last_committed_at >= @activeSince)
         ORDER BY m.last_committed_at, t.id LIMIT @limit`,
       )
-      .all(input) as MemoryEpisodeThreadWatermark[];
+      .all({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        activeSince: input.activeSince ?? null,
+        limit: input.limit,
+      }) as MemoryEpisodeThreadWatermark[];
   }
 
   private listUnindexed(input: {

@@ -125,6 +125,7 @@ import {
   proactiveRedirectUri,
 } from "./production-proactive.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
+import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -1701,6 +1702,24 @@ export async function runAgentService(
                 }),
               }))(protector, repository.payloadStore(configuration.ownerId, configuration.agentId))
             : {}),
+          ...(memory && memoryEpisodes && repository
+            ? ((book) => ({
+                recentSummaries: createProactiveRecentSummaries({
+                  ownerId: configuration.ownerId,
+                  agentId: configuration.agentId,
+                  episodes: memoryEpisodes,
+                  allowedClassifications: proactiveDescriptor.allowedDataClassifications,
+                  capturePaused: () =>
+                    book
+                      .readSettings({
+                        ownerId: configuration.ownerId,
+                        agentId: configuration.agentId,
+                      })
+                      .then(({ capturePaused }) => capturePaused),
+                  embedForMailCheck: memory.embedForMailCheck,
+                }),
+              }))(repository.memoryBook())
+            : {}),
           model: modelComposition.composition.proactiveModel(proactiveConfiguration.modelRef, {
             maxOutputTokens: PROACTIVE_MAX_OUTPUT_TOKENS,
             requestTimeoutMs: proactiveConfiguration.perCheckMs,
@@ -2091,12 +2110,13 @@ export async function runAgentService(
                       },
                     }
                   : {}),
-                generate: (request, prompt, gate, purpose = "memory-capture") => {
+                generate: (request, prompt, gate, purpose = "memory-capture", call) => {
                   const generateText = modelComposition?.composition.generateText;
                   if (!generateText) throw new Error("MEMORY_CAPTURE_MODEL_UNAVAILABLE");
                   return generateText(request, prompt, gate, {
                     purpose: modelUsagePurpose(purpose),
-                    invocationId: `${purpose}:${request.runId}`,
+                    invocationId: call?.invocationId ?? `${purpose}:${request.runId}`,
+                    ...(call ? { retryToolCall: call.retryToolCall } : {}),
                     maxOutputTokens: 1024,
                     reasoningOutputTokens: 4096,
                     disableThinking: true,

@@ -22,6 +22,7 @@ import type {
   MemoryEpisodeStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
+  MemoryCaptureBacklogPort,
   MemoryReminderStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
@@ -961,6 +962,15 @@ export class SqliteDurableAdapters {
     });
   }
 
+  memoryCaptureBacklog(): MemoryCaptureBacklogPort {
+    return Object.freeze<MemoryCaptureBacklogPort>({
+      enqueue: (entry) => this.context.write("memoryCaptureBacklog.enqueue", { entry }),
+      oldest: (input) => this.context.read("memoryCaptureBacklog.oldest", input),
+      recordAttempt: (input) => this.context.write("memoryCaptureBacklog.recordAttempt", input),
+      remove: (generationId) => this.context.write("memoryCaptureBacklog.remove", { generationId }),
+    });
+  }
+
   memoryReminders(): MemoryReminderStorePort {
     return Object.freeze<MemoryReminderStorePort>({
       schedule: (reminder) => this.context.write("memoryReminder.schedule", { reminder }),
@@ -1127,6 +1137,7 @@ export class SqliteDurableAdapters {
       listUnembedded: (input) => this.context.read("memoryEpisode.listUnembedded", input),
       attachEmbedding: (input) => this.context.write("memoryEpisode.attachEmbedding", input),
       listUnsummarized: (input) => this.context.read("memoryEpisode.listUnsummarized", input),
+      listDaySummaries: (input) => this.context.read("memoryEpisode.listDaySummaries", input),
     });
   }
 

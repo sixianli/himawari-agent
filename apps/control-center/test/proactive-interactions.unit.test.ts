@@ -604,6 +604,30 @@ describe("[PG-15] proactive reminders page", () => {
     expect(row?.textContent).not.toContain("外部程序读取记忆");
   });
 
+  it("[P3-5] names each failed memory capture by what happens next instead of waiting for approval", async () => {
+    review = {
+      ...review,
+      folded: {
+        total: 3,
+        items: (["capture_retrying", "capture_queued", "capture_gave_up"] as const).map((outcome) =>
+          reviewItem(`ledger:${outcome}`, { outcome, text: "" }),
+        ),
+      },
+    };
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    const section = "#page .proactive-review";
+    await click(section, "展开");
+    const rows = [...document.querySelectorAll<HTMLElement>(`${section} li`)];
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining("记忆抽取失败，已重试"),
+      expect.stringContaining("记忆抽取失败，下一轮补做"),
+      expect.stringContaining("这轮没记全"),
+    ]);
+    expect(text(section)).not.toContain("待你确认的记忆");
+    expect(text(section)).not.toContain("这里不显示原文");
+  });
+
   it("[P0-6] sends one rating, clears it on a second tap and leaves a reviewed mail alone", async () => {
     await act(async () => root.render(h(Page, { focus: null })));
     await flush();
@@ -1007,7 +1031,12 @@ describe("[P1-3] the basis drawer of a decision record", () => {
         },
       ],
     },
-    mails: { judged: 3, related: 2, relatedRead: "partial" },
+    mails: {
+      judged: 3,
+      related: 2,
+      relatedRead: "partial",
+      summaries: { count: 2, read: "ok" },
+    },
     memories: {
       state: "recorded",
       recall: "ok",
@@ -1094,6 +1123,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     expect(drawer.split("只记了规则名，显示的是现在的版本").length).toBe(2);
     expect(drawer).toContain("判断了 3 封");
     expect(drawer).toContain("关联邮件：只读到一部分");
+    expect(drawer).toContain("最近两天的对话摘要：带了 2 段");
     expect(drawer).toContain("我住在东京");
     expect(drawer).toContain("我搬到东京了");
     expect(drawer).toContain("推断依据");
@@ -1114,7 +1144,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     chainResult = chain({
       inputs: "not_recorded",
       rules: { state: "not_recorded", items: [] },
-      mails: { judged: null, related: null, relatedRead: "not_recorded" },
+      mails: { judged: null, related: null, relatedRead: "not_recorded", summaries: null },
       memories: {
         state: "not_recorded",
         recall: "not_recorded",
@@ -1129,6 +1159,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     await flush();
     const drawer = text(".decision-chain");
     expect(drawer.match(/无记录/gu)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    expect(drawer).not.toContain("对话摘要");
     expect(drawer).toContain("还没评价");
   });
 
