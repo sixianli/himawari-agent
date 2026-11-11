@@ -108,10 +108,15 @@ export async function importPortableExport(
   }
   assertEmptyTarget(options.database, options.scope);
 
-  const original = (key: string, text: ParsedText): string | null => {
-    if (text.withheld !== true) return text.text;
-    return sealed?.originals[key] ?? null;
+  const sealedText = (key: string): string | null => {
+    const value: unknown = sealed?.originals[key];
+    if (value === undefined) return null;
+    if (typeof value !== "string")
+      throw new DataExportError(DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH, `${key} 的原文不是文字`);
+    return value;
   };
+  const original = (key: string, text: ParsedText): string | null =>
+    text.withheld === true ? sealedText(key) : text.text;
 
   const skippedMemories = new Set<string>();
   let historyWithout = 0;
@@ -236,13 +241,8 @@ export async function importPortableExport(
     key: string,
   ): T | null => {
     if (version.withheld !== true) return version;
-    const parameters = sealed?.originals[key];
-    if (parameters === undefined) return null;
-    if (typeof parameters !== "string")
-      throw new DataExportError(
-        DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH,
-        `规则 ${ruleId} 的原文不是文字`,
-      );
+    const parameters = sealedText(key);
+    if (parameters === null) return null;
     if ([...parameters].length > RULE_PARAMETERS_MAXIMUM_LENGTH)
       throw new DataExportError(
         DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH,

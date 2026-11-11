@@ -243,8 +243,13 @@ export function checkRulesMarkdown(
 ): string | null {
   if (markdown === undefined) return `缺少 ${RULES_INDEX_FILE}`;
   const listed = markdown.split("\n").filter((line) => RULE_LINE.test(line));
+  const byRule = new Map<string, string[]>();
+  for (const line of listed) {
+    const id = RULE_LINE.exec(line)?.[1] ?? "";
+    byRule.set(id, [...(byRule.get(id) ?? []), line]);
+  }
   for (const rule of rules) {
-    const lines = listed.filter((line) => RULE_LINE.exec(line)?.[1] === rule.ruleId);
+    const lines = byRule.get(rule.ruleId) ?? [];
     if (lines.length !== 1)
       return `${RULES_INDEX_FILE} 里规则 ${rule.ruleId} 出现了 ${lines.length} 次`;
     const memories = [...(lines[0] ?? "").matchAll(MEMORY_MARK)].map((match) => match[1]);

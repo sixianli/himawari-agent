@@ -496,7 +496,8 @@ describe("data export: a tampered rule book is refused before anything is writte
     const sealed = (await unsealJson(PASSPHRASE, files.get(SEALED_FILE) ?? new Uint8Array())) as {
       originals: Record<string, unknown>;
     };
-    sealed.originals["rule/owner:build-key/parameters"] = 7;
+    const memoryKey = Object.keys(sealed.originals).find((key) => key.startsWith("memory/"));
+    sealed.originals[memoryKey ?? ""] = 7;
     const resealed = await sealJson(PASSPHRASE, sealed as never);
     const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE))) as {
       files: { path: string; bytes: number; sha256: string }[];
