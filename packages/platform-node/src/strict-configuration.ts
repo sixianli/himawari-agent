@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   type CapabilityDeploymentConfiguration,
   type ConfigurationPort,
+  type ConfiguredMemoryRetrieval,
   type ConfiguredCompletionsGenerationModelDescriptor,
   type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredModelDescriptor,
@@ -116,6 +117,27 @@ function nonNegativeNumber(value: unknown, field: string): number {
     throw invalid(field, "must be a non-negative finite number");
   }
   return value;
+}
+
+function memoryRetrieval(value: unknown): ConfiguredMemoryRetrieval | undefined {
+  if (value === undefined) return undefined;
+  const field = "configuration.memory.retrieval";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    ["keywordWeight", "entityWeight", "cutoffMargin", "dedupeSameSource"],
+    field,
+  );
+  const parsed: Record<string, number | boolean> = {};
+  for (const key of ["keywordWeight", "entityWeight", "cutoffMargin"] as const) {
+    if (input[key] === undefined) continue;
+    const value = unitInterval(input[key], `${field}.${key}`);
+    if (value >= 1) throw invalid(`${field}.${key}`, "must be at least 0 and below 1");
+    parsed[key] = value;
+  }
+  if (input["dedupeSameSource"] !== undefined)
+    parsed["dedupeSameSource"] = boolean(input["dedupeSameSource"], `${field}.dedupeSameSource`);
+  return Object.freeze(parsed) as ConfiguredMemoryRetrieval;
 }
 
 function unitInterval(value: unknown, field: string): number {
@@ -977,6 +999,7 @@ export const GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE = "google-oauth-client";
 export const MUSE_INTAKE_SECRET_PURPOSE = "muse-intake";
 export const GAP_EXPORT_SECRET_PURPOSE = "gap-export";
 export const MCP_READ_SECRET_PURPOSE = "mcp-read";
+export const MCP_WRITE_SECRET_PURPOSE = "mcp-write";
 
 function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["proactive"]> {
   const field = "configuration.runPolicy.proactive";
@@ -997,6 +1020,10 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       "relatedCharactersPerMail",
       "relatedCharactersPerRelatedMail",
       "relatedRequestsPerCheck",
+      "wholeThreadMailsPerMail",
+      "wholeThreadCharactersPerMail",
+      "ruleReplayDays",
+      "ruleReplayMailsPerOutcome",
       "reviewBudgetSeconds",
       "reviewSecondsPerItem",
       "reviewSilentSharePermille",
@@ -1033,6 +1060,17 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       `${field}.relatedCharactersPerMail`,
       "must not be smaller than relatedCharactersPerRelatedMail",
     );
+  const wholeThreadCharactersPerMail = optional(
+    "wholeThreadCharactersPerMail",
+    60_000,
+    200,
+    400_000,
+  );
+  if (wholeThreadCharactersPerMail < relatedCharactersPerRelatedMail)
+    throw invalid(
+      `${field}.wholeThreadCharactersPerMail`,
+      "must not be smaller than relatedCharactersPerRelatedMail",
+    );
   return Object.freeze({
     modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
     gmail: Object.freeze({
@@ -1052,6 +1090,10 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     relatedCharactersPerMail,
     relatedCharactersPerRelatedMail,
     relatedRequestsPerCheck: optional("relatedRequestsPerCheck", 300, 1, 2_000),
+    wholeThreadMailsPerMail: optional("wholeThreadMailsPerMail", 50, 1, 200),
+    wholeThreadCharactersPerMail,
+    ruleReplayDays: optional("ruleReplayDays", 30, 1, 365),
+    ruleReplayMailsPerOutcome: optional("ruleReplayMailsPerOutcome", 300, 10, 5_000),
     memoryMinimumSimilarity:
       input["memoryMinimumSimilarity"] === undefined
         ? 0.45
@@ -1081,8 +1123,13 @@ function parseMuseIntake(value: unknown): NonNullable<RunPolicyConfiguration["mu
 function parseMcpRead(value: unknown): NonNullable<RunPolicyConfiguration["mcpRead"]> {
   const field = "configuration.runPolicy.mcpRead";
   const input = record(value, field);
-  rejectUnknown(input, ["secretRef"], field);
-  return Object.freeze({ secretRef: safeReference(input["secretRef"], `${field}.secretRef`) });
+  rejectUnknown(input, ["secretRef", "writeSecretRef"], field);
+  const secretRef = safeReference(input["secretRef"], `${field}.secretRef`);
+  if (input["writeSecretRef"] === undefined) return Object.freeze({ secretRef });
+  const writeSecretRef = safeReference(input["writeSecretRef"], `${field}.writeSecretRef`);
+  if (writeSecretRef === secretRef)
+    throw invalid(`${field}.writeSecretRef`, "must differ from secretRef");
+  return Object.freeze({ secretRef, writeSecretRef });
 }
 
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
@@ -1297,9 +1344,10 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const memory = record(input["memory"], "configuration.memory");
   rejectUnknown(
     memory,
-    ["adapter", "version", "storagePath", "dimensions", "minimumSimilarity"],
+    ["adapter", "version", "storagePath", "dimensions", "minimumSimilarity", "retrieval"],
     "configuration.memory",
   );
+  const retrieval = memoryRetrieval(memory["retrieval"]);
   const minimumSimilarity =
     memory["minimumSimilarity"] === undefined
       ? undefined
@@ -1434,6 +1482,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       MCP_READ_SECRET_PURPOSE,
       "configuration.runPolicy.mcpRead.secretRef",
     );
+  if (runPolicy?.mcpRead?.writeSecretRef !== undefined)
+    assertIdentitySecretReference(
+      secretReferences,
+      runPolicy.mcpRead.writeSecretRef,
+      MCP_WRITE_SECRET_PURPOSE,
+      "configuration.runPolicy.mcpRead.writeSecretRef",
+    );
   if (runPolicy?.museIntake?.gapExportSecretRef !== undefined)
     assertIdentitySecretReference(
       secretReferences,
@@ -1494,6 +1549,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       storagePath: memoryPath,
       dimensions: memoryDimensions,
       ...(minimumSimilarity === undefined ? {} : { minimumSimilarity }),
+      ...(retrieval === undefined ? {} : { retrieval }),
     }),
     repositoryAllowlistRefs: stringArray(
       input["repositoryAllowlistRefs"],

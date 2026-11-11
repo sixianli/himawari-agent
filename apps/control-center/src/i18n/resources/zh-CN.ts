@@ -89,6 +89,7 @@ export const messages = {
   "step.search": "搜索网页",
   "step.recall": "翻看记忆",
   "step.reminder": "处理提醒",
+  "step.rule": "处理长期规则",
   "step.fetch": "打开网页",
   "step.read": "读取文件",
   "step.write": "写入文件",
@@ -637,8 +638,10 @@ export const messages = {
   "memory.profile.goal": "长期目标",
   "memory.profile.project": "进行中的事",
   "memory.tidyKept": "（保留：{text}）",
+  "memory.tidyOther": "（另一条：{text}）",
   "memory.undo": "撤销",
   "memory.undone": "已撤销",
+  "memory.undoLocked": "这条记忆之后又改过，不能撤销；想回到旧版本，请在它的历史里恢复",
   "memory.reminderTitle": "提醒",
   "memory.reminderDue": "时间：{time}",
   "memory.reminderDismiss": "不再提醒",
@@ -692,7 +695,7 @@ export const messages = {
   "memory.page.changed": "改过 {count} 次",
   "memory.page.source": "来源",
   "memory.page.origin":
-    "{o, select, owner {你手动添加} import {导入} deleted {来源对话已删除} reminder {提醒创建，无原话} other {整理记忆}}",
+    "{o, select, owner {你手动添加} external {外部 agent 提议，你确认后保存} import {导入} deleted {来源对话已删除} reminder {提醒创建，无原话} other {整理记忆}}",
   "memory.page.used": "上次用到",
   "memory.page.notUsed": "还没用到",
   "memory.page.history": "怎么变过来的",
@@ -708,7 +711,7 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {全部变化} new {新记住} drop {不记和删除} tidy {整理记忆} correct {更正} other {导入}}",
   "memory.page.event":
-    "{e, select, new {新记住} dropped {已不记} deleted {已删除} correct {更正} import {导入} merge {合并重复} supersede {取代旧说法} archive {归档} other {新推测}}",
+    "{e, select, new {新记住} dropped {已不记} deleted {已删除} correct {更正} import {导入} merge {合并重复} supersede {取代旧说法} archive {归档} hold {发现说法不一} other {新推测}}",
   "memory.page.imported":
     "从 {source, select, codex {Codex} assistant {其他 AI} other {Himawari 导出文件}} 导入 {count} 条",
   "memory.page.goConfirm": "去确认",
@@ -826,6 +829,25 @@ export const messages = {
   "memory.page.changeNo": "第 {n} 次变化",
   "memory.page.seeAllChanges": "看这条记忆的全部变化",
   "memory.page.confirmTitle": "需要你确认 · {count} 条",
+  "rules.title": "长期规则 · {count} 条",
+  "rules.note": "这些规则由程序强制执行，不靠模型记住。撤销后下一次检查邮件时就不再执行。",
+  "rules.type":
+    "{t, select, mail_must_notify {一定提醒} mail_read_whole_thread {先读完整个邮件串} other {其他规则}}",
+  "rules.needsReview": "来源记忆改过，待重新确认（仍在执行）",
+  "rules.notEnforced": "这条规则读不懂，暂时没有执行",
+  "rules.reconfirm": "重新确认",
+  "rules.undo": "撤销",
+  "rules.receipt.label": "长期规则回执",
+  "rules.receipt.status":
+    "{s, select, active {已立为长期规则} proposed {建议立为长期规则，点“生效”才执行} soft {已记成偏好，程序不强制执行} undone {已撤销} other {长期规则}}",
+  "rules.receipt.trials": "试算",
+  "rules.receipt.trial": "{hit, select, true {会命中} other {不会命中}}：{from} · {subject}",
+  "rules.receipt.replay":
+    "近 {days} 天回放：重算了 {checked} 封已判断过的邮件，规则命中 {hit} 封，其中 {changed} 封原来判为“不用管”或“知道就好”、{kind, select, mail_read_whole_thread {以后会先读完整个邮件串再判断，读不全就交给你看} other {现在会改成要你看}}；这些里你评过“有用”的有 {useful} 封。",
+  "rules.receipt.replayNote":
+    "回放用当时存下的内容重算。判为“不用管”的邮件只存了发件人和标题，所以结果是估计，可能偏多也可能偏少。",
+  "rules.receipt.replayNone": "这次没能做历史回放，规则已照常生效。",
+  "rules.receipt.confirm": "生效",
   "memory.page.carry.title": "每次对话都会带上的记忆",
   "memory.page.carry.summary": "{count} 条 · 已用 {used} / {limit} 字",
   "memory.page.carry.queued": "还有 {count} 条放不下",
@@ -956,6 +978,13 @@ export const messages = {
   "dailyReview.tag.externalRead": "外部程序读取记忆",
   "dailyReview.tag.ruleReview": "硬规则待重审",
   "dailyReview.ruleReview": "这条硬规则来自你说过的一句话，那条记忆变了，规则照常执行，等你看一眼",
+  "dailyReview.tag.captureRetrying": "记忆抽取失败，已重试",
+  "dailyReview.tag.captureQueued": "记忆抽取失败，下一轮补做",
+  "dailyReview.tag.captureGaveUp": "这轮没记全",
+  "dailyReview.captureRetrying": "这轮对话后抽取记忆的模型调用失败了一次，系统当场又试了一次",
+  "dailyReview.captureQueued": "这轮对话后抽取记忆没成功，系统会在你下一次发消息时补做",
+  "dailyReview.captureGaveUp":
+    "这轮对话的记忆补做了 3 次仍没抽取成功，或者抽取出来后没能存完（可能已存下一部分），系统不再重试",
   "dailyReview.hidden": "这里不显示原文",
   "dailyReview.fetched": "检查了 {count} 封邮件",
   "dailyReview.allFine": "这一页都没问题",
@@ -985,7 +1014,7 @@ export const messages = {
   "decision.chain.rules": "命中的规则",
   "decision.chain.reviewRules": "待重审的规则",
   "decision.chain.rule":
-    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：邮件里有金额相关的词} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} other {{id}}}",
+    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：邮件里有金额相关的词} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} mail_must_notify {你立的规则：这类邮件必须提醒你} mail_read_whole_thread {你立的规则：先看整个邮件串再判断} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {你设定的} built_in {内置规则} other {未登记的规则}}",
   "decision.chain.ruleMails": "命中 {count} 封邮件",
@@ -1004,6 +1033,8 @@ export const messages = {
   "decision.chain.related": "关联邮件 {count} 封",
   "decision.chain.read":
     "{s, select, off {关联邮件：没开启} ok {关联邮件：读取完整} partial {关联邮件：只读到一部分} failed {关联邮件：读取失败} other {关联邮件：无记录}}",
+  "decision.chain.summaries":
+    "{s, select, off {最近两天的对话摘要：这次没读} ok {最近两天的对话摘要：带了 {count} 段} partial {最近两天的对话摘要：带了 {count} 段，可能不全} failed {最近两天的对话摘要：读取失败} other {最近两天的对话摘要：无记录}}",
   "decision.chain.memories": "用到的记忆",
   "decision.chain.recall":
     "{s, select, off {找记忆：没开启} ok {找记忆：正常} partial {找记忆：只找到一部分} failed {找记忆：失败} other {找记忆：无记录}}",
@@ -1023,7 +1054,7 @@ export const messages = {
   "decision.chain.basis": "推断依据",
   "decision.chain.basisCut": "依据没读全（太多或读取出错）",
   "decision.chain.action":
-    "{a, select, merge {合并} supersede {取代} archive {归档} reflect {归纳} other {整理}}",
+    "{a, select, merge {合并} supersede {取代} archive {归档} reflect {归纳} hold {发现说法不一} other {整理}}",
   "decision.chain.repeated": "重复出现",
   "decision.chain.nodeCut": "后面还有",
   "decision.email.open": "查看这封邮件",
@@ -1254,11 +1285,11 @@ export const messages = {
   "weekly.type.how4":
     "区间是 95% Wilson 区间：按你评过的条数算出的范围，真实比例有 95% 的把握落在里面；评得越多，区间越窄。",
   "weekly.group":
-    "{g, select, proactive_pushed {读完邮件提醒了你} proactive_silent {读完邮件没提醒} memory_skipped {系统没存下的记忆} memory_kept {已存的记忆} consolidation {整理记忆} memory_pending {待你确认的记忆} context_truncation {回答时没带上的旧内容} retrieval_degrade {记忆搜索没生效} rule_review {硬规则待重审} other {外部程序读取记忆}}",
+    "{g, select, proactive_pushed {读完邮件提醒了你} proactive_silent {读完邮件没提醒} memory_skipped {系统没存下的记忆} memory_kept {已存的记忆} consolidation {整理记忆} memory_pending {待你确认的记忆} context_truncation {回答时没带上的旧内容} retrieval_degrade {记忆搜索没生效} rule_review {硬规则待重审} memory_capture_failed {记忆抽取失败} other {外部程序读取记忆}}",
   "weekly.groupInfo":
-    "{g, select, proactive_pushed {Himawari 每 15 分钟读一次新邮件；这一行是读完后提醒了你的那几次。} rule_review {Himawari 的硬规则来自你说过的话；那条记忆被改动、取代或删除后，规则标“待重审”，这一行是这类记录。} other {Himawari 每 15 分钟读一次新邮件；这一行是读完觉得都不用提醒你的那几次。}}",
+    "{g, select, proactive_pushed {Himawari 每 15 分钟读一次新邮件；这一行是读完后提醒了你的那几次。} rule_review {Himawari 的硬规则来自你说过的话；那条记忆被改动、取代或删除后，规则标“待重审”，这一行是这类记录。} memory_capture_failed {每轮对话后系统会从你的话里抽取要记住的内容；这一行是抽取或保存失败的那几次，每次失败一条，补做成功的那轮另有“已存”或“没存”记录。} other {Himawari 每 15 分钟读一次新邮件；这一行是读完觉得都不用提醒你的那几次。}}",
   "weekly.rate":
-    "{k, select, proactive_pushed_useful {提醒得对} proactive_pushed_unneeded {不该提醒} proactive_silent_useful {不提醒是对的} proactive_silent_missed {该提醒没提醒} memory_skipped_useful {不存是对的} memory_skipped_missed {该存没存} memory_kept_useful {存对了} memory_kept_unneeded {不该存} consolidation_useful {整理得对} consolidation_unneeded {不该整理} other_useful {做对了} other_unneeded {不该做} other {该做没做}}",
+    "{k, select, proactive_pushed_useful {提醒得对} proactive_pushed_unneeded {不该提醒} proactive_silent_useful {不提醒是对的} proactive_silent_missed {该提醒没提醒} memory_skipped_useful {不存是对的} memory_skipped_missed {该存没存} memory_kept_useful {存对了} memory_kept_unneeded {不该存} consolidation_useful {整理得对} consolidation_unneeded {不该整理} memory_capture_failed_useful {没漏掉什么} memory_capture_failed_missed {漏了该记的} other_useful {做对了} other_unneeded {不该做} other {该做没做}}",
   "weekly.ratio": "{pct}（{k}/{n}）",
   "weekly.interval": "区间 {low}–{high}",
   "weekly.few": "样本不足（{n} 条）",

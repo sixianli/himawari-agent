@@ -32,7 +32,7 @@ date: "2026-11-09"
 `DecisionInputs`（`packages/application/src/ports/decision-ledger.ts`）有两条写入路径，落盘的字段不同：
 
 - **系统主动提醒的检查**（`kind` 为 `proactive`，`sqlite-proactive-operations.ts` 的写入路径）：落盘完整字段，除下表的字段外还有 `memoryInjected`、`relatedStats`、`relatedFailedSteps` 等；下表只列抽屉会读的字段。
-- **其他种类**（`memory_candidate`、`consolidation`、`context_truncation`、`retrieval_degrade`、`external_read`，经 `DecisionLedgerPort.append`，`sqlite-decision-ledger-operations.ts` 的 `insertLedgerRow`）：目前只落 `memoryIds`、`ruleIds`、`batchId`、`resultMemoryIds` 四个键（没提供 `batchId`、`resultMemoryIds` 时也会写默认值，所以这四个键永远在；`rule_review` 由迁移 0087 的触发器直接写表，也写这四个键，`ruleIds` 是待重审的规则编号，`memoryIds` 是来源记忆），其余字段在入库前被丢掉。唯一的例外是 `context_truncation` 可以多带一个 `profileBudget`（`{limit, used, pinned}`，档案块的字数上限、实际用掉的字数、置顶条目占的字数，只在档案块放不下时写，见 [ADR 0214](../../adr/0214-record-profile-truncation-and-keep-pinned-memories.md)）。档案块的截断记录不走 `append`，走 `DecisionLedgerPort.appendIfChanged`：同一主人最近一条同类原因码的记录，原因码相同、编号集合也相同时就不写。要让这些种类也记下别的字段，先改 `insertLedgerRow` 和它的校验，再改这份约定。
+- **其他种类**（`memory_candidate`、`consolidation`、`context_truncation`、`retrieval_degrade`、`external_read`，经 `DecisionLedgerPort.append`，`sqlite-decision-ledger-operations.ts` 的 `insertLedgerRow`）：目前只落 `memoryIds`、`ruleIds`、`batchId`、`resultMemoryIds` 四个键（没提供 `batchId`、`resultMemoryIds` 时也会写默认值，所以这四个键永远在；`rule_review` 由迁移 0087 的触发器直接写表，也写这四个键，`ruleIds` 是待重审的规则编号，`memoryIds` 是来源记忆），其余字段在入库前被丢掉。例外有两个：`external_read` 可以多带下表的 summary 六项（见 [ADR 0219](../../adr/0219-read-only-mcp-entry-with-static-token.md) 决定 7，六项一起写或一起不写，别的种类带了就拒绝，`insertLedgerRow` 自己也拒绝）；`context_truncation` 可以多带一个 `profileBudget`（`{limit, used, pinned}`，档案块的字数上限、实际用掉的字数、置顶条目占的字数，只在档案块放不下时写，见 [ADR 0214](../../adr/0214-record-profile-truncation-and-keep-pinned-memories.md)）。档案块的截断记录不走 `append`，走 `DecisionLedgerPort.appendIfChanged`：同一主人最近一条同类原因码的记录，原因码相同、编号集合也相同时就不写。要让这些种类也记下别的字段，先改 `insertLedgerRow` 和它的校验，再改这份约定。
 
 | 字段 | 谁写 | 含义 |
 | --- | --- | --- |
@@ -42,6 +42,7 @@ date: "2026-11-09"
 | `memoryByMail`、`usedMemoryIds`、`tentativeMemoryIds` | `proactive` | 每封邮件对应的记忆、模型实际用到的记忆、待确认的记忆；其他种类现在没有这三个键，所以不会显示“模型用到了” |
 | `memoryRecall` | `proactive` | 找记忆的状态：`off`、`ok`、`partial`、`failed` |
 | `sourceIds`、`relatedByMail`、`relatedRead` | `proactive` | 判断了哪些邮件、关联了哪些邮件、读关联邮件是否完整 |
+| `summaryInjected`、`summaryIds`、`summaryDays`、`summaryCharacters`、`summaryRead`、`summaryGenerated` | `proactive` 只在 Gmail 检查接上了对话日摘要读取时写；`external_read` 只在外部读取的 `today_context` 接上了摘要读取时写，`summaryGenerated` 固定为 0，抽屉不显示这六项（依据链只给 Gmail 检查列 `mails.summaries`），只在记录的输入字段里能查到。六项一起写或一起不写 | 是否真的把最近两天的对话日摘要发给了模型、发了哪些段、哪几天、多少字、读取状态（`off`、`ok`、`partial`、`failed`）、这次补生成了几段（[ADR 0216](../../adr/0216-gmail-check-reads-recent-day-summaries.md)） |
 
 <a id="rules"></a>
 

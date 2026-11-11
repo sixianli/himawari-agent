@@ -17,6 +17,7 @@ import {
   type Embedder,
   HybridMemoryProvider,
   indexTerms,
+  isConsolidationUndoable,
   MemoryConsolidationService,
 } from "@himawari-agent/memory-engine";
 import {
@@ -66,6 +67,8 @@ const MEMORIES: ReadonlyArray<{
   readonly at: string;
   readonly classification: "private" | "sensitive";
   readonly attributes: Partial<ProductMemoryAttributes>;
+  readonly confidence?: number;
+  readonly later?: true;
 }> = [
   {
     id: "coffee-old",
@@ -136,6 +139,57 @@ const MEMORIES: ReadonlyArray<{
     at: "2026-10-23T00:00:00.000Z",
     classification: "private",
     attributes: { category: "goal", importancePermille: 600 },
+  },
+  {
+    id: "home-old",
+    text: "主人以前住在足立区",
+    at: "2026-05-04T00:00:00.000Z",
+    classification: "private",
+    attributes: { category: "identity", subCategory: "住处", importancePermille: 800 },
+  },
+  {
+    id: "home-new",
+    text: "主人现在住在北区",
+    at: "2026-10-24T00:00:00.000Z",
+    classification: "private",
+    attributes: { category: "identity", subCategory: "住处", importancePermille: 800 },
+  },
+  {
+    id: "milk-old",
+    text: "主人平时喝明治的牛奶",
+    at: "2026-05-05T00:00:00.000Z",
+    classification: "private",
+    attributes: { category: "preference", subCategory: "饮品", importancePermille: 500 },
+  },
+  {
+    id: "milk-new",
+    text: "主人出差时喝便利店的牛奶",
+    at: "2026-10-24T00:00:00.000Z",
+    classification: "private",
+    attributes: { category: "preference", subCategory: "饮品", importancePermille: 500 },
+  },
+  {
+    id: "pet-old",
+    text: "主人家里养着一只柴犬",
+    at: "2026-05-06T00:00:00.000Z",
+    classification: "private",
+    attributes: { category: "other", subCategory: "宠物", importancePermille: 500 },
+  },
+  {
+    id: "pet-new",
+    text: "主人家里改养了一只橘猫",
+    at: "2026-10-24T00:00:00.000Z",
+    classification: "private",
+    attributes: { category: "other", subCategory: "宠物", importancePermille: 500 },
+    confidence: 800,
+  },
+  {
+    id: "milk-weekend",
+    text: "主人周末在家喝燕麦奶",
+    at: "2026-10-25T10:00:00.000Z",
+    classification: "private",
+    attributes: { category: "preference", subCategory: "饮品", importancePermille: 500 },
+    later: true,
   },
 ];
 
@@ -247,8 +301,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       maximumProjectionAttempts: 3,
       projectionLeaseMs: 10_000,
     });
-    for (const item of MEMORIES) {
-      clock.value = item.at;
+    const create = async (item: (typeof MEMORIES)[number]) => {
       await memory.applyProposal(
         {
           decision: "create",
@@ -261,7 +314,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
             sourceThreadId: THREAD_ID,
             sourceRefs: [`message-${item.id}`],
             inference: false,
-            confidencePermille: 1000,
+            confidencePermille: item.confidence ?? 1000,
             policyVersion: "memory-policy-v1",
             attributes: {
               category: "other",
@@ -277,7 +330,17 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
         },
         GENERATION_ID,
       );
+    };
+    for (const item of MEMORIES.filter(({ later }) => !later)) {
+      clock.value = item.at;
+      await create(item);
     }
+    const addLater = async (id: string) => {
+      const item = MEMORIES.find((entry) => entry.id === id && entry.later);
+      if (!item) throw new Error(`No later memory ${id}`);
+      await create(item);
+      await memory.runProjectionBatch(50);
+    };
     clock.value = "2026-10-25T03:00:00.000Z";
     await memory.runProjectionBatch(50);
     const jobs = repository.memoryProjectionJobs();
@@ -329,7 +392,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
           groups: [
             {
               group: groupOf(prompt, label("coffee-new")),
-              action: "conflict",
+              action: "replace",
               keep: label("coffee-new"),
               drop: label("coffee-old"),
             },
@@ -408,6 +471,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       read,
       searchable,
       indexed,
+      addLater,
     };
   }
 
@@ -593,7 +657,10 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       if (!reflect || !result) throw new Error("reflect change missing");
       const insight = await resource.read(reflect.memoryId);
       if (!insight) throw new Error("insight missing");
+      expect(isConsolidationUndoable(reflect, insight)).toBe(true);
       await resource.memory.confirm(insight.id, GENERATION_ID);
+      expect(isConsolidationUndoable(reflect, await resource.read(reflect.memoryId))).toBe(false);
+      expect(isConsolidationUndoable(reflect, undefined)).toBe(false);
       await expect(resource.consolidation.undo(reflect.id)).rejects.toThrow(
         "MEMORY_CHANGED_AFTER_CONSOLIDATION",
       );
@@ -641,7 +708,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
           groups: [
             {
               group: groupOf(prompt, label("coffee-new")),
-              action: "conflict",
+              action: "replace",
               keep: label("coffee-new"),
               drop: label("coffee-old"),
             },
@@ -651,6 +718,188 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       });
       expect(result?.changes.map(({ action }) => action)).toEqual([]);
       expect((await resource.read("coffee-old"))?.attributes?.supersededBy).toBeNull();
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[P3-8] replaces a moved home automatically, holds a situational difference and a low-confidence replacement for the Owner, records each, and leaves a confirmed or undone pair alone afterwards", async () => {
+    const resource = await fixture();
+    try {
+      const result = await resource.run((prompt) => {
+        const labels = labelsOf(prompt);
+        const label = (id: string) =>
+          labels.get(MEMORIES.find((item) => item.id === id)?.text ?? "") ?? "";
+        const pair = (action: string, newer: string, older: string) => ({
+          group: groupOf(prompt, label(newer)),
+          action,
+          keep: label(newer),
+          drop: label(older),
+        });
+        return JSON.stringify({
+          groups: [
+            pair("replace", "home-new", "home-old"),
+            pair("conflict", "milk-new", "milk-old"),
+            pair("replace", "pet-new", "pet-old"),
+          ],
+          insights: [],
+        });
+      });
+      expect(result?.changes.map(({ action, memoryId }) => [action, memoryId]).sort()).toEqual(
+        [
+          ["supersede", "home-old"],
+          ["hold", "milk-new"],
+          ["hold", "pet-new"],
+        ].sort(),
+      );
+      expect((await resource.read("home-old"))?.attributes).toMatchObject({
+        supersededBy: "home-new",
+        validTo: "2026-10-24T00:00:00.000Z",
+      });
+      expect((await resource.read("home-new"))?.attributes?.tentative).not.toBe(true);
+      for (const [newer, older] of [
+        ["milk-new", "milk-old"],
+        ["pet-new", "pet-old"],
+      ] as const) {
+        expect(await resource.read(newer)).toMatchObject({ status: "active" });
+        expect((await resource.read(newer))?.attributes?.tentative).toBe(true);
+        expect(await resource.read(older)).toMatchObject({ status: "active" });
+        expect((await resource.read(older))?.attributes).toMatchObject({ supersededBy: null });
+        expect((await resource.read(older))?.attributes?.tentative).not.toBe(true);
+      }
+      const ledger = await resource.repository.decisionLedger().list({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        kind: "consolidation",
+        since: "1970-01-01T00:00:00.000Z",
+        limit: 50,
+      });
+      expect(
+        ledger
+          .map(({ outcome, reasonCode, subjectRef, inputs }) => [
+            outcome,
+            reasonCode,
+            subjectRef,
+            [...inputs.memoryIds],
+            [...inputs.resultMemoryIds],
+          ])
+          .sort(),
+      ).toEqual(
+        [
+          [
+            "supersede",
+            "consolidation_supersede",
+            "home-old",
+            ["home-old", "home-new"],
+            ["home-new"],
+          ],
+          ["hold", "consolidation_hold", "milk-new", ["milk-new", "milk-old"], ["milk-new"]],
+          ["hold", "consolidation_hold", "pet-new", ["pet-new", "pet-old"], ["pet-new"]],
+        ].sort(),
+      );
+      const pool = await resource.repository.decisionLedger().listReviewPool({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        since: "1970-01-01T00:00:00.000Z",
+        ratedSince: "2026-10-25T00:00:00.000Z",
+        limit: 50,
+      });
+      expect(
+        pool
+          .filter(({ kind, outcome }) => kind === "consolidation" && outcome === "hold")
+          .map(({ subjectRef }) => subjectRef)
+          .sort(),
+      ).toEqual(["milk-new", "pet-new"]);
+      await resource.memory.runProjectionBatch(50);
+      expect(await resource.searchable("出差便利店牛奶")).not.toContain("milk-new");
+      expect(await resource.searchable("出差便利店牛奶", "only")).toContain("milk-new");
+      const pet = result?.changes.find(({ memoryId }) => memoryId === "pet-new");
+      if (!pet) throw new Error("pet hold missing");
+      resource.clock.value = "2026-10-25T09:00:00.000Z";
+      await resource.consolidation.undo(pet.id);
+      expect((await resource.read("pet-new"))?.attributes?.tentative).not.toBe(true);
+      const milk = await resource.read("milk-new");
+      if (!milk) throw new Error("milk-new missing");
+      await resource.memory.confirm(milk.id, GENERATION_ID);
+      expect((await resource.read("milk-new"))?.attributes?.tentative).not.toBe(true);
+      expect(await resource.read("milk-old")).toMatchObject({ status: "active" });
+      expect((await resource.read("milk-old"))?.attributes?.supersededBy).toBeNull();
+      const milkHold = result?.changes.find(({ memoryId }) => memoryId === "milk-new");
+      await expect(resource.consolidation.undo(milkHold?.id ?? "")).rejects.toThrow(
+        "MEMORY_CHANGED_AFTER_CONSOLIDATION",
+      );
+      resource.clock.value = "2026-10-25T10:00:00.000Z";
+      await resource.addLater("milk-weekend");
+      resource.clock.value = "2026-10-26T03:00:00.000Z";
+      let together = false;
+      const again = await resource.run((prompt) => {
+        const named = labelsOf(prompt);
+        const group = (id: string) =>
+          groupOf(prompt, named.get(MEMORIES.find((item) => item.id === id)?.text ?? "") ?? "");
+        together =
+          group("milk-weekend") !== undefined &&
+          group("milk-new") === group("milk-weekend") &&
+          group("milk-old") === group("milk-weekend");
+        const labels = labelsOf(prompt);
+        const label = (id: string) =>
+          labels.get(MEMORIES.find((item) => item.id === id)?.text ?? "") ?? "";
+        return JSON.stringify({
+          groups: (
+            [
+              ["milk-new", "milk-old"],
+              ["pet-new", "pet-old"],
+            ] as const
+          ).map(([newer, older]) => ({
+            group: groupOf(prompt, label(newer)) ?? groupOf(prompt, label(older)) ?? "g1",
+            action: "replace",
+            keep: label(newer),
+            drop: label(older),
+          })),
+          insights: [],
+        });
+      });
+      expect(together).toBe(true);
+      expect(
+        again?.changes.filter(({ memoryId }) =>
+          ["milk-new", "milk-old", "pet-new", "pet-old"].includes(memoryId),
+        ),
+      ).toEqual([]);
+      for (const [newer, older] of [
+        ["milk-new", "milk-old"],
+        ["pet-new", "pet-old"],
+      ] as const) {
+        expect((await resource.read(newer))?.attributes?.tentative).not.toBe(true);
+        expect(await resource.read(older)).toMatchObject({ status: "active" });
+        expect((await resource.read(older))?.attributes?.supersededBy).toBeNull();
+      }
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[P3-8] holds a replacement whose newer statement the model named as the one to drop", async () => {
+    const resource = await fixture();
+    try {
+      const result = await resource.run((prompt) => {
+        const labels = labelsOf(prompt);
+        const label = (id: string) =>
+          labels.get(MEMORIES.find((item) => item.id === id)?.text ?? "") ?? "";
+        return JSON.stringify({
+          groups: [
+            {
+              group: groupOf(prompt, label("home-new")),
+              action: "replace",
+              keep: label("home-old"),
+              drop: label("home-new"),
+            },
+          ],
+          insights: [],
+        });
+      });
+      expect(result?.changes.map(({ action, memoryId }) => [action, memoryId])).toEqual([
+        ["hold", "home-new"],
+      ]);
+      expect((await resource.read("home-old"))?.attributes?.supersededBy).toBeNull();
     } finally {
       await resource.repository.close();
     }

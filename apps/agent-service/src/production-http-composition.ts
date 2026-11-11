@@ -84,6 +84,7 @@ import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
 } from "./production-memory-control.js";
+import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
@@ -188,6 +189,7 @@ export interface ProductionHttpCompositionOptions {
       | "revise"
       | "trash"
       | "recover"
+      | "archive"
     >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
@@ -1065,6 +1067,20 @@ export async function createProductionHttpComposition(
           undo: (changeId) => memoryTidyUp?.undo(changeId) ?? Promise.resolve(),
         },
         reminders: repository.memoryReminders(),
+        ownerRules: new ProductionOwnerRuleWriter({
+          configuration,
+          rules: repository.ownerRules(),
+          memory: options.memory.service,
+          memories: repository.productMemoryState(),
+          book: repository.memoryBook(),
+          threads,
+          payloads: memoryPayloads,
+          protector: payloadProtector,
+          clock: { now: clock },
+          ...(options.proactive
+            ? { replay: (rule) => options.proactive?.replayRule(rule) ?? Promise.reject(rule) }
+            : {}),
+        }),
         book: repository.memoryBook(),
         ledger: repository.decisionLedger(),
         payloads: memoryPayloads,

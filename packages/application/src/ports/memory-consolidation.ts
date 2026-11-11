@@ -1,7 +1,7 @@
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import type { ProductMemoryRecord } from "./memory-projection.js";
 
-export type MemoryConsolidationAction = "merge" | "supersede" | "archive" | "reflect";
+export type MemoryConsolidationAction = "merge" | "supersede" | "archive" | "reflect" | "hold";
 
 export interface MemoryConsolidationRun {
   readonly id: string;
@@ -66,6 +66,10 @@ export interface MemoryConsolidationStorePort {
     readonly agentId: AgentId;
     readonly limit: number;
   }): Promise<readonly MemoryConsolidationChange[]>;
+  listHeldPairs(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+  }): Promise<readonly (readonly [MemoryId, MemoryId])[]>;
   readChange(id: string): Promise<MemoryConsolidationChange | undefined>;
   readBasis(changeId: string): Promise<readonly MemoryId[]>;
   readBasisChain(input: {

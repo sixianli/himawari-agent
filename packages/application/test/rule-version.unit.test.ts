@@ -173,3 +173,32 @@ describe("[P2-7] decision records point at a rule version", () => {
     );
   });
 });
+
+describe("[P2-3] a rule the owner set in one sentence shows its kind in the decision chain", () => {
+  it("[P2-3] reads the owner rule's type, wording and tests from its stored version", () => {
+    const view = describeRuleVersion(
+      parseRuleRef("owner:immigration@1"),
+      stored("owner:immigration", 1, {
+        type: "mail_must_notify",
+        summary: "日本入管局相关的邮件一律提醒",
+        params: { senderDomains: ["isa.go.jp"] },
+      }),
+    );
+    expect(view).toMatchObject({
+      kind: "mail_must_notify",
+      revision: 1,
+      origin: "owner_setting",
+      wording: { values: ["日本入管局相关的邮件一律提醒"] },
+      tests: { state: "passed" },
+    });
+  });
+
+  it("[P2-3] REVERSE: an owner rule with a type it cannot read stays unknown and untested", () => {
+    const view = describeRuleVersion(
+      parseRuleRef("owner:broken@1"),
+      stored("owner:broken", 1, { type: "mail_unknown", summary: "x", params: {} }),
+    );
+    expect(view).toMatchObject({ kind: "unknown", origin: null, tests: { state: "unavailable" } });
+    expect(ruleKindOf("owner:immigration")).toBe("unknown");
+  });
+});

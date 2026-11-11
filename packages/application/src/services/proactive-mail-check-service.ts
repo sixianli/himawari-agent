@@ -5,6 +5,7 @@ import {
   MAIL_JUDGMENT_MEMORIES_HEADER,
   MAIL_JUDGMENT_TENTATIVE_NOTE,
   MAIL_JUDGMENT_NOW,
+  MAIL_JUDGMENT_RECENT_SUMMARIES_HEADER,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
 import type { ModelInvocationRequest, ModelPort } from "../ports/intelligence.js";
@@ -22,6 +23,7 @@ import type {
   ProactiveModelPayload,
   ProactivePriority,
   ProactiveProcessedMessage,
+  ProactiveRecentSummaries,
   ProactiveRelatedLimits,
   ProactiveRelatedReadStatus,
   ProactiveRelatedStats,
@@ -32,7 +34,9 @@ import type {
   ProactiveSourceItem,
   ProactiveSourceReader,
   ProactiveStorePort,
+  ProactiveSummaryReadStatus,
   ProactiveVerdict,
+  ProactiveWholeThread,
 } from "../ports/proactive-checks.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import type { DataClassification } from "../ports/common.js";
@@ -48,6 +52,8 @@ import {
   applyFloor,
   floorHitIds,
   floorHitRefs,
+  mustNotifyHitIds,
+  wholeThreadHitIds,
   senderDomain,
   keepOffReminderPage,
   quietEnd,
@@ -57,6 +63,8 @@ import {
 } from "./proactive-rules.js";
 import { type MailAmount, parseMailAmount } from "../rules/amount.js";
 import { assertRuleExamples, type RuleRecord, ruleBookFor } from "../rules/rule-book.js";
+import { enforceableOwnerRule } from "../rules/rule-types.js";
+import type { OwnerRuleStorePort } from "../ports/owner-rules.js";
 
 const LOOKBACK_MS = 3 * 24 * 3_600_000;
 const PUSH_WINDOW_MS = 48 * 3_600_000;
@@ -104,11 +112,14 @@ export interface ProactiveMailCheckOptions {
   readonly outputTokenLimit?: number;
   readonly memory?: ProactiveMemoryRecall;
   readonly memoryLimits?: Partial<ProactiveMemoryLimits>;
+  readonly recentSummaries?: ProactiveRecentSummaries;
+  readonly summaryLimits?: Partial<ProactiveSummaryLimits>;
   readonly bodyLimits?: Partial<ProactiveBodyLimits>;
   readonly relatedLimits?: Partial<ProactiveRelatedServiceLimits>;
   readonly onMasked?: (sightings: readonly EgressRedactionSighting[]) => void;
   readonly backoff?: Partial<ProactiveBackoffSettings>;
   readonly ownerRules?: readonly RuleRecord[];
+  readonly ownerRuleStore?: Pick<OwnerRuleStorePort, "list">;
 }
 
 export const DEFAULT_PROACTIVE_BACKOFF: ProactiveBackoffSettings = Object.freeze({
@@ -143,6 +154,7 @@ export const DEFAULT_PROACTIVE_BODY_LIMITS: ProactiveBodyLimits = Object.freeze(
 export interface ProactiveRelatedServiceLimits extends ProactiveRelatedLimits {
   readonly charactersPerRelated: number;
   readonly charactersPerMail: number;
+  readonly wholeThreadCharactersPerMail: number;
 }
 
 export const DEFAULT_PROACTIVE_RELATED_LIMITS: ProactiveRelatedServiceLimits = Object.freeze({
@@ -150,12 +162,15 @@ export const DEFAULT_PROACTIVE_RELATED_LIMITS: ProactiveRelatedServiceLimits = O
   requestsPerCheck: 300,
   charactersPerRelated: 2_000,
   charactersPerMail: 12_000,
+  wholeThreadPerMail: 50,
+  wholeThreadCharactersPerMail: 60_000,
 });
 
 interface RelatedView {
   readonly mails: readonly ProactiveSourceItem[];
   readonly json: readonly Record<string, unknown>[];
   readonly unavailable: boolean;
+  readonly wholeThreadComplete?: boolean;
 }
 
 const RECALL_BODY_CHARACTERS = 300;
@@ -176,6 +191,35 @@ export const DEFAULT_PROACTIVE_MEMORY_LIMITS: ProactiveMemoryLimits = Object.fre
   searchesPerCheck: 40,
   queryCharacters: 500,
 });
+
+export interface ProactiveSummaryLimits {
+  readonly days: number;
+  readonly perCheck: number;
+  readonly characters: number;
+  readonly catchUpPerCheck: number;
+}
+
+export const DEFAULT_PROACTIVE_SUMMARY_LIMITS: ProactiveSummaryLimits = Object.freeze({
+  days: 2,
+  perCheck: 8,
+  characters: 4_000,
+  catchUpPerCheck: 3,
+});
+
+interface PromptSummary {
+  readonly id: string;
+  readonly day: string;
+  readonly text: string;
+  readonly dataClassification: DataClassification;
+}
+
+interface ModelCall {
+  readonly output: string;
+  readonly completed: boolean;
+  readonly truncated: boolean;
+  readonly failure: string | null;
+  readonly costMicros: number;
+}
 
 interface PromptMemory {
   readonly mailId: string;
@@ -214,6 +258,11 @@ interface CheckTrace {
   readonly relatedSent: Set<string>;
   relatedRead: ProactiveRelatedReadStatus;
   relatedStats: ProactiveRelatedStats;
+  readonly summaryIds: Set<string>;
+  readonly summaryDays: Set<string>;
+  summaryCharacters: number;
+  summaryRead: ProactiveSummaryReadStatus;
+  summaryGenerated: number;
   recorded: boolean;
 }
 
@@ -286,6 +335,7 @@ function relatedMailView(
   mails: readonly ProactiveSourceItem[],
   unavailable: boolean,
   limits: ProactiveRelatedServiceLimits,
+  wholeThread?: ProactiveWholeThread,
 ): RelatedView {
   const chosen: { mail: ProactiveSourceItem; json: Record<string, unknown> }[] = [];
   let total = 0;
@@ -294,7 +344,11 @@ function relatedMailView(
       right.receivedAt.localeCompare(left.receivedAt) ||
       right.messageId.localeCompare(left.messageId),
   );
-  for (const mail of newestFirst.slice(0, limits.perMail)) {
+  const shown = wholeThread ? newestFirst : newestFirst.slice(0, limits.perMail);
+  const characterLimit = wholeThread
+    ? limits.wholeThreadCharactersPerMail
+    : limits.charactersPerMail;
+  for (const mail of shown) {
     const windowed =
       mail.body === null
         ? undefined
@@ -316,15 +370,22 @@ function relatedMailView(
       receivedAt: mail.receivedAt,
     };
     const size = JSON.stringify(json).length;
-    if (chosen.length > 0 && total + size > limits.charactersPerMail) break;
+    if (chosen.length > 0 && total + size > characterLimit) break;
     total += size;
     chosen.push({ mail, json });
   }
   chosen.reverse();
+  const included = new Set(chosen.map(({ mail }) => mail.messageId));
   return Object.freeze({
     mails: chosen.map(({ mail }) => mail),
     json: chosen.map(({ json }) => json),
     unavailable,
+    ...(wholeThread
+      ? {
+          wholeThreadComplete:
+            wholeThread.complete && wholeThread.messageIds.every((id) => included.has(id)),
+        }
+      : {}),
   });
 }
 
@@ -380,6 +441,7 @@ export function proactivePrompt(
   memories: readonly PromptMemory[] = [],
   bodyLimit: number = DEFAULT_PROACTIVE_BODY_LIMITS.perMail,
   related: ReadonlyMap<string, RelatedView> = new Map(),
+  summaries: readonly PromptSummary[] = [],
 ): string {
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -390,6 +452,12 @@ export function proactivePrompt(
   }).format(new Date(now));
   return [
     MAIL_JUDGMENT.text,
+    ...(summaries.length > 0
+      ? [
+          MAIL_JUDGMENT_RECENT_SUMMARIES_HEADER.text,
+          JSON.stringify(summaries.map(({ day, text }) => ({ day, text }))),
+        ]
+      : []),
     ...(memories.length > 0
       ? [
           MAIL_JUDGMENT_MEMORIES_HEADER.text,
@@ -565,16 +633,32 @@ export class ProactiveMailCheckService {
     };
   }
 
+  async #storedOwnerRules(): Promise<readonly RuleRecord[]> {
+    const store = this.#options.ownerRuleStore;
+    if (!store) return [];
+    const rules: RuleRecord[] = [];
+    for (const row of await store.list({ ...this.#options.scope, includeRetired: false })) {
+      const rule = enforceableOwnerRule(row);
+      if (rule) rules.push(rule);
+    }
+    return rules;
+  }
+
   async #related(
     token: string,
-    candidates: readonly ProactiveSourceItem[],
+    allCandidates: readonly ProactiveSourceItem[],
+    wholeThread: ReadonlySet<string>,
     signal: AbortSignal,
     trace: CheckTrace,
   ): Promise<ReadonlyMap<string, RelatedView>> {
     const { reader, clock } = this.#options;
     const views = new Map<string, RelatedView>();
     const limits = this.#relatedLimits();
-    if (reader.related === undefined || candidates.length === 0 || limits.perMail < 1) return views;
+    const candidates =
+      limits.perMail < 1
+        ? allCandidates.filter(({ messageId }) => wholeThread.has(messageId))
+        : allCandidates;
+    if (reader.related === undefined || candidates.length === 0) return views;
     const startedMs = Date.parse(clock.now());
     let requests = 0;
     let fetched: Awaited<ReturnType<NonNullable<typeof reader.related>>> | undefined;
@@ -583,6 +667,7 @@ export class ProactiveMailCheckService {
         token,
         items: candidates,
         limits,
+        ...(wholeThread.size > 0 ? { wholeThread } : {}),
         signal,
       });
       requests = fetched.requests;
@@ -606,6 +691,9 @@ export class ProactiveMailCheckService {
         fetched?.byMail.get(item.messageId) ?? [],
         failure !== undefined,
         limits,
+        wholeThread.has(item.messageId)
+          ? (fetched?.wholeThread?.get(item.messageId) ?? { messageIds: [], complete: false })
+          : undefined,
       );
       views.set(item.messageId, view);
     }
@@ -659,6 +747,11 @@ export class ProactiveMailCheckService {
       relatedSent: new Set(),
       relatedRead: "off",
       relatedStats: { requests: 0, messages: 0, characters: 0, durationMs: 0 },
+      summaryIds: new Set(),
+      summaryDays: new Set(),
+      summaryCharacters: 0,
+      summaryRead: "off",
+      summaryGenerated: 0,
       recorded: false,
     };
     try {
@@ -740,24 +833,71 @@ export class ProactiveMailCheckService {
     const judged = new Map<string, Judgement>();
     const judgedClassification = new Map<string, DataClassification>();
     let costMicros = 0;
+    const rules = [
+      ...ruleBookFor(settings),
+      ...(this.#options.ownerRules ?? []),
+      ...(await this.#storedOwnerRules()),
+    ];
+    const wholeThreadHits = new Map<string, readonly string[]>();
+    for (const item of candidates) {
+      if (item.sentByOwner) continue;
+      const hits = wholeThreadHitIds(item, rules);
+      if (hits.length > 0) wholeThreadHits.set(item.messageId, hits);
+    }
     const relatedViews =
       spentToday >= this.#options.limits.dailyCostMicros
         ? new Map<string, RelatedView>()
         : await this.#related(
             token,
             candidates,
+            new Set(wholeThreadHits.keys()),
             AbortSignal.any([
               controller.signal,
               AbortSignal.timeout(Math.floor(this.#options.limits.perCheckMs / 2)),
             ]),
             trace,
           );
+    const bodyLimits = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits };
+    let batchSize = this.#options.batchSize ?? DEFAULT_BATCH_SIZE;
     const recalled = await this.#recall(candidates, deadlineAt, controller.signal, trace);
     costMicros += recalled.costMicros;
+    const summaryLimits = { ...DEFAULT_PROACTIVE_SUMMARY_LIMITS, ...this.#options.summaryLimits };
+    const firstBatch = this.#fitBatch(candidates, batchSize, bodyLimits, relatedViews);
+    const judgmentReserveMicros =
+      candidates.length === 0
+        ? 0
+        : this.#options.limits.estimateCostMicros(
+            proactivePrompt(
+              firstBatch,
+              startedAt,
+              this.#options.timeZone,
+              this.#batchMemories(firstBatch, recalled.hits),
+              bodyLimits.perMail,
+              relatedViews,
+              this.#options.recentSummaries === undefined
+                ? []
+                : [
+                    {
+                      id: "reserve",
+                      day: startedAt.slice(0, 10),
+                      text: "。".repeat(Math.max(0, summaryLimits.characters)),
+                      dataClassification: "private",
+                    },
+                  ],
+            ),
+          );
+    const summaryBudget = {
+      spentToday: spentToday + recalled.costMicros,
+      reserveMicros: judgmentReserveMicros,
+      costMicros: 0,
+    };
+    const summaries =
+      candidates.length === 0 || spentToday >= this.#options.limits.dailyCostMicros
+        ? []
+        : await this.#summaries(deadlineAt, controller.signal, trace, summaryBudget);
+    costMicros += summaryBudget.costMicros;
     let stop: Stop = null;
     const queue = [...candidates];
-    let batchSize = this.#options.batchSize ?? DEFAULT_BATCH_SIZE;
-    const bodyLimits = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits };
     let failure: string | null = null;
     while (queue.length > 0 && stop === null) {
       const batch = this.#fitBatch(queue, batchSize, bodyLimits, relatedViews);
@@ -769,6 +909,7 @@ export class ProactiveMailCheckService {
         promptMemories,
         bodyLimits.perMail,
         relatedViews,
+        summaries,
       );
       const estimate = this.#options.limits.estimateCostMicros(prompt);
       if (spentToday + costMicros + estimate > this.#options.limits.dailyCostMicros) {
@@ -788,6 +929,7 @@ export class ProactiveMailCheckService {
         trace,
         promptMemories,
         relatedViews,
+        summaries,
       ).catch(() => ({
         judgements: undefined,
         costMicros: 0,
@@ -823,7 +965,6 @@ export class ProactiveMailCheckService {
       fetched: items.length,
       skipped: processed.length,
     };
-    const rules = [...ruleBookFor(settings), ...(this.#options.ownerRules ?? [])];
     const floorHits: Record<string, readonly string[]> = {};
     const ruleHits: Record<string, readonly string[]> = {};
     const settled = new Map<string, { readonly result: ProactiveResult; readonly sure: boolean }>();
@@ -833,7 +974,14 @@ export class ProactiveMailCheckService {
       if (floor) floorHits[item.messageId] = floorIds;
       const judgement = judged.get(item.messageId);
       if (!judgement) {
-        if (stop === "capped_daily" && floor) {
+        const ruled =
+          stop === "capped_daily" && !item.sentByOwner
+            ? [...(wholeThreadHits.get(item.messageId) ?? []), ...mustNotifyHitIds(item, rules)]
+            : [];
+        if (ruled.length > 0) {
+          ruleHits[item.messageId] = [...new Set(ruled)].sort().slice(0, 16);
+        }
+        if (stop === "capped_daily" && (floor || ruled.length > 0)) {
           processed.push({
             ...this.#base(item),
             outcome: "check",
@@ -859,6 +1007,14 @@ export class ProactiveMailCheckService {
         continue;
       }
       counts.judged += 1;
+      const threadRules = wholeThreadHits.get(item.messageId) ?? [];
+      const threadUnread =
+        threadRules.length > 0 &&
+        relatedViews.get(item.messageId)?.wholeThreadComplete !== true &&
+        judgement.result !== "act";
+      const notifyRules = item.sentByOwner ? [] : mustNotifyHitIds(item, rules);
+      const mustNotify = notifyRules.length > 0;
+      const forced = threadUnread || (mustNotify && judgement.result !== "act");
       const floored = applyFloor(judgement.result, judgement.confidence, floor);
       const lowered = keepOffReminderPage(
         floored.result,
@@ -866,10 +1022,16 @@ export class ProactiveMailCheckService {
         floor,
         judgement.confidence,
       );
-      const final = {
-        result: lowered.result,
-        raised: lowered.demoted ? floor : floored.raised,
-      };
+      const final = forced
+        ? { result: "check" as const, raised: judgement.result !== "check" }
+        : {
+            result: lowered.result,
+            raised: lowered.demoted ? floor : floored.raised,
+          };
+      const enforced = [...(threadUnread ? threadRules : []), ...notifyRules];
+      if (enforced.length > 0) {
+        ruleHits[item.messageId] = [...new Set(enforced)].sort().slice(0, 16);
+      }
       if (final.raised) counts.floorRaised += 1;
       counts[final.result] += 1;
       settled.set(item.messageId, {
@@ -903,23 +1065,27 @@ export class ProactiveMailCheckService {
         dueAt !== null &&
         Date.parse(dueAt) - Date.parse(startedAt) <= PUSH_WINDOW_MS &&
         Date.parse(startedAt) - Date.parse(dueAt) <= OVERDUE_PUSH_MS;
-      const wantsPush = dueSoon || (final.result === "check" && floor);
+      const wantsPush =
+        mustNotify || dueSoon || (final.result === "check" && (floor || threadUnread));
       const suppressing =
-        wantsPush && !floor ? suppressPushHits(item, judgement.amount, rules) : [];
+        wantsPush && !floor && !threadUnread && !mustNotify
+          ? suppressPushHits(item, judgement.amount, rules)
+          : [];
       if (suppressing.length > 0) ruleHits[item.messageId] = suppressing;
       const push = wantsPush && suppressing.length === 0;
       insights.push({
         item,
         result: final.result,
         floorRaised: final.raised,
-        floorHit: floor,
+        floorHit: floor || threadUnread || mustNotify,
         summary: final.result === "check" ? judgement.reason : judgement.todo,
         reason: judgement.reason,
         basis: "model",
         dueAt,
         priority,
         push,
-        pushClass: push && dueSoon && !floor ? proactivePushClass(item.fromAddress) : null,
+        pushClass:
+          push && dueSoon && !floor && !mustNotify ? proactivePushClass(item.fromAddress) : null,
         dataClassification: judgedClassification.get(item.messageId) ?? "private",
       });
     }
@@ -1100,48 +1266,19 @@ export class ProactiveMailCheckService {
     return ref;
   }
 
-  async #judge(
-    batch: readonly ProactiveSourceItem[],
+  async #invoke(
     prompt: string,
+    dataClassification: DataClassification,
     deadlineAt: string,
     signal: AbortSignal,
     trace: CheckTrace,
-    promptMemories: readonly PromptMemory[],
-    related: ReadonlyMap<string, RelatedView>,
-  ): Promise<JudgeOutcome> {
+    beforeInvoke: () => void = () => undefined,
+  ): Promise<ModelCall> {
     const { model } = this.#options;
     const invocationId = this.#options.ids.next("proactive-model");
-    const dataClassification = highestClassification(
-      "private",
-      promptMemories.map((memory) => memory.dataClassification),
-    );
     const authority = await model.prepare({ invocationId, prompt, deadlineAt, dataClassification });
     trace.payloads.push({ ref: authority.inputRef, role: "model_input" });
-    for (const { messageId } of batch) {
-      trace.sourceIds.add(messageId);
-      const view = related.get(messageId);
-      if (view === undefined || view.mails.length === 0 || trace.relatedSent.has(messageId))
-        continue;
-      trace.relatedSent.add(messageId);
-      trace.relatedByMail.set(
-        messageId,
-        view.mails.map((mail) => mail.messageId),
-      );
-      trace.relatedStats = {
-        ...trace.relatedStats,
-        messages: trace.relatedStats.messages + view.mails.length,
-        characters:
-          trace.relatedStats.characters +
-          view.json.reduce<number>((sum, entry) => sum + JSON.stringify(entry).length, 0),
-      };
-    }
-    for (const memory of promptMemories) {
-      trace.memoryIds.add(memory.id);
-      if (memory.tentative) trace.tentativeMemoryIds.add(memory.id);
-      const list = trace.memoryByMail.get(memory.mailId) ?? [];
-      if (!list.includes(memory.id)) list.push(memory.id);
-      trace.memoryByMail.set(memory.mailId, list);
-    }
+    beforeInvoke();
     let output = "";
     let completed = false;
     let truncated = false;
@@ -1181,6 +1318,57 @@ export class ProactiveMailCheckService {
     } finally {
       await authority.release();
     }
+    return { output, completed, truncated, failure, costMicros };
+  }
+
+  async #judge(
+    batch: readonly ProactiveSourceItem[],
+    prompt: string,
+    deadlineAt: string,
+    signal: AbortSignal,
+    trace: CheckTrace,
+    promptMemories: readonly PromptMemory[],
+    related: ReadonlyMap<string, RelatedView>,
+    summaries: readonly PromptSummary[],
+  ): Promise<JudgeOutcome> {
+    const dataClassification = highestClassification("private", [
+      ...promptMemories.map((memory) => memory.dataClassification),
+      ...summaries.map((summary) => summary.dataClassification),
+    ]);
+    const call = await this.#invoke(prompt, dataClassification, deadlineAt, signal, trace, () => {
+      for (const { messageId } of batch) {
+        trace.sourceIds.add(messageId);
+        const view = related.get(messageId);
+        if (view === undefined || view.mails.length === 0 || trace.relatedSent.has(messageId))
+          continue;
+        trace.relatedSent.add(messageId);
+        trace.relatedByMail.set(
+          messageId,
+          view.mails.map((mail) => mail.messageId),
+        );
+        trace.relatedStats = {
+          ...trace.relatedStats,
+          messages: trace.relatedStats.messages + view.mails.length,
+          characters:
+            trace.relatedStats.characters +
+            view.json.reduce<number>((sum, entry) => sum + JSON.stringify(entry).length, 0),
+        };
+      }
+      for (const memory of promptMemories) {
+        trace.memoryIds.add(memory.id);
+        if (memory.tentative) trace.tentativeMemoryIds.add(memory.id);
+        const list = trace.memoryByMail.get(memory.mailId) ?? [];
+        if (!list.includes(memory.id)) list.push(memory.id);
+        trace.memoryByMail.set(memory.mailId, list);
+      }
+      for (const summary of summaries) {
+        if (trace.summaryIds.has(summary.id)) continue;
+        trace.summaryIds.add(summary.id);
+        trace.summaryDays.add(summary.day);
+        trace.summaryCharacters += summary.text.length;
+      }
+    });
+    const { output, completed, truncated, failure, costMicros } = call;
     if (failure) return { judgements: undefined, costMicros, failure };
     if (!completed) return { judgements: undefined, costMicros, failure: "MODEL_NOT_COMPLETED" };
     const perMail = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits }.perMail;
@@ -1201,6 +1389,82 @@ export class ProactiveMailCheckService {
       costMicros,
       failure: truncated ? "MODEL_OUTPUT_TRUNCATED" : "MODEL_OUTPUT_INVALID",
     };
+  }
+
+  async #summaries(
+    deadlineAt: string,
+    signal: AbortSignal,
+    trace: CheckTrace,
+    budget: { readonly spentToday: number; readonly reserveMicros: number; costMicros: number },
+  ): Promise<readonly PromptSummary[]> {
+    const source = this.#options.recentSummaries;
+    if (source === undefined) return [];
+    const limits = { ...DEFAULT_PROACTIVE_SUMMARY_LIMITS, ...this.#options.summaryLimits };
+    if (limits.days < 1 || limits.perCheck < 1 || limits.characters < 1) return [];
+    if (limits.catchUpPerCheck > 0) {
+      try {
+        const catchUpMs = Math.floor(this.#options.limits.perCheckMs / 4);
+        const catchUpSignal = AbortSignal.any([signal, AbortSignal.timeout(catchUpMs)]);
+        const catchUpDeadlineAt = new Date(
+          Math.min(Date.parse(deadlineAt), Date.parse(this.#options.clock.now()) + catchUpMs),
+        ).toISOString();
+        const caught = await source.catchUp({
+          days: limits.days,
+          limit: limits.catchUpPerCheck,
+          deadlineAt: catchUpDeadlineAt,
+          signal: catchUpSignal,
+          generate: async (prompt, dataClassification) => {
+            if (
+              budget.spentToday +
+                budget.costMicros +
+                budget.reserveMicros +
+                this.#options.limits.estimateCostMicros(prompt) >
+              this.#options.limits.dailyCostMicros
+            )
+              throw new Error("PROACTIVE_SUMMARY_DAILY_CAP");
+            const call = await this.#invoke(
+              prompt,
+              dataClassification,
+              catchUpDeadlineAt,
+              catchUpSignal,
+              trace,
+            );
+            budget.costMicros += call.costMicros;
+            if (call.failure) throw new Error(call.failure);
+            if (!call.completed || call.truncated) throw new Error("PROACTIVE_SUMMARY_INCOMPLETE");
+            return call.output;
+          },
+        });
+        trace.summaryGenerated += caught.generated;
+        budget.costMicros += Math.max(0, caught.costMicros);
+        if (caught.failed) trace.summaryRead = "partial";
+      } catch {
+        trace.summaryRead = "partial";
+      }
+    }
+    try {
+      const found = await source.recent({ days: limits.days, limit: limits.perCheck });
+      const chosen: PromptSummary[] = [];
+      let characters = 0;
+      for (const summary of found.summaries) {
+        if (chosen.length >= limits.perCheck) break;
+        if (characters + summary.text.length > limits.characters) break;
+        characters += summary.text.length;
+        chosen.push(
+          Object.freeze({
+            id: summary.id,
+            day: summary.day,
+            text: summary.text,
+            dataClassification: summary.dataClassification,
+          }),
+        );
+      }
+      if (trace.summaryRead !== "partial") trace.summaryRead = found.partial ? "partial" : "ok";
+      return chosen.reverse();
+    } catch {
+      trace.summaryRead = "failed";
+      return [];
+    }
   }
 
   async #recall(
@@ -1396,6 +1660,16 @@ export class ProactiveMailCheckService {
       relatedRead: trace.relatedRead,
       relatedStats: trace.relatedStats,
       relatedFailedSteps: [...trace.relatedFailedSteps].sort(),
+      ...(this.#options.recentSummaries === undefined
+        ? {}
+        : {
+            summaryInjected: trace.summaryIds.size > 0,
+            summaryIds: [...trace.summaryIds],
+            summaryDays: [...trace.summaryDays].sort(),
+            summaryCharacters: trace.summaryCharacters,
+            summaryRead: trace.summaryRead,
+            summaryGenerated: trace.summaryGenerated,
+          }),
     });
     const result = await store.record({
       ...scope,

@@ -21,6 +21,7 @@ import {
 import { parseRuleRef, type RuleBookVersion } from "@himawari-agent/application/rule-ref";
 import { readCalibrationRows } from "@himawari-agent/calibration";
 import type Database from "better-sqlite3";
+import { summaryInputsValid } from "./sqlite-decision-summary-inputs.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { defaultRuleParameters } from "./sqlite-proactive-operations.ts";
 
@@ -69,6 +70,11 @@ export function validateLedgerWrite(write: DecisionLedgerWrite): string | null {
     (write.inputs.resultMemoryIds !== undefined && !idList(write.inputs.resultMemoryIds))
   )
     return "Decision ledger inputs are invalid";
+  if (
+    !summaryInputsValid(write.inputs, MAX_IDS) ||
+    (write.inputs.summaryRead !== undefined && write.kind !== "external_read")
+  )
+    return "Decision ledger summary inputs are invalid";
   const budget = write.inputs.profileBudget ?? null;
   if (
     budget !== null &&
@@ -111,6 +117,11 @@ export function validateLedgerWrite(write: DecisionLedgerWrite): string | null {
 }
 
 export function insertLedgerRow(database: Database.Database, write: DecisionLedgerWrite): void {
+  if (
+    !summaryInputsValid(write.inputs, MAX_IDS) ||
+    (write.inputs.summaryRead !== undefined && write.kind !== "external_read")
+  )
+    throw new Error("Decision ledger summary inputs are invalid");
   database
     .prepare(
       `INSERT INTO decision_ledger (
@@ -135,6 +146,16 @@ export function insertLedgerRow(database: Database.Database, write: DecisionLedg
         batchId: write.inputs.batchId ?? null,
         resultMemoryIds: write.inputs.resultMemoryIds ?? [],
         ...(write.inputs.profileBudget ? { profileBudget: write.inputs.profileBudget } : {}),
+        ...(write.inputs.summaryRead === undefined
+          ? {}
+          : {
+              summaryInjected: write.inputs.summaryInjected,
+              summaryIds: write.inputs.summaryIds,
+              summaryDays: write.inputs.summaryDays,
+              summaryCharacters: write.inputs.summaryCharacters,
+              summaryRead: write.inputs.summaryRead,
+              summaryGenerated: write.inputs.summaryGenerated,
+            }),
       }),
       write.reasonRef,
       write.contentRef,
@@ -170,6 +191,12 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
     relatedRead?: "off" | "ok" | "partial" | "failed";
     relatedStats?: DecisionInputs["relatedStats"];
     relatedFailedSteps?: readonly string[];
+    summaryInjected?: boolean;
+    summaryIds?: readonly string[];
+    summaryDays?: readonly string[];
+    summaryCharacters?: number;
+    summaryRead?: "off" | "ok" | "partial" | "failed";
+    summaryGenerated?: number;
     profileBudget?: DecisionInputs["profileBudget"];
   };
   return Object.freeze({
@@ -227,6 +254,12 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
         },
       ),
       relatedFailedSteps: Object.freeze([...(inputs.relatedFailedSteps ?? [])]),
+      summaryInjected: inputs.summaryInjected ?? false,
+      summaryIds: Object.freeze([...(inputs.summaryIds ?? [])]),
+      summaryDays: Object.freeze([...(inputs.summaryDays ?? [])]),
+      summaryCharacters: inputs.summaryCharacters ?? 0,
+      summaryRead: inputs.summaryRead ?? "off",
+      summaryGenerated: inputs.summaryGenerated ?? 0,
       profileBudget: inputs.profileBudget ? Object.freeze({ ...inputs.profileBudget }) : null,
     }),
   });

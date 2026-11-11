@@ -42,13 +42,39 @@ export type DecisionKind = (typeof DECISION_KINDS)[number];
 export type LedgerWriteKind = Exclude<DecisionKind, "proactive">;
 
 export const DECISION_OUTCOMES = {
-  memory_candidate: ["kept", "discarded", "pending_approval"],
-  consolidation: ["merge", "supersede", "archive", "reflect"],
+  memory_candidate: [
+    "kept",
+    "discarded",
+    "pending_approval",
+    "capture_retrying",
+    "capture_queued",
+    "capture_gave_up",
+  ],
+  consolidation: ["merge", "supersede", "archive", "reflect", "hold"],
   context_truncation: ["truncated"],
   retrieval_degrade: ["degraded"],
   external_read: ["read"],
   rule_review: ["needs_review"],
 } as const satisfies Record<LedgerWriteKind, readonly string[]>;
+
+export const EXTERNAL_PROPOSAL_REASON_PREFIX = "mcp_proposal_";
+
+export const EXTERNAL_PROPOSAL_REASON_CODES = {
+  kept: `${EXTERNAL_PROPOSAL_REASON_PREFIX}kept`,
+  declined: `${EXTERNAL_PROPOSAL_REASON_PREFIX}declined`,
+} as const;
+
+export const MEMORY_CAPTURE_FAILURE_OUTCOMES = [
+  "capture_retrying",
+  "capture_queued",
+  "capture_gave_up",
+] as const;
+
+export type MemoryCaptureFailureOutcome = (typeof MEMORY_CAPTURE_FAILURE_OUTCOMES)[number];
+
+export function isMemoryCaptureFailure(outcome: string | null): boolean {
+  return (MEMORY_CAPTURE_FAILURE_OUTCOMES as readonly (string | null)[]).includes(outcome);
+}
 
 export type DecisionOutcome = (typeof DECISION_OUTCOMES)[LedgerWriteKind][number];
 
@@ -93,6 +119,12 @@ export interface DecisionInputs {
     readonly durationMs: number;
   };
   readonly relatedFailedSteps?: readonly string[];
+  readonly summaryInjected?: boolean;
+  readonly summaryIds?: readonly string[];
+  readonly summaryDays?: readonly string[];
+  readonly summaryCharacters?: number;
+  readonly summaryRead?: "off" | "ok" | "partial" | "failed";
+  readonly summaryGenerated?: number;
   readonly profileBudget?: ProfileBudget | null;
 }
 

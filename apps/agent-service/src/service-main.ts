@@ -14,6 +14,7 @@ import {
   ExecutionLiveFeed,
   type IdGeneratorPort,
   modelUsagePurpose,
+  modelVisibleClassifications,
   type ProductConfiguration,
   RemoteExecutionBackend,
   type RuntimeRequest,
@@ -55,6 +56,7 @@ import {
   MacOsKeychainProviderSecretSource,
   MacOsKeychainSecretSource,
   MCP_READ_SECRET_PURPOSE,
+  MCP_WRITE_SECRET_PURPOSE,
   MUSE_INTAKE_SECRET_PURPOSE,
   PayloadUdsServer,
   parseServiceArguments,
@@ -95,6 +97,7 @@ import {
   type ProductionHttpCompositionOptions,
 } from "./production-http-composition.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
+import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
 import {
   createProductionMemoryCompositionFromConfiguration,
@@ -116,6 +119,7 @@ import {
 import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
+import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -125,6 +129,7 @@ import {
   proactiveRedirectUri,
 } from "./production-proactive.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
+import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -185,6 +190,7 @@ export interface AgentServiceMemoryCompositionContext {
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
   readonly sources?: ReturnType<typeof hostModelSources>;
+  readonly diagnostic?: (event: Readonly<Record<string, string | number>>) => void;
 }
 
 export type AgentServiceMemoryCompositionFactory = (
@@ -363,6 +369,12 @@ async function createDefaultMemoryComposition(
       now: () => new Date().toISOString(),
       onFailure: () => {},
     }),
+    onRelevanceUnknown: (count) =>
+      context.diagnostic?.({
+        component: "agent-service",
+        event: "memory.relevance_unknown",
+        candidates: count,
+      }),
   });
 }
 
@@ -806,7 +818,12 @@ export async function runAgentService(
         admission: modelAdmission,
       });
       const memoryFactory = dependencies.memoryCompositionFactory ?? createDefaultMemoryComposition;
-      memoryComposition = await memoryFactory({ configuration, repository, sources });
+      memoryComposition = await memoryFactory({
+        configuration,
+        repository,
+        sources,
+        diagnostic: (event) => writeServiceDiagnostic(errorOutput, event),
+      });
     }
     let automaticReview: ReturnType<typeof createProductionAutomaticReview>;
     if (configuration.runPolicy?.automaticReview !== undefined) {
@@ -1159,6 +1176,7 @@ export async function runAgentService(
         state: repository.productMemoryState(),
         jobs: repository.memoryProjectionJobs(),
         provider: memoryComposition.projection,
+        dedupeSameSource: memoryComposition.dedupeSameSource,
         ...(webEnabled
           ? ({
               project: (job, memory, operation) => {
@@ -1245,6 +1263,7 @@ export async function runAgentService(
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
         provider: { search: (input) => recallProjection.search(input) },
+        dedupeSameSource: memoryComposition.dedupeSameSource,
         state: repository.productMemoryState(),
         episodes: {
           search: (input) =>
@@ -1303,9 +1322,25 @@ export async function runAgentService(
         writer: reminderWriter,
         ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
       });
+      const ownerRuleTools = new ProductionOwnerRuleTools(
+        new ProductionOwnerRuleWriter({
+          configuration,
+          rules: repository.ownerRules(),
+          memory: durableMemory,
+          memories: repository.productMemoryState(),
+          book: repository.memoryBook(),
+          threads: repository.threadRepository(),
+          payloads,
+          protector: recallProtector,
+          clock: { now: () => clock.now() },
+          replay: (rule) =>
+            proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
+        }),
+      );
       const tools = new ProductionRuntimeTools({
         memoryRecall,
         reminders: reminderTools,
+        ownerRules: ownerRuleTools,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -1586,6 +1621,7 @@ export async function runAgentService(
           configuration: proactiveConfiguration,
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
           store: proactiveStore,
+          ownerRules: repository.ownerRules(),
           seal: proactiveSeal,
           oauth,
           reader: createGmailReader({ oauth }),
@@ -1631,6 +1667,24 @@ export async function runAgentService(
                   concurrency: 4,
                 }),
               }))(protector, repository.payloadStore(configuration.ownerId, configuration.agentId))
+            : {}),
+          ...(memory && memoryEpisodes && repository
+            ? ((book) => ({
+                recentSummaries: createProactiveRecentSummaries({
+                  ownerId: configuration.ownerId,
+                  agentId: configuration.agentId,
+                  episodes: memoryEpisodes,
+                  allowedClassifications: proactiveDescriptor.allowedDataClassifications,
+                  capturePaused: () =>
+                    book
+                      .readSettings({
+                        ownerId: configuration.ownerId,
+                        agentId: configuration.agentId,
+                      })
+                      .then(({ capturePaused }) => capturePaused),
+                  embedForMailCheck: memory.embedForMailCheck,
+                }),
+              }))(repository.memoryBook())
             : {}),
           model: modelComposition.composition.proactiveModel(proactiveConfiguration.modelRef, {
             maxOutputTokens: PROACTIVE_MAX_OUTPUT_TOKENS,
@@ -1729,15 +1783,37 @@ export async function runAgentService(
               ref === mcpReadConfiguration.secretRef && purpose === MCP_READ_SECRET_PURPOSE,
           )
         : undefined;
+      const mcpWriteSecret = mcpReadConfiguration?.writeSecretRef
+        ? configuration.secretReferences.find(
+            ({ ref, purpose }) =>
+              ref === mcpReadConfiguration.writeSecretRef && purpose === MCP_WRITE_SECRET_PURPOSE,
+          )
+        : undefined;
       if (mcpReadSecret) {
         const settingsStore = repository.proactive();
+        const ownerRuleStore = repository.ownerRules();
+        const secretProvider = hostModelSources(configuration).provider;
         mcpRead = new ProductionMcpRead({
           scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
           clock,
-          secret: await hostModelSources(configuration).provider.resolve(
-            mcpReadSecret.ref,
-            mcpReadSecret.version,
-          ),
+          secret: await secretProvider.resolve(mcpReadSecret.ref, mcpReadSecret.version),
+          ...(mcpWriteSecret
+            ? {
+                write: {
+                  secret: await secretProvider.resolve(mcpWriteSecret.ref, mcpWriteSecret.version),
+                  proposals: new ProductionMcpMemoryWriter({
+                    configuration,
+                    memory: durableMemory,
+                    state: repository.productMemoryState(),
+                    book: repository.memoryBook(),
+                    ledger: repository.decisionLedger(),
+                    payloads,
+                    protector: recallProtector,
+                    clock: { now: () => clock.now() },
+                  }),
+                },
+              }
+            : {}),
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
           requestTimeoutMs: configuration.deadlines.providerRequestMs,
           sources: {
@@ -1750,12 +1826,45 @@ export async function runAgentService(
                 ownerId: configuration.ownerId,
                 agentId: configuration.agentId,
               }),
+            ownerRules: () =>
+              ownerRuleStore.list({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                includeRetired: false,
+              }),
+            ...(memoryEpisodes
+              ? {
+                  summaries: async ({ days, limit }: { days: number; limit: number }) => {
+                    const found = await memoryEpisodes.recent({
+                      ownerId: configuration.ownerId,
+                      agentId: configuration.agentId,
+                      days,
+                      limit,
+                      allowedClassifications: modelVisibleClassifications(),
+                    });
+                    return {
+                      partial: found.partial,
+                      summaries: found.summaries.map(({ episode, text }) => ({
+                        id: episode.id,
+                        day: episode.day,
+                        text,
+                      })),
+                    };
+                  },
+                }
+              : {}),
           },
           ledger: repository.decisionLedger(),
           onFailure: (error) =>
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
               event: "mcp-read.failed",
+              code: stableErrorCode(error),
+            }),
+          onSummariesFailed: (error) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "mcp-read.summaries-failed",
               code: stableErrorCode(error),
             }),
         });
@@ -2022,12 +2131,13 @@ export async function runAgentService(
                       },
                     }
                   : {}),
-                generate: (request, prompt, gate, purpose = "memory-capture") => {
+                generate: (request, prompt, gate, purpose = "memory-capture", call) => {
                   const generateText = modelComposition?.composition.generateText;
                   if (!generateText) throw new Error("MEMORY_CAPTURE_MODEL_UNAVAILABLE");
                   return generateText(request, prompt, gate, {
                     purpose: modelUsagePurpose(purpose),
-                    invocationId: `${purpose}:${request.runId}`,
+                    invocationId: call?.invocationId ?? `${purpose}:${request.runId}`,
+                    ...(call ? { retryToolCall: call.retryToolCall } : {}),
                     maxOutputTokens: 1024,
                     reasoningOutputTokens: 4096,
                     disableThinking: true,

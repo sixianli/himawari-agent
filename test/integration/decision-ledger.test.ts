@@ -8,13 +8,13 @@ import {
   type DecisionLedgerWrite,
   DurableMemoryService,
   type MemoryCategory,
+  type MemoryContentPort,
+  type MemoryProviderProjectionPort,
   OwnerProfileService,
   PROFILE_BUDGET_EXCEEDED,
   PROFILE_PINNED_OVER_BUDGET,
-  SessionTraceRecorder,
-  type MemoryContentPort,
-  type MemoryProviderProjectionPort,
   type ProductMemoryRecord,
+  SessionTraceRecorder,
 } from "@himawari-agent/application";
 import {
   createAgentId,
@@ -303,6 +303,12 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
             relatedRead: "off",
             relatedStats: { requests: 0, messages: 0, characters: 0, durationMs: 0 },
             relatedFailedSteps: [],
+            summaryInjected: false,
+            summaryIds: [],
+            summaryDays: [],
+            summaryCharacters: 0,
+            summaryRead: "off",
+            summaryGenerated: 0,
             profileBudget: null,
           },
           reasonRef: "payload-2",
@@ -439,6 +445,54 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
         ledger.append(ledgerWrite("bad-3", { inputs: { memoryIds: ["a", "a"], ruleIds: [] } })),
       ).rejects.toThrow();
       expect(await list()).toEqual([]);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[P5-1] keeps the recent-summary inputs of an external read and refuses partial or misplaced ones", async () => {
+    const { repository } = await fixture();
+    try {
+      const ledger = repository.decisionLedger();
+      const summary = {
+        summaryInjected: true,
+        summaryIds: ["episode-1"],
+        summaryDays: ["2026-11-10"],
+        summaryCharacters: 12,
+        summaryRead: "ok" as const,
+        summaryGenerated: 0,
+      };
+      const read = (id: string, inputs: DecisionLedgerWrite["inputs"]) =>
+        ledgerWrite(id, {
+          kind: "external_read",
+          outcome: "read",
+          reasonCode: "today_context",
+          subjectRef: "mcp-client:test",
+          contentRef: null,
+          inputs,
+        });
+      await ledger.append(read("with-summary", { memoryIds: [], ruleIds: [], ...summary }));
+      const [row] = await ledger.list({
+        ...scope,
+        kind: "external_read",
+        since: "1970-01-01T00:00:00.000Z",
+        limit: 10,
+      });
+      expect(row?.inputs).toMatchObject(summary);
+      for (const [id, inputs] of [
+        ["no-read-state", { memoryIds: [], ruleIds: [], summaryIds: ["episode-1"] }],
+        ["injected-without-ids", { memoryIds: [], ruleIds: [], ...summary, summaryIds: [] }],
+        ["bad-day", { memoryIds: [], ruleIds: [], ...summary, summaryDays: ["11/10"] }],
+        ["bad-state", { memoryIds: [], ruleIds: [], ...summary, summaryRead: "maybe" }],
+      ] as const)
+        await expect(ledger.append(read(id, inputs as never))).rejects.toThrow();
+      await expect(
+        ledger.append(
+          ledgerWrite("not-external", {
+            inputs: { memoryIds: ["memory-1"], ruleIds: [], ...summary },
+          }),
+        ),
+      ).rejects.toThrow();
     } finally {
       await repository.close();
     }
@@ -888,7 +942,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
         seq: number,
         memoryId: string,
         related: string | null,
-        action: "merge" | "supersede" | "archive" | "reflect",
+        action: "merge" | "supersede" | "archive" | "reflect" | "hold",
       ) =>
         ({
           id: `consolidation-1:c${seq}`,

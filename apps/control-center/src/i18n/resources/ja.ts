@@ -97,6 +97,7 @@ export const messages = {
   "step.search": "ウェブ検索",
   "step.recall": "記憶を確認",
   "step.reminder": "リマインダーを操作",
+  "step.rule": "常設ルールを操作",
   "step.fetch": "ウェブページ表示",
   "step.read": "ファイル読み込み",
   "step.write": "ファイル書き込み",
@@ -686,8 +687,11 @@ export const messages = {
   "memory.profile.goal": "長期目標",
   "memory.profile.project": "進行中のこと",
   "memory.tidyKept": "（残した方：{text}）",
+  "memory.tidyOther": "（もう一方：{text}）",
   "memory.undo": "元に戻す",
   "memory.undone": "元に戻しました",
+  "memory.undoLocked":
+    "この記憶はその後に変更されたため元に戻せません。履歴から以前の版を復元してください",
   "memory.reminderTitle": "リマインダー",
   "memory.reminderDue": "予定：{time}",
   "memory.reminderDismiss": "今後通知しない",
@@ -742,7 +746,7 @@ export const messages = {
   "memory.page.changed": "{count} 回変更",
   "memory.page.source": "出どころ",
   "memory.page.origin":
-    "{o, select, owner {手動で追加} import {インポート} deleted {元の会話は削除済み} reminder {リマインダーから作成、元の発言なし} other {記憶の整理}}",
+    "{o, select, owner {手動で追加} external {外部エージェントが提案し、あなたが確認して保存} import {インポート} deleted {元の会話は削除済み} reminder {リマインダーから作成、元の発言なし} other {記憶の整理}}",
   "memory.page.used": "最後に使用",
   "memory.page.notUsed": "まだ使っていません",
   "memory.page.history": "変更の流れ",
@@ -758,7 +762,7 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {すべて} new {新規} drop {覚えない・削除} tidy {記憶の整理} correct {訂正} other {インポート}}",
   "memory.page.event":
-    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} other {推測}}",
+    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} hold {食い違いを発見} other {推測}}",
   "memory.page.imported":
     "{source, select, codex {Codex} assistant {他の AI} other {Himawari のエクスポート}}から {count} 件インポート",
   "memory.page.goConfirm": "確認する",
@@ -881,6 +885,26 @@ export const messages = {
   "memory.page.changeNo": "{n} 回目の変更",
   "memory.page.seeAllChanges": "この記憶の変更をすべて見る",
   "memory.page.confirmTitle": "確認が必要 · {count} 件",
+  "rules.title": "常設ルール · {count} 件",
+  "rules.note":
+    "これらのルールはモデルの記憶ではなく、プログラムが必ず守ります。取り消すと次のメール確認から適用されません。",
+  "rules.type":
+    "{t, select, mail_must_notify {必ず通知} mail_read_whole_thread {スレッド全体を先に読む} other {その他のルール}}",
+  "rules.needsReview": "元の記憶が変わったため再確認待ち（適用は継続中）",
+  "rules.notEnforced": "このルールを読み取れないため、いまは適用していません",
+  "rules.reconfirm": "再確認",
+  "rules.undo": "取り消す",
+  "rules.receipt.label": "常設ルールの控え",
+  "rules.receipt.status":
+    "{s, select, active {常設ルールにしました} proposed {ルールの提案です。「適用」を押すと有効になります} soft {好みとして記録しました（プログラムでは強制しません）} undone {取り消しました} other {常設ルール}}",
+  "rules.receipt.trials": "試算",
+  "rules.receipt.trial": "{hit, select, true {該当する} other {該当しない}}：{from} · {subject}",
+  "rules.receipt.replay":
+    "過去 {days} 日の再計算：判断済みのメール {checked} 件のうちルールに該当するのは {hit} 件で、そのうち {changed} 件は「対応不要」か「知っておけば十分」だったもので、{kind, select, mail_read_whole_thread {今後はスレッド全体を読んでから判断し、読み切れなければ確認待ちにします} other {確認待ちに変わります}}。そのうち「役に立った」と評価したものは {useful} 件です。",
+  "rules.receipt.replayNote":
+    "再計算は当時保存した内容で行います。「対応不要」と判断したメールは差出人と件名しか残っていないため、件数は推定で、多めにも少なめにもなりえます。",
+  "rules.receipt.replayNone": "今回は再計算ができませんでしたが、ルールは有効になっています。",
+  "rules.receipt.confirm": "適用",
   "memory.page.carry.title": "毎回の会話に持っていく記憶",
   "memory.page.carry.summary": "{count} 件 · {limit} 字中 {used} 字を使用",
   "memory.page.carry.queued": "ほかに {count} 件が入りきりません",
@@ -1018,6 +1042,15 @@ export const messages = {
   "dailyReview.tag.ruleReview": "ハードルールの再確認待ち",
   "dailyReview.ruleReview":
     "このハードルールはあなたの言葉から作られました。元の記憶が変わりました。ルールはそのまま適用され、確認を待っています",
+  "dailyReview.tag.captureRetrying": "記憶の抽出に失敗、再試行済み",
+  "dailyReview.tag.captureQueued": "記憶の抽出に失敗、次の発言で再試行",
+  "dailyReview.tag.captureGaveUp": "このターンは記憶しきれなかった",
+  "dailyReview.captureRetrying":
+    "このターンから記憶を抽出するモデル呼び出しが一度失敗し、その場でもう一度試しました",
+  "dailyReview.captureQueued":
+    "このターンの記憶の抽出がうまくいかなかったため、次にメッセージを送ったときに再試行します",
+  "dailyReview.captureGaveUp":
+    "このターンは 3 回再試行しても抽出できなかったか、抽出した内容を保存しきれなかったため（一部は保存されている場合があります）、これ以上は試しません",
   "dailyReview.hidden": "本文はここには表示しません",
   "dailyReview.fetched": "メール {count} 通を確認",
   "dailyReview.allFine": "このページは問題なし",
@@ -1048,7 +1081,7 @@ export const messages = {
   "decision.chain.rules": "該当したルール",
   "decision.chain.reviewRules": "再確認待ちのルール",
   "decision.chain.rule":
-    "{k, select, important_sender {重要なメールを逃さない：送信者が重要リストにある} public_domain {重要なメールを逃さない：官公庁・学校のドメインから} money_words {重要なメールを逃さない：金額に関する語がある} quiet_hours {通知しない時間帯：この時間は通知せず、終わってから送る} amount_threshold {少額は通知しない：金額が基準未満のメールは通知しない} other {{id}}}",
+    "{k, select, important_sender {重要なメールを逃さない：送信者が重要リストにある} public_domain {重要なメールを逃さない：官公庁・学校のドメインから} money_words {重要なメールを逃さない：金額に関する語がある} quiet_hours {通知しない時間帯：この時間は通知せず、終わってから送る} amount_threshold {少額は通知しない：金額が基準未満のメールは通知しない} mail_must_notify {あなたのルール：この種類のメールは必ず知らせる} mail_read_whole_thread {あなたのルール：スレッド全体を読んでから判断する} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {あなたの設定} built_in {組み込みルール} other {未登録のルール}}",
   "decision.chain.ruleMails": "{count} 件のメールが該当",
@@ -1067,6 +1100,8 @@ export const messages = {
   "decision.chain.related": "関連メール {count} 件",
   "decision.chain.read":
     "{s, select, off {関連メール：オフ} ok {関連メール：すべて読み取り} partial {関連メール：一部のみ読み取り} failed {関連メール：読み取り失敗} other {関連メール：記録なし}}",
+  "decision.chain.summaries":
+    "{s, select, off {直近 2 日の会話の要約：今回は読んでいません} ok {直近 2 日の会話の要約：{count} 件を使用} partial {直近 2 日の会話の要約：{count} 件を使用（不完全な可能性あり）} failed {直近 2 日の会話の要約：読み取り失敗} other {直近 2 日の会話の要約：記録なし}}",
   "decision.chain.memories": "使われた記憶",
   "decision.chain.recall":
     "{s, select, off {記憶検索：オフ} ok {記憶検索：正常} partial {記憶検索：一部のみ} failed {記憶検索：失敗} other {記憶検索：記録なし}}",
@@ -1086,7 +1121,7 @@ export const messages = {
   "decision.chain.basis": "推測の根拠",
   "decision.chain.basisCut": "根拠を読み切れていません（多すぎるか読み取りエラー）",
   "decision.chain.action":
-    "{a, select, merge {統合} supersede {置き換え} archive {アーカイブ} reflect {要約} other {整理}}",
+    "{a, select, merge {統合} supersede {置き換え} archive {アーカイブ} reflect {要約} hold {食い違いを発見} other {整理}}",
   "decision.chain.repeated": "重複",
   "decision.chain.nodeCut": "この先にもあります",
   "decision.email.open": "このメールを見る",
@@ -1344,11 +1379,11 @@ export const messages = {
   "weekly.type.how4":
     "区間は 95% Wilson 区間です。採点した件数から出した範囲で、本当の割合は 95% の確かさでこの中に入ります。採点が多いほど狭くなります。",
   "weekly.group":
-    "{g, select, proactive_pushed {メールを読んで通知した} proactive_silent {メールを読んで通知しなかった} memory_skipped {システムが保存しないと判断した記憶} memory_kept {保存した記憶} consolidation {記憶の整理} memory_pending {確認待ちの記憶} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索が働かなかった} rule_review {ハードルールの再確認待ち} other {外部プログラムによる記憶の読み取り}}",
+    "{g, select, proactive_pushed {メールを読んで通知した} proactive_silent {メールを読んで通知しなかった} memory_skipped {システムが保存しないと判断した記憶} memory_kept {保存した記憶} consolidation {記憶の整理} memory_pending {確認待ちの記憶} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索が働かなかった} rule_review {ハードルールの再確認待ち} memory_capture_failed {記憶の抽出に失敗} other {外部プログラムによる記憶の読み取り}}",
   "weekly.groupInfo":
-    "{g, select, proactive_pushed {Himawari は 15 分ごとに新着メールを読みます。読んだ後に通知した回です。} rule_review {ハードルールはあなたの言葉から作られます。元の記憶が変更・置き換え・削除されると、ルールは再確認待ちになり、その記録です。} other {Himawari は 15 分ごとに新着メールを読みます。読んだ後、通知が必要なものがなかった回です。}}",
+    "{g, select, proactive_pushed {Himawari は 15 分ごとに新着メールを読みます。読んだ後に通知した回です。} rule_review {ハードルールはあなたの言葉から作られます。元の記憶が変更・置き換え・削除されると、ルールは再確認待ちになり、その記録です。} memory_capture_failed {毎ターンの後、あなたの言葉から覚えることを抽出します。これは抽出または保存が失敗した回で、失敗ごとに 1 件です。後で成功したターンには別に保存・未保存の記録があります。} other {Himawari は 15 分ごとに新着メールを読みます。読んだ後、通知が必要なものがなかった回です。}}",
   "weekly.rate":
-    "{k, select, proactive_pushed_useful {通知は正しかった} proactive_pushed_unneeded {通知すべきではなかった} proactive_silent_useful {通知しないのが正しかった} proactive_silent_missed {通知すべきだった} memory_skipped_useful {保存しないのが正しかった} memory_skipped_missed {保存すべきだった} memory_kept_useful {正しく保存した} memory_kept_unneeded {保存すべきではなかった} consolidation_useful {整理は正しかった} consolidation_unneeded {整理すべきではなかった} other_useful {正しかった} other_unneeded {やるべきではなかった} other {やるべきだった}}",
+    "{k, select, proactive_pushed_useful {通知は正しかった} proactive_pushed_unneeded {通知すべきではなかった} proactive_silent_useful {通知しないのが正しかった} proactive_silent_missed {通知すべきだった} memory_skipped_useful {保存しないのが正しかった} memory_skipped_missed {保存すべきだった} memory_kept_useful {正しく保存した} memory_kept_unneeded {保存すべきではなかった} consolidation_useful {整理は正しかった} consolidation_unneeded {整理すべきではなかった} memory_capture_failed_useful {失ったものはない} memory_capture_failed_missed {覚えるべきことを逃した} other_useful {正しかった} other_unneeded {やるべきではなかった} other {やるべきだった}}",
   "weekly.ratio": "{pct}（{k}/{n}）",
   "weekly.interval": "区間 {low}–{high}",
   "weekly.few": "件数不足（{n} 件）",

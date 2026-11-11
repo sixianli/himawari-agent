@@ -418,7 +418,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
           },
         ],
       });
-      expect(chain.mails).toEqual({ judged: 2, related: 2, relatedRead: "ok" });
+      expect(chain.mails).toEqual({ judged: 2, related: 2, relatedRead: "ok", summaries: null });
       expect(chain.memories).toMatchObject({
         state: "recorded",
         recall: "ok",
@@ -473,6 +473,61 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
     }
   });
 
+  it("[P3-6] lists how many recent chat summaries a Gmail check sent and whether the read was whole", async () => {
+    const f = await fixture();
+    try {
+      await recordGmail(
+        f.repository,
+        "gmail-summaries",
+        gmailInputs({
+          summaryInjected: true,
+          summaryIds: ["episode:day_summary:thread-a:1", "episode:day_summary:thread-b:4"],
+          summaryDays: ["2026-11-03", "2026-11-04"],
+          summaryCharacters: 120,
+          summaryRead: "partial",
+          summaryGenerated: 1,
+        }),
+      );
+      await recordGmail(
+        f.repository,
+        "gmail-no-summaries",
+        gmailInputs({
+          summaryInjected: false,
+          summaryIds: [],
+          summaryDays: [],
+          summaryCharacters: 0,
+          summaryRead: "off",
+          summaryGenerated: 0,
+        }),
+      );
+      expect((await chainOf(f.control, "gmail-summaries")).mails?.summaries).toEqual({
+        count: 2,
+        read: "partial",
+      });
+      expect((await chainOf(f.control, "gmail-no-summaries")).mails?.summaries).toEqual({
+        count: 0,
+        read: "off",
+      });
+      const [entry] = (
+        await f.ledger.list({
+          ...scope,
+          kind: "proactive",
+          since: "2026-11-01T00:00:00.000Z",
+          limit: 10,
+        })
+      ).filter(({ id }) => id === "gmail-summaries");
+      expect(entry?.inputs).toMatchObject({
+        summaryInjected: true,
+        summaryDays: ["2026-11-03", "2026-11-04"],
+        summaryCharacters: 120,
+        summaryRead: "partial",
+        summaryGenerated: 1,
+      });
+    } finally {
+      await f.repository.close();
+    }
+  });
+
   it("[P1-3] shows 'not recorded' for every section of a Gmail row whose inputs were never written, never 'none'", async () => {
     const f = await fixture();
     try {
@@ -483,7 +538,12 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
       const chain = await chainOf(f.control, "gmail-old");
       expect(chain.inputs).toBe("not_recorded");
       expect(chain.rules).toEqual({ state: "not_recorded", items: [] });
-      expect(chain.mails).toEqual({ judged: null, related: null, relatedRead: "not_recorded" });
+      expect(chain.mails).toEqual({
+        judged: null,
+        related: null,
+        relatedRead: "not_recorded",
+        summaries: null,
+      });
       expect(chain.memories).toMatchObject({
         state: "not_recorded",
         recall: "not_recorded",
@@ -586,6 +646,51 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         text: TEXTS["payload-sensitive"],
         source: { quote: SENTINEL },
       });
+    } finally {
+      await f.repository.close();
+    }
+  });
+
+  it("[P5-1] keeps the recent-summary fields of an external read readable, without a mail section", async () => {
+    const f = await fixture();
+    try {
+      await f.ledger.append({
+        id: "ledger:external-read",
+        ...scope,
+        kind: "external_read",
+        decidedAt: DECIDED_AT,
+        outcome: "read",
+        reasonCode: "today_context",
+        subjectRef: "mcp-client:test",
+        inputs: {
+          memoryIds: [],
+          ruleIds: [],
+          summaryInjected: true,
+          summaryIds: ["episode:day_summary:thread-a:1"],
+          summaryDays: ["2026-11-04"],
+          summaryCharacters: 40,
+          summaryRead: "ok",
+          summaryGenerated: 0,
+        },
+        reasonRef: null,
+        contentRef: null,
+        costMicros: 0,
+        durationMs: 0,
+      });
+      const found = await f.ledger.read({ ...scope, decisionId: "ledger:external-read" });
+      expect(found?.inputFields).toEqual(
+        expect.arrayContaining([
+          "summaryCharacters",
+          "summaryDays",
+          "summaryGenerated",
+          "summaryIds",
+          "summaryInjected",
+          "summaryRead",
+        ]),
+      );
+      const chain = await chainOf(f.control, "ledger:external-read");
+      expect(chain.mails).toBeNull();
+      expect(chain.rules).toEqual({ state: "not_applicable", items: [] });
     } finally {
       await f.repository.close();
     }
@@ -1006,6 +1111,61 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
       await expect(
         gateway.request(authentication as never, query("gmail-missing")),
       ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
+    } finally {
+      await f.repository.close();
+    }
+  });
+
+  it("[P3-8-undo] the memory overview says a tidy-up can be undone until its memory is changed", async () => {
+    const f = await fixture();
+    try {
+      await seedMemories(f);
+      const overview = async () => {
+        const snapshot = await f.control.query({
+          ...(query("unused") as object),
+          type: "memory.overview.read",
+          payload: {},
+        } as never);
+        if (snapshot.type !== "memory.overview.snapshot") throw new Error("snapshot");
+        return snapshot.payload.tidyUps;
+      };
+      expect(await overview()).toMatchObject([
+        { changeId: "consolidation-1:c1", undone: false, undoable: true },
+      ]);
+      const current = await f.repository
+        .productMemoryState()
+        .read(createMemoryId("memory-insight"));
+      if (!current) throw new Error("insight missing");
+      await f.memory.revise({
+        memoryId: current.id,
+        expectedRevision: current.revision,
+        generationId: GENERATION_ID,
+        attributes: { tentative: true },
+      });
+      expect(await overview()).toMatchObject([
+        { changeId: "consolidation-1:c1", undone: false, undoable: false },
+      ]);
+    } finally {
+      await f.repository.close();
+    }
+  });
+
+  it("[P3-8-undo] the memory overview never calls an already undone tidy-up undoable, even when its memory is untouched", async () => {
+    const f = await fixture();
+    try {
+      await seedMemories(f);
+      await f.repository
+        .memoryConsolidation()
+        .markUndone({ id: "consolidation-1:c1", undoneAt: "2026-11-09T00:00:00.000Z" });
+      const snapshot = await f.control.query({
+        ...(query("unused") as object),
+        type: "memory.overview.read",
+        payload: {},
+      } as never);
+      if (snapshot.type !== "memory.overview.snapshot") throw new Error("snapshot");
+      expect(snapshot.payload.tidyUps).toMatchObject([
+        { changeId: "consolidation-1:c1", undone: true, undoable: false },
+      ]);
     } finally {
       await f.repository.close();
     }

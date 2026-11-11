@@ -1,0 +1,136 @@
+{
+  "cases": [
+    {
+      "id": "refund-whole-thread",
+      "sentence": "涉及退款的邮件以后必须看整个邮件串再判断",
+      "expect": "mail_read_whole_thread",
+      "hit": [
+        {
+          "from": "support@shop.example.cn",
+          "subject": "关于订单 #4821 的售后",
+          "body": "我们已同意您的退款申请，请确认收款账户。"
+        },
+        {
+          "from": "no-reply@amazon.co.jp",
+          "subject": "返金手続きのお知らせ",
+          "body": "ご注文の商品の返金を処理しました。"
+        },
+        {
+          "from": "service@paypal.example.com",
+          "subject": "Your refund is on its way",
+          "body": "The merchant has refunded $12.00."
+        }
+      ],
+      "miss": [
+        {
+          "from": "news@shop.example.cn",
+          "subject": "本周新品推荐",
+          "body": "秋冬新款上架，满 300 减 50。"
+        },
+        {
+          "from": "billing@hosting.example.com",
+          "subject": "Invoice for November",
+          "body": "Your invoice total is $5.00."
+        },
+        {
+          "from": "team@work.example.jp",
+          "subject": "朝会のアジェンダ",
+          "body": "明日の朝会の議題です。"
+        }
+      ]
+    },
+    {
+      "id": "immigration-notify",
+      "sentence": "日本入管局相关的邮件以后必须通知我",
+      "expect": "mail_must_notify",
+      "hit": [
+        {
+          "from": "no-reply@isa.go.jp",
+          "subject": "在留期間更新許可申請について",
+          "body": "申請の受付が完了しました。"
+        },
+        {
+          "from": "info@ras.isa.go.jp",
+          "subject": "Immigration Services Agency: application status",
+          "body": "Your application has been received."
+        },
+        {
+          "from": "office@gyosei.example.jp",
+          "subject": "ビザ更新の件",
+          "body": "出入国在留管理局に提出する書類をお送りします。"
+        }
+      ],
+      "miss": [
+        {
+          "from": "deals@travel.example.com",
+          "subject": "Japan travel deals",
+          "body": "Cheap flights to Tokyo this winter."
+        },
+        {
+          "from": "info@kenpo.example.jp",
+          "subject": "健康診断のご案内",
+          "body": "今年度の健康診断の日程です。"
+        },
+        {
+          "from": "noreply@city.example.jp",
+          "subject": "住民税の納付について",
+          "body": "第3期の納期限は11月末です。"
+        }
+      ]
+    },
+    {
+      "id": "subscription-notify",
+      "sentence": "订阅相关的必须提醒我",
+      "expect": "mail_must_notify",
+      "hit": [
+        {
+          "from": "info@account.netflix.com",
+          "subject": "Your membership will renew on Nov 20",
+          "body": "Your subscription renews automatically."
+        },
+        {
+          "from": "no_reply@email.apple.com",
+          "subject": "订阅续订确认",
+          "body": "您的 iCloud+ 订阅将于下月自动续订。"
+        },
+        {
+          "from": "billing@saas.example.com",
+          "subject": "Your free trial ends in 3 days",
+          "body": "Add a payment method to keep your subscription."
+        },
+        {
+          "from": "info@service.example.jp",
+          "subject": "サブスクリプション料金改定のお知らせ",
+          "body": "来月から月額料金が変わります。"
+        }
+      ],
+      "miss": [
+        {
+          "from": "news@blog.example.com",
+          "subject": "Weekly newsletter",
+          "body": "Here are this week's top posts. Unsubscribe anytime."
+        },
+        {
+          "from": "mag@shop.example.jp",
+          "subject": "メルマガ 11月号",
+          "body": "今月のおすすめ商品です。"
+        },
+        {
+          "from": "team@work.example.jp",
+          "subject": "朝会のアジェンダ",
+          "body": "明日の朝会の議題です。"
+        }
+      ]
+    },
+    {
+      "id": "one-off-not-a-rule",
+      "sentence": "这封先不用管，今天别提醒我了",
+      "expect": "none"
+    },
+    {
+      "id": "tone-is-soft",
+      "sentence": "以后回答我的时候短一点，别用表格",
+      "expect": "soft"
+    }
+  ]
+}

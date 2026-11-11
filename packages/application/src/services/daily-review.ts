@@ -1,8 +1,10 @@
-import type {
-  DecisionKind,
-  DecisionLedgerEntry,
-  DecisionLedgerPort,
+import {
+  type DecisionKind,
+  type DecisionLedgerEntry,
+  type DecisionLedgerPort,
+  isMemoryCaptureFailure,
 } from "../ports/decision-ledger.js";
+import { EXTERNAL_PROPOSAL_REASON_CODES } from "../ports/decision-ledger.js";
 import type { ProactiveRating, ProactiveScope } from "../ports/proactive-checks.js";
 import { isModelVisible } from "./model-visibility.js";
 import type { ProactiveOverview } from "./proactive-overview.js";
@@ -211,7 +213,8 @@ function ledgerGroup(entry: DecisionLedgerEntry): DailyReviewGroup {
 
 function ledgerActed(entry: DecisionLedgerEntry): boolean {
   if (entry.kind === "proactive") return entry.outcome !== "silent";
-  if (entry.kind === "memory_candidate") return entry.outcome !== "discarded";
+  if (entry.kind === "memory_candidate")
+    return entry.outcome !== "discarded" && !isMemoryCaptureFailure(entry.outcome);
   return true;
 }
 
@@ -221,7 +224,11 @@ function reviewedMemoryIds(entry: DecisionLedgerEntry): {
   readonly before: readonly string[];
   readonly after: string | undefined;
 } {
-  if (entry.kind === "memory_candidate" && entry.outcome !== "discarded") {
+  if (
+    entry.kind === "memory_candidate" &&
+    entry.outcome !== "discarded" &&
+    !isMemoryCaptureFailure(entry.outcome)
+  ) {
     const id = entry.subjectRef ?? entry.inputs.memoryIds[0];
     return { before: [], after: id };
   }
@@ -235,7 +242,10 @@ function reviewedMemoryIds(entry: DecisionLedgerEntry): {
   return { before: [], after: undefined };
 }
 
-const OWNER_DECIDED_DISCARD = "approval_rejected";
+const OWNER_DECIDED_DISCARDS: ReadonlySet<string> = new Set([
+  "approval_rejected",
+  EXTERNAL_PROPOSAL_REASON_CODES.declined,
+]);
 
 export async function readDailyReview(options: {
   readonly scope: ProactiveScope;
@@ -265,7 +275,7 @@ export async function readDailyReview(options: {
     { readonly item: DailyReviewPoolItem; readonly build: () => Promise<DailyReviewItem> }
   >();
   for (const entry of entries) {
-    if (entry.kind === "memory_candidate" && entry.reasonCode === OWNER_DECIDED_DISCARD) continue;
+    if (entry.kind === "memory_candidate" && OWNER_DECIDED_DISCARDS.has(entry.reasonCode)) continue;
     const check = entry.kind === "proactive" ? checks.get(entry.id) : undefined;
     if (entry.kind === "proactive" && entry.outcome === "silent" && (check?.counts.judged ?? 0) < 1)
       continue;
@@ -320,7 +330,9 @@ export async function readDailyReview(options: {
           rating: entry.ownerRating,
           text,
           textHidden:
-            (entry.kind === "memory_candidate" || entry.kind === "consolidation") && text === "",
+            (entry.kind === "memory_candidate" || entry.kind === "consolidation") &&
+            text === "" &&
+            !isMemoryCaptureFailure(entry.outcome),
           category: entry.category,
           fetched: check ? check.counts.fetched : null,
         };

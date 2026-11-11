@@ -25,7 +25,9 @@ import type {
   GovernanceMutationReceiptStorePort,
   MemoryConsolidationStorePort,
   MemoryEpisodeStorePort,
+  MemoryCaptureBacklogPort,
   MemoryReminderStorePort,
+  OwnerRuleStorePort,
   OwnerPreferencesStorePort,
   ProactiveStorePort,
   ThreadArtifactStorePort,
@@ -532,8 +534,16 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.memoryConsolidation();
   }
 
+  ownerRules(): OwnerRuleStorePort {
+    return this.durable.ownerRules();
+  }
+
   memoryReminders(): MemoryReminderStorePort {
     return this.durable.memoryReminders();
+  }
+
+  memoryCaptureBacklog(): MemoryCaptureBacklogPort {
+    return this.durable.memoryCaptureBacklog();
   }
 
   modelUsage(): ModelUsageStorePort {

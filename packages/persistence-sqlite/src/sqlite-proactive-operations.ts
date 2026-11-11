@@ -14,13 +14,14 @@ import type {
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
 import { recordDecisionSignal } from "./decision-signals.ts";
-import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import {
   applyBackoffWrites,
   listBackoff,
   previewBackoff,
   restoreBackoff,
 } from "./proactive-push-backoff.ts";
+import { summaryInputsValid } from "./sqlite-decision-summary-inputs.ts";
+import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { insertObservationEvent } from "./sqlite-observation-operations.ts";
 
 type Input<TName extends keyof ProactiveStorePort> = Parameters<ProactiveStorePort[TName]>[0];
@@ -678,6 +679,7 @@ export class SqliteProactiveOperations {
         ([messageId, list]) => messageId.length < 1 || messageId.length > 256 || !ids(list, 16),
       ) ||
       !this.relatedInputsValid(inputs, ids) ||
+      !summaryInputsValid(inputs, MAX_INPUT_IDS) ||
       typeof floorHits !== "object" ||
       floorHits === null ||
       Object.keys(floorHits).length > MAX_INPUT_IDS ||
@@ -763,6 +765,16 @@ export class SqliteProactiveOperations {
               durationMs: 0,
             },
             relatedFailedSteps: input.inputs.relatedFailedSteps ?? [],
+            ...(input.inputs.summaryRead === undefined
+              ? {}
+              : {
+                  summaryInjected: input.inputs.summaryInjected ?? false,
+                  summaryIds: input.inputs.summaryIds ?? [],
+                  summaryDays: input.inputs.summaryDays ?? [],
+                  summaryCharacters: input.inputs.summaryCharacters ?? 0,
+                  summaryRead: input.inputs.summaryRead,
+                  summaryGenerated: input.inputs.summaryGenerated ?? 0,
+                }),
           }),
           decision.pushSourceKey,
           decision.costMicros,
