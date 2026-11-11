@@ -17,6 +17,7 @@ import {
   type Embedder,
   HybridMemoryProvider,
   indexTerms,
+  isConsolidationUndoable,
   MemoryConsolidationService,
 } from "@himawari-agent/memory-engine";
 import {
@@ -656,7 +657,10 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       if (!reflect || !result) throw new Error("reflect change missing");
       const insight = await resource.read(reflect.memoryId);
       if (!insight) throw new Error("insight missing");
+      expect(isConsolidationUndoable(reflect, insight)).toBe(true);
       await resource.memory.confirm(insight.id, GENERATION_ID);
+      expect(isConsolidationUndoable(reflect, await resource.read(reflect.memoryId))).toBe(false);
+      expect(isConsolidationUndoable(reflect, undefined)).toBe(false);
       await expect(resource.consolidation.undo(reflect.id)).rejects.toThrow(
         "MEMORY_CHANGED_AFTER_CONSOLIDATION",
       );

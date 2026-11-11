@@ -584,6 +584,7 @@ export const governanceMessages = [
         relatedText: "主人的女儿名叫小葵",
         createdAt: "2026-09-11T00:00:00.000Z",
         undone: false,
+        undoable: true,
       },
       {
         changeId: "memory-consolidation:agent-01:2026-09-11:c2",
@@ -593,6 +594,7 @@ export const governanceMessages = [
         relatedText: "主人平时喝明治的牛奶",
         createdAt: "2026-09-11T00:00:01.000Z",
         undone: false,
+        undoable: true,
       },
     ],
     reminders: [

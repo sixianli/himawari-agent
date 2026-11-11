@@ -641,6 +641,7 @@ export const messages = {
   "memory.tidyOther": "（另一条：{text}）",
   "memory.undo": "撤销",
   "memory.undone": "已撤销",
+  "memory.undoLocked": "这条记忆之后又改过，不能撤销；想回到旧版本，请在它的历史里恢复",
   "memory.reminderTitle": "提醒",
   "memory.reminderDue": "时间：{time}",
   "memory.reminderDismiss": "不再提醒",

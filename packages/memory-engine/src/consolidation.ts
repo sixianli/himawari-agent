@@ -33,6 +33,15 @@ import {
 import { localDay } from "./episodes.js";
 import { indexTerms } from "./segmentation.js";
 
+export function isConsolidationUndoable(
+  change: Pick<MemoryConsolidationChange, "afterRevision" | "undoneAt">,
+  memory: Pick<ProductMemoryRecord, "revision"> | undefined,
+): boolean {
+  return (
+    change.undoneAt === null && memory !== undefined && memory.revision === change.afterRevision
+  );
+}
+
 export const MEMORY_CONSOLIDATION_POLICY_VERSION = "memory-consolidation:v1";
 const MAXIMUM_FRESH = 20;
 const MAXIMUM_NEIGHBOURS = 3;
@@ -432,7 +441,7 @@ export class MemoryConsolidationService {
     if (change.undoneAt !== null)
       throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Consolidation change undone");
     const memory = await this.#options.state.read(change.memoryId);
-    if (!memory || memory.revision !== change.afterRevision)
+    if (!memory || !isConsolidationUndoable(change, memory))
       throw new ApplicationPortError(
         PORT_ERROR_CODES.CONFLICT,
         "MEMORY_CHANGED_AFTER_CONSOLIDATION",
