@@ -667,6 +667,8 @@ export async function runAgentService(
     const webEnabled =
       configuration.publicMode ||
       (configuration.identity?.kind === "built-in" && Boolean(configuration.http));
+    if (configuration.runPolicy?.mcpRead !== undefined && !webEnabled)
+      throw new Error("MCP_READ_RUNTIME_UNAVAILABLE");
     if (
       webEnabled &&
       (!configuration.runPolicy ||

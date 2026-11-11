@@ -31,7 +31,11 @@ import {
   type ProductionHttpCompositionSecretSources,
   ProductionThreadGatewayAccessPolicy,
 } from "../src/production-http-composition.js";
-import { MCP_READ_PATH } from "../src/production-mcp-read.js";
+import {
+  MCP_READ_PATH,
+  ProductionMcpRead,
+  type ProductionMcpReadOptions,
+} from "../src/production-mcp-read.js";
 import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
 
 const ORIGIN = "https://agent.example.test";
@@ -846,6 +850,82 @@ describe("production HTTP composition", () => {
         },
       });
       expect(revokedSession.statusCode).toBe(401);
+    } finally {
+      await composition.close();
+      await repository.close();
+    }
+  });
+
+  it("[P5-1] serves the MCP read entry through the real composition with only its bearer token", async () => {
+    const paths = await fixture();
+    const config = configuration(paths);
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: paths.stateRoot,
+      databasePath: paths.databasePath,
+      minimumFreeBytes: 0,
+      now: () => NOW.toISOString(),
+    });
+    const secret = "m".repeat(40);
+    const recorded: string[] = [];
+    const scope = {
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+    } as unknown as ProductionMcpReadOptions["scope"];
+    const mcpRead = new ProductionMcpRead({
+      scope,
+      clock: { now: () => NOW.toISOString() },
+      secret,
+      timeZone: "Asia/Tokyo",
+      requestTimeoutMs: 5_000,
+      sources: {
+        recall: async () => ({ output: {}, contentClassification: "public", memoryIds: [] }),
+        embedOutsideRun: (_context, operation) => operation(),
+        reminders: async () => ({ reminders: [], more: false }),
+        settings: () => repository.proactive().readSettings(scope),
+      },
+      ledger: {
+        append: async (write) => {
+          recorded.push(write.reasonCode);
+        },
+      },
+      onFailure: () => undefined,
+    });
+    const composition = await createProductionHttpComposition({
+      configuration: config,
+      repository,
+      authority: () => authority(config),
+      secretSources: secretSources(),
+      jwksFetcher: { fetch: async () => ({ keys: [] }) },
+      identityFetcher: { fetch: async () => ({}) },
+      now: () => new Date(NOW),
+      mcpRead,
+    });
+    try {
+      const call = (authorization?: string) =>
+        composition.app.inject({
+          method: "POST",
+          url: MCP_READ_PATH,
+          headers: {
+            host: "agent.example.test",
+            accept: "application/json, text/event-stream",
+            "content-type": "application/json",
+            "mcp-protocol-version": "2025-06-18",
+            ...(authorization ? { authorization } : {}),
+          },
+          payload: {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "today_context", arguments: {} },
+          },
+        });
+      const denied = await call();
+      expect(denied.statusCode).toBe(401);
+      expect(recorded).toEqual([]);
+      const served = await call(["Bearer", secret].join(" "));
+      expect(served.statusCode).toBe(200);
+      expect(served.body).toContain("2026");
+      expect(recorded).toEqual(["today_context"]);
     } finally {
       await composition.close();
       await repository.close();

@@ -563,7 +563,9 @@ export function maskSensitiveTexts(inputs: readonly string[]): string[] {
     },
   };
   for (const input of inputs) redactForEgress(input, options);
-  return inputs.map((input) => redactForEgress(input, options).text);
+  return inputs.map((input) =>
+    redactForEgress(input, options).text.replace(EGRESS_PLACEHOLDER_PATTERN, "[$1]"),
+  );
 }
 
 export class EgressRedactionError extends Error {

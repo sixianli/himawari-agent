@@ -188,7 +188,7 @@ export class ProductionMemoryRecall {
       includeHistory: scope.includeHistory || input.includeHistory,
     };
     const tentativeLimit = Math.floor(input.limit / 2);
-    const [hits, tentativeHits] = await Promise.all([
+    const [confirmed, tentativeHits] = await Promise.all([
       within("memory-recall", () =>
         this.#options.provider.search({
           ownerId: this.#options.ownerId,
@@ -197,6 +197,9 @@ export class ProductionMemoryRecall {
           limit: input.limit * 3,
           scope: searchScope,
         }),
+      ).then(
+        (value) => ({ status: "fulfilled" as const, value }),
+        (reason: unknown) => ({ status: "rejected" as const, reason }),
       ),
       tentativeLimit === 0
         ? Promise.resolve([])
@@ -212,6 +215,8 @@ export class ProductionMemoryRecall {
             }),
           ).catch(() => []),
     ]);
+    if (confirmed.status === "rejected") throw confirmed.reason;
+    const hits = confirmed.value;
     const records = new Map(
       (
         await this.#options.state.readMany({
