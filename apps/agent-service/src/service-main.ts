@@ -14,6 +14,7 @@ import {
   ExecutionLiveFeed,
   type IdGeneratorPort,
   modelUsagePurpose,
+  modelVisibleClassifications,
   type ProductConfiguration,
   RemoteExecutionBackend,
   type RuntimeRequest,
@@ -55,6 +56,7 @@ import {
   MacOsKeychainProviderSecretSource,
   MacOsKeychainSecretSource,
   MCP_READ_SECRET_PURPOSE,
+  MCP_WRITE_SECRET_PURPOSE,
   MUSE_INTAKE_SECRET_PURPOSE,
   PayloadUdsServer,
   parseServiceArguments,
@@ -96,6 +98,7 @@ import {
   type ProductionHttpCompositionOptions,
 } from "./production-http-composition.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
+import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
 import {
   createProductionMemoryCompositionFromConfiguration,
@@ -117,6 +120,7 @@ import {
 import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
+import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -1324,9 +1328,25 @@ export async function runAgentService(
         writer: reminderWriter,
         ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
       });
+      const ownerRuleTools = new ProductionOwnerRuleTools(
+        new ProductionOwnerRuleWriter({
+          configuration,
+          rules: repository.ownerRules(),
+          memory: durableMemory,
+          memories: repository.productMemoryState(),
+          book: repository.memoryBook(),
+          threads: repository.threadRepository(),
+          payloads,
+          protector: recallProtector,
+          clock: { now: () => clock.now() },
+          replay: (rule) =>
+            proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
+        }),
+      );
       const tools = new ProductionRuntimeTools({
         memoryRecall,
         reminders: reminderTools,
+        ownerRules: ownerRuleTools,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -1656,6 +1676,7 @@ export async function runAgentService(
           configuration: proactiveConfiguration,
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
           store: proactiveStore,
+          ownerRules: repository.ownerRules(),
           seal: proactiveSeal,
           oauth,
           reader: createGmailReader({ oauth }),
@@ -1819,15 +1840,37 @@ export async function runAgentService(
               ref === mcpReadConfiguration.secretRef && purpose === MCP_READ_SECRET_PURPOSE,
           )
         : undefined;
+      const mcpWriteSecret = mcpReadConfiguration?.writeSecretRef
+        ? configuration.secretReferences.find(
+            ({ ref, purpose }) =>
+              ref === mcpReadConfiguration.writeSecretRef && purpose === MCP_WRITE_SECRET_PURPOSE,
+          )
+        : undefined;
       if (mcpReadSecret) {
         const settingsStore = repository.proactive();
+        const ownerRuleStore = repository.ownerRules();
+        const secretProvider = hostModelSources(configuration).provider;
         mcpRead = new ProductionMcpRead({
           scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
           clock,
-          secret: await hostModelSources(configuration).provider.resolve(
-            mcpReadSecret.ref,
-            mcpReadSecret.version,
-          ),
+          secret: await secretProvider.resolve(mcpReadSecret.ref, mcpReadSecret.version),
+          ...(mcpWriteSecret
+            ? {
+                write: {
+                  secret: await secretProvider.resolve(mcpWriteSecret.ref, mcpWriteSecret.version),
+                  proposals: new ProductionMcpMemoryWriter({
+                    configuration,
+                    memory: durableMemory,
+                    state: repository.productMemoryState(),
+                    book: repository.memoryBook(),
+                    ledger: repository.decisionLedger(),
+                    payloads,
+                    protector: recallProtector,
+                    clock: { now: () => clock.now() },
+                  }),
+                },
+              }
+            : {}),
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
           requestTimeoutMs: configuration.deadlines.providerRequestMs,
           sources: {
@@ -1840,12 +1883,45 @@ export async function runAgentService(
                 ownerId: configuration.ownerId,
                 agentId: configuration.agentId,
               }),
+            ownerRules: () =>
+              ownerRuleStore.list({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                includeRetired: false,
+              }),
+            ...(memoryEpisodes
+              ? {
+                  summaries: async ({ days, limit }: { days: number; limit: number }) => {
+                    const found = await memoryEpisodes.recent({
+                      ownerId: configuration.ownerId,
+                      agentId: configuration.agentId,
+                      days,
+                      limit,
+                      allowedClassifications: modelVisibleClassifications(),
+                    });
+                    return {
+                      partial: found.partial,
+                      summaries: found.summaries.map(({ episode, text }) => ({
+                        id: episode.id,
+                        day: episode.day,
+                        text,
+                      })),
+                    };
+                  },
+                }
+              : {}),
           },
           ledger: repository.decisionLedger(),
           onFailure: (error) =>
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
               event: "mcp-read.failed",
+              code: stableErrorCode(error),
+            }),
+          onSummariesFailed: (error) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "mcp-read.summaries-failed",
               code: stableErrorCode(error),
             }),
         });

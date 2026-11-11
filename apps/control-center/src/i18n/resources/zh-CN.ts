@@ -89,6 +89,7 @@ export const messages = {
   "step.search": "搜索网页",
   "step.recall": "翻看记忆",
   "step.reminder": "处理提醒",
+  "step.rule": "处理长期规则",
   "step.fetch": "打开网页",
   "step.read": "读取文件",
   "step.write": "写入文件",
@@ -637,8 +638,10 @@ export const messages = {
   "memory.profile.goal": "长期目标",
   "memory.profile.project": "进行中的事",
   "memory.tidyKept": "（保留：{text}）",
+  "memory.tidyOther": "（另一条：{text}）",
   "memory.undo": "撤销",
   "memory.undone": "已撤销",
+  "memory.undoLocked": "这条记忆之后又改过，不能撤销；想回到旧版本，请在它的历史里恢复",
   "memory.reminderTitle": "提醒",
   "memory.reminderDue": "时间：{time}",
   "memory.reminderDismiss": "不再提醒",
@@ -692,7 +695,7 @@ export const messages = {
   "memory.page.changed": "改过 {count} 次",
   "memory.page.source": "来源",
   "memory.page.origin":
-    "{o, select, owner {你手动添加} import {导入} deleted {来源对话已删除} reminder {提醒创建，无原话} other {整理记忆}}",
+    "{o, select, owner {你手动添加} external {外部 agent 提议，你确认后保存} import {导入} deleted {来源对话已删除} reminder {提醒创建，无原话} other {整理记忆}}",
   "memory.page.used": "上次用到",
   "memory.page.notUsed": "还没用到",
   "memory.page.history": "怎么变过来的",
@@ -708,7 +711,7 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {全部变化} new {新记住} drop {不记和删除} tidy {整理记忆} correct {更正} other {导入}}",
   "memory.page.event":
-    "{e, select, new {新记住} dropped {已不记} deleted {已删除} correct {更正} import {导入} merge {合并重复} supersede {取代旧说法} archive {归档} other {新推测}}",
+    "{e, select, new {新记住} dropped {已不记} deleted {已删除} correct {更正} import {导入} merge {合并重复} supersede {取代旧说法} archive {归档} hold {发现说法不一} other {新推测}}",
   "memory.page.imported":
     "从 {source, select, codex {Codex} assistant {其他 AI} other {Himawari 导出文件}} 导入 {count} 条",
   "memory.page.goConfirm": "去确认",
@@ -826,6 +829,25 @@ export const messages = {
   "memory.page.changeNo": "第 {n} 次变化",
   "memory.page.seeAllChanges": "看这条记忆的全部变化",
   "memory.page.confirmTitle": "需要你确认 · {count} 条",
+  "rules.title": "长期规则 · {count} 条",
+  "rules.note": "这些规则由程序强制执行，不靠模型记住。撤销后下一次检查邮件时就不再执行。",
+  "rules.type":
+    "{t, select, mail_must_notify {一定提醒} mail_read_whole_thread {先读完整个邮件串} other {其他规则}}",
+  "rules.needsReview": "来源记忆改过，待重新确认（仍在执行）",
+  "rules.notEnforced": "这条规则读不懂，暂时没有执行",
+  "rules.reconfirm": "重新确认",
+  "rules.undo": "撤销",
+  "rules.receipt.label": "长期规则回执",
+  "rules.receipt.status":
+    "{s, select, active {已立为长期规则} proposed {建议立为长期规则，点“生效”才执行} soft {已记成偏好，程序不强制执行} undone {已撤销} other {长期规则}}",
+  "rules.receipt.trials": "试算",
+  "rules.receipt.trial": "{hit, select, true {会命中} other {不会命中}}：{from} · {subject}",
+  "rules.receipt.replay":
+    "近 {days} 天回放：重算了 {checked} 封已判断过的邮件，规则命中 {hit} 封，其中 {changed} 封原来判为“不用管”或“知道就好”、{kind, select, mail_read_whole_thread {以后会先读完整个邮件串再判断，读不全就交给你看} other {现在会改成要你看}}；这些里你评过“有用”的有 {useful} 封。",
+  "rules.receipt.replayNote":
+    "回放用当时存下的内容重算。判为“不用管”的邮件只存了发件人和标题，所以结果是估计，可能偏多也可能偏少。",
+  "rules.receipt.replayNone": "这次没能做历史回放，规则已照常生效。",
+  "rules.receipt.confirm": "生效",
   "memory.page.carry.title": "每次对话都会带上的记忆",
   "memory.page.carry.summary": "{count} 条 · 已用 {used} / {limit} 字",
   "memory.page.carry.queued": "还有 {count} 条放不下",
@@ -992,7 +1014,7 @@ export const messages = {
   "decision.chain.rules": "命中的规则",
   "decision.chain.reviewRules": "待重审的规则",
   "decision.chain.rule":
-    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：邮件里有金额相关的词} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} other {{id}}}",
+    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：邮件里有金额相关的词} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} mail_must_notify {你立的规则：这类邮件必须提醒你} mail_read_whole_thread {你立的规则：先看整个邮件串再判断} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {你设定的} built_in {内置规则} other {未登记的规则}}",
   "decision.chain.ruleMails": "命中 {count} 封邮件",
@@ -1032,7 +1054,7 @@ export const messages = {
   "decision.chain.basis": "推断依据",
   "decision.chain.basisCut": "依据没读全（太多或读取出错）",
   "decision.chain.action":
-    "{a, select, merge {合并} supersede {取代} archive {归档} reflect {归纳} other {整理}}",
+    "{a, select, merge {合并} supersede {取代} archive {归档} reflect {归纳} hold {发现说法不一} other {整理}}",
   "decision.chain.repeated": "重复出现",
   "decision.chain.nodeCut": "后面还有",
   "decision.email.open": "查看这封邮件",

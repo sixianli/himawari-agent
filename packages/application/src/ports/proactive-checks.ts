@@ -460,12 +460,19 @@ export type ProactiveFetchResult =
 export interface ProactiveRelatedLimits {
   readonly perMail: number;
   readonly requestsPerCheck: number;
+  readonly wholeThreadPerMail: number;
+}
+
+export interface ProactiveWholeThread {
+  readonly messageIds: readonly string[];
+  readonly complete: boolean;
 }
 
 export interface ProactiveRelatedFetch {
   readonly byMail: ReadonlyMap<string, readonly ProactiveSourceItem[]>;
   readonly failed: ReadonlyMap<string, string>;
   readonly requests: number;
+  readonly wholeThread?: ReadonlyMap<string, ProactiveWholeThread>;
 }
 
 export interface ProactiveSourceReader {
@@ -475,6 +482,7 @@ export interface ProactiveSourceReader {
         readonly token: string;
         readonly items: readonly ProactiveSourceItem[];
         readonly limits: ProactiveRelatedLimits;
+        readonly wholeThread?: ReadonlySet<string>;
         readonly signal: AbortSignal;
       }) => Promise<ProactiveRelatedFetch>)
     | undefined;

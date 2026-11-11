@@ -49,6 +49,7 @@ import {
   TOOL_RESULT_RECALL_UNAVAILABLE,
   TOOL_RESULT_REMINDER_MEMORY_NOT_READY,
   TOOL_RESULT_REMINDER_REJECTED,
+  TOOL_RESULT_RULE_REJECTED,
   TOOL_RESULT_REMINDER_UNAVAILABLE,
   TOOL_SAVE_COPY,
   TOOL_SAVE_COPY_EXPECTED_HASH,
@@ -89,6 +90,12 @@ import {
   ReminderInputError,
   reminderToolDescriptors,
 } from "./production-reminder-writer.js";
+import {
+  OwnerRuleError,
+  ownerRuleToolDescriptors,
+  type ProductionOwnerRuleTools,
+  RULE_CAPABILITY_REFS,
+} from "./production-owner-rules.js";
 import {
   SANDBOX_TOOL_RESULT_LOST,
   SANDBOX_TOOL_RESULT_LOST_MESSAGE,
@@ -308,6 +315,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly backgroundCommands?: BackgroundCommandLimits;
   readonly memoryRecall?: Pick<ProductionMemoryRecall, "recallWithClassification">;
   readonly reminders?: Pick<ProductionReminderTools, "run">;
+  readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
@@ -552,6 +560,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     }
     if (this.#options.memoryRecall) descriptors.push(memoryRecallDescriptor());
     if (this.#options.reminders) descriptors.push(...reminderToolDescriptors());
+    if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
     return descriptors;
   }
@@ -589,6 +598,27 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     return (
       invocation.capabilityHandleRef === null &&
       REMINDER_CAPABILITY_REFS.includes(invocation.capabilityRef)
+    );
+  }
+  #isOwnerRule(invocation: RuntimeToolInvocation) {
+    return (
+      invocation.capabilityHandleRef === null &&
+      RULE_CAPABILITY_REFS.includes(invocation.capabilityRef)
+    );
+  }
+  async #ownerRule(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
+    const rules = this.#options.ownerRules;
+    return this.#ownerScoped(
+      invocation,
+      "rule",
+      rules ? async (call) => ({ value: await rules.run(call) }) : undefined,
+      (error) => ({
+        errorCode: error instanceof OwnerRuleError ? error.code : "RULE_UNAVAILABLE",
+        note:
+          error instanceof OwnerRuleError && error.detail
+            ? `${TOOL_RESULT_RULE_REJECTED.text}（${error.detail.slice(0, 200)}）`
+            : TOOL_RESULT_RULE_REJECTED.text,
+      }),
     );
   }
   #isMemoryRecall(invocation: RuntimeToolInvocation) {
@@ -642,7 +672,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScoped(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "reminder",
+    marker: "recall" | "reminder" | "rule",
     run:
       | ((call: RuntimeToolInvocation) => Promise<{
           readonly value: unknown;
@@ -744,6 +774,14 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         allowed: this.#exposed.has(invocation.runId) && this.#options.reminders !== undefined,
         permissionDecisionRef: `reminder:${digest([invocation.runId, invocation.toolCallId])}`,
         reasonCode: "REMINDER_OWNER_SCOPE",
+      };
+    }
+    if (this.#isOwnerRule(invocation)) {
+      await this.#options.assertRunActive(invocation.runId);
+      return {
+        allowed: this.#exposed.has(invocation.runId) && this.#options.ownerRules !== undefined,
+        permissionDecisionRef: `owner-rule:${digest([invocation.runId, invocation.toolCallId])}`,
+        reasonCode: "OWNER_RULE_OWNER_SCOPE",
       };
     }
     if (this.#isMemoryRecall(invocation)) {
@@ -1077,6 +1115,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     }
     if (this.#isMemoryRecall(invocation)) return this.#recall(invocation);
     if (this.#isReminder(invocation)) return this.#reminder(invocation);
+    if (this.#isOwnerRule(invocation)) return this.#ownerRule(invocation);
     if (this.#background && this.#codingTool(invocation) === "bash") {
       const key = digest([invocation.runId, invocation.toolCallId]);
       const command = await this.#commandDeadline(invocation, true);

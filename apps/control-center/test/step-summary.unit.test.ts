@@ -119,3 +119,14 @@ describe("tools that never ran because approval never came", () => {
     expect(endedAwaitingApproval(tool, [started, failed], run)).toBe(false);
   });
 });
+
+describe("[P2-3] standing rule steps", () => {
+  it("names the rule tools in all three languages and shows the rule summary", () => {
+    for (const name of ["rule_set", "rule_list", "rule_undo"])
+      expect(toolStepSummary(name, '{"summary":"入管局的邮件一律提醒"}').id).toBe("step.rule");
+    expect(toolStepSummary("rule_set", '{"summary":"入管局的邮件一律提醒"}').target).toBe(
+      "入管局的邮件一律提醒",
+    );
+    expect([zh["step.rule"], en["step.rule"], ja["step.rule"]].every(Boolean)).toBe(true);
+  });
+});

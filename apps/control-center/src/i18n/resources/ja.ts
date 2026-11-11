@@ -97,6 +97,7 @@ export const messages = {
   "step.search": "ウェブ検索",
   "step.recall": "記憶を確認",
   "step.reminder": "リマインダーを操作",
+  "step.rule": "常設ルールを操作",
   "step.fetch": "ウェブページ表示",
   "step.read": "ファイル読み込み",
   "step.write": "ファイル書き込み",
@@ -686,8 +687,11 @@ export const messages = {
   "memory.profile.goal": "長期目標",
   "memory.profile.project": "進行中のこと",
   "memory.tidyKept": "（残した方：{text}）",
+  "memory.tidyOther": "（もう一方：{text}）",
   "memory.undo": "元に戻す",
   "memory.undone": "元に戻しました",
+  "memory.undoLocked":
+    "この記憶はその後に変更されたため元に戻せません。履歴から以前の版を復元してください",
   "memory.reminderTitle": "リマインダー",
   "memory.reminderDue": "予定：{time}",
   "memory.reminderDismiss": "今後通知しない",
@@ -742,7 +746,7 @@ export const messages = {
   "memory.page.changed": "{count} 回変更",
   "memory.page.source": "出どころ",
   "memory.page.origin":
-    "{o, select, owner {手動で追加} import {インポート} deleted {元の会話は削除済み} reminder {リマインダーから作成、元の発言なし} other {記憶の整理}}",
+    "{o, select, owner {手動で追加} external {外部エージェントが提案し、あなたが確認して保存} import {インポート} deleted {元の会話は削除済み} reminder {リマインダーから作成、元の発言なし} other {記憶の整理}}",
   "memory.page.used": "最後に使用",
   "memory.page.notUsed": "まだ使っていません",
   "memory.page.history": "変更の流れ",
@@ -758,7 +762,7 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {すべて} new {新規} drop {覚えない・削除} tidy {記憶の整理} correct {訂正} other {インポート}}",
   "memory.page.event":
-    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} other {推測}}",
+    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} hold {食い違いを発見} other {推測}}",
   "memory.page.imported":
     "{source, select, codex {Codex} assistant {他の AI} other {Himawari のエクスポート}}から {count} 件インポート",
   "memory.page.goConfirm": "確認する",
@@ -881,6 +885,26 @@ export const messages = {
   "memory.page.changeNo": "{n} 回目の変更",
   "memory.page.seeAllChanges": "この記憶の変更をすべて見る",
   "memory.page.confirmTitle": "確認が必要 · {count} 件",
+  "rules.title": "常設ルール · {count} 件",
+  "rules.note":
+    "これらのルールはモデルの記憶ではなく、プログラムが必ず守ります。取り消すと次のメール確認から適用されません。",
+  "rules.type":
+    "{t, select, mail_must_notify {必ず通知} mail_read_whole_thread {スレッド全体を先に読む} other {その他のルール}}",
+  "rules.needsReview": "元の記憶が変わったため再確認待ち（適用は継続中）",
+  "rules.notEnforced": "このルールを読み取れないため、いまは適用していません",
+  "rules.reconfirm": "再確認",
+  "rules.undo": "取り消す",
+  "rules.receipt.label": "常設ルールの控え",
+  "rules.receipt.status":
+    "{s, select, active {常設ルールにしました} proposed {ルールの提案です。「適用」を押すと有効になります} soft {好みとして記録しました（プログラムでは強制しません）} undone {取り消しました} other {常設ルール}}",
+  "rules.receipt.trials": "試算",
+  "rules.receipt.trial": "{hit, select, true {該当する} other {該当しない}}：{from} · {subject}",
+  "rules.receipt.replay":
+    "過去 {days} 日の再計算：判断済みのメール {checked} 件のうちルールに該当するのは {hit} 件で、そのうち {changed} 件は「対応不要」か「知っておけば十分」だったもので、{kind, select, mail_read_whole_thread {今後はスレッド全体を読んでから判断し、読み切れなければ確認待ちにします} other {確認待ちに変わります}}。そのうち「役に立った」と評価したものは {useful} 件です。",
+  "rules.receipt.replayNote":
+    "再計算は当時保存した内容で行います。「対応不要」と判断したメールは差出人と件名しか残っていないため、件数は推定で、多めにも少なめにもなりえます。",
+  "rules.receipt.replayNone": "今回は再計算ができませんでしたが、ルールは有効になっています。",
+  "rules.receipt.confirm": "適用",
   "memory.page.carry.title": "毎回の会話に持っていく記憶",
   "memory.page.carry.summary": "{count} 件 · {limit} 字中 {used} 字を使用",
   "memory.page.carry.queued": "ほかに {count} 件が入りきりません",
@@ -1057,7 +1081,7 @@ export const messages = {
   "decision.chain.rules": "該当したルール",
   "decision.chain.reviewRules": "再確認待ちのルール",
   "decision.chain.rule":
-    "{k, select, important_sender {重要なメールを逃さない：送信者が重要リストにある} public_domain {重要なメールを逃さない：官公庁・学校のドメインから} money_words {重要なメールを逃さない：金額に関する語がある} quiet_hours {通知しない時間帯：この時間は通知せず、終わってから送る} amount_threshold {少額は通知しない：金額が基準未満のメールは通知しない} other {{id}}}",
+    "{k, select, important_sender {重要なメールを逃さない：送信者が重要リストにある} public_domain {重要なメールを逃さない：官公庁・学校のドメインから} money_words {重要なメールを逃さない：金額に関する語がある} quiet_hours {通知しない時間帯：この時間は通知せず、終わってから送る} amount_threshold {少額は通知しない：金額が基準未満のメールは通知しない} mail_must_notify {あなたのルール：この種類のメールは必ず知らせる} mail_read_whole_thread {あなたのルール：スレッド全体を読んでから判断する} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {あなたの設定} built_in {組み込みルール} other {未登録のルール}}",
   "decision.chain.ruleMails": "{count} 件のメールが該当",
@@ -1097,7 +1121,7 @@ export const messages = {
   "decision.chain.basis": "推測の根拠",
   "decision.chain.basisCut": "根拠を読み切れていません（多すぎるか読み取りエラー）",
   "decision.chain.action":
-    "{a, select, merge {統合} supersede {置き換え} archive {アーカイブ} reflect {要約} other {整理}}",
+    "{a, select, merge {統合} supersede {置き換え} archive {アーカイブ} reflect {要約} hold {食い違いを発見} other {整理}}",
   "decision.chain.repeated": "重複",
   "decision.chain.nodeCut": "この先にもあります",
   "decision.email.open": "このメールを見る",

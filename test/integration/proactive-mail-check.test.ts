@@ -117,6 +117,7 @@ describe("proactive Gmail check acceptance", () => {
       onMasked?: ProactiveMailCheckOptions["onMasked"];
       backoff?: ProactiveMailCheckOptions["backoff"];
       ownerRules?: ProactiveMailCheckOptions["ownerRules"];
+      storedOwnerRules?: boolean;
       recentSummaries?: (
         repository: SqliteProductStateRepository,
         now: () => string,
@@ -352,6 +353,7 @@ describe("proactive Gmail check acceptance", () => {
       ...(options.onMasked ? { onMasked: options.onMasked } : {}),
       ...(options.backoff ? { backoff: options.backoff } : {}),
       ...(options.ownerRules ? { ownerRules: options.ownerRules } : {}),
+      ...(options.storedOwnerRules ? { ownerRuleStore: repository.ownerRules() } : {}),
       ...(options.recentSummaries
         ? { recentSummaries: options.recentSummaries(repository, () => clock.now()) }
         : {}),
@@ -393,6 +395,7 @@ describe("proactive Gmail check acceptance", () => {
       stateRoot,
       repository,
       ledger: repository.decisionLedger(),
+      ownerRules: repository.ownerRules(),
       payloadStore,
       query: (sql: string, ...parameters: unknown[]) => {
         const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
@@ -2714,6 +2717,174 @@ describe("proactive Gmail check acceptance", () => {
       expect(entry?.inputs.relatedByMail["closing"]?.length).toBeLessThanOrEqual(6);
       expect(entry?.inputs.relatedByMail["closing"]).not.toContain("old-0");
       expect(h.prompts[0]).not.toContain("長".repeat(2_100));
+    });
+  });
+  describe("[P2-3] owner rules written from one sentence are enforced by the mail check", () => {
+    const immigration = {
+      type: "mail_must_notify",
+      summary: "日本入管局相关的邮件一律提醒",
+      params: { senderDomains: ["isa.go.jp"], phrases: ["在留資格", "在留カード"] },
+    };
+    const refund = {
+      type: "mail_read_whole_thread",
+      summary: "涉及退款的邮件先读完整个邮件串",
+      params: { phrases: ["返金", "退款"], words: ["refund"] },
+    };
+    const write = async (
+      h: Awaited<ReturnType<typeof harness>>,
+      ruleId: string,
+      parameters: Readonly<Record<string, unknown>>,
+    ) =>
+      h.ownerRules.create({
+        ...scope,
+        ruleId,
+        parameters,
+        source: "chat:thread-1",
+        sourceMemoryId: `memory:rule:${ruleId.slice(6)}`,
+        now: h.clock.now(),
+      });
+    const ledgerRows = (h: Awaited<ReturnType<typeof harness>>) =>
+      h.ledger.list({ ...scope, kind: "proactive", since: "2026-11-01T00:00:00.000Z", limit: 50 });
+
+    it("pushes an immigration mail the model would ignore once the rule is stored, and records which rule did it", async () => {
+      const h = await harness({ storedOwnerRules: true });
+      expect(await write(h, "owner:immigration", immigration)).toBe("created");
+      h.reader.items = [
+        mail("isa", {
+          from: "出入国在留管理庁 <no-reply@mail.isa.go.jp>",
+          fromAddress: "no-reply@mail.isa.go.jp",
+          subject: "お知らせ",
+          snippet: "",
+        }),
+        mail("body-only", {
+          threadId: "thread-body",
+          from: "行政書士 <office@gyosei.example>",
+          fromAddress: "office@gyosei.example",
+          subject: "ご案内",
+          snippet: "",
+          body: "在留ｶｰﾄﾞの更新手続きについてご連絡します",
+        }),
+      ];
+      h.script([
+        { id: "isa", result: "ignore" },
+        { id: "body-only", result: "know" },
+      ]);
+      const decision = await h.service.run();
+      expect(decision).toMatchObject({ verdict: "pushed" });
+      expect(decision?.counts).toMatchObject({ check: 2, pushed: 2 });
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.ruleHits).toEqual({
+        isa: ["owner:immigration@1"],
+        "body-only": ["owner:immigration@1"],
+      });
+      expect(entry?.inputs.floorHits["isa"]).not.toContain("owner:immigration");
+      expect(entry?.inputs.floorHits["body-only"]).toBeUndefined();
+      expect(entry?.inputs.ruleIds).toContain("owner:immigration@1");
+      expect(entry?.inputs.ruleIds).not.toContain("owner:immigration");
+    });
+
+    it("still hands a ruled mail to the owner after the daily model limit, and leaves unruled mail waiting", async () => {
+      const h = await harness({ storedOwnerRules: true, dailyCostMicros: 1_000, cost: 1_000 });
+      await write(h, "owner:immigration", immigration);
+      h.reader.items = [mail("first", { snippet: "随便聊聊" })];
+      h.script([{ id: "first", result: "ignore" }]);
+      await h.service.run();
+      h.clock.advance(15 * 60_000);
+      h.reader.items = [
+        mail("isa", { from: "no-reply@isa.go.jp", fromAddress: "no-reply@isa.go.jp" }),
+        mail("chat", { snippet: "今度ランチ行こう" }),
+      ];
+      const capped = await h.service.run();
+      expect(h.invocations()).toBe(1);
+      expect(capped).toMatchObject({ verdict: "pushed", reasonCode: "DAILY_LIMIT" });
+      expect((await h.overview()).insights).toEqual([
+        expect.objectContaining({ result: "check", basis: "daily_limit", pushed: true }),
+      ]);
+      const rows = await ledgerRows(h);
+      expect(rows.map((row) => row.inputs.ruleHits)).toContainEqual({
+        isa: ["owner:immigration@1"],
+      });
+    });
+
+    it("REVERSE: leaves unrelated mail to the model, and stops enforcing a retired rule at the next check without a restart", async () => {
+      const h = await harness({ storedOwnerRules: true });
+      await write(h, "owner:immigration", immigration);
+      h.reader.items = [mail("lunch", { subject: "Lunch", snippet: "金曜日どう？" })];
+      h.script([{ id: "lunch", result: "ignore" }]);
+      expect(await h.service.run()).toMatchObject({ verdict: "silent" });
+      const retired = await h.ownerRules.setStatus({
+        ...scope,
+        ruleId: "owner:immigration",
+        status: "retired",
+        expectedRevision: 1,
+        reason: "owner_undo",
+        now: h.clock.now(),
+      });
+      expect(retired?.status).toBe("retired");
+      h.clock.advance(15 * 60_000);
+      h.reader.items = [
+        mail("isa-later", {
+          from: "no-reply@isa.go.jp",
+          fromAddress: "no-reply@isa.go.jp",
+          subject: "お知らせ",
+        }),
+      ];
+      h.script([{ id: "isa-later", result: "ignore" }]);
+      const decision = await h.service.run();
+      expect(decision?.counts).toMatchObject({ pushed: 0 });
+      const rows = await ledgerRows(h);
+      expect(rows.some((row) => Object.keys(row.inputs.ruleHits ?? {}).includes("isa-later"))).toBe(
+        false,
+      );
+    });
+
+    it("hands a refund mail to the owner when the whole thread could not be read, and asks the reader for the whole thread", async () => {
+      const h = await harness({ storedOwnerRules: true });
+      await write(h, "owner:refund", refund);
+      const asked: (ReadonlySet<string> | undefined)[] = [];
+      h.reader.related = async ({ items, wholeThread }) => {
+        asked.push(wholeThread);
+        return {
+          byMail: new Map(items.map((item) => [item.messageId, []])),
+          failed: new Map(),
+          requests: 1,
+          wholeThread: new Map([["refund", { messageIds: ["older"], complete: false }]]),
+        };
+      };
+      h.reader.items = [
+        mail("refund", { subject: "返金のご案内", snippet: "" }),
+        mail("other", { threadId: "thread-other", subject: "週末", snippet: "" }),
+      ];
+      h.script([
+        { id: "refund", result: "ignore" },
+        { id: "other", result: "ignore" },
+      ]);
+      const decision = await h.service.run();
+      expect([...(asked[0] ?? [])]).toEqual(["refund"]);
+      expect(decision).toMatchObject({ verdict: "pushed" });
+      expect(decision?.counts).toMatchObject({ check: 1, ignore: 1, pushed: 1 });
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.ruleHits).toEqual({ refund: ["owner:refund@1"] });
+    });
+
+    it("REVERSE: keeps the model's own answer for a refund mail whose whole thread was read", async () => {
+      const h = await harness({ storedOwnerRules: true });
+      await write(h, "owner:refund", refund);
+      const older = mail("older", { threadId: "thread-refund", subject: "ご注文", snippet: "" });
+      h.reader.related = async () => ({
+        byMail: new Map([["refund", [older]]]),
+        failed: new Map(),
+        requests: 1,
+        wholeThread: new Map([["refund", { messageIds: ["older"], complete: true }]]),
+      });
+      h.reader.items = [
+        mail("refund", { threadId: "thread-refund", subject: "返金完了のお知らせ", snippet: "" }),
+      ];
+      h.script([{ id: "refund", result: "know" }]);
+      const decision = await h.service.run();
+      expect(decision?.counts).toMatchObject({ know: 1, check: 0, pushed: 0 });
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.ruleHits).toEqual({});
     });
   });
   describe("[P3-6] the Gmail check reads the last two days of conversation summaries", () => {

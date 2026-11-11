@@ -40,6 +40,11 @@ import {
 } from "../../apps/agent-service/src/production-memory-capture.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import {
+  isStandingQuote,
+  ProductionOwnerRuleTools,
+  ProductionOwnerRuleWriter,
+} from "../../apps/agent-service/src/production-owner-rules.ts";
+import {
   ProductionReminderTools,
   ProductionReminderWriter,
 } from "../../apps/agent-service/src/production-reminder-writer.ts";
@@ -267,6 +272,17 @@ describe("production memory capture", () => {
       }) as unknown as RuntimeRequest;
     await turn("owner", message, "run-memory-capture");
     const clock = { value: T0 };
+    const ruleWriter = new ProductionOwnerRuleWriter({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      rules: repository.ownerRules(),
+      memory,
+      memories: repository.productMemoryState(),
+      book: repository.memoryBook(),
+      threads: repository.threadRepository(),
+      payloads,
+      protector: adapters.payloadProtector,
+      clock: { now: () => clock.value },
+    });
     const control = new ProductionMemoryControl({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       state: repository.productMemoryState(),
@@ -274,6 +290,7 @@ describe("production memory capture", () => {
       approvals: repository.sensitiveMemoryApprovals(),
       memory,
       reminders: repository.memoryReminders(),
+      ownerRules: ruleWriter,
       book: repository.memoryBook(),
       profile: new OwnerProfileService({
         state: repository.productMemoryState(),
@@ -356,6 +373,7 @@ describe("production memory capture", () => {
       capture,
       control,
       reminderTools,
+      ruleTools: new ProductionOwnerRuleTools(ruleWriter),
       protect,
       request: requestFor("run-memory-capture"),
       requestFor,
@@ -1790,6 +1808,278 @@ describe("production memory capture", () => {
     expect(withPassword.find(({ id }) => id.includes("call-password"))?.dataClassification).toBe(
       "sensitive",
     );
+  });
+
+  it("[P2-3] turns the owner's standing sentence into an enforced rule, keeps inferred ones as proposals, and undoes one from the page", async () => {
+    const sentence = "日本入管局相关的邮件以后必须通知我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const immigration = { senderDomains: ["isa.go.jp"], phrases: ["在留資格"] };
+    const tool = (capabilityRef: string, args: Record<string, unknown>, id: string) =>
+      context.ruleTools.run({
+        runId: createRunId("run-rule-tool"),
+        toolCallId: id,
+        capabilityRef,
+        capabilityHandleRef: null,
+        arguments: args,
+        dataClassification: "private",
+        context: { threadId: THREAD_ID },
+      } as never) as Promise<Record<string, unknown>>;
+    const set = (args: Record<string, unknown>, id: string) =>
+      tool(
+        "rule.set",
+        { inferred: false, type: "mail_must_notify", summary: "入管局的邮件一律提醒", ...args },
+        id,
+      );
+    const listed = async () => {
+      const snapshot = await context.control.query({
+        ...envelope,
+        kind: "query",
+        type: "memory.rules.read",
+        payload: {},
+      } as never);
+      if (snapshot.type !== "memory.rules.snapshot") throw new Error("snapshot");
+      return snapshot.payload.rules;
+    };
+
+    const created = await set({ quote: sentence, params: immigration }, "call-1");
+    expect(created).toMatchObject({ status: "active", type: "mail_must_notify", replayed: false });
+    expect(created["ruleId"]).toMatch(/^owner:[0-9a-f]{24}$/u);
+    expect((created["trials"] as unknown[]).length).toBeGreaterThanOrEqual(3);
+    const ruleMemory = await context.repository
+      .productMemoryState()
+      .read(created["memoryId"] as never);
+    expect(ruleMemory).toMatchObject({ status: "active", attributes: { category: "rule" } });
+    expect(await context.plaintext(ruleMemory?.contentRef ?? null)).toContain(sentence);
+    expect(await set({ quote: sentence, params: immigration }, "call-1")).toMatchObject({
+      ruleId: created["ruleId"],
+      replayed: true,
+    });
+    expect(await set({ quote: sentence, params: immigration }, "call-again")).toMatchObject({
+      ruleId: created["ruleId"],
+      replayed: true,
+    });
+
+    await context.turn("owner", "这封必须提醒我，别的不用", null);
+    const proposals = new Set<unknown>();
+    for (const [name, args] of [
+      ["not said", { quote: "订阅相关的以后必须提醒我" }],
+      ["fragment of a one-off sentence", { quote: "必须提醒我" }],
+      ["whole one-off clause", { quote: "这封必须提醒我" }],
+      ["no standing words", { quote: "入管局相关的邮件" }],
+      ["inferred", { quote: sentence, inferred: true }],
+    ] as const) {
+      const proposed = await set(
+        { ...args, params: { senderDomains: ["moj.go.jp"] } },
+        `call-${name}`,
+      );
+      expect(proposed, name).toMatchObject({ status: "proposed", ruleId: null });
+      expect(proposed["proposalId"], name).toMatch(/^rule-proposal:[0-9a-f]{32}$/u);
+      proposals.add(proposed["proposalId"]);
+    }
+    expect(proposals.size).toBe(5);
+    const again = await set(
+      { quote: "必须提醒我", params: { senderDomains: ["moj.go.jp"] } },
+      "call-fragment-again",
+    );
+    expect(proposals.has(again["proposalId"])).toBe(true);
+    await expect(
+      set({ quote: sentence, summary: "入管局\n一律提醒", params: immigration }, "call-newline"),
+    ).rejects.toMatchObject({ code: "RULE_PARAMETERS_INVALID" });
+    expect((await listed()).map(({ ruleId }) => ruleId)).toEqual([created["ruleId"]]);
+    const proposal = await set(
+      { quote: sentence, inferred: true, params: { phrases: ["在留カード"] } },
+      "call-proposal",
+    );
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: proposal["proposalId"], action: "confirm" },
+      "confirm-1",
+    );
+    expect(await listed()).toHaveLength(2);
+    const confirmed = (await listed()).find(({ ruleId }) => ruleId !== created["ruleId"]);
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: confirmed?.ruleId, action: "undo" },
+      "undo-confirmed",
+    );
+    expect(await listed()).toHaveLength(1);
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: proposal["proposalId"], action: "confirm" },
+      "confirm-again",
+    );
+    expect((await listed()).find(({ ruleId }) => ruleId === confirmed?.ruleId)?.status).toBe(
+      "active",
+    );
+    const revived = await context.repository.ownerRules().read({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      ruleId: confirmed?.ruleId ?? "",
+    } as never);
+    expect(
+      await context.repository.productMemoryState().read(revived?.sourceMemoryId as never),
+    ).toMatchObject({ status: "active" });
+    await context.memory.archive(
+      revived?.sourceMemoryId as never,
+      (await context.repository.memoryBook().latestGeneration({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+      } as never)) as never,
+    );
+    expect((await listed()).find(({ ruleId }) => ruleId === confirmed?.ruleId)?.status).toBe(
+      "needs_review",
+    );
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: proposal["proposalId"], action: "confirm" },
+      "confirm-needs-review",
+    );
+    expect((await listed()).find(({ ruleId }) => ruleId === confirmed?.ruleId)?.status).toBe(
+      "active",
+    );
+    expect(
+      await context.repository.productMemoryState().read(revived?.sourceMemoryId as never),
+    ).toMatchObject({ status: "active" });
+
+    const soft = await tool(
+      "rule.set",
+      { quote: sentence, inferred: false, type: "soft", summary: "提醒时语气简短" },
+      "call-soft",
+    );
+    expect(soft).toMatchObject({ status: "soft", ruleId: null });
+    await expect(
+      tool(
+        "rule.set",
+        { quote: sentence, inferred: true, type: "soft", summary: "主人喜欢长篇回答" },
+        "call-soft-inferred",
+      ),
+    ).rejects.toMatchObject({ code: "RULE_NOT_EXPLICIT" });
+    expect(
+      await context.repository.productMemoryState().read(soft["memoryId"] as never),
+    ).toMatchObject({ attributes: { category: "preference" } });
+    expect(await listed()).toHaveLength(2);
+
+    await expect(
+      set({ quote: sentence, type: "mail_unknown", params: immigration }, "call-unknown"),
+    ).rejects.toMatchObject({ code: "RULE_TYPE_UNKNOWN" });
+    await expect(
+      set({ quote: sentence, params: { regex: [".*"] } }, "call-regex"),
+    ).rejects.toMatchObject({ code: "RULE_PARAMETERS_INVALID" });
+
+    const generation = await context.repository.memoryBook().latestGeneration({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+    } as never);
+    await context.memory.archive(created["memoryId"] as never, generation as never);
+    expect((await listed()).find(({ ruleId }) => ruleId === created["ruleId"])).toMatchObject({
+      status: "needs_review",
+      enforced: true,
+    });
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: created["ruleId"], action: "reconfirm" },
+      "reconfirm-1",
+    );
+    expect((await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.status).toBe(
+      "active",
+    );
+    expect(
+      await context.repository.productMemoryState().read(created["memoryId"] as never),
+    ).toMatchObject({ status: "active" });
+    expect(isStandingQuote("从今天开始，以后每次收到入管局的邮件都必须提醒我")).toBe(true);
+    expect(isStandingQuote("刚才那封必须提醒我")).toBe(false);
+    expect(isStandingQuote("这封必须提醒我")).toBe(false);
+    expect(isStandingQuote("这封先不用管，以后再说")).toBe(false);
+    expect(isStandingQuote("今天先这样，以后再看")).toBe(false);
+    expect(isStandingQuote("今天起每次都提醒我")).toBe(true);
+    expect(isStandingQuote("From now on, always tell me about refunds")).toBe(true);
+    expect(isStandingQuote("please pass the mustard")).toBe(false);
+    expect(isStandingQuote("nevertheless send it")).toBe(false);
+    expect(isStandingQuote("use must2fa for the login")).toBe(false);
+    expect(isStandingQuote("check never_x logs")).toBe(false);
+
+    await context.memory.archive(
+      created["memoryId"] as never,
+      (await context.repository.memoryBook().latestGeneration({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+      } as never)) as never,
+    );
+    expect((await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.status).toBe(
+      "needs_review",
+    );
+    expect(
+      await set(
+        { quote: sentence, summary: "入管局来信要提醒", params: immigration },
+        "call-same-params",
+      ),
+    ).toMatchObject({ status: "active", ruleId: created["ruleId"], replayed: true });
+    expect((await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.status).toBe(
+      "active",
+    );
+    expect(
+      await context.repository.productMemoryState().read(created["memoryId"] as never),
+    ).toMatchObject({ status: "active" });
+
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: created["ruleId"], action: "undo" },
+      "undo-1",
+    );
+    expect((await listed()).map(({ ruleId }) => ruleId)).not.toContain(created["ruleId"]);
+    expect(
+      await context.repository.productMemoryState().read(created["memoryId"] as never),
+    ).toMatchObject({ status: "archived" });
+    expect(
+      (await tool("rule.list", {}, "call-list"))["rules"] as { ruleId: string }[],
+    ).toHaveLength(1);
+    await expect(
+      command(
+        context.control,
+        "memory.rule.respond",
+        { target: "owner:missing", action: "undo" },
+        "undo-missing",
+      ),
+    ).rejects.toThrow("RULE_NOT_FOUND");
+
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: confirmed?.ruleId, action: "undo" },
+      "undo-confirmed-again",
+    );
+    await context.memory.delete(
+      revived?.sourceMemoryId as never,
+      (await context.repository.memoryBook().latestGeneration({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+      } as never)) as never,
+    );
+    await expect(
+      command(
+        context.control,
+        "memory.rule.respond",
+        { target: proposal["proposalId"], action: "confirm" },
+        "confirm-after-delete",
+      ),
+    ).rejects.toThrow("RULE_UNAVAILABLE");
+    expect(
+      (await context.repository.productMemoryState().read(revived?.sourceMemoryId as never))
+        ?.status,
+    ).toBe("deletion_pending");
+    expect(await listed()).toEqual([]);
   });
 
   it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {

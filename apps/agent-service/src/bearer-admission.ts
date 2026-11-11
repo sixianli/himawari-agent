@@ -20,13 +20,14 @@ export class BearerGate {
     this.secretDigest = createHash("sha256").update(secret).digest();
   }
 
+  matches(authorization: string | undefined): boolean {
+    const bearer = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+    return timingSafeEqual(createHash("sha256").update(bearer).digest(), this.secretDigest);
+  }
+
   admit(authorization: string | undefined): BearerAdmission {
     const now = Date.parse(this.clock.now());
-    const bearer = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
-    const matches = timingSafeEqual(
-      createHash("sha256").update(bearer).digest(),
-      this.secretDigest,
-    );
+    const matches = this.matches(authorization);
     const window = matches ? this.authorized : this.unauthorized;
     while (window.length > 0 && now - (window[0] as number) >= WINDOW_MS) window.shift();
     if (window.length >= (matches ? AUTHORIZED_PER_MINUTE : UNAUTHORIZED_PER_MINUTE))

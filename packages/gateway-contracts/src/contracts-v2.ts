@@ -70,6 +70,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.tidy.undo",
   "memory.reminder.respond",
   "memory.reminder.create",
+  "memory.rules.read",
+  "memory.rules.snapshot",
+  "memory.rule.respond",
   "memory.create",
   "memory.category.set",
   "memory.settings.set",
@@ -987,7 +990,7 @@ const memoryBasisSnapshotSchema = object({
       object({
         memoryId: machineString,
         changeId: nullable(machineString),
-        action: nullable(enumeration(["merge", "supersede", "archive", "reflect"])),
+        action: nullable(enumeration(["merge", "supersede", "archive", "reflect", "hold"])),
         changedAt: nullable(timestamp),
         decisionRecordId: nullable(machineString),
         basisMemoryIds: array(machineString),
@@ -1043,6 +1046,8 @@ const decisionChainSnapshotSchema = object({
             "money_words",
             "quiet_hours",
             "amount_threshold",
+            "mail_must_notify",
+            "mail_read_whole_thread",
             "unknown",
           ]),
           origin: nullable(enumeration(["owner_setting", "built_in"])),
@@ -1122,7 +1127,7 @@ const decisionChainSnapshotSchema = object({
               object({
                 memoryId: machineString,
                 text: nullable(boundedString(500)),
-                action: nullable(enumeration(["merge", "supersede", "archive", "reflect"])),
+                action: nullable(enumeration(["merge", "supersede", "archive", "reflect", "hold"])),
                 changedAt: nullable(timestamp),
                 basisMemoryIds: array(machineString),
                 repeated: booleanValue,
@@ -1229,11 +1234,13 @@ const memoryOverviewSnapshotSchema = object({
     tidyUps: array(
       object({
         changeId: machineString,
-        action: enumeration(["merge", "supersede", "archive", "reflect"]),
+        memoryId: machineString,
+        action: enumeration(["merge", "supersede", "archive", "reflect", "hold"]),
         text: boundedString(2000),
         relatedText: nullable(boundedString(2000)),
         createdAt: timestamp,
         undone: booleanValue,
+        undoable: booleanValue,
       }),
     ),
     reminders: array(
@@ -1334,6 +1341,34 @@ const memoryReminderCreateCommandSchema = object({
     contentRef: machineString,
     due: boundedString(16),
     repeat: enumeration(["none", "yearly"]),
+  }),
+});
+export const OWNER_RULE_ACTIONS = ["undo", "confirm", "reconfirm"] as const;
+const memoryRulesQuerySchema = object({
+  ...envelope("query", "memory.rules.read"),
+  payload: object({}),
+});
+const memoryRulesSnapshotSchema = object({
+  ...envelope("snapshot", "memory.rules.snapshot"),
+  payload: object({
+    rules: array(
+      object({
+        ruleId: machineString,
+        type: boundedString(64),
+        summary: boundedString(200),
+        status: enumeration(["active", "needs_review"]),
+        enforced: booleanValue,
+        updatedAt: timestamp,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const memoryRuleRespondCommandSchema = object({
+  ...commandEnvelope("memory.rule.respond"),
+  payload: object({
+    target: machineString,
+    action: enumeration(OWNER_RULE_ACTIONS),
   }),
 });
 const memoryCreateCommandSchema = object({
@@ -2272,6 +2307,9 @@ const schemasByType = {
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
   "memory.reminder.respond": memoryReminderRespondCommandSchema,
   "memory.reminder.create": memoryReminderCreateCommandSchema,
+  "memory.rules.read": memoryRulesQuerySchema,
+  "memory.rules.snapshot": memoryRulesSnapshotSchema,
+  "memory.rule.respond": memoryRuleRespondCommandSchema,
   "memory.create": memoryCreateCommandSchema,
   "memory.category.set": memoryCategorySetCommandSchema,
   "memory.settings.set": memorySettingsSetCommandSchema,

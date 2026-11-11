@@ -109,6 +109,7 @@ export interface ThreadControlCenterOptions {
   readonly storage: ControlCenterBrowserStorage;
   readonly onUnauthorized: () => void;
   readonly renderMemory?: (ownerRefs: readonly string[]) => ReactNode;
+  readonly renderToolCard?: (name: string, output: string) => ReactNode;
   readonly renderPage?: (page: SidePage) => ReactNode;
   readonly remindersDue?: number;
   readonly ownerName?: string | undefined;
@@ -1818,6 +1819,7 @@ export function useThreadControlCenter(
                 readImage={readImage}
                 connection={connection}
                 renderMemory={options.renderMemory}
+                renderToolCard={options.renderToolCard}
                 renderApproval={(runId, records) =>
                   client && configuration ? (
                     <RunApprovalCard

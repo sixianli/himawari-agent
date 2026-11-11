@@ -306,6 +306,48 @@ describe("[all decisions] which memories the review page may show", () => {
   });
 });
 
+describe("[P3-8] held memory conflicts in the daily review", () => {
+  it("shows a held conflict as old then new and keeps held conflicts within the day's capacity", async () => {
+    const memories: Record<string, { text: string; hidden: boolean }> = {
+      "milk-old": { text: "主人平时喝明治的牛奶", hidden: false },
+      "milk-new": { text: "主人出差时喝便利店的牛奶", hidden: false },
+    };
+    const holds = Array.from({ length: 30 }, (_, index) =>
+      entry({
+        id: `hold-${index}`,
+        kind: "consolidation",
+        outcome: "hold",
+        subjectRef: "milk-new",
+        inputs: {
+          ...entry({}).inputs,
+          memoryIds: ["milk-new", "milk-old"],
+          resultMemoryIds: ["milk-new"],
+        },
+      }),
+    );
+    const review = await readDailyReview({
+      scope,
+      ledger: { listReviewPool: async () => holds },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async (id) => memories[id],
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 50,
+      secondsPerItem: 5,
+    });
+    expect(review.capacity).toBe(10);
+    expect(review.items).toHaveLength(10);
+    expect(review.items[0]).toMatchObject({
+      kind: "consolidation",
+      outcome: "hold",
+      text: "主人平时喝明治的牛奶 → 主人出差时喝便利店的牛奶",
+      textHidden: false,
+      acted: true,
+    });
+  });
+});
+
 describe("[P0-6] reading the daily review", () => {
   const read = (entries: DecisionLedgerEntry[], view: ProactiveOverview) =>
     readDailyReview({

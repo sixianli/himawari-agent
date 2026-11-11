@@ -1,3 +1,4 @@
+import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
 import {
   ApplicationPortError,
   type ClockPort,
@@ -37,6 +38,7 @@ import {
   createProductionAutomaticMemory,
   protectedMemoryCandidates,
 } from "./production-memory-capture.js";
+import { OwnerRuleError, type ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { ProductionReminderWriter, ReminderInputError } from "./production-reminder-writer.js";
 
 type MemoryId = Parameters<ProductMemoryStatePort["read"]>[0];
@@ -55,6 +57,8 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.tidy.undo",
   "memory.reminder.respond",
   "memory.reminder.create",
+  "memory.rules.read",
+  "memory.rule.respond",
   "memory.create",
   "memory.category.set",
   "memory.settings.set",
@@ -123,6 +127,11 @@ function earliestSourceMessage(
   return matching[0]?.messageId ?? null;
 }
 
+export type OwnerRuleControl = Pick<
+  ProductionOwnerRuleWriter,
+  "list" | "undo" | "confirm" | "reconfirm"
+>;
+
 export class ProductionMemoryControl {
   private readonly options: {
     readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
@@ -152,6 +161,7 @@ export class ProductionMemoryControl {
       MemoryReminderStorePort,
       "schedule" | "listDue" | "listUpcoming" | "read" | "update"
     >;
+    readonly ownerRules?: OwnerRuleControl;
     readonly payloads: PayloadStorePort;
     readonly protector: PayloadProtectorPort;
     readonly clock: ClockPort;
@@ -405,6 +415,37 @@ export class ProductionMemoryControl {
     };
   }
 
+  async #rules(
+    query: Extract<GatewayV2Query, { type: "memory.rules.read" }>,
+  ): Promise<GatewayV2Snapshot> {
+    const control = this.options.ownerRules;
+    if (!control)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "MEMORY_OPERATION_NOT_INSTALLED",
+      );
+    const rules = (await control.list()).flatMap((rule) =>
+      rule.status === "retired"
+        ? []
+        : [
+            {
+              ruleId: rule.ruleId,
+              type: rule.type.slice(0, 64),
+              summary: Array.from(rule.summary).slice(0, 200).join(""),
+              status: rule.status,
+              enforced: rule.enforced,
+              updatedAt: rule.updatedAt,
+            },
+          ],
+    );
+    return {
+      ...query,
+      kind: "snapshot",
+      type: "memory.rules.snapshot",
+      payload: { rules, generatedAt: this.options.clock.now() },
+    };
+  }
+
   async #memoryViews(
     records: readonly ProductMemoryRecord[],
     keepUnreadable: boolean,
@@ -579,6 +620,7 @@ export class ProductionMemoryControl {
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
     if (query.type === "memory.basis.read") return this.#basisChain(query);
     if (query.type === "decision.chain.read") return this.#decisionChain(query);
+    if (query.type === "memory.rules.read") return this.#rules(query);
     if (query.type !== "memory.overview.read") throw new Error("MEMORY_OPERATION_NOT_INSTALLED");
     const { ownerId, agentId } = this.options.configuration;
     const scope = this.#scope();
@@ -628,11 +670,13 @@ export class ProductionMemoryControl {
       if (!text) continue;
       tidyUps.push({
         changeId: change.id,
+        memoryId: change.memoryId,
         action: change.action,
         text,
         relatedText: await textOf(change.relatedMemoryId),
         createdAt: change.createdAt,
         undone: change.undoneAt !== null,
+        undoable: isConsolidationUndoable(change, touched.get(change.memoryId)),
       });
     }
     const outline = await this.options.profile?.outline({
@@ -1030,6 +1074,33 @@ export class ProductionMemoryControl {
       } catch (error) {
         if (error instanceof ReminderInputError)
           throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, error.code);
+        throw error;
+      }
+    }
+    if (command.type === "memory.rule.respond") {
+      const control = this.options.ownerRules;
+      if (!control)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "MEMORY_OPERATION_NOT_INSTALLED",
+        );
+      const { target, action } = command.payload;
+      try {
+        const result =
+          action === "confirm"
+            ? (await control.confirm(target)).ruleId
+            : action === "reconfirm"
+              ? (await control.reconfirm(target)).ruleId
+              : (await control.undo(target)).ruleId;
+        return { resultRef: result ?? target, replayed: false };
+      } catch (error) {
+        if (error instanceof OwnerRuleError)
+          throw new ApplicationPortError(
+            error.code === "RULE_NOT_FOUND"
+              ? PORT_ERROR_CODES.NOT_FOUND
+              : PORT_ERROR_CODES.INVALID_OPERATION,
+            error.code,
+          );
         throw error;
       }
     }

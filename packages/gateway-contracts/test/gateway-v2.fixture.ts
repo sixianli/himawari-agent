@@ -578,11 +578,23 @@ export const governanceMessages = [
     tidyUps: [
       {
         changeId: "memory-consolidation:agent-01:2026-09-11:c1",
+        memoryId: "memory-02",
         action: "merge",
         text: "主人的女儿叫小葵",
         relatedText: "主人的女儿名叫小葵",
         createdAt: "2026-09-11T00:00:00.000Z",
         undone: false,
+        undoable: true,
+      },
+      {
+        changeId: "memory-consolidation:agent-01:2026-09-11:c2",
+        memoryId: "memory-03",
+        action: "hold",
+        text: "主人出差时喝便利店的牛奶",
+        relatedText: "主人平时喝明治的牛奶",
+        createdAt: "2026-09-11T00:00:01.000Z",
+        undone: false,
+        undoable: true,
       },
     ],
     reminders: [
@@ -647,6 +659,24 @@ export const governanceMessages = [
     contentRef: "payload-03",
     due: "2026-11-06T15:00",
     repeat: "none",
+  }),
+  fixture("query", "memory.rules.read", {}),
+  fixture("snapshot", "memory.rules.snapshot", {
+    rules: [
+      {
+        ruleId: "owner:0123456789abcdef01234567",
+        type: "mail_must_notify",
+        summary: "日本入管局相关的邮件一律提醒",
+        status: "active",
+        enforced: true,
+        updatedAt: "2026-11-11T00:00:00.000Z",
+      },
+    ],
+    generatedAt: "2026-11-11T00:00:00.000Z",
+  }),
+  fixture("command", "memory.rule.respond", {
+    target: "owner:0123456789abcdef01234567",
+    action: "undo",
   }),
   fixture("command", "memory.create", {
     contentRef: "payload-03",

@@ -25,7 +25,7 @@ date: "2026-11-11"
 
 ## 背景
 
-Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一处，Claude Code、Codex 这类外部 agent 都从这里读，不各记各的。外部 agent 读取的通道是 MCP（Model Context Protocol，让 AI 客户端调用外部工具的开放协议）。这是任务 P5-1。Andy 在 2026-11-11 同意了变更清单（原文在 `/mnt/project-files/p5-1-mcp/change-list.md`），并选择先做三个只读工具，把「近一两天的对话摘要」留到任务 P3-6 合并以后再接。
+Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一处，Claude Code、Codex 这类外部 agent 都从这里读，不各记各的。外部 agent 读取的通道是 MCP（Model Context Protocol，让 AI 客户端调用外部工具的开放协议）。这是任务 P5-1。Andy 在 2026-11-11 同意了变更清单（原文在 `/mnt/project-files/p5-1-mcp/change-list.md`），并选择先做三个只读工具，把「近一两天的对话摘要」留到任务 P3-6 合并以后再接。后续：P3-6 合并后已补上，见[决定 7](#decision)。
 
 本 ADR 记录这个入口的鉴权方式、协议版本、三个工具，以及外部读取怎样写进决策记录。
 
@@ -63,7 +63,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
 3. **三个只读工具，列出时顺序固定，都标为只读（`readOnlyHint`）。**
    - **`find_memories`（按问题找记忆）**：直接调用聊天里 `recall` 工具用的 `ProductionMemoryRecall`，只返回模型能看到的那几档记忆。为它新加了一个不属于任何一轮对话的入口 `recallOutsideRun`。
      - 算问题向量时，走 `createProductionRunMemory` 新加的 `embedForExternalRead`。它和 Gmail 检查用的是同一套做法：同一个嵌入出口，带截止时间，费用累加到这一次读取上。
-   - **`today_context`（今日上下文）**：返回主人所在时区的今天日期、现在的时间，以及 48 小时内的提醒。提醒复用 `ProductionReminderWriter.list` 来取，它加了一个时间窗口参数。近一两天的对话摘要等任务 P3-6 合并后再加。
+   - **`today_context`（今日上下文）**：返回主人所在时区的今天日期、现在的时间，以及 48 小时内的提醒。提醒复用 `ProductionReminderWriter.list` 来取，它加了一个时间窗口参数。近一两天的对话摘要等任务 P3-6 合并后再加。后续：已补上，见决定 7。
    - **`rule_book`（规则手册）**：返回 `ruleBookFor(settings)` 列出的每条规则，包括编号、版本、作用在哪一步、结果、来源、状态。主人自己设的规则还带上设置值，即重要发件人名单和静默时段。
      - 不返回规则的表达式。理由是 [ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md) 原话 “用户在界面看到的是试算例子，不是代码”。
 4. **返回给外部之前，先遮掉敏感内容。** 返回值里的全部文字一起交给新加的 `maskSensitiveTexts` 遮好再发出去。这个函数在专门识别敏感内容的包 `@himawari-agent/sensitive-capture`，内部调用 `redactForEgress`，和 Himawari 自己发给模型的出口用同一套规则：机器密钥、密码、验证码、银行卡号、证件号。
@@ -79,6 +79,15 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - `costMicros` 写这次算问题向量花的钱；读取中途失败时，也写失败前已经花掉的钱（找记忆时两路检索都结束后才报失败，所以另一路的嵌入费也算在内）。
    - 决策记录写不进去时，这次读取按失败处理：不把内容交给对方，只回工具错误。这样「每次外部读取都有一条记录」始终成立。
 6. **工具说明文字登记进提示词目录**，编号是 `mcp.find-memories`、`mcp.today-context`、`mcp.rule-book`、`mcp.tool-result-failed`。Himawari 自己发给模型的请求一个字节都不变。
+7. **（2026-11-11 补，P3-6 合并后）`today_context` 带上今天和昨天的对话摘要。**
+   - 用 [ADR 0216](0216-gmail-check-reads-recent-day-summaries.md) 新加的 `MemoryEpisodeService.recent`，按主人时区取今天和昨天的日摘要，最多 8 段，只取模型可见的分级。只读已经生成的摘要，不补生成，所以外部读取不花模型的钱。
+   - 返回字段是 `recentDays`（每段的日期和正文）；有摘要没读到时多一个 `recentDaysComplete: false`。摘要正文和其他文字一起遮盖。
+   - 摘要读取失败不挡提醒：照常返回日期和提醒，`recentDays` 为空并标 `recentDaysComplete: false`。服务日志写 `mcp-read.summaries-failed`，不写整次失败的 `mcp-read.failed`；摘要不完整（部分正文读不到，或候选太多被截断）时也写这条，错误码是 `MCP_READ_SUMMARIES_INCOMPLETE`。决策记录里这六项只在输入字段里，「依据」抽屉不显示。没接上摘要读取（对话摘要没启用）时不返回 `recentDays`。
+   - 决策记录按 ADR 0216 决定 6 写 `summary` 六项：`summaryIds`、`summaryDays`、`summaryCharacters`、`summaryRead`（`ok`、`partial`、`failed`；提醒先读失败、摘要还没读时记 `off`）、`summaryInjected`（是否真的交给了对方）、`summaryGenerated` 固定为 0。通用的决策记录写入（`insertLedgerRow`）原来只落四个键，这次让它在 `external_read` 记录上也落这六项，校验和 Gmail 检查共用同一个函数 `summaryInputsValid`；别的类别带这六项、或只带其中一部分，一律拒绝，`insertLedgerRow` 自己也拒绝（记忆整理直接调用它）。
+8. **（2026-11-11 补，P2-3 合并后）`rule_book` 也列出主人在对话里立的长期规则。**
+   - [ADR 0213](0213-owner-sentence-becomes-a-standing-rule.md) 决定 4 把这些规则存在 `rule_book_rules`，编号以 `owner:` 开头；Gmail 检查每次都读它们并执行。外部程序替主人做判断时同样要知道这些规矩，所以 `rule_book` 在内置规则之后按编号顺序列出生效中和待重新确认的主人规则，不列已撤销的。
+   - 每条带编号、版本、出处、状态、类型、一句话说明，以及是否正在执行（`enforced`）。能执行的再带作用在哪一步、结果和参数（发件域名、词语这些）；参数不合法或类型不认识的，和规则列表一样标 `enforced: false`，不给参数。
+   - 和内置规则一样不给表达式，返回内容整体遮盖。
 
 [返回阅读导航](#contents)
 
@@ -107,8 +116,8 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
 ## 后果
 
 - 每次 `find_memories` 都要算一次问题向量，会产生嵌入费用，和聊天里找记忆一样。这笔费用记在那条决策记录上，没有单独的每日上限；有限流兜底，每分钟最多 30 次。
-- 「今日上下文」暂时不含近一两天的对话摘要，要等任务 P3-6 合并后另开 PR 加上。
-- 写操作和确认框（2026-07-28 版的多轮请求，结果标为「需要输入」）不在这一步里做。
+- 「今日上下文」的近两天对话摘要已在 P3-6 合并后补上，见决定 7。
+- 写操作和确认框（2026-07-28 版的多轮请求，结果标为「需要输入」）不在这一步里做。后续：提议新记忆见 [ADR 0225](0225-external-agents-propose-memory-with-in-client-confirmation.md)，它用一把单独的写令牌，只读令牌的权限不变。
 - 测试：
   - `test/integration/mcp-read.test.ts` 用真实的 SQLite、真实的记忆检索和官方 SDK 客户端，新旧两版协议都连一遍。
   - 正向：三个工具都能列出、能调通，并且写了决策记录。
@@ -116,7 +125,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
   - `apps/agent-service/test/production-mcp-read.unit.test.ts`：同一个密码先点名、后单独出现，或先单独出现、后点名，都遮掉。
   - `apps/agent-service/test/production-http-composition.unit.test.ts`：真实的 HTTP 组装里没配这个入口时，`/api/mcp/v1` 回 404；配了时只凭令牌就能调通工具，没令牌回 401 且不写记录。
   - `packages/sensitive-capture/test/redaction.unit.test.ts`：`maskSensitiveTexts` 不论顺序都遮掉点名过的值，同一段文字的遮法不受无关内容影响。
-  - `packages/platform-node/test/startup-configuration.unit.test.ts`：`runPolicy.mcpRead` 只接受一把用途是 `mcp-read` 的密钥。
+  - `packages/platform-node/test/startup-configuration.unit.test.ts`：`runPolicy.mcpRead` 只接受一把用途是 `mcp-read` 的密钥。后续：[ADR 0225](0225-external-agents-propose-memory-with-in-client-confirmation.md) 加的写令牌 `writeSecretRef` 只接受一把用途是 `mcp-write`、和只读令牌不同的密钥，同一个测试文件覆盖。
   - `apps/agent-service/test/production-mail-embedding.unit.test.ts` 覆盖不属于任何一轮对话的嵌入入口。
 
 [返回阅读导航](#contents)

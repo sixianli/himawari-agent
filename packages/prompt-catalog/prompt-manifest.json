@@ -334,15 +334,75 @@
     "changedIn": "ADR 0219",
     "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
   },
+  "mcp.propose-memory": {
+    "sha256": "e980fe0dc8c61d83f10e1786bb6e7ce3bd522101b3cb513ca64303520038db7a",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-already-saved": {
+    "sha256": "f213567f4ace8b14f14d2f753e32498763ecc2f9008501e2c1a9ee51aaf37921",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-changed": {
+    "sha256": "7299ce6dcf269f8d1c852a1eb1f7986f094022e57561fc1cb48ae95f8336cfb2",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-confirm": {
+    "sha256": "8d27e58721a23beb109577314bd615dc2ce72b71ad2079d3c40100ec7721ae27",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-declined": {
+    "sha256": "09487ef998b0959cc71d2384cf31e80b3700b8607be4ebad0ba7b060e30b5440",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-failed": {
+    "sha256": "28480733c9fd66bc1bfa812cb263314aa3f377f93f4bc8a0bd8b43b8994bc3dd",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-invalid": {
+    "sha256": "ccf6a2eefb200610b1c79f34493464cedb334dfee56d3bcf75e8af28e2248804",
+    "changedIn": "ADR 0225",
+    "reason": "分类不在允许范围时也回这句，文字写明两种原因"
+  },
+  "mcp.propose-memory-not-ready": {
+    "sha256": "ebf3736df2154401f6f92fb69bcbd973ee4a114582ec0d13253462fb9c919507",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-save-label": {
+    "sha256": "059030f24bde551f1e3cd4625a0380eea595d6392f1ab918050d6719408eae04",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-saved": {
+    "sha256": "844d784b588aa8650d685b823ae424e4775c2bc2c8a741d1c31d8dabc1b7db57",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-sensitive-note": {
+    "sha256": "24fdfe018d1226955839819b48347679a90e9d16cb6428a70ab5746c15854779",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-unsupported": {
+    "sha256": "a3d8fe861d4f444acab308f0055ce1e578653e3053aa118f2e7737e3a1086837",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
   "mcp.rule-book": {
-    "sha256": "df131609c5e20c4560f5cdfa4cfa38fd276880ccf0cb6bd945141609eb998df5",
+    "sha256": "8dc6b13916a990e83cd27454ff3f5154b23f9982ab6ee070d95b6f19731ac758",
     "changedIn": "ADR 0219",
-    "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
+    "reason": "规则手册也列出主人在对话里立的长期规则（ADR 0213）"
   },
   "mcp.today-context": {
-    "sha256": "cdaf59f7b6c3d7cff2bdcf9aef00628f5237612d6b4bbdd7485c5abefed62325",
+    "sha256": "565ffbea5f0f81a0e65a96e44c3e79561409ea58078fb9603d2a0ab94a5a59d2",
     "changedIn": "ADR 0219",
-    "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
+    "reason": "今日上下文加上今天和昨天的对话摘要（P3-6 合并后接上）"
   },
   "mcp.tool-result-failed": {
     "sha256": "881b14437ad5dc2a42e6495240f40abeb4ff7d101bdd908e34f147560eb556ed",
@@ -364,9 +424,9 @@
     }
   },
   "memory.consolidation": {
-    "sha256": "535bd14d079979065d195db9ecbb5ab1deec9abbd5157e4d41c8cca9637b0a08",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变",
+    "sha256": "94e2bac81138bc9b4b4c30556d3a29a9b0dc7be2c5dee422a3d905b2f6fab83d",
+    "changedIn": "ADR 0220",
+    "reason": "整理冲突拆成取代和冲突两种：只有明确取代且新条置信度够高才自动作废旧条，其余让新条进待确认",
     "emphasis": {
       "kind": "deferred",
       "batch": "第 3 批 W-18",
@@ -374,9 +434,9 @@
     }
   },
   "memory.consolidation.format": {
-    "sha256": "fd58e8334ce0c815212cafb30887eec45cadc7426b6c48e85afea880b98d831c",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "ab0d71664c44f485340ca1c0e205a93229fa4c86f9fe7c4d7d8d409453f86e5a",
+    "changedIn": "ADR 0220",
+    "reason": "整理冲突拆成取代和冲突两种：只有明确取代且新条置信度够高才自动作废旧条，其余让新条进待确认"
   },
   "memory.consolidation.fresh-header": {
     "sha256": "d72613ad6af65f78d7a5d9192ec6e8135341db40a08d2d1e033165c5675c419f",
@@ -533,6 +593,11 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "tool-result.rule-rejected": {
+    "sha256": "d4eb6b5e8fa4d894cbd5960165eb2032dffcdf1965023c325c8218f320e0cd80",
+    "changedIn": "ADR 0213",
+    "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
+  },
   "tools.authorized": {
     "sha256": "e2bf668e954070fb41a107317b84ba9f5fc433f2a1b9a37b148f62fc76787fab",
     "changedIn": "ADR 0166",
@@ -670,6 +735,26 @@
     "sha256": "052bba8325aa7a15c5bfa6afce2e0085d2c1e198b68889285b05339f72690794",
     "changedIn": "ADR 0166",
     "reason": "W-09、W-13：写明有钟点的最多提前 1 小时、只有日期的当天 9 点（Andy 2026-11-05 定 D8）；失败时怎么说只留在身份说明里；复核第 2 轮：写明 yearly 的过去日期会顺延到下一次，不会被拒绝（reminderSchedule）"
+  },
+  "tools.rule-list": {
+    "sha256": "48d1f94df986c4b6321a1979dfb9907b32a17c0e0602bb56ef319c62011883e9",
+    "changedIn": "ADR 0213",
+    "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
+  },
+  "tools.rule-set": {
+    "sha256": "f62529b980811148f549896178580e077ccfe36cffb99db03067fc1e8e0147aa",
+    "changedIn": "ADR 0213",
+    "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果",
+    "emphasis": {
+      "kind": "not-tone",
+      "phrases": ["以后……一律……", "……必须提醒我", "“以后”“一律”“必须”"],
+      "reason": "这几处是在举主人原话的例子、说明 quote 要带哪些字样，不是对模型加重语气"
+    }
+  },
+  "tools.rule-undo": {
+    "sha256": "6b86761eeba8793f4420ba7cb691b4656871582ff885a8947726e4a8cd883e32",
+    "changedIn": "ADR 0213",
+    "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
   },
   "tools.save-copy": {
     "sha256": "2879603873a5ef9ce44fdfd844c6acfae39553b7544968c48f722756f619e076",

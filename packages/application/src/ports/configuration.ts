@@ -233,6 +233,10 @@ export interface ProactiveConfiguration {
   readonly relatedCharactersPerMail: number;
   readonly relatedCharactersPerRelatedMail: number;
   readonly relatedRequestsPerCheck: number;
+  readonly wholeThreadMailsPerMail: number;
+  readonly wholeThreadCharactersPerMail: number;
+  readonly ruleReplayDays: number;
+  readonly ruleReplayMailsPerOutcome: number;
   readonly memoryMinimumSimilarity?: number;
   readonly reviewBudgetSeconds: number;
   readonly reviewSecondsPerItem: number;
@@ -248,6 +252,7 @@ export interface MuseIntakeConfiguration {
 
 export interface McpReadConfiguration {
   readonly secretRef: string;
+  readonly writeSecretRef?: string;
 }
 
 export interface RunPolicyConfiguration {

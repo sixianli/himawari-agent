@@ -1,0 +1,5 @@
+{"id": "r4-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 0219 合并后内部自相矛盾，且测试说明没跟上写令牌", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 0219 背景和决定 3", "consequence": "文档说摘要还没接，和决定 7 矛盾；测试说明漏了写令牌", "modelSeverity": "低"}
+{"id": "r4-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`elicitationSupported` 对畸形能力对象过于宽松", "valid": true, "class": "error", "severity": "low", "trigger": "客户端声明 elicitation 为数组", "consequence": "服务端会发确认请求；实测官方 SDK 在握手时就拒绝这种客户端，碰不到这一步", "modelSeverity": "低"}
+{"id": "r4-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "分类非法时返回的是“正文为空或超长”的错误文字", "valid": true, "class": "error", "severity": "low", "trigger": "参数校验被绕过时分类不在九种之内", "consequence": "外部 agent 收到的原因不对", "modelSeverity": "低"}
+{"id": "r4-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "写工具与 P3-6 摘要没有组合用例", "valid": true, "class": "better"}
+{"id": "r4-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "跨客户端重发时，审计归属是“最初提议者”，不是“实际确认者”", "valid": false, "class": "error"}
