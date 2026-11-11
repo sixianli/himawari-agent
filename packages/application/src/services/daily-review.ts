@@ -157,6 +157,7 @@ export type DailyReviewRating = ProactiveRating;
 export interface DailyReviewCandidate {
   readonly key: string;
   readonly group: CalibrationGroup | null;
+  readonly text: () => Promise<string>;
 }
 
 function calibrationGroup(entry: DecisionLedgerEntry): CalibrationGroup | null {
@@ -312,7 +313,7 @@ interface BuiltReviewItem {
 }
 
 interface ReviewCandidate {
-  readonly candidate: DailyReviewCandidate;
+  readonly candidate: Omit<DailyReviewCandidate, "text">;
   readonly item: DailyReviewPoolItem;
   readonly build: () => Promise<BuiltReviewItem>;
 }
@@ -518,23 +519,49 @@ export interface DailyReviewSubject {
   readonly ownerRating: DailyReviewRating | null;
 }
 
+export interface DailyReviewSubjectSource {
+  readonly key: string;
+  readonly group: CalibrationGroup;
+  readonly rated: boolean;
+  readonly build: () => Promise<DailyReviewSubject | undefined>;
+}
+
+export async function listDailyReviewSubjects(
+  options: DailyReviewSourceOptions,
+): Promise<readonly DailyReviewSubjectSource[]> {
+  const { candidates } = await collectReviewCandidates(options, (since) => since);
+  return [...candidates.values()].flatMap(({ candidate, item: pooled, build }) => {
+    const group = candidate.group;
+    if (!isPrereviewGroup(group)) return [];
+    return [
+      {
+        key: candidate.key,
+        group,
+        rated: pooled.done,
+        build: async (): Promise<DailyReviewSubject | undefined> => {
+          const { item, dataClassification } = await build();
+          if (dataClassification === null || item.textHidden || item.text === "") return undefined;
+          return {
+            key: item.key,
+            group,
+            category: item.category,
+            text: item.text,
+            dataClassification,
+            ownerRating: item.rating,
+          };
+        },
+      },
+    ];
+  });
+}
+
 export async function readDailyReviewSubjects(
   options: DailyReviewSourceOptions,
 ): Promise<readonly DailyReviewSubject[]> {
-  const { candidates } = await collectReviewCandidates(options, (since) => since);
   const subjects: DailyReviewSubject[] = [];
-  for (const { candidate, build } of candidates.values()) {
-    if (!isPrereviewGroup(candidate.group)) continue;
-    const { item, dataClassification } = await build();
-    if (dataClassification === null || item.textHidden || item.text === "") continue;
-    subjects.push({
-      key: item.key,
-      group: candidate.group,
-      category: item.category,
-      text: item.text,
-      dataClassification,
-      ownerRating: item.rating,
-    });
+  for (const source of await listDailyReviewSubjects(options)) {
+    const subject = await source.build();
+    if (subject !== undefined) subjects.push(subject);
   }
   return subjects;
 }
@@ -556,7 +583,12 @@ export async function readDailyReview(
     (_since, dayStart) => dayStart,
   );
   const hidden = options.hideByModel
-    ? await options.hideByModel([...candidates.values()].map(({ candidate }) => candidate))
+    ? await options.hideByModel(
+        [...candidates.values()].map(({ candidate, build }) => ({
+          ...candidate,
+          text: async () => (await build()).item.text,
+        })),
+      )
     : undefined;
   const selection = selectDailyReview({
     pool: [...candidates.values()].map(({ item }) => item),

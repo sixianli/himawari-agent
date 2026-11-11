@@ -1,4 +1,4 @@
-import type { CalibrationGroup, CalibrationRating } from "@himawari-agent/calibration";
+import type { CalibrationGroup } from "@himawari-agent/calibration";
 import {
   acceptsPrereview,
   DEFAULT_PREREVIEW_AGREEMENT_PERMILLE,
@@ -20,8 +20,20 @@ import type { DataClassification } from "../ports/common.js";
 import type { ReviewPrereviewConfiguration } from "../ports/configuration.js";
 import type { ModelInvocationRequest } from "../ports/intelligence.js";
 import type { ProactiveScope } from "../ports/proactive-checks.js";
+import type {
+  PrereviewDone,
+  PrereviewSubjectRef,
+  ReviewPrereviewStorePort,
+} from "../ports/review-prereview.js";
 import type { ClockPort } from "../ports/system.js";
-import { type DailyReviewCandidate, type DailyReviewSubject, reviewHash } from "./daily-review.js";
+import {
+  type DailyReviewCandidate,
+  type DailyReviewSubject,
+  type DailyReviewSubjectSource,
+  parseReviewKey,
+  reviewHash,
+  reviewKey,
+} from "./daily-review.js";
 import type { ProactiveModelInvoker } from "./proactive-mail-check-service.js";
 import { startOfZonedDay } from "./proactive-rules.js";
 
@@ -90,57 +102,14 @@ export function prereviewAuditPicked(seed: string, key: string, auditPermille: n
   return reviewHash(`prereview-audit|${seed}|${key}`) % 1000 < auditPermille;
 }
 
-export interface PrereviewRecord {
-  readonly key: string;
-  readonly group: CalibrationGroup;
-  readonly category: string | null;
-  readonly rating: PrereviewRating;
-  readonly confidencePermille: number;
-  readonly historyConflict: boolean;
-  readonly modelRef: string;
-  readonly promptId: string;
-  readonly textDigest: string;
-  readonly dataClassification: DataClassification;
-  readonly costMicros: number;
-  readonly durationMs: number;
-  readonly createdAt: string;
+function subjectRef(key: string): PrereviewSubjectRef | undefined {
+  const parsed = parseReviewKey(key);
+  if (parsed === undefined || parsed.source === "checkup") return undefined;
+  return { source: parsed.source, id: parsed.id };
 }
 
-export interface PrereviewPairRecord {
-  readonly group: CalibrationGroup;
-  readonly rating: PrereviewRating;
-  readonly confidencePermille: number;
-  readonly historyConflict: boolean;
-  readonly ownerRating: CalibrationRating | null;
-}
-
-export interface ReviewPrereviewStorePort {
-  listPrereviewed(
-    input: ProactiveScope & {
-      readonly keys: readonly string[];
-      readonly modelRef: string;
-      readonly promptId: string;
-    },
-  ): Promise<ReadonlyMap<string, PrereviewRecord>>;
-  countSince(input: ProactiveScope & { readonly since: string }): Promise<{
-    readonly items: number;
-    readonly costMicros: number;
-  }>;
-  ownerHistory(
-    input: ProactiveScope & {
-      readonly group: CalibrationGroup;
-      readonly category: string | null;
-      readonly since: string;
-    },
-  ): Promise<readonly CalibrationRating[]>;
-  listPairs(
-    input: ProactiveScope & {
-      readonly since: string;
-      readonly modelRef: string;
-      readonly promptId: string;
-    },
-  ): Promise<readonly PrereviewPairRecord[]>;
-  record(input: ProactiveScope & PrereviewRecord): Promise<void>;
+function refKey(ref: PrereviewSubjectRef): string {
+  return reviewKey(ref.source, ref.id);
 }
 
 export type ReviewPrereviewSettings = ReviewPrereviewConfiguration;
@@ -154,7 +123,7 @@ export interface ReviewPrereviewOptions {
   readonly clock: ClockPort;
   readonly digest: (text: string) => string;
   readonly estimateCostMicros: (prompt: string) => number;
-  readonly subjects: () => Promise<readonly DailyReviewSubject[]>;
+  readonly subjects: () => Promise<readonly DailyReviewSubjectSource[]>;
 }
 
 export interface PrereviewRunResult {
@@ -168,7 +137,7 @@ export const PREREVIEW_FAILURE_BACKOFF_MS = DAY_MS;
 
 export class ReviewPrereviewService {
   readonly #options: ReviewPrereviewOptions;
-  readonly #failedAt = new Map<string, number>();
+  readonly #storeFailedAt = new Map<string, number>();
 
   constructor(options: ReviewPrereviewOptions) {
     this.#options = options;
@@ -183,51 +152,91 @@ export class ReviewPrereviewService {
     if (!settings.enabled)
       return { attempted: 0, recorded: 0, failures: [], stoppedBy: "disabled" };
     const now = clock.now();
-    const dayStart = startOfZonedDay(now, this.#options.timeZone);
-    const spent = await store.countSince({ ...scope, since: dayStart });
-    const subjects = await this.#options.subjects();
-    const done = await store.listPrereviewed({
-      ...scope,
-      keys: subjects.map(({ key }) => key),
-      modelRef: this.#options.model.modelRef,
-      promptId: this.promptId,
-    });
     const nowMs = Date.parse(now);
-    for (const [key, at] of this.#failedAt)
-      if (nowMs - at >= PREREVIEW_FAILURE_BACKOFF_MS) this.#failedAt.delete(key);
+    const dayStart = startOfZonedDay(now, this.#options.timeZone);
+    const version = { modelRef: this.#options.model.modelRef, promptId: this.promptId };
+    const spent = await store.countSince({ ...scope, since: dayStart });
+    if (spent.attempts >= settings.dailyLimit)
+      return { attempted: 0, recorded: 0, failures: [], stoppedBy: "daily_limit" };
+    for (const [key, at] of this.#storeFailedAt)
+      if (nowMs - at >= PREREVIEW_FAILURE_BACKOFF_MS) this.#storeFailedAt.delete(key);
+    const subjects = (await this.#options.subjects()).flatMap((source) => {
+      const ref = subjectRef(source.key);
+      return ref === undefined ? [] : [{ source, ref }];
+    });
+    const refs = subjects.map(({ ref }) => ref);
+    const done = new Set(
+      (await store.listDone({ ...scope, ...version, subjects: refs })).map(({ subject }) =>
+        refKey(subject),
+      ),
+    );
+    const failedRecently = new Set(
+      (
+        await store.listRecentFailures({
+          ...scope,
+          ...version,
+          subjects: refs,
+          since: new Date(nowMs - PREREVIEW_FAILURE_BACKOFF_MS).toISOString(),
+        })
+      ).map(refKey),
+    );
     const pending = subjects
-      .filter((subject) => !done.has(subject.key) && !this.#failedAt.has(subject.key))
+      .filter(
+        ({ source }) =>
+          !done.has(source.key) &&
+          !failedRecently.has(source.key) &&
+          !this.#storeFailedAt.has(source.key),
+      )
       .sort(
         (left, right) =>
-          Number(left.ownerRating !== null) - Number(right.ownerRating !== null) ||
-          (left.key < right.key ? -1 : left.key > right.key ? 1 : 0),
+          Number(left.source.rated) - Number(right.source.rated) ||
+          (left.source.key < right.source.key ? -1 : left.source.key > right.source.key ? 1 : 0),
       );
-    let items = spent.items;
+    let attempts = spent.attempts;
     let costMicros = spent.costMicros;
     let attempted = 0;
     let recorded = 0;
     const failures: string[] = [];
-    for (const subject of pending.slice(0, settings.perRun)) {
-      if (items >= settings.dailyLimit)
+    for (const { source, ref } of pending) {
+      if (attempted >= settings.perRun) break;
+      if (attempts >= settings.dailyLimit)
         return { attempted, recorded, failures, stoppedBy: "daily_limit" };
+      const subject = await source.build().catch(() => undefined);
+      if (subject === undefined) continue;
       const prompt = prereviewPrompt(subject);
       if (costMicros + this.#options.estimateCostMicros(prompt) > settings.dailyCostMicros)
         return { attempted, recorded, failures, stoppedBy: "daily_cost" };
       attempted += 1;
-      const result = await this.#invoke(subject, prompt).catch((error: unknown) => ({
+      attempts += 1;
+      const startedAt = Date.parse(clock.now());
+      const id = `review-prereview:${this.#options.digest(subject.key).slice(0, 16)}:${startedAt}`;
+      const result = await this.#invoke(id, startedAt, subject, prompt).catch((error: unknown) => ({
         reply: undefined,
         failure: `PREREVIEW_FAILED:${error instanceof Error ? error.message : "unknown"}`,
         costMicros: 0,
-        durationMs: 0,
+        durationMs: Math.max(0, Date.parse(clock.now()) - startedAt),
       }));
       costMicros += result.costMicros;
-      if (result.reply === undefined) {
-        this.#failedAt.set(subject.key, nowMs);
-        failures.push(result.failure);
-        continue;
-      }
+      const attempt = {
+        ...scope,
+        id,
+        subject: ref,
+        group: subject.group,
+        category: subject.category,
+        ...version,
+        textDigest: this.#options.digest(subject.text),
+        dataClassification: subject.dataClassification,
+        costMicros: result.costMicros,
+        durationMs: result.durationMs,
+        createdAt: clock.now(),
+      };
       try {
-        const since = new Date(Date.parse(now) - settings.historyDays * DAY_MS).toISOString();
+        if (result.reply === undefined) {
+          failures.push(result.failure);
+          await store.recordFailure({ ...attempt, failureCode: result.failure.slice(0, 128) });
+          continue;
+        }
+        const since = new Date(nowMs - settings.historyDays * DAY_MS).toISOString();
         const history = await store.ownerHistory({
           ...scope,
           group: subject.group,
@@ -235,30 +244,18 @@ export class ReviewPrereviewService {
           since,
         });
         await store.record({
-          ...scope,
-          key: subject.key,
-          group: subject.group,
-          category: subject.category,
+          ...attempt,
           rating: result.reply.rating,
           confidencePermille: result.reply.confidencePermille,
           historyConflict: historyConflict(result.reply.rating, history, settings.historyMinimum),
-          modelRef: this.#options.model.modelRef,
-          promptId: this.promptId,
-          textDigest: this.#options.digest(subject.text),
-          dataClassification: subject.dataClassification,
-          costMicros: result.costMicros,
-          durationMs: result.durationMs,
-          createdAt: clock.now(),
         });
+        recorded += 1;
       } catch (error) {
-        this.#failedAt.set(subject.key, nowMs);
+        this.#storeFailedAt.set(subject.key, nowMs);
         failures.push(
           `PREREVIEW_STORE_FAILED:${error instanceof Error ? error.message : "unknown"}`,
         );
-        continue;
       }
-      items += 1;
-      recorded += 1;
     }
     return { attempted, recorded, failures, stoppedBy: "done" };
   }
@@ -269,8 +266,8 @@ export class ReviewPrereviewService {
     if (!settings.enabled || !settings.reduction.enabled) return hidden;
     const reduction = settings.reduction;
     const since = new Date(Date.parse(clock.now()) - reduction.windowDays * DAY_MS).toISOString();
-    const modelRef = this.#options.model.modelRef;
-    const pairs = await store.listPairs({ ...scope, since, modelRef, promptId: this.promptId });
+    const version = { modelRef: this.#options.model.modelRef, promptId: this.promptId };
+    const pairs = await store.listPairs({ ...scope, ...version, since });
     const agreement = summarizePrereviewAgreement(
       pairs.map(
         (pair): PrereviewPair => ({
@@ -288,23 +285,24 @@ export class ReviewPrereviewService {
     );
     const open = new Set(agreement.filter(({ gate }) => gate.open).map(({ group }) => group));
     if (open.size === 0) return hidden;
-    const reducible = candidates.filter(
-      (candidate): candidate is DailyReviewCandidate & { readonly group: CalibrationGroup } =>
-        candidate.group !== null && open.has(candidate.group),
-    );
-    const prereviewed = await store.listPrereviewed({
-      ...scope,
-      keys: reducible.map(({ key }) => key),
-      modelRef,
-      promptId: this.promptId,
+    const reducible = candidates.flatMap((candidate) => {
+      const ref = subjectRef(candidate.key);
+      return candidate.group !== null && open.has(candidate.group) && ref !== undefined
+        ? [{ candidate, ref }]
+        : [];
     });
+    const records = new Map<string, PrereviewDone>(
+      (
+        await store.listDone({ ...scope, ...version, subjects: reducible.map(({ ref }) => ref) })
+      ).map((record) => [refKey(record.subject), record]),
+    );
     const seed = `${scope.ownerId}:${scope.agentId}`;
-    for (const candidate of reducible) {
-      const record = prereviewed.get(candidate.key);
+    for (const { candidate } of reducible) {
+      const record = records.get(candidate.key);
       if (record === undefined || record.group !== candidate.group) continue;
       if (prereviewAuditPicked(seed, candidate.key, reduction.auditPermille)) continue;
       if (
-        wouldHide(
+        !wouldHide(
           {
             model: record.rating,
             confidencePermille: record.confidencePermille,
@@ -313,12 +311,17 @@ export class ReviewPrereviewService {
           reduction.confidencePermille,
         )
       )
+        continue;
+      const text = await candidate.text().catch(() => undefined);
+      if (text !== undefined && this.#options.digest(text) === record.textDigest)
         hidden.add(candidate.key);
     }
     return hidden;
   }
 
   async #invoke(
+    invocationId: string,
+    startedAt: number,
     subject: DailyReviewSubject,
     prompt: string,
   ): Promise<{
@@ -328,8 +331,6 @@ export class ReviewPrereviewService {
     readonly durationMs: number;
   }> {
     const { model, clock, settings } = this.#options;
-    const startedAt = Date.parse(clock.now());
-    const invocationId = `review-prereview:${subject.key}:${startedAt}`;
     const authority = await model.prepare({
       invocationId,
       prompt,

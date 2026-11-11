@@ -231,6 +231,7 @@ export const governanceMessages = [
     ],
     folded: { total: 0, items: [] },
     memoryUnusedDays: 90,
+    hiddenByModel: 0,
     generatedAt: "2026-11-04T01:00:00.000Z",
   }),
   fixture("command", "proactive.review.rate", {

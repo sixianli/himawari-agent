@@ -1028,6 +1028,8 @@ export const messages = {
   "dailyReview.count": "{count, plural, one {# item} other {# items}} today",
   "dailyReview.countLeft":
     "{count, plural, one {# item} other {# items}} today, {left} more not picked",
+  "dailyReview.hiddenByModel":
+    "{count, plural, one {# more item was} other {# more items were}} pre-rated useful by the model with confidence, so the reduction you turned on left {count, plural, one {it} other {them}} out this time",
   "dailyReview.note": "Items not picked may show up tomorrow, and drop off after 7 days.",
   "dailyReview.tag.pushed": "Read mail and reminded you",
   "dailyReview.tag.silent": "Read mail, no reminder",
@@ -1515,6 +1517,7 @@ export const messages = {
   "sensitive.purpose.memory-consolidation": "merging memories",
   "sensitive.purpose.mail-judgment": "email check",
   "sensitive.purpose.action-review": "action review",
+  "sensitive.purpose.review-prereview": "model pre-rating",
   "sensitive.purpose.other": "other",
   "sensitive.maskedOnce": "{time} hidden once",
   "sensitive.maskedMany":

@@ -129,6 +129,7 @@ import {
   createProactivePushSource,
   PROACTIVE_MAX_OUTPUT_TOKENS,
   ProductionProactive,
+  PREREVIEW_MAX_OUTPUT_TOKENS,
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
@@ -1777,6 +1778,33 @@ export async function runAgentService(
             proactiveDescriptor.cost,
             PROACTIVE_MAX_OUTPUT_TOKENS,
           ),
+          readMemoryClassification: async (ref) =>
+            (await reviewPayloads.get(ref).catch(() => undefined))?.dataClassification,
+          prereview: {
+            store: repository.reviewPrereview(),
+            model: modelComposition.composition.proactiveModel(proactiveConfiguration.modelRef, {
+              maxOutputTokens: PREREVIEW_MAX_OUTPUT_TOKENS,
+              requestTimeoutMs: proactiveConfiguration.reviewPrereview.requestTimeoutMs,
+              purpose: "review-prereview",
+            }),
+            digest: (text) => createHash("sha256").update(text, "utf8").digest("hex"),
+            estimateCostMicros: proactiveCostEstimator(
+              proactiveDescriptor.cost,
+              PREREVIEW_MAX_OUTPUT_TOKENS,
+            ),
+          },
+          onPrereview: (result) => {
+            if (result.attempted > 0 || result.failures.length > 0)
+              writeServiceDiagnostic(errorOutput, {
+                component: "agent-service",
+                event: "proactive.prereviewed",
+                attempted: result.attempted,
+                recorded: result.recorded,
+                failed: result.failures.length,
+                stoppedBy: result.stoppedBy,
+                ...(result.failures[0] ? { code: result.failures[0].slice(0, 120) } : {}),
+              });
+          },
           feedback: (sentFrom) =>
             feedbackStore.listFeedback({
               ...proactiveScope,

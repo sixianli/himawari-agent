@@ -965,6 +965,8 @@ export const messages = {
   "dailyReview.title": "每天打分",
   "dailyReview.count": "今天 {count} 条",
   "dailyReview.countLeft": "今天 {count} 条，另有 {left} 条没抽到",
+  "dailyReview.hiddenByModel":
+    "另有 {count} 条模型已预评为有用、而且有把握，按你开的减量设置这次没给你看",
   "dailyReview.note": "没抽到的明天可能再出现，7 天后不再出现。",
   "dailyReview.tag.pushed": "读完邮件提醒了你",
   "dailyReview.tag.silent": "读完邮件没提醒",
@@ -1403,6 +1405,7 @@ export const messages = {
   "sensitive.purpose.memory-consolidation": "合并记忆",
   "sensitive.purpose.mail-judgment": "邮件判断",
   "sensitive.purpose.action-review": "动作复核",
+  "sensitive.purpose.review-prereview": "模型预评",
   "sensitive.purpose.other": "其他",
   "sensitive.maskedOnce": "{time} 遮住 1 次",
   "sensitive.maskedMany": "{time} 第一次遮住，之后 {later} 次发送都已遮住",

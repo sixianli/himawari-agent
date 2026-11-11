@@ -1028,6 +1028,8 @@ export const messages = {
   "dailyReview.title": "毎日の採点",
   "dailyReview.count": "今日 {count} 件",
   "dailyReview.countLeft": "今日 {count} 件、ほかに {left} 件は選ばれていません",
+  "dailyReview.hiddenByModel":
+    "ほかに {count} 件は、モデルの事前採点で「役に立った」と自信を持って判断されたため、あなたが有効にした削減設定により今回は表示していません",
   "dailyReview.note": "選ばれなかったものは明日また出ることがあり、7 日たつと出なくなります。",
   "dailyReview.tag.pushed": "メールを読んで通知した",
   "dailyReview.tag.silent": "メールを読んで通知しなかった",
@@ -1502,6 +1504,7 @@ export const messages = {
   "sensitive.purpose.memory-consolidation": "記憶の統合",
   "sensitive.purpose.mail-judgment": "メールの判定",
   "sensitive.purpose.action-review": "操作の確認",
+  "sensitive.purpose.review-prereview": "モデルの事前採点",
   "sensitive.purpose.other": "その他",
   "sensitive.maskedOnce": "{time} 1 回隠しました",
   "sensitive.maskedMany": "{time} 最初に隠し、その後の {later} 回の送信でも隠しました",

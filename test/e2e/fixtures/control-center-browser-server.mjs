@@ -1106,6 +1106,7 @@ function reviewSnapshot() {
     ],
     folded: { total: 7, items: Array.from({ length: 7 }, (_, index) => item(index, true)) },
     memoryUnusedDays: 90,
+    hiddenByModel: 0,
     generatedAt: now,
   };
 }

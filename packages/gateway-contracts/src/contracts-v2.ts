@@ -582,6 +582,7 @@ const proactiveReviewSnapshotSchema = object({
     capacity: integer(1),
     sampled: integer(0),
     notSampled: integer(0),
+    hiddenByModel: integer(0),
     items: array(proactiveReviewItemSchema),
     folded: object({ total: integer(0), items: array(proactiveReviewItemSchema) }),
     memoryUnusedDays: integer(1),
