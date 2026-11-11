@@ -39,6 +39,8 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import {
   assertProductionSecretSource,
+  BoundedJwksFetcher,
+  CloudflareAccessJwtVerifier,
   createGmailReader,
   createGoogleOAuth,
   createWebPushSender,
@@ -55,8 +57,6 @@ import {
   JsonFileConfigurationPort,
   MacOsKeychainProviderSecretSource,
   MacOsKeychainSecretSource,
-  MCP_READ_SECRET_PURPOSE,
-  MCP_WRITE_SECRET_PURPOSE,
   MUSE_INTAKE_SECRET_PURPOSE,
   PayloadUdsServer,
   parseServiceArguments,
@@ -1777,29 +1777,33 @@ export async function runAgentService(
         throw new Error("GAP_EXPORT_RUNTIME_UNAVAILABLE");
       }
       const mcpReadConfiguration = configuration.runPolicy?.mcpRead;
-      const mcpReadSecret = mcpReadConfiguration
-        ? configuration.secretReferences.find(
-            ({ ref, purpose }) =>
-              ref === mcpReadConfiguration.secretRef && purpose === MCP_READ_SECRET_PURPOSE,
-          )
-        : undefined;
-      const mcpWriteSecret = mcpReadConfiguration?.writeSecretRef
-        ? configuration.secretReferences.find(
-            ({ ref, purpose }) =>
-              ref === mcpReadConfiguration.writeSecretRef && purpose === MCP_WRITE_SECRET_PURPOSE,
-          )
-        : undefined;
-      if (mcpReadSecret) {
+      const mcpIdentity =
+        configuration.identity && configuration.identity.kind !== "built-in"
+          ? configuration.identity
+          : undefined;
+      if (mcpReadConfiguration && mcpIdentity) {
         const settingsStore = repository.proactive();
-        const secretProvider = hostModelSources(configuration).provider;
         mcpRead = new ProductionMcpRead({
           scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
           clock,
-          secret: await secretProvider.resolve(mcpReadSecret.ref, mcpReadSecret.version),
-          ...(mcpWriteSecret
+          access: new CloudflareAccessJwtVerifier({
+            issuer: mcpIdentity.issuer,
+            audience: mcpReadConfiguration.audience,
+            jwksUrl: mcpIdentity.jwksUrl,
+            jwksFetcher:
+              dependencies.httpOptions?.jwksFetcher ??
+              new BoundedJwksFetcher({
+                allowedUrl: mcpIdentity.jwksUrl,
+                timeoutMilliseconds: mcpIdentity.jwksTimeoutMilliseconds,
+                maximumBodyBytes: mcpIdentity.jwksMaximumBodyBytes,
+              }),
+            now: () => new Date(clock.now()),
+            cacheMilliseconds: mcpIdentity.jwksCacheMilliseconds,
+            clockToleranceSeconds: mcpIdentity.clockToleranceSeconds,
+          }),
+          ...(mcpReadConfiguration.proposals
             ? {
                 write: {
-                  secret: await secretProvider.resolve(mcpWriteSecret.ref, mcpWriteSecret.version),
                   proposals: new ProductionMcpMemoryWriter({
                     configuration,
                     memory: durableMemory,

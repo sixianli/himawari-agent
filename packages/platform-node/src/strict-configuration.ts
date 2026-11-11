@@ -998,8 +998,6 @@ export const WEB_PUSH_SECRET_PURPOSE = "web-push";
 export const GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE = "google-oauth-client";
 export const MUSE_INTAKE_SECRET_PURPOSE = "muse-intake";
 export const GAP_EXPORT_SECRET_PURPOSE = "gap-export";
-export const MCP_READ_SECRET_PURPOSE = "mcp-read";
-export const MCP_WRITE_SECRET_PURPOSE = "mcp-write";
 
 function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["proactive"]> {
   const field = "configuration.runPolicy.proactive";
@@ -1123,13 +1121,11 @@ function parseMuseIntake(value: unknown): NonNullable<RunPolicyConfiguration["mu
 function parseMcpRead(value: unknown): NonNullable<RunPolicyConfiguration["mcpRead"]> {
   const field = "configuration.runPolicy.mcpRead";
   const input = record(value, field);
-  rejectUnknown(input, ["secretRef", "writeSecretRef"], field);
-  const secretRef = safeReference(input["secretRef"], `${field}.secretRef`);
-  if (input["writeSecretRef"] === undefined) return Object.freeze({ secretRef });
-  const writeSecretRef = safeReference(input["writeSecretRef"], `${field}.writeSecretRef`);
-  if (writeSecretRef === secretRef)
-    throw invalid(`${field}.writeSecretRef`, "must differ from secretRef");
-  return Object.freeze({ secretRef, writeSecretRef });
+  rejectUnknown(input, ["audience", "proposals"], field);
+  const audience = safeReference(input["audience"], `${field}.audience`);
+  if (input["proposals"] === undefined) return Object.freeze({ audience });
+  if (input["proposals"] !== true) throw invalid(`${field}.proposals`, "must be true when present");
+  return Object.freeze({ audience, proposals: true as const });
 }
 
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
@@ -1461,6 +1457,11 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const runPolicy =
     input["runPolicy"] === undefined ? undefined : parseRunPolicy(input["runPolicy"]);
   assertWebProviderSecretReferences(runPolicy, secretReferences);
+  if (runPolicy?.mcpRead && (!identity || identity.kind === "built-in"))
+    throw invalid(
+      "configuration.runPolicy.mcpRead",
+      "requires configuration.identity to use Cloudflare Access",
+    );
   if (runPolicy?.webPush)
     assertIdentitySecretReference(
       secretReferences,
@@ -1474,20 +1475,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       runPolicy.museIntake.secretRef,
       MUSE_INTAKE_SECRET_PURPOSE,
       "configuration.runPolicy.museIntake.secretRef",
-    );
-  if (runPolicy?.mcpRead)
-    assertIdentitySecretReference(
-      secretReferences,
-      runPolicy.mcpRead.secretRef,
-      MCP_READ_SECRET_PURPOSE,
-      "configuration.runPolicy.mcpRead.secretRef",
-    );
-  if (runPolicy?.mcpRead?.writeSecretRef !== undefined)
-    assertIdentitySecretReference(
-      secretReferences,
-      runPolicy.mcpRead.writeSecretRef,
-      MCP_WRITE_SECRET_PURPOSE,
-      "configuration.runPolicy.mcpRead.writeSecretRef",
     );
   if (runPolicy?.museIntake?.gapExportSecretRef !== undefined)
     assertIdentitySecretReference(

@@ -32,6 +32,7 @@ import {
 } from "../../apps/agent-service/src/production-mcp-read.ts";
 import { ProductionMemoryRecall } from "../../apps/agent-service/src/production-memory-recall.ts";
 import { ProductionReminderWriter } from "../../apps/agent-service/src/production-reminder-writer.ts";
+import { createMcpAccess } from "../../apps/agent-service/test/fixtures/mcp-access.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-mcp-read");
@@ -41,7 +42,6 @@ const GENERATION_ID = createMemoryGenerationId("generation-mcp-read");
 const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
 const NOW = "2026-11-11T03:00:00.000Z";
 const SINCE = "1970-01-01T00:00:00.000Z";
-const SECRET = "mcp-read-test-secret-0123456789abcdef";
 const TIME_ZONE = "Asia/Tokyo";
 const DENTIST = "明天上午十点去牙医复诊";
 const WIFI = "家里 Wi-Fi 密码：Sunflower-8841";
@@ -223,10 +223,11 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     const failures: unknown[] = [];
     const summaryFailures: unknown[] = [];
     const settingsStore = repository.proactive();
+    const access = await createMcpAccess(() => new Date(clock.now()));
     const mcp = new ProductionMcpRead({
       scope,
       clock,
-      secret: SECRET,
+      access: access.verifier,
       timeZone: TIME_ZONE,
       requestTimeoutMs: 30_000,
       sources: {
@@ -283,14 +284,16 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     const url = new URL(
       `http://127.0.0.1:${(app.server.address() as AddressInfo).port}${MCP_READ_PATH}`,
     );
-    const connect = async (era: Era, secret: string = SECRET) => {
+    const connect = async (era: Era, assertion?: string) => {
       const client = new Client(
         { name: `mcp-read-test-${era}`, version: "1.0.0" },
         era === "modern" ? { versionNegotiation: { mode: { pin: "2026-07-28" } } } : {},
       );
       await client.connect(
         new StreamableHTTPClientTransport(url, {
-          requestInit: { headers: { authorization: `Bearer ${secret}` } },
+          requestInit: {
+            headers: { "cf-access-jwt-assertion": assertion ?? (await access.sign()) },
+          },
         }),
       );
       closers.push(() => client.close());
@@ -310,6 +313,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     return {
       url,
       connect,
+      access,
       call,
       ledger,
       recordFields,
@@ -509,7 +513,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(row).toMatchObject({ reasonCode: "rule_book", outcome: "read" });
   });
 
-  it("rejects requests without the token or with a wrong one, and records nothing", async () => {
+  it("rejects requests without a valid Cloudflare Access assertion, and records nothing", async () => {
     const f = await setup();
     const bare = await fetch(f.url, {
       method: "POST",
@@ -520,9 +524,24 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
     });
     expect(bare.status).toBe(401);
-    expect(bare.headers.get("www-authenticate")).toMatch(/^Bearer/u);
-    await expect(f.connect("legacy", "wrong-secret-0123456789abcdef0123456789")).rejects.toThrow();
-    await expect(f.connect("modern", "wrong-secret-0123456789abcdef0123456789")).rejects.toThrow();
+    expect(bare.headers.get("www-authenticate")).toBeNull();
+    const withBearer = await fetch(f.url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        authorization: ["Bearer", "m".repeat(40)].join(" "),
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    });
+    expect(withBearer.status).toBe(401);
+    await expect(f.connect("legacy", await f.access.signWithForeignKey())).rejects.toThrow();
+    await expect(
+      f.connect("modern", await f.access.sign({ audience: "another-app" })),
+    ).rejects.toThrow();
+    await expect(
+      f.connect("modern", await f.access.sign({ expiresInSeconds: -120 })),
+    ).rejects.toThrow();
     expect(await f.ledger()).toEqual([]);
   });
 
