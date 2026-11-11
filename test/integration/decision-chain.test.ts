@@ -1115,4 +1115,38 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
       await f.repository.close();
     }
   });
+
+  it("[P3-8-undo] the memory overview says a tidy-up can be undone until its memory is changed", async () => {
+    const f = await fixture();
+    try {
+      await seedMemories(f);
+      const overview = async () => {
+        const snapshot = await f.control.query({
+          ...(query("unused") as object),
+          type: "memory.overview.read",
+          payload: {},
+        } as never);
+        if (snapshot.type !== "memory.overview.snapshot") throw new Error("snapshot");
+        return snapshot.payload.tidyUps;
+      };
+      expect(await overview()).toMatchObject([
+        { changeId: "consolidation-1:c1", undone: false, undoable: true },
+      ]);
+      const current = await f.repository
+        .productMemoryState()
+        .read(createMemoryId("memory-insight"));
+      if (!current) throw new Error("insight missing");
+      await f.memory.revise({
+        memoryId: current.id,
+        expectedRevision: current.revision,
+        generationId: GENERATION_ID,
+        attributes: { tentative: true },
+      });
+      expect(await overview()).toMatchObject([
+        { changeId: "consolidation-1:c1", undone: false, undoable: false },
+      ]);
+    } finally {
+      await f.repository.close();
+    }
+  });
 });
