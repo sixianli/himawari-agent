@@ -3,6 +3,7 @@ import type {
   DecisionLedgerEntry,
   DecisionLedgerPort,
 } from "../ports/decision-ledger.js";
+import { EXTERNAL_PROPOSAL_REASON_CODES } from "../ports/decision-ledger.js";
 import type { ProactiveRating, ProactiveScope } from "../ports/proactive-checks.js";
 import { isModelVisible } from "./model-visibility.js";
 import type { ProactiveOverview } from "./proactive-overview.js";
@@ -235,7 +236,10 @@ function reviewedMemoryIds(entry: DecisionLedgerEntry): {
   return { before: [], after: undefined };
 }
 
-const OWNER_DECIDED_DISCARD = "approval_rejected";
+const OWNER_DECIDED_DISCARDS: ReadonlySet<string> = new Set([
+  "approval_rejected",
+  EXTERNAL_PROPOSAL_REASON_CODES.declined,
+]);
 
 export async function readDailyReview(options: {
   readonly scope: ProactiveScope;
@@ -265,7 +269,7 @@ export async function readDailyReview(options: {
     { readonly item: DailyReviewPoolItem; readonly build: () => Promise<DailyReviewItem> }
   >();
   for (const entry of entries) {
-    if (entry.kind === "memory_candidate" && entry.reasonCode === OWNER_DECIDED_DISCARD) continue;
+    if (entry.kind === "memory_candidate" && OWNER_DECIDED_DISCARDS.has(entry.reasonCode)) continue;
     const check = entry.kind === "proactive" ? checks.get(entry.id) : undefined;
     if (entry.kind === "proactive" && entry.outcome === "silent" && (check?.counts.judged ?? 0) < 1)
       continue;

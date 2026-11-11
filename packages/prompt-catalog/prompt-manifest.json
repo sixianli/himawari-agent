@@ -329,6 +329,66 @@
     "changedIn": "ADR 0219",
     "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
   },
+  "mcp.propose-memory": {
+    "sha256": "e980fe0dc8c61d83f10e1786bb6e7ce3bd522101b3cb513ca64303520038db7a",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-already-saved": {
+    "sha256": "f213567f4ace8b14f14d2f753e32498763ecc2f9008501e2c1a9ee51aaf37921",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-changed": {
+    "sha256": "7299ce6dcf269f8d1c852a1eb1f7986f094022e57561fc1cb48ae95f8336cfb2",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-confirm": {
+    "sha256": "8d27e58721a23beb109577314bd615dc2ce72b71ad2079d3c40100ec7721ae27",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-declined": {
+    "sha256": "09487ef998b0959cc71d2384cf31e80b3700b8607be4ebad0ba7b060e30b5440",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-failed": {
+    "sha256": "28480733c9fd66bc1bfa812cb263314aa3f377f93f4bc8a0bd8b43b8994bc3dd",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-invalid": {
+    "sha256": "1055448d6bdeefee2ab27a51cdc722bb0860738ddeb7a27cb4b3562a970812bf",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-not-ready": {
+    "sha256": "ebf3736df2154401f6f92fb69bcbd973ee4a114582ec0d13253462fb9c919507",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-save-label": {
+    "sha256": "059030f24bde551f1e3cd4625a0380eea595d6392f1ab918050d6719408eae04",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-saved": {
+    "sha256": "844d784b588aa8650d685b823ae424e4775c2bc2c8a741d1c31d8dabc1b7db57",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-sensitive-note": {
+    "sha256": "24fdfe018d1226955839819b48347679a90e9d16cb6428a70ab5746c15854779",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-unsupported": {
+    "sha256": "a3d8fe861d4f444acab308f0055ce1e578653e3053aa118f2e7737e3a1086837",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
   "mcp.rule-book": {
     "sha256": "df131609c5e20c4560f5cdfa4cfa38fd276880ccf0cb6bd945141609eb998df5",
     "changedIn": "ADR 0219",

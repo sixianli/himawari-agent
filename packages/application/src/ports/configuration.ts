@@ -239,6 +239,7 @@ export interface MuseIntakeConfiguration {
 
 export interface McpReadConfiguration {
   readonly secretRef: string;
+  readonly writeSecretRef?: string;
 }
 
 export interface RunPolicyConfiguration {

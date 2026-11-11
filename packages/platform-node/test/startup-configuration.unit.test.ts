@@ -1456,6 +1456,37 @@ it("[P5-1] accepts the MCP read entry only with one secret whose purpose is mcp-
   }
 });
 
+it("[P5-2] accepts an MCP write secret only when it is a separate mcp-write secret", () => {
+  const raw = config("/tmp/himawari-mcp-write-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const references = raw["secretReferences"] as unknown[];
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "mcp-read-secret", version: "v1", purpose: "mcp-read", scope: "agent" },
+    { ref: "mcp-write-secret", version: "v1", purpose: "mcp-write", scope: "agent" },
+    { ref: "other-secret", version: "v1", purpose: "google-oauth-client", scope: "agent" },
+  ];
+  const mcpRead = { secretRef: "mcp-read-secret", writeSecretRef: "mcp-write-secret" };
+  raw["runPolicy"] = { ...policy, mcpRead };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead).toEqual(
+    mcpRead,
+  );
+  for (const invalid of [
+    { secretRef: "mcp-read-secret", writeSecretRef: "mcp-read-secret" },
+    { secretRef: "mcp-read-secret", writeSecretRef: "other-secret" },
+    { secretRef: "mcp-read-secret", writeSecretRef: "missing-secret" },
+    { secretRef: "mcp-read-secret", writeSecretRef: 1 },
+  ]) {
+    raw["runPolicy"] = { ...policy, mcpRead: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});
+
 it("accepts Muse intake only with a boolean switch and one secret whose purpose is muse-intake", () => {
   const raw = config("/tmp/himawari-muse-intake-config");
   const policy = {
