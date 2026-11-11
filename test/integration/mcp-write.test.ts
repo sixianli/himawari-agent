@@ -31,12 +31,14 @@ import {
   MCP_PROPOSE_MEMORY_DECLINED,
   MCP_PROPOSE_MEMORY_FAILED,
   MCP_PROPOSE_MEMORY_INVALID,
+  MCP_PROPOSE_MEMORY_NOT_READY,
   MCP_PROPOSE_MEMORY_SAVED,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
   MCP_PROPOSE_NOT_SHOWN,
   MCP_PROPOSE_RULE_ALREADY_SAVED,
   MCP_PROPOSE_RULE_DECLINED,
   MCP_PROPOSE_RULE_INVALID,
+  MCP_PROPOSE_RULE_NOT_READY,
   MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE,
   MCP_PROPOSE_RULE_SAVED,
 } from "@himawari-agent/prompt-catalog";
@@ -123,6 +125,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       readonly readOnly?: boolean;
       readonly failRuleMarker?: boolean;
       readonly slowDecidedMs?: number;
+      readonly notReady?: boolean;
       readonly replay?: boolean;
     } = {},
   ) {
@@ -298,13 +301,15 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     });
     let slowReads = 0;
     const slowDecided = <T extends object>(target: T): T =>
-      options.slowDecidedMs === undefined
+      options.slowDecidedMs === undefined && !options.notReady
         ? target
         : new Proxy(target, {
             get(inner, key) {
               const value = Reflect.get(inner, key, inner);
               if (typeof value !== "function") return value;
-              if (key !== "decided") return value.bind(inner);
+              if (key === "ready" && options.notReady) return async () => false;
+              if (key !== "decided" || options.slowDecidedMs === undefined)
+                return value.bind(inner);
               return async (proposalId: string) => {
                 const found = await value.call(inner, proposalId);
                 slowReads += 1;
@@ -603,6 +608,16 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.storedRules()).toEqual([]);
   });
 
+  it("[P5-2] refuses before asking while the memory book is not ready", async () => {
+    const f = await setup({ notReady: true });
+    const client = await f.connect();
+    expect((await f.propose(client, { text: COFFEE })).text).toBe(
+      MCP_PROPOSE_MEMORY_NOT_READY.text,
+    );
+    expect((await f.proposeRule(client, RULE)).text).toBe(MCP_PROPOSE_RULE_NOT_READY.text);
+    expect(f.elicitations).toEqual([]);
+  });
+
   it("refuses without a dialog when the client cannot show a confirmation form", async () => {
     const f = await setup();
     const client = await f.connect({ elicitation: false });
@@ -741,7 +756,8 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       },
     };
     const state = first.requestState ?? "";
-    const tampered = `${state.slice(0, -2)}${state.endsWith("A") ? "B" : "A"}${state.at(-1)}`;
+    const tampered = `${state.slice(0, -2)}${state.at(-2) === "A" ? "B" : "A"}${state.at(-1)}`;
+    expect(tampered).not.toBe(state);
     await expect(
       f.raw(client, {
         arguments: { text: COFFEE },

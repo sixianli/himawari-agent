@@ -34,6 +34,7 @@ import {
   MCP_PROPOSE_RULE_INVALID,
   MCP_PROPOSE_RULE_KIND_NOTIFY,
   MCP_PROPOSE_RULE_KIND_WHOLE_THREAD,
+  MCP_PROPOSE_RULE_NOT_READY,
   MCP_PROPOSE_RULE_REPLAY,
   MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE,
   MCP_PROPOSE_RULE_SAVED,
@@ -572,7 +573,7 @@ export class ProductionMcpRead {
         if (!elicitationSupported(context.mcpReq.envelope))
           return proposalReply(MCP_PROPOSE_MEMORY_UNSUPPORTED.text, true);
         if (!(await this.#options.write?.proposals.ready()))
-          return proposalReply(MCP_PROPOSE_MEMORY_NOT_READY.text, true);
+          return proposalReply(MCP_PROPOSE_RULE_NOT_READY.text, true);
         return await this.#askRuleConfirmation(
           rules,
           { tool: "propose_rule", proposalId: randomUUID(), argsHash, client },

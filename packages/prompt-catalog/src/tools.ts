@@ -357,6 +357,16 @@ export const MCP_PROPOSE_MEMORY_DECLINED = fixedPrompt({
   text: "主人没有同意，这条记忆没有保存。除非主人再次要求，不要重复提议同样的内容。",
 });
 
+export const MCP_PROPOSE_RULE_NOT_READY = fixedPrompt({
+  id: "mcp.propose-rule-not-ready",
+  purpose:
+    "规则提议时 Himawari 的记忆册还没准备好（规则生效要写规则类记忆），返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "Himawari 的记忆功能还没准备好，规则要连同出处一起记下，所以这次没有生效。",
+});
+
 export const MCP_PROPOSE_NOT_SHOWN = fixedPrompt({
   id: "mcp.propose-not-shown",
   purpose: "客户端没把确认框显示给主人就立刻回了拒绝或取消时，返回给外部 agent 的文字",
