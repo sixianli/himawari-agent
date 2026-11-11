@@ -162,29 +162,40 @@ describe("strict product configuration", () => {
       ).toThrow();
   });
 
-  it("[P3-8] accepts an automatic confidence threshold only as a whole number from 1 to 1000", () => {
-    const withThreshold = (automaticConfidencePermille: unknown) => {
-      const input = config(path.join(tmpdir(), "himawari-memory-confidence"));
-      input["memory"] = {
-        ...(input["memory"] as Record<string, unknown>),
-        automaticConfidencePermille,
-      };
+  it("accepts memory retrieval tuning only as non-negative numbers below 1 and a boolean dedupe switch", () => {
+    const withRetrieval = (retrieval: unknown) => {
+      const input = config(path.join(tmpdir(), "himawari-memory-retrieval"));
+      input["memory"] = { ...(input["memory"] as Record<string, unknown>), retrieval };
       return input;
     };
-    expect(
-      parseProductConfiguration(withThreshold(900), "2026-11-11T00:00:00.000Z").memory
-        .automaticConfidencePermille,
-    ).toBe(900);
+    const at = "2026-11-11T00:00:00.000Z";
     expect(
       parseProductConfiguration(
-        config(path.join(tmpdir(), "himawari-memory-confidence")),
-        "2026-11-11T00:00:00.000Z",
-      ).memory.automaticConfidencePermille,
+        withRetrieval({
+          keywordWeight: 0.2,
+          entityWeight: 0,
+          cutoffMargin: 0.05,
+          dedupeSameSource: false,
+        }),
+        at,
+      ).memory.retrieval,
+    ).toEqual({ keywordWeight: 0.2, entityWeight: 0, cutoffMargin: 0.05, dedupeSameSource: false });
+    expect(parseProductConfiguration(withRetrieval({}), at).memory.retrieval).toEqual({});
+    expect(
+      parseProductConfiguration(config(path.join(tmpdir(), "himawari-memory-retrieval")), at).memory
+        .retrieval,
     ).toBeUndefined();
-    for (const invalid of [0, 1001, 850.5, "850"])
-      expect(() =>
-        parseProductConfiguration(withThreshold(invalid), "2026-11-11T00:00:00.000Z"),
-      ).toThrow();
+    for (const invalid of [
+      { keywordWeight: -0.1 },
+      { keywordWeight: 1 },
+      { entityWeight: Number.NaN },
+      { entityWeight: Number.POSITIVE_INFINITY },
+      { cutoffMargin: "0.03" },
+      { dedupeSameSource: "yes" },
+      { minimumScore: 0.5 },
+      "on",
+    ])
+      expect(() => parseProductConfiguration(withRetrieval(invalid), at)).toThrow();
   });
 
   it("accepts a Magpie primary on a loopback address without gateway routing", () => {
@@ -1442,6 +1453,41 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, relatedCharactersPerMail: 300, relatedCharactersPerRelatedMail: 400 },
   ]) {
     raw["runPolicy"] = { ...policy, proactive: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});
+
+it("[P5-1] accepts the MCP read entry only with one secret whose purpose is mcp-read", () => {
+  const raw = config("/tmp/himawari-mcp-read-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const references = raw["secretReferences"] as unknown[];
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "mcp-read-secret", version: "v1", purpose: "mcp-read", scope: "agent" },
+    { ref: "other-secret", version: "v1", purpose: "google-oauth-client", scope: "agent" },
+  ];
+  const mcpRead = { secretRef: "mcp-read-secret" };
+  raw["runPolicy"] = { ...policy, mcpRead };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead).toEqual(
+    mcpRead,
+  );
+  raw["runPolicy"] = { ...policy };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead,
+  ).toBeUndefined();
+  for (const invalid of [
+    {},
+    { secretRef: "other-secret" },
+    { secretRef: "missing-secret" },
+    { ...mcpRead, secret: "inline" },
+    "mcp-read-secret",
+  ]) {
+    raw["runPolicy"] = { ...policy, mcpRead: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
 });

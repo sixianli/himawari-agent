@@ -1,5 +1,7 @@
 import {
   ApplicationPortError,
+  autoCommitThreshold,
+  type CaptureGates,
   type DataClassification,
   type DurableMemoryService,
   highestClassification,
@@ -68,7 +70,7 @@ export interface MemoryConsolidationServiceOptions {
   }) => Promise<string>;
   readonly now: () => string;
   readonly timeZone?: string;
-  readonly automaticConfidencePermille: number;
+  readonly gates?: CaptureGates;
 }
 
 export interface MemoryConsolidationResult {
@@ -368,7 +370,8 @@ export class MemoryConsolidationService {
             decision.action === "replace" &&
             newer === keep &&
             statedAt(older.memory) < statedAt(newer.memory) &&
-            newer.memory.confidencePermille >= this.#options.automaticConfidencePermille
+            newer.memory.confidencePermille >=
+              autoCommitThreshold(newer.memory.attributes?.category ?? null, this.#options.gates)
           ) {
             const change = await this.#supersede(id, older.memory, newer.memory);
             if (!change) continue;

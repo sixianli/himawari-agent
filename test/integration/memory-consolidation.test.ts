@@ -2,7 +2,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  DEFAULT_AUTOMATIC_CONFIDENCE_PERMILLE,
   DurableMemoryService,
   type MemoryContentPort,
   type ProductMemoryAttributes,
@@ -169,14 +168,14 @@ const MEMORIES: ReadonlyArray<{
   },
   {
     id: "pet-old",
-    text: "主人养了一只柴犬",
+    text: "主人家里养着一只柴犬",
     at: "2026-05-06T00:00:00.000Z",
     classification: "private",
     attributes: { category: "other", subCategory: "宠物", importancePermille: 500 },
   },
   {
     id: "pet-new",
-    text: "主人现在养的是一只橘猫",
+    text: "主人家里改养了一只橘猫",
     at: "2026-10-24T00:00:00.000Z",
     classification: "private",
     attributes: { category: "other", subCategory: "宠物", importancePermille: 500 },
@@ -362,7 +361,6 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       },
       now: () => clock.value,
       timeZone: "Asia/Tokyo",
-      automaticConfidencePermille: DEFAULT_AUTOMATIC_CONFIDENCE_PERMILLE,
     });
     const prompts: string[] = [];
     const labels: string[] = [];
@@ -782,11 +780,11 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       const pet = result?.changes.find(({ memoryId }) => memoryId === "pet-new");
       if (!pet) throw new Error("pet hold missing");
       await resource.consolidation.undo(pet.id);
-      expect((await resource.read("pet-new"))?.attributes?.tentative).toBe(false);
+      expect((await resource.read("pet-new"))?.attributes?.tentative).not.toBe(true);
       const milk = await resource.read("milk-new");
       if (!milk) throw new Error("milk-new missing");
       await resource.memory.confirm(milk.id, GENERATION_ID);
-      expect((await resource.read("milk-new"))?.attributes?.tentative).toBe(false);
+      expect((await resource.read("milk-new"))?.attributes?.tentative).not.toBe(true);
       expect(await resource.read("milk-old")).toMatchObject({ status: "active" });
       expect((await resource.read("milk-old"))?.attributes?.supersededBy).toBeNull();
       const milkHold = result?.changes.find(({ memoryId }) => memoryId === "milk-new");

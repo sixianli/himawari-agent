@@ -1,6 +1,7 @@
 import {
   ApplicationPortError,
   type ClockPort,
+  classificationRank,
   type DecisionLedgerPort,
   type DurableMemoryService,
   type MemoryBookStorePort,
@@ -8,6 +9,7 @@ import {
   type MemoryConsolidationStorePort,
   type MemoryExtractionAuditRecord,
   isModelVisible,
+  modelVisibleCeiling,
   type MemoryHistoryEvent,
   type MemoryProjectionJobStatePort,
   type MemoryReminderStorePort,
@@ -133,6 +135,7 @@ export class ProductionMemoryControl {
       | "correct"
       | "delete"
       | "restore"
+      | "restoreVersion"
       | "confirm"
       | "trash"
       | "recover"
@@ -183,6 +186,85 @@ export class ProductionMemoryControl {
   private assertStorable(text: string) {
     if (text.trim().length === 0)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
+  }
+
+  async #versionContent(
+    current: ProductMemoryRecord,
+    historyId: number,
+  ): Promise<{
+    readonly contentRef: string;
+    readonly stance: string | null;
+    readonly copied: boolean;
+  }> {
+    if (current.status !== "active" || (current.attributes?.supersededBy ?? null) !== null)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "MEMORY_VERSION_TARGET_NOT_CURRENT",
+      );
+    const event = await this.options.state.readHistory({ ...this.#scope(), id: historyId });
+    if (!event || !(await this.#replacedInto(event.memoryId, current.id)))
+      throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_VERSION_NOT_FOUND");
+    const payload = await this.options.payloads.get(event.contentRef);
+    if (!payload || payload.contentType !== "text/plain")
+      throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_PAYLOAD_MISSING");
+    const text = await this.readText(event.contentRef);
+    this.assertStorable(text);
+    if (
+      singleLine(text) === singleLine(await this.readText(current.contentRef)) &&
+      event.stance === (current.attributes?.stance ?? null)
+    )
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "MEMORY_VERSION_ALREADY_CURRENT",
+      );
+    if (payload.dataClassification === current.dataClassification)
+      return { contentRef: event.contentRef, stance: event.stance, copied: false };
+    if (
+      classificationRank(payload.dataClassification) >
+      classificationRank(current.dataClassification)
+    )
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "MEMORY_VERSION_CLASSIFICATION_HIGHER",
+      );
+    const { ownerId, agentId } = this.options.configuration;
+    const copy = await this.options.protector.protect({
+      ownerId,
+      agentId,
+      ref: `memory-version:${current.id}:${current.revision}:${historyId}`,
+      dataClassification: current.dataClassification,
+      contentType: "text/plain",
+      plaintext: new TextEncoder().encode(text),
+      createdAt: this.options.clock.now(),
+    });
+    try {
+      await this.options.payloads.put(copy);
+    } catch (error) {
+      if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.DUPLICATE)
+        throw error;
+      return { contentRef: copy.ref, stance: event.stance, copied: false };
+    }
+    return { contentRef: copy.ref, stance: event.stance, copied: true };
+  }
+
+  async #replacedInto(memoryId: MemoryId, headId: MemoryId): Promise<boolean> {
+    const seen = new Set<MemoryId>();
+    let next: MemoryId | null = memoryId;
+    while (next !== null && !seen.has(next)) {
+      if (next === headId) return true;
+      seen.add(next);
+      const record = await this.options.state.read(next);
+      const { ownerId, agentId } = this.options.configuration;
+      if (
+        !record ||
+        record.ownerId !== ownerId ||
+        record.agentId !== agentId ||
+        record.status !== "active"
+      )
+        return false;
+      next = (record.attributes?.supersededBy ?? null) as MemoryId | null;
+    }
+    return false;
   }
 
   #scope() {
@@ -392,6 +474,7 @@ export class ProductionMemoryControl {
         const eventText = await textOfRef(event.contentRef);
         if (!eventText) continue;
         nodes.push({
+          historyId: event.id,
           kind: event.kind,
           text: eventText,
           stance: event.stance,
@@ -555,7 +638,7 @@ export class ProductionMemoryControl {
     const outline = await this.options.profile?.outline({
       ownerId,
       agentId,
-      maxClassification: "private",
+      maxClassification: modelVisibleCeiling(),
       now: this.options.clock.now(),
     });
     const lines = (items: readonly { memoryId: string; text: string; updatedAt: string }[]) =>
@@ -701,6 +784,7 @@ export class ProductionMemoryControl {
         profileUsage: {
           used: outline?.usage.used ?? 0,
           limit: outline?.usage.limit ?? 0,
+          pinned: outline?.usage.pinned ?? 0,
           queued: [...(outline?.usage.queued ?? [])],
         },
         generatedAt: now,
@@ -1016,7 +1100,7 @@ export class ProductionMemoryControl {
       return { resultRef: changeId, replayed: false };
     }
     if (command.type === "memory.mutate") {
-      const { memoryId, action, expectedRevision, contentRef } = command.payload;
+      const { memoryId, action, expectedRevision, contentRef, historyId } = command.payload;
       const current = await this.options.state.read(memoryId as MemoryId);
       const { ownerId, agentId } = this.options.configuration;
       if (!current || current.ownerId !== ownerId || current.agentId !== agentId)
@@ -1041,6 +1125,23 @@ export class ProductionMemoryControl {
       if (action === "restore") {
         const saved = await this.options.memory.restore(current.id, generationId);
         return { resultRef: saved.id, replayed: false };
+      }
+      if (action === "restore_version" && historyId !== null) {
+        const restored = await this.#versionContent(current, historyId);
+        try {
+          const saved = await this.options.memory.restoreVersion({
+            memoryId: current.id,
+            expectedRevision,
+            contentRef: restored.contentRef,
+            stance: restored.stance,
+            generationId,
+          });
+          return { resultRef: saved.id, replayed: false };
+        } catch (error) {
+          if (restored.copied)
+            await this.options.payloads.delete(restored.contentRef).catch(() => false);
+          throw error;
+        }
       }
       if (action === "delete") {
         const saved = await this.options.memory.trash(current.id, generationId);

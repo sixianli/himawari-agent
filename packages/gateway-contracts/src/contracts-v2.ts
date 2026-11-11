@@ -534,6 +534,7 @@ const proactiveReviewKinds = [
   "context_truncation",
   "retrieval_degrade",
   "external_read",
+  "rule_review",
   "mail",
 ] as const;
 const proactiveReviewItemSchema = object({
@@ -763,6 +764,8 @@ const calibrationGroupSchema = enumeration([
   "context_truncation",
   "retrieval_degrade",
   "external_read",
+  "rule_review",
+  "memory_capture_failed",
 ]);
 const calibrationRateSchema = nullable(
   object({
@@ -1018,6 +1021,7 @@ const decisionChainSnapshotSchema = object({
         "context_truncation",
         "retrieval_degrade",
         "external_read",
+        "rule_review",
       ]),
       decidedAt: timestamp,
       outcome: boundedString(64),
@@ -1031,8 +1035,45 @@ const decisionChainSnapshotSchema = object({
       items: array(
         object({
           ruleId: boundedString(256),
+          revision: nullable(integer(0)),
+          current: booleanValue,
+          kind: enumeration([
+            "important_sender",
+            "public_domain",
+            "money_words",
+            "quiet_hours",
+            "amount_threshold",
+            "unknown",
+          ]),
           origin: nullable(enumeration(["owner_setting", "built_in"])),
-          document: nullable(boundedString(64)),
+          source: nullable(boundedString(256)),
+          status: nullable(enumeration(["active", "needs_review", "retired"])),
+          changedAt: nullable(timestamp),
+          memory: nullable(
+            object({
+              memoryId: machineString,
+              state: enumeration(["visible", "hidden", "missing"]),
+              text: nullable(boundedString(2000)),
+            }),
+          ),
+          wording: nullable(
+            object({
+              values: array(boundedString(256)),
+              quietHours: array(
+                object({
+                  days: array(integer(0)),
+                  start: boundedString(5),
+                  end: boundedString(5),
+                }),
+              ),
+              amount: nullable(object({ currency: boundedString(3), minor: integer(0) })),
+            }),
+          ),
+          tests: object({
+            state: enumeration(["passed", "failed", "none", "unavailable"]),
+            total: integer(0),
+            failedAt: nullable(integer(1)),
+          }),
           mailCount: integer(0),
         }),
       ),
@@ -1042,6 +1083,12 @@ const decisionChainSnapshotSchema = object({
         judged: nullable(integer(0)),
         related: nullable(integer(0)),
         relatedRead: decisionChainReadState,
+        summaries: nullable(
+          object({
+            count: integer(0),
+            read: enumeration(["off", "ok", "partial", "failed"]),
+          }),
+        ),
       }),
     ),
     memories: object({
@@ -1167,6 +1214,7 @@ const memoryOverviewSnapshotSchema = object({
         stance: nullable(boundedString(16)),
         history: array(
           object({
+            historyId: integer(1),
             kind: enumeration(MEMORY_HISTORY_KIND_NAMES),
             text: boundedString(2000),
             stance: nullable(boundedString(16)),
@@ -1241,6 +1289,7 @@ const memoryOverviewSnapshotSchema = object({
     profileUsage: object({
       used: integer(0),
       limit: integer(1),
+      pinned: integer(0),
       queued: array(machineString),
     }),
     profile: array(
@@ -1430,9 +1479,11 @@ const memoryMutationPayloadSchema = object({
     "recover",
     "pin",
     "unpin",
+    "restore_version",
   ]),
   expectedRevision: integer(0),
   contentRef: nullable(machineString),
+  historyId: nullable(integer(1)),
 });
 
 export const mutateMemoryCommandSchema = object({
@@ -1447,6 +1498,12 @@ export const mutateMemoryCommandSchema = object({
         throw new ContractValidationError(
           `${path}.contentRef`,
           "must be present only for a correction",
+        );
+      }
+      if ((payload.action === "restore_version") !== (payload.historyId !== null)) {
+        throw new ContractValidationError(
+          `${path}.historyId`,
+          "must be present only for restoring a version",
         );
       }
       return payload;

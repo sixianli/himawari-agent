@@ -80,6 +80,7 @@ import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invoca
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
 import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
+import { SqliteMemoryCaptureBacklogOperations } from "./sqlite-memory-capture-backlog-operations.ts";
 import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
 import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
 import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
@@ -358,6 +359,7 @@ export class SqliteDurableOperations {
   private readonly memory: SqliteMemoryOperations;
   private readonly memoryConsolidation: SqliteMemoryConsolidationOperations;
   private readonly memoryReminders: SqliteMemoryReminderOperations;
+  private readonly memoryCaptureBacklog: SqliteMemoryCaptureBacklogOperations;
   private readonly proactive: SqliteProactiveOperations;
   private readonly decisionLedger: SqliteDecisionLedgerOperations;
   private readonly museIntake: SqliteMuseIntakeOperations;
@@ -436,6 +438,11 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
     );
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
+    this.memoryCaptureBacklog = new SqliteMemoryCaptureBacklogOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.proactive = new SqliteProactiveOperations(database, fail, assertDiskHeadroom);
     this.decisionLedger = new SqliteDecisionLedgerOperations(database, fail, assertDiskHeadroom);
     this.museIntake = new SqliteMuseIntakeOperations(database, fail, assertDiskHeadroom);
@@ -563,6 +570,8 @@ export class SqliteDurableOperations {
       return this.memoryConsolidation.execute(operation, payload);
     if (operation.startsWith("memoryReminder."))
       return this.memoryReminders.execute(operation, payload);
+    if (operation.startsWith("memoryCaptureBacklog."))
+      return this.memoryCaptureBacklog.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
     if (operation.startsWith("decisionLedger."))
       return this.decisionLedger.execute(operation, payload);

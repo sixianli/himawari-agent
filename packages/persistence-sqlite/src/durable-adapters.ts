@@ -22,6 +22,7 @@ import type {
   MemoryEpisodeStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
+  MemoryCaptureBacklogPort,
   MemoryReminderStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
@@ -908,6 +909,7 @@ export class SqliteDurableAdapters {
       markUsed: (memoryIds, usedAt) => this.context.write("memory.markUsed", { memoryIds, usedAt }),
       appendHistory: (input) => this.context.write("memory.appendHistory", input),
       listHistory: (input) => this.context.read("memory.listHistory", input),
+      readHistory: (input) => this.context.read("memory.readHistory", input),
     });
   }
 
@@ -957,6 +959,15 @@ export class SqliteDurableAdapters {
       listImportBatches: (input) => this.context.read("memoryBook.listImportBatches", input),
       markImportUndone: (input) => this.context.write("memoryBook.markImportUndone", input),
       findOwnerMessages: (input) => this.context.read("memoryBook.findOwnerMessages", input),
+    });
+  }
+
+  memoryCaptureBacklog(): MemoryCaptureBacklogPort {
+    return Object.freeze<MemoryCaptureBacklogPort>({
+      enqueue: (entry) => this.context.write("memoryCaptureBacklog.enqueue", { entry }),
+      oldest: (input) => this.context.read("memoryCaptureBacklog.oldest", input),
+      recordAttempt: (input) => this.context.write("memoryCaptureBacklog.recordAttempt", input),
+      remove: (generationId) => this.context.write("memoryCaptureBacklog.remove", { generationId }),
     });
   }
 
@@ -1019,6 +1030,7 @@ export class SqliteDurableAdapters {
   decisionLedger(): DecisionLedgerPort {
     return Object.freeze<DecisionLedgerPort>({
       append: (input) => this.context.write("decisionLedger.append", input),
+      appendIfChanged: (input) => this.context.write("decisionLedger.appendIfChanged", input),
       list: (input) => this.context.read("decisionLedger.list", input),
       read: (input) => this.context.read("decisionLedger.read", input),
       rate: (input) => this.context.write("decisionLedger.rate", input),
@@ -1125,6 +1137,7 @@ export class SqliteDurableAdapters {
       listUnembedded: (input) => this.context.read("memoryEpisode.listUnembedded", input),
       attachEmbedding: (input) => this.context.write("memoryEpisode.attachEmbedding", input),
       listUnsummarized: (input) => this.context.read("memoryEpisode.listUnsummarized", input),
+      listDaySummaries: (input) => this.context.read("memoryEpisode.listDaySummaries", input),
     });
   }
 

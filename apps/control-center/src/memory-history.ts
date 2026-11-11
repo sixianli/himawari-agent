@@ -4,6 +4,7 @@ export type MemoryHistoryKind = MemoryItem["history"][number]["kind"];
 
 export interface MemoryHistoryNode {
   readonly key: string;
+  readonly historyId: number;
   readonly record: MemoryItem;
   readonly kind: MemoryHistoryKind;
   readonly text: string;
@@ -15,6 +16,7 @@ export interface MemoryHistoryNode {
   readonly change: number;
   readonly current: boolean;
   readonly restorable: boolean;
+  readonly versionRestorable: boolean;
 }
 
 export interface MemoryStanceChart {
@@ -29,6 +31,7 @@ function recordNodes(record: MemoryItem): MemoryItem["history"] {
     ? record.history
     : [
         {
+          historyId: 0,
           kind: "created",
           text: record.text,
           stance: record.stance,
@@ -68,10 +71,16 @@ export function memoryChain(
     if (entry.node.kind !== "reaffirmed") lastWording.set(entry.record.memoryId, position);
   });
   let change = -1;
+  const headCurrent = head.status === "active" && !head.supersededBy;
   return raw.map((entry, position) => {
     if (entry.node.kind !== "reaffirmed" || change < 0) change += 1;
+    const restorable =
+      entry.record !== head &&
+      entry.record.status === "active" &&
+      lastWording.get(entry.record.memoryId) === position;
     return {
       key: `${entry.record.memoryId}:${entry.index}`,
+      historyId: entry.node.historyId,
       record: entry.record,
       kind: entry.node.kind,
       text: entry.node.text,
@@ -82,10 +91,14 @@ export function memoryChain(
       at: entry.node.at,
       change,
       current: position === raw.length - 1,
-      restorable:
-        entry.record !== head &&
+      restorable,
+      versionRestorable:
+        headCurrent &&
         entry.record.status === "active" &&
-        lastWording.get(entry.record.memoryId) === position,
+        !restorable &&
+        entry.node.historyId > 0 &&
+        entry.node.kind !== "reaffirmed" &&
+        (entry.node.text !== head.text || entry.node.stance !== head.stance),
     };
   });
 }

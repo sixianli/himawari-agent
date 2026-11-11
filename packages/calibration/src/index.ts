@@ -22,6 +22,8 @@ export const CALIBRATION_GROUPS = [
   "context_truncation",
   "retrieval_degrade",
   "external_read",
+  "rule_review",
+  "memory_capture_failed",
 ] as const;
 export type CalibrationGroup = (typeof CALIBRATION_GROUPS)[number];
 
@@ -43,6 +45,8 @@ const APPLICABLE: Readonly<Record<CalibrationGroup, readonly CalibrationRating[]
   context_truncation: ["useful", "unneeded"],
   retrieval_degrade: ["useful", "unneeded"],
   external_read: ["useful", "unneeded"],
+  rule_review: ["useful", "unneeded"],
+  memory_capture_failed: ["useful", "missed"],
 };
 
 const GROUP_LABELS: Readonly<Record<CalibrationGroup, string>> = {
@@ -55,6 +59,8 @@ const GROUP_LABELS: Readonly<Record<CalibrationGroup, string>> = {
   context_truncation: "回答时没带上的旧内容",
   retrieval_degrade: "记忆搜索没生效",
   external_read: "外部程序读取记忆",
+  rule_review: "硬规则待重审",
+  memory_capture_failed: "记忆抽取失败",
 };
 
 const RATING_LABELS: Readonly<
@@ -69,6 +75,8 @@ const RATING_LABELS: Readonly<
   context_truncation: { useful: "做对了", unneeded: "不该做" },
   retrieval_degrade: { useful: "做对了", unneeded: "不该做" },
   external_read: { useful: "做对了", unneeded: "不该做" },
+  rule_review: { useful: "做对了", unneeded: "不该做" },
+  memory_capture_failed: { useful: "没漏掉什么", missed: "漏了该记的" },
 };
 
 export interface Proportion {
@@ -261,6 +269,12 @@ export function calibrationGroup(row: CalibrationDecisionRow): CalibrationGroup 
     return row.outcome === "silent" ? "proactive_silent" : "proactive_pushed";
   if (row.kind === "memory_candidate") {
     if (row.outcome === "discarded") return "memory_skipped";
+    if (
+      row.outcome === "capture_retrying" ||
+      row.outcome === "capture_queued" ||
+      row.outcome === "capture_gave_up"
+    )
+      return "memory_capture_failed";
     if (row.outcome === "kept") return "memory_kept";
     return "memory_pending";
   }
@@ -982,3 +996,4 @@ export function sameMeasurement(left: HistoryRecord, right: HistoryRecord): bool
     JSON.stringify(left.implicit) === JSON.stringify(right.implicit)
   );
 }
+export * from "./thresholds.ts";

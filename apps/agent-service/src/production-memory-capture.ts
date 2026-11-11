@@ -1,12 +1,17 @@
+import { createHash } from "node:crypto";
 import {
   AutomaticMemoryService,
   type ClockPort,
   type CommittedRunMemoryInput,
   type DataClassification,
+  DEFAULT_MEMORY_ATTRIBUTES,
   type DecisionLedgerPort,
   type ExtractedMemoryCandidate,
   type IncrementalMemoryProductPort,
+  MEMORY_CAPTURE_BACKLOG_MAX_ATTEMPTS,
   MEMORY_CATEGORIES,
+  type MemoryCaptureBacklogPort,
+  type MemoryCaptureFailureOutcome,
   type MemoryBookStorePort,
   type MemoryCategory,
   type MemoryExtractionAuditRecord,
@@ -39,6 +44,10 @@ import {
 } from "@himawari-agent/sensitive-capture";
 
 type MemoryId = NonNullable<ExtractedMemoryCandidate["existingMemoryId"]>;
+type ProductThreadMessage = Awaited<
+  ReturnType<ThreadRepositoryPort["readCommittedMessagesByIds"]>
+>[number];
+type MessageId = ProductThreadMessage["id"];
 const createMemoryId = (value: string) => value as MemoryId;
 const createMemoryGenerationId = (value: string) =>
   value as CommittedRunMemoryInput["generationId"];
@@ -97,6 +106,7 @@ export interface ExistingMemoryText {
   readonly text: string;
   readonly stance?: string | null;
   readonly tentative?: boolean;
+  readonly category?: MemoryCategory;
 }
 
 export interface MemoryCaptureContext {
@@ -251,7 +261,10 @@ export function parseMemoryCandidates(input: {
   readonly sourceRef: string;
   readonly sourceClassification: DataClassification;
   readonly existingIds: ReadonlySet<string>;
-  readonly tentativeTexts?: ReadonlyMap<string, string>;
+  readonly tentativeMemories?: ReadonlyMap<
+    string,
+    { readonly text: string; readonly category: MemoryCategory }
+  >;
   readonly ownerMessage?: string;
   readonly sentAt?: string;
   readonly timeZone?: string;
@@ -344,7 +357,7 @@ export function parseMemoryCandidates(input: {
       input.ownerMessage !== undefined && quoteFromOwnerMessage(quote, input.ownerMessage);
     const confirmsTentative =
       existing !== null &&
-      input.tentativeTexts?.has(existing) === true &&
+      input.tentativeMemories?.has(existing) === true &&
       (decision === "unchanged" || decision === "update" || decision === "merge");
     const evidenceRejected =
       (input.ownerMessage !== undefined &&
@@ -353,7 +366,7 @@ export function parseMemoryCandidates(input: {
         !evidenceVerified) ||
       (confirmsTentative &&
         (!evidenceVerified ||
-          !quoteRelatesToMemory(quote, [input.tentativeTexts?.get(existing) ?? ""])));
+          !quoteRelatesToMemory(quote, [input.tentativeMemories?.get(existing)?.text ?? ""])));
     const category = (
       typeof value["category"] === "string" && CATEGORIES.has(value["category"])
         ? value["category"]
@@ -463,6 +476,14 @@ export function parseMemoryCandidates(input: {
       ...(reminder ? { reminder } : {}),
       ...(people.length ? { people } : {}),
       ...(personLinks.length ? { personLinks } : {}),
+      ...(confirmsTentative
+        ? {
+            confirmsTentativeCategory:
+              decision === "unchanged"
+                ? (input.tentativeMemories?.get(existing)?.category ?? category)
+                : category,
+          }
+        : {}),
       ...(dataClassification === "sensitive"
         ? {
             sensitiveTopic: (typeof value["topic"] === "string" && TOPICS.has(value["topic"])
@@ -552,15 +573,7 @@ export function protectedMemoryCandidates(
 export function createProductionAutomaticMemory(
   options: Pick<
     ProductionMemoryCaptureOptions,
-    | "product"
-    | "approvals"
-    | "payloads"
-    | "protector"
-    | "clock"
-    | "reminders"
-    | "book"
-    | "ledger"
-    | "automaticConfidencePermille"
+    "product" | "approvals" | "payloads" | "protector" | "clock" | "reminders" | "book" | "ledger"
   > & {
     readonly extract: () => Promise<readonly ExtractedMemoryCandidate[]>;
     readonly readSourceText: (sourceRef: string) => Promise<string>;
@@ -569,9 +582,6 @@ export function createProductionAutomaticMemory(
 ): AutomaticMemoryService {
   return new AutomaticMemoryService({
     extraction: { extract: options.extract },
-    ...(options.automaticConfidencePermille === undefined
-      ? {}
-      : { automaticConfidencePermille: options.automaticConfidencePermille }),
     product: options.product,
     content: {
       store: async (stored) => {
@@ -629,9 +639,14 @@ export function createProductionAutomaticMemory(
   });
 }
 
+export interface MemoryCaptureCall {
+  readonly invocationId: string;
+  readonly retryToolCall: boolean;
+}
+
 export interface ProductionMemoryCaptureOptions {
   readonly sources: RunExecutionSourcePort;
-  readonly threads: Pick<ThreadRepositoryPort, "read" | "listMessages">;
+  readonly threads: Pick<ThreadRepositoryPort, "listMessages" | "readCommittedMessagesByIds">;
   readonly generations: Pick<ThreadDistillationStatePort, "request">;
   readonly state: Pick<ProductMemoryStatePort, "listActive" | "readMany">;
   readonly relevantMemoryIds?: (runId: RuntimeRequest["runId"]) => readonly MemoryId[];
@@ -652,16 +667,72 @@ export interface ProductionMemoryCaptureOptions {
     request: RuntimeRequest,
     prompt: string,
     onAdmitted: () => void,
+    call: MemoryCaptureCall,
   ) => Promise<string>;
+  readonly backlog?: MemoryCaptureBacklogPort;
   readonly ledger?: DecisionLedgerPort;
-  readonly automaticConfidencePermille?: number;
   readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   readonly onFailure: (error: unknown) => void;
+}
+
+export const SAME_TURN_RETRYABLE_CAPTURE_ERRORS: ReadonlySet<string> = new Set([
+  "AI_GATEWAY_TOOL_CALL_UNSUPPORTED",
+  "AI_GATEWAY_REQUEST_TIMEOUT",
+  "AI_GATEWAY_RATE_LIMITED",
+  "AI_GATEWAY_PROVIDER_UNAVAILABLE",
+  "AI_GATEWAY_EMPTY_RESPONSE",
+  "PI_MODEL_STREAM_ERROR",
+  "MEMORY_CAPTURE_RESPONSE_INVALID",
+  "MEMORY_CAPTURE_RESPONSE_INCOMPLETE",
+  "PORT_CONFLICT",
+]);
+
+const REPLAY_NOT_ATTEMPTED_ERRORS: ReadonlySet<string> = new Set([
+  "MEMORY_CAPTURE_ADMISSION_UNAVAILABLE",
+  "MEMORY_CAPTURE_MODEL_UNAVAILABLE",
+]);
+
+const UNKNOWN_CAPTURE_ERROR = "MEMORY_CAPTURE_FAILED";
+
+export function captureErrorCode(error: unknown): string {
+  const code =
+    error !== null && typeof error === "object" && "code" in error && typeof error.code === "string"
+      ? error.code
+      : error instanceof Error
+        ? error.message
+        : "";
+  return /^[A-Z][A-Z0-9_]{0,127}$/.test(code) ? code : UNKNOWN_CAPTURE_ERROR;
+}
+
+function captureLedgerId(key: string): string {
+  return `ledger:${createHash("sha256").update(key).digest("hex").slice(0, 40)}`;
+}
+
+interface CapturePlan {
+  readonly request: RuntimeRequest;
+  readonly sourceRunId: RuntimeRequest["runId"];
+  readonly threadId: NonNullable<RuntimeRequest["threadId"]>;
+  readonly generationId: CommittedRunMemoryInput["generationId"];
+  readonly message: string;
+  readonly owner: ProductThreadMessage;
+  readonly prompt: string;
+  readonly existing: readonly ExistingMemoryText[];
+  readonly subCategories: Record<string, string[]>;
+  readonly people: readonly { readonly id: string }[];
+  readonly committedAt: string | null;
+  readonly input: Omit<
+    CommittedRunMemoryInput,
+    "explicitRememberCandidateOrdinal" | "rejectedCandidates"
+  >;
+  readonly audit: (outcome: MemoryExtractionAuditRecord["outcome"]) => void;
+  tag?: (kind: EgressPlaceholderKind, value: string) => string;
 }
 
 export class ProductionMemoryCapture {
   readonly #pending = new Map<string, { work: Promise<void>; admitted: Promise<void> }>();
   readonly #captured = new Set<string>();
+  readonly #busy = new Set<string>();
+  readonly #settled = new Set<string>();
   #stopping = false;
   private readonly options: ProductionMemoryCaptureOptions;
 
@@ -685,8 +756,19 @@ export class ProductionMemoryCapture {
     const admitted = new Promise<void>((resolve) => {
       onAdmitted = resolve;
     });
-    const work = this.#capture(request, onAdmitted)
+    let onCaptureAdmitted = () => {};
+    const captureAdmitted = new Promise<void>((resolve) => {
+      onCaptureAdmitted = resolve;
+    });
+    const capture = this.#captureTurn(request, onCaptureAdmitted)
       .catch(this.options.onFailure)
+      .finally(onCaptureAdmitted);
+    const replay = captureAdmitted
+      .then(() => this.#replayOne(request, onAdmitted))
+      .catch(this.options.onFailure)
+      .finally(onAdmitted);
+    const work = Promise.all([capture, replay])
+      .then(() => undefined)
       .finally(() => {
         onAdmitted();
         this.#pending.delete(id);
@@ -712,31 +794,205 @@ export class ProductionMemoryCapture {
     );
   }
 
-  async #capture(request: RuntimeRequest, onAdmitted: () => void): Promise<void> {
-    const { ownerId, agentId, runId, threadId } = request;
-    if (!threadId) return;
-    const source = await this.options.sources.read(runId);
-    if (!source || source.sourceType !== "user_message" || source.threadId !== threadId) return;
-    if (
-      this.options.book &&
-      (await this.options.book.readSettings({ ownerId, agentId })).capturePaused
-    )
+  async #paused(request: RuntimeRequest): Promise<boolean> {
+    return (
+      this.options.book !== undefined &&
+      (await this.options.book.readSettings({ ownerId: request.ownerId, agentId: request.agentId }))
+        .capturePaused
+    );
+  }
+
+  async #captureTurn(request: RuntimeRequest, onAdmitted: () => void): Promise<void> {
+    if (!request.threadId) return;
+    const plan = await this.#plan(request, request.runId, request.threadId);
+    if (!plan) return;
+    const { backlog } = this.options;
+    let parsed: ParsedMemoryCandidates;
+    try {
+      parsed = await this.#prepare(plan, onAdmitted, {
+        invocationId: `memory-capture:${request.runId}`,
+        retryToolCall: backlog === undefined,
+      });
+    } catch (first) {
+      if (!backlog) throw first;
+      this.#busy.add(plan.generationId);
+      try {
+        const retried = await this.#retryTurn(plan, request, backlog, first);
+        if (retried) await this.#save(plan, retried);
+      } finally {
+        this.#busy.delete(plan.generationId);
+      }
       return;
+    }
+    await this.#save(plan, parsed);
+  }
+
+  async #retryTurn(
+    plan: CapturePlan,
+    request: RuntimeRequest,
+    backlog: MemoryCaptureBacklogPort,
+    first: unknown,
+  ): Promise<ParsedMemoryCandidates | undefined> {
+    const queue = (lastErrorCode: string) =>
+      backlog.enqueue({
+        generationId: plan.generationId,
+        ownerId: request.ownerId,
+        agentId: request.agentId,
+        threadId: plan.threadId,
+        sourceRunId: plan.sourceRunId,
+        lastErrorCode,
+        createdAt: this.options.clock.now(),
+      });
+    const firstCode = captureErrorCode(first);
+    await queue(firstCode);
+    this.options.onFailure(first);
+    if (!SAME_TURN_RETRYABLE_CAPTURE_ERRORS.has(firstCode)) {
+      await this.#recordFailure(plan, "capture_queued", firstCode, "turn:1");
+      return undefined;
+    }
+    await this.#recordFailure(plan, "capture_retrying", firstCode, "turn:1");
+    try {
+      return await this.#prepare(plan, () => {}, {
+        invocationId: `memory-capture:${request.runId}:retry`,
+        retryToolCall: false,
+      });
+    } catch (second) {
+      const secondCode = captureErrorCode(second);
+      await queue(secondCode);
+      await this.#recordFailure(plan, "capture_queued", secondCode, "turn:2");
+      throw second;
+    }
+  }
+
+  async #save(plan: CapturePlan, parsed: ParsedMemoryCandidates): Promise<void> {
+    const { backlog } = this.options;
+    try {
+      await this.#commit(plan, parsed);
+    } catch (error) {
+      if (!backlog) throw error;
+      await this.#recordFailure(plan, "capture_gave_up", captureErrorCode(error), "save").catch(
+        this.options.onFailure,
+      );
+      await this.#settle(plan.generationId);
+      throw error;
+    }
+    if (backlog) await this.#settle(plan.generationId);
+  }
+
+  async #settle(generationId: string): Promise<void> {
+    try {
+      await this.options.backlog?.remove(generationId);
+      this.#settled.delete(generationId);
+    } catch (error) {
+      this.#settled.add(generationId);
+      if (this.#settled.size > 1000) {
+        const oldest = this.#settled.values().next().value;
+        if (oldest !== undefined) this.#settled.delete(oldest);
+      }
+      this.options.onFailure(error);
+    }
+  }
+
+  async #replayOne(request: RuntimeRequest, onAdmitted: () => void): Promise<void> {
+    const { backlog } = this.options;
+    if (!backlog || this.#stopping || (await this.#paused(request))) return;
+    const entry = await backlog.oldest({
+      ownerId: request.ownerId,
+      agentId: request.agentId,
+      excludeGenerationId: `memory-capture:${request.runId}`,
+    });
+    if (!entry || this.#busy.has(entry.generationId)) return;
+    this.#busy.add(entry.generationId);
+    try {
+      if (this.#settled.has(entry.generationId)) {
+        await backlog.remove(entry.generationId);
+        this.#settled.delete(entry.generationId);
+        return;
+      }
+      const plan = await this.#plan(request, entry.sourceRunId, entry.threadId);
+      if (!plan || plan.generationId !== entry.generationId) {
+        await backlog.remove(entry.generationId);
+        return;
+      }
+      let parsed: ParsedMemoryCandidates;
+      try {
+        parsed = await this.#prepare(plan, onAdmitted, {
+          invocationId: `memory-capture:${request.runId}:backlog`,
+          retryToolCall: false,
+        });
+      } catch (error) {
+        const code = captureErrorCode(error);
+        if (REPLAY_NOT_ATTEMPTED_ERRORS.has(code)) throw error;
+        const attempts = await backlog.recordAttempt({
+          generationId: entry.generationId,
+          errorCode: code,
+          updatedAt: this.options.clock.now(),
+        });
+        const gaveUp = attempts >= MEMORY_CAPTURE_BACKLOG_MAX_ATTEMPTS;
+        if (gaveUp) await backlog.remove(entry.generationId);
+        await this.#recordFailure(
+          plan,
+          gaveUp ? "capture_gave_up" : "capture_queued",
+          code,
+          `backlog:${attempts}`,
+        );
+        throw error;
+      }
+      await this.#save(plan, parsed);
+    } finally {
+      this.#busy.delete(entry.generationId);
+    }
+  }
+
+  async #recordFailure(
+    plan: CapturePlan,
+    outcome: MemoryCaptureFailureOutcome,
+    errorCode: string,
+    attempt: string,
+  ): Promise<void> {
+    if (!this.options.ledger) return;
+    await this.options.ledger.append({
+      id: captureLedgerId(`${plan.generationId}:${outcome}:${attempt}`),
+      ownerId: plan.request.ownerId,
+      agentId: plan.request.agentId,
+      kind: "memory_candidate",
+      decidedAt: this.options.clock.now(),
+      outcome,
+      reasonCode: errorCode.slice(0, 64),
+      subjectRef: plan.generationId,
+      inputs: { memoryIds: [], ruleIds: [] },
+      reasonRef: null,
+      contentRef: null,
+      costMicros: 0,
+      durationMs: 0,
+    });
+  }
+
+  async #plan(
+    request: RuntimeRequest,
+    sourceRunId: RuntimeRequest["runId"],
+    threadId: NonNullable<RuntimeRequest["threadId"]>,
+  ): Promise<CapturePlan | undefined> {
+    const { ownerId, agentId } = request;
+    const source = await this.options.sources.read(sourceRunId);
+    if (!source || source.sourceType !== "user_message" || source.threadId !== threadId) return;
+    if (await this.#paused(request)) return;
     const message = await this.#readText(source.payloadRef, ownerId, agentId);
     if (!message || message.trim().length < 2) return;
-    const thread = await this.options.threads.read(ownerId, agentId, threadId);
-    if (!thread) return;
+    const [owner] = await this.options.threads.readCommittedMessagesByIds({
+      ownerId,
+      agentId,
+      threadId,
+      messageIds: [source.sourceId as MessageId],
+    });
+    if (!owner || owner.role !== "owner" || owner.contentRef !== source.payloadRef) return;
     const messages = await this.options.threads.listMessages(
       ownerId,
       agentId,
       threadId,
-      Math.max(0, thread.messageWatermark - 50),
+      Math.max(0, owner.sequence - 51),
       50,
     );
-    const owner = messages.find(
-      (item) => item.role === "owner" && item.contentRef === source.payloadRef,
-    );
-    if (!owner) return;
     const allowed = (classification: DataClassification) =>
       CLASSIFICATION_RANK[classification] <= CLASSIFICATION_RANK[source.dataClassification];
     const previous = messages
@@ -752,7 +1008,7 @@ export class ProductionMemoryCapture {
       ? ((await this.#readText(previous.contentRef, ownerId, agentId).catch(() => undefined)) ??
         null)
       : null;
-    const relevantIds = (this.options.relevantMemoryIds?.(runId) ?? []).slice(
+    const relevantIds = (this.options.relevantMemoryIds?.(sourceRunId) ?? []).slice(
       0,
       MAXIMUM_RELEVANT_MEMORIES,
     );
@@ -781,6 +1037,7 @@ export class ProductionMemoryCapture {
           text,
           stance: memory.attributes?.stance ?? null,
           tentative: memory.attributes?.tentative === true,
+          category: memory.attributes?.category ?? DEFAULT_MEMORY_ATTRIBUTES.category,
         });
     }
     const subCategories: Record<string, string[]> = {};
@@ -793,11 +1050,11 @@ export class ProductionMemoryCapture {
       .toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt))
       .slice(0, MAXIMUM_KNOWN_PEOPLE)
       .map(({ id, name, aliases, relation }) => ({ id, name, aliases, relation }));
-    const generationId = createMemoryGenerationId(`memory-capture:${runId}`);
+    const generationId = createMemoryGenerationId(`memory-capture:${sourceRunId}`);
     const input = {
       ownerId,
       agentId,
-      runId,
+      runId: sourceRunId,
       threadId,
       generationId,
       sourceRef: source.payloadRef,
@@ -821,68 +1078,90 @@ export class ProductionMemoryCapture {
         secretFindings: [],
         occurredAt: this.options.clock.now(),
       });
-    let parsed: ParsedMemoryCandidates = {
-      candidates: [],
-      explicitOrdinal: null,
-      unverifiedEvidence: 0,
-      rejectedCandidates: [],
-      invalidCandidates: 0,
-      returnedNone: false,
-    };
-    try {
-      await this.options.assertActive();
-      const prompt = memoryCapturePrompt(
+    return {
+      request: { ...request, dataClassification: source.dataClassification },
+      sourceRunId,
+      threadId,
+      generationId,
+      message,
+      owner,
+      prompt: memoryCapturePrompt(
         message,
         existing,
         previousAssistantMessage,
         owner.committedAt,
         this.options.timeZone ?? "UTC",
         { subCategories, people },
-      );
-      const tag = await this.options.externalTag();
-      const output = await this.options.generate(
-        { ...request, dataClassification: source.dataClassification },
-        prompt,
-        onAdmitted,
-      );
-      const table = placeholderTable(prompt, tag, {
+      ),
+      existing,
+      subCategories,
+      people,
+      committedAt: owner.committedAt,
+      input,
+      audit,
+    };
+  }
+
+  async #extract(
+    plan: CapturePlan,
+    onAdmitted: () => void,
+    call: MemoryCaptureCall,
+  ): Promise<ParsedMemoryCandidates> {
+    try {
+      await this.options.assertActive();
+      plan.tag ??= await this.options.externalTag();
+      const output = await this.options.generate(plan.request, plan.prompt, onAdmitted, call);
+      const table = placeholderTable(plan.prompt, plan.tag, {
         trusted: TRUSTED_PROMPT_TEXTS,
         jsonEmbedded: true,
       });
-      parsed = parseMemoryCandidates({
+      const { existing } = plan;
+      return parseMemoryCandidates({
         output,
-        sourceRef: source.payloadRef,
-        sourceClassification: source.dataClassification,
+        sourceRef: plan.input.sourceRef,
+        sourceClassification: plan.input.sourceClassification,
         existingIds: new Set(existing.map(({ id }) => id)),
-        tentativeTexts: new Map(
-          existing.filter(({ tentative }) => tentative).map(({ id, text }) => [id, text]),
+        tentativeMemories: new Map(
+          existing
+            .filter(({ tentative }) => tentative)
+            .map(({ id, text, category }) => [
+              id,
+              { text, category: category ?? DEFAULT_MEMORY_ATTRIBUTES.category },
+            ]),
         ),
-        ownerMessage: message,
-        ...(owner.committedAt ? { sentAt: owner.committedAt } : {}),
+        ownerMessage: plan.message,
+        ...(plan.committedAt ? { sentAt: plan.committedAt } : {}),
         timeZone: this.options.timeZone ?? "UTC",
-        subCategories,
-        knownPersonIds: new Set(people.map(({ id }) => id)),
+        subCategories: plan.subCategories,
+        knownPersonIds: new Set(plan.people.map(({ id }) => id)),
         restore: (text: string) => restorePlaceholders(text, table),
       });
     } catch (error) {
-      audit("extraction_failed");
+      plan.audit("extraction_failed");
       throw error;
     }
-    for (let index = 0; index < parsed.unverifiedEvidence; index += 1) audit("evidence_unverified");
-    for (let index = 0; index < parsed.invalidCandidates; index += 1) audit("candidate_invalid");
-    if (parsed.returnedNone) audit("nothing_to_remember");
-    if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) return;
+  }
+
+  async #prepare(
+    plan: CapturePlan,
+    onAdmitted: () => void,
+    call: MemoryCaptureCall,
+  ): Promise<ParsedMemoryCandidates> {
+    const parsed = await this.#extract(plan, onAdmitted, call);
+    const { owner } = plan;
+    const { ownerId, agentId } = plan.request;
+    if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) return parsed;
     await this.options.assertActive();
     if (parsed.candidates.length > 0)
       await this.options.generations.request({
-        jobId: createCheckpointJobId(`checkpoint:memory-capture:${runId}`),
-        generationId,
+        jobId: createCheckpointJobId(`checkpoint:memory-capture:${plan.sourceRunId}`),
+        generationId: plan.generationId,
         ownerId,
         agentId,
-        threadId,
+        threadId: plan.threadId,
         sourceWatermark: owner.sequence,
         policyVersion: MEMORY_CAPTURE_POLICY_VERSION,
-        modelDescriptorRef: request.modelRef,
+        modelDescriptorRef: plan.request.modelRef,
         trigger: "controlled_idle",
         summaryRef: null,
         summaryClassification: null,
@@ -903,10 +1182,19 @@ export class ProductionMemoryCapture {
         requestedAt: this.options.clock.now(),
         errorCode: null,
       });
+    return parsed;
+  }
+
+  async #commit(plan: CapturePlan, parsed: ParsedMemoryCandidates): Promise<void> {
+    const { audit, input } = plan;
+    for (let index = 0; index < parsed.unverifiedEvidence; index += 1) audit("evidence_unverified");
+    for (let index = 0; index < parsed.invalidCandidates; index += 1) audit("candidate_invalid");
+    if (parsed.returnedNone) audit("nothing_to_remember");
+    if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) return;
     const service = createProductionAutomaticMemory({
       ...this.options,
       extract: async () => parsed.candidates,
-      readSourceText: async () => message,
+      readSourceText: async () => plan.message,
       onAudit: this.options.onAudit,
     });
     await service.processCommittedRun({

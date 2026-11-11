@@ -2,9 +2,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  ContextFormationService,
+  DEFAULT_MEMORY_ATTRIBUTES,
   type DecisionKind,
   type DecisionLedgerWrite,
   DurableMemoryService,
+  type MemoryCategory,
+  OwnerProfileService,
+  PROFILE_BUDGET_EXCEEDED,
+  PROFILE_PINNED_OVER_BUDGET,
+  SessionTraceRecorder,
   type MemoryContentPort,
   type MemoryProviderProjectionPort,
   type ProductMemoryRecord,
@@ -14,6 +21,8 @@ import {
   createMemoryGenerationId,
   createMemoryId,
   createOwnerId,
+  createRunId,
+  createSessionId,
   createThreadId,
 } from "@himawari-agent/domain";
 import { type Embedder, HybridMemoryProvider } from "@himawari-agent/memory-engine";
@@ -23,6 +32,7 @@ import {
   openQualifiedDatabase,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
+import { createReferenceAdapterSet, ManualClock } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { retrievalDegradeRecorder } from "../../apps/agent-service/src/production-decision-ledger.js";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
@@ -70,6 +80,75 @@ function ledgerWrite(
     costMicros: 0,
     durationMs: 0,
     ...overrides,
+  };
+}
+
+const PROFILE_TEXT: Record<string, string> = {
+  "memory-rule-long": "回答时先给结论再给理由，涉及金额一律写到日元个位并注明是否含税和手续费",
+  "memory-pin-name": "主人叫 Andy",
+  "memory-pin-tea": "主人只喝无糖绿茶",
+  "memory-fact-city": "主人住在东京",
+  "memory-fact-job": "主人在找 AI Agent 工程师的工作",
+};
+
+function profileMemory(
+  id: string,
+  category: MemoryCategory,
+  importancePermille: number,
+): ProductMemoryRecord {
+  return {
+    id: createMemoryId(id),
+    ...scope,
+    revision: 1,
+    status: "active",
+    contentRef: `payload-${id}`,
+    dataClassification: "private",
+    sourceThreadId: null,
+    sourceRefs: [`message-${id}`],
+    inference: false,
+    confidencePermille: 950,
+    policyVersion: "memory-capture:v2",
+    providerRecordId: null,
+    lastUsedAt: null,
+    updatedAt: T0,
+    attributes: { ...DEFAULT_MEMORY_ATTRIBUTES, category, importancePermille, validTo: null },
+  };
+}
+
+const PROFILE_RECORDS = [
+  profileMemory("memory-rule-long", "rule", 900),
+  profileMemory("memory-pin-name", "identity", 300),
+  profileMemory("memory-pin-tea", "preference", 300),
+  profileMemory("memory-fact-city", "identity", 800),
+  profileMemory("memory-fact-job", "goal", 700),
+];
+
+function formationRequest(round: number) {
+  return {
+    ...scope,
+    sessionId: createSessionId("session-ledger"),
+    threadId: THREAD_ID,
+    runId: createRunId(`run-ledger-${round}`),
+    trigger: {
+      id: `trigger-${round}`,
+      sourceType: "user_message" as const,
+      payloadRef: `payload-trigger-${round}`,
+      occurredAt: T0,
+    },
+    threadMessages: [],
+    sourceWatermark: null,
+    policyVersion: "context-policy-v1",
+    policies: [],
+    memoryQueryRef: `payload-memory-query-${round}`,
+    memoryQueryTerms: ["tea"],
+    memoryLimit: 5,
+    maxSelectedMemories: 5,
+    capabilities: [],
+    correlationId: `correlation-${round}`,
+    causationId: `cause-${round}`,
+    parentEventId: null,
+    actorId: "run-coordinator",
+    dataClassification: "private" as const,
   };
 }
 
@@ -181,6 +260,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
         ["context_truncation", "truncated"],
         ["retrieval_degrade", "degraded"],
         ["external_read", "read"],
+        ["rule_review", "needs_review"],
       ];
       for (const [index, [kind, outcome]] of rows.entries())
         await ledger.append(
@@ -197,7 +277,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           }),
         );
       const all = await list();
-      expect(all).toHaveLength(5);
+      expect(all).toHaveLength(6);
       for (const [index, [kind, outcome]] of rows.entries()) {
         expect((await list(kind))[0]).toEqual({
           id: `row-${index}`,
@@ -223,6 +303,13 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
             relatedRead: "off",
             relatedStats: { requests: 0, messages: 0, characters: 0, durationMs: 0 },
             relatedFailedSteps: [],
+            summaryInjected: false,
+            summaryIds: [],
+            summaryDays: [],
+            summaryCharacters: 0,
+            summaryRead: "off",
+            summaryGenerated: 0,
+            profileBudget: null,
           },
           reasonRef: "payload-2",
           contentRef: null,
@@ -1015,6 +1102,218 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
       ).toEqual(["gmail-check"]);
       await proactive.clearRecords(scope);
       expect((await list()).map(({ id }) => id)).toEqual(["keep-me"]);
+    } finally {
+      await repository.close();
+    }
+  });
+  function profileFormation(
+    repository: SqliteProductStateRepository,
+    settings: { budget: number; pins: Map<string, boolean> },
+    ledger = repository.decisionLedger(),
+  ) {
+    const clock = new ManualClock(T0);
+    const adapters = createReferenceAdapterSet({ scope, clock });
+    const profile = new OwnerProfileService({
+      state: { listActive: async () => PROFILE_RECORDS },
+      pins: {
+        listProfilePins: async () =>
+          [...settings.pins].map(([memoryId, pinned]) => ({
+            memoryId: createMemoryId(memoryId),
+            pinned,
+            updatedAt: T0,
+          })),
+      },
+      readText: async (record) => PROFILE_TEXT[record.id],
+      storeText: async () => {},
+      digest: (text) => `digest-${text.length}`,
+      get characterBudget() {
+        return settings.budget;
+      },
+    });
+    const service = new ContextFormationService({
+      memory: adapters.memory,
+      trace: new SessionTraceRecorder({
+        trace: adapters.trace,
+        artifacts: adapters.runPayloadArtifacts,
+        protector: adapters.payloadProtector,
+        audit: adapters.audit,
+        clock,
+        ids: adapters.ids,
+      }),
+      artifacts: adapters.runPayloadArtifacts,
+      payloads: adapters.payload,
+      protector: adapters.payloadProtector,
+      clock,
+      ids: adapters.ids,
+      profile,
+      ledger,
+    });
+    let round = 0;
+    return {
+      profile,
+      form: async () => {
+        round += 1;
+        clock.advance(1000);
+        return service.form(formationRequest(round));
+      },
+    };
+  }
+
+  const profileRows = async (list: Awaited<ReturnType<typeof fixture>>["list"]) =>
+    (await list("context_truncation")).filter(({ reasonCode }) =>
+      ([PROFILE_BUDGET_EXCEEDED, PROFILE_PINNED_OVER_BUDGET] as string[]).includes(reasonCode),
+    );
+
+  it("[P2-5] records an overlong profile once per set of dropped memories and never drops a pinned one", async () => {
+    const { repository, list } = await fixture();
+    try {
+      const settings = {
+        budget: 70,
+        pins: new Map([
+          ["memory-pin-name", true],
+          ["memory-pin-tea", true],
+        ]),
+      };
+      const { profile, form } = profileFormation(repository, settings);
+      const request = { ...scope, maxClassification: "private" as const, now: T0 };
+      const first = await profile.outline(request);
+      expect(first.usage.queued).toContain("memory-rule-long");
+      expect(first.usage.used).toBeLessThanOrEqual(70);
+      await form();
+      const formed = await profile.compose(request);
+      expect(formed.memoryIds).toEqual(
+        expect.arrayContaining(["memory-pin-name", "memory-pin-tea"]),
+      );
+      const rows = await profileRows(list);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        kind: "context_truncation",
+        outcome: "truncated",
+        reasonCode: PROFILE_BUDGET_EXCEEDED,
+        subjectRef: "run-ledger-1",
+        inputs: {
+          memoryIds: [...first.usage.queued].sort(),
+          ruleIds: [],
+          profileBudget: { limit: 70, used: first.usage.used, pinned: first.usage.pinned },
+        },
+        contentRef: null,
+        reasonRef: null,
+      });
+      expect(JSON.stringify(rows[0])).not.toContain(PROFILE_TEXT["memory-rule-long"]);
+
+      await form();
+      expect(await profileRows(list)).toHaveLength(1);
+
+      settings.pins.set("memory-fact-job", true);
+      const changed = await profile.outline(request);
+      expect(changed.usage.queued).not.toEqual(first.usage.queued);
+      await form();
+      const after = await profileRows(list);
+      expect(after).toHaveLength(2);
+      expect(after[0]?.inputs.memoryIds).toEqual([...changed.usage.queued].sort());
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[P2-5] keeps every pinned memory when they alone exceed the limit and records that once", async () => {
+    const { repository, list } = await fixture();
+    try {
+      const settings = {
+        budget: 20,
+        pins: new Map([
+          ["memory-pin-name", true],
+          ["memory-pin-tea", true],
+          ["memory-fact-job", true],
+        ]),
+      };
+      const { profile, form } = profileFormation(repository, settings);
+      const request = { ...scope, maxClassification: "private" as const, now: T0 };
+      const outline = await profile.outline(request);
+      expect(outline.usage.pinned).toBeGreaterThan(20);
+      expect(outline.usage.used).toBe(outline.usage.pinned);
+      const composed = await profile.compose(request);
+      expect(composed.memoryIds).toEqual(
+        expect.arrayContaining(["memory-pin-name", "memory-pin-tea", "memory-fact-job"]),
+      );
+      expect(composed.memoryIds).not.toContain("memory-rule-long");
+      await form();
+      await form();
+      const rows = await profileRows(list);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        reasonCode: PROFILE_PINNED_OVER_BUDGET,
+        inputs: {
+          memoryIds: ["memory-fact-city", "memory-rule-long"],
+          profileBudget: { limit: 20, used: outline.usage.pinned, pinned: outline.usage.pinned },
+        },
+      });
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[P2-5] compares with the record written last, even when an earlier one sorts later by time or id", async () => {
+    const { repository, list } = await fixture();
+    try {
+      const ledger = repository.decisionLedger();
+      const truncation = (id: string, memoryIds: readonly string[]) => ({
+        write: ledgerWrite(id, {
+          kind: "context_truncation",
+          outcome: "truncated",
+          reasonCode: PROFILE_BUDGET_EXCEEDED,
+          subjectRef: null,
+          contentRef: null,
+          inputs: { memoryIds, ruleIds: [], profileBudget: { limit: 10, used: 9, pinned: 0 } },
+        }),
+        reasonCodes: [PROFILE_BUDGET_EXCEEDED, PROFILE_PINNED_OVER_BUDGET],
+      });
+      expect(await ledger.appendIfChanged(truncation("ledger-z", ["memory-a"]))).toBe(true);
+      expect(await ledger.appendIfChanged(truncation("ledger-a", ["memory-b"]))).toBe(true);
+      expect(await ledger.appendIfChanged(truncation("ledger-b", ["memory-b"]))).toBe(false);
+      expect(await ledger.appendIfChanged(truncation("ledger-c", ["memory-a"]))).toBe(true);
+      expect((await profileRows(list)).map(({ id }) => id).sort()).toEqual([
+        "ledger-a",
+        "ledger-c",
+        "ledger-z",
+      ]);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[P2-5] still forms the context when the truncation record cannot be written", async () => {
+    const { repository, list } = await fixture();
+    try {
+      const { form } = profileFormation(
+        repository,
+        { budget: 70, pins: new Map([["memory-pin-name", true]]) },
+        {
+          ...repository.decisionLedger(),
+          appendIfChanged: async () => {
+            throw new Error("ledger unavailable");
+          },
+        },
+      );
+      const formed = await form();
+      expect(formed.envelope.contextBlocks.some(({ kind }) => kind === "owner-profile")).toBe(true);
+      expect(await profileRows(list)).toEqual([]);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[P2-5] reverse: a profile within the limit writes no truncation record", async () => {
+    const { repository, list } = await fixture();
+    try {
+      const { form } = profileFormation(repository, {
+        budget: 2000,
+        pins: new Map([["memory-pin-name", true]]),
+      });
+      await form();
+      await form();
+      expect(await profileRows(list)).toEqual([]);
+      expect(await list("context_truncation")).toEqual([]);
     } finally {
       await repository.close();
     }

@@ -15,6 +15,7 @@ import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../src/ga
 import type { MessageId } from "../src/i18n/message-ids.ts";
 import { messages } from "../src/i18n/resources/zh-CN.ts";
 import { type MemoryItem, type MemoryOverview, useMemory } from "../src/memory.ts";
+import { memoryChain } from "../src/memory-history.ts";
 import { guessCategory, parseMemoryExport, parseMemoryText } from "../src/memory-import.ts";
 
 const configuration: ControlCenterRuntimeConfiguration = {
@@ -70,6 +71,8 @@ function memoryItem(memoryId: string, text: string, change: Partial<MemoryItem> 
   };
 }
 
+let nextHistoryId = 0;
+
 function node(
   kind: MemoryItem["history"][number]["kind"],
   text: string,
@@ -77,7 +80,9 @@ function node(
   at: string,
   change: Partial<MemoryItem["history"][number]> = {},
 ): MemoryItem["history"][number] {
+  nextHistoryId += 1;
   return {
+    historyId: nextHistoryId,
     kind,
     text,
     stance,
@@ -217,7 +222,7 @@ beforeEach(() => {
       }),
     ],
     profile: [],
-    profileUsage: { used: 0, limit: 2000, queued: [] },
+    profileUsage: { used: 0, limit: 2000, pinned: 0, queued: [] },
     lastViewedAt: null,
     pending: [
       {
@@ -428,7 +433,7 @@ describe("memory approval and management", () => {
           topic: "health",
         }),
       ],
-      profileUsage: { used: 1980, limit: 2000, queued: ["memory-tea"] },
+      profileUsage: { used: 1980, limit: 2000, pinned: 0, queued: ["memory-tea"] },
       profile: [
         {
           kind: "preference",
@@ -488,6 +493,25 @@ describe("memory approval and management", () => {
     expect(text("#settings .memory-drawer")).toContain(
       "事件、健康、财务和其他类的记忆只在相关时调出",
     );
+  });
+
+  it("[P2-5] warns only when the memories the owner chose to bring exceed the limit", async () => {
+    const notice = () => document.querySelector("[data-testid='memory-carry-pinned-over']");
+    for (const [pinned, shown] of [
+      [0, false],
+      [100, false],
+      [2000, false],
+      [2001, true],
+    ] as const) {
+      overview = {
+        ...overview,
+        profileUsage: { used: Math.max(pinned, 10), limit: 2000, pinned, queued: [] },
+      };
+      await render();
+      expect(Boolean(notice())).toBe(shown);
+      if (shown) expect(notice()?.textContent).toContain("比上限 2000 字多出 1 字");
+      await act(async () => root.render(h("div")));
+    }
   });
 
   it("[MEM-CAT] lets the owner move a memory to another topic and offers none for sensitive ones", async () => {
@@ -614,6 +638,97 @@ describe("memory approval and management", () => {
     });
     await click("#settings .memory-history-fold", "收起");
     expect(points()).toHaveLength(4);
+  });
+
+  it("[P3-7] offers every earlier version of the current memory and restores the one picked", async () => {
+    const at = (day: number) => `2026-10-2${day}T12:00:00.000Z`;
+    const edits = [
+      node("created", "主人住在杭州", "杭州", at(1), { historyId: 41 }),
+      node("edited", "主人住在上海", "上海", at(2), { historyId: 42 }),
+      node("reaffirmed", "主人住在上海", "上海", at(3), { historyId: 43 }),
+      node("edited", "主人住在苏州", "苏州", at(4), { historyId: 44 }),
+      node("edited", "主人住在南京", "南京", at(5), { historyId: 45 }),
+    ];
+    overview = {
+      ...overview,
+      pending: [],
+      memories: [
+        memoryItem("memory-home-old", "主人住在宁波", {
+          revision: 2,
+          stance: "宁波",
+          supersededBy: "memory-home",
+          history: [
+            node("created", "主人住在温州", "温州", at(0), { historyId: 31 }),
+            node("updated", "主人住在宁波", "宁波", "2026-10-20T18:00:00.000Z", {
+              historyId: 32,
+            }),
+          ],
+        }),
+        memoryItem("memory-home", "主人住在南京", {
+          revision: 5,
+          stance: "南京",
+          history: edits,
+        }),
+      ],
+    };
+    await render();
+    await click("#settings .memory-results", "主人住在南京");
+    await click("#settings .memory-history-fold", "展开更早");
+    const line = () => [...document.querySelectorAll("#settings .memory-history-line > li")];
+    const labelled = (label: string) =>
+      line()
+        .filter((item) =>
+          [...item.querySelectorAll("button")].some((button) => button.textContent === label),
+        )
+        .map((item) => item.querySelector("p")?.textContent ?? "");
+    expect(labelled("恢复到这一版")).toEqual([
+      "主人住在苏州",
+      "主人住在上海",
+      "主人住在杭州",
+      "主人住在温州",
+    ]);
+    expect(labelled("换回这个说法")).toEqual(["主人住在宁波"]);
+    const first = line().find((item) => item.querySelector("p")?.textContent === "主人住在杭州");
+    await act(async () =>
+      [...(first?.querySelectorAll("button") ?? [])]
+        .find((item) => item.textContent === "恢复到这一版")
+        ?.click(),
+    );
+    await act(async () => {});
+    expect(lastCommand()).toMatchObject({
+      type: "memory.mutate",
+      payload: {
+        memoryId: "memory-home",
+        action: "restore_version",
+        expectedRevision: 5,
+        contentRef: null,
+        historyId: 41,
+      },
+    });
+  });
+
+  it("[P3-7] offers no version restore on a memory that is no longer current", () => {
+    const history = [
+      node("created", "主人住在杭州", "杭州", "2026-10-21T12:00:00.000Z"),
+      node("edited", "主人住在南京", "南京", "2026-10-22T12:00:00.000Z"),
+    ];
+    const current = memoryItem("memory-gone", "主人住在南京", { stance: "南京", history });
+    expect(memoryChain(current, [current]).map((item) => item.versionRestorable)).toEqual([
+      true,
+      false,
+    ]);
+    for (const gone of [
+      { ...current, status: "archived" as const },
+      { ...current, status: "trashed" as const },
+      { ...current, supersededBy: "memory-next" },
+    ])
+      expect(memoryChain(gone, [gone]).some((item) => item.versionRestorable)).toBe(false);
+    const trashed = memoryItem("memory-old", "主人住在杭州", {
+      status: "trashed",
+      supersededBy: current.memoryId,
+      history: [node("created", "主人住在温州", "温州", "2026-10-20T12:00:00.000Z")],
+    });
+    expect(memoryChain(current, [trashed, current])[0]).toMatchObject({ versionRestorable: false });
   });
 
   it("[MH-2] keeps the folded list without lanes when the old changes have no stance", async () => {
@@ -829,6 +944,7 @@ describe("memory approval and management", () => {
           sourceThreadId: null,
           history: [
             {
+              historyId: 1,
               kind: "created",
               text: "主人喜欢爬山",
               stance: null,
@@ -838,6 +954,7 @@ describe("memory approval and management", () => {
               at: "2026-10-25T12:00:00.000Z",
             },
             {
+              historyId: 2,
               kind: "reaffirmed",
               text: "主人喜欢爬山",
               stance: null,

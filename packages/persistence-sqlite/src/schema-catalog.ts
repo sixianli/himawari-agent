@@ -664,6 +664,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its Memory record",
   ),
   entry(
+    "memory_capture_backlog",
+    "MemoryCaptureBacklogPort",
+    "one row per turn whose memory capture model call failed, kept from the first failure, replayed on a later turn and removed once its result is saved, given up after three replays, or removed when the result cannot be saved; ids and an error code only, no text",
+    "metadata_only",
+    "cascade with its thread, Owner or Agent deletion",
+  ),
+  entry(
     "memory_settings",
     "MemoryBookStorePort",
     "one row per Agent; the Owner pauses or resumes new memories",
@@ -799,7 +806,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "rule_book_rules",
     "ProactiveStorePort",
-    "one row per Agent and rule: the owner's quiet hours and important senders as the current revision of a hard rule",
+    "one row per Agent and rule: the current revision of a hard rule, with the rule memory it came from and whether it waits for review",
     "metadata_only",
     "cascade with Owner or Agent deletion",
   ),
@@ -820,7 +827,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "decision_ledger",
     "ProactiveStorePort, DecisionLedgerPort",
-    "one row per model gate decision (proactive check, memory candidate, consolidation change, context truncation, retrieval degrade, external read): inputs as ids, cost and the owner's rating; text only as protected payload references",
+    "one row per model gate decision (proactive check, memory candidate, consolidation change, context truncation, retrieval degrade, external read, hard rule review, failed memory capture): inputs as ids, cost and the owner's rating; text only as protected payload references",
     "metadata_only",
     "cascade with Owner or Agent deletion; proactive rows are removed when the owner deletes proactive records",
   ),
