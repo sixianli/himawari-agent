@@ -893,19 +893,22 @@ export class ProductionMemoryCapture {
           createdAt: this.options.clock.now(),
         });
       let failure: unknown;
+      const held: MemoryExtractionAuditRecord[] = [];
       for (let attempt = 1; attempt <= SAVE_ATTEMPTS_PER_TURN; attempt += 1) {
         try {
-          await this.#commit(plan, parsed);
+          await this.#commit(plan, parsed, held);
           return;
         } catch (error) {
           failure = error;
-          if (
-            await backlog.has(plan.generationId).then(
-              (queued) => !queued,
-              () => false,
-            )
-          )
+          const state = await backlog.has(plan.generationId).then(
+            (queued) => (queued ? "queued" : "gone"),
+            () => "unknown",
+          );
+          if (state === "gone") {
+            this.#emitAudits(held);
             return;
+          }
+          if (state === "unknown") break;
         }
       }
       const code = captureErrorCode(failure);
@@ -1237,9 +1240,22 @@ export class ProductionMemoryCapture {
     return parsed;
   }
 
-  async #commit(plan: CapturePlan, parsed: ParsedMemoryCandidates): Promise<void> {
+  #emitAudits(records: readonly MemoryExtractionAuditRecord[]): void {
+    for (const record of records)
+      try {
+        this.options.onAudit(record);
+      } catch (error) {
+        this.options.onFailure(error);
+      }
+  }
+
+  async #commit(
+    plan: CapturePlan,
+    parsed: ParsedMemoryCandidates,
+    audits: MemoryExtractionAuditRecord[] = [],
+  ): Promise<void> {
     const { input } = plan;
-    const audits: MemoryExtractionAuditRecord[] = [];
+    audits.length = 0;
     const note = (outcome: MemoryExtractionAuditRecord["outcome"]) =>
       audits.push({
         ownerId: input.ownerId,
@@ -1277,11 +1293,6 @@ export class ProductionMemoryCapture {
         await backlog?.remove(plan.generationId);
       });
     }
-    for (const record of audits)
-      try {
-        this.options.onAudit(record);
-      } catch (error) {
-        this.options.onFailure(error);
-      }
+    this.#emitAudits(audits);
   }
 }

@@ -1065,7 +1065,10 @@ export class ProductionMemoryControl {
             : { requestId, resolution },
         ),
       );
-      for (const record of buffered) this.options.onAudit(record);
+      for (const record of buffered)
+        try {
+          this.options.onAudit(record);
+        } catch {}
       return { resultRef: committed ?? requestId, replayed: false };
     }
     if (command.type === "memory.reminder.create") {

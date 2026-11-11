@@ -3158,6 +3158,25 @@ describe("production memory capture", () => {
     expect(backlogRows(context)).toEqual([]);
   });
 
+  it("[P3-5] still sends the audit records when the transaction committed but its answer was lost", async () => {
+    const context = await setup(P3_5_MESSAGE, P3_5_MEMORY);
+    const options = optionsOf(context);
+    const lost = new ProductionMemoryCapture({
+      ...options,
+      unitOfWork: {
+        run: async (work) => {
+          await options.unitOfWork.run(work);
+          throw new Error("COMMIT_ANSWER_LOST");
+        },
+      },
+    });
+    await lost.start(context.request);
+    await lost.stop();
+    expect(await activeMemories(context)).toHaveLength(1);
+    expect(context.audits.length).toBeGreaterThan(0);
+    expect(backlogRows(context)).toEqual([]);
+  });
+
   it("[P3-5] retries an answer that is not valid JSON and records the failure", async () => {
     const context = await setup(P3_5_MESSAGE, "好的，我记住了。");
     context.outputs.push(P3_5_MEMORY);

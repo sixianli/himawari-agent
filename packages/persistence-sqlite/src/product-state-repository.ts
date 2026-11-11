@@ -245,6 +245,9 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
       options.databasePath ?? path.join(stateRoot, "product.sqlite"),
     );
     const busyTimeoutMs = validBusyTimeout(options.busyTimeoutMs ?? 5000);
+    const scopeTimeoutMs = validScopeTimeout(
+      options.transactionScopeTimeoutMs ?? DEFAULT_TRANSACTION_SCOPE_TIMEOUT_MS,
+    );
     const minimumFreeBytes = validMinimumFreeBytes(options.minimumFreeBytes ?? 256 * 1024 * 1024);
     const warningFreeBytes = validMinimumFreeBytes(
       options.warningFreeBytes ?? Math.max(minimumFreeBytes, 1024 * 1024 * 1024),
@@ -304,9 +307,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
         startReadContext,
         lock,
         now: options.now ?? (() => new Date().toISOString()),
-        scopeTimeoutMs: validScopeTimeout(
-          options.transactionScopeTimeoutMs ?? DEFAULT_TRANSACTION_SCOPE_TIMEOUT_MS,
-        ),
+        scopeTimeoutMs,
         onSlowScope: options.onSlowOperation,
       });
     } catch (error) {

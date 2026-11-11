@@ -9,7 +9,8 @@ import {
   openQualifiedDatabase,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { SqliteExecutionContext } from "../../packages/persistence-sqlite/src/sqlite-execution-context.ts";
 import { SqliteDurableOperations } from "../../packages/persistence-sqlite/src/sqlite-durable-operations.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
@@ -182,6 +183,24 @@ describe.each(["worker", "direct"] as const)(
     });
   },
 );
+
+describe("[P3-5] transaction scope timeout option", () => {
+  it("refuses an invalid timeout before any database worker is started", async () => {
+    const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-transaction-option-"));
+    roots.push(stateRoot);
+    const start = vi.spyOn(SqliteExecutionContext, "start");
+    await expect(
+      SqliteProductStateRepository.open({
+        stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T0,
+        transactionScopeTimeoutMs: 0,
+      }),
+    ).rejects.toBeDefined();
+    expect(start).not.toHaveBeenCalled();
+    start.mockRestore();
+  });
+});
 
 describe("[P3-5] transaction scope when the database worker is lost", () => {
   useSqliteContractExecution("worker");

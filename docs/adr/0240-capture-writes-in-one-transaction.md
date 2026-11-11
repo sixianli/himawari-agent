@@ -80,7 +80,7 @@ date: "2026-11-11"
 - 事务范围期间，别的写请求要等它结束：回调最多 2 秒（默认），加上开始和提交各自的忙等待上限；范围外的读走只读连接，不等，读到的是已提交的数据。一轮正常的写库是毫秒级。
 - 写失败的重试会多花几次后台模型调用（补做要重新抽取），最多 3 次。
 - 不改表。
-- `npm run check:memory-capture-retry` 现在运行带 `[P3-5]` 的 37 条测试：`test/integration/production-memory-capture.test.ts` 17 条，`test/integration/sqlite-transaction-scope.test.ts` 14 条（真实 SQLite，工作线程和进程内两种方式，含回滚、超时、隔离、被 SQLite 自行回滚、工作线程丢失），`packages/persistence-sqlite/test/memory-capture-backlog-migration.contract.test.ts` 6 条。
+- `npm run check:memory-capture-retry` 现在运行带 `[P3-5]` 的 39 条测试：`test/integration/production-memory-capture.test.ts` 18 条，`test/integration/sqlite-transaction-scope.test.ts` 15 条（真实 SQLite，工作线程和进程内两种方式，含回滚、超时、隔离、被 SQLite 自行回滚、工作线程丢失），`packages/persistence-sqlite/test/memory-capture-backlog-migration.contract.test.ts` 6 条。
 - 做梦记忆（PR 395）里“重试时补做取代”的补丁，等本决定合并后评估是否可以删除。
 
 [返回阅读导航](#contents)
