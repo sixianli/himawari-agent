@@ -125,16 +125,31 @@ function chineseNumber(value: string): number | null {
   return tens === undefined || ones === undefined ? null : tens * 10 + ones;
 }
 
+const PART_OF_DAY = /(凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|夜里|夜裡|半夜|深夜|午夜)\s*$/u;
+const AFTER_HOUR = /^\s*(钟|鐘|整|半|[0-9〇零一二三四五六七八九十]+\s*分)/u;
+
+function oneMeansHour(text: string, start: number, end: number): boolean {
+  return (
+    PART_OF_DAY.test(text.slice(Math.max(0, start - 4), start)) || AFTER_HOUR.test(text.slice(end))
+  );
+}
+
 function dateTokens(value: string): Set<string> {
   const tokens = new Set<string>();
-  for (const match of value.normalize("NFKC").matchAll(/(\d{1,2})\s*:\s*\d{2}/gu))
-    tokens.add(`${Number(match[1])}时`);
-  for (const match of value
-    .normalize("NFKC")
-    .matchAll(/([0-9〇零一二两三四五六七八九十]+)\s*([年月日号號点點时時])/gu)) {
+  const text = value.normalize("NFKC");
+  for (const match of text.matchAll(/(\d{1,2})\s*:\s*\d{2}/gu)) tokens.add(`${Number(match[1])}时`);
+  for (const match of text.matchAll(
+    /([0-9〇零一二两三四五六七八九十]+)\s*([年月日号號点點时時])/gu,
+  )) {
     const amount = chineseNumber(match[1] ?? "");
     const unit = match[2] ?? "";
-    if (amount === null || (match[1] === "一" && (unit === "点" || unit === "點"))) continue;
+    if (amount === null) continue;
+    if (
+      match[1] === "一" &&
+      (unit === "点" || unit === "點") &&
+      !oneMeansHour(text, match.index, match.index + match[0].length)
+    )
+      continue;
     tokens.add(`${amount}${DATE_UNITS[unit] ?? unit}`);
   }
   return tokens;

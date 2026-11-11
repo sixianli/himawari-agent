@@ -12,7 +12,7 @@ import {
   dueRealEvalTrigger,
   expireRealEvalSample,
   ProductionRealEval,
-  REAL_EVAL_IN_PROGRESS_FILE,
+  REAL_EVAL_IN_PROGRESS_PREFIX,
   REAL_EVAL_INTERVAL_MS,
   REAL_EVAL_RETRY_MS,
   REAL_EVAL_SAMPLE_FILE,
@@ -285,6 +285,42 @@ describe("[P4-5] real eval model calls", () => {
     }
   });
 
+  it("still releases the payloads when releasing the call authority fails", async () => {
+    const released: string[][] = [];
+    const base = invoker(
+      (invocationId) => [
+        { type: "model.output", invocationId, payloadRef: "out-1", text: "{}" },
+        { type: "model.completed", invocationId, costMicros: 1 },
+      ],
+      released,
+    );
+    const failing = {
+      ...base,
+      prepare: async (input: { invocationId: string }) => ({
+        ...(await base.prepare(input as never)),
+        release: async () => {
+          throw new Error("AUTHORITY_RELEASE_FAILED");
+        },
+      }),
+    } as unknown as ProactiveModelInvoker;
+    const model = createRealEvalModel({
+      modelRef: "eval-model",
+      invoker: () => failing,
+      cost,
+      requestTimeoutMs: 1_000,
+      now: () => NOW,
+    });
+    await expect(
+      model.generate({
+        invocationId: "call-1",
+        prompt: "judge",
+        maxOutputTokens: 100,
+        dataClassification: "private",
+      }),
+    ).rejects.toThrow("AUTHORITY_RELEASE_FAILED");
+    expect(released).toEqual([["input:call-1", "out-1"]]);
+  });
+
   it("estimates input by UTF-8 bytes so a token count cannot exceed it", () => {
     const model = createRealEvalModel({
       modelRef: "eval-model",
@@ -460,8 +496,11 @@ describe("[P4-5] real eval leftovers", () => {
       onFailure: () => undefined,
     });
     await timer.tick();
+    const markers = await readdir(directory);
+    expect(markers).toHaveLength(1);
+    expect(markers[0]?.startsWith(REAL_EVAL_IN_PROGRESS_PREFIX)).toBe(true);
     expect(
-      JSON.parse(await readFile(path.join(directory, REAL_EVAL_IN_PROGRESS_FILE), "utf8")),
+      JSON.parse(await readFile(path.join(directory, markers[0] ?? ""), "utf8")),
     ).toMatchObject({
       startedAt: NOW,
       trigger: "weekly",
@@ -486,9 +525,78 @@ describe("[P4-5] real eval leftovers", () => {
     });
     await later.tick();
     expect(limits).toEqual([500_000, 500_000]);
-    await expect(stat(path.join(directory, REAL_EVAL_IN_PROGRESS_FILE))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
+    expect(await readdir(directory)).toEqual([]);
+  });
+
+  it("counts an unreadable marker as a run that spent the whole weekly cap", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-real-eval-"));
+    directories.push(directory);
+    const limits: number[] = [];
+    const timer = (now: string) =>
+      new ProductionRealEval({
+        configuration,
+        scope: { ownerId: "owner", agentId: "agent" } as never,
+        store: { listRuns: async () => [] },
+        service: {
+          run: async (_trigger, input) => {
+            limits.push(input.capMicros);
+            return { runId: "run-1", outcome: "completed", costMicros: 1, summary: {}, sample: [] };
+          },
+        },
+        sampleDirectory: directory,
+        now: () => now,
+      });
+    for (const text of [
+      '{"startedAt":',
+      '{"startedAt":"2026-11-08","trigger":"weekly","capMicros":5}',
+      '{"startedAt":"2026-11-08T00:00:00.000Z","trigger":"weekly","capMicros":-5}',
+    ]) {
+      const file = path.join(directory, `${REAL_EVAL_IN_PROGRESS_PREFIX}${text.length}.json`);
+      await writeFile(file, text);
+      const written = new Date(Date.parse(NOW) - REAL_EVAL_RETRY_MS);
+      await utimes(file, written, written);
+    }
+    await timer(NOW).tick();
+    expect(limits).toEqual([]);
+    await timer(at(REAL_EVAL_INTERVAL_MS - REAL_EVAL_RETRY_MS)).tick();
+    expect(limits).toEqual([500_000]);
+    expect(
+      (await readdir(directory)).filter((name) => name.startsWith(REAL_EVAL_IN_PROGRESS_PREFIX)),
+    ).toEqual([]);
+  });
+
+  it("keeps the marker of an earlier unfinished run when a new run starts", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-real-eval-"));
+    directories.push(directory);
+    const limits: number[] = [];
+    const timer = (now: string) =>
+      new ProductionRealEval({
+        configuration,
+        scope: { ownerId: "owner", agentId: "agent" } as never,
+        store: { listRuns: async () => [] },
+        service: {
+          run: async (_trigger, input) => {
+            limits.push(input.capMicros);
+            throw new Error("SQLITE_FULL");
+          },
+        },
+        sampleDirectory: directory,
+        now: () => now,
+        onFailure: () => undefined,
+      });
+    const earlier = path.join(directory, `${REAL_EVAL_IN_PROGRESS_PREFIX}earlier.json`);
+    await writeFile(
+      earlier,
+      JSON.stringify({
+        startedAt: at(-2 * REAL_EVAL_RETRY_MS),
+        trigger: "weekly",
+        capMicros: 200_000,
+      }),
+    );
+    await timer(NOW).tick();
+    await timer(at(REAL_EVAL_RETRY_MS)).tick();
+    expect(limits).toEqual([300_000]);
+    expect(await readdir(directory)).toHaveLength(2);
   });
 
   it("keeps expiring the sample while the evaluation is off", async () => {

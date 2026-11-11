@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -36,7 +36,7 @@ export const REAL_EVAL_RETRY_MS = 24 * 60 * 60 * 1000;
 export const REAL_EVAL_SAMPLE_TTL_MS = REAL_EVAL_INTERVAL_MS;
 export const REAL_EVAL_SAMPLE_SIZE = 30;
 export const REAL_EVAL_SAMPLE_FILE = "latest-sample.json";
-export const REAL_EVAL_IN_PROGRESS_FILE = "in-progress.json";
+export const REAL_EVAL_IN_PROGRESS_PREFIX = "in-progress-";
 export const DECISION_EVAL_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
 const MAX_OUTPUT_BYTES = 64 * 1024;
 
@@ -93,32 +93,80 @@ interface InProgressRun {
   readonly capMicros: number;
 }
 
-export async function readUnfinishedRealEval(directory: string): Promise<RunTiming | undefined> {
-  const text = await readFile(path.join(directory, REAL_EVAL_IN_PROGRESS_FILE), "utf8").catch(
-    missing,
-  );
-  if (text === undefined) return undefined;
-  const value = JSON.parse(text) as Partial<InProgressRun>;
+function inProgressRun(text: string): InProgressRun | undefined {
+  let value: Partial<InProgressRun>;
+  try {
+    value = JSON.parse(text) as Partial<InProgressRun>;
+  } catch {
+    return undefined;
+  }
   if (
+    typeof value !== "object" ||
+    value === null ||
     typeof value.startedAt !== "string" ||
     !Number.isFinite(Date.parse(value.startedAt)) ||
+    new Date(value.startedAt).toISOString() !== value.startedAt ||
     (value.trigger !== "manual" && value.trigger !== "weekly") ||
-    !Number.isSafeInteger(value.capMicros)
+    !Number.isSafeInteger(value.capMicros) ||
+    (value.capMicros ?? -1) < 0
   )
-    throw new Error("REAL_EVAL_IN_PROGRESS_INVALID");
-  return {
-    startedAt: value.startedAt,
-    trigger: value.trigger,
-    outcome: "failed",
-    costMicros: Math.max(0, value.capMicros ?? 0),
-  };
+    return undefined;
+  return { startedAt: value.startedAt, trigger: value.trigger, capMicros: value.capMicros ?? 0 };
 }
 
-async function markRealEvalStarted(directory: string, run: InProgressRun): Promise<void> {
+export async function readUnfinishedRealEvals(
+  directory: string,
+  now: string,
+  weeklyCapMicros: number,
+): Promise<RunTiming[]> {
+  const names = (await readdir(directory).catch(missing)) ?? [];
+  const unfinished: RunTiming[] = [];
+  for (const name of names.toSorted()) {
+    if (!name.startsWith(REAL_EVAL_IN_PROGRESS_PREFIX)) continue;
+    const file = path.join(directory, name);
+    if (name.endsWith(".tmp")) {
+      await rm(file, { force: true });
+      continue;
+    }
+    const found = await stat(file).catch(missing);
+    if (!found) continue;
+    const text = await readFile(file, "utf8").catch(missing);
+    if (text === undefined) continue;
+    const run = inProgressRun(text) ?? {
+      startedAt: new Date(found.mtimeMs).toISOString(),
+      trigger: "weekly" as const,
+      capMicros: weeklyCapMicros,
+    };
+    const { startedAt } = run;
+    if (Date.parse(now) - Date.parse(startedAt) >= REAL_EVAL_INTERVAL_MS) {
+      await rm(file, { force: true });
+      continue;
+    }
+    unfinished.push({
+      startedAt,
+      trigger: run.trigger,
+      outcome: "failed",
+      costMicros: run.capMicros,
+    });
+  }
+  return unfinished;
+}
+
+async function markRealEvalStarted(directory: string, run: InProgressRun): Promise<string> {
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  await writeFile(path.join(directory, REAL_EVAL_IN_PROGRESS_FILE), `${JSON.stringify(run)}\n`, {
-    mode: 0o600,
-  });
+  const file = path.join(
+    directory,
+    `${REAL_EVAL_IN_PROGRESS_PREFIX}${Date.parse(run.startedAt)}-${randomUUID()}.json`,
+  );
+  const temporary = `${file}.tmp`;
+  try {
+    await writeFile(temporary, `${JSON.stringify(run)}\n`, { mode: 0o600, flag: "wx" });
+    await rename(temporary, file);
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
+  return file;
 }
 
 export class RealEvalSampleExpiry {
@@ -235,8 +283,11 @@ export function createRealEvalModel(options: {
           }
         }
       } finally {
-        await authority.release();
-        await model.release(payloads);
+        try {
+          await authority.release();
+        } finally {
+          await model.release(payloads);
+        }
       }
       if (failure !== null) throw new RealEvalModelError(failure);
       if (!completed) throw new RealEvalModelError("MODEL_NOT_COMPLETED");
@@ -336,16 +387,21 @@ export class ProductionRealEval {
     await expireRealEvalSample(sampleDirectory, now).catch((error: unknown) =>
       this.#options.onFailure?.(error),
     );
-    const unfinished = await readUnfinishedRealEval(sampleDirectory);
-    const runs = [
-      ...(await store.listRuns({ ...this.#options.scope, limit: 520 })),
-      ...(unfinished ? [unfinished] : []),
-    ];
+    const unfinished = await readUnfinishedRealEvals(
+      sampleDirectory,
+      now,
+      configuration.weeklyCapMicros,
+    );
+    const runs = [...(await store.listRuns({ ...this.#options.scope, limit: 520 })), ...unfinished];
     const trigger = dueRealEvalTrigger(configuration.mode, runs, now);
     if (trigger === null) return;
     const remaining = configuration.weeklyCapMicros - realEvalSpentMicros(runs, now);
     if (remaining <= 0) return;
-    await markRealEvalStarted(sampleDirectory, { startedAt: now, trigger, capMicros: remaining });
+    const marker = await markRealEvalStarted(sampleDirectory, {
+      startedAt: now,
+      trigger,
+      capMicros: remaining,
+    });
     const report = await service.run(trigger, {
       capMicros: remaining,
       newMemoriesPerRun: configuration.newMemoriesPerRun,
@@ -358,7 +414,7 @@ export class ProductionRealEval {
           }
         : { sampleSize: 0 }),
     });
-    await rm(path.join(sampleDirectory, REAL_EVAL_IN_PROGRESS_FILE), { force: true });
+    await rm(marker, { force: true });
     this.#options.onRun?.(report, trigger);
   }
 }

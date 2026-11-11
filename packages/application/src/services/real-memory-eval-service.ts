@@ -145,6 +145,15 @@ function declinedFromRuns(
   return keys;
 }
 
+function undiscardedOfLatestRun(
+  runs: readonly { readonly summary: Readonly<Record<string, unknown>> }[],
+): string[] {
+  const refs = runs[0]?.summary["undiscarded"];
+  return Array.isArray(refs)
+    ? refs.filter((ref): ref is string => typeof ref === "string" && ref.length > 0)
+    : [];
+}
+
 export class RealMemoryEvalService {
   readonly #dependencies: RealMemoryEvalDependencies;
 
@@ -159,6 +168,7 @@ export class RealMemoryEvalService {
     const budget = new RealEvalBudget(limits.capMicros);
     const rejected: Record<string, number> = {};
     const declined: string[] = [];
+    const undiscarded: string[] = [];
     const scored: ScoredItem[] = [];
     const sample: RealEvalSampleItem[] = [];
     let retired = 0;
@@ -195,6 +205,14 @@ export class RealMemoryEvalService {
     };
 
     try {
+      const recentRuns = await deps.store.listRuns({
+        ...deps.scope,
+        limit: RECENT_RUNS_FOR_DECLINES,
+      });
+      for (const ref of undiscardedOfLatestRun(recentRuns))
+        await deps.discardQuestion(ref).catch(() => {
+          if (!undiscarded.includes(ref)) undiscarded.push(ref);
+        });
       const memories = await deps.listMemories();
       const byId = new Map<string, ProductMemoryRecord>(
         memories.map((record) => [record.id, record]),
@@ -215,9 +233,7 @@ export class RealMemoryEvalService {
       }
       const pending: PendingItem[] = [];
       planned = active.length;
-      const skip = declinedFromRuns(
-        await deps.store.listRuns({ ...deps.scope, limit: RECENT_RUNS_FOR_DECLINES }),
-      );
+      const skip = declinedFromRuns(recentRuns);
       const candidates = memories.filter(
         (record) => !skip.has(declinedKey(record.id, record.revision)),
       );
@@ -274,6 +290,7 @@ export class RealMemoryEvalService {
             if (!stored)
               await deps.discardQuestion(questionRef).catch(() => {
                 rejected["discard_failed"] = (rejected["discard_failed"] ?? 0) + 1;
+                undiscarded.push(questionRef);
               });
           }
           if (!stored) {
@@ -407,6 +424,7 @@ export class RealMemoryEvalService {
       unanswered,
       rejected,
       declined,
+      undiscarded,
       ...(failure === null ? {} : { failure }),
     };
     await deps.store.recordRun({

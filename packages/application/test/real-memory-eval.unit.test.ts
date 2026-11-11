@@ -139,6 +139,9 @@ describe("[P4-5] generated questions are untrusted", () => {
     expect(leaksAnswer("我早上七点做什么？", ["主人每天 7:00 跑步"])).toBe(true);
     expect(leaksAnswer("我早上八点做什么？", ["主人每天 7:30 跑步"])).toBe(false);
     expect(leaksAnswer("我一点都不喜欢什么？", ["主人一点也不喜欢香菜"])).toBe(false);
+    expect(leaksAnswer("我下午一点做什么？", ["主人 1 点起床"])).toBe(true);
+    expect(leaksAnswer("我一点钟做什么？", ["主人 1:00 午睡"])).toBe(true);
+    expect(leaksAnswer("我一点半做什么？", ["主人一点也不想做事"])).toBe(false);
   });
 
   it("rejects kinds outside the allowed set and malformed output", () => {

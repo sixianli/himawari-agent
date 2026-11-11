@@ -371,17 +371,29 @@ describe("[P4-5] real memory eval run", () => {
   });
 
   it("keeps going and still skips the version when the unkept question text cannot be deleted", async () => {
-    const test = harness({
+    const options = {
       memories: [memory("coffee")],
-      addQuestion: "duplicate",
+      addQuestion: "duplicate" as const,
       discardFails: true,
-    });
+    };
+    const test = harness(options);
     const report = await test.service.run("weekly", LIMITS);
     expect(report.outcome).toBe("completed");
     expect(report.summary).toMatchObject({
       rejected: { already_banked: 2, discard_failed: 2 },
       declined: ["coffee@1"],
+      undiscarded: ["question:0", "question:1"],
     });
+    expect(test.payloads.size).toBe(2);
+
+    const stillFailing = await test.service.run("weekly", LIMITS);
+    expect(stillFailing.summary).toMatchObject({ undiscarded: ["question:0", "question:1"] });
+
+    options.discardFails = false;
+    const retried = await test.service.run("weekly", LIMITS);
+    expect(test.discarded).toEqual(["question:0", "question:1"]);
+    expect(test.payloads.size).toBe(0);
+    expect(retried.summary).toMatchObject({ undiscarded: [] });
   });
 
   it("does not ask again about a memory version the bank already holds", async () => {

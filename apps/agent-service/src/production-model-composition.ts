@@ -537,16 +537,22 @@ export function createProductionModelComposition(
           content: prompt,
           occurredAt: options.clock.now(),
         });
-        const handle = descriptor.secretRequirement
-          ? await options.handles.issueHandle({
-              ownerId: options.ownerId,
-              agentId: options.agentId,
-              runId,
-              ...descriptor.secretRequirement,
-              scopeRef: invocationId,
-              expiresAt: deadlineAt,
-            })
-          : undefined;
+        let handle: Awaited<ReturnType<typeof options.handles.issueHandle>> | undefined;
+        try {
+          handle = descriptor.secretRequirement
+            ? await options.handles.issueHandle({
+                ownerId: options.ownerId,
+                agentId: options.agentId,
+                runId,
+                ...descriptor.secretRequirement,
+                scopeRef: invocationId,
+                expiresAt: deadlineAt,
+              })
+            : undefined;
+        } catch (error) {
+          await payloadBoundary.release([inputRef]).catch(() => undefined);
+          throw error;
+        }
         return Object.freeze({
           runId,
           inputRef,
