@@ -81,7 +81,11 @@ const MEMORIES: ReadonlyArray<{
     text: "主人的女儿叫小葵",
     at: "2026-05-02T00:00:00.000Z",
     classification: "private",
-    attributes: { category: "relationship", importancePermille: 900, entities: ["小葵"] },
+    attributes: {
+      category: "relationship",
+      importancePermille: 900,
+      entities: ["小葵"],
+    },
   },
   {
     id: "onigiri",
@@ -95,7 +99,11 @@ const MEMORIES: ReadonlyArray<{
     text: "主人对青霉素过敏，医保卡背面抄着 x9Kq2mVb7Lp4Wz",
     at: "2026-10-20T00:00:00.000Z",
     classification: "sensitive",
-    attributes: { category: "health", importancePermille: 950, entities: ["青霉素"] },
+    attributes: {
+      category: "health",
+      importancePermille: 950,
+      entities: ["青霉素"],
+    },
   },
   {
     id: "coffee-new",
@@ -109,21 +117,33 @@ const MEMORIES: ReadonlyArray<{
     text: "主人的女儿名叫小葵",
     at: "2026-10-21T00:00:00.000Z",
     classification: "private",
-    attributes: { category: "relationship", importancePermille: 900, entities: ["小葵"] },
+    attributes: {
+      category: "relationship",
+      importancePermille: 900,
+      entities: ["小葵"],
+    },
   },
   {
     id: "fish-old",
     text: "主人不太喜欢吃鱼",
     at: "2026-05-03T00:00:00.000Z",
     classification: "private",
-    attributes: { category: "preference", subCategory: "饮食", importancePermille: 600 },
+    attributes: {
+      category: "preference",
+      subCategory: "饮食",
+      importancePermille: 600,
+    },
   },
   {
     id: "fish-new",
     text: "主人最近迷上了刺身拼盘",
     at: "2026-10-24T00:00:00.000Z",
     classification: "private",
-    attributes: { category: "preference", subCategory: "饮食", importancePermille: 600 },
+    attributes: {
+      category: "preference",
+      subCategory: "饮食",
+      importancePermille: 600,
+    },
   },
   {
     id: "run-a",
@@ -144,42 +164,66 @@ const MEMORIES: ReadonlyArray<{
     text: "主人以前住在足立区",
     at: "2026-05-04T00:00:00.000Z",
     classification: "private",
-    attributes: { category: "identity", subCategory: "住处", importancePermille: 800 },
+    attributes: {
+      category: "identity",
+      subCategory: "住处",
+      importancePermille: 800,
+    },
   },
   {
     id: "home-new",
     text: "主人现在住在北区",
     at: "2026-10-24T00:00:00.000Z",
     classification: "private",
-    attributes: { category: "identity", subCategory: "住处", importancePermille: 800 },
+    attributes: {
+      category: "identity",
+      subCategory: "住处",
+      importancePermille: 800,
+    },
   },
   {
     id: "milk-old",
     text: "主人平时喝明治的牛奶",
     at: "2026-05-05T00:00:00.000Z",
     classification: "private",
-    attributes: { category: "preference", subCategory: "饮品", importancePermille: 500 },
+    attributes: {
+      category: "preference",
+      subCategory: "饮品",
+      importancePermille: 500,
+    },
   },
   {
     id: "milk-new",
     text: "主人出差时喝便利店的牛奶",
     at: "2026-10-24T00:00:00.000Z",
     classification: "private",
-    attributes: { category: "preference", subCategory: "饮品", importancePermille: 500 },
+    attributes: {
+      category: "preference",
+      subCategory: "饮品",
+      importancePermille: 500,
+    },
   },
   {
     id: "pet-old",
     text: "主人家里养着一只柴犬",
     at: "2026-05-06T00:00:00.000Z",
     classification: "private",
-    attributes: { category: "other", subCategory: "宠物", importancePermille: 500 },
+    attributes: {
+      category: "other",
+      subCategory: "宠物",
+      importancePermille: 500,
+    },
   },
   {
     id: "pet-new",
     text: "主人家里改养了一只橘猫",
     at: "2026-10-24T00:00:00.000Z",
     classification: "private",
-    attributes: { category: "other", subCategory: "宠物", importancePermille: 500 },
+    attributes: {
+      category: "other",
+      subCategory: "宠物",
+      importancePermille: 500,
+    },
     confidence: 800,
   },
   {
@@ -187,7 +231,11 @@ const MEMORIES: ReadonlyArray<{
     text: "主人周末在家喝燕麦奶",
     at: "2026-10-25T10:00:00.000Z",
     classification: "private",
-    attributes: { category: "preference", subCategory: "饮品", importancePermille: 500 },
+    attributes: {
+      category: "preference",
+      subCategory: "饮品",
+      importancePermille: 500,
+    },
     later: true,
   },
 ];
@@ -422,7 +470,12 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
         agentId: AGENT_ID,
         triggerRunId: "run-consolidation",
         search: (query, limit) =>
-          provider.search({ ownerId: OWNER_ID, agentId: AGENT_ID, query, limit }),
+          provider.search({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            query,
+            limit,
+          }),
         generate: async (prompt, dataClassification) => {
           prompts.push(prompt);
           labels.push(dataClassification);
@@ -520,7 +573,11 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       ]);
       expect(byOutcome.get("reflect")?.inputs.resultMemoryIds).toEqual([`${result?.id}:insight:0`]);
       const store = resource.repository.memoryConsolidation();
-      const stored = await store.listChanges({ ownerId: OWNER_ID, agentId: AGENT_ID, limit: 10 });
+      const stored = await store.listChanges({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        limit: 10,
+      });
       const basisOf = async (action: string) => {
         const change = stored.find((entry) => entry.action === action);
         if (!change) throw new Error(`${action} change missing`);
@@ -757,10 +814,16 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
         ["milk-new", "milk-old"],
         ["pet-new", "pet-old"],
       ] as const) {
-        expect(await resource.read(newer)).toMatchObject({ status: "active" });
+        expect(await resource.read(newer)).toMatchObject({
+          status: "active",
+        });
         expect((await resource.read(newer))?.attributes?.tentative).toBe(true);
-        expect(await resource.read(older)).toMatchObject({ status: "active" });
-        expect((await resource.read(older))?.attributes).toMatchObject({ supersededBy: null });
+        expect(await resource.read(older)).toMatchObject({
+          status: "active",
+        });
+        expect((await resource.read(older))?.attributes).toMatchObject({
+          supersededBy: null,
+        });
         expect((await resource.read(older))?.attributes?.tentative).not.toBe(true);
       }
       const ledger = await resource.repository.decisionLedger().list({
@@ -814,11 +877,22 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       resource.clock.value = "2026-10-25T09:00:00.000Z";
       await resource.consolidation.undo(pet.id);
       expect((await resource.read("pet-new"))?.attributes?.tentative).not.toBe(true);
+      const held = resource.repository.memoryConsolidation();
+      const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
+      expect([...(await held.listHeldPairs(scope))].map((pair) => [...pair]).sort()).toEqual([
+        ["milk-new", "milk-old"],
+        ["pet-new", "pet-old"],
+      ]);
+      expect(await held.listHeldPairs({ ...scope, openOnly: true })).toEqual([
+        ["milk-new", "milk-old"],
+      ]);
       const milk = await resource.read("milk-new");
       if (!milk) throw new Error("milk-new missing");
       await resource.memory.confirm(milk.id, GENERATION_ID);
       expect((await resource.read("milk-new"))?.attributes?.tentative).not.toBe(true);
-      expect(await resource.read("milk-old")).toMatchObject({ status: "active" });
+      expect(await resource.read("milk-old")).toMatchObject({
+        status: "active",
+      });
       expect((await resource.read("milk-old"))?.attributes?.supersededBy).toBeNull();
       const milkHold = result?.changes.find(({ memoryId }) => memoryId === "milk-new");
       await expect(resource.consolidation.undo(milkHold?.id ?? "")).rejects.toThrow(
@@ -865,7 +939,9 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
         ["pet-new", "pet-old"],
       ] as const) {
         expect((await resource.read(newer))?.attributes?.tentative).not.toBe(true);
-        expect(await resource.read(older)).toMatchObject({ status: "active" });
+        expect(await resource.read(older)).toMatchObject({
+          status: "active",
+        });
         expect((await resource.read(older))?.attributes?.supersededBy).toBeNull();
       }
     } finally {

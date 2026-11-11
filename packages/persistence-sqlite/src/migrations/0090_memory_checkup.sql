@@ -15,6 +15,7 @@ CREATE TABLE memory_checkup_items (
   CHECK ((action IS NULL) = (handled_at IS NULL)),
   CHECK ((action IS NULL) = (before_state IS NULL)),
   CHECK (related_memory_id IS NULL OR reason = 'conflict'),
+  CHECK (kept_memory_id IS NULL OR action = 'merge'),
   UNIQUE (owner_id, agent_id, week_start, memory_id)
 ) STRICT;
 

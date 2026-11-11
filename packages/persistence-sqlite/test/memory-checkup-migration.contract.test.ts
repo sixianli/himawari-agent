@@ -99,6 +99,16 @@ describe("memory checkup migration", () => {
         T0,
       ),
     ).toThrow();
+    expect(() =>
+      database
+        .prepare(
+          `INSERT INTO memory_checkup_items (id, owner_id, agent_id, week_start, memory_id,
+            reason, action, kept_memory_id, before_state, handled_at, created_at)
+           VALUES ('c-7', ?, ?, '2026-11-15T15:00:00.000Z', 'm-1', 'unused', 'confirm', 'm-1',
+             '{"tentative":false}', ?, ?)`,
+        )
+        .run(OWNER, AGENT, T0, T0),
+    ).toThrow();
     database.prepare("DELETE FROM memory_records WHERE id = 'm-2'").run();
     expect(
       database

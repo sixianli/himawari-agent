@@ -14,7 +14,10 @@ import type { ProactiveOverview } from "../src/services/proactive-overview.js";
 
 const DAY = "2026-11-03T15:00:00.000Z";
 const NOW = "2026-11-04T01:00:00.000Z";
-const scope = { ownerId: createOwnerId("owner"), agentId: createAgentId("agent") };
+const scope = {
+  ownerId: createOwnerId("owner"),
+  agentId: createAgentId("agent"),
+};
 
 const item = (
   key: string,
@@ -84,9 +87,18 @@ describe("[P0-6] daily review sampling", () => {
 
   it("shows every default item when they fit and counts none as left out", () => {
     const pool = [item("a", "memory_skipped"), item("b", "proactive"), item("c", "other")];
-    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 24 });
+    const selection = selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 24,
+    });
     expect([...selection.shown].sort()).toEqual(["a", "b"]);
-    expect(selection).toMatchObject({ sampled: 2, notSampled: 0, foldedTotal: 1 });
+    expect(selection).toMatchObject({
+      sampled: 2,
+      notSampled: 0,
+      foldedTotal: 1,
+    });
     expect(selection.foldedShown).toEqual(["c"]);
   });
 
@@ -95,7 +107,12 @@ describe("[P0-6] daily review sampling", () => {
       ...Array.from({ length: 10 }, (_, index) => item(`m${index}`, "memory_skipped")),
       ...Array.from({ length: 30 }, (_, index) => item(`p${index}`, "proactive")),
     ];
-    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 24 });
+    const selection = selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 24,
+    });
     expect(selection.sampled).toBe(24);
     expect(selection.shown.filter((key) => key.startsWith("m"))).toHaveLength(10);
     expect(selection.notSampled).toBe(16);
@@ -118,7 +135,12 @@ describe("[P0-6] daily review sampling", () => {
       ...many("k", "memory_kept", 40),
       ...many("c", "consolidation", 40),
     ];
-    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 24 });
+    const selection = selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 24,
+    });
     const share = (prefix: string) =>
       selection.shown.filter((key) => key.startsWith(prefix)).length;
     expect([share("m"), share("p"), share("k"), share("c")]).toEqual([6, 6, 6, 6]);
@@ -138,7 +160,12 @@ describe("[P0-6] daily review sampling", () => {
     const pool = groups.flatMap((group) =>
       Array.from({ length: 10 }, (_, index) => item(`${group}:${index}`, group)),
     );
-    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 10 });
+    const selection = selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 10,
+    });
     const keys = new Set(pool.map(({ key }) => key));
     expect(selection.shown).toHaveLength(10);
     expect(new Set(selection.shown).size).toBe(10);
@@ -154,7 +181,12 @@ describe("[P0-6] daily review sampling", () => {
       item("t", "other"),
       ...Array.from({ length: 30 }, (_, index) => item(`k${index}`, "memory_kept")),
     ];
-    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 24 });
+    const selection = selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 24,
+    });
     expect(selection.shown).not.toContain("t");
     expect(selection.foldedShown).toEqual(["t"]);
   });
@@ -174,14 +206,25 @@ describe("[P0-6] daily review sampling", () => {
       item("yesterday", "memory_skipped", true, "2026-11-03T14:59:59.000Z"),
       item("open", "memory_skipped"),
     ];
-    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 24 });
+    const selection = selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 24,
+    });
     expect([...selection.shown].sort()).toEqual(["open", "today"]);
     expect(selection.notSampled).toBe(0);
   });
 
   it("builds and reads back review keys", () => {
-    expect(parseReviewKey(reviewKey("ledger", "x:1"))).toEqual({ source: "ledger", id: "x:1" });
-    expect(parseReviewKey(reviewKey("mail", "m"))).toEqual({ source: "mail", id: "m" });
+    expect(parseReviewKey(reviewKey("ledger", "x:1"))).toEqual({
+      source: "ledger",
+      id: "x:1",
+    });
+    expect(parseReviewKey(reviewKey("mail", "m"))).toEqual({
+      source: "mail",
+      id: "m",
+    });
     expect(parseReviewKey("ledger:")).toBeUndefined();
     expect(parseReviewKey("other:1")).toBeUndefined();
   });
@@ -323,7 +366,11 @@ describe("[all decisions] which memories the review page may show", () => {
             id: "merge",
             kind: "consolidation",
             outcome: "merge",
-            inputs: { ...entry({}).inputs, memoryIds: ["a", "b"], resultMemoryIds: ["c"] },
+            inputs: {
+              ...entry({}).inputs,
+              memoryIds: ["a", "b"],
+              resultMemoryIds: ["c"],
+            },
           }),
         ],
       },
@@ -349,7 +396,11 @@ describe("[all decisions] which memories the review page may show", () => {
             id: "merge",
             kind: "consolidation",
             outcome: "merge",
-            inputs: { ...entry({}).inputs, memoryIds: ["old"], resultMemoryIds: ["new"] },
+            inputs: {
+              ...entry({}).inputs,
+              memoryIds: ["old"],
+              resultMemoryIds: ["new"],
+            },
           }),
         ],
       },
@@ -548,7 +599,11 @@ describe("[P0-6] reading the daily review", () => {
       ledger: {
         listReviewPool: async () => [
           entry({ id: "kept", outcome: "kept", subjectRef: "memory:new" }),
-          entry({ id: "pending", outcome: "pending_approval", subjectRef: "request:1" }),
+          entry({
+            id: "pending",
+            outcome: "pending_approval",
+            subjectRef: "request:1",
+          }),
           entry({
             id: "hiddenkept",
             outcome: "kept",
@@ -597,7 +652,10 @@ describe("[P0-6] reading the daily review", () => {
       text: "我想吃肉 → 我最近想吃牛肉",
       acted: true,
     });
-    expect(byKey("ledger:hiddenkept")).toMatchObject({ text: "", textHidden: true });
+    expect(byKey("ledger:hiddenkept")).toMatchObject({
+      text: "",
+      textHidden: true,
+    });
     expect(JSON.stringify(review)).not.toContain("不该显示");
     expect(review.folded.total).toBe(1);
     expect(review.folded.items.map(({ key }) => key).sort()).toEqual([
@@ -660,12 +718,16 @@ describe("[P4-6] memory checkup in the daily review", () => {
     expect(review.items).toHaveLength(2);
   });
 
-  it("shows a held conflict only through the checkup group, not again as a consolidation", async () => {
+  it("shows a held conflict only through the checkup group, and as a consolidation when the checkup list does not carry it", async () => {
     const hold = entry({
       id: "hold",
       kind: "consolidation",
       outcome: "hold",
-      inputs: { ...entry({}).inputs, memoryIds: ["old"], resultMemoryIds: ["new"] },
+      inputs: {
+        ...entry({}).inputs,
+        memoryIds: ["old"],
+        resultMemoryIds: ["new"],
+      },
     });
     const withCheckup = await readDailyReview({
       scope,
@@ -677,7 +739,14 @@ describe("[P4-6] memory checkup in the daily review", () => {
       now: NOW,
       budgetSeconds: 120,
       secondsPerItem: 5,
-      checkup: [],
+      checkup: [
+        {
+          ...checkup("pair", null),
+          memoryId: "new" as never,
+          relatedMemoryId: "old" as never,
+          reason: "conflict",
+        },
+      ],
     });
     expect(withCheckup.items.map(({ key }) => key)).not.toContain("ledger:hold");
     const withoutCheckup = await readDailyReview({
@@ -690,6 +759,7 @@ describe("[P4-6] memory checkup in the daily review", () => {
       now: NOW,
       budgetSeconds: 120,
       secondsPerItem: 5,
+      checkup: [checkup("other", null)],
     });
     expect(withoutCheckup.items.map(({ key }) => key)).toContain("ledger:hold");
   });

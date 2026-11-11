@@ -46,9 +46,10 @@ const WEEKDAY_OFFSET: Readonly<Record<string, number>> = {
 
 export function checkupWeekStart(now: string, timeZone: string): string {
   const today = startOfZonedDay(now, timeZone);
-  const weekday = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(
-    new Date(Date.parse(today) + DAY_MS / 2),
-  );
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+  }).format(new Date(Date.parse(today) + DAY_MS / 2));
   const offset = WEEKDAY_OFFSET[weekday] ?? 0;
   return startOfZonedDay(
     new Date(Date.parse(today) - offset * DAY_MS + DAY_MS / 2).toISOString(),
@@ -79,17 +80,27 @@ export function pickMemoryCheckup(input: {
   const unusedBefore = Date.parse(input.now) - input.unusedDays * DAY_MS;
   const byKey = (left: ProductMemoryRecord, right: ProductMemoryRecord) =>
     left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+  const pairs = input.pairs.filter(
+    ({ memoryId, relatedMemoryId }) =>
+      byId.get(memoryId)?.attributes?.tentative === true && byId.has(relatedMemoryId),
+  );
+  const paired = new Set<string>(
+    pairs.flatMap(({ memoryId, relatedMemoryId }) => [memoryId, relatedMemoryId]),
+  );
   const queues: Record<MemoryCheckupReason, MemoryCheckupCandidate[]> = {
-    conflict: input.pairs
-      .filter(
-        ({ memoryId, relatedMemoryId }) =>
-          byId.get(memoryId)?.attributes?.tentative === true && byId.has(relatedMemoryId),
-      )
-      .map(({ memoryId, relatedMemoryId }) => ({ memoryId, relatedMemoryId, reason: "conflict" })),
+    conflict: pairs.map(({ memoryId, relatedMemoryId }) => ({
+      memoryId,
+      relatedMemoryId,
+      reason: "conflict",
+    })),
     unused: records
       .filter((record) => lastUse(record) < unusedBefore)
       .toSorted((left, right) => lastUse(left) - lastUse(right) || byKey(left, right))
-      .map(({ id }) => ({ memoryId: id, relatedMemoryId: null, reason: "unused" })),
+      .map(({ id }) => ({
+        memoryId: id,
+        relatedMemoryId: null,
+        reason: "unused",
+      })),
     low_confidence: records
       .filter(
         (record) =>
@@ -99,7 +110,11 @@ export function pickMemoryCheckup(input: {
       .toSorted(
         (left, right) => left.confidencePermille - right.confidencePermille || byKey(left, right),
       )
-      .map(({ id }) => ({ memoryId: id, relatedMemoryId: null, reason: "low_confidence" })),
+      .map(({ id }) => ({
+        memoryId: id,
+        relatedMemoryId: null,
+        reason: "low_confidence",
+      })),
     source_unavailable: records
       .filter(
         (record) =>
@@ -115,14 +130,20 @@ export function pickMemoryCheckup(input: {
           }) === "unavailable",
       )
       .toSorted((left, right) => lastUse(left) - lastUse(right) || byKey(left, right))
-      .map(({ id }) => ({ memoryId: id, relatedMemoryId: null, reason: "source_unavailable" })),
+      .map(({ id }) => ({
+        memoryId: id,
+        relatedMemoryId: null,
+        reason: "source_unavailable",
+      })),
   };
   const taken: MemoryCheckupCandidate[] = [];
   const seen = new Set<string>();
   const ordered = MEMORY_CHECKUP_REASON_ORDER.map((reason) =>
     reason === "conflict"
       ? queues[reason]
-      : queues[reason].filter(({ memoryId }) => !input.quiet.has(memoryId)),
+      : queues[reason].filter(
+          ({ memoryId }) => !input.quiet.has(memoryId) && !paired.has(memoryId),
+        ),
   );
   const cursors = ordered.map(() => 0);
   while (taken.length < input.limit) {
@@ -210,7 +231,10 @@ export class MemoryCheckupService {
     await store.createWeek({
       ...scope,
       weekStart,
-      items: picked.map((candidate) => ({ id: this.#options.id(), ...candidate })),
+      items: picked.map((candidate) => ({
+        id: this.#options.id(),
+        ...candidate,
+      })),
       createdAt: now,
     });
     return store.listWeek({ ...scope, weekStart });
@@ -239,6 +263,7 @@ export class MemoryCheckupService {
     const now = this.#options.now();
     const subject = await this.#live(item.memoryId);
     const tentative = subject.attributes?.tentative === true;
+    if (item.reason === "conflict" && !tentative) refuse("invalid", "MEMORY_CHECKUP_STALE");
     const { memory, generationFor } = this.#options;
     let before: MemoryCheckupBefore;
     let keptMemoryId: MemoryId | null = null;

@@ -85,7 +85,12 @@ interface Seed {
 
 const RECENT = "2026-11-09T00:00:00.000Z";
 const SEEDS: readonly Seed[] = [
-  { id: "milk-old", text: "平时喝明治的牛奶", at: "2026-10-01T00:00:00.000Z", usedAt: RECENT },
+  {
+    id: "milk-old",
+    text: "平时喝明治的牛奶",
+    at: "2026-10-01T00:00:00.000Z",
+    usedAt: RECENT,
+  },
   {
     id: "milk-new",
     text: "出差时喝便利店的牛奶",
@@ -109,7 +114,12 @@ const SEEDS: readonly Seed[] = [
     usedAt: RECENT,
     found: false,
   },
-  { id: "found", text: "主人周六跑步", at: "2026-10-20T00:00:00.000Z", usedAt: RECENT },
+  {
+    id: "found",
+    text: "主人周六跑步",
+    at: "2026-10-20T00:00:00.000Z",
+    usedAt: RECENT,
+  },
   {
     id: "reminder",
     text: "十二月一日交房租",
@@ -128,7 +138,10 @@ const SEEDS: readonly Seed[] = [
 ];
 
 const PAIRS: readonly MemoryCheckupPair[] = [
-  { memoryId: createMemoryId("milk-new"), relatedMemoryId: createMemoryId("milk-old") },
+  {
+    memoryId: createMemoryId("milk-new"),
+    relatedMemoryId: createMemoryId("milk-old"),
+  },
 ];
 
 const proactiveConfiguration = (budgetSeconds: number): ProactiveConfiguration => ({
@@ -167,7 +180,11 @@ function command(payload: unknown): GatewayV2Command {
     risk: "low",
     authorizationRef: "authorization-01",
     scope,
-    authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+    authority: {
+      deploymentId: "deployment-01",
+      authorityEpoch: 1,
+      fencingToken: 1,
+    },
     actor: { actorType: "owner", actorId: "owner-subject" },
     idempotencyKey: `idempotency-${Math.random()}`,
     payload,
@@ -190,6 +207,7 @@ describe.each(["worker", "direct"] as const)("[P4-6] memory checkup through %s",
       readonly failWeek?: boolean;
       readonly failReviseOnce?: MemoryId;
       readonly failMergeAndRestore?: boolean;
+      readonly pairs?: readonly MemoryCheckupPair[];
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-memory-checkup-"));
@@ -344,7 +362,7 @@ describe.each(["worker", "direct"] as const)("[P4-6] memory checkup through %s",
             return [record.id as string, seed?.found === false ? null : `message:${record.id}`];
           }),
         ),
-      pairs: async () => PAIRS,
+      pairs: async () => options.pairs ?? PAIRS,
       unusedDays: 90,
       lowConfidenceThreshold: () => 850,
       capacity: () => weekly,
@@ -373,7 +391,10 @@ describe.each(["worker", "direct"] as const)("[P4-6] memory checkup through %s",
       readMemory: async (memoryId) => {
         const record = await state.read(memoryId as MemoryId);
         if (!record) return undefined;
-        return { text: content.values.get(record.contentRef) ?? "", hidden: false };
+        return {
+          text: content.values.get(record.contentRef) ?? "",
+          hidden: false,
+        };
       },
       checkup: options.failWeek
         ? {
@@ -394,7 +415,11 @@ describe.each(["worker", "direct"] as const)("[P4-6] memory checkup through %s",
   }
 
   const picked = (
-    items: readonly { memoryId: string; reason: string; relatedMemoryId: string | null }[],
+    items: readonly {
+      memoryId: string;
+      reason: string;
+      relatedMemoryId: string | null;
+    }[],
   ) => items.map(({ memoryId, reason, relatedMemoryId }) => [memoryId, reason, relatedMemoryId]);
 
   it("builds one list per week from the four reasons and leaves fine memories out", async () => {
@@ -436,25 +461,45 @@ describe.each(["worker", "direct"] as const)("[P4-6] memory checkup through %s",
       };
     };
 
-    const confirmed = await checkup.act({ id: item("unsure").id, action: "confirm", keep: null });
+    const confirmed = await checkup.act({
+      id: item("unsure").id,
+      action: "confirm",
+      keep: null,
+    });
     expect(confirmed).toMatchObject({ action: "confirm", undoneAt: null });
-    expect(await read("unsure")).toMatchObject({ status: "active", tentative: false });
+    expect(await read("unsure")).toMatchObject({
+      status: "active",
+      tentative: false,
+    });
     await expect(
       checkup.act({ id: item("unsure").id, action: "delete", keep: null }),
     ).rejects.toThrow(ApplicationPortError);
     const unconfirmed = await checkup.undo(item("unsure").id);
     expect(unconfirmed).toMatchObject({ action: null, handledAt: null });
     expect(unconfirmed.undoneAt).not.toBeNull();
-    expect(await read("unsure")).toMatchObject({ status: "active", tentative: true });
+    expect(await read("unsure")).toMatchObject({
+      status: "active",
+      tentative: true,
+    });
 
     await checkup.act({ id: item("stale").id, action: "delete", keep: null });
     expect(await read("stale")).toMatchObject({ status: "trashed" });
     await checkup.undo(item("stale").id);
-    expect(await read("stale")).toMatchObject({ status: "active", tentative: false });
+    expect(await read("stale")).toMatchObject({
+      status: "active",
+      tentative: false,
+    });
 
-    const before = { old: await read("milk-old"), fresh: await read("milk-new") };
+    const before = {
+      old: await read("milk-old"),
+      fresh: await read("milk-new"),
+    };
     await expect(
-      checkup.act({ id: item("milk-new").id, action: "merge", keep: createMemoryId("sure") }),
+      checkup.act({
+        id: item("milk-new").id,
+        action: "merge",
+        keep: createMemoryId("sure"),
+      }),
     ).rejects.toThrow("MEMORY_CHECKUP_MERGE_REFUSED");
     const merged = await checkup.act({
       id: item("milk-new").id,
@@ -462,14 +507,24 @@ describe.each(["worker", "direct"] as const)("[P4-6] memory checkup through %s",
       keep: createMemoryId("milk-new"),
     });
     expect(merged.keptMemoryId).toBe("milk-new");
-    expect(await read("milk-old")).toMatchObject({ status: "archived", supersededBy: "milk-new" });
-    expect(await read("milk-new")).toMatchObject({ status: "active", tentative: false });
+    expect(await read("milk-old")).toMatchObject({
+      status: "archived",
+      supersededBy: "milk-new",
+    });
+    expect(await read("milk-new")).toMatchObject({
+      status: "active",
+      tentative: false,
+    });
     await checkup.undo(item("milk-new").id);
     expect(await read("milk-old")).toEqual(before.old);
     expect(await read("milk-new")).toEqual(before.fresh);
 
     await expect(
-      checkup.act({ id: item("stale").id, action: "merge", keep: createMemoryId("stale") }),
+      checkup.act({
+        id: item("stale").id,
+        action: "merge",
+        keep: createMemoryId("stale"),
+      }),
     ).rejects.toThrow("MEMORY_CHECKUP_MERGE_REFUSED");
     await expect(checkup.undo(item("lost").id)).rejects.toThrow("MEMORY_CHECKUP_NOT_HANDLED");
   });
@@ -492,7 +547,10 @@ describe.each(["worker", "direct"] as const)("[P4-6] memory checkup through %s",
   });
 
   it("lets one day handle only as many checkup items as the daily rating budget, undo gives none back", async () => {
-    const { clock, checkup, proactive, failures } = await fixture({ weekly: 4, budget: 15 });
+    const { clock, checkup, proactive, failures } = await fixture({
+      weekly: 4,
+      budget: 15,
+    });
     const week = await checkup.week();
     expect(week).toHaveLength(4);
     const review = await proactive.review();
@@ -539,7 +597,11 @@ describe.each(["worker", "direct"] as const)("[P4-6] memory checkup through %s",
     if (!pair?.relatedMemoryId) throw new Error("missing pair");
     const results = await Promise.allSettled([
       checkup.act({ id: pair.id, action: "merge", keep: pair.memoryId }),
-      checkup.act({ id: pair.id, action: "merge", keep: pair.relatedMemoryId }),
+      checkup.act({
+        id: pair.id,
+        action: "merge",
+        keep: pair.relatedMemoryId,
+      }),
     ]);
     expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
     const statuses = await Promise.all(
@@ -566,8 +628,14 @@ describe.each(["worker", "direct"] as const)("[P4-6] memory checkup through %s",
     await checkup.act({ id: stale.id, action: "delete", keep: null });
     await memory.recover(createMemoryId("stale"), GENERATION_ID);
     const revision = (await state.read(createMemoryId("stale")))?.revision;
-    expect(await checkup.undo(stale.id)).toMatchObject({ action: null, handledAt: null });
-    expect(await state.read(createMemoryId("stale"))).toMatchObject({ status: "active", revision });
+    expect(await checkup.undo(stale.id)).toMatchObject({
+      action: null,
+      handledAt: null,
+    });
+    expect(await state.read(createMemoryId("stale"))).toMatchObject({
+      status: "active",
+      revision,
+    });
   });
 
   it("[negative] reports a failed weekly list on the action instead of a used-up budget", async () => {
@@ -577,16 +645,26 @@ describe.each(["worker", "direct"] as const)("[P4-6] memory checkup through %s",
     expect(failures).toHaveLength(1);
     await expect(
       proactive.execute(
-        command({ key: "checkup:memory-checkup-0001", action: "confirm", keep: null }),
+        command({
+          key: "checkup:memory-checkup-0001",
+          action: "confirm",
+          keep: null,
+        }),
       ),
     ).rejects.toThrow("week failed");
   });
 
   it("finishes undoing a merge on the second try after the first try stopped half way", async () => {
-    const { checkup, state } = await fixture({ failReviseOnce: createMemoryId("milk-new") });
+    const { checkup, state } = await fixture({
+      failReviseOnce: createMemoryId("milk-new"),
+    });
     const pair = (await checkup.week()).find(({ reason }) => reason === "conflict");
     if (!pair) throw new Error("missing pair");
-    await checkup.act({ id: pair.id, action: "merge", keep: createMemoryId("milk-new") });
+    await checkup.act({
+      id: pair.id,
+      action: "merge",
+      keep: createMemoryId("milk-new"),
+    });
     expect((await state.read(createMemoryId("milk-new")))?.attributes?.tentative).not.toBe(true);
     await expect(checkup.undo(pair.id)).rejects.toThrow("revise failed");
     expect((await state.read(createMemoryId("milk-old")))?.status).toBe("active");
@@ -599,7 +677,11 @@ describe.each(["worker", "direct"] as const)("[P4-6] memory checkup through %s",
     const pair = (await checkup.week()).find(({ reason }) => reason === "conflict");
     if (!pair) throw new Error("missing pair");
     await expect(
-      checkup.act({ id: pair.id, action: "merge", keep: createMemoryId("milk-new") }),
+      checkup.act({
+        id: pair.id,
+        action: "merge",
+        keep: createMemoryId("milk-new"),
+      }),
     ).rejects.toThrow("MEMORY_CHECKUP_RESTORE_FAILED");
     expect((await state.read(createMemoryId("milk-old")))?.status).toBe("archived");
     expect((await checkup.week()).find(({ id }) => id === pair.id)?.action).toBe("merge");
@@ -610,5 +692,32 @@ describe.each(["worker", "direct"] as const)("[P4-6] memory checkup through %s",
     await memory.confirm(createMemoryId("milk-new"), GENERATION_ID);
     const week = await checkup.week();
     expect(week.map(({ reason }) => reason)).not.toContain("conflict");
+  });
+
+  it("lists every held pair as a conflict even when its newer memory is also unsure", async () => {
+    const { checkup } = await fixture({
+      pairs: [
+        ...PAIRS,
+        {
+          memoryId: createMemoryId("unsure"),
+          relatedMemoryId: createMemoryId("found"),
+        },
+      ],
+    });
+    const week = picked(await checkup.week());
+    expect(week).toContainEqual(["unsure", "conflict", "found"]);
+    expect(week).toContainEqual(["milk-new", "conflict", "milk-old"]);
+    expect(week).not.toContainEqual(["unsure", "low_confidence", null]);
+  });
+
+  it("[negative] refuses to act on a conflict whose newer memory was confirmed after the list was made", async () => {
+    const { checkup, memory, state } = await fixture();
+    const pair = (await checkup.week()).find(({ reason }) => reason === "conflict");
+    if (!pair) throw new Error("missing pair");
+    await memory.confirm(createMemoryId("milk-new"), GENERATION_ID);
+    await expect(checkup.act({ id: pair.id, action: "delete", keep: null })).rejects.toThrow(
+      "MEMORY_CHECKUP_STALE",
+    );
+    expect((await state.read(createMemoryId("milk-new")))?.status).toBe("active");
   });
 });

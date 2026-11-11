@@ -219,7 +219,9 @@ function productionClock(): ClockPort {
 }
 
 function productionIds(): IdGeneratorPort {
-  return Object.freeze({ next: (namespace: string) => `${namespace}:${randomUUID()}` });
+  return Object.freeze({
+    next: (namespace: string) => `${namespace}:${randomUUID()}`,
+  });
 }
 
 function srtTaskEnvironmentRoute(lifecycle: RemoteExecutionBackend): ProductionTaskEnvironments {
@@ -236,7 +238,9 @@ function srtTaskEnvironmentRoute(lifecycle: RemoteExecutionBackend): ProductionT
 function toolCallPrewarm<Route>(
   route: Route | undefined,
   create: (route: Route) => (request: RuntimeRequest, toolName: string) => void,
-): { readonly onToolCallStarted?: (request: RuntimeRequest, toolName: string) => void } {
+): {
+  readonly onToolCallStarted?: (request: RuntimeRequest, toolName: string) => void;
+} {
   return route ? { onToolCallStarted: create(route) } : {};
 }
 
@@ -591,9 +595,18 @@ export async function runAgentService(
     name: "sensitive-interceptions",
     close: () => (repository === undefined ? undefined : flushSensitiveInterceptions(repository)),
   });
-  lifecycle.register({ name: "authority", close: () => authorityLifecycle?.stop() });
-  lifecycle.register({ name: "model", close: () => modelComposition?.composition.close() });
-  lifecycle.register({ name: "memory", close: () => memoryComposition?.close() });
+  lifecycle.register({
+    name: "authority",
+    close: () => authorityLifecycle?.stop(),
+  });
+  lifecycle.register({
+    name: "model",
+    close: () => modelComposition?.composition.close(),
+  });
+  lifecycle.register({
+    name: "memory",
+    close: () => memoryComposition?.close(),
+  });
   lifecycle.register({
     name: "memory-worker",
     stopAccepting: () => memoryWorker?.stopAccepting(),
@@ -671,7 +684,10 @@ export async function runAgentService(
       resolveSecret: (secretRef, secretVersion) =>
         sources.provider.resolve(secretRef, secretVersion),
       onDiagnostic: (event) =>
-        writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
+        writeServiceDiagnostic(errorOutput, {
+          component: "agent-service",
+          ...event,
+        }),
     });
     const configuration = magpieModels.configuration;
     for (const key of configuration.runPolicy?.retiredKeys ?? [])
@@ -794,7 +810,10 @@ export async function runAgentService(
           configuration.ownerId,
           configuration.agentId,
           authority,
-          { leaseId: authorityLease.leaseId, fencingToken: authorityLease.fencingToken },
+          {
+            leaseId: authorityLease.leaseId,
+            fencingToken: authorityLease.fencingToken,
+          },
           agentServiceBootId,
         )
         .currentExecutionLease?.({ runId, at: clock.now() });
@@ -1068,7 +1087,10 @@ export async function runAgentService(
           reason: detail.reason,
         }),
       ...(sandboxServices
-        ? { sandboxJobs: sandboxServices.broker, sandboxExecutions: sandboxServices.brokerV2 }
+        ? {
+            sandboxJobs: sandboxServices.broker,
+            sandboxExecutions: sandboxServices.brokerV2,
+          }
         : {}),
       receipts: repository.capabilityInvocationReceiptPort(
         configuration.ownerId,
@@ -1429,7 +1451,11 @@ export async function runAgentService(
                 const payload = await episodePayloads.get(ref);
                 if (!payload || payload.contentType !== "text/plain") return undefined;
                 return new TextDecoder("utf-8", { fatal: true }).decode(
-                  await episodeProtector.unprotect({ ownerId, agentId, payload }),
+                  await episodeProtector.unprotect({
+                    ownerId,
+                    agentId,
+                    payload,
+                  }),
                 );
               },
               storeText: async (input) => {
@@ -1448,7 +1474,9 @@ export async function runAgentService(
               },
               embedder: memoryComposition.projection.embedder,
               ...(memoryComposition.projection.queryInstruction
-                ? { queryInstruction: memoryComposition.projection.queryInstruction }
+                ? {
+                    queryInstruction: memoryComposition.projection.queryInstruction,
+                  }
                 : {}),
               ...(configuration.runPolicy?.timeZone
                 ? { timeZone: configuration.runPolicy.timeZone }
@@ -1558,7 +1586,10 @@ export async function runAgentService(
             ({ ref }) => ref === proactiveConfiguration.modelRef,
           )
         : undefined;
-      const proactiveScope = { ownerId: configuration.ownerId, agentId: configuration.agentId };
+      const proactiveScope = {
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+      };
       const proactiveStore =
         proactiveConfiguration && proactiveSecret && proactiveDescriptor
           ? repository.proactive()
@@ -1609,7 +1640,10 @@ export async function runAgentService(
           productionSensitiveInterceptionRecorder(repository),
         );
         const proactiveTimeZone = configuration.runPolicy?.timeZone ?? "UTC";
-        const checkupScope = { ownerId: configuration.ownerId, agentId: configuration.agentId };
+        const checkupScope = {
+          ownerId: configuration.ownerId,
+          agentId: configuration.agentId,
+        };
         const checkupJobs = repository.memoryProjectionJobs();
         const checkupBook = repository.memoryBook();
         const checkupConsolidation = repository.memoryConsolidation();
@@ -1629,9 +1663,15 @@ export async function runAgentService(
               sourceMessageIds: (records) =>
                 findSourceMessageIds(checkupBook, checkupScope, records),
               pairs: async () =>
-                (await checkupConsolidation.listHeldPairs(checkupScope)).map(
-                  ([memoryId, relatedMemoryId]) => ({ memoryId, relatedMemoryId }),
-                ),
+                (
+                  await checkupConsolidation.listHeldPairs({
+                    ...checkupScope,
+                    openOnly: true,
+                  })
+                ).map(([memoryId, relatedMemoryId]) => ({
+                  memoryId,
+                  relatedMemoryId,
+                })),
               unusedDays: proactiveConfiguration.reviewMemoryUnusedDays,
               lowConfidenceThreshold: (category) => autoCommitThreshold(category),
               capacity: () =>
@@ -1736,7 +1776,11 @@ export async function runAgentService(
             PROACTIVE_MAX_OUTPUT_TOKENS,
           ),
           feedback: (sentFrom) =>
-            feedbackStore.listFeedback({ ...proactiveScope, sentFrom, limit: 500 }),
+            feedbackStore.listFeedback({
+              ...proactiveScope,
+              sentFrom,
+              limit: 500,
+            }),
           clock,
           ids,
           onDecision: (decision) =>
@@ -1801,7 +1845,10 @@ export async function runAgentService(
           : undefined;
       if (gapExportSecret && protector) {
         gapExport = new ProductionGapExport({
-          scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
+          scope: {
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+          },
           marks: repository.gapCaseMarks(),
           seal: createProactiveSeal({
             payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
@@ -1834,7 +1881,10 @@ export async function runAgentService(
         const settingsStore = repository.proactive();
         const secretProvider = hostModelSources(configuration).provider;
         mcpRead = new ProductionMcpRead({
-          scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
+          scope: {
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+          },
           clock,
           secret: await secretProvider.resolve(mcpReadSecret.ref, mcpReadSecret.version),
           ...(mcpWriteSecret
@@ -1945,7 +1995,9 @@ export async function runAgentService(
           listApprovals: () =>
             pushRepository
               .authorizationStore()
-              .listApprovals(configuration.ownerId, configuration.agentId, { status: "pending" }),
+              .listApprovals(configuration.ownerId, configuration.agentId, {
+                status: "pending",
+              }),
           ...(museIntake
             ? {
                 museChannel: createMuseChannelPushSource({
@@ -2008,7 +2060,10 @@ export async function runAgentService(
       }
       proactive?.start();
       observation = new ProductionObservation({
-        scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
+        scope: {
+          ownerId: configuration.ownerId,
+          agentId: configuration.agentId,
+        },
         observation: repository.ledgerObservation(),
         ledger: repository.decisionLedger(),
         marks: repository.gapCaseMarks(),
@@ -2208,7 +2263,10 @@ export async function runAgentService(
                   enabledTools: route.enabledTools,
                   prewarm: (request) => sandboxServices.prewarmEnvironment(request, route),
                   report: (event) =>
-                    writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
+                    writeServiceDiagnostic(errorOutput, {
+                      component: "agent-service",
+                      ...event,
+                    }),
                 }),
               ),
             }
@@ -2305,7 +2363,10 @@ export async function runAgentService(
             ...request,
           }),
         onSearchIndexDiagnostic: (diagnostic) =>
-          writeServiceDiagnostic(errorOutput, { component: "agent-service", ...diagnostic }),
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            ...diagnostic,
+          }),
         cancelRun: async (input) => {
           if (!runs) throw new Error("RUN_COORDINATOR_UNAVAILABLE");
           if (await runs.background?.cancel(input.runId)) return;
@@ -2412,7 +2473,12 @@ export async function runAgentService(
         "run-dispatch",
         "memory-consumer",
       ])
-        health.observe({ name, required: true, status: "healthy", reasonCode: null });
+        health.observe({
+          name,
+          required: true,
+          status: "healthy",
+          reasonCode: null,
+        });
       health.setAuthorityActive(true);
     }
     if (!webEnabled && sandboxServices) {
@@ -2484,7 +2550,10 @@ export async function runAgentService(
       signal,
     });
     await lifecycle.shutdown();
-    writeServiceDiagnostic(output, { component: "agent-service", event: "service.stopped" });
+    writeServiceDiagnostic(output, {
+      component: "agent-service",
+      event: "service.stopped",
+    });
     return termination.kind === "signal" ? 0 : 1;
   } catch (error) {
     await lifecycle.shutdown().catch(() => undefined);

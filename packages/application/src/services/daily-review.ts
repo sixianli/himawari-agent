@@ -181,7 +181,10 @@ export interface DailyReview {
   readonly sampled: number;
   readonly notSampled: number;
   readonly items: readonly DailyReviewItem[];
-  readonly folded: { readonly total: number; readonly items: readonly DailyReviewItem[] };
+  readonly folded: {
+    readonly total: number;
+    readonly items: readonly DailyReviewItem[];
+  };
 }
 
 const KEY_PREFIXES: readonly DailyReviewSource[] = ["ledger", "mail", "checkup"];
@@ -287,13 +290,27 @@ export async function readDailyReview(options: {
     limit: DAILY_REVIEW_POOL_LIMIT,
   });
   const checks = new Map(overview.decisions.map((decision) => [decision.id, decision]));
+  const checkupMemoryIds = new Set<string>(
+    (options.checkup ?? []).flatMap(({ reason, memoryId, relatedMemoryId }) =>
+      reason === "conflict" ? [memoryId, ...(relatedMemoryId ? [relatedMemoryId] : [])] : [],
+    ),
+  );
   const candidates = new Map<
     string,
-    { readonly item: DailyReviewPoolItem; readonly build: () => Promise<DailyReviewItem> }
+    {
+      readonly item: DailyReviewPoolItem;
+      readonly build: () => Promise<DailyReviewItem>;
+    }
   >();
   for (const entry of entries) {
     if (entry.kind === "memory_candidate" && OWNER_DECIDED_DISCARDS.has(entry.reasonCode)) continue;
-    if (options.checkup !== undefined && entry.kind === "consolidation" && entry.outcome === "hold")
+    if (
+      entry.kind === "consolidation" &&
+      entry.outcome === "hold" &&
+      [...entry.inputs.memoryIds, ...entry.inputs.resultMemoryIds].some((id) =>
+        checkupMemoryIds.has(id),
+      )
+    )
       continue;
     const check = entry.kind === "proactive" ? checks.get(entry.id) : undefined;
     if (entry.kind === "proactive" && entry.outcome === "silent" && (check?.counts.judged ?? 0) < 1)
