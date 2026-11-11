@@ -113,3 +113,9 @@ date: "2026-10-29"
 - [ADR 0102 推送反馈记录](0102-record-push-notification-feedback.md)
 - [ADR 0105 提醒页和设置四页](0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)
 - [案例 45](../engineering-casebook.md#case-proactive-gmail)
+
+<a id="multi-user-follow-up"></a>
+
+## 2026-11-11 后续：多人使用
+
+[ADR 0234](0234-one-program-per-person-database-file.md) 之后，第 10 条“只有 Andy 一个人用，接受这个风险”只对 Andy 自己的那一份成立。其他受邀的人各有自己的库和密钥，每人一把数据密钥，邀请时告知 Andy 技术上能读所有人的文件。本 ADR 的决定不变。
