@@ -107,7 +107,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       readonly withoutSummaries?: boolean;
       readonly binding?: { readonly status?: "disabled"; readonly ownerId?: string };
       readonly failBinding?: boolean;
-      readonly readCeiling?: DataClassification;
+      readonly readCeiling?: Exclude<DataClassification, "restricted">;
       readonly sensitiveSummary?: boolean;
     } = {},
   ) {
@@ -485,6 +485,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     return {
       url,
       seedProfile,
+      runProjection: () => memory.runProjectionBatch(20),
       connect,
       access,
       call,
@@ -953,13 +954,24 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       expect(output.profile.omitted).toContain(`${40 - lines.length} 条`);
     });
 
-    it("auto returns at most three memories", async () => {
+    it("auto returns at most three memories where a plain lookup returns more", async () => {
       const f = await setup();
+      for (let index = 0; index < 5; index += 1)
+        await f.writer.create({
+          key: `dentist-extra-${index}`,
+          text: `牙医第${index}次复诊的注意事项`,
+          due: "2026-11-20T10:00",
+          repeat: "none",
+        });
+      await f.runProjection();
       const client = await f.connect("modern");
+      const plain = JSON.parse(
+        (await f.call(client, "find_memories", { query: "牙医", limit: 10 })).text,
+      ) as { memories: unknown[] };
+      expect(plain.memories.length).toBeGreaterThan(3);
       const found = await f.call(client, "find_memories", { query: "牙医", limit: 10, auto: true });
       const output = JSON.parse(found.text) as { memories: { text: string }[] };
-      expect(output.memories.map(({ text }) => text)).toContain(DENTIST);
-      expect(output.memories.length).toBeLessThanOrEqual(3);
+      expect(output.memories.length).toBe(3);
     });
 
     it("REVERSE: auto on an unrelated question returns nothing at all, without the empty-result note", async () => {

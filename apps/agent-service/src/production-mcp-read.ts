@@ -42,6 +42,7 @@ import {
   MCP_PROPOSE_RULE_SAVED,
   MCP_SERVER_INSTRUCTIONS,
   MCP_START_HERE_OMITTED,
+  MCP_START_HERE_RULES_OMITTED,
   MCP_START_HERE_RULES_NOTE,
   MCP_TOOL_FIND_MEMORIES,
   MCP_TOOL_PROPOSE_MEMORY,
@@ -115,7 +116,7 @@ export const TODAY_CONTEXT_SUMMARY_LIMIT = 8;
 export const START_HERE_RULES_CHARACTER_BUDGET = 1_200;
 export const AUTO_FIND_LIMIT = 3;
 const START_HERE_MEMORY_ID_LIMIT = 200;
-export const START_HERE_DEFAULT_CEILING: DataClassification = "private";
+export const START_HERE_DEFAULT_CEILING: Exclude<DataClassification, "restricted"> = "private";
 const SERVER_NAME = "himawari";
 const SERVER_VERSION = "1.0.0";
 const CLIENT_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}/u;
@@ -213,7 +214,7 @@ export interface ProductionMcpReadOptions {
   readonly owners: Pick<OwnerIdentityStatePort, "readBySubject">;
   readonly write?: McpWriteAccess;
   readonly timeZone: string;
-  readonly readCeiling?: DataClassification;
+  readonly readCeiling?: Exclude<DataClassification, "restricted">;
   readonly requestTimeoutMs: number;
   readonly sources: McpReadSources;
   readonly ledger: Pick<DecisionLedgerPort, "append">;
@@ -928,7 +929,6 @@ export class ProductionMcpRead {
     trace: ReadTrace,
   ): Promise<ToolOutcome> {
     const { auto, ...recallArgs } = args;
-    if (auto !== undefined && typeof auto !== "boolean") throw new Error("MCP_FIND_AUTO_INVALID");
     const requested = recallArgs["limit"];
     const forwarded: JsonObject =
       auto === true
@@ -1077,7 +1077,7 @@ export class ProductionMcpRead {
       note: MCP_START_HERE_RULES_NOTE.text,
       items: kept,
       ...(omittedRules > 0
-        ? { omitted: renderPrompt(MCP_START_HERE_OMITTED, { count: String(omittedRules) }) }
+        ? { omitted: renderPrompt(MCP_START_HERE_RULES_OMITTED, { count: String(omittedRules) }) }
         : {}),
     };
     const today = await this.#todayContext(trace, ceiling);

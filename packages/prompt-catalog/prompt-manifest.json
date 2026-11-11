@@ -485,9 +485,9 @@
     "reason": "外部 agent 读记忆：新增 start_here 和服务使用说明，三个读工具的描述写明触发条件"
   },
   "mcp.start-here": {
-    "sha256": "efc63c5111ac32ea48270ced75b89fddc338c02ba55238900a9e141b78ecca19",
+    "sha256": "55f0d343aee40071057a6ab24ee9a8373ad6d335b6df31796043641d5636fdf9",
     "changedIn": "ADR 0242",
-    "reason": "外部 agent 读记忆：新增 start_here 和服务使用说明，三个读工具的描述写明触发条件"
+    "reason": "外部 agent 读记忆：规则摘要截断提示指向 rule_book，start_here 描述写准截断范围"
   },
   "mcp.start-here-omitted": {
     "sha256": "3c91def4ff3efa9af05ca5bd7e7cb9b9304f77c72d1d1b319a4b44039900e668",
@@ -498,6 +498,11 @@
     "sha256": "a0b9b6b42142fed30a3f70e93b7dd6ea9fdb36ffcb04a2bb28aff740c50a2f8e",
     "changedIn": "ADR 0242",
     "reason": "外部 agent 读记忆：新增 start_here 和服务使用说明，三个读工具的描述写明触发条件"
+  },
+  "mcp.start-here-rules-omitted": {
+    "sha256": "8a1041495b5bb495569ece1904a384281958bd49d20cb205edc880aa523e643b",
+    "changedIn": "ADR 0242",
+    "reason": "外部 agent 读记忆：规则摘要截断提示指向 rule_book，start_here 描述写准截断范围"
   },
   "mcp.today-context": {
     "sha256": "bc3035b642c736cfa6946e2c9b2ce88ec9f2b0e066266f5352db0d24050d3374",

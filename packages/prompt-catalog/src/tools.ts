@@ -264,7 +264,7 @@ export const MCP_TOOL_START_HERE = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tools",
   output: "free-text",
-  text: "每次开始一段新的工作（新会话）时先调用一次：返回三段，依次是主人是谁、有什么习惯和要求（profile），主人定下的规则摘要（rules），今天的日期、近期提醒和近两天的对话摘要（today）。前两段变化很少，第三段每次不同。某段太长时会截断，并写明还有几条没列出，需要更多用 find_memories 查。只读。",
+  text: "每次开始一段新的工作（新会话）时先调用一次：返回三段，依次是主人是谁、有什么习惯和要求（profile），主人定下的规则摘要（rules），今天的日期、近期提醒和近两天的对话摘要（today）。前两段变化很少，第三段每次不同。profile 和 rules 超出字数预算时会截断，并写明还有几条没列出；profile 的更多内容用 find_memories 查，规则的完整列表用 rule_book 查。只读。",
 });
 
 export const MCP_SERVER_INSTRUCTIONS = fixedPrompt({
@@ -292,6 +292,15 @@ export const MCP_START_HERE_OMITTED = templatePrompt({
   layer: "tool-result",
   output: "free-text",
   segments: [text("还有 "), slot("count"), text(" 条没列出，需要时用 find_memories 查。")],
+});
+
+export const MCP_START_HERE_RULES_OMITTED = templatePrompt({
+  id: "mcp.start-here-rules-omitted",
+  purpose: "start_here 规则摘要段超出字数预算被截断时，写明还有几条，并指向 rule_book",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  segments: [text("还有 "), slot("count"), text(" 条规则没列出，完整列表用 rule_book 查。")],
 });
 
 export const MCP_TOOL_FIND_MEMORIES = fixedPrompt({
