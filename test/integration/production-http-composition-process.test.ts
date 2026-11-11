@@ -967,6 +967,27 @@ describe("production HTTP composition over a real installed process", { timeout:
       });
       expect(crossSiteExport.status).toBe(403);
 
+      const chatUrl = "/api/data-export/v1/chats";
+      const chats = await httpRequest(appAddress, chatUrl, {
+        headers: requestHeaders(token, cookie),
+      });
+      expect(chats.status).toBe(200);
+      expect(chats.headers.get("content-type")).toBe("application/zip");
+      expect(chats.headers.get("cache-control")).toBe("no-store");
+      expect(chats.raw.startsWith("PK")).toBe(true);
+      const anonymousChats = await httpRequest(appAddress, chatUrl, {
+        headers: requestHeaders(token),
+      });
+      expect(anonymousChats.status).toBe(401);
+      expect(anonymousChats.raw).toBe("");
+      const crossSiteChats = await httpRequest(appAddress, chatUrl, {
+        headers: {
+          ...Object.fromEntries(requestHeaders(token, cookie)),
+          "sec-fetch-site": "cross-site",
+        },
+      });
+      expect(crossSiteChats.status).toBe(403);
+
       const expiredToken = await signToken({
         issuedAt: Math.floor(Date.now() / 1000) - 600,
         expiresAt: Math.floor(Date.now() / 1000) - 120,

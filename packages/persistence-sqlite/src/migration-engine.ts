@@ -714,6 +714,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0091_decision_prereviews.sql",
   },
+  {
+    sequence: 92,
+    name: "real_eval",
+    changeSet: "real-eval",
+    phase: "expand" as const,
+    file: "0092_real_eval.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

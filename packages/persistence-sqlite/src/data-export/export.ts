@@ -546,6 +546,12 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       count: null,
       reason: "可重建的派生数据；导入后服务启动时按当时的向量模型自动补建",
     },
+    {
+      what: "记忆评测的题库和每次评测的分数",
+      count: null,
+      reason:
+        "评测用的派生数据：题目由模型从记忆和原话生成，导入后下一次评测会从导入的记忆重新出题；分数只是统计数字",
+    },
   ];
   if (options.withEvidence !== true)
     omitted.push({

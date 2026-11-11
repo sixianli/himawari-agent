@@ -793,6 +793,15 @@ export const messages = {
   "memory.page.exportDone":
     "Exported {count} memories and {rules} standing rules in force; {withheld} sensitive text places were left as placeholders.",
   "memory.page.exportFailed": "The export failed. Please try again later.",
+  "memory.page.chatExport": "Export chats",
+  "memory.page.chatExportTitle": "Export all chats",
+  "memory.page.chatExportNote":
+    "You get one zip: data/threads.jsonl holds every conversation as data, and chats/ has one readable Markdown file per conversation. Passwords, ID numbers and other secrets are left as placeholders. Conversations in the trash are exported too, and apart from secrets their text is plain, so keep the file safe. Attachments come only as a list (name, size, type), not the files themselves. Chats can be taken away but not imported back. To take the secrets too, use the encrypted export on the command line.",
+  "memory.page.chatDownload": "Download chats",
+  "memory.page.chatExportDone":
+    "Exported {threads, plural, one {# conversation} other {# conversations}} and {messages, plural, one {# message} other {# messages}}; {withheld, plural, one {# message with a secret was left as a placeholder} other {# messages with secrets were left as placeholders}}.",
+  "memory.page.chatExportTooLarge":
+    "There are too many chats to export from the web in one go. Please export on the server with the command line (himawari-admin data export-chats).",
   "capabilities.title": "Capabilities and adapters",
   "authorizations.title": "Authorizations and grants",
   "trace.title": "Trace",

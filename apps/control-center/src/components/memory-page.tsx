@@ -4,7 +4,7 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { requestDataExport } from "../data-export.js";
+import { requestChatExport, requestDataExport } from "../data-export.js";
 import { DEFAULT_UI_LOCALE, useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import type { MemoryItem, MemoryModel, MemoryOverview } from "../memory.js";
@@ -2128,6 +2128,71 @@ function ExportPanel({ message, onClose }: { message: Message; onClose: () => vo
   );
 }
 
+function ChatExportPanel({ message, onClose }: { message: Message; onClose: () => void }) {
+  const [state, setState] = useState<
+    | { readonly kind: "idle" }
+    | { readonly kind: "working" }
+    | {
+        readonly kind: "done";
+        readonly threads: number;
+        readonly messages: number;
+        readonly withheld: number;
+      }
+    | { readonly kind: "failed"; readonly tooLarge: boolean }
+  >({ kind: "idle" });
+  const download = async () => {
+    setState({ kind: "working" });
+    try {
+      const result = await requestChatExport();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(result.blob);
+      link.download = result.fileName;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      setState({
+        kind: "done",
+        threads: result.threads,
+        messages: result.messages,
+        withheld: result.withheld,
+      });
+    } catch (error) {
+      setState({
+        kind: "failed",
+        tooLarge: error instanceof Error && error.message === "CHAT_EXPORT_TOO_LARGE",
+      });
+    }
+  };
+  return (
+    <section className="memory-card" ref={reveal}>
+      <h4>{message("memory.page.chatExportTitle")}</h4>
+      <p>{message("memory.page.chatExportNote")}</p>
+      <div className="actions">
+        <ActionButton disabled={state.kind === "working"} onClick={download}>
+          {message("memory.page.chatDownload")}
+        </ActionButton>
+        <ActionButton variant="quiet" onClick={onClose}>
+          {message("memory.page.less")}
+        </ActionButton>
+      </div>
+      {state.kind === "working" ? <output>{message("memory.page.exportWorking")}</output> : null}
+      {state.kind === "done" ? (
+        <output>
+          {message("memory.page.chatExportDone", {
+            threads: state.threads,
+            messages: state.messages,
+            withheld: state.withheld,
+          })}
+        </output>
+      ) : null}
+      {state.kind === "failed" ? (
+        <p role="alert">
+          {message(state.tooLarge ? "memory.page.chatExportTooLarge" : "memory.page.exportFailed")}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function AddForm({
   memory,
   message,
@@ -2227,7 +2292,7 @@ export function MemoryPage({
 }) {
   const [tab, setTab] = useState<Tab>("memories");
   const [showId, setShowId] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"add" | "import" | "export" | null>(null);
+  const [panel, setPanel] = useState<"add" | "import" | "export" | "chats" | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const [since, setSince] = useState<string | null | undefined>(undefined);
   const timer = useRef(0);
@@ -2314,7 +2379,7 @@ export function MemoryPage({
       )}
       <footer className="memory-footer">
         <span>
-          {(["import", "export"] as const).map((key) => (
+          {(["import", "export", "chats"] as const).map((key) => (
             <ActionButton
               key={key}
               variant="quiet"
@@ -2322,7 +2387,7 @@ export function MemoryPage({
               aria-expanded={panel === key}
               onClick={() => setPanel(panel === key ? null : key)}
             >
-              {message(`memory.page.${key}`)}
+              {message(key === "chats" ? "memory.page.chatExport" : `memory.page.${key}`)}
             </ActionButton>
           ))}
         </span>
@@ -2337,6 +2402,9 @@ export function MemoryPage({
       ) : null}
       {panel === "export" && overview ? (
         <ExportPanel message={message} onClose={() => setPanel(null)} />
+      ) : null}
+      {panel === "chats" && overview ? (
+        <ChatExportPanel message={message} onClose={() => setPanel(null)} />
       ) : null}
       {notice ? (
         <output className="memory-notice">

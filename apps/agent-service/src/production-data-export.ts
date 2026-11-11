@@ -16,6 +16,7 @@ import type { FastifyInstance } from "fastify";
 
 export const DATA_EXPORT_PATH = "/api/data-export/v1/archive";
 export const DATA_EXPORT_ARCHIVE_ROOT = "himawari-export";
+export const DATA_EXPORT_TOO_LARGE = "DATA_EXPORT_TOO_LARGE";
 const MAXIMUM_ARCHIVE_BYTES = 512 * 1024 * 1024;
 const encoder = new TextEncoder();
 
@@ -41,7 +42,12 @@ function dosDateTime(iso: string): { readonly time: number; readonly date: numbe
   };
 }
 
-export function createStoredZip(files: PortableFiles, exportedAt: string): Uint8Array {
+export function createStoredZip(
+  files: PortableFiles,
+  exportedAt: string,
+  root: string = DATA_EXPORT_ARCHIVE_ROOT,
+  maximumBytes: number = MAXIMUM_ARCHIVE_BYTES,
+): Uint8Array {
   const { time, date } = dosDateTime(exportedAt);
   const entries = [...files.entries()].sort(([left], [right]) =>
     left < right ? -1 : left > right ? 1 : 0,
@@ -50,7 +56,7 @@ export function createStoredZip(files: PortableFiles, exportedAt: string): Uint8
   const directory: Uint8Array[] = [];
   let offset = 0;
   for (const [name, content] of entries) {
-    const nameBytes = encoder.encode(`${DATA_EXPORT_ARCHIVE_ROOT}/${name}`);
+    const nameBytes = encoder.encode(`${root}/${name}`);
     const checksum = crc32(content);
     const local = new DataView(new ArrayBuffer(30));
     local.setUint32(0, 0x04034b50, true);
@@ -80,9 +86,10 @@ export function createStoredZip(files: PortableFiles, exportedAt: string): Uint8
     chunks.push(new Uint8Array(local.buffer), nameBytes, content);
     directory.push(new Uint8Array(entry.buffer), nameBytes);
     offset += 30 + nameBytes.byteLength + content.byteLength;
-    if (offset > MAXIMUM_ARCHIVE_BYTES) throw new RangeError("DATA_EXPORT_TOO_LARGE");
+    if (offset > maximumBytes) throw new RangeError(DATA_EXPORT_TOO_LARGE);
   }
   const directoryBytes = directory.reduce((sum, part) => sum + part.byteLength, 0);
+  if (offset + directoryBytes + 22 > maximumBytes) throw new RangeError(DATA_EXPORT_TOO_LARGE);
   const end = new DataView(new ArrayBuffer(22));
   end.setUint32(0, 0x06054b50, true);
   end.setUint16(8, entries.length, true);
