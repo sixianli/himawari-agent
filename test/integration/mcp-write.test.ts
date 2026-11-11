@@ -293,19 +293,23 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       clock,
       onFailure: (error) => failures.push(error),
     });
+    let slowReads = 0;
     const slowDecided = <T extends object>(target: T): T =>
-      new Proxy(target, {
-        get(inner, key) {
-          const value = Reflect.get(inner, key, inner);
-          if (typeof value !== "function") return value;
-          if (key !== "decided" || options.slowDecidedMs === undefined) return value.bind(inner);
-          return async (proposalId: string) => {
-            const found = await value.call(inner, proposalId);
-            clock.advance(options.slowDecidedMs ?? 0);
-            return found;
-          };
-        },
-      });
+      options.slowDecidedMs === undefined
+        ? target
+        : new Proxy(target, {
+            get(inner, key) {
+              const value = Reflect.get(inner, key, inner);
+              if (typeof value !== "function") return value;
+              if (key !== "decided") return value.bind(inner);
+              return async (proposalId: string) => {
+                const found = await value.call(inner, proposalId);
+                slowReads += 1;
+                clock.advance(options.slowDecidedMs ?? 0);
+                return found;
+              };
+            },
+          });
     const mcp = new ProductionMcpRead({
       scope,
       clock,
@@ -441,6 +445,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       repository,
       databasePath,
       clock,
+      slowReads: () => slowReads,
       realLedger,
     };
   }
@@ -582,6 +587,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const desktop = await f.connect({ answer: { action: "decline" }, answerAfterMs: 10 });
     expect((await f.propose(desktop, { text: COFFEE })).text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
     expect((await f.proposeRule(desktop, RULE)).text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect(f.slowReads()).toBe(2);
     expect(await f.decisions()).toEqual([]);
     expect(await f.storedRules()).toEqual([]);
   });

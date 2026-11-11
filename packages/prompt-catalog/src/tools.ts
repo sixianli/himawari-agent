@@ -359,7 +359,7 @@ export const MCP_PROPOSE_MEMORY_DECLINED = fixedPrompt({
 
 export const MCP_PROPOSE_NOT_SHOWN = fixedPrompt({
   id: "mcp.propose-not-shown",
-  purpose: "客户端没把确认框显示给主人就立刻回了拒绝时，返回给外部 agent 的文字",
+  purpose: "客户端没把确认框显示给主人就立刻回了拒绝或取消时，返回给外部 agent 的文字",
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tool-result",
   output: "free-text",
