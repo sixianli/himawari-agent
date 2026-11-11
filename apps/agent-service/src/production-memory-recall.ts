@@ -212,7 +212,7 @@ export class ProductionMemoryRecall {
       readonly text: string;
       readonly wanted: "confirmed" | "tentative";
     };
-    const dedupe = this.#options.dedupeSameSource === true;
+    const dedupe = this.#options.dedupeSameSource !== false;
     const duplicateOf = (
       shownSoFar: readonly Shown[],
       memory: ProductMemoryRecord,
@@ -242,23 +242,40 @@ export class ProductionMemoryRecall {
       return text ? { memory, text, wanted } : undefined;
     };
     const tentativeKept: Shown[] = [];
-    for (const hit of tentativeHits) {
-      if (tentativeKept.length >= tentativeLimit) break;
-      const shownHit = await eligible(hit, "tentative");
-      if (shownHit && !duplicateOf(tentativeKept, shownHit.memory, shownHit.text))
-        tentativeKept.push(shownHit);
-    }
+    let nextTentative = 0;
+    const fillTentative = async (): Promise<void> => {
+      while (
+        nextTentative < tentativeHits.length &&
+        tentativeKept.length < tentativeLimit &&
+        tentativeKept.length + confirmedKept.length < input.limit
+      ) {
+        const hit = tentativeHits[nextTentative] as (typeof tentativeHits)[number];
+        nextTentative += 1;
+        const shownHit = await eligible(hit, "tentative");
+        if (
+          shownHit &&
+          !duplicateOf(tentativeKept, shownHit.memory, shownHit.text) &&
+          !duplicateOf(confirmedKept, shownHit.memory, shownHit.text)
+        )
+          tentativeKept.push(shownHit);
+      }
+    };
     const confirmedKept: Shown[] = [];
+    await fillTentative();
+    let replaced = false;
     for (const hit of hits) {
       const room = input.limit - tentativeKept.length - confirmedKept.length;
       if (room <= 0 && (!dedupe || tentativeKept.length === 0)) break;
       const shownHit = await eligible(hit, "confirmed");
       if (!shownHit || duplicateOf(confirmedKept, shownHit.memory, shownHit.text)) continue;
       const twin = duplicateOf(tentativeKept, shownHit.memory, shownHit.text);
-      if (twin) tentativeKept.splice(tentativeKept.indexOf(twin), 1);
-      else if (room <= 0) continue;
+      if (twin) {
+        tentativeKept.splice(tentativeKept.indexOf(twin), 1);
+        replaced = true;
+      } else if (room <= 0) continue;
       confirmedKept.push(shownHit);
     }
+    if (replaced) await fillTentative();
     const present = ({ memory, text, wanted }: Shown): Record<string, unknown> => {
       shown.push(memory.dataClassification);
       const attributes = memory.attributes;

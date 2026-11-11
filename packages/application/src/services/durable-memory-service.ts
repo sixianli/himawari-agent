@@ -460,7 +460,7 @@ export class DurableMemoryService {
         (left, right) => right.score - left.score || left.memory.id.localeCompare(right.memory.id),
       );
     const selected =
-      this.options.dedupeSameSource === true
+      this.options.dedupeSameSource !== false
         ? (
             await dropSameSourceDuplicates(
               ranked.map((hit) => ({

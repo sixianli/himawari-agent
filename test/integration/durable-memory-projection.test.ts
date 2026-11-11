@@ -178,7 +178,7 @@ describe.each(["worker", "direct"] as const)(
       provider: DeterministicProjectionProvider;
       content: MapMemoryContent;
       now: () => string;
-      dedupeSameSource?: boolean;
+      dedupeSameSource?: boolean | undefined;
     }) {
       return new DurableMemoryService({
         ...(input.dedupeSameSource === undefined
@@ -463,6 +463,7 @@ describe.each(["worker", "direct"] as const)(
       it.each([
         [true, ["memory-dedupe-a", "memory-dedupe-c"]],
         [false, ["memory-dedupe-a", "memory-dedupe-b"]],
+        [undefined, ["memory-dedupe-a", "memory-dedupe-c"]],
       ] as const)(
         "asks for the relevance cutoff and, with same-source dedupe %s, returns %j and records use only for them",
         async (dedupeSameSource, expected) => {

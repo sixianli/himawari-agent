@@ -26,6 +26,8 @@ describe("near-duplicate text", () => {
     expect(nearDuplicateText(`${long}余额 -500 元`, `${long}余额 500 元`)).toBe(false);
     expect(nearDuplicateText(`${long}，买了两份`, `${long}，买了三份`)).toBe(false);
     expect(nearDuplicateText(`${long}，买了两份`, `${long}，买了两份。`)).toBe(true);
+    expect(nearDuplicateText(`${long}余额-三百元`, `${long}余额三百元`)).toBe(false);
+    expect(nearDuplicateText(`${long}余额-500 元`, `${long}余额 - 500 元`)).toBe(true);
   });
 
   it("does not call slightly different texts near duplicates when they fall below 0.9", () => {

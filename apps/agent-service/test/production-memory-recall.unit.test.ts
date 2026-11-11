@@ -22,6 +22,7 @@ function record(
     status: "active",
     dataClassification,
     contentRef: `text-${id}`,
+    sourceRefs: [`message-${id}`],
     providerRecordId: `provider-${id}`,
     attributes,
     updatedAt: "2026-10-01T00:00:00.000Z",
@@ -308,6 +309,10 @@ it("drops a same-source near duplicate, refills the slot and lets a confirmed me
     "主人住在杭州",
   ]);
   expect(deduped.memories.some(({ tentative }) => tentative === true)).toBe(false);
+  const byDefault = (await recallWith(entries).service.recall(
+    call({ query: "我家里人", limit: 4 }),
+  )) as RecallResult;
+  expect(byDefault.memories).toEqual(deduped.memories);
   const plain = (await recallWith(entries, false).service.recall(
     call({ query: "我家里人", limit: 4 }),
   )) as RecallResult;
@@ -339,4 +344,27 @@ it("lets a confirmed memory replace its tentative twin even when every slot is t
     expect.objectContaining({ text: "主人的妻子叫苏晴", tentative: true }),
   ]);
   expect(plain.tentativeNote).toBeDefined();
+});
+
+it("refills a tentative slot freed by a confirmed twin from the remaining tentative candidates", async () => {
+  const entries = [
+    { id: "guess-wife", text: "主人的妻子叫苏晴", score: 6, tentative: true, sourceRefs: ["m1"] },
+    { id: "guess-job", text: "主人在杭州做设计师", score: 5, tentative: true, sourceRefs: ["m2"] },
+    {
+      id: "guess-pet",
+      text: "主人家里养了一只橘猫",
+      score: 4,
+      tentative: true,
+      sourceRefs: ["m3"],
+    },
+    { id: "wife", text: "主人的妻子叫苏晴。", score: 3, sourceRefs: ["m1"] },
+  ];
+  const deduped = (await recallWith(entries, true).service.recall(
+    call({ query: "我家里人", limit: 4 }),
+  )) as RecallResult;
+  expect(deduped.memories.map(({ text }) => text)).toEqual([
+    "主人的妻子叫苏晴。",
+    "主人在杭州做设计师",
+    "主人家里养了一只橘猫",
+  ]);
 });

@@ -9,10 +9,12 @@ function normalized(text: string): string {
 }
 
 const NUMBER_RUN =
-  /[+\-\u2212]?\p{Nd}+|[〇零一二两三四五六七八九十百千万亿壹贰叁肆伍陆柒捌玖拾佰仟]+/gu;
+  /[+\-\u2212]?\s*(?:\p{Nd}+|[〇零一二两三四五六七八九十百千万亿壹贰叁肆伍陆柒捌玖拾佰仟]+)/gu;
 
 function numberRuns(text: string): string {
-  return (text.normalize("NFKC").match(NUMBER_RUN) ?? []).join(",");
+  return (text.normalize("NFKC").match(NUMBER_RUN) ?? [])
+    .map((run) => run.replace(/\s+/gu, "").replace("\u2212", "-"))
+    .join(",");
 }
 
 function trigrams(text: string): Map<string, number> {

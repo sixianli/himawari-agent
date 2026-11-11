@@ -1,6 +1,6 @@
 {
   "schema": "himawari-memory-retrieval-candidates.v1",
-  "note": "2026-11-11 用 alibaba/qwen3-embedding-8b 实跑 evals/memory-retrieval/dataset.json 时，每句话三路的原始候选（向量路已按 0.6 门槛过滤）。离线复算融合截断用，不调用任何模型。",
+  "note": "2026-11-11 用 alibaba/qwen3-embedding-8b 实跑 evals/memory-retrieval/dataset.json 时，每句话三路的原始候选。来源：live 评测在门槛 0 那一轮写出的 candidates.json（run 2026-11-11T02-36-25-792Z），再去掉相似度低于 0.6 的向量路候选（即生产门槛下向量路本来会返回的结果），每个候选压成 [记忆编号, 原始分数, 相似度] 一行，记忆的重要度等字段提到 memories。离线复算融合截断用，不调用任何模型。",
   "model": "alibaba/qwen3-embedding-8b",
   "minimumSimilarity": 0.6,
   "memories": {
