@@ -45,6 +45,8 @@ import {
   assertProductionSecretSource,
   BoundedJwksFetcher,
   CloudflareAccessJwtVerifier,
+  createDemoGoogleOAuth,
+  createDemoMailReader,
   createGmailReader,
   createGoogleOAuth,
   createWebPushSender,
@@ -1629,10 +1631,11 @@ export async function runAgentService(
         void localEmbedding.start();
       }
       const proactiveConfiguration = configuration.runPolicy?.proactive;
-      const proactiveSecret = proactiveConfiguration
+      const proactiveGmail = proactiveConfiguration?.gmail;
+      const proactiveSecret = proactiveGmail
         ? configuration.secretReferences.find(
             ({ ref, purpose }) =>
-              ref === proactiveConfiguration.gmail.clientSecretRef &&
+              ref === proactiveGmail.clientSecretRef &&
               purpose === GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
           )
         : undefined;
@@ -1646,7 +1649,9 @@ export async function runAgentService(
         agentId: configuration.agentId,
       };
       const proactiveStore =
-        proactiveConfiguration && proactiveSecret && proactiveDescriptor
+        proactiveConfiguration &&
+        (proactiveSecret || proactiveConfiguration.demoInbox) &&
+        proactiveDescriptor
           ? repository.proactive()
           : undefined;
       const proactiveSeal =
@@ -1659,19 +1664,22 @@ export async function runAgentService(
           : undefined;
       if (
         proactiveConfiguration &&
-        proactiveSecret &&
+        (proactiveSecret || proactiveConfiguration.demoInbox) &&
         proactiveDescriptor &&
         proactiveStore &&
         proactiveSeal
       ) {
-        const oauth = createGoogleOAuth({
-          clientId: proactiveConfiguration.gmail.clientId,
-          clientSecret: await hostModelSources(configuration).provider.resolve(
-            proactiveSecret.ref,
-            proactiveSecret.version,
-          ),
-          redirectUri: proactiveRedirectUri(configuration.publicOrigin),
-        });
+        const demoInbox = proactiveConfiguration.demoInbox;
+        const oauth = demoInbox
+          ? createDemoGoogleOAuth()
+          : createGoogleOAuth({
+              clientId: requireValue(proactiveGmail).clientId,
+              clientSecret: await hostModelSources(configuration).provider.resolve(
+                requireValue(proactiveSecret).ref,
+                requireValue(proactiveSecret).version,
+              ),
+              redirectUri: proactiveRedirectUri(configuration.publicOrigin),
+            });
         const feedbackStore = repository.webPush();
         const reviewPayloads = repository.payloadStore(
           configuration.ownerId,
@@ -1760,7 +1768,9 @@ export async function runAgentService(
           ownerRules: repository.ownerRules(),
           seal: proactiveSeal,
           oauth,
-          reader: createGmailReader({ oauth }),
+          reader: demoInbox
+            ? createDemoMailReader({ now: () => clock.now(), timeZone: proactiveTimeZone })
+            : createGmailReader({ oauth }),
           readAccount: (accessToken) => readGmailAccount({ accessToken }),
           ledger: repository.decisionLedger(),
           readMemoryText: readReviewText,
@@ -2695,4 +2705,9 @@ export async function runAgentService(
     });
     return 1;
   }
+}
+
+function requireValue<T>(value: T | undefined): T {
+  if (value === undefined) throw new Error("PROACTIVE_CONFIGURATION_INCOMPLETE");
+  return value;
 }

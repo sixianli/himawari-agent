@@ -25,8 +25,11 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import {
   CALENDAR_READONLY_SCOPE,
+  createDemoGoogleOAuth,
+  createDemoMailReader,
   createGmailReader,
   createGoogleOAuth,
+  demoMailboxToken,
   GMAIL_READONLY_SCOPE,
   readGmailAccount,
 } from "@himawari-agent/platform-node";
@@ -178,7 +181,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function setup() {
+  async function setup(options: { readonly demoInbox?: "ja" | "en" } = {}) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-proactive-production-"));
     directories.push(stateRoot);
     const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
@@ -221,12 +224,14 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       return new TextDecoder().decode(await protector.unprotect({ payload }));
     };
     const google = fakeGoogle();
-    const oauth = createGoogleOAuth({
-      clientId: "client-1",
-      clientSecret: "test-secret",
-      redirectUri: `${ORIGIN}${PROACTIVE_GOOGLE_CALLBACK_PATH}`,
-      fetch: google.fetch,
-    });
+    const oauth = options.demoInbox
+      ? createDemoGoogleOAuth()
+      : createGoogleOAuth({
+          clientId: "client-1",
+          clientSecret: "test-secret",
+          redirectUri: `${ORIGIN}${PROACTIVE_GOOGLE_CALLBACK_PATH}`,
+          fetch: google.fetch,
+        });
     const outputs = new Map<string, string>();
     let scripted = new ScriptedModelPort([descriptor], []);
     const prompts: string[] = [];
@@ -260,7 +265,9 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       scope,
       configuration: {
         modelRef: MODEL_REF,
-        gmail: { clientId: "client-1", clientSecretRef: "google-oauth" },
+        ...(options.demoInbox
+          ? { demoInbox: options.demoInbox }
+          : { gmail: { clientId: "client-1", clientSecretRef: "google-oauth" } }),
         intervalMs: 900_000,
         perCheckMs: 180_000,
         dailyCostMicros: 1_000_000,
@@ -286,7 +293,9 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       store,
       seal,
       oauth,
-      reader: createGmailReader({ oauth, fetch: google.fetch }),
+      reader: options.demoInbox
+        ? createDemoMailReader({ now: () => clock.now() })
+        : createGmailReader({ oauth, fetch: google.fetch }),
       readAccount: (accessToken) => readGmailAccount({ accessToken, fetch: google.fetch }),
       ledger: repository.decisionLedger(),
       ownerRules: repository.ownerRules(),
@@ -409,6 +418,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       prompts,
       push,
       script,
+      seal,
       sent,
       store,
       stateRoot,
@@ -941,6 +951,240 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     const nextDay = await h.review();
     expect(nextDay.items.length).toBeLessThanOrEqual(24);
     expect(nextDay.items.find(({ key }) => key === target)).toBeUndefined();
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[P6-demo] runs the real mail check over the fake inbox, with related earlier mail, without any call to Google", async () => {
+    const h = await setup({ demoInbox: "ja" });
+    await h.proactive.seedDemoInbox();
+    expect((await h.overview()).connection).toMatchObject({
+      status: "connected",
+      account: "demo@himawari.example",
+    });
+    expect((await h.overview()).enabled).toBe(true);
+
+    await h.proactive.tick();
+    expect((await h.overview()).decisions).toMatchObject([{ reasonCode: "NO_NEW_MAIL" }]);
+    expect(h.prompts).toEqual([]);
+
+    h.clock.advance(40 * 60_000);
+    h.script([
+      {
+        id: "demo-ja-mockups",
+        result: "act",
+        confidence: "sure",
+        todo: "明後日の正午までに最終モックを共有フォルダへ",
+        priority: "high",
+        dueAt: "2026-11-06T03:00:00.000Z",
+        reason: "",
+      },
+      {
+        id: "demo-ja-delivery",
+        result: "act",
+        confidence: "sure",
+        todo: "今日の15時までに再配達の時間を連絡する",
+        priority: "high",
+        dueAt: "2026-11-04T06:00:00.000Z",
+        reason: "",
+      },
+    ]);
+    await h.proactive.tick();
+    const overview = await h.overview();
+    expect(
+      overview.insights
+        .map(({ summary, pushed }) => ({ summary, pushed }))
+        .sort((a, b) => a.summary.localeCompare(b.summary)),
+    ).toEqual([
+      { summary: "今日の15時までに再配達の時間を連絡する", pushed: true },
+      { summary: "明後日の正午までに最終モックを共有フォルダへ", pushed: false },
+    ]);
+    expect(overview.decisions.map(({ counts }) => counts.fetched).sort()).toEqual([0, 2]);
+    expect(overview.decisions.find(({ counts }) => counts.fetched === 2)?.counts.act).toBe(2);
+    expect(h.prompts).toHaveLength(1);
+    expect(h.prompts[0]).toContain("最終モック");
+    expect(h.prompts[0]).toContain("16時に変更できないでしょうか");
+    expect(h.prompts[0]).toContain("手ぬぐいセット");
+    expect(h.prompts[0]).not.toContain("全品20%OFF");
+    expect(h.google.calls).toEqual([]);
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[P6-demo] [reverse] a fake-inbox service cannot be pointed at a real mailbox, and reconnecting only restores the fake inbox", async () => {
+    const h = await setup({ demoInbox: "en" });
+    await h.proactive.seedDemoInbox();
+    const start = await h.app.inject({
+      method: "GET",
+      url: PROACTIVE_GOOGLE_START_PATH,
+      headers: { ...cookie, "sec-fetch-site": "same-origin" },
+    });
+    expect(start.statusCode).toBe(303);
+    expect(start.headers["location"]).toBe("/?settings=apps&gmail=demo");
+
+    const forged = await h.app.inject({
+      method: "GET",
+      url: `${PROACTIVE_GOOGLE_CALLBACK_PATH}?state=forged&code=code-1`,
+      headers: cookie,
+    });
+    expect(forged.headers["location"]).toBe("/?settings=apps&gmail=failed");
+    expect((await h.overview()).connection.account).toBe("demo@himawari.example");
+
+    await h.command("proactive.source.manage", { source: "gmail", action: "disconnect" });
+    expect((await h.overview()).connection.status).toBe("disconnected");
+    await h.app.inject({
+      method: "GET",
+      url: PROACTIVE_GOOGLE_START_PATH,
+      headers: { ...cookie, "sec-fetch-site": "same-origin" },
+    });
+    expect((await h.overview()).connection).toMatchObject({
+      status: "connected",
+      account: "demo@himawari.example",
+    });
+    expect(h.google.calls).toEqual([]);
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[P6-demo] [reverse] a disconnected fake inbox stays disconnected after a restart, and a broken fake connection is replaced, and a real one is never touched", async () => {
+    const h = await setup({ demoInbox: "ja" });
+    await h.proactive.seedDemoInbox();
+    await h.command("proactive.source.manage", { source: "gmail", action: "disconnect" });
+    await h.proactive.seedDemoInbox();
+    expect((await h.overview()).connection.status).toBe("disconnected");
+
+    await h.app.inject({
+      method: "GET",
+      url: PROACTIVE_GOOGLE_START_PATH,
+      headers: { ...cookie, "sec-fetch-site": "same-origin" },
+    });
+    expect((await h.overview()).connection.status).toBe("connected");
+    const breakConnection = () =>
+      h.store.markConnection({
+        ...scope,
+        source: "gmail",
+        status: "needs_reconnect",
+        cursor: null,
+        now: h.clock.now(),
+      });
+    await breakConnection();
+    expect((await h.overview()).connection.status).toBe("needs_reconnect");
+    await h.proactive.seedDemoInbox();
+    expect((await h.overview()).connection.status).toBe("connected");
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[P6-demo] [reverse] never replaces a connection that holds a real Google token, at start or when the user presses connect", async () => {
+    const h = await setup({ demoInbox: "ja" });
+    const now = h.clock.now();
+    const accountRef = await h.seal.seal({ ...scope, text: "andy@example.com", at: now });
+    const tokenRef = await h.seal.seal({ ...scope, text: "refresh-real", at: now });
+    await h.store.saveConnection({
+      ...scope,
+      connection: {
+        source: "gmail",
+        accountRef,
+        tokenRef,
+        cursor: null,
+        status: "connected",
+        connectedAt: now,
+        updatedAt: now,
+      },
+    });
+    await h.proactive.seedDemoInbox();
+    await h.proactive.seedDemoInbox({ restore: true });
+    await h.store.writeSettings({
+      ...scope,
+      ...(await h.store.readSettings(scope)),
+      enabled: true,
+      now: h.clock.now(),
+    });
+    await h.proactive.tick();
+    await h.app.inject({
+      method: "GET",
+      url: PROACTIVE_GOOGLE_START_PATH,
+      headers: { ...cookie, "sec-fetch-site": "same-origin" },
+    });
+    expect((await h.overview()).connection).toMatchObject({
+      status: "connected",
+      account: "andy@example.com",
+    });
+    expect(await h.seal.open({ ...scope, ref: tokenRef })).toBe("refresh-real");
+    await expect(
+      h.command("proactive.source.manage", { source: "gmail", action: "disconnect" }),
+    ).rejects.toThrow();
+    expect(await h.seal.open({ ...scope, ref: tokenRef })).toBe("refresh-real");
+    expect(await h.store.readConnection({ ...scope, source: "gmail" })).toMatchObject({
+      status: "connected",
+      tokenRef,
+    });
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[P6-demo] replaces a fake connection whose language no longer matches the configuration", async () => {
+    const h = await setup({ demoInbox: "ja" });
+    const now = h.clock.now();
+    const accountRef = await h.seal.seal({ ...scope, text: "demo@himawari.example", at: now });
+    const tokenRef = await h.seal.seal({
+      ...scope,
+      text: demoMailboxToken("en", now),
+      at: now,
+    });
+    await h.store.saveConnection({
+      ...scope,
+      connection: {
+        source: "gmail",
+        accountRef,
+        tokenRef,
+        cursor: null,
+        status: "connected",
+        connectedAt: now,
+        updatedAt: now,
+      },
+    });
+    await h.proactive.seedDemoInbox();
+    const stored = await h.store.readConnection({ ...scope, source: "gmail" });
+    expect(await h.seal.open({ ...scope, ref: stored?.tokenRef ?? "" })).toContain(
+      "demo-inbox:v1:ja:",
+    );
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[P6-demo] replaces a fake token with an unreadable date, and releases what it sealed when saving fails", async () => {
+    const h = await setup({ demoInbox: "ja" });
+    const now = h.clock.now();
+    const accountRef = await h.seal.seal({ ...scope, text: "demo@himawari.example", at: now });
+    const tokenRef = await h.seal.seal({ ...scope, text: "demo-inbox:v1:ja:not-a-date", at: now });
+    await h.store.saveConnection({
+      ...scope,
+      connection: {
+        source: "gmail",
+        accountRef,
+        tokenRef,
+        cursor: null,
+        status: "connected",
+        connectedAt: now,
+        updatedAt: now,
+      },
+    });
+    await h.proactive.seedDemoInbox();
+    const stored = await h.store.readConnection({ ...scope, source: "gmail" });
+    expect(stored?.tokenRef).not.toBe(tokenRef);
+    expect(await h.seal.open({ ...scope, ref: stored?.tokenRef ?? "" })).toContain(
+      "demo-inbox:v1:ja:",
+    );
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[P6-demo] [reverse] checks nothing while proactive reminders are off", async () => {
+    const h = await setup({ demoInbox: "ja" });
+    await h.proactive.seedDemoInbox();
+    await h.proactive.seedDemoInbox({ restore: true });
+    await h.command("proactive.settings.set", {
+      enabled: false,
+      quietHours: [],
+      importantSenders: [],
+    });
+    h.script([]);
+    await h.proactive.tick();
+    expect(h.prompts).toEqual([]);
     expect(h.failures).toEqual([]);
   });
 });

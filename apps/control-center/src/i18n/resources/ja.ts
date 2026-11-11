@@ -1223,7 +1223,7 @@ export const messages = {
     "切断すると Google 側の許可を取り消し、メールから抜き出した対応事項と要点をすべて削除します。切断しますか？",
   "proactive.apps.disconnected": "切断し、Google 側の許可も取り消しました。",
   "proactive.apps.outcome":
-    "{o, select, connected {Gmail に接続しました。最初の確認をすぐに始めます。} denied {Google の画面で許可されなかったため、接続していません。} other {接続できませんでした。もう一度お試しください。}}",
+    "{o, select, connected {Gmail に接続しました。最初の確認をすぐに始めます。} denied {Google の画面で許可されなかったため、接続していません。} demo {体験版ではサンプルの受信トレイを使うため、ご自身のメールには接続できません。サンプルの受信トレイは準備できています。} other {接続できませんでした。もう一度お試しください。}}",
   "proactive.apps.what": "Himawari が読むものと送り先",
   "proactive.apps.what1":
     "メールを読むだけ。アーカイブ・ラベル付け・返信はしません。新着メールを判断するとき、同じ件のこれまでのやり取り（アーカイブ済みや自分が送ったメールを含む）も探して、あわせてモデルに送ります",
