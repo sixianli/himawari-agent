@@ -8,7 +8,7 @@ amends: "docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md"
 date: "2026-11-11"
 ---
 
-# ADR 0220：每日整理判到冲突时，默认让新条进「待确认」，只有明确取代且新条置信度够高才自动作废旧条
+# ADR 0220：整理记忆判到冲突时，默认让新条进「待确认」，只有明确取代且新条置信度够高才自动作废旧条
 
 <a id="contents"></a>
 
@@ -25,7 +25,7 @@ date: "2026-11-11"
 
 ## 背景
 
-「每日整理」（`MemoryConsolidationService`，`packages/memory-engine/src/consolidation.ts`）是每天自动跑一次的记忆整理：把最近新增或修改的记忆和相近的旧记忆编成一组交给模型，模型判断这组是重复、冲突还是保留。原来模型只要判 `conflict`，代码就把旧条作废（记一条 `supersede` 整理改动，旧条的 `supersededBy` 指向新条）。提示词里的 `conflict` 写的是「同一件事前后说法不一样，较新的说法取代旧的」，把两种情况混在了一起：
+「整理记忆」（每天自动跑一次，`MemoryConsolidationService`，`packages/memory-engine/src/consolidation.ts`）是每天自动跑一次的记忆整理：把最近新增或修改的记忆和相近的旧记忆编成一组交给模型，模型判断这组是重复、冲突还是保留。原来模型只要判 `conflict`，代码就把旧条作废（记一条 `supersede` 整理改动，旧条的 `supersededBy` 指向新条）。提示词里的 `conflict` 写的是「同一件事前后说法不一样，较新的说法取代旧的」，把两种情况混在了一起：
 
 - 取代：例如「以前住足立区」和「现在住北区」，旧说法确实不再成立；
 - 情境差异：例如「平时喝明治的牛奶」和「出差时喝便利店的牛奶」，两条在不同场合各自成立。
@@ -57,7 +57,7 @@ date: "2026-11-11"
 3. **其他情况都让新条进「待确认」。** 包括判 `conflict`、判 `replace` 但新条置信度不够、判 `replace` 但 keep 标成了较早的那条。说得更晚的那条加上 `tentative: true`，较早那条不动、照常生效。整理改动和决策记录都记成新动作 `hold`：改动的 `memory_id` 是新条，`related_memory_id` 是旧条；决策记录 `outcome` 为 `hold`、原因码 `consolidation_hold`，`memoryIds` 为 [新条, 旧条]，`resultMemoryIds` 为 [新条]，所以每天打分里显示成「旧 → 新」。这条记录和其他整理记录一样进每天打分的整理组，受同一个每日容量限制。
 4. **主人确认后两条都留。** 主人在记忆页对新条点「确认」，只是把它的 `tentative` 改回 false，不作废旧条（Andy 2026-11-11 选定）。如果其实是取代，主人在记忆页删旧条。
 5. **撤销 `hold`** 把新条的 `tentative` 改回 false。主人改过这条记忆（包括点了确认）之后不能再撤销，和其他整理改动一样。
-6. **门槛和自动存入共用一份登记。** 第 2 条的「自动存入门槛」就是门槛登记表 `packages/calibration/src/thresholds.ts` 里的 `MEMORY_AUTO_COMMIT_GATE`（默认 850，可按分类覆盖），按新条的分类取值（`autoCommitThreshold`）。每日整理和记忆抽取读同一份登记，校准周报给出的建议值改的也是它，代码里不再出现第二个 850。（变更清单原先写的是另加一个 `config.json` 设置；合并 main 时发现 P4-7 已把这个门槛登记进门槛登记表，于是改为复用它，不另开一个入口。）
+6. **门槛和自动存入共用一份登记。** 第 2 条的「自动存入门槛」就是门槛登记表 `packages/calibration/src/thresholds.ts` 里的 `MEMORY_AUTO_COMMIT_GATE`（默认 850，可按分类覆盖），按新条的分类取值（`autoCommitThreshold`）。整理记忆和记忆抽取读同一份登记，校准周报给出的建议值改的也是它，代码里不再出现第二个 850。（变更清单原先写的是另加一个 `config.json` 设置；合并 main 时发现 P4-7 已把这个门槛登记进门槛登记表，于是改为复用它，不另开一个入口。）
 7. **表结构。** `memory_consolidation_changes.action` 和 `decision_ledger` 里整理类 `outcome` 的取值各加 `hold`，用新迁移重建这两张表。
 
 [↑ 返回阅读导航](#contents)
@@ -80,7 +80,7 @@ date: "2026-11-11"
 - 已有提醒的记忆被改成待确认后，提醒不撤销（[ADR 0179](0179-keep-low-confidence-memory-candidates-as-tentative.md#decision) 只规定了新存的待确认记忆不登记提醒）。
 - 置信度这道闸短期基本不起作用（原因见上节第一条），实际起作用的是模型判 `replace` 还是 `conflict`。以后如果正式记忆里出现低置信度的条目，它才会起作用。
 - 整理调用模型的路径不变。I-63（辅助调用常失败，`缺门槛`）仍适用：调用失败时整次整理记为失败、不改任何记忆，不会因为失败误作废。
-- 提示词改动只影响每日整理这类后台调用，不改任何对话已发出的请求开头。
+- 提示词改动只影响整理记忆这类后台调用，不改任何对话已发出的请求开头。
 
 <a id="references"></a>
 
