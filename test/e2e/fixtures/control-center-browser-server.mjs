@@ -1014,6 +1014,36 @@ function weeklySnapshot(withMails = false) {
           },
         ],
       },
+      prereview: {
+        agreementPermille: 900,
+        confidencePermille: 800,
+        reductionEnabled: false,
+        auditPermille: 200,
+        minimumPairs: 35,
+        otherVersions: withMails ? 2 : 0,
+        groups: withMails
+          ? [
+              {
+                group: "proactive_silent",
+                prereviewed: 40,
+                unsure: 6,
+                paired: 30,
+                agreement: rate(27, 30),
+                kappa: 0.61,
+                balancedAccuracy: 0.8,
+                ownerUseful: rate(25, 30),
+                hidden: rate(20, 22),
+                confusion: [
+                  { model: "useful", owner: "useful", count: 24 },
+                  { model: "useful", owner: "missed", count: 2 },
+                  { model: "missed", owner: "useful", count: 1 },
+                  { model: "missed", owner: "missed", count: 3 },
+                ],
+                gate: { open: false, reason: "insufficient", requiredAgreement: 0.97 },
+              },
+            ]
+          : [],
+      },
     },
     generatedAt: now,
   };

@@ -127,9 +127,9 @@ import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./productio
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
+  PREREVIEW_MAX_OUTPUT_TOKENS,
   PROACTIVE_MAX_OUTPUT_TOKENS,
   ProductionProactive,
-  PREREVIEW_MAX_OUTPUT_TOKENS,
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
@@ -2133,6 +2133,16 @@ export async function runAgentService(
           perCheckMs: configuration.runPolicy?.proactive?.perCheckMs ?? 0,
         },
         serviceRevision: readServiceRevision(),
+        ...(configuration.runPolicy?.proactive
+          ? ((settings) => ({
+              prereview: {
+                agreementPermille: settings.reduction.hiddenAgreementPermille,
+                confidencePermille: settings.reduction.confidencePermille,
+                reductionEnabled: settings.enabled && settings.reduction.enabled,
+                auditPermille: settings.reduction.auditPermille,
+              },
+            }))(configuration.runPolicy.proactive.reviewPrereview)
+          : {}),
         onFailure: (error) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",

@@ -1479,6 +1479,22 @@ export const messages = {
   "weekly.implicit.def":
     "These three signals are what can be observed without you rating anything. They are observations only: they are not your ratings, they are never mixed into the rating shares above, and they never change any threshold automatically. The denominator is this week's decisions that sent a reminder; repeats of the same signal on one decision count once.",
   "weekly.goRate": "Rate them in “Reminders”",
+  "weekly.prereview.title": "Model pre-rating agreement",
+  "weekly.prereview.empty": "No decision this week has both a model pre-rating and your rating.",
+  "weekly.prereview.counts": "Pre-rated {rated} · model unsure {unsure} · you also rated {paired}",
+  "weekly.prereview.gate":
+    "{r, select, open {Past the bar: only unsure items need you} insufficient {Too few pairs to judge} below_threshold {Agreement below the bar} other {No better than calling everything useful}}",
+  "weekly.prereview.audit": "Of the confident “useful” calls, you also said useful {k}/{n}",
+  "weekly.prereview.otherVersions":
+    "{n} more pre-ratings came from an older model or prompt version and are left out.",
+  "weekly.prereview.reductionOn":
+    "Auto-reduction is on: for types past the bar, daily rating shows only items the model is unsure about or that conflict with your past ratings, plus a random {audit} for spot checks.",
+  "weekly.prereview.reductionOff":
+    "Auto-reduction is off: daily rating still shows every decision waiting for you.",
+  "weekly.prereview.def":
+    "The model rates each decision waiting for you first (useful / not needed / missed). These are stored separately and never written into your rating. Agreement is the share of items you also rated where the model and you agree.",
+  "weekly.prereview.gateDef":
+    "The bar: among confident (at least {confidence}) “useful” calls, the 95% Wilson lower bound of agreement must be at least {agreement} and above simply calling everything useful; at least {n} pairs are needed to pass.",
   "sensitive.title": "Blocked sensitive information",
   "sensitive.count": "{count, plural, one {# record} other {# records}}",
   "sensitive.none": "Nothing sensitive has been blocked yet",

@@ -948,6 +948,46 @@ const proactiveWeeklySnapshotSchema = object({
           }),
         ),
       }),
+      prereview: object({
+        agreementPermille: integer(0, 1000),
+        confidencePermille: integer(0, 1000),
+        reductionEnabled: booleanValue,
+        auditPermille: integer(0, 1000),
+        minimumPairs: integer(1),
+        otherVersions: integer(0),
+        groups: array(
+          object({
+            group: calibrationGroupSchema,
+            prereviewed: integer(0),
+            unsure: integer(0),
+            paired: integer(0),
+            agreement: calibrationRateSchema,
+            kappa: nullable(numberInRange(-1, 1)),
+            balancedAccuracy: nullable(numberInRange(0, 1)),
+            ownerUseful: calibrationRateSchema,
+            hidden: calibrationRateSchema,
+            confusion: array(
+              object({
+                model: proactiveRatingSchema,
+                owner: proactiveRatingSchema,
+                count: integer(0),
+              }),
+            ),
+            gate: nullable(
+              object({
+                open: booleanValue,
+                reason: enumeration([
+                  "open",
+                  "insufficient",
+                  "below_threshold",
+                  "not_above_baseline",
+                ]),
+                requiredAgreement: nullable(numberInRange(0, 1)),
+              }),
+            ),
+          }),
+        ),
+      }),
     }),
     generatedAt: timestamp,
   }),

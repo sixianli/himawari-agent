@@ -14,9 +14,7 @@ import {
   wouldHide,
 } from "@himawari-agent/calibration/prereview";
 import { REVIEW_PREREVIEW } from "@himawari-agent/prompt-catalog";
-
 import { maskSensitiveText } from "@himawari-agent/sensitive-capture";
-import type { DataClassification } from "../ports/common.js";
 import type { ReviewPrereviewConfiguration } from "../ports/configuration.js";
 import type { ModelInvocationRequest } from "../ports/intelligence.js";
 import type { ProactiveScope } from "../ports/proactive-checks.js";

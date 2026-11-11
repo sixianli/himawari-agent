@@ -1466,6 +1466,23 @@ export const messages = {
   "weekly.implicit.def":
     "この 3 つのシグナルは、あなたが評価しなくても観察できることです。観察だけで、あなたの評価としては扱わず、上の評価の割合と混ぜて計算せず、しきい値を自動で変えることにも使いません。分母は今週、通知を送った判断です。同じ判断に同じシグナルが何度あっても 1 回と数えます。",
   "weekly.goRate": "「リマインダー」で採点する",
+  "weekly.prereview.title": "モデル事前採点の一致率",
+  "weekly.prereview.empty": "今週は、モデルの事前採点とあなたの採点が両方ある判断がありません。",
+  "weekly.prereview.counts":
+    "事前採点 {rated} 件 · モデルが迷った {unsure} 件 · あなたも採点 {paired} 件",
+  "weekly.prereview.gate":
+    "{r, select, open {基準を満たした：迷った分だけ表示できます} insufficient {件数が足りず判断できません} below_threshold {一致率が基準未満} other {「全部役に立った」と当てるのと変わりません}}",
+  "weekly.prereview.audit": "自信のある「役に立った」のうち、あなたも役に立ったと評価 {k}/{n}",
+  "weekly.prereview.otherVersions":
+    "ほかに {n} 件は古いモデルまたはプロンプトの版によるもので、上の比率に含めません。",
+  "weekly.prereview.reductionOn":
+    "自動削減はオン：基準を満たした種類では、「毎日の採点」にモデルが迷ったものや過去の採点と食い違うものだけを出し、さらに {audit} を抜き取りで残します。",
+  "weekly.prereview.reductionOff":
+    "自動削減はオフ：「毎日の採点」には採点待ちの判断をすべて表示します。",
+  "weekly.prereview.def":
+    "モデルは採点待ちの判断を先に採点します（役に立った / 不要 / 見落とし）。これは別に保存し、あなたの採点には書き込みません。一致率は、あなたも採点したもののうちモデルと一致した割合です。",
+  "weekly.prereview.gateDef":
+    "基準：自信（{confidence} 以上）のある「役に立った」のうち、一致率の 95% Wilson 下限が {agreement} 以上で、かつ「全部役に立った」と当てるより高いこと。通過には少なくとも {n} 組が必要です。",
   "sensitive.title": "機密情報のブロック記録",
   "sensitive.count": "{count} 件の記録",
   "sensitive.none": "機密情報をブロックした記録はまだありません",

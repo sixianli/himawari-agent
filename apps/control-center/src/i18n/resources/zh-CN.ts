@@ -1367,6 +1367,20 @@ export const messages = {
   "weekly.implicit.def":
     "这三个信号是不需要你动手评价就能看到的事，只当观察，不当作你的打分，不和上面的打分比例混在一起算，也不会用来自动改任何门槛。分母是这一周推送过提醒的决策；同一条决策出现多次同类信号只算一次。",
   "weekly.goRate": "去「提醒」打分",
+  "weekly.prereview.title": "模型预评一致率",
+  "weekly.prereview.empty": "这一周还没有模型预评过、你也打过分的决策。",
+  "weekly.prereview.counts": "预评 {rated} 条 · 模型拿不准 {unsure} 条 · 你也评过 {paired} 条",
+  "weekly.prereview.gate":
+    "{r, select, open {已过门槛：可以只给你看拿不准的} insufficient {对数不够，还不能判断} below_threshold {一致率没到门槛} other {没比“全当有用”猜得更准}}",
+  "weekly.prereview.audit": "模型有把握评“有用”的里，你也评有用 {k}/{n}",
+  "weekly.prereview.otherVersions": "另有 {n} 条预评来自旧的模型或提示词版本，不进上面的比例。",
+  "weekly.prereview.reductionOn":
+    "自动减少已开启：过了门槛的类别，「每天打分」只给你看模型拿不准或和你以往打分冲突的那些，另随机留 {audit} 抽查。",
+  "weekly.prereview.reductionOff": "自动减少没有开启：「每天打分」仍给你看全部待打分的决策。",
+  "weekly.prereview.def":
+    "模型会先给每条待打分的决策评一次（有用 / 不需要 / 漏了），单独存放，不写进你的打分。一致率 = 你也评过的那些里，模型和你评得一样的比例。",
+  "weekly.prereview.gateDef":
+    "门槛：模型有把握（信心不低于 {confidence}）评“有用”的那些里，和你一致的比例按 95% Wilson 区间下限不低于 {agreement}，并且高于“全当有用”这种猜法；至少要 {n} 对才可能过。",
   "sensitive.title": "敏感信息拦截记录",
   "sensitive.count": "共 {count} 条记录",
   "sensitive.none": "还没有拦下过敏感信息",
