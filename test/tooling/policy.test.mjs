@@ -675,6 +675,10 @@ describe("CI policy contract", () => {
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
       "Required runs nothing after a failed entry check",
     );
+    delete value.jobs.required.steps.at(-1).if;
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+      "Required uploads its gate even when the gate fails",
+    );
   });
   it("accepts read-only permissions on the gate job", () => {
     const value = workflow();
