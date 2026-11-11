@@ -111,6 +111,57 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         ) VALUES (?, 'checkpoint-mcp', ?, ?, ?, 'completed', 'model-fixture', 'memory-policy-v1', NULL)`,
       )
       .run(GENERATION_ID, OWNER_ID, AGENT_ID, THREAD_ID);
+    const insertRule = database.prepare(
+      `INSERT INTO rule_book_rules (
+        owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id,
+        updated_at
+      ) VALUES (?, ?, ?, 1, ?, ?, 'chat:thread-1', NULL, ?)`,
+    );
+    for (const [ruleId, status, updatedAt, parameters] of [
+      [
+        "owner:immigration",
+        "active",
+        "2026-11-11T02:00:00.000Z",
+        {
+          type: "mail_must_notify",
+          summary: " 日本入管局相关的邮件一律提醒 ",
+          params: { senderDomains: ["@ISA.go.jp "] },
+        },
+      ],
+      [
+        "owner:a-refund",
+        "needs_review",
+        "2026-11-10T00:00:00.000Z",
+        {
+          type: "mail_read_whole_thread",
+          summary: "退款邮件先读完整串",
+          params: { phrases: ["退款"] },
+        },
+      ],
+      [
+        "owner:retired",
+        "retired",
+        "2026-11-11T01:00:00.000Z",
+        {
+          type: "mail_must_notify",
+          summary: "撤销了的规则",
+          params: { senderDomains: ["old.example"] },
+        },
+      ],
+      [
+        "owner:unknown",
+        "active",
+        NOW,
+        { type: "mail_unknown_kind", summary: "看不懂的规则", params: {} },
+      ],
+      [
+        "owner:empty",
+        "active",
+        NOW,
+        { type: "mail_must_notify", summary: "参数不全的规则", params: {} },
+      ],
+    ] as const)
+      insertRule.run(OWNER_ID, AGENT_ID, ruleId, JSON.stringify(parameters), status, updatedAt);
     database.close();
     const clock = new ManualClock(NOW);
     const repository = await SqliteProductStateRepository.open({
@@ -244,6 +295,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
           return writer.list(windowMs);
         },
         settings: () => settingsStore.readSettings(scope),
+        ownerRules: () => repository.ownerRules().list({ ...scope, includeRetired: false }),
         ...(options.withoutSummaries
           ? {}
           : {
@@ -502,7 +554,33 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       "floor_public_domain",
       "floor_money_words",
       "quiet_hours",
+      "owner:a-refund",
+      "owner:empty",
+      "owner:immigration",
+      "owner:unknown",
     ]);
+    expect(output.rules.find(({ id }) => id === "owner:immigration")).toMatchObject({
+      origin: "owner_setting",
+      type: "mail_must_notify",
+      summary: "日本入管局相关的邮件一律提醒",
+      enforced: true,
+      gate: "mail_item",
+      outcome: "require_notify",
+      parameters: { senderDomains: ["isa.go.jp"], phrases: [] },
+    });
+    expect(output.rules.find(({ id }) => id === "owner:a-refund")).toMatchObject({
+      status: "needs_review",
+      enforced: true,
+      outcome: "require_whole_thread",
+      parameters: { phrases: ["退款"] },
+    });
+    const empty = output.rules.find(({ id }) => id === "owner:empty");
+    expect(empty).toMatchObject({ enforced: false, type: "mail_must_notify" });
+    expect(empty).not.toHaveProperty("parameters");
+    const unknown = output.rules.find(({ id }) => id === "owner:unknown");
+    expect(unknown).toMatchObject({ enforced: false, summary: "看不懂的规则" });
+    expect(unknown).not.toHaveProperty("gate");
+    expect(unknown).not.toHaveProperty("parameters");
     expect(output.rules.every((rule) => rule.expression === undefined)).toBe(true);
     expect(output.rules.find(({ id }) => id === "quiet_hours")).toHaveProperty("quietHours");
     const [row] = await f.ledger();

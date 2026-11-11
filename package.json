@@ -72,7 +72,7 @@
     "check:v0.2-coverage": "node scripts/check-v0.2-coverage.mjs",
     "check:v0.2-invariants": "node scripts/check-v0.2-invariants.mjs",
     "format": "biome format --write .",
-    "format:check": "biome format .",
+    "format:check": "node scripts/check-format.mjs",
     "lint": "biome lint --error-on-warnings --diagnostic-level=warn .",
     "link:local-pi": "node scripts/link-local-pi.mjs",
     "test": "node scripts/ci/local.mjs --check coverage",
