@@ -461,3 +461,57 @@ describe("[P0-6] reading the daily review", () => {
     ]);
   });
 });
+
+describe("[P4-6] memory checkup in the daily review", () => {
+  const checkup = (
+    id: string,
+    handledAt: string | null,
+  ): import("../src/ports/memory-checkup.js").MemoryCheckupItem => ({
+    id,
+    ownerId: scope.ownerId,
+    agentId: scope.agentId,
+    weekStart: "2026-11-01T15:00:00.000Z",
+    memoryId: `memory:${id}` as never,
+    relatedMemoryId: null,
+    reason: "unused",
+    action: handledAt === null ? null : "confirm",
+    keptMemoryId: null,
+    before: handledAt === null ? null : { tentative: false },
+    handledAt,
+    undoneAt: null,
+    createdAt: "2026-11-02T00:00:00.000Z",
+  });
+  const read = (items: ReturnType<typeof checkup>[]) =>
+    readDailyReview({
+      scope,
+      ledger: { listReviewPool: async () => [] },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "牛奶", hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 10,
+      secondsPerItem: 5,
+      checkup: items,
+    });
+
+  it("keeps items handled earlier this week on the page for undo without spending today's slots", async () => {
+    const review = await read([
+      checkup("yesterday", "2026-11-03T02:00:00.000Z"),
+      checkup("a", null),
+      checkup("b", null),
+      checkup("c", null),
+    ]);
+    expect(review.sampled).toBe(2);
+    expect(review.items.map(({ key }) => key)).toContain("checkup:yesterday");
+    expect(review.items.filter(({ checkup: entry }) => entry?.action === null)).toHaveLength(2);
+    expect(review.items.find(({ key }) => key === "checkup:yesterday")?.checkup?.action).toBe(
+      "confirm",
+    );
+  });
+
+  it("[negative] does not add pending items beyond today's slots", async () => {
+    const review = await read([checkup("a", null), checkup("b", null), checkup("c", null)]);
+    expect(review.items).toHaveLength(2);
+  });
+});

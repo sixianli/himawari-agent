@@ -308,13 +308,16 @@ export class ProductionProactive {
     });
   }
 
-  async review(): Promise<DailyReview> {
-    const checkup = this.#options.checkup
-      ? await this.#options.checkup.week().catch((error: unknown) => {
-          this.#options.onFailure(error);
-          return [];
-        })
-      : [];
+  async review(options: { readonly strict?: boolean } = {}): Promise<DailyReview> {
+    const week = this.#options.checkup?.week();
+    const checkup = !week
+      ? []
+      : options.strict
+        ? await week
+        : await week.catch((error: unknown) => {
+            this.#options.onFailure(error);
+            return [];
+          });
     return readDailyReview({
       scope: this.#options.scope,
       ledger: this.#options.ledger,
@@ -557,7 +560,7 @@ export class ProductionProactive {
           await checkup.undo(parsed.id);
           return { resultRef: key, replayed: false };
         }
-        const shown = (await this.review()).items.some((item) => item.key === key);
+        const shown = (await this.review({ strict: true })).items.some((item) => item.key === key);
         if (!shown)
           throw new ApplicationPortError(
             PORT_ERROR_CODES.INVALID_OPERATION,

@@ -1,4 +1,4 @@
-import { memorySourceState } from "@himawari-agent/gateway-contracts";
+import { MEMORY_SOURCE_REF_MAX_LENGTH, memorySourceState } from "@himawari-agent/gateway-contracts";
 import type { AgentId, MemoryGenerationId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import {
   ApplicationPortError,
@@ -101,7 +101,9 @@ export function pickMemoryCheckup(input: {
             importBatchId: record.attributes?.importBatchId ?? null,
             sourceThreadId: record.sourceThreadId,
             sourceMessageId: input.sourceMessageIds.get(record.id) ?? null,
-            sourceRefs: record.sourceRefs,
+            sourceRefs: record.sourceRefs.filter(
+              (ref) => ref.length <= MEMORY_SOURCE_REF_MAX_LENGTH,
+            ),
             history: [],
           }) === "unavailable",
       )
@@ -164,6 +166,7 @@ function refuse(code: string, reason: string): never {
 
 export class MemoryCheckupService {
   readonly #options: MemoryCheckupServiceOptions;
+  #emptyWeek: string | null = null;
 
   constructor(options: MemoryCheckupServiceOptions) {
     this.#options = options;
@@ -173,6 +176,7 @@ export class MemoryCheckupService {
     const { scope, store } = this.#options;
     const now = this.#options.now();
     const weekStart = checkupWeekStart(now, this.#options.timeZone);
+    if (this.#emptyWeek === weekStart) return [];
     const existing = await store.listWeek({ ...scope, weekStart });
     if (existing.length > 0) return existing;
     const records = await this.#options.state.listActive(scope.ownerId, scope.agentId);
@@ -192,7 +196,10 @@ export class MemoryCheckupService {
       lowConfidencePermille: this.#options.lowConfidencePermille,
       limit: this.#options.capacity(),
     });
-    if (picked.length === 0) return [];
+    if (picked.length === 0) {
+      this.#emptyWeek = weekStart;
+      return [];
+    }
     await store.createWeek({
       ...scope,
       weekStart,
@@ -225,34 +232,27 @@ export class MemoryCheckupService {
     const now = this.#options.now();
     const subject = await this.#live(item.memoryId);
     const tentative = subject.attributes?.tentative === true;
+    const { memory, generationFor } = this.#options;
     let before: MemoryCheckupBefore;
     let keptMemoryId: MemoryId | null = null;
+    let apply: () => Promise<void>;
     if (input.action === "confirm") {
-      if (tentative)
-        await this.#options.memory.confirm(
-          subject.id,
-          await this.#options.generationFor(subject.id),
-        );
       before = { tentative };
+      apply = async () => {
+        if (tentative) await memory.confirm(subject.id, await generationFor(subject.id));
+      };
     } else if (input.action === "delete") {
-      await this.#options.memory.trash(subject.id, await this.#options.generationFor(subject.id));
       before = { tentative, status: "active" };
+      apply = async () => {
+        await memory.trash(subject.id, await generationFor(subject.id));
+      };
     } else {
       const related = item.relatedMemoryId;
       if (related === null || (input.keep !== item.memoryId && input.keep !== related))
         refuse("invalid", "MEMORY_CHECKUP_MERGE_REFUSED");
       const keep = await this.#live(input.keep);
       const drop = await this.#live(input.keep === item.memoryId ? related : item.memoryId);
-      await this.#options.memory.revise({
-        memoryId: drop.id,
-        expectedRevision: drop.revision,
-        status: "archived",
-        attributes: { supersededBy: keep.id, validTo: now },
-        generationId: await this.#options.generationFor(drop.id),
-      });
       const keepTentative = keep.attributes?.tentative === true;
-      if (keepTentative)
-        await this.#options.memory.confirm(keep.id, await this.#options.generationFor(keep.id));
       keptMemoryId = keep.id;
       before = {
         tentative,
@@ -262,8 +262,18 @@ export class MemoryCheckupService {
         dropValidTo: drop.attributes?.validTo ?? null,
         keepTentative,
       };
+      apply = async () => {
+        await memory.revise({
+          memoryId: drop.id,
+          expectedRevision: drop.revision,
+          status: "archived",
+          attributes: { supersededBy: keep.id, validTo: now },
+          generationId: await generationFor(drop.id),
+        });
+        if (keepTentative) await memory.confirm(keep.id, await generationFor(keep.id));
+      };
     }
-    const recorded = await this.#options.store.recordAction({
+    const claimed = await this.#options.store.recordAction({
       ...this.#options.scope,
       id: item.id,
       action: input.action,
@@ -271,56 +281,63 @@ export class MemoryCheckupService {
       before,
       handledAt: now,
     });
-    if (!recorded) refuse("conflict", "MEMORY_CHECKUP_ALREADY_HANDLED");
+    if (!claimed) refuse("conflict", "MEMORY_CHECKUP_ALREADY_HANDLED");
+    try {
+      await apply();
+    } catch (error) {
+      await this.#restore(item.id).catch(() => undefined);
+      throw error;
+    }
     return this.#item(item.id);
   }
 
   async undo(id: string): Promise<MemoryCheckupItem> {
+    return this.#restore(id);
+  }
+
+  async #restore(id: string): Promise<MemoryCheckupItem> {
     const item = await this.#item(id);
     const before = item.before;
     if (item.action === null || before === null) refuse("invalid", "MEMORY_CHECKUP_NOT_HANDLED");
     const { memory, generationFor, state } = this.#options;
     if (item.action === "confirm") {
-      if (before.tentative) {
-        const current = await this.#live(item.memoryId);
-        if (current.attributes?.tentative !== true)
-          await memory.revise({
-            memoryId: current.id,
-            expectedRevision: current.revision,
-            attributes: { tentative: true },
-            generationId: await generationFor(current.id),
-          });
-      }
+      const current = await state.read(item.memoryId);
+      if (before.tentative && live(current) && current.attributes?.tentative !== true)
+        await memory.revise({
+          memoryId: current.id,
+          expectedRevision: current.revision,
+          attributes: { tentative: true },
+          generationId: await generationFor(current.id),
+        });
     } else if (item.action === "delete") {
       const current = await state.read(item.memoryId);
-      if (current?.status !== "trashed") refuse("invalid", "MEMORY_CHECKUP_STALE");
-      await memory.recover(current.id, await generationFor(current.id));
+      if (current?.status === "trashed")
+        await memory.recover(current.id, await generationFor(current.id));
     } else {
       const dropId = before.dropMemoryId;
       const keepId = item.keptMemoryId;
-      if (!dropId || !keepId) refuse("invalid", "MEMORY_CHECKUP_STALE");
-      const drop = await state.read(dropId);
-      if (drop?.status !== "archived" || drop.attributes?.supersededBy !== keepId)
-        refuse("invalid", "MEMORY_CHECKUP_STALE");
-      await memory.revise({
-        memoryId: drop.id,
-        expectedRevision: drop.revision,
-        status: before.dropStatus ?? "active",
-        attributes: {
-          supersededBy: before.dropSupersededBy ?? null,
-          validTo: before.dropValidTo ?? null,
-        },
-        generationId: await generationFor(drop.id),
-      });
-      if (before.keepTentative) {
-        const keep = await this.#live(keepId);
+      const drop = dropId ? await state.read(dropId) : undefined;
+      const merged =
+        keepId !== null && drop?.status === "archived" && drop.attributes?.supersededBy === keepId;
+      if (merged)
+        await memory.revise({
+          memoryId: drop.id,
+          expectedRevision: drop.revision,
+          status: before.dropStatus ?? "active",
+          attributes: {
+            supersededBy: before.dropSupersededBy ?? null,
+            validTo: before.dropValidTo ?? null,
+          },
+          generationId: await generationFor(drop.id),
+        });
+      const keep = keepId ? await state.read(keepId) : undefined;
+      if (merged && before.keepTentative && live(keep) && keep.attributes?.tentative !== true)
         await memory.revise({
           memoryId: keep.id,
           expectedRevision: keep.revision,
           attributes: { tentative: true },
           generationId: await generationFor(keep.id),
         });
-      }
     }
     const undone = await this.#options.store.recordUndo({
       ...this.#options.scope,

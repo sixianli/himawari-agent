@@ -411,6 +411,9 @@ export async function readDailyReview(options: {
     capacity,
     ...(options.silentShare === undefined ? {} : { silentShare: options.silentShare }),
   });
+  const handledEarlier = (options.checkup ?? [])
+    .filter(({ handledAt }) => handledAt !== null && handledAt < dayStart)
+    .map(({ id }) => reviewKey("checkup", id));
   const build = (keys: readonly string[]) =>
     Promise.all(keys.map((key) => candidates.get(key)?.build())).then((items) =>
       items.filter((item): item is DailyReviewItem => item !== undefined),
@@ -420,7 +423,7 @@ export async function readDailyReview(options: {
     capacity,
     sampled: selection.sampled,
     notSampled: selection.notSampled,
-    items: Object.freeze(await build(selection.shown)),
+    items: Object.freeze(await build([...selection.shown, ...handledEarlier])),
     folded: Object.freeze({
       total: selection.foldedTotal,
       items: Object.freeze(await build(selection.foldedShown)),

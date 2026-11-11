@@ -44,6 +44,7 @@ const configuration: ControlCenterRuntimeConfiguration = {
     "proactive.audit.respond",
     "proactive.review.read",
     "proactive.review.rate",
+    "proactive.review.checkup",
     "proactive.source.manage",
     "proactive.backoff.restore",
   ],
