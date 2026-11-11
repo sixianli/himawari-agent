@@ -35,7 +35,12 @@ export function createProactiveRecentSummaries(
       if (await options.capturePaused()) return { generated: 0, costMicros: 0, failed: false };
       const { fromDay, toDay } = options.episodes.recentDays(days);
       const segments = (
-        await options.episodes.dueSegments({ ...scope, activeWithinDays: days, limit: limit * 4 })
+        await options.episodes.dueSegments({
+          ...scope,
+          activeWithinDays: days,
+          signal,
+          limit: limit * 4,
+        })
       )
         .filter(
           ({ day, dataClassification }) =>

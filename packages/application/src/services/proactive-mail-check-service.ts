@@ -803,27 +803,43 @@ export class ProactiveMailCheckService {
           );
     const bodyLimits = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits };
     let batchSize = this.#options.batchSize ?? DEFAULT_BATCH_SIZE;
+    const recalled = await this.#recall(candidates, deadlineAt, controller.signal, trace);
+    costMicros += recalled.costMicros;
+    const summaryLimits = { ...DEFAULT_PROACTIVE_SUMMARY_LIMITS, ...this.#options.summaryLimits };
+    const firstBatch = this.#fitBatch(candidates, batchSize, bodyLimits, relatedViews);
     const judgmentReserveMicros =
       candidates.length === 0
         ? 0
         : this.#options.limits.estimateCostMicros(
             proactivePrompt(
-              this.#fitBatch(candidates, batchSize, bodyLimits, relatedViews),
+              firstBatch,
               startedAt,
               this.#options.timeZone,
-              [],
+              this.#batchMemories(firstBatch, recalled.hits),
               bodyLimits.perMail,
               relatedViews,
+              this.#options.recentSummaries === undefined
+                ? []
+                : [
+                    {
+                      id: "reserve",
+                      day: startedAt.slice(0, 10),
+                      text: "。".repeat(Math.max(0, summaryLimits.characters)),
+                      dataClassification: "private",
+                    },
+                  ],
             ),
           );
-    const summaryBudget = { spentToday, reserveMicros: judgmentReserveMicros, costMicros: 0 };
+    const summaryBudget = {
+      spentToday: spentToday + recalled.costMicros,
+      reserveMicros: judgmentReserveMicros,
+      costMicros: 0,
+    };
     const summaries =
       candidates.length === 0 || spentToday >= this.#options.limits.dailyCostMicros
         ? []
         : await this.#summaries(deadlineAt, controller.signal, trace, summaryBudget);
     costMicros += summaryBudget.costMicros;
-    const recalled = await this.#recall(candidates, deadlineAt, controller.signal, trace);
-    costMicros += recalled.costMicros;
     let stop: Stop = null;
     const queue = [...candidates];
     let failure: string | null = null;

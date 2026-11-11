@@ -104,6 +104,7 @@ describe("proactive Gmail check acceptance", () => {
   async function harness(
     options: {
       dailyCostMicros?: number;
+      estimatePerCharacter?: number;
       estimate?: number;
       cost?: number;
       importantSenders?: string[];
@@ -296,7 +297,8 @@ describe("proactive Gmail check acceptance", () => {
       perCheckMs: 180_000,
       dailyCostMicros: options.dailyCostMicros ?? 1_000_000,
       estimate: options.estimate ?? 100,
-      estimateCostMicros: () => limits.estimate,
+      estimateCostMicros: (prompt: string) =>
+        limits.estimate + (options.estimatePerCharacter ?? 0) * prompt.length,
     };
     const recording: {
       failing: boolean;
@@ -3262,6 +3264,31 @@ describe("proactive Gmail check acceptance", () => {
       expect(head(h.prompts[0] ?? "")).toContain("下周去大阪出差");
       expect(head(h.prompts[0] ?? "")).toBe(head(h.prompts[1] ?? ""));
       expect(world.current?.calls).toEqual({ catchUp: 1, recent: 1 });
+    });
+
+    it("REVERSE: reserves room for a judgment that carries a full summary block, priced by prompt length", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({
+        recentSummaries: summariesFor(world),
+        dailyCostMicros: 5_000,
+        estimate: 0,
+        estimatePerCharacter: 1,
+        cost: 5_000,
+      });
+      chatTurn(h, world.current as World, {
+        threadId: "chat-yesterday",
+        sequence: 1,
+        role: "owner",
+        text: "十月的电费我已经交了",
+        at: "2026-11-03T03:00:00.000Z",
+      });
+      h.reader.items = [mail("bill", { subject: "電気料金のお知らせ" })];
+      h.script([{ id: "bill", result: "ignore" }]);
+      await h.service.run();
+      expect(h.invocations()).toBe(1);
+      expect(h.prompts[0]).toContain("電気料金のお知らせ");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({ summaryGenerated: 0, summaryRead: "partial" });
     });
 
     it("REVERSE: leaves room for the mail judgment instead of spending the last of the day's limit on catching up", async () => {

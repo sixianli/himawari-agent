@@ -118,6 +118,7 @@ export class MemoryEpisodeService {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
     readonly activeWithinDays?: number;
+    readonly signal?: AbortSignal;
     readonly limit: number;
   }): Promise<readonly EpisodeSegment[]> {
     const now = this.#options.now();
@@ -138,7 +139,7 @@ export class MemoryEpisodeService {
       limit: Math.min(100, Math.max(input.limit * 4, input.limit)),
     });
     for (const watermark of watermarks) {
-      if (segments.length >= input.limit) break;
+      if (segments.length >= input.limit || input.signal?.aborted) break;
       const messages = (
         await this.#options.threads.listMessages(
           input.ownerId,
