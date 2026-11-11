@@ -547,6 +547,12 @@ describe("CI policy contract", () => {
       },
     ],
     [
+      "required running a step after a failed entry check",
+      (value) => {
+        value.jobs.required.steps.push({ if: "always()", run: "echo late" });
+      },
+    ],
+    [
       "required removing the run directory after a failed entry check",
       (value) => {
         value.jobs.required.steps.find((step) => step.run?.endsWith(" remove")).if = "always()";
@@ -667,7 +673,7 @@ describe("CI policy contract", () => {
     expect(() => validateWorkflow(policy, stringify(value), lock)).not.toThrow();
     value.jobs.required.steps.at(-1).if = "always()";
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
-      "Required uploads its gate only after the entry check passed",
+      "Required runs nothing after a failed entry check",
     );
   });
   it("accepts read-only permissions on the gate job", () => {

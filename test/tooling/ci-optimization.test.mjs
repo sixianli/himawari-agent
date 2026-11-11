@@ -228,7 +228,7 @@ describe("草稿和被取消的运行不占 runner", () => {
   const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
   const entry = workflow.jobs.required.steps[0];
   const runEntry = (env) =>
-    spawnSync("bash", ["-e", "-c", entry.run], {
+    spawnSync("bash", ["--noprofile", "--norc", "-e", "-o", "pipefail", "-c", entry.run], {
       encoding: "utf8",
       env: { PATH: process.env.PATH, ...env },
     });

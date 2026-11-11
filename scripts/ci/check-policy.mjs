@@ -523,12 +523,6 @@ export function validateWorkflow(policy, source, toolchain) {
         "Required must first fail draft and cancelled runs before installing anything",
       );
       assert(
-        job.steps
-          .filter((step) => /^actions\/upload-artifact@/u.test(step.uses ?? ""))
-          .every((step) => step.if === REQUIRED_AFTER_ENTRY),
-        "Required uploads its gate only after the entry check passed",
-      );
-      assert(
         job.steps.some(
           (step) =>
             step.run ===
@@ -542,6 +536,12 @@ export function validateWorkflow(policy, source, toolchain) {
               step.if === REQUIRED_AFTER_ENTRY,
           ),
         "Required must collect digest-checked reports from the runner share and always remove the run directory",
+      );
+      assert(
+        job.steps
+          .slice(1)
+          .every((step) => step.if === undefined || step.if === REQUIRED_AFTER_ENTRY),
+        "Required runs nothing after a failed entry check",
       );
     } else {
       const shares = job.steps.filter((step) => step.run?.includes("scripts/ci/run-share.mjs put"));
