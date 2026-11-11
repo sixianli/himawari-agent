@@ -4,6 +4,7 @@
 用 `opencode-go/deepseek-v4.1-flash` 和 `opencode-go/glm-5.3-flash` 两个模型，推理强度都设为高，各看一遍；代码复核从第 2 轮起只用 DeepSeek（Andy 2026-11-06 定，见[代码复核](#code-review)第 3 步）。只能用这两个模型（Andy 在项目指令第 17 条规定）。一律用 `node scripts/model-review/opencode-review.mjs` 跑（见[怎么跑](#how-to-run)）。交给它们的材料只讲问题、目标、约束和已核对的事实，不预设结论，脚本会自动加上项目指令第 16 条的原话：列出的方案只是参考，请从问题本身出发，提出你认为更好的方案。
 
 - [写代码之前：方案讨论](#plan-discussion)
+- [方案交给 Andy 之前：核对代码说法](#plan-claims)
 - [合并之前：代码复核](#code-review)
 - [每次都要问的问题](#checklist)
 - [Andy 怎样控制复核](#owner-control)
@@ -18,6 +19,27 @@
 1. 独立出方案（`--mode plan`）：线程先把自己的方案写好存着，不给模型看。材料只写问题、目标、约束、已核对的事实和查到的一手资料，不写线程的方案或倾向。两个模型各自读代码、上网搜索，各出一套方案。
 2. 审核线程的方案（`--mode plan-review`）：把线程的方案发给两个模型，请它们找漏掉的场景、判断错的地方、和业界成熟做法不一致的地方。先独立、后审核，是为了不让模型顺着线程的思路走。
 3. 线程整合：线程把两个模型的方案、审核意见和自己的方案逐条比较，自己先判断每一条采纳还是不采纳、为什么、最后建议怎么做，线程自己的方案也一样要过这一遍。交给 Andy 的是一份整合后的方案：开头按[方案的前提](../../.claude/rules/proposal-premises.md)列前提和来源，然后是方案，最后只列真正需要他拍板的几项取舍。三方的原始方案和逐条判断作为附件，不要求 Andy 逐条看。Andy 同意后才写代码。
+
+<a id="plan-claims"></a>
+## 方案交给 Andy 之前：核对代码说法
+
+起因：线程整合两个模型的意见时，把其中对代码行为的说法写进了方案和 ADR 0242，没有自己打开代码核对，三次都是这样（[审核时直接采信代理自报的检查结果](../../docs/lessons.md#trust-reported-checks)）。按[事故和反复犯的错误](../../.claude/rules/incident-gates.md#what-counts)，第三次要上硬门槛：整合后的方案里每一句讲代码或仓库文档现状的话，都由低价模型对着代码核一遍，没核过的 ADR 不让合并。
+
+1. 方案要放在仓库里并提交（例如新 ADR 的草稿 `docs/adr/NNNN-….md`）；放在仓库外的整合方案，先提交成分支里的文件再核。
+2. 运行：`node scripts/model-review/opencode-review.mjs --mode plan-claims --head <提交> --topic <短名> --claims-file <方案文件的仓库路径> --gateway magpie`。不传 `--brief`：脚本直接读 `--head` 那个提交里的文件，所以核的就是提交过的内容。默认只跑 DeepSeek，要两个模型都跑加 `--models`；只用这两个模型，经 Magpie；不上网、只读代码；提示里不放代码复核的必答问题（它只核事实，不评方案）。记录写进这件事的方案讨论记录目录 `.agents/reviews/topic-<短名>/round-<序号>/`，用量进同一份 `usage.jsonl`，费用计入方案讨论 0.5 美元的先问线（`--approved-usd` 照旧）。
+3. 模型把每一句现状说法单独列成一行：`CLAIM|<序号>|<一致、不一致 或 找不到>|<文件:行>|<方案原句>|<代码原文>`。脚本跑完打印 `CLAIMS_SUMMARY`（总数、一致数、有问题数）和每条 `CLAIMS_FLAGGED`；模型的答案一条都解析不出来，打印 `CLAIMS_PARSE_FAILED`，退出码 4，不算核过。
+4. 线程逐条处理“不一致”和“找不到”：自己打开代码看。
+   - 方案写错了：改方案，提交，对改后的内容重新跑一次，直到这一轮没有“不一致”和“找不到”，或剩下的都是模型看错的。旧的记录留着。
+   - 模型看错了：在这一轮目录里的 `claims-verdicts.jsonl` 加一行 JSON：`{"id":"<序号>","model":"<模型全名>","quote":"<答案里那条 CLAIM 行，逐字>","outcome":"model-wrong","evidenceFile":"<仓库里的文件路径>","evidence":"<那个文件里逐字存在的代码原文，不少于 8 个字符>"}`。改了方案的记 `"outcome":"plan-fixed"` 加 `"change":"<改了什么>"`，只当备忘；它不能让“当前内容那一轮”里的条目过关，因为那一轮核的已经是改后的内容。
+5. 合并检查（`--assert-reviewed`）：PR 相对 `--main-ref`（默认 `origin/main`）新增了 `docs/adr/NNNN-*.md` 时，对每个新增的 ADR 要求：
+   - 有一条 `plan-claims` 记录，记的文件路径和内容摘要（SHA-256）与 HEAD 里这个 ADR 的当前内容一致；内容改过一个字节就不一致，报 `claims-stale`，必须对新内容重核；根本没有记录报 `claims-unchecked`。这样定的原因：核对对象是“交给人看的那份文字”，改一句就可能改变一条说法的真假；单次约 0.1 美元，比漏掉错误便宜。
+   - 以最晚的那一轮为准（同一内容多次重跑，只看最后一轮，所以不能靠重跑到碰巧全一致来蒙混；每次重跑的花费都在账本里）。这一轮没有任何模型 `ok` 报 `claims-run-failed`；答案文件缺失 `claims-answer-missing`；一行都解析不出 `claims-none`；格式坏了或序号重复 `claims-answer-invalid`。
+   - 每一条（含“一致”）的“文件:行”都要在 HEAD 里存在、行号不超出文件，代码原文逐字（空白不计，可用 `…` 省略中间）出现在那个文件里，否则报 `claims-evidence <ADR> <模型> <序号> <原因>`：模型没读到代码、编了引文，都过不了。核对用的是 HEAD 里的代码，引用的代码后来改了也要重核。
+   - 每条“不一致”和“找不到”都要有 `model-wrong` 判断，且 `evidence` 真的是 `evidenceFile` 里的原文、`quote` 真的是答案里的原文，否则报 `claims-unjudged` 或 `claims-verdict-evidence`、`claims-verdict-quote`。
+   - 这一步用到的记录文件（对这个 ADR 跑过的所有 `plan-claims` 轮次的目录和那份 `usage.jsonl`）不算“PR 自己的未复核改动”，所以补记录不必为此再复核一轮；它们照样做像密钥的文字检查。
+   - 不改代码、不新增 ADR 的 PR，和只修改已有 ADR 的 PR，都不要这一步。
+   - 上面所有 `claims-` 开头的问题，Andy 明确说跳过时，可以和其他复核问题一样用 `--accept-unreviewed "<Andy 的原话>"` 盖过（见[代码复核](#code-review)第 6 步的例外）。
+6. 局限，如实写在这里：低价模型自己也会看错，也可能漏列某句说法，脚本只能验证“列出的每一句都有真实的文件和代码原文，每条对不上的都被线程处理过”，验证不了“没有漏列”，更保证不了方案一定对。它不核对外部网站和第三方产品的说法，也不替代下面合并前的代码复核。
 
 <a id="code-review"></a>
 ## 合并之前：代码复核
@@ -121,7 +143,14 @@ node scripts/model-review/opencode-review.mjs --mode plan-review \
   --head <当前提交> --topic <短名> --brief <线程的方案.md>
 ```
 
-三种模式都可以加 `--gateway magpie`（经本机 Magpie 调模型，见下一节）、`--models deepseek-v4.1-flash`（只跑列出的模型，逗号分隔，可写短名或完整名；自检仍对两个模型都跑，不花钱；代码复核传了 `--previous` 而不写它时默认只跑 DeepSeek，要两个都跑就写 `--models deepseek-v4.1-flash,glm-5.3-flash`）、`--round <序号>`（把单个模型的重跑补进原来那一轮，见上文）、`--questions-ref <提交>`（从这个提交读必问问题，见上文）、`--approved-usd <美元>`（Andy 同意的这件事的总花费）和 `--providers <服务方 id>[,…]`（经 Magpie 时这一次只用列出的服务方，见[Andy 怎样控制复核](#owner-control)；自检不收，`ARG_PROVIDERS_NOT_FOR_SELF_CHECK`）。
+方案里关于代码的说法，交给 Andy 之前要再核一遍（[方案交给 Andy 之前：核对代码说法](#plan-claims)）：
+
+```
+node scripts/model-review/opencode-review.mjs --mode plan-claims \
+  --head <当前提交> --topic <短名> --claims-file docs/adr/<编号>-<名>.md --gateway magpie
+```
+
+三种复核模式（代码复核、`plan`、`plan-review`）都可以加 `--gateway magpie`（经本机 Magpie 调模型，见下一节）、`--models deepseek-v4.1-flash`（只跑列出的模型，逗号分隔，可写短名或完整名；自检仍对两个模型都跑，不花钱；代码复核传了 `--previous` 而不写它时默认只跑 DeepSeek，要两个都跑就写 `--models deepseek-v4.1-flash,glm-5.3-flash`）、`--round <序号>`（把单个模型的重跑补进原来那一轮，见上文）、`--questions-ref <提交>`（从这个提交读必问问题，见上文）、`--approved-usd <美元>`（Andy 同意的这件事的总花费）和 `--providers <服务方 id>[,…]`（经 Magpie 时这一次只用列出的服务方，见[Andy 怎样控制复核](#owner-control)；自检不收，`ARG_PROVIDERS_NOT_FOR_SELF_CHECK`）。
 
 `--brief` 只写这次的材料：代码复核写问题、目标、约束和作者的说法；`plan` 只写问题、目标、约束和已核对的事实，不写线程的方案；`plan-review` 写线程的方案。脚本会在前面加上各模式的固定说明（上面的必问问题、项目指令第 16 条原话、该模式的任务和输出格式），代码复核还会让模型自己用 `git diff` 看改动。提交可以写分支名，脚本先在原仓库解析成提交哈希。按意见修改后的复核传 `--previous`，模型先看增量，但可以读任何文件。
 
