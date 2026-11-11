@@ -148,9 +148,9 @@ regexTarget = "secret"
 regexes = ['''^abcdef123456$''']
 
 [[allowlists]]
-description = "本机向量模型出包脚本里固定的上游文件 SHA-256（文件路径为键），见 ADR 0224"
+description = "本机向量模型出包脚本里三个模型的 tokenizer 文件 SHA-256（逐个精确值，历史提交里以文件名为键），见 ADR 0224"
 targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''(?:^|/)scripts/embedding-models/build-artifact\.py$''']
 regexTarget = "secret"
-regexes = ['''^[0-9a-f]{64}$''']
+regexes = ['''^(?:aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4|9da9b391de9bb545e047bdfd5d9abefe32ee41937acf6c3b06aae33d85d0a4b4|def76fb086971c7867b829c23a26261e38d9d74e02139253b38aeb9df8b4b50a|977648852447cb6587327ff3205b0a84cf2fc9f05621d6c8e88a497caafab2e1|4d777ef5bdc1aa36227abdfb77c3e49e7b9c892d16e1b6bda41c393504828be4|17bd5d6e9364ca49a534e1502076593317c298d4a663623091ed45388f004874)$''']

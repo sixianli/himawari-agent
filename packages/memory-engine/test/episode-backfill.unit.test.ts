@@ -122,6 +122,15 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
               PORT_ERROR_CODES.PROVIDER_FAILURE,
               "EMBEDDING_LOCAL_INPUT_LENGTH",
             );
+          if (text.includes("zero")) throw new Error("EMBEDDING_VECTOR_INVALID");
+          if (text.includes("oversized"))
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.PROVIDER_FAILURE,
+              "EMBEDDING_HTTP_FAILURE",
+              {
+                status: "413",
+              },
+            );
           if (text.includes("rejected"))
             throw new ApplicationPortError(
               PORT_ERROR_CODES.PROVIDER_FAILURE,
@@ -155,14 +164,23 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
     await expect(run(100)).rejects.toThrow("EMBEDDING_LOCAL_INPUT_LENGTH");
     expect(tried.slice(7)).toEqual(["c-broken", "d-broken", "e-rejected", "f-broken", "g-broken"]);
     now += 3_600_000;
-    expect(await run(100)).toBe(0);
+    await expect(run(100)).rejects.toThrow("EMBEDDING_HTTP_FAILURE");
+    expect(tried.slice(12)).toEqual(["e-rejected"]);
     now -= 30 * 24 * 3_600_000;
     await expect(run(100)).rejects.toThrow("EMBEDDING_LOCAL_INPUT_LENGTH");
-    expect(tried).toHaveLength(17);
+    expect(tried).toHaveLength(18);
     stored = ["j-down", "k-fine"].map((id) => episode(id, "private"));
     await expect(run()).rejects.toThrow("EMBEDDING_LOCAL_NOT_READY");
     await expect(run()).rejects.toThrow("EMBEDDING_LOCAL_NOT_READY");
-    expect(tried.slice(17)).toEqual(["j-down", "j-down"]);
+    expect(tried.slice(18)).toEqual(["j-down", "j-down"]);
     expect(attached).toEqual(["h-fine", "i-fine"]);
+    stored = ["l-rejected", "m-rejected"].map((id) => episode(id, "private"));
+    await expect(run(100)).rejects.toThrow("EMBEDDING_HTTP_FAILURE");
+    await expect(run(100)).rejects.toThrow("EMBEDDING_HTTP_FAILURE");
+    expect(tried.slice(20)).toEqual(["l-rejected", "m-rejected", "l-rejected", "m-rejected"]);
+    stored = ["n-zero", "o-oversized", "p-fine", "q-zero"].map((id) => episode(id, "private"));
+    expect(await run(100)).toBe(1);
+    expect(await run(100)).toBe(0);
+    expect(tried.slice(24)).toEqual(["n-zero", "o-oversized", "p-fine", "q-zero"]);
   });
 });

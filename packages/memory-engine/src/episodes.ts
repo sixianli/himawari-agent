@@ -34,15 +34,16 @@ const SUMMARY_EMBEDDING_FAILURES = new Set([
   "EMBEDDING_LOCAL_INPUT_LENGTH",
   "EMBEDDING_VECTOR_INVALID",
 ]);
-const SUMMARY_REJECTION_STATUSES = new Set(["400", "413", "422"]);
+const SUMMARY_REJECTION_STATUSES = new Set(["413", "422"]);
 
-function failsOnlyThisSummary(error: unknown): boolean {
-  if (!(error instanceof ApplicationPortError)) return false;
-  if (SUMMARY_EMBEDDING_FAILURES.has(error.message)) return true;
-  return (
-    error.message === "EMBEDDING_HTTP_FAILURE" &&
-    SUMMARY_REJECTION_STATUSES.has(error.details["status"] ?? "")
-  );
+function summaryFailure(error: unknown): "this-summary" | "maybe-this-summary" | undefined {
+  if (!(error instanceof Error)) return undefined;
+  if (SUMMARY_EMBEDDING_FAILURES.has(error.message)) return "this-summary";
+  if (!(error instanceof ApplicationPortError) || error.message !== "EMBEDDING_HTTP_FAILURE")
+    return undefined;
+  const status = error.details["status"] ?? "";
+  if (SUMMARY_REJECTION_STATUSES.has(status)) return "this-summary";
+  return status === "400" ? "maybe-this-summary" : undefined;
 }
 
 export interface EpisodeSegment {
@@ -366,6 +367,10 @@ export class MemoryEpisodeService {
     let after: { createdAt: string; id: string } | undefined;
     let embedded = 0;
     let failure: { readonly error: unknown } | undefined;
+    const uncertain: {
+      key: string;
+      retry: { readonly notBefore: number; readonly failures: number } | undefined;
+    }[] = [];
     pages: for (;;) {
       const episodes = await this.#options.store.listUnembedded({
         ownerId: input.ownerId,
@@ -398,23 +403,11 @@ export class MemoryEpisodeService {
               embedder.embedDocument(`${episode.day}\n${text}`),
             );
           } catch (error) {
-            if (!failsOnlyThisSummary(error)) throw error;
+            const kind = summaryFailure(error);
+            if (!kind) throw error;
             failure ??= { error };
-            const failures = (retry?.failures ?? 0) + 1;
-            this.#embeddingRetries.delete(key);
-            this.#embeddingRetries.set(key, {
-              failures,
-              notBefore:
-                Date.parse(this.#options.now()) +
-                Math.min(
-                  FIRST_EMBEDDING_RETRY_MS * 2 ** (failures - 1),
-                  LONGEST_EMBEDDING_RETRY_MS,
-                ),
-            });
-            for (const oldest of this.#embeddingRetries.keys()) {
-              if (this.#embeddingRetries.size <= REMEMBERED_EMBEDDING_FAILURES) break;
-              this.#embeddingRetries.delete(oldest);
-            }
+            if (kind === "this-summary") this.#waitBeforeRetrying(key, retry);
+            else uncertain.push({ key, retry });
             continue;
           }
           await this.#options.store.attachEmbedding({
@@ -434,8 +427,27 @@ export class MemoryEpisodeService {
       }
       if (episodes.length < pageSize) break;
     }
+    if (embedded > 0) for (const { key, retry } of uncertain) this.#waitBeforeRetrying(key, retry);
     if (failure && embedded === 0) throw failure.error;
     return embedded;
+  }
+
+  #waitBeforeRetrying(
+    key: string,
+    retry: { readonly notBefore: number; readonly failures: number } | undefined,
+  ): void {
+    const failures = (retry?.failures ?? 0) + 1;
+    this.#embeddingRetries.delete(key);
+    this.#embeddingRetries.set(key, {
+      failures,
+      notBefore:
+        Date.parse(this.#options.now()) +
+        Math.min(FIRST_EMBEDDING_RETRY_MS * 2 ** (failures - 1), LONGEST_EMBEDDING_RETRY_MS),
+    });
+    for (const oldest of this.#embeddingRetries.keys()) {
+      if (this.#embeddingRetries.size <= REMEMBERED_EMBEDDING_FAILURES) break;
+      this.#embeddingRetries.delete(oldest);
+    }
   }
 
   async #record(input: {
