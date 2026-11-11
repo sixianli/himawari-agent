@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:1d8e5e0c4b25baba06edbbe95e75224809172228cc75849dda1c828bec368a9b"
+contract_sha256: "sha256:e5704cc7ababcebecb21a2d65dfae8c989357250b8c2d70bd0a41cd928908bf3"
 supersedes: "docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md"
 superseded_by: ""
 date: "2026-11-07"
@@ -131,7 +131,7 @@ date: "2026-11-07"
 
 1. 把 `scripts/operations/ci-runner/` 下的全部文件（包括 `runners.sh` 和 `gh-runner.service.in`）用 `scp` 传到 VPS 的 `/home/ubuntu/ci-runner/`。
 2. 有 runner 服务在运行时安装脚本以退出码 70 拒绝，所以重装前先按[暂停和恢复](#pause-and-resume)在 Mac 上运行 `pause-runners.sh`。
-3. `sudo bash /home/ubuntu/ci-runner/install-runner.sh`。脚本会：确认主机名是 `ci-vps`（否则以退出码 68 拒绝）；把要改动的服务文件、slice、`/etc/gh-runner/`、窄 sudo 规则和两个 runner 的 `hooks/` 目录复制到 `/var/backups/gh-runner/<时间>/`，并记下哪些原来不存在；之后任何一步失败或脚本被中断（`Ctrl-C`、`TERM`、`HUP`），都会把原有的放回、把这次新建的文件、用户、组和目录删掉，撤销这次新启用的开机启动，重新加载防火墙规则，并打印 `INSTALL_FAILED`；某一步出错时，先打印一行 `INSTALL_STEP_FAILED line <行号> exit <退出码>: <出错的命令>`，指出是哪一步；回滚期间忽略 `PIPE` 信号（读输出的一方已退出时系统发出的信号），所以标准错误被关掉、或接收输出的程序已经退出时，回滚也会放回全部文件，不会中途停下；有放不回去的会打印 `RESTORE_INCOMPLETE`，列出是哪几项和备份目录；建 `gh-runner` 和 `gh-runner-2` 两个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝），建系统组 `gh-ci-share` 和共享目录 `/srv/gh-runner-share`（`2770`，属主 root），建两个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、slice 和服务，按端口名单和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每小时清理定时器。成功时打印 `INSTALL_OK`，同时打印共享目录、 runner 账号的 uid、拦住的本机端口和备份目录。
+3. `sudo bash /home/ubuntu/ci-runner/install-runner.sh`。脚本会：确认主机名是 `ci-vps`（否则以退出码 68 拒绝）；把要改动的服务文件、slice、`/etc/gh-runner/`、窄 sudo 规则和两个 runner 的 `hooks/` 目录复制到 `/var/backups/gh-runner/<时间>/`，并记下哪些原来不存在；之后任何一步失败或脚本被中断（`Ctrl-C`、`TERM`、`HUP`），都会把原有的放回、把这次新建的文件、用户、组和目录删掉，撤销这次新启用的开机启动，重新加载防火墙规则，并打印 `INSTALL_FAILED`；某一步出错时，先打印一行 `INSTALL_STEP_FAILED line <行号> exit <退出码>: <出错的命令>`，指出是哪一步；回滚期间忽略 `PIPE` 信号（读输出的一方已退出时系统发出的信号），所以标准错误被关掉、或接收输出的程序已经退出时，回滚也会放回全部文件，不会中途停下；有放不回去的会打印 `RESTORE_INCOMPLETE`，列出是哪几项和备份目录；建 `gh-runner` 和 `gh-runner-2` 两个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝），建系统组 `gh-ci-share` 和共享目录 `/srv/gh-runner-share`（`2770`，属主 root；组不存在而目录已存在时以退出码 71 拒绝，不接管别人建的目录），建两个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、slice 和服务，按端口名单和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每小时清理定时器。成功时打印 `INSTALL_OK`，同时打印共享目录、 runner 账号的 uid、拦住的本机端口和备份目录。
 4. 重装时最后在 Mac 上运行 `resume-runners.sh`；第一次安装要先按[注册](#register)注册。
 
 <a id="register"></a>
@@ -256,7 +256,8 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 | 正在跑的任务日志里出现 `The runner has received a shutdown signal` | `sudo journalctl -u gh-runner -u gh-runner-2 --since <时间>` 里有 `Stopping gh-runner`，同一时段 `/var/log/unattended-upgrades/unattended-upgrades.log` 有升级记录 | 自动安全更新之后 needrestart 重启了 runner。确认 `/etc/needrestart/conf.d/50ci-vps-gh-runner.conf` 还在；不在就重新运行 `prepare-vps.sh`。被杀掉的运行在 GitHub 上重跑。runner 要用上新库时，等两个 runner 都空闲再 `sudo systemctl restart gh-runner gh-runner-2`。 |
 | 任务装浏览器时要 root | 看是否用了 `playwright install --with-deps` | 准备脚本已装好浏览器的系统库，workflow 里去掉 `--with-deps`；Playwright 升级后重新运行 `prepare-vps.sh`（先把里面的版本号改成新的）。 |
 | CI 作业在“放进 CI 服务器”或“取构建”步骤失败，报 `CI_SHARE_ROOT_REQUIRED` 或 `CI_SHARE_ROOT_INVALID` | `stat -c '%a %U %G' /srv/gh-runner-share`；`systemctl show gh-runner.service -p SupplementaryGroups -p Environment` | 共享目录或组没装：先 `pause-runners.sh`，再重新运行 `install-runner.sh`，最后 `resume-runners.sh`。 |
-| 报 `CI_SHARE_DIGEST_MISMATCH:<名字>` 或 `CI_SHARE_MISSING:<名字>` | 看同一轮里那个上游作业有没有成功；`ls -la /srv/gh-runner-share/<运行号-尝试号>/` | 上游没跑完就是缺失，重跑整轮；摘要不符说明文件在存和取之间被改了，保留现场、先报告。 |
+| 一个 runner 取另一个 runner 放的文件时报 `EACCES`（没有权限） | `stat -c '%a %U %G' /srv/gh-runner-share` 应为 `2770 root gh-ci-share`；`ls -ld /srv/gh-runner-share/*` 的组都应是 `gh-ci-share` | 共享目录的 setgid 位（让子目录继承组的权限位）丢了：先 `pause-runners.sh`，重新运行 `install-runner.sh`，删掉组不对的运行目录，再 `resume-runners.sh`。 |
+| 报 `CI_SHARE_DIGEST_MISMATCH:<名字>` 或 `CI_SHARE_MISSING:<名字>` | 看同一轮里那个上游作业有没有成功；`ls -la /srv/gh-runner-share/<运行号-尝试号>/` | 上游没跑完、或用了“只重跑失败的作业”，都是缺失，重跑整轮（Re-run all jobs）；摘要不符说明文件在存和取之间被改了，保留现场、先报告。 |
 | `gh-runner-nft.service` 失败，runner 服务起不来 | `systemctl status gh-runner-nft.service`；`sudo -n nft -c -f /etc/gh-runner/nft.rules` | 规则文件坏了就重新运行 `install-runner.sh` 生成。 |
 | 安装脚本以退出码 70 拒绝 | 输出里点名的服务 | 有 runner 服务在运行；先在 Mac 上运行 `pause-runners.sh`，装完再 `resume-runners.sh`。 |
 | bwrap 报 `Operation not permitted` 或 `setting up uid map` | `sysctl -n kernel.apparmor_restrict_unprivileged_userns`；`sudo aa-status \| grep bwrap` | `/etc/apparmor.d/bwrap` 没加载或被改过。重新运行 `prepare-vps.sh`；不要关掉全局开关。 |

@@ -1260,6 +1260,16 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     expect(box.calls()).toMatch(/^userdel gh-runner-2$/m);
   });
 
+  it("refuses to take over a share directory whose group it would have to create, and leaves it alone", () => {
+    const { box, state, stderr } = installWithFailingRuleCheck("exit 0", [
+      "mkdir -p /srv/gh-runner-share",
+    ]);
+    expect(state.rc).toBe("71");
+    expect(stderr).toContain("refusing to take over");
+    expect(state["/srv/gh-runner-share"]).toBe("DIR");
+    expect(box.calls()).not.toMatch(/^group(add|del) /m);
+  });
+
   it("keeps /srv/gh-runner/bin and files it did not install when the install succeeds", () => {
     const { result, state } = installWithFailingRuleCheck("exit 0", [
       "echo mine > /srv/gh-runner/bin/notes.txt",

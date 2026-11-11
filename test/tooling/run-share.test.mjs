@@ -100,6 +100,21 @@ describe("job 之间经 CI 服务器传文件", () => {
     );
   });
 
+  it("复制中途出错时也不留下半份文件", async () => {
+    const digest = await put({
+      root,
+      run,
+      name: "build-linux-x64",
+      from: tree("from", { r: "1" }),
+    });
+    symlinkSync("/etc/passwd", path.join(root, run, "build-linux-x64/leak"));
+    const to = path.join(base, "to");
+    await expect(get({ root, run, name: "build-linux-x64", digest, to })).rejects.toThrow(
+      "ARTIFACT_LINK_FORBIDDEN",
+    );
+    expect(existsSync(to)).toBe(false);
+  });
+
   it("汇总只收 needs 里给出摘要的成员，缺的逐个列出，不因一个缺失而中断", async () => {
     const digest = await put({ root, run, name: "static-default", from: tree("s", { r: "1" }) });
     const needs = {

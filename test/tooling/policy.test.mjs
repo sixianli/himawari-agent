@@ -551,12 +551,6 @@ describe("CI policy contract", () => {
       },
     ],
     [
-      "GitHub artifact download",
-      (value) => {
-        value.jobs.browser.steps.push({ uses: "actions/download-artifact@v4" });
-      },
-    ],
-    [
       "floating action",
       (value) => {
         value.jobs.policy.steps[0].uses = "actions/checkout@v4";
@@ -596,6 +590,15 @@ describe("CI policy contract", () => {
     const value = workflow();
     mutate(value);
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
+  });
+  it.each(["browser", "required"])("rejects a pinned GitHub artifact download in %s", (id) => {
+    const value = workflow();
+    value.jobs[id].steps.push({
+      uses: `actions/download-artifact@${lock.actions.find((entry) => entry.repository === "actions/download-artifact").sha}`,
+    });
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+      `Jobs must take reports and builds from the runner share, not GitHub artifacts: ${id}`,
+    );
   });
   it("accepts read-only permissions on the gate job", () => {
     const value = workflow();

@@ -88,6 +88,10 @@ install_runner_account() {
 
 install_runner_share() {
   if ! getent group "$RUNNER_SHARE_GROUP" > /dev/null; then
+    if [ -e "$RUNNER_SHARE_ROOT" ] || [ -L "$RUNNER_SHARE_ROOT" ]; then
+      echo "$RUNNER_SHARE_ROOT exists but group $RUNNER_SHARE_GROUP does not; refusing to take over a directory this script did not create" >&2
+      return 71
+    fi
     record_created_group "$BACKUP" "$RUNNER_SHARE_GROUP"
     groupadd --system "$RUNNER_SHARE_GROUP"
   fi

@@ -37,7 +37,7 @@ CI（持续集成，每次推送后自动跑的检查）的七个作业之间要
 别的开发者为了不付 GitHub 的钱，通常这样做：
 
 - 把作业之间的大文件放在 runner 所在机器或自己的存储上，GitHub 上只传很小的值。例如 [ci-storage](https://github.com/dimikot/ci-storage) 在自托管机器上按运行号建目录、用 rsync 存取，定时删旧目录。
-- 作业之间的小值（几十字节的字符串）走作业输出（job outputs），它们不占产物存储（[GitHub 文档：在作业之间传递信息](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/pass-job-outputs)）。
+- 作业之间的小值（几十字节的字符串）走作业输出（job outputs），它们不占产物存储（[GitHub 文档：在作业之间传递信息](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/pass-job-outputs)）。矩阵作业的各个成员可以各写一个不同名字的输出，GitHub 把它们合在一起；空值不会覆盖别的成员写的值（[GitHub 文档：workflow 语法，Using Job Outputs in a Matrix Job](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)，原话 “An output with an empty value is not set, so it does not override a value set by another matrix job.”）。
 
 [↑ 返回阅读导航](#contents)
 
@@ -87,9 +87,9 @@ CI（持续集成，每次推送后自动跑的检查）的七个作业之间要
 
 - 一轮 CI 在 GitHub 上只占几 KB 的汇总结论，加上失败时几 MB 的诊断；GitHub 产物额度不再随 CI 轮数增长。
 - CI VPS 磁盘每轮多占约 300 MB，汇总作业结束就删；最坏情况（汇总一直没跑完）每小时清理删掉 6 小时前的目录。任务开始前已有的 16 GiB 可用空间下限照样挡住磁盘不够的情况。
-- 两个 runner 能读写同一个目录，所以一个任务能改另一个 runner 正在用的本次文件。仓库私有、只有 Andy 和他的代理线程推送，这和 [ADR 0176](0176-ci-on-ovh-vps.md) 接受“同一个 runner 上的任务互相能改”是同一个理由；摘要核对能发现文件在存和取之间被改，但挡不住有意改摘要的任务。
+- 两个 runner 的任务都能读写整个共享目录，所以一个任务能读、改、删共享目录里任何一轮运行的文件，不只是本轮的。仓库私有、只有 Andy 和他的代理线程推送，这和 [ADR 0176](0176-ci-on-ovh-vps.md) 接受“同一个 runner 上的任务互相能改”是同一个理由；摘要核对能发现文件在存和取之间被改，但挡不住有意改摘要的任务。
 - 只有 CI VPS 上的 runner 能跑这套 CI：作业要靠 `HIMAWARI_CI_SHARE` 和共享目录，换到 GitHub 托管的 runner 上会以 `CI_SHARE_ROOT_REQUIRED` 失败。这是有意的：Andy 不在 GitHub 上花钱。
-- 汇总通过的运行不能单独重跑 `ci/required`（共享目录已删）；要重跑整轮。GitHub 的“重跑失败作业”会用新的尝试号，上游作业重新存一份，不受影响。
+- 重跑一律重跑整轮（GitHub 的 “Re-run all jobs”）。“只重跑失败的作业”会换新的尝试号，但已成功的上游作业不重跑，新尝试号的目录里没有它们的文件，取构建或收报告时以 `CI_SHARE_MISSING` 失败；这和以前一样：汇总脚本 `scripts/ci/aggregate.mjs` 本来就要求每份报告的尝试号等于本次尝试号，不符时报 “rerun the complete workflow”。
 - 合并后要在 CI VPS 上运行一次安装脚本，才会有组和目录（运维手册写了原样命令）；装好之前，CI 会在第一个存文件的步骤以 `CI_SHARE_ROOT_REQUIRED` 失败。
 - `quality.yml` 仍然下载 `report-` 产物，但它按 [ADR 0176](0176-ci-on-ovh-vps.md) 停用；重新启用时要改成从共享目录取。
 

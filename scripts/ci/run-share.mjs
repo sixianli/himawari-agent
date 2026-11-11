@@ -97,8 +97,15 @@ export async function get({ root, run, name, digest, to }) {
   if (!info?.isDirectory() || info.isSymbolicLink()) fail(`MISSING:${name}`);
   if (existsSync(to)) fail("DESTINATION_EXISTS");
   mkdirSync(path.dirname(to), { recursive: true });
-  cpSync(source, to, { recursive: true, errorOnExist: true, verbatimSymlinks: true });
-  if ((await treeDigest(to)) !== digest) {
+  let copied;
+  try {
+    cpSync(source, to, { recursive: true, errorOnExist: true, verbatimSymlinks: true });
+    copied = await treeDigest(to);
+  } catch (error) {
+    rmSync(to, { recursive: true, force: true });
+    throw error;
+  }
+  if (copied !== digest) {
     rmSync(to, { recursive: true, force: true });
     fail(`DIGEST_MISMATCH:${name}`);
   }
@@ -153,6 +160,8 @@ async function dispatch(argv, env) {
   if (command === "collect") {
     if (!args["--to"] || !env.CI_NEEDS) fail("COLLECT_INPUT_REQUIRED");
     const result = await collect({ root, run, needs: JSON.parse(env.CI_NEEDS), to: args["--to"] });
+    for (const reason of result.missing)
+      process.stderr.write(`CI_SHARE_COLLECT_MISSING ${reason}\n`);
     return [`CI_SHARE_COLLECT ${result.collected}`, ...result.missing].join("\n");
   }
   if (command === "remove") {
