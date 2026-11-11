@@ -1462,6 +1462,14 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       memoryId: first?.id,
     });
     expect((await web.overview()).externalProposals.total).toBe(0);
+    await web.command("memory.external.undo", { batchId: "external-batch-same" }, "undo-same");
+    expect((await f.external()).map(({ id }) => id)).toEqual([first?.id]);
+    expect(await writer.read("proposal-same-text")).toMatchObject({
+      status: "committed",
+      memoryId: first?.id,
+      batchId: null,
+    });
+    expect((await web.overview()).externalProposals.total).toBe(0);
   });
 
   it("[P5-3] replaces a waiting proposal when the same key brings new text, and counts each batch item on its own", async () => {
@@ -1799,5 +1807,74 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     await expect(submit(COFFEE, "k".repeat(201))).rejects.toThrow("MEMORY_TEXT_REFUSED");
     await expect(submit(COFFEE, `ghp_${"a".repeat(36)}`)).rejects.toThrow("MEMORY_TEXT_REFUSED");
     expect(await f.pending()).toEqual([]);
+  });
+
+  it("[P5-3] a key that brings text already saved retires its older waiting text, and keys belong to one client", async () => {
+    const f = await setup();
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    const claude = await f.connect({ elicitation: false, name: "claude-code" });
+    const TEA = "主人下午喝一杯绿茶";
+    await f.propose(muse, { text: COFFEE });
+    const [coffee] = await f.pending();
+    await f.writer.respond(
+      [{ proposalId: coffee?.id ?? "", decision: "keep", editedText: null }],
+      "external-batch-coffee",
+    );
+    await f.propose(muse, { text: TEA, key: "memory/drink" });
+    await f.propose(claude, { text: "主人每晚喝一杯热牛奶", key: "memory/drink" });
+    expect((await f.pending()).length).toBe(2);
+    expect((await f.propose(muse, { text: COFFEE, key: "memory/drink" })).text).toBe(
+      MCP_PROPOSE_MEMORY_ALREADY_SAVED.text,
+    );
+    const waiting = await f.pending();
+    expect(waiting.map(({ client }) => client)).toEqual(["claude-code"]);
+  });
+
+  it("[P5-3] a sensitive proposal is not hung on a private memory with the same text", async () => {
+    const f = await setup();
+    const text = "主人每晚十点吃降压药";
+    await f.writer.submit({
+      proposalId: "proposal-private",
+      text,
+      category: "other",
+      client: "muse",
+      subjectRef: "subject",
+      sourceKey: null,
+    });
+    await f.writer.respond(
+      [{ proposalId: "proposal-private", decision: "keep", editedText: null }],
+      "external-batch-private",
+    );
+    const [privateMemory] = await f.external();
+    expect(privateMemory?.dataClassification).toBe("private");
+    await f.writer.submit({
+      proposalId: "proposal-sensitive",
+      text: `${text}。`,
+      category: "health",
+      client: "muse",
+      subjectRef: "subject",
+      sourceKey: null,
+    });
+    await f.writer.respond(
+      [{ proposalId: "proposal-sensitive", decision: "keep", editedText: text }],
+      "external-batch-sensitive",
+    );
+    const saved = await f.writer.read("proposal-sensitive");
+    expect(saved?.memoryId).not.toBe(privateMemory?.id);
+    const memories = await f.external();
+    expect(memories.find(({ id }) => id === saved?.memoryId)?.dataClassification).toBe("sensitive");
+  });
+
+  it("[P5-3] confirming items that were all decided elsewhere reports a conflict", async () => {
+    const f = await setup();
+    const web = control(f);
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    await f.propose(muse, { text: COFFEE });
+    const [coffee] = await f.pending();
+    const items = [{ proposalId: coffee?.id ?? "", decision: "reject" as const, editedText: null }];
+    await web.command("memory.external.respond", { items }, "respond-first");
+    await expect(
+      web.command("memory.external.respond", { items }, "respond-second"),
+    ).rejects.toThrow("MCP_PROPOSAL_ALREADY_DECIDED");
   });
 });

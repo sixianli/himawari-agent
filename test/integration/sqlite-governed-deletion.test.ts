@@ -554,6 +554,42 @@ describe("SQLite governed deletion", () => {
     expect(payloadCount("payload-eval-abstain")).toBe(0);
   });
 
+  it("[P5-3] deleting a Memory forgets the proposal text it came from and keeps only the digest", async () => {
+    const resource = await fixture();
+    const database = openQualifiedDatabase(resource.databasePath);
+    insertPayload(database, { ref: "payload-proposal-text" });
+    database
+      .prepare(
+        `INSERT INTO external_memory_proposals (
+          id, owner_id, agent_id, subject_ref, client, source_key, text_sha256, normalization,
+          content_ref, category, classification, status, received_at, decided_at, batch_id,
+          memory_id
+        ) VALUES ('proposal-kept', ?, ?, 'subject', 'muse', NULL, ?, 'mcp-text:v1',
+          'payload-proposal-text', 'other', 'private', 'committed', ?, ?, 'batch-one',
+          'memory-retained')`,
+      )
+      .run(OWNER_ID, AGENT_ID, "b".repeat(64), T0, T0);
+    database.close();
+
+    const memory = await resource.adapter.deleteImmediately({
+      objectType: "memory",
+      objectId: "memory-retained",
+    });
+    expect(memory.lifecycle).toBe("deleted_verified");
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT COUNT(*) FROM payloads WHERE ref = 'payload-proposal-text'",
+      ),
+    ).toBe(0);
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT status || '|' || coalesce(content_ref, '-') || '|' || coalesce(memory_id, '-') || '|' || text_sha256 FROM external_memory_proposals",
+      ),
+    ).toBe(`rejected|-|-|${"b".repeat(64)}`);
+  });
+
   it("persists Memory provider cleanup and rejects deleting a referenced Payload directly", async () => {
     const resource = await fixture();
     const database = openQualifiedDatabase(resource.databasePath);

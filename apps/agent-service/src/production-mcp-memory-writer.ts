@@ -177,6 +177,9 @@ export class ProductionMcpMemoryWriter {
       text.length === 0 ||
       text.length > EXTERNAL_PROPOSAL_TEXT_MAXIMUM ||
       proposalHasMachineSecret(text) ||
+      !(EXTERNAL_PROPOSAL_CATEGORIES as readonly string[]).includes(input.category) ||
+      input.client.length < 1 ||
+      input.client.length > 64 ||
       (sourceKey !== null &&
         (sourceKey.length === 0 ||
           [...sourceKey].length > EXTERNAL_PROPOSAL_KEY_MAXIMUM ||
@@ -218,13 +221,13 @@ export class ProductionMcpMemoryWriter {
           Date.parse(submitted.proposal.receivedAt),
         ),
       );
-      for (const id of submitted.superseded) {
-        const replaced = await this.#options.proposals.read({ ...scope, id });
-        if (replaced)
-          await this.#appendOnce(
-            this.#ledgerWrite(replaced, null, "superseded", null, Date.parse(receivedAt)),
-          );
-      }
+    }
+    for (const id of submitted.superseded) {
+      const replaced = await this.#options.proposals.read({ ...scope, id });
+      if (replaced)
+        await this.#appendOnce(
+          this.#ledgerWrite(replaced, null, "superseded", null, Date.parse(receivedAt)),
+        );
     }
     return {
       proposal: submitted.proposal,
@@ -273,8 +276,13 @@ export class ProductionMcpMemoryWriter {
         throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
       const digests = await this.#digests(digestCache);
       const linked = digests.get(proposalTextDigest(text));
+      const existing = linked ? await this.#options.state.read(linked as MemoryId) : undefined;
       const same =
-        linked && (await this.#options.state.read(linked as MemoryId))?.status === "active"
+        linked &&
+        existing?.status === "active" &&
+        (existing.dataClassification !== "private" ||
+          (proposal.dataClassification === "private" &&
+            proposalClassification(text, proposal.category) === "private"))
           ? linked
           : undefined;
       if (same) {
@@ -435,7 +443,14 @@ export class ProductionMcpMemoryWriter {
   }
 
   async reopenBatch(batchId: string) {
-    return this.#serially(() => this.#options.proposals.reopenBatch({ ...this.#scope(), batchId }));
+    return this.#serially(async () => {
+      const members = await this.#options.proposals.listBatch({ ...this.#scope(), batchId });
+      return this.#options.proposals.reopenBatch({
+        ...this.#scope(),
+        batchId,
+        reopen: members.map(({ id }) => id),
+      });
+    });
   }
 
   async undoBatch(
@@ -445,14 +460,19 @@ export class ProductionMcpMemoryWriter {
     return this.#serially(async () => {
       const members = await this.#options.proposals.listBatch({ ...this.#scope(), batchId });
       if (members.length === 0) return undefined;
-      for (const { memoryId } of members)
-        if (
-          memoryId?.startsWith(EXTERNAL_PROPOSAL_MEMORY_PREFIX) &&
-          memoryId.endsWith(`:${batchId}`)
-        )
-          await trash(memoryId);
+      const reopen: string[] = [];
+      for (const member of members) {
+        if (member.status === "rejected") reopen.push(member.id);
+        else if (
+          member.status === "committed" &&
+          member.memoryId === externalProposalMemoryId(member.id, batchId)
+        ) {
+          await trash(member.memoryId);
+          reopen.push(member.id);
+        }
+      }
       this.#memoryChanges += 1;
-      return this.#options.proposals.reopenBatch({ ...this.#scope(), batchId });
+      return this.#options.proposals.reopenBatch({ ...this.#scope(), batchId, reopen });
     });
   }
 
@@ -501,6 +521,8 @@ export class ProductionMcpMemoryWriter {
       }
     }
     if (decided === 0 && firstError !== undefined) throw firstError;
+    if (decided === 0 && failed > 0)
+      throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "MCP_PROPOSAL_ALREADY_DECIDED");
     return { decided, failed };
   }
 

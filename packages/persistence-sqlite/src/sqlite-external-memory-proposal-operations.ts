@@ -108,7 +108,7 @@ export class SqliteExternalMemoryProposalOperations {
       case "externalMemoryProposal.listBatches":
         return this.listBatches(payload as Scope & { limit: number });
       case "externalMemoryProposal.reopenBatch":
-        return this.reopenBatch(payload as Scope & { batchId: string });
+        return this.reopenBatch(payload as Scope & { batchId: string; reopen: readonly string[] });
       case "externalMemoryProposal.dropDiscardedText":
         return this.dropDiscardedText(payload as Scope & { decidedBefore: string });
       default:
@@ -147,26 +147,35 @@ export class SqliteExternalMemoryProposalOperations {
         const previous = this.database
           .prepare(
             `SELECT proposal_id FROM external_memory_proposal_keys
-            WHERE owner_id = ? AND agent_id = ? AND source_key = ?`,
+            WHERE owner_id = ? AND agent_id = ? AND client = ? AND source_key = ?`,
           )
           .pluck()
-          .get(input.ownerId, input.agentId, input.sourceKey) as string | undefined;
+          .get(input.ownerId, input.agentId, input.client, input.sourceKey) as string | undefined;
         this.database
           .prepare(
-            `INSERT INTO external_memory_proposal_keys (owner_id, agent_id, source_key, proposal_id)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT (owner_id, agent_id, source_key) DO UPDATE SET proposal_id = excluded.proposal_id`,
+            `INSERT INTO external_memory_proposal_keys (
+              owner_id, agent_id, client, source_key, proposal_id
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (owner_id, agent_id, client, source_key)
+            DO UPDATE SET proposal_id = excluded.proposal_id`,
           )
-          .run(input.ownerId, input.agentId, input.sourceKey, target);
+          .run(input.ownerId, input.agentId, input.client, input.sourceKey, target);
         const candidates = (
           this.database
             .prepare(
               `SELECT id FROM external_memory_proposals
               WHERE owner_id = ? AND agent_id = ? AND status = 'pending' AND id <> ?
-                AND (id = ? OR source_key = ?)
+                AND (id = ? OR (client = ? AND source_key = ?))
               ORDER BY received_at, id`,
             )
-            .all(input.ownerId, input.agentId, target, previous ?? null, input.sourceKey) as {
+            .all(
+              input.ownerId,
+              input.agentId,
+              target,
+              previous ?? null,
+              input.client,
+              input.sourceKey,
+            ) as {
             id: string;
           }[]
         ).map(({ id }) => id);
@@ -184,9 +193,9 @@ export class SqliteExternalMemoryProposalOperations {
       };
       if (existing) {
         const known = record(existing);
-        const replaced = known.status === "pending" ? claim(known.id) : [];
+        const replaced = claim(known.id);
         if (known.status === "pending") {
-          if (known.sourceKey === null && input.sourceKey !== null)
+          if (known.sourceKey === null && input.sourceKey !== null && known.client === input.client)
             this.database
               .prepare(
                 `UPDATE external_memory_proposals SET source_key = ?
@@ -195,7 +204,10 @@ export class SqliteExternalMemoryProposalOperations {
               .run(input.sourceKey, known.id, input.ownerId, input.agentId);
         }
         const keyed =
-          known.status === "pending" && known.sourceKey === null && input.sourceKey !== null
+          known.status === "pending" &&
+          known.sourceKey === null &&
+          input.sourceKey !== null &&
+          known.client === input.client
             ? { ...known, sourceKey: input.sourceKey }
             : known;
         const raised =
@@ -299,7 +311,8 @@ export class SqliteExternalMemoryProposalOperations {
     if (
       !valid(input.decidedAt) ||
       !(["committed", "rejected"] as readonly string[]).includes(input.status) ||
-      (input.status === "rejected" && input.memoryId !== null)
+      (input.status === "rejected" && input.memoryId !== null) ||
+      (input.status === "committed" && input.memoryId === null)
     )
       this.fail("PORT_INVALID_OPERATION", "External Memory proposal decision is invalid");
     return (
@@ -348,25 +361,43 @@ export class SqliteExternalMemoryProposalOperations {
     ).map((batch) => Object.freeze({ ...batch }));
   }
 
-  private reopenBatch(input: Scope & { batchId: string }): readonly string[] {
+  private reopenBatch(
+    input: Scope & { batchId: string; reopen: readonly string[] },
+  ): readonly string[] {
     this.assertDiskHeadroom();
+    if (!Array.isArray(input.reopen))
+      this.fail("PORT_INVALID_OPERATION", "External Memory proposal batch is invalid");
+    const wanted = new Set(input.reopen);
     return this.database.transaction(() => {
-      const ids = (
-        this.database
-          .prepare(
-            `SELECT id FROM external_memory_proposals
-            WHERE owner_id = ? AND agent_id = ? AND batch_id = ? AND content_ref IS NOT NULL
-            ORDER BY received_at, id`,
-          )
-          .all(input.ownerId, input.agentId, input.batchId) as { id: string }[]
-      ).map(({ id }) => id);
+      const members = this.database
+        .prepare(
+          `SELECT id, status, content_ref AS contentRef FROM external_memory_proposals
+          WHERE owner_id = ? AND agent_id = ? AND batch_id = ?
+          ORDER BY received_at, id`,
+        )
+        .all(input.ownerId, input.agentId, input.batchId) as {
+        id: string;
+        status: string;
+        contentRef: string | null;
+      }[];
       const reopen = this.database.prepare(
         `UPDATE external_memory_proposals SET status = 'pending', decided_at = NULL,
           batch_id = NULL, memory_id = NULL
         WHERE id = ? AND owner_id = ? AND agent_id = ?`,
       );
-      for (const id of ids) reopen.run(id, input.ownerId, input.agentId);
-      return ids;
+      const detach = this.database.prepare(
+        `UPDATE external_memory_proposals SET batch_id = NULL
+        WHERE id = ? AND owner_id = ? AND agent_id = ?`,
+      );
+      const reopened: string[] = [];
+      for (const member of members) {
+        if (wanted.has(member.id) && member.contentRef !== null) {
+          reopen.run(member.id, input.ownerId, input.agentId);
+          reopened.push(member.id);
+        } else if (member.status === "committed")
+          detach.run(member.id, input.ownerId, input.agentId);
+      }
+      return reopened;
     })();
   }
 

@@ -34,7 +34,7 @@ CREATE UNIQUE INDEX external_memory_proposals_text_index
 CREATE INDEX external_memory_proposals_status_index
   ON external_memory_proposals(owner_id, agent_id, status, received_at);
 CREATE INDEX external_memory_proposals_key_index
-  ON external_memory_proposals(owner_id, agent_id, source_key)
+  ON external_memory_proposals(owner_id, agent_id, client, source_key)
   WHERE source_key IS NOT NULL;
 CREATE INDEX external_memory_proposals_batch_index
   ON external_memory_proposals(owner_id, agent_id, batch_id)
@@ -52,9 +52,10 @@ CREATE INDEX external_memory_proposals_superseded_index
 CREATE TABLE external_memory_proposal_keys (
   owner_id TEXT NOT NULL REFERENCES owners(id) ON DELETE CASCADE,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  client TEXT NOT NULL CHECK (length(client) BETWEEN 1 AND 64),
   source_key TEXT NOT NULL CHECK (length(source_key) BETWEEN 1 AND 200),
   proposal_id TEXT NOT NULL REFERENCES external_memory_proposals(id) ON DELETE CASCADE,
-  PRIMARY KEY (owner_id, agent_id, source_key)
+  PRIMARY KEY (owner_id, agent_id, client, source_key)
 ) STRICT;
 
 CREATE INDEX external_memory_proposal_keys_proposal_index
