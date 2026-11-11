@@ -610,24 +610,31 @@ const MONTHS_EN = [
   "Dec",
 ] as const;
 
-function localDate(locale: DemoLocale, instantMs: number): string {
+function localDate(locale: DemoLocale, timeZone: string, instantMs: number, days: number): string {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: DEMO_TIME_ZONES[locale],
+    timeZone,
+    year: "numeric",
     month: "numeric",
     day: "numeric",
   }).formatToParts(new Date(instantMs));
-  const month = Number(parts.find(({ type }) => type === "month")?.value ?? "1");
-  const day = Number(parts.find(({ type }) => type === "day")?.value ?? "1");
+  const part = (type: string) => Number(parts.find((entry) => entry.type === type)?.value ?? "1");
+  const shifted = new Date(Date.UTC(part("year"), part("month") - 1, part("day") + days));
+  const month = shifted.getUTCMonth() + 1;
+  const day = shifted.getUTCDate();
   return locale === "ja" ? `${month}月${day}日` : `${MONTHS_EN[month - 1]} ${day}`;
 }
 
-export function demoMailScript(locale: DemoLocale, anchor: string): readonly DemoMail[] {
+export function demoMailScript(
+  locale: DemoLocale,
+  anchor: string,
+  timeZone: string = DEMO_TIME_ZONES[locale],
+): readonly DemoMail[] {
   const anchorMs = Date.parse(anchor);
   return MAIL_SPECS.map((mail) => {
     const arrivalMs = anchorMs + mail.offsetMinutes * 60_000;
     const render = (text: string) =>
       text.replace(/\{day\+(\d+)\}/gu, (_whole, days: string) =>
-        localDate(locale, arrivalMs + Number(days) * 86_400_000),
+        localDate(locale, timeZone, arrivalMs, Number(days)),
       );
     return Object.freeze({
       key: mail.key,

@@ -5,27 +5,28 @@ import type {
 } from "@himawari-agent/application";
 import {
   type DemoLocale,
+  DEMO_OWNER_ADDRESS,
   type DemoMail,
   demoMailScript,
   isDemoLocale,
 } from "@himawari-agent/domain";
+import { DEMO_MAILBOX_TOKEN_PREFIX } from "./demo-mailbox-token.js";
 import { findRelatedMail, normalizeSubject } from "./gmail-related.js";
 import type { GoogleOAuth } from "./gmail-source.js";
 
-export const DEMO_MAILBOX_ACCOUNT = "demo@himawari.example";
+export const DEMO_MAILBOX_ACCOUNT = DEMO_OWNER_ADDRESS;
 export const DEMO_MAILBOX_SETTINGS_RETURN = "/?settings=apps&gmail=demo";
-const TOKEN_PREFIX = "demo-inbox:v1:";
 const SNIPPET_CHARACTERS = 200;
 
 export function demoMailboxToken(locale: DemoLocale, anchor: string): string {
-  return `${TOKEN_PREFIX}${locale}:${anchor}`;
+  return `${DEMO_MAILBOX_TOKEN_PREFIX}${locale}:${anchor}`;
 }
 
 function parseToken(
   token: string,
 ): { readonly locale: DemoLocale; readonly anchor: string; readonly anchorMs: number } | undefined {
-  if (!token.startsWith(TOKEN_PREFIX)) return undefined;
-  const rest = token.slice(TOKEN_PREFIX.length);
+  if (!token.startsWith(DEMO_MAILBOX_TOKEN_PREFIX)) return undefined;
+  const rest = token.slice(DEMO_MAILBOX_TOKEN_PREFIX.length);
   const separator = rest.indexOf(":");
   const locale = rest.slice(0, separator);
   const anchor = rest.slice(separator + 1);
@@ -59,12 +60,13 @@ function sourceItem(locale: DemoLocale, anchorMs: number, mail: DemoMail): Proac
 function arrived(
   token: string,
   nowMs: number,
+  timeZone: string | undefined,
 ): { readonly anchorMs: number; readonly items: readonly ProactiveSourceItem[] } | undefined {
   const parsed = parseToken(token);
   if (!parsed) return undefined;
   return {
     anchorMs: parsed.anchorMs,
-    items: demoMailScript(parsed.locale, parsed.anchor)
+    items: demoMailScript(parsed.locale, parsed.anchor, timeZone)
       .map((mail) => sourceItem(parsed.locale, parsed.anchorMs, mail))
       .filter((item) => Date.parse(item.receivedAt) <= nowMs)
       .sort((left, right) => left.receivedAt.localeCompare(right.receivedAt)),
@@ -80,11 +82,12 @@ function matches(item: ProactiveSourceItem, query: string): boolean {
 
 export function createDemoMailReader(options: {
   readonly now: () => string;
+  readonly timeZone?: string;
 }): ProactiveSourceReader {
   return Object.freeze<ProactiveSourceReader>({
     source: "gmail",
     async related({ token, items, limits, wholeThread, signal }) {
-      const pool = arrived(token, Date.parse(options.now()))?.items ?? [];
+      const pool = arrived(token, Date.parse(options.now()), options.timeZone)?.items ?? [];
       return findRelatedMail({
         items,
         limits,
@@ -109,7 +112,7 @@ export function createDemoMailReader(options: {
     async fetch({ token, cursor, since, signal, unseen }): Promise<ProactiveFetchResult> {
       if (signal.aborted) return { kind: "failed", step: "timeout" };
       const nowMs = Date.parse(options.now());
-      const mailbox = arrived(token, nowMs);
+      const mailbox = arrived(token, nowMs, options.timeZone);
       if (!mailbox) return { kind: "unauthorized" };
       const cursorMs = cursor === null ? Number.NaN : Date.parse(cursor);
       const lowerMs = Number.isFinite(cursorMs) ? cursorMs : Date.parse(since);

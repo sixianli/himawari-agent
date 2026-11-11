@@ -1615,17 +1615,16 @@ export async function runAgentService(
         proactiveSeal
       ) {
         const demoInbox = proactiveConfiguration.demoInbox;
-        const oauth =
-          demoInbox || !proactiveGmail || !proactiveSecret
-            ? createDemoGoogleOAuth()
-            : createGoogleOAuth({
-                clientId: proactiveGmail.clientId,
-                clientSecret: await hostModelSources(configuration).provider.resolve(
-                  proactiveSecret.ref,
-                  proactiveSecret.version,
-                ),
-                redirectUri: proactiveRedirectUri(configuration.publicOrigin),
-              });
+        const oauth = demoInbox
+          ? createDemoGoogleOAuth()
+          : createGoogleOAuth({
+              clientId: requireValue(proactiveGmail).clientId,
+              clientSecret: await hostModelSources(configuration).provider.resolve(
+                requireValue(proactiveSecret).ref,
+                requireValue(proactiveSecret).version,
+              ),
+              redirectUri: proactiveRedirectUri(configuration.publicOrigin),
+            });
         const feedbackStore = repository.webPush();
         const reviewPayloads = repository.payloadStore(
           configuration.ownerId,
@@ -1714,9 +1713,8 @@ export async function runAgentService(
           ownerRules: repository.ownerRules(),
           seal: proactiveSeal,
           oauth,
-          ...(demoInbox ? { demoInbox } : {}),
           reader: demoInbox
-            ? createDemoMailReader({ now: () => clock.now() })
+            ? createDemoMailReader({ now: () => clock.now(), timeZone: proactiveTimeZone })
             : createGmailReader({ oauth }),
           readAccount: (accessToken) => readGmailAccount({ accessToken }),
           ledger: repository.decisionLedger(),
@@ -2602,4 +2600,9 @@ export async function runAgentService(
     });
     return 1;
   }
+}
+
+function requireValue<T>(value: T | undefined): T {
+  if (value === undefined) throw new Error("PROACTIVE_CONFIGURATION_INCOMPLETE");
+  return value;
 }

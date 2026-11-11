@@ -263,7 +263,9 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       scope,
       configuration: {
         modelRef: MODEL_REF,
-        gmail: { clientId: "client-1", clientSecretRef: "google-oauth" },
+        ...(options.demoInbox
+          ? { demoInbox: options.demoInbox }
+          : { gmail: { clientId: "client-1", clientSecretRef: "google-oauth" } }),
         intervalMs: 900_000,
         perCheckMs: 180_000,
         dailyCostMicros: 1_000_000,
@@ -288,7 +290,6 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       store,
       seal,
       oauth,
-      ...(options.demoInbox ? { demoInbox: options.demoInbox } : {}),
       reader: options.demoInbox
         ? createDemoMailReader({ now: () => clock.now() })
         : createGmailReader({ oauth, fetch: google.fetch }),
@@ -1035,6 +1036,34 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       account: "demo@himawari.example",
     });
     expect(h.google.calls).toEqual([]);
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[P6-demo] [reverse] a disconnected fake inbox stays disconnected after a restart, and a broken fake connection is replaced when the user reconnects", async () => {
+    const h = await setup({ demoInbox: "ja" });
+    await h.proactive.seedDemoInbox();
+    await h.command("proactive.source.manage", { source: "gmail", action: "disconnect" });
+    await h.proactive.seedDemoInbox();
+    expect((await h.overview()).connection.status).toBe("disconnected");
+
+    await h.app.inject({
+      method: "GET",
+      url: PROACTIVE_GOOGLE_START_PATH,
+      headers: { ...cookie, "sec-fetch-site": "same-origin" },
+    });
+    expect((await h.overview()).connection.status).toBe("connected");
+    const breakConnection = () =>
+      h.store.markConnection({
+        ...scope,
+        source: "gmail",
+        status: "needs_reconnect",
+        cursor: null,
+        now: h.clock.now(),
+      });
+    await breakConnection();
+    expect((await h.overview()).connection.status).toBe("needs_reconnect");
+    await h.proactive.seedDemoInbox();
+    expect((await h.overview()).connection.status).toBe("connected");
     expect(h.failures).toEqual([]);
   });
 });

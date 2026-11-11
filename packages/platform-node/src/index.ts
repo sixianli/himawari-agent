@@ -14,6 +14,7 @@ export * from "./deepseek-web-provider.js";
 export * from "./ephemeral-secret-port.js";
 export * from "./exa-public-search.js";
 export * from "./demo-mailbox.js";
+export * from "./demo-mailbox-token.js";
 export * from "./gmail-related.js";
 export * from "./gmail-source.js";
 export * from "./execution-admission-uds-transport.js";

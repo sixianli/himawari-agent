@@ -19,6 +19,8 @@ import {
 import {
   createDataExportTextPolicy,
   createDemoGoogleOAuth,
+  createGoogleOAuth,
+  GoogleUnauthorizedError,
   createDemoMailReader,
   demoMailboxToken,
 } from "@himawari-agent/platform-node";
@@ -304,5 +306,32 @@ describe("[P6-demo] fake inbox", () => {
     await expect(oauth.exchange("code")).rejects.toThrow("DEMO_MAILBOX_NO_OAUTH");
     expect(await oauth.revoke("token")).toBe(true);
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe("[P6-demo] review round 1 fixes", () => {
+  it("[P6-demo] [reverse] the real Google sign-in refuses a fake-inbox token without any request", async () => {
+    const spy = vi.fn();
+    const oauth = createGoogleOAuth({
+      clientId: "client-1",
+      clientSecret: "secret",
+      redirectUri: "https://himawari.example/cb",
+      fetch: spy as never,
+    });
+    await expect(oauth.accessToken(demoMailboxToken("ja", ANCHOR))).rejects.toBeInstanceOf(
+      GoogleUnauthorizedError,
+    );
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("[P6-demo] writes dates as calendar days in the instance time zone, across a daylight-saving change", () => {
+    const anchor = "2026-11-01T08:00:00.000Z";
+    const invoice = (zone: string) =>
+      demoMailScript("en", anchor, zone).find(({ key }) => key === "invoice")?.body ?? "";
+    expect(invoice("America/Los_Angeles")).toContain("Payment due: Nov 6");
+    expect(invoice("Asia/Tokyo")).toContain("Payment due: Nov 6");
+    expect(invoice("Pacific/Kiritimati")).toContain("Payment due: Nov 7");
+    const reader = createDemoMailReader({ now: () => anchor, timeZone: "Pacific/Kiritimati" });
+    expect(reader.source).toBe("gmail");
   });
 });

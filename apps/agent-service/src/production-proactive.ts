@@ -39,6 +39,7 @@ import {
   DEMO_MAILBOX_ACCOUNT,
   DEMO_MAILBOX_SETTINGS_RETURN,
   demoMailboxToken,
+  isDemoMailboxToken,
   type GoogleOAuth,
 } from "@himawari-agent/platform-node";
 import type { ProactivePushSource } from "./production-web-push.js";
@@ -149,7 +150,6 @@ export interface ProductionProactiveOptions {
   readonly ownerRules?: Pick<OwnerRuleStorePort, "list">;
   readonly seal: ProactiveSealPort;
   readonly oauth: GoogleOAuth;
-  readonly demoInbox?: ProactiveConfiguration["demoInbox"];
   readonly reader: ProactiveSourceReader;
   readonly readAccount: (accessToken: string) => Promise<string>;
   readonly model: ProactiveModelInvoker;
@@ -218,7 +218,7 @@ export class ProductionProactive {
     if (this.#timer) return;
     this.#timer = setInterval(() => void this.tick(), this.#options.configuration.intervalMs);
     this.#timer.unref?.();
-    if (!this.#options.demoInbox) {
+    if (!this.#options.configuration.demoInbox) {
       void this.tick();
       return;
     }
@@ -227,12 +227,19 @@ export class ProductionProactive {
       .then(() => this.tick());
   }
 
-  async seedDemoInbox(): Promise<void> {
-    const { demoInbox, scope, store, seal, clock } = this.#options;
+  async seedDemoInbox(options: { readonly restore?: boolean } = {}): Promise<void> {
+    const { scope, store, seal, clock } = this.#options;
+    const demoInbox = this.#options.configuration.demoInbox;
     if (!demoInbox) return;
-    if (await store.readConnection({ ...scope, source: "gmail" })) return;
+    const existing = await store.readConnection({ ...scope, source: "gmail" });
+    if (existing?.status === "connected") {
+      const token = await seal.open({ ...scope, ref: existing.tokenRef });
+      if (token !== undefined && isDemoMailboxToken(token)) return;
+    }
+    const settings = await store.readSettings(scope);
+    if (!existing && !options.restore && settings.updatedAt !== null) return;
     const now = clock.now();
-    await store.saveConnection({
+    const released = await store.saveConnection({
       ...scope,
       connection: {
         source: "gmail",
@@ -248,13 +255,13 @@ export class ProductionProactive {
         updatedAt: now,
       },
     });
-    const settings = await store.readSettings(scope);
+    if (released.length > 0) await seal.release({ ...scope, refs: released });
     await store.writeSettings({ ...scope, ...settings, enabled: true, now });
   }
 
   async authorizationRedirect(owner: string): Promise<string> {
-    if (this.#options.demoInbox) {
-      await this.seedDemoInbox();
+    if (this.#options.configuration.demoInbox) {
+      await this.seedDemoInbox({ restore: true });
       void this.tick();
       return DEMO_MAILBOX_SETTINGS_RETURN;
     }

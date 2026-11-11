@@ -1,3 +1,4 @@
+import { isDemoMailboxToken } from "./demo-mailbox-token.js";
 import type {
   ProactiveFetchResult,
   ProactiveSourceItem,
@@ -127,6 +128,7 @@ export function createGoogleOAuth(options: GoogleOAuthOptions): GoogleOAuth {
       return { refreshToken, accessToken, scopes };
     },
     async accessToken(refreshToken, signal) {
+      if (isDemoMailboxToken(refreshToken)) throw new GoogleUnauthorizedError();
       const json = await token(
         [
           ["refresh_token", refreshToken],
