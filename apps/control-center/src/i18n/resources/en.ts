@@ -87,8 +87,6 @@ export const messages = {
   "chat.error.authFailed":
     "Model authentication failed. Check the server credentials and model access.",
   "chat.error.unavailable": "The model service is unavailable. Try again later.",
-  "chat.error.contextMemoryUnavailable":
-    "Looking up related memory failed because the model service connection failed. No chat model was called and no tool ran in this turn.",
   "chat.error.quotaExceeded":
     "The model service turned this request down because its spending limit is used up. This is not a network problem. Raise or remove the limit in the Vercel AI Gateway budgets, then try again.",
   "chat.error.contextWindowExhausted":
