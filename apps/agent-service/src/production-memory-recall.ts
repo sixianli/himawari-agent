@@ -87,8 +87,7 @@ function startOfDay(day: string, timeZone: string): string {
   return new Date(guess - offset).toISOString();
 }
 
-function argumentsOf(invocation: RuntimeToolInvocation) {
-  const args = invocation.arguments;
+function argumentsOf(args: RuntimeToolInvocation["arguments"]) {
   const query = typeof args["query"] === "string" ? args["query"].trim() : "";
   const from = args["from"];
   const to = args["to"];
@@ -117,6 +116,12 @@ function argumentsOf(invocation: RuntimeToolInvocation) {
   };
 }
 
+export interface RecallResult {
+  readonly output: Record<string, unknown>;
+  readonly contentClassification: DataClassification;
+  readonly memoryIds: readonly string[];
+}
+
 export class ProductionMemoryRecall {
   readonly #options: ProductionMemoryRecallOptions;
 
@@ -128,11 +133,25 @@ export class ProductionMemoryRecall {
     return (await this.recallWithClassification(invocation)).output;
   }
 
-  async recallWithClassification(invocation: RuntimeToolInvocation): Promise<{
-    readonly output: Record<string, unknown>;
-    readonly contentClassification: DataClassification;
-  }> {
-    const input = argumentsOf(invocation);
+  async recallWithClassification(invocation: RuntimeToolInvocation): Promise<RecallResult> {
+    return this.#recall(invocation.arguments, invocation.dataClassification, (slot, operation) =>
+      this.#options.embedWithin(invocation, slot, operation),
+    );
+  }
+
+  recallOutsideRun(
+    args: RuntimeToolInvocation["arguments"],
+    within: <T>(slot: string, operation: () => Promise<T>) => Promise<T>,
+  ): Promise<RecallResult> {
+    return this.#recall(args, "public", within);
+  }
+
+  async #recall(
+    args: RuntimeToolInvocation["arguments"],
+    requestClassification: DataClassification,
+    within: <T>(slot: string, operation: () => Promise<T>) => Promise<T>,
+  ): Promise<RecallResult> {
+    const input = argumentsOf(args);
     const timeZone = this.#options.timeZone ?? "UTC";
     const now = this.#options.now();
     const parsed = parseTimeScope(input.query, now, timeZone);
@@ -163,13 +182,14 @@ export class ProductionMemoryRecall {
         };
     const allowed = modelVisibleClassifications();
     const shown: DataClassification[] = [];
+    const shownIds: string[] = [];
     const searchScope = {
       ...scope,
       includeHistory: scope.includeHistory || input.includeHistory,
     };
     const tentativeLimit = Math.floor(input.limit / 2);
     const [hits, tentativeHits] = await Promise.all([
-      this.#options.embedWithin(invocation, "memory-recall", () =>
+      within("memory-recall", () =>
         this.#options.provider.search({
           ownerId: this.#options.ownerId,
           agentId: this.#options.agentId,
@@ -180,19 +200,17 @@ export class ProductionMemoryRecall {
       ),
       tentativeLimit === 0
         ? Promise.resolve([])
-        : this.#options
-            .embedWithin(invocation, "memory-recall-tentative", () =>
-              this.#options.provider.search({
-                ownerId: this.#options.ownerId,
-                agentId: this.#options.agentId,
-                query: input.query,
-                limit: input.limit * 3,
-                scope: searchScope,
-                includeTentative: true,
-                tentativeOnly: true,
-              }),
-            )
-            .catch(() => []),
+        : within("memory-recall-tentative", () =>
+            this.#options.provider.search({
+              ownerId: this.#options.ownerId,
+              agentId: this.#options.agentId,
+              query: input.query,
+              limit: input.limit * 3,
+              scope: searchScope,
+              includeTentative: true,
+              tentativeOnly: true,
+            }),
+          ).catch(() => []),
     ]);
     const records = new Map(
       (
@@ -223,6 +241,7 @@ export class ProductionMemoryRecall {
         const text = await this.#options.readText(memory).catch(() => undefined);
         if (!text) continue;
         shown.push(memory.dataClassification);
+        shownIds.push(memory.id);
         const attributes = memory.attributes;
         const validTo = attributes?.validTo ?? null;
         rendered.push({
@@ -246,7 +265,7 @@ export class ProductionMemoryRecall {
     const memories = [...confirmedMemories, ...tentativeMemories];
     const tentativeCount = tentativeMemories.length;
     const episodes = this.#options.episodes
-      ? await this.#options.embedWithin(invocation, "memory-recall-episodes", () =>
+      ? await within("memory-recall-episodes", () =>
           (this.#options.episodes as Pick<MemoryEpisodeService, "search">).search({
             ownerId: this.#options.ownerId,
             agentId: this.#options.agentId,
@@ -257,7 +276,7 @@ export class ProductionMemoryRecall {
           }),
         )
       : [];
-    const contentClassification = highestClassification(invocation.dataClassification, [
+    const contentClassification = highestClassification(requestClassification, [
       ...shown,
       ...episodes.map(({ episode }) => episode.dataClassification),
     ]);
@@ -276,6 +295,10 @@ export class ProductionMemoryRecall {
           : TOOL_RESULT_RECALL_HISTORY.text,
       ...(tentativeCount > 0 ? { tentativeNote: TOOL_RESULT_RECALL_TENTATIVE.text } : {}),
     };
-    return { output, contentClassification };
+    return {
+      output,
+      contentClassification,
+      memoryIds: shownIds,
+    };
   }
 }

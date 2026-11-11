@@ -1,0 +1,125 @@
+---
+status: active
+document_type: adr
+decision_status: accepted
+supersedes: ""
+superseded_by: ""
+date: "2026-11-11"
+---
+
+# ADR 0219：对外只读 MCP 入口，静态令牌鉴权，按 2026-07-28 版规范
+
+<a id="contents"></a>
+
+## 阅读导航
+
+- [背景](#context)
+- [前提](#premises)
+- [决定](#decision)
+- [业界怎么做](#industry)
+- [放弃的做法](#options)
+- [后果](#consequences)
+- [关联文档](#references)
+
+<a id="context"></a>
+
+## 背景
+
+Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一处，Claude Code、Codex 这类外部 agent 都从这里读，不各记各的。外部 agent 读取的通道是 MCP（Model Context Protocol，让 AI 客户端调用外部工具的开放协议）。这是任务 P5-1。Andy 在 2026-11-11 同意了变更清单（原文在 `/mnt/project-files/p5-1-mcp/change-list.md`），并选择先做三个只读工具，把「近一两天的对话摘要」留到任务 P3-6 合并以后再接。
+
+本 ADR 记录这个入口的鉴权方式、协议版本、三个工具，以及外部读取怎样写进决策记录。
+
+[返回阅读导航](#contents)
+
+<a id="premises"></a>
+
+## 前提
+
+1. MCP 的鉴权不是必选项：<https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization> 原话 “Authorization is **OPTIONAL** for MCP implementations. When supported: Implementations using an HTTP-based transport **SHOULD** conform to this specification.”
+2. Claude Code 可以带固定的请求头连接远程 MCP 服务：<https://code.claude.com/docs/en/mcp> 原话 `claude mcp add --transport http secure-api https://api.example.com/mcp --header "Authorization: Bearer your-token"`。
+3. Codex 也可以：<https://learn.chatgpt.com/docs/extend/mcp?surface=cli> 原话 “`bearer_token_env_var` (optional): Environment variable name for a bearer token to send in `Authorization`.”
+4. 2026-07-28 版把协议改成无状态，并用「多轮请求」代替服务端主动向客户端提问：<https://modelcontextprotocol.io/specification/2026-07-28/changelog> 原话 “Make MCP stateless: remove the `initialize`/`notifications/initialized` handshake.”
+5. 仓库已经依赖官方 SDK `@modelcontextprotocol/server` 2.0.0（`packages/platform-node/package.json`）。它的 `createMcpHandler` 原话 “Creates an HTTP handler that serves the 2026-07-28 protocol revision from a per-request server factory and, by default, falls back to old-school stateless serving for 2025-era traffic.”
+6. 现有的外部推送入口已经有一套鉴权：[ADR 0162](0162-receive-muse-data-through-a-service-token-and-an-app-secret.md) 原话 “边缘层用 Cloudflare Access 的服务令牌……应用层再要求 `Authorization: Bearer <应用密钥>`”。应用层的实现是 `apps/agent-service/src/bearer-admission.ts` 的 `BearerGate`。
+7. 决策记录已经有「外部读取」这一类，只是还没有任何代码写它：`packages/application/src/ports/decision-ledger.ts` 原话 `external_read: ["read"],`。
+8. 给外部的数据要先遮掉敏感内容：周报导出先例 `apps/agent-service/src/production-gap-export.ts` 原话 `return redactForEgress(text).text;`。
+
+[返回阅读导航](#contents)
+
+<a id="decision"></a>
+
+## 决定
+
+1. **鉴权用静态令牌，复用现有的 `BearerGate`。**
+   - 新配置项 `runPolicy.mcpRead.secretRef`，密钥用途写 `mcp-read`，写法和 Muse 推送入口的 `museIntake.secretRef` 一样。
+   - 密钥不少于 32 个字符；限流照 `BearerGate` 的规则，每分钟最多 30 次有效请求、60 次无效请求。
+   - 没带令牌或令牌错时回 401，并带上 `WWW-Authenticate: Bearer`，请求不进入 MCP，也不写库；超过限流回 429。
+   - 没有配置这个密钥时，路由不注册。
+   - 上线到公网时，在 Cloudflare 上给这条路径加一条服务令牌策略，做法和 Muse 推送入口一样。这样有两层鉴权，任何一层失效，另一层仍挡着。这一步属于生产改动，要等 Andy 同意。
+   - 不实现 OAuth 2.1 授权服务。理由见前提 1–3：鉴权本身不是规范的必选项，而 Claude Code 和 Codex 都支持带固定令牌头。
+2. **协议用官方 SDK 的 `createMcpHandler`。** 它按 2026-07-28 版服务；还没升级的客户端发来的老版本请求，由它自带的无状态兼容方式接住。
+   - 路径是 `POST /api/mcp/v1`，挂在现有的 Fastify 上。Fastify 的请求先转成标准的 Web `Request`，交给 `handler.fetch`，再把返回结果写回 Fastify 的响应。
+   - 不新增依赖 `@modelcontextprotocol/node`。它要额外引入 Hono 一套框架，而 `handler.fetch` 本来就是官方提供的标准入口。
+3. **三个只读工具，列出时顺序固定，都标为只读（`readOnlyHint`）。**
+   - **`find_memories`（按问题找记忆）**：直接调用聊天里 `recall` 工具用的 `ProductionMemoryRecall`，只返回模型能看到的那几档记忆。为它新加了一个不属于任何一轮对话的入口 `recallOutsideRun`。
+     - 算问题向量时，走 `createProductionRunMemory` 新加的 `embedForExternalRead`。它和 Gmail 检查用的是同一套做法：同一个嵌入出口，带截止时间，费用累加到这一次读取上。
+   - **`today_context`（今日上下文）**：返回主人所在时区的今天日期、现在的时间，以及 48 小时内的提醒。提醒复用 `ProductionReminderWriter.list` 来取，它加了一个时间窗口参数。近一两天的对话摘要等任务 P3-6 合并后再加。
+   - **`rule_book`（规则手册）**：返回 `ruleBookFor(settings)` 列出的每条规则，包括编号、版本、作用在哪一步、结果、来源、状态。主人自己设的规则还带上设置值，即重要发件人名单和静默时段。
+     - 不返回规则的表达式。理由是 [ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md) 原话 “用户在界面看到的是试算例子，不是代码”。
+4. **返回给外部之前，先遮掉敏感内容。** 返回值里每一段文字都先经过 `maskSensitiveText` 再发出去。这个函数来自专门识别敏感内容的包 `@himawari-agent/sensitive-capture`，遮的范围和 Himawari 自己发给模型的出口一样：密钥、密码、验证码、银行卡号、证件号。
+   - 外部 agent 会把这些内容转发给它自己用的模型，而这一段路不经过 Himawari 的出口，所以遮盖要在这里先做。
+5. **每次外部读取都写一条决策记录**，类别是 `external_read`，结果是 `read`。
+   - `reasonCode` 写工具名；读取失败时写 `<工具名>_failed`。
+   - `subjectRef` 写 `mcp-client:<客户端名>`。客户端名先取 2026-07-28 版请求自带的客户端信息；老版本请求不带这项，就取 User-Agent 请求头的开头一段。两者都只是对方自己报的名字。
+   - `inputs.memoryIds` 只写返回给对方的记忆编号，不写正文（依据 `docs/execution/specs/2026-11-09-decision-record-write-convention.md`）。
+   - `ruleIds` 写空数组：静默时段规则还没有登记在 `DECISION_RULE_CATALOG` 里，而依据抽屉对这一类记录本来就显示「这类记录不涉及」。
+   - `costMicros` 写这次算问题向量花的钱。
+6. **工具说明文字登记进提示词目录**，编号是 `mcp.find-memories`、`mcp.today-context`、`mcp.rule-book`、`mcp.tool-result-failed`。Himawari 自己发给模型的请求一个字节都不变。
+
+[返回阅读导航](#contents)
+
+<a id="industry"></a>
+
+## 业界怎么做
+
+- 远程 MCP 服务用静态令牌接入很常见。GitHub 官方的 MCP 服务就是这样：在 Claude Code 里用 `--header "Authorization: Bearer <个人令牌>"` 连接（见前提 2 的文档）。
+- MCP 官方 SDK 推荐用 `createMcpHandler` 同时服务新旧两版协议（见前提 5）。我们照着这个做，没有自己写协议层。
+- ChatGPT 和 Claude 的记忆只给自家客户端用，没有对外的读取入口。Himawari 要做的是「一个大脑，所有 agent 共用」，所以要开这个入口。
+
+[返回阅读导航](#contents)
+
+<a id="options"></a>
+
+## 放弃的做法
+
+- **现在就实现 OAuth 2.1 授权服务。** 放弃的原因是两家客户端都支持静态令牌头，而授权服务要多出发令牌、存令牌、撤销令牌这一整套东西，现在用不上。以后要接只支持 OAuth 的客户端时，再另开 ADR。
+- **每个客户端各发一把密钥。** 现在只有一把密钥，所以撤销时所有客户端一起停。这一点在变更清单里已经告诉 Andy；他要分开撤销时，再把配置改成多把带名字的密钥。
+- **在决策记录的 `inputs` 里记客户端名。** 放弃的原因是 `insertLedgerRow` 对这类记录只落四个键，要改写入路径。现在改记在 `subjectRef` 里。
+
+[返回阅读导航](#contents)
+
+<a id="consequences"></a>
+
+## 后果
+
+- 每次 `find_memories` 都要算一次问题向量，会产生嵌入费用，和聊天里找记忆一样。这笔费用记在那条决策记录上，没有单独的每日上限；有限流兜底，每分钟最多 30 次。
+- 「今日上下文」暂时不含近一两天的对话摘要，要等任务 P3-6 合并后另开 PR 加上。
+- 写操作和确认框（2026-07-28 版的多轮请求，结果标为「需要输入」）不在这一步里做。
+- 测试：
+  - `test/integration/mcp-read.test.ts` 用真实的 SQLite、真实的记忆检索和官方 SDK 客户端，新旧两版协议都连一遍。
+  - 正向：三个工具都能列出、能调通，并且写了决策记录。
+  - 反向：没带令牌或令牌错时回 401 且不写记录；不相关的问题返回空；72 小时后的提醒不出现；密码不原样出现；读取失败时作为工具错误返回并记一条失败记录；没配置密钥时路由不存在。
+  - `apps/agent-service/test/production-mail-embedding.unit.test.ts` 覆盖不属于任何一轮对话的嵌入入口。
+
+[返回阅读导航](#contents)
+
+<a id="references"></a>
+
+## 关联文档
+
+- [ADR 0162：用服务令牌和应用密钥接收 Muse 数据](0162-receive-muse-data-through-a-service-token-and-an-app-secret.md)
+- [ADR 0143：模型门槛决策的决策记录](0143-decision-ledger-for-model-gate-decisions.md)
+- [ADR 0209：规则手册用 CEL 表达式，由一个裁判计算](0209-rule-book-with-cel-expressions-and-judge.md)
+- [决策记录写入约定](../execution/specs/2026-11-09-decision-record-write-convention.md)
+
+[返回阅读导航](#contents)

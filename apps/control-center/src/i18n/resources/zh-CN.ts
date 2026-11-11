@@ -978,7 +978,7 @@ export const messages = {
   "decision.chain.rating": "你的评价",
   "decision.chain.unrated": "还没评价",
   "decision.chain.kind":
-    "{k, select, proactive {系统主动提醒} memory_candidate {存记忆的判断} consolidation {整理记忆} context_truncation {裁剪上下文} retrieval_degrade {找记忆降级} external_read {读外部内容} other {其他}}",
+    "{k, select, proactive {系统主动提醒} memory_candidate {存记忆的判断} consolidation {整理记忆} context_truncation {裁剪上下文} retrieval_degrade {找记忆降级} external_read {外部程序读取记忆} other {其他}}",
   "decision.chain.rules": "命中的规则",
   "decision.chain.rule":
     "{id, select, floor_important_sender {重要来信不放过：发件人在你的重要名单里} floor_public_domain {重要来信不放过：来自政府或学校域名} floor_money_words {重要来信不放过：邮件里有金额相关的词} other {{id}}}",
