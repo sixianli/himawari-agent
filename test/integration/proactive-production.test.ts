@@ -629,9 +629,13 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     await new Promise<void>((resolve) => google.listen(0, "127.0.0.1", resolve));
     closers.push(() => new Promise<void>((resolve) => google.close(() => resolve())));
     const bundled = "/opt/pw-browsers/chromium";
-    const executablePath =
-      process.env["HIMAWARI_CHROMIUM_PATH"] ?? (existsSync(bundled) ? bundled : undefined);
-    const browser = await chromium.launch(executablePath ? { executablePath } : {});
+    const configuredPath = process.env["HIMAWARI_CHROMIUM_PATH"] || undefined;
+    const browser = await chromium
+      .launch(configuredPath ? { executablePath: configuredPath } : {})
+      .catch((error: unknown) => {
+        if (configuredPath || !existsSync(bundled)) throw error;
+        return chromium.launch({ executablePath: bundled });
+      });
     closers.push(() => browser.close());
     const context = await browser.newContext();
     await context.addCookies([
