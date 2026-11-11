@@ -819,15 +819,43 @@ describe("production memory capture", () => {
         quote: "我搬到南京了",
       }),
     );
+    const middle = (await gatewayOverview(context.control)).memories.find(
+      ({ supersededBy }) => supersededBy === null,
+    );
+    if (!middle) throw new Error("middle");
+    await round(
+      "run-home-4",
+      "我又搬到上海了",
+      memoryOutput({
+        decision: "supersede",
+        existingMemoryId: middle.memoryId,
+        text: "主人住在上海",
+        quote: "我又搬到上海了",
+      }),
+    );
     expect(context.failures).toEqual([]);
     const view = await gatewayOverview(context.control);
     const replaced = view.memories.find(({ memoryId }) => memoryId === old.memoryId);
     const head = view.memories.find(({ supersededBy }) => supersededBy === null);
     if (!replaced || !head) throw new Error("chain");
-    expect(replaced.supersededBy).toBe(head.memoryId);
+    expect(replaced.supersededBy).toBe(middle.memoryId);
+    expect(view.memories.find(({ memoryId }) => memoryId === middle.memoryId)?.supersededBy).toBe(
+      head.memoryId,
+    );
     const earliest = replaced.history[0];
     expect(earliest).toMatchObject({ kind: "created", text: "主人住在杭州" });
     if (!earliest) throw new Error("earliest");
+    await expect(
+      restoreVersion(
+        context.control,
+        middle.memoryId,
+        view.memories.find(({ memoryId }) => memoryId === middle.memoryId)?.revision ?? 0,
+        earliest.historyId,
+        "restore-into-replaced",
+      ),
+    ).rejects.toThrow("MEMORY_VERSION_TARGET_NOT_CURRENT");
+    const state = context.repository.productMemoryState();
+    expect((await state.read(head.memoryId as never))?.confidencePermille).toBe(900);
     await restoreVersion(
       context.control,
       head.memoryId,
@@ -839,11 +867,10 @@ describe("production memory capture", () => {
     const current = after.memories.find(({ memoryId }) => memoryId === head.memoryId);
     expect(current?.text).toBe("主人住在杭州");
     expect(current?.history.map(({ kind, text }) => [kind, text])).toEqual([
-      ["created", "主人住在南京"],
+      ["created", "主人住在上海"],
       ["restored", "主人住在杭州"],
     ]);
     expect(after.memories.find(({ memoryId }) => memoryId === old.memoryId)).toEqual(replaced);
-    const state = context.repository.productMemoryState();
     const record = await state.read(head.memoryId as never);
     const [own] = await state.listHistory({
       ownerId: OWNER_ID,
@@ -851,6 +878,7 @@ describe("production memory capture", () => {
       memoryIds: [old.memoryId as never],
     });
     expect(record?.contentRef).toBe(own?.contentRef);
+    expect(record).toMatchObject({ inference: false, confidencePermille: 1000 });
   });
 
   it("[P3-7] copies a less sensitive earlier wording at the current memory's level", async () => {
@@ -873,6 +901,29 @@ describe("production memory capture", () => {
     });
     const older = (await gatewayOverview(context.control)).memories[0]?.history.at(-1);
     expect(older).toMatchObject({ text: "主人住在浙江" });
+    const options = (context.control as unknown as { options: { memory: DurableMemoryService } })
+      .options;
+    const real = options.memory;
+    options.memory = Object.assign(Object.create(real), {
+      restoreVersion: async () => {
+        throw new Error("MEMORY_REVISION_CHANGED_DURING_SAVE");
+      },
+    });
+    await expect(
+      restoreVersion(
+        context.control,
+        memory.memoryId,
+        memory.revision,
+        older?.historyId ?? 0,
+        "restore-public-lost",
+      ),
+    ).rejects.toThrow("MEMORY_REVISION_CHANGED_DURING_SAVE");
+    options.memory = real;
+    expect(
+      await context.plaintext(
+        `memory-version:${memory.memoryId}:${memory.revision}:${older?.historyId}`,
+      ),
+    ).toBeUndefined();
     await restoreVersion(
       context.control,
       memory.memoryId,
@@ -916,6 +967,25 @@ describe("production memory capture", () => {
         "restore-secret",
       ),
     ).rejects.toThrow("MEMORY_VERSION_CLASSIFICATION_HIGHER");
+    await context.protect("payload-spaced", "主人住在杭州 ");
+    context.sql((database) => {
+      database
+        .prepare(
+          `INSERT INTO memory_history_events (memory_id, kind, content_ref, stance, occurred_at)
+          VALUES (?, 'edited', 'payload-spaced', NULL, ?)`,
+        )
+        .run(memory.memoryId, T0);
+    });
+    const spaced = (await gatewayOverview(context.control)).memories[0]?.history.at(-1);
+    await expect(
+      restoreVersion(
+        context.control,
+        memory.memoryId,
+        memory.revision,
+        spaced?.historyId ?? 0,
+        "restore-spaced",
+      ),
+    ).rejects.toThrow("MEMORY_VERSION_ALREADY_CURRENT");
     expect((await gatewayOverview(context.control)).memories[0]?.text).toBe("主人住在杭州");
   });
 

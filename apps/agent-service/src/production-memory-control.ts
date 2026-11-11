@@ -190,7 +190,11 @@ export class ProductionMemoryControl {
   async #versionContent(
     current: ProductMemoryRecord,
     historyId: number,
-  ): Promise<{ readonly contentRef: string; readonly stance: string | null }> {
+  ): Promise<{
+    readonly contentRef: string;
+    readonly stance: string | null;
+    readonly copied: boolean;
+  }> {
     if (current.status !== "active" || (current.attributes?.supersededBy ?? null) !== null)
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
@@ -205,7 +209,7 @@ export class ProductionMemoryControl {
     const text = await this.readText(event.contentRef);
     this.assertStorable(text);
     if (
-      text === (await this.readText(current.contentRef)) &&
+      singleLine(text) === singleLine(await this.readText(current.contentRef)) &&
       event.stance === (current.attributes?.stance ?? null)
     )
       throw new ApplicationPortError(
@@ -213,7 +217,7 @@ export class ProductionMemoryControl {
         "MEMORY_VERSION_ALREADY_CURRENT",
       );
     if (payload.dataClassification === current.dataClassification)
-      return { contentRef: event.contentRef, stance: event.stance };
+      return { contentRef: event.contentRef, stance: event.stance, copied: false };
     if (
       classificationRank(payload.dataClassification) >
       classificationRank(current.dataClassification)
@@ -237,8 +241,9 @@ export class ProductionMemoryControl {
     } catch (error) {
       if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.DUPLICATE)
         throw error;
+      return { contentRef: copy.ref, stance: event.stance, copied: false };
     }
-    return { contentRef: copy.ref, stance: event.stance };
+    return { contentRef: copy.ref, stance: event.stance, copied: true };
   }
 
   async #replacedInto(memoryId: MemoryId, headId: MemoryId): Promise<boolean> {
@@ -1115,14 +1120,20 @@ export class ProductionMemoryControl {
       }
       if (action === "restore_version" && historyId !== null) {
         const restored = await this.#versionContent(current, historyId);
-        const saved = await this.options.memory.restoreVersion({
-          memoryId: current.id,
-          expectedRevision,
-          contentRef: restored.contentRef,
-          stance: restored.stance,
-          generationId,
-        });
-        return { resultRef: saved.id, replayed: false };
+        try {
+          const saved = await this.options.memory.restoreVersion({
+            memoryId: current.id,
+            expectedRevision,
+            contentRef: restored.contentRef,
+            stance: restored.stance,
+            generationId,
+          });
+          return { resultRef: saved.id, replayed: false };
+        } catch (error) {
+          if (restored.copied)
+            await this.options.payloads.delete(restored.contentRef).catch(() => false);
+          throw error;
+        }
       }
       if (action === "delete") {
         const saved = await this.options.memory.trash(current.id, generationId);

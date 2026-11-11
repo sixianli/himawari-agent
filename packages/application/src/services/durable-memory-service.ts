@@ -288,6 +288,8 @@ export class DurableMemoryService {
         current,
         {
           contentRef: input.contentRef,
+          inference: false,
+          confidencePermille: 1000,
           attributes: { ...attributes, stance: input.stance },
         },
         this.options.now(),
