@@ -122,6 +122,98 @@ function MemoryEntry({
   );
 }
 
+type ChainRule = DecisionChain["rules"]["items"][number];
+type RuleWording = NonNullable<ChainRule["wording"]>;
+
+const SUNDAY = Date.UTC(2024, 0, 7);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function wordingText(wording: RuleWording, locale: string, separator: string): string {
+  const list = (values: readonly string[]) => values.join(separator);
+  if (wording.amount) {
+    const format = new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: wording.amount.currency,
+    });
+    const digits = format.resolvedOptions().maximumFractionDigits ?? 0;
+    return format.format(wording.amount.minor / 10 ** digits);
+  }
+  if (wording.quietHours.length > 0) {
+    const weekday = new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" });
+    return list(
+      wording.quietHours.map(
+        ({ days, start, end }) =>
+          `${days.map((day) => weekday.format(new Date(SUNDAY + day * DAY_MS))).join(" ")} ${start}–${end}`,
+      ),
+    );
+  }
+  return list(wording.values);
+}
+
+function RuleItem({
+  rule,
+  message,
+  showMails,
+  thisMail,
+}: {
+  rule: ChainRule;
+  message: Message;
+  showMails: boolean;
+  thisMail: boolean;
+}) {
+  const { moment, locale } = useLocaleFormat();
+  const wording = rule.wording
+    ? wordingText(rule.wording, locale, message("decision.chain.listSeparator"))
+    : "";
+  return (
+    <li data-rule-id={rule.ruleId}>
+      <p>
+        {message("decision.chain.rule", { k: rule.kind, id: rule.ruleId })}
+        {` · ${message("decision.chain.origin", { o: rule.origin ?? "unknown" })}`}
+        {rule.status === "needs_review" ? ` · ${message("decision.chain.ruleNeedsReview")}` : ""}
+        {thisMail ? ` · ${message("decision.email.thisMail")}` : ""}
+      </p>
+      {rule.memory ? (
+        <p className="decision-chain-rule-text">
+          {message("decision.chain.ruleQuote", {
+            text:
+              rule.memory.state === "visible" && rule.memory.text
+                ? rule.memory.text
+                : message("decision.chain.noText"),
+          })}
+        </p>
+      ) : null}
+      <p className="decision-chain-rule-text">
+        {rule.wording
+          ? message("decision.chain.ruleWording", {
+              k: rule.kind,
+              text: wording,
+              empty: wording.length === 0 ? "yes" : "no",
+            })
+          : message("decision.chain.ruleWordingMissing")}
+      </p>
+      <small className="decision-chain-rule-source">
+        {message("decision.chain.ruleSource", {
+          source: rule.source ?? message("decision.chain.noRecord"),
+          revision: rule.revision ?? "?",
+        })}
+        {rule.changedAt ? ` · ${moment(rule.changedAt)}` : ""}
+        {rule.current ? ` · ${message("decision.chain.ruleCurrent")}` : ""}
+      </small>
+      <small className="decision-chain-rule-tests" data-tests={rule.tests.state}>
+        {message("decision.chain.ruleTests", {
+          s: rule.tests.state,
+          total: rule.tests.total,
+          at: rule.tests.failedAt ?? 0,
+        })}
+      </small>
+      {showMails ? (
+        <small>{message("decision.chain.ruleMails", { count: rule.mailCount })}</small>
+      ) : null}
+    </li>
+  );
+}
+
 export function DecisionChainBody({
   chain,
   message,
@@ -164,23 +256,13 @@ export function DecisionChainBody({
         {chain.rules.state === "recorded" ? (
           <ul className="decision-chain-list">
             {chain.rules.items.map((rule, index) => (
-              <li key={`${rule.ruleId}:${index}`}>
-                <p>
-                  {message("decision.chain.rule", { id: rule.ruleId })}
-                  {` · ${message("decision.chain.origin", { o: rule.origin ?? "unknown" })}`}
-                  {rule.document ? ` · ${rule.document}` : ""}
-                  {thisMail?.ruleIds.has(rule.ruleId)
-                    ? ` · ${message("decision.email.thisMail")}`
-                    : ""}
-                </p>
-                {chain.mails ? (
-                  <small>
-                    {message("decision.chain.ruleMails", {
-                      count: rule.mailCount,
-                    })}
-                  </small>
-                ) : null}
-              </li>
+              <RuleItem
+                key={`${rule.ruleId}:${index}`}
+                rule={rule}
+                message={message}
+                showMails={chain.mails !== null}
+                thisMail={thisMail?.ruleIds.has(rule.ruleId) ?? false}
+              />
             ))}
           </ul>
         ) : (

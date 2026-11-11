@@ -1467,6 +1467,7 @@ it("answers recall from owner memory, replays the saved result and reports failu
   const recall = vi.fn(async () => ({
     output: { memories: [{ text: "主人最喜欢蓝色", current: true }] },
     contentClassification: "private" as const,
+    memoryIds: [],
   }));
   const tools = new ProductionRuntimeTools({
     ...f.options,
@@ -1504,7 +1505,11 @@ it("offers reminder tools last, runs them once per call and tells the model why 
   const tools = new ProductionRuntimeTools({
     ...f.options,
     memoryRecall: {
-      recallWithClassification: async () => ({ output: {}, contentClassification: "private" }),
+      recallWithClassification: async () => ({
+        output: {},
+        contentClassification: "private",
+        memoryIds: [],
+      }),
     },
     reminders: { run },
   });

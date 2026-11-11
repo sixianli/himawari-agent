@@ -498,6 +498,7 @@ describe("production model composition", () => {
     const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
     const resolvedSecrets: string[] = [];
     const composition = await createProductionMemoryCompositionFromConfiguration({
+      onVectorFailure: () => {},
       egress: testModelEgress(),
       configuration,
       secretSource: {
@@ -548,6 +549,7 @@ describe("production model composition", () => {
     };
     const memoryIndex = inMemoryMemoryIndex();
     const composition = await createProductionMemoryCompositionFromConfiguration({
+      onVectorFailure: () => {},
       egress: testModelEgress(),
       configuration,
       secretSource: {
@@ -626,12 +628,14 @@ describe("production model composition", () => {
     };
     await expect(
       createProductionMemoryCompositionFromConfiguration({
+        onVectorFailure: () => {},
         egress: testModelEgress(),
         ...options,
         configuration,
       }),
     ).rejects.toThrow("MEMORY_MINIMUM_SIMILARITY_REQUIRED");
     const configured = await createProductionMemoryCompositionFromConfiguration({
+      onVectorFailure: () => {},
       egress: testModelEgress(),
       ...options,
       configuration: {
@@ -1533,6 +1537,7 @@ function embeddingAccountingFixture(mode: "query" | "projection", response: unkn
     markUnknown: vi.fn(async () => undefined),
   };
   const send = vi.fn(async () => response as EmbeddingResponse);
+  const diagnostics: Readonly<Record<string, string>>[] = [];
   const request: MemorySearchRequest = {
     ownerId: configuration.ownerId,
     agentId: configuration.agentId,
@@ -1570,6 +1575,7 @@ function embeddingAccountingFixture(mode: "query" | "projection", response: unkn
     budget: budget as never,
     assertActive: async () => undefined,
     now: () => time.now,
+    diagnostic: (event) => diagnostics.push(event),
   });
   const run =
     mode === "query"
@@ -1594,6 +1600,7 @@ function embeddingAccountingFixture(mode: "query" | "projection", response: unkn
     controller,
     permit,
     budget,
+    diagnostics,
     time,
     ledger: mode === "query" ? permit : budget,
   };
@@ -1714,14 +1721,30 @@ for (const mode of ["query", "projection"] as const) {
       name: "nonfinite vector",
       change: { data: [{ index: 0, embedding: Array.from({ length: 4096 }, () => Number.NaN) }] },
     },
-  ])("[R2-L5] retains unknown embedding $name for " + mode, async ({ change }) => {
-    const fixture = embeddingAccountingFixture(mode, { ...gatewayEmbeddingResponse(), ...change });
-    await expect(fixture.run()).rejects.toThrow();
-    expect(fixture.send).toHaveBeenCalledTimes(1);
-    expect(fixture.ledger.markUnknown).toHaveBeenCalledTimes(1);
-    expect(fixture.ledger.settle).not.toHaveBeenCalled();
-    expect(fixture.ledger.releaseReserved).not.toHaveBeenCalled();
-  });
+  ])(
+    mode === "query"
+      ? "[P3-2] settles a chat embedding with $name at the estimate so the Run can still answer"
+      : "[R2-L5] retains unknown embedding $name for projection",
+    async ({ change }) => {
+      const fixture = embeddingAccountingFixture(mode, {
+        ...gatewayEmbeddingResponse(),
+        ...change,
+      });
+      await expect(fixture.run()).rejects.toThrow();
+      expect(fixture.send).toHaveBeenCalledTimes(1);
+      expect(fixture.ledger.releaseReserved).not.toHaveBeenCalled();
+      if (mode === "query") {
+        expect(fixture.permit.markUnknown).not.toHaveBeenCalled();
+        expect(fixture.permit.settle).toHaveBeenCalledTimes(1);
+        expect(fixture.permit.settle).toHaveBeenCalledWith(
+          expect.objectContaining({ inputTokens: 16384, outputTokens: 0 }),
+        );
+      } else {
+        expect(fixture.ledger.markUnknown).toHaveBeenCalledTimes(1);
+        expect(fixture.ledger.settle).not.toHaveBeenCalled();
+      }
+    },
+  );
 }
 
 it("[R2-L5] retains unknown embedding when cancellation occurs before final settlement", async () => {
@@ -1736,7 +1759,7 @@ it("[R2-L5] retains unknown embedding when cancellation occurs before final sett
 });
 
 it.each(["cancel", "deadline"] as const)(
-  "[R2-L5] retains unknown embedding when %s occurs during the final authority check",
+  "[R2-L5][P3-2] keeps a cancelled chat embedding unknown and settles a late one at the estimate when %s occurs during the final authority check",
   async (ending) => {
     const fixture = embeddingAccountingFixture("query", gatewayEmbeddingResponse());
     fixture.permit.assertActive
@@ -1749,11 +1772,72 @@ it.each(["cancel", "deadline"] as const)(
       ending === "cancel" ? "RUN_CANCELLED_DURING_CHECK" : "EMBEDDING_DEADLINE_EXCEEDED",
     );
     expect(fixture.send).toHaveBeenCalledTimes(1);
-    expect(fixture.permit.markUnknown).toHaveBeenCalledWith("transport_unresolved");
-    expect(fixture.permit.settle).not.toHaveBeenCalled();
+    if (ending === "cancel") {
+      expect(fixture.permit.markUnknown).toHaveBeenCalledWith("transport_unresolved");
+      expect(fixture.permit.settle).not.toHaveBeenCalled();
+    } else {
+      expect(fixture.permit.markUnknown).not.toHaveBeenCalled();
+      expect(fixture.permit.settle).toHaveBeenCalledWith(
+        expect.objectContaining({ inputTokens: 16384, outputTokens: 0 }),
+      );
+    }
     expect(fixture.permit.releaseReserved).not.toHaveBeenCalled();
   },
 );
+
+it("[P3-2] keeps the embedding error and marks the call unknown when settling a failed chat embedding fails", async () => {
+  const fixture = embeddingAccountingFixture("query", {
+    ...gatewayEmbeddingResponse(),
+    data: [],
+  });
+  fixture.permit.settle.mockRejectedValueOnce(new Error("SETTLE_REFUSED"));
+  const failure = await fixture.run().then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  expect(failure).toMatchObject({ message: "EMBEDDING_VECTOR_INVALID" });
+  expect(fixture.permit.settle).toHaveBeenCalledTimes(1);
+  expect(fixture.permit.markUnknown).toHaveBeenCalledWith("transport_unresolved");
+  expect(fixture.permit.releaseReserved).not.toHaveBeenCalled();
+  expect(fixture.diagnostics).toContainEqual(
+    expect.objectContaining({ event: "memory.embedding_settle_failed", error: "SETTLE_REFUSED" }),
+  );
+});
+
+it("[P3-2] keeps the embedding error when marking a failed projection embedding unknown fails", async () => {
+  const fixture = embeddingAccountingFixture("projection", {
+    ...gatewayEmbeddingResponse(),
+    data: [],
+  });
+  fixture.budget.markUnknown.mockRejectedValueOnce(new Error("UNKNOWN_REFUSED"));
+  const failure = await fixture.run().then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  expect(failure).toMatchObject({ message: "EMBEDDING_VECTOR_INVALID" });
+  expect(fixture.budget.settle).not.toHaveBeenCalled();
+  expect(fixture.diagnostics).toContainEqual(
+    expect.objectContaining({ event: "memory.embedding_unknown_failed", error: "UNKNOWN_REFUSED" }),
+  );
+});
+
+it("[P3-2] keeps the embedding error when both settling and marking a failed chat embedding unknown fail", async () => {
+  const fixture = embeddingAccountingFixture("query", {
+    ...gatewayEmbeddingResponse(),
+    data: [],
+  });
+  fixture.permit.settle.mockRejectedValueOnce(new Error("SETTLE_REFUSED"));
+  fixture.permit.markUnknown.mockRejectedValueOnce(new Error("UNKNOWN_REFUSED"));
+  const failure = await fixture.run().then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  expect(failure).toMatchObject({ message: "EMBEDDING_VECTOR_INVALID" });
+  expect(fixture.permit.markUnknown).toHaveBeenCalledWith("transport_unresolved");
+  expect(fixture.diagnostics).toContainEqual(
+    expect.objectContaining({ event: "memory.embedding_unknown_failed", error: "UNKNOWN_REFUSED" }),
+  );
+});
 
 async function sensitiveInterceptionRepository(ownerId: string, agentId: string) {
   const stateRoot = path.join(temporaryDirectory, "sensitive-state");

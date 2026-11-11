@@ -14,6 +14,8 @@ let browser: Browser;
 let base = "";
 let staticRoot = "";
 let fixture: ChildProcess;
+let pinnedFixture: ChildProcess;
+let pinnedBase = "";
 
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -53,28 +55,35 @@ async function build(outDir: string): Promise<void> {
   });
 }
 
+async function serve(pinned: string): Promise<{ process: ChildProcess; base: string }> {
+  const port = await freePort();
+  const child = spawn(process.execPath, ["test/e2e/fixtures/control-center-browser-server.mjs"], {
+    cwd: repositoryRoot,
+    env: {
+      ...process.env,
+      HIMAWARI_BROWSER_FIXTURE_PORT: String(port),
+      HIMAWARI_BROWSER_STATIC_ROOT: staticRoot,
+      HIMAWARI_MEMORY_FIXTURE: "1",
+      HIMAWARI_PROFILE_PINNED_CHARACTERS: pinned,
+    },
+    stdio: "ignore",
+  });
+  const url = `http://127.0.0.1:${port}`;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try {
+      if ((await fetch(`${url}/threads`)).ok) break;
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return { process: child, base: url };
+}
+
 describe("[P1-1] memory page jumps to the original message in a real browser", () => {
   beforeAll(async () => {
     staticRoot = await mkdtemp(path.join(tmpdir(), "sensitive-browser-"));
     await build(staticRoot);
-    const port = await freePort();
-    fixture = spawn(process.execPath, ["test/e2e/fixtures/control-center-browser-server.mjs"], {
-      cwd: repositoryRoot,
-      env: {
-        ...process.env,
-        HIMAWARI_BROWSER_FIXTURE_PORT: String(port),
-        HIMAWARI_BROWSER_STATIC_ROOT: staticRoot,
-        HIMAWARI_MEMORY_FIXTURE: "1",
-      },
-      stdio: "ignore",
-    });
-    base = `http://127.0.0.1:${port}`;
-    for (let attempt = 0; attempt < 100; attempt++) {
-      try {
-        if ((await fetch(`${base}/threads`)).ok) break;
-      } catch {}
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+    ({ process: fixture, base } = await serve("0"));
+    ({ process: pinnedFixture, base: pinnedBase } = await serve("2150"));
     const bundled = "/opt/pw-browsers/chromium";
     const executablePath =
       process.env["HIMAWARI_CHROMIUM_PATH"] ?? (existsSync(bundled) ? bundled : undefined);
@@ -84,14 +93,15 @@ describe("[P1-1] memory page jumps to the original message in a real browser", (
   afterAll(async () => {
     await browser?.close();
     fixture?.kill();
+    pinnedFixture?.kill();
     if (staticRoot) await rm(staticRoot, { recursive: true, force: true });
   });
 
-  async function openMemory(page: Page) {
+  async function openMemory(page: Page, at = base) {
     await page.addInitScript(() => {
       localStorage.setItem("himawari.control-center.v1.locale", "zh-CN");
     });
-    await page.goto(`${base}/memory`);
+    await page.goto(`${at}/memory`);
   }
 
   it("offers the jump for a captured memory and opens its conversation", async () => {
@@ -136,6 +146,29 @@ describe("[P1-1] memory page jumps to the original message in a real browser", (
       const drawer = page.locator(".memory-drawer");
       await uiExpect(drawer).toContainText("来源已不可查");
       await uiExpect(drawer.getByRole("button", { name: "跳到原话" })).toHaveCount(0);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  it("[P2-5] tells the owner when the memories they chose to bring every time exceed the limit", async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    try {
+      await openMemory(page, pinnedBase);
+      await uiExpect(page.getByTestId("memory-carry-pinned-over")).toHaveText(
+        "你打开“每次对话都带上”的记忆共 2150 字，比上限 2000 字多出 150 字。它们照样每次都带上，但其他记忆就放不进来了；关掉几条可以回到上限以内。",
+      );
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  it("[P2-5] reverse: shows no over-limit notice when the chosen memories fit", async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    try {
+      await openMemory(page);
+      await uiExpect(page.locator(".memory-carry")).toBeVisible();
+      await uiExpect(page.getByTestId("memory-carry-pinned-over")).toHaveCount(0);
     } finally {
       await page.close();
     }
