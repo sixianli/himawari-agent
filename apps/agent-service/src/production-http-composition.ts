@@ -182,6 +182,7 @@ export interface ProductionHttpCompositionOptions {
       | "correct"
       | "delete"
       | "restore"
+      | "restoreVersion"
       | "confirm"
       | "revise"
       | "trash"

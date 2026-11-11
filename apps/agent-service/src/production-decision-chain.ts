@@ -94,12 +94,13 @@ export async function readDecisionChain(
   const fields: ReadonlySet<string> = new Set(found.inputFields);
   const inputs = entry.inputs;
   const proactive = entry.kind === "proactive";
+  const rulesRecorded = proactive || entry.kind === "rule_review";
 
   const floorMailCounts = new Map<string, number>();
   for (const rules of Object.values(inputs.floorHits))
     for (const rule of new Set(rules))
       floorMailCounts.set(rule, (floorMailCounts.get(rule) ?? 0) + 1);
-  const rules: ChainPayload["rules"] = proactive
+  const rules: ChainPayload["rules"] = rulesRecorded
     ? {
         state: sectionState(fields, "ruleIds", inputs.ruleIds),
         items: sortedUnique(inputs.ruleIds).map((ruleId) => {

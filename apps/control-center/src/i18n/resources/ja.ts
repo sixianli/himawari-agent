@@ -748,6 +748,7 @@ export const messages = {
   "memory.page.history": "変更の流れ",
   "memory.page.now": "現在",
   "memory.page.useThis": "この表現に戻す",
+  "memory.page.restoreVersion": "この版に戻す",
   "memory.page.editNote": "保存すると、以前の表現は「変更の流れ」に残ります。",
   "memory.page.archivedNote": "整理でアーカイブされ、回答に使いません",
   "memory.page.unarchive": "使用を再開",
@@ -1012,6 +1013,9 @@ export const messages = {
   "dailyReview.tag.truncation": "回答に入れなかった古い内容",
   "dailyReview.tag.degrade": "記憶検索が働かなかった",
   "dailyReview.tag.externalRead": "外部プログラムによる記憶の読み取り",
+  "dailyReview.tag.ruleReview": "ハードルールの再確認待ち",
+  "dailyReview.ruleReview":
+    "このハードルールはあなたの言葉から作られました。元の記憶が変わりました。ルールはそのまま適用され、確認を待っています",
   "dailyReview.hidden": "本文はここには表示しません",
   "dailyReview.fetched": "メール {count} 通を確認",
   "dailyReview.allFine": "このページは問題なし",
@@ -1038,8 +1042,9 @@ export const messages = {
   "decision.chain.rating": "あなたの評価",
   "decision.chain.unrated": "未評価",
   "decision.chain.kind":
-    "{k, select, proactive {自発的なリマインダー} memory_candidate {記憶を保存する判断} consolidation {記憶の整理} context_truncation {コンテキストの切り詰め} retrieval_degrade {記憶検索の縮退} external_read {外部の読み取り} other {その他}}",
+    "{k, select, proactive {自発的なリマインダー} memory_candidate {記憶を保存する判断} consolidation {記憶の整理} context_truncation {コンテキストの切り詰め} retrieval_degrade {記憶検索の縮退} external_read {外部の読み取り} rule_review {ハードルールの再確認} other {その他}}",
   "decision.chain.rules": "該当したルール",
+  "decision.chain.reviewRules": "再確認待ちのルール",
   "decision.chain.rule":
     "{id, select, floor_important_sender {重要なメールを逃さない：送信者が重要リストにある} floor_public_domain {重要なメールを逃さない：官公庁・学校のドメインから} floor_money_words {重要なメールを逃さない：金額に関する語がある} other {{id}}}",
   "decision.chain.origin":
@@ -1301,7 +1306,7 @@ export const messages = {
   "weekly.check.rowsCleared":
     "確認済みの日から Gmail の記録が {rows} 件減ったが、すべて自分で消したもの",
   "weekly.check.rowsMissing":
-    "{day}の{kind, select, proactive {Gmail の確認} memory_candidate {記憶} consolidation {記憶の整理} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索} external_read {外部プログラムによる記憶の読み取り} other {判断}}の記録が確認時より減った：当時 {before} 件、今 {after} 件",
+    "{day}の{kind, select, proactive {Gmail の確認} memory_candidate {記憶} consolidation {記憶の整理} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} other {判断}}の記録が確認時より減った：当時 {before} 件、今 {after} 件",
   "weekly.check.timeOk": "判断の記録の時刻の形式はすべて正しい",
   "weekly.check.timeBad": "判断の記録に形式の正しくない時刻が {rows} 件",
   "weekly.check.other":
@@ -1327,9 +1332,9 @@ export const messages = {
   "weekly.type.how4":
     "区間は 95% Wilson 区間です。採点した件数から出した範囲で、本当の割合は 95% の確かさでこの中に入ります。採点が多いほど狭くなります。",
   "weekly.group":
-    "{g, select, proactive_pushed {メールを読んで通知した} proactive_silent {メールを読んで通知しなかった} memory_skipped {システムが保存しないと判断した記憶} memory_kept {保存した記憶} consolidation {記憶の整理} memory_pending {確認待ちの記憶} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索が働かなかった} other {外部プログラムによる記憶の読み取り}}",
+    "{g, select, proactive_pushed {メールを読んで通知した} proactive_silent {メールを読んで通知しなかった} memory_skipped {システムが保存しないと判断した記憶} memory_kept {保存した記憶} consolidation {記憶の整理} memory_pending {確認待ちの記憶} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索が働かなかった} rule_review {ハードルールの再確認待ち} other {外部プログラムによる記憶の読み取り}}",
   "weekly.groupInfo":
-    "{g, select, proactive_pushed {Himawari は 15 分ごとに新着メールを読みます。読んだ後に通知した回です。} other {Himawari は 15 分ごとに新着メールを読みます。読んだ後、通知が必要なものがなかった回です。}}",
+    "{g, select, proactive_pushed {Himawari は 15 分ごとに新着メールを読みます。読んだ後に通知した回です。} rule_review {ハードルールはあなたの言葉から作られます。元の記憶が変更・置き換え・削除されると、ルールは再確認待ちになり、その記録です。} other {Himawari は 15 分ごとに新着メールを読みます。読んだ後、通知が必要なものがなかった回です。}}",
   "weekly.rate":
     "{k, select, proactive_pushed_useful {通知は正しかった} proactive_pushed_unneeded {通知すべきではなかった} proactive_silent_useful {通知しないのが正しかった} proactive_silent_missed {通知すべきだった} memory_skipped_useful {保存しないのが正しかった} memory_skipped_missed {保存すべきだった} memory_kept_useful {正しく保存した} memory_kept_unneeded {保存すべきではなかった} consolidation_useful {整理は正しかった} consolidation_unneeded {整理すべきではなかった} other_useful {正しかった} other_unneeded {やるべきではなかった} other {やるべきだった}}",
   "weekly.ratio": "{pct}（{k}/{n}）",
