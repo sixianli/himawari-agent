@@ -247,7 +247,8 @@ function slugOf(title: string | null): string {
 }
 
 function fenced(text: string): string {
-  const longest = Math.max(0, ...[...text.matchAll(/`+/gu)].map((run) => run[0].length));
+  let longest = 0;
+  for (const run of text.matchAll(/`+/gu)) longest = Math.max(longest, run[0].length);
   const fence = "`".repeat(Math.max(3, longest + 1));
   return `${fence}\n${text.replace(/\r\n?/gu, "\n")}\n${fence}`;
 }

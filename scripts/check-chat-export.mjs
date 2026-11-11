@@ -17,7 +17,7 @@ const GROUPS = [
   },
   { project: "browser", files: ["apps/control-center/test/memory-interactions.unit.test.ts"] },
 ];
-const REQUIRED = 36;
+const REQUIRED = 37;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(path.join(tmpdir(), "himawari-chat-export-"));

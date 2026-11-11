@@ -294,16 +294,31 @@ describe("chat export", () => {
       "看 ![x](https://evil.example/p.png) 和 <img src=x onerror=1> 还有 ```` 四个反引号";
     await seedThread(s, "t-1", {
       title: "标题 ![y](https://evil.example/t.png) <b>",
-      messages: [{ text: hostile }],
+      messages: [
+        {
+          text: `${hostile}\n\n<file name="![x](https://evil.example/a.png) \`" ref="r1" bytes="5" kind="text"/>`,
+        },
+      ],
     });
     const { files } = await exportOf(s);
     const [thread] = jsonl(files) as [ThreadRow];
     const markdown = decoder.decode(files.get(thread.file));
     expect(markdown).toContain(`\`\`\`\`\`\n${hostile}\n\`\`\`\`\``);
+    const attachmentLine = markdown.split("\n").find((line) => line.startsWith("- 附件：")) ?? "";
+    expect(attachmentLine).not.toMatch(/[[\]<>`]/u);
     const head = markdown.split("\n")[0] ?? "";
     expect(head).not.toMatch(/[[\]<>`]/u);
-    expect(decoder.decode(files.get("CHATS.md"))).not.toContain("![");
+    const index = decoder.decode(files.get("CHATS.md"));
+    expect(index).not.toContain("![");
+    expect(index).not.toMatch(/<b>|`/u);
     expect(verifyChatExport(files, s.migrationSequence).counts.threads).toBe(1);
+  });
+
+  it("[多人7] a message with hundreds of thousands of backtick runs still exports (negative case)", async () => {
+    const s = await side("many-backticks");
+    await seedThread(s, "t-1", { messages: [{ text: "` ".repeat(300_000) }] });
+    const { files } = await exportOf(s);
+    expect(verifyChatExport(files, s.migrationSequence).counts.messages).toBe(1);
   });
 
   it("[多人7] a very long title still produces an export that verifies", async () => {
