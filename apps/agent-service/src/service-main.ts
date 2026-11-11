@@ -185,6 +185,7 @@ export interface AgentServiceMemoryCompositionContext {
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
   readonly sources?: ReturnType<typeof hostModelSources>;
+  readonly diagnostic?: (event: Readonly<Record<string, string | number>>) => void;
 }
 
 export type AgentServiceMemoryCompositionFactory = (
@@ -363,6 +364,12 @@ async function createDefaultMemoryComposition(
       now: () => new Date().toISOString(),
       onFailure: () => {},
     }),
+    onRelevanceUnknown: (count) =>
+      context.diagnostic?.({
+        component: "agent-service",
+        event: "memory.relevance_unknown",
+        candidates: count,
+      }),
   });
 }
 
@@ -806,7 +813,12 @@ export async function runAgentService(
         admission: modelAdmission,
       });
       const memoryFactory = dependencies.memoryCompositionFactory ?? createDefaultMemoryComposition;
-      memoryComposition = await memoryFactory({ configuration, repository, sources });
+      memoryComposition = await memoryFactory({
+        configuration,
+        repository,
+        sources,
+        diagnostic: (event) => writeServiceDiagnostic(errorOutput, event),
+      });
     }
     let automaticReview: ReturnType<typeof createProductionAutomaticReview>;
     if (configuration.runPolicy?.automaticReview !== undefined) {
@@ -1159,6 +1171,7 @@ export async function runAgentService(
         state: repository.productMemoryState(),
         jobs: repository.memoryProjectionJobs(),
         provider: memoryComposition.projection,
+        dedupeSameSource: memoryComposition.dedupeSameSource,
         ...(webEnabled
           ? ({
               project: (job, memory, operation) => {
@@ -1245,6 +1258,7 @@ export async function runAgentService(
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
         provider: { search: (input) => recallProjection.search(input) },
+        dedupeSameSource: memoryComposition.dedupeSameSource,
         state: repository.productMemoryState(),
         episodes: {
           search: (input) =>

@@ -199,6 +199,20 @@ function vectorBlob(embedding: MemoryIndexEmbedding): Buffer {
   );
 }
 
+function cosineSimilarity(values: Float32Array, query: Float32Array): number {
+  let dot = 0;
+  let norm = 0;
+  let queryNorm = 0;
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index] ?? 0;
+    const other = query[index] ?? 0;
+    dot += value * other;
+    norm += value * value;
+    queryNorm += other * other;
+  }
+  return norm === 0 || queryNorm === 0 ? 0 : dot / Math.sqrt(norm) / Math.sqrt(queryNorm);
+}
+
 function blobVector(blob: Uint8Array, dimensions: number): Float32Array {
   const copy = new Uint8Array(blob.byteLength);
   copy.set(blob);
@@ -1141,8 +1155,6 @@ export class SqliteMemoryOperations {
         ).map((row) => this.indexCandidate(row));
       } else {
         vectorEngine = "javascript";
-        const query = embedding.vector;
-        const queryNorm = Math.sqrt(query.reduce((sum, value) => sum + value * value, 0));
         const rows = this.database
           .prepare(
             `SELECT ${indexCandidateColumns}, i.embedding AS embedding
@@ -1152,18 +1164,12 @@ export class SqliteMemoryOperations {
           )
           .all(vectorScope) as (Omit<IndexCandidateRow, "signal"> & { embedding: Uint8Array })[];
         vector = rows
-          .map(({ embedding: blob, ...row }) => {
-            const values = blobVector(blob, embedding.dimensions);
-            let dot = 0;
-            let norm = 0;
-            for (let index = 0; index < values.length; index += 1) {
-              const value = values[index] ?? 0;
-              dot += value * (query[index] ?? 0);
-              norm += value * value;
-            }
-            const signal = norm === 0 || queryNorm === 0 ? 0 : dot / Math.sqrt(norm) / queryNorm;
-            return this.indexCandidate({ ...row, signal });
-          })
+          .map(({ embedding: blob, ...row }) =>
+            this.indexCandidate({
+              ...row,
+              signal: cosineSimilarity(blobVector(blob, embedding.dimensions), embedding.vector),
+            }),
+          )
           .sort(
             (left, right) =>
               right.signal - left.signal || left.memoryId.localeCompare(right.memoryId),
@@ -1203,12 +1209,73 @@ export class SqliteMemoryOperations {
               )
               .all({ ...scope, queryText, limit: input.limit }) as IndexCandidateRow[]
           ).map((row) => this.indexCandidate(row));
+    const similarities = input.embedding
+      ? this.candidateSimilarities(
+          input.embedding,
+          vectorEngine,
+          vector,
+          [...lexical, ...entity].map(({ memoryId }) => memoryId),
+        )
+      : new Map<MemoryId, number>();
+    const withSimilarity = (candidate: MemoryIndexCandidate) => {
+      const similarity = similarities.get(candidate.memoryId);
+      return similarity === undefined ? candidate : Object.freeze({ ...candidate, similarity });
+    };
     return Object.freeze({
-      vector: Object.freeze(vector),
-      lexical: Object.freeze(lexical),
-      entity: Object.freeze(entity),
+      vector: Object.freeze(vector.map(withSimilarity)),
+      lexical: Object.freeze(lexical.map(withSimilarity)),
+      entity: Object.freeze(entity.map(withSimilarity)),
       vectorEngine,
     });
+  }
+
+  private candidateSimilarities(
+    embedding: MemoryIndexEmbedding,
+    vectorEngine: MemoryIndexSearchResult["vectorEngine"],
+    vector: readonly MemoryIndexCandidate[],
+    others: readonly MemoryId[],
+  ): Map<MemoryId, number> {
+    const similarities = new Map<MemoryId, number>(
+      vector.map(({ memoryId, signal }) => [memoryId, signal]),
+    );
+    const missing = [...new Set(others)].filter((memoryId) => !similarities.has(memoryId)).sort();
+    if (missing.length === 0) return similarities;
+    const scope = {
+      ids: JSON.stringify(missing),
+      model: embedding.model,
+      dimensions: embedding.dimensions,
+    };
+    const where = `i.memory_id IN (SELECT value FROM json_each(@ids))
+      AND i.embedding_model = @model AND i.embedding_dimensions = @dimensions
+      AND i.embedding IS NOT NULL`;
+    if (vectorEngine === "sqlite-vec") {
+      const rows = this.database
+        .prepare(
+          `SELECT i.memory_id AS memoryId, 1 - vec_distance_cosine(i.embedding, @query) AS similarity
+          FROM memory_search_index i WHERE ${where}`,
+        )
+        .all({ ...scope, query: vectorBlob(embedding) }) as {
+        memoryId: string;
+        similarity: number;
+      }[];
+      for (const row of rows)
+        if (Number.isFinite(row.similarity))
+          similarities.set(row.memoryId as MemoryId, row.similarity);
+      return similarities;
+    }
+    const rows = this.database
+      .prepare(
+        `SELECT i.memory_id AS memoryId, i.embedding AS embedding FROM memory_search_index i WHERE ${where}`,
+      )
+      .all(scope) as { memoryId: string; embedding: Uint8Array }[];
+    for (const row of rows) {
+      const similarity = cosineSimilarity(
+        blobVector(row.embedding, embedding.dimensions),
+        embedding.vector,
+      );
+      if (Number.isFinite(similarity)) similarities.set(row.memoryId as MemoryId, similarity);
+    }
+    return similarities;
   }
 
   private upsertEpisode(document: MemoryEpisodeDocument): void {
