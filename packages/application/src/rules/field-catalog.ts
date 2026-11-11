@@ -32,6 +32,23 @@ export const RULE_FIELD_CATALOG: Readonly<Record<RuleGate, readonly RuleFieldDef
         type: "list<string>",
         description: "text 里每一段连续的英文字母、数字、下划线，转成小写",
       }),
+      Object.freeze({
+        name: "amount_state",
+        type: "string",
+        description:
+          "邮件主金额读得怎么样：known 是模型有把握且正文完整，uncertain 是读到了但没把握或正文不全，missing 是没有读到（这个字段永远存在）",
+      }),
+      Object.freeze({
+        name: "amount_minor",
+        type: "int",
+        description:
+          "主金额，按币种最小单位的整数（日元是円，美元和人民币是分，科威特第纳尔是 0.001）；amount_state 不是 known 时没有意义，固定为 0",
+      }),
+      Object.freeze({
+        name: "amount_currency",
+        type: "string",
+        description: "主金额的三个大写字母币种代码；没有金额时是空字符串",
+      }),
     ] as const),
     mail_delivery: Object.freeze([
       Object.freeze({

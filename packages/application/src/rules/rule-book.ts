@@ -1,7 +1,8 @@
-import type { RuleGate } from "./field-catalog.js";
+import { currencyExponent, type MailAmount, MISSING_AMOUNT } from "./amount.js";
+import { type RuleGate, ruleFields } from "./field-catalog.js";
 import { compileRuleExpression, type RuleFacts } from "./rule-expression.js";
 
-export type RuleOutcome = "raise_floor" | "defer_to_quiet_hours";
+export type RuleOutcome = "raise_floor" | "suppress_push" | "defer_to_quiet_hours";
 export type RuleOrigin = "built_in" | "owner_setting";
 export type RuleStatus = "active" | "retired";
 
@@ -27,6 +28,7 @@ export const RULE_IDS = Object.freeze({
   publicDomain: "floor_public_domain",
   moneyWords: "floor_money_words",
   quietHours: "quiet_hours",
+  amountThreshold: "suppress_small_amount",
 } as const);
 
 export type RuleId = (typeof RULE_IDS)[keyof typeof RULE_IDS];
@@ -84,19 +86,36 @@ export function celStringList(values: readonly string[]): string {
   return `[${values.map(celString).join(", ")}]`;
 }
 
-function senderFacts(address: string, domain: string, text = "", words: readonly string[] = []) {
-  return { sender_address: address, sender_domain: domain, text, text_words: words };
+function senderFacts(
+  address: string,
+  domain: string,
+  text = "",
+  words: readonly string[] = [],
+  amount: MailAmount = MISSING_AMOUNT,
+) {
+  return {
+    sender_address: address,
+    sender_domain: domain,
+    text,
+    text_words: words,
+    amount_state: amount.state,
+    amount_minor: amount.state === "known" ? amount.minor : 0,
+    amount_currency: amount.state === "missing" ? "" : amount.currency,
+  };
 }
 
 function foldCase(word: string): string {
   return word.replaceAll("\u017f", "s").replaceAll("\u212a", "k").toLowerCase();
 }
 
-export function mailItemFacts(item: {
-  readonly fromAddress: string;
-  readonly subject: string;
-  readonly snippet: string;
-}): RuleFacts {
+export function mailItemFacts(
+  item: {
+    readonly fromAddress: string;
+    readonly subject: string;
+    readonly snippet: string;
+  },
+  amount: MailAmount = MISSING_AMOUNT,
+): RuleFacts {
   const address = item.fromAddress.toLowerCase();
   const text = `${item.subject}\n${item.snippet}`;
   return senderFacts(
@@ -104,6 +123,7 @@ export function mailItemFacts(item: {
     address.slice(address.lastIndexOf("@") + 1),
     text,
     (text.match(/[a-z0-9_]+/giu) ?? []).map(foldCase),
+    amount,
   );
 }
 
@@ -247,7 +267,86 @@ export function quietHoursRule(periods: readonly QuietPeriod[], revision: number
   });
 }
 
+export interface AmountThresholdParameters {
+  readonly currency: string;
+  readonly minor: number;
+}
+
+export function amountThresholdExpression(parameters: AmountThresholdParameters): string {
+  if (
+    !/^[A-Z]{3}$/u.test(parameters.currency) ||
+    currencyExponent(parameters.currency) === undefined
+  )
+    throw new Error("金额门槛的币种不在币种表里");
+  if (
+    !Number.isSafeInteger(parameters.minor) ||
+    parameters.minor < 0 ||
+    parameters.minor >= Number.MAX_SAFE_INTEGER
+  )
+    throw new Error("金额门槛必须是不小于 0、小于安全整数上限的整数");
+  return `amount_state == "known" && amount_currency == ${celString(parameters.currency)} && amount_minor < ${parameters.minor}`;
+}
+
+export function amountThresholdRule(
+  parameters: AmountThresholdParameters,
+  revision: number,
+  source: string,
+): RuleRecord {
+  const known = (minor: number, currency = parameters.currency) =>
+    mailItemFacts(
+      { fromAddress: "a@b.com", subject: "x", snippet: "" },
+      { state: "known", minor, currency },
+    );
+  const other = parameters.currency === "USD" ? "JPY" : "USD";
+  const examples: RuleExample[] = [
+    { facts: known(Math.max(0, parameters.minor - 1)), hit: parameters.minor > 0 },
+    { facts: known(parameters.minor), hit: false },
+    { facts: known(parameters.minor + 1), hit: false },
+    { facts: known(0, other), hit: false },
+    {
+      facts: mailItemFacts(
+        { fromAddress: "a@b.com", subject: "x", snippet: "" },
+        { state: "uncertain", minor: 0, currency: parameters.currency },
+      ),
+      hit: false,
+    },
+    { facts: mailItemFacts({ fromAddress: "a@b.com", subject: "x", snippet: "" }), hit: false },
+  ];
+  return Object.freeze({
+    id: RULE_IDS.amountThreshold,
+    revision,
+    gate: "mail_item",
+    expression: amountThresholdExpression(parameters),
+    outcome: "suppress_push",
+    origin: "owner_setting",
+    source,
+    status: "active",
+    examples: Object.freeze(examples.map((example) => Object.freeze(example))),
+  });
+}
+
+const GATE_OUTCOMES: Readonly<Record<RuleGate, readonly RuleOutcome[]>> = Object.freeze({
+  mail_item: Object.freeze(["raise_floor", "suppress_push"] as const),
+  mail_delivery: Object.freeze(["defer_to_quiet_hours"] as const),
+});
+
+const AMOUNT_FIELD_NAMES: readonly string[] = ruleFields("mail_item")
+  .map(({ name }) => name)
+  .filter((name) => name.startsWith("amount_"));
+const AMOUNT_FIELD = new RegExp(`\\b(?:${AMOUNT_FIELD_NAMES.join("|")})\\b`, "u");
+const STRING_LITERAL = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/gu;
+
+export function usesAmountFields(rule: Pick<RuleRecord, "expression">): boolean {
+  return AMOUNT_FIELD.test(rule.expression.replace(STRING_LITERAL, '""'));
+}
+
+export function assertRuleShape(rule: RuleRecord): void {
+  if (!GATE_OUTCOMES[rule.gate].includes(rule.outcome))
+    throw new Error(`规则 ${rule.id} 的结果 ${rule.outcome} 不能用在闸门 ${rule.gate} 上`);
+}
+
 export function assertRuleExamples(rule: RuleRecord): void {
+  assertRuleShape(rule);
   const compiled = compileRuleExpression(rule.gate, rule.expression);
   for (const example of rule.examples) {
     if (compiled.evaluate(example.facts) !== example.hit)

@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  amountThresholdRule,
   createProactiveSeal,
   type DataClassification,
   type ModelDescriptor,
@@ -61,6 +62,7 @@ interface Scripted {
   readonly dueAt?: string | null;
   readonly reason?: string;
   readonly usedMemoryIds?: readonly string[];
+  readonly amount?: unknown;
 }
 
 function mail(
@@ -110,6 +112,7 @@ describe("proactive Gmail check acceptance", () => {
       bodyLimits?: ProactiveMailCheckOptions["bodyLimits"];
       onMasked?: ProactiveMailCheckOptions["onMasked"];
       backoff?: ProactiveMailCheckOptions["backoff"];
+      ownerRules?: ProactiveMailCheckOptions["ownerRules"];
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-proactive-"));
@@ -332,6 +335,7 @@ describe("proactive Gmail check acceptance", () => {
       ...(options.bodyLimits ? { bodyLimits: options.bodyLimits } : {}),
       ...(options.onMasked ? { onMasked: options.onMasked } : {}),
       ...(options.backoff ? { backoff: options.backoff } : {}),
+      ...(options.ownerRules ? { ownerRules: options.ownerRules } : {}),
       ...(options.batchSize === undefined ? {} : { batchSize: options.batchSize }),
       ...(options.outputTokenLimit === undefined
         ? {}
@@ -1529,6 +1533,94 @@ describe("proactive Gmail check acceptance", () => {
     expect(first.split("\n").at(-1)).toMatch(/^现在是 /u);
     expect(later.split("\n").at(-1)).toMatch(/^现在是 /u);
   });
+  describe("[HR-2] an owner rule can keep a push back, but never when the amount is unclear or a floor rule hit", () => {
+    const smallYen = () => [amountThresholdRule({ currency: "JPY", minor: 1000 }, 3, "测试")];
+    const FULL_BODY = "ご請求額は 500 円です。";
+    const due = (overrides: Partial<ProactiveSourceItem> = {}) =>
+      mail("due", {
+        from: "Shop <shop@example.com>",
+        fromAddress: "shop@example.com",
+        subject: "ご案内",
+        snippet: "11/5 まで",
+        body: FULL_BODY,
+        ...overrides,
+      });
+    const act = (amount?: unknown) =>
+      ({
+        id: "due",
+        result: "act",
+        todo: "处理",
+        priority: "high",
+        dueAt: "2026-11-05T14:59:00Z",
+        ...(amount === undefined ? {} : { amount }),
+      }) as const;
+    const yen = (value: string, confidence = "sure", currency = "JPY") => ({
+      value,
+      currency,
+      confidence,
+    });
+    const ledgerRows = (h: Awaited<ReturnType<typeof harness>>) =>
+      h.ledger.list({ ...scope, kind: "proactive", since: "2026-11-01T00:00:00.000Z", limit: 50 });
+
+    it("keeps a small sure amount out of the push but still lists it on the reminder page, and records the rule", async () => {
+      const h = await harness({ ownerRules: smallYen() });
+      h.reader.items = [due()];
+      h.script([act(yen("500"))]);
+      const decision = await h.service.run();
+      expect(decision).toMatchObject({ verdict: "silent", pushSourceKey: null });
+      expect(decision?.counts).toMatchObject({ act: 1, pushed: 0 });
+      expect((await h.overview()).insights[0]).toMatchObject({ result: "act", pushed: false });
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.ruleHits).toEqual({ due: ["suppress_small_amount@3"] });
+    });
+
+    it("REVERSE: pushes as before when the amount is unsure, missing, in another currency, exactly the limit, or the body was not read in full", async () => {
+      const cases: [string, unknown, Partial<ProactiveSourceItem>][] = [
+        ["unsure", yen("500", "unsure"), {}],
+        ["missing", undefined, {}],
+        ["other currency", yen("5", "sure", "USD"), {}],
+        ["boundary", yen("1000"), {}],
+        ["unknown currency", yen("5", "sure", "XYZ"), {}],
+        ["garbage value", yen("five hundred"), {}],
+        ["no body", yen("500"), { body: null }],
+        ["truncated body", yen("500"), { bodyTruncated: true }],
+      ];
+      for (const [name, amount, item] of cases) {
+        const h = await harness({ ownerRules: smallYen() });
+        h.reader.items = [due(item)];
+        h.script([act(amount)]);
+        const decision = await h.service.run();
+        expect(decision, name).toMatchObject({ verdict: "pushed" });
+        const [entry] = await ledgerRows(h);
+        expect(entry?.inputs.ruleHits, name).toEqual({});
+      }
+    });
+
+    it("REVERSE: never holds back a mail a floor rule hit, even with a small sure amount", async () => {
+      const h = await harness({ ownerRules: smallYen() });
+      h.reader.items = [due({ subject: "お支払い料金のお知らせ" })];
+      h.script([act(yen("500"))]);
+      expect(await h.service.run()).toMatchObject({ verdict: "pushed" });
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.ruleHits).toEqual({});
+    });
+
+    it("pushes exactly as before when no owner rule exists, whatever amount the model reports", async () => {
+      const h = await harness();
+      h.reader.items = [due()];
+      h.script([act(yen("500"))]);
+      expect(await h.service.run()).toMatchObject({ verdict: "pushed" });
+    });
+
+    it("refuses to start with a rule whose examples do not match", () => {
+      const rule = smallYen()[0];
+      if (!rule) throw new Error("rule");
+      return expect(harness({ ownerRules: [{ ...rule, expression: "false" }] })).rejects.toThrow(
+        /例子不符/u,
+      );
+    });
+  });
+
   describe("[P0-5] ledger records what each check really sent to the model", () => {
     const moneyMail = (id: string) =>
       mail(id, { subject: "お支払い料金のお知らせ", snippet: "11/5 までに" });

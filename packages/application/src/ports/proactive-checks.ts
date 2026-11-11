@@ -209,6 +209,7 @@ export interface ProactiveCheckInputs {
   readonly ruleIds: readonly string[];
   readonly sourceIds: readonly string[];
   readonly floorHits: Readonly<Record<string, readonly string[]>>;
+  readonly ruleHits?: Readonly<Record<string, readonly string[]>>;
   readonly memoryInjected: boolean;
   readonly memoryIds: readonly string[];
   readonly usedMemoryIds: readonly string[];
