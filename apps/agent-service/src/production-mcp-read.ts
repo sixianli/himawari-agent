@@ -22,10 +22,10 @@ import {
   MCP_PROPOSE_MEMORY_FAILED,
   MCP_PROPOSE_MEMORY_INVALID,
   MCP_PROPOSE_MEMORY_NOT_READY,
-  MCP_PROPOSE_MEMORY_SAVE_LABEL,
   MCP_PROPOSE_MEMORY_SAVED,
   MCP_PROPOSE_MEMORY_SENSITIVE_NOTE,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
+  MCP_PROPOSE_NOT_SHOWN,
   MCP_PROPOSE_RULE_ALREADY_SAVED,
   MCP_PROPOSE_RULE_CONDITIONS,
   MCP_PROPOSE_RULE_CONFIRM,
@@ -34,9 +34,9 @@ import {
   MCP_PROPOSE_RULE_INVALID,
   MCP_PROPOSE_RULE_KIND_NOTIFY,
   MCP_PROPOSE_RULE_KIND_WHOLE_THREAD,
+  MCP_PROPOSE_RULE_NOT_READY,
   MCP_PROPOSE_RULE_REPLAY,
   MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE,
-  MCP_PROPOSE_RULE_SAVE_LABEL,
   MCP_PROPOSE_RULE_SAVED,
   MCP_TOOL_FIND_MEMORIES,
   MCP_TOOL_PROPOSE_MEMORY,
@@ -94,7 +94,7 @@ export const MCP_ACCESS_ASSERTION_HEADER = "cf-access-jwt-assertion";
 export const MCP_READ_TOOL_NAMES = ["find_memories", "today_context", "rule_book"] as const;
 export const MCP_WRITE_TOOL_NAMES = ["propose_memory", "propose_rule"] as const;
 export const MCP_PROPOSAL_CONFIRM_KEY = "confirm";
-export const MCP_PROPOSAL_SAVE_FIELD = "save";
+export const MCP_PROPOSAL_UNSEEN_ANSWER_MS = 1_500;
 export const MCP_PROPOSAL_STATE_TTL_SECONDS = 600;
 const WRITE_ACCESS = "himawari:write";
 const READ_ACCESS = "himawari:read";
@@ -167,6 +167,20 @@ interface ProposalState {
   readonly proposalId: string;
   readonly argsHash: string;
   readonly client: string;
+  readonly askedAt: number;
+}
+
+type ProposalTicket = Omit<ProposalState, "askedAt">;
+
+export type McpProposalAnswer = "accepted" | "declined" | "unseen";
+
+export function mcpProposalAnswer(
+  action: "accept" | "decline" | "cancel",
+  askedAt: number,
+  answeredAt: number,
+): McpProposalAnswer {
+  if (!(answeredAt - askedAt >= MCP_PROPOSAL_UNSEEN_ANSWER_MS)) return "unseen";
+  return action === "accept" ? "accepted" : "declined";
 }
 
 export interface ProductionMcpReadOptions {
@@ -532,6 +546,7 @@ export class ProductionMcpRead {
     client: string,
     context: ServerContext,
   ): Promise<CallToolResult | InputRequiredResult> {
+    const received = Date.parse(this.#options.clock.now());
     const reason = normalizeProposalText(typeof args["reason"] === "string" ? args["reason"] : "");
     let parsed: { readonly type: string; readonly params: unknown; readonly summary: string };
     try {
@@ -558,7 +573,7 @@ export class ProductionMcpRead {
         if (!elicitationSupported(context.mcpReq.envelope))
           return proposalReply(MCP_PROPOSE_MEMORY_UNSUPPORTED.text, true);
         if (!(await this.#options.write?.proposals.ready()))
-          return proposalReply(MCP_PROPOSE_MEMORY_NOT_READY.text, true);
+          return proposalReply(MCP_PROPOSE_RULE_NOT_READY.text, true);
         return await this.#askRuleConfirmation(
           rules,
           { tool: "propose_rule", proposalId: randomUUID(), argsHash, client },
@@ -572,6 +587,7 @@ export class ProductionMcpRead {
         state.tool !== "propose_rule" ||
         typeof state.proposalId !== "string" ||
         typeof state.client !== "string" ||
+        !Number.isFinite(state.askedAt) ||
         state.argsHash !== argsHash
       )
         return proposalReply(MCP_PROPOSE_MEMORY_CHANGED.text, true);
@@ -598,7 +614,9 @@ export class ProductionMcpRead {
         const answer = inputResponse(context.mcpReq.inputResponses, MCP_PROPOSAL_CONFIRM_KEY);
         if (answer.kind !== "elicit")
           return await this.#askRuleConfirmation(rules, state, proposal, context);
-        if (answer.action === "accept" && answer.content?.[MCP_PROPOSAL_SAVE_FIELD] === true) {
+        const outcome = mcpProposalAnswer(answer.action, state.askedAt, received);
+        if (outcome === "unseen") return proposalReply(MCP_PROPOSE_NOT_SHOWN.text, true);
+        if (outcome === "accepted") {
           await rules.accept(proposal);
           this.#decidedRules.set(proposal.proposalId, {
             until: Date.now() + MCP_PROPOSAL_STATE_TTL_SECONDS * 1000,
@@ -620,7 +638,7 @@ export class ProductionMcpRead {
 
   async #askRuleConfirmation(
     rules: McpRuleProposals,
-    state: ProposalState,
+    ticket: ProposalTicket,
     proposal: Pick<ExternalRuleProposal, "type" | "params" | "summary" | "reason" | "client">,
     context: ServerContext,
   ): Promise<InputRequiredResult> {
@@ -657,19 +675,19 @@ export class ProductionMcpRead {
               : MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE.text,
             reason: proposal.reason,
           }),
-          requestedSchema: {
-            type: "object",
-            properties: {
-              [MCP_PROPOSAL_SAVE_FIELD]: {
-                type: "boolean",
-                title: MCP_PROPOSE_RULE_SAVE_LABEL.text,
-              },
-            },
-            required: [MCP_PROPOSAL_SAVE_FIELD],
-          },
+          requestedSchema: { type: "object", properties: {} },
         }),
       },
-      requestState: await this.#stateCodec.mint(state, context),
+      requestState: await this.#stateCodec.mint(
+        {
+          tool: ticket.tool,
+          proposalId: ticket.proposalId,
+          argsHash: ticket.argsHash,
+          client: ticket.client,
+          askedAt: Date.parse(this.#options.clock.now()),
+        },
+        context,
+      ),
     });
   }
 
@@ -712,6 +730,7 @@ export class ProductionMcpRead {
         state.tool !== "propose_memory" ||
         typeof state.proposalId !== "string" ||
         typeof state.client !== "string" ||
+        !Number.isFinite(state.askedAt) ||
         state.argsHash !== argsHash
       )
         return proposalReply(MCP_PROPOSE_MEMORY_CHANGED.text, true);
@@ -727,7 +746,9 @@ export class ProductionMcpRead {
         if (decided === "declined") return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
         const answer = inputResponse(context.mcpReq.inputResponses, MCP_PROPOSAL_CONFIRM_KEY);
         if (answer.kind !== "elicit") return await this.#askConfirmation(state, proposal, context);
-        if (answer.action === "accept" && answer.content?.[MCP_PROPOSAL_SAVE_FIELD] === true) {
+        const outcome = mcpProposalAnswer(answer.action, state.askedAt, started);
+        if (outcome === "unseen") return proposalReply(MCP_PROPOSE_NOT_SHOWN.text, true);
+        if (outcome === "accepted") {
           await proposals.keep(proposal, started);
           return proposalReply(MCP_PROPOSE_MEMORY_SAVED.text, false);
         }
@@ -756,7 +777,7 @@ export class ProductionMcpRead {
   }
 
   async #askConfirmation(
-    state: ProposalState,
+    ticket: ProposalTicket,
     proposal: Pick<ExternalMemoryProposal, "text" | "category" | "client">,
     context: ServerContext,
   ): Promise<InputRequiredResult> {
@@ -770,19 +791,19 @@ export class ProductionMcpRead {
             sensitive: sensitive ? MCP_PROPOSE_MEMORY_SENSITIVE_NOTE.text : "",
             text: proposal.text,
           }),
-          requestedSchema: {
-            type: "object",
-            properties: {
-              [MCP_PROPOSAL_SAVE_FIELD]: {
-                type: "boolean",
-                title: MCP_PROPOSE_MEMORY_SAVE_LABEL.text,
-              },
-            },
-            required: [MCP_PROPOSAL_SAVE_FIELD],
-          },
+          requestedSchema: { type: "object", properties: {} },
         }),
       },
-      requestState: await this.#stateCodec.mint(state, context),
+      requestState: await this.#stateCodec.mint(
+        {
+          tool: ticket.tool,
+          proposalId: ticket.proposalId,
+          argsHash: ticket.argsHash,
+          client: ticket.client,
+          askedAt: Date.parse(this.#options.clock.now()),
+        },
+        context,
+      ),
     });
   }
 

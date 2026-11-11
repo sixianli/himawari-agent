@@ -274,6 +274,15 @@ class ReleaseCleanupTest(CleanupCase):
         plan = self.tree.plan(self.failed)
         self.assertEqual((plan['keepStateCopies'], plan['stateRoot']), (3, str(self.tree.lib / 'state')))
 
+    def test_p3_1_local_embedding_models_under_the_state_root_are_never_cleaned(self):
+        self.state_copies(5)
+        models = [self.tree.file(self.tree.lib / 'state/models' / name / (digit * 64) / 'model.onnx', 11 * MEBIBYTE) for name, digit in (('jina-embeddings-v5-text-small-retrieval-int8', 'a'), ('qwen3-embedding-0.6b-int8', 'b'))]
+        for model in models:
+            os.utime(model, (1000, 1000))
+        result = self.run_cleanup()
+        self.assertTrue(all(model.exists() for model in models))
+        self.assertFalse([item for item in result['deleted'] + result['trimmed'] if '/models/' in item['path']])
+
     def test_a_second_run_finds_nothing_more(self):
         self.run_cleanup()
         again = self.run_cleanup()

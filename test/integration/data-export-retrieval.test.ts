@@ -41,6 +41,14 @@ const AT = "2026-11-09T00:00:00.000Z";
 const directories: string[] = [];
 
 class HashingEmbedder implements Embedder {
+  embedQuery(query: string): Promise<Float32Array> {
+    return this.embed(query);
+  }
+
+  embedDocument(text: string): Promise<Float32Array> {
+    return this.embed(text);
+  }
+
   readonly model = "test-hashing-embedder";
   readonly dimensions = DIMENSIONS;
   async embed(text: string): Promise<Float32Array> {
