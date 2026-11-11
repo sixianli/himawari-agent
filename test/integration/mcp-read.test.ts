@@ -76,6 +76,8 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       readonly failRecall?: boolean;
       readonly failLedger?: boolean;
       readonly failSummaries?: boolean;
+      readonly failReminders?: boolean;
+      readonly loseTodaySummary?: boolean;
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-mcp-read-"));
@@ -185,10 +187,14 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     };
     await seedSummary("episode-older", "2026-11-08", OLDER, 1);
     await seedSummary("episode-yesterday", "2026-11-10", YESTERDAY, 2);
+    if (options.loseTodaySummary) await seedSummary("episode-today-lost", "2026-11-11", "lost", 3);
     const episodes = new MemoryEpisodeService({
       store: episodeStore,
       threads: repository.threadRepository(),
-      readText: async ({ ref }) => readText(ref),
+      readText: async ({ ref }) => {
+        if (ref === "payload:episode:episode-today-lost") throw new Error("SUMMARY_TEXT_GONE");
+        return readText(ref);
+      },
       storeText: async () => {
         throw new Error("SUMMARY_WRITE_NOT_EXPECTED");
       },
@@ -214,6 +220,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     });
     const embeddingContexts: { deadlineAt: string; aborted: boolean }[] = [];
     const failures: unknown[] = [];
+    const summaryFailures: unknown[] = [];
     const settingsStore = repository.proactive();
     const mcp = new ProductionMcpRead({
       scope,
@@ -231,7 +238,10 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
           context.costMicros += 7;
           return operation();
         },
-        reminders: (windowMs) => writer.list(windowMs),
+        reminders: async (windowMs) => {
+          if (options.failReminders) throw new Error("REMINDER_STORE_DOWN");
+          return writer.list(windowMs);
+        },
         settings: () => settingsStore.readSettings(scope),
         summaries: async ({ days, limit }) => {
           if (options.failSummaries) throw new Error("SUMMARY_STORE_DOWN");
@@ -259,6 +269,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
           }
         : repository.decisionLedger(),
       onFailure: (error) => failures.push(error),
+      onSummariesFailed: (error) => summaryFailures.push(error),
     });
     const app = Fastify({ logger: false });
     registerMcpReadRoute(app, mcp);
@@ -289,7 +300,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       const [content] = result.content as { type: string; text: string }[];
       return { result, text: content?.text ?? "" };
     };
-    return { url, connect, call, ledger, embeddingContexts, failures, writer };
+    return { url, connect, call, ledger, embeddingContexts, failures, summaryFailures, writer };
   }
 
   it.each(["legacy", "modern"] as const)(
@@ -395,12 +406,51 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(output.recentDays).toEqual([]);
     expect(output.recentDaysComplete).toBe(false);
     expect(today.text).not.toContain("SUMMARY_STORE_DOWN");
+    expect(f.summaryFailures).toHaveLength(1);
+    expect(f.failures).toEqual([]);
     const [row] = await f.ledger();
+    expect(row?.reasonCode).toBe("today_context");
     expect(row?.inputs).toMatchObject({
       summaryInjected: false,
       summaryIds: [],
       summaryRead: "failed",
     });
+  });
+
+  it("marks the days incomplete when one summary's text is gone, and records it as partial", async () => {
+    const f = await setup({ loseTodaySummary: true });
+    const client = await f.connect("modern");
+    const today = await f.call(client, "today_context");
+    expect(today.result.isError).not.toBe(true);
+    const output = JSON.parse(today.text) as {
+      recentDays: { day: string; text: string }[];
+      recentDaysComplete?: boolean;
+    };
+    expect(output.recentDays.map(({ day }) => day)).toEqual(["2026-11-10"]);
+    expect(output.recentDaysComplete).toBe(false);
+    const [row] = await f.ledger();
+    expect(row?.inputs).toMatchObject({
+      summaryInjected: true,
+      summaryIds: ["episode-yesterday"],
+      summaryDays: ["2026-11-10"],
+      summaryRead: "partial",
+    });
+  });
+
+  it("records the summaries as not tried when the reminders fail first", async () => {
+    const f = await setup({ failReminders: true });
+    const client = await f.connect("modern");
+    const today = await f.call(client, "today_context");
+    expect(today.result.isError).toBe(true);
+    expect(today.text).not.toContain("REMINDER_STORE_DOWN");
+    const [row] = await f.ledger();
+    expect(row?.reasonCode).toBe("today_context_failed");
+    expect(row?.inputs).toMatchObject({
+      summaryInjected: false,
+      summaryIds: [],
+      summaryRead: "off",
+    });
+    expect(f.summaryFailures).toEqual([]);
   });
 
   it("lists the rule book with each rule's id, revision and origin but not its expression", async () => {

@@ -889,6 +889,7 @@ describe("production HTTP composition", () => {
         },
       },
       onFailure: () => undefined,
+      onSummariesFailed: () => undefined,
     });
     const composition = await createProductionHttpComposition({
       configuration: config,

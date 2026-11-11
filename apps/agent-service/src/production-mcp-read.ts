@@ -75,13 +75,14 @@ export interface ProductionMcpReadOptions {
   readonly sources: McpReadSources;
   readonly ledger: Pick<DecisionLedgerPort, "append">;
   readonly onFailure: (error: unknown) => void;
+  readonly onSummariesFailed: (error: unknown) => void;
 }
 
 interface SummaryRead {
   readonly ids: readonly string[];
   readonly days: readonly string[];
   readonly characters: number;
-  readonly read: "ok" | "partial" | "failed";
+  readonly read: "off" | "ok" | "partial" | "failed";
 }
 
 interface ToolOutcome {
@@ -97,8 +98,16 @@ const SUMMARIES_FAILED: SummaryRead = Object.freeze({
   read: "failed",
 });
 
-interface ReadCost {
+const SUMMARIES_NOT_TRIED: SummaryRead = Object.freeze({
+  ids: [],
+  days: [],
+  characters: 0,
+  read: "off",
+});
+
+interface ReadTrace {
   costMicros: number;
+  summariesTried: boolean;
 }
 
 function mapStrings(value: unknown, map: (text: string) => string): unknown {
@@ -181,7 +190,7 @@ export class ProductionMcpRead {
       name: McpReadToolName,
       description: string,
       inputSchema: Record<string, unknown>,
-      run: (args: JsonObject, signal: AbortSignal, cost: ReadCost) => Promise<ToolOutcome>,
+      run: (args: JsonObject, signal: AbortSignal, trace: ReadTrace) => Promise<ToolOutcome>,
     ) =>
       server.registerTool(
         name,
@@ -213,13 +222,13 @@ export class ProductionMcpRead {
         required: ["query"],
         additionalProperties: false,
       },
-      (args, signal, cost) => this.#findMemories(args, signal, cost),
+      (args, signal, trace) => this.#findMemories(args, signal, trace),
     );
     register(
       "today_context",
       MCP_TOOL_TODAY_CONTEXT.text,
       { type: "object", properties: {}, additionalProperties: false },
-      () => this.#todayContext(),
+      (_args, _signal, trace) => this.#todayContext(trace),
     );
     register(
       "rule_book",
@@ -235,10 +244,10 @@ export class ProductionMcpRead {
     client: string,
     args: JsonObject,
     signal: AbortSignal,
-    run: (args: JsonObject, signal: AbortSignal, cost: ReadCost) => Promise<ToolOutcome>,
+    run: (args: JsonObject, signal: AbortSignal, trace: ReadTrace) => Promise<ToolOutcome>,
   ): Promise<CallToolResult> {
     const started = Date.parse(this.#options.clock.now());
-    const cost: ReadCost = { costMicros: 0 };
+    const trace: ReadTrace = { costMicros: 0, summariesTried: false };
     let delivered:
       | {
           readonly text: string;
@@ -247,7 +256,7 @@ export class ProductionMcpRead {
         }
       | undefined;
     try {
-      const outcome = await run(args, signal, cost);
+      const outcome = await run(args, signal, trace);
       delivered = {
         text: JSON.stringify(maskForExternalRead(outcome.output)),
         memoryIds: outcome.memoryIds,
@@ -258,10 +267,10 @@ export class ProductionMcpRead {
     }
     const summaries =
       name === "today_context" && this.#options.sources.summaries
-        ? (delivered?.summaries ?? SUMMARIES_FAILED)
+        ? (delivered?.summaries ?? (trace.summariesTried ? SUMMARIES_FAILED : SUMMARIES_NOT_TRIED))
         : undefined;
     try {
-      await this.#record(name, client, delivered?.memoryIds, summaries, cost.costMicros, started);
+      await this.#record(name, client, delivered?.memoryIds, summaries, trace.costMicros, started);
     } catch (error) {
       this.#options.onFailure(error);
       delivered = undefined;
@@ -293,11 +302,11 @@ export class ProductionMcpRead {
         ruleIds: [],
         ...(summaries
           ? {
-              summaryInjected: memoryIds !== undefined && summaries.ids.length > 0,
-              summaryIds: memoryIds ? summaries.ids : [],
-              summaryDays: memoryIds ? summaries.days : [],
-              summaryCharacters: memoryIds ? summaries.characters : 0,
-              summaryRead: memoryIds ? summaries.read : "failed",
+              summaryInjected: summaries.ids.length > 0,
+              summaryIds: summaries.ids,
+              summaryDays: summaries.days,
+              summaryCharacters: summaries.characters,
+              summaryRead: summaries.read,
               summaryGenerated: 0,
             }
           : {}),
@@ -309,7 +318,11 @@ export class ProductionMcpRead {
     });
   }
 
-  async #findMemories(args: JsonObject, signal: AbortSignal, cost: ReadCost): Promise<ToolOutcome> {
+  async #findMemories(
+    args: JsonObject,
+    signal: AbortSignal,
+    trace: ReadTrace,
+  ): Promise<ToolOutcome> {
     const context: MailEmbeddingContext = {
       deadlineAt: new Date(
         Date.parse(this.#options.clock.now()) + this.#options.requestTimeoutMs,
@@ -323,16 +336,17 @@ export class ProductionMcpRead {
       );
       return { output: result.output, memoryIds: result.memoryIds };
     } finally {
-      cost.costMicros = context.costMicros;
+      trace.costMicros = context.costMicros;
     }
   }
 
-  async #recentDays(): Promise<{
+  async #recentDays(trace: ReadTrace): Promise<{
     readonly output: Record<string, unknown>;
     readonly read?: SummaryRead;
   }> {
     const source = this.#options.sources.summaries;
     if (!source) return { output: {} };
+    trace.summariesTried = true;
     try {
       const found = await source({
         days: TODAY_CONTEXT_SUMMARY_DAYS,
@@ -349,15 +363,15 @@ export class ProductionMcpRead {
         },
       };
     } catch (error) {
-      this.#options.onFailure(error);
+      this.#options.onSummariesFailed(error);
       return { output: { recentDays: [], recentDaysComplete: false }, read: SUMMARIES_FAILED };
     }
   }
 
-  async #todayContext(): Promise<ToolOutcome> {
+  async #todayContext(trace: ReadTrace): Promise<ToolOutcome> {
     const now = this.#options.clock.now();
     const listed = await this.#options.sources.reminders(TODAY_CONTEXT_REMINDER_WINDOW_MS);
-    const recent = await this.#recentDays();
+    const recent = await this.#recentDays(trace);
     return {
       output: {
         today: localDay(now, this.#options.timeZone),

@@ -20,7 +20,7 @@ import {
   previewBackoff,
   restoreBackoff,
 } from "./proactive-push-backoff.ts";
-import { summaryInputsValid } from "./sqlite-decision-ledger-operations.ts";
+import { summaryInputsValid } from "./sqlite-decision-summary-inputs.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { insertObservationEvent } from "./sqlite-observation-operations.ts";
 

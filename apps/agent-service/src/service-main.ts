@@ -1813,6 +1813,12 @@ export async function runAgentService(
               event: "mcp-read.failed",
               code: stableErrorCode(error),
             }),
+          onSummariesFailed: (error) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "mcp-read.summaries-failed",
+              code: stableErrorCode(error),
+            }),
         });
       }
       const webPushConfiguration = configuration.runPolicy?.webPush;
