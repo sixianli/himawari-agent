@@ -47,9 +47,11 @@ import { mailBodyWindow, plainModelText, windowMailBody } from "./proactive-mail
 import {
   applyFloor,
   floorHitIds,
+  floorHitRefs,
   senderDomain,
   keepOffReminderPage,
   quietEnd,
+  quietHitRefs,
   startOfZonedDay,
   suppressPushHits,
 } from "./proactive-rules.js";
@@ -1320,6 +1322,7 @@ export class ProactiveMailCheckService {
     const { store, scope, ids, clock } = this.#options;
     const pushing = input.insights.some(({ push }) => push);
     let push: { id: string; readyAt: string } | null = null;
+    let quietRefs: readonly string[] = [];
     if (pushing) {
       const quiet = quietEnd(
         input.startedAt,
@@ -1327,6 +1330,7 @@ export class ProactiveMailCheckService {
         input.quietHours,
         this.#options.timeZone,
       );
+      if (quiet) quietRefs = quietHitRefs(input.startedAt, input.rules, this.#options.timeZone);
       const readyAt = quiet ?? input.startedAt;
       const pending = quiet ? await store.pendingPush({ ...scope, readyAt }) : undefined;
       push = { id: pending?.id ?? ids.next("proactive-push"), readyAt };
@@ -1372,7 +1376,13 @@ export class ProactiveMailCheckService {
       ratedAt: null,
     });
     const inputs: ProactiveCheckInputs = Object.freeze({
-      ruleIds: [...new Set(Object.values(input.floorHits).flat())].sort(),
+      ruleIds: [
+        ...new Set([
+          ...floorHitRefs(input.floorHits, input.rules),
+          ...Object.values(input.ruleHits).flat(),
+          ...quietRefs,
+        ]),
+      ].sort(),
       sourceIds: [...trace.sourceIds],
       floorHits: input.floorHits,
       ruleHits: input.ruleHits,

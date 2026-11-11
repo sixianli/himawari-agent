@@ -1034,8 +1034,45 @@ const decisionChainSnapshotSchema = object({
       items: array(
         object({
           ruleId: boundedString(256),
+          revision: nullable(integer(0)),
+          current: booleanValue,
+          kind: enumeration([
+            "important_sender",
+            "public_domain",
+            "money_words",
+            "quiet_hours",
+            "amount_threshold",
+            "unknown",
+          ]),
           origin: nullable(enumeration(["owner_setting", "built_in"])),
-          document: nullable(boundedString(64)),
+          source: nullable(boundedString(256)),
+          status: nullable(enumeration(["active", "needs_review", "retired"])),
+          changedAt: nullable(timestamp),
+          memory: nullable(
+            object({
+              memoryId: machineString,
+              state: enumeration(["visible", "hidden", "missing"]),
+              text: nullable(boundedString(2000)),
+            }),
+          ),
+          wording: nullable(
+            object({
+              values: array(boundedString(256)),
+              quietHours: array(
+                object({
+                  days: array(integer(0)),
+                  start: boundedString(5),
+                  end: boundedString(5),
+                }),
+              ),
+              amount: nullable(object({ currency: boundedString(3), minor: integer(0) })),
+            }),
+          ),
+          tests: object({
+            state: enumeration(["passed", "failed", "none", "unavailable"]),
+            total: integer(0),
+            failedAt: nullable(integer(1)),
+          }),
           mailCount: integer(0),
         }),
       ),

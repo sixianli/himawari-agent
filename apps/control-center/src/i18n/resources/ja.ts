@@ -1048,10 +1048,20 @@ export const messages = {
   "decision.chain.rules": "該当したルール",
   "decision.chain.reviewRules": "再確認待ちのルール",
   "decision.chain.rule":
-    "{id, select, floor_important_sender {重要なメールを逃さない：送信者が重要リストにある} floor_public_domain {重要なメールを逃さない：官公庁・学校のドメインから} floor_money_words {重要なメールを逃さない：金額に関する語がある} other {{id}}}",
+    "{k, select, important_sender {重要なメールを逃さない：送信者が重要リストにある} public_domain {重要なメールを逃さない：官公庁・学校のドメインから} money_words {重要なメールを逃さない：金額に関する語がある} quiet_hours {通知しない時間帯：この時間は通知せず、終わってから送る} amount_threshold {少額は通知しない：金額が基準未満のメールは通知しない} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {あなたの設定} built_in {組み込みルール} other {未登録のルール}}",
   "decision.chain.ruleMails": "{count} 件のメールが該当",
+  "decision.chain.ruleNeedsReview": "再確認待ち",
+  "decision.chain.ruleQuote": "あなたの言葉：{text}",
+  "decision.chain.ruleWording":
+    "{k, select, important_sender {{empty, select, yes {重要リストは空です} other {重要リスト：{text}}}} public_domain {ドメインの末尾：{text}} money_words {語の一覧：{text}} quiet_hours {{empty, select, yes {通知しない時間帯は未設定} other {時間帯：{text}}}} amount_threshold {基準：{text}} other {{text}}}",
+  "decision.chain.ruleWordingMissing": "この版のルールの内容が見つかりません",
+  "decision.chain.ruleSource": "出典：{source} · 第 {revision} 版",
+  "decision.chain.ruleCurrent": "ルール名だけが記録されているため、現在の版を表示しています",
+  "decision.chain.ruleTests":
+    "{s, select, passed {テスト：例 {total} 件すべて通過} failed {テスト：{total} 件中 {at} 件目の例が一致しない} none {テスト：このルールには例がない} other {テスト：確認できない}}",
+  "decision.chain.listSeparator": "、",
   "decision.chain.mails": "読んだメール",
   "decision.chain.judged": "{count} 件を判断",
   "decision.chain.related": "関連メール {count} 件",
