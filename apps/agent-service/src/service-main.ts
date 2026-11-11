@@ -128,6 +128,7 @@ import {
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
+import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
@@ -1319,9 +1320,25 @@ export async function runAgentService(
         writer: reminderWriter,
         ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
       });
+      const ownerRuleTools = new ProductionOwnerRuleTools(
+        new ProductionOwnerRuleWriter({
+          configuration,
+          rules: repository.ownerRules(),
+          memory: durableMemory,
+          memories: repository.productMemoryState(),
+          book: repository.memoryBook(),
+          threads: repository.threadRepository(),
+          payloads,
+          protector: recallProtector,
+          clock: { now: () => clock.now() },
+          replay: (rule) =>
+            proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
+        }),
+      );
       const tools = new ProductionRuntimeTools({
         memoryRecall,
         reminders: reminderTools,
+        ownerRules: ownerRuleTools,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -1602,6 +1619,7 @@ export async function runAgentService(
           configuration: proactiveConfiguration,
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
           store: proactiveStore,
+          ownerRules: repository.ownerRules(),
           seal: proactiveSeal,
           oauth,
           reader: createGmailReader({ oauth }),
