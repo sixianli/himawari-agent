@@ -1,0 +1,4 @@
+{"id": "r2-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`write-all` / `read-all` 字符串写法被按字符遍历，错误码不符合作者说法", "valid": true, "class": "error", "severity": "low", "trigger": "main.yml 或 ci.yml 用 write-all/read-all 字符串写权限", "consequence": "报 full-grants-0-w 这类看不懂的错误码，或对调用方误报", "modelSeverity": "低"}
+{"id": "r2-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "事故清单 I-93 引用了已被本轮测试改写删掉的失败文字", "valid": true, "class": "error", "severity": "low", "trigger": "有人按事故清单里的报错文字去搜", "consequence": "找不到这句报错", "modelSeverity": "低"}
+{"id": "r2-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 0201 仍写「其他作业只读」「只有 required 可以带 actions: write」，与新的 `main.yml` 不符", "valid": true, "class": "better"}
+{"id": "r2-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "接线测试只做源码文本包含，且缺关键反向用例", "valid": true, "class": "better"}

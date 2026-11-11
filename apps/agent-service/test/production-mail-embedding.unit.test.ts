@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createProactiveMemoryRecall } from "../src/production-proactive-memory.ts";
+import { createProactiveRecentSummaries } from "../src/production-proactive-summaries.ts";
 import { createProductionRunMemory } from "../src/production-run-memory.ts";
 
 const OWNER_ID = "owner-mail-embedding" as never;
@@ -80,12 +81,90 @@ describe("embedding for the Gmail check", () => {
     await expect(embed()).rejects.toThrow();
   });
 
+  it("[P3-6] embeds a conversation summary at its own classification, so a private-only model refuses a sensitive one", async () => {
+    const { memory, embed } = build();
+    const signal = new AbortController().signal;
+    const privateContext = {
+      deadlineAt: LATER,
+      signal,
+      dataClassification: "private" as const,
+      costMicros: 0,
+    };
+    await memory.embedForMailCheck(privateContext, async () => embed());
+    expect(privateContext.costMicros).toBeGreaterThan(0);
+    const sensitiveContext = {
+      deadlineAt: LATER,
+      signal,
+      dataClassification: "sensitive" as const,
+      costMicros: 0,
+    };
+    await expect(memory.embedForMailCheck(sensitiveContext, async () => embed())).rejects.toThrow();
+    expect(sensitiveContext.costMicros).toBe(0);
+  });
+
+  it("[P3-6] hands each caught-up segment's classification to the embedding scope and adds up its cost", async () => {
+    const seen: { dataClassification: string | undefined }[] = [];
+    const segment = (day: string, dataClassification: string) => ({ day, dataClassification });
+    const summaries = createProactiveRecentSummaries({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      episodes: {
+        recentDays: () => ({ fromDay: "2026-10-31", toDay: "2026-11-01" }),
+        dueSegments: async () =>
+          [
+            segment("2026-10-31", "private"),
+            segment("2026-11-01", "sensitive"),
+            segment("2026-11-02", "private"),
+            segment("2026-10-01", "private"),
+          ] as never,
+        summarize: async () => ({}) as never,
+        recent: async () => ({ summaries: [], partial: false }),
+      },
+      allowedClassifications: ["public", "private", "sensitive"],
+      capturePaused: async () => false,
+      embedForMailCheck: async (context, operation) => {
+        seen.push({ dataClassification: context.dataClassification });
+        context.costMicros += 7;
+        return operation();
+      },
+    });
+    const result = await summaries.catchUp({
+      days: 2,
+      limit: 3,
+      deadlineAt: LATER,
+      signal: new AbortController().signal,
+      generate: async () => "",
+    });
+    expect(seen).toEqual([{ dataClassification: "private" }, { dataClassification: "sensitive" }]);
+    expect(result).toEqual({ generated: 2, costMicros: 14, failed: false });
+  });
+
   it("refuses once the check has been aborted", async () => {
     const { memory, embed } = build();
     const controller = new AbortController();
     controller.abort();
     const context = { deadlineAt: LATER, signal: controller.signal, costMicros: 0 };
     await expect(memory.embedForMailCheck(context, async () => embed())).rejects.toThrow();
+    expect(context.costMicros).toBe(0);
+  });
+});
+
+describe("[P5-1] embedding for an external MCP read", () => {
+  it("embeds without a conversation run and charges the cost to the read", async () => {
+    const { memory, embed } = build();
+    const context = { deadlineAt: LATER, signal: new AbortController().signal, costMicros: 0 };
+    await memory.embedForExternalRead(context, async () => {
+      await embed();
+    });
+    expect(context.costMicros).toBeGreaterThan(0);
+  });
+
+  it("refuses once the caller has gone away", async () => {
+    const { memory, embed } = build();
+    const controller = new AbortController();
+    controller.abort();
+    const context = { deadlineAt: LATER, signal: controller.signal, costMicros: 0 };
+    await expect(memory.embedForExternalRead(context, async () => embed())).rejects.toThrow();
     expect(context.costMicros).toBe(0);
   });
 });

@@ -15,7 +15,10 @@ import type { ProactiveOverview } from "../src/services/proactive-overview.js";
 
 const DAY = "2026-11-03T15:00:00.000Z";
 const NOW = "2026-11-04T01:00:00.000Z";
-const scope = { ownerId: createOwnerId("owner"), agentId: createAgentId("agent") };
+const scope = {
+  ownerId: createOwnerId("owner"),
+  agentId: createAgentId("agent"),
+};
 
 const item = (
   key: string,
@@ -85,9 +88,18 @@ describe("[P0-6] daily review sampling", () => {
 
   it("shows every default item when they fit and counts none as left out", () => {
     const pool = [item("a", "memory_skipped"), item("b", "proactive"), item("c", "other")];
-    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 24 });
+    const selection = selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 24,
+    });
     expect([...selection.shown].sort()).toEqual(["a", "b"]);
-    expect(selection).toMatchObject({ sampled: 2, notSampled: 0, foldedTotal: 1 });
+    expect(selection).toMatchObject({
+      sampled: 2,
+      notSampled: 0,
+      foldedTotal: 1,
+    });
     expect(selection.foldedShown).toEqual(["c"]);
   });
 
@@ -96,7 +108,12 @@ describe("[P0-6] daily review sampling", () => {
       ...Array.from({ length: 10 }, (_, index) => item(`m${index}`, "memory_skipped")),
       ...Array.from({ length: 30 }, (_, index) => item(`p${index}`, "proactive")),
     ];
-    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 24 });
+    const selection = selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 24,
+    });
     expect(selection.sampled).toBe(24);
     expect(selection.shown.filter((key) => key.startsWith("m"))).toHaveLength(10);
     expect(selection.notSampled).toBe(16);
@@ -119,7 +136,12 @@ describe("[P0-6] daily review sampling", () => {
       ...many("k", "memory_kept", 40),
       ...many("c", "consolidation", 40),
     ];
-    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 24 });
+    const selection = selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 24,
+    });
     const share = (prefix: string) =>
       selection.shown.filter((key) => key.startsWith(prefix)).length;
     expect([share("m"), share("p"), share("k"), share("c")]).toEqual([6, 6, 6, 6]);
@@ -139,7 +161,12 @@ describe("[P0-6] daily review sampling", () => {
     const pool = groups.flatMap((group) =>
       Array.from({ length: 10 }, (_, index) => item(`${group}:${index}`, group)),
     );
-    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 10 });
+    const selection = selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 10,
+    });
     const keys = new Set(pool.map(({ key }) => key));
     expect(selection.shown).toHaveLength(10);
     expect(new Set(selection.shown).size).toBe(10);
@@ -155,7 +182,12 @@ describe("[P0-6] daily review sampling", () => {
       item("t", "other"),
       ...Array.from({ length: 30 }, (_, index) => item(`k${index}`, "memory_kept")),
     ];
-    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 24 });
+    const selection = selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 24,
+    });
     expect(selection.shown).not.toContain("t");
     expect(selection.foldedShown).toEqual(["t"]);
   });
@@ -175,14 +207,25 @@ describe("[P0-6] daily review sampling", () => {
       item("yesterday", "memory_skipped", true, "2026-11-03T14:59:59.000Z"),
       item("open", "memory_skipped"),
     ];
-    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 24 });
+    const selection = selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 24,
+    });
     expect([...selection.shown].sort()).toEqual(["open", "today"]);
     expect(selection.notSampled).toBe(0);
   });
 
   it("builds and reads back review keys", () => {
-    expect(parseReviewKey(reviewKey("ledger", "x:1"))).toEqual({ source: "ledger", id: "x:1" });
-    expect(parseReviewKey(reviewKey("mail", "m"))).toEqual({ source: "mail", id: "m" });
+    expect(parseReviewKey(reviewKey("ledger", "x:1"))).toEqual({
+      source: "ledger",
+      id: "x:1",
+    });
+    expect(parseReviewKey(reviewKey("mail", "m"))).toEqual({
+      source: "mail",
+      id: "m",
+    });
     expect(parseReviewKey("ledger:")).toBeUndefined();
     expect(parseReviewKey("other:1")).toBeUndefined();
   });
@@ -213,6 +256,13 @@ function entry(overrides: Partial<DecisionLedgerEntry>): DecisionLedgerEntry {
       relatedRead: "off",
       relatedStats: { requests: 0, messages: 0, characters: 0, durationMs: 0 },
       relatedFailedSteps: [],
+      summaryInjected: false,
+      summaryIds: [],
+      summaryDays: [],
+      summaryCharacters: 0,
+      summaryRead: "off",
+      summaryGenerated: 0,
+      profileBudget: null,
     },
     reasonRef: null,
     contentRef: null,
@@ -274,6 +324,70 @@ describe("[all decisions] which memories the review page may show", () => {
     expect(review.items[0]?.text).toBe("牛肉123");
   });
 
+  it("[P4-6] keeps text with characters outside the basic plane within the contract length", async () => {
+    const review = await readDailyReview({
+      scope,
+      ledger: {
+        listReviewPool: async () => [entry({ id: "kept", outcome: "kept", subjectRef: "m" })],
+      },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "😀".repeat(300), hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    expect(review.items[0]?.text).toBe("😀".repeat(100));
+  });
+
+  it("[P4-6] never splits a character in two at the length limit", async () => {
+    const review = await readDailyReview({
+      scope,
+      ledger: {
+        listReviewPool: async () => [entry({ id: "kept", outcome: "kept", subjectRef: "m" })],
+      },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: `a${"😀".repeat(200)}`, hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    expect(review.items[0]?.text).toBe(`a${"😀".repeat(99)}`);
+  });
+
+  it("[P4-6] keeps a consolidation of several long memories within the contract length", async () => {
+    const review = await readDailyReview({
+      scope,
+      ledger: {
+        listReviewPool: async () => [
+          entry({
+            id: "merge",
+            kind: "consolidation",
+            outcome: "merge",
+            inputs: {
+              ...entry({}).inputs,
+              memoryIds: ["a", "b"],
+              resultMemoryIds: ["c"],
+            },
+          }),
+        ],
+      },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "😀".repeat(100), hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    const text = review.items[0]?.text ?? "";
+    expect(text.length).toBeGreaterThan(150);
+    expect(text.length).toBeLessThanOrEqual(200);
+  });
+
   it("hides the whole consolidation when any memory in it may not be shown", async () => {
     const review = await readDailyReview({
       scope,
@@ -283,7 +397,11 @@ describe("[all decisions] which memories the review page may show", () => {
             id: "merge",
             kind: "consolidation",
             outcome: "merge",
-            inputs: { ...entry({}).inputs, memoryIds: ["old"], resultMemoryIds: ["new"] },
+            inputs: {
+              ...entry({}).inputs,
+              memoryIds: ["old"],
+              resultMemoryIds: ["new"],
+            },
           }),
         ],
       },
@@ -297,6 +415,48 @@ describe("[all decisions] which memories the review page may show", () => {
       secondsPerItem: 5,
     });
     expect(review.items[0]).toMatchObject({ text: "", textHidden: true });
+  });
+});
+
+describe("[P3-8] held memory conflicts in the daily review", () => {
+  it("shows a held conflict as old then new and keeps held conflicts within the day's capacity", async () => {
+    const memories: Record<string, { text: string; hidden: boolean }> = {
+      "milk-old": { text: "主人平时喝明治的牛奶", hidden: false },
+      "milk-new": { text: "主人出差时喝便利店的牛奶", hidden: false },
+    };
+    const holds = Array.from({ length: 30 }, (_, index) =>
+      entry({
+        id: `hold-${index}`,
+        kind: "consolidation",
+        outcome: "hold",
+        subjectRef: "milk-new",
+        inputs: {
+          ...entry({}).inputs,
+          memoryIds: ["milk-new", "milk-old"],
+          resultMemoryIds: ["milk-new"],
+        },
+      }),
+    );
+    const review = await readDailyReview({
+      scope,
+      ledger: { listReviewPool: async () => holds },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async (id) => memories[id],
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 50,
+      secondsPerItem: 5,
+    });
+    expect(review.capacity).toBe(10);
+    expect(review.items).toHaveLength(10);
+    expect(review.items[0]).toMatchObject({
+      kind: "consolidation",
+      outcome: "hold",
+      text: "主人平时喝明治的牛奶 → 主人出差时喝便利店的牛奶",
+      textHidden: false,
+      acted: true,
+    });
   });
 });
 
@@ -333,6 +493,42 @@ describe("[P0-6] reading the daily review", () => {
       textHidden: true,
       category: "health",
     });
+  });
+
+  it("[P3-5] shows a failed capture as not acted on, with no memory to read and no hidden text", async () => {
+    let reads = 0;
+    const review = await readDailyReview({
+      scope,
+      ledger: {
+        listReviewPool: async () =>
+          ["capture_retrying", "capture_queued", "capture_gave_up"].map((outcome) =>
+            entry({
+              id: outcome,
+              outcome,
+              reasonCode: "AI_GATEWAY_REQUEST_TIMEOUT",
+              subjectRef: "memory-capture:run-1",
+            }),
+          ),
+      },
+      overview: overview([]),
+      readMemoryText: async () => {
+        reads += 1;
+        return "should not be read";
+      },
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    expect(review.items).toEqual([]);
+    expect(review.folded.items.map(({ key }) => key).sort()).toEqual([
+      "ledger:capture_gave_up",
+      "ledger:capture_queued",
+      "ledger:capture_retrying",
+    ]);
+    for (const item of review.folded.items)
+      expect(item).toMatchObject({ acted: false, text: "", textHidden: false });
+    expect(reads).toBe(0);
   });
 
   it("leaves out a silent check that judged no mail and keeps pushed ones", async () => {
@@ -404,7 +600,11 @@ describe("[P0-6] reading the daily review", () => {
       ledger: {
         listReviewPool: async () => [
           entry({ id: "kept", outcome: "kept", subjectRef: "memory:new" }),
-          entry({ id: "pending", outcome: "pending_approval", subjectRef: "request:1" }),
+          entry({
+            id: "pending",
+            outcome: "pending_approval",
+            subjectRef: "request:1",
+          }),
           entry({
             id: "hiddenkept",
             outcome: "kept",
@@ -453,7 +653,10 @@ describe("[P0-6] reading the daily review", () => {
       text: "我想吃肉 → 我最近想吃牛肉",
       acted: true,
     });
-    expect(byKey("ledger:hiddenkept")).toMatchObject({ text: "", textHidden: true });
+    expect(byKey("ledger:hiddenkept")).toMatchObject({
+      text: "",
+      textHidden: true,
+    });
     expect(JSON.stringify(review)).not.toContain("不该显示");
     expect(review.folded.total).toBe(1);
     expect(review.folded.items.map(({ key }) => key).sort()).toEqual([
@@ -630,5 +833,137 @@ describe("[P4-8] decisions the prereview cannot see", () => {
       (await read("sensitive")).map(({ group, dataClassification }) => [group, dataClassification]),
     ).toEqual([["memory_kept", "sensitive"]]);
     expect(await read()).toEqual([]);
+  });
+});
+
+describe("[P4-6] memory checkup in the daily review", () => {
+  const checkup = (
+    id: string,
+    handledAt: string | null,
+  ): import("../src/ports/memory-checkup.js").MemoryCheckupItem => ({
+    id,
+    ownerId: scope.ownerId,
+    agentId: scope.agentId,
+    weekStart: "2026-11-01T15:00:00.000Z",
+    memoryId: `memory:${id}` as never,
+    relatedMemoryId: null,
+    reason: "unused",
+    action: handledAt === null ? null : "confirm",
+    keptMemoryId: null,
+    before: handledAt === null ? null : { tentative: false },
+    handledAt,
+    undoneAt: null,
+    createdAt: "2026-11-02T00:00:00.000Z",
+  });
+  const read = (items: ReturnType<typeof checkup>[]) =>
+    readDailyReview({
+      scope,
+      ledger: { listReviewPool: async () => [] },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "牛奶", hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 10,
+      secondsPerItem: 5,
+      checkup: items,
+    });
+
+  it("keeps items handled earlier this week on the page for undo without spending today's slots", async () => {
+    const review = await read([
+      checkup("yesterday", "2026-11-03T02:00:00.000Z"),
+      checkup("a", null),
+      checkup("b", null),
+      checkup("c", null),
+    ]);
+    expect(review.sampled).toBe(2);
+    expect(review.items.map(({ key }) => key)).toContain("checkup:yesterday");
+    expect(review.items.filter(({ checkup: entry }) => entry?.action === null)).toHaveLength(2);
+    expect(review.items.find(({ key }) => key === "checkup:yesterday")?.checkup?.action).toBe(
+      "confirm",
+    );
+  });
+
+  it("[negative] does not add pending items beyond today's slots", async () => {
+    const review = await read([checkup("a", null), checkup("b", null), checkup("c", null)]);
+    expect(review.items).toHaveLength(2);
+  });
+
+  it("shows a held conflict only through the checkup group, and as a consolidation when the checkup list does not carry it", async () => {
+    const hold = entry({
+      id: "hold",
+      kind: "consolidation",
+      outcome: "hold",
+      inputs: {
+        ...entry({}).inputs,
+        memoryIds: ["old"],
+        resultMemoryIds: ["new"],
+      },
+    });
+    const withCheckup = await readDailyReview({
+      scope,
+      ledger: { listReviewPool: async () => [hold] },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "牛奶", hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+      checkup: [
+        {
+          ...checkup("pair", null),
+          memoryId: "new" as never,
+          relatedMemoryId: "old" as never,
+          reason: "conflict",
+        },
+      ],
+    });
+    expect(withCheckup.items.map(({ key }) => key)).not.toContain("ledger:hold");
+    const withoutCheckup = await readDailyReview({
+      scope,
+      ledger: { listReviewPool: async () => [hold] },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "牛奶", hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+      checkup: [checkup("other", null)],
+    });
+    expect(withoutCheckup.items.map(({ key }) => key)).toContain("ledger:hold");
+    const sharedOld = entry({
+      id: "hold-shared",
+      kind: "consolidation",
+      outcome: "hold",
+      inputs: {
+        ...entry({}).inputs,
+        memoryIds: ["other-new", "old"],
+        resultMemoryIds: ["other-new"],
+      },
+    });
+    const sharing = await readDailyReview({
+      scope,
+      ledger: { listReviewPool: async () => [hold, sharedOld] },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "牛奶", hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+      checkup: [
+        {
+          ...checkup("pair", null),
+          memoryId: "new" as never,
+          relatedMemoryId: "old" as never,
+          reason: "conflict",
+        },
+      ],
+    });
+    const sharingKeys = sharing.items.map(({ key }) => key);
+    expect(sharingKeys).not.toContain("ledger:hold");
+    expect(sharingKeys).toContain("ledger:hold-shared");
   });
 });

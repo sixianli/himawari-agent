@@ -190,7 +190,7 @@ export const governanceMessages = [
   fixture("snapshot", "proactive.review.snapshot", {
     day: "2026-11-03T15:00:00.000Z",
     capacity: 24,
-    sampled: 1,
+    sampled: 2,
     notSampled: 0,
     items: [
       {
@@ -205,13 +205,41 @@ export const governanceMessages = [
         textHidden: false,
         category: "preference",
         fetched: null,
+        checkup: null,
+      },
+      {
+        key: "checkup:checkup-01",
+        source: "checkup",
+        kind: "checkup",
+        outcome: "pending",
+        decidedAt: "2026-11-02T15:00:00.000Z",
+        acted: false,
+        rating: null,
+        text: "平时喝明治的牛奶",
+        textHidden: false,
+        category: null,
+        fetched: null,
+        checkup: {
+          reason: "conflict",
+          action: null,
+          memoryId: "memory-02",
+          relatedMemoryId: "memory-01",
+          relatedText: "出差时喝便利店的牛奶",
+          keptMemoryId: null,
+        },
       },
     ],
     folded: { total: 0, items: [] },
+    memoryUnusedDays: 90,
     generatedAt: "2026-11-04T01:00:00.000Z",
   }),
   fixture("command", "proactive.review.rate", {
     ratings: [{ key: "ledger:ledger-01", rating: "useful" }],
+  }),
+  fixture("command", "proactive.review.checkup", {
+    key: "checkup:checkup-01",
+    action: "merge",
+    keep: "memory-02",
   }),
   fixture("command", "proactive.source.manage", { source: "gmail", action: "disconnect" }),
   fixture("command", "proactive.backoff.restore", { classKey: "due:service.example.com" }),
@@ -424,13 +452,25 @@ export const governanceMessages = [
       items: [
         {
           ruleId: "floor_important_sender",
+          revision: 2,
+          current: false,
+          kind: "important_sender",
           origin: "owner_setting",
-          document: "ADR 0106 第 4 条",
+          source: "ADR 0106 第 4 条；主人的设置“重要发件人”",
+          status: "needs_review",
+          changedAt: "2026-11-08T00:00:00.000Z",
+          memory: { memoryId: "memory-rule", state: "visible", text: "银行的信一律提醒我" },
+          wording: {
+            values: ["bank.example"],
+            quietHours: [{ days: [1, 2], start: "23:00", end: "07:00" }],
+            amount: { currency: "JPY", minor: 1000 },
+          },
+          tests: { state: "failed", total: 3, failedAt: 2 },
           mailCount: 1,
         },
       ],
     },
-    mails: { judged: 2, related: 1, relatedRead: "ok" },
+    mails: { judged: 2, related: 1, relatedRead: "ok", summaries: { count: 2, read: "ok" } },
     memories: {
       state: "recorded",
       recall: "ok",
@@ -539,7 +579,7 @@ export const governanceMessages = [
         ],
       },
     ],
-    profileUsage: { used: 14, limit: 2000, queued: [] },
+    profileUsage: { used: 14, limit: 2000, pinned: 0, queued: [] },
     lastViewedAt: "2026-09-10T00:00:00.000Z",
     profile: [
       {
@@ -566,11 +606,23 @@ export const governanceMessages = [
     tidyUps: [
       {
         changeId: "memory-consolidation:agent-01:2026-09-11:c1",
+        memoryId: "memory-02",
         action: "merge",
         text: "主人的女儿叫小葵",
         relatedText: "主人的女儿名叫小葵",
         createdAt: "2026-09-11T00:00:00.000Z",
         undone: false,
+        undoable: true,
+      },
+      {
+        changeId: "memory-consolidation:agent-01:2026-09-11:c2",
+        memoryId: "memory-03",
+        action: "hold",
+        text: "主人出差时喝便利店的牛奶",
+        relatedText: "主人平时喝明治的牛奶",
+        createdAt: "2026-09-11T00:00:01.000Z",
+        undone: false,
+        undoable: true,
       },
     ],
     reminders: [
@@ -635,6 +687,24 @@ export const governanceMessages = [
     contentRef: "payload-03",
     due: "2026-11-06T15:00",
     repeat: "none",
+  }),
+  fixture("query", "memory.rules.read", {}),
+  fixture("snapshot", "memory.rules.snapshot", {
+    rules: [
+      {
+        ruleId: "owner:0123456789abcdef01234567",
+        type: "mail_must_notify",
+        summary: "日本入管局相关的邮件一律提醒",
+        status: "active",
+        enforced: true,
+        updatedAt: "2026-11-11T00:00:00.000Z",
+      },
+    ],
+    generatedAt: "2026-11-11T00:00:00.000Z",
+  }),
+  fixture("command", "memory.rule.respond", {
+    target: "owner:0123456789abcdef01234567",
+    action: "undo",
   }),
   fixture("command", "memory.create", {
     contentRef: "payload-03",

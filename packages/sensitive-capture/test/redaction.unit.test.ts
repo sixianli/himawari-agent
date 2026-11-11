@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { findSensitiveValues, locateMaskedValues, redactForEgress } from "../src/index.js";
+import {
+  findSensitiveValues,
+  locateMaskedValues,
+  maskSensitiveTexts,
+  redactForEgress,
+} from "../src/index.js";
 
 const positives: ReadonlyArray<readonly [string, string, string]> = [
   ["验证码中文", "您的验证码是 482910，5 分钟内有效", "您的验证码是 [验证码]，5 分钟内有效"],
@@ -353,5 +358,35 @@ describe("locating masked values in the masked text", () => {
 
   it("gives up instead of guessing when the text already holds a placeholder", () => {
     expect(locateMaskedValues("早就遮过的 [密钥] 和密码：hunter22abc")).toBeNull();
+  });
+});
+
+describe("[P5-1] masking several texts that leave together", () => {
+  const value = "Sunflower-8841";
+  const named = `家里 Wi-Fi 密码：${value}`;
+  const bare = `路由器背面贴着 ${value}`;
+
+  it("masks a value named anywhere in the batch, in every text, whatever the order", () => {
+    for (const batch of [
+      [bare, named],
+      [named, bare],
+    ]) {
+      const masked = maskSensitiveTexts(batch);
+      expect(masked).toHaveLength(2);
+      expect(masked.join("\n")).not.toContain(value);
+    }
+  });
+
+  it("gives each text the same bytes whatever unrelated text is in the batch", () => {
+    const alone = maskSensitiveTexts([named]);
+    const withOthers = maskSensitiveTexts(["验证码 482910", named]);
+    expect(withOthers[1]).toBe(alone[0]);
+  });
+
+  it("returns texts without anything sensitive unchanged and in order", () => {
+    expect(maskSensitiveTexts(["明天上午十点去牙医复诊", "周六去京都"])).toEqual([
+      "明天上午十点去牙医复诊",
+      "周六去京都",
+    ]);
   });
 });

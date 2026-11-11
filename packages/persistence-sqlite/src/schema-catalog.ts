@@ -645,7 +645,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "memory_consolidation_change_basis",
     "MemoryConsolidationStorePort",
-    "every Memory a tidy-up change was made from, in order: both Memories of a merge or supersede, all basis Memories of an inferred one",
+    "every Memory a tidy-up change was made from, in order: both Memories of a merge, supersede or hold, all basis Memories of an inferred one",
     "metadata_only",
     "cascade with its change or its Memory record",
   ),
@@ -662,6 +662,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "one reminder per Memory, scheduled until dismissed or cancelled; yearly ones roll forward",
     "metadata_only",
     "cascade with its Memory record",
+  ),
+  entry(
+    "memory_capture_backlog",
+    "MemoryCaptureBacklogPort",
+    "one row per turn whose memory capture model call failed, kept from the first failure, replayed on a later turn and removed once its result is saved, given up after three replays, or removed when the result cannot be saved; ids and an error code only, no text",
+    "metadata_only",
+    "cascade with its thread, Owner or Agent deletion",
+  ),
+  entry(
+    "memory_checkup_items",
+    "MemoryCheckupStorePort",
+    "one row per Memory picked for a week's checkup: the reason, the owner's confirm, delete or merge with the state before it so it can be undone",
+    "metadata_only",
+    "cascade with its Memory record or with Owner or Agent deletion",
   ),
   entry(
     "memory_settings",
@@ -820,7 +834,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "decision_ledger",
     "ProactiveStorePort, DecisionLedgerPort",
-    "one row per model gate decision (proactive check, memory candidate, consolidation change, context truncation, retrieval degrade, external read, hard rule review): inputs as ids, cost and the owner's rating; text only as protected payload references",
+    "one row per model gate decision (proactive check, memory candidate, consolidation change, context truncation, retrieval degrade, external read, hard rule review, failed memory capture): inputs as ids, cost and the owner's rating; text only as protected payload references",
     "metadata_only",
     "cascade with Owner or Agent deletion; proactive rows are removed when the owner deletes proactive records",
   ),

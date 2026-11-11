@@ -8,6 +8,7 @@ import {
   DEFAULT_REVIEW_PREREVIEW,
   type ModelDescriptor,
   type ModelInvocationEvent,
+  ownerRuleRecord,
   type WebPushSendRequest,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
@@ -269,11 +270,16 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
         relatedCharactersPerMail: 12_000,
         relatedCharactersPerRelatedMail: 2_000,
         relatedRequestsPerCheck: 300,
+        wholeThreadMailsPerMail: 50,
+        wholeThreadCharactersPerMail: 60_000,
+        ruleReplayDays: 30,
+        ruleReplayMailsPerOutcome: 300,
         memoryMinimumSimilarity: 0.45,
         reviewBudgetSeconds: 120,
         reviewSecondsPerItem: 5,
         reviewSilentSharePermille: 500,
         reviewPrereview: DEFAULT_REVIEW_PREREVIEW,
+        reviewMemoryUnusedDays: 90,
         backoffThreshold: 3,
       },
       timeZone: "Asia/Tokyo",
@@ -283,6 +289,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       reader: createGmailReader({ oauth, fetch: google.fetch }),
       readAccount: (accessToken) => readGmailAccount({ accessToken, fetch: google.fetch }),
       ledger: repository.decisionLedger(),
+      ownerRules: repository.ownerRules(),
       readMemoryText: readPayload,
       model: {
         get model() {
@@ -389,6 +396,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     return {
       app,
       ledger: repository.decisionLedger(),
+      ownerRules: repository.ownerRules(),
       review,
       writePayload,
       clock,
@@ -522,6 +530,75 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     expect(h.google.calls.some(({ url }) => url.includes("calendar"))).toBe(false);
     expect(h.google.calls.some(({ url }) => url.includes("/threads/thread-invoice"))).toBe(true);
     expect(h.failures).toEqual([]);
+  });
+
+  const smbcRule = {
+    type: "mail_must_notify",
+    summary: "SMBC 的邮件一律提醒",
+    params: { senderDomains: ["smbc.co.jp"] },
+  };
+  const ignoreInvoice = (h: Awaited<ReturnType<typeof setup>>) =>
+    h.script([{ id: "invoice", result: "ignore", confidence: "sure", reason: "" }]);
+  const checkInbox = async (h: Awaited<ReturnType<typeof setup>>) => {
+    const state = await connect(h);
+    await h.app.inject({
+      method: "GET",
+      url: `${PROACTIVE_GOOGLE_CALLBACK_PATH}?state=${state}&code=code-1&scope=x`,
+      headers: cookie,
+    });
+    await h.proactive.stop();
+  };
+
+  it("[P2-3] enforces an owner rule stored in the database on the production mail check", async () => {
+    const h = await setup();
+    await h.ownerRules.create({
+      ...scope,
+      ruleId: "owner:smbc",
+      parameters: smbcRule,
+      source: "chat:thread-1",
+      sourceMemoryId: "memory:rule:smbc",
+      now: h.clock.now(),
+    });
+    ignoreInvoice(h);
+    await checkInbox(h);
+    expect((await h.overview()).insights).toMatchObject([
+      { result: "check", subject: "ご請求のお知らせ", pushed: true },
+    ]);
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[P2-3] replays a new rule over past decisions and counts the mail it would have changed", async () => {
+    const h = await setup();
+    ignoreInvoice(h);
+    await checkInbox(h);
+    expect((await h.overview()).insights).toMatchObject([{ result: "know", pushed: false }]);
+    const rule = ownerRuleRecord({
+      ruleId: "owner:smbc",
+      revision: 1,
+      status: "active",
+      source: "test",
+      parameters: smbcRule,
+    });
+    expect(await h.proactive.replayRule(rule)).toMatchObject({
+      days: 30,
+      mailsChecked: 1,
+      mailsHit: 1,
+      changed: 1,
+      usefulChanged: [],
+      truncated: false,
+    });
+    const elsewhere = ownerRuleRecord({
+      ruleId: "owner:elsewhere",
+      revision: 1,
+      status: "active",
+      source: "test",
+      parameters: { ...smbcRule, params: { senderDomains: ["isa.go.jp"] } },
+    });
+    expect(await h.proactive.replayRule(elsewhere)).toMatchObject({
+      mailsChecked: 1,
+      mailsHit: 0,
+      changed: 0,
+    });
   });
 
   it("[PG-12] finishes connecting when the browser holds back the strict session cookie on Google's cross-site return", async () => {

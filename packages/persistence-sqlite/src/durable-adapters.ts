@@ -22,7 +22,10 @@ import type {
   MemoryEpisodeStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
+  MemoryCaptureBacklogPort,
+  MemoryCheckupStorePort,
   MemoryReminderStorePort,
+  OwnerRuleStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
@@ -930,6 +933,7 @@ export class SqliteDurableAdapters {
         this.context.read("memoryConsolidation.lastCompleted", { ownerId, agentId }),
       finish: (input) => this.context.write("memoryConsolidation.finish", input),
       listChanges: (input) => this.context.read("memoryConsolidation.listChanges", input),
+      listHeldPairs: (input) => this.context.read("memoryConsolidation.listHeldPairs", input),
       readChange: (id) => this.context.read("memoryConsolidation.readChange", { id }),
       readBasis: (changeId) => this.context.read("memoryConsolidation.readBasis", { changeId }),
       readBasisChain: (input) => this.context.read("memoryConsolidation.readBasisChain", input),
@@ -958,6 +962,35 @@ export class SqliteDurableAdapters {
       listImportBatches: (input) => this.context.read("memoryBook.listImportBatches", input),
       markImportUndone: (input) => this.context.write("memoryBook.markImportUndone", input),
       findOwnerMessages: (input) => this.context.read("memoryBook.findOwnerMessages", input),
+    });
+  }
+
+  memoryCheckup(): MemoryCheckupStorePort {
+    return Object.freeze<MemoryCheckupStorePort>({
+      listWeek: (input) => this.context.read("memoryCheckup.listWeek", input),
+      createWeek: (input) => this.context.write("memoryCheckup.createWeek", input),
+      read: (input) => this.context.read("memoryCheckup.read", input),
+      recordAction: (input) => this.context.write("memoryCheckup.recordAction", input),
+      recordUndo: (input) => this.context.write("memoryCheckup.recordUndo", input),
+      listConfirmedSince: (input) => this.context.read("memoryCheckup.listConfirmedSince", input),
+    });
+  }
+
+  ownerRules(): OwnerRuleStorePort {
+    return Object.freeze<OwnerRuleStorePort>({
+      list: (input) => this.context.read("ownerRule.list", input),
+      read: (input) => this.context.read("ownerRule.read", input),
+      create: (input) => this.context.write("ownerRule.create", input),
+      setStatus: (input) => this.context.write("ownerRule.setStatus", input),
+    });
+  }
+
+  memoryCaptureBacklog(): MemoryCaptureBacklogPort {
+    return Object.freeze<MemoryCaptureBacklogPort>({
+      enqueue: (entry) => this.context.write("memoryCaptureBacklog.enqueue", { entry }),
+      oldest: (input) => this.context.read("memoryCaptureBacklog.oldest", input),
+      recordAttempt: (input) => this.context.write("memoryCaptureBacklog.recordAttempt", input),
+      remove: (generationId) => this.context.write("memoryCaptureBacklog.remove", { generationId }),
     });
   }
 
@@ -1020,6 +1053,7 @@ export class SqliteDurableAdapters {
   decisionLedger(): DecisionLedgerPort {
     return Object.freeze<DecisionLedgerPort>({
       append: (input) => this.context.write("decisionLedger.append", input),
+      appendIfChanged: (input) => this.context.write("decisionLedger.appendIfChanged", input),
       list: (input) => this.context.read("decisionLedger.list", input),
       read: (input) => this.context.read("decisionLedger.read", input),
       rate: (input) => this.context.write("decisionLedger.rate", input),
@@ -1126,6 +1160,7 @@ export class SqliteDurableAdapters {
       listUnembedded: (input) => this.context.read("memoryEpisode.listUnembedded", input),
       attachEmbedding: (input) => this.context.write("memoryEpisode.attachEmbedding", input),
       listUnsummarized: (input) => this.context.read("memoryEpisode.listUnsummarized", input),
+      listDaySummaries: (input) => this.context.read("memoryEpisode.listDaySummaries", input),
     });
   }
 

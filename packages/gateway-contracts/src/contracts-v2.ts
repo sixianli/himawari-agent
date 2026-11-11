@@ -41,6 +41,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.review.read",
   "proactive.review.snapshot",
   "proactive.review.rate",
+  "proactive.review.checkup",
   "proactive.source.manage",
   "proactive.backoff.restore",
   "muse.overview.read",
@@ -70,6 +71,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.tidy.undo",
   "memory.reminder.respond",
   "memory.reminder.create",
+  "memory.rules.read",
+  "memory.rules.snapshot",
+  "memory.rule.respond",
   "memory.create",
   "memory.category.set",
   "memory.settings.set",
@@ -536,10 +540,26 @@ const proactiveReviewKinds = [
   "external_read",
   "rule_review",
   "mail",
+  "checkup",
 ] as const;
+export const MEMORY_CHECKUP_REASONS = [
+  "conflict",
+  "unused",
+  "low_confidence",
+  "source_unavailable",
+] as const;
+export const MEMORY_CHECKUP_ACTIONS = ["confirm", "delete", "merge"] as const;
+const proactiveReviewCheckupSchema = object({
+  reason: enumeration(MEMORY_CHECKUP_REASONS),
+  action: nullable(enumeration(MEMORY_CHECKUP_ACTIONS)),
+  memoryId: machineString,
+  relatedMemoryId: nullable(machineString),
+  relatedText: proactiveTextSchema(200),
+  keptMemoryId: nullable(machineString),
+});
 const proactiveReviewItemSchema = object({
   key: machineString,
-  source: enumeration(["ledger", "mail"]),
+  source: enumeration(["ledger", "mail", "checkup"]),
   kind: enumeration(proactiveReviewKinds),
   outcome: machineString,
   decidedAt: timestamp,
@@ -549,6 +569,7 @@ const proactiveReviewItemSchema = object({
   textHidden: booleanValue,
   category: nullable(machineString),
   fetched: nullable(integer(0)),
+  checkup: nullable(proactiveReviewCheckupSchema),
 });
 const proactiveReviewQuerySchema = object({
   ...envelope("query", "proactive.review.read"),
@@ -563,6 +584,7 @@ const proactiveReviewSnapshotSchema = object({
     notSampled: integer(0),
     items: array(proactiveReviewItemSchema),
     folded: object({ total: integer(0), items: array(proactiveReviewItemSchema) }),
+    memoryUnusedDays: integer(1),
     generatedAt: timestamp,
   }),
 });
@@ -586,6 +608,21 @@ const proactiveReviewRatingsSchema: Schema<
 const proactiveReviewRateCommandSchema = object({
   ...commandEnvelope("proactive.review.rate"),
   payload: object({ ratings: proactiveReviewRatingsSchema }),
+});
+const proactiveReviewCheckupCommandSchema = object({
+  ...commandEnvelope("proactive.review.checkup"),
+  payload: {
+    parse(input, path = "$.payload") {
+      const payload = object({
+        key: machineString,
+        action: enumeration([...MEMORY_CHECKUP_ACTIONS, "undo"]),
+        keep: nullable(machineString),
+      }).parse(input, path);
+      if ((payload.action === "merge") !== (payload.keep !== null))
+        throw new ContractValidationError(`${path}.keep`, "must be present only for a merge");
+      return payload;
+    },
+  },
 });
 const proactiveSourceManageCommandSchema = object({
   ...commandEnvelope("proactive.source.manage"),
@@ -765,6 +802,7 @@ const calibrationGroupSchema = enumeration([
   "retrieval_degrade",
   "external_read",
   "rule_review",
+  "memory_capture_failed",
 ]);
 const calibrationRateSchema = nullable(
   object({
@@ -986,7 +1024,7 @@ const memoryBasisSnapshotSchema = object({
       object({
         memoryId: machineString,
         changeId: nullable(machineString),
-        action: nullable(enumeration(["merge", "supersede", "archive", "reflect"])),
+        action: nullable(enumeration(["merge", "supersede", "archive", "reflect", "hold"])),
         changedAt: nullable(timestamp),
         decisionRecordId: nullable(machineString),
         basisMemoryIds: array(machineString),
@@ -1034,8 +1072,47 @@ const decisionChainSnapshotSchema = object({
       items: array(
         object({
           ruleId: boundedString(256),
+          revision: nullable(integer(0)),
+          current: booleanValue,
+          kind: enumeration([
+            "important_sender",
+            "public_domain",
+            "money_words",
+            "quiet_hours",
+            "amount_threshold",
+            "mail_must_notify",
+            "mail_read_whole_thread",
+            "unknown",
+          ]),
           origin: nullable(enumeration(["owner_setting", "built_in"])),
-          document: nullable(boundedString(64)),
+          source: nullable(boundedString(256)),
+          status: nullable(enumeration(["active", "needs_review", "retired"])),
+          changedAt: nullable(timestamp),
+          memory: nullable(
+            object({
+              memoryId: machineString,
+              state: enumeration(["visible", "hidden", "missing"]),
+              text: nullable(boundedString(2000)),
+            }),
+          ),
+          wording: nullable(
+            object({
+              values: array(boundedString(256)),
+              quietHours: array(
+                object({
+                  days: array(integer(0)),
+                  start: boundedString(5),
+                  end: boundedString(5),
+                }),
+              ),
+              amount: nullable(object({ currency: boundedString(3), minor: integer(0) })),
+            }),
+          ),
+          tests: object({
+            state: enumeration(["passed", "failed", "none", "unavailable"]),
+            total: integer(0),
+            failedAt: nullable(integer(1)),
+          }),
           mailCount: integer(0),
         }),
       ),
@@ -1045,6 +1122,12 @@ const decisionChainSnapshotSchema = object({
         judged: nullable(integer(0)),
         related: nullable(integer(0)),
         relatedRead: decisionChainReadState,
+        summaries: nullable(
+          object({
+            count: integer(0),
+            read: enumeration(["off", "ok", "partial", "failed"]),
+          }),
+        ),
       }),
     ),
     memories: object({
@@ -1078,7 +1161,7 @@ const decisionChainSnapshotSchema = object({
               object({
                 memoryId: machineString,
                 text: nullable(boundedString(500)),
-                action: nullable(enumeration(["merge", "supersede", "archive", "reflect"])),
+                action: nullable(enumeration(["merge", "supersede", "archive", "reflect", "hold"])),
                 changedAt: nullable(timestamp),
                 basisMemoryIds: array(machineString),
                 repeated: booleanValue,
@@ -1185,11 +1268,13 @@ const memoryOverviewSnapshotSchema = object({
     tidyUps: array(
       object({
         changeId: machineString,
-        action: enumeration(["merge", "supersede", "archive", "reflect"]),
+        memoryId: machineString,
+        action: enumeration(["merge", "supersede", "archive", "reflect", "hold"]),
         text: boundedString(2000),
         relatedText: nullable(boundedString(2000)),
         createdAt: timestamp,
         undone: booleanValue,
+        undoable: booleanValue,
       }),
     ),
     reminders: array(
@@ -1245,6 +1330,7 @@ const memoryOverviewSnapshotSchema = object({
     profileUsage: object({
       used: integer(0),
       limit: integer(1),
+      pinned: integer(0),
       queued: array(machineString),
     }),
     profile: array(
@@ -1289,6 +1375,34 @@ const memoryReminderCreateCommandSchema = object({
     contentRef: machineString,
     due: boundedString(16),
     repeat: enumeration(["none", "yearly"]),
+  }),
+});
+export const OWNER_RULE_ACTIONS = ["undo", "confirm", "reconfirm"] as const;
+const memoryRulesQuerySchema = object({
+  ...envelope("query", "memory.rules.read"),
+  payload: object({}),
+});
+const memoryRulesSnapshotSchema = object({
+  ...envelope("snapshot", "memory.rules.snapshot"),
+  payload: object({
+    rules: array(
+      object({
+        ruleId: machineString,
+        type: boundedString(64),
+        summary: boundedString(200),
+        status: enumeration(["active", "needs_review"]),
+        enforced: booleanValue,
+        updatedAt: timestamp,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const memoryRuleRespondCommandSchema = object({
+  ...commandEnvelope("memory.rule.respond"),
+  payload: object({
+    target: machineString,
+    action: enumeration(OWNER_RULE_ACTIONS),
   }),
 });
 const memoryCreateCommandSchema = object({
@@ -2198,6 +2312,7 @@ const schemasByType = {
   "proactive.review.read": proactiveReviewQuerySchema,
   "proactive.review.snapshot": proactiveReviewSnapshotSchema,
   "proactive.review.rate": proactiveReviewRateCommandSchema,
+  "proactive.review.checkup": proactiveReviewCheckupCommandSchema,
   "proactive.source.manage": proactiveSourceManageCommandSchema,
   "proactive.backoff.restore": proactiveBackoffRestoreCommandSchema,
   "muse.overview.read": museOverviewQuerySchema,
@@ -2227,6 +2342,9 @@ const schemasByType = {
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
   "memory.reminder.respond": memoryReminderRespondCommandSchema,
   "memory.reminder.create": memoryReminderCreateCommandSchema,
+  "memory.rules.read": memoryRulesQuerySchema,
+  "memory.rules.snapshot": memoryRulesSnapshotSchema,
+  "memory.rule.respond": memoryRuleRespondCommandSchema,
   "memory.create": memoryCreateCommandSchema,
   "memory.category.set": memoryCategorySetCommandSchema,
   "memory.settings.set": memorySettingsSetCommandSchema,

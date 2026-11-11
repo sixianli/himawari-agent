@@ -44,6 +44,7 @@ const configuration: ControlCenterRuntimeConfiguration = {
     "proactive.audit.respond",
     "proactive.review.read",
     "proactive.review.rate",
+    "proactive.review.checkup",
     "proactive.source.manage",
     "proactive.backoff.restore",
   ],
@@ -233,6 +234,7 @@ const reviewItem = (
   textHidden: false,
   category: null,
   fetched: null,
+  checkup: null,
   ...change,
 });
 
@@ -279,6 +281,7 @@ function reviewFixture(): ProactiveReview {
         }),
       ],
     },
+    memoryUnusedDays: 90,
     generatedAt: NOW.toISOString(),
   };
 }
@@ -604,6 +607,30 @@ describe("[PG-15] proactive reminders page", () => {
     expect(row?.textContent).not.toContain("外部程序读取记忆");
   });
 
+  it("[P3-5] names each failed memory capture by what happens next instead of waiting for approval", async () => {
+    review = {
+      ...review,
+      folded: {
+        total: 3,
+        items: (["capture_retrying", "capture_queued", "capture_gave_up"] as const).map((outcome) =>
+          reviewItem(`ledger:${outcome}`, { outcome, text: "" }),
+        ),
+      },
+    };
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    const section = "#page .proactive-review";
+    await click(section, "展开");
+    const rows = [...document.querySelectorAll<HTMLElement>(`${section} li`)];
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining("记忆抽取失败，已重试"),
+      expect.stringContaining("记忆抽取失败，下一轮补做"),
+      expect.stringContaining("这轮没记全"),
+    ]);
+    expect(text(section)).not.toContain("待你确认的记忆");
+    expect(text(section)).not.toContain("这里不显示原文");
+  });
+
   it("[P0-6] sends one rating, clears it on a second tap and leaves a reviewed mail alone", async () => {
     await act(async () => root.render(h(Page, { focus: null })));
     await flush();
@@ -686,6 +713,78 @@ describe("[PG-15] proactive reminders page", () => {
     await flush();
     expect(document.querySelector("#page .proactive-review")).toBeNull();
     expect(text("#page")).not.toContain("每天打分");
+  });
+
+  it("[P4-6] shows the memory checkup group inside the daily rating, sends its actions and keeps it out of the rating buttons", async () => {
+    const checkupItem = (
+      key: string,
+      checkup: NonNullable<ProactiveReview["items"][number]["checkup"]>,
+      text: string,
+    ) =>
+      reviewItem(key, {
+        source: "checkup",
+        kind: "checkup",
+        outcome: checkup.action ?? "pending",
+        text,
+        checkup,
+      });
+    review = {
+      ...review,
+      items: [
+        checkupItem(
+          "checkup:c1",
+          {
+            reason: "conflict",
+            action: null,
+            memoryId: "memory-new",
+            relatedMemoryId: "memory-old",
+            relatedText: "出差时喝便利店的牛奶",
+            keptMemoryId: null,
+          },
+          "平时喝明治的牛奶",
+        ),
+        checkupItem(
+          "checkup:c2",
+          {
+            reason: "unused",
+            action: "confirm",
+            memoryId: "memory-quiet",
+            relatedMemoryId: null,
+            relatedText: "",
+            keptMemoryId: null,
+          },
+          "喜欢靠窗的座位",
+        ),
+        ...review.items,
+      ],
+    };
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    const group = "#page .proactive-review .proactive-review-list";
+    expect(document.querySelectorAll(`${group}`)).toHaveLength(1);
+    const rows = [...document.querySelectorAll<HTMLElement>(`${group} li`)];
+    expect(rows.length).toBeLessThanOrEqual(6);
+    expect(text(`${group} li:nth-child(1)`)).toContain("两条说法不一样");
+    expect(text(`${group} li:nth-child(1)`)).toContain("新：平时喝明治的牛奶");
+    expect(text(`${group} li:nth-child(1)`)).toContain("旧：出差时喝便利店的牛奶");
+    expect(text(`${group} li:nth-child(2)`)).toContain("90 天没用过");
+    expect(text(`${group} li:nth-child(2)`)).toContain("已确认");
+    expect(rows[1]?.textContent).not.toContain("没问题");
+    await click(`${group} li:nth-child(1)`, "用新的替换旧的");
+    expect(lastCommand()).toMatchObject({
+      type: "proactive.review.checkup",
+      payload: { key: "checkup:c1", action: "merge", keep: "memory-new" },
+    });
+    await click(`${group} li:nth-child(2)`, "撤销");
+    expect(lastCommand()).toMatchObject({
+      type: "proactive.review.checkup",
+      payload: { key: "checkup:c2", action: "undo", keep: null },
+    });
+    await click("#page .proactive-review", "这一页都没问题");
+    const ratings = (lastCommand() as { payload: { ratings: { key: string }[] } }).payload.ratings;
+    expect(ratings.map(({ key }) => key)).not.toContain("checkup:c1");
+    expect(ratings.map(({ key }) => key)).not.toContain("checkup:c2");
+    expect(ratings[0]?.key).toBe("ledger:a1");
   });
 
   it("[PG-15] shows one line per check in the reminder check record and takes ratings", async () => {
@@ -965,14 +1064,54 @@ describe("[P1-3] the basis drawer of a decision record", () => {
       items: [
         {
           ruleId: "floor_money_words",
+          revision: 1,
+          current: true,
+          kind: "money_words",
           origin: "built_in",
-          document: "ADR 0106 第 4 条",
+          source: "ADR 0106 第 4 条；ADR 0209",
+          status: "active",
+          changedAt: null,
+          memory: null,
+          wording: { values: ["账单", "invoice"], quietHours: [], amount: null },
+          tests: { state: "passed", total: 5, failedAt: null },
           mailCount: 2,
         },
-        { ruleId: "floor_unknown", origin: null, document: null, mailCount: 1 },
+        {
+          ruleId: "floor_important_sender",
+          revision: 3,
+          current: false,
+          kind: "important_sender",
+          origin: "owner_setting",
+          source: "ADR 0106 第 4 条；主人的设置“重要发件人”",
+          status: "needs_review",
+          changedAt: "2026-11-03T01:00:00.000Z",
+          memory: { memoryId: "memory-rule", state: "visible", text: "银行的信一律提醒我" },
+          wording: { values: ["bank.example"], quietHours: [], amount: null },
+          tests: { state: "failed", total: 3, failedAt: 2 },
+          mailCount: 1,
+        },
+        {
+          ruleId: "floor_unknown",
+          revision: null,
+          current: false,
+          kind: "unknown",
+          origin: null,
+          source: null,
+          status: null,
+          changedAt: null,
+          memory: null,
+          wording: null,
+          tests: { state: "unavailable", total: 0, failedAt: null },
+          mailCount: 1,
+        },
       ],
     },
-    mails: { judged: 3, related: 2, relatedRead: "partial" },
+    mails: {
+      judged: 3,
+      related: 2,
+      relatedRead: "partial",
+      summaries: { count: 2, read: "ok" },
+    },
     memories: {
       state: "recorded",
       recall: "ok",
@@ -1045,10 +1184,21 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     const drawer = text(".decision-chain");
     expect(drawer).toContain("命中的规则");
     expect(drawer).toContain("内置规则");
-    expect(drawer).toContain("ADR 0106 第 4 条");
+    expect(drawer).toContain("出处：ADR 0106 第 4 条；ADR 0209 · 第 1 版");
+    expect(drawer).toContain("词表：账单、invoice");
+    expect(drawer).toContain("测试：5 条例子全部通过");
+    expect(drawer).toContain("原话：银行的信一律提醒我");
+    expect(drawer).toContain("重要名单：bank.example");
+    expect(drawer).toContain("待重审");
+    expect(drawer).toContain("测试：第 2 条例子不符（共 3 条）");
     expect(drawer).toContain("未登记的规则");
+    expect(drawer).toContain("这一版的规则内容查不到");
+    expect(drawer).toContain("测试：查不到");
+    expect(drawer).toContain("只记了规则名，显示的是现在的版本");
+    expect(drawer.split("只记了规则名，显示的是现在的版本").length).toBe(2);
     expect(drawer).toContain("判断了 3 封");
     expect(drawer).toContain("关联邮件：只读到一部分");
+    expect(drawer).toContain("最近两天的对话摘要：带了 2 段");
     expect(drawer).toContain("我住在东京");
     expect(drawer).toContain("我搬到东京了");
     expect(drawer).toContain("推断依据");
@@ -1069,7 +1219,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     chainResult = chain({
       inputs: "not_recorded",
       rules: { state: "not_recorded", items: [] },
-      mails: { judged: null, related: null, relatedRead: "not_recorded" },
+      mails: { judged: null, related: null, relatedRead: "not_recorded", summaries: null },
       memories: {
         state: "not_recorded",
         recall: "not_recorded",
@@ -1084,6 +1234,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     await flush();
     const drawer = text(".decision-chain");
     expect(drawer.match(/无记录/gu)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    expect(drawer).not.toContain("对话摘要");
     expect(drawer).toContain("还没评价");
   });
 
@@ -1092,7 +1243,26 @@ describe("[P1-3] the basis drawer of a decision record", () => {
       decision: { ...chain().decision, kind: "rule_review", outcome: "needs_review" },
       rules: {
         state: "recorded",
-        items: [{ ruleId: "quiet_hours", origin: null, document: null, mailCount: 0 }],
+        items: [
+          {
+            ruleId: "quiet_hours",
+            revision: 2,
+            current: true,
+            kind: "quiet_hours",
+            origin: "owner_setting",
+            source: "ADR 0106；主人的设置“静默时段”",
+            status: "needs_review",
+            changedAt: "2026-11-03T01:00:00.000Z",
+            memory: null,
+            wording: {
+              values: [],
+              quietHours: [{ days: [1, 2], start: "23:00", end: "07:00" }],
+              amount: null,
+            },
+            tests: { state: "passed", total: 4, failedAt: null },
+            mailCount: 0,
+          },
+        ],
       },
       mails: null,
     });
@@ -1101,7 +1271,8 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     await flush();
     const drawer = text(".decision-chain");
     expect(drawer).toContain("待重审的规则");
-    expect(drawer).toContain("quiet_hours");
+    expect(drawer).toContain("静默时段");
+    expect(drawer).toContain("23:00–07:00");
     expect(drawer).not.toContain("命中的规则");
     expect(drawer).not.toContain("封邮件");
   });
