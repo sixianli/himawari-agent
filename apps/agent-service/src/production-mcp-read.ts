@@ -984,10 +984,7 @@ export class ProductionMcpRead {
         ...(ceiling ? { maxClassification: ceiling } : {}),
       });
       if (found.partial) this.#options.onSummariesFailed(new Error(SUMMARIES_INCOMPLETE));
-      const ordered = [...found.summaries].sort(
-        (a, b) => compareText(a.day, b.day) || compareText(a.id, b.id),
-      );
-      const recentDays = ordered.map(({ day, text }) => ({ day, text }));
+      const recentDays = found.summaries.map(({ day, text }) => ({ day, text }));
       return {
         output: { recentDays, ...(found.partial ? { recentDaysComplete: false } : {}) },
         read: {
@@ -1010,29 +1007,28 @@ export class ProductionMcpRead {
       ...(ceiling ? [ceiling] : []),
     );
     const recent = await this.#recentDays(trace, ceiling);
+    const orderedReminders = [...listed.reminders].sort(
+      (a, b) =>
+        compareText(a.dueAt, b.dueAt) ||
+        compareText(a.remindAt ?? "", b.remindAt ?? "") ||
+        compareText(a.text, b.text) ||
+        compareText(a.memoryId, b.memoryId),
+    );
     return {
       output: {
         today: localDay(now, this.#options.timeZone),
         timeZone: this.#options.timeZone,
         now,
-        reminders: [...listed.reminders]
-          .sort(
-            (a, b) =>
-              compareText(a.dueAt, b.dueAt) ||
-              compareText(a.remindAt ?? "", b.remindAt ?? "") ||
-              compareText(a.text, b.text) ||
-              compareText(a.memoryId, b.memoryId),
-          )
-          .map((reminder) => ({
-            text: reminder.text,
-            dueAt: reminder.dueAt,
-            remindAt: reminder.remindAt,
-            repeat: reminder.repeat,
-          })),
+        reminders: orderedReminders.map((reminder) => ({
+          text: reminder.text,
+          dueAt: reminder.dueAt,
+          remindAt: reminder.remindAt,
+          repeat: reminder.repeat,
+        })),
         ...(listed.more ? { more: true } : {}),
         ...recent.output,
       },
-      memoryIds: listed.reminders.map(({ memoryId }) => memoryId),
+      memoryIds: orderedReminders.map(({ memoryId }) => memoryId),
       ...(recent.read ? { summaries: recent.read } : {}),
     };
   }
@@ -1046,7 +1042,7 @@ export class ProductionMcpRead {
       items: lines.map(({ text }) => text),
     }));
     const omittedProfile = outline?.usage.queued.length ?? 0;
-    const versionBase = JSON.stringify([requirements, sections]);
+    const versionBase = JSON.stringify(maskForExternalRead([requirements, sections]));
     const profile = {
       version: createHash("sha256").update(versionBase).digest("hex").slice(0, 12),
       requirements,

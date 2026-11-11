@@ -1,0 +1,9 @@
+{"id": "d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "提醒先取 20 条再按 `readCeiling` 过滤，被过滤掉的不会回填", "valid": true, "class": "error", "severity": "medium-high", "trigger": "今天 48 小时内有超过 20 条提醒，前 20 条里有 sensitive 的", "consequence": "start_here 少给或不给符合上限的提醒，more 判断也不对", "modelSeverity": "中"}
+{"id": "d2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`profile.version` 是对遮盖前文字做的 SHA-256，泄露秘密指纹", "valid": true, "class": "error", "severity": "medium-high", "trigger": "profile 里有密码、验证码一类秘密", "consequence": "外部 agent 拿到含秘密原文的短哈希，可离线猜测", "modelSeverity": "中"}
+{"id": "d3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`readCeiling` 只作用于 `start_here`，`find_memories` 仍能读到 sensitive", "valid": false, "class": "better"}
+{"id": "d4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "整批遮盖使稳定段 `profile` 的字节可能依赖会变化的 `today`", "valid": false, "class": "better"}
+{"id": "d5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`start_here` 在 profile 来源失败时整次失败，且没有测试", "valid": false, "class": "better"}
+{"id": "d6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "决策记录里的 `memoryIds` 顺序取自未排序的提醒列表", "valid": true, "class": "error", "severity": "low", "trigger": "数据库返回提醒的顺序变了", "consequence": "决策记录里的编号顺序随之变，不影响返回内容", "modelSeverity": "低"}
+{"id": "d7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`recentDays` 从“日期倒序”改为“日期、id 升序”，改变了旧 `today_context` 的顺序", "valid": true, "class": "error", "severity": "low", "trigger": "今天和昨天都有摘要时调 today_context", "consequence": "昨天排在今天前面，和以前不同，不是错误结果", "modelSeverity": "低"}
+{"id": "d8", "model": "opencode-go/deepseek-v4.1-flash", "quote": "清单引用的 `ADR 0242` 不存在；ADR 0219 仍写“三个只读工具”", "valid": false, "class": "better"}
+{"id": "d9", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`start_here` 两个 `omitted` 的用途/文案与清单 reason 不完全对应", "valid": true, "class": "error", "severity": "low", "trigger": "有人读提示词清单的 reason", "consequence": "reason 写的变更范围不准，不影响运行", "modelSeverity": "低"}

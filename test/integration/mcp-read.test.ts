@@ -936,6 +936,35 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       expect(opened.text).toContain("慢性病");
     });
 
+    it("fills today with eligible reminders when sensitive ones come first", async () => {
+      const f = await setup();
+      for (let index = 0; index < 22; index += 1)
+        await f.writer.create({
+          key: `secret-${index}`,
+          text: `家里 Wi-Fi 密码：Key-${index}-abc`,
+          due: `2026-11-12T08:${String(index).padStart(2, "0")}`,
+          repeat: "none",
+        });
+      const client = await f.connect("modern");
+      const output = JSON.parse((await f.call(client, "start_here")).text) as StartHere;
+      const texts = (output.today as unknown as { reminders: { text: string }[] }).reminders.map(
+        ({ text }) => text,
+      );
+      expect(texts).toContain(DENTIST);
+      expect(texts.some((text) => text.includes("Wi-Fi"))).toBe(false);
+    });
+
+    it("keeps the profile version free of masked secrets", async () => {
+      const versionFor = async (secret: string) => {
+        const f = await setup();
+        await f.seedProfile("memory-note", "preference", 800, `备用门禁密码：${secret}`);
+        const client = await f.connect("modern");
+        const output = JSON.parse((await f.call(client, "start_here")).text) as StartHere;
+        return output.profile.version;
+      };
+      expect(await versionFor("Maple-7712-x")).toBe(await versionFor("Birch-1983-y"));
+    });
+
     it("stays inside the profile budget and says how many lines were left out", async () => {
       const f = await setup();
       for (let index = 0; index < 40; index += 1)

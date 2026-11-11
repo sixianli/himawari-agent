@@ -36,6 +36,7 @@ const REMINDER_POLICY_VERSION = "memory-reminder:v1";
 const REMINDER_IMPORTANCE = 500;
 const MAXIMUM_TEXT = 500;
 const LISTED = 20;
+const CEILING_SCAN_LIMIT = 200;
 const LIST_WINDOW_MS = 2 * 366 * 24 * 3_600_000;
 const SET_ARGUMENTS = ["text", "due", "repeat"];
 const CANCEL_ARGUMENTS = ["reminderId"];
@@ -268,12 +269,17 @@ export class ProductionReminderWriter {
       ...this.#scope(),
       from: now,
       to: new Date(Date.parse(now) + windowMs).toISOString(),
-      limit: LISTED + 1,
+      limit: ceiling === undefined ? LISTED + 1 : CEILING_SCAN_LIMIT,
     });
     const listed: ListedReminder[] = [];
-    for (const reminder of upcoming.slice(0, LISTED)) {
+    let eligibleAfterListed = false;
+    for (const reminder of ceiling === undefined ? upcoming.slice(0, LISTED) : upcoming) {
       const text = await this.#textOf(reminder, ceiling);
       if (text === undefined) continue;
+      if (listed.length >= LISTED) {
+        eligibleAfterListed = true;
+        break;
+      }
       listed.push({
         reminderId: reminder.id,
         memoryId: reminder.memoryId,
@@ -283,7 +289,10 @@ export class ProductionReminderWriter {
         repeat: reminder.repeat,
       });
     }
-    return { reminders: listed, more: upcoming.length > LISTED };
+    return {
+      reminders: listed,
+      more: ceiling === undefined ? upcoming.length > LISTED : eligibleAfterListed,
+    };
   }
 
   async #textOf(
