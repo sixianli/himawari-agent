@@ -23,3 +23,11 @@ export {
   parsePortable,
   verifyIntegrity,
 } from "./verify.js";
+export {
+  type ChatExportOptions,
+  type ChatExportResult,
+  type ChatManifest,
+  buildChatExport,
+} from "./chats.js";
+export { verifyChatExport } from "./chats-verify.js";
+export { CHAT_FORMAT_VERSION } from "./chat-schemas.js";

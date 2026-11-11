@@ -17,6 +17,7 @@ import {
 } from "@himawari-agent/platform-node";
 import { afterEach, describe, expect, it } from "vitest";
 import { runAdminCli } from "../../apps/admin-cli/src/index.ts";
+import { seedThread } from "./chat-export-fixture.ts";
 import { SECRET_PASSWORD, type Side, seedMemory } from "./data-export-fixture.ts";
 
 const roots: string[] = [];
@@ -101,7 +102,7 @@ function configuration(stateRoot: string) {
   };
 }
 
-async function prepare(name: string, seed: boolean) {
+async function prepare(name: string, seed: boolean, seedChats = false) {
   const root = await mkdtemp(path.join(tmpdir(), `himawari-data-cli-${name}-`));
   roots.push(root);
   const stateRoot = path.join(root, "state");
@@ -127,6 +128,11 @@ async function prepare(name: string, seed: boolean) {
       migrationSequence: LATEST_MIGRATION_SEQUENCE,
       directory: root,
     };
+    if (seedChats)
+      await seedThread(side, "thread-cli", {
+        title: "咖啡",
+        messages: [{ text: "早上好" }, { text: `网银密码是 ${SECRET_PASSWORD}` }],
+      });
     await seedMemory(side, { id: "memory-plain", text: "Andy 喜欢早上喝黑咖啡" });
     await seedMemory(side, {
       id: "memory-secret",
@@ -350,5 +356,64 @@ describe("data admin CLI", () => {
       "andy",
     ]);
     expect(refused.code).not.toBe(0);
+  });
+
+  it("[多人7] export-chats writes a verifiable chat export, seals the originals, and inspect reads it", async () => {
+    const source = await prepare("chats", true, true);
+    const out = path.join(source.root, "chats-export");
+    const base = [
+      "data",
+      "export-chats",
+      "--config",
+      source.configurationPath,
+      "--secret-dir",
+      source.secretDirectory,
+      "--out",
+      out,
+      "--operator",
+      "andy",
+    ];
+    expect((await run(base)).code).not.toBe(0);
+    await expect(readdir(out)).rejects.toThrow();
+    const exported = await run([...base, "--passphrase-file", source.passphraseFile]);
+    expect(exported.code).toBe(0);
+    const result = JSON.parse(exported.lines.at(-1) ?? "{}");
+    expect(result).toMatchObject({
+      command: "data.export-chats",
+      counts: { threads: 1, messages: 2, sealedOriginals: 1 },
+      withheld: { messages: 1 },
+      sealed: true,
+    });
+    const inspected = await run(["data", "inspect", "--from", out]);
+    expect(inspected.code).toBe(0);
+    expect(JSON.parse(inspected.lines.at(-1) ?? "{}")).toMatchObject({
+      format: "himawari.chat-export.v1",
+      counts: { threads: 1, messages: 2 },
+    });
+    const files = await readdir(out, { recursive: true });
+    expect(files).toContain("CHATS.md");
+    expect(files).toContain("sealed/sealed.enc");
+  });
+
+  it("[多人7][reverse] export-chats on a database without chats gives an empty export and needs no passphrase", async () => {
+    const source = await prepare("nochats", true);
+    const out = path.join(source.root, "chats-export");
+    const exported = await run([
+      "data",
+      "export-chats",
+      "--config",
+      source.configurationPath,
+      "--secret-dir",
+      source.secretDirectory,
+      "--out",
+      out,
+      "--operator",
+      "andy",
+    ]);
+    expect(exported.code).toBe(0);
+    expect(JSON.parse(exported.lines.at(-1) ?? "{}").counts).toMatchObject({
+      threads: 0,
+      messages: 0,
+    });
   });
 });

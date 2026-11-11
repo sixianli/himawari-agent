@@ -802,6 +802,13 @@ export const messages = {
     "記憶 {count} 件をエクスポートしました。機微な内容 {withheld} 箇所はプレースホルダーのままです。",
   "memory.page.exportFailed":
     "エクスポートに失敗しました。しばらくしてからもう一度お試しください。",
+  "memory.page.chatExport": "チャット履歴を書き出す",
+  "memory.page.chatExportTitle": "チャット履歴をすべて書き出す",
+  "memory.page.chatExportNote":
+    "zip ファイルが1つ手に入ります。data/threads.jsonl に会話ごとのデータが、chats/ にそのまま読める会話ごとの Markdown が入っています。パスワードや身分証番号などの機密はプレースホルダーだけが残ります。ごみ箱の中の会話も書き出され、機密以外の本文は平文なので、大切に保管してください。添付ファイルは一覧（名前・サイズ・種類）だけで、ファイル本体は含まれません。チャット履歴は持ち出し専用で、取り込み直すことはできません。機密も一緒に持ち出すには、コマンドラインの暗号化書き出しを使ってください。",
+  "memory.page.chatDownload": "チャット履歴をダウンロード",
+  "memory.page.chatExportDone":
+    "{threads}件の会話、{messages}件のメッセージを書き出しました。機密を含む{withheld}件のメッセージはプレースホルダーだけが残っています。",
   "capabilities.title": "機能とアダプター",
   "authorizations.title": "認可と Grant",
   "trace.title": "トレース",

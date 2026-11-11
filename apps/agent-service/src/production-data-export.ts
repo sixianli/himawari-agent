@@ -41,7 +41,11 @@ function dosDateTime(iso: string): { readonly time: number; readonly date: numbe
   };
 }
 
-export function createStoredZip(files: PortableFiles, exportedAt: string): Uint8Array {
+export function createStoredZip(
+  files: PortableFiles,
+  exportedAt: string,
+  root: string = DATA_EXPORT_ARCHIVE_ROOT,
+): Uint8Array {
   const { time, date } = dosDateTime(exportedAt);
   const entries = [...files.entries()].sort(([left], [right]) =>
     left < right ? -1 : left > right ? 1 : 0,
@@ -50,7 +54,7 @@ export function createStoredZip(files: PortableFiles, exportedAt: string): Uint8
   const directory: Uint8Array[] = [];
   let offset = 0;
   for (const [name, content] of entries) {
-    const nameBytes = encoder.encode(`${DATA_EXPORT_ARCHIVE_ROOT}/${name}`);
+    const nameBytes = encoder.encode(`${root}/${name}`);
     const checksum = crc32(content);
     const local = new DataView(new ArrayBuffer(30));
     local.setUint32(0, 0x04034b50, true);

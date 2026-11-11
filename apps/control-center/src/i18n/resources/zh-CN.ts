@@ -747,6 +747,13 @@ export const messages = {
   "memory.page.exportWorking": "正在生成导出文件……",
   "memory.page.exportDone": "已导出 {count} 条记忆；{withheld} 处敏感内容只留了占位符。",
   "memory.page.exportFailed": "导出失败，请稍后再试。",
+  "memory.page.chatExport": "导出聊天记录",
+  "memory.page.chatExportTitle": "导出全部聊天记录",
+  "memory.page.chatExportNote":
+    "得到一个压缩包：data/threads.jsonl 是逐个对话的数据，chats/ 下每个对话一个能直接读的 Markdown。密码、证件号等机密只留占位符；回收站里的对话也会导出，其中的正文除机密外是明文，请妥善保管。附件只带清单（名字、大小、类型），不带文件本体。聊天记录只能带走，不能再导入。要连机密一起带走，请用命令行加密导出。",
+  "memory.page.chatDownload": "下载聊天记录",
+  "memory.page.chatExportDone":
+    "已导出 {threads} 个对话、{messages} 条消息；{withheld} 条含机密的消息只留了占位符。",
   "capabilities.title": "能力与适配器",
   "authorizations.title": "授权与 Grant",
   "trace.title": "追踪",

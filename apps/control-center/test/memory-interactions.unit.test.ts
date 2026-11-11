@@ -1558,6 +1558,49 @@ describe("memory approval and management", () => {
     clicked.mockRestore();
   });
 
+  it("[多人7] downloads the chat export with the counts the server reports, and shows a failure", async () => {
+    await render();
+    const created = vi.fn(() => "blob:chats");
+    vi.stubGlobal("URL", { createObjectURL: created, revokeObjectURL: vi.fn() });
+    const clicked = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    const archive = vi.fn(
+      async () =>
+        new Response(new Uint8Array([80, 75]), {
+          status: 200,
+          headers: {
+            "content-disposition": 'attachment; filename="himawari-chats-2026-11-12.zip"',
+            "x-himawari-export-threads": "3",
+            "x-himawari-export-messages": "17",
+            "x-himawari-export-withheld": "2",
+          },
+        }),
+    );
+    vi.stubGlobal("fetch", archive);
+    await click("#settings .memory-footer", "导出聊天记录");
+    expect(text("#settings")).toContain("导出全部聊天记录");
+    expect(created).not.toHaveBeenCalled();
+    await click("#settings", "下载聊天记录");
+    expect(archive).toHaveBeenCalledWith("/api/data-export/v1/chats", {
+      credentials: "same-origin",
+    });
+    expect(created).toHaveBeenCalledTimes(1);
+    expect(clicked).toHaveBeenCalledTimes(1);
+    expect(text("#settings")).toContain(
+      "已导出 3 个对话、17 条消息；2 条含机密的消息只留了占位符。",
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 401 })),
+    );
+    await click("#settings", "下载聊天记录");
+    expect(created).toHaveBeenCalledTimes(1);
+    expect(text("#settings")).toContain("导出失败，请稍后再试。");
+    expect(text("#settings")).not.toContain("已导出");
+    clicked.mockRestore();
+  });
+
   it("[MP-8] keeps adding and importing closed until the first memory is learned and says why", async () => {
     overview = { ...overview, manualAddReady: false };
     await render();

@@ -2,13 +2,16 @@ import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assertWritableSchema,
+  buildChatExport,
   buildPortableExport,
+  CHAT_FORMAT_VERSION,
   importPortableExport,
   LATEST_MIGRATION_SEQUENCE,
   openQualifiedDatabase,
   parsePortable,
   SEALED_FILE,
   readPortableDirectory,
+  verifyChatExport,
   verifyIntegrity,
   writePortableDirectory,
 } from "@himawari-agent/persistence-sqlite";
@@ -40,7 +43,7 @@ export const DATA_COMMAND_ERROR_CODES = Object.freeze({
 } as const);
 
 interface ParsedData {
-  readonly action: "export" | "inspect" | "import";
+  readonly action: "export" | "export-chats" | "inspect" | "import";
   readonly values: Map<string, string>;
   readonly flags: Set<string>;
 }
@@ -49,7 +52,10 @@ function parse(arguments_: readonly string[]): ParsedData {
   const action = arguments_[1];
   if (
     arguments_[0] !== "data" ||
-    (action !== "export" && action !== "inspect" && action !== "import")
+    (action !== "export" &&
+      action !== "export-chats" &&
+      action !== "inspect" &&
+      action !== "import")
   )
     throw new Error(DATA_COMMAND_ERROR_CODES.ARGUMENT_INVALID);
   const values = new Map<string, string>();
@@ -109,6 +115,23 @@ export async function runDataCommand(
     const from = values.get("--from");
     if (!from) throw new Error(DATA_COMMAND_ERROR_CODES.ARGUMENT_INVALID);
     const files = await readPortableDirectory(from);
+    const manifestBytes = files.get("manifest.json");
+    const declaredFormat = manifestBytes
+      ? (JSON.parse(new TextDecoder().decode(manifestBytes)) as { format?: unknown }).format
+      : undefined;
+    if (declaredFormat === CHAT_FORMAT_VERSION) {
+      const chats = verifyChatExport(files, LATEST_MIGRATION_SEQUENCE);
+      return Object.freeze({
+        outputSchemaVersion: 1,
+        command: "data.inspect",
+        format: chats.format,
+        exportedAt: chats.exportedAt,
+        counts: chats.counts,
+        withheld: chats.withheld,
+        omitted: chats.omitted,
+        sealed: files.has("sealed/sealed.enc"),
+      });
+    }
     const manifest = verifyIntegrity(files, LATEST_MIGRATION_SEQUENCE);
     parsePortable(files, LATEST_MIGRATION_SEQUENCE);
     return Object.freeze({
@@ -181,6 +204,44 @@ export async function runDataCommand(
         return Object.freeze({
           outputSchemaVersion: 1,
           command: "data.export",
+          operator,
+          out,
+          counts: result.manifest.counts,
+          withheld: result.manifest.withheld,
+          sealed: passphrase !== undefined,
+        });
+      }
+      if (action === "export-chats") {
+        const out = values.get("--out");
+        if (!out) throw new Error(DATA_COMMAND_ERROR_CODES.ARGUMENT_INVALID);
+        const result = await buildChatExport({
+          database,
+          scope,
+          migrationSequence: LATEST_MIGRATION_SEQUENCE,
+          protector,
+          policy: createDataExportTextPolicy(),
+          now,
+          ...(passphrase === undefined ? {} : { sealPassphrase: passphrase }),
+        });
+        writeServiceDiagnostic(output, {
+          component: "admin-cli",
+          event: "export.plan",
+          action: "data.export-chats",
+          target: `agent:${configuration.agentId}`,
+          stoppedServiceRequired: true,
+          withheldMessages: result.manifest.withheld.messages,
+          sealed: passphrase !== undefined,
+        });
+        if (
+          result.manifest.withheld.texts > 0 &&
+          passphrase === undefined &&
+          !flags.has("--allow-unsealed")
+        )
+          throw new Error(DATA_COMMAND_ERROR_CODES.UNSEALED_WITHHELD);
+        await writePortableDirectory(out, result.files);
+        return Object.freeze({
+          outputSchemaVersion: 1,
+          command: "data.export-chats",
           operator,
           out,
           counts: result.manifest.counts,
