@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -154,6 +154,29 @@ describe("Layer 0 hooks from the repository", () => {
     expect(pushed.stderr).toContain("BOUNDARY_STUB_RAN");
     expect(pushed.stderr).toContain("FORMAT_STUB_RAN");
     expect(pushed.stderr).toContain("SECRETS_STUB_RAN");
+  });
+
+  it("runs the same format check at push as npm run format:check", () => {
+    const scripts = JSON.parse(
+      readFileSync(path.join(repositoryRoot, "package.json"), "utf8"),
+    ).scripts;
+    expect(scripts["format:check"]).toBe("node scripts/check-format.mjs");
+    expect(scripts["check:secrets"]).toBe("node scripts/scan-machine-secrets.mjs");
+  });
+
+  it("refuses the format check when biome is not installed", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "format-check-"));
+    roots.push(root);
+    mkdirSync(path.join(root, "scripts"));
+    cpSync(
+      path.join(repositoryRoot, "scripts/check-format.mjs"),
+      path.join(root, "scripts/check-format.mjs"),
+    );
+    const run = spawnSync(process.execPath, [path.join(root, "scripts/check-format.mjs")], {
+      encoding: "utf8",
+    });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("FORMAT_CHECK_UNAVAILABLE");
   });
 
   for (const [script, code] of [
