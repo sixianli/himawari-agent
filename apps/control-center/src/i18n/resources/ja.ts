@@ -1044,7 +1044,7 @@ export const messages = {
   "decision.chain.rating": "あなたの評価",
   "decision.chain.unrated": "未評価",
   "decision.chain.kind":
-    "{k, select, proactive {自発的なリマインダー} memory_candidate {記憶を保存する判断} consolidation {記憶の整理} context_truncation {コンテキストの切り詰め} retrieval_degrade {記憶検索の縮退} external_read {外部の読み取り} rule_review {ハードルールの再確認} other {その他}}",
+    "{k, select, proactive {自発的なリマインダー} memory_candidate {記憶を保存する判断} consolidation {記憶の整理} context_truncation {コンテキストの切り詰め} retrieval_degrade {記憶検索の縮退} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} other {その他}}",
   "decision.chain.rules": "該当したルール",
   "decision.chain.reviewRules": "再確認待ちのルール",
   "decision.chain.rule":

@@ -981,7 +981,7 @@ export const messages = {
   "decision.chain.rating": "你的评价",
   "decision.chain.unrated": "还没评价",
   "decision.chain.kind":
-    "{k, select, proactive {系统主动提醒} memory_candidate {存记忆的判断} consolidation {整理记忆} context_truncation {裁剪上下文} retrieval_degrade {找记忆降级} external_read {读外部内容} rule_review {硬规则待重审} other {其他}}",
+    "{k, select, proactive {系统主动提醒} memory_candidate {存记忆的判断} consolidation {整理记忆} context_truncation {裁剪上下文} retrieval_degrade {找记忆降级} external_read {外部程序读取记忆} rule_review {硬规则待重审} other {其他}}",
   "decision.chain.rules": "命中的规则",
   "decision.chain.reviewRules": "待重审的规则",
   "decision.chain.rule":

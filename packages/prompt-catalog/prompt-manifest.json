@@ -324,6 +324,26 @@
     "changedIn": "ADR 0179",
     "reason": "新增：邮件判断里有待确认记忆时，说明它们只是线索，不是事实"
   },
+  "mcp.find-memories": {
+    "sha256": "7661b0693e0523ebb3f83eb447b058eebfe9ce8ec811a7e762d86025fd6b58cb",
+    "changedIn": "ADR 0219",
+    "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
+  },
+  "mcp.rule-book": {
+    "sha256": "df131609c5e20c4560f5cdfa4cfa38fd276880ccf0cb6bd945141609eb998df5",
+    "changedIn": "ADR 0219",
+    "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
+  },
+  "mcp.today-context": {
+    "sha256": "cdaf59f7b6c3d7cff2bdcf9aef00628f5237612d6b4bbdd7485c5abefed62325",
+    "changedIn": "ADR 0219",
+    "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
+  },
+  "mcp.tool-result-failed": {
+    "sha256": "881b14437ad5dc2a42e6495240f40abeb4ff7d101bdd908e34f147560eb556ed",
+    "changedIn": "ADR 0219",
+    "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
+  },
   "memory.capture": {
     "sha256": "951c3556271b7e3e72b6aa91f48292aeb7505014e928f56036f5e3c849f8a445",
     "changedIn": "ADR 0185",

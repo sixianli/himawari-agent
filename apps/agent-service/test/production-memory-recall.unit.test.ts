@@ -277,3 +277,28 @@ it("[PA-2] REVERSE: a failing tentative search never takes the confirmed results
   expect(result.memories.map(({ text }) => text)).toEqual(["主人住在杭州"]);
   expect(result).not.toHaveProperty("tentativeNote");
 });
+
+it("[P5-1] reports a failed confirmed search only after the tentative search has finished", async () => {
+  const finished: string[] = [];
+  const service = new ProductionMemoryRecall({
+    ownerId,
+    agentId,
+    provider: {
+      search: async (request: { tentativeOnly?: boolean }) => {
+        if (request.tentativeOnly !== true) throw new Error("VECTOR_INDEX_DOWN");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        finished.push("tentative");
+        return [];
+      },
+    } as never,
+    state: { readMany: async () => [] },
+    readText: async () => undefined,
+    embedWithin: async (_invocation, _slot, operation) => operation(),
+    now: () => now,
+    timeZone: "Asia/Tokyo",
+  });
+  await expect(
+    service.recallOutsideRun({ query: "x", limit: 4 }, (_slot, op) => op()),
+  ).rejects.toThrow("VECTOR_INDEX_DOWN");
+  expect(finished).toEqual(["tentative"]);
+});

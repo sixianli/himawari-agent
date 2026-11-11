@@ -237,9 +237,14 @@ export interface MuseIntakeConfiguration {
   readonly gapExportSecretRef?: string;
 }
 
+export interface McpReadConfiguration {
+  readonly secretRef: string;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
   readonly museIntake?: MuseIntakeConfiguration;
+  readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;

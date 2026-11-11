@@ -221,3 +221,39 @@ export const TOOL_RESULT_REMINDER_SET = fixedPrompt({
   output: "free-text",
   text: "告诉主人 due 是事情的时间，remindAt 是会在什么时候提醒，两个时间都照结果原样说。",
 });
+
+export const MCP_TOOL_FIND_MEMORIES = fixedPrompt({
+  id: "mcp.find-memories",
+  purpose: "对外 MCP 工具 find_memories 的描述：外部 agent 按问题找主人的记忆",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "按问题查 Himawari 里主人的长期记忆和以前的对话摘要。需要了解主人的偏好、经历、计划、以前说过的事时使用。query 写要找的内容；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）。返回的记忆带有效期，已失效的标为历史；待确认的记忆标 tentative，只能当线索。只读，不会改动任何记忆。",
+});
+
+export const MCP_TOOL_TODAY_CONTEXT = fixedPrompt({
+  id: "mcp.today-context",
+  purpose: "对外 MCP 工具 today_context 的描述：今天的日期、时区和近期提醒",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "取主人今天的上下文：主人所在时区的今天日期、现在时间，以及接下来 48 小时内的提醒。开始一项和主人日程有关的工作前使用。只读。",
+});
+
+export const MCP_TOOL_RULE_BOOK = fixedPrompt({
+  id: "mcp.rule-book",
+  purpose: "对外 MCP 工具 rule_book 的描述：列出主人在 Himawari 里生效的规则",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "列出主人在 Himawari 里生效的规则：每条有编号、版本、作用在哪一步、结果、出处；主人自己设的规则还带设置值（例如重要发件人、静默时段）。替主人做判断前用来了解主人定下的规矩。只读。",
+});
+
+export const MCP_TOOL_RESULT_FAILED = fixedPrompt({
+  id: "mcp.tool-result-failed",
+  purpose: "对外 MCP 工具读取失败时返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这次没能从 Himawari 读到内容，请稍后再试；不要据此认为主人没有相关记忆。",
+});

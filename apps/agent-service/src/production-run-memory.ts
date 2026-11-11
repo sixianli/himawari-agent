@@ -85,6 +85,10 @@ export function createProductionRunMemory(options: {
   project: NonNullable<DurableMemoryServiceOptions["project"]>;
   embedWithin: <T>(context: RunEmbeddingContext, operation: () => Promise<T>) => Promise<T>;
   embedForMailCheck: <T>(context: MailEmbeddingContext, operation: () => Promise<T>) => Promise<T>;
+  embedForExternalRead: <T>(
+    context: MailEmbeddingContext,
+    operation: () => Promise<T>,
+  ) => Promise<T>;
 } {
   const scope = new AsyncLocalStorage<MemorySearchRequest & { readonly embeddingSlot?: string }>();
   const mailScope = new AsyncLocalStorage<MailEmbeddingContext>();
@@ -332,6 +336,7 @@ export function createProductionRunMemory(options: {
   return {
     project: (job, memory, operation) => projectionScope.run({ job, memory }, operation),
     embedForMailCheck: (context, operation) => mailScope.run(context, operation),
+    embedForExternalRead: (context, operation) => mailScope.run(context, operation),
     embedWithin: (context, operation) =>
       scope.run(
         {

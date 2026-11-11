@@ -1043,7 +1043,7 @@ export const messages = {
   "decision.chain.rating": "Your rating",
   "decision.chain.unrated": "Not rated yet",
   "decision.chain.kind":
-    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {External read} rule_review {Hard rule review} other {Other}}",
+    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {Outside program read memories} rule_review {Hard rule review} other {Other}}",
   "decision.chain.rules": "Rules hit",
   "decision.chain.reviewRules": "Rules waiting for review",
   "decision.chain.rule":
