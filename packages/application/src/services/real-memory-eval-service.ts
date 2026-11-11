@@ -1,3 +1,4 @@
+import type { CalibrationDecisionRow } from "@himawari-agent/calibration";
 import type { DataClassification } from "../ports/common.js";
 import type { ProductMemoryRecord } from "../ports/memory-projection.js";
 import type {
@@ -10,6 +11,8 @@ import type {
 } from "../ports/real-eval.js";
 import {
   answerPrompt,
+  type DecisionEvalGroup,
+  summarizeDecisionEval,
   fastPathVerdict,
   judgePrompt,
   parseGeneratedQuestion,
@@ -78,6 +81,7 @@ export interface RealMemoryEvalDependencies {
   readonly readQuestion: (ref: string) => Promise<string | undefined>;
   readonly recall: (question: string) => Promise<RealEvalRecall>;
   readonly profile: () => Promise<RealEvalProfile>;
+  readonly decisions?: () => Promise<readonly CalibrationDecisionRow[]>;
 }
 
 export interface RealEvalRunLimits {
@@ -321,8 +325,16 @@ export class RealMemoryEvalService {
       }
     }
 
+    let decisions: readonly DecisionEvalGroup[] | null = null;
+    if (deps.decisions && outcome !== "failed")
+      try {
+        decisions = summarizeDecisionEval(await deps.decisions());
+      } catch {
+        decisions = null;
+      }
     const summary = {
       scores: scoreItems(scored),
+      decisions,
       items: scored.length,
       retired,
       added,

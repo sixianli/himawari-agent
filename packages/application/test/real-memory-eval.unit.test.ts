@@ -21,6 +21,7 @@ import {
   RealEvalBudgetExceededError,
   retireReason,
   scoreItems,
+  summarizeDecisionEval,
 } from "../src/services/real-memory-eval.js";
 
 const AS_OF = "2026-11-11T00:00:00.000Z";
@@ -254,5 +255,33 @@ describe("[P4-5] spending cap", () => {
     expect(() => budget.reserve(100_000)).toThrow(RealEvalBudgetExceededError);
     expect(budget.spentMicros).toBe(450_000);
     expect(() => new RealEvalBudget(0)).toThrow("REAL_EVAL_BUDGET_INVALID");
+  });
+});
+
+describe("[P4-5] decision eval from rated decisions", () => {
+  it("counts a rated decision as correct only when the owner called it useful, per group", () => {
+    const rows = [
+      { kind: "proactive", outcome: "pushed", ownerRating: "useful", delivered: true },
+      { kind: "proactive", outcome: "pushed", ownerRating: "unneeded", delivered: true },
+      { kind: "proactive", outcome: "silent", ownerRating: "missed", delivered: false },
+      { kind: "proactive", outcome: "silent", ownerRating: null, delivered: false },
+      { kind: "memory_candidate", outcome: "kept", ownerRating: "useful", delivered: false },
+      { kind: "memory_candidate", outcome: "discarded", ownerRating: "missed", delivered: false },
+      { kind: "consolidation", outcome: "merged", ownerRating: "useful", delivered: false },
+      { kind: "context_truncation", outcome: null, ownerRating: "useful", delivered: false },
+    ] as const;
+    const groups = summarizeDecisionEval(rows);
+    expect(
+      groups.map(({ group, total, rated, correct }) => [group, total, rated, correct]),
+    ).toEqual([
+      ["proactive_pushed", 2, 2, 1],
+      ["proactive_silent", 2, 1, 0],
+      ["memory_kept", 1, 1, 1],
+      ["memory_skipped", 1, 1, 0],
+      ["consolidation", 1, 1, 1],
+    ]);
+    expect(
+      groups.every(({ accuracy }) => accuracy.enough === false && accuracy.value === null),
+    ).toBe(true);
   });
 });

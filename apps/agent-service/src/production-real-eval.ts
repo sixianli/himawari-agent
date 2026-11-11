@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { chmod, mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  type DecisionLedgerPort,
   type DurableMemoryService,
   highestClassification,
   type ModelInvocationRequest,
@@ -33,6 +34,7 @@ export const REAL_EVAL_TICK_MS = 60 * 60 * 1000;
 export const REAL_EVAL_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 export const REAL_EVAL_SAMPLE_SIZE = 30;
 export const REAL_EVAL_SAMPLE_FILE = "latest-sample.json";
+export const DECISION_EVAL_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
 const MAX_OUTPUT_BYTES = 64 * 1024;
 
 export function dueRealEvalTrigger(
@@ -244,6 +246,7 @@ export interface ProductionRealEvalDependencies {
     compose: OwnerProfileService["compose"];
   };
   readonly model: RealEvalModel;
+  readonly ledger: Pick<DecisionLedgerPort, "readCalibrationRows">;
   readonly sampleDirectory: string;
   readonly now: () => string;
   readonly newId: () => string;
@@ -299,6 +302,15 @@ export function createProductionRealEval(deps: ProductionRealEvalDependencies): 
       return ref;
     },
     readQuestion: readText,
+    decisions: async () => {
+      const end = deps.now();
+      const rows = await deps.ledger.readCalibrationRows({
+        ...scope,
+        start: new Date(Date.parse(end) - DECISION_EVAL_WINDOW_MS).toISOString(),
+        end,
+      });
+      return rows.decisions;
+    },
     profile: async () => {
       const texts = new Map<string, string>();
       const profile = await deps

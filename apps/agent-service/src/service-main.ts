@@ -1724,6 +1724,7 @@ export async function runAgentService(
             requestTimeoutMs: realEvalConfiguration.requestTimeoutMs,
             now: () => clock.now(),
           }),
+          ledger: realEvalRepository.decisionLedger(),
           sampleDirectory: path.join(configuration.stateRoot, "real-eval"),
           now: () => clock.now(),
           newId: () => ids.next("real-eval"),

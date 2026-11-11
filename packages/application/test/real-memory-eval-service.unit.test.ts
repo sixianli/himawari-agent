@@ -4,6 +4,7 @@ import {
   REAL_EVAL_JUDGE,
   REAL_EVAL_QUESTION,
 } from "@himawari-agent/prompt-catalog";
+import type { CalibrationDecisionRow } from "@himawari-agent/calibration";
 import { describe, expect, it } from "vitest";
 import type { ProductMemoryRecord } from "../src/ports/memory-projection.js";
 import type {
@@ -133,6 +134,7 @@ function harness(options: {
   readonly memories: ProductMemoryRecord[];
   readonly answer?: (question: string) => string;
   readonly judge?: string;
+  readonly decisions?: readonly CalibrationDecisionRow[];
 }): Harness {
   const store = new MemoryStore();
   const prompts: string[] = [];
@@ -203,6 +205,7 @@ function harness(options: {
       };
     },
     profile: async () => ({ memoryIds: [], texts: [], dataClassification: "public" as const }),
+    ...(options.decisions ? { decisions: async () => options.decisions ?? [] } : {}),
   });
   return state;
 }
@@ -351,5 +354,23 @@ describe("[P4-5] real memory eval run", () => {
     const report = await failing.run("manual", LIMITS);
     expect(report.outcome).toBe("failed");
     expect(JSON.stringify(test.store.runs[0])).not.toContain("燕麦");
+  });
+
+  it("adds the rated decision groups to the run without any model call", async () => {
+    const test = harness({
+      memories: [],
+      decisions: [
+        { kind: "proactive", outcome: "pushed", ownerRating: "useful", delivered: true },
+        { kind: "consolidation", outcome: "merged", ownerRating: "unneeded", delivered: false },
+      ],
+    });
+    const report = await test.service.run("weekly", LIMITS);
+    expect(test.prompts).toHaveLength(0);
+    expect((report.summary as { decisions: unknown }).decisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ group: "proactive_pushed", rated: 1, correct: 1 }),
+        expect.objectContaining({ group: "consolidation", rated: 1, correct: 0 }),
+      ]),
+    );
   });
 });

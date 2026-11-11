@@ -25,6 +25,7 @@ import {
   SECRET_MAIL_BODY,
   SECRET_PASSWORD,
   SECRETS,
+  putPayload,
   type Side,
   seedEverything,
   seedMemory,
@@ -607,6 +608,28 @@ describe("data export: determinism and the directory", () => {
     await expect(importInto(target, files, { passphrase: PASSPHRASE })).rejects.toMatchObject({
       code: DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY,
     });
+  });
+  it("[P1-6] [P4-5] names the memory eval question bank as left out and still imports cleanly", async () => {
+    const source = await seeded();
+    const questionText = "评测题干：我早上一般喝什么咖啡？";
+    await putPayload(source, "real-eval-question-1", questionText);
+    source.database
+      .prepare(
+        `INSERT INTO real_eval_questions (
+          id, owner_id, agent_id, memory_id, memory_revision, kind, question_ref,
+          question_model, prompt_sha256, created_at
+        ) VALUES ('q-1', ?, ?, 'm-plain', 1, 'preference', 'real-eval-question-1', 'eval-model', ?, ?)`,
+      )
+      .run(source.ownerId, source.agentId, "d".repeat(64), NOW);
+    const { files, manifest } = await exportOf(source);
+    expect(manifest.omitted.map(({ what }) => what)).toContain("记忆评测的题库和每次评测的分数");
+    for (const [path, bytes] of files)
+      expect(decoder.decode(bytes), path).not.toContain("我早上一般喝什么咖啡");
+    const target = await side("eval-bank-left-out");
+    await importInto(target, files, { passphrase: PASSPHRASE });
+    expect(
+      target.database.prepare("SELECT COUNT(*) AS count FROM real_eval_questions").get(),
+    ).toEqual({ count: 0 });
   });
   it("[P1-6] two different secrets in names and source ids stay distinct and round-trip", async () => {
     const source = await seeded();

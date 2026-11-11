@@ -1,4 +1,10 @@
-import { type Proportion, proportion } from "@himawari-agent/calibration";
+import {
+  type CalibrationDecisionRow,
+  type CalibrationGroup,
+  type Proportion,
+  proportion,
+  summarizeDecisions,
+} from "@himawari-agent/calibration";
 import {
   REAL_EVAL_ANSWER,
   REAL_EVAL_JUDGE,
@@ -283,4 +289,38 @@ export class RealEvalBudget {
   record(actualMicros: number): void {
     this.#spentMicros += Math.max(0, actualMicros);
   }
+}
+
+export const DECISION_EVAL_GROUPS = [
+  "proactive_pushed",
+  "proactive_silent",
+  "memory_kept",
+  "memory_skipped",
+  "consolidation",
+] as const satisfies readonly CalibrationGroup[];
+
+export interface DecisionEvalGroup {
+  readonly group: (typeof DECISION_EVAL_GROUPS)[number];
+  readonly total: number;
+  readonly rated: number;
+  readonly correct: number;
+  readonly accuracy: Proportion;
+}
+
+export function summarizeDecisionEval(
+  rows: readonly CalibrationDecisionRow[],
+): readonly DecisionEvalGroup[] {
+  const summaries = new Map(summarizeDecisions(rows).map((summary) => [summary.group, summary]));
+  return DECISION_EVAL_GROUPS.map((group) => {
+    const summary = summaries.get(group);
+    const rated = summary?.rated ?? 0;
+    const correct = summary?.useful ?? 0;
+    return {
+      group,
+      total: summary?.total ?? 0,
+      rated,
+      correct,
+      accuracy: proportion(correct, rated),
+    };
+  });
 }
