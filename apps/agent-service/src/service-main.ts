@@ -56,6 +56,7 @@ import {
   MacOsKeychainProviderSecretSource,
   MacOsKeychainSecretSource,
   MCP_READ_SECRET_PURPOSE,
+  MCP_WRITE_SECRET_PURPOSE,
   MUSE_INTAKE_SECRET_PURPOSE,
   PayloadUdsServer,
   parseServiceArguments,
@@ -96,6 +97,7 @@ import {
   type ProductionHttpCompositionOptions,
 } from "./production-http-composition.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
+import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
 import {
   createProductionMemoryCompositionFromConfiguration,
@@ -1781,15 +1783,36 @@ export async function runAgentService(
               ref === mcpReadConfiguration.secretRef && purpose === MCP_READ_SECRET_PURPOSE,
           )
         : undefined;
+      const mcpWriteSecret = mcpReadConfiguration?.writeSecretRef
+        ? configuration.secretReferences.find(
+            ({ ref, purpose }) =>
+              ref === mcpReadConfiguration.writeSecretRef && purpose === MCP_WRITE_SECRET_PURPOSE,
+          )
+        : undefined;
       if (mcpReadSecret) {
         const settingsStore = repository.proactive();
+        const secretProvider = hostModelSources(configuration).provider;
         mcpRead = new ProductionMcpRead({
           scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
           clock,
-          secret: await hostModelSources(configuration).provider.resolve(
-            mcpReadSecret.ref,
-            mcpReadSecret.version,
-          ),
+          secret: await secretProvider.resolve(mcpReadSecret.ref, mcpReadSecret.version),
+          ...(mcpWriteSecret
+            ? {
+                write: {
+                  secret: await secretProvider.resolve(mcpWriteSecret.ref, mcpWriteSecret.version),
+                  proposals: new ProductionMcpMemoryWriter({
+                    configuration,
+                    memory: durableMemory,
+                    state: repository.productMemoryState(),
+                    book: repository.memoryBook(),
+                    ledger: repository.decisionLedger(),
+                    payloads,
+                    protector: recallProtector,
+                    clock: { now: () => clock.now() },
+                  }),
+                },
+              }
+            : {}),
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
           requestTimeoutMs: configuration.deadlines.providerRequestMs,
           sources: {

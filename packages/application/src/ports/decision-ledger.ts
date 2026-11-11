@@ -57,6 +57,13 @@ export const DECISION_OUTCOMES = {
   rule_review: ["needs_review"],
 } as const satisfies Record<LedgerWriteKind, readonly string[]>;
 
+export const EXTERNAL_PROPOSAL_REASON_PREFIX = "mcp_proposal_";
+
+export const EXTERNAL_PROPOSAL_REASON_CODES = {
+  kept: `${EXTERNAL_PROPOSAL_REASON_PREFIX}kept`,
+  declined: `${EXTERNAL_PROPOSAL_REASON_PREFIX}declined`,
+} as const;
+
 export const MEMORY_CAPTURE_FAILURE_OUTCOMES = [
   "capture_retrying",
   "capture_queued",
