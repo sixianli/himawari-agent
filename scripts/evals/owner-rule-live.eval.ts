@@ -19,7 +19,7 @@ const MODELS = (process.env["EVAL_MODELS"] ?? "deepseek-v4.1-flash,glm-5.3-flash
 const RUNS = Number(process.env["EVAL_RUNS"] ?? "3");
 const CAP_USD = Number(process.env["EVAL_CONFIRM_COST"] ?? "0");
 const MINIMUM_PASS_SHARE = Number(process.env["EVAL_MINIMUM_PASS_SHARE"] ?? "1");
-const API_KEY = process.env["EVAL_API_KEY"] ?? "proxy-injected";
+const API_KEY = process.env["EVAL_API_KEY"]?.trim() || "proxy-injected";
 const OUTPUT_DIRECTORY = process.env["EVAL_OUT"] ?? "evals/owner-rule";
 const PRICES: Record<string, { input: number; output: number; cacheRead: number }> = {
   "deepseek-v4.1-flash": { input: 0.15e-6, output: 0.6e-6, cacheRead: 0.003e-6 },

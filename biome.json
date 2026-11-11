@@ -34,7 +34,8 @@
       "includes": [
         "test/qualification/evidence/**",
         "test/fixtures/memory-evaluation/embeddings-*.json",
-        "evals/**/*.json"
+        "evals/owner-rule/*.json",
+        "evals/memory-capture/*.json"
       ],
       "formatter": {
         "enabled": false

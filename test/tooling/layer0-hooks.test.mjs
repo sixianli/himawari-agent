@@ -164,7 +164,7 @@ describe("Layer 0 hooks from the repository", () => {
     expect(scripts["check:secrets"]).toBe("node scripts/scan-machine-secrets.mjs");
   });
 
-  it("refuses the format check when biome is not installed", () => {
+  const formatRoot = (entry) => {
     const root = mkdtempSync(path.join(tmpdir(), "format-check-"));
     roots.push(root);
     mkdirSync(path.join(root, "scripts"));
@@ -172,9 +172,47 @@ describe("Layer 0 hooks from the repository", () => {
       path.join(repositoryRoot, "scripts/check-format.mjs"),
       path.join(root, "scripts/check-format.mjs"),
     );
-    const run = spawnSync(process.execPath, [path.join(root, "scripts/check-format.mjs")], {
+    if (entry) write(root, "node_modules/@biomejs/biome/bin/biome", entry);
+    return root;
+  };
+  const runFormat = (root) =>
+    spawnSync(process.execPath, [path.join(root, "scripts/check-format.mjs")], {
       encoding: "utf8",
     });
+
+  it("runs the installed biome on the whole repository and passes its exit code on", () => {
+    const passing = formatRoot(
+      "require('node:fs').writeFileSync('args.txt', process.argv.slice(2).join(' '));\n",
+    );
+    expect(runFormat(passing).status).toBe(0);
+    expect(readFileSync(path.join(passing, "args.txt"), "utf8")).toBe("format .");
+    const failing = formatRoot("process.exit(3);\n");
+    expect(runFormat(failing).status).toBe(3);
+  });
+
+  it("formats hand-kept eval data but not the JSON the eval scripts write", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "format-evals-"));
+    roots.push(root);
+    cpSync(path.join(repositoryRoot, "biome.json"), path.join(root, "biome.json"));
+    const loose = '{"a":[1,\n2]}\n';
+    write(root, "evals/owner-rule/result.json", loose);
+    write(root, "evals/memory-capture/run.json", loose);
+    const biome = path.join(repositoryRoot, "node_modules/@biomejs/biome/bin/biome");
+    const generated = spawnSync(process.execPath, [biome, "format", "."], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    expect(generated.status).toBe(0);
+    write(root, "evals/memory-retrieval/dataset.json", loose);
+    const kept = spawnSync(process.execPath, [biome, "format", "."], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    expect(kept.status).not.toBe(0);
+  });
+
+  it("refuses the format check when biome is not installed", () => {
+    const run = runFormat(formatRoot(null));
     expect(run.status).toBe(1);
     expect(run.stderr).toContain("FORMAT_CHECK_UNAVAILABLE");
   });
