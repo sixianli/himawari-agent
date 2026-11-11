@@ -632,7 +632,7 @@
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
   },
   "tools.rule-set": {
-    "sha256": "03a796200b87a5e5f96a6b660bebbc06d65cc1deff4b549a5e4460295059b908",
+    "sha256": "f62529b980811148f549896178580e077ccfe36cffb99db03067fc1e8e0147aa",
     "changedIn": "ADR 0213",
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果",
     "emphasis": {

@@ -69,7 +69,11 @@ async function chat(model: string, sentence: string): Promise<any> {
     if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
     const response = await fetch(`${GATEWAY}/chat/completions`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer proxy-injected" },
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer proxy-injected",
+        "x-opencode-session": `himawari-owner-rule-eval-${model}`,
+      },
       body: JSON.stringify({
         model,
         temperature: 0,
