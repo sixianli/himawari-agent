@@ -14,6 +14,7 @@ import {
   analyzeGate,
   MEMORY_AUTO_COMMIT_GATE,
   requiredSamples,
+  thresholdReport,
   wilsonInterval,
   worstCaseIntervalWidth,
 } from "../../scripts/calibration-report/calibration.mjs";
@@ -267,16 +268,28 @@ describe("[P4-4] threshold suggestion", () => {
         score: 600,
         rating: "useful",
       });
+    for (let index = 0; index < 3; index += 1)
+      addMemory(database, {
+        outcome: "kept",
+        reason: "kept_tentative",
+        score: 600,
+        rating: "unneeded",
+      });
+    addMemory(database, { outcome: "kept", reason: "kept_tentative", score: 600, rating: null });
     for (let index = 0; index < n; index += 1) addMemory(database, dropped(300, "useful"));
     database.close();
     const sink = capture();
     const result = run([`--db=${databasePath}`], { now: NOW, output: sink.output });
     const analysis = result.analyses[0];
-    expect(analysis?.ambiguous).toBe(50);
+    expect(analysis?.ambiguous).toBe(53);
+    expect(analysis?.ambiguousRatings).toEqual({ useful: 50, unneeded: 3 });
+    expect(analysis?.unrated).toBe(1);
     expect(analysis?.overall.samples).toBe(n);
     expect(analysis?.overall.currentPoint).toMatchObject({ disturbances: 0, misses: 0 });
     expect(analysis?.overall.suggestions.every((item) => item.flips.length === 0)).toBe(true);
-    expect(sink.text()).toContain("低于门槛但暂存 50 条");
+    expect(sink.text()).toContain(
+      "已评价的低于门槛但暂存 53 条（评「不需要」3 条、评「有用」50 条；",
+    );
   });
 
   it("uses each decision's own category threshold for the live point and the replay", () => {
@@ -310,22 +323,30 @@ describe("[P4-4] threshold suggestion", () => {
       misses: 6,
       disturbances: 0,
     });
-    expect(analysis.overall.curve.some((point) => point.threshold === 850)).toBe(true);
+    const liveRow = analysis.overall.table.find((point) => point.threshold === 850);
+    expect(liveRow).toMatchObject({ misses: 6, disturbances: 0 });
     const overall = analysis.overall.suggestions[0];
     expect(overall?.threshold).toBe(850);
-    expect(overall?.flips.map((flip) => flip.id).sort()).toEqual([
-      "h0",
-      "h1",
-      "h2",
-      "h3",
-      "h4",
-      "h5",
-    ]);
-    expect(overall?.flips.every((flip) => flip.change === "missedCaught")).toBe(true);
+    expect(overall?.flips).toEqual([]);
     const health = analysis.categories.find((segment) => segment.segment === "health");
     expect(health?.current).toBe(950);
     expect(health?.mixedCurrent).toBe(false);
     expect(health?.suggestions[0]?.threshold).toBe(900);
+    expect(health?.suggestions[0]?.flips.map((flip) => flip.change)).toEqual(
+      Array.from({ length: 6 }, () => "missedCaught"),
+    );
+    const report = thresholdReport({
+      window: null,
+      scope: { ownerId: "o", agentId: "a" },
+      analyses: [analysis],
+      ungated: [],
+      required: 5,
+      widthLimit: 0.1,
+    });
+    expect(report).toContain(
+      "### 全部分类（默认门槛 850；下面的门槛值只替换没有单独覆盖的分类，有覆盖的分类保持各自的门槛）",
+    );
+    expect(report).toContain("### 分类 health（现在的门槛 950）");
     expect(analysis.categories.map((segment) => segment.segment)).toEqual(["health"]);
   });
 

@@ -32,7 +32,6 @@ export interface AutomaticMemoryServiceOptions {
   readonly now: () => string;
   readonly memoryIdFor: (generationId: MemoryGenerationId, candidateOrdinal: number) => MemoryId;
   readonly approvalIdFor: (generationId: MemoryGenerationId, candidateOrdinal: number) => string;
-  readonly automaticConfidencePermille?: number;
   readonly onCommitted?: (input: {
     readonly candidate: ExtractedMemoryCandidate;
     readonly memoryId: MemoryId;
@@ -165,8 +164,7 @@ export class AutomaticMemoryService {
       if (
         !explicitlyApproved &&
         candidate.confidencePermille <
-          (this.options.automaticConfidencePermille ??
-            thresholdFor(MEMORY_AUTO_COMMIT_GATE, candidate.attributes?.category ?? null))
+          thresholdFor(MEMORY_AUTO_COMMIT_GATE, candidate.attributes?.category ?? null)
       ) {
         if (canBeKeptTentatively(candidate)) {
           const { supersedes: _dropped, ...rest } = candidate;
