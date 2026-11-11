@@ -13,6 +13,7 @@ import {
   THRESHOLD_GATES,
   THRESHOLD_SQL,
   thresholdReport,
+  thresholdRowsSql,
   ungatedKinds,
 } from "./calibration.mjs";
 
@@ -22,8 +23,12 @@ const ALL_TIME = { start: "0000-01-01T00:00:00.000Z", end: "9999-12-31T23:59:59.
 export function parseArguments(argv) {
   const options = new Map();
   for (const argument of argv) {
-    const [key, value = "1"] = argument.replace(/^--/u, "").split("=");
+    const body = argument.replace(/^--/u, "");
+    const split = body.indexOf("=");
+    const key = split === -1 ? body : body.slice(0, split);
     if (!OPTIONS.has(key)) throw new TypeError(`THRESHOLD_UNKNOWN_OPTION：不认识的参数 --${key}`);
+    const value = split === -1 ? "" : body.slice(split + 1);
+    if (value === "") throw new TypeError(`THRESHOLD_OPTION_VALUE：--${key} 要写成 --${key}=值`);
     options.set(key, value);
   }
   if (!options.has("db"))
@@ -59,11 +64,15 @@ export function run(argv, { now = new Date(), output = process.stdout } = {}) {
   try {
     if (options.has("owner") !== options.has("agent"))
       throw new TypeError("THRESHOLD_SCOPE：--owner 和 --agent 要一起给，或者都不给。");
+    const scopes = findScopes(database);
     let scope;
-    if (options.has("owner"))
+    if (options.has("owner")) {
       scope = { ownerId: options.get("owner"), agentId: options.get("agent") };
-    else {
-      const scopes = findScopes(database);
+      if (!scopes.some((s) => s.ownerId === scope.ownerId && s.agentId === scope.agentId))
+        throw new Error(
+          `THRESHOLD_SCOPE：数据库里没有 ${scope.ownerId}/${scope.agentId}。现有：${scopes.map((s) => `${s.ownerId}/${s.agentId}`).join("、")}`,
+        );
+    } else {
       if (scopes.length !== 1)
         throw new Error(
           `THRESHOLD_SCOPE：数据库里有 ${scopes.length} 个所有者和智能体组合，请用 --owner 和 --agent 指定。${scopes.map((s) => `${s.ownerId}/${s.agentId}`).join("、")}`,
@@ -73,8 +82,9 @@ export function run(argv, { now = new Date(), output = process.stdout } = {}) {
     const read = database.transaction(() => {
       assertTimestampFormat(database);
       const parameters = [scope.ownerId, scope.agentId, range.start, range.end];
+      const kinds = [...new Set(THRESHOLD_GATES.map((gate) => gate.decisionKind))].sort();
       return {
-        rows: database.prepare(THRESHOLD_SQL.rows).all(...parameters),
+        rows: database.prepare(thresholdRowsSql(kinds.length)).all(...parameters, ...kinds),
         counts: database.prepare(THRESHOLD_SQL.kindCounts).all(...parameters),
       };
     })();

@@ -11,6 +11,7 @@ import {
 import type Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  analyzeGate,
   MEMORY_AUTO_COMMIT_GATE,
   requiredSamples,
   wilsonInterval,
@@ -256,6 +257,89 @@ describe("[P4-4] threshold suggestion", () => {
     expect(stdout).toContain("样本不足：已评价并由门槛决定的有 1 条");
   });
 
+  it("leaves tentatively kept candidates out because a rating cannot say whether to auto-commit them", async () => {
+    const { databasePath, database } = await fixture();
+    const n = requiredSamples();
+    for (let index = 0; index < 50; index += 1)
+      addMemory(database, {
+        outcome: "kept",
+        reason: "kept_tentative",
+        score: 600,
+        rating: "useful",
+      });
+    for (let index = 0; index < n; index += 1) addMemory(database, dropped(300, "useful"));
+    database.close();
+    const sink = capture();
+    const result = run([`--db=${databasePath}`], { now: NOW, output: sink.output });
+    const analysis = result.analyses[0];
+    expect(analysis?.ambiguous).toBe(50);
+    expect(analysis?.overall.samples).toBe(n);
+    expect(analysis?.overall.currentPoint).toMatchObject({ disturbances: 0, misses: 0 });
+    expect(analysis?.overall.suggestions.every((item) => item.flips.length === 0)).toBe(true);
+    expect(sink.text()).toContain("低于门槛但暂存 50 条");
+  });
+
+  it("uses each decision's own category threshold for the live point and the replay", () => {
+    const gate = { ...MEMORY_AUTO_COMMIT_GATE, byCategory: { health: 950 } };
+    const rows = [
+      ...Array.from({ length: 6 }, (_, index) => ({
+        id: `h${index}`,
+        kind: "memory_candidate",
+        outcome: "discarded",
+        reasonCode: "confidence_below_threshold",
+        ownerRating: "missed",
+        category: "health",
+        score: 900,
+        decidedAt: "2026-11-05T03:00:00.000Z",
+      })),
+      ...Array.from({ length: 4 }, (_, index) => ({
+        id: `p${index}`,
+        kind: "memory_candidate",
+        outcome: "kept",
+        reasonCode: "auto_committed",
+        ownerRating: "useful",
+        category: "preference",
+        score: 900,
+        decidedAt: "2026-11-05T03:00:00.000Z",
+      })),
+    ];
+    const analysis = analyzeGate(gate, rows, { required: 5, missCostRatios: [1] });
+    expect(analysis.overall.mixedCurrent).toBe(true);
+    expect(analysis.overall.currentPoint).toMatchObject({
+      threshold: 850,
+      misses: 6,
+      disturbances: 0,
+    });
+    expect(analysis.overall.curve.some((point) => point.threshold === 850)).toBe(true);
+    const overall = analysis.overall.suggestions[0];
+    expect(overall?.threshold).toBe(850);
+    expect(overall?.flips.map((flip) => flip.id).sort()).toEqual([
+      "h0",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+    ]);
+    expect(overall?.flips.every((flip) => flip.change === "missedCaught")).toBe(true);
+    const health = analysis.categories.find((segment) => segment.segment === "health");
+    expect(health?.current).toBe(950);
+    expect(health?.mixedCurrent).toBe(false);
+    expect(health?.suggestions[0]?.threshold).toBe(900);
+    expect(analysis.categories.map((segment) => segment.segment)).toEqual(["health"]);
+  });
+
+  it("checks an explicitly named owner and agent exist", async () => {
+    const { databasePath, database } = await fixture();
+    database.close();
+    expect(() =>
+      run([`--db=${databasePath}`, "--owner=o", "--agent=nope"], {
+        now: NOW,
+        output: capture().output,
+      }),
+    ).toThrow("THRESHOLD_SCOPE：数据库里没有 o/nope");
+  });
+
   it("keeps the live auto-commit threshold in one place", () => {
     expect(MEMORY_AUTO_COMMIT_GATE.defaultThreshold).toBe(850);
     expect(MEMORY_AUTO_COMMIT_GATE.decisionKind).toBe("memory_candidate");
@@ -265,5 +349,8 @@ describe("[P4-4] threshold suggestion", () => {
     expect(() => parseArguments([])).toThrow("THRESHOLD_DB_REQUIRED");
     expect(() => parseArguments(["--db=x", "--end=2026-11-01"])).toThrow("THRESHOLD_WINDOW");
     expect(() => parseArguments(["--db=x", "--nope"])).toThrow("THRESHOLD_UNKNOWN_OPTION");
+    expect(() => parseArguments(["--db"])).toThrow("THRESHOLD_OPTION_VALUE");
+    expect(() => parseArguments(["--db=x", "--owner="])).toThrow("THRESHOLD_OPTION_VALUE");
+    expect(parseArguments(["--db=/tmp/a=b.sqlite"]).get("db")).toBe("/tmp/a=b.sqlite");
   });
 });

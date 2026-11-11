@@ -21,6 +21,7 @@ export interface ThresholdGate {
   readonly scoreField: "confidencePermille";
   readonly scoreMax: number;
   readonly gatedReasons: readonly string[];
+  readonly ambiguousReasons: readonly string[];
   readonly positiveOutcomes: readonly string[];
   readonly defaultThreshold: number;
   readonly byCategory: Readonly<Partial<Record<ThresholdCategory, number>>>;
@@ -32,7 +33,8 @@ export const MEMORY_AUTO_COMMIT_GATE: ThresholdGate = Object.freeze({
   label: "记忆候选自动存入",
   scoreField: "confidencePermille",
   scoreMax: 1000,
-  gatedReasons: Object.freeze(["auto_committed", "kept_tentative", "confidence_below_threshold"]),
+  gatedReasons: Object.freeze(["auto_committed", "confidence_below_threshold"]),
+  ambiguousReasons: Object.freeze(["kept_tentative"]),
   positiveOutcomes: Object.freeze(["kept"]),
   defaultThreshold: 850,
   byCategory: Object.freeze({}),
@@ -111,6 +113,7 @@ export interface GateSampleSet {
   readonly samples: readonly ThresholdSample[];
   readonly unrated: number;
   readonly notGated: number;
+  readonly ambiguous: number;
   readonly missingScore: number;
   readonly mismatchedRating: number;
 }
@@ -122,10 +125,15 @@ export function gateSamples(
   const samples: ThresholdSample[] = [];
   let unrated = 0;
   let notGated = 0;
+  let ambiguous = 0;
   let missingScore = 0;
   let mismatchedRating = 0;
   for (const row of rows) {
     if (row.kind !== gate.decisionKind) continue;
+    if (gate.ambiguousReasons.includes(row.reasonCode)) {
+      ambiguous += 1;
+      continue;
+    }
     if (!gate.gatedReasons.includes(row.reasonCode)) {
       notGated += 1;
       continue;
@@ -159,7 +167,7 @@ export function gateSamples(
       currentThreshold: thresholdFor(gate, row.category),
     });
   }
-  return { samples, unrated, notGated, missingScore, mismatchedRating };
+  return { samples, unrated, notGated, ambiguous, missingScore, mismatchedRating };
 }
 
 export interface CurvePoint {
@@ -173,8 +181,9 @@ export interface CurvePoint {
 export function thresholdCandidates(
   samples: readonly ThresholdSample[],
   scoreMax: number,
+  current: number,
 ): number[] {
-  const values = new Set<number>([0, scoreMax + 1]);
+  const values = new Set<number>([0, scoreMax + 1, current]);
   for (const sample of samples) {
     values.add(sample.score);
     values.add(Math.min(sample.score + 1, scoreMax + 1));
@@ -183,15 +192,16 @@ export function thresholdCandidates(
   return [...values].sort((left, right) => left - right);
 }
 
-export function curvePoint(
+function countPoint(
   samples: readonly ThresholdSample[],
   threshold: number,
   minimumSamples: number,
+  thresholdOf: (sample: ThresholdSample) => number,
 ): CurvePoint {
   let disturbances = 0;
   let misses = 0;
   for (const sample of samples) {
-    const acts = sample.score >= threshold;
+    const acts = sample.score >= thresholdOf(sample);
     if (acts && sample.truth === "shouldNot") disturbances += 1;
     if (!acts && sample.truth === "shouldAct") misses += 1;
   }
@@ -202,6 +212,22 @@ export function curvePoint(
     disturbanceRate: proportion(disturbances, samples.length, minimumSamples),
     missRate: proportion(misses, samples.length, minimumSamples),
   };
+}
+
+export function curvePoint(
+  samples: readonly ThresholdSample[],
+  threshold: number,
+  minimumSamples: number,
+): CurvePoint {
+  return countPoint(samples, threshold, minimumSamples, () => threshold);
+}
+
+export function livePoint(
+  samples: readonly ThresholdSample[],
+  current: number,
+  minimumSamples: number,
+): CurvePoint {
+  return countPoint(samples, current, minimumSamples, (sample) => sample.currentThreshold);
 }
 
 export type ReplayChange =
@@ -294,6 +320,7 @@ export function suggestThreshold(
 export interface SegmentAnalysis {
   readonly segment: string | null;
   readonly current: number;
+  readonly mixedCurrent: boolean;
   readonly samples: number;
   readonly required: number;
   readonly enough: boolean;
@@ -307,6 +334,7 @@ export interface GateAnalysis {
   readonly gate: ThresholdGate;
   readonly unrated: number;
   readonly notGated: number;
+  readonly ambiguous: number;
   readonly missingScore: number;
   readonly mismatchedRating: number;
   readonly overall: SegmentAnalysis;
@@ -322,7 +350,7 @@ function analyzeSegment(
   missCostRatios: readonly number[],
 ): SegmentAnalysis {
   const enough = samples.length >= required;
-  const candidates = thresholdCandidates(samples, gate.scoreMax);
+  const candidates = thresholdCandidates(samples, gate.scoreMax, current);
   const curve = candidates.map((threshold) => curvePoint(samples, threshold, required));
   const suggestions = enough
     ? missCostRatios.map((ratio) => suggestThreshold(samples, candidates, current, ratio, required))
@@ -333,10 +361,11 @@ function analyzeSegment(
   return {
     segment,
     current,
+    mixedCurrent: samples.some((sample) => sample.currentThreshold !== current),
     samples: samples.length,
     required,
     enough,
-    currentPoint: curvePoint(samples, current, required),
+    currentPoint: livePoint(samples, current, required),
     curve,
     table: [...shown]
       .sort((left, right) => left - right)
@@ -376,6 +405,7 @@ export function analyzeGate(
     gate,
     unrated: set.unrated,
     notGated: set.notGated,
+    ambiguous: set.ambiguous,
     missingScore: set.missingScore,
     mismatchedRating: set.mismatchedRating,
     overall,
@@ -399,12 +429,19 @@ export function ungatedKinds(
     .sort((left, right) => left.kind.localeCompare(right.kind));
 }
 
-export const THRESHOLD_SQL = Object.freeze({
-  rows: `SELECT id, kind, COALESCE(outcome, verdict) AS outcome, reason_code AS reasonCode,
+export function thresholdRowsSql(kindCount: number): string {
+  if (!Number.isInteger(kindCount) || kindCount < 1)
+    throw new RangeError("THRESHOLD_KINDS：至少要有一个登记了门槛的决策类别");
+  const placeholders = Array.from({ length: kindCount }, () => "?").join(", ");
+  return `SELECT id, kind, outcome, reason_code AS reasonCode,
       owner_rating AS ownerRating, category, confidence_permille AS score, checked_at AS decidedAt
     FROM decision_ledger
     WHERE owner_id = ? AND agent_id = ? AND checked_at >= ? AND checked_at < ?
-    ORDER BY checked_at, id`,
+      AND kind IN (${placeholders})
+    ORDER BY checked_at, id`;
+}
+
+export const THRESHOLD_SQL = Object.freeze({
   kindCounts: `SELECT kind, count(*) AS total,
       sum(CASE WHEN owner_rating IS NULL THEN 0 ELSE 1 END) AS rated
     FROM decision_ledger
@@ -442,7 +479,10 @@ export function formatRate(rate: Proportion): string {
 
 function segmentLines(segment: SegmentAnalysis): string[] {
   const title = segment.segment === null ? "全部分类" : `分类 ${segment.segment}`;
-  const lines = [`### ${title}（现在的门槛 ${segment.current}）`, ""];
+  const current = segment.mixedCurrent
+    ? `默认门槛 ${segment.current}，有覆盖的分类按各自的门槛`
+    : `现在的门槛 ${segment.current}`;
+  const lines = [`### ${title}（${current}）`, ""];
   if (!segment.enough) {
     lines.push(
       `样本不足：已评价并由门槛决定的有 ${segment.samples} 条，需要至少 ${segment.required} 条，不给建议值。`,
@@ -511,7 +551,7 @@ export function thresholdReport({
     "",
     `范围：${scope.ownerId}/${scope.agentId}，${window === null ? "全部决策记录" : window.label}。`,
     `样本门槛：至少 ${required} 条已评价决策，这是让任意比例的 95% 区间宽度都不超过 ${percent(widthLimit)} 所需的最少条数（Wilson 区间）。`,
-    "误扰 = 按这个门槛会开口、但你评为不该开口的条数；漏报 = 按这个门槛会沉默、但你评为该开口的条数；两者都除以已评价总数。",
+    "误扰 = 按这个门槛会开口、但你评为不该开口的条数；漏报 = 按这个门槛会沉默、但你评为该开口的条数；两者都除以纳入统计的已评价条数（已评价、由门槛决定、有分数、评价和结果对得上）。",
     "这里只给建议，不会改任何门槛。",
     "",
   ];
@@ -520,6 +560,9 @@ export function thresholdReport({
     const skipped = [
       analysis.unrated > 0 ? `未评价 ${analysis.unrated} 条` : null,
       analysis.notGated > 0 ? `不由门槛决定 ${analysis.notGated} 条` : null,
+      analysis.ambiguous > 0
+        ? `低于门槛但暂存 ${analysis.ambiguous} 条（评价只说明该不该留下，说明不了该不该直接存入）`
+        : null,
       analysis.missingScore > 0 ? `没有分数 ${analysis.missingScore} 条` : null,
       analysis.mismatchedRating > 0 ? `评价和结果对不上 ${analysis.mismatchedRating} 条` : null,
     ].filter((item): item is string => item !== null);
