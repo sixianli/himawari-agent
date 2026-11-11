@@ -4,7 +4,11 @@ import { compileRuleExpression, type RuleFacts } from "./rule-expression.js";
 
 export type RuleOutcome = "raise_floor" | "suppress_push" | "defer_to_quiet_hours";
 export type RuleOrigin = "built_in" | "owner_setting";
-export type RuleStatus = "active" | "retired";
+export type RuleStatus = "active" | "needs_review" | "retired";
+
+export function ruleIsEnforced(status: RuleStatus): boolean {
+  return status === "active" || status === "needs_review";
+}
 
 export interface RuleExample {
   readonly facts: RuleFacts;

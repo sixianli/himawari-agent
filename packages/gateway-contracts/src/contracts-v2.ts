@@ -534,6 +534,7 @@ const proactiveReviewKinds = [
   "context_truncation",
   "retrieval_degrade",
   "external_read",
+  "rule_review",
   "mail",
 ] as const;
 const proactiveReviewItemSchema = object({
@@ -763,6 +764,7 @@ const calibrationGroupSchema = enumeration([
   "context_truncation",
   "retrieval_degrade",
   "external_read",
+  "rule_review",
 ]);
 const calibrationRateSchema = nullable(
   object({
@@ -1018,6 +1020,7 @@ const decisionChainSnapshotSchema = object({
         "context_truncation",
         "retrieval_degrade",
         "external_read",
+        "rule_review",
       ]),
       decidedAt: timestamp,
       outcome: boundedString(64),
