@@ -497,8 +497,8 @@ export async function importPortableExport(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
       );
       const reviewChange = database.prepare(
-        `INSERT INTO memory_conversation_review_changes (review_id, memory_id, action, source_message_id, after_revision, before_superseded_by, before_valid_to, created_at)
-        VALUES (?, ?, ?, 'data-import', ?, ?, ?, ?)`,
+        `INSERT INTO memory_conversation_review_changes (review_id, memory_id, action, source_message_id, after_revision, before_superseded_by, before_valid_to, created_at, undone_revision)
+        VALUES (?, ?, ?, 'data-import', ?, ?, ?, ?, ?)`,
       );
       for (const { review: item, changes } of keptReviews) {
         review.run(
@@ -527,6 +527,7 @@ export async function importPortableExport(
               : null,
             entry.beforeValidTo,
             entry.createdAt,
+            entry.undoneRevision,
           );
       }
       const decision = database.prepare(

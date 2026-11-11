@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   ApplicationPortError,
   DurableMemoryService,
+  type MemoryConversationReviewStorePort,
   type MemoryProviderProjectionPort,
   type ProductMemoryAttributes,
   type ProductMemoryRecord,
@@ -30,6 +31,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { MemoryCaptureCall } from "../../apps/agent-service/src/production-memory-capture.ts";
 import {
   type ConversationReviewSettings,
+  conversationReviewGenerationId,
+  conversationReviewId,
   DEFAULT_CONVERSATION_REVIEW_SETTINGS,
   ProductionMemoryConversationReview,
 } from "../../apps/agent-service/src/production-memory-conversation-review.ts";
@@ -116,6 +119,8 @@ describe("[DREAM] daily conversation review", () => {
     readonly settings?: Partial<ConversationReviewSettings>;
     readonly onGenerate?: (memory: DurableMemoryService) => Promise<void>;
     readonly failAssertActiveAt?: number;
+    readonly failSettles?: number;
+    readonly failWrite?: boolean;
   }) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-conversation-review-"));
     directories.push(stateRoot);
@@ -271,10 +276,22 @@ describe("[DREAM] daily conversation review", () => {
     const failures: unknown[] = [];
     const outputs = [...input.outputs];
     let activeChecks = 0;
+    let settleFailures = input.failSettles ?? 0;
+    const reviews = repository.memoryConversationReviews();
+    const store: MemoryConversationReviewStorePort = {
+      ...reviews,
+      recordChange: async (change) => {
+        if (change.afterRevision !== null && settleFailures > 0) {
+          settleFailures -= 1;
+          throw new Error("SETTLE_LOST");
+        }
+        await reviews.recordChange(change);
+      },
+    };
     const review = new ProductionMemoryConversationReview({
       settings: () => ({ ...DEFAULT_CONVERSATION_REVIEW_SETTINGS, ...input.settings }),
       episodes: repository.memoryEpisodes(),
-      store: repository.memoryConversationReviews(),
+      store,
       threads: repository.threadRepository(),
       state: repository.productMemoryState(),
       search: async (request, _query, limit) =>
@@ -282,7 +299,12 @@ describe("[DREAM] daily conversation review", () => {
           .toSorted((left, right) => left.id.localeCompare(right.id))
           .slice(0, limit)
           .map(({ id }) => ({ productMemoryId: id })),
-      generations: repository.threadDistillationState(),
+      generations: {
+        request: async (work) => {
+          if (input.failWrite) throw new Error("WRITE_LOST");
+          return repository.threadDistillationState().request(work);
+        },
+      },
       product: memory,
       approvals: repository.sensitiveMemoryApprovals(),
       reminders: repository.memoryReminders(),
@@ -409,6 +431,106 @@ describe("[DREAM] daily conversation review", () => {
     const [retried] = await resource.review.runDue(resource.request);
     expect(resource.prompts).toHaveLength(1);
     expect(retried?.changes.map(({ action }) => action).sort()).toEqual(["created", "superseded"]);
+  });
+
+  it("[DREAM] keeps review, generation and memory ids within the 128-character limit for any thread", () => {
+    const episodeId = `episode:day_summary:${"t".repeat(128)}:123456789`;
+    const messageId = "m".repeat(256);
+    const reviewId = conversationReviewId(episodeId);
+    const memoryId = `memory:${conversationReviewGenerationId(episodeId, messageId)}:23`;
+    expect(reviewId).toBe(conversationReviewId(episodeId));
+    expect(reviewId).not.toBe(conversationReviewId(`${episodeId}0`));
+    for (const id of [reviewId, memoryId]) {
+      expect(id.length).toBeLessThanOrEqual(128);
+      expect(createMemoryId(id)).toBe(id);
+    }
+    expect(`memory:memory-review:${episodeId}:${messageId}:23`.length).toBeGreaterThan(128);
+  });
+
+  it("[DREAM] REVERSE: hides and refuses to undo a failed review, then finishes the interrupted write on retry", async () => {
+    const resource = await setup({
+      lines: PLAN_CHANGE,
+      seeds: [OSAKA],
+      outputs: [JSON.stringify({ memories: [SUPERSEDE] })],
+      failSettles: 2,
+    });
+    await expect(resource.review.runDue(resource.request)).rejects.toThrow("SETTLE_LOST");
+    const store = resource.repository.memoryConversationReviews();
+    const reviewId = conversationReviewId("episode:day_summary:thread-conversation-review:1");
+    expect((await store.read(reviewId))?.status).toBe("failed");
+    expect((await store.listChanges(reviewId)).map(({ afterRevision }) => afterRevision)).toEqual([
+      null,
+      null,
+    ]);
+    expect(
+      await store.listWithChanges({ ownerId: OWNER_ID, agentId: AGENT_ID, limit: 10 }),
+    ).toEqual([]);
+    await expect(resource.undo(reviewId)).rejects.toThrow("Conversation review not finished");
+
+    await resource.review.runDue(resource.request);
+    expect(resource.prompts).toHaveLength(1);
+    expect((await store.read(reviewId))?.status).toBe("completed");
+    const changes = await store.listChanges(reviewId);
+    expect(changes.map(({ action }) => action).sort()).toEqual(["created", "superseded"]);
+    expect(changes.every(({ afterRevision }) => afterRevision !== null)).toBe(true);
+    const created = changes.find(({ action }) => action === "created");
+    expect((await resource.read("osaka"))?.attributes?.supersededBy).toBe(created?.memoryId);
+
+    await resource.undo(reviewId);
+    expect((await resource.read("osaka"))?.attributes?.supersededBy ?? null).toBeNull();
+    expect((await resource.read(created?.memoryId ?? ""))?.status).toBe("archived");
+  });
+
+  it("[DREAM] REVERSE: drops a planned change whose write never happened", async () => {
+    const resource = await setup({
+      lines: PLAN_CHANGE,
+      seeds: [OSAKA],
+      outputs: [JSON.stringify({ memories: [SUPERSEDE] })],
+      failWrite: true,
+    });
+    await expect(resource.review.runDue(resource.request)).rejects.toThrow("WRITE_LOST");
+    const store = resource.repository.memoryConversationReviews();
+    const reviewId = conversationReviewId("episode:day_summary:thread-conversation-review:1");
+    expect(await store.listChanges(reviewId)).toEqual([]);
+    expect((await resource.read("osaka"))?.attributes?.supersededBy ?? null).toBeNull();
+  });
+
+  it("[DREAM] resumes an undo that stopped halfway", async () => {
+    const resource = await setup({
+      lines: PLAN_CHANGE,
+      seeds: [OSAKA],
+      outputs: [JSON.stringify({ memories: [SUPERSEDE] })],
+    });
+    const [result] = await resource.review.runDue(resource.request);
+    const reviewId = result?.reviewId ?? "";
+    let revisions = 0;
+    const options = {
+      store: resource.repository.memoryConversationReviews(),
+      state: resource.repository.productMemoryState(),
+      generationFor: async (memoryId: ProductMemoryRecord["id"]) =>
+        (await resource.repository.memoryProjectionJobs().listByMemory(memoryId)).at(-1)
+          ?.generationId,
+      now: () => resource.clock.value,
+    };
+    const flaky = {
+      revise: async (request: Parameters<DurableMemoryService["revise"]>[0]) => {
+        revisions += 1;
+        if (revisions === 2) throw new Error("REVISE_LOST");
+        return resource.memory.revise(request);
+      },
+    };
+    await expect(undoConversationReview({ ...options, memory: flaky }, reviewId)).rejects.toThrow(
+      "REVISE_LOST",
+    );
+    const halfway = await options.store.listChanges(reviewId);
+    expect(halfway.filter(({ undoneRevision }) => undoneRevision !== null)).toHaveLength(1);
+    expect((await options.store.read(reviewId))?.undoneAt).toBeNull();
+
+    await undoConversationReview({ ...options, memory: resource.memory }, reviewId);
+    const created = halfway.find(({ action }) => action === "created");
+    expect((await resource.read("osaka"))?.attributes?.supersededBy ?? null).toBeNull();
+    expect((await resource.read(created?.memoryId ?? ""))?.status).toBe("archived");
+    expect((await options.store.read(reviewId))?.undoneAt).not.toBeNull();
   });
 
   it("records a habit only when another day supports it", async () => {

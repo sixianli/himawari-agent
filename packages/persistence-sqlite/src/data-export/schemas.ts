@@ -186,7 +186,7 @@ export const CONSOLIDATION_SCHEMA: JsonSchema = objectOf(
 
 export const CONVERSATION_REVIEW_SCHEMA: JsonSchema = objectOf(
   {
-    id: text(1, 300),
+    id: text(1, 128),
     day: text(10, 10),
     status: enumOf(["running", "completed", "failed", "gave_up"]),
     attempts: integer(1, 100),
@@ -203,6 +203,7 @@ export const CONVERSATION_REVIEW_SCHEMA: JsonSchema = objectOf(
         beforeSupersededBy: nullable(text(1, 512)),
         beforeValidTo: nullable(text(1, 64)),
         createdAt: timestamp,
+        undoneRevision: nullable(integer(2)),
       }),
     },
   },

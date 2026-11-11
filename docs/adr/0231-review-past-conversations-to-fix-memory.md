@@ -63,20 +63,24 @@ Himawari 现在有两个环节写记忆，但没有一个环节拿“对话”�
 依据的原则：愿景原则 3“记忆可靠性”（记忆要跟着主人的新说法变对），受原则 2“边界与可逆性”约束（每次改动可整批撤销，主人改过的记忆不碰）。
 
 1. **独立的后台任务。** `ProductionMemoryConversationReview`（`apps/agent-service/src/production-memory-conversation-review.ts`）在日摘要和整理记忆之后启动（`production-titled-runtime.ts`），由主人发起的一轮对话顺带触发，不阻塞回答；同一时间只跑一个，两次触发之间至少隔 10 分钟。
-2. **按日摘要的段落往前走。** 游标是“最新一段已完成或已放弃的回看”，按 `(episode_created_at, episode_id)` 排序；每次从游标之后取段（`listDaySummariesAfter`），每天最多回看 `maximumSegmentsPerDay` 段。每段在 `memory_conversation_reviews` 记一行，失败的最多重试 3 次（`MEMORY_CONVERSATION_REVIEW_MAX_ATTEMPTS`），之后记为 `gave_up`，游标跳过它。
+2. **按日摘要的段落往前走。** 游标是“最新一段已完成或已放弃的回看”，按 `(episode_created_at, episode_id)` 排序；每次从游标之后取段（`listDaySummariesAfter`），每天最多回看 `maximumSegmentsPerDay` 段。每段在 `memory_conversation_reviews` 记一行，失败的最多重试 3 次（`MEMORY_CONVERSATION_REVIEW_MAX_ATTEMPTS`），之后记为 `gave_up`，游标跳过它。游标只看对应日摘要还在的回看记录，从数据导出导入进来的回看记录（没有日摘要）不影响游标。回看编号是 `memory-review:` 加段编号的 SHA-256 前 32 位，长度固定，不随 thread 编号或消息序号变长（网关的编号上限是 128 字符）。
 3. **读主人原话，不读摘要。** 回读这一段对话的消息：跳过 system 和没提交的消息，模型看不到的（`isModelVisible`）和分级高于这段摘要的都排除；单条截到 1500 字，总字数不超过 `maximumSourceCharacters`。代码里有测试保证不读摘要正文（`proactive-summaries-scope.unit.test.ts`）。
 4. **带上相关旧记忆。** 用这段原话做混合检索（含待确认的记忆），只保留仍有效、没被取代、分级允许的，最多 `maximumRelatedMemories` 条；每条只给编号、记下的日期、正文、立场和是否待确认，不给分数。
 5. **提示词固定在前，会变的在最后。** `memory.conversation-review` 是固定指令；接着是本段数据 JSON（旧记忆、已有子分类、认识的人、主人时区、原话）；最后一行是 `memory.conversation-review.day`（“今天是 {day}（主人所在时区）。”）。见 [KV 缓存规范第 15 条](../kv-cache-guide.md)。
 6. **模型只能做三种判断：新增（create）、取代（supersede）、确认（unchanged）。** 解析后在代码里再执行硬规则，不只靠提示词：
    - 引用的消息必须是这段里主人说的话，原话必须逐字出现在那条消息里（复用每轮抽取的 `parseMemoryCandidates`）。
-   - 习惯类必须用 `alsoSeenIn` 指向另一天记下的旧记忆，只有一天的证据不算习惯。
+   - 习惯类必须用 `alsoSeenIn` 指向另一天记下的旧记忆，只有一天的证据不算习惯；`alsoSeenIn` 里的消息编号不算证据。
    - 敏感候选直接跳过，不发审批；推断出来的健康、财务类直接丢弃。
    - 确认只在旧记忆是“待确认”时才生效，把它转正。
    - 每天新增不超过 `maximumNewMemoriesPerDay` 条。
    - 取代要过 `replacesOlder`（从整理记忆抽出的共用判断，见 [ADR 0220](0220-consolidation-conflicts-wait-for-the-owner.md)）：新说法更晚且置信度够才取代；否则两条都留，新条标为待确认。
    - 回看期间主人改过的记忆（修订号变了）跳过。
-7. **写库复用每轮抽取那条路。** 新增和取代走 `createProductionAutomaticMemory().processCommittedRun`，每条用固定编号 `memory-review:<段编号>:<消息编号>` 建真实的生成记录（策略 `memory-conversation-review:v1`），所以 850 门槛、决策记录、遮盖还原都和每轮抽取一样。模型输出加密存一份（`memory-review-output:<回看编号>:<第几次>`），重试时复用，不再调模型。模型费用记在 `memory-consolidation` 用途下。
-8. **整批撤销。** `memory_conversation_review_changes` 记下这一批改了哪些记忆、动作（created、superseded、confirmed）、改后的修订号、改前的 `supersededBy` 和 `validTo`。撤销（网关命令 `memory.conversationReview.undo`，`packages/memory-engine/src/conversation-review.ts`）要么全做要么不做：新增的归档、被取代的恢复原状、确认的改回待确认；只要有一条记忆在回看之后又被改过，整批不能撤销，界面显示“锁定”而不是按钮。
+7. **写库复用每轮抽取那条路。** 新增和取代走 `createProductionAutomaticMemory().processCommittedRun`，每条用固定编号 `memory-review:<段编号和消息编号的 SHA-256 前 32 位>` 建真实的生成记录（策略 `memory-conversation-review:v1`），所以 850 门槛、决策记录、遮盖还原都和每轮抽取一样。模型输出加密存一份（`memory-review-output:<回看编号>:<第几次>`），重试时复用，不再调模型。模型费用记在 `memory-consolidation` 用途下。
+8. **整批撤销。** `memory_conversation_review_changes` 记下这一批改了哪些记忆、动作（created、superseded、confirmed）、改后的修订号、改前的 `supersededBy` 和 `validTo`。
+   - 先记后写：写记忆之前，先按这次回看的快照记下“打算改哪些记忆”和改前的值（这时改后的修订号为空）；写完、写失败时、下次重试开始时，按记忆的实际状态补上修订号，没发生的删掉。这样写到一半失败也不会留下不在任何批次里的记忆，重试也不会把已改过的值当成改前的值。新增的记忆在写之前还不存在，所以这张表不对记忆表用外键，改用删除触发器，记忆被删时一并删掉改动行。
+   - 撤销（网关命令 `memory.conversationReview.undo`，`packages/memory-engine/src/conversation-review.ts`）只对已完成或已放弃的批次开放，进行中或失败待重试的批次不显示、不能撤销。新增的归档、被取代的恢复原状、确认的改回待确认；只要有一条记忆在回看之后又被别人改过，整批不能撤销，界面显示“锁定”而不是按钮。
+   - 撤销中途失败可以接着做：每改回一条就记下它改回后的修订号（`undone_revision`），再点撤销时跳过已改回的。
+   - 已知空隙：检查修订号和写库之间没有锁，主人恰好在这几毫秒里改了那条旧记忆时，它仍会被标成已取代（可撤销）。根治要给每轮抽取共用的 `applyProposal` 加按修订号写，另行决定。
 9. **记忆页。** “整理记忆”筛选里显示回看批次：这一批新记住、取代、确认了几条，每条带记忆正文和原话，一个整批撤销按钮。
 10. **配置。** `configuration.memory.conversationReview` 下的 `enabled`（缺省开）、`maximumSegmentsPerDay`（3）、`maximumSourceCharacters`（16000）、`maximumRelatedMemories`（30）、`maximumNewMemoriesPerDay`（5）、`maximumOutputTokens`（1024），都有上下限检查，不写死。
 11. **数据导出。** 两张新表进导出格式（`data/conversation-reviews.jsonl`），导入时挂到导入建的占位对话上；来源对话、段落和消息的编号不导出，和记忆的来源对话编号不导出一致。

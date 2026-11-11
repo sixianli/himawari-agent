@@ -313,6 +313,13 @@ export async function seedEverything(side: Side): Promise<void> {
   reviewChange.run("m-archived", "superseded", null, null, T0);
   reviewChange.run("m-tentative", "confirmed", null, null, T0);
   reviewChange.run("m-pending", "created", null, null, T0);
+  db.prepare(
+    "UPDATE memory_conversation_review_changes SET undone_revision = 2 WHERE memory_id = 'm-archived'",
+  ).run();
+  db.prepare(
+    `INSERT INTO memory_conversation_review_changes (review_id, memory_id, action, source_message_id, after_revision, before_superseded_by, before_valid_to, created_at)
+    VALUES ('review-2', 'm-plain', 'created', 'message-1', NULL, NULL, NULL, ?)`,
+  ).run(T0);
 
   const decision = db.prepare(
     `INSERT INTO decision_ledger (id, owner_id, agent_id, kind, scenario, checked_at, counts, verdict, outcome, reason_code, subject_ref, inputs, reason_ref, content_ref, cost_micros, duration_ms, owner_rating, rated_at, category, confidence_permille, inferred)

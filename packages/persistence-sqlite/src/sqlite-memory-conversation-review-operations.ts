@@ -20,7 +20,7 @@ const reviewColumns = `id, owner_id AS ownerId, agent_id AS agentId, thread_id A
 const changeColumns = `review_id AS reviewId, memory_id AS memoryId, action,
   source_message_id AS sourceMessageId, after_revision AS afterRevision,
   before_superseded_by AS beforeSupersededBy, before_valid_to AS beforeValidTo,
-  created_at AS createdAt`;
+  created_at AS createdAt, undone_revision AS undoneRevision`;
 
 function validTime(value: unknown): value is string {
   if (typeof value !== "string") return false;
@@ -67,7 +67,15 @@ export class SqliteMemoryConversationReviewOperations {
           },
         );
       case "memoryConversationReview.recordChange":
-        return this.recordChange((payload as { change: MemoryConversationReviewChange }).change);
+        return this.recordChange(
+          (payload as { change: Omit<MemoryConversationReviewChange, "undoneRevision"> }).change,
+        );
+      case "memoryConversationReview.discardChange":
+        return this.discardChange(payload as { reviewId: string; memoryId: MemoryId });
+      case "memoryConversationReview.markChangeUndone":
+        return this.markChangeUndone(
+          payload as { reviewId: string; memoryId: MemoryId; undoneRevision: number },
+        );
       case "memoryConversationReview.read":
         return this.read((payload as { id: string }).id);
       case "memoryConversationReview.listWithChanges":
@@ -92,8 +100,9 @@ export class SqliteMemoryConversationReviewOperations {
     const row = this.database
       .prepare(
         `SELECT episode_created_at AS createdAt, episode_id AS episodeId
-        FROM memory_conversation_reviews
+        FROM memory_conversation_reviews r
         WHERE owner_id = ? AND agent_id = ? AND status IN ('completed', 'gave_up')
+          AND EXISTS (SELECT 1 FROM memory_episodes e WHERE e.id = r.episode_id)
         ORDER BY episode_created_at DESC, episode_id DESC LIMIT 1`,
       )
       .get(input.ownerId, input.agentId) as { createdAt: string; episodeId: string } | undefined;
@@ -112,7 +121,7 @@ export class SqliteMemoryConversationReviewOperations {
   }): MemoryConversationReview {
     this.assertDiskHeadroom();
     if (
-      !text(input.id, 300) ||
+      !text(input.id, 128) ||
       !text(input.episodeId, 256) ||
       !validTime(input.episodeCreatedAt) ||
       !validTime(input.startedAt) ||
@@ -204,13 +213,15 @@ export class SqliteMemoryConversationReviewOperations {
       .run(input.status, input.errorCode, input.finishedAt, input.id);
   }
 
-  private recordChange(change: MemoryConversationReviewChange): void {
+  private recordChange(change: Omit<MemoryConversationReviewChange, "undoneRevision">): void {
     this.assertDiskHeadroom();
     if (
       !ACTIONS.has(change.action) ||
       !text(change.sourceMessageId, 256) ||
-      !Number.isSafeInteger(change.afterRevision) ||
-      change.afterRevision < 1 ||
+      !(
+        change.afterRevision === null ||
+        (Number.isSafeInteger(change.afterRevision) && change.afterRevision >= 1)
+      ) ||
       !validTime(change.createdAt)
     )
       this.fail("PORT_INVALID_OPERATION", "Conversation review change is invalid");
@@ -218,11 +229,13 @@ export class SqliteMemoryConversationReviewOperations {
     const memory = this.database
       .prepare("SELECT owner_id AS ownerId, agent_id AS agentId FROM memory_records WHERE id = ?")
       .get(change.memoryId) as { ownerId: string; agentId: string } | undefined;
+    const pendingCreation = change.action === "created" && change.afterRevision === null;
     if (
       !review ||
-      !memory ||
-      memory.ownerId !== review.ownerId ||
-      memory.agentId !== review.agentId
+      !text(change.memoryId, 256) ||
+      (memory
+        ? memory.ownerId !== review.ownerId || memory.agentId !== review.agentId
+        : !pendingCreation)
     )
       this.fail("PORT_NOT_FOUND", "Conversation review change scope not found");
     this.database
@@ -231,7 +244,9 @@ export class SqliteMemoryConversationReviewOperations {
           review_id, memory_id, action, source_message_id, after_revision,
           before_superseded_by, before_valid_to, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (review_id, memory_id) DO UPDATE SET after_revision = excluded.after_revision`,
+        ON CONFLICT (review_id, memory_id) DO UPDATE SET
+          after_revision = coalesce(excluded.after_revision, after_revision)
+        WHERE undone_revision IS NULL`,
       )
       .run(
         change.reviewId,
@@ -243,6 +258,33 @@ export class SqliteMemoryConversationReviewOperations {
         change.beforeValidTo,
         change.createdAt,
       );
+  }
+
+  private discardChange(input: { reviewId: string; memoryId: MemoryId }): void {
+    this.database
+      .prepare(
+        `DELETE FROM memory_conversation_review_changes
+        WHERE review_id = ? AND memory_id = ? AND after_revision IS NULL`,
+      )
+      .run(input.reviewId, input.memoryId);
+  }
+
+  private markChangeUndone(input: {
+    reviewId: string;
+    memoryId: MemoryId;
+    undoneRevision: number;
+  }): void {
+    this.assertDiskHeadroom();
+    if (!Number.isSafeInteger(input.undoneRevision) || input.undoneRevision < 2)
+      this.fail("PORT_INVALID_OPERATION", "Conversation review undo revision is invalid");
+    const changed = this.database
+      .prepare(
+        `UPDATE memory_conversation_review_changes SET undone_revision = ?
+        WHERE review_id = ? AND memory_id = ? AND after_revision IS NOT NULL
+          AND after_revision < ?`,
+      )
+      .run(input.undoneRevision, input.reviewId, input.memoryId, input.undoneRevision).changes;
+    if (changed !== 1) this.fail("PORT_CONFLICT", "Conversation review change cannot be undone");
   }
 
   private read(id: string): MemoryConversationReview | undefined {
@@ -263,9 +305,11 @@ export class SqliteMemoryConversationReviewOperations {
       this.database
         .prepare(
           `SELECT ${reviewColumns} FROM memory_conversation_reviews r
-          WHERE owner_id = ? AND agent_id = ? AND EXISTS (
-            SELECT 1 FROM memory_conversation_review_changes c WHERE c.review_id = r.id
-          )
+          WHERE owner_id = ? AND agent_id = ? AND status IN ('completed', 'gave_up')
+            AND EXISTS (
+              SELECT 1 FROM memory_conversation_review_changes c
+              WHERE c.review_id = r.id AND c.after_revision IS NOT NULL
+            )
           ORDER BY coalesce(finished_at, started_at) DESC, id ASC LIMIT ?`,
         )
         .all(input.ownerId, input.agentId, input.limit) as MemoryConversationReview[]
@@ -294,7 +338,7 @@ export class SqliteMemoryConversationReviewOperations {
           (SELECT count(*) FROM memory_conversation_review_changes c
             JOIN memory_conversation_reviews r ON r.id = c.review_id
             WHERE r.owner_id = @ownerId AND r.agent_id = @agentId AND r.day = @day
-              AND c.action = 'created') AS created`,
+              AND c.action = 'created' AND c.after_revision IS NOT NULL) AS created`,
       )
       .get(input) as { reviews: number; created: number };
     return Object.freeze({ reviews: row.reviews, created: row.created });

@@ -1003,6 +1003,9 @@ export class SqliteDurableAdapters {
       finish: (input) => this.context.write("memoryConversationReview.finish", input),
       recordChange: (change) =>
         this.context.write("memoryConversationReview.recordChange", { change }),
+      discardChange: (input) => this.context.write("memoryConversationReview.discardChange", input),
+      markChangeUndone: (input) =>
+        this.context.write("memoryConversationReview.markChangeUndone", input),
       read: (id) => this.context.read("memoryConversationReview.read", { id }),
       listWithChanges: (input) =>
         this.context.read("memoryConversationReview.listWithChanges", input),

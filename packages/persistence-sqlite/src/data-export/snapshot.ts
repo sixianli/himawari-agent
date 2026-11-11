@@ -127,8 +127,8 @@ export function readSnapshot(
       );
       const reviewChanges = all(
         `SELECT review_id, memory_id, action, after_revision, before_superseded_by,
-          before_valid_to, created_at
-        FROM memory_conversation_review_changes WHERE review_id IN (
+          before_valid_to, created_at, undone_revision
+        FROM memory_conversation_review_changes WHERE after_revision IS NOT NULL AND review_id IN (
           SELECT id FROM memory_conversation_reviews
           WHERE owner_id = @ownerId AND agent_id = @agentId)
         ORDER BY review_id, created_at, memory_id`,

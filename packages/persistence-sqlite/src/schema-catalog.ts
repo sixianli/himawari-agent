@@ -687,7 +687,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "memory_conversation_review_changes",
     "MemoryConversationReviewStorePort",
-    "one row per Memory a conversation review created, superseded or confirmed, with the revision it left and the fields needed to undo the whole review",
+    "one row per Memory a conversation review plans to create, supersede or confirm, written before the write and settled with the revision it left (or removed when the write did not happen), with the fields needed to undo the whole review and the revision each undo left so an interrupted undo can resume",
     "metadata_only",
     "cascade with its review or its Memory record",
   ),

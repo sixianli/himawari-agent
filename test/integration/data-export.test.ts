@@ -18,6 +18,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { createDataExportTextPolicy } from "@himawari-agent/platform-node";
 import { afterEach, describe, expect, it } from "vitest";
+import { SqliteMemoryConversationReviewOperations } from "../../packages/persistence-sqlite/src/sqlite-memory-conversation-review-operations.ts";
 import {
   openSide,
   SECRET_API_KEY,
@@ -196,6 +197,26 @@ describe("data export: round trip", () => {
       },
       { id: "review-2", status: "gave_up", attempts: 3, output_ref: null, archived: 1, changes: 0 },
     ]);
+    expect(
+      target.database
+        .prepare(
+          "SELECT memory_id, undone_revision FROM memory_conversation_review_changes WHERE undone_revision IS NOT NULL",
+        )
+        .all(),
+    ).toEqual([{ memory_id: "m-archived", undone_revision: 2 }]);
+    const reviews = new SqliteMemoryConversationReviewOperations(
+      target.database,
+      (code: string, message: string) => {
+        throw new Error(`${code}: ${message}`);
+      },
+      () => {},
+    );
+    expect(
+      reviews.execute("memoryConversationReview.position", {
+        ownerId: target.ownerId,
+        agentId: target.agentId,
+      }),
+    ).toBeNull();
   });
 
   it("[P3-1] the search index and its vectors stay out of the export, sealed part included", async () => {

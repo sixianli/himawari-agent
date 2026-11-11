@@ -713,8 +713,10 @@ export class ProductionMemoryControl {
       agentId,
       limit: TIDY_UPS_SHOWN,
     })) ?? []) {
-      const reviewChanges = await this.options.conversationReviews?.store.listChanges(review.id);
-      if (!reviewChanges?.length) continue;
+      const reviewChanges = (
+        (await this.options.conversationReviews?.store.listChanges(review.id)) ?? []
+      ).filter(({ afterRevision }) => afterRevision !== null);
+      if (reviewChanges.length === 0) continue;
       const current = new Map(
         (
           await this.options.state.readMany({

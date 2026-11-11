@@ -30,10 +30,11 @@ export interface MemoryConversationReviewChange {
   readonly memoryId: MemoryId;
   readonly action: MemoryConversationReviewAction;
   readonly sourceMessageId: string;
-  readonly afterRevision: number;
+  readonly afterRevision: number | null;
   readonly beforeSupersededBy: MemoryId | null;
   readonly beforeValidTo: string | null;
   readonly createdAt: string;
+  readonly undoneRevision: number | null;
 }
 
 export interface MemoryConversationReviewStorePort {
@@ -58,7 +59,13 @@ export interface MemoryConversationReviewStorePort {
     readonly errorCode: string | null;
     readonly finishedAt: string;
   }): Promise<void>;
-  recordChange(change: MemoryConversationReviewChange): Promise<void>;
+  recordChange(change: Omit<MemoryConversationReviewChange, "undoneRevision">): Promise<void>;
+  discardChange(input: { readonly reviewId: string; readonly memoryId: MemoryId }): Promise<void>;
+  markChangeUndone(input: {
+    readonly reviewId: string;
+    readonly memoryId: MemoryId;
+    readonly undoneRevision: number;
+  }): Promise<void>;
   read(id: string): Promise<MemoryConversationReview | undefined>;
   listWithChanges(input: {
     readonly ownerId: OwnerId;
@@ -74,9 +81,29 @@ export interface MemoryConversationReviewStorePort {
   markUndone(input: { readonly id: string; readonly undoneAt: string }): Promise<boolean>;
 }
 
-export function isReviewChangeUndoable(
-  change: Pick<MemoryConversationReviewChange, "afterRevision">,
+export const UNDOABLE_REVIEW_STATUSES: ReadonlySet<MemoryConversationReviewStatus> = new Set([
+  "completed",
+  "gave_up",
+]);
+
+export function isReviewChangeUndone(
+  change: Pick<MemoryConversationReviewChange, "undoneRevision">,
   memory: Pick<ProductMemoryRecord, "revision"> | undefined,
 ): boolean {
-  return memory !== undefined && memory.revision === change.afterRevision;
+  return (
+    memory !== undefined &&
+    change.undoneRevision !== null &&
+    memory.revision === change.undoneRevision
+  );
+}
+
+export function isReviewChangeUndoable(
+  change: Pick<MemoryConversationReviewChange, "afterRevision" | "undoneRevision">,
+  memory: Pick<ProductMemoryRecord, "revision"> | undefined,
+): boolean {
+  return (
+    memory !== undefined &&
+    change.afterRevision !== null &&
+    (memory.revision === change.afterRevision || isReviewChangeUndone(change, memory))
+  );
 }

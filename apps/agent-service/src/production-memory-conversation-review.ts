@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type ClockPort,
   type CommittedRunMemoryInput,
@@ -55,6 +56,7 @@ const MAXIMUM_QUERY_CHARACTERS = 2000;
 const MAXIMUM_SEGMENT_MESSAGES = 120;
 const MAXIMUM_REVIEW_CANDIDATES = 24;
 const MAXIMUM_KNOWN_PEOPLE = 40;
+const ID_DIGEST_LENGTH = 32;
 const ATTEMPT_INTERVAL_MS = 10 * 60_000;
 const NEVER_INFERRED = new Set(["health", "finance"]);
 const CLASSIFICATION_RANK: Record<DataClassification, number> = {
@@ -81,6 +83,21 @@ export const DEFAULT_CONVERSATION_REVIEW_SETTINGS: ConversationReviewSettings = 
   maximumNewMemoriesPerDay: 5,
   maximumOutputTokens: 1024,
 });
+
+function digest(...parts: readonly string[]): string {
+  return createHash("sha256").update(parts.join("\n")).digest("hex").slice(0, ID_DIGEST_LENGTH);
+}
+
+export function conversationReviewId(episodeId: string): string {
+  return `memory-review:${digest(episodeId)}`;
+}
+
+export function conversationReviewGenerationId(
+  episodeId: string,
+  messageId: string,
+): MemoryGenerationId {
+  return `memory-review:${digest(episodeId, messageId)}` as MemoryGenerationId;
+}
 
 export interface ReviewMessage {
   readonly id: string;
@@ -225,10 +242,7 @@ export function parseConversationReview(input: {
     if (pattern === true) {
       const sourceDay = localDay(source.message.committedAt, input.timeZone);
       const otherDays = (Array.isArray(alsoSeenIn) ? alsoSeenIn : []).filter((id) => {
-        if (typeof id !== "string") return false;
-        const message = owners.get(id);
-        if (message) return localDay(message.message.committedAt, input.timeZone) !== sourceDay;
-        const memory = existing.get(id);
+        const memory = typeof id === "string" ? existing.get(id) : undefined;
         return memory !== undefined && memory.recordedOn !== sourceDay;
       });
       if (otherDays.length === 0) {
@@ -463,7 +477,7 @@ export class ProductionMemoryConversationReview {
       if (!episode) return results;
       await this.#options.assertActive();
       const review = await this.#options.store.begin({
-        id: `memory-review:${episode.id}`,
+        id: conversationReviewId(episode.id),
         ownerId,
         agentId,
         threadId: episode.threadId,
@@ -473,6 +487,7 @@ export class ProductionMemoryConversationReview {
         startedAt: this.#options.clock.now(),
       });
       if (review.attempts > MEMORY_CONVERSATION_REVIEW_MAX_ATTEMPTS) {
+        await this.#settle(review);
         await this.#options.store.finish({
           id: review.id,
           status: "gave_up",
@@ -499,6 +514,7 @@ export class ProductionMemoryConversationReview {
           finishedAt: this.#options.clock.now(),
         });
       } catch (error) {
+        await this.#settle(review).catch(this.#options.onFailure);
         await this.#options.store
           .finish({
             id: review.id,
@@ -575,10 +591,9 @@ export class ProductionMemoryConversationReview {
       query,
       settings.maximumRelatedMemories,
     );
-    const ids = [...new Set(hits.map(({ productMemoryId }) => productMemoryId))].slice(
-      0,
-      settings.maximumRelatedMemories,
-    );
+    const ids = [...new Set(hits.map(({ productMemoryId }) => productMemoryId))]
+      .slice(0, settings.maximumRelatedMemories)
+      .sort();
     const records = new Map(
       (ids.length === 0
         ? []
@@ -693,6 +708,7 @@ export class ProductionMemoryConversationReview {
     newMemoriesAllowed: number,
     onAdmitted: () => void,
   ): Promise<ConversationReviewResult> {
+    await this.#settle(review);
     const plan = await this.#plan(request, review, episode, settings, newMemoriesAllowed);
     if (!plan) return { reviewId: review.id, changes: [], skipped: emptySkips() };
     const output = await this.#output(plan, settings, onAdmitted);
@@ -754,8 +770,31 @@ export class ProductionMemoryConversationReview {
       return fresh;
     });
     if (candidates.length === 0 && group.parsed.rejectedCandidates.length === 0) return [];
-    const generationId = `memory-review:${episode.id}:${message.id}` as MemoryGenerationId;
+    const generationId = conversationReviewGenerationId(episode.id, message.id);
     await this.#options.assertActive();
+    const createdAt = this.#options.clock.now();
+    const intent = (
+      memoryId: MemoryId,
+      action: MemoryConversationReviewChange["action"],
+      before?: ProductMemoryRecord,
+    ) =>
+      this.#options.store.recordChange({
+        reviewId: plan.review.id,
+        memoryId,
+        action,
+        sourceMessageId: message.id,
+        afterRevision: null,
+        beforeSupersededBy: before?.attributes?.supersededBy ?? null,
+        beforeValidTo: before?.attributes?.validTo ?? null,
+        createdAt,
+      });
+    for (const [ordinal, candidate] of candidates.entries()) {
+      if (candidate.decision === "create") {
+        await intent(`memory:${generationId}:${ordinal}` as MemoryId, "created");
+        if (candidate.supersedes)
+          await intent(candidate.supersedes, "superseded", known.get(candidate.supersedes));
+      } else if (candidate.existingMemoryId) await intent(candidate.existingMemoryId, "confirmed");
+    }
     if (candidates.length > 0)
       await this.#options.generations.request({
         jobId: `checkpoint:${generationId}` as ThreadDistillationWork["jobId"],
@@ -783,7 +822,7 @@ export class ProductionMemoryConversationReview {
             dataClassification: message.dataClassification,
           },
         ],
-        requestedAt: this.#options.clock.now(),
+        requestedAt: createdAt,
         errorCode: null,
       });
     const service = createProductionAutomaticMemory({
@@ -792,7 +831,7 @@ export class ProductionMemoryConversationReview {
       readSourceText: async () => group.source.text,
       onAudit: () => {},
     });
-    const result = await service.processCommittedRun({
+    await service.processCommittedRun({
       ownerId,
       agentId,
       runId: message.runId ?? request.runId,
@@ -806,61 +845,43 @@ export class ProductionMemoryConversationReview {
       explicitRememberCandidateOrdinal: null,
       rejectedCandidates: group.parsed.rejectedCandidates,
     });
-    const written = new Set<string>([...result.committedMemoryIds, ...result.tentativeMemoryIds]);
-    const committed = new Set<string>(result.committedMemoryIds);
-    const planned: {
-      readonly memoryId: MemoryId;
-      readonly action: MemoryConversationReviewChange["action"];
-      readonly before: ProductMemoryRecord | undefined;
-    }[] = [];
-    for (const [ordinal, candidate] of candidates.entries()) {
-      if (candidate.decision === "create") {
-        const memoryId = `memory:${generationId}:${ordinal}` as MemoryId;
-        if (!written.has(memoryId)) continue;
-        planned.push({ memoryId, action: "created", before: undefined });
-        if (candidate.supersedes && committed.has(memoryId))
-          planned.push({
-            memoryId: candidate.supersedes,
-            action: "superseded",
-            before: current.get(candidate.supersedes),
-          });
-      } else if (candidate.existingMemoryId && committed.has(candidate.existingMemoryId))
-        planned.push({
-          memoryId: candidate.existingMemoryId,
-          action: "confirmed",
-          before: undefined,
-        });
-    }
-    const after = new Map(
-      (planned.length === 0
-        ? []
-        : await this.#options.state.readMany({
-            ownerId,
-            agentId,
-            memoryIds: planned.map(({ memoryId }) => memoryId),
-          })
+    await this.#settle(plan.review);
+    return (await this.#options.store.listChanges(plan.review.id)).filter(
+      (change) => change.sourceMessageId === message.id && change.afterRevision !== null,
+    );
+  }
+
+  async #settle(review: MemoryConversationReview): Promise<void> {
+    const pending = (await this.#options.store.listChanges(review.id)).filter(
+      ({ afterRevision }) => afterRevision === null,
+    );
+    if (pending.length === 0) return;
+    const records = new Map(
+      (
+        await this.#options.state.readMany({
+          ownerId: review.ownerId,
+          agentId: review.agentId,
+          memoryIds: [...new Set(pending.map(({ memoryId }) => memoryId))],
+        })
       ).map((record) => [record.id as string, record]),
     );
-    const changes: MemoryConversationReviewChange[] = [];
-    for (const entry of planned) {
-      const saved = after.get(entry.memoryId);
-      if (!saved) continue;
-      if (entry.action === "superseded" && (saved.attributes?.supersededBy ?? null) === null)
-        continue;
-      const change: MemoryConversationReviewChange = {
-        reviewId: plan.review.id,
-        memoryId: entry.memoryId,
-        action: entry.action,
-        sourceMessageId: message.id,
-        afterRevision: saved.revision,
-        beforeSupersededBy: entry.before?.attributes?.supersededBy ?? null,
-        beforeValidTo: entry.before?.attributes?.validTo ?? null,
-        createdAt: this.#options.clock.now(),
-      };
-      await this.#options.store.recordChange(change);
-      changes.push(change);
+    for (const { undoneRevision: _undone, ...change } of pending) {
+      const memory = records.get(change.memoryId);
+      const supersededBy = memory?.attributes?.supersededBy ?? null;
+      const happened =
+        memory !== undefined &&
+        (change.action === "created" ||
+          (change.action === "superseded"
+            ? supersededBy !== null && supersededBy !== change.beforeSupersededBy
+            : memory.attributes?.tentative !== true));
+      if (memory && happened)
+        await this.#options.store.recordChange({ ...change, afterRevision: memory.revision });
+      else
+        await this.#options.store.discardChange({
+          reviewId: review.id,
+          memoryId: change.memoryId,
+        });
     }
-    return changes;
   }
 }
 

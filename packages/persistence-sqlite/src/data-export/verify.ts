@@ -135,6 +135,7 @@ export interface ParsedConversationReview {
     readonly beforeSupersededBy: string | null;
     readonly beforeValidTo: string | null;
     readonly createdAt: string;
+    readonly undoneRevision: number | null;
   }[];
 }
 

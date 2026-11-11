@@ -335,6 +335,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
         beforeSupersededBy: keepMemoryRef(optionalString(change["before_superseded_by"])),
         beforeValidTo: optionalString(change["before_valid_to"]),
         createdAt: str(change["created_at"]),
+        undoneRevision: change["undone_revision"] === null ? null : num(change["undone_revision"]),
       }));
     conversationReviewChanges += changes.length;
     return {
