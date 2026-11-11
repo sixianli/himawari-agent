@@ -212,6 +212,13 @@ function entry(overrides: Partial<DecisionLedgerEntry>): DecisionLedgerEntry {
       relatedRead: "off",
       relatedStats: { requests: 0, messages: 0, characters: 0, durationMs: 0 },
       relatedFailedSteps: [],
+      summaryInjected: false,
+      summaryIds: [],
+      summaryDays: [],
+      summaryCharacters: 0,
+      summaryRead: "off",
+      summaryGenerated: 0,
+      profileBudget: null,
     },
     reasonRef: null,
     contentRef: null,
@@ -359,6 +366,48 @@ describe("[all decisions] which memories the review page may show", () => {
   });
 });
 
+describe("[P3-8] held memory conflicts in the daily review", () => {
+  it("shows a held conflict as old then new and keeps held conflicts within the day's capacity", async () => {
+    const memories: Record<string, { text: string; hidden: boolean }> = {
+      "milk-old": { text: "主人平时喝明治的牛奶", hidden: false },
+      "milk-new": { text: "主人出差时喝便利店的牛奶", hidden: false },
+    };
+    const holds = Array.from({ length: 30 }, (_, index) =>
+      entry({
+        id: `hold-${index}`,
+        kind: "consolidation",
+        outcome: "hold",
+        subjectRef: "milk-new",
+        inputs: {
+          ...entry({}).inputs,
+          memoryIds: ["milk-new", "milk-old"],
+          resultMemoryIds: ["milk-new"],
+        },
+      }),
+    );
+    const review = await readDailyReview({
+      scope,
+      ledger: { listReviewPool: async () => holds },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async (id) => memories[id],
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 50,
+      secondsPerItem: 5,
+    });
+    expect(review.capacity).toBe(10);
+    expect(review.items).toHaveLength(10);
+    expect(review.items[0]).toMatchObject({
+      kind: "consolidation",
+      outcome: "hold",
+      text: "主人平时喝明治的牛奶 → 主人出差时喝便利店的牛奶",
+      textHidden: false,
+      acted: true,
+    });
+  });
+});
+
 describe("[P0-6] reading the daily review", () => {
   const read = (entries: DecisionLedgerEntry[], view: ProactiveOverview) =>
     readDailyReview({
@@ -392,6 +441,42 @@ describe("[P0-6] reading the daily review", () => {
       textHidden: true,
       category: "health",
     });
+  });
+
+  it("[P3-5] shows a failed capture as not acted on, with no memory to read and no hidden text", async () => {
+    let reads = 0;
+    const review = await readDailyReview({
+      scope,
+      ledger: {
+        listReviewPool: async () =>
+          ["capture_retrying", "capture_queued", "capture_gave_up"].map((outcome) =>
+            entry({
+              id: outcome,
+              outcome,
+              reasonCode: "AI_GATEWAY_REQUEST_TIMEOUT",
+              subjectRef: "memory-capture:run-1",
+            }),
+          ),
+      },
+      overview: overview([]),
+      readMemoryText: async () => {
+        reads += 1;
+        return "should not be read";
+      },
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    expect(review.items).toEqual([]);
+    expect(review.folded.items.map(({ key }) => key).sort()).toEqual([
+      "ledger:capture_gave_up",
+      "ledger:capture_queued",
+      "ledger:capture_retrying",
+    ]);
+    for (const item of review.folded.items)
+      expect(item).toMatchObject({ acted: false, text: "", textHidden: false });
+    expect(reads).toBe(0);
   });
 
   it("leaves out a silent check that judged no mail and keeps pushed ones", async () => {
@@ -573,5 +658,39 @@ describe("[P4-6] memory checkup in the daily review", () => {
   it("[negative] does not add pending items beyond today's slots", async () => {
     const review = await read([checkup("a", null), checkup("b", null), checkup("c", null)]);
     expect(review.items).toHaveLength(2);
+  });
+
+  it("shows a held conflict only through the checkup group, not again as a consolidation", async () => {
+    const hold = entry({
+      id: "hold",
+      kind: "consolidation",
+      outcome: "hold",
+      inputs: { ...entry({}).inputs, memoryIds: ["old"], resultMemoryIds: ["new"] },
+    });
+    const withCheckup = await readDailyReview({
+      scope,
+      ledger: { listReviewPool: async () => [hold] },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "牛奶", hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+      checkup: [],
+    });
+    expect(withCheckup.items.map(({ key }) => key)).not.toContain("ledger:hold");
+    const withoutCheckup = await readDailyReview({
+      scope,
+      ledger: { listReviewPool: async () => [hold] },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "牛奶", hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    expect(withoutCheckup.items.map(({ key }) => key)).toContain("ledger:hold");
   });
 });

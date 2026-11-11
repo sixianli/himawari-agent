@@ -2,11 +2,13 @@ import { createAgentId, createMemoryId, createOwnerId } from "@himawari-agent/do
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MEMORY_ATTRIBUTES,
+  importantSenderRule,
   type MemoryCategory,
   memoryDateNote,
   memoryDatesOf,
   OwnerProfileService,
   type ProductMemoryRecord,
+  RuleJudge,
 } from "../src/index.js";
 
 const OWNER_ID = createOwnerId("owner-profile");
@@ -352,6 +354,32 @@ describe("owner profile composition", () => {
     expect(result.memoryIds).toEqual(["memory-language", "memory-name"]);
   });
 
+  it("[P2-2] a profile block that is too long drops the rule memory text but never a hard rule", async () => {
+    const { profile } = service(records, 5);
+    const result = await profile.compose({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "private",
+      now: NOW,
+    });
+    expect(result.memoryIds).not.toContain("memory-language");
+    const hardRule = importantSenderRule(["bank.example"], 3);
+    const facts = {
+      sender_address: "a@bank.example",
+      sender_domain: "bank.example",
+      text: "",
+      content_folded: "",
+      text_words: [],
+      content_words: [],
+      amount_state: "missing",
+      amount_minor: 0,
+      amount_currency: "",
+    };
+    expect(
+      new RuleJudge().decide("mail_item", facts, [{ ...hardRule, status: "needs_review" }]).hits,
+    ).toEqual([{ id: hardRule.id, revision: 3, outcome: "raise_floor" }]);
+  });
+
   it("[MEM-PIN] brings what the Owner switched on and drops what the Owner switched off", async () => {
     const { profile } = service(records, undefined, [
       ["memory-snack", true],
@@ -391,6 +419,7 @@ describe("owner profile composition", () => {
         .map((text) => (text ?? "").length + 3)
         .reduce((sum, length) => sum + length, 0),
       limit: 2000,
+      pinned: `${TEXT["memory-snack"]}（记于 2026-10-25）`.length + 3,
       queued: [],
     });
   });
@@ -413,6 +442,71 @@ describe("owner profile composition", () => {
     expect(outline.usage.queued).toEqual(["memory-name"]);
   });
 
+  it("[P2-5] never drops a pinned memory to make room for rules and reports only unpinned ones", async () => {
+    const { profile } = service(
+      [
+        memory("memory-language", "rule", 900),
+        memory("memory-name", "identity", 900),
+        memory("memory-snack", "preference", 400),
+        memory("memory-allergy", "preference", 400),
+      ],
+      60,
+      [
+        ["memory-snack", true],
+        ["memory-allergy", true],
+      ],
+    );
+    const request = {
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "private" as const,
+      now: NOW,
+    };
+    const composed = await profile.compose(request);
+    expect(composed.memoryIds).toEqual(expect.arrayContaining(["memory-snack", "memory-allergy"]));
+    expect(composed.usage?.queued).toEqual(["memory-language", "memory-name"]);
+    expect(composed.usage?.used).toBe(composed.usage?.pinned);
+    expect(composed.usage?.used).toBeLessThanOrEqual(60);
+  });
+
+  it("[P2-5] keeps every pinned memory when they alone exceed the limit", async () => {
+    const { profile } = service(
+      [
+        memory("memory-name", "identity", 900),
+        memory("memory-snack", "preference", 400),
+        memory("memory-allergy", "preference", 400),
+      ],
+      10,
+      [
+        ["memory-snack", true],
+        ["memory-allergy", true],
+      ],
+    );
+    const composed = await profile.compose({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "private",
+      now: NOW,
+    });
+    expect(composed.memoryIds).toEqual(expect.arrayContaining(["memory-snack", "memory-allergy"]));
+    expect(composed.memoryIds).not.toContain("memory-name");
+    expect(composed.usage?.pinned).toBeGreaterThan(10);
+    expect(composed.usage?.used).toBe(composed.usage?.pinned);
+    expect(composed.usage?.queued).toEqual(["memory-name"]);
+  });
+
+  it("[P2-5] reverse: reports nothing dropped when everything fits", async () => {
+    const { profile } = service(records, undefined, [["memory-snack", true]]);
+    const composed = await profile.compose({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "private",
+      now: NOW,
+    });
+    expect(composed.usage?.queued).toEqual([]);
+    expect(composed.usage?.used).toBeLessThanOrEqual(composed.usage?.limit ?? 0);
+  });
+
   it("returns no blocks when nothing qualifies", async () => {
     const { profile, stored } = service([memory("memory-snack", "preference", 400)]);
     expect(
@@ -422,7 +516,7 @@ describe("owner profile composition", () => {
         maxClassification: "private",
         now: NOW,
       }),
-    ).toEqual({ blocks: [], memoryIds: [] });
+    ).toMatchObject({ blocks: [], memoryIds: [] });
     expect(stored).toEqual([]);
   });
 });

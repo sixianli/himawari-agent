@@ -1,7 +1,5 @@
 import type {
   CapabilityInvocationAuthority,
-  SandboxExecutionJournalPort,
-  SandboxExecutionRecord,
   CapabilityInvocationReceiptPort,
   CapabilityInvocationResultPort,
   CapabilityResourceCeiling,
@@ -11,6 +9,8 @@ import type {
   PayloadRecord,
   PayloadStorePort,
   RunPayloadArtifactCommitResult,
+  SandboxExecutionJournalPort,
+  SandboxExecutionRecord,
 } from "@himawari-agent/application";
 import { createApplicationServiceIdentityFactory } from "@himawari-agent/application";
 import {

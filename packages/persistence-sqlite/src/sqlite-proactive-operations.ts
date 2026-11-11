@@ -14,13 +14,14 @@ import type {
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
 import { recordDecisionSignal } from "./decision-signals.ts";
-import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import {
   applyBackoffWrites,
   listBackoff,
   previewBackoff,
   restoreBackoff,
 } from "./proactive-push-backoff.ts";
+import { summaryInputsValid } from "./sqlite-decision-summary-inputs.ts";
+import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { insertObservationEvent } from "./sqlite-observation-operations.ts";
 
 type Input<TName extends keyof ProactiveStorePort> = Parameters<ProactiveStorePort[TName]>[0];
@@ -62,6 +63,14 @@ const DEFAULT_QUIET_HOURS: readonly ProactiveQuietPeriod[] = Object.freeze([
     end: "07:00",
   }),
 ]);
+export function defaultRuleParameters(
+  ruleId: string,
+): Readonly<Record<string, unknown>> | undefined {
+  if (ruleId === QUIET_HOURS_RULE_ID) return Object.freeze({ periods: DEFAULT_QUIET_HOURS });
+  if (ruleId === IMPORTANT_SENDER_RULE_ID) return Object.freeze({ senders: Object.freeze([]) });
+  return undefined;
+}
+
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/u;
 
 const decisionColumns = `id, scenario, checked_at AS checkedAt, counts, verdict,
@@ -230,7 +239,7 @@ export class SqliteProactiveOperations {
     const rules = this.database
       .prepare(
         `SELECT rule_id AS ruleId, revision, parameters FROM rule_book_rules
-         WHERE owner_id = ? AND agent_id = ? AND status = 'active'`,
+         WHERE owner_id = ? AND agent_id = ? AND status IN ('active', 'needs_review')`,
       )
       .all(scope.ownerId, scope.agentId) as {
       ruleId: string;
@@ -281,7 +290,11 @@ export class SqliteProactiveOperations {
           typeof sender !== "string" ||
           sender.length < 1 ||
           sender.length > 254 ||
-          /\p{Surrogate}/u.test(sender),
+          /\p{Surrogate}/u.test(sender) ||
+          [...sender].some((character) => {
+            const code = character.charCodeAt(0);
+            return code < 0x20 || code === 0x7f;
+          }),
       )
     )
       this.invalid("Proactive settings are invalid");
@@ -353,10 +366,13 @@ export class SqliteProactiveOperations {
     this.database
       .prepare(
         `INSERT INTO rule_book_history (
-          owner_id, agent_id, rule_id, revision, parameters, status, source, changed_at
-        ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
+          owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id,
+          changed_at
+        ) SELECT owner_id, agent_id, rule_id, revision, parameters, status, source,
+          source_memory_id, updated_at
+        FROM rule_book_rules WHERE owner_id = ? AND agent_id = ? AND rule_id = ?`,
       )
-      .run(input.ownerId, input.agentId, ruleId, revision, parameters, source, input.now);
+      .run(input.ownerId, input.agentId, ruleId);
   }
 
   private readConnection(input: Input<"readConnection">): ProactiveConnection | undefined {
@@ -663,6 +679,7 @@ export class SqliteProactiveOperations {
         ([messageId, list]) => messageId.length < 1 || messageId.length > 256 || !ids(list, 16),
       ) ||
       !this.relatedInputsValid(inputs, ids) ||
+      !summaryInputsValid(inputs, MAX_INPUT_IDS) ||
       typeof floorHits !== "object" ||
       floorHits === null ||
       Object.keys(floorHits).length > MAX_INPUT_IDS ||
@@ -748,6 +765,16 @@ export class SqliteProactiveOperations {
               durationMs: 0,
             },
             relatedFailedSteps: input.inputs.relatedFailedSteps ?? [],
+            ...(input.inputs.summaryRead === undefined
+              ? {}
+              : {
+                  summaryInjected: input.inputs.summaryInjected ?? false,
+                  summaryIds: input.inputs.summaryIds ?? [],
+                  summaryDays: input.inputs.summaryDays ?? [],
+                  summaryCharacters: input.inputs.summaryCharacters ?? 0,
+                  summaryRead: input.inputs.summaryRead,
+                  summaryGenerated: input.inputs.summaryGenerated ?? 0,
+                }),
           }),
           decision.pushSourceKey,
           decision.costMicros,

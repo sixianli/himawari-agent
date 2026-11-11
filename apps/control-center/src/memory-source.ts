@@ -1,7 +1,11 @@
 import { memorySourceState } from "@himawari-agent/gateway-contracts";
 import type { MemoryItem } from "./memory.js";
 
-export { memorySourceState, type MemorySourceState } from "@himawari-agent/gateway-contracts";
+export {
+  EXTERNAL_PROPOSAL_MEMORY_PREFIX,
+  type MemorySourceState,
+  memorySourceState,
+} from "@himawari-agent/gateway-contracts";
 
 export function memorySourceCounts(items: readonly MemoryItem[]): {
   readonly unavailable: number;

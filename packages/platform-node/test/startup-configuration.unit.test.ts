@@ -162,6 +162,42 @@ describe("strict product configuration", () => {
       ).toThrow();
   });
 
+  it("accepts memory retrieval tuning only as non-negative numbers below 1 and a boolean dedupe switch", () => {
+    const withRetrieval = (retrieval: unknown) => {
+      const input = config(path.join(tmpdir(), "himawari-memory-retrieval"));
+      input["memory"] = { ...(input["memory"] as Record<string, unknown>), retrieval };
+      return input;
+    };
+    const at = "2026-11-11T00:00:00.000Z";
+    expect(
+      parseProductConfiguration(
+        withRetrieval({
+          keywordWeight: 0.2,
+          entityWeight: 0,
+          cutoffMargin: 0.05,
+          dedupeSameSource: false,
+        }),
+        at,
+      ).memory.retrieval,
+    ).toEqual({ keywordWeight: 0.2, entityWeight: 0, cutoffMargin: 0.05, dedupeSameSource: false });
+    expect(parseProductConfiguration(withRetrieval({}), at).memory.retrieval).toEqual({});
+    expect(
+      parseProductConfiguration(config(path.join(tmpdir(), "himawari-memory-retrieval")), at).memory
+        .retrieval,
+    ).toBeUndefined();
+    for (const invalid of [
+      { keywordWeight: -0.1 },
+      { keywordWeight: 1 },
+      { entityWeight: Number.NaN },
+      { entityWeight: Number.POSITIVE_INFINITY },
+      { cutoffMargin: "0.03" },
+      { dedupeSameSource: "yes" },
+      { minimumScore: 0.5 },
+      "on",
+    ])
+      expect(() => parseProductConfiguration(withRetrieval(invalid), at)).toThrow();
+  });
+
   it("accepts a Magpie primary on a loopback address without gateway routing", () => {
     const input = config(path.join(tmpdir(), "himawari-magpie-primary"));
     const models = input["modelDescriptors"] as Record<string, unknown>[];
@@ -1361,6 +1397,10 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     relatedCharactersPerMail: 12_000,
     relatedCharactersPerRelatedMail: 2_000,
     relatedRequestsPerCheck: 300,
+    wholeThreadMailsPerMail: 50,
+    wholeThreadCharactersPerMail: 60_000,
+    ruleReplayDays: 30,
+    ruleReplayMailsPerOutcome: 300,
     memoryMinimumSimilarity: 0.45,
     reviewBudgetSeconds: 120,
     reviewSecondsPerItem: 5,
@@ -1419,9 +1459,79 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, backoffThreshold: -1 },
     { ...proactive, relatedMailsPerMail: 51 },
     { ...proactive, relatedRequestsPerCheck: 0 },
+    { ...proactive, wholeThreadMailsPerMail: 0 },
+    { ...proactive, wholeThreadCharactersPerMail: 1_000 },
+    { ...proactive, ruleReplayDays: 0 },
+    { ...proactive, ruleReplayMailsPerOutcome: 0 },
     { ...proactive, relatedCharactersPerMail: 300, relatedCharactersPerRelatedMail: 400 },
   ]) {
     raw["runPolicy"] = { ...policy, proactive: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});
+
+it("[P5-1] accepts the MCP read entry only with one secret whose purpose is mcp-read", () => {
+  const raw = config("/tmp/himawari-mcp-read-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const references = raw["secretReferences"] as unknown[];
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "mcp-read-secret", version: "v1", purpose: "mcp-read", scope: "agent" },
+    { ref: "other-secret", version: "v1", purpose: "google-oauth-client", scope: "agent" },
+  ];
+  const mcpRead = { secretRef: "mcp-read-secret" };
+  raw["runPolicy"] = { ...policy, mcpRead };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead).toEqual(
+    mcpRead,
+  );
+  raw["runPolicy"] = { ...policy };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead,
+  ).toBeUndefined();
+  for (const invalid of [
+    {},
+    { secretRef: "other-secret" },
+    { secretRef: "missing-secret" },
+    { ...mcpRead, secret: "inline" },
+    "mcp-read-secret",
+  ]) {
+    raw["runPolicy"] = { ...policy, mcpRead: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});
+
+it("[P5-2] accepts an MCP write secret only when it is a separate mcp-write secret", () => {
+  const raw = config("/tmp/himawari-mcp-write-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const references = raw["secretReferences"] as unknown[];
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "mcp-read-secret", version: "v1", purpose: "mcp-read", scope: "agent" },
+    { ref: "mcp-write-secret", version: "v1", purpose: "mcp-write", scope: "agent" },
+    { ref: "other-secret", version: "v1", purpose: "google-oauth-client", scope: "agent" },
+  ];
+  const mcpRead = { secretRef: "mcp-read-secret", writeSecretRef: "mcp-write-secret" };
+  raw["runPolicy"] = { ...policy, mcpRead };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead).toEqual(
+    mcpRead,
+  );
+  for (const invalid of [
+    { secretRef: "mcp-read-secret", writeSecretRef: "mcp-read-secret" },
+    { secretRef: "mcp-read-secret", writeSecretRef: "other-secret" },
+    { secretRef: "mcp-read-secret", writeSecretRef: "missing-secret" },
+    { secretRef: "mcp-read-secret", writeSecretRef: 1 },
+  ]) {
+    raw["runPolicy"] = { ...policy, mcpRead: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
 });

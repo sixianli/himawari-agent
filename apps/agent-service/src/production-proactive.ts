@@ -15,9 +15,14 @@ import {
   type ProactiveModelInvoker,
   type ProactiveOverview,
   type ProactiveRating,
+  type ProactiveRecentSummaries,
   type ProactiveScope,
   type ProactiveSealPort,
   type ProactiveSourceReader,
+  type OwnerRuleStorePort,
+  OwnerRuleReplay,
+  type OwnerRuleReplayResult,
+  type RuleRecord,
   type ProactiveStorePort,
   parseReviewKey,
   type DailyReviewMemoryText,
@@ -136,12 +141,14 @@ export interface ProductionProactiveOptions {
   readonly configuration: ProactiveConfiguration;
   readonly timeZone: string;
   readonly store: ProactiveStorePort;
+  readonly ownerRules?: Pick<OwnerRuleStorePort, "list">;
   readonly seal: ProactiveSealPort;
   readonly oauth: GoogleOAuth;
   readonly reader: ProactiveSourceReader;
   readonly readAccount: (accessToken: string) => Promise<string>;
   readonly model: ProactiveModelInvoker;
   readonly memory?: ProactiveMemoryRecall;
+  readonly recentSummaries?: ProactiveRecentSummaries;
   readonly ledger: Pick<DecisionLedgerPort, "listReviewPool" | "rateMany">;
   readonly readMemoryText: (ref: string) => Promise<string | undefined>;
   readonly readMemory?: (memoryId: string) => Promise<DailyReviewMemoryText | undefined>;
@@ -173,6 +180,8 @@ export class ProductionProactive {
       reader: options.reader,
       model: options.model,
       ...(options.memory ? { memory: options.memory } : {}),
+      ...(options.ownerRules ? { ownerRuleStore: options.ownerRules } : {}),
+      ...(options.recentSummaries ? { recentSummaries: options.recentSummaries } : {}),
       limits: {
         perCheckMs: options.configuration.perCheckMs,
         dailyCostMicros: options.configuration.dailyCostMicros,
@@ -192,6 +201,8 @@ export class ProductionProactive {
         requestsPerCheck: options.configuration.relatedRequestsPerCheck,
         charactersPerRelated: options.configuration.relatedCharactersPerRelatedMail,
         charactersPerMail: options.configuration.relatedCharactersPerMail,
+        wholeThreadPerMail: options.configuration.wholeThreadMailsPerMail,
+        wholeThreadCharactersPerMail: options.configuration.wholeThreadCharactersPerMail,
       },
       ...(options.onMasked ? { onMasked: options.onMasked } : {}),
     });
@@ -221,6 +232,18 @@ export class ProductionProactive {
         this.#running = undefined;
       });
     return this.#running;
+  }
+
+  async replayRule(rule: RuleRecord): Promise<OwnerRuleReplayResult> {
+    return new OwnerRuleReplay({
+      scope: this.#options.scope,
+      store: this.#options.store,
+      seal: this.#options.seal,
+      readModelInput: (ref) => this.#options.model.readOutput(ref),
+      clock: this.#options.clock,
+      days: this.#options.configuration.ruleReplayDays,
+      mailsPerOutcome: this.#options.configuration.ruleReplayMailsPerOutcome,
+    }).replay(rule);
   }
 
   async readDecisionModelIo(

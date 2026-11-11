@@ -1,16 +1,16 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile, chmod } from "node:fs/promises";
 import { readFileSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { runCapabilityNotice, runtimeEnvironmentNotice } from "../src/production-run-policy.js";
 import {
   inspectSandboxCommands,
   SANDBOX_COMMAND_CANDIDATES,
   SANDBOX_READ_ROOTS,
   sandboxCanRead,
 } from "../src/sandbox-command-inventory.js";
-import { runCapabilityNotice, runtimeEnvironmentNotice } from "../src/production-run-policy.js";
 
 const directories: string[] = [];
 afterEach(async () => {

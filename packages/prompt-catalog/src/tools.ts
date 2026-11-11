@@ -221,3 +221,192 @@ export const TOOL_RESULT_REMINDER_SET = fixedPrompt({
   output: "free-text",
   text: "告诉主人 due 是事情的时间，remindAt 是会在什么时候提醒，两个时间都照结果原样说。",
 });
+
+export const TOOL_RULE_SET = fixedPrompt({
+  id: "tools.rule-set",
+  purpose: "rule_set 工具的描述：主人立常设规矩时把一句话译成规则参数",
+  usedBy: ["apps/agent-service/src/production-owner-rules.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "把主人立下的常设规矩记成长期规则。只在主人说的是以后一直有效的要求时使用（例如“以后……一律……”“……必须提醒我”“……都要……”）；只针对这一次的话（例如“这封先不用管”“今天别提醒我”）不要使用。quote 照抄主人原话里表达这条规矩的那一句，不改字，要包含“以后”“一律”“必须”这类表示一直有效的字样；inferred 填 true 表示这是你从对话里推断出的、主人没有明说的规矩，只会生成提议，要主人点头才生效；type 填 soft 时只记主人的原话，inferred 填 false。type 选规则类型：mail_must_notify 是某类邮件一定提醒主人并推送到手机；mail_read_whole_thread 是某类邮件判断前一定读完同一邮件串里的全部往来，读不全就交给主人自己看；都不合适或者是语气、格式、回答长短这类偏好时填 soft，只记成给你参考的偏好，不由程序强制执行。params 写匹配条件：senderDomains 是发件域名（含子域名，例如 isa.go.jp），senderAddresses 是完整发件地址，phrases 是邮件主题或正文里出现的词（不分大小写和全半角，中日英各写常见说法），words 是英文整词（只算完整单词）；英文词写进 words 而不是 phrases，否则 subscribe 会误中 unsubscribe；同一个机构或事情要列出正式名称、简称和常见变体（例如出入国在留管理庁、出入国在留管理局、入管）；mail_must_notify 和 mail_read_whole_thread 至少写一项，不要写正则。excludePhrases 是出现了就不算的词，用来去掉明显不相干的一类邮件（例如付费订阅规则排除“newsletter”“メルマガ”这类资讯邮件）。summary 用一句话写这条规则做什么，给主人看。返回里有试算例子和在历史邮件上的回放结果，照实告诉主人；status 是 proposed 时说明还要主人确认。主人随时可以撤销。",
+});
+
+export const TOOL_RULE_LIST = fixedPrompt({
+  id: "tools.rule-list",
+  purpose: "rule_list 工具的描述",
+  usedBy: ["apps/agent-service/src/production-owner-rules.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "列出主人立下的、正在生效的长期规则（含 ruleId、说明、状态）。主人问有哪些规矩，或要撤销某条前使用。只读。",
+});
+
+export const TOOL_RULE_UNDO = fixedPrompt({
+  id: "tools.rule-undo",
+  purpose: "rule_undo 工具的描述",
+  usedBy: ["apps/agent-service/src/production-owner-rules.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "撤销主人的一条长期规则，撤销后立即不再执行，记录保留。ruleId 取自 rule_set 或 rule_list 的返回；不确定是哪一条时先用 rule_list，不要猜。",
+});
+
+export const TOOL_RESULT_RULE_REJECTED = fixedPrompt({
+  id: "tool-result.rule-rejected",
+  purpose: "记规则失败：参数不对、类型不能用或服务不可用",
+  usedBy: ["apps/agent-service/src/production-runtime-tools.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这次没有记成规则，原因见 error。不要说已记下或已撤销，如实告诉主人；参数不对时改正后可以再试一次。",
+});
+
+export const MCP_TOOL_FIND_MEMORIES = fixedPrompt({
+  id: "mcp.find-memories",
+  purpose: "对外 MCP 工具 find_memories 的描述：外部 agent 按问题找主人的记忆",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "按问题查 Himawari 里主人的长期记忆和以前的对话摘要。需要了解主人的偏好、经历、计划、以前说过的事时使用。query 写要找的内容；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）。返回的记忆带有效期，已失效的标为历史；待确认的记忆标 tentative，只能当线索。只读，不会改动任何记忆。",
+});
+
+export const MCP_TOOL_TODAY_CONTEXT = fixedPrompt({
+  id: "mcp.today-context",
+  purpose: "对外 MCP 工具 today_context 的描述：今天的日期、时区、近期提醒和近两天的对话摘要",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "取主人今天的上下文：主人所在时区的今天日期、现在时间、接下来 48 小时内的提醒，以及今天和昨天的对话摘要（recentDays，每天一段或几段；recentDaysComplete 为 false 时表示有摘要没读到）。开始一项和主人日程有关的工作前使用。只读。",
+});
+
+export const MCP_TOOL_RULE_BOOK = fixedPrompt({
+  id: "mcp.rule-book",
+  purpose: "对外 MCP 工具 rule_book 的描述：列出主人在 Himawari 里生效的规则",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "列出主人在 Himawari 里生效的规则：每条有编号、版本、作用在哪一步、结果、出处；主人自己设的规则还带设置值（例如重要发件人、静默时段）。替主人做判断前用来了解主人定下的规矩。只读。",
+});
+
+export const MCP_TOOL_RESULT_FAILED = fixedPrompt({
+  id: "mcp.tool-result-failed",
+  purpose: "对外 MCP 工具读取失败时返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这次没能从 Himawari 读到内容，请稍后再试；不要据此认为主人没有相关记忆。",
+});
+
+export const MCP_TOOL_PROPOSE_MEMORY = fixedPrompt({
+  id: "mcp.propose-memory",
+  purpose:
+    "对外 MCP 写工具 propose_memory 的描述：外部 agent 提议一条新记忆，主人在客户端确认后才保存",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "向主人提议在 Himawari 里新存一条长期记忆。调用后主人会在你所在的客户端里看到确认框，主人勾选保存并提交才会存下；拒绝、取消或超时都不会存。text 写一条完整、单独看也能懂的事实或偏好；category 选最贴近的分类。只能在能弹出确认框的交互会话里使用。「以后每次都怎样做」这类规则不要用这个工具提。",
+});
+
+export const MCP_PROPOSE_MEMORY_CONFIRM = templatePrompt({
+  id: "mcp.propose-memory-confirm",
+  purpose: "外部 agent 提议新记忆时，客户端确认框里给主人看的说明",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  segments: [
+    slot("client"),
+    text("（对方自称）提议在 Himawari 里新存一条长期记忆。\n分类："),
+    slot("category"),
+    slot("sensitive"),
+    text("\n\n"),
+    slot("text"),
+    text("\n\n勾选「保存」并提交才会存下；拒绝或取消就不存。"),
+  ],
+});
+
+export const MCP_PROPOSE_MEMORY_SENSITIVE_NOTE = fixedPrompt({
+  id: "mcp.propose-memory-sensitive-note",
+  purpose: "外部提议的记忆会按敏感记忆保存时，确认框里的提示",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "\n这条含敏感内容，会按敏感记忆加密保存。",
+});
+
+export const MCP_PROPOSE_MEMORY_SAVE_LABEL = fixedPrompt({
+  id: "mcp.propose-memory-save-label",
+  purpose: "外部提议记忆的确认框里，勾选项的标题",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "保存这条记忆",
+});
+
+export const MCP_PROPOSE_MEMORY_SAVED = fixedPrompt({
+  id: "mcp.propose-memory-saved",
+  purpose: "主人确认后记忆已保存，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "主人已确认，这条记忆已存进 Himawari。",
+});
+
+export const MCP_PROPOSE_MEMORY_ALREADY_SAVED = fixedPrompt({
+  id: "mcp.propose-memory-already-saved",
+  purpose: "同一次提议重发时，告诉外部 agent 之前已经保存过",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这次提议之前已经保存过，没有重复保存。",
+});
+
+export const MCP_PROPOSE_MEMORY_DECLINED = fixedPrompt({
+  id: "mcp.propose-memory-declined",
+  purpose: "主人拒绝或取消提议时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "主人没有同意，这条记忆没有保存。除非主人再次要求，不要重复提议同样的内容。",
+});
+
+export const MCP_PROPOSE_MEMORY_UNSUPPORTED = fixedPrompt({
+  id: "mcp.propose-memory-unsupported",
+  purpose: "客户端不能弹确认框时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这个客户端不能弹出确认框（需要支持 MCP 2026-07-28 版的表单确认，并在交互会话里使用），所以没有保存。",
+});
+
+export const MCP_PROPOSE_MEMORY_CHANGED = fixedPrompt({
+  id: "mcp.propose-memory-changed",
+  purpose: "重发的提议内容和确认时不一致时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这次重发的内容和主人确认的不一致，没有保存；请重新提议。",
+});
+
+export const MCP_PROPOSE_MEMORY_INVALID = fixedPrompt({
+  id: "mcp.propose-memory-invalid",
+  purpose: "提议的正文为空或太长、或分类不在允许范围时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "没有保存：text 去掉不可见字符后为空或超过 2000 字，或 category 不是允许的九种之一。",
+});
+
+export const MCP_PROPOSE_MEMORY_NOT_READY = fixedPrompt({
+  id: "mcp.propose-memory-not-ready",
+  purpose: "Himawari 记忆功能还没就绪时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "Himawari 的记忆功能还没准备好，这次没有保存。",
+});
+
+export const MCP_PROPOSE_MEMORY_FAILED = fixedPrompt({
+  id: "mcp.propose-memory-failed",
+  purpose: "保存提议的记忆出错时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这次没能保存，请稍后再试；不要告诉主人已经存好了。",
+});

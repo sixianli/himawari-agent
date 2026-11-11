@@ -284,6 +284,7 @@ export async function seedEverything(side: Side): Promise<void> {
     ["d-truncation", "context_truncation", null, null, "truncated", "window_full"],
     ["d-degrade", "retrieval_degrade", null, null, "degraded", "embedder_down"],
     ["d-read", "external_read", null, null, "read", "owner_asked"],
+    ["d-rule-review", "rule_review", null, null, "needs_review", "memory_edited"],
   ] as const;
   let index = 0;
   for (const [id, kind, scenario, verdict, outcome, reason] of kinds) {

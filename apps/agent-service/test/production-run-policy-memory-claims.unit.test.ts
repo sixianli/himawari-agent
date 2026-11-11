@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { HIMAWARI_IDENTITY } from "../src/production-run-policy.js";
 import { reminderToolDescriptors } from "../src/production-reminder-writer.js";
+import { HIMAWARI_IDENTITY } from "../src/production-run-policy.js";
 
 describe("HIMAWARI_IDENTITY memory and reminder claims", () => {
   it("does not promise that memory is saved automatically", () => {

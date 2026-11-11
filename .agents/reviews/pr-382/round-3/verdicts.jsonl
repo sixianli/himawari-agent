@@ -1,0 +1,5 @@
+{"id": "r3-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`onSummariesFailed(new Error(\"MCP_READ_SUMMARY_TEXT_UNREADABLE\"))` 对 `found.partial` 无条件触发。", "valid": true, "class": "error", "severity": "low", "trigger": "候选摘要太多被截断而没有正文读不到", "consequence": "服务日志错误码名不副实", "modelSeverity": "中", "reason": "只影响一条服务日志的错误码名字，决策记录和返回给外部的内容都正确"}
+{"id": "r3-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "即“后面影响前面”，与 r2-5 的“只取决于自己和前面的内容”表述相反", "valid": true, "class": "error", "severity": "low", "trigger": "摘要里点名了提醒里也出现的值", "consequence": "判断记录表述不准确，代码行为符合 ADR 0219 决定 3", "modelSeverity": "低"}
+{"id": "r3-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`#recentDays` 已成功返回 `read: \"ok\"` 后，若 `maskForExternalRead`/`JSON.stringify` 抛错，`delivered` 仍是 `undefined`，于是记录成 `summaryRead: \"failed\"`", "valid": false, "class": "error"}
+{"id": "r3-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "没有覆盖 `episodes.ts:237-238` 的“列表截断导致 partial”路径", "valid": true, "class": "better"}
+{"id": "r3-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "若存储里出现异常 `day`/超长 `id`，ledger 写入抛错", "valid": false, "class": "error"}

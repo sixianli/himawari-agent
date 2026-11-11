@@ -10,6 +10,7 @@ import {
   type ProactiveMailCheckOptions,
   ProactiveMailCheckService,
   type ProactiveMemoryRecall,
+  type ProactiveRecentSummaries,
   type ProactiveSourceItem,
   type ProactiveSourceReader,
   proactivePrompt,
@@ -22,6 +23,7 @@ import {
   openQualifiedDatabase,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
+import { MemoryEpisodeService } from "@himawari-agent/memory-engine";
 import { findRelatedMail } from "@himawari-agent/platform-node";
 import {
   DeterministicIdGenerator,
@@ -30,6 +32,7 @@ import {
   ScriptedModelPort,
 } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
+import { createProactiveRecentSummaries } from "../../apps/agent-service/src/production-proactive-summaries.ts";
 import { applyBackoffWrites } from "../../packages/persistence-sqlite/src/proactive-push-backoff.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
@@ -101,6 +104,7 @@ describe("proactive Gmail check acceptance", () => {
   async function harness(
     options: {
       dailyCostMicros?: number;
+      estimatePerCharacter?: number;
       estimate?: number;
       cost?: number;
       importantSenders?: string[];
@@ -113,6 +117,12 @@ describe("proactive Gmail check acceptance", () => {
       onMasked?: ProactiveMailCheckOptions["onMasked"];
       backoff?: ProactiveMailCheckOptions["backoff"];
       ownerRules?: ProactiveMailCheckOptions["ownerRules"];
+      storedOwnerRules?: boolean;
+      recentSummaries?: (
+        repository: SqliteProductStateRepository,
+        now: () => string,
+      ) => ProactiveRecentSummaries;
+      summaryLimits?: ProactiveMailCheckOptions["summaryLimits"];
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-proactive-"));
@@ -196,6 +206,7 @@ describe("proactive Gmail check acceptance", () => {
     };
     const outputs = new Map<string, string>();
     const prompts: string[] = [];
+    const deadlines: string[] = [];
     const labels: string[] = [];
     const models: ScriptedModelPort[] = [];
     let scripted = new ScriptedModelPort([descriptor], []);
@@ -287,15 +298,20 @@ describe("proactive Gmail check acceptance", () => {
       perCheckMs: 180_000,
       dailyCostMicros: options.dailyCostMicros ?? 1_000_000,
       estimate: options.estimate ?? 100,
-      estimateCostMicros: () => limits.estimate,
+      estimateCostMicros: (prompt: string) =>
+        limits.estimate + (options.estimatePerCharacter ?? 0) * prompt.length,
     };
-    const recording = { failing: false };
+    const recording: {
+      failing: boolean;
+      last?: Parameters<typeof store.record>[0];
+    } = { failing: false };
     const service = new ProactiveMailCheckService({
       scope,
       store: {
         ...store,
         record: async (input: Parameters<typeof store.record>[0]) => {
           if (recording.failing) throw new Error("RECORD_FAILED");
+          recording.last = input;
           return store.record(input);
         },
       },
@@ -306,8 +322,9 @@ describe("proactive Gmail check acceptance", () => {
           return queued.shift() ?? scripted;
         },
         modelRef: MODEL_REF,
-        async prepare({ invocationId, prompt, dataClassification }) {
+        async prepare({ invocationId, prompt, deadlineAt, dataClassification }) {
           prompts.push(prompt);
+          deadlines.push(deadlineAt);
           labels.push(dataClassification);
           const inputRef = `input-${invocationId}`;
           await writePayload(inputRef, prompt);
@@ -336,6 +353,11 @@ describe("proactive Gmail check acceptance", () => {
       ...(options.onMasked ? { onMasked: options.onMasked } : {}),
       ...(options.backoff ? { backoff: options.backoff } : {}),
       ...(options.ownerRules ? { ownerRules: options.ownerRules } : {}),
+      ...(options.storedOwnerRules ? { ownerRuleStore: repository.ownerRules() } : {}),
+      ...(options.recentSummaries
+        ? { recentSummaries: options.recentSummaries(repository, () => clock.now()) }
+        : {}),
+      ...(options.summaryLimits ? { summaryLimits: options.summaryLimits } : {}),
       ...(options.batchSize === undefined ? {} : { batchSize: options.batchSize }),
       ...(options.outputTokenLimit === undefined
         ? {}
@@ -364,13 +386,16 @@ describe("proactive Gmail check acceptance", () => {
       service,
       overview,
       prompts,
+      deadlines,
       labels,
       invocations,
       limits,
       readPayload,
       countPayloads,
       stateRoot,
+      repository,
       ledger: repository.decisionLedger(),
+      ownerRules: repository.ownerRules(),
       payloadStore,
       query: (sql: string, ...parameters: unknown[]) => {
         const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
@@ -388,6 +413,7 @@ describe("proactive Gmail check acceptance", () => {
           database.close();
         }
       },
+      lastRecord: () => recording.last,
       failRecords: () => {
         recording.failing = true;
         return () => {
@@ -680,6 +706,16 @@ describe("proactive Gmail check acceptance", () => {
     ]);
     const first = await h.service.run();
     expect(first).toMatchObject({ verdict: "deferred", reasonCode: "QUIET_HOURS" });
+    const [deferred] = await h.ledger.list({
+      ...scope,
+      kind: "proactive",
+      since: "2026-11-01T00:00:00.000Z",
+      limit: 1,
+    });
+    expect(
+      deferred?.inputs.ruleIds.filter((ref) => ref.startsWith("quiet_hours@")),
+      "[P2-7] the quiet hours rule that held the push",
+    ).toEqual([expect.stringMatching(/^quiet_hours@\d+$/u)]);
     h.clock.set("2026-11-04T15:30:00.000Z");
     h.reader.items = [
       mail("visa", {
@@ -1572,6 +1608,7 @@ describe("proactive Gmail check acceptance", () => {
       expect((await h.overview()).insights[0]).toMatchObject({ result: "act", pushed: false });
       const [entry] = await ledgerRows(h);
       expect(entry?.inputs.ruleHits).toEqual({ due: ["suppress_small_amount@3"] });
+      expect(entry?.inputs.ruleIds, "[P2-7]").toEqual(["suppress_small_amount@3"]);
     });
 
     it("REVERSE: pushes as before when the amount is unsure, missing, in another currency, exactly the limit, or the body was not read in full", async () => {
@@ -1593,6 +1630,7 @@ describe("proactive Gmail check acceptance", () => {
         expect(decision, name).toMatchObject({ verdict: "pushed" });
         const [entry] = await ledgerRows(h);
         expect(entry?.inputs.ruleHits, name).toEqual({});
+        expect(entry?.inputs.ruleIds, `[P2-7] ${name}`).toEqual([]);
       }
     });
 
@@ -1645,7 +1683,7 @@ describe("proactive Gmail check acceptance", () => {
       const [entry] = await ledgerRows(h);
       expect(entry?.id).toBe(decision?.id);
       expect(entry?.inputs.sourceIds).toEqual(["bill", "friend"]);
-      expect(entry?.inputs.ruleIds).toEqual(["floor_money_words"]);
+      expect(entry?.inputs.ruleIds).toEqual(["floor_money_words@1"]);
       expect(entry?.inputs.floorHits).toEqual({ bill: ["floor_money_words"] });
       expect(entry?.inputs.memoryIds).toEqual([]);
       expect(entry?.inputs.memoryInjected).toBe(false);
@@ -2679,6 +2717,840 @@ describe("proactive Gmail check acceptance", () => {
       expect(entry?.inputs.relatedByMail["closing"]?.length).toBeLessThanOrEqual(6);
       expect(entry?.inputs.relatedByMail["closing"]).not.toContain("old-0");
       expect(h.prompts[0]).not.toContain("長".repeat(2_100));
+    });
+  });
+  describe("[P2-3] owner rules written from one sentence are enforced by the mail check", () => {
+    const immigration = {
+      type: "mail_must_notify",
+      summary: "日本入管局相关的邮件一律提醒",
+      params: { senderDomains: ["isa.go.jp"], phrases: ["在留資格", "在留カード"] },
+    };
+    const refund = {
+      type: "mail_read_whole_thread",
+      summary: "涉及退款的邮件先读完整个邮件串",
+      params: { phrases: ["返金", "退款"], words: ["refund"] },
+    };
+    const write = async (
+      h: Awaited<ReturnType<typeof harness>>,
+      ruleId: string,
+      parameters: Readonly<Record<string, unknown>>,
+    ) =>
+      h.ownerRules.create({
+        ...scope,
+        ruleId,
+        parameters,
+        source: "chat:thread-1",
+        sourceMemoryId: `memory:rule:${ruleId.slice(6)}`,
+        now: h.clock.now(),
+      });
+    const ledgerRows = (h: Awaited<ReturnType<typeof harness>>) =>
+      h.ledger.list({ ...scope, kind: "proactive", since: "2026-11-01T00:00:00.000Z", limit: 50 });
+
+    it("pushes an immigration mail the model would ignore once the rule is stored, and records which rule did it", async () => {
+      const h = await harness({ storedOwnerRules: true });
+      expect(await write(h, "owner:immigration", immigration)).toBe("created");
+      h.reader.items = [
+        mail("isa", {
+          from: "出入国在留管理庁 <no-reply@mail.isa.go.jp>",
+          fromAddress: "no-reply@mail.isa.go.jp",
+          subject: "お知らせ",
+          snippet: "",
+        }),
+        mail("body-only", {
+          threadId: "thread-body",
+          from: "行政書士 <office@gyosei.example>",
+          fromAddress: "office@gyosei.example",
+          subject: "ご案内",
+          snippet: "",
+          body: "在留ｶｰﾄﾞの更新手続きについてご連絡します",
+        }),
+      ];
+      h.script([
+        { id: "isa", result: "ignore" },
+        { id: "body-only", result: "know" },
+      ]);
+      const decision = await h.service.run();
+      expect(decision).toMatchObject({ verdict: "pushed" });
+      expect(decision?.counts).toMatchObject({ check: 2, pushed: 2 });
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.ruleHits).toEqual({
+        isa: ["owner:immigration@1"],
+        "body-only": ["owner:immigration@1"],
+      });
+      expect(entry?.inputs.floorHits["isa"]).not.toContain("owner:immigration");
+      expect(entry?.inputs.floorHits["body-only"]).toBeUndefined();
+      expect(entry?.inputs.ruleIds).toContain("owner:immigration@1");
+      expect(entry?.inputs.ruleIds).not.toContain("owner:immigration");
+    });
+
+    it("still hands a ruled mail to the owner after the daily model limit, and leaves unruled mail waiting", async () => {
+      const h = await harness({ storedOwnerRules: true, dailyCostMicros: 1_000, cost: 1_000 });
+      await write(h, "owner:immigration", immigration);
+      h.reader.items = [mail("first", { snippet: "随便聊聊" })];
+      h.script([{ id: "first", result: "ignore" }]);
+      await h.service.run();
+      h.clock.advance(15 * 60_000);
+      h.reader.items = [
+        mail("isa", { from: "no-reply@isa.go.jp", fromAddress: "no-reply@isa.go.jp" }),
+        mail("chat", { snippet: "今度ランチ行こう" }),
+      ];
+      const capped = await h.service.run();
+      expect(h.invocations()).toBe(1);
+      expect(capped).toMatchObject({ verdict: "pushed", reasonCode: "DAILY_LIMIT" });
+      expect((await h.overview()).insights).toEqual([
+        expect.objectContaining({ result: "check", basis: "daily_limit", pushed: true }),
+      ]);
+      const rows = await ledgerRows(h);
+      expect(rows.map((row) => row.inputs.ruleHits)).toContainEqual({
+        isa: ["owner:immigration@1"],
+      });
+    });
+
+    it("REVERSE: leaves unrelated mail to the model, and stops enforcing a retired rule at the next check without a restart", async () => {
+      const h = await harness({ storedOwnerRules: true });
+      await write(h, "owner:immigration", immigration);
+      h.reader.items = [mail("lunch", { subject: "Lunch", snippet: "金曜日どう？" })];
+      h.script([{ id: "lunch", result: "ignore" }]);
+      expect(await h.service.run()).toMatchObject({ verdict: "silent" });
+      const retired = await h.ownerRules.setStatus({
+        ...scope,
+        ruleId: "owner:immigration",
+        status: "retired",
+        expectedRevision: 1,
+        reason: "owner_undo",
+        now: h.clock.now(),
+      });
+      expect(retired?.status).toBe("retired");
+      h.clock.advance(15 * 60_000);
+      h.reader.items = [
+        mail("isa-later", {
+          from: "no-reply@isa.go.jp",
+          fromAddress: "no-reply@isa.go.jp",
+          subject: "お知らせ",
+        }),
+      ];
+      h.script([{ id: "isa-later", result: "ignore" }]);
+      const decision = await h.service.run();
+      expect(decision?.counts).toMatchObject({ pushed: 0 });
+      const rows = await ledgerRows(h);
+      expect(rows.some((row) => Object.keys(row.inputs.ruleHits ?? {}).includes("isa-later"))).toBe(
+        false,
+      );
+    });
+
+    it("hands a refund mail to the owner when the whole thread could not be read, and asks the reader for the whole thread", async () => {
+      const h = await harness({ storedOwnerRules: true });
+      await write(h, "owner:refund", refund);
+      const asked: (ReadonlySet<string> | undefined)[] = [];
+      h.reader.related = async ({ items, wholeThread }) => {
+        asked.push(wholeThread);
+        return {
+          byMail: new Map(items.map((item) => [item.messageId, []])),
+          failed: new Map(),
+          requests: 1,
+          wholeThread: new Map([["refund", { messageIds: ["older"], complete: false }]]),
+        };
+      };
+      h.reader.items = [
+        mail("refund", { subject: "返金のご案内", snippet: "" }),
+        mail("other", { threadId: "thread-other", subject: "週末", snippet: "" }),
+      ];
+      h.script([
+        { id: "refund", result: "ignore" },
+        { id: "other", result: "ignore" },
+      ]);
+      const decision = await h.service.run();
+      expect([...(asked[0] ?? [])]).toEqual(["refund"]);
+      expect(decision).toMatchObject({ verdict: "pushed" });
+      expect(decision?.counts).toMatchObject({ check: 1, ignore: 1, pushed: 1 });
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.ruleHits).toEqual({ refund: ["owner:refund@1"] });
+    });
+
+    it("REVERSE: keeps the model's own answer for a refund mail whose whole thread was read", async () => {
+      const h = await harness({ storedOwnerRules: true });
+      await write(h, "owner:refund", refund);
+      const older = mail("older", { threadId: "thread-refund", subject: "ご注文", snippet: "" });
+      h.reader.related = async () => ({
+        byMail: new Map([["refund", [older]]]),
+        failed: new Map(),
+        requests: 1,
+        wholeThread: new Map([["refund", { messageIds: ["older"], complete: true }]]),
+      });
+      h.reader.items = [
+        mail("refund", { threadId: "thread-refund", subject: "返金完了のお知らせ", snippet: "" }),
+      ];
+      h.script([{ id: "refund", result: "know" }]);
+      const decision = await h.service.run();
+      expect(decision?.counts).toMatchObject({ know: 1, check: 0, pushed: 0 });
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.ruleHits).toEqual({});
+    });
+  });
+  describe("[P3-6] the Gmail check reads the last two days of conversation summaries", () => {
+    type Harness = Awaited<ReturnType<typeof harness>>;
+    interface World {
+      texts: Map<string, string>;
+      service: MemoryEpisodeService;
+      calls: { catchUp: number; recent: number };
+      failRecent: boolean;
+    }
+
+    function summariesFor(
+      world: { current?: World },
+      allowedClassifications: readonly DataClassification[] = ["public", "private", "sensitive"],
+    ) {
+      return (repository: SqliteProductStateRepository, now: () => string) => {
+        const texts = new Map<string, string>();
+        const writePayloadRow = (ref: string, classification: string, createdAt: string) => {
+          const database = openQualifiedDatabase(path.join(repository.stateRoot, "product.sqlite"));
+          try {
+            database
+              .prepare(
+                `INSERT OR IGNORE INTO payloads (
+                  ref, owner_id, agent_id, classification, storage_kind, ciphertext, content_digest,
+                  encryption_algorithm, key_ref, lifecycle_state, created_at, content_type
+                ) VALUES (?, ?, ?, ?, 'sqlite_blob', X'00', ?, 'fixture', 'fixture-key',
+                  'active', ?, 'text/plain')`,
+              )
+              .run(ref, OWNER_ID, AGENT_ID, classification, `sha256:${ref}`, createdAt);
+          } finally {
+            database.close();
+          }
+        };
+        const service = new MemoryEpisodeService({
+          store: repository.memoryEpisodes(),
+          threads: repository.threadRepository(),
+          readText: async ({ ref }) => texts.get(ref),
+          storeText: async (input) => {
+            writePayloadRow(input.ref, input.dataClassification, input.createdAt);
+            texts.set(input.ref, input.text);
+          },
+          embedder: null,
+          timeZone: TIME_ZONE,
+          now,
+        });
+        const state: World = {
+          texts,
+          service,
+          calls: { catchUp: 0, recent: 0 },
+          failRecent: false,
+        };
+        world.current = state;
+        const real = createProactiveRecentSummaries({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          episodes: service,
+          allowedClassifications,
+          capturePaused: () =>
+            repository
+              .memoryBook()
+              .readSettings({ ownerId: OWNER_ID, agentId: AGENT_ID })
+              .then(({ capturePaused }) => capturePaused),
+          embedForMailCheck: (_context, operation) => operation(),
+        });
+        return {
+          catchUp: (input) => {
+            state.calls.catchUp += 1;
+            return real.catchUp(input);
+          },
+          recent: (input) => {
+            state.calls.recent += 1;
+            if (state.failRecent) return Promise.reject(new Error("fixture read outage"));
+            return real.recent(input);
+          },
+        } satisfies ProactiveRecentSummaries;
+      };
+    }
+
+    function thread(h: Harness, threadId: string) {
+      h.exec(
+        `INSERT OR IGNORE INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at)
+        VALUES (?, ?, ?, 1, 'open', ?, ?)`,
+        threadId,
+        OWNER_ID,
+        AGENT_ID,
+        "2026-10-30T00:00:00.000Z",
+        "2026-10-30T00:00:00.000Z",
+      );
+    }
+
+    async function seed(
+      h: Harness,
+      world: World,
+      input: {
+        threadId: string;
+        day: string;
+        text: string;
+        source?: "day_summary" | "compaction";
+        classification?: DataClassification;
+        firstSequence?: number;
+        endedAt?: string;
+      },
+    ) {
+      thread(h, input.threadId);
+      const source = input.source ?? "day_summary";
+      const firstSequence = input.firstSequence ?? 1;
+      const classification = input.classification ?? "private";
+      const contentRef = `memory-episode:${input.threadId}:${source}:${firstSequence}`;
+      h.exec(
+        `INSERT OR IGNORE INTO payloads (
+          ref, owner_id, agent_id, classification, storage_kind, ciphertext, content_digest,
+          encryption_algorithm, key_ref, lifecycle_state, created_at, content_type
+        ) VALUES (?, ?, ?, ?, 'sqlite_blob', X'00', ?, 'fixture', 'fixture-key',
+          'active', ?, 'text/plain')`,
+        contentRef,
+        OWNER_ID,
+        AGENT_ID,
+        classification,
+        `sha256:${contentRef}`,
+        "2026-10-30T00:00:00.000Z",
+      );
+      world.texts.set(contentRef, input.text);
+      const endedAt = input.endedAt ?? `${input.day}T05:00:00.000Z`;
+      await h.repository.memoryEpisodes().upsert({
+        id: `episode:${source}:${input.threadId}:${firstSequence}`,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        threadId: input.threadId as never,
+        day: input.day,
+        source,
+        contentRef,
+        dataClassification: classification,
+        firstSequence,
+        lastSequence: firstSequence + 1,
+        startedAt: `${input.day}T01:00:00.000Z`,
+        endedAt,
+        createdAt: endedAt,
+        terms: [],
+        embedding: null,
+      });
+      return `episode:${source}:${input.threadId}:${firstSequence}`;
+    }
+
+    const HEADER = "最近几天主人和 Himawari 聊天的摘要";
+    const ledgerRows = (h: Harness) =>
+      h.ledger.list({ ...scope, kind: "proactive", since: "2026-11-01T00:00:00.000Z", limit: 50 });
+
+    it("puts yesterday's and today's summaries before the mails and records them in the decision record", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world) });
+      const w = world.current as World;
+      const yesterday = await seed(h, w, {
+        threadId: "chat-a",
+        day: "2026-11-03",
+        text: "主人说十月的电费已经交过了，不用再提醒。",
+      });
+      const today = await seed(h, w, {
+        threadId: "chat-b",
+        day: "2026-11-04",
+        text: "主人早上问了今天的天气。",
+        endedAt: "2026-11-04T00:30:00.000Z",
+      });
+      h.reader.items = [mail("bill", { subject: "電気料金のお知らせ", snippet: "10月分" })];
+      h.script([{ id: "bill", result: "ignore" }]);
+      await h.service.run();
+      const prompt = h.prompts[0] ?? "";
+      expect(prompt).toContain(HEADER);
+      expect(prompt).toContain("主人说十月的电费已经交过了");
+      expect(prompt.indexOf(HEADER)).toBeLessThan(prompt.indexOf("邮件："));
+      expect(prompt.indexOf("十月的电费")).toBeLessThan(prompt.indexOf("今天的天气"));
+      expect(prompt.split("\n").at(-1)).toMatch(/^现在是 /u);
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({
+        summaryInjected: true,
+        summaryDays: ["2026-11-03", "2026-11-04"],
+        summaryRead: "ok",
+        summaryGenerated: 0,
+        summaryCharacters:
+          "主人说十月的电费已经交过了，不用再提醒。".length + "主人早上问了今天的天气。".length,
+      });
+      expect([...(entry?.inputs.summaryIds ?? [])].sort()).toEqual([today, yesterday].sort());
+    });
+
+    it("REVERSE: leaves the block out for older days, compaction summaries, restricted talk and sensitive-only placeholders", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world) });
+      const w = world.current as World;
+      await seed(h, w, { threadId: "old", day: "2026-11-02", text: "前天的事" });
+      await seed(h, w, {
+        threadId: "compacted",
+        day: "2026-11-03",
+        text: "压缩出来的历史",
+        source: "compaction",
+      });
+      await seed(h, w, {
+        threadId: "restricted",
+        day: "2026-11-03",
+        text: "受限的内容",
+        classification: "restricted",
+      });
+      await seed(h, w, {
+        threadId: "placeholder",
+        day: "2026-11-03",
+        text: "（这段对话只含敏感内容，没有做摘要）",
+      });
+      h.reader.items = [mail("plain")];
+      h.script([{ id: "plain", result: "ignore" }]);
+      await h.service.run();
+      const prompt = h.prompts[0] ?? "";
+      expect(prompt).not.toContain(HEADER);
+      for (const text of ["前天的事", "压缩出来的历史", "受限的内容", "只含敏感内容"])
+        expect(prompt).not.toContain(text);
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({
+        summaryInjected: false,
+        summaryIds: [],
+        summaryDays: [],
+        summaryCharacters: 0,
+        summaryRead: "ok",
+      });
+    });
+
+    it("raises the call to sensitive when a sensitive summary goes in", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world) });
+      await seed(h, world.current as World, {
+        threadId: "health",
+        day: "2026-11-03",
+        text: "主人说最近在看医生。",
+        classification: "sensitive",
+      });
+      h.reader.items = [mail("plain")];
+      h.script([{ id: "plain", result: "ignore" }]);
+      await h.service.run();
+      expect(h.prompts[0]).toContain("主人说最近在看医生。");
+      expect(h.labels).toEqual(["sensitive"]);
+    });
+
+    it("REVERSE: leaves a sensitive summary out when the mail model may only see private data", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world, ["public", "private"]) });
+      await seed(h, world.current as World, {
+        threadId: "health",
+        day: "2026-11-03",
+        text: "主人说最近在看医生。",
+        classification: "sensitive",
+      });
+      h.reader.items = [mail("plain")];
+      h.script([{ id: "plain", result: "ignore" }]);
+      const decision = await h.service.run();
+      expect(decision?.verdict).not.toBe("failed");
+      expect(h.prompts[0]).not.toContain("主人说最近在看医生。");
+      expect(h.labels).toEqual(["private"]);
+    });
+
+    it("does not read or generate summaries when there is no new mail", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world) });
+      await seed(h, world.current as World, { threadId: "chat", day: "2026-11-03", text: "昨天" });
+      h.reader.items = [];
+      await h.service.run();
+      expect(world.current?.calls).toEqual({ catchUp: 0, recent: 0 });
+      expect(h.invocations()).toBe(0);
+    });
+
+    it("still judges the mail and records a failed read when the summaries cannot be read", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world) });
+      (world.current as World).failRecent = true;
+      h.reader.items = [mail("plain")];
+      h.script([{ id: "plain", result: "ignore" }]);
+      await h.service.run();
+      expect(h.invocations()).toBe(1);
+      expect(h.prompts[0]).not.toContain(HEADER);
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({ summaryInjected: false, summaryRead: "failed" });
+    });
+
+    it("summarizes yesterday's finished conversation first when no chat has done it yet", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world) });
+      const w = world.current as World;
+      thread(h, "chat-yesterday");
+      for (const [sequence, role, text, at] of [
+        [1, "owner", "十月的电费我已经交了", "2026-11-03T03:00:00.000Z"],
+        [2, "agent", "好的，记下了。", "2026-11-03T03:00:05.000Z"],
+      ] as const) {
+        const ref = `chat-yesterday-${sequence}`;
+        h.exec(
+          `INSERT INTO payloads (
+            ref, owner_id, agent_id, classification, storage_kind, ciphertext, content_digest,
+            encryption_algorithm, key_ref, lifecycle_state, created_at, content_type
+          ) VALUES (?, ?, ?, 'private', 'sqlite_blob', X'00', ?, 'fixture', 'fixture-key',
+            'active', ?, 'text/plain')`,
+          ref,
+          OWNER_ID,
+          AGENT_ID,
+          `sha256:${ref}`,
+          at,
+        );
+        w.texts.set(ref, text);
+        h.exec(
+          `INSERT INTO thread_messages (
+            id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+            classification, committed_at
+          ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'private', ?)`,
+          `message-${ref}`,
+          OWNER_ID,
+          AGENT_ID,
+          "chat-yesterday",
+          sequence,
+          role,
+          ref,
+          at,
+        );
+      }
+      h.reader.items = [mail("bill", { subject: "電気料金のお知らせ" })];
+      h.scriptRaw("completed", "主人说十月的电费已经交了。");
+      h.script([{ id: "bill", result: "ignore" }]);
+      await h.service.run();
+      expect(h.invocations()).toBe(2);
+      expect(h.prompts[0]).toContain("十月的电费我已经交了");
+      expect(h.prompts[1]).toContain(HEADER);
+      expect(h.prompts[1]).toContain("主人说十月的电费已经交了。");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({
+        summaryInjected: true,
+        summaryGenerated: 1,
+        summaryDays: ["2026-11-03"],
+        summaryRead: "ok",
+      });
+      expect(
+        h.query("SELECT COUNT(*) AS n FROM memory_episodes WHERE source = 'day_summary'")[0],
+      ).toEqual({ n: 1 });
+    });
+
+    function chatTurn(
+      h: Harness,
+      world: World,
+      input: {
+        threadId: string;
+        sequence: number;
+        role: "owner" | "agent";
+        text: string;
+        at: string;
+      },
+    ) {
+      thread(h, input.threadId);
+      const ref = `${input.threadId}-${input.sequence}`;
+      h.exec(
+        `INSERT INTO payloads (
+          ref, owner_id, agent_id, classification, storage_kind, ciphertext, content_digest,
+          encryption_algorithm, key_ref, lifecycle_state, created_at, content_type
+        ) VALUES (?, ?, ?, 'private', 'sqlite_blob', X'00', ?, 'fixture', 'fixture-key',
+          'active', ?, 'text/plain')`,
+        ref,
+        OWNER_ID,
+        AGENT_ID,
+        `sha256:${ref}`,
+        input.at,
+      );
+      world.texts.set(ref, input.text);
+      h.exec(
+        `INSERT INTO thread_messages (
+          id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+          classification, committed_at
+        ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'private', ?)`,
+        `message-${ref}`,
+        OWNER_ID,
+        AGENT_ID,
+        input.threadId,
+        input.sequence,
+        input.role,
+        ref,
+        input.at,
+      );
+    }
+
+    it("still reaches yesterday's conversation when many old conversations were never summarized", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world) });
+      const w = world.current as World;
+      for (let index = 0; index < 15; index += 1)
+        chatTurn(h, w, {
+          threadId: `stale-${String(index).padStart(2, "0")}`,
+          sequence: 1,
+          role: "owner",
+          text: `很久以前的话 ${index}`,
+          at: `2026-10-01T0${index % 10}:00:00.000Z`,
+        });
+      chatTurn(h, w, {
+        threadId: "chat-yesterday",
+        sequence: 1,
+        role: "owner",
+        text: "十月的电费我已经交了",
+        at: "2026-11-03T03:00:00.000Z",
+      });
+      h.reader.items = [mail("bill", { subject: "電気料金のお知らせ" })];
+      h.scriptRaw("completed", "主人说十月的电费已经交了。");
+      h.script([{ id: "bill", result: "ignore" }]);
+      await h.service.run();
+      expect(h.prompts[0]).toContain("十月的电费我已经交了");
+      expect(h.prompts.some((prompt) => prompt.includes("很久以前的话"))).toBe(false);
+      expect(h.prompts.at(-1)).toContain("主人说十月的电费已经交了。");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({ summaryGenerated: 1, summaryInjected: true });
+    });
+
+    it("gives the catch-up call a quarter of the check time and still judges when it fails", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world) });
+      chatTurn(h, world.current as World, {
+        threadId: "chat-yesterday",
+        sequence: 1,
+        role: "owner",
+        text: "十月的电费我已经交了",
+        at: "2026-11-03T03:00:00.000Z",
+      });
+      const startedAt = Date.parse(h.clock.now());
+      h.reader.items = [mail("bill", { subject: "電気料金のお知らせ" })];
+      h.scriptRaw({ failedWith: "MODEL_ROUTE_UNAVAILABLE" });
+      h.script([{ id: "bill", result: "ignore" }]);
+      await h.service.run();
+      expect(h.invocations()).toBe(2);
+      expect(Date.parse(h.deadlines[0] as string) - startedAt).toBe(45_000);
+      expect(Date.parse(h.deadlines[1] as string) - startedAt).toBe(180_000);
+      expect(h.prompts[1]).not.toContain(HEADER);
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({
+        summaryGenerated: 0,
+        summaryInjected: false,
+        summaryRead: "partial",
+      });
+      expect(h.query("SELECT COUNT(*) AS n FROM memory_episodes")[0]).toEqual({ n: 0 });
+    });
+
+    it("REVERSE: neither reads nor generates summaries once the day's spending limit is used up", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({
+        recentSummaries: summariesFor(world),
+        dailyCostMicros: 1_000,
+        cost: 1_000,
+      });
+      h.reader.items = [mail("first", { snippet: "随便聊聊" })];
+      h.script([{ id: "first", result: "ignore" }]);
+      await h.service.run();
+      const before = { ...(world.current as World).calls };
+      h.clock.advance(15 * 60_000);
+      chatTurn(h, world.current as World, {
+        threadId: "chat-yesterday",
+        sequence: 1,
+        role: "owner",
+        text: "十月的电费我已经交了",
+        at: "2026-11-03T03:00:00.000Z",
+      });
+      h.reader.items = [mail("second", { snippet: "今度ランチ行こう" })];
+      await h.service.run();
+      expect(world.current?.calls).toEqual(before);
+      expect(h.invocations()).toBe(1);
+    });
+
+    it("REVERSE: does not summarize anything while the owner has paused memory", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world) });
+      const w = world.current as World;
+      await h.repository.memoryBook().writeSettings({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        capturePaused: true,
+        updatedAt: h.clock.now(),
+      });
+      thread(h, "chat-paused");
+      const ref = "chat-paused-1";
+      h.exec(
+        `INSERT INTO payloads (
+          ref, owner_id, agent_id, classification, storage_kind, ciphertext, content_digest,
+          encryption_algorithm, key_ref, lifecycle_state, created_at, content_type
+        ) VALUES (?, ?, ?, 'private', 'sqlite_blob', X'00', ?, 'fixture', 'fixture-key',
+          'active', ?, 'text/plain')`,
+        ref,
+        OWNER_ID,
+        AGENT_ID,
+        `sha256:${ref}`,
+        "2026-11-03T03:00:00.000Z",
+      );
+      w.texts.set(ref, "暂停记忆时说的话");
+      h.exec(
+        `INSERT INTO thread_messages (
+          id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+          classification, committed_at
+        ) VALUES (?, ?, ?, ?, 0, 1, 'owner', ?, 'private', ?)`,
+        `message-${ref}`,
+        OWNER_ID,
+        AGENT_ID,
+        "chat-paused",
+        ref,
+        "2026-11-03T03:00:00.000Z",
+      );
+      h.reader.items = [mail("plain")];
+      h.script([{ id: "plain", result: "ignore" }]);
+      await h.service.run();
+      expect(h.invocations()).toBe(1);
+      expect(h.prompts[0]).not.toContain("暂停记忆时说的话");
+      expect(h.query("SELECT COUNT(*) AS n FROM memory_episodes")[0]).toEqual({ n: 0 });
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({ summaryGenerated: 0, summaryInjected: false });
+    });
+
+    it("keeps the newest summaries whole and drops the oldest once the character budget is used", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({
+        recentSummaries: summariesFor(world),
+        summaryLimits: { characters: 25 },
+      });
+      const w = world.current as World;
+      const oldest = await seed(h, w, {
+        threadId: "a",
+        day: "2026-11-03",
+        text: "一".repeat(10),
+        endedAt: "2026-11-03T01:00:00.000Z",
+      });
+      const middle = await seed(h, w, {
+        threadId: "b",
+        day: "2026-11-03",
+        text: "二".repeat(10),
+        endedAt: "2026-11-03T02:00:00.000Z",
+      });
+      const newest = await seed(h, w, {
+        threadId: "c",
+        day: "2026-11-04",
+        text: "三".repeat(10),
+        endedAt: "2026-11-04T00:10:00.000Z",
+      });
+      h.reader.items = [mail("plain")];
+      h.script([{ id: "plain", result: "ignore" }]);
+      await h.service.run();
+      const prompt = h.prompts[0] ?? "";
+      expect(prompt).not.toContain("一".repeat(10));
+      expect(prompt.indexOf("二".repeat(10))).toBeLessThan(prompt.indexOf("三".repeat(10)));
+      const [entry] = await ledgerRows(h);
+      expect([...(entry?.inputs.summaryIds ?? [])].sort()).toEqual([middle, newest].sort());
+      expect(entry?.inputs.summaryIds).not.toContain(oldest);
+      expect(entry?.inputs.summaryCharacters).toBe(20);
+    });
+
+    it("sends byte-identical summary blocks to every batch of one check", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world), batchSize: 1 });
+      await seed(h, world.current as World, {
+        threadId: "chat",
+        day: "2026-11-03",
+        text: "主人说下周去大阪出差。",
+      });
+      h.reader.items = [mail("one"), mail("two")];
+      h.script([{ id: "one", result: "ignore" }]);
+      h.script([{ id: "two", result: "ignore" }]);
+      await h.service.run();
+      expect(h.prompts).toHaveLength(2);
+      const head = (prompt: string) => prompt.slice(0, prompt.indexOf("邮件："));
+      expect(head(h.prompts[0] ?? "")).toContain("下周去大阪出差");
+      expect(head(h.prompts[0] ?? "")).toBe(head(h.prompts[1] ?? ""));
+      expect(world.current?.calls).toEqual({ catchUp: 1, recent: 1 });
+    });
+
+    it("REVERSE: reserves room for a judgment that carries a full summary block, priced by prompt length", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({
+        recentSummaries: summariesFor(world),
+        dailyCostMicros: 5_000,
+        estimate: 0,
+        estimatePerCharacter: 1,
+        cost: 5_000,
+      });
+      chatTurn(h, world.current as World, {
+        threadId: "chat-yesterday",
+        sequence: 1,
+        role: "owner",
+        text: "十月的电费我已经交了",
+        at: "2026-11-03T03:00:00.000Z",
+      });
+      h.reader.items = [mail("bill", { subject: "電気料金のお知らせ" })];
+      h.script([{ id: "bill", result: "ignore" }]);
+      await h.service.run();
+      expect(h.invocations()).toBe(1);
+      expect(h.prompts[0]).toContain("電気料金のお知らせ");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({ summaryGenerated: 0, summaryRead: "partial" });
+    });
+
+    it("REVERSE: leaves room for the mail judgment instead of spending the last of the day's limit on catching up", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({
+        recentSummaries: summariesFor(world),
+        dailyCostMicros: 150,
+        estimate: 100,
+        cost: 100,
+      });
+      chatTurn(h, world.current as World, {
+        threadId: "chat-yesterday",
+        sequence: 1,
+        role: "owner",
+        text: "十月的电费我已经交了",
+        at: "2026-11-03T03:00:00.000Z",
+      });
+      h.reader.items = [mail("bill", { subject: "電気料金のお知らせ" })];
+      h.script([{ id: "bill", result: "ignore" }]);
+      await h.service.run();
+      expect(h.invocations()).toBe(1);
+      expect(h.prompts[0]).toContain("電気料金のお知らせ");
+      expect(h.prompts[0]).not.toContain("十月的电费我已经交了");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({ summaryGenerated: 0, summaryRead: "partial" });
+      expect(h.query("SELECT COUNT(*) AS n FROM memory_episodes")[0]).toEqual({ n: 0 });
+    });
+
+    it("REVERSE: the store refuses summary inputs that would not read back as written", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world) });
+      const id = await seed(h, world.current as World, {
+        threadId: "chat",
+        day: "2026-11-03",
+        text: "昨天的事",
+      });
+      h.reader.items = [mail("plain")];
+      h.script([{ id: "plain", result: "ignore" }]);
+      await h.service.run();
+      const last = h.lastRecord();
+      if (last === undefined) throw new Error("no record");
+      const base = { ...last, modelPayloads: [], processed: [], insights: [], push: null };
+      let n = 0;
+      for (const inputs of [
+        { summaryIds: [id, id] },
+        { summaryDays: ["2026/11/03"] },
+        { summaryRead: "bogus" },
+        { summaryCharacters: -1 },
+        { summaryGenerated: 1.5 },
+        { summaryInjected: false },
+        { summaryInjected: true, summaryIds: [] },
+        { summaryRead: undefined },
+        { summaryIds: undefined, summaryInjected: undefined },
+        { summaryGenerated: undefined },
+        { summaryRead: null },
+      ]) {
+        n += 1;
+        await expect(
+          h.store.record({
+            ...base,
+            decision: { ...last.decision, id: `bad-${n}` },
+            inputs: { ...last.inputs, ...inputs } as never,
+          }),
+        ).rejects.toThrow(/invalid/u);
+      }
+    });
+
+    it("counts yesterday by the owner's time zone, not by UTC", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({ recentSummaries: summariesFor(world) });
+      h.clock.set("2026-11-03T16:00:00.000Z");
+      const w = world.current as World;
+      await seed(h, w, { threadId: "tokyo-yesterday", day: "2026-11-03", text: "东京的昨天" });
+      await seed(h, w, { threadId: "utc-yesterday", day: "2026-11-02", text: "只有 UTC 才算昨天" });
+      h.reader.items = [mail("plain")];
+      h.script([{ id: "plain", result: "ignore" }]);
+      await h.service.run();
+      expect(h.prompts[0]).toContain("东京的昨天");
+      expect(h.prompts[0]).not.toContain("只有 UTC 才算昨天");
     });
   });
 });

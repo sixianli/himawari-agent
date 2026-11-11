@@ -29,6 +29,16 @@ describe("[P1-1] memory source report", () => {
       await read("packages/gateway-contracts/src/memory-source.ts"),
     )?.[1];
     expect(REMINDER_SOURCE_PREFIX).toBe("memory-content:reminder:");
+    const EXTERNAL_PREFIX = /EXTERNAL_PROPOSAL_MEMORY_PREFIX = "([^"]+)"/.exec(
+      await read("packages/gateway-contracts/src/memory-source.ts"),
+    )?.[1];
+    expect(EXTERNAL_PREFIX).toBe("memory:mcp:");
+    expect(await read("scripts/operations/memory-source-report.mjs")).toContain(
+      `LIKE '${EXTERNAL_PREFIX}%'`,
+    );
+    expect(await read("apps/agent-service/src/production-mcp-memory-writer.ts")).toContain(
+      `EXTERNAL_PROPOSAL_MEMORY_PREFIX = "${EXTERNAL_PREFIX}"`,
+    );
     expect(await read("scripts/operations/memory-source-report.mjs")).toContain(
       `NOT LIKE '${REMINDER_SOURCE_PREFIX}%'`,
     );
@@ -80,6 +90,7 @@ describe("[P1-1] memory source report", () => {
       "d4",
       "d5",
       "d6",
+      "e1",
     ])
       payload(ref);
     database
@@ -101,6 +112,7 @@ describe("[P1-1] memory source report", () => {
     memory("memory:capture-unmatched", "m3", "t1");
     memory("memory:import:b1:0", "m4", null);
     memory("memory:owner:1", "m5", null);
+    memory("memory:mcp:proposal-1", "e1", null);
     memory("memory:lost-thread", "m6", null);
     memory("memory:tidy", "m7", null);
     memory("memory:trashed", "m8", "t1", "trashed");
@@ -160,12 +172,13 @@ describe("[P1-1] memory source report", () => {
     const counts = countSources(database);
     database.close();
     expect(counts).toEqual({
-      total: 13,
+      total: 14,
       jump: 1,
       reminder: 2,
       unavailable: 6,
       import: 1,
       owner: 1,
+      external: 1,
       deleted: 1,
       tidy: 1,
     });

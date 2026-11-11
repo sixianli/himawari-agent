@@ -679,6 +679,34 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0086_rule_book.sql",
   },
+  {
+    sequence: 87,
+    name: "rule_book_memory_link",
+    changeSet: "rule-book-memory-link",
+    phase: "expand" as const,
+    file: "0087_rule_book_memory_link.sql",
+  },
+  {
+    sequence: 88,
+    name: "memory_capture_backlog",
+    changeSet: "memory-capture-backlog",
+    phase: "expand" as const,
+    file: "0088_memory_capture_backlog.sql",
+  },
+  {
+    sequence: 89,
+    name: "consolidation_hold",
+    changeSet: "consolidation-hold",
+    phase: "expand" as const,
+    file: "0089_consolidation_hold.sql",
+  },
+  {
+    sequence: 90,
+    name: "memory_checkup",
+    changeSet: "memory-checkup",
+    phase: "expand" as const,
+    file: "0090_memory_checkup.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

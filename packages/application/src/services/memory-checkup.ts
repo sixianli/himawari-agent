@@ -71,7 +71,7 @@ export function pickMemoryCheckup(input: {
   readonly quiet: ReadonlySet<string>;
   readonly now: string;
   readonly unusedDays: number;
-  readonly lowConfidencePermille: number;
+  readonly lowConfidenceThreshold: (category: string | null) => number;
   readonly limit: number;
 }): readonly MemoryCheckupCandidate[] {
   const records = input.records.filter(live);
@@ -81,14 +81,21 @@ export function pickMemoryCheckup(input: {
     left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
   const queues: Record<MemoryCheckupReason, MemoryCheckupCandidate[]> = {
     conflict: input.pairs
-      .filter(({ memoryId, relatedMemoryId }) => byId.has(memoryId) && byId.has(relatedMemoryId))
+      .filter(
+        ({ memoryId, relatedMemoryId }) =>
+          byId.get(memoryId)?.attributes?.tentative === true && byId.has(relatedMemoryId),
+      )
       .map(({ memoryId, relatedMemoryId }) => ({ memoryId, relatedMemoryId, reason: "conflict" })),
     unused: records
       .filter((record) => lastUse(record) < unusedBefore)
       .toSorted((left, right) => lastUse(left) - lastUse(right) || byKey(left, right))
       .map(({ id }) => ({ memoryId: id, relatedMemoryId: null, reason: "unused" })),
     low_confidence: records
-      .filter((record) => record.confidencePermille < input.lowConfidencePermille)
+      .filter(
+        (record) =>
+          record.confidencePermille <
+          input.lowConfidenceThreshold(record.attributes?.category ?? null),
+      )
       .toSorted(
         (left, right) => left.confidencePermille - right.confidencePermille || byKey(left, right),
       )
@@ -150,7 +157,7 @@ export interface MemoryCheckupServiceOptions {
   ) => Promise<ReadonlyMap<string, string | null>>;
   readonly pairs: () => Promise<readonly MemoryCheckupPair[]>;
   readonly unusedDays: number;
-  readonly lowConfidencePermille: number;
+  readonly lowConfidenceThreshold: (category: string | null) => number;
   readonly capacity: () => number;
   readonly timeZone: string;
   readonly now: () => string;
@@ -193,7 +200,7 @@ export class MemoryCheckupService {
       quiet,
       now,
       unusedDays: this.#options.unusedDays,
-      lowConfidencePermille: this.#options.lowConfidencePermille,
+      lowConfidenceThreshold: this.#options.lowConfidenceThreshold,
       limit: this.#options.capacity(),
     });
     if (picked.length === 0) {

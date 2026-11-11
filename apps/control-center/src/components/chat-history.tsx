@@ -70,6 +70,7 @@ export function ChatHistory({
   readImage,
   renderApproval,
   renderMemory,
+  renderToolCard,
   outgoing,
   onRetry,
   inherited,
@@ -87,6 +88,7 @@ export function ChatHistory({
   readonly message: Message;
   readonly renderApproval: (runId: string, records: readonly ThreadExecutionRecord[]) => ReactNode;
   readonly renderMemory?: ((ownerRefs: readonly string[]) => ReactNode) | undefined;
+  readonly renderToolCard?: ((name: string, output: string) => ReactNode) | undefined;
   readonly onPreview?: ((preview: ContentPreviewValue) => void) | undefined;
   readonly onOpenFile?: ((file: DeliveredFile) => void) | undefined;
   readonly onMoreFiles?: (() => void) | undefined;
@@ -246,6 +248,7 @@ export function ChatHistory({
                   {group.run ? (
                     <ExecutionProcess
                       onPreview={onPreview}
+                      renderToolCard={renderToolCard}
                       run={group.run}
                       records={records}
                       state={executionStates?.[group.run.runId]}

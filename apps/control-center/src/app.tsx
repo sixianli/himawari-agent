@@ -1,3 +1,4 @@
+import { RuleReceiptCard } from "./components/rule-receipt.js";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ControlCenterShell } from "./app/app-shell.js";
 import {
@@ -439,6 +440,10 @@ function LocalizedControlCenterApp({
           renderMemory: (ownerRefs: readonly string[]) => (
             <MemoryTurnNote ownerRefs={ownerRefs} memory={memory} message={message} />
           ),
+          renderToolCard: (name: string, output: string) =>
+            name === "rule_set" ? (
+              <RuleReceiptCard output={output} memory={memory} message={message} />
+            ) : null,
           remindersDue:
             (memory.overview?.reminders.length ?? 0) +
             proactiveDueCount(proactive?.overview ?? null, new Date()),

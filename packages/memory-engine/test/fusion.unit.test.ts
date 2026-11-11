@@ -95,3 +95,99 @@ describe("reciprocal rank fusion", () => {
     expect(hits.map(({ memoryId }) => memoryId)).toEqual(["osaka", "tokyo"]);
   });
 });
+
+describe("relevance cutoff after fusion", () => {
+  const cutoff = { minimumScore: 0.57, keywordWeight: 0.15, entityWeight: 0.15 };
+  const ids = (hits: readonly { readonly memoryId: string }[]) =>
+    hits.map(({ memoryId }) => memoryId).sort();
+
+  it("drops a keyword-only hit whose similarity is far below the line", () => {
+    const hits = fuseCandidates(
+      {
+        vector: [candidate("vector", { signal: 0.61, similarity: 0.61 })],
+        lexical: [
+          candidate("keyword-noise", { signal: 4, similarity: 0.4 }),
+          candidate("vector", { signal: 2, similarity: 0.61 }),
+        ],
+        entity: [],
+        vectorEngine: "sqlite-vec",
+      },
+      { now, limit: 5, cutoff },
+    );
+    expect(ids(hits)).toEqual(["vector"]);
+  });
+
+  it("keeps an entity hit that the bonus lifts over the line and a vector hit at the floor", () => {
+    const hits = fuseCandidates(
+      {
+        vector: [candidate("floor", { signal: 0.6 })],
+        lexical: [],
+        entity: [candidate("person", { signal: 1, similarity: 0.45 })],
+        vectorEngine: "javascript",
+      },
+      { now, limit: 5, cutoff },
+    );
+    expect(ids(hits)).toEqual(["floor", "person"]);
+  });
+
+  it("drops the same entity hit when the entity weight is zero", () => {
+    const hits = fuseCandidates(
+      {
+        vector: [],
+        lexical: [],
+        entity: [candidate("person", { signal: 1, similarity: 0.45 })],
+        vectorEngine: "javascript",
+      },
+      { now, limit: 5, cutoff: { ...cutoff, entityWeight: 0 } },
+    );
+    expect(hits).toEqual([]);
+  });
+
+  it("keeps candidates without a known similarity and reports how many", () => {
+    const unknown: number[] = [];
+    const hits = fuseCandidates(
+      {
+        vector: [],
+        lexical: [candidate("no-vector", { signal: 1 })],
+        entity: [],
+        vectorEngine: "none",
+      },
+      { now, limit: 5, cutoff, onRelevanceUnknown: (count) => unknown.push(count) },
+    );
+    expect(ids(hits)).toEqual(["no-vector"]);
+    expect(unknown).toEqual([1]);
+  });
+
+  it("does not let a low boost push a relevant memory under the line", () => {
+    const hits = fuseCandidates(
+      {
+        vector: [
+          candidate("old-unimportant", {
+            signal: 0.62,
+            importancePermille: 0,
+            confidencePermille: 0,
+            updatedAt: "2020-01-01T00:00:00.000Z",
+          }),
+        ],
+        lexical: [],
+        entity: [],
+        vectorEngine: "sqlite-vec",
+      },
+      { now, limit: 5, cutoff },
+    );
+    expect(ids(hits)).toEqual(["old-unimportant"]);
+  });
+
+  it("cuts nothing when no cutoff is asked for", () => {
+    const hits = fuseCandidates(
+      {
+        vector: [],
+        lexical: [candidate("keyword-noise", { signal: 4, similarity: 0.1 })],
+        entity: [],
+        vectorEngine: "sqlite-vec",
+      },
+      { now, limit: 5 },
+    );
+    expect(ids(hits)).toEqual(["keyword-noise"]);
+  });
+});
