@@ -80,6 +80,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       readonly loseTodaySummary?: boolean;
       readonly withoutSummaries?: boolean;
       readonly binding?: { readonly status?: "disabled"; readonly ownerId?: string };
+      readonly failBinding?: boolean;
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-mcp-read-"));
@@ -288,6 +289,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       access: access.verifier,
       owners: {
         readBySubject: async (externalSubjectRef) => {
+          if (options.failBinding) throw new Error("OWNER_BINDING_STORE_DOWN");
           const binding = await owners.readBySubject(externalSubjectRef);
           return binding && options.binding
             ? ({ ...binding, ...options.binding } as typeof binding)
@@ -670,6 +672,22 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     await expect(f.connect("modern")).rejects.toThrow();
     expect(f.failures).toEqual([{ code: "MCP_ACCESS_OWNER_NOT_BOUND" }]);
     expect(await f.ledger()).toEqual([]);
+  });
+
+  it("answers 503, not 401, when the owner binding cannot be read, and does not count it as a bad sign-in", async () => {
+    const f = await setup({ failBinding: true });
+    const post = async () =>
+      fetch(f.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "cf-access-jwt-assertion": await f.access.sign(),
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      });
+    for (let attempt = 0; attempt < 61; attempt += 1) expect((await post()).status).toBe(503);
+    expect(f.failures).toHaveLength(61);
   });
 
   it("answers 429 after 60 rejected assertions a minute, logs only the 401s, and still serves a valid sign-in", async () => {

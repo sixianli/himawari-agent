@@ -55,7 +55,7 @@ Andy 2026-11-11 在任务 P5-3 的线程里同意的做法是：三个客户端�
 
 ## 决定
 
-1. **`/api/mcp/v1` 只认 Cloudflare Access 凭证。** 请求头 `Cf-Access-Jwt-Assertion` 里的凭证用现成的 `CloudflareAccessJwtVerifier` 校验：issuer 和公钥地址沿用 `configuration.identity`，audience 用这个入口自己那个 Access 应用的值。凭证通过校验后，还要核对凭证主体就是 Himawari 已绑定的主人：用凭证主体的摘要（`externalSubjectRef`）查网页登录时绑定的主人记录，记录属于本实例的主人且状态是 active 才放行。没有凭证、签名不对、audience 不对、过期、不是绑定的主人，都回 401，不写决策台账。带了凭证却没通过的，服务日志记一行 `mcp-read.failed`（只有错误码，不含凭证内容；不是主人时错误码是 `MCP_ACCESS_OWNER_NOT_BOUND`）；被限流挡下的不记，所以由校验失败产生的这类日志每分钟最多 60 行（工具出错等别的原因也写同名日志，不在这 60 行里）。固定令牌（`Authorization: Bearer`）不再被接受。
+1. **`/api/mcp/v1` 只认 Cloudflare Access 凭证。** 请求头 `Cf-Access-Jwt-Assertion` 里的凭证用现成的 `CloudflareAccessJwtVerifier` 校验：issuer 和公钥地址沿用 `configuration.identity`，audience 用这个入口自己那个 Access 应用的值。凭证通过校验后，还要核对凭证主体就是 Himawari 已绑定的主人：用凭证主体的摘要（`externalSubjectRef`）查网页登录时绑定的主人记录，记录属于本实例的主人且状态是 active 才放行。没有凭证、签名不对、audience 不对、过期、不是绑定的主人，都回 401，不写决策台账。读主人绑定记录时数据库出错，回 503，记 `mcp-read.failed`，不算一次无效登录。带了凭证却没通过的，服务日志记一行 `mcp-read.failed`（只有错误码，不含凭证内容；不是主人时错误码是 `MCP_ACCESS_OWNER_NOT_BOUND`）；被限流挡下的不记，所以由校验失败产生的这类日志每分钟最多 60 行（工具出错等别的原因也写同名日志，不在这 60 行里）。固定令牌（`Authorization: Bearer`）不再被接受。
    - 取代 ADR 0219 决定 1 里「固定令牌认证」的部分，以及 ADR 0225 决定 1「写操作用单独的令牌」。
    - 理由：三个客户端里有两个连不上固定令牌（前提 2、3）。一个入口只保留一套认证，也和「生产入口只一道 Cloudflare 门」一致（前提 5）。
 2. **配置改成 `runPolicy.mcpRead: { audience, proposals? }`。**
@@ -68,7 +68,7 @@ Andy 2026-11-11 在任务 P5-3 的线程里同意的做法是：三个客户端�
    - 能登录这个 Access 应用的只有 Andy 本人，由 Access 策略保证；源站另外核对凭证主体是绑定的主人（决定 1），所以 Access 策略哪天配宽了，别人登录进来也读不到记忆。Cloudflare 的凭证说明写 `sub` 是 “The ID of the user. This value is unique to an email address per account.”（<https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/>），即同一账号里按邮箱定，不按应用定，所以网页登录绑定的主体和 MCP 凭证的主体应是同一个摘要。这一点页面没有明说「跨应用相同」，要在 Hermes 上实测确认（列在后果一节）。
    - 每次写入仍要 Andy 确认：在客户端里弹框确认（ADR 0225），或者到 Himawari 里确认（ADR 0228）。所以不用再给每个客户端发一把单独的写令牌。
 4. **限流数值不变，但改成全入口共用一份。** 有效请求每分钟 30 次，无效请求每分钟 60 次，计数逻辑抽成 `AdmissionWindows`，和 `BearerGate` 共用。原来读、写两把令牌各有一份 30 次的额度；现在所有客户端共用同一份 30 次，`propose_memory` 确认来回的每次请求也算在里面。
-   - 凭证校验在限流计数之前做（要先知道算有效还是无效）。为了不让伪造的凭证借此反复触发公钥下载，`CloudflareAccessJwtVerifier` 遇到不认识的公钥编号（`kid`）时，距上次尝试下载公钥集不到 30 秒就不再下载，继续用未过期的缓存；上次下载失败、手里又没有未过期的缓存时，30 秒内直接按校验失败处理，不再下载；同一时刻只发一次下载，下载进行中，缓存里认识的公钥照常校验，不用等它。过期的缓存一律不用。这和 jose 库（本项目校验 JWT 用的开源库）自带的远程公钥集的做法一样（`cooldownDuration` 默认 30000 毫秒，见 `node_modules/jose/dist/types/jwks/remote.d.ts`）。网页登录用的是同一个类，一起受益；代价是 Cloudflare 换公钥后，最多晚 30 秒认新公钥。
+   - 凭证校验在限流计数之前做（要先知道算有效还是无效）。为了不让伪造的凭证借此反复触发公钥下载，`CloudflareAccessJwtVerifier` 遇到不认识的公钥编号（`kid`）时，只要缓存还没过期，距上次尝试下载公钥集不到 30 秒就不再下载，继续用缓存（缓存有效期配得比 30 秒短、缓存已过期时，照常重新下载；生产用默认的 300 秒）；上次下载失败、手里又没有未过期的缓存时，30 秒内直接按校验失败处理，不再下载；同一时刻只发一次下载，下载进行中，缓存里认识的公钥照常校验，不用等它。过期的缓存一律不用。这和 jose 库（本项目校验 JWT 用的开源库）自带的远程公钥集的做法一样（`cooldownDuration` 默认 30000 毫秒，见 `node_modules/jose/dist/types/jwks/remote.d.ts`）。网页登录用的是同一个类，一起受益；代价是 Cloudflare 换公钥后，最多晚 30 秒认新公钥。
 5. **401 不再带自定义 `WWW-Authenticate` 头。** 授权服务器的发现交给 Cloudflare（前提 6）。
 6. **`requestState` 的签名密钥不变。** 它本来就是进程启动时随机生成的，不从令牌派生（ADR 0225 决定 2）。原来绑定的「令牌种类」改为凭证主体的摘要（`externalSubjectRef`）。
 

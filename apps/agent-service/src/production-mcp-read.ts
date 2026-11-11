@@ -129,7 +129,7 @@ export interface McpAccessVerifier {
 
 export type McpAdmission =
   | { readonly status: "ok"; readonly authInfo: AuthInfo }
-  | { readonly status: "unauthorized" | "rate_limited" };
+  | { readonly status: "unauthorized" | "rate_limited" | "unavailable" };
 
 interface ProposalState {
   readonly tool: "propose_memory";
@@ -321,14 +321,23 @@ export class ProductionMcpRead {
     let subject: string | undefined;
     let rejection: unknown;
     if (assertion) {
+      let verified: string | undefined;
       try {
-        const verified = await this.#options.access.verify(assertion);
-        const binding = await this.#options.owners.readBySubject(verified.externalSubjectRef);
-        if (binding?.ownerId === this.#options.scope.ownerId && binding.status === "active")
-          subject = verified.externalSubjectRef;
-        else rejection = MCP_ACCESS_OWNER_NOT_BOUND;
+        verified = (await this.#options.access.verify(assertion)).externalSubjectRef;
       } catch (error) {
         rejection = error;
+      }
+      if (verified !== undefined) {
+        let binding: Awaited<ReturnType<OwnerIdentityStatePort["readBySubject"]>>;
+        try {
+          binding = await this.#options.owners.readBySubject(verified);
+        } catch (error) {
+          this.#options.onFailure(error);
+          return { status: "unavailable" };
+        }
+        if (binding?.ownerId === this.#options.scope.ownerId && binding.status === "active")
+          subject = verified;
+        else rejection = MCP_ACCESS_OWNER_NOT_BOUND;
       }
     }
     const status = this.#windows.admit(subject !== undefined);
@@ -778,7 +787,7 @@ export function registerMcpReadRoute(app: FastifyInstance, mcp: ProductionMcpRea
           return;
         }
         return reply
-          .code(gate.status === "unauthorized" ? 401 : 429)
+          .code(gate.status === "unauthorized" ? 401 : gate.status === "unavailable" ? 503 : 429)
           .header("cache-control", "no-store")
           .send();
       },
