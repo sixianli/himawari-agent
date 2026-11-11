@@ -1,3 +1,9 @@
+import {
+  MEMORY_AUTO_COMMIT_GATE,
+  MEMORY_TENTATIVE_CONFIRM_GATE,
+  type ThresholdGate,
+  thresholdFor,
+} from "@himawari-agent/calibration";
 import type { MemoryGenerationId, MemoryId } from "@himawari-agent/domain";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
@@ -28,10 +34,10 @@ export interface AutomaticMemoryServiceOptions {
   readonly audit: MemoryExtractionAuditPort;
   readonly ledger?: DecisionLedgerPort;
   readonly readSourceText: (sourceRef: string) => Promise<string>;
+  readonly gates?: CaptureGates;
   readonly now: () => string;
   readonly memoryIdFor: (generationId: MemoryGenerationId, candidateOrdinal: number) => MemoryId;
   readonly approvalIdFor: (generationId: MemoryGenerationId, candidateOrdinal: number) => string;
-  readonly automaticConfidencePermille?: number;
   readonly onCommitted?: (input: {
     readonly candidate: ExtractedMemoryCandidate;
     readonly memoryId: MemoryId;
@@ -39,6 +45,16 @@ export interface AutomaticMemoryServiceOptions {
     readonly agentId: CommittedRunMemoryInput["agentId"];
   }) => Promise<void>;
 }
+
+export interface CaptureGates {
+  readonly autoCommit: ThresholdGate;
+  readonly confirmTentative: ThresholdGate;
+}
+
+export const DEFAULT_CAPTURE_GATES: CaptureGates = Object.freeze({
+  autoCommit: MEMORY_AUTO_COMMIT_GATE,
+  confirmTentative: MEMORY_TENTATIVE_CONFIRM_GATE,
+});
 
 export interface CommittedRunMemoryInput {
   readonly ownerId: SensitiveMemoryApprovalRequest["ownerId"];
@@ -69,6 +85,7 @@ export type SensitiveMemoryResolution =
 
 type KeptReason =
   | "auto_committed"
+  | "tentative_confirmed"
   | "explicitly_approved"
   | "approval_committed"
   | "kept_tentative";
@@ -82,6 +99,14 @@ function canBeKeptTentatively(candidate: ExtractedMemoryCandidate): boolean {
     (candidate.people?.length ?? 0) === 0 &&
     (candidate.personLinks?.length ?? 0) === 0
   );
+}
+
+function confirmedTentativeCategory(
+  candidate: ExtractedMemoryCandidate,
+): ExtractedMemoryCandidate["confirmsTentativeCategory"] {
+  return candidate.decision !== "create" && candidate.existingMemoryId !== null
+    ? candidate.confirmsTentativeCategory
+    : undefined;
 }
 
 function ledgerId(key: string): string {
@@ -161,9 +186,15 @@ export class AutomaticMemoryService {
         );
         continue;
       }
+      const confirmationCategory = confirmedTentativeCategory(candidate);
+      const confirmsTentative = confirmationCategory !== undefined;
+      const gates = this.options.gates ?? DEFAULT_CAPTURE_GATES;
       if (
         !explicitlyApproved &&
-        candidate.confidencePermille < (this.options.automaticConfidencePermille ?? 850)
+        candidate.confidencePermille <
+          (confirmationCategory === undefined
+            ? thresholdFor(gates.autoCommit, candidate.attributes?.category ?? null)
+            : thresholdFor(gates.confirmTentative, confirmationCategory))
       ) {
         if (canBeKeptTentatively(candidate)) {
           const { supersedes: _dropped, ...rest } = candidate;
@@ -184,7 +215,13 @@ export class AutomaticMemoryService {
           continue;
         }
         await this.audit(input, candidateOrdinal, "confidence_below_threshold", []);
-        await this.discard(input, candidate, candidateOrdinal, "confidence_below_threshold", true);
+        await this.discard(
+          input,
+          candidate,
+          candidateOrdinal,
+          confirmsTentative ? "confirm_below_threshold" : "confidence_below_threshold",
+          true,
+        );
         continue;
       }
       const committed = await this.commitCandidate(
@@ -192,7 +229,11 @@ export class AutomaticMemoryService {
         candidate,
         candidateOrdinal,
         undefined,
-        explicitlyApproved ? "explicitly_approved" : "auto_committed",
+        explicitlyApproved
+          ? "explicitly_approved"
+          : confirmsTentative
+            ? "tentative_confirmed"
+            : "auto_committed",
       );
       committedMemoryIds.push(committed);
       await this.audit(
@@ -536,7 +577,10 @@ export class AutomaticMemoryService {
       contentRef: detail.contentRef,
       costMicros: 0,
       durationMs: 0,
-      category: detail.candidate?.attributes?.category ?? null,
+      category:
+        (detail.candidate ? confirmedTentativeCategory(detail.candidate) : undefined) ??
+        detail.candidate?.attributes?.category ??
+        null,
       confidencePermille: detail.candidate?.confidencePermille ?? null,
       inferred: detail.candidate?.inference ?? null,
     };
@@ -546,7 +590,7 @@ export class AutomaticMemoryService {
     input: CommittedRunMemoryInput,
     candidate: ExtractedMemoryCandidate,
     candidateOrdinal: number,
-    reasonCode: MemoryExtractionAuditRecord["outcome"],
+    reasonCode: MemoryExtractionAuditRecord["outcome"] | "confirm_below_threshold",
     keepText: boolean,
   ): Promise<void> {
     if (!this.options.ledger) return;
@@ -567,10 +611,7 @@ export class AutomaticMemoryService {
       memoryIds: candidate.existingMemoryId ? [candidate.existingMemoryId] : [],
       candidate,
     });
-    await this.options.ledger.append({
-      ...write,
-      inputs: { memoryIds: write.inputs.memoryIds, ruleIds: [reasonCode] },
-    });
+    await this.options.ledger.append(write);
   }
 
   private audit(

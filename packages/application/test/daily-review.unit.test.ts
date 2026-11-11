@@ -212,6 +212,7 @@ function entry(overrides: Partial<DecisionLedgerEntry>): DecisionLedgerEntry {
       relatedRead: "off",
       relatedStats: { requests: 0, messages: 0, characters: 0, durationMs: 0 },
       relatedFailedSteps: [],
+      profileBudget: null,
     },
     reasonRef: null,
     contentRef: null,

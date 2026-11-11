@@ -31,7 +31,7 @@ export interface ProductionMemoryCompositionOptions {
   readonly secretSource: HostProviderSecretSource;
   readonly index: MemoryIndexStorePort;
   readonly fetch?: typeof fetch;
-  readonly onVectorFailure?: HybridMemoryProviderOptions["onVectorFailure"];
+  readonly onVectorFailure: NonNullable<HybridMemoryProviderOptions["onVectorFailure"]>;
   readonly onRelevanceUnknown?: HybridMemoryProviderOptions["onRelevanceUnknown"];
 }
 
@@ -110,7 +110,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
     ...(options.configuration.runPolicy?.timeZone
       ? { timeZone: options.configuration.runPolicy.timeZone }
       : {}),
-    ...(options.onVectorFailure === undefined ? {} : { onVectorFailure: options.onVectorFailure }),
+    onVectorFailure: options.onVectorFailure,
     relevance: {
       keywordWeight: retrieval?.keywordWeight ?? DEFAULT_RELEVANCE_TUNING.keywordWeight,
       entityWeight: retrieval?.entityWeight ?? DEFAULT_RELEVANCE_TUNING.entityWeight,

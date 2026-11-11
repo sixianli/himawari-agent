@@ -112,6 +112,7 @@ describe.skipIf(!LIVE_ENABLED)("AI Gateway Qwen3 Embedding 8B live smoke", () =>
       | undefined;
     try {
       composition = await createProductionMemoryCompositionFromConfiguration({
+        onVectorFailure: () => {},
         egress: testModelEgress(),
         configuration: createAiGatewayLiveConfiguration(stateRoot),
         secretSource: new MacOsKeychainProviderSecretSource({

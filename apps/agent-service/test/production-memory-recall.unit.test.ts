@@ -368,3 +368,28 @@ it("refills a tentative slot freed by a confirmed twin from the remaining tentat
     "主人家里养了一只橘猫",
   ]);
 });
+
+it("[P5-1] reports a failed confirmed search only after the tentative search has finished", async () => {
+  const finished: string[] = [];
+  const service = new ProductionMemoryRecall({
+    ownerId,
+    agentId,
+    provider: {
+      search: async (request: { tentativeOnly?: boolean }) => {
+        if (request.tentativeOnly !== true) throw new Error("VECTOR_INDEX_DOWN");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        finished.push("tentative");
+        return [];
+      },
+    } as never,
+    state: { readMany: async () => [] },
+    readText: async () => undefined,
+    embedWithin: async (_invocation, _slot, operation) => operation(),
+    now: () => now,
+    timeZone: "Asia/Tokyo",
+  });
+  await expect(
+    service.recallOutsideRun({ query: "x", limit: 4 }, (_slot, op) => op()),
+  ).rejects.toThrow("VECTOR_INDEX_DOWN");
+  expect(finished).toEqual(["tentative"]);
+});

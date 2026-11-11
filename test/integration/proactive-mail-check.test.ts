@@ -680,6 +680,16 @@ describe("proactive Gmail check acceptance", () => {
     ]);
     const first = await h.service.run();
     expect(first).toMatchObject({ verdict: "deferred", reasonCode: "QUIET_HOURS" });
+    const [deferred] = await h.ledger.list({
+      ...scope,
+      kind: "proactive",
+      since: "2026-11-01T00:00:00.000Z",
+      limit: 1,
+    });
+    expect(
+      deferred?.inputs.ruleIds.filter((ref) => ref.startsWith("quiet_hours@")),
+      "[P2-7] the quiet hours rule that held the push",
+    ).toEqual([expect.stringMatching(/^quiet_hours@\d+$/u)]);
     h.clock.set("2026-11-04T15:30:00.000Z");
     h.reader.items = [
       mail("visa", {
@@ -1572,6 +1582,7 @@ describe("proactive Gmail check acceptance", () => {
       expect((await h.overview()).insights[0]).toMatchObject({ result: "act", pushed: false });
       const [entry] = await ledgerRows(h);
       expect(entry?.inputs.ruleHits).toEqual({ due: ["suppress_small_amount@3"] });
+      expect(entry?.inputs.ruleIds, "[P2-7]").toEqual(["suppress_small_amount@3"]);
     });
 
     it("REVERSE: pushes as before when the amount is unsure, missing, in another currency, exactly the limit, or the body was not read in full", async () => {
@@ -1593,6 +1604,7 @@ describe("proactive Gmail check acceptance", () => {
         expect(decision, name).toMatchObject({ verdict: "pushed" });
         const [entry] = await ledgerRows(h);
         expect(entry?.inputs.ruleHits, name).toEqual({});
+        expect(entry?.inputs.ruleIds, `[P2-7] ${name}`).toEqual([]);
       }
     });
 
@@ -1645,7 +1657,7 @@ describe("proactive Gmail check acceptance", () => {
       const [entry] = await ledgerRows(h);
       expect(entry?.id).toBe(decision?.id);
       expect(entry?.inputs.sourceIds).toEqual(["bill", "friend"]);
-      expect(entry?.inputs.ruleIds).toEqual(["floor_money_words"]);
+      expect(entry?.inputs.ruleIds).toEqual(["floor_money_words@1"]);
       expect(entry?.inputs.floorHits).toEqual({ bill: ["floor_money_words"] });
       expect(entry?.inputs.memoryIds).toEqual([]);
       expect(entry?.inputs.memoryInjected).toBe(false);

@@ -87,8 +87,6 @@ export const messages = {
   "chat.error.authFailed":
     "Model authentication failed. Check the server credentials and model access.",
   "chat.error.unavailable": "The model service is unavailable. Try again later.",
-  "chat.error.contextMemoryUnavailable":
-    "Looking up related memory failed because the model service connection failed. No chat model was called and no tool ran in this turn.",
   "chat.error.quotaExceeded":
     "The model service turned this request down because its spending limit is used up. This is not a network problem. Raise or remove the limit in the Vercel AI Gateway budgets, then try again.",
   "chat.error.contextWindowExhausted":
@@ -880,6 +878,8 @@ export const messages = {
   "memory.page.carry.title": "Brought into every conversation",
   "memory.page.carry.summary": "{count} memories · {used} of {limit} characters used",
   "memory.page.carry.queued": "{count} more do not fit",
+  "memory.page.carry.pinnedOver":
+    'The memories you set to "Bring into every conversation" take {pinned} characters, {over} over the {limit}-character limit. They are still brought in every time, but no other memory fits; turn a few off to get back under the limit.',
   "memory.page.carry.open": "View and adjust",
   "memory.page.carry.meter": "Characters used",
   "memory.page.carry.note":
@@ -1043,14 +1043,24 @@ export const messages = {
   "decision.chain.rating": "Your rating",
   "decision.chain.unrated": "Not rated yet",
   "decision.chain.kind":
-    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {External read} rule_review {Hard rule review} other {Other}}",
+    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {Outside program read memories} rule_review {Hard rule review} other {Other}}",
   "decision.chain.rules": "Rules hit",
   "decision.chain.reviewRules": "Rules waiting for review",
   "decision.chain.rule":
-    "{id, select, floor_important_sender {Never miss important mail: sender is on your important list} floor_public_domain {Never miss important mail: from a government or school domain} floor_money_words {Never miss important mail: money-related words in the message} other {{id}}}",
+    "{k, select, important_sender {Never miss important mail: sender is on your important list} public_domain {Never miss important mail: from a government or school domain} money_words {Never miss important mail: money-related words in the message} quiet_hours {Quiet hours: no notifications now, sent when quiet hours end} amount_threshold {Small amounts: no notification for mail below the threshold} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {Set by you} built_in {Built-in rule} other {Unregistered rule}}",
   "decision.chain.ruleMails": "Hit {count, plural, one {# email} other {# emails}}",
+  "decision.chain.ruleNeedsReview": "Needs review",
+  "decision.chain.ruleQuote": "Your words: {text}",
+  "decision.chain.ruleWording":
+    "{k, select, important_sender {{empty, select, yes {Important list is empty} other {Important list: {text}}}} public_domain {Domain endings: {text}} money_words {Words: {text}} quiet_hours {{empty, select, yes {No quiet hours set} other {Hours: {text}}}} amount_threshold {Threshold: {text}} other {{text}}}",
+  "decision.chain.ruleWordingMissing": "The content of this version cannot be found",
+  "decision.chain.ruleSource": "Source: {source} · version {revision}",
+  "decision.chain.ruleCurrent": "Only the rule name was recorded; showing the current version",
+  "decision.chain.ruleTests":
+    "{s, select, passed {Tests: all {total} examples pass} failed {Tests: example {at} of {total} does not match} none {Tests: this rule has no examples} other {Tests: unavailable}}",
+  "decision.chain.listSeparator": ", ",
   "decision.chain.mails": "Emails read",
   "decision.chain.judged": "{count, plural, one {# email} other {# emails}} judged",
   "decision.chain.related": "{count, plural, one {# related email} other {# related emails}}",

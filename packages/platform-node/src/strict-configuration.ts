@@ -3,21 +3,17 @@ import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   type CapabilityDeploymentConfiguration,
-  isWebProviderId,
-  WEB_FETCH_MAXIMUM_BYTES,
-  WEB_PROVIDER_IDS,
-  WEB_PROVIDERS,
-  type WebProviderId,
   type ConfigurationPort,
-  type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredMemoryRetrieval,
   type ConfiguredCompletionsGenerationModelDescriptor,
+  type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredModelDescriptor,
   type DataClassification,
   type HttpConfiguration,
   type IdentityBootstrapConfiguration,
   type IdentityConfiguration,
   type IdentityCsrfConfiguration,
+  isWebProviderId,
   type ModelCostDescriptor,
   type ModelProviderRouting,
   type ProductConfiguration,
@@ -25,9 +21,13 @@ import {
   type RunPolicyConfiguration,
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
+  WEB_FETCH_MAXIMUM_BYTES,
+  WEB_PROVIDER_IDS,
+  WEB_PROVIDERS,
+  type WebProviderId,
 } from "@himawari-agent/application";
-import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
+import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 
 export const CONFIGURATION_SCHEMA_VERSION = "himawari.configuration.v1" as const;
 
@@ -998,6 +998,7 @@ export const WEB_PUSH_SECRET_PURPOSE = "web-push";
 export const GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE = "google-oauth-client";
 export const MUSE_INTAKE_SECRET_PURPOSE = "muse-intake";
 export const GAP_EXPORT_SECRET_PURPOSE = "gap-export";
+export const MCP_READ_SECRET_PURPOSE = "mcp-read";
 
 function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["proactive"]> {
   const field = "configuration.runPolicy.proactive";
@@ -1099,6 +1100,13 @@ function parseMuseIntake(value: unknown): NonNullable<RunPolicyConfiguration["mu
   });
 }
 
+function parseMcpRead(value: unknown): NonNullable<RunPolicyConfiguration["mcpRead"]> {
+  const field = "configuration.runPolicy.mcpRead";
+  const input = record(value, field);
+  rejectUnknown(input, ["secretRef"], field);
+  return Object.freeze({ secretRef: safeReference(input["secretRef"], `${field}.secretRef`) });
+}
+
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
   const field = "configuration.runPolicy.webPush";
   const input = record(value, field);
@@ -1140,6 +1148,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "webPush",
       "proactive",
       "museIntake",
+      "mcpRead",
     ],
     "configuration.runPolicy",
   );
@@ -1179,6 +1188,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["museIntake"] === undefined
       ? {}
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
+    ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
     ...(input["freezeThreadPrompts"] === undefined
@@ -1439,6 +1449,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       runPolicy.museIntake.secretRef,
       MUSE_INTAKE_SECRET_PURPOSE,
       "configuration.runPolicy.museIntake.secretRef",
+    );
+  if (runPolicy?.mcpRead)
+    assertIdentitySecretReference(
+      secretReferences,
+      runPolicy.mcpRead.secretRef,
+      MCP_READ_SECRET_PURPOSE,
+      "configuration.runPolicy.mcpRead.secretRef",
     );
   if (runPolicy?.museIntake?.gapExportSecretRef !== undefined)
     assertIdentitySecretReference(

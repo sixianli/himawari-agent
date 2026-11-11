@@ -131,6 +131,33 @@ describe("[P1-3] the basis drawer of a decision record in a real browser", () =>
     }
   }, 30_000);
 
+  it("[P2-7] shows each rule's own words, wording, source and test state, and a failing example by number", async () => {
+    const page = await browser.newPage();
+    try {
+      await openLog(page);
+      await basisButton(page, 0).click();
+      const drawer = page.locator(".decision-chain");
+      const money = drawer.locator('[data-rule-id="floor_money_words"]');
+      await uiExpect(money).toContainText("词表：账单、扣款、invoice");
+      await uiExpect(money).toContainText("出处：ADR 0106 第 4 条；ADR 0209 · 第 1 版");
+      await uiExpect(money.locator('[data-tests="passed"]')).toHaveText("测试：5 条例子全部通过");
+      const sender = drawer.locator('[data-rule-id="floor_important_sender"]');
+      await uiExpect(sender).toContainText("原话：银行来的信一律提醒我");
+      await uiExpect(sender).toContainText("重要名单：smbc.example");
+      await uiExpect(sender).toContainText("待重审");
+      await uiExpect(sender).toContainText("第 2 版");
+      await uiExpect(sender.locator('[data-tests="failed"]')).toHaveText(
+        "测试：第 2 条例子不符（共 3 条）",
+      );
+      await uiExpect(sender).not.toContainText("全部通过");
+      const quiet = drawer.locator('[data-rule-id="quiet_hours"]');
+      await uiExpect(quiet).toContainText("23:00–07:00");
+      await uiExpect(money).not.toContainText("原话");
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   it("says no record for a record that kept nothing, never a blank section", async () => {
     const page = await browser.newPage();
     try {

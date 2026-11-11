@@ -15,6 +15,7 @@ import {
   type ObservationScope,
   PORT_ERROR_CODES,
   type ProactiveSchedule,
+  parseRuleRef,
   type ProactiveSealPort,
   summarizeObservation,
 } from "@himawari-agent/application";
@@ -319,18 +320,18 @@ export class ProductionObservation {
       : undefined;
     const fields: ReadonlySet<string> = new Set(found?.inputFields ?? []);
     const inputs = found?.entry.inputs;
+    const mailValues = (map: Readonly<Record<string, readonly string[]>> | undefined) =>
+      map && Object.hasOwn(map, messageId) && Array.isArray(map[messageId]) ? map[messageId] : [];
+    const tidy = (values: readonly string[]) =>
+      [...new Set(values.map(displayRuleId).filter((id) => id.trim().length > 0))].sort();
     const forMail = (field: "floorHits" | "memoryByMail" | "relatedByMail") =>
-      inputs && fields.has(field)
-        ? [
-            ...new Set(
-              (Object.hasOwn(inputs[field], messageId) && Array.isArray(inputs[field][messageId])
-                ? inputs[field][messageId]
-                : []
-              )
-                .map(displayRuleId)
-                .filter((id) => id.trim().length > 0),
-            ),
-          ].sort()
+      inputs && fields.has(field) ? tidy(mailValues(inputs[field])) : null;
+    const rulesForMail =
+      inputs && (fields.has("floorHits") || fields.has("ruleHits"))
+        ? tidy([
+            ...mailValues(inputs.floorHits),
+            ...mailValues(inputs.ruleHits).map((ref) => parseRuleRef(ref).ruleId),
+          ])
         : null;
     const related = forMail("relatedByMail");
     const open = async (ref: string | null, limit: number) => {
@@ -387,7 +388,7 @@ export class ProductionObservation {
               processedAt: processed.processedAt,
               rating: processed.ownerRating,
               decidedAt: found?.entry.decidedAt ?? null,
-              ruleIds: forMail("floorHits"),
+              ruleIds: rulesForMail,
               memoryIds: forMail("memoryByMail"),
               relatedMessages: related === null ? null : related.length,
             }

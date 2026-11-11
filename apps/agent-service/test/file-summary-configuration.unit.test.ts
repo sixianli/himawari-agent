@@ -6,13 +6,12 @@ import {
   ConfiguredPiModelBindingPort,
   type ConfiguredPiModelDescriptor,
 } from "@himawari-agent/runtime-pi";
-import { inMemoryMemoryIndex } from "@himawari-agent/testing";
+import { inMemoryMemoryIndex, testModelEgress } from "@himawari-agent/testing";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { describe, expect, it, vi } from "vitest";
 import { createProductionMemoryCompositionFromConfiguration } from "../src/production-memory-composition.js";
 import { resolveConfiguredModelDescriptorSet } from "../src/production-model-composition.js";
 import { embeddingAdmissionDescriptor } from "../src/production-run-memory.js";
-import { testModelEgress } from "@himawari-agent/testing";
 
 const fixture = new URL("../../../test/integration/fixtures/file-summary/", import.meta.url);
 
@@ -114,6 +113,7 @@ describe("file summary qualification configuration", () => {
     const requests: { url: string; authorized: boolean; body: unknown }[] = [];
     try {
       const memory = await createProductionMemoryCompositionFromConfiguration({
+        onVectorFailure: () => {},
         egress: testModelEgress(),
         configuration: {
           ...config,
@@ -210,6 +210,7 @@ describe("file summary qualification configuration", () => {
           }),
         },
         fetch: async () => new Response("unavailable", { status: 503 }),
+        onVectorFailure: () => {},
         onRelevanceUnknown: unknown,
       });
       memory.bindEmbeddingBoundary((_request, send) => send(), 1000);

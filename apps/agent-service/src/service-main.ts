@@ -50,11 +50,12 @@ import {
   failureReason,
   GAP_EXPORT_SECRET_PURPOSE,
   GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
-  MUSE_INTAKE_SECRET_PURPOSE,
   initializeStateRoot,
   JsonFileConfigurationPort,
   MacOsKeychainProviderSecretSource,
   MacOsKeychainSecretSource,
+  MCP_READ_SECRET_PURPOSE,
+  MUSE_INTAKE_SECRET_PURPOSE,
   PayloadUdsServer,
   parseServiceArguments,
   RuntimeHealthModel,
@@ -86,6 +87,7 @@ import { ProductionExecutionAdmissionHandler } from "./production-execution-admi
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
+import { ProductionGapExport } from "./production-gap-export.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
 import {
   createProductionHttpComposition,
@@ -93,6 +95,7 @@ import {
   type ProductionHttpCompositionOptions,
 } from "./production-http-composition.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
+import { ProductionMcpRead } from "./production-mcp-read.js";
 import {
   createProductionMemoryCompositionFromConfiguration,
   type ProductionMemoryComposition,
@@ -110,6 +113,9 @@ import {
   productionEgressThreadOf,
   productionSensitiveInterceptionRecorder,
 } from "./production-model-egress.js";
+import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
+import { ProductionMuseControl } from "./production-muse-intake-control.js";
+import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -118,10 +124,6 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
-import { ProductionGapExport } from "./production-gap-export.js";
-import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
-import { ProductionMuseControl } from "./production-muse-intake-control.js";
-import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
@@ -536,6 +538,7 @@ export async function runAgentService(
   let proactive: ProductionProactive | undefined;
   let museIntake: ProductionMuseIntake | undefined;
   let gapExport: ProductionGapExport | undefined;
+  let mcpRead: ProductionMcpRead | undefined;
   let museControl: ProductionMuseControl | undefined;
   let observation: ProductionObservation | undefined;
   const webPushPresence = new WebPushPresence();
@@ -671,6 +674,8 @@ export async function runAgentService(
     const webEnabled =
       configuration.publicMode ||
       (configuration.identity?.kind === "built-in" && Boolean(configuration.http));
+    if (configuration.runPolicy?.mcpRead !== undefined && !webEnabled)
+      throw new Error("MCP_READ_RUNTIME_UNAVAILABLE");
     if (
       webEnabled &&
       (!configuration.runPolicy ||
@@ -1297,18 +1302,19 @@ export async function runAgentService(
           : {}),
       });
       const reminderTimeZone = configuration.runPolicy?.timeZone;
+      const reminderWriter = new ProductionReminderWriter({
+        configuration,
+        memory: durableMemory,
+        state: repository.productMemoryState(),
+        book: repository.memoryBook(),
+        reminders: repository.memoryReminders(),
+        payloads,
+        protector: recallProtector,
+        clock: { now: () => clock.now() },
+        ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
+      });
       const reminderTools = new ProductionReminderTools({
-        writer: new ProductionReminderWriter({
-          configuration,
-          memory: durableMemory,
-          state: repository.productMemoryState(),
-          book: repository.memoryBook(),
-          reminders: repository.memoryReminders(),
-          payloads,
-          protector: recallProtector,
-          clock: { now: () => clock.now() },
-          ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
-        }),
+        writer: reminderWriter,
         ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
       });
       const tools = new ProductionRuntimeTools({
@@ -1730,6 +1736,44 @@ export async function runAgentService(
       } else if (gapExportRef !== undefined && museIntakeConfiguration?.enabled === true) {
         throw new Error("GAP_EXPORT_RUNTIME_UNAVAILABLE");
       }
+      const mcpReadConfiguration = configuration.runPolicy?.mcpRead;
+      const mcpReadSecret = mcpReadConfiguration
+        ? configuration.secretReferences.find(
+            ({ ref, purpose }) =>
+              ref === mcpReadConfiguration.secretRef && purpose === MCP_READ_SECRET_PURPOSE,
+          )
+        : undefined;
+      if (mcpReadSecret) {
+        const settingsStore = repository.proactive();
+        mcpRead = new ProductionMcpRead({
+          scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
+          clock,
+          secret: await hostModelSources(configuration).provider.resolve(
+            mcpReadSecret.ref,
+            mcpReadSecret.version,
+          ),
+          timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+          requestTimeoutMs: configuration.deadlines.providerRequestMs,
+          sources: {
+            recall: (args, within) => memoryRecall.recallOutsideRun(args, within),
+            embedOutsideRun: (context, operation) =>
+              memory.embedForExternalRead(context, operation),
+            reminders: (windowMs) => reminderWriter.list(windowMs),
+            settings: () =>
+              settingsStore.readSettings({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+              }),
+          },
+          ledger: repository.decisionLedger(),
+          onFailure: (error) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "mcp-read.failed",
+              code: stableErrorCode(error),
+            }),
+        });
+      }
       const webPushConfiguration = configuration.runPolicy?.webPush;
       const webPushSecret = webPushConfiguration
         ? configuration.secretReferences.find(
@@ -2086,12 +2130,15 @@ export async function runAgentService(
         };
       };
       const activeDurableMemory = durableMemory;
+      if (configuration.runPolicy?.mcpRead !== undefined && !mcpRead)
+        throw new Error("MCP_READ_RUNTIME_UNAVAILABLE");
       http = await createProductionHttpComposition({
         live,
         webPush: { presence: webPushPresence, push: webPush },
         ...(proactive ? { proactive } : {}),
         ...(museIntake ? { museIntake } : {}),
         ...(gapExport ? { gapExport } : {}),
+        ...(mcpRead ? { mcpRead } : {}),
         ...(museControl ? { museControl } : {}),
         ...(observation ? { observation } : {}),
         memory: {
