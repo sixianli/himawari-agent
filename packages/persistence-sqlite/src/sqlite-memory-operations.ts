@@ -61,6 +61,7 @@ interface MemoryRow {
 }
 
 interface MemoryHistoryRow {
+  readonly id: number;
   readonly memoryId: string;
   readonly kind: MemoryHistoryEvent["kind"];
   readonly contentRef: string;
@@ -69,6 +70,26 @@ interface MemoryHistoryRow {
   readonly sourceThreadId: string | null;
   readonly sourceDeleted: number;
   readonly occurredAt: string;
+}
+
+const memoryHistorySelect = `SELECT h.rowid AS id, h.memory_id AS memoryId, h.kind,
+  h.content_ref AS contentRef, h.stance, h.quote_ref AS quoteRef,
+  h.source_thread_id AS sourceThreadId, h.source_deleted AS sourceDeleted,
+  h.occurred_at AS occurredAt
+FROM memory_history_events h JOIN memory_records m ON m.id = h.memory_id`;
+
+function memoryHistoryEvent(row: MemoryHistoryRow): MemoryHistoryEvent {
+  return Object.freeze({
+    id: row.id,
+    memoryId: row.memoryId as MemoryId,
+    kind: row.kind,
+    contentRef: row.contentRef,
+    stance: row.stance,
+    quoteRef: row.quoteRef,
+    sourceThreadId: row.sourceThreadId as ThreadId | null,
+    sourceDeleted: row.sourceDeleted === 1,
+    occurredAt: row.occurredAt,
+  });
 }
 
 interface IndexCandidateRow {
@@ -342,6 +363,8 @@ export class SqliteMemoryOperations {
         return this.listHistory(
           payload as { ownerId: OwnerId; agentId: AgentId; memoryIds: readonly MemoryId[] },
         );
+      case "memory.readHistory":
+        return this.readHistory(payload as { ownerId: OwnerId; agentId: AgentId; id: number });
       case "memory.listInactive":
         return this.listInactive(
           payload as { ownerId: OwnerId; agentId: AgentId; trashedAfter: string; limit: number },
@@ -913,26 +936,24 @@ export class SqliteMemoryOperations {
     const unique = [...new Set(input.memoryIds)];
     const rows = this.database
       .prepare(
-        `SELECT h.memory_id AS memoryId, h.kind, h.content_ref AS contentRef, h.stance,
-          h.quote_ref AS quoteRef, h.source_thread_id AS sourceThreadId,
-          h.source_deleted AS sourceDeleted, h.occurred_at AS occurredAt
-        FROM memory_history_events h JOIN memory_records m ON m.id = h.memory_id
+        `${memoryHistorySelect}
         WHERE m.owner_id = ? AND m.agent_id = ? AND h.memory_id IN (${unique.map(() => "?").join(", ")})
         ORDER BY h.occurred_at, h.rowid`,
       )
       .all(input.ownerId, input.agentId, ...unique) as MemoryHistoryRow[];
-    return rows.map((row) =>
-      Object.freeze({
-        memoryId: row.memoryId as MemoryId,
-        kind: row.kind,
-        contentRef: row.contentRef,
-        stance: row.stance,
-        quoteRef: row.quoteRef,
-        sourceThreadId: row.sourceThreadId as ThreadId | null,
-        sourceDeleted: row.sourceDeleted === 1,
-        occurredAt: row.occurredAt,
-      }),
-    );
+    return rows.map(memoryHistoryEvent);
+  }
+
+  private readHistory(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    id: number;
+  }): MemoryHistoryEvent | undefined {
+    if (!Number.isSafeInteger(input.id) || input.id < 1) return undefined;
+    const row = this.database
+      .prepare(`${memoryHistorySelect} WHERE m.owner_id = ? AND m.agent_id = ? AND h.rowid = ?`)
+      .get(input.ownerId, input.agentId, input.id) as MemoryHistoryRow | undefined;
+    return row ? memoryHistoryEvent(row) : undefined;
   }
 
   private listInactive(input: {

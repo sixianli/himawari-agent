@@ -1,5 +1,10 @@
 import type { RuleGate } from "./field-catalog.js";
-import { type RuleOutcome, type RuleRecord, usesAmountFields } from "./rule-book.js";
+import {
+  type RuleOutcome,
+  type RuleRecord,
+  ruleIsEnforced,
+  usesAmountFields,
+} from "./rule-book.js";
 import {
   type CompiledRuleExpression,
   compileRuleExpression,
@@ -24,7 +29,7 @@ export class RuleJudge {
   decide(gate: RuleGate, facts: RuleFacts, rules: readonly RuleRecord[]): RuleDecision {
     const hits: RuleHit[] = [];
     for (const rule of rules) {
-      if (rule.gate !== gate || rule.status !== "active") continue;
+      if (rule.gate !== gate || !ruleIsEnforced(rule.status)) continue;
       if (usesAmountFields(rule) && facts["amount_state"] !== "known") continue;
       if (this.#compile(rule).evaluate(facts))
         hits.push(Object.freeze({ id: rule.id, revision: rule.revision, outcome: rule.outcome }));
