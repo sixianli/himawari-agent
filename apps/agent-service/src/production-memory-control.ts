@@ -121,6 +121,30 @@ function earliestSourceMessage(
   return matching[0]?.messageId ?? null;
 }
 
+export async function findSourceMessageIds(
+  book: Pick<MemoryBookStorePort, "findOwnerMessages">,
+  scope: {
+    readonly ownerId: ProductMemoryRecord["ownerId"];
+    readonly agentId: ProductMemoryRecord["agentId"];
+  },
+  records: readonly ProductMemoryRecord[],
+): Promise<ReadonlyMap<string, string | null>> {
+  const refsByThread = new Map<string, Set<string>>();
+  for (const { sourceThreadId, sourceRefs } of records) {
+    if (!sourceThreadId) continue;
+    const refs = refsByThread.get(sourceThreadId) ?? new Set<string>();
+    for (const ref of sourceRefs) if (ref.length <= MEMORY_SOURCE_REF_MAX_LENGTH) refs.add(ref);
+    refsByThread.set(sourceThreadId, refs);
+  }
+  const sourceMessages = await book.findOwnerMessages({
+    ...scope,
+    lookups: [...refsByThread].map(([threadId, refs]) => ({ threadId, refs: [...refs] })),
+  });
+  return new Map(
+    records.map((memory) => [memory.id as string, earliestSourceMessage(memory, sourceMessages)]),
+  );
+}
+
 export class ProductionMemoryControl {
   private readonly options: {
     readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
@@ -362,17 +386,7 @@ export class ProductionMemoryControl {
         memoryIds: records.slice(index, index + HISTORY_BATCH).map(({ id }) => id),
       }))
         history.set(event.memoryId, [...(history.get(event.memoryId) ?? []), event]);
-    const refsByThread = new Map<string, Set<string>>();
-    for (const { sourceThreadId, sourceRefs } of records) {
-      if (!sourceThreadId) continue;
-      const refs = refsByThread.get(sourceThreadId) ?? new Set<string>();
-      for (const ref of sourceRefs) if (ref.length <= MEMORY_SOURCE_REF_MAX_LENGTH) refs.add(ref);
-      refsByThread.set(sourceThreadId, refs);
-    }
-    const sourceMessages = await this.options.book.findOwnerMessages({
-      ...scope,
-      lookups: [...refsByThread].map(([threadId, refs]) => ({ threadId, refs: [...refs] })),
-    });
+    const sourceMessageIds = await findSourceMessageIds(this.options.book, scope, records);
     for (const memory of records) {
       if (
         memory.status !== "active" &&
@@ -411,7 +425,7 @@ export class ProductionMemoryControl {
           topic: memory.attributes?.sensitiveTopic ?? null,
           inference: memory.inference,
           sourceThreadId: memory.sourceThreadId,
-          sourceMessageId: earliestSourceMessage(memory, sourceMessages),
+          sourceMessageId: sourceMessageIds.get(memory.id) ?? null,
           sourceRefs: memory.sourceRefs.filter((ref) => ref.length <= MEMORY_SOURCE_REF_MAX_LENGTH),
           updatedAt: memory.updatedAt,
           supersededBy: memory.attributes?.supersededBy ?? null,

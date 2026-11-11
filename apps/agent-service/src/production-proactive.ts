@@ -5,6 +5,7 @@ import {
   type DailyReview,
   type DecisionLedgerPort,
   type IdGeneratorPort,
+  type MemoryCheckupService,
   PORT_ERROR_CODES,
   type ProactiveConfiguration,
   type ProactiveDecision,
@@ -40,6 +41,7 @@ export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
   "proactive.audit.respond",
   "proactive.review.read",
   "proactive.review.rate",
+  "proactive.review.checkup",
   "proactive.source.manage",
   "proactive.backoff.restore",
 ] as const);
@@ -138,6 +140,7 @@ export interface ProductionProactiveOptions {
   readonly ledger: Pick<DecisionLedgerPort, "listReviewPool" | "rateMany">;
   readonly readMemoryText: (ref: string) => Promise<string | undefined>;
   readonly readMemory?: (memoryId: string) => Promise<DailyReviewMemoryText | undefined>;
+  readonly checkup?: Pick<MemoryCheckupService, "week" | "act" | "undo">;
   readonly estimateCostMicros: (prompt: string) => number;
   readonly feedback: (sentFrom: string) => Promise<readonly WebPushFeedback[]>;
   readonly clock: ClockPort;
@@ -306,6 +309,12 @@ export class ProductionProactive {
   }
 
   async review(): Promise<DailyReview> {
+    const checkup = this.#options.checkup
+      ? await this.#options.checkup.week().catch((error: unknown) => {
+          this.#options.onFailure(error);
+          return [];
+        })
+      : [];
     return readDailyReview({
       scope: this.#options.scope,
       ledger: this.#options.ledger,
@@ -317,6 +326,7 @@ export class ProductionProactive {
       budgetSeconds: this.#options.configuration.reviewBudgetSeconds,
       secondsPerItem: this.#options.configuration.reviewSecondsPerItem,
       silentShare: this.#options.configuration.reviewSilentSharePermille,
+      checkup,
     });
   }
 
@@ -326,6 +336,9 @@ export class ProductionProactive {
       const item = (entry: DailyReview["items"][number]) => ({
         ...entry,
         text: clean(entry.text, 200),
+        checkup: entry.checkup
+          ? { ...entry.checkup, relatedText: clean(entry.checkup.relatedText, 200) }
+          : null,
       });
       return {
         ...query,
@@ -339,6 +352,7 @@ export class ProductionProactive {
           notSampled: review.notSampled,
           items: review.items.map(item),
           folded: { total: review.folded.total, items: review.folded.items.map(item) },
+          memoryUnusedDays: this.#options.configuration.reviewMemoryUnusedDays,
           generatedAt: this.#options.clock.now(),
         },
       };
@@ -493,7 +507,11 @@ export class ProductionProactive {
         const mailRatings: { messageId: string; rating: ProactiveRating | null }[] = [];
         for (const { key, rating } of command.payload.ratings) {
           const parsed = parseReviewKey(key);
-          if (!parsed || (parsed.source === "mail" && rating === "unneeded"))
+          if (
+            !parsed ||
+            parsed.source === "checkup" ||
+            (parsed.source === "mail" && rating === "unneeded")
+          )
             throw new ApplicationPortError(
               PORT_ERROR_CODES.INVALID_OPERATION,
               "PROACTIVE_REVIEW_KEY_INVALID",
@@ -524,6 +542,33 @@ export class ProductionProactive {
           resultRef: `proactive-review-rated:${ledgerRatings.length + mailRatings.length}`,
           replayed: false,
         };
+      }
+      case "proactive.review.checkup": {
+        const checkup = this.#options.checkup;
+        if (!checkup) throw new Error("PROACTIVE_OPERATION_NOT_INSTALLED");
+        const { key, action, keep } = command.payload;
+        const parsed = parseReviewKey(key);
+        if (parsed?.source !== "checkup")
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "PROACTIVE_REVIEW_KEY_INVALID",
+          );
+        if (action === "undo") {
+          await checkup.undo(parsed.id);
+          return { resultRef: key, replayed: false };
+        }
+        const shown = (await this.review()).items.some((item) => item.key === key);
+        if (!shown)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "PROACTIVE_REVIEW_BUDGET_USED",
+          );
+        await checkup.act({
+          id: parsed.id,
+          action,
+          keep: keep as Parameters<MemoryCheckupService["act"]>[0]["keep"],
+        });
+        return { resultRef: key, replayed: false };
       }
       case "proactive.backoff.restore": {
         const restored = await store.restoreBackoff({

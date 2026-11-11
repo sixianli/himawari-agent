@@ -22,6 +22,7 @@ import type {
   MemoryEpisodeStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
+  MemoryCheckupStorePort,
   MemoryReminderStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
@@ -957,6 +958,17 @@ export class SqliteDurableAdapters {
       listImportBatches: (input) => this.context.read("memoryBook.listImportBatches", input),
       markImportUndone: (input) => this.context.write("memoryBook.markImportUndone", input),
       findOwnerMessages: (input) => this.context.read("memoryBook.findOwnerMessages", input),
+    });
+  }
+
+  memoryCheckup(): MemoryCheckupStorePort {
+    return Object.freeze<MemoryCheckupStorePort>({
+      listWeek: (input) => this.context.read("memoryCheckup.listWeek", input),
+      createWeek: (input) => this.context.write("memoryCheckup.createWeek", input),
+      read: (input) => this.context.read("memoryCheckup.read", input),
+      recordAction: (input) => this.context.write("memoryCheckup.recordAction", input),
+      recordUndo: (input) => this.context.write("memoryCheckup.recordUndo", input),
+      listConfirmedSince: (input) => this.context.read("memoryCheckup.listConfirmedSince", input),
     });
   }
 

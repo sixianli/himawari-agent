@@ -9,16 +9,19 @@ import {
   type ClockPort,
   claimFromRunExecutionLease,
   createProactiveSeal,
+  DEFAULT_AUTOMATIC_CONFIDENCE_PERMILLE,
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
   DurableMemoryService,
   ExecutionLiveFeed,
   type IdGeneratorPort,
+  MemoryCheckupService,
   modelUsagePurpose,
   type ProductConfiguration,
   RemoteExecutionBackend,
   type RuntimeRequest,
   recoverSandboxExecutionsAtStartup,
   recoverSandboxJobsAtStartup,
+  reviewCapacity,
   reviewMemoryVisible,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
@@ -118,6 +121,7 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
+import { findSourceMessageIds } from "./production-memory-control.js";
 import { ProductionGapExport } from "./production-gap-export.js";
 import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
@@ -1563,7 +1567,40 @@ export async function runAgentService(
           sources,
           productionSensitiveInterceptionRecorder(repository),
         );
+        const proactiveTimeZone = configuration.runPolicy?.timeZone ?? "UTC";
+        const checkupScope = { ownerId: configuration.ownerId, agentId: configuration.agentId };
+        const checkupJobs = repository.memoryProjectionJobs();
+        const checkupBook = repository.memoryBook();
+        const checkup = durableMemory
+          ? new MemoryCheckupService({
+              scope: checkupScope,
+              store: repository.memoryCheckup(),
+              state: proactiveMemoryState,
+              memory: durableMemory,
+              generationFor: async (memoryId) => {
+                const generation =
+                  (await checkupJobs.listByMemory(memoryId)).at(-1)?.generationId ??
+                  (await checkupBook.latestGeneration(checkupScope));
+                if (!generation) throw new Error("MEMORY_GENERATION_MISSING");
+                return generation;
+              },
+              sourceMessageIds: (records) =>
+                findSourceMessageIds(checkupBook, checkupScope, records),
+              pairs: async () => [],
+              unusedDays: proactiveConfiguration.reviewMemoryUnusedDays,
+              lowConfidencePermille: DEFAULT_AUTOMATIC_CONFIDENCE_PERMILLE,
+              capacity: () =>
+                reviewCapacity(
+                  proactiveConfiguration.reviewBudgetSeconds,
+                  proactiveConfiguration.reviewSecondsPerItem,
+                ),
+              timeZone: proactiveTimeZone,
+              now: () => clock.now(),
+              id: () => ids.next("memory-checkup"),
+            })
+          : undefined;
         proactive = new ProductionProactive({
+          ...(checkup ? { checkup } : {}),
           onMasked: (sightings) =>
             void mailEgress.reportMasked(
               {

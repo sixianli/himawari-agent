@@ -272,6 +272,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
         reviewBudgetSeconds: 120,
         reviewSecondsPerItem: 5,
         reviewSilentSharePermille: 500,
+        reviewMemoryUnusedDays: 90,
         backoffThreshold: 3,
       },
       timeZone: "Asia/Tokyo",

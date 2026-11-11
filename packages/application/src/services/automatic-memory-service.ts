@@ -19,6 +19,8 @@ import {
   type SensitiveMemoryCandidatePort,
 } from "../ports/index.js";
 
+export const DEFAULT_AUTOMATIC_CONFIDENCE_PERMILLE = 850;
+
 export interface AutomaticMemoryServiceOptions {
   readonly extraction: IncrementalMemoryExtractionPort;
   readonly product: IncrementalMemoryProductPort;
@@ -163,7 +165,8 @@ export class AutomaticMemoryService {
       }
       if (
         !explicitlyApproved &&
-        candidate.confidencePermille < (this.options.automaticConfidencePermille ?? 850)
+        candidate.confidencePermille <
+          (this.options.automaticConfidencePermille ?? DEFAULT_AUTOMATIC_CONFIDENCE_PERMILLE)
       ) {
         if (canBeKeptTentatively(candidate)) {
           const { supersedes: _dropped, ...rest } = candidate;
