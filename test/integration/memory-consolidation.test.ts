@@ -700,7 +700,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
     }
   });
 
-  it("[P3-8] replaces a moved home automatically, holds a situational difference and a low-confidence replacement for the Owner, and records each", async () => {
+  it("[P3-8] replaces a moved home automatically, holds a situational difference and a low-confidence replacement for the Owner, records each, and leaves a confirmed or undone pair alone afterwards", async () => {
     const resource = await fixture();
     try {
       const result = await resource.run((prompt) => {
@@ -779,6 +779,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       expect(await resource.searchable("出差便利店牛奶", "only")).toContain("milk-new");
       const pet = result?.changes.find(({ memoryId }) => memoryId === "pet-new");
       if (!pet) throw new Error("pet hold missing");
+      resource.clock.value = "2026-10-25T09:00:00.000Z";
       await resource.consolidation.undo(pet.id);
       expect((await resource.read("pet-new"))?.attributes?.tentative).not.toBe(true);
       const milk = await resource.read("milk-new");
@@ -791,6 +792,39 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       await expect(resource.consolidation.undo(milkHold?.id ?? "")).rejects.toThrow(
         "MEMORY_CHANGED_AFTER_CONSOLIDATION",
       );
+      resource.clock.value = "2026-10-26T03:00:00.000Z";
+      const again = await resource.run((prompt) => {
+        const labels = labelsOf(prompt);
+        const label = (id: string) =>
+          labels.get(MEMORIES.find((item) => item.id === id)?.text ?? "") ?? "";
+        return JSON.stringify({
+          groups: (
+            [
+              ["milk-new", "milk-old"],
+              ["pet-new", "pet-old"],
+            ] as const
+          ).map(([newer, older]) => ({
+            group: groupOf(prompt, label(newer)) ?? groupOf(prompt, label(older)) ?? "g1",
+            action: "replace",
+            keep: label(newer),
+            drop: label(older),
+          })),
+          insights: [],
+        });
+      });
+      expect(
+        again?.changes.filter(({ memoryId }) =>
+          ["milk-new", "milk-old", "pet-new", "pet-old"].includes(memoryId),
+        ),
+      ).toEqual([]);
+      for (const [newer, older] of [
+        ["milk-new", "milk-old"],
+        ["pet-new", "pet-old"],
+      ] as const) {
+        expect((await resource.read(newer))?.attributes?.tentative).not.toBe(true);
+        expect(await resource.read(older)).toMatchObject({ status: "active" });
+        expect((await resource.read(older))?.attributes?.supersededBy).toBeNull();
+      }
     } finally {
       await resource.repository.close();
     }

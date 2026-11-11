@@ -56,9 +56,10 @@ date: "2026-11-11"
 2. **只有一种情况自动作废旧条：** 模型判 `replace`，模型标的 keep 是两条里说得更晚的那条（按 `validFrom`，没有就按记下时间），并且这条的置信度不低于自动存入门槛。这时和原来一样记 `supersede`。
 3. **其他情况都让新条进「待确认」。** 包括判 `conflict`、判 `replace` 但新条置信度不够、判 `replace` 但 keep 标成了较早的那条。说得更晚的那条加上 `tentative: true`，较早那条不动、照常生效。整理改动和决策记录都记成新动作 `hold`：改动的 `memory_id` 是新条，`related_memory_id` 是旧条；决策记录 `outcome` 为 `hold`、原因码 `consolidation_hold`，`memoryIds` 为 [新条, 旧条]，`resultMemoryIds` 为 [新条]，所以每天打分里显示成「旧 → 新」。这条记录和其他整理记录一样进每天打分的整理组，受同一个每日容量限制。
 4. **主人确认后两条都留。** 主人在记忆页对新条点「确认」，只是把它的 `tentative` 改回 false，不作废旧条（Andy 2026-11-11 选定）。如果其实是取代，主人在记忆页删旧条。
-5. **撤销 `hold`** 把新条的 `tentative` 改回 false。主人改过这条记忆（包括点了确认）之后不能再撤销，和其他整理改动一样。
-6. **门槛和自动存入共用一份登记。** 第 2 条的「自动存入门槛」就是门槛登记表 `packages/calibration/src/thresholds.ts` 里的 `MEMORY_AUTO_COMMIT_GATE`（默认 850，可按分类覆盖），按新条的分类取值（`autoCommitThreshold`）。整理记忆和记忆抽取读同一份登记，校准周报给出的建议值改的也是它，代码里不再出现第二个 850。（变更清单原先写的是另加一个 `config.json` 设置；合并 main 时发现 P4-7 已把这个门槛登记进门槛登记表，于是改为复用它，不另开一个入口。）
-7. **表结构。** `memory_consolidation_changes.action` 和 `decision_ledger` 里整理类 `outcome` 的取值各加 `hold`，用新迁移重建这两张表。
+5. **撤销 `hold`** 把新条的 `tentative` 改回 false。主人改过这条记忆（包括点了确认）之后不能再撤销，和其他整理改动一样。记忆页的变化记录里，只有新条还在待确认时才给「撤销」按钮。
+6. **处理过的一对不再整理。** 一对记忆只要有过 `hold`（不论后来是确认、撤销还是还在等），以后的整理就不再把它们放进同一组，模型对这一对给出的任何判断也不执行。否则主人确认或撤销后新条的修改时间变了，第二天又会被拿去整理，可能再次进待确认，甚至被自动作废旧条，推翻主人的选择。持久层用 `listHeldPairs` 读出所有 `hold` 过的一对。
+7. **门槛和自动存入共用一份登记。** 第 2 条的「自动存入门槛」就是门槛登记表 `packages/calibration/src/thresholds.ts` 里的 `MEMORY_AUTO_COMMIT_GATE`（默认 850，可按分类覆盖），按新条的分类取值（`autoCommitThreshold`）。整理记忆和记忆抽取读同一份登记，校准周报给出的建议值改的也是它，代码里不再出现第二个 850。（变更清单原先写的是另加一个 `config.json` 设置；合并 main 时发现 P4-7 已把这个门槛登记进门槛登记表，于是改为复用它，不另开一个入口。）
+8. **表结构。** `memory_consolidation_changes.action` 和 `decision_ledger` 里整理类 `outcome` 的取值各加 `hold`，用新迁移重建这两张表。
 
 [↑ 返回阅读导航](#contents)
 

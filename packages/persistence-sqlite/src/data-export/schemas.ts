@@ -181,7 +181,7 @@ export const CONSOLIDATION_SCHEMA: JsonSchema = objectOf(
     },
   },
   [],
-  "一次整理（把相近的记忆合并、取代、归档），带每次改动和依据的记忆编号。",
+  "一次整理（把相近的记忆合并、取代、归档，或把有冲突的新记忆标为待你确认），带每次改动和依据的记忆编号。",
 );
 
 export const DECISION_SCHEMA: JsonSchema = objectOf(

@@ -66,6 +66,10 @@ export interface MemoryConsolidationStorePort {
     readonly agentId: AgentId;
     readonly limit: number;
   }): Promise<readonly MemoryConsolidationChange[]>;
+  listHeldPairs(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+  }): Promise<readonly (readonly [MemoryId, MemoryId])[]>;
   readChange(id: string): Promise<MemoryConsolidationChange | undefined>;
   readBasis(changeId: string): Promise<readonly MemoryId[]>;
   readBasisChain(input: {

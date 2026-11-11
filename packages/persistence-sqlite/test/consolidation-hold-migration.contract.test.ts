@@ -22,6 +22,11 @@ afterEach(async () => {
 const TABLES = [
   "decision_ledger",
   "decision_signals",
+  "proactive_push_backoff",
+  "source_insights",
+  "proactive_processed_messages",
+  "decision_ledger_payloads",
+  "muse_reference_entries",
   "memory_consolidation_runs",
   "memory_consolidation_changes",
   "memory_consolidation_change_basis",
@@ -101,6 +106,40 @@ function seed(database: Database) {
        VALUES ('sig-1', ?, ?, 'd-supersede', 'undone', ?, 5, '{}', 'ref-1', ?)`,
     )
     .run(OWNER, AGENT, "2026-11-01T00:00:01.000Z", "2026-11-01T00:00:02.000Z");
+  database
+    .prepare(
+      `INSERT INTO proactive_push_backoff (owner_id, agent_id, class_key, stage, since_at, step_decision_id, ignored_count, updated_at)
+       VALUES (?, ?, 'c', 1, ?, 'd-supersede', 3, ?)`,
+    )
+    .run(OWNER, AGENT, T0, T0);
+  database
+    .prepare(
+      `INSERT INTO source_insights (id, owner_id, agent_id, source, thread_id, last_message_id, result,
+        floor_raised, content_ref, due_at, priority, status, decision_id, owner_rating, push_source_key,
+        created_at, updated_at, push_class)
+       VALUES ('si-1', ?, ?, 'gmail', 't-1', 'm-1', 'act', 1, 'payload-x', ?, 'high', 'open', 'd-supersede', 'useful', 'k-1', ?, ?, 'pc')`,
+    )
+    .run(OWNER, AGENT, T0, T0, T0);
+  database
+    .prepare(
+      `INSERT INTO proactive_processed_messages (owner_id, agent_id, source, message_id, thread_id,
+        decision_id, outcome, skip_reason, header_ref, processed_at, reviewed_at, owner_rating, received_at)
+       VALUES (?, ?, 'gmail', 'm-1', 't-1', 'd-supersede', 'act', NULL, 'payload-x', ?, ?, 'missed', ?)`,
+    )
+    .run(OWNER, AGENT, T0, T0, T0);
+  database
+    .prepare(
+      `INSERT INTO decision_ledger_payloads (decision_id, sequence, role, payload_ref)
+       VALUES ('d-supersede', 0, 'model_input', 'payload-x')`,
+    )
+    .run();
+  database
+    .prepare(
+      `INSERT INTO muse_reference_entries (id, owner_id, agent_id, muse_at, muse_reminded, timing_ok,
+        content_ok, content_ref, note_ref, paired_decision_id, intake_item_key, recorded_at, paired_message_id)
+       VALUES ('muse-1', ?, ?, ?, 1, 1, 1, 'payload-x', 'payload-x', 'd-supersede', 'intake-1', ?, 'm-1')`,
+    )
+    .run(OWNER, AGENT, T0, T0);
 }
 
 async function openMigrated() {
@@ -140,13 +179,14 @@ function insertHold(database: Database, action: string) {
 }
 
 describe("consolidation hold migration", () => {
-  it("[P3-8] keeps every consolidation change, its basis, decision records and signals when both tables are rebuilt", async () => {
+  it("[P3-8] keeps every consolidation change, its basis, every decision record and the six tables that point at it when the tables are rebuilt", async () => {
     const { database, before } = await openMigrated();
     expect(dump(database)).toEqual(before);
     expect(() => database.prepare("UPDATE decision_signals SET delay_ms = 9").run()).toThrow(
       /DECISION_SIGNAL_IMMUTABLE/u,
     );
     expect(database.pragma("foreign_key_check")).toEqual([]);
+    expect(database.prepare("SELECT count(*) FROM source_insights").pluck().get()).toBe(1);
     database.prepare("DELETE FROM memory_consolidation_changes WHERE id = 'change-1'").run();
     expect(
       database.prepare("SELECT count(*) FROM memory_consolidation_change_basis").pluck().get(),

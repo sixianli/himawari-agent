@@ -931,6 +931,7 @@ export class SqliteDurableAdapters {
         this.context.read("memoryConsolidation.lastCompleted", { ownerId, agentId }),
       finish: (input) => this.context.write("memoryConsolidation.finish", input),
       listChanges: (input) => this.context.read("memoryConsolidation.listChanges", input),
+      listHeldPairs: (input) => this.context.read("memoryConsolidation.listHeldPairs", input),
       readChange: (id) => this.context.read("memoryConsolidation.readChange", { id }),
       readBasis: (changeId) => this.context.read("memoryConsolidation.readBasis", { changeId }),
       readBasisChain: (input) => this.context.read("memoryConsolidation.readBasisChain", input),

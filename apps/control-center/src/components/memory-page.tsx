@@ -1735,6 +1735,9 @@ function TimelineTab({
     change?: number;
     show?: () => void;
   };
+  const pending = new Set(
+    overview.memories.filter((item) => item.tentative).map((item) => item.text),
+  );
   const everything: Event[] = [
     ...memoryHeads(overview.memories).flatMap((head) =>
       memoryChain(head, overview.memories).flatMap((node): Event[] =>
@@ -1776,7 +1779,9 @@ function TimelineTab({
         text: item.text,
         note: item.relatedText ? message("memory.tidyKept", { text: item.relatedText }) : "",
         undone: item.undone,
-        undo: () => void memory.undoTidy(item),
+        ...(item.action === "hold" && !pending.has(item.text)
+          ? {}
+          : { undo: () => void memory.undoTidy(item) }),
         confirm: item.action === "reflect" || item.action === "hold",
       }),
     ),
@@ -1800,9 +1805,6 @@ function TimelineTab({
     const day = dayHeading(event.at);
     days.set(day, [...(days.get(day) ?? []), event]);
   }
-  const pending = new Set(
-    overview.memories.filter((item) => item.tentative).map((item) => item.text),
-  );
   return (
     <>
       <Chips

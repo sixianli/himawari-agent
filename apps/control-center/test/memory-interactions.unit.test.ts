@@ -1203,6 +1203,55 @@ describe("memory approval and management", () => {
     });
   });
 
+  it("[P3-8] offers to undo a held conflict only while its newer memory still waits for the Owner", async () => {
+    overview = {
+      ...overview,
+      memories: [
+        memoryItem("m-milk-old", "主人平时喝明治的牛奶"),
+        memoryItem("m-milk-new", "主人出差时喝便利店的牛奶", { tentative: true, revision: 2 }),
+        memoryItem("m-pet-old", "主人家里养着一只柴犬"),
+        memoryItem("m-pet-new", "主人家里改养了一只橘猫", { revision: 3 }),
+      ],
+      tidyUps: [
+        {
+          changeId: "memory-consolidation:agent:2026-10-25:c1",
+          action: "hold",
+          text: "主人出差时喝便利店的牛奶",
+          relatedText: "主人平时喝明治的牛奶",
+          createdAt: "2026-10-25T12:00:00.000Z",
+          undone: false,
+        },
+        {
+          changeId: "memory-consolidation:agent:2026-10-25:c2",
+          action: "hold",
+          text: "主人家里改养了一只橘猫",
+          relatedText: "主人家里养着一只柴犬",
+          createdAt: "2026-10-25T12:00:01.000Z",
+          undone: false,
+        },
+      ],
+    };
+    await render();
+    await tab("变化记录");
+    const row = (content: string) =>
+      [...document.querySelectorAll("#settings .memory-day p")].find(
+        (line) => line.textContent?.startsWith("待你确认") && line.textContent.includes(content),
+      );
+    const buttons = (content: string) =>
+      [...(row(content)?.querySelectorAll("button") ?? [])].map((item) => item.textContent);
+    expect(buttons("主人出差时喝便利店的牛奶")).toEqual(["撤销", "去确认"]);
+    expect(buttons("主人家里改养了一只橘猫")).toEqual([]);
+    await act(async () =>
+      [...(row("主人出差时喝便利店的牛奶")?.querySelectorAll("button") ?? [])]
+        .find((item) => item.textContent === "撤销")
+        ?.click(),
+    );
+    expect(lastCommand()).toMatchObject({
+      type: "memory.tidy.undo",
+      payload: { changeId: "memory-consolidation:agent:2026-10-25:c1" },
+    });
+  });
+
   it("[MP-8] answers due reminders and cancels an upcoming one", async () => {
     overview = {
       ...overview,
