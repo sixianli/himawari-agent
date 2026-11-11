@@ -1,4 +1,4 @@
-import { currencyExponent, type MailAmount, MISSING_AMOUNT } from "./amount.js";
+import { currencyCodes, currencyExponent, type MailAmount, MISSING_AMOUNT } from "./amount.js";
 import type { RuleGate } from "./field-catalog.js";
 import { compileRuleExpression, type RuleFacts } from "./rule-expression.js";
 
@@ -278,8 +278,12 @@ export function amountThresholdExpression(parameters: AmountThresholdParameters)
     currencyExponent(parameters.currency) === undefined
   )
     throw new Error("金额门槛的币种不在币种表里");
-  if (!Number.isSafeInteger(parameters.minor) || parameters.minor < 0)
-    throw new Error("金额门槛必须是不小于 0 的整数");
+  if (
+    !Number.isSafeInteger(parameters.minor) ||
+    parameters.minor < 0 ||
+    parameters.minor >= Number.MAX_SAFE_INTEGER
+  )
+    throw new Error("金额门槛必须是不小于 0、小于安全整数上限的整数");
   return `amount_state == "known" && amount_currency == ${celString(parameters.currency)} && amount_minor < ${parameters.minor}`;
 }
 
@@ -326,17 +330,31 @@ const GATE_OUTCOMES: Readonly<Record<RuleGate, readonly RuleOutcome[]>> = Object
   mail_delivery: Object.freeze(["defer_to_quiet_hours"] as const),
 });
 
+const AMOUNT_FIELD = /\bamount_(?:minor|currency)\b/u;
+
+function unreadableAmountFacts(): readonly RuleFacts[] {
+  const item = { fromAddress: "a@b.com", subject: "x", snippet: "" };
+  return [
+    mailItemFacts(item),
+    ...["", ...currencyCodes()].map((currency) =>
+      mailItemFacts(item, { state: "uncertain", minor: 0, currency }),
+    ),
+  ];
+}
+
 export function assertRuleShape(rule: RuleRecord): void {
   if (!GATE_OUTCOMES[rule.gate].includes(rule.outcome))
     throw new Error(`规则 ${rule.id} 的结果 ${rule.outcome} 不能用在闸门 ${rule.gate} 上`);
   const bare = rule.expression.replace(/"(?:[^"\\]|\\.)*"/gu, '""');
-  if (
-    /\bamount_(?:minor|currency)\b/u.test(bare) &&
-    !/\bamount_state\s*==\s*"known"/u.test(rule.expression)
-  )
+  if (!AMOUNT_FIELD.test(bare)) return;
+  if (!/\bamount_state\s*==\s*"known"/u.test(rule.expression))
     throw new Error(
       `规则 ${rule.id} 用了金额却没有要求 amount_state == "known"，金额读不出来时会误判`,
     );
+  const compiled = compileRuleExpression(rule.gate, rule.expression);
+  for (const facts of unreadableAmountFacts())
+    if (compiled.evaluate(facts))
+      throw new Error(`规则 ${rule.id} 在金额缺失或不确定时命中了，金额读不出来时必须不命中`);
 }
 
 export function assertRuleExamples(rule: RuleRecord): void {

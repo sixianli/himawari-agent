@@ -67,9 +67,10 @@ export function suppressPushHits(
   amount: MailAmount,
   rules: readonly RuleRecord[],
 ): readonly string[] {
-  return JUDGE.decide("mail_item", mailItemFacts(item, amount), rules)
+  const hits = JUDGE.decide("mail_item", mailItemFacts(item, amount), rules)
     .hits.filter(({ outcome }) => outcome === "suppress_push")
-    .map(({ id, revision }) => `${id}@${revision}`);
+    .map(({ id, revision }) => `${id}@${revision}`.slice(0, 256));
+  return [...new Set(hits)].sort().slice(0, 16);
 }
 
 export function quietEnd(

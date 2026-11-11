@@ -904,7 +904,7 @@ export class ProactiveMailCheckService {
       const wantsPush = dueSoon || (final.result === "check" && floor);
       const suppressing =
         wantsPush && !floor ? suppressPushHits(item, judgement.amount, rules) : [];
-      if (suppressing.length > 0) ruleHits[item.messageId] = [...suppressing].sort();
+      if (suppressing.length > 0) ruleHits[item.messageId] = suppressing;
       const push = wantsPush && suppressing.length === 0;
       insights.push({
         item,

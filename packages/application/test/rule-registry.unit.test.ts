@@ -15,7 +15,7 @@ import {
 } from "../src/rules/rule-book.js";
 import { RuleJudge } from "../src/rules/rule-judge.js";
 import { RuleExpressionError } from "../src/rules/rule-expression.js";
-import { DECISION_RULE_CATALOG } from "../src/services/proactive-rules.js";
+import { DECISION_RULE_CATALOG, suppressPushHits } from "../src/services/proactive-rules.js";
 
 const DEFAULT_SETTINGS = {
   quietHours: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }],
@@ -266,5 +266,45 @@ describe("rule registry", () => {
     expect(() =>
       assertRuleShape({ ...rule, expression: 'text.contains("amount_minor") && size(text) > 0' }),
     ).not.toThrow();
+  });
+
+  it("[HR-2] refuses an amount rule that hits when the amount is missing or unsure, even if it mentions known", () => {
+    const rule = amountThresholdRule({ currency: "JPY", minor: 1000 }, 1, "测试");
+    for (const expression of [
+      'amount_minor < 1000 || amount_state == "known"',
+      'amount_state == "known" || amount_minor < 1000',
+      'amount_state == "known" && amount_minor < 1000 || amount_currency == ""',
+      '!(amount_state == "known" && amount_minor >= 1000)',
+    ])
+      expect(() => assertRuleShape({ ...rule, expression }), expression).toThrow(/必须不命中/u);
+    expect(() =>
+      assertRuleShape({
+        ...rule,
+        expression: 'amount_state == "known" && amount_currency == "USD" && amount_minor < 5',
+      }),
+    ).not.toThrow();
+  });
+
+  it("[HR-2] refuses an amount that only overflows after the decimals are added, and a limit with no room for an example", () => {
+    expect(toMinorUnits("100000000000000.5", "KWD")).toBeUndefined();
+    expect(() =>
+      amountThresholdRule({ currency: "JPY", minor: Number.MAX_SAFE_INTEGER }, 1, "测试"),
+    ).toThrow(/整数/u);
+    expect(() =>
+      assertRuleExamples(
+        amountThresholdRule({ currency: "JPY", minor: Number.MAX_SAFE_INTEGER - 1 }, 1, "测试"),
+      ),
+    ).not.toThrow();
+  });
+
+  it("[HR-2] lists each suppressing rule once and at most sixteen times, so the decision record can always be written", () => {
+    const rules = Array.from({ length: 20 }, (_, index) => ({
+      ...amountThresholdRule({ currency: "JPY", minor: 1000 + index }, 1, "测试"),
+      id: `suppress_small_amount_${String(index).padStart(2, "0")}`,
+    }));
+    const amount = { state: "known", minor: 1, currency: "JPY" } as const;
+    expect(suppressPushHits(ITEM as never, amount, [...rules, ...rules])).toHaveLength(16);
+    const [one] = rules as [RuleRecord];
+    expect(suppressPushHits(ITEM as never, amount, [one, one])).toEqual([`${one.id}@1`]);
   });
 });
