@@ -196,7 +196,8 @@ describe("Layer 0 hooks from the repository", () => {
     cpSync(path.join(repositoryRoot, "biome.json"), path.join(root, "biome.json"));
     const loose = '{"a":[1,\n2]}\n';
     write(root, "evals/owner-rule/result.json", loose);
-    write(root, "evals/memory-capture/run.json", loose);
+    write(root, "evals/memory-capture/partial-A-0.json", loose);
+    write(root, "evals/memory-capture/2026-11-11T02-36-25-792Z.json", loose);
     const biome = path.join(repositoryRoot, "node_modules/@biomejs/biome/bin/biome");
     const generated = spawnSync(process.execPath, [biome, "format", "."], {
       cwd: root,
