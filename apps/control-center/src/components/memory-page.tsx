@@ -1732,10 +1732,14 @@ function TimelineTab({
     note?: string;
     undone?: boolean;
     undo?: () => void;
+    locked?: boolean;
     confirm?: boolean;
     change?: number;
     show?: () => void;
   };
+  const waiting = new Set(
+    overview.memories.filter((item) => item.tentative).map((item) => item.memoryId),
+  );
   const everything: Event[] = [
     ...memoryHeads(overview.memories).flatMap((head) =>
       memoryChain(head, overview.memories).flatMap((node): Event[] =>
@@ -1775,10 +1779,19 @@ function TimelineTab({
         type: "tidy",
         kind: item.action,
         text: item.text,
-        note: item.relatedText ? message("memory.tidyKept", { text: item.relatedText }) : "",
+        note: item.relatedText
+          ? message(item.action === "hold" ? "memory.tidyOther" : "memory.tidyKept", {
+              text: item.relatedText,
+            })
+          : "",
         undone: item.undone,
-        undo: () => void memory.undoTidy(item),
-        confirm: item.action === "reflect",
+        ...(!item.undone && !item.undoable
+          ? { locked: true }
+          : item.action === "hold" && !waiting.has(item.memoryId)
+            ? {}
+            : { undo: () => void memory.undoTidy(item) }),
+        confirm:
+          (item.action === "reflect" || item.action === "hold") && waiting.has(item.memoryId),
       }),
     ),
     ...overview.imports.map(
@@ -1801,9 +1814,6 @@ function TimelineTab({
     const day = dayHeading(event.at);
     days.set(day, [...(days.get(day) ?? []), event]);
   }
-  const pending = new Set(
-    overview.memories.filter((item) => item.tentative).map((item) => item.text),
-  );
   return (
     <>
       <Chips
@@ -1842,12 +1852,14 @@ function TimelineTab({
               </span>
               {event.undone ? (
                 <small>{message("memory.undone")}</small>
+              ) : event.locked ? (
+                <small>{message("memory.undoLocked")}</small>
               ) : event.undo ? (
                 <ActionButton variant="quiet" disabled={memory.busy} onClick={event.undo}>
                   {message("memory.undo")}
                 </ActionButton>
               ) : null}
-              {event.confirm && pending.has(event.text) ? (
+              {event.confirm ? (
                 <ActionButton variant="quiet" onClick={onConfirm}>
                   {message("memory.page.goConfirm")}
                 </ActionButton>

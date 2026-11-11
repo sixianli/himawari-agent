@@ -56,6 +56,13 @@ export const DEFAULT_CAPTURE_GATES: CaptureGates = Object.freeze({
   confirmTentative: MEMORY_TENTATIVE_CONFIRM_GATE,
 });
 
+export function autoCommitThreshold(
+  category: string | null,
+  gates: CaptureGates = DEFAULT_CAPTURE_GATES,
+): number {
+  return thresholdFor(gates.autoCommit, category);
+}
+
 export interface CommittedRunMemoryInput {
   readonly ownerId: SensitiveMemoryApprovalRequest["ownerId"];
   readonly agentId: SensitiveMemoryApprovalRequest["agentId"];

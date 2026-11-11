@@ -680,8 +680,11 @@ export const messages = {
   "memory.profile.goal": "Long-term goals",
   "memory.profile.project": "In progress",
   "memory.tidyKept": "(kept: {text})",
+  "memory.tidyOther": "(the other one: {text})",
   "memory.undo": "Undo",
   "memory.undone": "Undone",
+  "memory.undoLocked":
+    "This memory was edited afterwards, so this can no longer be undone; restore an older version from its history instead",
   "memory.reminderTitle": "Reminder",
   "memory.reminderDue": "Due {time}",
   "memory.reminderDismiss": "Don't remind again",
@@ -752,7 +755,7 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {All changes} new {New} drop {Dropped and deleted} tidy {Memory tidy-ups} correct {Corrections} other {Imports}}",
   "memory.page.event":
-    "{e, select, new {New} dropped {Dropped} deleted {Deleted} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} other {Guess}}",
+    "{e, select, new {New} dropped {Dropped} deleted {Deleted} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} hold {Found differing statements} other {Guess}}",
   "memory.page.imported":
     "Imported {count} from {source, select, codex {Codex} assistant {another AI} other {a Himawari export}}",
   "memory.page.goConfirm": "Review",
@@ -1118,7 +1121,7 @@ export const messages = {
   "decision.chain.basis": "Inferred from",
   "decision.chain.basisCut": "Sources not fully read (too many, or a read error)",
   "decision.chain.action":
-    "{a, select, merge {Merged} supersede {Replaced} archive {Archived} reflect {Summarized} other {Tidied}}",
+    "{a, select, merge {Merged} supersede {Replaced} archive {Archived} reflect {Summarized} hold {Found differing statements} other {Tidied}}",
   "decision.chain.repeated": "repeated",
   "decision.chain.nodeCut": "more below",
   "decision.email.open": "View this email",

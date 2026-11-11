@@ -18,7 +18,7 @@ export function consolidationLedgerId(changeId: string): string {
 
 const MEMORY_BASIS_CHAIN_MAX_DEPTH = 8;
 const MEMORY_BASIS_CHAIN_MAX_NODES = 200;
-const ACTIONS = new Set(["merge", "supersede", "archive", "reflect"]);
+const ACTIONS = new Set(["merge", "supersede", "archive", "reflect", "hold"]);
 
 const runSelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId, day,
   trigger_run_id AS triggerRunId, status, reviewed_through AS reviewedThrough,
@@ -147,6 +147,8 @@ export class SqliteMemoryConsolidationOperations {
         );
       case "memoryConsolidation.listChanges":
         return this.listChanges(payload as { ownerId: OwnerId; agentId: AgentId; limit: number });
+      case "memoryConsolidation.listHeldPairs":
+        return this.listHeldPairs(payload as { ownerId: OwnerId; agentId: AgentId });
       case "memoryConsolidation.readChange":
         return this.readChange((payload as { id: string }).id);
       case "memoryConsolidation.readBasis":
@@ -257,6 +259,24 @@ export class SqliteMemoryConsolidationOperations {
           )
           .all(input.ownerId, input.agentId, input.limit) as MemoryConsolidationChange[]
       ).map((row) => Object.freeze(row)),
+    );
+  }
+
+  private listHeldPairs(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+  }): readonly (readonly [MemoryId, MemoryId])[] {
+    return Object.freeze(
+      (
+        this.database
+          .prepare(
+            `SELECT memory_id AS memoryId, related_memory_id AS relatedMemoryId
+            FROM memory_consolidation_changes
+            WHERE owner_id = ? AND agent_id = ? AND action = 'hold' AND related_memory_id IS NOT NULL
+            ORDER BY id`,
+          )
+          .all(input.ownerId, input.agentId) as { memoryId: MemoryId; relatedMemoryId: MemoryId }[]
+      ).map(({ memoryId, relatedMemoryId }) => Object.freeze([memoryId, relatedMemoryId] as const)),
     );
   }
 

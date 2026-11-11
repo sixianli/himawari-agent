@@ -1791,6 +1791,7 @@ export async function runAgentService(
         : undefined;
       if (mcpReadSecret) {
         const settingsStore = repository.proactive();
+        const ownerRuleStore = repository.ownerRules();
         const secretProvider = hostModelSources(configuration).provider;
         mcpRead = new ProductionMcpRead({
           scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
@@ -1837,6 +1838,12 @@ export async function runAgentService(
               settingsStore.readSettings({
                 ownerId: configuration.ownerId,
                 agentId: configuration.agentId,
+              }),
+            ownerRules: () =>
+              ownerRuleStore.list({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                includeRetired: false,
               }),
             ...(memoryEpisodes
               ? {

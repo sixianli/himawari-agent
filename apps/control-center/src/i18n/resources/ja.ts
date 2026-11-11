@@ -687,8 +687,11 @@ export const messages = {
   "memory.profile.goal": "長期目標",
   "memory.profile.project": "進行中のこと",
   "memory.tidyKept": "（残した方：{text}）",
+  "memory.tidyOther": "（もう一方：{text}）",
   "memory.undo": "元に戻す",
   "memory.undone": "元に戻しました",
+  "memory.undoLocked":
+    "この記憶はその後に変更されたため元に戻せません。履歴から以前の版を復元してください",
   "memory.reminderTitle": "リマインダー",
   "memory.reminderDue": "予定：{time}",
   "memory.reminderDismiss": "今後通知しない",
@@ -759,7 +762,7 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {すべて} new {新規} drop {覚えない・削除} tidy {記憶の整理} correct {訂正} other {インポート}}",
   "memory.page.event":
-    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} other {推測}}",
+    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} hold {食い違いを発見} other {推測}}",
   "memory.page.imported":
     "{source, select, codex {Codex} assistant {他の AI} other {Himawari のエクスポート}}から {count} 件インポート",
   "memory.page.goConfirm": "確認する",
@@ -1118,7 +1121,7 @@ export const messages = {
   "decision.chain.basis": "推測の根拠",
   "decision.chain.basisCut": "根拠を読み切れていません（多すぎるか読み取りエラー）",
   "decision.chain.action":
-    "{a, select, merge {統合} supersede {置き換え} archive {アーカイブ} reflect {要約} other {整理}}",
+    "{a, select, merge {統合} supersede {置き換え} archive {アーカイブ} reflect {要約} hold {食い違いを発見} other {整理}}",
   "decision.chain.repeated": "重複",
   "decision.chain.nodeCut": "この先にもあります",
   "decision.email.open": "このメールを見る",

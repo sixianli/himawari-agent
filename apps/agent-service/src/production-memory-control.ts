@@ -1,3 +1,4 @@
+import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
 import {
   ApplicationPortError,
   type ClockPort,
@@ -669,11 +670,13 @@ export class ProductionMemoryControl {
       if (!text) continue;
       tidyUps.push({
         changeId: change.id,
+        memoryId: change.memoryId,
         action: change.action,
         text,
         relatedText: await textOf(change.relatedMemoryId),
         createdAt: change.createdAt,
         undone: change.undoneAt !== null,
+        undoable: isConsolidationUndoable(change, touched.get(change.memoryId)),
       });
     }
     const outline = await this.options.profile?.outline({
