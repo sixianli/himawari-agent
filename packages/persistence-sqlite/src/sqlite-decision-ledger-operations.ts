@@ -18,9 +18,11 @@ import {
   type MuseReferenceEntry,
   type MuseReferenceWrite,
 } from "@himawari-agent/application/decision-ledger";
+import { parseRuleRef, type RuleBookVersion } from "@himawari-agent/application/rule-ref";
 import { readCalibrationRows } from "@himawari-agent/calibration";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import { defaultRuleParameters } from "./sqlite-proactive-operations.ts";
 
 type Input<TName extends keyof DecisionLedgerPort> = Parameters<DecisionLedgerPort[TName]>[0];
 
@@ -389,10 +391,65 @@ export class SqliteDecisionLedgerOperations {
       .get(input.ownerId, input.agentId, input.decisionId) as Record<string, unknown> | undefined;
     if (!row) return undefined;
     const inputFields = Object.keys(JSON.parse(row["inputs"] as string) as object).sort();
+    const entry = entryFromRow(row);
     return Object.freeze({
-      entry: entryFromRow(row),
+      entry,
       inputFields: Object.freeze(inputFields),
+      ruleVersions: this.readRuleVersions(input, entry.inputs.ruleIds),
     });
+  }
+
+  private readRuleVersions(
+    scope: Input<"read">,
+    refs: readonly string[],
+  ): Readonly<Record<string, RuleBookVersion>> {
+    const current = this.database.prepare(
+      `SELECT rule_id AS ruleId, revision, parameters, status, source_memory_id AS sourceMemoryId,
+         updated_at AS changedAt
+       FROM rule_book_rules WHERE owner_id = ? AND agent_id = ? AND rule_id = ?`,
+    );
+    const past = this.database.prepare(
+      `SELECT rule_id AS ruleId, revision, parameters, status, source_memory_id AS sourceMemoryId,
+         changed_at AS changedAt
+       FROM rule_book_history
+       WHERE owner_id = ? AND agent_id = ? AND rule_id = ? AND revision = ?`,
+    );
+    const versions: Record<string, RuleBookVersion> = Object.create(null);
+    for (const ref of new Set(refs)) {
+      const { ruleId, revision } = parseRuleRef(ref);
+      const found = (
+        revision === null
+          ? current.get(scope.ownerId, scope.agentId, ruleId)
+          : past.get(scope.ownerId, scope.agentId, ruleId, revision)
+      ) as
+        | {
+            ruleId: string;
+            revision: number;
+            parameters: string;
+            status: RuleBookVersion["status"];
+            sourceMemoryId: string | null;
+            changedAt: string;
+          }
+        | undefined;
+      if (found) {
+        versions[ref] = Object.freeze({
+          ...found,
+          parameters: Object.freeze(JSON.parse(found.parameters) as Record<string, unknown>),
+        });
+        continue;
+      }
+      const defaults = revision === 0 ? defaultRuleParameters(ruleId) : undefined;
+      if (defaults)
+        versions[ref] = Object.freeze({
+          ruleId,
+          revision: 0,
+          parameters: defaults,
+          status: "active",
+          sourceMemoryId: null,
+          changedAt: null,
+        });
+    }
+    return Object.freeze(versions);
   }
 
   private rate(input: Input<"rate">): boolean {

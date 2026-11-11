@@ -12,6 +12,11 @@ import {
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import type { Embedder } from "./embedding.js";
 import { DEFAULT_FUSION_WEIGHTS, type FusionWeights, fuseCandidates } from "./fusion.js";
+import {
+  DEFAULT_RELEVANCE_TUNING,
+  type RelevanceTuning,
+  validRelevanceTuning,
+} from "./relevance.js";
 import { indexableTerms, queryTerms } from "./segmentation.js";
 import { parseTimeScope } from "./time-scope.js";
 
@@ -25,6 +30,11 @@ export interface HybridMemoryProviderOptions {
   readonly now: () => string;
   readonly minimumSimilarity?: number;
   readonly weights?: FusionWeights;
+  readonly relevance?: RelevanceTuning;
+  readonly onRelevanceUnknown?: (
+    count: number,
+    scope: { readonly ownerId: OwnerId; readonly agentId: AgentId },
+  ) => void;
   readonly onVectorFailure?: (
     error: unknown,
     scope: { readonly ownerId: OwnerId; readonly agentId: AgentId },
@@ -50,6 +60,8 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     const minimum = options.minimumSimilarity ?? 0;
     if (!Number.isFinite(minimum) || minimum < 0 || minimum >= 1)
       throw new RangeError("MEMORY_MINIMUM_SIMILARITY_INVALID");
+    if (options.relevance !== undefined && !validRelevanceTuning(options.relevance))
+      throw new RangeError("MEMORY_RELEVANCE_TUNING_INVALID");
     this.#options = options;
     this.#embeddable = new Set(options.embeddableClassifications);
   }
@@ -60,6 +72,10 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
 
   get minimumSimilarity(): number {
     return this.#options.minimumSimilarity ?? 0;
+  }
+
+  get relevance(): RelevanceTuning {
+    return this.#options.relevance ?? DEFAULT_RELEVANCE_TUNING;
   }
 
   get timeZone(): string | undefined {
@@ -121,6 +137,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     readonly limit: number;
     readonly scope?: MemoryTimeScope;
     readonly minimumSimilarity?: number;
+    readonly relevanceCutoff?: boolean;
     readonly includeTentative?: boolean;
     readonly tentativeOnly?: boolean;
   }): Promise<readonly MemoryProviderHit[]> {
@@ -129,6 +146,9 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     if (!Number.isSafeInteger(input.limit) || input.limit < 0 || input.limit > 1000)
       throw new RangeError("limit must be an integer between 0 and 1000");
     if (input.limit === 0) return [];
+    const minimumSimilarity = input.minimumSimilarity ?? this.#options.minimumSimilarity ?? 0;
+    if (!Number.isFinite(minimumSimilarity) || minimumSimilarity < 0 || minimumSimilarity > 1)
+      throw new RangeError("MEMORY_MINIMUM_SIMILARITY_INVALID");
     const embedder = this.#options.embedder;
     let embedding = null;
     if (embedder) {
@@ -144,6 +164,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     }
     const now = this.#options.now();
     const scope = input.scope ?? parseTimeScope(input.query, now, this.#options.timeZone);
+    const relevance = this.relevance;
     const result = await this.#options.index.search({
       ownerId: input.ownerId,
       agentId: input.agentId,
@@ -151,7 +172,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
       terms: queryTerms(input.query),
       queryText: input.query,
       limit: Math.min(200, Math.max(CANDIDATES_PER_SIGNAL, input.limit)),
-      minimumSimilarity: input.minimumSimilarity ?? this.#options.minimumSimilarity ?? 0,
+      minimumSimilarity,
       now,
       includeHistory: scope?.includeHistory === true,
       ...(input.includeTentative === true ? { includeTentative: true } : {}),
@@ -162,6 +183,20 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
       limit: input.limit,
       weights: this.#options.weights ?? DEFAULT_FUSION_WEIGHTS,
       scope,
+      ...(input.relevanceCutoff === true
+        ? {
+            cutoff: {
+              minimumScore: minimumSimilarity - relevance.cutoffMargin,
+              keywordWeight: relevance.keywordWeight,
+              entityWeight: relevance.entityWeight,
+            },
+            onRelevanceUnknown: (count: number) =>
+              this.#options.onRelevanceUnknown?.(count, {
+                ownerId: input.ownerId,
+                agentId: input.agentId,
+              }),
+          }
+        : {}),
     }).map(({ memoryId, score }) =>
       Object.freeze({
         providerRecordId: memoryIndexRecordId(memoryId),

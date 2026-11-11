@@ -1392,6 +1392,12 @@ describe("production memory capture", () => {
     expect((await tentativeState()).attributes?.tentative).toBe(true);
     await round("run-pa2-3", "我又买了明治的牛奶", unchanged("我又买了明治的牛奶"));
     expect((await tentativeState()).attributes?.tentative).not.toBe(true);
+    const confirmed = (await context.ledgerEntries()).filter(
+      ({ reasonCode }) => reasonCode === "tentative_confirmed",
+    );
+    expect(confirmed.map(({ outcome, category }) => [outcome, category])).toEqual([
+      ["kept", created.attributes?.category],
+    ]);
     expect(context.failures).toEqual([]);
   });
 

@@ -98,6 +98,10 @@ export function createProductionRunMemory(options: {
     context: MaintenanceEmbeddingContext,
     operation: () => Promise<T>,
   ) => Promise<T>;
+  embedForExternalRead: <T>(
+    context: MailEmbeddingContext,
+    operation: () => Promise<T>,
+  ) => Promise<T>;
 } {
   const scope = new AsyncLocalStorage<MemorySearchRequest & { readonly embeddingSlot?: string }>();
   const mailScope = new AsyncLocalStorage<MailEmbeddingContext>();
@@ -378,6 +382,7 @@ export function createProductionRunMemory(options: {
     project: (job, memory, operation) => projectionScope.run({ job, memory }, operation),
     embedForMailCheck: (context, operation) => mailScope.run(context, operation),
     embedForMaintenance: (context, operation) => maintenanceScope.run(context, operation),
+    embedForExternalRead: (context, operation) => mailScope.run(context, operation),
     embedWithin: (context, operation) =>
       scope.run(
         {

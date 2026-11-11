@@ -209,6 +209,84 @@ describe("hybrid Memory provider", () => {
   });
 });
 
+describe("hybrid Memory provider relevance cutoff", () => {
+  const found = (id: string, signal: number, similarity: number) => ({
+    memoryId: id as MemoryId,
+    revision: 1,
+    importancePermille: 500,
+    confidencePermille: 900,
+    updatedAt: now,
+    lastUsedAt: null,
+    signal,
+    similarity,
+    startsAt: now,
+    endsAt: null,
+    current: true,
+  });
+  function provider(
+    relevance?: ConstructorParameters<typeof HybridMemoryProvider>[0]["relevance"],
+  ) {
+    const { port } = index();
+    port.search = vi.fn(async () => ({
+      vector: [found("close", 0.62, 0.62)],
+      lexical: [found("keyword-only", 5, 0.38), found("near-floor", 1, 0.48)],
+      entity: [],
+      vectorEngine: "sqlite-vec" as const,
+    }));
+    return new HybridMemoryProvider({
+      index: port,
+      embedder: embedder(),
+      embeddableClassifications: ["public", "private"],
+      now: () => now,
+      minimumSimilarity: 0.6,
+      ...(relevance === undefined ? {} : { relevance }),
+    });
+  }
+  const ids = (hits: readonly { readonly productMemoryId: string }[]) =>
+    hits.map(({ productMemoryId }) => productMemoryId).sort();
+  const query = { ownerId, agentId, query: "我住在哪里", limit: 5 };
+
+  it("cuts only when the caller asks, using the floor of that call minus the margin", async () => {
+    expect(ids(await provider().search(query))).toEqual(["close", "keyword-only", "near-floor"]);
+    expect(ids(await provider().search({ ...query, relevanceCutoff: true }))).toEqual(["close"]);
+    expect(
+      ids(await provider().search({ ...query, relevanceCutoff: true, minimumSimilarity: 0.45 })),
+    ).toEqual(["close", "keyword-only", "near-floor"]);
+  });
+
+  it("uses the configured weights and margin", async () => {
+    expect(
+      ids(
+        await provider({ keywordWeight: 0.15, entityWeight: 0.15, cutoffMargin: 0.08 }).search({
+          ...query,
+          relevanceCutoff: true,
+        }),
+      ),
+    ).toEqual(["close", "keyword-only"]);
+  });
+
+  it("refuses negative, non-finite or out-of-range tuning", () => {
+    for (const relevance of [
+      { keywordWeight: -0.1, entityWeight: 0.15, cutoffMargin: 0.03 },
+      { keywordWeight: 0.15, entityWeight: Number.NaN, cutoffMargin: 0.03 },
+      { keywordWeight: 0.15, entityWeight: 0.15, cutoffMargin: 1 },
+    ])
+      expect(() => provider(relevance)).toThrow("MEMORY_RELEVANCE_TUNING_INVALID");
+  });
+
+  it("refuses a per-call floor outside 0 to 1 before asking for an embedding, and accepts 1 like the Gmail setting", async () => {
+    const checked = provider();
+    for (const minimumSimilarity of [Number.NaN, -0.1, 1.1])
+      await expect(
+        checked.search({ ...query, relevanceCutoff: true, minimumSimilarity }),
+      ).rejects.toThrow("MEMORY_MINIMUM_SIMILARITY_INVALID");
+    expect(checked.embedder?.embedQuery).not.toHaveBeenCalled();
+    await expect(
+      provider().search({ ...query, relevanceCutoff: true, minimumSimilarity: 1 }),
+    ).resolves.toBeDefined();
+  });
+});
+
 describe("Gateway embedder", () => {
   it("redacts sensitive values before the text leaves for the embedding provider", async () => {
     const fetch = vi.fn(

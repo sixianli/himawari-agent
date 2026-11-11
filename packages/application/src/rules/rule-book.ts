@@ -131,6 +131,11 @@ export function mailItemFacts(
   );
 }
 
+export const BUILT_IN_RULE_VALUES: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  [RULE_IDS.publicDomain]: PUBLIC_DOMAIN_SUFFIXES,
+  [RULE_IDS.moneyWords]: Object.freeze([...MONEY_SUBSTRINGS, ...MONEY_WORDS]),
+});
+
 export const BUILT_IN_RULES: readonly RuleRecord[] = Object.freeze([
   Object.freeze({
     id: RULE_IDS.publicDomain,
@@ -229,8 +234,46 @@ export function importantSenderRule(senders: readonly string[], revision: number
     origin: "owner_setting",
     source: "ADR 0106 第 4 条；主人的设置“重要发件人”",
     status: "active",
-    examples: Object.freeze([]),
+    examples: importantSenderExamples(senders),
   });
+}
+
+const EXAMPLE_PER_ENTRY = 3;
+const MISS_DOMAIN = "himawari-rule-example.invalid";
+
+function senderListed(entries: readonly string[], address: string): boolean {
+  const domain = address.slice(address.lastIndexOf("@") + 1);
+  return entries.some((entry) =>
+    entry.includes("@") ? entry === address : domain === entry || domain.endsWith(`.${entry}`),
+  );
+}
+
+function importantSenderExamples(senders: readonly string[]): readonly RuleExample[] {
+  const entries = [
+    ...new Set(
+      senders
+        .filter((entry) => !/\p{Surrogate}/u.test(entry))
+        .map((entry) => entry.trim().toLowerCase().replace(/^@/u, ""))
+        .filter((entry) => entry.length > 0),
+    ),
+  ];
+  const addresses = new Set<string>();
+  for (const entry of entries.slice(0, EXAMPLE_PER_ENTRY)) {
+    if (entry.includes("@")) addresses.add(entry);
+    else {
+      addresses.add(`someone@${entry}`);
+      addresses.add(`someone@mail.${entry}`);
+    }
+  }
+  addresses.add(`someone@${MISS_DOMAIN}`);
+  return Object.freeze(
+    [...addresses].map((address) =>
+      Object.freeze({
+        facts: mailItemFacts({ fromAddress: address, subject: "x", snippet: "" }),
+        hit: senderListed(entries, address),
+      }),
+    ),
+  );
 }
 
 function clockMinutes(value: string): number {
@@ -267,8 +310,54 @@ export function quietHoursRule(periods: readonly QuietPeriod[], revision: number
     origin: "owner_setting",
     source: "ADR 0106；主人的设置“静默时段”",
     status: "active",
-    examples: Object.freeze([]),
+    examples: quietHoursExamples(periods),
   });
+}
+
+const MINUTES_PER_DAY = 24 * 60;
+
+function inQuietPeriod(period: QuietPeriod, weekday: number, minutes: number): boolean {
+  const start = clockMinutes(period.start);
+  const stop = clockMinutes(period.end);
+  if (start === stop) return false;
+  if (start < stop) return period.days.includes(weekday) && minutes >= start && minutes < stop;
+  return (
+    (period.days.includes(weekday) && minutes >= start) ||
+    (period.days.includes((weekday + 6) % 7) && minutes < stop)
+  );
+}
+
+function quietHoursExamples(periods: readonly QuietPeriod[]): readonly RuleExample[] {
+  const moments = new Map<string, { readonly weekday: number; readonly minutes: number }>();
+  const add = (weekday: number, minutes: number) => {
+    const day = (weekday + Math.floor(minutes / MINUTES_PER_DAY) + 7) % 7;
+    const minute = ((minutes % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+    moments.set(`${day}:${minute}`, { weekday: day, minutes: minute });
+  };
+  for (const period of periods.slice(0, 8)) {
+    const day = period.days[0];
+    if (day === undefined) continue;
+    const start = clockMinutes(period.start);
+    const stop = clockMinutes(period.end);
+    const end = stop > start ? stop : stop + MINUTES_PER_DAY;
+    add(day, start);
+    add(day, start - 1);
+    add(day, end - 1);
+    add(day, end);
+  }
+  if (moments.size === 0) add(0, 12 * 60);
+  return Object.freeze(
+    [...moments.values()].map(({ weekday, minutes }) =>
+      Object.freeze({
+        facts: {
+          local_minutes: minutes,
+          local_weekday: weekday,
+          local_previous_weekday: (weekday + 6) % 7,
+        },
+        hit: periods.some((period) => inQuietPeriod(period, weekday, minutes)),
+      }),
+    ),
+  );
 }
 
 export interface AmountThresholdParameters {
@@ -349,13 +438,26 @@ export function assertRuleShape(rule: RuleRecord): void {
     throw new Error(`规则 ${rule.id} 的结果 ${rule.outcome} 不能用在闸门 ${rule.gate} 上`);
 }
 
-export function assertRuleExamples(rule: RuleRecord): void {
+export interface RuleExampleRun {
+  readonly total: number;
+  readonly failedAt: number | null;
+}
+
+export function runRuleExamples(rule: RuleRecord): RuleExampleRun {
   assertRuleShape(rule);
   const compiled = compileRuleExpression(rule.gate, rule.expression);
-  for (const example of rule.examples) {
-    if (compiled.evaluate(example.facts) !== example.hit)
-      throw new Error(`规则 ${rule.id} 的例子不符：${JSON.stringify(example.facts)}`);
-  }
+  const failed = rule.examples.findIndex(
+    (example) => compiled.evaluate(example.facts) !== example.hit,
+  );
+  return Object.freeze({ total: rule.examples.length, failedAt: failed < 0 ? null : failed + 1 });
+}
+
+export function assertRuleExamples(rule: RuleRecord): void {
+  const run = runRuleExamples(rule);
+  if (run.failedAt !== null)
+    throw new Error(
+      `规则 ${rule.id} 的例子不符：${JSON.stringify(rule.examples[run.failedAt - 1]?.facts)}`,
+    );
 }
 
 export interface OwnerRuleSettings {

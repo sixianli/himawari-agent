@@ -1,10 +1,10 @@
+import { describe, expect, it } from "vitest";
 import {
   type GatewayAuthenticationContext,
   type GatewayAuthenticatorPort,
   type GatewayRequestResult,
   InProcessGatewayTransport,
 } from "../src/index.js";
-import { describe, expect, it } from "vitest";
 
 const authenticated: GatewayAuthenticationContext = {
   subjectId: "owner-01",

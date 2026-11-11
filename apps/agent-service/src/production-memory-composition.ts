@@ -12,6 +12,7 @@ import {
 import {
   AI_GATEWAY_BASE_URL,
   EgressEmbedder,
+  DEFAULT_RELEVANCE_TUNING,
   type EmbeddingBoundary,
   HybridMemoryProvider,
   type HybridMemoryProviderOptions,
@@ -37,6 +38,7 @@ export interface ProductionMemoryCompositionOptions {
   readonly fetch?: typeof fetch;
   readonly onVectorFailure: NonNullable<HybridMemoryProviderOptions["onVectorFailure"]>;
   readonly localLoader?: LocalOnnxLoader;
+  readonly onRelevanceUnknown?: HybridMemoryProviderOptions["onRelevanceUnknown"];
 }
 
 export interface ProductionMemoryComposition {
@@ -45,6 +47,7 @@ export interface ProductionMemoryComposition {
   readonly identity: string;
   readonly localRuntime: LocalOnnxEmbeddingRuntime | null;
   readonly projection: HybridMemoryProvider;
+  readonly dedupeSameSource: boolean;
   bindEmbeddingBoundary(
     boundary: EmbeddingBoundary,
     timeoutMs: number,
@@ -135,6 +138,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
   const minimumSimilarity =
     options.configuration.memory.minimumSimilarity ?? profile.chatMinimumSimilarity;
   let searchCancelled: (error: unknown) => boolean = () => false;
+  const retrieval = options.configuration.memory.retrieval;
   const projection = new HybridMemoryProvider({
     index: options.index,
     embedder,
@@ -147,6 +151,14 @@ export async function createProductionMemoryCompositionFromConfiguration(
     onVectorFailure: (error, scope) => {
       if (!searchCancelled(error)) options.onVectorFailure(error, scope);
     },
+    relevance: {
+      keywordWeight: retrieval?.keywordWeight ?? DEFAULT_RELEVANCE_TUNING.keywordWeight,
+      entityWeight: retrieval?.entityWeight ?? DEFAULT_RELEVANCE_TUNING.entityWeight,
+      cutoffMargin: retrieval?.cutoffMargin ?? DEFAULT_RELEVANCE_TUNING.cutoffMargin,
+    },
+    ...(options.onRelevanceUnknown === undefined
+      ? {}
+      : { onRelevanceUnknown: options.onRelevanceUnknown }),
   });
   return Object.freeze({
     descriptor: resolveConfiguredModelDescriptorSet(options.configuration).embedding,
@@ -154,6 +166,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
     identity,
     localRuntime,
     projection,
+    dedupeSameSource: retrieval?.dedupeSameSource ?? true,
     bindEmbeddingBoundary: (
       boundary: EmbeddingBoundary,
       timeoutMs: number,

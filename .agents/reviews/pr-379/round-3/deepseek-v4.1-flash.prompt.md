@@ -1,0 +1,39 @@
+你是独立的代码复核者。
+你能用的工具：read、grep、glob，以及 git diff、git log、git show、git blame、git status 这几条 git 命令。不能修改任何文件，不能运行别的命令。不能上网。
+系统的真相在代码里。下面「作者的说法」可能有错，每一条都要对照代码核对；发现说法和代码不一致，要明确指出。
+做法：先想清楚要回答哪几个问题、需要看哪些文件或资料，再直接去读这些地方；不要漫无目的地浏览代码，也不要用相同或相近的参数反复调用工具。读到的内容一旦足以下结论，就停止调用工具，写出结论；没读到的地方标「未核实」，不要为了查全而一直查下去。
+列出的方案只是参考，请从问题本身出发，提出你认为更好的方案。
+必答问题：
+1. 这个改动会不会改变模型已经见过的请求开头？包括系统提示、工具定义、历史消息、遮盖结果。要求回答：发给模型的内容是不是仍然只在末尾追加，每轮会变的值是不是都在最后一条消息里。依据：[发给模型的内容只追加](../../.claude/rules/prompt-prefix.md#rules)。
+2. 这个改动会不会让同一段文字在不同请求里变成不同的字节（例如依赖前后文的遮盖、带时间的字段、无序的集合）？
+3. 改动有没有对应的自动检查，反向用例是否真的会失败？
+4. 改动产生或修改的每个值（标识、字段、配置键、清单项、序列化格式），每一个使用它的地方都能接受吗？逐个找到产生它的地方和使用它的地方，核对两端的校验，只看改动本身不够。依据：[I-73](../../docs/incidents-and-gates.md#incidents)，双模型复核只看了改动，没问“清单里的 id 能通过后端校验吗”。
+你的额外侧重：错误路径、不合规范或不可信的输入、安全、资源耗尽、不可撤销的操作，以及规则文件、说明文档和代码是否一致。有时另有一个复核者侧重别的方面，有时只有你一个，所以你都要回答全部必答问题、报告你发现的任何问题；侧重只决定你先查什么。在结论之前单独写一节「侧重检查」，列出你查过的这类路径和结论。
+输出格式：按严重度从高到低排列，每条写：严重度、文件:行、问题、证据（引用你亲自读到的那几行代码）、建议。把「读代码证实的」和「推测」分开写。最后逐条回答必答问题。用简体中文。
+
+---- 本次材料 ----
+仓库就是当前目录，已检出 496819fca643ccb496fc8c6f53b7ba77506fe3f0。
+对比基准是 cb9c281916784201ff2ef3e8bca5fc8f359b64fc，先运行 git diff cb9c281916784201ff2ef3e8bca5fc8f359b64fc..496819fca643ccb496fc8c6f53b7ba77506fe3f0 看改动。
+上一轮复核到 5724b66df69b9c86e169e6e49cdc508db21a1300，先看 git diff 5724b66df69b9c86e169e6e49cdc508db21a1300..496819fca643ccb496fc8c6f53b7ba77506fe3f0 的增量，但可以读任何文件。
+作者的说法（可能有错，请核对）：
+# P4-7 作者说明
+
+目标：捕获门槛按记忆分类可配；待确认记忆的转正门槛也放进同一套配置；默认值全部等于现值（850），默认行为与改前完全一致；不改任何数值。
+
+已核对的事实：
+- 捕获门槛的按分类查表已在 main（P4-4，PR 368）：automatic-memory-service 用 thresholdFor(MEMORY_AUTO_COMMIT_GATE, candidate.attributes?.category ?? null)。
+- 改前，再次肯定（decision "unchanged"）一条待确认记忆也要先过 850 的捕获门槛；过了，DurableMemoryService.applyProposal 就把它转正，没过就丢弃（unchanged 不能暂存）。
+- decision_ledger.reason_code 只有长度检查（0069），新原因码不用改表。
+
+改动：在 thresholds.ts 新增 MEMORY_TENTATIVE_CONFIRM_GATE（默认 850，byCategory 为空），加进 THRESHOLD_GATES；AutomaticMemoryService 对指向待确认记忆的 unchanged 候选改用这道门槛，决策记录的原因码记为 tentative_confirmed / confirm_below_threshold；新增必填选项 isTentative（生产环境用 state.readMany 实现），以及只给测试用的 gates 选项。
+
+已知取舍：分类覆盖允许低于默认值（Andy 已同意）。理由：分类和分数是模型同一次输出的。
+
+## 第 2 轮改动（相对 ad81ef6）
+- 去掉 isTentative 选项和提交时读库。抽取阶段（parseMemoryCandidates）在判定 confirmsTentative 时（目标是待确认记忆，决定为 unchanged、update 或 merge），给候选加上 confirmsTentativeCategory：unchanged 取那条记忆原有的分类，update 和 merge 取候选给出的新分类（DurableMemoryService 在 update/merge 时会用候选的属性替换原有属性）。AutomaticMemoryService 只看这个字段来决定用哪道门槛、按哪个分类查，这样重放同一批候选时结果不变。
+- 默认配置的等价测试补上了对决策记录原因码的断言；ADR 0143、0179 加了修订说明。
+
+## 第 3 轮改动（相对 5724b66）
+- 决策记录的 category：对待确认记忆的确认候选，记转正后实际用来查门槛的分类（unchanged 记那条记忆原有的分类），不再记模型自报的分类。
+- 服务端多加一道校验：决定不是 create、并且有目标记忆，才认 confirmsTentativeCategory；否则照常走自动存入门槛。
+- 审计日志的 outcome 维持原值，有意不改：服务诊断日志的含义保持不变，只有决策记录区分转正。

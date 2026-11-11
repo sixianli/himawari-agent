@@ -321,6 +321,59 @@ describe.each(["worker", "direct"] as const)("memory engine index through %s", (
     }
   });
 
+  it("gives keyword and entity candidates the same similarity the vector path computes, even when the vector path filtered them out", async () => {
+    const resource = await fixture();
+    try {
+      const index = resource.repository.memoryIndex();
+      const query = "美式咖啡 小葵";
+      const embedding = {
+        model: resource.embedder.model,
+        dimensions: DIMENSIONS,
+        vector: await resource.embedder.embed(query),
+      };
+      const base = {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        embedding,
+        terms: ["美式", "咖啡"],
+        queryText: query,
+        limit: 50,
+        now: T0,
+      };
+      const open = await index.search({ ...base, minimumSimilarity: 0 });
+      const strict = await index.search({ ...base, minimumSimilarity: 0.999 });
+      const vectorSimilarity = new Map(
+        open.vector.map(({ memoryId, signal }) => [memoryId, signal]),
+      );
+      const others = [...strict.lexical, ...strict.entity];
+      expect(strict.vector).toEqual([]);
+      expect(others.map(({ memoryId }) => memoryId).sort()).toEqual([
+        "memory-engine-coffee",
+        "memory-engine-daughter",
+      ]);
+      for (const candidate of others)
+        expect(candidate.similarity).toBeCloseTo(vectorSimilarity.get(candidate.memoryId) ?? -1, 5);
+      const unembedded = await index.search({
+        ...base,
+        terms: ["青霉素"],
+        queryText: "青霉素",
+        minimumSimilarity: 0,
+      });
+      expect(unembedded.lexical.map(({ memoryId }) => memoryId)).toEqual(["memory-engine-allergy"]);
+      expect(unembedded.lexical[0]?.similarity).toBeUndefined();
+      const otherModel = await index.search({
+        ...base,
+        embedding: { ...embedding, model: `${embedding.model}-next` },
+        minimumSimilarity: 0,
+      });
+      expect(otherModel.vector).toEqual([]);
+      expect(otherModel.lexical.length).toBeGreaterThan(0);
+      for (const candidate of otherModel.lexical) expect(candidate.similarity).toBeUndefined();
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
   it("falls back to keyword and entity recall when embeddings fail", async () => {
     const resource = await fixture();
     try {

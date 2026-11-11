@@ -1043,14 +1043,24 @@ export const messages = {
   "decision.chain.rating": "Your rating",
   "decision.chain.unrated": "Not rated yet",
   "decision.chain.kind":
-    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {External read} rule_review {Hard rule review} other {Other}}",
+    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {Outside program read memories} rule_review {Hard rule review} other {Other}}",
   "decision.chain.rules": "Rules hit",
   "decision.chain.reviewRules": "Rules waiting for review",
   "decision.chain.rule":
-    "{id, select, floor_important_sender {Never miss important mail: sender is on your important list} floor_public_domain {Never miss important mail: from a government or school domain} floor_money_words {Never miss important mail: money-related words in the message} other {{id}}}",
+    "{k, select, important_sender {Never miss important mail: sender is on your important list} public_domain {Never miss important mail: from a government or school domain} money_words {Never miss important mail: money-related words in the message} quiet_hours {Quiet hours: no notifications now, sent when quiet hours end} amount_threshold {Small amounts: no notification for mail below the threshold} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {Set by you} built_in {Built-in rule} other {Unregistered rule}}",
   "decision.chain.ruleMails": "Hit {count, plural, one {# email} other {# emails}}",
+  "decision.chain.ruleNeedsReview": "Needs review",
+  "decision.chain.ruleQuote": "Your words: {text}",
+  "decision.chain.ruleWording":
+    "{k, select, important_sender {{empty, select, yes {Important list is empty} other {Important list: {text}}}} public_domain {Domain endings: {text}} money_words {Words: {text}} quiet_hours {{empty, select, yes {No quiet hours set} other {Hours: {text}}}} amount_threshold {Threshold: {text}} other {{text}}}",
+  "decision.chain.ruleWordingMissing": "The content of this version cannot be found",
+  "decision.chain.ruleSource": "Source: {source} · version {revision}",
+  "decision.chain.ruleCurrent": "Only the rule name was recorded; showing the current version",
+  "decision.chain.ruleTests":
+    "{s, select, passed {Tests: all {total} examples pass} failed {Tests: example {at} of {total} does not match} none {Tests: this rule has no examples} other {Tests: unavailable}}",
+  "decision.chain.listSeparator": ", ",
   "decision.chain.mails": "Emails read",
   "decision.chain.judged": "{count, plural, one {# email} other {# emails}} judged",
   "decision.chain.related": "{count, plural, one {# related email} other {# related emails}}",

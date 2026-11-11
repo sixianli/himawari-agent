@@ -76,6 +76,14 @@ export interface ConfiguredMemoryDescriptor {
   readonly storagePath: string;
   readonly dimensions: number;
   readonly minimumSimilarity?: number;
+  readonly retrieval?: ConfiguredMemoryRetrieval;
+}
+
+export interface ConfiguredMemoryRetrieval {
+  readonly keywordWeight?: number;
+  readonly entityWeight?: number;
+  readonly cutoffMargin?: number;
+  readonly dedupeSameSource?: boolean;
 }
 
 export interface ConcurrencyConfiguration {
@@ -238,9 +246,14 @@ export interface MuseIntakeConfiguration {
   readonly gapExportSecretRef?: string;
 }
 
+export interface McpReadConfiguration {
+  readonly secretRef: string;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
   readonly museIntake?: MuseIntakeConfiguration;
+  readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
