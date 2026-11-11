@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Browser, BrowserType } from "@playwright/test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { launchChromium, MISSING_BROWSER_MESSAGE } from "../fixtures/chromium-launch.ts";
+import {
+  launchChromium,
+  MISSING_BROWSER_MESSAGE,
+  PREINSTALLED_CHROMIUM,
+} from "../fixtures/chromium-launch.ts";
 
 type LaunchOptions = { executablePath?: string };
 
@@ -22,6 +26,11 @@ function fakeChromium(failures: readonly (Error | null)[]) {
 }
 
 describe("launchChromium", () => {
+  it("pins the Playwright error text and the preinstalled path it relies on", () => {
+    expect(MISSING_BROWSER_MESSAGE).toBe("Executable doesn't exist");
+    expect(PREINSTALLED_CHROMIUM).toBe("/opt/pw-browsers/chromium");
+  });
+
   let directory = "";
   let preinstalled = "";
   const saved = process.env["HIMAWARI_CHROMIUM_PATH"];
@@ -45,7 +54,7 @@ describe("launchChromium", () => {
 
   it("falls back to the preinstalled browser when the default one is missing", async () => {
     const fake = fakeChromium([
-      new Error(`browserType.launch: ${MISSING_BROWSER_MESSAGE} at x`),
+      new Error(`browserType.launch: Executable doesn't exist at x`),
       null,
     ]);
     expect(await launchChromium(fake.type, preinstalled)).toBe(fake.browser);
@@ -54,14 +63,16 @@ describe("launchChromium", () => {
 
   it("[reverse] does not fall back when a path was configured explicitly", async () => {
     process.env["HIMAWARI_CHROMIUM_PATH"] = "/configured/chrome";
-    const fake = fakeChromium([new Error(MISSING_BROWSER_MESSAGE), null]);
-    await expect(launchChromium(fake.type, preinstalled)).rejects.toThrow(MISSING_BROWSER_MESSAGE);
+    const fake = fakeChromium([new Error("Executable doesn't exist"), null]);
+    await expect(launchChromium(fake.type, preinstalled)).rejects.toThrow(
+      "Executable doesn't exist",
+    );
     expect(fake.calls).toEqual([{ executablePath: "/configured/chrome" }]);
   });
 
   it("[reverse] treats an empty configured path as not configured", async () => {
     process.env["HIMAWARI_CHROMIUM_PATH"] = "";
-    const fake = fakeChromium([new Error(MISSING_BROWSER_MESSAGE), null]);
+    const fake = fakeChromium([new Error("Executable doesn't exist"), null]);
     await launchChromium(fake.type, preinstalled);
     expect(fake.calls).toEqual([{}, { executablePath: preinstalled }]);
   });
@@ -73,7 +84,7 @@ describe("launchChromium", () => {
   });
 
   it("[reverse] rethrows the original error when the preinstalled browser does not exist", async () => {
-    const fake = fakeChromium([new Error(MISSING_BROWSER_MESSAGE), null]);
+    const fake = fakeChromium([new Error("Executable doesn't exist"), null]);
     await expect(launchChromium(fake.type, path.join(directory, "absent"))).rejects.toThrow(
       MISSING_BROWSER_MESSAGE,
     );
