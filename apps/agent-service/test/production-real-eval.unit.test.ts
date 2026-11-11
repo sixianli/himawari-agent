@@ -588,6 +588,7 @@ describe("[P4-5] real eval leftovers", () => {
     await writeFile(
       earlier,
       JSON.stringify({
+        runId: "run-earlier",
         startedAt: at(-2 * REAL_EVAL_RETRY_MS),
         trigger: "weekly",
         capMicros: 200_000,
@@ -597,6 +598,70 @@ describe("[P4-5] real eval leftovers", () => {
     await timer(at(REAL_EVAL_RETRY_MS)).tick();
     expect(limits).toEqual([300_000]);
     expect(await readdir(directory)).toHaveLength(2);
+  });
+
+  it("drops the marker of a run the database already recorded", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-real-eval-"));
+    directories.push(directory);
+    const marker = path.join(directory, `${REAL_EVAL_IN_PROGRESS_PREFIX}recorded.json`);
+    await writeFile(
+      marker,
+      JSON.stringify({
+        runId: "run-recorded",
+        startedAt: at(-2 * REAL_EVAL_RETRY_MS),
+        trigger: "weekly",
+        capMicros: 500_000,
+      }),
+    );
+    const limits: number[] = [];
+    const runIds: (string | undefined)[] = [];
+    await new ProductionRealEval({
+      configuration,
+      scope: { ownerId: "owner", agentId: "agent" } as never,
+      store: {
+        listRuns: async () => [
+          {
+            id: "run-recorded",
+            startedAt: at(-2 * REAL_EVAL_RETRY_MS),
+            finishedAt: at(-2 * REAL_EVAL_RETRY_MS),
+            outcome: "failed" as const,
+            trigger: "weekly" as const,
+            model: "eval-model",
+            costMicros: 100_000,
+            summary: {},
+          },
+        ],
+      },
+      service: {
+        run: async (_trigger, input) => {
+          limits.push(input.capMicros);
+          runIds.push(input.runId);
+          return { runId: "run-2", outcome: "completed", costMicros: 1, summary: {}, sample: [] };
+        },
+      },
+      sampleDirectory: directory,
+      now: () => NOW,
+    }).tick();
+    expect(limits).toEqual([400_000]);
+    expect(runIds[0]).toMatch(/^real-eval-run:/u);
+    expect(await readdir(directory)).toEqual([]);
+  });
+
+  it("removes week-old markers while the evaluation is off", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-real-eval-"));
+    directories.push(directory);
+    const old = path.join(directory, `${REAL_EVAL_IN_PROGRESS_PREFIX}old.json`);
+    const fresh = path.join(directory, `${REAL_EVAL_IN_PROGRESS_PREFIX}fresh.json`);
+    await writeFile(old, "{");
+    await writeFile(fresh, "{");
+    const written = new Date(Date.parse(NOW) - REAL_EVAL_INTERVAL_MS);
+    await utimes(old, written, written);
+    const expiry = new RealEvalSampleExpiry({ directory, now: () => NOW });
+    expiry.start();
+    await expiry.stop();
+    await vi.waitFor(async () => {
+      expect(await readdir(directory)).toEqual([path.basename(fresh)]);
+    });
   });
 
   it("keeps expiring the sample while the evaluation is off", async () => {

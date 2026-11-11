@@ -95,6 +95,7 @@ export type RealEvalSampleReport = Pick<
 >;
 
 export interface RealEvalRunLimits {
+  readonly runId?: string;
   readonly capMicros: number;
   readonly newMemoriesPerRun: number;
   readonly sampleSize?: number;
@@ -145,13 +146,16 @@ function declinedFromRuns(
   return keys;
 }
 
-function undiscardedOfLatestRun(
+function undiscardedOfRuns(
   runs: readonly { readonly summary: Readonly<Record<string, unknown>> }[],
 ): string[] {
-  const refs = runs[0]?.summary["undiscarded"];
-  return Array.isArray(refs)
-    ? refs.filter((ref): ref is string => typeof ref === "string" && ref.length > 0)
-    : [];
+  const refs = new Set<string>();
+  for (const run of runs) {
+    const entries = run.summary["undiscarded"];
+    if (!Array.isArray(entries)) continue;
+    for (const ref of entries) if (typeof ref === "string" && ref.length > 0) refs.add(ref);
+  }
+  return [...refs];
 }
 
 export class RealMemoryEvalService {
@@ -163,7 +167,7 @@ export class RealMemoryEvalService {
 
   async run(trigger: RealEvalTrigger, limits: RealEvalRunLimits): Promise<RealEvalRunReport> {
     const deps = this.#dependencies;
-    const runId = deps.newId();
+    const runId = limits.runId ?? deps.newId();
     const startedAt = deps.now();
     const budget = new RealEvalBudget(limits.capMicros);
     const rejected: Record<string, number> = {};
@@ -209,7 +213,7 @@ export class RealMemoryEvalService {
         ...deps.scope,
         limit: RECENT_RUNS_FOR_DECLINES,
       });
-      for (const ref of undiscardedOfLatestRun(recentRuns))
+      for (const ref of undiscardedOfRuns(recentRuns))
         await deps.discardQuestion(ref).catch(() => {
           if (!undiscarded.includes(ref)) undiscarded.push(ref);
         });

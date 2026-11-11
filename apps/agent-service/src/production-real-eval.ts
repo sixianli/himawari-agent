@@ -88,6 +88,7 @@ export async function expireRealEvalSample(directory: string, now: string): Prom
 }
 
 interface InProgressRun {
+  readonly runId: string;
   readonly startedAt: string;
   readonly trigger: RealEvalTrigger;
   readonly capMicros: number;
@@ -103,6 +104,8 @@ function inProgressRun(text: string): InProgressRun | undefined {
   if (
     typeof value !== "object" ||
     value === null ||
+    typeof value.runId !== "string" ||
+    value.runId.length === 0 ||
     typeof value.startedAt !== "string" ||
     !Number.isFinite(Date.parse(value.startedAt)) ||
     new Date(value.startedAt).toISOString() !== value.startedAt ||
@@ -111,13 +114,19 @@ function inProgressRun(text: string): InProgressRun | undefined {
     (value.capMicros ?? -1) < 0
   )
     return undefined;
-  return { startedAt: value.startedAt, trigger: value.trigger, capMicros: value.capMicros ?? 0 };
+  return {
+    runId: value.runId,
+    startedAt: value.startedAt,
+    trigger: value.trigger,
+    capMicros: value.capMicros ?? 0,
+  };
 }
 
 export async function readUnfinishedRealEvals(
   directory: string,
   now: string,
   weeklyCapMicros: number,
+  recordedRunIds: ReadonlySet<string> = new Set(),
 ): Promise<RunTiming[]> {
   const names = (await readdir(directory).catch(missing)) ?? [];
   const unfinished: RunTiming[] = [];
@@ -133,12 +142,16 @@ export async function readUnfinishedRealEvals(
     const text = await readFile(file, "utf8").catch(missing);
     if (text === undefined) continue;
     const run = inProgressRun(text) ?? {
+      runId: "",
       startedAt: new Date(found.mtimeMs).toISOString(),
       trigger: "weekly" as const,
       capMicros: weeklyCapMicros,
     };
     const { startedAt } = run;
-    if (Date.parse(now) - Date.parse(startedAt) >= REAL_EVAL_INTERVAL_MS) {
+    if (
+      recordedRunIds.has(run.runId) ||
+      Date.parse(now) - Date.parse(startedAt) >= REAL_EVAL_INTERVAL_MS
+    ) {
       await rm(file, { force: true });
       continue;
     }
@@ -187,10 +200,13 @@ export class RealEvalSampleExpiry {
 
   start(): void {
     if (this.#timer) return;
-    const check = () =>
-      void expireRealEvalSample(this.#directory, this.#now()).catch((error: unknown) =>
-        this.#onFailure?.(error),
-      );
+    const check = () => {
+      const now = this.#now();
+      void Promise.all([
+        expireRealEvalSample(this.#directory, now),
+        readUnfinishedRealEvals(this.#directory, now, 0),
+      ]).catch((error: unknown) => this.#onFailure?.(error));
+    };
     this.#timer = setInterval(check, REAL_EVAL_TICK_MS);
     this.#timer.unref?.();
     check();
@@ -387,22 +403,27 @@ export class ProductionRealEval {
     await expireRealEvalSample(sampleDirectory, now).catch((error: unknown) =>
       this.#options.onFailure?.(error),
     );
+    const recorded = await store.listRuns({ ...this.#options.scope, limit: 520 });
     const unfinished = await readUnfinishedRealEvals(
       sampleDirectory,
       now,
       configuration.weeklyCapMicros,
+      new Set(recorded.map(({ id }) => id)),
     );
-    const runs = [...(await store.listRuns({ ...this.#options.scope, limit: 520 })), ...unfinished];
+    const runs = [...recorded, ...unfinished];
     const trigger = dueRealEvalTrigger(configuration.mode, runs, now);
     if (trigger === null) return;
     const remaining = configuration.weeklyCapMicros - realEvalSpentMicros(runs, now);
     if (remaining <= 0) return;
+    const runId = `real-eval-run:${randomUUID()}`;
     const marker = await markRealEvalStarted(sampleDirectory, {
+      runId,
       startedAt: now,
       trigger,
       capMicros: remaining,
     });
     const report = await service.run(trigger, {
+      runId,
       capMicros: remaining,
       newMemoriesPerRun: configuration.newMemoriesPerRun,
       ...(trigger === "manual"

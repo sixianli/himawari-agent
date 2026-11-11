@@ -389,8 +389,11 @@ describe("[P4-5] real memory eval run", () => {
     const stillFailing = await test.service.run("weekly", LIMITS);
     expect(stillFailing.summary).toMatchObject({ undiscarded: ["question:0", "question:1"] });
 
+    const latest = test.store.runs.at(-1);
+    if (latest) test.store.runs.push({ ...latest, id: "run-lost", summary: { undiscarded: [] } });
     options.discardFails = false;
-    const retried = await test.service.run("weekly", LIMITS);
+    const retried = await test.service.run("weekly", { ...LIMITS, runId: "run-given" });
+    expect(retried.runId).toBe("run-given");
     expect(test.discarded).toEqual(["question:0", "question:1"]);
     expect(test.payloads.size).toBe(0);
     expect(retried.summary).toMatchObject({ undiscarded: [] });
