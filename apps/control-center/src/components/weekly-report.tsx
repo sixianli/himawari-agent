@@ -24,6 +24,7 @@ type InfoKey =
   | "stats"
   | "muse"
   | "implicit"
+  | "prereview"
   | "row:proactive_pushed"
   | "row:proactive_silent";
 interface Info {
@@ -831,6 +832,28 @@ export function WeeklyReport({
         list: [],
         version: null,
       };
+    if (key === "prereview")
+      return {
+        title: message("weekly.prereview.title"),
+        paragraphs: [
+          message("weekly.prereview.def"),
+          message("weekly.prereview.gateDef", {
+            agreement: format.percent(report.prereview.agreementPermille / 1000),
+            confidence: format.percent(report.prereview.confidencePermille / 1000),
+            n:
+              report.prereview.minimumPairs === null
+                ? "—"
+                : format.count(report.prereview.minimumPairs),
+          }),
+          report.prereview.reductionEnabled
+            ? message("weekly.prereview.reductionOn", {
+                audit: format.percent(report.prereview.auditPermille / 1000),
+              })
+            : message("weekly.prereview.reductionOff"),
+        ],
+        list: [],
+        version: null,
+      };
     if (key === "muse")
       return {
         title: message("weekly.muse.title"),
@@ -848,6 +871,9 @@ export function WeeklyReport({
   };
 
   const openCell = days.find((item) => item.day === openDay) ?? null;
+  const prereviewGroups = report.prereview.groups.filter(
+    (item) => item.prereviewed > 0 || item.paired > 0,
+  );
   const cellIndex = (day: string) => (startDay ? daysBetween(startDay, day) : 0);
   const detailTitle = (item: ObservationDay) =>
     [
@@ -1361,6 +1387,72 @@ export function WeeklyReport({
             ) : null}
           </>
         )}
+      </section>
+
+      <section className="weekly-card" aria-label={message("weekly.prereview.title")}>
+        <CardHead title={message("weekly.prereview.title")} infoKey="prereview" info={infoButton} />
+        {prereviewGroups.length === 0 ? (
+          <p className="weekly-empty">
+            {message(
+              report.prereview.otherVersions > 0
+                ? "weekly.prereview.emptyCurrent"
+                : "weekly.prereview.empty",
+            )}
+          </p>
+        ) : (
+          <div className="weekly-tiles" data-count="3">
+            {prereviewGroups.map((item) => (
+              <div key={item.group} className="weekly-tile" data-prereview-group={item.group}>
+                <b>
+                  {item.agreement?.enough && item.agreement.value !== null
+                    ? message("weekly.ratio", {
+                        pct: format.percent(item.agreement.value),
+                        k: format.count(item.agreement.successes),
+                        n: format.count(item.agreement.samples),
+                      })
+                    : !report.complete
+                      ? message("weekly.implicit.notFull")
+                      : message("weekly.few", { n: item.paired })}
+                </b>
+                <span>{message("weekly.group", { g: item.group })}</span>
+                <small>
+                  {message("weekly.prereview.counts", {
+                    rated: format.count(item.prereviewed),
+                    unsure: format.count(item.unsure),
+                    paired: format.count(item.paired),
+                  })}
+                </small>
+                {item.gate ? (
+                  <small data-gate={item.gate.reason}>
+                    {message("weekly.prereview.gate", { r: item.gate.reason })}
+                  </small>
+                ) : null}
+                {item.hidden && item.hidden.samples > 0 ? (
+                  <small>
+                    {message("weekly.prereview.audit", {
+                      k: format.count(item.hidden.successes),
+                      n: format.count(item.hidden.samples),
+                    })}
+                  </small>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+        {report.prereview.otherVersions > 0 ? (
+          <p className="weekly-muse-foot">
+            {message("weekly.prereview.otherVersions", {
+              n: format.count(report.prereview.otherVersions),
+            })}
+          </p>
+        ) : null}
+        <p className="weekly-muse-foot">
+          {report.prereview.reductionEnabled
+            ? message("weekly.prereview.reductionOn", {
+                audit: format.percent(report.prereview.auditPermille / 1000),
+              })
+            : message("weekly.prereview.reductionOff")}
+        </p>
       </section>
 
       <div className="weekly-foot">

@@ -231,6 +231,7 @@ export const governanceMessages = [
     ],
     folded: { total: 0, items: [] },
     memoryUnusedDays: 90,
+    hiddenByModel: 0,
     generatedAt: "2026-11-04T01:00:00.000Z",
   }),
   fixture("command", "proactive.review.rate", {
@@ -317,6 +318,15 @@ export const governanceMessages = [
           { signal: "undone", decisions: 0, events: 0, medianDelayMs: null, rate: null },
           { signal: "replied", decisions: 0, events: 0, medianDelayMs: null, rate: null },
         ],
+      },
+      prereview: {
+        agreementPermille: 900,
+        confidencePermille: 800,
+        reductionEnabled: false,
+        auditPermille: 200,
+        minimumPairs: 35,
+        otherVersions: 0,
+        groups: [],
       },
     },
     generatedAt: "2026-11-04T01:00:00.000Z",

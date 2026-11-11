@@ -846,6 +846,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with the ledger row; the payloads are removed when the owner deletes proactive records or disconnects the source",
   ),
   entry(
+    "decision_prereviews",
+    "ReviewPrereviewStorePort",
+    "append-only model prereviews of daily-review decisions: the model's rating and confidence, or a failure code, with the prompt id, model, a digest of the text it saw, cost and time; never the owner's rating and never the text itself",
+    "metadata_only",
+    "cascade with the ledger row or processed mail row, Owner or Agent deletion; never changed or deleted on its own",
+  ),
+  entry(
     "decision_signals",
     "ProactiveStorePort, WebPushStorePort, DecisionLedgerPort",
     "append-only observations of what happened to a proactive decision without the owner rating it: reminder opened, done or muted then undone, mail thread replied; timing and small codes only",
