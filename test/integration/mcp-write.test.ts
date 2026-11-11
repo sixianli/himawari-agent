@@ -1756,4 +1756,48 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       database.close();
     }
   });
+
+  it("[P5-3] keeps waiting text that another key still points at when the first key moves on", async () => {
+    const f = await setup();
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    const TEA = "主人下午喝一杯绿茶";
+    await f.propose(muse, { text: COFFEE, key: "muse:memory/one" });
+    await f.propose(muse, { text: COFFEE, key: "muse:memory/two" });
+    await f.propose(muse, { text: TEA, key: "muse:memory/one" });
+    const status = () => {
+      const database = openQualifiedDatabase(f.databasePath);
+      try {
+        return database
+          .prepare("SELECT status FROM external_memory_proposals WHERE text_sha256 = ?")
+          .pluck()
+          .get(proposalTextDigest(COFFEE));
+      } finally {
+        database.close();
+      }
+    };
+    expect(status()).toBe("pending");
+    expect((await f.pending()).length).toBe(2);
+    await f.propose(muse, { text: PARK, key: "muse:memory/two" });
+    expect(status()).toBe("superseded");
+  });
+
+  it("[P5-3] the writer refuses long text, machine secrets and long keys itself", async () => {
+    const f = await setup();
+    const submit = (text: string, sourceKey: string | null) =>
+      f.writer.submit({
+        proposalId: `proposal-${String(text.length)}-${String(sourceKey?.length ?? 0)}`,
+        text,
+        category: "other",
+        client: "muse",
+        subjectRef: "subject",
+        sourceKey,
+      });
+    await expect(submit("咖".repeat(2001), null)).rejects.toThrow("MEMORY_TEXT_REFUSED");
+    await expect(submit(`token ${"ghp_"}${"a".repeat(36)}`, null)).rejects.toThrow(
+      "MEMORY_TEXT_REFUSED",
+    );
+    await expect(submit(COFFEE, "k".repeat(201))).rejects.toThrow("MEMORY_TEXT_REFUSED");
+    await expect(submit(COFFEE, `ghp_${"a".repeat(36)}`)).rejects.toThrow("MEMORY_TEXT_REFUSED");
+    expect(await f.pending()).toEqual([]);
+  });
 });

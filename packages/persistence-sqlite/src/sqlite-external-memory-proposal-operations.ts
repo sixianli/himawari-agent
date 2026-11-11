@@ -47,6 +47,25 @@ function valid(value: string): boolean {
 
 const PROPOSAL_ID_MAXIMUM = 40;
 
+const CATEGORIES: ReadonlySet<string> = new Set([
+  "identity",
+  "preference",
+  "relationship",
+  "goal",
+  "project",
+  "health",
+  "finance",
+  "event",
+  "other",
+]);
+
+const CLASSIFICATIONS: ReadonlySet<string> = new Set(["private", "sensitive"]);
+
+function within(value: string, maximum: number): boolean {
+  const length = [...value].length;
+  return length >= 1 && length <= maximum;
+}
+
 function record(row: Row): ExternalMemoryProposalRecord {
   return Object.freeze({ ...row });
 }
@@ -107,7 +126,13 @@ export class SqliteExternalMemoryProposalOperations {
       !valid(input.receivedAt) ||
       input.contentRef === null ||
       input.id.length < 1 ||
-      input.id.length > PROPOSAL_ID_MAXIMUM
+      input.id.length > PROPOSAL_ID_MAXIMUM ||
+      !within(input.subjectRef, 128) ||
+      !within(input.client, 64) ||
+      !within(input.normalization, 64) ||
+      (input.sourceKey !== null && !within(input.sourceKey, 200)) ||
+      !CATEGORIES.has(input.category) ||
+      !CLASSIFICATIONS.has(input.dataClassification)
     )
       this.fail("PORT_INVALID_OPERATION", "External Memory proposal is invalid");
     return this.database.transaction((): ExternalMemoryProposalSubmitResult => {
@@ -117,34 +142,50 @@ export class SqliteExternalMemoryProposalOperations {
             AND status <> 'superseded'`,
         )
         .get(input.ownerId, input.agentId, input.textSha256) as Row | undefined;
-      const replaced =
-        input.sourceKey === null
-          ? []
-          : (
-              this.database
-                .prepare(
-                  `SELECT id FROM external_memory_proposals
-                  WHERE owner_id = ? AND agent_id = ? AND source_key = ? AND status = 'pending'
-                    AND text_sha256 <> ?
-                  ORDER BY received_at, id`,
-                )
-                .all(input.ownerId, input.agentId, input.sourceKey, input.textSha256) as {
-                id: string;
-              }[]
-            ).map(({ id }) => id);
-      const supersede = (by: string) => {
-        const statement = this.database.prepare(
+      const claim = (target: string): string[] => {
+        if (input.sourceKey === null) return [];
+        const previous = this.database
+          .prepare(
+            `SELECT proposal_id FROM external_memory_proposal_keys
+            WHERE owner_id = ? AND agent_id = ? AND source_key = ?`,
+          )
+          .pluck()
+          .get(input.ownerId, input.agentId, input.sourceKey) as string | undefined;
+        this.database
+          .prepare(
+            `INSERT INTO external_memory_proposal_keys (owner_id, agent_id, source_key, proposal_id)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (owner_id, agent_id, source_key) DO UPDATE SET proposal_id = excluded.proposal_id`,
+          )
+          .run(input.ownerId, input.agentId, input.sourceKey, target);
+        const candidates = (
+          this.database
+            .prepare(
+              `SELECT id FROM external_memory_proposals
+              WHERE owner_id = ? AND agent_id = ? AND status = 'pending' AND id <> ?
+                AND (id = ? OR source_key = ?)
+              ORDER BY received_at, id`,
+            )
+            .all(input.ownerId, input.agentId, target, previous ?? null, input.sourceKey) as {
+            id: string;
+          }[]
+        ).map(({ id }) => id);
+        const retire = this.database.prepare(
           `UPDATE external_memory_proposals SET status = 'superseded', decided_at = ?,
             superseded_by = ?
-          WHERE id = ? AND owner_id = ? AND agent_id = ? AND status = 'pending'`,
+          WHERE id = ? AND owner_id = ? AND agent_id = ? AND status = 'pending'
+            AND NOT EXISTS (SELECT 1 FROM external_memory_proposal_keys WHERE proposal_id = ?)`,
         );
-        for (const id of replaced)
-          statement.run(input.receivedAt, by, id, input.ownerId, input.agentId);
+        return candidates.filter(
+          (id) =>
+            retire.run(input.receivedAt, target, id, input.ownerId, input.agentId, id).changes ===
+            1,
+        );
       };
       if (existing) {
         const known = record(existing);
+        const replaced = known.status === "pending" ? claim(known.id) : [];
         if (known.status === "pending") {
-          supersede(known.id);
           if (known.sourceKey === null && input.sourceKey !== null)
             this.database
               .prepare(
@@ -182,7 +223,7 @@ export class SqliteExternalMemoryProposalOperations {
               }
             : keyed,
           created: false,
-          superseded: known.status === "pending" ? replaced : [],
+          superseded: replaced,
         };
       }
       this.database
@@ -206,7 +247,7 @@ export class SqliteExternalMemoryProposalOperations {
           input.dataClassification,
           input.receivedAt,
         );
-      supersede(input.id);
+      const replaced = claim(input.id);
       const created = this.read({ ownerId: input.ownerId, agentId: input.agentId, id: input.id });
       if (!created) return this.fail("PORT_NOT_FOUND", "External Memory proposal not found");
       return { proposal: created, created: true, superseded: replaced };

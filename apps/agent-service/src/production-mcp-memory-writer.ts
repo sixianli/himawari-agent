@@ -172,6 +172,17 @@ export class ProductionMcpMemoryWriter {
     const receivedAt = this.#options.clock.now();
     await this.#dropExpiredDiscardedText();
     const text = normalizeProposalText(input.text);
+    const sourceKey = input.sourceKey === null ? null : normalizeProposalText(input.sourceKey);
+    if (
+      text.length === 0 ||
+      text.length > EXTERNAL_PROPOSAL_TEXT_MAXIMUM ||
+      proposalHasMachineSecret(text) ||
+      (sourceKey !== null &&
+        (sourceKey.length === 0 ||
+          [...sourceKey].length > EXTERNAL_PROPOSAL_KEY_MAXIMUM ||
+          proposalHasMachineSecret(sourceKey)))
+    )
+      throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
     const textSha256 = proposalTextDigest(text);
     const dataClassification = proposalClassification(text, input.category);
     const scope = this.#scope();
@@ -189,7 +200,7 @@ export class ProductionMcpMemoryWriter {
           ? input.subjectRef
           : `sha256:${createHash("sha256").update(input.subjectRef).digest("hex")}`,
       client: input.client,
-      sourceKey: input.sourceKey,
+      sourceKey,
       textSha256,
       normalization: EXTERNAL_PROPOSAL_NORMALIZATION,
       contentRef,

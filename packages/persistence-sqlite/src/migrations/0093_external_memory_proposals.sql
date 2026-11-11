@@ -48,3 +48,14 @@ CREATE INDEX external_memory_proposals_memory_index
 CREATE INDEX external_memory_proposals_superseded_index
   ON external_memory_proposals(superseded_by)
   WHERE superseded_by IS NOT NULL;
+
+CREATE TABLE external_memory_proposal_keys (
+  owner_id TEXT NOT NULL REFERENCES owners(id) ON DELETE CASCADE,
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  source_key TEXT NOT NULL CHECK (length(source_key) BETWEEN 1 AND 200),
+  proposal_id TEXT NOT NULL REFERENCES external_memory_proposals(id) ON DELETE CASCADE,
+  PRIMARY KEY (owner_id, agent_id, source_key)
+) STRICT;
+
+CREATE INDEX external_memory_proposal_keys_proposal_index
+  ON external_memory_proposal_keys(proposal_id);
