@@ -39,6 +39,7 @@ export * from "./model-action-reviewer.js";
 export * from "./proactive-mail-body.js";
 export * from "./proactive-mail-check-service.js";
 export * from "./daily-review.js";
+export * from "./real-memory-eval.js";
 export * from "./ledger-observation.js";
 export * from "./proactive-overview.js";
 export * from "./proactive-rules.js";
