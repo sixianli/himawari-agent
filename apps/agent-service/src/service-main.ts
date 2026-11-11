@@ -1303,6 +1303,7 @@ export async function runAgentService(
           configuration,
           rules: repository.ownerRules(),
           memory: durableMemory,
+          memories: repository.productMemoryState(),
           book: repository.memoryBook(),
           threads: repository.threadRepository(),
           payloads,

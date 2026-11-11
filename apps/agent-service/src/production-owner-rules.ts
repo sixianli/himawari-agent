@@ -13,6 +13,7 @@ import {
   type PayloadStorePort,
   type ProductConfiguration,
   type ProductMemoryRecord,
+  type ProductMemoryStatePort,
   type RuleRecord,
   RULE_TYPES,
   RuleTypeError,
@@ -82,6 +83,11 @@ const ONE_OFF_MARKERS = [
   "这次",
   "这回",
   "本次",
+  "此次",
+  "这一次",
+  "此邮件",
+  "那封",
+  "刚才",
   "今天",
   "今晚",
   "この",
@@ -91,6 +97,7 @@ const ONE_OFF_MARKERS = [
   "this time",
   "this email",
   "this mail",
+  "this message",
   "today",
   "tonight",
 ].map(foldText);
@@ -226,6 +233,7 @@ export interface ProductionOwnerRuleWriterOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
   readonly rules: OwnerRuleStorePort;
   readonly memory: Pick<DurableMemoryService, "applyProposal" | "archive" | "recover">;
+  readonly memories: Pick<ProductMemoryStatePort, "read">;
   readonly book: Pick<MemoryBookStorePort, "latestGeneration">;
   readonly threads: Pick<ThreadRepositoryPort, "read" | "listMessages">;
   readonly payloads: PayloadStorePort;
@@ -250,10 +258,10 @@ function trialsOf(rule: RuleRecord): readonly RuleTrial[] {
 }
 
 export function isStandingQuote(quote: string): boolean {
-  const folded = foldText(quote);
-  return (
-    STANDING_MARKERS.some((marker) => folded.includes(marker)) &&
-    !ONE_OFF_MARKERS.some((marker) => folded.includes(marker))
+  return clausesOf(quote).some(
+    (clause) =>
+      STANDING_MARKERS.some((marker) => clause.includes(marker.replace(/\s+/gu, ""))) &&
+      !ONE_OFF_MARKERS.some((marker) => clause.includes(marker.replace(/\s+/gu, ""))),
   );
 }
 
@@ -375,7 +383,7 @@ export class ProductionOwnerRuleWriter {
     const memoryId = `memory:rule:${input.key}` as MemoryId;
     const contentRef = `memory-content:rule:${input.key}`;
     const classification = await this.#writeText(contentRef, input.text);
-    const written = await this.#options.memory.applyProposal(
+    await this.#options.memory.applyProposal(
       {
         decision: "create",
         memory: {
@@ -401,8 +409,7 @@ export class ProductionOwnerRuleWriter {
       },
       generation,
     );
-    if (written.status === "archived" || written.status === "trashed")
-      await this.#options.memory.recover(memoryId, generation);
+    await this.#reviveMemory(memoryId);
     return memoryId;
   }
 
@@ -624,6 +631,7 @@ export class ProductionOwnerRuleWriter {
     const current = await this.#options.rules.read({ ...this.#scope(), ruleId });
     if (!current || current.status === "retired") throw new OwnerRuleError("RULE_NOT_FOUND");
     if (enforceableOwnerRule(current) === undefined) throw new OwnerRuleError("RULE_UNAVAILABLE");
+    if (current.sourceMemoryId) await this.#reviveMemory(current.sourceMemoryId as MemoryId);
     const changed =
       current.status === "needs_review"
         ? await this.#options.rules.setStatus({
@@ -645,6 +653,16 @@ export class ProductionOwnerRuleWriter {
       enforced: true,
       updatedAt: changed.updatedAt,
     });
+  }
+
+  async #reviveMemory(memoryId: MemoryId): Promise<void> {
+    const record = await this.#options.memories.read(memoryId);
+    if (record?.status === "active") return;
+    if (record?.status !== "archived" && record?.status !== "trashed")
+      throw new OwnerRuleError("RULE_UNAVAILABLE", "这条规则的出处记忆已删除，请重新说一遍");
+    const generation = await this.#options.book.latestGeneration(this.#scope());
+    if (!generation) throw new OwnerRuleError("RULE_MEMORY_NOT_READY");
+    await this.#options.memory.recover(memoryId, generation);
   }
 
   async #archiveMemory(memoryId: MemoryId): Promise<void> {
@@ -671,7 +689,8 @@ export class ProductionOwnerRuleWriter {
     const { type, summary } = summaryOf(current.parameters);
     if (current.sourceMemoryId) await this.#archiveMemory(current.sourceMemoryId as MemoryId);
     const latest = await this.#options.rules.read({ ...this.#scope(), ruleId });
-    if (latest && latest.status !== "retired") {
+    if (!latest) throw new OwnerRuleError("RULE_UNAVAILABLE");
+    if (latest.status !== "retired") {
       const changed = await this.#options.rules.setStatus({
         ...this.#scope(),
         ruleId,

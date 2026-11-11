@@ -1069,6 +1069,7 @@ export async function createProductionHttpComposition(
           configuration,
           rules: repository.ownerRules(),
           memory: options.memory.service,
+          memories: repository.productMemoryState(),
           book: repository.memoryBook(),
           threads,
           payloads: memoryPayloads,

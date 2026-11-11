@@ -39,6 +39,7 @@ import {
 } from "../../apps/agent-service/src/production-memory-capture.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import {
+  isStandingQuote,
   ProductionOwnerRuleTools,
   ProductionOwnerRuleWriter,
 } from "../../apps/agent-service/src/production-owner-rules.ts";
@@ -269,6 +270,7 @@ describe("production memory capture", () => {
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       rules: repository.ownerRules(),
       memory,
+      memories: repository.productMemoryState(),
       book: repository.memoryBook(),
       threads: repository.threadRepository(),
       payloads,
@@ -1901,6 +1903,14 @@ describe("production memory capture", () => {
     expect((await listed()).find(({ ruleId }) => ruleId === confirmed?.ruleId)?.status).toBe(
       "active",
     );
+    const revived = await context.repository.ownerRules().read({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      ruleId: confirmed?.ruleId ?? "",
+    } as never);
+    expect(
+      await context.repository.productMemoryState().read(revived?.sourceMemoryId as never),
+    ).toMatchObject({ status: "active" });
 
     const soft = await tool(
       "rule.set",
@@ -1927,11 +1937,11 @@ describe("production memory capture", () => {
       set({ quote: sentence, params: { regex: [".*"] } }, "call-regex"),
     ).rejects.toMatchObject({ code: "RULE_PARAMETERS_INVALID" });
 
-    context.sql((rows) =>
-      rows
-        .prepare("UPDATE rule_book_rules SET status = 'needs_review' WHERE rule_id = ?")
-        .run(created["ruleId"]),
-    );
+    const generation = await context.repository.memoryBook().latestGeneration({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+    } as never);
+    await context.memory.archive(created["memoryId"] as never, generation as never);
     expect((await listed()).find(({ ruleId }) => ruleId === created["ruleId"])).toMatchObject({
       status: "needs_review",
       enforced: true,
@@ -1945,6 +1955,12 @@ describe("production memory capture", () => {
     expect((await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.status).toBe(
       "active",
     );
+    expect(
+      await context.repository.productMemoryState().read(created["memoryId"] as never),
+    ).toMatchObject({ status: "active" });
+    expect(isStandingQuote("从今天开始，以后每次收到入管局的邮件都必须提醒我")).toBe(true);
+    expect(isStandingQuote("刚才那封必须提醒我")).toBe(false);
+    expect(isStandingQuote("这封必须提醒我")).toBe(false);
 
     await command(
       context.control,
