@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
+amended_by: "docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md"
 date: "2026-11-11"
 ---
 
@@ -65,6 +66,7 @@ date: "2026-11-11"
    - 重发时先看决策记录里这个提议是否已有「保存」或「拒绝」，再看记忆本身是否存在（包括已删除、回收站里的）；有结论就直接回已有结论，不再写。
    - `requestState` 里存了正文和分类的哈希（按固定字段顺序算）；重发时参数和状态不符，回「内容变了」，不写。
    - 同一个提议的重发在服务里按提议编号排队，一次只处理一个：前一个做完决定，后一个才去查「已决定」。所以同时收到「保存」和「拒绝」时，只有先处理的那个生效，后面的都回已有结论。这只在一个进程里成立；签名密钥本来就只在这个进程里有效，服务重启后旧状态全部失效，所以不会有两个进程处理同一个提议。
+   - 2026-11-12 起：本条由 [ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 6 取代：`sync_memories` 里同一个稳定编号可以重复推，内容没变不产生任何东西，内容变了算更新并留历史。对应的编码任务合并之前，代码仍按本条。本条原文保留不改。
 4. **决策记录。** 类别 `memory_candidate`。保存记 `kept`、原因码 `mcp_proposal_kept`、`subjectRef` 是记忆编号；拒绝记 `discarded`、原因码 `mcp_proposal_declined`、`subjectRef` 是 `mcp-client:<客户端名>`。正文不进决策记录（`contentRef` 为空）。
    - 拒绝写不进决策记录时，回工具错误，不说「已拒绝」。
    - 每日回顾显示保存的那条，跳过主人拒绝的，和主人在网页上拒绝的提议同样处理。

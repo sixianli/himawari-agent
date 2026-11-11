@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
+amended_by: "docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md"
 date: "2026-11-11"
 ---
 
@@ -67,6 +68,7 @@ Andy 2026-11-11 在任务 P5-3 的线程里同意的做法是：三个客户端�
 3. **读写权限按配置给，不再按令牌分。** 凭证有效就给 `himawari:read`；配置打开了 `proposals` 时再给 `himawari:write`。
    - 能登录这个 Access 应用的只有 Andy 本人，由 Access 策略保证；源站另外核对凭证主体是绑定的主人（决定 1），所以 Access 策略哪天配宽了，别人登录进来也读不到记忆。Cloudflare 的凭证说明写 `sub` 是 “The ID of the user. This value is unique to an email address per account.”（<https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/>），即同一账号里按邮箱定，不按应用定，所以网页登录绑定的主体和 MCP 凭证的主体应是同一个摘要。这一点页面没有明说「跨应用相同」，要在 Hermes 上实测确认（列在后果一节）。
    - 每次写入仍要 Andy 确认：在客户端里弹框确认（ADR 0225），或者到 Himawari 里确认（ADR 0228）。所以不用再给每个客户端发一把单独的写令牌。
+   - 2026-11-12 起：[ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 1 在本条之上加了一层：`proposals` 这个全局开关仍然决定写工具出不出现；每个接入另有自己的设置（能不能推、推来的要不要先问、能读到哪一级），只能在全局开关之内再收窄。接入密钥是身份和统计用的，不是旧的写令牌。对应的编码任务合并之前，代码仍按本条。本条原文保留不改。
 4. **限流数值不变，但改成全入口共用一份。** 有效请求每分钟 30 次，无效请求每分钟 60 次，计数逻辑抽成 `AdmissionWindows`，和 `BearerGate` 共用。原来读、写两把令牌各有一份 30 次的额度；现在所有客户端共用同一份 30 次，`propose_memory` 确认来回的每次请求也算在里面。
    - 凭证校验在限流计数之前做（要先知道算有效还是无效）。为了不让伪造的凭证借此反复触发公钥下载，`CloudflareAccessJwtVerifier` 遇到不认识的公钥编号（`kid`）时，只要缓存还没过期，距上次尝试下载公钥集不到 30 秒就不再下载，继续用缓存（缓存有效期配得比 30 秒短、缓存已过期时，照常重新下载；生产用默认的 300 秒）；上次下载失败、手里又没有未过期的缓存时，30 秒内直接按校验失败处理，不再下载；同一时刻只发一次下载，下载进行中，缓存里认识的公钥照常校验，不用等它。过期的缓存一律不用。这和 jose 库（本项目校验 JWT 用的开源库）自带的远程公钥集的做法一样（`cooldownDuration` 默认 30000 毫秒，见 `node_modules/jose/dist/types/jwks/remote.d.ts`）。网页登录用的是同一个类，一起受益；代价是 Cloudflare 换公钥后，最多晚 30 秒认新公钥。
 5. **401 不再带自定义 `WWW-Authenticate` 头。** 授权服务器的发现交给 Cloudflare（前提 6）。

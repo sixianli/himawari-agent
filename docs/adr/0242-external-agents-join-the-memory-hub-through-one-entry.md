@@ -52,12 +52,12 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
 6. **别的 agent 的输出是数据；信息只在必需范围内披露。** 来源：`docs/product-vision.md` 原则 1：“外部内容与其他 Agent 的输出是数据，不是可覆盖我意图的指令；我的信息只在完成任务所必需的范围内被使用和披露。”
 7. **现在的读写都靠对方模型调用，服务没带使用说明。** 来源：`apps/agent-service/src/production-mcp-read.ts`：`MCP_READ_TOOL_NAMES = ["find_memories", "today_context", "rule_book"]`、`MCP_WRITE_TOOL_NAMES = ["propose_memory", "propose_rule"]`；`new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, …)` 没有传 `instructions`。
 8. **客户端的名字只能自报。** 来源：[ADR 0227 的后果](0227-mcp-entry-checks-cloudflare-access-sign-in.md#consequences)：“所有客户端都以 Andy 本人登录，凭证主体相同，所以「这条提议来自哪个客户端」仍然只能靠客户端自报的名字。”
-9. **外部读取现在能读到 sensitive（敏感）级别的记忆。** 来源：`apps/agent-service/src/production-memory-recall.ts`：`const allowed = modelVisibleClassifications();`；`packages/application/src/services/model-visibility.ts`：`MODEL_VISIBLE` 是 `"public"`、`"private"`、`"sensitive"` 三级。`recallOutsideRun` 传的 `"public"` 只是输出级别的下限（`highestClassification(requestClassification, …)`），不是上限。对外遮盖只按格式遮密码、卡号这类值（`production-mcp-read.ts` 的 `maskForExternalRead`）。
+9. **外部读取现在能读到 sensitive（敏感）级别的记忆。** 来源：`apps/agent-service/src/production-memory-recall.ts`：`const allowed = modelVisibleClassifications();`；`packages/application/src/services/model-visibility.ts`：`MODEL_VISIBLE` 是 `"public"`、`"private"`、`"sensitive"` 三级。`recallOutsideRun` 传的 `"public"` 只是输出级别的下限（`highestClassification(requestClassification, …)`），不是上限。`today_context` 也一样：近两天的对话摘要同样按 `modelVisibleClassifications()` 取（`apps/agent-service/src/service-main.ts`：`allowedClassifications: modelVisibleClassifications()`），提醒正文只排除 restricted（`apps/agent-service/src/production-reminder-writer.ts`：`memory.dataClassification !== "restricted"`）。对外遮盖只按格式遮密码、验证码、证件号、银行卡号这类值（`production-mcp-read.ts` 的 `maskForExternalRead`），不按级别整条隐藏。
 10. **记忆编号有格式限制，文件路径过不了。** 来源：`packages/gateway-contracts/src/validation.ts` 的 `machineString`：`input.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(input)`；`apps/agent-service/src/production-mcp-memory-writer.ts`：`` return `${EXTERNAL_PROPOSAL_MEMORY_PREFIX}${proposalId}` ``。
 11. **入口有请求体上限和频率上限。** 来源：`production-mcp-read.ts`：`MCP_READ_BODY_LIMIT = 65_536`；`apps/agent-service/src/bearer-admission.ts`：`AUTHORIZED_PER_MINUTE = 30`；`production-mcp-memory-writer.ts`：`EXTERNAL_PROPOSAL_TEXT_MAXIMUM = 2000`。
 12. **外部 agent 能提的规则只有两种邮件规则；转述的偏好按记忆提。** 来源：`apps/agent-service/src/production-mcp-rule-writer.ts`：`EXTERNAL_RULE_TYPES = ["mail_must_notify", "mail_read_whole_thread"]`；[ADR 0226 放弃的做法](0226-external-agents-propose-rules-through-the-rule-proposal-flow.md#options)：“外部 agent 的转述不是原话，提议偏好用 `propose_memory`。”
 13. **Claude Code 的钩子（agent 在固定时刻自动执行的一条命令）。** 来源 <https://code.claude.com/docs/en/hooks>：命令钩子从标准输入拿到完整事件；`mcp_tool` 钩子“call a tool on a configured MCP server”，参数只能做 `${path}` 替换，不能读文件；“The hook never starts an OAuth flow”；UserPromptSubmit 上默认超时 30 秒；“Claude Code adds plain-text stdout as context that Claude can see and act on”。
-14. **Codex 有同名钩子，输出同样进上下文。** 来源 <https://learn.chatgpt.com/docs/hooks.md>：“Plain text on `stdout` is added as extra developer context.”“Hooks are enabled by default”。
+14. **Codex 有同名钩子，输出同样进上下文。** 来源 <https://learn.chatgpt.com/docs/hooks.md>：它列出的事件里有 `SessionStart`、`UserPromptSubmit`、`Stop`，和 Claude Code 的事件同名；“Plain text on `stdout` is added as extra developer context.”“Hooks are enabled by default”。Codex 的钩子里跑命令行程序有什么限制没有核实，列在[后果](#consequences)的实测项里。
 15. **两家自己记的笔记都是磁盘上的文件。** 来源 <https://code.claude.com/docs/en/memory>：“Each project gets its own memory directory at `~/.claude/projects/<project>/memory/`”，目录可用 `autoMemoryDirectory` 改；<https://developers.openai.com/codex/memories>：`~/.codex/memories/`，新安装用 `memories_v2`，“Memories may not update right away when a chat ends”。
 16. **已有“主人概况”的生成代码，MCP 入口没用。** 来源：`packages/application/src/services/owner-profile-service.ts`：`OWNER_PROFILE_CHARACTER_BUDGET = 2000`，`compose` 接受 `maxClassification`。
 17. **不经浏览器登录的程序入口已有先例。** 来源：[ADR 0162](0162-receive-muse-data-through-a-service-token-and-an-app-secret.md) 决定第 1 条：“边缘层用 Cloudflare Access 的服务令牌（Service Auth 策略，请求头 `CF-Access-Client-Id` 与 `CF-Access-Client-Secret`）”“应用层再要求 `Authorization: Bearer <应用密钥>`”。
@@ -73,34 +73,39 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
 总的做法：门只有一个（MCP）；读一个动作、推一个动作，对所有 agent 相同；什么时候读、什么时候推，按对方的能力分档去触发，不指望对方模型自觉；每个接入有一条主人建的记录。
 
 1. **每个接入由主人在网页上建，得到一个带随机密钥的专属网址。**
-   - 主人起名字、勾选对方有哪些能力。服务端只存密钥的摘要，按密钥认出是哪个接入，生成自己的接入编号。日志和决策记录只写接入编号，不写密钥。
+   - 主人起名字、勾选对方有哪些能力。服务端只存密钥的摘要，按密钥认出是哪个接入，生成自己的接入编号。接入编号只含字母、数字和 `._:-`，不超过 128 个字符，能通过网关契约的 `machineString` 校验。日志和决策记录只写接入编号，不写密钥，也不写带密钥的路径。
+   - 密钥放在网址路径里。Cloudflare 的登录对带密钥的子路径不能照常工作时，改放请求头；不放查询参数，因为查询参数容易被各级日志记下。
    - 权限和统计都挂在接入编号上：暂停、撤销（网址立刻失效）、能读到哪一级、推来的要不要先问。
    - 对方自报的名字只在页面上当附注显示，标“自称”。不带密钥的网址不提供工具，只回一句提示，让主人去网页建一个接入。
    - 不写死客户端名单，不自动建记录。
    - 这把密钥用来分清是哪个接入、让暂停和撤销真的生效；它防不了主人自己电脑上已经拿到登录的恶意程序，那一层仍靠 Cloudflare 登录。
    - 改掉 ADR 0227 后果里“来源只能靠客户端自称”的现状，以及 ADR 0219 决定 5 里决策记录用 `mcp-client:<客户端名>` 当来源的写法。
+   - 和 ADR 0227 决定 3 的关系：全局配置 `runPolicy.mcpRead.proposals` 仍然决定写工具出不出现；接入上的设置只能在它之内再收窄（某个接入能不能推、推来的要不要先问、能读到哪一级），不能放宽。
    - 理由：名字能自报，就不能当权限（前提 8）。
 2. **读：新工具 `start_here`，`today_context` 保留。**
    - `start_here` 一次返回三段，固定的在前、会变的在后：主人概况和习惯（复用 `OwnerProfileService`，只取文字，不带内部编号）；规则摘要；今天的情况（和 `today_context` 同一个函数）。末尾一句固定文字，告诉对方学到关于主人的新东西用 `sync_memories` 推回来。
-   - 每段有字数预算，超了按重要度截断，并写明还有几条没列出。
+   - 每段有字数预算，超了按重要度截断，并写明还有几条没列出。概况沿用 `OwnerProfileService` 的 2000 字预算，并带一个内容摘要当版本号，方便对方判断变没变；规则摘要只列正在执行的主人规则，每条一句话。三段的键顺序固定。
+   - `start_here` 和别的读工具一样写一条 `external_read` 决策记录。
+   - 末尾那句“用 `sync_memories` 推回来”等 `sync_memories` 做出来时再加，不提前指向一个不存在的工具。
    - `today_context` 保留，给对话中途刷新“今天”用。
    - 在 ADR 0219 决定 3 的三个只读工具之外加一个。
-3. **`find_memories` 加两个可选参数。** `project`：只搜某个项目的项目笔记（见决定 8）。`auto`：调用方是钩子时用，最多 3 条，相关度不够就返回空，门槛沿用 [ADR 0221](0221-memory-retrieval-relevance-cutoff-and-same-source-dedupe.md) 已有的那个。两个参数在 MCP 这一层处理，不原样交给检索代码。
+3. **`find_memories` 加两个可选参数。** `project`：只搜某个项目的项目笔记（见决定 8）。`auto`：调用方是钩子时用，最多 3 条，相关度不够就返回空（也不带“没有找到记忆”这类提示文字），门槛沿用 [ADR 0221](0221-memory-retrieval-relevance-cutoff-and-same-source-dedupe.md) 已有的那个。两个参数在 MCP 这一层处理，不原样交给检索代码。
 4. **每个接入有读取级别上限，新建的接入默认到 private。**
-   - `start_here`、`find_memories`、`rule_book` 走同一道检查。主人可以在页面上把某个接入调高到 sensitive。
+   - 四个读工具 `start_here`、`find_memories`、`today_context`、`rule_book` 走同一道检查。`today_context` 和 `start_here` 里“今天的情况”带的提醒正文、近两天的对话摘要也按这个上限过滤（前提 9）。主人可以在页面上把某个接入调高到 sensitive。
    - `start_here` 默认不带邮件规则的参数（免打扰时段、重要发件人）。
    - 依据：边界与可逆性，以及前提 6。内容给了别家就收不回来；编码 agent 用不上主人的健康、财务情况。
    - 改掉前提 9 的现状。Andy 2026-11-12 同意。
 5. **服务带使用说明，同样的触发条件也写进每个工具的描述。** MCP 规范里使用说明是可选的，客户端不一定给模型看，工具描述更可靠。这些文字是固定的，登记进提示词目录，不含时间、名字这类会变的值。
 6. **推：新工具 `sync_memories`，取代 `propose_memory` 和 ADR 0228 计划中的 `propose_memories`。**
-   - 一批若干条。每条有对方自己的稳定编号（笔记文件路径之类，任意文字）、正文、种类（“关于主人”或“项目笔记”）、类别提示、项目名（可空）。
+   - 一批若干条。每条有对方自己的稳定编号（笔记文件路径之类的文字）、正文、种类（“关于主人”或“项目笔记”）、类别提示、项目名（可空）。稳定编号和项目名按普通文字存，有长度上限，统一成 NFC 写法，带控制字符的拒绝；它们不进任何要求 `machineString` 的字段。
    - 对方的稳定编号只当业务键，存在“接入编号 + 项目 + 稳定编号”的唯一键表里；记忆自己的编号由服务端生成（前提 10）。
    - 可以重复推：同编号同内容不产生任何东西；同编号新内容算更新，留历史版本。
-   - 助手程序（决定 10）每次附上“我这边现有的全部编号”。以前推过、这次不在名单里的，算对方删了。模型自己调用时不认这个名单，免得漏报被当成删除。
+   - 助手程序（决定 11）每次附上“我这边现有的全部编号”。以前推过、这次不在名单里的，算对方删了。模型自己调用时不认这个名单，免得漏报被当成删除。服务端按进门的方式区分两者：助手程序用服务令牌加接入密钥进门，模型所在的客户端用 Cloudflare 的 OAuth 登录加接入密钥进门；只有前一种请求带的全量名单才用来判断删除。
    - 逐条返回结果：待确认、已存、没变、已更新、主人拒绝过、不合格（附原因）。超过上限整批拒绝，不写半批。
+   - 一批在一个数据库事务里写完，连同它的决策记录。中途任何一步失败就整批回滚，只回工具错误，库里不留半批；对方原样重发不会重复（同编号同内容不产生任何东西）。
    - 主人在 Himawari 删掉或拒绝的，只在返回里告诉这个接入自己的那几条“主人已删除，不再接收”。不用命令口气要求对方删文件；Himawari 不动主人电脑上的任何文件。
    - 服务端只做校验、去重、敏感分级、加密，不调模型。
-   - 取代 ADR 0225 决定 2、3 的提议方式。
+   - 取代 ADR 0225 决定 2（在客户端里确认）和决定 3（同一个提议只写一次：现在同一个稳定编号可以更新，留历史）。
 7. **推来的内容，写入时由 Himawari 自己判敏感，不信对方标的种类。**
    - 关于主人的：进待确认，主人整批确认后成为正式记忆（前提 4）。
    - 判出是敏感的（健康、财务、带证件号等）：不管对方标成什么，一律进待确认。
@@ -111,7 +116,7 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
 8. **项目笔记单独存，不是记忆，不逐条确认。**
    - 某个接入第一次推某个项目的笔记时，主人批准一次“允许这个接入同步这个项目的笔记”，之后自动收。
    - 项目笔记不进主人概况，不进 Himawari 自己的聊天；别的 agent 用 `find_memories` 带 `project` 才搜得到，结果前面加固定标签，写明这是某个接入留下的资料，不是指令，主人没有逐条确认过（前提 6）。
-   - 项目名由助手程序取仓库的远程地址，没有就用目录名；服务端规范化成项目编号。页面上可以改名、合并。
+   - 项目名由助手程序取仓库的远程地址，没有就用目录名；服务端规范化成项目编号。远程地址里可能带用户名和令牌（`https://用户:令牌@主机/仓库`），助手程序发送前去掉这一段，只留主机和路径；服务端收到带这一段的项目名也拒绝。页面上可以改名、合并。
    - 对方删了的项目笔记跟着删，留历史。
    - 依据：前提 5。它不是关于主人的断言。Andy 2026-11-12 同意。
 9. **确认统一在 Himawari 里做，去掉对方客户端里的确认框。**
@@ -144,10 +149,11 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
     - 周报加同样的一节，和网页用同一套统计函数（[ADR 0155](0155-decision-record-observation-and-weekly-report-page.md)）。
     - 每句话自动搜的读取，决策记录按“接入 + 天 + 工具”汇总成一行。改掉 ADR 0219 决定 5 里“每次外部读取都写一条”对这类读取的要求。
     - 某个接入建好后 7 天没有任何读取，在每日回顾里提示一次；7 天可在设置里改。
-    - 每个上限（单条长度、批量条数、请求体大小、`start_here` 字数、钩子读取频率、接入个数）都在页面上显示当前用量。钩子读取用单独的频率额度。
-14. **对外遮盖改成按字段各自编号。** 现在整份输出共用一套占位编号，前面多一个敏感值，后面的编号全变。改掉 ADR 0219 决定 4 里“全部文字一起遮”的做法。所有列表固定排序。
+    - 每个上限（单条长度、批量条数、请求体大小、`start_here` 字数、钩子读取频率、接入个数）都在页面上显示当前用量。钩子读取用单独的频率额度。每个上限的数值在对应的编码任务里按主人真实的笔记文件和实测定，本 ADR 不写具体数；没有上限的入口不得合并，超限被拒的用例是那个任务的完成条件。
+14. **对外遮盖不改，所有列表固定排序。** 遮盖沿用 ADR 0219 决定 4：一次返回里的全部文字一起遮，后面一段点名的密码或验证码，在前面一段单独出现时也会被遮。提醒、摘要、逐条结果、“主人已删除”的编号这些列表都有固定顺序。
+    - 方案原先打算改成“按字段各自遮”，理由是“占位编号随前面内容变化”。这个理由核对代码后不成立：`maskSensitiveTexts` 输出前把占位符里的序号去掉了，现有测试断言同一段文字不受同批无关内容影响（`packages/sensitive-capture/test/redaction.unit.test.ts`：`expect(withOthers[1]).toBe(alone[0]);`）。各段分开遮反而会漏掉“后面才点名、前面单独出现”的值，所以不改。
 15. **规则带到别的 agent 那里只是文字要求。** `start_here` 和页面上都写明：这些在 Himawari 里必定执行，在别的 agent 里做不到必定执行。
-16. **多人。** 所有东西都在每个人自己的库里。网址是同一个（前提 18），服务端先按登录的人找到库，再在这个库里认接入密钥。
+16. **多人。** 所有东西都在每个人自己的库里。主机名和入口是同一个（前提 18），各个接入只是路径里的密钥不同。走 OAuth 登录的请求，服务端先按登录的人找到库，再在这个库里认接入密钥，密钥不属于这个人就拒绝。助手程序走服务令牌，没有登录的人，所以共用层要有一张“接入密钥的摘要对应哪个人”的索引表，只放摘要和人，不含私人内容，做法和 [ADR 0229](0229-native-apple-clients-and-device-api.md) 的设备索引表一样。
 
 **这次不做的：** 对话历史压缩包的导入（要用 Himawari 的模型逐段抽取，和前提 2 的理由一样贵）；让项目笔记进 Himawari 自己的聊天（要改它自己的检索工具的参数，会让每个老对话的请求开头换新一次，要做另出方案）；在对方执行工具之前来问 Himawari 的规则检查（现在没有管工具调用的规则）。
 
@@ -186,23 +192,26 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
 
 ## 后果
 
-- **实施前，代码仍按原来的 ADR。** 本 ADR 只记决定，没有改代码。实施分成几个编码任务，清单在 `/mnt/project-files/p5-memory-hub/coding-tasks.md`：读的一侧（决定 2、3、5、14）；接入记录、读取上限和统计（决定 1、4、13，改表）；`sync_memories`、项目笔记和待确认页面（决定 6 至 9，改表，依赖 ADR 0228 的待确认表）；助手程序、插件和向导（决定 10、11）；存量搬家（决定 12）。每个任务合并时在被改的 ADR 上补注。
-- **对发给模型的请求：** Himawari 自己发给模型的请求不变。新工具只注册在对外的 MCP 服务上；待确认的内容和项目笔记不进 Himawari 自己的任何请求；确认后的记忆和网页新建的记忆走同一条路；复用 `OwnerProfileService` 时不改它。外部 agent 那边，工具清单会变一次。“先筛一遍”和“解析贴回的文本”是两处新的后台模型调用，固定指令在前、数据在后，只用低价模型。
+- **实施前，代码仍按原来的 ADR。** 本 ADR 只记决定，没有改代码。实施分成几个编码任务，清单在 `/mnt/project-files/p5-memory-hub/coding-tasks.md`：读的一侧（决定 2、3、5、14；读取上限在决定 4 的任务里统一接到四个读工具上）；接入记录、读取上限和统计（决定 1、4、13，改表）；`sync_memories`、项目笔记和待确认页面（决定 6 至 9，改表，依赖 ADR 0228 的待确认表）；助手程序、插件和向导（决定 10、11）；存量搬家（决定 12）。每个任务合并时在被改的 ADR 上补注。
+- **对发给模型的请求：** Himawari 自己发给模型的请求不变。新工具只注册在对外的 MCP 服务上；待确认的内容和项目笔记不进 Himawari 自己的任何请求；确认后的记忆和网页新建的记忆走同一条路；复用 `OwnerProfileService` 时不改它。外部 agent 那边，工具清单会变一次。新登记进提示词目录的使用说明和工具描述只用在对外的 MCP 服务上，不得进入 Himawari 自己的系统提示和工具定义；带这些改动的编码 PR 照常要过 `npm run check:prompt-prefix`。“先筛一遍”和“解析贴回的文本”是两处新的后台模型调用，固定指令在前、数据在后，只用低价模型。
 - **要补的自动检查**（`npm run check:prompt-prefix` 只管 Himawari 自己的请求，管不到 MCP 这一侧）。每条带反向用例：
   - 新增一步 `npm run check`：稳定编号（含路径、空格、中文、超长）、种类、类别、项目名，从推送端走到存储和读取端都通过；把服务端生成编号换成直接用对方的编号，必须失败。
   - 同编号同内容不新增，新内容出新版本，重试不重复。
-  - 删除只认助手程序的全量名单；已确认的不跟着删。
+  - 删除只认助手程序的全量名单：走 OAuth 登录的请求带上全量名单，什么都不删；已确认的不跟着删。
+  - 写到一半数据库出错，整批回滚，库里没有半批；原样重发不重复。
   - 甲接入读不到乙接入的范围，收不到乙的“主人已删除”；暂停或撤销后立刻被拒。
-  - 对方把健康、财务内容标成项目笔记，仍然进待确认；读取上限以下的接入读不到上限以上的内容，三个读工具各一条。
+  - 对方把健康、财务内容标成项目笔记，仍然进待确认；读取上限以下的接入读不到上限以上的内容，四个读工具各一条；其中 `today_context` 和 `start_here` 要分别覆盖提醒正文和对话摘要。
   - 不带 `project` 时，项目笔记不出现在概况、Himawari 自己的聊天、Gmail 检查里。
   - 超批量、超请求体、超长，整批拒绝且库里没有半批。
-  - 同一份数据生成两次 `start_here`，字节相同。
+  - 同一份数据生成两次 `start_here`，字节相同；`find_memories`、`rule_book`、`sync_memories` 的逐条结果和统计页面，同样的数据每次顺序相同。
+  - 验证码只在“今天的情况”里被点名、同一个值在概况里单独出现，`start_here` 的输出里两处都被遮；把遮盖换成各段分开遮，这条用例必须失败。
+  - 稳定编号或项目名超长、带控制字符，项目名带用户名和令牌，都被拒绝。
   - 页面和周报的每个数字各有一条正向、一条反向用例。
 - **真实客户端的验收按档位分。** 第一档要求全程没有人工操作，页面上出现自动读取和自动同步；其余档位由主人手动验证一次。
 - **动工前要实测的**（不影响决定，影响具体做法）：
-  - Cloudflare 的 OAuth 登录对带密钥的子路径是否照常工作；不行就把密钥换到查询参数或请求头。
+  - Cloudflare 的 OAuth 登录对带密钥的子路径是否照常工作；不行就把密钥换到请求头（决定 1）。
   - Claude 桌面 App 里的 Claude Code 是否执行用户级钩子和插件；它的笔记是否都落在记忆目录。
-  - Codex 的 `memories.disable_on_external_context` 会不会让用过 MCP 工具的对话不产生记忆；会的话 Codex 这一档要重想。
+  - Codex 的钩子里跑命令行程序有什么限制；`memories.disable_on_external_context` 会不会让用过 MCP 工具的对话不产生记忆，会的话 Codex 这一档要重想。
   - 云端会话（在 claude.ai 云端跑的 Claude Code）的笔记不在主人电脑上，先按第三档接。
 - **要 Andy 亲手做的：** 在 Cloudflare 后台建一个服务令牌；在 Mac 上装插件。
 - **安全上多出来的东西：** 一个不经浏览器登录的程序入口（服务令牌加接入密钥），和主人电脑上的一份凭据。凭据可以在页面上随时撤销；助手程序只能调用 MCP 入口上这个接入被允许的工具。

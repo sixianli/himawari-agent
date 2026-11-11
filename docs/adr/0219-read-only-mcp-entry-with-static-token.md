@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
+amended_by: "docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md"
 date: "2026-11-11"
 ---
 
@@ -67,13 +68,12 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - **`today_context`（今日上下文）**：返回主人所在时区的今天日期、现在的时间，以及 48 小时内的提醒。提醒复用 `ProductionReminderWriter.list` 来取，它加了一个时间窗口参数。近一两天的对话摘要等任务 P3-6 合并后再加。后续：已补上，见决定 7。
    - **`rule_book`（规则手册）**：返回 `ruleBookFor(settings)` 列出的每条规则，包括编号、版本、作用在哪一步、结果、来源、状态。主人自己设的规则还带上设置值，即重要发件人名单和静默时段。
      - 不返回规则的表达式。理由是 [ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md) 原话 “用户在界面看到的是试算例子，不是代码”。
-   - 2026-11-12 起：[ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 2、3 在这三个工具之外加 `start_here`，并给 `find_memories` 加 `project`、`auto` 两个可选参数；决定 4 给每个接入加读取级别上限。对应的编码任务合并之前，代码仍按本条。本条原文保留不改。
+   - 2026-11-12 起：[ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 2、3 在这三个工具之外加 `start_here`，并给 `find_memories` 加 `project`、`auto` 两个可选参数；决定 4 给每个接入加读取级别上限，连同 `today_context` 在内的四个读工具都受它管。对应的编码任务合并之前，代码仍按本条。本条原文保留不改。
 4. **返回给外部之前，先遮掉敏感内容。** 返回值里的全部文字一起交给新加的 `maskSensitiveTexts` 遮好再发出去。这个函数在专门识别敏感内容的包 `@himawari-agent/sensitive-capture`，内部调用 `redactForEgress`，和 Himawari 自己发给模型的出口用同一套规则：机器密钥、密码、验证码、银行卡号、证件号。
    - 一次返回里先过一遍所有文字，记下认出的密码、验证码，再遮第二遍。这样同一个密码在一段里被点名、在另一段里单独出现时，两处都遮掉，和模型出口记住已点名值的做法一致。返回给对方的占位符只写类别（例如 `[密码]`），不带序号，所以同一段文字的遮法不随这次一起返回的其他无关内容变化。银行卡照现有规则保留尾号四位（`[银行卡 尾号1234]`），其余类别不含原值的任何信息。
    - 限制：只有这次返回的文字里有一处把这个值点名为密码或验证码，别处单独出现的同一个值才会被遮。一条记忆里只写了值、没写「密码」之类的字样，又没有和点名的那条一起返回时，它原样发出；这和 Himawari 自己的模型出口按对话记住点名值是同一种限制，只是这里的范围是一次返回。
    - 和模型出口不同的地方：模型出口遮完后发现还有机器密钥会整条扣下不发；这里 `redactForEgress` 本身已经把机器密钥换成占位符（出口检查 `check:egress-redaction` 只允许敏感包和出口模块直接调用它，所以多段文字的遮法放在敏感包里）。这道检查管的是 Himawari 向外发出的请求，不管 MCP 回给对方的响应；响应有没有遮，由 `test/integration/mcp-read.test.ts` 里密码不出现的用例把关，去掉遮盖这几条用例会失败，所以不再另做一遍。
    - 外部 agent 会把这些内容转发给它自己用的模型，而这一段路不经过 Himawari 的出口，所以遮盖要在这里先做。
-   - 2026-11-12 起：「全部文字一起遮」由 [ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 14 改成按字段各自编号，因为一起遮时前面多一个敏感值，后面的占位编号全变。对应的编码任务合并之前，代码仍按本条。本条原文保留不改。
 5. **每次外部读取都写一条决策记录**，类别是 `external_read`，结果是 `read`。
    - `reasonCode` 写工具名；读取失败时写 `<工具名>_failed`。
    - `subjectRef` 写 `mcp-client:<客户端名>`。客户端名先取 2026-07-28 版请求自带的客户端信息；老版本请求不带这项，就取 User-Agent 请求头的开头一段。两者都只是对方自己报的名字。
