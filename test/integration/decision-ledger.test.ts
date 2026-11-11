@@ -1247,6 +1247,35 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
     }
   });
 
+  it("[P2-5] compares with the record written last, even when an earlier one sorts later by time or id", async () => {
+    const { repository, list } = await fixture();
+    try {
+      const ledger = repository.decisionLedger();
+      const truncation = (id: string, memoryIds: readonly string[]) => ({
+        write: ledgerWrite(id, {
+          kind: "context_truncation",
+          outcome: "truncated",
+          reasonCode: PROFILE_BUDGET_EXCEEDED,
+          subjectRef: null,
+          contentRef: null,
+          inputs: { memoryIds, ruleIds: [], profileBudget: { limit: 10, used: 9, pinned: 0 } },
+        }),
+        reasonCodes: [PROFILE_BUDGET_EXCEEDED, PROFILE_PINNED_OVER_BUDGET],
+      });
+      expect(await ledger.appendIfChanged(truncation("ledger-z", ["memory-a"]))).toBe(true);
+      expect(await ledger.appendIfChanged(truncation("ledger-a", ["memory-b"]))).toBe(true);
+      expect(await ledger.appendIfChanged(truncation("ledger-b", ["memory-b"]))).toBe(false);
+      expect(await ledger.appendIfChanged(truncation("ledger-c", ["memory-a"]))).toBe(true);
+      expect((await profileRows(list)).map(({ id }) => id).sort()).toEqual([
+        "ledger-a",
+        "ledger-c",
+        "ledger-z",
+      ]);
+    } finally {
+      await repository.close();
+    }
+  });
+
   it("[P2-5] still forms the context when the truncation record cannot be written", async () => {
     const { repository, list } = await fixture();
     try {

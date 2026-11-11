@@ -8,6 +8,7 @@ import {
   type MemoryConsolidationStorePort,
   type MemoryExtractionAuditRecord,
   isModelVisible,
+  modelVisibleCeiling,
   type MemoryHistoryEvent,
   type MemoryProjectionJobStatePort,
   type MemoryReminderStorePort,
@@ -555,7 +556,7 @@ export class ProductionMemoryControl {
     const outline = await this.options.profile?.outline({
       ownerId,
       agentId,
-      maxClassification: "private",
+      maxClassification: modelVisibleCeiling(),
       now: this.options.clock.now(),
     });
     const lines = (items: readonly { memoryId: string; text: string; updatedAt: string }[]) =>
