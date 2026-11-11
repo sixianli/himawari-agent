@@ -165,6 +165,75 @@ describe("file summary qualification configuration", () => {
     }
   });
 
+  it("carries memory.retrieval settings and the unknown-relevance report into the memory engine", async () => {
+    const config = await configuration();
+    const stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-config-`);
+    const index = inMemoryMemoryIndex();
+    const unknown = vi.fn();
+    try {
+      const memory = await createProductionMemoryCompositionFromConfiguration({
+        egress: testModelEgress(),
+        configuration: {
+          ...config,
+          stateRoot,
+          memory: {
+            ...config.memory,
+            storagePath: `${stateRoot}/data/memory`,
+            retrieval: { keywordWeight: 0.2, cutoffMargin: 0.1, dedupeSameSource: false },
+          },
+        },
+        secretSource: {
+          kind: "macos-keychain",
+          productionSuitable: true,
+          resolve: async () => "offline-fixture-provider-value",
+        },
+        index: {
+          ...index,
+          search: async () => ({
+            vector: [],
+            lexical: [
+              {
+                memoryId: "memory-without-vector" as never,
+                revision: 1,
+                importancePermille: 500,
+                confidencePermille: 1000,
+                updatedAt: "2026-11-11T00:00:00.000Z",
+                lastUsedAt: null,
+                signal: 1,
+                startsAt: "2026-11-11T00:00:00.000Z",
+                endsAt: null,
+                current: true,
+              },
+            ],
+            entity: [],
+            vectorEngine: "javascript",
+          }),
+        },
+        fetch: async () => new Response("unavailable", { status: 503 }),
+        onRelevanceUnknown: unknown,
+      });
+      memory.bindEmbeddingBoundary((_request, send) => send(), 1000);
+      expect(memory.dedupeSameSource).toBe(false);
+      expect(memory.projection.relevance).toEqual({
+        keywordWeight: 0.2,
+        entityWeight: 0.15,
+        cutoffMargin: 0.1,
+      });
+      const hits = await memory.projection.search({
+        ownerId: config.ownerId,
+        agentId: config.agentId,
+        query: "图书角",
+        limit: 1,
+        relevanceCutoff: true,
+      });
+      expect(hits).toHaveLength(1);
+      expect(unknown).toHaveBeenCalledWith(1, { ownerId: config.ownerId, agentId: config.agentId });
+      await memory.close();
+    } finally {
+      await rm(stateRoot, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the answer facts in the file and out of the system instruction", async () => {
     const config = await configuration();
     const content = await readFile(new URL("project-brief.txt", fixture), "utf8");

@@ -225,37 +225,40 @@ export class ProductionMemoryRecall {
               nearDuplicateText(earlier.text, text),
           )
         : undefined;
-    const collect = async (
-      candidates: typeof hits,
+    const eligible = async (
+      hit: (typeof hits)[number],
       wanted: "confirmed" | "tentative",
-      kept: Shown[],
-      room: () => number,
-    ): Promise<void> => {
-      for (const hit of candidates) {
-        if (room() <= 0) break;
-        const memory = records.get(hit.productMemoryId);
-        if (
-          !memory ||
-          memory.status !== "active" ||
-          memory.providerRecordId !== hit.providerRecordId ||
-          !isModelVisible(memory.dataClassification) ||
-          (memory.attributes?.tentative === true) !== (wanted === "tentative")
-        )
-          continue;
-        const text = await this.#options.readText(memory).catch(() => undefined);
-        if (!text) continue;
-        const earlier = duplicateOf(kept, memory, text);
-        if (earlier) {
-          if (earlier.wanted === "tentative" && wanted === "confirmed")
-            kept.splice(kept.indexOf(earlier), 1, { memory, text, wanted });
-          continue;
-        }
-        kept.push({ memory, text, wanted });
-      }
+    ): Promise<Shown | undefined> => {
+      const memory = records.get(hit.productMemoryId);
+      if (
+        !memory ||
+        memory.status !== "active" ||
+        memory.providerRecordId !== hit.providerRecordId ||
+        !isModelVisible(memory.dataClassification) ||
+        (memory.attributes?.tentative === true) !== (wanted === "tentative")
+      )
+        return undefined;
+      const text = await this.#options.readText(memory).catch(() => undefined);
+      return text ? { memory, text, wanted } : undefined;
     };
-    const kept: Shown[] = [];
-    await collect(tentativeHits, "tentative", kept, () => tentativeLimit - kept.length);
-    await collect(hits, "confirmed", kept, () => input.limit - kept.length);
+    const tentativeKept: Shown[] = [];
+    for (const hit of tentativeHits) {
+      if (tentativeKept.length >= tentativeLimit) break;
+      const shownHit = await eligible(hit, "tentative");
+      if (shownHit && !duplicateOf(tentativeKept, shownHit.memory, shownHit.text))
+        tentativeKept.push(shownHit);
+    }
+    const confirmedKept: Shown[] = [];
+    for (const hit of hits) {
+      const room = input.limit - tentativeKept.length - confirmedKept.length;
+      if (room <= 0 && (!dedupe || tentativeKept.length === 0)) break;
+      const shownHit = await eligible(hit, "confirmed");
+      if (!shownHit || duplicateOf(confirmedKept, shownHit.memory, shownHit.text)) continue;
+      const twin = duplicateOf(tentativeKept, shownHit.memory, shownHit.text);
+      if (twin) tentativeKept.splice(tentativeKept.indexOf(twin), 1);
+      else if (room <= 0) continue;
+      confirmedKept.push(shownHit);
+    }
     const present = ({ memory, text, wanted }: Shown): Record<string, unknown> => {
       shown.push(memory.dataClassification);
       const attributes = memory.attributes;
@@ -270,8 +273,8 @@ export class ProductionMemoryRecall {
         validTo,
       };
     };
-    const confirmedMemories = kept.filter(({ wanted }) => wanted === "confirmed").map(present);
-    const tentativeMemories = kept.filter(({ wanted }) => wanted === "tentative").map(present);
+    const confirmedMemories = confirmedKept.map(present);
+    const tentativeMemories = tentativeKept.map(present);
     const memories = [...confirmedMemories, ...tentativeMemories];
     const tentativeCount = tentativeMemories.length;
     const episodes = this.#options.episodes

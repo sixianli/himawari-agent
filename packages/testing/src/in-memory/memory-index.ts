@@ -41,10 +41,18 @@ export function inMemoryMemoryIndex(): MemoryIndexStorePort & {
           return undefined;
         const left = document.embedding.vector;
         const right = input.embedding.vector;
+        if (left.length !== right.length) return undefined;
         let dot = 0;
-        for (let index = 0; index < left.length; index += 1)
-          dot += (left[index] ?? 0) * (right[index] ?? 0);
-        return dot;
+        let leftNorm = 0;
+        let rightNorm = 0;
+        for (let index = 0; index < left.length; index += 1) {
+          const a = left[index] ?? 0;
+          const b = right[index] ?? 0;
+          dot += a * b;
+          leftNorm += a * a;
+          rightNorm += b * b;
+        }
+        return leftNorm === 0 || rightNorm === 0 ? 0 : dot / Math.sqrt(leftNorm * rightNorm);
       };
       const withSimilarity = (
         document: MemoryIndexDocument,

@@ -318,3 +318,25 @@ it("drops a same-source near duplicate, refills the slot and lets a confirmed me
     "主人的妻子叫苏晴",
   ]);
 });
+
+it("lets a confirmed memory replace its tentative twin even when every slot is taken, keeping the confirmed order", async () => {
+  const entries = [
+    { id: "guess", text: "主人的妻子叫苏晴", score: 5, tentative: true, sourceRefs: ["m1"] },
+    { id: "home", text: "主人住在杭州", score: 4, sourceRefs: ["m2"] },
+    { id: "wife", text: "主人的妻子叫苏晴。", score: 3, sourceRefs: ["m1"] },
+  ];
+  const deduped = (await recallWith(entries, true).service.recall(
+    call({ query: "我家里人", limit: 2 }),
+  )) as RecallResult;
+  expect(deduped.memories.map(({ text }) => text)).toEqual(["主人住在杭州", "主人的妻子叫苏晴。"]);
+  expect(deduped.memories.some(({ tentative }) => tentative === true)).toBe(false);
+  expect(deduped.tentativeNote).toBeUndefined();
+  const plain = (await recallWith(entries, false).service.recall(
+    call({ query: "我家里人", limit: 2 }),
+  )) as RecallResult;
+  expect(plain.memories).toEqual([
+    expect.objectContaining({ text: "主人住在杭州" }),
+    expect.objectContaining({ text: "主人的妻子叫苏晴", tentative: true }),
+  ]);
+  expect(plain.tentativeNote).toBeDefined();
+});

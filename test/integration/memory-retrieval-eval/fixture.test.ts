@@ -1,10 +1,11 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import type { MemoryIndexCandidate, MemoryIndexSearchResult } from "@himawari-agent/application";
 import type { MemoryId } from "@himawari-agent/domain";
+import { DEFAULT_RELEVANCE_TUNING, fuseCandidates } from "@himawari-agent/memory-engine";
 import { describe, expect, it } from "vitest";
-import { fuseCandidates } from "../src/fusion.ts";
-import { DEFAULT_RELEVANCE_TUNING } from "../src/relevance.ts";
+import candidates from "../../../evals/memory-retrieval/candidates-qwen3-embedding-8b.json" with {
+  type: "json",
+};
+import evalDataset from "../../../evals/memory-retrieval/dataset.json" with { type: "json" };
 
 type Row = readonly [string, number] | readonly [string, number, number];
 
@@ -22,16 +23,8 @@ interface Dataset {
   readonly queries: readonly { readonly text: string; readonly expected: readonly string[] }[];
 }
 
-const root = path.resolve(import.meta.dirname, "../../..");
-const fixture = JSON.parse(
-  readFileSync(
-    path.join(root, "evals/memory-retrieval/candidates-qwen3-embedding-8b.json"),
-    "utf8",
-  ),
-) as Fixture;
-const dataset = JSON.parse(
-  readFileSync(path.join(root, "evals/memory-retrieval/dataset.json"), "utf8"),
-) as Dataset;
+const fixture = candidates as unknown as Fixture;
+const dataset = evalDataset as unknown as Dataset;
 const SELECTED_LIMIT = 5;
 
 function result(text: string): MemoryIndexSearchResult {

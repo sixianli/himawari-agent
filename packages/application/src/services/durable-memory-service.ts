@@ -472,7 +472,7 @@ export class DurableMemoryService {
               input.policy.limit,
               (contentRef) => this.options.content.readText(contentRef),
             )
-          ).kept.map(({ memory, providerRecordId, score }) => ({ memory, providerRecordId, score }))
+          ).map(({ memory, providerRecordId, score }) => ({ memory, providerRecordId, score }))
         : ranked.slice(0, input.policy.limit);
     if (input.recordUse !== false)
       await this.options.state.markUsed(

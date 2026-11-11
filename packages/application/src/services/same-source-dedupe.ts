@@ -8,8 +8,11 @@ function normalized(text: string): string {
     .replace(/[\p{P}\p{S}\p{Z}\s]/gu, "");
 }
 
-function digitRuns(text: string): string {
-  return (text.normalize("NFKC").match(/\p{Nd}+/gu) ?? []).join(",");
+const NUMBER_RUN =
+  /[+\-\u2212]?\p{Nd}+|[〇零一二两三四五六七八九十百千万亿壹贰叁肆伍陆柒捌玖拾佰仟]+/gu;
+
+function numberRuns(text: string): string {
+  return (text.normalize("NFKC").match(NUMBER_RUN) ?? []).join(",");
 }
 
 function trigrams(text: string): Map<string, number> {
@@ -23,7 +26,7 @@ function trigrams(text: string): Map<string, number> {
 }
 
 export function nearDuplicateText(left: string, right: string): boolean {
-  if (digitRuns(left) !== digitRuns(right)) return false;
+  if (numberRuns(left) !== numberRuns(right)) return false;
   const a = normalized(left);
   const b = normalized(right);
   if (a === b) return true;
@@ -50,7 +53,7 @@ export async function dropSameSourceDuplicates<T extends SameSourceCandidate>(
   ranked: readonly T[],
   limit: number,
   readText: (contentRef: string) => Promise<string>,
-): Promise<{ readonly kept: readonly T[]; readonly dropped: readonly T[] }> {
+): Promise<readonly T[]> {
   const texts = new Map<string, Promise<string | null>>();
   const text = (contentRef: string) => {
     let found = texts.get(contentRef);
@@ -61,7 +64,6 @@ export async function dropSameSourceDuplicates<T extends SameSourceCandidate>(
     return found;
   };
   const kept: T[] = [];
-  const dropped: T[] = [];
   for (const candidate of ranked) {
     if (kept.length >= limit) break;
     const sources = new Set(candidate.sourceRefs);
@@ -77,8 +79,7 @@ export async function dropSameSourceDuplicates<T extends SameSourceCandidate>(
         break;
       }
     }
-    if (duplicate) dropped.push(candidate);
-    else kept.push(candidate);
+    if (!duplicate) kept.push(candidate);
   }
-  return { kept, dropped };
+  return kept;
 }

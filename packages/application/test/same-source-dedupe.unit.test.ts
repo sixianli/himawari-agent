@@ -20,6 +20,14 @@ describe("near-duplicate text", () => {
     expect(nearDuplicateText(`${long}会员卡号 1234`, `${long}会员卡号 1234。`)).toBe(true);
   });
 
+  it("never merges texts whose sign or Chinese numerals differ", () => {
+    const long =
+      "主人在招商银行的储蓄账户里记了一笔这个月的家庭开销，备注是给父母买的体检套餐".repeat(4);
+    expect(nearDuplicateText(`${long}余额 -500 元`, `${long}余额 500 元`)).toBe(false);
+    expect(nearDuplicateText(`${long}，买了两份`, `${long}，买了三份`)).toBe(false);
+    expect(nearDuplicateText(`${long}，买了两份`, `${long}，买了两份。`)).toBe(true);
+  });
+
   it("does not call slightly different texts near duplicates when they fall below 0.9", () => {
     expect(nearDuplicateText("主人周末常去图书馆看书和写作", "主人周末常去咖啡馆看书和画画")).toBe(
       false,
@@ -46,7 +54,7 @@ describe("same-source duplicate removal", () => {
   });
 
   it("keeps the first of two near-identical memories from the same source and refills the slot", async () => {
-    const { kept, dropped } = await dropSameSourceDuplicates(
+    const kept = await dropSameSourceDuplicates(
       [
         item("wife-a", ["m1"]),
         item("wife-b", ["m1"]),
@@ -57,11 +65,10 @@ describe("same-source duplicate removal", () => {
       readText,
     );
     expect(kept.map(({ id }) => id)).toEqual(["wife-a", "daughter", "other"]);
-    expect(dropped.map(({ id }) => id)).toEqual(["wife-b"]);
   });
 
   it("keeps identical text from different sources", async () => {
-    const { kept } = await dropSameSourceDuplicates(
+    const kept = await dropSameSourceDuplicates(
       [item("wife-a", ["m1"]), item("wife-b", ["m2"])],
       5,
       readText,
@@ -70,7 +77,7 @@ describe("same-source duplicate removal", () => {
   });
 
   it("keeps both when one text cannot be read", async () => {
-    const { kept } = await dropSameSourceDuplicates(
+    const kept = await dropSameSourceDuplicates(
       [item("wife-a", ["m1"]), item("missing", ["m1"])],
       5,
       readText,

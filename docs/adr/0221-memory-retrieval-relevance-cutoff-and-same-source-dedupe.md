@@ -45,8 +45,8 @@ date: "2026-11-11"
    相关分低于“本次检索的向量门槛 − 截断余量”就不要。排序仍是 RRF 乘加成；加成不参与截断，免得重要度低、时间旧的相关记忆被误截。向量门槛以上的记忆相关分一定过线，所以向量路的行为不变；Gmail 检查自动用它自己的 0.45。
 2. **每个候选都有相似度。** 存储层给只被关键词或实体找到的候选也算出余弦相似度（`MemoryIndexCandidate.similarity`），包括不在向量前 50 名里的，用的是索引里已存的向量，不多发嵌入请求。
 3. **没有相似度就不截。** 查询向量失败（只剩关键词和实体，见 ADR 0115 和检索降级记录）、或这条记忆本身没有向量（不做向量的分级、写索引时嵌入失败）时，保持截断前的行为，并写一行 `memory.relevance_unknown` 诊断日志（只记条数）。
-4. **只在产品检索打开截断。** 截断由调用方显式要求（`relevanceCutoff: true`）：聊天自动带记忆和 Gmail 检查（都经 `DurableMemoryService.search`）、`memory.recall` 工具打开；整理记忆时找已有记忆的那次检索（`service-main.ts` 的 consolidation search）不打开，因为它要找的正是可能重复、需要合并的旧记忆。
-5. **同源且几乎相同才去重。** 两条记忆的 `sourceRefs` 有交集，才读两边正文比较：统一全半角和大小写、去掉空白和标点后完全相同，或者相邻三个字一组的重合度（Dice 系数）不低于 0.9，算几乎相同；规范化后少于 8 个字的只认完全相同；两条里的数字串只要有一处不同就不算重复（只差一个日期或金额的是两条事实）。排在前面的留下，后面的跳过，并由后续候选补满名额；被跳过的不记“最近使用”。正文读不出来时按不重复处理。`memory.recall` 工具把已确认和待确认的记忆合在一起去重，已确认的优先。去重只影响这次检索结果，不改存储。
+4. **只在产品检索打开截断。** 记忆引擎只在调用方显式要求（`relevanceCutoff: true`）时截断。`DurableMemoryService.search` 固定要求截断，所以经它的聊天自动带记忆和 Gmail 检查都截断；`memory.recall` 工具也要求截断；整理记忆时找已有记忆的那次检索（`service-main.ts` 的 consolidation search）不打开，因为它要找的正是可能重复、需要合并的旧记忆。
+5. **同源且几乎相同才去重。** 两条记忆的 `sourceRefs` 有交集，才读两边正文比较：统一全半角和大小写、去掉空白和标点后完全相同，或者相邻三个字一组的重合度（Dice 系数）不低于 0.9，算几乎相同；规范化后少于 8 个字的只认完全相同；两条里的数字串（阿拉伯数字连同前面的正负号，以及“两”“三”“十”这类中文数字）只要有一处不同就不算重复（只差一个日期、金额或份数的是两条事实）。排在前面的留下，后面的跳过，并由后续候选补满名额；被跳过的不记“最近使用”。正文读不出来时按不重复处理。`memory.recall` 工具把已确认和待确认的记忆合在一起去重，已确认的优先：名额已满时，已确认的记忆仍会替下与它重复的待确认记忆，已确认的记忆保持检索排序。去重只影响这次检索结果，不改存储。
 6. **“相关记忆”里的“相关”** 从此指相关分达到截断线；界面文字不变，[界面设计指南](../ui-ux-design-guide.md)同步改定义。
 
 [返回目录](#contents)
@@ -76,7 +76,7 @@ date: "2026-11-11"
 - 默认值是怎么选的：同一套题离线复算了两次独立实跑的原始候选（同一模型两次返回的相似度会差约 0.01）。余量 0.03 时准确率可到 93% 到 95%，但召回降 1.9 个点，离“最多降 2 个点”只差 0.1，嵌入的小抖动就可能越线；余量 0.05 在两次实跑上召回都不降、准确率都上升，所以取 0.05。关键词、实体权重在 0.15 到 0.2、余量在 0.02 到 0.06 的一片区域里都满足完成标准，不是单点。
 - 剩下的无关带出是“把刚才那段改成日语”带出“主人在准备日语 N2 考试”（相似度 0.586，离门槛只差 0.014），任何不伤召回的线都挡不住它。
 - 评测集只有 24 条记忆，过拟合的风险用两件事控制：参数取在稳定区域中间；另一个线程（P4-5）在建真实数据的评测集，届时复核。
-- 自动检查：两次实跑之一的原始候选存成 `evals/memory-retrieval/candidates-qwen3-embedding-8b.json`，`packages/memory-engine/test/retrieval-eval-fixture.unit.test.ts`（`[P3-3]`）在 `npm test` 里离线复算，默认参数下准确率不上升、或召回降超过 2 个点就失败；反向用例确认“只认向量门槛、不给关键词和实体加分”会让召回掉超过 2 个点。
+- 自动检查：两次实跑之一的原始候选存成 `evals/memory-retrieval/candidates-qwen3-embedding-8b.json`，`test/integration/memory-retrieval-eval/fixture.test.ts`（`[P3-3]`）在 `npm test` 里离线复算，默认参数下准确率不上升、或召回降超过 2 个点就失败；反向用例确认“只认向量门槛、不给关键词和实体加分”会让召回掉超过 2 个点。
 
 [返回目录](#contents)
 
@@ -124,7 +124,7 @@ date: "2026-11-11"
 
 - 好处：关键词撞上的无关记忆少带，评测里准确率 85.4% → 89.1%，召回不降；主动提醒因无关记忆误扰的机会变少；同源重复不再挤占名额。
 - 代价：带出“相关记忆”的口径变成相关分；换向量模型（P3-1）时要用同一套评测重新看门槛和余量。
-- 门槛：`packages/memory-engine/test/retrieval-eval-fixture.unit.test.ts`（离线复算完成标准）、`fusion.unit.test.ts`、`hybrid-memory-provider.unit.test.ts`、`packages/application/test/same-source-dedupe.unit.test.ts`、`test/integration/durable-memory-projection.test.ts`、`test/integration/memory-engine-index.test.ts`、`apps/agent-service/test/production-memory-recall.unit.test.ts`、`packages/platform-node/test/startup-configuration.unit.test.ts`。
+- 门槛：`test/integration/memory-retrieval-eval/fixture.test.ts`（离线复算完成标准）、`fusion.unit.test.ts`、`hybrid-memory-provider.unit.test.ts`、`packages/application/test/same-source-dedupe.unit.test.ts`、`test/integration/durable-memory-projection.test.ts`、`test/integration/memory-engine-index.test.ts`、`apps/agent-service/test/production-memory-recall.unit.test.ts`、`packages/platform-node/test/startup-configuration.unit.test.ts`。
 - 后续：真实数据评测集（P4-5）建好后，用它复核默认参数。
 
 [返回目录](#contents)
