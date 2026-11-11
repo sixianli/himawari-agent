@@ -369,6 +369,9 @@ describe("owner profile composition", () => {
       sender_domain: "bank.example",
       text: "",
       text_words: [],
+      amount_state: "missing",
+      amount_minor: 0,
+      amount_currency: "",
     };
     expect(
       new RuleJudge().decide("mail_item", facts, [{ ...hardRule, status: "needs_review" }]).hits,

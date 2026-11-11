@@ -672,6 +672,14 @@ export class SqliteProactiveOperations {
       Object.entries(floorHits).some(
         ([messageId, rules]) => messageId.length < 1 || messageId.length > 256 || !ids(rules, 16),
       ) ||
+      (inputs.ruleHits !== undefined &&
+        (typeof inputs.ruleHits !== "object" ||
+          inputs.ruleHits === null ||
+          Object.keys(inputs.ruleHits).length > MAX_INPUT_IDS ||
+          Object.entries(inputs.ruleHits).some(
+            ([messageId, rules]) =>
+              messageId.length < 1 || messageId.length > 256 || !ids(rules, 16),
+          ))) ||
       !Array.isArray(modelPayloads) ||
       modelPayloads.length > MAX_MODEL_PAYLOADS ||
       modelPayloads.some(
@@ -728,6 +736,7 @@ export class SqliteProactiveOperations {
             ruleIds: input.inputs.ruleIds,
             sourceIds: input.inputs.sourceIds,
             floorHits: input.inputs.floorHits,
+            ruleHits: input.inputs.ruleHits ?? {},
             memoryInjected: input.inputs.memoryInjected,
             usedMemoryIds: input.inputs.usedMemoryIds,
             tentativeMemoryIds: input.inputs.tentativeMemoryIds ?? [],

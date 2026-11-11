@@ -1,3 +1,4 @@
+import type { MailAmount } from "../rules/amount.js";
 import { RULE_IDS, type RuleRecord } from "../rules/rule-book.js";
 import { mailItemFacts } from "../rules/rule-book.js";
 import { RuleJudge } from "../rules/rule-judge.js";
@@ -59,6 +60,17 @@ export function floorHitIds(
   return JUDGE.decide("mail_item", mailItemFacts(item), rules)
     .hits.filter(({ outcome }) => outcome === "raise_floor")
     .map(({ id }) => id as FloorRuleId);
+}
+
+export function suppressPushHits(
+  item: ProactiveSourceItem,
+  amount: MailAmount,
+  rules: readonly RuleRecord[],
+): readonly string[] {
+  const hits = JUDGE.decide("mail_item", mailItemFacts(item, amount), rules)
+    .hits.filter(({ outcome }) => outcome === "suppress_push")
+    .map(({ id, revision }) => `${id}@${revision}`.slice(0, 256));
+  return [...new Set(hits)].sort().slice(0, 16);
 }
 
 export function quietEnd(

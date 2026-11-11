@@ -202,6 +202,7 @@ function entry(overrides: Partial<DecisionLedgerEntry>): DecisionLedgerEntry {
       resultMemoryIds: [],
       sourceIds: [],
       floorHits: {},
+      ruleHits: {},
       memoryInjected: false,
       usedMemoryIds: [],
       tentativeMemoryIds: [],

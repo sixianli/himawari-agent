@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createAgentSession } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type {
   RuntimeEvent,
   RuntimeProjection,
@@ -22,6 +22,9 @@ import {
 import type { Context, Message } from "@earendil-works/pi-ai";
 import {
   approximateTokens,
+  COMPACTION_TRIGGER_CAP_TOKENS,
+  compactionModelOverrides,
+  compactionPrefixMessages,
   sharedSummaryContext,
   sharedSummaryOptions,
 } from "../src/compaction-prefix.js";
@@ -1244,6 +1247,55 @@ describe("[I-66] [COMPACT-2] sharing the conversation's head with the summary re
     expect(sharedSummaryContext(compactLast(big), big, 30_000, 4_000)).toBeUndefined();
     const heavyPrompt = compactLast(prefix, "字".repeat(60_000));
     expect(sharedSummaryContext(heavyPrompt, prefix, 50_000, 4_000)).toBeUndefined();
+  });
+
+  it("REVERSE: the compaction hook gives no prefix for overflow, a split turn or a cut it cannot find", () => {
+    const base = {
+      preparation: { isSplitTurn: false, firstKeptEntryId: "missing" },
+      branchEntries: [],
+    };
+    expect(compactionPrefixMessages({ ...base, reason: "overflow" })).toBeUndefined();
+    expect(
+      compactionPrefixMessages({
+        ...base,
+        reason: "threshold",
+        preparation: { isSplitTurn: true, firstKeptEntryId: "missing" },
+      }),
+    ).toBeUndefined();
+    expect(compactionPrefixMessages({ ...base, reason: "threshold" })).toBeUndefined();
+    expect(compactionPrefixMessages({ ...base, reason: "manual" })).toBeUndefined();
+  });
+
+  it("[COMPACT-4] caps the compaction trigger at 200K for a large window and leaves a small window on Pi's default", () => {
+    const resolve = (model: { provider: string; id: string; contextWindow: number }) =>
+      SettingsManager.inMemory(
+        { compaction: { enabled: true, modelOverrides: compactionModelOverrides(model) } },
+        { projectTrusted: false },
+      ).getCompactionSettings(model).reserveTokens;
+    const large = { provider: "deepseek", id: "v4.1-flash", contextWindow: 1_000_000 };
+    expect(1_000_000 - resolve(large)).toBe(COMPACTION_TRIGGER_CAP_TOKENS);
+    const other = { provider: "deepseek", id: "other", contextWindow: 1_000_000 };
+    expect(
+      SettingsManager.inMemory(
+        { compaction: { enabled: true, modelOverrides: compactionModelOverrides(large) } },
+        { projectTrusted: false },
+      ).getCompactionSettings(other).reserveTokens,
+    ).toBe(16_384);
+    const small = { provider: "x", id: "small", contextWindow: 128_000 };
+    expect(compactionModelOverrides(small)).toEqual({});
+    expect(resolve(small)).toBe(16_384);
+    expect(compactionModelOverrides({ ...small, contextWindow: 0 })).toEqual({});
+    for (const window of [200_001, 210_000, 216_384]) {
+      expect(compactionModelOverrides({ ...small, contextWindow: window })).toEqual({});
+      expect(resolve({ ...small, contextWindow: window })).toBe(16_384);
+    }
+    expect(resolve({ ...small, contextWindow: 216_385 })).toBe(16_385);
+    const slashed = {
+      provider: "magpie",
+      id: "opencode-go/deepseek-v4.1-flash",
+      contextWindow: 1_000_000,
+    };
+    expect(1_000_000 - resolve(slashed)).toBe(COMPACTION_TRIGGER_CAP_TOKENS);
   });
 
   it("counts Chinese text as more tokens than ASCII of the same length", () => {

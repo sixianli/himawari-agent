@@ -17,11 +17,6 @@ export interface AttentionPolicyConfig {
   readonly duplicateWindowMs: number;
   readonly rateLimitWindowMs: number;
   readonly maxImmediateDeliveries: number;
-  readonly quietHours: {
-    readonly startMinute: number;
-    readonly endMinute: number;
-    readonly utcOffsetMinutes: number;
-  } | null;
   readonly authorizedInterruptRefs: readonly string[];
 }
 
@@ -68,17 +63,6 @@ function withinWindow(timestamp: string, nowMs: number, windowMs: number): boole
   return !Number.isNaN(value) && value >= nowMs - windowMs && value <= nowMs;
 }
 
-function isQuietHours(now: string, policy: AttentionPolicyConfig): boolean {
-  if (!policy.quietHours) return false;
-  const shifted = new Date(new Date(now).valueOf() + policy.quietHours.utcOffsetMinutes * 60_000);
-  const minute = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
-  const { startMinute, endMinute } = policy.quietHours;
-  if (startMinute === endMinute) return true;
-  return startMinute < endMinute
-    ? minute >= startMinute && minute < endMinute
-    : minute >= startMinute || minute < endMinute;
-}
-
 function assertCandidate(candidate: AttentionCandidate): void {
   const generatedAt = new Date(candidate.generatedAt);
   if (
@@ -105,18 +89,7 @@ function assertPolicy(policy: AttentionPolicyConfig): void {
     policy.rateLimitWindowMs,
     policy.maxImmediateDeliveries,
   ].every((value) => Number.isSafeInteger(value) && value >= 0);
-  const quietValid =
-    policy.quietHours === null ||
-    (Number.isSafeInteger(policy.quietHours.startMinute) &&
-      policy.quietHours.startMinute >= 0 &&
-      policy.quietHours.startMinute < 1_440 &&
-      Number.isSafeInteger(policy.quietHours.endMinute) &&
-      policy.quietHours.endMinute >= 0 &&
-      policy.quietHours.endMinute < 1_440 &&
-      Number.isSafeInteger(policy.quietHours.utcOffsetMinutes) &&
-      policy.quietHours.utcOffsetMinutes >= -840 &&
-      policy.quietHours.utcOffsetMinutes <= 840);
-  if (!nonNegative || !quietValid) {
+  if (!nonNegative) {
     throw new ApplicationPortError(
       PORT_ERROR_CODES.INVALID_OPERATION,
       "Attention policy configuration is invalid",
@@ -206,13 +179,6 @@ function baseDecision(
       reasonCode: "client_unavailable",
       interruptAuthorizationRef: null,
     };
-  } else if (decision.level === "NOTIFY" && isQuietHours(now, policy)) {
-    decision = {
-      candidateId: candidate.id,
-      level: "DIGEST",
-      reasonCode: "quiet_hours",
-      interruptAuthorizationRef: null,
-    };
   }
   return decision;
 }
@@ -226,9 +192,6 @@ export class AttentionPolicyService {
       ...dependencies,
       policy: Object.freeze({
         ...dependencies.policy,
-        quietHours: dependencies.policy.quietHours
-          ? Object.freeze({ ...dependencies.policy.quietHours })
-          : null,
         authorizedInterruptRefs: Object.freeze([...dependencies.policy.authorizedInterruptRefs]),
       }),
     });

@@ -77,6 +77,7 @@ export interface DecisionInputs {
   readonly resultMemoryIds?: readonly string[];
   readonly sourceIds?: readonly string[];
   readonly floorHits?: Readonly<Record<string, readonly string[]>>;
+  readonly ruleHits?: Readonly<Record<string, readonly string[]>>;
   readonly memoryInjected?: boolean;
   readonly usedMemoryIds?: readonly string[];
   readonly tentativeMemoryIds?: readonly string[];

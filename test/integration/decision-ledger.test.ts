@@ -214,6 +214,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
             resultMemoryIds: [],
             sourceIds: [],
             floorHits: {},
+            ruleHits: {},
             memoryInjected: false,
             usedMemoryIds: [],
             tentativeMemoryIds: [],

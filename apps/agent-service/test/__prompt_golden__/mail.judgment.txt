@@ -19,6 +19,7 @@ act 要写 "todo"（一句话待办）、"priority"（"high"、"medium"、"low"�
 know 的 "todo" 写一句关键信息；check 的 "reason" 写为什么可能重要。每封都写一句给主人看的 "reason"。
 todo 和 reason 用简体中文，每句不超过 60 个字。
 只输出 JSON，格式：{"items":[{"id":"…","result":"…","confidence":"…","todo":"…","priority":null,"dueAt":null,"reason":"…"}]}，每封邮件一项，id 照抄。
+act、know、check 的邮件如果有一个明确的主金额（要付的钱、扣的款、退的款），可以加 "amount":{"value":"100.00","currency":"CNY","confidence":"sure"}：value 是不带货币符号和千分位逗号的十进制数字字符串，currency 是三个大写字母的币种代码，confidence 是 "sure" 或 "unsure"。有好几个金额分不清哪个是主金额、金额不在邮件里或正文被截断时不要写 "amount"，不要自己换算币种。
 主人的记忆（mail 是它对应的邮件 id）：
 [{"mailId":"message-a","id":"memory-7","text":"主人用东京燃气，每月自动扣款。"}]
 邮件：

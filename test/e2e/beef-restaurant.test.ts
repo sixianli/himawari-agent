@@ -408,7 +408,6 @@ async function runJourney() {
       duplicateWindowMs: 60_000,
       rateLimitWindowMs: 60_000,
       maxImmediateDeliveries: 1,
-      quietHours: null,
       authorizedInterruptRefs: [],
     },
   });

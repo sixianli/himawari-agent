@@ -144,6 +144,7 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
     resultMemoryIds?: readonly string[];
     sourceIds?: readonly string[];
     floorHits?: Record<string, readonly string[]>;
+    ruleHits?: Record<string, readonly string[]>;
     memoryInjected?: boolean;
     usedMemoryIds?: readonly string[];
     tentativeMemoryIds?: readonly string[];
@@ -166,6 +167,14 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
       floorHits: Object.freeze(
         Object.fromEntries(
           Object.entries(inputs.floorHits ?? {}).map(([id, rules]) => [
+            id,
+            Object.freeze([...rules]),
+          ]),
+        ),
+      ),
+      ruleHits: Object.freeze(
+        Object.fromEntries(
+          Object.entries(inputs.ruleHits ?? {}).map(([id, rules]) => [
             id,
             Object.freeze([...rules]),
           ]),
