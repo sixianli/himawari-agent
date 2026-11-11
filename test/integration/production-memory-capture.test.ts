@@ -36,6 +36,10 @@ import {
 } from "../../apps/agent-service/src/production-memory-capture.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import {
+  ProductionOwnerRuleTools,
+  ProductionOwnerRuleWriter,
+} from "../../apps/agent-service/src/production-owner-rules.ts";
+import {
   ProductionReminderTools,
   ProductionReminderWriter,
 } from "../../apps/agent-service/src/production-reminder-writer.ts";
@@ -258,6 +262,16 @@ describe("production memory capture", () => {
       }) as unknown as RuntimeRequest;
     await turn("owner", message, "run-memory-capture");
     const clock = { value: T0 };
+    const ruleWriter = new ProductionOwnerRuleWriter({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      rules: repository.ownerRules(),
+      memory,
+      book: repository.memoryBook(),
+      threads: repository.threadRepository(),
+      payloads,
+      protector: adapters.payloadProtector,
+      clock: { now: () => clock.value },
+    });
     const control = new ProductionMemoryControl({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       state: repository.productMemoryState(),
@@ -265,6 +279,7 @@ describe("production memory capture", () => {
       approvals: repository.sensitiveMemoryApprovals(),
       memory,
       reminders: repository.memoryReminders(),
+      ownerRules: ruleWriter,
       book: repository.memoryBook(),
       profile: new OwnerProfileService({
         state: repository.productMemoryState(),
@@ -347,6 +362,7 @@ describe("production memory capture", () => {
       capture,
       control,
       reminderTools,
+      ruleTools: new ProductionOwnerRuleTools(ruleWriter),
       protect,
       request: requestFor("run-memory-capture"),
       requestFor,
@@ -1348,6 +1364,146 @@ describe("production memory capture", () => {
     expect(withPassword.find(({ id }) => id.includes("call-password"))?.dataClassification).toBe(
       "sensitive",
     );
+  });
+
+  it("[P2-3] turns the owner's standing sentence into an enforced rule, keeps inferred ones as proposals, and undoes one from the page", async () => {
+    const sentence = "日本入管局相关的邮件以后必须通知我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const immigration = { senderDomains: ["isa.go.jp"], phrases: ["在留資格"] };
+    const tool = (capabilityRef: string, args: Record<string, unknown>, id: string) =>
+      context.ruleTools.run({
+        runId: createRunId("run-rule-tool"),
+        toolCallId: id,
+        capabilityRef,
+        capabilityHandleRef: null,
+        arguments: args,
+        dataClassification: "private",
+        context: { threadId: THREAD_ID },
+      } as never) as Promise<Record<string, unknown>>;
+    const set = (args: Record<string, unknown>, id: string) =>
+      tool(
+        "rule.set",
+        { inferred: false, type: "mail_must_notify", summary: "入管局的邮件一律提醒", ...args },
+        id,
+      );
+    const listed = async () => {
+      const snapshot = await context.control.query({
+        ...envelope,
+        kind: "query",
+        type: "memory.rules.read",
+        payload: {},
+      } as never);
+      if (snapshot.type !== "memory.rules.snapshot") throw new Error("snapshot");
+      return snapshot.payload.rules;
+    };
+
+    const created = await set({ quote: sentence, params: immigration }, "call-1");
+    expect(created).toMatchObject({ status: "active", type: "mail_must_notify", replayed: false });
+    expect(created["ruleId"]).toMatch(/^owner:[0-9a-f]{24}$/u);
+    expect((created["trials"] as unknown[]).length).toBeGreaterThanOrEqual(3);
+    const ruleMemory = await context.repository
+      .productMemoryState()
+      .read(created["memoryId"] as never);
+    expect(ruleMemory).toMatchObject({ status: "active", attributes: { category: "rule" } });
+    expect(await context.plaintext(ruleMemory?.contentRef ?? null)).toContain(sentence);
+    expect(await set({ quote: sentence, params: immigration }, "call-1")).toMatchObject({
+      ruleId: created["ruleId"],
+      replayed: true,
+    });
+    expect(await set({ quote: sentence, params: immigration }, "call-again")).toMatchObject({
+      ruleId: created["ruleId"],
+      replayed: true,
+    });
+
+    for (const [name, args] of [
+      ["not said", { quote: "订阅相关的以后必须提醒我" }],
+      ["no standing words", { quote: "入管局相关的邮件" }],
+      ["inferred", { quote: sentence, inferred: true }],
+    ] as const) {
+      const proposed = await set(
+        { ...args, params: { senderDomains: ["moj.go.jp"] } },
+        `call-${name}`,
+      );
+      expect(proposed, name).toMatchObject({ status: "proposed", ruleId: null });
+      expect(proposed["proposalId"], name).toMatch(/^rule-proposal:[0-9a-f]{32}$/u);
+    }
+    expect((await listed()).map(({ ruleId }) => ruleId)).toEqual([created["ruleId"]]);
+    const proposal = await set(
+      { quote: sentence, inferred: true, params: { phrases: ["在留カード"] } },
+      "call-proposal",
+    );
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: proposal["proposalId"], action: "confirm" },
+      "confirm-1",
+    );
+    expect(await listed()).toHaveLength(2);
+
+    const soft = await tool(
+      "rule.set",
+      { quote: sentence, inferred: false, type: "soft", summary: "提醒时语气简短" },
+      "call-soft",
+    );
+    expect(soft).toMatchObject({ status: "soft", ruleId: null });
+    expect(
+      await context.repository.productMemoryState().read(soft["memoryId"] as never),
+    ).toMatchObject({ attributes: { category: "preference" } });
+    expect(await listed()).toHaveLength(2);
+
+    await expect(
+      set({ quote: sentence, type: "mail_unknown", params: immigration }, "call-unknown"),
+    ).rejects.toMatchObject({ code: "RULE_TYPE_UNKNOWN" });
+    await expect(
+      set({ quote: sentence, params: { regex: [".*"] } }, "call-regex"),
+    ).rejects.toMatchObject({ code: "RULE_PARAMETERS_INVALID" });
+
+    context.sql((rows) =>
+      rows
+        .prepare("UPDATE rule_book_rules SET status = 'needs_review' WHERE rule_id = ?")
+        .run(created["ruleId"]),
+    );
+    expect((await listed()).find(({ ruleId }) => ruleId === created["ruleId"])).toMatchObject({
+      status: "needs_review",
+      enforced: true,
+    });
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: created["ruleId"], action: "reconfirm" },
+      "reconfirm-1",
+    );
+    expect((await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.status).toBe(
+      "active",
+    );
+
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: created["ruleId"], action: "undo" },
+      "undo-1",
+    );
+    expect((await listed()).map(({ ruleId }) => ruleId)).not.toContain(created["ruleId"]);
+    expect(
+      await context.repository.productMemoryState().read(created["memoryId"] as never),
+    ).toMatchObject({ status: "archived" });
+    expect(
+      (await tool("rule.list", {}, "call-list"))["rules"] as { ruleId: string }[],
+    ).toHaveLength(1);
+    await expect(
+      command(
+        context.control,
+        "memory.rule.respond",
+        { target: "owner:missing", action: "undo" },
+        "undo-missing",
+      ),
+    ).rejects.toThrow("RULE_NOT_FOUND");
   });
 
   it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {

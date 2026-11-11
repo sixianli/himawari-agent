@@ -62,6 +62,31 @@ export function floorHitIds(
     .map(({ id }) => id as FloorRuleId);
 }
 
+function outcomeHits(
+  item: ProactiveSourceItem,
+  rules: readonly RuleRecord[],
+  wanted: "require_notify" | "require_whole_thread",
+): readonly string[] {
+  const hits = JUDGE.decide("mail_item", mailItemFacts(item), rules)
+    .hits.filter(({ outcome }) => outcome === wanted)
+    .map(({ id, revision }) => `${id}@${revision}`.slice(0, 256));
+  return [...new Set(hits)].sort().slice(0, 16);
+}
+
+export function wholeThreadHitIds(
+  item: ProactiveSourceItem,
+  rules: readonly RuleRecord[],
+): readonly string[] {
+  return outcomeHits(item, rules, "require_whole_thread");
+}
+
+export function mustNotifyHitIds(
+  item: ProactiveSourceItem,
+  rules: readonly RuleRecord[],
+): readonly string[] {
+  return outcomeHits(item, rules, "require_notify");
+}
+
 export function suppressPushHits(
   item: ProactiveSourceItem,
   amount: MailAmount,

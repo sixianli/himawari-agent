@@ -51,7 +51,11 @@ export interface DecisionChainDependencies {
     memoryIds: readonly string[],
   ) => Promise<ReadonlyMap<string, DecisionChainMemoryText>>;
   readonly visible: (classification: string) => boolean;
+  readonly ownerRuleSummary?: (ruleId: string) => Promise<string | undefined>;
 }
+
+const OWNER_RULE_PREFIX = "owner:";
+const RULE_DOCUMENT_LIMIT = 64;
 
 export const displayRuleId = (ruleId: string) =>
   [...ruleId]
@@ -100,11 +104,25 @@ export async function readDecisionChain(
   for (const rules of Object.values(inputs.floorHits))
     for (const rule of new Set(rules))
       floorMailCounts.set(rule, (floorMailCounts.get(rule) ?? 0) + 1);
+  const ownerSummaries = new Map<string, string | undefined>();
+  if (rulesRecorded)
+    for (const ruleId of sortedUnique(inputs.ruleIds))
+      if (ruleId.startsWith(OWNER_RULE_PREFIX))
+        ownerSummaries.set(ruleId, await dependencies.ownerRuleSummary?.(ruleId));
+  const ruleDefinition = (ruleId: string) => {
+    const summary = ownerSummaries.get(ruleId);
+    return summary === undefined
+      ? decisionRuleDefinition(ruleId)
+      : {
+          origin: "owner_setting" as const,
+          document: Array.from(summary).slice(0, RULE_DOCUMENT_LIMIT).join(""),
+        };
+  };
   const rules: ChainPayload["rules"] = rulesRecorded
     ? {
         state: sectionState(fields, "ruleIds", inputs.ruleIds),
         items: sortedUnique(inputs.ruleIds).map((ruleId) => {
-          const definition = decisionRuleDefinition(ruleId);
+          const definition = ruleDefinition(ruleId);
           return {
             ruleId: displayRuleId(ruleId),
             origin: definition?.origin ?? null,

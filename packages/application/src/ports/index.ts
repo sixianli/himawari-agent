@@ -41,6 +41,7 @@ export * from "./model-invocation.js";
 export * from "./observability.js";
 export * from "./owner-preferences.js";
 export * from "./persistence.js";
+export * from "./owner-rules.js";
 export * from "./proactive-checks.js";
 export * from "./proactivity.js";
 export * from "./recent-authentication.js";

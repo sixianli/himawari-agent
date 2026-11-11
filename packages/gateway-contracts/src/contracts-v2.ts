@@ -70,6 +70,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.tidy.undo",
   "memory.reminder.respond",
   "memory.reminder.create",
+  "memory.rules.read",
+  "memory.rules.snapshot",
+  "memory.rule.respond",
   "memory.create",
   "memory.category.set",
   "memory.settings.set",
@@ -1290,6 +1293,34 @@ const memoryReminderCreateCommandSchema = object({
     repeat: enumeration(["none", "yearly"]),
   }),
 });
+export const OWNER_RULE_ACTIONS = ["undo", "confirm", "reconfirm"] as const;
+const memoryRulesQuerySchema = object({
+  ...envelope("query", "memory.rules.read"),
+  payload: object({}),
+});
+const memoryRulesSnapshotSchema = object({
+  ...envelope("snapshot", "memory.rules.snapshot"),
+  payload: object({
+    rules: array(
+      object({
+        ruleId: machineString,
+        type: boundedString(64),
+        summary: boundedString(200),
+        status: enumeration(["active", "needs_review"]),
+        enforced: booleanValue,
+        updatedAt: timestamp,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const memoryRuleRespondCommandSchema = object({
+  ...commandEnvelope("memory.rule.respond"),
+  payload: object({
+    target: machineString,
+    action: enumeration(OWNER_RULE_ACTIONS),
+  }),
+});
 const memoryCreateCommandSchema = object({
   ...commandEnvelope("memory.create"),
   payload: object({
@@ -2218,6 +2249,9 @@ const schemasByType = {
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
   "memory.reminder.respond": memoryReminderRespondCommandSchema,
   "memory.reminder.create": memoryReminderCreateCommandSchema,
+  "memory.rules.read": memoryRulesQuerySchema,
+  "memory.rules.snapshot": memoryRulesSnapshotSchema,
+  "memory.rule.respond": memoryRuleRespondCommandSchema,
   "memory.create": memoryCreateCommandSchema,
   "memory.category.set": memoryCategorySetCommandSchema,
   "memory.settings.set": memorySettingsSetCommandSchema,

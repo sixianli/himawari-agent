@@ -2,7 +2,12 @@ import { currencyExponent, type MailAmount, MISSING_AMOUNT } from "./amount.js";
 import { type RuleGate, ruleFields } from "./field-catalog.js";
 import { compileRuleExpression, type RuleFacts } from "./rule-expression.js";
 
-export type RuleOutcome = "raise_floor" | "suppress_push" | "defer_to_quiet_hours";
+export type RuleOutcome =
+  | "raise_floor"
+  | "suppress_push"
+  | "require_notify"
+  | "require_whole_thread"
+  | "defer_to_quiet_hours";
 export type RuleOrigin = "built_in" | "owner_setting";
 export type RuleStatus = "active" | "needs_review" | "retired";
 
@@ -96,16 +101,23 @@ function senderFacts(
   text = "",
   words: readonly string[] = [],
   amount: MailAmount = MISSING_AMOUNT,
+  content = text,
 ) {
   return {
     sender_address: address,
     sender_domain: domain,
     text,
+    content_folded: foldText(content),
     text_words: words,
+    content_words: [...new Set(foldText(content).match(/[a-z0-9_]+/gu) ?? [])],
     amount_state: amount.state,
     amount_minor: amount.state === "known" ? amount.minor : 0,
     amount_currency: amount.state === "missing" ? "" : amount.currency,
   };
+}
+
+export function foldText(value: string): string {
+  return value.normalize("NFKC").toLowerCase();
 }
 
 function foldCase(word: string): string {
@@ -117,6 +129,7 @@ export function mailItemFacts(
     readonly fromAddress: string;
     readonly subject: string;
     readonly snippet: string;
+    readonly body?: string | null;
   },
   amount: MailAmount = MISSING_AMOUNT,
 ): RuleFacts {
@@ -128,6 +141,7 @@ export function mailItemFacts(
     text,
     (text.match(/[a-z0-9_]+/giu) ?? []).map(foldCase),
     amount,
+    `${item.subject}\n${item.body ?? item.snippet}`,
   );
 }
 
@@ -330,7 +344,12 @@ export function amountThresholdRule(
 }
 
 const GATE_OUTCOMES: Readonly<Record<RuleGate, readonly RuleOutcome[]>> = Object.freeze({
-  mail_item: Object.freeze(["raise_floor", "suppress_push"] as const),
+  mail_item: Object.freeze([
+    "raise_floor",
+    "suppress_push",
+    "require_notify",
+    "require_whole_thread",
+  ] as const),
   mail_delivery: Object.freeze(["defer_to_quiet_hours"] as const),
 });
 

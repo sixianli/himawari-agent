@@ -2,6 +2,7 @@ import type {
   ProactiveRelatedFetch,
   ProactiveRelatedLimits,
   ProactiveSourceItem,
+  ProactiveWholeThread,
 } from "@himawari-agent/application";
 
 const SUBJECT_PREFIX =
@@ -62,6 +63,12 @@ function isEarlier(candidate: ProactiveSourceItem, item: ProactiveSourceItem): b
   );
 }
 
+function chronological(left: ProactiveSourceItem, right: ProactiveSourceItem): number {
+  return (
+    left.receivedAt.localeCompare(right.receivedAt) || left.messageId.localeCompare(right.messageId)
+  );
+}
+
 export interface GmailRelatedTransport {
   thread(threadId: string): Promise<readonly ProactiveSourceItem[] | undefined>;
   search(query: string, maxResults: number): Promise<readonly string[] | undefined>;
@@ -84,10 +91,12 @@ class Budget {
 export async function findRelatedMail(input: {
   readonly items: readonly ProactiveSourceItem[];
   readonly limits: ProactiveRelatedLimits;
+  readonly wholeThread?: ReadonlySet<string>;
   readonly signal: AbortSignal;
   readonly transport: GmailRelatedTransport;
 }): Promise<ProactiveRelatedFetch> {
   const { items, limits, signal, transport } = input;
+  const wholeThread = new Map<string, ProactiveWholeThread>();
   const budget = new Budget(limits.requestsPerCheck);
   const known = new Map<string, ProactiveSourceItem | null>();
   const byMail = new Map<string, readonly ProactiveSourceItem[]>();
@@ -121,6 +130,8 @@ export async function findRelatedMail(input: {
       continue;
     }
     const pool = new Map<string, ProactiveSourceItem>();
+    const threadMessages: ProactiveSourceItem[] = [];
+    let threadRead = false;
     const add = (candidate: ProactiveSourceItem) => {
       if (candidate.messageId !== item.messageId && isEarlier(candidate, item))
         pool.set(candidate.messageId, candidate);
@@ -131,7 +142,10 @@ export async function findRelatedMail(input: {
       for (const message of (await transport.thread(item.threadId)) ?? []) {
         known.set(message.messageId, message);
         add(message);
+        if (message.messageId !== item.messageId && !message.categories.includes("spam"))
+          threadMessages.push(message);
       }
+      threadRead = true;
       step = "subject";
       const subject = normalizeSubject(item.subject);
       if (Array.from(subject).length >= MIN_SUBJECT_CHARACTERS && counterparts(item).length > 0) {
@@ -154,14 +168,21 @@ export async function findRelatedMail(input: {
     }
     const ordered = [...pool.values()]
       .filter(({ categories }) => !categories.includes("spam"))
-      .sort(
-        (left, right) =>
-          left.receivedAt.localeCompare(right.receivedAt) ||
-          left.messageId.localeCompare(right.messageId),
-      );
-    byMail.set(item.messageId, ordered.slice(-limits.perMail));
+      .sort(chronological);
+    if (input.wholeThread?.has(item.messageId)) {
+      const thread = [...threadMessages].sort(chronological);
+      const kept = thread.slice(-limits.wholeThreadPerMail);
+      const chosen = new Map<string, ProactiveSourceItem>();
+      for (const message of [...kept, ...ordered.slice(-limits.perMail)])
+        chosen.set(message.messageId, message);
+      byMail.set(item.messageId, [...chosen.values()].sort(chronological));
+      wholeThread.set(item.messageId, {
+        messageIds: thread.map(({ messageId }) => messageId),
+        complete: threadRead && kept.length === thread.length,
+      });
+    } else byMail.set(item.messageId, ordered.slice(-limits.perMail));
   }
-  return { byMail, failed, requests: budget.used };
+  return { byMail, failed, requests: budget.used, wholeThread };
 }
 
 class RelatedStop extends Error {
