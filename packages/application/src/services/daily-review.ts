@@ -1,7 +1,8 @@
-import type {
-  DecisionKind,
-  DecisionLedgerEntry,
-  DecisionLedgerPort,
+import {
+  type DecisionKind,
+  type DecisionLedgerEntry,
+  type DecisionLedgerPort,
+  isMemoryCaptureFailure,
 } from "../ports/decision-ledger.js";
 import { EXTERNAL_PROPOSAL_REASON_CODES } from "../ports/decision-ledger.js";
 import type { ProactiveRating, ProactiveScope } from "../ports/proactive-checks.js";
@@ -212,7 +213,8 @@ function ledgerGroup(entry: DecisionLedgerEntry): DailyReviewGroup {
 
 function ledgerActed(entry: DecisionLedgerEntry): boolean {
   if (entry.kind === "proactive") return entry.outcome !== "silent";
-  if (entry.kind === "memory_candidate") return entry.outcome !== "discarded";
+  if (entry.kind === "memory_candidate")
+    return entry.outcome !== "discarded" && !isMemoryCaptureFailure(entry.outcome);
   return true;
 }
 
@@ -222,7 +224,11 @@ function reviewedMemoryIds(entry: DecisionLedgerEntry): {
   readonly before: readonly string[];
   readonly after: string | undefined;
 } {
-  if (entry.kind === "memory_candidate" && entry.outcome !== "discarded") {
+  if (
+    entry.kind === "memory_candidate" &&
+    entry.outcome !== "discarded" &&
+    !isMemoryCaptureFailure(entry.outcome)
+  ) {
     const id = entry.subjectRef ?? entry.inputs.memoryIds[0];
     return { before: [], after: id };
   }
@@ -324,7 +330,9 @@ export async function readDailyReview(options: {
           rating: entry.ownerRating,
           text,
           textHidden:
-            (entry.kind === "memory_candidate" || entry.kind === "consolidation") && text === "",
+            (entry.kind === "memory_candidate" || entry.kind === "consolidation") &&
+            text === "" &&
+            !isMemoryCaptureFailure(entry.outcome),
           category: entry.category,
           fetched: check ? check.counts.fetched : null,
         };

@@ -11,6 +11,7 @@ import type {
 import type { DataClassification, PayloadRef } from "./common.js";
 import type { DecisionLedgerWrite } from "./decision-ledger.js";
 import type {
+  MemoryCategory,
   ProductMemoryAttributes,
   ProductMemoryProposal,
   ProductMemoryRecord,
@@ -39,6 +40,7 @@ export interface ExtractedMemoryCandidate {
   readonly people?: readonly MemoryPersonMention[];
   readonly personLinks?: readonly MemoryPersonLinkMention[];
   readonly quote?: string;
+  readonly confirmsTentativeCategory?: MemoryCategory;
 }
 
 export interface IncrementalMemoryExtractionPort {

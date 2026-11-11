@@ -127,6 +127,7 @@ import {
   proactiveRedirectUri,
 } from "./production-proactive.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
+import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -187,6 +188,7 @@ export interface AgentServiceMemoryCompositionContext {
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
   readonly sources?: ReturnType<typeof hostModelSources>;
+  readonly diagnostic?: (event: Readonly<Record<string, string | number>>) => void;
 }
 
 export type AgentServiceMemoryCompositionFactory = (
@@ -365,6 +367,12 @@ async function createDefaultMemoryComposition(
       now: () => new Date().toISOString(),
       onFailure: () => {},
     }),
+    onRelevanceUnknown: (count) =>
+      context.diagnostic?.({
+        component: "agent-service",
+        event: "memory.relevance_unknown",
+        candidates: count,
+      }),
   });
 }
 
@@ -808,7 +816,12 @@ export async function runAgentService(
         admission: modelAdmission,
       });
       const memoryFactory = dependencies.memoryCompositionFactory ?? createDefaultMemoryComposition;
-      memoryComposition = await memoryFactory({ configuration, repository, sources });
+      memoryComposition = await memoryFactory({
+        configuration,
+        repository,
+        sources,
+        diagnostic: (event) => writeServiceDiagnostic(errorOutput, event),
+      });
     }
     let automaticReview: ReturnType<typeof createProductionAutomaticReview>;
     if (configuration.runPolicy?.automaticReview !== undefined) {
@@ -1161,6 +1174,7 @@ export async function runAgentService(
         state: repository.productMemoryState(),
         jobs: repository.memoryProjectionJobs(),
         provider: memoryComposition.projection,
+        dedupeSameSource: memoryComposition.dedupeSameSource,
         ...(webEnabled
           ? ({
               project: (job, memory, operation) => {
@@ -1247,6 +1261,7 @@ export async function runAgentService(
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
         provider: { search: (input) => recallProjection.search(input) },
+        dedupeSameSource: memoryComposition.dedupeSameSource,
         state: repository.productMemoryState(),
         episodes: {
           search: (input) =>
@@ -1633,6 +1648,24 @@ export async function runAgentService(
                   concurrency: 4,
                 }),
               }))(protector, repository.payloadStore(configuration.ownerId, configuration.agentId))
+            : {}),
+          ...(memory && memoryEpisodes && repository
+            ? ((book) => ({
+                recentSummaries: createProactiveRecentSummaries({
+                  ownerId: configuration.ownerId,
+                  agentId: configuration.agentId,
+                  episodes: memoryEpisodes,
+                  allowedClassifications: proactiveDescriptor.allowedDataClassifications,
+                  capturePaused: () =>
+                    book
+                      .readSettings({
+                        ownerId: configuration.ownerId,
+                        agentId: configuration.agentId,
+                      })
+                      .then(({ capturePaused }) => capturePaused),
+                  embedForMailCheck: memory.embedForMailCheck,
+                }),
+              }))(repository.memoryBook())
             : {}),
           model: modelComposition.composition.proactiveModel(proactiveConfiguration.modelRef, {
             maxOutputTokens: PROACTIVE_MAX_OUTPUT_TOKENS,
@@ -2045,12 +2078,13 @@ export async function runAgentService(
                       },
                     }
                   : {}),
-                generate: (request, prompt, gate, purpose = "memory-capture") => {
+                generate: (request, prompt, gate, purpose = "memory-capture", call) => {
                   const generateText = modelComposition?.composition.generateText;
                   if (!generateText) throw new Error("MEMORY_CAPTURE_MODEL_UNAVAILABLE");
                   return generateText(request, prompt, gate, {
                     purpose: modelUsagePurpose(purpose),
-                    invocationId: `${purpose}:${request.runId}`,
+                    invocationId: call?.invocationId ?? `${purpose}:${request.runId}`,
+                    ...(call ? { retryToolCall: call.retryToolCall } : {}),
                     maxOutputTokens: 1024,
                     reasoningOutputTokens: 4096,
                     disableThinking: true,

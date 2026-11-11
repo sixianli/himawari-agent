@@ -5,6 +5,7 @@ import {
   type MemoryProviderProjectionPort,
   type MemoryTimeScope,
   modelVisibleClassifications,
+  nearDuplicateText,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
   type RuntimeRequest,
@@ -58,6 +59,7 @@ export interface ProductionMemoryRecallOptions {
   ) => Promise<T>;
   readonly now: () => string;
   readonly timeZone?: string;
+  readonly dedupeSameSource?: boolean;
 }
 
 function startOfDay(day: string, timeZone: string): string {
@@ -196,6 +198,7 @@ export class ProductionMemoryRecall {
           query: input.query,
           limit: input.limit * 3,
           scope: searchScope,
+          relevanceCutoff: true,
         }),
       ).then(
         (value) => ({ status: "fulfilled" as const, value }),
@@ -210,6 +213,7 @@ export class ProductionMemoryRecall {
               query: input.query,
               limit: input.limit * 3,
               scope: searchScope,
+              relevanceCutoff: true,
               includeTentative: true,
               tentativeOnly: true,
             }),
@@ -226,47 +230,92 @@ export class ProductionMemoryRecall {
         })
       ).map((record) => [record.id, record]),
     );
-    const render = async (
-      candidates: typeof hits,
-      wanted: "confirmed" | "tentative",
-      count: number,
-    ): Promise<Record<string, unknown>[]> => {
-      const rendered: Record<string, unknown>[] = [];
-      for (const hit of candidates) {
-        if (rendered.length >= count) break;
-        const memory = records.get(hit.productMemoryId);
-        if (
-          !memory ||
-          memory.status !== "active" ||
-          memory.providerRecordId !== hit.providerRecordId ||
-          !isModelVisible(memory.dataClassification) ||
-          (memory.attributes?.tentative === true) !== (wanted === "tentative")
-        )
-          continue;
-        const text = await this.#options.readText(memory).catch(() => undefined);
-        if (!text) continue;
-        shown.push(memory.dataClassification);
-        shownIds.push(memory.id);
-        const attributes = memory.attributes;
-        const validTo = attributes?.validTo ?? null;
-        rendered.push({
-          text,
-          ...(wanted === "tentative" ? { tentative: true } : {}),
-          current: validTo === null || validTo > now,
-          ...(attributes?.supersededBy ? { correctedLater: true } : {}),
-          recordedAt: memory.recordedAt ?? memory.updatedAt,
-          validFrom: attributes?.validFrom ?? null,
-          validTo,
-        });
-      }
-      return rendered;
+    type Shown = {
+      readonly memory: ProductMemoryRecord;
+      readonly text: string;
+      readonly wanted: "confirmed" | "tentative";
     };
-    const tentativeMemories = await render(tentativeHits, "tentative", tentativeLimit);
-    const confirmedMemories = await render(
-      hits,
-      "confirmed",
-      input.limit - tentativeMemories.length,
-    );
+    const dedupe = this.#options.dedupeSameSource !== false;
+    const duplicateOf = (
+      shownSoFar: readonly Shown[],
+      memory: ProductMemoryRecord,
+      text: string,
+    ) =>
+      dedupe
+        ? shownSoFar.find(
+            (earlier) =>
+              earlier.memory.sourceRefs.some((source) => memory.sourceRefs.includes(source)) &&
+              nearDuplicateText(earlier.text, text),
+          )
+        : undefined;
+    const eligible = async (
+      hit: (typeof hits)[number],
+      wanted: "confirmed" | "tentative",
+    ): Promise<Shown | undefined> => {
+      const memory = records.get(hit.productMemoryId);
+      if (
+        !memory ||
+        memory.status !== "active" ||
+        memory.providerRecordId !== hit.providerRecordId ||
+        !isModelVisible(memory.dataClassification) ||
+        (memory.attributes?.tentative === true) !== (wanted === "tentative")
+      )
+        return undefined;
+      const text = await this.#options.readText(memory).catch(() => undefined);
+      return text ? { memory, text, wanted } : undefined;
+    };
+    const tentativeKept: Shown[] = [];
+    let nextTentative = 0;
+    const fillTentative = async (): Promise<void> => {
+      while (
+        nextTentative < tentativeHits.length &&
+        tentativeKept.length < tentativeLimit &&
+        tentativeKept.length + confirmedKept.length < input.limit
+      ) {
+        const hit = tentativeHits[nextTentative] as (typeof tentativeHits)[number];
+        nextTentative += 1;
+        const shownHit = await eligible(hit, "tentative");
+        if (
+          shownHit &&
+          !duplicateOf(tentativeKept, shownHit.memory, shownHit.text) &&
+          !duplicateOf(confirmedKept, shownHit.memory, shownHit.text)
+        )
+          tentativeKept.push(shownHit);
+      }
+    };
+    const confirmedKept: Shown[] = [];
+    await fillTentative();
+    let replaced = false;
+    for (const hit of hits) {
+      const room = input.limit - tentativeKept.length - confirmedKept.length;
+      if (room <= 0 && (!dedupe || tentativeKept.length === 0)) break;
+      const shownHit = await eligible(hit, "confirmed");
+      if (!shownHit || duplicateOf(confirmedKept, shownHit.memory, shownHit.text)) continue;
+      const twin = duplicateOf(tentativeKept, shownHit.memory, shownHit.text);
+      if (twin) {
+        tentativeKept.splice(tentativeKept.indexOf(twin), 1);
+        replaced = true;
+      } else if (room <= 0) continue;
+      confirmedKept.push(shownHit);
+    }
+    if (replaced) await fillTentative();
+    const present = ({ memory, text, wanted }: Shown): Record<string, unknown> => {
+      shown.push(memory.dataClassification);
+      shownIds.push(memory.id);
+      const attributes = memory.attributes;
+      const validTo = attributes?.validTo ?? null;
+      return {
+        text,
+        ...(wanted === "tentative" ? { tentative: true } : {}),
+        current: validTo === null || validTo > now,
+        ...(attributes?.supersededBy ? { correctedLater: true } : {}),
+        recordedAt: memory.recordedAt ?? memory.updatedAt,
+        validFrom: attributes?.validFrom ?? null,
+        validTo,
+      };
+    };
+    const confirmedMemories = confirmedKept.map(present);
+    const tentativeMemories = tentativeKept.map(present);
     const memories = [...confirmedMemories, ...tentativeMemories];
     const tentativeCount = tentativeMemories.length;
     const episodes = this.#options.episodes

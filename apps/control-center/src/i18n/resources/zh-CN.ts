@@ -956,6 +956,13 @@ export const messages = {
   "dailyReview.tag.externalRead": "外部程序读取记忆",
   "dailyReview.tag.ruleReview": "硬规则待重审",
   "dailyReview.ruleReview": "这条硬规则来自你说过的一句话，那条记忆变了，规则照常执行，等你看一眼",
+  "dailyReview.tag.captureRetrying": "记忆抽取失败，已重试",
+  "dailyReview.tag.captureQueued": "记忆抽取失败，下一轮补做",
+  "dailyReview.tag.captureGaveUp": "这轮没记全",
+  "dailyReview.captureRetrying": "这轮对话后抽取记忆的模型调用失败了一次，系统当场又试了一次",
+  "dailyReview.captureQueued": "这轮对话后抽取记忆没成功，系统会在你下一次发消息时补做",
+  "dailyReview.captureGaveUp":
+    "这轮对话的记忆补做了 3 次仍没抽取成功，或者抽取出来后没能存完（可能已存下一部分），系统不再重试",
   "dailyReview.hidden": "这里不显示原文",
   "dailyReview.fetched": "检查了 {count} 封邮件",
   "dailyReview.allFine": "这一页都没问题",
@@ -1004,6 +1011,8 @@ export const messages = {
   "decision.chain.related": "关联邮件 {count} 封",
   "decision.chain.read":
     "{s, select, off {关联邮件：没开启} ok {关联邮件：读取完整} partial {关联邮件：只读到一部分} failed {关联邮件：读取失败} other {关联邮件：无记录}}",
+  "decision.chain.summaries":
+    "{s, select, off {最近两天的对话摘要：这次没读} ok {最近两天的对话摘要：带了 {count} 段} partial {最近两天的对话摘要：带了 {count} 段，可能不全} failed {最近两天的对话摘要：读取失败} other {最近两天的对话摘要：无记录}}",
   "decision.chain.memories": "用到的记忆",
   "decision.chain.recall":
     "{s, select, off {找记忆：没开启} ok {找记忆：正常} partial {找记忆：只找到一部分} failed {找记忆：失败} other {找记忆：无记录}}",
@@ -1254,11 +1263,11 @@ export const messages = {
   "weekly.type.how4":
     "区间是 95% Wilson 区间：按你评过的条数算出的范围，真实比例有 95% 的把握落在里面；评得越多，区间越窄。",
   "weekly.group":
-    "{g, select, proactive_pushed {读完邮件提醒了你} proactive_silent {读完邮件没提醒} memory_skipped {系统没存下的记忆} memory_kept {已存的记忆} consolidation {整理记忆} memory_pending {待你确认的记忆} context_truncation {回答时没带上的旧内容} retrieval_degrade {记忆搜索没生效} rule_review {硬规则待重审} other {外部程序读取记忆}}",
+    "{g, select, proactive_pushed {读完邮件提醒了你} proactive_silent {读完邮件没提醒} memory_skipped {系统没存下的记忆} memory_kept {已存的记忆} consolidation {整理记忆} memory_pending {待你确认的记忆} context_truncation {回答时没带上的旧内容} retrieval_degrade {记忆搜索没生效} rule_review {硬规则待重审} memory_capture_failed {记忆抽取失败} other {外部程序读取记忆}}",
   "weekly.groupInfo":
-    "{g, select, proactive_pushed {Himawari 每 15 分钟读一次新邮件；这一行是读完后提醒了你的那几次。} rule_review {Himawari 的硬规则来自你说过的话；那条记忆被改动、取代或删除后，规则标“待重审”，这一行是这类记录。} other {Himawari 每 15 分钟读一次新邮件；这一行是读完觉得都不用提醒你的那几次。}}",
+    "{g, select, proactive_pushed {Himawari 每 15 分钟读一次新邮件；这一行是读完后提醒了你的那几次。} rule_review {Himawari 的硬规则来自你说过的话；那条记忆被改动、取代或删除后，规则标“待重审”，这一行是这类记录。} memory_capture_failed {每轮对话后系统会从你的话里抽取要记住的内容；这一行是抽取或保存失败的那几次，每次失败一条，补做成功的那轮另有“已存”或“没存”记录。} other {Himawari 每 15 分钟读一次新邮件；这一行是读完觉得都不用提醒你的那几次。}}",
   "weekly.rate":
-    "{k, select, proactive_pushed_useful {提醒得对} proactive_pushed_unneeded {不该提醒} proactive_silent_useful {不提醒是对的} proactive_silent_missed {该提醒没提醒} memory_skipped_useful {不存是对的} memory_skipped_missed {该存没存} memory_kept_useful {存对了} memory_kept_unneeded {不该存} consolidation_useful {整理得对} consolidation_unneeded {不该整理} other_useful {做对了} other_unneeded {不该做} other {该做没做}}",
+    "{k, select, proactive_pushed_useful {提醒得对} proactive_pushed_unneeded {不该提醒} proactive_silent_useful {不提醒是对的} proactive_silent_missed {该提醒没提醒} memory_skipped_useful {不存是对的} memory_skipped_missed {该存没存} memory_kept_useful {存对了} memory_kept_unneeded {不该存} consolidation_useful {整理得对} consolidation_unneeded {不该整理} memory_capture_failed_useful {没漏掉什么} memory_capture_failed_missed {漏了该记的} other_useful {做对了} other_unneeded {不该做} other {该做没做}}",
   "weekly.ratio": "{pct}（{k}/{n}）",
   "weekly.interval": "区间 {low}–{high}",
   "weekly.few": "样本不足（{n} 条）",

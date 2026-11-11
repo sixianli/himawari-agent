@@ -162,6 +162,42 @@ describe("strict product configuration", () => {
       ).toThrow();
   });
 
+  it("accepts memory retrieval tuning only as non-negative numbers below 1 and a boolean dedupe switch", () => {
+    const withRetrieval = (retrieval: unknown) => {
+      const input = config(path.join(tmpdir(), "himawari-memory-retrieval"));
+      input["memory"] = { ...(input["memory"] as Record<string, unknown>), retrieval };
+      return input;
+    };
+    const at = "2026-11-11T00:00:00.000Z";
+    expect(
+      parseProductConfiguration(
+        withRetrieval({
+          keywordWeight: 0.2,
+          entityWeight: 0,
+          cutoffMargin: 0.05,
+          dedupeSameSource: false,
+        }),
+        at,
+      ).memory.retrieval,
+    ).toEqual({ keywordWeight: 0.2, entityWeight: 0, cutoffMargin: 0.05, dedupeSameSource: false });
+    expect(parseProductConfiguration(withRetrieval({}), at).memory.retrieval).toEqual({});
+    expect(
+      parseProductConfiguration(config(path.join(tmpdir(), "himawari-memory-retrieval")), at).memory
+        .retrieval,
+    ).toBeUndefined();
+    for (const invalid of [
+      { keywordWeight: -0.1 },
+      { keywordWeight: 1 },
+      { entityWeight: Number.NaN },
+      { entityWeight: Number.POSITIVE_INFINITY },
+      { cutoffMargin: "0.03" },
+      { dedupeSameSource: "yes" },
+      { minimumScore: 0.5 },
+      "on",
+    ])
+      expect(() => parseProductConfiguration(withRetrieval(invalid), at)).toThrow();
+  });
+
   it("accepts a Magpie primary on a loopback address without gateway routing", () => {
     const input = config(path.join(tmpdir(), "himawari-magpie-primary"));
     const models = input["modelDescriptors"] as Record<string, unknown>[];

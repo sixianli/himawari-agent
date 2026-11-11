@@ -22,6 +22,7 @@ export * from "./durable-autonomy-state-adapter.js";
 export * from "./durable-background-work-service.js";
 export * from "./durable-host-workspace-state-adapter.js";
 export * from "./durable-memory-service.js";
+export * from "./same-source-dedupe.js";
 export * from "./durable-web-state-adapter.js";
 export * from "./execution-envelope-policy.js";
 export * from "./execution-worker-service.js";
