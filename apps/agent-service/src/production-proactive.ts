@@ -305,6 +305,7 @@ export class ProductionProactive {
   async #checkable(): Promise<boolean> {
     if (!this.#options.configuration.demoInbox) return true;
     const { scope, store, seal } = this.#options;
+    if (!(await store.readSettings(scope)).enabled) return false;
     const connection = await store.readConnection({ ...scope, source: "gmail" });
     if (!connection) return true;
     const token = await seal.open({ ...scope, ref: connection.tokenRef });
@@ -696,6 +697,11 @@ export class ProductionProactive {
         const connection = await store.readConnection({ ...scope, source: "gmail" });
         if (connection) {
           const token = await seal.open({ ...scope, ref: connection.tokenRef });
+          if (token && this.#options.configuration.demoInbox && !isDemoMailboxToken(token))
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.INVALID_OPERATION,
+              "PROACTIVE_DEMO_KEEPS_REAL_CONNECTION",
+            );
           if (token) await this.#options.oauth.revoke(token).catch(() => false);
         }
         const released = await store.removeSource({ ...scope, source: "gmail" });

@@ -1105,6 +1105,10 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       account: "andy@example.com",
     });
     expect(await h.seal.open({ ...scope, ref: tokenRef })).toBe("refresh-real");
+    await expect(
+      h.command("proactive.source.manage", { source: "gmail", action: "disconnect" }),
+    ).rejects.toThrow();
+    expect(await h.seal.open({ ...scope, ref: tokenRef })).toBe("refresh-real");
     expect(await h.store.readConnection({ ...scope, source: "gmail" })).toMatchObject({
       status: "connected",
       tokenRef,
@@ -1138,6 +1142,47 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     expect(await h.seal.open({ ...scope, ref: stored?.tokenRef ?? "" })).toContain(
       "demo-inbox:v1:ja:",
     );
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[P6-demo] replaces a fake token with an unreadable date, and releases what it sealed when saving fails", async () => {
+    const h = await setup({ demoInbox: "ja" });
+    const now = h.clock.now();
+    const accountRef = await h.seal.seal({ ...scope, text: "demo@himawari.example", at: now });
+    const tokenRef = await h.seal.seal({ ...scope, text: "demo-inbox:v1:ja:not-a-date", at: now });
+    await h.store.saveConnection({
+      ...scope,
+      connection: {
+        source: "gmail",
+        accountRef,
+        tokenRef,
+        cursor: null,
+        status: "connected",
+        connectedAt: now,
+        updatedAt: now,
+      },
+    });
+    await h.proactive.seedDemoInbox();
+    const stored = await h.store.readConnection({ ...scope, source: "gmail" });
+    expect(stored?.tokenRef).not.toBe(tokenRef);
+    expect(await h.seal.open({ ...scope, ref: stored?.tokenRef ?? "" })).toContain(
+      "demo-inbox:v1:ja:",
+    );
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[P6-demo] [reverse] checks nothing while proactive reminders are off", async () => {
+    const h = await setup({ demoInbox: "ja" });
+    await h.proactive.seedDemoInbox();
+    await h.proactive.seedDemoInbox({ restore: true });
+    await h.command("proactive.settings.set", {
+      enabled: false,
+      quietHours: [],
+      importantSenders: [],
+    });
+    h.script([]);
+    await h.proactive.tick();
+    expect(h.prompts).toEqual([]);
     expect(h.failures).toEqual([]);
   });
 });
