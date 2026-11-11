@@ -18,9 +18,11 @@ import {
   type MuseReferenceEntry,
   type MuseReferenceWrite,
 } from "@himawari-agent/application/decision-ledger";
+import { parseRuleRef, type RuleBookVersion } from "@himawari-agent/application/rule-ref";
 import { readCalibrationRows } from "@himawari-agent/calibration";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import { defaultRuleParameters } from "./sqlite-proactive-operations.ts";
 
 type Input<TName extends keyof DecisionLedgerPort> = Parameters<DecisionLedgerPort[TName]>[0];
 
@@ -67,6 +69,19 @@ export function validateLedgerWrite(write: DecisionLedgerWrite): string | null {
     (write.inputs.resultMemoryIds !== undefined && !idList(write.inputs.resultMemoryIds))
   )
     return "Decision ledger inputs are invalid";
+  const budget = write.inputs.profileBudget ?? null;
+  if (
+    budget !== null &&
+    (write.kind !== "context_truncation" ||
+      !Number.isSafeInteger(budget.limit) ||
+      budget.limit < 1 ||
+      !Number.isSafeInteger(budget.used) ||
+      budget.used < 0 ||
+      !Number.isSafeInteger(budget.pinned) ||
+      budget.pinned < 0 ||
+      budget.pinned > budget.used)
+  )
+    return "Decision ledger profile budget is invalid";
   if (
     !Number.isSafeInteger(write.costMicros) ||
     write.costMicros < 0 ||
@@ -119,6 +134,7 @@ export function insertLedgerRow(database: Database.Database, write: DecisionLedg
         ruleIds: write.inputs.ruleIds,
         batchId: write.inputs.batchId ?? null,
         resultMemoryIds: write.inputs.resultMemoryIds ?? [],
+        ...(write.inputs.profileBudget ? { profileBudget: write.inputs.profileBudget } : {}),
       }),
       write.reasonRef,
       write.contentRef,
@@ -154,6 +170,7 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
     relatedRead?: "off" | "ok" | "partial" | "failed";
     relatedStats?: DecisionInputs["relatedStats"];
     relatedFailedSteps?: readonly string[];
+    profileBudget?: DecisionInputs["profileBudget"];
   };
   return Object.freeze({
     ...(row as unknown as DecisionLedgerEntry),
@@ -210,6 +227,7 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
         },
       ),
       relatedFailedSteps: Object.freeze([...(inputs.relatedFailedSteps ?? [])]),
+      profileBudget: inputs.profileBudget ? Object.freeze({ ...inputs.profileBudget }) : null,
     }),
   });
 }
@@ -233,6 +251,8 @@ export class SqliteDecisionLedgerOperations {
     switch (operation) {
       case "decisionLedger.append":
         return this.append(payload as Input<"append">);
+      case "decisionLedger.appendIfChanged":
+        return this.appendIfChanged(payload as Input<"appendIfChanged">);
       case "decisionLedger.list":
         return this.list(payload as Input<"list">);
       case "decisionLedger.read":
@@ -298,6 +318,41 @@ export class SqliteDecisionLedgerOperations {
     insertLedgerRow(this.database, write);
   }
 
+  private appendIfChanged(input: Input<"appendIfChanged">): boolean {
+    this.assertDiskHeadroom();
+    const { write, reasonCodes } = input;
+    const problem = validateLedgerWrite(write);
+    if (problem) this.fail("PORT_INVALID_OPERATION", problem);
+    if (
+      !Array.isArray(reasonCodes) ||
+      reasonCodes.length < 1 ||
+      reasonCodes.length > 16 ||
+      !reasonCodes.every((code) => text(code, 1, 64)) ||
+      !reasonCodes.includes(write.reasonCode)
+    )
+      this.fail("PORT_INVALID_OPERATION", "Decision ledger reason codes are invalid");
+    return this.database.transaction(() => {
+      const latest = this.database
+        .prepare(
+          `SELECT reason_code AS reasonCode, inputs FROM decision_ledger
+           WHERE owner_id = ? AND agent_id = ? AND kind = ?
+             AND reason_code IN (SELECT value FROM json_each(?))
+           ORDER BY rowid DESC LIMIT 1`,
+        )
+        .get(write.ownerId, write.agentId, write.kind, JSON.stringify(reasonCodes)) as
+        | { reasonCode: string; inputs: string }
+        | undefined;
+      if (latest?.reasonCode === write.reasonCode) {
+        const before = (JSON.parse(latest.inputs) as { memoryIds?: readonly string[] }).memoryIds;
+        const now = write.inputs.memoryIds;
+        if (before?.length === now.length && new Set([...before, ...now]).size === now.length)
+          return false;
+      }
+      insertLedgerRow(this.database, write);
+      return true;
+    })();
+  }
+
   private list(input: Input<"list">): readonly DecisionLedgerEntry[] {
     if (!validTime(input.since)) this.fail("PORT_INVALID_OPERATION", "Ledger time is invalid");
     if (!Number.isSafeInteger(input.limit) || input.limit < 0 || input.limit > 500)
@@ -336,10 +391,65 @@ export class SqliteDecisionLedgerOperations {
       .get(input.ownerId, input.agentId, input.decisionId) as Record<string, unknown> | undefined;
     if (!row) return undefined;
     const inputFields = Object.keys(JSON.parse(row["inputs"] as string) as object).sort();
+    const entry = entryFromRow(row);
     return Object.freeze({
-      entry: entryFromRow(row),
+      entry,
       inputFields: Object.freeze(inputFields),
+      ruleVersions: this.readRuleVersions(input, entry.inputs.ruleIds),
     });
+  }
+
+  private readRuleVersions(
+    scope: Input<"read">,
+    refs: readonly string[],
+  ): Readonly<Record<string, RuleBookVersion>> {
+    const current = this.database.prepare(
+      `SELECT rule_id AS ruleId, revision, parameters, status, source_memory_id AS sourceMemoryId,
+         updated_at AS changedAt
+       FROM rule_book_rules WHERE owner_id = ? AND agent_id = ? AND rule_id = ?`,
+    );
+    const past = this.database.prepare(
+      `SELECT rule_id AS ruleId, revision, parameters, status, source_memory_id AS sourceMemoryId,
+         changed_at AS changedAt
+       FROM rule_book_history
+       WHERE owner_id = ? AND agent_id = ? AND rule_id = ? AND revision = ?`,
+    );
+    const versions: Record<string, RuleBookVersion> = Object.create(null);
+    for (const ref of new Set(refs)) {
+      const { ruleId, revision } = parseRuleRef(ref);
+      const found = (
+        revision === null
+          ? current.get(scope.ownerId, scope.agentId, ruleId)
+          : past.get(scope.ownerId, scope.agentId, ruleId, revision)
+      ) as
+        | {
+            ruleId: string;
+            revision: number;
+            parameters: string;
+            status: RuleBookVersion["status"];
+            sourceMemoryId: string | null;
+            changedAt: string;
+          }
+        | undefined;
+      if (found) {
+        versions[ref] = Object.freeze({
+          ...found,
+          parameters: Object.freeze(JSON.parse(found.parameters) as Record<string, unknown>),
+        });
+        continue;
+      }
+      const defaults = revision === 0 ? defaultRuleParameters(ruleId) : undefined;
+      if (defaults)
+        versions[ref] = Object.freeze({
+          ruleId,
+          revision: 0,
+          parameters: defaults,
+          status: "active",
+          sourceMemoryId: null,
+          changedAt: null,
+        });
+    }
+    return Object.freeze(versions);
   }
 
   private rate(input: Input<"rate">): boolean {

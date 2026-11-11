@@ -81,8 +81,6 @@ export const messages = {
   "chat.error.rateLimited": "模型服务当前限流。请稍后重试，或为下一轮选择其他已配置模型。",
   "chat.error.authFailed": "模型服务认证失败。请检查服务端的模型凭据和访问权限。",
   "chat.error.unavailable": "模型服务暂不可用。请稍后重试。",
-  "chat.error.contextMemoryUnavailable":
-    "查找相关记忆时，连接模型服务失败。本轮没有调用对话模型，也没有执行任何工具。",
   "chat.error.quotaExceeded":
     "模型服务的费用额度已用完，请求被拒绝了，不是网络问题。请在 Vercel 的 AI Gateway 预算里调高或取消上限，之后再试。",
   "chat.error.contextWindowExhausted":
@@ -831,6 +829,8 @@ export const messages = {
   "memory.page.carry.title": "每次对话都会带上的记忆",
   "memory.page.carry.summary": "{count} 条 · 已用 {used} / {limit} 字",
   "memory.page.carry.queued": "还有 {count} 条放不下",
+  "memory.page.carry.pinnedOver":
+    "你打开“每次对话都带上”的记忆共 {pinned} 字，比上限 {limit} 字多出 {over} 字。它们照样每次都带上，但其他记忆就放不进来了；关掉几条可以回到上限以内。",
   "memory.page.carry.open": "查看和调整",
   "memory.page.carry.meter": "已用字数",
   "memory.page.carry.note":
@@ -985,10 +985,20 @@ export const messages = {
   "decision.chain.rules": "命中的规则",
   "decision.chain.reviewRules": "待重审的规则",
   "decision.chain.rule":
-    "{id, select, floor_important_sender {重要来信不放过：发件人在你的重要名单里} floor_public_domain {重要来信不放过：来自政府或学校域名} floor_money_words {重要来信不放过：邮件里有金额相关的词} other {{id}}}",
+    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：邮件里有金额相关的词} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {你设定的} built_in {内置规则} other {未登记的规则}}",
   "decision.chain.ruleMails": "命中 {count} 封邮件",
+  "decision.chain.ruleNeedsReview": "待重审",
+  "decision.chain.ruleQuote": "原话：{text}",
+  "decision.chain.ruleWording":
+    "{k, select, important_sender {{empty, select, yes {重要名单是空的} other {重要名单：{text}}}} public_domain {域名后缀：{text}} money_words {词表：{text}} quiet_hours {{empty, select, yes {没有设静默时段} other {时段：{text}}}} amount_threshold {门槛：{text}} other {{text}}}",
+  "decision.chain.ruleWordingMissing": "这一版的规则内容查不到",
+  "decision.chain.ruleSource": "出处：{source} · 第 {revision} 版",
+  "decision.chain.ruleCurrent": "只记了规则名，显示的是现在的版本",
+  "decision.chain.ruleTests":
+    "{s, select, passed {测试：{total} 条例子全部通过} failed {测试：第 {at} 条例子不符（共 {total} 条）} none {测试：这条规则没有例子} other {测试：查不到}}",
+  "decision.chain.listSeparator": "、",
   "decision.chain.mails": "看过的邮件",
   "decision.chain.judged": "判断了 {count} 封",
   "decision.chain.related": "关联邮件 {count} 封",

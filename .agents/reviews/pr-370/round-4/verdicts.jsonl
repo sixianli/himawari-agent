@@ -1,0 +1,2 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 低：取消/投影路径的 `markUnknown` 失败仍会覆盖原始嵌入错误", "valid": true, "class": "error", "severity": "low", "trigger": "取消时或投影路径的嵌入失败后，改记结果未知也失败", "consequence": "向上抛出的是记账错误而不是原来的嵌入错误", "modelSeverity": "低"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 低：端到端测试删掉了网关原文断言，弱化了 I-11 的日志门槛", "valid": true, "class": "error", "severity": "low", "trigger": "以后有人去掉日志里的网关原文", "consequence": "I-11 的端到端门槛挡不住", "modelSeverity": "低"}

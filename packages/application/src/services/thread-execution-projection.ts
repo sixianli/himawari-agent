@@ -492,8 +492,6 @@ export class ThreadExecutionProjection {
                       "PI_MODEL_RATE_LIMITED",
                       "PI_MODEL_AUTH_FAILED",
                       "PI_MODEL_UNAVAILABLE",
-                      "CONTEXT_MEMORY_UNAVAILABLE",
-                      "CONTEXT_MEMORY_QUOTA_EXCEEDED",
                       "PI_MODEL_QUOTA_EXCEEDED",
                       "PI_CONTEXT_WINDOW_EXHAUSTED",
                     ].includes(text(envelope["errorCode"]))

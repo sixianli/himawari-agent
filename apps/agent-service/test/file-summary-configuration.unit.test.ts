@@ -113,6 +113,7 @@ describe("file summary qualification configuration", () => {
     const requests: { url: string; authorized: boolean; body: unknown }[] = [];
     try {
       const memory = await createProductionMemoryCompositionFromConfiguration({
+        onVectorFailure: () => {},
         egress: testModelEgress(),
         configuration: {
           ...config,

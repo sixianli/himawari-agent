@@ -390,11 +390,32 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         items: [
           {
             ruleId: "floor_important_sender",
-            origin: "owner_setting",
-            document: "ADR 0106 第 4 条",
+            revision: null,
+            current: false,
+            kind: "important_sender",
+            origin: null,
+            source: null,
+            status: null,
+            changedAt: null,
+            memory: null,
+            wording: null,
+            tests: { state: "unavailable", total: 0, failedAt: null },
             mailCount: 2,
           },
-          { ruleId: "floor_unregistered_rule", origin: null, document: null, mailCount: 1 },
+          {
+            ruleId: "floor_unregistered_rule",
+            revision: null,
+            current: false,
+            kind: "unknown",
+            origin: null,
+            source: null,
+            status: null,
+            changedAt: null,
+            memory: null,
+            wording: null,
+            tests: { state: "unavailable", total: 0, failedAt: null },
+            mailCount: 1,
+          },
         ],
       });
       expect(chain.mails).toEqual({ judged: 2, related: 2, relatedRead: "ok" });
@@ -596,6 +617,221 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
     }
   });
 
+  it("[P2-7] shows each rule as the version the check used: wording, source, revision and examples run now", async () => {
+    const f = await fixture();
+    try {
+      const proactive = f.repository.proactive();
+      const settings = (senders: string[], now: string) =>
+        proactive.writeSettings({
+          ...scope,
+          enabled: true,
+          quietHours: [{ days: [1, 2], start: "22:00", end: "06:30" }],
+          importantSenders: senders,
+          now,
+        });
+      await settings(["boss@corp.example"], "2026-11-01T00:00:00.000Z");
+      await settings(["bank.example"], "2026-11-02T00:00:00.000Z");
+      await recordGmail(
+        f.repository,
+        "gmail-versions",
+        gmailInputs({
+          ruleIds: [
+            "floor_important_sender@1",
+            "floor_money_words@1",
+            "quiet_hours@1",
+            "suppress_small_amount@1",
+          ],
+          floorHits: { "mail-1": ["floor_important_sender", "floor_money_words"] },
+          ruleHits: { "mail-2": ["suppress_small_amount@1"] },
+          memoryIds: [],
+          memoryByMail: {},
+          usedMemoryIds: [],
+        }),
+      );
+      const chain = await chainOf(f.control, "gmail-versions");
+      const byId = new Map(chain.rules.items.map((item) => [item.ruleId, item]));
+      expect(byId.get("floor_important_sender")).toEqual({
+        ruleId: "floor_important_sender",
+        revision: 1,
+        current: false,
+        kind: "important_sender",
+        origin: "owner_setting",
+        source: "ADR 0106 第 4 条；主人的设置“重要发件人”",
+        status: "active",
+        changedAt: "2026-11-01T00:00:00.000Z",
+        memory: null,
+        wording: { values: ["boss@corp.example"], quietHours: [], amount: null },
+        tests: { state: "passed", total: 2, failedAt: null },
+        mailCount: 1,
+      });
+      expect(byId.get("floor_money_words")).toMatchObject({
+        kind: "money_words",
+        origin: "built_in",
+        source: "ADR 0106 第 4 条；ADR 0209",
+        tests: { state: "passed", failedAt: null },
+        mailCount: 1,
+      });
+      expect(byId.get("floor_money_words")?.wording?.values).toContain("invoice");
+      expect(byId.get("quiet_hours")).toMatchObject({
+        kind: "quiet_hours",
+        revision: 1,
+        wording: { quietHours: [{ days: [1, 2], start: "22:00", end: "06:30" }] },
+        tests: { state: "passed", failedAt: null },
+        mailCount: 0,
+      });
+      expect(byId.get("suppress_small_amount")).toMatchObject({
+        kind: "amount_threshold",
+        revision: 1,
+        wording: null,
+        tests: { state: "unavailable" },
+        mailCount: 1,
+      });
+    } finally {
+      await f.repository.close();
+    }
+  });
+
+  it("[P2-7] shows the default quiet hours and an empty important list for revision 0, and nothing for a bare id with no row", async () => {
+    const f = await fixture();
+    try {
+      await recordGmail(
+        f.repository,
+        "gmail-defaults",
+        gmailInputs({
+          ruleIds: ["__proto__", "floor_important_sender@0", "quiet_hours", "quiet_hours@0"],
+          floorHits: {},
+          memoryIds: [],
+          memoryByMail: {},
+          usedMemoryIds: [],
+        }),
+      );
+      const chain = await chainOf(f.control, "gmail-defaults");
+      const items = chain.rules.items;
+      expect(
+        items.find((item) => item.ruleId === "quiet_hours" && item.revision === 0),
+      ).toMatchObject({
+        current: false,
+        changedAt: null,
+        wording: { quietHours: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }] },
+        tests: { state: "passed", failedAt: null },
+      });
+      expect(items.find((item) => item.ruleId === "floor_important_sender")).toMatchObject({
+        revision: 0,
+        wording: { values: [] },
+        tests: { state: "passed", total: 1 },
+      });
+      expect(
+        items.find((item) => item.ruleId === "quiet_hours" && item.revision === null),
+      ).toMatchObject({
+        current: false,
+        wording: null,
+        tests: { state: "unavailable" },
+      });
+      expect(items.find((item) => item.ruleId === "__proto__")).toMatchObject({
+        kind: "unknown",
+        current: false,
+        wording: null,
+      });
+    } finally {
+      await f.repository.close();
+    }
+  });
+
+  it("[P2-7] shows the rule's own words when it came from a rule memory, and its review state", async () => {
+    const f = await fixture();
+    try {
+      await seedMemories(f);
+      await f.repository.proactive().writeSettings({
+        ...scope,
+        enabled: true,
+        quietHours: [],
+        importantSenders: ["bank.example"],
+        now: "2026-11-01T00:00:00.000Z",
+      });
+      f.sql((database) => {
+        database
+          .prepare(
+            "UPDATE rule_book_rules SET source_memory_id = 'memory-a', status = 'needs_review' WHERE rule_id = 'floor_important_sender'",
+          )
+          .run();
+      });
+      await recordGmail(
+        f.repository,
+        "gmail-memory-rule",
+        gmailInputs({
+          ruleIds: ["floor_important_sender"],
+          floorHits: { "mail-1": ["floor_important_sender"] },
+          memoryIds: [],
+          memoryByMail: {},
+          usedMemoryIds: [],
+        }),
+      );
+      const chain = await chainOf(f.control, "gmail-memory-rule");
+      expect(chain.rules.items).toMatchObject([
+        {
+          ruleId: "floor_important_sender",
+          current: true,
+          status: "needs_review",
+          memory: { memoryId: "memory-a", state: "visible", text: TEXTS["payload-a"] },
+          wording: { values: ["bank.example"] },
+          tests: { state: "passed" },
+        },
+      ]);
+    } finally {
+      await f.repository.close();
+    }
+  });
+
+  it("[P2-7] refuses an important sender with a control character and still reads a chain whose stored list has one", async () => {
+    const f = await fixture();
+    try {
+      await expect(
+        f.repository.proactive().writeSettings({
+          ...scope,
+          enabled: true,
+          quietHours: [],
+          importantSenders: ["bank\n.example"],
+          now: "2026-11-01T00:00:00.000Z",
+        }),
+      ).rejects.toThrow();
+      await f.repository.proactive().writeSettings({
+        ...scope,
+        enabled: true,
+        quietHours: [],
+        importantSenders: ["bank.example", "x\u0080y.example"],
+        now: "2026-11-01T00:00:00.000Z",
+      });
+      expect((await f.repository.proactive().readSettings(scope)).importantSenders).toEqual([
+        "bank.example",
+        "x\u0080y.example",
+      ]);
+      f.sql((database) => {
+        database
+          .prepare(
+            "UPDATE rule_book_rules SET parameters = ? WHERE rule_id = 'floor_important_sender'",
+          )
+          .run(JSON.stringify({ senders: ["bank\n.example"] }));
+      });
+      await recordGmail(
+        f.repository,
+        "gmail-control-sender",
+        gmailInputs({
+          ruleIds: ["floor_important_sender"],
+          floorHits: { "mail-1": ["floor_important_sender"] },
+          memoryIds: [],
+          memoryByMail: {},
+          usedMemoryIds: [],
+        }),
+      );
+      const chain = await chainOf(f.control, "gmail-control-sender");
+      expect(chain.rules.items).toMatchObject([
+        { ruleId: "floor_important_sender", current: true, wording: { values: ["bank .example"] } },
+      ]);
+    } finally {
+      await f.repository.close();
+    }
+  });
+
   it("[P2-2] lists the hard rule a rule review record points at", async () => {
     const f = await fixture();
     try {
@@ -697,8 +933,8 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         gmailInputs({ ruleIds: [odd], floorHits: { "mail-1": [odd] }, memoryIds: [] }),
       );
       const chain = await chainOf(f.control, "gmail-odd-rule");
-      expect(chain.rules.items).toEqual([
-        { ruleId: odd, origin: null, document: null, mailCount: 1 },
+      expect(chain.rules.items).toMatchObject([
+        { ruleId: odd, kind: "unknown", origin: null, wording: null, mailCount: 1 },
       ]);
     } finally {
       await f.repository.close();

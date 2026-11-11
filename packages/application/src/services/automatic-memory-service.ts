@@ -568,10 +568,7 @@ export class AutomaticMemoryService {
       memoryIds: candidate.existingMemoryId ? [candidate.existingMemoryId] : [],
       candidate,
     });
-    await this.options.ledger.append({
-      ...write,
-      inputs: { memoryIds: write.inputs.memoryIds, ruleIds: [reasonCode] },
-    });
+    await this.options.ledger.append(write);
   }
 
   private audit(
