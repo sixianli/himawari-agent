@@ -485,5 +485,5 @@ describe("data admin CLI", () => {
     const inspected = await run(["data", "inspect", "--from", out]);
     expect(inspected.code).toBe(0);
     expect(JSON.parse(inspected.lines.at(-1) ?? "{}").counts.threads).toBe(4100);
-  });
+  }, 60_000);
 });

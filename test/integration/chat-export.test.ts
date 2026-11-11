@@ -275,6 +275,19 @@ describe("chat export", () => {
       expect(everyText(files)).not.toContain(ref);
   });
 
+  it("[多人7] an attachment name over 1024 characters is shortened and the export still verifies", async () => {
+    const s = await side("long-attachment-name");
+    await seedThread(s, "t-1", {
+      messages: [
+        { text: `看这个\n\n<file name="${"长".repeat(3000)}" ref="r1" bytes="5" kind="text"/>` },
+      ],
+    });
+    const { files } = await exportOf(s);
+    const [thread] = jsonl(files) as [ThreadRow];
+    expect(thread.messages[0]?.attachments[0]?.name.length).toBeLessThanOrEqual(1000);
+    expect(verifyChatExport(files, s.migrationSequence).counts.attachments).toBe(1);
+  });
+
   it("[多人7] a very long title still produces an export that verifies", async () => {
     const s = await side("long-title");
     await seedThread(s, "t-1", { title: "长".repeat(6000), messages: [{ text: "x" }] });
@@ -428,7 +441,7 @@ describe("chat export", () => {
         counts: Record<string, number>;
         withheld: Record<string, number>;
       }) => void,
-      data?: string,
+      data?: string | Uint8Array,
     ) {
       const copy = new Map(files);
       const manifest = JSON.parse(decoder.decode(files.get("manifest.json"))) as Parameters<
@@ -436,7 +449,7 @@ describe("chat export", () => {
       >[0];
       change(manifest);
       if (data !== undefined) {
-        const content = encoder.encode(data);
+        const content = typeof data === "string" ? encoder.encode(data) : data;
         copy.set("data/threads.jsonl", content);
         const entry = manifest.files.find((file) => file.path === "data/threads.jsonl");
         if (!entry) throw new Error("missing entry");
@@ -446,6 +459,14 @@ describe("chat export", () => {
       copy.set("manifest.json", encoder.encode(canonicalJson(manifest)));
       return copy;
     }
+
+    it("[多人7] a data file that is not valid UTF-8 is a stable error, not a raw exception (negative case)", async () => {
+      const { s, files } = await good();
+      const broken = fixedUp(files, () => {}, new Uint8Array([0xff, 0xfe, 0x0a]));
+      expect(code(() => verifyChatExport(broken, s.migrationSequence))).toBe(
+        DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+      );
+    });
 
     it("[多人7] a manifest that hides a required file, or counts withheld texts wrongly, is rejected", async () => {
       const { s, files } = await good();

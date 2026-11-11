@@ -135,20 +135,21 @@ export async function runDataCommand(
   if (action === "inspect") {
     const from = values.get("--from");
     if (!from) throw new Error(DATA_COMMAND_ERROR_CODES.ARGUMENT_INVALID);
-    const files = await readPortableDirectory(from, {
-      maximumFiles: 200_000,
-      maximumTotalBytes: 2 * 1024 * 1024 * 1024,
-    });
-    const manifestBytes = files.get("manifest.json");
     let declaredFormat: unknown;
     try {
-      declaredFormat = manifestBytes
-        ? (JSON.parse(new TextDecoder().decode(manifestBytes)) as { format?: unknown } | null)
-            ?.format
+      const peeked = await readFile(path.join(from, "manifest.json"), "utf8").catch(() => "");
+      declaredFormat = peeked
+        ? (JSON.parse(peeked) as { format?: unknown } | null)?.format
         : undefined;
     } catch {
       throw new DataExportError(DATA_EXPORT_ERROR_CODES.MANIFEST_INVALID, "清单不是有效的 JSON");
     }
+    const files = await readPortableDirectory(
+      from,
+      declaredFormat === CHAT_FORMAT_VERSION
+        ? { maximumFiles: 200_000, maximumTotalBytes: 2 * 1024 * 1024 * 1024 }
+        : {},
+    );
     if (declaredFormat === CHAT_FORMAT_VERSION) {
       const chats = verifyChatExport(files, LATEST_MIGRATION_SEQUENCE);
       return Object.freeze({

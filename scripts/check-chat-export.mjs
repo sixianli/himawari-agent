@@ -11,7 +11,7 @@ const FILES = [
   "test/integration/chat-export-http.test.ts",
   "test/integration/data-cli.test.ts",
 ];
-const REQUIRED = 30;
+const REQUIRED = 32;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(path.join(tmpdir(), "himawari-chat-export-"));

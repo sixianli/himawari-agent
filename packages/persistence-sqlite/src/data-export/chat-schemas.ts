@@ -8,7 +8,7 @@ export const CHAT_INDEX_FILE = "CHATS.md";
 export const CHAT_SEALED_FILE = "sealed/sealed.enc";
 
 const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
-const text = (minLength = 0, maxLength = 100_000_000): JsonSchema => ({
+const text = (minLength = 0, maxLength = 2_000_000_000): JsonSchema => ({
   type: "string",
   minLength,
   maxLength,

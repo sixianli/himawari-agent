@@ -319,7 +319,7 @@ export async function buildChatExport(options: ChatExportOptions): Promise<ChatE
     };
   };
   const safeName = (name: string): string => {
-    if (!options.policy.hasSecret(name)) return name;
+    if (!options.policy.hasSecret(name)) return Array.from(name).slice(0, 1000).join("");
     replacedNames += 1;
     let number = nameNumbers.get(name);
     if (number === undefined) {

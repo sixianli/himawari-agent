@@ -56,10 +56,10 @@ date: "2026-11-11"
 4. **机密：**一段文字（标题或一条消息）认出机密，明文层放遮盖后的文字，仍像机密则放占位符，该条标 `withheld: true`，原文只进封存文件 `originals["thread/<对话>/message/<消息>"]`；附件名含机密时换成编号占位 `[已扣留:N]`，原文不保留。网页导出没有口令，所以含机密的消息在网页导出里只有占位符。
 5. **校验：**`verifyChatExport` 检查清单格式、必需文件（`data/threads.jsonl`、`schema/threads.schema.json`、`CHATS.md`）都在清单里、文件清单、字节数、SHA-256、每行对照 JSON Schema、对话和消息编号不重复、消息顺序递增、每个对话的 Markdown 在 `chats/` 下、以 `.md` 结尾、存在且不重复、清单里的条数（对话、消息、附件、扣留的消息、扣留的文字、扣留的对话、封存原文数）和数据文件一致。任何一项不符整份拒绝。清单的迁移序号只拒绝比当前新的（聊天记录是只读数据，旧版本导出的仍可校验；记忆导出因为要导入，要求完全相等）。导出生成后立即自己校验一遍，校验不过就整个导出失败，不会交出一份自己都认不得的包。
 6. **入口：**
-   - 网页：记忆页底部加“导出聊天记录”，`GET /api/data-export/v1/chats`。登录的主人会话、同源（`Sec-Fetch-Site` 为 `same-origin` 或 `none`），未登录 401，跨站 403，同时只生成一份（第二个并发请求 429），只读数据库连接，不需要停服务。读取之前先累加要读的荷载大小，超过 128 MiB 就返回 413，什么都不解密，页面提示改用命令行。响应头 `x-himawari-export-threads`、`x-himawari-export-messages`、`x-himawari-export-withheld` 分别等于清单的对话数、消息数和被扣留的消息数（`withheld.messages`）。页面上显示的数字就是这三个，不另算。
-   - 命令行：`himawari-admin data export-chats`，参数和 `data export` 相同（服务要停、口令文件、`--out` 必须是空目录）；有含机密的文字又没给口令时拒绝，除非 `--allow-unsealed`。命令行的上限是 256 MiB。`data inspect` 能认出这个格式并校验，读目录时对聊天导出放宽到 20 万个文件、总共 2 GiB（记忆导入仍是 4096 个、512 MB），因为每个对话一个 Markdown，对话多了文件会很多。
+   - 网页：记忆页底部加“导出聊天记录”，`GET /api/data-export/v1/chats`。登录的主人会话、同源（`Sec-Fetch-Site` 为 `same-origin` 或 `none`），未登录 401，跨站 403，同时只生成一份（第二个并发请求 429），只读数据库连接，不需要停服务。读取之前先累加要读的荷载大小，超过 128 MiB 就返回 413，什么都不解密，页面提示改用命令行；打包后超过 512 MiB 同样返回 413。响应头 `x-himawari-export-threads`、`x-himawari-export-messages`、`x-himawari-export-withheld` 分别等于清单的对话数、消息数和被扣留的消息数（`withheld.messages`）。页面上显示的数字就是这三个，不另算。
+   - 命令行：`himawari-admin data export-chats`，参数和 `data export` 相同（服务要停、口令文件、`--out` 必须是空目录）；有含机密的文字又没给口令时拒绝，除非 `--allow-unsealed`。命令行的上限是 256 MiB。`data inspect` 能认出这个格式并校验，先只读清单认出格式，读目录时只对聊天导出放宽到 20 万个文件、总共 2 GiB（记忆导入仍是 4096 个、512 MB），因为每个对话一个 Markdown，对话多了文件会很多。
 7. **只导出，不导入。**导入要重建对话、运行、轮次和检索骨架，不属于“把聊天带走”。
-8. **门槛：**`npm run check:chat-export`（属于 `npm run check`）跑带 `[多人7]` 的测试，要求至少 30 条通过。
+8. **门槛：**`npm run check:chat-export`（属于 `npm run check`）跑带 `[多人7]` 的测试，要求至少 32 条通过。
 9. 不加迁移。
 
 <a id="industry"></a>

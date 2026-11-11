@@ -51,7 +51,12 @@ export function verifyChatExport(files: PortableFiles, migrationSequence: number
     if (!listed.has(required)) throw failure("FILE_LISTING_MISMATCH", `缺少 ${required}`);
   const data = files.get(CHAT_THREADS_FILE);
   if (data === undefined) throw failure("FILE_LISTING_MISMATCH", CHAT_THREADS_FILE);
-  const raw = decoder.decode(data);
+  let raw: string;
+  try {
+    raw = decoder.decode(data);
+  } catch {
+    throw failure("LINE_INVALID", "threads.jsonl 不是有效的 UTF-8");
+  }
   const rows = raw === "" ? [] : raw.replace(/\n$/u, "").split("\n");
   if (raw !== "" && !raw.endsWith("\n")) throw failure("LINE_INVALID", "最后一行缺少换行");
   const threadIds = new Set<string>();

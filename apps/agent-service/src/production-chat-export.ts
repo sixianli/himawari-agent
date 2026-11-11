@@ -73,8 +73,11 @@ export function registerChatExportRoute(
         database.close();
       }
     } catch (error) {
-      if (error instanceof Error && error.message === CHAT_EXPORT_TOO_LARGE) {
-        request.log.warn({ code: CHAT_EXPORT_TOO_LARGE }, "chat export too large for the web");
+      if (
+        error instanceof Error &&
+        (error.message === CHAT_EXPORT_TOO_LARGE || error.message === "DATA_EXPORT_TOO_LARGE")
+      ) {
+        request.log.warn({ code: error.message }, "chat export too large for the web");
         return reply.code(413).send();
       }
       const code =
