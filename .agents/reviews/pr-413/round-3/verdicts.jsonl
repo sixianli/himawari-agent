@@ -1,0 +1,6 @@
+{"id": "e1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "整批遮盖让“固定的 profile 段”随 today 段变化，违背“前面稳定、只有末尾变化”", "valid": false, "class": "better"}
+{"id": "e2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`profile.version` 不覆盖最终交付内容，不能作为“profile 是否变了”的依据", "valid": false, "class": "better"}
+{"id": "e3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "提示词清单 `changedIn: \"ADR 0242\"` 指向不存在的文档", "valid": false, "class": "better"}
+{"id": "e4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`today` 段没有字数预算，也没有“还剩几条没列出”", "valid": false, "class": "better"}
+{"id": "e5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`readCeiling` 未接入生产配置，且 rules 段不受上限约束", "valid": false, "class": "better"}
+{"id": "e6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "提醒扫描上限边界下 `more` 可能报错为 false，且每次 `start_here` 可能扫描并解密 200 条", "valid": true, "class": "error", "severity": "low", "trigger": "今天 48 小时内超过 200 条提醒，且前 200 条里合格的不足 20 条", "consequence": "more 标志给 false，外部 agent 以为没有更多提醒；内容本身不错", "modelSeverity": "低"}

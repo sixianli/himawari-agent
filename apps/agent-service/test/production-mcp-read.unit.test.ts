@@ -29,3 +29,23 @@ describe("[P5-1] masking what an external MCP read returns", () => {
     expect(maskForExternalRead(value)).toEqual(value);
   });
 });
+
+describe("[P5-A] masking across the fields of one response", () => {
+  const code = "482910";
+
+  it("masks a value everywhere in start_here when only one field names it", () => {
+    const masked = JSON.stringify(
+      maskForExternalRead({
+        profile: { sections: [{ items: [`备用手机尾号提示 ${code}`] }] },
+        rules: { items: [] },
+        today: { reminders: [{ text: `${code} 是验证码` }] },
+      }),
+    );
+    expect(masked).not.toContain(code);
+  });
+
+  it("REVERSE: a response that names nothing sensitive keeps every field as it is", () => {
+    const value = { profile: { items: ["住在东京"] }, today: { reminders: [{ text: "开会" }] } };
+    expect(maskForExternalRead(value)).toEqual(value);
+  });
+});
