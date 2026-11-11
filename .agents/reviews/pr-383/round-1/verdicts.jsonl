@@ -1,0 +1,13 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "同一提议并发收到「同意」和「拒绝」时，两个结论都会落账", "valid": true, "class": "error", "severity": "medium-high", "trigger": "同一 requestState 并发重发一个保存、一个拒绝的答案", "consequence": "同时留下 kept 记忆和 declined 决策记录，拒绝不生效", "modelSeverity": "中"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`legacyShim: false` 没有真正的反向用例，现有老版本测试去掉该设置也会通过", "valid": true, "class": "better"}
+{"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "已有 payload 只比较分类，不比较正文摘要", "valid": false}
+{"id": "ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`requestState` 校验在 try 之外，被篡改/过期时不会走 `onFailure` 诊断", "valid": true, "class": "better"}
+{"id": "ds-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "不可见字符清洗没有覆盖全部格式字符，也没有处理行/段分隔符", "valid": true, "class": "error", "severity": "medium-high", "trigger": "提议正文里带 U+00AD、U+061C、U+2028 等字符", "consequence": "看不见的字符留在确认框和保存的正文里，和 ADR 写的去掉零宽、双向字符不符", "modelSeverity": "低"}
+{"id": "ds-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "工具 schema 的 `maxLength` 作用在规范化之前，和实际校验口径不一致", "valid": true, "class": "error", "severity": "low", "trigger": "原文超过 2000 个 UTF-16 单元、规范化后不超过 2000 个字符（例如末尾带大量零宽字符）", "consequence": "被 SDK 的参数校验报错拒绝，拿不到说明文字；不会写错数据", "modelSeverity": "低"}
+{"id": "ds-7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "配置了 `writeSecretRef` 但找不到对应密钥时，写工具会静默消失", "valid": false}
+{"id": "ds-8", "model": "opencode-go/deepseek-v4.1-flash", "quote": "文档与代码/其他 ADR 有漂移", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 0225 的 bind 说明、前提 7 的原话，或读 ADR 0143/0186 的原因码和分类顺序", "consequence": "说明与代码不一致，但不会让人照着做出错误操作", "modelSeverity": "低"}
+{"id": "ds-9", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`daily-review.ts` 对同一模块重复 import", "valid": true, "class": "better"}
+{"id": "gl-1", "model": "opencode-go/glm-5.3-flash", "quote": "规范化漏掉部分“零宽字符”，与 ADR 文字不完全一致", "valid": true, "class": "error", "severity": "medium-high", "trigger": "同 ds-5", "consequence": "同 ds-5", "modelSeverity": "低"}
+{"id": "gl-2", "model": "opencode-go/glm-5.3-flash", "quote": "`keep()` 的 CONFLICT 重试分支没有确定性测试", "valid": true, "class": "better"}
+{"id": "gl-3", "model": "opencode-go/glm-5.3-flash", "quote": "`MCP_WRITE_SECRET_REUSED` 检查无测试", "valid": true, "class": "better"}
+{"id": "gl-4", "model": "opencode-go/glm-5.3-flash", "quote": "`elicitationSupported` 把空对象视为支持 form，且该分支只测了“完全不支持”", "valid": true, "class": "better"}
