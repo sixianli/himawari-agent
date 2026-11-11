@@ -797,6 +797,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     for (const args of [
       { ...RULE, params: {} },
       { ...RULE, params: { phrases: ["留"] } },
+      { ...RULE, params: { excludePhrases: ["広告"] } },
       { ...RULE, params: { phrases: ["a\nb"] } },
       { ...RULE, summary: "两行\n说明" },
       { ...RULE, reason: "​⁠" },

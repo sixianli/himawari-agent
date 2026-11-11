@@ -395,7 +395,7 @@
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
   },
   "mcp.propose-rule": {
-    "sha256": "c86a664794a1c993b77c7ad50619d8073fc20664a55596dc1698a033a0c18baf",
+    "sha256": "a32fc16ab5c4cef51f253c3d45fff836d4070ffde51333db9b14616e95c735ef",
     "changedIn": "ADR 0226",
     "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
   },

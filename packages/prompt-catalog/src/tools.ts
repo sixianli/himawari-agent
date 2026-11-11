@@ -418,7 +418,7 @@ export const MCP_TOOL_PROPOSE_RULE = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tools",
   output: "free-text",
-  text: "向主人提议在 Himawari 里立一条邮件长期规则，由程序每次检查邮件时执行。只有两种：mail_must_notify（这类邮件一定提醒主人并推送）和 mail_read_whole_thread（这类邮件判断前先读完整个邮件串）。params 写匹配条件：senderDomains 发件域名、senderAddresses 发件地址、phrases 词语、words 英文整词、excludePhrases 排除词，至少给一项；summary 用一句话写这条规则做什么；reason 写为什么提，主人说过的原话就照抄。调用后主人会在你所在的客户端里看到确认框，看到近 30 天会命中几封邮件，勾选「生效」并提交才会生效；拒绝或取消就不生效。只能在能弹出确认框的交互会话里使用。",
+  text: "向主人提议在 Himawari 里立一条邮件长期规则，由程序每次检查邮件时执行。只有两种：mail_must_notify（这类邮件一定提醒主人并推送）和 mail_read_whole_thread（这类邮件判断前先读完整个邮件串）。params 写匹配条件：senderDomains 发件域名、senderAddresses 发件地址、phrases 词语、words 英文整词、excludePhrases 排除词；senderDomains、senderAddresses、phrases、words 至少给一项，只给 excludePhrases 不算；summary 用一句话写这条规则做什么；reason 写为什么提，主人说过的原话就照抄。调用后主人会在你所在的客户端里看到确认框，看到近 30 天会命中几封邮件，勾选「生效」并提交才会生效；拒绝或取消就不生效。只能在能弹出确认框的交互会话里使用。",
 });
 
 export const MCP_PROPOSE_RULE_CONFIRM = templatePrompt({
