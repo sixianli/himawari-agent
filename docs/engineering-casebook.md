@@ -111,6 +111,7 @@ date: "2026-10-26"
   84. [AI 代码复核一个 PR 花 0.79 美元：第 2 轮起只用一个模型，低严重度意见改完不再复核](#case-cheaper-code-review)
   85. [没人输入验证码，拦截记录里却天天有“验证码”：敏感信息检查把 Himawari 自己写的指令当成了外来内容](#case-trusted-prompt-text)
   86. [底层 Agent 框架跨大版本升级：Pi 从 0.84.2 升到 1.5.0，老对话的缓存一个字节都没变](#case-pi-1-5-upgrade)
+  87. [记忆评测全是合成题：改用主人确认过的记忆和原话自动出题、判分，每周跑一次](#case-real-memory-eval)
   88. [三路检索合并后怎么划“相关”的线：RRF 分数划不了线，用相似度加少量加分，权重和余量用评测扫出来](#case-relevance-cutoff)
   90. [让模型替主人先打一遍分，什么时候才敢少给主人看：一致率按区间下限算，还要比瞎猜准](#case-model-prereview)
 - [小案例速查](#small-cases)
@@ -134,7 +135,7 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction)、[自己写的指令不该被当成外来内容检查](#case-trusted-prompt-text)、[沙箱保护不能静默失效](#case-srt-locked-seccomp-helper) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
@@ -146,7 +147,7 @@ date: "2026-10-26"
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail)、[设置各端同步：版本号防旧设备覆盖](#case-settings-everywhere)、[通知设置点了没反应](#case-push-ready-hang) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt)、[产品愿景定为顶层文档](#case-product-vision) |
-| 产品判断：定位、差异化和用评测证明产品价值 | [产品愿景定为顶层文档](#case-product-vision)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[推送反馈记录](#case-push-feedback)、[多用户隔离](#case-multi-user)、[要不要做 iOS App](#case-mobile-client)、[主动看邮件不乱打扰](#case-proactive-gmail)、[记忆要不要改成主模型自己存](#case-memory-capture-eval) |
+| 产品判断：定位、差异化和用评测证明产品价值 | [产品愿景定为顶层文档](#case-product-vision)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[推送反馈记录](#case-push-feedback)、[多用户隔离](#case-multi-user)、[要不要做 iOS App](#case-mobile-client)、[主动看邮件不乱打扰](#case-proactive-gmail)、[记忆要不要改成主模型自己存](#case-memory-capture-eval)、[用真实记忆每周评测](#case-real-memory-eval) |
 
 [返回目录](#contents)
 
@@ -5476,6 +5477,126 @@ Pi 在 0.86 和 0.87 改了两处核心约定：发给模型的请求不再分�
 
 **面试 30 秒版**
 “我们的 Agent 跑在开源框架 Pi 上，跨大版本升级时 Pi 把系统提示改成放在消息里，并且会话历史只认它自己的会话管理器。我们按对话冻结请求开头来保证 KV 缓存命中，直接升级会让这层冻结静默失效。我按 Pi 官方文档把审批续跑改成用会话条目恢复，请求开头仍由我们生成再交给 Pi 的官方函数，并加了反向测试。最后用新旧两版生成同一请求做逐字节比对，证明老对话的缓存一个字节都没变。”
+
+[返回目录](#contents)
+
+<a id="case-real-memory-eval"></a>
+
+## 案例 87：记忆系统的评测全是合成题：改用主人自己确认过的记忆和原话自动出题、判分，每周跑一次
+
+**背景与现象**
+
+2026-11-11 之前，判断 Himawari 的记忆系统好不好，靠的是四个合成评测集：
+
+- `evals/memory-retrieval`（检索）：`dataset.json` 第 3 行写明“合成数据，不含 Andy 的真实记忆”。
+- `evals/memory-capture`（捕获，见[案例 78](#case-memory-capture-eval)）。
+- `test/integration/memory-evaluation.test.ts`（端到端回忆）。
+- `evals/jarvis-test`（Jarvis Test，产品愿景里的十条验收题，见[案例 39](#case-jarvis-test-evals)）。
+
+这些题由写代码的人想出来，量的是“我们想象中的记忆分布”。Andy 真实记下的东西更杂，例如口语、日期、改过口的偏好、敏感内容。合成题分数高，不等于对 Andy 本人好用。任务块 P4-5 要求：从 Andy 确认过的记忆和原话里自动出题、自动判分，每周自动更新；合成集保留做对照。
+
+**为什么需要这样一个评测集（根因）**
+
+不是故障，是“尺子量错了对象”，原因有三条：
+
+1. **题目来源有偏。** 合成题和代码出自同一个人之手，题目天然偏向现有实现能答对的样子。案例 78 的“局限”一节已经写过这一点：“题目和标准答案由 Claude 一人写，可能偏向 A”。
+2. **分布不同。** 真实记忆里有大量改写过的、带日期的、敏感级别的内容，合成集覆盖不到。
+3. **看不出趋势。** 合成集是固定的，系统改动后同一批题分数不变，不代表 Andy 新记下的内容也能答对。
+
+**我们的方案（这个评测集是怎么做出来的）**
+
+整体流程：每周一次在生产服务进程里跑（`runPolicy.realEval.mode`：`off` 不跑、`once` 手动跑一轮并写抽查样本、`weekly` 每周）。一轮分五步：
+
+1. **退役旧题。** 题对应的记忆被删、被取代、变成待确认、过期、或被改过（版本号变了），旧题退役、不再计分。
+2. **给新记忆出题。** 按记忆编号顺序，取还没有在用题的已确认记忆（状态 active 且 `tentative` 为假），每轮最多为 `newMemoriesPerRun` 条记忆出题；读取（解密）出错的记忆跳过、不占名额，下一轮排到最后再试；一轮最多读名额 4 倍的记忆，免得一批坏记忆让一轮读个没完。
+3. **作答。** 先答本周新题，再答固定面板（以前就在题库里的题）。作答前按和对话相同的规则选档案和检索记忆，再发给模型。
+4. **判分。** 先快判，快判不了再交判分模型。
+5. **记分。** 只把分数、计数和标识写进 `real_eval_runs`，不含正文。
+
+为什么要在生产服务进程里跑：记忆正文和原话在生产库里是加密保存的，只有服务进程能解密（评测在 `production-real-eval.ts` 里用服务进程传入的 `realEvalProtector` 解密）。所以出题、作答、判分都在生产上做，真实内容不进仓库。题干也加密存进题库表 `real_eval_questions`，删除记忆时外键级联删题，治理删除顺带删掉题干。
+
+**题目和答案是怎么生成的**
+
+- **标准答案不另写，就是原话。**
+  - 每道题记下“出自哪条记忆、哪个版本”。判分时从原记忆和主人当时的原话（记忆历史里的 `quote_ref`）现读，题库里不复制答案。
+  - 所以记忆一改，答案自动跟着变，旧题退役。
+- **出题：** 模型只写题干。出题提示词 `eval.real-memory.question` 要求：
+  - 问“主人过去的事实或偏好”，像主人随口问的一句话；
+  - 题型填 `fact`（事实）、`preference`（偏好）或 `time`（时间）；
+  - 题干不得透露答案。
+- **反向用例（拒答题）：**
+  - 出题模型可以为每条记忆另出一道拒答题：形式一样，但把对象换成记忆里没有的人或事，例如“我早上喝什么？”配“我妹妹早上喝什么？”；出不了时可以不出。
+  - 正确回答是“我没有这条记忆”，用来检查会不会编造。
+  - 这一类对应 LongMemEval 的 abstention（拒答）题。
+- **题干当不可信输入检查：** 下面任何一条不过，这道题就丢弃。
+  - 限长 4 到 120 字，只能是一行，不能有花括号、尖括号这类字符，必须是规定的 JSON 结构。
+  - 泄题检查：
+    - 和原话或记忆正文有连续 6 个字相同，算泄题；
+    - 含同一个两位以上数字，算泄题；
+    - 含同一个日期时刻也算泄题，“十二月”和“12 月”、“七点”和“7:00”算同一个；“一点”要有“下午”“钟”这类时间字眼才算钟点。
+  - 含银行卡号、密码这类敏感值。
+  - 被丢弃或模型拒绝出题的记忆版本，以后不再问，免得每周重复花钱；只有模型回的不是合法 JSON、或者记忆读取出错时，下次照常再问。
+- **作答：** 和对话走同一套记忆选取。
+  - 档案用 `OwnerProfileService.compose`。
+  - 检索用同一个记忆搜索、同样的 `memoryLimit` 和 `maxSelectedMemories`，检索不改记忆的使用计数。
+  - 检索时用题目所出自那条记忆的数据分级去调向量模型。
+- **判分：**
+  - 回答完整包含原话（归一化后至少 8 个字）直接判对，不花钱。
+  - 其余交判分模型，三选一：`correct`、`wrong`、`abstained`。
+- **报告的分数分开算：**
+  - 固定面板（看趋势）、本周新题、拒答题、检索命中（标准记忆有没有被选进作答材料）。
+  - 每项附 Wilson 区间（小样本下比例的置信区间），不足 5 题不出比例。
+- **决策评测这次只计数：**
+  - 从决策记录取主人评价过的系统主动提醒、系统没存下的记忆、记忆整理三类决策，主人评“有用”算做对。
+  - 重放当时的输入要用到决策记录里没有的证据，等某组评价满 5 条再做。
+
+**方案讨论与备选**
+
+- **作答时只给问题、不给检索结果：** 量不到记忆系统，放弃。
+- **复用对话的 `ContextFormationService`：** 它绑定一次对话运行（运行编号、执行租约），评测没有运行。改为按同样规则选档案和记忆，代价是分数量的是“档案加一次检索”，不含 `recall` 工具和对话历史。
+- **数据导出带上题库：** 题库是可以从记忆重新生成的派生数据，不导出。
+- **费用怎么控：**
+  - Andy 定了用第二个 OpenCode Go 账号，经 Magpie 单独一组路由，每周硬上限 0.5 美元。
+  - 代码里的防线经三轮复核逐步收紧：
+    - 上限按最近 7 天所有运行累计；
+    - 每次调用前按“输入 UTF-8 字节数 + 两倍最大输出”预估，token 数不会超过字节数；
+    - 实际费用一超就停；
+    - 调用失败、服务方报的费用缺失时按预估记账；
+    - 检索向量也先预留。
+- **抽查样本：** 第一次手动跑，把约 30 道题、回答、判分和对应的记忆正文、原话写到状态目录（权限 0600；敏感值按统一出口的默认遮盖规则遮掉，其余正文照原样）给 Andy 看。满 7 天删除，这样被删的记忆不会长期留在文件里。
+
+**业界主流做法**
+
+- ✅ LongMemEval（<https://arxiv.org/abs/2410.10813>）：量长期记忆的五项能力，原文 “information extraction, multi-session reasoning, temporal reasoning, knowledge updates, and abstention”，共 “500 meticulously curated questions”。商用助手表现原文是 “a 30% accuracy drop”。
+- ✅ LongMemEval 仓库（<https://github.com/xiaowu0162/LongMemEval>）：
+  - 判分用模型，原文 “python3 evaluate_qa.py gpt-4o your_hypothesis_file …”；
+  - 拒答题单独标出，原文 “If `question_id` ends with `_abs`, then the question is an `abstention` question”。
+- ✅ Mem0 论文（<https://arxiv.org/abs/2504.19413>）：在 LOCOMO 上用 “LLM-as-a-Judge metric” 比较各家记忆系统。
+
+**对比与取舍**
+
+- **相同：** 问答加模型判对错，换说法也算对，拒答题单独统计。
+- **不同 1：题目来源。** 业界用公开的合成对话；我们用主人自己的记忆和原话。所以只能和自己的历史比，不能和论文数字直接比。
+- **不同 2：判分模型。** 官方用 GPT-4o；项目禁用这类贵模型（[ADR 0111](adr/0111-no-expensive-models-anywhere.md)），换成低价模型。判分可能判错，第一次抽查时用 Andy 标出的判错条目算判分和人工的一致率。
+- **不同 3：先快判。** 回答包含原话就不调判分模型，省钱。
+- **放弃：** 题库偏向没被改写过的记忆。改写时没存新原话的记忆取不到原话，不出题。
+
+**结果数据**
+
+- **真实分数：未测量。** 生产第一轮（`mode: once`）还没跑，跑完把抽查结果和基线数字追加到本案例后。
+- **测试：** 第 0 层相关测试 126 条通过；`npm run check` 48 步全过（提交 1c9f8477、34dd5826 的提交说明）。
+- **集成测试：** 在真实 SQLite 和混合检索上跑。变异验证：去掉“只用已确认记忆”的过滤，4 条集成测试全部失败。
+- **代码复核：** 截至第 10 轮（第 1 轮 DeepSeek 和 GLM，之后只用 DeepSeek），累计 1.39 美元，见 `.agents/reviews/pr-378/usage.jsonl` 的 `REVIEW_SPENT_TOTAL`。后几轮抓到的多是错误路径：进程崩在某一步时花费会不会漏算或重复算、一条记忆解密失败会不会让整轮停摆、删不掉的题干有没有人再删。
+- **复核里抓到一个我自己引入的 bug。** 第 1 轮为了“退役题顺手删题干”加的代码，会撞上题库表 `question_ref` 的 `ON DELETE RESTRICT` 外键，整轮评测失败。原来的单元测试用的是假存储，测不出来。补了用真实 SQLite 的集成用例：把那行代码加回去，worker 和 direct 两条用例都失败。
+- **LongMemEval 行业对照：未测量。** 等本机向量模型（P3-1）合并后再跑，跑前报费用。
+
+**相关 ADR/PR**
+
+[ADR 0239](adr/0239-real-memory-eval-sets.md)、PR #378、[ADR 0115](adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)（检索评测，改为对照）、[案例 78](#case-memory-capture-eval)、[案例 39](#case-jarvis-test-evals)。
+
+**面试 30 秒版**
+
+“我们的记忆评测原来全是合成题，题和代码出自同一个人，天然偏向现有实现。我改成在生产上直接用主人确认过的记忆出题：标准答案就是主人当时的原话，模型只写题干，题干要过泄题检查，连汉字日期和阿拉伯数字的对应都查。多数题还配一道问不存在的事的拒答题，测会不会编造。作答走和对话一样的检索，回答包含原话就直接判对，其余交低价模型判分。每周最多花 0.5 美元，按 7 天累计挡在代码里。复核时还抓到我自己引入的一个外键冲突，补了真实数据库的回归测试。”
 
 [返回目录](#contents)
 

@@ -1751,3 +1751,91 @@ it("accepts Muse intake only with a boolean switch and one secret whose purpose 
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
 });
+
+it("[P4-5] accepts a real memory eval with a model that may see private and sensitive data and a weekly cap of at most 0.5 USD", () => {
+  const raw = config("/tmp/himawari-real-eval-config");
+  const descriptors = raw["modelDescriptors"] as Record<string, unknown>[];
+  const primary = descriptors.find(({ ref }) => ref === "model-primary");
+  if (!primary) throw new Error("fixture model missing");
+  primary["allowedDataClassifications"] = ["public", "private", "sensitive"];
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const realEval = {
+    mode: "once",
+    modelRef: "model-primary",
+    weeklyCapMicros: 500_000,
+    newMemoriesPerRun: 50,
+    requestTimeoutMs: 60_000,
+  };
+  raw["runPolicy"] = { ...policy, realEval };
+  expect(parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z").runPolicy?.realEval).toEqual(
+    realEval,
+  );
+  for (const invalid of [
+    { ...realEval, mode: "daily" },
+    { ...realEval, modelRef: "model-embedding" },
+    { ...realEval, modelRef: "model-missing" },
+    { ...realEval, weeklyCapMicros: 500_001 },
+    { ...realEval, weeklyCapMicros: 0 },
+    { ...realEval, newMemoriesPerRun: 0 },
+    { ...realEval, newMemoriesPerRun: 201 },
+    { ...realEval, requestTimeoutMs: 10 },
+    { ...realEval, budgetKey: "production" },
+  ]) {
+    raw["runPolicy"] = { ...policy, realEval: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow();
+  }
+  const embedding = descriptors.find(({ ref }) => ref === "model-embedding");
+  if (!embedding) throw new Error("fixture embedding missing");
+  embedding["allowedDataClassifications"] = ["public", "private"];
+  raw["runPolicy"] = { ...policy, realEval };
+  expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: expect.objectContaining({ field: "configuration.runPolicy.realEval.mode" }),
+    }),
+  );
+  raw["runPolicy"] = { ...policy, realEval: { ...realEval, mode: "off" } };
+  expect(parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z").runPolicy?.realEval?.mode).toBe(
+    "off",
+  );
+  embedding["allowedDataClassifications"] = ["public", "private", "sensitive", "restricted"];
+  descriptors.push({
+    ref: "model-specialist",
+    role: "specialist",
+    provider: "typesafe",
+    model: "jev-latest",
+    modelVersion: "jev-1.13.0",
+    version: "snapshot-1",
+    priority: 2,
+    name: "Jev reviewer",
+    api: "typesafe-systemone",
+    capabilities: ["text"],
+    cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+    allowedDataClassifications: ["private", "sensitive"],
+    disclosure: "external_remote",
+    secretRef: "provider-specialist",
+  });
+  (raw["secretReferences"] as Record<string, unknown>[]).push({
+    ref: "provider-specialist",
+    version: "v1",
+    purpose: "model-auth",
+    scope: "model-specialist",
+  });
+  raw["runPolicy"] = { ...policy, realEval: { ...realEval, modelRef: "model-specialist" } };
+  expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: expect.objectContaining({ field: "configuration.runPolicy.realEval.modelRef" }),
+    }),
+  );
+  primary["allowedDataClassifications"] = ["public", "private"];
+  raw["runPolicy"] = { ...policy, realEval };
+  expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: expect.objectContaining({ field: "configuration.runPolicy.realEval.modelRef" }),
+    }),
+  );
+});
