@@ -690,6 +690,33 @@ describe("[WP-3] web push dispatch", () => {
     expect(context.sender.requests).toHaveLength(1);
   });
 
+  it("[HR-4] REVERSE: a rule withdrawn between reading and deferring leaves no stale hold, and the push goes out next round", async () => {
+    const context = await setup();
+    let withdraw = false;
+    const push = context.create({
+      timeZone: "Asia/Tokyo",
+      readPushRules: async () => {
+        const rules = await context.rules.read();
+        if (withdraw) context.rules.write("owner:night", NIGHT_JST, "retired");
+        return rules;
+      },
+    });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    context.rules.write("owner:night", NIGHT_JST);
+    await push.tick();
+    context.setClock(NIGHT);
+    context.finishRun("run-race", "completed", at(NIGHT, -5));
+    withdraw = true;
+    await push.tick();
+    expect(context.rules.outbox("run:")?.deferUntil).toBeNull();
+    expect(context.rules.ledger()).toEqual([]);
+    expect(context.sender.requests).toEqual([]);
+    withdraw = false;
+    await push.tick();
+    expect(context.sender.requests).toHaveLength(1);
+  });
+
   it("[HR-4] sends a device that subscribed during the hold only when the hold ends", async () => {
     const context = await setup();
     const push = context.create({ timeZone: "Asia/Tokyo", readPushRules: context.rules.read });

@@ -414,6 +414,23 @@ export class SqliteWebPushOperations {
       .digest("hex");
     return this.database
       .transaction(() => {
+        const current = this.database.prepare(
+          `SELECT 1 FROM rule_book_rules
+           WHERE owner_id = ? AND agent_id = ? AND rule_id = ? AND revision = ? AND status = 'active'`,
+        );
+        const stale = refs.some((ref) => {
+          const at = ref.lastIndexOf("@");
+          return (
+            at < 1 ||
+            current.get(
+              input.ownerId,
+              input.agentId,
+              ref.slice(0, at),
+              Number(ref.slice(at + 1)),
+            ) === undefined
+          );
+        });
+        if (stale) return true;
         const stored =
           this.database
             .prepare(

@@ -2116,6 +2116,12 @@ describe("production memory capture", () => {
     expect(isStandingQuote("先别提醒我")).toBe(false);
     expect(isStandingQuote("明天晚上别提醒我")).toBe(false);
     expect(isStandingQuote("don't remind me tomorrow")).toBe(false);
+    expect(isStandingQuote("这个周末别提醒我")).toBe(false);
+    expect(isStandingQuote("下周三晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("后天晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("昨晚别提醒我")).toBe(false);
+    expect(isStandingQuote("don't remind me this weekend")).toBe(false);
+    expect(isStandingQuote("don't remind me next week at night")).toBe(false);
     expect(isStandingQuote("今天先这样，以后再看")).toBe(false);
     expect(isStandingQuote("今天起每次都提醒我")).toBe(true);
     expect(isStandingQuote("From now on, always tell me about refunds")).toBe(true);
