@@ -396,6 +396,28 @@ describe("product runtime event and tool contracts", () => {
       details: { reasonCode: "revoked", productOutcome: "failed", dispatchState: "not_sent" },
     });
   });
+  it("[COMPACT-4] gives the Pi session a compaction trigger of 200K for a 1M window, using the bound model's provider/id key", async () => {
+    const original = model.contextWindow;
+    const originalId = model.id;
+    const originalProvider = model.provider;
+    model.contextWindow = 1_000_000;
+    model.provider = "vercel-ai-gateway";
+    model.id = "deepseek/deepseek-v4.1-flash";
+    let reserve: number | undefined;
+    try {
+      const f = fixture(async (emit, options) => {
+        reserve = options.settingsManager?.getCompactionSettings(model).reserveTokens;
+        finish(emit);
+      });
+      await f.run();
+    } finally {
+      model.contextWindow = original;
+      model.provider = originalProvider;
+      model.id = originalId;
+    }
+    expect(reserve).toBe(800_000);
+  });
+
   it("[COMPACT-3] refuses a tool execution between compaction_start and compaction_end, and allows it again afterwards", async () => {
     let during: unknown;
     let after: unknown;

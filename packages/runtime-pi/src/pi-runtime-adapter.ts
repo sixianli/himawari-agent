@@ -92,6 +92,7 @@ import {
   compactionPrefixMessages,
   sharedSummaryContext,
   sharedSummaryOptions,
+  compactionModelOverrides,
 } from "./compaction-prefix.js";
 import { restoreModelStream, withPlaceholderLegend } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
@@ -1461,7 +1462,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       }
       const settingsManager = SettingsManager.inMemory(
         {
-          compaction: { enabled: true },
+          compaction: { enabled: true, modelOverrides: compactionModelOverrides(binding.model) },
           retry: { enabled: false, maxRetries: 0 },
           cacheWarming: "streaming",
           defaultTools: [],
