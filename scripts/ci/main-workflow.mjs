@@ -17,10 +17,21 @@ const parseWorkflow = (source) => {
 export function validateCallerGrantsCalledPermissions(mainSource, ciSource) {
   const main = parseWorkflow(mainSource);
   const ci = parseWorkflow(ciSource);
-  const granted = main.jobs?.full?.permissions ?? main.permissions ?? {};
-  const requested = [ci.permissions, ...Object.values(ci.jobs ?? {}).map((job) => job.permissions)];
+  const mapping = (permissions) => {
+    assert(
+      permissions === undefined ||
+        (permissions !== null && typeof permissions === "object" && !Array.isArray(permissions)),
+      "full-grants-invalid",
+    );
+    return permissions ?? {};
+  };
+  const granted = mapping(main.jobs?.full?.permissions ?? main.permissions);
+  const requested = [
+    ci.permissions,
+    ...Object.values(ci.jobs ?? {}).map((job) => job?.permissions),
+  ];
   for (const permissions of requested)
-    for (const [scope, level] of Object.entries(permissions ?? {}))
+    for (const [scope, level] of Object.entries(mapping(permissions)))
       assert(
         (permissionRank[granted[scope]] ?? 0) >= (permissionRank[level] ?? 3),
         `full-grants-${scope}-${level}`,

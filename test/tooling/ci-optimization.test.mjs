@@ -157,6 +157,25 @@ describe("[I-93] main 调用完整 CI 时授予的权限覆盖 ci.yml 每个 job
       validateCallerGrantsCalledPermissions(caller(""), called("      actions: read\n")),
     ).toEqual({ scopes: 2 });
   });
+  it("权限写成 write-all、read-all 这类字符串时按无效失败，空映射不申请任何权限", () => {
+    for (const shorthand of ["write-all", "read-all"]) {
+      expect(() =>
+        validateCallerGrantsCalledPermissions(caller(""), `permissions: ${shorthand}\njobs: {}\n`),
+      ).toThrow("full-grants-invalid");
+      expect(() =>
+        validateCallerGrantsCalledPermissions(
+          `permissions: ${shorthand}\njobs:\n  full:\n    uses: x\n`,
+          called("      actions: read\n"),
+        ),
+      ).toThrow("full-grants-invalid");
+    }
+    expect(
+      validateCallerGrantsCalledPermissions(
+        caller(""),
+        "permissions: {}\njobs:\n  a:\n    permissions: {}\n",
+      ),
+    ).toEqual({ scopes: 2 });
+  });
   it("被调用方顶层或 job 新增调用方没给的权限时失败", () => {
     expect(() =>
       validateCallerGrantsCalledPermissions(
