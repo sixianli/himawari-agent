@@ -500,21 +500,56 @@ describe(
       await entry("context.mjs", []);
       expect(process.exitCode).toBe(1);
     });
-    it("artifact CLI appends only the platform's immutable numeric ID and rejects absent output", async () => {
+    it("share CLI publishes a report under this run, hands its digest to GITHUB_OUTPUT, and rejects tampering", async () => {
+      const share = path.join(state.root, "share");
+      mkdirSync(share);
       const output = path.join(state.root, "github-output");
+      vi.stubEnv("HIMAWARI_CI_SHARE", share);
+      vi.stubEnv("GITHUB_RUN_ID", "41");
+      vi.stubEnv("GITHUB_RUN_ATTEMPT", "2");
       vi.stubEnv("GITHUB_OUTPUT", output);
-      vi.stubEnv("CI_MATRIX", "linux-x64");
-      vi.stubEnv("CI_ARTIFACT_ID", "123");
-      await entry("artifact-output.mjs", []);
-      expect(readFileSync(output, "utf8")).toBe("linux=123\n");
-      vi.stubEnv("CI_MATRIX", "macos-arm64");
-      vi.stubEnv("CI_ARTIFACT_ID", "456");
-      await entry("artifact-output.mjs", []);
-      expect(readFileSync(output, "utf8")).toBe("linux=123\nmacos=456\n");
-      vi.stubEnv("GITHUB_OUTPUT", "");
-      await entry("artifact-output.mjs", []);
+      const from = path.join(state.root, "published");
+      mkdirSync(path.join(from, "nested"), { recursive: true });
+      writeFileSync(path.join(from, "nested/result.json"), "{}\n");
+      await entry("run-share.mjs", [
+        "put",
+        "--name",
+        "build-linux-x64",
+        "--from",
+        from,
+        "--output-key",
+        "linux-x64",
+      ]);
+      const [, digest] = readFileSync(output, "utf8").trim().split("=");
+      expect(digest).toMatch(/^[0-9a-f]{64}$/u);
+      expect(
+        readFileSync(path.join(share, "41-2/build-linux-x64/nested/result.json"), "utf8"),
+      ).toBe("{}\n");
+      await entry("run-share.mjs", [
+        "get",
+        "--name",
+        "build-linux-x64",
+        "--digest",
+        digest,
+        "--to",
+        path.join(state.root, "copy"),
+      ]);
+      expect(readFileSync(path.join(state.root, "copy/nested/result.json"), "utf8")).toBe("{}\n");
+      writeFileSync(path.join(share, "41-2/build-linux-x64/nested/result.json"), "[]\n");
+      await entry("run-share.mjs", [
+        "get",
+        "--name",
+        "build-linux-x64",
+        "--digest",
+        digest,
+        "--to",
+        path.join(state.root, "tampered"),
+      ]);
       expect(process.exitCode).toBe(1);
-      expect(readFileSync(output, "utf8")).not.toContain("undefined");
+      expect(existsSync(path.join(state.root, "tampered"))).toBe(false);
+      process.exitCode = 0;
+      await entry("run-share.mjs", ["remove"]);
+      expect(existsSync(path.join(share, "41-2"))).toBe(false);
     });
     it("run CLI builds once, verifies producer identity and rejects altered or ambiguous transfers", async () => {
       const common = ["--tools", path.join(state.root, "tools"), "--base", context.baseSha];

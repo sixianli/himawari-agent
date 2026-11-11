@@ -21,4 +21,7 @@ for id in $(installed_runner_ids); do
   [ -d "$RUNNER_ROOT/runner/_work" ] && find "$RUNNER_ROOT/runner/_work" -mindepth 1 -maxdepth 1 -mtime +3 -exec rm -rf -- {} +
   [ -d "$RUNNER_ROOT/runner/_diag" ] && find "$RUNNER_ROOT/runner/_diag" -type f -mtime +14 -delete
 done
+if [ -d "$RUNNER_SHARE_ROOT" ]; then
+  find "$RUNNER_SHARE_ROOT" -mindepth 1 -maxdepth 1 -mmin +"$RUNNER_SHARE_KEEP_MINUTES" -exec rm -rf -- {} + || STATUS=1
+fi
 exit $STATUS

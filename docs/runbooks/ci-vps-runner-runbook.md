@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:76f46a4fd9d3235d67d7748ca55163d4b948bcdd0b838d7dd6bcb582819f3e51"
+contract_sha256: "sha256:1d8e5e0c4b25baba06edbbe95e75224809172228cc75849dda1c828bec368a9b"
 supersedes: "docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md"
 superseded_by: ""
 date: "2026-11-07"
@@ -46,7 +46,8 @@ date: "2026-11-07"
 | runner 的家目录 | `/srv/gh-runner/home/`、`/srv/gh-runner-2/home/` | 各自的账号 |
 | 每个任务开始和结束时的磁盘记录 `disk.log` | `/srv/gh-runner/logs/`、`/srv/gh-runner-2/logs/` | 各自的账号 |
 | 任务开始、结束钩子 | `/srv/gh-runner/hooks/`、`/srv/gh-runner-2/hooks/` | root，只读 |
-| 每日清理脚本（两个 runner 都清） | `/srv/gh-runner/hooks/clean-old.sh` | root，只读 |
+| 每小时清理脚本（两个 runner 和共享目录都清） | `/srv/gh-runner/hooks/clean-old.sh` | root，只读 |
+| CI 作业之间传文件的共享目录（每轮运行一个子目录，汇总作业结束就删，见 [ADR 0238](../adr/0238-ci-job-files-stay-on-the-ci-vps.md)） | `/srv/gh-runner-share/`，权限 `2770` | root，组 `gh-ci-share` |
 | 暂停、恢复脚本 | Mac 上的入口 `scripts/operations/ci-runner/pause-runners.sh`、`resume-runners.sh`；它们每次用 `scp` 把 `runners.sh`、`runner-pause.sh`、`runner-resume.sh` 传到 VPS 的 `/home/ubuntu/ci-runner/` 再运行 | ubuntu |
 | systemd 服务（Linux 管理后台服务的程序） | `/etc/systemd/system/gh-runner.service`、`gh-runner-2.service`（都由仓库里的模板 `gh-runner.service.in` 生成）、`gh-runners.slice`、`gh-runner-nft.service`、`gh-runner-clean.service`、`gh-runner-clean.timer` | root |
 | 安装前的备份 | `/var/backups/gh-runner/<时间>/` | root |
@@ -57,14 +58,14 @@ date: "2026-11-07"
 
 身份和限额（写在服务模板 `gh-runner.service.in` 和 `gh-runners.slice` 里）：
 
-- 每个 runner 一个系统用户（`gh-runner`、`gh-runner-2`），不能登录，只属于自己的组，不在 sudo 组或 docker 组里。
-- `ProtectHome=yes` 让它看不到 `/home`（包括 ubuntu 的 SSH 密钥），`InaccessiblePaths` 让它碰不到 Docker 的控制接口；`ProtectSystem=strict` 让它只能写自己的三个目录；每个服务还藏起另一个 runner 的目录（`InaccessiblePaths=-/srv/gh-runner-2` 或 `-/srv/gh-runner`）。
+- 每个 runner 一个系统用户（`gh-runner`、`gh-runner-2`），不能登录，只属于自己的组，不在 sudo 组或 docker 组里。服务启动时另外用 `SupplementaryGroups=gh-ci-share` 拿到共享目录的组，账号本身不加入这个组；环境变量 `HIMAWARI_CI_SHARE=/srv/gh-runner-share` 告诉 `scripts/ci/run-share.mjs` 目录在哪。两个 runner 因此能读写彼此在共享目录里放的本次运行文件，取用时靠内容摘要核对发现被改过的文件（理由见 [ADR 0238](../adr/0238-ci-job-files-stay-on-the-ci-vps.md#consequences)）。
+- `ProtectHome=yes` 让它看不到 `/home`（包括 ubuntu 的 SSH 密钥），`InaccessiblePaths` 让它碰不到 Docker 的控制接口；`ProtectSystem=strict` 让它只能写自己的三个目录和共享目录 `/srv/gh-runner-share`；每个服务还藏起另一个 runner 的目录（`InaccessiblePaths=-/srv/gh-runner-2` 或 `-/srv/gh-runner`）。
 - `ProtectProc=invisible` 让它在 `/proc` 里只看得到自己的进程，看不到本机其他服务的进程和命令行参数。
 - 服务不在 `/proc` 下加任何挂载，所以不设 `ProtectKernelTunables`、`ProtectKernelLogs`，`ReadOnlyPaths`、`InaccessiblePaths` 里也不写 `/proc` 下的路径：项目沙箱要给自己新挂一份 `/proc`，VPS 的内核遇到这类挂载会拒绝，沙箱就起不来（原因和复现见 [ADR 0176](../adr/0176-ci-on-ovh-vps.md#decision) 决定第 6 条）。
 - 防火墙规则只对两个 runner 账号生效（一条规则同时匹配两个账号的 uid）：拒绝它访问私有网段（`10/8`、`100.64/10`、`172.16/12`、`192.168/16`、`fc00::/7`、`fe80::/10`）和 `169.254.0.0/16`（云主机的元数据服务地址），以及本机任何地址（回环地址、公网 IPv4 和 IPv6 都算，规则写作 `fib daddr type local`）上端口名单里的 TCP 端口（DNS 的 53 端口除外）。名单在每次生成规则时取当时在监听的端口，再加上上一份规则里已有的端口。访问互联网不受影响。防火墙不管 UDP 和本机的 Unix 套接字（同一台机器上进程之间通信用的文件形式的接口）：Unix 套接字靠文件权限挡住，Docker 的控制接口另外被藏起来。
 - 同一个 runner 上的所有任务都以同一个账号运行，所以一个任务能读到这个 runner 自己的注册凭证，也能改 runner 的安装文件和后面任务的残留。仓库是私有的，只有 Andy 和他自己的代理线程会推送，所以接受这一点。这也是两个 runner 都不给 docker 组的原因：docker 组等于 root，一个任务就能拿到整台机器。怀疑 runner 被改过时，按 [Rollback](#rollback) 完整卸载后重新安装、注册；只重新运行安装脚本不会重新解压 runner。
 - VPS 只跑 CI，所以 runner 不限 CPU，CPU 和磁盘优先级用系统默认。每个 runner 内存最多 15 GB（`MemoryHigh=14G`、`MemoryMax=15G`），不用交换分区，最多 2048 个进程。两个服务都放在 `gh-runners.slice`（把几个服务放进同一个资源分组、一起设上限的单元）里，合计内存最多 20 GB（`MemoryHigh=19G`、`MemoryMax=20G`），最多 4096 个进程；留出的约 2 GB 让 ssh 在 runner 用满自己的内存时仍能登录。
-- 每个任务开始前检查 runner 目录所在磁盘（就是根盘）的可用空间，低于 16 GiB（两个任务可能同时占盘）或读不出数字时都拒绝这个任务；任务结束后删除它的检出和 `_work/_temp`；每天的定时清理删除三天前的 `_work` 残留和 14 天前的 runner 诊断日志，哪个 runner 有任务在跑就跳过它，查不出有没有任务时也跳过并以退出码 1 结束。
+- 每个任务开始前检查 runner 目录所在磁盘（就是根盘）的可用空间，低于 16 GiB（两个任务可能同时占盘）或读不出数字时都拒绝这个任务；任务结束后删除它的检出和 `_work/_temp`；每小时的定时清理删除三天前的 `_work` 残留和 14 天前的 runner 诊断日志，哪个 runner 有任务在跑就跳过它，查不出有没有任务时也跳过并以退出码 1 结束；共享目录里超过 6 小时没变的运行目录（汇总作业被取消或 runner 崩溃时留下的）不论有没有任务都删掉。
 
 [↑ 返回阅读导航](#contents)
 
@@ -104,7 +105,7 @@ date: "2026-11-07"
 2. 用户命名空间限制开着、bwrap 能用：`sysctl -n kernel.apparmor_restrict_unprivileged_userns` 是 `1`；`bwrap --unshare-all --ro-bind /usr /usr --symlink usr/lib64 /lib64 --symlink usr/lib /lib --symlink usr/bin /bin /usr/bin/true` 退出码是 0。
 3. 根盘可用空间：`df -B1 --output=avail /`。低于 16 GiB 时 runner 会拒绝任务，先报告。
 4. 服务状态：`systemctl is-active gh-runner.service gh-runner-2.service gh-runner-nft.service gh-runner-clean.timer`，四个都应是 `active`。
-5. 用户没有多余的组：`id gh-runner`、`id gh-runner-2` 各自只列出自己的一个组。
+5. 用户没有多余的组：`id gh-runner`、`id gh-runner-2` 各自只列出自己的一个组。共享目录在：`stat -c '%a %U %G' /srv/gh-runner-share` 是 `2770 root gh-ci-share`。
 6. 防火墙表在：`sudo -n nft list table inet gh_runner` 里有 `fib daddr type local`。
 7. 限额生效：`systemctl show gh-runner.service gh-runner-2.service -p Slice -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight -p Nice -p ExecStart`，两个都应为 `Slice=gh-runners.slice`、`MemoryHigh=15032385536`、`MemoryMax=16106127360`、`MemorySwapMax=0`、`TasksMax=2048`、`CPUQuotaPerSecUSec=infinity`、`CPUWeight=[not set]`、`IOWeight=[not set]`、`Nice=0`，启动命令分别是 `/srv/gh-runner/runner/bin/runsvc.sh` 和 `/srv/gh-runner-2/runner/bin/runsvc.sh`；`systemctl show gh-runners.slice -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight` 应为 `MemoryHigh=20401094656`、`MemoryMax=21474836480`、`MemorySwapMax=0`、`TasksMax=4096`、`CPUQuotaPerSecUSec=infinity`、`CPUWeight=[not set]`、`IOWeight=[not set]`。
 8. GitHub 上的状态（在 Mac 上运行）：`gh api repos/sixianli/himawari-agent/actions/runners --jq '.runners[]|{id,name,status,busy}'`，应看到 `ci-vps-1` 和 `ci-vps-2` 都为 `online`。
@@ -130,7 +131,7 @@ date: "2026-11-07"
 
 1. 把 `scripts/operations/ci-runner/` 下的全部文件（包括 `runners.sh` 和 `gh-runner.service.in`）用 `scp` 传到 VPS 的 `/home/ubuntu/ci-runner/`。
 2. 有 runner 服务在运行时安装脚本以退出码 70 拒绝，所以重装前先按[暂停和恢复](#pause-and-resume)在 Mac 上运行 `pause-runners.sh`。
-3. `sudo bash /home/ubuntu/ci-runner/install-runner.sh`。脚本会：确认主机名是 `ci-vps`（否则以退出码 68 拒绝）；把要改动的服务文件、slice、`/etc/gh-runner/`、窄 sudo 规则和两个 runner 的 `hooks/` 目录复制到 `/var/backups/gh-runner/<时间>/`，并记下哪些原来不存在；之后任何一步失败或脚本被中断（`Ctrl-C`、`TERM`、`HUP`），都会把原有的放回、把这次新建的文件、用户、组和目录删掉，撤销这次新启用的开机启动，重新加载防火墙规则，并打印 `INSTALL_FAILED`；某一步出错时，先打印一行 `INSTALL_STEP_FAILED line <行号> exit <退出码>: <出错的命令>`，指出是哪一步；回滚期间忽略 `PIPE` 信号（读输出的一方已退出时系统发出的信号），所以标准错误被关掉、或接收输出的程序已经退出时，回滚也会放回全部文件，不会中途停下；有放不回去的会打印 `RESTORE_INCOMPLETE`，列出是哪几项和备份目录；建 `gh-runner` 和 `gh-runner-2` 两个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝），建两个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、slice 和服务，按端口名单和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每日清理定时器。成功时打印 `INSTALL_OK`，同时打印 runner 账号的 uid、拦住的本机端口和备份目录。
+3. `sudo bash /home/ubuntu/ci-runner/install-runner.sh`。脚本会：确认主机名是 `ci-vps`（否则以退出码 68 拒绝）；把要改动的服务文件、slice、`/etc/gh-runner/`、窄 sudo 规则和两个 runner 的 `hooks/` 目录复制到 `/var/backups/gh-runner/<时间>/`，并记下哪些原来不存在；之后任何一步失败或脚本被中断（`Ctrl-C`、`TERM`、`HUP`），都会把原有的放回、把这次新建的文件、用户、组和目录删掉，撤销这次新启用的开机启动，重新加载防火墙规则，并打印 `INSTALL_FAILED`；某一步出错时，先打印一行 `INSTALL_STEP_FAILED line <行号> exit <退出码>: <出错的命令>`，指出是哪一步；回滚期间忽略 `PIPE` 信号（读输出的一方已退出时系统发出的信号），所以标准错误被关掉、或接收输出的程序已经退出时，回滚也会放回全部文件，不会中途停下；有放不回去的会打印 `RESTORE_INCOMPLETE`，列出是哪几项和备份目录；建 `gh-runner` 和 `gh-runner-2` 两个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝），建系统组 `gh-ci-share` 和共享目录 `/srv/gh-runner-share`（`2770`，属主 root），建两个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、slice 和服务，按端口名单和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每小时清理定时器。成功时打印 `INSTALL_OK`，同时打印共享目录、 runner 账号的 uid、拦住的本机端口和备份目录。
 4. 重装时最后在 Mac 上运行 `resume-runners.sh`；第一次安装要先按[注册](#register)注册。
 
 <a id="register"></a>
@@ -190,7 +191,7 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 - `journalctl -u gh-runner.service` 和 `journalctl -u gh-runner-2.service` 最近都出现 `Listening for Jobs`，之后没有 `Conflict`。
 - 分别以 `gh-runner` 和 `gh-runner-2` 身份读 `/home/ubuntu/.ssh`、另一个 runner 的目录都被拒绝；连本机公网地址和 `127.0.0.1` 的 22 端口、`169.254.169.254` 都被拒绝；访问 `https://api.github.com` 正常；在 runner 账号下用 bwrap 建立隔离环境成功。
 - 以 `gh-runner` 身份运行一次 `packages/runtime-sandbox/scripts/check-srt-boundary.mjs`（它不在 `npm run check` 里），记录 bwrap 版本、AppArmor 开关和结果。
-- PR 的 `ci/required` 在这两个 runner 上运行并通过，任务日志开头的 `Runner name` 是 `ci-vps-1` 或 `ci-vps-2`。
+- PR 的 `ci/required` 在这两个 runner 上运行并通过，任务日志开头的 `Runner name` 是 `ci-vps-1` 或 `ci-vps-2`；它的“从 CI 服务器收齐”步骤打印 `CI_SHARE_COLLECT 8`，结束后 `/srv/gh-runner-share/` 下没有这一轮的目录；GitHub 上这一轮只留 `gate-` 和失败时的 `diagnostic-` 产物，没有 `report-`。
 
 [↑ 返回阅读导航](#contents)
 
@@ -220,7 +221,7 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 **全部卸载**：
 
 1. 在 Mac 上先停用 `ci.yml` 和 `main.yml`（`gh workflow disable`），免得任务排队等不存在的 runner。
-2. 在 VPS 上运行 `sudo bash /home/ubuntu/ci-runner/uninstall-runner.sh all`。它停掉并删除两个 runner 的服务、slice、防火墙服务和每日清理，删除防火墙表和 `/etc/gh-runner/`、删除窄 sudo 规则，结束两个账号的进程，删除 `/srv/gh-runner/` 和 `/srv/gh-runner-2/`，再删除两个用户和组。最后逐项核对：全部删干净才打印 `UNINSTALL_OK`；还有残留时打印 `UNINSTALL_INCOMPLETE` 和残留清单，并以退出码 1 结束，按清单手动处理后再运行一次。缺 `nft` 命令时以退出码 66 拒绝，因为删不掉也查不了防火墙表。
+2. 在 VPS 上运行 `sudo bash /home/ubuntu/ci-runner/uninstall-runner.sh all`。它停掉并删除两个 runner 的服务、slice、防火墙服务和每小时清理，删除防火墙表、`/etc/gh-runner/`、共享目录 `/srv/gh-runner-share/` 和组 `gh-ci-share`、删除窄 sudo 规则，结束两个账号的进程，删除 `/srv/gh-runner/` 和 `/srv/gh-runner-2/`，再删除两个用户和组。最后逐项核对：全部删干净才打印 `UNINSTALL_OK`；还有残留时打印 `UNINSTALL_INCOMPLETE` 和残留清单，并以退出码 1 结束，按清单手动处理后再运行一次。缺 `nft` 命令时以退出码 66 拒绝，因为删不掉也查不了防火墙表。
 3. 在 Mac 上按上面第 3 步从 GitHub 删除 `ci-vps-1` 和 `ci-vps-2`。
 4. 验证：`id gh-runner`、`id gh-runner-2` 都报用户不存在，`/srv/gh-runner`、`/srv/gh-runner-2` 都不存在，`nft list tables` 里没有 `gh_runner`，GitHub 的 runner 列表里没有这两个 runner。
 
@@ -254,6 +255,8 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 | 任务访问本机服务、私有网段或元数据服务地址失败 | `sudo -n nft list table inet gh_runner` | 防火墙按设计拒绝。确实需要时先问 Andy，不自行放开。 |
 | 正在跑的任务日志里出现 `The runner has received a shutdown signal` | `sudo journalctl -u gh-runner -u gh-runner-2 --since <时间>` 里有 `Stopping gh-runner`，同一时段 `/var/log/unattended-upgrades/unattended-upgrades.log` 有升级记录 | 自动安全更新之后 needrestart 重启了 runner。确认 `/etc/needrestart/conf.d/50ci-vps-gh-runner.conf` 还在；不在就重新运行 `prepare-vps.sh`。被杀掉的运行在 GitHub 上重跑。runner 要用上新库时，等两个 runner 都空闲再 `sudo systemctl restart gh-runner gh-runner-2`。 |
 | 任务装浏览器时要 root | 看是否用了 `playwright install --with-deps` | 准备脚本已装好浏览器的系统库，workflow 里去掉 `--with-deps`；Playwright 升级后重新运行 `prepare-vps.sh`（先把里面的版本号改成新的）。 |
+| CI 作业在“放进 CI 服务器”或“取构建”步骤失败，报 `CI_SHARE_ROOT_REQUIRED` 或 `CI_SHARE_ROOT_INVALID` | `stat -c '%a %U %G' /srv/gh-runner-share`；`systemctl show gh-runner.service -p SupplementaryGroups -p Environment` | 共享目录或组没装：先 `pause-runners.sh`，再重新运行 `install-runner.sh`，最后 `resume-runners.sh`。 |
+| 报 `CI_SHARE_DIGEST_MISMATCH:<名字>` 或 `CI_SHARE_MISSING:<名字>` | 看同一轮里那个上游作业有没有成功；`ls -la /srv/gh-runner-share/<运行号-尝试号>/` | 上游没跑完就是缺失，重跑整轮；摘要不符说明文件在存和取之间被改了，保留现场、先报告。 |
 | `gh-runner-nft.service` 失败，runner 服务起不来 | `systemctl status gh-runner-nft.service`；`sudo -n nft -c -f /etc/gh-runner/nft.rules` | 规则文件坏了就重新运行 `install-runner.sh` 生成。 |
 | 安装脚本以退出码 70 拒绝 | 输出里点名的服务 | 有 runner 服务在运行；先在 Mac 上运行 `pause-runners.sh`，装完再 `resume-runners.sh`。 |
 | bwrap 报 `Operation not permitted` 或 `setting up uid map` | `sysctl -n kernel.apparmor_restrict_unprivileged_userns`；`sudo aa-status \| grep bwrap` | `/etc/apparmor.d/bwrap` 没加载或被改过。重新运行 `prepare-vps.sh`；不要关掉全局开关。 |

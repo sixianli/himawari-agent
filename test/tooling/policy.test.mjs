@@ -99,6 +99,21 @@ it("[I-91] policy入口拒绝与 package-lock.json 不符的安装脚本审阅�
   );
 });
 
+const shareCommand = ".ci-output/tools/bin/node scripts/ci/run-share.mjs";
+const sharePut = (check) => ({
+  id: "share",
+  run: `${shareCommand} put --name "${check.id}-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"`,
+});
+const buildFetch = () => ({
+  env: { CI_BUILD_DIGEST: githubExpression("needs.build.outputs.linux-x64") },
+  run: `${shareCommand} get --name build-linux-x64 --digest "$CI_BUILD_DIGEST" --to .ci-output/input`,
+});
+const shareCollect = () => ({
+  env: { CI_NEEDS: githubExpression("toJSON(needs)") },
+  run: `${shareCommand} collect --to .ci-output/reports`,
+});
+const shareRemove = () => ({ if: "always()", run: `${shareCommand} remove` });
+
 function workflow() {
   return {
     name: "CI",
@@ -133,7 +148,14 @@ function workflow() {
             : {}),
           ...(check.id === "required"
             ? { name: "ci/required", if: githubExpression("always()") }
-            : {}),
+            : {
+                outputs: Object.fromEntries(
+                  activeMembers(check).map((member) => [
+                    member.key,
+                    githubExpression(`steps.share.outputs.${member.key}`),
+                  ]),
+                ),
+              }),
           ...(["browser", "coverage"].includes(check.id)
             ? {
                 if: githubExpression(
@@ -149,18 +171,8 @@ function workflow() {
                   ? '.ci-output/tools/bin/node scripts/ci/run.mjs --check coverage --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only --input .ci-output/input/result.json'
                   : "node scripts/ci/run.mjs",
             },
-            ...(check.id === "coverage"
-              ? [
-                  {
-                    uses: `actions/download-artifact@${lock.actions.find((entry) => entry.repository === "actions/download-artifact").sha}`,
-                    with: {
-                      "artifact-ids": githubExpression("needs.build.outputs.linux"),
-                      path: ".ci-output/input",
-                      "merge-multiple": true,
-                    },
-                  },
-                ]
-              : []),
+            ...(["browser", "coverage"].includes(check.id) ? [buildFetch()] : []),
+            ...(check.id === "required" ? [shareCollect(), shareRemove()] : [sharePut(check)]),
             ...(["static", "coverage"].includes(check.id) ? [{ run: chromiumInstall }] : []),
           ],
         },
@@ -527,15 +539,21 @@ describe("CI policy contract", () => {
       },
     ],
     [
-      "artifact deletion outside the gate job",
+      "artifact write on a check job",
       (value) => {
         value.jobs.static.permissions = { contents: "read", actions: "write" };
       },
     ],
     [
-      "gate job with contents write",
+      "artifact write on the gate job",
       (value) => {
-        value.jobs.required.permissions = { contents: "write", actions: "write" };
+        value.jobs.required.permissions = { contents: "read", actions: "write" };
+      },
+    ],
+    [
+      "GitHub artifact download",
+      (value) => {
+        value.jobs.browser.steps.push({ uses: "actions/download-artifact@v4" });
       },
     ],
     [
@@ -579,9 +597,9 @@ describe("CI policy contract", () => {
     mutate(value);
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
   });
-  it("accepts artifact deletion permission on the gate job only", () => {
+  it("accepts read-only permissions on the gate job", () => {
     const value = workflow();
-    value.jobs.required.permissions = { contents: "read", actions: "write" };
+    value.jobs.required.permissions = { contents: "read", actions: "read" };
     expect(() => validateWorkflow(policy, stringify(value), lock)).not.toThrow();
   });
   it.each(["static", "coverage"])(
@@ -1136,18 +1154,61 @@ describe("CI policy contract", () => {
       "Vitest integration worker count differs from policy",
     );
   });
-  it.each(["missing", "wrong id", "conditional", "wrong path"])(
-    "拒绝 coverage 构建下载配置错误：%s",
+  it.each(
+    ["browser", "coverage"].flatMap((id) =>
+      ["missing", "wrong digest", "conditional", "wrong path", "duplicated"].map((fault) => [
+        id,
+        fault,
+      ]),
+    ),
+  )("拒绝 %s 从 CI 服务器取构建的配置错误：%s", (id, fault) => {
+    const value = workflow();
+    const steps = value.jobs[id].steps;
+    const fetch = steps.find((entry) => entry.run?.includes("run-share.mjs get"));
+    if (fault === "missing") steps.splice(steps.indexOf(fetch), 1);
+    if (fault === "wrong digest") fetch.env.CI_BUILD_DIGEST = "other-build";
+    if (fault === "conditional") fetch.if = "false";
+    if (fault === "wrong path") fetch.run = fetch.run.replace(".ci-output/input", ".ci-output/x");
+    if (fault === "duplicated") steps.push(structuredClone(fetch));
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+      `${id} must take this attempt's Linux build from the runner share by digest`,
+    );
+  });
+  it.each([
+    "missing put",
+    "second put",
+    "renamed id",
+    "missing output",
+    "extra output",
+    "wrong output",
+  ])("拒绝报告不放 CI 服务器或摘要没交出去：%s", (fault) => {
+    const value = workflow();
+    const job = value.jobs.browser;
+    const put = job.steps.find((entry) => entry.id === "share");
+    if (fault === "missing put") job.steps.splice(job.steps.indexOf(put), 1);
+    if (fault === "second put") job.steps.push({ ...put, id: "again" });
+    if (fault === "renamed id") put.id = "other";
+    if (fault === "missing output") delete job.outputs.firefox;
+    if (fault === "extra output") job.outputs["macos-arm64"] = "x";
+    if (fault === "wrong output")
+      job.outputs.webkit = githubExpression("steps.other.outputs.webkit");
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+      /runner share|report digest/u,
+    );
+  });
+  it.each(["missing collect", "conditional collect", "missing remove", "remove only on success"])(
+    "拒绝汇总不从 CI 服务器收齐或不总是删掉本次目录：%s",
     (fault) => {
       const value = workflow();
-      const steps = value.jobs.coverage.steps;
-      const download = steps.find((entry) => entry.uses?.startsWith("actions/download-artifact@"));
-      if (fault === "missing") steps.splice(steps.indexOf(download), 1);
-      if (fault === "wrong id") download.with["artifact-ids"] = "other-build";
-      if (fault === "conditional") download.if = "false";
-      if (fault === "wrong path") download.with.path = ".ci-output/other";
+      const steps = value.jobs.required.steps;
+      const collect = steps.find((entry) => entry.run?.includes("run-share.mjs collect"));
+      const remove = steps.find((entry) => entry.run?.includes("run-share.mjs remove"));
+      if (fault === "missing collect") steps.splice(steps.indexOf(collect), 1);
+      if (fault === "conditional collect") collect.if = "success()";
+      if (fault === "missing remove") steps.splice(steps.indexOf(remove), 1);
+      if (fault === "remove only on success") remove.if = "success()";
       expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
-        "download this attempt",
+        "Required must collect digest-checked reports",
       );
     },
   );

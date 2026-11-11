@@ -4,9 +4,6 @@ import { githubExpression as expression, linuxRunnerLabel } from "./contracts.mj
 const assert = (value, code) => {
   if (!value) throw new Error(`MAIN_WORKFLOW:${code}`);
 };
-const sameEntries = (actual, expected) =>
-  JSON.stringify(Object.entries(actual ?? {}).sort()) ===
-  JSON.stringify(Object.entries(expected).sort());
 const permissionRank = { none: 0, read: 1, write: 2 };
 const parseWorkflow = (source) => {
   const document = parseDocument(source, { uniqueKeys: true, maxAliasCount: 0 });
@@ -60,11 +57,7 @@ export function validateMainWorkflow(source, lock) {
         "always() && (needs.plan.result != 'success' || needs.plan.outputs.mode != 'light')",
     "fallback",
   );
-  assert(!full.secrets && !full.with, "full-inputs");
-  assert(
-    sameEntries(full.permissions, { contents: "read", actions: "write", "pull-requests": "read" }),
-    "full-permissions",
-  );
+  assert(!full.secrets && !full.with && !full.permissions, "full-inputs");
   assert(
     confirm.needs === "plan" &&
       confirm.if === "needs.plan.result == 'success' && needs.plan.outputs.mode == 'light'",

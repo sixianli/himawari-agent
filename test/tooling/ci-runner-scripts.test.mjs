@@ -1,13 +1,16 @@
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   readlinkSync,
   rmSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -687,7 +690,7 @@ describe("runner-resume.sh", () => {
 });
 
 describe("clean-old.sh", () => {
-  it("skips cleaning and reports failure when pgrep itself fails", () => {
+  it("skips cleaning work directories and reports failure when pgrep itself fails", () => {
     const box = sandbox();
     fakeRunnerAccounts(box, ["gh-runner", "gh-runner-2"]);
     box.fake("pgrep", "exit 3");
@@ -695,7 +698,44 @@ describe("clean-old.sh", () => {
     const result = box.run("clean-old.sh");
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("CLEAN_SKIPPED");
-    expect(box.calls()).not.toContain("find");
+    expect(box.calls()).not.toContain("_work");
+    expect(box.calls()).not.toContain("_diag");
+  });
+
+  it("removes only run directories in the runner share that are more than six hours old", () => {
+    const share = mkdtempSync(path.join(os.tmpdir(), "ci-runner-share-"));
+    directories.push(share);
+    for (const name of ["41-1", "42-1"])
+      mkdirSync(path.join(share, name, "build-linux-x64"), { recursive: true });
+    const old = new Date(Date.now() - 7 * 60 * 60 * 1000);
+    utimesSync(path.join(share, "41-1"), old, old);
+    const box = sandbox();
+    fakeRunnerAccounts(box, []);
+    const copy = path.join(box.root, "scripts");
+    mkdirSync(copy);
+    copyFileSync(path.join(scripts, "clean-old.sh"), path.join(copy, "clean-old.sh"));
+    writeFileSync(
+      path.join(copy, "runners.sh"),
+      readFileSync(path.join(scripts, "runners.sh"), "utf8").replace(
+        "RUNNER_SHARE_ROOT=/srv/gh-runner-share",
+        `RUNNER_SHARE_ROOT=${share}`,
+      ),
+    );
+    const result = spawnSync("/bin/bash", [path.join(copy, "clean-old.sh")], {
+      encoding: "utf8",
+      env: { PATH: `${box.root}/bin:${process.env.PATH}`, HOME: box.root },
+    });
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    expect(readdirSync(share)).toEqual(["42-1"]);
+  });
+
+  it("runs every hour so leftover run files never pile up for long", () => {
+    const timer = unitSettings(readFileSync(path.join(scripts, "gh-runner-clean.timer"), "utf8"));
+    expect(timer.OnCalendar).toBe("hourly");
+    expect(
+      shell('echo "$RUNNER_SHARE_ROOT $RUNNER_SHARE_GROUP $RUNNER_SHARE_KEEP_MINUTES"').stdout,
+    ).toBe("/srv/gh-runner-share gh-ci-share 360\n");
   });
 });
 
@@ -737,8 +777,10 @@ describe("runner units and shared limits", () => {
         MemorySwapMax: "0",
         TasksMax: "2048",
         ProtectProc: "invisible",
-        ReadWritePaths: `${root}/runner ${root}/home ${root}/logs`,
+        ReadWritePaths: `${root}/runner ${root}/home ${root}/logs /srv/gh-runner-share`,
+        SupplementaryGroups: "gh-ci-share",
       });
+      expect(result.stdout).toContain("Environment=HIMAWARI_CI_SHARE=/srv/gh-runner-share\n");
       expect(unit.Description).toContain(name);
       expect(unit.InaccessiblePaths.split(" ")).toEqual(
         expect.arrayContaining(["-/var/run/docker.sock", `-${other}`]),
@@ -771,7 +813,7 @@ describe("runner units and shared limits", () => {
     const normalize = (id, text) =>
       text
         .replaceAll(id === 1 ? "ci-vps-1" : "ci-vps-2", "NAME")
-        .replace(id === 1 ? /\/srv\/gh-runner(?!-2)/g : /\/srv\/gh-runner-2/g, "ROOT");
+        .replace(id === 1 ? /\/srv\/gh-runner(?!-)/g : /\/srv\/gh-runner-2/g, "ROOT");
     const first = render(1).stdout;
     const second = render(2).stdout;
     const swapOther = (text) => text.replace(/-\/srv\/gh-runner(-2)?$/m, "-OTHER");
@@ -1113,6 +1155,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     "/srv/gh-runner/runner/config.sh",
     "/srv/gh-runner/home",
     "/srv/gh-runner-2",
+    "/srv/gh-runner-share",
   ];
 
   const installWithFailingRuleCheck = (nftCheck, extraSetup = [], stderrRedirect) => {
@@ -1132,6 +1175,8 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     box.fake("userdel", `${box.record("userdel")}\nrm -f "${box.root}/user-$1"`);
     box.fake("pkill", `${box.record("pkill")}\nexit 1`);
     box.fake("getent", "exit 2");
+    box.fake("groupadd", box.record("groupadd"));
+    box.fake("groupdel", box.record("groupdel"));
     box.fake(
       "install",
       `args=()\nwhile [ $# -gt 0 ]; do case "$1" in -o|-g) shift 2 ;; *) args+=("$1"); shift ;; esac; done\nexec /usr/bin/install "\${args[@]}"`,
@@ -1226,7 +1271,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
   });
 
   it("removes the old pause scripts in /srv/gh-runner/bin when the install succeeds", () => {
-    const { result, state, stderr } = installWithFailingRuleCheck("exit 0");
+    const { box, result, state, stderr } = installWithFailingRuleCheck("exit 0");
     expect(result.status).toBe(0);
     expect(stderr).not.toContain("INSTALL_FAILED");
     expect(state.rc).toBe("0");
@@ -1234,6 +1279,8 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     expect(state["/srv/gh-runner/bin/runner-resume.sh"]).toBe("MISSING");
     expect(state["/srv/gh-runner/hooks/job-started.sh"]).not.toBe("old-hook");
     expect(state["/srv/gh-runner/bin"]).toBe("MISSING");
+    expect(state["/srv/gh-runner-share"]).toBe("DIR");
+    expect(box.calls()).toMatch(/^groupadd --system gh-ci-share$/m);
   });
 
   it.each([
@@ -1254,6 +1301,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     expect(box.calls()).toMatch(/^useradd .*gh-runner-2$/m);
     expect(box.calls()).toMatch(/^userdel gh-runner-2$/m);
     expect(box.calls()).toMatch(/^nft -f \/etc\/gh-runner\/nft.rules$/m);
+    expect(box.calls()).toMatch(/^groupadd --system gh-ci-share$/m);
     expect(state).toEqual({
       rc: code,
       "/etc/systemd/system/gh-runner.service": "old-unit",
@@ -1271,6 +1319,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       "/srv/gh-runner/runner/config.sh": "config",
       "/srv/gh-runner/home": "MISSING",
       "/srv/gh-runner-2": "MISSING",
+      "/srv/gh-runner-share": "MISSING",
     });
   });
 });
@@ -1339,6 +1388,7 @@ describe("uninstall-runner.sh", () => {
     expect(result.stderr).toContain("nft:inet/gh_runner");
     expect(box.calls()).toContain("userdel gh-runner\n");
     expect(box.calls()).toContain("userdel gh-runner-2\n");
+    expect(box.calls()).toContain("rm -rf /etc/gh-runner /srv/gh-runner-share\n");
   });
 
   it("removing only the second runner leaves the first runner, its service and its firewall rule alone", () => {
@@ -1374,6 +1424,8 @@ describe("uninstall-runner.sh", () => {
     expect(calls).not.toContain("gh-runner.service");
     expect(calls).not.toMatch(/userdel gh-runner\n|pkill -u gh-runner\n|\/srv\/gh-runner(\s|\/|$)/);
     expect(calls).not.toContain("nft delete table");
+    expect(calls).not.toContain("gh-runner-share");
+    expect(calls).not.toContain("groupdel gh-ci-share");
     expect(readFileSync(path.join(box.root, "nft-checked"), "utf8")).toContain(
       "meta skuid { 996 }",
     );
