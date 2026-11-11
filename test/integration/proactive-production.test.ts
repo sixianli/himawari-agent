@@ -1088,6 +1088,13 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     });
     await h.proactive.seedDemoInbox();
     await h.proactive.seedDemoInbox({ restore: true });
+    await h.store.writeSettings({
+      ...scope,
+      ...(await h.store.readSettings(scope)),
+      enabled: true,
+      now: h.clock.now(),
+    });
+    await h.proactive.tick();
     await h.app.inject({
       method: "GET",
       url: PROACTIVE_GOOGLE_START_PATH,
@@ -1098,6 +1105,10 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       account: "andy@example.com",
     });
     expect(await h.seal.open({ ...scope, ref: tokenRef })).toBe("refresh-real");
+    expect(await h.store.readConnection({ ...scope, source: "gmail" })).toMatchObject({
+      status: "connected",
+      tokenRef,
+    });
     expect(h.failures).toEqual([]);
   });
 

@@ -243,14 +243,18 @@ export class ProductionProactive {
         return;
     } else if (!options.restore && settings.updatedAt !== null) return;
     const now = clock.now();
-    const accountRef = await seal.seal({ ...scope, text: DEMO_MAILBOX_ACCOUNT, at: now });
-    const tokenRef = await seal.seal({
-      ...scope,
-      text: demoMailboxToken(demoInbox, now),
-      at: now,
-    });
-    const released = await store
-      .saveConnection({
+    const sealed: string[] = [];
+    let released: readonly string[];
+    try {
+      const accountRef = await seal.seal({ ...scope, text: DEMO_MAILBOX_ACCOUNT, at: now });
+      sealed.push(accountRef);
+      const tokenRef = await seal.seal({
+        ...scope,
+        text: demoMailboxToken(demoInbox, now),
+        at: now,
+      });
+      sealed.push(tokenRef);
+      released = await store.saveConnection({
         ...scope,
         connection: {
           source: "gmail",
@@ -261,11 +265,11 @@ export class ProductionProactive {
           connectedAt: now,
           updatedAt: now,
         },
-      })
-      .catch(async (error: unknown) => {
-        await seal.release({ ...scope, refs: [accountRef, tokenRef] }).catch(() => undefined);
-        throw error;
       });
+    } catch (error) {
+      await seal.release({ ...scope, refs: sealed }).catch(() => undefined);
+      throw error;
+    }
     if (released.length > 0) await seal.release({ ...scope, refs: released });
     await store.writeSettings({ ...scope, ...settings, enabled: true, now });
   }
@@ -286,8 +290,8 @@ export class ProductionProactive {
   }
 
   tick(): Promise<void> {
-    this.#running ??= this.#service
-      .run()
+    this.#running ??= this.#checkable()
+      .then((checkable) => (checkable ? this.#service.run() : undefined))
       .then((decision) => {
         if (decision) this.#options.onDecision?.(decision);
       })
@@ -296,6 +300,15 @@ export class ProductionProactive {
         this.#running = undefined;
       });
     return this.#running;
+  }
+
+  async #checkable(): Promise<boolean> {
+    if (!this.#options.configuration.demoInbox) return true;
+    const { scope, store, seal } = this.#options;
+    const connection = await store.readConnection({ ...scope, source: "gmail" });
+    if (!connection) return true;
+    const token = await seal.open({ ...scope, ref: connection.tokenRef });
+    return token === undefined || isDemoMailboxToken(token);
   }
 
   async replayRule(rule: RuleRecord): Promise<OwnerRuleReplayResult> {
