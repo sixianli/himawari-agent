@@ -853,6 +853,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with the ledger row or processed mail row, Owner or Agent deletion; never changed or deleted on its own",
   ),
   entry(
+    "real_eval_questions",
+    "RealEvalStorePort",
+    "one row per weekly real memory recall question: which confirmed memory and revision it tests, the sealed question text, which model and prompt version wrote it, and when it was retired",
+    "payload_reference",
+    "cascade with the memory; the question payload is removed when the owner deletes the memory, and with Owner or Agent deletion",
+  ),
+  entry(
+    "real_eval_runs",
+    "RealEvalStorePort",
+    "append-only result of each real memory recall evaluation run: counts, scores and cost only, no question or answer text",
+    "metadata_only",
+    "cascade with Owner or Agent deletion; never changed on its own",
+  ),
+  entry(
     "decision_signals",
     "ProactiveStorePort, WebPushStorePort, DecisionLedgerPort",
     "append-only observations of what happened to a proactive decision without the owner rating it: reminder opened, done or muted then undone, mail thread replied; timing and small codes only",

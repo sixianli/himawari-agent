@@ -881,6 +881,11 @@ export class SqliteGovernedDeletionAdapter {
             WHERE memory_id = ? AND quote_ref IS NOT NULL`,
             [objectId],
           ),
+          ...this.#values(
+            database,
+            "SELECT question_ref FROM real_eval_questions WHERE memory_id = ?",
+            [objectId],
+          ),
         );
         database.prepare("DELETE FROM memory_records WHERE id = ?").run(objectId);
       }

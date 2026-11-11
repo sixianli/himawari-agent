@@ -294,6 +294,21 @@
       "reason": "W-17 改写这句时把“必须”一起改"
     }
   },
+  "eval.real-memory.answer": {
+    "sha256": "ddfcdf9e0e36b91faafa899fc005a859fe602ae9222d324c03cea2447a11d095",
+    "changedIn": "ADR 0219",
+    "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
+  },
+  "eval.real-memory.judge": {
+    "sha256": "72ba55ba05d1378548b1ab6765a3c837614ca304c67cc91bdcf8bf20fe0f4ed3",
+    "changedIn": "ADR 0219",
+    "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
+  },
+  "eval.real-memory.question": {
+    "sha256": "bd9ec88d02e4d3c4b6f21b5dab89941946a27e7727395de39d6489a43a1e2fd8",
+    "changedIn": "ADR 0219",
+    "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
+  },
   "mail.judgment": {
     "sha256": "6828d0988462d4e491a4b7036b8a1f0fc3985ec859ddf79d6a2d10fdedc55f99",
     "changedIn": "HR-2",
