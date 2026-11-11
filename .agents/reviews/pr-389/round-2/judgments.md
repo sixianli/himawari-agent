@@ -1,0 +1,8 @@
+# PR 389 第 2 轮逐条判断
+
+- **ds-1**（deepseek-v4.1-flash）「MCP 入口只校验“凭证有效”，没有把 `sub` 绑定到 Himawari 的 owner」：成立，中高。ADR 0227 决定 3 把安全完全押在 Access 策略上；网页登录另有主人绑定核对（production-http-composition.ts 的 scopedIdentityState.readBySubject），MCP 没有。已改：ProductionMcpRead 新增 owners 选项，凭证通过后用 externalSubjectRef 查主人绑定，属于本实例主人且状态 active 才放行，否则 401 并记 MCP_ACCESS_OWNER_NOT_BOUND。新增拒绝用例（别的 sub）和真实进程用例；把核对改成只要有记录就放行后，mcp-read 拒绝用例失败（expected 200 to be 401，已实际运行）。依据 Cloudflare 文档 sub “unique to an email address per account”，跨应用相同列为 Hermes 实测项。
+- **ds-2**（deepseek-v4.1-flash）「限流在昂贵的 JWT 校验之后才计数，挡不住未认证校验洪泛」：不成立。第 1 轮 ds-1/gl-1 已判过（那时的说法已包括「不限制验签、解析」），这次没有新证据。补核对：生产走 Cloudflare Tunnel，生产机不开对外端口（docs/adr/0082-mobile-pwa-push-before-native-app.md 第 52 行「生产机主动连出去，不开对外端口」），请求要先过 Cloudflare Access 才到源站，未登录的人送不进伪造凭证；实测一次失败验签约 0.35 毫秒（本机 5000 次平均），网页登录对每个请求做同样的验签。
+- **ds-3**（deepseek-v4.1-flash）「JWKS 冷却在“没有有效缓存”或“缓存过期且下载失败”时不生效」：成立，按中高处理（触发后不是报错拒绝，而是放大对外请求，和 ADR 不符）。模型给低，判高的理由：这是资源放大，不属于「只报错拒绝」的低档。已改：冷却按每次尝试算，不论成败；冷却期内有缓存用缓存（含过期的），没有就直接按校验失败。新用例：下载失败后 30 秒内 20 次校验只下载 1 次，满 30 秒再试成功；换回上一版 identity-gateway.ts 后用例失败（已实际运行）。
+- **ds-4**（deepseek-v4.1-flash）「`proposals` 从配置到写工具出现的端到端路径没有自动检查」：成立，按中高处理（和第 1 轮 ds-2 同类，缺的是两端接线的测试）。模型给低，判高的理由：同 I-73，配置值能解析但组装接错时没有测试会失败。已在真实进程测试里加 [P5-3] shows the memory proposal tool only when runPolicy.mcpRead.proposals is on：不写 proposals 没有 propose_memory，写 true 有。把 service-main 改成总是打开写工具后用例失败（expected true to be false，已实际运行）。
+- **ds-5**（deepseek-v4.1-flash）「旧 `secretRef` 的拒绝用例不能单独证明旧键被拒」：成立，低。已补 { audience, secretRef } 用例。
+- **ds-6**（deepseek-v4.1-flash）「ADR 说“每分钟最多 60 行”容易与同一个事件的其它来源混淆」：成立，低。ADR 决定 1 已改成「由校验失败产生的这类日志每分钟最多 60 行」，并写明其它原因也写同名日志。

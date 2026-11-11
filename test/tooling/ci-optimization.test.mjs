@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { gateLock } from "../../scripts/ci/install-gate-dependencies.mjs";
 import { confirmMain, publishMainMetadata } from "../../scripts/ci/main-confirm.mjs";
-import { validateMainWorkflow } from "../../scripts/ci/main-workflow.mjs";
+import {
+  validateCallerGrantsCalledPermissions,
+  validateMainWorkflow,
+} from "../../scripts/ci/main-workflow.mjs";
 
 const temporary = [];
 afterEach(() => {
@@ -122,6 +125,89 @@ it("main 工作流不能隐藏检查失败或关闭完整 CI 回退", () => {
       tools,
     ),
   ).toThrow("runtime");
+});
+
+describe("[I-93] main 调用完整 CI 时授予的权限覆盖 ci.yml 每个 job 要的权限，否则整轮 startup_failure", () => {
+  const ci = readFileSync(".github/workflows/ci.yml", "utf8");
+  const main = readFileSync(".github/workflows/main.yml", "utf8");
+  const tools = JSON.parse(readFileSync("ci/toolchain-lock.json", "utf8"));
+  const caller = (granted) =>
+    `permissions:\n  contents: read\n  actions: read\njobs:\n  full:\n    uses: ./.github/workflows/ci.yml\n${granted}`;
+  const called = (jobPermissions) =>
+    `permissions:\n  contents: read\njobs:\n  required:\n    permissions:\n${jobPermissions}`;
+  it("仓库里的 main.yml 和 ci.yml 通过，并且这项检查在 check:ci-policy 里", () => {
+    expect(validateCallerGrantsCalledPermissions(main, ci)).toEqual({ scopes: 3 });
+    expect(readFileSync("scripts/ci/check-policy.mjs", "utf8")).toContain(
+      "validateCallerGrantsCalledPermissions(mainWorkflow",
+    );
+  });
+  it("被调用方的 job 要 write、调用方只给 read 时失败", () => {
+    expect(() =>
+      validateCallerGrantsCalledPermissions(
+        caller("    permissions:\n      contents: read\n      actions: read\n"),
+        called("      actions: write\n"),
+      ),
+    ).toThrow("full-grants-actions-write");
+  });
+  it("调用方没写 job 级权限时按工作流级权限算", () => {
+    expect(() =>
+      validateCallerGrantsCalledPermissions(caller(""), called("      actions: write\n")),
+    ).toThrow("full-grants-actions-write");
+    expect(
+      validateCallerGrantsCalledPermissions(caller(""), called("      actions: read\n")),
+    ).toEqual({ scopes: 2 });
+  });
+  it("权限写成 write-all、read-all 这类字符串时按无效失败，空映射不申请任何权限", () => {
+    for (const shorthand of ["write-all", "read-all"]) {
+      expect(() =>
+        validateCallerGrantsCalledPermissions(caller(""), `permissions: ${shorthand}\njobs: {}\n`),
+      ).toThrow("full-grants-invalid");
+      expect(() =>
+        validateCallerGrantsCalledPermissions(
+          `permissions: ${shorthand}\njobs:\n  full:\n    uses: x\n`,
+          called("      actions: read\n"),
+        ),
+      ).toThrow("full-grants-invalid");
+    }
+    expect(
+      validateCallerGrantsCalledPermissions(
+        caller(""),
+        "permissions: {}\njobs:\n  a:\n    permissions: {}\n",
+      ),
+    ).toEqual({ scopes: 2 });
+  });
+  it("被调用方顶层或 job 新增调用方没给的权限时失败", () => {
+    expect(() =>
+      validateCallerGrantsCalledPermissions(
+        main,
+        ci.replace("permissions:\n", "permissions:\n  issues: read\n"),
+      ),
+    ).toThrow("full-grants-issues-read");
+  });
+  it("把修复退回成 actions: read 时两道检查都失败", () => {
+    const reverted = main.replace("      actions: write\n", "      actions: read\n");
+    expect(() => validateMainWorkflow(reverted, tools)).toThrow("full-permissions");
+    expect(() => validateCallerGrantsCalledPermissions(reverted, ci)).toThrow(
+      "full-grants-actions-write",
+    );
+  });
+  it("full 的权限只看内容不看顺序，多给写权限仍失败", () => {
+    const reordered = main.replace(
+      "      contents: read\n      actions: write\n      pull-requests: read\n",
+      "      pull-requests: read\n      actions: write\n      contents: read\n",
+    );
+    expect(reordered).not.toBe(main);
+    expect(validateMainWorkflow(reordered, tools)).toEqual({ jobs: 3 });
+    expect(() =>
+      validateMainWorkflow(
+        main.replace(
+          "      contents: read\n      actions: write",
+          "      contents: write\n      actions: write",
+        ),
+        tools,
+      ),
+    ).toThrow("full-permissions");
+  });
 });
 
 it("完整 CI 只在汇总通过后删除本次运行的报告产物，且写权限只给汇总 job", () => {

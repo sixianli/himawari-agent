@@ -240,6 +240,7 @@ export interface ProactiveConfiguration {
   readonly reviewBudgetSeconds: number;
   readonly reviewSecondsPerItem: number;
   readonly reviewSilentSharePermille: number;
+  readonly reviewMemoryUnusedDays: number;
   readonly backoffThreshold: number;
 }
 
@@ -250,8 +251,8 @@ export interface MuseIntakeConfiguration {
 }
 
 export interface McpReadConfiguration {
-  readonly secretRef: string;
-  readonly writeSecretRef?: string;
+  readonly audience: string;
+  readonly proposals?: true;
 }
 
 export interface RunPolicyConfiguration {

@@ -41,6 +41,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.review.read",
   "proactive.review.snapshot",
   "proactive.review.rate",
+  "proactive.review.checkup",
   "proactive.source.manage",
   "proactive.backoff.restore",
   "muse.overview.read",
@@ -539,10 +540,26 @@ const proactiveReviewKinds = [
   "external_read",
   "rule_review",
   "mail",
+  "checkup",
 ] as const;
+export const MEMORY_CHECKUP_REASONS = [
+  "conflict",
+  "unused",
+  "low_confidence",
+  "source_unavailable",
+] as const;
+export const MEMORY_CHECKUP_ACTIONS = ["confirm", "delete", "merge"] as const;
+const proactiveReviewCheckupSchema = object({
+  reason: enumeration(MEMORY_CHECKUP_REASONS),
+  action: nullable(enumeration(MEMORY_CHECKUP_ACTIONS)),
+  memoryId: machineString,
+  relatedMemoryId: nullable(machineString),
+  relatedText: proactiveTextSchema(200),
+  keptMemoryId: nullable(machineString),
+});
 const proactiveReviewItemSchema = object({
   key: machineString,
-  source: enumeration(["ledger", "mail"]),
+  source: enumeration(["ledger", "mail", "checkup"]),
   kind: enumeration(proactiveReviewKinds),
   outcome: machineString,
   decidedAt: timestamp,
@@ -552,6 +569,7 @@ const proactiveReviewItemSchema = object({
   textHidden: booleanValue,
   category: nullable(machineString),
   fetched: nullable(integer(0)),
+  checkup: nullable(proactiveReviewCheckupSchema),
 });
 const proactiveReviewQuerySchema = object({
   ...envelope("query", "proactive.review.read"),
@@ -566,6 +584,7 @@ const proactiveReviewSnapshotSchema = object({
     notSampled: integer(0),
     items: array(proactiveReviewItemSchema),
     folded: object({ total: integer(0), items: array(proactiveReviewItemSchema) }),
+    memoryUnusedDays: integer(1),
     generatedAt: timestamp,
   }),
 });
@@ -589,6 +608,21 @@ const proactiveReviewRatingsSchema: Schema<
 const proactiveReviewRateCommandSchema = object({
   ...commandEnvelope("proactive.review.rate"),
   payload: object({ ratings: proactiveReviewRatingsSchema }),
+});
+const proactiveReviewCheckupCommandSchema = object({
+  ...commandEnvelope("proactive.review.checkup"),
+  payload: {
+    parse(input, path = "$.payload") {
+      const payload = object({
+        key: machineString,
+        action: enumeration([...MEMORY_CHECKUP_ACTIONS, "undo"]),
+        keep: nullable(machineString),
+      }).parse(input, path);
+      if ((payload.action === "merge") !== (payload.keep !== null))
+        throw new ContractValidationError(`${path}.keep`, "must be present only for a merge");
+      return payload;
+    },
+  },
 });
 const proactiveSourceManageCommandSchema = object({
   ...commandEnvelope("proactive.source.manage"),
@@ -2278,6 +2312,7 @@ const schemasByType = {
   "proactive.review.read": proactiveReviewQuerySchema,
   "proactive.review.snapshot": proactiveReviewSnapshotSchema,
   "proactive.review.rate": proactiveReviewRateCommandSchema,
+  "proactive.review.checkup": proactiveReviewCheckupCommandSchema,
   "proactive.source.manage": proactiveSourceManageCommandSchema,
   "proactive.backoff.restore": proactiveBackoffRestoreCommandSchema,
   "muse.overview.read": museOverviewQuerySchema,

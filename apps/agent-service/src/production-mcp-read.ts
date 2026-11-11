@@ -4,6 +4,7 @@ import type {
   DecisionLedgerPort,
   DecisionLedgerWrite,
   JsonObject,
+  OwnerIdentityStatePort,
   ProactiveSettings,
   RuleRecord,
   StoredOwnerRule,
@@ -63,7 +64,7 @@ import {
   type ServerContext,
 } from "@modelcontextprotocol/server";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { BearerGate } from "./bearer-admission.js";
+import { AdmissionWindows } from "./bearer-admission.js";
 import {
   EXTERNAL_PROPOSAL_CATEGORIES,
   EXTERNAL_PROPOSAL_TEXT_MAXIMUM,
@@ -86,7 +87,9 @@ import type { MailEmbeddingContext } from "./production-run-memory.js";
 
 export const MCP_READ_PATH = "/api/mcp/v1";
 export const MCP_READ_BODY_LIMIT = 65_536;
-export const MCP_READ_SECRET_MINIMUM_LENGTH = 32;
+const MCP_ACCESS_OWNER_NOT_BOUND = Object.freeze({ code: "MCP_ACCESS_OWNER_NOT_BOUND" });
+
+export const MCP_ACCESS_ASSERTION_HEADER = "cf-access-jwt-assertion";
 export const MCP_READ_TOOL_NAMES = ["find_memories", "today_context", "rule_book"] as const;
 export const MCP_WRITE_TOOL_NAMES = ["propose_memory", "propose_rule"] as const;
 export const MCP_PROPOSAL_CONFIRM_KEY = "confirm";
@@ -146,14 +149,17 @@ export interface McpRuleProposals {
 }
 
 export interface McpWriteAccess {
-  readonly secret: string;
   readonly proposals: McpMemoryProposals;
   readonly rules: McpRuleProposals;
 }
 
+export interface McpAccessVerifier {
+  readonly verify: (assertion: string) => Promise<{ readonly externalSubjectRef: string }>;
+}
+
 export type McpAdmission =
   | { readonly status: "ok"; readonly authInfo: AuthInfo }
-  | { readonly status: "unauthorized" | "rate_limited" };
+  | { readonly status: "unauthorized" | "rate_limited" | "unavailable" };
 
 interface ProposalState {
   readonly tool: "propose_memory" | "propose_rule";
@@ -179,7 +185,8 @@ export function mcpProposalAnswer(
 export interface ProductionMcpReadOptions {
   readonly scope: Pick<DecisionLedgerWrite, "ownerId" | "agentId">;
   readonly clock: ClockPort;
-  readonly secret: string;
+  readonly access: McpAccessVerifier;
+  readonly owners: Pick<OwnerIdentityStatePort, "readBySubject">;
   readonly write?: McpWriteAccess;
   readonly timeZone: string;
   readonly requestTimeoutMs: number;
@@ -335,32 +342,16 @@ function elicitationSupported(envelope: unknown): boolean {
 
 export class ProductionMcpRead {
   readonly #options: ProductionMcpReadOptions;
-  readonly #gate: BearerGate;
+  readonly #windows: AdmissionWindows;
   readonly handler: McpHttpHandler;
 
-  readonly #writeGate: BearerGate | undefined;
   readonly #stateCodec: RequestStateCodec<ProposalState>;
   readonly #deciding = new Map<string, Promise<void>>();
   readonly #decidedRules = new Map<string, { readonly until: number; readonly saved: boolean }>();
 
   constructor(options: ProductionMcpReadOptions) {
     this.#options = options;
-    this.#gate = new BearerGate(
-      options.clock,
-      options.secret,
-      MCP_READ_SECRET_MINIMUM_LENGTH,
-      "MCP_READ_SECRET_TOO_SHORT",
-    );
-    if (options.write && options.write.secret === options.secret)
-      throw new Error("MCP_WRITE_SECRET_REUSED");
-    this.#writeGate = options.write
-      ? new BearerGate(
-          options.clock,
-          options.write.secret,
-          MCP_READ_SECRET_MINIMUM_LENGTH,
-          "MCP_WRITE_SECRET_TOO_SHORT",
-        )
-      : undefined;
+    this.#windows = new AdmissionWindows(options.clock);
     this.#stateCodec = createRequestStateCodec<ProposalState>({
       key: randomBytes(32),
       ttlSeconds: MCP_PROPOSAL_STATE_TTL_SECONDS,
@@ -371,12 +362,36 @@ export class ProductionMcpRead {
     });
   }
 
-  admit(authorization: string | undefined): McpAdmission {
-    const writing = this.#writeGate?.matches(authorization) === true;
-    const status = (writing ? this.#writeGate : this.#gate)?.admit(authorization) ?? "unauthorized";
-    if (status !== "ok") return { status };
-    const access = writing ? WRITE_ACCESS : READ_ACCESS;
-    return { status, authInfo: { token: "", clientId: access, scopes: [access] } };
+  async admit(assertion: string | undefined): Promise<McpAdmission> {
+    let subject: string | undefined;
+    let rejection: unknown;
+    if (assertion) {
+      let verified: string | undefined;
+      try {
+        verified = (await this.#options.access.verify(assertion)).externalSubjectRef;
+      } catch (error) {
+        rejection = error;
+      }
+      if (verified !== undefined) {
+        let binding: Awaited<ReturnType<OwnerIdentityStatePort["readBySubject"]>>;
+        try {
+          binding = await this.#options.owners.readBySubject(verified);
+        } catch (error) {
+          if (this.#windows.admit(true) === "rate_limited") return { status: "rate_limited" };
+          this.#options.onFailure(error);
+          return { status: "unavailable" };
+        }
+        if (binding?.ownerId === this.#options.scope.ownerId && binding.status === "active")
+          subject = verified;
+        else rejection = MCP_ACCESS_OWNER_NOT_BOUND;
+      }
+    }
+    const status = this.#windows.admit(subject !== undefined);
+    if (status === "unauthorized" && assertion) this.#options.onFailure(rejection);
+    if (status !== "ok" || subject === undefined)
+      return { status: status === "ok" ? "unauthorized" : status };
+    const scopes = this.#options.write ? [READ_ACCESS, WRITE_ACCESS] : [READ_ACCESS];
+    return { status, authInfo: { token: "", clientId: subject, scopes } };
   }
 
   #server(context: McpRequestContext): McpServer {
@@ -1013,15 +1028,15 @@ export function registerMcpReadRoute(app: FastifyInstance, mcp: ProductionMcpRea
       url: MCP_READ_PATH,
       bodyLimit: MCP_READ_BODY_LIMIT,
       onRequest: async (request, reply) => {
-        const gate = mcp.admit(request.headers.authorization);
+        const header = request.headers[MCP_ACCESS_ASSERTION_HEADER];
+        const gate = await mcp.admit(typeof header === "string" ? header : undefined);
         if (gate.status === "ok") {
           admitted.set(request, gate.authInfo);
           return;
         }
         return reply
-          .code(gate.status === "unauthorized" ? 401 : 429)
+          .code(gate.status === "unauthorized" ? 401 : gate.status === "unavailable" ? 503 : 429)
           .header("cache-control", "no-store")
-          .header("www-authenticate", 'Bearer realm="himawari"')
           .send();
       },
       handler: async (request, reply) =>
