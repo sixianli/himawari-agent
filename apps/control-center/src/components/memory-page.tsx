@@ -1756,7 +1756,7 @@ function TimelineTab({
         note: item.relatedText ? message("memory.tidyKept", { text: item.relatedText }) : "",
         undone: item.undone,
         undo: () => void memory.undoTidy(item),
-        confirm: item.action === "reflect",
+        confirm: item.action === "reflect" || item.action === "hold",
       }),
     ),
     ...overview.imports.map(

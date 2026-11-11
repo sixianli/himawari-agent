@@ -168,7 +168,7 @@ export const CONSOLIDATION_SCHEMA: JsonSchema = objectOf(
         id: text(1, 512),
         memoryId: text(1, 512),
         relatedMemoryId: nullable(text(1, 512)),
-        action: enumOf(["merge", "supersede", "archive", "reflect"]),
+        action: enumOf(["merge", "supersede", "archive", "reflect", "hold"]),
         beforeRevision: nullable(integer(1)),
         afterRevision: integer(1),
         beforeStatus: nullable(text(1, 64)),

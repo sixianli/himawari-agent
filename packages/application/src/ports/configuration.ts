@@ -75,6 +75,7 @@ export interface ConfiguredMemoryDescriptor {
   readonly storagePath: string;
   readonly dimensions: number;
   readonly minimumSimilarity?: number;
+  readonly automaticConfidencePermille?: number;
 }
 
 export interface ConcurrencyConfiguration {

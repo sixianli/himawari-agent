@@ -18,7 +18,7 @@ export function consolidationLedgerId(changeId: string): string {
 
 const MEMORY_BASIS_CHAIN_MAX_DEPTH = 8;
 const MEMORY_BASIS_CHAIN_MAX_NODES = 200;
-const ACTIONS = new Set(["merge", "supersede", "archive", "reflect"]);
+const ACTIONS = new Set(["merge", "supersede", "archive", "reflect", "hold"]);
 
 const runSelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId, day,
   trigger_run_id AS triggerRunId, status, reviewed_through AS reviewedThrough,

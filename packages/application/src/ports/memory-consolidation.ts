@@ -1,7 +1,7 @@
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import type { ProductMemoryRecord } from "./memory-projection.js";
 
-export type MemoryConsolidationAction = "merge" | "supersede" | "archive" | "reflect";
+export type MemoryConsolidationAction = "merge" | "supersede" | "archive" | "reflect" | "hold";
 
 export interface MemoryConsolidationRun {
   readonly id: string;

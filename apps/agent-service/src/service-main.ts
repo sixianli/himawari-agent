@@ -6,6 +6,7 @@ import type {
   ProductMemoryRecord,
 } from "@himawari-agent/application";
 import {
+  DEFAULT_AUTOMATIC_CONFIDENCE_PERMILLE,
   type ClockPort,
   claimFromRunExecutionLease,
   createProactiveSeal,
@@ -1496,6 +1497,9 @@ export async function runAgentService(
               ...(configuration.runPolicy?.timeZone
                 ? { timeZone: configuration.runPolicy.timeZone }
                 : {}),
+              automaticConfidencePermille:
+                configuration.memory?.automaticConfidencePermille ??
+                DEFAULT_AUTOMATIC_CONFIDENCE_PERMILLE,
             })
           : undefined;
       const consolidationProjection = memoryComposition.projection;

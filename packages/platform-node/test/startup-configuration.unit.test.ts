@@ -162,6 +162,31 @@ describe("strict product configuration", () => {
       ).toThrow();
   });
 
+  it("[P3-8] accepts an automatic confidence threshold only as a whole number from 1 to 1000", () => {
+    const withThreshold = (automaticConfidencePermille: unknown) => {
+      const input = config(path.join(tmpdir(), "himawari-memory-confidence"));
+      input["memory"] = {
+        ...(input["memory"] as Record<string, unknown>),
+        automaticConfidencePermille,
+      };
+      return input;
+    };
+    expect(
+      parseProductConfiguration(withThreshold(900), "2026-11-11T00:00:00.000Z").memory
+        .automaticConfidencePermille,
+    ).toBe(900);
+    expect(
+      parseProductConfiguration(
+        config(path.join(tmpdir(), "himawari-memory-confidence")),
+        "2026-11-11T00:00:00.000Z",
+      ).memory.automaticConfidencePermille,
+    ).toBeUndefined();
+    for (const invalid of [0, 1001, 850.5, "850"])
+      expect(() =>
+        parseProductConfiguration(withThreshold(invalid), "2026-11-11T00:00:00.000Z"),
+      ).toThrow();
+  });
+
   it("accepts a Magpie primary on a loopback address without gateway routing", () => {
     const input = config(path.join(tmpdir(), "himawari-magpie-primary"));
     const models = input["modelDescriptors"] as Record<string, unknown>[];

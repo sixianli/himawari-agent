@@ -49,11 +49,11 @@ date: "2026-11-10"
 
 ## 先看结论
 
-- 一共盘出 54 条：程序硬规则 16 条、提示词软规则 25 条、记忆规则机制 5 条、配置和设置 8 条（逐条在后面的表里）。
+- 一共盘出 55 条：程序硬规则 17 条、提示词软规则 25 条、记忆规则机制 5 条、配置和设置 8 条（逐条在后面的表里）。
 - 真正“必定执行”的主人规矩只有 Gmail 系统主动提醒那一块。聊天里的规矩几乎都是软的。
 - Andy 举的例子“涉及退款的邮件必须看整个邮件串再决定”，现在不是一条按退款触发的规则：代码里“退款”只是金钱词，命中后把邮件抬到“值得知道”（H-3）；读整个邮件串是对所有邮件都做的（H-15），模型读了之后怎么判仍是软的。这个想法最早出现在 [ADR 0159](adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md) 的已知限制里：“退款、预订是否办结需要整个邮件串，留给第二阶段”。
 - 生产库里的 `rule` 类记忆只有 3 条，全都已删除或在回收站；生产配置的 `systemInstruction` 只有一行（见 [C](#memory-rules) 和 C-1）。
-- 没有任何一条规则带“出处”字段。出处只能从 ADR、事故号和规格里倒推；54 条里有 19 条的出处仓库内查不到或只能查到一半（见 [G](#owner-confirm)）。
+- 没有任何一条规则带“出处”字段。出处只能从 ADR、事故号和规格里倒推；55 条里有 19 条的出处仓库内查不到或只能查到一半（见 [G](#owner-confirm)）。
 - 同一条规则在代码和提示词里各写一份的有 4 处，其中 2 处已经对不上（见 [F](#findings)）。
 
 [↑ 回到阅读导航](#contents)
@@ -78,10 +78,11 @@ date: "2026-11-10"
 | H-10 | 垃圾邮件分类的邮件不送模型 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md) | `proactive-mail-check-service.ts` 里 `categories.includes("spam")` | 硬 | 某类事不提醒 | PG-3 |
 | H-11 | 同一类推送（理由类型加发件人域名）连续被忽略 N 次（缺省 3）后，每 24 小时最多推 1 条；再忽略 N 次后暂停，直到主人点“恢复推送”。命中地板的提醒不降频 | [ADR 0184](adr/0184-back-off-ignored-proactive-pushes.md)（任务块 PA-6，Andy 2026-11-08 “同意”） | `proactive-mail-check-service.ts` 的 `#gateBackoff`；配置键 `runPolicy.proactive.backoffThreshold`；状态在表 `proactive_push_backoff` | 硬 | 每天提醒的上限（降频版） | `proactive-mail-check.test.ts` 的降频一组用例 |
 | H-12 | 待存的记忆只要分类是“敏感”，除非主人明说“记住”，一律先出确认卡，等主人点头才存；分类是“受限”的直接丢弃 | [ADR 0179](adr/0179-keep-low-confidence-memory-candidates-as-tentative.md) 一句“敏感类仍走审批”；丢弃原因码见 [ADR 0143](adr/0143-decision-ledger-for-model-gate-decisions.md)；立这条规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `automatic-memory-service.ts` 的 `isSensitive` 分支和 `restricted_excluded` | 硬 | 尚无（记忆写入门槛） | `test/integration/automatic-memory-golden.test.ts` |
-| H-13 | 待存的记忆的把握低于 850（千分制）时：能保留为“待确认”的存成待确认，否则丢弃；待确认的记忆不进主人档案，也不被邮件判断当事实用 | [ADR 0179](adr/0179-keep-low-confidence-memory-candidates-as-tentative.md) | `automatic-memory-service.ts`（`canBeKeptTentatively`）；`owner-profile-service.ts`（`tentative === true` 排除） | 硬 | 尚无（记忆写入门槛） | `packages/application/test/tentative-memory-capture.unit.test.ts`、`owner-profile-service.unit.test.ts` 的 PA-2 |
+| H-13 | 待存的记忆的把握低于 850（千分制，`config.json` 的 `memory.automaticConfidencePermille` 可调，见 [ADR 0213](adr/0213-consolidation-conflicts-wait-for-the-owner.md#decision)）时：能保留为“待确认”的存成待确认，否则丢弃；待确认的记忆不进主人档案，也不被邮件判断当事实用 | [ADR 0179](adr/0179-keep-low-confidence-memory-candidates-as-tentative.md) | `automatic-memory-service.ts`（`canBeKeptTentatively`）；`owner-profile-service.ts`（`tentative === true` 排除） | 硬 | 尚无（记忆写入门槛） | `packages/application/test/tentative-memory-capture.unit.test.ts`、`owner-profile-service.unit.test.ts` 的 PA-2 |
 | H-14 | 提醒时间的换算：有钟点的最多提前 1 小时提醒（离现在不到 1 小时的马上发），只有日期的当天早上 9 点提醒，两年以后的拒绝，每年的日子顺延到下一次 | [ADR 0166](adr/0166-prompt-wording-batch-1-system-and-tools.md)（提前 1 小时是有意的、每年顺延）、[ADR 0150](adr/0150-let-the-model-set-list-and-cancel-reminders.md)（已过去和超过两年的拒绝） | `apps/agent-service/src/production-memory-capture.ts` 的 `DATE_ONLY_REMIND_HOUR`、`MAXIMUM_REMINDER_HORIZON` | 硬 | 尚无（提醒时间换算） | `apps/agent-service/test/production-memory-evidence.unit.test.ts`；`prompt-wording.unit.test.ts` 的 C6 W-09 |
 | H-15 | 每封邮件判断前，先读同一件事以前的往来邮件（同一串对话、同标题同一批人，或同一个订单号、预约号、案件号），按时间排好交给模型；在费用和请求预算内对所有待判邮件都做（本次已花到每日费用上限时不找），不是按“退款”之类的词触发 | [ADR 0180](adr/0180-gmail-check-reads-earlier-mail-about-the-same-matter.md)；起因是 [ADR 0159](adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md) 已知限制写的“退款、预订是否办结需要整个邮件串，留给第二阶段” | `proactive-mail-check-service.ts` 的 `#related`，上限见 C-8 | 硬（读不读由程序定；读了怎么判由模型） | 尚无 | `proactive-mail-check.test.ts` 的 `[PA-1]` 一组 |
 | H-16 | “已回复”按邮件串算：只有该串最新一封自己发的邮件已被模型判为“不用管”且有把握、本次和数据库里都没有更晚的邮件时，才把该串待处理提醒标成已回复；产生了新提醒的用新提醒替换旧提醒 | [ADR 0159](adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md) 决定第 7 条 | `proactive-mail-check-service.ts` 的 `#repliedThreads`（本次取到的邮件）；数据库里更晚的邮件由 `sqlite-proactive-operations.ts` 标记已回复的 SQL 条件挡住 | 硬 | 尚无 | PG-5、OM-1、OM-2、OM-14、OM-15 |
+| H-17 | 每日整理判到两条记忆说法不一样时，只有模型判“新说法明确取代旧说法”、新条说得更晚、并且新条的把握不低于自动存入门槛（同 H-13），才作废旧条；其余一律让新条进“待确认”、旧条照常生效，并写一条 `hold` 决策记录；主人确认新条后两条都留 | [ADR 0213](adr/0213-consolidation-conflicts-wait-for-the-owner.md) | `packages/memory-engine/src/consolidation.ts`（`replace` 分支和 `hold`） | 硬 | 尚无（记忆整理门槛） | `test/integration/memory-consolidation.test.ts` 的 P3-8 |
 
 [↑ 回到阅读导航](#contents)
 

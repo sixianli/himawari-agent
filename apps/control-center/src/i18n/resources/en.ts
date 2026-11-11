@@ -752,7 +752,7 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {All changes} new {New} drop {Dropped and deleted} tidy {Memory tidy-ups} correct {Corrections} other {Imports}}",
   "memory.page.event":
-    "{e, select, new {New} dropped {Dropped} deleted {Deleted} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} other {Guess}}",
+    "{e, select, new {New} dropped {Dropped} deleted {Deleted} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} hold {Awaiting your confirmation} other {Guess}}",
   "memory.page.imported":
     "Imported {count} from {source, select, codex {Codex} assistant {another AI} other {a Himawari export}}",
   "memory.page.goConfirm": "Review",
@@ -1070,7 +1070,7 @@ export const messages = {
   "decision.chain.basis": "Inferred from",
   "decision.chain.basisCut": "Sources not fully read (too many, or a read error)",
   "decision.chain.action":
-    "{a, select, merge {Merged} supersede {Replaced} archive {Archived} reflect {Summarized} other {Tidied}}",
+    "{a, select, merge {Merged} supersede {Replaced} archive {Archived} reflect {Summarized} hold {Awaiting your confirmation} other {Tidied}}",
   "decision.chain.repeated": "repeated",
   "decision.chain.nodeCut": "more below",
   "decision.email.open": "View this email",

@@ -1287,7 +1287,14 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const memory = record(input["memory"], "configuration.memory");
   rejectUnknown(
     memory,
-    ["adapter", "version", "storagePath", "dimensions", "minimumSimilarity"],
+    [
+      "adapter",
+      "version",
+      "storagePath",
+      "dimensions",
+      "minimumSimilarity",
+      "automaticConfidencePermille",
+    ],
     "configuration.memory",
   );
   const minimumSimilarity =
@@ -1296,6 +1303,15 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       : unitInterval(memory["minimumSimilarity"], "configuration.memory.minimumSimilarity");
   if (minimumSimilarity !== undefined && (minimumSimilarity <= 0 || minimumSimilarity >= 1))
     throw invalid("configuration.memory.minimumSimilarity", "must be greater than 0 and below 1");
+  const automaticConfidencePermille =
+    memory["automaticConfidencePermille"] === undefined
+      ? undefined
+      : integer(
+          memory["automaticConfidencePermille"],
+          "configuration.memory.automaticConfidencePermille",
+          1,
+          1000,
+        );
   if (memory["adapter"] !== "himawari-sqlite" && memory["adapter"] !== "mem0-oss")
     throw invalid("configuration.memory.adapter", "is unsupported");
   const memoryPath = absolutePath(memory["storagePath"], "configuration.memory.storagePath");
@@ -1477,6 +1493,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       storagePath: memoryPath,
       dimensions: memoryDimensions,
       ...(minimumSimilarity === undefined ? {} : { minimumSimilarity }),
+      ...(automaticConfidencePermille === undefined ? {} : { automaticConfidencePermille }),
     }),
     repositoryAllowlistRefs: stringArray(
       input["repositoryAllowlistRefs"],

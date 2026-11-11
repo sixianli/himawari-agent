@@ -10,6 +10,7 @@ import type {
   ThreadGatewayInboundMessage,
 } from "@himawari-agent/application";
 import {
+  DEFAULT_AUTOMATIC_CONFIDENCE_PERMILLE,
   AgentThreadGatewayService,
   ApplicationPortError,
   type ExecutionLiveFeed,
@@ -1032,6 +1033,8 @@ export async function createProductionHttpComposition(
           throw new Error("MEMORY_CONSOLIDATION_WRITE_UNAVAILABLE");
         },
         now: clock,
+        automaticConfidencePermille:
+          configuration.memory?.automaticConfidencePermille ?? DEFAULT_AUTOMATIC_CONFIDENCE_PERMILLE,
       })
     : undefined;
   const memoryControl = options.memory

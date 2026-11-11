@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  DEFAULT_AUTOMATIC_CONFIDENCE_PERMILLE,
   type ClockPort,
   ContextFormationService,
   ContextProjectionService,
@@ -114,6 +115,7 @@ export interface ProductionRunCompositionOptions {
       NonNullable<ProductConfiguration["runPolicy"]>,
       "freezeThreadPrompts"
     >;
+    readonly memory?: Pick<ProductConfiguration["memory"], "automaticConfidencePermille">;
   };
   readonly onHandleTools?: (
     request: RuntimeRequest,
@@ -502,6 +504,9 @@ export function createProductionRunComposition(options: ProductionRunComposition
         state: repository.productMemoryState(),
         relevantMemoryIds: (runId) => recalled.get(runId) ?? [],
         product: memoryCaptureOptions.product,
+        automaticConfidencePermille:
+          configuration.memory?.automaticConfidencePermille ??
+          DEFAULT_AUTOMATIC_CONFIDENCE_PERMILLE,
         approvals: memoryCaptureOptions.approvals,
         reminders: repository.memoryReminders(),
         book: repository.memoryBook(),

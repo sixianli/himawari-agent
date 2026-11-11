@@ -41,7 +41,7 @@ export type LedgerWriteKind = Exclude<DecisionKind, "proactive">;
 
 export const DECISION_OUTCOMES = {
   memory_candidate: ["kept", "discarded", "pending_approval"],
-  consolidation: ["merge", "supersede", "archive", "reflect"],
+  consolidation: ["merge", "supersede", "archive", "reflect", "hold"],
   context_truncation: ["truncated"],
   retrieval_degrade: ["degraded"],
   external_read: ["read"],

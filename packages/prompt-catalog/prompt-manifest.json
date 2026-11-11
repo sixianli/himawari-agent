@@ -339,9 +339,9 @@
     }
   },
   "memory.consolidation": {
-    "sha256": "535bd14d079979065d195db9ecbb5ab1deec9abbd5157e4d41c8cca9637b0a08",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变",
+    "sha256": "94e2bac81138bc9b4b4c30556d3a29a9b0dc7be2c5dee422a3d905b2f6fab83d",
+    "changedIn": "ADR 0213",
+    "reason": "整理冲突拆成取代和冲突两种：只有明确取代且新条置信度够高才自动作废旧条，其余让新条进待确认",
     "emphasis": {
       "kind": "deferred",
       "batch": "第 3 批 W-18",
@@ -349,9 +349,9 @@
     }
   },
   "memory.consolidation.format": {
-    "sha256": "fd58e8334ce0c815212cafb30887eec45cadc7426b6c48e85afea880b98d831c",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "ab0d71664c44f485340ca1c0e205a93229fa4c86f9fe7c4d7d8d409453f86e5a",
+    "changedIn": "ADR 0213",
+    "reason": "整理冲突拆成取代和冲突两种：只有明确取代且新条置信度够高才自动作废旧条，其余让新条进待确认"
   },
   "memory.consolidation.fresh-header": {
     "sha256": "d72613ad6af65f78d7a5d9192ec6e8135341db40a08d2d1e033165c5675c419f",

@@ -552,7 +552,15 @@ export function protectedMemoryCandidates(
 export function createProductionAutomaticMemory(
   options: Pick<
     ProductionMemoryCaptureOptions,
-    "product" | "approvals" | "payloads" | "protector" | "clock" | "reminders" | "book" | "ledger"
+    | "product"
+    | "approvals"
+    | "payloads"
+    | "protector"
+    | "clock"
+    | "reminders"
+    | "book"
+    | "ledger"
+    | "automaticConfidencePermille"
   > & {
     readonly extract: () => Promise<readonly ExtractedMemoryCandidate[]>;
     readonly readSourceText: (sourceRef: string) => Promise<string>;
@@ -561,6 +569,9 @@ export function createProductionAutomaticMemory(
 ): AutomaticMemoryService {
   return new AutomaticMemoryService({
     extraction: { extract: options.extract },
+    ...(options.automaticConfidencePermille === undefined
+      ? {}
+      : { automaticConfidencePermille: options.automaticConfidencePermille }),
     product: options.product,
     content: {
       store: async (stored) => {
@@ -643,6 +654,7 @@ export interface ProductionMemoryCaptureOptions {
     onAdmitted: () => void,
   ) => Promise<string>;
   readonly ledger?: DecisionLedgerPort;
+  readonly automaticConfidencePermille?: number;
   readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   readonly onFailure: (error: unknown) => void;
 }
