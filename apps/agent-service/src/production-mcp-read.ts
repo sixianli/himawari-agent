@@ -8,7 +8,11 @@ import type {
   RuleRecord,
   StoredOwnerRule,
 } from "@himawari-agent/application";
-import { enforceableOwnerRule, ruleBookFor } from "@himawari-agent/application";
+import {
+  enforceableOwnerRule,
+  parseOwnerRuleParameters,
+  ruleBookFor,
+} from "@himawari-agent/application";
 import {
   MCP_TOOL_FIND_MEMORIES,
   MCP_TOOL_RESULT_FAILED,
@@ -158,7 +162,8 @@ function ownerRuleEntry(row: StoredOwnerRule): Record<string, unknown> {
     row.parameters !== null && typeof row.parameters === "object"
       ? (row.parameters as Record<string, unknown>)
       : {};
-  const rule = enforceableOwnerRule(row);
+  const enforced = enforcedOwnerRule(row);
+  const rule = enforced?.rule;
   return {
     id: row.ruleId,
     revision: row.revision,
@@ -169,8 +174,19 @@ function ownerRuleEntry(row: StoredOwnerRule): Record<string, unknown> {
     enforced: rule !== undefined,
     ...(typeof stored["type"] === "string" ? { type: stored["type"] } : {}),
     ...(typeof stored["summary"] === "string" ? { summary: stored["summary"] } : {}),
-    ...(rule && stored["params"] !== undefined ? { parameters: stored["params"] } : {}),
+    ...(enforced ? { parameters: enforced.params } : {}),
   };
+}
+
+function enforcedOwnerRule(
+  row: StoredOwnerRule,
+): { readonly rule: RuleRecord; readonly params: unknown } | undefined {
+  try {
+    const rule = enforceableOwnerRule(row);
+    return rule ? { rule, params: parseOwnerRuleParameters(row.parameters).params } : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function clientNameOf(envelope: unknown, userAgent: string | null): string {
