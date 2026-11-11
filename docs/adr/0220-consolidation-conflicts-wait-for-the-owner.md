@@ -8,7 +8,7 @@ amends: "docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md"
 date: "2026-11-11"
 ---
 
-# ADR 0213：每日整理判到冲突时，默认让新条进「待确认」，只有明确取代且新条置信度够高才自动作废旧条
+# ADR 0220：每日整理判到冲突时，默认让新条进「待确认」，只有明确取代且新条置信度够高才自动作废旧条
 
 <a id="contents"></a>
 

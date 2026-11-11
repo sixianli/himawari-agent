@@ -340,7 +340,7 @@
   },
   "memory.consolidation": {
     "sha256": "94e2bac81138bc9b4b4c30556d3a29a9b0dc7be2c5dee422a3d905b2f6fab83d",
-    "changedIn": "ADR 0213",
+    "changedIn": "ADR 0220",
     "reason": "整理冲突拆成取代和冲突两种：只有明确取代且新条置信度够高才自动作废旧条，其余让新条进待确认",
     "emphasis": {
       "kind": "deferred",
@@ -350,7 +350,7 @@
   },
   "memory.consolidation.format": {
     "sha256": "ab0d71664c44f485340ca1c0e205a93229fa4c86f9fe7c4d7d8d409453f86e5a",
-    "changedIn": "ADR 0213",
+    "changedIn": "ADR 0220",
     "reason": "整理冲突拆成取代和冲突两种：只有明确取代且新条置信度够高才自动作废旧条，其余让新条进待确认"
   },
   "memory.consolidation.fresh-header": {
