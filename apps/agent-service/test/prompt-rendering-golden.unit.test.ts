@@ -224,7 +224,14 @@ describe("[PROMPT-GOLDEN] rendered prompts stay byte-identical while text moves 
         [mail("a")],
         "2026-11-04T01:00:00.000Z",
         "Asia/Tokyo",
-        [],
+        [
+          {
+            mailId: "message-a",
+            id: "memory-7",
+            text: "主人用东京燃气，每月自动扣款。",
+            dataClassification: "private",
+          },
+        ],
         undefined,
         new Map(),
         [

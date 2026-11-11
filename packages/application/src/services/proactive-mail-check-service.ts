@@ -801,7 +801,22 @@ export class ProactiveMailCheckService {
             ]),
             trace,
           );
-    const summaryBudget = { spentToday, costMicros: 0 };
+    const bodyLimits = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits };
+    let batchSize = this.#options.batchSize ?? DEFAULT_BATCH_SIZE;
+    const judgmentReserveMicros =
+      candidates.length === 0
+        ? 0
+        : this.#options.limits.estimateCostMicros(
+            proactivePrompt(
+              this.#fitBatch(candidates, batchSize, bodyLimits, relatedViews),
+              startedAt,
+              this.#options.timeZone,
+              [],
+              bodyLimits.perMail,
+              relatedViews,
+            ),
+          );
+    const summaryBudget = { spentToday, reserveMicros: judgmentReserveMicros, costMicros: 0 };
     const summaries =
       candidates.length === 0 || spentToday >= this.#options.limits.dailyCostMicros
         ? []
@@ -811,8 +826,6 @@ export class ProactiveMailCheckService {
     costMicros += recalled.costMicros;
     let stop: Stop = null;
     const queue = [...candidates];
-    let batchSize = this.#options.batchSize ?? DEFAULT_BATCH_SIZE;
-    const bodyLimits = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits };
     let failure: string | null = null;
     while (queue.length > 0 && stop === null) {
       const batch = this.#fitBatch(queue, batchSize, bodyLimits, relatedViews);
@@ -1286,7 +1299,7 @@ export class ProactiveMailCheckService {
     deadlineAt: string,
     signal: AbortSignal,
     trace: CheckTrace,
-    budget: { readonly spentToday: number; costMicros: number },
+    budget: { readonly spentToday: number; readonly reserveMicros: number; costMicros: number },
   ): Promise<readonly PromptSummary[]> {
     const source = this.#options.recentSummaries;
     if (source === undefined) return [];
@@ -1308,6 +1321,7 @@ export class ProactiveMailCheckService {
             if (
               budget.spentToday +
                 budget.costMicros +
+                budget.reserveMicros +
                 this.#options.limits.estimateCostMicros(prompt) >
               this.#options.limits.dailyCostMicros
             )

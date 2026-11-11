@@ -666,7 +666,8 @@ export class SqliteProactiveOperations {
       (inputs.summaryInjected ?? false) === hasSummaryIds &&
       count(inputs.summaryCharacters) &&
       count(inputs.summaryGenerated) &&
-      ["off", "ok", "partial", "failed"].includes(inputs.summaryRead ?? "off")
+      typeof inputs.summaryRead === "string" &&
+      ["off", "ok", "partial", "failed"].includes(inputs.summaryRead)
     );
   }
 

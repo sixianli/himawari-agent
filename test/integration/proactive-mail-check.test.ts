@@ -3261,6 +3261,33 @@ describe("proactive Gmail check acceptance", () => {
       const head = (prompt: string) => prompt.slice(0, prompt.indexOf("邮件："));
       expect(head(h.prompts[0] ?? "")).toContain("下周去大阪出差");
       expect(head(h.prompts[0] ?? "")).toBe(head(h.prompts[1] ?? ""));
+      expect(world.current?.calls).toEqual({ catchUp: 1, recent: 1 });
+    });
+
+    it("REVERSE: leaves room for the mail judgment instead of spending the last of the day's limit on catching up", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({
+        recentSummaries: summariesFor(world),
+        dailyCostMicros: 150,
+        estimate: 100,
+        cost: 100,
+      });
+      chatTurn(h, world.current as World, {
+        threadId: "chat-yesterday",
+        sequence: 1,
+        role: "owner",
+        text: "十月的电费我已经交了",
+        at: "2026-11-03T03:00:00.000Z",
+      });
+      h.reader.items = [mail("bill", { subject: "電気料金のお知らせ" })];
+      h.script([{ id: "bill", result: "ignore" }]);
+      await h.service.run();
+      expect(h.invocations()).toBe(1);
+      expect(h.prompts[0]).toContain("電気料金のお知らせ");
+      expect(h.prompts[0]).not.toContain("十月的电费我已经交了");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({ summaryGenerated: 0, summaryRead: "partial" });
+      expect(h.query("SELECT COUNT(*) AS n FROM memory_episodes")[0]).toEqual({ n: 0 });
     });
 
     it("REVERSE: the store refuses summary inputs that would not read back as written", async () => {
@@ -3289,6 +3316,7 @@ describe("proactive Gmail check acceptance", () => {
         { summaryRead: undefined },
         { summaryIds: undefined, summaryInjected: undefined },
         { summaryGenerated: undefined },
+        { summaryRead: null },
       ]) {
         n += 1;
         await expect(
