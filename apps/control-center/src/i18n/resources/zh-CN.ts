@@ -842,7 +842,7 @@ export const messages = {
   "rules.title": "长期规则 · {count} 条",
   "rules.note": "这些规则由程序强制执行，不靠模型记住。撤销后下一次检查邮件时就不再执行。",
   "rules.type":
-    "{t, select, mail_must_notify {一定提醒} mail_read_whole_thread {先读完整个邮件串} other {其他规则}}",
+    "{t, select, mail_must_notify {一定提醒} mail_read_whole_thread {先读完整个邮件串} push_quiet_hours {推送延后} other {其他规则}}",
   "rules.needsReview": "来源记忆改过，待重新确认（仍在执行）",
   "rules.notEnforced": "这条规则读不懂，暂时没有执行",
   "rules.reconfirm": "重新确认",
@@ -1041,7 +1041,7 @@ export const messages = {
   "decision.chain.rules": "命中的规则",
   "decision.chain.reviewRules": "待重审的规则",
   "decision.chain.rule":
-    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：邮件里有金额相关的词} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} mail_must_notify {你立的规则：这类邮件必须提醒你} mail_read_whole_thread {你立的规则：先看整个邮件串再判断} other {{id}}}",
+    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：邮件里有金额相关的词} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} mail_must_notify {你立的规则：这类邮件必须提醒你} mail_read_whole_thread {你立的规则：先看整个邮件串再判断} push_quiet_hours {你立的规则：静默时段里，指定的推送等时段结束再发} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {你设定的} built_in {内置规则} other {未登记的规则}}",
   "decision.chain.ruleMails": "命中 {count} 封邮件",

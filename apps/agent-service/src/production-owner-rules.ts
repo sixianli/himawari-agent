@@ -18,6 +18,7 @@ import {
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
   parseOwnerRuleParameters,
+  PUSH_QUIET_CLASSES,
   RULE_TYPES,
   type RuleRecord,
   RuleTypeError,
@@ -177,6 +178,32 @@ export function ownerRuleToolDescriptors(
               phrases: list,
               words: list,
               excludePhrases: list,
+              periods: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    days: {
+                      type: "array",
+                      items: { type: "integer", minimum: 0, maximum: 6 },
+                      minItems: 1,
+                      maxItems: 7,
+                    },
+                    start: { type: "string", pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+                    end: { type: "string", pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+                  },
+                  required: ["days", "start", "end"],
+                  additionalProperties: false,
+                },
+                minItems: 1,
+                maxItems: 8,
+              },
+              classes: {
+                type: "array",
+                items: { type: "string", enum: [...PUSH_QUIET_CLASSES] },
+                minItems: 1,
+                maxItems: 3,
+              },
             },
             additionalProperties: false,
           },
@@ -273,7 +300,20 @@ function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+const WEEKDAY_NAMES = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"] as const;
+
+function pushTrial(example: RuleRecord["examples"][number]): RuleTrial {
+  const minutes = Number(example.facts["local_minutes"] ?? 0);
+  const clock = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  return Object.freeze({
+    from: String(example.facts["push_class"] ?? ""),
+    subject: `${WEEKDAY_NAMES[Number(example.facts["local_weekday"] ?? 0)] ?? ""} ${clock}`,
+    hit: example.hit,
+  });
+}
+
 function trialsOf(rule: RuleRecord): readonly RuleTrial[] {
+  if (rule.gate === "push_delivery") return rule.examples.map(pushTrial);
   return rule.examples.map((example) => {
     const text = String(example.facts["text"] ?? "");
     return Object.freeze({
@@ -476,7 +516,7 @@ export class ProductionOwnerRuleWriter {
   }
 
   async #replay(rule: RuleRecord): Promise<RuleReplay | null> {
-    if (!this.#options.replay) return null;
+    if (!this.#options.replay || rule.gate !== "mail_item") return null;
     try {
       return await this.#options.replay(rule);
     } catch {

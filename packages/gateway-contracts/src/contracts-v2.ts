@@ -1123,6 +1123,7 @@ const decisionChainSnapshotSchema = object({
             "amount_threshold",
             "mail_must_notify",
             "mail_read_whole_thread",
+            "push_quiet_hours",
             "unknown",
           ]),
           origin: nullable(enumeration(["owner_setting", "built_in"])),

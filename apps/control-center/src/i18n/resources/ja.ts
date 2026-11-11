@@ -898,7 +898,7 @@ export const messages = {
   "rules.note":
     "これらのルールはモデルの記憶ではなく、プログラムが必ず守ります。取り消すと次のメール確認から適用されません。",
   "rules.type":
-    "{t, select, mail_must_notify {必ず通知} mail_read_whole_thread {スレッド全体を先に読む} other {その他のルール}}",
+    "{t, select, mail_must_notify {必ず通知} mail_read_whole_thread {スレッド全体を先に読む} push_quiet_hours {通知の延期} other {その他のルール}}",
   "rules.needsReview": "元の記憶が変わったため再確認待ち（適用は継続中）",
   "rules.notEnforced": "このルールを読み取れないため、いまは適用していません",
   "rules.reconfirm": "再確認",
@@ -1107,7 +1107,7 @@ export const messages = {
   "decision.chain.rules": "該当したルール",
   "decision.chain.reviewRules": "再確認待ちのルール",
   "decision.chain.rule":
-    "{k, select, important_sender {重要なメールを逃さない：送信者が重要リストにある} public_domain {重要なメールを逃さない：官公庁・学校のドメインから} money_words {重要なメールを逃さない：金額に関する語がある} quiet_hours {通知しない時間帯：この時間は通知せず、終わってから送る} amount_threshold {少額は通知しない：金額が基準未満のメールは通知しない} mail_must_notify {あなたのルール：この種類のメールは必ず知らせる} mail_read_whole_thread {あなたのルール：スレッド全体を読んでから判断する} other {{id}}}",
+    "{k, select, important_sender {重要なメールを逃さない：送信者が重要リストにある} public_domain {重要なメールを逃さない：官公庁・学校のドメインから} money_words {重要なメールを逃さない：金額に関する語がある} quiet_hours {通知しない時間帯：この時間は通知せず、終わってから送る} amount_threshold {少額は通知しない：金額が基準未満のメールは通知しない} mail_must_notify {あなたのルール：この種類のメールは必ず知らせる} mail_read_whole_thread {あなたのルール：スレッド全体を読んでから判断する} push_quiet_hours {あなたのルール：通知しない時間帯は、指定した通知を終わってから送る} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {あなたの設定} built_in {組み込みルール} other {未登録のルール}}",
   "decision.chain.ruleMails": "{count} 件のメールが該当",

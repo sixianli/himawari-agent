@@ -892,7 +892,7 @@ export const messages = {
   "rules.note":
     "These rules are enforced by code, not by the model remembering them. Undo one and the next mail check stops using it.",
   "rules.type":
-    "{t, select, mail_must_notify {Always notify} mail_read_whole_thread {Read the whole thread first} other {Other rule}}",
+    "{t, select, mail_must_notify {Always notify} mail_read_whole_thread {Read the whole thread first} push_quiet_hours {Push delay} other {Other rule}}",
   "rules.needsReview": "Its source memory changed; confirm it again (still enforced)",
   "rules.notEnforced": "This rule can't be read, so it isn't enforced for now",
   "rules.reconfirm": "Confirm again",
@@ -1107,7 +1107,7 @@ export const messages = {
   "decision.chain.rules": "Rules hit",
   "decision.chain.reviewRules": "Rules waiting for review",
   "decision.chain.rule":
-    "{k, select, important_sender {Never miss important mail: sender is on your important list} public_domain {Never miss important mail: from a government or school domain} money_words {Never miss important mail: money-related words in the message} quiet_hours {Quiet hours: no notifications now, sent when quiet hours end} amount_threshold {Small amounts: no notification for mail below the threshold} mail_must_notify {Your rule: always tell you about this kind of mail} mail_read_whole_thread {Your rule: read the whole thread before deciding} other {{id}}}",
+    "{k, select, important_sender {Never miss important mail: sender is on your important list} public_domain {Never miss important mail: from a government or school domain} money_words {Never miss important mail: money-related words in the message} quiet_hours {Quiet hours: no notifications now, sent when quiet hours end} amount_threshold {Small amounts: no notification for mail below the threshold} mail_must_notify {Your rule: always tell you about this kind of mail} mail_read_whole_thread {Your rule: read the whole thread before deciding} push_quiet_hours {Your rule: during quiet hours, the chosen pushes wait until they end} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {Set by you} built_in {Built-in rule} other {Unregistered rule}}",
   "decision.chain.ruleMails": "Hit {count, plural, one {# email} other {# emails}}",
