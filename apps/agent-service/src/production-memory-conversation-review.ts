@@ -852,10 +852,12 @@ export class ProductionMemoryConversationReview {
   }
 
   async #settle(review: MemoryConversationReview): Promise<void> {
-    const pending = (await this.#options.store.listChanges(review.id)).filter(
-      ({ afterRevision }) => afterRevision === null,
-    );
+    const all = await this.#options.store.listChanges(review.id);
+    const pending = all.filter(({ afterRevision }) => afterRevision === null);
     if (pending.length === 0) return;
+    const createdHere = new Set<string>(
+      all.filter(({ action }) => action === "created").map(({ memoryId }) => memoryId),
+    );
     const records = new Map(
       (
         await this.#options.state.readMany({
@@ -872,7 +874,7 @@ export class ProductionMemoryConversationReview {
         memory !== undefined &&
         (change.action === "created" ||
           (change.action === "superseded"
-            ? supersededBy !== null && supersededBy !== change.beforeSupersededBy
+            ? supersededBy !== null && createdHere.has(supersededBy)
             : memory.attributes?.tentative !== true));
       if (memory && happened)
         await this.#options.store.recordChange({ ...change, afterRevision: memory.revision });

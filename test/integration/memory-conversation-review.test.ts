@@ -369,6 +369,7 @@ describe("[DREAM] daily conversation review", () => {
       active,
       undo,
       clock,
+      databasePath,
     };
   }
 
@@ -523,14 +524,93 @@ describe("[DREAM] daily conversation review", () => {
       "REVISE_LOST",
     );
     const halfway = await options.store.listChanges(reviewId);
-    expect(halfway.filter(({ undoneRevision }) => undoneRevision !== null)).toHaveLength(1);
+    const created = halfway.find(({ action }) => action === "created");
+    expect((await resource.read(created?.memoryId ?? ""))?.status).toBe("archived");
+    expect((await resource.read("osaka"))?.attributes?.supersededBy).toBe(created?.memoryId);
     expect((await options.store.read(reviewId))?.undoneAt).toBeNull();
 
     await undoConversationReview({ ...options, memory: resource.memory }, reviewId);
-    const created = halfway.find(({ action }) => action === "created");
     expect((await resource.read("osaka"))?.attributes?.supersededBy ?? null).toBeNull();
     expect((await resource.read(created?.memoryId ?? ""))?.status).toBe("archived");
     expect((await options.store.read(reviewId))?.undoneAt).not.toBeNull();
+  });
+
+  it("[DREAM] resumes an undo that stopped right after changing a memory back", async () => {
+    const resource = await setup({
+      lines: PLAN_CHANGE,
+      seeds: [OSAKA],
+      outputs: [JSON.stringify({ memories: [SUPERSEDE] })],
+    });
+    const [result] = await resource.review.runDue(resource.request);
+    const reviewId = result?.reviewId ?? "";
+    let revisions = 0;
+    const crashing = {
+      revise: async (request: Parameters<DurableMemoryService["revise"]>[0]) => {
+        const revised = await resource.memory.revise(request);
+        revisions += 1;
+        if (revisions === 1) throw new Error("CRASH_AFTER_REVISE");
+        return revised;
+      },
+    };
+    const options = {
+      store: resource.repository.memoryConversationReviews(),
+      state: resource.repository.productMemoryState(),
+      generationFor: async (memoryId: ProductMemoryRecord["id"]) =>
+        (await resource.repository.memoryProjectionJobs().listByMemory(memoryId)).at(-1)
+          ?.generationId,
+      now: () => resource.clock.value,
+    };
+    await expect(
+      undoConversationReview({ ...options, memory: crashing }, reviewId),
+    ).rejects.toThrow("CRASH_AFTER_REVISE");
+    await undoConversationReview({ ...options, memory: resource.memory }, reviewId);
+    const created = result?.changes.find(({ action }) => action === "created");
+    expect((await resource.read("osaka"))?.attributes?.supersededBy ?? null).toBeNull();
+    expect((await resource.read(created?.memoryId ?? ""))?.status).toBe("archived");
+  });
+
+  it("[DREAM] finishes a replacement when the new memory was saved before a crash", async () => {
+    const resource = await setup({ lines: PLAN_CHANGE, seeds: [OSAKA], outputs: [] });
+    const proposal = {
+      decision: "create" as const,
+      memory: {
+        id: createMemoryId("kyoto"),
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        contentRef: "payload-osaka",
+        dataClassification: "private" as const,
+        sourceThreadId: THREAD_ID,
+        sourceRefs: ["source-kyoto"],
+        inference: false,
+        confidencePermille: 950,
+        policyVersion: "memory-policy-seed",
+      },
+    };
+    await resource.memory.applyProposal(proposal, SEED_GENERATION);
+    expect((await resource.read("osaka"))?.attributes?.supersededBy ?? null).toBeNull();
+    await resource.memory.applyProposal(
+      { ...proposal, supersedes: createMemoryId("osaka") },
+      SEED_GENERATION,
+    );
+    expect((await resource.read("osaka"))?.attributes?.supersededBy).toBe("kyoto");
+  });
+
+  it("[DREAM] removes a review's change rows when the memory itself is deleted", async () => {
+    const resource = await setup({
+      lines: PLAN_CHANGE,
+      seeds: [OSAKA],
+      outputs: [JSON.stringify({ memories: [SUPERSEDE] })],
+    });
+    const [result] = await resource.review.runDue(resource.request);
+    const created = result?.changes.find(({ action }) => action === "created");
+    const database = openQualifiedDatabase(resource.databasePath);
+    database.pragma("foreign_keys = ON");
+    database.prepare("DELETE FROM memory_records WHERE id = ?").run(created?.memoryId);
+    database.close();
+    const left = await resource.repository
+      .memoryConversationReviews()
+      .listChanges(result?.reviewId ?? "");
+    expect(left.map(({ memoryId }) => memoryId)).toEqual(["osaka"]);
   });
 
   it("records a habit only when another day supports it", async () => {

@@ -79,7 +79,8 @@ Himawari 现在有两个环节写记忆，但没有一个环节拿“对话”�
 8. **整批撤销。** `memory_conversation_review_changes` 记下这一批改了哪些记忆、动作（created、superseded、confirmed）、改后的修订号、改前的 `supersededBy` 和 `validTo`。
    - 先记后写：写记忆之前，先按这次回看的快照记下“打算改哪些记忆”和改前的值（这时改后的修订号为空）；写完、写失败时、下次重试开始时，按记忆的实际状态补上修订号，没发生的删掉。这样写到一半失败也不会留下不在任何批次里的记忆，重试也不会把已改过的值当成改前的值。新增的记忆在写之前还不存在，所以这张表不对记忆表用外键，改用删除触发器，记忆被删时一并删掉改动行。
    - 撤销（网关命令 `memory.conversationReview.undo`，`packages/memory-engine/src/conversation-review.ts`）只对已完成或已放弃的批次开放，进行中或失败待重试的批次不显示、不能撤销。新增的归档、被取代的恢复原状、确认的改回待确认；只要有一条记忆在回看之后又被别人改过，整批不能撤销，界面显示“锁定”而不是按钮。
-   - 撤销中途失败可以接着做：每改回一条就记下它改回后的修订号（`undone_revision`），再点撤销时跳过已改回的。
+   - 撤销中途失败可以接着做：改回每条记忆之前先记下改回后应有的修订号（`undone_revision`，改回固定把修订号加 1，结果不同再更正），再点撤销时跳过已改回的。
+   - “取代是否发生”只认被本批新建的记忆取代，别处的取代不算进本批。新记忆已保存、取代没做就中断时，重试会补做取代：`DurableMemoryService.applyProposal` 遇到同一提案已存在时也执行 `supersedes`（每轮记忆抽取共用这一处）。
    - 已知空隙：检查修订号和写库之间没有锁，主人恰好在这几毫秒里改了那条旧记忆时，它仍会被标成已取代（可撤销）。根治要给每轮抽取共用的 `applyProposal` 加按修订号写，另行决定。
 9. **记忆页。** “整理记忆”筛选里显示回看批次：这一批新记住、取代、确认了几条，每条带记忆正文和原话，一个整批撤销按钮。
 10. **配置。** `configuration.memory.conversationReview` 下的 `enabled`（缺省开）、`maximumSegmentsPerDay`（3）、`maximumSourceCharacters`（16000）、`maximumRelatedMemories`（30）、`maximumNewMemoriesPerDay`（5）、`maximumOutputTokens`（1024），都有上下限检查，不写死。
