@@ -124,6 +124,25 @@ it("main 工作流不能隐藏检查失败或关闭完整 CI 回退", () => {
   ).toThrow("runtime");
 });
 
+it("[I-93] main 调用完整 CI 时授予的权限覆盖 ci.yml 每个 job 要的权限，否则整轮 startup_failure", () => {
+  const ci = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
+  const main = parse(readFileSync(".github/workflows/main.yml", "utf8"));
+  const granted = main.jobs.full.permissions ?? main.permissions;
+  const rank = { none: 0, read: 1, write: 2 };
+  const requested = [ci.permissions, ...Object.values(ci.jobs).map((job) => job.permissions)];
+  for (const permissions of requested)
+    for (const [scope, level] of Object.entries(permissions ?? {}))
+      expect(
+        rank[granted[scope] ?? "none"],
+        `main.yml full 没有授予 ${scope}: ${level}`,
+      ).toBeGreaterThanOrEqual(rank[level]);
+  const tools = JSON.parse(readFileSync("ci/toolchain-lock.json", "utf8"));
+  const text = readFileSync(".github/workflows/main.yml", "utf8");
+  expect(() =>
+    validateMainWorkflow(text.replace("      actions: write\n", "      actions: read\n"), tools),
+  ).toThrow("full-permissions");
+});
+
 it("完整 CI 只在汇总通过后删除本次运行的报告产物，且写权限只给汇总 job", () => {
   const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
   const required = workflow.jobs.required;

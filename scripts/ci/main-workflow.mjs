@@ -28,7 +28,12 @@ export function validateMainWorkflow(source, lock) {
         "always() && (needs.plan.result != 'success' || needs.plan.outputs.mode != 'light')",
     "fallback",
   );
-  assert(!full.secrets && !full.permissions && !full.with, "full-inputs");
+  assert(!full.secrets && !full.with, "full-inputs");
+  assert(
+    JSON.stringify(full.permissions) ===
+      JSON.stringify({ contents: "read", actions: "write", "pull-requests": "read" }),
+    "full-permissions",
+  );
   assert(
     confirm.needs === "plan" &&
       confirm.if === "needs.plan.result == 'success' && needs.plan.outputs.mode == 'light'",
