@@ -335,9 +335,9 @@
     "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
   },
   "mcp.rule-book": {
-    "sha256": "df131609c5e20c4560f5cdfa4cfa38fd276880ccf0cb6bd945141609eb998df5",
+    "sha256": "5ec53f58db364245bc5ed5b0762a8f978236cb0f0a5858c8a3e2389084df6d2c",
     "changedIn": "ADR 0219",
-    "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
+    "reason": "规则手册也列出主人在对话里立的长期规则（ADR 0213）"
   },
   "mcp.today-context": {
     "sha256": "565ffbea5f0f81a0e65a96e44c3e79561409ea58078fb9603d2a0ab94a5a59d2",

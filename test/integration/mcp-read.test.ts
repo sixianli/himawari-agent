@@ -219,6 +219,25 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       now: () => clock.now(),
       timeZone: TIME_ZONE,
     });
+    for (const [ruleId, parameters] of [
+      [
+        "owner:immigration",
+        {
+          type: "mail_must_notify",
+          summary: "日本入管局相关的邮件一律提醒",
+          params: { senderDomains: ["isa.go.jp"] },
+        },
+      ],
+      ["owner:unknown", { type: "mail_unknown_kind", summary: "看不懂的规则", params: {} }],
+    ] as const)
+      await repository.ownerRules().create({
+        ...scope,
+        ruleId,
+        parameters,
+        source: "chat:thread-1",
+        sourceMemoryId: `memory:rule:${ruleId}`,
+        now: NOW,
+      });
     const embeddingContexts: { deadlineAt: string; aborted: boolean }[] = [];
     const failures: unknown[] = [];
     const summaryFailures: unknown[] = [];
@@ -244,6 +263,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
           return writer.list(windowMs);
         },
         settings: () => settingsStore.readSettings(scope),
+        ownerRules: () => repository.ownerRules().list({ ...scope, includeRetired: false }),
         ...(options.withoutSummaries
           ? {}
           : {
@@ -502,7 +522,22 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       "floor_public_domain",
       "floor_money_words",
       "quiet_hours",
+      "owner:immigration",
+      "owner:unknown",
     ]);
+    expect(output.rules.find(({ id }) => id === "owner:immigration")).toMatchObject({
+      origin: "owner_setting",
+      type: "mail_must_notify",
+      summary: "日本入管局相关的邮件一律提醒",
+      enforced: true,
+      gate: "mail_item",
+      outcome: "require_notify",
+      parameters: { senderDomains: ["isa.go.jp"] },
+    });
+    const unknown = output.rules.find(({ id }) => id === "owner:unknown");
+    expect(unknown).toMatchObject({ enforced: false, summary: "看不懂的规则" });
+    expect(unknown).not.toHaveProperty("gate");
+    expect(unknown).not.toHaveProperty("parameters");
     expect(output.rules.every((rule) => rule.expression === undefined)).toBe(true);
     expect(output.rules.find(({ id }) => id === "quiet_hours")).toHaveProperty("quietHours");
     const [row] = await f.ledger();

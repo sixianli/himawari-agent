@@ -6,8 +6,9 @@ import type {
   JsonObject,
   ProactiveSettings,
   RuleRecord,
+  StoredOwnerRule,
 } from "@himawari-agent/application";
-import { ruleBookFor } from "@himawari-agent/application";
+import { enforceableOwnerRule, ruleBookFor } from "@himawari-agent/application";
 import {
   MCP_TOOL_FIND_MEMORIES,
   MCP_TOOL_RESULT_FAILED,
@@ -56,6 +57,7 @@ export interface McpReadSources {
     readonly more: boolean;
   }>;
   readonly settings: () => Promise<ProactiveSettings>;
+  readonly ownerRules?: () => Promise<readonly StoredOwnerRule[]>;
   readonly summaries?: (input: { readonly days: number; readonly limit: number }) => Promise<{
     readonly summaries: readonly {
       readonly id: string;
@@ -149,6 +151,26 @@ function ruleParameters(rule: RuleRecord, settings: ProactiveSettings): Record<s
   if (rule.id === "quiet_hours") return { quietHours: settings.quietHours };
   if (rule.id === "floor_important_sender") return { importantSenders: settings.importantSenders };
   return {};
+}
+
+function ownerRuleEntry(row: StoredOwnerRule): Record<string, unknown> {
+  const stored =
+    row.parameters !== null && typeof row.parameters === "object"
+      ? (row.parameters as Record<string, unknown>)
+      : {};
+  const rule = enforceableOwnerRule(row);
+  return {
+    id: row.ruleId,
+    revision: row.revision,
+    ...(rule ? { gate: rule.gate, outcome: rule.outcome } : {}),
+    origin: "owner_setting",
+    source: row.source,
+    status: row.status,
+    enforced: rule !== undefined,
+    ...(typeof stored["type"] === "string" ? { type: stored["type"] } : {}),
+    ...(typeof stored["summary"] === "string" ? { summary: stored["summary"] } : {}),
+    ...(rule && stored["params"] !== undefined ? { parameters: stored["params"] } : {}),
+  };
 }
 
 function clientNameOf(envelope: unknown, userAgent: string | null): string {
@@ -396,18 +418,26 @@ export class ProductionMcpRead {
 
   async #ruleBook(): Promise<ToolOutcome> {
     const settings = await this.#options.sources.settings();
+    const owned = this.#options.sources.ownerRules
+      ? [...(await this.#options.sources.ownerRules())].sort((a, b) =>
+          a.ruleId < b.ruleId ? -1 : a.ruleId > b.ruleId ? 1 : 0,
+        )
+      : [];
     return {
       output: {
-        rules: ruleBookFor(settings).map((rule) => ({
-          id: rule.id,
-          revision: rule.revision,
-          gate: rule.gate,
-          outcome: rule.outcome,
-          origin: rule.origin,
-          source: rule.source,
-          status: rule.status,
-          ...ruleParameters(rule, settings),
-        })),
+        rules: [
+          ...ruleBookFor(settings).map((rule) => ({
+            id: rule.id,
+            revision: rule.revision,
+            gate: rule.gate,
+            outcome: rule.outcome,
+            origin: rule.origin,
+            source: rule.source,
+            status: rule.status,
+            ...ruleParameters(rule, settings),
+          })),
+          ...owned.map(ownerRuleEntry),
+        ],
       },
       memoryIds: [],
     };

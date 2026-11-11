@@ -282,7 +282,7 @@ export const MCP_TOOL_RULE_BOOK = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tools",
   output: "free-text",
-  text: "列出主人在 Himawari 里生效的规则：每条有编号、版本、作用在哪一步、结果、出处；主人自己设的规则还带设置值（例如重要发件人、静默时段）。替主人做判断前用来了解主人定下的规矩。只读。",
+  text: "列出主人在 Himawari 里生效的规则：每条有编号、版本、作用在哪一步、结果、出处；主人自己设的规则还带设置值（例如重要发件人、静默时段）；主人在对话里立的长期规则编号以 owner: 开头，带类型、一句话说明、参数和是否正在执行（enforced）。替主人做判断前用来了解主人定下的规矩。只读。",
 });
 
 export const MCP_TOOL_RESULT_FAILED = fixedPrompt({
