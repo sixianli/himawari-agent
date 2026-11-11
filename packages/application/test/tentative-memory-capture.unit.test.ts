@@ -1,4 +1,9 @@
-import { MEMORY_AUTO_COMMIT_GATE } from "@himawari-agent/calibration";
+import {
+  MEMORY_AUTO_COMMIT_GATE,
+  MEMORY_TENTATIVE_CONFIRM_GATE,
+  THRESHOLD_CATEGORIES,
+  THRESHOLD_GATES,
+} from "@himawari-agent/calibration";
 import type { MemoryGenerationId, MemoryId } from "@himawari-agent/domain";
 import { describe, expect, it } from "vitest";
 import type {
@@ -6,9 +11,12 @@ import type {
   MemoryExtractionAuditRecord,
 } from "../src/ports/automatic-memory.js";
 import type { DecisionLedgerWrite } from "../src/ports/decision-ledger.js";
+import { DEFAULT_MEMORY_ATTRIBUTES, MEMORY_CATEGORIES } from "../src/ports/memory-projection.js";
 import {
   AutomaticMemoryService,
+  type CaptureGates,
   type CommittedRunMemoryInput,
+  DEFAULT_CAPTURE_GATES,
 } from "../src/services/automatic-memory-service.js";
 
 const candidate = (overrides: Partial<ExtractedMemoryCandidate>): ExtractedMemoryCandidate => ({
@@ -38,7 +46,10 @@ const input = {
   explicitRememberCandidateOrdinal: null,
 } as unknown as CommittedRunMemoryInput;
 
-async function capture(candidates: readonly ExtractedMemoryCandidate[]) {
+async function capture(
+  candidates: readonly ExtractedMemoryCandidate[],
+  { gates }: { readonly gates?: CaptureGates } = {},
+) {
   const audit: MemoryExtractionAuditRecord[] = [];
   const ledger: DecisionLedgerWrite[] = [];
   const proposals: Record<string, unknown>[] = [];
@@ -61,6 +72,7 @@ async function capture(candidates: readonly ExtractedMemoryCandidate[]) {
     audit: { record: async (record) => void audit.push(record) },
     ledger: { append: async (write: DecisionLedgerWrite) => void ledger.push(write) } as never,
     readSourceText: async () => "好家里只喝明治的牛奶",
+    ...(gates ? { gates } : {}),
     now: () => "2026-11-08T00:00:00.000Z",
     memoryIdFor: (generation, ordinal) => `memory:${generation}:${ordinal}` as MemoryId,
     approvalIdFor: (generation, ordinal) => `approval:${generation}:${ordinal}`,
@@ -168,5 +180,188 @@ describe("[PA-2] low-confidence candidates are kept as tentative memories", () =
     const onLine = await capture([candidate({ confidencePermille: at })]);
     expect(onLine.result.committedMemoryIds).toEqual(["memory:generation-1:0"]);
     expect(onLine.result.tentativeMemoryIds).toEqual([]);
+  });
+});
+
+const withCategory = (
+  category: string | null,
+  overrides: Partial<ExtractedMemoryCandidate>,
+): ExtractedMemoryCandidate =>
+  candidate({
+    ...(category === null
+      ? {}
+      : { attributes: { ...DEFAULT_MEMORY_ATTRIBUTES, category: category as never } }),
+    ...overrides,
+  });
+
+const reaffirm = (
+  category: string | null,
+  confidencePermille: number,
+  confirmsTentativeCategory?: string,
+  decision: ExtractedMemoryCandidate["decision"] = "unchanged",
+) =>
+  withCategory(category, {
+    decision,
+    existingMemoryId: "memory-tentative" as MemoryId,
+    confidencePermille,
+    ...(confirmsTentativeCategory === undefined
+      ? {}
+      : { confirmsTentativeCategory: confirmsTentativeCategory as never }),
+  });
+
+describe("[P4-7] capture thresholds are configured per category", () => {
+  it("registers the tentative-confirm gate next to the auto-commit gate with today's values", () => {
+    expect(THRESHOLD_GATES).toContain(MEMORY_AUTO_COMMIT_GATE);
+    expect(THRESHOLD_GATES).toContain(MEMORY_TENTATIVE_CONFIRM_GATE);
+    expect(DEFAULT_CAPTURE_GATES).toEqual({
+      autoCommit: MEMORY_AUTO_COMMIT_GATE,
+      confirmTentative: MEMORY_TENTATIVE_CONFIRM_GATE,
+    });
+    for (const gate of [MEMORY_AUTO_COMMIT_GATE, MEMORY_TENTATIVE_CONFIRM_GATE]) {
+      expect(gate.defaultThreshold).toBe(850);
+      expect(gate.byCategory).toEqual({});
+    }
+  });
+
+  it("every registered override is an integer score for a known memory category", () => {
+    expect([...THRESHOLD_CATEGORIES].sort()).toEqual([...MEMORY_CATEGORIES].sort());
+    const keys = new Set<string>();
+    for (const gate of THRESHOLD_GATES) {
+      expect(keys.has(gate.key)).toBe(false);
+      keys.add(gate.key);
+      for (const [category, value] of Object.entries(gate.byCategory)) {
+        expect(THRESHOLD_CATEGORIES).toContain(category);
+        expect(Number.isInteger(value)).toBe(true);
+        expect(value).toBeGreaterThanOrEqual(0);
+        expect(value).toBeLessThanOrEqual(gate.scoreMax + 1);
+      }
+    }
+  });
+
+  it("a per-category auto-commit override takes effect only for that category", async () => {
+    const gates: CaptureGates = {
+      ...DEFAULT_CAPTURE_GATES,
+      autoCommit: { ...MEMORY_AUTO_COMMIT_GATE, byCategory: { health: 950, preference: 600 } },
+    };
+    const { result, ledger } = await capture(
+      [
+        withCategory("health", { confidencePermille: 900 }),
+        withCategory("preference", { confidencePermille: 700 }),
+        withCategory("goal", { confidencePermille: 849 }),
+        withCategory("goal", { confidencePermille: 850 }),
+      ],
+      { gates },
+    );
+    expect(result.tentativeMemoryIds).toEqual(["memory:generation-1:0", "memory:generation-1:2"]);
+    expect(result.committedMemoryIds).toEqual(["memory:generation-1:1", "memory:generation-1:3"]);
+    expect(ledger.map(({ reasonCode }) => reasonCode)).toEqual([
+      "kept_tentative",
+      "auto_committed",
+      "kept_tentative",
+      "auto_committed",
+    ]);
+  });
+
+  it("the confirm gate decides every confirmation of a tentative memory, not the auto-commit gate", async () => {
+    const gates: CaptureGates = {
+      autoCommit: { ...MEMORY_AUTO_COMMIT_GATE, defaultThreshold: 950 },
+      confirmTentative: {
+        ...MEMORY_TENTATIVE_CONFIRM_GATE,
+        defaultThreshold: 750,
+        byCategory: { health: 900 },
+      },
+    };
+    const { result, ledger } = await capture(
+      [
+        reaffirm("goal", 800, "goal"),
+        reaffirm("health", 800, "health"),
+        reaffirm("goal", 800, "goal", "update"),
+        reaffirm("goal", 800, "goal", "merge"),
+      ],
+      { gates },
+    );
+    expect(result.committedMemoryIds).toEqual([
+      "memory-tentative",
+      "memory-tentative",
+      "memory-tentative",
+    ]);
+    expect(ledger.map(({ outcome, reasonCode }) => [outcome, reasonCode])).toEqual([
+      ["kept", "tentative_confirmed"],
+      ["discarded", "confirm_below_threshold"],
+      ["kept", "tentative_confirmed"],
+      ["kept", "tentative_confirmed"],
+    ]);
+  });
+
+  it("REVERSE: the confirmed memory's own category picks the threshold, not the category the model claims", async () => {
+    const gates: CaptureGates = {
+      ...DEFAULT_CAPTURE_GATES,
+      confirmTentative: {
+        ...MEMORY_TENTATIVE_CONFIRM_GATE,
+        byCategory: { health: 950, preference: 600 },
+      },
+    };
+    const { result, ledger } = await capture([reaffirm("preference", 800, "health")], { gates });
+    expect(result.committedMemoryIds).toEqual([]);
+    expect(ledger.map(({ reasonCode, category }) => [reasonCode, category])).toEqual([
+      ["confirm_below_threshold", "health"],
+    ]);
+  });
+
+  it("REVERSE: a new memory carrying a confirmation mark still goes through the auto-commit gate", async () => {
+    const gates: CaptureGates = {
+      ...DEFAULT_CAPTURE_GATES,
+      confirmTentative: { ...MEMORY_TENTATIVE_CONFIRM_GATE, defaultThreshold: 0 },
+    };
+    const { result, ledger } = await capture(
+      [withCategory("goal", { confidencePermille: 800, confirmsTentativeCategory: "goal" })],
+      { gates },
+    );
+    expect(result.committedMemoryIds).toEqual([]);
+    expect(result.tentativeMemoryIds).toEqual(["memory:generation-1:0"]);
+    expect(ledger.map(({ reasonCode }) => reasonCode)).toEqual(["kept_tentative"]);
+  });
+
+  it("REVERSE: reaffirming a formal memory still uses the auto-commit gate", async () => {
+    const gates: CaptureGates = {
+      ...DEFAULT_CAPTURE_GATES,
+      confirmTentative: { ...MEMORY_TENTATIVE_CONFIRM_GATE, defaultThreshold: 0 },
+    };
+    const { result, ledger } = await capture([reaffirm("goal", 800)], { gates });
+    expect(result.committedMemoryIds).toEqual([]);
+    expect(ledger.map(({ reasonCode }) => reasonCode)).toEqual(["confidence_below_threshold"]);
+  });
+
+  it("replaying the same confirmation writes the same decision record", async () => {
+    const first = await capture([reaffirm("goal", 900, "goal")]);
+    const second = await capture([reaffirm("goal", 900, "goal")]);
+    expect(second.ledger).toEqual(first.ledger);
+    expect(first.ledger.map(({ reasonCode }) => reasonCode)).toEqual(["tentative_confirmed"]);
+  });
+
+  it("with the default configuration every category behaves exactly as the single 850 threshold did", async () => {
+    for (const category of [...THRESHOLD_CATEGORIES, null]) {
+      const below = await capture([withCategory(category, { confidencePermille: 849 })]);
+      expect(below.result.tentativeMemoryIds).toEqual(["memory:generation-1:0"]);
+      expect(below.result.committedMemoryIds).toEqual([]);
+      const onLine = await capture([withCategory(category, { confidencePermille: 850 })]);
+      expect(onLine.result.committedMemoryIds).toEqual(["memory:generation-1:0"]);
+      expect(onLine.result.tentativeMemoryIds).toEqual([]);
+      for (const confirms of [undefined, category ?? "other"]) {
+        const weak = await capture([reaffirm(category, 849, confirms)]);
+        expect(weak.result.committedMemoryIds).toEqual([]);
+        expect(weak.proposals).toEqual([]);
+        expect(weak.audit.map(({ outcome }) => outcome)).toEqual(["confidence_below_threshold"]);
+        expect(weak.ledger.map(({ reasonCode }) => reasonCode)).toEqual([
+          confirms === undefined ? "confidence_below_threshold" : "confirm_below_threshold",
+        ]);
+        const strong = await capture([reaffirm(category, 850, confirms)]);
+        expect(strong.result.committedMemoryIds).toEqual(["memory-tentative"]);
+        expect(strong.audit.map(({ outcome }) => outcome)).toEqual(["auto_committed"]);
+        expect(strong.ledger.map(({ reasonCode }) => reasonCode)).toEqual([
+          confirms === undefined ? "auto_committed" : "tentative_confirmed",
+        ]);
+      }
+    }
   });
 });
