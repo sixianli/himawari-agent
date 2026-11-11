@@ -70,10 +70,11 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
     expect(embedded.some((text) => text.includes("ep-secret"))).toBe(false);
   });
 
-  it("[P3-1] summaries that cannot be embedded never hold back the ones after them, and each call tries at most three of them", async () => {
+  it("[P3-1] summaries that cannot be embedded never hold back the ones after them, wait before being tried again, and each call tries at most three", async () => {
     const attached: string[] = [];
     const tried: string[] = [];
     let stored: MemoryEpisode[] = [];
+    let now = Date.parse("2026-11-09T00:00:00.000Z");
     const store = {
       listUnembedded: async ({
         after,
@@ -110,7 +111,7 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
           return new Float32Array([1, 0]);
         },
       },
-      now: () => "2026-11-09T00:00:00.000Z",
+      now: () => new Date(now).toISOString(),
     });
     const run = (limit = 1) =>
       service.backfillEmbeddings({ ownerId: OWNER_ID, agentId: AGENT_ID, limit });
@@ -127,9 +128,18 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
     expect(await run()).toBe(1);
     expect(tried.slice(3)).toEqual(["f-broken", "g-broken", "h-fine"]);
     expect(await run(100)).toBe(1);
-    expect(attached).toEqual(["h-fine", "i-fine"]);
-    expect(tried.slice(6)).toEqual(["i-fine", "c-broken", "d-broken", "e-broken"]);
-    stored = [];
+    expect(tried.slice(6)).toEqual(["i-fine"]);
     expect(await run(100)).toBe(0);
+    expect(tried).toHaveLength(7);
+    expect(attached).toEqual(["h-fine", "i-fine"]);
+    now += 3_600_000;
+    await expect(run(100)).rejects.toThrow("EMBEDDING_LOCAL_INPUT_LENGTH");
+    expect(tried.slice(7)).toEqual(["c-broken", "d-broken", "e-broken"]);
+    await expect(run(100)).rejects.toThrow("EMBEDDING_LOCAL_INPUT_LENGTH");
+    expect(tried.slice(10)).toEqual(["f-broken", "g-broken"]);
+    expect(await run(100)).toBe(0);
+    now += 3_600_000;
+    expect(await run(100)).toBe(0);
+    expect(tried).toHaveLength(12);
   });
 });

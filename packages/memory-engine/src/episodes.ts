@@ -26,6 +26,8 @@ const RRF_K = 60;
 const UNSUMMARIZED = "（这段对话只含敏感内容，没有做摘要）";
 
 const FAILED_EMBEDDINGS_PER_BACKFILL = 3;
+const FIRST_EMBEDDING_RETRY_MS = 3_600_000;
+const LONGEST_EMBEDDING_RETRY_MS = 24 * 3_600_000;
 
 export interface EpisodeSegment {
   readonly ownerId: OwnerId;
@@ -109,7 +111,11 @@ export function episodeSummaryPrompt(segment: EpisodeSegment): string {
 
 export class MemoryEpisodeService {
   readonly #options: MemoryEpisodeServiceOptions;
-  readonly #backfillResumesAfter = new Map<string, { createdAt: string; id: string }>();
+  readonly #embeddingRetries = new Map<
+    string,
+    { readonly notBefore: number; readonly failures: number }
+  >();
+  readonly #embeddingsInFlight = new Set<string>();
 
   constructor(options: MemoryEpisodeServiceOptions) {
     this.#options = options;
@@ -341,8 +347,7 @@ export class MemoryEpisodeService {
       "\u0000",
     );
     const pageSize = Math.min(100, input.limit + FAILED_EMBEDDINGS_PER_BACKFILL);
-    let after = this.#backfillResumesAfter.get(position);
-    let wrapped = after === undefined;
+    let after: { createdAt: string; id: string } | undefined;
     let embedded = 0;
     let failed = 0;
     let failure: { readonly error: unknown } | undefined;
@@ -358,42 +363,56 @@ export class MemoryEpisodeService {
       for (const episode of episodes) {
         after = { createdAt: episode.createdAt, id: episode.id };
         if (!isModelVisible(episode.dataClassification)) continue;
-        const text = await this.#options.readText({
-          ownerId: input.ownerId,
-          agentId: input.agentId,
-          ref: episode.contentRef,
-        });
-        if (!text) continue;
-        let vector: Float32Array;
+        const key = `${position}\u0000${episode.id}`;
+        const retry = this.#embeddingRetries.get(key);
+        if (this.#embeddingsInFlight.has(key)) continue;
+        if (retry && retry.notBefore > Date.parse(this.#options.now())) continue;
+        this.#embeddingsInFlight.add(key);
         try {
-          vector = await (input.within ?? ((_, operation) => operation()))(episode, () =>
-            embedder.embedDocument(`${episode.day}\n${text}`),
-          );
-        } catch (error) {
-          failure ??= { error };
-          failed += 1;
-          if (failed >= FAILED_EMBEDDINGS_PER_BACKFILL) break pages;
-          continue;
+          const text = await this.#options.readText({
+            ownerId: input.ownerId,
+            agentId: input.agentId,
+            ref: episode.contentRef,
+          });
+          if (!text) continue;
+          let vector: Float32Array;
+          try {
+            vector = await (input.within ?? ((_, operation) => operation()))(episode, () =>
+              embedder.embedDocument(`${episode.day}\n${text}`),
+            );
+          } catch (error) {
+            failure ??= { error };
+            failed += 1;
+            const failures = (retry?.failures ?? 0) + 1;
+            this.#embeddingRetries.set(key, {
+              failures,
+              notBefore:
+                Date.parse(this.#options.now()) +
+                Math.min(
+                  FIRST_EMBEDDING_RETRY_MS * 2 ** (failures - 1),
+                  LONGEST_EMBEDDING_RETRY_MS,
+                ),
+            });
+            if (failed >= FAILED_EMBEDDINGS_PER_BACKFILL) break pages;
+            continue;
+          }
+          await this.#options.store.attachEmbedding({
+            episodeId: episode.id,
+            embedding: {
+              model: embedder.model,
+              dimensions: embedder.dimensions,
+              vector,
+            },
+          });
+          this.#embeddingRetries.delete(key);
+        } finally {
+          this.#embeddingsInFlight.delete(key);
         }
-        await this.#options.store.attachEmbedding({
-          episodeId: episode.id,
-          embedding: {
-            model: embedder.model,
-            dimensions: embedder.dimensions,
-            vector,
-          },
-        });
         embedded += 1;
         if (embedded >= input.limit) break pages;
       }
-      if (episodes.length < pageSize) {
-        after = undefined;
-        if (wrapped) break;
-        wrapped = true;
-      }
+      if (episodes.length < pageSize) break;
     }
-    if (after) this.#backfillResumesAfter.set(position, after);
-    else this.#backfillResumesAfter.delete(position);
     if (failure && embedded === 0) throw failure.error;
     return embedded;
   }

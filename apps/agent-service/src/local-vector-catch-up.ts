@@ -29,11 +29,15 @@ export function createLocalVectorCatchUp(input: {
         const retryInMs = Math.min(FIRST_RETRY_MS * 2 ** failures, LONGEST_RETRY_MS);
         failures += 1;
         state = "retrying";
-        input.failed(error, retryInMs);
         schedule(() => {
           state = "waiting";
           start();
         }, retryInMs);
+        try {
+          input.failed(error, retryInMs);
+        } catch {
+          return;
+        }
       },
     );
   };

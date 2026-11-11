@@ -13,7 +13,10 @@ describe("[P3-1] local vector catch-up", () => {
         runs += 1;
         if (outcome) throw outcome;
       },
-      failed: (_error, retryInMs) => retries.push(retryInMs),
+      failed: (_error, retryInMs) => {
+        retries.push(retryInMs);
+        throw new Error("LOG_SINK_DOWN");
+      },
       schedule: (callback) => pending.push(callback),
     });
     const settle = () => new Promise((resolve) => setImmediate(resolve));

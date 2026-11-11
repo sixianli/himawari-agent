@@ -367,6 +367,44 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
     }
   });
 
+  it("[P3-1] lists summaries without a vector strictly after a position, ordered by creation time and then id", async () => {
+    const now = { value: "2026-10-25T02:30:00.000Z" };
+    const resource = await fixture(now);
+    try {
+      resource.embedder.fail = true;
+      const segments = await resource.service.dueSegments({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        limit: 5,
+      });
+      for (const [index, segment] of segments.entries()) {
+        now.value = new Date(Date.parse("2026-10-25T02:30:00.000Z") + index * 60_000).toISOString();
+        await resource.service.summarize(segment, resource.summarize);
+      }
+      const episodes = resource.repository.memoryEpisodes();
+      const unembedded = {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        model: resource.embedder.model,
+        dimensions: resource.embedder.dimensions,
+        limit: 5,
+      };
+      const all = await episodes.listUnembedded(unembedded);
+      const [first, second] = all;
+      if (!first || !second) throw new Error("two pending summaries");
+      expect(first.createdAt < second.createdAt).toBe(true);
+      const ids = async (after: { createdAt: string; id: string }) =>
+        (await episodes.listUnembedded({ ...unembedded, after })).map(({ id }) => id);
+      const rest = all.slice(1).map(({ id }) => id);
+      expect(await ids({ createdAt: first.createdAt, id: first.id })).toEqual(rest);
+      expect(await ids({ createdAt: first.createdAt, id: "\uffff" })).toEqual(rest);
+      expect(await ids({ createdAt: first.createdAt, id: "" })).toEqual(all.map(({ id }) => id));
+      expect(await ids({ createdAt: second.createdAt, id: second.id })).toEqual(rest.slice(1));
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
   it("stores a summary without a vector when embedding fails and backfills it later", async () => {
     const now = { value: "2026-10-25T02:30:00.000Z" };
     const resource = await fixture(now);
