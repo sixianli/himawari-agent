@@ -10,6 +10,7 @@ import {
   claimFromRunExecutionLease,
   createProactiveSeal,
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
+  OwnerProfileService,
   DurableMemoryService,
   ExecutionLiveFeed,
   type IdGeneratorPort,
@@ -122,6 +123,11 @@ import { ProductionGapExport } from "./production-gap-export.js";
 import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
+import {
+  createProductionRealEval,
+  createRealEvalModel,
+  type ProductionRealEval,
+} from "./production-real-eval.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
@@ -531,6 +537,7 @@ export async function runAgentService(
   let gapExport: ProductionGapExport | undefined;
   let museControl: ProductionMuseControl | undefined;
   let observation: ProductionObservation | undefined;
+  let realEval: ProductionRealEval | undefined;
   const webPushPresence = new WebPushPresence();
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
@@ -615,6 +622,7 @@ export async function runAgentService(
         await runs?.memoryConsolidation?.stop();
         await webPush?.stop();
         await proactive?.stop();
+        await realEval?.stop();
         await observation?.stop();
       }
     },
@@ -1656,6 +1664,85 @@ export async function runAgentService(
             }),
         });
       }
+      const realEvalConfiguration = configuration.runPolicy?.realEval;
+      const realEvalDescriptor = realEvalConfiguration
+        ? modelComposition.descriptors.generation.find(
+            ({ ref }) => ref === realEvalConfiguration.modelRef,
+          )
+        : undefined;
+      if (realEvalConfiguration && realEvalConfiguration.mode !== "off") {
+        if (!realEvalDescriptor || !protector || !durableMemory)
+          throw new Error("REAL_EVAL_RUNTIME_UNAVAILABLE");
+        const realEvalProtector = protector;
+        const realEvalRepository = repository;
+        const realEvalModels = modelComposition;
+        const realEvalPayloads = repository.payloadStore(
+          configuration.ownerId,
+          configuration.agentId,
+        );
+        realEval = createProductionRealEval({
+          configuration: realEvalConfiguration,
+          scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
+          memoryLimit: configuration.runPolicy?.memoryLimit ?? 1,
+          maxSelectedMemories: configuration.runPolicy?.maxSelectedMemories ?? 0,
+          store: repository.realEval(),
+          state: repository.productMemoryState(),
+          payloads: realEvalPayloads,
+          protector: realEvalProtector,
+          memory: durableMemory,
+          embed: memory.embedForMailCheck,
+          profile: (keep) =>
+            new OwnerProfileService({
+              state: realEvalRepository.productMemoryState(),
+              pins: realEvalRepository.memoryBook(),
+              readText: async (record) => {
+                const payload = await realEvalPayloads.get(record.contentRef);
+                if (!payload || payload.contentType !== "text/plain") return undefined;
+                return new TextDecoder("utf-8", { fatal: true }).decode(
+                  await realEvalProtector.unprotect({
+                    ownerId: configuration.ownerId,
+                    agentId: configuration.agentId,
+                    payload,
+                  }),
+                );
+              },
+              storeText: async ({ ref, text }) => keep(ref, text),
+              digest: (text) => createHash("sha256").update(text).digest("hex"),
+              ...(configuration.runPolicy?.timeZone
+                ? { timeZone: configuration.runPolicy.timeZone }
+                : {}),
+            }),
+          model: createRealEvalModel({
+            modelRef: realEvalConfiguration.modelRef,
+            invoker: (maxOutputTokens) =>
+              realEvalModels.composition.proactiveModel(realEvalConfiguration.modelRef, {
+                maxOutputTokens,
+                requestTimeoutMs: realEvalConfiguration.requestTimeoutMs,
+                purpose: "other",
+              }),
+            cost: realEvalDescriptor.cost,
+            requestTimeoutMs: realEvalConfiguration.requestTimeoutMs,
+            now: () => clock.now(),
+          }),
+          sampleDirectory: path.join(configuration.stateRoot, "real-eval"),
+          now: () => clock.now(),
+          newId: () => ids.next("real-eval"),
+          onRun: (report, trigger) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "real-eval.completed",
+              trigger,
+              outcome: report.outcome,
+              costMicros: report.costMicros,
+            }),
+          onFailure: (error) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "real-eval.failed",
+              code: stableErrorCode(error),
+            }),
+        });
+      }
       const museIntakeConfiguration = configuration.runPolicy?.museIntake;
       const museIntakeSecret =
         museIntakeConfiguration?.enabled === true
@@ -1820,6 +1907,7 @@ export async function runAgentService(
         webPush.start();
       }
       proactive?.start();
+      realEval?.start();
       observation = new ProductionObservation({
         scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
         observation: repository.ledgerObservation(),

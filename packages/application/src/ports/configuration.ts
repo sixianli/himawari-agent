@@ -237,8 +237,21 @@ export interface MuseIntakeConfiguration {
   readonly gapExportSecretRef?: string;
 }
 
+export const REAL_EVAL_MODES = ["off", "once", "weekly"] as const;
+export type RealEvalMode = (typeof REAL_EVAL_MODES)[number];
+export const REAL_EVAL_WEEKLY_CAP_MICROS_MAXIMUM = 500_000;
+
+export interface RealEvalConfiguration {
+  readonly mode: RealEvalMode;
+  readonly modelRef: string;
+  readonly weeklyCapMicros: number;
+  readonly newMemoriesPerRun: number;
+  readonly requestTimeoutMs: number;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
   readonly webPush?: WebPushConfiguration;
   readonly proactive?: ProactiveConfiguration;

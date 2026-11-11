@@ -1463,3 +1463,38 @@ it("accepts Muse intake only with a boolean switch and one secret whose purpose 
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
 });
+
+it("[P4-5] accepts a real memory eval with a private-capable model and a weekly cap of at most 0.5 USD", () => {
+  const raw = config("/tmp/himawari-real-eval-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const realEval = {
+    mode: "once",
+    modelRef: "model-primary",
+    weeklyCapMicros: 500_000,
+    newMemoriesPerRun: 50,
+    requestTimeoutMs: 60_000,
+  };
+  raw["runPolicy"] = { ...policy, realEval };
+  expect(parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z").runPolicy?.realEval).toEqual(
+    realEval,
+  );
+  for (const invalid of [
+    { ...realEval, mode: "daily" },
+    { ...realEval, modelRef: "model-embedding" },
+    { ...realEval, modelRef: "model-missing" },
+    { ...realEval, weeklyCapMicros: 500_001 },
+    { ...realEval, weeklyCapMicros: 0 },
+    { ...realEval, newMemoriesPerRun: 0 },
+    { ...realEval, newMemoriesPerRun: 201 },
+    { ...realEval, requestTimeoutMs: 10 },
+    { ...realEval, budgetKey: "production" },
+  ]) {
+    raw["runPolicy"] = { ...policy, realEval: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow();
+  }
+});
