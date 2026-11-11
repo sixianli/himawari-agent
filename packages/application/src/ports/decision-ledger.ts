@@ -50,7 +50,7 @@ export const DECISION_OUTCOMES = {
     "capture_queued",
     "capture_gave_up",
   ],
-  consolidation: ["merge", "supersede", "archive", "reflect"],
+  consolidation: ["merge", "supersede", "archive", "reflect", "hold"],
   context_truncation: ["truncated"],
   retrieval_degrade: ["degraded"],
   external_read: ["read"],

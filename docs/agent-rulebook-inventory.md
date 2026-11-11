@@ -49,12 +49,12 @@ date: "2026-11-10"
 
 ## 先看结论
 
-- 一共盘出 56 条：程序硬规则 18 条、提示词软规则 25 条、记忆规则机制 5 条、配置和设置 8 条（逐条在后面的表里）。
+- 一共盘出 57 条：程序硬规则 19 条、提示词软规则 25 条、记忆规则机制 5 条、配置和设置 8 条（逐条在后面的表里）。
 - 真正“必定执行”的主人规矩只有 Gmail 系统主动提醒那一块。聊天里的规矩几乎都是软的。
 - Andy 举的例子“涉及退款的邮件必须看整个邮件串再决定”，现在不是一条按退款触发的规则：代码里“退款”只是金钱词，命中后把邮件抬到“值得知道”（H-3）；读整个邮件串是对所有邮件都做的（H-15），模型读了之后怎么判仍是软的。这个想法最早出现在 [ADR 0159](adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md) 的已知限制里：“退款、预订是否办结需要整个邮件串，留给第二阶段”。
 - 自 [ADR 0213](adr/0213-owner-sentence-becomes-a-standing-rule.md) 起，主人可以在对话里把这类要求立成长期规则（H-17、H-18），由程序执行；上面说的是没有立规则时的默认行为。
 - 生产库里的 `rule` 类记忆只有 3 条，全都已删除或在回收站；生产配置的 `systemInstruction` 只有一行（见 [C](#memory-rules) 和 C-1）。
-- 没有任何一条规则带“出处”字段。出处只能从 ADR、事故号和规格里倒推；56 条里有 19 条的出处仓库内查不到或只能查到一半（见 [G](#owner-confirm)）。
+- 没有任何一条规则带“出处”字段。出处只能从 ADR、事故号和规格里倒推；57 条里有 19 条的出处仓库内查不到或只能查到一半（见 [G](#owner-confirm)）。
 - 同一条规则在代码和提示词里各写一份的有 4 处，其中 2 处已经对不上（见 [F](#findings)）。
 
 [↑ 回到阅读导航](#contents)
@@ -85,6 +85,7 @@ date: "2026-11-10"
 | H-16 | “已回复”按邮件串算：只有该串最新一封自己发的邮件已被模型判为“不用管”且有把握、本次和数据库里都没有更晚的邮件时，才把该串待处理提醒标成已回复；产生了新提醒的用新提醒替换旧提醒 | [ADR 0159](adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md) 决定第 7 条 | `proactive-mail-check-service.ts` 的 `#repliedThreads`（本次取到的邮件）；数据库里更晚的邮件由 `sqlite-proactive-operations.ts` 标记已回复的 SQL 条件挡住 | 硬 | 尚无 | PG-5、OM-1、OM-2、OM-14、OM-15 |
 | H-17 | 主人立的“一定提醒”规则（类型 `mail_must_notify`）：发件域名、地址、词语或英文整词命中、且不含排除词的邮件，模型判“不用管”“值得知道”或“请看原信”都改成“请看原信”并推送；判“要你做事”的不动；当天模型额度用完、没有判断时直接交给主人看并推送。词语在主题和正文里找，统一全半角和大小写 | [ADR 0213](adr/0213-owner-sentence-becomes-a-standing-rule.md) | `rules/rule-types.ts` 的 `RULE_TYPES`；`proactive-mail-check-service.ts` 里 `mustNotifyHitIds` 之后的强制分支 | 硬 | 某类事一定提醒 | `rule-type-mail-must-notify.unit.test.ts`、`proactive-mail-check.test.ts` 的 `[P2-3]` 一组 |
 | H-18 | 主人立的“先读完整个邮件串”规则（类型 `mail_read_whole_thread`）：命中的邮件读同一串里的全部往来（含后来的回复，上限见 C-8 旁的 `wholeThreadMailsPerMail`、`wholeThreadCharactersPerMail`）；读不全或读取失败（包括找不到这个邮件串）就改成“请看原信”并推送；模型判“要你做事”的不动，因为那已经交给主人；当天模型额度用完、没有判断时，命中的邮件同样直接交给主人看 | [ADR 0213](adr/0213-owner-sentence-becomes-a-standing-rule.md) | `gmail-related.ts` 的 `findRelatedMail`（`wholeThread`）；`proactive-mail-check-service.ts` 的 `threadUnread` | 硬（读不读、读不全怎么办由程序定；读全了怎么判由模型） | 某类事先查清再判断 | `rule-type-mail-read-whole-thread.unit.test.ts`、`gmail-related.unit.test.ts` 的 `[P2-3]`、`proactive-mail-check.test.ts` 的 `[P2-3]` 一组 |
+| H-19 | 整理记忆判到两条记忆说法不一样时，只有模型判“新说法明确取代旧说法”、新条说得更晚、并且新条的把握不低于自动存入门槛（同 H-13），才作废旧条（门槛取 `packages/calibration/src/thresholds.ts` 的 `MEMORY_AUTO_COMMIT_GATE`，和 H-13 同一份）；其余一律让两条里说得更晚的那条进“待确认”、较早那条照常生效，并写一条 `hold` 决策记录；主人确认后两条都留，有过 `hold` 的一对以后不再互相作为整理对象（仍可能一起作为第三条新记忆的邻居，但只执行涉及那条新记忆的判断） | [ADR 0220](adr/0220-consolidation-conflicts-wait-for-the-owner.md) | `packages/memory-engine/src/consolidation.ts`（`replace` 分支和 `hold`） | 硬 | 尚无（记忆整理门槛） | `test/integration/memory-consolidation.test.ts` 的 P3-8 |
 
 [↑ 回到阅读导航](#contents)
 

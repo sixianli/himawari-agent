@@ -942,7 +942,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
         seq: number,
         memoryId: string,
         related: string | null,
-        action: "merge" | "supersede" | "archive" | "reflect",
+        action: "merge" | "supersede" | "archive" | "reflect" | "hold",
       ) =>
         ({
           id: `consolidation-1:c${seq}`,

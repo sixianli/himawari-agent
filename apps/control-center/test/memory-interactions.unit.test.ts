@@ -1099,6 +1099,7 @@ describe("memory approval and management", () => {
       tidyUps: [
         {
           changeId: "memory-consolidation:agent:2026-10-25:c1",
+          memoryId: "memory-merged",
           action: "merge",
           text: "主人的女儿叫小葵",
           relatedText: "主人的女儿名叫小葵",
@@ -1200,6 +1201,63 @@ describe("memory approval and management", () => {
     expect(lastCommand()).toMatchObject({
       type: "memory.mutate",
       payload: { memoryId: "m-guess", action: "recover", expectedRevision: 4 },
+    });
+  });
+
+  it("[P3-8] offers to undo a held conflict only while its newer memory still waits for the Owner", async () => {
+    overview = {
+      ...overview,
+      memories: [
+        memoryItem("m-milk-old", "主人平时喝明治的牛奶"),
+        memoryItem("m-milk-new", "主人出差时喝便利店的牛奶", { tentative: true, revision: 2 }),
+        memoryItem("m-pet-old", "主人家里养着一只柴犬"),
+        memoryItem("m-pet-new", "主人家里改养了一只橘猫", { revision: 3 }),
+        memoryItem("m-pet-twin", "主人家里改养了一只橘猫", { tentative: true }),
+      ],
+      tidyUps: [
+        {
+          changeId: "memory-consolidation:agent:2026-10-25:c1",
+          memoryId: "m-milk-new",
+          action: "hold",
+          text: "主人出差时喝便利店的牛奶",
+          relatedText: "主人平时喝明治的牛奶",
+          createdAt: "2026-10-25T12:00:00.000Z",
+          undone: false,
+        },
+        {
+          changeId: "memory-consolidation:agent:2026-10-25:c2",
+          memoryId: "m-pet-new",
+          action: "hold",
+          text: "主人家里改养了一只橘猫",
+          relatedText: "主人家里养着一只柴犬",
+          createdAt: "2026-10-25T12:00:01.000Z",
+          undone: false,
+        },
+      ],
+    };
+    await render();
+    await tab("变化记录");
+    const row = (content: string) =>
+      [...document.querySelectorAll("#settings .memory-day p")].find(
+        (line) =>
+          line.textContent?.startsWith("发现说法不一") && line.textContent.includes(content),
+      );
+    const buttons = (content: string) =>
+      [...(row(content)?.querySelectorAll("button") ?? [])].map((item) => item.textContent);
+    expect(buttons("主人出差时喝便利店的牛奶")).toEqual(["撤销", "去确认"]);
+    expect(buttons("主人家里改养了一只橘猫")).toEqual([]);
+    expect(row("主人出差时喝便利店的牛奶")?.textContent).toContain(
+      "（另一条：主人平时喝明治的牛奶）",
+    );
+    expect(row("主人出差时喝便利店的牛奶")?.textContent).not.toContain("保留");
+    await act(async () =>
+      [...(row("主人出差时喝便利店的牛奶")?.querySelectorAll("button") ?? [])]
+        .find((item) => item.textContent === "撤销")
+        ?.click(),
+    );
+    expect(lastCommand()).toMatchObject({
+      type: "memory.tidy.undo",
+      payload: { changeId: "memory-consolidation:agent:2026-10-25:c1" },
     });
   });
 
@@ -1484,6 +1542,7 @@ describe("memory approval and management", () => {
       tidyUps: [
         {
           changeId: "tidy-1",
+          memoryId: "m-city",
           action: "merge",
           text: "主人住在上海",
           relatedText: "主人在上海住",
