@@ -63,7 +63,7 @@ date: "2026-11-11"
 5. 现在记忆只从主人打字的消息里来。来源 `apps/agent-service/src/production-memory-capture.ts:978` 原话：`if (!source || source.sourceType !== "user_message" || source.threadId !== threadId) return;`。
 6. 待确认记忆不带提醒、不带人物；转正要主人自己的原话。来源 `docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md` 决定第 1 条③原话：“不带提醒、不带人物”；第 6 条原话：“转正必须有主人自己的原话”“必须带在主人本次消息里逐字核对到的原话引用，没有就丢弃”。
 7. 运行来源类型是硬校验的枚举，使用点多。来源 `packages/gateway-contracts/src/contracts.ts:68` 原话：`sourceType: enumeration(["user_message", "schedule", "external_event"]),`。
-8. 系统主动提醒只有 Gmail 一个来源，而且写死在多处。来源 `packages/application/src/ports/proactive-checks.ts:4` `export type ProactiveSource = "gmail";`；`packages/persistence-sqlite/src/sqlite-proactive-operations.ts:29` `const SOURCES = ["gmail"] as const;`；`packages/persistence-sqlite/src/migrations/0062_proactive_checks.sql:15` `CHECK (source IN ('gmail'))`（`0069_decision_ledger.sql`、`0087_rule_book_memory_link.sql` 里同样）；`packages/persistence-sqlite/src/data-export/schemas.ts:253` `source: enumOf(["gmail"]),`。
+8. 系统主动提醒只有 Gmail 一个来源，而且写死在多处。来源 `packages/application/src/ports/proactive-checks.ts:4` `export type ProactiveSource = "gmail";`；`packages/persistence-sqlite/src/sqlite-proactive-operations.ts:29` `const SOURCES = ["gmail"] as const;`；`packages/persistence-sqlite/src/migrations/0062_proactive_checks.sql:15` `CHECK (source IN ('gmail'))`（`0069`、`0087`、`0088`、`0089` 四份迁移里同样）；`packages/persistence-sqlite/src/data-export/schemas.ts:253` `source: enumOf(["gmail"]),`。
 9. 现在已有不推送时段和顺延。来源 `docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md:124-125` 原话：“顺延到时段结束，再合成一条”“Andy 正开着 Himawari 网页时不弹推送”。
 10. 删掉来源现在只打标记，记忆还在，而且只按编号匹配。来源 `packages/persistence-sqlite/src/sqlite-governed-deletion.ts:762-764` 原话：`UPDATE memory_provenance SET source_deleted = 1 WHERE source_id IN (...)`。
 11. 发给模型的内容只追加；每轮会变的内容只放在最后一条消息里；工具首选一直在列表里。来源 `.claude/rules/prompt-prefix.md` 第 2、4、7 条原话：“每轮都会变的内容只放在最后一条用户消息里。”“已经发给过模型的内容，不得改动、重排或删除，只能在末尾追加。”“业界的首选是让工具一直在列表里，不能用的时候由执行端拒绝”。
@@ -89,9 +89,11 @@ date: "2026-11-11"
    - “主人本人说的”：声纹认出是主人的话。认人的错认率在评测里达标之前，所有听到的话一律标“其他”。
    - “其他”：旁人说的、没认出是谁的、电视和视频的声音、照片截图和屏幕上的字、网页正文、短信、日历备注，以及只从位置、运动、健康推断出的事。
    - 标记是“其他”的感知记录，在代码层不能直接产生正式记忆、提醒、日历事件、设备动作或审批结果，只能产生待确认记忆和“建议”。这不靠提示词，模型被诱导时也一样。
+   - 对话里也守同一条线：模型用 `perception_read` 读过“其他”来源的内容之后，这一轮里有后果的动作要过一道程序检查。主人发起的一轮里，本来不用问的中风险动作改成要主人点一下确认；后台发起的一轮里一律不做，改存“建议”。
 4. **主人对 Himawari 说的话是指令，其余都是数据。**
-   - 算指令的条件：声纹认出是主人，并且是对 Himawari 说的（叫了它的名字，或按按钮、捏耳机、抬腕后说的）。这句话当作主人发来的一条消息进对话，和打字一样；它的记忆只走现有的每轮抽取，感知抽取跳过它，同一句话不记两遍。
-   - 旁人叫 Himawari 的名字不算指令。没认出是谁或把握不够时，Himawari 回问一句，不直接执行。
+   - 动了手的（按按钮、捏耳机、抬腕、用 Siri 之后说的话）算指令，和在自己手机上打字是一回事，不需要认人。
+   - 只叫名字、没动手的，要声纹认出是主人才算指令；认人的错认率达标之前，光叫名字不执行，Himawari 回问一句，主人按一下再说。旁人叫 Himawari 的名字不算指令。
+   - 算指令的话当作主人发来的一条消息进对话，和打字一样；它的记忆只走现有的每轮抽取，感知抽取跳过它，同一句话不记两遍。
    - 口头指令和打字走同一套权限：涉及钱、删除、对外发送的仍要确认。
    - 数据里夹带的指令不照做：提示词固定写明，并有评测和自动检查守住。
 5. **感知记录怎样变成记忆（修改 ADR 0179 第 6 条）。**
@@ -116,7 +118,7 @@ date: "2026-11-11"
     - 删一段感知记录：只由它产生的记忆一起作废，不再被想起；有多个来源的记忆去掉这一条来源后重新评估。删除按“来源类型加编号”一起匹配，感知记录的编号带自己的前缀（修掉前提 10 里只按编号匹配的问题）。
     - 如实说明删不掉的：已经被工具读进某个对话的摘要留在那个对话里，要删就删那个对话；已经导出的文件、备份和模型服务方那边的日志收不回。
     - 原声不保留：设备上转的不上传；放服务器转的转完即删。
-12. **发给模型的路径都走统一出口。** 感知抽取、新来源的主动提醒检查、照片屏幕短信的理解，都登记进 `check:egress-redaction`（前提 16）；每种感知数据定数据分级。一批里的记录按“设备时间加编号”排序，同样的内容每次发出去字节相同。遮盖时“点名的密码”只从这一次请求自己的内容里认，不去查别的感知记录，所以删改别的记录不会改变这次请求的字节。
+12. **发给模型的路径都走统一出口。** 感知抽取、新来源的主动提醒检查、照片屏幕短信的理解，都登记进 `check:egress-redaction`（前提 16）；每种感知数据定数据分级。一批里的记录按“发生时间加编号”排序（时间先换算成统一的毫秒整数），同一批记录每次发出去字节相同。一次请求里的一批记录是一个遮盖单位：遮盖时“点名的密码”只从这一批自己的内容里认，不去查这一批以外的感知记录；同批里一条记录点了名的值，在同批后面的记录里也会被遮，这是现有规则。
 13. **自定义键盘先不做**（Andy 已定）。
 
 [返回阅读导航](#contents)
@@ -155,7 +157,7 @@ date: "2026-11-11"
 - 代价：
   - 存储和模型费增加，所以每种感官都有上限并显示出来。
   - 记忆多了一类由感知推断的条目；错认主人声音时会把别人的话当成主人说的，所以认人达标之前一律当线索。
-  - 系统主动提醒的三张表要重建一次（SQLite 改不了表约束），要排进改表队列。
+  - 系统主动提醒的四张表要重建一次（SQLite 改不了表约束），要排进改表队列；运行的那段程序现在是按 Gmail 一条线写的，要改成按登记表逐个来源跑。
   - 新加的提示词会让老对话的遮盖结果变一次（`.claude/rules/prompt-prefix.md` 第 11 条写明的已知代价）。
   - 用量页显示模型费，和 ADR 0106 那一句不同；ADR 0106 的其余决定不变。
 - 未验证：每种语言转写的准确率、认人的错认率、一天的模型费，都要等评测集和真机实测。评测要花模型费，超过 0.5 美元时先问 Andy。
