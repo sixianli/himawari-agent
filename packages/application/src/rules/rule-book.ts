@@ -1,5 +1,5 @@
 import { currencyExponent, type MailAmount, MISSING_AMOUNT } from "./amount.js";
-import type { RuleGate } from "./field-catalog.js";
+import { type RuleGate, ruleFields } from "./field-catalog.js";
 import { compileRuleExpression, type RuleFacts } from "./rule-expression.js";
 
 export type RuleOutcome = "raise_floor" | "suppress_push" | "defer_to_quiet_hours";
@@ -330,10 +330,14 @@ const GATE_OUTCOMES: Readonly<Record<RuleGate, readonly RuleOutcome[]>> = Object
   mail_delivery: Object.freeze(["defer_to_quiet_hours"] as const),
 });
 
-const AMOUNT_FIELD = /\bamount_(?:state|minor|currency)\b/u;
+const AMOUNT_FIELD_NAMES: readonly string[] = ruleFields("mail_item")
+  .map(({ name }) => name)
+  .filter((name) => name.startsWith("amount_"));
+const AMOUNT_FIELD = new RegExp(`\\b(?:${AMOUNT_FIELD_NAMES.join("|")})\\b`, "u");
+const STRING_LITERAL = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/gu;
 
 export function usesAmountFields(rule: Pick<RuleRecord, "expression">): boolean {
-  return AMOUNT_FIELD.test(rule.expression);
+  return AMOUNT_FIELD.test(rule.expression.replace(STRING_LITERAL, '""'));
 }
 
 export function assertRuleShape(rule: RuleRecord): void {

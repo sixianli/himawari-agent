@@ -318,4 +318,14 @@ describe("rule registry", () => {
     const [one] = rules as [RuleRecord];
     expect(suppressPushHits(ITEM as never, amount, [one, one])).toEqual([`${one.id}@1`]);
   });
+
+  it("[HR-2] still runs a rule that only mentions an amount field name inside a text literal", () => {
+    const rule = amountThresholdRule({ currency: "JPY", minor: 1000 }, 1, "测试");
+    const facts = mailItemFacts({ ...ITEM, subject: "amount_minor amount_state" });
+    for (const expression of ['text.contains("amount_minor")', "text.contains('amount_state')"])
+      expect(
+        new RuleJudge().decide("mail_item", facts, [{ ...rule, expression }]).hits,
+        expression,
+      ).toHaveLength(1);
+  });
 });
