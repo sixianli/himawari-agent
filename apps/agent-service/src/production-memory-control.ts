@@ -982,6 +982,7 @@ export class ProductionMemoryControl {
       }
       const resolver = createProductionAutomaticMemory({
         product: this.options.memory,
+        state: this.options.state,
         approvals: this.options.approvals,
         payloads: this.options.payloads,
         protector: this.options.protector,

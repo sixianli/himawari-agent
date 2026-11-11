@@ -40,7 +40,23 @@ export const MEMORY_AUTO_COMMIT_GATE: ThresholdGate = Object.freeze({
   byCategory: Object.freeze({}),
 });
 
-export const THRESHOLD_GATES: readonly ThresholdGate[] = Object.freeze([MEMORY_AUTO_COMMIT_GATE]);
+export const MEMORY_TENTATIVE_CONFIRM_GATE: ThresholdGate = Object.freeze({
+  key: "memory_candidate.confirm_tentative",
+  decisionKind: "memory_candidate",
+  label: "待确认记忆转正",
+  scoreField: "confidencePermille",
+  scoreMax: 1000,
+  gatedReasons: Object.freeze(["tentative_confirmed", "confirm_below_threshold"]),
+  ambiguousReasons: Object.freeze([]),
+  positiveOutcomes: Object.freeze(["kept"]),
+  defaultThreshold: 850,
+  byCategory: Object.freeze({}),
+});
+
+export const THRESHOLD_GATES: readonly ThresholdGate[] = Object.freeze([
+  MEMORY_AUTO_COMMIT_GATE,
+  MEMORY_TENTATIVE_CONFIRM_GATE,
+]);
 
 export function thresholdFor(gate: ThresholdGate, category: string | null): number {
   if (category !== null && Object.hasOwn(gate.byCategory, category))

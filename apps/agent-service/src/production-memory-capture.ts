@@ -554,6 +554,7 @@ export function createProductionAutomaticMemory(
     ProductionMemoryCaptureOptions,
     "product" | "approvals" | "payloads" | "protector" | "clock" | "reminders" | "book" | "ledger"
   > & {
+    readonly state: Pick<ProductMemoryStatePort, "readMany">;
     readonly extract: () => Promise<readonly ExtractedMemoryCandidate[]>;
     readonly readSourceText: (sourceRef: string) => Promise<string>;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
@@ -562,6 +563,10 @@ export function createProductionAutomaticMemory(
   return new AutomaticMemoryService({
     extraction: { extract: options.extract },
     product: options.product,
+    isTentative: async ({ ownerId, agentId, memoryId }) => {
+      const [memory] = await options.state.readMany({ ownerId, agentId, memoryIds: [memoryId] });
+      return memory?.status === "active" && memory.attributes?.tentative === true;
+    },
     content: {
       store: async (stored) => {
         const ref = `memory-content:${stored.contentKey}`;
