@@ -104,3 +104,9 @@ date: "2026-11-10"
 - 代码：`packages/persistence-sqlite/src/data-export/`、`packages/platform-node/src/export-text-policy.ts`、`apps/admin-cli/src/data-command.ts`
 
 [返回目录](#contents)
+
+<a id="multi-user-follow-up"></a>
+
+## 2026-11-11 后续：多人使用
+
+[ADR 0234](0234-one-program-per-person-database-file.md) 第 10 条要求导出按人做，并补上聊天记录，因为本 ADR 的导出不含对话。聊天记录导出的格式和范围另写 ADR；本 ADR 的决定不变。

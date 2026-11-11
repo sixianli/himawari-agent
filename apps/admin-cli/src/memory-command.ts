@@ -63,6 +63,7 @@ export async function runMemoryCommand(
         idleArchivesToRestore: plan.idleArchivesToRestore,
         indexedMemories: plan.indexedMemories,
         activeMemories: plan.activeMemories,
+        embeddedEpisodes: plan.embeddedEpisodes,
         confirmation,
       });
       if (values.get("--confirm") !== confirmation)
@@ -74,6 +75,7 @@ export async function runMemoryCommand(
         operator,
         restored: result.restored,
         clearedIndexRows: result.clearedIndexRows,
+        clearedEpisodeVectors: result.clearedEpisodeVectors,
       });
     } finally {
       database.close();

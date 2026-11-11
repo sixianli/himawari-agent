@@ -181,3 +181,9 @@ OpenCode Go 的 DeepSeek 要在设置里打开“Global”地区才能用，数�
 - [工程案例库 案例 60：本机 Magpie 网关替 Agent 在多个套餐之间切换](../engineering-casebook.md#case-magpie-subscriptions)
 
 [↑ 返回阅读导航](#contents)
+
+<a id="multi-user-follow-up"></a>
+
+## 2026-11-11 后续：多人使用
+
+[ADR 0234](0234-one-program-per-person-database-file.md) 决定所有受邀的人都和 Andy 走同一个 Magpie、同一套已有的订阅（按本 ADR 的路由顺序，不额外付费）（Andy 2026-11-11 说不再用 Vercel 的 key）。本 ADR 里“数据可以走 CodeBuddy 是 Andy 对自己数据的同意”只对 Andy 自己的数据成立；其他人的数据经过 Andy 的套餐账号、有时走到 CodeBuddy，要在邀请时告知对方。OpenCode Go 的条款写明只给单人使用（整合方案 1.8 节），这个风险由 Andy 承担，见 [ADR 0234](0234-one-program-per-person-database-file.md) 的后果一节。其他人的请求不允许落到按量付费的路上，除非 Andy 在配置里明确打开。本 ADR 的路由顺序不变。

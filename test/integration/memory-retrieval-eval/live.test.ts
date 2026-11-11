@@ -5,7 +5,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   DurableMemoryService,
+  type EmbeddingProfile,
+  embeddingIdentity,
+  findEmbeddingProfile,
+  GATEWAY_EMBEDDING_PROVIDER,
+  JINA_V5_SMALL_INT8_PROFILE,
+  LOCAL_ONNX_EMBEDDING_PROVIDER,
   type MemoryCategory,
+  QWEN3_EMBEDDING_8B_PROFILE,
   type MemoryIndexSearchResult,
   type MemoryIndexStorePort,
 } from "@himawari-agent/application";
@@ -18,16 +25,15 @@ import {
 } from "@himawari-agent/domain";
 import {
   AI_GATEWAY_BASE_URL,
+  EgressEmbedder,
   DEFAULT_RELEVANCE_TUNING,
   type Embedder,
-  GatewayEmbedder,
-  gatewayEmbeddingUsage,
+  embeddingUsageFor,
   HybridMemoryProvider,
+  LOCAL_ONNX_BASE_URL,
   QWEN3_EMBEDDING_8B_DIMENSIONS,
-  QWEN3_EMBEDDING_8B_MODEL,
-  QWEN3_MEMORY_MINIMUM_SIMILARITY,
-  QWEN3_MEMORY_QUERY_INSTRUCTION,
 } from "@himawari-agent/memory-engine";
+import { LocalOnnxEmbeddingRuntime } from "@himawari-agent/platform-node";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -45,6 +51,11 @@ interface LiveEnvironment {
   readonly HIMAWARI_MEMORY_EVAL_OUTPUT?: string;
   readonly HIMAWARI_MEMORY_EVAL_COST_LIMIT_MICROS?: string;
   readonly HIMAWARI_MEMORY_EVAL_THRESHOLDS?: string;
+  readonly HIMAWARI_MEMORY_EVAL_PROVIDER?: string;
+  readonly HIMAWARI_MEMORY_EVAL_MODEL?: string;
+  readonly HIMAWARI_MEMORY_EVAL_STATE_ROOT?: string;
+  readonly HIMAWARI_MEMORY_EVAL_ARTIFACT?: string;
+  readonly HIMAWARI_MEMORY_EVAL_DATASET?: string;
   readonly AI_GATEWAY_API_KEY?: string;
 }
 
@@ -65,7 +76,9 @@ interface Dataset {
 
 const environment = process.env as unknown as LiveEnvironment;
 const LIVE = environment.HIMAWARI_MEMORY_EVAL_LIVE === "1";
-const DATASET = path.resolve("evals/memory-retrieval/dataset.json");
+const DATASET = path.resolve(
+  environment.HIMAWARI_MEMORY_EVAL_DATASET ?? "evals/memory-retrieval/dataset.json",
+);
 const SELECTED_LIMIT = 5;
 const PROXY_INJECTED_KEY = "proxy-injected";
 const OWNER_ID = createOwnerId("owner-memory-retrieval-eval");
@@ -85,14 +98,40 @@ class CachedEmbedder implements Embedder {
     this.dimensions = inner.dimensions;
   }
 
-  embed(text: string): Promise<Float32Array> {
-    let vector = this.#cache.get(text);
+  embedQuery(query: string): Promise<Float32Array> {
+    return this.#cached(`query\u0000${query}`, () => this.#inner.embedQuery(query));
+  }
+
+  embedDocument(text: string): Promise<Float32Array> {
+    return this.#cached(`document\u0000${text}`, () => this.#inner.embedDocument(text));
+  }
+
+  #cached(key: string, compute: () => Promise<Float32Array>): Promise<Float32Array> {
+    let vector = this.#cache.get(key);
     if (!vector) {
-      vector = this.#inner.embed(text);
-      this.#cache.set(text, vector);
+      vector = compute();
+      this.#cache.set(key, vector);
     }
     return vector;
   }
+}
+
+function evaluatedProfile(): EmbeddingProfile {
+  const provider = environment.HIMAWARI_MEMORY_EVAL_PROVIDER ?? GATEWAY_EMBEDDING_PROVIDER;
+  const model =
+    environment.HIMAWARI_MEMORY_EVAL_MODEL ??
+    (provider === LOCAL_ONNX_EMBEDDING_PROVIDER
+      ? JINA_V5_SMALL_INT8_PROFILE.model
+      : QWEN3_EMBEDDING_8B_PROFILE.model);
+  const profile = findEmbeddingProfile(provider, model);
+  if (!profile) throw new Error(`MEMORY_EVAL_PROFILE_UNKNOWN ${provider} ${model}`);
+  return profile;
+}
+
+function percentile(values: readonly number[], fraction: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))] ?? null;
 }
 
 function recordingIndex(
@@ -169,37 +208,60 @@ describe.skipIf(!LIVE)("memory retrieval live evaluation", () => {
     async () => {
       const raw = await readFile(DATASET, "utf8");
       const dataset = JSON.parse(raw) as Dataset;
-      const costLimitMicros = Number(environment.HIMAWARI_MEMORY_EVAL_COST_LIMIT_MICROS);
-      expect(costLimitMicros).toBeGreaterThan(0);
+      const costLimitMicros = Number(environment.HIMAWARI_MEMORY_EVAL_COST_LIMIT_MICROS ?? 0);
+      const profile = evaluatedProfile();
+      const local = profile.provider === LOCAL_ONNX_EMBEDDING_PROVIDER;
+      const dimensions = local ? (profile.dimensions[0] ?? 0) : QWEN3_EMBEDDING_8B_DIMENSIONS;
+      const artifactSha256 = environment.HIMAWARI_MEMORY_EVAL_ARTIFACT?.trim();
+      const identity = embeddingIdentity({
+        provider: profile.provider,
+        model: profile.model,
+        dimensions,
+        ...(local && artifactSha256 ? { artifactSha256 } : {}),
+      });
       const thresholds = (
-        environment.HIMAWARI_MEMORY_EVAL_THRESHOLDS ?? `0,${QWEN3_MEMORY_MINIMUM_SIMILARITY}`
+        environment.HIMAWARI_MEMORY_EVAL_THRESHOLDS ?? `0,${profile.chatMinimumSimilarity}`
       )
         .split(",")
         .map(Number);
       const key = environment.AI_GATEWAY_API_KEY?.trim();
       const usage = { requests: 0, inputTokens: 0, costMicros: 0 };
-      const gateway = new GatewayEmbedder({
+      const latencies: number[] = [];
+      let runtime: LocalOnnxEmbeddingRuntime | undefined;
+      let loadMs: number | null = null;
+      if (local) {
+        const stateRoot = environment.HIMAWARI_MEMORY_EVAL_STATE_ROOT;
+        if (!stateRoot || !artifactSha256) throw new Error("MEMORY_EVAL_LOCAL_ARTIFACT_REQUIRED");
+        runtime = new LocalOnnxEmbeddingRuntime({ stateRoot, profile, dimensions, artifactSha256 });
+        const started = performance.now();
+        await runtime.start();
+        loadMs = Math.round(performance.now() - started);
+        expect(runtime.state).toBe("ready");
+      }
+      const settle = embeddingUsageFor(profile.provider);
+      const inner = new EgressEmbedder({
         egress: testModelEgress(),
-        baseUrl: AI_GATEWAY_BASE_URL,
-        model: QWEN3_EMBEDDING_8B_MODEL,
-        dimensions: QWEN3_EMBEDDING_8B_DIMENSIONS,
-        apiKey: async () => (key && key.length > 0 ? key : PROXY_INJECTED_KEY),
+        baseUrl: local ? LOCAL_ONNX_BASE_URL : AI_GATEWAY_BASE_URL,
+        profile,
+        identity,
+        dimensions,
+        ...(runtime
+          ? { fetch: runtime.fetch as typeof fetch }
+          : { apiKey: async () => (key && key.length > 0 ? key : PROXY_INJECTED_KEY) }),
       });
-      gateway.bindBoundary(async (_request, send) => {
-        if (usage.costMicros >= costLimitMicros)
+      inner.bindBoundary(async (_request, send) => {
+        if (!local && usage.costMicros >= costLimitMicros)
           throw new Error(`MEMORY_EVAL_COST_LIMIT_REACHED ${usage.costMicros}`);
+        const started = performance.now();
         const response = await send();
-        const settled = gatewayEmbeddingUsage(
-          response,
-          QWEN3_EMBEDDING_8B_MODEL,
-          QWEN3_EMBEDDING_8B_DIMENSIONS,
-        );
+        latencies.push(performance.now() - started);
+        const settled = settle(response, profile.model, dimensions);
         usage.requests += 1;
         usage.inputTokens += settled.inputTokens;
         usage.costMicros += settled.reportedCostMicros ?? 0;
         return response;
       }, 60_000);
-      const embedder = new CachedEmbedder(gateway);
+      const embedder = new CachedEmbedder(inner);
       const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-memory-retrieval-eval-"));
       const repository = await repositoryFor(dataset, stateRoot);
       const candidates = new Map<string, MemoryIndexSearchResult>();
@@ -222,7 +284,6 @@ describe.skipIf(!LIVE)("memory retrieval live evaluation", () => {
               index: recordingIndex(repository.memoryIndex(), candidates),
               embedder,
               embeddableClassifications: ["public", "private"],
-              queryInstruction: QWEN3_MEMORY_QUERY_INSTRUCTION,
               minimumSimilarity,
               now: () => dataset.today,
               timeZone: "Asia/Tokyo",
@@ -234,7 +295,8 @@ describe.skipIf(!LIVE)("memory retrieval live evaluation", () => {
             maximumProjectionAttempts: 1,
             projectionLeaseMs: 60_000,
           });
-        const ingest = service(QWEN3_MEMORY_MINIMUM_SIMILARITY);
+        if (!local) expect(costLimitMicros).toBeGreaterThan(0);
+        const ingest = service(profile.chatMinimumSimilarity);
         for (const memory of dataset.memories)
           await ingest.applyProposal(
             {
@@ -286,7 +348,7 @@ describe.skipIf(!LIVE)("memory retrieval live evaluation", () => {
             minimumSimilarity,
             relevance: DEFAULT_RELEVANCE_TUNING,
             dedupeSameSource: true,
-            production: minimumSimilarity === QWEN3_MEMORY_MINIMUM_SIMILARITY,
+            production: minimumSimilarity === profile.chatMinimumSimilarity,
             metrics: retrievalMetrics(outcomes),
             outcomes: outcomes.map(({ query, returned }) => ({
               id: query.id,
@@ -310,7 +372,15 @@ describe.skipIf(!LIVE)("memory retrieval live evaluation", () => {
           recordedAt: new Date().toISOString(),
           commit: execFileSync("git", ["rev-parse", "--short", "HEAD"]).toString().trim(),
           datasetSha256: createHash("sha256").update(raw).digest("hex"),
-          model: QWEN3_EMBEDDING_8B_MODEL,
+          model: profile.model,
+          provider: profile.provider,
+          embeddingIdentity: identity,
+          loadMs,
+          latencyMs: {
+            median: percentile(latencies, 0.5),
+            p95: percentile(latencies, 0.95),
+          },
+          rssMb: Math.round(process.memoryUsage().rss / 1_000_000),
           selectedLimit: SELECTED_LIMIT,
           memories: dataset.memories.length,
           queries: dataset.queries.length,
@@ -325,6 +395,7 @@ describe.skipIf(!LIVE)("memory retrieval live evaluation", () => {
         );
         expect(usage.requests).toBeGreaterThan(0);
       } finally {
+        await runtime?.close();
         await repository.close();
         await rm(stateRoot, { recursive: true, force: true });
       }

@@ -1,0 +1,3 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "文档仍写着已删除的 `writeSecretRef`", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 0225", "consequence": "文档和 ADR 0227 矛盾", "modelSeverity": "低"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 声称 P5-3 已使用 `unseen` 判定，但当前树没有", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR", "consequence": "误以为已接好", "modelSeverity": "低"}
+{"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`askedAt` 损坏分支缺少自动用例", "valid": true, "class": "better", "modelSeverity": "低"}
