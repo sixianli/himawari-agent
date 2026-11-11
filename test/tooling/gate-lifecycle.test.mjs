@@ -357,6 +357,31 @@ describe("publication admission is atomic and workflow-bound", { timeout: 30000 
     ).rejects.toThrow("REPORT_CHANGED");
     expect(existsSync(path.join(state.root, ".ci-output/tampered"))).toBe(false);
   });
+  it("omits the build archive when asked and keeps it by default", async () => {
+    const { input } = reportFixture({ "runtime.tar.gz": ["artifact", "synthetic archive"] });
+    state.mockAdmission = true;
+    const omitted = await publish({
+      root: state.root,
+      input,
+      output: ".ci-output/omit-public",
+      artifacts: "omit",
+    });
+    expect(omitted.reports.map((report) => report.kind)).not.toContain("artifact");
+    expect(existsSync(path.join(state.root, ".ci-output/omit-public/reports/runtime.tar.gz"))).toBe(
+      false,
+    );
+    expect(existsSync(path.join(state.root, ".ci-output/omit-public/reports/details.json"))).toBe(
+      true,
+    );
+    const kept = await publish({ root: state.root, input, output: ".ci-output/keep-public" });
+    expect(kept.reports.map((report) => report.kind)).toContain("artifact");
+    expect(existsSync(path.join(state.root, ".ci-output/keep-public/reports/runtime.tar.gz"))).toBe(
+      true,
+    );
+    await expect(
+      publish({ root: state.root, input, output: ".ci-output/bad-public", artifacts: "drop" }),
+    ).rejects.toThrow("CI_PUBLIC_ARTIFACTS_INVALID");
+  });
   it("CLI obtains verified Python explicitly and never relies on an inherited interpreter", async () => {
     const { input } = reportFixture({ "runtime.tar.gz": ["artifact", "synthetic archive"] });
     state.mockAdmission = true;

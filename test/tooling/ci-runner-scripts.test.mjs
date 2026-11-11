@@ -1174,7 +1174,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     box.fake("useradd", `${box.record("useradd")}\ntouch "${box.root}/user-gh-runner-2"`);
     box.fake("userdel", `${box.record("userdel")}\nrm -f "${box.root}/user-$1"`);
     box.fake("pkill", `${box.record("pkill")}\nexit 1`);
-    box.fake("getent", "exit 2");
+    box.fake("getent", '[ -e "/etc/fake-group-$2" ] && exit 0\nexit 2');
     box.fake("groupadd", box.record("groupadd"));
     box.fake("groupdel", box.record("groupdel"));
     box.fake(
@@ -1266,6 +1266,17 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     ]);
     expect(state.rc).toBe("71");
     expect(stderr).toContain("refusing to take over");
+    expect(state["/srv/gh-runner-share"]).toBe("DIR");
+    expect(box.calls()).not.toMatch(/^group(add|del) /m);
+  });
+
+  it("reinstalls over a share directory whose group already exists, and keeps the group and directory", () => {
+    const { box, result, state } = installWithFailingRuleCheck("exit 0", [
+      "mkdir -p /srv/gh-runner-share/43003101968-1",
+      "touch /etc/fake-group-gh-ci-share",
+    ]);
+    expect(result.status).toBe(0);
+    expect(state.rc).toBe("0");
     expect(state["/srv/gh-runner-share"]).toBe("DIR");
     expect(box.calls()).not.toMatch(/^group(add|del) /m);
   });

@@ -293,7 +293,7 @@ main 路径选择器仅接受固定仓库的真实 main push。轻量确认必�
 
 API 不可用、下载失败、证据缺失、内容或配置不一致均选择原有完整 CI；不伪造新的完整门禁结论。路径选择本身异常时也调度完整 CI，基础设施异常仍可使外层 workflow 失败。确认 job 启动时再次核验证据；此后构建、安全或启动检查失败直接失败，不通过重跑掩盖失败。
 
-轻量确认在实际 main 提交上重新生成 Linux 构建产物，运行现有机器密钥、Gitleaks、Semgrep 检查，并使用本轮产物执行完整的 `installable-node-services.test.ts` 安装、启动、停止与恢复测试。输出独立的 `main-confirmation` 记录，引用先前 PR run/attempt；不将先前 gate 改写为当前 GateSummary，也不将 PR 产物冒充 main 发布产物。这份确认不替代 S9 全套资格或授权生产部署；需要完整 push GateSummary 的交接仍显式运行完整 CI。
+轻量确认在实际 main 提交上重新生成 Linux 构建产物，运行现有机器密钥、Gitleaks、Semgrep 检查，并使用本轮产物执行完整的 `installable-node-services.test.ts` 安装、启动、停止与恢复测试。输出独立的 `main-confirmation` 记录，引用先前 PR run/attempt；不将先前 gate 改写为当前 GateSummary，也不将 PR 产物冒充 main 发布产物。上传到 GitHub 的 `main-confirmation-` 报告只含日志和 JSON，不含构建归档（`publish.mjs --artifacts omit`，[ADR 0238](../../adr/0238-ci-job-files-stay-on-the-ci-vps.md)），归档摘要记在 `summary.json` 的 `artifactSha256`。这份确认不替代 S9 全套资格或授权生产部署；需要完整 push GateSummary 的交接仍显式运行完整 CI。
 
 npm 下载和固定工具的 downloads/wheels 归档不再通过 cache Action 复用（[ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)），每个任务都重新下载；工具每次从已验证归档重新安装。仍校验下载完整性、执行锁文件安装和原生探针；损坏下载按现有校验拒绝。
 
