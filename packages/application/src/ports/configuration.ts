@@ -1,5 +1,6 @@
 import type { AgentId, DeploymentId, DemoLocale, OwnerId } from "@himawari-agent/domain";
 import type { DataClassification } from "./common.js";
+import type { DeviceConfiguration } from "./device-limits.js";
 import type { ModelProviderRouting } from "./intelligence.js";
 import type { WebProviderId } from "./web-providers.js";
 
@@ -280,6 +281,7 @@ export interface RunPolicyConfiguration {
   readonly museIntake?: MuseIntakeConfiguration;
   readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;
+  readonly device?: DeviceConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;

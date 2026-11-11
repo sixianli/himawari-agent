@@ -2,6 +2,7 @@
 import { chmod, lstat, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DEVICE_HARD_LIMIT_KEYS } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -1426,6 +1427,32 @@ it("[WP-7] accepts web push only with a web-push secret and an https or mailto s
   }
   raw["runPolicy"] = { ...policy, reminderPush: { channel: "bark", secretRef: "web-push-vapid" } };
   expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+});
+
+it("[P1-1] parses the nine device hard limits with defaults and rejects unknown or out-of-range keys", () => {
+  const raw = config("/tmp/himawari-device-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const parse = (device: unknown) => {
+    raw["runPolicy"] = { ...policy, device };
+    return parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.device;
+  };
+  const defaults = parse({});
+  expect(defaults?.signatureToleranceSeconds).toBe(60);
+  expect(Object.keys(defaults?.limits ?? {}).sort()).toEqual([...DEVICE_HARD_LIMIT_KEYS].sort());
+  expect(defaults?.limits["device.request.body_bytes"]).toBe(1_048_576);
+  expect(defaults?.limits["device.nonce.retained"]).toBe(10_000);
+  expect(parse({ "device.track.batch_points": 5 })?.limits["device.track.batch_points"]).toBe(5);
+  for (const key of DEVICE_HARD_LIMIT_KEYS) {
+    expect(() => parse({ [key]: 0 })).toThrow();
+    expect(() => parse({ [key]: 10 ** 12 })).toThrow();
+  }
+  expect(() => parse({ "device.unknown.limit": 5 })).toThrow();
+  expect(() => parse({ heartbeatSeconds: 100, connectionMaxSeconds: 60 })).toThrow();
 });
 
 it("[PG-12] accepts proactive Gmail checks only with a Google client secret and a private-capable model", () => {
