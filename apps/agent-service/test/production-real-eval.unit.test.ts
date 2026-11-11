@@ -550,6 +550,7 @@ describe("[P4-5] real eval leftovers", () => {
       '{"startedAt":',
       '{"startedAt":"2026-11-08","trigger":"weekly","capMicros":5}',
       '{"startedAt":"2026-11-08T00:00:00.000Z","trigger":"weekly","capMicros":-5}',
+      '{"runId":"run-zero","startedAt":"2026-11-08T00:00:00.000Z","trigger":"weekly","capMicros":0}',
     ]) {
       const file = path.join(directory, `${REAL_EVAL_IN_PROGRESS_PREFIX}${text.length}.json`);
       await writeFile(file, text);

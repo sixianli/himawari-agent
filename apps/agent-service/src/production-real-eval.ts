@@ -93,8 +93,13 @@ export async function expireRealEvalSample(directory: string, now: string): Prom
   const file = path.join(directory, REAL_EVAL_SAMPLE_FILE);
   const found = await stat(file).catch(missing);
   if (found && found.mtimeMs > Date.parse(now)) {
-    await utimes(file, new Date(now), new Date(now));
-    return false;
+    const reset = await utimes(file, new Date(now), new Date(now)).then(
+      () => true,
+      () => false,
+    );
+    if (reset) return false;
+    await rm(file, { force: true });
+    return true;
   }
   if (!found || Date.parse(now) - found.mtimeMs < REAL_EVAL_SAMPLE_TTL_MS) return false;
   await rm(file, { force: true });
@@ -126,7 +131,7 @@ function inProgressRun(text: string, now: string): InProgressRun | undefined {
     Date.parse(value.startedAt) > Date.parse(now) ||
     (value.trigger !== "manual" && value.trigger !== "weekly") ||
     !Number.isSafeInteger(value.capMicros) ||
-    (value.capMicros ?? -1) < 0
+    (value.capMicros ?? 0) < 1
   )
     return undefined;
   return {
@@ -162,7 +167,17 @@ export async function readUnfinishedRealEvals(
         () => false,
       );
       if (!reset) {
-        await rm(file, { force: true }).catch(() => undefined);
+        const removed = await rm(file, { force: true }).then(
+          () => true,
+          () => false,
+        );
+        if (!removed)
+          unfinished.push({
+            startedAt: now,
+            trigger: "weekly",
+            outcome: "failed",
+            costMicros: weeklyCapMicros,
+          });
         continue;
       }
     }

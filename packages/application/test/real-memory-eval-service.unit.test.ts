@@ -146,7 +146,7 @@ function harness(options: {
   readonly recallEstimateMicros?: number;
   readonly failAnswer?: boolean;
   readonly questionOutput?: string;
-  readonly unreadable?: string;
+  readonly unreadable?: string | readonly string[];
   readonly questionUnreadable?: boolean;
 }): Harness {
   const store = new MemoryStore();
@@ -214,7 +214,7 @@ function harness(options: {
     recallEstimateMicros: options.recallEstimateMicros ?? 0,
     listMemories: async () => state.memories,
     readMemoryText: async (record) => {
-      if (record.id === options.unreadable) throw new Error("DECRYPT_FAILED");
+      if ([options.unreadable ?? []].flat().includes(record.id)) throw new Error("DECRYPT_FAILED");
       return sourceOf(record)?.text;
     },
     readQuote: async (record) => sourceOf(record)?.quote,
@@ -425,6 +425,17 @@ describe("[P4-5] real memory eval run", () => {
     delete options.unreadable;
     await test.service.run("weekly", { ...LIMITS, newMemoriesPerRun: 2 });
     expect(test.store.questions.map(({ memoryId }) => memoryId)).toContain("coffee");
+  });
+
+  it("stops reading after four unreadable memories per question slot", async () => {
+    const broken = ["a1", "a2", "a3", "a4", "a5"];
+    const test = harness({
+      memories: [...broken.map((id) => memory(id)), memory("coffee")],
+      unreadable: broken,
+    });
+    const report = await test.service.run("weekly", { ...LIMITS, newMemoriesPerRun: 1 });
+    expect(report.summary).toMatchObject({ rejected: { source_unreadable: 4 } });
+    expect(test.store.questions).toEqual([]);
   });
 
   it("counts a question as unanswerable when its text or source cannot be read while answering", async () => {

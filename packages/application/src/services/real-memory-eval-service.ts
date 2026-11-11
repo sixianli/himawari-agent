@@ -116,6 +116,7 @@ export const QUESTION_OUTPUT_TOKENS = 400;
 export const ANSWER_OUTPUT_TOKENS = 300;
 export const JUDGE_OUTPUT_TOKENS = 100;
 export const RECENT_RUNS_FOR_DECLINES = 520;
+export const SOURCE_READS_PER_SLOT = 4;
 
 export interface RealEvalRunReport {
   readonly runId: string;
@@ -255,8 +256,14 @@ export class RealMemoryEvalService {
       );
       const banked = new Set(active.map(({ memoryId }) => memoryId));
       let asked = 0;
+      let reads = 0;
       for (const memory of pickNewMemories(candidates, banked, startedAt, candidates.length)) {
-        if (asked >= limits.newMemoriesPerRun) break;
+        if (
+          asked >= limits.newMemoriesPerRun ||
+          reads >= limits.newMemoriesPerRun * SOURCE_READS_PER_SLOT
+        )
+          break;
+        reads += 1;
         const source = await readSource(memory);
         if (source.unreadable) {
           rejected["source_unreadable"] = (rejected["source_unreadable"] ?? 0) + 1;
