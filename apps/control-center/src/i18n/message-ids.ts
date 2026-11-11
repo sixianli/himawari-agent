@@ -1450,7 +1450,7 @@ export const MESSAGE_SAMPLE_VALUES: Readonly<
   "memory.page.importFlag": { f: "all" },
   "memory.page.importCommit": { count: 2 },
   "memory.page.importDone": { count: 2 },
-  "memory.page.exportDone": { count: 2, withheld: 1 },
+  "memory.page.exportDone": { count: 2, rules: 1, withheld: 1 },
   "memory.page.chatExportDone": { threads: 2, messages: 5, withheld: 1 },
   "push.lastDelivered": { time: "10/26 14:32" },
   "push.pausedBody": { code: "WEB_PUSH_HTTP_403" },

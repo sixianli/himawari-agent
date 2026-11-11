@@ -3,10 +3,22 @@ import type Database from "better-sqlite3";
 import { canonicalJson, type JsonValue, jsonLines, sha256Hex } from "./canonical.js";
 import { type MarkdownMemory, renderMemoryMarkdown } from "./markdown.js";
 import {
+  assertRuleHistory,
+  assertRuleIdentifiers,
+  enforcedRuleCount,
+  type PortableRule,
+  type PortableRuleVersion,
+  RULES_INDEX_FILE,
+  renderRulesMarkdown,
+  ruleParametersKey,
+} from "./rules.js";
+import {
   DATA_FILES,
   FORMAT_VERSION,
   INDEX_FILE,
   MANIFEST_FILE,
+  MAXIMUM_LINE_LENGTH,
+  RULE_PARAMETERS_MAXIMUM_LENGTH,
   SCHEMA_FILES,
   SEALED_FILE,
 } from "./schemas.js";
@@ -366,6 +378,89 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     };
   });
 
+  const withheldRules = new Set<string>();
+  let droppedRuleMemoryLinks = 0;
+  const hasSecretLeaf = (value: JsonValue): boolean => {
+    if (typeof value === "string") return options.policy.hasSecret(value);
+    if (Array.isArray(value)) return value.some(hasSecretLeaf);
+    if (value !== null && typeof value === "object")
+      return Object.entries(value).some(
+        ([key, item]) => options.policy.hasSecret(key) || hasSecretLeaf(item as JsonValue),
+      );
+    return false;
+  };
+  const maskedText = (value: string): string => {
+    if (!options.policy.hasSecret(value)) return value;
+    const masked = options.policy.mask(value);
+    return options.policy.hasSecret(masked) ? WITHHELD_PLACEHOLDER : masked;
+  };
+  const maskLeaves = (value: JsonValue): JsonValue => {
+    if (typeof value === "string") return maskedText(value);
+    if (Array.isArray(value)) return value.map(maskLeaves);
+    if (value !== null && typeof value === "object") {
+      const result: { [key: string]: JsonValue } = {};
+      for (const [key, item] of Object.entries(value))
+        result[maskedText(key)] = maskLeaves(item as JsonValue);
+      return result;
+    }
+    return value;
+  };
+  const ruleParameters = (
+    raw: unknown,
+    key: string,
+    ruleId: string,
+  ): { parameters: string; withheld?: true } => {
+    const parameters = str(raw);
+    const parsed = JSON.parse(parameters) as JsonValue;
+    if ([...parameters].length > RULE_PARAMETERS_MAXIMUM_LENGTH)
+      throw new DataExportError(
+        DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+        `规则 ${ruleId} 的参数超过 ${RULE_PARAMETERS_MAXIMUM_LENGTH} 个字符`,
+      );
+    if (!hasSecretLeaf(parsed) && JSON.stringify(parsed) === parameters) return { parameters };
+    withheldKeys.add(key);
+    withheldRules.add(ruleId);
+    originals[key] = parameters;
+    return { parameters: JSON.stringify(maskLeaves(parsed)), withheld: true };
+  };
+  const ruleMemoryLink = (value: unknown): string | null => {
+    const id = optionalString(value);
+    const kept = keepMemoryRef(id);
+    if (id !== null && kept === null) droppedRuleMemoryLinks += 1;
+    return kept;
+  };
+  const ruleHistory = group(snapshot.ruleHistory, "rule_id");
+  const ruleLines: PortableRule[] = snapshot.rules.map((row) => {
+    const ruleId = str(row["rule_id"]);
+    const history: PortableRuleVersion[] = (ruleHistory.get(ruleId) ?? []).map((version) => ({
+      revision: num(version["revision"]),
+      status: str(version["status"]) as PortableRuleVersion["status"],
+      source: safeString(str(version["source"])),
+      sourceMemoryId: ruleMemoryLink(version["source_memory_id"]),
+      changeReason: safeOptional(optionalString(version["change_reason"])),
+      changedAt: str(version["changed_at"]),
+      ...ruleParameters(
+        version["parameters"],
+        ruleParametersKey(ruleId, num(version["revision"])),
+        ruleId,
+      ),
+    }));
+    const rule: PortableRule = {
+      ruleId,
+      revision: num(row["revision"]),
+      status: str(row["status"]) as PortableRule["status"],
+      source: safeString(str(row["source"])),
+      sourceMemoryId: ruleMemoryLink(row["source_memory_id"]),
+      updatedAt: str(row["updated_at"]),
+      ...ruleParameters(row["parameters"], ruleParametersKey(ruleId), ruleId),
+      history,
+    };
+    assertRuleIdentifiers(rule);
+    assertRuleHistory(rule);
+    return rule;
+  });
+  const ruleHistoryVersions = ruleLines.reduce((total, { history }) => total + history.length, 0);
+
   const evidence = options.withEvidence === true ? buildEvidence(snapshot, texts) : null;
 
   const files: PortableFiles = new Map();
@@ -386,11 +481,20 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   put(DATA_FILES.importBatches, "data", jsonLines(batchLines), batchLines.length);
   put(DATA_FILES.consolidations, "data", jsonLines(consolidationLines), consolidationLines.length);
   put(DATA_FILES.decisions, "data", jsonLines(decisionLines), decisionLines.length);
+  const rulesText = jsonLines(ruleLines as unknown as readonly JsonValue[]);
+  for (const [index, line] of rulesText.split("\n").entries())
+    if (line.length > MAXIMUM_LINE_LENGTH)
+      throw new DataExportError(
+        DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+        `规则 ${ruleLines[index]?.ruleId ?? ""} 连同历史超过单行上限`,
+      );
+  put(DATA_FILES.rules, "data", rulesText, ruleLines.length);
   for (const { path, schema } of SCHEMA_FILES)
     put(path, "schema", `${JSON.stringify(schema, null, 2)}\n`, 0);
   const markdown = renderMemoryMarkdown(memoryLines as unknown as readonly MarkdownMemory[]);
   for (const [path, content] of markdown.files) put(path, "markdown", content, 0);
   put(INDEX_FILE, "markdown", markdown.index, 0);
+  put(RULES_INDEX_FILE, "markdown", renderRulesMarkdown(ruleLines, WITHHELD_PLACEHOLDER), 0);
 
   let sealedEvidenceRows = 0;
   if (options.sealPassphrase !== undefined) {
@@ -430,6 +534,11 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       reason:
         "已换成编号占位（接着库里已有占位的最大编号往后排；同一原文同一编号，不同原文不同编号）；这些是名称和编号，原文不保留，不进封存文件",
     },
+    {
+      what: "规则出处里指向未导出记忆的链接",
+      count: droppedRuleMemoryLinks,
+      reason: "那条记忆已删除或分级为受限，不在导出里；链接置空，规则本身照常导出",
+    },
     { what: "对话和消息", count: null, reason: "不属于本格式；记忆的来源对话编号也不导出" },
     { what: "每日摘要", count: null, reason: "属于对话，随对话一起，不在本格式内" },
     {
@@ -461,6 +570,9 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     decisions: decisionLines.length,
     decisionSignals,
     markdownMemories: markdown.count,
+    rules: ruleLines.length,
+    enforcedRules: enforcedRuleCount(ruleLines),
+    ruleHistoryVersions,
     sealedOriginals: options.sealPassphrase === undefined ? 0 : Object.keys(originals).length,
     sealedEvidenceRows,
   };
@@ -481,6 +593,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       texts: withheldKeys.size,
       memories: withheldOwners.memories.size,
       decisions: withheldOwners.decisions.size,
+      rules: withheldRules.size,
     },
     omitted,
   };
