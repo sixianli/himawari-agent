@@ -622,7 +622,7 @@ describe("[PG-15] proactive reminders page", () => {
     expect(rows.map((row) => row.textContent)).toEqual([
       expect.stringContaining("记忆抽取失败，已重试"),
       expect.stringContaining("记忆抽取失败，下一轮补做"),
-      expect.stringContaining("这轮没记成"),
+      expect.stringContaining("这轮没记全"),
     ]);
     expect(text(section)).not.toContain("待你确认的记忆");
     expect(text(section)).not.toContain("这里不显示原文");

@@ -1020,13 +1020,13 @@ export const messages = {
     "このハードルールはあなたの言葉から作られました。元の記憶が変わりました。ルールはそのまま適用され、確認を待っています",
   "dailyReview.tag.captureRetrying": "記憶の抽出に失敗、再試行済み",
   "dailyReview.tag.captureQueued": "記憶の抽出に失敗、次の発言で再試行",
-  "dailyReview.tag.captureGaveUp": "このターンは記憶できなかった",
+  "dailyReview.tag.captureGaveUp": "このターンは記憶しきれなかった",
   "dailyReview.captureRetrying":
-    "このターンの記憶の抽出または保存が一度失敗し、その場でもう一度試しました",
+    "このターンから記憶を抽出するモデル呼び出しが一度失敗し、その場でもう一度試しました",
   "dailyReview.captureQueued":
     "このターンの記憶の抽出がうまくいかなかったため、次にメッセージを送ったときに再試行します",
   "dailyReview.captureGaveUp":
-    "このターンは 3 回再試行しても抽出できなかったか、抽出した内容を 2 回とも保存できなかったため、これ以上は試しません",
+    "このターンは 3 回再試行しても抽出できなかったか、抽出した内容を保存しきれなかったため（一部は保存されている場合があります）、これ以上は試しません",
   "dailyReview.hidden": "本文はここには表示しません",
   "dailyReview.fetched": "メール {count} 通を確認",
   "dailyReview.allFine": "このページは問題なし",

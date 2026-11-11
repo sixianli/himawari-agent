@@ -2893,8 +2893,9 @@ describe("production memory capture", () => {
     await capture.stop();
   });
 
-  it("[P3-5] saves the same result again once when saving fails, without asking the model again", async () => {
+  it("[P3-5] records a turn whose result could not be saved, without asking the model again or queueing it", async () => {
     const context = await setup(P3_5_MESSAGE, P3_5_MEMORY);
+    context.outputs.push(P3_5_MEMORY);
     const options = optionsOf(context);
     let failures = 1;
     const capture = new ProductionMemoryCapture({
@@ -2912,16 +2913,15 @@ describe("production memory capture", () => {
     expect(context.calls.map(({ invocationId }) => invocationId)).toEqual([
       "memory-capture:run-memory-capture",
     ]);
-    expect((await activeMemories(context)).map(({ id }) => id)).toEqual([
-      "memory:memory-capture:run-memory-capture:0",
-    ]);
+    expect(await activeMemories(context)).toEqual([]);
     expect(
       (await captureFailures(context)).map(({ outcome, reasonCode }) => [outcome, reasonCode]),
-    ).toEqual([["capture_retrying", "PORT_CONFLICT"]]);
+    ).toEqual([["capture_gave_up", "PORT_CONFLICT"]]);
     expect(backlogRows(context)).toEqual([]);
+    expect(context.failures).toHaveLength(1);
   });
 
-  it("[P3-5] gives up a replayed turn whose result cannot be saved twice, instead of asking the model again", async () => {
+  it("[P3-5] gives up a replayed turn whose result cannot be saved, instead of asking the model again", async () => {
     const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
     context.outputs.push(new Error("AI_GATEWAY_REQUEST_TIMEOUT"));
     await context.capture.start(context.request);
@@ -2950,7 +2950,7 @@ describe("production memory capture", () => {
         .filter(({ reasonCode }) => reasonCode === "PORT_CONFLICT")
         .map(({ outcome }) => outcome)
         .toSorted(),
-    ).toEqual(["capture_gave_up", "capture_retrying"]);
+    ).toEqual(["capture_gave_up"]);
   });
 
   it("[P3-5] does not replay a turn that another run is still retrying", async () => {

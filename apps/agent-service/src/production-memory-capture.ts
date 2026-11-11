@@ -854,17 +854,13 @@ export class ProductionMemoryCapture {
     const { backlog } = this.options;
     try {
       await this.#commit(plan, parsed);
-    } catch (first) {
-      if (!backlog) throw first;
-      this.options.onFailure(first);
-      await this.#recordFailure(plan, "capture_retrying", captureErrorCode(first), "save:1");
-      try {
-        await this.#commit(plan, parsed);
-      } catch (second) {
-        await backlog.remove(plan.generationId);
-        await this.#recordFailure(plan, "capture_gave_up", captureErrorCode(second), "save:2");
-        throw second;
-      }
+    } catch (error) {
+      if (!backlog) throw error;
+      await backlog.remove(plan.generationId).catch(this.options.onFailure);
+      await this.#recordFailure(plan, "capture_gave_up", captureErrorCode(error), "save").catch(
+        this.options.onFailure,
+      );
+      throw error;
     }
     await backlog?.remove(plan.generationId);
   }
