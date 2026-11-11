@@ -382,6 +382,13 @@ describe("rule memory review", () => {
         .prepare("SELECT reason_code, subject_ref FROM decision_ledger WHERE kind = 'rule_review'")
         .all(),
     ).toEqual([{ reason_code: "memory_removed", subject_ref: "r-edit" }]);
+    const stamps = database
+      .prepare(
+        "SELECT (SELECT checked_at FROM decision_ledger WHERE kind = 'rule_review') AS checked, (SELECT changed_at FROM rule_book_history WHERE rule_id = 'r-edit' AND revision = 2) AS changed, (SELECT updated_at FROM rule_book_rules WHERE rule_id = 'r-edit') AS updated",
+      )
+      .get() as Record<string, string>;
+    for (const stamp of Object.values(stamps))
+      expect(stamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u);
     database.close();
   });
 
