@@ -704,8 +704,12 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
       await this.context.close();
     } finally {
       try {
-        for (; this.extraReadThreads > 0; this.extraReadThreads -= 1)
-          this.extraReadThreadBudget?.release();
+        while (this.extraReadThreads > 0) {
+          this.extraReadThreads -= 1;
+          try {
+            this.extraReadThreadBudget?.release();
+          } catch {}
+        }
       } finally {
         await this.lock.release();
       }
@@ -734,10 +738,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
       const starting: Promise<void> = this.startReadContext()
         .then(
           (started) => {
-            if (this.closed) {
-              release();
-              return started.close();
-            }
+            if (this.closed) return started.close().finally(release);
             this.readContexts.push(started);
             if (budget) this.extraReadThreads += 1;
           },

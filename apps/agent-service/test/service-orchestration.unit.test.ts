@@ -1196,6 +1196,19 @@ describe("[MU-A] one tenant runtime started and stopped as a handle", () => {
     await handle.stop();
     expect(process.exitCode).not.toBe(1);
   });
+  it("logs and survives an authority-lost handler that throws, and still tells the other handlers", async () => {
+    const handle = await startTenantRuntime(tenantInput());
+    const other = vi.fn();
+    handle.onAuthorityLost(() => {
+      throw new Error("HANDLER_FAILED");
+    });
+    handle.onAuthorityLost(other);
+    boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+    await settle();
+    expect(other).toHaveBeenCalledOnce();
+    expect(stderr).toContain('"event":"authority.lost_handler_failed"');
+    await handle.stop();
+  });
   it("asks the injected execution worker launcher to start before reading the worker binding", async () => {
     const ensureStarted = vi.fn(async () => {
       boundary.events.push("worker.ensure-started");
@@ -1274,7 +1287,9 @@ describe("[MU-A] one tenant runtime started and stopped as a handle", () => {
     );
     const handle = await startTenantRuntime(tenantInput());
     const stopping = handle.stop(500);
-    const outcome = expect(stopping).rejects.toThrow(TENANT_RUNTIME_ERROR_CODES.STOP_TIMEOUT);
+    const outcome = expect(stopping).rejects.toMatchObject({
+      code: TENANT_RUNTIME_ERROR_CODES.STOP_TIMEOUT,
+    });
     await vi.advanceTimersByTimeAsync(600);
     await outcome;
     let finished = false;

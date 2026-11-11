@@ -436,9 +436,15 @@ describe("SQLite product-state transaction boundary", () => {
 
   it("[MU-A] still releases the state root lock when the budget refuses to give a thread back", async () => {
     let throwOnRelease = false;
+    let released = 0;
+    let acquired = 0;
     const budget = {
-      tryAcquire: () => true,
+      tryAcquire: () => {
+        acquired += 1;
+        return true;
+      },
       release: () => {
+        released += 1;
         if (throwOnRelease) throw new Error("BUDGET_RELEASE_FAILED");
       },
     };
@@ -452,7 +458,8 @@ describe("SQLite product-state transaction boundary", () => {
       await Promise.all(Array.from({ length: 6 }, () => repository.readAuthorityRevision()));
     expect(repository.readWorkerCount).toBeGreaterThan(1);
     throwOnRelease = true;
-    await expect(repository.close()).rejects.toThrow("BUDGET_RELEASE_FAILED");
+    await repository.close();
+    expect(released).toBe(acquired);
     const reopened = await SqliteProductStateRepository.open({
       stateRoot,
       databasePath,

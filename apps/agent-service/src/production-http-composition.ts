@@ -1245,13 +1245,16 @@ export async function createProductionHttpComposition(
     },
     close: async () => {
       searchIndexer.stop();
-      await app.close();
-      if (unixSocketPath !== undefined && unixSocketIdentity !== undefined) {
-        const identity = unixSocketIdentity;
-        unixSocketIdentity = undefined;
-        const current = await lstat(unixSocketPath).catch(() => undefined);
-        if (current && current.dev === identity.dev && current.ino === identity.ino)
-          await removeUnixSocketFile(unixSocketPath);
+      try {
+        await app.close();
+      } finally {
+        if (unixSocketPath !== undefined && unixSocketIdentity !== undefined) {
+          const identity = unixSocketIdentity;
+          unixSocketIdentity = undefined;
+          const current = await lstat(unixSocketPath).catch(() => undefined);
+          if (current && current.dev === identity.dev && current.ino === identity.ino)
+            await removeUnixSocketFile(unixSocketPath);
+        }
       }
     },
   });
