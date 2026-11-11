@@ -20,6 +20,7 @@ import {
 } from "@himawari-agent/application/decision-ledger";
 import { parseRuleRef, type RuleBookVersion } from "@himawari-agent/application/rule-ref";
 import { readCalibrationRows } from "@himawari-agent/calibration";
+import { readPrereviewWeek } from "@himawari-agent/calibration/prereview";
 import type Database from "better-sqlite3";
 import { summaryInputsValid } from "./sqlite-decision-summary-inputs.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
@@ -335,6 +336,7 @@ export class SqliteDecisionLedgerOperations {
             ([id, judgment]) => [id, { ...judgment }] as const,
           ),
           signals: rows.signals.map((row) => ({ ...row })),
+          prereviews: readPrereviewWeek(this.database, input).map((row) => ({ ...row })),
         };
       } catch (error) {
         if (error instanceof Error && error.message.startsWith("CALIBRATION_TIMESTAMP_FORMAT"))

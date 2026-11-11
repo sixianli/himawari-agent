@@ -1,4 +1,10 @@
-export const HISTORY_SCHEMA = "himawari-calibration-week.v3";
+import type { PrereviewWeekSummary } from "./prereview.ts";
+
+export const HISTORY_SCHEMA = "himawari-calibration-week.v4";
+export const READABLE_HISTORY_SCHEMAS: readonly string[] = Object.freeze([
+  "himawari-calibration-week.v3",
+  HISTORY_SCHEMA,
+]);
 export const DEFAULT_MINIMUM_SAMPLES = 5;
 export const WILSON_Z = 1.96;
 export const HIMAWARI_ATTENTION_OUTCOMES: readonly string[] = Object.freeze([
@@ -35,19 +41,20 @@ export const MAIN_CALIBRATION_GROUPS: readonly CalibrationGroup[] = Object.freez
   "consolidation",
 ]);
 
-const APPLICABLE: Readonly<Record<CalibrationGroup, readonly CalibrationRating[]>> = {
-  proactive_pushed: ["useful", "unneeded"],
-  proactive_silent: ["useful", "missed"],
-  memory_skipped: ["useful", "missed"],
-  memory_kept: ["useful", "unneeded"],
-  consolidation: ["useful", "unneeded"],
-  memory_pending: ["useful", "unneeded"],
-  context_truncation: ["useful", "unneeded"],
-  retrieval_degrade: ["useful", "unneeded"],
-  external_read: ["useful", "unneeded"],
-  rule_review: ["useful", "unneeded"],
-  memory_capture_failed: ["useful", "missed"],
-};
+export const APPLICABLE_RATINGS: Readonly<Record<CalibrationGroup, readonly CalibrationRating[]>> =
+  {
+    proactive_pushed: ["useful", "unneeded"],
+    proactive_silent: ["useful", "missed"],
+    memory_skipped: ["useful", "missed"],
+    memory_kept: ["useful", "unneeded"],
+    consolidation: ["useful", "unneeded"],
+    memory_pending: ["useful", "unneeded"],
+    context_truncation: ["useful", "unneeded"],
+    retrieval_degrade: ["useful", "unneeded"],
+    external_read: ["useful", "unneeded"],
+    rule_review: ["useful", "unneeded"],
+    memory_capture_failed: ["useful", "missed"],
+  };
 
 const GROUP_LABELS: Readonly<Record<CalibrationGroup, string>> = {
   proactive_pushed: "读完邮件提醒了你",
@@ -306,7 +313,7 @@ export function summarizeDecisions(
     const rated = ofGroup.filter((row) => row.ownerRating !== null);
     const count = (rating: CalibrationRating) =>
       rated.filter((row) => row.ownerRating === rating).length;
-    const applicable = APPLICABLE[group];
+    const applicable = APPLICABLE_RATINGS[group];
     const rate = (rating: CalibrationRating) =>
       applicable.includes(rating) ? proportion(count(rating), rated.length, minimumSamples) : null;
     return {
@@ -780,6 +787,17 @@ export interface HistoryRecord {
       readonly medianDelayMs: number | null;
     }[];
   };
+  readonly prereview?: {
+    readonly modelRef: string | null;
+    readonly promptId: string | null;
+    readonly groups: readonly {
+      readonly group: CalibrationGroup;
+      readonly prereviewed: number;
+      readonly unsure: number;
+      readonly paired: number;
+      readonly agreed: number;
+    }[];
+  };
 }
 
 const GAP_LINE_LABELS: Readonly<Record<GapLineName, string>> = Object.freeze({
@@ -837,6 +855,7 @@ export function buildReport({
   minimumSamples,
   previous,
   gap,
+  sections = [],
 }: {
   readonly window: CalibrationWindow;
   readonly scope: { readonly ownerId: string; readonly agentId: string };
@@ -846,6 +865,7 @@ export function buildReport({
   readonly minimumSamples: number;
   readonly previous?: HistoryRecord | undefined;
   readonly gap?: GapSummary | undefined;
+  readonly sections?: readonly string[];
 }): string {
   const lines: string[] = [];
   lines.push(`# 校准周报：${window.label}`, "");
@@ -911,6 +931,7 @@ export function buildReport({
         "",
       );
   }
+  lines.push(...sections);
   lines.push("## 与上一周对比", "");
   if (!previous) lines.push("没有更早的记录可比。", "");
   else {
@@ -941,6 +962,7 @@ export function historyRecord({
   minimumSamples,
   commit,
   recordedAt,
+  prereview,
 }: {
   readonly window: CalibrationWindow;
   readonly scope: { readonly ownerId: string; readonly agentId: string };
@@ -950,6 +972,7 @@ export function historyRecord({
   readonly minimumSamples: number;
   readonly commit: string;
   readonly recordedAt: string;
+  readonly prereview?: PrereviewWeekSummary;
 }): HistoryRecord {
   return {
     schema: HISTORY_SCHEMA,
@@ -985,6 +1008,19 @@ export function historyRecord({
         medianDelayMs,
       })),
     },
+    prereview: {
+      modelRef: prereview?.version?.modelRef ?? null,
+      promptId: prereview?.version?.promptId ?? null,
+      groups: (prereview?.groups ?? []).map(
+        ({ group, prereviewed, unsure, paired, agreement }) => ({
+          group,
+          prereviewed,
+          unsure,
+          paired,
+          agreed: agreement.successes,
+        }),
+      ),
+    },
   };
 }
 
@@ -997,7 +1033,8 @@ export function sameMeasurement(left: HistoryRecord, right: HistoryRecord): bool
     left.minimumSamples === right.minimumSamples &&
     JSON.stringify(left.groups) === JSON.stringify(right.groups) &&
     JSON.stringify(left.muse) === JSON.stringify(right.muse) &&
-    JSON.stringify(left.implicit) === JSON.stringify(right.implicit)
+    JSON.stringify(left.implicit) === JSON.stringify(right.implicit) &&
+    JSON.stringify(left.prereview ?? null) === JSON.stringify(right.prereview ?? null)
   );
 }
 export * from "./thresholds.ts";
