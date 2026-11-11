@@ -965,11 +965,46 @@ describe("[P1-3] the basis drawer of a decision record", () => {
       items: [
         {
           ruleId: "floor_money_words",
+          revision: 1,
+          current: false,
+          kind: "money_words",
           origin: "built_in",
-          document: "ADR 0106 第 4 条",
+          source: "ADR 0106 第 4 条；ADR 0209",
+          status: "active",
+          changedAt: null,
+          memory: null,
+          wording: { values: ["账单", "invoice"], quietHours: [], amount: null },
+          tests: { state: "passed", total: 5, failedAt: null },
           mailCount: 2,
         },
-        { ruleId: "floor_unknown", origin: null, document: null, mailCount: 1 },
+        {
+          ruleId: "floor_important_sender",
+          revision: 3,
+          current: false,
+          kind: "important_sender",
+          origin: "owner_setting",
+          source: "ADR 0106 第 4 条；主人的设置“重要发件人”",
+          status: "needs_review",
+          changedAt: "2026-11-03T01:00:00.000Z",
+          memory: { memoryId: "memory-rule", state: "visible", text: "银行的信一律提醒我" },
+          wording: { values: ["bank.example"], quietHours: [], amount: null },
+          tests: { state: "failed", total: 3, failedAt: 2 },
+          mailCount: 1,
+        },
+        {
+          ruleId: "floor_unknown",
+          revision: null,
+          current: true,
+          kind: "unknown",
+          origin: null,
+          source: null,
+          status: null,
+          changedAt: null,
+          memory: null,
+          wording: null,
+          tests: { state: "unavailable", total: 0, failedAt: null },
+          mailCount: 1,
+        },
       ],
     },
     mails: { judged: 3, related: 2, relatedRead: "partial" },
@@ -1045,8 +1080,17 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     const drawer = text(".decision-chain");
     expect(drawer).toContain("命中的规则");
     expect(drawer).toContain("内置规则");
-    expect(drawer).toContain("ADR 0106 第 4 条");
+    expect(drawer).toContain("出处：ADR 0106 第 4 条；ADR 0209 · 第 1 版");
+    expect(drawer).toContain("词表：账单、invoice");
+    expect(drawer).toContain("测试：5 条例子全部通过");
+    expect(drawer).toContain("原话：银行的信一律提醒我");
+    expect(drawer).toContain("重要名单：bank.example");
+    expect(drawer).toContain("待重审");
+    expect(drawer).toContain("测试：第 2 条例子不符（共 3 条）");
     expect(drawer).toContain("未登记的规则");
+    expect(drawer).toContain("这一版的规则内容查不到");
+    expect(drawer).toContain("测试：查不到");
+    expect(drawer).toContain("只记了规则名，显示的是现在的版本");
     expect(drawer).toContain("判断了 3 封");
     expect(drawer).toContain("关联邮件：只读到一部分");
     expect(drawer).toContain("我住在东京");
@@ -1092,7 +1136,26 @@ describe("[P1-3] the basis drawer of a decision record", () => {
       decision: { ...chain().decision, kind: "rule_review", outcome: "needs_review" },
       rules: {
         state: "recorded",
-        items: [{ ruleId: "quiet_hours", origin: null, document: null, mailCount: 0 }],
+        items: [
+          {
+            ruleId: "quiet_hours",
+            revision: 2,
+            current: true,
+            kind: "quiet_hours",
+            origin: "owner_setting",
+            source: "ADR 0106；主人的设置“静默时段”",
+            status: "needs_review",
+            changedAt: "2026-11-03T01:00:00.000Z",
+            memory: null,
+            wording: {
+              values: [],
+              quietHours: [{ days: [1, 2], start: "23:00", end: "07:00" }],
+              amount: null,
+            },
+            tests: { state: "passed", total: 4, failedAt: null },
+            mailCount: 0,
+          },
+        ],
       },
       mails: null,
     });
@@ -1101,7 +1164,8 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     await flush();
     const drawer = text(".decision-chain");
     expect(drawer).toContain("待重审的规则");
-    expect(drawer).toContain("quiet_hours");
+    expect(drawer).toContain("静默时段");
+    expect(drawer).toContain("23:00–07:00");
     expect(drawer).not.toContain("命中的规则");
     expect(drawer).not.toContain("封邮件");
   });

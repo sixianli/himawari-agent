@@ -984,10 +984,20 @@ export const messages = {
   "decision.chain.rules": "命中的规则",
   "decision.chain.reviewRules": "待重审的规则",
   "decision.chain.rule":
-    "{id, select, floor_important_sender {重要来信不放过：发件人在你的重要名单里} floor_public_domain {重要来信不放过：来自政府或学校域名} floor_money_words {重要来信不放过：邮件里有金额相关的词} other {{id}}}",
+    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：邮件里有金额相关的词} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {你设定的} built_in {内置规则} other {未登记的规则}}",
   "decision.chain.ruleMails": "命中 {count} 封邮件",
+  "decision.chain.ruleNeedsReview": "待重审",
+  "decision.chain.ruleQuote": "原话：{text}",
+  "decision.chain.ruleWording":
+    "{k, select, important_sender {{empty, select, yes {重要名单是空的} other {重要名单：{text}}}} public_domain {域名后缀：{text}} money_words {词表：{text}} quiet_hours {{empty, select, yes {没有设静默时段} other {时段：{text}}}} amount_threshold {门槛：{text}} other {{text}}}",
+  "decision.chain.ruleWordingMissing": "这一版的规则内容查不到",
+  "decision.chain.ruleSource": "出处：{source} · 第 {revision} 版",
+  "decision.chain.ruleCurrent": "只记了规则名，显示的是现在的版本",
+  "decision.chain.ruleTests":
+    "{s, select, passed {测试：{total} 条例子全部通过} failed {测试：第 {at} 条例子不符（共 {total} 条）} none {测试：这条规则没有例子} other {测试：查不到}}",
+  "decision.chain.listSeparator": "、",
   "decision.chain.mails": "看过的邮件",
   "decision.chain.judged": "判断了 {count} 封",
   "decision.chain.related": "关联邮件 {count} 封",

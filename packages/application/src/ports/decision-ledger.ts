@@ -5,6 +5,7 @@ import type {
   MuseEntryRow,
 } from "@himawari-agent/calibration";
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
+import type { RuleBookVersion } from "../rules/rule-ref.js";
 import type { ProactiveScope } from "./proactive-checks.js";
 
 export interface CalibrationRowsSnapshot {
@@ -135,6 +136,7 @@ export interface DecisionLedgerEntry {
 export interface DecisionRecordRead {
   readonly entry: DecisionLedgerEntry;
   readonly inputFields: readonly string[];
+  readonly ruleVersions?: Readonly<Record<string, RuleBookVersion>>;
 }
 
 interface MuseReferenceBase {

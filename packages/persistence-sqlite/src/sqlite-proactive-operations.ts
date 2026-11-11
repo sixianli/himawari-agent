@@ -62,6 +62,14 @@ const DEFAULT_QUIET_HOURS: readonly ProactiveQuietPeriod[] = Object.freeze([
     end: "07:00",
   }),
 ]);
+export function defaultRuleParameters(
+  ruleId: string,
+): Readonly<Record<string, unknown>> | undefined {
+  if (ruleId === QUIET_HOURS_RULE_ID) return Object.freeze({ periods: DEFAULT_QUIET_HOURS });
+  if (ruleId === IMPORTANT_SENDER_RULE_ID) return Object.freeze({ senders: Object.freeze([]) });
+  return undefined;
+}
+
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/u;
 
 const decisionColumns = `id, scenario, checked_at AS checkedAt, counts, verdict,

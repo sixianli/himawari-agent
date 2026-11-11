@@ -513,9 +513,11 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
       );
       expect(lowConfidence.length).toBeGreaterThan(0);
       for (const entry of lowConfidence) {
-        expect(entry.inputs.ruleIds).toEqual(["confidence_below_threshold"]);
+        expect(entry.inputs.ruleIds).toEqual([]);
         expect(content.plaintextByRef.get(entry.contentRef ?? "")).toBeTruthy();
       }
+      for (const entry of ledger.filter((item) => item.kind === "memory_candidate"))
+        expect(entry.inputs.ruleIds, `[P2-7] ${entry.reasonCode}`).toEqual([]);
       for (const entry of ledger.filter((item) => item.reasonCode === "restricted_excluded"))
         expect(entry.contentRef).toBeNull();
       expect(

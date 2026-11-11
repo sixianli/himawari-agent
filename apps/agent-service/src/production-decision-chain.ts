@@ -1,10 +1,11 @@
 import {
   ApplicationPortError,
   type DecisionLedgerPort,
-  decisionRuleDefinition,
+  describeRuleVersion,
   type MemoryBasisChainNode,
   PORT_ERROR_CODES,
   type ProductMemoryRecord,
+  parseRuleRef,
 } from "@himawari-agent/application";
 import type { GatewayV2Query, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 
@@ -96,20 +97,57 @@ export async function readDecisionChain(
   const proactive = entry.kind === "proactive";
   const rulesRecorded = proactive || entry.kind === "rule_review";
 
-  const floorMailCounts = new Map<string, number>();
-  for (const rules of Object.values(inputs.floorHits))
-    for (const rule of new Set(rules))
-      floorMailCounts.set(rule, (floorMailCounts.get(rule) ?? 0) + 1);
+  const ruleMailCounts = new Map<string, number>();
+  for (const hits of [inputs.floorHits, inputs.ruleHits ?? {}])
+    for (const refs of Object.values(hits))
+      for (const ruleId of new Set(refs.map((ref) => parseRuleRef(ref).ruleId)))
+        ruleMailCounts.set(ruleId, (ruleMailCounts.get(ruleId) ?? 0) + 1);
+  const ruleViews = rulesRecorded
+    ? sortedUnique(inputs.ruleIds).map((ref) =>
+        describeRuleVersion(parseRuleRef(ref), found.ruleVersions?.[ref]),
+      )
+    : [];
+  const ruleMemoryIds = sortedUnique(
+    ruleViews.flatMap(({ sourceMemoryId }) => (sourceMemoryId ? [sourceMemoryId] : [])),
+  );
+  const ruleMemoryTexts =
+    ruleMemoryIds.length > 0 ? await dependencies.texts(ruleMemoryIds) : new Map();
   const rules: ChainPayload["rules"] = rulesRecorded
     ? {
         state: sectionState(fields, "ruleIds", inputs.ruleIds),
-        items: sortedUnique(inputs.ruleIds).map((ruleId) => {
-          const definition = decisionRuleDefinition(ruleId);
+        items: ruleViews.map((view) => {
+          const memoryText = view.sourceMemoryId
+            ? ruleMemoryTexts.get(view.sourceMemoryId)
+            : undefined;
           return {
-            ruleId: displayRuleId(ruleId),
-            origin: definition?.origin ?? null,
-            document: definition?.document ?? null,
-            mailCount: floorMailCounts.get(ruleId) ?? 0,
+            ruleId: displayRuleId(view.ruleId),
+            revision: view.revision,
+            current: view.current,
+            kind: view.kind,
+            origin: view.origin,
+            source: view.source,
+            status: view.status,
+            changedAt: view.changedAt,
+            memory: view.sourceMemoryId
+              ? {
+                  memoryId: view.sourceMemoryId,
+                  state: !memoryText ? "missing" : memoryText.hidden ? "hidden" : "visible",
+                  text: memoryText?.text?.slice(0, NODE_TEXT_LIMIT) ?? null,
+                }
+              : null,
+            wording: view.wording
+              ? {
+                  values: view.wording.values.map((value) => value.slice(0, 256)),
+                  quietHours: view.wording.quietHours.map(({ days, start, end }) => ({
+                    days: [...days],
+                    start,
+                    end,
+                  })),
+                  amount: view.wording.amount,
+                }
+              : null,
+            tests: view.tests,
+            mailCount: ruleMailCounts.get(view.ruleId) ?? 0,
           };
         }),
       }
