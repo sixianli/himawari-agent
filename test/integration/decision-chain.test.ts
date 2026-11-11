@@ -691,6 +691,45 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
     }
   });
 
+  it("[P2-7] shows the default quiet hours and an empty important list for revision 0, and nothing for a bare id with no row", async () => {
+    const f = await fixture();
+    try {
+      await recordGmail(
+        f.repository,
+        "gmail-defaults",
+        gmailInputs({
+          ruleIds: ["floor_important_sender@0", "quiet_hours", "quiet_hours@0"],
+          floorHits: {},
+          memoryIds: [],
+          memoryByMail: {},
+          usedMemoryIds: [],
+        }),
+      );
+      const chain = await chainOf(f.control, "gmail-defaults");
+      const items = chain.rules.items;
+      expect(
+        items.find((item) => item.ruleId === "quiet_hours" && item.revision === 0),
+      ).toMatchObject({
+        current: false,
+        changedAt: null,
+        wording: { quietHours: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }] },
+        tests: { state: "passed", failedAt: null },
+      });
+      expect(items.find((item) => item.ruleId === "floor_important_sender")).toMatchObject({
+        revision: 0,
+        wording: { values: [] },
+        tests: { state: "passed", total: 1 },
+      });
+      expect(items.find((item) => item.ruleId === "quiet_hours" && item.current)).toMatchObject({
+        revision: null,
+        wording: null,
+        tests: { state: "unavailable" },
+      });
+    } finally {
+      await f.repository.close();
+    }
+  });
+
   it("[P2-7] shows the rule's own words when it came from a rule memory, and its review state", async () => {
     const f = await fixture();
     try {

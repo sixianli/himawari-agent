@@ -90,7 +90,9 @@ Andy 2026-11-11 在选择卡上选了“实算例子并补空的”：抽屉打�
 
 ## 后果
 
-- 删除了 `DECISION_RULE_CATALOG`：规则的来源和出处直接从规则手册读，不再有第二份登记表。
+- 删除了 `DECISION_RULE_CATALOG`：规则的来源（你设定的 / 内置）和出处改由生成那条规则的代码（`packages/application/src/rules/rule-book.ts` 里每条规则的 `origin`、`source`）给出，不再有第二份登记表。规则手册表 `rule_book_rules.source` 列现在只有写设置时留下的内部标记（例如 `owner setting: important senders`），不给主人看；规则来自一句话时，“原话”一行显示那条记忆。
+- 本 ADR 取代两处旧说法：[ADR 0195](0195-show-the-whole-chain-of-one-decision-record.md) 决定 4“规则出处登记在 `DECISION_RULE_CATALOG`”和它列出的 `decision-rule-catalog.unit.test.ts`；[ADR 0212](0212-hard-rules-step2-amount-field-and-push-suppression.md) 决定 4 里“原有的 `floorHits`、`ruleIds` 不变”中关于 `ruleIds` 的部分。两份 ADR 的其余决定不变。
+- 邮件详情页“这封邮件用到”的规则，除了按邮件记的地板规则，也算上这封邮件的“小额不推送”命中；静默时段管的是整次推送，不按邮件算，所以它的“命中 N 封邮件”是 0。
 - 决策记录写入约定（`docs/execution/specs/2026-11-09-decision-record-write-convention.md`）同步改为“写规则 id@修订号”。
 - 现在没有任何规则来自规则类记忆（ADR 0211 后果），所以“原话”这一行要等第 4 步填上 `source_memory_id` 才会出现；集成测试用直接改表的方式覆盖了它。
 - “小额不推送”的参数还不在规则手册表里，它出现在抽屉时内容显示“查不到”，等第 4 步把它存进规则手册后自动显示。

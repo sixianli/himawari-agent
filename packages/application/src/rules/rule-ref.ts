@@ -4,7 +4,7 @@ export interface RuleRef {
 }
 
 export function ruleRef(ruleId: string, revision: number): string {
-  return `${ruleId}@${revision}`.slice(0, 256);
+  return `${ruleId.slice(0, 240)}@${revision}`;
 }
 
 export function parseRuleRef(value: string): RuleRef {

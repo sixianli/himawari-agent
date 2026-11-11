@@ -158,6 +158,9 @@ describe("[P2-7] decision records point at a rule version", () => {
     expect(
       floorHitRefs({ m1: [RULE_IDS.importantSender], m2: [RULE_IDS.importantSender] }, rules),
     ).toEqual(["floor_important_sender@5"]);
+    expect(floorHitRefs({ m1: ["floor_not_in_book"] }, rules)).toEqual(["floor_not_in_book"]);
+    expect(ruleRef("x".repeat(300), 12)).toBe(`${"x".repeat(240)}@12`);
+    expect(parseRuleRef(ruleRef("x".repeat(300), 12)).revision).toBe(12);
     expect(quietHitRefs("2026-11-10T03:00:00.000Z", rules, "Asia/Tokyo")).toEqual([
       "quiet_hours@7",
     ]);
