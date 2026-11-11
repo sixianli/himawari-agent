@@ -44,6 +44,8 @@ import {
   assertProductionSecretSource,
   BoundedJwksFetcher,
   CloudflareAccessJwtVerifier,
+  createDemoGoogleOAuth,
+  createDemoMailReader,
   createGmailReader,
   createGoogleOAuth,
   createWebPushSender,
@@ -1574,10 +1576,11 @@ export async function runAgentService(
       const consolidationProjection = memoryComposition.projection;
       runMemoryEpisodes = memoryEpisodes;
       const proactiveConfiguration = configuration.runPolicy?.proactive;
-      const proactiveSecret = proactiveConfiguration
+      const proactiveGmail = proactiveConfiguration?.gmail;
+      const proactiveSecret = proactiveGmail
         ? configuration.secretReferences.find(
             ({ ref, purpose }) =>
-              ref === proactiveConfiguration.gmail.clientSecretRef &&
+              ref === proactiveGmail.clientSecretRef &&
               purpose === GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
           )
         : undefined;
@@ -1591,7 +1594,9 @@ export async function runAgentService(
         agentId: configuration.agentId,
       };
       const proactiveStore =
-        proactiveConfiguration && proactiveSecret && proactiveDescriptor
+        proactiveConfiguration &&
+        (proactiveSecret || proactiveConfiguration.demoInbox) &&
+        proactiveDescriptor
           ? repository.proactive()
           : undefined;
       const proactiveSeal =
@@ -1604,19 +1609,23 @@ export async function runAgentService(
           : undefined;
       if (
         proactiveConfiguration &&
-        proactiveSecret &&
+        (proactiveSecret || proactiveConfiguration.demoInbox) &&
         proactiveDescriptor &&
         proactiveStore &&
         proactiveSeal
       ) {
-        const oauth = createGoogleOAuth({
-          clientId: proactiveConfiguration.gmail.clientId,
-          clientSecret: await hostModelSources(configuration).provider.resolve(
-            proactiveSecret.ref,
-            proactiveSecret.version,
-          ),
-          redirectUri: proactiveRedirectUri(configuration.publicOrigin),
-        });
+        const demoInbox = proactiveConfiguration.demoInbox;
+        const oauth =
+          demoInbox || !proactiveGmail || !proactiveSecret
+            ? createDemoGoogleOAuth()
+            : createGoogleOAuth({
+                clientId: proactiveGmail.clientId,
+                clientSecret: await hostModelSources(configuration).provider.resolve(
+                  proactiveSecret.ref,
+                  proactiveSecret.version,
+                ),
+                redirectUri: proactiveRedirectUri(configuration.publicOrigin),
+              });
         const feedbackStore = repository.webPush();
         const reviewPayloads = repository.payloadStore(
           configuration.ownerId,
@@ -1705,7 +1714,10 @@ export async function runAgentService(
           ownerRules: repository.ownerRules(),
           seal: proactiveSeal,
           oauth,
-          reader: createGmailReader({ oauth }),
+          ...(demoInbox ? { demoInbox } : {}),
+          reader: demoInbox
+            ? createDemoMailReader({ now: () => clock.now() })
+            : createGmailReader({ oauth }),
           readAccount: (accessToken) => readGmailAccount({ accessToken }),
           ledger: repository.decisionLedger(),
           readMemoryText: readReviewText,

@@ -1222,7 +1222,7 @@ export const messages = {
     "Disconnecting revokes access at Google and deletes every to-do and key point extracted from your mail. Disconnect?",
   "proactive.apps.disconnected": "Disconnected, and access was revoked at Google.",
   "proactive.apps.outcome":
-    "{o, select, connected {Gmail connected. The first check starts now.} denied {You didn’t allow access on the Google page, so nothing was connected.} other {Connecting didn’t work. Please try again.}}",
+    "{o, select, connected {Gmail connected. The first check starts now.} denied {You didn’t allow access on the Google page, so nothing was connected.} demo {This trial uses a sample inbox, so your own mailbox can’t be connected. The sample inbox is ready.} other {Connecting didn’t work. Please try again.}}",
   "proactive.apps.what": "What Himawari reads and who receives it",
   "proactive.apps.what1":
     "Read-only; never archives, labels or replies. To judge a new mail it also looks up earlier mail about the same matter (including archived mail and mail you sent) and sends that to the model too",

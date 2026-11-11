@@ -1470,6 +1470,41 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
   }
 });
 
+it("[P6-demo] accepts a fake inbox in place of Gmail, in one of the offered languages, and never both at once", () => {
+  const raw = config("/tmp/himawari-demo-inbox-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const references = raw["secretReferences"] as unknown[];
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "google-oauth", version: "v1", purpose: "google-oauth-client", scope: "agent" },
+  ];
+  const gmail = {
+    clientId: "123-abc.apps.googleusercontent.com",
+    clientSecretRef: "google-oauth",
+  };
+  for (const locale of ["ja", "en"]) {
+    raw["runPolicy"] = { ...policy, proactive: { modelRef: "model-primary", demoInbox: locale } };
+    const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive;
+    expect(parsed?.demoInbox).toBe(locale);
+    expect(parsed).not.toHaveProperty("gmail");
+  }
+  for (const invalid of [
+    { modelRef: "model-primary" },
+    { modelRef: "model-primary", gmail, demoInbox: "ja" },
+    { modelRef: "model-primary", demoInbox: "zh-CN" },
+    { modelRef: "model-primary", demoInbox: "" },
+    { modelRef: "model-primary", demoInbox: true },
+  ]) {
+    raw["runPolicy"] = { ...policy, proactive: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});
+
 it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own audience and no shared secret", () => {
   const raw = config("/tmp/himawari-mcp-access-config");
   const policy = {

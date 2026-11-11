@@ -35,7 +35,12 @@ import type {
   GatewayV2Query,
   GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
-import type { GoogleOAuth } from "@himawari-agent/platform-node";
+import {
+  DEMO_MAILBOX_ACCOUNT,
+  DEMO_MAILBOX_SETTINGS_RETURN,
+  demoMailboxToken,
+  type GoogleOAuth,
+} from "@himawari-agent/platform-node";
 import type { ProactivePushSource } from "./production-web-push.js";
 
 export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
@@ -144,6 +149,7 @@ export interface ProductionProactiveOptions {
   readonly ownerRules?: Pick<OwnerRuleStorePort, "list">;
   readonly seal: ProactiveSealPort;
   readonly oauth: GoogleOAuth;
+  readonly demoInbox?: ProactiveConfiguration["demoInbox"];
   readonly reader: ProactiveSourceReader;
   readonly readAccount: (accessToken: string) => Promise<string>;
   readonly model: ProactiveModelInvoker;
@@ -212,7 +218,47 @@ export class ProductionProactive {
     if (this.#timer) return;
     this.#timer = setInterval(() => void this.tick(), this.#options.configuration.intervalMs);
     this.#timer.unref?.();
-    void this.tick();
+    if (!this.#options.demoInbox) {
+      void this.tick();
+      return;
+    }
+    void this.seedDemoInbox()
+      .catch(this.#options.onFailure)
+      .then(() => this.tick());
+  }
+
+  async seedDemoInbox(): Promise<void> {
+    const { demoInbox, scope, store, seal, clock } = this.#options;
+    if (!demoInbox) return;
+    if (await store.readConnection({ ...scope, source: "gmail" })) return;
+    const now = clock.now();
+    await store.saveConnection({
+      ...scope,
+      connection: {
+        source: "gmail",
+        accountRef: await seal.seal({ ...scope, text: DEMO_MAILBOX_ACCOUNT, at: now }),
+        tokenRef: await seal.seal({
+          ...scope,
+          text: demoMailboxToken(demoInbox, now),
+          at: now,
+        }),
+        cursor: null,
+        status: "connected",
+        connectedAt: now,
+        updatedAt: now,
+      },
+    });
+    const settings = await store.readSettings(scope);
+    await store.writeSettings({ ...scope, ...settings, enabled: true, now });
+  }
+
+  async authorizationRedirect(owner: string): Promise<string> {
+    if (this.#options.demoInbox) {
+      await this.seedDemoInbox();
+      void this.tick();
+      return DEMO_MAILBOX_SETTINGS_RETURN;
+    }
+    return this.beginAuthorization(owner);
   }
 
   async stop(): Promise<void> {

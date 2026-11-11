@@ -1,4 +1,4 @@
-import type { AgentId, DeploymentId, OwnerId } from "@himawari-agent/domain";
+import type { AgentId, DeploymentId, DemoLocale, OwnerId } from "@himawari-agent/domain";
 import type { DataClassification } from "./common.js";
 import type { ModelProviderRouting } from "./intelligence.js";
 import type { WebProviderId } from "./web-providers.js";
@@ -222,7 +222,8 @@ export interface ProactiveGmailConfiguration {
 
 export interface ProactiveConfiguration {
   readonly modelRef: string;
-  readonly gmail: ProactiveGmailConfiguration;
+  readonly gmail?: ProactiveGmailConfiguration;
+  readonly demoInbox?: DemoLocale;
   readonly intervalMs: number;
   readonly perCheckMs: number;
   readonly dailyCostMicros: number;
