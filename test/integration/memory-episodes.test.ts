@@ -400,6 +400,9 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
       expect(await ids({ createdAt: first.createdAt, id: "\uffff" })).toEqual(rest);
       expect(await ids({ createdAt: first.createdAt, id: "" })).toEqual(all.map(({ id }) => id));
       expect(await ids({ createdAt: second.createdAt, id: second.id })).toEqual(rest.slice(1));
+      await expect(
+        episodes.listUnembedded({ ...unembedded, after: { createdAt: 1, id: first.id } as never }),
+      ).rejects.toThrow("position");
     } finally {
       await resource.repository.close();
     }

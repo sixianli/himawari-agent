@@ -1,4 +1,9 @@
-import type { MemoryEpisode, MemoryEpisodeStorePort } from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  type MemoryEpisode,
+  type MemoryEpisodeStorePort,
+  PORT_ERROR_CODES,
+} from "@himawari-agent/application";
 import { createAgentId, createOwnerId, createThreadId } from "@himawari-agent/domain";
 import { describe, expect, it } from "vitest";
 import { MemoryEpisodeService } from "../src/episodes.ts";
@@ -70,7 +75,7 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
     expect(embedded.some((text) => text.includes("ep-secret"))).toBe(false);
   });
 
-  it("[P3-1] summaries that cannot be embedded never hold back the ones after them, wait before being tried again, and each call tries at most three", async () => {
+  it("[P3-1] summaries that cannot be embedded never hold back the ones after them and wait before being tried again, while an outage stops the backfill without marking anything", async () => {
     const attached: string[] = [];
     const tried: string[] = [];
     let stored: MemoryEpisode[] = [];
@@ -107,7 +112,24 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
         embedQuery: async () => new Float32Array([1, 0]),
         embedDocument: async (text: string) => {
           tried.push(text.slice(text.indexOf("payload-") + 8));
-          if (text.includes("broken")) throw new Error("EMBEDDING_LOCAL_INPUT_LENGTH");
+          if (text.includes("down"))
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.PROVIDER_FAILURE,
+              "EMBEDDING_LOCAL_NOT_READY",
+            );
+          if (text.includes("broken"))
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.PROVIDER_FAILURE,
+              "EMBEDDING_LOCAL_INPUT_LENGTH",
+            );
+          if (text.includes("rejected"))
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.PROVIDER_FAILURE,
+              "EMBEDDING_HTTP_FAILURE",
+              {
+                status: "400",
+              },
+            );
           return new Float32Array([1, 0]);
         },
       },
@@ -118,28 +140,29 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
     stored = ["a-broken", "b-fine"].map((id) => episode(id, "private"));
     expect(await run()).toBe(1);
     expect(attached).toEqual(["b-fine"]);
-    stored = ["c-broken", "d-broken", "e-broken", "f-broken", "g-broken", "h-fine", "i-fine"].map(
+    stored = ["c-broken", "d-broken", "e-rejected", "f-broken", "g-broken", "h-fine", "i-fine"].map(
       (id) => episode(id, "private"),
     );
     attached.length = 0;
     tried.length = 0;
-    await expect(run()).rejects.toThrow("EMBEDDING_LOCAL_INPUT_LENGTH");
-    expect(tried).toEqual(["c-broken", "d-broken", "e-broken"]);
     expect(await run()).toBe(1);
-    expect(tried.slice(3)).toEqual(["f-broken", "g-broken", "h-fine"]);
+    expect(tried).toEqual(["c-broken", "d-broken", "e-rejected", "f-broken", "g-broken", "h-fine"]);
     expect(await run(100)).toBe(1);
-    expect(tried.slice(6)).toEqual(["i-fine"]);
     expect(await run(100)).toBe(0);
-    expect(tried).toHaveLength(7);
+    expect(tried.slice(6)).toEqual(["i-fine"]);
     expect(attached).toEqual(["h-fine", "i-fine"]);
     now += 3_600_000;
     await expect(run(100)).rejects.toThrow("EMBEDDING_LOCAL_INPUT_LENGTH");
-    expect(tried.slice(7)).toEqual(["c-broken", "d-broken", "e-broken"]);
-    await expect(run(100)).rejects.toThrow("EMBEDDING_LOCAL_INPUT_LENGTH");
-    expect(tried.slice(10)).toEqual(["f-broken", "g-broken"]);
-    expect(await run(100)).toBe(0);
+    expect(tried.slice(7)).toEqual(["c-broken", "d-broken", "e-rejected", "f-broken", "g-broken"]);
     now += 3_600_000;
     expect(await run(100)).toBe(0);
-    expect(tried).toHaveLength(12);
+    now -= 30 * 24 * 3_600_000;
+    await expect(run(100)).rejects.toThrow("EMBEDDING_LOCAL_INPUT_LENGTH");
+    expect(tried).toHaveLength(17);
+    stored = ["j-down", "k-fine"].map((id) => episode(id, "private"));
+    await expect(run()).rejects.toThrow("EMBEDDING_LOCAL_NOT_READY");
+    await expect(run()).rejects.toThrow("EMBEDDING_LOCAL_NOT_READY");
+    expect(tried.slice(17)).toEqual(["j-down", "j-down"]);
+    expect(attached).toEqual(["h-fine", "i-fine"]);
   });
 });

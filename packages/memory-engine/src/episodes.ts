@@ -1,4 +1,5 @@
 import {
+  ApplicationPortError,
   type DataClassification,
   highestClassification,
   isModelVisible,
@@ -25,9 +26,24 @@ const MAXIMUM_SUMMARY_CHARACTERS = 1200;
 const RRF_K = 60;
 const UNSUMMARIZED = "（这段对话只含敏感内容，没有做摘要）";
 
-const FAILED_EMBEDDINGS_PER_BACKFILL = 3;
+const EPISODES_LISTED_PAST_LIMIT = 3;
 const FIRST_EMBEDDING_RETRY_MS = 3_600_000;
 const LONGEST_EMBEDDING_RETRY_MS = 24 * 3_600_000;
+const REMEMBERED_EMBEDDING_FAILURES = 10_000;
+const SUMMARY_EMBEDDING_FAILURES = new Set([
+  "EMBEDDING_LOCAL_INPUT_LENGTH",
+  "EMBEDDING_VECTOR_INVALID",
+]);
+const SUMMARY_REJECTION_STATUSES = new Set(["400", "413", "422"]);
+
+function failsOnlyThisSummary(error: unknown): boolean {
+  if (!(error instanceof ApplicationPortError)) return false;
+  if (SUMMARY_EMBEDDING_FAILURES.has(error.message)) return true;
+  return (
+    error.message === "EMBEDDING_HTTP_FAILURE" &&
+    SUMMARY_REJECTION_STATUSES.has(error.details["status"] ?? "")
+  );
+}
 
 export interface EpisodeSegment {
   readonly ownerId: OwnerId;
@@ -346,10 +362,9 @@ export class MemoryEpisodeService {
     const position = [input.ownerId, input.agentId, embedder.model, embedder.dimensions].join(
       "\u0000",
     );
-    const pageSize = Math.min(100, input.limit + FAILED_EMBEDDINGS_PER_BACKFILL);
+    const pageSize = Math.min(100, input.limit + EPISODES_LISTED_PAST_LIMIT);
     let after: { createdAt: string; id: string } | undefined;
     let embedded = 0;
-    let failed = 0;
     let failure: { readonly error: unknown } | undefined;
     pages: for (;;) {
       const episodes = await this.#options.store.listUnembedded({
@@ -366,7 +381,9 @@ export class MemoryEpisodeService {
         const key = `${position}\u0000${episode.id}`;
         const retry = this.#embeddingRetries.get(key);
         if (this.#embeddingsInFlight.has(key)) continue;
-        if (retry && retry.notBefore > Date.parse(this.#options.now())) continue;
+        const now = Date.parse(this.#options.now());
+        if (retry && retry.notBefore > now && retry.notBefore - now <= LONGEST_EMBEDDING_RETRY_MS)
+          continue;
         this.#embeddingsInFlight.add(key);
         try {
           const text = await this.#options.readText({
@@ -381,9 +398,10 @@ export class MemoryEpisodeService {
               embedder.embedDocument(`${episode.day}\n${text}`),
             );
           } catch (error) {
+            if (!failsOnlyThisSummary(error)) throw error;
             failure ??= { error };
-            failed += 1;
             const failures = (retry?.failures ?? 0) + 1;
+            this.#embeddingRetries.delete(key);
             this.#embeddingRetries.set(key, {
               failures,
               notBefore:
@@ -393,7 +411,10 @@ export class MemoryEpisodeService {
                   LONGEST_EMBEDDING_RETRY_MS,
                 ),
             });
-            if (failed >= FAILED_EMBEDDINGS_PER_BACKFILL) break pages;
+            for (const oldest of this.#embeddingRetries.keys()) {
+              if (this.#embeddingRetries.size <= REMEMBERED_EMBEDDING_FAILURES) break;
+              this.#embeddingRetries.delete(oldest);
+            }
             continue;
           }
           await this.#options.store.attachEmbedding({

@@ -19,10 +19,13 @@ SOURCES = {
         "externalData": ["onnx/model.onnx_data"],
         "quantization": "dynamic-int8-per-channel",
         "files": {
-            "onnx/model.onnx": "463fb3fec2adf9c47a946626dc2a0884e43091f95466083fb1754950000a7c1a",
-            "onnx/model.onnx_data": "0ae431b811baf89641ec67b690fb1d625c584d634c629362caf1e42438ca370e",
-            "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-            "tokenizer_config.json": "9da9b391de9bb545e047bdfd5d9abefe32ee41937acf6c3b06aae33d85d0a4b4",
+            name: digest
+            for digest, name in (
+                ("463fb3fec2adf9c47a946626dc2a0884e43091f95466083fb1754950000a7c1a", "onnx/model.onnx"),
+                ("0ae431b811baf89641ec67b690fb1d625c584d634c629362caf1e42438ca370e", "onnx/model.onnx_data"),
+                ("aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4", "tokenizer.json"),
+                ("9da9b391de9bb545e047bdfd5d9abefe32ee41937acf6c3b06aae33d85d0a4b4", "tokenizer_config.json"),
+            )
         },
     },
     "qwen3-embedding-0.6b-int8": {
@@ -33,9 +36,12 @@ SOURCES = {
         "externalData": [],
         "quantization": "none",
         "files": {
-            "onnx/model_quantized.onnx": "87cd124e0ef1fd1f223ebc283efccbaeac386d0b08344701c46975d0657b591f",
-            "tokenizer.json": "def76fb086971c7867b829c23a26261e38d9d74e02139253b38aeb9df8b4b50a",
-            "tokenizer_config.json": "977648852447cb6587327ff3205b0a84cf2fc9f05621d6c8e88a497caafab2e1",
+            name: digest
+            for digest, name in (
+                ("87cd124e0ef1fd1f223ebc283efccbaeac386d0b08344701c46975d0657b591f", "onnx/model_quantized.onnx"),
+                ("def76fb086971c7867b829c23a26261e38d9d74e02139253b38aeb9df8b4b50a", "tokenizer.json"),
+                ("977648852447cb6587327ff3205b0a84cf2fc9f05621d6c8e88a497caafab2e1", "tokenizer_config.json"),
+            )
         },
     },
     "embeddinggemma-2-fp32": {
@@ -46,10 +52,13 @@ SOURCES = {
         "externalData": ["onnx/model.onnx_data"],
         "quantization": "none",
         "files": {
-            "onnx/model.onnx": "bc47de15f81208a5c99e5ab10f746d5e33b51ea228b7dc0bef9c133a94f1c1c3",
-            "onnx/model.onnx_data": "9fd452bfc6916e5a92f080f8dada35598ca4512b21c65897d4c5974d5f9630a2",
-            "tokenizer.json": "4d777ef5bdc1aa36227abdfb77c3e49e7b9c892d16e1b6bda41c393504828be4",
-            "tokenizer_config.json": "17bd5d6e9364ca49a534e1502076593317c298d4a663623091ed45388f004874",
+            name: digest
+            for digest, name in (
+                ("bc47de15f81208a5c99e5ab10f746d5e33b51ea228b7dc0bef9c133a94f1c1c3", "onnx/model.onnx"),
+                ("9fd452bfc6916e5a92f080f8dada35598ca4512b21c65897d4c5974d5f9630a2", "onnx/model.onnx_data"),
+                ("4d777ef5bdc1aa36227abdfb77c3e49e7b9c892d16e1b6bda41c393504828be4", "tokenizer.json"),
+                ("17bd5d6e9364ca49a534e1502076593317c298d4a663623091ed45388f004874", "tokenizer_config.json"),
+            )
         },
     },
 }

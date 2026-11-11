@@ -461,6 +461,7 @@ export class SqliteMemoryOperations {
             agentId: AgentId;
             model: string;
             dimensions: number;
+            after?: { createdAt: string; id: string };
             limit: number;
           },
         );
@@ -1490,6 +1491,15 @@ export class SqliteMemoryOperations {
   }): readonly MemoryEpisode[] {
     if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100) {
       this.fail("PORT_INVALID_OPERATION", "Memory episode listing limit must be between 1 and 100");
+    }
+    if (
+      input.after !== undefined &&
+      (typeof input.after?.createdAt !== "string" || typeof input.after?.id !== "string")
+    ) {
+      this.fail(
+        "PORT_INVALID_OPERATION",
+        "Memory episode listing position must name a time and an id",
+      );
     }
     return (
       this.database
