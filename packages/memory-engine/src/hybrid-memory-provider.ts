@@ -151,6 +151,9 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     if (!Number.isSafeInteger(input.limit) || input.limit < 0 || input.limit > 1000)
       throw new RangeError("limit must be an integer between 0 and 1000");
     if (input.limit === 0) return [];
+    const minimumSimilarity = input.minimumSimilarity ?? this.#options.minimumSimilarity ?? 0;
+    if (!Number.isFinite(minimumSimilarity) || minimumSimilarity < 0 || minimumSimilarity > 1)
+      throw new RangeError("MEMORY_MINIMUM_SIMILARITY_INVALID");
     const embedder = this.#options.embedder;
     let embedding = null;
     if (embedder) {
@@ -170,9 +173,6 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     }
     const now = this.#options.now();
     const scope = input.scope ?? parseTimeScope(input.query, now, this.#options.timeZone);
-    const minimumSimilarity = input.minimumSimilarity ?? this.#options.minimumSimilarity ?? 0;
-    if (!Number.isFinite(minimumSimilarity) || minimumSimilarity < 0 || minimumSimilarity > 1)
-      throw new RangeError("MEMORY_MINIMUM_SIMILARITY_INVALID");
     const relevance = this.relevance;
     const result = await this.#options.index.search({
       ownerId: input.ownerId,

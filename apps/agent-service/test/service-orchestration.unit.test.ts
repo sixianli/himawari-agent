@@ -35,6 +35,7 @@ const boundary = vi.hoisted(() => ({
   runs: vi.fn(),
   memoryWorker: vi.fn(),
   durableMemory: vi.fn(),
+  memoryRecall: vi.fn(),
   events: [] as string[],
 }));
 vi.mock("@himawari-agent/platform-node", async (original) => ({
@@ -85,6 +86,18 @@ vi.mock("@himawari-agent/application", async (original) => {
     },
     recoverSandboxJobsAtStartup: boundary.recoverJobs,
     recoverSandboxExecutionsAtStartup: boundary.recoverExecutions,
+  };
+});
+vi.mock("../src/production-memory-recall.js", async (original) => {
+  const actual = await original<typeof import("../src/production-memory-recall.js")>();
+  return {
+    ...actual,
+    ProductionMemoryRecall: class extends actual.ProductionMemoryRecall {
+      constructor(options: ConstructorParameters<typeof actual.ProductionMemoryRecall>[0]) {
+        super(options);
+        boundary.memoryRecall(options);
+      }
+    },
   };
 });
 vi.mock("../src/production-model-composition.js", () => ({
@@ -826,6 +839,9 @@ describe("web service composition and readiness", () => {
     const runOptions = boundary.runs.mock.calls[0]?.[0];
     const modelOptions = boundary.modelComposition.mock.calls[0]?.[0];
     expect(boundary.durableMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ dedupeSameSource: false }),
+    );
+    expect(boundary.memoryRecall).toHaveBeenCalledWith(
       expect.objectContaining({ dedupeSameSource: false }),
     );
     expect(modelOptions.admission).toEqual(expect.any(Function));

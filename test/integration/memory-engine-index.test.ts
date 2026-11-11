@@ -353,6 +353,14 @@ describe.each(["worker", "direct"] as const)("memory engine index through %s", (
       });
       expect(unembedded.lexical.map(({ memoryId }) => memoryId)).toEqual(["memory-engine-allergy"]);
       expect(unembedded.lexical[0]?.similarity).toBeUndefined();
+      const otherModel = await index.search({
+        ...base,
+        embedding: { ...embedding, model: `${embedding.model}-next` },
+        minimumSimilarity: 0,
+      });
+      expect(otherModel.vector).toEqual([]);
+      expect(otherModel.lexical.length).toBeGreaterThan(0);
+      for (const candidate of otherModel.lexical) expect(candidate.similarity).toBeUndefined();
     } finally {
       await resource.repository.close();
     }

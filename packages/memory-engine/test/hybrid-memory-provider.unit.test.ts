@@ -263,11 +263,16 @@ describe("hybrid Memory provider relevance cutoff", () => {
       expect(() => provider(relevance)).toThrow("MEMORY_RELEVANCE_TUNING_INVALID");
   });
 
-  it("refuses a per-call floor that is not a finite number from 0 to 1", async () => {
+  it("refuses a per-call floor outside 0 to 1 before asking for an embedding, and accepts 1 like the Gmail setting", async () => {
+    const checked = provider();
     for (const minimumSimilarity of [Number.NaN, -0.1, 1.1])
       await expect(
-        provider().search({ ...query, relevanceCutoff: true, minimumSimilarity }),
+        checked.search({ ...query, relevanceCutoff: true, minimumSimilarity }),
       ).rejects.toThrow("MEMORY_MINIMUM_SIMILARITY_INVALID");
+    expect(checked.embedder?.embed).not.toHaveBeenCalled();
+    await expect(
+      provider().search({ ...query, relevanceCutoff: true, minimumSimilarity: 1 }),
+    ).resolves.toBeDefined();
   });
 });
 
