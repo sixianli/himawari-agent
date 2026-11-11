@@ -1522,6 +1522,7 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
   for (const invalid of [
     {},
     { secretRef: "mcp-read-secret" },
+    { audience: "mcp-access-audience", secretRef: "mcp-read-secret" },
     { audience: "mcp-access-audience", writeSecretRef: "mcp-write-secret" },
     { audience: "mcp-access-audience", proposals: false },
     { audience: "mcp access audience" },

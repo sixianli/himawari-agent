@@ -1786,6 +1786,7 @@ export async function runAgentService(
         mcpRead = new ProductionMcpRead({
           scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
           clock,
+          owners: repository.ownerIdentityState(),
           access: new CloudflareAccessJwtVerifier({
             issuer: mcpIdentity.issuer,
             audience: mcpReadConfiguration.audience,

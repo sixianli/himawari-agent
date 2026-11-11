@@ -222,10 +222,17 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const failures: unknown[] = [];
     const settingsStore = repository.proactive();
     const access = await createMcpAccess(() => new Date(clock.now()));
+    const owners = repository.ownerIdentityState();
+    await owners.bindFirstOwner({
+      ownerId: OWNER_ID,
+      externalSubjectRef: await access.ownerSubjectRef(),
+      boundAt: clock.now(),
+    });
     const mcp = new ProductionMcpRead({
       scope,
       clock,
       access: access.verifier,
+      owners,
       ...(options.readOnly ? {} : { write: { proposals: writer } }),
       timeZone: TIME_ZONE,
       requestTimeoutMs: 30_000,

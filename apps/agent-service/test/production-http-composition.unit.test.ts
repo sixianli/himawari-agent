@@ -872,10 +872,17 @@ describe("production HTTP composition", () => {
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
     } as unknown as ProductionMcpReadOptions["scope"];
+    const owners = repository.ownerIdentityState();
+    await owners.bindFirstOwner({
+      ownerId: scope.ownerId,
+      externalSubjectRef: await access.ownerSubjectRef(),
+      boundAt: NOW.toISOString(),
+    });
     const mcpRead = new ProductionMcpRead({
       scope,
       clock: { now: () => NOW.toISOString() },
       access: access.verifier,
+      owners,
       timeZone: "Asia/Tokyo",
       requestTimeoutMs: 5_000,
       sources: {

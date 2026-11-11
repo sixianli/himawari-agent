@@ -269,6 +269,41 @@ describe("Cloudflare Access JWT verification", () => {
     expect(fetches).toBe(2);
   });
 
+  it("does not retry a failed JWKS download for 30 seconds, then tries again", async () => {
+    let fetches = 0;
+    let available = false;
+    let now = NOW;
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      jwksFetcher: {
+        async fetch() {
+          fetches += 1;
+          if (!available) throw new Error("JWKS_DOWN");
+          return firstJwks;
+        },
+      },
+      now: () => now,
+    });
+    const known = await token({});
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await expect(verifier.verify(known)).rejects.toMatchObject({
+        code: IDENTITY_GATEWAY_ERROR_CODES.ASSERTION_INVALID,
+      });
+    }
+    expect(fetches).toBe(1);
+    available = true;
+    now = new Date(NOW.valueOf() + 29_999);
+    await expect(verifier.verify(known)).rejects.toMatchObject({
+      code: IDENTITY_GATEWAY_ERROR_CODES.ASSERTION_INVALID,
+    });
+    expect(fetches).toBe(1);
+    now = new Date(NOW.valueOf() + 30_000);
+    await expect(verifier.verify(known)).resolves.toMatchObject({ issuer: ISSUER });
+    expect(fetches).toBe(2);
+  });
+
   it.each([
     ["wrong issuer", { issuer: "https://wrong.example" }],
     ["wrong audience", { audience: "wrong-audience" }],

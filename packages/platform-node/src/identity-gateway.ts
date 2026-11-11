@@ -220,14 +220,13 @@ export class CloudflareAccessJwtVerifier {
 
   private async getJwks(observedAt: Date, forceRefresh: boolean): Promise<JSONWebKeySet> {
     const now = observedAt.valueOf();
-    if (
-      this.cached &&
-      this.cached.expiresAt > now &&
-      (!forceRefresh || this.withinRefreshCooldown(now))
-    ) {
-      return this.cached.jwks;
+    if (this.pendingFetch) return this.pendingFetch;
+    if (this.withinRefreshCooldown(now)) {
+      if (this.cached) return this.cached.jwks;
+      throw new IdentityGatewayError(IDENTITY_GATEWAY_ERROR_CODES.JWKS_INVALID);
     }
-    this.pendingFetch ??= this.fetchJwks(now).finally(() => {
+    if (!forceRefresh && this.cached && this.cached.expiresAt > now) return this.cached.jwks;
+    this.pendingFetch = this.fetchJwks(now).finally(() => {
       this.pendingFetch = undefined;
     });
     return this.pendingFetch;

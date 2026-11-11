@@ -12,6 +12,7 @@ export interface McpAccessFixture {
     readonly expiresInSeconds?: number;
   }) => Promise<string>;
   readonly signWithForeignKey: () => Promise<string>;
+  readonly ownerSubjectRef: () => Promise<string>;
 }
 
 export async function createMcpAccess(now: () => Date): Promise<McpAccessFixture> {
@@ -50,5 +51,8 @@ export async function createMcpAccess(now: () => Date): Promise<McpAccessFixture
     verifier,
     sign: (options) => signWith(keyPair.privateKey, "mcp-access-key", options),
     signWithForeignKey: () => signWith(foreign.privateKey, "mcp-access-key"),
+    ownerSubjectRef: async () =>
+      (await verifier.verify(await signWith(keyPair.privateKey, "mcp-access-key")))
+        .externalSubjectRef,
   };
 }

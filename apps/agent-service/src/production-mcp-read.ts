@@ -4,6 +4,7 @@ import type {
   DecisionLedgerPort,
   DecisionLedgerWrite,
   JsonObject,
+  OwnerIdentityStatePort,
   ProactiveSettings,
   RuleRecord,
 } from "@himawari-agent/application";
@@ -62,6 +63,8 @@ import type { MailEmbeddingContext } from "./production-run-memory.js";
 
 export const MCP_READ_PATH = "/api/mcp/v1";
 export const MCP_READ_BODY_LIMIT = 65_536;
+const MCP_ACCESS_OWNER_NOT_BOUND = Object.freeze({ code: "MCP_ACCESS_OWNER_NOT_BOUND" });
+
 export const MCP_ACCESS_ASSERTION_HEADER = "cf-access-jwt-assertion";
 export const MCP_READ_TOOL_NAMES = ["find_memories", "today_context", "rule_book"] as const;
 export const MCP_WRITE_TOOL_NAMES = ["propose_memory"] as const;
@@ -133,6 +136,7 @@ export interface ProductionMcpReadOptions {
   readonly scope: Pick<DecisionLedgerWrite, "ownerId" | "agentId">;
   readonly clock: ClockPort;
   readonly access: McpAccessVerifier;
+  readonly owners: Pick<OwnerIdentityStatePort, "readBySubject">;
   readonly write?: McpWriteAccess;
   readonly timeZone: string;
   readonly requestTimeoutMs: number;
@@ -270,7 +274,11 @@ export class ProductionMcpRead {
     let rejection: unknown;
     if (assertion) {
       try {
-        subject = (await this.#options.access.verify(assertion)).externalSubjectRef;
+        const verified = await this.#options.access.verify(assertion);
+        const binding = await this.#options.owners.readBySubject(verified.externalSubjectRef);
+        if (binding?.ownerId === this.#options.scope.ownerId && binding.status === "active")
+          subject = verified.externalSubjectRef;
+        else rejection = MCP_ACCESS_OWNER_NOT_BOUND;
       } catch (error) {
         rejection = error;
       }

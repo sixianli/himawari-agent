@@ -15,6 +15,7 @@ import {
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
 import { MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isAgentRequest } from "../fixtures/agent-request.ts";
@@ -2104,6 +2105,10 @@ it("[P5-3] checks the MCP entry against its own Cloudflare Access audience, not 
     expect(bare.headers.get("www-authenticate")).toBeNull();
     const webAudience = await call(await signToken());
     expect(webAudience.status).toBe(401);
+    const notOwner = await call(
+      await signToken({ audience: mcpAudience, subject: "someone-else-in-the-access-team" }),
+    );
+    expect(notOwner.status).toBe(401);
     const served = await call(await signToken({ audience: mcpAudience }));
     expect(served.status).toBe(200);
     expect(served.raw).toContain(String(new Date().getUTCFullYear()));
@@ -2111,6 +2116,58 @@ it("[P5-3] checks the MCP entry against its own Cloudflare Access audience, not 
     await service.stop();
   }
 }, 120_000);
+
+async function installedMcpToolNames(address: string, assertion: string): Promise<string[]> {
+  const client = new Client(
+    { name: "claude-code", version: "2.1.400" },
+    {
+      versionNegotiation: { mode: { pin: "2026-07-28" } },
+      capabilities: { elicitation: { form: {} } },
+    },
+  );
+  await client.connect(
+    new StreamableHTTPClientTransport(new URL("/api/mcp/v1", address), {
+      fetch: async (input, init) => {
+        const headers = new Headers(init?.headers);
+        headers.set("cf-access-jwt-assertion", assertion);
+        const target = new URL(input instanceof Request ? input.url : String(input));
+        const result = await httpRequest(address, `${target.pathname}${target.search}`, {
+          method: init?.method ?? "GET",
+          headers,
+          ...(typeof init?.body === "string" ? { body: init.body } : {}),
+        });
+        return new Response(result.status === 204 ? null : result.raw, {
+          status: result.status,
+          headers: result.headers,
+        });
+      },
+    }),
+  );
+  try {
+    return (await client.listTools()).tools.map((tool) => tool.name).sort();
+  } finally {
+    await client.close();
+  }
+}
+
+it("[P5-3] shows the memory proposal tool only when runPolicy.mcpRead.proposals is on", async () => {
+  const mcpAudience = "mcp-access-audience-production-process";
+  for (const proposals of [false, true]) {
+    const service = await openInstalledMain({
+      runPolicy: { mcpRead: { audience: mcpAudience, ...(proposals ? { proposals } : {}) } },
+    });
+    try {
+      const names = await installedMcpToolNames(
+        service.running().address,
+        await signToken({ audience: mcpAudience }),
+      );
+      expect(names).toContain("today_context");
+      expect(names.includes("propose_memory")).toBe(proposals);
+    } finally {
+      await service.stop();
+    }
+  }
+}, 240_000);
 
 it("[PR-B] keeps the request head byte-identical when the configured system instruction changes between turns", async () => {
   const { first, second, rows } = await systemInstructionChange({});

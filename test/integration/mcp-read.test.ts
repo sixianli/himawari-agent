@@ -224,10 +224,17 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     const summaryFailures: unknown[] = [];
     const settingsStore = repository.proactive();
     const access = await createMcpAccess(() => new Date(clock.now()));
+    const owners = repository.ownerIdentityState();
+    await owners.bindFirstOwner({
+      ownerId: OWNER_ID,
+      externalSubjectRef: await access.ownerSubjectRef(),
+      boundAt: clock.now(),
+    });
     const mcp = new ProductionMcpRead({
       scope,
       clock,
       access: access.verifier,
+      owners,
       timeZone: TIME_ZONE,
       requestTimeoutMs: 30_000,
       sources: {
@@ -540,6 +547,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       await f.access.signWithForeignKey(),
       await f.access.sign({ audience: "another-app" }),
       await f.access.sign({ expiresInSeconds: -120 }),
+      await f.access.sign({ subject: "someone-else-in-the-access-team" }),
     ]) {
       const rejected = await fetch(f.url, {
         method: "POST",
@@ -561,10 +569,11 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       f.connect("modern", await f.access.sign({ expiresInSeconds: -120 })),
     ).rejects.toThrow();
     expect(await f.ledger()).toEqual([]);
-    expect(f.failures).toHaveLength(6);
+    expect(f.failures).toHaveLength(7);
     expect(f.failures).toEqual(
-      Array.from({ length: 6 }, () => expect.objectContaining({ code: expect.any(String) })),
+      Array.from({ length: 7 }, () => expect.objectContaining({ code: expect.any(String) })),
     );
+    expect(f.failures[3]).toEqual({ code: "MCP_ACCESS_OWNER_NOT_BOUND" });
   });
 
   it("answers 429 after 60 rejected assertions a minute, logs only the 401s, and still serves a valid sign-in", async () => {
