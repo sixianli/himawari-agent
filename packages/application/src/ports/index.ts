@@ -31,6 +31,7 @@ export * from "./memory-dates.js";
 export * from "./memory-episodes.js";
 export * from "./memory-capture-backlog.js";
 export * from "./memory-reminders.js";
+export * from "./memory-checkup.js";
 export * from "./decision-ledger.js";
 export * from "./muse-intake.js";
 export * from "./ledger-observation.js";

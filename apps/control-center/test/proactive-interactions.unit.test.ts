@@ -44,6 +44,7 @@ const configuration: ControlCenterRuntimeConfiguration = {
     "proactive.audit.respond",
     "proactive.review.read",
     "proactive.review.rate",
+    "proactive.review.checkup",
     "proactive.source.manage",
     "proactive.backoff.restore",
   ],
@@ -233,6 +234,7 @@ const reviewItem = (
   textHidden: false,
   category: null,
   fetched: null,
+  checkup: null,
   ...change,
 });
 
@@ -279,6 +281,7 @@ function reviewFixture(): ProactiveReview {
         }),
       ],
     },
+    memoryUnusedDays: 90,
     generatedAt: NOW.toISOString(),
   };
 }
@@ -710,6 +713,78 @@ describe("[PG-15] proactive reminders page", () => {
     await flush();
     expect(document.querySelector("#page .proactive-review")).toBeNull();
     expect(text("#page")).not.toContain("每天打分");
+  });
+
+  it("[P4-6] shows the memory checkup group inside the daily rating, sends its actions and keeps it out of the rating buttons", async () => {
+    const checkupItem = (
+      key: string,
+      checkup: NonNullable<ProactiveReview["items"][number]["checkup"]>,
+      text: string,
+    ) =>
+      reviewItem(key, {
+        source: "checkup",
+        kind: "checkup",
+        outcome: checkup.action ?? "pending",
+        text,
+        checkup,
+      });
+    review = {
+      ...review,
+      items: [
+        checkupItem(
+          "checkup:c1",
+          {
+            reason: "conflict",
+            action: null,
+            memoryId: "memory-new",
+            relatedMemoryId: "memory-old",
+            relatedText: "出差时喝便利店的牛奶",
+            keptMemoryId: null,
+          },
+          "平时喝明治的牛奶",
+        ),
+        checkupItem(
+          "checkup:c2",
+          {
+            reason: "unused",
+            action: "confirm",
+            memoryId: "memory-quiet",
+            relatedMemoryId: null,
+            relatedText: "",
+            keptMemoryId: null,
+          },
+          "喜欢靠窗的座位",
+        ),
+        ...review.items,
+      ],
+    };
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    const group = "#page .proactive-review .proactive-review-list";
+    expect(document.querySelectorAll(`${group}`)).toHaveLength(1);
+    const rows = [...document.querySelectorAll<HTMLElement>(`${group} li`)];
+    expect(rows.length).toBeLessThanOrEqual(6);
+    expect(text(`${group} li:nth-child(1)`)).toContain("两条说法不一样");
+    expect(text(`${group} li:nth-child(1)`)).toContain("新：平时喝明治的牛奶");
+    expect(text(`${group} li:nth-child(1)`)).toContain("旧：出差时喝便利店的牛奶");
+    expect(text(`${group} li:nth-child(2)`)).toContain("90 天没用过");
+    expect(text(`${group} li:nth-child(2)`)).toContain("已确认");
+    expect(rows[1]?.textContent).not.toContain("没问题");
+    await click(`${group} li:nth-child(1)`, "用新的替换旧的");
+    expect(lastCommand()).toMatchObject({
+      type: "proactive.review.checkup",
+      payload: { key: "checkup:c1", action: "merge", keep: "memory-new" },
+    });
+    await click(`${group} li:nth-child(2)`, "撤销");
+    expect(lastCommand()).toMatchObject({
+      type: "proactive.review.checkup",
+      payload: { key: "checkup:c2", action: "undo", keep: null },
+    });
+    await click("#page .proactive-review", "这一页都没问题");
+    const ratings = (lastCommand() as { payload: { ratings: { key: string }[] } }).payload.ratings;
+    expect(ratings.map(({ key }) => key)).not.toContain("checkup:c1");
+    expect(ratings.map(({ key }) => key)).not.toContain("checkup:c2");
+    expect(ratings[0]?.key).toBe("ledger:a1");
   });
 
   it("[PG-15] shows one line per check in the reminder check record and takes ratings", async () => {
