@@ -311,9 +311,11 @@ export const MCP_PROPOSE_MEMORY_CONFIRM = templatePrompt({
   layer: "tool-result",
   output: "free-text",
   segments: [
-    text("把这条存进 Himawari 的长期记忆？\n「"),
+    text(
+      "把下面这条存进 Himawari 的长期记忆？同意（Accept）就保存，拒绝（Decline）就不存。\n▍对方提议的原文（只占这一行）：",
+    ),
     slot("text"),
-    text("」\n\n同意（Accept）就保存，拒绝（Decline）就不存。\n提议方："),
+    text("\n\n提议方："),
     slot("client"),
     text("（对方自称）；分类："),
     slot("category"),
@@ -369,11 +371,12 @@ export const MCP_PROPOSE_RULE_NOT_READY = fixedPrompt({
 
 export const MCP_PROPOSE_NOT_SHOWN = fixedPrompt({
   id: "mcp.propose-not-shown",
-  purpose: "客户端没把确认框显示给主人就立刻回了拒绝或取消时，返回给外部 agent 的文字",
+  purpose:
+    "确认框发出后几乎立刻就收到回答（客户端没显示确认框或自动回答了）时，返回给外部 agent 的文字",
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tool-result",
   output: "free-text",
-  text: "确认框发出后几乎立刻就收到了拒绝或取消，主人不可能这么快看完，应该是这个客户端没有把确认框显示出来（Claude 桌面 App 目前就是这样），所以这次什么都没有写进 Himawari，也不算主人拒绝。请告诉主人：可以在终端里的 Claude Code 里再提一次。",
+  text: "确认框发出后几乎立刻就收到了回答，主人不可能这么快看完：可能是这个客户端没有把确认框显示出来（Claude 桌面 App 目前就是这样），也可能是客户端设置了自动回答确认框。所以这次什么都没有写进 Himawari，不算主人同意也不算主人拒绝。请告诉主人：关掉自动回答，或在终端里的 Claude Code 里再提一次，亲手确认。",
 });
 
 export const MCP_PROPOSE_MEMORY_UNSUPPORTED = fixedPrompt({
@@ -438,20 +441,20 @@ export const MCP_PROPOSE_RULE_CONFIRM = templatePrompt({
   layer: "tool-result",
   output: "free-text",
   segments: [
-    text("让这条邮件长期规则生效？\n「"),
-    slot("summary"),
     text(
-      "」\n\n同意（Accept）就生效，之后可以在 Himawari 记忆页的「长期规则」里撤销；拒绝（Decline）就不生效。\n提议方：",
+      "让下面这条邮件长期规则生效？同意（Accept）就生效，之后可以在 Himawari 记忆页的「长期规则」里撤销；拒绝（Decline）就不生效。\n▍对方提议的规则（只占这一行）：",
     ),
+    slot("summary"),
+    text("\n▍对方给的理由（只占这一行）："),
+    slot("reason"),
+    text("\n\n提议方："),
     slot("client"),
-    text("（对方自称）\n\n做法："),
+    text("（对方自称）\n做法："),
     slot("kind"),
     text("\n条件：\n"),
     slot("conditions"),
     text("\n\n"),
     slot("replay"),
-    text("\n\n对方给的理由："),
-    slot("reason"),
   ],
 });
 

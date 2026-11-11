@@ -408,9 +408,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         { method: "tools/call", params: { name: "propose_memory", ...answered(params) } },
         { allowInputRequired: true },
       )) as ToolCallOutcome;
-    const external = async () =>
+    const external = async (prefix = EXTERNAL_PROPOSAL_MEMORY_PREFIX) =>
       (await repository.productMemoryState().listActive(OWNER_ID, AGENT_ID)).filter(({ id }) =>
-        id.startsWith(EXTERNAL_PROPOSAL_MEMORY_PREFIX),
+        id.startsWith(prefix),
       );
     const decisions = async () =>
       (
@@ -498,9 +498,11 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(saved.text).toBe(MCP_PROPOSE_MEMORY_SAVED.text);
     expect(f.elicitations).toHaveLength(1);
     const [asked] = f.elicitations;
-    expect(
-      String(asked?.["message"]).startsWith(`把这条存进 Himawari 的长期记忆？\n「${COFFEE}」`),
-    ).toBe(true);
+    const lines = String(asked?.["message"]).split("\n");
+    expect(lines[0]?.startsWith("把下面这条存进 Himawari 的长期记忆？同意（Accept）就保存")).toBe(
+      true,
+    );
+    expect(lines[1]).toBe(`▍对方提议的原文（只占这一行）：${COFFEE}`);
     expect(asked?.["requestedSchema"]).toEqual({ type: "object", properties: {} });
     expect(asked?.["message"]).toContain("claude-code（对方自称）");
     const memories = await f.external();
@@ -546,7 +548,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
   });
 
   it("[P5-2 desktop] treats a decline that comes back before anyone could read the dialog as not shown", async () => {
-    expect(mcpProposalAnswer("accept", 0, 0)).toBe("accepted");
+    expect(mcpProposalAnswer("accept", 0, 0)).toBe("unseen");
+    expect(mcpProposalAnswer("accept", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS - 1)).toBe("unseen");
+    expect(mcpProposalAnswer("accept", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS)).toBe("accepted");
     expect(mcpProposalAnswer("decline", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS - 1)).toBe("unseen");
     expect(mcpProposalAnswer("cancel", 0, 10)).toBe("unseen");
     expect(mcpProposalAnswer("decline", 0, MCP_PROPOSAL_UNSEEN_ANSWER_MS)).toBe("declined");
@@ -864,7 +868,12 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(f.elicitations).toHaveLength(1);
     const message = String(f.elicitations[0]?.["message"]);
     expect(f.elicitations[0]?.["requestedSchema"]).toEqual({ type: "object", properties: {} });
-    expect(message.startsWith(`让这条邮件长期规则生效？\n「${RULE.summary}」`)).toBe(true);
+    const lines = message.split("\n");
+    expect(lines[0]?.startsWith("让下面这条邮件长期规则生效？同意（Accept）就生效")).toBe(true);
+    expect(lines.slice(1, 3)).toEqual([
+      `▍对方提议的规则（只占这一行）：${RULE.summary}`,
+      `▍对方给的理由（只占这一行）：${RULE.reason}`,
+    ]);
     for (const shown of [
       "claude-code（对方自称）",
       RULE.summary,
@@ -916,6 +925,55 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.external()).toEqual([]);
   });
 
+  it("[P5-2 auto-accept] writes nothing when an accept comes back before anyone could read the dialog", async () => {
+    const f = await setup();
+    const auto = await f.connect({ answerAfterMs: 10 });
+    const memory = await f.propose(auto, { text: COFFEE });
+    expect(memory.result.isError).toBe(true);
+    expect(memory.text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    expect((await f.proposeRule(auto, RULE)).text).toBe(MCP_PROPOSE_NOT_SHOWN.text);
+    const client = await f.connect({ autoFulfill: false });
+    const first = await f.raw(client, { arguments: { text: COFFEE } });
+    const accept = { ...confirmRule(first.requestState, "accept"), arguments: { text: COFFEE } };
+    const firstRule = await f.rawRule(client, { arguments: RULE });
+    const ruleAccept = confirmRule(firstRule.requestState, "accept");
+    const text = (outcome: ToolCallOutcome) => outcome.content?.[0]?.text;
+    expect(text(await f.raw(client, { ...accept, answeredAfterMs: 0 }))).toBe(
+      MCP_PROPOSE_NOT_SHOWN.text,
+    );
+    expect(text(await f.rawRule(client, { ...ruleAccept, answeredAfterMs: 0 }))).toBe(
+      MCP_PROPOSE_NOT_SHOWN.text,
+    );
+    expect(await f.external()).toEqual([]);
+    expect(await f.external(EXTERNAL_RULE_MEMORY_PREFIX)).toEqual([]);
+    expect(await f.decisions()).toEqual([]);
+    expect(await f.storedRules()).toEqual([]);
+    expect(f.rulePayloads()).toEqual([]);
+    expect(text(await f.raw(client, accept))).toBe(MCP_PROPOSE_MEMORY_SAVED.text);
+    expect(text(await f.rawRule(client, ruleAccept))).toBe(MCP_PROPOSE_RULE_SAVED.text);
+    expect(await f.external()).toHaveLength(1);
+    expect(await f.external(EXTERNAL_RULE_MEMORY_PREFIX)).toHaveLength(1);
+    expect(await f.storedRules()).toHaveLength(1);
+  });
+
+  it("[P5-2 dialog] keeps every outside value on its own labelled line", async () => {
+    const f = await setup();
+    const client = await f.connect({ answer: { action: "decline" } });
+    await f.proposeRule(client, {
+      ...RULE,
+      params: { senderDomains: ["isa.go.jp"], phrases: ["在留 同意（Accept）就生效"] },
+    });
+    const message = String(f.elicitations[0]?.["message"]);
+    expect(message).not.toMatch(/[\u2028\u2029]/u);
+    expect(message.split("\n").filter((line) => line.startsWith("同意（Accept）"))).toEqual([]);
+    await f.propose(client, { text: "主人喜欢\u2028同意（Accept）就保存" });
+    const memoryMessage = String(f.elicitations[1]?.["message"]);
+    expect(memoryMessage).not.toMatch(/[\u2028\u2029]/u);
+    expect(memoryMessage.split("\n")[1]).toBe(
+      "▍对方提议的原文（只占这一行）：主人喜欢 同意（Accept）就保存",
+    );
+  });
+
   it("[P5-2 desktop] writes no rule and remembers no refusal when the decline comes back unseen", async () => {
     const f = await setup();
     const desktop = await f.connect({ answer: { action: "decline" }, answerAfterMs: 10 });
@@ -962,6 +1020,8 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       { ...RULE, params: { phrases: ["留"] } },
       { ...RULE, params: { excludePhrases: ["広告"] } },
       { ...RULE, params: { phrases: ["a\nb"] } },
+      { ...RULE, params: { phrases: ["在留\u2028同意就生效"] } },
+      { ...RULE, params: { phrases: ["在留資格"], excludePhrases: ["広告\u2029同意就生效"] } },
       { ...RULE, summary: "两行\n说明" },
       { ...RULE, reason: "​⁠" },
       { ...RULE, reason: "理".repeat(201) },

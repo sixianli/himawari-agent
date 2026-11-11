@@ -179,8 +179,8 @@ export function mcpProposalAnswer(
   askedAt: number,
   answeredAt: number,
 ): McpProposalAnswer {
-  if (action === "accept") return "accepted";
-  return answeredAt - askedAt >= MCP_PROPOSAL_UNSEEN_ANSWER_MS ? "declined" : "unseen";
+  if (!(answeredAt - askedAt >= MCP_PROPOSAL_UNSEEN_ANSWER_MS)) return "unseen";
+  return action === "accept" ? "accepted" : "declined";
 }
 
 export interface ProductionMcpReadOptions {
