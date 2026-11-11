@@ -750,6 +750,7 @@ export const messages = {
   "memory.page.history": "変更の流れ",
   "memory.page.now": "現在",
   "memory.page.useThis": "この表現に戻す",
+  "memory.page.restoreVersion": "この版に戻す",
   "memory.page.editNote": "保存すると、以前の表現は「変更の流れ」に残ります。",
   "memory.page.archivedNote": "整理でアーカイブされ、回答に使いません",
   "memory.page.unarchive": "使用を再開",
