@@ -81,7 +81,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - `ruleIds` 写空数组：按 [ADR 0215](0215-decision-record-points-at-the-rule-version.md) 决定 1，`ruleIds` 只记真正起了作用的规则和修订号；外部读取规则手册时没有哪条规则在做判断，和那份 ADR 决定 2 的记忆候选记录一样留空。
    - `costMicros` 写这次算问题向量花的钱；读取中途失败时，也写失败前已经花掉的钱（找记忆时两路检索都结束后才报失败，所以另一路的嵌入费也算在内）。
    - 决策记录写不进去时，这次读取按失败处理：不把内容交给对方，只回工具错误。这样「每次外部读取都有一条记录」始终成立。
-   - 2026-11-12 起：[ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 1 把来源从 `mcp-client:<客户端名>` 改成服务端生成的接入编号；决定 13 让钩子每句话自动搜的读取按「接入 + 天 + 工具」汇总成一行，不再每次一条。对应的编码任务合并之前，代码仍按本条。本条原文保留不改。
+   - 2026-11-12 起：[ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 1 把来源从 `mcp-client:<客户端名>` 改成服务端生成的接入编号；决定 13 让钩子每句话自动搜的读取里空手而归的只在按天的统计表里计数、不写决策记录，交出了内容的仍然每次一条。对应的编码任务合并之前，代码仍按本条。本条原文保留不改。
 6. **工具说明文字登记进提示词目录**，编号是 `mcp.find-memories`、`mcp.today-context`、`mcp.rule-book`、`mcp.tool-result-failed`。Himawari 自己发给模型的请求一个字节都不变。
 7. **（2026-11-11 补，P3-6 合并后）`today_context` 带上今天和昨天的对话摘要。**
    - 用 [ADR 0216](0216-gmail-check-reads-recent-day-summaries.md) 新加的 `MemoryEpisodeService.recent`，按主人时区取今天和昨天的日摘要，最多 8 段，只取模型可见的分级。只读已经生成的摘要，不补生成，所以外部读取不花模型的钱。
