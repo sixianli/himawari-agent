@@ -37,7 +37,7 @@ export const DEFAULT_REVIEW_PREREVIEW: ReviewPrereviewConfiguration = Object.fre
   historyMinimum: DEFAULT_PREREVIEW_HISTORY_MINIMUM,
   reduction: Object.freeze({
     enabled: false,
-    agreementPermille: DEFAULT_PREREVIEW_AGREEMENT_PERMILLE,
+    hiddenAgreementPermille: DEFAULT_PREREVIEW_AGREEMENT_PERMILLE,
     confidencePermille: DEFAULT_PREREVIEW_CONFIDENCE_PERMILLE,
     auditPermille: DEFAULT_PREREVIEW_AUDIT_PERMILLE,
     windowDays: DEFAULT_PREREVIEW_HISTORY_DAYS,
@@ -164,8 +164,11 @@ export interface PrereviewRunResult {
   readonly stoppedBy: "done" | "daily_limit" | "daily_cost" | "disabled";
 }
 
+export const PREREVIEW_FAILURE_BACKOFF_MS = DAY_MS;
+
 export class ReviewPrereviewService {
   readonly #options: ReviewPrereviewOptions;
+  readonly #failedAt = new Map<string, number>();
 
   constructor(options: ReviewPrereviewOptions) {
     this.#options = options;
@@ -189,8 +192,11 @@ export class ReviewPrereviewService {
       modelRef: this.#options.model.modelRef,
       promptId: this.promptId,
     });
+    const nowMs = Date.parse(now);
+    for (const [key, at] of this.#failedAt)
+      if (nowMs - at >= PREREVIEW_FAILURE_BACKOFF_MS) this.#failedAt.delete(key);
     const pending = subjects
-      .filter((subject) => !done.has(subject.key))
+      .filter((subject) => !done.has(subject.key) && !this.#failedAt.has(subject.key))
       .sort(
         (left, right) =>
           Number(left.ownerRating !== null) - Number(right.ownerRating !== null) ||
@@ -208,9 +214,15 @@ export class ReviewPrereviewService {
       if (costMicros + this.#options.estimateCostMicros(prompt) > settings.dailyCostMicros)
         return { attempted, recorded, failures, stoppedBy: "daily_cost" };
       attempted += 1;
-      const result = await this.#invoke(subject, prompt);
+      const result = await this.#invoke(subject, prompt).catch((error: unknown) => ({
+        reply: undefined,
+        failure: `PREREVIEW_FAILED:${error instanceof Error ? error.message : "unknown"}`,
+        costMicros: 0,
+        durationMs: 0,
+      }));
       costMicros += result.costMicros;
       if (result.reply === undefined) {
+        this.#failedAt.set(subject.key, nowMs);
         failures.push(result.failure);
         continue;
       }
@@ -262,7 +274,7 @@ export class ReviewPrereviewService {
         }),
       ),
       {
-        agreementPermille: reduction.agreementPermille,
+        agreementPermille: reduction.hiddenAgreementPermille,
         confidencePermille: reduction.confidencePermille,
       },
     );
@@ -323,6 +335,7 @@ export class ReviewPrereviewService {
     let completed = false;
     try {
       const request: ModelInvocationRequest = {
+        signal: AbortSignal.timeout(settings.requestTimeoutMs),
         invocationId,
         runId: authority.runId,
         modelRef: model.modelRef,

@@ -589,3 +589,46 @@ describe("[P4-8] what the model prereview may see", () => {
     ]);
   });
 });
+
+describe("[P4-8] decisions the prereview cannot see", () => {
+  it("[negative] gives reminded mail decisions no subject, since the page shows them without text", async () => {
+    const subjects = await readDailyReviewSubjects({
+      scope,
+      ledger: {
+        listReviewPool: async () => [entry({ id: "spoke", kind: "proactive", outcome: "pushed" })],
+      },
+      overview: overview([], [
+        { id: "spoke", counts: counts(1) },
+      ] as unknown as ProactiveOverview["decisions"]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "x", hidden: false, dataClassification: "private" }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+    });
+    expect(subjects).toEqual([]);
+  });
+
+  it("uses the memory's own classification for kept memories and skips ones without it", async () => {
+    const read = (dataClassification?: "private" | "sensitive") =>
+      readDailyReviewSubjects({
+        scope,
+        ledger: {
+          listReviewPool: async () => [
+            entry({ id: "kept", outcome: "kept", subjectRef: "memory:new" }),
+          ],
+        },
+        overview: overview([]),
+        readMemoryText: async () => undefined,
+        readMemory: async () =>
+          dataClassification === undefined
+            ? { text: "我最近想吃牛肉", hidden: false }
+            : { text: "我最近想吃牛肉", hidden: false, dataClassification },
+        timeZone: "Asia/Tokyo",
+        now: NOW,
+      });
+    expect(
+      (await read("sensitive")).map(({ group, dataClassification }) => [group, dataClassification]),
+    ).toEqual([["memory_kept", "sensitive"]]);
+    expect(await read()).toEqual([]);
+  });
+});

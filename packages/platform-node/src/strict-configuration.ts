@@ -1086,7 +1086,7 @@ function parseReviewPrereview(
     input["reduction"] === undefined ? {} : record(input["reduction"], reductionField);
   rejectUnknown(
     reduction,
-    ["enabled", "agreementPermille", "confidencePermille", "auditPermille", "windowDays"],
+    ["enabled", "hiddenAgreementPermille", "confidencePermille", "auditPermille", "windowDays"],
     reductionField,
   );
   const number = (
@@ -1126,11 +1126,11 @@ function parseReviewPrereview(
     historyMinimum: number(input, field, "historyMinimum", defaults.historyMinimum, 1, 100_000),
     reduction: Object.freeze({
       enabled: flag(reduction, reductionField, "enabled", off.enabled),
-      agreementPermille: number(
+      hiddenAgreementPermille: number(
         reduction,
         reductionField,
-        "agreementPermille",
-        off.agreementPermille,
+        "hiddenAgreementPermille",
+        off.hiddenAgreementPermille,
         500,
         1_000,
       ),

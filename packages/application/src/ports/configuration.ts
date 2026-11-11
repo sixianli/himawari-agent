@@ -242,7 +242,7 @@ export interface ReviewPrereviewConfiguration {
   readonly historyMinimum: number;
   readonly reduction: {
     readonly enabled: boolean;
-    readonly agreementPermille: number;
+    readonly hiddenAgreementPermille: number;
     readonly confidencePermille: number;
     readonly auditPermille: number;
     readonly windowDays: number;

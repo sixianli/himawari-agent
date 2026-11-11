@@ -1375,7 +1375,7 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
       historyMinimum: 20,
       reduction: {
         enabled: false,
-        agreementPermille: 900,
+        hiddenAgreementPermille: 900,
         confidencePermille: 800,
         auditPermille: 200,
         windowDays: 28,
@@ -1387,7 +1387,7 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     ...policy,
     proactive: {
       ...proactive,
-      reviewPrereview: { dailyLimit: 20, reduction: { enabled: true, agreementPermille: 950 } },
+      reviewPrereview: { dailyLimit: 20, reduction: { enabled: true, hiddenAgreementPermille: 950 } },
     },
   };
   expect(
@@ -1396,7 +1396,7 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
   ).toMatchObject({
     enabled: true,
     dailyLimit: 20,
-    reduction: { enabled: true, agreementPermille: 950, auditPermille: 200 },
+    reduction: { enabled: true, hiddenAgreementPermille: 950, auditPermille: 200 },
   });
   raw["runPolicy"] = {
     ...policy,
@@ -1445,7 +1445,7 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, reviewPrereview: { enabled: "yes" } },
     { ...proactive, reviewPrereview: { unknown: 1 } },
     { ...proactive, reviewPrereview: { reduction: { auditPermille: 0 } } },
-    { ...proactive, reviewPrereview: { reduction: { agreementPermille: 1_001 } } },
+    { ...proactive, reviewPrereview: { reduction: { hiddenAgreementPermille: 1_001 } } },
     { ...proactive, reviewPrereview: { reduction: { threshold: 900 } } },
     { ...proactive, backoffThreshold: 11 },
     { ...proactive, backoffThreshold: -1 },

@@ -1598,7 +1598,9 @@ export async function runAgentService(
               return undefined;
             if (!reviewMemoryVisible(record.dataClassification)) return { text: "", hidden: true };
             const text = await readReviewText(record.contentRef);
-            return text === undefined ? undefined : { text, hidden: false };
+            return text === undefined
+              ? undefined
+              : { text, hidden: false, dataClassification: record.dataClassification };
           },
           ...(memory && durableMemory && protector && repository
             ? ((recallProtector, recallPayloads) => ({
