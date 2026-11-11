@@ -340,7 +340,9 @@ function reviewTag(item: ProactiveReviewItem): MessageId {
             ? "dailyReview.tag.truncation"
             : item.kind === "retrieval_degrade"
               ? "dailyReview.tag.degrade"
-              : "dailyReview.tag.externalRead";
+              : item.kind === "rule_review"
+                ? "dailyReview.tag.ruleReview"
+                : "dailyReview.tag.externalRead";
 }
 
 function reviewText(item: ProactiveReviewItem, message: Message): string {
@@ -348,6 +350,7 @@ function reviewText(item: ProactiveReviewItem, message: Message): string {
   if (item.textHidden) return message("dailyReview.hidden");
   if (item.kind === "proactive" && item.fetched !== null)
     return message("dailyReview.fetched", { count: item.fetched });
+  if (item.kind === "rule_review") return message("dailyReview.ruleReview");
   return "";
 }
 

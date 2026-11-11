@@ -15,6 +15,7 @@ import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../src/ga
 import type { MessageId } from "../src/i18n/message-ids.ts";
 import { messages } from "../src/i18n/resources/zh-CN.ts";
 import { type MemoryItem, type MemoryOverview, useMemory } from "../src/memory.ts";
+import { memoryChain } from "../src/memory-history.ts";
 import { guessCategory, parseMemoryExport, parseMemoryText } from "../src/memory-import.ts";
 
 const configuration: ControlCenterRuntimeConfiguration = {
@@ -70,6 +71,8 @@ function memoryItem(memoryId: string, text: string, change: Partial<MemoryItem> 
   };
 }
 
+let nextHistoryId = 0;
+
 function node(
   kind: MemoryItem["history"][number]["kind"],
   text: string,
@@ -77,7 +80,9 @@ function node(
   at: string,
   change: Partial<MemoryItem["history"][number]> = {},
 ): MemoryItem["history"][number] {
+  nextHistoryId += 1;
   return {
+    historyId: nextHistoryId,
     kind,
     text,
     stance,
@@ -616,6 +621,97 @@ describe("memory approval and management", () => {
     expect(points()).toHaveLength(4);
   });
 
+  it("[P3-7] offers every earlier version of the current memory and restores the one picked", async () => {
+    const at = (day: number) => `2026-10-2${day}T12:00:00.000Z`;
+    const edits = [
+      node("created", "主人住在杭州", "杭州", at(1), { historyId: 41 }),
+      node("edited", "主人住在上海", "上海", at(2), { historyId: 42 }),
+      node("reaffirmed", "主人住在上海", "上海", at(3), { historyId: 43 }),
+      node("edited", "主人住在苏州", "苏州", at(4), { historyId: 44 }),
+      node("edited", "主人住在南京", "南京", at(5), { historyId: 45 }),
+    ];
+    overview = {
+      ...overview,
+      pending: [],
+      memories: [
+        memoryItem("memory-home-old", "主人住在宁波", {
+          revision: 2,
+          stance: "宁波",
+          supersededBy: "memory-home",
+          history: [
+            node("created", "主人住在温州", "温州", at(0), { historyId: 31 }),
+            node("updated", "主人住在宁波", "宁波", "2026-10-20T18:00:00.000Z", {
+              historyId: 32,
+            }),
+          ],
+        }),
+        memoryItem("memory-home", "主人住在南京", {
+          revision: 5,
+          stance: "南京",
+          history: edits,
+        }),
+      ],
+    };
+    await render();
+    await click("#settings .memory-results", "主人住在南京");
+    await click("#settings .memory-history-fold", "展开更早");
+    const line = () => [...document.querySelectorAll("#settings .memory-history-line > li")];
+    const labelled = (label: string) =>
+      line()
+        .filter((item) =>
+          [...item.querySelectorAll("button")].some((button) => button.textContent === label),
+        )
+        .map((item) => item.querySelector("p")?.textContent ?? "");
+    expect(labelled("恢复到这一版")).toEqual([
+      "主人住在苏州",
+      "主人住在上海",
+      "主人住在杭州",
+      "主人住在温州",
+    ]);
+    expect(labelled("换回这个说法")).toEqual(["主人住在宁波"]);
+    const first = line().find((item) => item.querySelector("p")?.textContent === "主人住在杭州");
+    await act(async () =>
+      [...(first?.querySelectorAll("button") ?? [])]
+        .find((item) => item.textContent === "恢复到这一版")
+        ?.click(),
+    );
+    await act(async () => {});
+    expect(lastCommand()).toMatchObject({
+      type: "memory.mutate",
+      payload: {
+        memoryId: "memory-home",
+        action: "restore_version",
+        expectedRevision: 5,
+        contentRef: null,
+        historyId: 41,
+      },
+    });
+  });
+
+  it("[P3-7] offers no version restore on a memory that is no longer current", () => {
+    const history = [
+      node("created", "主人住在杭州", "杭州", "2026-10-21T12:00:00.000Z"),
+      node("edited", "主人住在南京", "南京", "2026-10-22T12:00:00.000Z"),
+    ];
+    const current = memoryItem("memory-gone", "主人住在南京", { stance: "南京", history });
+    expect(memoryChain(current, [current]).map((item) => item.versionRestorable)).toEqual([
+      true,
+      false,
+    ]);
+    for (const gone of [
+      { ...current, status: "archived" as const },
+      { ...current, status: "trashed" as const },
+      { ...current, supersededBy: "memory-next" },
+    ])
+      expect(memoryChain(gone, [gone]).some((item) => item.versionRestorable)).toBe(false);
+    const trashed = memoryItem("memory-old", "主人住在杭州", {
+      status: "trashed",
+      supersededBy: current.memoryId,
+      history: [node("created", "主人住在温州", "温州", "2026-10-20T12:00:00.000Z")],
+    });
+    expect(memoryChain(current, [trashed, current])[0]).toMatchObject({ versionRestorable: false });
+  });
+
   it("[MH-2] keeps the folded list without lanes when the old changes have no stance", async () => {
     const versions = Array.from({ length: 6 }, (_, index) =>
       memoryItem(`memory-city-v${index}`, `住在第 ${index + 1} 个城市`, {
@@ -829,6 +925,7 @@ describe("memory approval and management", () => {
           sourceThreadId: null,
           history: [
             {
+              historyId: 1,
               kind: "created",
               text: "主人喜欢爬山",
               stance: null,
@@ -838,6 +935,7 @@ describe("memory approval and management", () => {
               at: "2026-10-25T12:00:00.000Z",
             },
             {
+              historyId: 2,
               kind: "reaffirmed",
               text: "主人喜欢爬山",
               stance: null,

@@ -4,17 +4,18 @@ import { RULE_GATES } from "../src/rules/field-catalog.js";
 import {
   amountThresholdRule,
   assertRuleExamples,
+  assertRuleShape,
   BUILT_IN_RULES,
   importantSenderRule,
-  assertRuleShape,
   mailItemFacts,
   quietHoursRule,
   RULE_IDS,
   type RuleRecord,
   ruleBookFor,
+  ruleIsEnforced,
 } from "../src/rules/rule-book.js";
-import { RuleJudge } from "../src/rules/rule-judge.js";
 import { RuleExpressionError } from "../src/rules/rule-expression.js";
+import { RuleJudge } from "../src/rules/rule-judge.js";
 import { DECISION_RULE_CATALOG, suppressPushHits } from "../src/services/proactive-rules.js";
 
 const DEFAULT_SETTINGS = {
@@ -182,6 +183,28 @@ describe("rule registry", () => {
     ]);
     expect(judge.decide("mail_item", facts, [{ ...rule, status: "retired" }]).hits).toEqual([]);
     expect(judge.decide("mail_delivery", facts, [rule]).hits).toEqual([]);
+  });
+
+  it("[P2-2] keeps running a rule that is waiting for review and never runs a retired one", () => {
+    const rule = importantSenderRule(["example.com"], 8);
+    const facts = {
+      sender_address: "a@example.com",
+      sender_domain: "example.com",
+      text: "",
+      text_words: [],
+      amount_state: "missing",
+      amount_minor: 0,
+      amount_currency: "",
+    };
+    const judge = new RuleJudge();
+    const hits = [{ id: RULE_IDS.importantSender, revision: 8, outcome: "raise_floor" }];
+    expect(judge.decide("mail_item", facts, [{ ...rule, status: "needs_review" }]).hits).toEqual(
+      hits,
+    );
+    expect(judge.decide("mail_item", facts, [{ ...rule, status: "retired" }]).hits).toEqual([]);
+    expect(ruleIsEnforced("active")).toBe(true);
+    expect(ruleIsEnforced("needs_review")).toBe(true);
+    expect(ruleIsEnforced("retired")).toBe(false);
   });
 
   it("[HR-1] never lets a user rule set the outcome of another gate: quiet hours only defer", () => {
