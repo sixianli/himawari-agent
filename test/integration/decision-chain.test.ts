@@ -1149,4 +1149,25 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
       await f.repository.close();
     }
   });
+
+  it("[P3-8-undo] the memory overview never calls an already undone tidy-up undoable, even when its memory is untouched", async () => {
+    const f = await fixture();
+    try {
+      await seedMemories(f);
+      await f.repository
+        .memoryConsolidation()
+        .markUndone({ id: "consolidation-1:c1", undoneAt: "2026-11-09T00:00:00.000Z" });
+      const snapshot = await f.control.query({
+        ...(query("unused") as object),
+        type: "memory.overview.read",
+        payload: {},
+      } as never);
+      if (snapshot.type !== "memory.overview.snapshot") throw new Error("snapshot");
+      expect(snapshot.payload.tidyUps).toMatchObject([
+        { changeId: "consolidation-1:c1", undone: true, undoable: false },
+      ]);
+    } finally {
+      await f.repository.close();
+    }
+  });
 });
