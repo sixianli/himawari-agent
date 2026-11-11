@@ -1,5 +1,6 @@
 import type {
   ClockPort,
+  DataClassification,
   DurableMemoryService,
   MemoryBookStorePort,
   MemoryReminder,
@@ -12,14 +13,15 @@ import type {
   RuntimeToolDescriptor,
   RuntimeToolInvocation,
 } from "@himawari-agent/application";
+import { classificationRank } from "@himawari-agent/application";
 import {
   TOOL_REMINDER_CANCEL,
   TOOL_REMINDER_LIST,
   TOOL_REMINDER_SET,
   TOOL_RESULT_REMINDER_SET,
 } from "@himawari-agent/prompt-catalog";
-import { reminderSchedule } from "./production-memory-capture.js";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
+import { reminderSchedule } from "./production-memory-capture.js";
 
 export const REMINDER_SET_CAPABILITY_REF = "reminder.set";
 export const REMINDER_LIST_CAPABILITY_REF = "reminder.list";
@@ -259,6 +261,7 @@ export class ProductionReminderWriter {
 
   async list(
     windowMs: number = LIST_WINDOW_MS,
+    ceiling?: DataClassification,
   ): Promise<{ readonly reminders: readonly ListedReminder[]; readonly more: boolean }> {
     const now = this.#options.clock.now();
     const upcoming = await this.#options.reminders.listUpcoming({
@@ -269,7 +272,7 @@ export class ProductionReminderWriter {
     });
     const listed: ListedReminder[] = [];
     for (const reminder of upcoming.slice(0, LISTED)) {
-      const text = await this.#textOf(reminder);
+      const text = await this.#textOf(reminder, ceiling);
       if (text === undefined) continue;
       listed.push({
         reminderId: reminder.id,
@@ -283,9 +286,16 @@ export class ProductionReminderWriter {
     return { reminders: listed, more: upcoming.length > LISTED };
   }
 
-  async #textOf(reminder: MemoryReminder): Promise<string | undefined> {
+  async #textOf(
+    reminder: MemoryReminder,
+    ceiling?: DataClassification,
+  ): Promise<string | undefined> {
     const memory = await this.#options.state.read(reminder.memoryId);
-    return memory && memory.status === "active" && memory.dataClassification !== "restricted"
+    return memory &&
+      memory.status === "active" &&
+      memory.dataClassification !== "restricted" &&
+      (ceiling === undefined ||
+        classificationRank(memory.dataClassification) <= classificationRank(ceiling))
       ? this.#readText(memory.contentRef)
       : undefined;
   }

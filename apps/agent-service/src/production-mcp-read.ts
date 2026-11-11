@@ -131,14 +131,21 @@ export interface McpReadSources {
     context: MailEmbeddingContext,
     operation: () => Promise<T>,
   ) => Promise<T>;
-  readonly reminders: (windowMs: number) => Promise<{
+  readonly reminders: (
+    windowMs: number,
+    ceiling?: DataClassification,
+  ) => Promise<{
     readonly reminders: readonly ListedReminder[];
     readonly more: boolean;
   }>;
   readonly settings: () => Promise<ProactiveSettings>;
   readonly ownerRules?: () => Promise<readonly StoredOwnerRule[]>;
   readonly profile?: (maxClassification: DataClassification) => Promise<OwnerProfileOutline>;
-  readonly summaries?: (input: { readonly days: number; readonly limit: number }) => Promise<{
+  readonly summaries?: (input: {
+    readonly days: number;
+    readonly limit: number;
+    readonly maxClassification?: DataClassification;
+  }) => Promise<{
     readonly summaries: readonly {
       readonly id: string;
       readonly day: string;
@@ -960,7 +967,10 @@ export class ProductionMcpRead {
     }
   }
 
-  async #recentDays(trace: ReadTrace): Promise<{
+  async #recentDays(
+    trace: ReadTrace,
+    ceiling?: DataClassification,
+  ): Promise<{
     readonly output: Record<string, unknown>;
     readonly read?: SummaryRead;
   }> {
@@ -971,6 +981,7 @@ export class ProductionMcpRead {
       const found = await source({
         days: TODAY_CONTEXT_SUMMARY_DAYS,
         limit: TODAY_CONTEXT_SUMMARY_LIMIT,
+        ...(ceiling ? { maxClassification: ceiling } : {}),
       });
       if (found.partial) this.#options.onSummariesFailed(new Error(SUMMARIES_INCOMPLETE));
       const ordered = [...found.summaries].sort(
@@ -992,10 +1003,13 @@ export class ProductionMcpRead {
     }
   }
 
-  async #todayContext(trace: ReadTrace): Promise<ToolOutcome> {
+  async #todayContext(trace: ReadTrace, ceiling?: DataClassification): Promise<ToolOutcome> {
     const now = this.#options.clock.now();
-    const listed = await this.#options.sources.reminders(TODAY_CONTEXT_REMINDER_WINDOW_MS);
-    const recent = await this.#recentDays(trace);
+    const listed = await this.#options.sources.reminders(
+      TODAY_CONTEXT_REMINDER_WINDOW_MS,
+      ...(ceiling ? [ceiling] : []),
+    );
+    const recent = await this.#recentDays(trace, ceiling);
     return {
       output: {
         today: localDay(now, this.#options.timeZone),
@@ -1066,7 +1080,7 @@ export class ProductionMcpRead {
         ? { omitted: renderPrompt(MCP_START_HERE_OMITTED, { count: String(omittedRules) }) }
         : {}),
     };
-    const today = await this.#todayContext(trace);
+    const today = await this.#todayContext(trace, ceiling);
     const memoryIds = [
       ...new Set([
         ...(outline?.rules ?? []).map(({ memoryId }) => memoryId as string),

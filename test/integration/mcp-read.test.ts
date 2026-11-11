@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  classificationRank,
   DEFAULT_MEMORY_ATTRIBUTES,
   DurableMemoryService,
   type DataClassification,
@@ -107,6 +108,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       readonly binding?: { readonly status?: "disabled"; readonly ownerId?: string };
       readonly failBinding?: boolean;
       readonly readCeiling?: DataClassification;
+      readonly sensitiveSummary?: boolean;
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-mcp-read-"));
@@ -236,14 +238,20 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     await writer.create({ key: "trip", text: TRIP, due: "2026-11-13T13:00", repeat: "none" });
     await memory.runProjectionBatch(10);
     const episodeStore = repository.memoryEpisodes();
-    const seedSummary = async (id: string, day: string, text: string, sequence: number) => {
+    const seedSummary = async (
+      id: string,
+      day: string,
+      text: string,
+      sequence: number,
+      classification: DataClassification = "private",
+    ) => {
       const contentRef = `payload:episode:${id}` as Parameters<typeof payloads.get>[0];
       await payloads.put(
         await adapters.payloadProtector.protect({
           ...scope,
           ref: contentRef,
           contentType: "text/plain",
-          dataClassification: "private",
+          dataClassification: classification,
           plaintext: new TextEncoder().encode(text),
           createdAt: NOW,
         }),
@@ -255,7 +263,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         day,
         source: "day_summary",
         contentRef,
-        dataClassification: "private",
+        dataClassification: classification,
         firstSequence: sequence,
         lastSequence: sequence,
         startedAt: `${day}T01:00:00.000Z`,
@@ -267,6 +275,14 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     };
     await seedSummary("episode-older", "2026-11-08", OLDER, 1);
     await seedSummary("episode-yesterday", "2026-11-10", YESTERDAY, 2);
+    if (options.sensitiveSummary)
+      await seedSummary(
+        "episode-sensitive",
+        "2026-11-11",
+        "今天陪主人去医院复查慢性病",
+        4,
+        "sensitive",
+      );
     if (options.loseTodaySummary) await seedSummary("episode-today-lost", "2026-11-11", "lost", 3);
     const episodes = new MemoryEpisodeService({
       store: episodeStore,
@@ -344,22 +360,34 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
           context.costMicros += 7;
           return operation();
         },
-        reminders: async (windowMs) => {
+        reminders: async (windowMs, ceiling) => {
           if (options.failReminders) throw new Error("REMINDER_STORE_DOWN");
-          return writer.list(windowMs);
+          return writer.list(windowMs, ceiling);
         },
         settings: () => settingsStore.readSettings(scope),
         ownerRules: () => repository.ownerRules().list({ ...scope, includeRetired: false }),
         ...(options.withoutSummaries
           ? {}
           : {
-              summaries: async ({ days, limit }: { days: number; limit: number }) => {
+              summaries: async ({
+                days,
+                limit,
+                maxClassification,
+              }: {
+                days: number;
+                limit: number;
+                maxClassification?: DataClassification;
+              }) => {
                 if (options.failSummaries) throw new Error("SUMMARY_STORE_DOWN");
                 const found = await episodes.recent({
                   ...scope,
                   days,
                   limit,
-                  allowedClassifications: ["public", "private", "sensitive"],
+                  allowedClassifications: (["public", "private", "sensitive"] as const).filter(
+                    (classification) =>
+                      maxClassification === undefined ||
+                      classificationRank(classification) <= classificationRank(maxClassification),
+                  ),
                 });
                 return {
                   partial: found.partial,
@@ -891,6 +919,20 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       await open.seedProfile("memory-health", "identity", 900, secretLine, "sensitive");
       const openClient = await open.connect("modern");
       expect((await open.call(openClient, "start_here")).text).toContain(secretLine);
+    });
+
+    it("REVERSE: leaves sensitive reminders and sensitive day summaries out of today under the default ceiling", async () => {
+      const hidden = await setup({ sensitiveSummary: true });
+      const hiddenClient = await hidden.connect("modern");
+      const closed = await hidden.call(hiddenClient, "start_here");
+      expect(closed.text).not.toContain("Wi-Fi");
+      expect(closed.text).not.toContain("慢性病");
+      expect(closed.text).toContain("牙医");
+      const open = await setup({ sensitiveSummary: true, readCeiling: "sensitive" });
+      const openClient = await open.connect("modern");
+      const opened = await open.call(openClient, "start_here");
+      expect(opened.text).toContain("Wi-Fi");
+      expect(opened.text).toContain("慢性病");
     });
 
     it("stays inside the profile budget and says how many lines were left out", async () => {

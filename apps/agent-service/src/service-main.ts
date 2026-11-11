@@ -9,15 +9,17 @@ import {
   autoCommitThreshold,
   type ClockPort,
   claimFromRunExecutionLease,
+  classificationRank,
   createProactiveSeal,
+  type DataClassification,
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
-  OwnerProfileService,
   DurableMemoryService,
   ExecutionLiveFeed,
   type IdGeneratorPort,
   MemoryCheckupService,
   modelUsagePurpose,
   modelVisibleClassifications,
+  OwnerProfileService,
   type ProductConfiguration,
   prereviewPromptId,
   RemoteExecutionBackend,
@@ -114,6 +116,7 @@ import {
   type ProductionMemoryComposition,
 } from "./production-memory-composition.js";
 import { quoteRefOfMemory } from "./production-memory-consolidation.js";
+import { findSourceMessageIds } from "./production-memory-control.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
@@ -139,15 +142,14 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
-import { findSourceMessageIds } from "./production-memory-control.js";
+import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
+import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import {
   createProductionRealEval,
   createRealEvalModel,
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
-import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
-import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -2245,7 +2247,7 @@ export async function startTenantRuntime(
             recall: (args, within) => memoryRecall.recallOutsideRun(args, within),
             embedOutsideRun: (context, operation) =>
               memory.embedForExternalRead(context, operation),
-            reminders: (windowMs) => reminderWriter.list(windowMs),
+            reminders: (windowMs, ceiling) => reminderWriter.list(windowMs, ceiling),
             settings: () =>
               settingsStore.readSettings({
                 ownerId: configuration.ownerId,
@@ -2289,13 +2291,26 @@ export async function startTenantRuntime(
               }),
             ...(memoryEpisodes
               ? {
-                  summaries: async ({ days, limit }: { days: number; limit: number }) => {
+                  summaries: async ({
+                    days,
+                    limit,
+                    maxClassification,
+                  }: {
+                    days: number;
+                    limit: number;
+                    maxClassification?: DataClassification;
+                  }) => {
                     const found = await memoryEpisodes.recent({
                       ownerId: configuration.ownerId,
                       agentId: configuration.agentId,
                       days,
                       limit,
-                      allowedClassifications: modelVisibleClassifications(),
+                      allowedClassifications: modelVisibleClassifications().filter(
+                        (classification) =>
+                          maxClassification === undefined ||
+                          classificationRank(classification) <=
+                            classificationRank(maxClassification),
+                      ),
                     });
                     return {
                       partial: found.partial,
