@@ -131,6 +131,9 @@ describe.each(["worker", "direct"] as const)(
         "payload-memory-v2",
         "payload-memory-v3",
         "payload-rule",
+        "payload-dedupe-a",
+        "payload-dedupe-b",
+        "payload-dedupe-c",
         "payload-query",
       ]) {
         insertPayload.run(ref, OWNER_ID, AGENT_ID, `sha256:${ref}`, T0);
@@ -175,8 +178,12 @@ describe.each(["worker", "direct"] as const)(
       provider: DeterministicProjectionProvider;
       content: MapMemoryContent;
       now: () => string;
+      dedupeSameSource?: boolean;
     }) {
       return new DurableMemoryService({
+        ...(input.dedupeSameSource === undefined
+          ? {}
+          : { dedupeSameSource: input.dedupeSameSource }),
         state: input.repository.productMemoryState(),
         jobs: input.repository.memoryProjectionJobs(),
         provider: input.provider,
@@ -452,6 +459,70 @@ describe.each(["worker", "direct"] as const)(
         expect((await resource.repository.productMemoryState().read(beef.id))?.lastUsedAt).toBe(T0);
         await resource.repository.close();
       });
+
+      it.each([
+        [true, ["memory-dedupe-a", "memory-dedupe-c"]],
+        [false, ["memory-dedupe-a", "memory-dedupe-b"]],
+      ] as const)(
+        "asks for the relevance cutoff and, with same-source dedupe %s, returns %j and records use only for them",
+        async (dedupeSameSource, expected) => {
+          const resource = await createRepository();
+          const provider = new DeterministicProjectionProvider();
+          const seenCutoff: (boolean | undefined)[] = [];
+          const originalSearch = provider.search.bind(provider);
+          provider.search = (async (input: { relevanceCutoff?: boolean }) => {
+            seenCutoff.push(input.relevanceCutoff);
+            return originalSearch();
+          }) as typeof provider.search;
+          const content = new MapMemoryContent();
+          content.set("payload-dedupe-a", "主人的妻子叫苏晴。");
+          content.set("payload-dedupe-b", "主人的妻子叫苏晴");
+          content.set("payload-dedupe-c", "主人的妻子叫苏晴");
+          const memory = service({
+            repository: resource.repository,
+            provider,
+            content,
+            now: () => T0,
+            dedupeSameSource,
+          });
+          for (const [suffix, source] of [
+            ["a", "message-dedupe-1"],
+            ["b", "message-dedupe-1"],
+            ["c", "message-dedupe-2"],
+          ] as const) {
+            const proposal = createProposal(createMemoryId(`memory-dedupe-${suffix}`));
+            await memory.applyProposal(
+              {
+                ...proposal,
+                memory: {
+                  ...proposal.memory,
+                  contentRef: `payload-dedupe-${suffix}`,
+                  sourceRefs: [source],
+                },
+              } as never,
+              GENERATION_ID,
+            );
+          }
+          await memory.runProjectionBatch(10);
+          const searched = await memory.search({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            queryRef: "",
+            queryText: "我妻子叫什么",
+            policy: { allowedClassifications: ["private"], limit: 2 },
+          });
+          expect(searched.map(({ memory: found }) => found.id)).toEqual(expected);
+          expect(seenCutoff).toEqual([true]);
+          const state = resource.repository.productMemoryState();
+          for (const suffix of ["a", "b", "c"]) {
+            const id = createMemoryId(`memory-dedupe-${suffix}`);
+            expect((await state.read(id))?.lastUsedAt ?? null).toBe(
+              (expected as readonly string[]).includes(id) ? T0 : null,
+            );
+          }
+          await resource.repository.close();
+        },
+      );
 
       it("recovers retries and restart, keeps deletion immediately unsearchable, and rebuilds equivalently", async () => {
         const resource = await createRepository();

@@ -10,6 +10,7 @@ import {
   type WebProviderId,
   type ConfigurationPort,
   type ConfiguredEmbeddingModelDescriptor,
+  type ConfiguredMemoryRetrieval,
   type ConfiguredCompletionsGenerationModelDescriptor,
   type ConfiguredModelDescriptor,
   type DataClassification,
@@ -116,6 +117,27 @@ function nonNegativeNumber(value: unknown, field: string): number {
     throw invalid(field, "must be a non-negative finite number");
   }
   return value;
+}
+
+function memoryRetrieval(value: unknown): ConfiguredMemoryRetrieval | undefined {
+  if (value === undefined) return undefined;
+  const field = "configuration.memory.retrieval";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    ["keywordWeight", "entityWeight", "cutoffMargin", "dedupeSameSource"],
+    field,
+  );
+  const parsed: Record<string, number | boolean> = {};
+  for (const key of ["keywordWeight", "entityWeight", "cutoffMargin"] as const) {
+    if (input[key] === undefined) continue;
+    const value = unitInterval(input[key], `${field}.${key}`);
+    if (value >= 1) throw invalid(`${field}.${key}`, "must be at least 0 and below 1");
+    parsed[key] = value;
+  }
+  if (input["dedupeSameSource"] !== undefined)
+    parsed["dedupeSameSource"] = boolean(input["dedupeSameSource"], `${field}.dedupeSameSource`);
+  return Object.freeze(parsed) as ConfiguredMemoryRetrieval;
 }
 
 function unitInterval(value: unknown, field: string): number {
@@ -1287,9 +1309,10 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const memory = record(input["memory"], "configuration.memory");
   rejectUnknown(
     memory,
-    ["adapter", "version", "storagePath", "dimensions", "minimumSimilarity"],
+    ["adapter", "version", "storagePath", "dimensions", "minimumSimilarity", "retrieval"],
     "configuration.memory",
   );
+  const retrieval = memoryRetrieval(memory["retrieval"]);
   const minimumSimilarity =
     memory["minimumSimilarity"] === undefined
       ? undefined
@@ -1477,6 +1500,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       storagePath: memoryPath,
       dimensions: memoryDimensions,
       ...(minimumSimilarity === undefined ? {} : { minimumSimilarity }),
+      ...(retrieval === undefined ? {} : { retrieval }),
     }),
     repositoryAllowlistRefs: stringArray(
       input["repositoryAllowlistRefs"],

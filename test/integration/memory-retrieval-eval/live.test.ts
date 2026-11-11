@@ -18,6 +18,7 @@ import {
 } from "@himawari-agent/domain";
 import {
   AI_GATEWAY_BASE_URL,
+  DEFAULT_RELEVANCE_TUNING,
   type Embedder,
   GatewayEmbedder,
   gatewayEmbeddingUsage,
@@ -228,6 +229,7 @@ describe.skipIf(!LIVE)("memory retrieval live evaluation", () => {
             }),
             content,
             workerId: "memory-retrieval-eval",
+            dedupeSameSource: true,
             now: () => dataset.today,
             maximumProjectionAttempts: 1,
             projectionLeaseMs: 60_000,
@@ -282,6 +284,8 @@ describe.skipIf(!LIVE)("memory retrieval live evaluation", () => {
           }
           runs.push({
             minimumSimilarity,
+            relevance: DEFAULT_RELEVANCE_TUNING,
+            dedupeSameSource: true,
             production: minimumSimilarity === QWEN3_MEMORY_MINIMUM_SIMILARITY,
             metrics: retrievalMetrics(outcomes),
             outcomes: outcomes.map(({ query, returned }) => ({

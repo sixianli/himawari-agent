@@ -5,6 +5,7 @@ import {
   type MemoryProviderProjectionPort,
   type MemoryTimeScope,
   modelVisibleClassifications,
+  nearDuplicateText,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
   type RuntimeRequest,
@@ -58,6 +59,7 @@ export interface ProductionMemoryRecallOptions {
   ) => Promise<T>;
   readonly now: () => string;
   readonly timeZone?: string;
+  readonly dedupeSameSource?: boolean;
 }
 
 function startOfDay(day: string, timeZone: string): string {
@@ -176,6 +178,7 @@ export class ProductionMemoryRecall {
           query: input.query,
           limit: input.limit * 3,
           scope: searchScope,
+          relevanceCutoff: true,
         }),
       ),
       tentativeLimit === 0
@@ -188,6 +191,7 @@ export class ProductionMemoryRecall {
                 query: input.query,
                 limit: input.limit * 3,
                 scope: searchScope,
+                relevanceCutoff: true,
                 includeTentative: true,
                 tentativeOnly: true,
               }),
@@ -203,14 +207,32 @@ export class ProductionMemoryRecall {
         })
       ).map((record) => [record.id, record]),
     );
-    const render = async (
+    type Shown = {
+      readonly memory: ProductMemoryRecord;
+      readonly text: string;
+      readonly wanted: "confirmed" | "tentative";
+    };
+    const dedupe = this.#options.dedupeSameSource === true;
+    const duplicateOf = (
+      shownSoFar: readonly Shown[],
+      memory: ProductMemoryRecord,
+      text: string,
+    ) =>
+      dedupe
+        ? shownSoFar.find(
+            (earlier) =>
+              earlier.memory.sourceRefs.some((source) => memory.sourceRefs.includes(source)) &&
+              nearDuplicateText(earlier.text, text),
+          )
+        : undefined;
+    const collect = async (
       candidates: typeof hits,
       wanted: "confirmed" | "tentative",
-      count: number,
-    ): Promise<Record<string, unknown>[]> => {
-      const rendered: Record<string, unknown>[] = [];
+      kept: Shown[],
+      room: () => number,
+    ): Promise<void> => {
       for (const hit of candidates) {
-        if (rendered.length >= count) break;
+        if (room() <= 0) break;
         const memory = records.get(hit.productMemoryId);
         if (
           !memory ||
@@ -222,27 +244,34 @@ export class ProductionMemoryRecall {
           continue;
         const text = await this.#options.readText(memory).catch(() => undefined);
         if (!text) continue;
-        shown.push(memory.dataClassification);
-        const attributes = memory.attributes;
-        const validTo = attributes?.validTo ?? null;
-        rendered.push({
-          text,
-          ...(wanted === "tentative" ? { tentative: true } : {}),
-          current: validTo === null || validTo > now,
-          ...(attributes?.supersededBy ? { correctedLater: true } : {}),
-          recordedAt: memory.recordedAt ?? memory.updatedAt,
-          validFrom: attributes?.validFrom ?? null,
-          validTo,
-        });
+        const earlier = duplicateOf(kept, memory, text);
+        if (earlier) {
+          if (earlier.wanted === "tentative" && wanted === "confirmed")
+            kept.splice(kept.indexOf(earlier), 1, { memory, text, wanted });
+          continue;
+        }
+        kept.push({ memory, text, wanted });
       }
-      return rendered;
     };
-    const tentativeMemories = await render(tentativeHits, "tentative", tentativeLimit);
-    const confirmedMemories = await render(
-      hits,
-      "confirmed",
-      input.limit - tentativeMemories.length,
-    );
+    const kept: Shown[] = [];
+    await collect(tentativeHits, "tentative", kept, () => tentativeLimit - kept.length);
+    await collect(hits, "confirmed", kept, () => input.limit - kept.length);
+    const present = ({ memory, text, wanted }: Shown): Record<string, unknown> => {
+      shown.push(memory.dataClassification);
+      const attributes = memory.attributes;
+      const validTo = attributes?.validTo ?? null;
+      return {
+        text,
+        ...(wanted === "tentative" ? { tentative: true } : {}),
+        current: validTo === null || validTo > now,
+        ...(attributes?.supersededBy ? { correctedLater: true } : {}),
+        recordedAt: memory.recordedAt ?? memory.updatedAt,
+        validFrom: attributes?.validFrom ?? null,
+        validTo,
+      };
+    };
+    const confirmedMemories = kept.filter(({ wanted }) => wanted === "confirmed").map(present);
+    const tentativeMemories = kept.filter(({ wanted }) => wanted === "tentative").map(present);
     const memories = [...confirmedMemories, ...tentativeMemories];
     const tentativeCount = tentativeMemories.length;
     const episodes = this.#options.episodes

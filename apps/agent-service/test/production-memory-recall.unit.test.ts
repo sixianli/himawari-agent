@@ -131,11 +131,14 @@ function recallWith(
     score: number;
     tentative?: boolean;
     classification?: ProductMemoryRecord["dataClassification"];
+    sourceRefs?: readonly string[];
   }[],
+  dedupeSameSource?: boolean,
 ) {
-  const records = entries.map(({ id, tentative, classification }) =>
-    record(id, classification ?? "private", tentative ? { tentative: true } : {}),
-  );
+  const records = entries.map(({ id, tentative, classification, sourceRefs }) => ({
+    ...record(id, classification ?? "private", tentative ? { tentative: true } : {}),
+    sourceRefs: sourceRefs ?? [`message-${id}`],
+  }));
   const search = vi.fn(async (request: { includeTentative?: boolean; tentativeOnly?: boolean }) =>
     entries
       .map(({ id, score, tentative }) => ({
@@ -160,6 +163,7 @@ function recallWith(
     embedWithin: async (_invocation, _slot, operation) => operation(),
     now: () => now,
     timeZone: "Asia/Tokyo",
+    ...(dedupeSameSource === undefined ? {} : { dedupeSameSource }),
   });
   return { service, search };
 }
@@ -276,4 +280,41 @@ it("[PA-2] REVERSE: a failing tentative search never takes the confirmed results
   const result = (await f.service.recall(call({ query: "x", limit: 4 }))) as RecallResult;
   expect(result.memories.map(({ text }) => text)).toEqual(["主人住在杭州"]);
   expect(result).not.toHaveProperty("tentativeNote");
+});
+
+it("asks both recall searches for the relevance cutoff", async () => {
+  const f = recallWith([{ id: "fact", text: "主人住在杭州", score: 1 }]);
+  await f.service.recall(call({ query: "我住在哪", limit: 4 }));
+  expect(f.search.mock.calls.map(([request]) => request)).toEqual([
+    expect.objectContaining({ relevanceCutoff: true }),
+    expect.objectContaining({ relevanceCutoff: true, tentativeOnly: true }),
+  ]);
+});
+
+it("drops a same-source near duplicate, refills the slot and lets a confirmed memory replace its tentative twin", async () => {
+  const entries = [
+    { id: "guess", text: "主人的妻子叫苏晴", score: 5, tentative: true, sourceRefs: ["m1"] },
+    { id: "wife", text: "主人的妻子叫苏晴。", score: 4, sourceRefs: ["m1"] },
+    { id: "wife-again", text: "主人的妻子叫苏晴", score: 3, sourceRefs: ["m1"] },
+    { id: "daughter", text: "主人的女儿叫小禾", score: 2, sourceRefs: ["m1"] },
+    { id: "home", text: "主人住在杭州", score: 1, sourceRefs: ["m2"] },
+  ];
+  const deduped = (await recallWith(entries, true).service.recall(
+    call({ query: "我家里人", limit: 4 }),
+  )) as RecallResult;
+  expect(deduped.memories.map(({ text }) => text)).toEqual([
+    "主人的妻子叫苏晴。",
+    "主人的女儿叫小禾",
+    "主人住在杭州",
+  ]);
+  expect(deduped.memories.some(({ tentative }) => tentative === true)).toBe(false);
+  const plain = (await recallWith(entries, false).service.recall(
+    call({ query: "我家里人", limit: 4 }),
+  )) as RecallResult;
+  expect(plain.memories.map(({ text }) => text)).toEqual([
+    "主人的妻子叫苏晴。",
+    "主人的妻子叫苏晴",
+    "主人的女儿叫小禾",
+    "主人的妻子叫苏晴",
+  ]);
 });

@@ -1,0 +1,442 @@
+{
+  "schema": "himawari-memory-retrieval-candidates.v1",
+  "note": "2026-11-11 用 alibaba/qwen3-embedding-8b 实跑 evals/memory-retrieval/dataset.json 时，每句话三路的原始候选（向量路已按 0.6 门槛过滤）。离线复算融合截断用，不调用任何模型。",
+  "model": "alibaba/qwen3-embedding-8b",
+  "minimumSimilarity": 0.6,
+  "memories": {
+    "colleague-lin": {
+      "importancePermille": 600,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "lin-zhou-friends": {
+      "importancePermille": 500,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "colleague-zhou": {
+      "importancePermille": 600,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "job": {
+      "importancePermille": 800,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "wife": {
+      "importancePermille": 900,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "daughter": {
+      "importancePermille": 900,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "crowds": {
+      "importancePermille": 700,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "shy": {
+      "importancePermille": 700,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "badminton": {
+      "importancePermille": 600,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "birthday": {
+      "importancePermille": 800,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "cilantro": {
+      "importancePermille": 600,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "library": {
+      "importancePermille": 500,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "color": {
+      "importancePermille": 700,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "mother": {
+      "importancePermille": 700,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "japanese": {
+      "importancePermille": 600,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "laptop": {
+      "importancePermille": 500,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "cat": {
+      "importancePermille": 700,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "peanut": {
+      "importancePermille": 900,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "car": {
+      "importancePermille": 500,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "home": {
+      "importancePermille": 800,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "latte": {
+      "importancePermille": 600,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "vegetarian": {
+      "importancePermille": 800,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "test-server": {
+      "importancePermille": 600,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    },
+    "dentist": {
+      "importancePermille": 500,
+      "confidencePermille": 1000,
+      "updatedAt": "2026-10-29T00:00:00.000Z",
+      "lastUsedAt": "2026-10-29T00:00:00.000Z",
+      "startsAt": "2026-10-29T00:00:00.000Z",
+      "endsAt": null,
+      "current": true
+    }
+  },
+  "queries": {
+    "林峰是谁？": {
+      "vector": [["colleague-lin", 0.62518, 0.62518], ["lin-zhou-friends", 0.61385, 0.61385]],
+      "lexical": [],
+      "entity": [["colleague-lin", 1, 0.62518], ["lin-zhou-friends", 1, 0.61385]]
+    },
+    "周岚是我什么人": {
+      "vector": [["colleague-zhou", 0.64216, 0.64216]],
+      "lexical": [],
+      "entity": [["colleague-zhou", 1, 0.64216], ["lin-zhou-friends", 1, 0.54878]]
+    },
+    "林峰和周岚认识吗": {
+      "vector": [
+        ["lin-zhou-friends", 0.80948, 0.80948],
+        ["colleague-zhou", 0.66673, 0.66673],
+        ["colleague-lin", 0.6623, 0.6623]
+      ],
+      "lexical": [],
+      "entity": [
+        ["lin-zhou-friends", 2, 0.80948],
+        ["colleague-lin", 1, 0.6623],
+        ["colleague-zhou", 1, 0.66673]
+      ]
+    },
+    "我前同事里谁和谁是同学": {
+      "vector": [],
+      "lexical": [
+        ["lin-zhou-friends", 2.20926, 0.55383],
+        ["colleague-lin", 1.93356, 0.54209],
+        ["colleague-zhou", 1.93356, 0.54918]
+      ],
+      "entity": []
+    },
+    "我想约林峰吃饭": {
+      "vector": [["colleague-lin", 0.69887, 0.69887], ["lin-zhou-friends", 0.64373, 0.64373]],
+      "lexical": [],
+      "entity": [["colleague-lin", 1, 0.69887], ["lin-zhou-friends", 1, 0.64373]]
+    },
+    "提醒我周五给周岚回消息": {
+      "vector": [],
+      "lexical": [],
+      "entity": [["colleague-zhou", 1, 0.57625], ["lin-zhou-friends", 1, 0.5036]]
+    },
+    "我老婆叫什么名字": { "vector": [], "lexical": [], "entity": [] },
+    "给苏晴挑个生日礼物": {
+      "vector": [["wife", 0.60367, 0.60367]],
+      "lexical": [["birthday", 2.67849, 0.39966]],
+      "entity": [["wife", 1, 0.60367]]
+    },
+    "我女儿叫什么": {
+      "vector": [["daughter", 0.60845, 0.60845]],
+      "lexical": [["daughter", 2.54344, 0.60845]],
+      "entity": []
+    },
+    "给小禾讲个睡前故事": {
+      "vector": [["daughter", 0.61446, 0.61446]],
+      "lexical": [],
+      "entity": [["daughter", 1, 0.61446]]
+    },
+    "我住在哪里": {
+      "vector": [],
+      "lexical": [["mother", 2.39302, 0.482], ["home", 2.25883, 0.51424]],
+      "entity": []
+    },
+    "北区附近有什么公园": {
+      "vector": [],
+      "lexical": [["home", 3.85565, 0.5094]],
+      "entity": [["home", 1, 0.5094]]
+    },
+    "我最喜欢什么颜色": {
+      "vector": [["color", 0.65349, 0.65349]],
+      "lexical": [
+        ["color", 2.24362, 0.65349],
+        ["latte", 2.10191, 0.43283],
+        ["crowds", 1.86619, 0.39079]
+      ],
+      "entity": []
+    },
+    "帮我挑一件衣服的颜色": { "vector": [], "lexical": [], "entity": [] },
+    "帮我点杯咖啡": { "vector": [["latte", 0.69231, 0.69231]], "lexical": [], "entity": [] },
+    "我喝咖啡一般喝什么": { "vector": [["latte", 0.67457, 0.67457]], "lexical": [], "entity": [] },
+    "帮我找个安静点的餐厅": { "vector": [], "lexical": [], "entity": [] },
+    "演唱会人那么多我还去吗": { "vector": [], "lexical": [], "entity": [] },
+    "周末推荐个地方去玩": {
+      "vector": [],
+      "lexical": [["library", 3.18599, 0.44301], ["crowds", 2.82868, 0.41731]],
+      "entity": []
+    },
+    "晚饭吃什么好": { "vector": [], "lexical": [], "entity": [] },
+    "我现在还吃肉吗": { "vector": [], "lexical": [], "entity": [] },
+    "点外卖要注意什么": { "vector": [], "lexical": [], "entity": [] },
+    "我对什么过敏": {
+      "vector": [["peanut", 0.66104, 0.66104]],
+      "lexical": [["peanut", 3.18599, 0.66104]],
+      "entity": []
+    },
+    "我的猫叫什么": {
+      "vector": [["cat", 0.69089, 0.69089]],
+      "lexical": [["cat", 2.67849, 0.69089]],
+      "entity": []
+    },
+    "团子该打疫苗了": {
+      "vector": [["cat", 0.64861, 0.64861]],
+      "lexical": [],
+      "entity": [["cat", 1, 0.64861]]
+    },
+    "我周三晚上有什么安排": {
+      "vector": [["badminton", 0.63416, 0.63416]],
+      "lexical": [["badminton", 2.67849, 0.63416]],
+      "entity": []
+    },
+    "我用的是什么电脑": {
+      "vector": [["laptop", 0.66809, 0.66809]],
+      "lexical": [["laptop", 2.54344, 0.66809]],
+      "entity": []
+    },
+    "我的车是什么颜色": { "vector": [["car", 0.61706, 0.61706]], "lexical": [], "entity": [] },
+    "我生日是哪天": { "vector": [], "lexical": [["birthday", 2.67849, 0.5946]], "entity": [] },
+    "我妈住在哪": {
+      "vector": [["mother", 0.61244, 0.61244]],
+      "lexical": [["mother", 2.39302, 0.61244], ["home", 2.25883, 0.44702]],
+      "entity": []
+    },
+    "帮我订一张去成都的机票看我妈": {
+      "vector": [["mother", 0.61484, 0.61484]],
+      "lexical": [["mother", 4.00886, 0.61484]],
+      "entity": [["mother", 1, 0.61484]]
+    },
+    "我在准备什么考试": { "vector": [], "lexical": [["japanese", 5.65736, 0.58586]], "entity": [] },
+    "帮我出几道日语题": {
+      "vector": [["japanese", 0.64802, 0.64802]],
+      "lexical": [["japanese", 2.82868, 0.64802]],
+      "entity": []
+    },
+    "帮我改一下简历": { "vector": [], "lexical": [], "entity": [] },
+    "我在找什么工作": {
+      "vector": [["job", 0.6128, 0.6128]],
+      "lexical": [["job", 2.54344, 0.6128]],
+      "entity": []
+    },
+    "我牙医在哪": {
+      "vector": [["dentist", 0.71145, 0.71145]],
+      "lexical": [["dentist", 2.82868, 0.71145]],
+      "entity": []
+    },
+    "我的测试机叫什么": {
+      "vector": [["test-server", 0.80524, 0.80524]],
+      "lexical": [["test-server", 2.82868, 0.80524]],
+      "entity": []
+    },
+    "Hermes 上的服务又挂了": {
+      "vector": [["test-server", 0.60492, 0.60492]],
+      "lexical": [["test-server", 3.85565, 0.60492]],
+      "entity": [["test-server", 1, 0.60492]]
+    },
+    "我周末一般干嘛": { "vector": [], "lexical": [["library", 3.18599, 0.54233]], "entity": [] },
+    "给我女儿准备个周末活动": {
+      "vector": [],
+      "lexical": [
+        ["library", 3.18599, 0.41667],
+        ["japanese", 2.82868, 0.28501],
+        ["daughter", 2.54344, 0.53997]
+      ],
+      "entity": []
+    },
+    "写到一个pdf文件": { "vector": [], "lexical": [], "entity": [] },
+    "把刚才的内容保存成markdown": { "vector": [], "lexical": [], "entity": [] },
+    "今天日本有什么新闻": { "vector": [], "lexical": [], "entity": [] },
+    "帮我写一首诗": { "vector": [], "lexical": [], "entity": [] },
+    "运行 ls -la": { "vector": [], "lexical": [], "entity": [] },
+    "后台运行300秒ticker": { "vector": [], "lexical": [], "entity": [] },
+    "1加1等于几": { "vector": [], "lexical": [], "entity": [] },
+    "解释一下快速排序": { "vector": [], "lexical": [], "entity": [] },
+    "翻译成英文": { "vector": [], "lexical": [], "entity": [] },
+    "继续": { "vector": [], "lexical": [], "entity": [] },
+    "好的": { "vector": [], "lexical": [], "entity": [] },
+    "再详细一点": { "vector": [], "lexical": [], "entity": [] },
+    "把这个表格转成CSV": { "vector": [], "lexical": [], "entity": [] },
+    "帮我总结上面的对话": { "vector": [], "lexical": [], "entity": [] },
+    "这段 Python 代码为什么报错": { "vector": [], "lexical": [], "entity": [] },
+    "写一个 bash 脚本统计行数": { "vector": [], "lexical": [], "entity": [] },
+    "现在几点了": { "vector": [], "lexical": [], "entity": [] },
+    "重写得更简洁": { "vector": [], "lexical": [], "entity": [] },
+    "打开文件 x.txt": { "vector": [], "lexical": [], "entity": [] },
+    "Bitcoin price today": { "vector": [], "lexical": [], "entity": [] },
+    "what is the capital of France": { "vector": [], "lexical": [], "entity": [] },
+    "git rebase 怎么用": { "vector": [], "lexical": [], "entity": [] },
+    "帮我检查一下这个正则": { "vector": [], "lexical": [], "entity": [] },
+    "把字号调大一点": { "vector": [], "lexical": [], "entity": [] },
+    "谢谢": { "vector": [], "lexical": [], "entity": [] },
+    "嗯": { "vector": [], "lexical": [], "entity": [] },
+    "你好": { "vector": [], "lexical": [], "entity": [] },
+    "你是谁": { "vector": [], "lexical": [], "entity": [] },
+    "你能做什么": { "vector": [], "lexical": [], "entity": [] },
+    "不对，重来": { "vector": [], "lexical": [], "entity": [] },
+    "停一下": { "vector": [], "lexical": [], "entity": [] },
+    "这个命令什么意思": { "vector": [], "lexical": [], "entity": [] },
+    "帮我把文件改名": { "vector": [], "lexical": [], "entity": [] },
+    "删除临时文件": { "vector": [], "lexical": [], "entity": [] },
+    "把图片压缩一下": { "vector": [], "lexical": [], "entity": [] },
+    "写个邮件给客户说项目延期": { "vector": [], "lexical": [], "entity": [] },
+    "帮我算一下汇率": { "vector": [], "lexical": [], "entity": [] },
+    "打开设置": { "vector": [], "lexical": [], "entity": [] },
+    "为什么这么慢": { "vector": [], "lexical": [], "entity": [] },
+    "把刚才那段改成日语": {
+      "vector": [],
+      "lexical": [["japanese", 2.82868, 0.5862]],
+      "entity": []
+    },
+    "总结这篇文章": { "vector": [], "lexical": [], "entity": [] },
+    "搜索一下 React 19 新功能": { "vector": [], "lexical": [], "entity": [] },
+    "装一下 numpy": { "vector": [], "lexical": [], "entity": [] },
+    "用表格列出来": { "vector": [], "lexical": [], "entity": [] },
+    "再来一个": { "vector": [], "lexical": [], "entity": [] },
+    "OK": { "vector": [], "lexical": [], "entity": [] },
+    "とりあえず続けて": { "vector": [], "lexical": [], "entity": [] },
+    "ファイルを保存して": { "vector": [], "lexical": [], "entity": [] }
+  }
+}

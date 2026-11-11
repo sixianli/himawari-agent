@@ -200,6 +200,7 @@ export interface MemoryProviderProjectionPort {
     readonly limit: number;
     readonly scope?: MemoryTimeScope;
     readonly minimumSimilarity?: number;
+    readonly relevanceCutoff?: boolean;
     readonly includeTentative?: boolean;
     readonly tentativeOnly?: boolean;
   }): Promise<readonly MemoryProviderHit[]>;
@@ -230,6 +231,7 @@ export interface MemoryIndexCandidate {
   readonly updatedAt: string;
   readonly lastUsedAt: string | null;
   readonly signal: number;
+  readonly similarity?: number;
   readonly startsAt: string;
   readonly endsAt: string | null;
   readonly current: boolean;
