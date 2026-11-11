@@ -303,7 +303,23 @@ describe("[P4-7] capture thresholds are configured per category", () => {
     };
     const { result, ledger } = await capture([reaffirm("preference", 800, "health")], { gates });
     expect(result.committedMemoryIds).toEqual([]);
-    expect(ledger.map(({ reasonCode }) => reasonCode)).toEqual(["confirm_below_threshold"]);
+    expect(ledger.map(({ reasonCode, category }) => [reasonCode, category])).toEqual([
+      ["confirm_below_threshold", "health"],
+    ]);
+  });
+
+  it("REVERSE: a new memory carrying a confirmation mark still goes through the auto-commit gate", async () => {
+    const gates: CaptureGates = {
+      ...DEFAULT_CAPTURE_GATES,
+      confirmTentative: { ...MEMORY_TENTATIVE_CONFIRM_GATE, defaultThreshold: 0 },
+    };
+    const { result, ledger } = await capture(
+      [withCategory("goal", { confidencePermille: 800, confirmsTentativeCategory: "goal" })],
+      { gates },
+    );
+    expect(result.committedMemoryIds).toEqual([]);
+    expect(result.tentativeMemoryIds).toEqual(["memory:generation-1:0"]);
+    expect(ledger.map(({ reasonCode }) => reasonCode)).toEqual(["kept_tentative"]);
   });
 
   it("REVERSE: reaffirming a formal memory still uses the auto-commit gate", async () => {

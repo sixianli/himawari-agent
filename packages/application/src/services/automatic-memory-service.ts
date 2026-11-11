@@ -101,6 +101,14 @@ function canBeKeptTentatively(candidate: ExtractedMemoryCandidate): boolean {
   );
 }
 
+function confirmedTentativeCategory(
+  candidate: ExtractedMemoryCandidate,
+): ExtractedMemoryCandidate["confirmsTentativeCategory"] {
+  return candidate.decision !== "create" && candidate.existingMemoryId !== null
+    ? candidate.confirmsTentativeCategory
+    : undefined;
+}
+
 function ledgerId(key: string): string {
   return `ledger:${bytesToHex(sha256(utf8ToBytes(key))).slice(0, 40)}`;
 }
@@ -178,14 +186,15 @@ export class AutomaticMemoryService {
         );
         continue;
       }
-      const confirmsTentative = candidate.confirmsTentativeCategory !== undefined;
+      const confirmationCategory = confirmedTentativeCategory(candidate);
+      const confirmsTentative = confirmationCategory !== undefined;
       const gates = this.options.gates ?? DEFAULT_CAPTURE_GATES;
       if (
         !explicitlyApproved &&
         candidate.confidencePermille <
-          (candidate.confirmsTentativeCategory === undefined
+          (confirmationCategory === undefined
             ? thresholdFor(gates.autoCommit, candidate.attributes?.category ?? null)
-            : thresholdFor(gates.confirmTentative, candidate.confirmsTentativeCategory))
+            : thresholdFor(gates.confirmTentative, confirmationCategory))
       ) {
         if (canBeKeptTentatively(candidate)) {
           const { supersedes: _dropped, ...rest } = candidate;
@@ -568,7 +577,10 @@ export class AutomaticMemoryService {
       contentRef: detail.contentRef,
       costMicros: 0,
       durationMs: 0,
-      category: detail.candidate?.attributes?.category ?? null,
+      category:
+        (detail.candidate ? confirmedTentativeCategory(detail.candidate) : undefined) ??
+        detail.candidate?.attributes?.category ??
+        null,
       confidencePermille: detail.candidate?.confidencePermille ?? null,
       inferred: detail.candidate?.inference ?? null,
     };
