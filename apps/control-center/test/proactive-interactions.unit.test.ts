@@ -282,6 +282,7 @@ function reviewFixture(): ProactiveReview {
       ],
     },
     memoryUnusedDays: 90,
+    hiddenByModel: 0,
     generatedAt: NOW.toISOString(),
   };
 }

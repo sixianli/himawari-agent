@@ -8,6 +8,7 @@ export const MODEL_USAGE_PURPOSES = [
   "memory-consolidation",
   "mail-judgment",
   "action-review",
+  "review-prereview",
   "other",
 ] as const;
 

@@ -4,13 +4,16 @@ import {
   type ClockPort,
   type DailyReview,
   type DailyReviewMemoryText,
+  type DataClassification,
   type DecisionLedgerPort,
   type IdGeneratorPort,
+  listDailyReviewSubjects,
   type MemoryCheckupService,
   OwnerRuleReplay,
   type OwnerRuleReplayResult,
   type OwnerRuleStorePort,
   PORT_ERROR_CODES,
+  type PrereviewRunResult,
   type ProactiveConfiguration,
   type ProactiveDecision,
   type ProactiveMailCheckOptions,
@@ -25,6 +28,8 @@ import {
   type ProactiveSourceReader,
   type ProactiveStorePort,
   parseReviewKey,
+  ReviewPrereviewService,
+  type ReviewPrereviewStorePort,
   type RuleRecord,
   readDailyReview,
   readProactiveOverview,
@@ -61,6 +66,7 @@ export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
 export const PROACTIVE_GOOGLE_START_PATH = "/api/proactive/v1/google/start";
 export const PROACTIVE_GOOGLE_CALLBACK_PATH = "/api/proactive/v1/google/callback";
 export const PROACTIVE_MAX_OUTPUT_TOKENS = 4096;
+export const PREREVIEW_MAX_OUTPUT_TOKENS = 1024;
 
 const STATE_TTL_MS = 10 * 60_000;
 const MAX_PENDING_STATES = 20;
@@ -159,6 +165,14 @@ export interface ProductionProactiveOptions {
   readonly ledger: Pick<DecisionLedgerPort, "listReviewPool" | "rateMany">;
   readonly readMemoryText: (ref: string) => Promise<string | undefined>;
   readonly readMemory?: (memoryId: string) => Promise<DailyReviewMemoryText | undefined>;
+  readonly readMemoryClassification?: (ref: string) => Promise<DataClassification | undefined>;
+  readonly prereview?: {
+    readonly store: ReviewPrereviewStorePort;
+    readonly model: ProactiveModelInvoker;
+    readonly digest: (text: string) => string;
+    readonly estimateCostMicros: (prompt: string) => number;
+  };
+  readonly onPrereview?: (result: PrereviewRunResult) => void;
   readonly checkup?: Pick<MemoryCheckupService, "week" | "act" | "undo">;
   readonly estimateCostMicros: (prompt: string) => number;
   readonly feedback: (sentFrom: string) => Promise<readonly WebPushFeedback[]>;
@@ -174,6 +188,7 @@ export type ProactiveAuthorizationOutcome = "connected" | "denied" | "failed";
 export class ProductionProactive {
   readonly #options: ProductionProactiveOptions;
   readonly #service: ProactiveMailCheckService;
+  readonly #prereview: ReviewPrereviewService | undefined;
   readonly #states = new Map<string, { readonly owner: string; readonly expiresAt: number }>();
   #timer: ReturnType<typeof setInterval> | undefined;
   #running: Promise<void> | undefined;
@@ -213,6 +228,36 @@ export class ProductionProactive {
       },
       ...(options.onMasked ? { onMasked: options.onMasked } : {}),
     });
+    const prereview = options.prereview;
+    this.#prereview = prereview
+      ? new ReviewPrereviewService({
+          scope: options.scope,
+          store: prereview.store,
+          model: prereview.model,
+          settings: options.configuration.reviewPrereview,
+          timeZone: options.timeZone,
+          clock: options.clock,
+          digest: prereview.digest,
+          estimateCostMicros: prereview.estimateCostMicros,
+          subjects: async () => listDailyReviewSubjects(await this.#reviewSources()),
+        })
+      : undefined;
+  }
+
+  async #reviewSources() {
+    const options = this.#options;
+    return {
+      scope: options.scope,
+      ledger: options.ledger,
+      overview: await this.overview(),
+      readMemoryText: options.readMemoryText,
+      ...(options.readMemory ? { readMemory: options.readMemory } : {}),
+      ...(options.readMemoryClassification
+        ? { readMemoryClassification: options.readMemoryClassification }
+        : {}),
+      timeZone: options.timeZone,
+      now: options.clock.now(),
+    };
   }
 
   start(): void {
@@ -296,10 +341,25 @@ export class ProductionProactive {
         if (decision) this.#options.onDecision?.(decision);
       })
       .catch(this.#options.onFailure)
+      .then(async () => {
+        await this.prereview();
+      })
       .finally(() => {
         this.#running = undefined;
       });
     return this.#running;
+  }
+
+  async prereview(): Promise<PrereviewRunResult | undefined> {
+    if (!this.#prereview) return undefined;
+    try {
+      const result = await this.#prereview.run();
+      this.#options.onPrereview?.(result);
+      return result;
+    } catch (error) {
+      this.#options.onFailure(error);
+      return undefined;
+    }
   }
 
   async #checkable(): Promise<boolean> {
@@ -424,14 +484,20 @@ export class ProductionProactive {
             this.#options.onFailure(error);
             return [];
           });
+    const prereview = this.#prereview;
     return readDailyReview({
-      scope: this.#options.scope,
-      ledger: this.#options.ledger,
-      overview: await this.overview(),
-      readMemoryText: this.#options.readMemoryText,
-      ...(this.#options.readMemory ? { readMemory: this.#options.readMemory } : {}),
-      timeZone: this.#options.timeZone,
-      now: this.#options.clock.now(),
+      ...(await this.#reviewSources()),
+      ...(prereview
+        ? {
+            hideByModel: (candidates) =>
+              options.strict
+                ? prereview.hiddenByModel(candidates)
+                : prereview.hiddenByModel(candidates).catch((error: unknown) => {
+                    this.#options.onFailure(error);
+                    return new Set<string>();
+                  }),
+          }
+        : {}),
       budgetSeconds: this.#options.configuration.reviewBudgetSeconds,
       secondsPerItem: this.#options.configuration.reviewSecondsPerItem,
       silentShare: this.#options.configuration.reviewSilentSharePermille,
@@ -459,6 +525,7 @@ export class ProductionProactive {
           capacity: review.capacity,
           sampled: review.sampled,
           notSampled: review.notSampled,
+          hiddenByModel: review.hiddenByModel,
           items: review.items.map(item),
           folded: { total: review.folded.total, items: review.folded.items.map(item) },
           memoryUnusedDays: this.#options.configuration.reviewMemoryUnusedDays,

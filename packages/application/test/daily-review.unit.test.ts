@@ -5,6 +5,7 @@ import {
   type DailyReviewPoolItem,
   parseReviewKey,
   readDailyReview,
+  readDailyReviewSubjects,
   reviewCapacity,
   reviewKey,
   reviewMemoryVisible,
@@ -662,6 +663,176 @@ describe("[P0-6] reading the daily review", () => {
       "ledger:pending",
       "ledger:rated",
     ]);
+  });
+});
+
+describe("[P4-8] model prereview reduction on the daily review", () => {
+  const pool = Array.from({ length: 12 }, (_, index) => item(`k${index}`, "memory_kept"));
+  const pick = (hidden?: ReadonlySet<string>) =>
+    selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 6,
+      ...(hidden === undefined ? {} : { hidden }),
+    });
+
+  it("[negative] leaves the selection exactly as before when nothing is hidden", () => {
+    const before = pick();
+    expect(pick(new Set())).toEqual(before);
+    expect(before.hiddenByModel).toBe(0);
+  });
+
+  it("drops hidden items without filling their place, and counts them", () => {
+    const before = pick();
+    const hidden = new Set(before.shown.slice(0, 2));
+    const after = pick(hidden);
+    expect(after.shown).toEqual(before.shown.slice(2));
+    expect(after.hiddenByModel).toBe(2);
+    expect(after.sampled).toBe(4);
+    expect(after.notSampled).toBe(before.notSampled);
+  });
+
+  it("[negative] never hides an item the owner already rated today", () => {
+    const rated = [item("r0", "memory_kept", true, NOW)];
+    const selection = selectDailyReview({
+      pool: rated,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 6,
+      hidden: new Set(["r0"]),
+    });
+    expect(selection.shown).toEqual(["r0"]);
+    expect(selection.hiddenByModel).toBe(0);
+  });
+});
+
+describe("[P4-8] what the model prereview may see", () => {
+  const classified: Record<string, "private" | "restricted"> = {
+    ok: "private",
+    locked: "restricted",
+  };
+  const subjects = (entries: DecisionLedgerEntry[], view: ProactiveOverview) => {
+    let ratedSince: string | undefined;
+    return readDailyReviewSubjects({
+      scope,
+      ledger: {
+        listReviewPool: async (query) => {
+          ratedSince = query.ratedSince;
+          return entries.filter(
+            (candidate) => candidate.ratedAt === null || candidate.ratedAt >= query.ratedSince,
+          );
+        },
+      },
+      overview: view,
+      readMemoryText: async (ref) => (ref in classified ? `正文 ${ref}` : undefined),
+      readMemoryClassification: async (ref) => classified[ref],
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+    }).then((result) => ({ result, ratedSince }));
+  };
+
+  it("includes items the owner rated days ago, with the owner's rating, so agreement can start at once", async () => {
+    const { result, ratedSince } = await subjects(
+      [
+        entry({
+          id: "old",
+          contentRef: "ok",
+          ownerRating: "missed",
+          ratedAt: "2026-10-30T00:00:00.000Z",
+        }),
+      ],
+      overview([]),
+    );
+    expect(ratedSince).toBe("2026-10-28T01:00:00.000Z");
+    expect(result).toEqual([
+      {
+        key: "ledger:old",
+        group: "memory_skipped",
+        category: null,
+        text: "正文 ok",
+        dataClassification: "private",
+        ownerRating: "missed",
+      },
+    ]);
+  });
+
+  it("[negative] leaves out restricted text and text it cannot classify", async () => {
+    const { result } = await subjects(
+      [entry({ id: "locked", contentRef: "locked" }), entry({ id: "unknown", contentRef: "gone" })],
+      overview([]),
+    );
+    expect(result).toEqual([]);
+  });
+
+  it("puts reminded and silent decisions and skipped mail in their own groups", async () => {
+    const { result } = await subjects(
+      [],
+      overview([
+        {
+          messageId: "m1",
+          decidedAt: NOW,
+          reviewedAt: "2026-11-04T00:10:00.000Z",
+          from: "Shop",
+          subject: "セール",
+          link: "",
+          rating: null,
+        },
+      ]),
+    );
+    expect(result).toEqual([
+      {
+        key: "mail:m1",
+        group: "proactive_silent",
+        category: null,
+        text: "Shop · セール",
+        dataClassification: "private",
+        ownerRating: "useful",
+      },
+    ]);
+  });
+});
+
+describe("[P4-8] decisions the prereview cannot see", () => {
+  it("[negative] gives reminded mail decisions no subject, since the page shows them without text", async () => {
+    const subjects = await readDailyReviewSubjects({
+      scope,
+      ledger: {
+        listReviewPool: async () => [entry({ id: "spoke", kind: "proactive", outcome: "pushed" })],
+      },
+      overview: overview([], [
+        { id: "spoke", counts: counts(1) },
+      ] as unknown as ProactiveOverview["decisions"]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "x", hidden: false, dataClassification: "private" }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+    });
+    expect(subjects).toEqual([]);
+  });
+
+  it("uses the memory's own classification for kept memories and skips ones without it", async () => {
+    const read = (dataClassification?: "private" | "sensitive") =>
+      readDailyReviewSubjects({
+        scope,
+        ledger: {
+          listReviewPool: async () => [
+            entry({ id: "kept", outcome: "kept", subjectRef: "memory:new" }),
+          ],
+        },
+        overview: overview([]),
+        readMemoryText: async () => undefined,
+        readMemory: async () =>
+          dataClassification === undefined
+            ? { text: "我最近想吃牛肉", hidden: false }
+            : { text: "我最近想吃牛肉", hidden: false, dataClassification },
+        timeZone: "Asia/Tokyo",
+        now: NOW,
+      });
+    expect(
+      (await read("sensitive")).map(({ group, dataClassification }) => [group, dataClassification]),
+    ).toEqual([["memory_kept", "sensitive"]]);
+    expect(await read()).toEqual([]);
   });
 });
 

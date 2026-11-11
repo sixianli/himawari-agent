@@ -18,6 +18,7 @@ import {
   modelUsagePurpose,
   modelVisibleClassifications,
   type ProductConfiguration,
+  prereviewPromptId,
   RemoteExecutionBackend,
   type RuntimeRequest,
   recoverSandboxExecutionsAtStartup,
@@ -130,6 +131,7 @@ import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./productio
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
+  PREREVIEW_MAX_OUTPUT_TOKENS,
   PROACTIVE_MAX_OUTPUT_TOKENS,
   ProductionProactive,
   proactiveCostEstimator,
@@ -1784,7 +1786,9 @@ export async function runAgentService(
               return undefined;
             if (!reviewMemoryVisible(record.dataClassification)) return { text: "", hidden: true };
             const text = await readReviewText(record.contentRef);
-            return text === undefined ? undefined : { text, hidden: false };
+            return text === undefined
+              ? undefined
+              : { text, hidden: false, dataClassification: record.dataClassification };
           },
           ...(memory && durableMemory && protector && repository
             ? ((recallProtector, recallPayloads) => ({
@@ -1840,6 +1844,33 @@ export async function runAgentService(
             proactiveDescriptor.cost,
             PROACTIVE_MAX_OUTPUT_TOKENS,
           ),
+          readMemoryClassification: async (ref) =>
+            (await reviewPayloads.get(ref).catch(() => undefined))?.dataClassification,
+          prereview: {
+            store: repository.reviewPrereview(),
+            model: modelComposition.composition.proactiveModel(proactiveConfiguration.modelRef, {
+              maxOutputTokens: PREREVIEW_MAX_OUTPUT_TOKENS,
+              requestTimeoutMs: proactiveConfiguration.reviewPrereview.requestTimeoutMs,
+              purpose: "review-prereview",
+            }),
+            digest: (text) => createHash("sha256").update(text, "utf8").digest("hex"),
+            estimateCostMicros: proactiveCostEstimator(
+              proactiveDescriptor.cost,
+              PREREVIEW_MAX_OUTPUT_TOKENS,
+            ),
+          },
+          onPrereview: (result) => {
+            if (result.attempted > 0 || result.failures.length > 0)
+              writeServiceDiagnostic(errorOutput, {
+                component: "agent-service",
+                event: "proactive.prereviewed",
+                attempted: result.attempted,
+                recorded: result.recorded,
+                failed: result.failures.length,
+                stoppedBy: result.stoppedBy,
+                ...(result.failures[0] ? { code: result.failures[0].slice(0, 120) } : {}),
+              });
+          },
           feedback: (sentFrom) =>
             feedbackStore.listFeedback({
               ...proactiveScope,
@@ -2173,6 +2204,25 @@ export async function runAgentService(
           perCheckMs: configuration.runPolicy?.proactive?.perCheckMs ?? 0,
         },
         serviceRevision: readServiceRevision(),
+        ...(configuration.runPolicy?.proactive
+          ? ((settings, modelRef) => ({
+              prereview: {
+                version: {
+                  modelRef,
+                  promptId: prereviewPromptId((text) =>
+                    createHash("sha256").update(text, "utf8").digest("hex"),
+                  ),
+                },
+                agreementPermille: settings.reduction.hiddenAgreementPermille,
+                confidencePermille: settings.reduction.confidencePermille,
+                reductionEnabled: settings.enabled && settings.reduction.enabled,
+                auditPermille: settings.reduction.auditPermille,
+              },
+            }))(
+              configuration.runPolicy.proactive.reviewPrereview,
+              configuration.runPolicy.proactive.modelRef,
+            )
+          : {}),
         onFailure: (error) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
