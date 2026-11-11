@@ -335,9 +335,9 @@
     "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
   },
   "mcp.propose-memory": {
-    "sha256": "e980fe0dc8c61d83f10e1786bb6e7ce3bd522101b3cb513ca64303520038db7a",
+    "sha256": "5c10a166b812efb777a14cd3843a13c0fcc627d9810f84d2f5618a52296833b1",
     "changedIn": "ADR 0225",
-    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+    "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
   },
   "mcp.propose-memory-already-saved": {
     "sha256": "f213567f4ace8b14f14d2f753e32498763ecc2f9008501e2c1a9ee51aaf37921",
@@ -350,9 +350,9 @@
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
   },
   "mcp.propose-memory-confirm": {
-    "sha256": "8d27e58721a23beb109577314bd615dc2ce72b71ad2079d3c40100ec7721ae27",
+    "sha256": "21bdb97b71700b0abe4e5903e0657084060a5db2e3df7c47de2f4d413604a672",
     "changedIn": "ADR 0225",
-    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+    "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
   },
   "mcp.propose-memory-declined": {
     "sha256": "09487ef998b0959cc71d2384cf31e80b3700b8607be4ebad0ba7b060e30b5440",
@@ -374,11 +374,6 @@
     "changedIn": "ADR 0225",
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
   },
-  "mcp.propose-memory-save-label": {
-    "sha256": "059030f24bde551f1e3cd4625a0380eea595d6392f1ab918050d6719408eae04",
-    "changedIn": "ADR 0225",
-    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
-  },
   "mcp.propose-memory-saved": {
     "sha256": "844d784b588aa8650d685b823ae424e4775c2bc2c8a741d1c31d8dabc1b7db57",
     "changedIn": "ADR 0225",
@@ -394,10 +389,15 @@
     "changedIn": "ADR 0225",
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
   },
+  "mcp.propose-not-shown": {
+    "sha256": "a4b3e6f70b007e8d2bdeb4c02e9ba45c8c5d9d028114fe00d1dd8b444a635655",
+    "changedIn": "ADR 0225",
+    "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
+  },
   "mcp.propose-rule": {
-    "sha256": "a32fc16ab5c4cef51f253c3d45fff836d4070ffde51333db9b14616e95c735ef",
+    "sha256": "2669de4d02fd11cc4cc28cf72dae4001778e0c099bf170f9dfb70a3ac3983f4a",
     "changedIn": "ADR 0226",
-    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+    "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
   },
   "mcp.propose-rule-already-saved": {
     "sha256": "b0bdf793b3eb3c2e5d65b0ba7421058931ffd5cae56179b7227d3c195e6ba0db",
@@ -410,9 +410,9 @@
     "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
   },
   "mcp.propose-rule-confirm": {
-    "sha256": "9185685310b5ada11aaaa847a9e053a167374c97fc1d5ebae622cf99c2135ab8",
+    "sha256": "d153dd78430f5378c306a6e9617749126904debeed3bb06131cca385034fa25e",
     "changedIn": "ADR 0226",
-    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+    "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
   },
   "mcp.propose-rule-declined": {
     "sha256": "f7d63533b82ab6f1f0ec205d335b15c232371a988bb2b429045c515e4862ae40",
@@ -439,6 +439,11 @@
     "changedIn": "ADR 0226",
     "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
   },
+  "mcp.propose-rule-not-ready": {
+    "sha256": "d00bf3f264dc49b62dd7399c0372e380d1be50348156430f25254b24a5bea56a",
+    "changedIn": "ADR 0226",
+    "reason": "P5-2: propose_rule says rules did not take effect when the memory book is not ready"
+  },
   "mcp.propose-rule-replay": {
     "sha256": "9faa6a9c14254b11618039f1509eed8e9c06cf743c1a6cb7b5000766ca21254c",
     "changedIn": "ADR 0226",
@@ -446,11 +451,6 @@
   },
   "mcp.propose-rule-replay-unavailable": {
     "sha256": "5780fc4fa25ea4f93b5c77c27d56ef308387c04777b8564eed9ea6740c5a5940",
-    "changedIn": "ADR 0226",
-    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
-  },
-  "mcp.propose-rule-save-label": {
-    "sha256": "331a1ffe47d2aa22f28ab2ad2c2fa294d945d12314870a48c23f1e1897f39c97",
     "changedIn": "ADR 0226",
     "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
   },
