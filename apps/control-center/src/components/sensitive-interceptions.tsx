@@ -251,5 +251,6 @@ const MESSAGE_PURPOSES: ReadonlySet<string> = new Set([
   "memory-consolidation",
   "mail-judgment",
   "action-review",
+  "review-prereview",
   "other",
 ]);

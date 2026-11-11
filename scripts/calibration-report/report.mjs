@@ -7,9 +7,12 @@ import {
   buildReport,
   currentCommit,
   DEFAULT_MINIMUM_SAMPLES,
+  DEFAULT_PREREVIEW_AGREEMENT_PERMILLE,
+  DEFAULT_PREREVIEW_CONFIDENCE_PERMILLE,
   findScopes,
-  HISTORY_SCHEMA,
   historyRecord,
+  prereviewReportLines,
+  READABLE_HISTORY_SCHEMAS,
   readWindow,
   resolveWindow,
   sameMeasurement,
@@ -17,6 +20,7 @@ import {
   summarizeGap,
   summarizeImplicit,
   summarizeMuse,
+  summarizePrereviewWeek,
 } from "./calibration.mjs";
 
 const OPTIONS = new Set([
@@ -98,13 +102,17 @@ export function run(
     const muse = summarizeMuse(data.entries, data.mailJudgments, minimumSamples);
     const gap = summarizeGap(data.entries, data.mailJudgments, minimumSamples);
     const implicit = summarizeImplicit(data.decisions, data.signals, minimumSamples);
+    const prereview = summarizePrereviewWeek(data.prereviews, {
+      agreementPermille: DEFAULT_PREREVIEW_AGREEMENT_PERMILLE,
+      confidencePermille: DEFAULT_PREREVIEW_CONFIDENCE_PERMILLE,
+    });
     const historyFile = path.resolve(
       root,
       options.get("history") ?? "evals/calibration/history.jsonl",
     );
     const history = readHistory(historyFile, output).filter(
       (entry) =>
-        entry.schema === HISTORY_SCHEMA &&
+        READABLE_HISTORY_SCHEMAS.includes(entry.schema) &&
         entry.ownerId === scope.ownerId &&
         entry.agentId === scope.agentId,
     );
@@ -121,6 +129,7 @@ export function run(
       minimumSamples,
       previous,
       gap,
+      sections: prereviewReportLines(prereview),
     });
     output.write(`${markdown}\n`);
     if (!options.has("no-record")) {
@@ -133,6 +142,7 @@ export function run(
         minimumSamples,
         commit: options.get("revision") ?? currentCommit(root),
         recordedAt: now.toISOString(),
+        prereview,
       });
       const outDirectory = path.resolve(
         root,
@@ -152,7 +162,7 @@ export function run(
         output.write(`历史记录：已追加到 ${path.relative(root, historyFile)}。\n`);
       }
     }
-    return { window, decisions, muse };
+    return { window, decisions, muse, prereview };
   } finally {
     database.close();
   }

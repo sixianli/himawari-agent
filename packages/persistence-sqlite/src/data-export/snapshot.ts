@@ -25,6 +25,7 @@ export interface PortableSnapshot {
   readonly museEntries: readonly Row[];
   readonly rules: readonly Row[];
   readonly ruleHistory: readonly Row[];
+  readonly prereviews: readonly Row[];
   readonly payloads: ReadonlyMap<string, PayloadRecord | { readonly unavailable: true }>;
   readonly omittedMemories: number;
   readonly restrictedMemories: number;
@@ -176,6 +177,15 @@ export function readSnapshot(
         FROM rule_book_history WHERE owner_id = @ownerId AND agent_id = @agentId
         ORDER BY rule_id, revision`,
       );
+      const prereviews = withEvidence
+        ? all(
+            `SELECT id, decision_id, mail_source, message_id, calibration_group, category, status,
+              rating, confidence_permille, history_conflict, failure_code, model_ref, prompt_id,
+              text_digest, data_classification, cost_micros, duration_ms, created_at
+            FROM decision_prereviews WHERE owner_id = @ownerId AND agent_id = @agentId
+            ORDER BY created_at, id`,
+          )
+        : [];
       const refs = new Set<string>();
       for (const row of [
         ...memories,
@@ -268,6 +278,7 @@ export function readSnapshot(
         museEntries,
         rules,
         ruleHistory,
+        prereviews,
         payloads,
         omittedMemories,
         restrictedMemories,

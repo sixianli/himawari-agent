@@ -349,6 +349,64 @@ export async function seedEverything(side: Side): Promise<void> {
     `INSERT INTO muse_reference_entries (id, owner_id, agent_id, muse_at, muse_reminded, timing_ok, content_ok, content_ref, paired_decision_id, recorded_at)
     VALUES ('muse-1', ?, ?, ?, 1, 1, 1, ?, 'd-proactive', ?)`,
   ).run(side.ownerId, side.agentId, T0, museContent, T0);
+  const prereview = db.prepare(
+    `INSERT INTO decision_prereviews (id, owner_id, agent_id, decision_id, mail_source, message_id, calibration_group, category, status, rating, confidence_permille, history_conflict, failure_code, model_ref, prompt_id, text_digest, data_classification, cost_micros, duration_ms, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'model-a', 'review.prereview@0123456789ab', ?, 'private', ?, 40, ?)`,
+  );
+  prereview.run(
+    "pre-1",
+    side.ownerId,
+    side.agentId,
+    "d-candidate",
+    null,
+    null,
+    "memory_kept",
+    "preference",
+    "done",
+    "useful",
+    920,
+    0,
+    null,
+    "a".repeat(64),
+    310,
+    T0,
+  );
+  prereview.run(
+    "pre-2",
+    side.ownerId,
+    side.agentId,
+    null,
+    "gmail",
+    "gmsg-1",
+    "proactive_silent",
+    null,
+    "done",
+    "missed",
+    640,
+    1,
+    null,
+    "b".repeat(64),
+    320,
+    T0,
+  );
+  prereview.run(
+    "pre-3",
+    side.ownerId,
+    side.agentId,
+    "d-consolidation",
+    null,
+    null,
+    "consolidation",
+    null,
+    "failed",
+    null,
+    null,
+    null,
+    "MODEL_OUTPUT_INVALID",
+    "c".repeat(64),
+    330,
+    T0,
+  );
   await seedRules(side);
 }
 

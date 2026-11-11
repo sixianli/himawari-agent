@@ -4,11 +4,12 @@ import path from "node:path";
 import {
   type CapabilityDeploymentConfiguration,
   type ConfigurationPort,
-  type ConfiguredMemoryRetrieval,
   type ConfiguredCompletionsGenerationModelDescriptor,
   type ConfiguredEmbeddingModelDescriptor,
+  type ConfiguredMemoryRetrieval,
   type ConfiguredModelDescriptor,
   type DataClassification,
+  DEFAULT_REVIEW_PREREVIEW,
   findEmbeddingProfile,
   GATEWAY_EMBEDDING_PROVIDER,
   type HttpConfiguration,
@@ -19,6 +20,7 @@ import {
   LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
   type ModelProviderRouting,
+  type ProactiveConfiguration,
   type ProductConfiguration,
   type RecentAuthenticationConfiguration,
   type RunPolicyConfiguration,
@@ -29,7 +31,13 @@ import {
   WEB_PROVIDERS,
   type WebProviderId,
 } from "@himawari-agent/application";
-import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
+import {
+  createAgentId,
+  createDeploymentId,
+  createOwnerId,
+  DEMO_LOCALES,
+  isDemoLocale,
+} from "@himawari-agent/domain";
 import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 
 export const CONFIGURATION_SCHEMA_VERSION = "himawari.configuration.v1" as const;
@@ -1032,6 +1040,7 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     [
       "modelRef",
       "gmail",
+      "demoInbox",
       "intervalMs",
       "perCheckCostMicros",
       "perCheckMs",
@@ -1050,15 +1059,21 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       "reviewBudgetSeconds",
       "reviewSecondsPerItem",
       "reviewSilentSharePermille",
+      "reviewPrereview",
       "reviewMemoryUnusedDays",
       "backoffThreshold",
     ],
     field,
   );
-  const gmail = record(input["gmail"], `${field}.gmail`);
-  rejectUnknown(gmail, ["clientId", "clientSecretRef"], `${field}.gmail`);
-  const clientId = string(gmail["clientId"], `${field}.gmail.clientId`);
-  if (clientId.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(clientId))
+  const demoInbox = input["demoInbox"];
+  if (demoInbox !== undefined && !isDemoLocale(demoInbox))
+    throw invalid(`${field}.demoInbox`, `must be one of ${DEMO_LOCALES.join(", ")}`);
+  if ((input["gmail"] === undefined) === (demoInbox === undefined))
+    throw invalid(field, "must set exactly one of gmail and demoInbox");
+  const gmail = input["gmail"] === undefined ? undefined : record(input["gmail"], `${field}.gmail`);
+  if (gmail) rejectUnknown(gmail, ["clientId", "clientSecretRef"], `${field}.gmail`);
+  const clientId = gmail ? string(gmail["clientId"], `${field}.gmail.clientId`) : "";
+  if (gmail && (clientId.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(clientId)))
     throw invalid(`${field}.gmail.clientId`, "must be a Google OAuth client id");
   const optional = (key: string, fallback: number, minimum: number, maximum: number) =>
     input[key] === undefined ? fallback : integer(input[key], `${field}.${key}`, minimum, maximum);
@@ -1097,13 +1112,22 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     );
   return Object.freeze({
     modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
-    gmail: Object.freeze({
-      clientId,
-      clientSecretRef: safeReference(gmail["clientSecretRef"], `${field}.gmail.clientSecretRef`),
-    }),
+    ...(gmail
+      ? {
+          gmail: Object.freeze({
+            clientId,
+            clientSecretRef: safeReference(
+              gmail["clientSecretRef"],
+              `${field}.gmail.clientSecretRef`,
+            ),
+          }),
+        }
+      : {}),
+    ...(demoInbox === undefined ? {} : { demoInbox }),
     reviewBudgetSeconds: optional("reviewBudgetSeconds", 120, 10, 3_600),
     reviewSecondsPerItem: optional("reviewSecondsPerItem", 5, 1, 60),
     reviewSilentSharePermille: optional("reviewSilentSharePermille", 500, 0, 1_000),
+    reviewPrereview: parseReviewPrereview(input["reviewPrereview"], `${field}.reviewPrereview`),
     reviewMemoryUnusedDays: optional("reviewMemoryUnusedDays", 90, 7, 3_650),
     backoffThreshold: optional("backoffThreshold", 3, 0, 10),
     intervalMs: optional("intervalMs", 900_000, 60_000, 86_400_000),
@@ -1127,6 +1151,99 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
             `${field}.memoryMinimumSimilarity`,
           ),
         }),
+  });
+}
+
+function parseReviewPrereview(
+  value: unknown,
+  field: string,
+): ProactiveConfiguration["reviewPrereview"] {
+  const input = value === undefined ? {} : record(value, field);
+  rejectUnknown(
+    input,
+    [
+      "enabled",
+      "dailyLimit",
+      "dailyCostMicros",
+      "perRun",
+      "requestTimeoutMs",
+      "historyDays",
+      "historyMinimum",
+      "reduction",
+    ],
+    field,
+  );
+  const reductionField = `${field}.reduction`;
+  const reduction =
+    input["reduction"] === undefined ? {} : record(input["reduction"], reductionField);
+  rejectUnknown(
+    reduction,
+    ["enabled", "hiddenAgreementPermille", "confidencePermille", "auditPermille", "windowDays"],
+    reductionField,
+  );
+  const number = (
+    source: JsonRecord,
+    at: string,
+    key: string,
+    fallback: number,
+    minimum: number,
+    maximum: number,
+  ) =>
+    source[key] === undefined ? fallback : integer(source[key], `${at}.${key}`, minimum, maximum);
+  const flag = (source: JsonRecord, at: string, key: string, fallback: boolean) =>
+    source[key] === undefined ? fallback : boolean(source[key], `${at}.${key}`);
+  const defaults = DEFAULT_REVIEW_PREREVIEW;
+  const off = defaults.reduction;
+  return Object.freeze({
+    enabled: flag(input, field, "enabled", defaults.enabled),
+    dailyLimit: number(input, field, "dailyLimit", defaults.dailyLimit, 1, 500),
+    dailyCostMicros: number(
+      input,
+      field,
+      "dailyCostMicros",
+      defaults.dailyCostMicros,
+      1,
+      10_000_000,
+    ),
+    perRun: number(input, field, "perRun", defaults.perRun, 1, 50),
+    requestTimeoutMs: number(
+      input,
+      field,
+      "requestTimeoutMs",
+      defaults.requestTimeoutMs,
+      5_000,
+      300_000,
+    ),
+    historyDays: number(input, field, "historyDays", defaults.historyDays, 1, 366),
+    historyMinimum: number(input, field, "historyMinimum", defaults.historyMinimum, 1, 100_000),
+    reduction: Object.freeze({
+      enabled: flag(reduction, reductionField, "enabled", off.enabled),
+      hiddenAgreementPermille: number(
+        reduction,
+        reductionField,
+        "hiddenAgreementPermille",
+        off.hiddenAgreementPermille,
+        500,
+        999,
+      ),
+      confidencePermille: number(
+        reduction,
+        reductionField,
+        "confidencePermille",
+        off.confidencePermille,
+        0,
+        1_000,
+      ),
+      auditPermille: number(
+        reduction,
+        reductionField,
+        "auditPermille",
+        off.auditPermille,
+        1,
+        1_000,
+      ),
+      windowDays: number(reduction, reductionField, "windowDays", off.windowDays, 1, 366),
+    }),
   });
 }
 
@@ -1525,12 +1642,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     );
   const proactive = runPolicy?.proactive;
   if (proactive) {
-    assertIdentitySecretReference(
-      secretReferences,
-      proactive.gmail.clientSecretRef,
-      GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
-      "configuration.runPolicy.proactive.gmail.clientSecretRef",
-    );
+    if (proactive.gmail)
+      assertIdentitySecretReference(
+        secretReferences,
+        proactive.gmail.clientSecretRef,
+        GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
+        "configuration.runPolicy.proactive.gmail.clientSecretRef",
+      );
     const descriptor = modelDescriptors.find(({ ref }) => ref === proactive.modelRef);
     if (
       !descriptor ||

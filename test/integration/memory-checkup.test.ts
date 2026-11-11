@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   ApplicationPortError,
   createProactiveSeal,
+  DEFAULT_REVIEW_PREREVIEW,
   DurableMemoryService,
   type MemoryCheckupPair,
   MemoryCheckupService,
@@ -169,6 +170,7 @@ const proactiveConfiguration = (budgetSeconds: number): ProactiveConfiguration =
   reviewSecondsPerItem: 5,
   reviewSilentSharePermille: 500,
   reviewMemoryUnusedDays: 90,
+  reviewPrereview: DEFAULT_REVIEW_PREREVIEW,
   backoffThreshold: 3,
   wholeThreadMailsPerMail: 50,
   wholeThreadCharactersPerMail: 60_000,

@@ -125,7 +125,11 @@ export interface ProductionModelComposition {
   ): Promise<string>;
   proactiveModel(
     modelRef: string,
-    limits: { readonly maxOutputTokens: number; readonly requestTimeoutMs: number },
+    limits: {
+      readonly maxOutputTokens: number;
+      readonly requestTimeoutMs: number;
+      readonly purpose?: "mail-judgment" | "review-prereview";
+    },
   ): ProactiveModelInvoker;
   readonly piModels: PiModelBindingPort;
   readonly transport: PiModelTransport;
@@ -495,7 +499,11 @@ export function createProductionModelComposition(
     });
   const proactiveModel = (
     modelRef: string,
-    limits: { readonly maxOutputTokens: number; readonly requestTimeoutMs: number },
+    limits: {
+      readonly maxOutputTokens: number;
+      readonly requestTimeoutMs: number;
+      readonly purpose?: "mail-judgment" | "review-prereview";
+    },
   ): ProactiveModelInvoker => {
     const descriptor = options.descriptors.find((item) => item.ref === modelRef);
     if (
@@ -506,7 +514,7 @@ export function createProductionModelComposition(
     const model = auxiliaryModelFor(
       descriptor,
       {
-        purpose: "mail-judgment",
+        purpose: limits.purpose ?? "mail-judgment",
         maxOutputTokens: limits.maxOutputTokens,
         reasoningOutputTokens: limits.maxOutputTokens * 2,
         requestTimeoutMs: limits.requestTimeoutMs,
