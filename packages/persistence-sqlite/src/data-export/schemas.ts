@@ -235,7 +235,7 @@ export const DECISION_SCHEMA: JsonSchema = objectOf(
 
 const RULE_STATUSES = ["active", "needs_review", "retired"] as const;
 export const RULE_PARAMETERS_MAXIMUM_LENGTH = 262_144;
-export const MAXIMUM_LINE_BYTES = 64 * 1024 * 1024;
+export const MAXIMUM_LINE_LENGTH = 64 * 1024 * 1024;
 
 const ruleVersionFields = {
   revision: integer(1),

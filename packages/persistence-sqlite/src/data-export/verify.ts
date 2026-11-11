@@ -16,7 +16,7 @@ import {
   FORMAT_VERSION,
   IMPORT_BATCH_SCHEMA,
   MANIFEST_FILE,
-  MAXIMUM_LINE_BYTES,
+  MAXIMUM_LINE_LENGTH,
   MANIFEST_SCHEMA,
   MEMORY_SCHEMA,
   PERSON_SCHEMA,
@@ -264,7 +264,7 @@ function parseLines<T>(
   const out: T[] = [];
   const lines = text.slice(0, -1).split("\n");
   lines.forEach((line, index) => {
-    if (line.length > MAXIMUM_LINE_BYTES)
+    if (line.length > MAXIMUM_LINE_LENGTH)
       throw new DataExportError(DATA_EXPORT_ERROR_CODES.LINE_INVALID, `${path}:${index + 1} 过长`);
     let value: unknown;
     try {
@@ -372,14 +372,14 @@ export function parsePortable(
       if (version.sourceMemoryId !== null && !memoryIds.has(version.sourceMemoryId))
         broken(`规则 ${rule.ruleId} 第 ${version.revision} 版的来源记忆`);
       if (version.withheld === true) continue;
+      const problem = storedRuleProblem(rule.ruleId, version);
+      if (problem !== null)
+        throw new DataExportError(DATA_EXPORT_ERROR_CODES.LINE_INVALID, problem);
       if (JSON.stringify(JSON.parse(version.parameters)) !== version.parameters)
         throw new DataExportError(
           DATA_EXPORT_ERROR_CODES.LINE_INVALID,
           `规则 ${rule.ruleId} 第 ${version.revision} 版的参数不是写规则的程序会写出的形式`,
         );
-      const problem = storedRuleProblem(rule.ruleId, version);
-      if (problem !== null)
-        throw new DataExportError(DATA_EXPORT_ERROR_CODES.LINE_INVALID, problem);
     }
   }
   const rulesProblem = checkRulesMarkdown(

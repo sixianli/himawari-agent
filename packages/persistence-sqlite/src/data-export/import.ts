@@ -238,6 +238,11 @@ export async function importPortableExport(
     if (version.withheld !== true) return version;
     const parameters = sealed?.originals[key];
     if (parameters === undefined) return null;
+    if (typeof parameters !== "string")
+      throw new DataExportError(
+        DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH,
+        `规则 ${ruleId} 的原文不是文字`,
+      );
     if ([...parameters].length > RULE_PARAMETERS_MAXIMUM_LENGTH)
       throw new DataExportError(
         DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH,

@@ -195,12 +195,16 @@ function wording(kind: RuleKind, parameters: Parameters): string {
 export const RULE_LINE = /^- 〔r:([^〕]+)〕 /u;
 const MEMORY_MARK = /〔m:([^〕]+)〕/gu;
 
+function plainText(text: string): string {
+  return foldText(text).replaceAll("〔", "［").replaceAll("〕", "］");
+}
+
 function ruleLine(rule: PortableRule, withheldText: string): string {
   const parameters = parseParameters(rule.parameters) ?? {};
   const kind = ruleKind(rule.ruleId, parameters);
   const text = rule.withheld === true ? withheldText : wording(kind, parameters);
   const source = rule.sourceMemoryId === null ? "" : `；来源记忆〔m:${rule.sourceMemoryId}〕`;
-  return `- 〔r:${rule.ruleId}〕 ${KIND_LABELS[kind]}。${foldText(text)}（第 ${rule.revision} 版，${STATUS_LABELS[rule.status]}；出处：${foldText(rule.source)}${source}）`;
+  return `- 〔r:${rule.ruleId}〕 ${KIND_LABELS[kind]}。${plainText(text)}（第 ${rule.revision} 版，${STATUS_LABELS[rule.status]}；出处：${plainText(rule.source)}${source}）`;
 }
 
 export function renderRulesMarkdown(rules: readonly PortableRule[], withheldText: string): string {

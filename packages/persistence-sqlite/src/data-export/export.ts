@@ -16,7 +16,7 @@ import {
   FORMAT_VERSION,
   INDEX_FILE,
   MANIFEST_FILE,
-  MAXIMUM_LINE_BYTES,
+  MAXIMUM_LINE_LENGTH,
   RULE_PARAMETERS_MAXIMUM_LENGTH,
   SCHEMA_FILES,
   SEALED_FILE,
@@ -481,7 +481,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   put(DATA_FILES.decisions, "data", jsonLines(decisionLines), decisionLines.length);
   const rulesText = jsonLines(ruleLines as unknown as readonly JsonValue[]);
   for (const [index, line] of rulesText.split("\n").entries())
-    if (line.length > MAXIMUM_LINE_BYTES)
+    if (line.length > MAXIMUM_LINE_LENGTH)
       throw new DataExportError(
         DATA_EXPORT_ERROR_CODES.LINE_INVALID,
         `规则 ${ruleLines[index]?.ruleId ?? ""} 连同历史超过单行上限`,

@@ -422,6 +422,17 @@ describe("data export: a tampered rule book is refused before anything is writte
         }),
       DATA_EXPORT_ERROR_CODES.LINE_INVALID,
     ],
+    [
+      "rule parameters that are not JSON",
+      (files) =>
+        editRuleLine(files, "quiet_hours", (rule) => {
+          rule["parameters"] = "{not json";
+          const history = rule["history"] as { parameters: unknown }[];
+          const last = history.at(-1);
+          if (last) last.parameters = rule["parameters"];
+        }),
+      DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+    ],
   ];
   for (const [name, mutate, code] of cases) {
     it(`[P1-6][reverse] refuses ${name} and writes nothing`, async () => {
@@ -447,6 +458,61 @@ describe("data export: a tampered rule book is refused before anything is writte
     const target = await side("rules-reworded");
     const report = await importInto(target, reworded, PASSPHRASE);
     expect(report.imported.rules).toBe(5);
+  });
+
+  it("[P1-6] a rule whose own words contain a memory marker still exports and imports", async () => {
+    const source = await side("rules-marker-text");
+    await seedMemory(source, { id: "m-plain", text: "退款的邮件都要提醒我" });
+    writeRuleVersion(source, {
+      ruleId: "owner:marker-linked",
+      parameters: ownerRuleParameters(
+        "mail_must_notify",
+        { phrases: ["退款"] },
+        "写着〔m:m-other〕的退款邮件一定提醒",
+      ),
+      source: "mcp:〔m:m-elsewhere〕",
+      sourceMemoryId: "m-plain",
+      at: "2026-11-01T00:00:00.000Z",
+    });
+    writeRuleVersion(source, {
+      ruleId: "owner:marker-alone",
+      parameters: ownerRuleParameters(
+        "mail_must_notify",
+        { phrases: ["发票"] },
+        "〔r:x〕〔m:y〕发票",
+      ),
+      source: "ADR 0213；主人在对话里说的一句话",
+      at: "2026-11-01T00:00:00.000Z",
+    });
+    const { files } = await exportOf(source);
+    const target = await side("rules-marker-text-target");
+    await importInto(target, files, PASSPHRASE);
+    expect(ruleRows(target)).toEqual(ruleRows(source));
+  });
+
+  it("[P1-6][reverse] a sealed original that is not text is refused", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const sealed = (await unsealJson(PASSPHRASE, files.get(SEALED_FILE) ?? new Uint8Array())) as {
+      originals: Record<string, unknown>;
+    };
+    sealed.originals["rule/owner:build-key/parameters"] = 7;
+    const resealed = await sealJson(PASSPHRASE, sealed as never);
+    const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE))) as {
+      files: { path: string; bytes: number; sha256: string }[];
+    };
+    for (const entry of manifest.files)
+      if (entry.path === SEALED_FILE) {
+        entry.bytes = resealed.byteLength;
+        entry.sha256 = sha256Hex(resealed);
+      }
+    const tampered: PortableFiles = new Map(files);
+    tampered.set(SEALED_FILE, resealed);
+    tampered.set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
+    const target = await side("rules-reseal-number");
+    await expect(importInto(target, tampered, PASSPHRASE)).rejects.toMatchObject({
+      code: DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH,
+    });
   });
 
   it("[P1-6][reverse] parameters longer than the export limit stop the export", async () => {
