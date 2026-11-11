@@ -226,29 +226,37 @@ export class ReviewPrereviewService {
         failures.push(result.failure);
         continue;
       }
-      const since = new Date(Date.parse(now) - settings.historyDays * DAY_MS).toISOString();
-      const history = await store.ownerHistory({
-        ...scope,
-        group: subject.group,
-        category: subject.category,
-        since,
-      });
-      await store.record({
-        ...scope,
-        key: subject.key,
-        group: subject.group,
-        category: subject.category,
-        rating: result.reply.rating,
-        confidencePermille: result.reply.confidencePermille,
-        historyConflict: historyConflict(result.reply.rating, history, settings.historyMinimum),
-        modelRef: this.#options.model.modelRef,
-        promptId: this.promptId,
-        textDigest: this.#options.digest(subject.text),
-        dataClassification: subject.dataClassification,
-        costMicros: result.costMicros,
-        durationMs: result.durationMs,
-        createdAt: clock.now(),
-      });
+      try {
+        const since = new Date(Date.parse(now) - settings.historyDays * DAY_MS).toISOString();
+        const history = await store.ownerHistory({
+          ...scope,
+          group: subject.group,
+          category: subject.category,
+          since,
+        });
+        await store.record({
+          ...scope,
+          key: subject.key,
+          group: subject.group,
+          category: subject.category,
+          rating: result.reply.rating,
+          confidencePermille: result.reply.confidencePermille,
+          historyConflict: historyConflict(result.reply.rating, history, settings.historyMinimum),
+          modelRef: this.#options.model.modelRef,
+          promptId: this.promptId,
+          textDigest: this.#options.digest(subject.text),
+          dataClassification: subject.dataClassification,
+          costMicros: result.costMicros,
+          durationMs: result.durationMs,
+          createdAt: clock.now(),
+        });
+      } catch (error) {
+        this.#failedAt.set(subject.key, nowMs);
+        failures.push(
+          `PREREVIEW_STORE_FAILED:${error instanceof Error ? error.message : "unknown"}`,
+        );
+        continue;
+      }
       items += 1;
       recorded += 1;
     }
@@ -366,7 +374,7 @@ export class ReviewPrereviewService {
         }
       }
     } finally {
-      await authority.release();
+      await authority.release().catch(() => undefined);
       await model.release(outputs).catch(() => undefined);
     }
     const durationMs = Math.max(0, Date.parse(clock.now()) - startedAt);

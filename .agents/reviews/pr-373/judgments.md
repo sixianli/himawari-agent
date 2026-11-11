@@ -16,3 +16,15 @@
 | GLM-6 低 / DS 推测：promptId 等标识两端校验 | 放第 2 部分 | 落表时加两端核对测试（I-73）。 |
 | DS 推测：requestTimeoutMs 不真正限时 | 成立 | 请求带 AbortSignal.timeout(requestTimeoutMs)。 |
 | DS 推测：邮件分级写死 private | 不改 | 发给模型的只是发件人和标题，邮件判断本身也按 private 起步。 |
+
+## 第 2 轮（DeepSeek，High）
+
+- 第 1 轮 DS-1 的不采纳理由：第 2 轮认可，成立。
+- 6（低）release 抛错会漏掉 outputs 释放：已修，两个释放各自吞掉异常。
+- 8（低）存储出错没有按条目隔离：已修，ownerHistory 和 record 包在 try/catch 里，出错记 `PREREVIEW_STORE_FAILED` 并进入退避。
+- 1（中）没有接到生产：成立，第二部分（改表轮到 P4-8 后）接入 ProductionProactive；第一部分不在生产路径上，不会出错。
+- 2（中）失败调用不落表、费用不计入每日上限、重启后退避丢失：成立，第二部分的 `decision_prereviews` 表记录失败尝试和费用。
+- 3（中）memory_skipped 没有分级来源：成立，第二部分接线时由记忆负载的分级提供 readMemoryClassification；在那之前条目按未知分级跳过，不会外发。
+- 4（中）textDigest 存了但隐藏时没核对：成立，第二部分隐藏前核对文字摘要，文字变了就不隐藏。
+- 5（低）快照缺 hiddenByModel：第二部分加。
+- 7（低）先构建全部条目再截断：第二部分接线时改成先按上限取。
