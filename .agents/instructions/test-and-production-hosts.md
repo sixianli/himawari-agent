@@ -5,7 +5,8 @@
 
 逐步操作流程（连接、目录布局、临时目录根、运行方式、监控、清理）见 [测试主机运维 Runbook（操作手册）](../../docs/runbooks/test-host-operations-runbook.md)。硬边界如下：
 
-- 绝不在用户的 MacBook 上运行 Himawari 测试：不做构建，不跑 `npm run check`、`npm test`、任何 Vitest 项目或产品路径资格验证。MacBook 只用于编辑、审查和提交；发现那里有这类进程在运行时要停止它。
+- 绝不在用户的 MacBook 上运行 Himawari 服务器端的测试：不做 Node 这一侧的构建，不跑 `npm run check`、`npm test`、任何 Vitest 项目或产品路径资格验证。发现那里有这类进程在运行时要停止它。
+- 例外只有苹果客户端（`clients/apple/` 下的 iPhone、Apple Watch、Mac App 和它们的扩展）：它们的构建、单元测试和装到 Andy 的设备上，在 Andy 的 Mac 上用 Xcode（苹果的开发工具，只能在 Mac 上运行）做，因为没有别的机器能做。这个例外不包括任何服务器端的命令；客户端测试要连服务器时，连 Hermes 测试机，不在 Mac 上起 Himawari 服务。依据 [ADR 0229](../../docs/adr/0229-native-apple-clients-and-device-api.md#decision) 决定第 8 条（Andy 2026-11-11：“同意改写”）。
 - 第 0-4 层在 Hermes 上运行，或在云服务器 `84.247.157.41` 上以普通账号 `himawari-ci`（uid 1001，无 sudo）在 `/srv/himawari-ci/` 下运行；在那里做例行测试工作不需要再请示。绝不使用 root 或生产账号，绝不读取生产机密，绝不触碰 `/opt/himawari`、`/etc/himawari`、`/var/lib/himawari` 或生产服务（不停止、不重启、不发请求）。任何需要 sudo、或会改变 Hermes 系统设置或服务的事，都以可执行脚本的形式交给用户，并解释每一步。
 - 在云服务器上，每次重负载运行之前、运行期间每 30 秒、以及运行之后，都用只读查询观察 `himawari-prod.service`；如果它不再是 `active`、它的重启次数增加，或测试账号记录到一次 `oom_kill`，立即停止运行，保留记录，并告诉用户；绝不提高限额。
 - `himawari-ci` 的结果绝不能代替生产上线的受限主机验收或签名。第四次及以后的上线没有长期有效的验收例外：它冻结的运维上线包（安装、用户/权限、签名、验收、清理、服务启动）需要用户本人授权。
