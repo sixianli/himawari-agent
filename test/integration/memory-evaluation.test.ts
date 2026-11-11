@@ -2,7 +2,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DurableMemoryService, type MemoryCategory } from "@himawari-agent/application";
+import {
+  DurableMemoryService,
+  embeddingQueryText,
+  type MemoryCategory,
+  QWEN3_EMBEDDING_8B_PROFILE,
+} from "@himawari-agent/application";
 import {
   createAgentId,
   createMemoryGenerationId,
@@ -14,10 +19,8 @@ import {
   type Embedder,
   HybridMemoryProvider,
   indexTerms,
-  instructedQuery,
   MemoryEpisodeService,
   parseTimeScope,
-  QWEN3_MEMORY_QUERY_INSTRUCTION,
 } from "@himawari-agent/memory-engine";
 import {
   applyMigrations,
@@ -102,7 +105,7 @@ function requiredTexts(questions: readonly DatasetQuestion[], episodes: boolean)
     ...dataset.memories.map(({ text }) => text),
     ...questions.flatMap(({ query }) => [
       query,
-      instructedQuery(QWEN3_MEMORY_QUERY_INSTRUCTION, query),
+      embeddingQueryText(QWEN3_EMBEDDING_8B_PROFILE, query),
     ]),
     ...(episodes ? dataset.episodes.map(({ day, text }) => `${day}\n${text}`) : []),
   ];
@@ -139,6 +142,18 @@ function hashVector(text: string): Float32Array {
 }
 
 class EvaluationEmbedder implements Embedder {
+  instructed = false;
+
+  embedQuery(query: string): Promise<Float32Array> {
+    return this.embed(
+      this.instructed ? embeddingQueryText(QWEN3_EMBEDDING_8B_PROFILE, query) : query,
+    );
+  }
+
+  embedDocument(text: string): Promise<Float32Array> {
+    return this.embed(text);
+  }
+
   readonly model: string;
   readonly dimensions: number;
   readonly #vectors: ReadonlyMap<string, Float32Array> | null;
@@ -291,15 +306,15 @@ describe("memory retrieval evaluation", () => {
     const instructed =
       vectors !== null &&
       (options.episodes ? PHASE_TWO_QUESTIONS : PHASE_ONE_QUESTIONS).every(({ query }) =>
-        vectors.has(instructedQuery(QWEN3_MEMORY_QUERY_INSTRUCTION, query)),
+        vectors.has(embeddingQueryText(QWEN3_EMBEDDING_8B_PROFILE, query)),
       );
+    embedder.instructed = instructed;
     const provider = new HybridMemoryProvider({
       index: repository.memoryIndex(),
       embedder,
       embeddableClassifications: ["public", "private"],
       now: () => dataset.now,
       timeZone: TIME_ZONE,
-      ...(instructed ? { queryInstruction: QWEN3_MEMORY_QUERY_INSTRUCTION } : {}),
     });
     const service = new DurableMemoryService({
       state: repository.productMemoryState(),
@@ -388,7 +403,6 @@ describe("memory retrieval evaluation", () => {
           embedder,
           timeZone: TIME_ZONE,
           now: () => dataset.now,
-          ...(instructed ? { queryInstruction: QWEN3_MEMORY_QUERY_INSTRUCTION } : {}),
         })
       : null;
     if (episodes)

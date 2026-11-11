@@ -37,15 +37,16 @@ function configuration(stateRoot: string) {
       ? {
           ref,
           role,
-          provider: "provider-local",
-          model: ref,
+          provider: "local-onnx",
+          model: "jina-embeddings-v5-text-small-retrieval-int8",
           version: "snapshot-1",
           capabilities: ["embedding"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          dimensions: 1536,
+          dimensions: 1024,
           allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
           disclosure: "local_only",
           secretRef: null,
+          artifactSha256: "a".repeat(64),
         }
       : {
           ref,
@@ -81,7 +82,7 @@ function configuration(stateRoot: string) {
       adapter: "himawari-sqlite",
       version: "3.3.1",
       storagePath: path.join(stateRoot, "data", "memory"),
-      dimensions: 1536,
+      dimensions: 1024,
     },
     repositoryAllowlistRefs: [],
     secretReferences: [],
@@ -164,6 +165,32 @@ async function prepare() {
        VALUES ('memory-kept', ?, ?, 1, ?)`,
     )
     .run(OWNER, AGENT, NOW);
+  database
+    .prepare(
+      "INSERT INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at) VALUES ('thread-1', ?, ?, 0, 'open', ?, ?)",
+    )
+    .run(OWNER, AGENT, NOW, NOW);
+  const episode = database.prepare(
+    `INSERT INTO memory_episodes (id, owner_id, agent_id, thread_id, day, source, content_ref,
+       classification, first_sequence, last_sequence, started_at, ended_at, created_at,
+       embedding_model, embedding_dimensions, embedding)
+     VALUES (?, ?, ?, 'thread-1', '2026-11-01', 'day_summary', 'payload-memory-kept', 'private',
+       ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  episode.run(
+    "episode-embedded",
+    OWNER,
+    AGENT,
+    1,
+    2,
+    NOW,
+    NOW,
+    NOW,
+    "old-model#1",
+    2,
+    Buffer.alloc(8),
+  );
+  episode.run("episode-plain", OWNER, AGENT, 3, 4, NOW, NOW, NOW, null, null, null);
   database.close();
   const configurationPath = path.join(root, "configuration.json");
   await writeFile(configurationPath, `${JSON.stringify(configuration(root))}\n`, { mode: 0o600 });
@@ -181,6 +208,10 @@ async function prepare() {
           .pluck()
           .all(),
         indexed: reader.prepare("SELECT COUNT(*) FROM memory_search_index").pluck().get(),
+        episodeVectors: reader
+          .prepare("SELECT COUNT(*) FROM memory_episodes WHERE embedding IS NOT NULL")
+          .pluck()
+          .get(),
       };
     } finally {
       reader.close();
@@ -208,6 +239,7 @@ describe("memory.reindex admin CLI", () => {
     expect(await runAdminCli(reindex(configurationPath), plan.stream, refused.stream)).toBe(1);
     expect(plan.value()).toContain('"idleArchivesToRestore":1');
     expect(plan.value()).toContain('"indexedMemories":1');
+    expect(plan.value()).toContain('"embeddedEpisodes":1');
     expect(plan.value()).toContain('"confirmation":"REINDEX_MEMORY_agent-memory-cli"');
     expect(refused.value()).toContain("ADMIN_CONFIRMATION_REQUIRED");
     expect(rows()).toEqual(before);
@@ -222,6 +254,7 @@ describe("memory.reindex admin CLI", () => {
     ).toBe(0);
     expect(output.value()).toContain('"restored":1');
     expect(output.value()).toContain('"clearedIndexRows":1');
+    expect(output.value()).toContain('"clearedEpisodeVectors":1');
     expect(rows()).toEqual({
       memories: [
         { id: "memory-edited-after", status: "archived", revision: 4 },
@@ -233,6 +266,7 @@ describe("memory.reindex admin CLI", () => {
       ],
       undone: ["change-idle", "change-undone", "change-undone-archived-again"],
       indexed: 0,
+      episodeVectors: 0,
     });
 
     const repository = await SqliteProductStateRepository.open({
@@ -265,6 +299,7 @@ describe("memory.reindex admin CLI", () => {
       ),
     ).toBe(0);
     expect(again.value()).toContain('"restored":0');
+    expect(again.value()).toContain('"clearedEpisodeVectors":0');
   });
 
   it("refuses unknown options", async () => {

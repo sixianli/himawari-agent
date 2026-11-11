@@ -1180,11 +1180,15 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 [ADR 0081](adr/0081-isolated-instance-per-person.md)；Idea `docs/ideas/IDEA-20261026-001-per-person-isolated-himawari.md`；Backlog `docs/backlog/BL-20261026-003-isolated-instance-per-person.md`；评估文档 <https://claude.ai/artifact/77cUajUv5MWWHHMH8m2g1N>；[PR #37](https://github.com/sixianli/himawari-agent/pull/37)。
 
+**后续（2026-11-11）**
+
+重新评估后，Andy 定了两个前提：生产机只有一台、不多花服务器钱，目标是 10 到 20 人。每人一套实例大概率放不下（推断，没有实测），所以 [ADR 0234](adr/0234-one-program-per-person-database-file.md) 取代了 ADR 0083，改成一个程序、每人一个数据库文件、每人一个专属执行账号；模型用 Andy 已有的套餐（对话模型按 ADR 0117 的顺序，可能先用 CodeBuddy 免费额度）、不用 Vercel 的 key，每人每月上限由 Andy 在管理页配置。上面“先选 silo”的取舍是当时单机、两三个熟人的前提下做的；放弃的理由是内存和磁盘要乘以人数，代价是隔离从“结构上分开”降为“三道防线加系统账号”，并接受主程序崩了所有人一起断。结果数据还没有：量机器是开工第一步。
+
 **后续（2026-10-26）**
 
 评估 iOS App 时决定 Andy 的手机也走 Cloudflare 入口，所以 [ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md) 取代了 ADR 0081，只改了“Andy 自己继续走 ssh 隧道”这一句，其余决定不变。详见[案例 21](#case-mobile-client)。
 
-**面试 30 秒版**
+**面试 30 秒版（2026-10 的版本；现行做法见上面 2026-11-11 的后续）**
 
 “个人 Agent 要分享给家人朋友，各自的记忆必须隔离。我先盘点代码：数据库每张表已经带主人 ID，单用户写死在配置、登录、密钥和后台任务。对照 AWS 的 silo / pool 模型，我没有马上改成一个实例分用户，因为漏一个过滤条件就会泄露别人的记忆；先给每人起一个独立实例，前面用 Cloudflare Access 只放行邀请的邮箱，不开放注册，避免陌生人刷爆模型费用。用户超过五人再迁到 pool，先写隔离测试。”
 
@@ -2822,11 +2826,15 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 
 **相关 ADR/PR**
 
-PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，没有新 ADR。改成本机模型这一步 Andy 2026-10-28 决定以后再做，记为 [BL-20261028-008](backlog/BL-20261028-008-local-memory-embedding.md)，动手时另写 ADR。
+PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，没有新 ADR。改成本机模型这一步 Andy 2026-10-28 决定以后再做，记为 [BL-20261028-008](archive/backlog/BL-20261028-008-local-memory-embedding.md)，动手时另写 ADR。
 
 **面试 30 秒版**
 
 “用户看到‘找到 0 条记忆’也花了 1.4 秒。我没有猜，用生产库里已有的时间点把这一步拆成五段，发现 88% 是一次向量化网络请求。看响应头才知道，东京的请求被网关转到悉尼，再去美国的供应商，绕了两段跨洋路。能在代码里改的，是照 OpenAI SDK 的做法改用 base64 返回格式，数值逐位相同，生产机上实测从 1.05 秒降到 0.77 秒。绕路本身是网关路由，根治只能在本机算向量，小模型 90 毫秒，但准确度和内存是产品取舍，我把数据摆给产品负责人来选。”
+
+**后续（2026-11-11）：改在本机算向量（P3-1）**
+
+候选报告比较了三个能在生产机 CPU 上跑的模型，Andy 选了 jina-embeddings-v5-text-small-retrieval 的 int8 量化版。按 [ADR 0224](adr/0224-memory-embedding-runs-on-the-host.md)，向量在服务进程里用 ONNX Runtime 计算，外网 Qwen3-8B 保留为可选；每个嵌入模型登记成一份档案，门槛跟着模型走，换模型只改配置。本机请求仍走统一出口，遮盖和记账不漏。合成评测集真实代码路径实测（门槛 0.30，数字出自 ADR 0224）：主评测集命中 90%（网关 8B 在 0.6 门槛下 80%），留出集 70%；查询中位数约 35 毫秒，加载约 3.7 秒，进程多占约 1.35 GB。生产上线后的中位数未测量。代价是许可为 CC BY-NC 4.0，对外收费前要换成 Apache 2.0 的 Qwen3-0.6B（已登记好档案）。检索索引的威胁模型另写在 [记忆检索索引的威胁模型](memory-index-threat-model.md)。
 
 [返回目录](#contents)
 
