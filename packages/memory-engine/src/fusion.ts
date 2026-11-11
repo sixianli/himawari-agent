@@ -29,6 +29,12 @@ export const DEFAULT_FUSION_WEIGHTS: FusionWeights = Object.freeze({
   timeWindow: 0.5,
 });
 
+export interface RelevanceCutoff {
+  readonly minimumScore: number;
+  readonly keywordWeight: number;
+  readonly entityWeight: number;
+}
+
 export interface FusedHit {
   readonly memoryId: MemoryId;
   readonly score: number;
@@ -72,6 +78,8 @@ export function fuseCandidates(
     readonly limit: number;
     readonly weights?: FusionWeights;
     readonly scope?: MemoryTimeScope | null;
+    readonly cutoff?: RelevanceCutoff;
+    readonly onRelevanceUnknown?: (count: number) => void;
   },
 ): FusedHit[] {
   const weights = input.weights ?? DEFAULT_FUSION_WEIGHTS;
@@ -96,7 +104,11 @@ export function fuseCandidates(
       fused.set(candidate.memoryId, current);
     });
   }
+  const admitted = input.cutoff
+    ? admitByRelevance(result, fused, input.cutoff, input.onRelevanceUnknown)
+    : null;
   return [...fused.entries()]
+    .filter(([memoryId]) => admitted === null || admitted.has(memoryId))
     .map(([memoryId, { rrf, candidate, sources }]) => {
       const boost =
         1 +
@@ -112,4 +124,43 @@ export function fuseCandidates(
     })
     .sort((left, right) => right.score - left.score || left.memoryId.localeCompare(right.memoryId))
     .slice(0, input.limit);
+}
+
+function admitByRelevance(
+  result: MemoryIndexSearchResult,
+  fused: ReadonlyMap<MemoryId, { readonly candidate: MemoryIndexCandidate }>,
+  cutoff: RelevanceCutoff,
+  onRelevanceUnknown: ((count: number) => void) | undefined,
+): ReadonlySet<MemoryId> {
+  const similarity = new Map<MemoryId, number>();
+  for (const candidate of [...result.vector, ...result.lexical, ...result.entity])
+    if (candidate.similarity !== undefined)
+      similarity.set(candidate.memoryId, candidate.similarity);
+  for (const candidate of result.vector)
+    if (!similarity.has(candidate.memoryId)) similarity.set(candidate.memoryId, candidate.signal);
+  const strongestKeyword = Math.max(0, ...result.lexical.map(({ signal }) => signal));
+  const keyword = new Map(
+    result.lexical.map(({ memoryId, signal }) => [
+      memoryId,
+      strongestKeyword > 0 ? Math.max(0, signal) / strongestKeyword : 0,
+    ]),
+  );
+  const entity = new Set(result.entity.map(({ memoryId }) => memoryId));
+  const admitted = new Set<MemoryId>();
+  let unknown = 0;
+  for (const memoryId of fused.keys()) {
+    const value = similarity.get(memoryId);
+    if (value === undefined) {
+      unknown += 1;
+      admitted.add(memoryId);
+      continue;
+    }
+    const relevance =
+      value +
+      cutoff.keywordWeight * (keyword.get(memoryId) ?? 0) +
+      cutoff.entityWeight * (entity.has(memoryId) ? 1 : 0);
+    if (relevance >= cutoff.minimumScore) admitted.add(memoryId);
+  }
+  if (unknown > 0) onRelevanceUnknown?.(unknown);
+  return admitted;
 }

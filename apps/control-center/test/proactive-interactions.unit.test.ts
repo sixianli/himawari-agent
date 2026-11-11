@@ -261,7 +261,12 @@ function reviewFixture(): ProactiveReview {
       reviewItem("ledger:a5", { rating: "useful" }),
       reviewItem("ledger:a6"),
       reviewItem("ledger:a7"),
-      reviewItem("ledger:a8"),
+      reviewItem("ledger:a8", {
+        kind: "rule_review",
+        outcome: "needs_review",
+        acted: true,
+        text: "",
+      }),
     ],
     folded: {
       total: 3,
@@ -585,6 +590,18 @@ describe("[PG-15] proactive reminders page", () => {
     expect(text(section)).toContain("其他判断 · 3 条");
     expect(text(section)).not.toContain("整理记忆");
     expect(text(section)).toContain("第 1 / 2 页");
+  });
+
+  it("[P2-2] shows a hard rule review in the daily rating with its own tag and sentence", async () => {
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    const section = "#page .proactive-review";
+    await click(section, "下一页");
+    const rows = [...document.querySelectorAll<HTMLElement>(`${section} li`)];
+    const row = rows.at(-1);
+    expect(row?.textContent).toContain("硬规则待重审");
+    expect(row?.textContent).toContain("那条记忆变了，规则照常执行");
+    expect(row?.textContent).not.toContain("外部程序读取记忆");
   });
 
   it("[P0-6] sends one rating, clears it on a second tap and leaves a reviewed mail alone", async () => {
@@ -948,11 +965,46 @@ describe("[P1-3] the basis drawer of a decision record", () => {
       items: [
         {
           ruleId: "floor_money_words",
+          revision: 1,
+          current: true,
+          kind: "money_words",
           origin: "built_in",
-          document: "ADR 0106 第 4 条",
+          source: "ADR 0106 第 4 条；ADR 0209",
+          status: "active",
+          changedAt: null,
+          memory: null,
+          wording: { values: ["账单", "invoice"], quietHours: [], amount: null },
+          tests: { state: "passed", total: 5, failedAt: null },
           mailCount: 2,
         },
-        { ruleId: "floor_unknown", origin: null, document: null, mailCount: 1 },
+        {
+          ruleId: "floor_important_sender",
+          revision: 3,
+          current: false,
+          kind: "important_sender",
+          origin: "owner_setting",
+          source: "ADR 0106 第 4 条；主人的设置“重要发件人”",
+          status: "needs_review",
+          changedAt: "2026-11-03T01:00:00.000Z",
+          memory: { memoryId: "memory-rule", state: "visible", text: "银行的信一律提醒我" },
+          wording: { values: ["bank.example"], quietHours: [], amount: null },
+          tests: { state: "failed", total: 3, failedAt: 2 },
+          mailCount: 1,
+        },
+        {
+          ruleId: "floor_unknown",
+          revision: null,
+          current: false,
+          kind: "unknown",
+          origin: null,
+          source: null,
+          status: null,
+          changedAt: null,
+          memory: null,
+          wording: null,
+          tests: { state: "unavailable", total: 0, failedAt: null },
+          mailCount: 1,
+        },
       ],
     },
     mails: {
@@ -1033,8 +1085,18 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     const drawer = text(".decision-chain");
     expect(drawer).toContain("命中的规则");
     expect(drawer).toContain("内置规则");
-    expect(drawer).toContain("ADR 0106 第 4 条");
+    expect(drawer).toContain("出处：ADR 0106 第 4 条；ADR 0209 · 第 1 版");
+    expect(drawer).toContain("词表：账单、invoice");
+    expect(drawer).toContain("测试：5 条例子全部通过");
+    expect(drawer).toContain("原话：银行的信一律提醒我");
+    expect(drawer).toContain("重要名单：bank.example");
+    expect(drawer).toContain("待重审");
+    expect(drawer).toContain("测试：第 2 条例子不符（共 3 条）");
     expect(drawer).toContain("未登记的规则");
+    expect(drawer).toContain("这一版的规则内容查不到");
+    expect(drawer).toContain("测试：查不到");
+    expect(drawer).toContain("只记了规则名，显示的是现在的版本");
+    expect(drawer.split("只记了规则名，显示的是现在的版本").length).toBe(2);
     expect(drawer).toContain("判断了 3 封");
     expect(drawer).toContain("关联邮件：只读到一部分");
     expect(drawer).toContain("最近两天的对话摘要：带了 2 段");
@@ -1075,6 +1137,45 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     expect(drawer.match(/无记录/gu)?.length ?? 0).toBeGreaterThanOrEqual(4);
     expect(drawer).not.toContain("对话摘要");
     expect(drawer).toContain("还没评价");
+  });
+
+  it("[P2-2] titles the rules of a hard rule review as waiting for review and counts no mail", async () => {
+    chainResult = chain({
+      decision: { ...chain().decision, kind: "rule_review", outcome: "needs_review" },
+      rules: {
+        state: "recorded",
+        items: [
+          {
+            ruleId: "quiet_hours",
+            revision: 2,
+            current: true,
+            kind: "quiet_hours",
+            origin: "owner_setting",
+            source: "ADR 0106；主人的设置“静默时段”",
+            status: "needs_review",
+            changedAt: "2026-11-03T01:00:00.000Z",
+            memory: null,
+            wording: {
+              values: [],
+              quietHours: [{ days: [1, 2], start: "23:00", end: "07:00" }],
+              amount: null,
+            },
+            tests: { state: "passed", total: 4, failedAt: null },
+            mailCount: 0,
+          },
+        ],
+      },
+      mails: null,
+    });
+    await openLog();
+    await act(async () => rowButton("1")?.click());
+    await flush();
+    const drawer = text(".decision-chain");
+    expect(drawer).toContain("待重审的规则");
+    expect(drawer).toContain("静默时段");
+    expect(drawer).toContain("23:00–07:00");
+    expect(drawer).not.toContain("命中的规则");
+    expect(drawer).not.toContain("封邮件");
   });
 
   it("closes and says the record was cleared when it is gone, and says it failed on any other error", async () => {

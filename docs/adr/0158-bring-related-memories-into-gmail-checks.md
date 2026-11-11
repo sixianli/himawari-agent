@@ -32,7 +32,7 @@ Andy 在 2026-11-01 的决定（均有原话，记录在线程）：记忆用在
 ## 决定
 
 1. **逐封搜记忆：** 每封要送模型的邮件用「发件人 + 标题 + 摘要」（上限 500 字，`DEFAULT_PROACTIVE_MEMORY_LIMITS.queryCharacters`）搜记忆。每封最多 3 条，一批最多 12 条（按相关度从高到低取），每条截 200 字，一次检查最多搜 40 封，超出的邮件不带记忆并记为 `partial`。
-2. **邮件专用的相关度门槛：** 配置项 `runPolicy.proactive.memoryMinimumSimilarity`，默认 0.45，不沿用聊天的 0.6。依据：159 封合成邮件（76 封有相关记忆）上，0.6 只命中 20%，0.45 命中 71%，无关邮件被带出记忆 8%（评测见 `/mnt/project-files/p0-5-gmail-ledger-inputs/eval/report.md`，只算向量一路）。
+2. **邮件专用的相关度门槛：** 配置项 `runPolicy.proactive.memoryMinimumSimilarity`，默认 0.45，不沿用聊天的 0.6。依据：159 封合成邮件（76 封有相关记忆）上，0.6 只命中 20%，0.45 命中 71%，无关邮件被带出记忆 8%（评测见 `/mnt/project-files/p0-5-gmail-ledger-inputs/eval/report.md`，只算向量一路）。（[ADR 0221](0221-memory-retrieval-relevance-cutoff-and-same-source-dedupe.md) 起，关键词和实体两路找到的记忆也按这个门槛减去截断余量截断。）
 3. **只读搜索：** 搜索函数新增 `recordUse: false`（不记「最近使用时间」和使用次数，免得后台每 15 分钟检查让记忆在聊天里无故靠前、也躲过每日整理）、`queryText`（直接传查询文字）、`minimumSimilarity`（覆盖门槛）、`excludeCategories`（排除「对 Himawari 的要求」类）。分类只取公开和私有，敏感和受限的不进邮件检查。（敏感一项已由 [ADR 0193](0193-memory-is-visible-to-the-model.md) 改为可以进邮件检查，受限的仍不进。）
 4. **嵌入服务的新场景：** `production-run-memory.ts` 新增第三种允许调用的场景「Gmail 检查」（和聊天一次运行、后台同步搜索索引平行）：固定按私有分类，截止时间用本次检查的截止时间，不走共享预算，费用累加进本次检查的成本；同时最多 4 个搜索。
 5. **只跳过垃圾邮件和主人自己发的邮件：** 删除 `SKIPPED_CATEGORIES` 和重要发件人对它的豁免。含验证码、卡号的邮件由 [ADR 0146](0146-redact-sensitive-text-before-it-leaves-for-any-model.md) 的统一遮盖处理，不再整封跳过。

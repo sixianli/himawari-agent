@@ -1,3 +1,5 @@
+import { existsSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { ProactiveSourceItem } from "@himawari-agent/application";
 import {
   EGRESS_PLACEHOLDER_LEGEND,
@@ -9,8 +11,6 @@ import {
   episodeSummaryPrompt,
   QWEN3_MEMORY_QUERY_INSTRUCTION,
 } from "@himawari-agent/memory-engine";
-import { existsSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { managedTaskDescriptors } from "../src/production-managed-tasks.js";
 import { memoryCapturePrompt } from "../src/production-memory-capture.js";

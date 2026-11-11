@@ -3,6 +3,7 @@ import {
   type ClockPort,
   type CommittedRunMemoryInput,
   type DataClassification,
+  DEFAULT_MEMORY_ATTRIBUTES,
   type DecisionLedgerPort,
   type ExtractedMemoryCandidate,
   type IncrementalMemoryProductPort,
@@ -97,6 +98,7 @@ export interface ExistingMemoryText {
   readonly text: string;
   readonly stance?: string | null;
   readonly tentative?: boolean;
+  readonly category?: MemoryCategory;
 }
 
 export interface MemoryCaptureContext {
@@ -251,7 +253,10 @@ export function parseMemoryCandidates(input: {
   readonly sourceRef: string;
   readonly sourceClassification: DataClassification;
   readonly existingIds: ReadonlySet<string>;
-  readonly tentativeTexts?: ReadonlyMap<string, string>;
+  readonly tentativeMemories?: ReadonlyMap<
+    string,
+    { readonly text: string; readonly category: MemoryCategory }
+  >;
   readonly ownerMessage?: string;
   readonly sentAt?: string;
   readonly timeZone?: string;
@@ -344,7 +349,7 @@ export function parseMemoryCandidates(input: {
       input.ownerMessage !== undefined && quoteFromOwnerMessage(quote, input.ownerMessage);
     const confirmsTentative =
       existing !== null &&
-      input.tentativeTexts?.has(existing) === true &&
+      input.tentativeMemories?.has(existing) === true &&
       (decision === "unchanged" || decision === "update" || decision === "merge");
     const evidenceRejected =
       (input.ownerMessage !== undefined &&
@@ -353,7 +358,7 @@ export function parseMemoryCandidates(input: {
         !evidenceVerified) ||
       (confirmsTentative &&
         (!evidenceVerified ||
-          !quoteRelatesToMemory(quote, [input.tentativeTexts?.get(existing) ?? ""])));
+          !quoteRelatesToMemory(quote, [input.tentativeMemories?.get(existing)?.text ?? ""])));
     const category = (
       typeof value["category"] === "string" && CATEGORIES.has(value["category"])
         ? value["category"]
@@ -463,6 +468,14 @@ export function parseMemoryCandidates(input: {
       ...(reminder ? { reminder } : {}),
       ...(people.length ? { people } : {}),
       ...(personLinks.length ? { personLinks } : {}),
+      ...(confirmsTentative
+        ? {
+            confirmsTentativeCategory:
+              decision === "unchanged"
+                ? (input.tentativeMemories?.get(existing)?.category ?? category)
+                : category,
+          }
+        : {}),
       ...(dataClassification === "sensitive"
         ? {
             sensitiveTopic: (typeof value["topic"] === "string" && TOPICS.has(value["topic"])
@@ -769,6 +782,7 @@ export class ProductionMemoryCapture {
           text,
           stance: memory.attributes?.stance ?? null,
           tentative: memory.attributes?.tentative === true,
+          category: memory.attributes?.category ?? DEFAULT_MEMORY_ATTRIBUTES.category,
         });
     }
     const subCategories: Record<string, string[]> = {};
@@ -842,8 +856,13 @@ export class ProductionMemoryCapture {
         sourceRef: source.payloadRef,
         sourceClassification: source.dataClassification,
         existingIds: new Set(existing.map(({ id }) => id)),
-        tentativeTexts: new Map(
-          existing.filter(({ tentative }) => tentative).map(({ id, text }) => [id, text]),
+        tentativeMemories: new Map(
+          existing
+            .filter(({ tentative }) => tentative)
+            .map(({ id, text, category }) => [
+              id,
+              { text, category: category ?? DEFAULT_MEMORY_ATTRIBUTES.category },
+            ]),
         ),
         ownerMessage: message,
         ...(owner.committedAt ? { sentAt: owner.committedAt } : {}),

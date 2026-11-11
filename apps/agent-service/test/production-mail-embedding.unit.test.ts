@@ -149,6 +149,26 @@ describe("embedding for the Gmail check", () => {
   });
 });
 
+describe("[P5-1] embedding for an external MCP read", () => {
+  it("embeds without a conversation run and charges the cost to the read", async () => {
+    const { memory, embed } = build();
+    const context = { deadlineAt: LATER, signal: new AbortController().signal, costMicros: 0 };
+    await memory.embedForExternalRead(context, async () => {
+      await embed();
+    });
+    expect(context.costMicros).toBeGreaterThan(0);
+  });
+
+  it("refuses once the caller has gone away", async () => {
+    const { memory, embed } = build();
+    const controller = new AbortController();
+    controller.abort();
+    const context = { deadlineAt: LATER, signal: controller.signal, costMicros: 0 };
+    await expect(memory.embedForExternalRead(context, async () => embed())).rejects.toThrow();
+    expect(context.costMicros).toBe(0);
+  });
+});
+
 describe("recall for the Gmail check", () => {
   const found = (id: string, score: number) => ({ memory: { id, contentRef: `ref-${id}` }, score });
   const recallWith = (

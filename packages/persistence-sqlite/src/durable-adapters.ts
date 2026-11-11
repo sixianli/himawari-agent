@@ -908,6 +908,7 @@ export class SqliteDurableAdapters {
       markUsed: (memoryIds, usedAt) => this.context.write("memory.markUsed", { memoryIds, usedAt }),
       appendHistory: (input) => this.context.write("memory.appendHistory", input),
       listHistory: (input) => this.context.read("memory.listHistory", input),
+      readHistory: (input) => this.context.read("memory.readHistory", input),
     });
   }
 
@@ -1019,6 +1020,7 @@ export class SqliteDurableAdapters {
   decisionLedger(): DecisionLedgerPort {
     return Object.freeze<DecisionLedgerPort>({
       append: (input) => this.context.write("decisionLedger.append", input),
+      appendIfChanged: (input) => this.context.write("decisionLedger.appendIfChanged", input),
       list: (input) => this.context.read("decisionLedger.list", input),
       read: (input) => this.context.read("decisionLedger.read", input),
       rate: (input) => this.context.write("decisionLedger.rate", input),

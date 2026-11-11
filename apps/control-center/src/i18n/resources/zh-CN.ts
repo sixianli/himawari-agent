@@ -81,8 +81,6 @@ export const messages = {
   "chat.error.rateLimited": "模型服务当前限流。请稍后重试，或为下一轮选择其他已配置模型。",
   "chat.error.authFailed": "模型服务认证失败。请检查服务端的模型凭据和访问权限。",
   "chat.error.unavailable": "模型服务暂不可用。请稍后重试。",
-  "chat.error.contextMemoryUnavailable":
-    "查找相关记忆时，连接模型服务失败。本轮没有调用对话模型，也没有执行任何工具。",
   "chat.error.quotaExceeded":
     "模型服务的费用额度已用完，请求被拒绝了，不是网络问题。请在 Vercel 的 AI Gateway 预算里调高或取消上限，之后再试。",
   "chat.error.contextWindowExhausted":
@@ -700,6 +698,7 @@ export const messages = {
   "memory.page.history": "怎么变过来的",
   "memory.page.now": "现在",
   "memory.page.useThis": "换回这个说法",
+  "memory.page.restoreVersion": "恢复到这一版",
   "memory.page.editNote": "保存后，旧说法会移到“怎么变过来的”里，不会丢。",
   "memory.page.archivedNote": "整理时判断为过时或重复，回答时不再用",
   "memory.page.unarchive": "恢复使用",
@@ -830,6 +829,8 @@ export const messages = {
   "memory.page.carry.title": "每次对话都会带上的记忆",
   "memory.page.carry.summary": "{count} 条 · 已用 {used} / {limit} 字",
   "memory.page.carry.queued": "还有 {count} 条放不下",
+  "memory.page.carry.pinnedOver":
+    "你打开“每次对话都带上”的记忆共 {pinned} 字，比上限 {limit} 字多出 {over} 字。它们照样每次都带上，但其他记忆就放不进来了；关掉几条可以回到上限以内。",
   "memory.page.carry.open": "查看和调整",
   "memory.page.carry.meter": "已用字数",
   "memory.page.carry.note":
@@ -953,6 +954,8 @@ export const messages = {
   "dailyReview.tag.truncation": "回答时没带上的旧内容",
   "dailyReview.tag.degrade": "记忆搜索没生效",
   "dailyReview.tag.externalRead": "外部程序读取记忆",
+  "dailyReview.tag.ruleReview": "硬规则待重审",
+  "dailyReview.ruleReview": "这条硬规则来自你说过的一句话，那条记忆变了，规则照常执行，等你看一眼",
   "dailyReview.hidden": "这里不显示原文",
   "dailyReview.fetched": "检查了 {count} 封邮件",
   "dailyReview.allFine": "这一页都没问题",
@@ -978,13 +981,24 @@ export const messages = {
   "decision.chain.rating": "你的评价",
   "decision.chain.unrated": "还没评价",
   "decision.chain.kind":
-    "{k, select, proactive {系统主动提醒} memory_candidate {存记忆的判断} consolidation {整理记忆} context_truncation {裁剪上下文} retrieval_degrade {找记忆降级} external_read {读外部内容} other {其他}}",
+    "{k, select, proactive {系统主动提醒} memory_candidate {存记忆的判断} consolidation {整理记忆} context_truncation {裁剪上下文} retrieval_degrade {找记忆降级} external_read {外部程序读取记忆} rule_review {硬规则待重审} other {其他}}",
   "decision.chain.rules": "命中的规则",
+  "decision.chain.reviewRules": "待重审的规则",
   "decision.chain.rule":
-    "{id, select, floor_important_sender {重要来信不放过：发件人在你的重要名单里} floor_public_domain {重要来信不放过：来自政府或学校域名} floor_money_words {重要来信不放过：邮件里有金额相关的词} other {{id}}}",
+    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：邮件里有金额相关的词} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {你设定的} built_in {内置规则} other {未登记的规则}}",
   "decision.chain.ruleMails": "命中 {count} 封邮件",
+  "decision.chain.ruleNeedsReview": "待重审",
+  "decision.chain.ruleQuote": "原话：{text}",
+  "decision.chain.ruleWording":
+    "{k, select, important_sender {{empty, select, yes {重要名单是空的} other {重要名单：{text}}}} public_domain {域名后缀：{text}} money_words {词表：{text}} quiet_hours {{empty, select, yes {没有设静默时段} other {时段：{text}}}} amount_threshold {门槛：{text}} other {{text}}}",
+  "decision.chain.ruleWordingMissing": "这一版的规则内容查不到",
+  "decision.chain.ruleSource": "出处：{source} · 第 {revision} 版",
+  "decision.chain.ruleCurrent": "只记了规则名，显示的是现在的版本",
+  "decision.chain.ruleTests":
+    "{s, select, passed {测试：{total} 条例子全部通过} failed {测试：第 {at} 条例子不符（共 {total} 条）} none {测试：这条规则没有例子} other {测试：查不到}}",
+  "decision.chain.listSeparator": "、",
   "decision.chain.mails": "看过的邮件",
   "decision.chain.judged": "判断了 {count} 封",
   "decision.chain.related": "关联邮件 {count} 封",
@@ -1219,7 +1233,7 @@ export const messages = {
   "weekly.check.rowsKept": "已检查过的日子没有少记录",
   "weekly.check.rowsCleared": "已检查过的日子少了 {rows} 条 Gmail 记录，都是你清除的",
   "weekly.check.rowsMissing":
-    "{day}的{kind, select, proactive {Gmail 检查} memory_candidate {记忆} consolidation {整理记忆} context_truncation {回答时没带上的旧内容} retrieval_degrade {记忆搜索} external_read {外部程序读取记忆} other {决策}}记录比检查时少了：原来 {before} 条，现在 {after} 条",
+    "{day}的{kind, select, proactive {Gmail 检查} memory_candidate {记忆} consolidation {整理记忆} context_truncation {回答时没带上的旧内容} retrieval_degrade {记忆搜索} external_read {外部程序读取记忆} rule_review {硬规则待重审} other {决策}}记录比检查时少了：原来 {before} 条，现在 {after} 条",
   "weekly.check.timeOk": "决策记录里的时间格式都正确",
   "weekly.check.timeBad": "决策记录里有 {rows} 条时间格式不对",
   "weekly.check.other":
@@ -1242,9 +1256,9 @@ export const messages = {
   "weekly.type.how4":
     "区间是 95% Wilson 区间：按你评过的条数算出的范围，真实比例有 95% 的把握落在里面；评得越多，区间越窄。",
   "weekly.group":
-    "{g, select, proactive_pushed {读完邮件提醒了你} proactive_silent {读完邮件没提醒} memory_skipped {系统没存下的记忆} memory_kept {已存的记忆} consolidation {整理记忆} memory_pending {待你确认的记忆} context_truncation {回答时没带上的旧内容} retrieval_degrade {记忆搜索没生效} other {外部程序读取记忆}}",
+    "{g, select, proactive_pushed {读完邮件提醒了你} proactive_silent {读完邮件没提醒} memory_skipped {系统没存下的记忆} memory_kept {已存的记忆} consolidation {整理记忆} memory_pending {待你确认的记忆} context_truncation {回答时没带上的旧内容} retrieval_degrade {记忆搜索没生效} rule_review {硬规则待重审} other {外部程序读取记忆}}",
   "weekly.groupInfo":
-    "{g, select, proactive_pushed {Himawari 每 15 分钟读一次新邮件；这一行是读完后提醒了你的那几次。} other {Himawari 每 15 分钟读一次新邮件；这一行是读完觉得都不用提醒你的那几次。}}",
+    "{g, select, proactive_pushed {Himawari 每 15 分钟读一次新邮件；这一行是读完后提醒了你的那几次。} rule_review {Himawari 的硬规则来自你说过的话；那条记忆被改动、取代或删除后，规则标“待重审”，这一行是这类记录。} other {Himawari 每 15 分钟读一次新邮件；这一行是读完觉得都不用提醒你的那几次。}}",
   "weekly.rate":
     "{k, select, proactive_pushed_useful {提醒得对} proactive_pushed_unneeded {不该提醒} proactive_silent_useful {不提醒是对的} proactive_silent_missed {该提醒没提醒} memory_skipped_useful {不存是对的} memory_skipped_missed {该存没存} memory_kept_useful {存对了} memory_kept_unneeded {不该存} consolidation_useful {整理得对} consolidation_unneeded {不该整理} other_useful {做对了} other_unneeded {不该做} other {该做没做}}",
   "weekly.ratio": "{pct}（{k}/{n}）",

@@ -6,6 +6,7 @@ import type {
 } from "@himawari-agent/application";
 import {
   AI_GATEWAY_BASE_URL,
+  DEFAULT_RELEVANCE_TUNING,
   type EmbeddingBoundary,
   GatewayEmbedder,
   HybridMemoryProvider,
@@ -30,12 +31,14 @@ export interface ProductionMemoryCompositionOptions {
   readonly secretSource: HostProviderSecretSource;
   readonly index: MemoryIndexStorePort;
   readonly fetch?: typeof fetch;
-  readonly onVectorFailure?: HybridMemoryProviderOptions["onVectorFailure"];
+  readonly onVectorFailure: NonNullable<HybridMemoryProviderOptions["onVectorFailure"]>;
+  readonly onRelevanceUnknown?: HybridMemoryProviderOptions["onRelevanceUnknown"];
 }
 
 export interface ProductionMemoryComposition {
   readonly descriptor: ProductionEmbeddingModelDescriptor;
   readonly projection: HybridMemoryProvider;
+  readonly dedupeSameSource: boolean;
   bindEmbeddingBoundary(boundary: EmbeddingBoundary, timeoutMs: number): void;
   close(): Promise<void>;
 }
@@ -94,6 +97,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
     (embedding.model === QWEN3_EMBEDDING_8B_MODEL ? QWEN3_MEMORY_MINIMUM_SIMILARITY : undefined);
   if (minimumSimilarity === undefined || minimumSimilarity <= 0)
     throw new TypeError("MEMORY_MINIMUM_SIMILARITY_REQUIRED");
+  const retrieval = options.configuration.memory.retrieval;
   const projection = new HybridMemoryProvider({
     index: options.index,
     embedder,
@@ -106,11 +110,20 @@ export async function createProductionMemoryCompositionFromConfiguration(
     ...(options.configuration.runPolicy?.timeZone
       ? { timeZone: options.configuration.runPolicy.timeZone }
       : {}),
-    ...(options.onVectorFailure === undefined ? {} : { onVectorFailure: options.onVectorFailure }),
+    onVectorFailure: options.onVectorFailure,
+    relevance: {
+      keywordWeight: retrieval?.keywordWeight ?? DEFAULT_RELEVANCE_TUNING.keywordWeight,
+      entityWeight: retrieval?.entityWeight ?? DEFAULT_RELEVANCE_TUNING.entityWeight,
+      cutoffMargin: retrieval?.cutoffMargin ?? DEFAULT_RELEVANCE_TUNING.cutoffMargin,
+    },
+    ...(options.onRelevanceUnknown === undefined
+      ? {}
+      : { onRelevanceUnknown: options.onRelevanceUnknown }),
   });
   return Object.freeze({
     descriptor: resolveConfiguredModelDescriptorSet(options.configuration).embedding,
     projection,
+    dedupeSameSource: retrieval?.dedupeSameSource ?? true,
     bindEmbeddingBoundary: (boundary: EmbeddingBoundary, timeoutMs: number) =>
       embedder.bindBoundary(boundary, timeoutMs),
     close: async () => {},

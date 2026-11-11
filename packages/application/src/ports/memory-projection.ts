@@ -103,6 +103,7 @@ export interface MemoryHistoryNote {
 }
 
 export interface MemoryHistoryEvent {
+  readonly id: number;
   readonly memoryId: MemoryId;
   readonly kind: MemoryHistoryKind;
   readonly contentRef: PayloadRef;
@@ -147,6 +148,11 @@ export interface ProductMemoryStatePort {
     readonly agentId: AgentId;
     readonly memoryIds: readonly MemoryId[];
   }): Promise<readonly MemoryHistoryEvent[]>;
+  readHistory(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly id: number;
+  }): Promise<MemoryHistoryEvent | undefined>;
 }
 
 export interface MemoryProjectionJobStatePort {
@@ -200,6 +206,7 @@ export interface MemoryProviderProjectionPort {
     readonly limit: number;
     readonly scope?: MemoryTimeScope;
     readonly minimumSimilarity?: number;
+    readonly relevanceCutoff?: boolean;
     readonly includeTentative?: boolean;
     readonly tentativeOnly?: boolean;
   }): Promise<readonly MemoryProviderHit[]>;
@@ -230,6 +237,7 @@ export interface MemoryIndexCandidate {
   readonly updatedAt: string;
   readonly lastUsedAt: string | null;
   readonly signal: number;
+  readonly similarity?: number;
   readonly startsAt: string;
   readonly endsAt: string | null;
   readonly current: boolean;
