@@ -1,3 +1,3 @@
-{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "限流在异步 JWT 校验和主人绑定查询之后，无法限制校验工作本身", "valid": false}
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "限流在异步 JWT 校验和主人绑定查询之后，无法限制校验工作本身", "valid": false, "class": "error"}
 {"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "主人绑定存储异常被当成“认证失败”返回 401", "valid": true, "class": "error", "severity": "low", "trigger": "读主人绑定记录时数据库出错", "consequence": "回 401 而不是 503，客户端可能要求重新登录，还占用无效请求额度；仍是拒绝，不会放行", "modelSeverity": "低"}
 {"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 对 JWKS 冷却的描述，在“缓存 TTL 小于 30 秒”时与代码不一致", "valid": true, "class": "error", "severity": "low", "trigger": "把 jwksCacheMilliseconds 配得小于 30000 后读 ADR", "consequence": "以为短缓存下也是 30 秒最多下载一次；生产默认 300 秒不受影响，不会让人做错危险操作", "modelSeverity": "低"}

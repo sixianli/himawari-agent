@@ -2,8 +2,8 @@
 {"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "启动组装没有端到端自动检查", "valid": true, "class": "error", "severity": "medium-high", "trigger": "service-main 把网页登录的 audience 传给 MCP 校验器", "consequence": "MCP 入口接受网页登录凭证、拒绝 MCP 应用的凭证，现有测试全部通过", "modelSeverity": "中"}
 {"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 0227 对测试覆盖的描述比实际测试更强", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 0227 的测试一节", "consequence": "以为三种带凭证的 401 和缺少身份配置都有断言，实际没有；不会导致做错操作", "modelSeverity": "低"}
 {"id": "ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "所有校验失败都被静默吞掉，JWKS 网络故障和恶意凭证在日志上不可区分", "valid": true, "class": "error", "severity": "low", "trigger": "MCP 应用的 audience 配错或凭证一直校验失败", "consequence": "客户端只看到 401，服务日志没有任何记录，排查困难；不会给出错误结果", "modelSeverity": "低"}
-{"id": "ds-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "若未来 verifier 返回空字符串会被放行", "valid": false}
-{"id": "ds-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "无效请求桶是全局共享的", "valid": false}
+{"id": "ds-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "若未来 verifier 返回空字符串会被放行", "valid": false, "class": "error"}
+{"id": "ds-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "无效请求桶是全局共享的", "valid": false, "class": "error"}
 {"id": "gl-1", "model": "opencode-go/glm-5.3-flash", "quote": "校验发生在限流计数之前，无凭证请求的代价不再被限流封顶", "valid": true, "class": "error", "severity": "medium-high", "trigger": "同 ds-1", "consequence": "同 ds-1", "modelSeverity": "中"}
 {"id": "gl-2", "model": "opencode-go/glm-5.3-flash", "quote": "MCP 的 verifier 没有启动就绪检查，验签失败被静默吞掉", "valid": true, "class": "error", "severity": "low", "trigger": "同 ds-4", "consequence": "同 ds-4；公钥地址不可达已由网页登录的就绪检查覆盖", "modelSeverity": "低-中", "reason": "就绪检查部分不成立：mcpRead 要求 Cloudflare 身份配置，网页登录的校验器在 production-http-composition.ts:835 用同一个 jwksUrl 做 assertReady；剩下的只是没有日志，不会给出错误结果"}
 {"id": "gl-3", "model": "opencode-go/glm-5.3-flash", "quote": "限流语义变了，作者「限流数值不变」只对了一半", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 0227 决定 4", "consequence": "以为额度仍按令牌各算一份；不会让人做错危险操作", "modelSeverity": "低"}
