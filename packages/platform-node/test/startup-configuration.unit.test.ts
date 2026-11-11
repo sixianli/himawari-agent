@@ -1530,7 +1530,28 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
     raw["runPolicy"] = { ...policy, mcpRead: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
+  const webAudience = (raw["identity"] as { audience: string }).audience;
+  raw["runPolicy"] = { ...policy, mcpRead: { audience: webAudience } };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: {
+        field: "configuration.runPolicy.mcpRead.audience",
+        reason: "must differ from configuration.identity.audience",
+      },
+    }),
+  );
   raw["runPolicy"] = { ...policy, mcpRead: { audience: "mcp-access-audience" } };
+  const withoutIdentity = { ...raw };
+  delete withoutIdentity["http"];
+  delete withoutIdentity["identity"];
+  expect(() => parseProductConfiguration(withoutIdentity, "2026-09-06T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: {
+        field: "configuration.runPolicy.mcpRead",
+        reason: "requires configuration.identity to use Cloudflare Access",
+      },
+    }),
+  );
   raw["identity"] = {
     kind: "built-in",
     sessionIdleMilliseconds: 86_400_000,

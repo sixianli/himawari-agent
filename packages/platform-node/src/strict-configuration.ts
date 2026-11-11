@@ -1462,6 +1462,15 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "configuration.runPolicy.mcpRead",
       "requires configuration.identity to use Cloudflare Access",
     );
+  if (
+    runPolicy?.mcpRead &&
+    identity?.kind !== "built-in" &&
+    identity?.audience === runPolicy.mcpRead.audience
+  )
+    throw invalid(
+      "configuration.runPolicy.mcpRead.audience",
+      "must differ from configuration.identity.audience",
+    );
   if (runPolicy?.webPush)
     assertIdentitySecretReference(
       secretReferences,

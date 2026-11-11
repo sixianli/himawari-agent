@@ -267,14 +267,16 @@ export class ProductionMcpRead {
 
   async admit(assertion: string | undefined): Promise<McpAdmission> {
     let subject: string | undefined;
+    let rejection: unknown;
     if (assertion) {
       try {
         subject = (await this.#options.access.verify(assertion)).externalSubjectRef;
-      } catch {
-        subject = undefined;
+      } catch (error) {
+        rejection = error;
       }
     }
     const status = this.#windows.admit(subject !== undefined);
+    if (status === "unauthorized" && assertion) this.#options.onFailure(rejection);
     if (status !== "ok" || subject === undefined)
       return { status: status === "ok" ? "unauthorized" : status };
     const scopes = this.#options.write ? [READ_ACCESS, WRITE_ACCESS] : [READ_ACCESS];

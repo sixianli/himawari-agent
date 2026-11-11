@@ -432,6 +432,7 @@ function rawConfiguration(): Record<string, unknown> {
 async function signToken(
   options: {
     readonly issuer?: string;
+    readonly audience?: string;
     readonly subject?: string;
     readonly issuedAt?: number;
     readonly expiresAt?: number;
@@ -441,7 +442,7 @@ async function signToken(
   return new SignJWT({})
     .setProtectedHeader({ alg: "RS256", kid: "production-process-key" })
     .setIssuer(options.issuer ?? `https://127.0.0.1:${providerPort}`)
-    .setAudience(audience)
+    .setAudience(options.audience ?? audience)
     .setSubject(options.subject ?? subject)
     .setIssuedAt(options.issuedAt ?? now)
     .setExpirationTime(options.expiresAt ?? now + 300)
@@ -2079,6 +2080,37 @@ async function systemInstructionChange(runPolicy: Record<string, unknown>) {
     await service.stop();
   }
 }
+
+it("[P5-3] checks the MCP entry against its own Cloudflare Access audience, not the web sign-in audience", async () => {
+  const mcpAudience = "mcp-access-audience-production-process";
+  const service = await openInstalledMain({ runPolicy: { mcpRead: { audience: mcpAudience } } });
+  try {
+    const call = async (assertion?: string) =>
+      httpRequest(service.running().address, "/api/mcp/v1", {
+        ...jsonRequestBody({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "today_context", arguments: {} },
+        }),
+        headers: {
+          accept: "application/json, text/event-stream",
+          "mcp-protocol-version": "2025-06-18",
+          ...(assertion ? { "cf-access-jwt-assertion": assertion } : {}),
+        },
+      });
+    const bare = await call();
+    expect(bare.status).toBe(401);
+    expect(bare.headers.get("www-authenticate")).toBeNull();
+    const webAudience = await call(await signToken());
+    expect(webAudience.status).toBe(401);
+    const served = await call(await signToken({ audience: mcpAudience }));
+    expect(served.status).toBe(200);
+    expect(served.raw).toContain(String(new Date().getUTCFullYear()));
+  } finally {
+    await service.stop();
+  }
+}, 120_000);
 
 it("[PR-B] keeps the request head byte-identical when the configured system instruction changes between turns", async () => {
   const { first, second, rows } = await systemInstructionChange({});

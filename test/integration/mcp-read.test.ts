@@ -535,6 +535,24 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
     });
     expect(withBearer.status).toBe(401);
+    expect(withBearer.headers.get("www-authenticate")).toBeNull();
+    for (const assertion of [
+      await f.access.signWithForeignKey(),
+      await f.access.sign({ audience: "another-app" }),
+      await f.access.sign({ expiresInSeconds: -120 }),
+    ]) {
+      const rejected = await fetch(f.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "cf-access-jwt-assertion": assertion,
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      });
+      expect(rejected.status).toBe(401);
+      expect(rejected.headers.get("www-authenticate")).toBeNull();
+    }
     await expect(f.connect("legacy", await f.access.signWithForeignKey())).rejects.toThrow();
     await expect(
       f.connect("modern", await f.access.sign({ audience: "another-app" })),
@@ -543,6 +561,31 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       f.connect("modern", await f.access.sign({ expiresInSeconds: -120 })),
     ).rejects.toThrow();
     expect(await f.ledger()).toEqual([]);
+    expect(f.failures).toHaveLength(6);
+    expect(f.failures).toEqual(
+      Array.from({ length: 6 }, () => expect.objectContaining({ code: expect.any(String) })),
+    );
+  });
+
+  it("answers 429 after 60 rejected assertions a minute, logs only the 401s, and still serves a valid sign-in", async () => {
+    const f = await setup();
+    const forged = await f.access.signWithForeignKey();
+    const post = () =>
+      fetch(f.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "cf-access-jwt-assertion": forged,
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      });
+    for (let attempt = 0; attempt < 60; attempt += 1) expect((await post()).status).toBe(401);
+    const limited = await post();
+    expect(limited.status).toBe(429);
+    expect(f.failures).toHaveLength(60);
+    const modern = await f.connect("modern");
+    expect((await modern.listTools()).tools.length).toBeGreaterThan(0);
   });
 
   it("answers a failed read as a tool error and records it as failed", async () => {

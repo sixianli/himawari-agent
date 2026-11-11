@@ -127,6 +127,8 @@ function validateJwks(value: unknown): JSONWebKeySet {
 export class CloudflareAccessJwtVerifier {
   private readonly options: CloudflareAccessJwtVerifierOptions;
   private cached: { readonly jwks: JSONWebKeySet; readonly expiresAt: number } | undefined;
+  private lastFetchStartedAt: number | undefined;
+  private pendingFetch: Promise<JSONWebKeySet> | undefined;
 
   constructor(options: CloudflareAccessJwtVerifierOptions) {
     const issuer = new URL(options.issuer);
@@ -217,21 +219,42 @@ export class CloudflareAccessJwtVerifier {
   }
 
   private async getJwks(observedAt: Date, forceRefresh: boolean): Promise<JSONWebKeySet> {
-    if (!forceRefresh && this.cached && this.cached.expiresAt > observedAt.valueOf()) {
+    const now = observedAt.valueOf();
+    if (
+      this.cached &&
+      this.cached.expiresAt > now &&
+      (!forceRefresh || this.withinRefreshCooldown(now))
+    ) {
       return this.cached.jwks;
     }
+    this.pendingFetch ??= this.fetchJwks(now).finally(() => {
+      this.pendingFetch = undefined;
+    });
+    return this.pendingFetch;
+  }
+
+  private withinRefreshCooldown(now: number): boolean {
+    return (
+      this.lastFetchStartedAt !== undefined &&
+      now - this.lastFetchStartedAt < JWKS_REFRESH_COOLDOWN_MILLISECONDS
+    );
+  }
+
+  private async fetchJwks(now: number): Promise<JSONWebKeySet> {
+    this.lastFetchStartedAt = now;
     const fetched = validateJwks(
       await this.options.jwksFetcher.fetch(new URL(this.options.jwksUrl)),
     );
     this.cached = {
       jwks: fetched,
-      expiresAt: observedAt.valueOf() + (this.options.cacheMilliseconds ?? 300_000),
+      expiresAt: now + (this.options.cacheMilliseconds ?? 300_000),
     };
     return fetched;
   }
 }
 
 const DEFAULT_IDENTITY_TIMEOUT_MILLISECONDS = 2_000;
+const JWKS_REFRESH_COOLDOWN_MILLISECONDS = 30_000;
 const SESSION_ACTIVITY_WRITE_INTERVAL_MILLISECONDS = 60_000;
 const DEFAULT_IDENTITY_BODY_BYTES = 64 * 1024;
 

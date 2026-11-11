@@ -205,6 +205,7 @@ describe("Cloudflare Access JWT verification", () => {
   it("validates RS256 claims and refreshes a bounded JWKS cache on kid rotation", async () => {
     let current = firstJwks;
     let fetches = 0;
+    let now = NOW;
     const verifier = new CloudflareAccessJwtVerifier({
       issuer: ISSUER,
       audience: AUDIENCE,
@@ -215,16 +216,56 @@ describe("Cloudflare Access JWT verification", () => {
           return current;
         },
       },
-      now: () => NOW,
+      now: () => now,
     });
     const first = await verifier.verify(await token({}));
     current = secondJwks;
+    now = new Date(NOW.valueOf() + 30_000);
     const second = await verifier.verify(
       await token({ key: secondPrivateKey, kid: "key-02", subject: "subject-02" }),
     );
 
     expect(first.externalSubjectRef).toMatch(/^sha256:/);
     expect(second.externalSubjectRef).not.toBe(first.externalSubjectRef);
+    expect(fetches).toBe(2);
+  });
+
+  it("refetches the JWKS for an unknown kid at most once per 30 seconds, however many requests ask", async () => {
+    let fetches = 0;
+    let now = NOW;
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      jwksFetcher: {
+        async fetch() {
+          fetches += 1;
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          return firstJwks;
+        },
+      },
+      now: () => now,
+    });
+    const known = await token({});
+    const unknown = await token({ key: secondPrivateKey, kid: "key-02" });
+
+    await Promise.all(Array.from({ length: 10 }, () => verifier.verify(known)));
+    expect(fetches).toBe(1);
+
+    now = new Date(NOW.valueOf() + 29_999);
+    const flood = await Promise.allSettled(
+      Array.from({ length: 50 }, () => verifier.verify(unknown)),
+    );
+    expect(flood.every((result) => result.status === "rejected")).toBe(true);
+    expect(fetches).toBe(1);
+
+    now = new Date(NOW.valueOf() + 30_000);
+    const later = await Promise.allSettled(
+      Array.from({ length: 50 }, () => verifier.verify(unknown)),
+    );
+    expect(later.every((result) => result.status === "rejected")).toBe(true);
+    expect(fetches).toBe(2);
+    await expect(verifier.verify(known)).resolves.toMatchObject({ issuer: ISSUER });
     expect(fetches).toBe(2);
   });
 

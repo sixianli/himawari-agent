@@ -857,7 +857,7 @@ describe("production HTTP composition", () => {
     }
   });
 
-  it("[P5-1] serves the MCP read entry through the real composition with only its bearer token", async () => {
+  it("[P5-3] serves the MCP read entry through the real composition only with a Cloudflare Access assertion", async () => {
     const paths = await fixture();
     const config = configuration(paths);
     const repository = await SqliteProductStateRepository.open({
