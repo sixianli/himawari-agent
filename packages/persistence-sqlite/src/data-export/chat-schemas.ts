@@ -60,7 +60,7 @@ const MESSAGE_SCHEMA = objectOf(
 
 export const CHAT_THREAD_SCHEMA: JsonSchema = objectOf({
   id: text(1, 128),
-  title: nullable(objectOf({ text: text(0, 4096), withheld: bool }, ["withheld"])),
+  title: nullable(objectOf({ text: text(), withheld: bool }, ["withheld"])),
   titleSource: nullable(enumOf(["automatic", "owner"])),
   status: enumOf(["open", "trashed"]),
   answerLocale: enumOf(["zh-CN", "en", "ja"]),

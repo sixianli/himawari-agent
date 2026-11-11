@@ -40,10 +40,13 @@ export async function requestChatExport(
   fetcher: typeof fetch = (input, init) => fetch(input, init),
 ): Promise<ChatExportResult> {
   const response = await fetcher(CHAT_EXPORT_URL, { credentials: "same-origin" });
+  if (response.status === 413) throw new Error("CHAT_EXPORT_TOO_LARGE");
   if (!response.ok) throw new Error("CHAT_EXPORT_FAILED");
   const count = (name: string) => {
-    const value = Number(response.headers.get(name));
-    return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+    const header = response.headers.get(name);
+    const value = header === null ? Number.NaN : Number(header);
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error("CHAT_EXPORT_FAILED");
+    return value;
   };
   const disposition = response.headers.get("content-disposition") ?? "";
   const fileName =

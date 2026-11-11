@@ -711,6 +711,7 @@ export const MESSAGE_IDS = [
   "memory.page.chatExportNote",
   "memory.page.chatDownload",
   "memory.page.chatExportDone",
+  "memory.page.chatExportTooLarge",
   "capabilities.title",
   "authorizations.title",
   "trace.title",

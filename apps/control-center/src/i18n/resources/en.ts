@@ -800,6 +800,8 @@ export const messages = {
   "memory.page.chatDownload": "Download chats",
   "memory.page.chatExportDone":
     "Exported {threads, plural, one {# conversation} other {# conversations}} and {messages, plural, one {# message} other {# messages}}; {withheld, plural, one {# message with a secret was left as a placeholder} other {# messages with secrets were left as placeholders}}.",
+  "memory.page.chatExportTooLarge":
+    "There are too many chats to export from the web in one go. Please export on the server with the command line (himawari-admin data export-chats).",
   "capabilities.title": "Capabilities and adapters",
   "authorizations.title": "Authorizations and grants",
   "trace.title": "Trace",

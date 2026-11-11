@@ -1598,6 +1598,21 @@ describe("memory approval and management", () => {
     expect(created).toHaveBeenCalledTimes(1);
     expect(text("#settings")).toContain("导出失败，请稍后再试。");
     expect(text("#settings")).not.toContain("已导出");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 413 })),
+    );
+    await click("#settings", "下载聊天记录");
+    expect(created).toHaveBeenCalledTimes(1);
+    expect(text("#settings")).toContain("聊天记录太多，网页放不下一次导出");
+    expect(text("#settings")).toContain("himawari-admin data export-chats");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(new Uint8Array([80]), { status: 200 })),
+    );
+    await click("#settings", "下载聊天记录");
+    expect(created).toHaveBeenCalledTimes(1);
+    expect(text("#settings")).toContain("导出失败，请稍后再试。");
     clicked.mockRestore();
   });
 

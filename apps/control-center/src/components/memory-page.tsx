@@ -2124,7 +2124,7 @@ function ChatExportPanel({ message, onClose }: { message: Message; onClose: () =
         readonly messages: number;
         readonly withheld: number;
       }
-    | { readonly kind: "failed" }
+    | { readonly kind: "failed"; readonly tooLarge: boolean }
   >({ kind: "idle" });
   const download = async () => {
     setState({ kind: "working" });
@@ -2141,8 +2141,11 @@ function ChatExportPanel({ message, onClose }: { message: Message; onClose: () =
         messages: result.messages,
         withheld: result.withheld,
       });
-    } catch {
-      setState({ kind: "failed" });
+    } catch (error) {
+      setState({
+        kind: "failed",
+        tooLarge: error instanceof Error && error.message === "CHAT_EXPORT_TOO_LARGE",
+      });
     }
   };
   return (
@@ -2167,7 +2170,11 @@ function ChatExportPanel({ message, onClose }: { message: Message; onClose: () =
           })}
         </output>
       ) : null}
-      {state.kind === "failed" ? <p role="alert">{message("memory.page.exportFailed")}</p> : null}
+      {state.kind === "failed" ? (
+        <p role="alert">
+          {message(state.tooLarge ? "memory.page.chatExportTooLarge" : "memory.page.exportFailed")}
+        </p>
+      ) : null}
     </section>
   );
 }

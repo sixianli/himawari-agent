@@ -2,9 +2,12 @@ import { sha256Hex } from "./canonical.js";
 import type { ChatManifest } from "./chats.js";
 import {
   CHAT_FORMAT_VERSION,
+  CHAT_INDEX_FILE,
   CHAT_MANIFEST_FILE,
   CHAT_MANIFEST_SCHEMA,
+  CHAT_SEALED_FILE,
   CHAT_THREAD_SCHEMA,
+  CHAT_THREAD_SCHEMA_FILE,
   CHAT_THREADS_FILE,
 } from "./chat-schemas.js";
 import { validateAgainst } from "./schema.js";
@@ -44,6 +47,8 @@ export function verifyChatExport(files: PortableFiles, migrationSequence: number
       throw failure("FILE_HASH_MISMATCH", entry.path);
   }
 
+  for (const required of [CHAT_THREADS_FILE, CHAT_THREAD_SCHEMA_FILE, CHAT_INDEX_FILE])
+    if (!listed.has(required)) throw failure("FILE_LISTING_MISMATCH", `缺少 ${required}`);
   const data = files.get(CHAT_THREADS_FILE);
   if (data === undefined) throw failure("FILE_LISTING_MISMATCH", CHAT_THREADS_FILE);
   const raw = decoder.decode(data);
@@ -55,6 +60,8 @@ export function verifyChatExport(files: PortableFiles, migrationSequence: number
   let messages = 0;
   let attachments = 0;
   let withheldMessages = 0;
+  let withheldTexts = 0;
+  const withheldThreadIds = new Set<string>();
   rows.forEach((line, index) => {
     let thread: unknown;
     try {
@@ -67,11 +74,18 @@ export function verifyChatExport(files: PortableFiles, migrationSequence: number
     const row = thread as {
       id: string;
       file: string;
+      title: { withheld?: boolean } | null;
       messages: { id: string; sequence: number; withheld?: boolean; attachments: unknown[] }[];
     };
     if (threadIds.has(row.id)) throw failure("REFERENCE_BROKEN", `重复的对话 ${row.id}`);
     threadIds.add(row.id);
     assertSafePath(row.file);
+    if (!row.file.startsWith("chats/") || !row.file.endsWith(".md"))
+      throw failure("REFERENCE_BROKEN", `对话 ${row.id} 的 Markdown 路径 ${row.file}`);
+    if (row.title?.withheld === true) {
+      withheldTexts += 1;
+      withheldThreadIds.add(row.id);
+    }
     if (!files.has(row.file) || markdown.has(row.file))
       throw failure("REFERENCE_BROKEN", `对话 ${row.id} 的 Markdown ${row.file}`);
     markdown.add(row.file);
@@ -83,7 +97,11 @@ export function verifyChatExport(files: PortableFiles, migrationSequence: number
       messageIds.add(message.id);
       messages += 1;
       attachments += message.attachments.length;
-      if (message.withheld === true) withheldMessages += 1;
+      if (message.withheld === true) {
+        withheldMessages += 1;
+        withheldTexts += 1;
+        withheldThreadIds.add(row.id);
+      }
     }
   });
   const declared = manifest.counts;
@@ -92,7 +110,10 @@ export function verifyChatExport(files: PortableFiles, migrationSequence: number
     declared.markdownThreads !== markdown.size ||
     declared.messages !== messages ||
     declared.attachments !== attachments ||
-    manifest.withheld.messages !== withheldMessages
+    manifest.withheld.messages !== withheldMessages ||
+    manifest.withheld.texts !== withheldTexts ||
+    manifest.withheld.threads !== withheldThreadIds.size ||
+    declared.sealedOriginals !== (listed.has(CHAT_SEALED_FILE) ? withheldTexts : 0)
   )
     throw failure("FILE_COUNT_MISMATCH", "清单里的条数和数据文件不符");
   const dataEntry = manifest.files.find((entry) => entry.path === CHAT_THREADS_FILE);

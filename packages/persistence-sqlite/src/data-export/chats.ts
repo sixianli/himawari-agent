@@ -10,6 +10,7 @@ import {
   CHAT_THREAD_SCHEMA_FILE,
   CHAT_THREADS_FILE,
 } from "./chat-schemas.js";
+import { verifyChatExport } from "./chats-verify.js";
 import { foldText } from "./markdown.js";
 import { sealJson } from "./seal.js";
 import {
@@ -27,7 +28,10 @@ export interface ChatExportOptions extends PortableTextDependencies {
   readonly policy: ExportTextPolicy;
   readonly now: () => string;
   readonly sealPassphrase?: string;
+  readonly maximumBytes?: number;
 }
+
+export const CHAT_EXPORT_TOO_LARGE = "CHAT_EXPORT_TOO_LARGE";
 
 export interface ChatManifest {
   readonly format: typeof CHAT_FORMAT_VERSION;
@@ -70,8 +74,8 @@ type StoredPayload = PayloadRecord | { readonly unavailable: true };
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
-const ATTACHMENT_TAG =
-  /\n?<file name="([^"<>\n]*)" ref="[^"<>\s]+" bytes="(\d+)" kind="([a-z]+)"( truncated="1")?\/>/g;
+const ATTACHMENT_TAG = /\n?<file name="([^"<>\n]*)" ref="[^"<>\s]+"((?: [a-z]+="[^"<>\n]*")*)\/>/g;
+const ATTRIBUTE = / ([a-z]+)="([^"<>\n]*)"/g;
 const ROLE_LABELS: { readonly [key: string]: string } = {
   owner: "你",
   agent: "Himawari",
@@ -95,7 +99,11 @@ interface ChatSnapshot {
   readonly restrictedMessages: number;
 }
 
-function readChatSnapshot(database: Database.Database, scope: ExportScope): ChatSnapshot {
+function readChatSnapshot(
+  database: Database.Database,
+  scope: ExportScope,
+  maximumBytes: number | undefined,
+): ChatSnapshot {
   const parameters = { ownerId: scope.ownerId, agentId: scope.agentId };
   const all = (sql: string): Row[] => database.prepare(sql).all(parameters) as Row[];
   const count = (sql: string): number => Number(database.prepare(sql).pluck().get(parameters));
@@ -131,6 +139,16 @@ function readChatSnapshot(database: Database.Database, scope: ExportScope): Chat
       for (const row of threads)
         if (typeof row["title_ref"] === "string") refs.add(row["title_ref"]);
       for (const row of messages) refs.add(str(row["content_ref"]));
+      if (maximumBytes !== undefined) {
+        const size = database.prepare(
+          "SELECT COALESCE(LENGTH(ciphertext), 0) FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ?",
+        );
+        let total = 0;
+        for (const ref of refs) {
+          total += Number(size.pluck().get(ref, scope.ownerId, scope.agentId) ?? 0);
+          if (total > maximumBytes) throw new Error(CHAT_EXPORT_TOO_LARGE);
+        }
+      }
       const payloads = new Map<string, StoredPayload>();
       const read = database.prepare(
         `SELECT ref, classification, content_type, storage_kind, ciphertext,
@@ -266,7 +284,7 @@ function renderThread(thread: ChatThreadLine): string {
 }
 
 export async function buildChatExport(options: ChatExportOptions): Promise<ChatExportResult> {
-  const snapshot = readChatSnapshot(options.database, options.scope);
+  const snapshot = readChatSnapshot(options.database, options.scope, options.maximumBytes);
   const texts = new Map<string, string>();
   for (const [ref, payload] of snapshot.payloads) {
     if ("unavailable" in payload) continue;
@@ -293,7 +311,7 @@ export async function buildChatExport(options: ChatExportOptions): Promise<ChatE
     if (!options.policy.hasSecret(text)) return { text };
     withheldKeys.add(key);
     onWithheld();
-    originals[key] = text;
+    if (options.sealPassphrase !== undefined) originals[key] = text;
     const masked = options.policy.mask(text);
     return {
       text: options.policy.hasSecret(masked) ? WITHHELD_PLACEHOLDER : masked,
@@ -338,12 +356,18 @@ export async function buildChatExport(options: ChatExportOptions): Promise<ChatE
       }
       const attachments: ChatMessageLine["attachments"][number][] = [];
       const body = raw
-        .replace(ATTACHMENT_TAG, (_match, name: string, bytes: string, kind: string, cut) => {
+        .replace(ATTACHMENT_TAG, (_match, name: string, rest: string) => {
+          const attributes = new Map<string, string>();
+          for (const [, key, value] of rest.matchAll(ATTRIBUTE))
+            attributes.set(key ?? "", value ?? "");
+          const bytes = Number(attributes.get("bytes"));
           attachments.push({
             name: safeName(name),
-            bytes: Number(bytes),
-            kind,
-            truncated: cut !== undefined,
+            bytes: Number.isSafeInteger(bytes) && bytes >= 0 ? bytes : 0,
+            kind: /^[a-z]{1,32}$/u.test(attributes.get("kind") ?? "")
+              ? (attributes.get("kind") as string)
+              : "other",
+            truncated: attributes.get("truncated") === "1",
           });
           return "";
         })
@@ -366,7 +390,8 @@ export async function buildChatExport(options: ChatExportOptions): Promise<ChatE
       });
     }
     const created = str(row["created_at"]);
-    const base = `chats/${created.slice(0, 7)}/${created.slice(0, 10)}-${slugOf(title?.text ?? null)}-${sha256Hex(id).slice(0, 10)}`;
+    const day = /^\d{4}-\d{2}-\d{2}/u.test(created) ? created.slice(0, 10) : "0000-00-00";
+    const base = `chats/${day.slice(0, 7)}/${day}-${slugOf(title?.text ?? null)}-${sha256Hex(id).slice(0, 10)}`;
     let file = `${base}.md`;
     for (let suffix = 2; usedPaths.has(file); suffix += 1) file = `${base}-${suffix}.md`;
     usedPaths.add(file);
@@ -495,5 +520,6 @@ export async function buildChatExport(options: ChatExportOptions): Promise<ChatE
       `${JSON.stringify(JSON.parse(canonicalJson(manifest as unknown as JsonValue)), null, 2)}\n`,
     ),
   );
+  verifyChatExport(files, options.migrationSequence);
   return { files, manifest };
 }

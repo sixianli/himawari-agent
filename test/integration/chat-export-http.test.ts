@@ -17,7 +17,11 @@ afterEach(async () => {
   await Promise.all(open.splice(0).map((app) => app.close()));
 });
 
-async function service(side: Side, protector: Side["protector"] = side.protector) {
+async function service(
+  side: Side,
+  protector: Side["protector"] = side.protector,
+  maximumBytes?: number,
+) {
   side.database.pragma("wal_checkpoint(TRUNCATE)");
   const app = Fastify();
   registerChatExportRoute(app, {
@@ -48,6 +52,7 @@ async function service(side: Side, protector: Side["protector"] = side.protector
     databasePath: path.join(side.directory, "product.sqlite"),
     protector,
     now: () => "2026-11-12T00:00:00.000Z",
+    ...(maximumBytes === undefined ? {} : { maximumBytes }),
   });
   open.push(app);
   return app;
@@ -153,5 +158,22 @@ describe("chat export route", () => {
       (await flakyApp.inject({ method: "GET", url: CHAT_EXPORT_PATH, headers: asOwner }))
         .statusCode,
     ).toBe(200);
+  });
+
+  it("[多人7] an export over the web limit is refused with 413 and nothing is sent, then works under the limit", async () => {
+    const side = await seeded("chat-http-large");
+    const refused = await (await service(side, side.protector, 50)).inject({
+      method: "GET",
+      url: CHAT_EXPORT_PATH,
+      headers: asOwner,
+    });
+    expect(refused.statusCode).toBe(413);
+    expect(refused.rawPayload.byteLength).toBe(0);
+    const accepted = await (await service(side, side.protector, 10_000_000)).inject({
+      method: "GET",
+      url: CHAT_EXPORT_PATH,
+      headers: asOwner,
+    });
+    expect(accepted.statusCode).toBe(200);
   });
 });

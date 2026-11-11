@@ -1,6 +1,7 @@
 import type { PayloadProtectorPort, ProductConfiguration } from "@himawari-agent/application";
 import {
   buildChatExport,
+  CHAT_EXPORT_TOO_LARGE,
   LATEST_MIGRATION_SEQUENCE,
   openReadOnlyDatabase,
 } from "@himawari-agent/persistence-sqlite";
@@ -14,6 +15,7 @@ import { createStoredZip } from "./production-data-export.js";
 
 export const CHAT_EXPORT_PATH = "/api/data-export/v1/chats";
 export const CHAT_EXPORT_ARCHIVE_ROOT = "himawari-chats";
+export const CHAT_EXPORT_WEB_MAXIMUM_BYTES = 128 * 1024 * 1024;
 
 export interface ProductionChatExportOptions {
   readonly authentication: HttpGatewayAuthenticationPort;
@@ -23,6 +25,7 @@ export interface ProductionChatExportOptions {
   readonly databasePath: string;
   readonly protector: PayloadProtectorPort;
   readonly now: () => string;
+  readonly maximumBytes?: number;
 }
 
 export function registerChatExportRoute(
@@ -50,6 +53,7 @@ export function registerChatExportRoute(
           protector: options.protector,
           policy: createDataExportTextPolicy(),
           now: options.now,
+          maximumBytes: options.maximumBytes ?? CHAT_EXPORT_WEB_MAXIMUM_BYTES,
         });
         const archive = createStoredZip(
           result.files,
@@ -69,6 +73,10 @@ export function registerChatExportRoute(
         database.close();
       }
     } catch (error) {
+      if (error instanceof Error && error.message === CHAT_EXPORT_TOO_LARGE) {
+        request.log.warn({ code: CHAT_EXPORT_TOO_LARGE }, "chat export too large for the web");
+        return reply.code(413).send();
+      }
       const code =
         error instanceof Error && /^[A-Z][A-Z0-9_]{2,63}$/.test(error.message)
           ? error.message

@@ -754,6 +754,8 @@ export const messages = {
   "memory.page.chatDownload": "下载聊天记录",
   "memory.page.chatExportDone":
     "已导出 {threads} 个对话、{messages} 条消息；{withheld} 条含机密的消息只留了占位符。",
+  "memory.page.chatExportTooLarge":
+    "聊天记录太多，网页放不下一次导出。请在服务器上用命令行导出（himawari-admin data export-chats）。",
   "capabilities.title": "能力与适配器",
   "authorizations.title": "授权与 Grant",
   "trace.title": "追踪",

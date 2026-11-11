@@ -1,6 +1,7 @@
 import { rm } from "node:fs/promises";
 import {
   buildChatExport,
+  CHAT_EXPORT_TOO_LARGE,
   canonicalJson,
   DATA_EXPORT_ERROR_CODES,
   type DataExportError,
@@ -252,6 +253,70 @@ describe("chat export", () => {
     expect(thread.messages[1]?.attachments[0]?.name).toMatch(/^\[已扣留:1\]$/);
   });
 
+  it("[多人7] old and extra-attribute attachment tags are also turned into a list, never left in the text", async () => {
+    const s = await side("legacy-tags");
+    await seedThread(s, "t-1", {
+      messages: [
+        {
+          text: '旧消息\n\n<file name="old.md" ref="payload-attachment-old" bytes="9"/>\n<file name="x.png" ref="r2" kind="image" extra="1"/>\n<file name="n.txt" ref="r3"/>',
+        },
+      ],
+    });
+    const { files, manifest } = await exportOf(s);
+    const [thread] = jsonl(files) as [ThreadRow];
+    expect(thread.messages[0]?.text).toBe("旧消息");
+    expect(thread.messages[0]?.attachments).toEqual([
+      { name: "old.md", bytes: 9, kind: "other", truncated: false },
+      { name: "x.png", bytes: 0, kind: "image", truncated: false },
+      { name: "n.txt", bytes: 0, kind: "other", truncated: false },
+    ]);
+    expect(manifest.counts.attachments).toBe(3);
+    for (const ref of ["payload-attachment-old", 'ref="r2"', 'ref="r3"'])
+      expect(everyText(files)).not.toContain(ref);
+  });
+
+  it("[多人7] a very long title still produces an export that verifies", async () => {
+    const s = await side("long-title");
+    await seedThread(s, "t-1", { title: "长".repeat(6000), messages: [{ text: "x" }] });
+    const { files } = await exportOf(s);
+    expect(verifyChatExport(files, s.migrationSequence).counts.threads).toBe(1);
+  });
+
+  it("[多人7] an export larger than the limit is refused before anything is decrypted (negative case)", async () => {
+    const s = await side("too-large");
+    await seedThread(s, "t-1", { messages: [{ text: "x".repeat(5000) }] });
+    await expect(
+      buildChatExport({
+        database: s.database,
+        scope: { ownerId: s.ownerId, agentId: s.agentId },
+        migrationSequence: s.migrationSequence,
+        protector: s.protector,
+        policy,
+        now: () => NOW,
+        maximumBytes: 1000,
+      }),
+    ).rejects.toThrow(CHAT_EXPORT_TOO_LARGE);
+    const ok = await buildChatExport({
+      database: s.database,
+      scope: { ownerId: s.ownerId, agentId: s.agentId },
+      migrationSequence: s.migrationSequence,
+      protector: s.protector,
+      policy,
+      now: () => NOW,
+      maximumBytes: 1_000_000,
+    });
+    expect(ok.manifest.counts.messages).toBe(1);
+  });
+
+  it("[多人7] a thread with an odd created_at cannot put a strange path into the archive", async () => {
+    const s = await side("odd-date");
+    await seedThread(s, "t-1", { created: "../../etc/passwd/../../x", messages: [{ text: "x" }] });
+    const { files } = await exportOf(s);
+    expect(jsonl(files)[0]?.file).toMatch(
+      /^chats\/0000-00\/0000-00-00-untitled-[0-9a-f]{10}\.md$/u,
+    );
+  });
+
   it("[多人7] export is deterministic for the same data", async () => {
     const s = await side("same");
     await seedThread(s, "t-1", { title: "A", messages: [{ text: "x" }, { text: "y" }] });
@@ -354,6 +419,88 @@ describe("chat export", () => {
       expect(code(() => verifyChatExport(copy, s.migrationSequence))).toBe(
         DATA_EXPORT_ERROR_CODES.FILE_COUNT_MISMATCH,
       );
+    });
+
+    function fixedUp(
+      files: Map<string, Uint8Array>,
+      change: (manifest: {
+        files: { path: string; bytes: number; sha256: string }[];
+        counts: Record<string, number>;
+        withheld: Record<string, number>;
+      }) => void,
+      data?: string,
+    ) {
+      const copy = new Map(files);
+      const manifest = JSON.parse(decoder.decode(files.get("manifest.json"))) as Parameters<
+        typeof change
+      >[0];
+      change(manifest);
+      if (data !== undefined) {
+        const content = encoder.encode(data);
+        copy.set("data/threads.jsonl", content);
+        const entry = manifest.files.find((file) => file.path === "data/threads.jsonl");
+        if (!entry) throw new Error("missing entry");
+        entry.bytes = content.byteLength;
+        entry.sha256 = sha256Hex(content);
+      }
+      copy.set("manifest.json", encoder.encode(canonicalJson(manifest)));
+      return copy;
+    }
+
+    it("[多人7] a manifest that hides a required file, or counts withheld texts wrongly, is rejected", async () => {
+      const { s, files } = await good();
+      const hidden = new Map(files);
+      hidden.delete("CHATS.md");
+      expect(
+        code(() =>
+          verifyChatExport(
+            fixedUp(hidden, (manifest) => {
+              manifest.files = manifest.files.filter(
+                (file: { path: string }) => file.path !== "CHATS.md",
+              );
+            }),
+            s.migrationSequence,
+          ),
+        ),
+      ).toBe(DATA_EXPORT_ERROR_CODES.FILE_LISTING_MISMATCH);
+      for (const field of ["texts", "threads"]) {
+        expect(
+          code(() =>
+            verifyChatExport(
+              fixedUp(files, (manifest) => {
+                manifest.withheld[field] = 7;
+              }),
+              s.migrationSequence,
+            ),
+          ),
+          field,
+        ).toBe(DATA_EXPORT_ERROR_CODES.FILE_COUNT_MISMATCH);
+      }
+      expect(
+        code(() =>
+          verifyChatExport(
+            fixedUp(files, (manifest) => {
+              manifest.counts["sealedOriginals"] = 3;
+            }),
+            s.migrationSequence,
+          ),
+        ),
+      ).toBe(DATA_EXPORT_ERROR_CODES.FILE_COUNT_MISMATCH);
+    });
+
+    it("[多人7] a thread whose file points at a data or sealed file is rejected", async () => {
+      const { s, files } = await good();
+      const rows = jsonl(files);
+      const [row] = rows as [ThreadRow];
+      const data = `${canonicalJson({ ...row, file: "data/threads.jsonl" } as never)}\n`;
+      expect(
+        code(() =>
+          verifyChatExport(
+            fixedUp(files, () => undefined, data),
+            s.migrationSequence,
+          ),
+        ),
+      ).toBe(DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN);
     });
 
     it("[多人7] duplicate messages and out-of-order sequences are rejected", async () => {

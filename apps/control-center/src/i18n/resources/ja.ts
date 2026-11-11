@@ -809,6 +809,8 @@ export const messages = {
   "memory.page.chatDownload": "チャット履歴をダウンロード",
   "memory.page.chatExportDone":
     "{threads}件の会話、{messages}件のメッセージを書き出しました。機密を含む{withheld}件のメッセージはプレースホルダーだけが残っています。",
+  "memory.page.chatExportTooLarge":
+    "チャット履歴が多すぎて、Web から一度に書き出せません。サーバー上でコマンドライン（himawari-admin data export-chats）を使って書き出してください。",
   "capabilities.title": "機能とアダプター",
   "authorizations.title": "認可と Grant",
   "trace.title": "トレース",

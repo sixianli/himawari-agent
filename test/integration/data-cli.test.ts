@@ -416,4 +416,74 @@ describe("data admin CLI", () => {
       messages: 0,
     });
   });
+
+  it("[多人7][reverse] inspect reports a broken manifest with the manifest error code, not a raw exception", async () => {
+    const source = await prepare("badmanifest", true, true);
+    const out = path.join(source.root, "chats-export");
+    await run([
+      "data",
+      "export-chats",
+      "--config",
+      source.configurationPath,
+      "--secret-dir",
+      source.secretDirectory,
+      "--out",
+      out,
+      "--allow-unsealed",
+      "--operator",
+      "andy",
+    ]);
+    await writeFile(path.join(out, "manifest.json"), "{not json", { mode: 0o600 });
+    const errors = sink();
+    const code = await runAdminCli(
+      ["data", "inspect", "--from", out],
+      sink().stream,
+      errors.stream,
+    );
+    expect(code).not.toBe(0);
+    expect(errors.value()).toContain("DATA_IMPORT_MANIFEST_INVALID");
+  });
+
+  it("[多人7] inspect accepts a chat export with more than 4096 files", async () => {
+    const source = await prepare("manyfiles", true);
+    const side: Side = await (async () => {
+      const database = openQualifiedDatabase(
+        path.join(source.root, "state", "data", "product.sqlite"),
+      );
+      return {
+        database,
+        ownerId: createOwnerId(OWNER),
+        agentId: createAgentId(AGENT),
+        protector: new EnvelopePayloadProtector({
+          keys: new RestrictedSecretFileSource(source.secretDirectory),
+          activeKey: { keyRef: "payload-kek", kekVersion: "v1", dekVersion: "dek-v1" },
+        }),
+        migrationSequence: LATEST_MIGRATION_SEQUENCE,
+        directory: source.root,
+      };
+    })();
+    for (let index = 0; index < 4100; index += 1)
+      await seedThread(side, `thread-many-${index}`, {
+        created: `2026-11-01T00:00:${String(index % 60).padStart(2, "0")}.000Z`,
+        messages: [{ text: `消息 ${index}` }],
+      });
+    side.database.close();
+    const out = path.join(source.root, "chats-export");
+    const exported = await run([
+      "data",
+      "export-chats",
+      "--config",
+      source.configurationPath,
+      "--secret-dir",
+      source.secretDirectory,
+      "--out",
+      out,
+      "--operator",
+      "andy",
+    ]);
+    expect(exported.code).toBe(0);
+    const inspected = await run(["data", "inspect", "--from", out]);
+    expect(inspected.code).toBe(0);
+    expect(JSON.parse(inspected.lines.at(-1) ?? "{}").counts.threads).toBe(4100);
+  });
 });

@@ -5,6 +5,9 @@ import {
   buildChatExport,
   buildPortableExport,
   CHAT_FORMAT_VERSION,
+  CHAT_SEALED_FILE,
+  DATA_EXPORT_ERROR_CODES,
+  DataExportError,
   importPortableExport,
   LATEST_MIGRATION_SEQUENCE,
   openQualifiedDatabase,
@@ -114,11 +117,20 @@ export async function runDataCommand(
   if (action === "inspect") {
     const from = values.get("--from");
     if (!from) throw new Error(DATA_COMMAND_ERROR_CODES.ARGUMENT_INVALID);
-    const files = await readPortableDirectory(from);
+    const files = await readPortableDirectory(from, {
+      maximumFiles: 200_000,
+      maximumTotalBytes: 2 * 1024 * 1024 * 1024,
+    });
     const manifestBytes = files.get("manifest.json");
-    const declaredFormat = manifestBytes
-      ? (JSON.parse(new TextDecoder().decode(manifestBytes)) as { format?: unknown }).format
-      : undefined;
+    let declaredFormat: unknown;
+    try {
+      declaredFormat = manifestBytes
+        ? (JSON.parse(new TextDecoder().decode(manifestBytes)) as { format?: unknown } | null)
+            ?.format
+        : undefined;
+    } catch {
+      throw new DataExportError(DATA_EXPORT_ERROR_CODES.MANIFEST_INVALID, "清单不是有效的 JSON");
+    }
     if (declaredFormat === CHAT_FORMAT_VERSION) {
       const chats = verifyChatExport(files, LATEST_MIGRATION_SEQUENCE);
       return Object.freeze({
@@ -129,7 +141,7 @@ export async function runDataCommand(
         counts: chats.counts,
         withheld: chats.withheld,
         omitted: chats.omitted,
-        sealed: files.has("sealed/sealed.enc"),
+        sealed: files.has(CHAT_SEALED_FILE),
       });
     }
     const manifest = verifyIntegrity(files, LATEST_MIGRATION_SEQUENCE);
@@ -221,6 +233,7 @@ export async function runDataCommand(
           protector,
           policy: createDataExportTextPolicy(),
           now,
+          maximumBytes: 256 * 1024 * 1024,
           ...(passphrase === undefined ? {} : { sealPassphrase: passphrase }),
         });
         writeServiceDiagnostic(output, {
