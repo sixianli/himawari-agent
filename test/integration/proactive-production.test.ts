@@ -633,7 +633,9 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     const browser = await chromium
       .launch(configuredPath ? { executablePath: configuredPath } : {})
       .catch((error: unknown) => {
-        if (configuredPath || !existsSync(bundled)) throw error;
+        const missing =
+          error instanceof Error && error.message.includes("Executable doesn't exist");
+        if (configuredPath || !missing || !existsSync(bundled)) throw error;
         return chromium.launch({ executablePath: bundled });
       });
     closers.push(() => browser.close());

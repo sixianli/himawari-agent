@@ -1,0 +1,4 @@
+{"id": "r2-1", "model": "deepseek-v4.1-flash", "quote": "回退分支没有任何自动检查，CI 永远走不到它", "valid": false, "class": "better"}
+{"id": "r2-2", "model": "deepseek-v4.1-flash", "quote": "捕获所有启动错误并丢弃原始错误，可能掩盖真正原因", "valid": true, "class": "error", "severity": "low", "trigger": "默认浏览器因缺库、超时等非“找不到”原因启动失败，且 /opt 浏览器存在", "consequence": "测试改用回退浏览器或抛出第二次错误，掩盖首次失败原因，不给出错误的产品结果", "modelSeverity": "低"}
+{"id": "r2-3", "model": "deepseek-v4.1-flash", "quote": "`existsSync` 只能证明\"存在\"，不能证明 Playwright 能执行它", "valid": false, "class": "better"}
+{"id": "r2-4", "model": "deepseek-v4.1-flash", "quote": "作者\"同样的回退写法\"的说法与代码不一致", "valid": false, "class": "better"}
