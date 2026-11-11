@@ -1,0 +1,4 @@
+{"id": "r3-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "并发用例的断言依赖请求到达顺序，正确实现也可能假失败", "valid": true, "class": "error", "severity": "medium-high", "trigger": "排队里先处理的是数组第 3 个请求（另一个客户端的保存）", "consequence": "代码正确时用例也会失败，挡住合并前检查", "modelSeverity": "中"}
+{"id": "r3-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`normalizeProposalText` 在 `try` 之外调用，异常不会走 `onFailure`/`FAILED`", "valid": true, "class": "better"}
+{"id": "r3-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“对方自称”的客户端名没有写进签名状态，重发时可以变化", "valid": true, "class": "error", "severity": "low", "trigger": "确认后换一个客户端名重发同一状态", "consequence": "拒绝记录里的客户端名和确认框里显示的不同，不影响写不写", "modelSeverity": "低"}
+{"id": "r3-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "测试覆盖缺口与文档措辞", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 0225 规范化一句", "consequence": "写的是去掉，代码是换成空格，不会让人做错事", "modelSeverity": "低"}

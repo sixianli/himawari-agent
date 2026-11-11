@@ -743,7 +743,7 @@ export const messages = {
   "memory.page.changed": "{count} 回変更",
   "memory.page.source": "出どころ",
   "memory.page.origin":
-    "{o, select, owner {手動で追加} import {インポート} deleted {元の会話は削除済み} reminder {リマインダーから作成、元の発言なし} other {記憶の整理}}",
+    "{o, select, owner {手動で追加} external {外部エージェントが提案し、あなたが確認して保存} import {インポート} deleted {元の会話は削除済み} reminder {リマインダーから作成、元の発言なし} other {記憶の整理}}",
   "memory.page.used": "最後に使用",
   "memory.page.notUsed": "まだ使っていません",
   "memory.page.history": "変更の流れ",
