@@ -56,11 +56,11 @@ Andy 2026-11-11 在任务 P5-3 的线程里同意的做法是：三个客户端�
 ## 决定
 
 1. **`/api/mcp/v1` 只认 Cloudflare Access 凭证。** 请求头 `Cf-Access-Jwt-Assertion` 里的凭证用现成的 `CloudflareAccessJwtVerifier` 校验：issuer 和公钥地址沿用 `configuration.identity`，audience 用这个入口自己那个 Access 应用的值。凭证通过校验后，还要核对凭证主体就是 Himawari 已绑定的主人：用凭证主体的摘要（`externalSubjectRef`）查网页登录时绑定的主人记录，记录属于本实例的主人且状态是 active 才放行。没有凭证、签名不对、audience 不对、过期、不是绑定的主人，都回 401，不写决策台账。读主人绑定记录时数据库出错，回 503，记 `mcp-read.failed`，不算一次无效登录。带了凭证却没通过的，服务日志记一行 `mcp-read.failed`（只有错误码，不含凭证内容；不是主人时错误码是 `MCP_ACCESS_OWNER_NOT_BOUND`）；被限流挡下的不记，所以由校验失败产生的这类日志每分钟最多 60 行（工具出错等别的原因也写同名日志，不在这 60 行里）。固定令牌（`Authorization: Bearer`）不再被接受。
-   - 取代 ADR 0219 决定 1 里「固定令牌认证」的部分，以及 ADR 0225 决定 1「写操作用单独的令牌」。
+   - 取代 ADR 0219 决定 1 里「固定令牌认证」的部分，以及 ADR 0225 决定 1「写操作用单独的令牌」、ADR 0226 决定 1 里「只给写令牌」的部分。
    - 理由：三个客户端里有两个连不上固定令牌（前提 2、3）。一个入口只保留一套认证，也和「生产入口只一道 Cloudflare 门」一致（前提 5）。
 2. **配置改成 `runPolicy.mcpRead: { audience, proposals? }`。**
    - `audience` 是这个入口的 Access 应用的 audience 值，必填。
-   - `proposals: true` 打开写工具 `propose_memory`，不写就只有三个只读工具。
+   - `proposals: true` 打开写工具 `propose_memory` 和 `propose_rule`（ADR 0226），不写就只有只读工具。
    - 去掉 `secretRef`、`writeSecretRef` 和密钥用途 `mcp-read`、`mcp-write`。
    - 配了 `mcpRead`，但 `configuration.identity` 不是 Cloudflare Access 的，启动时拒绝（`requires configuration.identity to use Cloudflare Access`）。
    - `audience` 和网页登录的 `configuration.identity.audience` 相同时，启动拒绝（`must differ from configuration.identity.audience`）。两个入口各用一个 Access 应用，网页登录的凭证不能拿来调 MCP。
@@ -119,7 +119,7 @@ Andy 2026-11-11 在任务 P5-3 的线程里同意的做法是：三个客户端�
   - `packages/platform-node/test/identity-gateway.unit.test.ts` 检查公钥下载冷却：50 个并发请求带不认识的 `kid`，30 秒内只下载一次，满 30 秒后再下载一次；下载失败后 30 秒内的 20 次校验不再下载，满 30 秒后再试并成功；缓存过期又下载失败时不用过期缓存；强制下载进行中，认识的公钥照常校验。换回改动前的写法，这几条用例会失败（已手动验证）。
   - `packages/platform-node/test/startup-configuration.unit.test.ts` 检查新配置：只接受 `audience` 和 `proposals: true`；旧的 `secretRef`、`writeSecretRef` 被拒；完全没有身份配置、或身份配置是内置登录时启动拒绝；`audience` 和网页登录的相同时启动拒绝。
   - `apps/agent-service/test/production-http-composition.unit.test.ts` 在真实组装里走一遍：不带凭证回 401，带凭证能调工具。
-  - `test/integration/production-http-composition-process.test.ts` 用安装好的真实服务进程，从配置文件一路走到 `/api/mcp/v1`：网页登录 audience 的凭证回 401，不是绑定主人的凭证回 401，MCP 自己 audience 的主人凭证能调工具；配置不写 `proposals` 时工具列表里没有 `propose_memory`，写 `proposals: true` 时有。把启动组装改成用网页登录的 audience，或者不论配置都打开写工具，对应用例会失败（已手动验证）。
+  - `test/integration/production-http-composition-process.test.ts` 用安装好的真实服务进程，从配置文件一路走到 `/api/mcp/v1`：网页登录 audience 的凭证回 401，不是绑定主人的凭证回 401，MCP 自己 audience 的主人凭证能调工具；配置不写 `proposals` 时工具列表里没有 `propose_memory`，写 `proposals: true` 时有（`propose_rule` 跟它同进同出，由 `test/integration/mcp-write.test.ts` 覆盖）。把启动组装改成用网页登录的 audience，或者不论配置都打开写工具，对应用例会失败（已手动验证）。
 
 [返回阅读导航](#contents)
 
@@ -129,6 +129,7 @@ Andy 2026-11-11 在任务 P5-3 的线程里同意的做法是：三个客户端�
 
 - [ADR 0219：对外只读 MCP 入口，静态令牌鉴权](0219-read-only-mcp-entry-with-static-token.md)
 - [ADR 0225：外部 agent 提议新记忆，主人在客户端确认后才保存](0225-external-agents-propose-memory-with-in-client-confirmation.md)
+- [ADR 0226：外部 agent 提议新规则，主人在客户端确认后按规则提议流程生效](0226-external-agents-propose-rules-through-the-rule-proposal-flow.md)
 - [ADR 0162：用服务令牌和应用密钥接收 Muse 数据](0162-receive-muse-data-through-a-service-token-and-an-app-secret.md)
 
 [返回阅读导航](#contents)
