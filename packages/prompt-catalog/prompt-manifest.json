@@ -825,5 +825,15 @@
     "sha256": "a55c0eceeba5e2b024a12f881ccc8ccb7e9029e470da74d3aa09df7adff68f3d",
     "changedIn": "ADR 0166",
     "reason": "W-10、W-14：联网搜索默认打开、不逐次询问（ADR 0121），删掉“经用户确认”"
+  },
+  "rule.review": {
+    "sha256": "81d386ad3305c145522fe129882843b6b12888ab8d7bf3562bdfd17e89ec2a73",
+    "changedIn": "ADR 0232",
+    "reason": "新增：规则的来源记忆被改后，请模型按改后的主人原话重译规则，供程序和现有规则比较"
+  },
+  "rule.review.instructions-header": {
+    "sha256": "bc69f86b71bed300c90480a913df92a23d47cfc50e02b1c5331d016e6b8b1156",
+    "changedIn": "ADR 0232",
+    "reason": "新增：重检提示词里引用立规则说明的标题"
   }
 }
