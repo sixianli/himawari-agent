@@ -882,7 +882,7 @@ export class ProductionMemoryCapture {
     const owned = !this.#busy.has(plan.generationId);
     if (owned) this.#busy.add(plan.generationId);
     try {
-      if (!(await backlog.has(plan.generationId)))
+      if (!(await backlog.has(plan.generationId).catch(() => false)))
         await backlog.enqueue({
           generationId: plan.generationId,
           ownerId: plan.request.ownerId,
@@ -912,11 +912,20 @@ export class ProductionMemoryCapture {
         }
       }
       const code = captureErrorCode(failure);
-      const attempts = await backlog.recordAttempt({
-        generationId: plan.generationId,
-        errorCode: code,
-        updatedAt: this.options.clock.now(),
-      });
+      const attempts = await backlog
+        .recordAttempt({
+          generationId: plan.generationId,
+          errorCode: code,
+          updatedAt: this.options.clock.now(),
+        })
+        .catch((error: unknown) => {
+          if ((error as { code?: string }).code === "PORT_NOT_FOUND") return 0;
+          throw error;
+        });
+      if (attempts === 0) {
+        this.#emitAudits(held);
+        return;
+      }
       const gaveUp = attempts >= MEMORY_CAPTURE_BACKLOG_MAX_ATTEMPTS;
       if (gaveUp) await this.#settle(plan.generationId);
       await this.#recordFailure(
@@ -1245,7 +1254,9 @@ export class ProductionMemoryCapture {
       try {
         this.options.onAudit(record);
       } catch (error) {
-        this.options.onFailure(error);
+        try {
+          this.options.onFailure(error);
+        } catch {}
       }
   }
 

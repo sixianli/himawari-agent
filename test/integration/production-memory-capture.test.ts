@@ -3177,6 +3177,26 @@ describe("production memory capture", () => {
     expect(backlogRows(context)).toEqual([]);
   });
 
+  it("[P3-5] keeps saving and keeps the turn queued when the queue cannot be read", async () => {
+    const context = await setup(P3_5_MESSAGE, P3_5_MEMORY);
+    const options = failingWrites(context);
+    const backlog = options.backlog;
+    if (!backlog) throw new Error("backlog");
+    const blind = new ProductionMemoryCapture({
+      ...options,
+      backlog: {
+        ...backlog,
+        has: async () => {
+          throw new Error("PORT_UNAVAILABLE");
+        },
+      },
+    });
+    await blind.start(context.request);
+    await blind.stop();
+    expect(await activeMemories(context)).toEqual([]);
+    expect(backlogRows(context).map((row) => (row as { attempts: number }).attempts)).toEqual([1]);
+  });
+
   it("[P3-5] retries an answer that is not valid JSON and records the failure", async () => {
     const context = await setup(P3_5_MESSAGE, "好的，我记住了。");
     context.outputs.push(P3_5_MEMORY);

@@ -50,7 +50,7 @@ date: "2026-11-11"
 3. **抽取这一轮的全部写库在一个范围里**：`processCommittedRun` 和出队（`backlog.remove`）；出队失败让整轮失败。“批准敏感记忆后提交”（`resolveSensitive`）同样放进范围，它的审计日志也是提交成功后才发。登记这次生成的行（`generations.request`）在抽取之后、写记忆之前单独写，是只记“这一轮在做”的登记行，回滚后保留无害，不并入；所以“回滚后无残留”指记忆、历史和待补队列行，这条登记行保留，重试时同一身份直接复用，不会重复。
 4. **审计日志提交成功后才发。**范围内先攒起来；回滚就丢掉，不会出现日志写着“已自动记下”而库里没有。
 5. **防止“提交成功但回包丢失”造成重放。**开始写之前先确保待补队列里有这一轮（没有就入队），出队和写记忆在同一个事务里：队列里没有这一轮，就等于已提交。写失败后先查队列，不在就当作成功。
-6. **取代 ADR 0222 决定 4 和决定 6 里“写记忆失败直接放弃”的部分**：写失败先用同一份已解析的结果再存一次（不再问模型），仍失败就留在队列并记一次补做；补做和存失败共用最多 3 次，满 3 次写 `capture_gave_up` 并出队（每一轮内部最多保存两次，两次都失败才算一次）；每次失败一条决策记录，原因码是错误码，id 带第几次。三语界面里 `capture_gave_up` 的说明改为“这一轮没有记下任何内容”。ADR 0222 的其余决定不变。
+6. **取代 ADR 0222 决定 4 和决定 6 里“写记忆失败直接放弃”的部分**：写失败先用同一份已解析的结果再存一次（不再问模型），仍失败就留在队列并记一次补做；补做和存失败共用最多 3 次，满 3 次写 `capture_gave_up` 并出队（每一轮内部最多保存两次，两次都失败才算一次；放弃后删行失败又遇到重启时，补做只删行、不再写放弃记录，见 ADR 0222 的后续说明）；每次失败一条决策记录，原因码是错误码，id 带第几次。三语界面里 `capture_gave_up` 的说明改为“这一轮没有记下任何内容”。ADR 0222 的其余决定不变。
 
 [返回阅读导航](#contents)
 
@@ -80,7 +80,7 @@ date: "2026-11-11"
 - 事务范围期间，别的写请求要等它结束：回调最多 2 秒（默认），加上开始和提交各自的忙等待上限；范围外的读走只读连接，不等，读到的是已提交的数据。一轮正常的写库是毫秒级。
 - 写失败的重试会多花几次后台模型调用（补做要重新抽取），最多 3 次。
 - 不改表。
-- `npm run check:memory-capture-retry` 现在运行带 `[P3-5]` 的 39 条测试：`test/integration/production-memory-capture.test.ts` 18 条，`test/integration/sqlite-transaction-scope.test.ts` 15 条（真实 SQLite，工作线程和进程内两种方式，含回滚、超时、隔离、被 SQLite 自行回滚、工作线程丢失），`packages/persistence-sqlite/test/memory-capture-backlog-migration.contract.test.ts` 6 条。
+- `npm run check:memory-capture-retry` 现在运行带 `[P3-5]` 的 40 条测试：`test/integration/production-memory-capture.test.ts` 19 条，`test/integration/sqlite-transaction-scope.test.ts` 15 条（真实 SQLite，工作线程和进程内两种方式，含回滚、超时、隔离、被 SQLite 自行回滚、工作线程丢失），`packages/persistence-sqlite/test/memory-capture-backlog-migration.contract.test.ts` 6 条。
 - 做梦记忆（PR 395）里“重试时补做取代”的补丁，等本决定合并后评估是否可以删除。
 
 [返回阅读导航](#contents)
