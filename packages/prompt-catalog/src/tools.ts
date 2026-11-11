@@ -293,3 +293,120 @@ export const MCP_TOOL_RESULT_FAILED = fixedPrompt({
   output: "free-text",
   text: "这次没能从 Himawari 读到内容，请稍后再试；不要据此认为主人没有相关记忆。",
 });
+
+export const MCP_TOOL_PROPOSE_MEMORY = fixedPrompt({
+  id: "mcp.propose-memory",
+  purpose:
+    "对外 MCP 写工具 propose_memory 的描述：外部 agent 提议一条新记忆，主人在客户端确认后才保存",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "向主人提议在 Himawari 里新存一条长期记忆。调用后主人会在你所在的客户端里看到确认框，主人勾选保存并提交才会存下；拒绝、取消或超时都不会存。text 写一条完整、单独看也能懂的事实或偏好；category 选最贴近的分类。只能在能弹出确认框的交互会话里使用。「以后每次都怎样做」这类规则不要用这个工具提。",
+});
+
+export const MCP_PROPOSE_MEMORY_CONFIRM = templatePrompt({
+  id: "mcp.propose-memory-confirm",
+  purpose: "外部 agent 提议新记忆时，客户端确认框里给主人看的说明",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  segments: [
+    slot("client"),
+    text("（对方自称）提议在 Himawari 里新存一条长期记忆。\n分类："),
+    slot("category"),
+    slot("sensitive"),
+    text("\n\n"),
+    slot("text"),
+    text("\n\n勾选「保存」并提交才会存下；拒绝或取消就不存。"),
+  ],
+});
+
+export const MCP_PROPOSE_MEMORY_SENSITIVE_NOTE = fixedPrompt({
+  id: "mcp.propose-memory-sensitive-note",
+  purpose: "外部提议的记忆会按敏感记忆保存时，确认框里的提示",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "\n这条含敏感内容，会按敏感记忆加密保存。",
+});
+
+export const MCP_PROPOSE_MEMORY_SAVE_LABEL = fixedPrompt({
+  id: "mcp.propose-memory-save-label",
+  purpose: "外部提议记忆的确认框里，勾选项的标题",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "保存这条记忆",
+});
+
+export const MCP_PROPOSE_MEMORY_SAVED = fixedPrompt({
+  id: "mcp.propose-memory-saved",
+  purpose: "主人确认后记忆已保存，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "主人已确认，这条记忆已存进 Himawari。",
+});
+
+export const MCP_PROPOSE_MEMORY_ALREADY_SAVED = fixedPrompt({
+  id: "mcp.propose-memory-already-saved",
+  purpose: "同一次提议重发时，告诉外部 agent 之前已经保存过",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这次提议之前已经保存过，没有重复保存。",
+});
+
+export const MCP_PROPOSE_MEMORY_DECLINED = fixedPrompt({
+  id: "mcp.propose-memory-declined",
+  purpose: "主人拒绝或取消提议时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "主人没有同意，这条记忆没有保存。除非主人再次要求，不要重复提议同样的内容。",
+});
+
+export const MCP_PROPOSE_MEMORY_UNSUPPORTED = fixedPrompt({
+  id: "mcp.propose-memory-unsupported",
+  purpose: "客户端不能弹确认框时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这个客户端不能弹出确认框（需要支持 MCP 2026-07-28 版的表单确认，并在交互会话里使用），所以没有保存。",
+});
+
+export const MCP_PROPOSE_MEMORY_CHANGED = fixedPrompt({
+  id: "mcp.propose-memory-changed",
+  purpose: "重发的提议内容和确认时不一致时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这次重发的内容和主人确认的不一致，没有保存；请重新提议。",
+});
+
+export const MCP_PROPOSE_MEMORY_INVALID = fixedPrompt({
+  id: "mcp.propose-memory-invalid",
+  purpose: "提议的正文为空或太长、或分类不在允许范围时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "没有保存：text 去掉不可见字符后为空或超过 2000 字，或 category 不是允许的九种之一。",
+});
+
+export const MCP_PROPOSE_MEMORY_NOT_READY = fixedPrompt({
+  id: "mcp.propose-memory-not-ready",
+  purpose: "Himawari 记忆功能还没就绪时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "Himawari 的记忆功能还没准备好，这次没有保存。",
+});
+
+export const MCP_PROPOSE_MEMORY_FAILED = fixedPrompt({
+  id: "mcp.propose-memory-failed",
+  purpose: "保存提议的记忆出错时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这次没能保存，请稍后再试；不要告诉主人已经存好了。",
+});

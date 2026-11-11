@@ -637,6 +637,8 @@ export interface CalibrationDatabase {
 
 const ISO_PATTERN = "????-??-??T??:??:??.???Z";
 
+export const EXTERNAL_PROPOSAL_REASON_PATTERN = "mcp!_proposal!_%";
+
 export const CALIBRATION_SQL = Object.freeze({
   badDecisionTimes: `SELECT count(*) AS n FROM decision_ledger WHERE checked_at NOT GLOB '${ISO_PATTERN}'`,
   badMuseTimes: `SELECT count(*) AS n FROM muse_reference_entries WHERE muse_at NOT GLOB '${ISO_PATTERN}'`,
@@ -650,6 +652,8 @@ export const CALIBRATION_SQL = Object.freeze({
     FROM decision_ledger decision
     WHERE decision.owner_id = ? AND decision.agent_id = ?
       AND decision.checked_at >= ? AND decision.checked_at < ?
+      AND NOT (decision.kind = 'memory_candidate'
+        AND COALESCE(decision.reason_code, '') LIKE '${EXTERNAL_PROPOSAL_REASON_PATTERN}' ESCAPE '!')
     ORDER BY decision.checked_at, decision.id`,
   museEntries: `SELECT muse_reminded AS museReminded, timing_ok AS timingOk,
       content_ok AS contentOk, paired_message_id AS pairedMessageId
