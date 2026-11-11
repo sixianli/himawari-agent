@@ -1810,7 +1810,7 @@ describe("production memory capture", () => {
     );
   });
 
-  it("[P2-3] keeps a standing sentence that carries a card number as an enforced rule, its quote marked sensitive", async () => {
+  it("[P2-3] keeps a standing sentence that carries a card number or a password as an enforced rule, its quote marked sensitive", async () => {
     const sentence = "尾号 6222 0212 3456 7890 的扣款邮件以后必须通知我";
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",
@@ -1840,6 +1840,27 @@ describe("production memory capture", () => {
       .read(created["memoryId"] as never);
     expect(ruleMemory).toMatchObject({ status: "active", dataClassification: "sensitive" });
     expect(await context.plaintext(ruleMemory?.contentRef ?? null)).toContain(sentence);
+    const password = "网银密码是 Abc12345 的那个账户的邮件以后必须通知我";
+    await context.turn("owner", password, null);
+    const withPassword = (await context.ruleTools.run({
+      runId: createRunId("run-rule-password"),
+      toolCallId: "call-password",
+      capabilityRef: "rule.set",
+      capabilityHandleRef: null,
+      arguments: {
+        quote: password,
+        inferred: false,
+        type: "mail_must_notify",
+        summary: "网银账户的邮件一律提醒",
+        params: { phrases: ["网银"] },
+      },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never)) as Record<string, unknown>;
+    expect(withPassword).toMatchObject({ status: "active", type: "mail_must_notify" });
+    expect(
+      await context.repository.productMemoryState().read(withPassword["memoryId"] as never),
+    ).toMatchObject({ status: "active", dataClassification: "sensitive" });
   });
 
   it("[P2-3] turns the owner's standing sentence into an enforced rule, keeps inferred ones as proposals, and undoes one from the page", async () => {
