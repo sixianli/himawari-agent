@@ -799,7 +799,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "rule_book_rules",
     "ProactiveStorePort",
-    "one row per Agent and rule: the owner's quiet hours and important senders as the current revision of a hard rule",
+    "one row per Agent and rule: the current revision of a hard rule, with the rule memory it came from and whether it waits for review",
     "metadata_only",
     "cascade with Owner or Agent deletion",
   ),

@@ -1039,7 +1039,7 @@ export const messages = {
   "decision.chain.rating": "Your rating",
   "decision.chain.unrated": "Not rated yet",
   "decision.chain.kind":
-    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {External read} other {Other}}",
+    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {External read} rule_review {Hard rule review} other {Other}}",
   "decision.chain.rules": "Rules hit",
   "decision.chain.rule":
     "{id, select, floor_important_sender {Never miss important mail: sender is on your important list} floor_public_domain {Never miss important mail: from a government or school domain} floor_money_words {Never miss important mail: money-related words in the message} other {{id}}}",
@@ -1312,7 +1312,7 @@ export const messages = {
   "weekly.check.rowsCleared":
     "{rows} Gmail records are gone from days already checked; you cleared them",
   "weekly.check.rowsMissing":
-    "Fewer {kind, select, proactive {Gmail check} memory_candidate {memory} consolidation {memory tidy-up} context_truncation {left-out older content} retrieval_degrade {memory search} external_read {outside memory read} other {decision}} records for {day} than when it was checked: {before} then, {after} now",
+    "Fewer {kind, select, proactive {Gmail check} memory_candidate {memory} consolidation {memory tidy-up} context_truncation {left-out older content} retrieval_degrade {memory search} external_read {outside memory read} rule_review {hard rule review} other {decision}} records for {day} than when it was checked: {before} then, {after} now",
   "weekly.check.timeOk": "All times in the decision record are well formed",
   "weekly.check.timeBad": "{rows} times in the decision record are malformed",
   "weekly.check.other":

@@ -2,11 +2,13 @@ import { createAgentId, createMemoryId, createOwnerId } from "@himawari-agent/do
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MEMORY_ATTRIBUTES,
+  importantSenderRule,
   type MemoryCategory,
   memoryDateNote,
   memoryDatesOf,
   OwnerProfileService,
   type ProductMemoryRecord,
+  RuleJudge,
 } from "../src/index.js";
 
 const OWNER_ID = createOwnerId("owner-profile");
@@ -350,6 +352,27 @@ describe("owner profile composition", () => {
       now: NOW,
     });
     expect(result.memoryIds).toEqual(["memory-language", "memory-name"]);
+  });
+
+  it("[P2-2] a profile block that is too long drops the rule memory text but never a hard rule", async () => {
+    const { profile } = service(records, 5);
+    const result = await profile.compose({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "private",
+      now: NOW,
+    });
+    expect(result.memoryIds).not.toContain("memory-language");
+    const hardRule = importantSenderRule(["bank.example"], 3);
+    const facts = {
+      sender_address: "a@bank.example",
+      sender_domain: "bank.example",
+      text: "",
+      text_words: [],
+    };
+    expect(
+      new RuleJudge().decide("mail_item", facts, [{ ...hardRule, status: "needs_review" }]).hits,
+    ).toEqual([{ id: hardRule.id, revision: 3, outcome: "raise_floor" }]);
   });
 
   it("[MEM-PIN] brings what the Owner switched on and drops what the Owner switched off", async () => {

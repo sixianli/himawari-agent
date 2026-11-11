@@ -33,6 +33,7 @@ export const DECISION_KINDS = [
   "context_truncation",
   "retrieval_degrade",
   "external_read",
+  "rule_review",
 ] as const;
 
 export type DecisionKind = (typeof DECISION_KINDS)[number];
@@ -45,6 +46,7 @@ export const DECISION_OUTCOMES = {
   context_truncation: ["truncated"],
   retrieval_degrade: ["degraded"],
   external_read: ["read"],
+  rule_review: ["needs_review"],
 } as const satisfies Record<LedgerWriteKind, readonly string[]>;
 
 export type DecisionOutcome = (typeof DECISION_OUTCOMES)[LedgerWriteKind][number];

@@ -181,6 +181,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
         ["context_truncation", "truncated"],
         ["retrieval_degrade", "degraded"],
         ["external_read", "read"],
+        ["rule_review", "needs_review"],
       ];
       for (const [index, [kind, outcome]] of rows.entries())
         await ledger.append(
@@ -197,7 +198,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           }),
         );
       const all = await list();
-      expect(all).toHaveLength(5);
+      expect(all).toHaveLength(6);
       for (const [index, [kind, outcome]] of rows.entries()) {
         expect((await list(kind))[0]).toEqual({
           id: `row-${index}`,

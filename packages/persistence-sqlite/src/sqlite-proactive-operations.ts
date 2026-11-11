@@ -230,7 +230,7 @@ export class SqliteProactiveOperations {
     const rules = this.database
       .prepare(
         `SELECT rule_id AS ruleId, revision, parameters FROM rule_book_rules
-         WHERE owner_id = ? AND agent_id = ? AND status = 'active'`,
+         WHERE owner_id = ? AND agent_id = ? AND status IN ('active', 'needs_review')`,
       )
       .all(scope.ownerId, scope.agentId) as {
       ruleId: string;
@@ -353,10 +353,13 @@ export class SqliteProactiveOperations {
     this.database
       .prepare(
         `INSERT INTO rule_book_history (
-          owner_id, agent_id, rule_id, revision, parameters, status, source, changed_at
-        ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
+          owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id,
+          changed_at
+        ) SELECT owner_id, agent_id, rule_id, revision, parameters, status, source,
+          source_memory_id, updated_at
+        FROM rule_book_rules WHERE owner_id = ? AND agent_id = ? AND rule_id = ?`,
       )
-      .run(input.ownerId, input.agentId, ruleId, revision, parameters, source, input.now);
+      .run(input.ownerId, input.agentId, ruleId);
   }
 
   private readConnection(input: Input<"readConnection">): ProactiveConnection | undefined {
