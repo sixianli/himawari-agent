@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   createProactiveSeal,
+  DEFAULT_REVIEW_PREREVIEW,
   type ModelDescriptor,
   type ModelInvocationEvent,
   type WebPushSendRequest,
@@ -272,6 +273,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
         reviewBudgetSeconds: 120,
         reviewSecondsPerItem: 5,
         reviewSilentSharePermille: 500,
+        reviewPrereview: DEFAULT_REVIEW_PREREVIEW,
         backoffThreshold: 3,
       },
       timeZone: "Asia/Tokyo",

@@ -403,6 +403,11 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "review.prereview": {
+    "sha256": "b4a2529b91a91177aae2b4203f8fe4d23b8135bcc659b73c24ecc8e28a1ecda6",
+    "changedIn": "P4-8",
+    "reason": "新增：每天打分前让模型盲评一条决策，统计和主人评价的一致率"
+  },
   "review.typesafe-questions": {
     "sha256": "693762a6b2f60f490e1217f79dea053f4319292232d8043fc8194e949232ac0d",
     "changedIn": "ADR 0161",

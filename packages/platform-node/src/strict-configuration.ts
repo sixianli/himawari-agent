@@ -3,6 +3,8 @@ import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   type CapabilityDeploymentConfiguration,
+  DEFAULT_REVIEW_PREREVIEW,
+  type ProactiveConfiguration,
   isWebProviderId,
   WEB_FETCH_MAXIMUM_BYTES,
   WEB_PROVIDER_IDS,
@@ -999,6 +1001,7 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       "reviewBudgetSeconds",
       "reviewSecondsPerItem",
       "reviewSilentSharePermille",
+      "reviewPrereview",
       "backoffThreshold",
     ],
     field,
@@ -1041,6 +1044,7 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     reviewBudgetSeconds: optional("reviewBudgetSeconds", 120, 10, 3_600),
     reviewSecondsPerItem: optional("reviewSecondsPerItem", 5, 1, 60),
     reviewSilentSharePermille: optional("reviewSilentSharePermille", 500, 0, 1_000),
+    reviewPrereview: parseReviewPrereview(input["reviewPrereview"], `${field}.reviewPrereview`),
     backoffThreshold: optional("backoffThreshold", 3, 0, 10),
     intervalMs: optional("intervalMs", 900_000, 60_000, 86_400_000),
     perCheckMs: optional("perCheckMs", 180_000, 10_000, 900_000),
@@ -1055,6 +1059,99 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       input["memoryMinimumSimilarity"] === undefined
         ? 0.45
         : unitInterval(input["memoryMinimumSimilarity"], `${field}.memoryMinimumSimilarity`),
+  });
+}
+
+function parseReviewPrereview(
+  value: unknown,
+  field: string,
+): ProactiveConfiguration["reviewPrereview"] {
+  const input = value === undefined ? {} : record(value, field);
+  rejectUnknown(
+    input,
+    [
+      "enabled",
+      "dailyLimit",
+      "dailyCostMicros",
+      "perRun",
+      "requestTimeoutMs",
+      "historyDays",
+      "historyMinimum",
+      "reduction",
+    ],
+    field,
+  );
+  const reductionField = `${field}.reduction`;
+  const reduction =
+    input["reduction"] === undefined ? {} : record(input["reduction"], reductionField);
+  rejectUnknown(
+    reduction,
+    ["enabled", "agreementPermille", "confidencePermille", "auditPermille", "windowDays"],
+    reductionField,
+  );
+  const number = (
+    source: JsonRecord,
+    at: string,
+    key: string,
+    fallback: number,
+    minimum: number,
+    maximum: number,
+  ) =>
+    source[key] === undefined ? fallback : integer(source[key], `${at}.${key}`, minimum, maximum);
+  const flag = (source: JsonRecord, at: string, key: string, fallback: boolean) =>
+    source[key] === undefined ? fallback : boolean(source[key], `${at}.${key}`);
+  const defaults = DEFAULT_REVIEW_PREREVIEW;
+  const off = defaults.reduction;
+  return Object.freeze({
+    enabled: flag(input, field, "enabled", defaults.enabled),
+    dailyLimit: number(input, field, "dailyLimit", defaults.dailyLimit, 1, 500),
+    dailyCostMicros: number(
+      input,
+      field,
+      "dailyCostMicros",
+      defaults.dailyCostMicros,
+      1,
+      10_000_000,
+    ),
+    perRun: number(input, field, "perRun", defaults.perRun, 1, 50),
+    requestTimeoutMs: number(
+      input,
+      field,
+      "requestTimeoutMs",
+      defaults.requestTimeoutMs,
+      5_000,
+      300_000,
+    ),
+    historyDays: number(input, field, "historyDays", defaults.historyDays, 1, 366),
+    historyMinimum: number(input, field, "historyMinimum", defaults.historyMinimum, 1, 100_000),
+    reduction: Object.freeze({
+      enabled: flag(reduction, reductionField, "enabled", off.enabled),
+      agreementPermille: number(
+        reduction,
+        reductionField,
+        "agreementPermille",
+        off.agreementPermille,
+        500,
+        1_000,
+      ),
+      confidencePermille: number(
+        reduction,
+        reductionField,
+        "confidencePermille",
+        off.confidencePermille,
+        0,
+        1_000,
+      ),
+      auditPermille: number(
+        reduction,
+        reductionField,
+        "auditPermille",
+        off.auditPermille,
+        1,
+        1_000,
+      ),
+      windowDays: number(reduction, reductionField, "windowDays", off.windowDays, 1, 366),
+    }),
   });
 }
 

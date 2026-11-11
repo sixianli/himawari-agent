@@ -1365,7 +1365,38 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     reviewBudgetSeconds: 120,
     reviewSecondsPerItem: 5,
     reviewSilentSharePermille: 500,
+    reviewPrereview: {
+      enabled: true,
+      dailyLimit: 50,
+      dailyCostMicros: 100_000,
+      perRun: 10,
+      requestTimeoutMs: 30_000,
+      historyDays: 28,
+      historyMinimum: 20,
+      reduction: {
+        enabled: false,
+        agreementPermille: 900,
+        confidencePermille: 800,
+        auditPermille: 200,
+        windowDays: 28,
+      },
+    },
     backoffThreshold: 3,
+  });
+  raw["runPolicy"] = {
+    ...policy,
+    proactive: {
+      ...proactive,
+      reviewPrereview: { dailyLimit: 20, reduction: { enabled: true, agreementPermille: 950 } },
+    },
+  };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive
+      ?.reviewPrereview,
+  ).toMatchObject({
+    enabled: true,
+    dailyLimit: 20,
+    reduction: { enabled: true, agreementPermille: 950, auditPermille: 200 },
   });
   raw["runPolicy"] = {
     ...policy,
@@ -1410,6 +1441,12 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, reviewSecondsPerItem: 0 },
     { ...proactive, reviewSilentSharePermille: 1_001 },
     { ...proactive, reviewSilentSharePermille: -1 },
+    { ...proactive, reviewPrereview: { dailyLimit: 0 } },
+    { ...proactive, reviewPrereview: { enabled: "yes" } },
+    { ...proactive, reviewPrereview: { unknown: 1 } },
+    { ...proactive, reviewPrereview: { reduction: { auditPermille: 0 } } },
+    { ...proactive, reviewPrereview: { reduction: { agreementPermille: 1_001 } } },
+    { ...proactive, reviewPrereview: { reduction: { threshold: 900 } } },
     { ...proactive, backoffThreshold: 11 },
     { ...proactive, backoffThreshold: -1 },
     { ...proactive, relatedMailsPerMail: 51 },

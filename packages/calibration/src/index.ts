@@ -33,17 +33,18 @@ export const MAIN_CALIBRATION_GROUPS: readonly CalibrationGroup[] = Object.freez
   "consolidation",
 ]);
 
-const APPLICABLE: Readonly<Record<CalibrationGroup, readonly CalibrationRating[]>> = {
-  proactive_pushed: ["useful", "unneeded"],
-  proactive_silent: ["useful", "missed"],
-  memory_skipped: ["useful", "missed"],
-  memory_kept: ["useful", "unneeded"],
-  consolidation: ["useful", "unneeded"],
-  memory_pending: ["useful", "unneeded"],
-  context_truncation: ["useful", "unneeded"],
-  retrieval_degrade: ["useful", "unneeded"],
-  external_read: ["useful", "unneeded"],
-};
+export const APPLICABLE_RATINGS: Readonly<Record<CalibrationGroup, readonly CalibrationRating[]>> =
+  {
+    proactive_pushed: ["useful", "unneeded"],
+    proactive_silent: ["useful", "missed"],
+    memory_skipped: ["useful", "missed"],
+    memory_kept: ["useful", "unneeded"],
+    consolidation: ["useful", "unneeded"],
+    memory_pending: ["useful", "unneeded"],
+    context_truncation: ["useful", "unneeded"],
+    retrieval_degrade: ["useful", "unneeded"],
+    external_read: ["useful", "unneeded"],
+  };
 
 const GROUP_LABELS: Readonly<Record<CalibrationGroup, string>> = {
   proactive_pushed: "读完邮件提醒了你",
@@ -292,7 +293,7 @@ export function summarizeDecisions(
     const rated = ofGroup.filter((row) => row.ownerRating !== null);
     const count = (rating: CalibrationRating) =>
       rated.filter((row) => row.ownerRating === rating).length;
-    const applicable = APPLICABLE[group];
+    const applicable = APPLICABLE_RATINGS[group];
     const rate = (rating: CalibrationRating) =>
       applicable.includes(rating) ? proportion(count(rating), rated.length, minimumSamples) : null;
     return {

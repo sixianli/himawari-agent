@@ -1,10 +1,16 @@
+import {
+  type CalibrationGroup,
+  calibrationGroup as calibrationGroupOf,
+} from "@himawari-agent/calibration";
+import { isPrereviewGroup } from "@himawari-agent/calibration/prereview";
+import type { DataClassification } from "../ports/common.js";
 import type {
   DecisionKind,
   DecisionLedgerEntry,
   DecisionLedgerPort,
 } from "../ports/decision-ledger.js";
 import type { ProactiveRating, ProactiveScope } from "../ports/proactive-checks.js";
-import { isModelVisible } from "./model-visibility.js";
+import { highestClassification, isModelVisible } from "./model-visibility.js";
 import type { ProactiveOverview } from "./proactive-overview.js";
 import { startOfZonedDay } from "./proactive-rules.js";
 
@@ -38,6 +44,7 @@ export interface DailyReviewPoolItem {
 
 export interface DailyReviewSelection {
   readonly shown: readonly string[];
+  readonly hiddenByModel: number;
   readonly sampled: number;
   readonly notSampled: number;
   readonly foldedTotal: number;
@@ -48,7 +55,7 @@ export function reviewCapacity(budgetSeconds: number, secondsPerItem: number): n
   return Math.max(1, Math.floor(budgetSeconds / secondsPerItem));
 }
 
-function hash(text: string): number {
+export function reviewHash(text: string): number {
   let value = 0x811c9dc5;
   for (let index = 0; index < text.length; index += 1) {
     value ^= text.charCodeAt(index);
@@ -84,6 +91,7 @@ export function selectDailyReview(input: {
   readonly seed: string;
   readonly capacity: number;
   readonly silentShare?: number;
+  readonly hidden?: ReadonlySet<string>;
 }): DailyReviewSelection {
   const { dayStart, seed, capacity } = input;
   const eligible = input.pool.filter(
@@ -92,7 +100,8 @@ export function selectDailyReview(input: {
   const order = (items: readonly DailyReviewPoolItem[]) =>
     [...items].sort(
       (left, right) =>
-        hash(`${seed}|${dayStart}|${left.key}`) - hash(`${seed}|${dayStart}|${right.key}`) ||
+        reviewHash(`${seed}|${dayStart}|${left.key}`) -
+          reviewHash(`${seed}|${dayStart}|${right.key}`) ||
         (left.key < right.key ? -1 : left.key > right.key ? 1 : 0),
     );
   const defaults = eligible.filter(({ group }) => group !== "other");
@@ -118,9 +127,12 @@ export function selectDailyReview(input: {
   }
   const takenKeys = new Set(taken.map(({ key }) => key));
   const other = eligible.filter(({ group }) => group === "other");
+  const hidden = input.hidden ?? new Set<string>();
+  const shown = taken.filter(({ key, done }) => done || !hidden.has(key));
   return Object.freeze({
-    shown: Object.freeze(taken.map(({ key }) => key)),
-    sampled: taken.length,
+    shown: Object.freeze(shown.map(({ key }) => key)),
+    hiddenByModel: taken.length - shown.length,
+    sampled: shown.length,
     notSampled: defaults.filter(({ key, done }) => !done && !takenKeys.has(key)).length,
     foldedTotal: other.filter(({ done }) => !done).length,
     foldedShown: Object.freeze(
@@ -133,6 +145,20 @@ export function selectDailyReview(input: {
 
 export type DailyReviewRating = ProactiveRating;
 
+export interface DailyReviewCandidate {
+  readonly key: string;
+  readonly group: CalibrationGroup | null;
+}
+
+function calibrationGroup(entry: DecisionLedgerEntry): CalibrationGroup | null {
+  return calibrationGroupOf({
+    kind: entry.kind,
+    outcome: entry.outcome,
+    ownerRating: null,
+    delivered: false,
+  });
+}
+
 export function reviewMemoryVisible(classification: string): boolean {
   return isModelVisible(classification);
 }
@@ -140,6 +166,7 @@ export function reviewMemoryVisible(classification: string): boolean {
 export interface DailyReviewMemoryText {
   readonly text: string;
   readonly hidden: boolean;
+  readonly dataClassification?: DataClassification;
 }
 
 export interface DailyReviewItem {
@@ -161,6 +188,7 @@ export interface DailyReview {
   readonly capacity: number;
   readonly sampled: number;
   readonly notSampled: number;
+  readonly hiddenByModel: number;
   readonly items: readonly DailyReviewItem[];
   readonly folded: { readonly total: number; readonly items: readonly DailyReviewItem[] };
 }
@@ -237,33 +265,55 @@ function reviewedMemoryIds(entry: DecisionLedgerEntry): {
 
 const OWNER_DECIDED_DISCARD = "approval_rejected";
 
-export async function readDailyReview(options: {
+interface DailyReviewSourceOptions {
   readonly scope: ProactiveScope;
   readonly ledger: Pick<DecisionLedgerPort, "listReviewPool">;
   readonly overview: ProactiveOverview;
   readonly readMemoryText: (ref: string) => Promise<string | undefined>;
+  readonly readMemoryClassification?: (ref: string) => Promise<DataClassification | undefined>;
   readonly readMemory?: (memoryId: string) => Promise<DailyReviewMemoryText | undefined>;
   readonly timeZone: string;
   readonly now: string;
-  readonly budgetSeconds: number;
-  readonly secondsPerItem: number;
-  readonly silentShare?: number;
-}): Promise<DailyReview> {
+}
+
+interface BuiltReviewItem {
+  readonly item: DailyReviewItem;
+  readonly dataClassification: DataClassification | null;
+}
+
+interface ReviewCandidate {
+  readonly candidate: DailyReviewCandidate;
+  readonly item: DailyReviewPoolItem;
+  readonly build: () => Promise<BuiltReviewItem>;
+}
+
+function visibleClassification(
+  classifications: readonly (DataClassification | undefined)[],
+): DataClassification | null {
+  if (classifications.length === 0) return null;
+  const known = classifications.filter(
+    (classification): classification is DataClassification => classification !== undefined,
+  );
+  if (known.length !== classifications.length) return null;
+  const highest = highestClassification(known[0] as DataClassification, known.slice(1));
+  return isModelVisible(highest) ? highest : null;
+}
+
+async function collectReviewCandidates(
+  options: DailyReviewSourceOptions,
+  ratedSince: (since: string, dayStart: string) => string,
+): Promise<{ readonly dayStart: string; readonly candidates: Map<string, ReviewCandidate> }> {
   const { scope, overview, now } = options;
   const dayStart = startOfZonedDay(now, options.timeZone);
-  const capacity = reviewCapacity(options.budgetSeconds, options.secondsPerItem);
   const since = new Date(Date.parse(now) - DAILY_REVIEW_WINDOW_DAYS * 86_400_000).toISOString();
   const entries = await options.ledger.listReviewPool({
     ...scope,
     since,
-    ratedSince: dayStart,
+    ratedSince: ratedSince(since, dayStart),
     limit: DAILY_REVIEW_POOL_LIMIT,
   });
   const checks = new Map(overview.decisions.map((decision) => [decision.id, decision]));
-  const candidates = new Map<
-    string,
-    { readonly item: DailyReviewPoolItem; readonly build: () => Promise<DailyReviewItem> }
-  >();
+  const candidates = new Map<string, ReviewCandidate>();
   for (const entry of entries) {
     if (entry.kind === "memory_candidate" && entry.reasonCode === OWNER_DECIDED_DISCARD) continue;
     const check = entry.kind === "proactive" ? checks.get(entry.id) : undefined;
@@ -271,6 +321,7 @@ export async function readDailyReview(options: {
       continue;
     const key = reviewKey("ledger", entry.id);
     candidates.set(key, {
+      candidate: { key, group: calibrationGroup(entry) },
       item: {
         key,
         group: ledgerGroup(entry),
@@ -279,11 +330,15 @@ export async function readDailyReview(options: {
       },
       build: async () => {
         let text = "";
+        let dataClassification: DataClassification | null = null;
         if (entry.kind === "memory_candidate" && entry.outcome === "discarded") {
-          if (entry.contentRef !== null)
-            text = clip(
-              (await options.readMemoryText(entry.contentRef).catch(() => undefined)) ?? "",
-            );
+          if (entry.contentRef !== null) {
+            const ref = entry.contentRef;
+            text = clip((await options.readMemoryText(ref).catch(() => undefined)) ?? "");
+            dataClassification = visibleClassification([
+              await options.readMemoryClassification?.(ref).catch(() => undefined),
+            ]);
+          }
         } else if (options.readMemory) {
           const { before, after } = reviewedMemoryIds(entry);
           const read = async (id: string) =>
@@ -308,21 +363,27 @@ export async function readDailyReview(options: {
                 : oldText === ""
                   ? clipped(next)
                   : `${oldText} → ${clipped(next)}`;
+            dataClassification = visibleClassification(
+              shown.map((memory) => memory.dataClassification),
+            );
           }
         }
         return {
-          key,
-          source: "ledger" as const,
-          kind: entry.kind,
-          outcome: entry.outcome,
-          decidedAt: entry.decidedAt,
-          acted: ledgerActed(entry),
-          rating: entry.ownerRating,
-          text,
-          textHidden:
-            (entry.kind === "memory_candidate" || entry.kind === "consolidation") && text === "",
-          category: entry.category,
-          fetched: check ? check.counts.fetched : null,
+          dataClassification: text === "" ? null : dataClassification,
+          item: {
+            key,
+            source: "ledger" as const,
+            kind: entry.kind,
+            outcome: entry.outcome,
+            decidedAt: entry.decidedAt,
+            acted: ledgerActed(entry),
+            rating: entry.ownerRating,
+            text,
+            textHidden:
+              (entry.kind === "memory_candidate" || entry.kind === "consolidation") && text === "",
+            category: entry.category,
+            fetched: check ? check.counts.fetched : null,
+          },
         };
       },
     });
@@ -331,38 +392,98 @@ export async function readDailyReview(options: {
     const key = reviewKey("mail", mail.messageId);
     const done = mail.reviewedAt !== null || mail.rating !== null;
     candidates.set(key, {
+      candidate: { key, group: "proactive_silent" },
       item: { key, group: "proactive", done, doneAt: mail.reviewedAt },
       build: async () => ({
-        key,
-        source: "mail" as const,
-        kind: "mail" as const,
-        outcome: "skipped",
-        decidedAt: mail.decidedAt,
-        acted: false,
-        rating: mail.rating ?? (mail.reviewedAt !== null ? "useful" : null),
-        text: clip(mail.subject ? `${mail.from} · ${mail.subject}` : mail.from),
-        textHidden: false,
-        category: null,
-        fetched: null,
+        dataClassification: MAIL_REVIEW_CLASSIFICATION,
+        item: {
+          key,
+          source: "mail" as const,
+          kind: "mail" as const,
+          outcome: "skipped",
+          decidedAt: mail.decidedAt,
+          acted: false,
+          rating: mail.rating ?? (mail.reviewedAt !== null ? "useful" : null),
+          text: clip(mail.subject ? `${mail.from} · ${mail.subject}` : mail.from),
+          textHidden: false,
+          category: null,
+          fetched: null,
+        },
       }),
     });
   }
+  return { dayStart, candidates };
+}
+
+const MAIL_REVIEW_CLASSIFICATION: DataClassification = "private";
+
+export interface DailyReviewSubject {
+  readonly key: string;
+  readonly group: CalibrationGroup;
+  readonly category: string | null;
+  readonly text: string;
+  readonly dataClassification: DataClassification;
+  readonly ownerRating: DailyReviewRating | null;
+}
+
+export async function readDailyReviewSubjects(
+  options: DailyReviewSourceOptions,
+): Promise<readonly DailyReviewSubject[]> {
+  const { candidates } = await collectReviewCandidates(options, (since) => since);
+  const subjects: DailyReviewSubject[] = [];
+  for (const { candidate, build } of candidates.values()) {
+    if (!isPrereviewGroup(candidate.group)) continue;
+    const { item, dataClassification } = await build();
+    if (dataClassification === null || item.textHidden || item.text === "") continue;
+    subjects.push({
+      key: item.key,
+      group: candidate.group,
+      category: item.category,
+      text: item.text,
+      dataClassification,
+      ownerRating: item.rating,
+    });
+  }
+  return subjects;
+}
+
+export async function readDailyReview(
+  options: DailyReviewSourceOptions & {
+    readonly budgetSeconds: number;
+    readonly secondsPerItem: number;
+    readonly silentShare?: number;
+    readonly hideByModel?: (
+      candidates: readonly DailyReviewCandidate[],
+    ) => Promise<ReadonlySet<string>>;
+  },
+): Promise<DailyReview> {
+  const { scope } = options;
+  const capacity = reviewCapacity(options.budgetSeconds, options.secondsPerItem);
+  const { dayStart, candidates } = await collectReviewCandidates(
+    options,
+    (_since, dayStart) => dayStart,
+  );
+  const hidden = options.hideByModel
+    ? await options.hideByModel([...candidates.values()].map(({ candidate }) => candidate))
+    : undefined;
   const selection = selectDailyReview({
     pool: [...candidates.values()].map(({ item }) => item),
+    ...(hidden === undefined ? {} : { hidden }),
     dayStart,
     seed: `${scope.ownerId}:${scope.agentId}`,
     capacity,
     ...(options.silentShare === undefined ? {} : { silentShare: options.silentShare }),
   });
   const build = (keys: readonly string[]) =>
-    Promise.all(keys.map((key) => candidates.get(key)?.build())).then((items) =>
-      items.filter((item): item is DailyReviewItem => item !== undefined),
+    Promise.all(keys.map((key) => candidates.get(key)?.build())).then((built) =>
+      built.flatMap((entry) => (entry === undefined ? [] : [entry.item])),
     );
   return Object.freeze({
     day: dayStart,
     capacity,
     sampled: selection.sampled,
     notSampled: selection.notSampled,
+    hiddenByModel: selection.hiddenByModel,
     items: Object.freeze(await build(selection.shown)),
     folded: Object.freeze({
       total: selection.foldedTotal,
