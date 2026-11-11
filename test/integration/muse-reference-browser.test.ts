@@ -1,11 +1,11 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { chromium, type Browser, type Page, expect as uiExpect } from "@playwright/test";
+import { type Browser, chromium, type Page, expect as uiExpect } from "@playwright/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { launchChromium } from "../fixtures/chromium-launch.ts";
 import { repositoryRoot } from "../fixtures/product-path-harness.ts";
 
 const APP = path.join(repositoryRoot, "apps/control-center");
@@ -114,10 +114,7 @@ describe("Muse 参考区（真实网页验收）", () => {
       } catch {}
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    const bundled = "/opt/pw-browsers/chromium";
-    const executablePath =
-      process.env["HIMAWARI_CHROMIUM_PATH"] ?? (existsSync(bundled) ? bundled : undefined);
-    browser = await chromium.launch(executablePath ? { executablePath } : {});
+    browser = await launchChromium(chromium);
   }, 120_000);
 
   afterAll(async () => {
