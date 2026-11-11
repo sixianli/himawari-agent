@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Writable } from "node:stream";
@@ -442,6 +442,34 @@ describe("data admin CLI", () => {
     );
     expect(code).not.toBe(0);
     expect(errors.value()).toContain("DATA_IMPORT_MANIFEST_INVALID");
+  });
+
+  it("[多人7][reverse] inspect refuses a manifest that is a symbolic link before reading it", async () => {
+    const source = await prepare("linkmanifest", true, true);
+    const out = path.join(source.root, "chats-export");
+    await run([
+      "data",
+      "export-chats",
+      "--config",
+      source.configurationPath,
+      "--secret-dir",
+      source.secretDirectory,
+      "--out",
+      out,
+      "--allow-unsealed",
+      "--operator",
+      "andy",
+    ]);
+    await unlink(path.join(out, "manifest.json"));
+    await symlink("/dev/zero", path.join(out, "manifest.json"));
+    const errors = sink();
+    const code = await runAdminCli(
+      ["data", "inspect", "--from", out],
+      sink().stream,
+      errors.stream,
+    );
+    expect(code).not.toBe(0);
+    expect(errors.value()).toContain("DATA_IMPORT_PATH_UNSAFE");
   });
 
   it("[多人7] inspect accepts a chat export with more than 4096 files", async () => {

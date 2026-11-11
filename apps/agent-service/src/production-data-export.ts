@@ -16,6 +16,7 @@ import type { FastifyInstance } from "fastify";
 
 export const DATA_EXPORT_PATH = "/api/data-export/v1/archive";
 export const DATA_EXPORT_ARCHIVE_ROOT = "himawari-export";
+export const DATA_EXPORT_TOO_LARGE = "DATA_EXPORT_TOO_LARGE";
 const MAXIMUM_ARCHIVE_BYTES = 512 * 1024 * 1024;
 const encoder = new TextEncoder();
 
@@ -45,6 +46,7 @@ export function createStoredZip(
   files: PortableFiles,
   exportedAt: string,
   root: string = DATA_EXPORT_ARCHIVE_ROOT,
+  maximumBytes: number = MAXIMUM_ARCHIVE_BYTES,
 ): Uint8Array {
   const { time, date } = dosDateTime(exportedAt);
   const entries = [...files.entries()].sort(([left], [right]) =>
@@ -84,7 +86,7 @@ export function createStoredZip(
     chunks.push(new Uint8Array(local.buffer), nameBytes, content);
     directory.push(new Uint8Array(entry.buffer), nameBytes);
     offset += 30 + nameBytes.byteLength + content.byteLength;
-    if (offset > MAXIMUM_ARCHIVE_BYTES) throw new RangeError("DATA_EXPORT_TOO_LARGE");
+    if (offset > maximumBytes) throw new RangeError(DATA_EXPORT_TOO_LARGE);
   }
   const directoryBytes = directory.reduce((sum, part) => sum + part.byteLength, 0);
   const end = new DataView(new ArrayBuffer(22));

@@ -137,11 +137,19 @@ export async function runDataCommand(
     if (!from) throw new Error(DATA_COMMAND_ERROR_CODES.ARGUMENT_INVALID);
     let declaredFormat: unknown;
     try {
-      const peeked = await readFile(path.join(from, "manifest.json"), "utf8").catch(() => "");
+      const manifestPath = path.join(from, "manifest.json");
+      const manifestStat = await lstat(manifestPath).catch(() => undefined);
+      if (manifestStat && (!manifestStat.isFile() || manifestStat.size > 16 * 1024 * 1024))
+        throw new DataExportError(
+          DATA_EXPORT_ERROR_CODES.PATH_UNSAFE,
+          "manifest.json 不是普通文件或太大",
+        );
+      const peeked = manifestStat ? await readFile(manifestPath, "utf8") : "";
       declaredFormat = peeked
         ? (JSON.parse(peeked) as { format?: unknown } | null)?.format
         : undefined;
-    } catch {
+    } catch (error) {
+      if (error instanceof DataExportError) throw error;
       throw new DataExportError(DATA_EXPORT_ERROR_CODES.MANIFEST_INVALID, "清单不是有效的 JSON");
     }
     const files = await readPortableDirectory(

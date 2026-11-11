@@ -11,7 +11,7 @@ import {
   type HttpGatewayAuthenticationPort,
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance } from "fastify";
-import { createStoredZip } from "./production-data-export.js";
+import { createStoredZip, DATA_EXPORT_TOO_LARGE } from "./production-data-export.js";
 
 export const CHAT_EXPORT_PATH = "/api/data-export/v1/chats";
 export const CHAT_EXPORT_ARCHIVE_ROOT = "himawari-chats";
@@ -26,6 +26,7 @@ export interface ProductionChatExportOptions {
   readonly protector: PayloadProtectorPort;
   readonly now: () => string;
   readonly maximumBytes?: number;
+  readonly maximumArchiveBytes?: number;
 }
 
 export function registerChatExportRoute(
@@ -59,6 +60,7 @@ export function registerChatExportRoute(
           result.files,
           result.manifest.exportedAt,
           CHAT_EXPORT_ARCHIVE_ROOT,
+          options.maximumArchiveBytes,
         );
         const stamp = result.manifest.exportedAt.slice(0, 10);
         return reply
@@ -75,7 +77,7 @@ export function registerChatExportRoute(
     } catch (error) {
       if (
         error instanceof Error &&
-        (error.message === CHAT_EXPORT_TOO_LARGE || error.message === "DATA_EXPORT_TOO_LARGE")
+        (error.message === CHAT_EXPORT_TOO_LARGE || error.message === DATA_EXPORT_TOO_LARGE)
       ) {
         request.log.warn({ code: error.message }, "chat export too large for the web");
         return reply.code(413).send();

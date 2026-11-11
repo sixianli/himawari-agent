@@ -21,6 +21,7 @@ async function service(
   side: Side,
   protector: Side["protector"] = side.protector,
   maximumBytes?: number,
+  maximumArchiveBytes?: number,
 ) {
   side.database.pragma("wal_checkpoint(TRUNCATE)");
   const app = Fastify();
@@ -53,6 +54,7 @@ async function service(
     protector,
     now: () => "2026-11-12T00:00:00.000Z",
     ...(maximumBytes === undefined ? {} : { maximumBytes }),
+    ...(maximumArchiveBytes === undefined ? {} : { maximumArchiveBytes }),
   });
   open.push(app);
   return app;
@@ -158,6 +160,17 @@ describe("chat export route", () => {
       (await flakyApp.inject({ method: "GET", url: CHAT_EXPORT_PATH, headers: asOwner }))
         .statusCode,
     ).toBe(200);
+  });
+
+  it("[多人7] an archive over the zip limit is also refused with 413, not 500 (negative case)", async () => {
+    const side = await seeded("chat-http-zip-large");
+    const refused = await (await service(side, side.protector, 10_000_000, 200)).inject({
+      method: "GET",
+      url: CHAT_EXPORT_PATH,
+      headers: asOwner,
+    });
+    expect(refused.statusCode).toBe(413);
+    expect(refused.rawPayload.byteLength).toBe(0);
   });
 
   it("[多人7] an export over the web limit is refused with 413 and nothing is sent, then works under the limit", async () => {
