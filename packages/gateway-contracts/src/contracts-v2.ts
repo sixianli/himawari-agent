@@ -1100,6 +1100,7 @@ const decisionChainSnapshotSchema = object({
         "retrieval_degrade",
         "external_read",
         "rule_review",
+        "web_push",
       ]),
       decidedAt: timestamp,
       outcome: boundedString(64),

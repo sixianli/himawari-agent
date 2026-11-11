@@ -517,6 +517,7 @@ export class SqliteDecisionLedgerOperations {
         `SELECT ${entryColumns} FROM decision_ledger
          WHERE owner_id = ? AND agent_id = ? AND checked_at >= ?
            AND (owner_rating IS NULL OR rated_at >= ?)
+           AND kind <> 'web_push'
            AND (kind <> 'proactive' OR verdict IN ('pushed', 'deferred', 'silent'))
          ORDER BY checked_at DESC, id DESC LIMIT ?`,
       )

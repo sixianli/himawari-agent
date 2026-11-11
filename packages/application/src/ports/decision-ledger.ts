@@ -37,6 +37,7 @@ export const DECISION_KINDS = [
   "retrieval_degrade",
   "external_read",
   "rule_review",
+  "web_push",
 ] as const;
 
 export type DecisionKind = (typeof DECISION_KINDS)[number];
@@ -57,6 +58,7 @@ export const DECISION_OUTCOMES = {
   retrieval_degrade: ["degraded"],
   external_read: ["read"],
   rule_review: ["needs_review"],
+  web_push: ["deferred"],
 } as const satisfies Record<LedgerWriteKind, readonly string[]>;
 
 export const EXTERNAL_PROPOSAL_REASON_PREFIX = "mcp_proposal_";

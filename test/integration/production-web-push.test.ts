@@ -227,6 +227,26 @@ describe("[WP-3] web push dispatch", () => {
           const rule = enforceableOwnerRule(row);
           return rule?.gate === "push_delivery" ? [rule] : [];
         }),
+      ledger() {
+        const database = openQualifiedDatabase(file);
+        try {
+          return database
+            .prepare(
+              `SELECT kind, outcome, reason_code AS reasonCode, subject_ref AS subjectRef,
+                      json_extract(inputs, '$.ruleIds') AS ruleIds
+               FROM decision_ledger WHERE kind = 'web_push'`,
+            )
+            .all() as {
+            kind: string;
+            outcome: string;
+            reasonCode: string;
+            subjectRef: string;
+            ruleIds: string;
+          }[];
+        } finally {
+          database.close();
+        }
+      },
       outbox(prefix: string, heldOnly = false) {
         const database = openQualifiedDatabase(file);
         try {
@@ -548,6 +568,15 @@ describe("[WP-3] web push dispatch", () => {
       deferUntil: MORNING,
       refs: JSON.stringify(["owner:night@1"]),
     });
+    expect(context.rules.ledger()).toEqual([
+      {
+        kind: "web_push",
+        outcome: "deferred",
+        reasonCode: "push_quiet_hours",
+        subjectRef: expect.stringMatching(/^run:/),
+        ruleIds: JSON.stringify(["owner:night@1"]),
+      },
+    ]);
     context.setClock(MORNING);
     await push.tick();
     await push.tick();
@@ -570,6 +599,7 @@ describe("[WP-3] web push dispatch", () => {
     context.finishRun("run-plain", "completed", at(NIGHT, -5));
     await push.tick();
     expect(context.sender.requests).toHaveLength(1);
+    expect(context.rules.ledger()).toEqual([]);
 
     context.rules.write("owner:night", NIGHT_JST);
     context.approval("a-night", "high", at(NIGHT, 3_600));
@@ -579,6 +609,9 @@ describe("[WP-3] web push dispatch", () => {
     const titles = context.sender.notifications().map(({ notification }) => notification["title"]);
     expect(titles).toEqual(["已完成", "等你审批 · 高风险"]);
     expect(context.rules.outbox("run:")).toBeDefined();
+    expect(context.rules.ledger().map(({ subjectRef }) => subjectRef)).toEqual([
+      "run:run-held:failed",
+    ]);
   });
 
   it("[HR-4] releases held pushes at once when the rule is withdrawn", async () => {

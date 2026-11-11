@@ -10,8 +10,10 @@ import type {
   WebPushStorePort,
   WebPushSubscription,
 } from "@himawari-agent/application";
+import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import { recordDecisionSignal } from "./decision-signals.ts";
+import { insertLedgerRow } from "./sqlite-decision-ledger-operations.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 type Input<TName extends keyof WebPushStorePort> = Parameters<WebPushStorePort[TName]>[0];
@@ -406,7 +408,7 @@ export class SqliteWebPushOperations {
       new Set(input.ruleRefs).size !== input.ruleRefs.length
     )
       this.fail("PORT_INVALID_OPERATION", "Web push deferral rule references are invalid");
-    return (
+    const stored =
       this.database
         .prepare(
           `UPDATE web_push_outbox SET defer_until = ?, defer_rule_refs = ?, expires_at = ?
@@ -419,8 +421,27 @@ export class SqliteWebPushOperations {
           input.ownerId,
           input.agentId,
           input.sourceKey,
-        ).changes > 0
-    );
+        ).changes > 0;
+    if (!stored) return false;
+    const digest = createHash("sha256")
+      .update(JSON.stringify([input.ownerId, input.agentId, input.sourceKey, input.deferUntil]))
+      .digest("hex");
+    insertLedgerRow(this.database, {
+      id: `web-push-${digest}`,
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      kind: "web_push",
+      decidedAt: input.now,
+      outcome: "deferred",
+      reasonCode: "push_quiet_hours",
+      subjectRef: input.sourceKey,
+      inputs: { memoryIds: [], ruleIds: [...input.ruleRefs].sort() },
+      reasonRef: null,
+      contentRef: null,
+      costMicros: 0,
+      durationMs: 0,
+    });
+    return true;
   }
 
   private recordAttempt(input: Input<"recordAttempt">): boolean {
