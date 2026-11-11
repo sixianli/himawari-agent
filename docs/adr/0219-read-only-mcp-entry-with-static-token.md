@@ -75,7 +75,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - `reasonCode` 写工具名；读取失败时写 `<工具名>_failed`。
    - `subjectRef` 写 `mcp-client:<客户端名>`。客户端名先取 2026-07-28 版请求自带的客户端信息；老版本请求不带这项，就取 User-Agent 请求头的开头一段。两者都只是对方自己报的名字。
    - `inputs.memoryIds` 只写这次返回了正文的那些记忆的编号（返回给对方的内容里不带编号），不写正文（依据 `docs/execution/specs/2026-11-09-decision-record-write-convention.md`）。
-   - `ruleIds` 写空数组：静默时段规则还没有登记在 `DECISION_RULE_CATALOG` 里，而依据抽屉对这一类记录本来就显示「这类记录不涉及」。
+   - `ruleIds` 写空数组：按 [ADR 0215](0215-decision-record-points-at-the-rule-version.md) 决定 1，`ruleIds` 只记真正起了作用的规则和修订号；外部读取规则手册时没有哪条规则在做判断，和那份 ADR 决定 2 的记忆候选记录一样留空。
    - `costMicros` 写这次算问题向量花的钱；读取中途失败时，也写失败前已经花掉的钱（找记忆时两路检索都结束后才报失败，所以另一路的嵌入费也算在内）。
    - 决策记录写不进去时，这次读取按失败处理：不把内容交给对方，只回工具错误。这样「每次外部读取都有一条记录」始终成立。
 6. **工具说明文字登记进提示词目录**，编号是 `mcp.find-memories`、`mcp.today-context`、`mcp.rule-book`、`mcp.tool-result-failed`。Himawari 自己发给模型的请求一个字节都不变。
