@@ -1103,6 +1103,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
   function profileFormation(
     repository: SqliteProductStateRepository,
     settings: { budget: number; pins: Map<string, boolean> },
+    ledger = repository.decisionLedger(),
   ) {
     const clock = new ManualClock(T0);
     const adapters = createReferenceAdapterSet({ scope, clock });
@@ -1139,7 +1140,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
       clock,
       ids: adapters.ids,
       profile,
-      ledger: repository.decisionLedger(),
+      ledger,
     });
     let round = 0;
     return {
@@ -1241,6 +1242,27 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           profileBudget: { limit: 20, used: outline.usage.pinned, pinned: outline.usage.pinned },
         },
       });
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[P2-5] still forms the context when the truncation record cannot be written", async () => {
+    const { repository, list } = await fixture();
+    try {
+      const { form } = profileFormation(
+        repository,
+        { budget: 70, pins: new Map([["memory-pin-name", true]]) },
+        {
+          ...repository.decisionLedger(),
+          appendIfChanged: async () => {
+            throw new Error("ledger unavailable");
+          },
+        },
+      );
+      const formed = await form();
+      expect(formed.envelope.contextBlocks.some(({ kind }) => kind === "owner-profile")).toBe(true);
+      expect(await profileRows(list)).toEqual([]);
     } finally {
       await repository.close();
     }

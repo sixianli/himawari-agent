@@ -335,7 +335,7 @@ export class SqliteDecisionLedgerOperations {
           `SELECT reason_code AS reasonCode, inputs FROM decision_ledger
            WHERE owner_id = ? AND agent_id = ? AND kind = ?
              AND reason_code IN (SELECT value FROM json_each(?))
-           ORDER BY checked_at DESC, id DESC LIMIT 1`,
+           ORDER BY rowid DESC LIMIT 1`,
         )
         .get(write.ownerId, write.agentId, write.kind, JSON.stringify(reasonCodes)) as
         | { reasonCode: string; inputs: string }

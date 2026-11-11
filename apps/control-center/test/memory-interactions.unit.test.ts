@@ -490,6 +490,25 @@ describe("memory approval and management", () => {
     );
   });
 
+  it("[P2-5] warns only when the memories the owner chose to bring exceed the limit", async () => {
+    const notice = () => document.querySelector("[data-testid='memory-carry-pinned-over']");
+    for (const [pinned, shown] of [
+      [0, false],
+      [100, false],
+      [2000, false],
+      [2001, true],
+    ] as const) {
+      overview = {
+        ...overview,
+        profileUsage: { used: Math.max(pinned, 10), limit: 2000, pinned, queued: [] },
+      };
+      await render();
+      expect(Boolean(notice())).toBe(shown);
+      if (shown) expect(notice()?.textContent).toContain("比上限 2000 字多出 1 字");
+      await act(async () => root.render(h("div")));
+    }
+  });
+
   it("[MEM-CAT] lets the owner move a memory to another topic and offers none for sensitive ones", async () => {
     overview = {
       ...overview,
