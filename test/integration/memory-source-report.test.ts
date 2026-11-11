@@ -26,11 +26,11 @@ describe("[P1-1] memory source report", () => {
   it("writes the reminder reference prefix the same way in the page, the script and the writer", async () => {
     const read = (file: string) => readFile(path.join(repositoryRoot, file), "utf8");
     const REMINDER_SOURCE_PREFIX = /REMINDER_SOURCE_PREFIX = "([^"]+)"/.exec(
-      await read("apps/control-center/src/memory-source.ts"),
+      await read("packages/gateway-contracts/src/memory-source.ts"),
     )?.[1];
     expect(REMINDER_SOURCE_PREFIX).toBe("memory-content:reminder:");
     const EXTERNAL_PREFIX = /EXTERNAL_PROPOSAL_MEMORY_PREFIX = "([^"]+)"/.exec(
-      await read("apps/control-center/src/memory-source.ts"),
+      await read("packages/gateway-contracts/src/memory-source.ts"),
     )?.[1];
     expect(EXTERNAL_PREFIX).toBe("memory:mcp:");
     expect(await read("scripts/operations/memory-source-report.mjs")).toContain(
@@ -40,7 +40,7 @@ describe("[P1-1] memory source report", () => {
       `EXTERNAL_PROPOSAL_MEMORY_PREFIX = "${EXTERNAL_PREFIX}"`,
     );
     const EXTERNAL_RULE_PREFIX = /EXTERNAL_RULE_MEMORY_PREFIX = "([^"]+)"/.exec(
-      await read("apps/control-center/src/memory-source.ts"),
+      await read("packages/gateway-contracts/src/memory-source.ts"),
     )?.[1];
     expect(EXTERNAL_RULE_PREFIX).toBe("memory:rule:mcp:");
     expect(await read("scripts/operations/memory-source-report.mjs")).toContain(

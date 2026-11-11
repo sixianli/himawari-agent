@@ -1,41 +1,12 @@
+import { memorySourceState } from "@himawari-agent/gateway-contracts";
 import type { MemoryItem } from "./memory.js";
 
-export const REMINDER_SOURCE_PREFIX = "memory-content:reminder:";
-export const EXTERNAL_PROPOSAL_MEMORY_PREFIX = "memory:mcp:";
-export const EXTERNAL_RULE_MEMORY_PREFIX = "memory:rule:mcp:";
-
-export type MemorySourceState =
-  | "jump"
-  | "reminder"
-  | "owner"
-  | "external"
-  | "import"
-  | "deleted"
-  | "tidy"
-  | "unavailable";
-
-export function memorySourceState(
-  item: Pick<
-    MemoryItem,
-    "memoryId" | "importBatchId" | "sourceThreadId" | "sourceMessageId" | "sourceRefs" | "history"
-  >,
-): MemorySourceState {
-  if (item.importBatchId) return "import";
-  if (item.memoryId.startsWith("memory:owner:")) return "owner";
-  if (
-    item.memoryId.startsWith(EXTERNAL_PROPOSAL_MEMORY_PREFIX) ||
-    item.memoryId.startsWith(EXTERNAL_RULE_MEMORY_PREFIX)
-  )
-    return "external";
-  if (item.sourceThreadId) {
-    if (item.sourceMessageId) return "jump";
-    return item.sourceRefs.length > 0 &&
-      item.sourceRefs.every((ref) => ref.startsWith(REMINDER_SOURCE_PREFIX))
-      ? "reminder"
-      : "unavailable";
-  }
-  return item.history[0]?.sourceDeleted ? "deleted" : "tidy";
-}
+export {
+  EXTERNAL_PROPOSAL_MEMORY_PREFIX,
+  EXTERNAL_RULE_MEMORY_PREFIX,
+  type MemorySourceState,
+  memorySourceState,
+} from "@himawari-agent/gateway-contracts";
 
 export function memorySourceCounts(items: readonly MemoryItem[]): {
   readonly unavailable: number;

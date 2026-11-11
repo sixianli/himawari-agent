@@ -671,6 +671,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its thread, Owner or Agent deletion",
   ),
   entry(
+    "memory_checkup_items",
+    "MemoryCheckupStorePort",
+    "one row per Memory picked for a week's checkup: the reason, the owner's confirm, delete or merge with the state before it so it can be undone",
+    "metadata_only",
+    "cascade with its Memory record or with Owner or Agent deletion",
+  ),
+  entry(
     "memory_settings",
     "MemoryBookStorePort",
     "one row per Agent; the Owner pauses or resumes new memories",

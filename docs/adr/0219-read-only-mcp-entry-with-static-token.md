@@ -57,6 +57,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - 没有配置这个密钥时，路由不注册。配置了却建不起这个入口（例如记忆功能没开，或者没开网页服务）时，服务启动失败（`MCP_READ_RUNTIME_UNAVAILABLE`），不会悄悄不注册。
    - 上线到公网时，在 Cloudflare 上给这条路径加一条服务令牌策略，做法和 Muse 推送入口一样。这样有两层鉴权，任何一层失效，另一层仍挡着。这一步属于生产改动，要等 Andy 同意。
    - 不实现 OAuth 2.1 授权服务。理由见前提 1–3：鉴权本身不是规范的必选项，而 Claude Code 和 Codex 都支持带固定令牌头。
+   - 2026-11-11 起：本条的固定令牌认证由 [ADR 0227](0227-mcp-entry-checks-cloudflare-access-sign-in.md) 取代。入口改为校验 Cloudflare Access 凭证，因为 Claude 应用和 Muse 接不上固定令牌。本条原文保留不改。
 2. **协议用官方 SDK 的 `createMcpHandler`。** 它按 2026-07-28 版服务；还没升级的客户端发来的老版本请求，由它自带的无状态兼容方式接住。
    - 路径是 `/api/mcp/v1`，挂在现有的 Fastify 上。工具调用走 `POST`；同一路径也接 `GET` 和 `DELETE`，同样先过鉴权，再交给 SDK 按规范处理。Fastify 的请求先转成标准的 Web `Request`，交给 `handler.fetch`，再把返回结果写回 Fastify 的响应。
    - 不新增依赖 `@modelcontextprotocol/node`。它要额外引入 Hono 一套框架，而 `handler.fetch` 本来就是官方提供的标准入口。
@@ -127,6 +128,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
   - `packages/sensitive-capture/test/redaction.unit.test.ts`：`maskSensitiveTexts` 不论顺序都遮掉点名过的值，同一段文字的遮法不受无关内容影响。
   - `packages/platform-node/test/startup-configuration.unit.test.ts`：`runPolicy.mcpRead` 只接受一把用途是 `mcp-read` 的密钥。后续：[ADR 0225](0225-external-agents-propose-memory-with-in-client-confirmation.md) 加的写令牌 `writeSecretRef` 只接受一把用途是 `mcp-write`、和只读令牌不同的密钥，同一个测试文件覆盖。
   - `apps/agent-service/test/production-mail-embedding.unit.test.ts` 覆盖不属于任何一轮对话的嵌入入口。
+  - 2026-11-11 起：上面几条里关于令牌的测试已按 [ADR 0227](0227-mcp-entry-checks-cloudflare-access-sign-in.md) 改成校验 Cloudflare Access 凭证，`runPolicy.mcpRead` 也改成 `{ audience, proposals? }`，旧的密钥配置会被拒绝。以上原文保留不改。
 
 [返回阅读导航](#contents)
 

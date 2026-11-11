@@ -1068,15 +1068,44 @@ function reviewSnapshot() {
       textHidden: false,
       category: null,
       fetched: kind === "proactive" ? 12 : null,
+      checkup: null,
     };
   };
+  const checkup = (index, reason, related) => ({
+    key: `checkup:fixture-c-${index}`,
+    source: "checkup",
+    kind: "checkup",
+    outcome: "pending",
+    decidedAt: "2026-08-24T15:00:00.000Z",
+    acted: false,
+    rating: null,
+    text: texts[index % texts.length],
+    textHidden: false,
+    category: null,
+    fetched: null,
+    checkup: {
+      reason,
+      action: null,
+      memoryId: `memory:fixture-c-${index}`,
+      relatedMemoryId: related ? `memory:fixture-c-${index}-old` : null,
+      relatedText: related ? texts[(index + 1) % texts.length] : "",
+      keptMemoryId: null,
+    },
+  });
   return {
     day: now,
     capacity: 24,
     sampled: 24,
     notSampled: 9,
-    items: Array.from({ length: 24 }, (_, index) => item(index, false)),
+    items: [
+      item(0, false),
+      checkup(0, "conflict", true),
+      item(1, false),
+      checkup(1, "unused", false),
+      ...Array.from({ length: 20 }, (_, index) => item(index + 2, false)),
+    ],
     folded: { total: 7, items: Array.from({ length: 7 }, (_, index) => item(index, true)) },
+    memoryUnusedDays: 90,
     generatedAt: now,
   };
 }
@@ -2038,6 +2067,7 @@ async function handleRequest(request, response) {
               "sensitive.interceptions.clear",
               "proactive.review.read",
               "proactive.review.rate",
+              "proactive.review.checkup",
               "proactive.weekly.read",
               "decision.chain.read",
               "decision.email.read",

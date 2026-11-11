@@ -700,6 +700,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0089_consolidation_hold.sql",
   },
+  {
+    sequence: 90,
+    name: "memory_checkup",
+    changeSet: "memory-checkup",
+    phase: "expand" as const,
+    file: "0090_memory_checkup.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =
