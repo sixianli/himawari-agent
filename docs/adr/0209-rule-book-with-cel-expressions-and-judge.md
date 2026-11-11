@@ -116,7 +116,7 @@ date: "2026-11-10"
 
 - [ADR 0163](0163-owner-preferences-as-data-run-by-tested-rule-types.md)：本 ADR 取代其中的决定 4，决定 1、2、3 继续有效。
 - [ADR 0134](0134-adopt-product-vision-v2-2.md)、[ADR 0153](0153-adopt-product-vision-v2-3.md)：规则是硬性设定。
-- [ADR 0083](0083-isolated-instance-per-person-with-owner-entry.md)：每人一个实例。
+- [ADR 0083](0083-isolated-instance-per-person-with-owner-entry.md)：每人一个实例（已被 [ADR 0234](0234-one-program-per-person-database-file.md) 取代，改为一个程序、每人一个数据库文件；每人各自一个主人这一点不变）。
 - [ADR 0204](0204-handle-pi-deviations-d2-d3-d5.md)：“先问我”接现有审批，第 3 步用。
 - [.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md)：发给模型的内容只追加。
 
