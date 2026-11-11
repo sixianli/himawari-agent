@@ -17,7 +17,7 @@ import {
   validateRecord,
 } from "./contracts.mjs";
 import { coverageProjects, inCoverageScope } from "./coverage-model.mjs";
-import { validateMainWorkflow } from "./main-workflow.mjs";
+import { validateCallerGrantsCalledPermissions, validateMainWorkflow } from "./main-workflow.mjs";
 import { validateQualityWorkflow } from "./quality-policy.mjs";
 import { integrationWorkerLimits, testWorkerCount } from "./test-concurrency.mjs";
 
@@ -1281,7 +1281,9 @@ export async function main(argv = process.argv.slice(2)) {
   validateInstallScriptReviews(lock, readJson(path.join(root, "package-lock.json")));
   const workflow = path.resolve(root, args["--workflow"] ?? ".github/workflows/ci.yml");
   validateWorkflow(proposed, readFileSync(workflow, "utf8"), lock);
-  validateMainWorkflow(readFileSync(path.join(root, ".github/workflows/main.yml"), "utf8"), lock);
+  const mainWorkflow = readFileSync(path.join(root, ".github/workflows/main.yml"), "utf8");
+  validateMainWorkflow(mainWorkflow, lock);
+  validateCallerGrantsCalledPermissions(mainWorkflow, readFileSync(workflow, "utf8"));
   validateWorkflow(source.policy, readFileSync(workflow, "utf8"), lock);
   validateQualityWorkflow(
     readJson(path.join(root, "ci/quality-policy.json")),

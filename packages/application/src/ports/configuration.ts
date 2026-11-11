@@ -241,6 +241,7 @@ export interface ProactiveConfiguration {
   readonly reviewBudgetSeconds: number;
   readonly reviewSecondsPerItem: number;
   readonly reviewSilentSharePermille: number;
+  readonly reviewMemoryUnusedDays: number;
   readonly backoffThreshold: number;
 }
 

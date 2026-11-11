@@ -5,6 +5,11 @@ import {
   isMemoryCaptureFailure,
 } from "../ports/decision-ledger.js";
 import { EXTERNAL_PROPOSAL_REASON_CODES } from "../ports/decision-ledger.js";
+import type {
+  MemoryCheckupAction,
+  MemoryCheckupItem,
+  MemoryCheckupReason,
+} from "../ports/memory-checkup.js";
 import type { ProactiveRating, ProactiveScope } from "../ports/proactive-checks.js";
 import { isModelVisible } from "./model-visibility.js";
 import type { ProactiveOverview } from "./proactive-overview.js";
@@ -20,6 +25,7 @@ export type DailyReviewGroup =
   | "memory_skipped"
   | "memory_kept"
   | "consolidation"
+  | "memory_checkup"
   | "other";
 
 const DEFAULT_GROUPS: readonly DailyReviewGroup[] = [
@@ -27,9 +33,10 @@ const DEFAULT_GROUPS: readonly DailyReviewGroup[] = [
   "proactive",
   "memory_kept",
   "consolidation",
+  "memory_checkup",
 ];
-export type DailyReviewSource = "ledger" | "mail";
-export type DailyReviewKind = DecisionKind | "mail";
+export type DailyReviewSource = "ledger" | "mail" | "checkup";
+export type DailyReviewKind = DecisionKind | "mail" | "checkup";
 
 export interface DailyReviewPoolItem {
   readonly key: string;
@@ -144,6 +151,15 @@ export interface DailyReviewMemoryText {
   readonly hidden: boolean;
 }
 
+export interface DailyReviewCheckup {
+  readonly reason: MemoryCheckupReason;
+  readonly action: MemoryCheckupAction | null;
+  readonly memoryId: string;
+  readonly relatedMemoryId: string | null;
+  readonly relatedText: string;
+  readonly keptMemoryId: string | null;
+}
+
 export interface DailyReviewItem {
   readonly key: string;
   readonly source: DailyReviewSource;
@@ -156,6 +172,7 @@ export interface DailyReviewItem {
   readonly textHidden: boolean;
   readonly category: string | null;
   readonly fetched: number | null;
+  readonly checkup: DailyReviewCheckup | null;
 }
 
 export interface DailyReview {
@@ -164,36 +181,38 @@ export interface DailyReview {
   readonly sampled: number;
   readonly notSampled: number;
   readonly items: readonly DailyReviewItem[];
-  readonly folded: { readonly total: number; readonly items: readonly DailyReviewItem[] };
+  readonly folded: {
+    readonly total: number;
+    readonly items: readonly DailyReviewItem[];
+  };
 }
 
-const LEDGER_PREFIX = "ledger:";
-const MAIL_PREFIX = "mail:";
+const KEY_PREFIXES: readonly DailyReviewSource[] = ["ledger", "mail", "checkup"];
 
-export const reviewKey = (source: DailyReviewSource, id: string) =>
-  `${source === "ledger" ? LEDGER_PREFIX : MAIL_PREFIX}${id}`;
+export const reviewKey = (source: DailyReviewSource, id: string) => `${source}:${id}`;
 
 export function parseReviewKey(
   key: string,
 ): { readonly source: DailyReviewSource; readonly id: string } | undefined {
-  if (key.startsWith(LEDGER_PREFIX) && key.length > LEDGER_PREFIX.length)
-    return { source: "ledger", id: key.slice(LEDGER_PREFIX.length) };
-  if (key.startsWith(MAIL_PREFIX) && key.length > MAIL_PREFIX.length)
-    return { source: "mail", id: key.slice(MAIL_PREFIX.length) };
+  for (const source of KEY_PREFIXES)
+    if (key.startsWith(`${source}:`) && key.length > source.length + 1)
+      return { source, id: key.slice(source.length + 1) };
   return undefined;
 }
 
 const TEXT_LIMIT = 200;
 
 function clipTo(text: string, limit: number): string {
-  return [
-    ...text
-      .replace(/\p{Cc}+/gu, " ")
-      .replace(/[\u202A-\u202E\u2066-\u2069]/gu, "")
-      .trim(),
-  ]
-    .slice(0, limit)
-    .join("");
+  const cleaned = text
+    .replace(/\p{Cc}+/gu, " ")
+    .replace(/[\u202A-\u202E\u2066-\u2069]/gu, "")
+    .trim();
+  let clipped = "";
+  for (const character of cleaned) {
+    if (clipped.length + character.length > limit) break;
+    clipped += character;
+  }
+  return clipped;
 }
 
 function clip(text: string): string {
@@ -258,6 +277,7 @@ export async function readDailyReview(options: {
   readonly budgetSeconds: number;
   readonly secondsPerItem: number;
   readonly silentShare?: number;
+  readonly checkup?: readonly MemoryCheckupItem[];
 }): Promise<DailyReview> {
   const { scope, overview, now } = options;
   const dayStart = startOfZonedDay(now, options.timeZone);
@@ -270,12 +290,27 @@ export async function readDailyReview(options: {
     limit: DAILY_REVIEW_POOL_LIMIT,
   });
   const checks = new Map(overview.decisions.map((decision) => [decision.id, decision]));
+  const pairKey = (ids: Iterable<string>) => [...new Set(ids)].sort().join("\u0000");
+  const checkupPairs = new Set<string>(
+    (options.checkup ?? []).flatMap(({ reason, memoryId, relatedMemoryId }) =>
+      reason === "conflict" && relatedMemoryId ? [pairKey([memoryId, relatedMemoryId])] : [],
+    ),
+  );
   const candidates = new Map<
     string,
-    { readonly item: DailyReviewPoolItem; readonly build: () => Promise<DailyReviewItem> }
+    {
+      readonly item: DailyReviewPoolItem;
+      readonly build: () => Promise<DailyReviewItem>;
+    }
   >();
   for (const entry of entries) {
     if (entry.kind === "memory_candidate" && OWNER_DECIDED_DISCARDS.has(entry.reasonCode)) continue;
+    if (
+      entry.kind === "consolidation" &&
+      entry.outcome === "hold" &&
+      checkupPairs.has(pairKey([...entry.inputs.memoryIds, ...entry.inputs.resultMemoryIds]))
+    )
+      continue;
     const check = entry.kind === "proactive" ? checks.get(entry.id) : undefined;
     if (entry.kind === "proactive" && entry.outcome === "silent" && (check?.counts.judged ?? 0) < 1)
       continue;
@@ -312,12 +347,14 @@ export async function readDailyReview(options: {
             const clipped = (memory: DailyReviewMemoryText) =>
               clipTo(memory.text, shown.length > 1 ? PART_LIMIT : TEXT_LIMIT);
             const oldText = olds.flatMap((memory) => (memory ? [clipped(memory)] : [])).join(" + ");
-            text =
+            text = clipTo(
               next === undefined
                 ? oldText
                 : oldText === ""
                   ? clipped(next)
-                  : `${oldText} → ${clipped(next)}`;
+                  : `${oldText} → ${clipped(next)}`,
+              TEXT_LIMIT,
+            );
           }
         }
         return {
@@ -335,6 +372,7 @@ export async function readDailyReview(options: {
             !isMemoryCaptureFailure(entry.outcome),
           category: entry.category,
           fetched: check ? check.counts.fetched : null,
+          checkup: null,
         };
       },
     });
@@ -356,7 +394,48 @@ export async function readDailyReview(options: {
         textHidden: false,
         category: null,
         fetched: null,
+        checkup: null,
       }),
+    });
+  }
+  for (const entry of options.checkup ?? []) {
+    const key = reviewKey("checkup", entry.id);
+    candidates.set(key, {
+      item: {
+        key,
+        group: "memory_checkup",
+        done: entry.action !== null,
+        doneAt: entry.handledAt,
+      },
+      build: async () => {
+        const read = async (id: string | null) =>
+          id === null ? undefined : options.readMemory?.(id).catch(() => undefined);
+        const subject = await read(entry.memoryId);
+        const related = await read(entry.relatedMemoryId);
+        const shown = (memory: DailyReviewMemoryText | undefined) =>
+          memory && !memory.hidden ? clip(memory.text) : "";
+        return {
+          key,
+          source: "checkup" as const,
+          kind: "checkup" as const,
+          outcome: entry.action ?? "pending",
+          decidedAt: entry.createdAt,
+          acted: false,
+          rating: null,
+          text: shown(subject),
+          textHidden: subject?.hidden === true,
+          category: null,
+          fetched: null,
+          checkup: {
+            reason: entry.reason,
+            action: entry.action,
+            memoryId: entry.memoryId,
+            relatedMemoryId: entry.relatedMemoryId,
+            relatedText: shown(related),
+            keptMemoryId: entry.keptMemoryId,
+          },
+        };
+      },
     });
   }
   const selection = selectDailyReview({
@@ -366,6 +445,9 @@ export async function readDailyReview(options: {
     capacity,
     ...(options.silentShare === undefined ? {} : { silentShare: options.silentShare }),
   });
+  const handledEarlier = (options.checkup ?? [])
+    .filter(({ handledAt }) => handledAt !== null && handledAt < dayStart)
+    .map(({ id }) => reviewKey("checkup", id));
   const build = (keys: readonly string[]) =>
     Promise.all(keys.map((key) => candidates.get(key)?.build())).then((items) =>
       items.filter((item): item is DailyReviewItem => item !== undefined),
@@ -375,7 +457,7 @@ export async function readDailyReview(options: {
     capacity,
     sampled: selection.sampled,
     notSampled: selection.notSampled,
-    items: Object.freeze(await build(selection.shown)),
+    items: Object.freeze(await build([...selection.shown, ...handledEarlier])),
     folded: Object.freeze({
       total: selection.foldedTotal,
       items: Object.freeze(await build(selection.foldedShown)),

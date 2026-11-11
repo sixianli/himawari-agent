@@ -247,6 +247,22 @@
   opacity: 0.4;
   cursor: default;
 }
+.proactive-checkup-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.proactive-checkup-text > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proactive-checkup-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
 .proactive-review-fold {
   display: flex;
   align-items: center;

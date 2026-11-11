@@ -1464,6 +1464,7 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     reviewBudgetSeconds: 120,
     reviewSecondsPerItem: 5,
     reviewSilentSharePermille: 500,
+    reviewMemoryUnusedDays: 90,
     backoffThreshold: 3,
   });
   raw["runPolicy"] = {
@@ -1473,6 +1474,7 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
       reviewBudgetSeconds: 300,
       reviewSecondsPerItem: 10,
       reviewSilentSharePermille: 200,
+      reviewMemoryUnusedDays: 30,
       backoffThreshold: 5,
     },
   };
@@ -1482,6 +1484,7 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     reviewBudgetSeconds: 300,
     reviewSecondsPerItem: 10,
     reviewSilentSharePermille: 200,
+    reviewMemoryUnusedDays: 30,
     backoffThreshold: 5,
   });
   raw["runPolicy"] = {
@@ -1509,6 +1512,8 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, reviewSecondsPerItem: 0 },
     { ...proactive, reviewSilentSharePermille: 1_001 },
     { ...proactive, reviewSilentSharePermille: -1 },
+    { ...proactive, reviewMemoryUnusedDays: 6 },
+    { ...proactive, reviewMemoryUnusedDays: 3_651 },
     { ...proactive, backoffThreshold: 11 },
     { ...proactive, backoffThreshold: -1 },
     { ...proactive, relatedMailsPerMail: 51 },
