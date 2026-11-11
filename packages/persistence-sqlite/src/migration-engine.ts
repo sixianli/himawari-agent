@@ -686,6 +686,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0087_rule_book_memory_link.sql",
   },
+  {
+    sequence: 88,
+    name: "real_eval",
+    changeSet: "real-eval",
+    phase: "expand" as const,
+    file: "0088_real_eval.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

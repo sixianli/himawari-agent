@@ -305,7 +305,7 @@
     "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
   },
   "eval.real-memory.question": {
-    "sha256": "d3650c558dbfe30ab45d7587c716cc2ad2caf11d3e1c6cb20ee131ea44d59aa4",
+    "sha256": "bd9ec88d02e4d3c4b6f21b5dab89941946a27e7727395de39d6489a43a1e2fd8",
     "changedIn": "ADR 0219",
     "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
   },

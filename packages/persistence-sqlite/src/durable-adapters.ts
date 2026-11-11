@@ -26,6 +26,7 @@ import type {
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
+  RealEvalStorePort,
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
@@ -1066,6 +1067,16 @@ export class SqliteDurableAdapters {
     return Object.freeze<ModelUsageStorePort>({
       record: (input) => this.context.write("modelUsage.record", input),
       isFollowUpTurn: (input) => this.context.read("modelUsage.isFollowUpTurn", input),
+    });
+  }
+
+  realEval(): RealEvalStorePort {
+    return Object.freeze<RealEvalStorePort>({
+      listQuestions: (input) => this.context.read("realEval.listQuestions", input),
+      addQuestion: (input) => this.context.write("realEval.addQuestion", input),
+      retireQuestion: (input) => this.context.write("realEval.retireQuestion", input),
+      recordRun: (input) => this.context.write("realEval.recordRun", input),
+      listRuns: (input) => this.context.read("realEval.listRuns", input),
     });
   }
 

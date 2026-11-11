@@ -4,26 +4,16 @@ import {
   REAL_EVAL_JUDGE,
   REAL_EVAL_QUESTION,
 } from "@himawari-agent/prompt-catalog";
-import { EGRESS_RULESET_CURRENT, redactForEgress } from "@himawari-agent/sensitive-capture";
+import { placeholderTable } from "@himawari-agent/sensitive-capture";
 import type { ProductMemoryRecord } from "../ports/memory-projection.js";
+import type { RealEvalItemKind, RealEvalRetireReason } from "../ports/real-eval.js";
 import { isModelVisible } from "./model-visibility.js";
 
 export const REAL_EVAL_QUESTION_KINDS = ["fact", "preference", "time"] as const;
 export type RealEvalQuestionKind = (typeof REAL_EVAL_QUESTION_KINDS)[number];
-export type RealEvalItemKind = RealEvalQuestionKind | "abstain";
 
 export const REAL_EVAL_VERDICTS = ["correct", "wrong", "abstained"] as const;
 export type RealEvalVerdict = (typeof REAL_EVAL_VERDICTS)[number];
-
-export const REAL_EVAL_RETIRE_REASONS = [
-  "memory_inactive",
-  "memory_tentative",
-  "memory_superseded",
-  "memory_expired",
-  "memory_not_visible",
-  "memory_revised",
-] as const;
-export type RealEvalRetireReason = (typeof REAL_EVAL_RETIRE_REASONS)[number];
 
 export const QUESTION_MAX_CHARACTERS = 120;
 export const QUESTION_MIN_CHARACTERS = 4;
@@ -103,7 +93,7 @@ export function leaksAnswer(question: string, sources: readonly string[]): boole
 }
 
 export function hasSensitiveValue(value: string): boolean {
-  return redactForEgress(value, { ruleset: EGRESS_RULESET_CURRENT }).findings.length > 0;
+  return placeholderTable(value, (kind) => `#${kind}#`).size > 0;
 }
 
 export function questionPrompt(input: { readonly memory: string; readonly quote: string }): string {
