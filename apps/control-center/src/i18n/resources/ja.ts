@@ -767,13 +767,13 @@ export const messages = {
     "{source, select, codex {Codex} assistant {他の AI} other {Himawari のエクスポート}}から {count} 件インポート",
   "memory.page.goConfirm": "確認する",
   "memory.page.import": "記憶をインポート",
-  "memory.page.export": "すべての記憶をエクスポート",
+  "memory.page.export": "記憶とルールをエクスポート",
   "memory.page.sourceTitle":
     "{s, select, codex {Codex} assistant {ChatGPT・Claude など} other {旧版 Himawari のエクスポート（JSON）}}",
   "memory.page.sourceHelp":
     "{s, select, codex {Codex の記憶ファイル（memory_summary.md、MEMORY.md）を選択} assistant {あなたについての記憶を書き出してもらい、貼り付け} other {以前保存した himawari-memories.json のみ。新しい zip はここでは取り込めません}}",
   "memory.page.fileHelp":
-    "{s, select, codex {memory_summary.md と MEMORY.md、必要なら AGENTS.md を選びます。Mac の ~/.codex/memories/ と ~/.codex/ にあります。ファイル選択で ⌘⇧G を押すとパスを入力できます。} other {以前保存した himawari-memories.json を選びます。いまの「すべての記憶をエクスポート」は zip で、バックアップと移行用（展開し、中の himawari-export フォルダーをコマンドラインで取り込み）です。ここでは取り込めません。}}",
+    "{s, select, codex {memory_summary.md と MEMORY.md、必要なら AGENTS.md を選びます。Mac の ~/.codex/memories/ と ~/.codex/ にあります。ファイル選択で ⌘⇧G を押すとパスを入力できます。} other {以前保存した himawari-memories.json を選びます。いまの「記憶とルールをエクスポート」は zip で、バックアップと移行用（展開し、中の himawari-export フォルダーをコマンドラインで取り込み）です。ここでは取り込めません。}}",
   "memory.page.aiStep1": "手順 1：次の文をコピーして、使っている AI に送ります。",
   "memory.page.aiPrompt":
     "あなたが覚えている私についての情報を、1 行 1 件、「- 」で始めてすべて書き出してください。私の身元、好み、習慣、取り組んでいること、周りの人、私が頼んだルールを含め、できるだけ私の言葉で。パスワード、身分証番号、カード番号は書かないでください。説明は不要です。",
@@ -793,13 +793,13 @@ export const messages = {
     "取り込める内容が見つかりません。ファイルや貼り付けた内容を確認してください。",
   "memory.page.importTooBig": "1 ファイル 200 KB までです。分けて取り込んでください。",
   "memory.page.importUnreadable": "ファイルを読めないか、形式が違います。",
-  "memory.page.exportTitle": "すべての記憶と判断記録をエクスポート",
+  "memory.page.exportTitle": "記憶・常設ルール・判断記録をエクスポート",
   "memory.page.exportNote":
-    "項目ごとの JSON Lines データと、そのまま読める Markdown を含む zip を受け取ります。パスワードや ID 番号などの秘密はプレースホルダーのままです。ごみ箱の記憶や、健康・お金など機微なテーマの記憶も書き出され、秘密以外の本文は平文なので、zip を大切に保管してください。秘密も含めて持ち出すにはコマンドラインの暗号化エクスポートを使ってください。",
+    "項目ごとの JSON Lines データと、そのまま読める Markdown を含む zip を受け取ります。常設ルールは出どころと変更履歴ごと書き出され、RULES.md で読めます。パスワードや ID 番号などの秘密はプレースホルダーのままです。ごみ箱の記憶や、健康・お金など機微なテーマの記憶も書き出され、秘密以外の本文は平文なので、zip を大切に保管してください。秘密も含めて持ち出すにはコマンドラインの暗号化エクスポートを使ってください。",
   "memory.page.download": "エクスポートをダウンロード",
   "memory.page.exportWorking": "エクスポートを作成しています…",
   "memory.page.exportDone":
-    "記憶 {count} 件をエクスポートしました。機微な内容 {withheld} 箇所はプレースホルダーのままです。",
+    "記憶 {count} 件と、有効な常設ルール {rules} 件をエクスポートしました。機微な内容 {withheld} 箇所はプレースホルダーのままです。",
   "memory.page.exportFailed":
     "エクスポートに失敗しました。しばらくしてからもう一度お試しください。",
   "memory.page.chatExport": "チャット履歴を書き出す",
