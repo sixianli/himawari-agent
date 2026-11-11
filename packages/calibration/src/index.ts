@@ -22,6 +22,7 @@ export const CALIBRATION_GROUPS = [
   "context_truncation",
   "retrieval_degrade",
   "external_read",
+  "rule_review",
 ] as const;
 export type CalibrationGroup = (typeof CALIBRATION_GROUPS)[number];
 
@@ -44,6 +45,7 @@ export const APPLICABLE_RATINGS: Readonly<Record<CalibrationGroup, readonly Cali
     context_truncation: ["useful", "unneeded"],
     retrieval_degrade: ["useful", "unneeded"],
     external_read: ["useful", "unneeded"],
+    rule_review: ["useful", "unneeded"],
   };
 
 const GROUP_LABELS: Readonly<Record<CalibrationGroup, string>> = {
@@ -56,6 +58,7 @@ const GROUP_LABELS: Readonly<Record<CalibrationGroup, string>> = {
   context_truncation: "回答时没带上的旧内容",
   retrieval_degrade: "记忆搜索没生效",
   external_read: "外部程序读取记忆",
+  rule_review: "硬规则待重审",
 };
 
 const RATING_LABELS: Readonly<
@@ -70,6 +73,7 @@ const RATING_LABELS: Readonly<
   context_truncation: { useful: "做对了", unneeded: "不该做" },
   retrieval_degrade: { useful: "做对了", unneeded: "不该做" },
   external_read: { useful: "做对了", unneeded: "不该做" },
+  rule_review: { useful: "做对了", unneeded: "不该做" },
 };
 
 export interface Proportion {

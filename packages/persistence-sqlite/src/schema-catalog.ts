@@ -799,7 +799,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "rule_book_rules",
     "ProactiveStorePort",
-    "one row per Agent and rule: the owner's quiet hours and important senders as the current revision of a hard rule",
+    "one row per Agent and rule: the current revision of a hard rule, with the rule memory it came from and whether it waits for review",
     "metadata_only",
     "cascade with Owner or Agent deletion",
   ),
@@ -820,7 +820,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "decision_ledger",
     "ProactiveStorePort, DecisionLedgerPort",
-    "one row per model gate decision (proactive check, memory candidate, consolidation change, context truncation, retrieval degrade, external read): inputs as ids, cost and the owner's rating; text only as protected payload references",
+    "one row per model gate decision (proactive check, memory candidate, consolidation change, context truncation, retrieval degrade, external read, hard rule review): inputs as ids, cost and the owner's rating; text only as protected payload references",
     "metadata_only",
     "cascade with Owner or Agent deletion; proactive rows are removed when the owner deletes proactive records",
   ),

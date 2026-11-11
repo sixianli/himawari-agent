@@ -152,7 +152,7 @@ describe("data export: round trip", () => {
     const sealedB = await unsealJson(PASSPHRASE, second.files.get(SEALED_FILE) ?? new Uint8Array());
     expect(canonicalJson(sealedB)).toBe(canonicalJson(sealedA));
     expect(first.manifest.counts.memories).toBe(8);
-    expect(first.manifest.counts.decisions).toBe(6);
+    expect(first.manifest.counts.decisions).toBe(7);
     expect(first.manifest.counts.sealedEvidenceRows).toBeGreaterThan(0);
   });
 

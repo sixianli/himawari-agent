@@ -23,7 +23,7 @@ date: "2026-11-09"
 
 ## 这份约定管什么
 
-决策记录是表 `decision_ledger` 的一行，种类有 `proactive`、`memory_candidate`、`consolidation`、`context_truncation`、`retrieval_degrade`、`external_read`。控制中心的“依据”抽屉（[ADR 0195](../../adr/0195-show-the-whole-chain-of-one-decision-record.md)）只读这些行，所以写入方写什么，Andy 就只能看到什么。新增写入决策记录的代码，必须照下面写。
+决策记录是表 `decision_ledger` 的一行，种类有 `proactive`、`memory_candidate`、`consolidation`、`context_truncation`、`retrieval_degrade`、`external_read`、`rule_review`（硬规则因来源记忆变了而待重审，由数据库触发器写，见 [ADR 0211](../../adr/0211-hard-rule-points-back-to-its-rule-memory.md)）。控制中心的“依据”抽屉（[ADR 0195](../../adr/0195-show-the-whole-chain-of-one-decision-record.md)）只读这些行，所以写入方写什么，Andy 就只能看到什么。新增写入决策记录的代码，必须照下面写。
 
 <a id="fields"></a>
 
@@ -32,7 +32,7 @@ date: "2026-11-09"
 `DecisionInputs`（`packages/application/src/ports/decision-ledger.ts`）有两条写入路径，落盘的字段不同：
 
 - **系统主动提醒的检查**（`kind` 为 `proactive`，`sqlite-proactive-operations.ts` 的写入路径）：落盘完整字段，除下表的字段外还有 `memoryInjected`、`relatedStats`、`relatedFailedSteps` 等；下表只列抽屉会读的字段。
-- **其他种类**（`memory_candidate`、`consolidation`、`context_truncation`、`retrieval_degrade`、`external_read`，经 `DecisionLedgerPort.append`，`sqlite-decision-ledger-operations.ts` 的 `insertLedgerRow`）：目前只落 `memoryIds`、`ruleIds`、`batchId`、`resultMemoryIds` 四个键（没提供 `batchId`、`resultMemoryIds` 时也会写默认值，所以这四个键永远在），其余字段在入库前被丢掉。要让这些种类也记下别的字段，先改 `insertLedgerRow` 和它的校验，再改这份约定。
+- **其他种类**（`memory_candidate`、`consolidation`、`context_truncation`、`retrieval_degrade`、`external_read`，经 `DecisionLedgerPort.append`，`sqlite-decision-ledger-operations.ts` 的 `insertLedgerRow`）：目前只落 `memoryIds`、`ruleIds`、`batchId`、`resultMemoryIds` 四个键（没提供 `batchId`、`resultMemoryIds` 时也会写默认值，所以这四个键永远在；`rule_review` 由迁移 0087 的触发器直接写表，也写这四个键，`ruleIds` 是待重审的规则编号，`memoryIds` 是来源记忆），其余字段在入库前被丢掉。要让这些种类也记下别的字段，先改 `insertLedgerRow` 和它的校验，再改这份约定。
 
 | 字段 | 谁写 | 含义 |
 | --- | --- | --- |

@@ -261,7 +261,12 @@ function reviewFixture(): ProactiveReview {
       reviewItem("ledger:a5", { rating: "useful" }),
       reviewItem("ledger:a6"),
       reviewItem("ledger:a7"),
-      reviewItem("ledger:a8"),
+      reviewItem("ledger:a8", {
+        kind: "rule_review",
+        outcome: "needs_review",
+        acted: true,
+        text: "",
+      }),
     ],
     folded: {
       total: 3,
@@ -585,6 +590,18 @@ describe("[PG-15] proactive reminders page", () => {
     expect(text(section)).toContain("其他判断 · 3 条");
     expect(text(section)).not.toContain("整理记忆");
     expect(text(section)).toContain("第 1 / 2 页");
+  });
+
+  it("[P2-2] shows a hard rule review in the daily rating with its own tag and sentence", async () => {
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    const section = "#page .proactive-review";
+    await click(section, "下一页");
+    const rows = [...document.querySelectorAll<HTMLElement>(`${section} li`)];
+    const row = rows.at(-1);
+    expect(row?.textContent).toContain("硬规则待重审");
+    expect(row?.textContent).toContain("那条记忆变了，规则照常执行");
+    expect(row?.textContent).not.toContain("外部程序读取记忆");
   });
 
   it("[P0-6] sends one rating, clears it on a second tap and leaves a reviewed mail alone", async () => {
@@ -1068,6 +1085,25 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     const drawer = text(".decision-chain");
     expect(drawer.match(/无记录/gu)?.length ?? 0).toBeGreaterThanOrEqual(4);
     expect(drawer).toContain("还没评价");
+  });
+
+  it("[P2-2] titles the rules of a hard rule review as waiting for review and counts no mail", async () => {
+    chainResult = chain({
+      decision: { ...chain().decision, kind: "rule_review", outcome: "needs_review" },
+      rules: {
+        state: "recorded",
+        items: [{ ruleId: "quiet_hours", origin: null, document: null, mailCount: 0 }],
+      },
+      mails: null,
+    });
+    await openLog();
+    await act(async () => rowButton("1")?.click());
+    await flush();
+    const drawer = text(".decision-chain");
+    expect(drawer).toContain("待重审的规则");
+    expect(drawer).toContain("quiet_hours");
+    expect(drawer).not.toContain("命中的规则");
+    expect(drawer).not.toContain("封邮件");
   });
 
   it("closes and says the record was cleared when it is gone, and says it failed on any other error", async () => {
