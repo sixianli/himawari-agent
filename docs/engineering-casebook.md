@@ -114,6 +114,7 @@ date: "2026-10-26"
   87. [记忆评测全是合成题：改用主人确认过的记忆和原话自动出题、判分，每周跑一次](#case-real-memory-eval)
   88. [三路检索合并后怎么划“相关”的线：RRF 分数划不了线，用相似度加少量加分，权重和余量用评测扫出来](#case-relevance-cutoff)
   90. [让模型替主人先打一遍分，什么时候才敢少给主人看：一致率按区间下限算，还要比瞎猜准](#case-model-prereview)
+  91. [对外开了 MCP 入口，别的 agent 却未必来读来存：补上触发和身份，把 Himawari 做成记忆中心](#case-memory-hub)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -135,7 +136,7 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval)、[别的 agent 共用一个记忆中心](#case-memory-hub) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction)、[自己写的指令不该被当成外来内容检查](#case-trusted-prompt-text)、[沙箱保护不能静默失效](#case-srt-locked-seccomp-helper) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
@@ -5736,6 +5737,53 @@ Himawari 的每个关键判断（读完邮件提醒没提醒、记忆存没存�
 **面试 30 秒版**
 
 “主人每天要给 agent 的判断打分，我让模型先预评一遍，想在一致率够高时少给他看。难点是一致率会骗人：样本少时 10/10 也是 100%，主人本来 95% 评‘有用’时模型全评‘有用’也有 95%。所以门槛用 Wilson 区间下限，还必须高于‘全当有用’的上限，只算会被隐藏的那部分；隐藏后固定留 20% 抽查，让一致率持续更新。预评单独存表，绝不进主人的打分。”
+
+[返回目录](#contents)
+
+<a id="case-memory-hub"></a>
+
+## 案例 91：对外开了 MCP 入口，别的 agent 却未必来读来存：补上触发和身份，把 Himawari 做成记忆中心
+
+**背景与现象**
+主人同时用好几个 AI agent（Claude Code、Codex、ChatGPT 这类编码或对话程序），每家各记各的，换一家就要重新教一遍。他要 Himawari 当“记忆中心”：别家产生的记忆能存进来，换任何一家都能来读他的记忆、规则和习惯。项目已经做了对外的 MCP 入口（MCP 即 Model Context Protocol，让 AI 程序调用外部工具的开放接口）、三个只读工具和两个提议工具（ADR 0219、0225、0226、0227）。回头审视时发现：入口做完了，却没有任何机制保证对方真的会用。
+
+**根因**
+读代码和业界资料后确认缺三样，都不是“接入步骤写得不够清楚”能解决的：
+
+- 触发。读和存都要对方的模型自己想起来调用工具；服务创建时连使用说明都没带（`production-mcp-read.ts` 里 `new McpServer(…)` 没传 `instructions`）。
+- 身份。所有客户端都用主人本人的登录，名字是对方自报的（ADR 0227 后果一节原话：“来源只能靠客户端自称”），所以没法按 agent 暂停、撤销或限制范围。
+- 范围。外部读取能读到 sensitive（敏感）级别的记忆，对外只按格式遮密码、卡号（`production-memory-recall.ts` 用 `modelVisibleClassifications()`，即 public、private、sensitive 三级）。这一条是方案审核时对着代码查出来的，之前没人注意。
+
+**我们的方案**
+[ADR 0242](adr/0242-external-agents-join-the-memory-hub-through-one-entry.md)。门仍然只有 MCP 一个；读一个动作（`start_here`，一次给出主人概况、习惯、规则摘要和今天的情况），推一个动作（`sync_memories`，对方把自己已经记好的笔记成批推过来，可以重复推，改了删了都认得出）。触发按对方的能力分四档：能跑钩子（agent 在固定时刻自动执行的一条命令）的，装一个只读的小助手程序，开场自动读、每句话自动搜、对话结束自动推，全程不经对方模型；没有钩子的降档，如实标为“尽力而为”或手动。身份改成主人在网页上建接入，带密钥的专属网址定身份，读取级别默认到 private。关于主人的内容先进待确认，项目笔记单独存。
+
+**方案讨论与备选**
+
+- 把别家的原始对话送来，由 Himawari 的模型抽取记忆：主人当场否了，编码对话动辄十万 token，太贵。改成同步对方已经记好的笔记文件，服务端不调模型。
+- 只挂 MCP，靠使用说明：做起来最省，但正是原来的问题。只留给没有钩子的客户端，并在产品里标明不可靠。
+- 每家写一个专用对接：等于写死名单。改成向导里勾选对方的能力，各家步骤是数据。
+- 线程第一版方案有六处会出错，由两个低价模型独立出方案、再审核线程方案时查出，全部改掉。最重的几处：拿自报的名字当权限；项目笔记不经确认直接存，敏感内容标错类就能绕过确认；拿对方的文件路径拼记忆编号，过不了编号格式校验；用 `mcp_tool` 钩子推送，而它读不了文件。讨论共花 0.26 美元。
+- 两个模型也有说错的：一家说外部读取的上限是 public，对着代码核对后不成立。模型的意见逐条对代码核实后才采纳。
+
+**业界主流做法**
+
+- ✅ Claude 的记忆导入（[帮助页](https://support.claude.com/en/articles/12123587-import-and-export-your-memory-from-claude)）：“Memory imports are experimental and still in active development”。大厂只做一次性搬进来，不做别家持续来读来存。
+- ✅ mem0 的 Codex 接入（[文档](https://docs.mem0.ai/integrations/codex.md)）：完整版用钩子，只挂 MCP 的简版读写靠模型自己调用。
+- ✅ Supermemory 博客（[原文](https://supermemory.ai/blog/how-to-make-your-mcp-clients-share-context-with-supermemory-mcp.md)，厂商自述）：“the model may not call a tool on its own”“The plugins hook into the agent instead, so nothing waits on the model's judgment.”
+- ✅ Claude Code 钩子文档（[Hooks](https://code.claude.com/docs/en/hooks)）：`mcp_tool` 钩子“call a tool on a configured MCP server”，“The hook never starts an OAuth flow”；命令钩子的输出“Claude Code adds plain-text stdout as context that Claude can see and act on”。
+- ✅ Claude Code 记忆文档（[Memory](https://code.claude.com/docs/en/memory)）：“Each project gets its own memory directory at `~/.claude/projects/<project>/memory/`”。
+
+**对比与取舍**
+和 mem0、Supermemory 相同的是“MCP 当通用入口，钩子补触发”。不同的有两点：它们采集对话原文再抽取，我们只同步对方已经写好的笔记，省掉模型费用，代价是只能拿到对方愿意记下来的东西；我们每个接入一把密钥，能单独暂停、撤销和限制读取级别，代价是主人接一个新 agent 要多点一次。
+
+**结果数据**
+未测量：写本案例时只有决定，还没有实施。讨论费用 0.26 美元，出处是 `.agents/reviews/topic-p5-memory-hub/usage.jsonl`。实施后补“自动读取、自动同步各多少次，空手而归多少次”。
+
+**相关 ADR/PR**
+[ADR 0242](adr/0242-external-agents-join-the-memory-hub-through-one-entry.md)；被它改掉部分决定的 [ADR 0219](adr/0219-read-only-mcp-entry-with-static-token.md)、[ADR 0225](adr/0225-external-agents-propose-memory-with-in-client-confirmation.md)、[ADR 0226](adr/0226-external-agents-propose-rules-through-the-rule-proposal-flow.md)、[ADR 0227](adr/0227-mcp-entry-checks-cloudflare-access-sign-in.md)；PR #411。
+
+**面试 30 秒版**
+“我给个人 agent 开了 MCP 入口，想让别的 AI 都来读写同一份记忆，做完才发现入口不等于会被用：读和存都靠对方模型自觉，身份是自报的，敏感记忆也读得到。我重做了方案：读和推各一个动作，能跑钩子的客户端装一个只读的小助手，开场自动读、结束自动把它记的笔记推过来；每个接入由主人建、有自己的密钥和读取上限；不采集对话原文，所以不花模型的钱。方案让两个低价模型独立审了一遍，查出我原稿六处会出错，花了 0.26 美元。”
 
 [返回目录](#contents)
 
