@@ -78,6 +78,7 @@ import {
   PRODUCTION_APPROVAL_OPERATIONS,
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
+import { registerChatExportRoute } from "./production-chat-export.js";
 import { registerDataExportRoute } from "./production-data-export.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
 import {
@@ -1163,6 +1164,15 @@ export async function createProductionHttpComposition(
       ownerId,
     });
   registerDataExportRoute(app, {
+    authentication,
+    sessionCookieName: httpConfiguration.sessionCookieName,
+    ownerId,
+    agentId,
+    databasePath: repository.databasePath,
+    protector: payloadProtector,
+    now: clock,
+  });
+  registerChatExportRoute(app, {
     authentication,
     sessionCookieName: httpConfiguration.sessionCookieName,
     ownerId,
