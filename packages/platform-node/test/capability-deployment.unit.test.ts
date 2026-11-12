@@ -522,7 +522,7 @@ describe("capability deployment snapshot loader", () => {
     [
       "another runtime identity",
       (qualification: JsonObject) => {
-        qualification["runtimeIdentity"] = "srt:0.0.0-other";
+        qualification["runtimeIdentity"] = "other-runtime";
       },
     ],
     [

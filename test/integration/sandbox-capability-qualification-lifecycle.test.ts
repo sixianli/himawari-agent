@@ -309,7 +309,7 @@ describe("sandbox capability qualification through the lifecycle service", () =>
       ...value,
       platform: value.platform === "linux" ? "darwin" : "linux",
     }));
-    await rejected((value) => ({ ...value, runtimeIdentity: "srt:0.0.0-other" }));
+    await rejected((value) => ({ ...value, runtimeIdentity: "other-runtime" }));
   });
 
   it("rejects sandbox evidence that the sandbox qualification contract does not accept", async () => {
