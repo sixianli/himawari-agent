@@ -10,8 +10,8 @@ public struct CardBackground: ViewModifier {
     public func body(content: Content) -> some View {
         content
             .padding(padding)
-            .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .shadow(color: Palette.lift.color, radius: 5, x: 0, y: 2)
+            .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
+            .hmShadow(DesignTokens.Shadows.lift)
     }
 }
 
@@ -101,20 +101,20 @@ public struct GroupedRow<Leading: View, Trailing: View>: View {
         HStack(spacing: 14) {
             icon
                 .foregroundStyle(Color.hmText)
-                .frame(width: 28, height: 28)
+                .frame(width: DesignTokens.IconSize.listRow, height: DesignTokens.IconSize.listRow)
             title
-                .font(.system(size: 17))
+                .hmType(DesignTokens.TypeScale.body)
                 .foregroundStyle(Color.hmText)
                 .frame(maxWidth: .infinity, alignment: .leading)
             trailing
-                .font(.system(size: 15))
+                .hmType(DesignTokens.TypeScale.secondary)
                 .foregroundStyle(Color.hmMuted)
             if showsChevron {
-                Icon(.chevronRight, size: 16)
+                Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
                     .foregroundStyle(Color.hmMuted)
             }
         }
-        .frame(minHeight: 56)
+        .frame(minHeight: DesignTokens.Size.rowMinHeight)
         .contentShape(Rectangle())
     }
 }
@@ -137,21 +137,21 @@ public struct ToggleRow<Leading: View>: View {
             HStack(spacing: 14) {
                 icon
                     .foregroundStyle(Color.hmText)
-                    .frame(width: 28, height: 28)
+                    .frame(width: DesignTokens.IconSize.listRow, height: DesignTokens.IconSize.listRow)
                 VStack(alignment: .leading, spacing: 2) {
                     title
-                        .font(.system(size: 17))
+                        .hmType(DesignTokens.TypeScale.body)
                         .foregroundStyle(Color.hmText)
                     if let detail {
                         detail
-                            .font(.system(size: 13))
+                            .hmType(DesignTokens.TypeScale.caption)
                             .foregroundStyle(Color.hmMuted)
                     }
                 }
             }
         }
         .tint(Color.hmSunBright)
-        .frame(minHeight: 56)
+        .frame(minHeight: DesignTokens.Size.rowMinHeight)
     }
 }
 
@@ -168,7 +168,7 @@ public struct GroupedSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 10) {
             if let header {
                 header
-                    .font(.system(size: 15))
+                    .hmType(DesignTokens.TypeScale.secondary)
                     .foregroundStyle(Color.hmMuted)
                     .padding(.horizontal, 4)
             }
@@ -199,7 +199,7 @@ public struct EmptyStateView: View {
 
     public var body: some View {
         message
-            .font(.system(size: 17))
+            .hmType(DesignTokens.TypeScale.body)
             .foregroundStyle(Color.hmMuted)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 32)
@@ -216,9 +216,9 @@ public struct ScreenTitle: View {
 
     public var body: some View {
         title
-            .font(.system(size: 34, weight: .bold, design: .rounded))
+            .hmType(DesignTokens.TypeScale.title1, design: .rounded)
             .foregroundStyle(Color.hmText)
-            .frame(minHeight: 44, alignment: .leading)
+            .frame(minHeight: DesignTokens.TypeScale.title1.lineHeight, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
     }
 }

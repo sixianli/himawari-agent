@@ -18,11 +18,11 @@ public struct DeviceCredentials: Sendable {
 }
 
 public enum DeviceAPIError: Error, Sendable, Equatable {
-    case server(status: Int, code: String?)
+    case server(status: Int, code: String?, pairingCodeTtlSeconds: Int? = nil)
     case invalidResponse
 
     public var code: String? {
-        if case let .server(_, code) = self { return code }
+        if case let .server(_, code, _) = self { return code }
         return nil
     }
 
@@ -192,14 +192,15 @@ public final class DeviceHTTPClient: @unchecked Sendable {
         struct Inner: Decodable {
             let code: String
             let serverTime: String?
+            let pairingCodeTtlSeconds: Int?
         }
         let error: Inner
     }
 
     static func check(_ response: HTTPExchangeResponse) throws -> Data {
         if (200..<300).contains(response.status) { return response.body }
-        let code = (try? JSONDecoder().decode(ErrorBody.self, from: response.body))?.error.code
-        throw DeviceAPIError.server(status: response.status, code: code)
+        let body = (try? JSONDecoder().decode(ErrorBody.self, from: response.body))?.error
+        throw DeviceAPIError.server(status: response.status, code: body?.code, pairingCodeTtlSeconds: body?.pairingCodeTtlSeconds)
     }
 
     static func serverTime(_ body: Data) -> Date? {

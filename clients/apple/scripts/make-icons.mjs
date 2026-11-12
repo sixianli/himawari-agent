@@ -18,8 +18,10 @@ writeFileSync(
   `${JSON.stringify({ info: { author: "xcode", version: 1 } }, null, 2)}\n`,
 );
 
-for (const [name, strokeWidth] of Object.entries(icons)) {
-  const source = readFileSync(join(packageDir, "icons", "outline", `${name}.svg`), "utf8");
+for (const [key, strokeWidth] of Object.entries(icons)) {
+  const [sourceName, variant] = key.split("@");
+  const name = variant ? `${sourceName}-${variant}` : sourceName;
+  const source = readFileSync(join(packageDir, "icons", "outline", `${sourceName}.svg`), "utf8");
   if (!source.includes('stroke-width="2"') || !source.includes('stroke="currentColor"')) {
     throw new Error(`unexpected outline icon format: ${name}`);
   }

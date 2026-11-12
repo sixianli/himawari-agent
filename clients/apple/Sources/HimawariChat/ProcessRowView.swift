@@ -4,9 +4,33 @@ import SwiftUI
 
 struct ProcessRowView: View {
     let line: ProcessLine
-    @State private var expanded = false
+    let failed: Bool
+    @State private var showingSteps = false
 
     var body: some View {
+        content
+            .onChange(of: line) { old, new in
+                Self.reportHaptic(from: old, to: new, failed: failed)
+            }
+    }
+
+    static func reportHaptic(from old: ProcessLine, to new: ProcessLine, failed: Bool) {
+        switch (old, new) {
+        case (.waiting, .waiting):
+            break
+        case (_, .waiting):
+            Haptics.shared.report(.approvalNeeded, ownerViewingThisPage: true)
+        case (.finished, .finished), (.stopped, .stopped):
+            break
+        case let (_, .finished(_, seconds)):
+            Haptics.shared.report(failed ? .taskFailed : .longTaskFinished, ownerViewingThisPage: true, waitedSeconds: TimeInterval(seconds))
+        default:
+            break
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch line {
         case .thinking:
             ProcessLineLabel(icon: .bulb, text: L.text("process.thinking"), tint: .hmMuted, shimmering: true)
@@ -25,55 +49,98 @@ struct ProcessRowView: View {
         case let .waiting(step):
             ProcessLineLabel(icon: .handStop, text: step.title, tint: .hmSun, shimmering: false)
         case let .finished(steps, seconds):
-            summary(icon: .check, title: L.text("process.finished"), steps: steps, seconds: seconds)
+            summary(icon: .check, steps: steps, seconds: seconds)
         case let .stopped(steps, seconds):
-            summary(icon: .playerStop, title: L.text("process.stopped"), steps: steps, seconds: seconds)
+            summary(icon: .playerStop, steps: steps, seconds: seconds)
         }
     }
 
-    private func summary(icon: IconName, title: String, steps: [ProcessStep], seconds: Int) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.25)) { expanded.toggle() }
-            } label: {
-                HStack(spacing: 10) {
-                    Icon(icon, size: 24)
-                    Text(title)
-                        .font(.system(size: 17))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(L.format("process.seconds", seconds))
-                        .font(.system(size: 15))
-                        .monospacedDigit()
-                    if !steps.isEmpty {
-                        Icon(.chevronRight, size: 16)
-                            .rotationEffect(.degrees(expanded ? 90 : 0))
-                    }
+    private func summary(icon: IconName, steps: [ProcessStep], seconds: Int) -> some View {
+        Button {
+            showingSteps = true
+        } label: {
+            HStack(spacing: DesignTokens.ProcessRow.gap) {
+                Icon(icon, size: DesignTokens.IconSize.processRow)
+                Text(L.format("process.didThings", steps.count))
+                    .font(.system(size: DesignTokens.ProcessRow.fontSize))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(L.format("process.seconds", seconds))
+                    .hmType(DesignTokens.TypeScale.caption)
+                    .monospacedDigit()
+                if !steps.isEmpty {
+                    Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
                 }
-                .foregroundStyle(Color.hmMuted)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .disabled(steps.isEmpty)
-            .accessibilityHint(Text(L.text(expanded ? "process.collapse" : "process.expand")))
-            if expanded {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(steps) { step in
-                        ProcessLineLabel(
-                            icon: step.phase == .failed || step.phase == .unavailable ? .alertCircle : Self.icon(step.icon),
-                            text: step.title,
-                            tint: .hmMuted,
-                            shimmering: false
-                        )
-                    }
-                }
-                .padding(.leading, 34)
-                .transition(.opacity)
-            }
+            .foregroundStyle(Color.hmMuted)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(steps.isEmpty)
+        .accessibilityHint(Text(L.text("process.expand")))
+        .sheet(isPresented: $showingSteps) {
+            ProcessStepsSheet(steps: steps) { showingSteps = false }
+                .onAppear { Haptics.shared.report(.sheetSettled) }
+                .presentationDetents([.medium, .large])
+                .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+                .presentationBackground(Color.hmBackground)
         }
     }
 
     static func icon(_ icon: ProcessIcon) -> IconName {
         IconName(rawValue: icon.rawValue) ?? .tools
+    }
+}
+
+struct ProcessStepsSheet: View {
+    let steps: [ProcessStep]
+    let close: () -> Void
+
+    var body: some View {
+        VStack(spacing: 24) {
+            ZStack {
+                Text(L.text("process.sheet.title"))
+                    .hmType(DesignTokens.TypeScale.sheetTitle)
+                    .foregroundStyle(Color.hmText)
+                HStack {
+                    Button(action: close) {
+                        Icon(.x, size: DesignTokens.IconSize.glassButton)
+                            .foregroundStyle(Color.hmText)
+                            .frame(width: DesignTokens.Size.glassButton, height: DesignTokens.Size.glassButton)
+                            .background(Color.hmFill, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text(L.text("process.sheet.close")))
+                    Spacer()
+                }
+            }
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
+                        HStack(spacing: DesignTokens.Size.rowGap) {
+                            Icon(
+                                step.phase == .failed || step.phase == .unavailable ? .alertCircle : ProcessRowView.icon(step.icon),
+                                size: DesignTokens.IconSize.listRow
+                            )
+                            .foregroundStyle(Color.hmText)
+                            Text(step.title)
+                                .hmType(DesignTokens.TypeScale.body)
+                                .foregroundStyle(Color.hmText)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(.vertical, 11)
+                        .frame(minHeight: DesignTokens.Size.rowMinHeight)
+                        .overlay(alignment: .bottom) {
+                            if index < steps.count - 1 { RowSeparator() }
+                        }
+                    }
+                }
+                .padding(.horizontal, DesignTokens.Size.cardPaddingX)
+                .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
+                .hmShadow(DesignTokens.Shadows.lift)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .padding(EdgeInsets(top: DesignTokens.Size.sheetPaddingTop, leading: DesignTokens.Size.sheetPaddingHorizontal, bottom: 0, trailing: DesignTokens.Size.sheetPaddingHorizontal))
     }
 }
 
@@ -84,15 +151,15 @@ struct ProcessLineLabel: View {
     let shimmering: Bool
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Icon(icon, size: 24)
+        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.ProcessRow.gap) {
+            Icon(icon, size: DesignTokens.IconSize.processRow)
                 .foregroundStyle(tint)
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 6 }
             if shimmering {
                 ShimmerText(text: text)
             } else {
                 Text(text)
-                    .font(.system(size: 17))
+                    .font(.system(size: DesignTokens.ProcessRow.fontSize))
                     .foregroundStyle(tint)
             }
         }
@@ -112,7 +179,7 @@ struct ShimmerText: View {
             label.foregroundStyle(Color.hmMuted)
         } else {
             TimelineView(.animation) { context in
-                let cycle = 2.4
+                let cycle = Double(DesignTokens.ProcessRow.shimmerSeconds)
                 let progress = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: cycle) / cycle
                 let center = 1.3 - 2.4 * progress
                 label.foregroundStyle(
@@ -133,6 +200,6 @@ struct ShimmerText: View {
     }
 
     private var label: Text {
-        Text(text).font(.system(size: 17))
+        Text(text).hmType(DesignTokens.TypeScale.body)
     }
 }

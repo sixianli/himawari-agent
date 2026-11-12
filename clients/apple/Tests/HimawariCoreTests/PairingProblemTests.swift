@@ -4,7 +4,9 @@ import Testing
 
 @Suite struct PairingProblemTests {
     @Test func mapsServerPairingErrors() {
-        #expect(PairingProblem.from(DeviceAPIError.server(status: 410, code: "DEVICE_PAIRING_CODE_EXPIRED")) == .codeExpired)
+        #expect(PairingProblem.from(DeviceAPIError.server(status: 410, code: "DEVICE_PAIRING_CODE_EXPIRED")) == .codeExpired(ttlSeconds: nil))
+        #expect(PairingProblem.from(DeviceAPIError.server(status: 410, code: "DEVICE_PAIRING_CODE_EXPIRED", pairingCodeTtlSeconds: 600)) == .codeExpired(ttlSeconds: 600))
+        #expect(PairingProblem.from(DeviceAPIError.server(status: 410, code: "DEVICE_PAIRING_CODE_EXPIRED", pairingCodeTtlSeconds: 0)) == .codeExpired(ttlSeconds: nil))
         #expect(PairingProblem.from(DeviceAPIError.server(status: 409, code: "DEVICE_PAIRING_CODE_USED")) == .codeUsed)
         #expect(PairingProblem.from(DeviceAPIError.server(status: 404, code: "DEVICE_PAIRING_CODE_INVALID")) == .codeInvalid)
         #expect(PairingProblem.from(DeviceAPIError.server(status: 502, code: nil)) == .unreachable)

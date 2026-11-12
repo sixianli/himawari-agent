@@ -15,7 +15,7 @@ public struct SettingsRootView: View {
         ZStack(alignment: .topLeading) {
             EmptyStateView(Text(PlaceholderText.notConnected))
             GlassCircleButton(Text(PlaceholderText.close), action: close) {
-                Icon(.x, size: 24)
+                Icon(.x, size: DesignTokens.IconSize.glassButton)
             }
             .padding(16)
         }

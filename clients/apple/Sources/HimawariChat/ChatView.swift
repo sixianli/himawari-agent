@@ -27,16 +27,27 @@ public struct ChatView: View {
 
     public var body: some View {
         ZStack {
-            transcript
+            if threadId == nil {
+                NewChatPrompt()
+            } else {
+                transcript
+            }
             VStack(spacing: 0) {
                 header
+                if store.connection != .online, threadId != nil {
+                    OfflineBanner()
+                        .padding(.top, 2)
+                        .transition(.opacity)
+                }
                 Spacer(minLength: 0)
                 ChatInputBar(text: $draft, focused: $inputFocused, sending: creating, send: submit)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-                    .background(alignment: .bottom) { EdgeFade(.bottom, height: 130).ignoresSafeArea() }
+                    .padding(.horizontal, DesignTokens.Size.composerInsetX)
+                    .padding(.bottom, DesignTokens.Size.composerBottom)
+                    .background(alignment: .bottom) { EdgeFade(.bottom, height: DesignTokens.Size.fadeComposer).ignoresSafeArea() }
             }
+            .ignoresSafeArea(.container, edges: .bottom)
         }
+        .animation(.easeInOut(duration: 0.2), value: store.connection)
         .himawariScreenBackground()
         .task(id: threadId) {
             if let threadId {
@@ -54,22 +65,22 @@ public struct ChatView: View {
 
     private var header: some View {
         ZStack {
-            EdgeFade(.top, height: 110).ignoresSafeArea()
+            EdgeFade(.top, height: DesignTokens.Size.fadeTop).ignoresSafeArea()
             HStack {
                 GlassCircleButton(Text(L.text("chat.back")), action: close) {
-                    Icon(.chevronLeft, size: 24)
+                    Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
                 }
                 Spacer()
             }
             .padding(.horizontal, 16)
             Text(title)
-                .font(.system(size: 17, weight: .semibold))
+                .hmType(DesignTokens.TypeScale.navTitle)
                 .foregroundStyle(Color.hmText)
                 .lineLimit(1)
                 .padding(.horizontal, 76)
                 .accessibilityAddTraits(.isHeader)
         }
-        .frame(height: 64)
+        .frame(height: Layout.navBarHeight)
     }
 
     private var transcript: some View {
@@ -82,16 +93,16 @@ public struct ChatView: View {
                             MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
                         case let .process(runId):
                             if let line = store.processLine(for: runId, in: threadId) {
-                                ProcessRowView(line: line)
+                                ProcessRowView(line: line, failed: store.run(runId, in: threadId)?.status == "failed")
                                     .task(id: runId) { await store.loadExecution(runId, in: threadId) }
                             }
                         }
                     }
                     if let streaming = store.streamingText(in: threadId) {
-                        MessageRow(role: .agent, text: streaming, failed: false)
+                        StreamingAnswer(text: streaming)
                     }
                     ForEach(store.queuedMessages(in: threadId)) { item in
-                        QueuedMessageRow(item: item) {
+                        QueuedMessageRow(item: item, online: store.connection == .online) {
                             Task { await store.retry(item.id) }
                         } discard: {
                             Task { await store.discard(item.id) }
@@ -111,6 +122,7 @@ public struct ChatView: View {
     private func submit() {
         let text = draft
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !creating else { return }
+        Haptics.shared.report(.messageSent)
         if let threadId {
             draft = ""
             Task { await store.send(text, in: threadId) }
@@ -139,60 +151,131 @@ struct MessageRow: View {
     var body: some View {
         switch role {
         case .owner:
-            HStack {
-                Spacer(minLength: 60)
-                Text(text ?? "")
-                    .font(.system(size: 17))
-                    .lineSpacing(4)
-                    .foregroundStyle(Color.hmText)
-                    .padding(.vertical, 14)
-                    .padding(.horizontal, 18)
-                    .background(Color.hmFill, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-                    .textSelection(.enabled)
-            }
+            OwnerBubble(text: text ?? "")
         case .agent:
             Text(text ?? "")
-                .font(.himawari(18, weight: .medium))
-                .lineSpacing(8)
-                .foregroundStyle(failed ? Color.hmDanger : Color.hmText)
+                .font(.himawari(DesignTokens.TypeScale.answer.size, weight: .medium))
+                .lineSpacing(DesignTokens.TypeScale.answer.lineSpacing)
+                .foregroundStyle(failed ? Color.hmMuted : Color.hmText)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
         case .system:
             Text(text ?? "")
-                .font(.system(size: 13))
+                .hmType(DesignTokens.TypeScale.caption)
                 .foregroundStyle(Color.hmMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
 
+struct OwnerBubble: View {
+    let text: String
+
+    var body: some View {
+        HStack {
+            Spacer(minLength: 0)
+            Text(text)
+                .hmType(DesignTokens.TypeScale.bubble)
+                .foregroundStyle(Color.hmText)
+                .padding(.vertical, 14)
+                .padding(.horizontal, 18)
+                .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.bubble, style: .continuous))
+                .frame(maxWidth: DesignTokens.Size.bubbleMaxWidth, alignment: .trailing)
+                .textSelection(.enabled)
+        }
+    }
+}
+
+struct StreamingAnswer: View {
+    let text: String
+
+    var body: some View {
+        (Text(text)
+            .font(.himawari(DesignTokens.TypeScale.answer.size, weight: .medium))
+            .foregroundStyle(Color.hmText)
+            + Text(" ")
+            + Text(Image(size: CGSize(width: DesignTokens.Size.streamingDot, height: DesignTokens.Size.streamingDot)) { context in
+                context.fill(Path(ellipseIn: CGRect(x: 0, y: 0, width: DesignTokens.Size.streamingDot, height: DesignTokens.Size.streamingDot)), with: .color(DesignTokens.Colors.streamingDot.color))
+            }))
+            .lineSpacing(DesignTokens.TypeScale.answer.lineSpacing)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct NewChatPrompt: View {
+    var body: some View {
+        VStack(spacing: 18) {
+            SunflowerMark()
+                .frame(width: DesignTokens.Size.emptyMarkNewChat, height: DesignTokens.Size.emptyMarkNewChat)
+            Text(L.text("chat.new.prompt"))
+                .hmType(DesignTokens.TypeScale.emptyTitleNewChat)
+                .foregroundStyle(Color.hmText)
+        }
+        .padding(.bottom, DesignTokens.Size.fadeTabBar - 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            RadialGradient(colors: [Color.hmGlow, .clear], center: .center, startRadius: 0, endRadius: Layout.newChatGlowRadius / 2)
+                .ignoresSafeArea()
+        }
+    }
+}
+
+struct OfflineBanner: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(Color.hmMuted)
+                .frame(width: Layout.offlineDotSize, height: Layout.offlineDotSize)
+            Text(L.text("chat.offline"))
+                .hmType(DesignTokens.TypeScale.offlineBanner)
+                .foregroundStyle(Color.hmText)
+        }
+        .padding(.vertical, DesignTokens.Size.offlineBannerPaddingVertical)
+        .padding(.horizontal, DesignTokens.Size.offlineBannerPaddingHorizontal)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.offlineBanner, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct QueuedMessageRow: View {
     let item: OutboxItem
+    let online: Bool
     let retry: () -> Void
     let discard: () -> Void
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            MessageRow(role: .owner, text: item.message.text, failed: false)
-                .opacity(item.state == .failed ? 1 : 0.6)
-            switch item.state {
-            case .failed:
-                HStack(spacing: 4) {
-                    Text(L.text("chat.queued.failed"))
-                        .foregroundStyle(Color.hmDanger)
-                    Button(L.text("chat.queued.retry"), action: retry)
-                        .foregroundStyle(Color.hmSun)
-                        .frame(minHeight: 44)
-                    Button(L.text("chat.queued.discard"), action: discard)
-                        .foregroundStyle(Color.hmSun)
-                        .frame(minHeight: 44)
+            OwnerBubble(text: item.message.text)
+            Group {
+                switch item.state {
+                case .failed:
+                    HStack(spacing: 12) {
+                        Text(L.text("chat.queued.failed"))
+                            .foregroundStyle(Color.hmDanger)
+                        Button(L.text("chat.queued.retry"), action: retry)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Color.hmSun)
+                        Button(L.text("chat.queued.discard"), action: discard)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Color.hmSun)
+                    }
+                case .waiting where !online:
+                    HStack(spacing: 12) {
+                        Text(L.text("chat.queued.offline"))
+                            .foregroundStyle(Color.hmDanger)
+                        Button(L.text("chat.queued.retryNow"), action: retry)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Color.hmSun)
+                    }
+                case .waiting, .sending:
+                    Text(L.text("chat.queued.sending"))
+                        .foregroundStyle(Color.hmMuted)
                 }
-                .font(.system(size: 13))
-            case .waiting, .sending:
-                Text(L.text("chat.queued.sending"))
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.hmMuted)
             }
+            .hmType(DesignTokens.TypeScale.caption)
+            .buttonStyle(.plain)
+            .frame(minHeight: Layout.minimumTapTarget)
+            .padding(.trailing, 6)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
@@ -209,28 +292,32 @@ struct ChatInputBar: View {
     }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 6) {
+        HStack(alignment: .bottom, spacing: DesignTokens.Size.composerGap) {
             TextField(L.text("chat.input.placeholder"), text: $text, axis: .vertical)
-                .font(.system(size: 17))
+                .hmType(DesignTokens.TypeScale.body)
                 .foregroundStyle(Color.hmText)
                 .lineLimit(1...6)
                 .focused(focused)
                 .submitLabel(.send)
                 .onSubmit(send)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 12)
-                .frame(minHeight: 46)
-            Button(action: send) {
-                Icon(.arrowUp, size: 22)
-                    .foregroundStyle(Color.hmOnText)
-                    .frame(width: 46, height: 46)
-                    .background(canSend ? Color.hmSpeak : Color.hmFillStrong, in: Circle())
+                .padding(.horizontal, 6 + DesignTokens.Size.composerPadding)
+                .padding(.vertical, (DesignTokens.Size.composerHeight - DesignTokens.Size.composerButton) / 2 + 12)
+                .frame(minHeight: DesignTokens.Size.composerHeight)
+            if canSend {
+                Button(action: send) {
+                    Icon(.arrowUp, size: DesignTokens.IconSize.glassButton)
+                        .foregroundStyle(Color.hmOnText)
+                        .frame(width: DesignTokens.Size.composerButton, height: DesignTokens.Size.composerButton)
+                        .background(Color.hmSpeak, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .padding((DesignTokens.Size.composerHeight - DesignTokens.Size.composerButton) / 2)
+                .padding(.trailing, DesignTokens.Size.composerPadding - (DesignTokens.Size.composerHeight - DesignTokens.Size.composerButton) / 2)
+                .accessibilityLabel(Text(L.text("chat.send")))
+                .transition(.scale.combined(with: .opacity))
             }
-            .buttonStyle(.plain)
-            .disabled(!canSend)
-            .accessibilityLabel(Text(L.text("chat.send")))
         }
-        .padding(8)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 31, style: .continuous))
+        .animation(.easeInOut(duration: 0.15), value: canSend)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.composer, style: .continuous))
     }
 }

@@ -65,6 +65,42 @@ import Testing
         #expect(texts["ref149"] == "t149")
     }
 
+    @Test func textsSendDeferredRefsAgainAheadOfTheRestInOrder() async throws {
+        let refs = (0..<101).map { "ref\($0)" }
+        func reply(_ indexes: [Int], deferred: [Int]) -> HTTPExchangeResponse {
+            var items: [String: Any] = [:]
+            for index in indexes { items["ref\(index)"] = ["text": "t\(index)", "contentType": "text/plain", "dataClassification": "personal"] }
+            let object: [String: Any] = ["items": items, "deferred": deferred.map { "ref\($0)" }]
+            return HTTPExchangeResponse(status: 200, body: try! JSONSerialization.data(withJSONObject: object))
+        }
+        let exchange = RecordingExchange([
+            reply(Array(0..<40), deferred: Array(40..<100)),
+            reply(Array(40..<101), deferred: []),
+        ])
+        let texts = try await api(exchange).texts(for: refs)
+        #expect(texts.count == 101)
+        #expect(exchange.requests.count == 2)
+        let firstBody = try body(exchange.requests[0])
+        let secondBody = try body(exchange.requests[1])
+        #expect((firstBody["refs"] as? [String])?.count == 100)
+        #expect(secondBody["refs"] as? [String] == (40..<101).map { "ref\($0)" })
+    }
+
+    @Test func textsStopWhenTheServerDefersEveryRef() async throws {
+        let object: [String: Any] = ["items": [String: Any](), "deferred": ["a", "b"]]
+        let exchange = RecordingExchange([HTTPExchangeResponse(status: 200, body: try JSONSerialization.data(withJSONObject: object))])
+        await #expect(throws: DeviceAPIError.invalidResponse) {
+            _ = try await api(exchange).texts(for: ["a", "b"])
+        }
+    }
+
+    @Test func expiredPairingCodeCarriesTheServerTtl() throws {
+        let body = Data(#"{"error":{"code":"DEVICE_PAIRING_CODE_EXPIRED","pairingCodeTtlSeconds":600}}"#.utf8)
+        #expect(throws: DeviceAPIError.server(status: 410, code: "DEVICE_PAIRING_CODE_EXPIRED", pairingCodeTtlSeconds: 600)) {
+            _ = try DeviceHTTPClient.check(HTTPExchangeResponse(status: 410, body: body))
+        }
+    }
+
     @Test func textsWithNoRefsSendsNothing() async throws {
         let exchange = RecordingExchange([])
         #expect(try await api(exchange).texts(for: []).isEmpty)

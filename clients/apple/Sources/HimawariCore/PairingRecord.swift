@@ -18,7 +18,7 @@ public struct PairingRecord: Codable, Sendable, Equatable {
 
 public enum PairingProblem: Sendable, Equatable {
     case unreadableCode
-    case codeExpired
+    case codeExpired(ttlSeconds: Int?)
     case codeUsed
     case codeInvalid
     case unreachable
@@ -30,9 +30,9 @@ public enum PairingProblem: Sendable, Equatable {
             return parse == .unsupportedVersion ? .codeInvalid : .unreadableCode
         }
         if error is DeviceKeyError { return .keysUnavailable }
-        if let api = error as? DeviceAPIError, case let .server(status, code) = api {
+        if let api = error as? DeviceAPIError, case let .server(status, code, ttl) = api {
             switch code {
-            case "DEVICE_PAIRING_CODE_EXPIRED": return .codeExpired
+            case "DEVICE_PAIRING_CODE_EXPIRED": return .codeExpired(ttlSeconds: ttl.flatMap { $0 > 0 ? $0 : nil })
             case "DEVICE_PAIRING_CODE_USED": return .codeUsed
             case "DEVICE_PAIRING_CODE_INVALID", "DEVICE_PAIRING_REQUEST_INVALID": return .codeInvalid
             default: return status >= 500 ? .unreachable : .codeInvalid

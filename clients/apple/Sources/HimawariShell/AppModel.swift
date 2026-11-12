@@ -1,6 +1,7 @@
 import Foundation
 import HimawariChat
 import HimawariCore
+import HimawariDesign
 import Observation
 #if canImport(UIKit)
 import UIKit
@@ -27,6 +28,7 @@ public final class AppModel {
     @ObservationIgnored private var store: FileLocalStore?
     @ObservationIgnored private var waiting: Task<Void, Never>?
     @ObservationIgnored private let heartbeat = HeartbeatSetting()
+    @ObservationIgnored private var lastScanned: String?
 
     private static let recordAccount = "pairing-record"
 
@@ -71,6 +73,7 @@ public final class AppModel {
 
     public func pair(scanned text: String) {
         guard phase != .submitting else { return }
+        lastScanned = text
         phase = .submitting
         Task {
             do {
@@ -95,6 +98,7 @@ public final class AppModel {
                 try save(record)
                 use(record)
                 if device.status == .active {
+                    Haptics.shared.report(.pairingSucceeded)
                     activate()
                 } else {
                     phase = .waitingForConfirmation(number: number)
@@ -109,7 +113,25 @@ public final class AppModel {
     }
 
     public func cancelPairing() {
+        lastScanned = nil
         forget(problem: nil)
+    }
+
+    public func retryPairing() {
+        guard let lastScanned else {
+            phase = .unpaired(nil)
+            return
+        }
+        pair(scanned: lastScanned)
+    }
+
+    public func dismissProblem() {
+        lastScanned = nil
+        phase = .unpaired(nil)
+    }
+
+    public var deviceDisplayName: String {
+        Self.deviceName
     }
 
     private func waitForConfirmation() {
@@ -121,6 +143,7 @@ public final class AppModel {
                 do {
                     configuration = try await api.configuration()
                     try? save(record.map { var updated = $0; updated.status = .active; return updated })
+                    Haptics.shared.report(.pairingSucceeded)
                     activate()
                     return
                 } catch let error as DeviceAPIError where error.isRevoked {

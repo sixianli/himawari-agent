@@ -31,8 +31,8 @@ public struct FloatingTabBar<ID: Hashable>: View {
                     selection = tab.id
                 } label: {
                     VStack(spacing: 1) {
-                        tab.icon.frame(width: 26, height: 26)
-                        tab.title.font(.system(size: 11, weight: .semibold))
+                        tab.icon.frame(width: DesignTokens.IconSize.tab, height: DesignTokens.IconSize.tab)
+                        tab.title.hmType(DesignTokens.TypeScale.tabLabel)
                     }
                     .foregroundStyle(tab.id == selection ? Color.hmSun : Color.hmText)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -44,11 +44,11 @@ public struct FloatingTabBar<ID: Hashable>: View {
                     .overlay(alignment: .top) {
                         if let badge = tab.badge, badge > 0 {
                             Text(badge, format: .number)
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .hmType(DesignTokens.TypeScale.badge, design: .rounded)
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 5)
-                                .frame(minWidth: 18, minHeight: 18)
-                                .background(Color.hmBadge, in: Capsule())
+                                .frame(minWidth: DesignTokens.Size.badge, minHeight: DesignTokens.Size.badge)
+                                .background(DesignTokens.Colors.badge.color, in: Capsule())
                                 .offset(x: 16, y: 4)
                         }
                     }
@@ -60,7 +60,7 @@ public struct FloatingTabBar<ID: Hashable>: View {
             }
         }
         .padding(4)
-        .frame(height: 64)
+        .frame(height: DesignTokens.Size.tabBarHeight)
         .glassEffect(.regular, in: Capsule())
         .animation(.snappy(duration: 0.25), value: selection)
     }
@@ -78,8 +78,8 @@ public struct SunflowerButton: View {
     public var body: some View {
         Button(action: action) {
             SunflowerMark(detail: .compact)
-                .frame(width: 46, height: 46)
-                .frame(width: 64, height: 64)
+                .frame(width: DesignTokens.Size.composerButton, height: DesignTokens.Size.composerButton)
+                .frame(width: DesignTokens.Size.speakButton, height: DesignTokens.Size.speakButton)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)

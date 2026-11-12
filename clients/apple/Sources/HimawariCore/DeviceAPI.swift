@@ -108,13 +108,23 @@ public final class DeviceAPI: Sendable {
         let unique = refs.filter { seen.insert($0).inserted }
         struct Body: Encodable { let refs: [String] }
         struct Item: Decodable { let text: String }
-        struct Result: Decodable { let items: [String: Item?] }
-        for start in stride(from: 0, to: unique.count, by: Self.textBatchLimit) {
-            let batch = Array(unique[start..<min(start + Self.textBatchLimit, unique.count)])
+        struct Result: Decodable {
+            let items: [String: Item?]
+            let deferred: [String]?
+        }
+        var pending = unique[...]
+        while !pending.isEmpty {
+            let batch = Array(pending.prefix(Self.textBatchLimit))
+            pending = pending.dropFirst(batch.count)
             let data = try await http.send(DeviceRequest(method: "POST", path: "payloads/text", body: try JSONEncoder().encode(Body(refs: batch))))
-            for (ref, item) in try decode(Result.self, data).items {
+            let page = try decode(Result.self, data)
+            for (ref, item) in page.items {
                 if let item { result[ref] = item.text }
             }
+            let requested = Set(batch)
+            let deferred = (page.deferred ?? []).filter { requested.contains($0) && page.items[$0] == nil }
+            guard deferred.count < batch.count else { throw DeviceAPIError.invalidResponse }
+            pending = deferred[...] + pending
         }
         return result
     }

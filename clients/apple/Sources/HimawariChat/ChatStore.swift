@@ -246,6 +246,7 @@ public final class ChatStore {
 
     public func retry(_ messageId: String) async {
         await outbox.retry(messageId)
+        if connection != .online { events.reconnectNow() }
         await flush()
     }
 

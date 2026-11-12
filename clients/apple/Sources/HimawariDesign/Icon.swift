@@ -4,6 +4,7 @@ import SwiftUI
 public enum IconName: String, CaseIterable, Sendable {
     case affiliate
     case alertCircle = "alert-circle"
+    case alertCircleLarge = "alert-circle-large"
     case arrowUp = "arrow-up"
     case bell
     case bulb
@@ -45,6 +46,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case scan
     case search
     case server
+    case serverLarge = "server-large"
     case stack2 = "stack-2"
     case sun
     case table

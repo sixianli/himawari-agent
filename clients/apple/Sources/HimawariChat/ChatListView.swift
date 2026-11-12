@@ -17,8 +17,7 @@ public struct ChatListView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     ScreenTitle(Text(L.text("chat.title")))
                     if store.threads.isEmpty && !store.loadingThreads {
-                        EmptyStateView(Text(L.text("chat.empty")))
-                            .frame(minHeight: 300)
+                        ChatListEmptyState()
                     }
                     LazyVStack(spacing: 0) {
                         ForEach(Array(store.threads.enumerated()), id: \.element.id) { index, thread in
@@ -45,7 +44,7 @@ public struct ChatListView: View {
             .refreshable { await store.refreshThreads() }
 
             GlassCircleButton(Text(L.text("chat.new")), action: { open(nil) }) {
-                Icon(.edit, size: 24)
+                Icon(.plus, size: DesignTokens.IconSize.glassButton)
             }
             .padding(.trailing, 16)
             .padding(.top, 10)
@@ -64,18 +63,18 @@ struct ChatListRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(title)
-                    .font(.system(size: 17, weight: .semibold))
+                    .hmType(DesignTokens.TypeScale.navTitle)
                     .foregroundStyle(Color.hmText)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 Text(time)
-                    .font(.system(size: 13))
+                    .hmType(DesignTokens.TypeScale.caption)
                     .foregroundStyle(Color.hmMuted)
                     .fixedSize()
             }
             if let snippet, !snippet.isEmpty {
                 Text(snippet)
-                    .font(.system(size: 15))
+                    .hmType(DesignTokens.TypeScale.secondary)
                     .foregroundStyle(Color.hmMuted)
                     .lineLimit(1)
             }
@@ -86,5 +85,23 @@ struct ChatListRow: View {
             if showsSeparator { RowSeparator() }
         }
         .contentShape(Rectangle())
+    }
+}
+
+struct ChatListEmptyState: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            SunflowerMark()
+                .frame(width: DesignTokens.Size.emptyMark, height: DesignTokens.Size.emptyMark)
+                .opacity(DesignTokens.Opacity.emptyMark)
+            Text(L.text("chat.empty"))
+                .hmType(DesignTokens.TypeScale.emptyTitle)
+                .foregroundStyle(Color.hmText)
+            Text(L.text("chat.empty.hint"))
+                .hmType(DesignTokens.TypeScale.secondary)
+                .foregroundStyle(Color.hmMuted)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, minHeight: Layout.emptyStateMinHeight)
     }
 }

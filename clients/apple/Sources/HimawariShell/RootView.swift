@@ -53,7 +53,7 @@ struct MainTabsView: View {
                 .transition(.move(edge: .trailing))
             } else {
                 content
-                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 80) }
+                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: Layout.tabBarInset) }
                     .overlay(alignment: .bottom) { bars }
                     .transition(.opacity)
             }
@@ -79,14 +79,14 @@ struct MainTabsView: View {
 
     private var bars: some View {
         ZStack(alignment: .bottom) {
-            EdgeFade(.bottom, height: 140).ignoresSafeArea()
+            EdgeFade(.bottom, height: DesignTokens.Size.fadeTabBar).ignoresSafeArea()
             HStack(spacing: 14) {
                 FloatingTabBar(selection: $tab, tabs: [
                     FloatingTab(id: MainTab.today, title: Text(L.text("tab.today"))) { Icon(.sun) },
                     FloatingTab(id: MainTab.chats, title: Text(L.text("tab.chats"))) { Icon(.message) },
                     FloatingTab(id: MainTab.memory, title: Text(L.text("tab.memory"))) { Icon(.affiliate) },
                 ])
-                .frame(maxWidth: 282)
+                .frame(maxWidth: DesignTokens.Size.tabBarWidth)
                 Spacer(minLength: 0)
                 SunflowerButton(Text(L.text("talk"))) {
                     withAnimation(.snappy) { openThread = OpenThread(threadId: nil) }
@@ -105,7 +105,7 @@ struct TodayView: View {
         ZStack(alignment: .topTrailing) {
             EmptyStateView(Text(L.text("placeholder.notConnected")))
             GlassCircleButton(Text(L.text("settings")), action: openSettings) {
-                Icon(.user, size: 24)
+                Icon(.user, size: DesignTokens.IconSize.glassButton)
             }
             .padding(.trailing, 16)
             .padding(.top, 10)

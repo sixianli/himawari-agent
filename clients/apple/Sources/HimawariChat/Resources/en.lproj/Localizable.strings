@@ -13,8 +13,13 @@
 "common.ok" = "OK";
 "time.yesterday" = "Yesterday";
 "process.thinking" = "Thinking";
-"process.finished" = "Done";
-"process.stopped" = "Stopped";
 "process.seconds" = "%d s";
 "process.expand" = "Show each step";
-"process.collapse" = "Hide steps";
+"process.didThings" = "Did %d things";
+"process.sheet.title" = "What it did";
+"process.sheet.close" = "Close";
+"chat.empty.hint" = "Whatever is on your mind, just say it";
+"chat.new.prompt" = "Go ahead, I’m listening";
+"chat.offline" = "Not connected. What you write will be sent once connected";
+"chat.queued.offline" = "Not sent. Will resend once connected";
+"chat.queued.retryNow" = "Resend now";

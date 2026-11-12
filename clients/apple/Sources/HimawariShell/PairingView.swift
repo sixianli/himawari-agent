@@ -10,43 +10,87 @@ struct PairingView: View {
     @State private var scanning = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 40)
-            SunflowerMark(detail: .full, growing: model.phase == .submitting)
-                .frame(width: 140, height: 140)
-                .padding(.bottom, 44)
-            Text(L.text("pairing.hello"))
-                .font(.system(size: 34, weight: .bold))
-                .foregroundStyle(Color.hmText)
-                .multilineTextAlignment(.center)
-            Text(L.text("pairing.subtitle"))
-                .font(.system(size: 17))
-                .foregroundStyle(Color.hmMuted)
-                .multilineTextAlignment(.center)
-                .padding(.top, 10)
-            steps
-                .padding(.top, 40)
-            statusMessage
-                .padding(.top, 20)
-            Spacer(minLength: 24)
-            action
-        }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background {
-            ZStack {
-                Color.hmBackground
-                RadialGradient(colors: [Color.hmGlow, .clear], center: UnitPoint(x: 0.5, y: 0.22), startRadius: 0, endRadius: 320)
+        content
+            .padding(.horizontal, Layout.pairingPaddingX)
+            .padding(.bottom, Layout.pairingPaddingBottom)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background { PairingGlow() }
+            .animation(.easeInOut(duration: 0.25), value: model.phase)
+            .fullScreenCover(isPresented: $scanning) {
+                PairingScanner { text in
+                    scanning = false
+                    model.pair(scanned: text)
+                } cancel: {
+                    scanning = false
+                }
             }
-            .ignoresSafeArea()
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch model.phase {
+        case let .waitingForConfirmation(number):
+            waiting(number)
+        case let .unpaired(problem?) where problem == .unreachable:
+            problemPage(icon: .serverLarge, tint: .hmMuted, problem: problem) {
+                VStack(spacing: 6) {
+                    Button(L.text("pairing.retry")) { model.retryPairing() }
+                        .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+                    linkButton(L.text("pairing.cancel")) { model.cancelPairing() }
+                }
+            }
+        case let .unpaired(problem?) where problem != .removed:
+            problemPage(icon: .alertCircleLarge, tint: .hmDanger, problem: problem) {
+                scanButton(L.text("pairing.rescan"))
+            }
+        case let .unpaired(problem):
+            home(removed: problem == .removed)
+        case .submitting:
+            home(removed: false)
+        case .active:
+            EmptyView()
         }
-        .fullScreenCover(isPresented: $scanning) {
-            PairingScanner { text in
-                scanning = false
-                model.pair(scanned: text)
-            } cancel: {
-                scanning = false
+    }
+
+    private func home(removed: Bool) -> some View {
+        VStack(spacing: 0) {
+            VStack(spacing: Layout.pairingHomeGap) {
+                if removed {
+                    Text(L.text("pairing.problem.removed"))
+                        .hmType(DesignTokens.TypeScale.secondary)
+                        .foregroundStyle(Color.hmText)
+                        .multilineTextAlignment(.center)
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 18)
+                        .frame(maxWidth: .infinity)
+                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Layout.pairingBannerRadius, style: .continuous))
+                }
+                SunflowerMark(detail: .full, growing: model.phase == .submitting)
+                    .frame(width: DesignTokens.Size.pairingMark, height: DesignTokens.Size.pairingMark)
+                VStack(spacing: 10) {
+                    Text(L.text("pairing.hello"))
+                        .font(.system(size: removed ? Layout.pairingRemovedTitleSize : DesignTokens.TypeScale.title1.size, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.hmText)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Text(L.text("pairing.subtitle"))
+                        .hmType(DesignTokens.TypeScale.body)
+                        .foregroundStyle(Color.hmMuted)
+                        .multilineTextAlignment(.center)
+                }
+                if !removed {
+                    steps
+                }
+            }
+            .padding(.top, removed ? Layout.pairingRemovedTop : Layout.pairingHomeTop)
+            Spacer(minLength: 24)
+            if model.phase == .submitting {
+                Button {} label: { ProgressView().tint(Color.hmOnText) }
+                    .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+                    .disabled(true)
+            } else {
+                scanButton(L.text("pairing.scan"))
             }
         }
     }
@@ -54,67 +98,101 @@ struct PairingView: View {
     private var steps: some View {
         VStack(spacing: 0) {
             ForEach(1...3, id: \.self) { index in
-                HStack(spacing: 24) {
+                HStack(spacing: DesignTokens.Size.rowGap) {
                     Text(index, format: .number)
-                        .font(.rounded(17, weight: .bold))
+                        .font(.rounded(DesignTokens.TypeScale.body.size, weight: .bold))
                         .foregroundStyle(Color.hmSun)
-                        .frame(width: 16, alignment: .leading)
+                        .frame(width: Layout.pairingStepNumberWidth, alignment: .leading)
                     Text(L.text("pairing.step\(index)"))
-                        .font(.system(size: 17))
+                        .hmType(DesignTokens.TypeScale.body)
                         .foregroundStyle(Color.hmText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(minHeight: 56)
+                .frame(minHeight: Layout.pairingStepRowHeight)
                 if index < 3 { RowSeparator() }
             }
         }
-        .himawariCard(padding: EdgeInsets(top: 0, leading: 18, bottom: 0, trailing: 18))
+        .padding(.horizontal, 18)
+        .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: Layout.pairingCardRadius, style: .continuous))
+        .hmShadow(DesignTokens.Shadows.lift)
     }
 
-    @ViewBuilder
-    private var statusMessage: some View {
-        switch model.phase {
-        case let .unpaired(problem?):
-            Text(L.text("pairing.problem.\(Self.key(problem))"))
-                .font(.system(size: 15))
-                .foregroundStyle(Color.hmDanger)
-                .multilineTextAlignment(.center)
-        case let .waitingForConfirmation(number):
-            VStack(spacing: 6) {
-                Text(L.text("pairing.waiting"))
-                    .font(.system(size: 15))
-                    .foregroundStyle(Color.hmMuted)
-                Text(number)
-                    .font(.rounded(34, weight: .bold))
-                    .foregroundStyle(Color.hmText)
-                    .accessibilityLabel(Text(number.replacingOccurrences(of: " ", with: "")))
-            }
-        default:
-            EmptyView()
-        }
-    }
-
-    @ViewBuilder
-    private var action: some View {
-        switch model.phase {
-        case .waitingForConfirmation:
-            Button(L.text("pairing.cancel")) { model.cancelPairing() }
-                .buttonStyle(CapsuleButtonStyle(.secondary, height: 56, fontSize: 17))
-        case .submitting:
-            Button {} label: { ProgressView() }
-                .buttonStyle(CapsuleButtonStyle(.primary, height: 56, fontSize: 17))
-                .disabled(true)
-        default:
-            Button {
-                scanning = true
-            } label: {
-                HStack(spacing: 8) {
-                    Icon(.scan, size: 22)
-                    Text(L.text("pairing.scan"))
+    private func waiting(_ number: String) -> some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 30) {
+                SunflowerMark(detail: .full, growing: true)
+                    .frame(width: Layout.pairingWaitingMarkSize, height: Layout.pairingWaitingMarkSize)
+                VStack(spacing: 12) {
+                    Text(number)
+                        .hmType(DesignTokens.TypeScale.pairingNumber)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.hmText)
+                        .accessibilityLabel(Text(number.replacingOccurrences(of: " ", with: "")))
+                    Text(L.text("pairing.waiting"))
+                        .font(.himawari(Layout.pairingWaitingTextSize, weight: .semibold))
+                        .lineSpacing(Layout.pairingWaitingTextSize * 0.3)
+                        .foregroundStyle(Color.hmText)
+                        .multilineTextAlignment(.center)
                 }
+                Text(L.format("pairing.waitingDevice", model.deviceDisplayName))
+                    .hmType(DesignTokens.TypeScale.secondary)
+                    .foregroundStyle(Color.hmMuted)
             }
-            .buttonStyle(CapsuleButtonStyle(.primary, height: 56, fontSize: 18))
+            .padding(.top, Layout.pairingWaitingTop)
+            Spacer(minLength: 24)
+            linkButton(L.text("pairing.cancel")) { model.cancelPairing() }
         }
+    }
+
+    private func problemPage<Actions: View>(icon: IconName, tint: Color, problem: PairingProblem, @ViewBuilder actions: () -> Actions) -> some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 22) {
+                Icon(icon, size: Layout.pairingProblemIconSize)
+                    .foregroundStyle(tint)
+                Text(L.text("pairing.problem.\(Self.key(problem)).title"))
+                    .font(.himawari(Layout.pairingProblemTitleSize, weight: .semibold))
+                    .foregroundStyle(Color.hmText)
+                    .multilineTextAlignment(.center)
+                Text(Self.detail(problem))
+                    .font(DesignTokens.TypeScale.body.font)
+                    .lineSpacing(DesignTokens.TypeScale.body.size * 0.3)
+                    .foregroundStyle(Color.hmMuted)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.top, Layout.pairingProblemTop)
+            Spacer(minLength: 24)
+            actions()
+        }
+    }
+
+    private func scanButton(_ title: String) -> some View {
+        Button {
+            model.dismissProblem()
+            scanning = true
+        } label: {
+            HStack(spacing: 10) {
+                Icon(.scan, size: DesignTokens.IconSize.glassButton)
+                Text(title)
+            }
+        }
+        .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+    }
+
+    private func linkButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .hmType(DesignTokens.TypeScale.body)
+            .foregroundStyle(Color.hmSun)
+            .frame(minHeight: Layout.minimumTapTarget)
+            .buttonStyle(.plain)
+    }
+
+    static func detail(_ problem: PairingProblem) -> String {
+        let plain = L.text("pairing.problem.\(key(problem))")
+        guard case let .codeExpired(ttl?) = problem else { return plain }
+        let limit = ttl % 60 == 0
+            ? L.format("pairing.problem.expired.ttlMinutes", ttl / 60)
+            : L.format("pairing.problem.expired.ttlSeconds", ttl)
+        return limit + plain
     }
 
     static func key(_ problem: PairingProblem) -> String {
@@ -130,6 +208,23 @@ struct PairingView: View {
     }
 }
 
+struct PairingGlow: View {
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                Color.hmBackground
+                RadialGradient(
+                    colors: [Color.hmGlow, .clear],
+                    center: UnitPoint(x: 0.5, y: Layout.pairingGlowCenterY / max(proxy.size.height, 1)),
+                    startRadius: 0,
+                    endRadius: Layout.pairingGlowRadius
+                )
+            }
+        }
+        .ignoresSafeArea()
+    }
+}
+
 struct PairingScanner: View {
     let found: (String) -> Void
     let cancel: () -> Void
@@ -139,6 +234,7 @@ struct PairingScanner: View {
             #if canImport(VisionKit) && os(iOS)
             if DataScannerViewController.isSupported && DataScannerViewController.isAvailable {
                 CodeScanner(found: found).ignoresSafeArea()
+                ScannerFrame(caption: Text(L.text("pairing.aim")))
             } else {
                 EmptyStateView(Text(L.text("pairing.cameraUnavailable")))
                     .himawariScreenBackground()
@@ -146,10 +242,9 @@ struct PairingScanner: View {
             #else
             EmptyStateView(Text(L.text("pairing.cameraUnavailable")))
             #endif
-            GlassCircleButton(Text(L.text("common.close")), action: cancel) {
-                Icon(.x, size: 24)
-            }
-            .padding(16)
+            ScannerCloseButton(Text(L.text("common.close")), action: cancel)
+                .padding(.leading, DesignTokens.Size.pagePaddingX)
+                .padding(.top, DesignTokens.Size.navTop - Layout.prototypeSafeAreaTop)
         }
     }
 }
@@ -168,7 +263,7 @@ struct CodeScanner: UIViewControllerRepresentable {
             qualityLevel: .balanced,
             recognizesMultipleItems: false,
             isHighFrameRateTrackingEnabled: false,
-            isHighlightingEnabled: true
+            isHighlightingEnabled: false
         )
         controller.delegate = context.coordinator
         return controller

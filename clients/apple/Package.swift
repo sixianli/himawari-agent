@@ -23,7 +23,7 @@ let interfaceTargets: [Target] = []
 let interfaceProducts: [Product] = []
 #else
 let interfaceTargets: [Target] = [
-    .target(name: "HimawariDesign", resources: [.process("Resources")]),
+    .target(name: "HimawariDesign", dependencies: ["HimawariCore"], resources: [.process("Resources")]),
     .target(name: "HimawariChat", dependencies: ["HimawariCore", "HimawariDesign"], resources: [.process("Resources")]),
     .target(name: "HimawariManage", dependencies: ["HimawariCore", "HimawariDesign"]),
     .target(
