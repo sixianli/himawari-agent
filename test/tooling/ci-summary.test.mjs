@@ -384,6 +384,22 @@ describe("检查失败时失败用例和命令日志进作业摘要和作业日�
     expect(text).not.toContain("keybody");
     expect(text).toContain("`policy.log`：二进制文件");
   });
+  it("冒号参数的颜色码和超链接序列夹在密钥或文件名的私钥标记中间时也先去掉", () => {
+    const esc = String.fromCharCode(27);
+    const bell = String.fromCharCode(7);
+    const pieces = [`${esc}[38:2::255:0:0m`, `${esc}]8;;https://example.invalid${bell}`];
+    const marker = ["-----", "BEGIN", pieces[0], " SSH2 ENCRYPTED", " PRIVATE KEY-----"].join("");
+    for (const piece of pieces) {
+      const split = `${secret.slice(0, 10)}${piece}${secret.slice(10)}`;
+      const text = renderSummary({
+        title: "t",
+        from: folder({ "a.log": `token ${split}\n`, [`${marker} body.log`]: "x\n" }),
+      });
+      expect(text).toContain("#### `a.log`");
+      expect(text).not.toContain(secret.slice(10, 30));
+      expect(text).not.toContain("body.log");
+    }
+  });
   it("文件名带私钥标记时整个名字不显示", () => {
     const marker = ["-----", "BEGIN", " SSH2 ENCRYPTED", " PRIVATE KEY-----"].join("");
     const text = renderSummary({ title: "t", from: folder({ [`${marker} body.log`]: "x\n" }) });

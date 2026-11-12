@@ -20,7 +20,12 @@ export const LINE_CHARACTERS = 500;
 export const READ_LIMIT_BYTES = 256 * 1024;
 const FOOTER_RESERVE_BYTES = 512;
 const PRIVATE_KEY_MARKER = /-----(?:BEGIN|END) [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----/u;
-const ANSI_COLOR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "gu");
+const ESCAPE = String.fromCharCode(27);
+const BELL = String.fromCharCode(7);
+const ANSI_SEQUENCE = new RegExp(
+  `${ESCAPE}(?:\\[[0-?]*[ -/]*[@-~]|\\][^${BELL}${ESCAPE}]*(?:${BELL}|${ESCAPE}\\\\))`,
+  "gu",
+);
 
 function listFiles(root) {
   const files = [];
@@ -72,7 +77,7 @@ function textTail(file, tailLines) {
   } catch {
     return null;
   }
-  const redacted = redactText(text.replace(ANSI_COLOR, ""));
+  const redacted = redactText(text.replace(ANSI_SEQUENCE, ""));
   if (PRIVATE_KEY_MARKER.test(redacted)) return null;
   const lines = redacted
     .replace(/\r\n?/gu, "\n")
@@ -90,7 +95,7 @@ function textTail(file, tailLines) {
 }
 
 function safeName(value) {
-  const redacted = redactText(String(value).replace(ANSI_COLOR, ""));
+  const redacted = redactText(String(value).replace(ANSI_SEQUENCE, ""));
   if (PRIVATE_KEY_MARKER.test(redacted)) return "?";
   return redacted.replace(/[\p{Cc}\p{Zl}\p{Zp}`|]/gu, "?");
 }
@@ -172,13 +177,13 @@ const reportPaths = (result, kind, extension) =>
     .filter((relative) => !path.isAbsolute(relative) && !relative.split("/").includes(".."));
 
 function cleanLine(value) {
-  const redacted = redactText(String(value).replace(ANSI_COLOR, ""));
+  const redacted = redactText(String(value).replace(ANSI_SEQUENCE, ""));
   if (PRIVATE_KEY_MARKER.test(redacted)) return "?";
   return redacted.replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, "?");
 }
 
 function failureMessage(value) {
-  const redacted = redactText(String(value ?? "").replace(ANSI_COLOR, ""));
+  const redacted = redactText(String(value ?? "").replace(ANSI_SEQUENCE, ""));
   if (PRIVATE_KEY_MARKER.test(redacted)) return "";
   return redacted
     .replace(/\r\n?/gu, "\n")
