@@ -268,7 +268,7 @@ export interface CapabilityReactivationVerifierPort {
 }
 
 export interface CapabilityInvalidationOutcome {
-  readonly lifecycle: "disabled" | "revoked" | "uninstalled";
+  readonly lifecycle: "disabled";
   readonly cancelledScheduledJobs: number;
   readonly occurredAt: string;
 }

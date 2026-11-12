@@ -789,6 +789,32 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       await expect(capabilities.listScheduledJobRefs?.("capability-without-jobs")).resolves.toEqual(
         [],
       );
+      await scheduler.upsert(
+        {
+          id: "job-capability-paused-sqlite",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          threadId: null,
+          payloadRef: "payload-schedule-01",
+          sourceProofRef: "source-proof-governed-sqlite",
+          dataClassification: "private",
+          authorizationRef: grant.id,
+          taskScopeRef: "task-scope-governed-sqlite",
+          capabilityRef: action.capabilityRef,
+          operation: action.operation,
+          resourceRef: action.resourceRef,
+          sideEffect: "none",
+          estimatedCostMicros: 10,
+          intervalMs: 60_000,
+          minimumIntervalMs: 60_000,
+          expiresAt: T2,
+          revokedAt: null,
+          nextRunAt: null,
+          occurrence: 0,
+          status: "paused",
+        },
+        null,
+      );
       const invalidateAuthority = capabilities.invalidateCapabilityAuthority;
       if (!invalidateAuthority) throw new Error("capability invalidation must be atomic");
       await expect(
@@ -805,10 +831,10 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       ).resolves.toMatchObject({
         revision: 2,
         lifecycle: "disabled",
-        lastInvalidation: { lifecycle: "disabled", cancelledScheduledJobs: 1, occurredAt: T2 },
+        lastInvalidation: { lifecycle: "disabled", cancelledScheduledJobs: 2, occurredAt: T2 },
       });
       await expect(capabilities.get(action.capabilityRef)).resolves.toMatchObject({
-        lastInvalidation: { cancelledScheduledJobs: 1 },
+        lastInvalidation: { cancelledScheduledJobs: 2 },
       });
       await expect(capabilities.getExecutionHandle(handle.ref)).resolves.toMatchObject({
         revision: 2,

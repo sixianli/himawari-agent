@@ -179,7 +179,7 @@ async function fixture(
   }
   const withVerifier = options.withVerifier ?? true;
   const capabilityLifecycle = createProductionCapabilityLifecycle({
-    configuration: { ownerId: OWNER_ID, agentId: AGENT_ID, capabilityDeployment },
+    configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
     repository,
     clock,
     ...(withVerifier

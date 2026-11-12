@@ -819,6 +819,28 @@ describe("governance recovery and read boundaries", () => {
         lastVersionTransition: { outcome: decision === "approved" ? "activated" : "rejected" },
       });
       if (decision === "approved") {
+        for (const recentAuthenticationRef of [null, "recent-auth-other-session"]) {
+          await expect(
+            setup.control.execute({
+              authentication: AUTHENTICATION,
+              command: command(
+                "capability.rollback",
+                `rollback-auth-${recentAuthenticationRef}`,
+                `rollback-auth-${recentAuthenticationRef}`,
+                {
+                  capabilityRef: active.ref,
+                  expectedRevision: current.revision,
+                  reasonCode: "owner_rollback",
+                  recentAuthenticationRef,
+                },
+              ),
+            }),
+          ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+          expect(await setup.capabilities.get(active.ref)).toMatchObject({
+            revision: current.revision,
+            declaration: { version: "2.0.0" },
+          });
+        }
         await interruptAfterMutation(
           setup,
           command("capability.rollback", "rollback-recover", "rollback-recover", {

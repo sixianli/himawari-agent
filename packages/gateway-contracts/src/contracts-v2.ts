@@ -2358,7 +2358,7 @@ export const capabilitySnapshotSchema = object({
     rollbackAvailable: booleanValue,
     lastInvalidation: nullable(
       object({
-        lifecycle: enumeration(["disabled", "revoked", "uninstalled"]),
+        lifecycle: enumeration(["disabled"]),
         cancelledScheduledJobs: integer(0),
         occurredAt: timestamp,
       }),

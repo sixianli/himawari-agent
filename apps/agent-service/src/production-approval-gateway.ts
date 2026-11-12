@@ -68,7 +68,6 @@ export const PRODUCTION_CAPABILITY_OPERATIONS = Object.freeze([
   "capability.list",
   "capability.detail",
   "capability.disable",
-  "capability.rollback",
 ] as const);
 
 export const PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS = Object.freeze([

@@ -370,7 +370,6 @@ describe("production HTTP composition", () => {
           "capability.list",
           "capability.detail",
           "capability.disable",
-          "capability.rollback",
         ],
         healthDependenciesAvailable: true,
       });

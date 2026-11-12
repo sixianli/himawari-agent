@@ -825,7 +825,6 @@ export function useGovernanceControlCenter({
         setAcknowledged(false);
         await refresh();
       } else {
-        if (status === 403) storage.clearPendingGovernanceMutation(identity.operationKey);
         setMutationStatus("rejected");
         setError(
           mutationError instanceof Error
