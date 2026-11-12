@@ -112,6 +112,22 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       else texts.set(ref, text);
     }
   }
+  const restrictedDigests = new Set<string>();
+  for (const row of snapshot.restrictedMemoryTexts) {
+    const text = texts.get(str(row["content_ref"]));
+    if (text !== undefined) restrictedDigests.add(proposalTextDigest(text));
+  }
+  for (const row of snapshot.externalProposals)
+    if (row["restricted_link"] === 1) restrictedDigests.add(str(row["text_sha256"]));
+  const restrictedProposal = (row: Row): boolean => {
+    if (row["restricted_link"] === 1 || restrictedDigests.has(str(row["text_sha256"]))) return true;
+    const contentRef = optionalString(row["content_ref"]);
+    const text = contentRef === null ? undefined : texts.get(contentRef);
+    return text !== undefined && restrictedDigests.has(proposalTextDigest(text));
+  };
+  const exportedProposals = snapshot.externalProposals.filter((row) => !restrictedProposal(row));
+  const restrictedProposals = snapshot.externalProposals.length - exportedProposals.length;
+  const exportedProposalIds = new Set(exportedProposals.map((row) => str(row["id"])));
   const originals: { [key: string]: JsonValue } = {};
   const withheldKeys = new Set<string>();
   const withheldOwners = { memories: new Set<string>(), decisions: new Set<string>() };
@@ -153,9 +169,13 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       snapshot.signals,
       snapshot.rules,
       snapshot.ruleHistory,
-      snapshot.externalProposals,
-      snapshot.externalProposalKeys,
-      snapshot.externalProposalUnkeyed,
+      exportedProposals,
+      snapshot.externalProposalKeys.filter((row) =>
+        exportedProposalIds.has(str(row["proposal_id"])),
+      ),
+      snapshot.externalProposalUnkeyed.filter((row) =>
+        exportedProposalIds.has(str(row["proposal_id"])),
+      ),
     ]);
     for (const match of scanned.matchAll(/\[已扣留:(\d{1,6})\]/g))
       highest = Math.max(highest, Number(match[1]));
@@ -508,22 +528,6 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   });
   const ruleHistoryVersions = ruleLines.reduce((total, { history }) => total + history.length, 0);
 
-  const restrictedDigests = new Set<string>();
-  for (const row of snapshot.restrictedMemoryTexts) {
-    const text = texts.get(str(row["content_ref"]));
-    if (text !== undefined) restrictedDigests.add(proposalTextDigest(text));
-  }
-  for (const row of snapshot.externalProposals)
-    if (row["restricted_link"] === 1) restrictedDigests.add(str(row["text_sha256"]));
-  const restrictedProposal = (row: Row): boolean => {
-    if (row["restricted_link"] === 1 || restrictedDigests.has(str(row["text_sha256"]))) return true;
-    const contentRef = optionalString(row["content_ref"]);
-    const text = contentRef === null ? undefined : texts.get(contentRef);
-    return text !== undefined && restrictedDigests.has(proposalTextDigest(text));
-  };
-  const exportedProposals = snapshot.externalProposals.filter((row) => !restrictedProposal(row));
-  const restrictedProposals = snapshot.externalProposals.length - exportedProposals.length;
-  const proposalIds = new Set(exportedProposals.map((row) => str(row["id"])));
   const proposalKeys = group(snapshot.externalProposalKeys, "proposal_id");
   const proposalUnkeyed = group(snapshot.externalProposalUnkeyed, "proposal_id");
   const proposalLines: JsonValue[] = exportedProposals.map((row) => {
@@ -554,7 +558,8 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
           ? null
           : optionalString(row["batch_id"]),
       memoryId,
-      supersededBy: supersededBy !== null && proposalIds.has(supersededBy) ? supersededBy : null,
+      supersededBy:
+        supersededBy !== null && exportedProposalIds.has(supersededBy) ? supersededBy : null,
       content,
       keys: (proposalKeys.get(id) ?? []).map((key) => ({
         client: safeString(str(key["client"])),

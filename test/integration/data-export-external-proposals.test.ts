@@ -379,6 +379,82 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
     ).toBe(0);
   });
 
+  it("[reverse] leaves out a proposal whose text is a restricted memory's original words", async () => {
+    const source = await seeded();
+    await seedMemory(source, {
+      id: "memory-restricted",
+      text: "受限的记忆正文",
+      classification: "restricted",
+      versions: [{ kind: "created", text: "受限记忆的旧版本", at: "2026-11-01T00:00:00.000Z" }],
+    });
+    await seedProposal(source, {
+      id: "proposal-restricted-quote",
+      text: "主人原话：受限记忆的旧版本",
+      status: "pending",
+      textSha256: proposalTextDigest("主人原话：受限记忆的旧版本"),
+    });
+    const { files, manifest } = await exportOf(source);
+    for (const [path, bytes] of files)
+      if (path !== SEALED_FILE) expect(decoder.decode(bytes)).not.toContain("主人原话");
+    expect(manifest.counts.externalProposals).toBe(5);
+    expect(
+      manifest.omitted.find(({ what }) => what.includes("受限（restricted）记忆的其他 agent 提议"))
+        ?.count,
+    ).toBe(1);
+  });
+
+  it("[reverse] writes no key, unkeyed client or replacement link of a left-out proposal, and numbers placeholders without it", async () => {
+    const source = await seeded();
+    await seedMemory(source, {
+      id: "memory-restricted",
+      text: "受限的记忆正文",
+      classification: "restricted",
+    });
+    await seedProposal(source, {
+      id: "proposal-restricted",
+      text: "受限的记忆正文",
+      status: "pending",
+      client: "Hidden",
+      sourceKey: "[已扣留:9]",
+      textSha256: proposalTextDigest("受限的记忆正文"),
+    });
+    await seedProposal(source, {
+      id: "proposal-replaced",
+      text: null,
+      status: "superseded",
+      supersededBy: "proposal-restricted",
+    });
+    await seedProposal(source, {
+      id: "proposal-secret-key",
+      text: "编号像机密的提议",
+      status: "pending",
+      sourceKey: SECRET_API_KEY,
+    });
+    const insertKey = source.database.prepare(
+      `INSERT INTO external_memory_proposal_keys (owner_id, agent_id, client, source_key, proposal_id)
+      VALUES (?, ?, ?, ?, ?)`,
+    );
+    insertKey.run(source.ownerId, source.agentId, "Hidden", "[已扣留:9]", "proposal-restricted");
+    insertKey.run(source.ownerId, source.agentId, "Muse", SECRET_API_KEY, "proposal-secret-key");
+    source.database
+      .prepare(
+        "INSERT INTO external_memory_proposal_unkeyed (proposal_id, client) VALUES ('proposal-restricted', 'Hidden')",
+      )
+      .run();
+    const { files } = await exportOf(source);
+    const plain = decoder.decode(files.get(PROPOSALS_FILE));
+    expect(plain).not.toContain("Hidden");
+    expect(plain).not.toContain("proposal-restricted");
+    const lines = plain
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(lines.find(({ id }) => id === "proposal-replaced")?.["supersededBy"]).toBeNull();
+    expect(lines.find(({ id }) => id === "proposal-secret-key")?.["keys"]).toEqual([
+      { client: "Muse", sourceKey: "[已扣留:1]" },
+    ]);
+  });
+
   it("keeps a proposal whose text only resembles a restricted memory", async () => {
     const source = await seeded();
     await seedMemory(source, {
