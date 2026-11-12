@@ -940,7 +940,7 @@ export const messages = {
   "memory.page.carry.open": "View and adjust",
   "memory.page.carry.meter": "Characters used",
   "memory.page.carry.note":
-    "Himawari reads these before every answer. They are picked by importance, highest first, from your rules, identity, preferences, people, goals and work in progress, until {limit} characters are used. Sensitive memories such as health or money, and events, are never included here; they come up only when relevant, except that those dated within the next 7 days are also brought in separately as upcoming plans. When you turn “Bring into every conversation” on or off for a memory, your choice wins.",
+    "Himawari reads these before every answer. They are picked by importance, highest first, from your rules, identity, preferences, people, goals and work in progress, until {limit} characters are used. Sensitive memories such as health or money, and events, are never included here; they come up only when relevant. Separately, any memory dated within the next 7 days, including those not included here, is brought in as an upcoming plan. When you turn “Bring into every conversation” on or off for a memory, your choice wins.",
   "memory.page.carry.none":
     "Nothing is brought into every conversation yet. Your identity, preferences and long-term goals are added as you mention them.",
   "memory.page.carry.yours": "Your choice",

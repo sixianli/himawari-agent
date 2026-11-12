@@ -752,6 +752,16 @@ describe("owner agenda", () => {
     expect(agenda?.memoryIds).toEqual(["memory-move"]);
   });
 
+  it("lists a dated memory classified sensitive when the turn allows sensitive, and leaves it out when it does not", async () => {
+    const { agendaText } = agendaService([
+      dated("memory-secret", "2026-10-27", null, { dataClassification: "sensitive" }, "health"),
+    ]);
+    const allowed = await agendaText("sensitive");
+    expect(allowed.agenda?.memoryIds).toEqual(["memory-secret"]);
+    expect(allowed.agenda?.dataClassification).toBe("sensitive");
+    expect((await agendaText("private")).agenda).toBeUndefined();
+  });
+
   it("keeps the reminder of a memory the Owner switched off from every conversation", async () => {
     const { agenda, text } = await agendaService(
       [dated("memory-dentist", "2026-10-27", null, {}, "project")],
