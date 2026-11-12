@@ -4,6 +4,7 @@ import ts from "typescript";
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const credentialName =
   /^(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|client[_-]?secret|webhook[_-]?secret)$/i;
+const environmentReference = /^\$(?:[A-Z][A-Z0-9_]*|\{[A-Z][A-Z0-9_]*\})$/;
 const patterns = [
   [
     "private-key",
@@ -72,7 +73,9 @@ export function findBuildSecrets({ name, bytes, sentinels = [] }) {
       add(rule, match[0], text.slice(0, match.index).split("\n").length);
   const credential = (key, values, line) => {
     if (credentialName.test(key))
-      for (const value of values) if (value.length >= 12) add("credential-literal", value, line);
+      for (const value of values)
+        if (value.length >= 12 && !environmentReference.test(value))
+          add("credential-literal", value, line);
   };
   const source = (filename, content) => {
     if (

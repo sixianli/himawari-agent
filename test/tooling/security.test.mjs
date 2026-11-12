@@ -209,6 +209,22 @@ describe("构建包源码与日志有各自的检测语义", () => {
     ).toBe(true);
     expect(JSON.stringify(findings)).not.toContain(literal);
   });
+  it("只引用环境变量名的值不算credential字面量，像密钥的值照样检测", () => {
+    for (const [content, name] of [
+      ['apiKey: "$ACME_API_KEY",', "guide.md"],
+      ['{ "password": "${DATABASE_PASSWORD}" }', "config.json"],
+      ['const apiKey = "$ACME_API_KEY";', "example.ts"],
+    ])
+      expect(
+        scan(content, name).filter((finding) => finding.rule === "credential-literal"),
+      ).toEqual([]);
+    for (const value of ["$acme_api_key_value", "$ACME_API_KEY-extra1", `x${literal}`])
+      expect(
+        scan(`apiKey: "${value}",`, "guide.md").some(
+          (finding) => finding.rule === "credential-literal",
+        ),
+      ).toBe(true);
+  });
   it("JSON及source map嵌入源码仍检测解码后的字面量", () => {
     expect(redactText(JSON.stringify({ password: literal }))).not.toContain(literal);
     expect(
