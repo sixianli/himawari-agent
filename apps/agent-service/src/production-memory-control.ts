@@ -488,6 +488,13 @@ export class ProductionMemoryControl {
     if (!sourceMemoryId) return null;
     const record = await this.options.state.read(sourceMemoryId as MemoryId);
     if (!record || record.ownerId !== this.options.configuration.ownerId) return null;
+    if (
+      record.status === "deletion_pending" ||
+      record.status === "deleted_verified" ||
+      record.status === "trashed" ||
+      !reviewMemoryVisible(record.dataClassification)
+    )
+      return null;
     const text = await this.readText(record.contentRef).catch(() => null);
     const suffix = `\n${summary}`;
     if (text === null || !text.endsWith(suffix)) return null;
@@ -514,7 +521,7 @@ export class ProductionMemoryControl {
         agentId,
         ruleIds: all.slice(start, start + 64),
       }))
-        if (/^[A-Za-z0-9._:-]{1,128}$/u.test(use.decisionId))
+        if (/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(use.decisionId))
           found.set(use.ruleId, { at: use.decidedAt, kind: use.kind, decisionId: use.decisionId });
     return found;
   }
