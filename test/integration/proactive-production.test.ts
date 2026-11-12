@@ -517,7 +517,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
           limit: 500,
           defaultLimit: 500,
           minimum: 1,
-          maximum: 10_000,
+          maximum: 500,
           onReach: "hold_until_next_check",
         },
         dailyLimitReached: false,

@@ -306,7 +306,6 @@ export interface ProactiveCheckRecord extends ProactiveScope {
   readonly onlyIfNew?: {
     readonly source: ProactiveSource;
     readonly since: string;
-    readonly perDay: number | null;
   };
 }
 

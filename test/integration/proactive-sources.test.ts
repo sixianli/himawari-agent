@@ -417,6 +417,15 @@ describe("[iOS-7] proactive source registry", () => {
     expect(
       proactiveSourceDefinitionProblems({
         ...NOTES_SOURCE,
+        safetyLimits: {
+          ...NOTES_SOURCE.safetyLimits,
+          perCheck: { defaultLimit: 500, minimum: 1, maximum: 501 },
+        },
+      }),
+    ).toEqual(["safetyLimits.perCheck"]);
+    expect(
+      proactiveSourceDefinitionProblems({
+        ...NOTES_SOURCE,
         safetyLimits: { ...NOTES_SOURCE.safetyLimits, perDay: undefined },
         evaluation: { calibrationGroups: [] },
       }),
@@ -540,6 +549,12 @@ describe("[iOS-7] proactive source registry", () => {
     const h = await harness();
     await h.connect("gmail");
     for (const [id, receive] of [
+      [
+        "mail-0",
+        () => {
+          throw new Error("RECEIVER_BROKEN");
+        },
+      ],
       ["mail-1", () => Promise.reject(new Error("RECEIVER_DOWN"))],
       ["mail-2", () => new Promise<void>(() => undefined)],
     ] as const) {
@@ -550,7 +565,7 @@ describe("[iOS-7] proactive source registry", () => {
     }
     expect(
       h.query("SELECT message_id FROM proactive_processed_messages ORDER BY message_id"),
-    ).toEqual([{ message_id: "mail-1" }, { message_id: "mail-2" }]);
+    ).toEqual([{ message_id: "mail-0" }, { message_id: "mail-1" }, { message_id: "mail-2" }]);
   });
 
   it("[iOS-7][reverse] the database refuses a source name that is not registered", async () => {
@@ -735,6 +750,9 @@ describe("[iOS-7] proactive source registry", () => {
       { result: "act", priority: null, summary: "x".repeat(2_001) },
       { result: "act", priority: null, reason: "x".repeat(2_001) },
       { result: "act", priority: null, link: "x".repeat(2_001) },
+      { result: "act", priority: null, dueAt: "tomorrow" },
+      { result: "act", priority: null, deliverAt: "9999" },
+      { result: "act", priority: null, deliverAt: "2026-11-04T15:00:00+09:00" },
     ])
       expect(
         await h.entry({ ...base, source: FEED, entryId: "bad", summary: "x", ...invalid } as never),

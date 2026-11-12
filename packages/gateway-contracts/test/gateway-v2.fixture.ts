@@ -265,7 +265,7 @@ export const governanceMessages = [
           limit: 500,
           defaultLimit: 500,
           minimum: 1,
-          maximum: 10000,
+          maximum: 500,
           onReach: "hold_until_next_check",
         },
         dailyLimitReached: false,

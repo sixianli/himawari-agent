@@ -4,6 +4,8 @@ export type ProactiveSourceTrust = (typeof PROACTIVE_SOURCE_TRUST)[number];
 export const PROACTIVE_SOURCE_INTAKES = ["reader", "written_by_program"] as const;
 export type ProactiveSourceIntake = (typeof PROACTIVE_SOURCE_INTAKES)[number];
 
+export const PROACTIVE_ITEMS_PER_CHECK_MAXIMUM = 500;
+
 export const PROACTIVE_SOURCE_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/u;
 
 export interface ProactiveSourceItem<Extra = Readonly<Record<string, unknown>>> {
@@ -83,7 +85,11 @@ export const GMAIL_SOURCE = Object.freeze({
   }),
   safetyLimits: Object.freeze({
     perDay: Object.freeze({ defaultLimit: 5_000, minimum: 1, maximum: 1_000_000 }),
-    perCheck: Object.freeze({ defaultLimit: 500, minimum: 1, maximum: 10_000 }),
+    perCheck: Object.freeze({
+      defaultLimit: PROACTIVE_ITEMS_PER_CHECK_MAXIMUM,
+      minimum: 1,
+      maximum: PROACTIVE_ITEMS_PER_CHECK_MAXIMUM,
+    }),
   }),
   latestDeliveryMs: null,
   evaluation: Object.freeze({
@@ -120,7 +126,8 @@ export function proactiveSourceDefinitionProblems(definition: unknown): readonly
     if (
       !numbers.every((value) => Number.isSafeInteger(value) && (value as number) >= 1) ||
       (limit?.minimum as number) > (limit?.defaultLimit as number) ||
-      (limit?.defaultLimit as number) > (limit?.maximum as number)
+      (limit?.defaultLimit as number) > (limit?.maximum as number) ||
+      (key === "perCheck" && (limit?.maximum as number) > PROACTIVE_ITEMS_PER_CHECK_MAXIMUM)
     )
       problems.push(`safetyLimits.${key}`);
   }

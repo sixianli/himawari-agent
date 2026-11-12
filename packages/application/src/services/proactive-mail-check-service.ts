@@ -1813,8 +1813,9 @@ export class ProactiveMailCheckService {
         };
       });
       let timer: ReturnType<typeof setTimeout> | undefined;
+      const sink = this.#options.observations;
       await Promise.race([
-        this.#options.observations.receive(observations),
+        Promise.resolve().then(() => sink.receive(observations)),
         new Promise<void>((resolve) => {
           timer = setTimeout(resolve, this.#options.limits.perCheckMs);
         }),

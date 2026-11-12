@@ -15,6 +15,7 @@ import type {
 import { LIMIT_CHANGE_REASON_CODE } from "@himawari-agent/application/decision-ledger";
 import {
   defaultProactiveSourceSettings,
+  PROACTIVE_ITEMS_PER_CHECK_MAXIMUM,
   PROACTIVE_SOURCES,
   type ProactiveSource,
   type ProactiveSourceSafetyLimits,
@@ -59,7 +60,7 @@ const VERDICTS = [
   "capped_daily",
   "needs_owner",
 ] as const;
-const MAX_INPUT_IDS = 500;
+const MAX_INPUT_IDS = PROACTIVE_ITEMS_PER_CHECK_MAXIMUM;
 const MAX_MODEL_PAYLOADS = 5000;
 const SKIP_REASONS = ["category", "sensitive", "own_mail"] as const;
 const PRIORITIES = ["high", "medium", "low"] as const;
@@ -895,8 +896,6 @@ export class SqliteProactiveOperations {
     if (guard !== undefined) {
       this.source(guard.source);
       this.time(guard.since);
-      if (guard.perDay !== null && !(Number.isSafeInteger(guard.perDay) && guard.perDay >= 1))
-        this.invalid("Proactive record guard is invalid");
     }
     return this.database.transaction(() => {
       const scope = [input.ownerId, input.agentId] as const;
@@ -913,11 +912,14 @@ export class SqliteProactiveOperations {
           )
         )
           return { insightIds: [], releasedRefs: [], refused: "already_recorded" as const };
+        const perDay = this.listSourceSettings(input).find(
+          ({ source }) => source === guard.source,
+        )?.perDay;
         if (
-          guard.perDay !== null &&
+          perDay !== undefined &&
           this.processedSince({ ...input, source: guard.source, since: guard.since }) +
             input.processed.length >
-            guard.perDay
+            perDay
         )
           return { insightIds: [], releasedRefs: [], refused: "daily_limit" as const };
       }

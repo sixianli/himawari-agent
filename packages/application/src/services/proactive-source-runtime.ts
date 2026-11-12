@@ -128,6 +128,13 @@ export interface ProactiveProgramEntryOptions {
   readonly onLimit?: (hit: ProactiveSourceLimitHit) => void;
 }
 
+function isoTimeOrNull(value: unknown): boolean {
+  if (value === null) return true;
+  if (typeof value !== "string") return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
 export async function recordProactiveProgramEntry(
   options: ProactiveProgramEntryOptions,
   entry: ProactiveProgramEntry,
@@ -149,7 +156,9 @@ export async function recordProactiveProgramEntry(
     typeof entry.reason !== "string" ||
     entry.reason.length > PROGRAM_ENTRY_TEXT_LIMIT ||
     typeof entry.link !== "string" ||
-    entry.link.length > PROGRAM_ENTRY_TEXT_LIMIT
+    entry.link.length > PROGRAM_ENTRY_TEXT_LIMIT ||
+    !isoTimeOrNull(entry.dueAt) ||
+    !isoTimeOrNull(entry.deliverAt)
   )
     return { kind: "not_recorded", reason: "entry_invalid" };
   const settings = await store.readSettings(scope);
@@ -272,7 +281,6 @@ export async function recordProactiveProgramEntry(
       onlyIfNew: {
         source: entry.source,
         since: startOfZonedDay(now, options.timeZone),
-        perDay: sourceSettings?.perDay ?? null,
       },
     });
     if (recorded.refused !== undefined) {
