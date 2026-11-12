@@ -729,6 +729,41 @@ describe("[P1-1] device client routes", () => {
     await h.repository.close();
   });
 
+  it("reads the steps of one run in a conversation", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const created = await post(h, client, "threads", {
+      requestId: "device-request-0003",
+      answerLocale: "ja",
+    });
+    const threadId = created.json().payload.threadId as string;
+    await post(h, client, "messages", {
+      messageId: "device-message-0012",
+      threadId,
+      expectedRevision: 1,
+      text: "hello",
+    });
+    const detail = await get(h, client, `threads/${threadId}`);
+    const runId = detail.json().payload.runs[0].runId as string;
+    const steps = await get(h, client, `threads/${threadId}/runs/${runId}/execution`, "after=0");
+    expect(steps.statusCode, steps.body).toBe(200);
+    expect(steps.json()).toMatchObject({
+      type: "thread.execution_snapshot",
+      payload: { threadId, runId, records: [] },
+    });
+    expect(
+      (await get(h, client, `threads/${threadId}/runs/${runId}/execution`, "after=x")).statusCode,
+    ).toBe(400);
+    expect(
+      (await get(h, client, `threads/${threadId}/runs/run:missing/execution`)).statusCode,
+    ).toBe(404);
+    expect((await get(h, client, `threads/${threadId}/runs/${runId}`)).statusCode).toBe(404);
+    expect((await get(h, client, `threads/${threadId}/runs/${runId}`)).json()).toMatchObject({
+      error: { code: "DEVICE_PATH_NOT_ALLOWED" },
+    });
+    await h.repository.close();
+  });
+
   it("streams run progress for one conversation and stops after the device is revoked", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);

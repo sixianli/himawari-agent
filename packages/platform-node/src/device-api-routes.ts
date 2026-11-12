@@ -41,12 +41,16 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "threads", signed: true },
   { method: "GET", path: "threads/{threadId}", signed: true },
   { method: "GET", path: "threads/{threadId}/execution-stream", signed: true },
+  { method: "GET", path: "threads/{threadId}/runs/{runId}/execution", signed: true },
   { method: "POST", path: "payloads/text", signed: true },
 ] as const);
 
 const DEVICE_ROUTE_PATTERNS = DEVICE_API_ROUTES.map((route) => ({
   method: route.method,
-  pattern: new RegExp(`^${route.path.replace("{threadId}", THREAD_ID_SEGMENT)}$`, "u"),
+  pattern: new RegExp(
+    `^${route.path.replace("{threadId}", THREAD_ID_SEGMENT).replace("{runId}", THREAD_ID_SEGMENT)}$`,
+    "u",
+  ),
 }));
 
 export const DEVICE_PAYLOAD_TEXT_MAXIMUM_REFS = 100;
@@ -435,14 +439,24 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         }
         const after = new URLSearchParams(rawQuery(request)).get("after") ?? "0";
         if (!/^(0|[1-9][0-9]{0,15})$/u.test(after)) options.rejectBody(400);
+        const segments = requestPath(request)
+          .slice(DEVICE_API_PREFIX.length + "/threads/".length)
+          .split("/");
+        const runId = segments.length === 4 ? segments[2] : undefined;
+        if (runId !== undefined && !MACHINE_STRING.test(runId)) options.rejectBody(400);
         const query = threadGatewayMessageSchema.parse({
           ...envelope(
             authenticated,
             "query",
-            "thread.detail",
-            `device-query:${stableSuffix(authenticated.device.id, `${threadId}\n${now().toISOString()}`)}`,
+            runId === undefined ? "thread.detail" : "thread.execution",
+            `device-query:${stableSuffix(authenticated.device.id, `${threadId}\n${runId ?? ""}\n${now().toISOString()}`)}`,
           ),
-          payload: { threadId, afterSequence: Number(after), limit: 200 },
+          payload: {
+            threadId,
+            ...(runId === undefined ? {} : { runId }),
+            afterSequence: Number(after),
+            limit: 200,
+          },
         }) as ThreadGatewayRequestMessage;
         return options.sendJson(
           reply,
