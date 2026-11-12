@@ -26,6 +26,7 @@ import {
   approvalMatchesIntent,
 } from "./action-intent-snapshot.js";
 import { actionIntentFingerprint } from "./permission-service.js";
+import { assertPolicyFactCodes } from "./policy-fact-registry.js";
 
 const RISK_RANK: Readonly<Record<ActionRiskLevel, number>> = Object.freeze({
   LOW: 0,
@@ -159,6 +160,7 @@ export function validateGovernedActionIntent(intent: GovernedActionIntent): void
       { intentId: intent.id },
     );
   }
+  assertPolicyFactCodes(intent.deterministicFacts);
   if (intent.modelClassification.actionKind !== intent.actionKind) {
     throw new ApplicationPortError(
       PORT_ERROR_CODES.INVALID_OPERATION,
@@ -232,7 +234,9 @@ export function assessActionIntentCompleteness(
 
 export interface CapabilityAuthorizationFacts {
   readonly lifecycle: CapabilityRegistryLifecycle;
-  readonly manifest: CapabilityManifest;
+  readonly manifest: Pick<CapabilityManifest, "version" | "operations" | "health"> & {
+    readonly scopes: Pick<CapabilityManifest["scopes"], "dataClassifications">;
+  };
 }
 
 export interface CapabilityAuthorizationFactsPort {
@@ -259,7 +263,6 @@ export interface ActionPolicyServiceDependencies {
   readonly ids: IdGeneratorPort;
   readonly policy: PermissionPolicy;
   readonly trace?: AuthorizationDecisionTracePort;
-  /** Absent in production unless an explicitly configured coordinator is supplied. */
   readonly automaticReview?: AutomaticActionReviewPort;
 }
 
@@ -280,8 +283,6 @@ export class ActionPolicyService {
   ): Promise<PermissionDecision> {
     const current = { ...options };
     const decision = await this.evaluateCurrent(source, current, true);
-    // Final trace/store writes can yield too. They preserve historical facts but
-    // must not return fresh execution permission after the caller has stopped.
     return current.signal?.aborted
       ? Object.freeze({
           decision: "DENY",
@@ -461,15 +462,11 @@ export class ActionPolicyService {
             ]);
           }
         } catch {
-          // Diagnostics stay with the review coordinator; failure is not a user denial.
         } finally {
           if (timer !== undefined) clearTimeout(timer);
           if (onAbort) signal.removeEventListener("abort", onAbort);
           controller.abort();
         }
-        // A safer alternative is a recorded observation, not authority: the model receives
-        // the reason and must propose a new request through this same entry. No Grant,
-        // Approval, Handle or file claim is created for it.
         if (outcome?.decision === "alternative")
           return this.finish(
             intent,
@@ -485,8 +482,6 @@ export class ActionPolicyService {
               },
             },
           );
-        // A return value cannot authorize anything. Re-read current policy, capability,
-        // approval, quota and expiry after every await; review runs at most once here.
         return this.evaluateCurrent(intent, options, false);
       }
       options.signal?.throwIfAborted();
@@ -510,7 +505,6 @@ export class ActionPolicyService {
         grantId: null,
       });
       const stored = await this.dependencies.store.createApproval(request);
-      // Another device or review may have resolved the request during this write.
       if (stored.status !== "pending") return this.evaluateCurrent(intent, options, false);
       await this.trace(
         intent,
