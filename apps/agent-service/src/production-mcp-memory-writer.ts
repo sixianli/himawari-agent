@@ -450,18 +450,6 @@ export class ProductionMcpMemoryWriter {
     return this.#options.proposals.listBatch({ ...this.#scope(), batchId });
   }
 
-  async reopenBatch(batchId: string) {
-    return this.#serially(async () => {
-      const members = await this.#options.proposals.listBatch({ ...this.#scope(), batchId });
-      return this.#options.proposals.reopenBatch({
-        ...this.#scope(),
-        batchId,
-        reopen: members.map(({ id }) => id),
-        trashed: [],
-      });
-    });
-  }
-
   async undoBatch(
     batchId: string,
     trash: (memoryId: MemoryId) => Promise<void>,
@@ -471,24 +459,33 @@ export class ProductionMcpMemoryWriter {
       if (members.length === 0) return undefined;
       const reopen: string[] = [];
       const trashed: string[] = [];
-      for (const member of members) {
-        if (member.status === "rejected") reopen.push(member.id);
-        else if (
-          member.status === "committed" &&
-          member.memoryId === externalProposalMemoryId(member.id, batchId)
-        ) {
-          await trash(member.memoryId);
-          trashed.push(member.memoryId);
-          reopen.push(member.id);
+      const settle = (complete: boolean) => {
+        this.#memoryChanges += 1;
+        return this.#options.proposals.reopenBatch({
+          ...this.#scope(),
+          batchId,
+          reopen,
+          trashed,
+          complete,
+        });
+      };
+      try {
+        for (const member of members) {
+          if (
+            member.status === "committed" &&
+            member.memoryId === externalProposalMemoryId(member.id, batchId)
+          ) {
+            await trash(member.memoryId);
+            trashed.push(member.memoryId);
+            reopen.push(member.id);
+          }
         }
+      } catch (error) {
+        if (trashed.length > 0) await settle(false);
+        throw error;
       }
-      this.#memoryChanges += 1;
-      return this.#options.proposals.reopenBatch({
-        ...this.#scope(),
-        batchId,
-        reopen,
-        trashed,
-      });
+      for (const member of members) if (member.status === "rejected") reopen.push(member.id);
+      return settle(true);
     });
   }
 

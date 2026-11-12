@@ -1585,7 +1585,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.payloads.get(waiting?.contentRef ?? "")).toBeUndefined();
     expect((await f.propose(later, { text: RAIN })).text).toBe(MCP_PROPOSE_MEMORY_DECLINED.text);
     expect(await f.payloads.get(waiting?.contentRef ?? "")).toBeUndefined();
-    expect(await f.writer.reopenBatch("external-batch-rain")).toEqual([]);
+    expect(await f.writer.undoBatch("external-batch-rain", async () => undefined)).toEqual([]);
     expect(await f.writer.listBatch("external-batch-rain")).toEqual([]);
   });
 
@@ -1967,5 +1967,62 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const sent = await batch(muse, [{ text: RAIN }, { text: PARK }]);
     expect(sent.parsed.results.map(({ status }) => status)).toEqual(["full", "pending"]);
     expect(payloadsBefore()).toBe(before);
+  });
+
+  it("[P5-3] a key that keeps changing its text cannot get past the limit on kept text", async () => {
+    const f = await setup();
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    await f.propose(muse, { text: PARK });
+    const [park] = await f.pending();
+    const database = openQualifiedDatabase(f.databasePath);
+    try {
+      const insert = database.prepare(
+        `INSERT INTO external_memory_proposals (
+          id, owner_id, agent_id, subject_ref, client, source_key, text_sha256, normalization,
+          content_ref, category, classification, status, received_at, decided_at
+        ) SELECT ?, owner_id, agent_id, subject_ref, client, NULL, ?, normalization, content_ref,
+          category, classification, 'superseded', received_at, received_at
+        FROM external_memory_proposals WHERE id = ?`,
+      );
+      for (let index = 1; index < 5000; index += 1)
+        insert.run(`old-${String(index)}`, index.toString(16).padStart(64, "0"), park?.id ?? "");
+    } finally {
+      database.close();
+    }
+    expect((await f.pending()).length).toBe(1);
+    expect((await f.propose(muse, { text: RAIN, key: "memory/rain" })).text).toBe(
+      MCP_PROPOSE_MEMORY_FULL.text,
+    );
+  });
+
+  it("[P5-3] an undo that fails part way reopens what it moved to the trash and leaves the rest to undo again", async () => {
+    const f = await setup();
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    await f.propose(muse, { text: PARK });
+    await f.propose(muse, { text: RAIN });
+    const [park, rain] = await f.pending();
+    await f.writer.respond(
+      [
+        { proposalId: park?.id ?? "", decision: "keep", editedText: null },
+        { proposalId: rain?.id ?? "", decision: "keep", editedText: null },
+      ],
+      "external-batch-two",
+    );
+    let calls = 0;
+    await expect(
+      f.writer.undoBatch("external-batch-two", async () => {
+        calls += 1;
+        if (calls === 2) throw new Error("trash failed");
+      }),
+    ).rejects.toThrow("trash failed");
+    const waiting = await f.pending();
+    expect(waiting).toHaveLength(1);
+    const left = await f.writer.listBatch("external-batch-two");
+    expect(left).toHaveLength(1);
+    expect(left[0]?.status).toBe("committed");
+    expect([park?.id, rain?.id].sort()).toEqual([waiting[0]?.id, left[0]?.id].sort());
+    expect(await f.writer.undoBatch("external-batch-two", async () => undefined)).toEqual([
+      left[0]?.id,
+    ]);
   });
 });

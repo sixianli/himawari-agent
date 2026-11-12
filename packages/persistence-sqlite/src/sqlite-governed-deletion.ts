@@ -898,7 +898,7 @@ export class SqliteGovernedDeletionAdapter {
         }>;
         const forget = database.prepare(
           `UPDATE external_memory_proposals SET status = 'rejected', memory_id = NULL,
-            content_ref = NULL
+            content_ref = NULL, batch_id = NULL
           WHERE id = ?`,
         );
         for (const proposal of proposals) {

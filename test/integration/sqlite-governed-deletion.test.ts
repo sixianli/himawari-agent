@@ -585,9 +585,9 @@ describe("SQLite governed deletion", () => {
     expect(
       scalar(
         resource.databasePath,
-        "SELECT status || '|' || coalesce(content_ref, '-') || '|' || coalesce(memory_id, '-') || '|' || text_sha256 FROM external_memory_proposals",
+        "SELECT status || '|' || coalesce(content_ref, '-') || '|' || coalesce(memory_id, '-') || '|' || coalesce(batch_id, '-') || '|' || text_sha256 FROM external_memory_proposals",
       ),
-    ).toBe(`rejected|-|-|${"b".repeat(64)}`);
+    ).toBe(`rejected|-|-|-|${"b".repeat(64)}`);
   });
 
   it("persists Memory provider cleanup and rejects deleting a referenced Payload directly", async () => {

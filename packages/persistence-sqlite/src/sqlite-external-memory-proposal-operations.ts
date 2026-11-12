@@ -49,6 +49,8 @@ const PROPOSAL_ID_MAXIMUM = 40;
 
 const EXTERNAL_PROPOSAL_PENDING_MAXIMUM = 1000;
 
+const EXTERNAL_PROPOSAL_HELD_TEXT_MAXIMUM = 5000;
+
 const CATEGORIES: ReadonlySet<string> = new Set([
   "identity",
   "preference",
@@ -115,6 +117,7 @@ export class SqliteExternalMemoryProposalOperations {
             batchId: string;
             reopen: readonly string[];
             trashed: readonly string[];
+            complete: boolean;
           },
         );
       case "externalMemoryProposal.dropDiscardedText":
@@ -150,15 +153,17 @@ export class SqliteExternalMemoryProposalOperations {
           WHERE owner_id = ? AND agent_id = ? AND text_sha256 = ? AND status <> 'superseded'`,
         )
         .get(input.ownerId, input.agentId, input.textSha256) !== undefined;
+    const held = this.database
+      .prepare(
+        `SELECT SUM(status = 'pending') AS pending, COUNT(*) AS held
+        FROM external_memory_proposals
+        WHERE owner_id = ? AND agent_id = ? AND status <> 'committed' AND content_ref IS NOT NULL`,
+      )
+      .get(input.ownerId, input.agentId) as { pending: number | null; held: number };
     if (
       !seen &&
-      (this.database
-        .prepare(
-          `SELECT COUNT(*) FROM external_memory_proposals
-          WHERE owner_id = ? AND agent_id = ? AND status = 'pending'`,
-        )
-        .pluck()
-        .get(input.ownerId, input.agentId) as number) >= EXTERNAL_PROPOSAL_PENDING_MAXIMUM
+      ((held.pending ?? 0) >= EXTERNAL_PROPOSAL_PENDING_MAXIMUM ||
+        held.held >= EXTERNAL_PROPOSAL_HELD_TEXT_MAXIMUM)
     ) {
       if (!this.contentInUse(input.contentRef)) this.dropPayload(input.contentRef, input);
       this.fail("PORT_CONFLICT", "EXTERNAL_MEMORY_PROPOSAL_PENDING_FULL");
@@ -397,6 +402,7 @@ export class SqliteExternalMemoryProposalOperations {
       batchId: string;
       reopen: readonly string[];
       trashed: readonly string[];
+      complete: boolean;
     },
   ): readonly string[] {
     this.assertDiskHeadroom();
@@ -448,7 +454,7 @@ export class SqliteExternalMemoryProposalOperations {
         if (wanted.has(member.id) && member.contentRef !== null) {
           reopen.run(member.id, input.ownerId, input.agentId);
           reopened.push(member.id);
-        } else detach.run(member.id, input.ownerId, input.agentId);
+        } else if (input.complete) detach.run(member.id, input.ownerId, input.agentId);
       }
       return reopened;
     })();

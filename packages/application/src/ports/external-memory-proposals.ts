@@ -90,6 +90,7 @@ export interface ExternalMemoryProposalStorePort {
       readonly batchId: string;
       readonly reopen: readonly string[];
       readonly trashed: readonly string[];
+      readonly complete: boolean;
     },
   ): Promise<readonly string[]>;
   dropDiscardedText(
