@@ -48,7 +48,12 @@ function memory(overrides: Partial<ProductMemoryRecord> = {}): ProductMemoryReco
 
 type Reply = string | { failed: string } | "disclosure-denied";
 
-function harness(reply: Reply, source: ProductMemoryRecord | null = memory()) {
+function harness(
+  reply: Reply,
+  source: ProductMemoryRecord | null = memory(),
+  readMemoryText: () => Promise<string> = async () =>
+    "以后 boss@b.com 的邮件必须提醒我\n老板的邮件一律提醒",
+) {
   const resolved: unknown[] = [];
   const failures: unknown[] = [];
   const prompts: string[] = [];
@@ -118,7 +123,7 @@ function harness(reply: Reply, source: ProductMemoryRecord | null = memory()) {
     clock: { now: () => NOW },
     store,
     memories: { read: async () => source ?? undefined },
-    readMemoryText: async () => "以后 boss@b.com 的邮件必须提醒我\n老板的邮件一律提醒",
+    readMemoryText,
     model,
     nextInvocationId: () => "rule-review-1",
   });
@@ -206,6 +211,23 @@ describe("[P4-1] RuleReviewService", () => {
         expect.objectContaining({ reason, retryAfter: "2026-11-11T11:00:00.000Z" }),
       ]);
     }
+  });
+
+  it("keeps the rule as it is and counts a failed attempt when the source memory's text cannot be read", async () => {
+    const run = harness("{}", memory(), async () => {
+      throw new Error("RULE_REVIEW_MEMORY_UNREADABLE");
+    });
+    expect(await run.service.run()).toEqual([
+      { ruleId: "owner:boss", outcome: "source_unreadable" },
+    ]);
+    expect(run.calls()).toBe(0);
+    expect(run.resolved).toEqual([]);
+    expect(run.failures).toEqual([
+      expect.objectContaining({
+        reason: "source_unreadable",
+        retryAfter: "2026-11-11T11:00:00.000Z",
+      }),
+    ]);
   });
 
   it("puts the fixed instructions first and the changing data last, byte for byte the same each time", () => {

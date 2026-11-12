@@ -942,9 +942,12 @@ export const messages = {
   "review.suspendReason":
     "{r, select, source_removed {停止中：元の記憶が削除されたか、ルールではなくなりました} no_longer_standing {停止中：元の記憶がもう継続的な指示として読めません} parameters_changed {停止中：元の記憶と今のルールが合いません} other {停止中}}",
   "review.checking": "元の記憶が変わりました。自動の確認待ちです（確認までは今まで通り実行）",
+  "review.condition":
+    "{f, select, senderDomains {送信元ドメイン} senderAddresses {送信元アドレス} phrases {含むフレーズ} words {含む単語} excludePhrases {除外フレーズ} other {条件}}：{v}",
+  "review.textGone": "この記憶の文章を読み出せません",
   "review.suggestion": "変更の提案：{s}",
   "review.adopt": "提案を採用",
-  "review.confirmSuspended": "停止を確定",
+  "review.confirmSuspended": "無効にする",
   "review.restore": "元のルールに戻す",
   "memory.page.missed": "ほかにも一緒に直すべき記憶がある",
   "memory.page.missedPick": "一緒に直すべき記憶を選ぶ",
@@ -1150,7 +1153,7 @@ export const messages = {
   "decision.chain.rating": "あなたの評価",
   "decision.chain.unrated": "未評価",
   "decision.chain.kind":
-    "{k, select, proactive {自発的なリマインダー} memory_candidate {記憶を保存する判断} consolidation {記憶の整理} context_truncation {コンテキストの切り詰め} retrieval_degrade {記憶検索の縮退} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} other {その他}}",
+    "{k, select, proactive {自発的なリマインダー} memory_candidate {記憶を保存する判断} consolidation {記憶の整理} context_truncation {コンテキストの切り詰め} retrieval_degrade {記憶検索の縮退} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} memory_review {記憶修正後の再確認} other {その他}}",
   "decision.chain.rules": "該当したルール",
   "decision.chain.reviewRules": "再確認待ちのルール",
   "decision.chain.rule":
@@ -1427,7 +1430,7 @@ export const messages = {
   "weekly.check.rowsCleared":
     "確認済みの日から Gmail の記録が {rows} 件減ったが、すべて自分で消したもの",
   "weekly.check.rowsMissing":
-    "{day}の{kind, select, proactive {Gmail の確認} memory_candidate {記憶} consolidation {記憶の整理} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} other {判断}}の記録が確認時より減った：当時 {before} 件、今 {after} 件",
+    "{day}の{kind, select, proactive {Gmail の確認} memory_candidate {記憶} consolidation {記憶の整理} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} memory_review {記憶修正後の再確認} other {判断}}の記録が確認時より減った：当時 {before} 件、今 {after} 件",
   "weekly.check.timeOk": "判断の記録の時刻の形式はすべて正しい",
   "weekly.check.timeBad": "判断の記録に形式の正しくない時刻が {rows} 件",
   "weekly.check.other":
@@ -1529,7 +1532,7 @@ export const messages = {
   "weekly.correction.missed": "フラグ漏れ：あなたが一緒に直すべきと指摘し、フラグがなかったもの",
   "weekly.correction.open": "再確認リストであなたの対応待ち",
   "weekly.correction.note":
-    "累計の数字で、週ごとではありません。記憶を直したり消したりすると、それを根拠にした記憶とそれから決めたルールに再確認のフラグが付きます。再確認リストで対応したものだけを数えます。ルールで「提案を採用」か「停止を確定」、記憶を直した場合は認めたことに、「元のルールに戻す」「問題なし」は認めなかったことになります。未対応は数えません。対応済みが 5 件未満のときはサンプル不足とだけ表示します。",
+    "累計の数字で、週ごとではありません。記憶を直したり消したりすると、それを根拠にした記憶とそれから決めたルールに再確認のフラグが付きます。再確認リストで対応したものだけを数えます。ルールで「提案を採用」か「無効にする」、記憶を直した場合は認めたことに、「元のルールに戻す」「問題なし」は認めなかったことになります。未対応は数えません。対応済みが 5 件未満のときはサンプル不足とだけ表示します。",
   "weekly.prereview.empty": "今週は、モデルの事前採点とあなたの採点が両方ある判断がありません。",
   "weekly.prereview.emptyCurrent":
     "今週は現在のモデルとプロンプトの版による事前採点がまだありません。",

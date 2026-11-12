@@ -2406,6 +2406,7 @@ describe("production memory capture", () => {
       status: "suspended",
       suspendReason: "parameters_changed",
       suggestion: "日本和韩国入管局的邮件一律提醒",
+      suggestionConditions: [{ field: "senderDomains", values: ["isa.go.jp", "moj.go.kr"] }],
     });
     if (!suspended) throw new Error("suspended");
     await expect(

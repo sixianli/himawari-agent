@@ -33,7 +33,12 @@ const MEMORY_ID = /^[\x21-\x7e]{1,128}$/u;
 const MAX_LIMIT = 200;
 const MAX_SUGGESTION = 16_384;
 const SUSPEND_REASONS = new Set(["source_removed", "no_longer_standing", "parameters_changed"]);
-const FAILURE_REASONS = new Set(["model_failed", "answer_invalid", "content_blocked"]);
+const FAILURE_REASONS = new Set([
+  "model_failed",
+  "answer_invalid",
+  "content_blocked",
+  "source_unreadable",
+]);
 const OWNER_ACTIONS = new Set(["adopt", "confirm_suspended", "restore"]);
 const RESOLUTIONS = new Set(["owner_edited", "owner_dismissed"]);
 export const COUNTED_RULE_REASON = "from_suspended";
@@ -431,7 +436,7 @@ export class SqliteCorrectionReviewOperations {
            depth = excluded.depth, expanded = 1, truncated = 0, status = 'open',
            resolution = NULL, resolved_at = NULL, flagged_at = excluded.flagged_at
          WHERE memory_review_items.flagged_at < excluded.flagged_at
-           OR memory_review_items.status = 'open'`,
+           OR (memory_review_items.status = 'open' AND excluded.depth < memory_review_items.depth)`,
       );
       const finish = this.database.prepare(
         `UPDATE memory_review_items SET expanded = 1, truncated = ?

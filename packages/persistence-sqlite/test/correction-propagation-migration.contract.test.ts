@@ -176,6 +176,22 @@ describe("[P4-1] correction propagation in SQLite", () => {
     database.close();
   });
 
+  it("keeps the shortest path when a memory was reflected both from the edited memory and from one of its descendants", async () => {
+    const { database, run } = await openLatest();
+    for (const id of ["m:a", "m:b", "m:c", "m:d"]) memory(database, id);
+    reflect(database, "m:b", ["m:a"]);
+    reflect(database, "m:c", ["m:a", "m:b"]);
+    reflect(database, "m:d", ["m:c"]);
+    edit(database, "m:a", T1);
+    while ((run("memoryReview.expand", { now: T1, limit: 20 }) as number) > 0);
+    expect(openItems(database)).toEqual([
+      { memoryId: "m:b", upstream: "m:a", depth: 1, status: "open" },
+      { memoryId: "m:c", upstream: "m:a", depth: 1, status: "open" },
+      { memoryId: "m:d", upstream: "m:a", depth: 2, status: "open" },
+    ]);
+    database.close();
+  });
+
   it("does not mark memories when an unrelated field such as last use changes", async () => {
     const { database } = await openLatest();
     for (const id of ["m:a", "m:b"]) memory(database, id);
@@ -317,6 +333,39 @@ describe("[P4-1] correction propagation in SQLite", () => {
     edit(database, "m:rule", T3);
     expect(ruleRow(database)).toMatchObject({ status: "suspended", reviewAfter: T3, revision: 4 });
     expect(run("ruleReview.listDue", { now: T3, limit: 3 })).toHaveLength(1);
+    database.close();
+  });
+
+  it("drops an old suggestion when the source changes again so it cannot be adopted before the new check, and writes one wait per cycle", async () => {
+    const { database, run } = await openLatest();
+    memory(database, "m:rule", "rule");
+    rule(database, "m:rule");
+    edit(database, "m:rule", T1);
+    edit(database, "m:rule", T2);
+    run("ruleReview.resolve", {
+      ruleId: RULE,
+      expectedRevision: 3,
+      sourceMemoryId: "m:rule",
+      sourceRevision: 3,
+      resolution: { outcome: "suspended", reason: "parameters_changed", suggestion: NEW_BOSS },
+      now: T2,
+    });
+    edit(database, "m:rule", T3);
+    expect(ruleRow(database)).toMatchObject({ status: "suspended", revision: 5, reviewAfter: T3 });
+    expect(
+      database
+        .prepare("SELECT suggestion FROM rule_book_rules WHERE rule_id = ?")
+        .pluck()
+        .get(RULE),
+    ).toBeNull();
+    expect(
+      run("ruleReview.act", { ruleId: RULE, expectedRevision: 5, action: "adopt", now: T3 }),
+    ).toBe(false);
+    expect(ledger(database, "rule_review")).toEqual([
+      { outcome: "needs_review", reasonCode: "memory_edited", subjectRef: RULE },
+      { outcome: "suspended", reasonCode: "parameters_changed", subjectRef: RULE },
+      { outcome: "needs_review", reasonCode: "memory_edited", subjectRef: RULE },
+    ]);
     database.close();
   });
 

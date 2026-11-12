@@ -144,8 +144,8 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     const insertRule = database.prepare(
       `INSERT INTO rule_book_rules (
         owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id,
-        updated_at
-      ) VALUES (?, ?, ?, 1, ?, ?, 'chat:thread-1', NULL, ?)`,
+        updated_at, review_after
+      ) VALUES (?, ?, ?, 1, ?, ?, 'chat:thread-1', NULL, ?, ?)`,
     );
     for (const [ruleId, status, updatedAt, parameters] of [
       [
@@ -191,7 +191,15 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         { type: "mail_must_notify", summary: "参数不全的规则", params: {} },
       ],
     ] as const)
-      insertRule.run(OWNER_ID, AGENT_ID, ruleId, JSON.stringify(parameters), status, updatedAt);
+      insertRule.run(
+        OWNER_ID,
+        AGENT_ID,
+        ruleId,
+        JSON.stringify(parameters),
+        status,
+        updatedAt,
+        status === "needs_review" ? updatedAt : null,
+      );
     database.close();
     const clock = new ManualClock(NOW);
     const repository = await SqliteProductStateRepository.open({

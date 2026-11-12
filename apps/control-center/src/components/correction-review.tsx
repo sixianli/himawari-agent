@@ -6,7 +6,7 @@ type Message = (id: MessageId, values?: Record<string, string | number>) => stri
 
 interface FlaggedMemory {
   readonly memoryId: string;
-  readonly text: string;
+  readonly text: string | null;
   readonly sources: MemoryReview["memories"];
 }
 
@@ -60,6 +60,16 @@ export function CorrectionReviewSection({
           {rule.suggestion ? (
             <p className="settings-note">{message("review.suggestion", { s: rule.suggestion })}</p>
           ) : null}
+          {rule.suggestion
+            ? rule.suggestionConditions.map((condition) => (
+                <small key={condition.field} data-review-condition={condition.field}>
+                  {message("review.condition", {
+                    f: condition.field,
+                    v: condition.values.join("、"),
+                  })}{" "}
+                </small>
+              ))
+            : null}
           <div className="actions">
             {rule.status === "suspended" && rule.suggestion ? (
               <ActionButton
@@ -108,7 +118,7 @@ export function CorrectionReviewSection({
           {item.sources.some(({ truncated }) => truncated) ? (
             <small data-review-truncated=""> {message("review.truncated")}</small>
           ) : null}
-          <p className="memory-text">{item.text}</p>
+          <p className="memory-text">{item.text ?? message("review.textGone")}</p>
           <div className="actions">
             <ActionButton variant="secondary" onClick={() => onOpenMemory(item.memoryId)}>
               {message("review.open")}

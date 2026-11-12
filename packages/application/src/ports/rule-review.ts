@@ -10,7 +10,11 @@ export type RuleReviewSuspendReason =
   | "no_longer_standing"
   | "parameters_changed";
 
-export type RuleReviewFailureReason = "model_failed" | "answer_invalid" | "content_blocked";
+export type RuleReviewFailureReason =
+  | "model_failed"
+  | "answer_invalid"
+  | "content_blocked"
+  | "source_unreadable";
 
 export interface RuleReviewCandidate {
   readonly ruleId: string;

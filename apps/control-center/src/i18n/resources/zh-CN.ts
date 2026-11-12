@@ -885,9 +885,12 @@ export const messages = {
   "review.suspendReason":
     "{r, select, source_removed {已暂停：来源记忆删了或不再是规则} no_longer_standing {已暂停：来源记忆读下来已不是长期要求} parameters_changed {已暂停：来源记忆读下来和原规则对不上} other {已暂停}}",
   "review.checking": "来源记忆改过，等系统自动核对（核对完之前照常执行）",
+  "review.condition":
+    "{f, select, senderDomains {发件域名} senderAddresses {发件地址} phrases {包含短语} words {包含词} excludePhrases {排除短语} other {条件}}：{v}",
+  "review.textGone": "这条记忆的文字读不出来",
   "review.suggestion": "系统建议改成：{s}",
   "review.adopt": "采用建议",
-  "review.confirmSuspended": "确认暂停",
+  "review.confirmSuspended": "确认停用",
   "review.restore": "恢复原规则",
   "memory.page.missed": "还有哪条也该跟着改",
   "memory.page.missedPick": "选出也该跟着改的记忆",
@@ -1083,7 +1086,7 @@ export const messages = {
   "decision.chain.rating": "你的评价",
   "decision.chain.unrated": "还没评价",
   "decision.chain.kind":
-    "{k, select, proactive {系统主动提醒} memory_candidate {存记忆的判断} consolidation {整理记忆} context_truncation {裁剪上下文} retrieval_degrade {找记忆降级} external_read {外部程序读取记忆} rule_review {硬规则待重审} other {其他}}",
+    "{k, select, proactive {系统主动提醒} memory_candidate {存记忆的判断} consolidation {整理记忆} context_truncation {裁剪上下文} retrieval_degrade {找记忆降级} external_read {外部程序读取记忆} rule_review {硬规则待重审} memory_review {改记忆后待重审} other {其他}}",
   "decision.chain.rules": "命中的规则",
   "decision.chain.reviewRules": "待重审的规则",
   "decision.chain.rule":
@@ -1336,7 +1339,7 @@ export const messages = {
   "weekly.check.rowsKept": "已检查过的日子没有少记录",
   "weekly.check.rowsCleared": "已检查过的日子少了 {rows} 条 Gmail 记录，都是你清除的",
   "weekly.check.rowsMissing":
-    "{day}的{kind, select, proactive {Gmail 检查} memory_candidate {记忆} consolidation {整理记忆} context_truncation {回答时没带上的旧内容} retrieval_degrade {记忆搜索} external_read {外部程序读取记忆} rule_review {硬规则待重审} other {决策}}记录比检查时少了：原来 {before} 条，现在 {after} 条",
+    "{day}的{kind, select, proactive {Gmail 检查} memory_candidate {记忆} consolidation {整理记忆} context_truncation {回答时没带上的旧内容} retrieval_degrade {记忆搜索} external_read {外部程序读取记忆} rule_review {硬规则待重审} memory_review {改记忆后待重审} other {决策}}记录比检查时少了：原来 {before} 条，现在 {after} 条",
   "weekly.check.timeOk": "决策记录里的时间格式都正确",
   "weekly.check.timeBad": "决策记录里有 {rows} 条时间格式不对",
   "weekly.check.other":
@@ -1430,7 +1433,7 @@ export const messages = {
   "weekly.correction.missed": "漏标：你指出还该跟着改、系统没标到的",
   "weekly.correction.open": "还在待重审列表里等你处理",
   "weekly.correction.note":
-    "累计数字，不分周。你改、删一条记忆后，系统把依据它推出来的记忆和由它定的规则标成待重审。只算你在待重审列表里处理过的：规则点“采用建议”或“确认暂停”、记忆被你改过，算认可；规则点“恢复原规则”、记忆点“看过没问题”，算不认可。没处理的不算。处理过的少于 5 条时只显示样本不足。",
+    "累计数字，不分周。你改、删一条记忆后，系统把依据它推出来的记忆和由它定的规则标成待重审。只算你在待重审列表里处理过的：规则点“采用建议”或“确认停用”、记忆被你改过，算认可；规则点“恢复原规则”、记忆点“看过没问题”，算不认可。没处理的不算。处理过的少于 5 条时只显示样本不足。",
   "weekly.prereview.empty": "这一周还没有模型预评过、你也打过分的决策。",
   "weekly.prereview.emptyCurrent": "这一周还没有当前这一版模型和提示词做的预评。",
   "weekly.prereview.counts": "预评 {rated} 条 · 模型拿不准 {unsure} 条 · 你也评过 {paired} 条",

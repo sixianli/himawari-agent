@@ -1683,6 +1683,13 @@ export const RULE_SUSPEND_REASONS = [
   "no_longer_standing",
   "parameters_changed",
 ] as const;
+export const RULE_CONDITION_FIELDS = [
+  "senderDomains",
+  "senderAddresses",
+  "phrases",
+  "words",
+  "excludePhrases",
+] as const;
 export const MEMORY_REVIEW_ACTIONS = ["dismiss", "adopt", "confirm_suspended", "restore"] as const;
 const memoryReviewQuerySchema = object({
   ...envelope("query", "memory.review.read"),
@@ -1694,7 +1701,7 @@ const memoryReviewSnapshotSchema = object({
     memories: array(
       object({
         memoryId: machineString,
-        text: boundedString(200),
+        text: nullable(boundedString(200)),
         upstreamMemoryId: machineString,
         upstreamText: nullable(boundedString(200)),
         reason: enumeration(MEMORY_REVIEW_REASONS),
@@ -1710,6 +1717,12 @@ const memoryReviewSnapshotSchema = object({
         status: enumeration(["needs_review", "suspended"]),
         summary: boundedString(200),
         suggestion: nullable(boundedString(200)),
+        suggestionConditions: array(
+          object({
+            field: enumeration(RULE_CONDITION_FIELDS),
+            values: array(boundedString(200)),
+          }),
+        ),
         suspendReason: nullable(enumeration(RULE_SUSPEND_REASONS)),
         sourceMemoryId: nullable(machineString),
         updatedAt: timestamp,

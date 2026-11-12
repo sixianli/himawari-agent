@@ -938,9 +938,12 @@ export const messages = {
     "{r, select, source_removed {Paused: its source memory was deleted or is no longer a rule} no_longer_standing {Paused: its source memory no longer reads as a standing request} parameters_changed {Paused: its source memory no longer matches the rule} other {Paused}}",
   "review.checking":
     "Its source memory changed; waiting for the automatic check (it keeps running until then)",
+  "review.condition":
+    "{f, select, senderDomains {Sender domains} senderAddresses {Sender addresses} phrases {Phrases} words {Words} excludePhrases {Excluded phrases} other {Condition}}: {v}",
+  "review.textGone": "The text of this memory cannot be read",
   "review.suggestion": "Suggested change: {s}",
   "review.adopt": "Use suggestion",
-  "review.confirmSuspended": "Keep paused",
+  "review.confirmSuspended": "Turn off for good",
   "review.restore": "Restore rule",
   "memory.page.missed": "Another memory should change too",
   "memory.page.missedPick": "Pick the memory that should change too",
@@ -1152,7 +1155,7 @@ export const messages = {
   "decision.chain.rating": "Your rating",
   "decision.chain.unrated": "Not rated yet",
   "decision.chain.kind":
-    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {Outside program read memories} rule_review {Hard rule review} other {Other}}",
+    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {Outside program read memories} rule_review {Hard rule review} memory_review {Review after a memory edit} other {Other}}",
   "decision.chain.rules": "Rules hit",
   "decision.chain.reviewRules": "Rules waiting for review",
   "decision.chain.rule":
@@ -1439,7 +1442,7 @@ export const messages = {
   "weekly.check.rowsCleared":
     "{rows} Gmail records are gone from days already checked; you cleared them",
   "weekly.check.rowsMissing":
-    "Fewer {kind, select, proactive {Gmail check} memory_candidate {memory} consolidation {memory tidy-up} context_truncation {left-out older content} retrieval_degrade {memory search} external_read {outside memory read} rule_review {hard rule review} other {decision}} records for {day} than when it was checked: {before} then, {after} now",
+    "Fewer {kind, select, proactive {Gmail check} memory_candidate {memory} consolidation {memory tidy-up} context_truncation {left-out older content} retrieval_degrade {memory search} external_read {outside memory read} rule_review {hard rule review} memory_review {review-after-edit} other {decision}} records for {day} than when it was checked: {before} then, {after} now",
   "weekly.check.timeOk": "All times in the decision record are well formed",
   "weekly.check.timeBad": "{rows} times in the decision record are malformed",
   "weekly.check.other":
@@ -1544,7 +1547,7 @@ export const messages = {
   "weekly.correction.missed": "Missed: items you said should change too that were not flagged",
   "weekly.correction.open": "Still waiting for you in the review list",
   "weekly.correction.note":
-    "Running totals, not per week. When you edit or delete a memory, memories inferred from it and rules set from it are flagged for review. Only items you handled in the review list count: for a rule, Use suggestion or Keep paused, and for a memory, editing it, count as agreeing; Restore rule and Looks fine count as not agreeing. Unhandled items are left out. Below 5 handled items only Not enough samples is shown.",
+    "Running totals, not per week. When you edit or delete a memory, memories inferred from it and rules set from it are flagged for review. Only items you handled in the review list count: for a rule, Use suggestion or Turn off for good, and for a memory, editing it, count as agreeing; Restore rule and Looks fine count as not agreeing. Unhandled items are left out. Below 5 handled items only Not enough samples is shown.",
   "weekly.prereview.empty": "No decision this week has both a model pre-rating and your rating.",
   "weekly.prereview.emptyCurrent":
     "No pre-rating this week from the current model and prompt version.",

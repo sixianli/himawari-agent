@@ -51,6 +51,10 @@ const flagged: MemoryReview = {
       status: "suspended",
       summary: "日本入管局相关的邮件一律提醒",
       suggestion: "日本和韩国入管局相关的邮件一律提醒",
+      suggestionConditions: [
+        { field: "senderDomains", values: ["moj.go.jp", "moj.go.kr"] },
+        { field: "excludePhrases", values: ["广告"] },
+      ],
       suspendReason: "parameters_changed",
       sourceMemoryId: "memory-rule",
       updatedAt: "2026-11-12T00:00:00.000Z",
@@ -61,6 +65,7 @@ const flagged: MemoryReview = {
       status: "needs_review",
       summary: "涉及退款的邮件先读完整个邮件串",
       suggestion: null,
+      suggestionConditions: [],
       suspendReason: null,
       sourceMemoryId: "memory-rule-2",
       updatedAt: "2026-11-12T00:00:00.000Z",
@@ -118,16 +123,21 @@ describe("[P4-1] memories and rules to recheck after a memory edit", () => {
     expect(text).toContain("依据它推出来的记忆太多，超过上限的没有标出");
     expect(text).toContain("已暂停：来源记忆读下来和原规则对不上");
     expect(text).toContain("系统建议改成：日本和韩国入管局相关的邮件一律提醒");
+    expect(text).toContain("发件域名：moj.go.jp、moj.go.kr");
+    expect(text).toContain("排除短语：广告");
+    expect(
+      container.querySelectorAll('[data-review-rule="owner:waiting"] [data-review-condition]'),
+    ).toHaveLength(0);
     expect(text).toContain("等系统自动核对（核对完之前照常执行）");
     expect(
       buttonsIn('[data-review-rule="owner:suspended"]').map((button) => button.textContent),
-    ).toEqual(["采用建议", "确认暂停", "恢复原规则"]);
+    ).toEqual(["采用建议", "确认停用", "恢复原规则"]);
     expect(
       buttonsIn('[data-review-rule="owner:waiting"]').map((button) => button.textContent),
     ).toEqual(["看过没问题"]);
     await press('[data-review-rule="owner:suspended"]', "采用建议");
     expect(respondReview).toHaveBeenLastCalledWith("owner:suspended", "adopt", 4);
-    await press('[data-review-rule="owner:suspended"]', "确认暂停");
+    await press('[data-review-rule="owner:suspended"]', "确认停用");
     expect(respondReview).toHaveBeenLastCalledWith("owner:suspended", "confirm_suspended", 4);
     await press('[data-review-rule="owner:waiting"]', "看过没问题");
     expect(respondReview).toHaveBeenLastCalledWith("owner:waiting", "restore", 2);
@@ -135,6 +145,35 @@ describe("[P4-1] memories and rules to recheck after a memory edit", () => {
     expect(respondReview).toHaveBeenLastCalledWith("memory-c", "dismiss", null);
     await press('[data-review-memory="memory-c"]', "打开修改");
     expect(onOpenMemory).toHaveBeenCalledWith("memory-c");
+  });
+
+  it("keeps a flagged memory whose text cannot be read on the list so it can still be dismissed", async () => {
+    const respondReview = vi.fn(async () => true);
+    const unreadable: MemoryReview = {
+      ...empty,
+      memories: [
+        {
+          memoryId: "memory-gone",
+          text: null,
+          upstreamMemoryId: "memory-a",
+          upstreamText: "Andy 在办日本签证续签",
+          reason: "memory_edited",
+          depth: 1,
+          truncated: false,
+          flaggedAt: "2026-11-12T00:00:00.000Z",
+        },
+      ],
+    };
+    await show(
+      h(CorrectionReviewSection, {
+        memory: { review: unreadable, respondReview, busy: false },
+        message,
+        onOpenMemory: vi.fn(),
+      }),
+    );
+    expect(container.textContent).toContain("这条记忆的文字读不出来");
+    await press('[data-review-memory="memory-gone"]', "看过没问题");
+    expect(respondReview).toHaveBeenLastCalledWith("memory-gone", "dismiss", null);
   });
 
   it("shows nothing when no memory or rule is waiting", async () => {

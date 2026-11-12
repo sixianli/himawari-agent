@@ -344,7 +344,9 @@ CREATE TABLE rule_book_rules_next (
   review_after TEXT,
   review_attempts INTEGER NOT NULL DEFAULT 0 CHECK (review_attempts BETWEEN 0 AND 1000),
   review_failure TEXT CHECK (
-    review_failure IS NULL OR review_failure IN ('model_failed', 'answer_invalid', 'content_blocked')
+    review_failure IS NULL OR review_failure IN (
+      'model_failed', 'answer_invalid', 'content_blocked', 'source_unreadable'
+    )
   ),
   reviewed_source_revision INTEGER CHECK (
     reviewed_source_revision IS NULL OR reviewed_source_revision >= 0
@@ -575,7 +577,7 @@ BEGIN
   UPDATE rule_book_rules SET
     status = CASE WHEN status = 'suspended' THEN 'suspended' ELSE 'needs_review' END,
     revision = revision + 1, updated_at = NEW.updated_at, review_after = NEW.updated_at,
-    review_attempts = 0, review_failure = NULL
+    review_attempts = 0, review_failure = NULL, suggestion = NULL
   WHERE source_memory_id = OLD.id AND owner_id = OLD.owner_id AND agent_id = OLD.agent_id
     AND status IN ('active', 'needs_review', 'suspended')
     AND (OLD.category = 'rule' OR NEW.category = 'rule');
@@ -628,7 +630,7 @@ BEGIN
     status = CASE WHEN status = 'suspended' THEN 'suspended' ELSE 'needs_review' END,
     revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
     review_after = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), review_attempts = 0,
-    review_failure = NULL
+    review_failure = NULL, suggestion = NULL
   WHERE source_memory_id = OLD.id AND owner_id = OLD.owner_id AND agent_id = OLD.agent_id
     AND status IN ('active', 'needs_review', 'suspended') AND OLD.category = 'rule';
 END;

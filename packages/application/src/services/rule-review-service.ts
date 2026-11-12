@@ -100,9 +100,15 @@ export class RuleReviewService {
         reason: "source_removed",
         suggestion: null,
       });
+    let text: string;
+    try {
+      text = await this.#options.readMemoryText(memory);
+    } catch {
+      return this.#fail(candidate, "source_unreadable");
+    }
     let prompt: string;
     try {
-      prompt = ruleReviewPrompt(await this.#options.readMemoryText(memory), candidate.parameters);
+      prompt = ruleReviewPrompt(text, candidate.parameters);
     } catch (error) {
       if (error instanceof RuleTypeError) return this.#fail(candidate, "answer_invalid");
       throw error;

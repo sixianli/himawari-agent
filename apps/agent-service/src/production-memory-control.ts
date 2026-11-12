@@ -37,6 +37,7 @@ import {
   type GatewayV2Snapshot,
   MEMORY_SENSITIVE_CATEGORY_NAMES,
   MEMORY_SOURCE_REF_MAX_LENGTH,
+  RULE_CONDITION_FIELDS,
 } from "@himawari-agent/gateway-contracts";
 import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
 import { type DecisionChainMemoryView, readDecisionChain } from "./production-decision-chain.js";
@@ -597,11 +598,9 @@ export class ProductionMemoryControl {
     };
     const memories = [];
     for (const item of items) {
-      const text = await textOf(item.memoryId);
-      if (!text) continue;
       memories.push({
         memoryId: item.memoryId,
-        text,
+        text: await textOf(item.memoryId),
         upstreamMemoryId: item.upstreamMemoryId,
         upstreamText: await textOf(item.upstreamMemoryId),
         reason: item.reason,
@@ -621,6 +620,12 @@ export class ProductionMemoryControl {
         status: rule.status,
         summary: clip(summaries.get(rule.ruleId) ?? ""),
         suggestion: rule.suggestion ? clip(rule.suggestion.summary) : null,
+        suggestionConditions: rule.suggestion
+          ? RULE_CONDITION_FIELDS.flatMap((field) => {
+              const values = rule.suggestion?.params[field] ?? [];
+              return values.length ? [{ field, values: values.map(clip) }] : [];
+            })
+          : [],
         suspendReason: rule.suspendReason,
         sourceMemoryId: rule.sourceMemoryId,
         updatedAt: rule.updatedAt,
