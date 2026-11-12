@@ -1,0 +1,3 @@
+{"id": "d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低：反向用例只覆盖 `listPending` 失败，没有覆盖“改状态失败”", "valid": true, "class": "error", "severity": "low", "trigger": "以后有人删掉改状态失败的兜底", "consequence": "采纳在整理失败时报错而没有测试拦住", "modelSeverity": "低", "reason": "补了整理阶段改状态失败的用例"}
+{"id": "d2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低：`#settle` 失败被完全静默吞掉，且“漏掉的留到下次”没有独立的后续重试", "valid": true, "class": "better", "modelSeverity": "低", "reason": "规则写入器目前没有日志通道；文档已写明漏掉的会留到过期；列给 Andy"}
+{"id": "d3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 说明：文档“一条规则生效时”比代码实际范围宽（非本轮引入）", "valid": true, "class": "error", "severity": "low", "trigger": "读文档的人以为重新确认也会整理", "consequence": "文档和代码范围不一致", "modelSeverity": "低", "reason": "文档限定为经采纳提议或主人原话生效时"}

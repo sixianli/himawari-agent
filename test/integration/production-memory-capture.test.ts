@@ -2648,6 +2648,30 @@ describe("production memory capture", () => {
       const receipt = await writer.confirm(proposal["proposalId"] as string);
       expect(receipt.status).toBe("active");
       expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(0);
+      const twin = await inferred("tidy-two.example");
+      await context.ruleWriter.create({
+        key: "tidy-two-reworded",
+        quote: "入管局相关的邮件",
+        inferred: true,
+        type: "mail_must_notify",
+        params: { senderDomains: ["tidy-two.example"] },
+        summary: "另一种说法",
+        threadId: THREAD_ID,
+      });
+      let decisions = 0;
+      const second = context.ruleWriterWith({
+        proposals: {
+          propose: (input) => store.propose(input),
+          read: (input) => store.read(input),
+          listPending: (input) => store.listPending(input),
+          decide: async (input) => {
+            if (decisions++ > 0) throw new Error("decide failed");
+            return store.decide(input);
+          },
+        },
+      });
+      expect((await second.confirm(twin["proposalId"] as string)).status).toBe("active");
+      expect(decisions).toBe(2);
       await expect(
         context.ruleWriter.reject(proposal["proposalId"] as string),
       ).rejects.toMatchObject({ code: "RULE_PROPOSAL_ACCEPTED" });
