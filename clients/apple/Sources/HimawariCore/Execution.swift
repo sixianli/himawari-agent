@@ -89,6 +89,7 @@ public enum ProcessLine: Sendable, Equatable {
     case working(current: ProcessStep, setback: ProcessStep?)
     case waiting(ProcessStep)
     case finished(steps: [ProcessStep], seconds: Int)
+    case failed(steps: [ProcessStep], seconds: Int)
     case stopped(steps: [ProcessStep], seconds: Int)
 
     public static let terminalRunStatuses: Set<String> = ["completed", "failed", "cancelled"]
@@ -142,10 +143,15 @@ public enum ProcessLine: Sendable, Equatable {
             return max(0, Int(end.timeIntervalSince(start).rounded()))
         }()
         if terminalRunStatuses.contains(runStatus) {
-            return runStatus == "cancelled" ? .stopped(steps: steps, seconds: seconds) : .finished(steps: steps, seconds: seconds)
+            switch runStatus {
+            case "cancelled": return .stopped(steps: steps, seconds: seconds)
+            case "failed": return .failed(steps: steps, seconds: seconds)
+            default: return .finished(steps: steps, seconds: seconds)
+            }
         }
-        if let waiting = steps.last(where: { $0.phase == .waiting }) {
-            return .waiting(waiting)
+        if let latest = sorted.last, latest.phase == .waiting,
+           let step = latest.kind == .tool ? steps.first(where: { $0.id == latest.itemId }) : steps.last {
+            return .waiting(ProcessStep(id: step.id, title: step.title, icon: step.icon, phase: .waiting, startedAt: step.startedAt, endedAt: latest.occurredAt))
         }
         guard let current = steps.last else { return .thinking }
         let setback = steps.dropLast().last.flatMap { $0.phase == .failed || $0.phase == .unavailable ? $0 : nil }

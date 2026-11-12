@@ -40,6 +40,17 @@ public struct SecureEnclaveKeyStore: Sendable {
         (try? readRepresentation(role)) != nil
     }
 
+    public func presence(_ role: DeviceKeyRole) -> KeychainPresence {
+        do {
+            _ = try readRepresentation(role)
+            return .present
+        } catch DeviceKeyError.keyMissing {
+            return .absent
+        } catch {
+            return .unreadable
+        }
+    }
+
     public func create(_ role: DeviceKeyRole) throws {
         guard SecureEnclave.isAvailable else { throw DeviceKeyError.secureEnclaveUnavailable }
         try delete(role)

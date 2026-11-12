@@ -26,10 +26,12 @@ struct ProcessRowView: View {
             break
         case (_, .waiting):
             Haptics.shared.report(.approvalNeeded, ownerViewingThisPage: true)
-        case (.finished, .finished), (.stopped, .stopped):
+        case (.finished, .finished), (.stopped, .stopped), (.failed, .failed):
             break
         case let (_, .finished(_, seconds)):
             Haptics.shared.report(failed ? .taskFailed : .longTaskFinished, ownerViewingThisPage: true, waitedSeconds: TimeInterval(seconds))
+        case let (_, .failed(_, seconds)):
+            Haptics.shared.report(.taskFailed, ownerViewingThisPage: true, waitedSeconds: TimeInterval(seconds))
         default:
             break
         }
@@ -58,6 +60,8 @@ struct ProcessRowView: View {
             summary(icon: .check, steps: steps, seconds: seconds)
         case let .stopped(steps, seconds):
             summary(icon: .playerStop, steps: steps, seconds: seconds)
+        case let .failed(steps, seconds):
+            summary(icon: .alertCircle, steps: steps, seconds: seconds)
         }
     }
 

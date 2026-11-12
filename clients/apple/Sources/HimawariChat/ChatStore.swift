@@ -222,15 +222,8 @@ public final class ChatStore {
         guard !loadingExecutions.contains(runId) else { return }
         loadingExecutions.insert(runId)
         defer { loadingExecutions.remove(runId) }
-        var records = executions[runId] ?? []
         do {
-            while true {
-                let page = try await api.execution(threadId: threadId, runId: runId, afterSequence: records.map(\.sequence).max() ?? 0)
-                let known = Set(records.map(\.id))
-                records += page.records.filter { !known.contains($0.id) }
-                guard page.nextSequence != nil, !page.records.isEmpty else { break }
-            }
-            executions[runId] = records.sorted { $0.sequence < $1.sequence }
+            executions[runId] = try await api.executionRecords(threadId: threadId, runId: runId, known: executions[runId] ?? [])
         } catch {
             await handle(error)
         }
@@ -280,25 +273,23 @@ public final class ChatStore {
         }
         flushing = true
         defer { flushing = false }
-        var delivered = false
-        var deferred = false
-        repeat {
+        while true {
             flushAgain = false
             let results = await outbox.flush(using: api) { [weak self] threadId in
                 await self?.details[threadId]?.thread.revision
             }
-            delivered = delivered || results.contains { if case .delivered = $0 { true } else { false } }
-            deferred = results.contains(.retryLater)
-        } while flushAgain && !deferred
-        if deferred {
-            scheduleRetry()
-        } else {
-            retryFailures = 0
-            retryTask?.cancel()
-            retryTask = nil
-        }
-        if delivered {
-            await refreshThreads()
+            let deferred = results.contains(.retryLater)
+            if deferred {
+                scheduleRetry()
+            } else {
+                retryFailures = 0
+                retryTask?.cancel()
+                retryTask = nil
+            }
+            if results.contains(where: { if case .delivered = $0 { true } else { false } }) {
+                await refreshThreads()
+            }
+            if deferred || !flushAgain { return }
         }
     }
 

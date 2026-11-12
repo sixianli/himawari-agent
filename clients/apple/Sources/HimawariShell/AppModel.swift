@@ -58,7 +58,12 @@ public final class AppModel {
     }
 
     private func restore() {
-        guard let record, keys.exists(.device), keys.exists(.confirm) else {
+        let presence = [keychain.presence(Self.recordAccount), keys.presence(.device), keys.presence(.confirm)]
+        if presence.contains(.unreadable) {
+            phase = .unpaired(.keysUnavailable)
+            return
+        }
+        guard let record, presence.allSatisfy({ $0 == .present }) else {
             forget(problem: nil)
             return
         }
@@ -278,6 +283,10 @@ public final class AppModel {
     }
 
     public func becameActive() {
+        if phase == .unpaired(.keysUnavailable), keychain.presence(Self.recordAccount) != .absent {
+            restore()
+            return
+        }
         guard phase == .active else { return }
         chat?.reconnect()
         Task { await refreshConfiguration() }
@@ -306,7 +315,7 @@ public final class AppModel {
         #if canImport(UIKit)
         PairingRequestLimits.deviceName(UIDevice.current.name)
         #else
-        PairingRequestLimits.deviceName(Host.current().localizedName ?? "Mac")
+        PairingRequestLimits.deviceName(Host.current().localizedName ?? "", fallback: "Mac")
         #endif
     }
 }

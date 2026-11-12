@@ -77,9 +77,34 @@ import Testing
         #expect(steps.first?.title == "tool_a")
     }
 
-    @Test func waitingForApprovalWins() {
-        let records = [record(1, "a", .waiting, at: 0, activity: "要给田中发邮件，等你点头", icon: "mail"), record(2, "b", .started, at: 1)]
-        #expect(ProcessLine.make(records: records, runStatus: "running") == .waiting(ProcessLine.steps(from: records)[0]))
+    @Test func waitingShowsWhileItIsTheLatestRecord() {
+        let records = [record(1, "a", .started, at: 0, activity: "正在写邮件", icon: "mail"), record(2, "a", .waiting, at: 2, activity: "要给田中发邮件，等你点头", icon: "mail")]
+        guard case let .waiting(step) = ProcessLine.make(records: records, runStatus: "running") else {
+            Issue.record("expected waiting")
+            return
+        }
+        #expect(step.id == "a")
+        #expect(step.title == "要给田中发邮件，等你点头")
+        #expect(step.icon == .mail)
+    }
+
+    @Test func aRunSuspendedForApprovalWaitsOnItsLastStep() {
+        let records = [record(1, "a", .started, at: 0, activity: "要给田中发邮件", icon: "mail"), record(2, "run", .waiting, at: 1, kind: .status)]
+        guard case let .waiting(step) = ProcessLine.make(records: records, runStatus: "running") else {
+            Issue.record("expected waiting")
+            return
+        }
+        #expect(step.id == "a")
+        #expect(step.phase == .waiting)
+    }
+
+    @Test func aNewerRecordEndsTheWait() {
+        let records = [record(1, "a", .waiting, at: 0, activity: "要给田中发邮件，等你点头", icon: "mail"), record(2, "b", .started, at: 1, activity: "正在发邮件")]
+        guard case let .working(current, _) = ProcessLine.make(records: records, runStatus: "running") else {
+            Issue.record("expected working")
+            return
+        }
+        #expect(current.id == "b")
     }
 
     @Test func finishedRunCollapsesWithItsDuration() {
@@ -90,6 +115,10 @@ import Testing
         }
         #expect(steps.map(\.id) == ["a"])
         #expect(seconds == 8)
+        guard case .failed = ProcessLine.make(records: records, runStatus: "failed") else {
+            Issue.record("expected failed")
+            return
+        }
         guard case .stopped = ProcessLine.make(records: records, runStatus: "cancelled") else {
             Issue.record("expected stopped")
             return
