@@ -193,6 +193,35 @@ describe("published fixture admission", () => {
     f.save();
     expect(() => f.review().inspect(f)).toThrow("PUBLIC_ARTIFACT_CONTAINS_SECRET");
   });
+  it("候选把例外改到别的路径时，原路径按没有例外处理，新路径也不生效", () => {
+    const f = fixture();
+    f.accept();
+    const moved = "runtime/node_modules/example/OTHER.md";
+    f.document.exceptions = [{ ...f.entry, path: moved, archiveMember: "package/OTHER.md" }];
+    f.save();
+    const review = f.review();
+    expect(() => review.inspect(f)).toThrow("PUBLIC_ARTIFACT_CONTAINS_SECRET");
+    expect(() => review.inspect({ ...f, name: moved })).toThrow("PUBLIC_ARTIFACT_CONTAINS_SECRET");
+    expect(review.finish()).toMatchObject({ memberCount: 0, removedPublishedPaths: [f.name] });
+  });
+  it("base台账结构错误时报受控错误码", () => {
+    const f = fixture();
+    const good = f.document.exceptions;
+    f.document.exceptions = {};
+    f.accept();
+    f.document.exceptions = good;
+    f.save();
+    expect(f.review).toThrow("SECURITY_EXCEPTION_SCHEMA_INVALID");
+  });
+  it("初始化时没有可撤掉的例外", () => {
+    const f = fixture(),
+      review = f.review();
+    review.inspect(f);
+    expect(review.finish()).toMatchObject({
+      approvalBasis: "initialization_proposal",
+      removedPublishedPaths: [],
+    });
+  });
   it("只有例外存在的base不能冒充初始化", () => {
     const f = fixture();
     f.git("add", "ci/security-exceptions.json");

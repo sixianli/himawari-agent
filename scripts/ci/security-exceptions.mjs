@@ -227,21 +227,25 @@ export function loadReviewedExceptions({
     exceptionPath;
   assert(!source.initialization || !available, "SECURITY_PARTIAL_INITIALIZATION");
   const candidate = readFileSync(join(root, exceptionPath), "utf8");
-  validateSecurityExceptions(JSON.parse(candidate), { now, ruleIds, dependencies });
+  const candidateExceptions = validateSecurityExceptions(JSON.parse(candidate), {
+    now,
+    ruleIds,
+    dependencies,
+  });
   assert(available || source.initialization, "SECURITY_ACCEPTED_EXCEPTIONS_MISSING");
   const bytes = available ? git(root, ["show", `${context.baseSha}:${exceptionPath}`]) : candidate;
   const document = withoutRemovedDependencies(JSON.parse(bytes), dependencies);
-  const publishedPaths = (value) =>
+  const exceptions = validateSecurityExceptions(document, { now, ruleIds, dependencies });
+  const publishedPaths = (entries) =>
     new Set(
-      (value.exceptions ?? [])
+      entries
         .filter((entry) => entry.kind === "published-synthetic-fixture")
         .map((entry) => entry.path),
     );
-  const candidatePublishedPaths = publishedPaths(JSON.parse(candidate));
-  const removedPublishedPaths = [...publishedPaths(document)]
+  const candidatePublishedPaths = publishedPaths(candidateExceptions);
+  const removedPublishedPaths = [...publishedPaths(exceptions)]
     .filter((path) => !candidatePublishedPaths.has(path))
     .sort();
-  const exceptions = validateSecurityExceptions(document, { now, ruleIds, dependencies });
   assert(
     available ||
       exceptions.length === 0 ||
