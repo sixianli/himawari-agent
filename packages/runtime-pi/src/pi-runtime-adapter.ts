@@ -108,6 +108,12 @@ import {
 } from "./pi-tool-batch-continuation.js";
 import { PiToolProgressGuard, type PiToolProgressState } from "./pi-tool-progress-guard.js";
 import {
+  carriesToolActivity,
+  processIconsSection,
+  removeToolActivity,
+  withToolActivityParameters,
+} from "./tool-activity.js";
+import {
   contextBlockMarker,
   runtimeEnvironmentAfterCompaction,
   splitRuntimeEnvironment,
@@ -598,6 +604,7 @@ function productSystemPrompt(
           ].join("\n"),
         ]
       : []),
+    ...processIconsSection(tools),
   ].join("\n\n");
 }
 
@@ -1460,6 +1467,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       if (descriptorsByName.size !== descriptors.length) {
         throw new TypeError("RUNTIME_DUPLICATE_TOOL_NAME");
       }
+      const activityTools = new Set(
+        descriptors
+          .filter((descriptor) => carriesToolActivity(this.toolDefinition(descriptor).parameters))
+          .map(({ name }) => name),
+      );
       const settingsManager = SettingsManager.inMemory(
         {
           compaction: { enabled: true, modelOverrides: compactionModelOverrides(binding.model) },
@@ -1517,7 +1529,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             name: "himawari-tool-outcomes",
             hidden: true,
             factory: (pi: ExtensionAPI) => {
-              pi.on("tool_call", () => {
+              pi.on("tool_call", (event) => {
+                if (activityTools.has(event.toolName)) removeToolActivity(event.input);
                 if (toolProgress.blocked)
                   return { block: true, reason: CHAT_TOOL_LOOP_REJECTED.text };
               });
@@ -2047,7 +2060,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         name: builtin.name,
         label: builtin.label,
         description: text.description,
-        parameters: text.parameters,
+        parameters: withToolActivityParameters(text.parameters),
         ...(builtin.promptSnippet === undefined ? {} : { promptSnippet: builtin.promptSnippet }),
         ...(text.promptGuidelines === undefined
           ? {}
@@ -2061,7 +2074,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       name: descriptor.name,
       label: descriptor.name,
       description: "description" in descriptor ? descriptor.description : "",
-      parameters: descriptor.parameters as ToolDefinition["parameters"],
+      parameters: withToolActivityParameters(descriptor.parameters as ToolDefinition["parameters"]),
     };
   }
 

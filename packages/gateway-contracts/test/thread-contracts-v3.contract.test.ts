@@ -423,6 +423,8 @@ describe("displayable execution records", () => {
     text: "",
     input: "fixture input",
     output: "",
+    activity: "",
+    activityIcon: "",
     occurredAt: "2026-09-14T00:00:00.000Z",
   };
   it("preserves empty and bounded display content without treating it as a machine identifier", () => {
@@ -434,6 +436,15 @@ describe("displayable execution records", () => {
         output: "line one\nline two",
       }).output,
     ).toBe("line one\nline two");
+  });
+  it("[ICON-2] carries the model's activity and icon and rejects a record without them", () => {
+    const step = { ...record, activity: "查东京明天的天气", activityIcon: "cloud" };
+    expect(threadExecutionRecordSchema.parse(step)).toEqual(step);
+    const { activity: _activity, ...withoutActivity } = step;
+    expect(() => threadExecutionRecordSchema.parse(withoutActivity)).toThrow("$.activity");
+    expect(() => threadExecutionRecordSchema.parse({ ...step, activityIcon: 7 })).toThrow(
+      "$.activityIcon",
+    );
   });
   it.each([null, 42, "a".repeat(65537)])(
     "rejects non-text or oversized execution input",

@@ -168,6 +168,8 @@ it("[UI-13] shows only the token total and the KV cache hit rate after the turn 
     }),
     input: "",
     output: "",
+    activity: "",
+    activityIcon: "",
     occurredAt: at(26000),
   };
   const html = render(completedRun, [...newsRun(), usage]);
@@ -321,6 +323,8 @@ const reviewRecord = (
   text: "",
   input: "",
   output: "",
+  activity: "",
+  activityIcon: "",
   occurredAt: at(milliseconds),
 });
 

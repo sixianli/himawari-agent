@@ -32,6 +32,8 @@ const record = (
   text: "",
   input: "",
   output: "",
+  activity: "",
+  activityIcon: "",
   occurredAt: new Date(seconds * 1000).toISOString(),
   ...overrides,
 });
@@ -360,6 +362,8 @@ it("keeps the model request time and arguments separate from tool execution", ()
     name: "web_search",
     phase: "completed",
     output: "News",
+    activity: "",
+    activityIcon: "",
   });
   expect(executionItems([end, request, start, end])[0]).toMatchObject({
     requestedAt: request.occurredAt,

@@ -25,6 +25,8 @@ function render(
       text: "保留的部分回答",
       input: "",
       output: "",
+      activity: "",
+      activityIcon: "",
       occurredAt: "2026-09-11T00:00:02Z",
     },
   ]);
@@ -124,6 +126,8 @@ const record = (
   text,
   input: kind === "tool" ? `{"query":"${itemId}"}` : "",
   output: "",
+  activity: "",
+  activityIcon: "",
   occurredAt: `2026-09-11T00:00:0${sequence}Z`,
 });
 const narration = "I'll search for the latest US news now.";
@@ -226,6 +230,8 @@ it("[UI-47] never shows the memories brought to the model as process steps", () 
     text: count,
     input: "",
     output: "",
+    activity: "",
+    activityIcon: "",
     occurredAt: `2026-09-11T00:00:0${sequence}Z`,
   });
   const html = renderRun("completed", [
@@ -253,6 +259,8 @@ it("[I-23] shows no memory step when no memory passed the relevance threshold", 
     text: count,
     input: "",
     output: "",
+    activity: "",
+    activityIcon: "",
     occurredAt: `2026-09-11T00:00:0${sequence}Z`,
   });
   const html = renderRun("completed", [

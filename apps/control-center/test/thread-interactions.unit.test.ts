@@ -556,6 +556,8 @@ describe("thread control center interactions", () => {
                       text: "",
                       input: "",
                       output: "Retained output",
+                      activity: "",
+                      activityIcon: "",
                       occurredAt: NOW,
                     },
                   ]
@@ -706,6 +708,8 @@ describe("thread control center interactions", () => {
       text,
       input: "",
       output: "",
+      activity: "",
+      activityIcon: "",
       occurredAt: NOW,
     });
     let records: ReturnType<typeof answerRecord>[] = [];
@@ -843,6 +847,8 @@ describe("thread control center interactions", () => {
                       text: "",
                       input: "",
                       output: "",
+                      activity: "",
+                      activityIcon: "",
                       occurredAt: NOW,
                     },
                   ]
@@ -1047,6 +1053,8 @@ describe("thread control center interactions", () => {
                       text: "",
                       input: '{"path":"notes.md"}',
                       output: "",
+                      activity: "",
+                      activityIcon: "",
                       occurredAt: NOW,
                     },
                   ]
@@ -1161,6 +1169,8 @@ describe("thread control center interactions", () => {
                       text: "已经显示的工具回复",
                       input: "",
                       output: "",
+                      activity: "",
+                      activityIcon: "",
                       occurredAt: NOW,
                     },
                   ]
@@ -1581,6 +1591,8 @@ describe("thread control center interactions", () => {
         text: "",
         input: '{"path":"notes.md"}',
         output: "文件内容",
+        activity: "",
+        activityIcon: "",
         occurredAt: "2026-09-14T00:00:09.400Z",
       },
       {
@@ -1593,6 +1605,8 @@ describe("thread control center interactions", () => {
         text: "",
         input: "",
         output: "",
+        activity: "",
+        activityIcon: "",
         occurredAt: NOW,
       },
       {
@@ -1605,6 +1619,8 @@ describe("thread control center interactions", () => {
         text: "",
         input: "",
         output: "",
+        activity: "",
+        activityIcon: "",
         occurredAt: "2026-09-14T00:00:09.400Z",
       },
     ];
@@ -1825,6 +1841,8 @@ describe("thread control center interactions", () => {
       text: "Read an authorized document",
       input: '{"path":"README.md"}',
       output: phase === "completed" ? "Read complete" : "",
+      activity: "",
+      activityIcon: "",
       occurredAt: NOW,
     });
     const original = query.getMockImplementation();

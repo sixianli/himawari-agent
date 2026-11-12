@@ -602,6 +602,8 @@ export const threadExecutionRecordSchema = object({
   text: displayText,
   input: displayText,
   output: displayText,
+  activity: displayText,
+  activityIcon: displayText,
   occurredAt: timestamp,
 });
 export type ThreadExecutionRecord = InferSchema<typeof threadExecutionRecordSchema>;

@@ -26,6 +26,8 @@ const extra = (id: string, overrides: Partial<ThreadExecutionRecord>): ThreadExe
   text: "",
   input: "",
   output: "",
+  activity: "",
+  activityIcon: "",
   occurredAt: at(26000),
   ...overrides,
 });

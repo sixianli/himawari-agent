@@ -158,7 +158,7 @@ pi.on("tool_call", async (event, ctx) => {
 - 被拦下的调用不会执行工具；要观察它，用 `tool_execution_end` 事件。
 - 这个钩子只能当场决定或当场等。要等人批准几个小时、服务中途可能重启的情况，官方没有可靠写法，见[偏离 D2](#current-deviations)。
 - 新增的“直接拒绝、不需要等人”的规则（例如硬规则），用这个钩子写，挂在一个隐藏的内联扩展里。
-- 顺序：`tool_call` 先于工具的 `execute` 运行，官方原话“Mutations to `event.input` affect the actual tool execution”（`docs/extensions.md` 第 984 行），所以在这里改了参数，Himawari 在 `execute` 里做的权限判断（[偏离 D2](#current-deviations)）看到的是改后的参数。仓库里还没有测试锁住这一点，第一次在 `tool_call` 里改参数的改动要补上。
+- 顺序：`tool_call` 先于工具的 `execute` 运行，官方原话“Mutations to `event.input` affect the actual tool execution”（`docs/extensions.md` 第 984 行），所以在这里改了参数，Himawari 在 `execute` 里做的权限判断（[偏离 D2](#current-deviations)）看到的是改后的参数。`pi-runtime-adapter.compat.test.ts` 的 `[ICON-1]` 用真实 Pi 会话锁住了这一点：`tool_call` 里删掉的 `activity`、`activityIcon` 不会出现在 `preflight` 和 `execute` 收到的参数里（[ADR 0250](adr/0250-tools-carry-model-written-activity-and-icon.md)）。
 
 <a id="pattern-tool-result"></a>
 ### 改工具结果

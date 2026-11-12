@@ -19,6 +19,8 @@ const record = (
   text: "",
   input: "",
   output: "",
+  activity: "",
+  activityIcon: "",
   occurredAt: new Date(sequence * 1000).toISOString(),
   ...overrides,
 });
