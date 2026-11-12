@@ -41,7 +41,7 @@ function readTail(file) {
   const bytes = Buffer.alloc(length);
   const handle = openSync(file.full, "r");
   try {
-    readSync(handle, bytes, 0, length, file.size - length);
+    if (readSync(handle, bytes, 0, length, file.size - length) !== length) return null;
   } finally {
     closeSync(handle);
   }
@@ -50,7 +50,7 @@ function readTail(file) {
 
 function textTail(file) {
   let bytes = readTail(file);
-  if (bytes.includes(0)) return null;
+  if (bytes === null || bytes.includes(0)) return null;
   if (file.size > bytes.length) {
     const newline = bytes.indexOf(0x0a);
     if (newline < 0) return null;
@@ -62,7 +62,9 @@ function textTail(file) {
   } catch {
     return null;
   }
-  const lines = redactText(text)
+  const redacted = redactText(text);
+  if (/-----(?:BEGIN|END) [A-Z ]*PRIVATE KEY-----/u.test(redacted)) return null;
+  const lines = redacted
     .replace(/\r\n?/gu, "\n")
     .replace(/\n$/u, "")
     .replace(/[^\P{Cc}\n\t]/gu, "?")

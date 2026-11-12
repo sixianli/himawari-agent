@@ -38,6 +38,11 @@ export function required({
 
 const cell = (value) => redactText(String(value)).replace(/[\p{Cc}|`]/gu, " ");
 
+export const publicGate = (gate) =>
+  JSON.parse(
+    JSON.stringify(gate, (_key, value) => (typeof value === "string" ? redactText(value) : value)),
+  );
+
 export function gateSummaryMarkdown(summary) {
   const rows = summary.checks.map(
     (check) =>
@@ -69,7 +74,7 @@ export function main(
     needs: JSON.parse(env.CI_NEEDS),
     env,
   });
-  write(encodeGate({ context, summary }));
+  write(encodeGate(publicGate({ context, summary })));
   if (env.GITHUB_STEP_SUMMARY)
     appendFileSync(env.GITHUB_STEP_SUMMARY, gateSummaryMarkdown(summary));
   write(`${summary.status}: ${summary.observed.length}/${summary.expected.length} reports\n`);

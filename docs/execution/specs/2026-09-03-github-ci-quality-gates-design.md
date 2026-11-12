@@ -126,7 +126,7 @@ date: "2026-09-03"
 
 2026-11-06 起 CI 不再使用 GitHub 缓存，每个任务都从锁定的下载地址重新下载并校验，以免产生 GitHub 存储费（[ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)）。每次仍执行锁文件安装；不跨平台传递 `node_modules`。
 
-作业之间的文件不经 GitHub 产物存储，放在 CI VPS 的共享目录 `/srv/gh-runner-share/<运行号-尝试号>/<作业-成员>/`（[ADR 0238](../../adr/0238-ci-job-files-stay-on-the-ci-vps.md)）：每个作业成员用 `scripts/ci/run-share.mjs put` 放入完整报告，并把内容摘要写进作业输出；`browser`、`coverage` 用 `needs.build.outputs.linux-x64` 的摘要取构建，`ci/required` 按 `needs` 里的摘要逐个取回报告，核对不一致即失败，入口检查（草稿、上游取消）通过后，结束时不论成败删掉本次运行的目录；入口检查失败的运行由 CI 服务器每小时的清理在 6 小时后删掉（[ADR 0241](../../adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md)）。2026-11-12 起 CI 完全不用 GitHub 产物（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)）：`ci/required` 把汇总结论（几 KB 的 JSON，经 base64 编码，前后有开始和结束标记并附 SHA-256 校验值）打印进自己的步骤日志，同时把各检查的结果表写进作业摘要（GitHub 运行页面上每个作业下方显示的一段 Markdown）；其他作业把失败诊断写进作业摘要，每个文本文件只显示最后 40 行、先遮盖像密钥的内容、总量不超过 64 KiB，截图、trace 这类二进制文件只列名字和大小。三个工作流用到 `actions/upload-artifact` 或 `actions/download-artifact` 时 `npm run check:ci-policy` 失败。`ci.yml` 的所有作业都只有只读权限；`main.yml` 的 `full` 作业以可复用工作流（被别的工作流整个调用的工作流）的方式调用 `ci.yml`，不单独授予权限，沿用工作流级的只读权限。被调用的工作流拿不到超过调用方的权限，`npm run check:ci-policy` 核对 `ci.yml` 每个作业要的权限都在调用方给的范围内，否则整轮会在启动前失败（事故 I-93）。
+作业之间的文件不经 GitHub 产物存储，放在 CI VPS 的共享目录 `/srv/gh-runner-share/<运行号-尝试号>/<作业-成员>/`（[ADR 0238](../../adr/0238-ci-job-files-stay-on-the-ci-vps.md)）：每个作业成员用 `scripts/ci/run-share.mjs put` 放入完整报告，并把内容摘要写进作业输出；`browser`、`coverage` 用 `needs.build.outputs.linux-x64` 的摘要取构建，`ci/required` 按 `needs` 里的摘要逐个取回报告，核对不一致即失败，入口检查（草稿、上游取消）通过后，结束时不论成败删掉本次运行的目录；入口检查失败的运行由 CI 服务器每小时的清理在 6 小时后删掉（[ADR 0241](../../adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md)）。2026-11-12 起 CI 完全不用 GitHub 产物（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)）：`ci/required` 把汇总结论（几 KB 的 JSON，经 base64 编码，前后有开始和结束标记并附 SHA-256 校验值）（其中每个字符串先遮盖像密钥的内容）打印进自己的步骤日志，同时把各检查的结果表写进作业摘要（GitHub 运行页面上每个作业下方显示的一段 Markdown）；其他作业把失败诊断写进作业摘要，每个文本文件只显示最后 40 行、先遮盖像密钥的内容、每段摘要不超过 64 KiB，截图、trace 这类二进制文件只列名字和大小。三个工作流用到 `actions/upload-artifact` 或 `actions/download-artifact` 时 `npm run check:ci-policy` 失败。`ci.yml` 的所有作业都只有只读权限；`main.yml` 的 `full` 作业以可复用工作流（被别的工作流整个调用的工作流）的方式调用 `ci.yml`，不单独授予权限，沿用工作流级的只读权限。被调用的工作流拿不到超过调用方的权限，`npm run check:ci-policy` 核对 `ci.yml` 每个作业要的权限都在调用方给的范围内，否则整轮会在启动前失败（事故 I-93）。
 
 文档治理运行依赖放在仓库内的固定工具目录，保留上游 Skill 来源、许可依据、完整依赖闭包和内容摘要。采用原始 `validate_docs.py`、其导入模块及必需资源，不另写文档规则。更新由显式同步工具整体完成，CI 只读验证。来源或许可未明确时该任务未完成，不能静默跳过文档检查。
 
@@ -317,7 +317,7 @@ npm 下载和固定工具的 downloads/wheels 归档不再通过 cache Action �
 
 scale 使用固定数据形状、seed 和受控临时目录，输出本次 run 的报告，不写入 `test/integration/qualification/evidence`。比较性能时记录硬件、runner image、样本数和 p50/p95/p99/max；跨硬件变化只报告不可比，不能伪造退化结论。产品绝对目标沿用 S9，不重新定义。
 
-记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟（2026-11-08 起没有 test 和 node-floor 作业）、scale 60 分钟、汇总 5 分钟；现行时限以 `ci/policy.json` 为准：build 和 browser 90 分钟，汇总 15 分钟，其余 60 分钟。超时是资源上限，不是实测性能承诺。2026-11-12 起完整报告和诊断 screenshot/trace 都不再上传到 GitHub（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)，取代 [ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md) 的“保留 1 天”）：`ci.yml` 的完整报告只在本次运行的共享目录里，汇总作业结束时删除；`quality.yml` 的完整报告随作业结束丢弃；GitHub 上只留作业日志和作业摘要（每个文本文件最后 40 行，总量不超过 64 KiB），仓库设置的保留期为 3 天。要看完整材料，需要在 CI 服务器上重跑，或在本地按同样的命令运行。
+记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟（2026-11-08 起没有 test 和 node-floor 作业）、scale 60 分钟、汇总 5 分钟；现行时限以 `ci/policy.json` 为准：build 和 browser 90 分钟，汇总 15 分钟，其余 60 分钟。超时是资源上限，不是实测性能承诺。2026-11-12 起完整报告和诊断 screenshot/trace 都不再上传到 GitHub（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)，取代 [ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md) 的“保留 1 天”）：`ci.yml` 的完整报告只在本次运行的共享目录里，汇总作业结束时删除；`quality.yml` 的完整报告随作业结束丢弃；GitHub 上只留作业日志和作业摘要（每个文本文件最后 40 行，每段摘要不超过 64 KiB；`quality.yml` 每个作业写“检测结果”和“失败诊断”两段），仓库设置的保留期为 3 天。要看完整材料，需要在 CI 服务器上重跑，或在本地按同样的命令运行。
 
 公开仓库使用标准 GitHub 托管 runner 的 Actions 运行免费；仍需遵守并发、执行时间、存储和保留限制，不据此移除超时或扩大资源。更大规格 runner、付费服务或外部 provider 不因仓库公开而获得授权。
 
@@ -354,7 +354,7 @@ Mac/Hermes 平台 conformance、六类正式浏览器、人工 WCAG、运行与�
 | --- | --- |
 | 安装、工具校验、原生加载失败 | 停止该 job，记录实际版本及稳定错误码，不换版本重试到成功 |
 | 测试、覆盖率、policy 或安全规则失败 | 保留失败报告，修复原因；不得降低规则、加大范围排除或改成功出口 |
-| 下载、runner 或 artifact 服务不可用 | `infrastructure_failed`；有界重试保留 attempt，耗尽后仍阻断 |
+| 下载、runner 或 CI 服务器共享目录不可用 | `infrastructure_failed`；有界重试保留 attempt，耗尽后仍阻断 |
 | UDS/listen、权限或沙箱前提不满足 | 报运行环境失败，不用 fixture 冒充真实验证，不跳过相关合同 |
 | evidence 混合 SHA、错误矩阵或篡改 | 拒绝汇总，重新生成当前组合的完整证据 |
 | GitHub 规则不可用或规则漂移 | 标明服务端门禁未生效；保留可执行检测，等待授权条件满足 |
@@ -391,7 +391,7 @@ Plan 必须按 CI-A01 至 CI-A14 建立双向映射。机械验证与真实 GitH
 - [Dependency Review 可用范围](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependency-review)。
 - [公开 fork 工作流审批](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/approve-runs-from-forks)。
 - [fork 审批策略 API](https://docs.github.com/en/rest/actions/permissions#set-fork-pr-contributor-approval-permissions-for-a-repository)。
-- [Actions artifact 下载权限](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts)。
+- [下载单个作业的日志](https://docs.github.com/en/rest/actions/workflow-jobs#download-job-logs-for-a-workflow-run)。
 - [公开仓库标准 runner 计费与使用限制](https://docs.github.com/en/actions/concepts/billing-and-usage)。
 - [Vitest coverage 配置](https://vitest.dev/config/coverage.html)。
 - [Gitleaks](https://github.com/gitleaks/gitleaks)、[Semgrep CE](https://docs.semgrep.dev/deployment/oss-deployment)、[actionlint](https://github.com/rhysd/actionlint)、[npm audit](https://docs.npmjs.com/cli/v11/commands/npm-audit/)。

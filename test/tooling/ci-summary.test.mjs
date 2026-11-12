@@ -10,7 +10,7 @@ import {
   SUMMARY_LIMIT_BYTES,
   TAIL_LINES,
 } from "../../scripts/ci/ci-summary.mjs";
-import { gateSummaryMarkdown } from "../../scripts/ci/required.mjs";
+import { gateSummaryMarkdown, publicGate } from "../../scripts/ci/required.mjs";
 
 const roots = [];
 afterEach(() => {
@@ -75,6 +75,20 @@ describe("诊断写进作业摘要", () => {
     });
     expect(noNewline).toContain("二进制文件");
   });
+  it("截断切开私钥时整份文件不显示", () => {
+    const body = Array.from({ length: 30 }, (_, i) => `KEYBODY${i}${"Q".repeat(56)}`).join("\n");
+    const marker = (kind) => ["-----", kind, " PRIVATE", " KEY-----"].join("");
+    const big = `${"p".repeat(READ_LIMIT_BYTES)}\n${marker("BEGIN")}\n${"R".repeat(READ_LIMIT_BYTES)}\n${body}\n${marker("END")}\n`;
+    const text = renderSummary({ title: "t", from: folder({ "key.log": big }) });
+    expect(text).not.toContain("KEYBODY");
+    expect(text).toContain("`key.log`：二进制文件");
+  });
+  it("截断点落在多字节字符中间时从下一行开始显示", () => {
+    const big = `${"字".repeat(READ_LIMIT_BYTES / 3 + 1)}\n尾行内容\n`;
+    const text = renderSummary({ title: "t", from: folder({ "wide.log": big }) });
+    expect(text).toContain("尾行内容");
+    expect(text).not.toContain("二进制文件");
+  });
   it("NUL 出现在文件末尾也按二进制处理", () => {
     const text = renderSummary({
       title: "t",
@@ -116,6 +130,15 @@ describe("诊断写进作业摘要", () => {
 });
 
 describe("ci/required 的作业摘要表", () => {
+  it("打印进日志的汇总结论先遮盖像密钥的字符串", () => {
+    const gate = publicGate({
+      context: { runId: 1, headSha: "a".repeat(40) },
+      summary: { status: "failed", checks: [{ reasons: [`path ${secret}`] }] },
+    });
+    expect(JSON.stringify(gate)).not.toContain(secret);
+    expect(gate.context).toEqual({ runId: 1, headSha: "a".repeat(40) });
+    expect(gate.summary.checks[0].reasons[0]).toBe("path [REDACTED]");
+  });
   it("失败原因里的密钥、竖线和换行不会进表格", () => {
     const text = gateSummaryMarkdown({
       status: "failed",
