@@ -41,6 +41,7 @@ export interface PairedDevice extends PairedDeviceScope {
 
 export type PairingRedeemResult =
   | { readonly kind: "paired"; readonly device: PairedDevice }
+  | { readonly kind: "replayed"; readonly device: PairedDevice }
   | { readonly kind: "code_invalid" }
   | { readonly kind: "code_expired" }
   | { readonly kind: "code_used" };

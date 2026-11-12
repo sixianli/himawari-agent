@@ -90,9 +90,11 @@ async function openDevices(h: Harness, locale = "zh-CN"): Promise<Page> {
 }
 
 async function pairFromPage(h: Harness, page: Page, name: string) {
-  await page.getByRole("button", { name: "添加设备", exact: true }).click();
   const qr = page.getByRole("img", { name: "配对二维码" });
+  const previous = (await qr.count()) > 0 ? await qr.getAttribute("data-pairing-uri") : null;
+  await page.getByRole("button", { name: "添加设备", exact: true }).click();
   await uiExpect(qr).toBeVisible();
+  if (previous) await uiExpect(qr).not.toHaveAttribute("data-pairing-uri", previous);
   expect(await qr.locator("path").getAttribute("d")).toMatch(/^M\d/u);
   const uri = await qr.getAttribute("data-pairing-uri");
   const keys = generateDeviceTestKeyPair();

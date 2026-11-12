@@ -52,6 +52,7 @@ import {
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
   DEVICE_ACCESS_SECRET_PURPOSES,
+  type DevicePairingAccess,
   digestIdentityCredential,
   EnvelopePayloadProtector,
   type HostProviderSecretSource,
@@ -447,6 +448,23 @@ export class ProductionThreadGatewayAccessPolicy implements ThreadGatewayAccessP
   }
 }
 
+export async function resolveDevicePairingAccess(
+  secretReferences: readonly {
+    readonly ref: string;
+    readonly version: string;
+    readonly purpose: string;
+  }[],
+  resolve: (ref: string, version: string) => Promise<string>,
+): Promise<DevicePairingAccess | undefined> {
+  const [clientIdReference, clientSecretReference] = DEVICE_ACCESS_SECRET_PURPOSES.map((purpose) =>
+    secretReferences.find((entry) => entry.purpose === purpose),
+  );
+  if (!clientIdReference || !clientSecretReference) return undefined;
+  const clientId = await resolve(clientIdReference.ref, clientIdReference.version);
+  const clientSecret = await resolve(clientSecretReference.ref, clientSecretReference.version);
+  return { clientId, clientSecret };
+}
+
 export class ProductionHttpPayloadAdmission implements HttpGatewayPayloadAdmissionPort {
   readonly #ownerId: OwnerId;
   readonly #agentId: AgentId;
@@ -743,23 +761,10 @@ export async function createProductionHttpComposition(
     ...DEVICE_CONFIGURATION_DEFAULTS,
     limits: defaultDeviceHardLimits(),
   };
-  const deviceAccessSecrets = DEVICE_ACCESS_SECRET_PURPOSES.map((purpose) =>
-    configuration.secretReferences.find((entry) => entry.purpose === purpose),
+  const devicePairingAccess = await resolveDevicePairingAccess(
+    configuration.secretReferences,
+    (ref, version) => secretSources.provider.resolve(ref, version),
   );
-  const [deviceAccessClientId, deviceAccessClientSecret] = deviceAccessSecrets;
-  const devicePairingAccess =
-    deviceAccessClientId && deviceAccessClientSecret
-      ? {
-          clientId: await secretSources.provider.resolve(
-            deviceAccessClientId.ref,
-            deviceAccessClientId.version,
-          ),
-          clientSecret: await secretSources.provider.resolve(
-            deviceAccessClientSecret.ref,
-            deviceAccessClientSecret.version,
-          ),
-        }
-      : undefined;
   const payloadKey = soleSecret(configuration, "payload-encryption");
   const payloadProtector = new EnvelopePayloadProtector({
     keys: secretSources.keys,

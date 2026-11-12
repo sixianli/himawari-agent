@@ -41,12 +41,18 @@ export type PairedDeviceErrorCode =
 export class PairedDeviceError extends Error {
   readonly code: PairedDeviceErrorCode;
   readonly statusCode: number;
+  readonly details: Readonly<Record<string, number>>;
 
-  constructor(code: PairedDeviceErrorCode, statusCode: number) {
+  constructor(
+    code: PairedDeviceErrorCode,
+    statusCode: number,
+    details: Readonly<Record<string, number>> = {},
+  ) {
     super(code);
     this.name = "PairedDeviceError";
     this.code = code;
     this.statusCode = statusCode;
+    this.details = details;
   }
 }
 
@@ -135,7 +141,9 @@ export class PairedDeviceService {
     return Object.freeze({ code, expiresAt });
   }
 
-  async pair(body: unknown): Promise<PairedDevice> {
+  async pair(
+    body: unknown,
+  ): Promise<{ readonly device: PairedDevice; readonly replayed: boolean }> {
     if (!body || typeof body !== "object" || Array.isArray(body))
       throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_REQUEST_INVALID, 400);
     const input = body as Record<string, unknown>;
@@ -187,9 +195,13 @@ export class PairedDeviceService {
     });
     switch (result.kind) {
       case "paired":
-        return result.device;
+        return { device: result.device, replayed: false };
+      case "replayed":
+        return { device: result.device, replayed: true };
       case "code_expired":
-        throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_CODE_EXPIRED, 410);
+        throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_CODE_EXPIRED, 410, {
+          pairingCodeTtlSeconds: PAIRING_CODE_LIFETIME_MILLISECONDS / 1000,
+        });
       case "code_used":
         throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_CODE_USED, 409);
       default:
@@ -361,6 +373,6 @@ export class PairedDeviceService {
     const session = await this.#options.sessions.readSession(
       device.webSessionId as Parameters<SessionDeviceStatePort["readSession"]>[0],
     );
-    return session?.status === "active";
+    return session?.status === "active" && session.ownerId === device.ownerId;
   }
 }

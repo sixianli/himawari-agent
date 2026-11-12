@@ -759,7 +759,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "PairedDeviceStorePort",
     "one row per pairing code the owner generated: only the SHA-256 of the code, who started it, when it expires and which device used it; never exported",
     "metadata_only",
-    "removed after it expires or is used, and with Owner or Agent deletion",
+    "kept after use so a retried pairing request gets the same device; removed when the Owner starts another pairing, and with Owner or Agent deletion",
   ),
   entry(
     "device_request_nonces",

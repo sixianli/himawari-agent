@@ -902,7 +902,11 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
   });
 
   app.setErrorHandler((error, _request, reply) => {
-    if (error instanceof PairedDeviceError || error instanceof DeviceGatewayError) {
+    if (error instanceof PairedDeviceError) {
+      sendJson(reply, error.statusCode, { error: { ...error.details, code: error.code } });
+      return;
+    }
+    if (error instanceof DeviceGatewayError) {
       sendJson(reply, error.statusCode, { error: { code: error.code } });
       return;
     }
