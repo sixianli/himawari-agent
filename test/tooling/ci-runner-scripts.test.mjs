@@ -1906,8 +1906,18 @@ describe("uninstall-runner.sh with the gate runner", () => {
       "id",
       `[ -e "${box.root}/gone-\${@: -1}" ] && exit 1\n[ "$1" = -u ] && echo 0\nexit 0`,
     );
-    const result = box.run("uninstall-runner.sh", ["all"]);
+    const inner = [
+      `scripts="${box.root}/scripts"`,
+      `mkdir -p "$scripts" && mount --bind "${scripts}" "$scripts" || exit 92`,
+      "for dir in /srv /etc/systemd/system /etc/gh-runner /etc/sudoers.d; do [ -d $dir ] || continue; mount -t tmpfs tmpfs $dir || exit 91; done",
+      'exec bash "$scripts/uninstall-runner.sh" all',
+    ].join("\n");
+    const result = spawnSync("bwrap", asRootInPrivateMounts(inner), {
+      encoding: "utf8",
+      env: { PATH: `${box.root}/bin:${process.env.PATH}`, HOME: box.root },
+    });
     const calls = box.calls();
+    expect(result.stderr).not.toContain("UNINSTALL_INCOMPLETE");
     expect(calls).toContain("systemctl disable --now gh-runner-gate.service\n");
     expect(calls).toContain("userdel gh-runner-gate\n");
     expect(calls).toContain("rm -rf /srv/gh-runner-gate\n");
