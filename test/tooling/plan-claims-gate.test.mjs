@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -14,6 +14,7 @@ import {
   REVIEWS_DIR,
   reviewConfig,
 } from "../../scripts/model-review/opencode-review.mjs";
+import { validateTask } from "../../scripts/model-review/delegate.mjs";
 import {
   claimsProblems,
   parseClaimVerdicts,
@@ -268,7 +269,7 @@ describe("plan claims check: running it", () => {
 
   it("[claims] counts the claims ledger record only when its file name and hash are valid", () => {
     const record = {
-      at: "t",
+      at: "2026-11-12T00:00:00.000Z",
       cost: 0.1,
       round: 1,
       mode: "plan-claims",
@@ -458,4 +459,141 @@ describe("plan claims check: the merge gate", () => {
       expect(after.status).toBe(0);
       expect(after.stdout).toMatch(/REVIEW_CURRENT pr=7 /);
     }));
+
+  it("[claims gate] a line number of 0 does not count as a place in the file", () =>
+    withFixture({}, (f) => {
+      f.writeClaims({
+        answer: claimLine("1", "一致", `${REDACTION}:0`, RIGHT_SENTENCE, CODE_LINE),
+      });
+      expect(f.check().problems).toEqual([
+        `claims-evidence ${ADR} deepseek-v4.1-flash 1 location-line-out-of-range`,
+      ]);
+    }));
+
+  it("[claims gate] a malformed answer line, a broken verdicts file and a broken ledger each block", () =>
+    withFixture({}, (f) => {
+      f.writeClaims({ answer: `${consistentAnswer()}CLAIM|9|大概一致|a|b|c\n` });
+      expect(f.check().problems).toEqual([
+        `claims-answer-invalid ${ADR} deepseek-v4.1-flash line-3-malformed`,
+      ]);
+      f.writeClaims({
+        answer: consistentAnswer(),
+        verdicts: "不是 JSON\n",
+        record: f.claimsRecord({ at: "2026-11-12T04:00:00.000Z" }),
+        topic: "plan-v",
+      });
+      expect(claimsOnly(f.check())).toEqual([
+        expect.stringMatching(
+          /^claims-verdicts-invalid CLAIM_VERDICTS_INVALID .*claims-verdicts\.jsonl:1$/,
+        ),
+      ]);
+      f.commit({ [`${REVIEWS_DIR}/topic-broken/usage.jsonl`]: "not json\n" }, "broken ledger");
+      expect(claimsOnly(f.check())).toContain(
+        `claims-ledger-invalid ${REVIEWS_DIR}/topic-broken/usage.jsonl`,
+      );
+    }));
+
+  it("[claims gate] an ADR whose file name cannot be given to the check is reported instead of skipped", () =>
+    withFixture({ withAdr: false }, (f) => {
+      f.commit({ "docs/adr/0301-has space.md": "# 方案\n" }, "adr with a space");
+      expect(claimsOnly(f.check())).toEqual(["claims-name-unsupported docs/adr/0301-has space.md"]);
+    }));
+
+  it("[claims gate] an ADR with a non-ASCII name can be checked like any other", () => {
+    const path = "docs/adr/0302-中文方案.md";
+    const text = `# 方案\n\n${RIGHT_SENTENCE}。\n`;
+    return withFixture({ withAdr: false }, (f) => {
+      f.commit({ [path]: text }, "adr with a Chinese name");
+      expect(claimsOnly(f.check())).toEqual([`claims-unchecked ${path}`]);
+      f.writeClaims({
+        answer: consistentAnswer(),
+        record: f.claimsRecord({ claimsFile: path, claimsSha256: sha(text) }),
+      });
+      expect(claimsOnly(f.check())).toEqual([]);
+    });
+  });
+
+  it("[claims gate] records of a stale run are not counted as unreviewed changes of the PR", () =>
+    withFixture({}, (f) => {
+      f.writeClaims({ answer: consistentAnswer() });
+      f.commit({ [ADR]: `# 方案\n\n${RIGHT_SENTENCE}，又改了一句。\n` }, "edit adr");
+      expect(f.check().problems).toEqual([`unreviewed ${ADR}`, `claims-stale ${ADR}`]);
+    }));
+
+  it("[claims gate] a record that names a model outside the two review models, or has no valid time, is refused", () => {
+    const base = {
+      cost: 0.1,
+      round: 1,
+      mode: "plan-claims",
+      head: "a".repeat(40),
+      outcome: "ok",
+      claimsFile: ADR,
+      claimsSha256: sha("x"),
+    };
+    const line = (extra) => `${JSON.stringify({ ...base, ...extra })}\n`;
+    expect(parseUsage(line({ at: "2026-11-12T00:00:00.000Z", model: deepseek }), "u").length).toBe(
+      1,
+    );
+    expect(() => parseUsage(line({ at: "t", model: deepseek }), "u")).toThrow(
+      "USAGE_LEDGER_INVALID",
+    );
+    expect(() =>
+      parseUsage(line({ at: "2026-11-12T00:00:00.000Z", model: "other/model" }), "u"),
+    ).toThrow("USAGE_LEDGER_INVALID");
+  });
+
+  it("[claims gate] both models' answers are checked when both ran", () =>
+    withFixture({}, (f) => {
+      f.writeClaims({ answer: consistentAnswer() });
+      const dir = `${REVIEWS_DIR}/topic-plan-x`;
+      f.commit(
+        {
+          [`${dir}/usage.jsonl`]: [
+            f.claimsRecord(),
+            f.claimsRecord({ model: glm, at: "2026-11-12T01:00:01.000Z" }),
+          ]
+            .map((record) => `${JSON.stringify(record)}\n`)
+            .join(""),
+          [`${dir}/round-1/glm-5.3-flash.md`]: wrongAnswer(),
+        },
+        "glm record",
+      );
+      expect(f.check().problems).toEqual([`claims-unjudged ${ADR} glm-5.3-flash 2 不一致`]);
+    }));
+});
+
+describe("plan claims check: the pieces around it", () => {
+  it("[claims] the two fixture plans differ in exactly the sentence the P5 plan got wrong", () => {
+    const dir = join(import.meta.dirname, "fixtures/plan-claims");
+    const wrong = readFileSync(join(dir, "plan-wrong.md"), "utf8");
+    const right = readFileSync(join(dir, "plan-right.md"), "utf8");
+    expect(wrong).toContain("`maskSensitiveTexts` 输出的占位编号随前面内容变化");
+    expect(right).not.toContain("输出的占位编号随前面内容变化");
+    expect(right).toContain("输出前把占位编号去掉");
+  });
+
+  it("[claims] the check is not asked to propose better plans", () => {
+    const prompt = buildPrompt({
+      mode: "plan-claims",
+      model: deepseek,
+      questions: [],
+      head: "a".repeat(40),
+      brief: "x",
+    });
+    expect(prompt).not.toContain("提出你认为更好的方案");
+    expect(prompt).toContain("竖线字符换成全角");
+  });
+
+  it("[claims] it cannot be handed to a cloud thread, which has no way to pass the file", () => {
+    expect(() =>
+      validateTask({
+        branch: "claude/x",
+        tip: "a".repeat(40),
+        mode: "plan-claims",
+        head: "b".repeat(40),
+        topic: "t",
+        brief: "b.md",
+      }),
+    ).toThrow("DELEGATE_INVALID mode");
+  });
 });

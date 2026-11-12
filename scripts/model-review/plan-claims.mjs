@@ -4,8 +4,9 @@ import { createHash } from "node:crypto";
 export const CLAIM_VERDICTS = ["一致", "不一致", "找不到"];
 export const CLAIM_PROBLEM_VERDICTS = ["不一致", "找不到"];
 export const CLAIM_OUTCOMES = ["plan-fixed", "model-wrong"];
-export const CLAIMS_FILE_PATTERN = /^[A-Za-z0-9._][A-Za-z0-9._/-]*\.md$/;
+export const CLAIMS_FILE_PATTERN = /^[\p{L}\p{N}._][\p{L}\p{N}._/-]*\.md$/u;
 export const ADR_PATH_PATTERN = /^docs\/adr\/\d{4}-[^/]+\.md$/;
+const safe = (text) => String(text).replace(/[\p{Cc}\u2028\u2029]/gu, "?");
 export const CLAIM_ID_PATTERN = /^[A-Za-z0-9._-]{1,40}$/;
 export const CLAIMS_VERDICTS_FILE = "claims-verdicts.jsonl";
 export const EVIDENCE_MIN_CHARS = 8;
@@ -137,7 +138,7 @@ function claimEvidenceProblem(repo, head, claim) {
   const blob = blobAt(repo, head, place.path);
   if (blob === null) return "location-file-missing";
   const text = blob.toString("utf8");
-  if (place.line > text.split("\n").length) return "location-line-out-of-range";
+  if (place.line < 1 || place.line > text.split("\n").length) return "location-line-out-of-range";
   if (claim.verdict !== "找不到" && !quoteInText(claim.code, text)) return "code-quote-not-in-file";
   return null;
 }
@@ -189,7 +190,7 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage }) 
     try {
       parsed = parseUsage(text.toString("utf8"), `HEAD:${ledger.file}`);
     } catch {
-      problems.push(`claims-ledger-invalid ${ledger.file}`);
+      problems.push(`claims-ledger-invalid ${safe(ledger.file)}`);
       continue;
     }
     parsed.forEach((record, order) => {
@@ -197,22 +198,13 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage }) 
     });
   }
   for (const adr of adrs) {
-    const sha = blobSha256(repo, head, adr);
-    const own = records.filter((record) => record.claimsFile === adr);
-    const matching = own.filter((record) => record.claimsSha256 === sha);
-    if (matching.length === 0) {
-      problems.push(own.length > 0 ? `claims-stale ${adr}` : `claims-unchecked ${adr}`);
+    const label = safe(adr);
+    if (!validClaimsFile(adr)) {
+      problems.push(`claims-name-unsupported ${label}`);
       continue;
     }
-    const latest = matching.reduce((best, record) =>
-      Date.parse(record.at) > Date.parse(best.at) ||
-      (Date.parse(record.at) === Date.parse(best.at) && record.order > best.order)
-        ? record
-        : best,
-    );
-    const round = matching.filter(
-      (record) => record.dir === latest.dir && (record.round ?? 1) === (latest.round ?? 1),
-    );
+    const sha = blobSha256(repo, head, adr);
+    const own = records.filter((record) => record.claimsFile === adr);
     for (const place of new Set(own.map((record) => `${record.dir}\0${record.round ?? 1}`))) {
       const [dir, roundNumber] = place.split("\0");
       const listed = git(repo, [
@@ -226,32 +218,46 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage }) 
       ]);
       files.push(`${dir}/usage.jsonl`, ...listed.stdout.split("\0").filter(Boolean));
     }
+    const matching = own.filter((record) => record.claimsSha256 === sha);
+    if (matching.length === 0) {
+      problems.push(own.length > 0 ? `claims-stale ${label}` : `claims-unchecked ${label}`);
+      continue;
+    }
+    const latest = matching.reduce((best, record) =>
+      Date.parse(record.at) > Date.parse(best.at) ||
+      (Date.parse(record.at) === Date.parse(best.at) && record.order > best.order)
+        ? record
+        : best,
+    );
+    const round = matching.filter(
+      (record) => record.dir === latest.dir && (record.round ?? 1) === (latest.round ?? 1),
+    );
     const lastByModel = new Map();
     for (const record of round) lastByModel.set(record.model, record);
     const done = [...lastByModel.values()].filter((record) => record.outcome === "ok");
     if (done.length === 0) {
-      problems.push(`claims-run-failed ${adr}`);
+      problems.push(`claims-run-failed ${label}`);
       continue;
     }
     for (const record of done) {
       const roundDir = `${latest.dir}/round-${record.round ?? 1}`;
-      const short = record.model.split("/").pop();
+      const short = safe(record.model.split("/").pop());
       const answerPath = `${roundDir}/${short}.md`;
       const answer = blobAt(repo, head, answerPath);
       if (answer === null) {
-        problems.push(`claims-answer-missing ${adr} ${short}`);
+        problems.push(`claims-answer-missing ${label} ${short}`);
         continue;
       }
       const { claims, problems: parseProblems } = parseClaims(answer.toString("utf8"));
       for (const detail of parseProblems)
-        problems.push(`claims-answer-invalid ${adr} ${short} ${detail}`);
+        problems.push(`claims-answer-invalid ${label} ${short} ${detail}`);
       if (claims.length === 0) {
-        problems.push(`claims-none ${adr} ${short}`);
+        problems.push(`claims-none ${label} ${short}`);
         continue;
       }
       for (const claim of claims) {
         const why = claimEvidenceProblem(repo, head, claim);
-        if (why) problems.push(`claims-evidence ${adr} ${short} ${claim.id} ${why}`);
+        if (why) problems.push(`claims-evidence ${label} ${short} ${claim.id} ${why}`);
       }
       const verdictsPath = `${roundDir}/${CLAIMS_VERDICTS_FILE}`;
       const verdictsText = blobAt(repo, head, verdictsPath);
@@ -260,7 +266,7 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage }) 
         try {
           verdicts = parseClaimVerdicts(verdictsText.toString("utf8"), verdictsPath);
         } catch (error) {
-          problems.push(`claims-verdicts-invalid ${error.message}`);
+          problems.push(`claims-verdicts-invalid ${safe(error.message)}`);
           continue;
         }
       }
@@ -270,7 +276,7 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage }) 
           (item) => item.model === record.model && item.id === claim.id,
         );
         if (!verdict || verdict.outcome !== "model-wrong") {
-          problems.push(`claims-unjudged ${adr} ${short} ${claim.id} ${claim.verdict}`);
+          problems.push(`claims-unjudged ${label} ${short} ${claim.id} ${claim.verdict}`);
           continue;
         }
         const evidenceBlob = validEvidencePath(verdict.evidenceFile)
@@ -281,9 +287,9 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage }) 
           collapse(verdict.evidence).length < EVIDENCE_MIN_CHARS ||
           !collapse(evidenceBlob.toString("utf8")).includes(collapse(verdict.evidence))
         )
-          problems.push(`claims-verdict-evidence ${adr} ${short} ${claim.id}`);
+          problems.push(`claims-verdict-evidence ${label} ${short} ${claim.id}`);
         if (!collapse(answerText).includes(collapse(verdict.quote)))
-          problems.push(`claims-verdict-quote ${adr} ${short} ${claim.id}`);
+          problems.push(`claims-verdict-quote ${label} ${short} ${claim.id}`);
       }
     }
   }

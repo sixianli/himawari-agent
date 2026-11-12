@@ -276,7 +276,7 @@ const MODE_TEXT = {
     role: "你是方案里“关于代码和文档现状的说法”的核对者。",
     network: "不能上网。",
     task: "下面是一份还没合并的方案或 ADR。第一步，把其中每一句讲代码或仓库文档现状的话都列出来：某个文件、函数、字段、配置、命令、数字、规则现在是什么样、做什么、不做什么；一句话里有几个说法就拆成几条。方案打算新增或修改什么，不算现状；讲外部网站、第三方产品的话也不算。第二步，逐条自己打开对应的文件核对，给出：一致、不一致、找不到（仓库里没有这个东西，或没读到能证明它的内容）。材料里的说法可能有错，写得再肯定也不能因此判一致；没有亲自读到对应代码，就判找不到。只核对事实，不评价方案好不好，不提建议。",
-    output: `输出格式：每个说法单独一行，不换行，字段之间用竖线分隔，行首写 CLAIM：\n${CLAIMS_LINE_FORMAT}\n序号从 1 起，不重复。文件:行 写你读到证据的那个文件和行号，例如 packages/x/src/y.ts:42；找不到时写 -。代码原文必须是你亲自读到的、逐字摘抄的一行或几行，不要改写、不要概括；字段里不要出现竖线字符。列完所有 CLAIM 行之后，另起一段，用一两句话写你没能核对的部分。用简体中文。`,
+    output: `输出格式：每个说法单独一行，不换行，字段之间用竖线分隔，行首写 CLAIM：\n${CLAIMS_LINE_FORMAT}\n序号从 1 起，不重复。文件:行 写你读到证据的那个文件和行号，例如 packages/x/src/y.ts:42；找不到时写 -。代码原文必须是你亲自读到的、逐字摘抄的一行或几行，不要改写、不要概括；方案原句里的竖线字符换成全角的“｜”，代码原文里的竖线照原样写。列完所有 CLAIM 行之后，另起一段，用一两句话写你没能核对的部分。用简体中文。`,
     materialTitle: "待核对的方案：",
   },
 };
@@ -306,7 +306,7 @@ export function buildPrompt({ mode, model, questions, head, base, previous, brie
     `你能用的工具：read、grep、glob${OFFLINE_MODES.includes(mode) ? "" : "、websearch、webfetch"}，以及 ${GIT_READ_COMMANDS.join("、")} 这几条 git 命令。不能修改任何文件，不能运行别的命令。${text.network}`,
     text.task,
     FOCUS_SENTENCE,
-    RULE_16_SENTENCE,
+    ...(mode === "plan-claims" ? [] : [RULE_16_SENTENCE]),
     ...(questions.length > 0
       ? ["必答问题：", ...questions.map((question, index) => `${index + 1}. ${question}`)]
       : []),
@@ -1705,7 +1705,11 @@ export function parseUsage(text, path) {
               record.problems.every((problem) => typeof problem === "string"))));
       const claimsValid =
         record?.mode !== "plan-claims" ||
-        (validClaimsFile(record.claimsFile) && /^[0-9a-f]{64}$/.test(record.claimsSha256 ?? ""));
+        (validClaimsFile(record.claimsFile) &&
+          /^[0-9a-f]{64}$/.test(record.claimsSha256 ?? "") &&
+          REVIEW_MODELS.includes(record.model) &&
+          typeof record.at === "string" &&
+          Number.isFinite(Date.parse(record.at)));
       const gatewayValid =
         record?.gateway === undefined ||
         (GATEWAYS.includes(record.gateway) &&
@@ -3358,7 +3362,9 @@ async function main() {
           `CLAIMS_SUMMARY ${name} round=${round} total=${claims.length} consistent=${claims.length - flagged.length} flagged=${flagged.length} malformed=${problems.length}`,
         );
         for (const claim of flagged)
-          console.log(`CLAIMS_FLAGGED ${name} ${claim.id} ${claim.verdict} ${claim.location}`);
+          console.log(
+            `CLAIMS_FLAGGED ${name} ${claim.id} ${claim.verdict} ${printable(claim.location)}`,
+          );
         if (claims.length === 0 || problems.length > 0) {
           console.log(`CLAIMS_PARSE_FAILED ${name}`);
           process.exitCode = 4;
