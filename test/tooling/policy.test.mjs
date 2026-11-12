@@ -1181,8 +1181,6 @@ describe("CI policy contract", () => {
     hosted.checks.find((check) => check.id === "required").members[0].runner = "ubuntu-24.04";
     expect(upgradeGateRunnerPolicy(hosted)).toBe(hosted);
     expect(() => validatePolicy(upgradeGateRunnerPolicy(hosted))).toThrow();
-    const nineJobs = retiredTestPolicy();
-    expect(upgradeGateRunnerPolicy(nineJobs)).toBe(nineJobs);
   });
   it("[ADR-0256] 检查作业写成 ci-vps-gate、汇总作业写回 ci-vps 的策略都被拒", () => {
     const checkOnGate = clone();

@@ -1649,6 +1649,11 @@ describe("[HR-11] the gate runner keeps its own label", () => {
     for (const [id, label] of fixed)
       expect([id, label]).toEqual([id, id === "required" ? gateRunnerLabel : linuxRunnerLabel]);
     expect(Object.fromEntries(fixed).required).toBe(gateRunnerLabel);
+    const matrixRunners = Object.values(workflow.jobs).flatMap((job) =>
+      (job.strategy?.matrix?.include ?? []).map((entry) => entry.runner),
+    );
+    expect(matrixRunners.length).toBeGreaterThan(0);
+    expect(matrixRunners).not.toContain(gateRunnerLabel);
   });
 
   it("register-runner.sh registers each runner with the label runners.sh selected for it", () => {
