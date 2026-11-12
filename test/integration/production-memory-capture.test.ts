@@ -382,6 +382,7 @@ describe("production memory capture", () => {
       ruleTools: new ProductionOwnerRuleTools(ruleWriter),
       ruleWriter,
       ruleWriterWith,
+      protector: adapters.payloadProtector,
       protect,
       request: requestFor("run-memory-capture"),
       requestFor,
@@ -2603,6 +2604,67 @@ describe("production memory capture", () => {
       );
       expect(again).toMatchObject({ status: "active" });
       expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(0);
+    });
+
+    it("takes waiting proposals for the same rule off the list once that rule is enforced", async () => {
+      const { context, set, inferred } = await prepared();
+      const first = await inferred("twin.example");
+      await set(
+        {
+          quote: "入管局相关的邮件",
+          inferred: true,
+          summary: "另一种说法",
+          params: { senderDomains: ["twin.example"] },
+        },
+        "call-twin-reworded",
+      );
+      await inferred("apart.example");
+      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(3);
+      await command(
+        context.control,
+        "memory.rule.respond",
+        { target: first["proposalId"], action: "confirm" },
+        "adopt-twin",
+      );
+      const left = (await proposalsQuery(context.control)).payload;
+      expect(left.pendingCount).toBe(1);
+      expect(await context.ruleWriter.list()).toHaveLength(1);
+    });
+
+    it("keeps the old basis and the old state when writing the new basis fails", async () => {
+      const { context, inferred } = await prepared();
+      const first = await inferred("fail.example");
+      const id = first["proposalId"] as string;
+      await context.ruleWriter.reject(id);
+      const real = context.ruleWriterWith();
+      let failures = 1;
+      const failing = context.ruleWriterWith({
+        protector: {
+          protect: async (input: Parameters<typeof context.protector.protect>[0]) => {
+            if (failures-- > 0) throw new Error("protect failed");
+            return context.protector.protect(input);
+          },
+          unprotect: (input: Parameters<typeof context.protector.unprotect>[0]) =>
+            context.protector.unprotect(input),
+        } as never,
+      });
+      await expect(
+        failing.create({
+          key: "fail-key",
+          quote: sentence,
+          inferred: true,
+          type: "mail_must_notify",
+          params: { senderDomains: ["fail.example"] },
+          summary: "入管局的邮件一律提醒",
+          threadId: THREAD_ID,
+        }),
+      ).rejects.toThrow("protect failed");
+      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(0);
+      await expect(real.confirm(id)).rejects.toMatchObject({ code: "RULE_PROPOSAL_REJECTED" });
+      await inferred("fail.example", "call-fail-again");
+      const back = (await proposalsQuery(context.control)).payload.proposals;
+      expect(back).toHaveLength(1);
+      expect(back[0]?.quote).toBe(sentence);
     });
 
     it("lets an adopted card be adopted again after its rule was undone, even when the list is full", async () => {

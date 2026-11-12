@@ -537,6 +537,38 @@ export class ProductionOwnerRuleWriter {
     }
   }
 
+  async #settle(type: string, params: unknown): Promise<void> {
+    const scope = this.#scope();
+    const store = this.#options.proposals;
+    const now = this.#options.clock.now();
+    const waiting = await store.listPending({ ...scope, now, limit: this.#limit() });
+    for (const row of waiting.proposals) {
+      const evidence = row.evidenceRef
+        ? await this.#readProposal(row.evidenceRef).catch(() => undefined)
+        : undefined;
+      if (!evidence) continue;
+      let covered = false;
+      try {
+        const parsed = parseOwnerRuleParameters({
+          type: evidence.type,
+          params: evidence.params,
+          summary: evidence.summary,
+        });
+        covered = sameRule({ type: parsed.type, params: parsed.params }, type, params);
+      } catch {
+        covered = false;
+      }
+      if (covered)
+        await store.decide({
+          ...scope,
+          proposalId: row.proposalId,
+          from: "pending",
+          to: "accepted",
+          now,
+        });
+    }
+  }
+
   async #activate(proposal: Proposal, replayed: RuleReplay | null): Promise<RuleReceipt> {
     const draft = this.#draft(proposal.type, proposal.params, proposal.summary);
     const parsed = parseOwnerRuleParameters({
@@ -551,6 +583,7 @@ export class ProductionOwnerRuleWriter {
     );
     if (same) {
       await this.reconfirm(same.ruleId);
+      await this.#settle(parsed.type, parsed.params);
       return Object.freeze({
         status: "active",
         ruleId: same.ruleId,
@@ -605,6 +638,7 @@ export class ProductionOwnerRuleWriter {
         throw new OwnerRuleError("RULE_UNAVAILABLE");
       }
     }
+    await this.#settle(parsed.type, parsed.params);
     return Object.freeze({
       status: "active",
       ruleId,
@@ -731,10 +765,24 @@ export class ProductionOwnerRuleWriter {
         });
       const payloads = this.#options.payloads;
       if (existing) {
-        if ((await propose()) === "limit_reached")
+        const stale = existing.status !== "pending";
+        const prior = stale ? await this.#readText(proposalId).catch(() => undefined) : undefined;
+        const restore = async (): Promise<void> => {
+          if (!stale) return;
+          await payloads.delete(proposalId as never).catch(() => false);
+          if (prior !== undefined) await this.#writeText(proposalId, prior).catch(() => undefined);
+        };
+        if (stale) await payloads.delete(proposalId as never);
+        const outcome = await this.#writeText(proposalId, evidence)
+          .then(propose)
+          .catch(async (error: unknown) => {
+            await restore();
+            throw error;
+          });
+        if (outcome === "limit_reached") {
+          await restore();
           throw new OwnerRuleError("RULE_PROPOSALS_FULL", String(this.#limit()));
-        if (existing.status !== "pending") await payloads.delete(proposalId as never);
-        await this.#writeText(proposalId, evidence);
+        }
       } else {
         const fresh = (await payloads.get(proposalId as never)) === undefined;
         await this.#writeText(proposalId, evidence);
