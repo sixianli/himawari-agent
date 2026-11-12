@@ -1,0 +1,36 @@
+CLAIM|1|一致|docs/adr/0228-external-memory-proposals-wait-for-owner-confirmation.md:37|ADR 0228 定了后端|本 ADR 定后端：新表、MCP 工具的行为、确认和撤销的网关操作。网页上「来自其他 agent」那一节界面和数据导出放在下一个 PR（见[后果](#consequences)），这样改表队列可以先放行。
+CLAIM|2|一致|docs/adr/0228-external-memory-proposals-wait-for-owner-confirmation.md:60|其他 agent（例如 Muse、Claude Code 这类能通过 MCP 连到 Himawari 的程序）提议的记忆先存进 `external_memory_proposals` 表|1. **新表 `external_memory_proposals`（迁移 0093）。** 一行是一条提议：
+CLAIM|3|一致|docs/adr/0228-external-memory-proposals-wait-for-owner-confirmation.md:62|叫「待确认」|   - 状态四种：`pending`（待确认）、`committed`（已保存）、`rejected`（已拒绝）、`superseded`（被同一个固定编号的新内容替换）。
+CLAIM|4|一致|docs/adr/0228-external-memory-proposals-wait-for-owner-confirmation.md:10|Andy 在 Himawari 里确认后才保存|# ADR 0228：其他 agent 写进来的记忆先存「待确认」，主人在 Himawari 里确认后才保存（部分取代 ADR 0225 决定 2、3、6）
+CLAIM|5|一致|docs/adr/0228-external-memory-proposals-wait-for-owner-confirmation.md:122|那个 PR 为了让改表队列先放行|- **下一个 PR 要做的**（不改表，所以拆出来，好让改表队列先放行）：
+CLAIM|6|一致|docs/adr/0228-external-memory-proposals-wait-for-owner-confirmation.md:122-125|把网页、每天打分里的提示和数据导出留给了下一个 PR|- **下一个 PR 要做的**（不改表，所以拆出来，好让改表队列先放行）：
+CLAIM|7|一致|git log:fed6ae92|本 ADR 对应的 PR（任务 P5-3 PR A2）|feat(memory): 网页确认其他 agent 的提议，提议进入数据导出 v3（P5-3 PR A2）
+CLAIM|8|一致|docs/adr/0228-external-memory-proposals-wait-for-owner-confirmation.md:123|网页「设置 → 记忆」顶部的「来自其他 agent」一节：勾选后「保存所选」「不要所选」、全选、单条改了再保存、撤销一批；来源按「自称：Muse」显示；数字按第 4 条的定义。|  - 网页「设置 → 记忆」顶部的「来自其他 agent」一节：勾选后「保存所选」「不要所选」、全选、单条改了再保存、撤销一批；来源按「自称：Muse」显示；数字按第 4 条的定义。
+CLAIM|9|一致|docs/adr/0228-external-memory-proposals-wait-for-owner-confirmation.md:124|每日回顾在待确认条数大于 0 时加一行提示。|  - 每日回顾在待确认条数大于 0 时加一行提示。
+CLAIM|10|一致|docs/adr/0228-external-memory-proposals-wait-for-owner-confirmation.md:125|数据导出带上这张表。|  - 数据导出带上这张表。在那之前，导出清单的 `omitted` 里写明这张表还没导出、有几行。
+CLAIM|11|一致|packages/persistence-sqlite/src/migrations/0093_external_memory_proposals.sql:24-28|表里每一行的状态和字段有固定的搭配|  CHECK ((status = 'pending') = (decided_at IS NULL)),
+CLAIM|12|一致|packages/persistence-sqlite/src/migrations/0093_external_memory_proposals.sql:24|`CHECK ((status = 'pending') = (decided_at IS NULL))`|  CHECK ((status = 'pending') = (decided_at IS NULL)),
+CLAIM|13|一致|packages/persistence-sqlite/src/migrations/0093_external_memory_proposals.sql:26|`CHECK (content_ref IS NOT NULL OR status IN ('rejected', 'superseded'))`|  CHECK (content_ref IS NOT NULL OR status IN ('rejected', 'superseded')),
+CLAIM|14|一致|packages/persistence-sqlite/src/migrations/0093_external_memory_proposals.sql:25|只有已保存的能指向记忆|  CHECK (memory_id IS NULL OR status = 'committed'),
+CLAIM|15|一致|packages/persistence-sqlite/src/migrations/0093_external_memory_proposals.sql:27|只有被替换的能指向替换它的提议|  CHECK (superseded_by IS NULL OR status = 'superseded'),
+CLAIM|16|一致|packages/persistence-sqlite/src/migrations/0093_external_memory_proposals.sql:28|只有已保存或已拒绝的能属于一批|  CHECK (batch_id IS NULL OR status IN ('committed', 'rejected'))
+CLAIM|17|一致|packages/persistence-sqlite/src/migrations/0093_external_memory_proposals.sql:31-33|没被替换的提议，正文摘要不能重复|  ON external_memory_proposals(owner_id, agent_id, text_sha256)
+CLAIM|18|一致|packages/persistence-sqlite/src/migrations/0093_external_memory_proposals.sql:58|`external_memory_proposal_keys` 的主键是“`(owner_id, agent_id, client, source_key)`”|  PRIMARY KEY (owner_id, agent_id, client, source_key)
+CLAIM|19|一致|packages/persistence-sqlite/src/migrations/0093_external_memory_proposals.sql:67|`external_memory_proposal_unkeyed` 的主键是“`(proposal_id, client)`”|  PRIMARY KEY (proposal_id, client)
+CLAIM|20|一致|apps/agent-service/src/production-mcp-memory-writer.ts:45；packages/persistence-sqlite/src/sqlite-external-memory-proposal-operations.ts:492|拒绝的正文 30 天后删掉，只留摘要|export const EXTERNAL_PROPOSAL_REJECTED_TEXT_DAYS = 30;
+CLAIM|21|一致|packages/persistence-sqlite/src/data-export/export.ts:505|所以导出里有的提议没有正文|      contentRef === null ? null : requiredText(contentRef, externalProposalTextKey(id));
+CLAIM|22|一致|apps/agent-service/src/production-memory-control.ts:1083|网关命令只回一个结果编号：后端返回结果编号和是否重放|  async execute(command: GatewayV2Command): Promise<{ resultRef: string; replayed: boolean }> {
+CLAIM|23|一致|apps/control-center/src/gateway-client.ts:40|网页端的结果类型再多一个状态|  readonly status: MutationStatus;
+CLAIM|24|一致|apps/agent-service/src/production-memory-control.ts:1067|`memory.external.respond` 的结果编号就是这一批的批次号|    return { resultRef: batchId, replayed: false };
+CLAIM|25|一致|apps/agent-service/src/production-memory-control.ts:421|概况里的 `externalProposals.batches` 按批次给出保存和不要各几条|        ({ batchId, decidedAt, committed, rejected }) => ({
+CLAIM|26|一致|docs/adr/0233-rule-book-joins-the-data-export.md:47|格式升到 `himawari.data-export.v2`。v1 的导出文件导入时整份拒绝|1. **格式升到 `himawari.data-export.v2`。**v1 的导出文件导入时整份拒绝（`DATA_IMPORT_FORMAT_UNSUPPORTED`）。依据“记忆可靠性”：v1 文件没有规则，导入后规则手册是空的，主人会以为规则还在。
+CLAIM|27|一致|docs/adr/0200-portable-export-of-memories-and-decisions.md:54|机密原文只进口令加密的封存文件|3. **机密的处理：**一段文字只要 `findSensitiveValues` 认出值，或 `containsRestrictedIdentifier` 为真，明文层就放遮盖后的文字；遮盖后仍像机密则放占位符 `[内容含机密，已扣留]`，该条标 `withheld: true`。原文只进封存文件的 `originals`。话题类敏感（健康、财务等）但没有机密值的记忆，按 Andy 的决定放明文层。
+CLAIM|28|一致|docs/adr/0200-portable-export-of-memories-and-decisions.md:59|导入只进空库|6. **导入：**只导入到没有任何记忆、决定记录、人物、导入批次、整理记录、来源洞察、已处理邮件记录和 Muse 校准记录的空库；用目标库自己的保护器重新加密，荷载引用换新；在一个事务里写入，失败整体回滚；支持只校验不写入（`--dry-run`）。没有口令或扣留项的原文缺失时，那几条跳过并在报告里写条数。导入后建检索所需的最小骨架（一个空的已归档线程、一个生成批次、每条在用记忆一个待建索引任务），服务启动后按已有流程建索引。
+CLAIM|29|一致|packages/gateway-contracts/src/contracts-v2.ts:1532|最多 2000 字，和后端上限一致|export const EXTERNAL_PROPOSAL_TEXT_MAXIMUM = 2000;
+CLAIM|30|一致|packages/persistence-sqlite/src/migrations/0093_external_memory_proposals.sql:19-20|收到和处理时间是库里存的格式（`2026-11-12T00:00:00.000Z` 这样，同表上的 `GLOB` 约束）|  received_at TEXT NOT NULL CHECK (received_at GLOB '????-??-??T??:??:??.???Z'),
+CLAIM|31|一致|docs/adr/0200-portable-export-of-memories-and-decisions.md:62|网页导出不设口令|9. **网页导出（第 2 个 PR）：**记忆页的“导出全部记忆”改为下载同一格式的压缩包（`GET /api/data-export/v1/archive`），替换原来在浏览器里拼 JSON 的下载。接口在服务内运行，用一个只读的数据库连接读取，不需要停服务；要求已登录的主人会话，并且请求来源是同源（`Sec-Fetch-Site` 为 `same-origin` 或 `none`），未登录返回 401，跨站返回 403，同时只生成一份（第二个并发请求返回 429）。网页导出不设口令，所以不带加密封存文件和证据：含机密的文字在文件里只留占位符，页面写明“要完整带走请用命令行加密导出”，并显示被扣留的处数。响应头 `x-himawari-export-memories` 是清单里的记忆条数；`x-himawari-export-withheld` 是文件里被换成占位符的文字段数，等于清单的 `withheld.texts`（含机密而被遮盖或扣留的文字段，一段里有几个密钥都只算一处）加上“含机密的短文字”那一项的条数（记忆条数和决策条数是另一个口径，不加进去，否则同一处会算两次）。网页导出和命令行一样，回收站里的记忆和敏感主题记忆也会导出，其中的正文除机密外是明文（机密仍留占位符），页面文案写明了这一点。
+CLAIM|32|一致|docs/adr/0228-external-memory-proposals-wait-for-owner-confirmation.md:63|待确认的提议不进任何发给模型的请求|   - 这张表只有 MCP 写工具和记忆页的确认操作读写，没有任何组装发给模型内容的代码读它。依据「用户主权」：确认前 Himawari 不用它。
+CLAIM|33|一致|apps/control-center/src/components/external-proposals.tsx:96；apps/control-center/src/components/memory-page.tsx:1058；packages/persistence-sqlite/src/data-export/export.ts:569|ADR 0228 留给下一个 PR 的三件事都做完了|export function ExternalProposalsSection({
+CLAIM|34|一致|apps/control-center/src/components/external-proposals.tsx:96；packages/persistence-sqlite/src/data-export/export.ts:569；packages/persistence-sqlite/src/data-export/verify.ts:109；packages/persistence-sqlite/src/data-export/import.ts:78|代码：`apps/control-center/src/components/external-proposals.tsx`、`packages/persistence-sqlite/src/data-export/export.ts`、`verify.ts`、`import.ts`。|  const where = `其他 agent 的提议 ${proposal.id}`;
+
+未核对的部分：方案中关于 GDPR、MCP 等外部规范或第三方产品的陈述，以及各项决定实施后的实际运行效果（未运行测试）。对 PR A2 的对应关系只用 git log 的提交标题核对。
