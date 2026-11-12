@@ -1,0 +1,37 @@
+CLAIM|1|一致|apps/control-center/src/step-summary.ts:92|现在这句话是网页按工具名套模板拼出来的（`apps/control-center/src/step-summary.ts`）|`return { id: \`step.${kind}\` as MessageId, target };`
+CLAIM|2|一致|apps/control-center/src/components/tool-icon.tsx:22|图标也是网页按工具名查表|`export function toolCategory(name: string): keyof typeof symbols {` `const category = glyph ?? toolCategory(name);`
+CLAIM|3|一致|docs/pi-development-guide.md:140|仓库里的转述见 [Pi 二次开发规范](../pi-development-guide.md#pattern-tool-call)|`<a id="pattern-tool-call"></a>` `- 顺序：\`tool_call\` 先于工具的 \`execute\` 运行，官方原话“Mutations to \`event.input\` affect the actual tool execution”（\`docs/extensions.md\` 第 984 行），所以在这里改了参数，Himawari 在 \`execute\` 里做的权限判断（[偏离 D2](#current-deviations)）看到的是改后的参数。`
+CLAIM|4|一致|packages/runtime-pi/src/pi-runtime-adapter.ts:2036|每个工具的定义都经过同一个函数。来源：`packages/runtime-pi/src/pi-runtime-adapter.ts` 的 `toolDefinition()`：冻结的工具、带执行句柄的工具、系统提示里的工具说明都从它取（`frozenDefinitions`、`requestTools`、`productSystemPrompt`）。|`private toolDefinition(descriptor: RuntimeToolDescriptor): PiToolDefinitionText {` `this.toolDefinition(descriptor),` `...handleDescriptors.map((descriptor) => providerTool(this.toolDefinition(descriptor))),` `systemPrompt: productSystemPrompt(projection.systemInstruction, frozenDefinitions),`
+CLAIM|5|一致|packages/application/src/services/thread-prompt-bundle-service.ts:155|`toolSchemaChanged`：“`current.has(name) && current.get(name) !== schema`”|`([name, schema]) => current.has(name) && current.get(name) !== schema,`
+CLAIM|6|一致|.claude/rules/prompt-prefix.md:41|规则 `.claude/rules/prompt-prefix.md` 第 6 条：“工具集合变了（工具名，或者去掉说明文字后的参数结构）……才换新一次”|`只有下面这些情况才换新一次，并且每次都留记录：工具集合变了（工具名，或者去掉说明文字后的参数结构）、冻结的工具找不到了、模型变了、推理强度变了、回答语言变了、数据分类变低了，或者手动执行了 \`thread prompt rebuild\`。`
+CLAIM|7|一致|packages/runtime-pi/src/pi-runtime-adapter.ts:2375|`pi-runtime-adapter.ts` 的 `case "tool_execution_start"`：`arguments: event.args` 写进 `tool_intent` 记录|`kind: "tool_intent",` `arguments: event.args,`
+CLAIM|8|一致|packages/gateway-contracts/src/validation.ts:175|`packages/gateway-contracts/src/validation.ts` 第 175 行：``if (!expectedKeySet.has(key)) fail(`${path}.${key}`, "unknown field");``|`if (!expectedKeySet.has(key)) fail(\`${path}.${key}\`, "unknown field");`
+CLAIM|9|一致|packages/runtime-pi/src/pi-runtime-adapter.ts:1529|在已有的隐藏扩展 `himawari-tool-outcomes` 的 `tool_call` 钩子里|`name: "himawari-tool-outcomes",` `hidden: true,` `pi.on("tool_call", (event) => {`
+CLAIM|10|一致|packages/application/src/services/thread-execution-projection.ts:302|`ThreadExecutionProjection` 生成 `kind` 为 `tool` 的过程记录时，从模型的参数里取出这两项|`...toolActivity(call["arguments"]),`
+CLAIM|11|一致|packages/application/src/services/thread-execution-projection.ts:69|`activity` 去掉首尾空白|`? [...rawActivity.trim()].slice(0, PROCESS_ACTIVITY_MAX_LENGTH).join("")`
+CLAIM|12|一致|packages/prompt-catalog/src/activity.ts:45|最多 80 个字符|`export const PROCESS_ACTIVITY_MAX_LENGTH = 80;`
+CLAIM|13|一致|packages/application/src/services/thread-execution-projection.ts:83|`activityIcon` 在 36 个名字之内就原样给|`: (PROCESS_ACTIVITY_ICONS as readonly string[]).includes(icon)` `? icon`
+CLAIM|14|一致|packages/application/src/services/thread-execution-projection.ts:85|模型给了那句话但图标没给或不在表里就给 `tools`|`: PROCESS_ACTIVITY_FALLBACK_ICON,` `export const PROCESS_ACTIVITY_FALLBACK_ICON: ProcessActivityIcon = "tools";`
+CLAIM|15|一致|packages/application/src/services/thread-execution-projection.ts:81|那句话也没给时两个都是空字符串|`activityIcon: !activity` `? ""`
+CLAIM|16|一致|packages/application/src/services/thread-execution-projection.ts:62|记录的 `input` 里不再有这两项|`const {` `[TOOL_ACTIVITY_PARAMETER_NAME]: rawActivity,` `[TOOL_ACTIVITY_ICON_PARAMETER_NAME]: rawIcon,` `...rest` `} = object(value);`
+CLAIM|17|一致|packages/gateway-contracts/src/thread-contracts-v3.ts:605|网关契约 `threadExecutionRecordSchema` 加这两个字段|`activity: displayText,` `activityIcon: displayText,`
+CLAIM|18|一致|apps/control-center/src/i18n/resources/en.ts:95|模板要三种语言，在网页的 i18n 里|`"step.search": "Searching the web",`
+CLAIM|19|一致|packages/runtime-pi/src/pi-runtime-adapter.ts:1544|“工具循环停止”的判断用的是 `tool_result` 事件里的参数|`toolProgress.observe(` `event.toolName,` `event.input,`
+CLAIM|20|一致|apps/control-center/src/components/execution-process.tsx:432|网页的过程区仍用模板句子|`const summary = toolStepSummary(item.name, item.input);` `{item.kind === "tool" ? message(summary.id) : message("chat.responseText")}`
+CLAIM|21|一致|packages/gateway-contracts/src/thread-contracts-v3.ts:587|过程记录多了两个必填字段|`export const threadExecutionRecordSchema = object({` `activity: displayText,` `activityIcon: displayText,`
+CLAIM|22|一致|packages/runtime-pi/package.json:11|`packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts` 的 `[ICON-1]` 用真实的 Pi 1.5.0 会话|`"@earendil-works/pi-coding-agent": "1.5.0",`
+CLAIM|23|一致|packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts:2480|`[ICON-1]` 用……假模型|`const faux = ai.fauxProvider();`
+CLAIM|24|一致|packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts:2585|工具定义带这两个参数|`expect(offered.get("restaurant_search")).toMatchObject({` `activity: { type: "string", description: TOOL_ACTIVITY_PARAMETER.text },`
+CLAIM|25|一致|packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts:2605|系统提示只出现一次图标表|`expect(head?.content.split(CHAT_PROCESS_ICONS_SECTION.text)).toHaveLength(2);`
+CLAIM|26|一致|packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts:2609|工具执行和权限判断拿到的参数里没有它们|`expect(executed.get("activity-call")).toEqual({ query: "beef" });` `).toContainEqual({ query: "beef" });`
+CLAIM|27|一致|packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts:2610|工具自己的同名参数原样保留|`expect(executed.get("own-activity-call")).toEqual({` `activity: "跑步",` `activityIcon: "walk",` `});`
+CLAIM|28|一致|packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts:2622|过程事件里仍有它们|`expect(JSON.stringify(intents)).toContain("找附近的牛肉店");` `expect(JSON.stringify(intents)).toContain("map-pin");`
+CLAIM|29|一致|test/integration/thread-run-lifecycle.test.ts:104|`test/integration/thread-run-lifecycle.test.ts` 的 `[ICON-2]` 用真实 SQLite|`const databasePath = path.join(stateRoot, "data", "product.sqlite");` `await copyMigratedDatabase(databasePath);` `const database = openQualifiedDatabase(databasePath);`
+CLAIM|30|一致|test/integration/thread-run-lifecycle.test.ts:3905|锁住过程记录的两个字段|`expect(tools.map(({ activity, activityIcon }) => [activity, activityIcon])).toEqual([` `["查东京明天的天气", "cloud"],`
+CLAIM|31|一致|test/integration/thread-run-lifecycle.test.ts:3907|退回 `tools`|`["查资料", "tools"],`
+CLAIM|32|一致|test/integration/thread-run-lifecycle.test.ts:3914|`input` 里不再有它们|`expect(tool.input).not.toContain("activity");`
+CLAIM|33|一致|test/integration/thread-run-lifecycle.test.ts:3918|并用网关契约逐条解析|`expect(() => threadExecutionRecordSchema.parse(record)).not.toThrow();`
+CLAIM|34|一致|packages/runtime-pi/test/fixtures/d4-golden-requests.json:14|请求字节的对照文件更新了。`packages/runtime-pi/test/fixtures/d4-golden-requests.json` 的两条请求体换成带新参数和图标表的版本|`\"activity\":{\"type\":\"string\",\"description\":\"可选。用回答的语言写一句话告诉主人这一步在做什么，说事情本身，不写工具名，例如“查东京明天的天气”。不超过 30 个字，不影响工具执行。\"}` `过程图标：调用任何工具时，都可以顺带给 activity（一句话说这一步在做什么）和 activityIcon（下面的名字之一），主人会在过程行上看到它们。`
+CLAIM|35|一致|packages/runtime-pi/test/fixtures/d4-golden-requests.json:26|其他字段不变|`\"reasoning\":{\"effort\":\"none\"},\"providerOptions\":{\"gateway\":{\"order\":[\"runware\",\"deepinfra\",\"morph\"],\"sort\":\"cost\"}}}`
+
+未核实：Pi 官方文档的逐行原文、Claude Code/OpenAI 的当前行为，以及详细设计在 PR 405 是否仍未合进 main，我无法确认；我只确认 f7cbbf01 这个提交存在、其 diff 含“过程行图标”一节，且当前检出的 HEAD 不包含该提交。其余 CLAIM 均按当前检出的文件核对。
