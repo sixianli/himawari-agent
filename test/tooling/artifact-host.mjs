@@ -1,12 +1,10 @@
 import { afterAll, beforeAll } from "vitest";
 import { hostPlatform } from "../../scripts/ci/platforms.mjs";
 
-const ARTIFACT_HOSTS = ["darwin-arm64", "linux-x64"];
-
 export function useArtifactCapableHost() {
   const original = {};
   beforeAll(() => {
-    if (ARTIFACT_HOSTS.includes(hostPlatform())) return;
+    if (hostPlatform() !== "linux-arm64") return;
     for (const [key, value] of [
       ["platform", "linux"],
       ["arch", "x64"],
