@@ -111,6 +111,7 @@ export interface ParsedPairedDevice {
   readonly pairedAt: string;
   readonly confirmedAt: string | null;
   readonly revokedAt: string | null;
+  readonly lastSeenAt: string | null;
 }
 
 export interface ParsedConsolidation {

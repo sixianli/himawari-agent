@@ -303,6 +303,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     pairedAt: str(row["paired_at"]),
     confirmedAt: optionalString(row["confirmed_at"]),
     revokedAt: optionalString(row["revoked_at"]),
+    lastSeenAt: optionalString(row["last_seen_at"]),
   }));
 
   const basis = group(snapshot.basis, "change_id");

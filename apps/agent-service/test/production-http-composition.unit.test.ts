@@ -31,6 +31,7 @@ import {
   createProductionHttpComposition,
   type ProductionHttpCompositionSecretSources,
   ProductionThreadGatewayAccessPolicy,
+  resolveDevicePairingAccess,
 } from "../src/production-http-composition.js";
 import {
   MCP_READ_PATH,
@@ -1556,4 +1557,28 @@ describe("production Thread access scope", () => {
       ).toEqual({ allowed: true, reasonCode: "OWNER_SESSION_AUTHORIZED" });
     },
   );
+});
+
+describe("[P1-1] device pairing access", () => {
+  const resolve = async (ref: string, version: string) => `resolved:${ref}@${version}`;
+  const base = [
+    { ref: "payload-kek", version: "v1", purpose: "payload-encryption" },
+    { ref: "device-id-ref", version: "v2", purpose: "device-access-client-id" },
+    { ref: "device-key-ref", version: "v3", purpose: "device-access-client-secret" },
+  ];
+
+  it("reads the client id and secret from the two declared secrets", async () => {
+    await expect(resolveDevicePairingAccess(base, resolve)).resolves.toEqual({
+      clientId: "resolved:device-id-ref@v2",
+      clientSecret: "resolved:device-key-ref@v3",
+    });
+  });
+
+  it("gives no access when either secret is not declared", async () => {
+    await expect(resolveDevicePairingAccess(base.slice(0, 1), resolve)).resolves.toBeUndefined();
+    await expect(resolveDevicePairingAccess(base.slice(0, 2), resolve)).resolves.toBeUndefined();
+    await expect(
+      resolveDevicePairingAccess([base[0], base[2]] as typeof base, resolve),
+    ).resolves.toBeUndefined();
+  });
 });

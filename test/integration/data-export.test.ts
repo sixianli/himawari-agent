@@ -848,10 +848,10 @@ describe("data export: paired devices", () => {
       .prepare(
         `INSERT INTO paired_devices
            (id, owner_id, agent_id, revision, kind, name, release_channel, device_public_key,
-            confirm_public_key, status, supported_actions, paired_at)
-         VALUES (?, ?, ?, 0, 'iphone', 'Andy iPhone', 'testflight', ?, ?, 'pending', '[]', ?)`,
+            confirm_public_key, status, supported_actions, paired_at, last_seen_at)
+         VALUES (?, ?, ?, 0, 'iphone', 'Andy iPhone', 'testflight', ?, ?, 'pending', '[]', ?, ?)`,
       )
-      .run(deviceId, source.ownerId, source.agentId, devicePublicKey, confirmPublicKey, NOW);
+      .run(deviceId, source.ownerId, source.agentId, devicePublicKey, confirmPublicKey, NOW, NOW);
     source.database
       .prepare(
         `INSERT INTO device_pairing_codes
@@ -885,6 +885,7 @@ describe("data export: paired devices", () => {
         pairedAt: NOW,
         confirmedAt: null,
         revokedAt: null,
+        lastSeenAt: NOW,
       },
     ]);
     expect(manifest.counts.pairedDevices).toBe(1);

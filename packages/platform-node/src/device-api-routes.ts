@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import {
   type AgentThreadGatewayPort,
   ApplicationPortError,
@@ -54,6 +54,7 @@ const DEVICE_ROUTE_PATTERNS = DEVICE_API_ROUTES.map((route) => ({
 }));
 
 export const DEVICE_PAYLOAD_TEXT_MAXIMUM_REFS = 100;
+export const DEVICE_PAYLOAD_TEXT_RESPONSE_BYTES = 4 * 1024 * 1024;
 
 export const DEVICE_THREAD_EVENT_TYPES: ReadonlySet<string> = new Set([
   "thread.create",
@@ -244,6 +245,23 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
       device.addContentTypeParser("*", { parseAs: "buffer" }, (_request, body, done) =>
         done(null, body),
       );
+      device.addHook("preParsing", async (_request, _reply, payload) => {
+        const limit = options.configuration().limits["device.request.body_bytes"];
+        let received = 0;
+        return payload.pipe(
+          new Transform({
+            transform(chunk: Buffer, _encoding, callback) {
+              received += chunk.length;
+              if (received <= limit) return callback(null, chunk);
+              try {
+                options.rejectBody(413);
+              } catch (error) {
+                callback(error as Error);
+              }
+            },
+          }),
+        );
+      });
       device.addHook("onRequest", async (request) => {
         const path = requestPath(request).slice(DEVICE_API_PREFIX.length + 1);
         if (
@@ -481,9 +499,21 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         if ((refs as string[]).length > DEVICE_PAYLOAD_TEXT_MAXIMUM_REFS) options.rejectBody(413);
         const readPayload = options.readPayload;
         const items: Record<string, unknown> = {};
+        const deferred: string[] = [];
+        let responseBytes = 0;
         for (const payloadRef of refs as string[]) {
+          if (deferred.length > 0) {
+            deferred.push(payloadRef);
+            continue;
+          }
           try {
             const payload = await readPayload({ authentication, payloadRef });
+            const bytes = Buffer.byteLength(payload.content, "utf8");
+            if (responseBytes > 0 && responseBytes + bytes > DEVICE_PAYLOAD_TEXT_RESPONSE_BYTES) {
+              deferred.push(payloadRef);
+              continue;
+            }
+            responseBytes += bytes;
             items[payloadRef] = {
               text: payload.content,
               contentType: payload.contentType,
@@ -494,7 +524,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             items[payloadRef] = null;
           }
         }
-        return options.sendJson(reply, 200, { items });
+        return options.sendJson(reply, 200, { items, deferred });
       });
 
       device.post("/messages", async (request, reply) => {

@@ -40,12 +40,18 @@ export type PairedDeviceErrorCode =
 export class PairedDeviceError extends Error {
   readonly code: PairedDeviceErrorCode;
   readonly statusCode: number;
+  readonly details: Readonly<Record<string, number>>;
 
-  constructor(code: PairedDeviceErrorCode, statusCode: number) {
+  constructor(
+    code: PairedDeviceErrorCode,
+    statusCode: number,
+    details: Readonly<Record<string, number>> = {},
+  ) {
     super(code);
     this.name = "PairedDeviceError";
     this.code = code;
     this.statusCode = statusCode;
+    this.details = details;
   }
 }
 
@@ -181,7 +187,9 @@ export class PairedDeviceService {
       case "paired":
         return result.device;
       case "code_expired":
-        throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_CODE_EXPIRED, 410);
+        throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_CODE_EXPIRED, 410, {
+          pairingCodeTtlSeconds: PAIRING_CODE_LIFETIME_MILLISECONDS / 1000,
+        });
       case "code_used":
         throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_CODE_USED, 409);
       default:

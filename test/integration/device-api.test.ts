@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { RecentAuthenticationGuard } from "@himawari-agent/application";
 import { createSessionId } from "@himawari-agent/domain";
 import {
+  DEVICE_PAYLOAD_TEXT_RESPONSE_BYTES,
   devicePairingNumber,
   EnvelopePayloadProtector,
   PairedDeviceService,
@@ -202,6 +204,9 @@ describe("[P1-1] device pairing and signed device API", () => {
       }),
     });
     expect(expired.statusCode).toBe(410);
+    expect(expired.json()).toEqual({
+      error: { code: "DEVICE_PAIRING_CODE_EXPIRED", pairingCodeTtlSeconds: 600 },
+    });
 
     const base = {
       pairingCode: "A".repeat(22),
@@ -704,6 +709,7 @@ describe("[P1-1] device client routes", () => {
         },
         [missing]: null,
       },
+      deferred: [],
     });
     expect((await post(h, client, "payloads/text", { refs: [missing, missing] })).statusCode).toBe(
       400,
@@ -761,6 +767,51 @@ describe("[P1-1] device client routes", () => {
     expect((await get(h, client, `threads/${threadId}/runs/${runId}`)).json()).toMatchObject({
       error: { code: "DEVICE_PATH_NOT_ALLOWED" },
     });
+    await h.repository.close();
+  });
+
+  it("defers the texts that do not fit in one response", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const admission = new ProductionHttpPayloadAdmission({
+      ownerId,
+      agentId,
+      sessions: h.repository.sessionDeviceState(),
+      payloads: h.repository.payloadStore(ownerId, agentId),
+      protector: new EnvelopePayloadProtector({
+        keys: {
+          kind: "memory-development",
+          productionSuitable: false,
+          resolve: async () => new Uint8Array(32).fill(9),
+        },
+        activeKey: { keyRef: "test-kek", kekVersion: "v1", dekVersion: "v1" },
+      }),
+      clock: () => h.clock.now(),
+    });
+    const refs: string[] = [];
+    for (let index = 0; index < 70; index += 1)
+      refs.push(
+        (
+          await admission.protect({
+            authentication: h.webAuthentication,
+            idempotencyKey: `large-text-${index}`,
+            content: String(index % 10).repeat(64_000),
+            dataClassification: "private",
+            contentType: "text/plain",
+          })
+        ).payloadRef,
+      );
+    const first = await post(h, client, "payloads/text", { refs });
+    expect(first.statusCode).toBe(200);
+    const body = first.json() as { items: Record<string, unknown>; deferred: string[] };
+    const included = Object.keys(body.items);
+    expect(included).toEqual(refs.slice(0, included.length));
+    expect(body.deferred).toEqual(refs.slice(included.length));
+    expect(included.length * 64_000).toBeLessThanOrEqual(DEVICE_PAYLOAD_TEXT_RESPONSE_BYTES);
+    expect(body.deferred.length).toBeGreaterThan(0);
+    const rest = await post(h, client, "payloads/text", { refs: body.deferred });
+    expect(Object.keys(rest.json().items)).toEqual(body.deferred);
+    expect(rest.json().deferred).toEqual([]);
     await h.repository.close();
   });
 
@@ -932,6 +983,26 @@ describe("[P1-1] device client routes", () => {
       "客厅 Mac",
     );
     expect(browserDevices.map((device) => device.label)).not.toContain("Andy iPhone");
+    await h.repository.close();
+  });
+
+  it("stops reading a body without a declared length once it passes the device limit", async () => {
+    const h = await harness();
+    h.configuration.current = {
+      ...h.configuration.current,
+      limits: { ...h.configuration.current.limits, "device.request.body_bytes": 4096 },
+    };
+    const chunked = (size: number) =>
+      h.app.inject({
+        method: "POST",
+        url: "/api/device/v1/pair",
+        headers: { host: "himawari.example", "content-type": "application/json" },
+        payload: Readable.from([Buffer.from(JSON.stringify({ name: "x".repeat(size) }))]),
+      });
+    const large = await chunked(8000);
+    expect(large.statusCode, large.body).toBe(413);
+    expect(large.json()).toMatchObject({ error: { code: "DEVICE_BODY_TOO_LARGE" } });
+    expect((await chunked(100)).statusCode).toBe(400);
     await h.repository.close();
   });
 

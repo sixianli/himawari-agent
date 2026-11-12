@@ -104,7 +104,7 @@ export function readSnapshot(
         WHERE owner_id = @ownerId AND agent_id = @agentId ORDER BY created_at, id`,
       );
       const pairedDevices = all(
-        `SELECT id, kind, name, release_channel, status, paired_at, confirmed_at, revoked_at
+        `SELECT id, kind, name, release_channel, status, paired_at, confirmed_at, revoked_at, last_seen_at
         FROM paired_devices WHERE owner_id = @ownerId AND agent_id = @agentId
         ORDER BY paired_at, id`,
       );
