@@ -1,15 +1,17 @@
-import type {
-  ProactiveCounts,
-  ProactiveInsight,
-  ProactiveInsightContent,
-  ProactiveQuietPeriod,
-  ProactiveRating,
-  ProactiveScope,
-  ProactiveSourceItem,
-  ProactiveSealPort,
-  ProactiveSource,
-  ProactiveStorePort,
-  ProactiveVerdict,
+import type { DataClassification } from "../ports/common.js";
+import {
+  PROACTIVE_INSIGHT_LIST_MAXIMUM,
+  type ProactiveCounts,
+  type ProactiveInsight,
+  type ProactiveInsightContent,
+  type ProactiveQuietPeriod,
+  type ProactiveRating,
+  type ProactiveScope,
+  type ProactiveSourceItem,
+  type ProactiveSealPort,
+  type ProactiveSource,
+  type ProactiveStorePort,
+  type ProactiveVerdict,
 } from "../ports/proactive-checks.js";
 import type { WebPushFeedback } from "../ports/web-push.js";
 import { ruleBookFor } from "../rules/rule-book.js";
@@ -44,6 +46,7 @@ export interface ProactiveOverviewInsight {
   readonly decisionId: string;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly dataClassification: DataClassification;
 }
 
 export interface ProactiveOverviewBackoff {
@@ -88,6 +91,7 @@ export interface ProactiveOverview {
   readonly dailyLimitReached: boolean;
   readonly backoff: readonly ProactiveOverviewBackoff[];
   readonly insights: readonly ProactiveOverviewInsight[];
+  readonly insightsCapped: boolean;
   readonly audit: {
     readonly active: boolean;
     readonly since: string;
@@ -145,7 +149,8 @@ export async function readProactiveOverview(options: {
   const auditSince = new Date(Date.parse(now) - AUDIT_DAYS * DAY_MS).toISOString();
   const insights: ProactiveOverviewInsight[] = [];
   const filteredInsights: ProactiveOverviewAuditItem[] = [];
-  for (const insight of await store.listInsights({ ...scope, statuses: ["open", "replied"] })) {
+  const storedInsights = await store.listInsights({ ...scope, statuses: ["open", "replied"] });
+  for (const insight of storedInsights) {
     const content = parse<ProactiveInsightContent>(await open(insight.contentRef));
     const floor =
       insight.floorRaised ||
@@ -193,6 +198,8 @@ export async function readProactiveOverview(options: {
         decisionId: insight.decisionId,
         createdAt: insight.createdAt,
         updatedAt: insight.updatedAt,
+        dataClassification:
+          (await seal.classificationOf?.({ ...scope, ref: insight.contentRef })) ?? "private",
       }),
     );
   }
@@ -299,6 +306,7 @@ export async function readProactiveOverview(options: {
         ),
     ),
     insights: Object.freeze(insights),
+    insightsCapped: storedInsights.length >= PROACTIVE_INSIGHT_LIST_MAXIMUM,
     audit: Object.freeze({
       active: auditActive,
       since: auditSince,

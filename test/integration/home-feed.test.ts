@@ -8,6 +8,7 @@ import {
   DurableMemoryService,
   type HomeFeedConfiguration,
   type MemoryProviderProjectionPort,
+  PROACTIVE_INSIGHT_LIST_MAXIMUM,
   type ProductMemoryRecord,
   readProactiveOverview,
   type SensitiveMemoryApprovalRequest,
@@ -32,6 +33,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { createReferenceAdapterSet, DeterministicIdGenerator } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
+import { ProductionMcpMemoryWriter } from "../../apps/agent-service/src/production-mcp-memory-writer.ts";
 import { HOME_TEXT, ProductionHomeControl } from "../../apps/agent-service/src/production-home.ts";
 import { protectedMemoryCandidates } from "../../apps/agent-service/src/production-memory-capture.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
@@ -173,6 +175,17 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       protector,
       clock,
     });
+    const externalProposals = new ProductionMcpMemoryWriter({
+      configuration: scope,
+      memory,
+      state: repository.productMemoryState(),
+      book: repository.memoryBook(),
+      ledger: repository.decisionLedger(),
+      proposals: repository.externalMemoryProposals(),
+      payloads,
+      protector,
+      clock,
+    });
     const control = new ProductionMemoryControl({
       configuration: scope,
       state: repository.productMemoryState(),
@@ -191,6 +204,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       payloads,
       protector,
       clock,
+      externalProposals,
       onAudit: () => undefined,
     });
     const proactiveStore = repository.proactive();
@@ -261,7 +275,8 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       );
       const parsed = gatewayV2MessageSchema.parse(JSON.parse(JSON.stringify(snapshot)));
       if (parsed.type !== "home.snapshot") throw new Error("snapshot");
-      expect(sourceFailures).toEqual([]);
+      for (const failed of sourceFailures.splice(0))
+        expect(parsed.payload.incompleteSources).toContain(failed);
       return parsed.payload;
     };
 
@@ -376,6 +391,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
         readonly dueAt?: string | null;
         readonly result?: "act" | "know" | "check";
         readonly priority?: "high" | "medium" | "low" | null;
+        readonly dataClassification?: "private" | "sensitive";
       }[],
     ) => {
       decisions += 1;
@@ -398,6 +414,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
               link: `https://mail.google.com/mail/u/0/#inbox/${mail.id}`,
             }),
             at: clock.now(),
+            ...(mail.dataClassification ? { dataClassification: mail.dataClassification } : {}),
           }),
           dueAt: mail.dueAt ?? null,
           priority: mail.priority === undefined ? ("high" as const) : mail.priority,
@@ -549,10 +566,76 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       onFailure: (error) => failures.push(error),
     });
 
+    const propose = (proposalId: string, text: string) =>
+      externalProposals.submit({
+        proposalId,
+        text,
+        category: "preference",
+        client: "claude-code",
+        subjectRef: "mcp-client:claude-code",
+        sourceKey: null,
+      });
+    const tidy = async (id: string, text: string, when: string) => {
+      await repository.memoryConsolidation().begin({
+        id: `consolidation-${id}`,
+        ...scope,
+        day: when.slice(0, 10),
+        triggerRunId: RUN_ID,
+        status: "running",
+        reviewedThrough: null,
+        modelCalled: false,
+        changeCount: 0,
+        errorCode: null,
+        startedAt: when,
+        finishedAt: null,
+      });
+      await remember(`basis-${id}`, `依据 ${id}`);
+      await put(`payload-${id}`, text);
+      await memory.applyProposal(
+        {
+          decision: "create",
+          memory: {
+            id: createMemoryId(id),
+            ...scope,
+            contentRef: `payload-${id}`,
+            dataClassification: "private",
+            sourceThreadId: THREAD_ID,
+            sourceRefs: [`message-${id}`],
+            inference: false,
+            confidencePermille: 1000,
+            policyVersion: "memory-policy-v1",
+          },
+        } as never,
+        GENERATION_ID,
+        undefined,
+        (saved) => ({
+          change: {
+            id: `consolidation-${id}:c1`,
+            consolidationId: `consolidation-${id}`,
+            ...scope,
+            memoryId: createMemoryId(id),
+            relatedMemoryId: createMemoryId(`basis-${id}`),
+            action: "reflect",
+            beforeRevision: null,
+            afterRevision: saved.revision,
+            beforeStatus: "active",
+            beforeSupersededBy: null,
+            beforeValidTo: null,
+            createdAt: when,
+            undoneAt: null,
+          },
+          basisMemoryIds: [createMemoryId(`basis-${id}`)],
+          resultMemoryIds: [createMemoryId(id)],
+        }),
+      );
+    };
+
     return {
       repository,
       home,
       read,
+      propose,
+      tidy,
       sql,
       put,
       seedRun,
@@ -703,6 +786,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
         dueAt: at(6 * 1440),
         repeat: "none",
         sourceThreadId: THREAD_ID,
+        dataClassification: "private",
       },
     ]);
 
@@ -920,6 +1004,149 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
     expect(snapshot.awaitingCount).toBe(5);
     expect(snapshot.awaitingTruncated).toBe(true);
     expect(await f.home.awaitingCount()).toBe(5);
+  });
+
+  it("shows what another agent proposed to remember, keeps the real count past the read limit", async () => {
+    const f = await fixture({ ...DEFAULT_HOME_FEED, sourceReadLimit: 2 });
+    expect((await f.read()).items).toEqual([]);
+    await f.propose("proposal-1", "我喝咖啡不加糖");
+    await f.propose("proposal-2", "我周三不开会");
+    await f.propose("proposal-3", "我住在东京");
+    const snapshot = await f.read();
+    expect(snapshot.items).toHaveLength(2);
+    expect(snapshot.awaitingCount).toBe(3);
+    expect(snapshot.awaitingTruncated).toBe(true);
+    expect(await f.home.awaitingCount()).toBe(3);
+    for (const item of snapshot.items) {
+      expect(item.key).toMatch(/^external_proposal:proposal-[123]$/u);
+      expect(item).toMatchObject({
+        kind: "memory_confirm",
+        awaitsOwner: true,
+        sentenceBasis: "recorded",
+        target: { type: "external_proposal" },
+        source: { type: "agent", from: "claude-code" },
+        actions: [{ action: "keep" }, { action: "reject" }],
+      });
+      expect(["我喝咖啡不加糖", "我周三不开会", "我住在东京"]).toContain(item.sentence);
+    }
+  });
+
+  it("still answers when one entry has an id the contract cannot carry, says the source is incomplete and sends no badge", async () => {
+    const f = await fixture();
+    await f.propose("proposal ok/1", "我喝咖啡不加糖");
+    await f.propose("proposal-2", "我周三不开会");
+    await f.createApproval("approval-1", { expiresAt: at(60) });
+    const snapshot = await f.read();
+    expect(keys(snapshot)).toEqual(["approval:approval-1", "external_proposal:proposal-2"]);
+    expect(snapshot.incompleteSources).toEqual(["external_proposals"]);
+    expect(snapshot.awaitingCount).toBe(2);
+    expect(await f.home.awaitingCount()).toBeUndefined();
+
+    await f.repository.webPush().saveSubscription({
+      ...scope,
+      id: "phone",
+      endpoint: "https://push.example/phone",
+      p256dh: "key-phone",
+      auth: "auth-phone",
+      locale: "zh-CN",
+      deviceLabel: "phone",
+      now: NOW,
+    });
+    await f.repository.webPush().writeKinds({ ...scope, kinds: ["approval"], now: NOW });
+    await f.push.tick();
+    await f.push.tick();
+    expect(f.sender.requests).toHaveLength(1);
+    expect(f.sender.requests[0]?.payload).not.toContain("app_badge");
+  });
+
+  it("shows what a tidy-up changed as done, without counting it, and drops it after the recent window", async () => {
+    const f = await fixture();
+    await f.tidy("memory-tidy", "你常在周三下午开会", at(-30));
+    const snapshot = await f.read();
+    expect(snapshot.awaitingCount).toBe(0);
+    expect(snapshot.items).toHaveLength(1);
+    expect(snapshot.items[0]).toMatchObject({
+      key: "tidy:consolidation-memory-tidy:c1",
+      kind: "done",
+      awaitsOwner: false,
+      sentence: "你常在周三下午开会",
+      rank: "recency",
+      target: { type: "memory", id: "memory-tidy" },
+    });
+    f.setNow(at(DEFAULT_HOME_FEED.recentHours * 60 + 1));
+    expect((await f.read()).items).toEqual([]);
+  });
+
+  it("carries the classification the mail check stored and the one of an upcoming reminder's memory", async () => {
+    const f = await fixture();
+    await f.recordMail([
+      { id: "health", summary: "体检结果出来了", dataClassification: "sensitive" },
+      { id: "plain", summary: "普通邮件" },
+    ]);
+    await f.remember("memory-clinic", "复诊预约", "sensitive");
+    await f.repository.memoryReminders().schedule({
+      id: "reminder-clinic",
+      ...scope,
+      memoryId: createMemoryId("memory-clinic"),
+      dueAt: at(3 * 1440),
+      remindAt: at(2 * 1440),
+      repeat: "none",
+      status: "scheduled",
+      dismissedAt: null,
+      createdAt: START,
+      updatedAt: START,
+    });
+    const snapshot = await f.read();
+    expect(
+      Object.fromEntries(snapshot.items.map((item) => [item.key, item.dataClassification])),
+    ).toEqual({ "insight:insight-health": "sensitive", "insight:insight-plain": "private" });
+    expect(snapshot.upcoming).toMatchObject([
+      { reminderId: "reminder-clinic", dataClassification: "sensitive" },
+    ]);
+  });
+
+  it("never lists a reminder that is already due as upcoming, even past the read limit", async () => {
+    const f = await fixture({ ...DEFAULT_HOME_FEED, sourceReadLimit: 1 });
+    await f.remind("reminder-a", "提醒 A", at(-20), at(600));
+    await f.remind("reminder-b", "提醒 B", at(-10), at(700));
+    await f.remind("reminder-later", "以后的提醒", at(1440), at(2 * 1440));
+    const snapshot = await f.read();
+    expect(snapshot.items).toHaveLength(1);
+    expect(snapshot.awaitingCount).toBe(2);
+    expect(snapshot.upcoming.map(({ reminderId }) => reminderId)).toEqual(["reminder-later"]);
+  });
+
+  it("cuts overlong text and control characters to what the contract accepts", async () => {
+    const f = await fixture();
+    await f.remind("reminder-long", `开头\u0007\n${"长".repeat(5000)}`, at(-10), at(120));
+    const snapshot = await f.read();
+    expect(snapshot.items[0]?.sentence).toHaveLength(2000);
+    expect(snapshot.items[0]?.sentence?.startsWith("开头")).toBe(true);
+  });
+
+  it("says the mail source is incomplete once the store returns as many reminders as it can list", async () => {
+    const f = await fixture();
+    await f.recordMail([{ id: "first", summary: "第一封" }]);
+    expect((await f.read()).incompleteSources).toEqual([]);
+    f.sql((handle) =>
+      handle
+        .prepare(
+          `WITH RECURSIVE counter(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM counter WHERE n < ?)
+          INSERT INTO source_insights (
+            id, owner_id, agent_id, source, thread_id, last_message_id, result, floor_raised,
+            content_ref, due_at, priority, status, decision_id, owner_rating, push_source_key,
+            created_at, updated_at, push_class
+          ) SELECT 'insight-copy-' || n, owner_id, agent_id, source, 'gmail-thread-copy-' || n,
+            last_message_id, result, floor_raised, content_ref, due_at, priority, 'replied',
+            decision_id, owner_rating, push_source_key, created_at, updated_at, push_class
+          FROM source_insights, counter WHERE id = 'insight-first'`,
+        )
+        .run(PROACTIVE_INSIGHT_LIST_MAXIMUM - 1),
+    );
+    const snapshot = await f.read();
+    expect(snapshot.incompleteSources).toEqual(["mail"]);
+    expect(snapshot.items.map(({ key }) => key)).toEqual(["insight:insight-first"]);
+    expect(await f.home.awaitingCount()).toBeUndefined();
   });
 
   it("puts the same number on the web push badge as the home count", async () => {

@@ -504,6 +504,7 @@ export class ProductionMemoryControl {
     readonly until: string;
     readonly limit: number;
     readonly exclude: ReadonlySet<string>;
+    readonly notYetDue?: boolean;
   }) {
     const { ownerId, agentId } = this.options.configuration;
     const { exclude } = input;
@@ -515,7 +516,7 @@ export class ProductionMemoryControl {
         to: input.until,
         limit: input.limit,
       })) ?? []
-    ).filter(({ id }) => !exclude.has(id));
+    ).filter(({ id, remindAt }) => !exclude.has(id) && !(input.notYetDue && remindAt <= input.now));
     const comingMemories = new Map(
       (
         await this.options.state.readMany({
@@ -525,7 +526,9 @@ export class ProductionMemoryControl {
         })
       ).map((memory) => [memory.id, memory]),
     );
-    const upcoming: OverviewSnapshot["payload"]["upcoming"][number][] = [];
+    const upcoming: (OverviewSnapshot["payload"]["upcoming"][number] & {
+      readonly dataClassification: ProductMemoryRecord["dataClassification"];
+    })[] = [];
     for (const reminder of coming) {
       const memory = comingMemories.get(reminder.memoryId);
       const text = memory ? singleLine(await this.readText(memory.contentRef).catch(() => "")) : "";
@@ -537,6 +540,7 @@ export class ProductionMemoryControl {
         dueAt: reminder.dueAt,
         repeat: reminder.repeat,
         sourceThreadId: memory?.sourceThreadId ?? null,
+        dataClassification: memory?.dataClassification ?? "private",
       });
     }
     return upcoming;
@@ -594,7 +598,7 @@ export class ProductionMemoryControl {
     return tidyUps;
   }
 
-  async conversationReviewViews(limit: number) {
+  async conversationReviewViews(limit: number, options: { readonly lead: boolean }) {
     const { ownerId, agentId } = this.options.configuration;
     const conversationReviews: (OverviewSnapshot["payload"]["conversationReviews"][number] & {
       readonly lead: {
@@ -622,7 +626,7 @@ export class ProductionMemoryControl {
         ).map((memory) => [memory.id as string, memory]),
       );
       let lead: (typeof conversationReviews)[number]["lead"] = null;
-      for (const { memoryId } of reviewChanges) {
+      for (const { memoryId } of options.lead ? reviewChanges : []) {
         const memory = current.get(memoryId);
         if (!memory || memory.status !== "active") continue;
         const text = singleLine(await this.readText(memory.contentRef).catch(() => ""));
@@ -937,9 +941,9 @@ export class ProductionMemoryControl {
     const tidyUps = (await this.tidyUpViews(TIDY_UPS_SHOWN)).map(
       ({ dataClassification: _dataClassification, ...change }) => change,
     );
-    const conversationReviews = (await this.conversationReviewViews(TIDY_UPS_SHOWN)).map(
-      ({ lead: _lead, ...review }) => review,
-    );
+    const conversationReviews = (
+      await this.conversationReviewViews(TIDY_UPS_SHOWN, { lead: false })
+    ).map(({ lead: _lead, ...review }) => review);
     const outline = await this.options.profile?.outline({
       ownerId,
       agentId,
@@ -980,12 +984,14 @@ export class ProductionMemoryControl {
       sourceThreadId,
     }));
     const now = this.options.clock.now();
-    const upcoming = await this.upcomingViews({
-      now,
-      until: new Date(Date.parse(now) + UPCOMING_WINDOW_MS).toISOString(),
-      limit: UPCOMING_SHOWN,
-      exclude: new Set(due.rowIds),
-    });
+    const upcoming = (
+      await this.upcomingViews({
+        now,
+        until: new Date(Date.parse(now) + UPCOMING_WINDOW_MS).toISOString(),
+        limit: UPCOMING_SHOWN,
+        exclude: new Set(due.rowIds),
+      })
+    ).map(({ dataClassification: _dataClassification, ...entry }) => entry);
     const people = (await this.options.book.listPeople(scope)).map((person) => ({
       personId: person.id,
       name: person.name,

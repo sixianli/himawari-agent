@@ -1178,7 +1178,12 @@ export async function createProductionHttpComposition(
       options.onHomeDiagnostic?.({
         event: "home.source_failed",
         source,
-        error: error instanceof Error ? error.message : String(error),
+        error:
+          error instanceof ApplicationPortError
+            ? error.code
+            : error instanceof Error
+              ? error.name
+              : "unknown",
       }),
     ...(options.homeUrgency
       ? {

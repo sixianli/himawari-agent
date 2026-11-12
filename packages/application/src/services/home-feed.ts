@@ -91,6 +91,7 @@ export interface HomeUpcoming {
   readonly dueAt: string;
   readonly repeat: "none" | "yearly";
   readonly sourceThreadId: string | null;
+  readonly dataClassification: DataClassification;
 }
 
 export interface HomeSourceInput {
@@ -103,6 +104,7 @@ export interface HomeSourceInput {
 export interface HomeSourceResult {
   readonly items: readonly HomeCandidate[];
   readonly unread: number;
+  readonly incomplete?: boolean;
 }
 
 export interface HomeSource {
@@ -253,6 +255,7 @@ export class HomeFeedService {
         for (const item of result.items)
           if (item.awaitsOwner === source.awaitsOwner) candidates.push(item);
         if (source.awaitsOwner) unread += Math.max(0, result.unread);
+        if (result.incomplete) incomplete.push(source.name);
       } catch (error) {
         incomplete.push(source.name);
         this.#options.onSourceFailure(source.name, error);
@@ -271,9 +274,13 @@ export class HomeFeedService {
     };
   }
 
-  async awaitingCount(): Promise<number> {
+  async awaitingCount(): Promise<number | undefined> {
     const now = this.#options.clock.now();
-    const { candidates, unread } = await this.#collect(this.#input(now, HOME_SCORING_LOCALE), true);
+    const { candidates, incomplete, unread } = await this.#collect(
+      this.#input(now, HOME_SCORING_LOCALE),
+      true,
+    );
+    if (incomplete.length > 0) return undefined;
     return new Set(candidates.map(({ key }) => key)).size + unread;
   }
 
@@ -303,7 +310,10 @@ export class HomeFeedService {
       false,
     );
     const ordered = orderHomeItems(
-      candidates,
+      [
+        ...candidates.filter(({ awaitsOwner }) => awaitsOwner),
+        ...candidates.filter(({ awaitsOwner }) => !awaitsOwner),
+      ],
       now,
       settings.deadlineLeadMinutes,
       await this.#scores(candidates),
