@@ -79,4 +79,58 @@ import Testing
         try FileManager.default.removeItem(at: directory)
         #expect(throws: (any Error).self) { try store.removeAll() }
     }
+
+    @Test func anOwnerMarkThatCannotBeReadLeavesTheStoreAlone() throws {
+        let store = UnreadableMarkStore()
+        try store.write("outbox", Data("unsent".utf8))
+        #expect(throws: LocalStoreError.unreadable("owner")) { try store.claim(for: "dev_a") }
+        #expect(store.read("outbox") == Data("unsent".utf8))
+    }
+
+    @Test func aRetiredStoreIsEmptyAndTakesNoLateWrites() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("retire-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try FileLocalStore(directory: directory)
+        try store.write("threads-cache.json", Data("old".utf8))
+        try store.retire()
+        #expect(store.read("threads-cache.json") == nil)
+        #expect(throws: LocalStoreError.retired) { try store.write("threads-cache.json", Data("late".utf8)) }
+        #expect(store.read("threads-cache.json") == nil)
+        let next = try FileLocalStore(directory: directory)
+        try next.claim(for: "dev_b")
+        try next.write("outbox.json", Data("new".utf8))
+        #expect(next.read("outbox.json") == Data("new".utf8))
+    }
+
+    @Test func aRemovedDeviceOnlyClaimsItsDataIsGoneWhenTheStoreWasEmptied() {
+        #expect(ForgetOutcome.problem(wanted: .removed, storeEmptied: true) == .removed)
+        #expect(ForgetOutcome.problem(wanted: .removed, storeEmptied: false) == nil)
+        #expect(ForgetOutcome.problem(wanted: nil, storeEmptied: false) == nil)
+    }
+
+    @Test func aRevokedDeviceIsToldApartFromANetworkFailure() {
+        #expect(DeviceAPIError.server(status: 403, code: "DEVICE_REVOKED").isRevoked)
+        #expect(!DeviceAPIError.server(status: 403, code: "FORBIDDEN").isRevoked)
+        #expect(!DeviceAPIError.server(status: 503, code: nil).isRevoked)
+    }
+}
+
+private final class UnreadableMarkStore: LocalStore, @unchecked Sendable {
+    private let inner = MemoryLocalStore()
+
+    func read(_ name: String) -> Data? {
+        name == "owner" ? nil : inner.read(name)
+    }
+
+    func contains(_ name: String) -> Bool {
+        name == "owner" || inner.contains(name)
+    }
+
+    func write(_ name: String, _ data: Data?) throws {
+        try inner.write(name, data)
+    }
+
+    func removeAll() throws {
+        try inner.removeAll()
+    }
 }

@@ -23,7 +23,7 @@ struct PairingView: View {
             .background { PairingGlow() }
             .animation(.easeInOut(duration: 0.25), value: model.phase)
             .confirmationDialog(L.text("pairing.startOver.confirm"), isPresented: $confirmingStartOver, titleVisibility: .visible) {
-                Button(L.text("pairing.startOver"), role: .destructive) { model.cancelPairing() }
+                Button(L.text("pairing.startOver"), role: .destructive) { model.startOver() }
                 Button(L.text("pairing.cancel"), role: .cancel) {}
             }
             .fullScreenCover(isPresented: $scanning) {

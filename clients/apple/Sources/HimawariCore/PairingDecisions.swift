@@ -40,8 +40,24 @@ extension LocalStore {
 
     public func claim(for owner: String) throws {
         let mark = Data(owner.utf8)
-        if read(Self.ownerName) == mark { return }
+        if let current = read(Self.ownerName) {
+            if current == mark { return }
+        } else if contains(Self.ownerName) {
+            throw LocalStoreError.unreadable(Self.ownerName)
+        }
         try removeAll()
         try write(Self.ownerName, mark)
+    }
+}
+
+public enum LocalStoreError: Error, Equatable {
+    case unreadable(String)
+    case retired
+}
+
+public enum ForgetOutcome {
+    public static func problem(wanted: PairingProblem?, storeEmptied: Bool) -> PairingProblem? {
+        if !storeEmptied, wanted == .removed { return nil }
+        return wanted
     }
 }

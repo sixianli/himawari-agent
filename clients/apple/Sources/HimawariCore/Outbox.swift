@@ -24,6 +24,11 @@ public enum OutboxSendResult: Sendable, Equatable {
     case delivered(messageId: String, threadRevision: Int)
     case retryLater
     case rejected(messageId: String, code: String?)
+
+    public var deviceRevoked: Bool {
+        if case .rejected(_, "DEVICE_REVOKED") = self { return true }
+        return false
+    }
 }
 
 public actor Outbox {

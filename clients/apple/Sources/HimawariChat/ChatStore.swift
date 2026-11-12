@@ -303,7 +303,7 @@ public final class ChatStore {
                 await self?.details[threadId]?.thread.revision
             }
             let deferred = results.contains(.retryLater)
-            if results.contains(where: { if case let .rejected(_, code) = $0 { code == "DEVICE_REVOKED" } else { false } }) {
+            if results.contains(where: { $0.deviceRevoked }) {
                 onSessionInvalid()
                 return
             }

@@ -31,14 +31,18 @@ done
 scenes=()
 while IFS= read -r scene; do scenes+=("$scene"); done < <(sed -nE 's/^ *case [a-zA-Z]+ = "([^"]+)"$/\1/p' "$root/Sources/HimawariShell/DemoScenes.swift")
 [ ${#scenes[@]} -gt 0 ] || { echo "UI_REVIEW_FAILED no demo scenes found" >&2; exit 1; }
-warm_up="${scenes[0]}"
+warm_up=""
+for scene in "${scenes[@]}"; do
+  case "$scene" in motion-*) ;; *) warm_up="$scene"; break ;; esac
+done
+[ -n "$warm_up" ] || { echo "UI_REVIEW_FAILED no still demo scene to warm up with" >&2; exit 1; }
 if [ -n "$only" ]; then
   [ "$mode" = "record" ] || { echo "UI_REVIEW_FAILED --only works only when recording; --check and --approve need every scene" >&2; exit 1; }
   chosen=()
   for scene in "${scenes[@]}"; do
     case "$only" in *",$scene,"*) chosen+=("$scene") ;; esac
   done
-  [ "${#chosen[@]}" -gt 0 ] && [ "${#chosen[@]}" -eq "$(printf '%s' "$only" | tr ',' '\n' | grep . | sort -u | grep -c .)" ] || { echo "UI_REVIEW_FAILED --only names a scene that does not exist; scenes: ${scenes[*]}" >&2; exit 1; }
+  [ "${#chosen[@]}" -gt 0 ] && [ "${#chosen[@]}" -eq "$(printf '%s' "$only" | tr ',' '\n' | grep -c .)" ] || { echo "UI_REVIEW_FAILED --only names a scene that does not exist or names one twice; scenes: ${scenes[*]}" >&2; exit 1; }
   scenes=("${chosen[@]}")
 fi
 still=()

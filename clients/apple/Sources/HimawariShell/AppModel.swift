@@ -188,6 +188,25 @@ public final class AppModel {
         forget(problem: nil)
     }
 
+    public func startOver() {
+        guard emptyStore() else {
+            phase = .unpaired(.storageUnavailable)
+            return
+        }
+        cancelPairing()
+    }
+
+    private func emptyStore() -> Bool {
+        chat?.stop()
+        chat = nil
+        do {
+            try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
+            return true
+        } catch {
+            return false
+        }
+    }
+
     public func retryReadingKeys() {
         restore()
     }
@@ -305,19 +324,14 @@ public final class AppModel {
         waiting?.cancel()
         configurationRetry?.cancel()
         configurationRetry = nil
-        chat?.stop()
-        chat = nil
+        let emptied = emptyStore()
         configuration = nil
-        try? store?.removeAll()
-        if store == nil, let fresh = try? FileLocalStore.applicationSupport(named: "himawari-device") {
-            try? fresh.removeAll()
-        }
         store = nil
         try? keys.delete(.device)
         try? keys.delete(.confirm)
         try? save(nil)
         api.http.use(nil)
-        phase = .unpaired(problem)
+        phase = .unpaired(ForgetOutcome.problem(wanted: problem, storeEmptied: emptied))
     }
 
     static var deviceName: String {
