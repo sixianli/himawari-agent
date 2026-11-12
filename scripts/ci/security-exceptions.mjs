@@ -227,11 +227,25 @@ export function loadReviewedExceptions({
     exceptionPath;
   assert(!source.initialization || !available, "SECURITY_PARTIAL_INITIALIZATION");
   const candidate = readFileSync(join(root, exceptionPath), "utf8");
-  validateSecurityExceptions(JSON.parse(candidate), { now, ruleIds, dependencies });
+  const candidateExceptions = validateSecurityExceptions(JSON.parse(candidate), {
+    now,
+    ruleIds,
+    dependencies,
+  });
   assert(available || source.initialization, "SECURITY_ACCEPTED_EXCEPTIONS_MISSING");
   const bytes = available ? git(root, ["show", `${context.baseSha}:${exceptionPath}`]) : candidate;
   const document = withoutRemovedDependencies(JSON.parse(bytes), dependencies);
   const exceptions = validateSecurityExceptions(document, { now, ruleIds, dependencies });
+  const publishedPaths = (entries) =>
+    new Set(
+      entries
+        .filter((entry) => entry.kind === "published-synthetic-fixture")
+        .map((entry) => entry.path),
+    );
+  const candidatePublishedPaths = publishedPaths(candidateExceptions);
+  const removedPublishedPaths = [...publishedPaths(exceptions)]
+    .filter((path) => !candidatePublishedPaths.has(path))
+    .sort();
   assert(
     available ||
       exceptions.length === 0 ||
@@ -258,6 +272,7 @@ export function loadReviewedExceptions({
       sourceSha: ownerReview.sourceSha,
       initialization: !available,
       candidateDiffers: sha256(candidate) !== sha256(bytes),
+      removedPublishedPaths,
       approvalBasis: "owner_pr_comment",
       reviewStatus: "owner_approved",
       reviewReference: ownerReview.reference,
@@ -270,6 +285,7 @@ export function loadReviewedExceptions({
     sourceSha: available ? context.baseSha : null,
     initialization: !available,
     candidateDiffers: sha256(candidate) !== sha256(bytes),
+    removedPublishedPaths,
     approvalBasis: available ? "accepted_base" : "initialization_proposal",
     reviewStatus: available ? "accepted_base" : (document.proposal?.status ?? "no_exceptions"),
     proposal: document.proposal ?? null,
