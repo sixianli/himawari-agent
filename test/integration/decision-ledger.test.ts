@@ -431,6 +431,66 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
     }
   });
 
+  it("finds the last decision that used each rule, by exact rule id with or without a revision", async () => {
+    const { repository } = await fixture();
+    try {
+      const ledger = repository.decisionLedger();
+      await ledger.append(
+        ledgerWrite("use-old", {
+          kind: "rule_review",
+          outcome: "needs_review",
+          decidedAt: "2026-10-31T01:00:00.000Z",
+          inputs: { memoryIds: [], ruleIds: ["owner:aaaa@1", "floor_money_words@2"] },
+        } as never),
+      );
+      await ledger.append(
+        ledgerWrite("use-new", {
+          kind: "rule_review",
+          outcome: "needs_review",
+          decidedAt: "2026-10-31T05:00:00.000Z",
+          inputs: { memoryIds: [], ruleIds: ["owner:aaaa@2"] },
+        } as never),
+      );
+      await ledger.append(
+        ledgerWrite("other-rule", {
+          kind: "rule_review",
+          outcome: "needs_review",
+          decidedAt: "2026-10-31T09:00:00.000Z",
+          inputs: { memoryIds: [], ruleIds: ["owner:aaaab@1", "owner:bbbb"] },
+        } as never),
+      );
+      await ledger.append(ledgerWrite("no-rules", { decidedAt: "2026-10-31T10:00:00.000Z" }));
+      expect(
+        await ledger.lastRuleUses({
+          ...scope,
+          ruleIds: ["owner:aaaa", "owner:bbbb", "owner:cccc", "owner:aaa"],
+        }),
+      ).toEqual([
+        {
+          ruleId: "owner:aaaa",
+          decisionId: "use-new",
+          kind: "rule_review",
+          decidedAt: "2026-10-31T05:00:00.000Z",
+        },
+        {
+          ruleId: "owner:bbbb",
+          decisionId: "other-rule",
+          kind: "rule_review",
+          decidedAt: "2026-10-31T09:00:00.000Z",
+        },
+      ]);
+      expect(
+        await ledger.lastRuleUses({
+          ownerId: createOwnerId("another-owner"),
+          agentId: AGENT_ID,
+          ruleIds: ["owner:aaaa"],
+        }),
+      ).toEqual([]);
+    } finally {
+      await repository.close();
+    }
+  });
+
   it("refuses writes whose outcome does not belong to the kind", async () => {
     const { repository, list } = await fixture();
     try {

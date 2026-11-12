@@ -291,6 +291,7 @@ describe("production memory capture", () => {
       memory,
       reminders: repository.memoryReminders(),
       ownerRules: ruleWriter,
+      ledger: repository.decisionLedger(),
       book: repository.memoryBook(),
       profile: new OwnerProfileService({
         state: repository.productMemoryState(),
@@ -1904,6 +1905,28 @@ describe("production memory capture", () => {
     expect(created).toMatchObject({ status: "active", type: "mail_must_notify", replayed: false });
     expect(created["ruleId"]).toMatch(/^owner:[0-9a-f]{24}$/u);
     expect((created["trials"] as unknown[]).length).toBeGreaterThanOrEqual(3);
+    const detail = (await listed()).find(({ ruleId }) => ruleId === created["ruleId"]);
+    expect(detail).toMatchObject({ quote: sentence, changes: 0, lastUsed: null });
+    await context.repository.decisionLedger().append({
+      id: "rule-used-1",
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      kind: "rule_review",
+      decidedAt: "2026-11-11T08:00:00.000Z",
+      outcome: "needs_review",
+      reasonCode: "rule_used",
+      subjectRef: null,
+      inputs: { memoryIds: [], ruleIds: [`${created["ruleId"]}@1`] },
+      reasonRef: null,
+      contentRef: null,
+      costMicros: 0,
+      durationMs: 0,
+    } as never);
+    expect((await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.lastUsed).toEqual({
+      at: "2026-11-11T08:00:00.000Z",
+      kind: "rule_review",
+      decisionId: "rule-used-1",
+    });
     const ruleMemory = await context.repository
       .productMemoryState()
       .read(created["memoryId"] as never);

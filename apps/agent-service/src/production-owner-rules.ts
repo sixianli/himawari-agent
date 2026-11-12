@@ -236,6 +236,8 @@ export interface ListedOwnerRule {
   readonly status: StoredOwnerRule["status"];
   readonly enforced: boolean;
   readonly updatedAt: string;
+  readonly revision: number;
+  readonly sourceMemoryId: string | null;
 }
 
 interface Proposal {
@@ -691,6 +693,8 @@ export class ProductionOwnerRuleWriter {
         status: row.status,
         enforced: enforceableOwnerRule(row) !== undefined,
         updatedAt: row.updatedAt,
+        revision: row.revision,
+        sourceMemoryId: row.sourceMemoryId,
       });
     });
   }
@@ -727,6 +731,8 @@ export class ProductionOwnerRuleWriter {
       status: changed.status,
       enforced: true,
       updatedAt: changed.updatedAt,
+      revision: changed.revision,
+      sourceMemoryId: changed.sourceMemoryId,
     });
   }
 
@@ -784,6 +790,8 @@ export class ProductionOwnerRuleWriter {
       status: "retired",
       enforced: false,
       updatedAt: this.#options.clock.now(),
+      revision: latest.revision,
+      sourceMemoryId: latest.sourceMemoryId,
     });
   }
 }
