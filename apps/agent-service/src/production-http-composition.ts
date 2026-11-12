@@ -36,7 +36,7 @@ import {
   ThreadQueryService,
 } from "@himawari-agent/application";
 import {
-  DEVICE_ACCESS_TEXT_MAX_LENGTH,
+  isDeviceAccessText,
   type ThreadExecutionEnvironment,
 } from "@himawari-agent/gateway-contracts";
 import { MemoryConsolidationService } from "@himawari-agent/memory-engine";
@@ -476,7 +476,7 @@ export async function resolveDevicePairingAccess(
   const clientId = await resolve(clientIdReference.ref, clientIdReference.version);
   const clientSecret = await resolve(clientSecretReference.ref, clientSecretReference.version);
   for (const value of [clientId, clientSecret])
-    if (value.length === 0 || value.length > DEVICE_ACCESS_TEXT_MAX_LENGTH)
+    if (!isDeviceAccessText(value))
       compositionError(PRODUCTION_HTTP_COMPOSITION_ERROR_CODES.SECRET_MATERIAL_INVALID);
   return { clientId, clientSecret };
 }

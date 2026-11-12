@@ -571,8 +571,15 @@ export function normalizeDeviceName(input: unknown): string | null {
     return null;
   }
 }
-export const DEVICE_ACCESS_TEXT_MAX_LENGTH = 256;
-const accessText = boundedString(DEVICE_ACCESS_TEXT_MAX_LENGTH);
+const accessText = boundedString(256);
+export function isDeviceAccessText(input: unknown): boolean {
+  try {
+    accessText.parse(input);
+    return true;
+  } catch {
+    return false;
+  }
+}
 const deviceAccessSchema = object({
   clientId: accessText,
   clientSecret: accessText,

@@ -86,6 +86,14 @@ export class SqlitePairedDeviceOperations {
     if (!/^[0-9a-f]{64}$/u.test(input.codeHash) || expiresAt <= now)
       this.fail("PORT_INVALID_OPERATION", "Pairing code is invalid");
     this.database.transaction(() => {
+      const open = this.database
+        .prepare(
+          `SELECT 1 FROM device_pairing_codes
+            WHERE code_hash = ? AND owner_id = ? AND agent_id = ? AND session_id = ?
+              AND used_at IS NULL AND expires_at > ?`,
+        )
+        .get(input.codeHash, input.ownerId, input.agentId, input.sessionId, now);
+      if (open) return;
       this.database
         .prepare(
           `DELETE FROM device_pairing_codes

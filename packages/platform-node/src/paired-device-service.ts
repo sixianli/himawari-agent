@@ -143,7 +143,12 @@ export class PairedDeviceService {
       now: now.toISOString(),
       expiresAt,
     });
-    return Object.freeze({ code, expiresAt });
+    const open = await this.#options.store.readOpenPairingCode({
+      ownerId: scope.ownerId,
+      agentId: scope.agentId,
+      now: now.toISOString(),
+    });
+    return Object.freeze({ code, expiresAt: open?.expiresAt ?? expiresAt });
   }
 
   async pair(

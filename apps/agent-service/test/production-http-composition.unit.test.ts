@@ -11,10 +11,11 @@ import type {
 } from "@himawari-agent/application";
 import {
   actionIntentFingerprint,
+  DEVICE_HARD_LIMIT_KEYS,
   type GovernedActionIntent,
   type GovernedApprovalRequest,
 } from "@himawari-agent/application";
-import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
+import { DEVICE_LIMIT_KEYS, gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -1640,8 +1641,8 @@ describe("[P1-1] device pairing access", () => {
     });
   });
 
-  it("refuses an empty access value and one longer than the gateway contract allows", async () => {
-    for (const value of ["", "x".repeat(257)])
+  it("refuses an access value the gateway contract would reject", async () => {
+    for (const value of ["", "x".repeat(257), "line\nbreak"])
       await expect(
         resolveDevicePairingAccess(base, async (ref) =>
           ref === "device-key-ref" ? value : "client-id",
@@ -1956,5 +1957,19 @@ describe("[P1-1] device management through gateway v2", () => {
       expect(bytes.includes(ACCESS_ID)).toBe(false);
       expect(bytes.includes(ACCESS_KEY)).toBe(false);
     }
+  });
+});
+
+describe("[P1-1] device limit keys", () => {
+  it("lists the same keys in the application, the gateway contract and the settings page", async () => {
+    const page = await readFile(
+      new URL("../../control-center/src/components/device-settings.tsx", import.meta.url),
+      "utf8",
+    );
+    const listed =
+      /export const DEVICE_LIMIT_KEYS = \[([\s\S]*?)\] as const/u.exec(page)?.[1] ?? "";
+    const pageKeys = [...listed.matchAll(/"([^"]+)"/gu)].map((match) => match[1]);
+    expect(pageKeys).toEqual([...DEVICE_HARD_LIMIT_KEYS]);
+    expect([...DEVICE_LIMIT_KEYS]).toEqual([...DEVICE_HARD_LIMIT_KEYS]);
   });
 });

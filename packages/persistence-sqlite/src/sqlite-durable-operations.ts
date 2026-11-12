@@ -5029,6 +5029,18 @@ export class SqliteDurableOperations {
           WHERE device_id = ? AND status = 'active'`,
         )
         .run(input.revokedAt, input.deviceId);
+      this.database
+        .prepare(
+          `DELETE FROM device_request_nonces WHERE device_id IN (
+             SELECT id FROM paired_devices WHERE web_device_id = ? AND status <> 'revoked')`,
+        )
+        .run(input.deviceId);
+      this.database
+        .prepare(
+          `UPDATE paired_devices SET status = 'revoked', revoked_at = ?, revision = revision + 1
+            WHERE web_device_id = ? AND status <> 'revoked'`,
+        )
+        .run(input.revokedAt, input.deviceId);
       return this.readProductDevice(input.deviceId);
     });
     const revoked = transaction.immediate();

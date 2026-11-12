@@ -1046,6 +1046,59 @@ describe("[P1-1] device client routes", () => {
     await h.repository.close();
   });
 
+  it("marks the paired device removed when its signed-in browser entry is revoked from the account page", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const sessions = h.repository.sessionDeviceState();
+    const stored = await h.repository.pairedDevices().readDevice(client.deviceId);
+    const browser = (await sessions.listDevices(ownerId, false)).find(
+      (device) => device.id === stored?.webDeviceId,
+    );
+    expect(browser).toBeDefined();
+    const other = await pairAndConfirm(h);
+    await sessions.revokeDevice(browser?.id as never, browser?.revision ?? -1, h.clock.now());
+    const listed = (await web(h, "list")).body["devices"] as { id: string; status: string }[];
+    expect(listed.find((device) => device.id === client.deviceId)?.status).toBe("revoked");
+    expect(listed.find((device) => device.id === other.deviceId)?.status).toBe("active");
+    const refused = await send(
+      h,
+      signedRequest(h, client, { method: "GET", path: "/api/device/v1/config" }),
+    );
+    expect(refused.statusCode).toBe(403);
+    const allowed = await send(
+      h,
+      signedRequest(h, other, { method: "GET", path: "/api/device/v1/config" }),
+    );
+    expect(allowed.statusCode).toBe(200);
+    await h.repository.close();
+  });
+
+  it("keeps the first expiry when the owner starts pairing again with the same code", async () => {
+    const h = await harness();
+    const service = new PairedDeviceService({
+      store: h.repository.pairedDevices(),
+      sessions: h.repository.sessionDeviceState(),
+      configuration: () => h.configuration.current,
+      ownerActive: async () => true,
+      now: () => new Date(h.clock.now()),
+    });
+    const scope = { ownerId, agentId, sessionId: String(h.webAuthentication.sessionId) };
+    const code = Buffer.alloc(16, 7).toString("base64url");
+    const first = await service.startPairingWithCode({ ...scope, code });
+    h.clock.advance(60_000);
+    const again = await service.startPairingWithCode({ ...scope, code });
+    expect(again.expiresAt).toBe(first.expiresAt);
+    const next = await service.startPairingWithCode({
+      ...scope,
+      code: Buffer.alloc(16, 8).toString("base64url"),
+    });
+    expect(next.expiresAt).not.toBe(first.expiresAt);
+    h.clock.advance(9 * 60_000 + 1);
+    const expired = await service.startPairingWithCode({ ...scope, code });
+    expect(Date.parse(expired.expiresAt)).toBeGreaterThan(Date.parse(next.expiresAt));
+    await h.repository.close();
+  });
+
   it("rejects device names with hidden characters the same way as the gateway contract", async () => {
     const h = await harness();
     const hidden = await pair(h, "Andy\u200biPhone");
