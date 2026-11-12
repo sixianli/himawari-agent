@@ -80,11 +80,11 @@ Andy 的要求：CI 要顺；修根因，不降低检查质量；不在 GitHub �
 PR A（安装脚本和运行手册，不动工作流）：
 
 - `runners.sh`：`RUNNER_IDS` 加 3 号，名字 `ci-vps-gate`，标签只有 `ci-vps-gate`，不带 `ci-vps`，所以检查作业永远不会落到它上面；标签从全局一个值改成每个 runner 自己的值。
-- `gh-runner.service.in`：`InaccessiblePaths` 藏另外两个 runner 的目录（前提 10）。
+- `gh-runner.service.in`：`InaccessiblePaths` 藏另外两个 runner 的目录（前提 10）；所属的内存池、内存和进程数限额从写死改成按 runner 填。`install-runner.sh` 安装和备份新的 `ghgate.slice`，`uninstall-runner.sh all` 一并删掉它；`prepare-vps.sh` 的重启保护检查和 `gh-runner-nft.service` 的启动顺序也把 3 号算进去。
 - 3 号放进自己单独的内存池：预留 2 GB（`MemoryMin`），上限 2 GB，进程数上限单独算；两个检查 runner 的池子从 20 GB 降到 18 GB（前提 14）。这样检查作业把内存吃满时，系统不会先杀汇总作业。2 GB 够不够先在 VPS 上量一次汇总作业的峰值再定。3 号的内存池是一个单独的 systemd 分组（slice，systemd 用来给一组服务统一设限额的单位）`ghgate.slice`；名字里不带短横线，因为 systemd 把短横线当成上下级（`gh-runners.slice` 实际挂在 `gh.slice` 下面），而预留内存要每一级上级都设了才生效。
 - `register-runner.sh`、`uninstall-runner.sh` 认 3 号；`mac-runners.sh`、`pause-runners.sh`、`resume-runners.sh`、`runner-pause.sh` 按 runner 名字对应各自的标签（前提 15）。
 - 新增一个应急脚本：3 号坏了时，在 Mac 上跑一条命令，把 `ci-vps-gate` 标签临时加到 1 号上，汇总作业就改由 1 号接，不用改代码、不用回滚 PR；3 号修好后再跑一次去掉。
-- `test/tooling/ci-runner-scripts.test.mjs`：加一条跨文件的对照用例，读 `runners.sh`、`contracts.mjs`、`ci/policy.json`、`ci.yml`、`.github/actionlint.yaml`、`ci/policy.schema.json`，断言 3 号的标签是 `ci-vps-gate`、1 和 2 号是 `ci-vps`、3 号不带 `ci-vps`。反向用例：3 号标签写成 `ci-vps`、恢复时给 3 号加回 `ci-vps`、1 号看得到 3 号目录、暂停后 `ci-vps-gate` 标签还在、卸载漏掉 3 号，都必须失败。
+- `test/tooling/ci-runner-scripts.test.mjs`：断言 `runners.sh` 里 3 号的标签是 `ci-vps-gate`、1 和 2 号是 `ci-vps`、3 号不带 `ci-vps`，3 号的服务文件在 `ghgate.slice` 里、限额是 2 GB。和 `contracts.mjs`、`ci/policy.json`、`ci.yml`、`.github/actionlint.yaml`、`ci/policy.schema.json` 的跨文件对照用例放在 PR B，因为这些文件到 PR B 才有 `ci-vps-gate`。反向用例：3 号标签写成 `ci-vps`、恢复时给 3 号加回 `ci-vps`、1 号看得到 3 号目录、暂停后 `ci-vps-gate` 标签还在、卸载漏掉 3 号，都必须失败。
 - 运行手册 `docs/runbooks/ci-vps-runner-runbook.md` 逐处改成三个 runner，补 3 号的预检、验证、应急和卸载，并重新封存。
 
 Andy 在 Mac 上：按运行手册暂停、上传脚本、安装（会重新生成 1、2 号的服务文件，所以要先暂停）、注册 3 号、恢复，确认三个 runner 在线、3 号的标签只有 `ci-vps-gate`。
@@ -94,7 +94,7 @@ PR B（工作流和硬规则，要等 3 号 runner 在线才能合并）：
 - `ci.yml` 的 `required` 改成 `runs-on: ci-vps-gate`。作业名 `ci/required` 不变，main 的轻量确认照旧按名字找它。`main.yml` 这次不动。
 - `ci/policy.json` 的 required 成员、`ci/policy.schema.json` 的枚举（加一个值，不替换）、`.github/actionlint.yaml`、`scripts/ci/contracts.mjs`（新增 `gateRunnerLabel`）同步。
 - `check-policy.mjs`：汇总作业只能在 `ci-vps-gate` 上跑，检查作业只能在 `ci-vps` 上跑。加一个升级函数 `upgradeGateRunnerPolicy`，放在升级链的最外层最后执行，只把“现行 7 个作业、required 还在 `ci-vps`”这一种旧写法升级；原有几个升级函数和它们用的旧值不动（前提 9）。
-- 测试：四种历史写法的目标分支策略各一条升级用例；混写、required 改回 `ci-vps`、某个检查作业改到 `ci-vps-gate`，都必须失败并断言具体的错误信息。
+- 测试：PR A 推迟过来的跨文件对照用例（上面几个文件里汇总作业的 runner 标签和 `runners.sh` 里 3 号的标签必须是同一个值）；四种历史写法的目标分支策略各一条升级用例；混写、required 改回 `ci-vps`、某个检查作业改到 `ci-vps-gate`，都必须失败并断言具体的错误信息。
 - 其他开着的 PR 不用特别处理：它们下一次运行跑的是和 main 合并后的提交，自动用新工作流和新策略（前提 13）。和 main 有冲突的 PR 本来就要先合 main。
 
 效果：草稿和被取消的运行几秒钟就结束，不再排在 13 分钟的检查后面，同一个 PR 的新运行马上开始。ADR 0241 的判定一条不改：草稿和被取消照样判失败。
@@ -106,7 +106,7 @@ PR B（工作流和硬规则，要等 3 号 runner 在线才能合并）：
 ### 第 2 步：main 的确认只保留最新一次
 
 - `main.yml` 并发组改成固定的 `main-confirmation`，`cancel-in-progress` 保持 `false`：正在跑的那次跑完，还在等的只留最新一次（前提 4）。不用 `true`，因为那会把跑到一半的确认也掐掉。
-- 效果：连续合并 6 次不再排 6 次确认。main 的确认仍然和 PR 用同样两个 runner，只是次数少了。
+- 效果：连续合并 6 次不再排 6 次确认。main 的确认仍然和 PR 用同一批 runner（检查作业用两个检查 runner，完整确认里的汇总作业和 PR 一样用 3 号），只是次数少了。
 - 取舍：连续合并时，中间那几个提交没有单独的确认结果，显示为取消；最新一次失败时，要自己查是哪个提交弄坏的。
 - `main-workflow.mjs` 的硬规则和反向用例同步（改回带运行号的组、改成 `true`，都必须失败）。
 
