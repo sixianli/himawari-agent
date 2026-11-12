@@ -59,7 +59,7 @@ describe("[第11批] 客户端能力表", () => {
     expect(findClientCapability("thread-v3", "thread.pin")?.tier).toBe("routine");
     expect(findClientCapability("thread-v3", "thread.trash")?.tier).toBe("routine");
     expect(findClientCapability("thread-v3", "thread.run.cancel")?.tier).toBe("tighten");
-    expect(findClientCapability("v1", "run.cancel")?.tier).toBe("tighten");
+    expect(findClientCapability("thread-v3", "thread.message.submit")?.tier).toBe("not_on_phone");
     expect(findClientCapability("thread-v3", "thread.delete_permanently")?.tier).toBe("change");
   });
 
@@ -112,6 +112,17 @@ describe("[第11批] 客户端能力表", () => {
       "restore_version",
     ])
       expect(mutate && requiredClientTier(mutate, { action }), action).toBe("change");
+  });
+
+  it("“读”只给查询；会写状态的命令至少是“日常”", () => {
+    for (const entry of CLIENT_CAPABILITY_TABLE)
+      if (entry.tier === "read") expect(entry.kind, entry.type).toBe("query");
+    expect(findClientCapability("v2", "memory.page.viewed")?.tier).toBe("routine");
+  });
+
+  it("生产没有装的 v1 网关整套手机上不做", () => {
+    for (const entry of CLIENT_CAPABILITY_TABLE.filter((item) => item.gateway === "v1"))
+      expect(entry.tier, entry.type).toBe("not_on_phone");
   });
 
   it("任务页的 GitHub 监控开关手机上不做", () => {

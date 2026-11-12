@@ -78,18 +78,20 @@ const WEB_PUSH_ONLY = "这是网页推送的登记；手机用苹果推送，走
 const WEB_PRESENCE_ONLY = "这是网页标签页的在线心跳；手机的在线状态由设备事件流的心跳决定";
 const DEVICE_FEEDBACK = "手机上的通知反馈走设备接口 POST feedback";
 const INTERNAL_ONLY = "只由服务器内部在回答生成完成时调用，网页也不直接发";
+const NO_V1_IN_PRODUCTION =
+  "生产服务没有装最早那套网关（v1），网页也已改用对话网关和 v2；手机走同样的两套";
 const WEB_TASKS_ONLY =
   "网页的任务页约定还没定（contractStatus 是 missing），这条命令只在那一页用；网页定了约定后再补原生页";
 
 export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.freeze([
-  change("v1", "trigger.admit"),
-  change("v1", "thread.create"),
-  change("v1", "thread.close"),
-  tighten("v1", "run.cancel"),
-  change("v1", "approval.respond"),
-  query("v1", "thread.get_snapshot"),
-  query("v1", "run.get_snapshot"),
-  query("v1", "trace.query"),
+  notOnPhone("v1", "trigger.admit", "command", NO_V1_IN_PRODUCTION),
+  notOnPhone("v1", "thread.create", "command", NO_V1_IN_PRODUCTION),
+  notOnPhone("v1", "thread.close", "command", NO_V1_IN_PRODUCTION),
+  notOnPhone("v1", "run.cancel", "command", NO_V1_IN_PRODUCTION),
+  notOnPhone("v1", "approval.respond", "command", NO_V1_IN_PRODUCTION),
+  notOnPhone("v1", "thread.get_snapshot", "query", NO_V1_IN_PRODUCTION),
+  notOnPhone("v1", "run.get_snapshot", "query", NO_V1_IN_PRODUCTION),
+  notOnPhone("v1", "trace.query", "query", NO_V1_IN_PRODUCTION),
 
   notOnPhone("v2", "thread.message.submit", "command", VIA_DEVICE_MESSAGES),
   change("v2", "approval.respond"),
@@ -136,7 +138,7 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   change("v2", "memory.create"),
   change("v2", "memory.category.set"),
   tightenOrChange("v2", "memory.settings.set", { capturePaused: true }),
-  { gateway: "v2", type: "memory.page.viewed", kind: "command", tier: READ },
+  routine("v2", "memory.page.viewed"),
   change("v2", "memory.person.respond"),
   change("v2", "memory.import.commit"),
   change("v2", "memory.import.undo"),
@@ -177,7 +179,7 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   query("v2", "improvement.detail"),
 
   routine("thread-v3", "thread.create"),
-  routine("thread-v3", "thread.message.submit"),
+  notOnPhone("thread-v3", "thread.message.submit", "command", VIA_DEVICE_MESSAGES),
   notOnPhone("thread-v3", "thread.message.submit_configured", "command", VIA_DEVICE_MESSAGES),
   tighten("thread-v3", "thread.run.cancel"),
   notOnPhone("thread-v3", "thread.message.commit_assistant", "command", INTERNAL_ONLY),

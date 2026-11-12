@@ -317,7 +317,7 @@ export class ProductionProactive {
       throw error;
     }
     if (released.length > 0) await seal.release({ ...scope, refs: released });
-    await store.writeSettings({ ...scope, ...settings, enabled: true, now });
+    await store.setEnabled({ ...scope, enabled: true, now });
   }
 
   async authorizationRedirect(owner: string): Promise<string> {
@@ -450,10 +450,7 @@ export class ProductionProactive {
         },
       });
       if (released.length > 0) await seal.release({ ...scope, refs: released });
-      if (!existing) {
-        const settings = await store.readSettings(scope);
-        await store.writeSettings({ ...scope, ...settings, enabled: true, now });
-      }
+      if (!existing) await store.setEnabled({ ...scope, enabled: true, now });
       void this.tick();
       return "connected";
     } catch (error) {
@@ -639,8 +636,7 @@ export class ProductionProactive {
         return { resultRef: "proactive-settings", replayed: false };
       }
       case "proactive.pause": {
-        const settings = await store.readSettings(scope);
-        await store.writeSettings({ ...scope, ...settings, enabled: false, now });
+        await store.setEnabled({ ...scope, enabled: false, now });
         return { resultRef: "proactive-settings", replayed: false };
       }
       case "proactive.insight.respond": {

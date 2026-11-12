@@ -64,7 +64,7 @@ export interface DeviceGatewayRequest {
 const MACHINE_STRING = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const RECENT_AUTHENTICATION_KEY = "recentAuthenticationRef";
 const AUTHORIZATION_KEY = "authorizationRef";
-const SERVER_FILLED_PAYLOAD_KEYS = [RECENT_AUTHENTICATION_KEY, AUTHORIZATION_KEY] as const;
+export const SERVER_FILLED_PAYLOAD_KEYS = [AUTHORIZATION_KEY, RECENT_AUTHENTICATION_KEY] as const;
 export const DEVICE_REFERENCE_PLACEHOLDER = "device";
 
 const BODY_KEYS: Readonly<Record<ClientGateway, readonly string[]>> = Object.freeze({
@@ -136,14 +136,14 @@ export async function dispatchDeviceGatewayRequest(input: {
   readonly authentication: GatewayAuthenticationContext;
   readonly authority: DeviceGatewayAuthority;
   readonly gateways: DeviceGateways;
-  readonly audit?: AuditLedgerPort;
+  readonly audit: AuditLedgerPort;
   readonly now: () => Date;
 }): Promise<unknown> {
   if (input.request.tier === "change" && !input.confirmed)
     throw new DeviceGatewayError(DEVICE_GATEWAY_ERROR_CODES.CONFIRM_REQUIRED, 403);
   if (input.request.tier === "read" || input.request.tier === "routine") return forward(input);
-  const record = (outcome: "completed" | "failed") =>
-    input.audit?.append({
+  const record = (outcome: "accepted" | "completed" | "failed") =>
+    input.audit.append({
       id: `audit:device-gateway:${randomUUID()}`,
       ownerId: input.authentication.ownerId as Parameters<AuditLedgerPort["append"]>[0]["ownerId"],
       agentId: input.authority.agentId as Parameters<AuditLedgerPort["append"]>[0]["agentId"],
@@ -152,14 +152,15 @@ export async function dispatchDeviceGatewayRequest(input: {
       outcome,
       occurredAt: input.now().toISOString(),
     });
+  await record("accepted");
   let result: unknown;
   try {
     result = await forward(input);
   } catch (error) {
-    await record("failed");
+    await record("failed").catch(() => undefined);
     throw error;
   }
-  await record("completed");
+  await record("completed").catch(() => undefined);
   return result;
 }
 

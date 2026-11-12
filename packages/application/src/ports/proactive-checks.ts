@@ -334,6 +334,9 @@ export interface ProactiveStorePort {
       readonly now: string;
     },
   ): Promise<void>;
+  setEnabled(
+    input: ProactiveScope & { readonly enabled: boolean; readonly now: string },
+  ): Promise<void>;
   readConnection(
     input: ProactiveScope & { readonly source: ProactiveSource },
   ): Promise<ProactiveConnection | undefined>;

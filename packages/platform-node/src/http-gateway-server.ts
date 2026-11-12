@@ -125,7 +125,7 @@ export interface HttpGatewayServerOptions {
   readonly devices?: {
     readonly service: PairedDeviceService;
     readonly configuration: () => DeviceConfiguration;
-    readonly audit?: AuditLedgerPort;
+    readonly audit: AuditLedgerPort;
     readonly pairingAccess?: DevicePairingAccess;
   };
   readonly health?: HttpGatewayHealthPort;
@@ -1298,7 +1298,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         ...(options.gatewayV2 ? { v2: options.gatewayV2 } : {}),
         "thread-v3": options.threadGateway,
       },
-      ...(options.devices.audit ? { audit: options.devices.audit } : {}),
+      audit: options.devices.audit,
       protectText: async (input) =>
         (
           await payloadAdmission.protect({

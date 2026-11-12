@@ -49,14 +49,14 @@ public enum NativePage: String, Sendable, CaseIterable {
 
 public enum ClientCapabilities {
     public static let all: [ClientCapability] = [
-        ClientCapability(gateway: .v1, type: "trigger.admit", kind: .command, tier: .change, tightenPayload: nil),
-        ClientCapability(gateway: .v1, type: "thread.create", kind: .command, tier: .change, tightenPayload: nil),
-        ClientCapability(gateway: .v1, type: "thread.close", kind: .command, tier: .change, tightenPayload: nil),
-        ClientCapability(gateway: .v1, type: "run.cancel", kind: .command, tier: .tighten, tightenPayload: nil),
-        ClientCapability(gateway: .v1, type: "approval.respond", kind: .command, tier: .change, tightenPayload: nil),
-        ClientCapability(gateway: .v1, type: "thread.get_snapshot", kind: .query, tier: .read, tightenPayload: nil),
-        ClientCapability(gateway: .v1, type: "run.get_snapshot", kind: .query, tier: .read, tightenPayload: nil),
-        ClientCapability(gateway: .v1, type: "trace.query", kind: .query, tier: .read, tightenPayload: nil),
+        ClientCapability(gateway: .v1, type: "trigger.admit", kind: .command, tier: .notOnPhone, tightenPayload: nil),
+        ClientCapability(gateway: .v1, type: "thread.create", kind: .command, tier: .notOnPhone, tightenPayload: nil),
+        ClientCapability(gateway: .v1, type: "thread.close", kind: .command, tier: .notOnPhone, tightenPayload: nil),
+        ClientCapability(gateway: .v1, type: "run.cancel", kind: .command, tier: .notOnPhone, tightenPayload: nil),
+        ClientCapability(gateway: .v1, type: "approval.respond", kind: .command, tier: .notOnPhone, tightenPayload: nil),
+        ClientCapability(gateway: .v1, type: "thread.get_snapshot", kind: .query, tier: .notOnPhone, tightenPayload: nil),
+        ClientCapability(gateway: .v1, type: "run.get_snapshot", kind: .query, tier: .notOnPhone, tightenPayload: nil),
+        ClientCapability(gateway: .v1, type: "trace.query", kind: .query, tier: .notOnPhone, tightenPayload: nil),
         ClientCapability(gateway: .v2, type: "thread.message.submit", kind: .command, tier: .notOnPhone, tightenPayload: nil),
         ClientCapability(gateway: .v2, type: "approval.respond", kind: .command, tier: .change, tightenPayload: nil),
         ClientCapability(gateway: .v2, type: "search.authorization.set", kind: .command, tier: .change, tightenPayload: nil),
@@ -102,7 +102,7 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v2, type: "memory.create", kind: .command, tier: .change, tightenPayload: nil),
         ClientCapability(gateway: .v2, type: "memory.category.set", kind: .command, tier: .change, tightenPayload: nil),
         ClientCapability(gateway: .v2, type: "memory.settings.set", kind: .command, tier: .change, tightenPayload: ["capturePaused": true]),
-        ClientCapability(gateway: .v2, type: "memory.page.viewed", kind: .command, tier: .read, tightenPayload: nil),
+        ClientCapability(gateway: .v2, type: "memory.page.viewed", kind: .command, tier: .routine, tightenPayload: nil),
         ClientCapability(gateway: .v2, type: "memory.person.respond", kind: .command, tier: .change, tightenPayload: nil),
         ClientCapability(gateway: .v2, type: "memory.import.commit", kind: .command, tier: .change, tightenPayload: nil),
         ClientCapability(gateway: .v2, type: "memory.import.undo", kind: .command, tier: .change, tightenPayload: nil),
@@ -142,7 +142,7 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v2, type: "improvement.list", kind: .query, tier: .read, tightenPayload: nil),
         ClientCapability(gateway: .v2, type: "improvement.detail", kind: .query, tier: .read, tightenPayload: nil),
         ClientCapability(gateway: .threadV3, type: "thread.create", kind: .command, tier: .routine, tightenPayload: nil),
-        ClientCapability(gateway: .threadV3, type: "thread.message.submit", kind: .command, tier: .routine, tightenPayload: nil),
+        ClientCapability(gateway: .threadV3, type: "thread.message.submit", kind: .command, tier: .notOnPhone, tightenPayload: nil),
         ClientCapability(gateway: .threadV3, type: "thread.message.submit_configured", kind: .command, tier: .notOnPhone, tightenPayload: nil),
         ClientCapability(gateway: .threadV3, type: "thread.run.cancel", kind: .command, tier: .tighten, tightenPayload: nil),
         ClientCapability(gateway: .threadV3, type: "thread.message.commit_assistant", kind: .command, tier: .notOnPhone, tightenPayload: nil),
@@ -165,6 +165,9 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .threadV3, type: "thread.lineage", kind: .query, tier: .read, tightenPayload: nil),
         ClientCapability(gateway: .threadV3, type: "thread.checkpoint", kind: .query, tier: .read, tightenPayload: nil),
     ]
+
+    public static let referencePlaceholder = "device"
+    public static let serverFilledReferences = ["authorizationRef", "recentAuthenticationRef"]
 
     public static func find(_ gateway: ClientGateway, _ type: String) -> ClientCapability? {
         all.first { $0.gateway == gateway && $0.type == type }

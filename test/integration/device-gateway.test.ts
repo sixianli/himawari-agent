@@ -124,6 +124,12 @@ async function audits(h: Harness) {
   );
 }
 
+async function auditTrail(h: Harness) {
+  return (await audits(h))
+    .map(({ action, targetRef, outcome }) => `${action}:${targetRef}:${outcome}`)
+    .sort();
+}
+
 describe("[第11批] 原生页面经设备接口走和网页同一个处理程序", () => {
   it("“读”只要设备密钥签名，结果和网页同一个处理程序给的一样", async () => {
     const h = await harness();
@@ -152,14 +158,9 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     const issued = await challenge(h, client);
     const confirmed = await gateway(h, client, clear(), { nonce: issued.challenge });
     expect(confirmed.statusCode, confirmed.body).toBe(200);
-    expect(
-      (await audits(h)).map(({ action, targetRef, outcome }) => ({ action, targetRef, outcome })),
-    ).toEqual([
-      {
-        action: "device.gateway.change",
-        targetRef: `${client.deviceId}:v2:muse.data.clear`,
-        outcome: "completed",
-      },
+    expect(await auditTrail(h)).toEqual([
+      `device.gateway.change:${client.deviceId}:v2:muse.data.clear:accepted`,
+      `device.gateway.change:${client.deviceId}:v2:muse.data.clear:completed`,
     ]);
     await h.repository.close();
   });
@@ -199,7 +200,7 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     const expired = await gateway(h, client, clear(), { nonce: late.challenge });
     expect(expired.statusCode).toBe(401);
     expect(expired.json()).toEqual({ error: { code: "DEVICE_CHALLENGE_INVALID" } });
-    expect((await audits(h)).length).toBe(1);
+    expect((await audits(h)).length).toBe(2);
     await h.repository.close();
   });
 
@@ -243,9 +244,11 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     );
     expect(resume.statusCode, resume.body).toBe(200);
     expect(await overview()).not.toBe("paused");
-    expect((await audits(h)).map(({ action, outcome }) => ({ action, outcome }))).toEqual([
-      { action: "device.gateway.tighten", outcome: "completed" },
-      { action: "device.gateway.change", outcome: "completed" },
+    expect(await auditTrail(h)).toEqual([
+      `device.gateway.change:${client.deviceId}:v2:muse.intake.set:accepted`,
+      `device.gateway.change:${client.deviceId}:v2:muse.intake.set:completed`,
+      `device.gateway.tighten:${client.deviceId}:v2:muse.intake.set:accepted`,
+      `device.gateway.tighten:${client.deviceId}:v2:muse.intake.set:completed`,
     ]);
     await h.repository.close();
   });
@@ -333,7 +336,82 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     expect(results.find((response) => response.statusCode === 401)?.json()).toEqual({
       error: { code: "DEVICE_NONCE_REPLAYED" },
     });
-    expect((await audits(h)).length).toBe(1);
+    expect((await audits(h)).length).toBe(2);
+    await h.repository.close();
+  });
+
+  it("v2 的查询经设备网关读到的就是网页那份", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const response = await gateway(
+      h,
+      client,
+      gatewayBody({ gateway: "v2", type: "muse.overview.read", command: false, payload: {} }),
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    expect((response.json() as { type: string }).type).toBe("muse.overview.snapshot");
+    expect(await audits(h)).toEqual([]);
+    await h.repository.close();
+  });
+
+  it("确认过的“改”执行失败时，审计先记了受理、再记失败", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const issued = await challenge(h, client);
+    const stale = await gateway(
+      h,
+      client,
+      gatewayBody({
+        gateway: "v2",
+        type: "memory.mutate",
+        payload: {
+          memoryId: "memory-missing",
+          action: "archive",
+          expectedRevision: 1,
+          contentRef: null,
+          historyId: null,
+        },
+      }),
+      { nonce: issued.challenge },
+    );
+    expect(stale.statusCode).not.toBe(200);
+    expect(await auditTrail(h)).toEqual([
+      `device.gateway.change:${client.deviceId}:v2:memory.mutate:accepted`,
+      `device.gateway.change:${client.deviceId}:v2:memory.mutate:failed`,
+    ]);
+    await h.repository.close();
+  });
+
+  it("上传文字和网页那条一样拒绝空的、太长的、多字段的和分级不对的", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const upload = (body: Record<string, unknown>) =>
+      send(
+        h,
+        signedRequest(h, client, {
+          method: "POST",
+          path: "/api/device/v1/payloads/text/new",
+          body: JSON.stringify(body),
+        }),
+      );
+    const valid = {
+      idempotencyKey: "device-text-key-reverse-01",
+      content: "x",
+      dataClassification: "private",
+    };
+    for (const body of [
+      { ...valid, content: "" },
+      { ...valid, content: "x".repeat(64 * 1024 + 1) },
+      { ...valid, extra: true },
+      { ...valid, dataClassification: "secret" },
+      { ...valid, idempotencyKey: "short" },
+      { content: "x", dataClassification: "private" },
+    ]) {
+      const response = await upload(body);
+      expect(response.statusCode, JSON.stringify(Object.keys(body))).toBe(400);
+    }
+    const accepted = await upload({ ...valid, content: "x".repeat(64 * 1024) });
+    expect(accepted.statusCode, accepted.body).toBe(201);
     await h.repository.close();
   });
 
@@ -351,6 +429,13 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     );
     expect(notOnPhone.statusCode).toBe(403);
     expect(notOnPhone.json()).toEqual({ error: { code: "DEVICE_GATEWAY_NOT_ON_PHONE" } });
+    const legacy = await gateway(
+      h,
+      client,
+      gatewayBody({ gateway: "v1", type: "trace.query", command: false, payload: {} }),
+    );
+    expect(legacy.statusCode).toBe(403);
+    expect(legacy.json()).toEqual({ error: { code: "DEVICE_GATEWAY_NOT_ON_PHONE" } });
 
     const unknown = await gateway(
       h,

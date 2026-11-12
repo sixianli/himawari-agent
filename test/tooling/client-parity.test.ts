@@ -4,6 +4,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { CONTROL_CENTER_SURFACE_INVENTORY } from "../../apps/control-center/src/app/control-center-inventory.ts";
 import {
+  DEVICE_REFERENCE_PLACEHOLDER,
+  SERVER_FILLED_PAYLOAD_KEYS,
+} from "../../packages/platform-node/src/device-gateway.ts";
+import {
   CLIENT_CAPABILITY_TABLE,
   CLIENT_GATEWAY_MESSAGE_TYPES,
   CLIENT_GATEWAYS,
@@ -105,6 +109,9 @@ public enum ClientCapabilities {
     public static let all: [ClientCapability] = [
 ${capabilities.map(capabilityLine).join("\n")}
     ]
+
+    public static let referencePlaceholder = ${swiftString(DEVICE_REFERENCE_PLACEHOLDER)}
+    public static let serverFilledReferences = [${SERVER_FILLED_PAYLOAD_KEYS.map(swiftString).join(", ")}]
 
     public static func find(_ gateway: ClientGateway, _ type: String) -> ClientCapability? {
         all.first { $0.gateway == gateway && $0.type == type }

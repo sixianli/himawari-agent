@@ -109,7 +109,7 @@ export interface DeviceApiRouteOptions {
   readonly authority: DeviceApiAuthority;
   readonly threadGateway: AgentThreadGatewayPort;
   readonly gateways: DeviceGateways;
-  readonly audit?: AuditLedgerPort;
+  readonly audit: AuditLedgerPort;
   readonly protectText: (input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly idempotencyKey: string;
@@ -618,7 +618,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             authentication: authenticated.authentication,
             authority: options.authority,
             gateways: options.gateways,
-            ...(options.audit ? { audit: options.audit } : {}),
+            audit: options.audit,
             now,
           }),
         );
