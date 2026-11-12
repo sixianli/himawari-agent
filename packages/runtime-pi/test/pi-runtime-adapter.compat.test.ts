@@ -2632,6 +2632,89 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(history).toContain("map-pin");
   });
 
+  it("[ICON-1] stops a tool loop even when the model changes the activity sentence each time", async () => {
+    const piSpecifier: string = "@earendil-works/pi-coding-agent";
+    const piEntry = fileURLToPath(import.meta.resolve(piSpecifier));
+    const aiSpecifier = pathToFileURL(resolvePiAiEntry(piEntry)).href;
+    const pi = (await import(piSpecifier)) as {
+      readonly ModelRuntime: {
+        create(options: unknown): Promise<{ registerNativeProvider(provider: unknown): void }>;
+      };
+    };
+    const ai = (await import(aiSpecifier)) as {
+      readonly InMemoryCredentialStore: new () => unknown;
+      fauxProvider(): {
+        readonly provider: unknown;
+        getModel(): unknown;
+        setResponses(responses: readonly unknown[]): void;
+      };
+      fauxAssistantMessage(content: unknown, options?: unknown): unknown;
+      fauxToolCall(name: string, input: unknown, options?: unknown): unknown;
+    };
+    const faux = ai.fauxProvider();
+    faux.setResponses([
+      ...[1, 2, 3, 4, 5].map((index) =>
+        ai.fauxAssistantMessage(
+          [
+            ai.fauxToolCall(
+              "restaurant_search",
+              { query: "beef", activity: `第 ${index} 次找牛肉店`, activityIcon: "map-pin" },
+              { id: `loop-call-${index}` },
+            ),
+          ],
+          { stopReason: "toolUse" },
+        ),
+      ),
+      ai.fauxAssistantMessage("好了。"),
+      ai.fauxAssistantMessage("好了。"),
+    ]);
+    const runtime = await pi.ModelRuntime.create({
+      credentials: new ai.InMemoryCredentialStore(),
+      refreshOnCreate: false,
+      modelsPath: null,
+    });
+    runtime.registerNativeProvider(faux.provider);
+    const projection = new RecordingProjection();
+    const tools = new RecordingRuntimeTools();
+    const adapter = new PiAgentRuntimeAdapter({
+      egress: testModelEgress(),
+      projection,
+      tools,
+      models: {
+        resolve: async () =>
+          ({
+            model: faux.getModel(),
+            modelRuntime: runtime,
+            descriptor: {
+              ref: request.modelRef,
+              provider: "faux",
+              model: "faux-1",
+              version: "1.5.0-test",
+              routingClass: "local",
+              priority: 1,
+              disclosure: "local_only",
+              capabilities: ["text", "tool_calling"],
+              allowedDataClassifications: ["private"],
+              secretRequirement: null,
+            },
+            admissionCost: {
+              pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              estimatedCostMicros: 0,
+            },
+          }) as unknown as PiModelBinding,
+      },
+      cwd: process.cwd(),
+      now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      logicalSlot: (runtimeRequest, ordinal) => `${runtimeRequest.runId}:faux-stream:${ordinal}`,
+      turnId: (_runtimeRequest, turnIndex) => `turn-faux-${turnIndex}` as never,
+    });
+
+    await collect(adapter.run(request));
+
+    expect(tools.execute).toHaveBeenCalledTimes(4);
+  });
+
   it("[ICON-1] leaves handle tools without activity when no frozen tool offers the process icons", async () => {
     const piSpecifier: string = "@earendil-works/pi-coding-agent";
     const piEntry = fileURLToPath(import.meta.resolve(piSpecifier));
@@ -2882,6 +2965,146 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     });
     expect(head?.content).not.toContain(CHAT_PROCESS_ICONS_SECTION.text);
     expect(offered.get("weather")).toEqual(weatherParameters);
+  });
+
+  it("[ICON-1] gives handle tools activity when the stored frozen tools carry it", async () => {
+    const piSpecifier: string = "@earendil-works/pi-coding-agent";
+    const piEntry = fileURLToPath(import.meta.resolve(piSpecifier));
+    const aiSpecifier = pathToFileURL(resolvePiAiEntry(piEntry)).href;
+    const pi = (await import(piSpecifier)) as {
+      readonly ModelRuntime: {
+        create(options: unknown): Promise<{ registerNativeProvider(provider: unknown): void }>;
+      };
+    };
+    const ai = (await import(aiSpecifier)) as {
+      readonly InMemoryCredentialStore: new () => unknown;
+      fauxProvider(): {
+        readonly provider: unknown;
+        getModel(): unknown;
+        setResponses(responses: readonly unknown[]): void;
+      };
+      fauxAssistantMessage(content: unknown, options?: unknown): unknown;
+      fauxToolCall(name: string, input: unknown, options?: unknown): unknown;
+    };
+    const faux = ai.fauxProvider();
+    let observedContext: unknown;
+    faux.setResponses([
+      (context: unknown) => {
+        observedContext = context;
+        return ai.fauxAssistantMessage("好了。");
+      },
+    ]);
+    const runtime = await pi.ModelRuntime.create({
+      credentials: new ai.InMemoryCredentialStore(),
+      refreshOnCreate: false,
+      modelsPath: null,
+    });
+    runtime.registerNativeProvider(faux.provider);
+    const projection = new RecordingProjection();
+    const tools = new RecordingRuntimeTools();
+    const restaurant = (await tools.listAuthorized())[0];
+    const weatherParameters = {
+      type: "object",
+      properties: { city: { type: "string" } },
+      required: ["city"],
+      additionalProperties: false,
+    };
+    if (!restaurant) throw new Error("missing restaurant tool");
+    tools.listAuthorized = async (): Promise<readonly RuntimeToolDescriptor[]> => [
+      {
+        ...(restaurant as Extract<RuntimeToolDescriptor, { readonly description: string }>),
+        capabilityRef: "weather",
+        capabilityHandleRef: null,
+        name: "weather",
+        description: "Weather",
+        parameters: weatherParameters,
+      },
+      {
+        ...(restaurant as Extract<RuntimeToolDescriptor, { readonly description: string }>),
+        capabilityRef: "diary-note",
+        capabilityHandleRef: "handle-diary-note",
+        name: "diary_note",
+        description: "Write a diary entry",
+        parameters: {
+          type: "object",
+          properties: { note: { type: "string" } },
+          required: ["note"],
+          additionalProperties: false,
+        },
+      },
+    ];
+    const adapter = new PiAgentRuntimeAdapter({
+      promptBundles: {
+        resolve: async () => ({
+          generation: 1,
+          systemPrompt: `旧的系统提示\n\n${CHAT_PROCESS_ICONS_SECTION.text}`,
+          tools: JSON.stringify([
+            {
+              name: "weather",
+              label: "weather",
+              description: "Weather",
+              parameters: withToolActivityParameters(weatherParameters),
+            },
+          ]),
+        }),
+      },
+      egress: testModelEgress(),
+      projection,
+      tools,
+      models: {
+        resolve: async () =>
+          ({
+            model: faux.getModel(),
+            modelRuntime: runtime,
+            descriptor: {
+              ref: request.modelRef,
+              provider: "faux",
+              model: "faux-1",
+              version: "1.5.0-test",
+              routingClass: "local",
+              priority: 1,
+              disclosure: "local_only",
+              capabilities: ["text", "tool_calling"],
+              allowedDataClassifications: ["private"],
+              secretRequirement: null,
+            },
+            admissionCost: {
+              pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              estimatedCostMicros: 0,
+            },
+          }) as unknown as PiModelBinding,
+      },
+      cwd: process.cwd(),
+      now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      logicalSlot: (runtimeRequest, ordinal) => `${runtimeRequest.runId}:faux-stream:${ordinal}`,
+      turnId: (_runtimeRequest, turnIndex) => `turn-faux-${turnIndex}` as never,
+    });
+
+    const events = await collect(adapter.run(request));
+
+    expect(events.at(-1)?.type).toBe("runtime.completed");
+    const head = (
+      observedContext as {
+        readonly messages: readonly {
+          readonly content: string;
+          readonly toolsAdded: readonly {
+            readonly name: string;
+            readonly parameters: unknown;
+          }[];
+        }[];
+      }
+    ).messages[0];
+    const offered = new Map(head?.toolsAdded.map((tool) => [tool.name, tool.parameters]));
+    expect(offered.get("diary_note")).toEqual(
+      withToolActivityParameters({
+        type: "object",
+        properties: { note: { type: "string" } },
+        required: ["note"],
+        additionalProperties: false,
+      }),
+    );
+    expect(offered.get("weather")).toEqual(withToolActivityParameters(weatherParameters));
   });
 });
 

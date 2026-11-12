@@ -3840,7 +3840,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         id: "call-weather",
         arguments: {
           query: "东京 明天 天气",
-          activity: "  查东京\n明天的\u202e天气\u0007  ",
+          activity: "  查东京\n明天的\u202e天气\u0007\u061c  ",
           activityIcon: "cloud",
         },
       },
