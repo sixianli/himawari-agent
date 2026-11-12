@@ -216,8 +216,9 @@ async function approveInstall(lifecycle: CapabilityLifecycleService, loaded: Loa
   await lifecycle.approveInstallation(REF, "approval-install-lifecycle");
 }
 
-async function rejected(change: Change) {
-  const loaded = await loadSnapshot();
+async function rejected(change: Change, manifest: Partial<Loaded["manifest"]> = {}) {
+  const snapshot = await loadSnapshot();
+  const loaded = { ...snapshot, manifest: { ...snapshot.manifest, ...manifest } };
   const lifecycle = lifecycleFor([loaded], change);
   await approveInstall(lifecycle, loaded);
   await expect(lifecycle.activate(REF)).rejects.toThrow("runtime qualification failed");
@@ -314,15 +315,20 @@ describe("sandbox capability qualification through the lifecycle service", () =>
   it("rejects sandbox evidence that the sandbox qualification contract does not accept", async () => {
     await rejected((value) => {
       if (!value.sandbox) throw new Error("snapshot has no sandbox evidence");
-      const linux = value.sandbox.platform === "linux";
-      return {
-        ...value,
-        enforcement: { ...value.enforcement, termination: !linux },
-        sandbox: {
-          ...value.sandbox,
-          terminationMode: linux ? "best_effort" : "verified_tree",
-        },
-      };
+      return { ...value, sandbox: { ...value.sandbox, guarantees: [] } };
+    });
+  });
+
+  it("rejects a null sandbox field and sandbox evidence on a manifest that is not a program", async () => {
+    await rejected((value) => ({
+      ...value,
+      sandbox: null as never,
+      enforcement: { ...value.enforcement, resourceCeilings: true, termination: true },
+    }));
+    const mcp = { kind: "mcp", serverIdentity: "mcp:lifecycle", transport: "stdio:v1" } as const;
+    await rejected((value) => value, {
+      source: { type: "mcp", locator: `mcp:${REF}` },
+      runtime: { ...mcp, mappedResources: ["tool:echo"] },
     });
   });
 
