@@ -1,0 +1,88 @@
+---
+status: active
+document_type: adr
+decision_status: accepted
+supersedes: ""
+superseded_by: ""
+amends: "docs/adr/0198-upgrade-pi-to-1-5-0.md"
+date: "2026-11-12"
+---
+
+# ADR 0243：模型请求被限流或暂时不可用时，在请求层重试最多 2 次
+
+<a id="contents"></a>
+
+## 阅读导航
+
+- [背景](#context)
+- [Andy 的原话](#owner-decisions)
+- [决定](#decision)
+- [比较过的方案](#options)
+- [后果](#consequences)
+- [关联文档](#references)
+
+<a id="context"></a>
+
+## 背景
+
+2026-11-12 09:13 JST，Andy 在手机上发“新闻”，页面显示“发送中”，18 秒后回答“模型服务当前限流”。生产日志（`out.txt`，在 Andy 的 Mac 上）显示：这一轮在 00:13:42Z 收到上游 429（provider_status_429），同一秒起标题的后台调用也被同一上游限流；数据库没有堵（这一轮 154 次操作总排队 349 ms）。Himawari 对 429 没有任何重试，立刻报错，用户只能自己重发。
+
+Himawari 关着两层重试：Pi 的自动重试（`packages/runtime-pi/src/pi-runtime-adapter.ts` 里 `retry: { enabled: false, maxRetries: 0 }`），以及传给模型服务方请求函数的 `maxRetries: 0`。第一层要关，因为 Pi 的自动重试会往历史追加 `context_edit`，改变已发出的内容（[ADR 0198](0198-upgrade-pi-to-1-5-0.md#decision) 前提 5、决定 7）。第二层没有这个问题：它在发出 HTTP 请求的那一层，只重发同一份请求，不碰对话历史。
+
+别人怎么做：OpenAI 官方限流指南说有 `Retry-After` 就照它等，没有就指数退避加随机抖动，并限制次数和总时长（<https://developers.openai.com/api/docs/guides/rate-limits>）；OpenAI 和 Anthropic 的官方 SDK 默认都在请求层重试 2 次。Pi 的模型层自己带了同样的官方做法：`@earendil-works/pi-ai` 的 `maxRetries` 和 `maxRetryDelayMs` 选项（`dist/utils/provider-retry.js`：只重试 408、409、429、5xx 和连接错误；先看 `retry-after-ms`、`retry-after`，没有就从 0.5 秒起指数退避；服务方要求等得比上限还久就立刻失败）。
+
+[↑ 返回阅读导航](#contents)
+
+<a id="owner-decisions"></a>
+
+## Andy 的原话
+
+2026-11-12 09:31 JST，Andy 在决定卡“对 429 限流，要不要在请求层自动重试最多 2 次？”上选了“重试加记日志（推荐）”。
+
+[↑ 返回阅读导航](#contents)
+
+<a id="decision"></a>
+
+## 决定
+
+1. 传给 Pi 模型层的 `maxRetries` 从 0 改成 2，`maxRetryDelayMs` 设为 10 秒。重试只重发同一份请求体，失败的那次不进历史，不影响 KV 缓存（[prompt-prefix 规则](../../.claude/rules/prompt-prefix.md)第 4 条）。服务方要求等超过 10 秒时立刻失败，总等待不超过约 22 秒。
+2. Pi 的自动重试仍然关着，决定 7 的前提不变。
+3. Vercel 网关的请求观察器原来只许每次调用发一次请求。改成：上一次得到非 2xx 响应（没有生成内容、没有计费）时允许重发；发过一次成功响应后再发仍然报 `AI_GATEWAY_MULTIPLE_REQUESTS_FORBIDDEN`；网络错误之后再发，直接重抛原来的错误，不再发请求。
+4. 每个被拒绝的响应写一行服务日志 `model.request_rejected`：运行号、状态码、`retry-after`、`x-should-retry`、服务方主机名（不含路径、密钥和内容）。这是这次查不到“谁返回的 429、等多久”的缺口。
+5. 超过等待上限而失败时，错误信息以“Server requested …s retry delay (max: …s).”开头，仍按其后的状态码归类成“限流”，用户看到的还是“模型服务当前限流”。
+6. 不在同一对话中途自动换模型或服务方：换服务方会让缓存整段重算（prompt-prefix 规则第 8、9 条）。
+
+[↑ 返回阅读导航](#contents)
+
+<a id="options"></a>
+
+## 比较过的方案
+
+- 打开 Pi 自动重试：官方有，但会追加 `context_edit`，违反“只追加”，放弃。
+- 自己在 Himawari 里另写一层重试循环：Pi 的模型层已经有官方的同样做法，不重复造。
+- 只加日志不重试：Andy 没选。
+- 不改：用户每次遇到偶发限流都要手动重发，放弃。
+
+[↑ 返回阅读导航](#contents)
+
+<a id="consequences"></a>
+
+## 后果
+
+- 偶发的 429/503 对用户不可见，最多多等几秒。
+- 失败的尝试不收费，所以一次调用仍只记一份用量；准入和预算按调用算，没有变。
+- 压缩摘要请求也走同一个请求函数，一并重试；它的失败原因仍按状态码归类。
+- 持续限流时多发最多 2 次请求，每次都带上同一份遮盖后的内容。
+- 测试：`packages/runtime-pi/test/prompt-prefix.compat.test.ts` 的 `[ADR-0198]`（持续 503 时重发的请求字节完全相同、历史里没有 `context_edit`、下一轮仍以第一轮开头）、`[RETRY-429]` 及其反向用例（等待超过上限立刻失败）；`gateway-observation.unit.test.ts`。
+
+[↑ 返回阅读导航](#contents)
+
+<a id="references"></a>
+
+## 关联文档
+
+- [ADR 0198](0198-upgrade-pi-to-1-5-0.md)
+- [Pi 二次开发规范](../pi-development-guide.md#pattern-settings)
+- [模型请求的 KV 缓存规范](../kv-cache-guide.md)
+
+[↑ 返回阅读导航](#contents)

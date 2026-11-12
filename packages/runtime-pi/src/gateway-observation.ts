@@ -144,15 +144,27 @@ export function observeGatewayFetch(
 } {
   let sent = false;
   let repeated = false;
+  let failure: unknown;
   let observation: Promise<GatewayObservation> = Promise.resolve({ status: "missing" });
   return {
     fetch: async (input, init) => {
       if (sent) {
+        if (failure !== undefined) throw failure;
         repeated = true;
         throw new Error("AI_GATEWAY_MULTIPLE_REQUESTS_FORBIDDEN");
       }
       sent = true;
-      const response = await fetch(input, init);
+      let response: Response;
+      try {
+        response = await fetch(input, init);
+      } catch (error) {
+        failure = error;
+        throw error;
+      }
+      if (!response.ok) {
+        sent = false;
+        return response;
+      }
       if (response.ok && response.body !== null) {
         observation = observeResponse(response.clone(), expectedModel).catch(() => ({
           status: "invalid",
