@@ -580,6 +580,46 @@ describe("reporting what was masked", () => {
     expect(JSON.stringify(reports)).not.toContain("a".repeat(24));
   });
 
+  it("[RETRY-429] a refused request that is sent again is refused again without a second withheld report", async () => {
+    const reports: (readonly ModelEgressSighting[])[] = [];
+    const leaked = `固定说明里不该有的 token sk-${"b".repeat(24)} 结尾`;
+    const instance = new ModelEgress({
+      key: async () => key,
+      sign,
+      trusted: [leaked],
+      report: (_context, sightings) => reports.push(sightings),
+    });
+    const { calls, base } = recorder();
+    const fetch = instance.exchange(context).wrapFetch(base);
+    const call = () =>
+      fetch("https://gateway.invalid/v1/chat/completions", {
+        method: "POST",
+        body: JSON.stringify({
+          model: "m",
+          messages: [{ role: "user", content: `卡号 ${CARD}\n${leaked}` }],
+        }),
+      });
+    const first = await call().catch((error: unknown) => error);
+    const second = await call().catch((error: unknown) => error);
+    expect(first).toBeInstanceOf(ModelEgressRefusedError);
+    expect(second).toBe(first);
+    expect(calls).toHaveLength(0);
+    expect(reports).toHaveLength(1);
+  });
+
+  it("REVERSE [RETRY-429] the resend memory is not used for a different body or for a request object carrying its own body", async () => {
+    const { calls, base } = recorder();
+    const fetch = egress().exchange(context).wrapFetch(base);
+    const url = "https://gateway.invalid/v1/chat/completions";
+    const post = (input: unknown, body: string) => fetch(input as string, { method: "POST", body });
+    const good = JSON.stringify({ model: "m", messages: [{ role: "user", content: "x" }] });
+    await post(url, good);
+    await expect(post({ href: url, body: good }, good)).rejects.toThrow(ModelEgressRefusedError);
+    await expect(post(url, "not json")).rejects.toThrow(ModelEgressRefusedError);
+    await post(url, good);
+    expect(calls).toHaveLength(2);
+  });
+
   it("masks and records part of a private key", async () => {
     const { reports, instance } = reporting();
     const marker = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");
@@ -635,6 +675,50 @@ describe("reporting what was masked", () => {
       category: "password",
       ruleId: "password-keyword",
     });
+  });
+
+  it("[RETRY-429] resends the same bytes and reports once when the identical request is sent again", async () => {
+    const { reports, instance } = reporting();
+    const { calls, base } = recorder();
+    const fetch = instance.exchange(context).wrapFetch(base);
+    const request = {
+      model: "m",
+      messages: [
+        { role: "user", content: "先记一下 hunter22abc" },
+        { role: "assistant", content: "好的" },
+        { role: "user", content: "密码：hunter22abc" },
+      ],
+    };
+    const call = () =>
+      fetch("https://gateway.invalid/v1/chat/completions", {
+        method: "POST",
+        headers: { "content-type": "application/json", "content-length": "999" },
+        body: JSON.stringify(request),
+      });
+    await call();
+    await call();
+    await call();
+    expect(calls).toHaveLength(3);
+    expect(String(calls[1]?.[1]?.body)).toBe(String(calls[0]?.[1]?.body));
+    expect(String(calls[2]?.[1]?.body)).toBe(String(calls[0]?.[1]?.body));
+    expect(String(calls[0]?.[1]?.body)).toContain("先记一下 hunter22abc");
+    expect(reports).toHaveLength(1);
+  });
+
+  it("REVERSE [RETRY-429] masks a different request on its own, so a changed body is never served from the resend memory", async () => {
+    const { reports, instance } = reporting();
+    const { calls, base } = recorder();
+    const fetch = instance.exchange(context).wrapFetch(base);
+    const send2 = (text: string) =>
+      fetch("https://gateway.invalid/v1/chat/completions", {
+        method: "POST",
+        body: JSON.stringify({ model: "m", messages: [{ role: "user", content: text }] }),
+      });
+    await send2("密码：hunter22abc");
+    await send2("密码：other77pass9");
+    expect(String(calls[1]?.[1]?.body)).not.toContain("other77pass9");
+    expect(String(calls[1]?.[1]?.body)).not.toBe(String(calls[0]?.[1]?.body));
+    expect(reports).toHaveLength(2);
   });
 
   it("reports nothing without a context or when nothing was masked", async () => {

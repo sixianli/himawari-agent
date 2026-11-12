@@ -5,9 +5,11 @@ import {
   type DecisionLedgerPort,
   type DurableMemoryService,
   isModelVisible,
+  isReviewChangeUndoable,
   type MemoryBookStorePort,
   type MemoryCategory,
   type MemoryConsolidationStorePort,
+  type MemoryConversationReviewStorePort,
   type MemoryExtractionAuditRecord,
   type MemoryHistoryEvent,
   type MemoryProjectionJobStatePort,
@@ -59,6 +61,7 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.approval.respond",
   "memory.mutate",
   "memory.tidy.undo",
+  "memory.conversationReview.undo",
   "memory.reminder.respond",
   "memory.reminder.create",
   "memory.rules.read",
@@ -188,6 +191,10 @@ export class ProductionMemoryControl {
     readonly consolidation?: {
       readonly store: Pick<MemoryConsolidationStorePort, "listChanges" | "readBasisChain">;
       readonly undo: (changeId: string) => Promise<unknown>;
+    };
+    readonly conversationReviews?: {
+      readonly store: Pick<MemoryConversationReviewStorePort, "listWithChanges" | "listChanges">;
+      readonly undo: (reviewId: string) => Promise<unknown>;
     };
     readonly reminders?: Pick<
       MemoryReminderStorePort,
@@ -379,6 +386,12 @@ export class ProductionMemoryControl {
         agentId,
         limit: TIDY_UPS_SHOWN,
       })) ?? [];
+    const reviews =
+      (await this.options.conversationReviews?.store.listWithChanges({
+        ownerId,
+        agentId,
+        limit: TIDY_UPS_SHOWN,
+      })) ?? [];
     const due = await this.#dueReminders();
     const external = (await this.options.externalProposals?.pendingSummary(
       EXTERNAL_PROPOSALS_SHOWN,
@@ -389,6 +402,7 @@ export class ProductionMemoryControl {
       active.map(({ id, revision }) => [id, revision, historyCount.get(id) ?? 0]),
       pending.map(({ id }) => id),
       changes.map(({ id, undoneAt }) => [id, undoneAt]),
+      reviews.map(({ id, undoneAt }) => [id, undoneAt]),
       due.map(({ id, updatedAt }) => [id, updatedAt]),
       inactive.map(({ id, revision }) => [id, revision]),
       settings.updatedAt,
@@ -784,6 +798,37 @@ export class ProductionMemoryControl {
         undoable: isConsolidationUndoable(change, touched.get(change.memoryId)),
       });
     }
+    const conversationReviews: OverviewSnapshot["payload"]["conversationReviews"][number][] = [];
+    for (const review of (await this.options.conversationReviews?.store.listWithChanges({
+      ownerId,
+      agentId,
+      limit: TIDY_UPS_SHOWN,
+    })) ?? []) {
+      const reviewChanges = (
+        (await this.options.conversationReviews?.store.listChanges(review.id)) ?? []
+      ).filter(({ afterRevision }) => afterRevision !== null);
+      if (reviewChanges.length === 0) continue;
+      const current = new Map(
+        (
+          await this.options.state.readMany({
+            ownerId,
+            agentId,
+            memoryIds: reviewChanges.map(({ memoryId }) => memoryId),
+          })
+        ).map((memory) => [memory.id as string, memory]),
+      );
+      conversationReviews.push({
+        reviewId: review.id,
+        finishedAt: review.finishedAt ?? review.startedAt,
+        undone: review.undoneAt !== null,
+        undoable:
+          review.undoneAt === null &&
+          reviewChanges.every((change) =>
+            isReviewChangeUndoable(change, current.get(change.memoryId)),
+          ),
+        changes: reviewChanges.map(({ memoryId, action }) => ({ memoryId, action })),
+      });
+    }
     const outline = await this.options.profile?.outline({
       ownerId,
       agentId,
@@ -924,6 +969,7 @@ export class ProductionMemoryControl {
         pending,
         externalProposals,
         tidyUps,
+        conversationReviews,
         reminders,
         upcoming,
         people,
@@ -1310,6 +1356,29 @@ export class ProductionMemoryControl {
         throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_TIDY_CHANGE_NOT_FOUND");
       await this.options.consolidation.undo(changeId);
       return { resultRef: changeId, replayed: false };
+    }
+    if (command.type === "memory.conversationReview.undo") {
+      if (!this.options.conversationReviews)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "MEMORY_OPERATION_NOT_INSTALLED",
+        );
+      const { reviewId } = command.payload;
+      const { ownerId, agentId } = this.options.configuration;
+      const owned = (
+        await this.options.conversationReviews.store.listWithChanges({
+          ownerId,
+          agentId,
+          limit: 200,
+        })
+      ).some(({ id }) => id === reviewId);
+      if (!owned)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_FOUND,
+          "MEMORY_CONVERSATION_REVIEW_NOT_FOUND",
+        );
+      await this.options.conversationReviews.undo(reviewId);
+      return { resultRef: reviewId, replayed: false };
     }
     if (command.type === "memory.mutate") {
       const { memoryId, action, expectedRevision, contentRef, historyId } = command.payload;

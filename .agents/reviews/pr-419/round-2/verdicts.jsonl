@@ -1,0 +1,5 @@
+{"id": "r2ds1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "端到端重试用例没有覆盖“遮盖后重发”这条真正要修的路径", "valid": true, "class": "better"}
+{"id": "r2ds2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`#lastRequest` 只记最后一次，地址+请求体作为键，交换被复用时的 A→B→A 会失效", "valid": true, "class": "better"}
+{"id": "r2ds3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "缓存键复制并长期持有整段未遮盖请求体；大请求会多一份内存，也延长了秘密在内存里的存活时间", "valid": true, "class": "better"}
+{"id": "r2ds4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "拒绝路径没有被记忆，若 Pi 把它当连接错误重试，会重复遮盖、重复上报 `withheld`", "valid": true, "class": "error", "severity": "low", "trigger": "出口遮盖的自检拒绝了一个请求（遮盖后仍有敏感内容）", "consequence": "Pi 把拒绝当连接错误重试 2 次，每次重新检查并再报一条 withheld 记录，审计计数变成 3 次，并白等约 1.3 秒；不会多发出任何内容，也不会给出错误结果", "modelSeverity": "低"}
+{"id": "r2ds5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "连接错误重试可能让直连服务方的请求被重复计费，文档只论证了“被拒绝的响应不收费”", "valid": true, "class": "better"}
