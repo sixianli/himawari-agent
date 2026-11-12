@@ -23,6 +23,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   classifyDeviceGatewayRequest,
+  type DeviceGatewayAuditFailure,
   type DeviceGateways,
   dispatchDeviceGatewayRequest,
 } from "./device-gateway.js";
@@ -111,6 +112,7 @@ export interface DeviceApiRouteOptions {
   readonly threadGateway: AgentThreadGatewayPort;
   readonly gateways: DeviceGateways;
   readonly audit: AuditLedgerPort;
+  readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly protectText: (input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly idempotencyKey: string;
@@ -652,6 +654,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             authority: options.authority,
             gateways: options.gateways,
             audit: options.audit,
+            ...(options.onAuditFailed ? { onAuditFailed: options.onAuditFailed } : {}),
             now,
           }),
         );

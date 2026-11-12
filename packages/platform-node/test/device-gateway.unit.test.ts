@@ -7,6 +7,7 @@ import type {
 import { describe, expect, it } from "vitest";
 import {
   classifyDeviceGatewayRequest,
+  type DeviceGatewayAuditFailure,
   dispatchDeviceGatewayRequest,
 } from "../src/device-gateway.ts";
 
@@ -51,7 +52,11 @@ function pause() {
   });
 }
 
-function dispatch(audit: AuditLedgerPort, v2: AgentGatewayV2Port) {
+function dispatch(
+  audit: AuditLedgerPort,
+  v2: AgentGatewayV2Port,
+  onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void,
+) {
   return dispatchDeviceGatewayRequest({
     request: pause(),
     confirmed: false,
@@ -60,6 +65,7 @@ function dispatch(audit: AuditLedgerPort, v2: AgentGatewayV2Port) {
     authority,
     gateways: { v2 },
     audit,
+    ...(onAuditFailed ? { onAuditFailed } : {}),
     now: () => new Date("2026-11-12T00:00:00.000Z"),
   });
 }
@@ -86,6 +92,30 @@ describe("[第11批] 设备网关审计", () => {
     expect([...records].sort((a, b) => a.id.localeCompare(b.id)).map((r) => r.outcome)).toEqual([
       "accepted",
       outcome,
+    ]);
+  });
+
+  it.each([
+    ["completed", succeeding],
+    ["failed", failing],
+  ] as const)("记%s失败时报给服务器日志，结果和错误照常返回", async (outcome, v2) => {
+    const { audit, records } = ledger(1);
+    const failures: DeviceGatewayAuditFailure[] = [];
+    const settled = await dispatch(audit, v2, (failure) => failures.push(failure)).then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    expect(settled).toEqual(
+      outcome === "completed" ? { value: { ok: true } } : { error: new Error("downstream failed") },
+    );
+    expect(records.map((record) => record.outcome)).toEqual(["accepted"]);
+    expect(failures).toEqual([
+      {
+        action: "device.gateway.tighten",
+        targetRef: "paired-1:v2:proactive.pause",
+        outcome,
+        error: new Error("audit store unavailable"),
+      },
     ]);
   });
 

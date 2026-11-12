@@ -55,6 +55,13 @@ export interface DeviceGatewayAuthority {
   readonly fencingToken: number;
 }
 
+export interface DeviceGatewayAuditFailure {
+  readonly action: string;
+  readonly targetRef: string;
+  readonly outcome: "completed" | "failed";
+  readonly error: unknown;
+}
+
 export interface DeviceGatewayRequest {
   readonly entry: ClientCapabilityEntry;
   readonly tier: Exclude<ClientCapabilityTier, "not_on_phone">;
@@ -137,31 +144,38 @@ export async function dispatchDeviceGatewayRequest(input: {
   readonly authority: DeviceGatewayAuthority;
   readonly gateways: DeviceGateways;
   readonly audit: AuditLedgerPort;
+  readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly now: () => Date;
 }): Promise<unknown> {
   if (input.request.tier === "change" && !input.confirmed)
     throw new DeviceGatewayError(DEVICE_GATEWAY_ERROR_CODES.CONFIRM_REQUIRED, 403);
   if (input.request.tier === "read" || input.request.tier === "routine") return forward(input);
   const attempt = randomUUID();
+  const action = `device.gateway.${input.request.tier}`;
+  const targetRef = `${input.pairedDeviceId}:${input.request.entry.gateway}:${input.request.entry.type}`;
   const record = (outcome: "accepted" | "completed" | "failed") =>
     input.audit.append({
       id: `audit:device-gateway:${attempt}:${outcome}`,
       ownerId: input.authentication.ownerId as Parameters<AuditLedgerPort["append"]>[0]["ownerId"],
       agentId: input.authority.agentId as Parameters<AuditLedgerPort["append"]>[0]["agentId"],
-      action: `device.gateway.${input.request.tier}`,
-      targetRef: `${input.pairedDeviceId}:${input.request.entry.gateway}:${input.request.entry.type}`,
+      action,
+      targetRef,
       outcome,
       occurredAt: input.now().toISOString(),
     });
+  const settle = (outcome: "completed" | "failed") =>
+    record(outcome).catch((error: unknown) =>
+      input.onAuditFailed?.({ action, targetRef, outcome, error }),
+    );
   await record("accepted");
   let result: unknown;
   try {
     result = await forward(input);
   } catch (error) {
-    await record("failed").catch(() => undefined);
+    await settle("failed");
     throw error;
   }
-  await record("completed").catch(() => undefined);
+  await settle("completed");
   return result;
 }
 

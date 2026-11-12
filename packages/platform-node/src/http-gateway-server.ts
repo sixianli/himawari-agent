@@ -35,7 +35,7 @@ import {
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
 import { type DevicePairingAccess, registerDeviceApiRoutes } from "./device-api-routes.js";
-import { DeviceGatewayError } from "./device-gateway.js";
+import { type DeviceGatewayAuditFailure, DeviceGatewayError } from "./device-gateway.js";
 import { DeviceSignatureError } from "./device-request-signature.js";
 import {
   PAIRED_DEVICE_ERROR_CODES,
@@ -126,6 +126,7 @@ export interface HttpGatewayServerOptions {
     readonly service: PairedDeviceService;
     readonly configuration: () => DeviceConfiguration;
     readonly audit: AuditLedgerPort;
+    readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
     readonly pairingAccess?: DevicePairingAccess;
   };
   readonly health?: HttpGatewayHealthPort;
@@ -1303,6 +1304,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         "thread-v3": options.threadGateway,
       },
       audit: options.devices.audit,
+      ...(options.devices.onAuditFailed ? { onAuditFailed: options.devices.onAuditFailed } : {}),
       protectText: async (input) =>
         (
           await payloadAdmission.protect({

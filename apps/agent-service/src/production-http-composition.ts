@@ -52,6 +52,7 @@ import {
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
   DEVICE_ACCESS_SECRET_PURPOSES,
+  type DeviceGatewayAuditFailure,
   type DevicePairingAccess,
   digestIdentityCredential,
   EnvelopePayloadProtector,
@@ -183,6 +184,7 @@ export interface ProductionHttpCompositionOptions {
   ) => Promise<void>;
   readonly onCommandAccepted?: (path: string) => void;
   readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
+  readonly onDeviceAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
@@ -1211,6 +1213,7 @@ export async function createProductionHttpComposition(
       }),
       configuration: () => deviceConfiguration,
       audit: repository.auditLedger(),
+      ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
     },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
