@@ -212,7 +212,7 @@ describe("构建包源码与日志有各自的检测语义", () => {
   it("只引用环境变量名的值不算credential字面量，像密钥的值照样检测", () => {
     for (const [content, name] of [
       ['apiKey: "$ACME_API_KEY",', "guide.md"],
-      ['{ "password": "${DATABASE_PASSWORD}" }', "config.json"],
+      [JSON.stringify({ password: ["$", "{DATABASE_PASSWORD}"].join("") }), "config.json"],
       ['const apiKey = "$ACME_API_KEY";', "example.ts"],
     ])
       expect(
