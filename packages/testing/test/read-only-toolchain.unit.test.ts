@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -94,13 +94,25 @@ describe("read-only toolchain paths", () => {
   });
 
   it("returns the real path of the default optional entry only when this host has it", async () => {
-    const result = await resolveReadOnlyToolchainPaths(["/usr/lib", "/lib64"]);
-    const hasLib64 = await import("node:fs/promises").then((fs) =>
-      fs.lstat("/lib64").then(
-        () => true,
-        () => false,
-      ),
+    const expected = await realpath("/lib64").then(
+      async (resolved) => [await realpath("/usr/lib"), resolved],
+      async () => [await realpath("/usr/lib")],
     );
-    expect(result.length).toBe(hasLib64 ? 2 : 1);
+    const result = await resolveReadOnlyToolchainPaths(["/usr/lib", "/lib64"], { dedupe: false });
+    expect(result).toEqual(expected);
+  });
+
+  it("is used by every fixture that builds a read-only toolchain list", async () => {
+    const callers = [
+      "test/fixtures/product-path-harness.ts",
+      "test/fixtures/mac-sandbox-deployment.ts",
+      "test/integration/prepared-file-runner.test.ts",
+      "test/integration/sandbox-preparation-control.test.ts",
+    ];
+    for (const caller of callers) {
+      const source = await readFile(path.resolve(import.meta.dirname, "../../..", caller), "utf8");
+      expect(source, caller).toContain("@himawari-agent/testing/read-only-toolchain");
+      expect(source, caller).toContain("resolveReadOnlyToolchainPaths(");
+    }
   });
 });

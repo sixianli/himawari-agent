@@ -1,0 +1,4 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`/lib64` 在所有平台上都变成“可选”，x64 上缺失时测试不再报错", "valid": true, "class": "better", "modelSeverity": "低", "reason": "不改：x64 的发行版都带 /lib64，缺失只会出现在 ARM；可选清单由调用方传入的能力已有（`optional` 参数），固定默认值是有意的最小做法。列给 Andy。"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 说“取真实路径之后按原顺序去重”，但 `mac-sandbox-deployment` 关掉了去重", "valid": true, "class": "better", "modelSeverity": "低", "reason": "已改：ADR 补上默认去重、该调用点显式关闭的说明"}
+{"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "默认 `/lib64` 的单元测试依赖宿主机状态，异常宿主上会误判", "valid": true, "class": "better", "modelSeverity": "低", "reason": "已改：用 realpath 的结果算期望并断言具体值，不再只比长度"}
+{"id": "ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "没有自动检查确保四处调用方真的使用了新函数", "valid": true, "class": "better", "modelSeverity": "低", "reason": "已改：单元测试里加了读四个调用方源码、断言导入并调用新函数的用例"}
