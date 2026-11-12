@@ -14,8 +14,10 @@ interface MutableCoverageManifest {
   prd: {
     sha256: string;
   };
+  requirements: unknown[];
   specifications: Array<{
     acceptances: Array<{
+      id: string;
       verificationEntrypoints: string[];
     }>;
   }>;
@@ -47,12 +49,18 @@ afterEach(async () => {
 });
 
 describe("v0.2 coverage baseline", () => {
-  it("accepts the owner-reviewed manifest", () => {
+  it("accepts the owner-reviewed manifest", async () => {
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as MutableCoverageManifest;
+    const acceptanceIds = new Set(
+      manifest.specifications.flatMap((specification) =>
+        specification.acceptances.map((acceptance) => acceptance.id),
+      ),
+    );
     const result = runChecker();
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      "v0.2 coverage check passed for 79 requirements, 53 acceptance IDs, and 10 Specs/Plans.",
+      `v0.2 coverage check passed for ${manifest.requirements.length} requirements, ${acceptanceIds.size} acceptance IDs, and ${manifest.specifications.length} Specs/Plans.`,
     );
   });
 

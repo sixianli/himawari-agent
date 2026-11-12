@@ -96,7 +96,7 @@ const descriptors = [primaryModel] as const;
 
 class RecordingRuntime {
   readonly models = new Map<string, unknown>();
-  readonly removedProviders: string[] = [];
+  readonly refreshes: { readonly allowNetwork?: boolean }[] = [];
 
   getModel(providerId: string, modelId: string): unknown | undefined {
     return this.models.get(`${providerId}:${modelId}`);
@@ -114,12 +114,8 @@ class RecordingRuntime {
     }
   }
 
-  async refresh(): Promise<void> {}
-
-  async setRuntimeApiKey(): Promise<void> {}
-
-  async removeRuntimeApiKey(providerId: string): Promise<void> {
-    this.removedProviders.push(providerId);
+  async refresh(options: { readonly allowNetwork?: boolean }): Promise<void> {
+    this.refreshes.push(options);
   }
 }
 
@@ -242,7 +238,7 @@ describe("production model composition", () => {
     expect(composition.payloadBoundary).toBeDefined();
 
     await composition.close();
-    expect(runtime.removedProviders).toEqual([]);
+    expect(runtime.refreshes).toEqual([{ allowNetwork: false }]);
   });
 
   it("rejects unsafe secret sources and conflicting canonical descriptors", () => {

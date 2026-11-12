@@ -46,8 +46,6 @@ class CleanupRuntime {
       this.models.set(`${provider.id}:${model.id}`, model);
   }
   async refresh(): Promise<void> {}
-  async setRuntimeApiKey(): Promise<void> {}
-  async removeRuntimeApiKey(): Promise<void> {}
   stream(_model: unknown, _context: unknown, options: Record<string, unknown>) {
     const failing = this.failing;
     return (async function* () {
