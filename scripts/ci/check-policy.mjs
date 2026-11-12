@@ -560,7 +560,7 @@ export function validateWorkflow(policy, source, toolchain) {
         summaries.length === 1 &&
           summaries[0].if === githubExpression("always() && steps.publish.outcome == 'success'") &&
           summaries[0].run ===
-            `.ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "${check.id}/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics`,
+            `.ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "${check.id}/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports`,
         `Job must write its diagnostics into the job summary exactly once: ${check.id}`,
       );
       const members = activeMembers(check)
