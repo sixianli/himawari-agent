@@ -25,7 +25,7 @@ date: "2026-11-12"
 
 ## 背景
 
-内置规则 `floor_money_words` 用两张词表（中日文子串、英文单词）对邮件标题和摘要做包含匹配，命中就把邮件至少抬到“值得知道”。词表只认写进去的词：“お引落し”这类写法、词表外的说法认不出，“账单”出现在促销文案里却会误命中。Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户或邮件意思一律交给模型判断，不用关键词表或正则。设计线程的整合方案把这一条列为 T7，Andy 同意。
+内置规则 `floor_money_words` 原来靠“钱相关词”判断邮件涉不涉钱（`docs/adr/0209-rule-book-with-cel-expressions-and-judge.md` 第 42 行：“写死了三条‘地板规则’（重要发件人、公共机构域名后缀、钱相关词）”）。凭词判断认不出词表外的说法，也会被促销文案里的同一个词骗到。Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户或邮件意思一律交给模型判断，不用关键词表或正则。设计线程的整合方案把这一条列为 T7，Andy 同意。
 
 [返回阅读导航](#contents)
 
@@ -37,7 +37,6 @@ date: "2026-11-12"
 2. 地板的作用是“判断模型已经给出结论后，涉钱邮件至少升到要知道”：`packages/application/src/services/proactive-rules.ts` 的 `applyFloor`，`ignore` 命中地板变 `know`，`unsure` 或 `check` 变 `check`，`act` 不动。
 3. 先例：邮件金额由模型给、规则读：`packages/application/src/rules/field-catalog.ts` 的 `amount_state` 字段和 `rules/amount.ts` 的 `parseMailAmount`，`suppress_small_amount` 规则读它。
 4. 地板命中在判断之后计算：`proactive-mail-check-service.ts` 里逐封邮件先取 `judged.get(item.messageId)` 再算 `floorHitIds`；判断之前用同一份邮件事实算的是 `outcomeHits`（要读整串、一定提醒），它们不读涉钱事实。
-5. 设计线程方案：`/mnt/project-files/model-judges-meaning/integrated-plan.md` 末尾“T7”一节。
 
 [返回阅读导航](#contents)
 
@@ -78,7 +77,7 @@ date: "2026-11-12"
 ## 后果
 
 - 好处：认得出词表外的说法，促销里的“账单”“折扣”不再误命中。
-- 代价：模型漏答或答错时这条地板失效（失败默认不命中）；每日成本用尽那一轮没有模型判断，涉钱邮件不再靠词表被抬成“要看”。已存的旧决策记录里写着 `floor_money_words@1`，版本 1 的词表已不在代码里，界面显示“找不到这一版的内容”。已存的、没有 `floorHit` 记录的旧提醒行在读取时无法再按词表补判。
-- 判断提示词变了：只影响后台的邮件判断调用，不属于对话请求的开头，不涉及 `prompt-prefix` 规则。
+- 代价：模型漏答或答错时这条地板失效（失败默认不命中）；每日成本用尽那一轮没有模型判断，涉钱邮件不再靠词表被抬成“要看”。旧决策记录里已存的 `floor_money_words@1`，在界面上显示“这一版的规则内容查不到”，因为版本 1 的词表已删。已存的、没有 `floorHit` 记录的旧提醒行在读取时无法再按词表补判。
+- 判断提示词变了：只影响后台的邮件判断调用，不属于对话请求的开头，属于 `.claude/rules/prompt-prefix.md` 第 15 条说的后台调用。
 
 [返回阅读导航](#contents)
