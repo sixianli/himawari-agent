@@ -64,6 +64,8 @@ export const EXTERNAL_PROPOSAL_REASON_PREFIX = "mcp_proposal_";
 export const EXTERNAL_PROPOSAL_REASON_CODES = {
   kept: `${EXTERNAL_PROPOSAL_REASON_PREFIX}kept`,
   declined: `${EXTERNAL_PROPOSAL_REASON_PREFIX}declined`,
+  pending: `${EXTERNAL_PROPOSAL_REASON_PREFIX}pending`,
+  superseded: `${EXTERNAL_PROPOSAL_REASON_PREFIX}superseded`,
 } as const;
 
 export const MEMORY_CAPTURE_FAILURE_OUTCOMES = [
