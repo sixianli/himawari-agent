@@ -55,6 +55,7 @@ const ACTIVE_RULE_LIMIT = 32;
 export const PENDING_PROPOSAL_LIMIT = 20;
 const PENDING_PROPOSAL_CEILING = 200;
 const EVIDENCE_SWEEP_BATCH = 100;
+const PENDING_PROPOSAL_TTL_CEILING_DAYS = 3650;
 export const PENDING_PROPOSAL_TTL_DAYS = 30;
 const DAY_MS = 86_400_000;
 const PROPOSAL_ID_PATTERN = /^rule-proposal:[0-9a-f]{32}$/u;
@@ -444,7 +445,8 @@ export class ProductionOwnerRuleWriter {
       proposalLimit < 1 ||
       proposalLimit > PENDING_PROPOSAL_CEILING ||
       !Number.isInteger(proposalTtlDays) ||
-      proposalTtlDays < 1
+      proposalTtlDays < 1 ||
+      proposalTtlDays > PENDING_PROPOSAL_TTL_CEILING_DAYS
     )
       throw new RangeError("Owner rule proposal limit or lifetime is out of range");
     this.#options = options;
@@ -813,6 +815,7 @@ export class ProductionOwnerRuleWriter {
       const payloads = this.#options.payloads;
       const evidenceRef = `${proposalId}:${hash(`${proposalId}\n${now}\n${randomUUID()}`).slice(0, 16)}`;
       const drop = () => payloads.delete(evidenceRef as never).catch(() => false);
+      const expiresAt = new Date(Date.parse(now) + this.#ttlDays() * DAY_MS).toISOString();
       await this.#writeText(evidenceRef, evidence);
       const outcome = await store
         .propose({
@@ -824,7 +827,7 @@ export class ProductionOwnerRuleWriter {
           threadId: input.threadId,
           evidenceRef,
           now,
-          expiresAt: new Date(Date.parse(now) + this.#ttlDays() * DAY_MS).toISOString(),
+          expiresAt,
           pendingLimit: this.#limit(),
         })
         .catch(async (error: unknown) => {
@@ -928,10 +931,11 @@ export class ProductionOwnerRuleWriter {
       .settledEvidence({ ...scope, now: this.#options.clock.now(), limit: EVIDENCE_SWEEP_BATCH })
       .catch(() => []);
     for (const { proposalId, evidenceRef } of settled) {
-      const cleared = await store
-        .clearEvidence({ ...scope, proposalId, evidenceRef })
+      const gone = await this.#options.payloads
+        .delete(evidenceRef as never)
+        .then(() => true)
         .catch(() => false);
-      if (cleared) await this.#options.payloads.delete(evidenceRef as never).catch(() => false);
+      if (gone) await store.clearEvidence({ ...scope, proposalId, evidenceRef }).catch(() => false);
     }
   }
 

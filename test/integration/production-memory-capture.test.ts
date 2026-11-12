@@ -2779,6 +2779,22 @@ describe("production memory capture", () => {
 
       expect(() => context.ruleWriterWith({ proposalLimit: 201 })).toThrow(RangeError);
       expect(() => context.ruleWriterWith({ proposalTtlDays: 0 })).toThrow(RangeError);
+      expect(() => context.ruleWriterWith({ proposalTtlDays: 3651 })).toThrow(RangeError);
+      await expect(
+        store.propose({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          proposalId: broken,
+          ruleType: "mail_must_notify",
+          summary: "坏依据",
+          origin: "inferred",
+          threadId: null,
+          evidenceRef: broken,
+          now: T0,
+          expiresAt: "2026-11-24T12:00:00.000Z",
+          pendingLimit: 201,
+        }),
+      ).rejects.toThrow("limit is invalid");
       context.sql((database) => {
         database
           .prepare(
@@ -2803,6 +2819,9 @@ describe("production memory capture", () => {
       expect(stored().filter((row) => row.kept > 0)).toHaveLength(2);
       expect(stored().filter((row) => row.ref === null)).toHaveLength(3);
       expect(payloadCount()).toBe(2);
+      await inferred("repeat.example");
+      await inferred("repeat.example", "call-repeat-again");
+      expect(payloadCount()).toBe(3);
     });
 
     it("keeps the old basis and the old state when writing the new basis fails", async () => {
