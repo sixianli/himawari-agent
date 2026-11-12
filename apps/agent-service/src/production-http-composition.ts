@@ -1181,6 +1181,11 @@ export async function createProductionHttpComposition(
     },
     now,
     ...(options.onDeviceWarning ? { onWarning: options.onDeviceWarning } : {}),
+    prepareRevoke: async (deviceId) => {
+      const report = (error: unknown) => options.onDevicePushFailed?.(error);
+      const wipe = await options.webPush?.applePush?.prepareWipe(deviceId).catch(report);
+      return wipe ? () => wipe().catch(report) : undefined;
+    },
   });
   const pushPresence = options.webPush?.presence ?? new WebPushPresence();
   const applePush = options.webPush?.applePush;
@@ -1193,8 +1198,6 @@ export async function createProductionHttpComposition(
     onRegistered: (_deviceId, pushType) => {
       if (pushType === "widgets") applePush?.requestWidgetRefresh();
     },
-    onRevoke: async (deviceId) => applePush?.wipeDevice(deviceId),
-    ...(options.onDevicePushFailed ? { onFailure: options.onDevicePushFailed } : {}),
   });
   const gatewayV2 = createProductionApprovalGateway({
     configuration,

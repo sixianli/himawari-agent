@@ -728,7 +728,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           body: json(request),
         });
         const approval = token.approval;
-        if (approval === null)
+        if (approval === null || (token.action !== "approve" && token.action !== "deny"))
           throw new DevicePushError(DEVICE_PUSH_ERROR_CODES.ACTION_INVALID, 410);
         const reference = token.tokenHash.slice(0, 40);
         try {
@@ -823,15 +823,15 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
               revalidate: async () => {
                 if (!(await options.devices.stillActive(authenticated.device.id)))
                   throw new Error(PAIRED_DEVICE_ERROR_CODES.DEVICE_REVOKED);
-                options.push?.presence(authenticated.device.id, true);
+                options.push?.streamAlive(authenticated.device.id);
               },
             }),
             configuration.connectionMaxSeconds * 1000,
           ),
         );
         holdStream(authenticated.device.id, stream, configuration.streamConnections);
-        options.push?.presence(authenticated.device.id, true);
-        stream.once("close", () => options.push?.presence(authenticated.device.id, false));
+        options.push?.streamOpened(authenticated.device.id);
+        stream.once("close", () => options.push?.streamClosed(authenticated.device.id));
         options.setStreamHeaders(reply);
         return reply.send(stream);
       });
@@ -926,7 +926,6 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
   app.post(`${DEVICE_MANAGEMENT_PREFIX}/revoke`, async (request, reply) => {
     const authentication = await managed(request);
     const body = deviceAction(request);
-    await options.push?.beforeRevoke(body.deviceId);
     const device = await options.devices.revoke({ ...scope(authentication), ...body });
     return options.sendJson(reply, 200, { device: presentPairedDevice(device) });
   });

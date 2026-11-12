@@ -1464,6 +1464,7 @@ it("[IOS-4] accepts Apple push only with an apple-push secret, web push, Apple i
     liveActivityStaleAfterSeconds: 600,
     actionTokenLifetimeSeconds: 86_400,
     requestTimeoutSeconds: 10,
+    liveActivityRegistrationsPerDevice: 8,
   });
   expect(
     parse({

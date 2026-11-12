@@ -30,7 +30,10 @@ import {
 } from "@himawari-agent/platform-node";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { ProductionApplePush } from "../../apps/agent-service/src/production-apple-push.ts";
+import {
+  applePushAlertPayload,
+  ProductionApplePush,
+} from "../../apps/agent-service/src/production-apple-push.ts";
 import {
   ProductionWebPush,
   WebPushPresence,
@@ -283,6 +286,7 @@ describe("[IOS-4] push channels", () => {
         environment: "development",
         topic: TOPIC,
         locale: "zh-CN",
+        activityLimit: configuration.liveActivityRegistrationsPerDevice,
         now: clock,
       });
     const subscribe = async (id: string) => {
@@ -733,15 +737,8 @@ describe("[IOS-4] push channels", () => {
       ),
     ).toBe(2);
 
-    await context.applePush.wipeDevice(IPHONE);
-    const [wipe] = context.apns.ofType("background");
-    expect(wipe?.token).toBe(registration.token);
-    expect(wipe?.headers["apns-priority"]).toBe("5");
-    expect(wipe?.json).toEqual({
-      aps: { "content-available": 1 },
-      himawari: { v: 1, command: "wipe_local_data", deviceId: IPHONE },
-    });
-
+    const sendWipe = await context.applePush.prepareWipe(IPHONE);
+    expect(context.apns.ofType("background")).toEqual([]);
     const devices = context.sql((database) =>
       database.prepare("SELECT revision FROM paired_devices WHERE id = ?").pluck().get(IPHONE),
     ) as number;
@@ -751,6 +748,15 @@ describe("[IOS-4] push channels", () => {
       deviceId: IPHONE,
       expectedRevision: devices,
       now: T0,
+    });
+    await sendWipe();
+    const [wipe] = context.apns.ofType("background");
+    expect(context.apns.ofType("background")).toHaveLength(1);
+    expect(wipe?.token).toBe(registration.token);
+    expect(wipe?.headers["apns-priority"]).toBe("5");
+    expect(wipe?.json).toEqual({
+      aps: { "content-available": 1 },
+      himawari: { v: 1, command: "wipe_local_data", deviceId: IPHONE },
     });
     expect(
       context.sql((database) =>
@@ -762,5 +768,79 @@ describe("[IOS-4] push channels", () => {
         database.prepare("SELECT count(*) FROM notification_action_tokens").pluck().get(),
       ),
     ).toBe(0);
+  });
+
+  it("[IOS-4] replaces the unused button tokens when an approval alert is sent again after a server error", async () => {
+    const context = await setup();
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    context.approval("a1", false);
+    context.apns.respond = () => ({ status: 503, reason: "ServiceUnavailable" });
+    await context.push.tick();
+    context.apns.respond = () => ({ status: 200 });
+    context.setClock(at(T0, 62));
+    await context.push.tick();
+    const alerts = context.apns.ofType("alert");
+    expect(alerts).toHaveLength(2);
+    const sentTokens = (
+      (alerts[1]?.json["himawari"] as { actions: { token: string }[] }).actions ?? []
+    ).map(({ token }) => createHash("sha256").update(token, "utf8").digest("hex"));
+    expect(
+      context.sql((database) =>
+        database
+          .prepare("SELECT token_hash FROM notification_action_tokens ORDER BY token_hash")
+          .pluck()
+          .all(),
+      ),
+    ).toEqual([...sentTokens].sort());
+  });
+
+  it("[IOS-4] tries to start a Live Activity again after a temporary Apple error", async () => {
+    const context = await setup({ liveActivityStartAfterSeconds: 30 });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "liveactivity");
+    context.setClock(T0);
+    context.run("run-long", "running", T0);
+    context.setClock(at(T0, 31));
+    context.apns.respond = () => ({ status: 503, reason: "ServiceUnavailable" });
+    await context.push.tick();
+    expect(context.apns.ofType("liveactivity")).toHaveLength(1);
+    context.apns.respond = () => ({ status: 200 });
+    await context.push.tick();
+    await context.push.tick();
+    expect(context.apns.ofType("liveactivity")).toHaveLength(2);
+  });
+
+  it("[IOS-4] keeps only the newest Live Activity registrations of a device, up to the configured number", async () => {
+    const context = await setup({ liveActivityRegistrationsPerDevice: 2 });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "liveactivity");
+    for (const [index, ref] of ["run-1", "run-2", "run-3"].entries()) {
+      context.setClock(at(T0, index));
+      await context.register(IPHONE, "liveactivity", ref);
+    }
+    expect(
+      context.sql((database) =>
+        database
+          .prepare("SELECT activity_ref FROM apns_registrations ORDER BY activity_ref")
+          .pluck()
+          .all(),
+      ),
+    ).toEqual(["", "run-2", "run-3"]);
+  });
+
+  it("[IOS-4] shortens a very long title as well as the body so the alert still fits Apple's size limit", () => {
+    const payload = applePushAlertPayload({
+      title: "标题".repeat(3_000),
+      body: "正文".repeat(3_000),
+      navigate: "/threads/thread-1",
+      tag: "tag-1",
+      kind: "reminder",
+      badge: 1,
+      actions: [],
+    });
+    expect(Buffer.byteLength(payload, "utf8")).toBeLessThanOrEqual(4_096);
+    expect(JSON.parse(payload).aps.alert.title.endsWith("…")).toBe(true);
   });
 });

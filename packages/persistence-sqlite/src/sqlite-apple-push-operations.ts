@@ -172,6 +172,8 @@ export class SqliteApplePushOperations {
       !APPLE_PUSH_TOKEN_PATTERN.test(input.token) ||
       !APPLE_PUSH_TOPIC_PATTERN.test(input.topic) ||
       !LOCALES.includes(input.locale) ||
+      !Number.isSafeInteger(input.activityLimit) ||
+      input.activityLimit < 1 ||
       (input.pushType === "liveactivity"
         ? input.activityRef !== "" && !APPLE_PUSH_ACTIVITY_REF_PATTERN.test(input.activityRef)
         : input.activityRef !== "")
@@ -210,6 +212,17 @@ export class SqliteApplePushOperations {
             WHERE device_id = ? AND push_type = ? AND activity_ref = ?`,
         )
         .get(input.deviceId, input.pushType, input.activityRef) as { id: string };
+      if (input.pushType === "liveactivity" && input.activityRef !== "")
+        this.database
+          .prepare(
+            `DELETE FROM apns_registrations
+              WHERE device_id = ? AND push_type = 'liveactivity' AND activity_ref <> ''
+                AND id NOT IN (
+                  SELECT id FROM apns_registrations
+                   WHERE device_id = ? AND push_type = 'liveactivity' AND activity_ref <> ''
+                   ORDER BY (id = ?) DESC, updated_at DESC, id DESC LIMIT ?)`,
+          )
+          .run(input.deviceId, input.deviceId, saved.id, input.activityLimit);
       return this.readRegistration(saved.id);
     })();
   }
@@ -484,6 +497,12 @@ export class SqliteApplePushOperations {
       this.fail("PORT_INVALID_OPERATION", "Notification action token is invalid");
     this.database.transaction(() => {
       this.activeDevice(input, input.deviceId);
+      this.database
+        .prepare(
+          `DELETE FROM notification_action_tokens
+            WHERE device_id = ? AND source_key = ? AND used_at IS NULL`,
+        )
+        .run(input.deviceId, input.sourceKey);
       const insert = this.database.prepare(
         `INSERT INTO notification_action_tokens (
           token_hash, owner_id, agent_id, device_id, source_key, action, owner_presence,
@@ -515,7 +534,7 @@ export class SqliteApplePushOperations {
   ): NotificationActionTokenResult {
     const now = this.time(input.now);
     if (!TOKEN_HASH.test(input.tokenHash)) return { kind: "rejected", reason: "unknown" };
-    return this.database.transaction((): NotificationActionTokenResult => {
+    const resolve = this.database.transaction((): NotificationActionTokenResult => {
       const row = this.database
         .prepare(
           `SELECT token_hash AS tokenHash, owner_id AS ownerId, agent_id AS agentId,
@@ -582,7 +601,8 @@ export class SqliteApplePushOperations {
         usedAt,
       });
       return { kind: "accepted", token };
-    })();
+    });
+    return consume ? resolve.immediate() : resolve();
   }
 
   private setCompanion(input: Input<"setCompanion">) {

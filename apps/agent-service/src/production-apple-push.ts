@@ -89,10 +89,10 @@ export function applePushAlertPayload(input: {
   readonly badge: number;
   readonly actions: readonly ApplePushAction[];
 }): string {
-  const build = (body: string) =>
+  const build = (title: string, body: string) =>
     JSON.stringify({
       aps: {
-        alert: { title: input.title, body },
+        alert: { title, body },
         sound: "default",
         badge: input.badge,
         "thread-id": input.kind,
@@ -108,10 +108,16 @@ export function applePushAlertPayload(input: {
         actions: input.actions,
       },
     });
-  const full = build(input.body);
-  const overflow = Buffer.byteLength(full, "utf8") - PAYLOAD_BYTES;
-  if (overflow <= 0) return full;
-  return build(clip(input.body, Math.max(0, Buffer.byteLength(input.body, "utf8") - overflow - 8)));
+  const excess = (title: string, body: string) =>
+    Buffer.byteLength(build(title, body), "utf8") - PAYLOAD_BYTES;
+  const shorten = (text: string, overflow: number) =>
+    clip(text, Math.max(0, Buffer.byteLength(text, "utf8") - overflow - 8));
+  const bodyOverflow = excess(input.title, input.body);
+  if (bodyOverflow <= 0) return build(input.title, input.body);
+  const body = shorten(input.body, bodyOverflow);
+  const titleOverflow = excess(input.title, body);
+  if (titleOverflow <= 0) return build(input.title, body);
+  return build(shorten(input.title, titleOverflow), body);
 }
 
 export function liveActivityPhase(status: string): AppleLiveActivityPhase {
@@ -168,29 +174,31 @@ export class ProductionApplePush implements PushCompanionChannel {
     this.#widgetsDirtyForAll = true;
   }
 
-  async wipeDevice(deviceId: string): Promise<void> {
-    const registrations = await this.#options.store.listRegistrations({
-      ...this.#scope(),
-      pushType: "alert",
-      deviceId,
-    });
-    const now = this.#options.now();
-    for (const registration of registrations) {
-      if (!this.#configured(registration)) continue;
-      await this.#transmit("background", "wipe", {
-        token: registration.token,
-        environment: registration.environment,
-        topic: registration.topic,
-        pushType: "background",
-        priority: 5,
-        expiresAtSeconds: Math.floor(Date.parse(now) / 1_000) + 30 * 86_400,
-        collapseId: null,
-        payload: JSON.stringify({
-          aps: { "content-available": 1 },
-          himawari: { v: 1, command: "wipe_local_data", deviceId },
-        }),
-      });
-    }
+  async prepareWipe(deviceId: string): Promise<() => Promise<void>> {
+    const registrations = (
+      await this.#options.store.listRegistrations({
+        ...this.#scope(),
+        pushType: "alert",
+        deviceId,
+      })
+    ).filter((registration) => this.#configured(registration));
+    return async () => {
+      const now = this.#options.now();
+      for (const registration of registrations)
+        await this.#transmit("background", "wipe", {
+          token: registration.token,
+          environment: registration.environment,
+          topic: registration.topic,
+          pushType: "background",
+          priority: 5,
+          expiresAtSeconds: Math.floor(Date.parse(now) / 1_000) + 30 * 86_400,
+          collapseId: null,
+          payload: JSON.stringify({
+            aps: { "content-available": 1 },
+            himawari: { v: 1, command: "wipe_local_data", deviceId },
+          }),
+        });
+    };
   }
 
   async #transmit(
@@ -497,7 +505,6 @@ export class ProductionApplePush implements PushCompanionChannel {
             !this.#configured(registration)
           )
             continue;
-          this.#activityStarts.add(key);
           const locale = accountLocale ?? registration.locale;
           const title = await this.#title(run.threadId, locale);
           const result = await this.#transmit("liveactivity", "start", {
@@ -520,8 +527,15 @@ export class ProductionApplePush implements PushCompanionChannel {
               },
             }),
           });
+          if (result.kind !== "retry" && result.kind !== "rate_limited")
+            this.#activityStarts.add(key);
           await this.#applyRegistrationOutcome(registration, result, now);
         }
+      if (runs.length < ACTIVITY_BATCH) {
+        const unfinished = new Set(runs.map(({ runId }) => runId));
+        for (const key of this.#activityStarts)
+          if (!unfinished.has(key.slice(key.indexOf("\n") + 1))) this.#activityStarts.delete(key);
+      }
     }
     if (running.length === 0) return;
     const runs = new Map(

@@ -34,6 +34,7 @@ export interface ApplePushConfiguration {
   readonly liveActivityStaleAfterSeconds: number;
   readonly actionTokenLifetimeSeconds: number;
   readonly requestTimeoutSeconds: number;
+  readonly liveActivityRegistrationsPerDevice: number;
 }
 
 export const APPLE_PUSH_CONFIGURATION_DEFAULTS = Object.freeze({
@@ -43,6 +44,7 @@ export const APPLE_PUSH_CONFIGURATION_DEFAULTS = Object.freeze({
   liveActivityStaleAfterSeconds: 600,
   actionTokenLifetimeSeconds: 86_400,
   requestTimeoutSeconds: 10,
+  liveActivityRegistrationsPerDevice: 8,
 } as const);
 
 export const APPLE_PUSH_CONFIGURATION_BOUNDS = Object.freeze({
@@ -52,6 +54,7 @@ export const APPLE_PUSH_CONFIGURATION_BOUNDS = Object.freeze({
   liveActivityStaleAfterSeconds: { minimum: 30, maximum: 86_400 },
   actionTokenLifetimeSeconds: { minimum: 60, maximum: 30 * 86_400 },
   requestTimeoutSeconds: { minimum: 1, maximum: 120 },
+  liveActivityRegistrationsPerDevice: { minimum: 1, maximum: 64 },
 } as const);
 
 export interface ApplePushRegistration extends PairedDeviceScope {
@@ -141,6 +144,7 @@ export interface ApplePushStorePort {
       readonly environment: ApplePushEnvironment;
       readonly topic: string;
       readonly locale: WebPushLocale;
+      readonly activityLimit: number;
       readonly now: string;
     },
   ): Promise<ApplePushRegistration>;

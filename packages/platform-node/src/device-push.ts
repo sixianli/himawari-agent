@@ -78,8 +78,9 @@ export interface DevicePushPort {
     readonly device: PairedDevice;
     readonly body: Record<string, unknown>;
   }): Promise<{ readonly linked: boolean }>;
-  presence(deviceId: string, visible: boolean): void;
-  beforeRevoke(deviceId: string): Promise<void>;
+  streamOpened(deviceId: string): void;
+  streamAlive(deviceId: string): void;
+  streamClosed(deviceId: string): void;
 }
 
 export interface DevicePushServiceOptions {
@@ -89,8 +90,6 @@ export interface DevicePushServiceOptions {
   readonly now: () => Date;
   readonly onPresence?: (deviceId: string, visible: boolean, now: string) => void;
   readonly onRegistered?: (deviceId: string, pushType: ApplePushType) => void;
-  readonly onRevoke?: (deviceId: string) => Promise<void>;
-  readonly onFailure?: (error: unknown) => void;
   readonly randomBytes?: (size: number) => Buffer;
 }
 
@@ -108,6 +107,7 @@ export function notificationActionHash(token: string): string {
 
 export class DevicePushService implements DevicePushPort {
   readonly #options: DevicePushServiceOptions;
+  readonly #openStreams = new Map<string, number>();
 
   constructor(options: DevicePushServiceOptions) {
     this.#options = options;
@@ -166,6 +166,7 @@ export class DevicePushService implements DevicePushPort {
       environment: environment as ApplePushEnvironment,
       topic: topic as string,
       locale: locale as WebPushLocale,
+      activityLimit: configuration.liveActivityRegistrationsPerDevice,
       now: this.#options.now().toISOString(),
     });
     this.#options.onRegistered?.(device.id, saved.pushType);
@@ -265,15 +266,26 @@ export class DevicePushService implements DevicePushPort {
     throw new DevicePushError(DEVICE_PUSH_ERROR_CODES.COMPANION_INVALID, 409);
   }
 
-  presence(deviceId: string, visible: boolean): void {
-    this.#options.onPresence?.(deviceId, visible, this.#options.now().toISOString());
+  streamOpened(deviceId: string): void {
+    this.#openStreams.set(deviceId, (this.#openStreams.get(deviceId) ?? 0) + 1);
+    this.#presence(deviceId, true);
   }
 
-  async beforeRevoke(deviceId: string): Promise<void> {
-    try {
-      await this.#options.onRevoke?.(deviceId);
-    } catch (error) {
-      this.#options.onFailure?.(error);
+  streamAlive(deviceId: string): void {
+    if (this.#openStreams.has(deviceId)) this.#presence(deviceId, true);
+  }
+
+  streamClosed(deviceId: string): void {
+    const remaining = (this.#openStreams.get(deviceId) ?? 0) - 1;
+    if (remaining > 0) {
+      this.#openStreams.set(deviceId, remaining);
+      return;
     }
+    this.#openStreams.delete(deviceId);
+    this.#presence(deviceId, false);
+  }
+
+  #presence(deviceId: string, visible: boolean): void {
+    this.#options.onPresence?.(deviceId, visible, this.#options.now().toISOString());
   }
 }

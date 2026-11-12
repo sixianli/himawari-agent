@@ -96,6 +96,7 @@ export interface Harness {
   readonly presence: { deviceId: string; visible: boolean }[];
   readonly registered: { deviceId: string; pushType: string }[];
   readonly revoking: string[];
+  readonly wiped: string[];
 }
 
 export async function harness(
@@ -255,6 +256,7 @@ export async function harness(
   const presence: Harness["presence"] = [];
   const registered: Harness["registered"] = [];
   const revoking: string[] = [];
+  const wiped: string[] = [];
   const app = buildHttpGatewayServer({
     publicOrigin,
     staticRoot: options.staticRoot ?? stateRoot,
@@ -310,6 +312,12 @@ export async function harness(
             : undefined,
         now,
         onWarning: (warning) => warnings.push(warning),
+        prepareRevoke: async (deviceId) => {
+          revoking.push(deviceId);
+          return async () => {
+            wiped.push(deviceId);
+          };
+        },
       }),
       configuration: () => configuration.current,
       audit: repository.auditLedger(),
@@ -320,9 +328,6 @@ export async function harness(
         now,
         onPresence: (deviceId, visible) => presence.push({ deviceId, visible }),
         onRegistered: (deviceId, pushType) => registered.push({ deviceId, pushType }),
-        onRevoke: async (deviceId) => {
-          revoking.push(deviceId);
-        },
       }),
       ...(options.pairingAccess ? { pairingAccess: options.pairingAccess } : {}),
     },
@@ -341,6 +346,7 @@ export async function harness(
     presence,
     registered,
     revoking,
+    wiped,
     webHeaders: async () => ({
       host: new URL(publicOrigin).host,
       origin: publicOrigin,

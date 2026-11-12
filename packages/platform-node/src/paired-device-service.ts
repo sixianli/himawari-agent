@@ -72,6 +72,7 @@ export interface PairedDeviceServiceOptions {
   readonly now?: () => Date;
   readonly randomBytes?: (size: number) => Buffer;
   readonly onWarning?: (warning: PairedDeviceWarning) => void;
+  readonly prepareRevoke?: (deviceId: string) => Promise<(() => Promise<void>) | undefined>;
 }
 
 export interface PairedDeviceWarning {
@@ -272,10 +273,16 @@ export class PairedDeviceService {
     return this.#options.store.renameDevice({ ...scope, name });
   }
 
-  revoke(
+  async revoke(
     scope: PairedDeviceScope & { readonly deviceId: string; readonly expectedRevision: number },
   ): Promise<PairedDevice> {
-    return this.#options.store.revokeDevice({ ...scope, now: this.#now().toISOString() });
+    const afterRevoke = await this.#options.prepareRevoke?.(scope.deviceId);
+    const device = await this.#options.store.revokeDevice({
+      ...scope,
+      now: this.#now().toISOString(),
+    });
+    await afterRevoke?.();
+    return device;
   }
 
   #challengeMac(deviceId: string, head: Buffer): Buffer {

@@ -398,12 +398,19 @@ describe("[IOS-4] 通知按钮的一次性凭据", () => {
     const device = (await h.repository.pairedDevices().listDevices(scope)).find(
       ({ id }) => id === client.deviceId,
     );
+    const stale = await web(h, "revoke", {
+      deviceId: client.deviceId,
+      expectedRevision: (device?.revision ?? 0) + 1,
+    });
+    expect(stale.status).toBe(409);
+    expect(h.wiped).toEqual([]);
     const revoked = await web(h, "revoke", {
       deviceId: client.deviceId,
       expectedRevision: device?.revision,
     });
     expect(revoked.status).toBe(200);
-    expect(h.revoking).toEqual([client.deviceId]);
+    expect(h.revoking).toEqual([client.deviceId, client.deviceId]);
+    expect(h.wiped).toEqual([client.deviceId]);
     const afterRevoke = await post(h, watch, "approvals/respond", { token: nextTokens.deny });
     expect(afterRevoke.statusCode).toBe(410);
     expect(await status(h, next)).toEqual({ status: "pending", revision: 1 });
@@ -584,17 +591,31 @@ describe("[IOS-4] 通知反馈和在线状态", () => {
     const url = new URL(request.url);
     await h.app.listen({ host: "127.0.0.1", port: 0 });
     const { port } = h.app.server.address() as AddressInfo;
-    const connection = get({
-      host: "127.0.0.1",
-      port,
-      path: url.pathname + url.search,
-      headers: request.headers,
-    });
-    connection.on("error", () => undefined);
-    connection.on("response", (response) => response.resume());
+    const open = (signed: typeof request) => {
+      const target = new URL(signed.url);
+      const opened = get({
+        host: "127.0.0.1",
+        port,
+        path: target.pathname + target.search,
+        headers: signed.headers,
+      });
+      opened.on("error", () => undefined);
+      opened.on("response", (response) => response.resume());
+      return opened;
+    };
+    expect(url.pathname).toBe("/api/device/v1/stream");
+    const connection = open(request);
     await expect
       .poll(() => h.presence.filter(({ visible }) => visible).length, { timeout: 5_000 })
       .toBeGreaterThanOrEqual(2);
+    const second = open(signedRequest(h, client, { method: "GET", path: "/api/device/v1/stream" }));
+    const seen = h.presence.length;
+    await expect.poll(() => h.presence.length, { timeout: 5_000 }).toBeGreaterThan(seen);
+    second.destroy();
+    const afterSecondClosed = h.presence.length;
+    await expect
+      .poll(() => h.presence.length, { timeout: 5_000 })
+      .toBeGreaterThan(afterSecondClosed + 1);
     expect(
       h.presence.every(({ deviceId, visible }) => deviceId === client.deviceId && visible),
     ).toBe(true);
