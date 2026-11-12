@@ -96,6 +96,6 @@ date: "2026-11-12"
 
 - [.agents/instructions/model-review.md](../../.agents/instructions/model-review.md)：方案讨论和代码复核的步骤。
 - [ADR 0175](0175-cheaper-code-review-rounds.md)：代码复核第 2 轮起只用 DeepSeek。
-- `scripts/model-review/review-models.json`、`scripts/model-review/opencode-review.mjs`、`test/tooling/opencode-review.test.mjs`、`test/tooling/opencode-review-merge-gate.test.mjs`、`test/tooling/review-delegate.test.mjs`：配置、实现和测试。
+- 配置在 `scripts/model-review/review-models.json`，由 `scripts/model-review/opencode-review.mjs` 里的 `readReviewModels` 读入、`reviewModelsProblems` 校验。
 
 [↑ 返回阅读导航](#contents)
