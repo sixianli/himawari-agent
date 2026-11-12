@@ -328,6 +328,7 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
         await reserve("classification-private", "private");
         await expect(reserve("classification-sensitive", "sensitive")).rejects.toMatchObject({
           code: "PORT_CONFLICT",
+          message: "Budget account classification is immutable",
         });
       } finally {
         await resource.repository.close();
