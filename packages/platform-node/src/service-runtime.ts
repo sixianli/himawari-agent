@@ -58,6 +58,20 @@ export function stableErrorCode(error: unknown): string {
   return SERVICE_RUNTIME_ERROR_CODES.STARTUP_FAILED;
 }
 
+export function portErrorSite(error: unknown): string | undefined {
+  if (
+    error === null ||
+    typeof error !== "object" ||
+    !("code" in error) ||
+    typeof error.code !== "string" ||
+    !error.code.startsWith("PORT_") ||
+    !("message" in error) ||
+    typeof error.message !== "string"
+  )
+    return undefined;
+  return error.message.slice(0, 200);
+}
+
 export function failureReason(error: unknown): string | undefined {
   if (stableErrorCode(error) !== SERVICE_RUNTIME_ERROR_CODES.STARTUP_FAILED) return undefined;
   if (!(error instanceof Error)) return typeof error;
