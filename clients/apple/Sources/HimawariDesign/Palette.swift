@@ -119,3 +119,9 @@ extension Color {
     public static var hmGlass: Color { DesignTokens.Colors.glass.color }
     public static var hmGlassLine: Color { DesignTokens.Colors.glassLine.color }
 }
+
+extension Text {
+    public func hmText(_ token: TypeToken) -> Text {
+        font(token.font).tracking(token.tracking)
+    }
+}

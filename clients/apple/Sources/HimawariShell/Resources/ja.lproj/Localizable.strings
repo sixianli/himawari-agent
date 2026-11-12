@@ -37,3 +37,6 @@
 "pairing.connect" = "接続";
 "pairing.problem.keysUnreadable" = "ペアリングと会話は残っています。ロックを解除してここに戻ると自動でやり直します";
 "pairing.problem.keysUnreadable.title" = "この iPhone の鍵が一時的に読めません";
+"pairing.problem.storage" = "ペアリングと会話は残っています。ロックを解除し空き容量を作ってここに戻ると自動でやり直します";
+"pairing.problem.storage.title" = "この端末の保存領域を一時的に開けません";
+"pairing.startOver" = "消去して最初からペアリング";

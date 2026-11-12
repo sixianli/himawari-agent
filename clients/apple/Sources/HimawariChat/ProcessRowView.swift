@@ -211,7 +211,7 @@ struct ShimmerText: View {
     }
 
     private var label: Text {
-        Text(text).hmType(DesignTokens.TypeScale.body)
+        Text(text).hmText(DesignTokens.TypeScale.body)
     }
 }
 

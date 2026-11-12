@@ -63,8 +63,12 @@ public final class AppModel {
             phase = .unpaired(.keysUnreadable)
             return
         }
-        guard let record, presence.allSatisfy({ $0 == .present }) else {
+        guard presence.allSatisfy({ $0 == .present }) else {
             forget(problem: nil)
+            return
+        }
+        guard let record else {
+            phase = .unpaired(.keysUnreadable)
             return
         }
         use(record)
@@ -247,7 +251,7 @@ public final class AppModel {
             chat.start()
             Task { await refreshConfiguration() }
         } catch {
-            phase = .unpaired(.keysUnavailable)
+            phase = .unpaired(.storageUnavailable)
         }
     }
 
@@ -287,7 +291,7 @@ public final class AppModel {
     }
 
     public func becameActive() {
-        if phase == .unpaired(.keysUnreadable) {
+        if phase == .unpaired(.keysUnreadable) || phase == .unpaired(.storageUnavailable) {
             restore()
             return
         }

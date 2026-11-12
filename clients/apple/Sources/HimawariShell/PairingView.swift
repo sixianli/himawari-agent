@@ -38,10 +38,13 @@ struct PairingView: View {
             confirmServer(host)
         case let .waitingForConfirmation(number):
             waiting(number)
-        case .unpaired(.keysUnreadable):
-            problemPage(icon: .alertCircleLarge, tint: .hmMuted, problem: .keysUnreadable) {
-                Button(L.text("pairing.retry")) { model.retryReadingKeys() }
-                    .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+        case let .unpaired(problem?) where problem == .keysUnreadable || problem == .storageUnavailable:
+            problemPage(icon: .alertCircleLarge, tint: .hmMuted, problem: problem) {
+                VStack(spacing: 6) {
+                    Button(L.text("pairing.retry")) { model.retryReadingKeys() }
+                        .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+                    linkButton(L.text("pairing.startOver")) { model.cancelPairing() }
+                }
             }
         case let .unpaired(problem?) where problem == .unreachable:
             problemPage(icon: .serverLarge, tint: .hmMuted, problem: problem) {
@@ -248,6 +251,7 @@ struct PairingView: View {
         case .unreachable: "unreachable"
         case .keysUnavailable: "keys"
         case .keysUnreadable: "keysUnreadable"
+        case .storageUnavailable: "storage"
         case .removed: "removed"
         }
     }

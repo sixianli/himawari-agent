@@ -37,3 +37,6 @@
 "pairing.connect" = "Connect";
 "pairing.problem.keysUnreadable" = "Your pairing and chats are still here. Unlock the phone and come back to try again automatically";
 "pairing.problem.keysUnreadable.title" = "Can’t read this iPhone’s keys right now";
+"pairing.problem.storage" = "Your pairing and chats are still here. Unlock the phone, free some space, and come back to try again automatically";
+"pairing.problem.storage.title" = "Can’t open this phone’s storage right now";
+"pairing.startOver" = "Erase and pair again";

@@ -24,6 +24,7 @@ public enum PairingProblem: Sendable, Equatable {
     case unreachable
     case keysUnavailable
     case keysUnreadable
+    case storageUnavailable
     case removed
 
     public static func from(_ error: Error) -> PairingProblem {

@@ -108,6 +108,14 @@ import Testing
         #expect(step.phase == .waiting)
     }
 
+    @Test func aWaitingMessageRecordIsNotAnApproval() {
+        let records = [record(1, "a", .started, at: 0, activity: "正在写邮件"), record(2, "m", .waiting, at: 1, kind: .message)]
+        guard case .working = ProcessLine.make(records: records, runStatus: "running") else {
+            Issue.record("expected working")
+            return
+        }
+    }
+
     @Test func aNewerRecordEndsTheWait() {
         let records = [record(1, "a", .waiting, at: 0, activity: "要给田中发邮件，等你点头", icon: "mail"), record(2, "b", .started, at: 1, activity: "正在发邮件")]
         guard case let .working(current, _) = ProcessLine.make(records: records, runStatus: "running") else {
