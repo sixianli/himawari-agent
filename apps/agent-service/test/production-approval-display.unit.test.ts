@@ -24,6 +24,10 @@ describe("approval display facts", () => {
     expect(toolApprovalBodyText("bash", { command: "   " })).toBeNull();
     expect(toolApprovalBodyText("write", { content: 5 })).toBeNull();
     expect(toolApprovalBodyText("save_copy", { operationId: "x" })).toBeNull();
+    expect(
+      toolApprovalBodyText("send_email", { to: "tanaka@example.com", body: "周五见", path: "x" }),
+    ).toBeNull();
+    expect(toolApprovalBodyText("unknown_tool", { command: "ls", query: "q" })).toBeNull();
   });
 
   it("masks secrets and cuts the preview at the configured length", async () => {

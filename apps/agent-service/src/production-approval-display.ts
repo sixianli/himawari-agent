@@ -50,10 +50,13 @@ export function toolApprovalBodyText(
       const to = text(args["destination"]);
       return from && to ? `${from} → ${to}` : (from ?? to);
     }
-    case "save_copy":
-      return null;
-    default:
+    case "read":
+    case "ls":
+    case "find":
+    case "grep":
       return text(args["pattern"]) ?? text(args["path"]);
+    default:
+      return null;
   }
 }
 
