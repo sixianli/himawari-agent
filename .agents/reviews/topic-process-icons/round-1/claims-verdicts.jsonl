@@ -1,0 +1,3 @@
+{"id": "3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|3|找不到|-|苹果客户端的详细设计（`docs/execution/specs/2026-11-11-apple-device-body-design.md` 的“过程行的那句话和图标由 Himawari 自己给”一段，在 PR 405 的分支上）定了做法|-", "outcome": "plan-fixed", "change": "引用的详细设计不在本分支，改成指向 PR 405 提交 f7cbbf01 的链接"}
+{"id": "4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|4|找不到|-|详细设计同一段：“工具的参数结构变了，每个老对话的请求开头换新一次（Andy 2026-11-12 同意）”|-", "outcome": "plan-fixed", "change": "引用的详细设计不在本分支，改成指向 PR 405 提交 f7cbbf01 的链接"}
+{"id": "20", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|20|找不到|-|40 个图标里“结果”那 4 个（`hand-stop`、`alert-circle`、`player-stop`、`check`）是服务器知道的状态，不给模型挑|-", "outcome": "plan-fixed", "change": "引用的详细设计不在本分支，改成指向 PR 405 提交 f7cbbf01 的链接"}

@@ -35,9 +35,9 @@ date: "2026-11-12"
 ## 前提
 
 1. **Andy 同意由模型挑图标，也同意老对话的请求开头换新一次。** 来源：Andy 2026-11-12 在 iOS 设计线程的原话“同意图标由 himawari 自己从这 40 个里面挑”；[详细设计](https://github.com/sixianli/himawari-agent/blob/f7cbbf01ce61df6c3927e99c0e8407bc0a59fbe0/docs/execution/specs/2026-11-11-apple-device-body-design.md#process-row-icons)同一段：“工具的参数结构变了，每个老对话的请求开头换新一次（Andy 2026-11-12 同意）”。
-2. **Pi 允许在工具执行前就地改参数，而且改动会作用到真正的执行。** 来源：`@earendil-works/pi-coding-agent@1.5.0` 的 `docs/extensions.md` 第 973 行“Fired after `tool_execution_start`, before the tool executes”，第 982 行“Mutations to `event.input` affect the actual tool execution”，第 984 行“No re-validation is performed after your mutation”；1.5.1 同一段在第 975、984、986 行，说法相同。
-3. **Pi 的 `prepareArguments` 不是给这种用途的。** 来源：同一文件第 2302 行：“Use it to mimic an older accepted input shape when Pi resumes an older session …… Keep the public schema strict.”
-4. **Pi 校验参数时用的是副本，对话记录里保留模型的原样参数。** 来源：`@earendil-works/pi-ai@1.5.0` 的 `dist/utils/validation.js` 第 53 行：“A copy, so tools that modify their arguments never modify the tool call in the transcript.”
+2. **Pi 允许在工具执行前就地改参数，而且改动会作用到真正的执行。** 来源：Pi 1.5.0 的官方文档 <https://unpkg.com/@earendil-works/pi-coding-agent@1.5.0/docs/extensions.md> 第 973 行“Fired after `tool_execution_start`, before the tool executes”，第 982 行“Mutations to `event.input` affect the actual tool execution”，第 984 行“No re-validation is performed after your mutation”；1.5.1 的 <https://unpkg.com/@earendil-works/pi-coding-agent@1.5.1/docs/extensions.md> 同一段在第 975、984、986 行，说法相同（仓库里的转述见 [Pi 二次开发规范](../pi-development-guide.md#pattern-tool-call)）。
+3. **Pi 的 `prepareArguments` 不是给这种用途的。** 来源：<https://unpkg.com/@earendil-works/pi-coding-agent@1.5.0/docs/extensions.md> 第 2302 行：“Use it to mimic an older accepted input shape when Pi resumes an older session …… Keep the public schema strict.”
+4. **Pi 校验参数时用的是副本，对话记录里保留模型的原样参数。** 来源：<https://unpkg.com/@earendil-works/pi-ai@1.5.0/dist/utils/validation.js> 第 53 行：“A copy, so tools that modify their arguments never modify the tool call in the transcript.”
 5. **每个工具的定义都经过同一个函数。** 来源：`packages/runtime-pi/src/pi-runtime-adapter.ts` 的 `toolDefinition()`：冻结的工具、带执行句柄的工具、系统提示里的工具说明都从它取（`frozenDefinitions`、`requestTools`、`productSystemPrompt`）。
 6. **参数结构变了，老对话会换新一次冻结的开头。** 来源：`packages/application/src/services/thread-prompt-bundle-service.ts` 的 `toolSchemaChanged`：“`current.has(name) && current.get(name) !== schema`”；规则 `.claude/rules/prompt-prefix.md` 第 6 条：“工具集合变了（工具名，或者去掉说明文字后的参数结构）……才换新一次”。
 7. **开始执行时的过程事件里本来就带着模型给的参数。** 来源：`pi-runtime-adapter.ts` 的 `case "tool_execution_start"`：`arguments: event.args` 写进 `tool_intent` 记录。
@@ -88,7 +88,7 @@ date: "2026-11-12"
 - **对话记录里保留模型的原样参数。**模型下一轮看到的历史里，工具调用仍带着它自己写的 `activity` 和 `activityIcon`（前提 4），这符合只追加，不改历史。
 - **网关契约变了。**过程记录多了两个必填字段，旧版网页和旧版手机解析新记录会报“unknown field”。网页和服务器一起上线；手机客户端在 iOS 第 2 批按新形状解析。
 - **网页暂时不显示这句话。**网页的过程区仍用模板句子；要不要改用模型那句话，按详细设计“网页的过程区可以用同一句话”另行决定，改了要做真实网页上的正反两种验收。
-- **测试。**`packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts` 的 `[ICON-1]` 用真实的 Pi 1.5.0 会话和假模型锁住：工具定义带这两个参数、系统提示只出现一次图标表、工具执行和权限判断拿到的参数里没有它们、工具自己的同名参数原样保留、过程事件里仍有它们；把钩子里的删除去掉，这条测试会失败。`test/integration/thread-run-lifecycle.test.ts` 的 `[ICON-2]` 用真实 SQLite 锁住过程记录的两个字段、退回 `tools`、`input` 里不再有它们，并用网关契约逐条解析。
+- **测试。**`packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts` 的 `[ICON-1]` 用真实的 Pi 1.5.0 会话和假模型锁住：工具定义带这两个参数、系统提示只出现一次图标表、工具执行和权限判断拿到的参数里没有它们、工具自己的同名参数原样保留、过程事件里仍有它们。`test/integration/thread-run-lifecycle.test.ts` 的 `[ICON-2]` 用真实 SQLite 锁住过程记录的两个字段、退回 `tools`、`input` 里不再有它们，并用网关契约逐条解析。
 - **请求字节的对照文件更新了。**`packages/runtime-pi/test/fixtures/d4-golden-requests.json` 的两条请求体换成带新参数和图标表的版本，其他字段不变。
 
 [返回阅读导航](#contents)
