@@ -1,7 +1,6 @@
 source "$HERE/runners.sh"
 
 REPO=${HIMAWARI_REPO:-sixianli/himawari-agent}
-LABEL=$RUNNER_LABEL
 CI_VPS=${CI_VPS_SSH:-ubuntu@158.69.191.249}
 REMOTE=${CI_RUNNER_DIR:-/home/ubuntu/ci-runner}
 LOCK=${RUNNER_LOCK_DIR:-.ci-output/ci-runner-pause.lock}
@@ -45,9 +44,17 @@ runner_field() {
 
 has_label() {
   case ",$1," in
-    *",$LABEL,"*) return 0 ;;
+    *",$2,"*) return 0 ;;
   esac
   return 1
+}
+
+managed_labels_on() {
+  local label found=""
+  for label in $RUNNER_LABELS; do
+    has_label "$1" "$label" && found="$found $label"
+  done
+  echo $found
 }
 
 reconcile_runners() {
@@ -59,35 +66,45 @@ reconcile_runners() {
   done
   while IFS=$'\t' read -r id name _ _ labels; do
     [ -n "$id" ] || continue
-    has_label "$labels" || continue
+    [ -n "$(managed_labels_on "$labels")" ] || continue
     case " $(echo $names) " in
       *" $name "*) ;;
-      *) echo "GitHub runner $name carries $LABEL but is not installed on $RUNNER_HOST"; return 1 ;;
+      *) echo "GitHub runner $name carries $(managed_labels_on "$labels") but is not installed on $RUNNER_HOST"; return 1 ;;
     esac
   done <<< "$table"
 }
 
+own_label() {
+  runner_label_for_name "$1" || { echo "no label is defined for runner $1" >&2; return 1; }
+}
+
 label_states() {
-  local names=$1 table=$2 name count states=""
+  local names=$1 table=$2 name count labels own states=""
   for name in $names; do
     count=$(runner_field "$table" "$name" 1 | grep -c .)
-    if [ "$count" != 1 ]; then
+    labels=$(runner_field "$table" "$name" 5)
+    own=$(own_label "$name" 2> /dev/null)
+    if [ "$count" != 1 ] || [ -z "$own" ]; then
       states="$states $name=unread"
-    elif has_label "$(runner_field "$table" "$name" 5)"; then
+    elif [ "$(managed_labels_on "$labels")" = "$own" ]; then
       states="$states $name=on"
-    else
+    elif [ -z "$(managed_labels_on "$labels")" ]; then
       states="$states $name=off"
+    elif has_label "$labels" "$own"; then
+      states="$states $name=extra"
+    else
+      states="$states $name=foreign"
     fi
   done
   echo $states
 }
 
 add_label() {
-  gh api -X POST "repos/$REPO/actions/runners/$1/labels" -f "labels[]=$LABEL" > /dev/null
+  gh api -X POST "repos/$REPO/actions/runners/$1/labels" -f "labels[]=$2" > /dev/null
 }
 
 remove_label() {
-  gh api -X DELETE "repos/$REPO/actions/runners/$1/labels/$LABEL" > /dev/null
+  gh api -X DELETE "repos/$REPO/actions/runners/$1/labels/$2" > /dev/null
 }
 
 service_states() {

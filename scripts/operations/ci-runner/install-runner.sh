@@ -27,7 +27,7 @@ for id in $RUNNER_IDS; do
   fi
 done
 
-INSTALL_PATHS="$UNIT_DIR/gh-runners.slice $UNIT_DIR/gh-runner-nft.service $UNIT_DIR/gh-runner-clean.service $UNIT_DIR/gh-runner-clean.timer /etc/gh-runner $SUDOERS_FILE $SHARED/bin"
+INSTALL_PATHS="$UNIT_DIR/gh-runners.slice $UNIT_DIR/ghgate.slice $UNIT_DIR/gh-runner-nft.service $UNIT_DIR/gh-runner-clean.service $UNIT_DIR/gh-runner-clean.timer /etc/gh-runner $SUDOERS_FILE $SHARED/bin"
 for id in $RUNNER_IDS; do
   runner_select "$id"
   INSTALL_PATHS="$INSTALL_PATHS $UNIT_DIR/$RUNNER_UNIT $RUNNER_ROOT/hooks"
@@ -108,7 +108,7 @@ done
 rm -f -- "$SHARED/bin/runner-pause.sh" "$SHARED/bin/runner-resume.sh" "$SHARED/bin/runners.sh"
 [ ! -d "$SHARED/bin" ] || rmdir --ignore-fail-on-non-empty -- "$SHARED/bin"
 install -m 0755 -o root -g root "$SRC/clean-old.sh" "$SRC/runners.sh" "$SHARED/hooks/"
-install -m 0644 -o root -g root "$SRC/gh-runners.slice" "$SRC/gh-runner-nft.service" "$SRC/gh-runner-clean.service" "$SRC/gh-runner-clean.timer" "$UNIT_DIR/"
+install -m 0644 -o root -g root "$SRC/gh-runners.slice" "$SRC/ghgate.slice" "$SRC/gh-runner-nft.service" "$SRC/gh-runner-clean.service" "$SRC/gh-runner-clean.timer" "$UNIT_DIR/"
 
 apply_runner_controls
 

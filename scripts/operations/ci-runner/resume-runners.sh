@@ -18,13 +18,14 @@ interrupted() {
 
 trap interrupted INT TERM HUP
 for name in $NAMES; do
-  has_label "$(runner_field "$TABLE" "$name" 5)" && continue
-  add_label "$(runner_field "$TABLE" "$name" 1)" || echo "could not add $LABEL to $name"
+  OWN=$(own_label "$name") || continue
+  has_label "$(runner_field "$TABLE" "$name" 5)" "$OWN" && continue
+  add_label "$(runner_field "$TABLE" "$name" 1)" "$OWN" || echo "could not add $OWN to $name"
 done
 TABLE=$(github_runners) || TABLE=""
 STATES=$(label_states "$NAMES" "$TABLE")
 case " $STATES " in
-  *=off\ * | *=unread\ *)
+  *=off\ * | *=unread\ * | *=foreign\ *)
     echo "RUNNER_RESUME_INCOMPLETE labels: $STATES; services not started, queued jobs keep waiting, run resume-runners.sh again"
     exit 1
     ;;
