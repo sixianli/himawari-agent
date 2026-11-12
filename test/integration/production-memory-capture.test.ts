@@ -2779,6 +2779,19 @@ describe("production memory capture", () => {
       expect(waiting).toBe(3);
       expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(2);
 
+      await expect(
+        context.ruleWriterWith({ proposalLimit: 201 }).create({
+          key: "over-limit",
+          quote: sentence,
+          inferred: true,
+          type: "mail_must_notify",
+          params: { senderDomains: ["over.example"] },
+          summary: "入管局的邮件一律提醒",
+          threadId: THREAD_ID,
+        }),
+      ).rejects.toThrow("limit is invalid");
+      expect(payloadCount()).toBe(4);
+
       context.clock.value = new Date(Date.parse(T0) + 31 * 86_400_000).toISOString();
       expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(0);
       expect(stored().filter((row) => row.kept > 0)).toHaveLength(2);

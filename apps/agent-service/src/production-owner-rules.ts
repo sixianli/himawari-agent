@@ -8,7 +8,6 @@ import {
   type MemoryBookStorePort,
   OWNER_RULE_ID_PREFIX,
   OWNER_RULE_SUMMARY_LIMIT,
-  OWNER_RULE_PROPOSALS_LISTED_MAX,
   type OwnerRuleProposalOrigin,
   type OwnerRuleProposalStorePort,
   type OwnerRuleReplayResult,
@@ -855,10 +854,7 @@ export class ProductionOwnerRuleWriter {
   }
 
   #limit(): number {
-    return Math.min(
-      this.#options.proposalLimit ?? PENDING_PROPOSAL_LIMIT,
-      OWNER_RULE_PROPOSALS_LISTED_MAX,
-    );
+    return this.#options.proposalLimit ?? PENDING_PROPOSAL_LIMIT;
   }
 
   #ttlDays(): number {

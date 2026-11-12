@@ -1,8 +1,7 @@
-import {
-  OWNER_RULE_PROPOSALS_LISTED_MAX,
-  type OwnerRuleProposalOutcome,
-  type OwnerRuleProposalStorePort,
-  type StoredOwnerRuleProposal,
+import type {
+  OwnerRuleProposalOutcome,
+  OwnerRuleProposalStorePort,
+  StoredOwnerRuleProposal,
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
@@ -11,6 +10,7 @@ type Input<TName extends keyof OwnerRuleProposalStorePort> = Parameters<
   OwnerRuleProposalStorePort[TName]
 >[0];
 
+const MAX_LISTED = 200;
 const PROPOSAL_ID = /^rule-proposal:[0-9a-f]{32}$/u;
 
 const columns = `id AS proposalId, rule_type AS ruleType, summary, origin, thread_id AS threadId,
@@ -98,7 +98,11 @@ export class SqliteOwnerRuleProposalOperations {
     const proposalId = this.proposalId(input.proposalId);
     if (!valid(input.now) || !valid(input.expiresAt) || input.expiresAt <= input.now)
       this.invalid("Owner rule proposal time is invalid");
-    if (!Number.isInteger(input.pendingLimit) || input.pendingLimit < 1)
+    if (
+      !Number.isInteger(input.pendingLimit) ||
+      input.pendingLimit < 1 ||
+      input.pendingLimit > MAX_LISTED
+    )
       this.invalid("Owner rule proposal limit is invalid");
     if (input.origin !== "owner_said" && input.origin !== "inferred")
       this.invalid("Owner rule proposal origin is invalid");
@@ -190,7 +194,7 @@ export class SqliteOwnerRuleProposalOperations {
     readonly pendingCount: number;
   } {
     if (!valid(input.now)) this.invalid("Owner rule proposal time is invalid");
-    const limit = Math.min(Math.max(1, Math.trunc(input.limit)), OWNER_RULE_PROPOSALS_LISTED_MAX);
+    const limit = Math.min(Math.max(1, Math.trunc(input.limit)), MAX_LISTED);
     return this.database.transaction(() => {
       this.expire(input.ownerId, input.agentId, input.now);
       const rows = this.database
@@ -249,7 +253,7 @@ export class SqliteOwnerRuleProposalOperations {
     input: Input<"settledEvidence">,
   ): readonly { readonly proposalId: string; readonly evidenceRef: string }[] {
     if (!valid(input.now)) this.invalid("Owner rule proposal time is invalid");
-    const limit = Math.min(Math.max(1, Math.trunc(input.limit)), OWNER_RULE_PROPOSALS_LISTED_MAX);
+    const limit = Math.min(Math.max(1, Math.trunc(input.limit)), MAX_LISTED);
     return this.database.transaction(() => {
       this.expire(input.ownerId, input.agentId, input.now);
       return Object.freeze(
