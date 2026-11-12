@@ -300,6 +300,7 @@ export class ActionPolicyService {
       readonly uiAvailable: boolean;
       readonly approvalExpiresAt: string;
       readonly display?: () => Promise<ApprovalDisplayInput>;
+      builtDisplay?: ApprovalDisplay;
       readonly signal?: AbortSignal;
     },
     allowReview: boolean,
@@ -494,12 +495,12 @@ export class ActionPolicyService {
         return this.evaluateCurrent(intent, options, false);
       }
       options.signal?.throwIfAborted();
-      const display = await this.approvalDisplay(options.display);
-      options.signal?.throwIfAborted();
-      now = this.dependencies.clock.now();
-      if (now >= intent.expiresAt) return this.finish(intent, "DENY", "intent_expired", now, false);
-      if (options.approvalExpiresAt <= now)
-        return this.finish(intent, "DENY", "approval_expiry_invalid", now, true);
+      if (!options.builtDisplay) {
+        options.builtDisplay = await this.approvalDisplay(options.display);
+        options.signal?.throwIfAborted();
+        return this.evaluateCurrent(source, options, allowReview);
+      }
+      const display = options.builtDisplay;
       const request: GovernedApprovalRequest = Object.freeze({
         id: this.dependencies.ids.next("approval"),
         display,

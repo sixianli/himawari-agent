@@ -1596,7 +1596,12 @@ export async function startTenantRuntime(
             );
           if (!thread?.titleRef) return null;
           const payload = await episodePayloads.get(thread.titleRef);
-          if (!payload || payload.contentType !== "text/plain") return null;
+          if (
+            !payload ||
+            payload.contentType !== "text/plain" ||
+            !["public", "private"].includes(payload.dataClassification)
+          )
+            return null;
           const title = new TextDecoder("utf-8", { fatal: true }).decode(
             await episodeProtector.unprotect({
               ownerId: configuration.ownerId,
