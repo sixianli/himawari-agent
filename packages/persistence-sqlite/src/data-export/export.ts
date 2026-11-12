@@ -481,8 +481,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     const digest = str(row["text_sha256"]);
     if (withheld) originals[externalProposalDigestKey(id)] = digest;
     const supersededBy = optionalString(row["superseded_by"]);
-    const storedMemoryId = optionalString(row["memory_id"]);
-    const memoryId = keepMemoryRef(storedMemoryId);
+    const memoryId = keepMemoryRef(optionalString(row["memory_id"]));
     return {
       id,
       subjectRef: safeString(str(row["subject_ref"])),
@@ -496,7 +495,9 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       receivedAt: str(row["received_at"]),
       decidedAt: optionalString(row["decided_at"]),
       batchId:
-        storedMemoryId !== null && memoryId === null ? null : optionalString(row["batch_id"]),
+        str(row["status"]) === "committed" && memoryId === null
+          ? null
+          : optionalString(row["batch_id"]),
       memoryId,
       supersededBy: supersededBy !== null && proposalIds.has(supersededBy) ? supersededBy : null,
       content,
@@ -572,6 +573,11 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       what: "分级为受限（restricted）的记忆",
       count: snapshot.restrictedMemories,
       reason: "按产品规则不应存在；遇到时只计数，不导出",
+    },
+    {
+      what: "保存进受限（restricted）记忆的其他 agent 提议",
+      count: snapshot.restrictedProposals,
+      reason: "正文就是那条受限记忆的文字，和受限记忆一样不导出",
     },
     {
       what: "写入时原文已被删除的历史版本和引用原话",

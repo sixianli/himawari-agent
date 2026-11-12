@@ -305,37 +305,86 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
     expect(imported.texts["proposal-pending"]).toBe("主人周末喜欢去镰仓");
   });
 
-  it("drops the link and the batch of a saved proposal whose memory is not exported, and keeps it as saved", async () => {
+  it("[reverse] leaves out a proposal saved into a restricted memory, text and all", async () => {
     const source = await seeded();
     await seedMemory(source, {
       id: "memory-restricted",
-      text: "受限的记忆",
+      text: "受限的记忆正文",
       classification: "restricted",
     });
     await seedProposal(source, {
       id: "proposal-restricted-link",
-      text: "受限的记忆",
+      text: "受限的记忆正文",
       status: "committed",
       batchId: "batch-2",
       memoryId: "memory-restricted",
     });
+    const { files, manifest } = await exportOf(source);
+    for (const [path, bytes] of files)
+      if (path !== SEALED_FILE) {
+        expect(decoder.decode(bytes)).not.toContain("受限的记忆正文");
+        expect(decoder.decode(bytes)).not.toContain("proposal-restricted-link");
+      }
+    expect(manifest.counts.externalProposals).toBe(5);
+    expect(
+      manifest.omitted.find(({ what }) => what.includes("受限（restricted）记忆的其他 agent 提议"))
+        ?.count,
+    ).toBe(1);
+  });
+
+  it("drops the batch of a saved proposal whose memory was already deleted, so the batch does not count it", async () => {
+    const source = await seeded();
+    await seedProposal(source, {
+      id: "proposal-memory-gone",
+      text: "记忆已经删掉的提议",
+      status: "committed",
+      batchId: "batch-1",
+    });
     const { files } = await exportOf(source);
-    const target = await side("proposals-links");
+    const target = await side("proposals-memory-gone");
     await importInto(target, files, PASSPHRASE);
-    const rows = target.database
-      .prepare(
-        "SELECT id, status, memory_id, batch_id FROM external_memory_proposals WHERE status = 'committed' ORDER BY id",
-      )
-      .all();
-    expect(rows).toEqual([
-      {
-        id: "proposal-committed",
-        status: "committed",
-        memory_id: "memory-kept",
-        batch_id: "batch-1",
-      },
-      { id: "proposal-restricted-link", status: "committed", memory_id: null, batch_id: null },
-    ]);
+    expect(
+      target.database
+        .prepare(
+          "SELECT status, memory_id, batch_id FROM external_memory_proposals WHERE id = 'proposal-memory-gone'",
+        )
+        .get(),
+    ).toEqual({ status: "committed", memory_id: null, batch_id: null });
+    expect(
+      target.database
+        .prepare(
+          "SELECT batch_id FROM external_memory_proposals WHERE id IN ('proposal-committed', 'proposal-rejected') ORDER BY id",
+        )
+        .pluck()
+        .all(),
+    ).toEqual(["batch-1", "batch-1"]);
+  });
+
+  it("imports a replaced proposal and a waiting one that share the same text digest", async () => {
+    const source = await seeded();
+    const shared = source.database
+      .prepare("SELECT text_sha256 FROM external_memory_proposals WHERE id = 'proposal-secret'")
+      .pluck()
+      .get() as string;
+    await seedProposal(source, {
+      id: "proposal-secret-copy",
+      text: SECRET_TEXT,
+      status: "superseded",
+      classification: "sensitive",
+      textSha256: shared,
+    });
+    const { files } = await exportOf(source);
+    const target = await side("proposals-shared-digest");
+    const report = await importInto(target, files, PASSPHRASE);
+    expect(report.imported.externalProposals).toBe(6);
+    expect(
+      target.database
+        .prepare(
+          "SELECT COUNT(*) FROM external_memory_proposals WHERE text_sha256 = ? AND status <> 'superseded'",
+        )
+        .pluck()
+        .get(shared),
+    ).toBe(1);
   });
 
   it("drops the link and the batch of a saved proposal whose memory is skipped without the passphrase", async () => {

@@ -711,7 +711,9 @@ export async function importPortableExport(
           item.status,
           item.receivedAt,
           item.decidedAt,
-          item.memoryId !== null && keptMemoryLink(item.memoryId) === null ? null : item.batchId,
+          item.status === "committed" && keptMemoryLink(item.memoryId) === null
+            ? null
+            : item.batchId,
           keptMemoryLink(item.memoryId),
           item.supersededBy !== null && importedProposalIds.has(item.supersededBy)
             ? item.supersededBy
