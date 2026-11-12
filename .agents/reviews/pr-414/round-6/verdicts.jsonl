@@ -1,0 +1,4 @@
+{"id": "r6-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "跨子句的一次性限定不起作用，一次性请求仍会被立成长期规则", "valid": true, "class": "error", "severity": "medium-high", "trigger": "主人说“这个月，晚上别提醒我”", "consequence": "立成永久规则", "modelSeverity": "中"}
+{"id": "r6-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 对长期有效判断的描述与代码不一致", "valid": true, "class": "better", "severity": "low", "modelSeverity": "低"}
+{"id": "r6-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新增月/年/季度词对邮件类规则同样生效，词表也有缺口", "valid": true, "class": "better", "severity": "low", "modelSeverity": "低"}
+{"id": "r6-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 验证清单没有列出本轮新增的 needs_review 用例", "valid": true, "class": "better", "severity": "low", "modelSeverity": "低"}

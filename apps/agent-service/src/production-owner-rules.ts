@@ -448,17 +448,22 @@ function containsMarker(clause: string, marker: string): boolean {
 }
 
 export function isStandingQuote(quote: string): boolean {
+  const whole = STANDING_STARTS.reduce(
+    (text, start) => text.replaceAll(start, " | "),
+    foldText(quote).replace(/\s+/gu, " "),
+  );
+  if (ONE_OFF_MARKERS.some((marker) => containsMarker(whole, marker))) return false;
   return foldText(quote)
     .split(CLAUSE_BREAK)
     .map((clause) => clause.replace(/\s+/gu, " ").trim())
     .filter((clause) => clause.length > 0)
     .some((clause) => {
       const rest = STANDING_STARTS.reduce((text, start) => text.replaceAll(start, " | "), clause);
-      const standing =
+      return (
         STANDING_MARKERS.some((marker) => containsMarker(rest, marker)) ||
         (QUIET_REQUEST_MARKERS.some((marker) => containsMarker(rest, marker)) &&
-          RECURRING_TIME_MARKERS.some((marker) => containsMarker(rest, marker)));
-      return standing && !ONE_OFF_MARKERS.some((marker) => containsMarker(rest, marker));
+          RECURRING_TIME_MARKERS.some((marker) => containsMarker(rest, marker)))
+      );
     });
 }
 

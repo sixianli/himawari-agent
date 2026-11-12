@@ -50,7 +50,7 @@ date: "2026-11-12"
 2. **新增闸门名 `push_delivery`**，事实有四个：`push_class`（`scheduled_reminder`、`approval`、`run_result`、`mail_reminder`、`muse_outage`、`unknown`）、`local_minutes`、`local_weekday`、`local_previous_weekday`（主人所在时区，默认 `"UTC"`，生产配置里写实际时区）。规则的结果只有一种：延后到静默时段结束。
 3. **审批、Muse 告警和认不出的来源由代码直接放行，不交给规则判断。**这样规则写错、判断器出错都拦不住它们。目前唯一的规则类型也不碰审批；Andy 11-10 定的“普通审批可以延后但不得过期、高风险审批和告警不受影响”留给以后扩展，到时另写 ADR。
 4. **新增主人规则类型 `push_quiet_hours`**：参数是时段（`periods`，每段有星期、开始、结束，可跨零点）和适用类别（`classes`）。默认管任务完成或失败、邮件提醒；主人明说“包括我自己定的提醒”才含到点提醒。注册时必须带测试文件（`packages/application/test/rule-type-push-quiet-hours.unit.test.ts`），规则自带的命中和不命中例子必须能在判断器里重现。不再另做设置页开关。
-5. **一句话立规则要认得“夜里别提醒我”。**`rule_set` 里“这是长期有效的话”的判断词表（`production-owner-rules.ts` 的 `STANDING_MARKERS`）加了“别提醒我、不要提醒我、别打扰我”等说法；带“今晚、今夜、现在、这次、这封”之类一次性词的句子仍然只算提议；“从现在起”这类开头不算一次性。`rule_set` 的工具定义改了，所以这次上线后所有老对话的系统提示和工具重建一次（Andy 已接受）。
+5. **一句话立规则要认得“夜里别提醒我”。**`rule_set` 里“这是长期有效的话”的判断另加了一族“别提醒我、不要提醒我、别打扰我”的说法（`QUIET_REQUEST_MARKERS`），它单独不算长期，必须同时有“夜里、晚上、周末、每天”这类反复出现的时段词（`RECURRING_TIME_MARKERS`）才算；整句话里只要有“今晚、现在、这次、这封、明天、这个周末、下个月、今年”之类一次性或限时的词（`ONE_OFF_MARKERS`，不分子句），就只算提议；“从现在起”这类开头不算一次性。这张词表对所有规则类型通用，所以“今年起每次……”这类邮件规则也只会先成提议，不会直接生效；词表是启发式的，漏掉的说法最坏结果是多立一条主人可以撤销的规则。`rule_set` 的工具定义改了，所以这次上线后所有老对话的系统提示和工具重建一次（Andy 已接受）。
 6. **延后存在推送出站表上。**新列 `defer_until`、`defer_rule_refs`；`listDue` 跳过还没到点的行。延后到的时刻最多 24 小时之后；延后后有效期延长到延后时刻再加 1 小时，从入队起算总寿命最长 48 小时，不会无限延后。主人改、停、删任何一条规则，数据库触发器会把所有延后清空，下一轮重新判断。**迁移里的这三个触发器挂在表 `rule_book_rules` 上：以后谁重建这张表，必须把它们一并重建。**
 7. **判断器或规则读取出错，推送照发，并告警**（`onGateFailure`，每条推送来源各报一次）。存着的静默规则读不懂（例如参数被改坏）也算读取出错：整类推送照发并告警，不会悄悄当成“没有这条规则”。拦不住一条推送，好过吞掉它。
 8. **每次延后写一条决策记录。**表 `decision_ledger` 新增种类 `web_push`，结果固定为 `deferred`；和出站表更新放在同一个事务里写（`deferItem` 开事务，记录写不进就整体回滚，推送照发并告警），编号由主人、实例、来源键、延后到的时刻算出，同一次延后只写一条；`ruleIds` 写让它延后的规则“规则 id@修订号”（[ADR 0215](0215-decision-record-points-at-the-rule-version.md)）。这个种类不进「每天打分」、不进校准分组、不要求主人打分。延后到几点不进决策记录，只在出站表里。写入约定见 [决策记录写入约定](../execution/specs/2026-11-09-decision-record-write-convention.md)。
@@ -97,6 +97,7 @@ date: "2026-11-12"
 - `test/integration/production-web-push.test.ts` 的 `[HR-4]` 用例：真实 SQLite，延后、一次写入、早上发给所有设备；没有规则时立刻发（反向）；审批不延后（反向）；撤销规则立即放出；延后期间新订阅的设备；到点提醒只在规则点名时才延后；规则读取失败照发并告警（反向）；决策记录只在延后时写（反向：没延后没记录）。
 - `packages/persistence-sqlite/test/web-push-gate-migration.contract.test.ts`：重建后决策记录、信号、预评一条不丢，不许改的触发器还在；`web_push` 只接受 `deferred`（反向）。
 - `packages/application/test/rule-type-push-quiet-hours.unit.test.ts`、`web-push-gate.unit.test.ts`、`rule-version.unit.test.ts`：规则类型、闸门、规则版本展示。
+- `test/integration/production-web-push.test.ts` 的 `[HR-4]`：待重审（`needs_review`）的规则与生效规则一样延后并延长有效期；规则在读取后、写入前被撤销，不留延后。
 - `test/integration/production-memory-capture.test.ts` 的 `[HR-4]`：经 `rule_set` 工具，“夜里别提醒我”立成生效规则，错误时段被拒绝；“今晚别提醒我”不算长期有效。
 - `test/integration/data-export-rules.test.ts` 的 `[HR-4]`：规则随数据导出导入往返。
 
