@@ -724,7 +724,7 @@ describe("[IOS-4] push channels", () => {
     expect(context.apns.requests).toEqual([]);
   });
 
-  it("[IOS-4] tells a device to wipe its local data before it is revoked, and a revoked device loses its tokens", async () => {
+  it("[IOS-4] tells a device to wipe its local data only after it is revoked, and a revoked device loses its tokens", async () => {
     const context = await setup();
     context.device(IPHONE, "iphone");
     const registration = await context.register(IPHONE, "alert");
@@ -807,6 +807,10 @@ describe("[IOS-4] push channels", () => {
     await context.push.tick();
     expect(context.apns.ofType("liveactivity")).toHaveLength(1);
     context.apns.respond = () => ({ status: 200 });
+    context.setClock(at(T0, 60));
+    await context.push.tick();
+    expect(context.apns.ofType("liveactivity")).toHaveLength(1);
+    context.setClock(at(T0, 92));
     await context.push.tick();
     await context.push.tick();
     expect(context.apns.ofType("liveactivity")).toHaveLength(2);

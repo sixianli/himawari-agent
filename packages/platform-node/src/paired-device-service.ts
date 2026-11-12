@@ -276,12 +276,12 @@ export class PairedDeviceService {
   async revoke(
     scope: PairedDeviceScope & { readonly deviceId: string; readonly expectedRevision: number },
   ): Promise<PairedDevice> {
-    const afterRevoke = await this.#options.prepareRevoke?.(scope.deviceId);
+    const afterRevoke = await this.#options.prepareRevoke?.(scope.deviceId).catch(() => undefined);
     const device = await this.#options.store.revokeDevice({
       ...scope,
       now: this.#now().toISOString(),
     });
-    await afterRevoke?.();
+    await afterRevoke?.().catch(() => undefined);
     return device;
   }
 

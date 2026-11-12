@@ -46,8 +46,14 @@ afterEach(async () => {
   await removeDeviceHarnessDirectories();
 });
 
-async function start(configuration: ApplePushConfiguration | null = applePush) {
-  const h = await harness(configuration ? { applePush: configuration } : {});
+async function start(
+  configuration: ApplePushConfiguration | null = applePush,
+  revokeHookFails?: "prepare" | "wipe",
+) {
+  const h = await harness({
+    ...(configuration ? { applePush: configuration } : {}),
+    ...(revokeHookFails ? { revokeHookFails } : {}),
+  });
   closers.push(async () => {
     await h.app.close();
     await h.repository.close();
@@ -626,5 +632,26 @@ describe("[IOS-4] 通知反馈和在线状态", () => {
         deviceId: client.deviceId,
         visible: false,
       });
+  });
+
+  it("清除推送准备或发送失败时，设备照样被移除", async () => {
+    for (const failing of ["prepare", "wipe"] as const) {
+      const h = await start(applePush, failing);
+      const client = await pairAndConfirm(h);
+      const device = (await h.repository.pairedDevices().listDevices(scope)).find(
+        ({ id }) => id === client.deviceId,
+      );
+      const revoked = await web(h, "revoke", {
+        deviceId: client.deviceId,
+        expectedRevision: device?.revision,
+      });
+      expect([failing, revoked.status]).toEqual([failing, 200]);
+      expect(h.wiped).toEqual([]);
+      expect(
+        (await h.repository.pairedDevices().listDevices(scope)).find(
+          ({ id }) => id === client.deviceId,
+        )?.status,
+      ).toBe("revoked");
+    }
   });
 });

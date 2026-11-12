@@ -1487,6 +1487,8 @@ it("[IOS-4] accepts Apple push only with an apple-push secret, web push, Apple i
     { ...base, liveActivityStaleAfterSeconds: 86_401 },
     { ...base, actionTokenLifetimeSeconds: 59 },
     { ...base, requestTimeoutSeconds: 1.5 },
+    { ...base, liveActivityRegistrationsPerDevice: 0 },
+    { ...base, liveActivityRegistrationsPerDevice: 65 },
     { ...base, signingKey: "inline" },
   ])
     expect(() => parse(applePush), JSON.stringify(applePush)).toThrow();

@@ -500,9 +500,10 @@ export class SqliteApplePushOperations {
       this.database
         .prepare(
           `DELETE FROM notification_action_tokens
-            WHERE device_id = ? AND source_key = ? AND used_at IS NULL`,
+            WHERE owner_id = ? AND agent_id = ? AND source_key = ? AND device_id = ?
+              AND used_at IS NULL`,
         )
-        .run(input.deviceId, input.sourceKey);
+        .run(input.ownerId, input.agentId, input.sourceKey, input.deviceId);
       const insert = this.database.prepare(
         `INSERT INTO notification_action_tokens (
           token_hash, owner_id, agent_id, device_id, source_key, action, owner_presence,

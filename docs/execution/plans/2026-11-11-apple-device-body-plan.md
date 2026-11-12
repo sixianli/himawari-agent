@@ -99,7 +99,7 @@ Andy 2026-11-11 21:32（日本时间）同意开工：“那这样，我们先�
 - 一份迁移：`apns_registrations`、`notification_action_tokens` 两张新表；投递记录表和通知反馈表重建，多认 `apns` 通道；待发通知表多一列通道；设备表多一列“配对手表属于哪台 iPhone”。
 - 苹果推送的发送器（HTTP/2，用 `.p8` 密钥签发的令牌认证，令牌 50 分钟换一次）、三种推送类型的投递（提醒、小组件刷新、实时活动）、移除设备时的“清掉本地数据”推送。这条推送在移除成功之后才发（移除请求因版本不对被拒时不发），发给移除前记下的提醒令牌；设备管理接口和 v2 的 `device.revoke` 都走这一步。它只是尽力送达：没登记提醒令牌的设备、从网页“登录设备”列表里移除的设备收不到，所以客户端在任何请求收到 `DEVICE_REVOKED` 时也必须自己清掉本地数据。
 - 设备接口四条：`POST push/register`、`POST approvals/respond`、`POST feedback`、`POST companions`；设备事件流连着算“正在看”，同一台设备开着几条事件流时，最后一条断开才算不在看。
-- 配置 `runPolicy.applePush` 和密钥用途 `apple-push`。每台设备最多保留几条实时活动登记由 `liveActivityRegistrationsPerDevice` 定（默认 8），超出时删掉最旧的；第 3 批的用量上限表进 main 后，把这一项挪进那张表，让主人在设置里看得见。
+- 配置 `runPolicy.applePush` 和密钥用途 `apple-push`。每台设备最多保留几条按运行的实时活动登记由 `liveActivityRegistrationsPerDevice` 定（默认 8，用来收“开始”的那一条不算在内），超出时删掉最久没更新的；第 3 批的用量上限表进 main 后，把这一项挪进那张表，让主人在设置里看得见。
 - 测试：`test/integration/push-channels.test.ts`、`test/integration/notification-actions.test.ts`、`test/integration/apple-push-sender.test.ts`（苹果服务器用本机的 HTTP/2 桩代替）、迁移保数据的测试、配置解析的测试、导出的反向断言。
 
 **这一批没做、留到后面的：**

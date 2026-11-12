@@ -105,6 +105,7 @@ export async function harness(
     readonly staticRoot?: string;
     readonly pairingAccess?: DevicePairingAccess;
     readonly applePush?: ApplePushConfiguration;
+    readonly revokeHookFails?: "prepare" | "wipe";
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -314,7 +315,9 @@ export async function harness(
         onWarning: (warning) => warnings.push(warning),
         prepareRevoke: async (deviceId) => {
           revoking.push(deviceId);
+          if (options.revokeHookFails === "prepare") throw new Error("PREPARE_WIPE_FAILED");
           return async () => {
+            if (options.revokeHookFails === "wipe") throw new Error("WIPE_FAILED");
             wiped.push(deviceId);
           };
         },

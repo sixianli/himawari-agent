@@ -728,7 +728,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           body: json(request),
         });
         const approval = token.approval;
-        if (approval === null || (token.action !== "approve" && token.action !== "deny"))
+        if (approval === null)
           throw new DevicePushError(DEVICE_PUSH_ERROR_CODES.ACTION_INVALID, 410);
         const reference = token.tokenHash.slice(0, 40);
         try {

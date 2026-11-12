@@ -9,6 +9,7 @@ import {
   type ApplePushEnvironment,
   type ApplePushStorePort,
   type ApplePushType,
+  NOTIFICATION_ACTIONS,
   type NotificationActionToken,
   type PairedDevice,
   type PairedDeviceScope,
@@ -194,7 +195,11 @@ export class DevicePushService implements DevicePushPort {
       now: this.#options.now().toISOString(),
     };
     const read = await this.#options.store.readActionToken(request);
-    if (read.kind === "rejected" || read.token.approval === null)
+    if (
+      read.kind === "rejected" ||
+      read.token.approval === null ||
+      !(NOTIFICATION_ACTIONS as readonly string[]).includes(read.token.action)
+    )
       throw new DevicePushError(DEVICE_PUSH_ERROR_CODES.ACTION_INVALID, 410);
     if (read.token.action === "approve" && read.token.ownerPresence && !input.confirmed)
       throw new DevicePushError(DEVICE_PUSH_ERROR_CODES.ACTION_CONFIRM_REQUIRED, 403);
