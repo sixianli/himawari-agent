@@ -31,7 +31,7 @@ GitHub 产物（artifact，工作流上传到 GitHub、之后可下载的文件�
 - 每个检查作业上传失败诊断 `diagnostic-`，保留 1 天；
 - `main.yml` 的路径选择作业把证据交给确认作业，确认作业上传 `main-confirmation-` 报告；`quality.yml` 上传检测结果，`handoff` 作业下载 `report-` 和 `gate-` 产物。
 
-2026-11-11 起所有运行都在上传步骤失败，`ci/required` 全红（[I-94](../incidents-and-gates.md#incidents)）。前提和来源：
+2026-11-11 起所有运行都在上传步骤失败，`ci/required` 全红（[I-95](../incidents-and-gates.md#incidents)）。前提和来源：
 
 1. 免费账号的产物和 Packages 共用 500 MB 额度，按小时累计到整个账单周期；没有付款方式时，额度用完就被拦。来源 <https://docs.github.com/en/billing/concepts/product-billing/github-actions>，原话：“Storage charges accrue every hour based on your actual usage throughout the month”，“usage is blocked once you use up your quota”。2026-11-12 07:13 JST 删掉旧产物 9 小时后仍被拒。
 2. 日志算不算存储，两份官方材料说法相反。计费页说日志和作业摘要“do not count towards the repository owner's artifact storage allowance”；2026-08-27 的 GitHub Changelog 说“Artifacts and logs count toward your billable GitHub Actions storage”。本决定按较严的说法处理：日志尽量少写，保留期尽量短。

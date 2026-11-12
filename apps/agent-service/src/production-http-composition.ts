@@ -117,6 +117,10 @@ import {
   PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
   ProductionSensitiveInterceptionsControl,
 } from "./production-sensitive-interceptions-control.js";
+import {
+  PRODUCTION_SERVER_STATUS_OPERATIONS,
+  ProductionServerStatusControl,
+} from "./production-server-status-control.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -683,6 +687,7 @@ function routeOptions(
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
+        ...PRODUCTION_SERVER_STATUS_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1141,6 +1146,11 @@ export async function createProductionHttpComposition(
       store: repository.sensitiveInterceptions(),
       clock: { now: clock },
       beforeRead: () => flushSensitiveInterceptions(repository),
+    }),
+    serverStatusControl: new ProductionServerStatusControl({
+      configuration,
+      health,
+      clock: { now: clock },
     }),
   });
   const app = buildHttpGatewayServer({

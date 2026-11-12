@@ -654,7 +654,7 @@ describe("CI policy contract", () => {
     ["policy", "browser", "coverage", "required"].flatMap((id) =>
       formerArtifactActions.map((uses) => [id, uses]),
     ),
-  )("[I-94] rejects a GitHub artifact step in %s: %s", (id, uses) => {
+  )("[I-95] rejects a GitHub artifact step in %s: %s", (id, uses) => {
     const value = workflow();
     value.jobs[id].steps.push({ uses, with: { name: "x", path: ".ci-output/gate/" } });
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
