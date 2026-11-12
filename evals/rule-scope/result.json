@@ -1,0 +1,3857 @@
+{
+  "gateway": "https://opencode.ai/inference/go/v1",
+  "mainModel": "deepseek-v4.1-flash",
+  "verifierModel": "glm-5.3-flash",
+  "runs": 3,
+  "spentUsd": 0.05258316800000001,
+  "usage": {
+    "deepseek-v4.1-flash": {
+      "prompt": 383094,
+      "cached": 377856,
+      "completion": 76425,
+      "calls": 123
+    },
+    "glm-5.3-flash": {
+      "prompt": 22636,
+      "cached": 0,
+      "completion": 2827,
+      "calls": 59
+    }
+  },
+  "summary": [
+    {
+      "config": "main-only",
+      "total": 123,
+      "right": 104,
+      "wrongActivation": 0,
+      "missed": 19,
+      "safeHold": 0,
+      "wrongCases": []
+    },
+    {
+      "config": "main-plus-model",
+      "total": 123,
+      "right": 95,
+      "wrongActivation": 0,
+      "missed": 28,
+      "safeHold": 0,
+      "wrongCases": []
+    }
+  ],
+  "rows": [
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-standing-2",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-standing-2",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-standing-3",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-standing-3",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-standing-4",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "每天晚上十一点到早上七点"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-standing-4",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "每天晚上十一点到早上七点"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-standing-5",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "周末一律"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-standing-5",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "周末一律"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-standing-6",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-standing-6",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-standing-7",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-standing-7",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-standing-8",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "今年起每次"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-standing-8",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "今年起每次"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "ja-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "今後"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "ja-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "今後"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "ja-standing-2",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "ja-standing-2",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "ja-standing-3",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "これからずっと"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "ja-standing-3",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "これからずっと"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "en-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "From now on, always"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "en-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "From now on, always"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "en-standing-2",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "Never"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "en-standing-2",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "Never"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "en-standing-3",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "en-standing-3",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-until-1",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T14:59:59.000Z",
+          "evidence": "今晚"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-until-1",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": {
+          "kind": "ask",
+          "reason": "mismatch"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T14:59:59.000Z",
+          "evidence": "今晚"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-until-2",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T14:59:59.000Z",
+          "evidence": "今天"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-until-2",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": {
+          "kind": "ask",
+          "reason": "mismatch"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T14:59:59.000Z",
+          "evidence": "今天"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-until-3",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-15T14:59:59.000Z",
+          "evidence": "这个周末"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-until-3",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-15T14:59:59.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-15T14:59:59.000Z",
+          "evidence": "这个周末"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-until-4",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-13T15:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-13T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-13T15:00:00.000Z",
+          "evidence": "明天一整天"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-until-4",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-13T15:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-13T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-13T15:00:00.000Z",
+          "evidence": "明天一整天"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-until-5",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-15T15:00:00.000Z",
+          "evidence": "下周一之前"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-until-5",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-15T15:00:00.000Z",
+          "evidence": "下周一之前"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-until-6",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-18T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-18T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-18T14:59:59.000Z",
+          "evidence": "到下周三为止"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-until-6",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-18T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-18T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-18T14:59:59.000Z",
+          "evidence": "到下周三为止"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-until-7",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-30T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-30T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-30T14:59:59.000Z",
+          "evidence": "这个月底之前"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-until-7",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-30T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-30T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-30T14:59:59.000Z",
+          "evidence": "这个月底之前"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "ja-until-1",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "ja-until-1",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "ja-until-2",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-12-03T15:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-12-03T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-12-03T14:59:59.000Z",
+          "evidence": "12月3日まで"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "ja-until-2",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-12-03T14:59:59.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-12-03T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-12-03T14:59:59.000Z",
+          "evidence": "12月3日まで"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "en-until-1",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "en-until-1",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "en-until-2",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "en-until-2",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "en-until-3",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "en-until-3",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-item-2",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-item-2",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-item-3",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-item-3",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-item-4",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-item-4",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-item-5",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-item-5",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "ja-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "ja-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "en-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "en-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "en-item-2",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "en-item-2",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-unclear-2",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-unclear-2",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-unclear-3",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-unclear-3",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "zh-unclear-4",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "zh-unclear-4",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "ja-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "ja-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "en-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "en-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 1,
+      "caseId": "en-unclear-2",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 1,
+      "caseId": "en-unclear-2",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-standing-2",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-standing-2",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-standing-3",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-standing-3",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-standing-4",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "每天晚上十一点到早上七点"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-standing-4",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "每天晚上十一点到早上七点"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-standing-5",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "一律"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-standing-5",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "一律"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-standing-6",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-standing-6",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-standing-7",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-standing-7",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-standing-8",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "今年起"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-standing-8",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "今年起"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "ja-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "今後"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "ja-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "今後"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "ja-standing-2",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "ja-standing-2",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "ja-standing-3",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "これからずっと"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "ja-standing-3",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "これからずっと"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "en-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "From now on, always"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "en-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "From now on, always"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "en-standing-2",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "Never"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "en-standing-2",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "Never"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "en-standing-3",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "en-standing-3",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-until-1",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T14:59:59.000Z",
+          "evidence": "今晚"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-until-1",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": {
+          "kind": "ask",
+          "reason": "mismatch"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T14:59:59.000Z",
+          "evidence": "今晚"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-until-2",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T14:59:59.000Z",
+          "evidence": "今天"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-until-2",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": {
+          "kind": "ask",
+          "reason": "mismatch"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T14:59:59.000Z",
+          "evidence": "今天"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-until-3",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-15T22:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-15T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-15T14:59:59.000Z",
+          "evidence": "这个周末"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-until-3",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": {
+          "kind": "ask",
+          "reason": "mismatch"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-15T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-15T14:59:59.000Z",
+          "evidence": "这个周末"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-until-4",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-13T15:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-13T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-13T14:59:59.000Z",
+          "evidence": "明天一整天"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-until-4",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-13T14:59:59.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-13T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-13T14:59:59.000Z",
+          "evidence": "明天一整天"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-until-5",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-15T15:00:00.000Z",
+          "evidence": "下周一之前"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-until-5",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-15T15:00:00.000Z",
+          "evidence": "下周一之前"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-until-6",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-18T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-18T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-18T14:59:59.000Z",
+          "evidence": "到下周三为止"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-until-6",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-18T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-18T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-18T14:59:59.000Z",
+          "evidence": "到下周三为止"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-until-7",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-30T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-30T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-30T14:59:59.000Z",
+          "evidence": "这个月底之前"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-until-7",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-30T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-30T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-30T14:59:59.000Z",
+          "evidence": "这个月底之前"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "ja-until-1",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "ja-until-1",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "ja-until-2",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-12-03T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-12-03T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-12-02T15:00:00.000Z",
+          "evidence": "12月3日までは"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "ja-until-2",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": {
+          "kind": "ask",
+          "reason": "mismatch"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-12-03T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-12-02T15:00:00.000Z",
+          "evidence": "12月3日までは"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "en-until-1",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "en-until-1",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "en-until-2",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T22:00:00.000Z",
+          "evidence": "until Friday morning"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "en-until-2",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T22:00:00.000Z",
+          "evidence": "until Friday morning"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "en-until-3",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "en-until-3",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-item-2",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-item-2",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-item-3",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-item-3",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-item-4",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-item-4",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-item-5",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-item-5",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "ja-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "ja-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "en-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "en-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "en-item-2",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "en-item-2",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-unclear-2",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-unclear-2",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-unclear-3",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-unclear-3",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "zh-unclear-4",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "zh-unclear-4",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "ja-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "ja-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "en-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "en-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 2,
+      "caseId": "en-unclear-2",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 2,
+      "caseId": "en-unclear-2",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-standing-2",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-standing-2",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-standing-3",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-standing-3",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-standing-4",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "每天晚上十一点到早上七点"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-standing-4",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "每天晚上十一点到早上七点"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-standing-5",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "周末一律"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-standing-5",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "周末一律"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-standing-6",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-standing-6",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "以后"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-standing-7",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "从现在起"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-standing-7",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "从现在起"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-standing-8",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "今年起每次"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-standing-8",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "今年起每次"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "ja-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "今後"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "ja-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "今後"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "ja-standing-2",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "ja-standing-2",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "ja-standing-3",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "これからずっと"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "ja-standing-3",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "これからずっと"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "en-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "From now on, always"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "en-standing-1",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "From now on, always"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "en-standing-2",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "Never"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "en-standing-2",
+      "expect": "standing",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": null
+        },
+        "scope": {
+          "kind": "standing"
+        },
+        "verdict": {
+          "scope": "standing",
+          "until": null,
+          "evidence": "Never"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "en-standing-3",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "en-standing-3",
+      "expect": "standing",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-until-1",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T14:59:59.000Z",
+          "evidence": "今晚"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-until-1",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": {
+          "kind": "ask",
+          "reason": "mismatch"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T14:59:59.000Z",
+          "evidence": "今晚"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-until-2",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T14:59:59.000Z",
+          "evidence": "今天"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-until-2",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": {
+          "kind": "ask",
+          "reason": "mismatch"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T14:59:59.000Z",
+          "evidence": "今天"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-until-3",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-15T15:00:00.000Z",
+          "evidence": "这个周末"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-until-3",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-15T15:00:00.000Z",
+          "evidence": "这个周末"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-until-4",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-13T15:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-13T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-13T14:59:59.000Z",
+          "evidence": "明天一整天"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-until-4",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-13T14:59:59.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-13T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-13T14:59:59.000Z",
+          "evidence": "明天一整天"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-until-5",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-15T15:00:00.000Z",
+          "evidence": "下周一之前"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-until-5",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-15T15:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-15T15:00:00.000Z",
+          "evidence": "下周一之前"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-until-6",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-18T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-18T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-18T14:59:59.000Z",
+          "evidence": "到下周三为止"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-until-6",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-18T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-18T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-18T14:59:59.000Z",
+          "evidence": "到下周三为止"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-until-7",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-30T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-30T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-30T14:59:59.000Z",
+          "evidence": "这个月底之前"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-until-7",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-30T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-30T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-30T14:59:59.000Z",
+          "evidence": "这个月底之前"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "ja-until-1",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "ja-until-1",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "ja-until-2",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-12-03T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-12-03T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-12-03T14:59:59.000Z",
+          "evidence": "12月3日まで"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "ja-until-2",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-12-03T14:59:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-12-03T14:59:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-12-03T14:59:59.000Z",
+          "evidence": "12月3日まで"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "en-until-1",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T14:59:59.000Z",
+          "evidence": "tonight"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "en-until-1",
+      "expect": "until",
+      "result": "missed",
+      "outcome": {
+        "outcome": {
+          "kind": "ask",
+          "reason": "mismatch"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T14:59:59.000Z",
+          "evidence": "tonight"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "en-until-2",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T22:00:00.000Z",
+          "evidence": "until Friday morning"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "en-until-2",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-12T22:00:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-12T22:00:00.000Z",
+          "evidence": "until Friday morning"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "en-until-3",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-15T03:30:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-15T03:30:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-15T03:30:00.000Z",
+          "evidence": "For the next three days"
+        }
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "en-until-3",
+      "expect": "until",
+      "result": "right",
+      "outcome": {
+        "outcome": {
+          "kind": "activate",
+          "expiresAt": "2026-11-15T03:30:00.000Z"
+        },
+        "scope": {
+          "kind": "until",
+          "expiresAt": "2026-11-15T03:30:00.000Z"
+        },
+        "verdict": {
+          "scope": "until",
+          "until": "2026-11-15T03:30:00.000Z",
+          "evidence": "For the next three days"
+        }
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-item-2",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-item-2",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-item-3",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-item-3",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-item-4",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-item-4",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-item-5",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-item-5",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "ja-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "ja-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "en-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "en-item-1",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "en-item-2",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "en-item-2",
+      "expect": "this_item",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-unclear-2",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-unclear-2",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-unclear-3",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-unclear-3",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "zh-unclear-4",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "zh-unclear-4",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "ja-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "ja-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "en-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "en-unclear-1",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-only",
+      "run": 3,
+      "caseId": "en-unclear-2",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    },
+    {
+      "config": "main-plus-model",
+      "run": 3,
+      "caseId": "en-unclear-2",
+      "expect": "unclear",
+      "result": "right",
+      "outcome": {
+        "outcome": "no-call"
+      }
+    }
+  ]
+}

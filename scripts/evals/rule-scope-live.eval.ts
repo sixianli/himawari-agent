@@ -162,7 +162,7 @@ function localInstant(expiresAt: string): string {
     .replace(" ", "T");
 }
 
-function grade(item: Case, reading: MainReading, outcome: ScopeOutcome | "no-call"): Result {
+function grade(item: Case, outcome: ScopeOutcome | "no-call"): Result {
   if (outcome === "no-call" || outcome.kind === "ask") {
     return item.expect === "standing" || item.expect === "until" ? "missed" : "right";
   }
