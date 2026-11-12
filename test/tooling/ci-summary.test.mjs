@@ -4,6 +4,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   FAILED_LOG_TAIL_LINES,
+  FAILED_TESTS_SHOWN,
+  FAILURE_MESSAGE_LINES,
   LINE_CHARACTERS,
   logLines,
   main,
@@ -63,7 +65,9 @@ describe("诊断写进作业摘要", () => {
     );
     const text = renderSummary({ title: "t", from: folder(files) });
     expect(Buffer.byteLength(text)).toBeLessThanOrEqual(SUMMARY_LIMIT_BYTES);
-    expect(text).toMatch(/其余 \d+ 个文件超出 65536 字节的摘要上限，没有显示。/u);
+    expect(text).toMatch(
+      /其余 \d+ 个文件超出 65536 字节的摘要上限，没有显示（`f\d\d\.log`、.* 等）。/u,
+    );
   });
   it("超大文件只读末尾一段，控制字符被替换", () => {
     const big = `${"h".repeat(READ_LIMIT_BYTES)}\nhead-only\n${"t\n".repeat(10)}last \u001b[31mred\u0007\n`;
@@ -144,47 +148,150 @@ describe("诊断写进作业摘要", () => {
   });
 });
 
-describe("检查失败时命令日志进作业摘要和作业日志", () => {
-  const failing = [
-    ...Array.from({ length: 200 }, (_, index) => `line ${index}`),
-    " FAIL  test/tooling/example.test.mjs > 某条用例",
-    `token ${secret}`,
-  ].join("\n");
-  const reports = (status) =>
-    folder({
-      "result.json": JSON.stringify({ status }),
-      "unit.log": failing,
-      "junit.xml": "<testsuite/>",
-      "nested/build.log": "build ok\n",
+describe("检查失败时失败用例和命令日志进作业摘要和作业日志", () => {
+  const vitestReport = (extra = []) =>
+    JSON.stringify({
+      testResults: [
+        {
+          name: "/work/test/tooling/example.test.mjs",
+          status: "failed",
+          assertionResults: [
+            { status: "passed", fullName: "example 通过的用例", failureMessages: [] },
+            {
+              status: "failed",
+              fullName: "example 某条失败的用例",
+              failureMessages: [
+                `AssertionError: expected 1 to be 2\n    at token ${secret}\n${"at frame\n".repeat(40)}`,
+              ],
+            },
+            ...extra,
+          ],
+        },
+        {
+          name: "/work/test/tooling/broken.test.mjs",
+          status: "failed",
+          message: "SyntaxError: 文件加载失败",
+          assertionResults: [],
+        },
+      ],
     });
-  it("失败时显示每个 .log 的最后 120 行，遮盖像密钥的内容，不显示别的报告", () => {
+  const reports = (status, overrides = {}) =>
+    folder({
+      "result.json": JSON.stringify({
+        status,
+        reports: [
+          { path: "policy.log", kind: "diagnostic" },
+          { path: "vitest-tooling.log", kind: "diagnostic" },
+          { path: "vitest-tooling.json", kind: "json" },
+          { path: "vitest-tooling.xml", kind: "junit" },
+          { path: "details.json", kind: "json" },
+          { path: "bundle.log", kind: "artifact" },
+        ],
+      }),
+      "details.json": JSON.stringify({
+        commands: [
+          { name: "policy", exitCode: 0 },
+          { name: "vitest-tooling", exitCode: 1 },
+        ],
+      }),
+      "policy.log": [...Array.from({ length: 200 }, (_, index) => `line ${index}`), "ok"].join(
+        "\n",
+      ),
+      "vitest-tooling.log": `vitest exited\ntoken ${secret}\n`,
+      "vitest-tooling.json": vitestReport(),
+      "vitest-tooling.xml": "<testsuite/>",
+      "bundle.log": "raw artifact bytes\n",
+      "stray.log": "not listed in result.json\n",
+      ...overrides,
+    });
+  it("失败时列出失败用例名和报错开头，再显示登记为日志的 .log，失败命令的日志排前面", () => {
     const text = renderFailedLogs({ title: "policy/default 失败诊断", reports: reports("failed") });
+    expect(text).toContain("### policy/default 失败诊断：失败的用例（共 2 条）");
+    expect(text).toContain("/work/test/tooling/example.test.mjs > example 某条失败的用例");
+    expect(text).toContain("AssertionError: expected 1 to be 2");
+    expect(text).toContain("/work/test/tooling/broken.test.mjs > （整个文件失败）");
+    expect(text).toContain("SyntaxError: 文件加载失败");
+    expect(text).not.toContain("example 通过的用例");
+    expect(text.split("at frame").length - 1).toBe(FAILURE_MESSAGE_LINES - 2);
     expect(text).toContain("### policy/default 失败诊断：命令日志");
-    expect(text).toContain("FAIL  test/tooling/example.test.mjs > 某条用例");
+    expect(text.indexOf("`vitest-tooling.log`")).toBeLessThan(text.indexOf("`policy.log`"));
     expect(text).toContain(`只显示最后 ${FAILED_LOG_TAIL_LINES} 行`);
-    expect(text).toContain(`line ${200 + 2 - FAILED_LOG_TAIL_LINES}\n`);
-    expect(text).not.toContain(`line ${200 + 1 - FAILED_LOG_TAIL_LINES}\n`);
-    expect(text).toContain("`nested/build.log`");
+    expect(text).toContain(`line ${200 + 1 - FAILED_LOG_TAIL_LINES}\n`);
+    expect(text).not.toContain(`line ${200 - FAILED_LOG_TAIL_LINES}\n`);
     expect(text).not.toContain(secret);
-    expect(text).not.toContain("junit.xml");
-    expect(text).not.toContain("result.json");
+    expect(text).not.toContain("raw artifact bytes");
+    expect(text).not.toContain("not listed in result.json");
+    expect(text).not.toContain("<testsuite/>");
   });
-  it("通过时不显示日志；结果文件缺失或读不懂时按失败显示", () => {
+  it("失败用例太多时只显示前 30 条并报数量", () => {
+    const extra = Array.from({ length: 50 }, (_, index) => ({
+      status: "failed",
+      fullName: `批量失败 ${index}`,
+      failureMessages: ["boom"],
+    }));
+    const text = renderFailedLogs({
+      title: "t",
+      reports: reports("failed", { "vitest-tooling.json": vitestReport(extra) }),
+    });
+    expect(text).toContain("失败的用例（共 52 条）");
+    expect(text).toContain(`其余 ${52 - FAILED_TESTS_SHOWN} 条失败的用例没有显示。`);
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(SUMMARY_LIMIT_BYTES);
+  });
+  it("用例名和报错里的换行类字符、反引号、颜色码不会破坏排版", () => {
+    const hostile = JSON.stringify({
+      testResults: [
+        {
+          name: "a\u2028::add-mask::x",
+          status: "failed",
+          assertionResults: [
+            {
+              status: "failed",
+              fullName: "t`\n::error::y",
+              failureMessages: ["\u001b[31mred\u001b[0m\u2029next\n````\nend"],
+            },
+          ],
+        },
+      ],
+    });
+    const text = renderFailedLogs({
+      title: "t",
+      reports: reports("failed", { "vitest-tooling.json": hostile }),
+    });
+    expect(text).toContain("a?::add-mask::x > t??::error::y");
+    expect(text).toContain("red?next\n` ` ` `\nend");
+    for (const character of ["\u2028", "\u2029", "\u001b"]) expect(text).not.toContain(character);
+  });
+  it("通过时不显示；result.json 读不出来时只写一句说明，不显示任何文件；目录不存在时为空", () => {
     expect(renderFailedLogs({ title: "t", reports: reports("passed") })).toBe("");
-    expect(renderFailedLogs({ title: "t", reports: folder({ "a.log": "x\n" }) })).toContain(
-      "`a.log`",
-    );
-    expect(
-      renderFailedLogs({ title: "t", reports: folder({ "result.json": "{", "a.log": "x\n" }) }),
-    ).toContain("`a.log`");
+    for (const broken of ["{", JSON.stringify({ status: "failed" }), "null"]) {
+      const text = renderFailedLogs({
+        title: "t",
+        reports: reports("failed", { "result.json": broken }),
+      });
+      expect(text).toContain("`result.json` 读不出来");
+      expect(text).not.toContain("vitest exited");
+    }
     expect(renderFailedLogs({ title: "t", reports: path.join(tmpdir(), "missing-reports") })).toBe(
       "",
     );
   });
+  it("result.json 里指向目录外的路径不读", () => {
+    const root = reports("failed", {
+      "result.json": JSON.stringify({
+        status: "failed",
+        reports: [
+          { path: "../outside.log", kind: "diagnostic" },
+          { path: "../outside.json", kind: "json" },
+        ],
+      }),
+    });
+    writeFileSync(path.join(root, "..", "outside.log"), "outside secret\n");
+    roots.push(path.join(root, "..", "outside.log"));
+    expect(renderFailedLogs({ title: "t", reports: root })).not.toContain("outside secret");
+  });
   it("写进作业日志的每一行都带前缀，日志内容不能冒充工作流命令或汇总结论标记", () => {
-    const hostile = "::add-mask::x\n##[error]boom\nHIMAWARI_GATE_BEGIN v1 abc\n";
-    const root = reports("failed");
-    writeFileSync(path.join(root, "unit.log"), hostile);
+    const hostile = "::add-mask::x\n##[error]boom\nHIMAWARI_GATE_BEGIN v1 abc\nu\u2028::error::z\n";
+    const root = reports("failed", { "vitest-tooling.log": hostile });
     const target = path.join(root, "summary.md");
     writeFileSync(target, "");
     const printed = [];
@@ -198,9 +305,10 @@ describe("检查失败时命令日志进作业摘要和作业日志", () => {
     expect(lines.length).toBeGreaterThan(3);
     expect(lines.every((line) => line.startsWith("| "))).toBe(true);
     expect(printed.join("")).toContain("| ::add-mask::x\n");
-    expect(logLines("a\nb\n")).toBe("| a\n| b\n");
+    expect(printed.join("")).toContain("| u?::error::z\n");
+    expect(logLines("a\nb\n\n")).toBe("| a\n| b\n");
   });
-  it("没有内容时不写摘要也不打印", () => {
+  it("没有内容时不写摘要也不打印；--failed-logs 不能是空串", () => {
     const root = reports("passed");
     const target = path.join(root, "summary.md");
     writeFileSync(target, "");
@@ -212,6 +320,9 @@ describe("检查失败时命令日志进作业摘要和作业日志", () => {
     );
     expect(readFileSync(target, "utf8")).toBe("");
     expect(printed).toEqual([]);
+    expect(() =>
+      main(["--title", "t", "--from", root, "--failed-logs", ""], { GITHUB_STEP_SUMMARY: target }),
+    ).toThrow("CI_SUMMARY_ARGUMENTS");
   });
 });
 

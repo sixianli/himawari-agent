@@ -17,7 +17,7 @@ export const TAIL_LINES = 40;
 export const FAILED_LOG_TAIL_LINES = 120;
 export const LINE_CHARACTERS = 500;
 export const READ_LIMIT_BYTES = 256 * 1024;
-const FOOTER_RESERVE_BYTES = 256;
+const FOOTER_RESERVE_BYTES = 512;
 
 function listFiles(root) {
   const files = [];
@@ -74,7 +74,7 @@ function textTail(file, tailLines) {
   const lines = redacted
     .replace(/\r\n?/gu, "\n")
     .replace(/\n$/u, "")
-    .replace(/[^\P{Cc}\n\t]/gu, "?")
+    .replace(/[^\P{Cc}\n\t]|[\p{Zl}\p{Zp}]/gu, "?")
     .split("\n");
   const tail = lines
     .slice(-tailLines)
@@ -86,7 +86,7 @@ function textTail(file, tailLines) {
   };
 }
 
-const safeName = (value) => redactText(value).replace(/[\p{Cc}`|]/gu, "?");
+const safeName = (value) => redactText(value).replace(/[\p{Cc}\p{Zl}\p{Zp}`|]/gu, "?");
 
 export function renderSummary({
   title,
@@ -94,9 +94,14 @@ export function renderSummary({
   limit = SUMMARY_LIMIT_BYTES,
   tailLines = TAIL_LINES,
   only = () => true,
+  first = () => false,
 }) {
   if (!existsSync(from)) return "";
-  const files = listFiles(from).filter((file) => only(file.relative));
+  const listed = listFiles(from).filter((file) => only(file.relative));
+  const files = [
+    ...listed.filter((file) => first(file.relative)),
+    ...listed.filter((file) => !first(file.relative)),
+  ];
   if (files.length === 0) return "";
   const header = `### ${title}\n\n`;
   const sections = [];
@@ -110,7 +115,11 @@ export function renderSummary({
         ? `- \`${name}\`：二进制文件，${file.size} 字节，内容不显示\n\n`
         : `#### \`${name}\`（${file.size} 字节${tail.omitted ? `，只显示最后 ${tailLines} 行` : ""}）\n\n\`\`\`\`text\n${tail.text}\n\`\`\`\`\n\n`;
     const remaining = files.length - shown - 1;
-    const footer = `其余 ${files.length - shown} 个文件超出 ${limit} 字节的摘要上限，没有显示。\n`;
+    const omitted = files
+      .slice(shown, shown + 5)
+      .map((entry) => `\`${safeName(entry.relative).slice(0, 40)}\``)
+      .join("、");
+    const footer = `其余 ${files.length - shown} 个文件超出 ${limit} 字节的摘要上限，没有显示（${omitted}${files.length - shown > 5 ? " 等" : ""}）。\n`;
     const reserve = remaining > 0 ? FOOTER_RESERVE_BYTES : 0;
     if (used + Buffer.byteLength(section) + reserve > limit) {
       sections.push(footer);
@@ -123,27 +132,143 @@ export function renderSummary({
   return header + sections.join("");
 }
 
-function checkFailed(reports) {
+export const FAILED_TESTS_SHOWN = 30;
+export const FAILURE_MESSAGE_LINES = 20;
+const REPORT_JSON_LIMIT_BYTES = 64 * 1024 * 1024;
+
+function publishedResult(reports) {
   try {
-    return JSON.parse(readFileSync(path.join(reports, "result.json"), "utf8")).status !== "passed";
+    const result = JSON.parse(readFileSync(path.join(reports, "result.json"), "utf8"));
+    return result && typeof result === "object" && Array.isArray(result.reports) ? result : null;
   } catch {
-    return true;
+    return null;
   }
 }
 
-export function renderFailedLogs({ title, reports }) {
-  if (!existsSync(reports) || !checkFailed(reports)) return "";
-  return renderSummary({
-    title: `${title}：命令日志`,
-    from: reports,
-    tailLines: FAILED_LOG_TAIL_LINES,
-    only: (relative) => relative.endsWith(".log"),
-  });
+const reportPaths = (result, kind, extension) =>
+  result.reports
+    .filter(
+      (report) =>
+        report?.kind === kind && typeof report.path === "string" && report.path.endsWith(extension),
+    )
+    .map((report) => report.path.split(path.sep).join("/"))
+    .filter((relative) => !path.isAbsolute(relative) && !relative.split("/").includes(".."));
+
+const ANSI_COLOR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "gu");
+
+const cleanLine = (value) =>
+  redactText(String(value))
+    .replace(ANSI_COLOR, "")
+    .replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, "?");
+
+function failureMessage(value) {
+  const redacted = redactText(String(value ?? ""));
+  if (/-----(?:BEGIN|END) [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----/u.test(redacted)) return "";
+  return redacted
+    .replace(ANSI_COLOR, "")
+    .replace(/\r\n?/gu, "\n")
+    .replace(/[^\P{Cc}\n\t]|[\p{Zl}\p{Zp}]/gu, "?")
+    .split("\n")
+    .slice(0, FAILURE_MESSAGE_LINES)
+    .map((line) => (line.length > LINE_CHARACTERS ? `${line.slice(0, LINE_CHARACTERS)}…` : line))
+    .join("\n")
+    .replaceAll("````", "` ` ` `");
+}
+
+function failedTests(reports, result) {
+  const failures = [];
+  for (const relative of reportPaths(result, "json", ".json").sort()) {
+    let report;
+    try {
+      const full = path.join(reports, relative);
+      const stat = lstatSync(full);
+      if (!stat.isFile() || stat.size > REPORT_JSON_LIMIT_BYTES) continue;
+      report = JSON.parse(readFileSync(full, "utf8"));
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(report?.testResults)) continue;
+    for (const file of report.testResults) {
+      const name = typeof file?.name === "string" ? file.name : "?";
+      const assertions = Array.isArray(file?.assertionResults) ? file.assertionResults : [];
+      const failed = assertions.filter((assertion) => assertion?.status === "failed");
+      for (const assertion of failed)
+        failures.push({
+          report: relative,
+          file: name,
+          test: assertion.fullName ?? assertion.title ?? "?",
+          message: (Array.isArray(assertion.failureMessages) ? assertion.failureMessages : [])[0],
+        });
+      if (file?.status === "failed" && failed.length === 0)
+        failures.push({
+          report: relative,
+          file: name,
+          test: "（整个文件失败）",
+          message: file.message,
+        });
+    }
+  }
+  return failures;
+}
+
+function renderFailedTests({ title, reports, result, limit }) {
+  const failures = failedTests(reports, result);
+  if (failures.length === 0) return "";
+  let text = `### ${title}：失败的用例（共 ${failures.length} 条）\n\n`;
+  let shown = 0;
+  for (const failure of failures) {
+    const message = failureMessage(failure.message);
+    const section = `- \`${safeName(cleanLine(failure.report))}\`：${cleanLine(failure.file).replaceAll("`", "?")} > ${cleanLine(failure.test).replaceAll("`", "?")}\n\n${message ? `\`\`\`\`text\n${message}\n\`\`\`\`\n\n` : ""}`;
+    if (
+      shown === FAILED_TESTS_SHOWN ||
+      Buffer.byteLength(text) + Buffer.byteLength(section) + FOOTER_RESERVE_BYTES > limit
+    )
+      break;
+    text += section;
+    shown += 1;
+  }
+  if (shown < failures.length) text += `其余 ${failures.length - shown} 条失败的用例没有显示。\n\n`;
+  return text;
+}
+
+function failedCommandLogs(reports) {
+  try {
+    const details = JSON.parse(readFileSync(path.join(reports, "details.json"), "utf8"));
+    return new Set(
+      details.commands
+        .filter((command) => command.exitCode !== 0 && typeof command.name === "string")
+        .map((command) => `${command.name}.log`),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+export function renderFailedLogs({ title, reports, limit = SUMMARY_LIMIT_BYTES }) {
+  if (!existsSync(reports)) return "";
+  const result = publishedResult(reports);
+  if (result === null)
+    return `### ${title}：命令日志\n\n\`result.json\` 读不出来，无法确定哪些文件是命令日志，没有显示。\n\n`;
+  if (result.status === "passed") return "";
+  const tests = renderFailedTests({ title, reports, result, limit: Math.floor(limit / 2) });
+  const logs = new Set(reportPaths(result, "diagnostic", ".log"));
+  const failedFirst = failedCommandLogs(reports);
+  return (
+    tests +
+    renderSummary({
+      title: `${title}：命令日志`,
+      from: reports,
+      limit: limit - Buffer.byteLength(tests),
+      tailLines: FAILED_LOG_TAIL_LINES,
+      only: (relative) => logs.has(relative),
+      first: (relative) => failedFirst.has(path.posix.basename(relative)),
+    })
+  );
 }
 
 export const logLines = (text) =>
   text
-    .replace(/\n$/u, "")
+    .replace(/\n+$/u, "")
     .split("\n")
     .map((line) => `| ${line}\n`)
     .join("");
@@ -158,7 +283,7 @@ export function main(
     if (
       !["--title", "--from", "--failed-logs"].includes(argv[i]) ||
       Object.hasOwn(args, argv[i]) ||
-      argv[i + 1] === undefined
+      !argv[i + 1]
     )
       throw new Error("CI_SUMMARY_ARGUMENTS");
     args[argv[i]] = argv[i + 1];
