@@ -272,17 +272,23 @@ describe("production memory capture", () => {
       }) as unknown as RuntimeRequest;
     await turn("owner", message, "run-memory-capture");
     const clock = { value: T0 };
-    const ruleWriter = new ProductionOwnerRuleWriter({
-      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
-      rules: repository.ownerRules(),
-      memory,
-      memories: repository.productMemoryState(),
-      book: repository.memoryBook(),
-      threads: repository.threadRepository(),
-      payloads,
-      protector: adapters.payloadProtector,
-      clock: { now: () => clock.value },
-    });
+    const ruleWriterWith = (
+      extra: Partial<ConstructorParameters<typeof ProductionOwnerRuleWriter>[0]> = {},
+    ) =>
+      new ProductionOwnerRuleWriter({
+        configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        rules: repository.ownerRules(),
+        proposals: repository.ownerRuleProposals(),
+        memory,
+        memories: repository.productMemoryState(),
+        book: repository.memoryBook(),
+        threads: repository.threadRepository(),
+        payloads,
+        protector: adapters.payloadProtector,
+        clock: { now: () => clock.value },
+        ...extra,
+      });
+    const ruleWriter = ruleWriterWith();
     const control = new ProductionMemoryControl({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       state: repository.productMemoryState(),
@@ -374,6 +380,8 @@ describe("production memory capture", () => {
       control,
       reminderTools,
       ruleTools: new ProductionOwnerRuleTools(ruleWriter),
+      ruleWriter,
+      ruleWriterWith,
       protect,
       request: requestFor("run-memory-capture"),
       requestFor,
@@ -2133,6 +2141,347 @@ describe("production memory capture", () => {
         ?.status,
     ).toBe("deletion_pending");
     expect(await listed()).toEqual([]);
+  });
+
+  describe("[A-1] rule proposals waiting for the owner", () => {
+    const sentence = "日本入管局相关的邮件以后必须通知我";
+    const proposalsQuery = async (control: ProductionMemoryControl) => {
+      const snapshot = await control.query({
+        ...envelope,
+        kind: "query",
+        type: "memory.ruleProposals.read",
+        payload: {},
+      } as never);
+      if (snapshot.type !== "memory.ruleProposals.snapshot") throw new Error("snapshot");
+      const { idempotencyKey: _key, ...wire } = snapshot as typeof snapshot & {
+        idempotencyKey?: string;
+      };
+      gatewayV2MessageSchema.parse(wire);
+      return snapshot;
+    };
+    const counts = (context: Awaited<ReturnType<typeof setup>>) => {
+      const found = { rules: 0, memories: 0 };
+      context.sql((database) => {
+        found.rules = (
+          database.prepare("SELECT COUNT(*) AS n FROM rule_book_rules").get() as { n: number }
+        ).n;
+        found.memories = (
+          database.prepare("SELECT COUNT(*) AS n FROM memory_records").get() as { n: number }
+        ).n;
+      });
+      return found;
+    };
+    const prepared = async () => {
+      const context = await setup(
+        "请记住，我最喜欢的颜色是蓝色。",
+        '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+      );
+      await context.capture.start(context.request);
+      await context.capture.stop();
+      await context.turn("owner", sentence, null);
+      await context.turn("owner", "入管局相关的邮件", null);
+      const set = (args: Record<string, unknown>, id: string, writer = context.ruleTools) =>
+        writer.run({
+          runId: createRunId("run-proposal-tool"),
+          toolCallId: id,
+          capabilityRef: "rule.set",
+          capabilityHandleRef: null,
+          arguments: {
+            inferred: false,
+            type: "mail_must_notify",
+            summary: "入管局的邮件一律提醒",
+            ...args,
+          },
+          dataClassification: "private",
+          context: { threadId: THREAD_ID },
+        } as never) as Promise<Record<string, unknown>>;
+      const inferred = (domain: string, id = `call-${domain}`) =>
+        set({ quote: sentence, inferred: true, params: { senderDomains: [domain] } }, id);
+      return { context, set, inferred };
+    };
+
+    it("lists a proposal with who it came from, its evidence and the limit, and adopts it into a rule that can be undone", async () => {
+      const { context, set, inferred } = await prepared();
+      const replay = {
+        days: 30,
+        mailsChecked: 12,
+        mailsHit: 2,
+        changed: 1,
+        usefulChanged: [],
+        headersOnly: 0,
+        truncated: false,
+      };
+      const withReplay = new ProductionOwnerRuleTools(
+        context.ruleWriterWith({ replay: async () => replay }),
+      );
+      expect((await proposalsQuery(context.control)).payload).toMatchObject({
+        proposals: [],
+        pendingCount: 0,
+        limit: 20,
+        expiresAfterDays: 30,
+      });
+      const guessed = await inferred("isa.go.jp");
+      const said = await set(
+        { quote: "入管局相关的邮件", params: { senderDomains: ["moj.go.jp"] } },
+        "call-said",
+        withReplay,
+      );
+      expect(guessed).toMatchObject({ status: "proposed" });
+      expect(said).toMatchObject({ status: "proposed" });
+      const first = await proposalsQuery(context.control);
+      expect(first.payload.proposals.map((item) => item.proposalId).sort()).toEqual(
+        [guessed["proposalId"], said["proposalId"]].sort(),
+      );
+      expect(first.payload).toMatchObject({ pendingCount: 2, limit: 20, expiresAfterDays: 30 });
+      const byId = new Map(first.payload.proposals.map((item) => [item.proposalId, item]));
+      expect(byId.get(guessed["proposalId"] as string)).toMatchObject({
+        origin: "inferred",
+        quote: sentence,
+        replay: null,
+        proposedAt: T0,
+        expiresAt: "2026-11-24T12:00:00.000Z",
+        refusedBefore: 0,
+      });
+      expect(byId.get(guessed["proposalId"] as string)?.trials.length).toBeGreaterThan(0);
+      expect(byId.get(said["proposalId"] as string)).toMatchObject({
+        origin: "owner_said",
+        quote: "入管局相关的邮件",
+        replay: { days: 30, mailsChecked: 12, mailsHit: 2, changed: 1, truncated: false },
+      });
+      const { generatedAt: _first, ...firstPayload } = first.payload;
+      const { generatedAt: _second, ...secondPayload } = (await proposalsQuery(context.control))
+        .payload;
+      expect(JSON.stringify(secondPayload)).toBe(JSON.stringify(firstPayload));
+
+      const before = counts(context);
+      await command(
+        context.control,
+        "memory.rule.respond",
+        { target: guessed["proposalId"], action: "confirm" },
+        "adopt-1",
+      );
+      expect(counts(context)).toEqual({ rules: before.rules + 1, memories: before.memories + 1 });
+      await command(
+        context.control,
+        "memory.rule.respond",
+        { target: guessed["proposalId"], action: "confirm" },
+        "adopt-2",
+      );
+      expect(counts(context)).toEqual({ rules: before.rules + 1, memories: before.memories + 1 });
+      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(1);
+      const rule = (await context.ruleWriter.list())[0];
+      expect(rule).toMatchObject({ status: "active", enforced: true });
+      await command(
+        context.control,
+        "memory.rule.respond",
+        { target: rule?.ruleId, action: "undo" },
+        "undo-adopted",
+      );
+      expect(await context.ruleWriter.list()).toEqual([]);
+    });
+
+    it("refuses a proposal without writing a rule or a memory, and says so when it is adopted or refused again", async () => {
+      const { context, inferred } = await prepared();
+      const proposal = await inferred("isa.go.jp");
+      const before = counts(context);
+      await command(
+        context.control,
+        "memory.rule.respond",
+        { target: proposal["proposalId"], action: "reject" },
+        "reject-1",
+      );
+      expect(counts(context)).toEqual(before);
+      expect(await context.ruleWriter.list()).toEqual([]);
+      expect((await proposalsQuery(context.control)).payload.proposals).toEqual([]);
+      await expect(
+        command(
+          context.control,
+          "memory.rule.respond",
+          { target: proposal["proposalId"], action: "confirm" },
+          "adopt-refused",
+        ),
+      ).rejects.toThrow("RULE_PROPOSAL_REJECTED");
+      expect(counts(context)).toEqual(before);
+      await command(
+        context.control,
+        "memory.rule.respond",
+        { target: proposal["proposalId"], action: "reject" },
+        "reject-2",
+      );
+      await expect(
+        command(
+          context.control,
+          "memory.rule.respond",
+          { target: "rule-proposal:00000000000000000000000000000000", action: "reject" },
+          "reject-missing",
+        ),
+      ).rejects.toThrow("RULE_NOT_FOUND");
+      await expect(
+        command(
+          context.control,
+          "memory.rule.respond",
+          { target: proposal["proposalId"], action: "forget" },
+          "unknown-action",
+        ),
+      ).rejects.toThrow();
+      expect(await context.ruleWriter.list()).toEqual([]);
+
+      const again = await inferred("isa.go.jp", "call-again");
+      expect(again["proposalId"]).toBe(proposal["proposalId"]);
+      const listed = (await proposalsQuery(context.control)).payload;
+      expect(listed.proposals).toMatchObject([
+        { proposalId: proposal["proposalId"], refusedBefore: 1 },
+      ]);
+      await command(
+        context.control,
+        "memory.rule.respond",
+        { target: proposal["proposalId"], action: "confirm" },
+        "adopt-after-again",
+      );
+      await expect(
+        command(
+          context.control,
+          "memory.rule.respond",
+          { target: proposal["proposalId"], action: "reject" },
+          "reject-adopted",
+        ),
+      ).rejects.toThrow("RULE_PROPOSAL_ACCEPTED");
+    });
+
+    it("lets only one of a simultaneous adopt and refuse win", async () => {
+      const { context, inferred } = await prepared();
+      for (const [index, domain] of [
+        "a.example",
+        "b.example",
+        "c.example",
+        "d.example",
+      ].entries()) {
+        const proposal = await inferred(domain);
+        const outcomes = await Promise.allSettled([
+          command(
+            context.control,
+            "memory.rule.respond",
+            { target: proposal["proposalId"], action: "confirm" },
+            `race-adopt-${index}`,
+          ),
+          command(
+            context.control,
+            "memory.rule.respond",
+            { target: proposal["proposalId"], action: "reject" },
+            `race-reject-${index}`,
+          ),
+        ]);
+        expect(outcomes.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+        const adopted = outcomes[0]?.status === "fulfilled";
+        const active = (await context.ruleWriter.list()).length;
+        expect(active).toBe(adopted ? 1 : 0);
+        await context.ruleWriter
+          .list()
+          .then((rules) => Promise.all(rules.map((rule) => context.ruleWriter.undo(rule.ruleId))));
+      }
+    });
+
+    it("keeps a proposal an outside agent made out of the list, and still lets it be adopted at once", async () => {
+      const { context } = await prepared();
+      const receipt = await context.ruleWriter.create({
+        key: "mcp:outside-1",
+        quote: "外部 agent「x」提议：入管局的邮件要提醒",
+        inferred: true,
+        type: "mail_must_notify",
+        params: { senderDomains: ["isa.go.jp"] },
+        summary: "入管局的邮件一律提醒",
+        threadId: null,
+        source: "mcp:x",
+        listed: false,
+      });
+      expect(receipt).toMatchObject({ status: "proposed" });
+      expect((await proposalsQuery(context.control)).payload.proposals).toEqual([]);
+      expect(await context.ruleWriter.confirm(receipt.proposalId ?? "")).toMatchObject({
+        status: "active",
+      });
+      await expect(context.ruleWriter.reject(receipt.proposalId ?? "")).rejects.toMatchObject({
+        code: "RULE_NOT_FOUND",
+      });
+    });
+
+    it("shows the limit, refuses a proposal over it and expires a proposal after its days", async () => {
+      const { context, set } = await prepared();
+      const small = new ProductionOwnerRuleTools(
+        context.ruleWriterWith({ proposalLimit: 2, proposalTtlDays: 3 }),
+      );
+      const make = (domain: string) =>
+        set(
+          { quote: sentence, inferred: true, params: { senderDomains: [domain] } },
+          `call-${domain}`,
+          small,
+        );
+      const one = await make("one.example");
+      await make("two.example");
+      await expect(make("three.example")).rejects.toMatchObject({ code: "RULE_PROPOSALS_FULL" });
+      await make("one.example");
+      const full = (await proposalsQuery(context.control)).payload;
+      expect(full.pendingCount).toBe(2);
+      expect(full.limit).toBe(20);
+      context.clock.value = new Date(Date.parse(T0) + 3 * 86_400_000).toISOString();
+      expect((await proposalsQuery(context.control)).payload).toMatchObject({
+        proposals: [],
+        pendingCount: 0,
+      });
+      await expect(
+        command(
+          context.control,
+          "memory.rule.respond",
+          { target: one["proposalId"], action: "confirm" },
+          "adopt-expired",
+        ),
+      ).rejects.toThrow("RULE_PROPOSAL_EXPIRED");
+      await make("one.example");
+      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(1);
+    });
+
+    it("gives the same proposal id however the parameters are ordered, and shows no evidence for one stored without it", async () => {
+      const { context, set } = await prepared();
+      const one = await set(
+        {
+          quote: sentence,
+          inferred: true,
+          params: { senderDomains: ["isa.go.jp"], phrases: ["在留"] },
+        },
+        "call-order-1",
+      );
+      const two = await set(
+        {
+          quote: sentence,
+          inferred: true,
+          params: { phrases: ["在留"], senderDomains: ["isa.go.jp"] },
+        },
+        "call-order-2",
+      );
+      expect(two["proposalId"]).toBe(one["proposalId"]);
+      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(1);
+
+      const oldRef = "rule-proposal:ffffffffffffffffffffffffffffffff";
+      await context.protect(oldRef, JSON.stringify({ key: "k", type: "mail_must_notify" }));
+      await context.repository.ownerRuleProposals().propose({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        proposalId: oldRef,
+        ruleType: "mail_must_notify",
+        summary: "旧提议",
+        origin: "inferred",
+        threadId: null,
+        evidenceRef: oldRef,
+        now: T0,
+        expiresAt: "2026-11-24T12:00:00.000Z",
+        pendingLimit: 20,
+      } as never);
+      const listed = (await proposalsQuery(context.control)).payload.proposals;
+      expect(listed.find((item) => item.proposalId === oldRef)).toMatchObject({
+        quote: null,
+        trials: [],
+        replay: null,
+      });
+    });
   });
 
   it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {

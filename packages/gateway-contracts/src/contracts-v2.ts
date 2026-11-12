@@ -74,6 +74,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.reminder.create",
   "memory.rules.read",
   "memory.rules.snapshot",
+  "memory.ruleProposals.read",
+  "memory.ruleProposals.snapshot",
   "memory.rule.respond",
   "memory.create",
   "memory.category.set",
@@ -1626,7 +1628,7 @@ const memoryReminderCreateCommandSchema = object({
     repeat: enumeration(["none", "yearly"]),
   }),
 });
-export const OWNER_RULE_ACTIONS = ["undo", "confirm", "reconfirm"] as const;
+export const OWNER_RULE_ACTIONS = ["undo", "confirm", "reconfirm", "reject"] as const;
 const memoryRulesQuerySchema = object({
   ...envelope("query", "memory.rules.read"),
   payload: object({}),
@@ -1644,6 +1646,47 @@ const memoryRulesSnapshotSchema = object({
         updatedAt: timestamp,
       }),
     ),
+    generatedAt: timestamp,
+  }),
+});
+const memoryRuleProposalsQuerySchema = object({
+  ...envelope("query", "memory.ruleProposals.read"),
+  payload: object({}),
+});
+const memoryRuleProposalsSnapshotSchema = object({
+  ...envelope("snapshot", "memory.ruleProposals.snapshot"),
+  payload: object({
+    proposals: array(
+      object({
+        proposalId: machineString,
+        type: boundedString(64),
+        summary: boundedString(200),
+        origin: enumeration(["owner_said", "inferred"]),
+        quote: nullable(boundedString(500)),
+        trials: array(
+          object({
+            from: nullable(boundedString(200)),
+            subject: nullable(boundedString(200)),
+            hit: booleanValue,
+          }),
+        ),
+        replay: nullable(
+          object({
+            days: integer(0),
+            mailsChecked: integer(0),
+            mailsHit: integer(0),
+            changed: integer(0),
+            truncated: booleanValue,
+          }),
+        ),
+        proposedAt: timestamp,
+        expiresAt: timestamp,
+        refusedBefore: integer(0),
+      }),
+    ),
+    pendingCount: integer(0),
+    limit: integer(1),
+    expiresAfterDays: integer(1),
     generatedAt: timestamp,
   }),
 });
@@ -2630,6 +2673,8 @@ const schemasByType = {
   "memory.reminder.create": memoryReminderCreateCommandSchema,
   "memory.rules.read": memoryRulesQuerySchema,
   "memory.rules.snapshot": memoryRulesSnapshotSchema,
+  "memory.ruleProposals.read": memoryRuleProposalsQuerySchema,
+  "memory.ruleProposals.snapshot": memoryRuleProposalsSnapshotSchema,
   "memory.rule.respond": memoryRuleRespondCommandSchema,
   "memory.create": memoryCreateCommandSchema,
   "memory.category.set": memoryCategorySetCommandSchema,

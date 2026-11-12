@@ -263,6 +263,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const ownerRules = new ProductionOwnerRuleWriter({
       configuration: scope,
       rules: repository.ownerRules(),
+      proposals: repository.ownerRuleProposals(),
       memory,
       memories: repository.productMemoryState(),
       book: repository.memoryBook(),
@@ -1013,6 +1014,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const payloads = f.rulePayloads();
     expect(payloads.filter((ref) => ref.startsWith("rule-proposal:"))).toHaveLength(1);
     expect(payloads.filter((ref) => ref.startsWith(EXTERNAL_RULE_DECISION_PREFIX))).toHaveLength(1);
+    expect(await f.ownerRules.listProposals()).toMatchObject({ proposals: [], pendingCount: 0 });
   });
 
   it.each([

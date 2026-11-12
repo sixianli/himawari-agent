@@ -1108,6 +1108,7 @@ export async function createProductionHttpComposition(
         ownerRules: new ProductionOwnerRuleWriter({
           configuration,
           rules: repository.ownerRules(),
+          proposals: repository.ownerRuleProposals(),
           memory: options.memory.service,
           memories: repository.productMemoryState(),
           book: repository.memoryBook(),

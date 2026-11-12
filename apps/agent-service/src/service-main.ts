@@ -1490,6 +1490,7 @@ export async function startTenantRuntime(
       const ownerRuleWriter = new ProductionOwnerRuleWriter({
         configuration,
         rules: repository.ownerRules(),
+        proposals: repository.ownerRuleProposals(),
         memory: durableMemory,
         memories: repository.productMemoryState(),
         book: repository.memoryBook(),

@@ -8,6 +8,8 @@ import {
   type MemoryBookStorePort,
   OWNER_RULE_ID_PREFIX,
   OWNER_RULE_SUMMARY_LIMIT,
+  type OwnerRuleProposalOrigin,
+  type OwnerRuleProposalStorePort,
   type OwnerRuleReplayResult,
   type OwnerRuleStorePort,
   ownerRuleRecord,
@@ -50,6 +52,10 @@ const OWNER_MESSAGES_CHECKED = 6;
 const MESSAGES_SCANNED = 200;
 const SET_ARGUMENTS = ["quote", "inferred", "type", "params", "summary"];
 const ACTIVE_RULE_LIMIT = 32;
+export const PENDING_PROPOSAL_LIMIT = 20;
+export const PENDING_PROPOSAL_TTL_DAYS = 30;
+const DAY_MS = 86_400_000;
+const PROPOSAL_ID_PATTERN = /^rule-proposal:[0-9a-f]{32}$/u;
 const STANDING_MARKERS = [
   "以后",
   "以後",
@@ -134,7 +140,11 @@ export type OwnerRuleErrorCode =
   | "RULE_MEMORY_NOT_READY"
   | "RULE_LIMIT_REACHED"
   | "RULE_NOT_EXPLICIT"
-  | "RULE_UNAVAILABLE";
+  | "RULE_UNAVAILABLE"
+  | "RULE_PROPOSALS_FULL"
+  | "RULE_PROPOSAL_REJECTED"
+  | "RULE_PROPOSAL_ACCEPTED"
+  | "RULE_PROPOSAL_EXPIRED";
 
 export class OwnerRuleError extends Error {
   readonly code: OwnerRuleErrorCode;
@@ -246,6 +256,33 @@ interface Proposal {
   readonly quote: string;
   readonly threadId: string | null;
   readonly source?: string;
+  readonly trials?: readonly RuleTrial[];
+  readonly replay?: RuleReplay | null;
+}
+
+export interface PendingRuleProposal {
+  readonly proposalId: string;
+  readonly type: string;
+  readonly summary: string;
+  readonly origin: OwnerRuleProposalOrigin;
+  readonly quote: string | null;
+  readonly trials: readonly RuleTrial[];
+  readonly replay: RuleReplay | null;
+  readonly proposedAt: string;
+  readonly expiresAt: string;
+  readonly refusedBefore: number;
+}
+
+export interface PendingRuleProposals {
+  readonly proposals: readonly PendingRuleProposal[];
+  readonly pendingCount: number;
+  readonly limit: number;
+  readonly expiresAfterDays: number;
+}
+
+export interface RejectedRuleProposal {
+  readonly proposalId: string;
+  readonly replayed: boolean;
 }
 
 export interface RulePreview {
@@ -267,6 +304,9 @@ export interface ProductionOwnerRuleWriterOptions {
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
   readonly replay?: (rule: RuleRecord) => Promise<RuleReplay>;
+  readonly proposals: OwnerRuleProposalStorePort;
+  readonly proposalLimit?: number;
+  readonly proposalTtlDays?: number;
 }
 
 function hash(value: string): string {
@@ -322,6 +362,19 @@ function saysWholeClauses(text: string, quote: readonly string[]): boolean {
   for (let start = 0; start + quote.length <= clauses.length; start += 1)
     if (quote.every((clause, index) => clauses[start + index] === clause)) return true;
   return false;
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object")
+    return `{${Object.keys(value)
+      .sort()
+      .filter((key) => (value as Record<string, unknown>)[key] !== undefined)
+      .map(
+        (key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`,
+      )
+      .join(",")}}`;
+  return JSON.stringify(value) ?? "null";
 }
 
 function sameRule(parameters: unknown, type: string, params: unknown): boolean {
@@ -595,6 +648,7 @@ export class ProductionOwnerRuleWriter {
     readonly summary: string;
     readonly threadId: string | null;
     readonly source?: string;
+    readonly listed?: boolean;
   }): Promise<RuleReceipt> {
     const quote = input.quote.trim();
     const summary = input.summary.trim();
@@ -634,16 +688,15 @@ export class ProductionOwnerRuleWriter {
       threadId: input.threadId,
       ...(input.source === undefined ? {} : { source: input.source }),
     };
-    const explicit =
-      !input.inferred && isStandingQuote(quote) && (await this.#ownerSaid(input.threadId, quote));
-    if (explicit) return this.#activate(proposal, replayed);
+    const ownerSaid = !input.inferred && (await this.#ownerSaid(input.threadId, quote));
+    if (ownerSaid && isStandingQuote(quote)) return this.#activate(proposal, replayed);
     const normalized = parseOwnerRuleParameters({
       type: input.type,
       params: input.params,
       summary,
     });
     const proposalId = `rule-proposal:${hash(
-      JSON.stringify([
+      canonicalJson([
         this.#scope().ownerId,
         normalized.type,
         normalized.params,
@@ -651,7 +704,25 @@ export class ProductionOwnerRuleWriter {
         quote,
       ]),
     ).slice(0, 32)}`;
-    await this.#writeText(proposalId, JSON.stringify(proposal));
+    const trials = trialsOf(draft);
+    if (input.listed !== false) {
+      const now = this.#options.clock.now();
+      const outcome = await this.#options.proposals.propose({
+        ...this.#scope(),
+        proposalId,
+        ruleType: normalized.type,
+        summary: normalized.summary,
+        origin: ownerSaid ? "owner_said" : "inferred",
+        threadId: input.threadId,
+        evidenceRef: proposalId,
+        now,
+        expiresAt: new Date(Date.parse(now) + this.#ttlDays() * DAY_MS).toISOString(),
+        pendingLimit: this.#limit(),
+      });
+      if (outcome === "limit_reached")
+        throw new OwnerRuleError("RULE_PROPOSALS_FULL", String(this.#limit()));
+    }
+    await this.#writeText(proposalId, JSON.stringify({ ...proposal, trials, replay: replayed }));
     return Object.freeze({
       status: "proposed",
       ruleId: null,
@@ -660,19 +731,127 @@ export class ProductionOwnerRuleWriter {
       type: input.type,
       summary,
       quote,
-      trials: trialsOf(draft),
+      trials,
       replay: replayed,
       replayed: false,
     });
   }
 
-  async confirm(proposalId: string): Promise<RuleReceipt> {
-    if (!/^rule-proposal:[0-9a-f]{32}$/u.test(proposalId))
-      throw new OwnerRuleError("RULE_NOT_FOUND");
+  #limit(): number {
+    return this.#options.proposalLimit ?? PENDING_PROPOSAL_LIMIT;
+  }
+
+  #ttlDays(): number {
+    return this.#options.proposalTtlDays ?? PENDING_PROPOSAL_TTL_DAYS;
+  }
+
+  async #readProposal(proposalId: string): Promise<Proposal | undefined> {
     const text = await this.#readText(proposalId);
-    if (text === undefined) throw new OwnerRuleError("RULE_NOT_FOUND");
-    const proposal = JSON.parse(text) as Proposal;
-    return this.#activate(proposal, null);
+    if (text === undefined) return undefined;
+    try {
+      return JSON.parse(text) as Proposal;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async confirm(proposalId: string): Promise<RuleReceipt> {
+    if (!PROPOSAL_ID_PATTERN.test(proposalId)) throw new OwnerRuleError("RULE_NOT_FOUND");
+    const scope = this.#scope();
+    const store = this.#options.proposals;
+    let row = await store.read({ ...scope, proposalId, now: this.#options.clock.now() });
+    let claimed = false;
+    if (row) {
+      if (row.status === "rejected") throw new OwnerRuleError("RULE_PROPOSAL_REJECTED");
+      if (row.status === "expired") throw new OwnerRuleError("RULE_PROPOSAL_EXPIRED");
+      if (row.status === "pending") {
+        const won = await store.decide({
+          ...scope,
+          proposalId,
+          from: "pending",
+          to: "accepted",
+          now: this.#options.clock.now(),
+        });
+        if (won) claimed = true;
+        else {
+          row = await store.read({ ...scope, proposalId, now: this.#options.clock.now() });
+          if (row?.status === "rejected") throw new OwnerRuleError("RULE_PROPOSAL_REJECTED");
+          if (row?.status === "expired") throw new OwnerRuleError("RULE_PROPOSAL_EXPIRED");
+        }
+      }
+    }
+    const release = async (): Promise<void> => {
+      if (claimed)
+        await store
+          .decide({
+            ...scope,
+            proposalId,
+            from: "accepted",
+            to: "pending",
+            now: this.#options.clock.now(),
+          })
+          .catch(() => undefined);
+    };
+    const proposal = await this.#readProposal(proposalId);
+    if (!proposal) {
+      await release();
+      throw new OwnerRuleError("RULE_NOT_FOUND");
+    }
+    try {
+      return await this.#activate(proposal, proposal.replay ?? null);
+    } catch (error) {
+      await release();
+      throw error;
+    }
+  }
+
+  async reject(proposalId: string): Promise<RejectedRuleProposal> {
+    if (!PROPOSAL_ID_PATTERN.test(proposalId)) throw new OwnerRuleError("RULE_NOT_FOUND");
+    const scope = this.#scope();
+    const store = this.#options.proposals;
+    const now = this.#options.clock.now();
+    const won = await store.decide({ ...scope, proposalId, from: "pending", to: "rejected", now });
+    if (won) return Object.freeze({ proposalId, replayed: false });
+    const row = await store.read({ ...scope, proposalId, now });
+    if (!row) throw new OwnerRuleError("RULE_NOT_FOUND");
+    if (row.status === "rejected") return Object.freeze({ proposalId, replayed: true });
+    if (row.status === "accepted") throw new OwnerRuleError("RULE_PROPOSAL_ACCEPTED");
+    throw new OwnerRuleError("RULE_PROPOSAL_EXPIRED");
+  }
+
+  async listProposals(): Promise<PendingRuleProposals> {
+    const now = this.#options.clock.now();
+    const listed = await this.#options.proposals.listPending({
+      ...this.#scope(),
+      now,
+      limit: this.#limit(),
+    });
+    const proposals: PendingRuleProposal[] = [];
+    for (const row of listed.proposals) {
+      const evidence = row.evidenceRef
+        ? await this.#readProposal(row.evidenceRef).catch(() => undefined)
+        : undefined;
+      proposals.push(
+        Object.freeze({
+          proposalId: row.proposalId,
+          type: row.ruleType,
+          summary: row.summary,
+          origin: row.origin,
+          quote: evidence?.quote ?? null,
+          trials: evidence?.trials ?? [],
+          replay: evidence?.replay ?? null,
+          proposedAt: row.proposedAt,
+          expiresAt: row.expiresAt,
+          refusedBefore: row.rejectCount,
+        }),
+      );
+    }
+    return Object.freeze({
+      proposals: Object.freeze(proposals),
+      pendingCount: listed.pendingCount,
+      limit: this.#limit(),
+      expiresAfterDays: this.#ttlDays(),
+    });
   }
 
   async storedFor(key: string): Promise<boolean> {

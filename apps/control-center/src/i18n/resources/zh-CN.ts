@@ -854,7 +854,7 @@ export const messages = {
   "rules.undo": "撤销",
   "rules.receipt.label": "长期规则回执",
   "rules.receipt.status":
-    "{s, select, active {已立为长期规则} proposed {建议立为长期规则，点“生效”才执行} soft {已记成偏好，程序不强制执行} undone {已撤销} other {长期规则}}",
+    "{s, select, active {已立为长期规则} proposed {建议立为长期规则，点“生效”才执行} soft {已记成偏好，程序不强制执行} undone {已撤销} rejected {已拒绝，不会生效} other {长期规则}}",
   "rules.receipt.trials": "试算",
   "rules.receipt.trial": "{hit, select, true {会命中} other {不会命中}}：{from} · {subject}",
   "rules.receipt.replay":
@@ -863,6 +863,18 @@ export const messages = {
     "回放用当时存下的内容重算。判为“不用管”的邮件只存了发件人和标题，所以结果是估计，可能偏多也可能偏少。",
   "rules.receipt.replayNone": "这次没能做历史回放，规则已照常生效。",
   "rules.receipt.confirm": "生效",
+  "rules.pending.title": "待采纳的规则 · {count} 条",
+  "rules.pending.note":
+    "这些是建议立的规则，点“生效”才会执行，点“不要”就不会写进规则。已用 {count} 条，最多 {limit} 条；{days} 天内不处理会自动过期。",
+  "rules.pending.origin":
+    "{o, select, owner_said {你说过的话} other {Himawari 推断的，不是你的原话}}",
+  "rules.pending.evidence": "看依据",
+  "rules.pending.noEvidence": "没有记录",
+  "rules.pending.replay":
+    "提出时的回放：近 {days} 天判断过的 {checked} 封邮件里，规则命中 {hit} 封，其中 {changed} 封会改判。",
+  "rules.pending.expires": "{date} 过期",
+  "rules.pending.refused": "你之前不要过 {count} 次",
+  "rules.pending.reject": "不要",
   "memory.page.carry.title": "每次对话都会带上的记忆",
   "memory.page.carry.summary": "{count} 条 · 已用 {used} / {limit} 字",
   "memory.page.carry.queued": "还有 {count} 条放不下",

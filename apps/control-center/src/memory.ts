@@ -19,12 +19,18 @@ export type OwnerRule = Extract<
   GatewayV2Snapshot,
   { type: "memory.rules.snapshot" }
 >["payload"]["rules"][number];
-export type OwnerRuleAction = "undo" | "confirm" | "reconfirm";
+export type RuleProposals = Extract<
+  GatewayV2Snapshot,
+  { type: "memory.ruleProposals.snapshot" }
+>["payload"];
+export type RuleProposal = RuleProposals["proposals"][number];
+export type OwnerRuleAction = "undo" | "confirm" | "reconfirm" | "reject";
 const REMINDER_REFRESH_MS = 300_000;
 
 export interface MemoryModel {
   readonly overview: MemoryOverview | null;
   readonly rules: readonly OwnerRule[];
+  readonly proposals: RuleProposals | null;
   readonly respondRule: (target: string, action: OwnerRuleAction) => Promise<boolean>;
   readonly failed: boolean;
   readonly busy: boolean;
@@ -80,6 +86,9 @@ export function useMemory(input: {
     configuration?.installedGatewayV2Operations?.includes("memory.overview.read") ?? false;
   const rulesAvailable =
     configuration?.installedGatewayV2Operations?.includes("memory.rules.read") ?? false;
+  const proposalsAvailable =
+    configuration?.installedGatewayV2Operations?.includes("memory.ruleProposals.read") ?? false;
+  const [proposals, setProposals] = useState<RuleProposals | null>(null);
   const [overview, setOverview] = useState<MemoryOverview | null>(null);
   const [rules, setRules] = useState<readonly OwnerRule[]>([]);
   const [failed, setFailed] = useState(false);
@@ -112,10 +121,29 @@ export function useMemory(input: {
         .catch(() => {
           if (!disposed) setFailed(true);
         });
+    if (proposalsAvailable)
+      void client
+        .query(queryMessage(configuration, "memory.ruleProposals.read", {}))
+        .then((result) => {
+          if (result.type !== "memory.ruleProposals.snapshot") throw new Error("PROPOSALS_INVALID");
+          if (!disposed) setProposals(result.payload);
+        })
+        .catch(() => {
+          if (!disposed) setFailed(true);
+        });
     return () => {
       disposed = true;
     };
-  }, [available, rulesAvailable, client, configuration, connected, reload, refreshSignal]);
+  }, [
+    available,
+    rulesAvailable,
+    proposalsAvailable,
+    client,
+    configuration,
+    connected,
+    reload,
+    refreshSignal,
+  ]);
   useEffect(() => {
     if (!available || !connected) return;
     const timer = window.setInterval(() => setReload((value) => value + 1), REMINDER_REFRESH_MS);
@@ -151,6 +179,7 @@ export function useMemory(input: {
   return {
     overview,
     rules,
+    proposals,
     respondRule: (target, action) => send("memory.rule.respond", () => ({ target, action })),
     failed,
     busy,

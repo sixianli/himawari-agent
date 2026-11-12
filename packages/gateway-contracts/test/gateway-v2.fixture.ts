@@ -806,6 +806,27 @@ export const governanceMessages = [
     ],
     generatedAt: "2026-11-11T00:00:00.000Z",
   }),
+  fixture("query", "memory.ruleProposals.read", {}),
+  fixture("snapshot", "memory.ruleProposals.snapshot", {
+    proposals: [
+      {
+        proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
+        type: "mail_must_notify",
+        summary: "日本入管局相关的邮件一律提醒",
+        origin: "inferred",
+        quote: "入管局的邮件别漏了",
+        trials: [{ from: "info@mail.isa.go.jp", subject: "Hello", hit: true }],
+        replay: { days: 30, mailsChecked: 120, mailsHit: 3, changed: 2, truncated: false },
+        proposedAt: "2026-11-11T00:00:00.000Z",
+        expiresAt: "2026-12-11T00:00:00.000Z",
+        refusedBefore: 0,
+      },
+    ],
+    pendingCount: 1,
+    limit: 20,
+    expiresAfterDays: 30,
+    generatedAt: "2026-11-11T00:00:00.000Z",
+  }),
   fixture("command", "memory.rule.respond", {
     target: "owner:0123456789abcdef01234567",
     action: "undo",

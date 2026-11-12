@@ -100,7 +100,14 @@ export function RuleReceiptCard({
     <section className="memory-card rule-receipt" aria-label={message("rules.receipt.label")}>
       <span className="memory-tag" data-kind="rule">
         {message("rules.receipt.status", {
-          s: done === "undo" ? "undone" : done === "confirm" ? "active" : receipt.status,
+          s:
+            done === "undo"
+              ? "undone"
+              : done === "confirm"
+                ? "active"
+                : done === "reject"
+                  ? "rejected"
+                  : receipt.status,
         })}
       </span>
       <p className="memory-text">{receipt.summary}</p>
@@ -165,8 +172,111 @@ export function RuleReceiptCard({
               {message("rules.receipt.confirm")}
             </ActionButton>
           ) : null}
+          {receipt.status === "proposed" && receipt.proposalId ? (
+            <ActionButton
+              variant="quiet"
+              disabled={memory.busy}
+              onClick={() => void act(receipt.proposalId ?? "", "reject")}
+            >
+              {message("rules.pending.reject")}
+            </ActionButton>
+          ) : null}
         </div>
       )}
+    </section>
+  );
+}
+
+function PendingRuleProposals({
+  memory,
+  message,
+}: {
+  memory: Pick<MemoryModel, "proposals" | "respondRule" | "busy">;
+  message: Message;
+}) {
+  const pending = memory.proposals;
+  if (!pending || !pending.proposals.length) return null;
+  return (
+    <section
+      id="memory-rule-proposals"
+      className="memory-confirm"
+      aria-label={message("rules.pending.title", { count: pending.pendingCount })}
+    >
+      <h4>{message("rules.pending.title", { count: pending.pendingCount })}</h4>
+      <p className="settings-note">
+        {message("rules.pending.note", {
+          count: pending.pendingCount,
+          limit: pending.limit,
+          days: pending.expiresAfterDays,
+        })}
+      </p>
+      {pending.proposals.map((proposal) => (
+        <section
+          className="memory-card"
+          key={proposal.proposalId}
+          data-proposal={proposal.proposalId}
+        >
+          <span className="memory-tag" data-kind="rule" data-origin={proposal.origin}>
+            {message("rules.type", { t: proposal.type })}
+          </span>
+          <small> {message("rules.pending.origin", { o: proposal.origin })}</small>
+          <p className="memory-text">{proposal.summary}</p>
+          <small>
+            {message("rules.pending.expires", { date: proposal.expiresAt.slice(0, 10) })}
+          </small>
+          {proposal.refusedBefore > 0 ? (
+            <small> {message("rules.pending.refused", { count: proposal.refusedBefore })}</small>
+          ) : null}
+          <details>
+            <summary>{message("rules.pending.evidence")}</summary>
+            {proposal.quote === null && !proposal.trials.length && proposal.replay === null ? (
+              <p className="settings-note">{message("rules.pending.noEvidence")}</p>
+            ) : (
+              <>
+                {proposal.quote === null ? null : <blockquote>{proposal.quote}</blockquote>}
+                {proposal.trials.length ? (
+                  <ul className="rule-trials">
+                    {proposal.trials.map((trial, index) => (
+                      <li key={`${index}-${trial.from ?? ""}`} data-hit={String(trial.hit)}>
+                        {message("rules.receipt.trial", {
+                          hit: String(trial.hit),
+                          from: trial.from ?? "",
+                          subject: trial.subject ?? "",
+                        })}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {proposal.replay ? (
+                  <p className="settings-note">
+                    {message("rules.pending.replay", {
+                      days: proposal.replay.days,
+                      checked: proposal.replay.mailsChecked,
+                      hit: proposal.replay.mailsHit,
+                      changed: proposal.replay.changed,
+                    })}
+                  </p>
+                ) : null}
+              </>
+            )}
+          </details>
+          <div className="actions">
+            <ActionButton
+              disabled={memory.busy}
+              onClick={() => void memory.respondRule(proposal.proposalId, "confirm")}
+            >
+              {message("rules.receipt.confirm")}
+            </ActionButton>
+            <ActionButton
+              variant="quiet"
+              disabled={memory.busy}
+              onClick={() => void memory.respondRule(proposal.proposalId, "reject")}
+            >
+              {message("rules.pending.reject")}
+            </ActionButton>
+          </div>
+        </section>
+      ))}
     </section>
   );
 }
@@ -175,45 +285,49 @@ export function OwnerRulesSection({
   memory,
   message,
 }: {
-  memory: Pick<MemoryModel, "rules" | "respondRule" | "busy">;
+  memory: Pick<MemoryModel, "rules" | "proposals" | "respondRule" | "busy">;
   message: Message;
 }) {
-  if (!memory.rules.length) return null;
+  const proposals = <PendingRuleProposals memory={memory} message={message} />;
+  if (!memory.rules.length) return proposals;
   return (
-    <section
-      id="memory-rules"
-      className="memory-confirm"
-      aria-label={message("rules.title", { count: memory.rules.length })}
-    >
-      <h4>{message("rules.title", { count: memory.rules.length })}</h4>
-      <p className="settings-note">{message("rules.note")}</p>
-      {memory.rules.map((rule) => (
-        <section className="memory-card" key={rule.ruleId} data-rule={rule.ruleId}>
-          <span className="memory-tag" data-kind="rule">
-            {message("rules.type", { t: rule.type })}
-          </span>
-          {rule.status === "needs_review" ? <small> {message("rules.needsReview")}</small> : null}
-          {rule.enforced ? null : <small> {message("rules.notEnforced")}</small>}
-          <p className="memory-text">{rule.summary}</p>
-          <div className="actions">
-            {rule.status === "needs_review" && rule.enforced ? (
+    <>
+      {proposals}
+      <section
+        id="memory-rules"
+        className="memory-confirm"
+        aria-label={message("rules.title", { count: memory.rules.length })}
+      >
+        <h4>{message("rules.title", { count: memory.rules.length })}</h4>
+        <p className="settings-note">{message("rules.note")}</p>
+        {memory.rules.map((rule) => (
+          <section className="memory-card" key={rule.ruleId} data-rule={rule.ruleId}>
+            <span className="memory-tag" data-kind="rule">
+              {message("rules.type", { t: rule.type })}
+            </span>
+            {rule.status === "needs_review" ? <small> {message("rules.needsReview")}</small> : null}
+            {rule.enforced ? null : <small> {message("rules.notEnforced")}</small>}
+            <p className="memory-text">{rule.summary}</p>
+            <div className="actions">
+              {rule.status === "needs_review" && rule.enforced ? (
+                <ActionButton
+                  disabled={memory.busy}
+                  onClick={() => void memory.respondRule(rule.ruleId, "reconfirm")}
+                >
+                  {message("rules.reconfirm")}
+                </ActionButton>
+              ) : null}
               <ActionButton
+                variant="quiet"
                 disabled={memory.busy}
-                onClick={() => void memory.respondRule(rule.ruleId, "reconfirm")}
+                onClick={() => void memory.respondRule(rule.ruleId, "undo")}
               >
-                {message("rules.reconfirm")}
+                {message("rules.undo")}
               </ActionButton>
-            ) : null}
-            <ActionButton
-              variant="quiet"
-              disabled={memory.busy}
-              onClick={() => void memory.respondRule(rule.ruleId, "undo")}
-            >
-              {message("rules.undo")}
-            </ActionButton>
-          </div>
-        </section>
-      ))}
-    </section>
+            </div>
+          </section>
+        ))}
+      </section>
+    </>
   );
 }

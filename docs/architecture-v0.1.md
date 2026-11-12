@@ -415,6 +415,10 @@ Memory 端口使用产品自己的 proposal、record、candidate 和 correction 
 
 user message、schedule 和 external event 没有各自的上下文实现，三者只改变统一请求中的 `sourceType`。Pi 的公开产品依赖面只包含 Agent Runtime Port，因此不能直接调用 Memory 的 proposal、commit、correct 或 delete；长期记忆写入仍必须由后续 Run Coordinator 的产品策略触发。该边界落实可替换 Memory 决策：[SOURCE: docs/adr/0005-replaceable-memory-boundary.md]
 
+### 待采纳的规则提议（2026-11-12）
+
+模型用 `rule_set` 提的、主人没明说的规则不直接生效，而是存成提议：表 `owner_rule_proposals` 只存索引（提议编号、类型、一句话说明、来源标记“主人说的”或“模型推断的”、来源对话、状态 待采纳/已采纳/已拒绝/已过期、产生和过期时间、被提议和被拒绝的次数）；原话、参数、试算例子和回放数字仍在加密载荷里，表里只存载荷引用，读的时候不重算。提议编号是类型、参数（先固定键顺序）、说明和原话的哈希，同样内容再次提议会把状态重置为待采纳并保留拒绝次数。网关新增读操作 `memory.ruleProposals.read`（待采纳列表，顺序固定，带已用条数、上限和每条的过期日）；命令 `memory.rule.respond` 的动作增为 `undo`、`confirm`、`reconfirm`、`reject`，未知动作报错；`reject` 只把提议标成已拒绝，不写规则也不写记忆，已采纳的提议再拒绝、已拒绝的再采纳都被拒绝。采纳和拒绝靠“先把状态从待采纳改走”这一步互斥，同时点只有一个生效。待采纳数量上限和过期天数是写在 `production-owner-rules.ts` 里的默认值，也随列表响应一起返回，界面显示的就是这两个值。外部 agent 经 MCP 提的规则当场确认，不写这张表。
+
 ### Model routing and trusted Provider boundary
 
 Model descriptor 以产品值固定 provider、model、version、routing class、deterministic priority、capabilities、允许的数据等级、披露边界和可空 Secret requirement。`ModelRouterService` 的策略阶段先对候选生成明确 allow/deny reason，并把任务 profile、数据等级、请求披露上限、政策引用、全部候选和最终模型身份写入 protected Trace；只有 `model.route_decided` 成功写入后才进入执行阶段并产生 Provider request。

@@ -149,7 +149,7 @@ describe("[P2-3] standing rules on the web page", () => {
     );
     expect(container.textContent).toContain("点“生效”才执行");
     expect(container.textContent).toContain("这次没能做历史回放");
-    expect(buttons()).toEqual(["生效"]);
+    expect(buttons()).toEqual(["生效", "不要"]);
     await press("生效");
     expect(respondRule).toHaveBeenCalledWith(
       "rule-proposal:0123456789abcdef0123456789abcdef",
@@ -199,6 +199,7 @@ describe("[P2-3] standing rules on the web page", () => {
             rule({ ruleId: "owner:b", status: "needs_review", summary: "入管局的邮件一律提醒" }),
             rule({ ruleId: "owner:c", enforced: false, summary: "读不懂的规则" }),
           ],
+          proposals: null,
           respondRule,
           busy: false,
         },
@@ -217,7 +218,97 @@ describe("[P2-3] standing rules on the web page", () => {
 
   it("REVERSE: shows no rules section when there are no rules", async () => {
     await show(
-      h(OwnerRulesSection, { memory: { rules: [], respondRule: vi.fn(), busy: false }, message }),
+      h(OwnerRulesSection, {
+        memory: { rules: [], proposals: null, respondRule: vi.fn(), busy: false },
+        message,
+      }),
+    );
+    expect(container.textContent).toBe("");
+  });
+
+  const proposal = (over: Record<string, unknown> = {}) => ({
+    proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
+    type: "mail_must_notify",
+    summary: "入管局的邮件一律提醒",
+    origin: "inferred" as "inferred" | "owner_said",
+    quote: "入管局的邮件别漏了" as string | null,
+    trials: [{ from: "info@mail.isa.go.jp", subject: "Hello", hit: true }],
+    replay: { days: 30, mailsChecked: 120, mailsHit: 3, changed: 2, truncated: false },
+    proposedAt: "2026-11-11T00:00:00.000Z",
+    expiresAt: "2026-12-11T00:00:00.000Z",
+    refusedBefore: 0,
+    ...over,
+  });
+
+  it("lists waiting proposals with who they came from, the basis, the limit and the day they expire, and sends adopt and refuse", async () => {
+    const respondRule = vi.fn(async () => true);
+    await show(
+      h(OwnerRulesSection, {
+        memory: {
+          rules: [],
+          proposals: {
+            proposals: [
+              proposal(),
+              proposal({
+                proposalId: "rule-proposal:ffffffffffffffffffffffffffffffff",
+                origin: "owner_said",
+                quote: null,
+                trials: [],
+                replay: null,
+                refusedBefore: 2,
+              }),
+            ],
+            pendingCount: 2,
+            limit: 20,
+            expiresAfterDays: 30,
+            generatedAt: "2026-11-11T00:00:00.000Z",
+          },
+          respondRule,
+          busy: false,
+        },
+        message,
+      }),
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("待采纳的规则 · 2 条");
+    expect(text).toContain("已用 2 条，最多 20 条");
+    expect(text).toContain("30 天内不处理会自动过期");
+    expect(text).toContain("Himawari 推断的，不是你的原话");
+    expect(text).toContain("你说过的话");
+    expect(text).toContain("2026-12-11 过期");
+    expect(text).toContain("入管局的邮件别漏了");
+    expect(text).toContain("规则命中 3 封");
+    expect(text).toContain("没有记录");
+    expect(text).toContain("你之前不要过 2 次");
+    await press("生效");
+    expect(respondRule).toHaveBeenCalledWith(
+      "rule-proposal:0123456789abcdef0123456789abcdef",
+      "confirm",
+    );
+    await press("不要");
+    expect(respondRule).toHaveBeenLastCalledWith(
+      "rule-proposal:0123456789abcdef0123456789abcdef",
+      "reject",
+    );
+  });
+
+  it("REVERSE: shows no waiting-proposal section when none are waiting", async () => {
+    await show(
+      h(OwnerRulesSection, {
+        memory: {
+          rules: [],
+          proposals: {
+            proposals: [],
+            pendingCount: 0,
+            limit: 20,
+            expiresAfterDays: 30,
+            generatedAt: "2026-11-11T00:00:00.000Z",
+          },
+          respondRule: vi.fn(),
+          busy: false,
+        },
+        message,
+      }),
     );
     expect(container.textContent).toBe("");
   });
