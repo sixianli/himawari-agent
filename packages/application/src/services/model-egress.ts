@@ -129,6 +129,7 @@ class Exchange implements ModelEgressExchange {
   readonly table = new Map<string, string>();
   readonly #known = new Map<string, string>();
   readonly #counts = new Map<string, number>();
+  #lastRequest: { readonly key: string; readonly body: string | undefined } | undefined;
   readonly #options: ModelEgressOptions;
   readonly #context: ModelEgressContext | undefined;
 
@@ -188,6 +189,15 @@ class Exchange implements ModelEgressExchange {
       refuse("request has no readable body");
     }
     if (typeof body !== "string") refuse("request body is not text");
+    const requestKey = `${href}\u0000${body}`;
+    if (this.#lastRequest?.key === requestKey) {
+      const resent = this.#lastRequest.body;
+      if (resent === undefined) return { input, init };
+      return {
+        input,
+        init: { ...options, body: resent, headers: withoutLength(options["headers"]) },
+      };
+    }
     const path = pathOf(href);
     const redactor = this.#redactorFor(path);
     if (redactor === undefined) refuse(`unsupported request path ${path}`);
@@ -249,12 +259,17 @@ class Exchange implements ModelEgressExchange {
     };
     const next = redactor(parsed, text);
     this.#report(sightings);
-    if (next === parsed) return { input, init };
+    if (next === parsed) {
+      this.#lastRequest = { key: requestKey, body: undefined };
+      return { input, init };
+    }
+    const redacted = JSON.stringify(next);
+    this.#lastRequest = { key: requestKey, body: redacted };
     return {
       input,
       init: {
         ...options,
-        body: JSON.stringify(next),
+        body: redacted,
         headers: withoutLength(options["headers"]),
       },
     };

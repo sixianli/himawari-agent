@@ -1152,6 +1152,7 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       secretSource: { productionSuitable: true, resolve: async () => "loopback-fixture-key" },
     });
     const projection = new ConversationProjection();
+    const failureCodes: string[] = [];
     const adapter = new PiAgentRuntimeAdapter({
       egress: testModelEgress(),
       projection,
@@ -1166,6 +1167,7 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     });
     const runTurns = async () => {
       const outcomes: (string | undefined)[] = [];
+      failureCodes.length = 0;
       for (const [index, turn] of THREE_TURNS.entries()) {
         projection.turn = turn;
         const events: RuntimeEvent[] = [];
@@ -1174,21 +1176,23 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
           modelRef: "loopback-primary",
         } as RuntimeRequest))
           events.push(event);
-        outcomes.push(
-          events.find((event) => event.type === "runtime.failed")?.type ?? events.at(-1)?.type,
-        );
+        const failed = events.find((event) => event.type === "runtime.failed");
+        if (failed?.type === "runtime.failed") failureCodes.push(failed.errorCode);
+        outcomes.push(failed?.type ?? events.at(-1)?.type);
       }
       return outcomes;
     };
-    return { runTurns };
+    return { runTurns, failureCodes };
   };
 
   it("[ADR-0198] a failing provider is retried at the request layer with identical bytes, never inside Pi, so no context_edit removes anything from the next request", async () => {
     const server = await loopback((index) =>
       index >= 1 && index <= 3 ? { status: 503, retryAfter: "0" } : { text: `回答 ${index}` },
     );
-    const outcomes = await retryAdapter(server).runTurns();
+    const adapter = retryAdapter(server);
+    const outcomes = await adapter.runTurns();
     expect(outcomes).toEqual(["runtime.completed", "runtime.failed", "runtime.completed"]);
+    expect(adapter.failureCodes).toEqual(["PI_MODEL_UNAVAILABLE"]);
     expect(server.bodies).toHaveLength(5);
     expect(server.bodies[2]).toBe(server.bodies[1]);
     expect(server.bodies[3]).toBe(server.bodies[1]);
@@ -1221,8 +1225,10 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     const server = await loopback((index) =>
       index === 1 ? { status: 429, retryAfter: "120" } : { text: `回答 ${index}` },
     );
-    const outcomes = await retryAdapter(server).runTurns();
+    const adapter = retryAdapter(server);
+    const outcomes = await adapter.runTurns();
     expect(outcomes).toEqual(["runtime.completed", "runtime.failed", "runtime.completed"]);
+    expect(adapter.failureCodes).toEqual(["PI_MODEL_RATE_LIMITED"]);
     expect(server.bodies).toHaveLength(3);
   });
 

@@ -637,6 +637,50 @@ describe("reporting what was masked", () => {
     });
   });
 
+  it("[RETRY-429] resends the same bytes and reports once when the identical request is sent again", async () => {
+    const { reports, instance } = reporting();
+    const { calls, base } = recorder();
+    const fetch = instance.exchange(context).wrapFetch(base);
+    const request = {
+      model: "m",
+      messages: [
+        { role: "user", content: "先记一下 hunter22abc" },
+        { role: "assistant", content: "好的" },
+        { role: "user", content: "密码：hunter22abc" },
+      ],
+    };
+    const call = () =>
+      fetch("https://gateway.invalid/v1/chat/completions", {
+        method: "POST",
+        headers: { "content-type": "application/json", "content-length": "999" },
+        body: JSON.stringify(request),
+      });
+    await call();
+    await call();
+    await call();
+    expect(calls).toHaveLength(3);
+    expect(String(calls[1]?.[1]?.body)).toBe(String(calls[0]?.[1]?.body));
+    expect(String(calls[2]?.[1]?.body)).toBe(String(calls[0]?.[1]?.body));
+    expect(String(calls[0]?.[1]?.body)).toContain("先记一下 hunter22abc");
+    expect(reports).toHaveLength(1);
+  });
+
+  it("REVERSE [RETRY-429] masks a different request on its own, so a changed body is never served from the resend memory", async () => {
+    const { reports, instance } = reporting();
+    const { calls, base } = recorder();
+    const fetch = instance.exchange(context).wrapFetch(base);
+    const send2 = (text: string) =>
+      fetch("https://gateway.invalid/v1/chat/completions", {
+        method: "POST",
+        body: JSON.stringify({ model: "m", messages: [{ role: "user", content: text }] }),
+      });
+    await send2("密码：hunter22abc");
+    await send2("密码：other77pass9");
+    expect(String(calls[1]?.[1]?.body)).not.toContain("other77pass9");
+    expect(String(calls[1]?.[1]?.body)).not.toBe(String(calls[0]?.[1]?.body));
+    expect(reports).toHaveLength(2);
+  });
+
   it("reports nothing without a context or when nothing was masked", async () => {
     const { reports, instance } = reporting();
     await send("/chat/completions", chat, { exchange: instance.exchange() });

@@ -7,9 +7,21 @@ export interface ProviderRejection {
   readonly host: string | null;
 }
 
+const HEADER_LIMIT = 128;
+
+const headerText = (value: string | null): string | null =>
+  value === null ? null : value.slice(0, HEADER_LIMIT);
+
 const hostOf = (input: unknown): string | null => {
   try {
-    const href = typeof input === "string" ? input : input instanceof URL ? input.href : undefined;
+    const href =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : typeof (input as { url?: unknown } | null)?.url === "string"
+            ? (input as { url: string }).url
+            : undefined;
     return href === undefined ? null : new URL(href).host;
   } catch {
     return null;
@@ -27,10 +39,12 @@ export function observeProviderRejections(
       try {
         onRejected({
           status: response.status,
-          retryAfter: response.headers.get("retry-after-ms")
-            ? `${response.headers.get("retry-after-ms")}ms`
-            : response.headers.get("retry-after"),
-          shouldRetry: response.headers.get("x-should-retry"),
+          retryAfter: headerText(
+            response.headers.get("retry-after-ms")
+              ? `${response.headers.get("retry-after-ms")}ms`
+              : response.headers.get("retry-after"),
+          ),
+          shouldRetry: headerText(response.headers.get("x-should-retry")),
           host: hostOf(input),
         });
       } catch {}

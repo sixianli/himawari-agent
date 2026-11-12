@@ -43,3 +43,30 @@ it("REVERSE: after a transport error a resend surfaces the original error, not a
   await expect(fetch("https://gateway.test/x", { method: "POST" })).rejects.toBe(original);
   expect(calls).toBe(1);
 });
+
+it("REVERSE: a status the provider will not retry keeps the gateway closed to a resend", async () => {
+  let calls = 0;
+  const { fetch } = observeGatewayFetch(async () => {
+    calls += 1;
+    return new Response("{}", { status: 400 });
+  }, "m");
+  expect((await fetch("https://gateway.test/x", { method: "POST" })).status).toBe(400);
+  await expect(fetch("https://gateway.test/x", { method: "POST" })).rejects.toThrow(
+    "AI_GATEWAY_MULTIPLE_REQUESTS_FORBIDDEN",
+  );
+  expect(calls).toBe(1);
+});
+
+it("REVERSE: resends stop after the configured number of rejected attempts", async () => {
+  let calls = 0;
+  const { fetch } = observeGatewayFetch(async () => {
+    calls += 1;
+    return new Response("{}", { status: 503 });
+  }, "m");
+  for (let attempt = 0; attempt < 3; attempt += 1)
+    expect((await fetch("https://gateway.test/x", { method: "POST" })).status).toBe(503);
+  await expect(fetch("https://gateway.test/x", { method: "POST" })).rejects.toThrow(
+    "AI_GATEWAY_MULTIPLE_REQUESTS_FORBIDDEN",
+  );
+  expect(calls).toBe(3);
+});

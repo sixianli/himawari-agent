@@ -135,9 +135,13 @@ async function observeResponse(
   }
 }
 
+const RESENDABLE_STATUSES = new Set([408, 409, 429]);
+const MAX_GATEWAY_RESENDS = 2;
+
 export function observeGatewayFetch(
   fetch: FetchFunction,
   expectedModel: string,
+  maxResends = MAX_GATEWAY_RESENDS,
 ): {
   readonly fetch: FetchFunction;
   readonly result: () => Promise<GatewayObservation>;
@@ -145,6 +149,7 @@ export function observeGatewayFetch(
   let sent = false;
   let repeated = false;
   let failure: unknown;
+  let rejected = 0;
   let observation: Promise<GatewayObservation> = Promise.resolve({ status: "missing" });
   return {
     fetch: async (input, init) => {
@@ -162,7 +167,12 @@ export function observeGatewayFetch(
         throw error;
       }
       if (!response.ok) {
-        sent = false;
+        rejected += 1;
+        if (
+          rejected <= maxResends &&
+          (RESENDABLE_STATUSES.has(response.status) || response.status >= 500)
+        )
+          sent = false;
         return response;
       }
       if (response.ok && response.body !== null) {

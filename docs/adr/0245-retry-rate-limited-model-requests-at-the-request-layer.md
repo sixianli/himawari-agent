@@ -47,10 +47,12 @@ Himawari 关着两层重试：Pi 的自动重试（`packages/runtime-pi/src/pi-r
 
 1. 传给 Pi 模型层的 `maxRetries` 从 0 改成 2，`maxRetryDelayMs` 设为 10 秒。重试只重发同一份请求体，失败的那次不进历史，不影响 KV 缓存（[prompt-prefix 规则](../../.claude/rules/prompt-prefix.md)第 4 条）。服务方要求等超过 10 秒时立刻失败，总等待不超过约 22 秒。
 2. Pi 的自动重试仍然关着，决定 7 的前提不变。
-3. Vercel 网关的请求观察器原来只许每次调用发一次请求。改成：上一次得到非 2xx 响应（没有生成内容、没有计费）时允许重发；发过一次成功响应后再发仍然报 `AI_GATEWAY_MULTIPLE_REQUESTS_FORBIDDEN`；网络错误之后再发，直接重抛原来的错误，不再发请求。
-4. 每个被拒绝的响应写一行服务日志 `model.request_rejected`：运行号、状态码、`retry-after`、`x-should-retry`、服务方主机名（不含路径、密钥和内容）。这是这次查不到“谁返回的 429、等多久”的缺口。
+3. Vercel 网关的请求观察器原来只许每次调用发一次请求。改成：上一次得到 408、409、429 或 5xx 的拒绝（没有生成内容，不记用量）时允许重发，最多重发 2 次；其他非 2xx（如 400、401）、发过一次成功响应后再发，仍然报 `AI_GATEWAY_MULTIPLE_REQUESTS_FORBIDDEN`；网络错误之后再发，直接重抛原来的错误，不再发请求。
+4. 聊天请求和压缩摘要请求里，每个被拒绝的响应写一行服务日志 `model.request_rejected`：运行号、状态码、`retry-after`、`x-should-retry`、服务方主机名（不含路径、密钥和内容；头部文字截到 128 个字符）。这是这次查不到“谁返回的 429、等多久”的缺口。
 5. 超过等待上限而失败时，错误信息以“Server requested …s retry delay (max: …s).”开头，仍按其后的状态码归类成“限流”，用户看到的还是“模型服务当前限流”。
-6. 不在同一对话中途自动换模型或服务方：换服务方会让缓存整段重算（prompt-prefix 规则第 8、9 条）。
+6. 出口遮盖对“同一份请求再发一次”只做一次：同一个出口交换里，请求地址和请求体都与上一次完全相同时，直接沿用上一次遮盖后的请求体，不重新遮盖、不重复上报拦截记录。否则第二次遮盖会带着第一次已记下的“点名值”，把排在点名消息前面的同一个值也遮掉，重发的字节就和第一次不同（复核第 1 轮发现，`[RETRY-429]` 用例复现过）。
+7. 范围：只覆盖聊天请求和压缩摘要请求。标题、邮件判断、记忆整理等后台调用走 `packages/runtime-pi/src/pi-model-transport.ts`，仍然 `maxRetries: 0`，它们的准入、用量和缓存预热是另一条路，另行决定；记忆保存已有自己的同轮重试（[ADR 0222](0222-retry-and-queue-failed-memory-capture.md)）。
+8. 不在同一对话中途自动换模型或服务方：换服务方会让缓存整段重算（prompt-prefix 规则第 8、9 条）。
 
 [↑ 返回阅读导航](#contents)
 
@@ -70,10 +72,10 @@ Himawari 关着两层重试：Pi 的自动重试（`packages/runtime-pi/src/pi-r
 ## 后果
 
 - 偶发的 429/503 对用户不可见，最多多等几秒。
-- 失败的尝试不收费，所以一次调用仍只记一份用量；准入和预算按调用算，没有变。
+- 被拒绝的响应没有生成内容，不记用量，所以一次调用仍只记一份用量；准入和预算按调用算，没有变。
 - 压缩摘要请求也走同一个请求函数，一并重试；它的失败原因仍按状态码归类。
 - 持续限流时多发最多 2 次请求，每次都带上同一份遮盖后的内容。
-- 测试：`packages/runtime-pi/test/prompt-prefix.compat.test.ts` 的 `[ADR-0198]`（持续 503 时重发的请求字节完全相同、历史里没有 `context_edit`、下一轮仍以第一轮开头）、`[RETRY-429]` 及其反向用例（等待超过上限立刻失败）；`gateway-observation.unit.test.ts`。
+- 测试：`packages/application/test/model-egress.unit.test.ts` 的 `[RETRY-429]`（重发字节相同、只上报一次，及反向用例）；`provider-rejection-observation.unit.test.ts`；`packages/runtime-pi/test/prompt-prefix.compat.test.ts` 的 `[ADR-0198]`（持续 503 时重发的请求字节完全相同、历史里没有 `context_edit`、下一轮仍以第一轮开头）、`[RETRY-429]` 及其反向用例（等待超过上限立刻失败）；`gateway-observation.unit.test.ts`。
 
 [↑ 返回阅读导航](#contents)
 
