@@ -64,15 +64,19 @@ udid="$(xcrun simctl list devices available | grep -F "$device_name (" | head -1
 if [ -z "$udid" ]; then
   udid="$(xcrun simctl create "$device_name" "$device_type" "$runtime")"
 fi
+echo "UI_REVIEW_BUILD device=$udid"
+taskpolicy -b xcodebuild -project "$root/App/Himawari.xcodeproj" -scheme Himawari -configuration Debug \
+  -destination "id=$udid" -derivedDataPath "$derived" -jobs 2 \
+  COMPILER_INDEX_STORE_ENABLE=NO build -quiet
+app="$derived/Build/Products/Debug-iphonesimulator/Himawari.app"
+bundle="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")"
+
+if ! xcrun simctl list devices booted | grep -qF "$udid"; then
+  trap 'xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true' EXIT
+fi
 xcrun simctl boot "$udid" 2>/dev/null || true
 xcrun simctl bootstatus "$udid" -b >/dev/null
 xcrun simctl status_bar "$udid" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
-
-echo "UI_REVIEW_BUILD device=$udid"
-xcodebuild -project "$root/App/Himawari.xcodeproj" -scheme Himawari -configuration Debug \
-  -destination "id=$udid" -derivedDataPath "$derived" build -quiet
-app="$derived/Build/Products/Debug-iphonesimulator/Himawari.app"
-bundle="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")"
 xcrun simctl install "$udid" "$app"
 
 shots="$out"
