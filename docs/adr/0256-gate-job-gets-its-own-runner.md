@@ -1,7 +1,7 @@
 ---
 status: active
 document_type: adr
-decision_status: proposed
+decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0176-ci-on-ovh-vps.md, docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md"
@@ -65,7 +65,7 @@ Andy 的要求：CI 要顺；修根因，不降低检查质量；不在 GitHub �
 
 ## Andy 的原话
 
-这份 ADR 还是提议，等 Andy 决定。他同意后把原话补在这里，并把 `decision_status` 改成 `accepted`。
+2026-11-12 22:13（日本时间），Andy 在决定卡片“同意按 ADR 0256 修 CI 排队吗（加专用 runner，main 确认只留最新）？”上选了“两项都同意”。第 1 步和第 2 步照做；第 3 步仍然先量再定。
 
 [↑ 返回阅读导航](#contents)
 
@@ -81,7 +81,7 @@ PR A（安装脚本和运行手册，不动工作流）：
 
 - `runners.sh`：`RUNNER_IDS` 加 3 号，名字 `ci-vps-gate`，标签只有 `ci-vps-gate`，不带 `ci-vps`，所以检查作业永远不会落到它上面；标签从全局一个值改成每个 runner 自己的值。
 - `gh-runner.service.in`：`InaccessiblePaths` 藏另外两个 runner 的目录（前提 10）。
-- 3 号放进自己单独的内存池：预留 2 GB（`MemoryMin`），上限 2 GB，进程数上限单独算；两个检查 runner 的池子从 20 GB 降到 18 GB（前提 14）。这样检查作业把内存吃满时，系统不会先杀汇总作业。2 GB 够不够先在 VPS 上量一次汇总作业的峰值再定。
+- 3 号放进自己单独的内存池：预留 2 GB（`MemoryMin`），上限 2 GB，进程数上限单独算；两个检查 runner 的池子从 20 GB 降到 18 GB（前提 14）。这样检查作业把内存吃满时，系统不会先杀汇总作业。2 GB 够不够先在 VPS 上量一次汇总作业的峰值再定。3 号的内存池是一个单独的 systemd 分组（slice，systemd 用来给一组服务统一设限额的单位）`ghgate.slice`；名字里不带短横线，因为 systemd 把短横线当成上下级（`gh-runners.slice` 实际挂在 `gh.slice` 下面），而预留内存要每一级上级都设了才生效。
 - `register-runner.sh`、`uninstall-runner.sh` 认 3 号；`mac-runners.sh`、`pause-runners.sh`、`resume-runners.sh`、`runner-pause.sh` 按 runner 名字对应各自的标签（前提 15）。
 - 新增一个应急脚本：3 号坏了时，在 Mac 上跑一条命令，把 `ci-vps-gate` 标签临时加到 1 号上，汇总作业就改由 1 号接，不用改代码、不用回滚 PR；3 号修好后再跑一次去掉。
 - `test/tooling/ci-runner-scripts.test.mjs`：加一条跨文件的对照用例，读 `runners.sh`、`contracts.mjs`、`ci/policy.json`、`ci.yml`、`.github/actionlint.yaml`、`ci/policy.schema.json`，断言 3 号的标签是 `ci-vps-gate`、1 和 2 号是 `ci-vps`、3 号不带 `ci-vps`。反向用例：3 号标签写成 `ci-vps`、恢复时给 3 号加回 `ci-vps`、1 号看得到 3 号目录、暂停后 `ci-vps-gate` 标签还在、卸载漏掉 3 号，都必须失败。
