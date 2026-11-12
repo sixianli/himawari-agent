@@ -48,7 +48,10 @@ describe("platform assumption inventory", () => {
         'assert.equal(hostname(), "hermes-home");\nassert.equal(hostname(), "__PKT_HOSTNAME__");\nassert.equal(hostname(), receipt.host);\nassert.equal(receipt.host, hostname(), "__PKT_LABEL_UPPER___HOST_CHANGED");\nconst who = { host: hostname(), "actor": 1 };\n',
       "scripts/probe.py": "assert socket.gethostname()=='hermes-home'\n",
       ".github/workflows/ci.yml":
-        "      - key: linux-x64\n        arch: x64\n        arch: x64-musl\n",
+        "      - key: linux-x64\n        arch: x64\n        arch: x64-musl\n        arch: x64_foo\n        arch: x64foo\n        arch: x641\n",
+      "scripts/runner.sh":
+        '[ "$(hostname)" = "$RUNNER_HOST" ] || exit 68\n[ "$(hostname)" = "__PKT_HOSTNAME__" ] || exit 68\necho "on $(hostname)"\n',
+      "test/qualification/evidence/rehearsal.py": "assert socket.gethostname()=='hermes-home'\n",
       "packages/a/Dockerfile": "FROM --platform=linux/amd64 node:22\n",
       "packages/a/NOTES": "x86_64\n",
     });
@@ -62,7 +65,12 @@ describe("platform assumption inventory", () => {
       },
       x86_64: { "scripts/download.py": 1, "scripts/tools.json": 1 },
       amd64: { "packages/a/Dockerfile": 1, "scripts/tools.json": 1 },
-      "fixed-hostname": { "scripts/probe.mjs": 1, "scripts/probe.py": 1 },
+      "fixed-hostname": {
+        "scripts/probe.mjs": 1,
+        "scripts/probe.py": 1,
+        "scripts/runner.sh": 1,
+        "test/qualification/evidence/rehearsal.py": 1,
+      },
       "python-3.12.10-archive": { "scripts/make.py": 1 },
     });
   });
@@ -104,6 +112,20 @@ describe("platform assumption inventory", () => {
     expect(comparePlatformAssumptions(recorded, scanPlatformAssumptions(root))).toEqual([
       { kind: "stale", name: "lib64", file: "scripts/seal.mjs", expected: 1, actual: 0 },
     ]);
+  });
+
+  it("fails when the inventory names a kind inherited from Object.prototype", () => {
+    expect(comparePlatformAssumptions({ toString: { "a.mjs": 1 } }, {})).toEqual([
+      { kind: "unknown", name: "toString", file: "", expected: 0, actual: 0 },
+    ]);
+  });
+
+  it("the command line refuses --root without a directory", () => {
+    for (const flags of [["--root"], ["--root", "--write"]]) {
+      const result = spawnSync(process.execPath, [scriptPath, ...flags], { encoding: "utf8" });
+      expect(result.status).toBe(2);
+      expect(result.stderr).toMatch(/^PLATFORM_ASSUMPTIONS_USAGE /);
+    }
   });
 
   it("fails when the inventory names a kind the check does not scan", () => {

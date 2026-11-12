@@ -3,6 +3,7 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -26,7 +27,6 @@ const SKIPPED_DIRECTORIES = new Set([
   "dist",
   "build",
   "coverage",
-  "evidence",
   ".ci-output",
 ]);
 const SCANNED_EXTENSIONS = new Set([
@@ -56,7 +56,7 @@ export const PLATFORM_ASSUMPTIONS = Object.freeze({
   x86_64: /x86_64/gi,
   amd64: /amd64/gi,
   "fixed-hostname":
-    /hostname\(\)\s*[!=]==?\s*["'](?!__PKT_)[^"'\n]+["']|[eE]qual\(\s*(?:[\w.]*\.)?(?:get)?hostname\(\)\s*,\s*["'](?!__PKT_)[^"'\n]+["']/g,
+    /hostname\(\)\s*[!=]==?\s*["'](?!__PKT_)[^"'\n]+["']|[eE]qual\(\s*(?:[\w.]*\.)?(?:get)?hostname\(\)\s*,\s*["'](?!__PKT_)[^"'\n]+["']|\$\(hostname(?:\s+-\w+)?\)"?\s*(?:!?==?|-eq|-ne)\s*["']?(?!__PKT_)[^\s"']/g,
   "python-3.12.10-archive": /python-3\.12\.10\.tar\.gz/g,
 });
 
@@ -109,7 +109,7 @@ export function comparePlatformAssumptions(recorded, observed) {
     }
   }
   for (const name of Object.keys(recorded))
-    if (!(name in PLATFORM_ASSUMPTIONS))
+    if (!Object.hasOwn(PLATFORM_ASSUMPTIONS, name))
       problems.push({ kind: "unknown", name, file: "", expected: 0, actual: 0 });
   return problems;
 }
@@ -169,8 +169,12 @@ export function runPlatformAssumptionsCheck({
         `PLATFORM_ASSUMPTIONS_CHANGED ${problem.kind} ${problem.name} ${problem.file} ${problem.expected} -> ${problem.actual}`,
       );
     const temporary = `${inventory}.${process.pid}.tmp`;
-    writeFileSync(temporary, `${JSON.stringify(observed, null, 2)}\n`);
-    renameSync(temporary, inventory);
+    try {
+      writeFileSync(temporary, `${JSON.stringify(observed, null, 2)}\n`);
+      renameSync(temporary, inventory);
+    } finally {
+      rmSync(temporary, { force: true });
+    }
     log(`PLATFORM_ASSUMPTIONS written ${INVENTORY_PATH}`);
     return 0;
   }
@@ -192,8 +196,14 @@ export function runPlatformAssumptionsCheck({
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const rootFlag = process.argv.indexOf("--root");
-  process.exitCode = runPlatformAssumptionsCheck({
-    root: rootFlag > 0 ? path.resolve(process.argv[rootFlag + 1]) : repositoryRoot,
-    write: process.argv.includes("--write"),
-  });
+  const rootValue = rootFlag > 0 ? process.argv[rootFlag + 1] : undefined;
+  if (rootFlag > 0 && (rootValue === undefined || rootValue.startsWith("-"))) {
+    console.error("PLATFORM_ASSUMPTIONS_USAGE --root 后面要跟一个目录");
+    process.exitCode = 2;
+  } else {
+    process.exitCode = runPlatformAssumptionsCheck({
+      root: rootValue === undefined ? repositoryRoot : path.resolve(rootValue),
+      write: process.argv.includes("--write"),
+    });
+  }
 }
