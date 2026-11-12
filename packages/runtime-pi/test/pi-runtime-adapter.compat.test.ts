@@ -2710,9 +2710,13 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       turnId: (_runtimeRequest, turnIndex) => `turn-faux-${turnIndex}` as never,
     });
 
-    await collect(adapter.run(request));
+    const events = await collect(adapter.run(request));
 
     expect(tools.execute).toHaveBeenCalledTimes(4);
+    expect(events.at(-1)).toMatchObject({
+      type: "runtime.failed",
+      errorCode: "PI_TOOL_LOOP_DETECTED",
+    });
   });
 
   it("[ICON-1] leaves handle tools without activity when no frozen tool offers the process icons", async () => {
@@ -3105,6 +3109,12 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       }),
     );
     expect(offered.get("weather")).toEqual(withToolActivityParameters(weatherParameters));
+    expect(offered.get("diary_note")).toMatchObject({
+      properties: {
+        activity: { type: "string", description: TOOL_ACTIVITY_PARAMETER.text },
+        activityIcon: { type: "string", description: TOOL_ACTIVITY_ICON_PARAMETER.text },
+      },
+    });
   });
 });
 
