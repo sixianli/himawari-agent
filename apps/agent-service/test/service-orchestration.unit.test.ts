@@ -1124,6 +1124,20 @@ describe("service request readiness and runtime callbacks", () => {
     options.onTitleFailure(new Error("private provider exception"));
     expect(stderr).not.toContain("private provider exception");
   });
+  it("[I-94] gives every model-call failure log the site field", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(new URL("../src/service-main.ts", import.meta.url), "utf8");
+    for (const event of [
+      "thread-title.failed",
+      "memory-capture.failed",
+      "memory-episode.failed",
+      "memory-consolidation.failed",
+    ]) {
+      const start = source.indexOf(`event: "${event}"`);
+      expect(start).toBeGreaterThan(-1);
+      expect(source.slice(start, start + 200)).toContain("...siteField(error)");
+    }
+  });
   it("rechecks the memory worker authority at execution time", async () => {
     web();
     start();
