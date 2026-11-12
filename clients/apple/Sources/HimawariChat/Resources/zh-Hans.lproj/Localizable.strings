@@ -16,6 +16,8 @@
 "process.seconds" = "%d 秒";
 "process.expand" = "点开看每一步";
 "process.didThings" = "做了 %d 件事";
+"process.failed" = "没做成";
+"process.stopped" = "停了";
 "process.sheet.title" = "它做了什么";
 "process.sheet.close" = "关闭";
 "chat.empty.hint" = "想到什么，直接说";

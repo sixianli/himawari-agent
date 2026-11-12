@@ -57,21 +57,21 @@ struct ProcessRowView: View {
         case let .waiting(step):
             ProcessLineLabel(icon: .handStop, text: step.title, tint: .hmSun, shimmering: false)
         case let .finished(steps, seconds):
-            summary(icon: .check, steps: steps, seconds: seconds)
+            summary(icon: .check, text: L.format("process.didThings", steps.count), steps: steps, seconds: seconds)
         case let .stopped(steps, seconds):
-            summary(icon: .playerStop, steps: steps, seconds: seconds)
+            summary(icon: .playerStop, text: L.text("process.stopped"), steps: steps, seconds: seconds)
         case let .failed(steps, seconds):
-            summary(icon: .alertCircle, steps: steps, seconds: seconds)
+            summary(icon: .alertCircle, text: L.text("process.failed"), steps: steps, seconds: seconds)
         }
     }
 
-    private func summary(icon: IconName, steps: [ProcessStep], seconds: Int) -> some View {
+    private func summary(icon: IconName, text: String, steps: [ProcessStep], seconds: Int) -> some View {
         Button {
             showingSteps = true
         } label: {
             HStack(spacing: DesignTokens.ProcessRow.gap) {
                 Icon(icon, size: DesignTokens.IconSize.processRow)
-                Text(L.format("process.didThings", steps.count))
+                Text(text)
                     .font(.system(size: DesignTokens.ProcessRow.fontSize))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(L.format("process.seconds", seconds))
