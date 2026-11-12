@@ -126,7 +126,7 @@ const gateStep = () => ({
 });
 const diagnosticSummary = (check) => ({
   if: githubExpression("always() && steps.publish.outcome == 'success'"),
-  run: `.ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "${check.id}/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics`,
+  run: `.ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "${check.id}/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports`,
 });
 const requiredEntry = () => ({
   name: "草稿和被取消的运行直接判失败",
@@ -682,23 +682,32 @@ describe("CI policy contract", () => {
       );
     },
   );
-  it.each(["missing", "duplicated", "only on success", "wrong folder", "wrong title"])(
-    "rejects a check job whose diagnostics do not reach the job summary: %s",
-    (change) => {
-      const value = workflow();
-      const steps = value.jobs.static.steps;
-      const index = steps.findIndex((step) => step.run?.includes("ci-summary.mjs"));
-      if (change === "missing") steps.splice(index, 1);
-      if (change === "duplicated") steps.push({ ...steps[index] });
-      if (change === "only on success") delete steps[index].if;
-      if (change === "wrong folder")
-        steps[index].run = steps[index].run.replace("public/diagnostics", "check");
-      if (change === "wrong title") steps[index].run = steps[index].run.replace("static/", "x/");
-      expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
-        "Job must write its diagnostics into the job summary exactly once: static",
-      );
-    },
-  );
+  it.each([
+    "missing",
+    "duplicated",
+    "only on success",
+    "wrong folder",
+    "wrong title",
+    "no failed logs",
+    "wrong failed logs folder",
+  ])("rejects a check job whose diagnostics do not reach the job summary: %s", (change) => {
+    const value = workflow();
+    const steps = value.jobs.static.steps;
+    const index = steps.findIndex((step) => step.run?.includes("ci-summary.mjs"));
+    if (change === "missing") steps.splice(index, 1);
+    if (change === "duplicated") steps.push({ ...steps[index] });
+    if (change === "only on success") delete steps[index].if;
+    if (change === "wrong folder")
+      steps[index].run = steps[index].run.replace("public/diagnostics", "check");
+    if (change === "wrong title") steps[index].run = steps[index].run.replace("static/", "x/");
+    if (change === "no failed logs")
+      steps[index].run = steps[index].run.replace(" --failed-logs .ci-output/public/reports", "");
+    if (change === "wrong failed logs folder")
+      steps[index].run = steps[index].run.replace("public/reports", "public/other");
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+      "Job must write its diagnostics into the job summary exactly once: static",
+    );
+  });
   it("accepts read-only permissions on the gate job", () => {
     const value = workflow();
     value.jobs.required.permissions = { contents: "read", actions: "read" };
