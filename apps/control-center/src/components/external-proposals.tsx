@@ -1,3 +1,4 @@
+import { EXTERNAL_PROPOSAL_TEXT_MAXIMUM } from "@himawari-agent/gateway-contracts";
 import { useState } from "react";
 import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
@@ -6,8 +7,6 @@ import { TextEditor } from "./memory-panel.js";
 import { ActionButton } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
-
-export const EXTERNAL_PROPOSAL_TEXT_MAXIMUM = 2000;
 
 interface Sent {
   readonly batchId: string;
@@ -113,6 +112,7 @@ export function ExternalProposalsSection({
   const result = externalResult(sent, external.batches);
   const ready = memory.externalReady;
   const answer = async (items: readonly ExternalDecision[]) => {
+    setSent(null);
     const batchId = await memory.externalRespond(items);
     if (batchId === null) return;
     setSent({ batchId, count: items.length });

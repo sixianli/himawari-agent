@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   openSide,
   putPayload,
+  SECRET_API_KEY,
   SECRET_BANK_CARD,
   type Side,
   seedMemory,
@@ -53,6 +54,7 @@ interface ProposalSeed {
   readonly batchId?: string | null;
   readonly memoryId?: string | null;
   readonly supersededBy?: string | null;
+  readonly textSha256?: string;
 }
 
 async function seedProposal(target: Side, seed: ProposalSeed): Promise<void> {
@@ -76,7 +78,7 @@ async function seedProposal(target: Side, seed: ProposalSeed): Promise<void> {
       `mcp-client:${seed.client ?? "Muse"}`,
       seed.client ?? "Muse",
       seed.sourceKey ?? null,
-      digest(`${seed.id}:${seed.text ?? ""}`),
+      seed.textSha256 ?? digest(`${seed.id}:${seed.text ?? ""}`),
       contentRef,
       classification,
       seed.status,
@@ -303,7 +305,7 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
     expect(imported.texts["proposal-pending"]).toBe("主人周末喜欢去镰仓");
   });
 
-  it("drops the link to a memory that is not exported, and keeps the proposal as saved", async () => {
+  it("drops the link and the batch of a saved proposal whose memory is not exported, and keeps it as saved", async () => {
     const source = await seeded();
     await seedMemory(source, {
       id: "memory-restricted",
@@ -322,13 +324,109 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
     await importInto(target, files, PASSPHRASE);
     const rows = target.database
       .prepare(
-        "SELECT id, status, memory_id FROM external_memory_proposals WHERE status = 'committed' ORDER BY id",
+        "SELECT id, status, memory_id, batch_id FROM external_memory_proposals WHERE status = 'committed' ORDER BY id",
       )
       .all();
     expect(rows).toEqual([
-      { id: "proposal-committed", status: "committed", memory_id: "memory-kept" },
-      { id: "proposal-restricted-link", status: "committed", memory_id: null },
+      {
+        id: "proposal-committed",
+        status: "committed",
+        memory_id: "memory-kept",
+        batch_id: "batch-1",
+      },
+      { id: "proposal-restricted-link", status: "committed", memory_id: null, batch_id: null },
     ]);
+  });
+
+  it("drops the link and the batch of a saved proposal whose memory is skipped without the passphrase", async () => {
+    const source = await seeded();
+    await seedMemory(source, { id: "memory-secret", text: SECRET_TEXT });
+    await seedProposal(source, {
+      id: "proposal-secret-link",
+      text: "指向机密记忆的提议",
+      status: "committed",
+      batchId: "batch-3",
+      memoryId: "memory-secret",
+    });
+    const { files } = await exportOf(source);
+    const target = await side("proposals-skipped-link");
+    await importInto(target, files);
+    expect(
+      target.database
+        .prepare(
+          "SELECT status, memory_id, batch_id FROM external_memory_proposals WHERE id = 'proposal-secret-link'",
+        )
+        .get(),
+    ).toEqual({ status: "committed", memory_id: null, batch_id: null });
+  });
+
+  it("[reverse] refuses two live withheld proposals whose sealed digests match, before writing anything", async () => {
+    const source = await seeded();
+    const shared = source.database
+      .prepare("SELECT text_sha256 FROM external_memory_proposals WHERE id = 'proposal-secret'")
+      .pluck()
+      .get() as string;
+    await seedProposal(source, {
+      id: "proposal-secret-copy",
+      text: SECRET_TEXT,
+      status: "superseded",
+      classification: "sensitive",
+      textSha256: shared,
+    });
+    const { files } = await exportOf(source);
+    const tampered = editLine(files, "proposal-secret-copy", (line) => ({
+      ...line,
+      status: "rejected",
+    }));
+    const target = await side("proposals-sealed-duplicate");
+    for (const dryRun of [true, false]) {
+      const failure = await importPortableExport(tampered, {
+        database: target.database,
+        scope: { ownerId: target.ownerId, agentId: target.agentId },
+        migrationSequence: target.migrationSequence,
+        protector: target.protector,
+        now: () => NOW,
+        passphrase: PASSPHRASE,
+        dryRun,
+      }).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(DataExportError);
+      expect((failure as DataExportError).code).toBe(DATA_EXPORT_ERROR_CODES.LINE_INVALID);
+    }
+    expect(
+      target.database.prepare("SELECT COUNT(*) FROM external_memory_proposals").pluck().get(),
+    ).toBe(0);
+  });
+
+  it("numbers a new withheld key after placeholders already stored on proposals, so a re-export imports again", async () => {
+    const source = await seeded();
+    await seedProposal(source, {
+      id: "proposal-old-placeholder",
+      text: "导入过一次的提议",
+      status: "pending",
+      sourceKey: "[已扣留:1]",
+    });
+    await seedProposal(source, {
+      id: "proposal-secret-key",
+      text: "编号像机密的提议",
+      status: "pending",
+      sourceKey: SECRET_API_KEY,
+    });
+    const insertKey = source.database.prepare(
+      `INSERT INTO external_memory_proposal_keys (owner_id, agent_id, client, source_key, proposal_id)
+      VALUES (?, ?, 'Muse', ?, ?)`,
+    );
+    insertKey.run(source.ownerId, source.agentId, "[已扣留:1]", "proposal-old-placeholder");
+    insertKey.run(source.ownerId, source.agentId, SECRET_API_KEY, "proposal-secret-key");
+    const { files } = await exportOf(source);
+    expect(decoder.decode(files.get(PROPOSALS_FILE))).not.toContain(SECRET_API_KEY);
+    const target = await side("proposals-placeholders");
+    const report = await importInto(target, files, PASSPHRASE);
+    expect(report.imported.externalProposals).toBe(7);
+    const keys = target.database
+      .prepare("SELECT source_key FROM external_memory_proposal_keys ORDER BY source_key")
+      .pluck()
+      .all();
+    expect(new Set(keys).size).toBe(3);
   });
 
   it.each([
@@ -336,6 +434,24 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
       "a pending proposal with a decision time",
       (files: PortableFiles) =>
         editLine(files, "proposal-pending", (line) => ({ ...line, decidedAt: NOW })),
+      DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+    ],
+    [
+      "a receive time without milliseconds",
+      (files: PortableFiles) =>
+        editLine(files, "proposal-pending", (line) => ({
+          ...line,
+          receivedAt: "2026-11-12T00:00:00Z",
+        })),
+      DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+    ],
+    [
+      "a text whose classification differs from its proposal",
+      (files: PortableFiles) =>
+        editLine(files, "proposal-pending", (line) => ({
+          ...line,
+          content: { ...(line["content"] as object), classification: "sensitive" },
+        })),
       DATA_EXPORT_ERROR_CODES.LINE_INVALID,
     ],
     [

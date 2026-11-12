@@ -17,7 +17,11 @@ import {
   type ProductMemoryStatePort,
   type SensitiveMemoryTopic,
 } from "@himawari-agent/application";
-import { MEMORY_SENSITIVE_CATEGORY_NAMES } from "@himawari-agent/gateway-contracts";
+import {
+  EXTERNAL_PROPOSAL_TEXT_MAXIMUM,
+  MEMORY_SENSITIVE_CATEGORY_NAMES,
+} from "@himawari-agent/gateway-contracts";
+export { EXTERNAL_PROPOSAL_TEXT_MAXIMUM };
 import {
   classificationWithIdentifiers,
   scanMachineSecrets,
@@ -31,7 +35,6 @@ export const EXTERNAL_PROPOSAL_CONTENT_PREFIX = "memory-content:mcp:";
 export const EXTERNAL_PROPOSAL_PENDING_CONTENT_PREFIX = "memory-content:mcp-proposal:";
 export const EXTERNAL_PROPOSAL_POLICY_VERSION = "memory-mcp:v1";
 export const EXTERNAL_PROPOSAL_NORMALIZATION = "mcp-text:v1";
-export const EXTERNAL_PROPOSAL_TEXT_MAXIMUM = 2000;
 export const EXTERNAL_PROPOSAL_SUBJECT_MAXIMUM = 128;
 export const EXTERNAL_PROPOSAL_KEY_MAXIMUM = 200;
 export const EXTERNAL_PROPOSAL_ID_MAXIMUM = 40;

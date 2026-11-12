@@ -318,6 +318,16 @@ export async function importPortableExport(
         proposal.content === null || text === null ? null : await protect(proposal.content, text),
     });
   }
+  const liveDigests = new Set<string>();
+  for (const { proposal, textSha256 } of proposalPlans) {
+    if (proposal.status === "superseded") continue;
+    if (liveDigests.has(textSha256))
+      throw new DataExportError(
+        DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+        `其他 agent 的提议 ${proposal.id} 的正文摘要和另一条没被替换的提议重复`,
+      );
+    liveDigests.add(textSha256);
+  }
   const importedProposalIds = new Set(proposalPlans.map(({ proposal }) => proposal.id));
   const imported: PortableCounts = {
     memories: plans.length,
@@ -701,7 +711,7 @@ export async function importPortableExport(
           item.status,
           item.receivedAt,
           item.decidedAt,
-          item.batchId,
+          item.memoryId !== null && keptMemoryLink(item.memoryId) === null ? null : item.batchId,
           keptMemoryLink(item.memoryId),
           item.supersededBy !== null && importedProposalIds.has(item.supersededBy)
             ? item.supersededBy

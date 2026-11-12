@@ -139,6 +139,11 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       snapshot.people,
       snapshot.decisions,
       snapshot.signals,
+      snapshot.rules,
+      snapshot.ruleHistory,
+      snapshot.externalProposals,
+      snapshot.externalProposalKeys,
+      snapshot.externalProposalUnkeyed,
     ]);
     for (const match of scanned.matchAll(/\[已扣留:(\d{1,6})\]/g))
       highest = Math.max(highest, Number(match[1]));
@@ -476,6 +481,8 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     const digest = str(row["text_sha256"]);
     if (withheld) originals[externalProposalDigestKey(id)] = digest;
     const supersededBy = optionalString(row["superseded_by"]);
+    const storedMemoryId = optionalString(row["memory_id"]);
+    const memoryId = keepMemoryRef(storedMemoryId);
     return {
       id,
       subjectRef: safeString(str(row["subject_ref"])),
@@ -488,8 +495,9 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       status: str(row["status"]),
       receivedAt: str(row["received_at"]),
       decidedAt: optionalString(row["decided_at"]),
-      batchId: optionalString(row["batch_id"]),
-      memoryId: keepMemoryRef(optionalString(row["memory_id"])),
+      batchId:
+        storedMemoryId !== null && memoryId === null ? null : optionalString(row["batch_id"]),
+      memoryId,
       supersededBy: supersededBy !== null && proposalIds.has(supersededBy) ? supersededBy : null,
       content,
       keys: (proposalKeys.get(id) ?? []).map((key) => ({

@@ -103,8 +103,15 @@ export interface ParsedExternalProposal {
   readonly unkeyedClients: readonly string[];
 }
 
+const STORED_TIME = /^.{4}-.{2}-.{2}T.{2}:.{2}:.{2}\..{3}Z$/u;
+
 export function externalProposalProblem(proposal: ParsedExternalProposal): string | null {
   const where = `其他 agent 的提议 ${proposal.id}`;
+  if (
+    !STORED_TIME.test(proposal.receivedAt) ||
+    (proposal.decidedAt !== null && !STORED_TIME.test(proposal.decidedAt))
+  )
+    return `${where}：时间不是库里存的格式（例如 2026-11-12T00:00:00.000Z）`;
   if ((proposal.status === "pending") !== (proposal.decidedAt === null))
     return `${where}：只有待确认的没有处理时间`;
   if (proposal.memoryId !== null && proposal.status !== "committed")
@@ -123,6 +130,8 @@ export function externalProposalProblem(proposal: ParsedExternalProposal): strin
     proposal.status !== "rejected"
   )
     return `${where}：只有已保存或已拒绝的能属于一批`;
+  if (proposal.content !== null && proposal.content.classification !== proposal.classification)
+    return `${where}：正文的分级和提议的分级不一致`;
   if ((proposal.textSha256 === null) !== (proposal.content?.withheld === true))
     return `${where}：只有正文被扣留时摘要才不在明文里`;
   if (new Set(proposal.unkeyedClients).size !== proposal.unkeyedClients.length)

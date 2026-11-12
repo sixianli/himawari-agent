@@ -195,7 +195,7 @@ describe("[P5-3] Andy confirms memories other agents proposed, in a real browser
     }
   }, 60_000);
 
-  it("says how many could not be handled when some were already decided elsewhere", async () => {
+  it("says how many could not be handled when some were already decided elsewhere, and drops that line when the next send fails", async () => {
     await fixtureState({ mode: "pending" });
     await fixtureState({
       items: [
@@ -226,6 +226,10 @@ describe("[P5-3] Andy confirms memories other agents proposed, in a real browser
       await uiExpect(section.locator(".memory-external-result")).toContainText(
         "这一批保存了 1 条，不要 0 条；另有 1 条没处理成",
       );
+      await uiExpect(section.locator('[data-proposal="proposal-2"]')).toBeVisible();
+      await section.getByRole("checkbox", { name: /这条已经在别处处理过/ }).check();
+      await section.getByRole("button", { name: "保存所选（1）" }).click();
+      await uiExpect(section.locator(".memory-external-result")).toHaveCount(0);
       await uiExpect(section.locator('[data-proposal="proposal-2"]')).toBeVisible();
     } finally {
       await page.close();
