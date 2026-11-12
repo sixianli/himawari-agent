@@ -192,19 +192,17 @@ import Testing
         #expect(exchange.requests.count == DeviceAPI.pageLimit)
     }
 
-    @Test func deviceNameFitsTheServerLimitInUTF16UnitsWithoutHiddenCharacters() {
+    @Test func deviceNameFitsTheServerLimitInCodePointsWithoutHiddenCharacters() {
         let long = String(repeating: "葵", count: 70)
-        #expect(PairingRequestLimits.deviceName("  " + long + "  ").utf16.count == 64)
+        #expect(PairingRequestLimits.deviceName("  " + long + "  ").unicodeScalars.count == 64)
         let emoji = PairingRequestLimits.deviceName(String(repeating: "🌻", count: 40))
-        #expect(emoji.utf16.count == 64)
-        #expect(emoji == String(repeating: "🌻", count: 32))
-        let family = PairingRequestLimits.deviceName("a" + String(repeating: "👨‍👩‍👧", count: 10))
-        #expect(family.utf16.count <= 64)
-        #expect(family.unicodeScalars.last != "\u{200D}")
+        #expect(emoji == String(repeating: "🌻", count: 40))
+        let flags = PairingRequestLimits.deviceName("a" + String(repeating: "🇯🇵", count: 40))
+        #expect(flags.unicodeScalars.count == 63)
         #expect(PairingRequestLimits.deviceName("Andy\u{7}的\niPhone") == "Andy的iPhone")
         #expect(PairingRequestLimits.deviceName("A\u{202E}B\u{85}C\u{200B}D\u{FEFF}") == "ABCD")
         #expect(PairingRequestLimits.deviceName("A\u{061C}B\u{2060}C\u{2028}D\u{2029}E") == "ABCDE")
-        #expect(PairingRequestLimits.deviceName("👨‍👩‍👧") == "👨‍👩‍👧")
+        #expect(PairingRequestLimits.deviceName("👨‍👩‍👧") == "👨👩👧")
         #expect(PairingRequestLimits.deviceName("Andy 的 iPhone") == "Andy 的 iPhone")
         #expect(PairingRequestLimits.deviceName("   ") == "iPhone")
     }

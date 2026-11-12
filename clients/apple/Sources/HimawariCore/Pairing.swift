@@ -89,10 +89,9 @@ public enum PairingNumber {
 }
 
 public enum PairingRequestLimits {
-    public static let deviceNameUTF16Units = 64
+    public static let deviceNameScalars = 64
 
     static func hidden(_ scalar: Unicode.Scalar) -> Bool {
-        guard scalar.value != 0x200D else { return false }
         switch scalar.properties.generalCategory {
         case .control, .format, .lineSeparator, .paragraphSeparator: return true
         default: return false
@@ -103,7 +102,7 @@ public enum PairingRequestLimits {
         let printable = String(String.UnicodeScalarView(raw.unicodeScalars.filter { !Self.hidden($0) }))
         var name = ""
         for character in printable.trimmingCharacters(in: .whitespacesAndNewlines) {
-            guard name.utf16.count + character.utf16.count <= deviceNameUTF16Units else { break }
+            guard name.unicodeScalars.count + character.unicodeScalars.count <= deviceNameScalars else { break }
             name.append(character)
         }
         name = name.trimmingCharacters(in: .whitespacesAndNewlines)
