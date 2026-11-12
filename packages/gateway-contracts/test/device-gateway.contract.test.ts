@@ -12,7 +12,7 @@ function rejects(message: Record<string, unknown>) {
 describe("device management gateway messages", () => {
   it("accepts a pairing code of exactly 22 base64url characters", () => {
     const parsed = gatewayV2MessageSchema.parse(
-      fixture("command", "device.pairing.start", { pairingCode: "abc-_ABC012345678901" + "xy" }),
+      fixture("command", "device.pairing.start", { pairingCode: "abc-_ABC012345678901xw" }),
     );
     expect(parsed.type).toBe("device.pairing.start");
   });
@@ -24,6 +24,7 @@ describe("device management gateway messages", () => {
     ["standard base64 plus", `${"A".repeat(21)}+`],
     ["standard base64 slash", `${"A".repeat(21)}/`],
     ["empty", ""],
+    ["not canonical (last character carries non-zero padding bits)", `${"A".repeat(21)}B`],
   ])("rejects a pairing code that is %s", (_name, pairingCode) => {
     rejects(fixture("command", "device.pairing.start", { pairingCode }));
   });
@@ -63,7 +64,11 @@ describe("device management gateway messages", () => {
 
   it("rejects extra payload fields on every device command", () => {
     rejects(fixture("command", "device.pairing.start", { pairingCode: "A".repeat(22), extra: 1 }));
-    rejects(fixture("command", "device.revoke", { deviceId, expectedRevision: 0, extra: 1 }));
+    for (const type of ["device.pairing.confirm", "device.revoke"])
+      rejects(fixture("command", type, { deviceId, expectedRevision: 0, extra: 1 }));
+    rejects(
+      fixture("command", "device.rename", { deviceId, expectedRevision: 0, name: "x", extra: 1 }),
+    );
     rejects(fixture("query", "device.list.read", { extra: 1 }));
   });
 
@@ -88,6 +93,11 @@ describe("device management gateway messages", () => {
         ...overrides,
       });
 
+    it("accepts every release channel", () => {
+      for (const releaseChannel of ["direct", "testflight", "app_store", "mac_direct"])
+        gatewayV2MessageSchema.parse(snapshot({ devices: [{ ...device, releaseChannel }] }));
+    });
+
     it("accepts no pairing and an empty device list", () => {
       gatewayV2MessageSchema.parse(snapshot({ devices: [] }));
       gatewayV2MessageSchema.parse(snapshot({}));
@@ -102,6 +112,7 @@ describe("device management gateway messages", () => {
     it.each([
       ["unknown kind", { devices: [{ ...device, kind: "tablet" }] }],
       ["unknown status", { devices: [{ ...device, status: "lost" }] }],
+      ["unknown release channel", { devices: [{ ...device, releaseChannel: "beta" }] }],
       ["pairing number with 5 digits", { devices: [{ ...device, pairingNumber: "12345" }] }],
       ["pairing number with letters", { devices: [{ ...device, pairingNumber: "12345a" }] }],
       ["unknown limit key", { limits: [{ key: "device.unknown", unit: "bytes", value: 1 }] }],

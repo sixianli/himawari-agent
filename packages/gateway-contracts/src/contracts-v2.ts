@@ -519,6 +519,7 @@ export const DEVICE_LIMIT_KEYS = [
   "perception.extract.max_chars",
   "device.nonce.retained",
 ] as const;
+export const DEVICE_RELEASE_CHANNELS = ["direct", "testflight", "app_store", "mac_direct"] as const;
 export const DEVICE_NAME_MAX_LENGTH = 64;
 const deviceIdSchema: Schema<string> = {
   parse(input, path = "$") {
@@ -529,8 +530,11 @@ const deviceIdSchema: Schema<string> = {
 };
 const devicePairingCodeSchema: Schema<string> = {
   parse(input, path = "$") {
-    if (typeof input !== "string" || !/^[A-Za-z0-9_-]{22}$/u.test(input))
-      throw new ContractValidationError(path, "expected a 22 character base64url pairing code");
+    if (typeof input !== "string" || !/^[A-Za-z0-9_-]{21}[AQgw]$/u.test(input))
+      throw new ContractValidationError(
+        path,
+        "expected the canonical unpadded base64url encoding of 16 bytes",
+      );
     return input;
   },
 };
@@ -579,7 +583,7 @@ const deviceListSnapshotSchema = object({
         revision: integer(0),
         kind: enumeration(DEVICE_KINDS),
         name: deviceNameSchema,
-        releaseChannel: machineString,
+        releaseChannel: enumeration(DEVICE_RELEASE_CHANNELS),
         status: enumeration(DEVICE_STATUSES),
         pairedAt: timestamp,
         lastSeenAt: nullable(timestamp),

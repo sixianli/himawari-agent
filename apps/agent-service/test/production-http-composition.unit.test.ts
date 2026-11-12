@@ -3,6 +3,7 @@ import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import type {
   AuthorityFence,
   ProductConfiguration,
@@ -1126,6 +1127,9 @@ describe("production HTTP composition", () => {
         };
       };
       const webBody = webStatus.json() as typeof phoneStatus.payload;
+      expect(gatewayV2MessageSchema.parseJson(serverStatus.body).type).toBe(
+        "server.status.snapshot",
+      );
       expect(phoneStatus.type).toBe("server.status.snapshot");
       expect(phoneStatus.payload.live).toBe(webBody.live);
       expect(phoneStatus.payload.ready).toBe(webBody.ready);
