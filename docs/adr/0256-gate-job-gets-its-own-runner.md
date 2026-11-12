@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0176-ci-on-ovh-vps.md, docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md"
+amends: "docs/adr/0172-resume-runners-labels-first.md, docs/adr/0176-ci-on-ovh-vps.md, docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md"
 date: "2026-11-12"
 ---
 
@@ -146,7 +146,7 @@ PR B（工作流和硬规则，要等 3 号 runner 在线才能合并）：
 - Andy 要在 Mac 上按运行手册装一次 3 号 runner，约 10 分钟。
 - 多一个要照看的 runner；它停了有应急脚本。
 - 连续合并时，中间的 main 提交不再逐个确认。
-- [ADR 0176](0176-ci-on-ovh-vps.md) 里“两个 runner”的说法改为三个；[ADR 0241](0241-draft-prs-skip-ci-and-merge-waits-for-green.md) 的判定不变，只是汇总作业换了 runner。
+- [ADR 0176](0176-ci-on-ovh-vps.md) 里“两个 runner”的说法改为三个；[ADR 0241](0241-draft-prs-skip-ci-and-merge-waits-for-green.md) 的判定不变，只是汇总作业换了 runner。[ADR 0172](0172-resume-runners-labels-first.md) 的“先加标签再启动”不变，但恢复时加回的是每个 runner 自己的标签：检查 runner 加 `ci-vps`，汇总 runner 加 `ci-vps-gate`。
 
 [↑ 返回阅读导航](#contents)
 
