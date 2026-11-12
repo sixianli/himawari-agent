@@ -27,6 +27,7 @@ export const PRODUCTION_WORKSPACE_CHANGES_OPERATIONS = Object.freeze([
 
 export const WORKSPACE_FOLDER_LIST_LIMIT = 200;
 export const WORKSPACE_FOLDER_SCAN_PAGES = 10;
+export const WORKSPACE_CHANGES_SCAN_PAGES = 10;
 
 export interface ProductionWorkspaceChangesControlOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId" | "runPolicy">;
@@ -156,7 +157,9 @@ export class ProductionWorkspaceChangesControl {
     let skipped = false;
     let from = afterPath;
     let page: ChangedFilesPage = { items: [], nextAfterPath: null, fileCount: 0 };
+    let pages = 0;
     while (matched) {
+      pages += 1;
       page = await this.#options.changes.changedFiles({
         ownerId,
         agentId,
@@ -188,7 +191,8 @@ export class ProductionWorkspaceChangesControl {
           return [];
         }
       });
-      if (items.length > 0 || page.nextAfterPath === null) break;
+      if (items.length > 0 || page.nextAfterPath === null || pages >= WORKSPACE_CHANGES_SCAN_PAGES)
+        break;
       from = page.nextAfterPath;
     }
     return {

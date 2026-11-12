@@ -1,0 +1,4 @@
+{"id": "1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 中 — 改动列表的续页循环没有任何上限，且每轮都重做一次全表计数", "valid": true, "class": "error", "severity": "low", "trigger": "库里有成百上千条路径带控制字符的旧记录，且连续排在一起", "consequence": "一次请求内部多读很多页、每页再做一次全表计数，响应变慢；不会返回错数据", "modelSeverity": "中", "reason": "要靠大量历史坏记录才触发：这个 PR 加上的登记检查已经挡住新的坏记录，现有生产库没有已知的坏记录；后果是变慢，不是错结果，也不越权；已加 10 页上限，读满返回空页并标不完整"}
+{"id": "2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低 — 作者说“nextAfterPath 用存储给的最后一页续页位置”，代码在末行不合格时会改用最后一条合格路径", "valid": true, "class": "error", "severity": "low", "trigger": "读文档的人按文档以为续页位置是存储给的那个", "consequence": "文档与代码说法不一致，代码行为是对的", "modelSeverity": "低"}
+{"id": "3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低 — “控制字符”过滤只覆盖 C0 和 DEL，C1/格式控制符仍可通过", "valid": true, "class": "better"}
+{"id": "4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低 — 新增的反向用例没有覆盖最容易出错的边界", "valid": true, "class": "better"}

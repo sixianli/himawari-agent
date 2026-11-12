@@ -24,6 +24,7 @@ import {
 import { createWorkspaceChangeMarks } from "../../apps/agent-service/src/production-workspace-change-marks.ts";
 import {
   ProductionWorkspaceChangesControl,
+  WORKSPACE_CHANGES_SCAN_PAGES,
   WORKSPACE_FOLDER_LIST_LIMIT,
   WORKSPACE_FOLDER_SCAN_PAGES,
 } from "../../apps/agent-service/src/production-workspace-changes-control.ts";
@@ -329,6 +330,14 @@ describe("[WC-1] folder changes read", () => {
         if (after === null) break;
       }
       expect(walked).toEqual(["a.py", "b.py", "c.py"]);
+      for (let index = 0; index < WORKSPACE_CHANGES_SCAN_PAGES + 2; index += 1)
+        await store.register({
+          ...scope,
+          artifact: artifact(`d\u0001${String(index).padStart(2, "0")}.py`, { createdAt: at(10) }),
+        });
+      await store.register({ ...scope, artifact: artifact("e.py", { createdAt: at(11) }) });
+      const capped = await read(control(), { limit: 1, afterPath: "c.py" });
+      expect(capped).toMatchObject({ items: [], nextAfterPath: null, incomplete: true });
       expect(sawIncomplete).toBe(true);
     } finally {
       await repository.close();
