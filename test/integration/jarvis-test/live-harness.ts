@@ -282,7 +282,10 @@ export class FixtureRuntimeTools implements RuntimeToolPort {
         ? undefined
         : injected(this.#failures, name, JSON.stringify(invocation.arguments));
     if (failure) return { text: failure.error ?? failure.output ?? "failed", isError: true };
-    const canned = this.#toolResults.find(({ tool }) => tool === name)?.outputs ?? [];
+    const canned =
+      name === "web_fetch" || name === "web_search"
+        ? (this.#toolResults.find(({ tool }) => tool === name)?.outputs ?? [])
+        : [];
     if (canned.length > 0) {
       const call = this.#toolCalls.get(name) ?? 0;
       this.#toolCalls.set(name, call + 1);

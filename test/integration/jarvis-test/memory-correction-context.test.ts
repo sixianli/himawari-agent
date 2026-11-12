@@ -66,7 +66,7 @@ describe("Jarvis Test #9 next step: the material given to the model", () => {
       const text = await material(item);
       expect(text).toContain("主人接下来 7 天的安排");
       for (const memory of item.memories ?? [])
-        expect(text, memory.id).toContain(`（没设提醒）：${memory.text}`);
+        expect(text, memory.id).toContain(`（这 7 天里没有提醒）：${memory.text}`);
     },
   );
 

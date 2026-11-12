@@ -23,6 +23,10 @@ describe("Jarvis Test dataset", () => {
     for (const item of cases) {
       expect(typeof item.shouldPropose, item.id).toBe("boolean");
       expect(item.toolResults?.length ?? 0, item.id).toBeGreaterThan(0);
+      for (const prepared of item.toolResults ?? []) {
+        expect(["web_search", "web_fetch"], item.id).toContain(prepared.tool);
+        expect(prepared.outputs.length, item.id).toBeGreaterThan(0);
+      }
       const sameQuestion = cases.filter(({ prompt }) => prompt === item.prompt);
       expect(
         sameQuestion.some(({ shouldPropose }) => shouldPropose === true),

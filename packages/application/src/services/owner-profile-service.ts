@@ -188,6 +188,7 @@ export class OwnerProfileService implements OwnerProfilePort {
       ).map(({ memoryId, pinned }) => [memoryId, pinned]),
     );
     const pinned = new Set([...choices].flatMap(([memoryId, on]) => (on ? [memoryId] : [])));
+    const declined = new Set([...choices].flatMap(([memoryId, on]) => (on ? [] : [memoryId])));
     const valid = (await this.#options.state.listActive(input.ownerId, input.agentId)).filter(
       (memory) =>
         memory.status === "active" &&
@@ -255,12 +256,13 @@ export class OwnerProfileService implements OwnerProfilePort {
       pinned: pinnedUsed,
       queued: Object.freeze(queued),
     });
-    return { rules, sections, eligible: valid, usage };
+    return { rules, sections, eligible: valid, declined, usage };
   }
 
   async #agenda(
     input: { readonly ownerId: OwnerId; readonly agentId: AgentId; readonly now: string },
     eligible: readonly ProductMemoryRecord[],
+    declined: ReadonlySet<MemoryId>,
   ) {
     const timeZone = this.#options.timeZone ?? "UTC";
     const now = Date.parse(input.now);
@@ -309,7 +311,7 @@ export class OwnerProfileService implements OwnerProfilePort {
         day: memoryLocalDate(reminder.dueAt, timeZone),
         timed: true,
         instant: reminder.dueAt,
-        tie: "",
+        tie: reminder.id,
         label: timed.format(new Date(reminder.dueAt)),
       });
     }
@@ -321,7 +323,7 @@ export class OwnerProfileService implements OwnerProfilePort {
       return day >= firstDay && day <= lastDay ? day : null;
     };
     for (const memory of eligible) {
-      if (reminded.has(memory.id)) continue;
+      if (reminded.has(memory.id) || declined.has(memory.id)) continue;
       const dates = memoryDatesOf(memory);
       for (const [value, prompt] of [
         [dates.validFrom, OWNER_AGENDA_DATED],
@@ -372,8 +374,8 @@ export class OwnerProfileService implements OwnerProfilePort {
     readonly maxClassification: DataClassification;
     readonly now: string;
   }): Promise<OwnerProfile> {
-    const { rules, sections, eligible, usage } = await this.#select(input);
-    const agenda = await this.#agenda(input, eligible);
+    const { rules, sections, eligible, declined, usage } = await this.#select(input);
+    const agenda = await this.#agenda(input, eligible, declined);
     const blocks: OwnerProfileBlock[] = [];
     const name =
       CLASSIFICATION_RANK[input.maxClassification] >= CLASSIFICATION_RANK.private
@@ -414,7 +416,7 @@ export class OwnerProfileService implements OwnerProfilePort {
           sections.flatMap(({ lines }) => lines.map(({ memory }) => memory)),
         ),
       );
-    if (agenda.lines.length > 0)
+    if (agenda.lines.length > 0 || agenda.omitted > 0)
       blocks.push(
         await this.#block(
           input,

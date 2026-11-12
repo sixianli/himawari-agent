@@ -284,20 +284,20 @@ export const MEMORY_DATE_UPCOMING = templatePrompt({
 
 export const OWNER_AGENDA_DATED = templatePrompt({
   id: "memory.agenda.dated",
-  purpose: "近期安排里一条没设提醒、只有日期的记忆前面的日期标记",
+  purpose: "近期安排里一条只有日期、这 7 天里没有提醒的记忆前面的日期标记",
   usedBy: ["packages/application/src/services/owner-profile-service.ts"],
   layer: "last-user-message",
   output: "free-text",
-  segments: [slot("day"), text("（没设提醒）")],
+  segments: [slot("day"), text("（这 7 天里没有提醒）")],
 });
 
 export const OWNER_AGENDA_ENDING = templatePrompt({
   id: "memory.agenda.ending",
-  purpose: "近期安排里一条没设提醒、在这一天到期的记忆前面的日期标记",
+  purpose: "近期安排里一条在这一天到期、这 7 天里没有提醒的记忆前面的日期标记",
   usedBy: ["packages/application/src/services/owner-profile-service.ts"],
   layer: "last-user-message",
   output: "free-text",
-  segments: [slot("day"), text("截止（没设提醒）")],
+  segments: [slot("day"), text("截止（这 7 天里没有提醒）")],
 });
 
 export const OWNER_AGENDA_OMITTED = templatePrompt({

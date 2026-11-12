@@ -194,6 +194,7 @@ describe.skipIf(!LIVE)("Jarvis Test live round", () => {
             return {
               id: item.id,
               scenario: item.scenario,
+              ...(item.shouldPropose === undefined ? {} : { shouldPropose: item.shouldPropose }),
               trials: runs.map(({ grade }) => grade?.passed === true),
               jev_probability: mean(
                 verdicts.flatMap(({ probability }) => (probability === null ? [] : [probability])),
