@@ -43,11 +43,11 @@ date: "2026-11-12"
 
 ## 背景
 
-2026-11-12，Andy 同意“重新启用 = 重新检查 + 面容，定时任务不自动恢复”（四块功能的设计结论，方案在项目文件夹 `four-features-wiring/integrated-plan.md`，以 v2 第 6 条和 v3 第 17 条为准）。此前能力一旦停用，没有任何命令能让它回到在用（前提 2）。
+2026-11-12，Andy 同意“重新启用 = 重新检查 + 面容，定时任务不自动恢复”（四块功能设计线程的结论；方案文件在仓库之外的项目文件夹里，本 ADR 把用到的结论都写在下面）。此前能力一旦停用，没有任何命令能让它回到在用（前提 2）。
 
 对标：本线程没有单独调研其他产品的做法，沿用设计线程方案的结论。根因层面的处理是：给“已停用到在用”一条受控的路径（先验面容、再核对），而不是把安装审批流程改宽。
 
-第一版实现让重新启用走部署快照加载器，结果启动 5 分钟后必然失败（前提 5）。设计线程因此定了 v3 第 17 条：运行期核验另写入口，不走启动准入那条规则，也不放宽那个数。
+第一版实现让重新启用走部署快照加载器，结果启动 5 分钟后必然失败（前提 5）。设计线程因此定下：运行期核验另写入口，不走启动准入那条规则，也不放宽那个数。
 
 [↑ 返回阅读导航](#contents)
 
@@ -116,7 +116,7 @@ date: "2026-11-12"
 
 ## 已知问题
 
-- `CapabilityLifecycleService` 的 `qualify` 要求资格记录的六项管控全部为真（`Object.values(qualification.enforcement).some((enforced) => !enforced)`），而部署快照加载器要求带沙箱证据的记录 `resourceCeilings` 为假（`checkedEnforcement.resourceCeilings !== false`）。两处要求相反，带沙箱证据的能力经 `qualify` 过不了。重新启用不走 `qualify`，不受影响；受影响的是安装批准后的激活、更新激活和退回。本 PR 不修，已报给协调者另开任务。
+- `CapabilityLifecycleService` 的 `qualify` 要求资格记录的六项管控全部为真（`Object.values(qualification.enforcement).some((enforced) => !enforced)`），而部署快照加载器要求带沙箱证据的记录 `resourceCeilings` 为假（`checkedEnforcement.resourceCeilings !== false`）。两处要求相反：加载器放行的带沙箱证据的资格记录，`resourceCeilings` 一定为假，交给 `qualify` 的这项判断就一定不过。重新启用不走 `qualify`，不受影响；受影响的是安装批准后的激活、更新激活和退回。本 PR 不修，已报给协调者另开任务。
 - 执行进程“现场检查通过后才写出记录”的顺序，由代码顺序和失败路径的单元测试保证（启动失败时没有记录、上一次的记录被删掉）；完整启动成功后写出记录这一条，要在有上线包的环境里用进程级测试或上线后的读回确认，云端容器里跑不了。
 
 [↑ 返回阅读导航](#contents)
@@ -136,7 +136,6 @@ date: "2026-11-12"
 
 ## 关联文档
 
-- 设计方案：项目文件夹 `four-features-wiring/integrated-plan.md` 的 v2 第 6 条、v3 第 17 条
 - [ADR 0036：Agent Service 与 Execution Worker 必须成对重启](0036-agent-worker-restart-as-a-pair.md)
 
 [↑ 返回阅读导航](#contents)
