@@ -631,6 +631,21 @@ describe("SQLite governed deletion", () => {
       null,
       null,
     );
+    database
+      .prepare(
+        `INSERT INTO external_memory_proposals (
+          id, owner_id, agent_id, subject_ref, client, source_key, text_sha256, normalization,
+          content_ref, category, classification, status, received_at, decided_at, superseded_by
+        ) VALUES ('proposal-older', ?, ?, 'subject', 'muse', NULL, ?, 'mcp-text:v1', NULL,
+          'other', 'private', 'superseded', ?, ?, 'proposal-linked')`,
+      )
+      .run(OWNER_ID, AGENT_ID, "d".repeat(64), T0, T0);
+    database
+      .prepare(
+        `INSERT INTO external_memory_proposal_keys (owner_id, agent_id, client, source_key, proposal_id)
+        VALUES (?, ?, 'muse', 'muse-key-linked', 'proposal-linked')`,
+      )
+      .run(OWNER_ID, AGENT_ID);
     insert.run(
       "proposal-other",
       OWNER_ID,
@@ -659,9 +674,12 @@ describe("SQLite governed deletion", () => {
     expect(
       scalar(
         resource.databasePath,
-        "SELECT group_concat(id || '|' || text_sha256) FROM external_memory_proposals",
+        "SELECT group_concat(id || '|' || text_sha256 || '|' || coalesce(superseded_by, '-'), ',') FROM (SELECT * FROM external_memory_proposals ORDER BY id)",
       ),
-    ).toBe(`proposal-other|${"c".repeat(64)}`);
+    ).toBe(`proposal-older|${"d".repeat(64)}|-,proposal-other|${"c".repeat(64)}|-`);
+    expect(
+      scalar(resource.databasePath, "SELECT COUNT(*) FROM external_memory_proposal_keys"),
+    ).toBe(0);
     expect(
       scalar(
         resource.databasePath,

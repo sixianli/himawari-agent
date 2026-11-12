@@ -554,7 +554,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       receivedAt: str(row["received_at"]),
       decidedAt: optionalString(row["decided_at"]),
       batchId:
-        str(row["status"]) === "committed" && memoryId === null
+        (str(row["status"]) === "committed" && memoryId === null) || content === null
           ? null
           : optionalString(row["batch_id"]),
       memoryId,
@@ -639,7 +639,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       what: "保存进受限（restricted）记忆的其他 agent 提议，以及正文和它相同的提议",
       count: restrictedProposals,
       reason:
-        "正文和受限记忆的文字相同，或已保存进受限记忆；和受限记忆一样不导出，明文和封存文件里都没有",
+        "正文和受限记忆的文字（当前文字、历史版本或主人的原话）相同，或已保存进受限记忆；和受限记忆一样不导出，明文和封存文件里都没有",
     },
     {
       what: "读不出文字、没法和提议比较的受限（restricted）记忆版本",

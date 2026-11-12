@@ -26,7 +26,7 @@ date: "2026-11-12"
 
 ## 背景
 
-[ADR 0246](0246-external-proposals-join-the-data-export-and-web.md) 让其他 agent 的提议（其他 agent 通过 MCP 送来、等 Andy 确认的记忆）进了网页和数据导出。它的 PR 复核留下了五条没做的意见，协调者按 Andy 的长期规则（“可以更好”的意见直接改）要求一起做掉：
+[ADR 0246](0246-external-proposals-join-the-data-export-and-web.md) 让其他 agent 的提议（其他 agent 通过 MCP 送来、等 Andy 确认的记忆）进了网页和数据导出。它的 PR 复核留下了五条没做的意见（`.agents/reviews/pr-420/round-1/judgments.md` 的 glm-4，`.agents/reviews/pr-420/round-5/judgments.md` 的 ds5-5 到 ds5-7，以及交付报告里列出的“受限记忆删掉以后摘要留在明文导出里”），协调者要求一起做掉：
 
 - 受限（restricted）记忆被彻底删除后，保存进它的那条提议的正文摘要还留在库里，下一次导出会以明文写出；短的正文光凭摘要就可能被逐个试出来。
 - 被排除的提议仍参与占位编号的扫描，导出里的占位编号会跳号。
@@ -44,7 +44,7 @@ date: "2026-11-12"
 2. 删除提议行时，固定编号和「不带编号送过」两张表跟着删，指着它的替换链接置空。`packages/persistence-sqlite/src/migrations/0093_external_memory_proposals.sql:57` 和 65 行：“`proposal_id TEXT NOT NULL REFERENCES external_memory_proposals(id) ON DELETE CASCADE`”；同文件 23 行：“`superseded_by TEXT REFERENCES external_memory_proposals(id) ON DELETE SET NULL`”。
 3. 导出比较受限记忆时只读当前文字和历史版本。`packages/persistence-sqlite/src/data-export/snapshot.ts:82`（本 PR 之前的 main）：“`AND memory.classification = 'restricted' AND history.content_ref IS NOT NULL`”，没有 `quote_ref`。
 4. 占位编号扫描用的是全部提议。`packages/persistence-sqlite/src/data-export/export.ts:156`（本 PR 之前的 main）：“`snapshot.externalProposals,`”。
-5. 拒绝满 30 天时只清掉正文，批次号保留。`packages/persistence-sqlite/src/sqlite-external-memory-proposal-operations.ts:492`（本 PR 之前的 main）：“`UPDATE external_memory_proposals SET content_ref = NULL WHERE id = ?`”。撤销时没有正文的条目不恢复。同文件 455 行：“`} else if (input.complete) detach.run(member.id, input.ownerId, input.agentId);`”。
+5. 拒绝满 30 天时只清掉正文，批次号保留。`packages/persistence-sqlite/src/sqlite-external-memory-proposal-operations.ts:492`（本 PR 之前的 main）：“`UPDATE external_memory_proposals SET content_ref = NULL WHERE id = ?`”。撤销时没有正文的条目不恢复。同文件 457 行：“`} else if (input.complete) detach.run(member.id, input.ownerId, input.agentId);`”。
 
 <a id="decision"></a>
 
@@ -54,7 +54,9 @@ date: "2026-11-12"
 2. **导出时，受限记忆历史版本的原话也参与比较。**和原话同文的提议整条不导出，计入 ADR 0246 决定 7 那一项 `omitted` 条数。
 3. **占位编号只扫描要导出的提议**和它们的固定编号、「不带编号送过」的客户端，被排除的提议不影响编号。
 4. **拒绝满 30 天、正文清掉时，同时清掉它的批次号。**这一批的「不要 Y 条」随之变少；整批都没有可恢复的条目时，这一批不再列出，也就没有「撤销这一批」按钮。这样网页上能撤销的就是真能恢复的。
-5. 不加迁移。
+5. **导出和导入也照这个规则：**没有正文的提议，`batchId` 一律置空，免得导入一份旧文件又把“正文已清、仍属于一批”的行带回库里。
+6. **导入时核对正文和摘要：**有正文的提议（被扣留的用封存文件里的原文），按提议的规范化方式重算摘要，和 `textSha256` 不一致就整份拒绝（`DATA_IMPORT_SEAL_MISMATCH`）。决定 1 按摘要删除提议，摘要必须真是那段正文的摘要，不能由导入文件随意指定。
+7. 不加迁移。
 
 <a id="industry"></a>
 

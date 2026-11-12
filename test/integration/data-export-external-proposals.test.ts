@@ -80,7 +80,7 @@ async function seedProposal(target: Side, seed: ProposalSeed): Promise<void> {
       `mcp-client:${seed.client ?? "Muse"}`,
       seed.client ?? "Muse",
       seed.sourceKey ?? null,
-      seed.textSha256 ?? digest(`${seed.id}:${seed.text ?? ""}`),
+      seed.textSha256 ?? (seed.text === null ? digest(seed.id) : proposalTextDigest(seed.text)),
       contentRef,
       classification,
       seed.status,
@@ -112,7 +112,6 @@ async function seeded(): Promise<Side> {
     id: "proposal-rejected",
     text: null,
     status: "rejected",
-    batchId: "batch-1",
   });
   await seedProposal(source, {
     id: "proposal-superseded",
@@ -396,6 +395,8 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
     const { files, manifest } = await exportOf(source);
     for (const [path, bytes] of files)
       if (path !== SEALED_FILE) expect(decoder.decode(bytes)).not.toContain("主人原话");
+    const sealedQuote = await unsealJson(PASSPHRASE, files.get(SEALED_FILE) ?? new Uint8Array());
+    expect(JSON.stringify(sealedQuote)).not.toContain("主人原话");
     expect(manifest.counts.externalProposals).toBe(5);
     expect(
       manifest.omitted.find(({ what }) => what.includes("受限（restricted）记忆的其他 agent 提议"))
@@ -492,12 +493,44 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
     ).toEqual({ status: "committed", memory_id: null, batch_id: null });
     expect(
       target.database
-        .prepare(
-          "SELECT batch_id FROM external_memory_proposals WHERE id IN ('proposal-committed', 'proposal-rejected') ORDER BY id",
-        )
+        .prepare("SELECT batch_id FROM external_memory_proposals WHERE id = 'proposal-committed'")
         .pluck()
         .all(),
-    ).toEqual(["batch-1", "batch-1"]);
+    ).toEqual(["batch-1"]);
+  });
+
+  it("[reverse] drops the batch of a rejected proposal whose text is gone, on export and on import", async () => {
+    const source = await seeded();
+    await seedProposal(source, {
+      id: "proposal-rejected-old",
+      text: null,
+      status: "rejected",
+      batchId: "batch-1",
+    });
+    const { files } = await exportOf(source);
+    const line = (from: PortableFiles) =>
+      JSON.parse(
+        decoder
+          .decode(from.get(PROPOSALS_FILE))
+          .split("\n")
+          .find((entry) => entry.includes('"id":"proposal-rejected-old"')) ?? "{}",
+      ) as { batchId: string | null };
+    expect(line(files).batchId).toBeNull();
+    const edited = editLine(files, "proposal-rejected-old", (entry) => ({
+      ...entry,
+      batchId: "batch-1",
+    }));
+    expect(line(edited).batchId).toBe("batch-1");
+    const target = await side("proposals-rejected-old");
+    await importInto(target, edited, PASSPHRASE);
+    expect(
+      target.database
+        .prepare(
+          "SELECT batch_id FROM external_memory_proposals WHERE id = 'proposal-rejected-old'",
+        )
+        .pluck()
+        .get(),
+    ).toBeNull();
   });
 
   it("imports a replaced proposal and a waiting one that share the same text digest", async () => {
@@ -679,6 +712,12 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
         }));
       },
       DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+    ],
+    [
+      "a proposal whose text does not match its digest",
+      (files: PortableFiles) =>
+        editLine(files, "proposal-pending", (line) => ({ ...line, textSha256: "0".repeat(64) })),
+      DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH,
     ],
     [
       "a proposal replaced by one that is not in the export",
