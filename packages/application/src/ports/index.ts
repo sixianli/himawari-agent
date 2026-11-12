@@ -37,6 +37,7 @@ export * from "./memory-dates.js";
 export * from "./memory-episodes.js";
 export * from "./memory-projection.js";
 export * from "./memory-reminders.js";
+export * from "./memory-review.js";
 export * from "./model-budget.js";
 export * from "./model-invocation.js";
 export * from "./model-usage.js";

@@ -37,6 +37,7 @@ export const DECISION_KINDS = [
   "retrieval_degrade",
   "external_read",
   "rule_review",
+  "memory_review",
 ] as const;
 
 export type DecisionKind = (typeof DECISION_KINDS)[number];
@@ -56,7 +57,16 @@ export const DECISION_OUTCOMES = {
   context_truncation: ["truncated"],
   retrieval_degrade: ["degraded"],
   external_read: ["read"],
-  rule_review: ["needs_review"],
+  rule_review: [
+    "needs_review",
+    "suspended",
+    "cleared",
+    "recheck_failed",
+    "owner_adopted",
+    "owner_confirmed",
+    "owner_restored",
+  ],
+  memory_review: ["flagged", "owner_edited", "owner_dismissed", "owner_reported_missed"],
 } as const satisfies Record<LedgerWriteKind, readonly string[]>;
 
 export const EXTERNAL_PROPOSAL_REASON_PREFIX = "mcp_proposal_";

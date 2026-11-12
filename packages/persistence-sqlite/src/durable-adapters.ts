@@ -27,6 +27,7 @@ import type {
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   MemoryReminderStorePort,
+  MemoryReviewStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
@@ -41,6 +42,8 @@ import type {
   ReliableEventPort,
   ReliableEventSinkPort,
   ReviewPrereviewStorePort,
+  RuleReviewOwnerStorePort,
+  RuleReviewStorePort,
   RunCheckpointStore,
   RunDispatchCandidate,
   RunDispatchPort,
@@ -1013,6 +1016,26 @@ export class SqliteDurableAdapters {
       read: (input) => this.context.read("ownerRule.read", input),
       create: (input) => this.context.write("ownerRule.create", input),
       setStatus: (input) => this.context.write("ownerRule.setStatus", input),
+    });
+  }
+
+  ruleReviews(): RuleReviewStorePort & RuleReviewOwnerStorePort {
+    return Object.freeze<RuleReviewStorePort & RuleReviewOwnerStorePort>({
+      listDue: (input) => this.context.read("ruleReview.listDue", input),
+      resolve: (input) => this.context.write("ruleReview.resolve", input),
+      recordFailure: (input) => this.context.write("ruleReview.recordFailure", input),
+      listOpen: (input) => this.context.read("ruleReview.listOpen", input),
+      act: (input) => this.context.write("ruleReview.act", input),
+    });
+  }
+
+  memoryReviews(): MemoryReviewStorePort {
+    return Object.freeze<MemoryReviewStorePort>({
+      expand: (input) => this.context.write("memoryReview.expand", input),
+      listOpen: (input) => this.context.read("memoryReview.listOpen", input),
+      resolve: (input) => this.context.write("memoryReview.resolve", input),
+      reportMissed: (input) => this.context.write("memoryReview.reportMissed", input),
+      agreement: (input) => this.context.read("memoryReview.agreement", input),
     });
   }
 

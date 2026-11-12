@@ -36,6 +36,7 @@ import type {
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   MemoryReminderStorePort,
+  MemoryReviewStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
@@ -51,6 +52,8 @@ import type {
   ReliableEventPort,
   ReliableEventRecord,
   ReviewPrereviewStorePort,
+  RuleReviewOwnerStorePort,
+  RuleReviewStorePort,
   RunCheckpointStore,
   RunDispatchPort,
   RunExecutionSourcePort,
@@ -574,6 +577,14 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   memoryCaptureBacklog(): MemoryCaptureBacklogPort {
     return this.durable.memoryCaptureBacklog();
+  }
+
+  ruleReviews(): RuleReviewStorePort & RuleReviewOwnerStorePort {
+    return this.durable.ruleReviews();
+  }
+
+  memoryReviews(): MemoryReviewStorePort {
+    return this.durable.memoryReviews();
   }
 
   memoryConversationReviews(): MemoryConversationReviewStorePort {

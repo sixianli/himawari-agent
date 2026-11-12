@@ -703,6 +703,7 @@ const proactiveReviewKinds = [
   "retrieval_degrade",
   "external_read",
   "rule_review",
+  "memory_review",
   "mail",
   "checkup",
 ] as const;
@@ -1269,6 +1270,7 @@ const decisionChainSnapshotSchema = object({
         "retrieval_degrade",
         "external_read",
         "rule_review",
+        "memory_review",
       ]),
       decidedAt: timestamp,
       outcome: boundedString(64),

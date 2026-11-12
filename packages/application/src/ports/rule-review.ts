@@ -53,3 +53,32 @@ export interface RuleReviewStorePort {
     },
   ): Promise<boolean>;
 }
+
+export type RuleReviewOwnerAction = "adopt" | "confirm_suspended" | "restore";
+
+export interface RuleReviewListItem {
+  readonly ruleId: string;
+  readonly revision: number;
+  readonly status: "needs_review" | "suspended";
+  readonly parameters: unknown;
+  readonly sourceMemoryId: string | null;
+  readonly suspendReason: RuleReviewSuspendReason | null;
+  readonly suggestion: OwnerRuleParameters | null;
+  readonly reviewAttempts: number;
+  readonly reviewFailure: RuleReviewFailureReason | null;
+  readonly updatedAt: string;
+}
+
+export interface RuleReviewOwnerStorePort {
+  listOpen(
+    input: OwnerRuleScope & { readonly limit: number },
+  ): Promise<readonly RuleReviewListItem[]>;
+  act(
+    input: OwnerRuleScope & {
+      readonly ruleId: string;
+      readonly expectedRevision: number;
+      readonly action: RuleReviewOwnerAction;
+      readonly now: string;
+    },
+  ): Promise<boolean>;
+}
