@@ -1281,6 +1281,10 @@ export function coveragePoints(records) {
     const direct = (model) =>
       passed.some((record) => record.model === model && record.substitute === undefined);
     const stoodIn = (model) =>
+      inRound.some(
+        (record) =>
+          record.model === model && record.substitute === undefined && record.outcome !== "ok",
+      ) &&
       passed.some(
         (record) =>
           record.substitute === true &&
