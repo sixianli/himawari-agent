@@ -69,19 +69,20 @@ export function readSnapshot(
         `SELECT COUNT(*) FROM memory_records WHERE owner_id = @ownerId AND agent_id = @agentId
           AND status IN ${EXPORTABLE_STATUSES} AND classification = 'restricted'`,
       );
-      const linkedToRestricted = `memory_id IN (SELECT id FROM memory_records
-        WHERE owner_id = @ownerId AND agent_id = @agentId AND classification = 'restricted')`;
+      const restrictedText = `text_sha256 IN (SELECT text_sha256 FROM external_memory_proposals
+        WHERE owner_id = @ownerId AND agent_id = @agentId AND memory_id IN (
+          SELECT id FROM memory_records
+          WHERE owner_id = @ownerId AND agent_id = @agentId AND classification = 'restricted'))`;
       const restrictedProposals = count(
         `SELECT COUNT(*) FROM external_memory_proposals
-        WHERE owner_id = @ownerId AND agent_id = @agentId AND ${linkedToRestricted}`,
+        WHERE owner_id = @ownerId AND agent_id = @agentId AND ${restrictedText}`,
       );
       const externalProposals = all(
         `SELECT id, subject_ref, client, source_key, text_sha256, normalization, content_ref,
           category, classification, status, received_at, decided_at, batch_id, memory_id,
           superseded_by
         FROM external_memory_proposals
-        WHERE owner_id = @ownerId AND agent_id = @agentId
-          AND (memory_id IS NULL OR NOT ${linkedToRestricted})
+        WHERE owner_id = @ownerId AND agent_id = @agentId AND NOT ${restrictedText}
         ORDER BY received_at, id`,
       );
       const externalProposalKeys = all(

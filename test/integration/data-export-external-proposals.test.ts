@@ -305,7 +305,7 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
     expect(imported.texts["proposal-pending"]).toBe("主人周末喜欢去镰仓");
   });
 
-  it("[reverse] leaves out a proposal saved into a restricted memory, text and all", async () => {
+  it("[reverse] leaves out a proposal saved into a restricted memory and every proposal with the same text, sealed file included", async () => {
     const source = await seeded();
     await seedMemory(source, {
       id: "memory-restricted",
@@ -318,18 +318,42 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
       status: "committed",
       batchId: "batch-2",
       memoryId: "memory-restricted",
+      textSha256: digest("受限的记忆正文"),
+    });
+    await seedProposal(source, {
+      id: "proposal-restricted-copy",
+      text: "受限的记忆正文",
+      status: "superseded",
+      textSha256: digest("受限的记忆正文"),
     });
     const { files, manifest } = await exportOf(source);
     for (const [path, bytes] of files)
-      if (path !== SEALED_FILE) {
-        expect(decoder.decode(bytes)).not.toContain("受限的记忆正文");
-        expect(decoder.decode(bytes)).not.toContain("proposal-restricted-link");
-      }
+      if (path !== SEALED_FILE)
+        for (const hidden of [
+          "受限的记忆正文",
+          digest("受限的记忆正文"),
+          "proposal-restricted-link",
+          "proposal-restricted-copy",
+        ])
+          expect(decoder.decode(bytes)).not.toContain(hidden);
     expect(manifest.counts.externalProposals).toBe(5);
     expect(
       manifest.omitted.find(({ what }) => what.includes("受限（restricted）记忆的其他 agent 提议"))
         ?.count,
-    ).toBe(1);
+    ).toBe(2);
+    const target = await side("proposals-restricted");
+    const report = await importInto(target, files, PASSPHRASE);
+    expect(report.imported.externalProposals).toBe(5);
+    expect(
+      target.database
+        .prepare(
+          "SELECT COUNT(*) FROM external_memory_proposals WHERE id LIKE 'proposal-restricted%' OR text_sha256 = ?",
+        )
+        .pluck()
+        .get(digest("受限的记忆正文")),
+    ).toBe(0);
+    const texts = await proposalRows(target);
+    expect(JSON.stringify(texts.texts)).not.toContain("受限的记忆正文");
   });
 
   it("drops the batch of a saved proposal whose memory was already deleted, so the batch does not count it", async () => {

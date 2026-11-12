@@ -575,9 +575,9 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       reason: "按产品规则不应存在；遇到时只计数，不导出",
     },
     {
-      what: "保存进受限（restricted）记忆的其他 agent 提议",
+      what: "保存进受限（restricted）记忆的其他 agent 提议，以及正文和它相同的提议",
       count: snapshot.restrictedProposals,
-      reason: "正文就是那条受限记忆的文字，和受限记忆一样不导出",
+      reason: "正文就是那条受限记忆的文字，和受限记忆一样不导出，明文和封存文件里都没有",
     },
     {
       what: "写入时原文已被删除的历史版本和引用原话",
