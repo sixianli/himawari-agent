@@ -148,6 +148,15 @@ export interface ProductionRunCompositionOptions {
     request: RuntimeRequest,
     failure: { readonly code: string; readonly reason: string | null },
   ) => void;
+  readonly onModelRequestRejected?: (
+    request: RuntimeRequest,
+    rejection: {
+      readonly status: number;
+      readonly retryAfter: string | null;
+      readonly shouldRetry: string | null;
+      readonly host: string | null;
+    },
+  ) => void;
   readonly onCompactionSummaryRequest?: (
     request: RuntimeRequest,
     summary: { readonly sharedHead: boolean },
@@ -462,6 +471,9 @@ export function createProductionRunComposition(options: ProductionRunComposition
       : {}),
     ...(options.onModelAdmissionFailed
       ? { onModelAdmissionFailed: options.onModelAdmissionFailed }
+      : {}),
+    ...(options.onModelRequestRejected
+      ? { onModelRequestRejected: options.onModelRequestRejected }
       : {}),
     ...(options.modelUsage ? { usage: options.modelUsage } : {}),
   });
