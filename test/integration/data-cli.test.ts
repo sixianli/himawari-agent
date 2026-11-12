@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Writable } from "node:stream";
@@ -17,6 +17,7 @@ import {
 } from "@himawari-agent/platform-node";
 import { afterEach, describe, expect, it } from "vitest";
 import { runAdminCli } from "../../apps/admin-cli/src/index.ts";
+import { seedThread } from "./chat-export-fixture.ts";
 import { SECRET_PASSWORD, type Side, seedMemory } from "./data-export-fixture.ts";
 
 const roots: string[] = [];
@@ -101,7 +102,7 @@ function configuration(stateRoot: string) {
   };
 }
 
-async function prepare(name: string, seed: boolean) {
+async function prepare(name: string, seed: boolean, seedChats = false) {
   const root = await mkdtemp(path.join(tmpdir(), `himawari-data-cli-${name}-`));
   roots.push(root);
   const stateRoot = path.join(root, "state");
@@ -127,6 +128,11 @@ async function prepare(name: string, seed: boolean) {
       migrationSequence: LATEST_MIGRATION_SEQUENCE,
       directory: root,
     };
+    if (seedChats)
+      await seedThread(side, "thread-cli", {
+        title: "咖啡",
+        messages: [{ text: "早上好" }, { text: `网银密码是 ${SECRET_PASSWORD}` }],
+      });
     await seedMemory(side, { id: "memory-plain", text: "Andy 喜欢早上喝黑咖啡" });
     await seedMemory(side, {
       id: "memory-secret",
@@ -351,4 +357,161 @@ describe("data admin CLI", () => {
     ]);
     expect(refused.code).not.toBe(0);
   });
+
+  it("[多人7] export-chats writes a verifiable chat export, seals the originals, and inspect reads it", async () => {
+    const source = await prepare("chats", true, true);
+    const out = path.join(source.root, "chats-export");
+    const base = [
+      "data",
+      "export-chats",
+      "--config",
+      source.configurationPath,
+      "--secret-dir",
+      source.secretDirectory,
+      "--out",
+      out,
+      "--operator",
+      "andy",
+    ];
+    expect((await run(base)).code).not.toBe(0);
+    await expect(readdir(out)).rejects.toThrow();
+    const exported = await run([...base, "--passphrase-file", source.passphraseFile]);
+    expect(exported.code).toBe(0);
+    const result = JSON.parse(exported.lines.at(-1) ?? "{}");
+    expect(result).toMatchObject({
+      command: "data.export-chats",
+      counts: { threads: 1, messages: 2, sealedOriginals: 1 },
+      withheld: { messages: 1 },
+      sealed: true,
+    });
+    const inspected = await run(["data", "inspect", "--from", out]);
+    expect(inspected.code).toBe(0);
+    expect(JSON.parse(inspected.lines.at(-1) ?? "{}")).toMatchObject({
+      format: "himawari.chat-export.v1",
+      counts: { threads: 1, messages: 2 },
+    });
+    const files = await readdir(out, { recursive: true });
+    expect(files).toContain("CHATS.md");
+    expect(files).toContain("sealed/sealed.enc");
+  });
+
+  it("[多人7][reverse] export-chats on a database without chats gives an empty export and needs no passphrase", async () => {
+    const source = await prepare("nochats", true);
+    const out = path.join(source.root, "chats-export");
+    const exported = await run([
+      "data",
+      "export-chats",
+      "--config",
+      source.configurationPath,
+      "--secret-dir",
+      source.secretDirectory,
+      "--out",
+      out,
+      "--operator",
+      "andy",
+    ]);
+    expect(exported.code).toBe(0);
+    expect(JSON.parse(exported.lines.at(-1) ?? "{}").counts).toMatchObject({
+      threads: 0,
+      messages: 0,
+    });
+  });
+
+  it("[多人7][reverse] inspect reports a broken manifest with the manifest error code, not a raw exception", async () => {
+    const source = await prepare("badmanifest", true, true);
+    const out = path.join(source.root, "chats-export");
+    await run([
+      "data",
+      "export-chats",
+      "--config",
+      source.configurationPath,
+      "--secret-dir",
+      source.secretDirectory,
+      "--out",
+      out,
+      "--allow-unsealed",
+      "--operator",
+      "andy",
+    ]);
+    await writeFile(path.join(out, "manifest.json"), "{not json", { mode: 0o600 });
+    const errors = sink();
+    const code = await runAdminCli(
+      ["data", "inspect", "--from", out],
+      sink().stream,
+      errors.stream,
+    );
+    expect(code).not.toBe(0);
+    expect(errors.value()).toContain("DATA_IMPORT_MANIFEST_INVALID");
+  });
+
+  it("[多人7][reverse] inspect refuses a manifest that is a symbolic link before reading it", async () => {
+    const source = await prepare("linkmanifest", true, true);
+    const out = path.join(source.root, "chats-export");
+    await run([
+      "data",
+      "export-chats",
+      "--config",
+      source.configurationPath,
+      "--secret-dir",
+      source.secretDirectory,
+      "--out",
+      out,
+      "--allow-unsealed",
+      "--operator",
+      "andy",
+    ]);
+    await unlink(path.join(out, "manifest.json"));
+    await symlink("/dev/zero", path.join(out, "manifest.json"));
+    const errors = sink();
+    const code = await runAdminCli(
+      ["data", "inspect", "--from", out],
+      sink().stream,
+      errors.stream,
+    );
+    expect(code).not.toBe(0);
+    expect(errors.value()).toContain("DATA_IMPORT_PATH_UNSAFE");
+  });
+
+  it("[多人7] inspect accepts a chat export with more than 4096 files", async () => {
+    const source = await prepare("manyfiles", true);
+    const side: Side = await (async () => {
+      const database = openQualifiedDatabase(
+        path.join(source.root, "state", "data", "product.sqlite"),
+      );
+      return {
+        database,
+        ownerId: createOwnerId(OWNER),
+        agentId: createAgentId(AGENT),
+        protector: new EnvelopePayloadProtector({
+          keys: new RestrictedSecretFileSource(source.secretDirectory),
+          activeKey: { keyRef: "payload-kek", kekVersion: "v1", dekVersion: "dek-v1" },
+        }),
+        migrationSequence: LATEST_MIGRATION_SEQUENCE,
+        directory: source.root,
+      };
+    })();
+    for (let index = 0; index < 4100; index += 1)
+      await seedThread(side, `thread-many-${index}`, {
+        created: `2026-11-01T00:00:${String(index % 60).padStart(2, "0")}.000Z`,
+        messages: [{ text: `消息 ${index}` }],
+      });
+    side.database.close();
+    const out = path.join(source.root, "chats-export");
+    const exported = await run([
+      "data",
+      "export-chats",
+      "--config",
+      source.configurationPath,
+      "--secret-dir",
+      source.secretDirectory,
+      "--out",
+      out,
+      "--operator",
+      "andy",
+    ]);
+    expect(exported.code).toBe(0);
+    const inspected = await run(["data", "inspect", "--from", out]);
+    expect(inspected.code).toBe(0);
+    expect(JSON.parse(inspected.lines.at(-1) ?? "{}").counts.threads).toBe(4100);
+  }, 60_000);
 });

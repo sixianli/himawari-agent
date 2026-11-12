@@ -30,7 +30,17 @@ export async function writePortableDirectory(
   }
 }
 
-export async function readPortableDirectory(directory: string): Promise<PortableFiles> {
+export interface ReadLimits {
+  readonly maximumFiles?: number;
+  readonly maximumTotalBytes?: number;
+}
+
+export async function readPortableDirectory(
+  directory: string,
+  limits: ReadLimits = {},
+): Promise<PortableFiles> {
+  const fileLimit = limits.maximumFiles ?? MAXIMUM_FILES;
+  const totalLimit = limits.maximumTotalBytes ?? MAXIMUM_TOTAL_BYTES;
   const root = path.resolve(directory);
   const files: PortableFiles = new Map();
   let totalBytes = 0;
@@ -44,10 +54,10 @@ export async function readPortableDirectory(directory: string): Promise<Portable
         await walk(full);
         continue;
       }
-      if (!stat.isFile() || stat.size > MAXIMUM_FILE_BYTES || files.size >= MAXIMUM_FILES)
+      if (!stat.isFile() || stat.size > MAXIMUM_FILE_BYTES || files.size >= fileLimit)
         throw new DataExportError(DATA_EXPORT_ERROR_CODES.PATH_UNSAFE, relative);
       totalBytes += stat.size;
-      if (totalBytes > MAXIMUM_TOTAL_BYTES)
+      if (totalBytes > totalLimit)
         throw new DataExportError(DATA_EXPORT_ERROR_CODES.PATH_UNSAFE, relative);
       files.set(relative, new Uint8Array(await readFile(full)));
     }

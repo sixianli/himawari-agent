@@ -27,6 +27,9 @@ import {
   type ModelProviderRouting,
   type ProactiveConfiguration,
   type ProductConfiguration,
+  REAL_EVAL_MODES,
+  REAL_EVAL_WEEKLY_CAP_MICROS_MAXIMUM,
+  type RealEvalMode,
   type RecentAuthenticationConfiguration,
   type RunPolicyConfiguration,
   type TaskEnvironmentConfiguration,
@@ -1350,6 +1353,31 @@ function parseDevice(value: unknown): DeviceConfiguration {
   });
 }
 
+function parseRealEval(value: unknown): NonNullable<RunPolicyConfiguration["realEval"]> {
+  const field = "configuration.runPolicy.realEval";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    ["mode", "modelRef", "weeklyCapMicros", "newMemoriesPerRun", "requestTimeoutMs"],
+    field,
+  );
+  const mode = input["mode"];
+  if (typeof mode !== "string" || !(REAL_EVAL_MODES as readonly string[]).includes(mode))
+    throw invalid(`${field}.mode`, "must be off, once or weekly");
+  return Object.freeze({
+    mode: mode as RealEvalMode,
+    modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
+    weeklyCapMicros: integer(
+      input["weeklyCapMicros"],
+      `${field}.weeklyCapMicros`,
+      1,
+      REAL_EVAL_WEEKLY_CAP_MICROS_MAXIMUM,
+    ),
+    newMemoriesPerRun: integer(input["newMemoriesPerRun"], `${field}.newMemoriesPerRun`, 1, 200),
+    requestTimeoutMs: integer(input["requestTimeoutMs"], `${field}.requestTimeoutMs`, 1000, 300000),
+  });
+}
+
 function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   const input = record(value, "configuration.runPolicy");
   rejectUnknown(
@@ -1371,6 +1399,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "device",
       "proactive",
       "museIntake",
+      "realEval",
       "mcpRead",
     ],
     "configuration.runPolicy",
@@ -1409,6 +1438,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["webPush"] === undefined ? {} : { webPush: parseWebPush(input["webPush"]) }),
     ...(input["device"] === undefined ? {} : { device: parseDevice(input["device"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
+    ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
     ...(input["museIntake"] === undefined
       ? {}
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
@@ -1713,6 +1743,32 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       throw invalid(
         "configuration.runPolicy.proactive.modelRef",
         "must name a configured generation model that accepts private data",
+      );
+  }
+  const realEval = runPolicy?.realEval;
+  if (realEval) {
+    const descriptor = modelDescriptors.find(({ ref }) => ref === realEval.modelRef);
+    if (
+      !descriptor ||
+      descriptor.role === "embedding" ||
+      descriptor.api !== "openai-completions" ||
+      !descriptor.allowedDataClassifications.includes("private") ||
+      !descriptor.allowedDataClassifications.includes("sensitive")
+    )
+      throw invalid(
+        "configuration.runPolicy.realEval.modelRef",
+        "must name a configured openai-completions generation model that accepts private and sensitive data",
+      );
+    if (
+      realEval.mode !== "off" &&
+      modelDescriptors.some(
+        ({ role, allowedDataClassifications }) =>
+          role === "embedding" && !allowedDataClassifications.includes("sensitive"),
+      )
+    )
+      throw invalid(
+        "configuration.runPolicy.realEval.mode",
+        "needs an embedding model that accepts sensitive data",
       );
   }
   const review = runPolicy?.automaticReview;

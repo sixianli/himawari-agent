@@ -1531,13 +1531,14 @@ describe("memory approval and management", () => {
           headers: {
             "content-disposition": 'attachment; filename="himawari-export-2026-11-02.zip"',
             "x-himawari-export-memories": "5",
+            "x-himawari-export-rules": "3",
             "x-himawari-export-withheld": "2",
           },
         }),
     );
     vi.stubGlobal("fetch", archive);
-    await click("#settings .memory-footer", "导出全部记忆");
-    expect(text("#settings")).toContain("导出全部记忆和决策记录");
+    await click("#settings .memory-footer", "导出记忆和规则");
+    expect(text("#settings")).toContain("导出记忆、长期规则和决策记录");
     expect(created).not.toHaveBeenCalled();
     await click("#settings", "下载导出文件");
     expect(archive).toHaveBeenCalledWith("/api/data-export/v1/archive", {
@@ -1545,7 +1546,9 @@ describe("memory approval and management", () => {
     });
     expect(created).toHaveBeenCalledTimes(1);
     expect(clicked).toHaveBeenCalledTimes(1);
-    expect(text("#settings")).toContain("已导出 5 条记忆；2 处敏感内容只留了占位符。");
+    expect(text("#settings")).toContain(
+      "已导出 5 条记忆、3 条正在执行的长期规则；2 处敏感内容只留了占位符。",
+    );
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(null, { status: 401 })),
@@ -1555,6 +1558,64 @@ describe("memory approval and management", () => {
     expect(clicked).toHaveBeenCalledTimes(1);
     expect(text("#settings")).toContain("导出失败，请稍后再试。");
     expect(text("#settings")).not.toContain("已导出");
+    clicked.mockRestore();
+  });
+
+  it("[多人7] downloads the chat export with the counts the server reports, and shows a failure", async () => {
+    await render();
+    const created = vi.fn(() => "blob:chats");
+    vi.stubGlobal("URL", { createObjectURL: created, revokeObjectURL: vi.fn() });
+    const clicked = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    const archive = vi.fn(
+      async () =>
+        new Response(new Uint8Array([80, 75]), {
+          status: 200,
+          headers: {
+            "content-disposition": 'attachment; filename="himawari-chats-2026-11-12.zip"',
+            "x-himawari-export-threads": "3",
+            "x-himawari-export-messages": "17",
+            "x-himawari-export-withheld": "2",
+          },
+        }),
+    );
+    vi.stubGlobal("fetch", archive);
+    await click("#settings .memory-footer", "导出聊天记录");
+    expect(text("#settings")).toContain("导出全部聊天记录");
+    expect(created).not.toHaveBeenCalled();
+    await click("#settings", "下载聊天记录");
+    expect(archive).toHaveBeenCalledWith("/api/data-export/v1/chats", {
+      credentials: "same-origin",
+    });
+    expect(created).toHaveBeenCalledTimes(1);
+    expect(clicked).toHaveBeenCalledTimes(1);
+    expect(text("#settings")).toContain(
+      "已导出 3 个对话、17 条消息；2 条含机密的消息只留了占位符。",
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 401 })),
+    );
+    await click("#settings", "下载聊天记录");
+    expect(created).toHaveBeenCalledTimes(1);
+    expect(text("#settings")).toContain("导出失败，请稍后再试。");
+    expect(text("#settings")).not.toContain("已导出");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 413 })),
+    );
+    await click("#settings", "下载聊天记录");
+    expect(created).toHaveBeenCalledTimes(1);
+    expect(text("#settings")).toContain("聊天记录太多，网页放不下一次导出");
+    expect(text("#settings")).toContain("himawari-admin data export-chats");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(new Uint8Array([80]), { status: 200 })),
+    );
+    await click("#settings", "下载聊天记录");
+    expect(created).toHaveBeenCalledTimes(1);
+    expect(text("#settings")).toContain("导出失败，请稍后再试。");
     clicked.mockRestore();
   });
 
@@ -1569,7 +1630,7 @@ describe("memory approval and management", () => {
     ];
     expect(header.find((item) => item.textContent === "添加")?.disabled).toBe(true);
     expect(footer.find((item) => item.textContent === "导入记忆")?.disabled).toBe(true);
-    expect(footer.find((item) => item.textContent === "导出全部记忆")?.disabled).toBe(false);
+    expect(footer.find((item) => item.textContent === "导出记忆和规则")?.disabled).toBe(false);
     expect(text("#settings")).toContain("要先从对话里记下第一条记忆，才能手动添加和导入");
     expect(document.querySelector("#settings .memory-card[data-kind=add]")).toBeNull();
   });

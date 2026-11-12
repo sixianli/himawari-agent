@@ -55,6 +55,8 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseMemoryCandidates: capture.parseMemoryCandidates,
   parseJudgements: application.parseJudgements,
   parseAutomaticReviewDecision: application.parseAutomaticReviewDecision,
+  parseGeneratedQuestion: application.parseGeneratedQuestion,
+  parseJudgeVerdict: application.parseJudgeVerdict,
   parsePrereview: application.parsePrereview,
 };
 
@@ -80,7 +82,14 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         .map(({ id }) => id)
         .sort(),
     ).toEqual(
-      ["mail.judgment", "memory.capture", "review.prereview", "review.typesafe-questions"].sort(),
+      [
+        "eval.real-memory.judge",
+        "eval.real-memory.question",
+        "mail.judgment",
+        "memory.capture",
+        "review.prereview",
+        "review.typesafe-questions",
+      ].sort(),
     );
   });
 
@@ -109,6 +118,40 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
       [mail],
     );
     expect(parsed?.get("mail-a")?.result).toBe("ignore");
+  });
+
+  it("[P4-5] real eval question: accepts the JSON the prompt asks for, also inside a Markdown fence", () => {
+    const sources = { memory: "主人住在大阪市北区。", quote: "我家在大阪北区" };
+    const answer = JSON.stringify({
+      question: "我现在住在哪个城市？",
+      kind: "fact",
+      abstainQuestion: "我妹妹住在哪个城市？",
+    });
+    expect(application.parseGeneratedQuestion(answer, sources)).toMatchObject({ kind: "fact" });
+    expect(
+      application.parseGeneratedQuestion(`\`\`\`json\n${answer}\n\`\`\``, sources),
+    ).toMatchObject({
+      kind: "fact",
+    });
+    expect(
+      application.parseGeneratedQuestion(
+        JSON.stringify({ question: null, kind: null, abstainQuestion: null }),
+        sources,
+      ),
+    ).toEqual({ rejected: "declined" });
+  });
+
+  it("[P4-5] real eval question and judge: reject a renamed key and plain text", () => {
+    const sources = { memory: "主人住在大阪市北区。", quote: "我家在大阪北区" };
+    expect(
+      application.parseGeneratedQuestion(JSON.stringify({ q: "我住哪？", kind: "fact" }), sources),
+    ).toEqual({ rejected: "question_invalid" });
+    expect(application.parseGeneratedQuestion("我住哪？", sources)).toEqual({
+      rejected: "response_invalid",
+    });
+    expect(application.parseJudgeVerdict(JSON.stringify({ verdict: "correct" }))).toBe("correct");
+    expect(application.parseJudgeVerdict(JSON.stringify({ result: "correct" }))).toBeNull();
+    expect(application.parseJudgeVerdict("答对了")).toBeNull();
   });
 
   it("mail judgment: rejects a renamed top-level key and plain text", () => {
