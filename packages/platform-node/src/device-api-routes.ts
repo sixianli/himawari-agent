@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import {
   type AgentThreadGatewayPort,
-  type AuditLedgerPort,
   ApplicationPortError,
+  type AuditLedgerPort,
   DEVICE_HARD_LIMIT_KEYS,
   DEVICE_HARD_LIMITS,
   type DeviceConfiguration,
@@ -32,6 +32,11 @@ import {
   type PairedDeviceError,
   type PairedDeviceService,
 } from "./paired-device-service.js";
+import {
+  PLAIN_TEXT_MAXIMUM_CHARACTERS,
+  parseTextAdmission,
+  type TextAdmissionClassification,
+} from "./text-admission.js";
 
 export const DEVICE_API_PREFIX = "/api/device/v1" as const;
 export const DEVICE_MANAGEMENT_PREFIX = "/api/devices/v1" as const;
@@ -81,9 +86,8 @@ export const DEVICE_THREAD_EVENT_TYPES: ReadonlySet<string> = new Set([
 
 const MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/u;
 const MACHINE_STRING = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const MESSAGE_TEXT_MAXIMUM = 64 * 1024;
-const TEXT_CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
-export type DeviceTextClassification = (typeof TEXT_CLASSIFICATIONS)[number];
+const MESSAGE_TEXT_MAXIMUM = PLAIN_TEXT_MAXIMUM_CHARACTERS;
+export type DeviceTextClassification = TextAdmissionClassification;
 
 export interface DeviceApiAuthority {
   readonly agentId: string;
@@ -580,24 +584,18 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
 
       device.post("/payloads/text/new", async (request, reply) => {
         const { device: paired, authentication } = await authenticate(request);
-        const body = json(request);
+        const { idempotencyKey, ...text } = json(request);
+        const admitted = parseTextAdmission(text, PLAIN_TEXT_MAXIMUM_CHARACTERS);
         if (
-          Object.keys(body).some(
-            (key) => !["idempotencyKey", "content", "dataClassification"].includes(key),
-          ) ||
-          typeof body["idempotencyKey"] !== "string" ||
-          !MESSAGE_ID_PATTERN.test(body["idempotencyKey"]) ||
-          typeof body["content"] !== "string" ||
-          body["content"].length === 0 ||
-          body["content"].length > MESSAGE_TEXT_MAXIMUM ||
-          !(TEXT_CLASSIFICATIONS as readonly unknown[]).includes(body["dataClassification"])
+          typeof idempotencyKey !== "string" ||
+          !MESSAGE_ID_PATTERN.test(idempotencyKey) ||
+          !admitted
         )
-          options.rejectBody(400);
+          return options.rejectBody(400);
         const payloadRef = await options.protectText({
           authentication,
-          idempotencyKey: `device-text:${stableSuffix(paired.id, body["idempotencyKey"] as string)}`,
-          content: body["content"] as string,
-          dataClassification: body["dataClassification"] as DeviceTextClassification,
+          idempotencyKey: `device-text:${stableSuffix(paired.id, idempotencyKey)}`,
+          ...admitted,
         });
         return options.sendJson(reply, 201, { payloadRef });
       });

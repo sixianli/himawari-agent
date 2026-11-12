@@ -65,6 +65,7 @@ const MACHINE_STRING = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const RECENT_AUTHENTICATION_KEY = "recentAuthenticationRef";
 const AUTHORIZATION_KEY = "authorizationRef";
 const SERVER_FILLED_PAYLOAD_KEYS = [RECENT_AUTHENTICATION_KEY, AUTHORIZATION_KEY] as const;
+export const DEVICE_REFERENCE_PLACEHOLDER = "device";
 
 const BODY_KEYS: Readonly<Record<ClientGateway, readonly string[]>> = Object.freeze({
   v1: ["gateway", "type", "messageId", "idempotencyKey", "dataClassification", "payload"],
@@ -98,7 +99,9 @@ export function classifyDeviceGatewayRequest(body: Record<string, unknown>): Dev
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) invalid();
   if (
     SERVER_FILLED_PAYLOAD_KEYS.some(
-      (key) => Object.hasOwn(payload, key) && (payload as Record<string, unknown>)[key] !== null,
+      (key) =>
+        Object.hasOwn(payload, key) &&
+        (payload as Record<string, unknown>)[key] !== DEVICE_REFERENCE_PLACEHOLDER,
     )
   )
     invalid();

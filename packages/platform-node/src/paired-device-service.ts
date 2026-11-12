@@ -337,7 +337,7 @@ export class PairedDeviceService {
           ? {
               ...authentication,
               recentAuthenticationEvidence: Object.freeze({
-                source: "device_confirm_key" as const,
+                source: "device_confirmation_key" as const,
                 externalSubjectRef,
                 ownerId: session.ownerId,
                 deviceId: session.deviceId,

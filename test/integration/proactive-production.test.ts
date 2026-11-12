@@ -702,6 +702,17 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     expect(tuned.decisions[0]?.rating).toBe("useful");
     expect(tuned.metrics.hits).toBe(1);
 
+    await h.command("proactive.pause", {});
+    const paused = await h.overview();
+    expect(paused.enabled).toBe(false);
+    expect(paused.quietHours).toEqual(tuned.quietHours);
+    expect(paused.importantSenders).toEqual(tuned.importantSenders);
+    await h.command("proactive.settings.set", {
+      enabled: true,
+      quietHours: tuned.quietHours,
+      importantSenders: tuned.importantSenders,
+    });
+
     await h.command("proactive.insight.respond", { insightId, action: "done", rating: null });
     expect((await h.overview()).insights).toEqual([]);
     await h.push.tick();

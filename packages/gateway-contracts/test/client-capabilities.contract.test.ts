@@ -77,4 +77,44 @@ describe("[第11批] 客户端能力表", () => {
     const rule = findClientCapability("v2", "memory.rule.respond");
     expect(rule && requiredClientTier(rule, {})).toBe("change");
   });
+
+  it("正文还带别的设置的开关整个算改，暂停提醒用只有方向的单独类型", () => {
+    const settings = findClientCapability("v2", "proactive.settings.set");
+    expect(settings?.tier).toBe("change");
+    expect(settings?.tightenPayload).toBeUndefined();
+    expect(
+      settings &&
+        requiredClientTier(settings, { enabled: false, quietHours: [], importantSenders: [] }),
+    ).toBe("change");
+    expect(findClientCapability("v2", "proactive.pause")?.tier).toBe("tighten");
+    const { schemaVersion, schema } = CLIENT_GATEWAY_SCHEMAS.v2;
+    expect(() =>
+      schema.parse({
+        schemaVersion,
+        kind: "command",
+        type: "proactive.pause",
+        payload: { enabled: true },
+      }),
+    ).toThrow(ContractValidationError);
+  });
+
+  it("记忆没有日常动作：memory.mutate 的每种动作都要面容", () => {
+    const mutate = findClientCapability("v2", "memory.mutate");
+    for (const action of [
+      "correct",
+      "archive",
+      "delete",
+      "restore",
+      "confirm",
+      "recover",
+      "pin",
+      "unpin",
+      "restore_version",
+    ])
+      expect(mutate && requiredClientTier(mutate, { action }), action).toBe("change");
+  });
+
+  it("任务页的 GitHub 监控开关手机上不做", () => {
+    expect(findClientCapability("v2", "github.monitor.set_state")?.tier).toBe("not_on_phone");
+  });
 });

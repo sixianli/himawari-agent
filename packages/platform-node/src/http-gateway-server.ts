@@ -44,6 +44,7 @@ import {
 } from "./paired-device-service.js";
 import { withPreviewStorage } from "./preview-page-storage.js";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
+import { PLAIN_TEXT_MAXIMUM_CHARACTERS, parseTextAdmission } from "./text-admission.js";
 
 export const HTTP_GATEWAY_ERROR_CODES = Object.freeze({
   AUTHENTICATION_REQUIRED: "HTTP_GATEWAY_AUTHENTICATION_REQUIRED",
@@ -1392,39 +1393,24 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)) {
           throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
         }
-        const body = request.body as Readonly<{
-          content?: unknown;
-          dataClassification?: unknown;
-        }>;
-        if (
-          Object.keys(body).some((key) => !["content", "dataClassification"].includes(key)) ||
-          typeof body.content !== "string" ||
-          body.content.length === 0 ||
-          body.content.length > maximumCharacters ||
-          !accepts(body.content) ||
-          !["public", "private", "sensitive", "restricted"].includes(
-            body.dataClassification as string,
-          )
-        ) {
-          throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
-        }
+        const admitted = parseTextAdmission(
+          request.body as Readonly<Record<string, unknown>>,
+          maximumCharacters,
+          accepts,
+        );
+        if (!admitted) throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
         return sendJson(
           reply,
           201,
           await payloadAdmission.protect({
             authentication,
             idempotencyKey,
-            content: body.content,
-            dataClassification: body.dataClassification as
-              | "public"
-              | "private"
-              | "sensitive"
-              | "restricted",
+            ...admitted,
             contentType,
           }),
         );
       };
-    app.post("/api/payload/v1/text", admitText(64 * 1024, "text/plain"));
+    app.post("/api/payload/v1/text", admitText(PLAIN_TEXT_MAXIMUM_CHARACTERS, "text/plain"));
     app.post(
       "/api/payload/v1/attachment",
       { bodyLimit: ATTACHMENT_BODY_LIMIT },

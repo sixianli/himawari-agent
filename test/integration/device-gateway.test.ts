@@ -263,8 +263,8 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
           threadId: "thread-gateway-04",
           expectedRevision: revision,
           reasonCode: "OWNER_REQUESTED",
-          authorizationRef: null,
-          recentAuthenticationRef: null,
+          authorizationRef: "device",
+          recentAuthenticationRef: "device",
           resultRef: await text(h, client, "thread-action:delete"),
         },
       });
@@ -275,6 +275,65 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     const issued = await challenge(h, client);
     const confirmed = await gateway(h, client, await deletion(), { nonce: issued.challenge });
     expect(confirmed.statusCode, confirmed.body).toBe(200);
+    await h.repository.close();
+  });
+
+  it("正文带别的设置的开关和记忆的每种动作都算“改”，只用设备密钥签被拒", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const requests = [
+      gatewayBody({
+        gateway: "v2",
+        type: "proactive.settings.set",
+        payload: { enabled: false, quietHours: [], importantSenders: [] },
+      }),
+      ...[
+        "correct",
+        "archive",
+        "delete",
+        "restore",
+        "confirm",
+        "recover",
+        "pin",
+        "unpin",
+        "restore_version",
+      ].map((action) =>
+        gatewayBody({
+          gateway: "v2",
+          type: "memory.mutate",
+          payload: { action, memoryId: "memory-x" },
+        }),
+      ),
+      gatewayBody({ gateway: "v2", type: "muse.intake.set", payload: { paused: false } }),
+      gatewayBody({
+        gateway: "v2",
+        type: "memory.settings.set",
+        payload: { capturePaused: true, extra: true },
+      }),
+    ];
+    for (const body of requests) {
+      const response = await gateway(h, client, body);
+      expect(response.statusCode, JSON.stringify(body.payload)).toBe(403);
+      expect(response.json()).toEqual({ error: { code: "DEVICE_GATEWAY_CONFIRM_REQUIRED" } });
+    }
+    expect(await audits(h)).toEqual([]);
+    await h.repository.close();
+  });
+
+  it("同一个挑战值并发用两次，只有一次成功", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const issued = await challenge(h, client);
+    const clear = () => gatewayBody({ gateway: "v2", type: "muse.data.clear", payload: {} });
+    const results = await Promise.all([
+      gateway(h, client, clear(), { nonce: issued.challenge }),
+      gateway(h, client, clear(), { nonce: issued.challenge }),
+    ]);
+    expect(results.map((response) => response.statusCode).sort()).toEqual([200, 401]);
+    expect(results.find((response) => response.statusCode === 401)?.json()).toEqual({
+      error: { code: "DEVICE_NONCE_REPLAYED" },
+    });
+    expect((await audits(h)).length).toBe(1);
     await h.repository.close();
   });
 
@@ -320,23 +379,31 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
       expect(spoofed.statusCode, JSON.stringify(extra)).toBe(400);
     }
 
-    const presetReference = await gateway(
-      h,
-      client,
-      gatewayBody({
-        gateway: "thread-v3",
-        type: "thread.delete_permanently",
-        payload: {
-          threadId: "thread-x",
-          expectedRevision: 1,
-          reasonCode: "OWNER_REQUESTED",
-          authorizationRef: null,
-          recentAuthenticationRef: "sha256:guessed",
-          resultRef: "delete-result",
-        },
-      }),
-    );
-    expect(presetReference.statusCode).toBe(400);
+    for (const references of [
+      { authorizationRef: "device", recentAuthenticationRef: "sha256:guessed" },
+      { authorizationRef: "authorization-guessed", recentAuthenticationRef: "device" },
+      { authorizationRef: null, recentAuthenticationRef: "device" },
+      { authorizationRef: "device", recentAuthenticationRef: null },
+    ]) {
+      const issued = await challenge(h, client);
+      const presetReference = await gateway(
+        h,
+        client,
+        gatewayBody({
+          gateway: "thread-v3",
+          type: "thread.delete_permanently",
+          payload: {
+            threadId: "thread-x",
+            expectedRevision: 1,
+            reasonCode: "OWNER_REQUESTED",
+            ...references,
+            resultRef: "delete-result",
+          },
+        }),
+        { nonce: issued.challenge },
+      );
+      expect(presetReference.statusCode, JSON.stringify(references)).toBe(400);
+    }
     expect(await audits(h)).toEqual([]);
     await h.repository.close();
   });

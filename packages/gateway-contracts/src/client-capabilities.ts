@@ -78,6 +78,8 @@ const WEB_PUSH_ONLY = "这是网页推送的登记；手机用苹果推送，走
 const WEB_PRESENCE_ONLY = "这是网页标签页的在线心跳；手机的在线状态由设备事件流的心跳决定";
 const DEVICE_FEEDBACK = "手机上的通知反馈走设备接口 POST feedback";
 const INTERNAL_ONLY = "只由服务器内部在回答生成完成时调用，网页也不直接发";
+const WEB_TASKS_ONLY =
+  "网页的任务页约定还没定（contractStatus 是 missing），这条命令只在那一页用；网页定了约定后再补原生页";
 
 export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.freeze([
   change("v1", "trigger.admit"),
@@ -101,6 +103,7 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   query("v2", "push.status.read"),
   query("v2", "proactive.overview.read"),
   change("v2", "proactive.settings.set"),
+  tighten("v2", "proactive.pause"),
   change("v2", "proactive.insight.respond"),
   change("v2", "proactive.decision.rate"),
   change("v2", "proactive.audit.respond"),
@@ -137,7 +140,7 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   change("v2", "memory.person.respond"),
   change("v2", "memory.import.commit"),
   change("v2", "memory.import.undo"),
-  change("v2", "github.monitor.set_state"),
+  notOnPhone("v2", "github.monitor.set_state", "command", WEB_TASKS_ONLY),
   change("v2", "memory.mutate"),
   change("v2", "grant.revoke"),
   change("v2", "capability.review"),
@@ -267,7 +270,7 @@ export function requiredClientTier(
 }
 
 export type ClientPageEntry =
-  | { readonly webPage: string; readonly nativePage: string }
+  | { readonly webPage: string; readonly nativePage: string; readonly noGatewayTypes?: string }
   | { readonly webPage: string; readonly notOnPhone: string };
 
 const WEB_CONTRACT_MISSING = "网页自己还没有约定，没有任何查询或命令；网页定了约定后补原生页";
@@ -275,7 +278,7 @@ const WEB_CONTRACT_MISSING = "网页自己还没有约定，没有任何查询�
 export const CLIENT_PAGE_TABLE: readonly ClientPageEntry[] = Object.freeze([
   { webPage: "threads", nativePage: "chat" },
   { webPage: "approvals", nativePage: "today.approvals" },
-  { webPage: "tasks", notOnPhone: WEB_CONTRACT_MISSING },
+  { webPage: "tasks", notOnPhone: WEB_TASKS_ONLY },
   { webPage: "inbox-digest", notOnPhone: WEB_CONTRACT_MISSING },
   { webPage: "memory", nativePage: "memory" },
   { webPage: "capabilities-adapters", nativePage: "settings.capabilities" },
@@ -287,6 +290,14 @@ export const CLIENT_PAGE_TABLE: readonly ClientPageEntry[] = Object.freeze([
   { webPage: "improvements", nativePage: "settings.improvements" },
   { webPage: "trace", notOnPhone: WEB_CONTRACT_MISSING },
   { webPage: "settings", notOnPhone: WEB_CONTRACT_MISSING },
-  { webPage: "sessions-devices", nativePage: "settings.devices" },
-  { webPage: "health-deployment", nativePage: "settings.health" },
+  {
+    webPage: "sessions-devices",
+    nativePage: "settings.devices",
+    noGatewayTypes: "等设备管理的网关类型",
+  },
+  {
+    webPage: "health-deployment",
+    nativePage: "settings.health",
+    noGatewayTypes: "等服务器状态查询",
+  },
 ]);

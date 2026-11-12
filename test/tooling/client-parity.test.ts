@@ -5,7 +5,10 @@ import { describe, expect, it } from "vitest";
 import { CONTROL_CENTER_SURFACE_INVENTORY } from "../../apps/control-center/src/app/control-center-inventory.ts";
 import {
   CLIENT_CAPABILITY_TABLE,
+  CLIENT_GATEWAY_MESSAGE_TYPES,
+  CLIENT_GATEWAYS,
   CLIENT_PAGE_TABLE,
+  CLIENT_RESPONSE_ONLY_TYPES,
   type ClientCapabilityEntry,
   type ClientPageEntry,
 } from "../../packages/gateway-contracts/src/index.ts";
@@ -129,6 +132,40 @@ describe("[第11批] check:client-parity 网页和手机不能悄悄不一致", 
       ...surface.mutations,
     ]);
     expect(used.filter((type) => !registered.has(type))).toEqual([]);
+  });
+
+  it("能力表只登记合约里的查询和命令，对话那份和旧的那份重名只算一次", () => {
+    const contract = new Set(
+      CLIENT_GATEWAYS.flatMap((gateway) =>
+        CLIENT_GATEWAY_MESSAGE_TYPES[gateway].filter(
+          (type) => !CLIENT_RESPONSE_ONLY_TYPES[gateway].includes(type),
+        ),
+      ),
+    );
+    const table = new Set(CLIENT_CAPABILITY_TABLE.map((entry) => entry.type));
+    expect([...table].filter((type) => !contract.has(type))).toEqual([]);
+    expect([...contract].filter((type) => !table.has(type))).toEqual([]);
+  });
+
+  it("每个原生页面在能力表里至少对上一种类型，对不上的要写明原因", () => {
+    const registered = new Set(
+      CLIENT_CAPABILITY_TABLE.filter((entry) => entry.tier !== "not_on_phone").map(
+        (entry) => entry.type,
+      ),
+    );
+    for (const page of CLIENT_PAGE_TABLE) {
+      if (!("nativePage" in page)) continue;
+      const surface = CONTROL_CENTER_SURFACE_INVENTORY.find((item) => item.id === page.webPage);
+      const types = [...(surface?.queries ?? []), ...(surface?.mutations ?? [])].filter((type) =>
+        registered.has(type),
+      );
+      if (page.noGatewayTypes === undefined)
+        expect(types.length, page.nativePage).toBeGreaterThan(0);
+      else {
+        expect(page.noGatewayTypes.length).toBeGreaterThan(0);
+        expect(types, page.nativePage).toEqual([]);
+      }
+    }
   });
 
   it("Swift 的消息清单和原生页清单由能力表生成，没有手改", () => {
