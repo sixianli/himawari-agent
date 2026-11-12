@@ -36,7 +36,7 @@ date: "2026-11-12"
 3. 没被替换的提议，正文摘要不能重复。同文件 31-33 行：“`CREATE UNIQUE INDEX external_memory_proposals_text_index ON external_memory_proposals(owner_id, agent_id, text_sha256) WHERE status <> 'superseded'`”。
 4. 客户端固定编号和「不带编号送过」各有一张表。同文件 52-68 行：`external_memory_proposal_keys` 的主键是“`(owner_id, agent_id, client, source_key)`”，`external_memory_proposal_unkeyed` 的主键是“`(proposal_id, client)`”。
 5. 拒绝的正文 30 天后删掉，只留摘要。`apps/agent-service/src/production-mcp-memory-writer.ts:45`：“`export const EXTERNAL_PROPOSAL_REJECTED_TEXT_DAYS = 30;`”。所以导出里有的提议没有正文。
-6. 网关命令只回一个结果编号，外加是否重放和状态。`apps/control-center/src/gateway-client.ts:37-41`：“`export interface GatewayClientMutationResult { readonly resultRef: string; readonly replayed: boolean; readonly status: MutationStatus; }`”。`memory.external.respond` 的结果编号就是这一批的批次号（`apps/agent-service/src/production-memory-control.ts` 的 `#externalRespond`：“`return { resultRef: batchId, replayed: false };`”），概况里的 `externalProposals.batches` 按批次给出保存和不要各几条。
+6. 网关命令只回一个结果编号：后端返回结果编号和是否重放，网页端的结果类型再多一个状态。`apps/control-center/src/gateway-client.ts:37-41`：“`export interface GatewayClientMutationResult { readonly resultRef: string; readonly replayed: boolean; readonly status: MutationStatus; }`”。`memory.external.respond` 的结果编号就是这一批的批次号（`apps/agent-service/src/production-memory-control.ts` 的 `#externalRespond`：“`return { resultRef: batchId, replayed: false };`”），概况里的 `externalProposals.batches` 按批次给出保存和不要各几条。
 7. 数据导出遇到新数据时的先例：[ADR 0233 决定 1](0233-rule-book-joins-the-data-export.md#decision)：“格式升到 `himawari.data-export.v2`。v1 的导出文件导入时整份拒绝”；机密原文只进口令加密的封存文件，导入只进空库（[ADR 0200 决定 3、6](0200-portable-export-of-memories-and-decisions.md#decision)）。
 
 <a id="decision"></a>
