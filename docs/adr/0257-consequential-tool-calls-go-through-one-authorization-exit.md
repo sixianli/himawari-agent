@@ -50,12 +50,12 @@ date: "2026-11-12"
 
 ## 前提
 
-每条前提的来源在 2026-11-12 对着 `origin/main` 的 `cc510cc0` 核对过。
+每条前提的来源最初在 2026-11-12 对着 `origin/main` 的 `cc510cc0` 核对过。第 1 步的代码写完后，这张表里的文件行号和原话已按这个 PR 分支上的代码更新；凡是这次改动改变了的现状，行里写明“这次改动之前”是什么样。
 
 | 编号 | 前提 | 来源和原话 |
 | --- | --- | --- |
-| 1 | 这次改动之前，提醒、规则、记忆检索、任务管理这几类工具的事前检查只查“给没给这一轮”，各有一个原因码；任务管理现在仍是这样，另外三类的原因码保留下来 | `apps/agent-service/src/production-runtime-tools.ts:858-862`：`this.#exposed.has(invocation.runId) &&` … `reasonCode: "TASK_RESOURCE_AUTHORITY_REQUIRED",`；`apps/agent-service/src/production-runtime-tools.ts:130`：`"owner-reminder": { prefix: "reminder", reasonCode: "REMINDER_OWNER_SCOPE" },` |
-| 2 | 这次改动之前，它们执行时不组动作意图、不调权限引擎，直接交给各自的执行函数；这次改成先按登记表找到这一行，再把统一出口的检查一起交给执行函数 | `apps/agent-service/src/production-runtime-tools.ts:1202-1206`：`const row = this.#builtinRow(invocation);` … `return run(invocation, this.#ownerScopeGate(invocation, row, signal));` |
+| 1 | 这次改动之前，提醒、规则、记忆检索、任务管理这几类工具的事前检查只查“给没给这一轮”，各有一个原因码；任务管理现在仍是这样，另外三类的原因码保留下来 | `apps/agent-service/src/production-runtime-tools.ts:869-873`：`this.#exposed.has(invocation.runId) &&` … `reasonCode: "TASK_RESOURCE_AUTHORITY_REQUIRED",`；`apps/agent-service/src/production-runtime-tools.ts:130`：`"owner-reminder": { prefix: "reminder", reasonCode: "REMINDER_OWNER_SCOPE" },` |
+| 2 | 这次改动之前，它们执行时不组动作意图、不调权限引擎，直接交给各自的执行函数；这次改成先按登记表找到这一行，再把统一出口的检查一起交给执行函数 | `apps/agent-service/src/production-runtime-tools.ts:1213-1217`：`const row = this.#builtinRow(invocation);` … `return run(invocation, this.#ownerScopeGate(invocation, row, signal));` |
 | 3 | 受治理工具的统一写法已经有了 | `apps/agent-service/src/production-coding-workflow.ts:408`：`const permission = await services.authorize(intent, ctx.signal);`；`:411`：`const result = runtimeToolAuthorizationResult(permission);` |
 | 4 | 等审批时运行挂起，所有受治理工具同一种做法 | `packages/application/src/services/runtime-tool-authorization.ts:3`：`Every governed tool uses the same suspension contract; no model result on ASK.` |
 | 5 | 已有“主人事先同意的长期授权”这种做法：条件满足就替主人记一条已同意的审批和一次性授权 | `apps/agent-service/src/production-file-read-services.ts:305-306`：`await searchAuthorization.authorize(intent);`、`await options.workspaceAuto?.authorize(intent);`；`apps/agent-service/src/owner-policy-authorization.ts:36`：`export async function applyOwnerPolicyAuthorization(input: {` |
@@ -268,7 +268,8 @@ date: "2026-11-12"
 
 - 一个对话读过外来内容之后，基本上到结束都算“有外来内容”；主人意图核对打开之前，这样的对话里每建一个提醒都要点一下。
 - 绑定了对话的定时任务会继承那个对话的“有外来内容”状态（[前提 32](#premises)、[前提 33](#premises)）。
-- 上线前还等着的旧审批，续跑时新组的动作意图多了事实，指纹对不上，会被拒绝后重新问一次。这是偏安全的结果，上线说明里写一句。
+- 读文件、写代码、联网搜索这三条老路在第 2 步多了事实之后，上线前还等着的旧审批，续跑时新组的动作意图多了事实，指纹对不上，会被拒绝后重新问一次。这是偏安全的结果，上线说明里写一句。这次新接入的提醒、规则以前没有审批，不存在旧审批；它们的动作意图第一次组好就存下，同一次工具调用续跑时原样读回，不重新组，所以中途发了新版本也按当时存下的事实判断。
+- 统一出口自己出错（例如存储写不进去）时按拒绝处理，原因码 `authorization_component_error`，不执行；出错的原因存一条诊断记录（键 `owner-scope-diagnostic:` 开头），不给模型看。同一次工具调用同时进来两次时合并成一次，这只在同一个服务进程里有效，靠的是一个数据目录同时只让一个服务进程打开。
 - 规则手册的闸门清单和结果值各多几项；另一个还没合并的分支给闸门清单加了通知闸门，两边合并时这一行要手工合。
 - 记录上的来源标记打算放进记忆记录已有的出处列表（[前提 36](#premises)）和规则已有的出处字段，对话的状态放进已有的按对话存的状态里，预计不用改表；这一点在第 2 步动工时对着存储层核实，核实前不算定论。
 - 发给模型的请求开头不变（见[发给模型的开头](#decision-prompt)）。

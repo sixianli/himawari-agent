@@ -1948,8 +1948,49 @@ it("[ADR-0257] reports a failed check and does nothing when the authorization ex
   });
   expect(broken.modelContent).not.toContain("state store unavailable");
   expect(run).not.toHaveBeenCalled();
+  expect([...f.artifacts.keys()].some((key) => key.startsWith("owner-scope-diagnostic:"))).toBe(
+    true,
+  );
   expect(await tools.execute(set)).toMatchObject({ outcome: "succeeded" });
   expect(run).toHaveBeenCalledTimes(1);
+});
+
+it("[ADR-0257] throws instead of reporting a failed check when the run has stopped or the call was cancelled while the exit broke", async () => {
+  const f = fixture();
+  const run = vi.fn(async () => ({ created: true }));
+  const assertRunActive = vi.fn(async () => undefined);
+  const authorize = vi.fn(async () => {
+    throw new Error("state store unavailable");
+  });
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    assertRunActive,
+    reminders: { run },
+    ownerScope: { authorize } as unknown as NonNullable<
+      ProductionRuntimeToolsOptions["ownerScope"]
+    >,
+  });
+  await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  const set = {
+    ...invocation,
+    capabilityRef: "reminder.set",
+    capabilityHandleRef: null,
+    arguments: { text: "交周报", due: "2026-11-13T15:00" },
+  };
+  const controller = new AbortController();
+  authorize.mockImplementationOnce(async () => {
+    controller.abort();
+    throw new Error("state store unavailable");
+  });
+  await expect(
+    tools.execute({ ...set, toolCallId: "cancelled" }, { signal: controller.signal }),
+  ).rejects.toMatchObject({ name: "AbortError" });
+  authorize.mockImplementationOnce(async () => {
+    assertRunActive.mockRejectedValue(new Error("RUN_STOPPED"));
+    throw new Error("state store unavailable");
+  });
+  await expect(tools.execute({ ...set, toolCallId: "stopped" })).rejects.toThrow("RUN_STOPPED");
+  expect(run).not.toHaveBeenCalled();
 });
 
 it("[ADR-0257] only the three listing and recall tools skip the authorization exit among the built-in tools", () => {

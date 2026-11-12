@@ -654,9 +654,20 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           },
           signal,
         );
-      } catch {
+      } catch (error) {
         await this.#options.assertRunActive(invocation.runId);
         signal?.throwIfAborted();
+        const cause =
+          error instanceof ApplicationPortError
+            ? error.code
+            : error instanceof Error
+              ? error.name
+              : "unknown";
+        await this.#writeJson(
+          invocation,
+          `owner-scope-diagnostic:${digest([invocation.runId, invocation.toolCallId, cause])}`,
+          { stage: "not_dispatched", reasonCode: "authorization_component_error", cause },
+        ).catch(() => undefined);
         permission = {
           decision: "DENY",
           reasonCode: "authorization_component_error",
