@@ -156,7 +156,7 @@ describe("[P4-1] memories and rules to recheck after a memory edit", () => {
           ? { type: "memory.rules.snapshot", payload: { rules: [], generatedAt: "x" } }
           : { type: "memory.overview.snapshot", payload: {} },
     );
-    const mutate = vi.fn(async () => ({}));
+    const mutate = vi.fn(async (_command: { type: string; payload: unknown }) => ({}));
     const client = { query, mutate, protectText: vi.fn() } as unknown as GatewayClient;
     const configuration: ControlCenterRuntimeConfiguration = {
       ownerId: "owner",
@@ -173,15 +173,15 @@ describe("[P4-1] memories and rules to recheck after a memory edit", () => {
         "memory.review.reportMissed",
       ],
     };
-    let model: ReturnType<typeof useMemory> = null;
+    const probe: { model: ReturnType<typeof useMemory> } = { model: null };
     function Probe() {
-      model = useMemory({ client, configuration, connected: true, refreshSignal: 0 });
+      probe.model = useMemory({ client, configuration, connected: true, refreshSignal: 0 });
       return null;
     }
     await show(h(Probe));
-    expect(model?.review).toEqual(flagged);
-    await act(async () => void (await model?.respondReview("owner:suspended", "adopt", 4)));
-    await act(async () => void (await model?.reportMissed("memory-c", "memory-a")));
+    expect(probe.model?.review).toEqual(flagged);
+    await act(async () => void (await probe.model?.respondReview("owner:suspended", "adopt", 4)));
+    await act(async () => void (await probe.model?.reportMissed("memory-c", "memory-a")));
     const sent = mutate.mock.calls.map(
       ([command]) => (command as { type: string; payload: unknown }).payload,
     );
@@ -196,7 +196,10 @@ describe("[P4-1] memories and rules to recheck after a memory edit", () => {
   });
 
   it("does not ask for the list when the service has not installed it", async () => {
-    const query = vi.fn(async () => ({ type: "memory.overview.snapshot", payload: {} }));
+    const query = vi.fn(async (_request: { type: string }) => ({
+      type: "memory.overview.snapshot",
+      payload: {},
+    }));
     const client = { query, mutate: vi.fn(), protectText: vi.fn() } as unknown as GatewayClient;
     const configuration: ControlCenterRuntimeConfiguration = {
       ownerId: "owner",
