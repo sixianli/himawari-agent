@@ -70,6 +70,7 @@ import {
   type JwksFetcher,
   OwnerBootstrapService,
   PairedDeviceService,
+  type PairedDeviceWarning,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
   prepareUnixSocketPath,
@@ -196,6 +197,7 @@ export interface ProductionHttpCompositionOptions {
   readonly onCommandAccepted?: (path: string) => void;
   readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
+  readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
@@ -1167,6 +1169,7 @@ export async function createProductionHttpComposition(
       return (await identityState.readByOwner(ownerId))?.status === "active";
     },
     now,
+    ...(options.onDeviceWarning ? { onWarning: options.onDeviceWarning } : {}),
   });
   const gatewayV2 = createProductionApprovalGateway({
     configuration,

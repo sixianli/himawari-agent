@@ -406,6 +406,13 @@ describe("[P1-1] device pairing and signed device API", () => {
     );
     expect(full.statusCode).toBe(429);
     expect(full.json()).toMatchObject({ error: { code: "DEVICE_NONCE_STORE_FULL" } });
+    expect(
+      (await send(h, signedRequest(h, client, { method: "GET", path: "/api/device/v1/config" })))
+        .statusCode,
+    ).toBe(429);
+    expect(h.warnings).toEqual([
+      { event: "device.nonce_store_full", deviceId: client.deviceId, retained: 2 },
+    ]);
     h.clock.advance(121_000);
     expect(
       (await send(h, signedRequest(h, client, { method: "GET", path: "/api/device/v1/config" })))
@@ -949,6 +956,65 @@ describe("[P1-1] device client routes", () => {
     expect(otherKeys.statusCode).toBe(409);
     expect(otherKeys.json()).toMatchObject({ error: { code: "DEVICE_PAIRING_CODE_USED" } });
     expect((await web(h, "list")).body["devices"]).toHaveLength(1);
+    const device = (first.json() as { device: { id: string; revision: number } }).device;
+    const removed = await web(h, "revoke", {
+      deviceId: device.id,
+      expectedRevision: device.revision,
+    });
+    expect(removed.status).toBe(200);
+    const afterRemoval = await pairWith(keys.publicKeySpkiBase64, confirmKeys.publicKeySpkiBase64);
+    expect(afterRemoval.statusCode).toBe(403);
+    expect(afterRemoval.json()).toEqual({ error: { code: "DEVICE_REVOKED" } });
+    await h.repository.close();
+  });
+
+  it("limits how many streams one device keeps open and frees a slot when a stream ends", async () => {
+    const h = await harness();
+    h.configuration.current = {
+      ...h.configuration.current,
+      connectionMaxSeconds: 1,
+      streamConnections: 1,
+    };
+    const client = await pairAndConfirm(h);
+    const other = await pairAndConfirm(h);
+    const open = async (who: PairedClient, path: string) => {
+      const request = signedRequest(h, who, { method: "GET", path });
+      const url = new URL(request.url);
+      return h.app.inject({
+        method: "GET",
+        url: url.pathname + url.search,
+        headers: request.headers,
+        payloadAsStream: true,
+      });
+    };
+    const held = await open(client, "/api/device/v1/stream");
+    expect(held.statusCode).toBe(200);
+    const ended = new Promise<void>((resolve) => {
+      const stream = held.stream();
+      stream.on("data", () => undefined);
+      stream.on("end", () => resolve());
+    });
+    const refused = await open(client, "/api/device/v1/stream");
+    expect(refused.statusCode).toBe(429);
+    const body = await new Promise<string>((resolve) => {
+      const parts: Buffer[] = [];
+      refused
+        .stream()
+        .on("data", (chunk: Buffer) => parts.push(chunk))
+        .on("end", () => resolve(Buffer.concat(parts).toString("utf8")));
+    });
+    expect(JSON.parse(body)).toEqual({
+      error: { streamConnections: 1, code: "DEVICE_STREAM_LIMIT" },
+    });
+    const otherDevice = await open(other, "/api/device/v1/stream");
+    expect(otherDevice.statusCode).toBe(200);
+    otherDevice.stream().resume();
+    await ended;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const reopened = await open(client, "/api/device/v1/stream");
+    expect(reopened.statusCode).toBe(200);
+    reopened.stream().resume();
+    await new Promise((resolve) => setTimeout(resolve, 1200));
     await h.repository.close();
   });
 

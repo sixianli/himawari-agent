@@ -1314,6 +1314,7 @@ function parseDevice(value: unknown): DeviceConfiguration {
       "signatureToleranceSeconds",
       "heartbeatSeconds",
       "connectionMaxSeconds",
+      "streamConnections",
       ...DEVICE_HARD_LIMIT_KEYS,
     ],
     field,
@@ -1349,6 +1350,12 @@ function parseDevice(value: unknown): DeviceConfiguration {
     ),
     heartbeatSeconds,
     connectionMaxSeconds,
+    streamConnections: optional(
+      "streamConnections",
+      DEVICE_CONFIGURATION_DEFAULTS.streamConnections,
+      1,
+      64,
+    ),
     limits: Object.freeze(limits),
   });
 }

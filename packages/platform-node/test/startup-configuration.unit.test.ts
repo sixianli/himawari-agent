@@ -1454,6 +1454,10 @@ it("[P1-1] parses the ten device hard limits with defaults and rejects unknown o
   }
   expect(() => parse({ "device.unknown.limit": 5 })).toThrow();
   expect(() => parse({ heartbeatSeconds: 100, connectionMaxSeconds: 60 })).toThrow();
+  expect(defaults?.streamConnections).toBe(4);
+  expect(parse({ streamConnections: 8 })?.streamConnections).toBe(8);
+  expect(() => parse({ streamConnections: 0 })).toThrow();
+  expect(() => parse({ streamConnections: 65 })).toThrow();
 });
 
 it("[PG-12] accepts proactive Gmail checks only with a Google client secret and a private-capable model", () => {

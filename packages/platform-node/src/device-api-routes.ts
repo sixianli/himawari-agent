@@ -23,7 +23,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { DeviceSignedRequest } from "./device-request-signature.js";
 import {
   PAIRED_DEVICE_ERROR_CODES,
-  type PairedDeviceError,
+  PairedDeviceError,
   type PairedDeviceService,
 } from "./paired-device-service.js";
 
@@ -198,6 +198,27 @@ export function presentDeviceLimits(configuration: DeviceConfiguration) {
   }));
 }
 
+function holdDeviceStream(
+  counts: Map<string, number>,
+  deviceId: string,
+  stream: Readable,
+  maximum: number,
+): void {
+  const open = counts.get(deviceId) ?? 0;
+  if (open >= maximum) {
+    stream.destroy();
+    throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.STREAM_LIMIT, 429, {
+      streamConnections: maximum,
+    });
+  }
+  counts.set(deviceId, open + 1);
+  stream.once("close", () => {
+    const remaining = (counts.get(deviceId) ?? 1) - 1;
+    if (remaining > 0) counts.set(deviceId, remaining);
+    else counts.delete(deviceId);
+  });
+}
+
 async function* bounded(
   source: AsyncGenerator<string>,
   maximumMilliseconds: number,
@@ -229,6 +250,9 @@ async function* bounded(
 }
 
 export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApiRouteOptions) {
+  const streamCounts = new Map<string, number>();
+  const holdStream = (deviceId: string, stream: Readable, maximum: number) =>
+    holdDeviceStream(streamCounts, deviceId, stream, maximum);
   const scope = (authentication: GatewayAuthenticationContext): PairedDeviceScope =>
     ({
       ownerId: authentication.ownerId,
@@ -326,6 +350,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         return options.sendJson(reply, 200, {
           heartbeatSeconds: configuration.heartbeatSeconds,
           connectionMaxSeconds: configuration.connectionMaxSeconds,
+          streamConnections: configuration.streamConnections,
           signatureToleranceSeconds: configuration.signatureToleranceSeconds,
           limits: presentDeviceLimits(configuration),
         });
@@ -457,6 +482,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
               configuration.connectionMaxSeconds * 1000,
             ),
           );
+          holdStream(authenticated.device.id, stream, configuration.streamConnections);
           options.setStreamHeaders(reply);
           return reply.send(stream);
         }
@@ -635,6 +661,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             configuration.connectionMaxSeconds * 1000,
           ),
         );
+        holdStream(authenticated.device.id, stream, configuration.streamConnections);
         options.setStreamHeaders(reply);
         return reply.send(stream);
       });

@@ -31,6 +31,7 @@ export const PAIRED_DEVICE_ERROR_CODES = Object.freeze({
   OWNER_INACTIVE: "DEVICE_OWNER_INACTIVE",
   NONCE_REPLAYED: "DEVICE_NONCE_REPLAYED",
   NONCE_STORE_FULL: "DEVICE_NONCE_STORE_FULL",
+  STREAM_LIMIT: "DEVICE_STREAM_LIMIT",
   PATH_NOT_ALLOWED: "DEVICE_PATH_NOT_ALLOWED",
   BODY_TOO_LARGE: "DEVICE_BODY_TOO_LARGE",
 } as const);
@@ -68,7 +69,16 @@ export interface PairedDeviceServiceOptions {
   readonly owners?: PairedDeviceOwnerDirectory;
   readonly now?: () => Date;
   readonly randomBytes?: (size: number) => Buffer;
+  readonly onWarning?: (warning: PairedDeviceWarning) => void;
 }
+
+export interface PairedDeviceWarning {
+  readonly event: "device.nonce_store_full";
+  readonly deviceId: string;
+  readonly retained: number;
+}
+
+const WARNING_INTERVAL_MILLISECONDS = 60_000;
 
 export interface AuthenticatedDeviceRequest {
   readonly device: PairedDevice;
@@ -97,6 +107,7 @@ function canonicalSpki(value: string): string {
 
 export class PairedDeviceService {
   readonly #options: PairedDeviceServiceOptions;
+  readonly #warnedAt = new Map<string, number>();
   readonly #owners: PairedDeviceOwnerDirectory;
 
   constructor(options: PairedDeviceServiceOptions) {
@@ -206,6 +217,8 @@ export class PairedDeviceService {
       case "paired":
         return { device: result.device, replayed: false };
       case "replayed":
+        if (result.device.status === "revoked")
+          throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.DEVICE_REVOKED, 403);
         return { device: result.device, replayed: true };
       case "code_expired":
         throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_CODE_EXPIRED, 410, {
@@ -302,8 +315,18 @@ export class PairedDeviceService {
     });
     if (nonce === "replayed")
       throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.NONCE_REPLAYED, 401);
-    if (nonce === "full")
+    if (nonce === "full") {
+      const warned = this.#warnedAt.get(current.id);
+      if (warned === undefined || now.getTime() - warned >= WARNING_INTERVAL_MILLISECONDS) {
+        this.#warnedAt.set(current.id, now.getTime());
+        this.#options.onWarning?.({
+          event: "device.nonce_store_full",
+          deviceId: current.id,
+          retained: configuration.limits["device.nonce.retained"],
+        });
+      }
       throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.NONCE_STORE_FULL, 429);
+    }
     const session = await this.#options.sessions.readSession(
       current.webSessionId as Parameters<SessionDeviceStatePort["readSession"]>[0],
     );
