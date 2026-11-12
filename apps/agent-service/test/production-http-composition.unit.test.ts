@@ -370,6 +370,11 @@ describe("production HTTP composition", () => {
           "sensitive.interceptions.read",
           "sensitive.interceptions.clear",
           "server.status.read",
+          "device.list.read",
+          "device.pairing.start",
+          "device.pairing.confirm",
+          "device.rename",
+          "device.revoke",
         ],
         healthDependenciesAvailable: true,
       });
@@ -1635,6 +1640,18 @@ describe("[P1-1] device pairing access", () => {
     });
   });
 
+  it("refuses an empty access value and one longer than the gateway contract allows", async () => {
+    for (const value of ["", "x".repeat(257)])
+      await expect(
+        resolveDevicePairingAccess(base, async (ref) =>
+          ref === "device-key-ref" ? value : "client-id",
+        ),
+      ).rejects.toMatchObject({ code: "PRODUCTION_HTTP_SECRET_MATERIAL_INVALID" });
+    await expect(
+      resolveDevicePairingAccess(base, async () => "x".repeat(256)),
+    ).resolves.toBeDefined();
+  });
+
   it("gives no access when either secret is not declared", async () => {
     await expect(resolveDevicePairingAccess(base.slice(0, 1), resolve)).resolves.toBeUndefined();
     await expect(resolveDevicePairingAccess(base.slice(0, 2), resolve)).resolves.toBeUndefined();
@@ -1865,7 +1882,13 @@ describe("[P1-1] device management through gateway v2", () => {
         expectedRevision: 0,
       });
       expect(confirmed.statusCode, confirmed.body).toBe(200);
-      expect((confirmed.json() as { resultRef: string }).resultRef).toBe(`device:${deviceId}:1`);
+      expect(confirmed.json()).toEqual({ resultRef: `device:${deviceId}:1`, replayed: false });
+      const confirmedAgain = await command("device.pairing.confirm", {
+        deviceId,
+        expectedRevision: 0,
+      });
+      expect(confirmedAgain.statusCode, confirmedAgain.body).toBe(200);
+      expect(confirmedAgain.json()).toEqual({ resultRef: `device:${deviceId}:1`, replayed: true });
       expect((await list()).payload.devices[0]).toMatchObject({
         status: "active",
         pairingNumber: null,
@@ -1883,6 +1906,18 @@ describe("[P1-1] device management through gateway v2", () => {
         name: "  Desk iPhone  ",
       });
       expect(renamed.statusCode, renamed.body).toBe(200);
+      const renamedAgain = await command("device.rename", {
+        deviceId,
+        expectedRevision: 1,
+        name: "Desk iPhone",
+      });
+      expect(renamedAgain.json()).toEqual({ resultRef: `device:${deviceId}:2`, replayed: true });
+      const otherName = await command("device.rename", {
+        deviceId,
+        expectedRevision: 1,
+        name: "Another name",
+      });
+      expect(otherName.statusCode).not.toBe(200);
       expect((await list()).payload.devices[0]).toMatchObject({ name: "Desk iPhone", revision: 2 });
       const rest = await app.inject({
         method: "POST",
@@ -1895,7 +1930,11 @@ describe("[P1-1] device management through gateway v2", () => {
 
       const revoked = await command("device.revoke", { deviceId, expectedRevision: 2 });
       expect(revoked.statusCode, revoked.body).toBe(200);
-      expect((await list()).payload.devices[0]).toMatchObject({ status: "revoked" });
+      const revokedAgain = await command("device.revoke", { deviceId, expectedRevision: 2 });
+      expect(revokedAgain.json()).toEqual({ resultRef: `device:${deviceId}:3`, replayed: true });
+      const revokedStale = await command("device.revoke", { deviceId, expectedRevision: 0 });
+      expect(revokedStale.statusCode).not.toBe(200);
+      expect((await list()).payload.devices[0]).toMatchObject({ status: "revoked", revision: 3 });
 
       const printed = [...logged.mock.calls, ...errored.mock.calls].map(([chunk]) => String(chunk));
       for (const text of [...leaked, ...others, ...printed]) {

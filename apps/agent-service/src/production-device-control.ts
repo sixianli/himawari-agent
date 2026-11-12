@@ -3,6 +3,7 @@ import {
   type ClockPort,
   type DeviceConfiguration,
   type GatewayAuthenticationContext,
+  type PairedDevice,
   type PairedDeviceScope,
   PORT_ERROR_CODES,
   type ProductConfiguration,
@@ -49,6 +50,26 @@ export class ProductionDeviceControl {
   #scope(): PairedDeviceScope {
     const { ownerId, agentId } = this.#options.configuration;
     return { ownerId, agentId } as PairedDeviceScope;
+  }
+
+  async #change(
+    target: { readonly deviceId: string; readonly expectedRevision: number },
+    apply: () => Promise<PairedDevice>,
+    alreadyApplied: (device: PairedDevice) => boolean,
+  ): Promise<{ resultRef: string; replayed: boolean }> {
+    try {
+      const device = await apply();
+      return { resultRef: `device:${device.id}:${device.revision}`, replayed: false };
+    } catch (error) {
+      if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.CONFLICT)
+        throw error;
+      const current = (await this.#options.devices.list(this.#scope())).find(
+        (device) => device.id === target.deviceId,
+      );
+      if (!current || current.revision !== target.expectedRevision + 1 || !alreadyApplied(current))
+        throw error;
+      return { resultRef: `device:${current.id}:${current.revision}`, replayed: true };
+    }
   }
 
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
@@ -119,18 +140,24 @@ export class ProductionDeviceControl {
         });
         return { resultRef: `device-pairing:${pairing.expiresAt}`, replayed: false };
       }
-      case "device.pairing.confirm": {
-        const device = await this.#options.devices.confirm({ ...scope, ...command.payload });
-        return { resultRef: `device:${device.id}:${device.revision}`, replayed: false };
-      }
-      case "device.rename": {
-        const device = await this.#options.devices.rename({ ...scope, ...command.payload });
-        return { resultRef: `device:${device.id}:${device.revision}`, replayed: false };
-      }
-      case "device.revoke": {
-        const device = await this.#options.devices.revoke({ ...scope, ...command.payload });
-        return { resultRef: `device:${device.id}:${device.revision}`, replayed: false };
-      }
+      case "device.pairing.confirm":
+        return this.#change(
+          command.payload,
+          () => this.#options.devices.confirm({ ...scope, ...command.payload }),
+          (device) => device.status === "active",
+        );
+      case "device.rename":
+        return this.#change(
+          command.payload,
+          () => this.#options.devices.rename({ ...scope, ...command.payload }),
+          (device) => device.status !== "revoked" && device.name === command.payload.name,
+        );
+      case "device.revoke":
+        return this.#change(
+          command.payload,
+          () => this.#options.devices.revoke({ ...scope, ...command.payload }),
+          (device) => device.status === "revoked",
+        );
       default:
         throw new Error("DEVICE_OPERATION_NOT_INSTALLED");
     }

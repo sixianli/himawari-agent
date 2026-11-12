@@ -545,17 +545,7 @@ const devicePairingNumberSchema: Schema<string> = {
     return input;
   },
 };
-function isHiddenNameCharacter(code: number): boolean {
-  return (
-    code < 0x20 ||
-    (code >= 0x7f && code <= 0x9f) ||
-    (code >= 0x200b && code <= 0x200f) ||
-    (code >= 0x202a && code <= 0x202e) ||
-    (code >= 0x2060 && code <= 0x2064) ||
-    (code >= 0x2066 && code <= 0x2069) ||
-    code === 0xfeff
-  );
-}
+const HIDDEN_NAME_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 const deviceNameSchema: Schema<string> = {
   parse(input, path = "$") {
     if (typeof input !== "string")
@@ -565,7 +555,7 @@ const deviceNameSchema: Schema<string> = {
     if (
       characters.length < 1 ||
       characters.length > DEVICE_NAME_MAX_LENGTH ||
-      characters.some((character) => isHiddenNameCharacter(character.codePointAt(0) ?? 0))
+      HIDDEN_NAME_CHARACTER.test(trimmed)
     )
       throw new ContractValidationError(
         path,
@@ -581,7 +571,8 @@ export function normalizeDeviceName(input: unknown): string | null {
     return null;
   }
 }
-const accessText = boundedString(256);
+export const DEVICE_ACCESS_TEXT_MAX_LENGTH = 256;
+const accessText = boundedString(DEVICE_ACCESS_TEXT_MAX_LENGTH);
 const deviceAccessSchema = object({
   clientId: accessText,
   clientSecret: accessText,

@@ -1051,7 +1051,15 @@ describe("[P1-1] device client routes", () => {
     const hidden = await pair(h, "Andy\u200biPhone");
     expect(hidden.response.statusCode).toBe(400);
     const client = await pairAndConfirm(h);
-    for (const name of ["Desk\u202eMac", "Desk\u0007Mac", "   ", "x".repeat(65)]) {
+    for (const name of [
+      "Desk\u202eMac",
+      "Desk\u0007Mac",
+      "Desk\u061cMac",
+      "Desk\u2028Mac",
+      "Desk\u180eMac",
+      "   ",
+      "x".repeat(65),
+    ]) {
       const renamed = await web(h, "rename", {
         deviceId: client.deviceId,
         expectedRevision: client.revision,
