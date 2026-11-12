@@ -53,6 +53,8 @@ const MESSAGES_SCANNED = 200;
 const SET_ARGUMENTS = ["quote", "inferred", "type", "params", "summary"];
 const ACTIVE_RULE_LIMIT = 32;
 export const PENDING_PROPOSAL_LIMIT = 20;
+const PENDING_PROPOSAL_CEILING = 200;
+const EVIDENCE_SWEEP_BATCH = 100;
 export const PENDING_PROPOSAL_TTL_DAYS = 30;
 const DAY_MS = 86_400_000;
 const PROPOSAL_ID_PATTERN = /^rule-proposal:[0-9a-f]{32}$/u;
@@ -435,6 +437,16 @@ export class ProductionOwnerRuleWriter {
   readonly #options: ProductionOwnerRuleWriterOptions;
 
   constructor(options: ProductionOwnerRuleWriterOptions) {
+    const { proposalLimit = PENDING_PROPOSAL_LIMIT, proposalTtlDays = PENDING_PROPOSAL_TTL_DAYS } =
+      options;
+    if (
+      !Number.isInteger(proposalLimit) ||
+      proposalLimit < 1 ||
+      proposalLimit > PENDING_PROPOSAL_CEILING ||
+      !Number.isInteger(proposalTtlDays) ||
+      proposalTtlDays < 1
+    )
+      throw new RangeError("Owner rule proposal limit or lifetime is out of range");
     this.#options = options;
   }
 
@@ -799,18 +811,9 @@ export class ProductionOwnerRuleWriter {
         return this.#activate(proposal, replayed);
       const existing = await store.read({ ...scope, proposalId, now });
       const payloads = this.#options.payloads;
-      const kept =
-        existing?.status === "pending" &&
-        existing.evidenceRef !== null &&
-        (await payloads.get(existing.evidenceRef as never)) !== undefined
-          ? existing.evidenceRef
-          : null;
-      const evidenceRef =
-        kept ?? `${proposalId}:${hash(`${proposalId}\n${now}\n${randomUUID()}`).slice(0, 16)}`;
-      const drop = async (): Promise<void> => {
-        if (kept === null) await payloads.delete(evidenceRef as never).catch(() => false);
-      };
-      if (kept === null) await this.#writeText(evidenceRef, evidence);
+      const evidenceRef = `${proposalId}:${hash(`${proposalId}\n${now}\n${randomUUID()}`).slice(0, 16)}`;
+      const drop = () => payloads.delete(evidenceRef as never).catch(() => false);
+      await this.#writeText(evidenceRef, evidence);
       const outcome = await store
         .propose({
           ...scope,
@@ -832,12 +835,8 @@ export class ProductionOwnerRuleWriter {
         await drop();
         throw new OwnerRuleError("RULE_PROPOSALS_FULL", String(this.#limit()));
       }
-      if (kept === null) {
-        const stored = await store.read({ ...scope, proposalId, now }).catch(() => undefined);
-        if (stored && stored.evidenceRef !== evidenceRef) await drop();
-        else if (existing?.evidenceRef && existing.evidenceRef !== evidenceRef)
-          await payloads.delete(existing.evidenceRef as never).catch(() => false);
-      }
+      if (existing?.evidenceRef && existing.evidenceRef !== evidenceRef)
+        await payloads.delete(existing.evidenceRef as never).catch(() => false);
     }
     return Object.freeze({
       status: "proposed",
@@ -926,14 +925,13 @@ export class ProductionOwnerRuleWriter {
     const scope = this.#scope();
     const store = this.#options.proposals;
     const settled = await store
-      .settledEvidence({ ...scope, now: this.#options.clock.now(), limit: this.#limit() })
+      .settledEvidence({ ...scope, now: this.#options.clock.now(), limit: EVIDENCE_SWEEP_BATCH })
       .catch(() => []);
     for (const { proposalId, evidenceRef } of settled) {
-      const gone = await this.#options.payloads
-        .delete(evidenceRef as never)
-        .then(() => true)
+      const cleared = await store
+        .clearEvidence({ ...scope, proposalId, evidenceRef })
         .catch(() => false);
-      if (gone) await store.clearEvidence({ ...scope, proposalId, evidenceRef }).catch(() => false);
+      if (cleared) await this.#options.payloads.delete(evidenceRef as never).catch(() => false);
     }
   }
 

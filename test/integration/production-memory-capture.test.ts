@@ -2484,7 +2484,7 @@ describe("production memory capture", () => {
       });
     });
 
-    it("rewrites the basis when a refused proposal comes back, keeps the pending one, and drops what it wrote when the list is full", async () => {
+    it("rewrites the basis when a proposal comes back, and drops what it wrote when the list is full", async () => {
       const { context, set, inferred } = await prepared();
       const first = await inferred("a.example");
       await command(
@@ -2517,9 +2517,7 @@ describe("production memory capture", () => {
         { quote: sentence, inferred: true, params: { senderDomains: ["a.example"] } },
         "call-a-third",
       );
-      expect((await proposalsQuery(context.control)).payload.proposals[0]?.replay).toMatchObject({
-        mailsChecked: 9,
-      });
+      expect((await proposalsQuery(context.control)).payload.proposals[0]?.replay).toBeNull();
 
       const small = new ProductionOwnerRuleTools(context.ruleWriterWith({ proposalLimit: 1 }));
       const refs = () => {
@@ -2779,17 +2777,25 @@ describe("production memory capture", () => {
       expect(waiting).toBe(3);
       expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(2);
 
-      await expect(
-        context.ruleWriterWith({ proposalLimit: 201 }).create({
-          key: "over-limit",
-          quote: sentence,
+      expect(() => context.ruleWriterWith({ proposalLimit: 201 })).toThrow(RangeError);
+      expect(() => context.ruleWriterWith({ proposalTtlDays: 0 })).toThrow(RangeError);
+      context.sql((database) => {
+        database
+          .prepare(
+            "DELETE FROM payloads WHERE ref IN (SELECT evidence_ref FROM owner_rule_proposals WHERE status = 'pending' AND summary = '入管局的邮件一律提醒')",
+          )
+          .run();
+      });
+      expect(payloadCount()).toBe(3);
+      await set(
+        {
+          quote: "入管局\u202e相关的邮件",
           inferred: true,
-          type: "mail_must_notify",
-          params: { senderDomains: ["over.example"] },
-          summary: "入管局的邮件一律提醒",
-          threadId: THREAD_ID,
-        }),
-      ).rejects.toThrow("limit is invalid");
+          params: { senderDomains: ["bidi.example"] },
+        },
+        "call-bidi-repaired",
+      );
+      expect(stored().filter((row) => row.ref !== null && row.kept === 0)).toEqual([]);
       expect(payloadCount()).toBe(4);
 
       context.clock.value = new Date(Date.parse(T0) + 31 * 86_400_000).toISOString();
