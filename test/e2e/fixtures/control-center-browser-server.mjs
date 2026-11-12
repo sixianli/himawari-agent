@@ -826,6 +826,7 @@ function memoryOverview() {
       },
       { kind: "relationship", lines: lines(["memory-peikun", "memory-lilei"]) },
     ],
+    externalProposals: { total: 0, items: [], batches: [] },
     pending: [],
     generatedAt: now,
   };
