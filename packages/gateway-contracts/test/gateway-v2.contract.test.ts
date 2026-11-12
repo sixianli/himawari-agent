@@ -192,6 +192,35 @@ describe("Gateway v2 fail-closed validation", () => {
         keep: null,
       }),
     ],
+    [
+      "[P5-3] external proposal rejected with edited text",
+      fixture("command", "memory.external.respond", {
+        items: [{ proposalId: "external-proposal-01", decision: "reject", editedText: "改过的" }],
+      }),
+    ],
+    [
+      "[P5-3] external proposal answered twice in one batch",
+      fixture("command", "memory.external.respond", {
+        items: [
+          { proposalId: "external-proposal-01", decision: "keep", editedText: null },
+          { proposalId: "external-proposal-01", decision: "reject", editedText: null },
+        ],
+      }),
+    ],
+    [
+      "[P5-3] external proposal batch with no items",
+      fixture("command", "memory.external.respond", { items: [] }),
+    ],
+    [
+      "[P5-3] external proposal batch over 500 items",
+      fixture("command", "memory.external.respond", {
+        items: Array.from({ length: 501 }, (_unused, index) => ({
+          proposalId: `external-proposal-${index}`,
+          decision: "keep",
+          editedText: null,
+        })),
+      }),
+    ],
     ["push surface is absent", { ...messages[0], type: "workspace.push" }],
     ["unknown message type", { ...messages[0], type: "provider.github.raw" }],
   ])("rejects %s", (_case, input) => {

@@ -887,6 +887,24 @@ export class SqliteGovernedDeletionAdapter {
             [objectId],
           ),
         );
+        const proposals = database
+          .prepare(
+            `SELECT id, content_ref AS contentRef FROM external_memory_proposals
+            WHERE owner_id = ? AND agent_id = ? AND memory_id = ?`,
+          )
+          .all(this.#options.ownerId, this.#options.agentId, objectId) as Array<{
+          id: string;
+          contentRef: string | null;
+        }>;
+        const forget = database.prepare(
+          `UPDATE external_memory_proposals SET status = 'rejected', memory_id = NULL,
+            content_ref = NULL, batch_id = NULL
+          WHERE id = ?`,
+        );
+        for (const proposal of proposals) {
+          forget.run(proposal.id);
+          if (proposal.contentRef !== null) payloadRefs.push(proposal.contentRef);
+        }
         database.prepare("DELETE FROM memory_records WHERE id = ?").run(objectId);
       }
     } else {

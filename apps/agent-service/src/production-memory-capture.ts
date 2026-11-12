@@ -10,9 +10,9 @@ import {
   type IncrementalMemoryProductPort,
   MEMORY_CAPTURE_BACKLOG_MAX_ATTEMPTS,
   MEMORY_CATEGORIES,
+  type MemoryBookStorePort,
   type MemoryCaptureBacklogPort,
   type MemoryCaptureFailureOutcome,
-  type MemoryBookStorePort,
   type MemoryCategory,
   type MemoryExtractionAuditRecord,
   type MemoryPersonLinkMention,
@@ -643,6 +643,7 @@ export function createProductionAutomaticMemory(
 export interface MemoryCaptureCall {
   readonly invocationId: string;
   readonly retryToolCall: boolean;
+  readonly maxOutputTokens?: number;
 }
 
 export interface ProductionMemoryCaptureOptions {

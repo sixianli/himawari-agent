@@ -711,7 +711,12 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {全部变化} new {新记住} drop {不记和删除} tidy {整理记忆} correct {更正} other {导入}}",
   "memory.page.event":
-    "{e, select, new {新记住} dropped {已不记} deleted {已删除} correct {更正} import {导入} merge {合并重复} supersede {取代旧说法} archive {归档} hold {发现说法不一} other {新推测}}",
+    "{e, select, new {新记住} dropped {已不记} deleted {已删除} correct {更正} import {导入} merge {合并重复} supersede {取代旧说法} archive {归档} hold {发现说法不一} review {回看对话} other {新推测}}",
+  "memory.page.reviewed":
+    "回看了一段对话：新记住 {created} 条，取代旧说法 {superseded} 条，确认 {confirmed} 条",
+  "memory.page.reviewItem":
+    "{action, select, created {新记住} superseded {不再成立} other {已确认}}：{text}",
+  "memory.page.reviewQuote": "（原话：{quote}）",
   "memory.page.imported":
     "从 {source, select, codex {Codex} assistant {其他 AI} other {Himawari 导出文件}} 导入 {count} 条",
   "memory.page.goConfirm": "去确认",

@@ -12,33 +12,35 @@ import type {
   CapabilityRegistryStorePort,
   DecisionLedgerPort,
   ExecutionEnvironmentStorePort,
+  ExternalMemoryProposalStorePort,
   GapCaseMarkPort,
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
   LedgerObservationPort,
   MemoryBookStorePort,
+  MemoryCaptureBacklogPort,
+  MemoryCheckupStorePort,
   MemoryConsolidationStorePort,
+  MemoryConversationReviewStorePort,
   MemoryEpisodeStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
-  MemoryCaptureBacklogPort,
-  MemoryCheckupStorePort,
-  ReviewPrereviewStorePort,
   MemoryReminderStorePort,
-  OwnerRuleStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
-  RealEvalStorePort,
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
+  OwnerRuleStorePort,
   PayloadStorePort,
   ProactiveStorePort,
   ProductMemoryStatePort,
+  RealEvalStorePort,
   ReliableEventPort,
   ReliableEventSinkPort,
+  ReviewPrereviewStorePort,
   RunCheckpointStore,
   RunDispatchCandidate,
   RunDispatchPort,
@@ -990,6 +992,20 @@ export class SqliteDurableAdapters {
     });
   }
 
+  externalMemoryProposals(): ExternalMemoryProposalStorePort {
+    return Object.freeze<ExternalMemoryProposalStorePort>({
+      submit: (input) => this.context.write("externalMemoryProposal.submit", input),
+      read: (input) => this.context.read("externalMemoryProposal.read", input),
+      listPending: (input) => this.context.read("externalMemoryProposal.listPending", input),
+      decide: (input) => this.context.write("externalMemoryProposal.decide", input),
+      listBatch: (input) => this.context.read("externalMemoryProposal.listBatch", input),
+      listBatches: (input) => this.context.read("externalMemoryProposal.listBatches", input),
+      reopenBatch: (input) => this.context.write("externalMemoryProposal.reopenBatch", input),
+      dropDiscardedText: (input) =>
+        this.context.write("externalMemoryProposal.dropDiscardedText", input),
+    });
+  }
+
   ownerRules(): OwnerRuleStorePort {
     return Object.freeze<OwnerRuleStorePort>({
       list: (input) => this.context.read("ownerRule.list", input),
@@ -1006,6 +1022,27 @@ export class SqliteDurableAdapters {
       recordAttempt: (input) => this.context.write("memoryCaptureBacklog.recordAttempt", input),
       has: (generationId) => this.context.read("memoryCaptureBacklog.has", { generationId }),
       remove: (generationId) => this.context.write("memoryCaptureBacklog.remove", { generationId }),
+    });
+  }
+
+  memoryConversationReviews(): MemoryConversationReviewStorePort {
+    return Object.freeze<MemoryConversationReviewStorePort>({
+      position: (input) => this.context.read("memoryConversationReview.position", input),
+      begin: (input) => this.context.write("memoryConversationReview.begin", input),
+      attachOutput: (input) => this.context.write("memoryConversationReview.attachOutput", input),
+      finish: (input) => this.context.write("memoryConversationReview.finish", input),
+      recordChange: (change) =>
+        this.context.write("memoryConversationReview.recordChange", { change }),
+      discardChange: (input) => this.context.write("memoryConversationReview.discardChange", input),
+      markChangeUndone: (input) =>
+        this.context.write("memoryConversationReview.markChangeUndone", input),
+      read: (id) => this.context.read("memoryConversationReview.read", { id }),
+      listWithChanges: (input) =>
+        this.context.read("memoryConversationReview.listWithChanges", input),
+      listChanges: (reviewId) =>
+        this.context.read("memoryConversationReview.listChanges", { reviewId }),
+      dayUsage: (input) => this.context.read("memoryConversationReview.dayUsage", input),
+      markUndone: (input) => this.context.write("memoryConversationReview.markUndone", input),
     });
   }
 
@@ -1186,6 +1223,8 @@ export class SqliteDurableAdapters {
       attachEmbedding: (input) => this.context.write("memoryEpisode.attachEmbedding", input),
       listUnsummarized: (input) => this.context.read("memoryEpisode.listUnsummarized", input),
       listDaySummaries: (input) => this.context.read("memoryEpisode.listDaySummaries", input),
+      listDaySummariesAfter: (input) =>
+        this.context.read("memoryEpisode.listDaySummariesAfter", input),
     });
   }
 

@@ -34,7 +34,7 @@ import {
   ThreadQueryService,
 } from "@himawari-agent/application";
 import type { ThreadExecutionEnvironment } from "@himawari-agent/gateway-contracts";
-import { MemoryConsolidationService } from "@himawari-agent/memory-engine";
+import { MemoryConsolidationService, undoConversationReview } from "@himawari-agent/memory-engine";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
@@ -86,13 +86,13 @@ import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
 import { registerDataExportRoute } from "./production-data-export.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
+import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
+import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
 } from "./production-memory-control.js";
-import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
-import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
 import {
   PRODUCTION_MUSE_OPERATIONS,
@@ -106,6 +106,7 @@ import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   ProductionOwnerPreferencesControl,
 } from "./production-owner-preferences-control.js";
+import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
   PROACTIVE_GOOGLE_START_PATH,
@@ -116,6 +117,10 @@ import {
   PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
   ProductionSensitiveInterceptionsControl,
 } from "./production-sensitive-interceptions-control.js";
+import {
+  PRODUCTION_SERVER_STATUS_OPERATIONS,
+  ProductionServerStatusControl,
+} from "./production-server-status-control.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -198,6 +203,7 @@ export interface ProductionHttpCompositionOptions {
       | "recover"
       | "archive"
     >;
+    readonly externalProposals?: ProductionMcpMemoryWriter;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
   readonly webPush?: {
@@ -681,6 +687,7 @@ function routeOptions(
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
+        ...PRODUCTION_SERVER_STATUS_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1081,6 +1088,23 @@ export async function createProductionHttpComposition(
           store: repository.memoryConsolidation(),
           undo: (changeId) => memoryTidyUp?.undo(changeId) ?? Promise.resolve(),
         },
+        conversationReviews: {
+          store: repository.memoryConversationReviews(),
+          undo: (reviewId) =>
+            options.memory
+              ? undoConversationReview(
+                  {
+                    store: repository.memoryConversationReviews(),
+                    state: repository.productMemoryState(),
+                    memory: options.memory.service,
+                    generationFor: async (memoryId) =>
+                      (await memoryJobs.listByMemory(memoryId)).at(-1)?.generationId,
+                    now: clock,
+                  },
+                  reviewId,
+                )
+              : Promise.resolve(),
+        },
         reminders: repository.memoryReminders(),
         ownerRules: new ProductionOwnerRuleWriter({
           configuration,
@@ -1103,6 +1127,9 @@ export async function createProductionHttpComposition(
         clock: { now: clock },
         ...(configuration.runPolicy?.timeZone
           ? { timeZone: configuration.runPolicy.timeZone }
+          : {}),
+        ...(options.memory.externalProposals
+          ? { externalProposals: options.memory.externalProposals }
           : {}),
         onAudit: options.memory.onAudit,
       })
@@ -1137,6 +1164,11 @@ export async function createProductionHttpComposition(
       store: repository.sensitiveInterceptions(),
       clock: { now: clock },
       beforeRead: () => flushSensitiveInterceptions(repository),
+    }),
+    serverStatusControl: new ProductionServerStatusControl({
+      configuration,
+      health,
+      clock: { now: clock },
     }),
   });
   const app = buildHttpGatewayServer({

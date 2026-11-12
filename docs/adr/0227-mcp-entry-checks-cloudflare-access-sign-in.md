@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
+amended_by: "docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md"
 date: "2026-11-11"
 ---
 
@@ -67,6 +68,7 @@ Andy 2026-11-11 在任务 P5-3 的线程里同意的做法是：三个客户端�
 3. **读写权限按配置给，不再按令牌分。** 凭证有效就给 `himawari:read`；配置打开了 `proposals` 时再给 `himawari:write`。
    - 能登录这个 Access 应用的只有 Andy 本人，由 Access 策略保证；源站另外核对凭证主体是绑定的主人（决定 1），所以 Access 策略哪天配宽了，别人登录进来也读不到记忆。Cloudflare 的凭证说明写 `sub` 是 “The ID of the user. This value is unique to an email address per account.”（<https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/>），即同一账号里按邮箱定，不按应用定，所以网页登录绑定的主体和 MCP 凭证的主体应是同一个摘要。这一点页面没有明说「跨应用相同」，要在 Hermes 上实测确认（列在后果一节）。
    - 每次写入仍要 Andy 确认：在客户端里弹框确认（ADR 0225），或者到 Himawari 里确认（ADR 0228）。所以不用再给每个客户端发一把单独的写令牌。
+   - 2026-11-12 起：[ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 1 在本条之上加了一层：`proposals` 这个全局开关仍然决定写工具出不出现；每个接入另有自己的设置（能不能推、推来的要不要先问、能读到哪一级），只能在全局开关之内再收窄。接入密钥是身份和统计用的，不是旧的写令牌。对应的编码任务合并之前，代码仍按本条。本条原文保留不改。
 4. **限流数值不变，但改成全入口共用一份。** 有效请求每分钟 30 次，无效请求每分钟 60 次，计数逻辑抽成 `AdmissionWindows`，和 `BearerGate` 共用。原来读、写两把令牌各有一份 30 次的额度；现在所有客户端共用同一份 30 次，`propose_memory` 确认来回的每次请求也算在里面。
    - 凭证校验在限流计数之前做（要先知道算有效还是无效）。为了不让伪造的凭证借此反复触发公钥下载，`CloudflareAccessJwtVerifier` 遇到不认识的公钥编号（`kid`）时，只要缓存还没过期，距上次尝试下载公钥集不到 30 秒就不再下载，继续用缓存（缓存有效期配得比 30 秒短、缓存已过期时，照常重新下载；生产用默认的 300 秒）；上次下载失败、手里又没有未过期的缓存时，30 秒内直接按校验失败处理，不再下载；同一时刻只发一次下载，下载进行中，缓存里认识的公钥照常校验，不用等它。过期的缓存一律不用。这和 jose 库（本项目校验 JWT 用的开源库）自带的远程公钥集的做法一样（`cooldownDuration` 默认 30000 毫秒，见 `node_modules/jose/dist/types/jwks/remote.d.ts`）。网页登录用的是同一个类，一起受益；代价是 Cloudflare 换公钥后，最多晚 30 秒认新公钥。
 5. **401 不再带自定义 `WWW-Authenticate` 头。** 授权服务器的发现交给 Cloudflare（前提 6）。
@@ -113,6 +115,7 @@ Andy 2026-11-11 在任务 P5-3 的线程里同意的做法是：三个客户端�
   - MCP 那个 Access 应用发的凭证里的 `sub`，和网页登录那个应用的是否相同（决定 3）。不同的话，主人核对会把 Andy 也挡在外面，回 401。
 - **客户端第一次连接要在浏览器里登录一次。** 之后客户端自己续期。Andy 撤销授权后，客户端要重新登录。
 - **来源只能靠客户端自称。** 所有客户端都以 Andy 本人登录，凭证主体相同，所以「这条提议来自哪个客户端」仍然只能靠客户端自报的名字。ADR 0228 在界面上把它标成「自称」。
+  - 2026-11-12 起：这一条由 [ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 1 改掉：每个接入由 Andy 在网页上建，带密钥的专属网址定身份，自报的名字只当附注。对应的编码任务合并之前，代码仍按本条。本条原文保留不改。
 - **P5-1 的固定令牌没有上线过**，所以不用迁移生产配置或撤销旧令牌。
 - **测试：**
   - `test/integration/mcp-read.test.ts`、`test/integration/mcp-write.test.ts` 用真实的 `CloudflareAccessJwtVerifier`，用测试密钥签发的凭证连接。拒绝用例覆盖：没有凭证、只带旧的 Bearer 令牌、别的密钥签的、audience 不对、过期、不是绑定的主人（另有两条：绑定已停用、绑定属于别的主人，只检查连接被拒并记 `MCP_ACCESS_OWNER_NOT_BOUND`）；直接发请求的那几种检查 401 不带 `WWW-Authenticate` 头，带了凭证的那几种各记一次失败。把校验换成「有凭证就放行」，或者去掉主人核对，拒绝用例会失败（已手动验证）。另有限流用例：60 次无效凭证之后回 429，429 不记日志，有效登录照常可用；30 次有效请求之后回 429，此时无效凭证仍回 401。

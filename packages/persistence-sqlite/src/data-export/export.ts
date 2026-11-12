@@ -335,6 +335,34 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     };
   });
 
+  const changesByReview = group(snapshot.reviewChanges, "review_id");
+  let conversationReviewChanges = 0;
+  const reviewLines: JsonValue[] = snapshot.reviews.map((review) => {
+    const changes: JsonValue[] = (changesByReview.get(str(review["id"])) ?? [])
+      .filter((change) => memoryIds.has(str(change["memory_id"])))
+      .map((change) => ({
+        memoryId: str(change["memory_id"]),
+        action: str(change["action"]),
+        afterRevision: num(change["after_revision"]),
+        beforeSupersededBy: keepMemoryRef(optionalString(change["before_superseded_by"])),
+        beforeValidTo: optionalString(change["before_valid_to"]),
+        createdAt: str(change["created_at"]),
+        undoneRevision: change["undone_revision"] === null ? null : num(change["undone_revision"]),
+      }));
+    conversationReviewChanges += changes.length;
+    return {
+      id: str(review["id"]),
+      day: str(review["day"]),
+      status: str(review["status"]),
+      attempts: num(review["attempts"]),
+      errorCode: optionalString(review["error_code"]),
+      startedAt: str(review["started_at"]),
+      finishedAt: optionalString(review["finished_at"]),
+      undoneAt: optionalString(review["undone_at"]),
+      changes,
+    };
+  });
+
   const signals = group(snapshot.signals, "decision_id");
   let decisionSignals = 0;
   const decisionLines: JsonValue[] = snapshot.decisions.map((row) => {
@@ -480,6 +508,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   put(DATA_FILES.people, "data", jsonLines(peopleLines), peopleLines.length);
   put(DATA_FILES.importBatches, "data", jsonLines(batchLines), batchLines.length);
   put(DATA_FILES.consolidations, "data", jsonLines(consolidationLines), consolidationLines.length);
+  put(DATA_FILES.conversationReviews, "data", jsonLines(reviewLines), reviewLines.length);
   put(DATA_FILES.decisions, "data", jsonLines(decisionLines), decisionLines.length);
   const rulesText = jsonLines(ruleLines as unknown as readonly JsonValue[]);
   for (const [index, line] of rulesText.split("\n").entries())
@@ -535,6 +564,11 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
         "已换成编号占位（接着库里已有占位的最大编号往后排；同一原文同一编号，不同原文不同编号）；这些是名称和编号，原文不保留，不进封存文件",
     },
     {
+      what: "其他 agent 通过 MCP 提议的记忆（待确认、已拒绝、被替换的提议）",
+      count: snapshot.externalProposals,
+      reason: "本版导出格式还不含这张表；已确认保存的会作为普通记忆导出",
+    },
+    {
       what: "规则出处里指向未导出记忆的链接",
       count: droppedRuleMemoryLinks,
       reason: "那条记忆已删除或分级为受限，不在导出里；链接置空，规则本身照常导出",
@@ -567,6 +601,8 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     importBatches: batchLines.length,
     consolidations: consolidationLines.length,
     consolidationChanges,
+    conversationReviews: reviewLines.length,
+    conversationReviewChanges,
     decisions: decisionLines.length,
     decisionSignals,
     markdownMemories: markdown.count,

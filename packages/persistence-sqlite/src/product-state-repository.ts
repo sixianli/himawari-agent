@@ -3,7 +3,6 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import type {
   AttentionStatePort,
-  BuiltInIdentityStatePort,
   AuditLedgerPort,
   AuthorityFence,
   AuthorityLeasePort,
@@ -11,6 +10,7 @@ import type {
   AuthorizationStorePort,
   AutomaticReviewStorePort,
   BackgroundWorkStatePort,
+  BuiltInIdentityStatePort,
   CapabilityExecutionHandleStorePort,
   CapabilityInvocationReceiptPort,
   CapabilityInvocationResultPort,
@@ -20,41 +20,39 @@ import type {
   CommandResultRecord,
   CommitStateAndEventsInput,
   CommitStateAndEventsResult,
+  DecisionLedgerPort,
   DeploymentAuthorityStatePort,
   DurableGitHubMonitorHistoryPolicyPort,
   ExecutionEnvironmentStorePort,
+  ExternalMemoryProposalStorePort,
+  GapCaseMarkPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
-  MemoryConsolidationStorePort,
-  MemoryEpisodeStorePort,
+  LedgerObservationPort,
+  MemoryBookStorePort,
   MemoryCaptureBacklogPort,
   MemoryCheckupStorePort,
-  ReviewPrereviewStorePort,
-  MemoryReminderStorePort,
-  OwnerRuleStorePort,
-  OwnerPreferencesStorePort,
-  ProactiveStorePort,
-  ThreadArtifactStorePort,
-  SensitiveInterceptionStorePort,
-  ThreadPromptBundleStorePort,
-  DecisionLedgerPort,
-  GapCaseMarkPort,
-  MuseIntakePort,
-  LedgerObservationPort,
-  ModelUsageStorePort,
-  RealEvalStorePort,
-  WebPushStorePort,
-  MemoryBookStorePort,
+  MemoryConsolidationStorePort,
+  MemoryConversationReviewStorePort,
+  MemoryEpisodeStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
+  MemoryReminderStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
+  ModelUsageStorePort,
+  MuseIntakePort,
   OwnerIdentityStatePort,
+  OwnerPreferencesStorePort,
+  OwnerRuleStorePort,
   PayloadStorePort,
+  ProactiveStorePort,
   ProductMemoryStatePort,
   ProductStateRepositoryPort,
+  RealEvalStorePort,
   ReliableEventPort,
   ReliableEventRecord,
+  ReviewPrereviewStorePort,
   RunCheckpointStore,
   RunDispatchPort,
   RunExecutionSourcePort,
@@ -66,14 +64,18 @@ import type {
   SandboxExecutionPreparationPort,
   SandboxJobJournalPort,
   SchedulerPort,
+  SensitiveInterceptionStorePort,
   SensitiveMemoryApprovalStatePort,
   SessionDeletionStatePort,
   SessionDeviceStatePort,
   StateRecord,
+  ThreadArtifactStorePort,
   ThreadDistillationStatePort,
+  ThreadPromptBundleStorePort,
   ThreadRepositoryPort,
   ThreadSearchProjectionSourcePort,
   TraceStorePort,
+  WebPushStorePort,
 } from "@himawari-agent/application";
 import type {
   AgentAuthorityLease,
@@ -601,8 +603,16 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.reviewPrereview();
   }
 
+  externalMemoryProposals(): ExternalMemoryProposalStorePort {
+    return this.durable.externalMemoryProposals();
+  }
+
   memoryCaptureBacklog(): MemoryCaptureBacklogPort {
     return this.durable.memoryCaptureBacklog();
+  }
+
+  memoryConversationReviews(): MemoryConversationReviewStorePort {
+    return this.durable.memoryConversationReviews();
   }
 
   modelUsage(): ModelUsageStorePort {
