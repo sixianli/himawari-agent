@@ -288,25 +288,28 @@ describe("production memory capture", () => {
         readonly proposals?: ConstructorParameters<typeof ProductionProposalBox>[0]["store"];
         readonly proposalLimit?: number;
         readonly proposalTtlDays?: number;
+        readonly box?: ProductionProposalBox;
       } = {},
     ) => {
-      const { proposals, proposalLimit, proposalTtlDays, ...rest } = extra;
+      const { proposals, proposalLimit, proposalTtlDays, box: given, ...rest } = extra;
       return new ProductionOwnerRuleWriter({
         configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
         rules: repository.ownerRules(),
-        box: boxWith({
-          ...(proposals ? { store: proposals } : {}),
-          ...(rest.protector ? { protector: rest.protector } : {}),
-          configuration: {
-            ...(rest.configuration ?? { ownerId: OWNER_ID, agentId: AGENT_ID }),
-            runPolicy: {
-              ownerProposals: {
-                ...(proposalLimit === undefined ? {} : { pendingLimit: proposalLimit }),
-                ...(proposalTtlDays === undefined ? {} : { expiresAfterDays: proposalTtlDays }),
+        box:
+          given ??
+          boxWith({
+            ...(proposals ? { store: proposals } : {}),
+            ...(rest.protector ? { protector: rest.protector } : {}),
+            configuration: {
+              ...(rest.configuration ?? { ownerId: OWNER_ID, agentId: AGENT_ID }),
+              runPolicy: {
+                ownerProposals: {
+                  ...(proposalLimit === undefined ? {} : { pendingLimit: proposalLimit }),
+                  ...(proposalTtlDays === undefined ? {} : { expiresAfterDays: proposalTtlDays }),
+                },
               },
             },
-          },
-        }),
+          }),
         memory,
         memories: repository.productMemoryState(),
         book: repository.memoryBook(),
@@ -2430,14 +2433,11 @@ describe("production memory capture", () => {
             { target: proposal["proposalId"], action: "confirm" },
             `race-adopt-${index}`,
           ),
-          command(
-            context.control,
-            "memory.rule.respond",
-            { target: proposal["proposalId"], action: "reject" },
-            `race-reject-${index}`,
-          ),
+          respond(context, proposal["proposalId"], "reject", `race-reject-${index}`),
         ]);
         expect(outcomes.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+        const lost = outcomes.find(({ status }) => status === "rejected") as PromiseRejectedResult;
+        expect(String(lost.reason)).toMatch(/PROPOSAL_ACCEPTED|RULE_PROPOSAL_REJECTED/u);
         const adopted = outcomes[0]?.status === "fulfilled";
         const active = (await context.ruleWriter.list()).length;
         expect(active).toBe(adopted ? 1 : 0);
@@ -2472,9 +2472,20 @@ describe("production memory capture", () => {
 
     it("shows the limit, refuses a proposal over it and expires a proposal after its days", async () => {
       const { context, set } = await prepared();
-      const small = new ProductionOwnerRuleTools(
-        context.ruleWriterWith({ proposalLimit: 2, proposalTtlDays: 3 }),
-      );
+      const tight = context.boxWith({
+        configuration: {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runPolicy: { ownerProposals: { pendingLimit: 2, expiresAfterDays: 3 } },
+        },
+      });
+      const small = new ProductionOwnerRuleTools(context.ruleWriterWith({ box: tight }));
+      const shownByTight = await new ProductionProposalControl({
+        configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        box: tight,
+        clock: { now: () => context.clock.value },
+      }).query({ ...envelope, kind: "query", type: "proposals.read", payload: {} } as never);
+      expect(shownByTight.payload).toMatchObject({ limit: 2, expiresAfterDays: 3 });
       const make = (domain: string) =>
         set(
           { quote: sentence, inferred: true, params: { senderDomains: [domain] } },
@@ -3003,6 +3014,51 @@ describe("production memory capture", () => {
       });
       expect(adopted).toEqual([{ query: "新款手机" }]);
       expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
+      await expect(respond(context, proposalId, "adopt", "adopt-again")).rejects.toThrow(
+        "PROPOSAL_ACCEPTED",
+      );
+      expect(adopted).toHaveLength(1);
+
+      const wideId = `next-step:${"8".repeat(32)}`;
+      const wide = (over: Record<string, unknown> = {}) =>
+        context.box.propose({
+          proposalId: wideId,
+          type: "price_search",
+          summary: "😀".repeat(200),
+          effect: "\u202e  采纳后去比价",
+          origin: "external_agent",
+          threadId: null,
+          evidence: [
+            { kind: "\u202e", text: "只有控制符的种类", sources: [], figures: [] },
+            { kind: "note", text: "\u202e", sources: [], figures: [] },
+          ],
+          data: { query: "宽字符" },
+          ...over,
+        } as never);
+      for (const invalid of [
+        { summary: "\u202e \u0007" },
+        { effect: "" },
+        { type: "t".repeat(65) },
+        { summary: "长".repeat(401) },
+        { proposalId: "not-an-id" },
+      ])
+        await expect(wide(invalid)).rejects.toMatchObject({ code: "PROPOSAL_INVALID" });
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
+      await wide();
+      const shown = (await proposalsQuery(context)).payload.proposals[0];
+      expect(shown).toMatchObject({
+        summary: "😀".repeat(100),
+        effect: "采纳后去比价",
+        evidence: [{ kind: "note", text: null }],
+      });
+      await wide();
+      expect(
+        await respond(context, wideId, "adopt", "adopt-after-same-content", {
+          version: shown?.version as number,
+          fingerprint: shown?.fingerprint as string,
+        }),
+      ).toMatchObject({ resultRef: "price-search:1" });
+      expect(adopted).toEqual([{ query: "新款手机" }, { query: "宽字符" }]);
     });
 
     it("keeps the old basis and the old state when writing the new basis fails", async () => {

@@ -9,7 +9,7 @@ import type {
   GatewayV2Query,
   GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
-import { type ProductionProposalBox, ProposalError } from "./production-proposals.js";
+import { type ProductionProposalBox, ProposalError, shownText } from "./production-proposals.js";
 
 export const PRODUCTION_PROPOSAL_OPERATIONS = Object.freeze([
   "proposals.read",
@@ -19,17 +19,6 @@ export const PRODUCTION_PROPOSAL_OPERATIONS = Object.freeze([
 const EVIDENCE_SHOWN = 20;
 const SOURCES_SHOWN = 10;
 const FIGURES_SHOWN = 10;
-
-function shown(text: string, maximum: number): string {
-  return Array.from(
-    text
-      .replace(/\p{Bidi_Control}/gu, "")
-      .replace(/\p{Cc}/gu, " ")
-      .trim(),
-  )
-    .slice(0, maximum)
-    .join("");
-}
 
 export interface ProductionProposalControlOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
@@ -61,27 +50,33 @@ export class ProductionProposalControl {
           proposalId: proposal.proposalId,
           version: proposal.version,
           fingerprint: proposal.fingerprint,
-          type: shown(proposal.type, 64),
-          summary: shown(proposal.summary, 200),
-          effect: shown(proposal.effect, 200),
+          type: shownText(proposal.type, 64),
+          summary: shownText(proposal.summary, 200),
+          effect: shownText(proposal.effect, 200),
           origin: proposal.origin,
           adoptable: proposal.adoptable,
-          evidence: proposal.evidence.slice(0, EVIDENCE_SHOWN).map((item) => ({
-            kind: shown(item.kind, 64),
-            text: item.text === null ? null : shown(item.text, 500) || null,
-            sources: item.sources
-              .slice(0, SOURCES_SHOWN)
-              .map((source) => ({ kind: shown(source.kind, 64), ref: shown(source.ref, 256) }))
-              .filter((source) => source.kind.length > 0 && source.ref.length > 0),
-            figures: item.figures
-              .slice(0, FIGURES_SHOWN)
-              .map((figure) => ({
-                name: shown(figure.name, 64),
-                value: figure.value,
-                definition: shown(figure.definition, 200),
-              }))
-              .filter((figure) => figure.name.length > 0 && figure.definition.length > 0),
-          })),
+          evidence: proposal.evidence
+            .filter((item) => shownText(item.kind, 64).length > 0)
+            .slice(0, EVIDENCE_SHOWN)
+            .map((item) => ({
+              kind: shownText(item.kind, 64),
+              text: item.text === null ? null : shownText(item.text, 500) || null,
+              sources: item.sources
+                .slice(0, SOURCES_SHOWN)
+                .map((source) => ({
+                  kind: shownText(source.kind, 64),
+                  ref: shownText(source.ref, 256),
+                }))
+                .filter((source) => source.kind.length > 0 && source.ref.length > 0),
+              figures: item.figures
+                .slice(0, FIGURES_SHOWN)
+                .map((figure) => ({
+                  name: shownText(figure.name, 64),
+                  value: figure.value,
+                  definition: shownText(figure.definition, 200),
+                }))
+                .filter((figure) => figure.name.length > 0 && figure.definition.length > 0),
+            })),
           proposedAt: proposal.proposedAt,
           expiresAt: proposal.expiresAt,
           refusedBefore: proposal.refusedBefore,

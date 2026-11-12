@@ -459,6 +459,7 @@ export class ProductionOwnerRuleWriter {
   constructor(options: ProductionOwnerRuleWriterOptions) {
     this.#options = options;
     options.box.register(RULE_PROPOSAL_TYPE, {
+      repeatable: true,
       adopt: async ({ threadId, data }) => {
         const stored = evidenceOf(data);
         if (!stored) throw new OwnerRuleError("RULE_NOT_FOUND");

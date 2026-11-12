@@ -26,6 +26,7 @@ export type ProposalErrorCode =
   | "PROPOSAL_ACCEPTED"
   | "PROPOSAL_EXPIRED"
   | "PROPOSAL_CHANGED"
+  | "PROPOSAL_INVALID"
   | "PROPOSAL_TYPE_NOT_ADOPTABLE";
 
 export class ProposalError extends Error {
@@ -62,6 +63,7 @@ export interface ProposalAdoption {
 }
 
 export interface ProposalHandler {
+  readonly repeatable?: boolean;
   adopt(input: {
     readonly proposalId: string;
     readonly threadId: string | null;
@@ -114,6 +116,30 @@ interface StoredBasis {
 
 function text(value: unknown): value is string {
   return typeof value === "string";
+}
+
+export function shownText(value: string, maximum: number): string {
+  let kept = "";
+  for (const character of value
+    .replace(/\p{Bidi_Control}/gu, "")
+    .replace(/\p{Cc}/gu, " ")
+    .trim()) {
+    if (kept.length + character.length > maximum) break;
+    kept += character;
+  }
+  return kept.trim();
+}
+
+const TYPE_LENGTH = 64;
+const SENTENCE_LENGTH = 400;
+
+function sentence(value: unknown, maximum: number): boolean {
+  return (
+    typeof value === "string" &&
+    value.length >= 1 &&
+    value.length <= maximum &&
+    shownText(value, maximum).length > 0
+  );
 }
 
 export function canonicalJson(value: unknown): string {
@@ -259,6 +285,13 @@ export class ProductionProposalBox {
     const { store, payloads } = this.#options;
     const now = this.#options.clock.now();
     const { proposalId } = input;
+    if (
+      !PROPOSAL_ID_PATTERN.test(proposalId) ||
+      !sentence(input.type, TYPE_LENGTH) ||
+      !sentence(input.summary, SENTENCE_LENGTH) ||
+      !sentence(input.effect, SENTENCE_LENGTH)
+    )
+      throw new ProposalError("PROPOSAL_INVALID");
     const existing = await store.read({ ...scope, proposalId, now });
     const digest = createHash("sha256").update(`${proposalId}\n${now}\n${randomUUID()}`);
     const evidenceRef = `${proposalId}:${digest.digest("hex").slice(0, 16)}`;
@@ -278,7 +311,14 @@ export class ProductionProposalBox {
         sourceVersion: input.source?.version ?? null,
         fingerprint: createHash("sha256")
           .update(
-            canonicalJson([input.type, input.summary, input.effect, input.evidence, input.data]),
+            canonicalJson([
+              input.type,
+              input.summary,
+              input.effect,
+              input.origin,
+              input.evidence,
+              input.data,
+            ]),
           )
           .digest("hex"),
         evidenceRef,
@@ -309,36 +349,42 @@ export class ProductionProposalBox {
     const handler = this.#handlers.get(row.type);
     if (!handler) throw new ProposalError("PROPOSAL_TYPE_NOT_ADOPTABLE", row.type);
     let claimed = false;
+    let current = row;
     if (row.status === "pending") {
-      claimed =
-        (await store.decide({
-          ...scope,
-          proposalId,
-          from: "pending",
-          to: "accepted",
-          now: clock.now(),
-          ...(expected ? { expected } : {}),
-        })) !== undefined;
-      if (!claimed) {
+      const taken = await store.decide({
+        ...scope,
+        proposalId,
+        from: "pending",
+        to: "accepted",
+        now: clock.now(),
+        ...(expected ? { expected } : {}),
+      });
+      if (taken) {
+        claimed = true;
+        current = taken;
+      } else {
         const latest = await this.read(proposalId);
-        if (latest && changed(latest, expected)) throw new ProposalError("PROPOSAL_CHANGED");
-        if (latest?.status === "rejected") throw new ProposalError("PROPOSAL_REJECTED");
-        if (latest?.status === "expired") throw new ProposalError("PROPOSAL_EXPIRED");
+        if (!latest) throw new ProposalError("PROPOSAL_NOT_FOUND");
+        if (changed(latest, expected)) throw new ProposalError("PROPOSAL_CHANGED");
+        if (latest.status === "rejected") throw new ProposalError("PROPOSAL_REJECTED");
+        if (latest.status === "expired") throw new ProposalError("PROPOSAL_EXPIRED");
+        current = latest;
       }
     }
+    if (!claimed && handler.repeatable !== true) throw new ProposalError("PROPOSAL_ACCEPTED");
     const release = async (): Promise<void> => {
-      if (claimed)
-        await store
-          .decide({ ...scope, proposalId, from: "accepted", to: "pending", now: clock.now() })
-          .catch(() => undefined);
+      if (!claimed) return;
+      const back = () =>
+        store.decide({ ...scope, proposalId, from: "accepted", to: "pending", now: clock.now() });
+      await back().catch(() => back().catch(() => undefined));
     };
-    const basis = await this.#readBasis(row.evidenceRef);
+    const basis = await this.#readBasis(current.evidenceRef);
     if (!basis) {
       await release();
       throw new ProposalError("PROPOSAL_NOT_FOUND");
     }
     try {
-      return await handler.adopt({ proposalId, threadId: row.threadId, data: basis.data });
+      return await handler.adopt({ proposalId, threadId: current.threadId, data: basis.data });
     } catch (error) {
       await release();
       throw error;
@@ -396,7 +442,14 @@ export class ProductionProposalBox {
       }
       if (done)
         await store
-          .decide({ ...scope, proposalId: row.proposalId, from: "pending", to: "accepted", now })
+          .decide({
+            ...scope,
+            proposalId: row.proposalId,
+            from: "pending",
+            to: "accepted",
+            now,
+            expected: { version: row.version, fingerprint: row.fingerprint },
+          })
           .catch(() => false);
     }
   }
