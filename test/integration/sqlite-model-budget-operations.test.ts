@@ -282,6 +282,58 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
       }
     });
 
+    it("[I-94] still refuses a different data classification on a background occurrence account", async () => {
+      const resource = await fixture();
+      try {
+        const state = resource.repository.backgroundWorkState();
+        const created = await state.createOccurrence(occurrence());
+        const admitted = await state.reserveAdmission({
+          occurrenceId: created.id,
+          expectedRevision: created.revision,
+          runId: RUN_ID,
+          authority: AUTHORITY,
+          limits: LIMITS,
+          admittedAt: NOW,
+        });
+        const claimed = await state.claimOccurrence({
+          occurrenceId: admitted.occurrence.id,
+          expectedRevision: admitted.occurrence.revision,
+          authority: AUTHORITY,
+          leaseId: "work-lease-classification",
+          holderId: "worker-classification",
+          claimedAt: NOW,
+          expiresAt: FAR_FUTURE,
+        });
+        if (!claimed.workLease) throw new Error("Expected a claimed occurrence");
+        const budget = resource.repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+          leaseId: AUTHORITY_LEASE_ID,
+          fencingToken: 1,
+        });
+        const parent = {
+          kind: "occurrence" as const,
+          occurrenceId: claimed.id,
+          expectedRevision: claimed.revision,
+          workLeaseId: claimed.workLease.id,
+          workLeaseHolderId: claimed.workLease.holderId,
+        };
+        const reserve = (operationKey: string, dataClassification: "private" | "sensitive") =>
+          budget.reserve({
+            parent,
+            operationKey,
+            modelRef: "approved-model-v1",
+            dataClassification,
+            estimatedCostMicros: 1,
+            reservedAt: NOW,
+          });
+        await reserve("classification-private", "private");
+        await expect(reserve("classification-sensitive", "sensitive")).rejects.toMatchObject({
+          code: "PORT_CONFLICT",
+        });
+      } finally {
+        await resource.repository.close();
+      }
+    });
+
     it("routes an unknown child on an expired occurrence lease only to reconciliation", async () => {
       const resource = await fixture();
       try {
