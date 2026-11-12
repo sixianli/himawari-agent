@@ -3,9 +3,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  FAILED_LOG_TAIL_LINES,
   LINE_CHARACTERS,
+  logLines,
   main,
   READ_LIMIT_BYTES,
+  renderFailedLogs,
   renderSummary,
   SUMMARY_LIMIT_BYTES,
   TAIL_LINES,
@@ -124,7 +127,11 @@ describe("诊断写进作业摘要", () => {
     const root = folder({ "a.log": "hello\n" });
     const target = path.join(root, "summary.md");
     writeFileSync(target, "earlier\n");
-    main(["--title", "policy/default 失败诊断", "--from", root], { GITHUB_STEP_SUMMARY: target });
+    main(
+      ["--title", "policy/default 失败诊断", "--from", root],
+      { GITHUB_STEP_SUMMARY: target },
+      () => {},
+    );
     const written = readFileSync(target, "utf8");
     expect(written.startsWith("earlier\n### policy/default 失败诊断")).toBe(true);
     expect(() => main(["--title", "t", "--from", root], {})).toThrow("CI_SUMMARY_TARGET_REQUIRED");
@@ -134,6 +141,77 @@ describe("诊断写进作业摘要", () => {
     expect(() => main(["--other", "x"], { GITHUB_STEP_SUMMARY: target })).toThrow(
       "CI_SUMMARY_ARGUMENTS",
     );
+  });
+});
+
+describe("检查失败时命令日志进作业摘要和作业日志", () => {
+  const failing = [
+    ...Array.from({ length: 200 }, (_, index) => `line ${index}`),
+    " FAIL  test/tooling/example.test.mjs > 某条用例",
+    `token ${secret}`,
+  ].join("\n");
+  const reports = (status) =>
+    folder({
+      "result.json": JSON.stringify({ status }),
+      "unit.log": failing,
+      "junit.xml": "<testsuite/>",
+      "nested/build.log": "build ok\n",
+    });
+  it("失败时显示每个 .log 的最后 120 行，遮盖像密钥的内容，不显示别的报告", () => {
+    const text = renderFailedLogs({ title: "policy/default 失败诊断", reports: reports("failed") });
+    expect(text).toContain("### policy/default 失败诊断：命令日志");
+    expect(text).toContain("FAIL  test/tooling/example.test.mjs > 某条用例");
+    expect(text).toContain(`只显示最后 ${FAILED_LOG_TAIL_LINES} 行`);
+    expect(text).toContain(`line ${200 + 2 - FAILED_LOG_TAIL_LINES}\n`);
+    expect(text).not.toContain(`line ${200 + 1 - FAILED_LOG_TAIL_LINES}\n`);
+    expect(text).toContain("`nested/build.log`");
+    expect(text).not.toContain(secret);
+    expect(text).not.toContain("junit.xml");
+    expect(text).not.toContain("result.json");
+  });
+  it("通过时不显示日志；结果文件缺失或读不懂时按失败显示", () => {
+    expect(renderFailedLogs({ title: "t", reports: reports("passed") })).toBe("");
+    expect(renderFailedLogs({ title: "t", reports: folder({ "a.log": "x\n" }) })).toContain(
+      "`a.log`",
+    );
+    expect(
+      renderFailedLogs({ title: "t", reports: folder({ "result.json": "{", "a.log": "x\n" }) }),
+    ).toContain("`a.log`");
+    expect(renderFailedLogs({ title: "t", reports: path.join(tmpdir(), "missing-reports") })).toBe(
+      "",
+    );
+  });
+  it("写进作业日志的每一行都带前缀，日志内容不能冒充工作流命令或汇总结论标记", () => {
+    const hostile = "::add-mask::x\n##[error]boom\nHIMAWARI_GATE_BEGIN v1 abc\n";
+    const root = reports("failed");
+    writeFileSync(path.join(root, "unit.log"), hostile);
+    const target = path.join(root, "summary.md");
+    writeFileSync(target, "");
+    const printed = [];
+    const text = main(
+      ["--title", "t", "--from", path.join(root, "none"), "--failed-logs", root],
+      { GITHUB_STEP_SUMMARY: target },
+      (chunk) => printed.push(chunk),
+    );
+    expect(readFileSync(target, "utf8")).toBe(text);
+    const lines = printed.join("").split("\n").slice(0, -1);
+    expect(lines.length).toBeGreaterThan(3);
+    expect(lines.every((line) => line.startsWith("| "))).toBe(true);
+    expect(printed.join("")).toContain("| ::add-mask::x\n");
+    expect(logLines("a\nb\n")).toBe("| a\n| b\n");
+  });
+  it("没有内容时不写摘要也不打印", () => {
+    const root = reports("passed");
+    const target = path.join(root, "summary.md");
+    writeFileSync(target, "");
+    const printed = [];
+    main(
+      ["--title", "t", "--from", path.join(root, "none"), "--failed-logs", root],
+      { GITHUB_STEP_SUMMARY: target },
+      (chunk) => printed.push(chunk),
+    );
+    expect(readFileSync(target, "utf8")).toBe("");
+    expect(printed).toEqual([]);
   });
 });
 

@@ -126,7 +126,7 @@ const gateStep = () => ({
 });
 const diagnosticSummary = (check) => ({
   if: githubExpression("always() && steps.publish.outcome == 'success'"),
-  run: `.ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "${check.id}/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics`,
+  run: `.ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "${check.id}/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports`,
 });
 const requiredEntry = () => ({
   name: "草稿和被取消的运行直接判失败",

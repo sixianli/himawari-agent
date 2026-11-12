@@ -5,6 +5,7 @@ import {
   lstatSync,
   openSync,
   readdirSync,
+  readFileSync,
   readSync,
 } from "node:fs";
 import path from "node:path";
@@ -13,6 +14,7 @@ import { redactText } from "./redact-text.mjs";
 
 export const SUMMARY_LIMIT_BYTES = 64 * 1024;
 export const TAIL_LINES = 40;
+export const FAILED_LOG_TAIL_LINES = 120;
 export const LINE_CHARACTERS = 500;
 export const READ_LIMIT_BYTES = 256 * 1024;
 const FOOTER_RESERVE_BYTES = 256;
@@ -48,7 +50,7 @@ function readTail(file) {
   return bytes;
 }
 
-function textTail(file) {
+function textTail(file, tailLines) {
   let bytes;
   try {
     bytes = readTail(file);
@@ -75,32 +77,38 @@ function textTail(file) {
     .replace(/[^\P{Cc}\n\t]/gu, "?")
     .split("\n");
   const tail = lines
-    .slice(-TAIL_LINES)
+    .slice(-tailLines)
     .map((line) => (line.length > LINE_CHARACTERS ? `${line.slice(0, LINE_CHARACTERS)}…` : line))
     .join("\n");
   return {
-    omitted: file.size > bytes.length || lines.length > TAIL_LINES,
+    omitted: file.size > bytes.length || lines.length > tailLines,
     text: tail.replaceAll("````", "` ` ` `"),
   };
 }
 
 const safeName = (value) => redactText(value).replace(/[\p{Cc}`|]/gu, "?");
 
-export function renderSummary({ title, from, limit = SUMMARY_LIMIT_BYTES }) {
+export function renderSummary({
+  title,
+  from,
+  limit = SUMMARY_LIMIT_BYTES,
+  tailLines = TAIL_LINES,
+  only = () => true,
+}) {
   if (!existsSync(from)) return "";
-  const files = listFiles(from);
+  const files = listFiles(from).filter((file) => only(file.relative));
   if (files.length === 0) return "";
   const header = `### ${title}\n\n`;
   const sections = [];
   let used = Buffer.byteLength(header);
   let shown = 0;
   for (const file of files) {
-    const tail = textTail(file);
+    const tail = textTail(file, tailLines);
     const name = safeName(file.relative);
     const section =
       tail === null
         ? `- \`${name}\`：二进制文件，${file.size} 字节，内容不显示\n\n`
-        : `#### \`${name}\`（${file.size} 字节${tail.omitted ? `，只显示最后 ${TAIL_LINES} 行` : ""}）\n\n\`\`\`\`text\n${tail.text}\n\`\`\`\`\n\n`;
+        : `#### \`${name}\`（${file.size} 字节${tail.omitted ? `，只显示最后 ${tailLines} 行` : ""}）\n\n\`\`\`\`text\n${tail.text}\n\`\`\`\`\n\n`;
     const remaining = files.length - shown - 1;
     const footer = `其余 ${files.length - shown} 个文件超出 ${limit} 字节的摘要上限，没有显示。\n`;
     const reserve = remaining > 0 ? FOOTER_RESERVE_BYTES : 0;
@@ -115,11 +123,40 @@ export function renderSummary({ title, from, limit = SUMMARY_LIMIT_BYTES }) {
   return header + sections.join("");
 }
 
-export function main(argv = process.argv.slice(2), env = process.env) {
+function checkFailed(reports) {
+  try {
+    return JSON.parse(readFileSync(path.join(reports, "result.json"), "utf8")).status !== "passed";
+  } catch {
+    return true;
+  }
+}
+
+export function renderFailedLogs({ title, reports }) {
+  if (!existsSync(reports) || !checkFailed(reports)) return "";
+  return renderSummary({
+    title: `${title}：命令日志`,
+    from: reports,
+    tailLines: FAILED_LOG_TAIL_LINES,
+    only: (relative) => relative.endsWith(".log"),
+  });
+}
+
+export const logLines = (text) =>
+  text
+    .replace(/\n$/u, "")
+    .split("\n")
+    .map((line) => `| ${line}\n`)
+    .join("");
+
+export function main(
+  argv = process.argv.slice(2),
+  env = process.env,
+  write = (text) => process.stdout.write(text),
+) {
   const args = {};
   for (let i = 0; i < argv.length; i += 2) {
     if (
-      !["--title", "--from"].includes(argv[i]) ||
+      !["--title", "--from", "--failed-logs"].includes(argv[i]) ||
       Object.hasOwn(args, argv[i]) ||
       argv[i + 1] === undefined
     )
@@ -128,8 +165,15 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   }
   if (!args["--title"] || !args["--from"]) throw new Error("CI_SUMMARY_INPUT_REQUIRED");
   if (!env.GITHUB_STEP_SUMMARY) throw new Error("CI_SUMMARY_TARGET_REQUIRED");
-  const text = renderSummary({ title: args["--title"], from: path.resolve(args["--from"]) });
-  if (text) appendFileSync(env.GITHUB_STEP_SUMMARY, text);
+  const text =
+    renderSummary({ title: args["--title"], from: path.resolve(args["--from"]) }) +
+    (args["--failed-logs"]
+      ? renderFailedLogs({ title: args["--title"], reports: path.resolve(args["--failed-logs"]) })
+      : "");
+  if (text) {
+    appendFileSync(env.GITHUB_STEP_SUMMARY, text);
+    write(logLines(text));
+  }
   return text;
 }
 
