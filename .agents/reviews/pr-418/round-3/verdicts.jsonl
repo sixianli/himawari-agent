@@ -1,0 +1,2 @@
+{"id": "r3-ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "refresh 断言移到 close 之前后，不再验证 close 不触发 refresh", "valid": true, "class": "error", "severity": "low", "trigger": "以后 close 里误加了 refresh 调用", "consequence": "测试看不出来；不影响现有行为", "modelSeverity": "low"}
+{"id": "r3-ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "反向用例只做了 `toContain`，没有限定为唯一错误", "valid": true, "class": "error", "severity": "low", "trigger": "检查脚本删掉一条需求时同时报出别的无关错误", "consequence": "反向用例仍通过，看不出多报；不影响现有行为", "modelSeverity": "low"}
