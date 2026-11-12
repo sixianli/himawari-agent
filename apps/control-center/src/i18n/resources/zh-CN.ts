@@ -577,6 +577,8 @@ export const messages = {
   "governance.updateAssessment": "更新差异与评估",
   "governance.rollback": "可回退版本",
   "governance.lastTransition": "最近版本切换",
+  "governance.lastInvalidation": "最近一次停用",
+  "governance.lastInvalidationValue": "{time}：取消了 {count} 个定时任务，不会自动恢复",
   "governance.rollbackBoundary": "副作用 / 产品状态回退边界",
   "governance.notAvailable": "不可用",
   "governance.capability": "能力",

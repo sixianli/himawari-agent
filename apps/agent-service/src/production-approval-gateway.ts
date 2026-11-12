@@ -183,7 +183,8 @@ export function createProductionApprovalGateway(options: {
       },
     },
     dependencies: {
-      listTaskRefsByCapability: unsupported,
+      listTaskRefsByCapability: async (capabilityRef) =>
+        (await capabilities.listScheduledJobRefs?.(capabilityRef)) ?? [],
       listTaskRefsByGrant: unsupported,
       trueResultRefForApproval: async (id) => {
         const approval = await authorization.getApproval(id);

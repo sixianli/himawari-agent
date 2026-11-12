@@ -783,6 +783,12 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       );
       const currentCapability = await capabilities.get(action.capabilityRef);
       if (!currentCapability) throw new Error("expected governed capability");
+      await expect(capabilities.listScheduledJobRefs?.(action.capabilityRef)).resolves.toEqual([
+        "job-capability-governed-sqlite",
+      ]);
+      await expect(capabilities.listScheduledJobRefs?.("capability-without-jobs")).resolves.toEqual(
+        [],
+      );
       const invalidateAuthority = capabilities.invalidateCapabilityAuthority;
       if (!invalidateAuthority) throw new Error("capability invalidation must be atomic");
       await expect(
@@ -796,7 +802,14 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           1,
           T2,
         ),
-      ).resolves.toMatchObject({ revision: 2, lifecycle: "disabled" });
+      ).resolves.toMatchObject({
+        revision: 2,
+        lifecycle: "disabled",
+        lastInvalidation: { lifecycle: "disabled", cancelledScheduledJobs: 1, occurredAt: T2 },
+      });
+      await expect(capabilities.get(action.capabilityRef)).resolves.toMatchObject({
+        lastInvalidation: { cancelledScheduledJobs: 1 },
+      });
       await expect(capabilities.getExecutionHandle(handle.ref)).resolves.toMatchObject({
         revision: 2,
         revokedAt: T2,

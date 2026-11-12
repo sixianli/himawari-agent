@@ -870,11 +870,13 @@ export const governanceMessages = [
     capabilityRef: "capability-01",
     expectedRevision: 7,
     reasonCode: "owner-disabled",
+    recentAuthenticationRef: "recent-auth-01",
   }),
   fixture("command", "capability.rollback", {
     capabilityRef: "capability-01",
     expectedRevision: 8,
     reasonCode: "owner-rollback",
+    recentAuthenticationRef: "recent-auth-01",
   }),
   fixture("query", "approval.detail", { approvalRequestId: "approval-01" }),
   fixture("query", "capability.list", {
@@ -978,6 +980,7 @@ export const governanceMessages = [
     },
     rollbackVersion: "0.9.0",
     rollbackAvailable: true,
+    lastInvalidation: null,
     lastTransition: {
       fromVersion: "0.9.0",
       toVersion: "1.0.0",

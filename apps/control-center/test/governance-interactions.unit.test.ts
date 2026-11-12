@@ -281,7 +281,7 @@ describe("governance page action contracts", () => {
       "active",
       "governance.disableCapability",
       "capability.disable",
-      { reasonCode: "owner_disabled_from_control_center" },
+      { reasonCode: "owner_disabled_from_control_center", recentAuthenticationRef: "recent-auth-01" },
     ],
     [
       "capabilities-adapters",
@@ -289,7 +289,7 @@ describe("governance page action contracts", () => {
       "active",
       "governance.rollbackCapability",
       "capability.rollback",
-      { reasonCode: "owner_rollback_from_control_center" },
+      { reasonCode: "owner_rollback_from_control_center", recentAuthenticationRef: "recent-auth-01" },
     ],
   ] as const;
   it.each(actions)(

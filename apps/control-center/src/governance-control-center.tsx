@@ -486,6 +486,17 @@ function GovernanceDetails({
               }
             />
             <Row
+              label={message("governance.lastInvalidation")}
+              value={
+                snapshot.payload.lastInvalidation
+                  ? message("governance.lastInvalidationValue", {
+                      count: snapshot.payload.lastInvalidation.cancelledScheduledJobs,
+                      time: snapshot.payload.lastInvalidation.occurredAt,
+                    })
+                  : "—"
+              }
+            />
+            <Row
               label={message("governance.rollbackBoundary")}
               value={
                 snapshot.payload.lastTransition ? (
@@ -756,6 +767,7 @@ export function useGovernanceControlCenter({
               capabilityRef: action.snapshot.payload.capabilityRef,
               expectedRevision: action.snapshot.payload.revision,
               reasonCode: "owner_disabled_from_control_center",
+              recentAuthenticationRef: configuration.recentAuthenticationRef ?? null,
             },
             { risk, authorizationRef, idempotencyKey },
           );
@@ -768,6 +780,7 @@ export function useGovernanceControlCenter({
               capabilityRef: action.snapshot.payload.capabilityRef,
               expectedRevision: action.snapshot.payload.revision,
               reasonCode: "owner_rollback_from_control_center",
+              recentAuthenticationRef: configuration.recentAuthenticationRef ?? null,
             },
             { risk, authorizationRef, idempotencyKey },
           );
