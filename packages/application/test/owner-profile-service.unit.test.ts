@@ -577,11 +577,12 @@ describe("owner agenda", () => {
     validFrom: string | null,
     validTo: string | null = null,
     overrides: Partial<ProductMemoryRecord> = {},
+    category: MemoryCategory = "event",
   ): ProductMemoryRecord => ({
-    ...memory(id, "event", 300),
+    ...memory(id, category, 300),
     attributes: {
       ...DEFAULT_MEMORY_ATTRIBUTES,
-      category: "event",
+      category,
       importancePermille: 300,
       validFrom,
       validTo,
@@ -601,7 +602,7 @@ describe("owner agenda", () => {
   const agendaService = (
     records: readonly ProductMemoryRecord[],
     options: {
-      readonly reminders?: readonly { memoryId: string; dueAt: string }[];
+      readonly reminders?: readonly { memoryId: string; dueAt: string; id?: string }[];
       readonly agendaCharacterBudget?: number;
       readonly pins?: readonly (readonly [string, boolean])[];
     } = {},
@@ -634,8 +635,8 @@ describe("owner agenda", () => {
         ? {
             reminders: {
               listUpcoming: async () =>
-                (options.reminders ?? []).map(({ memoryId, dueAt }) => ({
-                  id: `reminder:${memoryId}`,
+                (options.reminders ?? []).map(({ memoryId, dueAt, id }) => ({
+                  id: id ?? `reminder:${memoryId}`,
                   ownerId: OWNER_ID,
                   agentId: AGENT_ID,
                   memoryId: createMemoryId(memoryId),
@@ -674,9 +675,45 @@ describe("owner agenda", () => {
     expect(text).toBe(
       [
         "主人接下来 7 天的安排（时间为主人当地时间，Asia/Tokyo）：",
-        "- 10/26周一（这 7 天里没有提醒）：主人打算洗衣服晾衣服",
+        "- 10/26周一：主人打算洗衣服晾衣服",
       ].join("\n"),
     );
+  });
+
+  it("says a dated memory has no reminder only when every reminder of the seven days was read", async () => {
+    const records = [
+      dated("memory-laundry", "2026-10-26"),
+      dated("memory-visa", null, "2026-10-30"),
+    ];
+    const complete = await agendaService(records, { reminders: [] }).agendaText();
+    expect(complete.text.split("\n").slice(1)).toEqual([
+      "- 10/26周一（这 7 天里没有提醒）：主人打算洗衣服晾衣服",
+      "- 10/30周五截止（这 7 天里没有提醒）：主人的在留卡在办续签",
+    ]);
+  });
+
+  it("REVERSE: does not say there is no reminder when no reminder store is wired or the reminder list was cut off", async () => {
+    const records = [
+      dated("memory-laundry", "2026-10-26"),
+      dated("memory-visa", null, "2026-10-30"),
+    ];
+    const plain = ["- 10/26周一：主人打算洗衣服晾衣服", "- 10/30周五截止：主人的在留卡在办续签"];
+    const unwired = await agendaService(records).agendaText();
+    expect(unwired.text.split("\n").slice(1)).toEqual(plain);
+    const cut = await agendaService(records, {
+      reminders: Array.from({ length: 100 }, (_, index) => ({
+        memoryId: `memory-unknown-${index}`,
+        dueAt: "2026-10-27T06:00:00.000Z",
+      })),
+    }).agendaText();
+    expect(cut.text.split("\n").slice(1)).toEqual(plain);
+    const belowLimit = await agendaService(records, {
+      reminders: Array.from({ length: 99 }, (_, index) => ({
+        memoryId: `memory-unknown-${index}`,
+        dueAt: "2026-10-27T06:00:00.000Z",
+      })),
+    }).agendaText();
+    expect(belowLimit.text).toContain("10/26周一（这 7 天里没有提醒）");
   });
 
   it("REVERSE: leaves out memories dated before today, after the seven days, undated, or above the classification ceiling", async () => {
@@ -702,7 +739,10 @@ describe("owner agenda", () => {
   });
 
   it("REVERSE: leaves out a dated memory the Owner switched off from every conversation, and keeps one switched on", async () => {
-    const records = [dated("memory-laundry", "2026-10-26"), dated("memory-move", "2026-10-28")];
+    const records = [
+      dated("memory-laundry", "2026-10-26", null, {}, "project"),
+      dated("memory-move", "2026-10-28", null, {}, "project"),
+    ];
     const { agenda } = await agendaService(records, {
       pins: [
         ["memory-laundry", false],
@@ -712,17 +752,40 @@ describe("owner agenda", () => {
     expect(agenda?.memoryIds).toEqual(["memory-move"]);
   });
 
-  it("orders reminders due at the same moment the same way however the store returns them", async () => {
+  it("keeps the reminder of a memory the Owner switched off from every conversation", async () => {
+    const { agenda, text } = await agendaService(
+      [dated("memory-dentist", "2026-10-27", null, {}, "project")],
+      {
+        pins: [["memory-dentist", false]],
+        reminders: [{ memoryId: "memory-dentist", dueAt: "2026-10-27T06:00:00.000Z" }],
+      },
+    ).agendaText();
+    expect(agenda?.memoryIds).toEqual(["memory-dentist"]);
+    expect(text.split("\n").slice(1)).toEqual(["- 10/27周二 15:00：主人去看牙医"]);
+  });
+
+  it("lists dated health and finance memories like events, inside the classification ceiling", async () => {
+    const records = [
+      dated("memory-dentist", "2026-10-27", null, {}, "health"),
+      dated("memory-visa", null, "2026-10-30", {}, "finance"),
+    ];
+    expect((await agendaService(records).agendaText()).agenda?.memoryIds).toEqual([
+      "memory-dentist",
+      "memory-visa",
+    ]);
+  });
+
+  it("orders reminders due at the same moment by reminder id in code-unit order, however the store returns them", async () => {
     const records = [dated("memory-move", null), dated("memory-dentist", null)];
     const reminders = [
-      { memoryId: "memory-move", dueAt: "2026-10-27T06:00:00.000Z" },
-      { memoryId: "memory-dentist", dueAt: "2026-10-27T06:00:00.000Z" },
+      { memoryId: "memory-move", dueAt: "2026-10-27T06:00:00.000Z", id: "reminder:B" },
+      { memoryId: "memory-dentist", dueAt: "2026-10-27T06:00:00.000Z", id: "reminder:a" },
     ];
     const first = await agendaService(records, { reminders }).agendaText();
     const reversed = await agendaService(records, {
       reminders: [...reminders].reverse(),
     }).agendaText();
-    expect(first.agenda?.memoryIds).toEqual(["memory-dentist", "memory-move"]);
+    expect(first.agenda?.memoryIds).toEqual(["memory-move", "memory-dentist"]);
     expect(reversed.text).toBe(first.text);
   });
 
@@ -734,17 +797,15 @@ describe("owner agenda", () => {
     ]);
     const { text } = await agendaText();
     expect(text.split("\n").slice(1)).toEqual([
-      "- 10/25周日（这 7 天里没有提醒）：主人打算洗衣服晾衣服",
-      "- 10/26周一（这 7 天里没有提醒）：主人去看牙医",
-      "- 11/1周日（这 7 天里没有提醒）：主人搬到杭州",
+      "- 10/25周日：主人打算洗衣服晾衣服",
+      "- 10/26周一：主人去看牙医",
+      "- 11/1周日：主人搬到杭州",
     ]);
   });
 
   it("marks a memory whose validity ends inside the seven days as ending that day", async () => {
     const { agendaText } = agendaService([dated("memory-visa", null, "2026-10-30")]);
-    expect((await agendaText()).text).toContain(
-      "- 10/30周五截止（这 7 天里没有提醒）：主人的在留卡在办续签",
-    );
+    expect((await agendaText()).text).toContain("- 10/30周五截止：主人的在留卡在办续签");
   });
 
   it("shows a memory once when it already has a reminder, and orders reminders and dated memories by day", async () => {
@@ -771,9 +832,9 @@ describe("owner agenda", () => {
       dated("memory-dentist", "2026-10-27"),
       dated("memory-move", "2026-10-28"),
     ];
-    const { text } = await agendaService(records, { agendaCharacterBudget: 38 }).agendaText();
+    const { text } = await agendaService(records, { agendaCharacterBudget: 27 }).agendaText();
     expect(text.split("\n").slice(1)).toEqual([
-      "- 10/26周一（这 7 天里没有提醒）：主人打算洗衣服晾衣服",
+      "- 10/26周一：主人打算洗衣服晾衣服",
       "（另有 2 项因篇幅没有列出。）",
     ]);
     const roomy = await agendaService(records).agendaText();

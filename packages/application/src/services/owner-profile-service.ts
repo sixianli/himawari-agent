@@ -1,8 +1,8 @@
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import {
-  OWNER_AGENDA_DATED,
   OWNER_AGENDA_ENDING,
   OWNER_AGENDA_OMITTED,
+  OWNER_AGENDA_UNREMINDED,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
 import type {
@@ -116,6 +116,10 @@ function currentlyValid(memory: ProductMemoryRecord, now: string): boolean {
   if (!attributes) return false;
   if (attributes.supersededBy !== null || attributes.tentative === true) return false;
   return attributes.validTo === null || attributes.validTo > now;
+}
+
+function byCodeUnit(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function byImportance(left: ProductMemoryRecord, right: ProductMemoryRecord): number {
@@ -270,14 +274,15 @@ export class OwnerProfileService implements OwnerProfilePort {
     const firstDay = memoryLocalDate(input.now, timeZone);
     const lastDay = memoryLocalDate(until, timeZone);
     const memories = new Map(eligible.map((memory) => [memory.id, memory]));
-    const upcoming =
-      (await this.#options.reminders?.listUpcoming({
-        ownerId: input.ownerId,
-        agentId: input.agentId,
-        from: input.now,
-        to: until,
-        limit: AGENDA_REMINDER_LIMIT,
-      })) ?? [];
+    const listed = await this.#options.reminders?.listUpcoming({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      from: input.now,
+      to: until,
+      limit: AGENDA_REMINDER_LIMIT,
+    });
+    const upcoming = listed ?? [];
+    const remindersComplete = listed !== undefined && listed.length < AGENDA_REMINDER_LIMIT;
     const timed = new Intl.DateTimeFormat("zh-CN", {
       timeZone,
       month: "numeric",
@@ -325,31 +330,31 @@ export class OwnerProfileService implements OwnerProfilePort {
     for (const memory of eligible) {
       if (reminded.has(memory.id) || declined.has(memory.id)) continue;
       const dates = memoryDatesOf(memory);
-      for (const [value, prompt] of [
-        [dates.validFrom, OWNER_AGENDA_DATED],
-        [dates.validTo, OWNER_AGENDA_ENDING],
+      for (const [value, ending] of [
+        [dates.validFrom, false],
+        [dates.validTo, true],
       ] as const) {
         const day = dayInWindow(value);
         if (day === null) continue;
+        const shown = dayOnly.format(new Date(`${day}T12:00:00.000Z`));
+        const label = ending ? renderPrompt(OWNER_AGENDA_ENDING, { day: shown }) : shown;
         entries.push({
           memory,
           day,
           timed: false,
           instant: "",
           tie: memory.id,
-          label: renderPrompt(prompt, {
-            day: dayOnly.format(new Date(`${day}T12:00:00.000Z`)),
-          }),
+          label: remindersComplete ? renderPrompt(OWNER_AGENDA_UNREMINDED, { label }) : label,
         });
       }
     }
     entries.sort(
       (left, right) =>
-        left.day.localeCompare(right.day) ||
+        byCodeUnit(left.day, right.day) ||
         Number(left.timed) - Number(right.timed) ||
-        left.instant.localeCompare(right.instant) ||
-        left.tie.localeCompare(right.tie) ||
-        left.label.localeCompare(right.label),
+        byCodeUnit(left.instant, right.instant) ||
+        byCodeUnit(left.tie, right.tie) ||
+        byCodeUnit(left.label, right.label),
     );
     let remaining = this.#options.agendaCharacterBudget ?? OWNER_AGENDA_CHARACTER_BUDGET;
     let omitted = 0;

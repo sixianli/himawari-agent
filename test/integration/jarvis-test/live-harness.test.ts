@@ -126,6 +126,30 @@ describe("Jarvis Test live tools", () => {
     expect(result.modelContent).toContain("评测环境没有联网");
   });
 
+  it("REVERSE: ignores results prepared for a tool that is not a web tool", async () => {
+    const item = caseById("6a");
+    const workspaceRoot = await mkdtemp(path.join(tmpdir(), "himawari-jarvis-tools-canned-"));
+    roots.push(workspaceRoot);
+    await prepareWorkspace(item, workspaceRoot);
+    const tools = new FixtureRuntimeTools({
+      descriptors,
+      workspaceRoot,
+      failures: [],
+      toolResults: [{ tool: "read" as never, outputs: ["预设的假文件内容"] }],
+      steps: [],
+    });
+    const result = await tools.execute({
+      runId: createRunId("run-jarvis-tools-canned"),
+      toolCallId: "call-1",
+      capabilityRef: descriptors.find(({ name }) => name === "read")?.capabilityRef ?? "read",
+      capabilityHandleRef: null,
+      arguments: { path: "inbox/2026-10-30-amazon-refund.txt" },
+    } as never);
+    expect(result.outcome).toBe("succeeded");
+    expect(result.modelContent).toContain("经审核不予退款");
+    expect(result.modelContent).not.toContain("预设的假文件内容");
+  });
+
   it("refuses every write in the read-only folder, through tools and shell alike", async () => {
     const { run, workspaceRoot } = await toolsFor("8a");
     const write = await run("write", { path: "report.md", content: "合计 3500\n" });
