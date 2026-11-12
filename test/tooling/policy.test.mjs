@@ -16,6 +16,7 @@ import {
   REQUIRED_CANCELLED,
   REQUIRED_DRAFT,
   REQUIRED_ENTRY_SCRIPT,
+  REQUIRED_GATE_COMMAND,
   resolvePolicySource,
   resolveTestHygieneBaseline,
   upgradeHostedRunnerPolicy,
@@ -119,10 +120,13 @@ const shareCollect = () => ({
   run: `${shareCommand} collect --to .ci-output/reports`,
 });
 const shareRemove = () => ({ if: REQUIRED_AFTER_ENTRY, run: `${shareCommand} remove` });
-const gateUpload = () => ({
-  if: REQUIRED_AFTER_ENTRY,
-  uses: `actions/upload-artifact@${lock.actions.find((entry) => entry.repository === "actions/upload-artifact").sha}`,
-  with: { name: "g", path: ".ci-output/gate/", "retention-days": 1 },
+const gateStep = () => ({
+  env: { CI_NEEDS: githubExpression("toJSON(needs)") },
+  run: REQUIRED_GATE_COMMAND,
+});
+const diagnosticSummary = (check) => ({
+  if: githubExpression("always() && steps.publish.outcome == 'success'"),
+  run: `.ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "${check.id}/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics`,
 });
 const requiredEntry = () => ({
   name: "草稿和被取消的运行直接判失败",
@@ -187,8 +191,8 @@ function workflow() {
             },
             ...(["browser", "coverage"].includes(check.id) ? [buildFetch()] : []),
             ...(check.id === "required"
-              ? [shareCollect(), gateUpload(), shareRemove()]
-              : [sharePut(check)]),
+              ? [shareCollect(), gateStep(), shareRemove()]
+              : [sharePut(check), diagnosticSummary(check)]),
             ...(["static", "coverage"].includes(check.id) ? [{ run: chromiumInstall }] : []),
           ],
         },
@@ -642,56 +646,59 @@ describe("CI policy contract", () => {
     mutate(value);
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
   });
-  it.each(["browser", "required"])("rejects a pinned GitHub artifact download in %s", (id) => {
+  const formerArtifactActions = [
+    "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+    "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
+  ];
+  it.each(
+    ["policy", "browser", "coverage", "required"].flatMap((id) =>
+      formerArtifactActions.map((uses) => [id, uses]),
+    ),
+  )("[I-95] rejects a GitHub artifact step in %s: %s", (id, uses) => {
     const value = workflow();
-    value.jobs[id].steps.push({
-      uses: `actions/download-artifact@${lock.actions.find((entry) => entry.repository === "actions/download-artifact").sha}`,
-    });
+    value.jobs[id].steps.push({ uses, with: { name: "x", path: ".ci-output/gate/" } });
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
-      `Jobs must take reports and builds from the runner share, not GitHub artifacts: ${id}`,
+      `GitHub artifacts are not used; reports stay on the runner share and diagnostics go to the job summary: ${id}`,
     );
   });
-  it.each([
-    ["static", ".ci-output/public/reports/", 1],
-    ["static", ".ci-output/public/", 1],
-    ["static", ".ci-output/public/diagnostics/", 7],
-    ["required", ".ci-output/reports/", 1],
-    ["required", ".ci-output/public/diagnostics/", 1],
-  ])("rejects a %s upload of %s kept %s days", (id, uploadPath, days) => {
-    const value = workflow();
-    value.jobs[id].steps.push({
-      uses: `actions/upload-artifact@${lock.actions.find((entry) => entry.repository === "actions/upload-artifact").sha}`,
-      with: { name: "x", path: uploadPath, "retention-days": days },
-    });
-    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(`Jobs may upload only`);
-  });
-  it("accepts one-day diagnostics uploads and the gate upload", () => {
-    const value = workflow();
-    const upload = `actions/upload-artifact@${lock.actions.find((entry) => entry.repository === "actions/upload-artifact").sha}`;
-    value.jobs.static.steps.push({
-      uses: upload,
-      with: { name: "d", path: ".ci-output/public/diagnostics/", "retention-days": 1 },
-    });
-    expect(() => validateWorkflow(policy, stringify(value), lock)).not.toThrow();
-    const gate = value.jobs.required.steps.find((step) => step.uses === upload);
-    gate.if = "always()";
-    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
-      "Required runs nothing after a failed entry check",
-    );
-    delete gate.if;
-    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
-      "Required uploads its gate even when the gate fails",
+  it("rejects artifact steps even when the actions are locked, and the repository no longer locks them", () => {
+    const repositoryLock = readJson(path.join(repositoryRoot, "ci/toolchain-lock.json"));
+    expect(repositoryLock.actions.filter((entry) => entry.repository.includes("artifact"))).toEqual(
+      [],
     );
   });
-  it("rejects a gate job without its gate upload", () => {
-    const value = workflow();
-    value.jobs.required.steps = value.jobs.required.steps.filter(
-      (step) => !step.uses?.startsWith("actions/upload-artifact@"),
-    );
-    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
-      "Required uploads its gate even when the gate fails",
-    );
-  });
+  it.each(["missing", "conditional", "different output"])(
+    "rejects a gate job that does not print its gate into the log: %s",
+    (change) => {
+      const value = workflow();
+      const steps = value.jobs.required.steps;
+      const index = steps.findIndex((step) => step.run === REQUIRED_GATE_COMMAND);
+      if (change === "missing") steps.splice(index, 1);
+      if (change === "conditional") steps[index].if = REQUIRED_AFTER_ENTRY;
+      if (change === "different output")
+        steps[index].run = steps[index].run.replace(".ci-output/gate", ".ci-output/other");
+      expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+        "Required must print its gate into the ci/required log, where main reads it",
+      );
+    },
+  );
+  it.each(["missing", "duplicated", "only on success", "wrong folder", "wrong title"])(
+    "rejects a check job whose diagnostics do not reach the job summary: %s",
+    (change) => {
+      const value = workflow();
+      const steps = value.jobs.static.steps;
+      const index = steps.findIndex((step) => step.run?.includes("ci-summary.mjs"));
+      if (change === "missing") steps.splice(index, 1);
+      if (change === "duplicated") steps.push({ ...steps[index] });
+      if (change === "only on success") delete steps[index].if;
+      if (change === "wrong folder")
+        steps[index].run = steps[index].run.replace("public/diagnostics", "check");
+      if (change === "wrong title") steps[index].run = steps[index].run.replace("static/", "x/");
+      expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+        "Job must write its diagnostics into the job summary exactly once: static",
+      );
+    },
+  );
   it("accepts read-only permissions on the gate job", () => {
     const value = workflow();
     value.jobs.required.permissions = { contents: "read", actions: "read" };

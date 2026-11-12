@@ -4,7 +4,7 @@
 <a id="delivery-mode"></a>
 ## 交付模式
 
-在决定一项改动需要哪些测试、文档步骤、合并检查或生产步骤之前，先读仓库根目录的 `DELIVERY_MODE`。只要它写的是 `fast`，[.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) 就替代它在本文件和 `.agents/instructions/` 下各文件中点名的那些规则。只有用户能切换模式。CI（持续集成，即每次推送后 GitHub Actions 自动跑的检查）按 [ADR 0176](docs/adr/0176-ci-on-ovh-vps.md) 在 CI VPS（Andy 在 OVH 租的一台只跑 CI 的云服务器）上的自托管 runner（装在自己机器上、替 GitHub 执行 CI 任务的程序）里运行，macOS 检查暂停；合并前 PR 最新提交上的 `ci/required` 必须是成功，本地的快速模式检查也仍是必过的门槛；草稿 PR 不跑 CI，CI 本身坏了时只有 Andy 明确说这次不等才能先合并（[ADR 0241](docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md)）。
+在决定一项改动需要哪些测试、文档步骤、合并检查或生产步骤之前，先读仓库根目录的 `DELIVERY_MODE`。只要它写的是 `fast`，[.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) 就替代它在本文件和 `.agents/instructions/` 下各文件中点名的那些规则。只有用户能切换模式。CI（持续集成，即每次推送后 GitHub Actions 自动跑的检查）按 [ADR 0176](docs/adr/0176-ci-on-ovh-vps.md) 在 CI VPS（Andy 在 OVH 租的一台只跑 CI 的云服务器）上的自托管 runner（装在自己机器上、替 GitHub 执行 CI 任务的程序）里运行，macOS 检查暂停；合并前 PR 最新提交上的 `ci/required` 必须是成功，本地的快速模式检查也仍是必过的门槛；草稿 PR 不跑 CI，CI 本身坏了、失败已确认与本 PR 无关时，按 Andy 2026-11-12 的长期授权不等 CI 直接合并，PR 描述写明失败原因；CI 因本 PR 的改动变红时先查先修（[ADR 0241](docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md)）。
 
 <a id="product-vision"></a>
 ## 产品愿景

@@ -38,12 +38,24 @@ describe("[P3-6] recent conversation summaries reach only the Gmail check and th
       "apps/agent-service/src/production-proactive-summaries.ts",
       "apps/agent-service/src/service-main.ts",
     ]);
-    expect(await filesUsing(/listDaySummaries/u)).toEqual([
+    expect(await filesUsing(/listDaySummaries\b/u)).toEqual([
       "packages/application/src/ports/memory-episodes.ts",
       "packages/memory-engine/src/episodes.ts",
       "packages/persistence-sqlite/src/durable-adapters.ts",
       "packages/persistence-sqlite/src/sqlite-memory-operations.ts",
     ]);
+    expect(await filesUsing(/listDaySummariesAfter/u)).toEqual([
+      "apps/agent-service/src/production-memory-conversation-review.ts",
+      "packages/application/src/ports/memory-episodes.ts",
+      "packages/persistence-sqlite/src/durable-adapters.ts",
+      "packages/persistence-sqlite/src/sqlite-memory-operations.ts",
+    ]);
+    expect(
+      await readFile(
+        path.join(ROOT, "apps/agent-service/src/production-memory-conversation-review.ts"),
+        "utf8",
+      ),
+    ).not.toMatch(/episode\.contentRef/u);
     expect(await filesUsing(/\.recent\(\{/u)).toEqual([
       "apps/agent-service/src/production-proactive-summaries.ts",
       "apps/agent-service/src/service-main.ts",

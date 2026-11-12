@@ -16,6 +16,8 @@ if (!Number.isInteger(port) || port < 0 || port > 65535)
 const now = "2026-08-27T00:00:00.000Z";
 const executionQualification = process.env.HIMAWARI_EXECUTION_FIXTURE === "1";
 const memoryFixture = process.env.HIMAWARI_MEMORY_FIXTURE === "1";
+const reviewFixture = memoryFixture && process.env.HIMAWARI_MEMORY_REVIEW_FIXTURE === "1";
+const reviewFixtureState = { undone: false, commands: [] };
 const pinnedCharacters = Number(process.env.HIMAWARI_PROFILE_PINNED_CHARACTERS ?? "0");
 const executionRecords = new Map();
 const executionStates = new Map();
@@ -758,6 +760,27 @@ function memoryOverview() {
     }),
     item("memory-peikun", "陪坤是主人的前同事", "relationship"),
     item("memory-lilei", "李雷是主人的前同事", "relationship"),
+    ...(reviewFixture
+      ? [
+          item("memory-review-german", "主人在学德语", "goal", {
+            status: reviewFixtureState.undone ? "archived" : "active",
+            revision: reviewFixtureState.undone ? 2 : 1,
+            recordedAt: "2026-10-29T01:00:00.000Z",
+            history: [
+              {
+                historyId: 1,
+                kind: "created",
+                text: "主人在学德语",
+                stance: null,
+                quote: "我最近每天晚上学一小时德语",
+                sourceThreadId: "thread-main",
+                sourceDeleted: false,
+                at: "2026-10-29T01:00:00.000Z",
+              },
+            ],
+          }),
+        ]
+      : []),
   ];
   const lines = (ids) =>
     ids.map((memoryId) => {
@@ -767,6 +790,17 @@ function memoryOverview() {
   return {
     memories,
     tidyUps: [],
+    conversationReviews: reviewFixture
+      ? [
+          {
+            reviewId: "memory-review:episode-1",
+            finishedAt: "2026-10-29T01:00:00.000Z",
+            undone: reviewFixtureState.undone,
+            undoable: true,
+            changes: [{ memoryId: "memory-review-german", action: "created" }],
+          },
+        ]
+      : [],
     reminders: [],
     upcoming: [
       {
@@ -2516,6 +2550,12 @@ async function handleRequest(request, response) {
         sensitiveFixtureState.commands.push({ type: message.type, payload: message.payload });
         sensitiveFixtureState.items = [];
         json(response, 200, { resultRef: "sensitive-interceptions-cleared", replayed: false });
+        return;
+      }
+      if (reviewFixture && message.type === "memory.conversationReview.undo") {
+        reviewFixtureState.commands.push({ type: message.type, payload: message.payload });
+        reviewFixtureState.undone = true;
+        json(response, 200, { resultRef: "memory-review-undone", replayed: false });
         return;
       }
       const muse = memoryFixture ? handleMuseCommand(message) : null;

@@ -120,13 +120,7 @@ export function validateToolchainLock(lock) {
   license(lock.python.buildLicense);
   platformArtifacts(lock.python.artifacts);
   assert(Array.isArray(lock.actions), "Actions 清单缺失");
-  const expectedActions = [
-    "actions/checkout",
-    "actions/setup-node",
-    "actions/setup-python",
-    "actions/upload-artifact",
-    "actions/download-artifact",
-  ].sort();
+  const expectedActions = ["actions/checkout", "actions/setup-node", "actions/setup-python"].sort();
   assert(
     JSON.stringify(lock.actions.map((action) => action.repository).sort()) ===
       JSON.stringify(expectedActions),
