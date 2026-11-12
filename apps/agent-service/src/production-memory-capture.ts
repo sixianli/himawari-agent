@@ -164,18 +164,20 @@ export interface SupportCheck {
 export class SupportVerdictCache {
   readonly #known = new Map<string, boolean>();
 
-  get(check: SupportCheck): boolean | undefined {
-    return this.#known.get(this.#key(check));
+  get(check: SupportCheck, classification: DataClassification): boolean | undefined {
+    return this.#known.get(this.#key(check, classification));
   }
 
-  set(check: SupportCheck, verdict: boolean): void {
+  set(check: SupportCheck, classification: DataClassification, verdict: boolean): void {
     if (this.#known.size >= MAXIMUM_SUPPORT_CACHE) this.#known.clear();
-    this.#known.set(this.#key(check), verdict);
+    this.#known.set(this.#key(check, classification), verdict);
   }
 
-  #key(check: SupportCheck): string {
+  #key(check: SupportCheck, classification: DataClassification): string {
     return createHash("sha256")
-      .update(`${SUPPORT_JUDGE_VERSION}\u0000${check.memoryText}\u0000${check.quote}`)
+      .update(
+        `${SUPPORT_JUDGE_VERSION}\u0000${classification}\u0000${check.memoryText}\u0000${check.quote}`,
+      )
       .digest("hex");
   }
 }
@@ -1148,7 +1150,7 @@ export class ProductionMemoryCapture {
   ): Promise<ReadonlyMap<string, boolean>> {
     const verdicts = new Map<string, boolean>();
     for (const [index, check] of checks.entries()) {
-      const known = this.#supportCache.get(check);
+      const known = this.#supportCache.get(check, plan.request.dataClassification);
       if (known !== undefined) {
         verdicts.set(check.key, known);
         continue;
@@ -1170,7 +1172,7 @@ export class ProductionMemoryCapture {
           this.options.onFailure(error);
         },
       );
-      if (settled) this.#supportCache.set(check, verdict);
+      if (settled) this.#supportCache.set(check, plan.request.dataClassification, verdict);
       verdicts.set(check.key, verdict);
     }
     return verdicts;

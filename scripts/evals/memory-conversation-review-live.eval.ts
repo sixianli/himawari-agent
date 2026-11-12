@@ -244,6 +244,7 @@ function score(item: Item, outcome: Outcome) {
       extraCreates === 0 &&
       wrongSupersedes === 0 &&
       extraConfirms === 0 &&
+      outcome.judgeFailures === 0 &&
       !outcome.error,
   };
 }
@@ -296,6 +297,7 @@ describe.skipIf(!(CAP_USD > 0 || FLAT_RATE))("回看对话评测（真实模型�
         ).length,
         negatives: negatives.length,
         errors: results.filter(({ outcome }) => outcome.error).length,
+        judgeFailures: results.reduce((sum, { outcome }) => sum + outcome.judgeFailures, 0),
         failed: results.filter(({ score: value }) => !value.pass).map(({ outcome }) => outcome),
       };
     });

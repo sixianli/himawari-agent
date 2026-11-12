@@ -681,10 +681,11 @@ describe("[DREAM] daily conversation review", () => {
         }),
         '{"supports":true}',
       ],
-      failSettles: 1,
+      failAssertActiveAt: 4,
       episodeClassification: "sensitive",
     });
-    await expect(resource.review.runDue(resource.request)).rejects.toThrow("SETTLE_LOST");
+    await expect(resource.review.runDue(resource.request)).rejects.toThrow("AUTHORITY_LOST");
+    expect((await resource.read("osaka"))?.attributes?.tentative).toBe(true);
     expect(resource.request.dataClassification).toBe("private");
     expect(resource.classifications).toEqual(["sensitive", "sensitive"]);
     await resource.review.runDue(resource.request);

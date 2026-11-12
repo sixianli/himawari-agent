@@ -761,12 +761,12 @@ export class ProductionMemoryConversationReview {
     const verdicts = new Map<string, boolean>();
     for (const [index, check] of checks.entries()) {
       if (verdicts.has(check.key)) continue;
-      const known = this.#supportCache.get(check);
+      if (this.#stopping) throw new Error("MEMORY_CONVERSATION_REVIEW_STOPPING");
+      const known = this.#supportCache.get(check, request.dataClassification);
       if (known !== undefined) {
         verdicts.set(check.key, known);
         continue;
       }
-      if (this.#stopping) throw new Error("MEMORY_CONVERSATION_REVIEW_STOPPING");
       await this.#options.assertActive();
       const prompt = memoryConfirmationJudgePrompt(check.memoryText, check.quote);
       let settled = true;
@@ -785,7 +785,7 @@ export class ProductionMemoryConversationReview {
           this.#options.onFailure(error);
         },
       );
-      if (settled) this.#supportCache.set(check, verdict);
+      if (settled) this.#supportCache.set(check, request.dataClassification, verdict);
       verdicts.set(check.key, verdict);
     }
     return verdicts;
