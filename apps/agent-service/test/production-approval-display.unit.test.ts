@@ -30,7 +30,7 @@ describe("approval display facts", () => {
     expect(toolApprovalBodyText("unknown_tool", { command: "ls", query: "q" })).toBeNull();
   });
 
-  it("masks secrets before cutting, even when the secret sits inside the kept part", async () => {
+  it("masks a secret that straddles the cut instead of leaving its start in the preview", async () => {
     const build = createApprovalDisplayBuilder({
       maximumCharacters: 60,
       threadTitle: async () => "周五去大阪",
@@ -38,13 +38,22 @@ describe("approval display facts", () => {
     const shown = await build({
       threadId: "thread-1",
       tool: "bash",
-      arguments: { command: `echo 4111 1111 1111 1111 ${"x".repeat(100)}` },
+      arguments: { command: `${"x".repeat(52)} 4111 1111 1111 1111 ${"y".repeat(100)}` },
     })();
     expect(shown.bodyPreview).not.toContain("4111");
-    expect(shown.bodyPreview).toContain("[");
     expect([...(shown.bodyPreview ?? "")].length).toBeLessThanOrEqual(61);
     expect(shown.origin).toEqual({ threadId: "thread-1", threadTitle: "周五去大阪" });
     expect(shown.displayTitle).toBeNull();
+  });
+
+  it("replaces bidirectional formatting characters that could reorder what the owner reads", async () => {
+    const build = createApprovalDisplayBuilder({});
+    const shown = await build({
+      threadId: "thread-1",
+      tool: "bash",
+      arguments: { command: "rm \u202Efdp.txt\u2066 \u200f done" },
+    })();
+    expect(shown.bodyPreview).toBe("rm \uFFFDfdp.txt\uFFFD \uFFFD done");
   });
 
   it("replaces control characters the gateway contract refuses and keeps tab and newline", async () => {

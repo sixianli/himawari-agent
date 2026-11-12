@@ -2220,7 +2220,7 @@ const approvalDisplayText = (maximum: number): Schema<string> => ({
     )
       throw new ContractValidationError(
         path,
-        `expected a 1-${maximum} character string without control characters other than tab and newline`,
+        `expected a 1-${maximum} character string without control characters other than tab, newline and carriage return`,
       );
     return input;
   },
@@ -2229,12 +2229,12 @@ const approvalDisplayText = (maximum: number): Schema<string> => ({
 export const APPROVAL_DISPLAY_BODY_MAX_CHARACTERS = 2001;
 
 const approvalDisplaySchema = object({
-  displayTitle: nullable(approvalDisplayText(300)),
+  displayTitle: nullable(approvalDisplayText(301)),
   bodyPreview: nullable(approvalDisplayText(APPROVAL_DISPLAY_BODY_MAX_CHARACTERS)),
   askedBecause: object({
     kind: enumeration(["rule", "no_rule_allows"]),
     ruleId: nullable(machineString),
-    ruleText: nullable(approvalDisplayText(2000)),
+    ruleText: nullable(approvalDisplayText(2001)),
   }),
   origin: nullable(
     object({
