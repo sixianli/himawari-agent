@@ -1403,9 +1403,14 @@ describe("production memory capture", () => {
           },
         ],
       });
-    const round = async (runId: string, ownerText: string, output: string) => {
+    const round = async (
+      runId: string,
+      ownerText: string,
+      output: string,
+      ...judge: readonly string[]
+    ) => {
       await context.turn("owner", ownerText, runId);
-      context.outputs.push(output);
+      context.outputs.push(output, ...judge);
       const capture = new ProductionMemoryCapture(options);
       await capture.start(context.requestFor(runId));
       await capture.stop();
@@ -1413,10 +1418,33 @@ describe("production memory capture", () => {
     await round("run-pa2-2", "今天天气不错", unchanged("明治"));
     expect((await tentativeState()).attributes?.tentative).toBe(true);
     expect(context.audits.map(({ outcome }) => outcome)).toContain("evidence_unverified");
-    await round("run-pa2-unrelated", "明天下午三点开会", unchanged("明天下午三点开会"));
+    const callsBefore = context.calls.length;
+    await round(
+      "run-pa2-unrelated",
+      "明天下午三点开会",
+      unchanged("明天下午三点开会"),
+      '{"supports":false}',
+    );
+    expect(context.calls.length - callsBefore).toBe(2);
     expect((await tentativeState()).attributes?.tentative).toBe(true);
-    await round("run-pa2-3", "我又买了明治的牛奶", unchanged("我又买了明治的牛奶"));
+    await round(
+      "run-pa2-judge-down",
+      "我又买了明治的牛奶",
+      unchanged("我又买了明治的牛奶"),
+      "not json",
+      "still not json",
+    );
+    expect((await tentativeState()).attributes?.tentative).toBe(true);
+    expect(context.failures).toHaveLength(1);
+    context.failures.length = 0;
+    await round(
+      "run-pa2-3",
+      "我又买了明治的牛奶",
+      unchanged("我又买了明治的牛奶"),
+      '{"supports":true}',
+    );
     expect((await tentativeState()).attributes?.tentative).not.toBe(true);
+    expect(context.prompts.at(-1)).toContain("ownerQuote");
     const confirmed = (await context.ledgerEntries()).filter(
       ({ reasonCode }) => reasonCode === "tentative_confirmed",
     );

@@ -53,6 +53,7 @@ const isEntry = (value: unknown): value is PromptEntry =>
 
 const PARSERS: Readonly<Record<string, unknown>> = {
   parseMemoryCandidates: capture.parseMemoryCandidates,
+  parseSupportVerdict: capture.parseSupportVerdict,
   parseJudgements: application.parseJudgements,
   parseAutomaticReviewDecision: application.parseAutomaticReviewDecision,
   parseGeneratedQuestion: application.parseGeneratedQuestion,
@@ -87,6 +88,7 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         "eval.real-memory.question",
         "mail.judgment",
         "memory.capture",
+        "memory.confirmation-judge",
         "review.prereview",
         "review.typesafe-questions",
       ].sort(),
