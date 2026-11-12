@@ -142,9 +142,10 @@ export async function dispatchDeviceGatewayRequest(input: {
   if (input.request.tier === "change" && !input.confirmed)
     throw new DeviceGatewayError(DEVICE_GATEWAY_ERROR_CODES.CONFIRM_REQUIRED, 403);
   if (input.request.tier === "read" || input.request.tier === "routine") return forward(input);
+  const attempt = randomUUID();
   const record = (outcome: "accepted" | "completed" | "failed") =>
     input.audit.append({
-      id: `audit:device-gateway:${randomUUID()}`,
+      id: `audit:device-gateway:${attempt}:${outcome}`,
       ownerId: input.authentication.ownerId as Parameters<AuditLedgerPort["append"]>[0]["ownerId"],
       agentId: input.authority.agentId as Parameters<AuditLedgerPort["append"]>[0]["agentId"],
       action: `device.gateway.${input.request.tier}`,
