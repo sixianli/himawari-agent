@@ -872,8 +872,11 @@ export class PerceptionService {
     const names = (await readdir(this.#media())).filter((name) => /^[0-9a-f]{64}$/u.test(name));
     const known = new Set(await this.#options.store.knownMediaDigests({ digests: names }));
     for (const name of names)
-      if (!known.has(name) && !this.#placing.has(name))
-        await rm(path.join(this.#media(), name), { force: true });
+      if (!known.has(name))
+        await this.#exclusive(`media:${name}`, async () => {
+          const kept = await this.#options.store.knownMediaDigests({ digests: [name] });
+          if (kept.length === 0) await rm(path.join(this.#media(), name), { force: true });
+        });
   }
 
   async #lines(upload: ReceivedUpload, maximumLines: number, key: string): Promise<unknown[]> {
@@ -1037,8 +1040,6 @@ export class PerceptionService {
               .catch(() => [grant.sha256]);
             if (kept.length === 0) await rm(final, { force: true });
             throw error;
-          } finally {
-            this.#placing.delete(grant.sha256);
           }
         });
         await this.#afterWrite(scope, settings, bounds.start, [
