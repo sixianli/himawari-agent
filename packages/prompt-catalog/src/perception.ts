@@ -4,6 +4,7 @@ const TOOLS_FILE = "apps/agent-service/src/production-perception-tools.ts";
 const EXTRACTION_FILE = "packages/application/src/services/perception-extraction.ts";
 const SOURCES_FILE = "packages/application/src/services/perception-source-prompts.ts";
 const ACTIONS_FILE = "packages/application/src/services/device-action-service.ts";
+const REGISTRY_FILE = "packages/application/src/services/device-action-registry.ts";
 const GATE_FILE = "packages/application/src/services/perception-origin-gate.ts";
 
 export const TOOL_DEVICE_ACTION = fixedPrompt({
@@ -398,6 +399,15 @@ export const TOOL_RESULT_DEVICE_ACTION_REASON_TARGET_UNKNOWN = fixedPrompt({
   layer: "tool-result",
   output: "free-text",
   text: "参数里的编号在这台设备同步来的数据里找不到，什么都没有做。先读出这件东西现在的编号再试，不要猜编号。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER = fixedPrompt({
+  id: "tools.result.device-action.usage.device-reminder",
+  purpose: "device_action describe 结果里 device_reminder 两个动作的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这个动作操作的是设备上苹果的“提醒事项”App。主人说“提醒我……”时默认用 Himawari 自己的提醒，不用这个动作；只有主人明说要放进“提醒事项”App 或其中某个清单时才用它。",
 });
 
 export const TOOL_RESULT_ORIGIN_GATE_CONFIRM = fixedPrompt({

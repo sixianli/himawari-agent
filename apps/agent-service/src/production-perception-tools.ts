@@ -147,6 +147,7 @@ export interface DeviceActionDefinition {
   readonly reads: boolean;
   readonly confirm: boolean;
   readonly parameters: Readonly<Record<string, unknown>>;
+  readonly usage?: string;
 }
 
 export interface DeviceActionRequest {
@@ -472,7 +473,12 @@ export class ProductionPerceptionTools {
           })),
           actions: registry
             .filter(({ name }) => used.has(name))
-            .map(({ name, confirm, parameters: shape }) => ({ name, confirm, parameters: shape })),
+            .map(({ name, confirm, parameters: shape, usage }) => ({
+              name,
+              confirm,
+              parameters: shape,
+              ...(usage === undefined ? {} : { usage }),
+            })),
           note: TOOL_RESULT_DEVICE_ACTION_DESCRIBE.text,
         },
       };

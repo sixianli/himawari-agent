@@ -112,6 +112,7 @@ export interface DeviceActionDescription {
   readonly reads: boolean;
   readonly confirm: boolean;
   readonly parameters: Readonly<Record<string, unknown>>;
+  readonly usage?: string;
 }
 
 export type DeviceActionRequestOutcome =
@@ -191,6 +192,7 @@ export class DeviceActionService {
         reads,
         confirm: !reads,
         parameters: describeDeviceActionParameters(registration.parameters),
+        ...(registration.usage === undefined ? {} : { usage: registration.usage }),
       });
     });
   }

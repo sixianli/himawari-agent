@@ -1101,6 +1101,11 @@
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
   },
+  "tools.result.device-action.usage.device-reminder": {
+    "sha256": "4cdea5930b529306a9a838e53350001a4f11ae72f06984db41755eba737b2fc3",
+    "changedIn": "iOS 第 9A 批",
+    "reason": "device_reminder 两个动作的用法说明：默认用 Himawari 自己的提醒，主人明说才写进苹果“提醒事项”"
+  },
   "tools.result.device-action.waiting-owner": {
     "sha256": "cd84a6d23e03457c0fc116fa235ca008d2ec33f5495d30a90b363479dc06caec",
     "changedIn": "ADR 0230",

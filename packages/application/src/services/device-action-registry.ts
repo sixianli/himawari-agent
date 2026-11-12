@@ -1,3 +1,4 @@
+import { TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER } from "@himawari-agent/prompt-catalog";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import type { ActionKind } from "../ports/authorization.js";
@@ -74,6 +75,7 @@ export interface DeviceActionRegistration {
   readonly snapshotBefore: boolean;
   readonly reversible: boolean;
   readonly untrustedOriginAllowed: boolean;
+  readonly usage?: string;
   readonly detail: (
     args: DeviceActionArguments,
     context: DeviceActionContext,
@@ -528,6 +530,60 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
       }),
   },
   {
+    name: "device_reminder.complete",
+    schemaVersion: 1,
+    deviceKinds: APPLE_DEVICES,
+    parameters: { reminderId: text(256) },
+    target: { mirrorKind: "reminder", idKey: "reminderId" },
+    actionKind: "CREATE_OR_UPDATE",
+    escalation: null,
+    ownerPresence: never,
+    recipients: null,
+    resultOrigin: "owner",
+    readBack: "read_item",
+    snapshotBefore: false,
+    reversible: true,
+    untrustedOriginAllowed: true,
+    usage: TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER.text,
+    detail: (_args, context) =>
+      detail((locale) => {
+        const title = named(context, "title");
+        if (locale === "en") return `In Reminders, mark as done: ${title}`;
+        if (locale === "ja") return `「リマインダー」で完了にする：${title}`;
+        return `在“提醒事项”里标成完成：${title}`;
+      }),
+  },
+  {
+    name: "device_reminder.create",
+    schemaVersion: 1,
+    deviceKinds: APPLE_DEVICES,
+    parameters: {
+      title: text(200),
+      due: localTime(false),
+      notes: text(2000, false),
+      list: text(120, false),
+    },
+    target: null,
+    actionKind: "CREATE_OR_UPDATE",
+    escalation: null,
+    ownerPresence: never,
+    recipients: null,
+    resultOrigin: "owner",
+    readBack: "read_item",
+    snapshotBefore: false,
+    reversible: true,
+    untrustedOriginAllowed: true,
+    usage: TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER.text,
+    detail: (args) =>
+      detail((locale) => {
+        const rest = changes(args, REMINDER_LABELS, locale);
+        if (locale === "en") return joined([`In Reminders, create: ${args["title"]}`, rest], "; ");
+        if (locale === "ja")
+          return joined([`「リマインダー」に作成：${args["title"]}`, rest], "；");
+        return joined([`在“提醒事项”里新建：${args["title"]}`, rest], "；");
+      }),
+  },
+  {
     name: "home.control",
     schemaVersion: 1,
     deviceKinds: PHONE_AND_WATCH,
@@ -578,57 +634,6 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
         if (locale === "en") return joined(["Read home state", where], ": ");
         if (locale === "ja") return joined(["家の状態を読む", where], "：");
         return joined(["读取家居状态", where], "：");
-      }),
-  },
-  {
-    name: "reminder.complete",
-    schemaVersion: 1,
-    deviceKinds: APPLE_DEVICES,
-    parameters: { reminderId: text(256) },
-    target: { mirrorKind: "reminder", idKey: "reminderId" },
-    actionKind: "CREATE_OR_UPDATE",
-    escalation: null,
-    ownerPresence: never,
-    recipients: null,
-    resultOrigin: "owner",
-    readBack: "read_item",
-    snapshotBefore: false,
-    reversible: true,
-    untrustedOriginAllowed: true,
-    detail: (_args, context) =>
-      detail((locale) => {
-        const title = named(context, "title");
-        if (locale === "en") return `Mark reminder "${title}" as done`;
-        if (locale === "ja") return `リマインダー「${title}」を完了にする`;
-        return `把提醒事项“${title}”标为完成`;
-      }),
-  },
-  {
-    name: "reminder.create",
-    schemaVersion: 1,
-    deviceKinds: APPLE_DEVICES,
-    parameters: {
-      title: text(200),
-      due: localTime(false),
-      notes: text(2000, false),
-      list: text(120, false),
-    },
-    target: null,
-    actionKind: "CREATE_OR_UPDATE",
-    escalation: null,
-    ownerPresence: never,
-    recipients: null,
-    resultOrigin: "owner",
-    readBack: "read_item",
-    snapshotBefore: false,
-    reversible: true,
-    untrustedOriginAllowed: true,
-    detail: (args) =>
-      detail((locale) => {
-        const rest = changes(args, REMINDER_LABELS, locale);
-        if (locale === "en") return joined([`Create reminder "${args["title"]}"`, rest], "; ");
-        if (locale === "ja") return joined([`リマインダー「${args["title"]}」を作成`, rest], "；");
-        return joined([`新建提醒事项“${args["title"]}”`, rest], "；");
       }),
   },
 ]);
