@@ -56,7 +56,7 @@ Andy 的要求：CI 要顺；修根因，不降低检查质量；不在 GitHub �
 
 13. PR 的 CI 跑的是“PR 和目标分支合并后的提交”，工作流文件也取自这个合并提交，所以工作流改动合进 main 后，其他 PR 下一次运行自动用新工作流。来源：https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request ，原话 “GITHUB_SHA: Last merge commit on the GITHUB_REF branch”“GITHUB_REF: PR merge branch refs/pull/PULL_REQUEST_NUMBER/merge”；`scripts/ci/context.mjs` 第 97 到 108 行把合并提交的第一个父提交当基准。
 14. 所有 runner 的服务都放在同一个内存池里（现在是两个，直接再加一个也会进这个池子），池子上限 20 GB，每个 runner 自己的上限不是预留。来源：`scripts/operations/ci-runner/gh-runners.slice` 第 6、7 行 `MemoryHigh=19G`、`MemoryMax=20G`；`gh-runner.service.in` 第 25、26 行 `MemoryHigh=14G`、`MemoryMax=15G`。
-15. 暂停和恢复靠 Mac 上的脚本增删一个全局标签；注册和卸载脚本只认 1、2 号。来源：`scripts/operations/ci-runner/mac-runners.sh` 第 4 行 `LABEL=$RUNNER_LABEL`；`register-runner.sh` 第 11 到 14 行只接受 `1|2`；`uninstall-runner.sh` 第 10 到 14 行只接受 `2|all`。
+15. 暂停和恢复靠 Mac 上的脚本增删一个全局标签；注册和卸载脚本只认 1、2 号。来源：`scripts/operations/ci-runner/mac-runners.sh` 第 4 行 `LABEL=$RUNNER_LABEL`；`register-runner.sh` 第 11 到 14 行只接受 `1` 和 `2`；`uninstall-runner.sh` 第 10 到 14 行只接受 `2` 和 `all`。
 16. 汇总作业跑的是 PR 合并提交里的脚本，和检查作业在同一个信任范围。来源：`.github/workflows/ci.yml` 第 350 到 366 行（检出后运行 `scripts/ci/required.mjs`）。
 
 [↑ 返回阅读导航](#contents)
