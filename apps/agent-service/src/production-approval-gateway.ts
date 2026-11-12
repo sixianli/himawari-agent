@@ -68,7 +68,6 @@ export const PRODUCTION_CAPABILITY_OPERATIONS = Object.freeze([
   "capability.list",
   "capability.detail",
   "capability.disable",
-  "capability.rollback",
 ] as const);
 
 export function createProductionApprovalGateway(options: {

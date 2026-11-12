@@ -2646,7 +2646,7 @@ export class SqliteDurableOperations {
         record: {
           ...input.record,
           lastInvalidation:
-            lifecycle === "disabled" || lifecycle === "revoked" || lifecycle === "uninstalled"
+            lifecycle === "disabled"
               ? {
                   lifecycle,
                   cancelledScheduledJobs: jobs.length,

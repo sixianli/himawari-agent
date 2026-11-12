@@ -804,7 +804,6 @@ export function useGovernanceControlCenter({
         setAcknowledged(false);
         await refresh();
       } else {
-        if (status === 403) storage.clearPendingGovernanceMutation(identity.operationKey);
         setMutationStatus("rejected");
         setError(
           mutationError instanceof Error
@@ -817,9 +816,15 @@ export function useGovernanceControlCenter({
 
   const itemRefs =
     listSnapshot?.type === "collection.snapshot" ? listSnapshot.payload.itemRefs : [];
+  const installedOperations = configuration?.installedGatewayV2Operations;
   const actions = useMemo(
-    () => (detailSnapshot ? detailActions(detailSnapshot) : []),
-    [detailSnapshot],
+    () =>
+      (detailSnapshot ? detailActions(detailSnapshot) : []).filter(
+        (candidate) =>
+          installedOperations === undefined ||
+          installedOperations.includes(actionIdentity(candidate).commandType),
+      ),
+    [detailSnapshot, installedOperations],
   );
 
   const list = (

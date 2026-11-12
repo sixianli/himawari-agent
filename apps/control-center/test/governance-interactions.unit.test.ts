@@ -281,7 +281,10 @@ describe("governance page action contracts", () => {
       "active",
       "governance.disableCapability",
       "capability.disable",
-      { reasonCode: "owner_disabled_from_control_center", recentAuthenticationRef: "recent-auth-01" },
+      {
+        reasonCode: "owner_disabled_from_control_center",
+        recentAuthenticationRef: "recent-auth-01",
+      },
     ],
     [
       "capabilities-adapters",
@@ -289,7 +292,10 @@ describe("governance page action contracts", () => {
       "active",
       "governance.rollbackCapability",
       "capability.rollback",
-      { reasonCode: "owner_rollback_from_control_center", recentAuthenticationRef: "recent-auth-01" },
+      {
+        reasonCode: "owner_rollback_from_control_center",
+        recentAuthenticationRef: "recent-auth-01",
+      },
     ],
   ] as const;
   it.each(actions)(
@@ -351,7 +357,26 @@ describe("governance page action contracts", () => {
       expect(document.querySelector("dialog[open]")).toBeNull();
     },
   );
-  it.each([401, 403, 409, 503])(
+  it("offers only the capability actions whose operations the server installed", async () => {
+    detail = snapshot("capability.snapshot", { lifecycle: "active" });
+    await render({
+      configuration: {
+        ...configuration,
+        installedGatewayV2Operations: [
+          "capability.list",
+          "capability.detail",
+          "capability.disable",
+        ],
+      },
+      route: { ...input.route, surfaceId: "capabilities-adapters", objectId: "selected" },
+    });
+    const labels = [...container.querySelectorAll(".governance-actions button")].map(
+      (button) => button.textContent,
+    );
+    expect(labels).toContain("governance.disableCapability");
+    expect(labels).not.toContain("governance.rollbackCapability");
+  });
+  it.each([401, 409, 503])(
     "preserves retry identity or reports a revision conflict after %s",
     async (status) => {
       detail = snapshot("grant.snapshot");
@@ -368,7 +393,7 @@ describe("governance page action contracts", () => {
       await confirm("governance.revokeGrant");
       expect(unauthorized).toHaveBeenCalledTimes(status === 401 ? 1 : 0);
       expect(storage.readPendingGovernanceMutation("grant.revoke:grant-01:2") === null).toBe(
-        status === 409 || status === 403,
+        status === 409,
       );
       if (status === 409) expect(container.textContent).toContain("governance.conflictDescription");
       if (status === 503) {

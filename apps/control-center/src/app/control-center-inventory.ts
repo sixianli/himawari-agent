@@ -42,6 +42,7 @@ export interface ControlCenterSurfaceInventoryEntry {
   readonly stableObjects: readonly string[];
   readonly queries: readonly string[];
   readonly mutations: readonly string[];
+  readonly mutationsOfferedWhenInstalled?: true;
   readonly revisionControl: readonly string[];
   readonly authorization: {
     readonly ownerAgentScope: true;
@@ -63,7 +64,9 @@ export function isSurfaceInstalled(
 ): boolean {
   if (surface.id === "health-deployment") return healthDependenciesAvailable;
   // Conversations use the separately composed Thread v3 gateway.
-  const operations = [...surface.queries, ...surface.mutations];
+  const operations = surface.mutationsOfferedWhenInstalled
+    ? surface.queries
+    : [...surface.queries, ...surface.mutations];
   return (
     surface.id === "threads" ||
     (operations.length > 0 &&
@@ -222,6 +225,7 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
       "capability.disable",
       "capability.rollback",
     ],
+    mutationsOfferedWhenInstalled: true,
     revisionControl: ["CapabilityRegistryRecord.revision", "idempotencyKey"],
     authorization: {
       ownerAgentScope: true,
