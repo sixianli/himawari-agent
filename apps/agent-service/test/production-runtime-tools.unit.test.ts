@@ -1919,6 +1919,53 @@ it("[ADR-0257] refuses a tool with consequences when no authorization exit is wi
   expect(run).toHaveBeenCalledTimes(1);
 });
 
+it("[ADR-0257] reports a failed check and does nothing when the authorization exit breaks, then works once it recovers", async () => {
+  const f = fixture();
+  const run = vi.fn(async () => ({ created: true }));
+  const authorize = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("state store unavailable"))
+    .mockResolvedValue(OWNER_SCOPE_ALLOW);
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    reminders: { run },
+    ownerScope: { authorize } as unknown as NonNullable<
+      ProductionRuntimeToolsOptions["ownerScope"]
+    >,
+  });
+  await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  const set = {
+    ...invocation,
+    capabilityRef: "reminder.set",
+    capabilityHandleRef: null,
+    arguments: { text: "交周报", due: "2026-11-13T15:00" },
+  };
+  const broken = await tools.execute(set);
+  expect(broken).toMatchObject({
+    outcome: "failed",
+    errorCode: "authorization_component_error",
+    dispatchState: "not_sent",
+  });
+  expect(broken.modelContent).not.toContain("state store unavailable");
+  expect(run).not.toHaveBeenCalled();
+  expect(await tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+  expect(run).toHaveBeenCalledTimes(1);
+});
+
+it("[ADR-0257] only the three listing and recall tools skip the authorization exit among the built-in tools", () => {
+  const builtin = PRODUCTION_TOOL_ACTION_ROWS.filter(({ family }) => family === "builtin");
+  expect(
+    builtin.filter(({ authorization }) => authorization === "read").map(({ tool }) => tool),
+  ).toEqual(["recall", "reminder_list", "rule_list"]);
+  expect(
+    builtin
+      .filter(({ authorization }) => authorization === "owner_scope")
+      .map(({ tool }) => tool)
+      .sort(),
+  ).toEqual(["reminder_cancel", "reminder_set", "rule_set", "rule_undo"]);
+  expect(builtin).toHaveLength(7);
+});
+
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {
   const f = fixture();
   const run = vi.fn(async () => ({ created: true }));

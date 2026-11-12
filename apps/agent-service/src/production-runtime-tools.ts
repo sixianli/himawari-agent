@@ -18,6 +18,7 @@ import {
   type PayloadProtectorPort,
   type PayloadStorePort,
   PORT_ERROR_CODES,
+  type PermissionDecision,
   type ProductConfiguration,
   RECOVERY_SETTLE_WAIT_MS,
   type RunPayloadArtifactPort,
@@ -636,12 +637,32 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     const ownerScope = this.#options.ownerScope;
     return async () => {
       if (!ownerScope) reject();
-      const permission = await ownerScope.authorize(
-        invocation,
-        row,
-        async (key, value) => this.#readJson((await this.#writeJson(invocation, key, value)).ref),
-        signal,
-      );
+      let permission: PermissionDecision;
+      try {
+        permission = await ownerScope.authorize(
+          invocation,
+          row,
+          async (key, value) => {
+            const frozen = await this.#options.artifacts.lookup({
+              runId: invocation.runId,
+              purpose: "trace",
+              operationKey: key,
+            });
+            return this.#readJson(
+              frozen?.payloadRef ?? (await this.#writeJson(invocation, key, value)).ref,
+            );
+          },
+          signal,
+        );
+      } catch {
+        await this.#options.assertRunActive(invocation.runId);
+        signal?.throwIfAborted();
+        permission = {
+          decision: "DENY",
+          reasonCode: "authorization_component_error",
+          alternativesAllowed: false,
+        };
+      }
       if (permission.decision === "ALLOW") return undefined;
       const result = runtimeToolAuthorizationResult(permission);
       return result.outcome === "failed" ? { ...result, dispatchState: "not_sent" } : result;
@@ -731,6 +752,29 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   ): Promise<RuntimeToolExecutionResult> {
     await this.#options.assertRunActive(invocation.runId);
     if (!this.#exposed.has(invocation.runId) || !run) reject();
+    const flightKey = `owner-scoped:${digest([invocation.runId, invocation.toolCallId])}`;
+    const fingerprint = digest(executionIdentity(invocation));
+    const active = this.#inFlight.get(flightKey);
+    if (active) {
+      if (active.fingerprint !== fingerprint)
+        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed");
+      return active.result;
+    }
+    const result = this.#ownerScopedOnce(invocation, marker, gate, run, failure);
+    this.#inFlight.set(flightKey, { fingerprint, result });
+    void result.finally(() => this.#inFlight.delete(flightKey)).catch(() => undefined);
+    return result;
+  }
+  async #ownerScopedOnce(
+    invocation: RuntimeToolInvocation,
+    marker: "recall" | "reminder" | "rule",
+    gate: OwnerScopeGate,
+    run: (call: RuntimeToolInvocation) => Promise<{
+      readonly value: unknown;
+      readonly contentClassification?: DataClassification;
+    }>,
+    failure: (error: unknown) => { readonly errorCode: string; readonly note: string },
+  ): Promise<RuntimeToolExecutionResult> {
     const key = digest([invocation.runId, invocation.toolCallId]);
     const fingerprint = digest(executionIdentity(invocation));
     const claimed = await this.#writeJson(invocation, `runtime-tool-intent:${key}`, {

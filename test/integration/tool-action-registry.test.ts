@@ -55,7 +55,11 @@ async function setup(
   const f = runtimeToolFixture();
   let sequence = 0;
   const ids = { next: (scope: string) => `${scope}:owner-scope:${++sequence}` };
-  const clock = { now: () => T1 };
+  let now = T1;
+  const clock = { now: () => now };
+  const advance = (milliseconds: number) => {
+    now = new Date(Date.parse(now) + milliseconds).toISOString();
+  };
   const registry = options.registry ?? productionToolActionRegistry();
   const store = repository.authorizationStore();
   const ownerScope = new OwnerScopeAuthorization({
@@ -109,6 +113,7 @@ async function setup(
     call,
     approvals,
     clock,
+    advance,
     ids,
     close: async () => {
       await repository.close();
@@ -182,7 +187,8 @@ it("[ADR-0257] waits for the owner when no rule preauthorizes the action, and ru
     const set = s.call("reminder.set", "call:ask", { text: "交周报", due: "2026-11-13T15:00" });
     const waiting = await s.tools.execute(set);
     expect(waiting).toMatchObject({ outcome: "awaiting_approval" });
-    expect(await s.tools.execute(set)).toMatchObject({ outcome: "awaiting_approval" });
+    s.advance(5_000);
+    expect(await s.tools.execute(set)).toEqual(waiting);
     expect(s.reminders).not.toHaveBeenCalled();
     const [pending] = await s.approvals();
     expect(await s.approvals()).toHaveLength(1);
@@ -219,10 +225,68 @@ it("[ADR-0257] waits for the owner when no rule preauthorizes the action, and ru
       semanticSnapshotHash: pending.semanticSnapshotHash,
       response: { decision: "approved", grant, recentAuthenticationRef: null },
     });
+    s.advance(5_000);
     const done = await s.tools.execute(set);
     expect(done).toMatchObject({ outcome: "succeeded" });
+    s.advance(5_000);
     expect(await s.tools.execute(set)).toEqual(done);
     expect(s.reminders).toHaveBeenCalledTimes(1);
+    expect(await s.approvals()).toHaveLength(1);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] two identical calls at the same moment share one approval and run once", async () => {
+  const s = await setup();
+  try {
+    const set = s.call("reminder.set", "call:twice", { text: "交周报", due: "2026-11-13T15:00" });
+    const [left, right] = await Promise.all([s.tools.execute(set), s.tools.execute(set)]);
+    expect(left).toMatchObject({ outcome: "succeeded" });
+    expect(right).toEqual(left);
+    expect(s.reminders).toHaveBeenCalledTimes(1);
+    expect(await s.approvals()).toHaveLength(1);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] a new revision of the built-in rule keeps the owner's switch: still on stays on, switched off stays off", async () => {
+  const revised = { ...(BUILT_IN_ACTION_RULES[0] as RuleRecord), revision: 2 };
+  const s = await setup({ rules: [revised] });
+  try {
+    const key = `action-rule:${ACTION_RULE_IDS.preauthorizeOwnerData}`;
+    const write = (value: { enabled: boolean; ruleRevision: number }, revision: number | null) =>
+      s.repository.commitStateAndEvents({
+        command: {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          commandType: "authorization.action_rule.set",
+          idempotencyKey: `seed:${JSON.stringify(value)}` as never,
+          commandFingerprint: JSON.stringify(value),
+          authority: SERVICE_AUTHORITY.lease,
+        },
+        state: { key, expectedRevision: revision, value: { ...value, actorId: OWNER_ID } },
+        events: [],
+        resultRef: key,
+        committedAt: T1,
+      });
+    await write({ enabled: true, ruleRevision: 1 }, null);
+    const first = s.call("reminder.set", "call:r2", { text: "交周报", due: "2026-11-13T15:00" });
+    expect(await s.tools.execute(first)).toMatchObject({ outcome: "succeeded" });
+    const renewed = await s.repository.readScopedState(OWNER_ID, AGENT_ID, key);
+    expect(renewed?.value).toMatchObject({ enabled: true, ruleRevision: 2 });
+    const [approval] = await s.approvals();
+    expect(approval?.policyAuthorization).toEqual({ key, revision: renewed?.revision });
+    await write({ enabled: false, ruleRevision: 1 }, renewed?.revision ?? null);
+    const second = s.call("reminder.set", "call:r2-off", {
+      text: "交月报",
+      due: "2026-11-14T15:00",
+    });
+    expect(await s.tools.execute(second)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.reminders).toHaveBeenCalledTimes(1);
+    const off = await s.repository.readScopedState(OWNER_ID, AGENT_ID, key);
+    expect(off?.value).toMatchObject({ enabled: false, ruleRevision: 1 });
   } finally {
     await s.close();
   }
