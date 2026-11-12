@@ -68,5 +68,10 @@ import Testing
         #expect(throws: PairingInvitation.ParseError.malformed) {
             try PairingInvitation.parse(try uri(["v": 1, "origin": "https://a.test", "code": "short"]))
         }
+        for origin in ["https://user:pass@a.test", "https://user@a.test", "https://a.test/?next=b", "https://a.test/#x", "https:///"] {
+            #expect(throws: PairingInvitation.ParseError.malformed) {
+                try PairingInvitation.parse(try uri(["v": 1, "origin": origin, "code": "abcdefghijklmnopqrstuv"]))
+            }
+        }
     }
 }

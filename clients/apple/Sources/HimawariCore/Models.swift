@@ -26,6 +26,7 @@ public struct PairedDeviceInfo: Codable, Sendable, Equatable {
     public let name: String
     public let releaseChannel: ReleaseChannel
     public let status: PairedDeviceStatus
+    public let pairingNumber: String?
 }
 
 public struct DeviceLimit: Codable, Sendable, Equatable, Identifiable {
@@ -109,6 +110,13 @@ public struct ThreadDetail: Codable, Sendable, Equatable {
     public let messages: [ThreadMessage]
     public let runs: [ThreadRunSummary]
     public let nextSequence: Int?
+
+    public init(thread: ThreadSummary, messages: [ThreadMessage], runs: [ThreadRunSummary], nextSequence: Int?) {
+        self.thread = thread
+        self.messages = messages
+        self.runs = runs
+        self.nextSequence = nextSequence
+    }
 }
 
 struct GatewayEnvelope<Payload: Decodable>: Decodable {

@@ -35,7 +35,7 @@ public final class FileLocalStore: LocalStore, @unchecked Sendable {
                 return
             }
             #if os(iOS) || os(watchOS)
-            try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
             #else
             try data.write(to: url, options: [.atomic])
             #endif

@@ -108,9 +108,10 @@ public final class DeviceEventStream: @unchecked Sendable {
             var stop = false
             do {
                 let chunks = try await http.openStream(DeviceRequest(method: "GET", path: path, query: query))
-                failures = 0
                 continuation.yield(.connected)
-                stop = try await consume(chunks, continuation: continuation)
+                let deadline = LivenessDeadline(window: { [heartbeat] in heartbeat() * 2 + 5 })
+                stop = try await consume(chunks, deadline: deadline, continuation: continuation)
+                failures = deadline.heard ? 0 : failures + 1
             } catch let error as DeviceAPIError where error.isRevoked {
                 continuation.yield(.sessionInvalid)
                 stop = true
@@ -124,8 +125,7 @@ public final class DeviceEventStream: @unchecked Sendable {
         continuation.finish()
     }
 
-    private func consume(_ chunks: AsyncThrowingStream<String, Error>, continuation: AsyncStream<DeviceStreamEvent>.Continuation) async throws -> Bool {
-        let deadline = LivenessDeadline(window: { [heartbeat] in heartbeat() * 2 + 5 })
+    private func consume(_ chunks: AsyncThrowingStream<String, Error>, deadline: LivenessDeadline, continuation: AsyncStream<DeviceStreamEvent>.Continuation) async throws -> Bool {
         return try await withThrowingTaskGroup(of: Bool.self) { group in
             group.addTask {
                 var parser = ServerSentEventParser()
@@ -180,8 +180,17 @@ final class LivenessDeadline: @unchecked Sendable {
         self.window = window
     }
 
+    private var touched = false
+
+    var heard: Bool {
+        lock.withLock { touched }
+    }
+
     func touch() {
-        lock.withLock { last = Date() }
+        lock.withLock {
+            last = Date()
+            touched = true
+        }
     }
 
     func expired() -> Bool {

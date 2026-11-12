@@ -29,6 +29,8 @@ public final class AppModel {
     @ObservationIgnored private var waiting: Task<Void, Never>?
     @ObservationIgnored private let heartbeat = HeartbeatSetting()
     @ObservationIgnored private var lastScanned: String?
+    @ObservationIgnored private var keysMadeFor: String?
+    @ObservationIgnored private var configurationRetry: Task<Void, Never>?
 
     private static let recordAccount = "pairing-record"
 
@@ -52,7 +54,7 @@ public final class AppModel {
 
     private func restore() {
         guard let record, keys.exists(.device), keys.exists(.confirm) else {
-            phase = .unpaired(nil)
+            forget(problem: nil)
             return
         }
         use(record)
@@ -78,8 +80,12 @@ public final class AppModel {
         Task {
             do {
                 let invitation = try PairingInvitation.parse(text)
-                try keys.create(.device)
-                try keys.create(.confirm)
+                if keysMadeFor != text || !keys.exists(.device) || !keys.exists(.confirm) {
+                    keysMadeFor = nil
+                    try keys.create(.device)
+                    try keys.create(.confirm)
+                    keysMadeFor = text
+                }
                 let deviceKey = keys.signer(.device)
                 let confirmKey = keys.signer(.confirm)
                 let device = try await api.pair(
@@ -90,10 +96,13 @@ public final class AppModel {
                     deviceKey: deviceKey,
                     confirmKey: confirmKey
                 )
-                let number = PairingNumber.display(
-                    devicePublicKey: try deviceKey.publicKeySPKI(),
-                    confirmPublicKey: try confirmKey.publicKeySPKI()
-                )
+                let devicePublicKey = try deviceKey.publicKeySPKI()
+                let confirmPublicKey = try confirmKey.publicKeySPKI()
+                if let reported = device.pairingNumber,
+                   reported != PairingNumber.digits(devicePublicKey: devicePublicKey, confirmPublicKey: confirmPublicKey) {
+                    throw DeviceAPIError.invalidResponse
+                }
+                let number = PairingNumber.display(devicePublicKey: devicePublicKey, confirmPublicKey: confirmPublicKey)
                 let record = PairingRecord(origin: invitation.origin, deviceId: device.id, access: invitation.access, status: device.status, pairingNumber: number)
                 try save(record)
                 use(record)
@@ -105,15 +114,25 @@ public final class AppModel {
                     waitForConfirmation()
                 }
             } catch {
-                try? keys.delete(.device)
-                try? keys.delete(.confirm)
+                if !Self.mayHavePaired(error) {
+                    keysMadeFor = nil
+                    try? keys.delete(.device)
+                    try? keys.delete(.confirm)
+                }
                 phase = .unpaired(PairingProblem.from(error))
             }
         }
     }
 
+    static func mayHavePaired(_ error: Error) -> Bool {
+        if error is PairingInvitation.ParseError || error is DeviceKeyError { return false }
+        if case let .server(status, _, _)? = error as? DeviceAPIError { return status >= 500 || status == 408 || status == 429 }
+        return true
+    }
+
     public func cancelPairing() {
         lastScanned = nil
+        keysMadeFor = nil
         forget(problem: nil)
     }
 
@@ -127,6 +146,7 @@ public final class AppModel {
 
     public func dismissProblem() {
         lastScanned = nil
+        keysMadeFor = nil
         phase = .unpaired(nil)
     }
 
@@ -178,13 +198,34 @@ public final class AppModel {
     }
 
     public func refreshConfiguration() async {
+        configurationRetry?.cancel()
+        configurationRetry = nil
         do {
             let configuration = try await api.configuration()
             self.configuration = configuration
             heartbeat.seconds = TimeInterval(configuration.heartbeatSeconds)
         } catch let error as DeviceAPIError where error.isRevoked {
             forget(problem: .removed)
-        } catch {}
+        } catch {
+            retryConfiguration(failures: 1)
+        }
+    }
+
+    private func retryConfiguration(failures: Int) {
+        configurationRetry = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(DeviceEventStream.backoff(failures: failures)))
+            guard !Task.isCancelled, let self, phase == .active else { return }
+            do {
+                let configuration = try await api.configuration()
+                self.configuration = configuration
+                heartbeat.seconds = TimeInterval(configuration.heartbeatSeconds)
+                configurationRetry = nil
+            } catch let error as DeviceAPIError where error.isRevoked {
+                forget(problem: .removed)
+            } catch {
+                retryConfiguration(failures: failures + 1)
+            }
+        }
     }
 
     private func checkRevoked() {
@@ -192,11 +233,15 @@ public final class AppModel {
     }
 
     public func becameActive() {
+        guard phase == .active else { return }
         chat?.reconnect()
+        Task { await refreshConfiguration() }
     }
 
     private func forget(problem: PairingProblem?) {
         waiting?.cancel()
+        configurationRetry?.cancel()
+        configurationRetry = nil
         chat?.stop()
         chat = nil
         configuration = nil
@@ -214,9 +259,9 @@ public final class AppModel {
 
     static var deviceName: String {
         #if canImport(UIKit)
-        UIDevice.current.name
+        PairingRequestLimits.deviceName(UIDevice.current.name)
         #else
-        Host.current().localizedName ?? "Mac"
+        PairingRequestLimits.deviceName(Host.current().localizedName ?? "Mac")
         #endif
     }
 }

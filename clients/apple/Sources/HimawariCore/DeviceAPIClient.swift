@@ -94,15 +94,33 @@ public final class DeviceHTTPClient: @unchecked Sendable {
         return response
     }
 
+    public static let streamErrorBodyLimit = 16 * 1024
+
     public func openStream(_ request: DeviceRequest) async throws -> AsyncThrowingStream<String, Error> {
+        try await openStream(request, allowClockRetry: true)
+    }
+
+    private func openStream(_ request: DeviceRequest, allowClockRetry: Bool) async throws -> AsyncThrowingStream<String, Error> {
         let urlRequest = try await signed(request)
         let (status, chunks) = try await exchange.stream(urlRequest)
-        guard (200..<300).contains(status) else { throw DeviceAPIError.server(status: status, code: nil) }
-        return chunks
+        if (200..<300).contains(status) { return chunks }
+        var body = ""
+        for try await chunk in chunks {
+            body += chunk
+            if body.utf8.count > Self.streamErrorBodyLimit { break }
+        }
+        let response = HTTPExchangeResponse(status: status, body: Data(body.utf8))
+        if allowClockRetry, status == 401, let serverTime = Self.serverTime(response.body) {
+            lock.withLock { clockOffset = serverTime.timeIntervalSince(now()) }
+            return try await openStream(request, allowClockRetry: false)
+        }
+        _ = try Self.check(response)
+        throw DeviceAPIError.server(status: status, code: nil)
     }
 
     public func pair(origin: URL, access: ServiceAccessToken?, body: Data) async throws -> Data {
-        var urlRequest = URLRequest(url: Self.url(origin: origin, path: "pair", rawQuery: ""))
+        guard let url = Self.url(origin: origin, path: "pair", rawQuery: "") else { throw DeviceAPIError.invalidResponse }
+        var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.httpBody = body
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -125,7 +143,9 @@ public final class DeviceHTTPClient: @unchecked Sendable {
         let (credentials, offset) = lock.withLock { (self.credentials, clockOffset) }
         guard let credentials else { throw DeviceAPIError.server(status: 401, code: "DEVICE_NOT_PAIRED") }
         let rawQuery = Self.encode(request.query)
-        let url = Self.url(origin: credentials.origin, path: request.path, rawQuery: rawQuery)
+        guard let url = Self.url(origin: credentials.origin, path: request.path, rawQuery: rawQuery) else {
+            throw DeviceAPIError.invalidResponse
+        }
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             throw DeviceAPIError.invalidResponse
         }
@@ -158,12 +178,12 @@ public final class DeviceHTTPClient: @unchecked Sendable {
         return urlRequest
     }
 
-    static func url(origin: URL, path: String, rawQuery: String) -> URL {
+    static func url(origin: URL, path: String, rawQuery: String) -> URL? {
         var text = origin.absoluteString
         while text.hasSuffix("/") { text.removeLast() }
         text += prefix + path
         if !rawQuery.isEmpty { text += "?" + rawQuery }
-        return URL(string: text) ?? origin
+        return URL(string: text)
     }
 
     static func authority(_ origin: URL) -> String {

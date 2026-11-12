@@ -91,6 +91,7 @@ public actor Outbox {
         latestRevision: @Sendable (String) async -> Int?
     ) async -> [OutboxSendResult] {
         var results: [OutboxSendResult] = []
+        var conflictRetries: [String: Int] = [:]
         while let index = items.firstIndex(where: { $0.state == .waiting }) {
             items[index].state = .sending
             items[index].attempts += 1
@@ -104,7 +105,8 @@ public actor Outbox {
                 case let .conflict(reason, latest):
                     let revision: Int?
                     if let latest { revision = latest.revision } else { revision = await latestRevision(message.threadId) }
-                    if let revision, revision != message.expectedRevision, attempts(message.messageId) <= Self.maximumConflictRetries {
+                    if let revision, revision != message.expectedRevision, conflictRetries[message.messageId, default: 0] < Self.maximumConflictRetries {
+                        conflictRetries[message.messageId, default: 0] += 1
                         update(message.messageId) {
                             $0.message.expectedRevision = revision
                             $0.state = .waiting
@@ -142,10 +144,6 @@ public actor Outbox {
         return results
     }
 
-    private func attempts(_ messageId: String) -> Int {
-        items.first { $0.id == messageId }?.attempts ?? 0
-    }
-
     private func update(_ messageId: String, _ change: (inout OutboxItem) -> Void) {
         guard let index = items.firstIndex(where: { $0.id == messageId }) else { return }
         change(&items[index])
@@ -153,7 +151,7 @@ public actor Outbox {
     }
 
     private func persist() {
-        try? store.write(name, try? JSONEncoder().encode(items))
+        if let data = try? JSONEncoder().encode(items) { try? store.write(name, data) }
         for observer in observers.values { observer.yield(items) }
     }
 }

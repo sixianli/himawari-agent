@@ -77,6 +77,6 @@ mkdir -p /tmp/tabler && cd /tmp/tabler && npm pack @tabler/icons@3.35.0 && tar x
 node clients/apple/scripts/make-icons.mjs /tmp/tabler/package clients/apple/Sources/HimawariDesign/Resources
 ```
 
-脚本把每个 SVG 改好线宽后放进 `Icons.xcassets`（Xcode 的图片资源目录），按模板图片处理；许可证原文和版本号放进 `Licenses/`，致谢页用 `ThirdPartyLicense.all` 读出来显示。
+脚本把每个 SVG 改好线宽后放进 `Icons.xcassets`（Xcode 的图片资源目录），按模板图片处理；许可证原文和版本号放进 `Licenses/`，以后的致谢页（第 11 批设置页）用 `ThirdPartyLicense.all` 读出来显示，第 2 批还没有界面用它。
 
 [返回目录](#apple-clients)

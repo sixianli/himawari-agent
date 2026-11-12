@@ -39,6 +39,10 @@ public final class ChatStore {
     @ObservationIgnored private let onSessionInvalid: @MainActor () -> Void
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
     @ObservationIgnored private var flushing = false
+    @ObservationIgnored private var flushAgain = false
+    @ObservationIgnored private var retryTask: Task<Void, Never>?
+    @ObservationIgnored private var retryFailures = 0
+    @ObservationIgnored private var createdRevisions: [String: Int] = [:]
     @ObservationIgnored private var pendingTextRefs: Set<String> = []
     @ObservationIgnored private var loadingExecutions: Set<String> = []
     @ObservationIgnored private let heartbeatSeconds: @Sendable () -> TimeInterval
@@ -85,6 +89,8 @@ public final class ChatStore {
     }
 
     public func stop() {
+        retryTask?.cancel()
+        retryTask = nil
         tasks.forEach { $0.cancel() }
         tasks.removeAll()
         events.stop()
@@ -146,10 +152,12 @@ public final class ChatStore {
         do {
             var collected: [ThreadSummary] = []
             var cursor: String?
+            var seen = Set<String>()
             repeat {
                 let page = try await api.threads(after: cursor)
                 collected += page.threads
                 cursor = page.nextCursor
+                if let cursor, !seen.insert(cursor).inserted { throw DeviceAPIError.invalidResponse }
             } while cursor != nil
             threads = collected.sorted(by: Self.listOrder)
             await loadTexts(threads.compactMap(\.titleRef))
@@ -161,7 +169,7 @@ public final class ChatStore {
 
     public func load(_ threadId: String) async {
         do {
-            let detail = try await api.thread(threadId)
+            let detail = try await api.fullThread(threadId)
             details[threadId] = detail
             if let index = threads.firstIndex(where: { $0.threadId == threadId }) {
                 threads[index] = detail.thread
@@ -232,6 +240,7 @@ public final class ChatStore {
 
     public func newThread(requestId: String) async throws -> String {
         let created = try await api.createThread(requestId: requestId, answerLocale: answerLocale)
+        createdRevisions[created.threadId] = created.threadRevision
         await refreshThreads()
         return created.threadId
     }
@@ -239,7 +248,7 @@ public final class ChatStore {
     public func send(_ text: String, in threadId: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let revision = details[threadId]?.thread.revision ?? threads.first(where: { $0.threadId == threadId })?.revision ?? 1
+        let revision = details[threadId]?.thread.revision ?? threads.first(where: { $0.threadId == threadId })?.revision ?? createdRevisions[threadId] ?? 1
         await outbox.enqueue(OutgoingMessage(threadId: threadId, expectedRevision: revision, text: trimmed, createdAt: Date()))
         await flush()
     }
@@ -255,19 +264,47 @@ public final class ChatStore {
     }
 
     func flush() async {
-        guard !flushing else { return }
+        guard !flushing else {
+            flushAgain = true
+            return
+        }
         flushing = true
         defer { flushing = false }
-        let results = await outbox.flush(using: api) { [weak self] threadId in
-            await self?.details[threadId]?.thread.revision
+        var delivered = false
+        var deferred = false
+        repeat {
+            flushAgain = false
+            let results = await outbox.flush(using: api) { [weak self] threadId in
+                await self?.details[threadId]?.thread.revision
+            }
+            delivered = delivered || results.contains { if case .delivered = $0 { true } else { false } }
+            deferred = results.contains(.retryLater)
+        } while flushAgain && !deferred
+        if deferred {
+            scheduleRetry()
+        } else {
+            retryFailures = 0
+            retryTask?.cancel()
+            retryTask = nil
         }
-        let delivered = Set(results.compactMap { result -> String? in
-            if case let .delivered(messageId, _) = result { return messageId }
-            return nil
-        })
-        if !delivered.isEmpty {
+        if delivered {
             await refreshThreads()
         }
+    }
+
+    private func scheduleRetry() {
+        retryFailures += 1
+        let delay = Self.retryDelay(failures: retryFailures)
+        retryTask?.cancel()
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self else { return }
+            await self.flush()
+        }
+    }
+
+    static func retryDelay(failures: Int) -> Double {
+        min(60, 2 * pow(2, Double(max(0, failures - 1))))
     }
 
     private func handle(_ event: DeviceStreamEvent) async {
@@ -326,7 +363,9 @@ public final class ChatStore {
         case let (l?, r?): return l < r
         case (_?, nil): return true
         case (nil, _?): return false
-        default: return left.updatedAt > right.updatedAt
+        default:
+            if left.updatedAt != right.updatedAt { return left.updatedAt > right.updatedAt }
+            return left.threadId < right.threadId
         }
     }
 }

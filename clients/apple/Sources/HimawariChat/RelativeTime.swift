@@ -1,14 +1,9 @@
 import Foundation
 
 enum RelativeTime {
-    static let parser: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
     static func date(_ text: String) -> Date? {
-        parser.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+        (try? Date(text, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
+            ?? (try? Date(text, strategy: Date.ISO8601FormatStyle()))
     }
 
     static func label(_ text: String, now: Date = Date(), calendar: Calendar = .current) -> String {

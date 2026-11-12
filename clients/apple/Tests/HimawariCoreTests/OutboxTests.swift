@@ -68,6 +68,21 @@ final class ScriptedSender: MessageSender, @unchecked Sendable {
         #expect(await outbox.pending.isEmpty)
     }
 
+    @Test func earlierNetworkFailuresDoNotUseUpConflictRetries() async {
+        let outbox = Outbox(store: MemoryLocalStore())
+        await outbox.enqueue(message())
+        let offline = ScriptedSender([.failure(URLError(.timedOut))])
+        for _ in 0..<4 { _ = await outbox.flush(using: offline) { _ in nil } }
+        let sender = ScriptedSender([
+            .success(.conflict(reasonCode: "THREAD_REVISION_CONFLICT", latest: nil)),
+            .success(.accepted(threadRevision: 3, replayed: false)),
+        ])
+        let results = await outbox.flush(using: sender) { _ in 2 }
+        #expect(results.count == 1)
+        #expect(sender.sent.map(\.expectedRevision) == [1, 2])
+        #expect(await outbox.pending.isEmpty)
+    }
+
     @Test func conflictWithoutNewRevisionFails() async {
         let outbox = Outbox(store: MemoryLocalStore())
         let item = await outbox.enqueue(message(revision: 3))

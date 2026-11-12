@@ -259,7 +259,7 @@ struct QueuedMessageRow: View {
                             .fontWeight(.semibold)
                             .foregroundStyle(Color.hmSun)
                     }
-                case .waiting where !online:
+                case .waiting where !online || item.attempts > 0:
                     HStack(spacing: 12) {
                         Text(L.text("chat.queued.offline"))
                             .foregroundStyle(Color.hmDanger)

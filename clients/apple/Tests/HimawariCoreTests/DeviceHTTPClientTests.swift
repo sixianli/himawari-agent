@@ -8,10 +8,12 @@ import Testing
 final class RecordingExchange: HTTPExchange, @unchecked Sendable {
     private let lock = NSLock()
     private var responses: [HTTPExchangeResponse]
+    private var streams: [(status: Int, lines: [String])]
     private(set) var requests: [URLRequest] = []
 
-    init(_ responses: [HTTPExchangeResponse]) {
+    init(_ responses: [HTTPExchangeResponse], streams: [(status: Int, lines: [String])] = []) {
         self.responses = responses
+        self.streams = streams
     }
 
     func send(_ request: URLRequest) async throws -> HTTPExchangeResponse {
@@ -22,11 +24,50 @@ final class RecordingExchange: HTTPExchange, @unchecked Sendable {
     }
 
     func stream(_ request: URLRequest) async throws -> (status: Int, chunks: AsyncThrowingStream<String, Error>) {
-        throw HTTPExchangeError.streamingUnsupported
+        let next = lock.withLock { () -> (status: Int, lines: [String])? in
+            requests.append(request)
+            return streams.isEmpty ? nil : streams.removeFirst()
+        }
+        guard let next else { throw HTTPExchangeError.streamingUnsupported }
+        let chunks = AsyncThrowingStream<String, Error> { continuation in
+            for line in next.lines { continuation.yield(line) }
+            continuation.finish()
+        }
+        return (next.status, chunks)
     }
 }
 
 @Suite struct DeviceHTTPClientTests {
+    @Test func streamRefusedAsRevokedEndsTheEventStreamWithSessionInvalid() async throws {
+        let exchange = RecordingExchange([], streams: [(403, [#"{"error":{"code":"DEVICE_REVOKED"}}"#])])
+        let (http, _) = try client(exchange)
+        var events: [DeviceStreamEvent] = []
+        let stream = DeviceEventStream(http: http, cursors: nil, heartbeat: { 30 })
+        for await event in stream.start() { events.append(event) }
+        #expect(events == [.sessionInvalid])
+        #expect(exchange.requests.count == 1)
+    }
+
+    @Test func streamCorrectsTheClockOnceWhenTheServerSaysSkewed() async throws {
+        let skewed = #"{"error":{"code":"DEVICE_SIGNATURE_CLOCK_SKEW","serverTime":"2027-01-15T08:10:00Z"}}"#
+        let exchange = RecordingExchange([], streams: [(401, [skewed]), (200, [])])
+        let (http, _) = try client(exchange)
+        _ = try await http.openStream(DeviceRequest(method: "GET", path: "stream"))
+        #expect(exchange.requests.count == 2)
+        let first = try #require(exchange.requests[0].value(forHTTPHeaderField: "Signature-Input"))
+        let second = try #require(exchange.requests[1].value(forHTTPHeaderField: "Signature-Input"))
+        #expect(first.contains("created=1800000000"))
+        #expect(second.contains("created=1800000600"))
+    }
+
+    @Test func streamRefusalKeepsTheServerCode() async throws {
+        let exchange = RecordingExchange([], streams: [(429, [#"{"error":{"code":"DEVICE_NONCE_STORE_FULL"}}"#])])
+        let (http, _) = try client(exchange)
+        await #expect(throws: DeviceAPIError.server(status: 429, code: "DEVICE_NONCE_STORE_FULL")) {
+            _ = try await http.openStream(DeviceRequest(method: "GET", path: "stream"))
+        }
+    }
+
     private func client(_ exchange: RecordingExchange, access: ServiceAccessToken? = nil, at time: TimeInterval = 1_800_000_000) throws -> (DeviceHTTPClient, SoftwareKeySigner) {
         let signer = try SoftwareKeySigner()
         let http = DeviceHTTPClient(exchange: exchange, now: { Date(timeIntervalSince1970: time) })

@@ -102,6 +102,21 @@ public final class DeviceAPI: Sendable {
         throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "timestamp"))
     }
 
+    public func fullThread(_ threadId: String) async throws -> ThreadDetail {
+        var page = try await thread(threadId)
+        var messages = page.messages
+        var after = 0
+        while let next = page.nextSequence {
+            guard next > after else { throw DeviceAPIError.invalidResponse }
+            after = next
+            page = try await thread(threadId, afterSequence: next)
+            let known = Set(messages.map(\.messageId))
+            messages += page.messages.filter { !known.contains($0.messageId) }
+            if page.messages.isEmpty { break }
+        }
+        return ThreadDetail(thread: page.thread, messages: messages.sorted { $0.sequence < $1.sequence }, runs: page.runs, nextSequence: nil)
+    }
+
     public func texts(for refs: [String]) async throws -> [String: String] {
         var result: [String: String] = [:]
         var seen = Set<String>()

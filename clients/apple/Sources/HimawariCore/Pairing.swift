@@ -52,7 +52,11 @@ public struct PairingInvitation: Sendable, Equatable {
         guard
             let origin = URL(string: envelope.origin),
             origin.scheme == "https",
-            origin.host != nil,
+            origin.host?.isEmpty == false,
+            origin.user == nil,
+            origin.password == nil,
+            origin.query == nil,
+            origin.fragment == nil,
             origin.path.isEmpty || origin.path == "/",
             envelope.code.range(of: "^[A-Za-z0-9_-]{22}$", options: .regularExpression) != nil
         else { throw ParseError.malformed }
@@ -81,5 +85,16 @@ public enum PairingNumber {
     public static func display(devicePublicKey: Data, confirmPublicKey: Data) -> String {
         let text = digits(devicePublicKey: devicePublicKey, confirmPublicKey: confirmPublicKey)
         return "\(text.prefix(3)) \(text.suffix(3))"
+    }
+}
+
+public enum PairingRequestLimits {
+    public static let deviceNameCharacters = 64
+
+    public static func deviceName(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = String(String.UnicodeScalarView(trimmed.unicodeScalars.prefix(deviceNameCharacters)))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "iPhone" : name
     }
 }

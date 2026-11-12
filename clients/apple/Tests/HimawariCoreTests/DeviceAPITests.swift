@@ -101,6 +101,39 @@ import Testing
         }
     }
 
+    private func detailPage(_ sequences: [Int], next: Int?, watermark: Int) -> HTTPExchangeResponse {
+        let messages = sequences.map { sequence -> [String: Any] in
+            ["messageId": "m\(sequence)", "sequence": sequence, "role": "owner", "contentRef": "c\(sequence)", "status": "committed", "committedAt": "2026-11-12T00:00:00Z"]
+        }
+        let thread: [String: Any] = ["threadId": "thread-a", "revision": watermark, "status": "active", "answerLocale": "zh-CN", "messageWatermark": watermark, "createdAt": "2026-11-12T00:00:00Z", "updatedAt": "2026-11-12T00:00:00Z"]
+        var payload: [String: Any] = ["thread": thread, "messages": messages, "runs": [Any]()]
+        payload["nextSequence"] = next ?? NSNull()
+        return HTTPExchangeResponse(status: 200, body: try! JSONSerialization.data(withJSONObject: ["type": "thread.detail_snapshot", "payload": payload]))
+    }
+
+    @Test func fullThreadFollowsNextSequenceUntilTheEnd() async throws {
+        let exchange = RecordingExchange([detailPage([1, 2], next: 2, watermark: 5), detailPage([3, 4], next: 4, watermark: 5), detailPage([5], next: nil, watermark: 5)])
+        let detail = try await api(exchange).fullThread("thread-a")
+        #expect(detail.messages.map(\.sequence) == [1, 2, 3, 4, 5])
+        #expect(detail.nextSequence == nil)
+        let afters = exchange.requests.compactMap { $0.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems?.first { $0.name == "after" }?.value }
+        #expect(afters == ["0", "2", "4"])
+    }
+
+    @Test func fullThreadStopsWhenNextSequenceDoesNotMoveForward() async throws {
+        let exchange = RecordingExchange([detailPage([1, 2], next: 2, watermark: 9), detailPage([1, 2], next: 2, watermark: 9)])
+        await #expect(throws: DeviceAPIError.invalidResponse) {
+            _ = try await api(exchange).fullThread("thread-a")
+        }
+    }
+
+    @Test func deviceNameIsTrimmedToTheServerLimitInCharacters() {
+        let long = String(repeating: "葵", count: 70)
+        #expect(PairingRequestLimits.deviceName("  " + long + "  ").unicodeScalars.count == 64)
+        #expect(PairingRequestLimits.deviceName("Andy 的 iPhone") == "Andy 的 iPhone")
+        #expect(PairingRequestLimits.deviceName("   ") == "iPhone")
+    }
+
     @Test func textsWithNoRefsSendsNothing() async throws {
         let exchange = RecordingExchange([])
         #expect(try await api(exchange).texts(for: []).isEmpty)
