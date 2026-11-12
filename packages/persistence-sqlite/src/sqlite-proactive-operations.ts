@@ -46,6 +46,7 @@ export function registeredSqliteProactiveSources(): readonly SqliteProactiveSour
   return PROACTIVE_SOURCES.definitions.map(({ name, safetyLimits }) => ({ name, safetyLimits }));
 }
 
+const MAX_CHANGE_ID_LENGTH = 100;
 const RESULTS = ["act", "know", "check", "ignore"] as const;
 const INSIGHT_STATUSES = ["open", "replied", "done", "muted"] as const;
 const RATINGS = ["useful", "unneeded", "missed"] as const;
@@ -297,56 +298,58 @@ export class SqliteProactiveOperations {
       !proactiveSourceLimitsValid(definition, input) ||
       typeof input.changeId !== "string" ||
       input.changeId.length < 1 ||
-      input.changeId.length > 128
+      input.changeId.length > MAX_CHANGE_ID_LENGTH
     )
       this.invalid("Proactive source settings are invalid");
-    const current =
-      this.listSourceSettings(input).find(({ source }) => source === definition.name) ??
-      defaultProactiveSourceSettings(definition);
-    for (const key of ["perDay", "perCheck"] as const) {
-      if (current[key] === input[key]) continue;
-      insertLedgerRow(this.database, {
-        id: `${input.changeId}:${key}`,
-        ownerId: input.ownerId,
-        agentId: input.agentId,
-        kind: "limit_change",
-        decidedAt: input.now,
-        outcome: "changed",
-        reasonCode: LIMIT_CHANGE_REASON_CODE,
-        subjectRef: `limit:${proactiveSourceLimitKey(definition.name, key)}`,
-        inputs: {
-          memoryIds: [],
-          ruleIds: [],
-          limitChange: {
-            key: proactiveSourceLimitKey(definition.name, key),
-            from: current[key],
-            to: input[key],
+    this.database.transaction(() => {
+      const current =
+        this.listSourceSettings(input).find(({ source }) => source === definition.name) ??
+        defaultProactiveSourceSettings(definition);
+      this.database
+        .prepare(
+          `INSERT INTO proactive_source_settings (
+             owner_id, agent_id, source, enabled, per_day, per_check, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (owner_id, agent_id, source) DO UPDATE SET enabled = excluded.enabled,
+             per_day = excluded.per_day, per_check = excluded.per_check,
+             updated_at = excluded.updated_at`,
+        )
+        .run(
+          input.ownerId,
+          input.agentId,
+          input.source,
+          input.enabled ? 1 : 0,
+          input.perDay,
+          input.perCheck,
+          input.now,
+        );
+      for (const key of ["perDay", "perCheck"] as const) {
+        if (current[key] === input[key]) continue;
+        insertLedgerRow(this.database, {
+          id: `${input.changeId}:${key}`,
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          kind: "limit_change",
+          decidedAt: input.now,
+          outcome: "changed",
+          reasonCode: LIMIT_CHANGE_REASON_CODE,
+          subjectRef: `limit:${proactiveSourceLimitKey(definition.name, key)}`,
+          inputs: {
+            memoryIds: [],
+            ruleIds: [],
+            limitChange: {
+              key: proactiveSourceLimitKey(definition.name, key),
+              from: current[key],
+              to: input[key],
+            },
           },
-        },
-        reasonRef: null,
-        contentRef: null,
-        costMicros: 0,
-        durationMs: 0,
-      });
-    }
-    this.database
-      .prepare(
-        `INSERT INTO proactive_source_settings (
-           owner_id, agent_id, source, enabled, per_day, per_check, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (owner_id, agent_id, source) DO UPDATE SET enabled = excluded.enabled,
-           per_day = excluded.per_day, per_check = excluded.per_check,
-           updated_at = excluded.updated_at`,
-      )
-      .run(
-        input.ownerId,
-        input.agentId,
-        input.source,
-        input.enabled ? 1 : 0,
-        input.perDay,
-        input.perCheck,
-        input.now,
-      );
+          reasonRef: null,
+          contentRef: null,
+          costMicros: 0,
+          durationMs: 0,
+        });
+      }
+    })();
   }
 
   private processedSince(input: Input<"processedSince">): number {
@@ -888,8 +891,36 @@ export class SqliteProactiveOperations {
       )
         this.invalid("Proactive insight is invalid");
     }
+    const guard = input.onlyIfNew;
+    if (guard !== undefined) {
+      this.source(guard.source);
+      this.time(guard.since);
+      if (guard.perDay !== null && !(Number.isSafeInteger(guard.perDay) && guard.perDay >= 1))
+        this.invalid("Proactive record guard is invalid");
+    }
     return this.database.transaction(() => {
       const scope = [input.ownerId, input.agentId] as const;
+      if (guard !== undefined) {
+        const seen = this.database.prepare(
+          `SELECT 1 FROM proactive_processed_messages
+           WHERE owner_id = ? AND agent_id = ? AND source = ? AND message_id = ?`,
+        );
+        if (
+          input.processed.some(
+            (message) =>
+              message.source !== guard.source ||
+              seen.get(...scope, message.source, message.messageId) !== undefined,
+          )
+        )
+          return { insightIds: [], releasedRefs: [], refused: "already_recorded" as const };
+        if (
+          guard.perDay !== null &&
+          this.processedSince({ ...input, source: guard.source, since: guard.since }) +
+            input.processed.length >
+            guard.perDay
+        )
+          return { insightIds: [], releasedRefs: [], refused: "daily_limit" as const };
+      }
       this.database
         .prepare(
           `INSERT INTO decision_ledger (

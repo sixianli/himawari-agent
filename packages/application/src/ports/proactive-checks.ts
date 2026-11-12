@@ -303,11 +303,17 @@ export interface ProactiveCheckRecord extends ProactiveScope {
   readonly push: { readonly id: string; readonly readyAt: string } | null;
   readonly backoff?: readonly ProactiveBackoffWrite[];
   readonly cursor: string | null;
+  readonly onlyIfNew?: {
+    readonly source: ProactiveSource;
+    readonly since: string;
+    readonly perDay: number | null;
+  };
 }
 
 export interface ProactiveRecordResult {
   readonly insightIds: readonly string[];
   readonly releasedRefs: readonly string[];
+  readonly refused?: "already_recorded" | "daily_limit";
 }
 
 export interface ProactiveStorePort {

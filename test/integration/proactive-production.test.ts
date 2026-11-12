@@ -606,6 +606,15 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     await expect(
       h.command("proactive.source.manage", { source: "test_notes", action: "disconnect" }),
     ).rejects.toThrow("PROACTIVE_SOURCE_NOT_REGISTERED");
+    h.clock.advance(40 * 60_000);
+    h.script([{ id: "demo-ja-mockups", result: "ignore", confidence: "sure" }]);
+    await h.proactive.tick();
+    const decided = (await h.overview()).decisions.length;
+    expect(decided).toBeGreaterThan(0);
+    await expect(
+      h.command("proactive.source.manage", { source: "test_notes", action: "clear_records" }),
+    ).rejects.toThrow("PROACTIVE_SOURCE_NOT_REGISTERED");
+    expect((await h.overview()).decisions).toHaveLength(decided);
     await expect(
       h.command("proactive.source.switch_off", { source: "test_notes" }),
     ).rejects.toThrow("PROACTIVE_SOURCE_NOT_REGISTERED");

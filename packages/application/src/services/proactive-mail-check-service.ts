@@ -115,7 +115,7 @@ export interface ProactiveMailCheckOptions {
   readonly reader: ProactiveMailReader;
   readonly definition?: Pick<
     ProactiveSourceDefinition<string, ProactiveMailExtra>,
-    "trust" | "provenance" | "dedupKey"
+    "trust" | "provenance" | "dedupKey" | "groupKey"
   >;
   readonly observations?: ProactiveObservationPort;
   readonly model: ProactiveModelInvoker;
@@ -1801,7 +1801,7 @@ export class ProactiveMailCheckService {
         const item = mailItem(insight.item);
         return {
           source: this.#options.reader.source,
-          sourceId: write.threadId,
+          sourceId: definition.groupKey(item),
           sourceVersion: definition.dedupKey(item),
           trust: definition.trust,
           provenance: definition.provenance(item),
@@ -1812,7 +1812,15 @@ export class ProactiveMailCheckService {
           observedAt: input.startedAt,
         };
       });
-      await this.#options.observations.receive(observations).catch(() => undefined);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        this.#options.observations.receive(observations),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, this.#options.limits.perCheckMs);
+        }),
+      ])
+        .catch(() => undefined)
+        .finally(() => clearTimeout(timer));
     }
     return decision;
   }

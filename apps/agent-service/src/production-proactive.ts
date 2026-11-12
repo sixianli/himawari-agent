@@ -226,7 +226,6 @@ export class ProductionProactive {
       seal: options.seal,
       reader: limitedSourceReader({
         reader: options.reader,
-        definition: GMAIL_SOURCE,
         scope: options.scope,
         store: options.store,
         clock: options.clock,
@@ -937,17 +936,17 @@ export class ProductionProactive {
         return { resultRef: `proactive-source-off:${definition.name}`, replayed: false };
       }
       case "proactive.source.manage": {
-        if (command.payload.action === "clear_records") {
-          const released = await store.clearRecords(scope);
-          if (released.length > 0) await seal.release({ ...scope, refs: released });
-          return { resultRef: "proactive-cleared", replayed: false };
-        }
         const managed = this.#registry.get(command.payload.source);
         if (managed === undefined)
           throw new ApplicationPortError(
             PORT_ERROR_CODES.INVALID_OPERATION,
             "PROACTIVE_SOURCE_NOT_REGISTERED",
           );
+        if (command.payload.action === "clear_records") {
+          const released = await store.clearRecords(scope);
+          if (released.length > 0) await seal.release({ ...scope, refs: released });
+          return { resultRef: "proactive-cleared", replayed: false };
+        }
         const connection = await store.readConnection({ ...scope, source: managed.name });
         if (connection && managed.name === GMAIL_SOURCE.name) {
           const token = await seal.open({ ...scope, ref: connection.tokenRef });

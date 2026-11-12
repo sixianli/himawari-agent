@@ -239,6 +239,8 @@ describe("[iOS-7] proactive source registry", () => {
       extra: {
         observations?: ProactiveObservation[];
         limits?: ProactiveSourceLimitHit[];
+        receive?: () => Promise<void>;
+        perCheckMs?: number;
       } = {},
     ) => {
       const reader: FlatMailReader & { items: ProactiveMail[]; nextCursor: string | null } = {
@@ -260,7 +262,6 @@ describe("[iOS-7] proactive source registry", () => {
         seal,
         reader: limitedSourceReader({
           reader: mailReader(reader),
-          definition,
           scope,
           store,
           clock,
@@ -268,6 +269,7 @@ describe("[iOS-7] proactive source registry", () => {
           ...(limits ? { onLimit: (hit: ProactiveSourceLimitHit) => limits.push(hit) } : {}),
         }),
         definition,
+        ...(extra.receive ? { observations: { receive: extra.receive } } : {}),
         ...(observations
           ? {
               observations: {
@@ -304,7 +306,11 @@ describe("[iOS-7] proactive source registry", () => {
             for (const ref of refs) await payloadStore.delete(ref);
           },
         },
-        limits: { perCheckMs: 180_000, dailyCostMicros: 1_000_000, estimateCostMicros: () => 100 },
+        limits: {
+          perCheckMs: extra.perCheckMs ?? 180_000,
+          dailyCostMicros: 1_000_000,
+          estimateCostMicros: () => 100,
+        },
         timeZone: TIME_ZONE,
         clock,
         ids,
@@ -326,6 +332,14 @@ describe("[iOS-7] proactive source registry", () => {
       const opened = openQualifiedDatabase(databasePath);
       try {
         return opened.prepare(sql).all(...parameters) as Record<string, unknown>[];
+      } finally {
+        opened.close();
+      }
+    };
+    const exec = (sql: string) => {
+      const opened = openQualifiedDatabase(databasePath);
+      try {
+        opened.exec(sql);
       } finally {
         opened.close();
       }
@@ -361,6 +375,7 @@ describe("[iOS-7] proactive source registry", () => {
       checker,
       overview,
       query,
+      exec,
       entry,
       exported,
       prompts,
@@ -519,6 +534,23 @@ describe("[iOS-7] proactive source registry", () => {
           (row) => (JSON.parse(String(row["inputs"])) as Record<string, unknown>)["observations"],
         ),
     ).toEqual([{ handedOff: 0, sink: "port" }]);
+  });
+
+  it("[iOS-7][reverse] a proposal entry that fails or never answers does not hold up the check", async () => {
+    const h = await harness();
+    await h.connect("gmail");
+    for (const [id, receive] of [
+      ["mail-1", () => Promise.reject(new Error("RECEIVER_DOWN"))],
+      ["mail-2", () => new Promise<void>(() => undefined)],
+    ] as const) {
+      const gmail = h.checker("gmail", { receive, perCheckMs: 50 });
+      gmail.reader.items = [mail("gmail", id)];
+      h.script([{ id, result: "act", todo: "回复周末安排" }]);
+      expect(await gmail.service.run()).toMatchObject({ verdict: "pushed" });
+    }
+    expect(
+      h.query("SELECT message_id FROM proactive_processed_messages ORDER BY message_id"),
+    ).toEqual([{ message_id: "mail-1" }, { message_id: "mail-2" }]);
   });
 
   it("[iOS-7][reverse] the database refuses a source name that is not registered", async () => {
@@ -700,6 +732,9 @@ describe("[iOS-7] proactive source registry", () => {
       { result: "know", priority: null },
       { result: "act", priority: "low" },
       { result: "act", priority: null, summary: " " },
+      { result: "act", priority: null, summary: "x".repeat(2_001) },
+      { result: "act", priority: null, reason: "x".repeat(2_001) },
+      { result: "act", priority: null, link: "x".repeat(2_001) },
     ])
       expect(
         await h.entry({ ...base, source: FEED, entryId: "bad", summary: "x", ...invalid } as never),
@@ -721,6 +756,83 @@ describe("[iOS-7] proactive source registry", () => {
     expect(h.query("SELECT message_id FROM proactive_processed_messages")).toEqual([
       { message_id: "one" },
     ]);
+  });
+
+  it("[iOS-7][reverse] two writers racing on one entry, or on the last slot of the day, record it once", async () => {
+    const h = await harness();
+    const base = {
+      source: FEED,
+      reason: "",
+      link: "",
+      result: "act" as const,
+      priority: null,
+      dueAt: null,
+      deliverAt: null,
+    };
+    const same = await Promise.all(
+      [1, 2, 3].map(() => h.entry({ ...base, entryId: "race", summary: "快递到了" })),
+    );
+    expect(same.filter(({ kind }) => kind === "recorded")).toHaveLength(1);
+    expect(same.filter((outcome) => outcome.kind === "not_recorded")).toEqual([
+      { kind: "not_recorded", reason: "already_recorded" },
+      { kind: "not_recorded", reason: "already_recorded" },
+    ]);
+    await h.store.writeSourceSettings({
+      ...scope,
+      source: FEED,
+      enabled: true,
+      perDay: 2,
+      perCheck: 5,
+      changeId: "race-cap",
+      now: h.clock.now(),
+    });
+    const last = await Promise.all(
+      ["a", "b", "c"].map((entryId) => h.entry({ ...base, entryId, summary: entryId })),
+    );
+    expect(last.filter(({ kind }) => kind === "recorded")).toHaveLength(1);
+    expect(last.filter((outcome) => outcome.kind === "not_recorded")).toEqual([
+      { kind: "not_recorded", reason: "daily_limit" },
+      { kind: "not_recorded", reason: "daily_limit" },
+    ]);
+    expect(h.query("SELECT COUNT(*) AS total FROM proactive_processed_messages")).toEqual([
+      { total: 2 },
+    ]);
+    expect(
+      h.query("SELECT COUNT(*) AS total FROM decision_ledger WHERE kind = 'proactive'"),
+    ).toEqual([{ total: 2 }]);
+    expect(h.query("SELECT COUNT(*) AS total FROM source_insights")).toEqual([{ total: 2 }]);
+  });
+
+  it("[iOS-7][reverse] a cap change whose decision record cannot be written changes nothing", async () => {
+    const h = await harness();
+    const change = (changeId: string, perDay: number) =>
+      h.store.writeSourceSettings({
+        ...scope,
+        source: NOTES,
+        enabled: false,
+        perDay,
+        perCheck: 5,
+        changeId,
+        now: h.clock.now(),
+      });
+    await expect(change("x".repeat(101), 10)).rejects.toThrow(/settings are invalid/u);
+    h.exec(
+      `CREATE TRIGGER refuse_limit_change BEFORE INSERT ON decision_ledger
+       WHEN NEW.kind = 'limit_change'
+       BEGIN SELECT RAISE(ABORT, 'LIMIT_CHANGE_REFUSED'); END`,
+    );
+    await expect(change("change-1", 10)).rejects.toThrow();
+    expect(h.query("SELECT COUNT(*) AS total FROM proactive_source_settings")).toEqual([
+      { total: 0 },
+    ]);
+    h.exec("DROP TRIGGER refuse_limit_change");
+    await change("change-1", 10);
+    expect(h.query("SELECT enabled, per_day FROM proactive_source_settings")).toEqual([
+      { enabled: 0, per_day: 10 },
+    ]);
+    expect(
+      h.query("SELECT id FROM decision_ledger WHERE kind = 'limit_change' ORDER BY id"),
+    ).toEqual([{ id: "change-1:perCheck" }, { id: "change-1:perDay" }]);
   });
 
   it("[iOS-7] entries of newly registered sources survive export and import, and an unregistered name is refused on import", async () => {

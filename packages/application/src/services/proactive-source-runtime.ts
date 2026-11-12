@@ -8,7 +8,6 @@ import type {
 import {
   PROACTIVE_SOURCES,
   type ProactiveSource,
-  type ProactiveSourceDefinition,
   type ProactiveSourceItem,
   type ProactiveSourceRegistry,
   type ProactiveSourceSettings,
@@ -39,21 +38,20 @@ export function limitedSourceReader<
   Reader extends ProactiveSourceReader<Extra> = ProactiveSourceReader<Extra>,
 >(options: {
   readonly reader: Reader;
-  readonly definition: Pick<ProactiveSourceDefinition<string, Extra>, "dedupKey">;
   readonly scope: ProactiveScope;
   readonly store: Pick<ProactiveStorePort, "listSourceSettings" | "processedSince" | "unprocessed">;
   readonly clock: ClockPort;
   readonly timeZone: string;
   readonly onLimit?: (hit: ProactiveSourceLimitHit) => void;
 }): Reader {
-  const { reader, definition, scope, store } = options;
+  const { reader, scope, store } = options;
   const source = reader.source;
   const fetch: ProactiveSourceReader<Extra>["fetch"] = async (input) => {
     const fetched = await reader.fetch(input);
     if (fetched.kind !== "items") return fetched;
     const settings = await readProactiveSourceSettings(store, scope, source);
     if (settings === undefined) return fetched;
-    const key = (item: ProactiveSourceItem<Extra>) => definition.dedupKey(item);
+    const key = (item: ProactiveSourceItem<Extra>) => item.id;
     const fresh = new Set(
       await store.unprocessed({ ...scope, source, messageIds: fetched.items.map(key) }),
     );
@@ -89,6 +87,7 @@ export function limitedSourceReader<
   }) as Reader;
 }
 
+export const PROGRAM_ENTRY_TEXT_LIMIT = 2_000;
 export const PROGRAM_ENTRY_RESULTS = ["act", "check"] as const;
 export const PROGRAM_ENTRY_PRIORITIES = ["high", "medium", null] as const;
 
@@ -145,7 +144,12 @@ export async function recordProactiveProgramEntry(
     entry.entryId.length < 1 ||
     entry.entryId.length > 256 ||
     typeof entry.summary !== "string" ||
-    entry.summary.trim().length < 1
+    entry.summary.trim().length < 1 ||
+    entry.summary.length > PROGRAM_ENTRY_TEXT_LIMIT ||
+    typeof entry.reason !== "string" ||
+    entry.reason.length > PROGRAM_ENTRY_TEXT_LIMIT ||
+    typeof entry.link !== "string" ||
+    entry.link.length > PROGRAM_ENTRY_TEXT_LIMIT
   )
     return { kind: "not_recorded", reason: "entry_invalid" };
   const settings = await store.readSettings(scope);
@@ -265,7 +269,23 @@ export async function recordProactiveProgramEntry(
       push,
       backoff: [],
       cursor: null,
+      onlyIfNew: {
+        source: entry.source,
+        since: startOfZonedDay(now, options.timeZone),
+        perDay: sourceSettings?.perDay ?? null,
+      },
     });
+    if (recorded.refused !== undefined) {
+      await seal.release({ ...scope, refs: [contentRef] }).catch(() => undefined);
+      if (recorded.refused === "daily_limit" && sourceSettings !== undefined)
+        options.onLimit?.({
+          source: entry.source,
+          kind: "per_day",
+          limit: sourceSettings.perDay,
+          heldBack: 1,
+        });
+      return { kind: "not_recorded", reason: recorded.refused };
+    }
     if (recorded.releasedRefs.length > 0)
       await seal.release({ ...scope, refs: recorded.releasedRefs });
     return { kind: "recorded", decision, insightId: recorded.insightIds[0] ?? insightId };
