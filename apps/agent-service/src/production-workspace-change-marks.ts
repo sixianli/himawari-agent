@@ -8,12 +8,12 @@ import type {
 } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 
-export function workspaceIncompleteFolderKey(grantId: string): string {
-  return `workspace-ledger-incomplete:${grantId}`;
+export function workspaceIncompleteFolderPrefix(grantId: string): string {
+  return `workspace-ledger-incomplete:${grantId.length}:${grantId}:`;
 }
 
 export function workspaceIncompleteThreadKey(grantId: string, threadId: string): string {
-  return `workspace-ledger-incomplete:${grantId}:${threadId}`;
+  return `${workspaceIncompleteFolderPrefix(grantId)}${threadId}`;
 }
 
 export interface WorkspaceChangeMarks {
@@ -37,29 +37,29 @@ export function createWorkspaceChangeMarks(options: {
 }): WorkspaceChangeMarks {
   const { ownerId, agentId, repository, clock } = options;
   const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+  const read = (key: string): Promise<StateRecord | undefined> =>
+    repository.readScopedState(ownerId, agentId, key);
   const write = async (key: string, value: JsonObject, commandKey: string) => {
-    const existing: StateRecord | undefined = await repository.readScopedState(
-      ownerId,
-      agentId,
-      key,
-    );
-    const input = { key, expectedRevision: existing ? existing.revision : null, value };
-    const fingerprint = hash(commandKey);
-    await repository.commitStateAndEvents({
-      command: {
-        ownerId,
-        agentId,
-        idempotencyKey:
-          `workspace-incomplete:${hash(commandKey)}` as IdempotentAgentCommand["idempotencyKey"],
-        commandType: "workspace.ledger.incomplete",
-        commandFingerprint: fingerprint,
-        authority: options.authority(),
-      },
-      state: input,
-      events: [],
-      resultRef: key,
-      committedAt: clock.now(),
-    });
+    if (await read(key)) return;
+    try {
+      await repository.commitStateAndEvents({
+        command: {
+          ownerId,
+          agentId,
+          idempotencyKey:
+            `workspace-incomplete:${hash(commandKey)}` as IdempotentAgentCommand["idempotencyKey"],
+          commandType: "workspace.ledger.incomplete",
+          commandFingerprint: hash(commandKey),
+          authority: options.authority(),
+        },
+        state: { key, expectedRevision: null, value },
+        events: [],
+        resultRef: key,
+        committedAt: clock.now(),
+      });
+    } catch (error) {
+      if (!(await read(key))) throw error;
+    }
   };
   return {
     async markIncomplete(input) {
@@ -70,13 +70,11 @@ export function createWorkspaceChangeMarks(options: {
         toolCallId: input.toolCallId,
         at: clock.now(),
       };
-      const identity = `${input.runId}:${input.toolCallId}`;
       await write(
         workspaceIncompleteThreadKey(input.grantId, input.threadId),
         value,
-        `thread:${identity}`,
+        `${input.runId}:${input.toolCallId}`,
       );
-      await write(workspaceIncompleteFolderKey(input.grantId), value, `folder:${identity}`);
     },
   };
 }

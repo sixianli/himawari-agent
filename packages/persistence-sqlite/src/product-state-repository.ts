@@ -321,9 +321,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     agentId: AgentId,
     prefix: string,
     limit: number,
+    afterKey: string | null = null,
   ): Promise<readonly StateRecord[]> {
     this.assertOpen();
-    return this.readRequest("listScopedState", { ownerId, agentId, prefix, limit });
+    return this.readRequest("listScopedState", { ownerId, agentId, prefix, limit, afterKey });
   }
 
   listPending(limit: number): Promise<readonly ReliableEventRecord[]> {

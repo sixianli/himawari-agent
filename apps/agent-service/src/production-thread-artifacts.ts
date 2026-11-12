@@ -187,17 +187,23 @@ export class ProductionThreadArtifacts {
     readonly paths: readonly string[];
     readonly grant: HostDirectoryGrant;
     readonly overlapped: boolean;
-  }): Promise<void> {
+  }): Promise<boolean> {
     let paths = input.paths.filter((path) => !skipsThreadArtifact(path));
+    let unknown = false;
     if (input.overlapped)
       paths = (
         await Promise.all(
           paths.map(async (path) =>
-            (await this.#isMissing(input.grant, path).catch(() => false)) ? path : null,
+            (await this.#isMissing(input.grant, path).catch(() => {
+              unknown = true;
+              return false;
+            }))
+              ? path
+              : null,
           ),
         )
       ).filter((path): path is string => path !== null);
-    if (paths.length === 0) return;
+    if (paths.length === 0) return unknown;
     try {
       await this.#store.markDeleted({
         ownerId: input.ownerId,
@@ -214,7 +220,9 @@ export class ProductionThreadArtifacts {
         code: error instanceof Error ? error.message : "THREAD_ARTIFACT_MARK_DELETED_FAILED",
         at: this.#now(),
       });
+      return true;
     }
+    return unknown;
   }
 
   async #isMissing(grant: HostDirectoryGrant, relativePath: string): Promise<boolean> {

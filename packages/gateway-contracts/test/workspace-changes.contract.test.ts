@@ -7,6 +7,7 @@ const snapshot = (item: Record<string, unknown>, overrides: Record<string, unkno
   fixture("snapshot", "workspace.changes.snapshot", {
     grantId: "grant-coding",
     grantMatched: true,
+    grantActive: true,
     displayPath: "/var/lib/himawari/workspace",
     threadId: null,
     recording: "direct",
@@ -31,7 +32,7 @@ const snapshot = (item: Record<string, unknown>, overrides: Record<string, unkno
   });
 
 describe("[WC-8] workspace.changes.snapshot", () => {
-  it("accepts a file-changing tool that does not exist yet", () => {
+  it("does not list tool names in the contract; storage still decides which sources can be recorded", () => {
     expect(gatewayV2MessageSchema.parse(snapshot({ source: "apply_patch" })).type).toBe(
       "workspace.changes.snapshot",
     );
@@ -48,10 +49,18 @@ describe("[WC-8] workspace.changes.snapshot", () => {
 
   it("keeps an unknown folder apart from a folder with no changes", () => {
     const unknown = gatewayV2MessageSchema.parse(
-      snapshot({}, { grantMatched: false, displayPath: null, fileCount: 0, items: [] }),
+      snapshot(
+        {},
+        { grantMatched: false, grantActive: false, displayPath: null, fileCount: 0, items: [] },
+      ),
     );
     const empty = gatewayV2MessageSchema.parse(snapshot({}, { fileCount: 0, items: [] }));
     expect(unknown.payload).toMatchObject({ grantMatched: false, fileCount: 0 });
     expect(empty.payload).toMatchObject({ grantMatched: true, fileCount: 0 });
+    const whole = snapshot({}) as { payload: Record<string, unknown> };
+    const { grantActive: _dropped, ...withoutActive } = whole.payload;
+    expect(() => gatewayV2MessageSchema.parse({ ...whole, payload: withoutActive })).toThrow(
+      ContractValidationError,
+    );
   });
 });

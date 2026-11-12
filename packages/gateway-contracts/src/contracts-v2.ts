@@ -2127,18 +2127,17 @@ const workspaceFoldersQuerySchema = object({
   ...envelope("query", "workspace.folders.read"),
   payload: object({}),
 });
+export const workspaceFolderSchema = object({
+  grantId: machineString,
+  hostId: machineString,
+  displayPath: boundedString(4096),
+  operations: array(machineString),
+  expiresAt: timestamp,
+});
 const workspaceFoldersSnapshotSchema = object({
   ...envelope("snapshot", "workspace.folders.snapshot"),
   payload: object({
-    folders: array(
-      object({
-        grantId: machineString,
-        hostId: machineString,
-        displayPath: boundedString(4096),
-        operations: array(machineString),
-        expiresAt: timestamp,
-      }),
-    ),
+    folders: array(workspaceFolderSchema),
     truncated: booleanValue,
     generatedAt: timestamp,
   }),
@@ -2157,6 +2156,7 @@ const workspaceChangesSnapshotSchema = object({
   payload: object({
     grantId: machineString,
     grantMatched: booleanValue,
+    grantActive: booleanValue,
     displayPath: nullable(boundedString(4096)),
     threadId: nullable(machineString),
     recording: enumeration(WORKSPACE_RECORDING_MODES),

@@ -93,7 +93,7 @@ describe("[WC-1] folder changes read", () => {
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function open() {
+  async function open(extraGrants: readonly (readonly [string, Record<string, unknown>])[] = []) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-workspace-changes-"));
     directories.push(stateRoot);
     const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
@@ -156,6 +156,14 @@ describe("[WC-1] folder changes read", () => {
       ["grant-sibling", OWNER_ID, "agent-sibling", {}],
     ] as const)
       grantRow.run(`host-workspace:directory-grant:${id}`, owner, agent, grant(id, overrides), T0);
+    for (const [id, overrides] of extraGrants)
+      grantRow.run(
+        `host-workspace:directory-grant:${id}`,
+        OWNER_ID,
+        AGENT_ID,
+        grant(id, overrides),
+        T0,
+      );
     grantRow.run(
       "host-workspace:directory-grant-other:grant-x",
       OWNER_ID,
@@ -182,7 +190,8 @@ describe("[WC-1] folder changes read", () => {
       now: () => T0,
     });
     const store = repository.threadArtifacts();
-    const control = (grantId = GRANT) =>
+    const warnings: Record<string, unknown>[] = [];
+    const control = (grantId = GRANT, displayPath: string | null = "/var/lib/himawari/workspace") =>
       new ProductionWorkspaceChangesControl({
         configuration: {
           ownerId: OWNER_ID,
@@ -191,9 +200,11 @@ describe("[WC-1] folder changes read", () => {
         } as never,
         changes: store,
         readState: (key) => repository.readScopedState(OWNER_ID, AGENT_ID, key),
-        listState: (prefix, limit) => repository.listScopedState(OWNER_ID, AGENT_ID, prefix, limit),
-        displayPath: async () => "/var/lib/himawari/workspace",
+        listState: (prefix, limit, afterKey) =>
+          repository.listScopedState(OWNER_ID, AGENT_ID, prefix, limit, afterKey),
+        displayPath: async () => displayPath,
         clock: { now: () => at(59) },
+        warn: (event) => warnings.push(event),
       });
     const marks = createWorkspaceChangeMarks({
       ownerId: OWNER_ID,
@@ -202,7 +213,7 @@ describe("[WC-1] folder changes read", () => {
       authority: () => LEASE,
       clock: { now: () => at(30) },
     });
-    return { repository, store, control, marks };
+    return { repository, store, control, marks, warnings };
   }
 
   const read = async (
@@ -211,6 +222,7 @@ describe("[WC-1] folder changes read", () => {
   ) =>
     (await control.query(query(payload))).payload as unknown as {
       grantMatched: boolean;
+      grantActive: boolean;
       displayPath: string | null;
       recording: string;
       fileCount: number;
@@ -230,6 +242,7 @@ describe("[WC-1] folder changes read", () => {
         incomplete: false,
         recording: "direct",
         grantMatched: true,
+        grantActive: true,
       });
       expect(JSON.stringify(await control().query(query({})))).toBe(JSON.stringify(first));
     } finally {
@@ -308,10 +321,18 @@ describe("[WC-1] folder changes read", () => {
       const stranger = await read(control(), { grantId: "grant-other" });
       expect(stranger).toMatchObject({
         grantMatched: false,
+        grantActive: false,
         fileCount: 0,
         items: [],
         displayPath: null,
         incomplete: false,
+      });
+      const revoked = await read(control(GRANT, null));
+      expect(revoked).toMatchObject({
+        grantMatched: true,
+        grantActive: false,
+        displayPath: null,
+        fileCount: 6,
       });
     } finally {
       await repository.close();
@@ -346,6 +367,36 @@ describe("[WC-1] folder changes read", () => {
       expect((await read(control("grant-other"), { grantId: "grant-other" })).incomplete).toBe(
         false,
       );
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[WC-4] ids that contain colons never share a mark, and marks written at the same time both land", async () => {
+    const { repository, control, marks } = await open();
+    try {
+      await marks.markIncomplete({
+        grantId: `${GRANT}:thread-1`,
+        threadId: "thread-9",
+        runId: "run-1",
+        toolCallId: "call-1",
+      });
+      expect((await read(control(), { threadId: "thread-1" })).incomplete).toBe(false);
+      expect((await read(control(), { threadId: "thread-1:thread-9" })).incomplete).toBe(false);
+      expect((await read(control())).incomplete).toBe(false);
+      await Promise.all(
+        ["call-2", "call-3", "call-4"].map((toolCallId) =>
+          marks.markIncomplete({
+            grantId: GRANT,
+            threadId: "thread-2",
+            runId: "run-2",
+            toolCallId,
+          }),
+        ),
+      );
+      expect((await read(control(), { threadId: "thread-2" })).incomplete).toBe(true);
+      expect((await read(control(), { threadId: "thread-1" })).incomplete).toBe(false);
+      expect((await read(control())).incomplete).toBe(true);
     } finally {
       await repository.close();
     }
@@ -413,15 +464,74 @@ describe("[WC-1] folder changes read", () => {
     }
   });
 
+  it("[WC-9] one bad stored folder is skipped instead of failing the list, and live folders after 200 dead ones are still listed", async () => {
+    const dead = Array.from(
+      { length: 201 },
+      (_, index) => [`dead-${String(index).padStart(3, "0")}`, { revokedAt: T0 }] as const,
+    );
+    const { repository, control, warnings } = await open([
+      ...dead,
+      ["grant-seconds", { expiresAt: "2027-01-01T00:00:00Z" }],
+      ["grant-offset", { expiresAt: "2027-01-01T09:00:00+09:00" }],
+      ["grant-not-a-date", { expiresAt: "someday" }],
+      ["grant-wrong-id", { id: "not the key" }],
+      ["grant-no-path", { displayPath: 7 }],
+    ]);
+    try {
+      const request = { ...query({}), type: "workspace.folders.read", payload: {} } as never;
+      const payload = (await control().query(request)).payload as unknown as {
+        folders: { grantId: string; expiresAt: string }[];
+        truncated: boolean;
+      };
+      expect(payload.folders.map((folder) => [folder.grantId, folder.expiresAt])).toEqual([
+        ["grant-a", "2027-01-01T00:00:00.000Z"],
+        ["grant-b", "2027-01-01T00:00:00.000Z"],
+        ["grant-offset", "2027-01-01T00:00:00.000Z"],
+        ["grant-seconds", "2027-01-01T00:00:00.000Z"],
+      ]);
+      expect(payload.truncated).toBe(false);
+      expect(warnings.map((event) => event["key"]).sort()).toEqual([
+        "host-workspace:directory-grant:grant-no-path",
+        "host-workspace:directory-grant:grant-not-a-date",
+        "host-workspace:directory-grant:grant-wrong-id",
+      ]);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[WC-9] more than 200 live folders are cut at 200 and say so", async () => {
+    const { repository, control } = await open(
+      Array.from(
+        { length: 200 },
+        (_, index) => [`live-${String(index).padStart(3, "0")}`, {}] as const,
+      ),
+    );
+    try {
+      const request = { ...query({}), type: "workspace.folders.read", payload: {} } as never;
+      const payload = (await control().query(request)).payload as unknown as {
+        folders: { grantId: string }[];
+        truncated: boolean;
+      };
+      expect(payload.folders).toHaveLength(200);
+      expect(payload.folders[0]?.grantId).toBe("grant-a");
+      expect(payload.truncated).toBe(true);
+    } finally {
+      await repository.close();
+    }
+  });
+
   it("[WC-6] files under skipped directories are not counted and the list is returned", async () => {
     const { repository, store, control } = await open();
     try {
       let reads = 0;
+      let readable = false;
       const artifacts = new ProductionThreadArtifacts({
         store,
         files: {
-          readFile: async () => {
+          readFile: async (input: { relativePath: string }) => {
             reads += 1;
+            if (readable) return new TextEncoder().encode(input.relativePath);
             throw new Error("must not read");
           },
           inspectEntry: async () => {
@@ -459,10 +569,45 @@ describe("[WC-1] folder changes read", () => {
       expect(result.skippedDirectories).toContain("node_modules");
       await artifacts.record(recording(["readme.md"]));
       expect(incomplete).toBe(1);
+      readable = true;
+      incomplete = 0;
       await artifacts.record(
-        recording(Array.from({ length: THREAD_ARTIFACTS_PER_CALL + 1 }, (_, i) => `f${i}.txt`)),
+        recording(
+          Array.from({ length: THREAD_ARTIFACTS_PER_CALL }, (_, i) => `f${i}.txt`),
+          { toolCallId: "call-at-cap" },
+        ),
       );
-      expect(incomplete).toBeGreaterThan(1);
+      expect(incomplete).toBe(0);
+      await artifacts.record(
+        recording(
+          Array.from({ length: THREAD_ARTIFACTS_PER_CALL + 1 }, (_, i) => `g${i}.txt`),
+          { toolCallId: "call-over-cap" },
+        ),
+      );
+      expect(incomplete).toBe(1);
+      expect((await read(control())).fileCount).toBe(THREAD_ARTIFACTS_PER_CALL * 2);
+      expect(
+        await artifacts.recordDeleted({
+          ...scope,
+          threadId: "thread-1",
+          runId: "run-1",
+          toolCallId: "call-deleted",
+          paths: ["f0.txt"],
+          grant: { id: GRANT } as HostDirectoryGrant,
+          overlapped: false,
+        }),
+      ).toBe(false);
+      expect(
+        await artifacts.recordDeleted({
+          ...scope,
+          threadId: "thread-1",
+          runId: "run-1",
+          toolCallId: "call-deleted-overlap",
+          paths: ["f1.txt"],
+          grant: { id: GRANT } as HostDirectoryGrant,
+          overlapped: true,
+        }),
+      ).toBe(true);
     } finally {
       await repository.close();
     }

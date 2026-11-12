@@ -580,8 +580,9 @@ export async function executeProductionCodingRequest(
     }
     timing.mark("phase");
     if (executed.outcome === "awaiting_approval") return executed;
-    let changes = (await ctx.load("workspace-changes")) as { readonly summary: string } | undefined;
-    let droppedArtifacts = false;
+    let changes = (await ctx.load("workspace-changes")) as
+      | (Record<string, unknown> & { readonly summary: string })
+      | undefined;
     if (!changes) {
       const identity = {
         runId: call.runId,
@@ -601,8 +602,15 @@ export async function executeProductionCodingRequest(
           summary: "工作目录改动：这次没能记录",
         };
       }
-      changes = (await ctx.save("workspace-changes", recorded)).value as { summary: string };
-      droppedArtifacts = await recordThreadArtifacts(
+      changes = (await ctx.save("workspace-changes", recorded)).value as Record<string, unknown> & {
+        summary: string;
+      };
+    }
+    let artifacts = (await ctx.load("workspace-artifacts")) as
+      | { readonly dropped?: boolean }
+      | undefined;
+    if (!artifacts) {
+      const droppedChanged = await recordThreadArtifacts(
         services,
         ctx,
         call,
@@ -610,20 +618,24 @@ export async function executeProductionCodingRequest(
         grant,
         "bash",
         overlapped,
-        [...ledgerCandidates(recorded)],
+        [...ledgerCandidates(changes)],
       );
-      await services.threadArtifacts?.recordDeleted({
-        ownerId: ctx.ownerId,
-        agentId: ctx.agentId,
-        threadId: binding.threadId,
-        runId: call.runId,
-        toolCallId: call.toolCallId,
-        paths: ledgerDeletedPaths(recorded),
-        grant,
-        overlapped,
-      });
+      const droppedDeleted =
+        (await services.threadArtifacts?.recordDeleted({
+          ownerId: ctx.ownerId,
+          agentId: ctx.agentId,
+          threadId: binding.threadId,
+          runId: call.runId,
+          toolCallId: call.toolCallId,
+          paths: ledgerDeletedPaths(changes),
+          grant,
+          overlapped,
+        })) ?? false;
+      artifacts = (
+        await ctx.save("workspace-artifacts", { dropped: droppedChanged || droppedDeleted })
+      ).value as { readonly dropped?: boolean };
     }
-    if (droppedArtifacts || (changes as { readonly complete?: boolean }).complete !== true)
+    if (artifacts.dropped !== false || changes["complete"] !== true)
       await services.workspaceChangeMarks?.markIncomplete({
         grantId: grant.id,
         threadId: binding.threadId,

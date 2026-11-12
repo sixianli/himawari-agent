@@ -296,8 +296,7 @@ export class SqliteThreadArtifactOperations {
       input.limit > CHANGED_FILE_LIST_LIMIT
     )
       return this.fail("PORT_INVALID_OPERATION", "Changed file query is invalid");
-    const thread = input.threadId === null ? "" : " AND b.thread_id = ?";
-    const threadOuter = input.threadId === null ? "" : " AND a.thread_id = ?";
+    const thread = input.threadId === null ? "" : " AND thread_id = ?";
     const scope = [
       input.ownerId,
       input.agentId,
@@ -306,36 +305,24 @@ export class SqliteThreadArtifactOperations {
     const fileCount = (
       this.database
         .prepare(
-          `SELECT count(DISTINCT b.path) AS n FROM thread_artifacts b
-           WHERE b.owner_id = ? AND b.agent_id = ? AND b.source != 'upload'${thread}`,
+          `SELECT count(DISTINCT path) AS n FROM thread_artifacts
+           WHERE owner_id = ? AND agent_id = ? AND source != 'upload'${thread}`,
         )
         .get(...scope) as { readonly n: number }
     ).n;
     const rows = this.database
       .prepare(
-        `SELECT a.path, a.thread_id AS threadId, a.source, a.created_at AS changedAt,
-           a.deleted_at AS deletedAt,
-           (SELECT count(*) FROM thread_artifacts v WHERE v.owner_id = a.owner_id
-              AND v.agent_id = a.agent_id AND v.path = a.path AND v.source != 'upload'${
-                input.threadId === null ? "" : " AND v.thread_id = a.thread_id"
-              }) AS versions
-         FROM thread_artifacts a
-         WHERE a.owner_id = ? AND a.agent_id = ? AND a.source != 'upload'${threadOuter}
-           AND (? IS NULL OR a.path > ?)
-           AND a.id = (
-             SELECT b.id FROM thread_artifacts b
-             WHERE b.owner_id = a.owner_id AND b.agent_id = a.agent_id
-               AND b.source != 'upload' AND b.path = a.path${thread}
-             ORDER BY b.created_at DESC, b.id DESC LIMIT 1)
-         ORDER BY a.path LIMIT ?`,
+        `SELECT path, threadId, source, changedAt, deletedAt, versions FROM (
+           SELECT path, thread_id AS threadId, source, created_at AS changedAt,
+             deleted_at AS deletedAt,
+             count(*) OVER (PARTITION BY path) AS versions,
+             row_number() OVER (PARTITION BY path ORDER BY created_at DESC, id DESC) AS position
+           FROM thread_artifacts
+           WHERE owner_id = ? AND agent_id = ? AND source != 'upload'${thread}
+             AND (? IS NULL OR path > ?))
+         WHERE position = 1 ORDER BY path LIMIT ?`,
       )
-      .all(
-        ...scope,
-        input.afterPath,
-        input.afterPath,
-        ...(input.threadId === null ? [] : [input.threadId]),
-        input.limit + 1,
-      ) as ChangedFile[];
+      .all(...scope, input.afterPath, input.afterPath, input.limit + 1) as ChangedFile[];
     const items = rows.slice(0, input.limit);
     const last = items.at(-1);
     return Object.freeze({

@@ -470,6 +470,7 @@ export const governanceMessages = [
   fixture("snapshot", "workspace.changes.snapshot", {
     grantId: "grant-coding",
     grantMatched: true,
+    grantActive: true,
     displayPath: "/var/lib/himawari/workspace",
     threadId: null,
     recording: "direct",

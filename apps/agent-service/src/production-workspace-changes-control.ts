@@ -7,10 +7,14 @@ import {
   type StateRecord,
   type ThreadArtifactChangesPort,
 } from "@himawari-agent/application";
-import type { GatewayV2Query, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
+import {
+  type GatewayV2Query,
+  type GatewayV2Snapshot,
+  workspaceFolderSchema,
+} from "@himawari-agent/gateway-contracts";
 import { THREAD_ARTIFACT_SKIPPED_DIRECTORIES } from "./production-thread-artifacts.js";
 import {
-  workspaceIncompleteFolderKey,
+  workspaceIncompleteFolderPrefix,
   workspaceIncompleteThreadKey,
 } from "./production-workspace-change-marks.js";
 
@@ -25,10 +29,20 @@ export interface ProductionWorkspaceChangesControlOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId" | "runPolicy">;
   readonly changes: ThreadArtifactChangesPort;
   readonly readState: (key: string) => Promise<StateRecord | undefined>;
-  readonly listState: (prefix: string, limit: number) => Promise<readonly StateRecord[]>;
+  readonly listState: (
+    prefix: string,
+    limit: number,
+    afterKey: string | null,
+  ) => Promise<readonly StateRecord[]>;
   readonly displayPath: () => Promise<string | null>;
   readonly clock: ClockPort;
+  readonly warn?: (event: Record<string, unknown>) => void;
 }
+
+type WorkspaceFolder = Extract<
+  GatewayV2Snapshot,
+  { type: "workspace.folders.snapshot" }
+>["payload"]["folders"][number];
 
 export class ProductionWorkspaceChangesControl {
   readonly #options: ProductionWorkspaceChangesControlOptions;
@@ -37,43 +51,65 @@ export class ProductionWorkspaceChangesControl {
     this.#options = options;
   }
 
+  #folder(record: StateRecord, now: string): WorkspaceFolder | null {
+    const grant = record.value as unknown as Partial<HostDirectoryGrant>;
+    try {
+      if (
+        typeof grant.id !== "string" ||
+        record.key !== hostDirectoryGrantStateKey(grant.id) ||
+        typeof grant.expiresAt !== "string" ||
+        !Array.isArray(grant.operations)
+      )
+        throw new Error("WORKSPACE_FOLDER_RECORD_INVALID");
+      if ((grant.revokedAt ?? null) !== null) return null;
+      const expiresAt = new Date(grant.expiresAt).toISOString();
+      if (expiresAt <= new Date(now).toISOString()) return null;
+      return workspaceFolderSchema.parse({
+        grantId: grant.id,
+        hostId: grant.hostId,
+        displayPath: grant.displayPath,
+        operations: [...grant.operations],
+        expiresAt,
+      });
+    } catch (error) {
+      (this.#options.warn ?? ((event) => console.error(JSON.stringify(event))))({
+        event: "workspace.folders.record_skipped",
+        key: record.key,
+        code: error instanceof Error ? error.name : "WORKSPACE_FOLDER_RECORD_INVALID",
+        at: now,
+      });
+      return null;
+    }
+  }
+
   async #folders(
     query: Extract<GatewayV2Query, { type: "workspace.folders.read" }>,
   ): Promise<GatewayV2Snapshot> {
     const now = this.#options.clock.now();
-    const records = await this.#options.listState(
-      HOST_DIRECTORY_GRANT_STATE_PREFIX,
-      WORKSPACE_FOLDER_LIST_LIMIT + 1,
-    );
-    const folders = records.slice(0, WORKSPACE_FOLDER_LIST_LIMIT).flatMap((record) => {
-      const grant = record.value as unknown as Partial<HostDirectoryGrant>;
-      return typeof grant.id === "string" &&
-        record.key === hostDirectoryGrantStateKey(grant.id) &&
-        typeof grant.hostId === "string" &&
-        typeof grant.displayPath === "string" &&
-        typeof grant.expiresAt === "string" &&
-        Array.isArray(grant.operations) &&
-        (grant.revokedAt ?? null) === null &&
-        Date.parse(grant.expiresAt) > Date.parse(now)
-        ? [
-            {
-              grantId: grant.id,
-              hostId: grant.hostId,
-              displayPath: grant.displayPath,
-              operations: [...grant.operations],
-              expiresAt: grant.expiresAt,
-            },
-          ]
-        : [];
-    });
+    const folders: WorkspaceFolder[] = [];
+    let afterKey: string | null = null;
+    let exhausted = false;
+    while (!exhausted && folders.length <= WORKSPACE_FOLDER_LIST_LIMIT) {
+      const records: readonly StateRecord[] = await this.#options.listState(
+        HOST_DIRECTORY_GRANT_STATE_PREFIX,
+        WORKSPACE_FOLDER_LIST_LIMIT + 1,
+        afterKey,
+      );
+      for (const record of records) {
+        const folder = this.#folder(record, now);
+        if (folder) folders.push(folder);
+      }
+      afterKey = records.at(-1)?.key ?? null;
+      exhausted = records.length <= WORKSPACE_FOLDER_LIST_LIMIT;
+    }
     return {
       ...query,
       kind: "snapshot",
       type: "workspace.folders.snapshot",
       actor: { actorType: "system", actorId: "agent-service" },
       payload: {
-        folders,
-        truncated: records.length > WORKSPACE_FOLDER_LIST_LIMIT,
+        folders: folders.slice(0, WORKSPACE_FOLDER_LIST_LIMIT),
+        truncated: folders.length > WORKSPACE_FOLDER_LIST_LIMIT,
         generatedAt: now,
       },
     };
@@ -97,11 +133,12 @@ export class ProductionWorkspaceChangesControl {
         : null;
     const incomplete =
       matched &&
-      (await this.#options.readState(
-        threadId === null
-          ? workspaceIncompleteFolderKey(grantId)
-          : workspaceIncompleteThreadKey(grantId, threadId),
-      )) !== undefined;
+      (threadId === null
+        ? (await this.#options.listState(workspaceIncompleteFolderPrefix(grantId), 1, null))
+            .length > 0
+        : (await this.#options.readState(workspaceIncompleteThreadKey(grantId, threadId))) !==
+          undefined);
+    const displayPath = matched ? await this.#options.displayPath() : null;
     return {
       ...query,
       kind: "snapshot",
@@ -110,7 +147,8 @@ export class ProductionWorkspaceChangesControl {
       payload: {
         grantId,
         grantMatched: matched,
-        displayPath: matched ? await this.#options.displayPath() : null,
+        grantActive: displayPath !== null,
+        displayPath,
         threadId,
         recording: typeof copy === "string" ? "copy" : "direct",
         fileCount: page.fileCount,

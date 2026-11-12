@@ -574,6 +574,7 @@ function listScopedState(input: {
   agentId: string;
   prefix: string;
   limit: number;
+  afterKey: string | null;
 }): StateRecord[] {
   if (
     input.prefix.length === 0 ||
@@ -587,7 +588,7 @@ function listScopedState(input: {
       .prepare(
         `SELECT key, owner_id AS ownerId, agent_id AS agentId, revision, value_json AS valueJson
          FROM product_state_records
-         WHERE owner_id = ? AND agent_id = ? AND key >= ? AND key < ?
+         WHERE owner_id = ? AND agent_id = ? AND key >= ? AND key < ? AND key > ?
          ORDER BY key LIMIT ?`,
       )
       .all(
@@ -595,6 +596,7 @@ function listScopedState(input: {
         input.agentId,
         input.prefix,
         `${input.prefix}\u{10ffff}`,
+        input.afterKey ?? "",
         input.limit,
       ) as StateRow[]
   ).flatMap((row) => stateFromRow(row) ?? []);
@@ -1050,7 +1052,13 @@ channel.on("message", (request: WorkerRequest) => {
         break;
       case "listScopedState":
         value = listScopedState(
-          request.payload as { ownerId: string; agentId: string; prefix: string; limit: number },
+          request.payload as {
+            ownerId: string;
+            agentId: string;
+            prefix: string;
+            limit: number;
+            afterKey: string | null;
+          },
         );
         break;
       case "read":

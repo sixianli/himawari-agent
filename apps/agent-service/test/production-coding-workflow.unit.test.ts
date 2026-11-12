@@ -1527,3 +1527,105 @@ it("[FD-1] does not register anything when the write failed", async () => {
   );
   expect(rows).toEqual([]);
 });
+
+it("[WC-7] a restart after the change record was saved still records the files and does not report complete by silence", async () => {
+  const { f, ledger, services, call, rows } = artifactFixture({ "out.csv": "a" });
+  await f.ctx.save("workspace-changes", {
+    ...ledgerRecord([fileChange("out.csv")]),
+    runId: call.runId,
+  });
+  const markIncomplete = vi.fn(async () => undefined);
+  const withMarks = { ...services, workspaceChangeMarks: { markIncomplete } };
+  await executeProductionCodingRequest(call, "bash", withMarks, f.ctx);
+  expect(ledger.record).not.toHaveBeenCalled();
+  expect(rows.map((row) => row.path)).toEqual(["out.csv"]);
+  expect(f.values.get("workspace-artifacts")).toEqual({ dropped: false });
+  expect(markIncomplete).not.toHaveBeenCalled();
+  await executeProductionCodingRequest(call, "bash", withMarks, f.ctx);
+  expect(rows).toHaveLength(1);
+
+  const unreadable = artifactFixture({});
+  await unreadable.f.ctx.save("workspace-changes", ledgerRecord([fileChange("gone.csv")]));
+  const mark = vi.fn(async () => undefined);
+  await executeProductionCodingRequest(
+    unreadable.call,
+    "bash",
+    { ...unreadable.services, workspaceChangeMarks: { markIncomplete: mark } },
+    unreadable.f.ctx,
+  );
+  expect(unreadable.f.values.get("workspace-artifacts")).toEqual({ dropped: true });
+  expect(mark).toHaveBeenCalledTimes(1);
+  const failingOnce = vi.fn(async () => undefined);
+  await executeProductionCodingRequest(
+    unreadable.call,
+    "bash",
+    { ...unreadable.services, workspaceChangeMarks: { markIncomplete: failingOnce } },
+    unreadable.f.ctx,
+  );
+  expect(failingOnce).toHaveBeenCalledTimes(1);
+});
+
+it("[WC-7] a deletion that could not be recorded marks the thread incomplete", async () => {
+  const { f, ledger, services, call } = artifactFixture({});
+  ledger.record.mockResolvedValue(ledgerRecord([fileChange("old.txt", "deleted")]) as never);
+  const failing = new ProductionThreadArtifacts({
+    store: {
+      markDeleted: async () => {
+        throw new Error("PORT_UNAVAILABLE");
+      },
+    } as never,
+    files: { readFile: async () => new Uint8Array(), inspectEntry: async () => null },
+    ids: { next: (scope) => scope },
+    now: () => now,
+    warn: () => {},
+  });
+  const markIncomplete = vi.fn(async () => undefined);
+  await executeProductionCodingRequest(
+    call,
+    "bash",
+    { ...services, threadArtifacts: failing, workspaceChangeMarks: { markIncomplete } } as never,
+    f.ctx,
+  );
+  expect(markIncomplete).toHaveBeenCalledTimes(1);
+  const fine = artifactFixture({});
+  fine.ledger.record.mockResolvedValue(ledgerRecord([fileChange("old.txt", "deleted")]) as never);
+  const quiet = vi.fn(async () => undefined);
+  await executeProductionCodingRequest(
+    fine.call,
+    "bash",
+    { ...fine.services, workspaceChangeMarks: { markIncomplete: quiet } },
+    fine.f.ctx,
+  );
+  expect(quiet).not.toHaveBeenCalled();
+});
+
+it("[WC-7] write and edit mark the thread incomplete only when the changed file could not be recorded", async () => {
+  for (const tool of ["write", "edit"] as const) {
+    const recorded = artifactFixture({ "note.txt": "hello" });
+    const call = { ...recorded.f.call, capabilityRef: `coding.${tool}` };
+    const quiet = vi.fn(async () => undefined);
+    await executeProductionCodingRequest(
+      call,
+      tool,
+      { ...recorded.services, workspaceChangeMarks: { markIncomplete: quiet } },
+      recorded.f.ctx,
+    );
+    expect(recorded.rows.map((row) => [row.path, row.source])).toEqual([["note.txt", tool]]);
+    expect(quiet).not.toHaveBeenCalled();
+    const unreadable = artifactFixture({});
+    const mark = vi.fn(async () => undefined);
+    await executeProductionCodingRequest(
+      call,
+      tool,
+      { ...unreadable.services, workspaceChangeMarks: { markIncomplete: mark } },
+      unreadable.f.ctx,
+    );
+    expect(unreadable.rows).toEqual([]);
+    expect(mark).toHaveBeenCalledWith({
+      grantId: unreadable.f.binding.grant.id,
+      threadId: unreadable.f.binding.threadId,
+      runId: call.runId,
+      toolCallId: call.toolCallId,
+    });
+  }
+});
