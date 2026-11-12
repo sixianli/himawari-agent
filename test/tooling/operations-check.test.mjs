@@ -60,8 +60,18 @@ const service = { installedOperations: [ ...(options.${option} ? ${list} : []) ]
 `;
 }
 const composition = `const browser = { installedGatewayV2Operations: [ ...PRODUCTION_DEMO_OPERATIONS ] };`;
+const baseInventory = `export function isSurfaceInstalled(surface) { return surface.id === "threads"; }
+export const CONTROL_CENTER_SURFACE_INVENTORY = [
+  {
+    id: "demo",
+    queries: ["demo.read"],
+    mutations: ["demo.write"],
+  },
+];`;
+const inventoryFile = "apps/control-center/src/app/control-center-inventory.ts";
 const wired = {
   ...complete,
+  [inventoryFile]: baseInventory,
   "apps/agent-service/src/production-demo.ts": demoList,
   [gatewayFile]: gateway(),
   [compositionFile]: composition,
@@ -138,10 +148,12 @@ describe("operations check", () => {
       "apps/agent-service/src/production-demo.ts": `export const PRODUCTION_DEMO_OPERATIONS = Object.freeze(["demo.read", "demo.ghost"] as const);`,
       [gatewayFile]: gateway(),
       [compositionFile]: composition,
+      [inventoryFile]: baseInventory,
     };
-    expect(checkOperations(tree(files)).errors).toContain(
+    expect(checkOperations(tree(files)).errors).toEqual([
+      "OPERATION_DECLARED_NOT_INSTALLED demo.write (demo)",
       "OPERATION_INSTALLED_NOT_IN_CONTRACT demo.ghost (PRODUCTION_DEMO_OPERATIONS in apps/agent-service/src/production-demo.ts)",
-    );
+    ]);
   });
 
   it("does not let the installed list itself stand in for the implementation", () => {
@@ -151,10 +163,13 @@ describe("operations check", () => {
       "apps/agent-service/src/production-demo.ts": `export const PRODUCTION_DEMO_OPERATIONS = Object.freeze(["demo.write"] as const);`,
       [gatewayFile]: gateway(),
       [compositionFile]: composition,
+      [inventoryFile]: baseInventory,
     };
-    expect(checkOperations(tree(files)).errors).toContain(
+    expect(checkOperations(tree(files)).errors).toEqual([
+      "OPERATION_HANDLER_MISSING demo.write (apps/agent-service/src/production-demo.ts 里没有处理它的代码)",
+      "OPERATION_DECLARED_NOT_INSTALLED demo.read (demo)",
       "OPERATION_INCOMPLETE demo.write 缺：后端实现",
-    );
+    ]);
   });
 
   it("[P1-4] rejects a deleted operation that code or tests still use", () => {
@@ -276,7 +291,73 @@ describe("operations check", () => {
 
   it("[四处一致] reports a list with no gateway at all", () => {
     const files = { ...wired, [gatewayFile]: null, [compositionFile]: null };
-    expect(checkOperations(tree(files)).errors).toEqual(["OPERATIONS_GATEWAY_MISSING"]);
+    expect(checkOperations(tree(files)).errors).toEqual([
+      "OPERATIONS_GATEWAY_MISSING",
+      "OPERATION_DECLARED_NOT_INSTALLED demo.read (demo)",
+      "OPERATION_DECLARED_NOT_INSTALLED demo.write (demo)",
+    ]);
+  });
+
+  it("[四处一致] reports a list the browser configuration advertises but the gateway does not install", () => {
+    const files = {
+      ...wired,
+      [compositionFile]:
+        "const browser = { installedGatewayV2Operations: [ ...PRODUCTION_DEMO_OPERATIONS, ...PRODUCTION_GHOST_OPERATIONS ] };",
+    };
+    expect(checkOperations(tree(files)).errors).toEqual([
+      "OPERATION_LIST_NOT_IN_GATEWAY PRODUCTION_GHOST_OPERATIONS",
+    ]);
+  });
+
+  it("[四处一致] reports a missing advertising array, a missing inventory and an unparsable inventory", () => {
+    expect(
+      checkOperations(tree({ ...wired, [compositionFile]: "const browser = {};" })).errors,
+    ).toEqual(["OPERATIONS_ADVERTISING_MISSING"]);
+    expect(checkOperations(tree({ ...wired, [inventoryFile]: null })).errors).toEqual([
+      "OPERATIONS_INVENTORY_MISSING",
+    ]);
+    expect(
+      checkOperations(tree({ ...wired, [inventoryFile]: "export const nothing = [];" })).errors,
+    ).toEqual(["OPERATIONS_INVENTORY_UNPARSED"]);
+  });
+
+  it("[四处一致] matches an exact route written with ===", () => {
+    const exact = {
+      ...wired,
+      [gatewayFile]: gateway({
+        query: 'query.type === "demo.read"',
+        command: 'command.type === "demo.write"',
+      }),
+    };
+    expect(checkOperations(tree(exact)).errors).toEqual([]);
+  });
+
+  it("[四处一致] checks an unconditional list for a stolen route and a missing handler", () => {
+    const base = {
+      ...wired,
+      [gatewayFile]: `const reads = { query: (query) => query.type.startsWith("other.") && options.otherControl ? 1 : 2 };
+const service = { installedOperations: [ ...PRODUCTION_DEMO_OPERATIONS ] };`,
+    };
+    expect(checkOperations(tree(base)).errors).toEqual([]);
+    const stolen = {
+      ...base,
+      [gatewayFile]: base[gatewayFile].replace('"other."', '"demo."'),
+    };
+    expect(checkOperations(tree(stolen)).errors).toEqual([
+      "OPERATION_ROUTED_TO_OTHER_HANDLER demo.read 走到 otherControl，应由 PRODUCTION_DEMO_OPERATIONS 的基础处理方接住",
+    ]);
+    const missing = {
+      ...base,
+      "apps/agent-service/src/production-demo.ts": demoList.replace(
+        'if (m.type === "demo.write") {}',
+        "",
+      ),
+      "apps/agent-service/src/handler.ts": `if (m.type === "demo.read") {}`,
+    };
+    expect(checkOperations(tree(missing)).errors).toEqual([
+      "OPERATION_HANDLER_MISSING demo.write (apps/agent-service/src/production-demo.ts 里没有处理它的代码)",
+      "OPERATION_INCOMPLETE demo.write 缺：后端实现",
+    ]);
   });
 
   const inventory = `export function isSurfaceInstalled(surface) { return surface.id === "threads"; }
@@ -292,7 +373,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     mutations: ["demo.write", "demo.later"],
   },
 ];`;
-  const inventoryFile = "apps/control-center/src/app/control-center-inventory.ts";
   const laterContract = contract
     .replace('"demo.snapshot",', '"demo.snapshot",\n  "demo.later",')
     .concat('const d = object({ ...commandEnvelope("demo.later") });\n');

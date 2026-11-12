@@ -188,12 +188,19 @@ export function readInventoryOperations(text) {
 
 function checkInstalledRouting({ root, files, lists, contractKinds, backendTexts }) {
   const errors = [];
-  const gateways = files
-    .map((file) => ({ file, text: readFileSync(path.join(root, file), "utf8") }))
-    .filter(({ text }) => /installedOperations\s*:\s*\[/.test(text));
+  const cache = new Map();
+  const readCached = (file) => {
+    if (!cache.has(file)) cache.set(file, readFileSync(path.join(root, file), "utf8"));
+    return cache.get(file);
+  };
+  const withField = (field) =>
+    files
+      .map((file) => ({ file, text: readCached(file) }))
+      .filter(({ text }) => new RegExp(`${field}\\s*:\\s*\\[`).test(text));
+  const gateways = withField("installedOperations");
   if (gateways.length === 0) {
     if (lists.length > 0) errors.push("OPERATIONS_GATEWAY_MISSING");
-    return { errors, installedNames: new Set(lists.flatMap((list) => list.names)) };
+    return { errors, installedNames: new Set() };
   }
   const installed = new Map();
   const optionList = new Map();
@@ -210,15 +217,14 @@ function checkInstalledRouting({ root, files, lists, contractKinds, backendTexts
     if (!installed.has(list.listName))
       errors.push(`OPERATION_LIST_NOT_INSTALLED ${list.listName} in ${list.file}`);
   }
-  const advertisedArrays = files
-    .map((file) => ({ file, text: readFileSync(path.join(root, file), "utf8") }))
-    .filter(({ text }) => /installedGatewayV2Operations\s*:\s*\[/.test(text))
+  const advertisedArrays = withField("installedGatewayV2Operations")
     .flatMap(({ text }) => readInstalledArrays(text))
     .filter((array) => array.field === "installedGatewayV2Operations");
   const advertised = advertisedArrays.flatMap((array) =>
     array.entries.map((entry) => entry.listName),
   );
-  if (advertisedArrays.length > 0) {
+  if (advertisedArrays.length === 0) errors.push("OPERATIONS_ADVERTISING_MISSING");
+  else {
     for (const listName of installed.keys())
       if (!advertised.includes(listName)) errors.push(`OPERATION_LIST_NOT_ADVERTISED ${listName}`);
     for (const listName of advertised)
@@ -226,29 +232,40 @@ function checkInstalledRouting({ root, files, lists, contractKinds, backendTexts
   }
   const handlerTexts = backendTexts.filter((text) => !/installedOperations\s*:\s*\[/.test(text));
   const branches = gateways.flatMap(({ text }) => readRouteBranches(text));
-  const handlerOf = new Map();
-  for (const [option, listName] of optionList) handlerOf.set(option, listName);
   for (const list of lists) {
+    if (!installed.has(list.listName)) continue;
     const option = [...optionList].find(([, listName]) => listName === list.listName)?.[0];
-    if (!option) continue;
-    const ownText = readFileSync(path.join(root, list.file), "utf8").replace(list.raw, "");
+    const ownText = option ? readCached(list.file).replace(list.raw, "") : "";
     for (const name of list.names) {
       const kind = contractKinds.get(name);
       if (kind !== "query" && kind !== "command") continue;
       const branch = branches.find((candidate) =>
         candidate.predicates.some((predicate) => routeMatches(predicate, kind, name)),
       );
-      if (!branch) errors.push(`OPERATION_NOT_ROUTED ${name} (${list.listName}，${kind})`);
-      else if (branch.option !== option)
+      if (option) {
+        if (!branch) errors.push(`OPERATION_NOT_ROUTED ${name} (${list.listName}，${kind})`);
+        else if (branch.option !== option)
+          errors.push(
+            `OPERATION_ROUTED_TO_OTHER_HANDLER ${name} 走到 ${branch.option}，应为 ${option}`,
+          );
+      } else if (branch) {
         errors.push(
-          `OPERATION_ROUTED_TO_OTHER_HANDLER ${name} 走到 ${branch.option}，应为 ${option}`,
+          `OPERATION_ROUTED_TO_OTHER_HANDLER ${name} 走到 ${branch.option}，应由 ${list.listName} 的基础处理方接住`,
         );
-      const elsewhere = handlerTexts.some((text) => text.includes(`"${name}"`));
-      if (!ownText.includes(`"${name}"`) && !elsewhere)
+      }
+      const found =
+        (option && ownText.includes(`"${name}"`)) ||
+        handlerTexts.some((text) => text.includes(`"${name}"`));
+      if (!found)
         errors.push(`OPERATION_HANDLER_MISSING ${name} (${list.file} 里没有处理它的代码)`);
     }
   }
-  return { errors, installedNames: new Set(lists.flatMap((list) => list.names)) };
+  return {
+    errors,
+    installedNames: new Set(
+      lists.filter((list) => installed.has(list.listName)).flatMap((list) => list.names),
+    ),
+  };
 }
 
 export function checkOperations(root = repositoryRoot) {
@@ -355,8 +372,11 @@ export function checkOperations(root = repositoryRoot) {
   errors.push(...routing.errors);
   const notInstalled = new Set();
   const inventoryPath = path.join(root, INVENTORY_FILE);
-  if (existsSync(inventoryPath) && lists.length > 0) {
-    for (const { id, name } of readInventoryOperations(readFileSync(inventoryPath, "utf8"))) {
+  if (lists.length > 0 && !existsSync(inventoryPath)) errors.push("OPERATIONS_INVENTORY_MISSING");
+  else if (lists.length > 0) {
+    const declared = readInventoryOperations(readFileSync(inventoryPath, "utf8"));
+    if (declared.length === 0) errors.push("OPERATIONS_INVENTORY_UNPARSED");
+    for (const { id, name } of declared) {
       if (routing.installedNames.has(name)) continue;
       notInstalled.add(name);
       if (pending[name] === undefined)
