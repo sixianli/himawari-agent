@@ -1,0 +1,3 @@
+{"id": "r6-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "改名没有改全。ADR 0250 现在写退回图标是 `puzzle`、三个名字已改，但 ADR 自己链接的详细设计仍写旧名字和旧退回图标。", "valid": true, "class": "better"}
+{"id": "r6-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "这条测试把 `activityIcon: \"tools\"` 改成 `\"puzzle\"`，但它不校验图标白名单", "valid": false, "class": "error"}
+{"id": "r6-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`git show 5bd7c` 返回 unknown revision", "valid": false, "class": "error"}
