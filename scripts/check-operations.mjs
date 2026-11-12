@@ -8,6 +8,7 @@ export const CONTRACT_FILE = "packages/gateway-contracts/src/contracts-v2.ts";
 export const PENDING_LEDGER = "ci/operations-pending.json";
 export const REMOVED_LEDGER = "ci/operations-removed.json";
 const FRONTEND_ROOT = "apps/control-center/src";
+export const INVENTORY_FILE = `${FRONTEND_ROOT}/app/control-center-inventory.ts`;
 const FRONTEND_EXCLUDED = [
   `${FRONTEND_ROOT}/app/control-center-inventory.ts`,
   `${FRONTEND_ROOT}/i18n/`,
@@ -105,6 +106,151 @@ function removedNameUsed(text, name) {
   return false;
 }
 
+const GATEWAY_ARRAY_PATTERN = /(installedOperations|installedGatewayV2Operations)\s*[:=]\s*\[/g;
+
+function balancedArray(text, openAt) {
+  let depth = 0;
+  for (let at = openAt; at < text.length; at += 1) {
+    if (text[at] === "[") depth += 1;
+    else if (text[at] === "]") {
+      depth -= 1;
+      if (depth === 0) return text.slice(openAt + 1, at);
+    }
+  }
+  return "";
+}
+
+export function readInstalledArrays(text) {
+  const arrays = [];
+  for (const match of text.matchAll(GATEWAY_ARRAY_PATTERN)) {
+    const body = balancedArray(text, match.index + match[0].length - 1);
+    const entries = [];
+    for (const entry of body.matchAll(
+      /\.\.\.\(\s*options\.(\w+)\s*\?\s*(PRODUCTION_[A-Z_]+_OPERATIONS)\s*:\s*\[\]\s*\)|\.\.\.\(\s*(\w+)\s*\?\s*(PRODUCTION_[A-Z_]+_OPERATIONS)\s*:\s*\[\]\s*\)|\.\.\.(PRODUCTION_[A-Z_]+_OPERATIONS)/g,
+    )) {
+      if (entry[2]) entries.push({ listName: entry[2], option: entry[1] });
+      else if (entry[4]) entries.push({ listName: entry[4], option: null });
+      else entries.push({ listName: entry[5], option: null });
+    }
+    arrays.push({ field: match[1], entries });
+  }
+  return arrays;
+}
+
+export function readRouteBranches(text) {
+  const events = [];
+  for (const match of text.matchAll(
+    /\b(query|command)\.type\s*(?:\.startsWith\(\s*"([^"]+)"\s*\)|===\s*"([^"]+)")|\boptions\.(\w+)/g,
+  )) {
+    if (match[4]) events.push({ option: match[4] });
+    else
+      events.push({
+        kind: match[1] === "query" ? "query" : "command",
+        literal: match[2] ?? match[3],
+        prefix: match[2] !== undefined,
+      });
+  }
+  const branches = [];
+  let pending = [];
+  for (const event of events) {
+    if (event.option !== undefined) {
+      if (pending.length > 0) branches.push({ option: event.option, predicates: pending });
+      pending = [];
+    } else pending.push(event);
+  }
+  return branches;
+}
+
+function routeMatches(predicate, kind, name) {
+  return (
+    predicate.kind === kind &&
+    (predicate.prefix ? name.startsWith(predicate.literal) : name === predicate.literal)
+  );
+}
+
+export function readInventoryOperations(text) {
+  const exemptIds = new Set(
+    [...text.matchAll(/surface\.id\s*===\s*"([^"]+)"/g)].map((match) => match[1]),
+  );
+  const declared = [];
+  const parts = text.split(/\n\s*id:\s*"/).slice(1);
+  for (const part of parts) {
+    const id = part.slice(0, part.indexOf('"'));
+    if (exemptIds.has(id)) continue;
+    for (const field of ["queries", "mutations"]) {
+      const block = new RegExp(`\\b${field}:\\s*\\[([\\s\\S]*?)\\]`).exec(part);
+      if (!block) continue;
+      for (const item of block[1].matchAll(/"([^"]+)"/g)) declared.push({ id, name: item[1] });
+    }
+  }
+  return declared;
+}
+
+function checkInstalledRouting({ root, files, lists, contractKinds, backendTexts }) {
+  const errors = [];
+  const gateways = files
+    .map((file) => ({ file, text: readFileSync(path.join(root, file), "utf8") }))
+    .filter(({ text }) => /installedOperations\s*:\s*\[/.test(text));
+  if (gateways.length === 0) {
+    if (lists.length > 0) errors.push("OPERATIONS_GATEWAY_MISSING");
+    return { errors, installedNames: new Set(lists.flatMap((list) => list.names)) };
+  }
+  const installed = new Map();
+  const optionList = new Map();
+  for (const { file, text } of gateways) {
+    for (const array of readInstalledArrays(text)) {
+      if (array.field !== "installedOperations") continue;
+      for (const entry of array.entries) {
+        installed.set(entry.listName, file);
+        if (entry.option) optionList.set(entry.option, entry.listName);
+      }
+    }
+  }
+  for (const list of lists) {
+    if (!installed.has(list.listName))
+      errors.push(`OPERATION_LIST_NOT_INSTALLED ${list.listName} in ${list.file}`);
+  }
+  const advertisedArrays = files
+    .map((file) => ({ file, text: readFileSync(path.join(root, file), "utf8") }))
+    .filter(({ text }) => /installedGatewayV2Operations\s*:\s*\[/.test(text))
+    .flatMap(({ text }) => readInstalledArrays(text))
+    .filter((array) => array.field === "installedGatewayV2Operations");
+  const advertised = advertisedArrays.flatMap((array) =>
+    array.entries.map((entry) => entry.listName),
+  );
+  if (advertisedArrays.length > 0) {
+    for (const listName of installed.keys())
+      if (!advertised.includes(listName)) errors.push(`OPERATION_LIST_NOT_ADVERTISED ${listName}`);
+    for (const listName of advertised)
+      if (!installed.has(listName)) errors.push(`OPERATION_LIST_NOT_IN_GATEWAY ${listName}`);
+  }
+  const handlerTexts = backendTexts.filter((text) => !/installedOperations\s*:\s*\[/.test(text));
+  const branches = gateways.flatMap(({ text }) => readRouteBranches(text));
+  const handlerOf = new Map();
+  for (const [option, listName] of optionList) handlerOf.set(option, listName);
+  for (const list of lists) {
+    const option = [...optionList].find(([, listName]) => listName === list.listName)?.[0];
+    if (!option) continue;
+    const ownText = readFileSync(path.join(root, list.file), "utf8").replace(list.raw, "");
+    for (const name of list.names) {
+      const kind = contractKinds.get(name);
+      if (kind !== "query" && kind !== "command") continue;
+      const branch = branches.find((candidate) =>
+        candidate.predicates.some((predicate) => routeMatches(predicate, kind, name)),
+      );
+      if (!branch) errors.push(`OPERATION_NOT_ROUTED ${name} (${list.listName}，${kind})`);
+      else if (branch.option !== option)
+        errors.push(
+          `OPERATION_ROUTED_TO_OTHER_HANDLER ${name} 走到 ${branch.option}，应为 ${option}`,
+        );
+      const elsewhere = handlerTexts.some((text) => text.includes(`"${name}"`));
+      if (!ownText.includes(`"${name}"`) && !elsewhere)
+        errors.push(`OPERATION_HANDLER_MISSING ${name} (${list.file} 里没有处理它的代码)`);
+    }
+  }
+  return { errors, installedNames: new Set(lists.flatMap((list) => list.names)) };
+}
+
 export function checkOperations(root = repositoryRoot) {
   const errors = [];
   const contractPath = path.join(root, CONTRACT_FILE);
@@ -198,6 +344,26 @@ export function checkOperations(root = repositoryRoot) {
     if (used) errors.push(`OPERATION_REMOVED_STILL_USED ${name}`);
   }
 
+  const contractKinds = new Map(operations.map(({ name, kind }) => [name, kind]));
+  const routing = checkInstalledRouting({
+    root,
+    files: backendFiles,
+    lists,
+    contractKinds,
+    backendTexts,
+  });
+  errors.push(...routing.errors);
+  const notInstalled = new Set();
+  const inventoryPath = path.join(root, INVENTORY_FILE);
+  if (existsSync(inventoryPath) && lists.length > 0) {
+    for (const { id, name } of readInventoryOperations(readFileSync(inventoryPath, "utf8"))) {
+      if (routing.installedNames.has(name)) continue;
+      notInstalled.add(name);
+      if (pending[name] === undefined)
+        errors.push(`OPERATION_DECLARED_NOT_INSTALLED ${name} (${id})`);
+    }
+  }
+
   const report = [];
   for (const { name, kind } of operations) {
     const literal = `"${name}"`;
@@ -209,7 +375,7 @@ export function checkOperations(root = repositoryRoot) {
     const reason = pending[name];
     if (missing.length > 0 && reason === undefined)
       errors.push(`OPERATION_INCOMPLETE ${name} 缺：${missing.join("、")}`);
-    if (missing.length === 0 && reason !== undefined)
+    if (missing.length === 0 && reason !== undefined && !notInstalled.has(name))
       errors.push(`OPERATION_PENDING_BUT_COMPLETE ${name} 已齐全，从 ${PENDING_LEDGER} 移除`);
   }
   for (const [name, reason] of Object.entries(pending)) {
