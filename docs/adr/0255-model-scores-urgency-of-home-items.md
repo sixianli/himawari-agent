@@ -26,7 +26,7 @@ date: "2026-11-12"
 
 ## 背景
 
-“首页条目”是服务器把 Himawari 主动找主人的事汇成的一张清单：等主人点头的审批、读完邮件后的提醒、等确认的记忆、到点的提醒等。第 1 步已经做了读取层（`packages/application/src/services/home-feed.ts`），那时还没有模型分数：命中主人规则的和快到期的排在前面，其余等主人定的事都标 `unscored`（还没打分），彼此之间只按到期时间和创建时间排。
+“首页条目”是服务器把 Himawari 主动找主人的事汇成的一张清单：等主人点头的审批、读完邮件后的提醒、等确认的记忆、到点的提醒等。第 1 步已经做了读取层（`packages/application/src/services/home-feed.ts`），那时还没有模型分数：命中主人规则的和快到期的排在前面，其余等主人定的事都标 `unscored`（还没打分），彼此之间依次按到期时间、创建时间、条目编号排。
 
 这份 ADR 记第 2 步：新增一种后台模型调用，给等主人定的每件事打一个 0 到 1000 的“要紧度”，存进一张新表；审批没有给人看的一句话，同一次调用里让模型写一句话和同意按钮上的字。新增模型调用属于大改动，方案是 `.agents/handoffs/2026-11-12-home-feed-plan.md`，Andy 2026-11-12 在项目聊天同意（原话：“以上需要我定的事情，按照你的推荐来。然后你要走方案审核讨论的话，我同意。”）。
 
@@ -101,7 +101,7 @@ date: "2026-11-12"
 
 ## 验证
 
-- `test/integration/home-urgency.test.ts`：真实 SQLite，经 `ProductionHomeControl` 走完打分、排序、参照、字节确定、重启后顺序不变、规则和到期优先、模型坏回答、24 小时退避、每天次数和费用上限、关闭、文字变了重打、审批文字的正反向（指纹、语言、各语言上限刚好和超一个字、和否定文字相同、本人在场）、分级不许时只发种类和到期时间、`restricted` 不发、存储失败时释放密封内容、表不许改和级联删除。模型只在 `ProactiveModelInvoker` 这一层用桩，和预评的测试相同。
+- `test/integration/home-urgency.test.ts`：真实 SQLite，经 `ProductionHomeControl` 走完打分、排序、参照、字节确定、重启后顺序不变、规则和到期优先、模型坏回答、24 小时退避、每天次数和费用上限、关闭、文字变了重打、审批文字的正反向（指纹、语言、中文上限刚好和超一个字、和否定文字相同、本人在场；日文和英文的上限在下面的单元测试里）、分级不许时只发种类和到期时间、`restricted` 不发、存储失败时释放密封内容、表不许改和级联删除。模型只在 `ProactiveModelInvoker` 这一层用桩，和预评的测试相同。
 - `packages/application/test/home-urgency.unit.test.ts`：提示词的排列和字节、回答的解析、按钮文字的核对。
 - `packages/platform-node/test/startup-configuration.unit.test.ts`：`runPolicy.homeUrgency` 的默认值和越界拒绝。
 - `apps/agent-service/test/prompt-output-contracts.unit.test.ts`、`npm run check:prompt-catalog`：提示词登记在目录并有对应的解析函数。`npm run check:egress-redaction` 通过：这次调用走现有的统一出口，没有新增直连模型的地方。
