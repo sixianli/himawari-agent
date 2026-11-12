@@ -607,6 +607,19 @@ describe("reporting what was masked", () => {
     expect(reports).toHaveLength(1);
   });
 
+  it("REVERSE [RETRY-429] the resend memory is not used for a different body or for a request object carrying its own body", async () => {
+    const { calls, base } = recorder();
+    const fetch = egress().exchange(context).wrapFetch(base);
+    const url = "https://gateway.invalid/v1/chat/completions";
+    const post = (input: unknown, body: string) => fetch(input as string, { method: "POST", body });
+    const good = JSON.stringify({ model: "m", messages: [{ role: "user", content: "x" }] });
+    await post(url, good);
+    await expect(post({ href: url, body: good }, good)).rejects.toThrow(ModelEgressRefusedError);
+    await expect(post(url, "not json")).rejects.toThrow(ModelEgressRefusedError);
+    await post(url, good);
+    expect(calls).toHaveLength(2);
+  });
+
   it("masks and records part of a private key", async () => {
     const { reports, instance } = reporting();
     const marker = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");

@@ -188,6 +188,8 @@ class Exchange implements ModelEgressExchange {
   ): Promise<{ readonly input: unknown; readonly init: unknown }> {
     const options = isRecord(init) ? init : {};
     const href = typeof input === "string" ? input : urlOf(input);
+    if (href === undefined) refuse("request target is not a URL");
+    if (hasBodyInRequest(input)) refuse("request object carries its own body");
     const method = String(options["method"] ?? methodOf(input) ?? "GET").toUpperCase();
     const body = options["body"];
     const last = this.#lastRequest;
@@ -207,7 +209,7 @@ class Exchange implements ModelEgressExchange {
     }
     try {
       const prepared = await this.#prepareFresh(input, init);
-      if (href !== undefined && typeof body === "string") {
+      if (typeof body === "string") {
         const preparedBody = isRecord(prepared.init) ? prepared.init["body"] : undefined;
         this.#lastRequest = {
           href,
