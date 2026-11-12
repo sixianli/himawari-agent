@@ -415,7 +415,12 @@ describe("prod-read.sh", () => {
   });
 
   it("refuses arguments for the two new queries", () => {
-    for (const query of ["rule-memories", "system-instruction", "gmail-decisions", "capabilities"]) {
+    for (const query of [
+      "rule-memories",
+      "system-instruction",
+      "gmail-decisions",
+      "capabilities",
+    ]) {
       const result = run(query, "extra");
       expect(result.code).toBe(64);
       expect(result.calls).toBe("");

@@ -617,7 +617,8 @@ export const messages = {
   "governance.rollback": "Rollback version",
   "governance.lastTransition": "Latest version transition",
   "governance.lastInvalidation": "Latest disable",
-  "governance.lastInvalidationValue": "{time}: cancelled {count} scheduled jobs; they are not restored",
+  "governance.lastInvalidationValue":
+    "{time}: cancelled {count} scheduled jobs; they are not restored",
   "governance.rollbackBoundary": "Side-effect / product-state rollback boundary",
   "governance.notAvailable": "Not available",
   "governance.capability": "Capability",
