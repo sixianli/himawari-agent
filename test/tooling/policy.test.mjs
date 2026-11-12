@@ -19,6 +19,7 @@ import {
   REQUIRED_GATE_COMMAND,
   resolvePolicySource,
   resolveTestHygieneBaseline,
+  upgradeGateRunnerPolicy,
   upgradeHostedRunnerPolicy,
   upgradeRetiredTestChecks,
   upgradeRunnerLabel,
@@ -126,7 +127,7 @@ const gateStep = () => ({
 });
 const diagnosticSummary = (check) => ({
   if: githubExpression("always() && steps.publish.outcome == 'success'"),
-  run: `.ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "${check.id}/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics`,
+  run: `.ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "${check.id}/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports`,
 });
 const requiredEntry = () => ({
   name: "草稿和被取消的运行直接判失败",
@@ -682,23 +683,32 @@ describe("CI policy contract", () => {
       );
     },
   );
-  it.each(["missing", "duplicated", "only on success", "wrong folder", "wrong title"])(
-    "rejects a check job whose diagnostics do not reach the job summary: %s",
-    (change) => {
-      const value = workflow();
-      const steps = value.jobs.static.steps;
-      const index = steps.findIndex((step) => step.run?.includes("ci-summary.mjs"));
-      if (change === "missing") steps.splice(index, 1);
-      if (change === "duplicated") steps.push({ ...steps[index] });
-      if (change === "only on success") delete steps[index].if;
-      if (change === "wrong folder")
-        steps[index].run = steps[index].run.replace("public/diagnostics", "check");
-      if (change === "wrong title") steps[index].run = steps[index].run.replace("static/", "x/");
-      expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
-        "Job must write its diagnostics into the job summary exactly once: static",
-      );
-    },
-  );
+  it.each([
+    "missing",
+    "duplicated",
+    "only on success",
+    "wrong folder",
+    "wrong title",
+    "no failed logs",
+    "wrong failed logs folder",
+  ])("rejects a check job whose diagnostics do not reach the job summary: %s", (change) => {
+    const value = workflow();
+    const steps = value.jobs.static.steps;
+    const index = steps.findIndex((step) => step.run?.includes("ci-summary.mjs"));
+    if (change === "missing") steps.splice(index, 1);
+    if (change === "duplicated") steps.push({ ...steps[index] });
+    if (change === "only on success") delete steps[index].if;
+    if (change === "wrong folder")
+      steps[index].run = steps[index].run.replace("public/diagnostics", "check");
+    if (change === "wrong title") steps[index].run = steps[index].run.replace("static/", "x/");
+    if (change === "no failed logs")
+      steps[index].run = steps[index].run.replace(" --failed-logs .ci-output/public/reports", "");
+    if (change === "wrong failed logs folder")
+      steps[index].run = steps[index].run.replace("public/reports", "public/other");
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+      "Job must write its diagnostics into the job summary exactly once: static",
+    );
+  });
   it("accepts read-only permissions on the gate job", () => {
     const value = workflow();
     value.jobs.required.permissions = { contents: "read", actions: "read" };
@@ -943,7 +953,9 @@ describe("CI policy contract", () => {
       id === "required" ? 5 : ["build", "test", "node-floor", "browser"].includes(id) ? 30 : 15;
     const legacy = hostedWithTimeouts(legacyTimeout);
     expect(upgradeHostedRunnerPolicy(legacy)).not.toBe(legacy);
-    expect(() => validatePolicy(upgradeHostedRunnerPolicy(legacy))).not.toThrow();
+    expect(() =>
+      validatePolicy(upgradeGateRunnerPolicy(upgradeHostedRunnerPolicy(legacy))),
+    ).not.toThrow();
     const wrongTimeout = hostedWithTimeouts((id) => (id === "build" ? 1 : legacyTimeout(id)));
     expect(upgradeHostedRunnerPolicy(wrongTimeout)).toBe(wrongTimeout);
     expect(() => validatePolicy(upgradeHostedRunnerPolicy(wrongTimeout))).toThrow();
@@ -991,6 +1003,7 @@ describe("CI policy contract", () => {
   });
   const retiredTestPolicy = () => {
     const value = clone();
+    value.checks.find((check) => check.id === "required").members[0].runner = linuxRunnerLabel;
     const fiveProjects = ["unit", "contracts", "integration", "e2e", "pi-compat"];
     const coverageIndex = value.checks.findIndex((check) => check.id === "coverage");
     value.checks[coverageIndex].projects = ["unit", "contracts", "tooling", "integration"];
@@ -1135,9 +1148,56 @@ describe("CI policy contract", () => {
   it("升级保留 coverage 以外作业的原样，现行七作业策略原样返回", () => {
     expect(upgradeRetiredTestChecks(policy)).toBe(policy);
     const accepted = retiredTestPolicy();
-    const upgraded = upgradeRetiredTestChecks(accepted);
+    const upgraded = upgradeGateRunnerPolicy(upgradeRetiredTestChecks(accepted));
     expect(upgraded).toEqual(policy);
     expect(accepted.checks.map((check) => check.id)).toContain("node-floor");
+  });
+  const sharedRunnerPolicy = () => {
+    const value = clone();
+    value.checks.find((check) => check.id === "required").members[0].runner = linuxRunnerLabel;
+    return value;
+  };
+  it("[ADR-0256] 基准上汇总作业还在 ci-vps 的七作业策略升级成 ci-vps-gate，摘要仍按原始字节算", () => {
+    const { root, git } = fixtureRepository();
+    const accepted = sharedRunnerPolicy();
+    expect(() => validatePolicy(accepted)).toThrow("Incorrect platform: required/default");
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted shared runner");
+    const selected = resolvePolicySource({ root });
+    expect(selected.policy).toEqual(policy);
+    expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
+    expect(validateWorkflow(selected.policy, stringify(workflow()), lock)).toEqual({
+      jobs: 7,
+      members: 10,
+    });
+  });
+  it("[ADR-0256] 只升级汇总作业在 ci-vps 的七作业写法，现行策略原样返回，别的写法照样被拒", () => {
+    expect(upgradeGateRunnerPolicy(policy)).toBe(policy);
+    const upgraded = upgradeGateRunnerPolicy(sharedRunnerPolicy());
+    expect(upgraded).toEqual(policy);
+    const hosted = sharedRunnerPolicy();
+    hosted.checks.find((check) => check.id === "required").members[0].runner = "ubuntu-24.04";
+    expect(upgradeGateRunnerPolicy(hosted)).toBe(hosted);
+    expect(() => validatePolicy(upgradeGateRunnerPolicy(hosted))).toThrow();
+  });
+  it("[ADR-0256] 检查作业写成 ci-vps-gate、汇总作业写回 ci-vps 的策略都被拒", () => {
+    const checkOnGate = clone();
+    checkOnGate.checks.find((check) => check.id === "static").members[0].runner = "ci-vps-gate";
+    expect(upgradeGateRunnerPolicy(checkOnGate)).toBe(checkOnGate);
+    expect(() => validatePolicy(checkOnGate)).toThrow("Incorrect platform: static/default");
+    expect(() => validatePolicy(sharedRunnerPolicy())).toThrow(
+      "Incorrect platform: required/default",
+    );
+  });
+  it("[ADR-0256] 工作流的汇总作业写回 ci-vps、或检查作业写成 ci-vps-gate 时被拒", () => {
+    const gateOnShared = workflow();
+    gateOnShared.jobs.required["runs-on"] = linuxRunnerLabel;
+    expect(() => validateWorkflow(policy, stringify(gateOnShared), lock)).toThrow();
+    const checkOnGate = workflow();
+    checkOnGate.jobs.static["runs-on"] = "ci-vps-gate";
+    expect(() => validateWorkflow(policy, stringify(checkOnGate), lock)).toThrow();
   });
   it.each(["test", "node-floor"])("工作流里多出 %s 作业就被拒", (id) => {
     const value = workflow();

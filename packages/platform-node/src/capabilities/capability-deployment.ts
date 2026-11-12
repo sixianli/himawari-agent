@@ -15,6 +15,8 @@ import {
 import {
   type SandboxHostBinding,
   sandboxHostBindingSchema,
+  sandboxEnforcementClaimsMatchEvidence,
+  sandboxRequiredControlsEnforced,
   sandboxRuntimeQualificationSchema,
 } from "@himawari-agent/execution-contracts";
 import type {
@@ -581,10 +583,14 @@ function parseQualification(
       : sandboxRuntimeQualificationSchema.parse(input["sandbox"]);
   if (
     sandbox &&
-    (sandbox.platform !== qualificationPlatform ||
-      input["runtimeIdentity"] !== `srt:${sandbox.srtVersion}` ||
-      checkedEnforcement.resourceCeilings !== false ||
-      checkedEnforcement.termination !== (sandbox.platform === "linux"))
+    !sandboxEnforcementClaimsMatchEvidence(
+      {
+        platform: qualificationPlatform,
+        runtimeIdentity: input["runtimeIdentity"],
+        enforcement: checkedEnforcement,
+      },
+      sandbox,
+    )
   ) {
     throw failure(
       CAPABILITY_DEPLOYMENT_ERROR_CODES.QUALIFICATION_INVALID,
@@ -592,15 +598,11 @@ function parseQualification(
       "sandbox evidence conflicts with enforcement claims",
     );
   }
-  const requiredControls = sandbox
-    ? [
-        checkedEnforcement.filesystem,
-        checkedEnforcement.network,
-        checkedEnforcement.processes,
-        checkedEnforcement.secrets,
-      ]
-    : Object.values(checkedEnforcement);
-  if (requiredControls.some((value) => value !== true)) {
+  if (
+    sandbox
+      ? !sandboxRequiredControlsEnforced(checkedEnforcement)
+      : Object.values(checkedEnforcement).some((value) => value !== true)
+  ) {
     throw failure(
       CAPABILITY_DEPLOYMENT_ERROR_CODES.QUALIFICATION_INVALID,
       `${field}.enforcement`,
