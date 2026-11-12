@@ -20,12 +20,24 @@ export type OwnerRule = Extract<
   { type: "memory.rules.snapshot" }
 >["payload"]["rules"][number];
 export type OwnerRuleAction = "undo" | "confirm" | "reconfirm";
+export type MemoryReview = Extract<
+  GatewayV2Snapshot,
+  { type: "memory.review.snapshot" }
+>["payload"];
+export type MemoryReviewAction = "dismiss" | "adopt" | "confirm_suspended" | "restore";
 const REMINDER_REFRESH_MS = 300_000;
 
 export interface MemoryModel {
   readonly overview: MemoryOverview | null;
   readonly rules: readonly OwnerRule[];
   readonly respondRule: (target: string, action: OwnerRuleAction) => Promise<boolean>;
+  readonly review: MemoryReview | null;
+  readonly respondReview: (
+    target: string,
+    action: MemoryReviewAction,
+    expectedRevision: number | null,
+  ) => Promise<boolean>;
+  readonly reportMissed: (memoryId: string, upstreamMemoryId: string) => Promise<boolean>;
   readonly failed: boolean;
   readonly busy: boolean;
   readonly respond: (
@@ -82,6 +94,9 @@ export function useMemory(input: {
     configuration?.installedGatewayV2Operations?.includes("memory.rules.read") ?? false;
   const [overview, setOverview] = useState<MemoryOverview | null>(null);
   const [rules, setRules] = useState<readonly OwnerRule[]>([]);
+  const [review, setReview] = useState<MemoryReview | null>(null);
+  const reviewAvailable =
+    configuration?.installedGatewayV2Operations?.includes("memory.review.read") ?? false;
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
@@ -112,10 +127,29 @@ export function useMemory(input: {
         .catch(() => {
           if (!disposed) setFailed(true);
         });
+    if (reviewAvailable)
+      void client
+        .query(queryMessage(configuration, "memory.review.read", {}))
+        .then((result) => {
+          if (result.type !== "memory.review.snapshot") throw new Error("REVIEW_INVALID");
+          if (!disposed) setReview(result.payload);
+        })
+        .catch(() => {
+          if (!disposed) setFailed(true);
+        });
     return () => {
       disposed = true;
     };
-  }, [available, rulesAvailable, client, configuration, connected, reload, refreshSignal]);
+  }, [
+    available,
+    rulesAvailable,
+    reviewAvailable,
+    client,
+    configuration,
+    connected,
+    reload,
+    refreshSignal,
+  ]);
   useEffect(() => {
     if (!available || !connected) return;
     const timer = window.setInterval(() => setReload((value) => value + 1), REMINDER_REFRESH_MS);
@@ -152,6 +186,11 @@ export function useMemory(input: {
     overview,
     rules,
     respondRule: (target, action) => send("memory.rule.respond", () => ({ target, action })),
+    review,
+    respondReview: (target, action, expectedRevision) =>
+      send("memory.review.respond", () => ({ target, action, expectedRevision })),
+    reportMissed: (memoryId, upstreamMemoryId) =>
+      send("memory.review.reportMissed", () => ({ memoryId, upstreamMemoryId })),
     failed,
     busy,
     checkSource: async (memoryId) => {

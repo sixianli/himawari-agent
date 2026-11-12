@@ -7,7 +7,9 @@ import {
   type MemoryExtractionAuditRecord,
   type MemoryProviderProjectionPort,
   OwnerProfileService,
+  type ProactiveModelInvoker,
   type ProductMemoryRecord,
+  RuleReviewService,
   type RuntimeRequest,
   type ThreadRepositoryPort,
 } from "@himawari-agent/application";
@@ -292,6 +294,7 @@ describe("production memory capture", () => {
       memory,
       reminders: repository.memoryReminders(),
       ownerRules: ruleWriter,
+      reviews: { memories: repository.memoryReviews(), rules: repository.ruleReviews() },
       book: repository.memoryBook(),
       profile: new OwnerProfileService({
         state: repository.productMemoryState(),
@@ -2134,6 +2137,307 @@ describe("production memory capture", () => {
         ?.status,
     ).toBe("deletion_pending");
     expect(await listed()).toEqual([]);
+  });
+
+  it("[P4-1] flags a three-level chain after an edit, leaves an unrelated memory alone, suspends the rule whose source changed and counts what the Owner agreed with", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const texts = {
+      a: "Andy 在办日本签证续签",
+      b: "Andy 最近常和入管局通信",
+      c: "Andy 每周一早上要看入管局的邮件",
+      d: "Andy 喜欢早上跑步",
+    } as const;
+    for (const [key, text] of Object.entries(texts)) {
+      await context.protect(`payload-chain-${key}`, text);
+      await command(
+        context.control,
+        "memory.create",
+        { contentRef: `payload-chain-${key}`, category: "other", subCategory: null, pinned: false },
+        `chain-${key}`,
+      );
+    }
+    const id = (key: keyof typeof texts) => `memory:owner:chain-${key}`;
+    context.sql((database) => {
+      database
+        .prepare(
+          `INSERT INTO memory_consolidation_runs (id, owner_id, agent_id, day, trigger_run_id,
+            status, model_called, started_at) VALUES ('run-p41', ?, ?, '2026-05-01', 'r', 'completed', 1, ?)`,
+        )
+        .run(OWNER_ID, AGENT_ID, T0);
+      for (const [change, memoryId, basis] of [
+        ["change-b", id("b"), id("a")],
+        ["change-c", id("c"), id("b")],
+      ] as const) {
+        database
+          .prepare(
+            `INSERT INTO memory_consolidation_changes (id, consolidation_id, owner_id, agent_id,
+              memory_id, action, after_revision, created_at)
+             VALUES (?, 'run-p41', ?, ?, ?, 'reflect', 1, ?)`,
+          )
+          .run(change, OWNER_ID, AGENT_ID, memoryId, T0);
+        database
+          .prepare(
+            "INSERT INTO memory_consolidation_change_basis (change_id, position, memory_id) VALUES (?, 0, ?)",
+          )
+          .run(change, basis);
+      }
+    });
+    const review = async () => {
+      const snapshot = await context.control.query({
+        ...envelope,
+        kind: "query",
+        type: "memory.review.read",
+        payload: {},
+      } as never);
+      if (snapshot.type !== "memory.review.snapshot") throw new Error("snapshot");
+      return snapshot.payload;
+    };
+    const current = async (key: keyof typeof texts) => {
+      const found = (await overview(context.control)).memories.find(
+        ({ memoryId }) => memoryId === id(key),
+      );
+      if (!found) throw new Error(key);
+      return found;
+    };
+    expect((await review()).memories).toEqual([]);
+
+    context.clock.value = "2026-10-26T00:00:00.000Z";
+    await context.protect("payload-chain-a2", "Andy 的日本签证已经续好了");
+    await mutate(
+      context.control,
+      id("a"),
+      (await current("a")).revision,
+      "correct",
+      "payload-chain-a2",
+    );
+    const flagged = await review();
+    expect(
+      flagged.memories.map(({ memoryId, upstreamMemoryId, depth, reason, upstreamText }) => ({
+        memoryId,
+        upstreamMemoryId,
+        depth,
+        reason,
+        upstreamText,
+      })),
+    ).toEqual([
+      {
+        memoryId: id("b"),
+        upstreamMemoryId: id("a"),
+        depth: 1,
+        reason: "memory_edited",
+        upstreamText: "Andy 的日本签证已经续好了",
+      },
+      {
+        memoryId: id("c"),
+        upstreamMemoryId: id("a"),
+        depth: 2,
+        reason: "memory_edited",
+        upstreamText: "Andy 的日本签证已经续好了",
+      },
+    ]);
+    expect(flagged.memories.some(({ memoryId }) => memoryId === id("d"))).toBe(false);
+    expect((await current("b")).text).toBe(texts.b);
+    expect((await current("c")).text).toBe(texts.c);
+
+    context.clock.value = "2026-10-27T00:00:00.000Z";
+    await command(
+      context.control,
+      "memory.review.respond",
+      { target: id("c"), action: "dismiss", expectedRevision: null },
+      "dismiss-c",
+    );
+    await expect(
+      command(
+        context.control,
+        "memory.review.respond",
+        { target: id("d"), action: "dismiss", expectedRevision: null },
+        "dismiss-d",
+      ),
+    ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
+    await context.protect("payload-chain-b2", "Andy 最近不再和入管局通信");
+    await mutate(
+      context.control,
+      id("b"),
+      (await current("b")).revision,
+      "correct",
+      "payload-chain-b2",
+    );
+    expect(
+      await command(
+        context.control,
+        "memory.review.reportMissed",
+        { memoryId: id("d"), upstreamMemoryId: id("a") },
+        "missed-d",
+      ),
+    ).toMatchObject({ replayed: false });
+    expect(
+      await command(
+        context.control,
+        "memory.review.reportMissed",
+        { memoryId: id("d"), upstreamMemoryId: id("a") },
+        "missed-d-again",
+      ),
+    ).toMatchObject({ replayed: true });
+    const after = await review();
+    expect(
+      after.memories.map(({ memoryId, upstreamMemoryId, reason }) => [
+        memoryId,
+        upstreamMemoryId,
+        reason,
+      ]),
+    ).toEqual([
+      [id("d"), id("a"), "owner_reported"],
+      [id("c"), id("b"), "memory_edited"],
+    ]);
+    expect(after.agreement).toEqual({
+      handled: 2,
+      agreed: 1,
+      missed: 1,
+      openMemories: 2,
+      openRules: 0,
+    });
+
+    const sentence = "日本入管局相关的邮件以后必须通知我";
+    await context.turn("owner", sentence, null);
+    const created = (await context.ruleTools.run({
+      runId: createRunId("run-rule-p41"),
+      toolCallId: "call-p41",
+      capabilityRef: "rule.set",
+      capabilityHandleRef: null,
+      arguments: {
+        inferred: false,
+        type: "mail_must_notify",
+        summary: "入管局的邮件一律提醒",
+        quote: sentence,
+        params: { senderDomains: ["isa.go.jp"] },
+      },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never)) as Record<string, unknown>;
+    const ruleId = created["ruleId"] as string;
+    const rules = async () => {
+      const snapshot = await context.control.query({
+        ...envelope,
+        kind: "query",
+        type: "memory.rules.read",
+        payload: {},
+      } as never);
+      if (snapshot.type !== "memory.rules.snapshot") throw new Error("snapshot");
+      return snapshot.payload.rules;
+    };
+    const ruleMemory = await context.repository
+      .productMemoryState()
+      .read(created["memoryId"] as never);
+    if (!ruleMemory) throw new Error("rule memory");
+    context.clock.value = "2026-10-28T00:00:00.000Z";
+    await context.protect("payload-rule-p41", "日本和韩国入管局相关的邮件以后必须通知我");
+    await mutate(
+      context.control,
+      ruleMemory.id,
+      ruleMemory.revision,
+      "correct",
+      "payload-rule-p41",
+    );
+    expect(await rules()).toMatchObject([{ ruleId, status: "needs_review", enforced: true }]);
+
+    const prompts: string[] = [];
+    const answer = JSON.stringify({
+      standing: true,
+      type: "mail_must_notify",
+      summary: "日本和韩国入管局的邮件一律提醒",
+      params: { senderDomains: ["isa.go.jp", "moj.go.kr"] },
+    });
+    const model: ProactiveModelInvoker = {
+      modelRef: "stub-flash",
+      model: {
+        listAvailable: async () => [],
+        async *invoke(request) {
+          yield {
+            type: "model.output",
+            invocationId: request.invocationId,
+            sequence: 0,
+            payloadRef: "out-p41" as never,
+            occurredAt: context.clock.value,
+          };
+          yield {
+            type: "model.completed",
+            invocationId: request.invocationId,
+            inputTokens: 1,
+            outputTokens: 1,
+            costMicros: 1,
+            latencyMs: 1,
+            occurredAt: context.clock.value,
+          };
+        },
+      },
+      async prepare({ prompt }) {
+        prompts.push(prompt);
+        return {
+          runId: "run-p41-review" as never,
+          inputRef: "in-p41",
+          allowedDisclosureRef: "in-p41",
+          secretHandleRefs: [],
+          release: async () => undefined,
+        };
+      },
+      readOutput: async () => answer,
+      release: async () => undefined,
+    };
+    const reviewer = new RuleReviewService({
+      scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      clock: { now: () => context.clock.value },
+      store: context.repository.ruleReviews(),
+      memories: context.repository.productMemoryState(),
+      readMemoryText: async (record) => (await context.plaintext(record.contentRef)) ?? "",
+      model,
+      nextInvocationId: () => `rule-review-${prompts.length}`,
+    });
+    expect(await reviewer.run()).toEqual([{ ruleId, outcome: "suspended" }]);
+    expect(prompts[0]).toContain("日本和韩国入管局相关的邮件以后必须通知我");
+    expect(await rules()).toMatchObject([{ ruleId, status: "suspended", enforced: false }]);
+    const [suspended] = (await review()).rules;
+    expect(suspended).toMatchObject({
+      ruleId,
+      status: "suspended",
+      suspendReason: "parameters_changed",
+      suggestion: "日本和韩国入管局的邮件一律提醒",
+    });
+    if (!suspended) throw new Error("suspended");
+    await expect(
+      command(
+        context.control,
+        "memory.review.respond",
+        { target: ruleId, action: "adopt", expectedRevision: suspended.revision - 1 },
+        "adopt-stale",
+      ),
+    ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+    expect(await rules()).toMatchObject([{ ruleId, status: "suspended" }]);
+    await command(
+      context.control,
+      "memory.review.respond",
+      { target: ruleId, action: "adopt", expectedRevision: suspended.revision },
+      "adopt",
+    );
+    expect(await rules()).toMatchObject([{ ruleId, status: "active", enforced: true }]);
+    const stored = await context.repository
+      .ownerRules()
+      .read({ ownerId: OWNER_ID, agentId: AGENT_ID, ruleId } as never);
+    expect(stored?.parameters).toMatchObject({
+      params: { senderDomains: ["isa.go.jp", "moj.go.kr"] },
+    });
+    expect(await reviewer.run()).toEqual([]);
+    expect((await review()).agreement).toEqual({
+      handled: 3,
+      agreed: 2,
+      missed: 1,
+      openMemories: 2,
+      openRules: 0,
+    });
   });
 
   it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {

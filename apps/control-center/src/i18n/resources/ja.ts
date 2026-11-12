@@ -911,6 +911,26 @@ export const messages = {
   "rules.notEnforced": "このルールを読み取れないため、いまは適用していません",
   "rules.reconfirm": "再確認",
   "rules.undo": "取り消す",
+  "review.title": "記憶の修正後に再確認 · {count} 件",
+  "review.note":
+    "直したり消したりした記憶を根拠にした記憶や、それから決めたルールがここに並びます。フラグを付けるだけで、記憶の文面は自動では変えません。停止中のルールは、あなたが決めるまで実行しません。",
+  "review.reason":
+    "{r, select, memory_edited {根拠の記憶が直されました} memory_superseded {根拠の記憶が新しい内容に置き換わりました} memory_removed {根拠の記憶が削除かアーカイブされました} memory_restored {根拠の記憶が元に戻されました} memory_reclassified {根拠の記憶の分類が変わりました} owner_reported {あなたが一緒に直すべきと指摘しました} other {根拠の記憶が変わりました}}",
+  "review.upstream": "根拠の記憶：{t}",
+  "review.upstreamGone": "根拠の記憶は削除済みです",
+  "review.open": "開いて直す",
+  "review.dismiss": "問題なし",
+  "review.suspendReason":
+    "{r, select, source_removed {停止中：元の記憶が削除されたか、ルールではなくなりました} no_longer_standing {停止中：元の記憶がもう継続的な指示として読めません} parameters_changed {停止中：元の記憶と今のルールが合いません} other {停止中}}",
+  "review.checking": "元の記憶が変わりました。自動の確認待ちです（確認までは今まで通り実行）",
+  "review.suggestion": "変更の提案：{s}",
+  "review.adopt": "提案を採用",
+  "review.confirmSuspended": "停止を確定",
+  "review.restore": "元のルールに戻す",
+  "memory.page.missed": "ほかにも一緒に直すべき記憶がある",
+  "memory.page.missedPick": "一緒に直すべき記憶を選ぶ",
+  "memory.page.missedSubmit": "記録する",
+  "memory.page.missedSaved": "記録しました。再確認リストに表示されます",
   "rules.receipt.label": "常設ルールの控え",
   "rules.receipt.status":
     "{s, select, active {常設ルールにしました} proposed {ルールの提案です。「適用」を押すと有効になります} soft {好みとして記録しました（プログラムでは強制しません）} undone {取り消しました} other {常設ルール}}",
@@ -1485,6 +1505,12 @@ export const messages = {
     "この 3 つのシグナルは、あなたが評価しなくても観察できることです。観察だけで、あなたの評価としては扱わず、上の評価の割合と混ぜて計算せず、しきい値を自動で変えることにも使いません。分母は今週、通知を送った判断です。同じ判断に同じシグナルが何度あっても 1 回と数えます。",
   "weekly.goRate": "「リマインダー」で採点する",
   "weekly.prereview.title": "モデル事前採点の一致率",
+  "weekly.correction.title": "記憶の修正に伴う再確認フラグの一致率",
+  "weekly.correction.agreed": "システムが {n} 件にフラグ、あなたが認めたのは {k} 件",
+  "weekly.correction.missed": "見落とし：あなたが一緒に直すべきと指摘し、フラグがなかったもの",
+  "weekly.correction.open": "再確認リストであなたの対応待ち",
+  "weekly.correction.note":
+    "累計の数字で、週ごとではありません。記憶を直したり消したりすると、それを根拠にした記憶とそれから決めたルールに再確認のフラグが付きます。再確認リストで対応したものだけを数えます。ルールで「提案を採用」か「停止を確定」、記憶を直した場合は認めたことに、「元のルールに戻す」「問題なし」は認めなかったことになります。未対応は数えません。対応済みが 5 件未満のときはサンプル不足とだけ表示します。",
   "weekly.prereview.empty": "今週は、モデルの事前採点とあなたの採点が両方ある判断がありません。",
   "weekly.prereview.emptyCurrent":
     "今週は現在のモデルとプロンプトの版による事前採点がまだありません。",
@@ -1542,6 +1568,7 @@ export const messages = {
   "sensitive.purpose.mail-judgment": "メールの判定",
   "sensitive.purpose.action-review": "操作の確認",
   "sensitive.purpose.review-prereview": "モデルの事前採点",
+  "sensitive.purpose.rule-review": "ルールの再確認",
   "sensitive.purpose.other": "その他",
   "sensitive.maskedOnce": "{time} 1 回隠しました",
   "sensitive.maskedMany": "{time} 最初に隠し、その後の {later} 回の送信でも隠しました",

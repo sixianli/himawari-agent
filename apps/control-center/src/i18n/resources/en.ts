@@ -905,6 +905,27 @@ export const messages = {
   "rules.notEnforced": "This rule can't be read, so it isn't enforced for now",
   "rules.reconfirm": "Confirm again",
   "rules.undo": "Undo",
+  "review.title": "To recheck after memory edits · {count}",
+  "review.note":
+    "When you edit or delete a memory, memories inferred from it and rules set from it are listed here. They are only flagged; memory text is never changed for you, and paused rules do not run until you decide.",
+  "review.reason":
+    "{r, select, memory_edited {a memory it is based on was edited} memory_superseded {a memory it is based on was replaced by a newer statement} memory_removed {a memory it is based on was deleted or archived} memory_restored {a memory it is based on was restored} memory_reclassified {a memory it is based on changed category} owner_reported {you said it should change too} other {a memory it is based on changed}}",
+  "review.upstream": "Based on: {t}",
+  "review.upstreamGone": "The memory it was based on is deleted",
+  "review.open": "Open to edit",
+  "review.dismiss": "Looks fine",
+  "review.suspendReason":
+    "{r, select, source_removed {Paused: its source memory was deleted or is no longer a rule} no_longer_standing {Paused: its source memory no longer reads as a standing request} parameters_changed {Paused: its source memory no longer matches the rule} other {Paused}}",
+  "review.checking":
+    "Its source memory changed; waiting for the automatic check (it keeps running until then)",
+  "review.suggestion": "Suggested change: {s}",
+  "review.adopt": "Use suggestion",
+  "review.confirmSuspended": "Keep paused",
+  "review.restore": "Restore rule",
+  "memory.page.missed": "Another memory should change too",
+  "memory.page.missedPick": "Pick the memory that should change too",
+  "memory.page.missedSubmit": "Note it",
+  "memory.page.missedSaved": "Noted. It now appears in the recheck list",
   "rules.receipt.label": "Standing rule receipt",
   "rules.receipt.status":
     "{s, select, active {Saved as a standing rule} proposed {Suggested rule; it takes effect only when you tap Apply} soft {Saved as a preference; not enforced by code} undone {Undone} other {Standing rule}}",
@@ -1498,6 +1519,12 @@ export const messages = {
     "These three signals are what can be observed without you rating anything. They are observations only: they are not your ratings, they are never mixed into the rating shares above, and they never change any threshold automatically. The denominator is this week's decisions that sent a reminder; repeats of the same signal on one decision count once.",
   "weekly.goRate": "Rate them in “Reminders”",
   "weekly.prereview.title": "Model pre-rating agreement",
+  "weekly.correction.title": "Agreement with follow-up flags after memory edits",
+  "weekly.correction.agreed": "Flagged {n}, you agreed with {k}",
+  "weekly.correction.missed": "Missed: items you said should change too that were not flagged",
+  "weekly.correction.open": "Still waiting for you in the review list",
+  "weekly.correction.note":
+    "Running totals, not per week. When you edit or delete a memory, memories inferred from it and rules set from it are flagged for review. Only items you handled in the review list count: for a rule, Use suggestion or Keep paused, and for a memory, editing it, count as agreeing; Restore rule and Looks fine count as not agreeing. Unhandled items are left out. Below 5 handled items only Not enough samples is shown.",
   "weekly.prereview.empty": "No decision this week has both a model pre-rating and your rating.",
   "weekly.prereview.emptyCurrent":
     "No pre-rating this week from the current model and prompt version.",
@@ -1554,6 +1581,7 @@ export const messages = {
   "sensitive.purpose.mail-judgment": "email check",
   "sensitive.purpose.action-review": "action review",
   "sensitive.purpose.review-prereview": "model pre-rating",
+  "sensitive.purpose.rule-review": "rule recheck",
   "sensitive.purpose.other": "other",
   "sensitive.maskedOnce": "{time} hidden once",
   "sensitive.maskedMany":
