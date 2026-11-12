@@ -365,6 +365,7 @@ describe("production HTTP composition", () => {
           "owner.preferences.set",
           "sensitive.interceptions.read",
           "sensitive.interceptions.clear",
+          "server.status.read",
         ],
         healthDependenciesAvailable: true,
       });
@@ -1094,6 +1095,60 @@ describe("production HTTP composition", () => {
         type: "owner.preferences.snapshot",
         payload: { ...saved, revision: 1 },
       });
+      const serverStatus = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, second.cookie),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "server.status.read"),
+          kind: "query",
+          payload: {},
+        },
+      });
+      expect(serverStatus.statusCode, serverStatus.body).toBe(200);
+      const webStatus = await running.composition.app.inject({
+        method: "GET",
+        url: "/api/health/v1/dependencies",
+        headers: requestHeaders(token, second.cookie),
+      });
+      const phoneStatus = serverStatus.json() as {
+        type: string;
+        payload: {
+          live: boolean;
+          ready: boolean;
+          status: string;
+          dependencies: {
+            name: string;
+            required: boolean;
+            status: string;
+            reasonCode: string | null;
+          }[];
+        };
+      };
+      const webBody = webStatus.json() as typeof phoneStatus.payload;
+      expect(phoneStatus.type).toBe("server.status.snapshot");
+      expect(phoneStatus.payload.live).toBe(webBody.live);
+      expect(phoneStatus.payload.ready).toBe(webBody.ready);
+      expect(phoneStatus.payload.status).toBe(webBody.status);
+      expect(phoneStatus.payload.dependencies).toEqual(
+        webBody.dependencies.map(({ name, required, status, reasonCode }) => ({
+          name,
+          required,
+          status,
+          reasonCode,
+        })),
+      );
+      const withoutSession = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, "", undefined),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "server.status.read"),
+          kind: "query",
+          payload: {},
+        },
+      });
+      expect(withoutSession.statusCode).toBeGreaterThanOrEqual(400);
       const readInterceptions = async () => {
         const response = await running.composition.app.inject({
           method: "POST",
