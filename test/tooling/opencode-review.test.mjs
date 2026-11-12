@@ -514,6 +514,7 @@ describe("opencode review model list", () => {
     default: ["a/one"],
     substitutes: { "a/one": "a/two" },
   };
+  const changed = (change) => Object.assign({}, valid, change);
 
   it("[review models] reads the allowed, default and substitute models from the committed file", () => {
     const config = readReviewModels();
@@ -528,21 +529,21 @@ describe("opencode review model list", () => {
       expect(readGatewayConfig(undefined, REVIEW_MODELS).models[model]).toBeDefined();
     }
     expect(reviewModelsProblems(valid)).toEqual([]);
-    expect(reviewModelsProblems({ ...valid, default: valid.allowed, substitutes: {} })).toEqual([]);
+    expect(reviewModelsProblems(changed({ default: valid.allowed, substitutes: {} }))).toEqual([]);
   });
 
   it("[review models] refuses a list that is empty, repeats, or names a model outside the allowed ones", () => {
     const bad = [
-      [{ ...valid, allowed: [] }, "allowed"],
-      [{ ...valid, allowed: ["a/one", "a/one"] }, "allowed"],
-      [{ ...valid, allowed: ["a/one", "b/one"], substitutes: {} }, "allowed.short-name-repeats"],
-      [{ ...valid, allowed: ["one"] }, "allowed"],
-      [{ ...valid, default: [] }, "default"],
-      [{ ...valid, default: ["a/three"] }, "default"],
-      [{ ...valid, default: "a/one" }, "default"],
-      [{ ...valid, substitutes: { "a/one": "a/three" } }, "substitutes"],
-      [{ ...valid, substitutes: { "a/one": "a/one" } }, "substitutes"],
-      [{ ...valid, substitutes: undefined }, "substitutes"],
+      [changed({ allowed: [] }), "allowed"],
+      [changed({ allowed: ["a/one", "a/one"] }), "allowed"],
+      [changed({ allowed: ["a/one", "b/one"], substitutes: {} }), "allowed.short-name-repeats"],
+      [changed({ allowed: ["one"] }), "allowed"],
+      [changed({ default: [] }), "default"],
+      [changed({ default: ["a/three"] }), "default"],
+      [changed({ default: "a/one" }), "default"],
+      [changed({ substitutes: { "a/one": "a/three" } }), "substitutes"],
+      [changed({ substitutes: { "a/one": "a/one" } }), "substitutes"],
+      [changed({ substitutes: undefined }), "substitutes"],
       [null, "allowed"],
     ];
     for (const [config, problem] of bad) expect(reviewModelsProblems(config)).toContain(problem);
@@ -550,7 +551,7 @@ describe("opencode review model list", () => {
     try {
       const path = join(dir, "review-models.json");
       expect(() => readReviewModels(path)).toThrow("REVIEW_MODELS_CONFIG_INVALID unreadable");
-      writeFileSync(path, JSON.stringify({ ...valid, default: [] }));
+      writeFileSync(path, JSON.stringify(changed({ default: [] })));
       expect(() => readReviewModels(path)).toThrow("REVIEW_MODELS_CONFIG_INVALID default");
     } finally {
       rmSync(dir, { recursive: true, force: true });
