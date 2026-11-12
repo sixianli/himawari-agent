@@ -67,6 +67,7 @@ import type {
   SessionDeletionStatePort,
   SessionDeviceStatePort,
   StateRecord,
+  ThreadArtifactChangesPort,
   ThreadArtifactStorePort,
   ThreadDistillationStatePort,
   ThreadPromptBundleStorePort,
@@ -616,7 +617,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.ownerPreferences();
   }
 
-  threadArtifacts(): ThreadArtifactStorePort {
+  threadArtifacts(): ThreadArtifactStorePort & ThreadArtifactChangesPort {
     return this.durable.threadArtifacts();
   }
 

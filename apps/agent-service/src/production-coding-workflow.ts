@@ -581,6 +581,7 @@ export async function executeProductionCodingRequest(
     timing.mark("phase");
     if (executed.outcome === "awaiting_approval") return executed;
     let changes = (await ctx.load("workspace-changes")) as { readonly summary: string } | undefined;
+    let droppedArtifacts = false;
     if (!changes) {
       const identity = {
         runId: call.runId,
@@ -601,7 +602,7 @@ export async function executeProductionCodingRequest(
         };
       }
       changes = (await ctx.save("workspace-changes", recorded)).value as { summary: string };
-      await recordThreadArtifacts(
+      droppedArtifacts = await recordThreadArtifacts(
         services,
         ctx,
         call,
@@ -622,6 +623,13 @@ export async function executeProductionCodingRequest(
         overlapped,
       });
     }
+    if (droppedArtifacts || (changes as { readonly complete?: boolean }).complete !== true)
+      await services.workspaceChangeMarks?.markIncomplete({
+        grantId: grant.id,
+        threadId: binding.threadId,
+        runId: call.runId,
+        toolCallId: call.toolCallId,
+      });
     timing.finish("ledger_after");
     return {
       ...executed,
@@ -638,14 +646,22 @@ export async function executeProductionCodingRequest(
     result.outcome === "succeeded" &&
     typeof args["path"] === "string"
   )
-    await recordThreadArtifacts(services, ctx, call, binding.threadId, grant, tool, false, [
-      {
-        path: resolveHostFileReadPath(grant, args["path"]),
-        ...(tool === "write" && typeof args["content"] === "string"
-          ? { sizeBytes: Buffer.byteLength(args["content"]) }
-          : {}),
-      },
-    ]);
+    if (
+      await recordThreadArtifacts(services, ctx, call, binding.threadId, grant, tool, false, [
+        {
+          path: resolveHostFileReadPath(grant, args["path"]),
+          ...(tool === "write" && typeof args["content"] === "string"
+            ? { sizeBytes: Buffer.byteLength(args["content"]) }
+            : {}),
+        },
+      ])
+    )
+      await services.workspaceChangeMarks?.markIncomplete({
+        grantId: grant.id,
+        threadId: binding.threadId,
+        runId: call.runId,
+        toolCallId: call.toolCallId,
+      });
   if (memory && memoryKey) {
     memory.observe(providers, result);
     memory.remember(memoryKey, tool as "web_search" | "web_fetch", result);
@@ -687,10 +703,15 @@ async function recordThreadArtifacts(
   source: ThreadArtifactSource,
   overlapped: boolean,
   candidates: readonly ThreadArtifactCandidate[],
-): Promise<void> {
+): Promise<boolean> {
   const saveCopy = ctx.saveCopy;
-  if (!services.threadArtifacts || !saveCopy || candidates.length === 0) return;
+  if (!services.threadArtifacts || candidates.length === 0) return false;
+  if (!saveCopy) return true;
+  let incomplete = false;
   await services.threadArtifacts.record({
+    onIncomplete: () => {
+      incomplete = true;
+    },
     ownerId: ctx.ownerId,
     agentId: ctx.agentId,
     threadId,
@@ -702,4 +723,5 @@ async function recordThreadArtifacts(
     overlapped,
     saveCopy: (key, bytes, mediaType) => saveCopy(key, bytes, mediaType),
   });
+  return incomplete;
 }

@@ -366,6 +366,8 @@ Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也
 
 审批页空闲时，`/api/gateway/v2/events` 应保持连接并发送心跳；HTTP 200 后立即结束不是正常空闲状态。正式审批组合通过受控订阅通知快照变化，浏览器重新读取审批列表／详情；该提示没有 durable cursor。验收须覆盖空列表下的连接稳定、持久数据变化后的刷新和客户端断开后的订阅取消，不能只检查状态码或用测试服务器的常驻空连接替代正式组合。
 
+上线后验收 `workspace.changes.read`：用已登录会话 POST `/api/gateway/v2/queries`，授权目录填写生产写代码路由配置的那一个，应返回 `workspace.changes.snapshot`，`grantMatched` 为 `true`；换一个不存在的授权目录应返回空列表和 `grantMatched: false`。让一个对话用命令新建两个文件、用 `write` 工具改一个文件后再读，文件数应是 3。工作目录副本里的对话读到 `recording: "copy"`。
+
 控制中心验收还须检查已认证 `/api/control-center/v1/config` 的安装操作清单：当前正式部署只开放对话、审批和依赖健康检查，其他 13 个页面应显示“未启用”且不发送缺失操作的查询。健康页必须读取 `/api/health/v1/dependencies` 的实际依赖状态；连接指示灯不能证明业务功能已安装。已认证但未安装的操作应返回 HTTP 501 / `PORT_OPERATION_NOT_INSTALLED`，不能报成身份权限错误；无效身份和错误 authority 仍应拒绝。不能为了消除报错而移除授权检查，或把缺失后端替换为空数组。
 
 

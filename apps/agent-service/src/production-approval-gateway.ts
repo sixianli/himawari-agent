@@ -52,6 +52,10 @@ import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
   type ProductionWebPushControl,
 } from "./production-web-push-control.js";
+import {
+  PRODUCTION_WORKSPACE_CHANGES_OPERATIONS,
+  type ProductionWorkspaceChangesControl,
+} from "./production-workspace-changes-control.js";
 import { PRODUCTION_COPY_OPERATIONS } from "./production-workspace-copies.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
 
@@ -81,6 +85,7 @@ export function createProductionApprovalGateway(options: {
   readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
   readonly serverStatusControl?: ProductionServerStatusControl;
+  readonly workspaceChangesControl?: ProductionWorkspaceChangesControl;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -125,7 +130,10 @@ export function createProductionApprovalGateway(options: {
                       ? options.sensitiveInterceptionsControl.query(query)
                       : query.type.startsWith("server.status.") && options.serverStatusControl
                         ? options.serverStatusControl.query(query)
-                        : searchAuthorization.query(query),
+                        : query.type.startsWith("workspace.changes.") &&
+                            options.workspaceChangesControl
+                          ? options.workspaceChangesControl.query(query)
+                          : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -267,6 +275,7 @@ export function createProductionApprovalGateway(options: {
         ? PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS
         : []),
       ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
+      ...(options.workspaceChangesControl ? PRODUCTION_WORKSPACE_CHANGES_OPERATIONS : []),
     ],
     reads,
     controlPlane,

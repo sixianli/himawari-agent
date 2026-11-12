@@ -1,4 +1,8 @@
 import {
+  CHANGED_FILE_LIST_LIMIT,
+  type ChangedFile,
+  type ChangedFilesPage,
+  type ChangedFilesQuery,
   THREAD_ARTIFACT_KINDS,
   THREAD_ARTIFACT_LIST_LIMIT,
   THREAD_ARTIFACT_ORIGINS,
@@ -90,6 +94,8 @@ export class SqliteThreadArtifactOperations {
             readonly deletedAt: string;
           },
         );
+      case "threadArtifact.changedFiles":
+        return this.changedFiles(payload as ChangedFilesQuery);
       default:
         return this.fail("PORT_INVALID_OPERATION", "Unknown thread artifact operation");
     }
@@ -280,6 +286,62 @@ export class SqliteThreadArtifactOperations {
     return Object.freeze({
       items,
       nextCursor: rows.length > input.limit && last ? encodeCursor(last) : null,
+    });
+  }
+
+  private changedFiles(input: ChangedFilesQuery): ChangedFilesPage {
+    if (
+      !Number.isSafeInteger(input.limit) ||
+      input.limit < 1 ||
+      input.limit > CHANGED_FILE_LIST_LIMIT
+    )
+      return this.fail("PORT_INVALID_OPERATION", "Changed file query is invalid");
+    const thread = input.threadId === null ? "" : " AND b.thread_id = ?";
+    const threadOuter = input.threadId === null ? "" : " AND a.thread_id = ?";
+    const scope = [
+      input.ownerId,
+      input.agentId,
+      ...(input.threadId === null ? [] : [input.threadId]),
+    ];
+    const fileCount = (
+      this.database
+        .prepare(
+          `SELECT count(DISTINCT b.path) AS n FROM thread_artifacts b
+           WHERE b.owner_id = ? AND b.agent_id = ? AND b.source != 'upload'${thread}`,
+        )
+        .get(...scope) as { readonly n: number }
+    ).n;
+    const rows = this.database
+      .prepare(
+        `SELECT a.path, a.thread_id AS threadId, a.source, a.created_at AS changedAt,
+           a.deleted_at AS deletedAt,
+           (SELECT count(*) FROM thread_artifacts v WHERE v.owner_id = a.owner_id
+              AND v.agent_id = a.agent_id AND v.path = a.path AND v.source != 'upload'${
+                input.threadId === null ? "" : " AND v.thread_id = a.thread_id"
+              }) AS versions
+         FROM thread_artifacts a
+         WHERE a.owner_id = ? AND a.agent_id = ? AND a.source != 'upload'${threadOuter}
+           AND (? IS NULL OR a.path > ?)
+           AND a.id = (
+             SELECT b.id FROM thread_artifacts b
+             WHERE b.owner_id = a.owner_id AND b.agent_id = a.agent_id
+               AND b.source != 'upload' AND b.path = a.path${thread}
+             ORDER BY b.created_at DESC, b.id DESC LIMIT 1)
+         ORDER BY a.path LIMIT ?`,
+      )
+      .all(
+        ...scope,
+        input.afterPath,
+        input.afterPath,
+        ...(input.threadId === null ? [] : [input.threadId]),
+        input.limit + 1,
+      ) as ChangedFile[];
+    const items = rows.slice(0, input.limit);
+    const last = items.at(-1);
+    return Object.freeze({
+      items: Object.freeze(items),
+      nextAfterPath: rows.length > input.limit && last ? last.path : null,
+      fileCount,
     });
   }
 }

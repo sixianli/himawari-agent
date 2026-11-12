@@ -21,6 +21,7 @@ import type { ExternalRedactionOptions } from "@himawari-agent/sensitive-capture
 import type { ProductionHostReadOnly } from "./production-host-read.js";
 import type { ProductionHostWeb } from "./production-host-web.js";
 import type { ProductionThreadArtifacts } from "./production-thread-artifacts.js";
+import type { WorkspaceChangeMarks } from "./production-workspace-change-marks.js";
 import type { ProductionWorkspaceLedger } from "./production-workspace-ledger.js";
 import type { WebToolMemory } from "./web-tool-memory.js";
 
@@ -62,6 +63,7 @@ export interface ProductionFileReadServices {
   readonly hostReadOnly?: ProductionHostReadOnly;
   readonly workspaceLedger?: ProductionWorkspaceLedger;
   readonly threadArtifacts?: ProductionThreadArtifacts;
+  readonly workspaceChangeMarks?: WorkspaceChangeMarks;
   reconcileDeletedArtifacts?(): Promise<number>;
   readonly hostWeb?: ProductionHostWeb;
   readonly webMemory?: WebToolMemory;

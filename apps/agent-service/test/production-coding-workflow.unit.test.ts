@@ -1202,6 +1202,63 @@ it("[BW-3] keeps the command result and notes a failed change record", async () 
   });
 });
 
+it("[WC-7] marks the thread incomplete only when the scan or the record was not complete", async () => {
+  const { f, ledger, services, call } = ledgerFixture();
+  const markIncomplete = vi.fn(async () => undefined);
+  const withMarks = { ...services, workspaceChangeMarks: { markIncomplete } };
+  await executeProductionCodingRequest(call, "bash", withMarks, f.ctx);
+  expect(markIncomplete).not.toHaveBeenCalled();
+  const second = ledgerFixture();
+  const secondMarks = vi.fn(async () => undefined);
+  second.ledger.record.mockImplementation(async () => ({
+    version: "workspace-changes.v1" as const,
+    complete: false,
+    beforeScanMs: 3,
+    afterScanMs: 4,
+    changes: [],
+    summary: "工作目录改动：只对比了前一部分",
+  }));
+  await executeProductionCodingRequest(
+    second.call,
+    "bash",
+    { ...second.services, workspaceChangeMarks: { markIncomplete: secondMarks } },
+    second.f.ctx,
+  );
+  expect(secondMarks).toHaveBeenCalledWith({
+    grantId: second.f.binding.grant.id,
+    threadId: second.f.binding.threadId,
+    runId: second.call.runId,
+    toolCallId: second.call.toolCallId,
+  });
+  expect(ledger.record).toHaveBeenCalledTimes(1);
+});
+
+it("[WC-7] marks the thread incomplete when the change record failed, and never treats a failed mark as complete", async () => {
+  const { f, ledger, services, call } = ledgerFixture();
+  ledger.record.mockRejectedValue(new Error("HOST_READ_ROOT_IDENTITY_CHANGED"));
+  const markIncomplete = vi.fn(async () => undefined);
+  await executeProductionCodingRequest(
+    call,
+    "bash",
+    { ...services, workspaceChangeMarks: { markIncomplete } },
+    f.ctx,
+  );
+  expect(markIncomplete).toHaveBeenCalledTimes(1);
+  const again = ledgerFixture();
+  again.ledger.record.mockRejectedValue(new Error("HOST_READ_ROOT_IDENTITY_CHANGED"));
+  const failingMark = vi.fn(async () => {
+    throw new Error("STATE_WRITE_FAILED");
+  });
+  await expect(
+    executeProductionCodingRequest(
+      again.call,
+      "bash",
+      { ...again.services, workspaceChangeMarks: { markIncomplete: failingMark } },
+      again.f.ctx,
+    ),
+  ).rejects.toThrow("STATE_WRITE_FAILED");
+});
+
 function memoryArtifactStore() {
   const rows: ThreadArtifact[] = [];
   const latest = (threadId: string, path: string) =>

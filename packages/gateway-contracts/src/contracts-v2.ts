@@ -137,6 +137,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "device.revoke",
   "server.status.read",
   "server.status.snapshot",
+  "workspace.changes.read",
+  "workspace.changes.snapshot",
   "stream.event",
 ] as const;
 
@@ -2116,6 +2118,45 @@ export const workspaceListQuerySchema = object({
   payload: object({ ...pagePayload }),
 });
 
+export const WORKSPACE_CHANGE_STATES = ["changed", "deleted"] as const;
+export const WORKSPACE_CHANGE_SOURCES = ["write", "edit", "bash"] as const;
+export const WORKSPACE_RECORDING_MODES = ["direct", "copy"] as const;
+const workspaceChangesQuerySchema = object({
+  ...envelope("query", "workspace.changes.read"),
+  payload: object({
+    grantId: machineString,
+    threadId: nullable(machineString),
+    afterPath: nullable(boundedString(1024)),
+    limit: integer(1, 200),
+  }),
+});
+const workspaceChangesSnapshotSchema = object({
+  ...envelope("snapshot", "workspace.changes.snapshot"),
+  payload: object({
+    grantId: machineString,
+    grantMatched: booleanValue,
+    displayPath: nullable(boundedString(4096)),
+    threadId: nullable(machineString),
+    recording: enumeration(WORKSPACE_RECORDING_MODES),
+    fileCount: integer(0),
+    incomplete: booleanValue,
+    skippedDirectories: array(boundedString(256)),
+    items: array(
+      object({
+        path: boundedString(1024),
+        state: enumeration(WORKSPACE_CHANGE_STATES),
+        source: enumeration(WORKSPACE_CHANGE_SOURCES),
+        threadId: machineString,
+        versions: integer(1),
+        changedAt: timestamp,
+        deletedAt: nullable(timestamp),
+      }),
+    ),
+    nextAfterPath: nullable(boundedString(1024)),
+    generatedAt: timestamp,
+  }),
+});
+
 export const suggestionListQuerySchema = object({
   ...envelope("query", "suggestion.list"),
   payload: object({
@@ -2611,7 +2652,9 @@ const schemasByType = {
   "device.rename": deviceRenameCommandSchema,
   "device.revoke": deviceRevokeCommandSchema,
   "server.status.read": serverStatusQuerySchema,
+  "workspace.changes.read": workspaceChangesQuerySchema,
   "server.status.snapshot": serverStatusSnapshotSchema,
+  "workspace.changes.snapshot": workspaceChangesSnapshotSchema,
   "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
   "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,
   "sensitive.interceptions.clear": sensitiveInterceptionsClearCommandSchema,

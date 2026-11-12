@@ -28,6 +28,10 @@ const SKIPPED_DIRECTORIES = new Set([
   ".turbo",
 ]);
 
+export const THREAD_ARTIFACT_SKIPPED_DIRECTORIES: readonly string[] = Object.freeze([
+  ...SKIPPED_DIRECTORIES,
+]);
+
 const KINDS: Readonly<Record<string, readonly [ThreadArtifactKind, string]>> = {
   html: ["web", "text/html"],
   htm: ["web", "text/html"],
@@ -130,6 +134,7 @@ export interface ThreadArtifactRecording {
   readonly grant: HostDirectoryGrant;
   readonly candidates: readonly ThreadArtifactCandidate[];
   readonly overlapped: boolean;
+  readonly onIncomplete?: () => void;
   readonly saveCopy: (
     key: string,
     bytes: Uint8Array,
@@ -270,12 +275,18 @@ export class ProductionThreadArtifacts {
     let created = 0;
     const seen = new Set<string>();
     for (const candidate of input.candidates) {
-      if (seen.size >= THREAD_ARTIFACTS_PER_CALL) break;
       if (seen.has(candidate.path) || skipsThreadArtifact(candidate.path)) continue;
+      if (seen.size >= THREAD_ARTIFACTS_PER_CALL) {
+        input.onIncomplete?.();
+        break;
+      }
       seen.add(candidate.path);
       try {
-        if (await this.#recordOne(input, candidate)) created++;
+        const outcome = await this.#recordOne(input, candidate);
+        if (outcome === "created") created++;
+        if (outcome === "unreadable") input.onIncomplete?.();
       } catch (error) {
+        input.onIncomplete?.();
         this.#warn({
           event: "thread.artifact.record_failed",
           runId: input.runId,
@@ -291,7 +302,7 @@ export class ProductionThreadArtifacts {
   async #recordOne(
     input: ThreadArtifactRecording,
     candidate: ThreadArtifactCandidate,
-  ): Promise<boolean> {
+  ): Promise<"created" | "unchanged" | "unreadable"> {
     const { kind, mediaType } = classifyThreadArtifact(candidate.path);
     const scope = { ownerId: input.ownerId, agentId: input.agentId };
     const oversized =
@@ -310,7 +321,7 @@ export class ProductionThreadArtifacts {
           error.code !== HOST_READ_ONLY_ERROR_CODES.LENGTH_EXCEEDED ||
           candidate.sizeBytes === undefined
         )
-          return false;
+          return "unreadable";
       }
     }
     const sha256 = bytes
@@ -322,7 +333,7 @@ export class ProductionThreadArtifacts {
       path: candidate.path,
     });
     if (latest && latest.deletedAt === null && sha256 !== null && latest.sha256 === sha256)
-      return false;
+      return "unchanged";
     const key = createHash("sha256")
       .update(JSON.stringify([input.toolCallId, candidate.path]))
       .digest("hex")
@@ -346,6 +357,6 @@ export class ProductionThreadArtifacts {
         createdAt: this.#now(),
       },
     });
-    return result.created;
+    return result.created ? "created" : "unchanged";
   }
 }

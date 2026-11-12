@@ -79,3 +79,30 @@ export interface ThreadArtifactStorePort {
     },
   ): Promise<number>;
 }
+
+export const CHANGED_FILE_LIST_LIMIT = 200;
+
+export interface ChangedFilesQuery extends ThreadArtifactScope {
+  readonly threadId: string | null;
+  readonly afterPath: string | null;
+  readonly limit: number;
+}
+
+export interface ChangedFile {
+  readonly path: string;
+  readonly threadId: string;
+  readonly source: Exclude<ThreadArtifactSource, "upload">;
+  readonly versions: number;
+  readonly changedAt: string;
+  readonly deletedAt: string | null;
+}
+
+export interface ChangedFilesPage {
+  readonly items: readonly ChangedFile[];
+  readonly nextAfterPath: string | null;
+  readonly fileCount: number;
+}
+
+export interface ThreadArtifactChangesPort {
+  changedFiles(input: ChangedFilesQuery): Promise<ChangedFilesPage>;
+}

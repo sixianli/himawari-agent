@@ -27,6 +27,7 @@ import type { ExternalRedactionOptions } from "@himawari-agent/sensitive-capture
 import { ProductionThreadArtifacts } from "./production-thread-artifacts.js";
 import { createProductionWorkspaceLedger } from "./production-workspace-ledger.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
+import { createWorkspaceChangeMarks } from "./production-workspace-change-marks.js";
 import { WebToolMemory } from "./web-tool-memory.js";
 import type { WorkspaceAutoAuthorization } from "./workspace-auto-authorization.js";
 
@@ -93,6 +94,15 @@ export function createProductionFileReadServices(options: {
         now: () => clock.now(),
       })
     : undefined;
+  const workspaceChangeMarks = workspaceLedger
+    ? createWorkspaceChangeMarks({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        repository,
+        authority: () => options.authority().lease,
+        clock,
+      })
+    : undefined;
   const webMemory =
     configuration.runPolicy?.publicSearch || configuration.runPolicy?.publicFetch
       ? new WebToolMemory({ now: () => Date.parse(clock.now()) })
@@ -114,6 +124,7 @@ export function createProductionFileReadServices(options: {
     ...(hostReadOnly ? { hostReadOnly } : {}),
     ...(workspaceLedger ? { workspaceLedger } : {}),
     ...(threadArtifacts ? { threadArtifacts } : {}),
+    ...(workspaceChangeMarks ? { workspaceChangeMarks } : {}),
     ...(threadArtifacts
       ? {
           reconcileDeletedArtifacts: async () => {

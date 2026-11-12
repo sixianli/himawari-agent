@@ -59,6 +59,7 @@ import type {
   SensitiveMemoryApprovalStatePort,
   SessionDeletionStatePort,
   SessionDeviceStatePort,
+  ThreadArtifactChangesPort,
   ThreadArtifactStorePort,
   ThreadDistillationStatePort,
   ThreadPromptBundleStorePort,
@@ -1203,8 +1204,9 @@ export class SqliteDurableAdapters {
     });
   }
 
-  threadArtifacts(): ThreadArtifactStorePort {
-    return Object.freeze<ThreadArtifactStorePort>({
+  threadArtifacts(): ThreadArtifactStorePort & ThreadArtifactChangesPort {
+    return Object.freeze<ThreadArtifactStorePort & ThreadArtifactChangesPort>({
+      changedFiles: (input) => this.context.read("threadArtifact.changedFiles", input),
       register: (input) => this.context.write("threadArtifact.register", input),
       latest: (input) => this.context.read("threadArtifact.latest", input),
       get: (input) => this.context.read("threadArtifact.get", input),

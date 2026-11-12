@@ -367,6 +367,7 @@ describe("production HTTP composition", () => {
           "sensitive.interceptions.read",
           "sensitive.interceptions.clear",
           "server.status.read",
+          "workspace.changes.read",
         ],
         healthDependenciesAvailable: true,
       });
@@ -1142,6 +1143,33 @@ describe("production HTTP composition", () => {
           reasonCode,
         })),
       );
+      const workspaceChanges = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, second.cookie),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "workspace.changes.read"),
+          kind: "query",
+          payload: { grantId: "grant-not-configured", threadId: null, afterPath: null, limit: 20 },
+        },
+      });
+      expect(workspaceChanges.statusCode, workspaceChanges.body).toBe(200);
+      const changesMessage = gatewayV2MessageSchema.parseJson(workspaceChanges.body);
+      expect(changesMessage.type).toBe("workspace.changes.snapshot");
+      expect(changesMessage).toMatchObject({
+        payload: { grantMatched: false, fileCount: 0, items: [], incomplete: false },
+      });
+      const workspaceChangesWithoutSession = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, "", undefined),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "workspace.changes.read"),
+          kind: "query",
+          payload: { grantId: "grant-not-configured", threadId: null, afterPath: null, limit: 20 },
+        },
+      });
+      expect(workspaceChangesWithoutSession.statusCode).toBe(401);
       const withoutSession = await running.composition.app.inject({
         method: "POST",
         url: "/api/gateway/v2/queries",

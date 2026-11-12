@@ -121,6 +121,11 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
+import { configuredWorkspaceRoot } from "./production-run-policy.js";
+import {
+  PRODUCTION_WORKSPACE_CHANGES_OPERATIONS,
+  ProductionWorkspaceChangesControl,
+} from "./production-workspace-changes-control.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -688,6 +693,7 @@ function routeOptions(
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
+        ...PRODUCTION_WORKSPACE_CHANGES_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1167,6 +1173,14 @@ export async function createProductionHttpComposition(
     serverStatusControl: new ProductionServerStatusControl({
       configuration,
       health,
+      clock: { now: clock },
+    }),
+    workspaceChangesControl: new ProductionWorkspaceChangesControl({
+      configuration,
+      changes: repository.threadArtifacts(),
+      readState: (key) =>
+        repository.readScopedState(configuration.ownerId, configuration.agentId, key),
+      displayPath: configuredWorkspaceRoot(configuration, repository, { now: clock }),
       clock: { now: clock },
     }),
   });
