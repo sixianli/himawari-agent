@@ -106,19 +106,6 @@ async function seeded(): Promise<Side> {
     AT,
   );
   run(
-    `INSERT INTO perception_suggestions
-       (id, owner_id, agent_id, action, parameters, record_ids, dedupe_key, status, created_at,
-        expires_at, resolved_at, decision_id)
-     VALUES (?, ?, ?, 'create_reminder', ?, ?, 'dinner', 'dismissed', ?, ?, ?, NULL)`,
-    `suggestion:${"f".repeat(16)}`,
-    ...scope,
-    JSON.stringify({ title: "和小林吃饭" }),
-    JSON.stringify([recordId]),
-    NOW,
-    "2026-11-11T00:00:00.000Z",
-    NOW,
-  );
-  run(
     `INSERT INTO perception_settings
        (owner_id, agent_id, revision, disabled_senses, paused_from, paused_until, retention_days,
         limit_overrides, updated_at)
@@ -184,7 +171,7 @@ function lines(files: PortableFiles, path: string): Record<string, unknown>[] {
 }
 
 describe("data export: perception", () => {
-  it("[P1-6] exports perception records with their text, episodes, mirror items, track points, suggestions, settings and usage", async () => {
+  it("[P1-6] exports perception records with their text, episodes, mirror items, track points, settings and usage", async () => {
     const source = await seeded();
     const { files, manifest } = await exportOf(source);
     expect(lines(files, "data/perception-records.jsonl")).toEqual([
@@ -227,11 +214,6 @@ describe("data export: perception", () => {
         speedMetersPerSecond: null,
       },
     ]);
-    expect(lines(files, "data/perception-suggestions.jsonl")[0]).toMatchObject({
-      action: "create_reminder",
-      status: "dismissed",
-      recordIds: [recordId],
-    });
     expect(lines(files, "data/perception-settings.jsonl")).toEqual([
       {
         disabledSenses: ["vision"],
@@ -261,7 +243,6 @@ describe("data export: perception", () => {
       perceptionEpisodes: 1,
       deviceMirrorItems: 1,
       trackPoints: 1,
-      perceptionSuggestions: 1,
       perceptionSettings: 1,
       limitUsage: 2,
     });
@@ -287,7 +268,6 @@ describe("data export: perception", () => {
       "data/perception-episodes.jsonl",
       "data/device-mirror-items.jsonl",
       "data/track-points.jsonl",
-      "data/perception-suggestions.jsonl",
       "data/perception-settings.jsonl",
       "data/limit-usage.jsonl",
     ])

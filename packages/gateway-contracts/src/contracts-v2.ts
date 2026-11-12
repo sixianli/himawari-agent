@@ -143,9 +143,6 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "perception.usage.read",
   "perception.usage.snapshot",
   "perception.settings.change",
-  "perception.suggestions.read",
-  "perception.suggestions.snapshot",
-  "perception.suggestion.dismiss",
   "server.status.read",
   "server.status.snapshot",
   "stream.event",
@@ -797,30 +794,6 @@ const perceptionSettingsChangeCommandSchema = object({
     key: nullable(machineString),
     value: nullable(integer(0)),
   }),
-});
-const perceptionSuggestionsQuerySchema = object({
-  ...envelope("query", "perception.suggestions.read"),
-  payload: object({}),
-});
-const perceptionSuggestionsSnapshotSchema = object({
-  ...envelope("snapshot", "perception.suggestions.snapshot"),
-  payload: object({
-    suggestions: array(
-      object({
-        id: machineString,
-        action: machineString,
-        parameters: array(object({ name: machineString, value: boundedString(512) })),
-        recordIds: array(machineString),
-        createdAt: timestamp,
-        expiresAt: timestamp,
-      }),
-    ),
-    generatedAt: timestamp,
-  }),
-});
-const perceptionSuggestionDismissCommandSchema = object({
-  ...commandEnvelope("perception.suggestion.dismiss"),
-  payload: object({ suggestionId: machineString }),
 });
 export const SERVER_STATUS_OVERALL = ["healthy", "degraded", "not_ready", "not_live"] as const;
 export const SERVER_STATUS_DEPENDENCY = ["healthy", "degraded", "blocked", "unavailable"] as const;
@@ -2789,9 +2762,6 @@ const schemasByType = {
   "perception.usage.read": perceptionUsageQuerySchema,
   "perception.usage.snapshot": perceptionUsageSnapshotSchema,
   "perception.settings.change": perceptionSettingsChangeCommandSchema,
-  "perception.suggestions.read": perceptionSuggestionsQuerySchema,
-  "perception.suggestions.snapshot": perceptionSuggestionsSnapshotSchema,
-  "perception.suggestion.dismiss": perceptionSuggestionDismissCommandSchema,
   "server.status.read": serverStatusQuerySchema,
   "server.status.snapshot": serverStatusSnapshotSchema,
   "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,

@@ -25,15 +25,11 @@ import {
   PERCEPTION_EPISODE_ANCHOR_TYPES,
   PERCEPTION_EPISODE_BOUNDARY_TYPES,
   PERCEPTION_RECORD_ID_PATTERN,
-  PERCEPTION_SUGGESTION_STATUSES,
-  PERCEPTION_SUGGESTION_TRANSITIONS,
   PERCEPTION_RECORD_TYPE_NAMES,
   PERCEPTION_RECORD_TYPES,
   PERCEPTION_RETENTION_KEYS,
   PERCEPTION_SENSES,
   PERCEPTION_SPEAKER_KINDS,
-  PERCEPTION_SUGGESTION_ACTIONS,
-  PERCEPTION_SUGGESTION_ID_PATTERN,
   PERCEPTION_TEXT_MAXIMUM,
   type PerceptionCaptureSource,
   type PerceptionConfiguration,
@@ -48,8 +44,6 @@ import {
   type PerceptionSettings,
   type PerceptionSpeakerKind,
   type PerceptionStorePort,
-  type PerceptionSuggestion,
-  type PerceptionSuggestionAction,
   perceptionTypesOfSense,
   resolvePerceptionOrigin,
   type TrackPointInput,
@@ -178,6 +172,7 @@ export class PerceptionService {
   readonly #options: PerceptionServiceOptions;
   readonly #consuming = new Set<string>();
   readonly #placing = new Set<string>();
+  readonly #queues = new Map<string, Promise<void>>();
   readonly #prunedAt = new Map<string, number>();
 
   constructor(options: PerceptionServiceOptions) {
@@ -496,38 +491,46 @@ export class PerceptionService {
       }),
     );
     const prepared: PerceptionRecordInput[] = [];
-    for (const record of candidates) {
-      const contentRef =
-        record.text === null || known.has(record.input.id)
-          ? null
-          : await this.#options.protectText({
-              authentication: input.authentication,
-              idempotencyKey: `perception-content:${digest(record.input.id).slice(0, 40)}`,
-              content: record.text,
-              dataClassification: record.input.dataClassification,
-            });
-      prepared.push({ ...record.input, contentRef });
-    }
     const bounds = ownerDayBounds(now.toISOString(), timeZone);
     const configuration = this.#options.configuration();
-    const stored =
-      prepared.length === 0
-        ? { outcomes: [], reached: [] }
-        : await this.#ingestPrepared(scope, prepared, {
-            ...scope,
-            deviceId: input.deviceId,
-            now: now.toISOString(),
-            periodStart: bounds.start,
-            records: prepared,
-            recordLimitKey: "perception.records.daily",
-            recordLimit: this.#serverLimit(settings, "perception.records.daily"),
-            audioLimitKey: "perception.audio.daily",
-            audioLimit: this.#serverLimit(settings, "perception.audio.daily"),
-            episodeSilenceMs: configuration.episodeSilenceSeconds * 1000,
-            episodeMaximumMs: configuration.episodeMaximumSeconds * 1000,
-            episodeAnchorTypes: PERCEPTION_EPISODE_ANCHOR_TYPES,
-            episodeBoundaryTypes: PERCEPTION_EPISODE_BOUNDARY_TYPES,
-          });
+    const stored = await this.#exclusive(`ingest:${scope.ownerId}\n${scope.agentId}`, async () => {
+      try {
+        for (const record of candidates) {
+          const contentRef =
+            record.text === null || known.has(record.input.id)
+              ? null
+              : await this.#options.protectText({
+                  authentication: input.authentication,
+                  idempotencyKey: `perception-content:${digest(record.input.id).slice(0, 40)}`,
+                  content: record.text,
+                  dataClassification: record.input.dataClassification,
+                });
+          prepared.push({ ...record.input, contentRef });
+        }
+        return prepared.length === 0
+          ? { outcomes: [], reached: [] }
+          : await this.#options.store.ingestRecords({
+              ...scope,
+              deviceId: input.deviceId,
+              now: now.toISOString(),
+              periodStart: bounds.start,
+              records: prepared,
+              recordLimitKey: "perception.records.daily",
+              recordLimit: this.#serverLimit(settings, "perception.records.daily"),
+              audioLimitKey: "perception.audio.daily",
+              audioLimit: this.#serverLimit(settings, "perception.audio.daily"),
+              episodeSilenceMs: configuration.episodeSilenceSeconds * 1000,
+              episodeMaximumMs: configuration.episodeMaximumSeconds * 1000,
+              episodeAnchorTypes: PERCEPTION_EPISODE_ANCHOR_TYPES,
+              episodeBoundaryTypes: PERCEPTION_EPISODE_BOUNDARY_TYPES,
+            });
+      } finally {
+        await this.#options.store.releaseContent({
+          ...scope,
+          refs: prepared.flatMap(({ contentRef }) => (contentRef === null ? [] : [contentRef])),
+        });
+      }
+    });
     const outcome = new Map<string, PerceptionOutcome>([
       ...blocked,
       ...stored.outcomes.map(({ id, outcome: result }) => [id, result] as const),
@@ -589,10 +592,6 @@ export class PerceptionService {
     const settings = await this.settings(scope);
     const retention = this.retentionDays(settings);
     const day = 86_400_000;
-    await this.#options.store.expireSuggestions({
-      ...this.#scope(scope),
-      now: now.toISOString(),
-    });
     const pruned = await this.#options.store.prune({
       ...this.#scope(scope),
       now: now.toISOString(),
@@ -854,18 +853,18 @@ export class PerceptionService {
     return Object.freeze({ grant, replay: null });
   }
 
-  async #ingestPrepared(
-    scope: PerceptionScope,
-    prepared: readonly PerceptionRecordInput[],
-    input: Parameters<PerceptionStorePort["ingestRecords"]>[0],
-  ) {
+  async #exclusive<TResult>(key: string, run: () => Promise<TResult>): Promise<TResult> {
+    const previous = this.#queues.get(key) ?? Promise.resolve();
+    const current = previous.then(run, run);
+    const settled = current.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.#queues.set(key, settled);
     try {
-      return await this.#options.store.ingestRecords(input);
+      return await current;
     } finally {
-      await this.#options.store.releaseContent({
-        ...scope,
-        refs: prepared.flatMap(({ contentRef }) => (contentRef === null ? [] : [contentRef])),
-      });
+      if (this.#queues.get(key) === settled) this.#queues.delete(key);
     }
   }
 
@@ -918,7 +917,7 @@ export class PerceptionService {
           });
         const parts = (pending + decoder.write(chunk)).split("\n");
         pending = parts.pop() ?? "";
-        if (pending.length > lineCap) tooLong();
+        if (Buffer.byteLength(pending) > lineCap) tooLong();
         for (const part of parts) take(part);
       }
       take(pending + decoder.end());
@@ -988,10 +987,11 @@ export class PerceptionService {
         const bounds = ownerDayBounds(now.toISOString(), this.#options.timeZone());
         const final = path.join(this.#media(), grant.sha256);
         const image = grant.mediaKind === "image" || grant.mediaKind === "screen";
-        this.#placing.add(grant.sha256);
-        const stored = await rename(upload.file, final)
-          .then(() =>
-            this.#options.store.recordMedia({
+        const stored = await this.#exclusive(`media:${grant.sha256}`, async () => {
+          this.#placing.add(grant.sha256);
+          try {
+            await rename(upload.file, final);
+            const outcome = await this.#options.store.recordMedia({
               ...scope,
               periodStart: bounds.start,
               item: {
@@ -1028,10 +1028,19 @@ export class PerceptionService {
                       },
                     ]),
               ],
-            }),
-          )
-          .finally(() => this.#placing.delete(grant.sha256));
-        if (!stored.stored && !stored.duplicate) await rm(final, { force: true });
+            });
+            if (!outcome.stored && !outcome.duplicate) await rm(final, { force: true });
+            return outcome;
+          } catch (error) {
+            const kept = await this.#options.store
+              .knownMediaDigests({ digests: [grant.sha256] })
+              .catch(() => [grant.sha256]);
+            if (kept.length === 0) await rm(final, { force: true });
+            throw error;
+          } finally {
+            this.#placing.delete(grant.sha256);
+          }
+        });
         await this.#afterWrite(scope, settings, bounds.start, [
           "perception.media.daily_bytes",
           "perception.images.daily",
@@ -1210,60 +1219,6 @@ export class PerceptionService {
       episodeId: input.episodeId,
       cursor: input.cursor,
       limit: this.#options.configuration().listPageRows,
-    });
-  }
-
-  async proposeSuggestion(input: {
-    readonly scope: PerceptionScope;
-    readonly id: string;
-    readonly action: PerceptionSuggestionAction;
-    readonly parameters: Readonly<Record<string, string | number | boolean>>;
-    readonly recordIds: readonly string[];
-    readonly dedupeKey: string;
-    readonly expiresAt: string;
-    readonly decisionId: string | null;
-  }): Promise<{ readonly suggestion: PerceptionSuggestion; readonly created: boolean }> {
-    if (
-      !PERCEPTION_SUGGESTION_ID_PATTERN.test(input.id) ||
-      !PERCEPTION_SUGGESTION_ACTIONS.includes(input.action) ||
-      input.recordIds.length === 0 ||
-      input.recordIds.some((id) => !PERCEPTION_RECORD_ID_PATTERN.test(id)) ||
-      input.dedupeKey.length < 1 ||
-      input.dedupeKey.length > 256
-    )
-      return invalid("suggestion");
-    return this.#options.store.createSuggestion({
-      ...this.#scope(input.scope),
-      suggestion: {
-        id: input.id,
-        action: input.action,
-        parameters: input.parameters,
-        recordIds: input.recordIds,
-        dedupeKey: input.dedupeKey,
-        createdAt: this.#now().toISOString(),
-        expiresAt: input.expiresAt,
-        decisionId: input.decisionId,
-      },
-    });
-  }
-
-  async suggestions(scope: PerceptionScope): Promise<readonly PerceptionSuggestion[]> {
-    await this.#options.store.expireSuggestions({
-      ...this.#scope(scope),
-      now: this.#now().toISOString(),
-    });
-    return this.#options.store.listSuggestions({ ...this.#scope(scope), status: "open" });
-  }
-
-  dismissSuggestion(scope: PerceptionScope, suggestionId: string): Promise<PerceptionSuggestion> {
-    return this.#options.store.transitionSuggestion({
-      ...this.#scope(scope),
-      suggestionId,
-      to: "dismissed",
-      allowedFrom: PERCEPTION_SUGGESTION_STATUSES.filter((status) =>
-        (PERCEPTION_SUGGESTION_TRANSITIONS[status] as readonly string[]).includes("dismissed"),
-      ),
-      now: this.#now().toISOString(),
     });
   }
 }

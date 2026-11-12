@@ -14,7 +14,6 @@ import type {
   PerceptionScope,
   PerceptionSettings,
   PerceptionStorePort,
-  PerceptionSuggestion,
   PerceptionEpisodeOverview,
   UploadGrant,
 } from "@himawari-agent/application";
@@ -38,26 +37,9 @@ const grantColumns = `token_hash AS tokenHash, device_id AS deviceId, purpose, s
   media_kind AS mediaKind, media_ms AS mediaMilliseconds, created_at AS createdAt,
   expires_at AS expiresAt, used_at AS usedAt, result`;
 
-const suggestionColumns = `id, action, parameters, record_ids AS recordIds, dedupe_key AS dedupeKey,
-  status, created_at AS createdAt, expires_at AS expiresAt, resolved_at AS resolvedAt,
-  decision_id AS decisionId`;
-
 type RecordRow = Omit<PerceptionRecord, "evidence"> & { readonly evidence: string };
-type SuggestionRow = Omit<PerceptionSuggestion, "parameters" | "recordIds"> & {
-  readonly parameters: string;
-  readonly recordIds: string;
-};
-
 function toRecord(row: RecordRow): PerceptionRecord {
   return Object.freeze({ ...row, evidence: Object.freeze(JSON.parse(row.evidence)) });
-}
-
-function toSuggestion(row: SuggestionRow): PerceptionSuggestion {
-  return Object.freeze({
-    ...row,
-    parameters: Object.freeze(JSON.parse(row.parameters)),
-    recordIds: Object.freeze(JSON.parse(row.recordIds) as string[]),
-  });
 }
 
 function validTime(value: string): boolean {
@@ -989,87 +971,6 @@ export class SqlitePerceptionOperations {
           this.time(input.periodStart),
         ).changes === 1
     );
-  }
-
-  private readSuggestion(scope: PerceptionScope, where: string, value: string) {
-    const row = this.database
-      .prepare(
-        `SELECT ${suggestionColumns} FROM perception_suggestions
-          WHERE owner_id = ? AND agent_id = ? AND ${where} = ?`,
-      )
-      .get(scope.ownerId, scope.agentId, value) as SuggestionRow | undefined;
-    return row ? toSuggestion(row) : undefined;
-  }
-
-  protected op_createSuggestion(input: Input<"createSuggestion">) {
-    this.assertDiskHeadroom();
-    const { suggestion } = input;
-    this.time(suggestion.createdAt);
-    this.time(suggestion.expiresAt);
-    return this.database.transaction(() => {
-      const existing = this.readSuggestion(input, "dedupe_key", suggestion.dedupeKey);
-      if (existing) return Object.freeze({ suggestion: existing, created: false });
-      this.database
-        .prepare(
-          `INSERT INTO perception_suggestions
-             (id, owner_id, agent_id, action, parameters, record_ids, dedupe_key, status,
-              created_at, expires_at, decision_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
-        )
-        .run(
-          suggestion.id,
-          input.ownerId,
-          input.agentId,
-          suggestion.action,
-          JSON.stringify(suggestion.parameters),
-          JSON.stringify(suggestion.recordIds),
-          suggestion.dedupeKey,
-          suggestion.createdAt,
-          suggestion.expiresAt,
-          suggestion.decisionId,
-        );
-      return Object.freeze({
-        suggestion: this.readSuggestion(input, "id", suggestion.id) as PerceptionSuggestion,
-        created: true,
-      });
-    })();
-  }
-
-  protected op_listSuggestions(input: Input<"listSuggestions">): readonly PerceptionSuggestion[] {
-    return (
-      this.database
-        .prepare(
-          `SELECT ${suggestionColumns} FROM perception_suggestions
-            WHERE owner_id = ? AND agent_id = ? AND (? IS NULL OR status = ?)
-            ORDER BY created_at DESC, id`,
-        )
-        .all(input.ownerId, input.agentId, input.status, input.status) as SuggestionRow[]
-    ).map(toSuggestion);
-  }
-
-  protected op_transitionSuggestion(input: Input<"transitionSuggestion">): PerceptionSuggestion {
-    const now = this.time(input.now);
-    return this.database.transaction(() => {
-      const current = this.readSuggestion(input, "id", input.suggestionId);
-      if (!current) return this.fail("PORT_NOT_FOUND", "Suggestion was not found");
-      if (current.status === input.to) return current;
-      if (!input.allowedFrom.includes(current.status))
-        return this.fail("PORT_CONFLICT", "Suggestion cannot change to that status");
-      this.database
-        .prepare("UPDATE perception_suggestions SET status = ?, resolved_at = ? WHERE id = ?")
-        .run(input.to, now, current.id);
-      return this.readSuggestion(input, "id", current.id) as PerceptionSuggestion;
-    })();
-  }
-
-  protected op_expireSuggestions(input: Input<"expireSuggestions">): number {
-    const now = this.time(input.now);
-    return this.database
-      .prepare(
-        `UPDATE perception_suggestions SET status = 'expired', resolved_at = ?
-          WHERE owner_id = ? AND agent_id = ? AND status = 'open' AND expires_at <= ?`,
-      )
-      .run(now, input.ownerId, input.agentId, now).changes;
   }
 
   protected op_prune(input: Input<"prune">) {

@@ -19,7 +19,6 @@ import {
   ingest,
   perceptionScope,
   power,
-  recordId,
   utterance,
 } from "../fixtures/perception-test-client.ts";
 
@@ -256,33 +255,5 @@ describe("perception gateway operations", () => {
     expect((await read(h, "perception.status.read", "perception.status.snapshot")).revision).toBe(
       1,
     );
-  });
-
-  it("lists open suggestions and dismisses one", async () => {
-    const h = await harness();
-    const empty = await read(h, "perception.suggestions.read", "perception.suggestions.snapshot");
-    expect(empty.suggestions).toEqual([]);
-    const { suggestion } = await h.perception.proposeSuggestion({
-      scope: perceptionScope,
-      id: "suggestion:0123456789abcdef",
-      action: "create_reminder",
-      parameters: { title: "给妈妈回电话" },
-      recordIds: [recordId()],
-      dedupeKey: "call-mom",
-      expiresAt: atOffset(h, 3600),
-      decisionId: null,
-    });
-    const listed = await read(h, "perception.suggestions.read", "perception.suggestions.snapshot");
-    expect(listed.suggestions.map(({ id, parameters }) => [id, parameters])).toEqual([
-      [suggestion.id, [{ name: "title", value: "给妈妈回电话" }]],
-    ]);
-    const dismissed = await control(h).execute(
-      message("command", "perception.suggestion.dismiss", {
-        suggestionId: suggestion.id,
-      }) as GatewayV2Command,
-    );
-    expect(dismissed.resultRef).toBe(`perception-suggestion:${suggestion.id}:dismissed`);
-    const after = await read(h, "perception.suggestions.read", "perception.suggestions.snapshot");
-    expect(after.suggestions).toEqual([]);
   });
 });

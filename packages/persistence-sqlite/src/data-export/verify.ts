@@ -334,7 +334,7 @@ export function parsePortable(
       parseLines<Record<string, unknown>>(files, DATA_FILES[key], PERCEPTION_FILE_SCHEMAS[key]),
     ]),
   ) as Record<PerceptionFileKey, Record<string, unknown>[]>;
-  for (const key of ["perceptionRecords", "perceptionEpisodes", "perceptionSuggestions"] as const)
+  for (const key of ["perceptionRecords", "perceptionEpisodes"] as const)
     unique(
       perception[key].map(({ id }) => String(id)),
       DATA_FILES[key],

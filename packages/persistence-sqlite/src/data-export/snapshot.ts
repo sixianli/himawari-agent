@@ -138,10 +138,6 @@ export function readSnapshot(
           `SELECT device_id, occurred_at_ms, latitude_e7, longitude_e7, accuracy_dm, speed_cms
           FROM location_track_points WHERE ${scoped} ORDER BY occurred_at_ms, device_id`,
         ),
-        perceptionSuggestions: all(
-          `SELECT id, action, parameters, record_ids, status, created_at, expires_at, resolved_at
-          FROM perception_suggestions WHERE ${scoped} ORDER BY created_at, id`,
-        ),
         perceptionSettings: all(
           `SELECT disabled_senses, paused_from, paused_until, retention_days, limit_overrides,
             updated_at

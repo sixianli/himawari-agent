@@ -36,7 +36,6 @@ export type PerceptionRecordStatus = (typeof PERCEPTION_RECORD_STATUSES)[number]
 
 export const PERCEPTION_RECORD_ID_PATTERN = /^perception:[A-Za-z0-9_-]{16,64}$/u;
 export const PERCEPTION_EPISODE_ID_PATTERN = /^episode:[0-9a-f]{32}$/u;
-export const PERCEPTION_SUGGESTION_ID_PATTERN = /^suggestion:[A-Za-z0-9_-]{16,64}$/u;
 export const PERCEPTION_TEXT_MAXIMUM = 32 * 1024;
 export const PERCEPTION_DEVICE_TIME_MAXIMUM = 64;
 export const PERCEPTION_CONFIDENCE_MAXIMUM = 1000;
@@ -320,19 +319,6 @@ export function resolvePerceptionOrigin(input: {
     : "other";
 }
 
-export const PERCEPTION_SUGGESTION_STATUSES = ["open", "accepted", "dismissed", "expired"] as const;
-export type PerceptionSuggestionStatus = (typeof PERCEPTION_SUGGESTION_STATUSES)[number];
-export const PERCEPTION_SUGGESTION_TRANSITIONS: Readonly<
-  Record<PerceptionSuggestionStatus, readonly PerceptionSuggestionStatus[]>
-> = Object.freeze({
-  open: Object.freeze(["accepted", "dismissed", "expired"] as const),
-  accepted: Object.freeze([] as const),
-  dismissed: Object.freeze([] as const),
-  expired: Object.freeze([] as const),
-});
-export const PERCEPTION_SUGGESTION_ACTIONS = ["create_reminder", "create_calendar_event"] as const;
-export type PerceptionSuggestionAction = (typeof PERCEPTION_SUGGESTION_ACTIONS)[number];
-
 export const UPLOAD_GRANT_PURPOSES = ["perception", "track", "media"] as const;
 export type UploadGrantPurpose = (typeof UPLOAD_GRANT_PURPOSES)[number];
 export const UPLOAD_BATCH_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/u;
@@ -515,19 +501,6 @@ export interface UploadGrant {
   readonly result: string | null;
 }
 
-export interface PerceptionSuggestion {
-  readonly id: string;
-  readonly action: PerceptionSuggestionAction;
-  readonly parameters: Readonly<Record<string, string | number | boolean>>;
-  readonly recordIds: readonly string[];
-  readonly dedupeKey: string;
-  readonly status: PerceptionSuggestionStatus;
-  readonly createdAt: string;
-  readonly expiresAt: string;
-  readonly resolvedAt: string | null;
-  readonly decisionId: string | null;
-}
-
 export interface LimitUsageRow {
   readonly key: string;
   readonly deviceId: string;
@@ -697,23 +670,6 @@ export interface PerceptionStorePort {
       readonly now: string;
     },
   ): Promise<boolean>;
-  createSuggestion(
-    input: PerceptionScope & {
-      readonly suggestion: Omit<PerceptionSuggestion, "status" | "resolvedAt">;
-    },
-  ): Promise<{ readonly suggestion: PerceptionSuggestion; readonly created: boolean }>;
-  listSuggestions(
-    input: PerceptionScope & { readonly status: PerceptionSuggestionStatus | null },
-  ): Promise<readonly PerceptionSuggestion[]>;
-  transitionSuggestion(
-    input: PerceptionScope & {
-      readonly suggestionId: string;
-      readonly to: PerceptionSuggestionStatus;
-      readonly allowedFrom: readonly PerceptionSuggestionStatus[];
-      readonly now: string;
-    },
-  ): Promise<PerceptionSuggestion>;
-  expireSuggestions(input: PerceptionScope & { readonly now: string }): Promise<number>;
   prune(
     input: PerceptionScope & {
       readonly now: string;

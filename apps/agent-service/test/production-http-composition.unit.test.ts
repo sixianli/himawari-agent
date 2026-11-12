@@ -381,8 +381,6 @@ describe("production HTTP composition", () => {
           "perception.episode.read",
           "perception.usage.read",
           "perception.settings.change",
-          "perception.suggestions.read",
-          "perception.suggestion.dismiss",
         ],
         healthDependenciesAvailable: true,
       });

@@ -200,6 +200,18 @@ describe("consolidation hold migration", () => {
       /DECISION_SIGNAL_IMMUTABLE/u,
     );
     expect(database.pragma("foreign_key_check")).toEqual([]);
+    const ledger = (kind: string, outcome: string) =>
+      database
+        .prepare(
+          `INSERT INTO decision_ledger (id, owner_id, agent_id, kind, checked_at, counts, outcome,
+            reason_code, subject_ref, inputs, cost_micros, duration_ms)
+           VALUES (?, ?, ?, ?, ?, '{}', ?, 'test', 'subject', '{"memoryIds":[],"ruleIds":[]}', 0, 0)`,
+        )
+        .run(`d-${kind}-${outcome}`, OWNER, AGENT, kind, T0, outcome);
+    expect(ledger("limit_change", "changed").changes).toBe(1);
+    expect(ledger("delivery_timing", "deferred").changes).toBe(1);
+    expect(() => ledger("limit_change", "deferred")).toThrow(/CHECK/u);
+    expect(() => ledger("no_such_kind", "changed")).toThrow(/CHECK/u);
     expect(database.prepare("SELECT count(*) FROM source_insights").pluck().get()).toBe(1);
     database.prepare("DELETE FROM memory_consolidation_changes WHERE id = 'change-1'").run();
     expect(

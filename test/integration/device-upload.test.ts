@@ -221,6 +221,40 @@ describe("device background uploads", () => {
     expect(await readdir(directory)).toEqual([]);
   });
 
+  it("keeps the file when the same bytes arrive twice at once", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const bytes = Buffer.from("the-same-picture");
+    const begin = async (batchId: string) => {
+      const begun = await beginUpload(h, client, {
+        purpose: "media",
+        sha256: sha256(bytes),
+        bytes: bytes.length,
+        batchId,
+        mediaKind: "image",
+      });
+      expect(begun.status, JSON.stringify(begun.body)).toBe(201);
+      return begun.target;
+    };
+    const targets = [await begin("media-batch-00000same1"), await begin("media-batch-00000same2")];
+    const results = await Promise.all(targets.map((target) => upload(h, target, bytes)));
+    expect(
+      results
+        .map(({ body }) => [body["stored"], body["duplicate"]])
+        .sort((a, b) => Number(b[0]) - Number(a[0])),
+    ).toEqual([
+      [true, false],
+      [false, true],
+    ]);
+    expect(await readdir(path.join(h.stateRoot, "device-uploads", "media"))).toEqual([
+      sha256(bytes),
+    ]);
+    await h.perception.prune(perceptionScope);
+    expect(await readdir(path.join(h.stateRoot, "device-uploads", "media"))).toEqual([
+      sha256(bytes),
+    ]);
+  });
+
   it("refuses records outside the id range the grant was issued for", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);

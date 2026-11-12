@@ -231,21 +231,6 @@ export const TRACK_POINT_SCHEMA: JsonSchema = objectOf(
   "一个轨迹点。只供查看，导入时不恢复。",
 );
 
-export const PERCEPTION_SUGGESTION_SCHEMA: JsonSchema = objectOf(
-  {
-    id: text(1, 128),
-    action: text(1, 64),
-    parameters: scalarMap,
-    recordIds: { type: "array", items: text(1, 128) },
-    status: enumOf(["open", "accepted", "dismissed", "expired"]),
-    createdAt: timestamp,
-    expiresAt: timestamp,
-    resolvedAt: nullable(timestamp),
-  },
-  [],
-  "从感知记录得出的一条建议和它的处理结果。只供查看，导入时不恢复。",
-);
-
 export const PERCEPTION_SETTINGS_SCHEMA: JsonSchema = objectOf(
   {
     disabledSenses: { type: "array", items: text(1, 32) },
@@ -512,7 +497,6 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       perceptionEpisodes: integer(0),
       deviceMirrorItems: integer(0),
       trackPoints: integer(0),
-      perceptionSuggestions: integer(0),
       perceptionSettings: integer(0),
       limitUsage: integer(0),
       consolidations: integer(0),
@@ -536,7 +520,6 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       "perceptionEpisodes",
       "deviceMirrorItems",
       "trackPoints",
-      "perceptionSuggestions",
       "perceptionSettings",
       "limitUsage",
       "consolidations",
@@ -583,7 +566,6 @@ export const SCHEMA_FILES: readonly { readonly path: string; readonly schema: Js
     { path: "schema/perception-episodes.schema.json", schema: PERCEPTION_EPISODE_SCHEMA },
     { path: "schema/perception-records.schema.json", schema: PERCEPTION_RECORD_SCHEMA },
     { path: "schema/perception-settings.schema.json", schema: PERCEPTION_SETTINGS_SCHEMA },
-    { path: "schema/perception-suggestions.schema.json", schema: PERCEPTION_SUGGESTION_SCHEMA },
     { path: "schema/rules.schema.json", schema: RULE_SCHEMA },
     { path: "schema/track-points.schema.json", schema: TRACK_POINT_SCHEMA },
   ]);
@@ -597,7 +579,6 @@ export const DATA_FILES = Object.freeze({
   perceptionEpisodes: "data/perception-episodes.jsonl",
   deviceMirrorItems: "data/device-mirror-items.jsonl",
   trackPoints: "data/track-points.jsonl",
-  perceptionSuggestions: "data/perception-suggestions.jsonl",
   perceptionSettings: "data/perception-settings.jsonl",
   limitUsage: "data/limit-usage.jsonl",
   consolidations: "data/consolidations.jsonl",
@@ -610,7 +591,6 @@ export const PERCEPTION_FILE_KEYS = [
   "perceptionEpisodes",
   "deviceMirrorItems",
   "trackPoints",
-  "perceptionSuggestions",
   "perceptionSettings",
   "limitUsage",
 ] as const;
@@ -622,7 +602,6 @@ export const PERCEPTION_FILE_SCHEMAS: Readonly<Record<PerceptionFileKey, JsonSch
     perceptionEpisodes: PERCEPTION_EPISODE_SCHEMA,
     deviceMirrorItems: DEVICE_MIRROR_ITEM_SCHEMA,
     trackPoints: TRACK_POINT_SCHEMA,
-    perceptionSuggestions: PERCEPTION_SUGGESTION_SCHEMA,
     perceptionSettings: PERCEPTION_SETTINGS_SCHEMA,
     limitUsage: LIMIT_USAGE_SCHEMA,
   });

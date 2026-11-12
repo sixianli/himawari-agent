@@ -433,27 +433,6 @@ CREATE TABLE location_track_points (
 CREATE INDEX location_track_points_time_index
   ON location_track_points(owner_id, agent_id, occurred_at_ms);
 
-CREATE TABLE perception_suggestions (
-  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 27 AND 75 AND substr(id, 1, 11) = 'suggestion:'),
-  owner_id TEXT NOT NULL REFERENCES owners(id) ON DELETE CASCADE,
-  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-  action TEXT NOT NULL CHECK (length(action) BETWEEN 1 AND 64),
-  parameters TEXT NOT NULL CHECK (json_valid(parameters) AND json_type(parameters) = 'object'),
-  record_ids TEXT NOT NULL CHECK (json_valid(record_ids) AND json_type(record_ids) = 'array'),
-  dedupe_key TEXT NOT NULL CHECK (length(dedupe_key) BETWEEN 1 AND 256),
-  status TEXT NOT NULL CHECK (status IN ('open', 'accepted', 'dismissed', 'expired')),
-  created_at TEXT NOT NULL CHECK (created_at GLOB '????-??-??T??:??:??.???Z'),
-  expires_at TEXT NOT NULL CHECK (expires_at GLOB '????-??-??T??:??:??.???Z'),
-  resolved_at TEXT CHECK (resolved_at IS NULL OR resolved_at GLOB '????-??-??T??:??:??.???Z'),
-  decision_id TEXT REFERENCES decision_ledger(id) ON DELETE SET NULL,
-  UNIQUE (owner_id, agent_id, dedupe_key),
-  CHECK ((status = 'open') = (resolved_at IS NULL)),
-  CHECK (expires_at > created_at)
-) STRICT;
-
-CREATE INDEX perception_suggestions_status_index
-  ON perception_suggestions(owner_id, agent_id, status, expires_at);
-
 CREATE TABLE device_upload_grants (
   token_hash TEXT PRIMARY KEY CHECK (length(token_hash) = 64 AND token_hash NOT GLOB '*[^0-9a-f]*'),
   owner_id TEXT NOT NULL REFERENCES owners(id) ON DELETE CASCADE,

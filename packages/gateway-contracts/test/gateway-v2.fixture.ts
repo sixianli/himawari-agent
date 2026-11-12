@@ -543,23 +543,6 @@ export const governanceMessages = [
     key: "perception.records.daily",
     value: 10000,
   }),
-  fixture("query", "perception.suggestions.read", {}),
-  fixture("snapshot", "perception.suggestions.snapshot", {
-    suggestions: [
-      {
-        id: "suggestion:0123456789abcdef",
-        action: "create_reminder",
-        parameters: [{ name: "title", value: "给妈妈回电话" }],
-        recordIds: ["perception:0123456789abcdef"],
-        createdAt: "2026-11-12T03:00:00.000Z",
-        expiresAt: "2026-11-13T03:00:00.000Z",
-      },
-    ],
-    generatedAt: "2026-11-12T03:06:30.000Z",
-  }),
-  fixture("command", "perception.suggestion.dismiss", {
-    suggestionId: "suggestion:0123456789abcdef",
-  }),
   fixture("query", "server.status.read", {}),
   fixture("snapshot", "server.status.snapshot", {
     live: true,

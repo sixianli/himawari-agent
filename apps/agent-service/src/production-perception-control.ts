@@ -29,8 +29,6 @@ export const PRODUCTION_PERCEPTION_OPERATIONS = Object.freeze([
   "perception.episode.read",
   "perception.usage.read",
   "perception.settings.change",
-  "perception.suggestions.read",
-  "perception.suggestion.dismiss",
 ] as const);
 
 export interface ProductionPerceptionControlOptions {
@@ -219,22 +217,6 @@ export class ProductionPerceptionControl {
           payload: { ...usage, revision: settings.revision, generatedAt },
         };
       }
-      case "perception.suggestions.read":
-        return {
-          ...head,
-          type: "perception.suggestions.snapshot",
-          payload: {
-            suggestions: (await service.suggestions(scope)).map((suggestion) => ({
-              id: suggestion.id,
-              action: suggestion.action,
-              parameters: pairs(suggestion.parameters),
-              recordIds: suggestion.recordIds,
-              createdAt: suggestion.createdAt,
-              expiresAt: suggestion.expiresAt,
-            })),
-            generatedAt,
-          },
-        };
       default:
         throw new Error("PERCEPTION_OPERATION_NOT_INSTALLED");
     }
@@ -261,16 +243,6 @@ export class ProductionPerceptionControl {
             throw error;
           });
         return { resultRef: `perception-settings:${settings.revision}`, replayed: false };
-      }
-      case "perception.suggestion.dismiss": {
-        const suggestion = await this.#options.perception.dismissSuggestion(
-          scope,
-          command.payload.suggestionId,
-        );
-        return {
-          resultRef: `perception-suggestion:${suggestion.id}:${suggestion.status}`,
-          replayed: false,
-        };
       }
       default:
         throw new Error("PERCEPTION_OPERATION_NOT_INSTALLED");

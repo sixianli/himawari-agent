@@ -825,13 +825,6 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "removed after the track retention days; cascade with the device, Owner or Agent deletion",
   ),
   entry(
-    "perception_suggestions",
-    "PerceptionStorePort",
-    "one row per suggestion derived from perception records: the proposed action, its parameters, the records it came from and open, accepted, dismissed or expired",
-    "metadata_only",
-    "expired rows stay as history; cascade with Owner or Agent deletion",
-  ),
-  entry(
     "device_upload_grants",
     "PerceptionStorePort",
     "one row per background upload grant: only the SHA-256 of the token, the device, purpose, file digest and size, record id range or batch id, expiry and the first result; never exported",
@@ -843,7 +836,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "PerceptionStorePort",
     "one row per raw audio, image or screen file received for server processing; the file itself is on disk under the state root, named by its digest",
     "metadata_only",
-    "cascade with the device, Owner or Agent deletion",
+    "removed with its file once older than the configured media retention days; cascade with the device, Owner or Agent deletion",
   ),
   entry(
     "limit_usage",

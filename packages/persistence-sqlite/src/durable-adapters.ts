@@ -1184,10 +1184,6 @@ export class SqliteDurableAdapters {
       reserveUsage: (input) => this.context.write("perception.reserveUsage", input),
       reportDeviceUsage: (input) => this.context.write("perception.reportDeviceUsage", input),
       markUsageWarned: (input) => this.context.write("perception.markUsageWarned", input),
-      createSuggestion: (input) => this.context.write("perception.createSuggestion", input),
-      listSuggestions: (input) => this.context.read("perception.listSuggestions", input),
-      transitionSuggestion: (input) => this.context.write("perception.transitionSuggestion", input),
-      expireSuggestions: (input) => this.context.write("perception.expireSuggestions", input),
       prune: (input) => this.context.write("perception.prune", input),
     });
   }
