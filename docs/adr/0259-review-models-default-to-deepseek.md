@@ -8,7 +8,7 @@ amends: "docs/adr/0175-cheaper-code-review-rounds.md"
 date: "2026-11-12"
 ---
 
-# ADR 0255：方案审核和代码复核默认只用 DeepSeek，默认模型写在配置里
+# ADR 0259：方案审核和代码复核默认只用 DeepSeek，默认模型写在配置里
 
 <a id="contents"></a>
 

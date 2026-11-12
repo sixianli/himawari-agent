@@ -46,7 +46,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="working-with-opencode"></a>
 ## 和 OpenCode 协作：方案讨论和代码复核
 
-下面两个时机都要请 OpenCode（一个能让模型读代码、调用工具的命令行程序）上的模型看：默认只用 `opencode-go/deepseek-v4.1-flash`，方案讨论和代码复核的每一轮都是这样（Andy 2026-11-12 定，[ADR 0255](docs/adr/0255-review-models-default-to-deepseek.md)）；只有 Andy 特别指明时才加上 `opencode-go/glm-5.3-flash`（`--models deepseek-v4.1-flash,glm-5.3-flash`）。默认跑哪些模型写在 `scripts/model-review/review-models.json`，不写死在脚本里。一律用 `node scripts/model-review/opencode-review.mjs` 跑，不自己拼 `opencode run` 命令。
+下面两个时机都要请 OpenCode（一个能让模型读代码、调用工具的命令行程序）上的模型看：默认只用 `opencode-go/deepseek-v4.1-flash`，方案讨论和代码复核的每一轮都是这样（Andy 2026-11-12 定，[ADR 0259](docs/adr/0259-review-models-default-to-deepseek.md)）；只有 Andy 特别指明时才加上 `opencode-go/glm-5.3-flash`（`--models deepseek-v4.1-flash,glm-5.3-flash`）。默认跑哪些模型写在 `scripts/model-review/review-models.json`，不写死在脚本里。一律用 `node scripts/model-review/opencode-review.mjs` 跑，不自己拼 `opencode run` 命令。
 
 - 写代码之前要出方案时（大改动一定要）：先让模型在不看线程结论的情况下独立出方案（`--mode plan`），再请它审核线程自己的方案（`--mode plan-review`）。线程把各方逐条比较，先替 Andy 判断采纳什么、不采纳什么、为什么，只把整合后的方案和真正要他拍板的几项交给他。
 - 合并 PR 之前：对最终提交做一次代码复核（`--mode code-review`），每一轮默认只用 DeepSeek。线程把成立的意见分成“会出错”和“可以更好”，“会出错”的再分中、高和低两档：中、高的要修改并对修改再复核，连续三轮没过就先停下报告 Andy，否则复核到没有中、高的“会出错”意见为止；低的照样修改、补测试，但改动够小时用 `--accept-low` 记进账本，不再复核，汇报里逐条列给 Andy 抽查；可以更好的不修改，列给 Andy，他说采纳才改，改完同样再复核。Andy 明确说跳过复核时，不论复核了几轮，都按那份文件用 `--accept-unreviewed` 记下他的原话后合并；他也可以随时叫停正在跑的复核或指定这一次用哪家服务方。Mac 本地线程不在本机跑复核，按那份文件把复核交给 himawari-cloud 里的云端线程，结果先经 `delegate.mjs check` 核对再采用。
