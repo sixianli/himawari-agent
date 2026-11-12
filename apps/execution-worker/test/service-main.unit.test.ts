@@ -250,7 +250,7 @@ describe("execution Worker service main", () => {
       deploymentId: FIXTURE_SCOPE.authority.deploymentId,
       snapshotDigest: `sha256:${"a".repeat(64)}`,
     });
-    await writeAuthorityFile(layout, { ...authority(2, 2), status: "transferring" });
+    await writeAuthorityFile(layout, { ...authority(2, 2), status: "inactive_ready" });
     const diagnostics = capture();
 
     await expect(
