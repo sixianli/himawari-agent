@@ -348,6 +348,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       memories: { readMany: async () => [] },
       readMemoryText: async () => undefined,
       listApprovals: async () => [],
+      awaitingCount: async () => 0,
       runThread: async () => null,
       threadTitle: async () => null,
       proactive: createProactivePushSource({ scope, store, seal }),

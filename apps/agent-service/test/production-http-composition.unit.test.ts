@@ -367,6 +367,7 @@ describe("production HTTP composition", () => {
           "sensitive.interceptions.read",
           "sensitive.interceptions.clear",
           "server.status.read",
+          "home.read",
         ],
         healthDependenciesAvailable: true,
       });
@@ -1153,6 +1154,29 @@ describe("production HTTP composition", () => {
         },
       });
       expect(withoutSession.statusCode, withoutSession.body).toBe(401);
+      const homeQuery = (cookie: string) =>
+        running.composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/queries",
+          headers: requestHeaders(token, cookie),
+          payload: {
+            ...ownerEnvelope(second.authenticationRef, "home.read"),
+            kind: "query",
+            payload: { locale: "zh-CN" },
+          },
+        });
+      const homeResponse = await homeQuery(second.cookie);
+      expect(homeResponse.statusCode, homeResponse.body).toBe(200);
+      const homeSnapshot = gatewayV2MessageSchema.parseJson(homeResponse.body);
+      if (homeSnapshot.type !== "home.snapshot") throw new Error(homeSnapshot.type);
+      expect(homeSnapshot.payload.incompleteSources).toEqual([]);
+      expect(homeSnapshot.payload.awaitingCount).toBe(
+        homeSnapshot.payload.items.filter(({ awaitsOwner }) => awaitsOwner).length,
+      );
+      expect(await running.composition.home.awaitingCount()).toBe(
+        homeSnapshot.payload.awaitingCount,
+      );
+      expect((await homeQuery("")).statusCode).toBe(401);
       const readInterceptions = async () => {
         const response = await running.composition.app.inject({
           method: "POST",

@@ -20,6 +20,7 @@ import {
 type ProductAuthorityFence = ThreadCreateInput["authority"];
 
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import { PRODUCTION_HOME_OPERATIONS, type ProductionHomeControl } from "./production-home.js";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
   type ProductionMemoryControl,
@@ -81,6 +82,7 @@ export function createProductionApprovalGateway(options: {
   readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
   readonly serverStatusControl?: ProductionServerStatusControl;
+  readonly homeControl?: Pick<ProductionHomeControl, "query">;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -106,26 +108,28 @@ export function createProductionApprovalGateway(options: {
     clock,
     delegate: {
       query: (query) =>
-        (query.type.startsWith("memory.") || query.type.startsWith("decision.chain.")) &&
-        options.memoryControl
-          ? options.memoryControl.query(query)
-          : query.type.startsWith("push.") && options.webPushControl
-            ? options.webPushControl.query(query)
-            : (query.type === "proactive.weekly.read" || query.type === "decision.email.read") &&
-                options.observationControl
-              ? options.observationControl.query(query)
-              : query.type.startsWith("proactive.") && options.proactiveControl
-                ? options.proactiveControl.query(query)
-                : query.type.startsWith("muse.") && options.museControl
-                  ? options.museControl.query(query)
-                  : query.type.startsWith("owner.preferences.") && options.ownerPreferencesControl
-                    ? options.ownerPreferencesControl.query(query)
-                    : query.type.startsWith("sensitive.interceptions.") &&
-                        options.sensitiveInterceptionsControl
-                      ? options.sensitiveInterceptionsControl.query(query)
-                      : query.type.startsWith("server.status.") && options.serverStatusControl
-                        ? options.serverStatusControl.query(query)
-                        : searchAuthorization.query(query),
+        query.type === "home.read" && options.homeControl
+          ? options.homeControl.query(query)
+          : (query.type.startsWith("memory.") || query.type.startsWith("decision.chain.")) &&
+              options.memoryControl
+            ? options.memoryControl.query(query)
+            : query.type.startsWith("push.") && options.webPushControl
+              ? options.webPushControl.query(query)
+              : (query.type === "proactive.weekly.read" || query.type === "decision.email.read") &&
+                  options.observationControl
+                ? options.observationControl.query(query)
+                : query.type.startsWith("proactive.") && options.proactiveControl
+                  ? options.proactiveControl.query(query)
+                  : query.type.startsWith("muse.") && options.museControl
+                    ? options.museControl.query(query)
+                    : query.type.startsWith("owner.preferences.") && options.ownerPreferencesControl
+                      ? options.ownerPreferencesControl.query(query)
+                      : query.type.startsWith("sensitive.interceptions.") &&
+                          options.sensitiveInterceptionsControl
+                        ? options.sensitiveInterceptionsControl.query(query)
+                        : query.type.startsWith("server.status.") && options.serverStatusControl
+                          ? options.serverStatusControl.query(query)
+                          : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -267,6 +271,7 @@ export function createProductionApprovalGateway(options: {
         ? PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS
         : []),
       ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
+      ...(options.homeControl ? PRODUCTION_HOME_OPERATIONS : []),
     ],
     reads,
     controlPlane,

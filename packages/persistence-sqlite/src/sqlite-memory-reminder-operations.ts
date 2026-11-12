@@ -39,6 +39,8 @@ export class SqliteMemoryReminderOperations {
         return this.listDue(
           payload as { ownerId: OwnerId; agentId: AgentId; now: string; limit: number },
         );
+      case "memoryReminder.countDue":
+        return this.countDue(payload as { ownerId: OwnerId; agentId: AgentId; now: string });
       case "memoryReminder.listUpcoming":
         return this.listUpcoming(
           payload as {
@@ -126,6 +128,16 @@ export class SqliteMemoryReminderOperations {
         ORDER BY r.remind_at, r.id LIMIT ?`,
       )
       .all(input.ownerId, input.agentId, input.now, input.limit) as MemoryReminder[];
+  }
+
+  private countDue(input: { ownerId: OwnerId; agentId: AgentId; now: string }): number {
+    return this.database
+      .prepare(
+        `SELECT COUNT(*) FROM memory_reminders r ${liveMemory}
+        WHERE r.owner_id = ? AND r.agent_id = ? AND r.status = 'scheduled' AND r.remind_at <= ?`,
+      )
+      .pluck()
+      .get(input.ownerId, input.agentId, input.now) as number;
   }
 
   private listUpcoming(input: {

@@ -41,6 +41,8 @@ export interface ProactiveOverviewInsight {
   readonly pushed: boolean;
   readonly pushReaction: "opened" | "dismissed" | null;
   readonly rating: ProactiveRating | null;
+  readonly decisionId: string;
+  readonly createdAt: string;
   readonly updatedAt: string;
 }
 
@@ -78,6 +80,7 @@ export interface ProactiveOverview {
     readonly status: "disconnected" | "connected" | "needs_reconnect";
     readonly account: string | null;
     readonly connectedAt: string | null;
+    readonly changedAt: string | null;
   };
   readonly enabled: boolean;
   readonly quietHours: readonly ProactiveQuietPeriod[];
@@ -187,6 +190,8 @@ export async function readProactiveOverview(options: {
         pushed: insight.pushSourceKey !== null,
         pushReaction: reaction(insight.pushSourceKey),
         rating: insight.ownerRating,
+        decisionId: insight.decisionId,
+        createdAt: insight.createdAt,
         updatedAt: insight.updatedAt,
       }),
     );
@@ -274,6 +279,7 @@ export async function readProactiveOverview(options: {
       status: connection?.status ?? "disconnected",
       account,
       connectedAt: connection?.connectedAt ?? null,
+      changedAt: connection?.updatedAt ?? null,
     }),
     enabled: settings.enabled,
     quietHours: settings.quietHours,
