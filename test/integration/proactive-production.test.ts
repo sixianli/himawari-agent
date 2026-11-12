@@ -33,6 +33,7 @@ import {
   GMAIL_READONLY_SCOPE,
   readGmailAccount,
 } from "@himawari-agent/platform-node";
+import { MAIL_REFERENCE_EXTRACTION } from "@himawari-agent/prompt-catalog";
 import {
   DeterministicIdGenerator,
   DeterministicPayloadProtector,
@@ -307,7 +308,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
         },
         modelRef: MODEL_REF,
         async prepare({ invocationId, prompt }) {
-          prompts.push(prompt);
+          if (!prompt.startsWith(MAIL_REFERENCE_EXTRACTION.text)) prompts.push(prompt);
           const inputRef = `input-${invocationId}`;
           await writePayload(inputRef, prompt);
           for (const [ref, content] of outputs)
@@ -549,7 +550,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     params: { senderDomains: ["smbc.co.jp"] },
   };
   const ignoreInvoice = (h: Awaited<ReturnType<typeof setup>>) =>
-    h.script([{ id: "invoice", result: "ignore", confidence: "sure", reason: "" }]);
+    h.script([{ id: "invoice", result: "ignore", confidence: "sure", money: "yes", reason: "" }]);
   const checkInbox = async (h: Awaited<ReturnType<typeof setup>>) => {
     const state = await connect(h);
     await h.app.inject({
