@@ -1,6 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   comparePlatformAssumptions,
@@ -9,6 +11,9 @@ import {
   scanPlatformAssumptions,
 } from "../../scripts/check-platform-assumptions.mjs";
 
+const scriptPath = fileURLToPath(
+  new URL("../../scripts/check-platform-assumptions.mjs", import.meta.url),
+);
 const roots = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -42,14 +47,21 @@ describe("platform assumption inventory", () => {
       "scripts/probe.mjs":
         'assert.equal(hostname(), "hermes-home");\nassert.equal(hostname(), "__PKT_HOSTNAME__");\nassert.equal(hostname(), receipt.host);\nassert.equal(receipt.host, hostname(), "__PKT_LABEL_UPPER___HOST_CHANGED");\nconst who = { host: hostname(), "actor": 1 };\n',
       "scripts/probe.py": "assert socket.gethostname()=='hermes-home'\n",
-      ".github/workflows/ci.yml": "      - key: linux-x64\n",
+      ".github/workflows/ci.yml":
+        "      - key: linux-x64\n        arch: x64\n        arch: x64-musl\n",
+      "packages/a/Dockerfile": "FROM --platform=linux/amd64 node:22\n",
+      "packages/a/NOTES": "x86_64\n",
     });
     expect(scanPlatformAssumptions(root)).toEqual({
       lib64: { "packages/a/src/join.ts": 1, "scripts/seal.mjs": 1 },
       "linux-x64": { ".github/workflows/ci.yml": 1, "scripts/ci/build.mjs": 1 },
-      "arch-x64": { "scripts/ci/policy.mjs": 1, "scripts/install.mjs": 1 },
+      "arch-x64": {
+        ".github/workflows/ci.yml": 1,
+        "scripts/ci/policy.mjs": 1,
+        "scripts/install.mjs": 1,
+      },
       x86_64: { "scripts/download.py": 1, "scripts/tools.json": 1 },
-      amd64: { "scripts/tools.json": 1 },
+      amd64: { "packages/a/Dockerfile": 1, "scripts/tools.json": 1 },
       "fixed-hostname": { "scripts/probe.mjs": 1, "scripts/probe.py": 1 },
       "python-3.12.10-archive": { "scripts/make.py": 1 },
     });
@@ -123,13 +135,55 @@ describe("platform assumption inventory", () => {
     expect(result.err[0]).toMatch(/^PLATFORM_ASSUMPTION_ADDED lib64 scripts\/seal\.mjs /);
   });
 
-  it("exits 1 when the inventory is missing or is not JSON", () => {
+  it("exits 1 when the inventory is missing, is not JSON, or has the wrong shape", () => {
     const missing = run(fixture({ "scripts/seal.mjs": sealWithLib64 }));
     expect(missing.code).toBe(1);
     expect(missing.err).toEqual([`PLATFORM_ASSUMPTIONS_INVENTORY_MISSING ${INVENTORY_PATH}`]);
-    const invalid = run(fixture({ [INVENTORY_PATH]: "{" }));
-    expect(invalid.code).toBe(1);
-    expect(invalid.err[0]).toMatch(/^PLATFORM_ASSUMPTIONS_INVENTORY_INVALID /);
+    for (const text of ["{", "null", "[]", '{ "lib64": 1 }', '{ "lib64": { "a.mjs": "1" } }']) {
+      const invalid = run(fixture({ [INVENTORY_PATH]: text }));
+      expect(invalid.code).toBe(1);
+      expect(invalid.err).toHaveLength(1);
+      expect(invalid.err[0]).toMatch(/^PLATFORM_ASSUMPTIONS_INVENTORY_INVALID /);
+    }
+  });
+
+  it("--write replaces a missing or invalid inventory and says the old one was invalid", () => {
+    const missing = fixture({ "scripts/seal.mjs": sealWithLib64 });
+    expect(run(missing, true)).toEqual({
+      code: 0,
+      out: [
+        "PLATFORM_ASSUMPTIONS_CHANGED added lib64 scripts/seal.mjs 0 -> 1",
+        `PLATFORM_ASSUMPTIONS written ${INVENTORY_PATH}`,
+      ],
+      err: [],
+    });
+    expect(run(missing).code).toBe(0);
+    const invalid = fixture({ "scripts/seal.mjs": sealWithLib64, [INVENTORY_PATH]: "null" });
+    const result = run(invalid, true);
+    expect(result.code).toBe(0);
+    expect(result.err[0]).toMatch(/^PLATFORM_ASSUMPTIONS_INVENTORY_INVALID /);
+    expect(run(invalid).code).toBe(0);
+    expect(readdirSync(join(invalid, "scripts")).sort()).toEqual([
+      "platform-assumptions.json",
+      "seal.mjs",
+    ]);
+  });
+
+  it("the command line exits 1 for an unlisted occurrence and 0 after --write", () => {
+    const root = fixture({ "scripts/seal.mjs": sealWithLib64, [INVENTORY_PATH]: "{}\n" });
+    const cli = (...flags) =>
+      spawnSync(process.execPath, [scriptPath, "--root", root, ...flags], { encoding: "utf8" });
+    const failed = cli();
+    expect(failed.status).toBe(1);
+    expect(failed.stderr).toMatch(/^PLATFORM_ASSUMPTION_ADDED lib64 scripts\/seal\.mjs /);
+    const written = cli("--write");
+    expect(written.status).toBe(0);
+    const bytes = readFileSync(join(root, INVENTORY_PATH), "utf8");
+    expect(cli("--write").status).toBe(0);
+    expect(readFileSync(join(root, INVENTORY_PATH), "utf8")).toBe(bytes);
+    const passed = cli();
+    expect(passed.status).toBe(0);
+    expect(passed.stdout).toBe("PLATFORM_ASSUMPTIONS passed kinds=7 occurrences=1\n");
   });
 
   it("--write lists what changed, writes the same bytes each time, and the check then passes", () => {

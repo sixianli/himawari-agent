@@ -1,4 +1,11 @@
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -36,6 +43,7 @@ const SCANNED_EXTENSIONS = new Set([
   ".yaml",
   ".yml",
 ]);
+const SCANNED_FILENAMES = new Set(["Dockerfile", "Containerfile", "Makefile"]);
 const EXCLUDED_FILES = new Set([
   INVENTORY_PATH,
   "scripts/check-platform-assumptions.mjs",
@@ -44,7 +52,7 @@ const EXCLUDED_FILES = new Set([
 export const PLATFORM_ASSUMPTIONS = Object.freeze({
   lib64: /(?:\/|["'])lib64(?![\w-])/g,
   "linux-x64": /linux-x64/g,
-  "arch-x64": /\barch\s*(?:[!=]==?|:)\s*["']x64["']/g,
+  "arch-x64": /\barch\s*(?:[!=]==?|:)\s*["']?x64(?![\w-])/g,
   x86_64: /x86_64/gi,
   amd64: /amd64/gi,
   "fixed-hostname":
@@ -63,7 +71,10 @@ function scannedFiles(root, relative, files) {
     const child = path.posix.join(relative, entry.name);
     if (entry.isDirectory()) {
       if (!SKIPPED_DIRECTORIES.has(entry.name)) scannedFiles(root, child, files);
-    } else if (entry.isFile() && SCANNED_EXTENSIONS.has(path.extname(entry.name))) {
+    } else if (
+      entry.isFile() &&
+      (SCANNED_EXTENSIONS.has(path.extname(entry.name)) || SCANNED_FILENAMES.has(entry.name))
+    ) {
       files.push(child);
     }
   }
@@ -111,15 +122,32 @@ function describeProblem(problem) {
   return `PLATFORM_ASSUMPTION_UNKNOWN ${problem.name} 清单里有检查不认识的类别`;
 }
 
+function isPlainObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function readInventory(inventory) {
   let text;
   try {
     text = readFileSync(inventory, "utf8");
   } catch (error) {
-    if (error.code === "ENOENT") return undefined;
+    if (error.code === "ENOENT") return { state: "missing" };
     throw error;
   }
-  return JSON.parse(text);
+  let recorded;
+  try {
+    recorded = JSON.parse(text);
+  } catch {
+    return { state: "invalid" };
+  }
+  const wellFormed =
+    isPlainObject(recorded) &&
+    Object.values(recorded).every(
+      (files) =>
+        isPlainObject(files) &&
+        Object.values(files).every((count) => Number.isInteger(count) && count > 0),
+    );
+  return wellFormed ? { state: "ok", recorded } : { state: "invalid" };
 }
 
 export function runPlatformAssumptionsCheck({
@@ -130,23 +158,24 @@ export function runPlatformAssumptionsCheck({
 } = {}) {
   const observed = scanPlatformAssumptions(root);
   const inventory = path.join(root, INVENTORY_PATH);
-  let recorded;
-  try {
-    recorded = readInventory(inventory);
-  } catch {
-    error(`PLATFORM_ASSUMPTIONS_INVENTORY_INVALID ${INVENTORY_PATH} 不是合法的 JSON`);
-    if (!write) return 1;
-  }
+  const { state, recorded } = readInventory(inventory);
+  if (state === "invalid")
+    error(
+      `PLATFORM_ASSUMPTIONS_INVENTORY_INVALID ${INVENTORY_PATH} 必须是“类别 → 文件 → 正整数次数”的 JSON`,
+    );
   if (write) {
     for (const problem of comparePlatformAssumptions(recorded ?? {}, observed))
       log(
         `PLATFORM_ASSUMPTIONS_CHANGED ${problem.kind} ${problem.name} ${problem.file} ${problem.expected} -> ${problem.actual}`,
       );
-    writeFileSync(inventory, `${JSON.stringify(observed, null, 2)}\n`);
+    const temporary = `${inventory}.${process.pid}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify(observed, null, 2)}\n`);
+    renameSync(temporary, inventory);
     log(`PLATFORM_ASSUMPTIONS written ${INVENTORY_PATH}`);
     return 0;
   }
-  if (recorded === undefined) {
+  if (state === "invalid") return 1;
+  if (state === "missing") {
     error(`PLATFORM_ASSUMPTIONS_INVENTORY_MISSING ${INVENTORY_PATH}`);
     return 1;
   }
@@ -162,5 +191,9 @@ export function runPlatformAssumptionsCheck({
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  process.exitCode = runPlatformAssumptionsCheck({ write: process.argv.includes("--write") });
+  const rootFlag = process.argv.indexOf("--root");
+  process.exitCode = runPlatformAssumptionsCheck({
+    root: rootFlag > 0 ? path.resolve(process.argv[rootFlag + 1]) : repositoryRoot,
+    write: process.argv.includes("--write"),
+  });
 }
