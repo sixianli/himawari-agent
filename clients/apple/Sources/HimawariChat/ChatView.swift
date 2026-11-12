@@ -20,6 +20,9 @@ public struct ChatView: View {
         _threadId = State(initialValue: threadId)
     }
 
+    private static let navBottom = DesignTokens.Size.navTop + DesignTokens.Size.glassButton
+    private static let fadeBelowNav: CGFloat = 32
+
     private var title: String {
         guard let threadId, let thread = store.threads.first(where: { $0.threadId == threadId }) else {
             return L.text("chat.untitled")
@@ -34,7 +37,7 @@ public struct ChatView: View {
             } else {
                 transcript
             }
-            EdgeFade(.top, height: DesignTokens.Size.fadeTop, solid: 0.45)
+            EdgeFade(.top, height: Self.navBottom + Self.fadeBelowNav, solid: Self.navBottom / (Self.navBottom + Self.fadeBelowNav))
                 .frame(maxHeight: .infinity, alignment: .top)
                 .ignoresSafeArea()
             VStack(spacing: 0) {
