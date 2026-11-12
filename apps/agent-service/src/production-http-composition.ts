@@ -13,6 +13,7 @@ import {
   AgentThreadGatewayService,
   ApplicationPortError,
   DEVICE_CONFIGURATION_DEFAULTS,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
   defaultDeviceHardLimits,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
@@ -70,6 +71,8 @@ import {
   type JwksFetcher,
   OwnerBootstrapService,
   PairedDeviceService,
+  type PerceptionLimitWarning,
+  PerceptionService,
   type PairedDeviceWarning,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
@@ -94,6 +97,10 @@ import {
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
 import { registerDataExportRoute } from "./production-data-export.js";
+import {
+  PRODUCTION_PERCEPTION_OPERATIONS,
+  ProductionPerceptionControl,
+} from "./production-perception-control.js";
 import {
   PRODUCTION_DEVICE_OPERATIONS,
   ProductionDeviceControl,
@@ -198,6 +205,7 @@ export interface ProductionHttpCompositionOptions {
   readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
   readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
+  readonly onPerceptionLimitWarning?: (warning: PerceptionLimitWarning) => void;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
@@ -723,6 +731,7 @@ function routeOptions(
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
         ...PRODUCTION_DEVICE_OPERATIONS,
+        ...PRODUCTION_PERCEPTION_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1171,6 +1180,31 @@ export async function createProductionHttpComposition(
     now,
     ...(options.onDeviceWarning ? { onWarning: options.onDeviceWarning } : {}),
   });
+  const perceptionConfiguration =
+    configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS;
+  const proactiveConfiguration = configuration.runPolicy?.proactive;
+  const perception = new PerceptionService({
+    store: repository.perception(),
+    deviceConfiguration: () => deviceConfiguration,
+    configuration: () => perceptionConfiguration,
+    timeZone: () => configuration.runPolicy?.timeZone ?? "UTC",
+    protectText: async (input) =>
+      (await payloadAdmission.protect({ ...input, contentType: "text/plain" })).payloadRef,
+    uploadDirectory: path.join(configuration.stateRoot, "data", "device-uploads"),
+    ...(proactiveConfiguration
+      ? {
+          proactiveUsage: {
+            limit: () => proactiveConfiguration.dailyCostMicros,
+            usedSince: (scope, since) => repository.proactive().costSince({ ...scope, since }),
+          },
+        }
+      : {}),
+    ...(options.onPerceptionLimitWarning
+      ? { onLimitWarning: options.onPerceptionLimitWarning }
+      : {}),
+    now,
+  });
+  await perception.prepareDirectories();
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     repository,
@@ -1209,6 +1243,19 @@ export async function createProductionHttpComposition(
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
       clock: { now: clock },
     }),
+    perceptionControl: new ProductionPerceptionControl({
+      configuration,
+      perception,
+      perceptionConfiguration: () => perceptionConfiguration,
+      readText: async (contentRef) => {
+        const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
+        if (!payload || payload.contentType !== "text/plain") return undefined;
+        return new TextDecoder("utf-8", { fatal: true }).decode(
+          await payloadProtector.unprotect({ ownerId, agentId, payload }),
+        );
+      },
+      clock: { now: clock },
+    }),
     serverStatusControl: new ProductionServerStatusControl({
       configuration,
       health,
@@ -1243,6 +1290,7 @@ export async function createProductionHttpComposition(
       service: pairedDevices,
       configuration: () => deviceConfiguration,
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      perception,
     },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
     ...(options.onSlowRequest ? { onSlowRequest: options.onSlowRequest } : {}),

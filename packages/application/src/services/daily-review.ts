@@ -42,7 +42,10 @@ const DEFAULT_GROUPS: readonly DailyReviewGroup[] = [
   "memory_checkup",
 ];
 export type DailyReviewSource = "ledger" | "mail" | "checkup";
-export type DailyReviewKind = DecisionKind | "mail" | "checkup";
+export type DailyReviewKind =
+  | Exclude<DecisionKind, "limit_change" | "delivery_timing">
+  | "mail"
+  | "checkup";
 
 export interface DailyReviewPoolItem {
   readonly key: string;
@@ -357,6 +360,8 @@ async function collectReviewCandidates(
   );
   const candidates = new Map<string, ReviewCandidate>();
   for (const entry of entries) {
+    const kind = entry.kind;
+    if (kind === "limit_change" || kind === "delivery_timing") continue;
     if (entry.kind === "memory_candidate" && OWNER_DECIDED_DISCARDS.has(entry.reasonCode)) continue;
     if (entry.kind === "memory_candidate" && EXTERNAL_PROPOSAL_NOT_SAVED.has(entry.reasonCode))
       continue;
@@ -425,7 +430,7 @@ async function collectReviewCandidates(
           item: {
             key,
             source: "ledger" as const,
-            kind: entry.kind,
+            kind,
             outcome: entry.outcome,
             decidedAt: entry.decidedAt,
             acted: ledgerActed(entry),

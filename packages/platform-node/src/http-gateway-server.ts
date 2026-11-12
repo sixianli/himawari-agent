@@ -40,6 +40,7 @@ import {
   PairedDeviceError,
   type PairedDeviceService,
 } from "./paired-device-service.js";
+import type { PerceptionService } from "./perception-service.js";
 import { withPreviewStorage } from "./preview-page-storage.js";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
 
@@ -123,6 +124,7 @@ export interface HttpGatewayServerOptions {
     readonly service: PairedDeviceService;
     readonly configuration: () => DeviceConfiguration;
     readonly pairingAccess?: DevicePairingAccess;
+    readonly perception?: PerceptionService;
   };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
@@ -1282,6 +1284,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       devices: options.devices.service,
       configuration: options.devices.configuration,
       ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),
+      ...(options.devices.perception ? { perception: options.devices.perception } : {}),
       authority: {
         agentId: browserConfiguration.agentId,
         deploymentId: browserConfiguration.deploymentId,

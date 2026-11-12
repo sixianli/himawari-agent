@@ -3,7 +3,12 @@ import type { PayloadRecord } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
 import type { JsonValue } from "./canonical.js";
 import { validateAgainst } from "./schema.js";
-import { RULE_PARAMETERS_MAXIMUM_LENGTH, SEALED_FILE, SEALED_SCHEMA } from "./schemas.js";
+import {
+  EMPTY_PERCEPTION_COUNTS,
+  RULE_PARAMETERS_MAXIMUM_LENGTH,
+  SEALED_FILE,
+  SEALED_SCHEMA,
+} from "./schemas.js";
 import {
   assertRuleHistory,
   enforcedRuleCount,
@@ -280,6 +285,7 @@ export async function importPortableExport(
     people: parsed.people.length,
     importBatches: parsed.importBatches.length,
     pairedDevices: 0,
+    ...EMPTY_PERCEPTION_COUNTS,
     consolidations: parsed.consolidations.length,
     consolidationChanges: 0,
     decisions: parsed.decisions.length,

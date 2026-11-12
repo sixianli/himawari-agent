@@ -36,6 +36,8 @@ export * from "./memory-dates.js";
 export * from "./memory-episodes.js";
 export * from "./device-limits.js";
 export * from "./paired-devices.js";
+export * from "./perception.js";
+export * from "./usage-limits.js";
 export * from "./memory-projection.js";
 export * from "./memory-reminders.js";
 export * from "./model-budget.js";

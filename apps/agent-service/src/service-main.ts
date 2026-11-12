@@ -2792,6 +2792,11 @@ export async function startTenantRuntime(
             component: "agent-service",
             ...warning,
           }),
+        onPerceptionLimitWarning: (warning) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            ...warning,
+          }),
         cancelRun: async (input) => {
           if (!runs) throw new Error("RUN_COORDINATOR_UNAVAILABLE");
           if (await runs.background?.cancel(input.runId)) return;

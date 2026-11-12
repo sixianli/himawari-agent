@@ -21,6 +21,9 @@ import {
   MANIFEST_SCHEMA,
   MEMORY_SCHEMA,
   PAIRED_DEVICE_SCHEMA,
+  PERCEPTION_FILE_KEYS,
+  PERCEPTION_FILE_SCHEMAS,
+  type PerceptionFileKey,
   PERSON_SCHEMA,
   RULE_SCHEMA,
 } from "./schemas.js";
@@ -179,6 +182,7 @@ export interface ParsedPortable {
   readonly people: readonly ParsedPerson[];
   readonly importBatches: readonly ParsedBatch[];
   readonly pairedDevices: readonly ParsedPairedDevice[];
+  readonly perception: Readonly<Record<PerceptionFileKey, readonly Record<string, unknown>[]>>;
   readonly consolidations: readonly ParsedConsolidation[];
   readonly decisions: readonly ParsedDecision[];
   readonly rules: readonly PortableRule[];
@@ -324,6 +328,17 @@ export function parsePortable(
     pairedDevices.map(({ id }) => id),
     "配对设备",
   );
+  const perception = Object.fromEntries(
+    PERCEPTION_FILE_KEYS.map((key) => [
+      key,
+      parseLines<Record<string, unknown>>(files, DATA_FILES[key], PERCEPTION_FILE_SCHEMAS[key]),
+    ]),
+  ) as Record<PerceptionFileKey, Record<string, unknown>[]>;
+  for (const key of ["perceptionRecords", "perceptionEpisodes", "perceptionSuggestions"] as const)
+    unique(
+      perception[key].map(({ id }) => String(id)),
+      DATA_FILES[key],
+    );
   const importBatches = parseLines<ParsedBatch>(
     files,
     DATA_FILES.importBatches,
@@ -421,6 +436,9 @@ export function parsePortable(
     people: people.length,
     importBatches: importBatches.length,
     pairedDevices: pairedDevices.length,
+    ...(Object.fromEntries(
+      PERCEPTION_FILE_KEYS.map((key) => [key, perception[key].length]),
+    ) as Record<PerceptionFileKey, number>),
     consolidations: consolidations.length,
     consolidationChanges: consolidations.reduce((total, { changes }) => total + changes.length, 0),
     decisions: decisions.length,
@@ -463,6 +481,7 @@ export function parsePortable(
     people,
     importBatches,
     pairedDevices,
+    perception,
     consolidations,
     decisions,
     rules,

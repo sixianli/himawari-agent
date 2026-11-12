@@ -15,6 +15,9 @@ import {
   DEVICE_HARD_LIMITS,
   type DeviceConfiguration,
   type DeviceHardLimitKey,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
+  PERCEPTION_CONFIGURATION_RANGES,
+  type PerceptionConfiguration,
   findEmbeddingProfile,
   GATEWAY_EMBEDDING_PROVIDER,
   type HttpConfiguration,
@@ -1360,6 +1363,30 @@ function parseDevice(value: unknown): DeviceConfiguration {
   });
 }
 
+function parsePerception(value: unknown): PerceptionConfiguration {
+  const field = "configuration.runPolicy.perception";
+  const input = record(value, field);
+  const keys = Object.keys(PERCEPTION_CONFIGURATION_DEFAULTS) as (keyof PerceptionConfiguration)[];
+  rejectUnknown(input, keys, field);
+  const parsed = Object.fromEntries(
+    keys.map((key) => {
+      const [minimum, maximum] = PERCEPTION_CONFIGURATION_RANGES[key];
+      return [
+        key,
+        input[key] === undefined
+          ? PERCEPTION_CONFIGURATION_DEFAULTS[key]
+          : integer(input[key], `${field}.${key}`, minimum, maximum),
+      ];
+    }),
+  ) as unknown as PerceptionConfiguration;
+  if (parsed.episodeMaximumSeconds < parsed.episodeSilenceSeconds)
+    throw invalid(
+      `${field}.episodeMaximumSeconds`,
+      "must not be smaller than episodeSilenceSeconds",
+    );
+  return Object.freeze(parsed);
+}
+
 function parseRealEval(value: unknown): NonNullable<RunPolicyConfiguration["realEval"]> {
   const field = "configuration.runPolicy.realEval";
   const input = record(value, field);
@@ -1404,6 +1431,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "automaticReview",
       "webPush",
       "device",
+      "perception",
       "proactive",
       "museIntake",
       "realEval",
@@ -1444,6 +1472,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       : { automaticReview: parseAutomaticReview(input["automaticReview"]) }),
     ...(input["webPush"] === undefined ? {} : { webPush: parseWebPush(input["webPush"]) }),
     ...(input["device"] === undefined ? {} : { device: parseDevice(input["device"]) }),
+    ...(input["perception"] === undefined
+      ? {}
+      : { perception: parsePerception(input["perception"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
     ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
     ...(input["museIntake"] === undefined

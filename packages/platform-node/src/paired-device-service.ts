@@ -34,6 +34,18 @@ export const PAIRED_DEVICE_ERROR_CODES = Object.freeze({
   STREAM_LIMIT: "DEVICE_STREAM_LIMIT",
   PATH_NOT_ALLOWED: "DEVICE_PATH_NOT_ALLOWED",
   BODY_TOO_LARGE: "DEVICE_BODY_TOO_LARGE",
+  REQUEST_INVALID: "DEVICE_REQUEST_INVALID",
+  BATCH_TOO_LARGE: "DEVICE_BATCH_TOO_LARGE",
+  UPLOAD_GRANT_INVALID: "DEVICE_UPLOAD_GRANT_INVALID",
+  UPLOAD_GRANT_EXPIRED: "DEVICE_UPLOAD_GRANT_EXPIRED",
+  UPLOAD_GRANT_PATH: "DEVICE_UPLOAD_GRANT_PATH",
+  UPLOAD_DIGEST_MISMATCH: "DEVICE_UPLOAD_DIGEST_MISMATCH",
+  UPLOAD_TOO_LARGE: "DEVICE_UPLOAD_TOO_LARGE",
+  UPLOAD_EXPANDED_TOO_LARGE: "DEVICE_UPLOAD_EXPANDED_TOO_LARGE",
+  UPLOAD_BATCH_USED: "DEVICE_UPLOAD_BATCH_USED",
+  UPLOAD_IN_PROGRESS: "DEVICE_UPLOAD_IN_PROGRESS",
+  LIMIT_REACHED: "DEVICE_LIMIT_REACHED",
+  SETTINGS_INVALID: "PERCEPTION_SETTINGS_INVALID",
 } as const);
 
 export type PairedDeviceErrorCode =
@@ -42,12 +54,12 @@ export type PairedDeviceErrorCode =
 export class PairedDeviceError extends Error {
   readonly code: PairedDeviceErrorCode;
   readonly statusCode: number;
-  readonly details: Readonly<Record<string, number>>;
+  readonly details: Readonly<Record<string, number | string>>;
 
   constructor(
     code: PairedDeviceErrorCode,
     statusCode: number,
-    details: Readonly<Record<string, number>> = {},
+    details: Readonly<Record<string, number | string>> = {},
   ) {
     super(code);
     this.name = "PairedDeviceError";
@@ -339,6 +351,36 @@ export class PairedDeviceService {
       authentication: Object.freeze({
         subjectId: current.ownerId,
         ownerId: current.ownerId,
+        deviceId: session.deviceId,
+        authenticatedAt: now.toISOString(),
+        authenticationRef: session.authenticationRef,
+        sessionId: session.id,
+      }),
+    });
+  }
+
+  async authenticateStored(deviceId: string): Promise<AuthenticatedDeviceRequest> {
+    const now = this.#now();
+    const device = await this.#options.store.readDevice(deviceId);
+    if (!device) throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.DEVICE_REVOKED, 403);
+    if (!(await this.#options.ownerActive({ ownerId: device.ownerId, agentId: device.agentId })))
+      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.OWNER_INACTIVE, 403);
+    if (device.status === "revoked")
+      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.DEVICE_REVOKED, 403);
+    if (device.status !== "active" || device.webSessionId === null)
+      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.DEVICE_PENDING, 403);
+    const session = await this.#options.sessions.readSession(
+      device.webSessionId as Parameters<SessionDeviceStatePort["readSession"]>[0],
+    );
+    if (!session || session.status !== "active" || session.ownerId !== device.ownerId)
+      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.DEVICE_REVOKED, 403);
+    await this.#options.store.touchDevice({ deviceId: device.id, now: now.toISOString() });
+    return Object.freeze({
+      device,
+      confirmed: false,
+      authentication: Object.freeze({
+        subjectId: device.ownerId,
+        ownerId: device.ownerId,
         deviceId: session.deviceId,
         authenticatedAt: now.toISOString(),
         authenticationRef: session.authenticationRef,

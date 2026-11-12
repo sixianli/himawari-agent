@@ -376,6 +376,13 @@ describe("production HTTP composition", () => {
           "device.pairing.confirm",
           "device.rename",
           "device.revoke",
+          "perception.status.read",
+          "perception.day.read",
+          "perception.episode.read",
+          "perception.usage.read",
+          "perception.settings.change",
+          "perception.suggestions.read",
+          "perception.suggestion.dismiss",
         ],
         healthDependenciesAvailable: true,
       });

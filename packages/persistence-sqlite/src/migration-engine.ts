@@ -735,6 +735,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0094_paired_devices.sql",
   },
+  {
+    sequence: 95,
+    name: "perception_records",
+    changeSet: "perception-records",
+    phase: "expand" as const,
+    file: "0095_perception_records.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

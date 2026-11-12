@@ -29,6 +29,10 @@ import {
   type ProductionMemoryControl,
 } from "./production-memory-control.js";
 import {
+  PRODUCTION_PERCEPTION_OPERATIONS,
+  type ProductionPerceptionControl,
+} from "./production-perception-control.js";
+import {
   PRODUCTION_MUSE_OPERATIONS,
   type ProductionMuseControl,
 } from "./production-muse-intake-control.js";
@@ -86,6 +90,7 @@ export function createProductionApprovalGateway(options: {
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
   readonly serverStatusControl?: ProductionServerStatusControl;
   readonly deviceControl?: Pick<ProductionDeviceControl, "query" | "execute">;
+  readonly perceptionControl?: Pick<ProductionPerceptionControl, "query" | "execute">;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -132,7 +137,9 @@ export function createProductionApprovalGateway(options: {
                         ? options.serverStatusControl.query(query)
                         : query.type.startsWith("device.") && options.deviceControl
                           ? options.deviceControl.query(query)
-                          : searchAuthorization.query(query),
+                          : query.type.startsWith("perception.") && options.perceptionControl
+                            ? options.perceptionControl.query(query)
+                            : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -247,6 +254,8 @@ export function createProductionApprovalGateway(options: {
           return options.sensitiveInterceptionsControl.execute(command);
         if (command.type.startsWith("device.") && options.deviceControl)
           return options.deviceControl.execute(authentication, command);
+        if (command.type.startsWith("perception.") && options.perceptionControl)
+          return options.perceptionControl.execute(command);
         if (command.type.startsWith("workspace.copy.") && options.workspaceCopies)
           return options.workspaceCopies.execute({ authentication, command });
         return searchAuthorization.set(command, options.executionAuthority());
@@ -277,6 +286,7 @@ export function createProductionApprovalGateway(options: {
         : []),
       ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
       ...(options.deviceControl ? PRODUCTION_DEVICE_OPERATIONS : []),
+      ...(options.perceptionControl ? PRODUCTION_PERCEPTION_OPERATIONS : []),
     ],
     reads,
     controlPlane,
