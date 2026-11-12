@@ -229,13 +229,13 @@ describe.each(["worker", "direct"] as const)("ledger observation store through %
       expect(facts.consolidationRuns).toEqual([
         expect.objectContaining({ status: "completed", changeCount: 2, ledgerRows: 1 }),
       ]);
-      await repository.proactive().clearRecords(scope);
+      await repository.proactive().clearRecords({ ...scope, source: "gmail" });
       const events = await observation.listEvents({
         ...scope,
         since: "1970-01-01T00:00:00.000Z",
       });
       expect(events.map(({ kind, detail }) => [kind, detail])).toEqual([
-        ["proactive_records_cleared", { rows: 3 }],
+        ["proactive_records_cleared", { source: "gmail", rows: 3 }],
       ]);
       expect(await observation.countDays({ ...scope, days: [DAY] })).toEqual({
         "2026-11-06": { consolidation: 1 },
@@ -333,7 +333,7 @@ describe.each(["worker", "direct"] as const)("ledger observation store through %
   it("writes no clear event when there were no Gmail records to clear", async () => {
     const { repository, observation } = await fixture();
     try {
-      await repository.proactive().clearRecords(scope);
+      await repository.proactive().clearRecords({ ...scope, source: "gmail" });
       expect(await observation.listEvents({ ...scope, since: "1970-01-01T00:00:00.000Z" })).toEqual(
         [],
       );

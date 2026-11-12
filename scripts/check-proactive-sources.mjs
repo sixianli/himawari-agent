@@ -23,6 +23,7 @@ const REQUIRED_NAMES = [
   "a program entry is not recorded twice",
   "two writers racing on one entry",
   "a cap change whose decision record cannot be written changes nothing",
+  "clearing the records of one source, or disconnecting it, leaves the other source alone",
   "survive export and import",
   "the same Gmail judging request, byte for byte",
   "a source switched off is not checked",

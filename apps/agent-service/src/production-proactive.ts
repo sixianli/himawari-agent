@@ -943,7 +943,7 @@ export class ProductionProactive {
             "PROACTIVE_SOURCE_NOT_REGISTERED",
           );
         if (command.payload.action === "clear_records") {
-          const released = await store.clearRecords(scope);
+          const released = await store.clearRecords({ ...scope, source: managed.name });
           if (released.length > 0) await seal.release({ ...scope, refs: released });
           return { resultRef: "proactive-cleared", replayed: false };
         }

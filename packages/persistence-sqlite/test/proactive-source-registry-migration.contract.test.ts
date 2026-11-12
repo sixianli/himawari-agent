@@ -175,7 +175,15 @@ const NAME_CHECK = (column: string) =>
 function withGmailConstraint(sql: string | null): string | null {
   return (
     sql
-      ?.replaceAll(`( ${NAME_CHECK("source")} )`, "(source IN ('gmail'))")
+      ?.replace(
+        `agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, source TEXT NOT NULL CHECK ( ${NAME_CHECK("source")} ), class_key`,
+        "agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, class_key",
+      )
+      .replace(
+        "PRIMARY KEY (owner_id, agent_id, source, class_key)",
+        "PRIMARY KEY (owner_id, agent_id, class_key)",
+      )
+      .replaceAll(`( ${NAME_CHECK("source")} )`, "(source IN ('gmail'))")
       .replace(
         `( scenario IS NULL OR (${NAME_CHECK("scenario")}) )`,
         "(scenario IS NULL OR scenario IN ('gmail'))",
@@ -193,13 +201,21 @@ describe("[iOS-7] proactive source registry migration", () => {
     const after = rows(database);
     for (const table of TABLES) {
       expect((before.rows[table] as unknown[]).length, table).toBeGreaterThan(0);
-      expect(after[table], table).toEqual(before.rows[table]);
+      expect(
+        table === "proactive_push_backoff"
+          ? (after[table] as Record<string, unknown>[]).map(({ source, ...kept }) => {
+              expect(source).toBe("gmail");
+              return kept;
+            })
+          : after[table],
+        table,
+      ).toEqual(before.rows[table]);
     }
     expect(database.pragma("foreign_key_check")).toEqual([]);
     database.close();
   });
 
-  it("[iOS-7] changes nothing in the rebuilt tables except the source name constraints", async () => {
+  it("[iOS-7] changes nothing in the rebuilt tables except the source name constraints and the source column on backoff", async () => {
     const { database, before } = await openMigrated();
     const after = schema(database);
     expect(after.map(({ name }) => name)).toEqual(before.schema.map(({ name }) => name));

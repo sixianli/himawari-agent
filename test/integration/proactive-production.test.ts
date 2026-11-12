@@ -934,9 +934,9 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     database
       .prepare(
         `INSERT INTO proactive_push_backoff (
-          owner_id, agent_id, class_key, stage, since_at, last_push_at, stage_changed_at,
+          owner_id, agent_id, source, class_key, stage, since_at, last_push_at, stage_changed_at,
           step_decision_id, ignored_count, restored_at, updated_at
-        ) VALUES (?, ?, 'due:service.example.com', 2, ?, NULL, ?, NULL, 3, NULL, ?)`,
+        ) VALUES (?, ?, 'gmail', 'due:service.example.com', 2, ?, NULL, ?, NULL, 3, NULL, ?)`,
       )
       .run(
         OWNER_ID,

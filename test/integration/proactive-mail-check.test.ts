@@ -1142,6 +1142,7 @@ describe("proactive Gmail check acceptance", () => {
       const stale = (
         await h.store.previewBackoff({
           ...scope,
+          source: "gmail",
           classKeys: [CLASS_KEY],
           settings: { threshold: 3, ignoreAfterMs: 24 * HOUR, gapMs: 24 * HOUR },
           now: h.clock.now(),
@@ -1153,6 +1154,7 @@ describe("proactive Gmail check acceptance", () => {
         applyBackoffWrites(
           database,
           { ownerId: OWNER_ID, agentId: AGENT_ID },
+          "gmail",
           decisionId,
           [{ ...(stale as NonNullable<typeof stale>), ignoredCount: 5_000 }],
           h.clock.now(),
@@ -1165,6 +1167,7 @@ describe("proactive Gmail check acceptance", () => {
         const second = (
           await h.store.previewBackoff({
             ...scope,
+            source: "gmail",
             classKeys: [CLASS_KEY],
             settings: { threshold: 3, ignoreAfterMs: 24 * HOUR, gapMs: 24 * HOUR },
             now: h.clock.now(),
@@ -1174,6 +1177,7 @@ describe("proactive Gmail check acceptance", () => {
         applyBackoffWrites(
           database,
           { ownerId: OWNER_ID, agentId: AGENT_ID },
+          "gmail",
           decisionId,
           [{ ...(second as NonNullable<typeof second>), stage: 2, steppedUp: true }],
           h.clock.now(),
@@ -1789,7 +1793,7 @@ describe("proactive Gmail check acceptance", () => {
         ...scope,
         decisionId: decision?.id ?? "",
       });
-      const released = await h.store.clearRecords(scope);
+      const released = await h.store.clearRecords({ ...scope, source: "gmail" });
       expect(released).toContain(first?.ref);
       await h.seal.release({ ...scope, refs: released });
       expect(await h.readPayload(first?.ref ?? "")).toBeUndefined();

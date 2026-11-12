@@ -342,7 +342,9 @@ export interface ProactiveStorePort {
   removeSource(
     input: ProactiveScope & { readonly source: ProactiveSource },
   ): Promise<readonly string[]>;
-  clearRecords(input: ProactiveScope): Promise<readonly string[]>;
+  clearRecords(
+    input: ProactiveScope & { readonly source: ProactiveSource },
+  ): Promise<readonly string[]>;
   readDecisionPayloads(
     input: ProactiveScope & { readonly decisionId: string },
   ): Promise<readonly ProactiveModelPayload[]>;
@@ -416,6 +418,7 @@ export interface ProactiveStorePort {
   ): Promise<readonly ProactiveInsight[]>;
   previewBackoff(
     input: ProactiveScope & {
+      readonly source: ProactiveSource;
       readonly classKeys: readonly string[];
       readonly settings: ProactiveBackoffSettings;
       readonly now: string;

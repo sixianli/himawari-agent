@@ -284,6 +284,9 @@ CREATE INDEX muse_reference_entries_time_index ON muse_reference_entries(owner_i
 CREATE TABLE proactive_push_backoff (
   owner_id TEXT NOT NULL REFERENCES owners(id) ON DELETE CASCADE,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  source TEXT NOT NULL CHECK (
+    length(source) BETWEEN 1 AND 64 AND source GLOB '[a-z]*' AND source NOT GLOB '*[^a-z0-9_]*'
+  ),
   class_key TEXT NOT NULL CHECK (length(class_key) BETWEEN 1 AND 128),
   stage INTEGER NOT NULL CHECK (stage BETWEEN 0 AND 2),
   since_at TEXT NOT NULL,
@@ -293,11 +296,11 @@ CREATE TABLE proactive_push_backoff (
   ignored_count INTEGER NOT NULL CHECK (ignored_count >= 0 AND ignored_count <= 1000),
   restored_at TEXT,
   updated_at TEXT NOT NULL,
-  PRIMARY KEY (owner_id, agent_id, class_key)
+  PRIMARY KEY (owner_id, agent_id, source, class_key)
 ) STRICT;
 
-INSERT INTO proactive_push_backoff (owner_id, agent_id, class_key, stage, since_at, last_push_at, stage_changed_at, step_decision_id, ignored_count, restored_at, updated_at)
-SELECT owner_id, agent_id, class_key, stage, since_at, last_push_at, stage_changed_at, step_decision_id, ignored_count, restored_at, updated_at FROM proactive_push_backoff_keep;
+INSERT INTO proactive_push_backoff (owner_id, agent_id, source, class_key, stage, since_at, last_push_at, stage_changed_at, step_decision_id, ignored_count, restored_at, updated_at)
+SELECT owner_id, agent_id, 'gmail', class_key, stage, since_at, last_push_at, stage_changed_at, step_decision_id, ignored_count, restored_at, updated_at FROM proactive_push_backoff_keep;
 
 CREATE TABLE source_insights (
   id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),

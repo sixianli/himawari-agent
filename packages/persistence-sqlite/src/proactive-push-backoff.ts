@@ -35,6 +35,7 @@ function stageOf(value: number): ProactiveBackoffStage {
 export function countIgnoredPushes(
   database: Database.Database,
   scope: Scope,
+  source: string,
   classKey: string,
   sinceAt: string,
   now: string,
@@ -48,12 +49,15 @@ export function countIgnoredPushes(
        JOIN web_push_feedback feedback
          ON feedback.owner_id = insight.owner_id AND feedback.agent_id = insight.agent_id
          AND feedback.source_key = insight.push_source_key
-       WHERE insight.owner_id = ? AND insight.agent_id = ? AND insight.push_class = ?
+       WHERE insight.owner_id = ? AND insight.agent_id = ? AND insight.source = ?
+         AND insight.push_class = ?
          AND insight.push_source_key IS NOT NULL
          AND feedback.first_sent_at > ?
        ORDER BY feedback.first_sent_at DESC, insight.id DESC`,
     )
-    .all(scope.ownerId, scope.agentId, classKey, sinceAt) as (HistoryRow & { pushKey: string })[];
+    .all(scope.ownerId, scope.agentId, source, classKey, sinceAt) as (HistoryRow & {
+    pushKey: string;
+  })[];
   const pushes = new Map<string, { at: string; unneeded: boolean; opened: boolean }>();
   for (const row of rows) {
     const push = pushes.get(row.pushKey) ?? { at: row.at, unneeded: false, opened: false };
@@ -74,6 +78,7 @@ export function countIgnoredPushes(
 export function previewBackoff(
   database: Database.Database,
   scope: Scope,
+  source: string,
   classKeys: readonly string[],
   settings: ProactiveBackoffSettings,
   now: string,
@@ -81,17 +86,25 @@ export function previewBackoff(
   const read = database.prepare(
     `SELECT stage, since_at AS sinceAt, last_push_at AS lastPushAt,
        stage_changed_at AS stageChangedAt, updated_at AS updatedAt FROM proactive_push_backoff
-     WHERE owner_id = ? AND agent_id = ? AND class_key = ?`,
+     WHERE owner_id = ? AND agent_id = ? AND source = ? AND class_key = ?`,
   );
   return classKeys.map((classKey): ProactiveBackoffPreview => {
-    const row = read.get(scope.ownerId, scope.agentId, classKey) as StateRow | undefined;
+    const row = read.get(scope.ownerId, scope.agentId, source, classKey) as StateRow | undefined;
     const stage = stageOf(row?.stage ?? 0);
     const sinceAt = row?.sinceAt ?? EPOCH;
     const baseline = row ? { stage, sinceAt: row.sinceAt, updatedAt: row.updatedAt } : null;
     const ignored =
       stage >= 2
         ? 0
-        : countIgnoredPushes(database, scope, classKey, sinceAt, now, settings.ignoreAfterMs);
+        : countIgnoredPushes(
+            database,
+            scope,
+            source,
+            classKey,
+            sinceAt,
+            now,
+            settings.ignoreAfterMs,
+          );
     if (stage < 2 && ignored >= settings.threshold) {
       const next = stageOf(stage + 1);
       return {
@@ -127,16 +140,17 @@ export function previewBackoff(
 export function applyBackoffWrites(
   database: Database.Database,
   scope: Scope,
+  source: string,
   decisionId: string,
   writes: readonly ProactiveBackoffWrite[],
   now: string,
 ): void {
   const upsert = database.prepare(
     `INSERT INTO proactive_push_backoff (
-       owner_id, agent_id, class_key, stage, since_at, last_push_at, stage_changed_at,
+       owner_id, agent_id, source, class_key, stage, since_at, last_push_at, stage_changed_at,
        step_decision_id, ignored_count, restored_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
-     ON CONFLICT (owner_id, agent_id, class_key) DO UPDATE SET
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+     ON CONFLICT (owner_id, agent_id, source, class_key) DO UPDATE SET
        stage = excluded.stage, since_at = excluded.since_at, last_push_at = excluded.last_push_at,
        stage_changed_at = excluded.stage_changed_at,
        step_decision_id = CASE WHEN ? THEN excluded.step_decision_id ELSE step_decision_id END,
@@ -145,10 +159,10 @@ export function applyBackoffWrites(
   );
   const current = database.prepare(
     `SELECT stage, since_at AS sinceAt, updated_at AS updatedAt FROM proactive_push_backoff
-     WHERE owner_id = ? AND agent_id = ? AND class_key = ?`,
+     WHERE owner_id = ? AND agent_id = ? AND source = ? AND class_key = ?`,
   );
   for (const write of writes) {
-    const row = current.get(scope.ownerId, scope.agentId, write.classKey) as
+    const row = current.get(scope.ownerId, scope.agentId, source, write.classKey) as
       | { stage: number; sinceAt: string; updatedAt: string }
       | undefined;
     const unchanged =
@@ -162,6 +176,7 @@ export function applyBackoffWrites(
     upsert.run(
       scope.ownerId,
       scope.agentId,
+      source,
       write.classKey,
       write.stage,
       write.sinceAt,
@@ -188,7 +203,7 @@ export function listBackoff(
            ignored_count AS ignoredCount, restored_at AS restoredAt, updated_at AS updatedAt
          FROM proactive_push_backoff
          WHERE owner_id = ? AND agent_id = ?
-         ORDER BY class_key LIMIT 500`,
+         ORDER BY class_key, source LIMIT 500`,
       )
       .all(scope.ownerId, scope.agentId) as (Omit<ProactiveBackoffClass, "stage"> & {
       stage: number;

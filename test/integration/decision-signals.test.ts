@@ -375,7 +375,7 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
       );
       database.close();
       expect(await signals(["decision-1"])).toHaveLength(1);
-      await repository.proactive().clearRecords(scope);
+      await repository.proactive().clearRecords({ ...scope, source: "gmail" });
       expect(await signals(["decision-1"])).toEqual([]);
     } finally {
       await repository.close();
@@ -430,7 +430,7 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
       expect(replay()).toBe(false);
       database.close();
       expect(await signals(["decision-1"])).toHaveLength(1);
-      await repository.proactive().clearRecords(scope);
+      await repository.proactive().clearRecords({ ...scope, source: "gmail" });
       expect(await signals(["decision-1"])).toEqual([]);
     } finally {
       await repository.close();

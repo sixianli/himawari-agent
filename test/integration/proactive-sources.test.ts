@@ -890,6 +890,75 @@ describe("[iOS-7] proactive source registry", () => {
     ).toEqual([{ id: "change-1:perCheck" }, { id: "change-1:perDay" }]);
   });
 
+  it("[iOS-7][reverse] clearing the records of one source, or disconnecting it, leaves the other source alone", async () => {
+    const h = await harness();
+    const seed = async () => {
+      for (const [source, id] of [
+        ["gmail", `mail-${h.clock.now()}`],
+        [NOTES, `note-${h.clock.now()}`],
+      ] as const) {
+        if ((await h.store.readConnection({ ...scope, source })) === undefined)
+          await h.connect(source);
+        const check = h.checker(source);
+        check.reader.items = [mail(source, id)];
+        h.script([{ id, result: "act", todo: "回复周末安排" }]);
+        expect(await check.service.run()).toMatchObject({ scenario: source, verdict: "pushed" });
+        h.exec(
+          `INSERT OR REPLACE INTO proactive_push_backoff (owner_id, agent_id, source, class_key, stage,
+             since_at, ignored_count, updated_at)
+           VALUES ('${OWNER_ID}', '${AGENT_ID}', '${source}', 'due:example.com', 1, '${h.clock.now()}', 3, '${h.clock.now()}')`,
+        );
+      }
+    };
+    const left = (table: string, column = "source", where = "") =>
+      h
+        .query(`SELECT ${column} AS source FROM ${table} ${where} ORDER BY 1`)
+        .map((row) => row["source"]);
+    const everywhere = () => ({
+      insights: left("source_insights"),
+      processed: left("proactive_processed_messages"),
+      backoff: left("proactive_push_backoff"),
+      decisions: left("decision_ledger", "scenario", "WHERE kind = 'proactive'"),
+      connections: left("proactive_connections"),
+      pushes: h.query("SELECT COUNT(*) AS total FROM proactive_pushes")[0]?.["total"],
+    });
+    const both = ["gmail", "test_notes"];
+    await seed();
+    expect(await everywhere()).toEqual({
+      insights: both,
+      processed: both,
+      backoff: both,
+      decisions: both,
+      connections: both,
+      pushes: 2,
+    });
+
+    await h.store.clearRecords({ ...scope, source: NOTES });
+    expect(await everywhere()).toEqual({
+      insights: ["gmail"],
+      processed: ["gmail"],
+      backoff: ["gmail"],
+      decisions: ["gmail"],
+      connections: both,
+      pushes: 1,
+    });
+
+    h.clock.advance(60_000);
+    await seed();
+    await h.store.removeSource({ ...scope, source: NOTES });
+    const after = await everywhere();
+    expect(after).toMatchObject({
+      insights: ["gmail", "gmail"],
+      processed: ["gmail", "gmail"],
+      backoff: ["gmail"],
+      connections: ["gmail"],
+    });
+    expect(after.decisions.filter((source) => source === "gmail")).toHaveLength(2);
+    await expect(
+      h.store.clearRecords({ ...scope, source: "nowhere" as ProactiveSource }),
+    ).rejects.toThrow(/not registered/u);
+  });
+
   it("[iOS-7] entries of newly registered sources survive export and import, and an unregistered name is refused on import", async () => {
     const h = await harness();
     await h.connect(NOTES);

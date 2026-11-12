@@ -38,7 +38,21 @@ type Database = ReturnType<typeof openQualifiedDatabase>;
 function dump(database: Database) {
   return {
     ...Object.fromEntries(
-      TABLES.map((table) => [table, database.prepare(`SELECT * FROM ${table}`).all()]),
+      TABLES.map((table) => [
+        table,
+        database
+          .prepare(`SELECT * FROM ${table}`)
+          .all()
+          .map((row) =>
+            table === "proactive_push_backoff"
+              ? Object.fromEntries(
+                  Object.entries(row as Record<string, unknown>).filter(
+                    ([column]) => column !== "source",
+                  ),
+                )
+              : row,
+          ),
+      ]),
     ),
     schemaNames: database
       .prepare(
@@ -62,6 +76,14 @@ function dump(database: Database) {
             .replace(
               "( scenario IS NULL OR (length(scenario) BETWEEN 1 AND 64 AND scenario GLOB '[a-z]*' AND scenario NOT GLOB '*[^a-z0-9_]*') )",
               "(scenario IS NULL OR scenario IN ('gmail'))",
+            )
+            .replace(
+              "agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, source TEXT NOT NULL CHECK (source IN ('gmail')), class_key",
+              "agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, class_key",
+            )
+            .replace(
+              "PRIMARY KEY (owner_id, agent_id, source, class_key)",
+              "PRIMARY KEY (owner_id, agent_id, class_key)",
             )
             .replace(", 'limit_change', 'delivery_timing', 'proposal'", "")
             .replace(

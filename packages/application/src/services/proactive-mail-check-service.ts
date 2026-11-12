@@ -1288,6 +1288,7 @@ export class ProactiveMailCheckService {
       return { insights, writes: [], steppedUp: false, suppressed: 0 };
     const previews = await this.#options.store.previewBackoff({
       ...this.#options.scope,
+      source: this.#options.reader.source,
       classKeys,
       settings,
       now: startedAt,

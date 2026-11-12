@@ -1079,9 +1079,9 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "proactive_push_backoff",
     "ProactiveStorePort",
-    "per sender-domain class of reminder pushes: current backoff stage, when counting started, last allowed push; no mail text",
+    "per source and sender-domain class of reminder pushes: current backoff stage, when counting started, last allowed push; no mail text",
     "metadata_only",
-    "removed with its Owner or Agent, when the owner deletes proactive records, or when the source is disconnected",
+    "removed with its Owner or Agent, when the owner deletes that source's proactive records, or when that source is disconnected",
   ),
   entry(
     "proactive_processed_messages",

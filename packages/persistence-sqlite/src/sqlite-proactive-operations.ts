@@ -173,7 +173,7 @@ export class SqliteProactiveOperations {
       case "proactive.removeSource":
         return this.removeSource(payload as Input<"removeSource">);
       case "proactive.clearRecords":
-        return this.clearRecords(payload as ProactiveScope);
+        return this.clearRecords(payload as Input<"clearRecords">);
       case "proactive.readDecisionPayloads":
         return this.readDecisionPayloads(payload as Input<"readDecisionPayloads">);
       case "proactive.unprocessed":
@@ -200,6 +200,7 @@ export class SqliteProactiveOperations {
         return previewBackoff(
           this.database,
           request,
+          this.source(request.source).name,
           request.classKeys,
           request.settings,
           request.now,
@@ -683,25 +684,11 @@ export class SqliteProactiveOperations {
         )
         .run(...scope);
       this.database
-        .prepare("DELETE FROM proactive_push_backoff WHERE owner_id = ? AND agent_id = ?")
-        .run(input.ownerId, input.agentId);
-      const pending = this.database
         .prepare(
-          `SELECT id, insight_ids AS insightIds FROM proactive_pushes
-           WHERE owner_id = ? AND agent_id = ? AND status = 'pending'`,
+          "DELETE FROM proactive_push_backoff WHERE owner_id = ? AND agent_id = ? AND source = ?",
         )
-        .all(input.ownerId, input.agentId) as { id: string; insightIds: string }[];
-      for (const push of pending) {
-        const kept = (JSON.parse(push.insightIds) as string[]).filter(
-          (id) => !removedInsights.has(id),
-        );
-        if (kept.length === 0)
-          this.database.prepare("DELETE FROM proactive_pushes WHERE id = ?").run(push.id);
-        else
-          this.database
-            .prepare("UPDATE proactive_pushes SET insight_ids = ? WHERE id = ?")
-            .run(JSON.stringify(kept), push.id);
-      }
+        .run(...scope);
+      this.dropInsightsFromPushes(input, removedInsights, "pending");
       if (connection)
         insertObservationEvent(this.database, {
           ownerId: input.ownerId,
@@ -713,30 +700,66 @@ export class SqliteProactiveOperations {
     })();
   }
 
-  private clearRecords(scope: ProactiveScope): readonly string[] {
+  private dropInsightsFromPushes(
+    scope: ProactiveScope,
+    removed: ReadonlySet<string>,
+    only: "pending" | "any",
+  ): void {
+    const pushes = this.database
+      .prepare(
+        `SELECT id, insight_ids AS insightIds FROM proactive_pushes
+         WHERE owner_id = ? AND agent_id = ?${only === "pending" ? " AND status = 'pending'" : ""}`,
+      )
+      .all(scope.ownerId, scope.agentId) as { id: string; insightIds: string }[];
+    for (const push of pushes) {
+      const all = JSON.parse(push.insightIds) as string[];
+      const kept = all.filter((id) => !removed.has(id));
+      if (kept.length === all.length) continue;
+      if (kept.length === 0)
+        this.database.prepare("DELETE FROM proactive_pushes WHERE id = ?").run(push.id);
+      else
+        this.database
+          .prepare("UPDATE proactive_pushes SET insight_ids = ? WHERE id = ?")
+          .run(JSON.stringify(kept), push.id);
+    }
+  }
+
+  private clearRecords(input: Input<"clearRecords">): readonly string[] {
+    const source = this.source(input.source).name;
     return this.database.transaction(() => {
-      const refs = this.collectRefs(scope, null);
-      this.deleteModelLinks(scope, null);
+      const scope = [input.ownerId, input.agentId, source] as const;
+      const refs = this.collectRefs(input, source);
+      this.deleteModelLinks(input, source);
+      const removedInsights = new Set(
+        (
+          this.database
+            .prepare(
+              "SELECT id FROM source_insights WHERE owner_id = ? AND agent_id = ? AND source = ?",
+            )
+            .all(...scope) as { id: string }[]
+        ).map(({ id }) => id),
+      );
       for (const table of [
         "source_insights",
         "proactive_processed_messages",
-        "proactive_pushes",
         "proactive_push_backoff",
       ])
         this.database
-          .prepare(`DELETE FROM ${table} WHERE owner_id = ? AND agent_id = ?`)
-          .run(scope.ownerId, scope.agentId);
+          .prepare(`DELETE FROM ${table} WHERE owner_id = ? AND agent_id = ? AND source = ?`)
+          .run(...scope);
+      this.dropInsightsFromPushes(input, removedInsights, "any");
       const cleared = this.database
         .prepare(
-          "DELETE FROM decision_ledger WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive'",
+          `DELETE FROM decision_ledger
+           WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive' AND scenario = ?`,
         )
-        .run(scope.ownerId, scope.agentId).changes;
+        .run(...scope).changes;
       if (cleared > 0)
         insertObservationEvent(this.database, {
-          ownerId: scope.ownerId,
-          agentId: scope.agentId,
+          ownerId: input.ownerId,
+          agentId: input.agentId,
           kind: "proactive_records_cleared",
-          detail: { rows: cleared },
+          detail: { source, rows: cleared },
         });
       return refs;
     })();
@@ -1168,6 +1191,7 @@ export class SqliteProactiveOperations {
         applyBackoffWrites(
           this.database,
           { ownerId: input.ownerId, agentId: input.agentId },
+          decision.scenario,
           decision.id,
           input.backoff,
           decision.checkedAt,
