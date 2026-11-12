@@ -197,6 +197,8 @@
 ### 9. 感知状态和接下来
 
 - `perception`：原样嵌入第 3 批（感知记录和上传）线程做的那个读取方法的返回值，首页不另算。已和那个线程对过：“今天记了 N 件”和“感知到的”页今天一栏出自同一个查询。那个方法还没合入时，整块不给，不返回 0。
+  - 第 3 批线程 2026-11-12 报来的读法（草稿 PR 444，分支 `claude/project-thread-jmjzyz`，还没复核、没合入，我没读过它的代码；字段在它复核时可能改，第 4 步编码时对着合入后的代码核）：网关查询 `perception.status.read`，返回 `perception.status.snapshot`，服务端是 `PerceptionService.status`。首页用到的字段：`state`（`sensing`、`paused`、`off`）、`pausedUntil`（没暂停时为空）、`senses`（开着的感知，固定顺序）、`day`（主人时区的日期）、`todayCount`（今天记了几件）。它还返回 `availableSenses`、`retention`、`pauseMaximumSeconds`、`revision`、`generatedAt`，首页原样带上，不挑字段、不改名。
+  - 它报的三条保证：这个读取不写任何表；`todayCount` 和“感知到的”页今天一栏走同一个查询，有测试断言两者相等；`senses` 的顺序固定。首页的测试只需要再加一条：首页里的 `perception` 和直接调那个读取得到的逐字段相等。
 - `upcoming`：现在的真实来源是记忆总览的 `upcoming`（到期日在未来的提醒）。日历要等设备批次。不参与排序，不计入件数。
 
 <a id="tables"></a>
