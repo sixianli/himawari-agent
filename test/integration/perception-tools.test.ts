@@ -437,10 +437,14 @@ describe("[iOS-5] device_action describes what is possible and refuses what is n
             arguments: { eventId: "event-1" },
           }),
         ),
-      ).rejects.toMatchObject({
-        code: DEVICE_ACTION_UNCONFIRMED_CODE,
-        note: expect.stringContaining("没有拿到主人的确认"),
-      });
+      ).rejects.toMatchObject(
+        confirm === undefined
+          ? { code: "DEVICE_ACTION_UNAVAILABLE" }
+          : {
+              code: DEVICE_ACTION_UNCONFIRMED_CODE,
+              note: expect.stringContaining("没有拿到主人的确认"),
+            },
+      );
       expect(performed).toEqual([]);
       const reading = await tools.run(
         call("run-owner", "device.action", {

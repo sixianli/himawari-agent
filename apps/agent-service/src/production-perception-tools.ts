@@ -521,6 +521,11 @@ export class ProductionPerceptionTools {
       action: definition,
       arguments: parameters as Readonly<Record<string, unknown>>,
     };
+    if (definition.confirm && !this.#options.confirm)
+      throw new PerceptionToolError(
+        "DEVICE_ACTION_UNAVAILABLE",
+        TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE.text,
+      );
     if (definition.confirm && (await this.#options.confirm?.(request)) !== true)
       throw new PerceptionToolError(
         DEVICE_ACTION_UNCONFIRMED_CODE,
