@@ -8,7 +8,6 @@ import {
   assertReviewed,
   buildPrompt,
   expectedTools,
-  ledgerLine,
   parseArgs,
   parseUsage,
   REVIEW_MODELS,
@@ -409,15 +408,27 @@ describe("plan claims check: the merge gate", () => {
       expect(f.check().problems).toEqual([]);
     }));
 
-  it("[claims gate] a file name that looks like a secret is still recorded in a ledger the gate can read", () => {
+  it("[claims gate] an ADR named like a secret cannot be recorded, so the gate says so instead of failing on the record scan", () => {
     const path = `docs/adr/0304-${["sk", "abcdefghijklmnopqrstuv"].join("-")}.md`;
-    const text = `# 方案\n\n${RIGHT_SENTENCE}。\n`;
+    expect(() =>
+      parseArgs(["--mode", "plan-claims", "--head", "HEAD", "--topic", "t", "--claims-file", path]),
+    ).toThrow("ARG_INVALID --claims-file");
     return withFixture({ withAdr: false }, (f) => {
-      f.commit({ [path]: text }, "adr named like a key");
-      const line = ledgerLine(f.claimsRecord({ claimsFile: path, claimsSha256: sha(text) }));
-      expect(JSON.parse(line).claimsFile).toBe(path);
-      expect(parseUsage(line, "u")[0].claimsFile).toBe(path);
+      f.commit({ [path]: "# 方案\n" }, "adr named like a key");
+      expect(claimsOnly(f.check())).toEqual([`claims-name-unsupported ${path}`]);
     });
+  });
+
+  it("[claims] a numbered or full-width prefix before CLAIM is reported too", () => {
+    const { claims, problems } = parseClaims(
+      [
+        "1、CLAIM|1|一致|a.ts:1|句|码",
+        "１. CLAIM|2|一致|a.ts:1|句|码",
+        "1）CLAIM|3|一致|a.ts:1|句|码",
+      ].join("\n"),
+    );
+    expect(claims).toEqual([]);
+    expect(problems).toHaveLength(3);
   });
 
   it("[claims gate] a failed run does not count, and every run of the same text has to pass", () =>

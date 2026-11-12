@@ -45,7 +45,7 @@ export function parseClaims(text) {
     const line = raw.replace(/^\s*(?:[-*>]\s+)?/, "");
     const number = index + 1;
     if (!line.startsWith("CLAIM|")) {
-      if (/^(?:\d+[.)]\s+)?[`*"'“#]*CLAIM(?![A-Za-z])/u.test(line))
+      if (/^(?:\p{N}+[.．)）、]\s*)?[`*"'“#]*CLAIM(?![A-Za-z])/u.test(line))
         problems.push(`line-${number}-malformed`);
       continue;
     }
@@ -181,7 +181,7 @@ function topicLedgers(repo, head, reviewsDir) {
     .map(({ file, match }) => ({ file, dir: `${reviewsDir}/${match[1]}` }));
 }
 
-export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage }) {
+export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, looksSecret }) {
   const adrs = addedAdrs(repo, head, mainRef);
   const problems = [];
   const files = [];
@@ -203,7 +203,7 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage }) 
   }
   for (const adr of adrs) {
     const label = safe(adr);
-    if (!validClaimsFile(adr)) {
+    if (!validClaimsFile(adr) || looksSecret?.(adr)) {
       problems.push(`claims-name-unsupported ${label}`);
       continue;
     }

@@ -277,7 +277,7 @@ const MODE_TEXT = {
     role: "你是方案里“关于代码和文档现状的说法”的核对者。",
     network: "不能上网。",
     task: "下面是一份还没合并的方案或 ADR。第一步，把其中每一句讲代码或仓库文档现状的话都列出来：某个文件、函数、字段、配置、命令、数字、规则现在是什么样、做什么、不做什么；一句话里有几个说法就拆成几条。方案打算新增或修改什么，不算现状；讲外部网站、第三方产品的话也不算。第二步，逐条自己打开对应的文件核对，给出：一致、不一致、找不到（仓库里没有这个东西，或没读到能证明它的内容）。材料里的说法可能有错，写得再肯定也不能因此判一致；没有亲自读到对应代码，就判找不到。只核对事实，不评价方案好不好，不提建议。",
-    output: `输出格式：每个说法单独一行，不换行，字段之间用竖线分隔，行首写 CLAIM：\n${CLAIMS_LINE_FORMAT}\n序号从 1 起，不重复。文件:行 写你读到证据的那个文件和行号，例如 packages/x/src/y.ts:42；找不到时写 -。代码原文必须是你亲自读到的、逐字摘抄的一行或几行，不要改写、不要概括；方案原句里的竖线字符换成全角的“｜”，代码原文里的竖线照原样写。列完所有 CLAIM 行之后，另起一段，用一两句话写你没能核对的部分。用简体中文。`,
+    output: `输出格式：每个说法单独一行，不换行，字段之间用竖线分隔，行首写 CLAIM：\n${CLAIMS_LINE_FORMAT}\n序号用 1、2、3……，不重复。文件:行 写你读到证据的那个文件和行号，例如 packages/x/src/y.ts:42；找不到时写 -。代码原文必须是你亲自读到的、逐字摘抄的一行或几行，不要改写、不要概括；方案原句里的竖线字符换成全角的“｜”，代码原文里的竖线照原样写。列完所有 CLAIM 行之后，另起一段，用一两句话写你没能核对的部分。用简体中文。`,
     materialTitle: "待核对的方案：",
   },
 };
@@ -1375,6 +1375,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     mainRef,
     reviewsDir: REVIEWS_DIR,
     parseUsage,
+    looksSecret: (text) => maskSecretLike(text) !== text,
   });
   const claimsOwned = new Set(claims.files);
   const unreviewed = (from, to) =>
@@ -2672,10 +2673,7 @@ function maskSecretLikeDeep(value) {
 }
 
 export function ledgerLine(record) {
-  const masked = maskSecretLikeDeep(record);
-  if (record.mode === "plan-claims")
-    return `${JSON.stringify({ ...masked, claimsFile: record.claimsFile })}\n`;
-  return `${JSON.stringify(masked)}\n`;
+  return `${JSON.stringify(maskSecretLikeDeep(record))}\n`;
 }
 
 function recordFileProblems(repo, files) {
@@ -2763,7 +2761,11 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     else if (key === "--brief") options.brief = resolve(take());
     else if (key === "--claims-file") {
       options.claimsFile = take();
-      if (!validClaimsFile(options.claimsFile)) throw new Error("ARG_INVALID --claims-file");
+      if (
+        !validClaimsFile(options.claimsFile) ||
+        maskSecretLike(options.claimsFile) !== options.claimsFile
+      )
+        throw new Error("ARG_INVALID --claims-file");
     } else if (key === "--out") options.out = resolve(take());
     else if (key === "--pr") {
       options.pr = Number(take());
