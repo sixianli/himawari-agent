@@ -52,7 +52,8 @@ function capabilityLine(entry: ClientCapabilityEntry): string {
         .map(([key, value]) => `${swiftString(key)}: ${value}`)
         .join(", ")}]`
     : "nil";
-  return `        ClientCapability(gateway: .${GATEWAY_CASES[entry.gateway]}, type: ${swiftString(entry.type)}, kind: .${entry.kind}, tier: .${TIER_CASES[entry.tier]}, tightenPayload: ${tighten}),`;
+  const open = `[${(entry.tightenOpenKeys ?? []).map(swiftString).join(", ")}]`;
+  return `        ClientCapability(gateway: .${GATEWAY_CASES[entry.gateway]}, type: ${swiftString(entry.type)}, kind: .${entry.kind}, tier: .${TIER_CASES[entry.tier]}, tightenPayload: ${tighten}, tightenOpenKeys: ${open}),`;
 }
 
 function nativePages(pages: readonly ClientPageEntry[]): string[] {
@@ -92,6 +93,7 @@ public struct ClientCapability: Sendable, Hashable {
     public let kind: ClientRequestKind
     public let tier: ClientCapabilityTier
     public let tightenPayload: [String: Bool]?
+    public let tightenOpenKeys: [String]
 
     public func requiredTier(payloadFlags: [String: Bool]?) -> ClientCapabilityTier {
         guard let tightenPayload, let payloadFlags, payloadFlags == tightenPayload else { return tier }

@@ -253,6 +253,37 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     await h.repository.close();
   });
 
+  it("关掉一种推送只用设备密钥就过了面容这一关，打开要确认签名", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const off = await gateway(
+      h,
+      client,
+      gatewayBody({
+        gateway: "v2",
+        type: "push.kind.set",
+        payload: { kind: "run", enabled: false },
+      }),
+    );
+    expect(off.json()).toEqual({ error: { code: "PORT_OPERATION_NOT_INSTALLED" } });
+    const on = await gateway(
+      h,
+      client,
+      gatewayBody({
+        gateway: "v2",
+        type: "push.kind.set",
+        payload: { kind: "run", enabled: true },
+      }),
+    );
+    expect(on.statusCode).toBe(403);
+    expect(on.json()).toEqual({ error: { code: "DEVICE_GATEWAY_CONFIRM_REQUIRED" } });
+    expect(await auditTrail(h)).toEqual([
+      `device.gateway.tighten:${client.deviceId}:v2:push.kind.set:accepted`,
+      `device.gateway.tighten:${client.deviceId}:v2:push.kind.set:failed`,
+    ]);
+    await h.repository.close();
+  });
+
   it("确认签名算近期身份验证：永久删除对话只有确认过的请求能做", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);

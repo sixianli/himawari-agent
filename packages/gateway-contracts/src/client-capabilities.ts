@@ -34,6 +34,7 @@ export interface ClientCapabilityEntry {
   readonly kind: ClientRequestKind;
   readonly tier: ClientCapabilityTier;
   readonly tightenPayload?: Readonly<Record<string, boolean>>;
+  readonly tightenOpenKeys?: readonly string[];
   readonly reason?: string;
 }
 
@@ -60,8 +61,16 @@ function tightenOrChange(
   gateway: ClientGateway,
   type: string,
   tightenPayload: Readonly<Record<string, boolean>>,
+  tightenOpenKeys: readonly string[] = [],
 ): ClientCapabilityEntry {
-  return { gateway, type, kind: "command", tier: CHANGE, tightenPayload };
+  return {
+    gateway,
+    type,
+    kind: "command",
+    tier: CHANGE,
+    tightenPayload,
+    ...(tightenOpenKeys.length > 0 ? { tightenOpenKeys } : {}),
+  };
 }
 
 function notOnPhone(
@@ -98,7 +107,7 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   change("v2", "search.authorization.set"),
   query("v2", "search.authorization.read"),
   notOnPhone("v2", "push.subscription.set", "command", WEB_PUSH_ONLY),
-  change("v2", "push.kind.set"),
+  tightenOrChange("v2", "push.kind.set", { enabled: false }, ["kind"]),
   notOnPhone("v2", "push.test", "command", WEB_PUSH_ONLY),
   notOnPhone("v2", "presence.heartbeat", "command", WEB_PRESENCE_ONLY),
   notOnPhone("v2", "push.feedback.record", "command", DEVICE_FEEDBACK),
@@ -253,10 +262,11 @@ export function findClientCapability(
 function sameFlags(
   payload: unknown,
   expected: Readonly<Record<string, boolean>>,
-): payload is Record<string, boolean> {
+  openKeys: readonly string[],
+): boolean {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
   const actual = payload as Record<string, unknown>;
-  const keys = Object.keys(actual);
+  const keys = Object.keys(actual).filter((key) => !openKeys.includes(key));
   return (
     keys.length === Object.keys(expected).length &&
     keys.every((key) => Object.hasOwn(expected, key) && actual[key] === expected[key])
@@ -267,7 +277,8 @@ export function requiredClientTier(
   entry: ClientCapabilityEntry,
   payload: unknown,
 ): ClientCapabilityTier {
-  if (entry.tightenPayload && sameFlags(payload, entry.tightenPayload)) return "tighten";
+  if (entry.tightenPayload && sameFlags(payload, entry.tightenPayload, entry.tightenOpenKeys ?? []))
+    return "tighten";
   return entry.tier;
 }
 

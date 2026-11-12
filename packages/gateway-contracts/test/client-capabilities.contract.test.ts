@@ -74,6 +74,16 @@ describe("[第11批] 客户端能力表", () => {
     );
     expect(muse && requiredClientTier(muse, { paused: true })).toBe("tighten");
     expect(muse && requiredClientTier(muse, { paused: false })).toBe("change");
+    const push = findClientCapability("v2", "push.kind.set");
+    expect(push && requiredClientTier(push, { kind: "reminder", enabled: false })).toBe("tighten");
+    expect(push && requiredClientTier(push, { kind: "run", enabled: true })).toBe("change");
+    expect(push && requiredClientTier(push, { kind: "run" })).toBe("change");
+    expect(push && requiredClientTier(push, { kind: "run", enabled: "false" })).toBe("change");
+    expect(push && requiredClientTier(push, { kind: "run", enabled: null })).toBe("change");
+    expect(push && requiredClientTier(push, { kind: "run", enabled: false, extra: false })).toBe(
+      "change",
+    );
+    expect(memory?.tightenOpenKeys).toBeUndefined();
     const rule = findClientCapability("v2", "memory.rule.respond");
     expect(rule && requiredClientTier(rule, {})).toBe("change");
   });
