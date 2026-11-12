@@ -416,7 +416,7 @@ export class SqliteWebPushOperations {
       .transaction(() => {
         const current = this.database.prepare(
           `SELECT 1 FROM rule_book_rules
-           WHERE owner_id = ? AND agent_id = ? AND rule_id = ? AND revision = ? AND status = 'active'`,
+           WHERE owner_id = ? AND agent_id = ? AND rule_id = ? AND revision = ? AND status IN ('active', 'needs_review')`,
         );
         const stale = refs.some((ref) => {
           const at = ref.lastIndexOf("@");

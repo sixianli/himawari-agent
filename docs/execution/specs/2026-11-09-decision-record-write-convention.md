@@ -23,7 +23,7 @@ date: "2026-11-09"
 
 ## 这份约定管什么
 
-决策记录是表 `decision_ledger` 的一行，种类有 `proactive`、`memory_candidate`、`consolidation`、`context_truncation`、`retrieval_degrade`、`external_read`、`rule_review`（硬规则因来源记忆变了而待重审，由数据库触发器写，见 [ADR 0211](../../adr/0211-hard-rule-points-back-to-its-rule-memory.md)）、`web_push`（一条推送被主人的“静默延后”规则延后，结果固定为 `deferred`，见 [ADR 0242](../../adr/0242-hard-rules-step4-unified-push-gate.md)）。控制中心的“依据”抽屉（[ADR 0195](../../adr/0195-show-the-whole-chain-of-one-decision-record.md)）只读这些行，所以写入方写什么，Andy 就只能看到什么。新增写入决策记录的代码，必须照下面写。
+决策记录是表 `decision_ledger` 的一行，种类有 `proactive`、`memory_candidate`、`consolidation`、`context_truncation`、`retrieval_degrade`、`external_read`、`rule_review`（硬规则因来源记忆变了而待重审，由数据库触发器写，见 [ADR 0211](../../adr/0211-hard-rule-points-back-to-its-rule-memory.md)）、`web_push`（一条推送被主人的“静默延后”规则延后，结果固定为 `deferred`，见 [ADR 0244](../../adr/0244-hard-rules-step4-unified-push-gate.md)）。控制中心的“依据”抽屉（[ADR 0195](../../adr/0195-show-the-whole-chain-of-one-decision-record.md)）只读这些行，所以写入方写什么，Andy 就只能看到什么。新增写入决策记录的代码，必须照下面写。
 
 <a id="fields"></a>
 

@@ -828,7 +828,7 @@
   },
   "tools.rule-set": {
     "sha256": "1aae04d93f2d0d6124af412b1226339eb3522cfe68f22c81a11a4165009e945b",
-    "changedIn": "ADR 0242",
+    "changedIn": "ADR 0244",
     "reason": "硬规则第 4 步：rule_set 增加 push_quiet_hours 规则类型（夜里指定类别的推送等到静默结束再发）",
     "emphasis": {
       "kind": "not-tone",

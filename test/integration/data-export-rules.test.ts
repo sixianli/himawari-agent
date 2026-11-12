@@ -183,7 +183,7 @@ describe("data export: the rule book travels with the memories", () => {
           classes: ["run_result"],
         },
       },
-      source: "ADR 0242；主人在对话里说的一句话",
+      source: "ADR 0244；主人在对话里说的一句话",
       reason: "owner_sentence",
       at: "2026-11-04T05:00:00.000Z",
     });

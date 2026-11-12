@@ -204,7 +204,11 @@ describe("[WP-3] web push dispatch", () => {
         finalRisk: risk,
       } as unknown as ApprovalRequest);
     const rules = {
-      write(ruleId: string, parameters: unknown, status: "active" | "retired" = "active") {
+      write(
+        ruleId: string,
+        parameters: unknown,
+        status: "active" | "needs_review" | "retired" = "active",
+      ) {
         const database = openQualifiedDatabase(file);
         try {
           database
@@ -768,6 +772,25 @@ describe("[WP-3] web push dispatch", () => {
     context.setClock(MORNING);
     await push.tick();
     expect(context.sender.requests).toHaveLength(2);
+  });
+
+  it("[HR-4] holds a push for a rule that needs review exactly as for an active one, and lengthens its life", async () => {
+    const context = await setup();
+    const push = context.create({ timeZone: "Asia/Tokyo", readPushRules: context.rules.read });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    context.rules.write("owner:night", NIGHT_JST, "needs_review");
+    await push.tick();
+    context.setClock(NIGHT);
+    context.finishRun("run-review", "completed", at(NIGHT, -5));
+    await push.tick();
+    const held = context.rules.outbox("run:");
+    expect(held?.deferUntil).toBe(MORNING);
+    expect(Date.parse(held?.expiresAt ?? "")).toBeGreaterThanOrEqual(
+      Date.parse(MORNING) + 3_600_000,
+    );
+    expect(context.rules.ledger()).toHaveLength(1);
+    expect(context.sender.requests).toEqual([]);
   });
 
   it("[HR-4] REVERSE: a rule store that fails never stops pushes, and the failure is reported", async () => {

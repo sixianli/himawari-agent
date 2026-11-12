@@ -1,0 +1,4 @@
+{"id": "r5-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "needs_review 的静默规则被 deferItem 当成已失效，延后不落库，提醒可能在静默结束前过期被吞", "valid": true, "class": "error", "severity": "medium-high", "trigger": "规则处于 needs_review 且到点提醒寿命短于静默时段", "consequence": "提醒被记为过期不再发", "modelSeverity": "中高"}
+{"id": "r5-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "一次性范围词仍不完整，这个月、今年、明年等限时请求会被自动立成永久规则", "valid": true, "class": "error", "severity": "medium-high", "trigger": "主人说“这个月晚上别提醒我”", "consequence": "立成永久规则", "modelSeverity": "中"}
+{"id": "r5-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "deferItem 返回 true 同时表示已延后和没写但本轮跳过，接口语义含混", "valid": true, "class": "better", "severity": "low", "modelSeverity": "低"}
+{"id": "r5-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "迁移契约测试只填了 8 张重建表中的 3 张", "valid": false, "class": "error", "severity": "low", "modelSeverity": "低"}
