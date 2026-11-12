@@ -272,7 +272,7 @@ export async function runCheck({
         if (entry.status !== "passed")
           process.stdout.write(
             redactText(
-              `security scan ${entry.id}: ${entry.status}${entry.error ? ` ${entry.error}` : ""}\n`,
+              `security scan ${entry.id}: ${entry.status}${/^[A-Z][A-Z_]*$/.test(entry.error ?? "") ? ` ${entry.error}` : ""}\n`,
             ),
           );
       if (security.status !== "passed") {
