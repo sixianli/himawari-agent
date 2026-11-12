@@ -215,6 +215,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
     });
     const failures: unknown[] = [];
     const sourceFailures: string[] = [];
+    const failureNames: string[] = [];
     const titled = async (threadId: string) => {
       const thread = await threads.read(OWNER_ID, AGENT_ID, createThreadId(threadId));
       if (!thread || thread.status !== "active") return null;
@@ -252,7 +253,10 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       runs: repository.runLifecycle(OWNER_ID, AGENT_ID, AUTHORITY),
       threadTitle: titled,
       clock,
-      onSourceFailure: (source) => sourceFailures.push(source),
+      onSourceFailure: (source, error) => {
+        sourceFailures.push(source);
+        failureNames.push((error as Error).name);
+      },
     });
 
     const read = async (locale: "zh-CN" | "en" | "ja" = "zh-CN"): Promise<HomeSnapshot> => {
@@ -636,6 +640,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       read,
       propose,
       tidy,
+      failureNames,
       sql,
       put,
       seedRun,
@@ -1142,7 +1147,16 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
     expect(keys(snapshot)).toEqual(["reminder:reminder-ok"]);
     expect(snapshot.upcoming).toEqual([]);
     expect([...snapshot.incompleteSources].sort()).toEqual(["reminders", "upcoming"]);
+    expect(new Set(f.failureNames)).toEqual(new Set(["HOME_ITEM_ID_NOT_SHOWABLE"]));
     expect(await f.home.awaitingCount()).toBeUndefined();
+  });
+
+  it("still lists a later reminder as upcoming when due ones alone would fill the upcoming limit", async () => {
+    const f = await fixture({ ...DEFAULT_HOME_FEED, upcomingLimit: 1 });
+    await f.remind("reminder-a", "提醒 A", at(-20), at(600));
+    await f.remind("reminder-later", "以后的提醒", at(1440), at(2 * 1440));
+    const { upcoming } = await f.read();
+    expect(upcoming.map(({ reminderId }) => reminderId)).toEqual(["reminder-later"]);
   });
 
   it("cuts overlong text and control characters to what the contract accepts", async () => {

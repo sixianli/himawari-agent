@@ -49,6 +49,7 @@ export class SqliteMemoryReminderOperations {
             from: string;
             to: string;
             limit: number;
+            remindAfter?: string;
           },
         );
       case "memoryReminder.read":
