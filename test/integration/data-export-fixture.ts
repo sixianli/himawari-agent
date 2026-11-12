@@ -272,6 +272,54 @@ export async function seedEverything(side: Side): Promise<void> {
   db.prepare(
     "INSERT INTO memory_consolidation_change_basis (change_id, position, memory_id) VALUES ('run-1:c1', 0, 'm-plain'), ('run-1:c1', 1, 'm-pending')",
   ).run();
+  db.prepare(
+    "INSERT INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at) VALUES ('thread-review', ?, ?, 1, 'open', ?, ?)",
+  ).run(side.ownerId, side.agentId, T0, T0);
+  const review = db.prepare(
+    `INSERT INTO memory_conversation_reviews (id, owner_id, agent_id, thread_id, episode_id, episode_created_at, day, status, attempts, output_ref, error_code, started_at, finished_at, undone_at)
+    VALUES (?, ?, ?, 'thread-review', ?, ?, '2026-11-01', ?, ?, ?, ?, ?, ?, NULL)`,
+  );
+  review.run(
+    "review-1",
+    side.ownerId,
+    side.agentId,
+    "episode-1",
+    T0,
+    "completed",
+    1,
+    "payload-review-output",
+    null,
+    T0,
+    T0,
+  );
+  review.run(
+    "review-2",
+    side.ownerId,
+    side.agentId,
+    "episode-2",
+    T0,
+    "gave_up",
+    3,
+    null,
+    "MEMORY_REVIEW_OUTPUT_INVALID",
+    T0,
+    T0,
+  );
+  const reviewChange = db.prepare(
+    `INSERT INTO memory_conversation_review_changes (review_id, memory_id, action, source_message_id, after_revision, before_superseded_by, before_valid_to, created_at)
+    VALUES ('review-1', ?, ?, 'message-1', 1, ?, ?, ?)`,
+  );
+  reviewChange.run("m-plain", "created", null, null, T0);
+  reviewChange.run("m-archived", "superseded", null, null, T0);
+  reviewChange.run("m-tentative", "confirmed", null, null, T0);
+  reviewChange.run("m-pending", "created", null, null, T0);
+  db.prepare(
+    "UPDATE memory_conversation_review_changes SET undone_revision = 2 WHERE memory_id = 'm-archived'",
+  ).run();
+  db.prepare(
+    `INSERT INTO memory_conversation_review_changes (review_id, memory_id, action, source_message_id, after_revision, before_superseded_by, before_valid_to, created_at)
+    VALUES ('review-2', 'm-plain', 'created', 'message-1', NULL, NULL, NULL, ?)`,
+  ).run(T0);
 
   const decision = db.prepare(
     `INSERT INTO decision_ledger (id, owner_id, agent_id, kind, scenario, checked_at, counts, verdict, outcome, reason_code, subject_ref, inputs, reason_ref, content_ref, cost_micros, duration_ms, owner_rating, rated_at, category, confidence_permille, inferred)

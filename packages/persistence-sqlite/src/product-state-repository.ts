@@ -31,6 +31,7 @@ import type {
   MemoryCaptureBacklogPort,
   MemoryCheckupStorePort,
   MemoryConsolidationStorePort,
+  MemoryConversationReviewStorePort,
   MemoryEpisodeStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
@@ -573,6 +574,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   memoryCaptureBacklog(): MemoryCaptureBacklogPort {
     return this.durable.memoryCaptureBacklog();
+  }
+
+  memoryConversationReviews(): MemoryConversationReviewStorePort {
+    return this.durable.memoryConversationReviews();
   }
 
   modelUsage(): ModelUsageStorePort {

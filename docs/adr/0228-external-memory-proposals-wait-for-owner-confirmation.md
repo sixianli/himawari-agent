@@ -147,5 +147,6 @@ Andy 2026-11-11 在任务 P5-3 的线程里改了完成标准：弹不出确认�
 - [ADR 0226：外部 agent 提议新规则，主人在客户端确认后按规则提议流程生效](0226-external-agents-propose-rules-through-the-rule-proposal-flow.md)
 - [ADR 0227：对外 MCP 入口改为校验 Cloudflare Access 登录凭证，去掉固定令牌](0227-mcp-entry-checks-cloudflare-access-sign-in.md)
 - [ADR 0179：低置信度的记忆候选存为待确认](0179-keep-low-confidence-memory-candidates-as-tentative.md)
+- [ADR 0246：其他 agent 的提议进入网页和数据导出，格式升到 v3](0246-external-proposals-join-the-data-export-and-web.md)（后续，做了上面「下一个 PR 要做的」三件事）
 
 [返回阅读导航](#contents)

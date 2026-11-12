@@ -22,6 +22,7 @@ import type {
   MemoryCaptureBacklogPort,
   MemoryCheckupStorePort,
   MemoryConsolidationStorePort,
+  MemoryConversationReviewStorePort,
   MemoryEpisodeStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
@@ -1023,6 +1024,27 @@ export class SqliteDurableAdapters {
     });
   }
 
+  memoryConversationReviews(): MemoryConversationReviewStorePort {
+    return Object.freeze<MemoryConversationReviewStorePort>({
+      position: (input) => this.context.read("memoryConversationReview.position", input),
+      begin: (input) => this.context.write("memoryConversationReview.begin", input),
+      attachOutput: (input) => this.context.write("memoryConversationReview.attachOutput", input),
+      finish: (input) => this.context.write("memoryConversationReview.finish", input),
+      recordChange: (change) =>
+        this.context.write("memoryConversationReview.recordChange", { change }),
+      discardChange: (input) => this.context.write("memoryConversationReview.discardChange", input),
+      markChangeUndone: (input) =>
+        this.context.write("memoryConversationReview.markChangeUndone", input),
+      read: (id) => this.context.read("memoryConversationReview.read", { id }),
+      listWithChanges: (input) =>
+        this.context.read("memoryConversationReview.listWithChanges", input),
+      listChanges: (reviewId) =>
+        this.context.read("memoryConversationReview.listChanges", { reviewId }),
+      dayUsage: (input) => this.context.read("memoryConversationReview.dayUsage", input),
+      markUndone: (input) => this.context.write("memoryConversationReview.markUndone", input),
+    });
+  }
+
   memoryReminders(): MemoryReminderStorePort {
     return Object.freeze<MemoryReminderStorePort>({
       schedule: (reminder) => this.context.write("memoryReminder.schedule", { reminder }),
@@ -1200,6 +1222,8 @@ export class SqliteDurableAdapters {
       attachEmbedding: (input) => this.context.write("memoryEpisode.attachEmbedding", input),
       listUnsummarized: (input) => this.context.read("memoryEpisode.listUnsummarized", input),
       listDaySummaries: (input) => this.context.read("memoryEpisode.listDaySummaries", input),
+      listDaySummariesAfter: (input) =>
+        this.context.read("memoryEpisode.listDaySummariesAfter", input),
     });
   }
 
