@@ -2393,6 +2393,7 @@ export async function startTenantRuntime(
               .listApprovals(configuration.ownerId, configuration.agentId, {
                 status: "pending",
               }),
+          awaitingCount: async () => http?.home.awaitingCount(),
           ...(museIntake
             ? {
                 museChannel: createMuseChannelPushSource({
@@ -2832,6 +2833,11 @@ export async function startTenantRuntime(
             ...request,
           }),
         onSearchIndexDiagnostic: (diagnostic) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            ...diagnostic,
+          }),
+        onHomeDiagnostic: (diagnostic) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
             ...diagnostic,
