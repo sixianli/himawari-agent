@@ -138,10 +138,15 @@ export function readInstalledArrays(text) {
 }
 
 function withoutInstalledArrays(text) {
-  let stripped = text;
-  for (const match of text.matchAll(GATEWAY_ARRAY_PATTERN))
-    stripped = stripped.replace(balancedArray(text, match.index + match[0].length - 1), "");
-  return stripped;
+  let stripped = "";
+  let from = 0;
+  for (const match of text.matchAll(GATEWAY_ARRAY_PATTERN)) {
+    const open = match.index + match[0].length;
+    if (open < from) continue;
+    stripped += text.slice(from, open);
+    from = open + balancedArray(text, open - 1).length;
+  }
+  return stripped + text.slice(from);
 }
 
 export function readRouteBranches(text) {
@@ -382,22 +387,28 @@ export function checkOperations(root = repositoryRoot) {
   errors.push(...routing.errors);
   const notInstalled = new Set();
   const inventoryPath = path.join(root, INVENTORY_FILE);
+  const declaredNames = new Set();
   if (lists.length > 0 && !existsSync(inventoryPath)) errors.push("OPERATIONS_INVENTORY_MISSING");
   else if (lists.length > 0) {
     const declared = readInventoryOperations(readFileSync(inventoryPath, "utf8"));
     if (declared.length === 0) errors.push("OPERATIONS_INVENTORY_UNPARSED");
     for (const { id, name } of declared) {
+      declaredNames.add(name);
       if (routing.installedNames.has(name)) continue;
       notInstalled.add(name);
-      if (pending[name] === undefined && undeployed[name] === undefined)
+      if (!Object.hasOwn(pending, name) && !Object.hasOwn(undeployed, name))
         errors.push(`OPERATION_DECLARED_NOT_INSTALLED ${name} (${id})`);
     }
   }
-  for (const name of Object.keys(undeployed))
+  for (const name of Object.keys(undeployed)) {
     if (routing.installedNames.has(name))
       errors.push(
         `OPERATION_NOT_INSTALLED_BUT_INSTALLED ${name} 已安装，从 ${PENDING_LEDGER} 的 notInstalled 移除`,
       );
+    else if (declaredNames.size > 0 && !declaredNames.has(name))
+      errors.push(`OPERATION_NOT_INSTALLED_NOT_DECLARED ${name} 控制中心清单没有声明它`);
+    if (Object.hasOwn(pending, name)) errors.push(`OPERATION_LEDGER_BOTH_SECTIONS ${name}`);
+  }
 
   const report = [];
   for (const { name, kind } of operations) {
@@ -407,11 +418,13 @@ export function checkOperations(root = repositoryRoot) {
     if (!frontendTexts.some((text) => frontendSends(text, name))) missing.push("调用方");
     if (!testTexts.some((text) => text.includes(literal))) missing.push("测试");
     report.push({ name, kind, missing });
-    const reason = pending[name];
+    const reason = Object.hasOwn(pending, name) ? pending[name] : undefined;
     if (missing.length > 0 && reason === undefined)
       errors.push(`OPERATION_INCOMPLETE ${name} 缺：${missing.join("、")}`);
     if (missing.length === 0 && reason !== undefined)
-      errors.push(`OPERATION_PENDING_BUT_COMPLETE ${name} 已齐全，从 ${PENDING_LEDGER} 移除`);
+      errors.push(
+        `OPERATION_PENDING_BUT_COMPLETE ${name} 已齐全，${notInstalled.has(name) ? "改登记到 notInstalled" : "从 operations 移除"}（${PENDING_LEDGER}）`,
+      );
   }
   for (const [name, reason] of [...Object.entries(pending), ...Object.entries(undeployed)]) {
     if (!contractNames.has(name)) errors.push(`OPERATION_PENDING_NOT_IN_CONTRACT ${name}`);

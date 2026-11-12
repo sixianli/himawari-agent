@@ -127,7 +127,7 @@ describe("operations check", () => {
     const reason = "后端已实现，前端还没有页面";
     expect(checkOperations(tree(missing, { "demo.write": reason })).errors).toEqual([]);
     expect(checkOperations(tree(complete, { "demo.write": reason })).errors).toEqual([
-      "OPERATION_PENDING_BUT_COMPLETE demo.write 已齐全，从 ci/operations-pending.json 移除",
+      "OPERATION_PENDING_BUT_COMPLETE demo.write 已齐全，从 operations 移除（ci/operations-pending.json）",
     ]);
   });
 
@@ -434,6 +434,25 @@ ${gateway()}`,
     expect(checkOperations(tree(dangling)).errors).toEqual([
       "OPERATION_LIST_NOT_ADVERTISED PRODUCTION_OTHER_OPERATIONS",
     ]);
+  });
+
+  it("[四处一致] rejects a notInstalled entry nobody declares and one listed in both sections", () => {
+    const reason = "契约和页面已有，生产还没装配";
+    expect(checkOperations(tree(wired, {}, { "demo.snapshot": reason })).errors).toEqual([
+      "OPERATION_NOT_INSTALLED_NOT_DECLARED demo.snapshot 控制中心清单没有声明它",
+      "OPERATION_PENDING_NOT_IN_CONTRACT demo.snapshot",
+    ]);
+    expect(
+      checkOperations(tree(later, { "demo.later": reason }, { "demo.later": reason })).errors,
+    ).toEqual([
+      "OPERATION_LEDGER_BOTH_SECTIONS demo.later",
+      "OPERATION_PENDING_BUT_COMPLETE demo.later 已齐全，改登记到 notInstalled（ci/operations-pending.json）",
+    ]);
+  });
+
+  it("[四处一致] strips the installed arrays by position and reads an assigned installedOperations", () => {
+    const text = `const decoy = [ ...(options.demoControl ? PRODUCTION_DEMO_OPERATIONS : []) ];\n${gateway().replace("installedOperations:", "installedOperations =")}`;
+    expect(checkOperations(tree({ ...wired, [gatewayFile]: text })).errors).toEqual([]);
   });
 
   it("passes on the real repository", () => {
