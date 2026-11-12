@@ -8,6 +8,7 @@ import {
   enforcedRuleCount,
   type PortableRule,
   type PortableRuleVersion,
+  type RuleSuspendReason,
   RULES_INDEX_FILE,
   renderRulesMarkdown,
   ruleParametersKey,
@@ -457,6 +458,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     if (id !== null && kept === null) droppedRuleMemoryLinks += 1;
     return kept;
   };
+  let droppedRuleSuggestions = 0;
   const ruleHistory = group(snapshot.ruleHistory, "rule_id");
   const ruleLines: PortableRule[] = snapshot.rules.map((row) => {
     const ruleId = str(row["rule_id"]);
@@ -481,8 +483,12 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       sourceMemoryId: ruleMemoryLink(row["source_memory_id"]),
       updatedAt: str(row["updated_at"]),
       ...ruleParameters(row["parameters"], ruleParametersKey(ruleId), ruleId),
+      ...(row["suspend_reason"] === null || row["suspend_reason"] === undefined
+        ? {}
+        : { suspendReason: str(row["suspend_reason"]) as RuleSuspendReason }),
       history,
     };
+    if (row["suggestion"] !== null && row["suggestion"] !== undefined) droppedRuleSuggestions += 1;
     assertRuleIdentifiers(rule);
     assertRuleHistory(rule);
     return rule;
@@ -567,6 +573,16 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       what: "其他 agent 通过 MCP 提议的记忆（待确认、已拒绝、被替换的提议）",
       count: snapshot.externalProposals,
       reason: "本版导出格式还不含这张表；已确认保存的会作为普通记忆导出",
+    },
+    {
+      what: "规则暂停时系统算出的建议值",
+      count: droppedRuleSuggestions,
+      reason: "只是待你确认的建议，导入后规则仍是暂停状态，你可以恢复原规则或确认停用",
+    },
+    {
+      what: "等你确认的待重审记忆标记",
+      count: snapshot.openMemoryReviews,
+      reason: "是本机的待办清单，不进导出；导入后从空清单开始",
     },
     {
       what: "规则出处里指向未导出记忆的链接",

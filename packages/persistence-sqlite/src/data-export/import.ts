@@ -640,8 +640,8 @@ export async function importPortableExport(
           );
       }
       const ruleRow = database.prepare(
-        `INSERT INTO rule_book_rules (owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO rule_book_rules (owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, updated_at, suspend_reason, review_after)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const ruleVersion = database.prepare(
         `INSERT INTO rule_book_history (owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, change_reason, changed_at)
@@ -658,6 +658,8 @@ export async function importPortableExport(
           rule.source,
           rule.sourceMemoryId,
           rule.updatedAt,
+          rule.suspendReason ?? null,
+          rule.status === "needs_review" ? rule.updatedAt : null,
         );
         for (const version of versions)
           ruleVersion.run(

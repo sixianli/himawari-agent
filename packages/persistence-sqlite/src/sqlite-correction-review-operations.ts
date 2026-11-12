@@ -1,15 +1,15 @@
 import { randomUUID } from "node:crypto";
-import {
-  type CorrectionAgreementCounts,
-  type DecisionLedgerWrite,
-  type MemoryReviewItem,
-  type MemoryReviewStorePort,
-  RULE_REVIEW_MAX_ATTEMPTS,
-  type RuleReviewCandidate,
-  type RuleReviewListItem,
-  type RuleReviewOwnerStorePort,
-  type RuleReviewStorePort,
+import type {
+  CorrectionAgreementCounts,
+  DecisionLedgerWrite,
+  MemoryReviewItem,
+  MemoryReviewStorePort,
+  RuleReviewCandidate,
+  RuleReviewListItem,
+  RuleReviewOwnerStorePort,
+  RuleReviewStorePort,
 } from "@himawari-agent/application";
+import { RULE_REVIEW_MAX_ATTEMPTS } from "@himawari-agent/application/rule-review";
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import { insertLedgerRow } from "./sqlite-decision-ledger-operations.ts";

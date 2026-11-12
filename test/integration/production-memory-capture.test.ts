@@ -275,6 +275,7 @@ describe("production memory capture", () => {
     const ruleWriter = new ProductionOwnerRuleWriter({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       rules: repository.ownerRules(),
+      reviews: repository.ruleReviews(),
       memory,
       memories: repository.productMemoryState(),
       book: repository.memoryBook(),

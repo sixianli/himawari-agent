@@ -13,7 +13,8 @@ import { DATA_EXPORT_ERROR_CODES, DataExportError } from "./types.js";
 
 export const RULES_INDEX_FILE = "RULES.md";
 
-export type RuleStatus = "active" | "needs_review" | "retired";
+export type RuleStatus = "active" | "needs_review" | "suspended" | "retired";
+export type RuleSuspendReason = "source_removed" | "no_longer_standing" | "parameters_changed";
 
 export interface PortableRuleVersion {
   readonly revision: number;
@@ -35,6 +36,7 @@ export interface PortableRule {
   readonly updatedAt: string;
   readonly parameters: string;
   readonly withheld?: true;
+  readonly suspendReason?: RuleSuspendReason;
   readonly history: readonly PortableRuleVersion[];
 }
 
@@ -45,7 +47,7 @@ export function ruleParametersKey(ruleId: string, revision?: number): string {
 }
 
 export function enforcedRuleCount(rules: readonly PortableRule[]): number {
-  return rules.filter(({ status }) => status !== "retired").length;
+  return rules.filter(({ status }) => status === "active" || status === "needs_review").length;
 }
 
 const OWNER_RULE_ID = /^owner:[A-Za-z0-9_-]{1,58}$/u;
@@ -71,6 +73,7 @@ const KIND_LABELS: Readonly<Record<RuleKind, string>> = Object.freeze({
 const STATUS_LABELS: Readonly<Record<RuleStatus, string>> = Object.freeze({
   active: "在用",
   needs_review: "待重审，照常执行",
+  suspended: "已暂停，不执行，等你确认",
   retired: "已撤销",
 });
 
@@ -297,4 +300,6 @@ export function assertRuleHistory(rule: PortableRule): void {
     (last.withheld === true) !== (rule.withheld === true)
   )
     fail(`规则 ${rule.ruleId} 当前版本和历史最后一版对不上`);
+  if ((rule.status === "suspended") !== (rule.suspendReason !== undefined))
+    fail(`规则 ${rule.ruleId} 的暂停原因和状态对不上`);
 }

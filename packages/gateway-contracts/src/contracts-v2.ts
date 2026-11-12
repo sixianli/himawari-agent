@@ -1298,7 +1298,7 @@ const decisionChainSnapshotSchema = object({
           ]),
           origin: nullable(enumeration(["owner_setting", "built_in"])),
           source: nullable(boundedString(256)),
-          status: nullable(enumeration(["active", "needs_review", "retired"])),
+          status: nullable(enumeration(["active", "needs_review", "suspended", "retired"])),
           changedAt: nullable(timestamp),
           memory: nullable(
             object({
@@ -1641,7 +1641,7 @@ const memoryRulesSnapshotSchema = object({
         ruleId: machineString,
         type: boundedString(64),
         summary: boundedString(200),
-        status: enumeration(["active", "needs_review"]),
+        status: enumeration(["active", "needs_review", "suspended"]),
         enforced: booleanValue,
         updatedAt: timestamp,
       }),

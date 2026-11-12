@@ -32,6 +32,7 @@ export interface PortableSnapshot {
   readonly omittedMemories: number;
   readonly restrictedMemories: number;
   readonly externalProposals: number;
+  readonly openMemoryReviews: number;
 }
 
 const EXPORTABLE_STATUSES = "('active', 'archived', 'trashed')";
@@ -71,6 +72,10 @@ export function readSnapshot(
       const externalProposals = count(
         `SELECT COUNT(*) FROM external_memory_proposals
           WHERE owner_id = @ownerId AND agent_id = @agentId AND status <> 'committed'`,
+      );
+      const openMemoryReviews = count(
+        `SELECT COUNT(*) FROM memory_review_items
+          WHERE owner_id = @ownerId AND agent_id = @agentId AND status = 'open'`,
       );
       const history = all(
         `SELECT memory_id, kind, content_ref, stance, quote_ref, source_deleted, occurred_at
@@ -187,7 +192,8 @@ export function readSnapshot(
           )
         : [];
       const rules = all(
-        `SELECT rule_id, revision, parameters, status, source, source_memory_id, updated_at
+        `SELECT rule_id, revision, parameters, status, source, source_memory_id, updated_at,
+          suspend_reason, suggestion
         FROM rule_book_rules WHERE owner_id = @ownerId AND agent_id = @agentId
         ORDER BY rule_id`,
       );
@@ -305,6 +311,7 @@ export function readSnapshot(
         omittedMemories,
         restrictedMemories,
         externalProposals,
+        openMemoryReviews,
       };
     })
     .deferred();

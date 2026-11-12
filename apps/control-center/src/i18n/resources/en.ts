@@ -899,6 +899,9 @@ export const messages = {
   "rules.type":
     "{t, select, mail_must_notify {Always notify} mail_read_whole_thread {Read the whole thread first} other {Other rule}}",
   "rules.needsReview": "Its source memory changed; confirm it again (still enforced)",
+  "rules.suspended":
+    "Paused, not enforced: its source memory changed and no longer matches this rule; waiting for you",
+  "rules.resume": "Enforce again",
   "rules.notEnforced": "This rule can't be read, so it isn't enforced for now",
   "rules.reconfirm": "Confirm again",
   "rules.undo": "Undo",
@@ -1117,6 +1120,7 @@ export const messages = {
     "{o, select, owner_setting {Set by you} built_in {Built-in rule} other {Unregistered rule}}",
   "decision.chain.ruleMails": "Hit {count, plural, one {# email} other {# emails}}",
   "decision.chain.ruleNeedsReview": "Needs review",
+  "decision.chain.ruleSuspended": "Paused",
   "decision.chain.ruleQuote": "Your words: {text}",
   "decision.chain.ruleWording":
     "{k, select, important_sender {{empty, select, yes {Important list is empty} other {Important list: {text}}}} public_domain {Domain endings: {text}} money_words {Words: {text}} quiet_hours {{empty, select, yes {No quiet hours set} other {Hours: {text}}}} amount_threshold {Threshold: {text}} other {{text}}}",

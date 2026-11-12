@@ -905,6 +905,9 @@ export const messages = {
   "rules.type":
     "{t, select, mail_must_notify {必ず通知} mail_read_whole_thread {スレッド全体を先に読む} other {その他のルール}}",
   "rules.needsReview": "元の記憶が変わったため再確認待ち（適用は継続中）",
+  "rules.suspended":
+    "停止中（適用していません）：元の記憶が変わり、このルールと合わなくなりました。確認待ちです",
+  "rules.resume": "適用を再開",
   "rules.notEnforced": "このルールを読み取れないため、いまは適用していません",
   "rules.reconfirm": "再確認",
   "rules.undo": "取り消す",
@@ -1117,6 +1120,7 @@ export const messages = {
     "{o, select, owner_setting {あなたの設定} built_in {組み込みルール} other {未登録のルール}}",
   "decision.chain.ruleMails": "{count} 件のメールが該当",
   "decision.chain.ruleNeedsReview": "再確認待ち",
+  "decision.chain.ruleSuspended": "停止中",
   "decision.chain.ruleQuote": "あなたの言葉：{text}",
   "decision.chain.ruleWording":
     "{k, select, important_sender {{empty, select, yes {重要リストは空です} other {重要リスト：{text}}}} public_domain {ドメインの末尾：{text}} money_words {語の一覧：{text}} quiet_hours {{empty, select, yes {通知しない時間帯は未設定} other {時間帯：{text}}}} amount_threshold {基準：{text}} other {{text}}}",

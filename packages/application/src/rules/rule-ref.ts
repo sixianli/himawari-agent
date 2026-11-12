@@ -20,7 +20,7 @@ export interface RuleBookVersion {
   readonly ruleId: string;
   readonly revision: number;
   readonly parameters: Readonly<Record<string, unknown>>;
-  readonly status: "active" | "needs_review" | "retired";
+  readonly status: "active" | "needs_review" | "suspended" | "retired";
   readonly sourceMemoryId: string | null;
   readonly changedAt: string | null;
 }

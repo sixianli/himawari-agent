@@ -1,5 +1,8 @@
+import { calibrationGroup } from "@himawari-agent/calibration";
 import { describe, expect, it } from "vitest";
+import { ruleIsEnforced } from "../src/rules/rule-book.js";
 import { judgeRuleReview, parseRuleReviewAnswer } from "../src/rules/rule-review.js";
+import { enforceableOwnerRule } from "../src/rules/rule-types.js";
 
 const BOSS = {
   type: "mail_must_notify",
@@ -76,5 +79,44 @@ describe("[P4-1] judgeRuleReview", () => {
     expect(parseRuleReviewAnswer('{"standing":false}')).toEqual({ standing: false });
     expect(parseRuleReviewAnswer('```json\n{"standing":false}\n```')).toEqual({ standing: false });
     expect(() => parseRuleReviewAnswer("不是 JSON")).toThrow();
+  });
+});
+
+describe("[P4-1] a suspended rule is not enforced anywhere", () => {
+  const row = {
+    ruleId: "owner:boss",
+    revision: 3,
+    source: "owner sentence",
+    parameters: BOSS,
+  };
+
+  it("drops out of the enforced rules but stays readable", () => {
+    expect(ruleIsEnforced("suspended")).toBe(false);
+    expect(enforceableOwnerRule({ ...row, status: "suspended" })).toBeUndefined();
+    expect(enforceableOwnerRule({ ...row, status: "needs_review" })?.id).toBe("owner:boss");
+    expect(enforceableOwnerRule({ ...row, status: "active" })?.id).toBe("owner:boss");
+  });
+
+  it("keeps rule-review outcomes for the owner's own answers out of the daily ratings", () => {
+    expect(
+      calibrationGroup({
+        kind: "rule_review",
+        outcome: "suspended",
+        ownerRating: null,
+        delivered: false,
+      }),
+    ).toBe("rule_review");
+    for (const outcome of ["owner_adopted", "owner_confirmed", "owner_restored"])
+      expect(
+        calibrationGroup({ kind: "rule_review", outcome, ownerRating: null, delivered: false }),
+      ).toBeNull();
+    expect(
+      calibrationGroup({
+        kind: "memory_review",
+        outcome: "flagged",
+        ownerRating: null,
+        delivered: false,
+      }),
+    ).toBeNull();
   });
 });

@@ -849,6 +849,8 @@ export const messages = {
   "rules.type":
     "{t, select, mail_must_notify {一定提醒} mail_read_whole_thread {先读完整个邮件串} other {其他规则}}",
   "rules.needsReview": "来源记忆改过，待重新确认（仍在执行）",
+  "rules.suspended": "已暂停，不执行：来源记忆改了，自动核对后发现和原规则对不上，等你确认",
+  "rules.resume": "恢复执行",
   "rules.notEnforced": "这条规则读不懂，暂时没有执行",
   "rules.reconfirm": "重新确认",
   "rules.undo": "撤销",
@@ -1051,6 +1053,7 @@ export const messages = {
     "{o, select, owner_setting {你设定的} built_in {内置规则} other {未登记的规则}}",
   "decision.chain.ruleMails": "命中 {count} 封邮件",
   "decision.chain.ruleNeedsReview": "待重审",
+  "decision.chain.ruleSuspended": "已暂停",
   "decision.chain.ruleQuote": "原话：{text}",
   "decision.chain.ruleWording":
     "{k, select, important_sender {{empty, select, yes {重要名单是空的} other {重要名单：{text}}}} public_domain {域名后缀：{text}} money_words {词表：{text}} quiet_hours {{empty, select, yes {没有设静默时段} other {时段：{text}}}} amount_threshold {门槛：{text}} other {{text}}}",

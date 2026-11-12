@@ -7,6 +7,7 @@ import {
   type RuleExample,
   type RuleOutcome,
   type RuleRecord,
+  ruleIsEnforced,
   type RuleStatus,
 } from "./rule-book.js";
 
@@ -301,7 +302,7 @@ export function enforceableOwnerRule(
   row: OwnerRuleRow,
   registry: readonly RuleTypeDefinition[] = RULE_TYPES,
 ): RuleRecord | undefined {
-  if (row.status === "retired") return undefined;
+  if (!ruleIsEnforced(row.status)) return undefined;
   try {
     return ownerRuleRecord(row, registry);
   } catch (error) {
