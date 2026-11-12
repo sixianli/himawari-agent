@@ -290,6 +290,11 @@ function reviewedMemoryIds(entry: DecisionLedgerEntry): {
   return { before: [], after: undefined };
 }
 
+const EXTERNAL_PROPOSAL_NOT_SAVED: ReadonlySet<string> = new Set([
+  EXTERNAL_PROPOSAL_REASON_CODES.pending,
+  EXTERNAL_PROPOSAL_REASON_CODES.superseded,
+]);
+
 const OWNER_DECIDED_DISCARDS: ReadonlySet<string> = new Set([
   "approval_rejected",
   EXTERNAL_PROPOSAL_REASON_CODES.declined,
@@ -353,6 +358,8 @@ async function collectReviewCandidates(
   const candidates = new Map<string, ReviewCandidate>();
   for (const entry of entries) {
     if (entry.kind === "memory_candidate" && OWNER_DECIDED_DISCARDS.has(entry.reasonCode)) continue;
+    if (entry.kind === "memory_candidate" && EXTERNAL_PROPOSAL_NOT_SAVED.has(entry.reasonCode))
+      continue;
     if (
       entry.kind === "consolidation" &&
       entry.outcome === "hold" &&
