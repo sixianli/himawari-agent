@@ -242,6 +242,31 @@ describe("execution Worker service main", () => {
     });
   }, 5_000);
 
+  it("clears an earlier boot's qualified record even when the authority check fails", async () => {
+    const { configurationPath, layout } = await fixture();
+    await writeWorkerQualifiedDeployment(layout, {
+      workerInstanceId: `execution-worker:${FIXTURE_SCOPE.authority.deploymentId}`,
+      workerBootId: "worker-boot:old",
+      deploymentId: FIXTURE_SCOPE.authority.deploymentId,
+      snapshotDigest: `sha256:${"a".repeat(64)}`,
+    });
+    await writeAuthorityFile(layout, { ...authority(2, 2), status: "transferring" });
+    const diagnostics = capture();
+
+    await expect(
+      runExecutionWorkerService(
+        serviceArguments(configurationPath),
+        diagnostics.stream,
+        diagnostics.stream,
+        FAST_STARTUP_TIMING,
+      ),
+    ).resolves.toBe(1);
+    expect(qualification.started).toBe(0);
+    await expect(readWorkerQualifiedDeployment(layout)).rejects.toMatchObject({
+      code: "STATE_ROOT_BOOT_BINDING_INVALID",
+    });
+  }, 5_000);
+
   it("publishes no qualified record when the Agent binding arrives but the checks fail", async () => {
     const { configurationPath, layout, currentAuthority } = await fixture();
     let bound = false;

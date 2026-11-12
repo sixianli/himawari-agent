@@ -149,6 +149,7 @@ export async function runExecutionWorkerService(
     const args = parseServiceArguments(arguments_);
     const configuration = await new JsonFileConfigurationPort(args.configurationPath).load();
     const layout = await initializeStateRoot(configuration.stateRoot);
+    await clearWorkerQualifiedDeployment(layout);
     const authority = await readAuthorityFile(layout);
     if (authority.status !== "active") {
       throw new Error(EXECUTION_WORKER_SERVICE_ERROR_CODES.AUTHORITY_INACTIVE);
@@ -162,7 +163,6 @@ export async function runExecutionWorkerService(
     }
     const workerInstanceId = `execution-worker:${configuration.deploymentId}`;
     const workerBootId = `worker-boot:${randomUUID()}`;
-    await clearWorkerQualifiedDeployment(layout);
     const credential = await readRestrictedExecutionTokenFile(args.workerTokenPath);
     const [binding, qualified] = await bindingThenQualification(
       waitForAgentBinding({

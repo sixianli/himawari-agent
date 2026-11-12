@@ -1,0 +1,1 @@
+{"id": "34", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|34|找不到|-|用真实的现场检查完整启动成功、正常停止时删掉记录，这两条没有自动测试|-|-", "outcome": "model-wrong", "evidenceFile": "apps/execution-worker/test/service-main.unit.test.ts", "evidence": "deployment: { snapshotDigest: qualification.admittedSnapshotDigest, manifests: [] },"}
