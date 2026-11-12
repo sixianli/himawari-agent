@@ -351,7 +351,7 @@ describe("governance page action contracts", () => {
       expect(document.querySelector("dialog[open]")).toBeNull();
     },
   );
-  it.each([401, 409, 503])(
+  it.each([401, 403, 409, 503])(
     "preserves retry identity or reports a revision conflict after %s",
     async (status) => {
       detail = snapshot("grant.snapshot");
@@ -368,7 +368,7 @@ describe("governance page action contracts", () => {
       await confirm("governance.revokeGrant");
       expect(unauthorized).toHaveBeenCalledTimes(status === 401 ? 1 : 0);
       expect(storage.readPendingGovernanceMutation("grant.revoke:grant-01:2") === null).toBe(
-        status === 409,
+        status === 409 || status === 403,
       );
       if (status === 409) expect(container.textContent).toContain("governance.conflictDescription");
       if (status === 503) {

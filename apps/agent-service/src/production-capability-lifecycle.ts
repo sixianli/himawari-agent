@@ -1,9 +1,11 @@
 import {
+  ApplicationPortError,
   type CapabilityArtifactVerification,
   CapabilityLifecycleService,
   type CapabilityManifest,
   type CapabilityRuntimeQualification,
   type ClockPort,
+  PORT_ERROR_CODES,
   type ProductConfiguration,
 } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
@@ -69,7 +71,15 @@ export function createProductionCapabilityLifecycle(options: {
     runtime: {
       qualify: async (manifest): Promise<CapabilityRuntimeQualification> => {
         const { entry, reason } = await entryFor(manifest);
-        if (!entry) throw new Error(reason);
+        if (!entry)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "Capability runtime qualification failed",
+            {
+              capabilityRef: manifest.ref,
+              reasons: reason,
+            },
+          );
         return entry.qualification;
       },
     },

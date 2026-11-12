@@ -23,7 +23,7 @@ usage: prod-read.sh <query>
   rows <table> <run-id>       rows of one table whose run_id or id column equals <run-id>
   rule-memories               metadata (no text) of the rule-category memories, all statuses, newest 500
   gmail-decisions             metadata (no text) of the newest 100 Gmail decision records: outcome, rating, rule and memory counts, paired Muse entries
-  capabilities                metadata (no declaration body) of the registered capabilities, newest 200, with handle count
+  capabilities                metadata (no declaration body) of the registered capabilities, first 200 by id, with the count of all handles (any status)
   system-instruction          the runPolicy.systemInstruction text of the production configuration
 TEXT
   exit 64
