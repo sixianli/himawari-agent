@@ -81,7 +81,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
+  PRODUCTION_CAPABILITY_OPERATIONS,
 } from "./production-approval-gateway.js";
+import { createProductionCapabilityLifecycle } from "./production-capability-lifecycle.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
 import { registerDataExportRoute } from "./production-data-export.js";
@@ -688,6 +690,7 @@ function routeOptions(
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
+        ...PRODUCTION_CAPABILITY_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1135,6 +1138,11 @@ export async function createProductionHttpComposition(
     : undefined;
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
+    capabilityLifecycle: createProductionCapabilityLifecycle({
+      configuration,
+      repository,
+      clock: { now: clock },
+    }),
     repository,
     access: threadAccess,
     recentAuthentication,

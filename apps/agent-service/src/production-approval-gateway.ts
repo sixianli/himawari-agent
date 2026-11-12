@@ -5,6 +5,7 @@ import {
   ApplicationPortError,
   ApprovalService,
   type AuthorityFence,
+  type CapabilityLifecycleService,
   type ClockPort,
   type GatewayV2AccessPolicyPort,
   type GatewayV2ControlPlanePort,
@@ -63,6 +64,13 @@ export const PRODUCTION_APPROVAL_OPERATIONS = Object.freeze([
   "search.authorization.set",
 ] as const);
 
+export const PRODUCTION_CAPABILITY_OPERATIONS = Object.freeze([
+  "capability.list",
+  "capability.detail",
+  "capability.disable",
+  "capability.rollback",
+] as const);
+
 export function createProductionApprovalGateway(options: {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId"> &
     Partial<Pick<ProductConfiguration, "modelDescriptors" | "runPolicy">>;
@@ -81,6 +89,7 @@ export function createProductionApprovalGateway(options: {
   readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
   readonly serverStatusControl?: ProductionServerStatusControl;
+  readonly capabilityLifecycle?: CapabilityLifecycleService;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -253,6 +262,7 @@ export function createProductionApprovalGateway(options: {
     }),
     audit: repository.auditLedger(),
     recentAuthentication: options.recentAuthentication,
+    ...(options.capabilityLifecycle ? { capabilityLifecycle: options.capabilityLifecycle } : {}),
   });
   return new AgentGatewayV2Service({
     installedOperations: [
@@ -268,6 +278,7 @@ export function createProductionApprovalGateway(options: {
         ? PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS
         : []),
       ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
+      ...(options.capabilityLifecycle ? PRODUCTION_CAPABILITY_OPERATIONS : []),
     ],
     reads,
     controlPlane,

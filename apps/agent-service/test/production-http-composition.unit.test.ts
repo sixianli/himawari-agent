@@ -367,6 +367,10 @@ describe("production HTTP composition", () => {
           "sensitive.interceptions.read",
           "sensitive.interceptions.clear",
           "server.status.read",
+          "capability.list",
+          "capability.detail",
+          "capability.disable",
+          "capability.rollback",
         ],
         healthDependenciesAvailable: true,
       });
