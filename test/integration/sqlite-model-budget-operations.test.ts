@@ -1176,14 +1176,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
           }),
         ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
         await expect(
-          budget.reserve({
-            ...reserveInput,
-            operationKey: "model-call-higher-classification",
-            dataClassification: "sensitive",
-            estimatedCostMicros: 1,
-          }),
-        ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
-        await expect(
           budget.settle({
             parent: { kind: "run", runId: RUN_ID },
             operationKey: reserveInput.operationKey,
@@ -2123,6 +2115,29 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
         });
         expect(snapshot?.allocations).toHaveLength(1);
         expect(snapshot?.allocations[0]?.status).toBe("started");
+      } finally {
+        await fixtureState.resource.repository.close();
+      }
+    });
+
+    it("[I-94] lets a Run account take a higher-classification call such as an embedding", async () => {
+      const fixtureState = await identityFixture();
+      try {
+        const run = (slot: string, dataClassification: "private" | "sensitive") =>
+          fixtureState.identity.begin(
+            identityInput(fixtureState.claim, { logicalSlot: slot, dataClassification }),
+          );
+        expect((await run("chat-stream", "private")).disposition).toBe("fresh");
+        expect((await run("embedding:memory-episode", "sensitive")).disposition).toBe("fresh");
+        const snapshot = await fixtureState.budget.read({
+          parent: { kind: "run", runId: RUN_ID },
+          limit: 10,
+        });
+        expect(snapshot?.account.dataClassification).toBe("sensitive");
+        expect(snapshot?.allocations.map((item) => item.dataClassification).sort()).toEqual([
+          "private",
+          "sensitive",
+        ]);
       } finally {
         await fixtureState.resource.repository.close();
       }

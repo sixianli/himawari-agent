@@ -2579,6 +2579,7 @@ export async function startTenantRuntime(
             component: "agent-service",
             event: "thread-title.failed",
             code: stableErrorCode(error),
+            ...siteField(error),
           }),
         ...(modelComposition.composition.generateText
           ? {

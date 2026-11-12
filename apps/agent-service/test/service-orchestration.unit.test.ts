@@ -1109,6 +1109,21 @@ describe("service request readiness and runtime callbacks", () => {
     expect(stdout).toContain('"event":"service.ready"');
     expect(repository.close).not.toHaveBeenCalled();
   });
+  it("[I-94] names the refusing check in a model-call failure log only for port errors", async () => {
+    web();
+    start();
+    await settle();
+    const options = boundary.runs.mock.calls[0]?.[0];
+    options.onTitleFailure(
+      Object.assign(new Error("Budget account classification is immutable"), {
+        code: "PORT_CONFLICT",
+      }),
+    );
+    const line = stderr.split("\n").find((item: string) => item.includes('"code":"PORT_CONFLICT"'));
+    expect(JSON.parse(line ?? "").site).toBe("Budget account classification is immutable");
+    options.onTitleFailure(new Error("private provider exception"));
+    expect(stderr).not.toContain("private provider exception");
+  });
   it("rechecks the memory worker authority at execution time", async () => {
     web();
     start();

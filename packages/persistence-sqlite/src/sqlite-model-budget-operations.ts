@@ -491,8 +491,8 @@ export class SqliteModelBudgetOperations {
     let account =
       existingAccount ??
       this.insertAccount(scope.ownerId, scope.agentId, input.parent, input.dataClassification);
-    if (input.parent.kind === "thread-title") {
-      account = this.raiseAuxiliaryAccountClassification(account, input.dataClassification);
+    if (input.parent.kind === "thread-title" || input.parent.kind === "run") {
+      account = this.raiseAccountClassification(account, input.dataClassification);
     } else {
       this.assertAccountClassification(account, input.dataClassification);
     }
@@ -1467,7 +1467,7 @@ export class SqliteModelBudgetOperations {
     }
   }
 
-  private raiseAuxiliaryAccountClassification(
+  private raiseAccountClassification(
     account: AccountRow,
     dataClassification: ModelClassification,
   ): AccountRow {
