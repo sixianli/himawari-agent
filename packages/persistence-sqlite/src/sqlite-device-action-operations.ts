@@ -273,31 +273,41 @@ export class SqliteDeviceActionOperations {
     if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 500)
       this.fail("PORT_INVALID_OPERATION", "Device action claim is invalid");
     return this.database.transaction(() => {
-      const rows = this.database
+      const active = this.database
         .prepare(
-          `SELECT device_actions.id AS id, device_actions.state AS state
-             FROM device_actions
-             JOIN paired_devices ON paired_devices.id = device_actions.device_id
-            WHERE device_actions.owner_id = ? AND device_actions.agent_id = ?
-              AND device_actions.device_id = ? AND paired_devices.status = 'active'
-              AND ((device_actions.state = 'queued' AND device_actions.expires_at > ?)
-                OR device_actions.state = 'result_unknown')
-            ORDER BY device_actions.created_at, device_actions.id LIMIT ?`,
+          `SELECT 1 FROM paired_devices
+            WHERE id = ? AND owner_id = ? AND agent_id = ? AND status = 'active'`,
         )
-        .all(input.ownerId, input.agentId, input.deviceId, now, input.limit) as {
-        id: string;
-        state: string;
-      }[];
-      if (rows.some(({ state }) => state === "queued")) this.assertDiskHeadroom();
+        .get(input.deviceId, input.ownerId, input.agentId);
+      if (!active) return [];
+      const scope = [input.ownerId, input.agentId, input.deviceId] as const;
+      const queued = this.database
+        .prepare(
+          `SELECT id FROM device_actions
+            WHERE owner_id = ? AND agent_id = ? AND device_id = ? AND state = 'queued'
+              AND expires_at > ?
+            ORDER BY created_at, id LIMIT ?`,
+        )
+        .all(...scope, now, input.limit) as { id: string }[];
+      const unknown =
+        queued.length >= input.limit
+          ? []
+          : (this.database
+              .prepare(
+                `SELECT id FROM device_actions
+                  WHERE owner_id = ? AND agent_id = ? AND device_id = ?
+                    AND state = 'result_unknown'
+                  ORDER BY updated_at, created_at, id LIMIT ?`,
+              )
+              .all(...scope, input.limit - queued.length) as { id: string }[]);
+      if (queued.length > 0) this.assertDiskHeadroom();
       const deliver = this.database.prepare(
         `UPDATE device_actions
             SET state = 'delivered', delivered_at = ?, updated_at = ?, revision = revision + 1
           WHERE id = ? AND state = 'queued'`,
       );
-      return rows.map(({ id, state }) => {
-        if (state === "queued") deliver.run(now, now, id);
-        return this.one(input, id) as DeviceActionRecord;
-      });
+      for (const { id } of queued) deliver.run(now, now, id);
+      return [...queued, ...unknown].map(({ id }) => this.one(input, id) as DeviceActionRecord);
     })();
   }
 
@@ -311,7 +321,15 @@ export class SqliteDeviceActionOperations {
       if (record.state === "succeeded" || record.state === "failed")
         return { kind: "replayed", record };
       if (record.state === "result_unknown") {
-        if (input.outcome === "result_unknown") return { kind: "replayed", record };
+        if (input.outcome === "result_unknown") {
+          this.database
+            .prepare(
+              `UPDATE device_actions SET updated_at = ?, revision = revision + 1
+                WHERE id = ? AND state = 'result_unknown'`,
+            )
+            .run(now, input.id);
+          return { kind: "replayed", record: this.one(input, input.id) as DeviceActionRecord };
+        }
         if (!input.readBack) return { kind: "verify_only", record };
       } else if (record.state !== "delivered") return { kind: "not_delivered", record };
       if (input.outcome === "result_unknown")
@@ -367,15 +385,21 @@ export class SqliteDeviceActionOperations {
       for (const { id } of delivered)
         if (lose.run(now, id).changes === 1)
           forgotten.push(this.one(input, id) as DeviceActionRecord);
-      const pending = (
-        this.database
-          .prepare(
-            `SELECT ${columns} FROM device_actions
-              WHERE owner_id = ? AND agent_id = ? AND device_id = ? AND state = 'result_unknown'
-              ORDER BY created_at, id LIMIT ?`,
-          )
-          .all(...scope, input.limit) as Row[]
-      ).map(toRecord);
+      const older =
+        forgotten.length >= input.limit
+          ? []
+          : (
+              this.database
+                .prepare(
+                  `SELECT ${columns} FROM device_actions
+                    WHERE owner_id = ? AND agent_id = ? AND device_id = ?
+                      AND state = 'result_unknown'
+                      AND NOT (reason_code = 'device_lost_record' AND updated_at = ?)
+                    ORDER BY updated_at, created_at, id LIMIT ?`,
+                )
+                .all(...scope, now, input.limit - forgotten.length) as Row[]
+            ).map(toRecord);
+      const pending = [...forgotten, ...older];
       return { forgotten, pending };
     })();
   }

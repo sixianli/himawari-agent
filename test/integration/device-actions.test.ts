@@ -814,6 +814,65 @@ describe("[iOS-9A] review round 2: replays, failed reports and reopening stay bo
   });
 });
 
+describe("[iOS-9A] review round 3: actions nobody can verify do not block the queue", () => {
+  it("[reverse] new work and not-yet-checked actions are handed out before actions the device already said it cannot verify", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["reminder.create"]);
+    h.actions.authorization.current = ownerAllows(false);
+    h.perceptionConfiguration.current = {
+      ...PERCEPTION_CONFIGURATION_DEFAULTS,
+      actionWaitSeconds: 0,
+      actionClaimBatch: 2,
+    };
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    const create = (title: string) =>
+      act("run-1", { action: "reminder.create", arguments: { title } });
+    const claim = async () =>
+      (
+        (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
+          id: string;
+          mode: string;
+          detail: Record<string, string>;
+        }[]
+      ).map(({ id, mode, detail }) => ({ id, mode, title: detail["zh-CN"] }));
+    for (const title of ["甲", "乙", "丙"]) {
+      await create(title);
+      h.clock.advance(1000);
+    }
+    expect((await claim()).map(({ title }) => title)).toEqual([
+      "新建提醒事项“甲”",
+      "新建提醒事项“乙”",
+    ]);
+    expect((await claim()).map(({ title }) => title)).toEqual(["新建提醒事项“丙”"]);
+    h.clock.advance(601_000);
+    const firstCheck = await claim();
+    expect(firstCheck.map(({ mode, title }) => [mode, title])).toEqual([
+      ["verify", "新建提醒事项“甲”"],
+      ["verify", "新建提醒事项“乙”"],
+    ]);
+    h.clock.advance(1000);
+    for (const { id } of firstCheck)
+      expect(
+        (
+          await devicePost(h, client, "actions/result", {
+            id,
+            outcome: "result_unknown",
+            readBack: true,
+          })
+        ).body,
+      ).toEqual({ state: "result_unknown", replayed: true });
+    await create("丁");
+    expect((await claim()).map(({ mode, title }) => [mode, title])).toEqual([
+      ["perform", "新建提醒事项“丁”"],
+      ["verify", "新建提醒事项“丙”"],
+    ]);
+    expect((await rows(h)).filter(({ state }) => state === "result_unknown")).toHaveLength(3);
+    await h.repository.close();
+  });
+});
+
 describe("[iOS-9A] actions that need the owner in person", () => {
   it("[reverse] is not carried out while the device is offline or the owner's presence is unproven", async () => {
     const h = await harness();

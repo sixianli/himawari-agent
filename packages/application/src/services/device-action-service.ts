@@ -317,13 +317,7 @@ export class DeviceActionService {
       runId: input.runId,
       toolCallId: input.toolCallId,
     });
-    if (replayed) {
-      if (replayed.deviceId !== input.device.id || replayed.action !== input.action)
-        return { kind: "invalid", note: null };
-      if (replayed.state === "result_unknown" || replayed.state === "queued")
-        this.#options.delivery.announce(replayed.deviceId);
-      return this.#outcome(replayed);
-    }
+    if (replayed) return this.#repeated(replayed, input.device.id, input.action);
     const registration = registry.get(input.action);
     if (!registration) return { kind: "invalid", note: null };
     const args = validateDeviceActionArguments(registration.parameters, input.arguments);
@@ -432,14 +426,24 @@ export class DeviceActionService {
         throw error;
       });
     if (inserted.kind !== "created") {
-      await this.#options.content.discard(argumentsRef);
-      if (inserted.record.state === "result_unknown" || inserted.record.state === "queued")
-        this.#options.delivery.announce(inserted.record.deviceId);
-      return this.#outcome(inserted.record);
+      await this.#options.content.discard(argumentsRef).catch(() => undefined);
+      return this.#repeated(inserted.record, input.device.id, input.action);
     }
     await this.#ledger(inserted.record);
     if (inserted.record.state !== "queued") return this.#outcome(inserted.record);
     return this.#outcome(await this.#dispatch(inserted.record, detail, settings.waitMilliseconds));
+  }
+
+  async #repeated(
+    record: DeviceActionRecord,
+    deviceId: string,
+    action: string,
+  ): Promise<DeviceActionRequestOutcome> {
+    if (record.deviceId !== deviceId || record.action !== action)
+      return { kind: "invalid", note: null };
+    if (record.state === "result_unknown" || record.state === "queued")
+      this.#options.delivery.announce(record.deviceId);
+    return this.#outcome(record);
   }
 
   async #dispatch(
