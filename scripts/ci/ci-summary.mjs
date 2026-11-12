@@ -72,10 +72,9 @@ function textTail(file, tailLines) {
   } catch {
     return null;
   }
-  const redacted = redactText(text);
+  const redacted = redactText(text.replace(ANSI_COLOR, ""));
   if (PRIVATE_KEY_MARKER.test(redacted)) return null;
   const lines = redacted
-    .replace(ANSI_COLOR, "")
     .replace(/\r\n?/gu, "\n")
     .replace(/\n$/u, "")
     .replace(/[^\P{Cc}\n\t]|[\p{Zl}\p{Zp}]/gu, "?")
@@ -90,7 +89,11 @@ function textTail(file, tailLines) {
   };
 }
 
-const safeName = (value) => redactText(value).replace(/[\p{Cc}\p{Zl}\p{Zp}`|]/gu, "?");
+function safeName(value) {
+  const redacted = redactText(String(value).replace(ANSI_COLOR, ""));
+  if (PRIVATE_KEY_MARKER.test(redacted)) return "?";
+  return redacted.replace(/[\p{Cc}\p{Zl}\p{Zp}`|]/gu, "?");
+}
 
 export function renderSummary({
   title,
@@ -127,7 +130,8 @@ export function renderSummary({
         : `#### \`${name}\`（${file.size} 字节${tail.omitted ? `，只显示最后 ${tailLines} 行` : ""}）\n\n\`\`\`\`text\n${tail.text}\n\`\`\`\`\n\n`;
     const reserve = shown + 1 < files.length ? Buffer.byteLength(footerFrom(shown + 1)) : 0;
     if (used + Buffer.byteLength(section) + reserve > limit) {
-      sections.push(footerFrom(shown));
+      const footer = footerFrom(shown);
+      if (used + Buffer.byteLength(footer) <= limit) sections.push(footer);
       break;
     }
     sections.push(section);
@@ -168,16 +172,15 @@ const reportPaths = (result, kind, extension) =>
     .filter((relative) => !path.isAbsolute(relative) && !relative.split("/").includes(".."));
 
 function cleanLine(value) {
-  const redacted = redactText(String(value));
+  const redacted = redactText(String(value).replace(ANSI_COLOR, ""));
   if (PRIVATE_KEY_MARKER.test(redacted)) return "?";
-  return redacted.replace(ANSI_COLOR, "").replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, "?");
+  return redacted.replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, "?");
 }
 
 function failureMessage(value) {
-  const redacted = redactText(String(value ?? ""));
+  const redacted = redactText(String(value ?? "").replace(ANSI_COLOR, ""));
   if (PRIVATE_KEY_MARKER.test(redacted)) return "";
   return redacted
-    .replace(ANSI_COLOR, "")
     .replace(/\r\n?/gu, "\n")
     .replace(/[^\P{Cc}\n\t]|[\p{Zl}\p{Zp}]/gu, "?")
     .split("\n")

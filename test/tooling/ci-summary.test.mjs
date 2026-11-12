@@ -354,6 +354,50 @@ describe("检查失败时失败用例和命令日志进作业摘要和作业日�
     }
     expect(over).toEqual([]);
   });
+  it("颜色码夹在密钥或私钥标记中间时，先去颜色码再遮盖", () => {
+    const esc = String.fromCharCode(27);
+    const split = `${secret.slice(0, 10)}${esc}[31m${secret.slice(10)}${esc}[0m`;
+    const marker = ["-----", "BEGIN", `${esc}[31m`, " SSH2 ENCRYPTED", " PRIVATE KEY-----"].join(
+      "",
+    );
+    const text = renderFailedLogs({
+      title: "t",
+      reports: reports("failed", {
+        "vitest-tooling.log": `token ${split}\n`,
+        "policy.log": `${marker}\nkeybody-log\n`,
+        "vitest-tooling.json": JSON.stringify({
+          testResults: [
+            {
+              name: `file ${split}`,
+              status: "failed",
+              assertionResults: [
+                { status: "failed", fullName: `name ${split}`, failureMessages: [`m ${split}`] },
+                { status: "failed", fullName: "other", failureMessages: [`${marker}\nkeybody-m`] },
+              ],
+            },
+          ],
+        }),
+      }),
+    });
+    expect(text).toContain("file ");
+    expect(text).not.toContain(secret.slice(10, 30));
+    expect(text).not.toContain("keybody");
+    expect(text).toContain("`policy.log`：二进制文件");
+  });
+  it("文件名带私钥标记时整个名字不显示", () => {
+    const marker = ["-----", "BEGIN", " SSH2 ENCRYPTED", " PRIVATE KEY-----"].join("");
+    const text = renderSummary({ title: "t", from: folder({ [`${marker} body.log`]: "x\n" }) });
+    expect(text).toContain("#### `?`");
+    expect(text).not.toContain("body.log");
+  });
+  it("上限小到连说明文字都放不下时不写说明文字", () => {
+    const from = folder({ "a.log": "x\n".repeat(50), "b.log": "y\n" });
+    for (const limit of [10, 60, 120, 200]) {
+      const text = renderSummary({ title: "t", from, limit });
+      const header = Buffer.byteLength("### t\n\n");
+      expect(Buffer.byteLength(text)).toBeLessThanOrEqual(Math.max(limit, header));
+    }
+  });
   it("文档里写的三个数字就是代码里的值", () => {
     expect([FAILURE_MESSAGE_LINES, FAILED_LOG_TAIL_LINES, FAILED_TESTS_SHOWN]).toEqual([
       20, 120, 30,
