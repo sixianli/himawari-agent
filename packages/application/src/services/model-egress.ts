@@ -129,6 +129,15 @@ class Exchange implements ModelEgressExchange {
   readonly table = new Map<string, string>();
   readonly #known = new Map<string, string>();
   readonly #counts = new Map<string, number>();
+  #lastRequest:
+    | {
+        readonly href: string;
+        readonly method: string;
+        readonly body: string;
+        readonly redacted: string | undefined;
+        readonly refusal: ModelEgressRefusedError | undefined;
+      }
+    | undefined;
   readonly #options: ModelEgressOptions;
   readonly #context: ModelEgressContext | undefined;
 
@@ -174,6 +183,56 @@ class Exchange implements ModelEgressExchange {
   }
 
   async #prepare(
+    input: unknown,
+    init: unknown,
+  ): Promise<{ readonly input: unknown; readonly init: unknown }> {
+    const options = isRecord(init) ? init : {};
+    const href = typeof input === "string" ? input : urlOf(input);
+    if (href === undefined) refuse("request target is not a URL");
+    if (hasBodyInRequest(input)) refuse("request object carries its own body");
+    const method = String(options["method"] ?? methodOf(input) ?? "GET").toUpperCase();
+    const body = options["body"];
+    const last = this.#lastRequest;
+    if (
+      last !== undefined &&
+      typeof body === "string" &&
+      last.href === href &&
+      last.method === method &&
+      last.body === body
+    ) {
+      if (last.refusal !== undefined) throw last.refusal;
+      if (last.redacted === undefined) return { input, init };
+      return {
+        input,
+        init: { ...options, body: last.redacted, headers: withoutLength(options["headers"]) },
+      };
+    }
+    try {
+      const prepared = await this.#prepareFresh(input, init);
+      if (typeof body === "string") {
+        const preparedBody = isRecord(prepared.init) ? prepared.init["body"] : undefined;
+        this.#lastRequest = {
+          href,
+          method,
+          body,
+          redacted:
+            prepared.init !== init && typeof preparedBody === "string" ? preparedBody : undefined,
+          refusal: undefined,
+        };
+      }
+      return prepared;
+    } catch (error) {
+      if (
+        error instanceof ModelEgressRefusedError &&
+        href !== undefined &&
+        typeof body === "string"
+      )
+        this.#lastRequest = { href, method, body, redacted: undefined, refusal: error };
+      throw error;
+    }
+  }
+
+  async #prepareFresh(
     input: unknown,
     init: unknown,
   ): Promise<{ readonly input: unknown; readonly init: unknown }> {
