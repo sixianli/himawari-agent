@@ -282,6 +282,17 @@ export interface RealEvalConfiguration {
   readonly requestTimeoutMs: number;
 }
 
+export const RULE_SCOPE_VERIFIER_KINDS = ["off", "model", "jev"] as const;
+export type RuleScopeVerifierKindSetting = (typeof RULE_SCOPE_VERIFIER_KINDS)[number];
+
+export interface RuleScopeConfiguration {
+  readonly verifier: RuleScopeVerifierKindSetting;
+  readonly modelRef?: string;
+  readonly jevThreshold: number;
+  readonly timeoutMs: number;
+  readonly maxDays: number;
+}
+
 export interface McpReadConfiguration {
   readonly audience: string;
   readonly proposals?: true;
@@ -292,6 +303,7 @@ export interface RunPolicyConfiguration {
   readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
   readonly mcpRead?: McpReadConfiguration;
+  readonly ruleScope?: RuleScopeConfiguration;
   readonly webPush?: WebPushConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;

@@ -765,4 +765,60 @@ describe("TypeSafe JEV transport", () => {
       estimatedCostMicros: Math.ceil(65_536 * 0.042),
     });
   });
+
+  it("asks the rule-scope question and turns a low-confidence answer into unclear", async () => {
+    const state = JSON.stringify({
+      schemaVersion: "rule-scope-input.v1",
+      quote: "夜里别提醒我",
+      context: "夜里别提醒我",
+      localNow: "2026-09-22T09:00（Asia/Tokyo）",
+    });
+    for (const [confidence, expected] of [
+      [0.95, "until"],
+      [0.6, "unclear"],
+    ] as const) {
+      const { transport, seen, payloads } = transportFor(
+        state,
+        () =>
+          new Response(jevResponse({ scope: answer("until", confidence) }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      );
+      const events = await collect(transport, {
+        descriptor: descriptor(),
+        request: request({ invocationId: "rule-scope:1" }),
+        secretValues: ["key"],
+      });
+      expect(Object.keys(seen[0]?.body.questions ?? {})).toEqual(["scope"]);
+      expect(JSON.parse(payloads.written[0] ?? "{}")).toEqual({
+        scope: expected,
+        until: null,
+        evidence: null,
+      });
+      expect(events.map(({ type }) => type)).toEqual(["model.output", "model.completed"]);
+    }
+  });
+
+  it("fails the rule-scope call when the answer is outside the offered choices", async () => {
+    const state = JSON.stringify({
+      schemaVersion: "rule-scope-input.v1",
+      quote: "x",
+      context: "x",
+    });
+    const { transport } = transportFor(
+      state,
+      () =>
+        new Response(jevResponse({ scope: answer("forever") }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    const events = await collect(transport, {
+      descriptor: descriptor(),
+      request: request({ invocationId: "rule-scope:2" }),
+      secretValues: ["key"],
+    });
+    expect(events.map(({ type }) => type)).toEqual(["model.failed"]);
+  });
 });

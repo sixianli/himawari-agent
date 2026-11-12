@@ -12,7 +12,10 @@ import {
   type PayloadRef,
   parseAutomaticReviewDecision,
 } from "@himawari-agent/application";
-import { REVIEW_TYPESAFE_QUESTIONS } from "@himawari-agent/prompt-catalog";
+import {
+  REVIEW_TYPESAFE_QUESTIONS,
+  RULE_SCOPE_TYPESAFE_QUESTIONS,
+} from "@himawari-agent/prompt-catalog";
 import {
   type ExternalRedactionOptions,
   redactForExternalText,
@@ -41,6 +44,7 @@ export interface TypeSafeJevTransportOptions {
   readonly baseUrl?: string;
   readonly requestTimeoutMs?: number;
   readonly maximumAttempts?: number;
+  readonly ruleScopeThreshold?: number;
 }
 
 interface ReviewInputEnvelope {
@@ -74,6 +78,9 @@ interface JevResponseBody {
   readonly usage: { readonly input_tokens: number; readonly output_tokens: number };
 }
 
+const RULE_SCOPE_INPUT_VERSION = "rule-scope-input.v1";
+const DEFAULT_RULE_SCOPE_THRESHOLD = 0.85;
+const RULE_SCOPE_CHOICES = new Set(["standing", "until", "this_item", "unclear"]);
 const DEFAULT_BASE_URL = "https://api.typesafe.ai";
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAXIMUM_ATTEMPTS = 2;
@@ -98,6 +105,12 @@ function boundedInteger(
     Number.isSafeInteger(value) &&
     value >= minimum &&
     value <= maximum
+    ? value
+    : fallback;
+}
+
+function boundedFraction(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1
     ? value
     : fallback;
 }
@@ -199,7 +212,7 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
       yield prepared.failed;
       return;
     }
-    const { body, envelope, apiKey } = prepared;
+    const { body, envelope, apiKey, ruleScope } = prepared;
     const attempts = boundedInteger(this.options.maximumAttempts, DEFAULT_MAXIMUM_ATTEMPTS, 1, 4);
     const deadline =
       Date.now() +
@@ -208,7 +221,9 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
         const parsed = await this.#call(descriptor, request, body, apiKey, deadline);
-        const decision = this.#validateDecision(envelope, this.#synthesize(envelope, parsed));
+        const decision = ruleScope
+          ? this.#synthesizeRuleScope(parsed)
+          : this.#validateDecision(envelope, this.#synthesize(envelope, parsed));
         const pricing = this.options.pricingFor(descriptor);
         if (
           [pricing.input, pricing.output, pricing.cacheRead, pricing.cacheWrite].some(
@@ -283,11 +298,26 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
     secretValues: readonly string[],
     occurredAt: string,
   ): Promise<
-    | { readonly body: string; readonly envelope: ReviewInputEnvelope; readonly apiKey: string }
+    | {
+        readonly body: string;
+        readonly envelope: ReviewInputEnvelope;
+        readonly apiKey: string;
+        readonly ruleScope: boolean;
+      }
     | { readonly failed: ModelInvocationEvent }
   > {
     try {
       const state = await this.options.payloads.readText(request.inputRef);
+      if (this.#isRuleScope(state)) {
+        const body = JSON.stringify({
+          state: redactedState(JSON.parse(state)),
+          model: descriptor.model,
+          questions: RULE_SCOPE_TYPESAFE_QUESTIONS.questions,
+        });
+        if (Buffer.byteLength(body, "utf8") > MAX_REQUEST_BYTES)
+          throw new JevTransportFailure("TYPESAFE_REVIEW_INPUT_TOO_LARGE", false);
+        return { body, envelope: {}, apiKey: this.#apiKey(secretValues), ruleScope: true };
+      }
       const envelope = this.#parseEnvelope(state, request);
       const body = JSON.stringify({
         state: redactedState(envelope),
@@ -296,7 +326,7 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
       });
       if (Buffer.byteLength(body, "utf8") > MAX_REQUEST_BYTES)
         throw new JevTransportFailure("TYPESAFE_REVIEW_INPUT_TOO_LARGE", false);
-      return { body, envelope, apiKey: this.#apiKey(secretValues) };
+      return { body, envelope, apiKey: this.#apiKey(secretValues), ruleScope: false };
     } catch (error) {
       return {
         failed: {
@@ -312,6 +342,32 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
         },
       };
     }
+  }
+
+  #isRuleScope(state: string): boolean {
+    try {
+      const parsed: unknown = JSON.parse(state);
+      return isRecord(parsed) && parsed["schemaVersion"] === RULE_SCOPE_INPUT_VERSION;
+    } catch {
+      return false;
+    }
+  }
+
+  #synthesizeRuleScope(response: JevResponseBody): Record<string, unknown> {
+    const answers = response.answers;
+    if (!isRecord(answers)) throw new JevTransportFailure("TYPESAFE_RESPONSE_INVALID", false);
+    const scope = answerValue(answers["scope"]);
+    if (!scope || !RULE_SCOPE_CHOICES.has(scope.value))
+      throw new JevTransportFailure("TYPESAFE_ANSWER_INVALID", false);
+    const threshold = boundedFraction(
+      this.options.ruleScopeThreshold,
+      DEFAULT_RULE_SCOPE_THRESHOLD,
+    );
+    return {
+      scope: scope.confidence >= threshold ? scope.value : "unclear",
+      until: null,
+      evidence: null,
+    };
   }
 
   #parseEnvelope(state: string, request: ModelInvocationRequest): ReviewInputEnvelope {

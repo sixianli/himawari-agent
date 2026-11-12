@@ -58,6 +58,7 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseGeneratedQuestion: application.parseGeneratedQuestion,
   parseJudgeVerdict: application.parseJudgeVerdict,
   parsePrereview: application.parsePrereview,
+  parseRuleScopeVerdict: application.parseRuleScopeVerdict,
 };
 
 const NOT_COVERED = new Set(["memory.consolidation", "memory.consolidation.format"]);
@@ -89,6 +90,8 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         "memory.capture",
         "review.prereview",
         "review.typesafe-questions",
+        "rule-scope.typesafe-questions",
+        "rule-scope.verify",
       ].sort(),
     );
   });
@@ -152,6 +155,31 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
     expect(application.parseJudgeVerdict(JSON.stringify({ verdict: "correct" }))).toBe("correct");
     expect(application.parseJudgeVerdict(JSON.stringify({ result: "correct" }))).toBeNull();
     expect(application.parseJudgeVerdict("答对了")).toBeNull();
+  });
+
+  it("rule scope: accepts the JSON the prompt asks for, also inside a fence, and rejects the rest", () => {
+    const answer = JSON.stringify({
+      scope: "until",
+      until: "2026-11-12T07:00:00+09:00",
+      evidence: "今晚",
+    });
+    expect(application.parseRuleScopeVerdict(answer, "今晚别提醒我")).toEqual({
+      scope: "until",
+      until: "2026-11-11T22:00:00.000Z",
+      evidence: "今晚",
+    });
+    expect(
+      application.parseRuleScopeVerdict(`\`\`\`json\n${answer}\n\`\`\``, "今晚别提醒我"),
+    ).toMatchObject({ scope: "until" });
+    for (const bad of [
+      JSON.stringify({ scope: "forever", until: null, evidence: null }),
+      JSON.stringify({ scope: "until", until: "2026-11-12T07:00:00", evidence: null }),
+      JSON.stringify({ scope: "until", until: "tomorrow", evidence: null }),
+      JSON.stringify({ scope: "standing", until: null, evidence: "以后" }),
+      JSON.stringify({ duration: "standing" }),
+      "好的，长期有效",
+    ])
+      expect(application.parseRuleScopeVerdict(bad, "今晚别提醒我"), bad).toBeUndefined();
   });
 
   it("mail judgment: rejects a renamed top-level key and plain text", () => {

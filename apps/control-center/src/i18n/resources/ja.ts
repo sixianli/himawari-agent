@@ -1533,6 +1533,7 @@ export const messages = {
   "sensitive.purpose.mail-judgment": "メールの判定",
   "sensitive.purpose.action-review": "操作の確認",
   "sensitive.purpose.review-prereview": "モデルの事前採点",
+  "sensitive.purpose.rule-scope": "ルールの期間確認",
   "sensitive.purpose.other": "その他",
   "sensitive.maskedOnce": "{time} 1 回隠しました",
   "sensitive.maskedMany": "{time} 最初に隠し、その後の {later} 回の送信でも隠しました",

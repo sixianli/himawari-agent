@@ -1300,6 +1300,7 @@ export const MESSAGE_IDS = [
   "sensitive.purpose.mail-judgment",
   "sensitive.purpose.action-review",
   "sensitive.purpose.review-prereview",
+  "sensitive.purpose.rule-scope",
   "sensitive.purpose.other",
   "sensitive.maskedOnce",
   "sensitive.maskedMany",

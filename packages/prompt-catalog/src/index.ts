@@ -5,6 +5,7 @@ export * from "./eval.js";
 export * from "./mail.js";
 export * from "./memory.js";
 export * from "./review.js";
+export * from "./rule-scope.js";
 export * from "./runtime.js";
 export * from "./tools.js";
 export * from "./trusted.js";

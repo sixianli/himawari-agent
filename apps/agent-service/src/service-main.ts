@@ -133,6 +133,7 @@ import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
+import { type RuleScopeWiring, ruleScopeWiring } from "./production-rule-scope-verifier.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -343,6 +344,9 @@ async function createDefaultModelComposition(
       ids,
       clock,
       requestTimeoutMs: configuration.deadlines.providerRequestMs,
+      ...(configuration.runPolicy?.ruleScope
+        ? { ruleScopeThreshold: configuration.runPolicy.ruleScope.jevThreshold }
+        : {}),
       ...(context.admission === undefined ? {} : { admission: context.admission }),
       usage: {
         store: repository.modelUsage(),
@@ -645,6 +649,7 @@ export async function startTenantRuntime(
   let admissionServer: ExecutionAdmissionUdsServer | undefined;
   let payloadServer: PayloadUdsServer | undefined;
   let modelComposition: ProductionConfiguredModelComposition | undefined;
+  let ruleScopeForHttp: RuleScopeWiring | undefined;
   let memoryComposition: ProductionMemoryComposition | undefined;
   let memoryWorker: ProductionMemoryWorker | undefined;
   let piFilePreparationPool: ReturnType<typeof createPiFilePreparationPool> | undefined;
@@ -1480,8 +1485,25 @@ export async function startTenantRuntime(
         writer: reminderWriter,
         ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
       });
+      const ruleScope = ruleScopeWiring({
+        configuration: configuration.runPolicy?.ruleScope,
+        composition: modelComposition.composition,
+        ids,
+        clock: { now: () => clock.now() },
+        onFailure: (code) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "rule-scope.verifier-failed",
+            code,
+          }),
+      });
+      ruleScopeForHttp = ruleScope;
       const ownerRuleWriter = new ProductionOwnerRuleWriter({
         configuration,
+        ...(configuration.runPolicy?.timeZone
+          ? { timeZone: configuration.runPolicy.timeZone }
+          : {}),
+        scope: ruleScope,
         rules: repository.ownerRules(),
         memory: durableMemory,
         memories: repository.productMemoryState(),
@@ -2705,6 +2727,7 @@ export async function startTenantRuntime(
         live,
         webPush: { presence: webPushPresence, push: webPush },
         ...(proactive ? { proactive } : {}),
+        ...(ruleScopeForHttp ? { ruleScope: ruleScopeForHttp } : {}),
         ...(museIntake ? { museIntake } : {}),
         ...(gapExport ? { gapExport } : {}),
         ...(mcpRead ? { mcpRead } : {}),

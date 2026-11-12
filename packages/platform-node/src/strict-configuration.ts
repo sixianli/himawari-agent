@@ -23,6 +23,7 @@ import {
   type ProactiveConfiguration,
   type ProductConfiguration,
   REAL_EVAL_MODES,
+  RULE_SCOPE_VERIFIER_KINDS,
   REAL_EVAL_WEEKLY_CAP_MICROS_MAXIMUM,
   type RealEvalMode,
   type RecentAuthenticationConfiguration,
@@ -993,6 +994,35 @@ function parseCodingRoute(value: unknown): NonNullable<RunPolicyConfiguration["c
   };
 }
 
+function parseRuleScope(value: unknown): NonNullable<RunPolicyConfiguration["ruleScope"]> {
+  const field = "configuration.runPolicy.ruleScope";
+  const input = record(value, field);
+  rejectUnknown(input, ["verifier", "modelRef", "jevThreshold", "timeoutMs", "maxDays"], field);
+  const verifier = string(input["verifier"], `${field}.verifier`);
+  if (!(RULE_SCOPE_VERIFIER_KINDS as readonly string[]).includes(verifier))
+    throw invalid(`${field}.verifier`, `must be one of ${RULE_SCOPE_VERIFIER_KINDS.join(", ")}`);
+  if (verifier !== "off" && input["modelRef"] === undefined)
+    throw invalid(`${field}.modelRef`, "is required when verifier is not off");
+  return Object.freeze({
+    verifier: verifier as NonNullable<RunPolicyConfiguration["ruleScope"]>["verifier"],
+    ...(input["modelRef"] === undefined
+      ? {}
+      : { modelRef: safeReference(input["modelRef"], `${field}.modelRef`) }),
+    jevThreshold:
+      input["jevThreshold"] === undefined
+        ? 0.85
+        : unitInterval(input["jevThreshold"], `${field}.jevThreshold`),
+    timeoutMs:
+      input["timeoutMs"] === undefined
+        ? 10_000
+        : integer(input["timeoutMs"], `${field}.timeoutMs`, 1_000, 60_000),
+    maxDays:
+      input["maxDays"] === undefined
+        ? 366
+        : integer(input["maxDays"], `${field}.maxDays`, 1, 3_660),
+  });
+}
+
 function parseAutomaticReview(
   value: unknown,
 ): NonNullable<RunPolicyConfiguration["automaticReview"]> {
@@ -1347,6 +1377,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "museIntake",
       "realEval",
       "mcpRead",
+      "ruleScope",
     ],
     "configuration.runPolicy",
   );
@@ -1388,6 +1419,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       ? {}
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
     ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
+    ...(input["ruleScope"] === undefined ? {} : { ruleScope: parseRuleScope(input["ruleScope"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
     ...(input["freezeThreadPrompts"] === undefined
@@ -1714,6 +1746,18 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       throw invalid(
         "configuration.runPolicy.realEval.mode",
         "needs an embedding model that accepts sensitive data",
+      );
+  }
+  const ruleScope = runPolicy?.ruleScope;
+  if (ruleScope && ruleScope.verifier !== "off") {
+    const descriptor = modelDescriptors.find(({ ref }) => ref === ruleScope.modelRef);
+    const api = descriptor && "api" in descriptor ? descriptor.api : undefined;
+    const apiMatches =
+      ruleScope.verifier === "jev" ? api === "typesafe-systemone" : api === "openai-completions";
+    if (!descriptor || !apiMatches || !descriptor.allowedDataClassifications.includes("private"))
+      throw invalid(
+        "configuration.runPolicy.ruleScope.modelRef",
+        "must name a configured model of the matching kind that accepts private data",
       );
   }
   const review = runPolicy?.automaticReview;

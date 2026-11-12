@@ -103,6 +103,7 @@ export interface ProductionModelCompositionOptions {
   readonly admission?: ModelInvocationAdmissionResolver;
   readonly usage?: ModelUsageRecording;
   readonly egressThreadOf?: PiModelTransportOptions["egressThreadOf"];
+  readonly ruleScopeThreshold?: number;
 }
 
 export interface ModelUsageRecording {
@@ -129,6 +130,7 @@ export interface ProductionModelComposition {
       readonly maxOutputTokens: number;
       readonly requestTimeoutMs: number;
       readonly purpose?: ModelUsagePurpose;
+      readonly allowChoiceModel?: boolean;
     },
   ): ProactiveModelInvoker;
   readonly piModels: PiModelBindingPort;
@@ -376,6 +378,9 @@ function modelTransportFor(
     ...(options.requestTimeoutMs === undefined
       ? {}
       : { requestTimeoutMs: options.requestTimeoutMs }),
+    ...(options.ruleScopeThreshold === undefined
+      ? {}
+      : { ruleScopeThreshold: options.ruleScopeThreshold }),
   });
   return {
     pi: piTransport,
@@ -503,27 +508,48 @@ export function createProductionModelComposition(
       readonly maxOutputTokens: number;
       readonly requestTimeoutMs: number;
       readonly purpose?: ModelUsagePurpose;
+      readonly allowChoiceModel?: boolean;
     },
   ): ProactiveModelInvoker => {
     const descriptor = options.descriptors.find((item) => item.ref === modelRef);
+    const choiceModel =
+      limits.allowChoiceModel === true && descriptor?.api === "typesafe-systemone";
     if (
-      descriptor?.api !== "openai-completions" ||
+      descriptor === undefined ||
+      (descriptor.api !== "openai-completions" && !choiceModel) ||
       !descriptor.allowedDataClassifications.includes("private")
     )
       throw new Error("PROACTIVE_MODEL_DISCLOSURE_DENIED");
-    const model = auxiliaryModelFor(
-      descriptor,
-      {
-        purpose: limits.purpose ?? "mail-judgment",
-        maxOutputTokens: limits.maxOutputTokens,
-        reasoningOutputTokens: limits.maxOutputTokens * 2,
-        requestTimeoutMs: limits.requestTimeoutMs,
-      },
-      ({ runId }) => ({
-        context: { ownerId: options.ownerId, agentId: options.agentId, runId },
-        begin: async () => ({ disposition: "fresh" as const, permit: UNMETERED_PERMIT }),
-      }),
-    );
+    const admission: TrustedModelAdmissionResolver = ({ runId }) => ({
+      context: { ownerId: options.ownerId, agentId: options.agentId, runId },
+      begin: async () => ({ disposition: "fresh" as const, permit: UNMETERED_PERMIT }),
+    });
+    const model =
+      descriptor.api === "typesafe-systemone"
+        ? new TrustedModelProviderAdapter({
+            ownerId: options.ownerId,
+            agentId: options.agentId,
+            descriptors: [descriptor],
+            handles: options.handles,
+            secretSource: options.secretSource,
+            transport: transport.trusted,
+            clock: options.clock,
+            admission,
+            ...(options.usage === undefined
+              ? {}
+              : { usage: { purpose: limits.purpose ?? "mail-judgment", ...options.usage } }),
+            admissionCost: () => TypeSafeJevTransport.estimatedAdmissionCost(descriptor),
+          })
+        : auxiliaryModelFor(
+            descriptor,
+            {
+              purpose: limits.purpose ?? "mail-judgment",
+              maxOutputTokens: limits.maxOutputTokens,
+              reasoningOutputTokens: limits.maxOutputTokens * 2,
+              requestTimeoutMs: limits.requestTimeoutMs,
+            },
+            admission,
+          );
     return Object.freeze<ProactiveModelInvoker>({
       model,
       modelRef,

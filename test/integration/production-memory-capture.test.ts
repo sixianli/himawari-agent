@@ -8,6 +8,7 @@ import {
   type MemoryProviderProjectionPort,
   OwnerProfileService,
   type ProductMemoryRecord,
+  type RuleScopeVerdict,
   type RuntimeRequest,
   type ThreadRepositoryPort,
 } from "@himawari-agent/application";
@@ -39,11 +40,6 @@ import {
   parseMemoryCandidates,
 } from "../../apps/agent-service/src/production-memory-capture.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
-import type {
-  RuleScopeVerdict,
-  RuleScopeVerifier,
-  RuleScopeVerifierInput,
-} from "../../apps/agent-service/src/production-rule-scope.ts";
 import {
   ProductionOwnerRuleTools,
   ProductionOwnerRuleWriter,
@@ -52,6 +48,10 @@ import {
   ProductionReminderTools,
   ProductionReminderWriter,
 } from "../../apps/agent-service/src/production-reminder-writer.ts";
+import type {
+  RuleScopeVerifier,
+  RuleScopeVerifierInput,
+} from "../../apps/agent-service/src/production-rule-scope.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-memory-capture");

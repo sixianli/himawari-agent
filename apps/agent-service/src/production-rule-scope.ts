@@ -1,8 +1,4 @@
-import { zonedTime } from "@himawari-agent/application";
-
-export const RULE_SCOPE_KINDS = ["standing", "until"] as const;
-export const RULE_SCOPE_VERDICTS = ["standing", "until", "this_item", "unclear"] as const;
-export type RuleScopeVerdictKind = (typeof RULE_SCOPE_VERDICTS)[number];
+import { type RuleScopeVerdict, zonedTime } from "@himawari-agent/application";
 
 export const RULE_SCOPE_DEFAULT_MAX_DAYS = 366;
 export const RULE_SCOPE_AGREEMENT_MS = 3_600_000;
@@ -11,12 +7,6 @@ export const RULE_SCOPE_CONTEXT_CHARACTERS = 2_000;
 export type RuleScope =
   | { readonly kind: "standing" }
   | { readonly kind: "until"; readonly expiresAt: string };
-
-export interface RuleScopeVerdict {
-  readonly scope: RuleScopeVerdictKind;
-  readonly until: string | null;
-  readonly evidence: string | null;
-}
 
 export interface RuleScopeVerifierInput {
   readonly quote: string;
@@ -134,13 +124,4 @@ export function describeExpiry(expiresAt: string | null, timeZone: string): stri
     hourCycle: "h23",
   }).format(new Date(expiresAt));
   return `到 ${text} 为止`;
-}
-
-export function evidenceIn(quote: string, evidence: unknown): evidence is string {
-  return (
-    typeof evidence === "string" &&
-    evidence.trim().length > 0 &&
-    evidence.length <= 200 &&
-    quote.includes(evidence)
-  );
 }

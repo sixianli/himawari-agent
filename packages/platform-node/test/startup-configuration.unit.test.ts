@@ -1839,3 +1839,38 @@ it("[P4-5] accepts a real memory eval with a model that may see private and sens
     }),
   );
 });
+
+it("[RS-1] accepts a rule-scope reader only when it names a matching model, with defaults for the rest", () => {
+  const raw = config("/tmp/himawari-rule-scope-config");
+  const policy = {
+    version: "policy-v1",
+    systemInstruction: "可信指令",
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+  };
+  const parse = (ruleScope: unknown) => {
+    raw["runPolicy"] = { ...policy, ruleScope };
+    return parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ruleScope;
+  };
+  expect(parse({ verifier: "off" })).toEqual({
+    verifier: "off",
+    jevThreshold: 0.85,
+    timeoutMs: 10_000,
+    maxDays: 366,
+  });
+  expect(
+    parse({ verifier: "model", modelRef: "model-primary", timeoutMs: 5_000, maxDays: 30 }),
+  ).toMatchObject({ verifier: "model", modelRef: "model-primary", timeoutMs: 5_000, maxDays: 30 });
+  for (const bad of [
+    { verifier: "model" },
+    { verifier: "jev", modelRef: "model-primary" },
+    { verifier: "model", modelRef: "model-unknown" },
+    { verifier: "model", modelRef: "model-embedding" },
+    { verifier: "maybe", modelRef: "model-primary" },
+    { verifier: "off", extra: true },
+    { verifier: "model", modelRef: "model-primary", jevThreshold: 1.5 },
+    { verifier: "model", modelRef: "model-primary", timeoutMs: 10 },
+    { verifier: "model", modelRef: "model-primary", maxDays: 0 },
+  ])
+    expect(() => parse(bad), JSON.stringify(bad)).toThrow();
+});

@@ -603,6 +603,16 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "rule-scope.typesafe-questions": {
+    "sha256": "9aab1862c03542148ebd375ea57e827d488875a5fc3f68364f024982589cf9fe",
+    "changedIn": "ADR 0252",
+    "reason": "新增：核对规矩时效的第二个读者（对话模型和 TypeSafe 两条路线）"
+  },
+  "rule-scope.verify": {
+    "sha256": "39b212abea14b6c73a2a03b06e1cde76da43caccb587ee1280f8dbf9792c058d",
+    "changedIn": "ADR 0252",
+    "reason": "新增：核对规矩时效的第二个读者（对话模型和 TypeSafe 两条路线）"
+  },
   "runtime.compaction.summary-instruction": {
     "sha256": "c660e6ce3998ce2684fd7e656fea25ab7f2fca93db91c12d51742943f5bd82aa",
     "changedIn": "ADR 0207",

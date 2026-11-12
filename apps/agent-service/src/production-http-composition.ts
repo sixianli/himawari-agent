@@ -91,6 +91,7 @@ import {
   ProductionMemoryControl,
 } from "./production-memory-control.js";
 import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
+import type { RuleScopeWiring } from "./production-rule-scope-verifier.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
@@ -205,6 +206,7 @@ export interface ProductionHttpCompositionOptions {
     readonly push: ProductionWebPush | undefined;
   };
   readonly proactive?: ProductionProactive;
+  readonly ruleScope?: RuleScopeWiring;
   readonly museIntake?: ProductionMuseIntake;
   readonly gapExport?: ProductionGapExport;
   readonly mcpRead?: ProductionMcpRead;
@@ -1091,6 +1093,10 @@ export async function createProductionHttpComposition(
           payloads: memoryPayloads,
           protector: payloadProtector,
           clock: { now: clock },
+          ...(configuration.runPolicy?.timeZone
+            ? { timeZone: configuration.runPolicy.timeZone }
+            : {}),
+          ...(options.ruleScope ? { scope: options.ruleScope } : {}),
           ...(options.proactive
             ? { replay: (rule) => options.proactive?.replayRule(rule) ?? Promise.reject(rule) }
             : {}),

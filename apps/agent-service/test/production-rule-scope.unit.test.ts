@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  evidenceIn,
   localToInstant,
   parseRuleScope,
   type RuleScopeVerifier,
@@ -117,11 +116,7 @@ describe("[RS-1] rule scope", () => {
     ).toEqual({ kind: "activate", expiresAt: "2026-11-11T22:00:00.000Z" });
   });
 
-  it("checks that evidence is a substring and trims the context around the quote", () => {
-    expect(evidenceIn("夜里别提醒我", "夜里")).toBe(true);
-    expect(evidenceIn("夜里别提醒我", "白天")).toBe(false);
-    expect(evidenceIn("夜里别提醒我", "")).toBe(false);
-    expect(evidenceIn("夜里别提醒我", 5)).toBe(false);
+  it("trims the context around the quote", () => {
     const long = `${"甲".repeat(5000)}夜里别提醒我${"乙".repeat(5000)}`;
     const context = scopeContext(long, "夜里别提醒我");
     expect(context).toContain("夜里别提醒我");
