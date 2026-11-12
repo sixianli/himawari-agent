@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -13,6 +12,7 @@ import {
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { isolatedEnvironment, loadToolchainLock, verifyInstalledTools } from "./install-tools.mjs";
 import { observeResources } from "./resources.mjs";
 
@@ -146,6 +146,31 @@ function platformMatches(entry, platform, arch) {
   return matches(entry.os, platform) && matches(entry.cpu, arch);
 }
 
+function lockDependents(lock) {
+  const resolve = (from, name) => {
+    for (let base = from; ; ) {
+      const candidate = `${base ? `${base}/` : ""}node_modules/${name}`;
+      if (lock.packages[candidate]) return candidate;
+      if (!base) return null;
+      const parent = base.lastIndexOf("node_modules/");
+      base = parent < 0 ? "" : base.slice(0, parent).replace(/\/$/, "");
+    }
+  };
+  const dependents = new Map();
+  for (const [path, entry] of Object.entries(lock.packages)) {
+    if (entry.link === true) continue;
+    for (const name of new Set(
+      [entry.dependencies, entry.optionalDependencies, entry.peerDependencies].flatMap((group) =>
+        Object.keys(group ?? {}),
+      ),
+    )) {
+      const target = resolve(path, name);
+      if (target) dependents.set(target, [...(dependents.get(target) ?? []), path]);
+    }
+  }
+  return dependents;
+}
+
 export function auditInstalledDependencies(
   root,
   toolchain = loadToolchainLock(root),
@@ -230,13 +255,30 @@ export function auditInstalledDependencies(
       });
     }
   }
+  const absentOptional = Object.entries(lock.packages).filter(
+    ([path, entry]) =>
+      path.includes("node_modules/") && !installed.has(path) && entry.optional === true,
+  );
+  const skipped = new Set(
+    absentOptional
+      .filter(([, entry]) => !platformMatches(entry, platform, arch))
+      .map(([path]) => path),
+  );
+  const dependents = lockDependents(lock);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [path] of absentOptional) {
+      const requiredBy = dependents.get(path) ?? [];
+      if (skipped.has(path) || requiredBy.length === 0) continue;
+      if (!requiredBy.every((dependent) => skipped.has(dependent))) continue;
+      skipped.add(path);
+      grew = true;
+    }
+  }
   for (const [path, entry] of Object.entries(lock.packages)) {
     if (!path.includes("node_modules/") || installed.has(path)) continue;
     if (entry.optional === true && entry.peer === true) continue;
-    assert(
-      entry.optional === true && !platformMatches(entry, platform, arch),
-      `锁文件依赖没有安装: ${path}`,
-    );
+    assert(skipped.has(path), `锁文件依赖没有安装: ${path}`);
   }
   for (const decision of decisions.values()) {
     const expected = lock.packages[decision.path];

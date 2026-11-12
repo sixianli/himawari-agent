@@ -374,6 +374,48 @@ describe("npm 发布包身份与 lifecycle", () => {
     );
   });
 
+  it("其他平台的可选包没装时，只有它用到的可选依赖也可以不装", () => {
+    const fixture = npmFixture();
+    fixture.lock.packages["node_modules/other-platform"] = {
+      version: "1.0.0",
+      optional: true,
+      cpu: ["wasm32"],
+      dependencies: { "only-for-other-platform": "1.0.0", "runtime-helper": "1.0.0" },
+    };
+    fixture.lock.packages["node_modules/only-for-other-platform"] = {
+      version: "1.0.0",
+      optional: true,
+      dependencies: { "nested-helper": "1.0.0" },
+    };
+    fixture.lock.packages["node_modules/nested-helper"] = { version: "1.0.0", optional: true };
+    fixture.lock.packages["node_modules/runtime-helper"] = {
+      version: "1.0.0",
+      optional: true,
+      peerDependencies: { "only-for-other-platform": "1.0.0" },
+    };
+    fixture.save();
+    expect(auditInstalledDependencies(fixture.directory, fixture.toolchain).pi).toHaveLength(3);
+    fixture.lock.packages["node_modules/@earendil-works/pi-ai"].dependencies = {
+      "nested-helper": "1.0.0",
+    };
+    fixture.save();
+    expect(() => auditInstalledDependencies(fixture.directory, fixture.toolchain)).toThrow(
+      "锁文件依赖没有安装: node_modules/nested-helper",
+    );
+    delete fixture.lock.packages["node_modules/@earendil-works/pi-ai"].dependencies;
+    delete fixture.lock.packages["node_modules/only-for-other-platform"].optional;
+    fixture.save();
+    expect(() => auditInstalledDependencies(fixture.directory, fixture.toolchain)).toThrow(
+      "锁文件依赖没有安装: node_modules/only-for-other-platform",
+    );
+    fixture.lock.packages["node_modules/only-for-other-platform"].optional = true;
+    fixture.lock.packages["node_modules/other-platform"].cpu = [process.arch];
+    fixture.save();
+    expect(() => auditInstalledDependencies(fixture.directory, fixture.toolchain)).toThrow(
+      "锁文件依赖没有安装",
+    );
+  });
+
   it("允许没装的可选对等依赖，但拒绝没装的普通可选依赖", () => {
     const fixture = npmFixture();
     fixture.lock.packages["node_modules/optional-peer"] = {
