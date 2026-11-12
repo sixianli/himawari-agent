@@ -13,6 +13,7 @@ import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   type DeviceActionDefinition,
+  DEVICE_ACTION_UNCONFIRMED_CODE,
   type DeviceActionRequest,
   PerceptionToolError,
   ProductionPerceptionTools,
@@ -99,7 +100,10 @@ async function addRun(h: Harness, runId: string, sourceType: "user_message" | "s
 
 function setup(
   h: Harness,
-  options: { readonly perform?: (request: DeviceActionRequest) => void } = {},
+  options: {
+    readonly perform?: (request: DeviceActionRequest) => void;
+    readonly confirm?: boolean;
+  } = {},
 ) {
   const received: VerifiedPerceptionProposal[] = [];
   const configuration = { current: PERCEPTION_CONFIGURATION_DEFAULTS };
@@ -127,6 +131,9 @@ function setup(
             options.perform?.(request);
             return { state: "succeeded" as const, evidence: { eventId: "event-1" } };
           },
+          ...(options.confirm === undefined
+            ? {}
+            : { confirm: async () => options.confirm === true }),
         }
       : {}),
     timeZone: "Asia/Tokyo",
@@ -248,6 +255,29 @@ describe("[iOS-5] perception_read reads what the devices recorded", () => {
     expect(result.contentClassification).toBe("private");
   });
 
+  it("stops looking after the configured number of records and says how many it did not look at", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await ingest(
+      h,
+      client,
+      [0, 1, 2, 3].map((index) => utterance(h, `第 ${index} 句话`, { seconds: index })),
+    );
+    await addRun(h, "run-owner", "user_message");
+    const { tools, call, configuration } = setup(h);
+    configuration.current = { ...PERCEPTION_CONFIGURATION_DEFAULTS, readMaximumScanned: 3 };
+    const searched = await tools.run(
+      call("run-owner", "perception.read", { ...DAY, query: "第 3 句" }),
+    );
+    expect(searched.value).toMatchObject({ records: [] });
+    expect(String((searched.value as { note?: string }).note)).toContain("1 条");
+    configuration.current = PERCEPTION_CONFIGURATION_DEFAULTS;
+    const found = await tools.run(
+      call("run-owner", "perception.read", { ...DAY, query: "第 3 句" }),
+    );
+    expect((found.value as { records: unknown[] }).records).toHaveLength(1);
+  });
+
   it("refuses a malformed range and lists the kinds when a kind is unknown", async () => {
     const h = await harness();
     await addRun(h, "run-owner", "user_message");
@@ -294,6 +324,7 @@ describe("[iOS-5] after reading outside content, consequential tool calls are no
     const performed: DeviceActionRequest[] = [];
     const { tools, call, read, received } = setup(h, {
       perform: (request) => performed.push(request),
+      confirm: true,
     });
     const listed = await tools.run(
       call("run-owner", "device.action", {
@@ -388,6 +419,44 @@ describe("[iOS-5] after reading outside content, consequential tool calls are no
 });
 
 describe("[iOS-5] device_action describes what is possible and refuses what is not", () => {
+  it("does not carry out an action that needs the owner's confirmation when nothing can ask for it", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    allowActions(h, client.deviceId);
+    await addRun(h, "run-owner", "user_message");
+    for (const confirm of [undefined, false] as const) {
+      const performed: DeviceActionRequest[] = [];
+      const { tools, call } = setup(h, {
+        perform: (request) => performed.push(request),
+        ...(confirm === undefined ? {} : { confirm }),
+      });
+      await expect(
+        tools.run(
+          call("run-owner", "device.action", {
+            action: "calendar.delete_event",
+            arguments: { eventId: "event-1" },
+          }),
+        ),
+      ).rejects.toMatchObject(
+        confirm === undefined
+          ? { code: "DEVICE_ACTION_UNAVAILABLE" }
+          : {
+              code: DEVICE_ACTION_UNCONFIRMED_CODE,
+              note: expect.stringContaining("没有拿到主人的确认"),
+            },
+      );
+      expect(performed).toEqual([]);
+      const reading = await tools.run(
+        call("run-owner", "device.action", {
+          action: "calendar.list_events",
+          arguments: { day: "2026-11-13" },
+        }),
+      );
+      expect(reading.value).toMatchObject({ done: true });
+      expect(performed).toHaveLength(1);
+    }
+  });
+
   it("lists devices and actions, and answers plainly when nothing is connected or known", async () => {
     const h = await harness();
     await addRun(h, "run-owner", "user_message");

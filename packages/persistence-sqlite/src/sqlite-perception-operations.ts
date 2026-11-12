@@ -1134,7 +1134,9 @@ export class SqlitePerceptionOperations {
           recordCount: this.amount(input.recordCount),
           leaseUntil,
           now,
-          attempts: fresh ? 1 : (current?.attempts ?? 0) + 1,
+          attempts: fresh
+            ? 1
+            : (current?.attempts ?? 0) + (current?.status === "waiting_budget" ? 0 : 1),
         });
       return this.extraction(input.episodeId);
     })();

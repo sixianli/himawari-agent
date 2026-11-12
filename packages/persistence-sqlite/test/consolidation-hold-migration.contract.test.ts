@@ -65,7 +65,7 @@ function dump(database: Database) {
             )
             .replace(", 'limit_change', 'delivery_timing', 'proposal'", "")
             .replace(
-              " OR (kind = 'limit_change' AND outcome = 'changed') OR (kind = 'delivery_timing' AND outcome IN ( 'delivered', 'deferred', 'deadline_reached', 'shown_in_app' )) OR (kind = 'proposal' AND outcome IN ( 'proposed', 'blocked', 'accepted', 'dismissed', 'expired', 'executed', 'failed', 'undone', 'not_proposed', 'superseded' ))",
+              " OR (kind = 'limit_change' AND outcome = 'changed') OR (kind = 'delivery_timing' AND outcome IN ( 'delivered', 'deferred', 'deadline_reached', 'shown_in_app' )) OR (kind = 'proposal' AND outcome IN ( 'proposed', 'blocked', 'accepted', 'dismissed', 'expired', 'executed', 'failed', 'undone', 'not_proposed', 'superseded', 'told' ))",
               "",
             ),
         };

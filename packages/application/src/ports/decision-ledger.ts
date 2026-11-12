@@ -73,6 +73,7 @@ export const DECISION_OUTCOMES = {
     "undone",
     "not_proposed",
     "superseded",
+    "told",
   ],
 } as const satisfies Record<LedgerWriteKind, readonly string[]>;
 

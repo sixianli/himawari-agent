@@ -42,6 +42,7 @@ import {
   TOOL_RESULT_DEVICE_ACTION_RESULT_UNKNOWN,
   TOOL_RESULT_DEVICE_ACTION_SUCCEEDED,
   TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
+  TOOL_RESULT_DEVICE_ACTION_UNCONFIRMED,
   TOOL_RESULT_DEVICE_ACTION_UNKNOWN,
   TOOL_RESULT_DEVICE_ACTION_UNSUPPORTED,
   TOOL_RESULT_DEVICE_ACTION_WAITING_OWNER,
@@ -69,6 +70,7 @@ const ACTION_ARGUMENTS = ["action", "device", "arguments"];
 const LOCAL_TIME = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/u;
 const DAY_MS = 86_400_000;
 const SCAN_PAGE = 500;
+export const DEVICE_ACTION_UNCONFIRMED_CODE = "DEVICE_ACTION_CONFIRMATION_REQUIRED";
 
 export const DEVICE_ACTION_STATES = [
   "queued",
@@ -171,6 +173,7 @@ export interface ProductionPerceptionToolsOptions {
   readonly gate: Pick<PerceptionOriginGate, "check">;
   readonly actions?: () => readonly DeviceActionDefinition[];
   readonly perform?: (request: DeviceActionRequest) => Promise<DeviceActionOutcome>;
+  readonly confirm?: (request: DeviceActionRequest) => Promise<boolean>;
   readonly timeZone?: string;
   readonly now: () => string;
 }
@@ -310,7 +313,7 @@ export class ProductionPerceptionTools {
           note: TOOL_RESULT_PERCEPTION_READ_UNKNOWN_KINDS.text,
         },
       };
-    const needle = typeof query === "string" ? query.trim().toLocaleLowerCase() : null;
+    const needle = typeof query === "string" ? query.trim().toLowerCase() : null;
     const listed: Record<string, unknown>[] = [];
     const shown: PerceptionRecord[] = [];
     let characters = 0;
@@ -321,13 +324,14 @@ export class ProductionPerceptionTools {
     let after: { readonly atMs: number; readonly id: string } | null = null;
     let full = false;
     for (;;) {
+      const scanLimit = Math.min(SCAN_PAGE, configuration.readMaximumScanned - examined);
       const page = await this.#options.store.listRecordsBetween({
         ...this.#options.scope,
         fromMs,
         toMs,
         types,
         after,
-        limit: SCAN_PAGE,
+        limit: scanLimit,
       });
       total = page.total;
       for (const record of page.records) {
@@ -342,7 +346,7 @@ export class ProductionPerceptionTools {
         }
         const text =
           record.contentRef === null ? undefined : await this.#options.readText(record.contentRef);
-        if (needle !== null && !(text ?? "").toLocaleLowerCase().includes(needle)) continue;
+        if (needle !== null && !(text ?? "").toLowerCase().includes(needle)) continue;
         const body =
           text === undefined
             ? undefined
@@ -377,7 +381,13 @@ export class ProductionPerceptionTools {
         shown.push(record);
       }
       const last = page.records.at(-1);
-      if (!last || page.records.length < SCAN_PAGE || (full && needle !== null)) break;
+      if (
+        !last ||
+        page.records.length < scanLimit ||
+        (full && needle !== null) ||
+        examined >= configuration.readMaximumScanned
+      )
+        break;
       after = { atMs: last.occurredAtMs, id: last.id };
     }
     const unexamined = total - examined;
@@ -505,12 +515,23 @@ export class ProductionPerceptionTools {
         "DEVICE_ACTION_UNAVAILABLE",
         TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE.text,
       );
-    const outcome = await this.#options.perform({
+    const request: DeviceActionRequest = {
       invocation,
       device: target,
       action: definition,
       arguments: parameters as Readonly<Record<string, unknown>>,
-    });
+    };
+    if (definition.confirm && !this.#options.confirm)
+      throw new PerceptionToolError(
+        "DEVICE_ACTION_UNAVAILABLE",
+        TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE.text,
+      );
+    if (definition.confirm && (await this.#options.confirm?.(request)) !== true)
+      throw new PerceptionToolError(
+        DEVICE_ACTION_UNCONFIRMED_CODE,
+        TOOL_RESULT_DEVICE_ACTION_UNCONFIRMED.text,
+      );
+    const outcome = await this.#options.perform(request);
     return {
       value: {
         done: outcome.state === "succeeded",

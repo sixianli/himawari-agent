@@ -2,6 +2,8 @@ import { sequentialPlaceholderTag } from "@himawari-agent/sensitive-capture";
 import { describe, expect, it } from "vitest";
 import {
   buildPerceptionExtractionChunks,
+  COMMAND_UTTERANCE_BATCH,
+  commandUtteranceBatches,
   buildPerceptionSourceCheckPrompt,
   type PerceptionExtractionSource,
   type PerceptionRecord,
@@ -272,5 +274,19 @@ describe("perception source checks", () => {
     });
     expect(parsePerceptionImage('{"text":"发票"}')).toBeNull();
     expect(parsePerceptionImage("看不清")).toBeNull();
+  });
+});
+
+describe("[iOS-5] spoken-command ids are looked up in bounded batches", () => {
+  it("splits distinct ids into sorted batches no larger than the batch size", () => {
+    const ids = Array.from(
+      { length: COMMAND_UTTERANCE_BATCH * 5 + 7 },
+      (_, index) => `utterance-${String(index).padStart(6, "0")}`,
+    );
+    const batches = commandUtteranceBatches([...ids].reverse().concat(ids.slice(0, 50)));
+    expect(batches).toHaveLength(6);
+    expect(batches.every((batch) => batch.length <= COMMAND_UTTERANCE_BATCH)).toBe(true);
+    expect(batches.flat()).toEqual(ids);
+    expect(commandUtteranceBatches([])).toEqual([]);
   });
 });

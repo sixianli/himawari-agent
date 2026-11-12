@@ -1036,6 +1036,11 @@
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
   },
+  "tools.result.device-action.unconfirmed": {
+    "sha256": "e05f02c1fb9c18595955c2af9d3bf3e7ad0a7e5712cf15c4bebc2b65a46e53a8",
+    "changedIn": "ADR 0230",
+    "reason": "要主人确认的设备动作没拿到确认时单独说明"
+  },
   "tools.result.device-action.unknown-action": {
     "sha256": "b5af85ce1d1ee305d9e513cc2576b8fd8f946eeec941b9da26c820da8d89fb53",
     "changedIn": "ADR 0230",
@@ -1057,9 +1062,9 @@
     "reason": "iOS 第 5 批：两个固定工具、感知抽取和来源检查的提示词"
   },
   "tools.result.origin-gate.deferred": {
-    "sha256": "d8cdb77e66ef6a19680f1dae1fb4319b1faa3b8d982da8b51aa6ee0121af0812",
+    "sha256": "c151ed61c23723ba881b5d4ea3d3bb2c9b83d5fec5295d3af893bd054294f623",
     "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：两个固定工具、感知抽取和来源检查的提示词"
+    "reason": "入口检查的后台说明不再说留给主人决定"
   },
   "tools.result.perception-read.empty": {
     "sha256": "417a658e6eb2cf55730417f26aa581d053d9653635643a9f6659c7af6261b7cd",
