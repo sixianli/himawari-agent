@@ -210,6 +210,16 @@ describe("plan claims check: reading the model's answer", () => {
     expect(quoteInText("  ", text)).toBe(false);
   });
 
+  it("[claims] accepts several quoted fragments joined by a full-width semicolon only when every fragment is in the file", () => {
+    const text = "MemoryHigh=19G\nMemoryMax=20G\nnote: 第一步；第二步\n";
+    expect(quoteInText("MemoryHigh=19G；MemoryMax=20G", text)).toBe(true);
+    expect(quoteInText("note: 第一步；第二步", text)).toBe(true);
+    expect(quoteInText("MemoryHigh=19G；MemoryMax=21G", text)).toBe(false);
+    expect(quoteInText("MemoryHigh=19G；20G", text)).toBe(false);
+    expect(quoteInText("MemoryHigh=19G；", text)).toBe(true);
+    expect(quoteInText("；", text)).toBe(false);
+  });
+
   it("[claims] checks the verdict file line by line", () => {
     expect(parseClaimVerdicts(modelWrongVerdict(), "v").length).toBe(1);
     const plan = JSON.stringify({

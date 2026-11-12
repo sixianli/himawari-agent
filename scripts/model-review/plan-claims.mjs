@@ -125,14 +125,17 @@ function stripQuoteMarks(text) {
 
 export function quoteInText(quote, text) {
   const haystack = collapse(text);
-  const fragments = stripQuoteMarks(quote)
-    .split(/…|\.\.\./)
-    .map((fragment) => collapse(stripQuoteMarks(fragment)))
-    .filter((fragment) => fragment !== "");
-  return (
-    fragments.length > 0 &&
-    fragments.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))
-  );
+  const everyFragmentPresent = (separator) => {
+    const fragments = stripQuoteMarks(quote)
+      .split(separator)
+      .map((fragment) => collapse(stripQuoteMarks(fragment)))
+      .filter((fragment) => fragment !== "");
+    return (
+      fragments.length > 0 &&
+      fragments.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))
+    );
+  };
+  return everyFragmentPresent(/…|\.\.\./) || everyFragmentPresent(/…|\.\.\.|；/);
 }
 
 function claimEvidenceProblem(repo, head, claim) {
