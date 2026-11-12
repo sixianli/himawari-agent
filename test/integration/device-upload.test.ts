@@ -255,6 +255,47 @@ describe("device background uploads", () => {
     ]);
   });
 
+  it("keeps a stored file when the same bytes are refused by a limit or swept at the same moment", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const settings = await h.perception.settings(perceptionScope);
+    await h.perception.changeSettings(perceptionScope, settings.revision, {
+      kind: "limit",
+      key: "perception.images.daily",
+      value: 0,
+    });
+    const directory = path.join(h.stateRoot, "device-uploads", "media");
+    for (let round = 0; round < 8; round += 1) {
+      const bytes = Buffer.from(`one-recording-two-kinds-${round}`);
+      const begin = async (batchId: string, kind: object) => {
+        const begun = await beginUpload(h, client, {
+          purpose: "media",
+          sha256: sha256(bytes),
+          bytes: bytes.length,
+          batchId,
+          ...kind,
+        });
+        expect(begun.status, JSON.stringify(begun.body)).toBe(201);
+        return begun.target;
+      };
+      const image = await begin(`media-batch-0000mixi${round}`, { mediaKind: "image" });
+      const audio = await begin(`media-batch-0000mixa${round}`, {
+        mediaKind: "audio",
+        durationMs: 1000,
+      });
+      const [refused, kept] = await Promise.all([
+        upload(h, image, bytes),
+        upload(h, audio, bytes),
+        h.perception.prune(perceptionScope),
+      ]);
+      expect(kept.body, JSON.stringify(kept.body)).toMatchObject({ stored: true });
+      expect(refused.body["stored"]).toBe(false);
+      expect(await readdir(directory)).toContain(sha256(bytes));
+    }
+    await h.perception.prune(perceptionScope);
+    expect((await readdir(directory)).length).toBe(8);
+  });
+
   it("refuses records outside the id range the grant was issued for", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
