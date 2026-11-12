@@ -432,6 +432,17 @@ describe("published fixture admission", () => {
 });
 
 describe("真实台账和当前扫描规则一致", () => {
+  it.each([
+    "docs/custom-provider.md",
+    "docs/extensions.md",
+    "docs/mcp.md",
+    "examples/extensions/custom-provider-anthropic/index.ts",
+    "examples/extensions/custom-provider-gitlab-duo/index.ts",
+  ])("PR 431撤掉例外的pi-coding-agent文件%s按当前扫描规则没有命中", (member) => {
+    const name = `runtime/node_modules/@earendil-works/pi-coding-agent/${member}`;
+    const bytes = readFileSync(join(repository, name.replace(/^runtime\//, "")));
+    expect(findBuildSecrets({ name, bytes })).toEqual([]);
+  });
   it("每条published-synthetic-fixture登记的命中等于用当前扫描规则扫已安装文件的结果", () => {
     const ledger = JSON.parse(
       readFileSync(join(repository, "ci/security-exceptions.json"), "utf8"),
