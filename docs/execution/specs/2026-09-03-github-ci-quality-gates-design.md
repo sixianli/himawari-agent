@@ -126,7 +126,7 @@ date: "2026-09-03"
 
 2026-11-06 起 CI 不再使用 GitHub 缓存，每个任务都从锁定的下载地址重新下载并校验，以免产生 GitHub 存储费（[ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)）。每次仍执行锁文件安装；不跨平台传递 `node_modules`。
 
-作业之间的文件不经 GitHub 产物存储，放在 CI VPS 的共享目录 `/srv/gh-runner-share/<运行号-尝试号>/<作业-成员>/`（[ADR 0238](../../adr/0238-ci-job-files-stay-on-the-ci-vps.md)）：每个作业成员用 `scripts/ci/run-share.mjs put` 放入完整报告，并把内容摘要写进作业输出；`browser`、`coverage` 用 `needs.build.outputs.linux-x64` 的摘要取构建，`ci/required` 按 `needs` 里的摘要逐个取回报告，核对不一致即失败，结束时不论成败删掉本次运行的目录。GitHub 上只留 `gate-` 汇总结论和 1 天的失败诊断。`ci.yml` 的所有作业都只有只读权限；`main.yml` 的 `full` 作业以可复用工作流（被别的工作流整个调用的工作流）的方式调用 `ci.yml`，不单独授予权限，沿用工作流级的只读权限。被调用的工作流拿不到超过调用方的权限，`npm run check:ci-policy` 核对 `ci.yml` 每个作业要的权限都在调用方给的范围内，否则整轮会在启动前失败（事故 I-93）。
+作业之间的文件不经 GitHub 产物存储，放在 CI VPS 的共享目录 `/srv/gh-runner-share/<运行号-尝试号>/<作业-成员>/`（[ADR 0238](../../adr/0238-ci-job-files-stay-on-the-ci-vps.md)）：每个作业成员用 `scripts/ci/run-share.mjs put` 放入完整报告，并把内容摘要写进作业输出；`browser`、`coverage` 用 `needs.build.outputs.linux-x64` 的摘要取构建，`ci/required` 按 `needs` 里的摘要逐个取回报告，核对不一致即失败，入口检查（草稿、上游取消）通过后，结束时不论成败删掉本次运行的目录；入口检查失败的运行由 CI 服务器每小时的清理在 6 小时后删掉（[ADR 0241](../../adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md)）。GitHub 上只留 `gate-` 汇总结论和 1 天的失败诊断。`ci.yml` 的所有作业都只有只读权限；`main.yml` 的 `full` 作业以可复用工作流（被别的工作流整个调用的工作流）的方式调用 `ci.yml`，不单独授予权限，沿用工作流级的只读权限。被调用的工作流拿不到超过调用方的权限，`npm run check:ci-policy` 核对 `ci.yml` 每个作业要的权限都在调用方给的范围内，否则整轮会在启动前失败（事故 I-93）。
 
 文档治理运行依赖放在仓库内的固定工具目录，保留上游 Skill 来源、许可依据、完整依赖闭包和内容摘要。采用原始 `validate_docs.py`、其导入模块及必需资源，不另写文档规则。更新由显式同步工具整体完成，CI 只读验证。来源或许可未明确时该任务未完成，不能静默跳过文档检查。
 
@@ -263,7 +263,7 @@ JSON、JUnit、LCOV、日志、截图和 trace 均按公开可读材料准备。
 
 ### 9. 触发、并发、权限与信任边界
 
-PR 使用 `pull_request`，在 opened、synchronize、reopened、ready_for_review 及所有 edited 事件（改标题、正文或目标分支）重新验证。草稿 PR 只跑 policy、static、build、security，`browser` 和 `coverage` 在草稿上跳过，所以草稿上的 `ci/required` 按设计不通过，转为正式后重新完整运行（见 [ADR 0191](../../adr/0191-draft-pull-requests-run-fast-checks-only.md)）；`edited` 事件的运行不取消其他事件的运行，也不被它们取消，连续的 `edited` 之间后一次取消前一次。默认分支使用 `main.yml` 接收 `push`，按下述条件选择 main 确认或调用完整 CI。完整 `ci.yml` 保留 PR、手动入口，并通过 `workflow_call` 供 main 回退复用。`workflow_dispatch` 只验证明确 ref/SHA，不自动发布。禁用工作流级路径过滤和以 skip 标记跳过必需检查的交付方式。
+PR 使用 `pull_request`，在 opened、synchronize、reopened、ready_for_review 事件重新验证；只改标题或正文（edited）不触发，改目标分支后要推新提交。草稿 PR 上 6 个检查作业全部跳过，`ci/required` 第一步就以 `CI_DRAFT_UNVERIFIED` 失败，上游有作业被取消时以 `CI_UPSTREAM_CANCELLED` 失败，都不装任何东西；转为正式后完整运行（见 [ADR 0241](../../adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md)）。默认分支使用 `main.yml` 接收 `push`，按下述条件选择 main 确认或调用完整 CI。完整 `ci.yml` 保留 PR、手动入口，并通过 `workflow_call` 供 main 回退复用。`workflow_dispatch` 只验证明确 ref/SHA，不自动发布。禁用工作流级路径过滤和以 skip 标记跳过必需检查的交付方式。
 
 公开 fork PR 作为正常贡献入口。目标 Actions 设置为所有外部贡献者需批准运行（`all_external_contributors`）；Owner 先审阅当前提交，特别是 workflow、安装脚本、政策和汇总器变更，再批准相应运行。等待批准属于尚未执行，不能计作成功或自动豁免；批准运行不等于批准合并，之后仍执行完整矩阵。首次贡献者、重复外部贡献者及 Dependabot 的实际审批和只读 token 行为分别验收，不通过改用 `pull_request_target` 或提供写权限来消除等待。
 
