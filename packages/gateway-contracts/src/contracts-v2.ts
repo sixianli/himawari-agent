@@ -1713,11 +1713,12 @@ const memoryImportUndoCommandSchema = object({
   ...commandEnvelope("memory.import.undo"),
   payload: object({ batchId: machineString }),
 });
+export const EXTERNAL_PROPOSAL_TEXT_MAXIMUM = 2000;
 const memoryExternalRespondItemsSchema = array(
   object({
     proposalId: machineString,
     decision: enumeration(["keep", "reject"]),
-    editedText: nullable(boundedString(2000)),
+    editedText: nullable(boundedString(EXTERNAL_PROPOSAL_TEXT_MAXIMUM)),
   }),
 );
 const memoryExternalRespondCommandSchema = object({

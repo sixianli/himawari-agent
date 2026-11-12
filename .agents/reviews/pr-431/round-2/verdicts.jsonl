@@ -1,0 +1,5 @@
+{"id":"r2-1","model":"opencode-go/deepseek-v4.1-flash","quote":"删掉台账条目的 PR 会在本 PR 和合并提交的 main 上都判红","valid":true,"class":"error","severity":"medium-high","trigger":"PR 或合并提交的 CI 按 base 的旧台账核对被删的 5 条","consequence":"PUBLIC_FIXTURE_FINDINGS_CHANGED，PR 和 main 各红一次","modelSeverity":"高"}
+{"id":"r2-2","model":"opencode-go/deepseek-v4.1-flash","quote":"新的“真实台账”测试没有验证“删除是否正确”","valid":true,"class":"error","severity":"medium-high","trigger":"误删一条仍有命中的条目","consequence":"测试不报，要等产物扫描才发现","modelSeverity":"中"}
+{"id":"r2-3","model":"opencode-go/deepseek-v4.1-flash","quote":"测试直接用台账里的 `path` 拼仓库根","valid":true,"class":"error","severity":"low","trigger":"台账出现 runtime/../../x 这类路径","consequence":"测试读到仓库外的文件，只读","modelSeverity":"中低","reason":"台账在 CI 使用前先经过 exactPath 校验，测试只读不写"}
+{"id":"r2-4","model":"opencode-go/deepseek-v4.1-flash","quote":"新正则仍会放过“全大写、无数字”的真实字面量","valid":true,"class":"error","severity":"low","trigger":"真实密钥恰好是 $ 加 12 个以上大写字母或下划线","consequence":"credential-literal 不报，格式类规则照样检查","modelSeverity":"低"}
+{"id":"r2-5","model":"opencode-go/deepseek-v4.1-flash","quote":"作者把“5 条归零”归因于第 2 轮的正则收紧，时间线上不准确","valid":true,"class":"better"}

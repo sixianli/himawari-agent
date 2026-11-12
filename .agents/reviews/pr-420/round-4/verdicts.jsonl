@@ -1,0 +1,6 @@
+{"id": "ds4-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "排除集合以“提议的摘要”为准，不以“受限记忆正文”为准，编辑保存时仍会漏", "valid": true, "class": "error", "severity": "medium-high", "trigger": "库里有受限记忆，另有一条提议正文和它相同但没有记忆链接（例如待确认，或别的提议改过文字后保存进了它）", "consequence": "受限记忆的文字经那条提议的正文进明文导出", "modelSeverity": "高"}
+{"id": "ds4-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新反向测试名为“sealed file included”，实际完全跳过封存文件", "valid": true, "class": "error", "severity": "low", "trigger": "将来有人把受限正文写进封存文件", "consequence": "测试里明文循环不看封存文件，但同一用例带口令导入后检查库里没有这段正文，封存文件里的原文会被导入，所以仍会失败；只是没直接检查封存文件的键", "modelSeverity": "中", "reason": "同一用例带口令导入后的检查已覆盖封存文件里的原文，缺的只是对键的直接断言"}
+{"id": "ds4-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "被排除提议的编号仍会经 `decision_ledger` 的 `id` 带出", "valid": false, "class": "error"}
+{"id": "ds4-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "导入不校验 `textSha256` 与正文一致", "valid": true, "class": "error", "severity": "low", "trigger": "有人手改导出文件，把正文配上不对应的摘要并重算清单哈希", "consequence": "导入后摘要和正文对不上，再导出时同文排除可能认不出", "modelSeverity": "低"}
+{"id": "ds4-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`externalProposalKeys`/`Unkeyed` 没有按导出集合过滤", "valid": true, "class": "better"}
+{"id": "ds4-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "作者说明与本轮实际 diff 不完全一致", "valid": true, "class": "better"}
