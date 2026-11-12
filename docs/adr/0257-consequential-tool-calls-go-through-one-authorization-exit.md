@@ -30,7 +30,7 @@ date: "2026-11-12"
 
 在这个决定落地之前，Himawari 给模型的工具有两条授权路（下面说的“现在”都指落地之前）。读文件、写代码、联网搜索先组一份“动作意图”（一条写明谁、对什么、做哪类事的记录），交给权限引擎（`ActionPolicyService`，决定放行、等主人点头还是拒绝的那个服务）。提醒、规则、记忆检索、任务管理这几类后来加的内置工具各写了一个分支，只查“这个工具这一轮给没给模型”，不经过权限引擎。每加一个内置工具就多一个绕开权限引擎的分支；苹果端的设备动作工具 `device_action` 会是下一个。
 
-另一个缺口是外来内容。模型读过网页、邮件、文件之后，里面夹带的指令可能让它去建提醒、改规则。苹果端设计的“指令和数据的界线”一节要求这种情况下中风险动作等主人确认、后台一律不做，但落地之前没有任何地方记“模型看得到的内容里有没有外来内容”；第 1 步做完后统一出口组事实时也还只放“谁发起的”这一类（`apps/agent-service/src/owner-scope-authorization.ts:121`：`const factCodes: PolicyFactCode[] = [RUN_SOURCE_FACT[source.sourceType]];`），外来内容那条事实到第 2 步才有地方产生。
+另一个缺口是外来内容。模型读过网页、邮件、文件之后，里面夹带的指令可能让它去建提醒、改规则。苹果端设计的“指令和数据的界线”一节要求这种情况下中风险动作等主人确认、后台一律不做，但落地之前没有任何地方记“模型看得到的内容里有没有外来内容”。第 1 步只把这条事实的代码登记进事实代码表（`packages/application/src/services/policy-fact-registry.ts:16`：`contextExternalContent: "context_external_content",`），统一出口组事实时只放“谁发起的”，再加上登记表那一行带来的“要本人在场”和“改长期规则”（`apps/agent-service/src/owner-scope-authorization.ts:121-123`：`const factCodes: PolicyFactCode[] = [RUN_SOURCE_FACT[source.sourceType]];`、`if (row.ownerPresenceRequired) factCodes.push(POLICY_FACT_CODES.ownerPresenceRequired);`、`if (row.standingRuleChange) factCodes.push(POLICY_FACT_CODES.standingRuleChange);`），外来内容这条事实到第 2 步才有地方产生。
 
 本 ADR 把方案线程 2026-11-12 定稿的整合方案（仓库副本 [.agents/plans/owner-scope-approval.md](../../.agents/plans/owner-scope-approval.md)）记成决定。Andy 2026-11-12 22:11 JST 在方案线程的卡片上选了 A：加主人意图核对，评测过了才打开；22:07 JST 提出核对模型用 Jev。
 
