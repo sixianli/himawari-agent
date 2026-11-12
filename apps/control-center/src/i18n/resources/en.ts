@@ -897,6 +897,9 @@ export const messages = {
   "rules.notEnforced": "This rule can't be read, so it isn't enforced for now",
   "rules.reconfirm": "Confirm again",
   "rules.undo": "Undo",
+  "rules.expiry":
+    "{kind, select, until {Until {when}, then it stops on its own} other {Standing until you undo it}}",
+  "rules.expired": "Expired and no longer applied (say it again to keep it)",
   "rules.receipt.label": "Standing rule receipt",
   "rules.receipt.status":
     "{s, select, active {Saved as a standing rule} proposed {Suggested rule; it takes effect only when you tap Apply} soft {Saved as a preference; not enforced by code} undone {Undone} other {Standing rule}}",

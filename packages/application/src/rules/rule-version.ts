@@ -72,6 +72,7 @@ export interface RuleVersionView {
   readonly changedAt: string | null;
   readonly sourceMemoryId: string | null;
   readonly wording: RuleWording | null;
+  readonly expiresAt: string | null;
   readonly tests: RuleTestStatus;
 }
 
@@ -224,6 +225,7 @@ export function describeRuleVersion(
     changedAt: stored?.changedAt ?? null,
     sourceMemoryId: stored?.sourceMemoryId ?? null,
     wording: rebuilt?.wording ?? null,
+    expiresAt: rebuilt?.rule.expiresAt ?? null,
     tests: rebuilt ? testStatus(rebuilt.rule) : UNAVAILABLE,
   });
 }

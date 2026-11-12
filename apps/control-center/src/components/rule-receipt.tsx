@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import type { MemoryModel, OwnerRuleAction } from "../memory.js";
 import { ActionButton } from "./primitives.js";
@@ -31,6 +32,7 @@ export interface RuleReceipt {
   readonly summary: string;
   readonly trials: readonly Trial[];
   readonly replay: Replay | null;
+  readonly expiresAt: string | null;
 }
 
 const text = (value: unknown) => (typeof value === "string" ? value : "");
@@ -55,6 +57,7 @@ export function parseRuleReceipt(output: string): RuleReceipt | null {
     proposalId: text(record["proposalId"]) || null,
     type: text(record["type"]),
     summary: text(record["summary"]),
+    expiresAt: text(record["expiresAt"]) || null,
     trials: Array.isArray(record["trials"])
       ? (record["trials"] as Record<string, unknown>[]).map((trial) => ({
           from: text(trial["from"]),
@@ -91,6 +94,7 @@ export function RuleReceiptCard({
   message: Message;
 }) {
   const receipt = parseRuleReceipt(output);
+  const format = useLocaleFormat();
   const [done, setDone] = useState<OwnerRuleAction | null>(null);
   if (!receipt) return null;
   const act = async (target: string, action: OwnerRuleAction) => {
@@ -104,6 +108,12 @@ export function RuleReceiptCard({
         })}
       </span>
       <p className="memory-text">{receipt.summary}</p>
+      <p className="settings-note" data-expiry={receipt.expiresAt ?? "standing"}>
+        {message("rules.expiry", {
+          kind: receipt.expiresAt ? "until" : "standing",
+          when: receipt.expiresAt ? format.deadline(receipt.expiresAt) : "",
+        })}
+      </p>
       {receipt.status === "soft" ? null : (
         <>
           <h5>{message("rules.receipt.trials")}</h5>
@@ -178,6 +188,7 @@ export function OwnerRulesSection({
   memory: Pick<MemoryModel, "rules" | "respondRule" | "busy">;
   message: Message;
 }) {
+  const format = useLocaleFormat();
   if (!memory.rules.length) return null;
   return (
     <section
@@ -193,10 +204,20 @@ export function OwnerRulesSection({
             {message("rules.type", { t: rule.type })}
           </span>
           {rule.status === "needs_review" ? <small> {message("rules.needsReview")}</small> : null}
-          {rule.enforced ? null : <small> {message("rules.notEnforced")}</small>}
+          {rule.expired ? (
+            <small> {message("rules.expired")}</small>
+          ) : rule.enforced ? null : (
+            <small> {message("rules.notEnforced")}</small>
+          )}
           <p className="memory-text">{rule.summary}</p>
+          <p className="settings-note" data-expiry={rule.expiresAt ?? "standing"}>
+            {message("rules.expiry", {
+              kind: rule.expiresAt ? "until" : "standing",
+              when: rule.expiresAt ? format.deadline(rule.expiresAt) : "",
+            })}
+          </p>
           <div className="actions">
-            {rule.status === "needs_review" && rule.enforced ? (
+            {rule.status === "needs_review" && rule.enforced && !rule.expired ? (
               <ActionButton
                 disabled={memory.busy}
                 onClick={() => void memory.respondRule(rule.ruleId, "reconfirm")}

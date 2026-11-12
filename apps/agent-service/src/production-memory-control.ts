@@ -459,6 +459,8 @@ export class ProductionMemoryControl {
               status: rule.status,
               enforced: rule.enforced,
               updatedAt: rule.updatedAt,
+              expiresAt: rule.expiresAt,
+              expired: rule.expired,
             },
           ],
     );

@@ -161,7 +161,7 @@ export function buildDemoPack(options: DemoPackOptions): {
   const markdown = renderMemoryMarkdown(memoryLines as unknown as readonly MarkdownMemory[]);
   for (const [path, content] of markdown.files) put(path, "markdown", content, 0);
   put(INDEX_FILE, "markdown", markdown.index, 0);
-  put(RULES_INDEX_FILE, "markdown", renderRulesMarkdown([], WITHHELD_PLACEHOLDER), 0);
+  put(RULES_INDEX_FILE, "markdown", renderRulesMarkdown([], WITHHELD_PLACEHOLDER, exportedAt), 0);
 
   const counts: PortableCounts = {
     memories: memoryLines.length,

@@ -146,6 +146,7 @@ export async function readDecisionChain(
                   amount: view.wording.amount,
                 }
               : null,
+            expiresAt: view.expiresAt,
             tests: view.tests,
             mailCount: ruleMailCounts.get(view.ruleId) ?? 0,
           };

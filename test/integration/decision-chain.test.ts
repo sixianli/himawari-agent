@@ -400,6 +400,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
             memory: null,
             wording: null,
             tests: { state: "unavailable", total: 0, failedAt: null },
+            expiresAt: null,
             mailCount: 2,
           },
           {
@@ -414,6 +415,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
             memory: null,
             wording: null,
             tests: { state: "unavailable", total: 0, failedAt: null },
+            expiresAt: null,
             mailCount: 1,
           },
         ],
@@ -767,6 +769,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         memory: null,
         wording: { values: ["boss@corp.example"], quietHours: [], amount: null },
         tests: { state: "passed", total: 2, failedAt: null },
+        expiresAt: null,
         mailCount: 1,
       });
       expect(byId.get("floor_money_words")).toMatchObject({
@@ -774,6 +777,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         origin: "built_in",
         source: "ADR 0106 第 4 条；ADR 0209",
         tests: { state: "passed", failedAt: null },
+        expiresAt: null,
         mailCount: 1,
       });
       expect(byId.get("floor_money_words")?.wording?.values).toContain("invoice");
@@ -782,6 +786,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         revision: 1,
         wording: { quietHours: [{ days: [1, 2], start: "22:00", end: "06:30" }] },
         tests: { state: "passed", failedAt: null },
+        expiresAt: null,
         mailCount: 0,
       });
       expect(byId.get("suppress_small_amount")).toMatchObject({
@@ -789,6 +794,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         revision: 1,
         wording: null,
         tests: { state: "unavailable" },
+        expiresAt: null,
         mailCount: 1,
       });
     } finally {

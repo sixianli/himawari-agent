@@ -847,6 +847,9 @@ export const messages = {
   "rules.notEnforced": "这条规则读不懂，暂时没有执行",
   "rules.reconfirm": "重新确认",
   "rules.undo": "撤销",
+  "rules.expiry":
+    "{kind, select, until {到 {when} 为止，之后自动失效} other {长期有效，直到你撤销}}",
+  "rules.expired": "已到期，不再执行（要继续请重新说一遍）",
   "rules.receipt.label": "长期规则回执",
   "rules.receipt.status":
     "{s, select, active {已立为长期规则} proposed {建议立为长期规则，点“生效”才执行} soft {已记成偏好，程序不强制执行} undone {已撤销} other {长期规则}}",

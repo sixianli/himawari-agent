@@ -481,6 +481,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   put(DATA_FILES.importBatches, "data", jsonLines(batchLines), batchLines.length);
   put(DATA_FILES.consolidations, "data", jsonLines(consolidationLines), consolidationLines.length);
   put(DATA_FILES.decisions, "data", jsonLines(decisionLines), decisionLines.length);
+  const exportedAt = options.now();
   const rulesText = jsonLines(ruleLines as unknown as readonly JsonValue[]);
   for (const [index, line] of rulesText.split("\n").entries())
     if (line.length > MAXIMUM_LINE_LENGTH)
@@ -494,7 +495,12 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   const markdown = renderMemoryMarkdown(memoryLines as unknown as readonly MarkdownMemory[]);
   for (const [path, content] of markdown.files) put(path, "markdown", content, 0);
   put(INDEX_FILE, "markdown", markdown.index, 0);
-  put(RULES_INDEX_FILE, "markdown", renderRulesMarkdown(ruleLines, WITHHELD_PLACEHOLDER), 0);
+  put(
+    RULES_INDEX_FILE,
+    "markdown",
+    renderRulesMarkdown(ruleLines, WITHHELD_PLACEHOLDER, exportedAt),
+    0,
+  );
 
   let sealedEvidenceRows = 0;
   if (options.sealPassphrase !== undefined) {
@@ -571,7 +577,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     decisionSignals,
     markdownMemories: markdown.count,
     rules: ruleLines.length,
-    enforcedRules: enforcedRuleCount(ruleLines),
+    enforcedRules: enforcedRuleCount(ruleLines, exportedAt),
     ruleHistoryVersions,
     sealedOriginals: options.sealPassphrase === undefined ? 0 : Object.keys(originals).length,
     sealedEvidenceRows,
@@ -579,7 +585,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   const manifest: PortableManifest = {
     format: FORMAT_VERSION,
     migrationSequence: options.migrationSequence,
-    exportedAt: options.now(),
+    exportedAt,
     egressRuleset: options.policy.rulesetVersion,
     files: [...files.keys()].sort().map((path) => ({
       path,

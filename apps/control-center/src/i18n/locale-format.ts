@@ -20,6 +20,14 @@ export function localeFormat(locale: string) {
         hour: "2-digit",
         minute: "2-digit",
       }),
+    deadline: (value: Moment) =>
+      date(value, {
+        month: "numeric",
+        day: "numeric",
+        weekday: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
     full: (value: Moment) =>
       date(value, {
         year: "numeric",

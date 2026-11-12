@@ -72,6 +72,8 @@ const rule = (change: Partial<OwnerRule> = {}): OwnerRule => ({
   status: "active",
   enforced: true,
   updatedAt: "2026-11-11T00:00:00.000Z",
+  expiresAt: null,
+  expired: false,
   ...change,
 });
 
@@ -213,6 +215,67 @@ describe("[P2-3] standing rules on the web page", () => {
     expect(buttons().filter((label) => label === "重新确认")).toHaveLength(1);
     await press("重新确认");
     expect(respondRule).toHaveBeenCalledWith("owner:b", "reconfirm");
+  });
+
+  it("[RS-1] shows how long each rule lasts, marks an expired one, and never offers reconfirm for it", async () => {
+    await show(
+      h(OwnerRulesSection, {
+        memory: {
+          rules: [
+            rule({ ruleId: "owner:forever", summary: "一直有效的规则" }),
+            rule({
+              ruleId: "owner:night",
+              summary: "今晚不提醒",
+              expiresAt: "2026-11-16T22:00:00.000Z",
+            }),
+            rule({
+              ruleId: "owner:old",
+              summary: "过期的规则",
+              status: "needs_review",
+              enforced: false,
+              expired: true,
+              expiresAt: "2026-11-01T22:00:00.000Z",
+            }),
+          ],
+          respondRule: vi.fn(),
+          busy: false,
+        },
+        message,
+      }),
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("长期有效，直到你撤销");
+    expect(text).toMatch(/到 .+ 为止，之后自动失效/u);
+    expect(text).toContain("已到期，不再执行");
+    expect(text).not.toContain("暂时没有执行");
+    expect(buttons().filter((label) => label === "重新确认")).toHaveLength(0);
+    expect(
+      container
+        .querySelector('[data-rule="owner:forever"] [data-expiry]')
+        ?.getAttribute("data-expiry"),
+    ).toBe("standing");
+  });
+
+  it("[RS-1] the receipt of a timed rule says when it stops, a standing one says it stays", async () => {
+    await show(
+      h(RuleReceiptCard, {
+        key: "timed",
+        output: JSON.stringify({ ...active, expiresAt: "2026-11-16T22:00:00.000Z" }),
+        memory: { respondRule: vi.fn(async () => true), busy: false },
+        message,
+      }),
+    );
+    expect(container.textContent).toMatch(/到 .+ 为止，之后自动失效/u);
+    await show(
+      h(RuleReceiptCard, {
+        key: "standing",
+        output: JSON.stringify({ ...active, expiresAt: null }),
+        memory: { respondRule: vi.fn(async () => true), busy: false },
+        message,
+      }),
+    );
+    expect(container.textContent).toContain("长期有效，直到你撤销");
+    expect(container.textContent).not.toContain("自动失效");
   });
 
   it("REVERSE: shows no rules section when there are no rules", async () => {

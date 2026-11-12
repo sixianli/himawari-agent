@@ -161,7 +161,7 @@ function RuleItem({
   showMails: boolean;
   thisMail: boolean;
 }) {
-  const { moment, locale } = useLocaleFormat();
+  const { moment, deadline, locale } = useLocaleFormat();
   const wording = rule.wording
     ? wordingText(rule.wording, locale, message("decision.chain.listSeparator"))
     : "";
@@ -192,6 +192,14 @@ function RuleItem({
             })
           : message("decision.chain.ruleWordingMissing")}
       </p>
+      {rule.origin === "owner_setting" && rule.kind !== "important_sender" ? (
+        <p className="decision-chain-rule-text" data-expiry={rule.expiresAt ?? "standing"}>
+          {message("rules.expiry", {
+            kind: rule.expiresAt ? "until" : "standing",
+            when: rule.expiresAt ? deadline(rule.expiresAt) : "",
+          })}
+        </p>
+      ) : null}
       <small className="decision-chain-rule-source">
         {message("decision.chain.ruleSource", {
           source: rule.source ?? message("decision.chain.noRecord"),

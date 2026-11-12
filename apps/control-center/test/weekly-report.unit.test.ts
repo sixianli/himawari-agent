@@ -1360,6 +1360,7 @@ describe("[P1-5] email decision detail page", () => {
           memory: null,
           wording: { values: ["invoice"], quietHours: [], amount: null },
           tests: { state: "passed", total: 5, failedAt: null },
+          expiresAt: null,
           mailCount: 1,
         },
         {
@@ -1374,6 +1375,7 @@ describe("[P1-5] email decision detail page", () => {
           memory: null,
           wording: null,
           tests: { state: "unavailable", total: 0, failedAt: null },
+          expiresAt: null,
           mailCount: 1,
         },
       ],

@@ -1095,6 +1095,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
           memory: null,
           wording: { values: ["账单", "invoice"], quietHours: [], amount: null },
           tests: { state: "passed", total: 5, failedAt: null },
+          expiresAt: null,
           mailCount: 2,
         },
         {
@@ -1109,6 +1110,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
           memory: { memoryId: "memory-rule", state: "visible", text: "银行的信一律提醒我" },
           wording: { values: ["bank.example"], quietHours: [], amount: null },
           tests: { state: "failed", total: 3, failedAt: 2 },
+          expiresAt: null,
           mailCount: 1,
         },
         {
@@ -1123,7 +1125,23 @@ describe("[P1-3] the basis drawer of a decision record", () => {
           memory: null,
           wording: null,
           tests: { state: "unavailable", total: 0, failedAt: null },
+          expiresAt: null,
           mailCount: 1,
+        },
+        {
+          ruleId: "owner:tonight",
+          revision: 1,
+          current: false,
+          kind: "push_quiet_hours",
+          origin: "owner_setting",
+          source: "ADR 0213；主人在对话里说的一句话",
+          status: "active",
+          changedAt: "2026-11-11T12:00:00.000Z",
+          memory: null,
+          wording: { values: ["今晚别提醒我"], quietHours: [], amount: null },
+          tests: { state: "passed", total: 3, failedAt: null },
+          expiresAt: "2026-11-11T22:00:00.000Z",
+          mailCount: 0,
         },
       ],
     },
@@ -1215,6 +1233,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     expect(drawer).toContain("未登记的规则");
     expect(drawer).toContain("这一版的规则内容查不到");
     expect(drawer).toContain("测试：查不到");
+    expect(drawer).toMatch(/到 .+ 为止，之后自动失效/u);
     expect(drawer).toContain("只记了规则名，显示的是现在的版本");
     expect(drawer.split("只记了规则名，显示的是现在的版本").length).toBe(2);
     expect(drawer).toContain("判断了 3 封");
@@ -1281,6 +1300,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
               amount: null,
             },
             tests: { state: "passed", total: 4, failedAt: null },
+            expiresAt: null,
             mailCount: 0,
           },
         ],

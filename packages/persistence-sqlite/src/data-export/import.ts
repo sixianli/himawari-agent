@@ -285,7 +285,10 @@ export async function importPortableExport(
     decisionSignals: parsed.decisions.reduce((total, { signals }) => total + signals.length, 0),
     markdownMemories: parsed.manifest.counts.markdownMemories,
     rules: rulePlans.length,
-    enforcedRules: enforcedRuleCount(rulePlans.map(({ rule }) => rule)),
+    enforcedRules: enforcedRuleCount(
+      rulePlans.map(({ rule }) => rule),
+      parsed.manifest.exportedAt,
+    ),
     ruleHistoryVersions: rulePlans.reduce((total, { history }) => total + history.length, 0),
     sealedOriginals: options.passphrase === undefined ? 0 : parsed.manifest.counts.sealedOriginals,
     sealedEvidenceRows: evidence

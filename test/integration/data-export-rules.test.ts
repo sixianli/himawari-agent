@@ -205,6 +205,44 @@ describe("data export: the rule book travels with the memories", () => {
     );
   });
 
+  it("[RS-1] a rule with an expiry keeps it through the round trip, shows it in RULES.md, and stops being counted as running once it has passed", async () => {
+    const source = await seeded();
+    const base = (id: string, expiresAt: string) =>
+      writeRuleVersion(source, {
+        ruleId: id,
+        parameters: {
+          type: "push_quiet_hours",
+          summary: `到点失效的静默 ${id}`,
+          params: { periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }] },
+          expiresAt,
+        },
+        source: "ADR 0252；主人在对话里说的一句话",
+        reason: "owner_sentence",
+        at: "2026-11-04T05:00:00.000Z",
+      });
+    base("owner:until-future", "2026-11-12T00:00:00.000Z");
+    base("owner:until-past", "2026-11-05T00:00:00.000Z");
+    const { files, manifest } = await exportOf(source);
+    expect(manifest.counts.rules).toBe(7);
+    const markdown = decoder.decode(files.get("RULES.md"));
+    const line = (id: string) => markdown.split("\n").find((text) => text.includes(`〔r:${id}〕`));
+    expect(line("owner:until-future")).toContain("到 2026-11-12T00:00:00.000Z 为止");
+    expect(line("owner:until-past")).toContain("已于 2026-11-05T00:00:00.000Z 到期");
+    expect(line("owner:night-push") ?? "").not.toContain("到期");
+    const target = await side("expiry-target");
+    const report = await importInto(target, files, PASSPHRASE);
+    expect(report.imported.rules).toBe(7);
+    expect(ruleRows(target).rules).toEqual(
+      ruleRows(source).rules.map((row) =>
+        (row as Record<string, unknown>)["source_memory_id"] === "m-verified"
+          ? { ...(row as Record<string, unknown>), source_memory_id: null }
+          : row,
+      ),
+    );
+    expect(manifest.counts.enforcedRules).toBe(5);
+    expect(markdown).toContain("其中 5 条正在执行");
+  });
+
   it("[P1-6] RULES.md lists each stored rule once with its wording, state and source memory", async () => {
     const source = await seeded();
     const { files } = await exportOf(source);

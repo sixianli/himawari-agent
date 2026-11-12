@@ -1151,6 +1151,7 @@ const decisionChainSnapshotSchema = object({
               amount: nullable(object({ currency: boundedString(3), minor: integer(0) })),
             }),
           ),
+          expiresAt: nullable(timestamp),
           tests: object({
             state: enumeration(["passed", "failed", "none", "unavailable"]),
             total: integer(0),
@@ -1436,6 +1437,8 @@ const memoryRulesSnapshotSchema = object({
         status: enumeration(["active", "needs_review"]),
         enforced: booleanValue,
         updatedAt: timestamp,
+        expiresAt: nullable(timestamp),
+        expired: booleanValue,
       }),
     ),
     generatedAt: timestamp,

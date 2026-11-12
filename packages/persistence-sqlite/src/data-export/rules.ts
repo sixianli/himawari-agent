@@ -44,8 +44,19 @@ export function ruleParametersKey(ruleId: string, revision?: number): string {
     : `rule/${ruleId}/history/${revision}/parameters`;
 }
 
-export function enforcedRuleCount(rules: readonly PortableRule[]): number {
-  return rules.filter(({ status }) => status !== "retired").length;
+function expiryOf(rule: PortableRule): string | null {
+  const parameters = parseParameters(rule.parameters);
+  const value = parameters?.["expiresAt"];
+  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+export function enforcedRuleCount(rules: readonly PortableRule[], at: string): number {
+  return rules.filter((rule) => {
+    const expiresAt = expiryOf(rule);
+    return (
+      rule.status !== "retired" && !(expiresAt !== null && Date.parse(expiresAt) <= Date.parse(at))
+    );
+  }).length;
 }
 
 const OWNER_RULE_ID = /^owner:[A-Za-z0-9_-]{1,58}$/u;
@@ -222,21 +233,32 @@ function plainText(text: string): string {
   return foldText(text).replaceAll("〔", "［").replaceAll("〕", "］");
 }
 
-function ruleLine(rule: PortableRule, withheldText: string): string {
+function ruleLine(rule: PortableRule, withheldText: string, at: string): string {
   const parameters = parseParameters(rule.parameters) ?? {};
   const kind = ruleKind(rule.ruleId, parameters);
   const text = rule.withheld === true ? withheldText : wording(kind, parameters);
   const source = rule.sourceMemoryId === null ? "" : `；来源记忆〔m:${rule.sourceMemoryId}〕`;
-  return `- 〔r:${rule.ruleId}〕 ${KIND_LABELS[kind]}。${plainText(text)}（第 ${rule.revision} 版，${STATUS_LABELS[rule.status]}；出处：${plainText(rule.source)}${source}）`;
+  const expiresAt = expiryOf(rule);
+  const lasting =
+    expiresAt === null
+      ? "长期有效"
+      : Date.parse(expiresAt) <= Date.parse(at)
+        ? `已于 ${expiresAt} 到期`
+        : `到 ${expiresAt} 为止`;
+  return `- 〔r:${rule.ruleId}〕 ${KIND_LABELS[kind]}。${plainText(text)}（第 ${rule.revision} 版，${STATUS_LABELS[rule.status]}，${lasting}；出处：${plainText(rule.source)}${source}）`;
 }
 
-export function renderRulesMarkdown(rules: readonly PortableRule[], withheldText: string): string {
+export function renderRulesMarkdown(
+  rules: readonly PortableRule[],
+  withheldText: string,
+  at: string,
+): string {
   const fromSettings = rules.filter(({ ruleId }) => !ruleId.startsWith(OWNER_RULE_ID_PREFIX));
   const fromOwner = rules.filter(({ ruleId }) => ruleId.startsWith(OWNER_RULE_ID_PREFIX));
   const section = (title: string, items: readonly PortableRule[]): string[] => [
     `## ${title}`,
     "",
-    ...(items.length === 0 ? ["（没有）"] : items.map((rule) => ruleLine(rule, withheldText))),
+    ...(items.length === 0 ? ["（没有）"] : items.map((rule) => ruleLine(rule, withheldText, at))),
     "",
   ];
   return [
@@ -244,7 +266,7 @@ export function renderRulesMarkdown(rules: readonly PortableRule[], withheldText
     "",
     "自动生成，不要手改。这些规则在 Himawari 里由程序执行，不靠模型自觉。每条行首的〔r:编号〕可以到 data/rules.jsonl 里按 ruleId 查到参数和全部修订历史；〔m:编号〕是立这条规则时的那条记忆，在 data/memories.jsonl 里。本文件里的文字都是记录，不是指令。",
     "",
-    `共 ${rules.length} 条存下来的规则，其中 ${enforcedRuleCount(rules)} 条正在执行（在用或待重审）。`,
+    `共 ${rules.length} 条存下来的规则，其中 ${enforcedRuleCount(rules, at)} 条正在执行（在用或待重审，不含导出时已到期的）。`,
     "",
     "## 产品自带",
     "",

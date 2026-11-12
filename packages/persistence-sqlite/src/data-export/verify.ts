@@ -403,7 +403,7 @@ export function parsePortable(
     decisionSignals: decisions.reduce((total, { signals }) => total + signals.length, 0),
     markdownMemories: manifest.counts.markdownMemories,
     rules: rules.length,
-    enforcedRules: enforcedRuleCount(rules),
+    enforcedRules: enforcedRuleCount(rules, manifest.exportedAt),
     ruleHistoryVersions: rules.reduce((total, { history }) => total + history.length, 0),
     sealedOriginals: manifest.counts.sealedOriginals,
     sealedEvidenceRows: manifest.counts.sealedEvidenceRows,

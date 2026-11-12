@@ -903,6 +903,9 @@ export const messages = {
   "rules.notEnforced": "このルールを読み取れないため、いまは適用していません",
   "rules.reconfirm": "再確認",
   "rules.undo": "取り消す",
+  "rules.expiry":
+    "{kind, select, until {{when} まで有効で、その後は自動で止まります} other {取り消すまで有効}}",
+  "rules.expired": "期限切れで、もう適用されません（続けるにはもう一度言ってください）",
   "rules.receipt.label": "常設ルールの控え",
   "rules.receipt.status":
     "{s, select, active {常設ルールにしました} proposed {ルールの提案です。「適用」を押すと有効になります} soft {好みとして記録しました（プログラムでは強制しません）} undone {取り消しました} other {常設ルール}}",
