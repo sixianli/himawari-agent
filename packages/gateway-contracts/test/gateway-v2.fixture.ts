@@ -389,6 +389,64 @@ export const governanceMessages = [
     thinkingLevel: null,
     expectedRevision: 3,
   }),
+  fixture("query", "device.list.read", {}),
+  fixture("snapshot", "device.list.snapshot", {
+    devices: [
+      {
+        id: "dev_AAAAAAAAAAAAAAAAAAAAAA",
+        revision: 2,
+        kind: "iphone",
+        name: "Andy 的 iPhone",
+        releaseChannel: "direct",
+        status: "active",
+        pairedAt: "2026-11-12T03:00:00.000Z",
+        lastSeenAt: "2026-11-12T03:05:00.000Z",
+        pairingNumber: null,
+      },
+      {
+        id: "dev_BBBBBBBBBBBBBBBBBBBBBB",
+        revision: 0,
+        kind: "watch",
+        name: "Apple Watch",
+        releaseChannel: "testflight",
+        status: "pending",
+        pairedAt: "2026-11-12T03:06:00.000Z",
+        lastSeenAt: null,
+        pairingNumber: "482910",
+      },
+    ],
+    limits: [{ key: "device.request.body_bytes", unit: "bytes", value: 1048576 }],
+    pairing: {
+      expiresAt: "2026-11-12T03:16:00.000Z",
+      access: { clientId: "access-client-01", clientSecret: "secret-01" },
+    },
+    generatedAt: "2026-11-12T03:06:30.000Z",
+  }),
+  fixture("command", "device.pairing.start", { pairingCode: "AAAAAAAAAAAAAAAAAAAAAA" }),
+  fixture("command", "device.pairing.confirm", {
+    deviceId: "dev_BBBBBBBBBBBBBBBBBBBBBB",
+    expectedRevision: 0,
+  }),
+  fixture("command", "device.rename", {
+    deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA",
+    expectedRevision: 2,
+    name: "办公室的 iPhone",
+  }),
+  fixture("command", "device.revoke", {
+    deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA",
+    expectedRevision: 2,
+  }),
+  fixture("query", "server.status.read", {}),
+  fixture("snapshot", "server.status.snapshot", {
+    live: true,
+    ready: false,
+    status: "degraded",
+    dependencies: [
+      { name: "sqlite", required: true, status: "healthy", reasonCode: null },
+      { name: "worker", required: true, status: "blocked", reasonCode: "WORKER_STARTING" },
+    ],
+    generatedAt: "2026-11-12T03:06:30.000Z",
+  }),
   fixture("query", "sensitive.interceptions.read", { before: null }),
   fixture("snapshot", "sensitive.interceptions.snapshot", {
     counts: { masked: 1, withheld: 0, notSaved: 0 },
@@ -613,6 +671,27 @@ export const governanceMessages = [
         requestedAt: "2026-09-11T00:00:00.000Z",
       },
     ],
+    externalProposals: {
+      total: 1,
+      items: [
+        {
+          proposalId: "external-proposal-01",
+          text: "主人每天早上只喝无糖的燕麦拿铁",
+          category: "preference",
+          dataClassification: "private",
+          client: "muse",
+          receivedAt: "2026-09-11T00:00:00.000Z",
+        },
+      ],
+      batches: [
+        {
+          batchId: "external-batch-01",
+          decidedAt: "2026-09-11T01:00:00.000Z",
+          committed: 2,
+          rejected: 1,
+        },
+      ],
+    },
     tidyUps: [
       {
         changeId: "memory-consolidation:agent-01:2026-09-11:c1",
@@ -739,6 +818,14 @@ export const governanceMessages = [
     items: [{ contentRef: "payload-04", category: "rule", subCategory: null }],
   }),
   fixture("command", "memory.import.undo", { batchId: "memory-import-01" }),
+  fixture("command", "memory.external.respond", {
+    items: [
+      { proposalId: "external-proposal-01", decision: "keep", editedText: null },
+      { proposalId: "external-proposal-02", decision: "keep", editedText: "主人喜欢燕麦拿铁" },
+      { proposalId: "external-proposal-03", decision: "reject", editedText: null },
+    ],
+  }),
+  fixture("command", "memory.external.undo", { batchId: "external-batch-01" }),
   fixture("command", "memory.approval.respond", {
     requestId: "memory-approval-01",
     resolution: "approved",

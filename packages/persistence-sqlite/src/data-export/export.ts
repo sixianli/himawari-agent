@@ -548,6 +548,11 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
         "已换成编号占位（接着库里已有占位的最大编号往后排；同一原文同一编号，不同原文不同编号）；这些是名称和编号，原文不保留，不进封存文件",
     },
     {
+      what: "其他 agent 通过 MCP 提议的记忆（待确认、已拒绝、被替换的提议）",
+      count: snapshot.externalProposals,
+      reason: "本版导出格式还不含这张表；已确认保存的会作为普通记忆导出",
+    },
+    {
       what: "规则出处里指向未导出记忆的链接",
       count: droppedRuleMemoryLinks,
       reason: "那条记忆已删除或分级为受限，不在导出里；链接置空，规则本身照常导出",

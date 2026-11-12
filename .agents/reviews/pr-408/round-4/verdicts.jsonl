@@ -1,0 +1,8 @@
+{"id": "ds4-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新增的回归用例与本轮存储层实现相反，按代码执行必然失败", "valid": false, "class": "error"}
+{"id": "ds4-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`memory.external.respond` 部分失败被静默吞掉，命令仍返回成功，调用方看不到哪些条目没处理。", "valid": true, "class": "better"}
+{"id": "ds4-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "分级调高只改 `classification`，不改 `category`；保存后的记忆分类和 `sensitiveTopic` 仍是旧分类。", "valid": true, "class": "error", "severity": "medium-high", "trigger": "同一正文先按「其他」、再按「健康」提交后保存", "consequence": "记忆分级是敏感，但分类和敏感主题仍是「其他」", "modelSeverity": "中"}
+{"id": "ds4-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "错误路径会留下无人引用的加密 payload。", "valid": false, "class": "error"}
+{"id": "ds4-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "跨 key、同正文的替换存在把某个客户端最新正文挤掉的边缘情况。", "valid": true, "class": "better"}
+{"id": "ds4-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "摘要缓存只随写入器自己的 `#memoryChanges` 失效，跨路径写入和“建了记忆但决定失败”的窗口会造成缓存陈旧。", "valid": true, "class": "error", "severity": "low", "trigger": "新建记忆成功但随后写决策记录失败，同一批里后面还有同样正文", "consequence": "同一批里可能再建一条同样的记忆", "modelSeverity": "低"}
+{"id": "ds4-7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`propose_memories` 标了 `idempotentHint: true`，但重发带 key 的批量会新增 superseded 行、新的 proposalId 和决策记录。", "valid": true, "class": "error", "severity": "low", "trigger": "带 key 的批量重发", "consequence": "客户端以为重发没有副作用，实际多出被替换的行和决策记录", "modelSeverity": "低"}
+{"id": "ds4-8", "model": "opencode-go/deepseek-v4.1-flash", "quote": "端口层不校验正文长度、机器密钥和 `sourceKey` 长度，坏输入会以 SQLite 约束错误而非 `PORT_INVALID_OPERATION` 冒出。", "valid": true, "class": "better"}

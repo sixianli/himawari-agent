@@ -57,6 +57,8 @@ export class SqlitePairedDeviceOperations {
         return this.readDevice(payload as string);
       case "pairedDevices.listDevices":
         return this.listDevices(payload as PairedDeviceScope);
+      case "pairedDevices.readOpenPairingCode":
+        return this.readOpenPairingCode(payload as Input<"readOpenPairingCode">);
       case "pairedDevices.confirmDevice":
         return this.confirmDevice(payload as Input<"confirmDevice">);
       case "pairedDevices.renameDevice":
@@ -153,6 +155,20 @@ export class SqlitePairedDeviceOperations {
         .run(now, device.id, input.codeHash);
       return { kind: "paired", device: this.requireDevice(device.id) };
     })();
+  }
+
+  private readOpenPairingCode(
+    input: Input<"readOpenPairingCode">,
+  ): { readonly expiresAt: string } | undefined {
+    const now = this.time(input.now);
+    const row = this.database
+      .prepare(
+        `SELECT expires_at AS expiresAt FROM device_pairing_codes
+          WHERE owner_id = ? AND agent_id = ? AND used_at IS NULL AND expires_at > ?
+          ORDER BY expires_at DESC LIMIT 1`,
+      )
+      .get(input.ownerId, input.agentId, now) as { expiresAt: string } | undefined;
+    return row ? { expiresAt: row.expiresAt } : undefined;
   }
 
   private readDevice(deviceId: string): PairedDevice | undefined {

@@ -14,8 +14,10 @@ interface MutableCoverageManifest {
   prd: {
     sha256: string;
   };
+  requirements: Array<{ id: string }>;
   specifications: Array<{
     acceptances: Array<{
+      id: string;
       verificationEntrypoints: string[];
     }>;
   }>;
@@ -47,12 +49,18 @@ afterEach(async () => {
 });
 
 describe("v0.2 coverage baseline", () => {
-  it("accepts the owner-reviewed manifest", () => {
+  it("accepts the owner-reviewed manifest", async () => {
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as MutableCoverageManifest;
+    const acceptanceIds = new Set(
+      manifest.specifications.flatMap((specification) =>
+        specification.acceptances.map((acceptance) => acceptance.id),
+      ),
+    );
     const result = runChecker();
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      "v0.2 coverage check passed for 79 requirements, 53 acceptance IDs, and 10 Specs/Plans.",
+      `v0.2 coverage check passed for ${manifest.requirements.length} requirements, ${acceptanceIds.size} acceptance IDs, and ${manifest.specifications.length} Specs/Plans.`,
     );
   });
 
@@ -66,6 +74,23 @@ describe("v0.2 coverage baseline", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("PRD digest differs");
     expect(result.stderr).toContain("S0 recorded PRD digest differs from manifest");
+  });
+
+  it("rejects a manifest that drops a requirement listed in the S0 coverage matrix", async () => {
+    let dropped = "";
+    const shortManifest = await changedManifest((manifest) => {
+      const requirement = manifest.requirements.pop();
+      if (!requirement) throw new Error("fixture has no requirements");
+      dropped = requirement.id;
+    });
+
+    const result = runChecker(shortManifest);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr.trim().split("\n")).toEqual([
+      "v0.2 coverage check failed:",
+      `- coverage manifest is missing ${dropped}`,
+    ]);
   });
 
   it("rejects an acceptance without a verification entrypoint", async () => {

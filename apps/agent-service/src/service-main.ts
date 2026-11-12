@@ -78,6 +78,7 @@ import {
   SERVICE_RUNTIME_ERROR_CODES,
   SystemdCredentialSecretSource,
   SystemdProviderSecretSource,
+  portErrorSite,
   stableErrorCode,
   TypeSafeJevTransport,
   writeAgentServiceBootBinding,
@@ -176,6 +177,11 @@ import {
   resolveCodingNetworkFacts,
   WorkspaceAutoAuthorization,
 } from "./workspace-auto-authorization.js";
+
+function siteField(error: unknown): { readonly site?: string } {
+  const site = portErrorSite(error);
+  return site === undefined ? {} : { site };
+}
 
 export const AGENT_SERVICE_ERROR_CODES = Object.freeze({
   AUTHORITY_INACTIVE: "AGENT_AUTHORITY_INACTIVE",
@@ -2180,6 +2186,17 @@ export async function startTenantRuntime(
       } else if (gapExportRef !== undefined && museIntakeConfiguration?.enabled === true) {
         throw new Error("GAP_EXPORT_RUNTIME_UNAVAILABLE");
       }
+      const externalProposals = new ProductionMcpMemoryWriter({
+        configuration,
+        memory: durableMemory,
+        state: repository.productMemoryState(),
+        book: repository.memoryBook(),
+        ledger: repository.decisionLedger(),
+        proposals: repository.externalMemoryProposals(),
+        payloads,
+        protector: recallProtector,
+        clock: { now: () => clock.now() },
+      });
       const mcpReadConfiguration = configuration.runPolicy?.mcpRead;
       const mcpIdentity =
         configuration.identity && configuration.identity.kind !== "built-in"
@@ -2215,16 +2232,7 @@ export async function startTenantRuntime(
           ...(mcpReadConfiguration.proposals
             ? {
                 write: {
-                  proposals: new ProductionMcpMemoryWriter({
-                    configuration,
-                    memory: durableMemory,
-                    state: repository.productMemoryState(),
-                    book: repository.memoryBook(),
-                    ledger: repository.decisionLedger(),
-                    payloads,
-                    protector: recallProtector,
-                    clock: { now: () => clock.now() },
-                  }),
+                  proposals: externalProposals,
                   rules: new ProductionMcpRuleWriter({
                     configuration,
                     rules: ownerRuleWriter,
@@ -2573,6 +2581,7 @@ export async function startTenantRuntime(
             component: "agent-service",
             event: "thread-title.failed",
             code: stableErrorCode(error),
+            ...siteField(error),
           }),
         ...(modelComposition.composition.generateText
           ? {
@@ -2593,6 +2602,7 @@ export async function startTenantRuntime(
                             component: "agent-service",
                             event: "memory-episode.failed",
                             code: stableErrorCode(error),
+                            ...siteField(error),
                           }),
                       },
                     }
@@ -2622,6 +2632,7 @@ export async function startTenantRuntime(
                             component: "agent-service",
                             event: "memory-consolidation.failed",
                             code: stableErrorCode(error),
+                            ...siteField(error),
                           }),
                       },
                     }
@@ -2654,6 +2665,7 @@ export async function startTenantRuntime(
                     component: "agent-service",
                     event: "memory-capture.failed",
                     code: stableErrorCode(error),
+                    ...siteField(error),
                   }),
               },
             }
@@ -2738,6 +2750,7 @@ export async function startTenantRuntime(
         ...(observation ? { observation } : {}),
         memory: {
           service: activeDurableMemory,
+          externalProposals,
           onAudit: (record) => {
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",

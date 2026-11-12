@@ -30,6 +30,7 @@ export interface PortableSnapshot {
   readonly payloads: ReadonlyMap<string, PayloadRecord | { readonly unavailable: true }>;
   readonly omittedMemories: number;
   readonly restrictedMemories: number;
+  readonly externalProposals: number;
 }
 
 const EXPORTABLE_STATUSES = "('active', 'archived', 'trashed')";
@@ -65,6 +66,10 @@ export function readSnapshot(
       const restrictedMemories = count(
         `SELECT COUNT(*) FROM memory_records WHERE owner_id = @ownerId AND agent_id = @agentId
           AND status IN ${EXPORTABLE_STATUSES} AND classification = 'restricted'`,
+      );
+      const externalProposals = count(
+        `SELECT COUNT(*) FROM external_memory_proposals
+          WHERE owner_id = @ownerId AND agent_id = @agentId AND status <> 'committed'`,
       );
       const history = all(
         `SELECT memory_id, kind, content_ref, stance, quote_ref, source_deleted, occurred_at
@@ -289,6 +294,7 @@ export function readSnapshot(
         payloads,
         omittedMemories,
         restrictedMemories,
+        externalProposals,
       };
     })
     .deferred();

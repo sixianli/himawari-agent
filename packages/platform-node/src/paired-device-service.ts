@@ -12,6 +12,7 @@ import {
   type PairedDeviceStorePort,
   type SessionDeviceStatePort,
 } from "@himawari-agent/application";
+import { normalizeDeviceName } from "@himawari-agent/gateway-contracts";
 import {
   DEVICE_SIGNATURE_ERROR_CODES,
   DeviceSignatureError,
@@ -119,8 +120,20 @@ export class PairedDeviceService {
   async startPairing(
     scope: PairedDeviceScope & { readonly sessionId: string },
   ): Promise<{ readonly code: string; readonly expiresAt: string }> {
+    return this.startPairingWithCode({
+      ...scope,
+      code: this.#random(16).toString("base64url"),
+    });
+  }
+
+  async startPairingWithCode(
+    input: PairedDeviceScope & { readonly sessionId: string; readonly code: string },
+  ): Promise<{ readonly code: string; readonly expiresAt: string }> {
+    if (!PAIRING_CODE_PATTERN.test(input.code) || !/[AQgw]$/u.test(input.code))
+      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_REQUEST_INVALID, 400);
+    const { code } = input;
+    const scope = input;
     const now = this.#now();
-    const code = this.#random(16).toString("base64url");
     const expiresAt = new Date(now.getTime() + PAIRING_CODE_LIFETIME_MILLISECONDS).toISOString();
     await this.#options.store.createPairingCode({
       ownerId: scope.ownerId,
@@ -147,15 +160,14 @@ export class PairedDeviceService {
       "devicePublicKey",
       "confirmPublicKey",
     ];
-    const name = typeof input["name"] === "string" ? input["name"].trim() : "";
+    const name = normalizeDeviceName(input["name"]);
     if (
       !hasOnlyKeys(input, keys) ||
       typeof input["pairingCode"] !== "string" ||
       !PAIRING_CODE_PATTERN.test(input["pairingCode"]) ||
       !(PAIRED_DEVICE_KINDS as readonly unknown[]).includes(input["kind"]) ||
       !(PAIRED_DEVICE_RELEASE_CHANNELS as readonly unknown[]).includes(input["releaseChannel"]) ||
-      name.length === 0 ||
-      [...name].length > 64 ||
+      name === null ||
       typeof input["devicePublicKey"] !== "string" ||
       typeof input["confirmPublicKey"] !== "string" ||
       !SPKI_PATTERN.test(input["devicePublicKey"]) ||
@@ -201,6 +213,10 @@ export class PairedDeviceService {
     }
   }
 
+  openPairing(scope: PairedDeviceScope): Promise<{ readonly expiresAt: string } | undefined> {
+    return this.#options.store.readOpenPairingCode({ ...scope, now: this.#now().toISOString() });
+  }
+
   list(scope: PairedDeviceScope): Promise<readonly PairedDevice[]> {
     return this.#options.store.listDevices(scope);
   }
@@ -224,7 +240,10 @@ export class PairedDeviceService {
       readonly name: string;
     },
   ): Promise<PairedDevice> {
-    return this.#options.store.renameDevice(scope);
+    const name = normalizeDeviceName(scope.name);
+    if (name === null)
+      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_REQUEST_INVALID, 400);
+    return this.#options.store.renameDevice({ ...scope, name });
   }
 
   revoke(

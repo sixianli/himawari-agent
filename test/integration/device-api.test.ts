@@ -1046,6 +1046,28 @@ describe("[P1-1] device client routes", () => {
     await h.repository.close();
   });
 
+  it("rejects device names with hidden characters the same way as the gateway contract", async () => {
+    const h = await harness();
+    const hidden = await pair(h, "Andy\u200biPhone");
+    expect(hidden.response.statusCode).toBe(400);
+    const client = await pairAndConfirm(h);
+    for (const name of ["Desk\u202eMac", "Desk\u0007Mac", "   ", "x".repeat(65)]) {
+      const renamed = await web(h, "rename", {
+        deviceId: client.deviceId,
+        expectedRevision: client.revision,
+        name,
+      });
+      expect(renamed.status, name).toBe(400);
+    }
+    const trimmed = await web(h, "rename", {
+      deviceId: client.deviceId,
+      expectedRevision: client.revision,
+      name: "  Desk Mac  ",
+    });
+    expect((trimmed.body["device"] as { name: string }).name).toBe("Desk Mac");
+    await h.repository.close();
+  });
+
   it("renames the confirmed device and its signed-in browser entry together", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);

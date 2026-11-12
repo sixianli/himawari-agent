@@ -12,33 +12,35 @@ import type {
   CapabilityRegistryStorePort,
   DecisionLedgerPort,
   ExecutionEnvironmentStorePort,
+  ExternalMemoryProposalStorePort,
   GapCaseMarkPort,
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
   LedgerObservationPort,
   MemoryBookStorePort,
+  MemoryCaptureBacklogPort,
+  MemoryCheckupStorePort,
   MemoryConsolidationStorePort,
   MemoryEpisodeStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
-  MemoryCaptureBacklogPort,
-  MemoryCheckupStorePort,
-  ReviewPrereviewStorePort,
   MemoryReminderStorePort,
-  OwnerRuleStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
-  RealEvalStorePort,
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
+  OwnerRuleStorePort,
+  PairedDeviceStorePort,
   PayloadStorePort,
   ProactiveStorePort,
   ProductMemoryStatePort,
+  RealEvalStorePort,
   ReliableEventPort,
   ReliableEventSinkPort,
+  ReviewPrereviewStorePort,
   RunCheckpointStore,
   RunDispatchCandidate,
   RunDispatchPort,
@@ -62,7 +64,6 @@ import type {
   ThreadPromptBundleStorePort,
   ThreadRepositoryPort,
   TraceStorePort,
-  PairedDeviceStorePort,
   WebPushStorePort,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId, ProductAuthorityFence } from "@himawari-agent/domain";
@@ -991,6 +992,20 @@ export class SqliteDurableAdapters {
     });
   }
 
+  externalMemoryProposals(): ExternalMemoryProposalStorePort {
+    return Object.freeze<ExternalMemoryProposalStorePort>({
+      submit: (input) => this.context.write("externalMemoryProposal.submit", input),
+      read: (input) => this.context.read("externalMemoryProposal.read", input),
+      listPending: (input) => this.context.read("externalMemoryProposal.listPending", input),
+      decide: (input) => this.context.write("externalMemoryProposal.decide", input),
+      listBatch: (input) => this.context.read("externalMemoryProposal.listBatch", input),
+      listBatches: (input) => this.context.read("externalMemoryProposal.listBatches", input),
+      reopenBatch: (input) => this.context.write("externalMemoryProposal.reopenBatch", input),
+      dropDiscardedText: (input) =>
+        this.context.write("externalMemoryProposal.dropDiscardedText", input),
+    });
+  }
+
   ownerRules(): OwnerRuleStorePort {
     return Object.freeze<OwnerRuleStorePort>({
       list: (input) => this.context.read("ownerRule.list", input),
@@ -1134,6 +1149,7 @@ export class SqliteDurableAdapters {
       redeemPairingCode: (input) => this.context.write("pairedDevices.redeemPairingCode", input),
       readDevice: (deviceId) => this.context.read("pairedDevices.readDevice", deviceId),
       listDevices: (input) => this.context.read("pairedDevices.listDevices", input),
+      readOpenPairingCode: (input) => this.context.read("pairedDevices.readOpenPairingCode", input),
       confirmDevice: (input) => this.context.write("pairedDevices.confirmDevice", input),
       renameDevice: (input) => this.context.write("pairedDevices.renameDevice", input),
       revokeDevice: (input) => this.context.write("pairedDevices.revokeDevice", input),

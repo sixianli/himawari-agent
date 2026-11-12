@@ -21,6 +21,10 @@ type ProductAuthorityFence = ThreadCreateInput["authority"];
 
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
+  PRODUCTION_DEVICE_OPERATIONS,
+  type ProductionDeviceControl,
+} from "./production-device-control.js";
+import {
   PRODUCTION_MEMORY_OPERATIONS,
   type ProductionMemoryControl,
 } from "./production-memory-control.js";
@@ -44,6 +48,10 @@ import {
   PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
   type ProductionSensitiveInterceptionsControl,
 } from "./production-sensitive-interceptions-control.js";
+import {
+  PRODUCTION_SERVER_STATUS_OPERATIONS,
+  type ProductionServerStatusControl,
+} from "./production-server-status-control.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
   type ProductionWebPushControl,
@@ -76,6 +84,8 @@ export function createProductionApprovalGateway(options: {
   readonly observationControl?: Pick<ProductionObservation, "query" | "execute">;
   readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
+  readonly serverStatusControl?: ProductionServerStatusControl;
+  readonly deviceControl?: Pick<ProductionDeviceControl, "query" | "execute">;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -118,7 +128,11 @@ export function createProductionApprovalGateway(options: {
                     : query.type.startsWith("sensitive.interceptions.") &&
                         options.sensitiveInterceptionsControl
                       ? options.sensitiveInterceptionsControl.query(query)
-                      : searchAuthorization.query(query),
+                      : query.type.startsWith("server.status.") && options.serverStatusControl
+                        ? options.serverStatusControl.query(query)
+                        : query.type.startsWith("device.") && options.deviceControl
+                          ? options.deviceControl.query(query)
+                          : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -231,6 +245,8 @@ export function createProductionApprovalGateway(options: {
           options.sensitiveInterceptionsControl
         )
           return options.sensitiveInterceptionsControl.execute(command);
+        if (command.type.startsWith("device.") && options.deviceControl)
+          return options.deviceControl.execute(authentication, command);
         if (command.type.startsWith("workspace.copy.") && options.workspaceCopies)
           return options.workspaceCopies.execute({ authentication, command });
         return searchAuthorization.set(command, options.executionAuthority());
@@ -259,6 +275,8 @@ export function createProductionApprovalGateway(options: {
       ...(options.sensitiveInterceptionsControl
         ? PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS
         : []),
+      ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
+      ...(options.deviceControl ? PRODUCTION_DEVICE_OPERATIONS : []),
     ],
     reads,
     controlPlane,

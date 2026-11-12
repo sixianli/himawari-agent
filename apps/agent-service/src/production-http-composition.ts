@@ -90,7 +90,9 @@ import {
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
 import { registerDataExportRoute } from "./production-data-export.js";
+import { ProductionDeviceControl } from "./production-device-control.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
+import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
@@ -121,6 +123,10 @@ import {
   PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
   ProductionSensitiveInterceptionsControl,
 } from "./production-sensitive-interceptions-control.js";
+import {
+  PRODUCTION_SERVER_STATUS_OPERATIONS,
+  ProductionServerStatusControl,
+} from "./production-server-status-control.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -203,6 +209,7 @@ export interface ProductionHttpCompositionOptions {
       | "recover"
       | "archive"
     >;
+    readonly externalProposals?: ProductionMcpMemoryWriter;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
   readonly webPush?: {
@@ -703,6 +710,7 @@ function routeOptions(
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
+        ...PRODUCTION_SERVER_STATUS_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1133,9 +1141,23 @@ export async function createProductionHttpComposition(
         ...(configuration.runPolicy?.timeZone
           ? { timeZone: configuration.runPolicy.timeZone }
           : {}),
+        ...(options.memory.externalProposals
+          ? { externalProposals: options.memory.externalProposals }
+          : {}),
         onAudit: options.memory.onAudit,
       })
     : undefined;
+  const pairedDevices = new PairedDeviceService({
+    store: repository.pairedDevices(),
+    sessions: sessionsState,
+    configuration: () => deviceConfiguration,
+    ownerActive: async (scope) => {
+      if (scope.ownerId !== ownerId || scope.agentId !== agentId) return false;
+      if (identityConfiguration.kind === "built-in") return true;
+      return (await identityState.readByOwner(ownerId))?.status === "active";
+    },
+    now,
+  });
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     repository,
@@ -1167,6 +1189,18 @@ export async function createProductionHttpComposition(
       clock: { now: clock },
       beforeRead: () => flushSensitiveInterceptions(repository),
     }),
+    deviceControl: new ProductionDeviceControl({
+      configuration,
+      devices: pairedDevices,
+      deviceConfiguration: () => deviceConfiguration,
+      ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      clock: { now: clock },
+    }),
+    serverStatusControl: new ProductionServerStatusControl({
+      configuration,
+      health,
+      clock: { now: clock },
+    }),
   });
   const app = buildHttpGatewayServer({
     ...routeOptions(
@@ -1193,17 +1227,7 @@ export async function createProductionHttpComposition(
     threadSearch,
     files,
     devices: {
-      service: new PairedDeviceService({
-        store: repository.pairedDevices(),
-        sessions: sessionsState,
-        configuration: () => deviceConfiguration,
-        ownerActive: async (scope) => {
-          if (scope.ownerId !== ownerId || scope.agentId !== agentId) return false;
-          if (identityConfiguration.kind === "built-in") return true;
-          return (await identityState.readByOwner(ownerId))?.status === "active";
-        },
-        now,
-      }),
+      service: pairedDevices,
       configuration: () => deviceConfiguration,
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
     },

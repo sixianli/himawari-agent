@@ -152,7 +152,7 @@ function isNotFound(error: unknown): boolean {
   return error instanceof ApplicationPortError && error.code === PORT_ERROR_CODES.NOT_FOUND;
 }
 
-function pairingAccessFields({ clientId, clientSecret }: DevicePairingAccess) {
+export function pairingAccessFields({ clientId, clientSecret }: DevicePairingAccess) {
   return { clientId, clientSecret };
 }
 
@@ -172,7 +172,7 @@ export function devicePairingNumber(input: {
   return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, "0");
 }
 
-function presentDevice(device: PairedDevice) {
+export function presentPairedDevice(device: PairedDevice) {
   return {
     pairingNumber: device.status === "pending" ? devicePairingNumber(device) : null,
     id: device.id,
@@ -188,7 +188,7 @@ function presentDevice(device: PairedDevice) {
   };
 }
 
-function presentLimits(configuration: DeviceConfiguration) {
+export function presentDeviceLimits(configuration: DeviceConfiguration) {
   return DEVICE_HARD_LIMIT_KEYS.map((key) => ({
     key,
     unit: DEVICE_HARD_LIMITS[key].unit,
@@ -316,7 +316,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
       device.post("/pair", async (request, reply) => {
         const paired = await options.devices.pair(json(request));
         return options.sendJson(reply, paired.replayed ? 200 : 201, {
-          device: presentDevice(paired.device),
+          device: presentPairedDevice(paired.device),
         });
       });
 
@@ -327,7 +327,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           heartbeatSeconds: configuration.heartbeatSeconds,
           connectionMaxSeconds: configuration.connectionMaxSeconds,
           signatureToleranceSeconds: configuration.signatureToleranceSeconds,
-          limits: presentLimits(configuration),
+          limits: presentDeviceLimits(configuration),
         });
       });
 
@@ -676,8 +676,8 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
     emptyBody(request);
     const devices = await options.devices.list(scope(authentication));
     return options.sendJson(reply, 200, {
-      devices: devices.map(presentDevice),
-      limits: presentLimits(options.configuration()),
+      devices: devices.map(presentPairedDevice),
+      limits: presentDeviceLimits(options.configuration()),
     });
   });
 
@@ -710,7 +710,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
     const authentication = await managed(request);
     const body = deviceAction(request);
     const device = await options.devices.confirm({ ...scope(authentication), ...body });
-    return options.sendJson(reply, 200, { device: presentDevice(device) });
+    return options.sendJson(reply, 200, { device: presentPairedDevice(device) });
   });
 
   app.post(`${DEVICE_MANAGEMENT_PREFIX}/rename`, async (request, reply) => {
@@ -723,13 +723,13 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
       expectedRevision: body.expectedRevision,
       name: body.name as string,
     });
-    return options.sendJson(reply, 200, { device: presentDevice(device) });
+    return options.sendJson(reply, 200, { device: presentPairedDevice(device) });
   });
 
   app.post(`${DEVICE_MANAGEMENT_PREFIX}/revoke`, async (request, reply) => {
     const authentication = await managed(request);
     const body = deviceAction(request);
     const device = await options.devices.revoke({ ...scope(authentication), ...body });
-    return options.sendJson(reply, 200, { device: presentDevice(device) });
+    return options.sendJson(reply, 200, { device: presentPairedDevice(device) });
   });
 }

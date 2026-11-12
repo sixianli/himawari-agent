@@ -723,10 +723,17 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 93,
+    name: "external_memory_proposals",
+    changeSet: "external-memory-proposals",
+    phase: "expand" as const,
+    file: "0093_external_memory_proposals.sql",
+  },
+  {
+    sequence: 94,
     name: "paired_devices",
     changeSet: "paired-devices",
     phase: "expand" as const,
-    file: "0093_paired_devices.sql",
+    file: "0094_paired_devices.sql",
   },
 ] as const;
 
