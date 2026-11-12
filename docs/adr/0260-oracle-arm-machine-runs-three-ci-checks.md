@@ -27,7 +27,7 @@ date: "2026-11-13"
 
 ## 背景
 
-CI（持续集成，每次推送后 GitHub Actions 自动跑的检查）现在全部在 Andy 租的一台 CI 服务器上跑。[ADR 0256](0256-gate-job-gets-its-own-runner.md) 落地后，汇总作业 `ci/required`（把各项检查的结果汇成一个结论的作业）有了专用的 runner（装在自己机器上、替 GitHub 执行 CI 作业的程序），不再和检查抢位置；但检查作业本身仍然只有两个 runner 能接，一次完整运行有 6 种检查，同一时间只能跑 2 个作业。开发线程多的时候，这就是排队的原因。
+CI（持续集成，每次推送后 GitHub Actions 自动跑的检查）的工作流 `.github/workflows/ci.yml` 里，各项检查现在都在 Andy 租的一台 CI 服务器上跑（前提 1）。[ADR 0256](0256-gate-job-gets-its-own-runner.md) 落地后，汇总作业 `ci/required`（把各项检查的结果汇成一个结论的作业）有了专用的 runner（装在自己机器上、替 GitHub 执行 CI 作业的程序），不再和检查抢位置；但检查作业本身仍然只有两个 runner 能接，一次完整运行有 6 种检查，同一时间只能跑 2 个作业。开发线程多的时候，这就是排队的原因。
 
 Andy 另外租了一台 Oracle 云的 ARM 机器（4 核、24 GB 内存，在东京），目前只当测试机用，大部分时间空着。这份 ADR 决定把它接进 CI，让它固定跑其中三项检查，同一时间能跑的检查作业从 2 个变成 4 个。检查的内容和判定一条不减。
 
@@ -36,7 +36,7 @@ Andy 另外租了一台 Oracle 云的 ARM 机器（4 核、24 GB 内存，在东
 ## 前提和来源
 
 1. 一次完整运行有 6 种检查作业，全部在 CI 服务器的两个检查 runner 上跑。来源：`.github/workflows/ci.yml` 第 33、72、236、284 行，原话 `runs-on: ci-vps`；第 115、165 行，原话 `runs-on: ${{ matrix.runner }}`。
-2. policy 和 static 各要 13 到 14 分钟，是最长的两个作业。来源：GitHub 接口 2026-11-12 的作业记录，实测，记在 `.agents/evidence/ci-queue-2026-11-12.md`。
+2. policy 和 static 各要 13 到 14 分钟，build 和 security 各约 6 分钟。来源：GitHub 接口 2026-11-12 的作业记录，实测，记在 `.agents/evidence/ci-queue-2026-11-12.md`。
 3. 每项检查跑在哪种 runner 上写在策略文件里，工作流必须和它一致。来源：`scripts/ci/check-policy.mjs` 第 493 行，原话 `!job.strategy && job["runs-on"] === check.members[0].runner,`。
 4. 策略校验现在要求非 macOS 的成员只能是 x64。来源：`scripts/ci/check-policy.mjs` 第 341 行，原话 `member.arch === (mac ? "arm64" : "x64") &&`；`ci/policy.schema.json` 第 64 行，原话 `"enum": ["ci-vps", "ci-vps-gate", "macos-15"]`。
 5. 各作业的报告靠 CI 服务器本机的目录交接。来源：`scripts/ci/run-share.mjs` 第 27 行，原话 `const root = env.HIMAWARI_CI_SHARE;`；`.github/workflows/ci.yml` 第 362 行，原话 `run-share.mjs collect --to .ci-output/reports`。
@@ -61,8 +61,6 @@ Andy 另外租了一台 Oracle 云的 ARM 机器（4 核、24 GB 内存，在东
 
 - 2026-11-12 21:55 JST：“你以后不用担心我那台 Oracle 云服务器费用的问题”，并要求把这台机器完全用起来给 CI 提速。
 - 2026-11-13 01:01 JST：“那个 Oracle 的加速方案不用给我看了，方案出来之后直接实施，赶快把它加速，把整个 CI 流水线搞快起来”。
-
-方案经过两轮模型讨论（独立方案一轮，审核一轮），记录在 `.agents/reviews/topic-ci-oracle/`。
 
 <a id="decision"></a>
 
@@ -124,7 +122,7 @@ Andy 另外租了一台 Oracle 云的 ARM 机器（4 核、24 GB 内存，在东
 - 让 Oracle 把报告送到 CI 服务器：不采用。要在 Oracle 上放一把能连 CI 服务器的私钥，那里跑的 PR 代码读得到它；还要在 CI 服务器上新开一个能写共享目录的账号。
 - 两台机器共用一个标签，谁空谁接：不采用。同一个提交可能这次在 x64 上、下次在 ARM 上检查，结果不可比，出了差异也查不清。
 - 用 GitHub 的产物或缓存传报告：不采用（前提 12）。
-- 把 build、browser、coverage 也搬到 ARM：不采用（前提 6），生产是 x64。
+- 把 build、browser、coverage 也搬到 ARM：不采用（前提 6）。
 - 在两台机器之间挂网络文件系统：不采用，多一个会坏的东西，权限也更难收紧。
 - 每次运行签发一把短期凭证：不采用。方向反过来之后钥匙只读、只能读 CI 报告，再加一套签发服务不值得。
 - ARM 的工具链用独立的锁文件：不采用（前提 8）。
@@ -138,7 +136,7 @@ Andy 另外租了一台 Oracle 云的 ARM 机器（4 核、24 GB 内存，在东
 - 必过检查开始依赖 Oracle 这台机器。它被回收或停机时，三项检查会排队，直到有人跑应急命令。
 - 这台机器同时是测试机。上面的限制挡得住“顺手读到测试数据”，挡不住有人存心利用系统漏洞（前提 17）；仓库是私有的，只有 Andy 和他的代理提交，这和 CI 服务器接受的前提相同，差别是这台机器上还有别的东西。
 - [ADR 0238](0238-ci-job-files-stay-on-the-ci-vps.md) 的“只有 CI 服务器上的 runner 能跑这套 CI”改为：三项检查可以在 Oracle 上跑，报告由汇总作业取回（前提 13）。共享目录的信任范围没有变大：往里写的仍然只有 CI 服务器上的 runner 账号。
-- ARM 测试机线程原先打算让 ARM 用独立的锁文件、不进必过检查；这份 ADR 定为一份锁文件、ARM 进必过检查，那边的 ADR 落地时按这份修订。
+- ARM 测试机线程那边的 ADR 落地时按这份写：只有一份锁文件，ARM 进必过检查。
 - GitHub 上不花钱。Oracle 机器的费用 Andy 已说不用担心。
 
 <a id="verification"></a>
