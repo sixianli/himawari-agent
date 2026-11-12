@@ -1642,6 +1642,11 @@ const memoryRulesSnapshotSchema = object({
         status: enumeration(["active", "needs_review"]),
         enforced: booleanValue,
         updatedAt: timestamp,
+        quote: nullable(boundedString(500)),
+        changes: integer(0),
+        lastUsed: nullable(
+          object({ at: timestamp, kind: machineString, decisionId: machineString }),
+        ),
       }),
     ),
     generatedAt: timestamp,
