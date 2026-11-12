@@ -54,8 +54,8 @@ date: "2026-11-12"
 
 | 编号 | 前提 | 来源和原话 |
 | --- | --- | --- |
-| 1 | 这次改动之前，提醒、规则、记忆检索、任务管理这几类工具的事前检查只查“给没给这一轮”，各有一个原因码；任务管理现在仍是这样，另外三类的原因码保留下来 | `apps/agent-service/src/production-runtime-tools.ts:869-873`：`this.#exposed.has(invocation.runId) &&` … `reasonCode: "TASK_RESOURCE_AUTHORITY_REQUIRED",`；`apps/agent-service/src/production-runtime-tools.ts:130`：`"owner-reminder": { prefix: "reminder", reasonCode: "REMINDER_OWNER_SCOPE" },` |
-| 2 | 这次改动之前，它们执行时不组动作意图、不调权限引擎，直接交给各自的执行函数；这次改成先按登记表找到这一行，再把统一出口的检查一起交给执行函数 | `apps/agent-service/src/production-runtime-tools.ts:1213-1217`：`const row = this.#builtinRow(invocation);` … `return run(invocation, this.#ownerScopeGate(invocation, row, signal));` |
+| 1 | 这次改动之前，提醒、规则、记忆检索、任务管理这几类工具的事前检查只查“给没给这一轮”，各有一个原因码；任务管理现在仍是这样，另外三类的原因码保留下来 | `apps/agent-service/src/production-runtime-tools.ts:870-874`：`this.#exposed.has(invocation.runId) &&` … `reasonCode: "TASK_RESOURCE_AUTHORITY_REQUIRED",`；`apps/agent-service/src/production-runtime-tools.ts:130`：`"owner-reminder": { prefix: "reminder", reasonCode: "REMINDER_OWNER_SCOPE" },` |
+| 2 | 这次改动之前，它们执行时不组动作意图、不调权限引擎，直接交给各自的执行函数；这次改成先按登记表找到这一行，再把统一出口的检查一起交给执行函数 | `apps/agent-service/src/production-runtime-tools.ts:1214-1218`：`const row = this.#builtinRow(invocation);` … `return run(invocation, this.#ownerScopeGate(invocation, row, signal));` |
 | 3 | 受治理工具的统一写法已经有了 | `apps/agent-service/src/production-coding-workflow.ts:408`：`const permission = await services.authorize(intent, ctx.signal);`；`:411`：`const result = runtimeToolAuthorizationResult(permission);` |
 | 4 | 等审批时运行挂起，所有受治理工具同一种做法 | `packages/application/src/services/runtime-tool-authorization.ts:3`：`Every governed tool uses the same suspension contract; no model result on ASK.` |
 | 5 | 已有“主人事先同意的长期授权”这种做法：条件满足就替主人记一条已同意的审批和一次性授权 | `apps/agent-service/src/production-file-read-services.ts:305-306`：`await searchAuthorization.authorize(intent);`、`await options.workspaceAuto?.authorize(intent);`；`apps/agent-service/src/owner-policy-authorization.ts:36`：`export async function applyOwnerPolicyAuthorization(input: {` |
@@ -211,6 +211,7 @@ date: "2026-11-12"
 | 规则结果值 `allow_preauthorized`、`ask_owner`、`refuse` | 内置动作规则 | 统一出口 | 结果值的类型穷举；邮件闸门的规则不许用这三种，动作闸门的规则只许用这三种 | 同上 |
 | 内置动作规则的编号 | 内置规则数据 | 长期授权记录里的“按哪条规则”、决策记录、卡片 | 编号固定，写进记录后不改名 | 同上 |
 | 长期授权记录的键 `action-rule:<内置规则编号>`（按内置规则预先授权），值里有开关 `enabled` 和规则修订号 `ruleRevision` | 统一出口，第一次用到这条规则时按“开”写入 | 审批记录里的 `policyAuthorization`（键和这条记录的修订号）；数据库在用授权前核对这条记录还开着、修订号没变 | 和联网搜索的长期授权同一种做法。主人把记录关掉后，新的动作改成问主人；记录的修订号变了，按旧修订号记下的预先授权不再能用。内置规则换了修订号（只会随代码发布发生）时，仍开着的记录自动更新到新修订号、继续预先授权，关掉的保持关掉 | `test/integration/tool-action-registry.test.ts`（反向：把记录关掉，下一次建提醒改成等主人点头；规则修订号从 1 变 2，开着的继续、关掉的仍然问） |
+| 统一出口出错时的诊断记录（键 `runtime-tool-diagnostic:` 开头，内容是阶段、原因码 `authorization_component_error`、错误代码或类型名） | 统一出口抛错时，由出工具的那一层写 | `diagnose run` 命令按键前缀读出来给运维看 | 沿用现有工具诊断记录的键前缀；写不进去时忽略，仍按拒绝处理 | `apps/agent-service/test/production-runtime-tools.unit.test.ts` 里带 `[ADR-0257]` 的出口抛错用例（反向：这一轮已停或已取消时不写） |
 | 拒绝次数上限的两个配置键（连续、累计） | 配置解析，带默认值和范围 | 统一出口 | 配置解析只认登记的键名 | `test/integration/external-content-fact.test.ts`（连续被拒到上限后这一轮停下） |
 | 决策记录的新结果（后台有外来内容时不做） | 统一出口 | 决策记录页、导出 | 类别和结果登记在 `DECISION_KINDS`、`DECISION_OUTCOMES` | 现有决策记录的校验测试扩充 |
 | 提议候选的字段（动作、规范化参数、依据的外来内容、指纹） | 统一出口 | 主动提议方案落地后的接收端 | 落地前只写决策记录 | 第 2 步的后台用例 |
@@ -269,7 +270,7 @@ date: "2026-11-12"
 - 一个对话读过外来内容之后，基本上到结束都算“有外来内容”；主人意图核对打开之前，这样的对话里每建一个提醒都要点一下。
 - 绑定了对话的定时任务会继承那个对话的“有外来内容”状态（[前提 32](#premises)、[前提 33](#premises)）。
 - 读文件、写代码、联网搜索这三条老路在第 2 步多了事实之后，上线前还等着的旧审批，续跑时新组的动作意图多了事实，指纹对不上，会被拒绝后重新问一次。这是偏安全的结果，上线说明里写一句。这次新接入的提醒、规则以前没有审批，不存在旧审批；它们的动作意图第一次组好就存下，同一次工具调用续跑时原样读回，不重新组，所以中途发了新版本也按当时存下的事实判断。
-- 统一出口自己出错（例如存储写不进去）时按拒绝处理，原因码 `authorization_component_error`，不执行；出错的原因存一条诊断记录（键 `owner-scope-diagnostic:` 开头），不给模型看。同一次工具调用同时进来两次时合并成一次，这只在同一个服务进程里有效，靠的是一个数据目录同时只让一个服务进程打开。
+- 统一出口自己出错（例如存储写不进去）时按拒绝处理，原因码 `authorization_component_error`，不执行；出错的原因（端口错误代码，别的错误只记类型名，不记错误文字）存一条诊断记录，不给模型看；键和别的工具诊断记录同一个前缀 `runtime-tool-diagnostic:`，所以运维用的 `diagnose run` 命令能读到。同一次工具调用同时进来两次时合并成一次，这只在同一个服务进程里有效，靠的是一个数据目录同时只让一个服务进程打开。
 - 规则手册的闸门清单和结果值各多几项；另一个还没合并的分支给闸门清单加了通知闸门，两边合并时这一行要手工合。
 - 记录上的来源标记打算放进记忆记录已有的出处列表（[前提 36](#premises)）和规则已有的出处字段，对话的状态放进已有的按对话存的状态里，预计不用改表；这一点在第 2 步动工时对着存储层核实，核实前不算定论。
 - 发给模型的请求开头不变（见[发给模型的开头](#decision-prompt)）。

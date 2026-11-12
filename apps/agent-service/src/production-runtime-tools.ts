@@ -665,9 +665,10 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
               : "unknown";
         await this.#writeJson(
           invocation,
-          `owner-scope-diagnostic:${digest([invocation.runId, invocation.toolCallId, cause])}`,
+          `runtime-tool-diagnostic:${digest([invocation.runId, invocation.toolCallId, "owner-scope", cause])}`,
           { stage: "not_dispatched", reasonCode: "authorization_component_error", cause },
         ).catch(() => undefined);
+        signal?.throwIfAborted();
         permission = {
           decision: "DENY",
           reasonCode: "authorization_component_error",

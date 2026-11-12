@@ -1948,9 +1948,22 @@ it("[ADR-0257] reports a failed check and does nothing when the authorization ex
   });
   expect(broken.modelContent).not.toContain("state store unavailable");
   expect(run).not.toHaveBeenCalled();
-  expect([...f.artifacts.keys()].some((key) => key.startsWith("owner-scope-diagnostic:"))).toBe(
-    true,
-  );
+  const diagnostics = () =>
+    [...f.artifacts.keys()].filter((key) => key.startsWith("runtime-tool-diagnostic:"));
+  expect(diagnostics()).toHaveLength(1);
+  const artifacts = f.options.artifacts as { commit: typeof f.options.artifacts.commit };
+  const commit = artifacts.commit;
+  artifacts.commit = async (input) => {
+    if (input.operationKey.startsWith("runtime-tool-diagnostic:")) throw new Error("disk full");
+    return commit(input);
+  };
+  authorize.mockRejectedValueOnce(new TypeError("state store unavailable"));
+  expect(await tools.execute({ ...set, toolCallId: "unrecorded" })).toMatchObject({
+    outcome: "failed",
+    errorCode: "authorization_component_error",
+  });
+  expect(diagnostics()).toHaveLength(1);
+  artifacts.commit = commit;
   expect(await tools.execute(set)).toMatchObject({ outcome: "succeeded" });
   expect(run).toHaveBeenCalledTimes(1);
 });
@@ -1991,6 +2004,9 @@ it("[ADR-0257] throws instead of reporting a failed check when the run has stopp
   });
   await expect(tools.execute({ ...set, toolCallId: "stopped" })).rejects.toThrow("RUN_STOPPED");
   expect(run).not.toHaveBeenCalled();
+  expect(
+    [...f.artifacts.keys()].filter((key) => key.startsWith("runtime-tool-diagnostic:")),
+  ).toEqual([]);
 });
 
 it("[ADR-0257] only the three listing and recall tools skip the authorization exit among the built-in tools", () => {

@@ -86,6 +86,7 @@ async function setup(
     reminders: { run: reminders },
     ownerRules: { run: rules },
     ownerScope,
+    toolActions: registry,
     clock,
   });
   await tools.listAuthorized(RUN_ID, []);
