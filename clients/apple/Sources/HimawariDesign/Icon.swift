@@ -101,3 +101,8 @@ public struct ThirdPartyLicense: Identifiable, Sendable {
         return ThirdPartyLicense(id: id, name: name, version: version, text: text)
     }
 }
+
+public enum ChromeIcon {
+    public static let todayTab: IconName = .sun
+    public static let newChat: IconName = .edit
+}

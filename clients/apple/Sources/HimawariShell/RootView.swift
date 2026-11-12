@@ -109,7 +109,7 @@ struct MainTabsView: View {
             EdgeFade(.bottom, height: DesignTokens.Size.fadeTabBar).ignoresSafeArea()
             HStack(spacing: 14) {
                 FloatingTabBar(selection: $tab, tabs: [
-                    FloatingTab(id: MainTab.today, title: Text(L.text("tab.today"))) { Icon(.sun) },
+                    FloatingTab(id: MainTab.today, title: Text(L.text("tab.today"))) { Icon(ChromeIcon.todayTab) },
                     FloatingTab(id: MainTab.chats, title: Text(L.text("tab.chats"))) { Icon(.message) },
                     FloatingTab(id: MainTab.memory, title: Text(L.text("tab.memory"))) { Icon(.affiliate) },
                 ])
