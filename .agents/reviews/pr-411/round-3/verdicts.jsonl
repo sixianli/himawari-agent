@@ -1,0 +1,11 @@
+{"id": "r3ds1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "同样会被当成一次成功完整扫描", "valid": true, "class": "error", "severity": "medium-high", "trigger": "主人清空了对方的记忆目录，或对方的设置指到了另一个目录，助手程序照样完整扫完并附上名单", "consequence": "这个接入以前推过的项目笔记被整批删掉（留历史），待确认的被撤下，已确认的被标成来源已删除", "modelSeverity": "高"}
+{"id": "r3ds2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "所以“没有计数字段”是事实错误。", "valid": true, "class": "error", "severity": "low", "trigger": "读者按决定 13 的这句话去看 DecisionInputs", "consequence": "发现这句话和代码不符，对这条决定的理由起疑；用单独统计表的结论不变", "modelSeverity": "中", "reason": "这句话只是“不用决策记录存汇总”的理由，说错了不会让编码线程做出不同的东西；结论由另一条事实支撑（决策记录写入后不改，没有累加的地方），已对着代码改写"}
+{"id": "r3ds3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "同一份清单里，“稳定编号/项目名超长”在 204 行被列为“都通过”，在 211、214 行又被列为“拒绝”。", "valid": true, "class": "error", "severity": "low", "trigger": "编码线程照后果清单逐条写用例", "consequence": "读到“超长也通过”和“超长被拒绝”两句要停下来问一次；决定 6 已写明有长度上限，不会做成不设上限", "modelSeverity": "中", "reason": "是清单里一个词用了两个意思（比 machineString 的 128 长，和超过上限），决定正文没有矛盾，改一个词就消除了"}
+{"id": "r3ds4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "按这个键，“自动”与“模型调用”无法区分，推送结果和最近时间也没有落点。", "valid": true, "class": "better"}
+{"id": "r3ds5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "引用把两件事混了。", "valid": true, "class": "better"}
+{"id": "r3ds6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“换新”在决定 1 里没有对应的页面动作/命令，也没有说明换新后旧密钥的失效时机。", "valid": true, "class": "better"}
+{"id": "r3ds7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "但清单里没有接入编号的边界反向用例", "valid": true, "class": "better"}
+{"id": "r3ds8", "model": "opencode-go/deepseek-v4.1-flash", "quote": "每次同步都被整批拒绝，新增和删除都无法落地。", "valid": true, "class": "error", "severity": "medium-high", "trigger": "主人的记忆目录文件很多，全部编号的名单和内容放在同一批里超过批量或请求体上限", "consequence": "这个目录每次同步都被整批拒绝，新增、改动和删除都进不来", "modelSeverity": "中（推测）"}
+{"id": "r3ds9", "model": "opencode-go/deepseek-v4.1-flash", "quote": "拼接后不同三元组可能得到同一个键。", "valid": true, "class": "better"}
+{"id": "r3ds10", "model": "opencode-go/deepseek-v4.1-flash", "quote": "最坏情况是页面报错但本人库仍是 active，访问继续有效。", "valid": true, "class": "better"}
+{"id": "r3ds11", "model": "opencode-go/deepseek-v4.1-flash", "quote": "若实现使用请求追踪、指标标签或访问日志中间件，路径仍可能进入这些地方。", "valid": true, "class": "better"}
