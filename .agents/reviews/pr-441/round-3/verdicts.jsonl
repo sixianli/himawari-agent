@@ -1,0 +1,7 @@
+{"id":"ds-1","model":"opencode-go/deepseek-v4.1-flash","quote":"ANSI 颜色码在遮盖和私钥标记检查之后才去掉","valid":true,"class":"error","severity":"medium-high","trigger":"颜色码夹在密钥或私钥标记中间","consequence":"明文出现在公开的作业日志里","modelSeverity":"中"}
+{"id":"ds-2","model":"opencode-go/deepseek-v4.1-flash","quote":"诊断文件和命令日志的文件名没有套用私钥标记隐藏","valid":true,"class":"error","severity":"low","trigger":"文件名里带私钥标记","consequence":"标记和后面的名字照样显示","modelSeverity":"低"}
+{"id":"ds-3","model":"opencode-go/deepseek-v4.1-flash","quote":"第一份文件就放不下时没有校验 footer 是否仍在上限内","valid":true,"class":"error","severity":"low","trigger":"上限小于约 700 字节","consequence":"摘要超出上限几百字节","modelSeverity":"低"}
+{"id":"ds-4","model":"opencode-go/deepseek-v4.1-flash","quote":"ADR 主句仍写“放不下的文件只报数量”，与补充和代码矛盾","valid":true,"class":"error","severity":"low","trigger":"只读第 4 条主句","consequence":"以为不列文件名","modelSeverity":"低"}
+{"id":"ds-5","model":"opencode-go/deepseek-v4.1-flash","quote":"硬链接绕过（推测，低）","valid":false,"class":"error"}
+{"id":"ds-6","model":"opencode-go/deepseek-v4.1-flash","quote":"realpath 与 readFileSync 之间的 TOCTOU（推测，低）","valid":false,"class":"error"}
+{"id":"ds-7","model":"opencode-go/deepseek-v4.1-flash","quote":"聚合资源上限（推测，低）","valid":false,"class":"error"}
