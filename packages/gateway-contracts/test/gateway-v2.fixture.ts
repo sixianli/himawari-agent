@@ -500,6 +500,7 @@ export const governanceMessages = [
         dueAt: "2026-11-20T00:00:00.000Z",
         repeat: "yearly",
         sourceThreadId: null,
+        dataClassification: "private",
       },
     ],
     revision: "a".repeat(64),

@@ -217,6 +217,33 @@ describe("home feed count", () => {
     expect(read.incompleteSources).toEqual(["approvals"]);
     expect(read.awaitingCount).toBe(3);
     expect(failures).toEqual(["approvals"]);
+    expect(await feed.awaitingCount()).toBeUndefined();
+  });
+
+  it("gives no badge number when a source says its own answer is incomplete", async () => {
+    const feed = service([
+      fixed("mail", true, awaiting),
+      {
+        name: "rules",
+        awaitsOwner: true,
+        read: async () => ({ items: [], unread: 0, incomplete: true }),
+      },
+    ]);
+    const read = await feed.read({ locale: "en" });
+    expect(read.incompleteSources).toEqual(["rules"]);
+    expect(read.awaitingCount).toBe(3);
+    expect(await feed.awaitingCount()).toBeUndefined();
+  });
+
+  it("counts an awaiting entry even when something that does not wait shares its key and was read first", async () => {
+    const feed = service([
+      fixed("done", false, [candidate("shared:1", { kind: "done", awaitsOwner: false })]),
+      fixed("mail", true, [candidate("shared:1")]),
+    ]);
+    const read = await feed.read({ locale: "en" });
+    expect(read.awaitingCount).toBe(1);
+    expect(read.items.map(({ awaitsOwner }) => awaitsOwner)).toEqual([true]);
+    expect(await feed.awaitingCount()).toBe(1);
   });
 
   it("does not read finished and running sources for the badge", async () => {

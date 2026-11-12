@@ -12,7 +12,12 @@ import {
   type HomeSourceName,
   type RunLifecyclePort,
 } from "@himawari-agent/application";
-import type { GatewayV2Query, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
+import {
+  type GatewayV2Query,
+  type GatewayV2Snapshot,
+  HOME_KEY_MAXIMUM,
+  machineString,
+} from "@himawari-agent/gateway-contracts";
 import type { ProductionMemoryControl } from "./production-memory-control.js";
 import type { ProductionProactive } from "./production-proactive.js";
 
@@ -154,7 +159,7 @@ function mailSource(proactive: Pick<ProductionProactive, "overview">): HomeSourc
     name: "mail",
     awaitsOwner: true,
     async read({ locale }) {
-      const { insights, connection, source } = await proactive.overview();
+      const { insights, insightsCapped, connection, source } = await proactive.overview();
       const items = insights
         .filter(({ status }) => status === "open")
         .map(
@@ -185,7 +190,7 @@ function mailSource(proactive: Pick<ProductionProactive, "overview">): HomeSourc
             createdAt: insight.createdAt,
             actions: [action(locale, "done", "positive"), action(locale, "mute", "negative")],
             ruleHit: insight.floorRaised,
-            dataClassification: "private",
+            dataClassification: insight.dataClassification,
           }),
         );
       const since = connection.changedAt ?? connection.connectedAt;
@@ -211,7 +216,7 @@ function mailSource(proactive: Pick<ProductionProactive, "overview">): HomeSourc
           ruleHit: false,
           dataClassification: "private",
         });
-      return { items, unread: 0 };
+      return { items, unread: 0, incomplete: insightsCapped };
     },
   };
 }
@@ -411,18 +416,19 @@ function memorySources(memory: MemorySources): HomeSource[] {
               change.dataClassification,
             ),
           );
-        const reviews = (await memory.conversationReviewViews(limit)).flatMap((review) =>
-          !review.lead || review.undone || review.finishedAt < recentSince
-            ? []
-            : [
-                done(
-                  review.lead.text,
-                  `review:${review.reviewId}`,
-                  review.lead.memoryId,
-                  review.finishedAt,
-                  review.lead.dataClassification,
-                ),
-              ],
+        const reviews = (await memory.conversationReviewViews(limit, { lead: true })).flatMap(
+          (review) =>
+            !review.lead || review.undone || review.finishedAt < recentSince
+              ? []
+              : [
+                  done(
+                    review.lead.text,
+                    `review:${review.reviewId}`,
+                    review.lead.memoryId,
+                    review.finishedAt,
+                    review.lead.dataClassification,
+                  ),
+                ],
         );
         return { unread: 0, items: [...tidy, ...reviews] };
       },
@@ -513,13 +519,46 @@ function runSource(
   };
 }
 
+function fitsContract(item: HomeCandidate): boolean {
+  if (item.key.length > HOME_KEY_MAXIMUM) return false;
+  try {
+    for (const id of [
+      item.target.id,
+      item.target.threadId,
+      item.source.threadId,
+      item.source.decisionId,
+    ])
+      if (id !== null) machineString.parse(id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function showableOnly(
+  source: HomeSource,
+  onSourceFailure: ProductionHomeOptions["onSourceFailure"],
+): HomeSource {
+  return {
+    name: source.name,
+    awaitsOwner: source.awaitsOwner,
+    async read(input) {
+      const result = await source.read(input);
+      const items = result.items.filter(fitsContract);
+      if (items.length === result.items.length) return result;
+      onSourceFailure(source.name, new Error("HOME_ITEM_ID_NOT_SHOWABLE"));
+      return { ...result, items, incomplete: true };
+    },
+  };
+}
+
 export function createProductionHomeSources(options: ProductionHomeOptions): HomeSource[] {
   return [
     ...(options.proactive ? [mailSource(options.proactive)] : []),
     approvalSource(options),
     ...(options.memory ? memorySources(options.memory) : []),
     ...(options.runs ? [runSource(options, options.runs)] : []),
-  ];
+  ].map((source) => showableOnly(source, options.onSourceFailure));
 }
 
 export class ProductionHomeControl {
@@ -534,7 +573,13 @@ export class ProductionHomeControl {
             upcoming: async ({ now, until, limit }) => {
               if (limit === 0) return [];
               const due = await memory.dueReminderViews(settings.sourceReadLimit);
-              return memory.upcomingViews({ now, until, limit, exclude: new Set(due.rowIds) });
+              return memory.upcomingViews({
+                now,
+                until,
+                limit,
+                exclude: new Set(due.rowIds),
+                notYetDue: true,
+              });
             },
           }
         : {}),
@@ -545,7 +590,7 @@ export class ProductionHomeControl {
     });
   }
 
-  awaitingCount(): Promise<number> {
+  awaitingCount(): Promise<number | undefined> {
     return this.#service.awaitingCount();
   }
 

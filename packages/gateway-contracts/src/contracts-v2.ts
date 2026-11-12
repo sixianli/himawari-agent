@@ -640,6 +640,7 @@ const deviceRenameCommandSchema = object({
 });
 export const SERVER_STATUS_OVERALL = ["healthy", "degraded", "not_ready", "not_live"] as const;
 export const SERVER_STATUS_DEPENDENCY = ["healthy", "degraded", "blocked", "unavailable"] as const;
+export const HOME_KEY_MAXIMUM = 160;
 export const HOME_ITEM_KINDS = [
   "heads_up",
   "approval",
@@ -706,7 +707,7 @@ const homeSnapshotSchema = object({
   payload: object({
     items: array(
       object({
-        key: boundedString(160),
+        key: boundedString(HOME_KEY_MAXIMUM),
         kind: enumeration(HOME_ITEM_KINDS),
         awaitsOwner: booleanValue,
         sentence: nullable(boundedString(2000)),
@@ -752,6 +753,7 @@ const homeSnapshotSchema = object({
         dueAt: timestamp,
         repeat: enumeration(["none", "yearly"]),
         sourceThreadId: nullable(machineString),
+        dataClassification: classificationSchema,
       }),
     ),
     revision: machineString,
