@@ -2128,6 +2128,48 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
       }
     });
 
+    it("[I-94] lets auxiliary calls of one Run use different data classifications", async () => {
+      const fixtureState = await identityFixture();
+      try {
+        const auxiliary = (
+          slot: string,
+          dataClassification: "private" | "sensitive",
+          overrides: Partial<ModelInvocationIdentityBeginInput> = {},
+        ) =>
+          identityInput(fixtureState.claim, {
+            logicalSlot: slot,
+            source: "model-port",
+            budgetAccount: "thread-title",
+            dataClassification,
+            ...overrides,
+          });
+        const capture = await fixtureState.identity.begin(
+          auxiliary(`memory-capture:${RUN_ID}`, "private"),
+        );
+        expect(capture.disposition).toBe("fresh");
+        const episode = await fixtureState.identity.begin(
+          auxiliary(`memory-episode-0:${RUN_ID}`, "sensitive"),
+        );
+        expect(episode.disposition).toBe("fresh");
+        const lowerAgain = await fixtureState.identity.begin(
+          auxiliary(`memory-episode-1:${RUN_ID}`, "private"),
+        );
+        expect(lowerAgain.disposition).toBe("fresh");
+        const snapshot = await fixtureState.budget.read({
+          parent: { kind: "thread-title", runId: RUN_ID },
+          limit: 10,
+        });
+        expect(snapshot?.allocations.map((item) => item.dataClassification).sort()).toEqual([
+          "private",
+          "private",
+          "sensitive",
+        ]);
+        expect(snapshot?.account.dataClassification).toBe("sensitive");
+      } finally {
+        await fixtureState.resource.repository.close();
+      }
+    });
+
     it("keeps an unknown thread title in its own account so the Run can be claimed again", async () => {
       const fixtureState = await identityFixture();
       try {
