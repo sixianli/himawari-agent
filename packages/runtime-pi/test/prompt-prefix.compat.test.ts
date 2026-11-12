@@ -1165,10 +1165,10 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       logicalSlot: (run, ordinal) => `${run.runId}:retry:${ordinal}`,
       ...extra,
     });
-    const runTurns = async () => {
+    const runTurns = async (turns: readonly Turn[] = THREE_TURNS) => {
       const outcomes: (string | undefined)[] = [];
       failureCodes.length = 0;
-      for (const [index, turn] of THREE_TURNS.entries()) {
+      for (const [index, turn] of turns.entries()) {
         projection.turn = turn;
         const events: RuntimeEvent[] = [];
         for await (const event of adapter.run({
@@ -1219,6 +1219,21 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(rejections).toEqual([
       { status: 429, retryAfter: "0", host: expect.stringMatching(/^127\.0\.0\.1:\d+$/) },
     ]);
+  });
+
+  it("[RETRY-429] a value named as a password only in the new message is masked the same way in the first attempt and in the resend", async () => {
+    const server = await loopback((index) =>
+      index === 1 ? { status: 429, retryAfter: "0" } : { text: `回答 ${index}` },
+    );
+    const outcomes = await retryAdapter(server).runTurns([
+      { prompt: "先记一下 hunter22abc 这个词" },
+      { prompt: "密码：hunter22abc" },
+    ]);
+    expect(outcomes).toEqual(["runtime.completed", "runtime.completed"]);
+    expect(server.bodies).toHaveLength(3);
+    expect(server.bodies[2]).toBe(server.bodies[1]);
+    expect(server.bodies[1]).toContain("先记一下 hunter22abc 这个词");
+    expect(server.bodies[1]).not.toContain("密码：hunter22abc");
   });
 
   it("REVERSE [RETRY-429] a provider that asks for a long wait fails at once and still reports as rate limited", async () => {

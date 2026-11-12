@@ -580,6 +580,33 @@ describe("reporting what was masked", () => {
     expect(JSON.stringify(reports)).not.toContain("a".repeat(24));
   });
 
+  it("[RETRY-429] a refused request that is sent again is refused again without a second withheld report", async () => {
+    const reports: (readonly ModelEgressSighting[])[] = [];
+    const leaked = `固定说明里不该有的 token sk-${"b".repeat(24)} 结尾`;
+    const instance = new ModelEgress({
+      key: async () => key,
+      sign,
+      trusted: [leaked],
+      report: (_context, sightings) => reports.push(sightings),
+    });
+    const { calls, base } = recorder();
+    const fetch = instance.exchange(context).wrapFetch(base);
+    const call = () =>
+      fetch("https://gateway.invalid/v1/chat/completions", {
+        method: "POST",
+        body: JSON.stringify({
+          model: "m",
+          messages: [{ role: "user", content: `卡号 ${CARD}\n${leaked}` }],
+        }),
+      });
+    const first = await call().catch((error: unknown) => error);
+    const second = await call().catch((error: unknown) => error);
+    expect(first).toBeInstanceOf(ModelEgressRefusedError);
+    expect(second).toBe(first);
+    expect(calls).toHaveLength(0);
+    expect(reports).toHaveLength(1);
+  });
+
   it("masks and records part of a private key", async () => {
     const { reports, instance } = reporting();
     const marker = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");

@@ -129,7 +129,15 @@ class Exchange implements ModelEgressExchange {
   readonly table = new Map<string, string>();
   readonly #known = new Map<string, string>();
   readonly #counts = new Map<string, number>();
-  #lastRequest: { readonly key: string; readonly body: string | undefined } | undefined;
+  #lastRequest:
+    | {
+        readonly href: string;
+        readonly method: string;
+        readonly body: string;
+        readonly redacted: string | undefined;
+        readonly refusal: ModelEgressRefusedError | undefined;
+      }
+    | undefined;
   readonly #options: ModelEgressOptions;
   readonly #context: ModelEgressContext | undefined;
 
@@ -178,6 +186,54 @@ class Exchange implements ModelEgressExchange {
     input: unknown,
     init: unknown,
   ): Promise<{ readonly input: unknown; readonly init: unknown }> {
+    const options = isRecord(init) ? init : {};
+    const href = typeof input === "string" ? input : urlOf(input);
+    const method = String(options["method"] ?? methodOf(input) ?? "GET").toUpperCase();
+    const body = options["body"];
+    const last = this.#lastRequest;
+    if (
+      last !== undefined &&
+      typeof body === "string" &&
+      last.href === href &&
+      last.method === method &&
+      last.body === body
+    ) {
+      if (last.refusal !== undefined) throw last.refusal;
+      if (last.redacted === undefined) return { input, init };
+      return {
+        input,
+        init: { ...options, body: last.redacted, headers: withoutLength(options["headers"]) },
+      };
+    }
+    try {
+      const prepared = await this.#prepareFresh(input, init);
+      if (href !== undefined && typeof body === "string") {
+        const preparedBody = isRecord(prepared.init) ? prepared.init["body"] : undefined;
+        this.#lastRequest = {
+          href,
+          method,
+          body,
+          redacted:
+            prepared.init !== init && typeof preparedBody === "string" ? preparedBody : undefined,
+          refusal: undefined,
+        };
+      }
+      return prepared;
+    } catch (error) {
+      if (
+        error instanceof ModelEgressRefusedError &&
+        href !== undefined &&
+        typeof body === "string"
+      )
+        this.#lastRequest = { href, method, body, redacted: undefined, refusal: error };
+      throw error;
+    }
+  }
+
+  async #prepareFresh(
+    input: unknown,
+    init: unknown,
+  ): Promise<{ readonly input: unknown; readonly init: unknown }> {
     const href = typeof input === "string" ? input : urlOf(input);
     if (href === undefined) refuse("request target is not a URL");
     if (hasBodyInRequest(input)) refuse("request object carries its own body");
@@ -189,15 +245,6 @@ class Exchange implements ModelEgressExchange {
       refuse("request has no readable body");
     }
     if (typeof body !== "string") refuse("request body is not text");
-    const requestKey = `${href}\u0000${body}`;
-    if (this.#lastRequest?.key === requestKey) {
-      const resent = this.#lastRequest.body;
-      if (resent === undefined) return { input, init };
-      return {
-        input,
-        init: { ...options, body: resent, headers: withoutLength(options["headers"]) },
-      };
-    }
     const path = pathOf(href);
     const redactor = this.#redactorFor(path);
     if (redactor === undefined) refuse(`unsupported request path ${path}`);
@@ -259,17 +306,12 @@ class Exchange implements ModelEgressExchange {
     };
     const next = redactor(parsed, text);
     this.#report(sightings);
-    if (next === parsed) {
-      this.#lastRequest = { key: requestKey, body: undefined };
-      return { input, init };
-    }
-    const redacted = JSON.stringify(next);
-    this.#lastRequest = { key: requestKey, body: redacted };
+    if (next === parsed) return { input, init };
     return {
       input,
       init: {
         ...options,
-        body: redacted,
+        body: JSON.stringify(next),
         headers: withoutLength(options["headers"]),
       },
     };
