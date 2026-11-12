@@ -8,6 +8,7 @@ import VisionKit
 struct PairingView: View {
     let model: AppModel
     @State private var scanning: Bool
+    @State private var confirmingStartOver = false
 
     init(model: AppModel, scanning: Bool = false) {
         self.model = model
@@ -21,6 +22,10 @@ struct PairingView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background { PairingGlow() }
             .animation(.easeInOut(duration: 0.25), value: model.phase)
+            .confirmationDialog(L.text("pairing.startOver.confirm"), isPresented: $confirmingStartOver, titleVisibility: .visible) {
+                Button(L.text("pairing.startOver"), role: .destructive) { model.cancelPairing() }
+                Button(L.text("pairing.cancel"), role: .cancel) {}
+            }
             .fullScreenCover(isPresented: $scanning) {
                 PairingScanner { text in
                     scanning = false
@@ -43,7 +48,7 @@ struct PairingView: View {
                 VStack(spacing: 6) {
                     Button(L.text("pairing.retry")) { model.retryReadingKeys() }
                         .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
-                    linkButton(L.text("pairing.startOver")) { model.cancelPairing() }
+                    linkButton(L.text("pairing.startOver")) { confirmingStartOver = true }
                 }
             }
         case let .unpaired(problem?) where problem == .unreachable:

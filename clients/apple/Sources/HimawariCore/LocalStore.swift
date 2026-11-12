@@ -3,6 +3,7 @@ import Foundation
 public protocol LocalStore: Sendable {
     func read(_ name: String) -> Data?
     func write(_ name: String, _ data: Data?) throws
+    func removeAll() throws
 }
 
 public final class FileLocalStore: LocalStore, @unchecked Sendable {
@@ -44,7 +45,7 @@ public final class FileLocalStore: LocalStore, @unchecked Sendable {
 
     public func removeAll() throws {
         try lock.withLock {
-            let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+            let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
             for name in names { try FileManager.default.removeItem(at: directory.appendingPathComponent(name)) }
         }
     }
@@ -62,6 +63,10 @@ public final class MemoryLocalStore: LocalStore, @unchecked Sendable {
 
     public func write(_ name: String, _ data: Data?) throws {
         lock.withLock { files[name] = data }
+    }
+
+    public func removeAll() throws {
+        lock.withLock { files.removeAll() }
     }
 }
 

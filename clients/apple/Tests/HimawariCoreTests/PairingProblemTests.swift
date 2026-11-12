@@ -32,3 +32,51 @@ import Testing
         #expect(without.streamConnections == nil)
     }
 }
+
+@Suite struct PairingDecisionTests {
+    @Test func restoreNeverForgetsWhenSomethingIsOnlyUnreadable() {
+        #expect(RestoreDecision.decide(presence: [.present, .present, .present], recordDecodes: true) == .use)
+        #expect(RestoreDecision.decide(presence: [.present, .present, .present], recordDecodes: false) == .unreadable)
+        #expect(RestoreDecision.decide(presence: [.present, .unreadable, .absent], recordDecodes: false) == .unreadable)
+        #expect(RestoreDecision.decide(presence: [.present, .absent, .present], recordDecodes: true) == .forget)
+        #expect(RestoreDecision.decide(presence: [.absent, .absent, .absent], recordDecodes: false) == .forget)
+    }
+
+    @Test func aRefusedPairingLeavesNothingBehindButAnUnknownOutcomeKeepsTheKeys() {
+        #expect(!PairingAttempt.mayHavePaired(DeviceAPIError.server(status: 403, code: "DEVICE_REVOKED")))
+        #expect(!PairingAttempt.mayHavePaired(DeviceAPIError.server(status: 410, code: "DEVICE_PAIRING_CODE_EXPIRED")))
+        #expect(!PairingAttempt.mayHavePaired(DeviceKeyError.secureEnclaveUnavailable))
+        #expect(PairingAttempt.mayHavePaired(DeviceAPIError.server(status: 502, code: nil)))
+        #expect(PairingAttempt.mayHavePaired(DeviceAPIError.server(status: 429, code: nil)))
+        #expect(PairingAttempt.mayHavePaired(URLError(.timedOut)))
+    }
+
+    @Test func theExecutionStreamNeedsRoomForTwoConnections() {
+        #expect(ExecutionStreamPolicy.allowed(streamConnections: nil))
+        #expect(ExecutionStreamPolicy.allowed(streamConnections: 4))
+        #expect(ExecutionStreamPolicy.allowed(streamConnections: 2))
+        #expect(!ExecutionStreamPolicy.allowed(streamConnections: 1))
+        #expect(!ExecutionStreamPolicy.allowed(streamConnections: 0))
+    }
+
+    @Test func aStoreLeftByAnotherPairingIsEmptiedBeforeUse() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("claim-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try FileLocalStore(directory: directory)
+        try store.write("outbox", Data("old".utf8))
+        try store.claim(for: "dev_a")
+        #expect(store.read("outbox") == nil)
+        try store.write("outbox", Data("mine".utf8))
+        try store.claim(for: "dev_a")
+        #expect(store.read("outbox") == Data("mine".utf8))
+        try store.claim(for: "dev_b")
+        #expect(store.read("outbox") == nil)
+    }
+
+    @Test func emptyingAStoreThatCannotBeListedFails() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("gone-\(UUID().uuidString)", isDirectory: true)
+        let store = try FileLocalStore(directory: directory)
+        try FileManager.default.removeItem(at: directory)
+        #expect(throws: (any Error).self) { try store.removeAll() }
+    }
+}

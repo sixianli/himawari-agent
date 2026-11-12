@@ -40,3 +40,4 @@
 "pairing.problem.storage" = "配对和对话都还在。解锁手机、空出一些存储后回到这里会自动再试";
 "pairing.problem.storage.title" = "本机存储暂时打不开";
 "pairing.startOver" = "清掉，重新配对";
+"pairing.startOver.confirm" = "清掉后，这台 iPhone 上存的对话和密钥都会删除，要重新扫码配对。";

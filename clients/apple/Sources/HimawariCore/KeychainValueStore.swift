@@ -49,11 +49,7 @@ public struct KeychainValueStore: Sendable {
     }
 }
 
-public enum KeychainPresence: Sendable, Equatable {
-    case present
-    case absent
-    case unreadable
-
+extension KeychainPresence {
     public init(_ status: OSStatus) {
         switch status {
         case errSecSuccess: self = .present

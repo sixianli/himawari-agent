@@ -59,18 +59,18 @@ public final class AppModel {
 
     private func restore() {
         let presence = [keychain.presence(Self.recordAccount), keys.presence(.device), keys.presence(.confirm)]
-        if presence.contains(.unreadable) {
+        let record = record
+        switch RestoreDecision.decide(presence: presence, recordDecodes: record != nil) {
+        case .unreadable:
             phase = .unpaired(.keysUnreadable)
             return
-        }
-        guard presence.allSatisfy({ $0 == .present }) else {
+        case .forget:
             forget(problem: nil)
             return
+        case .use:
+            break
         }
-        guard let record else {
-            phase = .unpaired(.keysUnreadable)
-            return
-        }
+        guard let record else { return }
         use(record)
         switch record.status {
         case .pending:
@@ -172,7 +172,7 @@ public final class AppModel {
                     waitForConfirmation()
                 }
             } catch {
-                if !Self.mayHavePaired(error) {
+                if !PairingAttempt.mayHavePaired(error) {
                     keysMadeFor = nil
                     try? keys.delete(.device)
                     try? keys.delete(.confirm)
@@ -180,12 +180,6 @@ public final class AppModel {
                 phase = .unpaired(PairingProblem.from(error))
             }
         }
-    }
-
-    static func mayHavePaired(_ error: Error) -> Bool {
-        if error is PairingInvitation.ParseError || error is DeviceKeyError { return false }
-        if case let .server(status, _, _)? = error as? DeviceAPIError { return status >= 500 || status == 408 || status == 429 }
-        return true
     }
 
     public func cancelPairing() {
@@ -236,8 +230,13 @@ public final class AppModel {
 
     private func activate() {
         waiting?.cancel()
+        guard let record else {
+            phase = .unpaired(.keysUnreadable)
+            return
+        }
         do {
             let store = try FileLocalStore.applicationSupport(named: "himawari-device")
+            try store.claim(for: record.deviceId)
             self.store = store
             let heartbeat = heartbeat
             let chat = ChatStore(
@@ -262,7 +261,7 @@ public final class AppModel {
             let configuration = try await api.configuration()
             self.configuration = configuration
             heartbeat.seconds = TimeInterval(configuration.heartbeatSeconds)
-            chat?.streamConnections = configuration.streamConnections
+            chat?.limitStreams(to: configuration.streamConnections)
         } catch let error as DeviceAPIError where error.isRevoked {
             forget(problem: .removed)
         } catch {
@@ -278,7 +277,7 @@ public final class AppModel {
                 let configuration = try await api.configuration()
                 self.configuration = configuration
                 heartbeat.seconds = TimeInterval(configuration.heartbeatSeconds)
-                chat?.streamConnections = configuration.streamConnections
+                chat?.limitStreams(to: configuration.streamConnections)
                 configurationRetry = nil
             } catch let error as DeviceAPIError where error.isRevoked {
                 forget(problem: .removed)

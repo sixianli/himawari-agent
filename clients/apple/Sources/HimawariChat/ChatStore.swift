@@ -49,6 +49,8 @@ public final class ChatStore {
     @ObservationIgnored private let heartbeatSeconds: @Sendable () -> TimeInterval
     @ObservationIgnored private var watched: (threadId: String, stream: DeviceEventStream, task: Task<Void, Never>)?
     @ObservationIgnored private let answerLocale: AnswerLocale
+    @ObservationIgnored private var wantedThreadId: String?
+    @ObservationIgnored private var streamConnections: Int?
 
     public init(
         api: DeviceAPI,
@@ -99,13 +101,21 @@ public final class ChatStore {
         unwatch()
     }
 
-    public var streamConnections: Int?
+    public func limitStreams(to connections: Int?) {
+        streamConnections = connections
+        if !ExecutionStreamPolicy.allowed(streamConnections: connections) {
+            closeWatchedStream()
+        } else if let wantedThreadId {
+            watch(wantedThreadId)
+        }
+    }
 
     public func watch(_ threadId: String) {
         guard !frozen else { return }
-        if let streamConnections, streamConnections < 2 { return }
+        wantedThreadId = threadId
+        guard ExecutionStreamPolicy.allowed(streamConnections: streamConnections) else { return }
         if watched?.threadId == threadId { return }
-        unwatch()
+        closeWatchedStream()
         let stream = DeviceEventStream(http: api.http, path: "threads/\(threadId)/execution-stream", cursors: nil, heartbeat: heartbeatSeconds)
         let task = Task { [weak self] in
             for await event in stream.start() {
@@ -117,6 +127,11 @@ public final class ChatStore {
     }
 
     public func unwatch() {
+        wantedThreadId = nil
+        closeWatchedStream()
+    }
+
+    private func closeWatchedStream() {
         watched?.task.cancel()
         watched?.stream.stop()
         watched = nil
@@ -243,7 +258,13 @@ public final class ChatStore {
     }
 
     public func newThread(requestId: String) async throws -> String {
-        let created = try await api.createThread(requestId: requestId, answerLocale: answerLocale)
+        let created: CreatedThread
+        do {
+            created = try await api.createThread(requestId: requestId, answerLocale: answerLocale)
+        } catch {
+            await handle(error)
+            throw error
+        }
         createdRevisions[created.threadId] = created.threadRevision
         await refreshThreads()
         return created.threadId
@@ -282,6 +303,10 @@ public final class ChatStore {
                 await self?.details[threadId]?.thread.revision
             }
             let deferred = results.contains(.retryLater)
+            if results.contains(where: { if case let .rejected(_, code) = $0 { code == "DEVICE_REVOKED" } else { false } }) {
+                onSessionInvalid()
+                return
+            }
             if deferred {
                 scheduleRetry()
             } else {
@@ -354,8 +379,12 @@ public final class ChatStore {
         guard !missing.isEmpty else { return }
         pendingTextRefs.formUnion(missing)
         defer { pendingTextRefs.subtract(missing) }
-        guard let resolved = try? await api.texts(for: missing) else { return }
-        texts.merge(resolved) { _, new in new }
+        do {
+            let resolved = try await api.texts(for: missing)
+            texts.merge(resolved) { _, new in new }
+        } catch {
+            await handle(error)
+        }
     }
 
     private func persist() {

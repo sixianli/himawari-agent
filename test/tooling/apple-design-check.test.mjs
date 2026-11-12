@@ -55,7 +55,7 @@ it("accepts token-based code", () => {
     "RoundedRectangle(cornerRadius: DesignTokens.Radius.bubble, style: .continuous)",
     ".foregroundStyle(Color.hmMuted)",
     ".padding(.horizontal, 20)",
-    ".lineSpacing(DesignTokens.TypeScale.answer.lineSpacing)",
+    ".hmLineHeight(DesignTokens.TypeScale.answer.lineHeight)",
     ".opacity(DesignTokens.Opacity.disabled)",
   ]) {
     expect(findViolations(line, "X.swift")).toEqual([]);

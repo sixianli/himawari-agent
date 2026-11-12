@@ -31,13 +31,14 @@ done
 scenes=()
 while IFS= read -r scene; do scenes+=("$scene"); done < <(sed -nE 's/^ *case [a-zA-Z]+ = "([^"]+)"$/\1/p' "$root/Sources/HimawariShell/DemoScenes.swift")
 [ ${#scenes[@]} -gt 0 ] || { echo "UI_REVIEW_FAILED no demo scenes found" >&2; exit 1; }
+warm_up="${scenes[0]}"
 if [ -n "$only" ]; then
   [ "$mode" = "record" ] || { echo "UI_REVIEW_FAILED --only works only when recording; --check and --approve need every scene" >&2; exit 1; }
   chosen=()
   for scene in "${scenes[@]}"; do
     case "$only" in *",$scene,"*) chosen+=("$scene") ;; esac
   done
-  [ "${#chosen[@]}" -eq "$(printf '%s' "$only" | tr ',' '\n' | grep -c .)" ] || { echo "UI_REVIEW_FAILED --only names a scene that does not exist; scenes: ${scenes[*]}" >&2; exit 1; }
+  [ "${#chosen[@]}" -gt 0 ] && [ "${#chosen[@]}" -eq "$(printf '%s' "$only" | tr ',' '\n' | grep . | sort -u | grep -c .)" ] || { echo "UI_REVIEW_FAILED --only names a scene that does not exist; scenes: ${scenes[*]}" >&2; exit 1; }
   scenes=("${chosen[@]}")
 fi
 still=()
@@ -104,6 +105,7 @@ wait_until_calm() {
   local quiet=0 waited=0
   while [ "$quiet" -lt 3 ]; do
     if calm; then quiet=$((quiet + 1)); else quiet=0; fi
+    [ "$quiet" -lt 3 ] || return 0
     [ "$waited" -lt "$calm_patience" ] || { echo "UI_REVIEW_FAILED simulator stayed busy for ${calm_patience}s (load $(simulator_load)%, limit ${calm_below}%)" >&2; exit 1; }
     sleep 2
     waited=$((waited + 2))
@@ -165,7 +167,7 @@ settle() {
 }
 
 xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true >/dev/null 2>&1 || true
-launch "${scenes[0]}"
+launch "$warm_up"
 sleep 8
 wait_until_calm
 
