@@ -60,17 +60,17 @@ public struct ExecutionPage: Codable, Sendable, Equatable {
 
 public enum ProcessIcon: String, CaseIterable, Sendable {
     case bulb, affiliate, pencilPlus = "pencil-plus", listCheck = "list-check", history, stack2 = "stack-2"
-    case calendar, bell, mail, message2 = "message-2", phone, checklist
+    case calendar, bell, mail, message2 = "message-2", phone, clipboardList = "clipboard-list"
     case train, car, walk, plane, mapPin = "map-pin", cloud
     case worldSearch = "world-search", world, fileText = "file-text", filePencil = "file-pencil", table, photo
-    case terminal2 = "terminal-2", calculator, creditCard = "credit-card", download, users, tools
-    case ear, eye, currentLocation = "current-location", heartRateMonitor = "heart-rate-monitor", deviceMobile = "device-mobile", homeBolt = "home-bolt"
+    case terminal2 = "terminal-2", calculator, creditCard = "credit-card", download, users, puzzle
+    case ear, eye, currentLocation = "current-location", heartbeat, deviceMobile = "device-mobile", homeBolt = "home-bolt"
     case handStop = "hand-stop", alertCircle = "alert-circle", playerStop = "player-stop", check
 
     public static let outcomes: Set<ProcessIcon> = [.handStop, .alertCircle, .playerStop, .check]
 
     public static func chosen(_ name: String?) -> ProcessIcon {
-        guard let name, let icon = ProcessIcon(rawValue: name), !outcomes.contains(icon) else { return .tools }
+        guard let name, let icon = ProcessIcon(rawValue: name), !outcomes.contains(icon) else { return .puzzle }
         return icon
     }
 }

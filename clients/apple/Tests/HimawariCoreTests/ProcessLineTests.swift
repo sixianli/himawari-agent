@@ -54,10 +54,10 @@ import Testing
     }
 
     @Test func iconsOutsideTheTableOrOutcomeIconsFallBackToTools() {
-        #expect(ProcessIcon.chosen("rocket") == .tools)
-        #expect(ProcessIcon.chosen(nil) == .tools)
-        #expect(ProcessIcon.chosen("check") == .tools)
-        #expect(ProcessIcon.chosen("hand-stop") == .tools)
+        #expect(ProcessIcon.chosen("rocket") == .puzzle)
+        #expect(ProcessIcon.chosen(nil) == .puzzle)
+        #expect(ProcessIcon.chosen("check") == .puzzle)
+        #expect(ProcessIcon.chosen("hand-stop") == .puzzle)
         #expect(ProcessIcon.chosen("world-search") == .worldSearch)
         #expect(ProcessIcon.allCases.count == 40)
     }

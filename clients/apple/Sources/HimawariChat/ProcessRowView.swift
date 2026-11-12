@@ -97,7 +97,7 @@ struct ProcessRowView: View {
     }
 
     static func icon(_ icon: ProcessIcon) -> IconName {
-        IconName(rawValue: icon.rawValue) ?? .tools
+        IconName(rawValue: icon.rawValue) ?? .puzzle
     }
 }
 
