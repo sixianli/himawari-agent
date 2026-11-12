@@ -515,8 +515,9 @@ export class ProductionMemoryControl {
         from: input.now,
         to: input.until,
         limit: input.limit,
+        ...(input.notYetDue ? { remindAfter: input.now } : {}),
       })) ?? []
-    ).filter(({ id, remindAt }) => !exclude.has(id) && !(input.notYetDue && remindAt <= input.now));
+    ).filter(({ id }) => !exclude.has(id));
     const comingMemories = new Map(
       (
         await this.options.state.readMany({

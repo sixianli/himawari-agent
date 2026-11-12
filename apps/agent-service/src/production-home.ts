@@ -519,20 +519,31 @@ function runSource(
   };
 }
 
-function fitsContract(item: HomeCandidate): boolean {
-  if (item.key.length > HOME_KEY_MAXIMUM) return false;
+function fitsMachineStrings(ids: readonly (string | null)[]): boolean {
   try {
-    for (const id of [
+    for (const id of ids) if (id !== null) machineString.parse(id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function fitsContract(item: HomeCandidate): boolean {
+  return (
+    item.key.length <= HOME_KEY_MAXIMUM &&
+    fitsMachineStrings([
       item.target.id,
       item.target.threadId,
       item.source.threadId,
       item.source.decisionId,
     ])
-      if (id !== null) machineString.parse(id);
-    return true;
-  } catch {
-    return false;
-  }
+  );
+}
+
+function notShowable(): Error {
+  return Object.assign(new Error("HOME_ITEM_ID_NOT_SHOWABLE"), {
+    name: "HOME_ITEM_ID_NOT_SHOWABLE",
+  });
 }
 
 function showableOnly(
@@ -546,7 +557,7 @@ function showableOnly(
       const result = await source.read(input);
       const items = result.items.filter(fitsContract);
       if (items.length === result.items.length) return result;
-      onSourceFailure(source.name, new Error("HOME_ITEM_ID_NOT_SHOWABLE"));
+      onSourceFailure(source.name, notShowable());
       return { ...result, items, incomplete: true };
     },
   };
@@ -571,15 +582,20 @@ export class ProductionHomeControl {
       ...(memory
         ? {
             upcoming: async ({ now, until, limit }) => {
-              if (limit === 0) return [];
-              const due = await memory.dueReminderViews(settings.sourceReadLimit);
-              return memory.upcomingViews({
+              if (limit === 0) return { items: [], incomplete: false };
+              const entries = await memory.upcomingViews({
                 now,
                 until,
                 limit,
-                exclude: new Set(due.rowIds),
+                exclude: new Set(),
                 notYetDue: true,
               });
+              const items = entries.filter((entry) =>
+                fitsMachineStrings([entry.reminderId, entry.memoryId, entry.sourceThreadId]),
+              );
+              const incomplete = items.length < entries.length;
+              if (incomplete) options.onSourceFailure("upcoming", notShowable());
+              return { items, incomplete };
             },
           }
         : {}),

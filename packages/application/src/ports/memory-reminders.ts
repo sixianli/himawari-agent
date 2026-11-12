@@ -36,6 +36,7 @@ export interface MemoryReminderStorePort {
     readonly from: string;
     readonly to: string;
     readonly limit: number;
+    readonly remindAfter?: string;
   }): Promise<readonly MemoryReminder[]>;
   read(id: string): Promise<MemoryReminder | undefined>;
   update(input: {
