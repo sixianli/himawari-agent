@@ -29,8 +29,14 @@ import type { MuseModel } from "../muse.js";
 import type { ProactiveGroup, ProactiveModel } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { Glyph } from "./glyphs.js";
+import { ExternalProposalsSection } from "./external-proposals.js";
 import { MailDecisionPage } from "./mail-decision-page.js";
-import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
+import {
+  MemoryApprovalCard,
+  openMemoryPage,
+  openNotificationSettings,
+  TextEditor,
+} from "./memory-panel.js";
 import { MuseReference } from "./muse-reference.js";
 import { ActionButton, Dropdown, EmptyState } from "./primitives.js";
 import { OwnerRulesSection } from "./rule-receipt.js";
@@ -1048,6 +1054,14 @@ export function RemindersPage({
             >
               {message("reminders.empty")}
             </EmptyState>
+          ) : null}
+          {overview.externalProposals.total > 0 ? (
+            <p className="settings-note reminders-external">
+              {message("memory.external.reviewHint", { count: overview.externalProposals.total })}{" "}
+              <ActionButton variant="quiet" onClick={() => openMemoryPage()}>
+                {message("memory.external.go")}
+              </ActionButton>
+            </p>
           ) : null}
           {proactive ? (
             <ProactiveReviewSection proactive={proactive} message={message} locale={locale} />
@@ -2363,6 +2377,7 @@ export function MemoryPage({
       {panel === "add" ? (
         <AddForm memory={memory} message={message} notify={notify} onDone={() => setPanel(null)} />
       ) : null}
+      <ExternalProposalsSection memory={memory} message={message} />
       <ConfirmSection memory={memory} message={message} />
       <OwnerRulesSection memory={memory} message={message} />
       <div role="tablist" className="memory-tabs" aria-label={message("nav.memory")}>
