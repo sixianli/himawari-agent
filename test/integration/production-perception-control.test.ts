@@ -111,6 +111,23 @@ describe("perception gateway operations", () => {
     });
     expect(after.todayCount).toBe(1);
     expect(dayAfter.rows).toHaveLength(1);
+    const counted = Object.fromEntries(day.senseCounts.map(({ sense, count }) => [sense, count]));
+    expect(day.senseCounts.map(({ sense }) => sense)).toEqual(empty.availableSenses);
+    for (const sense of empty.availableSenses) {
+      const filtered = await read(h, "perception.day.read", "perception.day.snapshot", {
+        day: null,
+        sense,
+        types: null,
+        cursor: null,
+      });
+      expect([sense, filtered.total]).toEqual([
+        sense,
+        dayAfter.senseCounts.find((row) => row.sense === sense)?.count,
+      ]);
+    }
+    expect(counted["hearing"]).toBe(1);
+    expect(Object.values(counted).reduce((sum, count) => sum + count, 0)).toBe(2);
+    expect(dayAfter.senseCounts.reduce((sum, { count }) => sum + count, 0)).toBe(1);
   });
 
   it("returns clipped text in the day list, full text in the episode and nothing for an unknown episode", async () => {
@@ -138,6 +155,17 @@ describe("perception gateway operations", () => {
       cursor: null,
     });
     const episodeId = grouped.rows[0]?.episode?.id ?? "";
+    const limit = h.perceptionConfiguration.current.previewCharacters;
+    expect(grouped.rows[0]?.episode).toMatchObject({
+      recordCount: 1,
+      senses: ["hearing"],
+      types: ["speech.utterance"],
+      deviceIds: [client.deviceId],
+      preview: [...long].slice(0, limit).join(""),
+      previewTruncated: true,
+      summary: null,
+      summarySource: "none",
+    });
     const episode = await read(h, "perception.episode.read", "perception.episode.snapshot", {
       episodeId,
       cursor: null,
@@ -150,6 +178,22 @@ describe("perception gateway operations", () => {
       cursor: null,
     });
     expect([missing.episode, missing.records]).toEqual([null, []]);
+    await ingest(h, client, [utterance(h, "第二句", { seconds: -4 })]);
+    await h.repository.perception().setRecordStatus({
+      ...perceptionScope,
+      recordId: spoken.id,
+      status: "deleted",
+    });
+    const afterDelete = await read(h, "perception.episode.read", "perception.episode.snapshot", {
+      episodeId,
+      cursor: null,
+    });
+    expect(afterDelete.episode).toMatchObject({
+      recordCount: 1,
+      preview: "第二句",
+      previewTruncated: false,
+    });
+    expect(afterDelete.records.map(({ text }) => text)).toEqual(["第二句"]);
   });
 
   it("changes a limit, a sense, a pause and a retention through one command and shows them in the snapshots", async () => {

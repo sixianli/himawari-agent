@@ -1088,6 +1088,27 @@ export class PerceptionService {
     });
   }
 
+  async countDayBySense(
+    scope: PerceptionScope,
+    day: string,
+  ): Promise<readonly { readonly sense: PerceptionSense; readonly count: number }[]> {
+    if (!DAY_PATTERN.test(day)) return invalid("day");
+    return Object.freeze(
+      await Promise.all(
+        PERCEPTION_SENSES.map(async (sense) =>
+          Object.freeze({
+            sense,
+            count: await this.#options.store.countDay({
+              ...this.#scope(scope),
+              day,
+              types: [...perceptionTypesOfSense(sense)],
+            }),
+          }),
+        ),
+      ),
+    );
+  }
+
   async listDay(input: {
     readonly scope: PerceptionScope;
     readonly day: string | null;

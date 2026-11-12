@@ -15,6 +15,7 @@ import type {
   PerceptionSettings,
   PerceptionStorePort,
   PerceptionSuggestion,
+  PerceptionEpisodeOverview,
   UploadGrant,
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
@@ -549,6 +550,7 @@ export class SqlitePerceptionOperations {
           episode: this.database
             .prepare(`SELECT ${episodeColumns} FROM perception_episodes WHERE id = ?`)
             .get(row.id) as PerceptionEpisode,
+          overview: this.episodeOverview(row.id),
         });
       return Object.freeze({
         kind: "record",
@@ -565,6 +567,30 @@ export class SqlitePerceptionOperations {
       rows: Object.freeze(rows),
       total: this.op_countDay(input),
       nextCursor: found.length > input.limit && last ? encodeCursor(last.atMs, last.id) : null,
+    });
+  }
+
+  private episodeOverview(episodeId: string): PerceptionEpisodeOverview {
+    const distinct = (column: "type" | "device_id") =>
+      this.database
+        .prepare(
+          `SELECT ${column} AS value FROM perception_records
+            WHERE episode_id = ? AND status = 'active'
+            GROUP BY ${column} ORDER BY MIN(occurred_at_ms), ${column}`,
+        )
+        .pluck()
+        .all(episodeId) as string[];
+    const lead = this.database
+      .prepare(
+        `SELECT ${recordColumns} FROM perception_records
+          WHERE episode_id = ? AND status = 'active' AND content_ref IS NOT NULL
+          ORDER BY occurred_at_ms, id LIMIT 1`,
+      )
+      .get(episodeId) as RecordRow | undefined;
+    return Object.freeze({
+      types: Object.freeze(distinct("type") as PerceptionRecordType[]),
+      deviceIds: Object.freeze(distinct("device_id")),
+      lead: lead ? toRecord(lead) : null,
     });
   }
 
@@ -599,6 +625,7 @@ export class SqlitePerceptionOperations {
     const last = page.at(-1);
     return Object.freeze({
       episode: Object.freeze(episode),
+      overview: this.episodeOverview(input.episodeId),
       records: Object.freeze(page),
       nextCursor:
         found.length > input.limit && last ? encodeCursor(last.occurredAtMs, last.id) : null,

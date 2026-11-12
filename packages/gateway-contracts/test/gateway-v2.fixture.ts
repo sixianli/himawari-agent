@@ -458,6 +458,7 @@ export const governanceMessages = [
   fixture("snapshot", "perception.day.snapshot", {
     day: "2026-11-12",
     total: 2,
+    senseCounts: [{ sense: "hearing", count: 1 }],
     rows: [
       {
         kind: "episode",
@@ -467,6 +468,13 @@ export const governanceMessages = [
           startedAt: "2026-11-12T02:00:00.000Z",
           endedAt: "2026-11-12T02:05:00.000Z",
           recordCount: 4,
+          senses: ["hearing"],
+          types: ["speech.utterance"],
+          deviceIds: ["device-01"],
+          preview: "周六七点和小林吃饭",
+          previewTruncated: false,
+          summary: null,
+          summarySource: "none",
         },
         record: null,
       },

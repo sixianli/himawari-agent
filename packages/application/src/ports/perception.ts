@@ -452,8 +452,19 @@ export interface PerceptionEpisode {
   readonly status: PerceptionRecordStatus;
 }
 
+export interface PerceptionEpisodeOverview {
+  readonly types: readonly PerceptionRecordType[];
+  readonly deviceIds: readonly string[];
+  readonly lead: PerceptionRecord | null;
+}
+
 export type PerceptionDayRow =
-  | { readonly kind: "episode"; readonly atMs: number; readonly episode: PerceptionEpisode }
+  | {
+      readonly kind: "episode";
+      readonly atMs: number;
+      readonly episode: PerceptionEpisode;
+      readonly overview: PerceptionEpisodeOverview;
+    }
   | { readonly kind: "record"; readonly atMs: number; readonly record: PerceptionRecord };
 
 export interface PerceptionDayPage {
@@ -591,6 +602,7 @@ export interface PerceptionStorePort {
   ): Promise<
     | {
         readonly episode: PerceptionEpisode;
+        readonly overview: PerceptionEpisodeOverview;
         readonly records: readonly PerceptionRecord[];
         readonly nextCursor: string | null;
       }

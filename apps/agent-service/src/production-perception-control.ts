@@ -6,6 +6,7 @@ import {
   PERCEPTION_SENSES,
   type PerceptionConfiguration,
   type PerceptionEpisode,
+  type PerceptionEpisodeOverview,
   type PerceptionRecord,
   type PerceptionScope,
   PORT_ERROR_CODES,
@@ -44,15 +45,6 @@ type PerceptionCommand = Extract<GatewayV2Command, { type: "perception.settings.
 
 function pairs(values: Readonly<Record<string, string | number | boolean>>) {
   return Object.entries(values).map(([name, value]) => ({ name, value: String(value) }));
-}
-
-function episodeView(episode: PerceptionEpisode) {
-  return {
-    id: episode.id,
-    startedAt: new Date(episode.startedAtMs).toISOString(),
-    endedAt: new Date(episode.endedAtMs).toISOString(),
-    recordCount: episode.recordCount,
-  };
 }
 
 function settingsChange(payload: PerceptionCommand["payload"]): PerceptionSettingsChange {
@@ -116,6 +108,24 @@ export class ProductionPerceptionControl {
     };
   }
 
+  async #episodeView(episode: PerceptionEpisode, overview: PerceptionEpisodeOverview) {
+    const lead = overview.lead === null ? null : await this.#recordView(overview.lead, true);
+    const senses = new Set(overview.types.map((type) => PERCEPTION_RECORD_TYPES[type].sense));
+    return {
+      id: episode.id,
+      startedAt: new Date(episode.startedAtMs).toISOString(),
+      endedAt: new Date(episode.endedAtMs).toISOString(),
+      recordCount: episode.recordCount,
+      senses: PERCEPTION_SENSES.filter((sense) => senses.has(sense)),
+      types: overview.types,
+      deviceIds: overview.deviceIds,
+      preview: lead?.text ?? null,
+      previewTruncated: lead?.textTruncated ?? false,
+      summary: null,
+      summarySource: "none" as const,
+    };
+  }
+
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
     const scope = this.#scope();
     const service = this.#options.perception;
@@ -166,11 +176,15 @@ export class ProductionPerceptionControl {
           payload: {
             day: page.day,
             total: page.total,
+            senseCounts: await service.countDayBySense(scope, page.day),
             rows: await Promise.all(
               page.rows.map(async (row) => ({
                 kind: row.kind,
                 at: new Date(row.atMs).toISOString(),
-                episode: row.kind === "episode" ? episodeView(row.episode) : null,
+                episode:
+                  row.kind === "episode"
+                    ? await this.#episodeView(row.episode, row.overview)
+                    : null,
                 record: row.kind === "record" ? await this.#recordView(row.record, true) : null,
               })),
             ),
@@ -185,7 +199,7 @@ export class ProductionPerceptionControl {
           ...head,
           type: "perception.episode.snapshot",
           payload: {
-            episode: found ? episodeView(found.episode) : null,
+            episode: found ? await this.#episodeView(found.episode, found.overview) : null,
             records: found
               ? await Promise.all(found.records.map((record) => this.#recordView(record, false)))
               : [],

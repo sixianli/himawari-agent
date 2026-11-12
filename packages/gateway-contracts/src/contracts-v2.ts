@@ -661,6 +661,7 @@ export const PERCEPTION_SETTINGS_CHANGE_KINDS = [
   "limit",
 ] as const;
 export const PERCEPTION_ROW_KINDS = ["episode", "record"] as const;
+export const PERCEPTION_SUMMARY_SOURCES = ["recorded", "model", "none"] as const;
 export const USAGE_LIMIT_STATES = ["ok", "near", "stopped"] as const;
 const perceptionDaySchema: Schema<string> = {
   parse(input, path = "$") {
@@ -688,6 +689,13 @@ const perceptionEpisodeViewSchema = object({
   startedAt: timestamp,
   endedAt: timestamp,
   recordCount: integer(0),
+  senses: array(machineString),
+  types: array(machineString),
+  deviceIds: array(machineString),
+  preview: nullable(boundedString(32 * 1024)),
+  previewTruncated: booleanValue,
+  summary: nullable(boundedString(2048)),
+  summarySource: enumeration(PERCEPTION_SUMMARY_SOURCES),
 });
 const perceptionStatusQuerySchema = object({
   ...envelope("query", "perception.status.read"),
@@ -722,6 +730,7 @@ const perceptionDaySnapshotSchema = object({
   payload: object({
     day: perceptionDaySchema,
     total: integer(0),
+    senseCounts: array(object({ sense: machineString, count: integer(0) })),
     rows: array(
       object({
         kind: enumeration(PERCEPTION_ROW_KINDS),
