@@ -1179,9 +1179,15 @@ export async function createProductionHttpComposition(
           if (identityConfiguration.kind === "built-in") return true;
           return (await identityState.readByOwner(ownerId))?.status === "active";
         },
+        ownerSubject: async (scope) => {
+          if (scope.ownerId !== ownerId || scope.agentId !== agentId) return undefined;
+          const binding = await identityState.readByOwner(ownerId);
+          return binding?.status === "active" ? binding.externalSubjectRef : undefined;
+        },
         now,
       }),
       configuration: () => deviceConfiguration,
+      audit: repository.auditLedger(),
     },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
     ...(options.onSlowRequest ? { onSlowRequest: options.onSlowRequest } : {}),

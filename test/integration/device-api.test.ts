@@ -1,13 +1,10 @@
 import { RecentAuthenticationGuard } from "@himawari-agent/application";
 import { createSessionId } from "@himawari-agent/domain";
-import { EnvelopePayloadProtector, PairedDeviceService } from "@himawari-agent/platform-node";
+import { PairedDeviceService } from "@himawari-agent/platform-node";
 import { generateDeviceTestKeyPair } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { ProductionHttpPayloadAdmission } from "../../apps/agent-service/src/production-http-composition.ts";
 import {
-  agentId,
-  authority,
-  type Harness,
+  createThread,
   harness,
   ownerId,
   type PairedClient,
@@ -21,51 +18,6 @@ import {
 } from "../fixtures/device-api-harness.ts";
 
 afterEach(removeDeviceHarnessDirectories);
-
-async function createThread(h: Harness, threadId: string) {
-  const resultRef = (
-    await new ProductionHttpPayloadAdmission({
-      ownerId,
-      agentId,
-      sessions: h.repository.sessionDeviceState(),
-      payloads: h.repository.payloadStore(ownerId, agentId),
-      protector: new EnvelopePayloadProtector({
-        keys: {
-          kind: "memory-development",
-          productionSuitable: false,
-          resolve: async () => new Uint8Array(32).fill(9),
-        },
-        activeKey: { keyRef: "test-kek", kekVersion: "v1", dekVersion: "v1" },
-      }),
-      clock: () => h.clock.now(),
-    }).protect({
-      authentication: h.webAuthentication,
-      idempotencyKey: `create:${threadId}`,
-      content: "thread-action:create",
-      dataClassification: "private",
-      contentType: "text/plain",
-    })
-  ).payloadRef;
-  const response = await h.app.inject({
-    method: "POST",
-    url: "/api/gateway/thread/v3/commands",
-    headers: { ...(await h.webHeaders()), "idempotency-key": `create:${threadId}` },
-    payload: JSON.stringify({
-      schemaVersion: "gateway.thread.v3",
-      kind: "command",
-      type: "thread.create",
-      messageId: `message:create:${threadId}`,
-      correlationId: "correlation:create",
-      causationId: null,
-      scope: { ownerId, agentId },
-      authority,
-      actor: { actorType: "owner", actorId: ownerId },
-      idempotencyKey: `create:${threadId}`,
-      payload: { threadId, answerLocale: "zh-CN", resultRef },
-    }),
-  });
-  expect(response.statusCode).toBe(200);
-}
 
 describe("[P1-1] device pairing and signed device API", () => {
   it("pairs as pending, works only after the owner confirms, and never exposes the internal session", async () => {

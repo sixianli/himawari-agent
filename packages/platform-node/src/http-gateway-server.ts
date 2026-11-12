@@ -6,6 +6,7 @@ import {
   type AgentGatewayV2Port,
   type AgentThreadGatewayPort,
   ApplicationPortError,
+  type AuditLedgerPort,
   type DeviceConfiguration,
   type GatewayAuthenticationContext,
   type GatewayV2StreamItem,
@@ -34,6 +35,7 @@ import {
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
 import { registerDeviceApiRoutes } from "./device-api-routes.js";
+import { DeviceGatewayError } from "./device-gateway.js";
 import { DeviceSignatureError } from "./device-request-signature.js";
 import {
   PAIRED_DEVICE_ERROR_CODES,
@@ -122,6 +124,7 @@ export interface HttpGatewayServerOptions {
   readonly devices?: {
     readonly service: PairedDeviceService;
     readonly configuration: () => DeviceConfiguration;
+    readonly audit?: AuditLedgerPort;
   };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
@@ -890,7 +893,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
   });
 
   app.setErrorHandler((error, _request, reply) => {
-    if (error instanceof PairedDeviceError) {
+    if (error instanceof PairedDeviceError || error instanceof DeviceGatewayError) {
       sendJson(reply, error.statusCode, { error: { code: error.code } });
       return;
     }
@@ -1279,13 +1282,19 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         fencingToken: browserConfiguration.fencingToken,
       },
       threadGateway: options.threadGateway,
+      gateways: {
+        ...(options.gateway ? { v1: options.gateway } : {}),
+        ...(options.gatewayV2 ? { v2: options.gatewayV2 } : {}),
+        "thread-v3": options.threadGateway,
+      },
+      ...(options.devices.audit ? { audit: options.devices.audit } : {}),
       protectText: async (input) =>
         (
           await payloadAdmission.protect({
             authentication: input.authentication,
             idempotencyKey: input.idempotencyKey,
             content: input.content,
-            dataClassification: "private",
+            dataClassification: input.dataClassification ?? "private",
             contentType: "text/plain",
           })
         ).payloadRef,

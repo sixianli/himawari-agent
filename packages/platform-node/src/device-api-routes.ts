@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import {
   type AgentThreadGatewayPort,
+  type AuditLedgerPort,
   DEVICE_HARD_LIMIT_KEYS,
   DEVICE_HARD_LIMITS,
   type DeviceConfiguration,
@@ -16,6 +17,11 @@ import {
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import {
+  classifyDeviceGatewayRequest,
+  type DeviceGateways,
+  dispatchDeviceGatewayRequest,
+} from "./device-gateway.js";
 import type { DeviceSignedRequest } from "./device-request-signature.js";
 import {
   PAIRED_DEVICE_ERROR_CODES,
@@ -32,11 +38,16 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "GET", path: "stream", signed: true },
   { method: "POST", path: "messages", signed: true },
   { method: "GET", path: "threads", signed: true },
+  { method: "POST", path: "approvals/challenge", signed: true },
+  { method: "POST", path: "gateway", signed: true },
+  { method: "POST", path: "payloads/text/new", signed: true },
 ] as const);
 
 const MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/u;
 const MACHINE_STRING = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const MESSAGE_TEXT_MAXIMUM = 64 * 1024;
+const TEXT_CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
+export type DeviceTextClassification = (typeof TEXT_CLASSIFICATIONS)[number];
 
 export interface DeviceApiAuthority {
   readonly agentId: string;
@@ -51,10 +62,13 @@ export interface DeviceApiRouteOptions {
   readonly configuration: () => DeviceConfiguration;
   readonly authority: DeviceApiAuthority;
   readonly threadGateway: AgentThreadGatewayPort;
+  readonly gateways: DeviceGateways;
+  readonly audit?: AuditLedgerPort;
   readonly protectText: (input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly idempotencyKey: string;
     readonly content: string;
+    readonly dataClassification?: DeviceTextClassification;
   }) => Promise<string>;
   readonly streamThreadEvents: (input: {
     readonly gateway: AgentThreadGatewayPort;
@@ -323,6 +337,54 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           reply,
           200,
           await options.threadGateway.request(authentication, command),
+        );
+      });
+
+      device.post("/payloads/text/new", async (request, reply) => {
+        const { device: paired, authentication } = await authenticate(request);
+        const body = json(request);
+        if (
+          Object.keys(body).some(
+            (key) => !["idempotencyKey", "content", "dataClassification"].includes(key),
+          ) ||
+          typeof body["idempotencyKey"] !== "string" ||
+          !MESSAGE_ID_PATTERN.test(body["idempotencyKey"]) ||
+          typeof body["content"] !== "string" ||
+          body["content"].length === 0 ||
+          body["content"].length > MESSAGE_TEXT_MAXIMUM ||
+          !(TEXT_CLASSIFICATIONS as readonly unknown[]).includes(body["dataClassification"])
+        )
+          options.rejectBody(400);
+        const payloadRef = await options.protectText({
+          authentication,
+          idempotencyKey: `device-text:${stableSuffix(paired.id, body["idempotencyKey"] as string)}`,
+          content: body["content"] as string,
+          dataClassification: body["dataClassification"] as DeviceTextClassification,
+        });
+        return options.sendJson(reply, 201, { payloadRef });
+      });
+
+      device.post("/approvals/challenge", async (request, reply) => {
+        const { device: paired } = await authenticate(request);
+        return options.sendJson(reply, 201, options.devices.issueConfirmChallenge(paired.id));
+      });
+
+      device.post("/gateway", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const classified = classifyDeviceGatewayRequest(json(request));
+        return options.sendJson(
+          reply,
+          200,
+          await dispatchDeviceGatewayRequest({
+            request: classified,
+            confirmed: authenticated.confirmed,
+            pairedDeviceId: authenticated.device.id,
+            authentication: authenticated.authentication,
+            authority: options.authority,
+            gateways: options.gateways,
+            ...(options.audit ? { audit: options.audit } : {}),
+            now,
+          }),
         );
       });
 
