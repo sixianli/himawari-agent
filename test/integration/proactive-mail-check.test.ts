@@ -3616,7 +3616,7 @@ describe("proactive Gmail check acceptance", () => {
       expect(entry?.inputs).toMatchObject({ summaryGenerated: 0, summaryInjected: false });
     });
 
-    it("judges as usual and reads no summary when the summary limits switch them off", async () => {
+    it("still judges and reads no summary when the summary limits switch them off (does not pin the reserve size)", async () => {
       const world: { current?: World } = {};
       const h = await harness({
         recentSummaries: summariesFor(world),

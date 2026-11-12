@@ -630,6 +630,32 @@ describe("[DREAM] daily conversation review", () => {
     expect(changes.map(({ action }) => action)).toEqual(["created"]);
   });
 
+  it.each([
+    ["the judge says the quote is about something else", ['{"supports":false}']],
+    ["the judge answers nonsense twice", ["not json", "still not json"]],
+  ])(
+    "[T2] REVERSE: the review does not confirm a tentative memory when %s",
+    async (_name, judge) => {
+      const resource = await setup({
+        lines: PLAN_CHANGE,
+        seeds: [{ ...OSAKA, attributes: { tentative: true } }],
+        outputs: [
+          output({
+            messageId: "message-1",
+            decision: "unchanged",
+            existingMemoryId: "osaka",
+            text: "主人下周三去大阪出差",
+            quote: "下周三我要去大阪出差",
+          }),
+          ...judge,
+        ],
+      });
+      const [result] = await resource.review.runDue(resource.request);
+      expect(result?.changes.map(({ action }) => action)).toEqual([]);
+      expect((await resource.read("osaka"))?.attributes?.tentative).toBe(true);
+    },
+  );
+
   it("[DREAM] REVERSE: a confirmed memory the owner edited after a failed undo is not counted as undone", async () => {
     const resource = await setup({
       lines: PLAN_CHANGE,
@@ -642,6 +668,7 @@ describe("[DREAM] daily conversation review", () => {
           text: "主人下周三去大阪出差",
           quote: "下周三我要去大阪出差",
         }),
+        '{"supports":true}',
       ],
     });
     const [result] = await resource.review.runDue(resource.request);

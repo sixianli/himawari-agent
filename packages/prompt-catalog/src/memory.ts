@@ -65,7 +65,10 @@ export const MEMORY_CAPTURE = fixedPrompt({
 export const MEMORY_CONFIRMATION_JUDGE = fixedPrompt({
   id: "memory.confirmation-judge",
   purpose: "主人的一句原话是否确认了某条待确认的规矩或记忆；只有判“是”才会让它生效",
-  usedBy: ["apps/agent-service/src/production-memory-capture.ts"],
+  usedBy: [
+    "apps/agent-service/src/production-memory-capture.ts",
+    "apps/agent-service/src/production-memory-conversation-review.ts",
+  ],
   layer: "background",
   output: "json",
   parser: "parseSupportVerdict",
