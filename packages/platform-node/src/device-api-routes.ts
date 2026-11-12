@@ -428,7 +428,10 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         const authenticated = await authenticate(request);
         const { authentication } = authenticated;
         const threadId = threadIdOf(request);
-        if (requestPath(request).endsWith("/execution-stream")) {
+        const segments = requestPath(request)
+          .slice(DEVICE_API_PREFIX.length + "/threads/".length)
+          .split("/");
+        if (segments.length === 2 && segments[1] === "execution-stream") {
           if (!options.streamExecution) return options.rejectNotAllowed();
           const configuration = options.configuration();
           const subscription = threadGatewayMessageSchema.parse({
@@ -459,9 +462,6 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         }
         const after = new URLSearchParams(rawQuery(request)).get("after") ?? "0";
         if (!/^(0|[1-9][0-9]{0,15})$/u.test(after)) options.rejectBody(400);
-        const segments = requestPath(request)
-          .slice(DEVICE_API_PREFIX.length + "/threads/".length)
-          .split("/");
         const runId = segments.length === 4 ? segments[2] : undefined;
         if (runId !== undefined && !MACHINE_STRING.test(runId)) options.rejectBody(400);
         const query = threadGatewayMessageSchema.parse({
@@ -510,17 +510,18 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           }
           try {
             const payload = await readPayload({ authentication, payloadRef });
-            const bytes = Buffer.byteLength(payload.content, "utf8");
+            const item = {
+              text: payload.content,
+              contentType: payload.contentType,
+              dataClassification: payload.dataClassification,
+            };
+            const bytes = Buffer.byteLength(JSON.stringify(item), "utf8");
             if (responseBytes > 0 && responseBytes + bytes > DEVICE_PAYLOAD_TEXT_RESPONSE_BYTES) {
               deferred.push(payloadRef);
               continue;
             }
             responseBytes += bytes;
-            items[payloadRef] = {
-              text: payload.content,
-              contentType: payload.contentType,
-              dataClassification: payload.dataClassification,
-            };
+            items[payloadRef] = item;
           } catch (error) {
             if (!isNotFound(error)) throw error;
             items[payloadRef] = null;

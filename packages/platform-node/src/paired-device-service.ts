@@ -308,6 +308,6 @@ export class PairedDeviceService {
     const session = await this.#options.sessions.readSession(
       device.webSessionId as Parameters<SessionDeviceStatePort["readSession"]>[0],
     );
-    return session?.status === "active";
+    return session?.status === "active" && session.ownerId === device.ownerId;
   }
 }

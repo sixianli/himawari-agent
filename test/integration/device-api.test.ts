@@ -767,6 +767,19 @@ describe("[P1-1] device client routes", () => {
     expect((await get(h, client, `threads/${threadId}/runs/${runId}`)).json()).toMatchObject({
       error: { code: "DEVICE_PATH_NOT_ALLOWED" },
     });
+    const stored = await h.repository.pairedDevices().readDevice(client.deviceId);
+    const session = await h.repository
+      .sessionDeviceState()
+      .readSession(createSessionId(stored?.webSessionId ?? ""));
+    for (const secret of [stored?.webSessionId, session?.authenticationRef])
+      expect(steps.body).not.toContain(secret);
+    await createThread(h, "execution-stream");
+    const named = await get(h, client, "threads/execution-stream");
+    expect(named.statusCode, named.body).toBe(200);
+    expect(named.json()).toMatchObject({
+      type: "thread.detail_snapshot",
+      payload: { thread: { threadId: "execution-stream" } },
+    });
     await h.repository.close();
   });
 
