@@ -1152,7 +1152,7 @@ describe("production HTTP composition", () => {
           payload: {},
         },
       });
-      expect(withoutSession.statusCode).toBeGreaterThanOrEqual(400);
+      expect(withoutSession.statusCode, withoutSession.body).toBe(401);
       const readInterceptions = async () => {
         const response = await running.composition.app.inject({
           method: "POST",

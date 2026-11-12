@@ -545,18 +545,27 @@ const devicePairingNumberSchema: Schema<string> = {
     return input;
   },
 };
+function isHiddenNameCharacter(code: number): boolean {
+  return (
+    code < 0x20 ||
+    (code >= 0x7f && code <= 0x9f) ||
+    (code >= 0x200b && code <= 0x200f) ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2060 && code <= 0x2064) ||
+    (code >= 0x2066 && code <= 0x2069) ||
+    code === 0xfeff
+  );
+}
 const deviceNameSchema: Schema<string> = {
   parse(input, path = "$") {
     if (typeof input !== "string")
       throw new ContractValidationError(path, "expected a device name");
     const trimmed = input.trim();
+    const characters = [...trimmed];
     if (
-      trimmed.length < 1 ||
-      trimmed.length > DEVICE_NAME_MAX_LENGTH ||
-      [...trimmed].some((character) => {
-        const code = character.charCodeAt(0);
-        return code < 0x20 || code === 0x7f;
-      })
+      characters.length < 1 ||
+      characters.length > DEVICE_NAME_MAX_LENGTH ||
+      characters.some((character) => isHiddenNameCharacter(character.codePointAt(0) ?? 0))
     )
       throw new ContractValidationError(
         path,

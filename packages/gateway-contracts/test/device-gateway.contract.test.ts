@@ -58,7 +58,19 @@ describe("device management gateway messages", () => {
     gatewayV2MessageSchema.parse(
       fixture("command", "device.rename", { deviceId, expectedRevision: 1, name: "a".repeat(64) }),
     );
-    for (const name of ["", "   ", "a".repeat(65), "a\nb"])
+    gatewayV2MessageSchema.parse(
+      fixture("command", "device.rename", { deviceId, expectedRevision: 1, name: "😀".repeat(64) }),
+    );
+    for (const name of [
+      "",
+      "   ",
+      "a".repeat(65),
+      "😀".repeat(65),
+      "a\nb",
+      "a\u202eb",
+      "a\u200bb",
+      "a\u0085b",
+    ])
       rejects(fixture("command", "device.rename", { deviceId, expectedRevision: 1, name }));
   });
 
