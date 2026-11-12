@@ -497,6 +497,87 @@ function sensitiveSnapshot() {
   };
 }
 const museFixtureState = { commands: [] };
+const externalFixtureState = { items: [], batches: [], decided: new Map(), commands: [] };
+function externalProposal(index, change = {}) {
+  return {
+    proposalId: `proposal-${index}`,
+    text: `外部提议的记忆 ${index}`,
+    category: "preference",
+    dataClassification: "private",
+    client: "Muse",
+    receivedAt: "2026-08-26T23:40:00.000Z",
+    ...change,
+  };
+}
+function externalReset(mode) {
+  externalFixtureState.batches = [];
+  externalFixtureState.decided = new Map();
+  externalFixtureState.commands = [];
+  externalFixtureState.total = null;
+  externalFixtureState.items =
+    mode === "pending"
+      ? [
+          externalProposal(1, { text: "主人周末喜欢去镰仓" }),
+          externalProposal(2, {
+            text: "主人对花粉过敏",
+            category: "health",
+            dataClassification: "sensitive",
+            client: "Claude Code",
+          }),
+          externalProposal(3, { text: "主人在学法语" }),
+        ]
+      : mode === "many"
+        ? Array.from({ length: 100 }, (_, index) => externalProposal(index + 1))
+        : [];
+  if (mode === "many") externalFixtureState.total = 130;
+}
+function externalSnapshot() {
+  return {
+    total: externalFixtureState.total ?? externalFixtureState.items.length,
+    items: externalFixtureState.items,
+    batches: externalFixtureState.batches.map(({ batchId, decidedAt, committed, rejected }) => ({
+      batchId,
+      decidedAt,
+      committed,
+      rejected,
+    })),
+  };
+}
+function handleExternalCommand(message) {
+  if (!["memory.external.respond", "memory.external.undo"].includes(message.type)) return null;
+  externalFixtureState.commands.push({ type: message.type, payload: message.payload });
+  if (message.type === "memory.external.undo") {
+    const batch = externalFixtureState.batches.find(
+      ({ batchId }) => batchId === message.payload.batchId,
+    );
+    if (!batch) return { status: 404, body: { error: { code: "PORT_NOT_FOUND" } } };
+    externalFixtureState.batches = externalFixtureState.batches.filter((entry) => entry !== batch);
+    externalFixtureState.items = [...batch.members, ...externalFixtureState.items];
+    return { status: 200, body: { resultRef: batch.batchId, replayed: false } };
+  }
+  const batchId = `batch-${externalFixtureState.commands.length}`;
+  const members = [];
+  let committed = 0;
+  let rejected = 0;
+  for (const { proposalId, decision, editedText } of message.payload.items) {
+    const item = externalFixtureState.items.find((entry) => entry.proposalId === proposalId);
+    if (!item || item.text.includes("别处")) continue;
+    externalFixtureState.items = externalFixtureState.items.filter((entry) => entry !== item);
+    members.push(item);
+    externalFixtureState.decided.set(proposalId, { decision, editedText });
+    if (decision === "keep") committed += 1;
+    else rejected += 1;
+  }
+  if (members.length === 0) return { status: 409, body: { error: { code: "PORT_CONFLICT" } } };
+  externalFixtureState.batches.unshift({
+    batchId,
+    decidedAt: "2026-08-27T00:10:00.000Z",
+    committed,
+    rejected,
+    members,
+  });
+  return { status: 200, body: { resultRef: batchId, replayed: false } };
+}
 function museReset(mode) {
   const channels = {
     ok: { state: "ok", lastBatchAt: "2026-08-26T23:40:00.000Z", gapCount: 0 },
@@ -826,7 +907,7 @@ function memoryOverview() {
       },
       { kind: "relationship", lines: lines(["memory-peikun", "memory-lilei"]) },
     ],
-    externalProposals: { total: 0, items: [], batches: [] },
+    externalProposals: externalSnapshot(),
     pending: [],
     generatedAt: now,
   };
@@ -2110,6 +2191,8 @@ async function handleRequest(request, response) {
         ...(memoryFixture
           ? [
               "memory.overview.read",
+              "memory.external.respond",
+              "memory.external.undo",
               "search.authorization.read",
               "search.authorization.set",
               "proactive.overview.read",
@@ -2144,6 +2227,19 @@ async function handleRequest(request, response) {
       if (mode !== undefined) sensitiveReset(mode);
     }
     json(response, 200, sensitiveFixtureState);
+    return;
+  }
+  if (memoryFixture && url.pathname === "/__fixture/external") {
+    if (request.method === "POST") {
+      const { mode, items } = await body(request);
+      if (mode !== undefined) externalReset(mode);
+      if (items !== undefined) externalFixtureState.items = items;
+    }
+    json(response, 200, {
+      ...externalSnapshot(),
+      decided: Object.fromEntries(externalFixtureState.decided),
+      commands: externalFixtureState.commands,
+    });
     return;
   }
   if (memoryFixture && url.pathname === "/__fixture/muse") {
@@ -2516,6 +2612,11 @@ async function handleRequest(request, response) {
         sensitiveFixtureState.commands.push({ type: message.type, payload: message.payload });
         sensitiveFixtureState.items = [];
         json(response, 200, { resultRef: "sensitive-interceptions-cleared", replayed: false });
+        return;
+      }
+      const external = memoryFixture ? handleExternalCommand(message) : null;
+      if (external) {
+        json(response, external.status, external.body);
         return;
       }
       const muse = memoryFixture ? handleMuseCommand(message) : null;

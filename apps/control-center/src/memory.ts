@@ -14,6 +14,12 @@ export type PendingMemory = MemoryOverview["pending"][number];
 export type MemoryTidyUp = MemoryOverview["tidyUps"][number];
 export type MemoryReminder = MemoryOverview["reminders"][number];
 export type MemoryImportSource = MemoryOverview["imports"][number]["source"];
+export type ExternalProposal = MemoryOverview["externalProposals"]["items"][number];
+export interface ExternalDecision {
+  readonly proposalId: string;
+  readonly decision: "keep" | "reject";
+  readonly editedText: string | null;
+}
 export type OwnerRule = Extract<
   GatewayV2Snapshot,
   { type: "memory.rules.snapshot" }
@@ -64,6 +70,9 @@ export interface MemoryModel {
     items: readonly ImportCandidate[],
   ) => Promise<boolean>;
   readonly importUndo: (batchId: string) => Promise<boolean>;
+  readonly externalReady: boolean;
+  readonly externalRespond: (items: readonly ExternalDecision[]) => Promise<string | null>;
+  readonly externalUndo: (batchId: string) => Promise<boolean>;
   readonly checkSource: (memoryId: string) => Promise<MemoryItem | null>;
 }
 
@@ -134,6 +143,7 @@ export function useMemory(input: {
     }
   }, []);
   if (!available || !client || !configuration) return null;
+  const operations = configuration.installedGatewayV2Operations ?? [];
   const send = (type: GatewayV2Command["type"], payload: () => unknown | Promise<unknown>) =>
     run(async () =>
       client.mutate(commandMessage(configuration, type, await payload(), { risk: "medium" })),
@@ -237,5 +247,18 @@ export function useMemory(input: {
         ),
       })),
     importUndo: (batchId) => send("memory.import.undo", () => ({ batchId })),
+    externalReady:
+      operations.includes("memory.external.respond") && operations.includes("memory.external.undo"),
+    externalRespond: async (items) => {
+      let batchId: string | null = null;
+      const ok = await run(async () => {
+        const result = await client.mutate(
+          commandMessage(configuration, "memory.external.respond", { items }, { risk: "medium" }),
+        );
+        batchId = result.resultRef;
+      });
+      return ok ? batchId : null;
+    },
+    externalUndo: (batchId) => send("memory.external.undo", () => ({ batchId })),
   };
 }

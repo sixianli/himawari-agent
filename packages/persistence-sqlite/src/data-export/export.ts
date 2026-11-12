@@ -14,6 +14,8 @@ import {
 } from "./rules.js";
 import {
   DATA_FILES,
+  externalProposalDigestKey,
+  externalProposalTextKey,
   FORMAT_VERSION,
   INDEX_FILE,
   MANIFEST_FILE,
@@ -461,6 +463,45 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   });
   const ruleHistoryVersions = ruleLines.reduce((total, { history }) => total + history.length, 0);
 
+  const proposalIds = new Set(snapshot.externalProposals.map((row) => str(row["id"])));
+  const proposalKeys = group(snapshot.externalProposalKeys, "proposal_id");
+  const proposalUnkeyed = group(snapshot.externalProposalUnkeyed, "proposal_id");
+  const proposalLines: JsonValue[] = snapshot.externalProposals.map((row) => {
+    const id = str(row["id"]);
+    const contentRef = optionalString(row["content_ref"]);
+    const content =
+      contentRef === null ? null : requiredText(contentRef, externalProposalTextKey(id));
+    const withheld =
+      content !== null && (content as { readonly withheld?: boolean }).withheld === true;
+    const digest = str(row["text_sha256"]);
+    if (withheld) originals[externalProposalDigestKey(id)] = digest;
+    const supersededBy = optionalString(row["superseded_by"]);
+    return {
+      id,
+      subjectRef: safeString(str(row["subject_ref"])),
+      client: safeString(str(row["client"])),
+      sourceKey: safeOptional(optionalString(row["source_key"])),
+      textSha256: withheld ? null : digest,
+      normalization: str(row["normalization"]),
+      category: str(row["category"]),
+      classification: str(row["classification"]),
+      status: str(row["status"]),
+      receivedAt: str(row["received_at"]),
+      decidedAt: optionalString(row["decided_at"]),
+      batchId: optionalString(row["batch_id"]),
+      memoryId: keepMemoryRef(optionalString(row["memory_id"])),
+      supersededBy: supersededBy !== null && proposalIds.has(supersededBy) ? supersededBy : null,
+      content,
+      keys: (proposalKeys.get(id) ?? []).map((key) => ({
+        client: safeString(str(key["client"])),
+        sourceKey: safeString(str(key["source_key"])),
+      })),
+      unkeyedClients: (proposalUnkeyed.get(id) ?? []).map((entry) =>
+        safeString(str(entry["client"])),
+      ),
+    };
+  });
+
   const evidence = options.withEvidence === true ? buildEvidence(snapshot, texts) : null;
 
   const files: PortableFiles = new Map();
@@ -489,6 +530,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
         `规则 ${ruleLines[index]?.ruleId ?? ""} 连同历史超过单行上限`,
       );
   put(DATA_FILES.rules, "data", rulesText, ruleLines.length);
+  put(DATA_FILES.externalProposals, "data", jsonLines(proposalLines), proposalLines.length);
   for (const { path, schema } of SCHEMA_FILES)
     put(path, "schema", `${JSON.stringify(schema, null, 2)}\n`, 0);
   const markdown = renderMemoryMarkdown(memoryLines as unknown as readonly MarkdownMemory[]);
@@ -535,11 +577,6 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
         "已换成编号占位（接着库里已有占位的最大编号往后排；同一原文同一编号，不同原文不同编号）；这些是名称和编号，原文不保留，不进封存文件",
     },
     {
-      what: "其他 agent 通过 MCP 提议的记忆（待确认、已拒绝、被替换的提议）",
-      count: snapshot.externalProposals,
-      reason: "本版导出格式还不含这张表；已确认保存的会作为普通记忆导出",
-    },
-    {
       what: "规则出处里指向未导出记忆的链接",
       count: droppedRuleMemoryLinks,
       reason: "那条记忆已删除或分级为受限，不在导出里；链接置空，规则本身照常导出",
@@ -577,6 +614,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     markdownMemories: markdown.count,
     rules: ruleLines.length,
     enforcedRules: enforcedRuleCount(ruleLines),
+    externalProposals: proposalLines.length,
     ruleHistoryVersions,
     sealedOriginals: options.sealPassphrase === undefined ? 0 : Object.keys(originals).length,
     sealedEvidenceRows,

@@ -3,7 +3,13 @@ import type { PayloadRecord } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
 import type { JsonValue } from "./canonical.js";
 import { validateAgainst } from "./schema.js";
-import { RULE_PARAMETERS_MAXIMUM_LENGTH, SEALED_FILE, SEALED_SCHEMA } from "./schemas.js";
+import {
+  externalProposalDigestKey,
+  externalProposalTextKey,
+  RULE_PARAMETERS_MAXIMUM_LENGTH,
+  SEALED_FILE,
+  SEALED_SCHEMA,
+} from "./schemas.js";
 import {
   assertRuleHistory,
   enforcedRuleCount,
@@ -21,7 +27,12 @@ import {
   type PortableFiles,
   type PortableTextDependencies,
 } from "./types.js";
-import { type ParsedMemory, type ParsedText, parsePortable } from "./verify.js";
+import {
+  type ParsedExternalProposal,
+  type ParsedMemory,
+  type ParsedText,
+  parsePortable,
+} from "./verify.js";
 
 export interface ImportOptions extends PortableTextDependencies {
   readonly database: Database.Database;
@@ -41,6 +52,7 @@ export interface ImportReport {
     readonly historyEventsWithoutOriginal: number;
     readonly decisionTextsWithoutOriginal: number;
     readonly rulesWithoutOriginal: number;
+    readonly externalProposalsWithoutOriginal: number;
     readonly evidenceNotImported: boolean;
   };
 }
@@ -74,6 +86,7 @@ const EMPTY_TARGET_TABLES = [
   "muse_reference_entries",
   "rule_book_rules",
   "rule_book_history",
+  "external_memory_proposals",
 ] as const;
 
 function assertEmptyTarget(database: Database.Database, scope: ExportScope): void {
@@ -274,6 +287,38 @@ export async function importPortableExport(
       })),
     });
   }
+  const proposalPlans: {
+    readonly proposal: ParsedExternalProposal;
+    readonly textSha256: string;
+    readonly contentRef: string | null;
+  }[] = [];
+  let proposalsWithout = 0;
+  for (const proposal of parsed.externalProposals) {
+    const withheld = proposal.content?.withheld === true;
+    const digest = withheld
+      ? sealedText(externalProposalDigestKey(proposal.id))
+      : proposal.textSha256;
+    const text =
+      proposal.content === null
+        ? null
+        : original(externalProposalTextKey(proposal.id), proposal.content);
+    if (digest === null || (proposal.content !== null && text === null)) {
+      proposalsWithout += 1;
+      continue;
+    }
+    if (!/^[0-9a-f]{64}$/.test(digest))
+      throw new DataExportError(
+        DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH,
+        `其他 agent 的提议 ${proposal.id} 的正文摘要不对`,
+      );
+    proposalPlans.push({
+      proposal,
+      textSha256: digest,
+      contentRef:
+        proposal.content === null || text === null ? null : await protect(proposal.content, text),
+    });
+  }
+  const importedProposalIds = new Set(proposalPlans.map(({ proposal }) => proposal.id));
   const imported: PortableCounts = {
     memories: plans.length,
     memoryHistoryEvents: plans.reduce((total, { history }) => total + history.length, 0),
@@ -286,6 +331,7 @@ export async function importPortableExport(
     markdownMemories: parsed.manifest.counts.markdownMemories,
     rules: rulePlans.length,
     enforcedRules: enforcedRuleCount(rulePlans.map(({ rule }) => rule)),
+    externalProposals: proposalPlans.length,
     ruleHistoryVersions: rulePlans.reduce((total, { history }) => total + history.length, 0),
     sealedOriginals: options.passphrase === undefined ? 0 : parsed.manifest.counts.sealedOriginals,
     sealedEvidenceRows: evidence
@@ -309,6 +355,7 @@ export async function importPortableExport(
       historyEventsWithoutOriginal: historyWithout,
       decisionTextsWithoutOriginal: decisionWithout,
       rulesWithoutOriginal: rulesWithout,
+      externalProposalsWithoutOriginal: proposalsWithout,
       evidenceNotImported: evidence === null && parsed.manifest.counts.sealedEvidenceRows > 0,
     },
   });
@@ -622,6 +669,47 @@ export async function importPortableExport(
             version.changeReason,
             version.changedAt,
           );
+      }
+      const proposal = database.prepare(
+        `INSERT INTO external_memory_proposals (
+          id, owner_id, agent_id, subject_ref, client, source_key, text_sha256, normalization,
+          content_ref, category, classification, status, received_at, decided_at, batch_id,
+          memory_id, superseded_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const proposalKey = database.prepare(
+        `INSERT INTO external_memory_proposal_keys (owner_id, agent_id, client, source_key, proposal_id)
+        VALUES (?, ?, ?, ?, ?)`,
+      );
+      const proposalUnkeyed = database.prepare(
+        "INSERT INTO external_memory_proposal_unkeyed (proposal_id, client) VALUES (?, ?)",
+      );
+      for (const plan of proposalPlans) {
+        const item = plan.proposal;
+        proposal.run(
+          item.id,
+          ownerId,
+          agentId,
+          item.subjectRef,
+          item.client,
+          item.sourceKey,
+          plan.textSha256,
+          item.normalization,
+          plan.contentRef,
+          item.category,
+          item.classification,
+          item.status,
+          item.receivedAt,
+          item.decidedAt,
+          item.batchId,
+          keptMemoryLink(item.memoryId),
+          item.supersededBy !== null && importedProposalIds.has(item.supersededBy)
+            ? item.supersededBy
+            : null,
+        );
+        for (const key of item.keys)
+          proposalKey.run(ownerId, agentId, key.client, key.sourceKey, item.id);
+        for (const client of item.unkeyedClients) proposalUnkeyed.run(item.id, client);
       }
       if (evidence) writeEvidence(database, ownerId, agentId, evidence, evidenceRefs);
     })

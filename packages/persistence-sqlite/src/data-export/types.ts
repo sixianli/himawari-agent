@@ -23,6 +23,7 @@ export interface PortableCounts {
   markdownMemories: number;
   rules: number;
   enforcedRules: number;
+  externalProposals: number;
   ruleHistoryVersions: number;
   sealedOriginals: number;
   sealedEvidenceRows: number;
