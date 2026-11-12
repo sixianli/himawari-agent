@@ -1,5 +1,6 @@
 import {
   APPROVAL_BODY_PREVIEW_DEFAULT_CHARACTERS,
+  APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
   type ApprovalDisplayInput,
   approvalBodyPreview,
 } from "@himawari-agent/application";
@@ -64,7 +65,10 @@ export function createApprovalDisplayBuilder(options: {
   readonly threadTitle?: (threadId: string) => Promise<string | null>;
   readonly maximumCharacters?: number;
 }): ApprovalDisplayBuilder {
-  const maximum = options.maximumCharacters ?? APPROVAL_BODY_PREVIEW_DEFAULT_CHARACTERS;
+  const maximum = Math.min(
+    options.maximumCharacters ?? APPROVAL_BODY_PREVIEW_DEFAULT_CHARACTERS,
+    APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
+  );
   return (request) => async () => {
     const body = toolApprovalBodyText(request.tool, request.arguments);
     let title: string | null = null;

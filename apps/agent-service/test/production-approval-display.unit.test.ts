@@ -30,9 +30,9 @@ describe("approval display facts", () => {
     expect(toolApprovalBodyText("unknown_tool", { command: "ls", query: "q" })).toBeNull();
   });
 
-  it("masks secrets and cuts the preview at the configured length", async () => {
+  it("masks secrets before cutting, even when the secret sits inside the kept part", async () => {
     const build = createApprovalDisplayBuilder({
-      maximumCharacters: 20,
+      maximumCharacters: 60,
       threadTitle: async () => "周五去大阪",
     });
     const shown = await build({
@@ -40,10 +40,32 @@ describe("approval display facts", () => {
       tool: "bash",
       arguments: { command: `echo 4111 1111 1111 1111 ${"x".repeat(100)}` },
     })();
-    expect(shown.bodyPreview).not.toContain("4111 1111 1111 1111");
-    expect([...(shown.bodyPreview ?? "")].length).toBeLessThanOrEqual(21);
+    expect(shown.bodyPreview).not.toContain("4111");
+    expect(shown.bodyPreview).toContain("[");
+    expect([...(shown.bodyPreview ?? "")].length).toBeLessThanOrEqual(61);
     expect(shown.origin).toEqual({ threadId: "thread-1", threadTitle: "周五去大阪" });
     expect(shown.displayTitle).toBeNull();
+  });
+
+  it("replaces control characters the gateway contract refuses and keeps tab and newline", async () => {
+    const build = createApprovalDisplayBuilder({ threadTitle: async () => "a\u0007b" });
+    const shown = await build({
+      threadId: "thread-1",
+      tool: "bash",
+      arguments: { command: "echo \u001b[31mred\u0000\u007f\ttab\nline" },
+    })();
+    expect(shown.bodyPreview).toBe("echo \uFFFD[31mred\uFFFD\uFFFD\ttab\nline");
+    expect(shown.origin?.threadTitle).toBe("a\uFFFDb");
+  });
+
+  it("never exceeds the configured ceiling even when asked for more", async () => {
+    const build = createApprovalDisplayBuilder({ maximumCharacters: 5000 });
+    const shown = await build({
+      threadId: "thread-1",
+      tool: "bash",
+      arguments: { command: "y".repeat(5000) },
+    })();
+    expect([...(shown.bodyPreview ?? "")].length).toBe(2001);
   });
 
   it("never invents a title and keeps the preview when the thread title cannot be read", async () => {

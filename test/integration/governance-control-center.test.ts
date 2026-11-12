@@ -2,6 +2,7 @@ import {
   ApplicationPortError,
   ApprovalService,
   actionIntentFingerprint,
+  approvalBodyPreview,
   CapabilityLifecycleService,
   type CapabilityManifest,
   type GatewayAuthenticationContext,
@@ -417,7 +418,7 @@ describe("S4 Task 11 governance Control Center boundary", () => {
       semanticSnapshotHash: actionIntentFingerprint(intent),
       display: {
         displayTitle: null,
-        bodyPreview: "rm -rf build\ncd ..",
+        bodyPreview: approvalBodyPreview("rm -rf build\ncd ..\u001b[0m\u0000", 300),
         askedBecause: { kind: "no_rule_allows" },
         origin: { threadId: "thread-1", threadTitle: "周五去大阪" },
       },
@@ -429,7 +430,7 @@ describe("S4 Task 11 governance Control Center boundary", () => {
       payload: {
         display: {
           displayTitle: null,
-          bodyPreview: "rm -rf build\ncd ..",
+          bodyPreview: "rm -rf build\ncd ..\uFFFD[0m\uFFFD",
           askedBecause: { kind: "no_rule_allows", ruleId: null, ruleText: null },
           origin: { threadId: "thread-1", threadTitle: "周五去大阪" },
         },

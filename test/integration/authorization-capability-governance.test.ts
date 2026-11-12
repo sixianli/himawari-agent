@@ -1053,6 +1053,19 @@ describe("authorization continuity", () => {
       });
     }
   });
+  it("denies instead of storing a pending Approval that expired while the display facts were built", async () => {
+    const f = await continuityFixture([]);
+    const decision = await f.service().evaluate(intent({ id: "display-slow" }), {
+      uiAvailable: true,
+      approvalExpiresAt: T1,
+      display: async () => {
+        f.clock.set(T1);
+        return { displayTitle: null, bodyPreview: "slow", origin: null };
+      },
+    });
+    expect(decision.decision).toBe("DENY");
+    expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toHaveLength(0);
+  });
   it("acknowledges a repeated denial without another decision or revision", async () => {
     const f = await continuityFixture([]);
     const ask = await f
