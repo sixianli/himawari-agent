@@ -117,6 +117,36 @@ describe("toolchain platforms", () => {
       }
   });
 
+  it("rejects macOS wheels of the same CPU family in the Linux Semgrep closures", () => {
+    for (const [platform, suffix] of [
+      ["linux-x64", "macosx_11_0_x86_64"],
+      ["linux-arm64", "macosx_11_0_aarch64"],
+    ]) {
+      const lock = structuredClone(loadToolchainLock());
+      const wheel = lock.tools.semgrep.wheels[platform].find((item) =>
+        item.filename.includes("manylinux"),
+      );
+      const filename = wheel.filename.replace(/-[^-]+\.whl$/, `-${suffix}.whl`);
+      wheel.url = wheel.url.slice(0, wheel.url.lastIndexOf("/") + 1) + filename;
+      wheel.filename = filename;
+      expect(() => validateToolchainLock(lock)).toThrow(`${platform} 的 wheel 下载物文件名`);
+    }
+  });
+
+  it("rejects a wheel whose file name disagrees with its package name or version", () => {
+    for (const platform of supportedPlatforms())
+      for (const change of [
+        (wheel) => ({ ...wheel, version: `${wheel.version}1` }),
+        (wheel) => ({ ...wheel, name: `${wheel.name}x` }),
+      ]) {
+        const lock = structuredClone(loadToolchainLock());
+        const wheels = lock.tools.semgrep.wheels[platform];
+        const index = wheels.findIndex((item) => item.name !== "semgrep");
+        wheels[index] = change(wheels[index]);
+        expect(() => validateToolchainLock(lock)).toThrow("wheel 文件名和它的包名、版本对不上");
+      }
+  });
+
   it("rejects linux-arm64 wheels placed in the linux-x64 or macOS Semgrep closure", () => {
     for (const platform of ["linux-x64", "darwin-arm64"]) {
       const lock = structuredClone(loadToolchainLock());

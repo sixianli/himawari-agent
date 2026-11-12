@@ -236,7 +236,12 @@ vi.mock("../../scripts/ci/check-security.mjs", () => ({
       scannedCount: 42,
       retryCount: 0,
       reportPath,
-      checks: [{ status: state.failSecurity ? "failed" : "passed" }],
+      checks: state.failSecurity
+        ? [
+            { id: "gitleaks", status: "passed" },
+            { id: "semgrep", status: "infrastructure_failed", error: "SECURITY_SCANNER_FAILED" },
+          ]
+        : [{ id: "gitleaks", status: "passed" }],
     };
   },
 }));
@@ -368,6 +373,25 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(state.calls).toEqual([]);
     expect(existsSync(path.join(state.root, ".ci-output/policy"))).toBe(false);
   });
+  it("rejects build, browser and coverage on linux-arm64 before creating output or executing anything", async () => {
+    const original = {
+      platform: Object.getOwnPropertyDescriptor(process, "platform"),
+      arch: Object.getOwnPropertyDescriptor(process, "arch"),
+    };
+    Object.defineProperty(process, "platform", { ...original.platform, value: "linux" });
+    Object.defineProperty(process, "arch", { ...original.arch, value: "arm64" });
+    try {
+      for (const checkId of ["build", "browser", "coverage"]) {
+        await expect(run(checkId)).rejects.toThrow("CI_ARTIFACT_PLATFORM_UNSUPPORTED: linux-arm64");
+        expect(existsSync(path.join(state.root, `.ci-output/${checkId}`))).toBe(false);
+      }
+      expect(state.calls).toEqual([]);
+    } finally {
+      Object.defineProperty(process, "platform", original.platform);
+      Object.defineProperty(process, "arch", original.arch);
+    }
+  });
+
   it("coverage 在归档身份不符时失败，不开始快照或测试", async () => {
     state.artifactFailure = true;
     const result = await run("coverage");
@@ -727,10 +751,18 @@ describe("共享runner的调度、来源和失败传播", () => {
   it("安全发现和空执行不能变成通过", async () => {
     expect(await run("security")).toMatchObject({ status: "passed", retryCount: 0 });
     state.failSecurity = true;
-    expect(await run("security", { output: ".ci-output/security-fail" })).toMatchObject({
-      status: "failed",
-      retryCount: 0,
-    });
+    const written = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    try {
+      expect(await run("security", { output: ".ci-output/security-fail" })).toMatchObject({
+        status: "failed",
+        retryCount: 0,
+      });
+      expect(written.mock.calls.map(([text]) => text)).toEqual([
+        "security scan semgrep: infrastructure_failed SECURITY_SCANNER_FAILED\n",
+      ]);
+    } finally {
+      written.mockRestore();
+    }
     state.empty = true;
     expect(
       (

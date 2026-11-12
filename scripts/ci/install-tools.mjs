@@ -95,7 +95,7 @@ const PLATFORM_FILENAMES = Object.freeze({
       exactly(`cpython-${version}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz`),
     actionlint: (version) => exactly(`actionlint_${version}_linux_amd64.tar.gz`),
     gitleaks: (version) => exactly(`gitleaks_${version}_linux_x64.tar.gz`),
-    wheel: () => /(?:_x86_64|-none-any)\.whl$/,
+    wheel: () => /(?:-(?:many|musl)linux[\w.]*_x86_64|-none-any)\.whl$/,
   }),
   "linux-arm64": Object.freeze({
     node: (version) => exactly(`node-v${version}-linux-arm64.tar.gz`),
@@ -103,7 +103,7 @@ const PLATFORM_FILENAMES = Object.freeze({
       exactly(`cpython-${version}-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz`),
     actionlint: (version) => exactly(`actionlint_${version}_linux_arm64.tar.gz`),
     gitleaks: (version) => exactly(`gitleaks_${version}_linux_arm64.tar.gz`),
-    wheel: () => /(?:_aarch64|-none-any)\.whl$/,
+    wheel: () => /(?:-(?:many|musl)linux[\w.]*_aarch64|-none-any)\.whl$/,
   }),
 });
 
@@ -212,6 +212,12 @@ export function validateToolchainLock(lock) {
       names.add(name);
       artifact({ filename: wheel.filename, url: wheel.url, sha256: wheel.sha256 });
       platformFilename(platform, "wheel", wheel.version, wheel.filename);
+      const [distribution, version] = wheel.filename.split("-");
+      assert(
+        distribution.toLowerCase().replace(/[-_.]+/g, "-") ===
+          wheel.name.toLowerCase().replace(/[-_.]+/g, "-") && version === wheel.version,
+        `wheel 文件名和它的包名、版本对不上: ${wheel.filename}`,
+      );
       assert(
         wheel.filename.endsWith(".whl") && new URL(wheel.url).hostname === "files.pythonhosted.org",
         "只允许官方 PyPI wheel",

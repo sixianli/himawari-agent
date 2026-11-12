@@ -84,6 +84,7 @@ export async function runCheck({
     (checkId !== "coverage" || baselineCandidate !== "initial-only")
   )
     throw new Error("CI_INITIAL_BASELINE_CANDIDATE_OPTION_INVALID");
+  if (["build", "browser", "coverage"].includes(checkId)) artifactPlatformKey();
   const directory = outputPath(output, root);
   const source = resolvePolicySource({ root, base: context.baseSha });
   if (!source.policy.events.includes(context.event)) throw new Error("CI_EVENT_UNSUPPORTED");
@@ -267,6 +268,13 @@ export async function runCheck({
         failed: security.checks.filter((entry) => entry.status !== "passed").length,
         skipped: 0,
       };
+      for (const entry of security.checks)
+        if (entry.status !== "passed")
+          process.stdout.write(
+            redactText(
+              `security scan ${entry.id}: ${entry.status}${entry.error ? ` ${entry.error}` : ""}\n`,
+            ),
+          );
       if (security.status !== "passed") {
         result.status = security.status;
         throw new Error("CI_SECURITY_FAILED");
