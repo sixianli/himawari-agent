@@ -1,0 +1,2 @@
+{"id": "r5-ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "传播逻辑没有把“允许缺席的可选对等依赖”当作已缺席集合，逻辑两端不一致", "valid": true, "class": "improvement", "severity": "low", "trigger": "没装的可选对等依赖自己还带可选依赖", "consequence": "核对误报依赖没有安装（过严，不是放过）；改前也是这样", "modelSeverity": "low"}
+{"id": "r5-ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新测试不在 `npm run check` 的步骤里，且三条反向断言只有第一条能区分新旧实现", "valid": true, "class": "improvement", "severity": "low", "trigger": "只在本地跑 npm run check", "consequence": "本地不跑这条用例，CI 的 tooling 项目会跑；线程已单独跑过", "modelSeverity": "low"}
