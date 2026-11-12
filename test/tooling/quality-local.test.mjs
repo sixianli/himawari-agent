@@ -493,6 +493,10 @@ describe("periodic quality policy and evidence", () => {
       "node-browser-typecheck",
       "node-tooling",
     ]);
+    for (const name of ["node-typecheck", "node-browser-typecheck"])
+      expect(state.calls.find((entry) => entry.name === name).args[0]).toBe(
+        "--max-old-space-size=4096",
+      );
     expect(state.calls[0].artifact.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(report.observations[0]).toMatchObject({
       productSupported: false,
