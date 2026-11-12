@@ -1,0 +1,269 @@
+import Foundation
+import HimawariCore
+import Observation
+
+public enum ChatConnection: Sendable, Equatable {
+    case offline
+    case connecting
+    case online
+}
+
+@MainActor
+@Observable
+public final class ChatStore {
+    public private(set) var threads: [ThreadSummary] = []
+    public private(set) var texts: [String: String] = [:]
+    public private(set) var details: [String: ThreadDetail] = [:]
+    public private(set) var queued: [OutboxItem] = []
+    public private(set) var streaming: [String: StreamingReply] = [:]
+    public private(set) var connection: ChatConnection = .offline
+    public private(set) var loadingThreads = false
+
+    @ObservationIgnored private let api: DeviceAPI
+    @ObservationIgnored private let outbox: Outbox
+    @ObservationIgnored private let cache: ThreadCache
+    @ObservationIgnored private let events: DeviceEventStream
+    @ObservationIgnored private let onSessionInvalid: @MainActor () -> Void
+    @ObservationIgnored private var tasks: [Task<Void, Never>] = []
+    @ObservationIgnored private var flushing = false
+    @ObservationIgnored private var pendingTextRefs: Set<String> = []
+    @ObservationIgnored private let heartbeatSeconds: @Sendable () -> TimeInterval
+    @ObservationIgnored private var watched: (threadId: String, stream: DeviceEventStream, task: Task<Void, Never>)?
+    @ObservationIgnored private let answerLocale: AnswerLocale
+
+    public init(
+        api: DeviceAPI,
+        store: LocalStore,
+        heartbeatSeconds: @escaping @Sendable () -> TimeInterval,
+        answerLocale: AnswerLocale = .matching(preferredLanguages: Locale.preferredLanguages),
+        onSessionInvalid: @escaping @MainActor () -> Void
+    ) {
+        self.api = api
+        self.heartbeatSeconds = heartbeatSeconds
+        self.answerLocale = answerLocale
+        outbox = Outbox(store: store)
+        cache = ThreadCache(store: store)
+        events = DeviceEventStream(http: api.http, cursors: StoredCursor(store: store), heartbeat: heartbeatSeconds)
+        self.onSessionInvalid = onSessionInvalid
+        let snapshot = cache.load()
+        threads = snapshot.threads
+        texts = snapshot.texts
+        details = snapshot.details
+    }
+
+    public func start() {
+        stop()
+        tasks.append(Task { [weak self] in
+            guard let self else { return }
+            for await items in await outbox.updates() {
+                queued = items
+            }
+        })
+        tasks.append(Task { [weak self] in
+            guard let self else { return }
+            connection = .connecting
+            for await event in events.start() {
+                await handle(event)
+            }
+            connection = .offline
+        })
+        Task { await refreshThreads() }
+    }
+
+    public func stop() {
+        tasks.forEach { $0.cancel() }
+        tasks.removeAll()
+        events.stop()
+        unwatch()
+    }
+
+    public func watch(_ threadId: String) {
+        if watched?.threadId == threadId { return }
+        unwatch()
+        let stream = DeviceEventStream(http: api.http, path: "threads/\(threadId)/execution-stream", cursors: nil, heartbeat: heartbeatSeconds)
+        let task = Task { [weak self] in
+            for await event in stream.start() {
+                guard let self else { return }
+                await self.handle(event)
+            }
+        }
+        watched = (threadId, stream, task)
+    }
+
+    public func unwatch() {
+        watched?.task.cancel()
+        watched?.stream.stop()
+        watched = nil
+    }
+
+    public func reconnect() {
+        events.reconnectNow()
+        watched?.stream.reconnectNow()
+        Task { await flush() }
+    }
+
+    public func title(for thread: ThreadSummary) -> String? {
+        thread.titleRef.flatMap { texts[$0] }
+    }
+
+    public func messages(in threadId: String) -> [ThreadMessage] {
+        details[threadId]?.messages ?? []
+    }
+
+    public func lastMessageText(in threadId: String) -> String? {
+        if let queued = queued.last(where: { $0.message.threadId == threadId }) { return queued.message.text }
+        guard let last = details[threadId]?.messages.last(where: { $0.role != .system }) else { return nil }
+        return texts[last.contentRef]
+    }
+
+    public func queuedMessages(in threadId: String) -> [OutboxItem] {
+        queued.filter { $0.message.threadId == threadId }
+    }
+
+    public func streamingText(in threadId: String) -> String? {
+        guard let reply = streaming[threadId] else { return nil }
+        let text = reply.text
+        return text.isEmpty ? nil : text
+    }
+
+    public func refreshThreads() async {
+        loadingThreads = true
+        defer { loadingThreads = false }
+        do {
+            var collected: [ThreadSummary] = []
+            var cursor: String?
+            repeat {
+                let page = try await api.threads(after: cursor)
+                collected += page.threads
+                cursor = page.nextCursor
+            } while cursor != nil
+            threads = collected.sorted(by: Self.listOrder)
+            await loadTexts(threads.compactMap(\.titleRef))
+            persist()
+        } catch {
+            await handle(error)
+        }
+    }
+
+    public func load(_ threadId: String) async {
+        do {
+            let detail = try await api.thread(threadId)
+            details[threadId] = detail
+            if let index = threads.firstIndex(where: { $0.threadId == threadId }) {
+                threads[index] = detail.thread
+            }
+            await loadTexts(detail.messages.map(\.contentRef) + [detail.thread.titleRef].compactMap { $0 })
+            if detail.runs.allSatisfy({ ["completed", "failed", "cancelled"].contains($0.status) }) {
+                streaming[threadId] = nil
+            }
+            persist()
+        } catch {
+            await handle(error)
+        }
+    }
+
+    public func prefetch(_ threadId: String) {
+        guard details[threadId] == nil else { return }
+        Task { await load(threadId) }
+    }
+
+    public static func newRequestId() -> String {
+        OutgoingMessage.newId()
+    }
+
+    public func newThread(requestId: String) async throws -> String {
+        let created = try await api.createThread(requestId: requestId, answerLocale: answerLocale)
+        await refreshThreads()
+        return created.threadId
+    }
+
+    public func send(_ text: String, in threadId: String) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let revision = details[threadId]?.thread.revision ?? threads.first(where: { $0.threadId == threadId })?.revision ?? 1
+        await outbox.enqueue(OutgoingMessage(threadId: threadId, expectedRevision: revision, text: trimmed, createdAt: Date()))
+        await flush()
+    }
+
+    public func retry(_ messageId: String) async {
+        await outbox.retry(messageId)
+        await flush()
+    }
+
+    public func discard(_ messageId: String) async {
+        await outbox.discard(messageId)
+    }
+
+    func flush() async {
+        guard !flushing else { return }
+        flushing = true
+        defer { flushing = false }
+        let results = await outbox.flush(using: api) { [weak self] threadId in
+            await self?.details[threadId]?.thread.revision
+        }
+        let delivered = Set(results.compactMap { result -> String? in
+            if case let .delivered(messageId, _) = result { return messageId }
+            return nil
+        })
+        if !delivered.isEmpty {
+            await refreshThreads()
+        }
+    }
+
+    private func handle(_ event: DeviceStreamEvent) async {
+        switch event {
+        case .connected:
+            connection = .online
+            await flush()
+        case .disconnected:
+            connection = .connecting
+        case let .thread(threadEvent):
+            if details[threadEvent.threadId] != nil {
+                await load(threadEvent.threadId)
+            }
+            await refreshThreads()
+        case let .executionText(chunk):
+            var reply = streaming[chunk.threadId].flatMap { $0.runId == chunk.runId ? $0 : nil } ?? StreamingReply(runId: chunk.runId)
+            reply.apply(chunk)
+            streaming[chunk.threadId] = reply
+        case let .executionChanged(threadId, _):
+            if details[threadId] != nil { await load(threadId) }
+        case .unavailable:
+            break
+        case .resyncRequired:
+            await refreshThreads()
+            for threadId in details.keys { await load(threadId) }
+        case .sessionInvalid:
+            connection = .offline
+            onSessionInvalid()
+        }
+    }
+
+    private func handle(_ error: Error) async {
+        if let error = error as? DeviceAPIError, error.isRevoked {
+            onSessionInvalid()
+        }
+    }
+
+    private func loadTexts(_ refs: [String]) async {
+        let missing = Array(Set(refs).subtracting(texts.keys).subtracting(pendingTextRefs)).sorted()
+        guard !missing.isEmpty else { return }
+        pendingTextRefs.formUnion(missing)
+        defer { pendingTextRefs.subtract(missing) }
+        guard let resolved = try? await api.texts(for: missing) else { return }
+        texts.merge(resolved) { _, new in new }
+    }
+
+    private func persist() {
+        cache.save(ThreadCacheSnapshot(threads: threads, texts: texts, details: details))
+    }
+
+    static func listOrder(_ left: ThreadSummary, _ right: ThreadSummary) -> Bool {
+        switch (left.pinOrder, right.pinOrder) {
+        case let (l?, r?): return l < r
+        case (_?, nil): return true
+        case (nil, _?): return false
+        default: return left.updatedAt > right.updatedAt
+        }
+    }
+}

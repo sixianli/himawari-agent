@@ -1,0 +1,14 @@
+"chat.title" = "对话";
+"chat.untitled" = "新对话";
+"chat.new" = "新对话";
+"chat.back" = "返回";
+"chat.empty" = "还没有对话";
+"chat.input.placeholder" = "输入消息";
+"chat.send" = "发送";
+"chat.queued.sending" = "发送中";
+"chat.queued.failed" = "没发出去";
+"chat.queued.retry" = "重发";
+"chat.queued.discard" = "不发了";
+"chat.createFailed" = "新对话没建成，稍后再试";
+"common.ok" = "好";
+"time.yesterday" = "昨天";

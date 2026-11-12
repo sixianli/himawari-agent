@@ -1,0 +1,14 @@
+"chat.title" = "会話";
+"chat.untitled" = "新しい会話";
+"chat.new" = "新しい会話";
+"chat.back" = "戻る";
+"chat.empty" = "まだ会話はありません";
+"chat.input.placeholder" = "メッセージを入力";
+"chat.send" = "送信";
+"chat.queued.sending" = "送信中";
+"chat.queued.failed" = "送信できませんでした";
+"chat.queued.retry" = "再送";
+"chat.queued.discard" = "送らない";
+"chat.createFailed" = "新しい会話を作れませんでした。あとでもう一度試してください。";
+"common.ok" = "OK";
+"time.yesterday" = "昨日";
