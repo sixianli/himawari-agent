@@ -5,6 +5,7 @@ import {
   type CapabilityDeploymentConfiguration,
   type ConfigurationPort,
   type ConfiguredCompletionsGenerationModelDescriptor,
+  type ConfiguredConversationReview,
   type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredMemoryRetrieval,
   type ConfiguredModelDescriptor,
@@ -22,6 +23,9 @@ import {
   type ModelProviderRouting,
   type ProactiveConfiguration,
   type ProductConfiguration,
+  REAL_EVAL_MODES,
+  REAL_EVAL_WEEKLY_CAP_MICROS_MAXIMUM,
+  type RealEvalMode,
   type RecentAuthenticationConfiguration,
   type RunPolicyConfiguration,
   type TaskEnvironmentConfiguration,
@@ -149,6 +153,29 @@ function memoryRetrieval(value: unknown): ConfiguredMemoryRetrieval | undefined 
   if (input["dedupeSameSource"] !== undefined)
     parsed["dedupeSameSource"] = boolean(input["dedupeSameSource"], `${field}.dedupeSameSource`);
   return Object.freeze(parsed) as ConfiguredMemoryRetrieval;
+}
+
+const CONVERSATION_REVIEW_LIMITS = {
+  maximumSegmentsPerDay: [0, 50],
+  maximumSourceCharacters: [1000, 200000],
+  maximumRelatedMemories: [0, 200],
+  maximumNewMemoriesPerDay: [0, 100],
+  maximumOutputTokens: [256, 8192],
+} as const;
+
+function conversationReview(value: unknown): ConfiguredConversationReview | undefined {
+  if (value === undefined) return undefined;
+  const field = "configuration.memory.conversationReview";
+  const input = record(value, field);
+  rejectUnknown(input, ["enabled", ...Object.keys(CONVERSATION_REVIEW_LIMITS)], field);
+  const parsed: Record<string, number | boolean> = {};
+  if (input["enabled"] !== undefined)
+    parsed["enabled"] = boolean(input["enabled"], `${field}.enabled`);
+  for (const [key, [minimum, maximum]] of Object.entries(CONVERSATION_REVIEW_LIMITS)) {
+    if (input[key] === undefined) continue;
+    parsed[key] = integer(input[key], `${field}.${key}`, minimum, maximum);
+  }
+  return Object.freeze(parsed) as ConfiguredConversationReview;
 }
 
 function unitInterval(value: unknown, field: string): number {
@@ -1297,6 +1324,31 @@ function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPu
   });
 }
 
+function parseRealEval(value: unknown): NonNullable<RunPolicyConfiguration["realEval"]> {
+  const field = "configuration.runPolicy.realEval";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    ["mode", "modelRef", "weeklyCapMicros", "newMemoriesPerRun", "requestTimeoutMs"],
+    field,
+  );
+  const mode = input["mode"];
+  if (typeof mode !== "string" || !(REAL_EVAL_MODES as readonly string[]).includes(mode))
+    throw invalid(`${field}.mode`, "must be off, once or weekly");
+  return Object.freeze({
+    mode: mode as RealEvalMode,
+    modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
+    weeklyCapMicros: integer(
+      input["weeklyCapMicros"],
+      `${field}.weeklyCapMicros`,
+      1,
+      REAL_EVAL_WEEKLY_CAP_MICROS_MAXIMUM,
+    ),
+    newMemoriesPerRun: integer(input["newMemoriesPerRun"], `${field}.newMemoriesPerRun`, 1, 200),
+    requestTimeoutMs: integer(input["requestTimeoutMs"], `${field}.requestTimeoutMs`, 1000, 300000),
+  });
+}
+
 function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   const input = record(value, "configuration.runPolicy");
   rejectUnknown(
@@ -1317,6 +1369,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "webPush",
       "proactive",
       "museIntake",
+      "realEval",
       "mcpRead",
     ],
     "configuration.runPolicy",
@@ -1354,6 +1407,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       : { automaticReview: parseAutomaticReview(input["automaticReview"]) }),
     ...(input["webPush"] === undefined ? {} : { webPush: parseWebPush(input["webPush"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
+    ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
     ...(input["museIntake"] === undefined
       ? {}
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
@@ -1488,10 +1542,19 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const memory = record(input["memory"], "configuration.memory");
   rejectUnknown(
     memory,
-    ["adapter", "version", "storagePath", "dimensions", "minimumSimilarity", "retrieval"],
+    [
+      "adapter",
+      "version",
+      "storagePath",
+      "dimensions",
+      "minimumSimilarity",
+      "retrieval",
+      "conversationReview",
+    ],
     "configuration.memory",
   );
   const retrieval = memoryRetrieval(memory["retrieval"]);
+  const conversationReviewSettings = conversationReview(memory["conversationReview"]);
   const minimumSimilarity =
     memory["minimumSimilarity"] === undefined
       ? undefined
@@ -1660,6 +1723,32 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
         "must name a configured generation model that accepts private data",
       );
   }
+  const realEval = runPolicy?.realEval;
+  if (realEval) {
+    const descriptor = modelDescriptors.find(({ ref }) => ref === realEval.modelRef);
+    if (
+      !descriptor ||
+      descriptor.role === "embedding" ||
+      descriptor.api !== "openai-completions" ||
+      !descriptor.allowedDataClassifications.includes("private") ||
+      !descriptor.allowedDataClassifications.includes("sensitive")
+    )
+      throw invalid(
+        "configuration.runPolicy.realEval.modelRef",
+        "must name a configured openai-completions generation model that accepts private and sensitive data",
+      );
+    if (
+      realEval.mode !== "off" &&
+      modelDescriptors.some(
+        ({ role, allowedDataClassifications }) =>
+          role === "embedding" && !allowedDataClassifications.includes("sensitive"),
+      )
+    )
+      throw invalid(
+        "configuration.runPolicy.realEval.mode",
+        "needs an embedding model that accepts sensitive data",
+      );
+  }
   const review = runPolicy?.automaticReview;
   if (review) {
     const descriptor = modelDescriptors.find(({ ref }) => ref === review.modelRef);
@@ -1695,6 +1784,9 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       dimensions: memoryDimensions,
       ...(minimumSimilarity === undefined ? {} : { minimumSimilarity }),
       ...(retrieval === undefined ? {} : { retrieval }),
+      ...(conversationReviewSettings === undefined
+        ? {}
+        : { conversationReview: conversationReviewSettings }),
     }),
     repositoryAllowlistRefs: stringArray(
       input["repositoryAllowlistRefs"],

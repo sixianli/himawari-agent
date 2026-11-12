@@ -8,13 +8,13 @@ source "$HERE/runners.sh"
 require_runner_host
 [ "$(id -u)" -eq 0 ] || { echo "run it with sudo" >&2; exit 65; }
 case "${1:-}" in
-  2) REMOVE="2" ;;
+  2|3) REMOVE="$1" ;;
   all) REMOVE="$RUNNER_IDS" ;;
-  *) echo "usage: sudo bash uninstall-runner.sh <2|all>   (2 removes only the second runner; all removes both and the shared files)" >&2; exit 64 ;;
+  *) echo "usage: sudo bash uninstall-runner.sh <2|3|all>   (2 removes only the second check runner; 3 removes only the gate runner; all removes every runner and the shared files)" >&2; exit 64 ;;
 esac
 command -v nft > /dev/null || { echo "missing nft; cannot remove or verify the firewall table" >&2; exit 66; }
 
-SHARED_UNITS="/etc/systemd/system/gh-runners.slice /etc/systemd/system/gh-runner-nft.service /etc/systemd/system/gh-runner-clean.service /etc/systemd/system/gh-runner-clean.timer"
+SHARED_UNITS="/etc/systemd/system/gh-runners.slice /etc/systemd/system/ghgate.slice /etc/systemd/system/gh-runner-nft.service /etc/systemd/system/gh-runner-clean.service /etc/systemd/system/gh-runner-clean.timer"
 LEFT=""
 NAMES=""
 
@@ -35,10 +35,12 @@ if [ "$1" = all ]; then
   nft delete table inet gh_runner 2>/dev/null
   rm -f $SHARED_UNITS
   rm -f /etc/sudoers.d/91-gh-runner-control
-  rm -rf /etc/gh-runner
-  for path in $SHARED_UNITS /etc/sudoers.d/91-gh-runner-control /etc/gh-runner; do
+  rm -rf /etc/gh-runner "$RUNNER_SHARE_ROOT"
+  getent group "$RUNNER_SHARE_GROUP" > /dev/null && groupdel "$RUNNER_SHARE_GROUP"
+  for path in $SHARED_UNITS /etc/sudoers.d/91-gh-runner-control /etc/gh-runner "$RUNNER_SHARE_ROOT"; do
     [ -e "$path" ] && LEFT="$LEFT $path"
   done
+  getent group "$RUNNER_SHARE_GROUP" > /dev/null 2>&1 && LEFT="$LEFT group:$RUNNER_SHARE_GROUP"
   nft list table inet gh_runner > /dev/null 2>&1 && LEFT="$LEFT nft:inet/gh_runner"
 else
   apply_runner_controls || LEFT="$LEFT firewall-and-sudo-rules-not-rewritten"

@@ -53,6 +53,7 @@ import {
   ProductionWebPush,
   WebPushPresence,
 } from "../../apps/agent-service/src/production-web-push.ts";
+import { launchChromium } from "../fixtures/chromium-launch.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-proactive-production");
@@ -627,11 +628,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     });
     await new Promise<void>((resolve) => google.listen(0, "127.0.0.1", resolve));
     closers.push(() => new Promise<void>((resolve) => google.close(() => resolve())));
-    const browser = await chromium.launch(
-      process.env["HIMAWARI_CHROMIUM_PATH"]
-        ? { executablePath: process.env["HIMAWARI_CHROMIUM_PATH"] }
-        : {},
-    );
+    const browser = await launchChromium(chromium);
     closers.push(() => browser.close());
     const context = await browser.newContext();
     await context.addCookies([

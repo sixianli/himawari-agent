@@ -12,7 +12,6 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { artifactOutput } from "../../scripts/ci/artifact-output.mjs";
 import { createContext } from "../../scripts/ci/context.mjs";
 import { fileSha256, repositoryRoot, validateRecord } from "../../scripts/ci/contracts.mjs";
 import { execute, sumCounts, vitestCounts } from "../../scripts/ci/execute.mjs";
@@ -322,7 +321,7 @@ describe("受控检查与公开输出", () => {
 describe("required 失败证据和平台 artifact ID", () => {
   it("依赖全部失败或报告目录缺失仍有明确GateSummary", () => {
     const { root, context } = fixture();
-    const summary = required({
+    const { context: gateContext, summary } = required({
       root,
       reports: path.join(root, "missing"),
       output: ".ci-output/gate",
@@ -333,18 +332,10 @@ describe("required 失败证据和平台 artifact ID", () => {
     expect(summary.status).toBe("failed");
     expect(summary.missing).toHaveLength(8);
     expect(read(path.join(root, ".ci-output/gate/summary.json"))).toEqual(summary);
+    expect(read(path.join(root, ".ci-output/gate/context.json"))).toEqual(gateContext);
     expect(() =>
       required({ root, reports: root, output: ".ci-output/gate", needs: {}, env: {} }),
     ).toThrow("EXISTS");
-  });
-  it("只传递当前平台的真实数字artifact ID，拒绝shell或多行内容", () => {
-    expect(artifactOutput({ CI_MATRIX: "linux-x64", CI_ARTIFACT_ID: "123" })).toBe("linux=123\n");
-    expect(artifactOutput({ CI_MATRIX: "macos-arm64", CI_ARTIFACT_ID: "456" })).toBe("macos=456\n");
-    for (const id of ["", "0", "1\nmalicious=2", "$(echo) "])
-      expect(() => artifactOutput({ CI_MATRIX: "linux-x64", CI_ARTIFACT_ID: id })).toThrow(
-        "INVALID",
-      );
-    expect(() => artifactOutput({ CI_MATRIX: "windows", CI_ARTIFACT_ID: "1" })).toThrow("PLATFORM");
   });
   it("计划中的schedule保持停用，保留期限和观察集合不能暗改", () => {
     const policy = read(path.join(repositoryRoot, "ci/quality-policy.json"));

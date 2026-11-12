@@ -69,6 +69,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "decision.email.snapshot",
   "memory.approval.respond",
   "memory.tidy.undo",
+  "memory.conversationReview.undo",
   "memory.reminder.respond",
   "memory.reminder.create",
   "memory.rules.read",
@@ -81,6 +82,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.person.respond",
   "memory.import.commit",
   "memory.import.undo",
+  "memory.external.respond",
+  "memory.external.undo",
   "github.monitor.set_state",
   "memory.mutate",
   "grant.revoke",
@@ -126,6 +129,14 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "reflection.snapshot",
   "delegation.snapshot",
   "improvement.snapshot",
+  "device.list.read",
+  "device.list.snapshot",
+  "device.pairing.start",
+  "device.pairing.confirm",
+  "device.rename",
+  "device.revoke",
+  "server.status.read",
+  "server.status.snapshot",
   "stream.event",
 ] as const;
 
@@ -494,6 +505,159 @@ const ownerPreferencesSnapshotSchema = object({
 const ownerPreferencesSetCommandSchema = object({
   ...commandEnvelope("owner.preferences.set"),
   payload: object({ ...ownerPreferencesSchema, expectedRevision: integer(0) }),
+});
+export const DEVICE_KINDS = ["iphone", "watch", "mac"] as const;
+export const DEVICE_STATUSES = ["pending", "active", "revoked"] as const;
+export const DEVICE_LIMIT_KEYS = [
+  "device.request.body_bytes",
+  "device.upload.file_bytes",
+  "device.upload.expanded_bytes",
+  "device.perception.batch_records",
+  "device.mirror.batch_items",
+  "device.track.batch_points",
+  "device.prefetch.cache.entries",
+  "device.prefetch.cache.bytes",
+  "perception.extract.max_chars",
+  "device.nonce.retained",
+] as const;
+export const DEVICE_RELEASE_CHANNELS = ["direct", "testflight", "app_store", "mac_direct"] as const;
+export const DEVICE_NAME_MAX_LENGTH = 64;
+const deviceIdSchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !/^dev_[A-Za-z0-9_-]{22}$/u.test(input))
+      throw new ContractValidationError(path, "expected a device id");
+    return input;
+  },
+};
+const devicePairingCodeSchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !/^[A-Za-z0-9_-]{21}[AQgw]$/u.test(input))
+      throw new ContractValidationError(
+        path,
+        "expected the canonical unpadded base64url encoding of 16 bytes",
+      );
+    return input;
+  },
+};
+const devicePairingNumberSchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !/^[0-9]{6}$/u.test(input))
+      throw new ContractValidationError(path, "expected a 6 digit pairing number");
+    return input;
+  },
+};
+function isHiddenNameCharacter(code: number): boolean {
+  return (
+    code < 0x20 ||
+    (code >= 0x7f && code <= 0x9f) ||
+    (code >= 0x200b && code <= 0x200f) ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2060 && code <= 0x2064) ||
+    (code >= 0x2066 && code <= 0x2069) ||
+    code === 0xfeff
+  );
+}
+const deviceNameSchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string")
+      throw new ContractValidationError(path, "expected a device name");
+    const trimmed = input.trim();
+    const characters = [...trimmed];
+    if (
+      characters.length < 1 ||
+      characters.length > DEVICE_NAME_MAX_LENGTH ||
+      characters.some((character) => isHiddenNameCharacter(character.codePointAt(0) ?? 0))
+    )
+      throw new ContractValidationError(
+        path,
+        `expected a 1-${DEVICE_NAME_MAX_LENGTH} character device name`,
+      );
+    return trimmed;
+  },
+};
+const accessText = boundedString(256);
+const deviceAccessSchema = object({
+  clientId: accessText,
+  clientSecret: accessText,
+});
+const deviceListQuerySchema = object({
+  ...envelope("query", "device.list.read"),
+  payload: object({}),
+});
+const deviceListSnapshotSchema = object({
+  ...envelope("snapshot", "device.list.snapshot"),
+  payload: object({
+    devices: array(
+      object({
+        id: deviceIdSchema,
+        revision: integer(0),
+        kind: enumeration(DEVICE_KINDS),
+        name: deviceNameSchema,
+        releaseChannel: enumeration(DEVICE_RELEASE_CHANNELS),
+        status: enumeration(DEVICE_STATUSES),
+        pairedAt: timestamp,
+        lastSeenAt: nullable(timestamp),
+        pairingNumber: nullable(devicePairingNumberSchema),
+      }),
+    ),
+    limits: array(
+      object({
+        key: enumeration(DEVICE_LIMIT_KEYS),
+        unit: boundedString(32),
+        value: integer(0),
+      }),
+    ),
+    pairing: nullable(
+      object({
+        expiresAt: timestamp,
+        access: nullable(deviceAccessSchema),
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const devicePairingStartCommandSchema = object({
+  ...commandEnvelope("device.pairing.start"),
+  payload: object({ pairingCode: devicePairingCodeSchema }),
+});
+const deviceRevisionTargetShape = {
+  deviceId: deviceIdSchema,
+  expectedRevision: integer(0),
+};
+const devicePairingConfirmCommandSchema = object({
+  ...commandEnvelope("device.pairing.confirm"),
+  payload: object(deviceRevisionTargetShape),
+});
+const deviceRevokeCommandSchema = object({
+  ...commandEnvelope("device.revoke"),
+  payload: object(deviceRevisionTargetShape),
+});
+const deviceRenameCommandSchema = object({
+  ...commandEnvelope("device.rename"),
+  payload: object({ ...deviceRevisionTargetShape, name: deviceNameSchema }),
+});
+export const SERVER_STATUS_OVERALL = ["healthy", "degraded", "not_ready", "not_live"] as const;
+export const SERVER_STATUS_DEPENDENCY = ["healthy", "degraded", "blocked", "unavailable"] as const;
+const serverStatusQuerySchema = object({
+  ...envelope("query", "server.status.read"),
+  payload: object({}),
+});
+const serverStatusSnapshotSchema = object({
+  ...envelope("snapshot", "server.status.snapshot"),
+  payload: object({
+    live: booleanValue,
+    ready: booleanValue,
+    status: enumeration(SERVER_STATUS_OVERALL),
+    dependencies: array(
+      object({
+        name: machineString,
+        required: booleanValue,
+        status: enumeration(SERVER_STATUS_DEPENDENCY),
+        reasonCode: nullable(machineString),
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
 });
 const proactiveSettingsSetCommandSchema = object({
   ...commandEnvelope("proactive.settings.set"),
@@ -1031,6 +1195,11 @@ export const MEMORY_CATEGORY_NAMES = [
   "other",
 ] as const;
 export const MEMORY_SENSITIVE_CATEGORY_NAMES = ["health", "finance"] as const;
+export const MEMORY_EXTERNAL_CATEGORY_NAMES = MEMORY_CATEGORY_NAMES.filter(
+  (category): category is Exclude<(typeof MEMORY_CATEGORY_NAMES)[number], "rule"> =>
+    category !== "rule",
+);
+export const MEMORY_EXTERNAL_RESPOND_MAXIMUM = 500;
 export const MEMORY_HISTORY_KIND_NAMES = [
   "created",
   "updated",
@@ -1318,6 +1487,20 @@ const memoryOverviewSnapshotSchema = object({
         undoable: booleanValue,
       }),
     ),
+    conversationReviews: array(
+      object({
+        reviewId: machineString,
+        finishedAt: timestamp,
+        undone: booleanValue,
+        undoable: booleanValue,
+        changes: array(
+          object({
+            memoryId: machineString,
+            action: enumeration(["created", "superseded", "confirmed"]),
+          }),
+        ),
+      }),
+    ),
     reminders: array(
       object({
         reminderId: machineString,
@@ -1396,12 +1579,37 @@ const memoryOverviewSnapshotSchema = object({
         requestedAt: timestamp,
       }),
     ),
+    externalProposals: object({
+      total: integer(0),
+      items: array(
+        object({
+          proposalId: machineString,
+          text: boundedString(2000),
+          category: enumeration(MEMORY_EXTERNAL_CATEGORY_NAMES),
+          dataClassification: enumeration(["private", "sensitive"]),
+          client: boundedString(64),
+          receivedAt: timestamp,
+        }),
+      ),
+      batches: array(
+        object({
+          batchId: machineString,
+          decidedAt: timestamp,
+          committed: integer(0),
+          rejected: integer(0),
+        }),
+      ),
+    }),
     generatedAt: timestamp,
   }),
 });
 const memoryTidyUndoCommandSchema = object({
   ...commandEnvelope("memory.tidy.undo"),
   payload: object({ changeId: machineString }),
+});
+const memoryConversationReviewUndoCommandSchema = object({
+  ...commandEnvelope("memory.conversationReview.undo"),
+  payload: object({ reviewId: machineString }),
 });
 const memoryReminderRespondCommandSchema = object({
   ...commandEnvelope("memory.reminder.respond"),
@@ -1434,6 +1642,11 @@ const memoryRulesSnapshotSchema = object({
         status: enumeration(["active", "needs_review"]),
         enforced: booleanValue,
         updatedAt: timestamp,
+        quote: nullable(boundedString(500)),
+        changes: integer(0),
+        lastUsed: nullable(
+          object({ at: timestamp, kind: machineString, decisionId: machineString }),
+        ),
       }),
     ),
     generatedAt: timestamp,
@@ -1499,6 +1712,35 @@ const memoryImportCommitCommandSchema = object({
 });
 const memoryImportUndoCommandSchema = object({
   ...commandEnvelope("memory.import.undo"),
+  payload: object({ batchId: machineString }),
+});
+export const EXTERNAL_PROPOSAL_TEXT_MAXIMUM = 2000;
+const memoryExternalRespondItemsSchema = array(
+  object({
+    proposalId: machineString,
+    decision: enumeration(["keep", "reject"]),
+    editedText: nullable(boundedString(EXTERNAL_PROPOSAL_TEXT_MAXIMUM)),
+  }),
+);
+const memoryExternalRespondCommandSchema = object({
+  ...commandEnvelope("memory.external.respond"),
+  payload: object({
+    items: {
+      parse(input, path = "$.payload.items") {
+        const items = memoryExternalRespondItemsSchema.parse(input, path);
+        if (items.length < 1 || items.length > MEMORY_EXTERNAL_RESPOND_MAXIMUM)
+          throw new ContractValidationError(path, "must hold 1 to 500 items");
+        if (new Set(items.map(({ proposalId }) => proposalId)).size !== items.length)
+          throw new ContractValidationError(path, "must not repeat a proposal");
+        if (items.some(({ decision, editedText }) => decision === "reject" && editedText !== null))
+          throw new ContractValidationError(path, "a rejected proposal cannot carry edited text");
+        return items;
+      },
+    },
+  }),
+});
+const memoryExternalUndoCommandSchema = object({
+  ...commandEnvelope("memory.external.undo"),
   payload: object({ batchId: machineString }),
 });
 const memoryApprovalRespondCommandSchema = object({
@@ -2368,6 +2610,14 @@ const schemasByType = {
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
+  "device.list.read": deviceListQuerySchema,
+  "device.list.snapshot": deviceListSnapshotSchema,
+  "device.pairing.start": devicePairingStartCommandSchema,
+  "device.pairing.confirm": devicePairingConfirmCommandSchema,
+  "device.rename": deviceRenameCommandSchema,
+  "device.revoke": deviceRevokeCommandSchema,
+  "server.status.read": serverStatusQuerySchema,
+  "server.status.snapshot": serverStatusSnapshotSchema,
   "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
   "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,
   "sensitive.interceptions.clear": sensitiveInterceptionsClearCommandSchema,
@@ -2381,6 +2631,7 @@ const schemasByType = {
   "decision.email.snapshot": decisionEmailSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
+  "memory.conversationReview.undo": memoryConversationReviewUndoCommandSchema,
   "memory.reminder.respond": memoryReminderRespondCommandSchema,
   "memory.reminder.create": memoryReminderCreateCommandSchema,
   "memory.rules.read": memoryRulesQuerySchema,
@@ -2393,6 +2644,8 @@ const schemasByType = {
   "memory.person.respond": memoryPersonRespondCommandSchema,
   "memory.import.commit": memoryImportCommitCommandSchema,
   "memory.import.undo": memoryImportUndoCommandSchema,
+  "memory.external.respond": memoryExternalRespondCommandSchema,
+  "memory.external.undo": memoryExternalUndoCommandSchema,
   "github.monitor.set_state": setGitHubMonitorStateCommandSchema,
   "memory.mutate": mutateMemoryCommandSchema,
   "grant.revoke": revokeGrantCommandSchema,

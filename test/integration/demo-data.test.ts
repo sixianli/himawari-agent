@@ -83,6 +83,8 @@ describe("[P6-demo] demo memory pack", () => {
         memoriesWithoutOriginal: 0,
         historyEventsWithoutOriginal: 0,
         decisionTextsWithoutOriginal: 0,
+        rulesWithoutOriginal: 0,
+        externalProposalsWithoutOriginal: 0,
         evidenceNotImported: false,
       });
       const count = (sql: string) => side.database.prepare(sql).pluck().get() as number;

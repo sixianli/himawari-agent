@@ -96,16 +96,15 @@ const descriptors = [primaryModel] as const;
 
 class RecordingRuntime {
   readonly models = new Map<string, unknown>();
-  readonly removedProviders: string[] = [];
+  readonly refreshes: { readonly allowNetwork?: boolean }[] = [];
 
   getModel(providerId: string, modelId: string): unknown | undefined {
     return this.models.get(`${providerId}:${modelId}`);
   }
 
-  registerProvider(providerId: string, config: Readonly<Record<string, unknown>>): void {
-    const models = config["models"];
-    if (!Array.isArray(models)) throw new Error("models missing");
-    for (const model of models) {
+  registerNativeProvider(provider: { readonly id: string; getModels(): readonly unknown[] }): void {
+    const providerId = provider.id;
+    for (const model of provider.getModels()) {
       if (model === null || typeof model !== "object" || Array.isArray(model)) {
         throw new Error("model invalid");
       }
@@ -115,10 +114,8 @@ class RecordingRuntime {
     }
   }
 
-  async setRuntimeApiKey(): Promise<void> {}
-
-  async removeRuntimeApiKey(providerId: string): Promise<void> {
-    this.removedProviders.push(providerId);
+  async refresh(options: { readonly allowNetwork?: boolean }): Promise<void> {
+    this.refreshes.push(options);
   }
 }
 
@@ -240,8 +237,9 @@ describe("production model composition", () => {
     expect(composition.transport).toBeDefined();
     expect(composition.payloadBoundary).toBeDefined();
 
+    expect(runtime.refreshes).toEqual([{ allowNetwork: false }]);
     await composition.close();
-    expect(runtime.removedProviders).toEqual([]);
+    expect(runtime.refreshes).toEqual([{ allowNetwork: false }]);
   });
 
   it("rejects unsafe secret sources and conflicting canonical descriptors", () => {
@@ -1645,6 +1643,39 @@ it("[PG-12] judges mail through the selected Pi transport with its own invocatio
     expect(output).toBe('{"items":[]}');
     expect(costMicros).toBe(2);
     expect(streamOptions[0]).toMatchObject({ maxTokens: 4096, timeoutMs: 60_000, maxRetries: 0 });
+  } finally {
+    await composition.close();
+  }
+});
+
+it("[P4-5] releases the stored prompt when a proactive call cannot get its secret handle", async () => {
+  const adapters = createReferenceAdapterSet();
+  const prepared = compositionOptions(adapters, {
+    runtimeFactory: { create: async () => new RecordingRuntime() as unknown as PiModelRuntime },
+  });
+  const released: string[][] = [];
+  const release = adapters.payload.delete.bind(adapters.payload);
+  vi.spyOn(adapters.payload, "delete").mockImplementation(async (ref) => {
+    released.push([ref]);
+    return release(ref);
+  });
+  vi.spyOn(prepared.options.handles, "issueHandle").mockRejectedValue(new Error("HANDLE_FAILED"));
+  const composition = createProductionModelComposition(prepared.options);
+  try {
+    const invoker = composition.proactiveModel(primaryModel.ref, {
+      maxOutputTokens: 256,
+      requestTimeoutMs: 60_000,
+    });
+    await expect(
+      invoker.prepare({
+        invocationId: "handle-fails",
+        prompt: "判断这些新邮件",
+        dataClassification: "private",
+        deadlineAt: "2099-01-01T00:00:00.000Z",
+      }),
+    ).rejects.toThrow("HANDLE_FAILED");
+    expect(released).toHaveLength(1);
+    expect(await adapters.payload.get(released[0]?.[0] as never)).toBeUndefined();
   } finally {
     await composition.close();
   }

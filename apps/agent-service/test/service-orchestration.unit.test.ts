@@ -2,7 +2,12 @@
 import { PassThrough } from "node:stream";
 import { EXECUTION_UDS_ERROR_CODES, ExecutionUdsError } from "@himawari-agent/platform-node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runAgentService } from "../src/service-main.js";
+import {
+  runAgentService,
+  startTenantRuntime,
+  TENANT_RUNTIME_ERROR_CODES,
+  type StartTenantRuntimeInput,
+} from "../src/service-main.js";
 
 const boundary = vi.hoisted(() => ({
   load: vi.fn(),
@@ -282,6 +287,7 @@ beforeEach(() => {
     "capabilityInvocationResultPort",
     "memoryIndex",
     "memoryEpisodes",
+    "externalMemoryProposals",
     "memoryConsolidation",
     "threadRepository",
     "sensitiveInterceptions",
@@ -1104,6 +1110,35 @@ describe("service request readiness and runtime callbacks", () => {
     expect(stdout).toContain('"event":"service.ready"');
     expect(repository.close).not.toHaveBeenCalled();
   });
+  it("[I-94] names the refusing check in a model-call failure log only for port errors", async () => {
+    web();
+    start();
+    await settle();
+    const options = boundary.runs.mock.calls[0]?.[0];
+    options.onTitleFailure(
+      Object.assign(new Error("Budget account classification is immutable"), {
+        code: "PORT_CONFLICT",
+      }),
+    );
+    const line = stderr.split("\n").find((item: string) => item.includes('"code":"PORT_CONFLICT"'));
+    expect(JSON.parse(line ?? "").site).toBe("Budget account classification is immutable");
+    options.onTitleFailure(new Error("private provider exception"));
+    expect(stderr).not.toContain("private provider exception");
+  });
+  it("[I-94] gives every model-call failure log the site field", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(new URL("../src/service-main.ts", import.meta.url), "utf8");
+    for (const event of [
+      "thread-title.failed",
+      "memory-capture.failed",
+      "memory-episode.failed",
+      "memory-consolidation.failed",
+    ]) {
+      const start = source.indexOf(`event: "${event}"`);
+      expect(start).toBeGreaterThan(-1);
+      expect(source.slice(start, start + 200)).toContain("...siteField(error)");
+    }
+  });
   it("rechecks the memory worker authority at execution time", async () => {
     web();
     start();
@@ -1137,4 +1172,179 @@ describe("service request readiness and runtime callbacks", () => {
       expect(repository.close).toHaveBeenCalledOnce();
     },
   );
+});
+
+describe("[MU-A] one tenant runtime started and stopped as a handle", () => {
+  function tenantInput(extra: Partial<StartTenantRuntimeInput> = {}): StartTenantRuntimeInput {
+    const sources = {
+      provider: { resolve: boundary.key },
+      keys: { kind: "systemd-credential", productionSuitable: true, resolve: boundary.key },
+    } as unknown as StartTenantRuntimeInput["sources"];
+    return {
+      tenantId: "tenant-a",
+      configuration: configuration as never,
+      magpieModels: {
+        configuration,
+        prices: new Map(),
+        automaticRefs: new Set(),
+      } as never,
+      sources,
+      workerTokenPath: "/fixture-token.json",
+      output,
+      errorOutput: errors,
+      ...extra,
+    };
+  }
+  it("returns a ready handle without touching process signals and stops idempotently", async () => {
+    const handle = await Promise.all([startTenantRuntime(tenantInput()), settle()]).then(
+      ([started]) => started,
+    );
+    expect(handle.tenantId).toBe("tenant-a");
+    expect(handle.listenPath).toBeUndefined();
+    expect(handle.listenPort).toBeUndefined();
+    expect(stdout).toContain('"event":"service.ready"');
+    expect(signal).toBeUndefined();
+    await handle.stop();
+    await handle.stop();
+    expect(repository.close).toHaveBeenCalledOnce();
+    expect(boundary.stopWorker).toHaveBeenCalledOnce();
+    expect(stdout).not.toContain('"event":"service.stopped"');
+  });
+  it("reports authority loss to every handler, including one registered after the loss", async () => {
+    const handle = await startTenantRuntime(tenantInput());
+    const early = vi.fn();
+    handle.onAuthorityLost(early);
+    const error = new Error("AGENT_AUTHORITY_LOST");
+    boundary.authority.mock.calls[0]?.[0].onLost(error);
+    await settle();
+    expect(early).toHaveBeenCalledWith(error);
+    const late = vi.fn();
+    handle.onAuthorityLost(late);
+    await settle();
+    expect(late).toHaveBeenCalledWith(error);
+    expect(boundary.stopWorker).toHaveBeenCalledOnce();
+    await handle.stop();
+    expect(process.exitCode).not.toBe(1);
+  });
+  it("logs and survives an authority-lost handler that throws, and still tells the other handlers", async () => {
+    const handle = await startTenantRuntime(tenantInput());
+    const other = vi.fn();
+    handle.onAuthorityLost(() => {
+      throw new Error("HANDLER_FAILED");
+    });
+    handle.onAuthorityLost(other);
+    boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+    await settle();
+    expect(other).toHaveBeenCalledOnce();
+    expect(stderr).toContain('"event":"authority.lost_handler_failed"');
+    await handle.stop();
+  });
+  it("asks the injected execution worker launcher to start before reading the worker binding", async () => {
+    const ensureStarted = vi.fn(async () => {
+      boundary.events.push("worker.ensure-started");
+    });
+    boundary.boot.mockImplementation(async () => {
+      boundary.events.push("worker.binding-read");
+      return {
+        ...authority,
+        deploymentId: authority.id,
+        workerInstanceId: `execution-worker:${authority.id}`,
+        workerBootId: "worker-boot",
+      };
+    });
+    const handle = await startTenantRuntime(tenantInput({ executionWorker: { ensureStarted } }));
+    expect(ensureStarted).toHaveBeenCalledOnce();
+    expect(boundary.events.indexOf("worker.ensure-started")).toBeLessThan(
+      boundary.events.indexOf("worker.binding-read"),
+    );
+    await handle.stop();
+  });
+  it("passes the shared read-thread budget to the repository and borrows the shared Pi pool without closing it", async () => {
+    const budget = { tryAcquire: vi.fn(() => true), release: vi.fn() };
+    const shared = { prepare: vi.fn(), close: vi.fn() };
+    const handle = await startTenantRuntime(
+      tenantInput({
+        shared: { extraReadThreadBudget: budget, piFilePreparationPool: shared as never },
+      }),
+    );
+    expect(boundary.open.mock.calls[0]?.[0]).toMatchObject({ extraReadThreadBudget: budget });
+    expect(boundary.sandbox.mock.calls.length).toBe(1);
+    const prepare = boundary.sandbox.mock.calls[0]?.[0].createPiFilePreparation();
+    expect(prepare).toBe(shared.prepare);
+    await handle.stop();
+    expect(shared.close).not.toHaveBeenCalled();
+  });
+  it("listens on the requested unix socket and reports it as the listen path", async () => {
+    const f = web();
+    const handle = await startTenantRuntime(
+      tenantInput({ listen: { kind: "unix", path: "/fixture-state/web/tenant-a.sock" } }),
+    );
+    expect(boundary.http.mock.calls[0]?.[0]).toMatchObject({
+      listenUnixSocketPath: "/fixture-state/web/tenant-a.sock",
+    });
+    expect(handle.listenPath).toBe("/fixture-state/web/tenant-a.sock");
+    expect(handle.listenPort).toBeUndefined();
+    expect(handle.health).toBeDefined();
+    expect(stdout).toContain('"listenPath":"/fixture-state/web/tenant-a.sock"');
+    expect(stdout).not.toContain('"listenPort"');
+    await handle.stop();
+    expect(f.http.close).toHaveBeenCalledOnce();
+  });
+  it("keeps tcp listening and the port report when no unix socket is asked for", async () => {
+    web();
+    const handle = await startTenantRuntime(tenantInput());
+    expect(boundary.http.mock.calls[0]?.[0]).not.toHaveProperty("listenUnixSocketPath");
+    expect(handle.listenPort).toBe(mockListenPort);
+    expect(handle.listenPath).toBeUndefined();
+    await handle.stop();
+  });
+  it("rejects with the startup error and releases owned resources when startup fails", async () => {
+    boundary.connect.mockResolvedValue({ payload: { ready: false } });
+    const pending = startTenantRuntime(tenantInput());
+    const outcome = expect(pending).rejects.toBeInstanceOf(Error);
+    await vi.advanceTimersByTimeAsync(400);
+    await outcome;
+    expect(repository.close).toHaveBeenCalledOnce();
+    expect(stdout).not.toContain('"event":"service.ready"');
+  });
+  it("bounds stop() with the given timeout, and a later stop() waits for the same shutdown without closing twice", async () => {
+    let release: () => void = () => undefined;
+    boundary.admissionStop.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const handle = await startTenantRuntime(tenantInput());
+    const stopping = handle.stop(500);
+    const outcome = expect(stopping).rejects.toMatchObject({
+      code: TENANT_RUNTIME_ERROR_CODES.STOP_TIMEOUT,
+    });
+    await vi.advanceTimersByTimeAsync(600);
+    await outcome;
+    let finished = false;
+    const again = handle.stop().then(() => {
+      finished = true;
+    });
+    await settle();
+    expect(finished).toBe(false);
+    release();
+    await again;
+    expect(finished).toBe(true);
+    expect(boundary.admissionStop).toHaveBeenCalledOnce();
+    expect(repository.close).toHaveBeenCalledOnce();
+  });
+  it("starts, stops and starts again without leaving the first runtime's resources behind", async () => {
+    for (let round = 0; round < 3; round += 1) {
+      const handle = await startTenantRuntime(tenantInput());
+      await handle.stop();
+    }
+    expect(boundary.open).toHaveBeenCalledTimes(3);
+    expect(repository.close).toHaveBeenCalledTimes(3);
+    expect(boundary.admissionStop).toHaveBeenCalledTimes(3);
+    expect(boundary.payloadStop).toHaveBeenCalledTimes(3);
+    expect(boundary.stopWorker).toHaveBeenCalledTimes(3);
+    expect(lease.stop).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

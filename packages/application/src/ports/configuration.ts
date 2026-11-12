@@ -77,6 +77,16 @@ export interface ConfiguredMemoryDescriptor {
   readonly dimensions: number;
   readonly minimumSimilarity?: number;
   readonly retrieval?: ConfiguredMemoryRetrieval;
+  readonly conversationReview?: ConfiguredConversationReview;
+}
+
+export interface ConfiguredConversationReview {
+  readonly enabled?: boolean;
+  readonly maximumSegmentsPerDay?: number;
+  readonly maximumSourceCharacters?: number;
+  readonly maximumRelatedMemories?: number;
+  readonly maximumNewMemoriesPerDay?: number;
+  readonly maximumOutputTokens?: number;
 }
 
 export interface ConfiguredMemoryRetrieval {
@@ -183,7 +193,9 @@ export interface FileReadRouteConfiguration {
 
 export type PublicSearchRouteConfiguration = (
   | FileReadRouteConfiguration
-  | (Omit<FileReadRouteConfiguration, "grantId"> & { readonly scopeSource: "private_temp" })
+  | (Omit<FileReadRouteConfiguration, "grantId"> & {
+      readonly scopeSource: "private_temp";
+    })
 ) &
   WebProviderRouteConfiguration;
 
@@ -270,6 +282,18 @@ export interface MuseIntakeConfiguration {
   readonly gapExportSecretRef?: string;
 }
 
+export const REAL_EVAL_MODES = ["off", "once", "weekly"] as const;
+export type RealEvalMode = (typeof REAL_EVAL_MODES)[number];
+export const REAL_EVAL_WEEKLY_CAP_MICROS_MAXIMUM = 500_000;
+
+export interface RealEvalConfiguration {
+  readonly mode: RealEvalMode;
+  readonly modelRef: string;
+  readonly weeklyCapMicros: number;
+  readonly newMemoriesPerRun: number;
+  readonly requestTimeoutMs: number;
+}
+
 export interface McpReadConfiguration {
   readonly audience: string;
   readonly proposals?: true;
@@ -277,6 +301,7 @@ export interface McpReadConfiguration {
 
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
   readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;

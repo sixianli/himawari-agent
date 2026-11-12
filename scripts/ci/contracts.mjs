@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import Ajv from "ajv";
 
 export const linuxRunnerLabel = "ci-vps";
+export const gateRunnerLabel = "ci-vps-gate";
 export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 export const identityFields = [
   "repository",

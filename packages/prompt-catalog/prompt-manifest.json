@@ -294,6 +294,21 @@
       "reason": "W-17 改写这句时把“必须”一起改"
     }
   },
+  "eval.real-memory.answer": {
+    "sha256": "ddfcdf9e0e36b91faafa899fc005a859fe602ae9222d324c03cea2447a11d095",
+    "changedIn": "ADR 0219",
+    "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
+  },
+  "eval.real-memory.judge": {
+    "sha256": "72ba55ba05d1378548b1ab6765a3c837614ca304c67cc91bdcf8bf20fe0f4ed3",
+    "changedIn": "ADR 0219",
+    "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
+  },
+  "eval.real-memory.question": {
+    "sha256": "bd9ec88d02e4d3c4b6f21b5dab89941946a27e7727395de39d6489a43a1e2fd8",
+    "changedIn": "ADR 0219",
+    "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
+  },
   "mail.judgment": {
     "sha256": "6828d0988462d4e491a4b7036b8a1f0fc3985ec859ddf79d6a2d10fdedc55f99",
     "changedIn": "HR-2",
@@ -330,14 +345,24 @@
     "reason": "新增：邮件判断里有待确认记忆时，说明它们只是线索，不是事实"
   },
   "mcp.find-memories": {
-    "sha256": "7661b0693e0523ebb3f83eb447b058eebfe9ce8ec811a7e762d86025fd6b58cb",
-    "changedIn": "ADR 0219",
-    "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
+    "sha256": "b237866524c80554f6c6b7196603727f09c43dd92f6e05fe7ea57f173a916fa6",
+    "changedIn": "ADR 0242",
+    "reason": "外部 agent 读记忆：新增 start_here 和服务使用说明，三个读工具的描述写明触发条件"
+  },
+  "mcp.propose-memories": {
+    "sha256": "f75b853df7d4a7a9e00f60981b07066014f3f68105df73f5ce30419d3bdfce7f",
+    "changedIn": "ADR 0228",
+    "reason": "P5-3: full also covers kept text of recently replaced or rejected proposals"
+  },
+  "mcp.propose-memories-result": {
+    "sha256": "026254c2eb0ddcf54e2cd12d7e39597d85e77e4a4bbab7b0f2b83ecb296bac0f",
+    "changedIn": "ADR 0228",
+    "reason": "P5-3: external memory proposals wait as pending until the owner confirms in Himawari; batch propose_memories"
   },
   "mcp.propose-memory": {
-    "sha256": "5c10a166b812efb777a14cd3843a13c0fcc627d9810f84d2f5618a52296833b1",
-    "changedIn": "ADR 0225",
-    "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
+    "sha256": "71097efb7312054b44b1d2981ebe2e99286a24d10eba18682c54abd7554fe461",
+    "changedIn": "ADR 0228",
+    "reason": "P5-3: external memory proposals wait as pending until the owner confirms in Himawari; batch propose_memories"
   },
   "mcp.propose-memory-already-saved": {
     "sha256": "f213567f4ace8b14f14d2f753e32498763ecc2f9008501e2c1a9ee51aaf37921",
@@ -364,20 +389,30 @@
     "changedIn": "ADR 0225",
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
   },
+  "mcp.propose-memory-full": {
+    "sha256": "99230b859bc102b3bf66351798dcb5771dd9879f89a366084ad7757c338756ad",
+    "changedIn": "ADR 0228",
+    "reason": "P5-3: full also covers kept text of recently replaced or rejected proposals"
+  },
   "mcp.propose-memory-invalid": {
     "sha256": "ccf6a2eefb200610b1c79f34493464cedb334dfee56d3bcf75e8af28e2248804",
     "changedIn": "ADR 0225",
     "reason": "分类不在允许范围时也回这句，文字写明两种原因"
   },
-  "mcp.propose-memory-not-ready": {
-    "sha256": "ebf3736df2154401f6f92fb69bcbd973ee4a114582ec0d13253462fb9c919507",
-    "changedIn": "ADR 0225",
-    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  "mcp.propose-memory-pending": {
+    "sha256": "89d36079e60b5c4a4bfc6f0b1b486373678ae8e82c8e11b0bcb35f59c506e734",
+    "changedIn": "ADR 0228",
+    "reason": "P5-3: external memory proposals wait as pending until the owner confirms in Himawari; batch propose_memories"
   },
   "mcp.propose-memory-saved": {
     "sha256": "844d784b588aa8650d685b823ae424e4775c2bc2c8a741d1c31d8dabc1b7db57",
     "changedIn": "ADR 0225",
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-secret": {
+    "sha256": "cf2b819b8852f0eb55177378c407a603bc7498396178ed6971fd4e96789c3a14",
+    "changedIn": "ADR 0228",
+    "reason": "P5-3: external memory proposals wait as pending until the owner confirms in Himawari; batch propose_memories; key is scanned for secrets too"
   },
   "mcp.propose-memory-sensitive-note": {
     "sha256": "24fdfe018d1226955839819b48347679a90e9d16cb6428a70ab5746c15854779",
@@ -464,10 +499,35 @@
     "changedIn": "ADR 0219",
     "reason": "规则手册也列出主人在对话里立的长期规则（ADR 0213）"
   },
+  "mcp.server-instructions": {
+    "sha256": "98d911bf287a39e40b7348c077b6258cf4dd95be67b3b4275dbefcc5e0a9b62e",
+    "changedIn": "ADR 0242",
+    "reason": "外部 agent 读记忆：新增服务使用说明"
+  },
+  "mcp.start-here": {
+    "sha256": "55f0d343aee40071057a6ab24ee9a8373ad6d335b6df31796043641d5636fdf9",
+    "changedIn": "ADR 0242",
+    "reason": "外部 agent 读记忆：规则摘要截断提示指向 rule_book，start_here 描述写准截断范围"
+  },
+  "mcp.start-here-omitted": {
+    "sha256": "3c91def4ff3efa9af05ca5bd7e7cb9b9304f77c72d1d1b319a4b44039900e668",
+    "changedIn": "ADR 0242",
+    "reason": "外部 agent 读记忆：新增 start_here 概况段截断时的提示"
+  },
+  "mcp.start-here-rules-note": {
+    "sha256": "a0b9b6b42142fed30a3f70e93b7dd6ea9fdb36ffcb04a2bb28aff740c50a2f8e",
+    "changedIn": "ADR 0242",
+    "reason": "外部 agent 读记忆：新增 start_here 规则摘要段的固定说明"
+  },
+  "mcp.start-here-rules-omitted": {
+    "sha256": "8a1041495b5bb495569ece1904a384281958bd49d20cb205edc880aa523e643b",
+    "changedIn": "ADR 0242",
+    "reason": "外部 agent 读记忆：新增规则摘要截断提示，指向 rule_book"
+  },
   "mcp.today-context": {
-    "sha256": "565ffbea5f0f81a0e65a96e44c3e79561409ea58078fb9603d2a0ab94a5a59d2",
-    "changedIn": "ADR 0219",
-    "reason": "今日上下文加上今天和昨天的对话摘要（P3-6 合并后接上）"
+    "sha256": "bc3035b642c736cfa6946e2c9b2ce88ec9f2b0e066266f5352db0d24050d3374",
+    "changedIn": "ADR 0242",
+    "reason": "外部 agent 读记忆：新增 start_here 和服务使用说明，三个读工具的描述写明触发条件"
   },
   "mcp.tool-result-failed": {
     "sha256": "881b14437ad5dc2a42e6495240f40abeb4ff7d101bdd908e34f147560eb556ed",
@@ -517,6 +577,25 @@
     "sha256": "1903531c8c4bca28d8e853a4cd569aa0a9b95fc691f39d72d81d5f183c8fb058",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "memory.conversation-review": {
+    "sha256": "9b9fc6c0068093938dd12a124c53306fdba877716daa200de1ea94075a5ed530",
+    "changedIn": "ADR 0231",
+    "reason": "初次登记：每天回看一段已经结束的对话，补记跨几条消息才完整的信息，找出被推翻的旧记忆；字段规则和每轮抽取共用同一份文字",
+    "emphasis": {
+      "kind": "hard-condition",
+      "phrases": ["supersede 和 unchanged 必须填 existingMemoryId", "每条都必须填"],
+      "evidence": [
+        "apps/agent-service/src/production-memory-capture.ts#(requestedDecision !== \"create\" && existing === null)",
+        "apps/agent-service/src/production-memory-capture.ts#const evidenceRejected"
+      ],
+      "reason": "回看把每条候选交给每轮抽取同一个解析函数：非 create 的候选没有有效的 existingMemoryId 整条作废；quote 对不上 messageId 那条主人消息的原话会被拒"
+    }
+  },
+  "memory.conversation-review.day": {
+    "sha256": "0299f9a2367cdb92f9eb7292fd9f87ebf498863f59c74a86eb9f3190736da0f5",
+    "changedIn": "ADR 0231",
+    "reason": "初次登记：回看提示词最后一行带今天的日期，每天会变，所以放在最后"
   },
   "memory.date.ongoing": {
     "sha256": "2e254e51b948538ef3e6edf6362cafe1b73eb1b2ed73e9f6dc9ca31a4fd72ac1",

@@ -4,7 +4,7 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { requestDataExport } from "../data-export.js";
+import { requestChatExport, requestDataExport } from "../data-export.js";
 import { DEFAULT_UI_LOCALE, useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import type { MemoryItem, MemoryModel, MemoryOverview } from "../memory.js";
@@ -29,8 +29,14 @@ import type { MuseModel } from "../muse.js";
 import type { ProactiveGroup, ProactiveModel } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { Glyph } from "./glyphs.js";
+import { ExternalProposalsSection } from "./external-proposals.js";
 import { MailDecisionPage } from "./mail-decision-page.js";
-import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
+import {
+  MemoryApprovalCard,
+  openMemoryPage,
+  openNotificationSettings,
+  TextEditor,
+} from "./memory-panel.js";
 import { MuseReference } from "./muse-reference.js";
 import { ActionButton, Dropdown, EmptyState } from "./primitives.js";
 import { OwnerRulesSection } from "./rule-receipt.js";
@@ -1049,6 +1055,14 @@ export function RemindersPage({
               {message("reminders.empty")}
             </EmptyState>
           ) : null}
+          {overview.externalProposals.total > 0 ? (
+            <p className="settings-note reminders-external">
+              {message("memory.external.reviewHint", { count: overview.externalProposals.total })}{" "}
+              <ActionButton variant="quiet" onClick={() => openMemoryPage()}>
+                {message("memory.external.go")}
+              </ActionButton>
+            </p>
+          ) : null}
           {proactive ? (
             <ProactiveReviewSection proactive={proactive} message={message} locale={locale} />
           ) : null}
@@ -1794,6 +1808,36 @@ function TimelineTab({
           (item.action === "reflect" || item.action === "hold") && waiting.has(item.memoryId),
       }),
     ),
+    ...overview.conversationReviews.map((item): Event => {
+      const count = (action: string) =>
+        item.changes.filter((change) => change.action === action).length;
+      return {
+        key: item.reviewId,
+        at: item.finishedAt,
+        type: "tidy",
+        kind: "review",
+        text: message("memory.page.reviewed", {
+          created: count("created"),
+          superseded: count("superseded"),
+          confirmed: count("confirmed"),
+        }),
+        note: item.changes
+          .flatMap(({ memoryId, action }) => {
+            const found = overview.memories.find((entry) => entry.memoryId === memoryId);
+            if (!found) return [];
+            const quote = found.history.find((entry) => entry.quote)?.quote ?? null;
+            return [
+              message("memory.page.reviewItem", { action, text: found.text }) +
+                (quote ? message("memory.page.reviewQuote", { quote }) : ""),
+            ];
+          })
+          .join(" "),
+        undone: item.undone,
+        ...(!item.undone && !item.undoable
+          ? { locked: true }
+          : { undo: () => void memory.undoReview(item) }),
+      };
+    }),
     ...overview.imports.map(
       (item): Event => ({
         key: item.batchId,
@@ -2074,7 +2118,12 @@ function ExportPanel({ message, onClose }: { message: Message; onClose: () => vo
   const [state, setState] = useState<
     | { readonly kind: "idle" }
     | { readonly kind: "working" }
-    | { readonly kind: "done"; readonly memories: number; readonly withheld: number }
+    | {
+        readonly kind: "done";
+        readonly memories: number;
+        readonly rules: number;
+        readonly withheld: number;
+      }
     | { readonly kind: "failed" }
   >({ kind: "idle" });
   const download = async () => {
@@ -2086,7 +2135,12 @@ function ExportPanel({ message, onClose }: { message: Message; onClose: () => vo
       link.download = result.fileName;
       link.click();
       URL.revokeObjectURL(link.href);
-      setState({ kind: "done", memories: result.memories, withheld: result.withheld });
+      setState({
+        kind: "done",
+        memories: result.memories,
+        rules: result.rules,
+        withheld: result.withheld,
+      });
     } catch {
       setState({ kind: "failed" });
     }
@@ -2106,10 +2160,79 @@ function ExportPanel({ message, onClose }: { message: Message; onClose: () => vo
       {state.kind === "working" ? <output>{message("memory.page.exportWorking")}</output> : null}
       {state.kind === "done" ? (
         <output>
-          {message("memory.page.exportDone", { count: state.memories, withheld: state.withheld })}
+          {message("memory.page.exportDone", {
+            count: state.memories,
+            rules: state.rules,
+            withheld: state.withheld,
+          })}
         </output>
       ) : null}
       {state.kind === "failed" ? <p role="alert">{message("memory.page.exportFailed")}</p> : null}
+    </section>
+  );
+}
+
+function ChatExportPanel({ message, onClose }: { message: Message; onClose: () => void }) {
+  const [state, setState] = useState<
+    | { readonly kind: "idle" }
+    | { readonly kind: "working" }
+    | {
+        readonly kind: "done";
+        readonly threads: number;
+        readonly messages: number;
+        readonly withheld: number;
+      }
+    | { readonly kind: "failed"; readonly tooLarge: boolean }
+  >({ kind: "idle" });
+  const download = async () => {
+    setState({ kind: "working" });
+    try {
+      const result = await requestChatExport();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(result.blob);
+      link.download = result.fileName;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      setState({
+        kind: "done",
+        threads: result.threads,
+        messages: result.messages,
+        withheld: result.withheld,
+      });
+    } catch (error) {
+      setState({
+        kind: "failed",
+        tooLarge: error instanceof Error && error.message === "CHAT_EXPORT_TOO_LARGE",
+      });
+    }
+  };
+  return (
+    <section className="memory-card" ref={reveal}>
+      <h4>{message("memory.page.chatExportTitle")}</h4>
+      <p>{message("memory.page.chatExportNote")}</p>
+      <div className="actions">
+        <ActionButton disabled={state.kind === "working"} onClick={download}>
+          {message("memory.page.chatDownload")}
+        </ActionButton>
+        <ActionButton variant="quiet" onClick={onClose}>
+          {message("memory.page.less")}
+        </ActionButton>
+      </div>
+      {state.kind === "working" ? <output>{message("memory.page.exportWorking")}</output> : null}
+      {state.kind === "done" ? (
+        <output>
+          {message("memory.page.chatExportDone", {
+            threads: state.threads,
+            messages: state.messages,
+            withheld: state.withheld,
+          })}
+        </output>
+      ) : null}
+      {state.kind === "failed" ? (
+        <p role="alert">
+          {message(state.tooLarge ? "memory.page.chatExportTooLarge" : "memory.page.exportFailed")}
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -2213,7 +2336,7 @@ export function MemoryPage({
 }) {
   const [tab, setTab] = useState<Tab>("memories");
   const [showId, setShowId] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"add" | "import" | "export" | null>(null);
+  const [panel, setPanel] = useState<"add" | "import" | "export" | "chats" | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const [since, setSince] = useState<string | null | undefined>(undefined);
   const timer = useRef(0);
@@ -2254,6 +2377,7 @@ export function MemoryPage({
       {panel === "add" ? (
         <AddForm memory={memory} message={message} notify={notify} onDone={() => setPanel(null)} />
       ) : null}
+      <ExternalProposalsSection memory={memory} message={message} />
       <ConfirmSection memory={memory} message={message} />
       <OwnerRulesSection memory={memory} message={message} />
       <div role="tablist" className="memory-tabs" aria-label={message("nav.memory")}>
@@ -2300,7 +2424,7 @@ export function MemoryPage({
       )}
       <footer className="memory-footer">
         <span>
-          {(["import", "export"] as const).map((key) => (
+          {(["import", "export", "chats"] as const).map((key) => (
             <ActionButton
               key={key}
               variant="quiet"
@@ -2308,7 +2432,7 @@ export function MemoryPage({
               aria-expanded={panel === key}
               onClick={() => setPanel(panel === key ? null : key)}
             >
-              {message(`memory.page.${key}`)}
+              {message(key === "chats" ? "memory.page.chatExport" : `memory.page.${key}`)}
             </ActionButton>
           ))}
         </span>
@@ -2323,6 +2447,9 @@ export function MemoryPage({
       ) : null}
       {panel === "export" && overview ? (
         <ExportPanel message={message} onClose={() => setPanel(null)} />
+      ) : null}
+      {panel === "chats" && overview ? (
+        <ChatExportPanel message={message} onClose={() => setPanel(null)} />
       ) : null}
       {notice ? (
         <output className="memory-notice">

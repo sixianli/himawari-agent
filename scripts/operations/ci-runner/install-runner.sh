@@ -15,7 +15,7 @@ source "$SRC/runners.sh"
 
 require_runner_host
 [ "$(id -u)" -eq 0 ] || { echo "run it with sudo" >&2; exit 65; }
-for tool in nft visudo useradd sha256sum curl ss python3; do
+for tool in nft visudo useradd groupadd getent sha256sum curl ss python3; do
   command -v "$tool" > /dev/null || { echo "missing $tool" >&2; exit 66; }
 done
 
@@ -27,7 +27,7 @@ for id in $RUNNER_IDS; do
   fi
 done
 
-INSTALL_PATHS="$UNIT_DIR/gh-runners.slice $UNIT_DIR/gh-runner-nft.service $UNIT_DIR/gh-runner-clean.service $UNIT_DIR/gh-runner-clean.timer /etc/gh-runner $SUDOERS_FILE $SHARED/bin"
+INSTALL_PATHS="$UNIT_DIR/gh-runners.slice $UNIT_DIR/ghgate.slice $UNIT_DIR/gh-runner-nft.service $UNIT_DIR/gh-runner-clean.service $UNIT_DIR/gh-runner-clean.timer /etc/gh-runner $SUDOERS_FILE $SHARED/bin"
 for id in $RUNNER_IDS; do
   runner_select "$id"
   INSTALL_PATHS="$INSTALL_PATHS $UNIT_DIR/$RUNNER_UNIT $RUNNER_ROOT/hooks"
@@ -86,6 +86,20 @@ install_runner_account() {
   chmod 0644 "$UNIT_DIR/$RUNNER_UNIT"
 }
 
+install_runner_share() {
+  if ! getent group "$RUNNER_SHARE_GROUP" > /dev/null; then
+    if [ -e "$RUNNER_SHARE_ROOT" ] || [ -L "$RUNNER_SHARE_ROOT" ]; then
+      echo "$RUNNER_SHARE_ROOT exists but group $RUNNER_SHARE_GROUP does not; refusing to take over a directory this script did not create" >&2
+      return 71
+    fi
+    record_created_group "$BACKUP" "$RUNNER_SHARE_GROUP"
+    groupadd --system "$RUNNER_SHARE_GROUP"
+  fi
+  record_created_paths "$BACKUP" "$RUNNER_SHARE_ROOT"
+  install -d -m 2770 -o root -g "$RUNNER_SHARE_GROUP" "$RUNNER_SHARE_ROOT"
+}
+
+install_runner_share
 for id in $RUNNER_IDS; do
   runner_select "$id"
   install_runner_account
@@ -94,7 +108,7 @@ done
 rm -f -- "$SHARED/bin/runner-pause.sh" "$SHARED/bin/runner-resume.sh" "$SHARED/bin/runners.sh"
 [ ! -d "$SHARED/bin" ] || rmdir --ignore-fail-on-non-empty -- "$SHARED/bin"
 install -m 0755 -o root -g root "$SRC/clean-old.sh" "$SRC/runners.sh" "$SHARED/hooks/"
-install -m 0644 -o root -g root "$SRC/gh-runners.slice" "$SRC/gh-runner-nft.service" "$SRC/gh-runner-clean.service" "$SRC/gh-runner-clean.timer" "$UNIT_DIR/"
+install -m 0644 -o root -g root "$SRC/gh-runners.slice" "$SRC/ghgate.slice" "$SRC/gh-runner-nft.service" "$SRC/gh-runner-clean.service" "$SRC/gh-runner-clean.timer" "$UNIT_DIR/"
 
 apply_runner_controls
 
@@ -104,4 +118,4 @@ systemctl enable --now gh-runner-nft.service gh-runner-clean.timer
 nft list table inet gh_runner > /dev/null
 trap - ERR INT TERM HUP
 
-echo "INSTALL_OK version=$VERSION runner_uids=$RUNNER_CONTROL_UIDS blocked_local_ports=$RUNNER_CONTROL_PORTS backup=$BACKUP"
+echo "INSTALL_OK version=$VERSION share=$RUNNER_SHARE_ROOT runner_uids=$RUNNER_CONTROL_UIDS blocked_local_ports=$RUNNER_CONTROL_PORTS backup=$BACKUP"

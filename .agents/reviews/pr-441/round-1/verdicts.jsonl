@@ -1,0 +1,10 @@
+{"id":"ds-1","model":"opencode-go/deepseek-v4.1-flash","quote":"只显示 `.log`，把结构化失败详情排除","valid":true,"class":"error","severity":"medium-high","trigger":"vitest 用例失败","consequence":"日志里仍然没有失败用例的名字，PR 目标没达到","modelSeverity":"高"}
+{"id":"ds-2","model":"opencode-go/deepseek-v4.1-flash","quote":"全局 64 KiB 预算会让排序靠后的失败日志整体消失","valid":true,"class":"error","severity":"medium-high","trigger":"排在前面的日志很大","consequence":"真正失败的命令日志不显示","modelSeverity":"中"}
+{"id":"ds-3","model":"opencode-go/deepseek-v4.1-flash","quote":"判据用扩展名而不是已校验的 `result.json` 元数据","valid":true,"class":"error","severity":"low","trigger":"以后某个检查把 .log 登记为 artifact","consequence":"没经过遮盖管道的内容被显示，发布前密钥扫描仍会拦","modelSeverity":"低"}
+{"id":"ds-4","model":"opencode-go/deepseek-v4.1-flash","quote":"U+2028/U+2029 没有被清理","valid":true,"class":"error","severity":"low","trigger":"测试输出里带 U+2028","consequence":"某些查看器里像没有前缀的新行","modelSeverity":"低"}
+{"id":"ds-5","model":"opencode-go/deepseek-v4.1-flash","quote":"自动化用例用的是合成失败日志","valid":true,"class":"error","severity":"low","trigger":"真实输出和合成样本不同","consequence":"用例通过但线上看不到用例名","modelSeverity":"低"}
+{"id":"ds-6","model":"opencode-go/deepseek-v4.1-flash","quote":"文档与代码的小不一致","valid":true,"class":"error","severity":"low","trigger":"照文档理解这一步的行为","consequence":"以为诊断只在失败时显示、只写摘要","modelSeverity":"低"}
+{"id":"glm-1","model":"opencode-go/glm-5.3-flash","quote":"的文件**原样复制、不遮盖**","valid":true,"class":"error","severity":"low","trigger":"以后某个检查把 .log 登记为 artifact","consequence":"没经过遮盖管道的内容被显示","modelSeverity":"低"}
+{"id":"glm-2","model":"opencode-go/glm-5.3-flash","quote":"该行仍写「每个文本文件最后 40 行，每段摘要不超过 64 KiB」","valid":true,"class":"error","severity":"low","trigger":"照设计文档第 320 行理解","consequence":"不知道失败时另有 120 行日志","modelSeverity":"低"}
+{"id":"glm-3","model":"opencode-go/glm-5.3-flash","quote":"对末尾多出的空行会打出一行","valid":true,"class":"better"}
+{"id":"glm-4","model":"opencode-go/glm-5.3-flash","quote":"会以 cwd 作为 reports 目录扫全仓库","valid":true,"class":"error","severity":"low","trigger":"手写 --failed-logs 空串","consequence":"把当前目录当报告目录","modelSeverity":"低"}

@@ -1,23 +1,15 @@
 import { createHash } from "node:crypto";
-import { SqliteAutomaticActionReview } from "./sqlite-automatic-action-review.ts";
-import { SqliteAuthorizationReservations } from "./sqlite-authorization-reservations.ts";
-import {
-  approvalMatchesIntent,
-  isApprovalResolutionReplay,
-} from "@himawari-agent/application/action-intent-snapshot";
 import type {
   ApprovalChangeMarker,
   ApprovalRequest,
-  AutomaticReviewStart,
-  AutomaticReviewRecord,
-  AutomaticReviewFinish,
-  ReserveAuthorizationInput,
-  GovernedGrantRecord,
   AttentionDecisionCommit,
   AttentionDecisionCommitResult,
   AttentionPolicyState,
   AuditRecord,
   AuthorityFence,
+  AutomaticReviewFinish,
+  AutomaticReviewRecord,
+  AutomaticReviewStart,
   BackgroundAdmissionReservation,
   BackgroundAdmissionResult,
   BackgroundOccurrenceClaim,
@@ -37,6 +29,7 @@ import type {
   GitHubWebhookReceiptRecord,
   GovernanceMutationReceipt,
   GovernedCapabilityExecutionHandle,
+  GovernedGrantRecord,
   GrantRecord,
   OwnerIdentityBindingRecord,
   PayloadRecord,
@@ -44,6 +37,7 @@ import type {
   ProductSessionRecord,
   ReliableEvent,
   ReliableEventRecord,
+  ReserveAuthorizationInput,
   ResolveApprovalInput,
   RunDispatchScope,
   RunExecutionLeaseTransactionGuard,
@@ -54,6 +48,10 @@ import type {
   SessionDeletionRecord,
   TraceEvent,
 } from "@himawari-agent/application";
+import {
+  approvalMatchesIntent,
+  isApprovalResolutionReplay,
+} from "@himawari-agent/application/action-intent-snapshot";
 import type {
   AgentId,
   BackgroundJobState,
@@ -76,34 +74,39 @@ import type {
   TraceQuery,
 } from "@himawari-agent/gateway-contracts";
 import type Database from "better-sqlite3";
+import { SqliteAuthorizationReservations } from "./sqlite-authorization-reservations.ts";
+import { SqliteAutomaticActionReview } from "./sqlite-automatic-action-review.ts";
+import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
 import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invocation-operations.ts";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
-import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
+import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
+import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory-proposal-operations.ts";
 import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryCaptureBacklogOperations } from "./sqlite-memory-capture-backlog-operations.ts";
 import { SqliteMemoryCheckupOperations } from "./sqlite-memory-checkup-operations.ts";
-import { SqliteReviewPrereviewOperations } from "./sqlite-review-prereview-operations.ts";
-import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
-import { SqliteOwnerRuleOperations } from "./sqlite-owner-rule-operations.ts";
-import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
-import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
-import { SqliteMuseIntakeOperations } from "./sqlite-muse-intake-operations.ts";
-import { SqliteLedgerObservationOperations } from "./sqlite-observation-operations.ts";
-import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
-import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
-import { SqliteWebPushOperations } from "./sqlite-web-push-operations.ts";
+import { SqliteMemoryConversationReviewOperations } from "./sqlite-memory-conversation-review-operations.ts";
+import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
+import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
 import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
 import { SqliteModelInvocationOperations } from "./sqlite-model-invocation-operations.ts";
+import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
+import { SqliteMuseIntakeOperations } from "./sqlite-muse-intake-operations.ts";
+import { SqliteLedgerObservationOperations } from "./sqlite-observation-operations.ts";
+import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
+import { SqliteOwnerRuleOperations } from "./sqlite-owner-rule-operations.ts";
+import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
+import { SqliteRealEvalOperations } from "./sqlite-real-eval-operations.ts";
+import { SqliteReviewPrereviewOperations } from "./sqlite-review-prereview-operations.ts";
 import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operations.ts";
 import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts";
 import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
 import { SqliteRunPayloadArtifactOperations } from "./sqlite-run-payload-artifact-operations.ts";
-import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
-import { SqliteThreadArtifactOperations } from "./sqlite-thread-artifact-operations.ts";
 import { SqliteSensitiveInterceptionOperations } from "./sqlite-sensitive-interception-operations.ts";
-import { SqliteThreadPromptBundleOperations } from "./sqlite-thread-prompt-bundle-operations.ts";
+import { SqliteThreadArtifactOperations } from "./sqlite-thread-artifact-operations.ts";
 import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
+import { SqliteThreadPromptBundleOperations } from "./sqlite-thread-prompt-bundle-operations.ts";
+import { SqliteWebPushOperations } from "./sqlite-web-push-operations.ts";
 
 export type SqliteApplicationFailure = (
   code: string,
@@ -365,13 +368,16 @@ export class SqliteDurableOperations {
   private readonly ownerRules: SqliteOwnerRuleOperations;
   private readonly memoryCaptureBacklog: SqliteMemoryCaptureBacklogOperations;
   private readonly memoryCheckup: SqliteMemoryCheckupOperations;
+  private readonly memoryConversationReview: SqliteMemoryConversationReviewOperations;
   private readonly reviewPrereview: SqliteReviewPrereviewOperations;
+  private readonly externalMemoryProposals: SqliteExternalMemoryProposalOperations;
   private readonly proactive: SqliteProactiveOperations;
   private readonly decisionLedger: SqliteDecisionLedgerOperations;
   private readonly museIntake: SqliteMuseIntakeOperations;
   private readonly ledgerObservation: SqliteLedgerObservationOperations;
   private readonly ownerPreferences: SqliteOwnerPreferencesOperations;
   private readonly modelUsage: SqliteModelUsageOperations;
+  private readonly realEval: SqliteRealEvalOperations;
   private readonly webPush: SqliteWebPushOperations;
   private readonly threadArtifacts: SqliteThreadArtifactOperations;
   private readonly threadPromptBundles: SqliteThreadPromptBundleOperations;
@@ -451,7 +457,17 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
     );
     this.memoryCheckup = new SqliteMemoryCheckupOperations(database, fail, assertDiskHeadroom);
+    this.memoryConversationReview = new SqliteMemoryConversationReviewOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.reviewPrereview = new SqliteReviewPrereviewOperations(database, fail, assertDiskHeadroom);
+    this.externalMemoryProposals = new SqliteExternalMemoryProposalOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.proactive = new SqliteProactiveOperations(database, fail, assertDiskHeadroom);
     this.decisionLedger = new SqliteDecisionLedgerOperations(database, fail, assertDiskHeadroom);
     this.museIntake = new SqliteMuseIntakeOperations(database, fail, assertDiskHeadroom);
@@ -466,6 +482,7 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
     );
     this.modelUsage = new SqliteModelUsageOperations(database, fail, assertDiskHeadroom);
+    this.realEval = new SqliteRealEvalOperations(database, fail, assertDiskHeadroom);
     this.webPush = new SqliteWebPushOperations(database, fail, assertDiskHeadroom);
     this.threadArtifacts = new SqliteThreadArtifactOperations(database, fail, assertDiskHeadroom);
     this.threadPromptBundles = new SqliteThreadPromptBundleOperations(
@@ -583,8 +600,12 @@ export class SqliteDurableOperations {
       return this.memoryCaptureBacklog.execute(operation, payload);
     if (operation.startsWith("memoryCheckup."))
       return this.memoryCheckup.execute(operation, payload);
+    if (operation.startsWith("memoryConversationReview."))
+      return this.memoryConversationReview.execute(operation, payload);
     if (operation.startsWith("reviewPrereview."))
       return this.reviewPrereview.execute(operation, payload);
+    if (operation.startsWith("externalMemoryProposal."))
+      return this.externalMemoryProposals.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
     if (operation.startsWith("ownerRule.")) return this.ownerRules.execute(operation, payload);
     if (operation.startsWith("decisionLedger."))
@@ -595,6 +616,7 @@ export class SqliteDurableOperations {
     if (operation.startsWith("ownerPreferences."))
       return this.ownerPreferences.execute(operation, payload);
     if (operation.startsWith("modelUsage.")) return this.modelUsage.execute(operation, payload);
+    if (operation.startsWith("realEval.")) return this.realEval.execute(operation, payload);
     if (operation.startsWith("webPush.")) return this.webPush.execute(operation, payload);
     if (operation.startsWith("threadArtifact."))
       return this.threadArtifacts.execute(operation, payload);
