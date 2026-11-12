@@ -3,11 +3,15 @@ import { crc32 } from "node:zlib";
 import { parsePortable, verifyIntegrity } from "@himawari-agent/persistence-sqlite";
 import Fastify from "fastify";
 import { unzipSync } from "fflate";
+import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createStoredZip,
   DATA_EXPORT_ARCHIVE_ROOT,
   DATA_EXPORT_PATH,
+  DataExportJobs,
+  ProductionDataExportControl,
   registerDataExportRoute,
 } from "../../apps/agent-service/src/production-data-export.ts";
 import {
@@ -25,9 +29,74 @@ afterEach(async () => {
   await Promise.all(open.splice(0).map((app) => app.close()));
 });
 
-async function service(side: Side, protector: Side["protector"] = side.protector) {
+async function service(
+  side: Side,
+  protector: Side["protector"] = side.protector,
+  now: () => string = () => "2026-11-02T00:00:00.000Z",
+) {
+  return (await gateway(side, protector, now)).app;
+}
+
+async function gateway(
+  side: Side,
+  protector: Side["protector"] = side.protector,
+  now: () => string = () => "2026-11-02T00:00:00.000Z",
+) {
   side.database.pragma("wal_checkpoint(TRUNCATE)");
   const app = Fastify();
+  const jobs = new DataExportJobs({
+    ownerId: side.ownerId,
+    agentId: side.agentId,
+    databasePath: path.join(side.directory, "product.sqlite"),
+    protector,
+    now,
+  });
+  const control = new ProductionDataExportControl({
+    configuration: { ownerId: side.ownerId, agentId: side.agentId },
+    jobs,
+    clock: { now },
+  });
+  const message = (
+    kind: "command" | "query",
+    type: string,
+    payload: unknown,
+    actorType = "owner",
+  ) =>
+    gatewayV2MessageSchema.parse({
+      schemaVersion: "gateway.v2",
+      kind,
+      type,
+      messageId: `message-${type}`,
+      correlationId: `correlation-${type}`,
+      causationId: null,
+      dataClassification: "private",
+      risk: kind === "command" ? "high" : "low",
+      authorizationRef: kind === "command" ? "authorization-export" : null,
+      scope: { ownerId: side.ownerId, agentId: side.agentId },
+      authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+      actor: { actorType, actorId: actorType === "owner" ? side.ownerId : "agent-service" },
+      ...(kind === "command" ? { idempotencyKey: `key-${type}` } : {}),
+      payload,
+    });
+  const start = async (actorType = "owner") =>
+    (await control.execute(message("command", "data.export.start", {}, actorType) as never))
+      .resultRef;
+  const status = async (exportId: string) => {
+    const snapshot = await control.query(
+      message("query", "data.export.status.read", { exportId }) as never,
+    );
+    const parsed = gatewayV2MessageSchema.parse(snapshot);
+    if (parsed.type !== "data.export.status.snapshot") throw new Error("snapshot");
+    return parsed.payload;
+  };
+  const settled = async (exportId: string) => {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const payload = await status(exportId);
+      if (payload.state !== "running") return payload;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("export did not settle");
+  };
   registerDataExportRoute(app, {
     authentication: {
       authenticate: async (input) => {
@@ -52,13 +121,10 @@ async function service(side: Side, protector: Side["protector"] = side.protector
     },
     sessionCookieName: "himawari_session",
     ownerId: side.ownerId,
-    agentId: side.agentId,
-    databasePath: path.join(side.directory, "product.sqlite"),
-    protector,
-    now: () => "2026-11-02T00:00:00.000Z",
+    jobs,
   });
   open.push(app);
-  return app;
+  return { app, start, status, settled };
 }
 
 const asOwner = { cookie: "himawari_session=owner-session" };
@@ -221,5 +287,158 @@ describe("[P1-6] 网页导出接口", () => {
       "喜欢喝茶",
     );
     expect(entries[`${DATA_EXPORT_ARCHIVE_ROOT}/data/a.jsonl`]?.byteLength).toBe(0);
+  });
+
+  it("[iOS] 经网关开始导出、查进度、取结果：和网页直接下载是同一份内容", async () => {
+    const side = await openSide("gateway-positive");
+    await seedEverything(side);
+    const { app, start, status, settled } = await gateway(side);
+    const exportId = await start();
+    expect(exportId).toMatch(/^data-export:[A-Za-z0-9_-]{22}$/u);
+    const ready = await settled(exportId);
+    expect(ready).toMatchObject({
+      exportId,
+      state: "ready",
+      startedAt: "2026-11-02T00:00:00.000Z",
+      finishedAt: "2026-11-02T00:00:00.000Z",
+      failureCode: null,
+    });
+    if (!ready.result) throw new Error("result");
+    expect(ready.result.fileName).toBe("himawari-export-2026-11-02.zip");
+    expect(ready.result.expiresAt).toBe("2026-11-02T00:10:00.000Z");
+    const prepared = await app.inject({
+      method: "GET",
+      url: ready.result.downloadPath,
+      headers: asOwner,
+    });
+    expect(prepared.statusCode).toBe(200);
+    expect(prepared.rawPayload.byteLength).toBe(ready.result.sizeBytes);
+    expect(createHash("sha256").update(prepared.rawPayload).digest("hex")).toBe(
+      ready.result.sha256,
+    );
+    const direct = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
+    expect(Buffer.compare(direct.rawPayload, prepared.rawPayload)).toBe(0);
+    expect(ready.result.memories).toBe(Number(direct.headers["x-himawari-export-memories"]));
+    expect(ready.result.rules).toBe(Number(direct.headers["x-himawari-export-rules"]));
+    expect(ready.result.withheld).toBe(Number(direct.headers["x-himawari-export-withheld"]));
+    const again = await app.inject({
+      method: "GET",
+      url: ready.result.downloadPath,
+      headers: asOwner,
+    });
+    expect(again.statusCode).toBe(200);
+    expect((await status(exportId)).state).toBe("ready");
+  });
+
+  it("[iOS] 反向：不认识的编号是 expired 且没有结果；没登录、编号不对、编号不合格都拿不到文件", async () => {
+    const side = await openSide("gateway-negative");
+    await seedEverything(side);
+    const { app, start, status, settled } = await gateway(side);
+    const unknown = "data-export:AAAAAAAAAAAAAAAAAAAAAA";
+    expect(await status(unknown)).toMatchObject({
+      exportId: unknown,
+      state: "expired",
+      startedAt: null,
+      result: null,
+    });
+    const exportId = await start();
+    const ready = await settled(exportId);
+    if (!ready.result) throw new Error("result");
+    const anonymous = await app.inject({ method: "GET", url: ready.result.downloadPath });
+    expect(anonymous.statusCode).toBe(401);
+    expect(anonymous.rawPayload.byteLength).toBe(0);
+    const stranger = await app.inject({
+      method: "GET",
+      url: ready.result.downloadPath,
+      headers: { cookie: "himawari_session=other-session" },
+    });
+    expect(stranger.statusCode).toBe(401);
+    const missing = await app.inject({
+      method: "GET",
+      url: `${DATA_EXPORT_PATH}?exportId=${encodeURIComponent(unknown)}`,
+      headers: asOwner,
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.rawPayload.byteLength).toBe(0);
+    const malformed = await app.inject({
+      method: "GET",
+      url: `${DATA_EXPORT_PATH}?exportId=not-an-id`,
+      headers: asOwner,
+    });
+    expect(malformed.statusCode).toBe(400);
+    await expect(start("system")).rejects.toThrow("DATA_EXPORT_OWNER_REQUIRED");
+  });
+
+  it("[iOS] 生成失败时进度是 failed 并带原因，取不到文件；再开始一次可以成功", async () => {
+    const side = await openSide("gateway-failed");
+    await seedEverything(side);
+    let failures = 1;
+    const flaky = new Proxy(side.protector, {
+      get(target, property, receiver) {
+        if (property === "unprotect")
+          return async (...arguments_: Parameters<Side["protector"]["unprotect"]>) => {
+            if (failures-- > 0) throw new Error("DATA_EXPORT_PAYLOAD_UNAVAILABLE");
+            return target.unprotect(...arguments_);
+          };
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const { app, start, settled } = await gateway(side, flaky);
+    const failedId = await start();
+    const failed = await settled(failedId);
+    expect(failed).toMatchObject({
+      state: "failed",
+      failureCode: "DATA_EXPORT_PAYLOAD_UNAVAILABLE",
+      result: null,
+    });
+    const download = await app.inject({
+      method: "GET",
+      url: `${DATA_EXPORT_PATH}?exportId=${encodeURIComponent(failedId)}`,
+      headers: asOwner,
+    });
+    expect(download.statusCode).toBe(404);
+    const retryId = await start();
+    expect(retryId).not.toBe(failedId);
+    expect((await settled(retryId)).state).toBe("ready");
+    expect((await settled(failedId)).state).toBe("expired");
+  });
+
+  it("[iOS] 生成中再点开始得到同一个编号，网页直接下载得到 429；过了保留时间结果作废", async () => {
+    const side = await openSide("gateway-running");
+    await seedEverything(side);
+    let now = "2026-11-02T00:00:00.000Z";
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const held = new Proxy(side.protector, {
+      get(target, property, receiver) {
+        if (property === "unprotect")
+          return async (...arguments_: Parameters<Side["protector"]["unprotect"]>) => {
+            await gate;
+            return target.unprotect(...arguments_);
+          };
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const { app, start, status, settled } = await gateway(side, held, () => now);
+    const first = await start();
+    expect((await status(first)).state).toBe("running");
+    expect(await start()).toBe(first);
+    const busy = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
+    expect(busy.statusCode).toBe(429);
+    release();
+    const ready = await settled(first);
+    if (!ready.result) throw new Error("result");
+    now = "2026-11-02T00:09:59.999Z";
+    expect((await status(first)).state).toBe("ready");
+    now = "2026-11-02T00:10:00.000Z";
+    expect(await status(first)).toMatchObject({ state: "expired", result: null });
+    const late = await app.inject({
+      method: "GET",
+      url: ready.result.downloadPath,
+      headers: asOwner,
+    });
+    expect(late.statusCode).toBe(404);
   });
 });

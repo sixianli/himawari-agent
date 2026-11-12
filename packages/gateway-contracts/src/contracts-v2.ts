@@ -137,6 +137,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "device.revoke",
   "server.status.read",
   "server.status.snapshot",
+  "data.export.start",
+  "data.export.status.read",
+  "data.export.status.snapshot",
   "stream.event",
 ] as const;
 
@@ -654,6 +657,47 @@ const serverStatusSnapshotSchema = object({
         required: booleanValue,
         status: enumeration(SERVER_STATUS_DEPENDENCY),
         reasonCode: nullable(machineString),
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+export const DATA_EXPORT_STATES = ["running", "ready", "failed", "expired"] as const;
+const patternString = (pattern: RegExp, expected: string): Schema<string> => ({
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !pattern.test(input))
+      throw new ContractValidationError(path, expected);
+    return input;
+  },
+});
+export const DATA_EXPORT_ID_PATTERN = /^data-export:[A-Za-z0-9_-]{22}$/u;
+const dataExportIdSchema = patternString(DATA_EXPORT_ID_PATTERN, "expected a data export id");
+const dataExportStartCommandSchema = object({
+  ...commandEnvelope("data.export.start"),
+  payload: object({}),
+});
+const dataExportStatusQuerySchema = object({
+  ...envelope("query", "data.export.status.read"),
+  payload: object({ exportId: dataExportIdSchema }),
+});
+const dataExportStatusSnapshotSchema = object({
+  ...envelope("snapshot", "data.export.status.snapshot"),
+  payload: object({
+    exportId: dataExportIdSchema,
+    state: enumeration(DATA_EXPORT_STATES),
+    startedAt: nullable(timestamp),
+    finishedAt: nullable(timestamp),
+    failureCode: nullable(machineString),
+    result: nullable(
+      object({
+        downloadPath: boundedString(256),
+        fileName: boundedString(128),
+        sizeBytes: integer(1),
+        sha256: patternString(/^[0-9a-f]{64}$/u, "expected a SHA-256 hex digest"),
+        memories: integer(0),
+        rules: integer(0),
+        withheld: integer(0),
+        expiresAt: timestamp,
       }),
     ),
     generatedAt: timestamp,
@@ -2618,6 +2662,9 @@ const schemasByType = {
   "device.revoke": deviceRevokeCommandSchema,
   "server.status.read": serverStatusQuerySchema,
   "server.status.snapshot": serverStatusSnapshotSchema,
+  "data.export.start": dataExportStartCommandSchema,
+  "data.export.status.read": dataExportStatusQuerySchema,
+  "data.export.status.snapshot": dataExportStatusSnapshotSchema,
   "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
   "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,
   "sensitive.interceptions.clear": sensitiveInterceptionsClearCommandSchema,
