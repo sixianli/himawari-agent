@@ -33,7 +33,7 @@ Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户的意思�
 
 ## 前提
 
-1. 待确认规矩被主人的原话确认后会变成硬规则，所以是不可逆的动作：`.claude/rules/owner-standing-rules.md` 与 [ADR 0134](0134-adopt-product-vision-v2-2.md) 的“规则写进程序、必定执行”；确认的现有代码在 `apps/agent-service/src/production-memory-capture.ts` 的 `evidenceRejected`，原先用 `GENERIC_TERMS` 去掉虚词后比较两句话有没有共同的两字词。
+1. 自 v2.2 起 Andy 定的规则是硬性设定：`AGENTS.md` 写明“规则写进程序、必定执行、每条有回归测试”；确认的现有代码在 `apps/agent-service/src/production-memory-capture.ts` 的 `evidenceRejected`，原先用 `GENERIC_TERMS` 去掉虚词后比较两句话有没有共同的两字词。
 2. 待确认记忆转正“有原话还要和那条记忆相关”的规则出自 [ADR 0179](0179-keep-low-confidence-memory-candidates-as-tentative.md) 第 59 行：“原话与那条待确认记忆自己的文字……去掉「主人」「喜欢」「的」这类到处都有的词后，至少共享一个连续两个字（中文）或一个单词，否则同样丢弃、不转正”，并写明“字面判断对不上同义词（「牛奶」对「乳制品」），误拦的代价只是少转正一次”。Andy 当时要防的是“拿无关的话当证据”，裁判模型照样防得住，还认得出同义词。
 3. 逐字核对 `quoteFromOwnerMessage` 只看引用是否出自主人原话，不看是否在说同一件事：同文件，原话必须在归一化后逐字出现在主人消息里。
 4. 邮件单号原先由正则 `REFERENCE_CONTEXT` 在 `packages/platform-node/src/gmail-related.ts` 里抽取，要求“订单、预约、案件”等标签紧挨着号码；[ADR 0180](0180-gmail-check-reads-earlier-mail-about-the-same-matter.md) 第 41 行写明规则：“单独的 ID、No.、# 不算”。
@@ -82,6 +82,6 @@ LongMemEval 一类评测和 Mem0 的记忆更新，都让模型判断“两句�
 - 待确认规矩的确认多一次裁判调用，只在“会让规矩生效”的少数情形发生；裁判出错时规矩保持待确认，主人下次再说一遍即可。
 - 邮件每次检查多一次（每批一次）抽取调用，计入每日成本；每日成本用尽那一轮不抽取，只靠线程和同标题同参与人串邮件。
 - 评测每道题多一到两次小调用，计入每周 0.5 美元上限；裁判不稳定时更多题会被丢弃（宁可少出题，不泄题）。
-- 改动前的代码对“明天下午开会”会和“主人喜欢喝咖啡”共享虚词外的字面而误确认的情形，由裁判判否；这些反向用例写成自动化测试，改动前的代码跑它们必失败。
+- “明天下午开会”这类和那条记忆无关的话，由裁判判否；这些反向用例写成自动化测试。
 
 [返回阅读导航](#contents)
