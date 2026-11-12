@@ -1307,7 +1307,7 @@ export function coveragePoints(records) {
       record.substitute === true
         ? needed.includes(record.substituteFor) &&
           record.model === SUBSTITUTES[record.substituteFor]
-        : needed.includes(record.model),
+        : record.substitute === undefined && needed.includes(record.model),
     );
     if (covering.length === 0) continue;
     const heads = [...new Set(covering.map((record) => record.head))];

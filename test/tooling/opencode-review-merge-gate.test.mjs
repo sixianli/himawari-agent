@@ -1075,6 +1075,12 @@ describe("opencode review merge gate", () => {
         f.writeLedger([stranger]);
         expect(f.check().problems).toEqual(["no-complete-round"]);
       }
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.main, deepseek, { substitute: false }),
+        ok(1, f.main, glm, { substitute: "true", substituteFor: deepseek }),
+      ]);
+      expect(f.check()).toMatchObject({ round: 1, reviewed: f.reviewed, problems: [] });
       const second = f.commit({ "code.txt": "fixed\n" }, "fix");
       f.writeLedger([
         ok(1, f.reviewed, deepseek),

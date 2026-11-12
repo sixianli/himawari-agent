@@ -26,9 +26,9 @@ date: "2026-11-12"
 
 ## 背景
 
-线程在写代码前请模型讨论方案、在合并 PR 前请模型复核代码，都用 `scripts/model-review/opencode-review.mjs`，它经 OpenCode（一个能让模型读代码、调用工具的命令行程序）调用模型。按 [ADR 0175](0175-cheaper-code-review-rounds.md) 的第 2 条，代码复核第 1 轮必须 DeepSeek V4.1 Flash 和 GLM 5.3 Flash 两个模型都跑，第 1 轮只给一个模型时脚本以 `ARG_FIRST_ROUND_NEEDS_BOTH_MODELS` 拒绝；方案讨论（`--mode plan`、`--mode plan-review`）默认两个模型都跑。能用哪两个模型、默认跑哪些，都写死在脚本的常量里。
+线程在写代码前请模型讨论方案、在合并 PR 前请模型复核代码，都用 `scripts/model-review/opencode-review.mjs`，它经 OpenCode（一个能让模型读代码、调用工具的命令行程序）调用模型。本 ADR 之前的规则写在 [ADR 0175](0175-cheaper-code-review-rounds.md) 里，原话是：“代码复核第 1 轮两个模型都跑，之后默认只跑 DeepSeek。第 1 轮只给一个模型时脚本拒绝”；复核链的“起点是最后一轮不带 `--previous`、两个模型都通过的复核”；方案讨论“仍然两个模型都跑”。两个模型指 DeepSeek V4.1 Flash 和 GLM 5.3 Flash。
 
-2026-11-12 Andy 决定默认只让 DeepSeek 审。照旧的脚本，这个决定执行不了：第 1 轮只给 DeepSeek 会被拒绝，合并前检查也只认“两个模型都通过”的轮次作为复核链的起点。
+2026-11-12 Andy 决定默认只让 DeepSeek 审。这和 ADR 0175 的上面三句直接冲突，所以规则和脚本要一起改。
 
 [↑ 返回阅读导航](#contents)
 
@@ -45,8 +45,8 @@ date: "2026-11-12"
 ## 决定
 
 1. **默认只跑 DeepSeek。** 方案讨论、核对代码说法和代码复核的每一轮（包括第 1 轮），不写 `--models` 时都只跑默认模型，现在是 `opencode-go/deepseek-v4.1-flash`。Andy 特别指明时，用 `--models deepseek-v4.1-flash,glm-5.3-flash` 让两个模型都跑。第 1 轮只给一个模型就拒绝的限制去掉。
-2. **模型清单写在配置里。** `scripts/model-review/review-models.json` 有三项：`allowed`（能用的模型，仍然只有项目指令第 17 条允许的两个）、`default`（不写 `--models` 时跑哪些）、`substitutes`（哪个模型的服务用不了时由谁替补）。脚本启动时读它并校验：三项都要在 `allowed` 里，清单不能为空、不能重复，不合格以 `REVIEW_MODELS_CONFIG_INVALID` 停下。以后要改默认，只改这个文件。
-3. **合并前检查的复核链跟着改。** 一轮算数的条件改成：这一轮要跑的模型（账本里这一轮出现过的、不是替补的模型）每个都有 `ok` 的结果或有替补它的 `ok` 结果；或者默认模型每个都有。链的起点改成最后一个不带 `--previous` 的算数的轮次，不再要求两个模型都通过。其余不变：之后每一点的提交必须是前一点的后续提交，带 `--previous` 的一轮的 `previous` 不晚于前一点的提交，最后一点之后只许改记录目录。
+2. **模型清单写在配置里。** `scripts/model-review/review-models.json` 有三项：`allowed`（能用的模型，仍然只有项目指令第 17 条允许的两个）、`default`（不写 `--models` 时跑哪些）、`substitutes`（哪个模型的服务用不了时由谁替补）。脚本启动时读它并校验：`allowed` 和 `default` 不能为空、不能重复，`default` 和 `substitutes` 里的模型都必须在 `allowed` 里，`substitutes` 可以为空，不合格以 `REVIEW_MODELS_CONFIG_INVALID` 停下。以后要改默认，只改这个文件的 `default`；往 `allowed` 加模型还要在脚本里补它的固定侧重和输出上限、在 `gateway.json` 里补条目，并且先改项目指令第 17 条。
+3. **合并前检查的复核链跟着改。** 一轮算数的条件改成：这一轮要跑的模型（账本里这一轮出现过的、在 `allowed` 清单里、记录上没有 `substitute` 字段的模型）每个都有 `ok` 的结果或有替补它的 `ok` 结果；或者默认模型每个都有。链的起点改成最后一个不带 `--previous` 的算数的轮次，不再要求两个模型都通过。其余不变：之后每一点的提交必须是前一点的后续提交，带 `--previous` 的一轮的 `previous` 不晚于前一点的提交，最后一点之后只许改记录目录。
 4. **替补对第 1 轮也生效。** 只跑一个模型的代码复核里，DeepSeek 重跑后仍是可以重试的服务报错时由 GLM 替补，原来只对第 2 轮起生效，现在第 1 轮也一样，因为第 1 轮现在也只有 DeepSeek 一个。替补只在 DeepSeek 的服务用不了时发生，账本照旧记 `substitute: true`。
 
 取舍依据的原则：依据的是“用户主权”（[产品愿景](../product-vision.md)里排第一的原则）。用哪个模型审、花多少钱由 Andy 定；合并前检查这道边界仍在（每个 PR 的全部改动仍要被至少一个模型完整看过，复核链的连续性要求不变），只是完整复核需要的模型数由两个降到默认的一个。
@@ -72,7 +72,7 @@ date: "2026-11-12"
 
 ## 比较过的方案
 
-- **只改规则文字，线程每次自己传 `--models deepseek-v4.1-flash`。** 不采用：脚本第 1 轮会拒绝，合并前检查也不认单模型的第 1 轮，规则和工具互相矛盾。
+- **只改规则文字，线程每次自己传 `--models deepseek-v4.1-flash`。** 不采用：ADR 0175 定的脚本行为是第 1 轮只给一个模型就拒绝、复核链起点要两个模型都通过，只改文字的话规则和工具互相矛盾。
 - **把默认模型改写成脚本里的另一个常量。** 不采用：下次 Andy 再调整默认，还得改脚本和它的测试；写在配置里只改一个文件。
 - **把默认模型放进 `scripts/model-review/gateway.json`。** 不采用：那份文件管的是经 Magpie（本机模型网关）时用哪些服务方，直连 OpenCode 时不读它；默认模型两种走法都要用。
 - **去掉替补，DeepSeek 用不了就停下。** 不采用：替补只在 DeepSeek 的服务报错、重跑仍不行时发生，去掉后拥堵时每个 PR 都要停下等人；Andy 的原话针对的是默认用谁审，不是服务故障时怎么办。
