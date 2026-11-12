@@ -60,12 +60,13 @@ date: "2026-11-12"
    - (a) 快照文件的摘要仍等于配置里封存的摘要。
    - (b) 这个能力的编号、版本、安装包摘要和快照里那一条完全一致。
    - (c) 执行进程在通过现场检查之后公布了一份记录，记录里的启动编号等于 agent-service 当前认定的对端启动编号，记录里的快照摘要等于配置里封存的摘要。
-3. 每种失败给出各自的原因码：没有配置部署快照、快照读不出、快照摘要不符、能力不在快照里、执行进程没有公布、启动编号不符、执行进程准入的是另一份快照。
+3. 每种失败给出各自的原因码：快照读不出、快照摘要不符、能力不在快照里、执行进程没有公布、启动编号不符、执行进程准入的是另一份快照。
 4. 不恢复执行句柄，不恢复被取消的定时任务。`lastInvalidation` 原样保留。重新启用不改能力声明和资格记录，只改状态和修订号。
 5. 现有的“已停用直接激活”仍被拒绝（`activate` 不动）。重新启用不依赖退回上一版。
 6. 审计：复用现有治理命令的审计追加，动作名是命令类型。
 7. 同一条命令重放：记录已是在用且修订号等于期望加 1 时，直接返回同一结果，不再核对、不重复写。
-8. 生产网关只在核验入口已装配时才把 `capability.reactivate` 列进已安装清单；网页只对已安装的操作显示按钮。
+8. 生产网关只在核验入口已装配时才把 `capability.reactivate` 列进已安装清单；网页只对已安装的操作显示按钮。配置里没有部署快照时不装配核验入口，命令不进已安装清单。
+10. 最近认证在写幂等收据之前先验一次（和停用、退回相同）：认证没过的请求不留收据，不占用那个幂等键。
 9. 界面和回执的说法是“核对安装包和上线时的检查结果”，不写“已重新检查运行环境”。
 
 [↑ 返回阅读导航](#contents)
@@ -76,9 +77,9 @@ date: "2026-11-12"
 
 这是进程间契约的改动，单列说明。
 
-- 执行进程启动时先删掉上一次留下的记录；现场检查通过、且拿到 agent-service 的绑定之后，才写出 `runtime/execution-worker.qualified.json`。字段：`schemaVersion`、`workerInstanceId`、`workerBootId`、`deploymentId`、`snapshotDigest`。读到这份文件且启动编号对得上，就等于这次启动的现场检查已经通过。
+- 执行进程启动时先删掉上一次留下的记录；现场检查通过、且拿到 agent-service 的绑定之后，才写出 `runtime/execution-worker.qualified.json`。字段：`schemaVersion`、`workerInstanceId`、`workerBootId`、`deploymentId`、`snapshotDigest`。读到这份文件且启动编号对得上，就等于这次启动的现场检查已经通过。写出记录之后启动仍然失败的（例如后面的装配或监听出错），退出前把记录删掉。
 - 现有的启动绑定文件 `execution-worker.boot.json` 的格式和写入时机都不变，agent-service 启动时等的仍是它，启动顺序不受影响。
-- 读写沿用启动绑定的安全做法，和启动绑定共用同一对函数（`commitWorkerRuntimeRecord`、`readWorkerRuntimeRecord`）：临时文件加原子改名、权限 0600；读时拒绝符号链接、组或其他人可读写的文件、属主不是服务账号的文件、多余字段。
+- 读写沿用启动绑定的安全做法，和启动绑定共用同一对函数（`commitWorkerRuntimeRecord`、`readWorkerRuntimeRecord`）：临时文件加原子改名、权限 0600；读时拒绝符号链接、组或其他人可读写的文件、属主不是服务账号的文件、超过 16384 字节的文件、多余字段。
 - 两个进程成对重启（前提 8），所以不考虑新旧版本混跑，文件不做旧格式兼容。
 - 上线脚本不用改：`scripts/delivery-mode/` 下读启动绑定的有两处，`packet-template/systemd/S7-startup-readback.mjs` 和 `packet-template/acceptance/cloud/probe-source/test/qualification/sandbox-install-restart-probe.mjs`（都调用 `readWorkerServiceBootBinding`），它们读的那份文件没有变。
 
@@ -117,7 +118,7 @@ date: "2026-11-12"
 ## 已知问题
 
 - `CapabilityLifecycleService` 的 `qualify` 要求资格记录的六项管控全部为真（`Object.values(qualification.enforcement).some((enforced) => !enforced)`），而部署快照加载器要求带沙箱证据的记录 `resourceCeilings` 为假（`checkedEnforcement.resourceCeilings !== false`）。两处要求相反：加载器放行的带沙箱证据的资格记录，`resourceCeilings` 一定为假，交给 `qualify` 的这项判断就一定不过。重新启用不走 `qualify`，不受影响；受影响的是安装批准后的激活、更新激活和退回。本 PR 不修，已报给协调者另开任务。
-- 执行进程“现场检查通过后才写出记录”的顺序，由代码顺序和失败路径的单元测试保证（启动失败时没有记录、上一次的记录被删掉）；完整启动成功后写出记录这一条，要在有上线包的环境里用进程级测试或上线后的读回确认，云端容器里跑不了。
+- 执行进程“现场检查通过后才写出记录”的顺序，由代码顺序和失败路径的单元测试保证（现场检查没通过时没有记录、上一次的记录被删掉）；完整启动成功后写出记录、写出之后启动失败时删掉记录这两条，要在有上线包的环境里用进程级测试或上线后的读回确认，云端容器里跑不了。
 
 [↑ 返回阅读导航](#contents)
 

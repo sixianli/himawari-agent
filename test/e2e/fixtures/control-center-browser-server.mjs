@@ -1849,7 +1849,6 @@ function handleGovernanceCommand(message) {
       }
       target.revision += 1;
       target.lifecycle = "active";
-      target.healthStatus = "healthy";
       break;
     case "capability.rollback": {
       if (target.lifecycle !== "active" || !target.rollbackVersion) {

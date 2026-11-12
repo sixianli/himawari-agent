@@ -9,6 +9,7 @@ import {
   readAgentServiceBootBinding,
   readAuthorityFile,
   readRestrictedExecutionTokenFile,
+  type StateRootLayout,
   stableErrorCode,
   waitForTerminationSignal,
   writeServiceDiagnostic,
@@ -142,6 +143,7 @@ export async function runExecutionWorkerService(
 ): Promise<number> {
   let server: ExecutionUdsServer | undefined;
   let composition: ProductionWorkerComposition | undefined;
+  let publishedLayout: StateRootLayout | undefined;
   try {
     const timing = resolveStartupTiming(dependencies);
     const args = parseServiceArguments(arguments_);
@@ -172,6 +174,7 @@ export async function runExecutionWorkerService(
       }),
       qualifyProductionWorkerDeployment({ configuration }),
     );
+    publishedLayout = layout;
     await writeWorkerQualifiedDeployment(layout, {
       workerInstanceId,
       workerBootId,
@@ -227,6 +230,8 @@ export async function runExecutionWorkerService(
   } catch (error) {
     await server?.stop().catch(() => undefined);
     await composition?.close().catch(() => undefined);
+    if (publishedLayout)
+      await clearWorkerQualifiedDeployment(publishedLayout).catch(() => undefined);
     writeServiceDiagnostic(errorOutput, {
       component: "execution-worker",
       event: "service.failed",

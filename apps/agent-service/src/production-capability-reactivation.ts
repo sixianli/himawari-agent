@@ -9,7 +9,6 @@ import {
 } from "@himawari-agent/platform-node";
 
 export const CAPABILITY_REACTIVATION_REASONS = Object.freeze({
-  NO_DEPLOYMENT: "capability_deployment_not_configured",
   WORKER_NOT_QUALIFIED: "execution_worker_qualification_not_published",
   WORKER_BOOT_MISMATCH: "execution_worker_boot_mismatch",
   WORKER_SNAPSHOT_MISMATCH: "execution_worker_admitted_other_snapshot",
@@ -22,12 +21,12 @@ export function createProductionCapabilityReactivationVerifier(options: {
     readonly workerInstanceId: string;
     readonly workerBootId: string;
   };
-}): CapabilityReactivationVerifierPort {
+}): CapabilityReactivationVerifierPort | undefined {
+  const deployment = options.configuration.capabilityDeployment;
+  if (!deployment) return undefined;
   const refuse = (reason: string) => ({ verified: false, reasonCodes: [reason] });
   return {
     verify: async (manifest) => {
-      const deployment = options.configuration.capabilityDeployment;
-      if (!deployment) return refuse(CAPABILITY_REACTIVATION_REASONS.NO_DEPLOYMENT);
       const membership = await checkSealedCapabilityMembership({
         snapshotPath: deployment.snapshotPath,
         sha256: deployment.sha256,

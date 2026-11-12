@@ -44,12 +44,12 @@ afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
 });
 
-function manifest(integrity = DIGEST): CapabilityManifest {
+function manifest(integrity = DIGEST, version = "1.0.0"): CapabilityManifest {
   return {
     manifestVersion: "capability.v2",
     ref: CAPABILITY_REF,
     displayName: "Production capability",
-    version: "1.0.0",
+    version,
     source: { type: "remote_api", locator: "endpoint:production-capability" },
     sourceIdentity: "publisher:fixture",
     integrity,
@@ -98,6 +98,8 @@ function record(declaration: CapabilityManifest): CapabilityRegistryRecord {
 async function fixture(
   options: {
     readonly recordIntegrity?: string;
+    readonly recordVersion?: string;
+    readonly withDeployment?: boolean;
     readonly published?: "none" | { readonly workerBootId?: string; readonly digest?: string };
     readonly withVerifier?: boolean;
   } = {},
@@ -135,7 +137,7 @@ async function fixture(
   let peerBootId = WORKER_BOOT;
   const clock = { now: () => T1 };
   const capabilities = repository.capabilityStore(OWNER_ID, AGENT_ID);
-  await capabilities.create(record(manifest(options.recordIntegrity)));
+  await capabilities.create(record(manifest(options.recordIntegrity, options.recordVersion)));
   await capabilities.createExecutionHandle({ ...handle(), capabilityRef: CAPABILITY_REF });
   const seed = new Database(path.join(resource.stateRoot, "product.sqlite"));
   seed
@@ -177,23 +179,25 @@ async function fixture(
       null,
     );
   }
-  const withVerifier = options.withVerifier ?? true;
+  const reactivation =
+    (options.withVerifier ?? true)
+      ? createProductionCapabilityReactivationVerifier({
+          configuration: {
+            ...((options.withDeployment ?? true) ? { capabilityDeployment } : {}),
+            deploymentId: DEPLOYMENT_ID,
+          },
+          layout,
+          trustedPeerBinding: () => ({
+            workerInstanceId: WORKER_INSTANCE,
+            workerBootId: peerBootId,
+          }),
+        })
+      : undefined;
   const capabilityLifecycle = createProductionCapabilityLifecycle({
     configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
     repository,
     clock,
-    ...(withVerifier
-      ? {
-          reactivation: createProductionCapabilityReactivationVerifier({
-            configuration: { capabilityDeployment, deploymentId: DEPLOYMENT_ID },
-            layout,
-            trustedPeerBinding: () => ({
-              workerInstanceId: WORKER_INSTANCE,
-              workerBootId: peerBootId,
-            }),
-          }),
-        }
-      : {}),
+    ...(reactivation ? { reactivation } : {}),
   });
   const gateway = createProductionApprovalGateway({
     configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
@@ -217,7 +221,7 @@ async function fixture(
       },
     },
     capabilityLifecycle,
-    capabilityReactivationAvailable: withVerifier,
+    capabilityReactivationAvailable: reactivation !== undefined,
   });
   const authentication = {
     ownerId: OWNER_ID,
@@ -290,6 +294,7 @@ async function fixture(
     message,
     reactivate,
     stillDisabled,
+    reactivationWired: reactivation !== undefined,
     restartWorker: (bootId: string) => {
       peerBootId = bootId;
     },
@@ -307,6 +312,36 @@ it("refuses reactivation without matching recent authentication and leaves the c
   await expect(f.reactivate("other-auth", { ref: "session:other" })).rejects.toThrow(
     "RECENT_AUTH_REQUIRED",
   );
+  await f.stillDisabled();
+  const receipts = f.resource.repository.governanceMutationReceiptStore();
+  await expect(receipts.get(OWNER_ID, AGENT_ID, "no-auth")).resolves.toBeUndefined();
+  await expect(receipts.get(OWNER_ID, AGENT_ID, "other-auth")).resolves.toBeUndefined();
+});
+
+it("refuses to reactivate a capability that is already active", async () => {
+  const f = await fixture();
+  await f.reactivate("first");
+  await expect(f.reactivate("again", { revision: 3 })).rejects.toMatchObject({
+    code: "PORT_INVALID_OPERATION",
+  });
+  expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({
+    lifecycle: "active",
+    revision: 3,
+  });
+});
+
+it("refuses when the capability's version is not the one in the snapshot", async () => {
+  const f = await fixture({ recordVersion: "1.0.1" });
+  await expect(f.reactivate("other-version")).rejects.toMatchObject(
+    refusedWith("capability_not_in_deployment_snapshot"),
+  );
+  await f.stillDisabled();
+});
+
+it("wires no reactivation check when no deployment snapshot is configured", async () => {
+  const f = await fixture({ withDeployment: false });
+  expect(f.reactivationWired).toBe(false);
+  await expect(f.reactivate("no-deployment")).rejects.toBeDefined();
   await f.stillDisabled();
 });
 

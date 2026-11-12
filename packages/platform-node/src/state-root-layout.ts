@@ -390,13 +390,20 @@ async function commitWorkerRuntimeRecord(
   }
 }
 
+const WORKER_RUNTIME_RECORD_MAX_BYTES = 16_384;
+
 async function readWorkerRuntimeRecord(
   file: string,
   fields: readonly string[],
   label: string,
 ): Promise<Record<string, unknown>> {
   const info = await lstat(file).catch(() => undefined);
-  if (!info?.isFile() || info.isSymbolicLink() || (info.mode & 0o077) !== 0) {
+  if (
+    !info?.isFile() ||
+    info.isSymbolicLink() ||
+    (info.mode & 0o077) !== 0 ||
+    info.size > WORKER_RUNTIME_RECORD_MAX_BYTES
+  ) {
     throw new StateRootLifecycleError(
       STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
       `${label} is missing or unsafe`,

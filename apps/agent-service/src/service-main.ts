@@ -2788,12 +2788,13 @@ export async function startTenantRuntime(
       const activeDurableMemory = durableMemory;
       if (configuration.runPolicy?.mcpRead !== undefined && !mcpRead)
         throw new Error("MCP_READ_RUNTIME_UNAVAILABLE");
+      const capabilityReactivation = createProductionCapabilityReactivationVerifier({
+        configuration,
+        layout,
+        trustedPeerBinding: () => peerBinding,
+      });
       http = await createProductionHttpComposition({
-        capabilityReactivation: createProductionCapabilityReactivationVerifier({
-          configuration,
-          layout,
-          trustedPeerBinding: () => peerBinding,
-        }),
+        ...(capabilityReactivation ? { capabilityReactivation } : {}),
         ...(input.listen?.kind === "unix" ? { listenUnixSocketPath: input.listen.path } : {}),
         live,
         webPush: { presence: webPushPresence, push: webPush },

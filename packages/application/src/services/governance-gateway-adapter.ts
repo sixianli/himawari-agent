@@ -623,7 +623,12 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
     authentication: GatewayAuthenticationContext,
     command: GovernanceCommand,
   ): Promise<void> {
-    if (command.type !== "capability.disable" && command.type !== "capability.rollback") return;
+    if (
+      command.type !== "capability.disable" &&
+      command.type !== "capability.rollback" &&
+      command.type !== "capability.reactivate"
+    )
+      return;
     const existing = await this.#dependencies.receipts.get(
       this.#dependencies.ownerId,
       this.#dependencies.agentId,
