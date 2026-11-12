@@ -74,7 +74,7 @@ public enum DesignTokens {
         public static let offlineBannerPaddingHorizontal: CGFloat = 16
         public static let offlineDot: CGFloat = 8
         public static let pagePaddingX: CGFloat = 16
-        public static let pairingMark: CGFloat = 140
+        public static let pairingMark: CGFloat = 148
         public static let pill: CGFloat = 46
         public static let pillBig: CGFloat = 56
         public static let rowGap: CGFloat = 14

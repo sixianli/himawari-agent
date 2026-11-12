@@ -27,6 +27,7 @@ public enum SunflowerSeeds {
     static let fadeSeeds = 6.0
     static let smallestSeed = 0.43
     static let seedGrowth = 0.72
+    static let frameShare = 0.94
     static let newSeed = (255.0, 236.0, 170.0)
     static let brown = (92.0, 52.0, 16.0)
     static let amber = (214.0, 128.0, 20.0)
@@ -107,7 +108,7 @@ public struct SunflowerMark: View {
 
     private func disc(growth: Double) -> some View {
         Canvas { context, size in
-            let scale = min(size.width, size.height) / (2 * SunflowerSeeds.reach(detail))
+            let scale = min(size.width, size.height) * SunflowerSeeds.frameShare / (2 * SunflowerSeeds.reach(detail))
             let dx = size.width / 2 - SunflowerSeeds.center * scale
             let dy = size.height / 2 - SunflowerSeeds.center * scale
             for seed in SunflowerSeeds.at(detail, growth: growth) where seed.radius > 0 {

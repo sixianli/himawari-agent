@@ -9,11 +9,12 @@ device_name="Himawari 390pt"
 device_type="com.apple.CoreSimulator.SimDeviceType.iPhone-16e"
 expected_width=1170
 derived="$root/ui-review/DerivedData"
+only=""
 calm_below=40
 calm_patience=600
 
 usage() {
-  echo "usage: clients/apple/scripts/ui-review.sh [--check | --approve] [--out DIR]" >&2
+  echo "usage: clients/apple/scripts/ui-review.sh [--check | --approve] [--out DIR] [--only SCENE,SCENE]" >&2
   exit 2
 }
 
@@ -22,6 +23,7 @@ while [ $# -gt 0 ]; do
     --check) mode="check"; shift ;;
     --approve) mode="approve"; shift ;;
     --out) [ $# -ge 2 ] || usage; out="$2"; shift 2 ;;
+    --only) [ $# -ge 2 ] || usage; only=",$2,"; shift 2 ;;
     *) usage ;;
   esac
 done
@@ -29,6 +31,15 @@ done
 scenes=()
 while IFS= read -r scene; do scenes+=("$scene"); done < <(sed -nE 's/^ *case [a-zA-Z]+ = "([^"]+)"$/\1/p' "$root/Sources/HimawariShell/DemoScenes.swift")
 [ ${#scenes[@]} -gt 0 ] || { echo "UI_REVIEW_FAILED no demo scenes found" >&2; exit 1; }
+if [ -n "$only" ]; then
+  [ "$mode" = "record" ] || { echo "UI_REVIEW_FAILED --only works only when recording; --check and --approve need every scene" >&2; exit 1; }
+  chosen=()
+  for scene in "${scenes[@]}"; do
+    case "$only" in *",$scene,"*) chosen+=("$scene") ;; esac
+  done
+  [ "${#chosen[@]}" -eq "$(printf '%s' "$only" | tr ',' '\n' | grep -c .)" ] || { echo "UI_REVIEW_FAILED --only names a scene that does not exist; scenes: ${scenes[*]}" >&2; exit 1; }
+  scenes=("${chosen[@]}")
+fi
 still=()
 for appearance in light dark; do
   for scene in "${scenes[@]}"; do

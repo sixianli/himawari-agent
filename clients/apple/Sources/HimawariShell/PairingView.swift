@@ -172,7 +172,7 @@ struct PairingView: View {
             VStack(spacing: 30) {
                 SunflowerMark(detail: .full, growing: true)
                     .frame(width: DesignTokens.Pairing.waitingMark, height: DesignTokens.Pairing.waitingMark)
-                VStack(spacing: 12) {
+                VStack(spacing: 15) {
                     Text(number)
                         .hmType(DesignTokens.TypeScale.pairingNumber)
                         .monospacedDigit()
