@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import {
   DEVICE_ACTION_RECORD_STATES,
@@ -14,6 +15,7 @@ import {
   LATEST_MIGRATION_SEQUENCE,
   openQualifiedDatabase,
   type PortableFiles,
+  SqliteProductStateRepository,
   parsePortable,
 } from "@himawari-agent/persistence-sqlite";
 import { createDataExportTextPolicy } from "@himawari-agent/platform-node";
@@ -28,14 +30,17 @@ import {
   TOOL_RESULT_DEVICE_ACTION_UNKNOWN,
 } from "@himawari-agent/prompt-catalog";
 import { afterEach, describe, expect, it } from "vitest";
+import { createProductionDeviceActions } from "../../apps/agent-service/src/production-device-actions.ts";
 import {
   PerceptionToolError,
   ProductionPerceptionTools,
   perceptionToolDescriptors,
 } from "../../apps/agent-service/src/production-perception-tools.ts";
 import {
+  agentId,
   type Harness,
   harness,
+  ownerId,
   type PairedClient,
   pairAndConfirm,
   removeDeviceHarnessDirectories,
@@ -692,6 +697,119 @@ describe("[iOS-9A] review round 1: the same action is recognised however it is a
       database.close();
     }
     expect(await rows(h)).toEqual([]);
+    await h.repository.close();
+  });
+});
+
+describe("[iOS-9A] review round 2: replays, failed reports and reopening stay bounded and honest", () => {
+  it("replaying the same tool call while the result is unknown asks the device to read back again, and a different action under that call is refused", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["reminder.create", "alarm.set"]);
+    h.actions.authorization.current = ownerAllows(false);
+    noWaiting(h);
+    const device = await connectDevice(h, client);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    const request = { action: "reminder.create", arguments: { title: "买牛奶" } };
+    await act("run-1", request, "call:fixed");
+    await until(() => device.claimed.length === 1);
+    h.clock.advance(601_000);
+    expect(await act("run-1", request, "call:fixed")).toMatchObject({ state: "result_unknown" });
+    await until(() => device.claimed.length >= 2);
+    expect(device.claimed[1]).toMatchObject({ id: device.claimed[0]?.["id"], mode: "verify" });
+    await expect(
+      act("run-1", { action: "alarm.set", arguments: { time: "2026-11-13T07:00" } }, "call:fixed"),
+    ).rejects.toMatchObject({ code: "DEVICE_ACTION_INPUT_INVALID" });
+    expect(await rows(h)).toHaveLength(1);
+    await device.close();
+    await h.repository.close();
+  });
+
+  it("[reverse] a report that could not be recorded leaves no stored result behind", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["reminder.create"]);
+    h.actions.authorization.current = ownerAllows(false);
+    noWaiting(h);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    await act("run-1", { action: "reminder.create", arguments: { title: "买牛奶" } });
+    expect((await devicePost(h, client, "actions/claim", {})).body["actions"]).toHaveLength(1);
+    const [record] = await rows(h);
+    const secondRoot = path.join(h.stateRoot, "full-disk-view");
+    await mkdir(secondRoot);
+    const full = await SqliteProductStateRepository.open({
+      stateRoot: secondRoot,
+      databasePath: path.join(h.stateRoot, "product.sqlite"),
+      minimumFreeBytes: Number.MAX_SAFE_INTEGER,
+      now: () => h.clock.now(),
+    });
+    const onFullDisk = createProductionDeviceActions({
+      scope: perceptionScope,
+      store: full.deviceActions(),
+      perception: h.repository.perception(),
+      devices: (scope) => h.repository.pairedDevices().listDevices(scope),
+      ledger: h.repository.decisionLedger(),
+      payloads: h.repository.payloadStore(ownerId, agentId),
+      protector: h.protector,
+      delivery: h.actions.hub,
+      configuration: () => h.perceptionConfiguration.current,
+      timeZone: "Asia/Tokyo",
+      now: () => h.clock.now(),
+    });
+    await expect(
+      onFullDisk.service.report(client.deviceId, {
+        id: record?.id,
+        outcome: "failed",
+        readBack: false,
+        reason: "提醒事项的权限被关了",
+      }),
+    ).rejects.toMatchObject({ details: { reason: "disk_headroom" } });
+    await full.close();
+    const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
+    try {
+      expect(
+        database
+          .prepare("SELECT ref FROM payloads WHERE ref LIKE 'device-action:%:result:%'")
+          .all(),
+      ).toEqual([]);
+    } finally {
+      database.close();
+    }
+    expect((await rows(h))[0]).toMatchObject({ state: "delivered", resultRef: null });
+    await h.repository.close();
+  });
+
+  it("[reverse] a reinstalled device gets back at most one batch of delivered actions per call", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["reminder.create"]);
+    h.actions.authorization.current = ownerAllows(false);
+    noWaiting(h);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    for (const title of ["买牛奶", "交房租", "取快递"]) {
+      await act("run-1", { action: "reminder.create", arguments: { title } });
+      h.clock.advance(1000);
+    }
+    expect((await devicePost(h, client, "actions/claim", {})).body["actions"]).toHaveLength(3);
+    h.perceptionConfiguration.current = {
+      ...PERCEPTION_CONFIGURATION_DEFAULTS,
+      actionWaitSeconds: 0,
+      actionClaimBatch: 2,
+    };
+    const first = await devicePost(h, client, "actions/open", {});
+    expect((first.body["actions"] as { mode: string }[]).map(({ mode }) => mode)).toEqual([
+      "verify",
+      "verify",
+    ]);
+    expect((await rows(h)).map(({ state }) => state)).toEqual([
+      "result_unknown",
+      "result_unknown",
+      "delivered",
+    ]);
+    expect((await ledger(h)).filter(({ outcome }) => outcome === "result_unknown")).toHaveLength(2);
     await h.repository.close();
   });
 });

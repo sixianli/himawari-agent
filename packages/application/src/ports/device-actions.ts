@@ -99,6 +99,11 @@ export interface DeviceActionSettlement {
   readonly unknown: readonly DeviceActionRecord[];
 }
 
+export interface DeviceActionReopening {
+  readonly forgotten: readonly DeviceActionRecord[];
+  readonly pending: readonly DeviceActionRecord[];
+}
+
 export type DeviceActionReportResult =
   | { readonly kind: "recorded"; readonly record: DeviceActionRecord }
   | { readonly kind: "replayed"; readonly record: DeviceActionRecord }
@@ -155,8 +160,12 @@ export interface DeviceActionStorePort {
     },
   ): Promise<DeviceActionReportResult>;
   forget(
-    input: PairedDeviceScope & { readonly deviceId: string; readonly now: string },
-  ): Promise<readonly DeviceActionRecord[]>;
+    input: PairedDeviceScope & {
+      readonly deviceId: string;
+      readonly now: string;
+      readonly limit: number;
+    },
+  ): Promise<DeviceActionReopening>;
   decide(
     input: PairedDeviceScope & {
       readonly id: string;

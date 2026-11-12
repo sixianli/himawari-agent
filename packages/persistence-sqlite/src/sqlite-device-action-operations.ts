@@ -1,6 +1,7 @@
 import type {
   DeviceActionRecord,
   DeviceActionRecordState,
+  DeviceActionReopening,
   DeviceActionReportResult,
   DeviceActionSettlement,
   DeviceActionStorePort,
@@ -342,28 +343,40 @@ export class SqliteDeviceActionOperations {
     })();
   }
 
-  private forget(input: Input<"forget">): readonly DeviceActionRecord[] {
+  private forget(input: Input<"forget">): DeviceActionReopening {
     this.assertDiskHeadroom();
     const now = this.time(input.now);
-    return this.database.transaction(() => {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 500)
+      this.fail("PORT_INVALID_OPERATION", "Device action reopen is invalid");
+    return this.database.transaction((): DeviceActionReopening => {
       const scope = [input.ownerId, input.agentId, input.deviceId] as const;
-      this.database
+      const delivered = this.database
         .prepare(
-          `UPDATE device_actions
-              SET state = 'result_unknown', reason_code = 'device_lost_record', updated_at = ?,
-                  revision = revision + 1
-            WHERE owner_id = ? AND agent_id = ? AND device_id = ? AND state = 'delivered'`,
+          `SELECT id FROM device_actions
+            WHERE owner_id = ? AND agent_id = ? AND device_id = ? AND state = 'delivered'
+            ORDER BY created_at, id LIMIT ?`,
         )
-        .run(now, ...scope);
-      return (
+        .all(...scope, input.limit) as { id: string }[];
+      const lose = this.database.prepare(
+        `UPDATE device_actions
+            SET state = 'result_unknown', reason_code = 'device_lost_record', updated_at = ?,
+                revision = revision + 1
+          WHERE id = ? AND state = 'delivered'`,
+      );
+      const forgotten: DeviceActionRecord[] = [];
+      for (const { id } of delivered)
+        if (lose.run(now, id).changes === 1)
+          forgotten.push(this.one(input, id) as DeviceActionRecord);
+      const pending = (
         this.database
           .prepare(
             `SELECT ${columns} FROM device_actions
               WHERE owner_id = ? AND agent_id = ? AND device_id = ? AND state = 'result_unknown'
-              ORDER BY created_at, id`,
+              ORDER BY created_at, id LIMIT ?`,
           )
-          .all(...scope) as Row[]
+          .all(...scope, input.limit) as Row[]
       ).map(toRecord);
+      return { forgotten, pending };
     })();
   }
 

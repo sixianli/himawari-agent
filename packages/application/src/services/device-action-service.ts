@@ -317,7 +317,13 @@ export class DeviceActionService {
       runId: input.runId,
       toolCallId: input.toolCallId,
     });
-    if (replayed) return this.#outcome(replayed);
+    if (replayed) {
+      if (replayed.deviceId !== input.device.id || replayed.action !== input.action)
+        return { kind: "invalid", note: null };
+      if (replayed.state === "result_unknown" || replayed.state === "queued")
+        this.#options.delivery.announce(replayed.deviceId);
+      return this.#outcome(replayed);
+    }
     const registration = registry.get(input.action);
     if (!registration) return { kind: "invalid", note: null };
     const args = validateDeviceActionArguments(registration.parameters, input.arguments);
@@ -422,7 +428,7 @@ export class DeviceActionService {
         expiresAt,
       })
       .catch(async (error: unknown) => {
-        await this.#options.content.discard(argumentsRef);
+        await this.#options.content.discard(argumentsRef).catch(() => undefined);
         throw error;
       });
     if (inserted.kind !== "created") {
@@ -546,13 +552,18 @@ export class DeviceActionService {
   async reopen(deviceId: string): Promise<readonly DeviceActionDelivery[]> {
     await this.settle();
     const now = this.#options.now();
-    const records = await this.#options.store.forget({ ...this.#options.scope, deviceId, now });
+    const reopening = await this.#options.store.forget({
+      ...this.#options.scope,
+      deviceId,
+      now,
+      limit: this.#options.settings().claimBatch,
+    });
+    for (const record of reopening.forgotten) {
+      await this.#ledger(record);
+      this.#options.delivery.settled(record.id);
+    }
     const deliveries: DeviceActionDelivery[] = [];
-    for (const record of records) {
-      if (record.reasonCode === "device_lost_record" && record.updatedAt === now) {
-        await this.#ledger(record);
-        this.#options.delivery.settled(record.id);
-      }
+    for (const record of reopening.pending) {
       const delivery = await this.#delivery(record);
       if (delivery) deliveries.push(delivery);
     }
@@ -618,7 +629,8 @@ export class DeviceActionService {
         now: this.#options.now(),
       })
       .catch(async (error: unknown) => {
-        if (resultRef !== null && accepted) await this.#options.content.discard(resultRef);
+        if (resultRef !== null && accepted)
+          await this.#options.content.discard(resultRef).catch(() => undefined);
         throw error;
       });
     if (reported.kind === "not_found" || reported.kind === "wrong_device")
