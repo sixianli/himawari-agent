@@ -4,7 +4,7 @@
     "status": "proposed_owner_review_required",
     "proposedAt": "2026-11-04T00:00:00Z",
     "owner": "sixianli",
-    "reviewEvidence": "本次 GitHub CI Task 8 初始化实现中，主代理逐条核对 28 条 Gitleaks 命中的源码上下文与既有 machine baseline，确认 18 个请求去重 ID、6 个重复十六进制合成启动 token、2 个公开认证标签和 2 个既有 JWT fixture。此为代码审阅后提交给 Owner 的精确例外提案；尚无 Owner 对这些独立例外的合入审阅证据。reviewReference 仅指向原始源码提交，不表示例外已获 Owner 审阅。 同次主代理核验官方 npm 缓存来源闭包，并逐项审阅干净构建中 39 个原样发布文件、48 个合成或非凭据字面量的用途，形成 published-synthetic-fixture 精确提案；公开来源本身不是豁免依据，仍待 Owner 合入审阅。 2026-10-03 Owner sixianli 曾逐条查看这 52 条并要求全部续期（记录于 .agents/tasks/round2-tool-execution/goal.md 的 G25），但该续期只提交在 claude/isolated-tool-execution 分支，main 上于 2026-10-03 过期。2026-10-24 主代理在 claude/isolated-tool-execution@44600517 上逐条复核：13 条合成字面量当前文件与历史仍被 gitleaks 8.30.0 命中（gateway-v2.contract.test.ts 一条仅剩历史命中，因 schema 要求 current 范围非空而保持原样），39 条依赖文件的锁路径、版本与 integrity 均未变化；Owner sixianli 在 Claude 项目对话中确认全部按复核建议续期。据此把提案日期改为 2026-10-24、全部到期日改为 2026-11-23，路径、摘要、数量和来源证明不变。 2026-11-04 Owner sixianli 在 Claude 项目对话中批准“51 条按现状续期 30 天”（消息 cmsg_01EE1hey9cboYNfwFnBv5dgrFc9SXu13zEM9rUxVEZ9B1R）；据此把提案日期改为 2026-11-04、已有 51 条的到期日改为 2026-12-04，路径、摘要、数量和来源证明不变。同日新增 13 条 synthetic-boot-token 例外，覆盖 gitleaks 8.30.0 在 main 上对同一合成 token（摘要 3eb1bd43…）的其余命中，每条逐行核对了 tokenValue 与 16 位十六进制重复的格式。2026-11-07：PR 248 新增的 13 条 synthetic-boot-token 例外里，有 10 条和 .github/security-review-manifest.json 重复登记，已从本文件删除，改由那份 Owner 复核清单覆盖。 2026-11-10 云端线程把 Pi 升级到 1.5.0（PR 338）后，在与 CI 相同的构建路径（tsc 编译加 packageNodeRuntime）生成运行时依赖闭包，用 findBuildSecrets 扫描，新增 42 个成员命中（来自 @earendil-works/pi-ai、@earendil-works/pi-coding-agent、@google/genai、openai、@aws-sdk/nested-clients），Pi 打包出的 pi-coding-main 分块文件无命中。逐条读了命中行：AWS 官方文档示例密钥、your-api-key 与 GEMINI_API_KEY 占位、$ACME_API_KEY 这类环境变量名引用、命令行帮助文本、bearer 认证说明文字，都不是真实凭据。每个成员对应的官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；此为提案，仍待 Owner 合入审阅，reviewReference 指向引入这些依赖版本的 PR 338。"
+    "reviewEvidence": "本次 GitHub CI Task 8 初始化实现中，主代理逐条核对 28 条 Gitleaks 命中的源码上下文与既有 machine baseline，确认 18 个请求去重 ID、6 个重复十六进制合成启动 token、2 个公开认证标签和 2 个既有 JWT fixture。此为代码审阅后提交给 Owner 的精确例外提案；尚无 Owner 对这些独立例外的合入审阅证据。reviewReference 仅指向原始源码提交，不表示例外已获 Owner 审阅。 同次主代理核验官方 npm 缓存来源闭包，并逐项审阅干净构建中 39 个原样发布文件、48 个合成或非凭据字面量的用途，形成 published-synthetic-fixture 精确提案；公开来源本身不是豁免依据，仍待 Owner 合入审阅。 2026-10-03 Owner sixianli 曾逐条查看这 52 条并要求全部续期（记录于 .agents/tasks/round2-tool-execution/goal.md 的 G25），但该续期只提交在 claude/isolated-tool-execution 分支，main 上于 2026-10-03 过期。2026-10-24 主代理在 claude/isolated-tool-execution@44600517 上逐条复核：13 条合成字面量当前文件与历史仍被 gitleaks 8.30.0 命中（gateway-v2.contract.test.ts 一条仅剩历史命中，因 schema 要求 current 范围非空而保持原样），39 条依赖文件的锁路径、版本与 integrity 均未变化；Owner sixianli 在 Claude 项目对话中确认全部按复核建议续期。据此把提案日期改为 2026-10-24、全部到期日改为 2026-11-23，路径、摘要、数量和来源证明不变。 2026-11-04 Owner sixianli 在 Claude 项目对话中批准“51 条按现状续期 30 天”（消息 cmsg_01EE1hey9cboYNfwFnBv5dgrFc9SXu13zEM9rUxVEZ9B1R）；据此把提案日期改为 2026-11-04、已有 51 条的到期日改为 2026-12-04，路径、摘要、数量和来源证明不变。同日新增 13 条 synthetic-boot-token 例外，覆盖 gitleaks 8.30.0 在 main 上对同一合成 token（摘要 3eb1bd43…）的其余命中，每条逐行核对了 tokenValue 与 16 位十六进制重复的格式。2026-11-07：PR 248 新增的 13 条 synthetic-boot-token 例外里，有 10 条和 .github/security-review-manifest.json 重复登记，已从本文件删除，改由那份 Owner 复核清单覆盖。 2026-11-10 云端线程把 Pi 升级到 1.5.0（PR 338）后，在与 CI 相同的构建路径（tsc 编译加 packageNodeRuntime）生成运行时依赖闭包，用 findBuildSecrets 扫描，新增 42 个成员命中（来自 @earendil-works/pi-ai、@earendil-works/pi-coding-agent、@google/genai、openai、@aws-sdk/nested-clients），Pi 打包出的 pi-coding-main 分块文件无命中。逐条读了命中行：AWS 官方文档示例密钥、your-api-key 与 GEMINI_API_KEY 占位、$ACME_API_KEY 这类环境变量名引用、命令行帮助文本、bearer 认证说明文字，都不是真实凭据。每个成员对应的官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；此为提案，仍待 Owner 合入审阅，reviewReference 指向引入这些依赖版本的 PR 338。 2026-11-12 Owner sixianli 在项目线程的卡片上同意 PR 422 的依赖升级改例外：删掉随 @octokit/app 移除的 8 条（@octokit 6 个 README、universal-github-app-jwt 2 个测试文件）；MCP client、core 自带 zod 的 2 条按 4.6.7 重登；新增 MCP server 2.3.1 的 6 个 dist 文件和它自带 zod 的测试文件共 7 条。命中内容是文档示例和测试固定值，不是真实凭据。"
   },
   "exceptions": [
     {
@@ -350,12 +350,12 @@
       "id": "published-synthetic-fixture",
       "path": "runtime/node_modules/@modelcontextprotocol/client/node_modules/zod/src/v4/mini/tests/string.test.ts",
       "package": "zod",
-      "version": "4.4.3",
+      "version": "4.6.7",
       "packageLockPath": "node_modules/@modelcontextprotocol/client/node_modules/zod",
-      "integrity": "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==",
-      "sourceUrl": "https://registry.npmjs.org/zod/-/zod-4.4.3.tgz",
+      "integrity": "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==",
+      "sourceUrl": "https://registry.npmjs.org/zod/-/zod-4.6.7.tgz",
       "archiveMember": "package/src/v4/mini/tests/string.test.ts",
-      "fileSha256": "efb9ef22f2179e700a2033edd4e1e03a6fe4f6b95fa4bc0bd29223065e1ec0a0",
+      "fileSha256": "f4ebdab74387516508d0ce96a56979fe06af7e2425dccc13d34c0a229ba3a050",
       "findings": [
         {
           "rule": "jwt-token",
@@ -365,22 +365,22 @@
       ],
       "reason": "字符串解析测试：固定 JWT 输入及解析结果断言。",
       "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/422",
       "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
-      "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
+      "sourceProofSha256": "84efd155bed93270286e793fc951be270b536cbd5b0eeb111f0fa3967201d698",
+      "sourceReview": "2026-11-12 体检线程把 MCP SDK 升到 2.3.1、嵌套 zod 升到 4.6.7（PR 422）。逐条读了命中行：zod 的是字符串解析测试里的固定 JWT，MCP server 的是 Bearer 认证说明文字和类型注释里的示例。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于安装的文件；Owner sixianli 2026-11-12 在项目线程的卡片上同意。"
     },
     {
       "kind": "published-synthetic-fixture",
       "id": "published-synthetic-fixture",
       "path": "runtime/node_modules/@modelcontextprotocol/core/node_modules/zod/src/v4/mini/tests/string.test.ts",
       "package": "zod",
-      "version": "4.4.3",
+      "version": "4.6.7",
       "packageLockPath": "node_modules/@modelcontextprotocol/core/node_modules/zod",
-      "integrity": "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==",
-      "sourceUrl": "https://registry.npmjs.org/zod/-/zod-4.4.3.tgz",
+      "integrity": "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==",
+      "sourceUrl": "https://registry.npmjs.org/zod/-/zod-4.6.7.tgz",
       "archiveMember": "package/src/v4/mini/tests/string.test.ts",
-      "fileSha256": "efb9ef22f2179e700a2033edd4e1e03a6fe4f6b95fa4bc0bd29223065e1ec0a0",
+      "fileSha256": "f4ebdab74387516508d0ce96a56979fe06af7e2425dccc13d34c0a229ba3a050",
       "findings": [
         {
           "rule": "jwt-token",
@@ -390,200 +390,10 @@
       ],
       "reason": "字符串解析测试：固定 JWT 输入及解析结果断言。",
       "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/422",
       "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
-      "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
-    },
-    {
-      "kind": "published-synthetic-fixture",
-      "id": "published-synthetic-fixture",
-      "path": "runtime/node_modules/@octokit/auth-app/README.md",
-      "package": "@octokit/auth-app",
-      "version": "8.3.0",
-      "packageLockPath": "node_modules/@octokit/auth-app",
-      "integrity": "sha512-/UaKmJCsOc5XBZwhnFiGNdLH/FkDF8lYtBn1QlKxtX7IpgaRB/XOXjixFtERAknyUZHxp3oDuoiG0En4VptJSg==",
-      "sourceUrl": "https://registry.npmjs.org/@octokit/auth-app/-/auth-app-8.3.0.tgz",
-      "archiveMember": "package/README.md",
-      "fileSha256": "b7e00ffcd7961101dba9eb47123822c70c9ec912a9232e58cf559d750fef8883",
-      "findings": [
-        {
-          "rule": "credential-literal",
-          "digest": "37fe142431ab94c1a2f021ee8e3c542073937c313e50ad4e931c5f21d629bbd6",
-          "count": 1
-        },
-        {
-          "rule": "credential-literal",
-          "digest": "4c09422b949a71723f72af315de016346cc6abdc208ffecde026dc00bd506674",
-          "count": 4
-        },
-        {
-          "rule": "credential-literal",
-          "digest": "9657ef578d49754259efff7debf255e795c1abc7db7524c0e17c6f1cfd344ac7",
-          "count": 5
-        }
-      ],
-      "reason": "README 认证 API 调用或响应示例：文档中固定的 client secret、访问/刷新 token。",
-      "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
-      "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
-    },
-    {
-      "kind": "published-synthetic-fixture",
-      "id": "published-synthetic-fixture",
-      "path": "runtime/node_modules/@octokit/auth-oauth-app/README.md",
-      "package": "@octokit/auth-oauth-app",
-      "version": "9.0.4",
-      "packageLockPath": "node_modules/@octokit/auth-oauth-app",
-      "integrity": "sha512-Pe3du5LrC6dlv10b0RbarBlJtIT1Urq8BFoQklK8WmBw8YKnGgrANn7cQmHiA1v8AVihgi7YutV8MncP57I4og==",
-      "sourceUrl": "https://registry.npmjs.org/@octokit/auth-oauth-app/-/auth-oauth-app-9.0.4.tgz",
-      "archiveMember": "package/README.md",
-      "fileSha256": "ae888a2a3afc6cae75209f2e02059ec359d7682879539d48c9f914ad34e2d485",
-      "findings": [
-        {
-          "rule": "credential-literal",
-          "digest": "37fe142431ab94c1a2f021ee8e3c542073937c313e50ad4e931c5f21d629bbd6",
-          "count": 1
-        },
-        {
-          "rule": "credential-literal",
-          "digest": "4c09422b949a71723f72af315de016346cc6abdc208ffecde026dc00bd506674",
-          "count": 10
-        }
-      ],
-      "reason": "README 认证 API 调用或响应示例：文档中固定的 client secret、访问/刷新 token。",
-      "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
-      "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
-    },
-    {
-      "kind": "published-synthetic-fixture",
-      "id": "published-synthetic-fixture",
-      "path": "runtime/node_modules/@octokit/auth-oauth-user/README.md",
-      "package": "@octokit/auth-oauth-user",
-      "version": "6.0.3",
-      "packageLockPath": "node_modules/@octokit/auth-oauth-user",
-      "integrity": "sha512-t4OKUhrI5britmpRiSzPAz1TJPyUN/Hw1HEE3Hz/uElxcmnf/YCRSKtFRNc5gy4yJFTlXgk34H1lvxiotQJQvQ==",
-      "sourceUrl": "https://registry.npmjs.org/@octokit/auth-oauth-user/-/auth-oauth-user-6.0.3.tgz",
-      "archiveMember": "package/README.md",
-      "fileSha256": "ebc353da520fa0971e54711833437b9536d267c0fd3c42873692fb48ca576035",
-      "findings": [
-        {
-          "rule": "credential-literal",
-          "digest": "4c09422b949a71723f72af315de016346cc6abdc208ffecde026dc00bd506674",
-          "count": 8
-        }
-      ],
-      "reason": "README 认证 API 调用或响应示例：文档中固定的 client secret、访问/刷新 token。",
-      "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
-      "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
-    },
-    {
-      "kind": "published-synthetic-fixture",
-      "id": "published-synthetic-fixture",
-      "path": "runtime/node_modules/@octokit/auth-token/README.md",
-      "package": "@octokit/auth-token",
-      "version": "6.0.0",
-      "packageLockPath": "node_modules/@octokit/auth-token",
-      "integrity": "sha512-P4YJBPdPSpWTQ1NU4XYdvHvXJJDxM6YwpS0FZHRgP7YFkdVxsWcpWGy/NVqlAA7PcPCnMacXlRm1y2PFZRWL/w==",
-      "sourceUrl": "https://registry.npmjs.org/@octokit/auth-token/-/auth-token-6.0.0.tgz",
-      "archiveMember": "package/README.md",
-      "fileSha256": "bfff4dc81db9a97be9b5a3e5d2969d269f0c6238164dd789d4326c35f8d5bd88",
-      "findings": [
-        {
-          "rule": "github-token",
-          "digest": "25ba5ecff1e53d417d5b4a3c3d1f8b63843045aadc3e4beebe497b8d1dcba65f",
-          "count": 8
-        },
-        {
-          "rule": "github-token",
-          "digest": "b32c64ba371b636fef6ba6eb96c4a5602e937c1d948168449111b4e88190c5ec",
-          "count": 2
-        },
-        {
-          "rule": "github-token",
-          "digest": "de3ffa57526ffa0ab375ac324e8edb7b36d5d1f60d2206b637f001517a49ead1",
-          "count": 2
-        }
-      ],
-      "reason": "README 认证 API 调用或响应示例：文档中固定的 client secret、访问/刷新 token。",
-      "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
-      "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
-    },
-    {
-      "kind": "published-synthetic-fixture",
-      "id": "published-synthetic-fixture",
-      "path": "runtime/node_modules/@octokit/oauth-app/README.md",
-      "package": "@octokit/oauth-app",
-      "version": "8.0.4",
-      "packageLockPath": "node_modules/@octokit/oauth-app",
-      "integrity": "sha512-Ji5JpRwAJcbOJkO4ij0tW6+GrQ8efpICnAca3o5xI8/HUNjqJu3hhG4cCZdXAHMKaOaQTFX0Yl+cpu61Rsx94A==",
-      "sourceUrl": "https://registry.npmjs.org/@octokit/oauth-app/-/oauth-app-8.0.4.tgz",
-      "archiveMember": "package/README.md",
-      "fileSha256": "779323ca90ed8828727ec14b29244d1df44fd2ac4ce406abf8c4cf8fe976bb45",
-      "findings": [
-        {
-          "rule": "credential-literal",
-          "digest": "378744acc37ceb47a52d2fa35193794949528c9c141cfecc91df289e36668291",
-          "count": 1
-        },
-        {
-          "rule": "credential-literal",
-          "digest": "4c09422b949a71723f72af315de016346cc6abdc208ffecde026dc00bd506674",
-          "count": 7
-        },
-        {
-          "rule": "credential-literal",
-          "digest": "fdfa7a6f99a44ecbd0260cfc26b9cd10868958355e78516fe17fb8e2017c6d42",
-          "count": 1
-        }
-      ],
-      "reason": "README 认证 API 调用或响应示例：文档中固定的 client secret、访问/刷新 token。",
-      "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
-      "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
-    },
-    {
-      "kind": "published-synthetic-fixture",
-      "id": "published-synthetic-fixture",
-      "path": "runtime/node_modules/@octokit/oauth-methods/README.md",
-      "package": "@octokit/oauth-methods",
-      "version": "6.0.4",
-      "packageLockPath": "node_modules/@octokit/oauth-methods",
-      "integrity": "sha512-96RsnxS7Hk/BQhUA1Qo2pmcYP6LWQRWMdo7bVbNE7ZCkFLhSUYBXVUj9tVnvhl4jzbwHYt/dcIG+ioY427b2sg==",
-      "sourceUrl": "https://registry.npmjs.org/@octokit/oauth-methods/-/oauth-methods-6.0.4.tgz",
-      "archiveMember": "package/README.md",
-      "fileSha256": "ad02e920889b61ce5c124ed7cd288c5d7c6efb67775f199d1f8ebc0ec76d3e95",
-      "findings": [
-        {
-          "rule": "credential-literal",
-          "digest": "7b0ec6474968c63a80f0ddfba1f2cfe608f867f6bc5c91d30aa195e8d2bd27fa",
-          "count": 2
-        },
-        {
-          "rule": "credential-literal",
-          "digest": "fdfa7a6f99a44ecbd0260cfc26b9cd10868958355e78516fe17fb8e2017c6d42",
-          "count": 11
-        }
-      ],
-      "reason": "README 认证 API 调用或响应示例：文档中固定的 client secret、访问/刷新 token。",
-      "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
-      "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
+      "sourceProofSha256": "84efd155bed93270286e793fc951be270b536cbd5b0eeb111f0fa3967201d698",
+      "sourceReview": "2026-11-12 体检线程把 MCP SDK 升到 2.3.1、嵌套 zod 升到 4.6.7（PR 422）。逐条读了命中行：zod 的是字符串解析测试里的固定 JWT，MCP server 的是 Bearer 认证说明文字和类型注释里的示例。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于安装的文件；Owner sixianli 2026-11-12 在项目线程的卡片上同意。"
     },
     {
       "kind": "published-synthetic-fixture",
@@ -809,76 +619,6 @@
         }
       ],
       "reason": "CloudWatch 传输文档 auth 示例的 your-* 密码占位值。",
-      "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
-      "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
-    },
-    {
-      "kind": "published-synthetic-fixture",
-      "id": "published-synthetic-fixture",
-      "path": "runtime/node_modules/universal-github-app-jwt/test/deno.test.js",
-      "package": "universal-github-app-jwt",
-      "version": "2.2.2",
-      "packageLockPath": "node_modules/universal-github-app-jwt",
-      "integrity": "sha512-dcmbeSrOdTnsjGjUfAlqNDJrhxXizjAz94ija9Qw8YkZ1uu0d+GoZzyH+Jb9tIIqvGsadUfwg+22k5aDqqwzbw==",
-      "sourceUrl": "https://registry.npmjs.org/universal-github-app-jwt/-/universal-github-app-jwt-2.2.2.tgz",
-      "archiveMember": "package/test/deno.test.js",
-      "fileSha256": "e6c68d48cf2f005172e88eec19409b097ca334f0936caf6602a3f14d7315bcbc",
-      "findings": [
-        {
-          "rule": "jwt-token",
-          "digest": "04e70cd172b3d959fb13e4e47fac0df16b74a0d4b314e00b6a024fa94ac7683b",
-          "count": 1
-        },
-        {
-          "rule": "private-key",
-          "digest": "365753f6db0caff03a756aaf2e86034ec10e189cfac768fc9f319943f7d583dd",
-          "count": 1
-        }
-      ],
-      "reason": "已发布包自身测试：固定 PKCS#1/PKCS#8 私钥与确定性 JWT，用于签名格式和相等性断言。",
-      "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
-      "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
-    },
-    {
-      "kind": "published-synthetic-fixture",
-      "id": "published-synthetic-fixture",
-      "path": "runtime/node_modules/universal-github-app-jwt/test/node.test.js",
-      "package": "universal-github-app-jwt",
-      "version": "2.2.2",
-      "packageLockPath": "node_modules/universal-github-app-jwt",
-      "integrity": "sha512-dcmbeSrOdTnsjGjUfAlqNDJrhxXizjAz94ija9Qw8YkZ1uu0d+GoZzyH+Jb9tIIqvGsadUfwg+22k5aDqqwzbw==",
-      "sourceUrl": "https://registry.npmjs.org/universal-github-app-jwt/-/universal-github-app-jwt-2.2.2.tgz",
-      "archiveMember": "package/test/node.test.js",
-      "fileSha256": "7bbe4a8ff5bbdd714eac0b378c1d5424a8e22a2f3b720904d2c526775d7e445b",
-      "findings": [
-        {
-          "rule": "jwt-token",
-          "digest": "04e70cd172b3d959fb13e4e47fac0df16b74a0d4b314e00b6a024fa94ac7683b",
-          "count": 1
-        },
-        {
-          "rule": "private-key",
-          "digest": "149047c9eb21883ff8e97273d1ce613cd9e7e9c47a1ee4c0d11439e8a9e723ad",
-          "count": 1
-        },
-        {
-          "rule": "private-key",
-          "digest": "365753f6db0caff03a756aaf2e86034ec10e189cfac768fc9f319943f7d583dd",
-          "count": 1
-        },
-        {
-          "rule": "private-key",
-          "digest": "ef9f99e8c15ed020595a78391d1b17f3d49b8324b594318ce43e1e336f362c11",
-          "count": 1
-        }
-      ],
-      "reason": "已发布包自身测试：固定 PKCS#1/PKCS#8 私钥与确定性 JWT，用于签名格式和相等性断言。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
       "expiresAt": "2026-12-04T00:00:00Z",
@@ -2092,6 +1832,181 @@
       "expiresAt": "2026-12-04T00:00:00Z",
       "sourceProofSha256": "597532dcb9051ee8aa5edadedb57b798b42add68cc5aec1d67e994d0cfad07f1",
       "sourceReview": "2026-11-10 主代理核对：官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员 SHA256 等于构建出的成员摘要；sourceProofSha256 是该 tarball 的 SHA256；此为提案，仍待 Owner 合入审阅，reviewReference 仅标识引入该依赖版本的 PR。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "path": "runtime/node_modules/@modelcontextprotocol/server/dist/index.d.cts",
+      "package": "@modelcontextprotocol/server",
+      "version": "2.3.1",
+      "packageLockPath": "node_modules/@modelcontextprotocol/server",
+      "integrity": "sha512-e59MfWuSssj6DoQ96JCTqdW1AXT5/XtnTl0WWd6MU1Ka434fFUGGosCLJbGNySDhHGvxQWoRWK137FXYFkYNWw==",
+      "sourceUrl": "https://registry.npmjs.org/@modelcontextprotocol/server/-/server-2.3.1.tgz",
+      "archiveMember": "package/dist/index.d.cts",
+      "fileSha256": "d0787a639fe04fffa3d65010fb2a2cc248852ccc125ecb732324c546286a74f7",
+      "findings": [
+        {
+          "rule": "bearer-token",
+          "digest": "fd5870803904313175576b9669f2f129a03143af27d87a830b1fc7848fb651da",
+          "count": 2
+        }
+      ],
+      "reason": "Bearer 认证的说明文字和类型注释示例。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/422",
+      "sourceProofSha256": "96bc3fe00cbc9a72093a3f91c531387a5f988ea34d09e6c34a9a6b77dd0dc518",
+      "sourceReview": "2026-11-12 体检线程把 MCP SDK 升到 2.3.1、嵌套 zod 升到 4.6.7（PR 422）。逐条读了命中行：zod 的是字符串解析测试里的固定 JWT，MCP server 的是 Bearer 认证说明文字和类型注释里的示例。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于安装的文件；Owner sixianli 2026-11-12 在项目线程的卡片上同意。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "path": "runtime/node_modules/@modelcontextprotocol/server/dist/index.d.mts",
+      "package": "@modelcontextprotocol/server",
+      "version": "2.3.1",
+      "packageLockPath": "node_modules/@modelcontextprotocol/server",
+      "integrity": "sha512-e59MfWuSssj6DoQ96JCTqdW1AXT5/XtnTl0WWd6MU1Ka434fFUGGosCLJbGNySDhHGvxQWoRWK137FXYFkYNWw==",
+      "sourceUrl": "https://registry.npmjs.org/@modelcontextprotocol/server/-/server-2.3.1.tgz",
+      "archiveMember": "package/dist/index.d.mts",
+      "fileSha256": "1df33ce0d949d368005f0adcf99121988dd0e67f9cde991e60070a071b599c0c",
+      "findings": [
+        {
+          "rule": "bearer-token",
+          "digest": "fd5870803904313175576b9669f2f129a03143af27d87a830b1fc7848fb651da",
+          "count": 2
+        }
+      ],
+      "reason": "Bearer 认证的说明文字和类型注释示例。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/422",
+      "sourceProofSha256": "96bc3fe00cbc9a72093a3f91c531387a5f988ea34d09e6c34a9a6b77dd0dc518",
+      "sourceReview": "2026-11-12 体检线程把 MCP SDK 升到 2.3.1、嵌套 zod 升到 4.6.7（PR 422）。逐条读了命中行：zod 的是字符串解析测试里的固定 JWT，MCP server 的是 Bearer 认证说明文字和类型注释里的示例。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于安装的文件；Owner sixianli 2026-11-12 在项目线程的卡片上同意。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "path": "runtime/node_modules/@modelcontextprotocol/server/dist/mcp-BumlNux0.cjs",
+      "package": "@modelcontextprotocol/server",
+      "version": "2.3.1",
+      "packageLockPath": "node_modules/@modelcontextprotocol/server",
+      "integrity": "sha512-e59MfWuSssj6DoQ96JCTqdW1AXT5/XtnTl0WWd6MU1Ka434fFUGGosCLJbGNySDhHGvxQWoRWK137FXYFkYNWw==",
+      "sourceUrl": "https://registry.npmjs.org/@modelcontextprotocol/server/-/server-2.3.1.tgz",
+      "archiveMember": "package/dist/mcp-BumlNux0.cjs",
+      "fileSha256": "f845f6f1dd26d7563ad829abc3ebe7944352c455578307c864dc1a09c34fb65b",
+      "findings": [
+        {
+          "rule": "bearer-token",
+          "digest": "fd5870803904313175576b9669f2f129a03143af27d87a830b1fc7848fb651da",
+          "count": 2
+        }
+      ],
+      "reason": "Bearer 认证的说明文字和函数注释示例。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/422",
+      "sourceProofSha256": "96bc3fe00cbc9a72093a3f91c531387a5f988ea34d09e6c34a9a6b77dd0dc518",
+      "sourceReview": "2026-11-12 体检线程把 MCP SDK 升到 2.3.1、嵌套 zod 升到 4.6.7（PR 422）。逐条读了命中行：zod 的是字符串解析测试里的固定 JWT，MCP server 的是 Bearer 认证说明文字和类型注释里的示例。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于安装的文件；Owner sixianli 2026-11-12 在项目线程的卡片上同意。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "path": "runtime/node_modules/@modelcontextprotocol/server/dist/mcp-BumlNux0.cjs.map",
+      "package": "@modelcontextprotocol/server",
+      "version": "2.3.1",
+      "packageLockPath": "node_modules/@modelcontextprotocol/server",
+      "integrity": "sha512-e59MfWuSssj6DoQ96JCTqdW1AXT5/XtnTl0WWd6MU1Ka434fFUGGosCLJbGNySDhHGvxQWoRWK137FXYFkYNWw==",
+      "sourceUrl": "https://registry.npmjs.org/@modelcontextprotocol/server/-/server-2.3.1.tgz",
+      "archiveMember": "package/dist/mcp-BumlNux0.cjs.map",
+      "fileSha256": "66243888b8d0fd85dff52fc040b110ac5965ac05cbb733a3305e90913d2f4303",
+      "findings": [
+        {
+          "rule": "bearer-token",
+          "digest": "fd5870803904313175576b9669f2f129a03143af27d87a830b1fc7848fb651da",
+          "count": 1
+        }
+      ],
+      "reason": "Bearer 认证的说明文字和函数注释示例（源码映射）。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/422",
+      "sourceProofSha256": "96bc3fe00cbc9a72093a3f91c531387a5f988ea34d09e6c34a9a6b77dd0dc518",
+      "sourceReview": "2026-11-12 体检线程把 MCP SDK 升到 2.3.1、嵌套 zod 升到 4.6.7（PR 422）。逐条读了命中行：zod 的是字符串解析测试里的固定 JWT，MCP server 的是 Bearer 认证说明文字和类型注释里的示例。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于安装的文件；Owner sixianli 2026-11-12 在项目线程的卡片上同意。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "path": "runtime/node_modules/@modelcontextprotocol/server/dist/mcp-DIH4cS6P.mjs",
+      "package": "@modelcontextprotocol/server",
+      "version": "2.3.1",
+      "packageLockPath": "node_modules/@modelcontextprotocol/server",
+      "integrity": "sha512-e59MfWuSssj6DoQ96JCTqdW1AXT5/XtnTl0WWd6MU1Ka434fFUGGosCLJbGNySDhHGvxQWoRWK137FXYFkYNWw==",
+      "sourceUrl": "https://registry.npmjs.org/@modelcontextprotocol/server/-/server-2.3.1.tgz",
+      "archiveMember": "package/dist/mcp-DIH4cS6P.mjs",
+      "fileSha256": "2657fbeaebe76ef461e8d0860308da4c3404d2d3b6b1f06960b8ffc578fec1b4",
+      "findings": [
+        {
+          "rule": "bearer-token",
+          "digest": "fd5870803904313175576b9669f2f129a03143af27d87a830b1fc7848fb651da",
+          "count": 2
+        }
+      ],
+      "reason": "Bearer 认证的说明文字和函数注释示例。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/422",
+      "sourceProofSha256": "96bc3fe00cbc9a72093a3f91c531387a5f988ea34d09e6c34a9a6b77dd0dc518",
+      "sourceReview": "2026-11-12 体检线程把 MCP SDK 升到 2.3.1、嵌套 zod 升到 4.6.7（PR 422）。逐条读了命中行：zod 的是字符串解析测试里的固定 JWT，MCP server 的是 Bearer 认证说明文字和类型注释里的示例。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于安装的文件；Owner sixianli 2026-11-12 在项目线程的卡片上同意。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "path": "runtime/node_modules/@modelcontextprotocol/server/dist/mcp-DIH4cS6P.mjs.map",
+      "package": "@modelcontextprotocol/server",
+      "version": "2.3.1",
+      "packageLockPath": "node_modules/@modelcontextprotocol/server",
+      "integrity": "sha512-e59MfWuSssj6DoQ96JCTqdW1AXT5/XtnTl0WWd6MU1Ka434fFUGGosCLJbGNySDhHGvxQWoRWK137FXYFkYNWw==",
+      "sourceUrl": "https://registry.npmjs.org/@modelcontextprotocol/server/-/server-2.3.1.tgz",
+      "archiveMember": "package/dist/mcp-DIH4cS6P.mjs.map",
+      "fileSha256": "e24d9d3e9d12f6bbef320e59d503c0c9f2aee5aaadfddbc7f1d31d2c1fefbb20",
+      "findings": [
+        {
+          "rule": "bearer-token",
+          "digest": "fd5870803904313175576b9669f2f129a03143af27d87a830b1fc7848fb651da",
+          "count": 1
+        }
+      ],
+      "reason": "Bearer 认证的说明文字和函数注释示例（源码映射）。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/422",
+      "sourceProofSha256": "96bc3fe00cbc9a72093a3f91c531387a5f988ea34d09e6c34a9a6b77dd0dc518",
+      "sourceReview": "2026-11-12 体检线程把 MCP SDK 升到 2.3.1、嵌套 zod 升到 4.6.7（PR 422）。逐条读了命中行：zod 的是字符串解析测试里的固定 JWT，MCP server 的是 Bearer 认证说明文字和类型注释里的示例。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于安装的文件；Owner sixianli 2026-11-12 在项目线程的卡片上同意。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "path": "runtime/node_modules/@modelcontextprotocol/server/node_modules/zod/src/v4/mini/tests/string.test.ts",
+      "package": "zod",
+      "version": "4.6.7",
+      "packageLockPath": "node_modules/@modelcontextprotocol/server/node_modules/zod",
+      "integrity": "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==",
+      "sourceUrl": "https://registry.npmjs.org/zod/-/zod-4.6.7.tgz",
+      "archiveMember": "package/src/v4/mini/tests/string.test.ts",
+      "fileSha256": "f4ebdab74387516508d0ce96a56979fe06af7e2425dccc13d34c0a229ba3a050",
+      "findings": [
+        {
+          "rule": "jwt-token",
+          "digest": "7f75367e7881255134e1375e723d1dea8ad5f6a4fdb79d938df1f1754a830606",
+          "count": 2
+        }
+      ],
+      "reason": "字符串解析测试：固定 JWT 输入及解析结果断言。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/422",
+      "sourceProofSha256": "84efd155bed93270286e793fc951be270b536cbd5b0eeb111f0fa3967201d698",
+      "sourceReview": "2026-11-12 体检线程把 MCP SDK 升到 2.3.1、嵌套 zod 升到 4.6.7（PR 422）。逐条读了命中行：zod 的是字符串解析测试里的固定 JWT，MCP server 的是 Bearer 认证说明文字和类型注释里的示例。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于安装的文件；Owner sixianli 2026-11-12 在项目线程的卡片上同意。"
     }
   ]
 }
