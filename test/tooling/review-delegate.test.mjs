@@ -829,6 +829,9 @@ describe("review delegation result check, legitimate edge cases", () => {
     withFixture((f) => {
       const task = { ...f.task, models: undefined };
       expect(parseArgs(reviewArgv(task)).models).toEqual(DEFAULT_REVIEW_MODELS);
+      expect(reviewArgv(task).join(" ")).toContain(
+        `--models ${DEFAULT_REVIEW_MODELS.map((model) => model.split("/").pop()).join(",")} `,
+      );
       cloudFiles(f, {
         [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger(
           DEFAULT_REVIEW_MODELS.map((m) => f.record(m)),

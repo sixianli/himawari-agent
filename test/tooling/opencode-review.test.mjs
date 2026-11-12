@@ -36,6 +36,7 @@ import {
   killProcessGroup,
   MIN_OUTPUT_TOKENS,
   MODEL_LENSES,
+  MODEL_OUTPUT_LIMITS,
   OPENCODE_KEPT_ENV,
   OPENCODE_LOCK_DIR,
   OPENCODE_VERSION,
@@ -76,6 +77,7 @@ import {
   WRAP_UP_RESERVE_USD,
   wrapUpReason,
 } from "../../scripts/model-review/opencode-review.mjs";
+import { readGatewayConfig } from "../../scripts/model-review/gateway.mjs";
 import { GUARD_ENV } from "../../scripts/model-review/spend-guard.mjs";
 import {
   expectAppendedTo,
@@ -519,6 +521,12 @@ describe("opencode review model list", () => {
     expect(DEFAULT_REVIEW_MODELS).toEqual(config.default);
     expect(SUBSTITUTES).toEqual(config.substitutes);
     expect(DEFAULT_REVIEW_MODELS).toEqual(["opencode-go/deepseek-v4.1-flash"]);
+    for (const model of REVIEW_MODELS) {
+      const name = model.split("/").pop();
+      expect(MODEL_LENSES[name]).toEqual(expect.any(String));
+      expect(MODEL_OUTPUT_LIMITS[name]).toEqual(expect.any(Number));
+      expect(readGatewayConfig(undefined, REVIEW_MODELS).models[model]).toBeDefined();
+    }
     expect(reviewModelsProblems(valid)).toEqual([]);
     expect(reviewModelsProblems({ ...valid, default: valid.allowed, substitutes: {} })).toEqual([]);
   });

@@ -1279,7 +1279,7 @@ export function coveragePoints(records) {
     );
     const inRound = reviews.filter((record) => (record.round ?? 1) === round);
     const direct = (model) =>
-      passed.some((record) => record.model === model && record.substitute !== true);
+      passed.some((record) => record.model === model && record.substitute === undefined);
     const stoodIn = (model) =>
       passed.some(
         (record) =>
@@ -1289,7 +1289,11 @@ export function coveragePoints(records) {
       );
     const requested = [
       ...new Set(
-        inRound.filter((record) => record.substitute !== true).map((record) => record.model),
+        inRound
+          .filter(
+            (record) => record.substitute === undefined && REVIEW_MODELS.includes(record.model),
+          )
+          .map((record) => record.model),
       ),
     ];
     const complete = (models) =>
@@ -3005,10 +3009,9 @@ export function gatewayUsageLine(record) {
   return `GATEWAY_USAGE ${record.model} ${parts.length ? parts.join(" ; ") : "none"}${dropped}`;
 }
 
-export function reserveModels({ mode, previous, models }) {
+export function reserveModels({ mode, models }) {
   const substitute = SUBSTITUTES[models[0]];
-  if (mode === "code-review" && previous && models.length === 1 && substitute)
-    return [...models, substitute];
+  if (mode === "code-review" && models.length === 1 && substitute) return [...models, substitute];
   return models;
 }
 
