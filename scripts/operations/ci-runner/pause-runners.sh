@@ -84,6 +84,11 @@ while :; do
     echo "RUNNER_PAUSE_INCOMPLETE labels=removed services=$(service_states) busy:${BUSY:- none}; run pause-runners.sh again, or resume-runners.sh to undo"
     exit 2
   fi
+  WAITING=${BUSY:- a job the VPS still sees}
+  if [ "$WAITING" != "${REPORTED:-}" ]; then
+    echo "RUNNER_PAUSE_WAITING for:$WAITING; jobs already running finish first, up to $(((DEADLINE - $(date +%s)) / 60)) more minutes; Ctrl-C keeps the labels removed"
+    REPORTED=$WAITING
+  fi
   sleep "$POLL"
 done
 

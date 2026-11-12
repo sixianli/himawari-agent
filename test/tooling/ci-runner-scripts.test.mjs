@@ -404,6 +404,17 @@ describe("pause-runners.sh", () => {
     const stop = order.findIndex((line) => line.includes("--labels-removed"));
     const listsBefore = order.slice(0, stop).filter((line) => line.endsWith("@tsv"));
     expect(listsBefore.length).toBeGreaterThanOrEqual(5);
+    const waiting = result.stdout
+      .split("\n")
+      .filter((line) => line.startsWith("RUNNER_PAUSE_WAITING"));
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0]).toContain("for: ci-vps-1 ci-vps-2;");
+  });
+
+  it("says nothing about waiting when the runners are idle from the start", () => {
+    const result = macBox().mac("pause-runners.sh");
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain("RUNNER_PAUSE_WAITING");
   });
 
   it("asks the VPS again when a job was still finishing there", () => {
