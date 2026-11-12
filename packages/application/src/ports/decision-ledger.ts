@@ -40,6 +40,7 @@ export const DECISION_KINDS = [
   "limit_change",
   "delivery_timing",
   "proposal",
+  "device_action",
 ] as const;
 
 export type DecisionKind = (typeof DECISION_KINDS)[number];
@@ -73,6 +74,17 @@ export const DECISION_OUTCOMES = {
     "undone",
     "not_proposed",
     "superseded",
+  ],
+  device_action: [
+    "waiting_owner",
+    "queued",
+    "delivered",
+    "succeeded",
+    "failed",
+    "result_unknown",
+    "expired",
+    "rejected",
+    "policy_changed",
   ],
 } as const satisfies Record<LedgerWriteKind, readonly string[]>;
 

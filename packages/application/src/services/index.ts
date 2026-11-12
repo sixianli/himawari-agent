@@ -104,3 +104,5 @@ export * from "./owner-day.js";
 export * from "./perception-extraction.js";
 export * from "./perception-origin-gate.js";
 export * from "./perception-source-prompts.js";
+export * from "./device-action-registry.js";
+export * from "./device-action-service.js";

@@ -170,6 +170,7 @@ export interface ProductionPerceptionToolsOptions {
   readonly configuration: () => PerceptionConfiguration;
   readonly gate: Pick<PerceptionOriginGate, "check">;
   readonly actions?: () => readonly DeviceActionDefinition[];
+  readonly offered?: (device: PairedDevice) => Promise<readonly string[]>;
   readonly perform?: (request: DeviceActionRequest) => Promise<DeviceActionOutcome>;
   readonly timeZone?: string;
   readonly now: () => string;
@@ -447,8 +448,14 @@ export class ProductionPerceptionTools {
     const registry = [...(this.#options.actions?.() ?? [])].sort((left, right) =>
       left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
     );
+    const allowed = new Map<string, readonly string[]>();
+    for (const target of devices)
+      allowed.set(
+        target.id,
+        this.#options.offered ? await this.#options.offered(target) : target.supportedActions,
+      );
     const offered = (target: PairedDevice) =>
-      registry.filter(({ name }) => target.supportedActions.includes(name));
+      registry.filter(({ name }) => (allowed.get(target.id) ?? []).includes(name));
     if (action === DEVICE_ACTION_DESCRIBE) {
       if (devices.length === 0)
         return {
@@ -484,7 +491,10 @@ export class ProductionPerceptionTools {
           note: TOOL_RESULT_DEVICE_ACTION_UNKNOWN.text,
         },
       };
-    const target = device === undefined ? capable[0] : devices.find(({ id }) => id === device);
+    const target =
+      device === undefined
+        ? (capable.find(({ id }) => (allowed.get(id) ?? []).includes(action)) ?? capable[0])
+        : devices.find(({ id }) => id === device);
     if (!target || !target.supportedActions.includes(action))
       return {
         value: {

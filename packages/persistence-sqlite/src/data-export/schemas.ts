@@ -1,4 +1,9 @@
+import { ACTION_KINDS, ACTION_RISK_LEVELS } from "@himawari-agent/application/authorization";
 import { DECISION_KINDS } from "@himawari-agent/application/decision-ledger";
+import {
+  DEVICE_ACTION_REASON_CODES,
+  DEVICE_ACTION_RECORD_STATES,
+} from "@himawari-agent/application/device-actions";
 import type { JsonSchema } from "./schema.js";
 
 export const FORMAT_VERSION = "himawari.data-export.v2" as const;
@@ -255,6 +260,40 @@ export const LIMIT_USAGE_SCHEMA: JsonSchema = objectOf(
   "某个上限在某一天的已用量；deviceId 有值的是设备自己报的数。只供查看，导入时不恢复。",
 );
 
+export const DEVICE_POLICY_SCHEMA: JsonSchema = objectOf(
+  {
+    deviceId: text(1, 64),
+    blockedActions: { type: "array", items: text(3, 64) },
+    updatedAt: timestamp,
+  },
+  [],
+  "主人在某台设备上关掉的动作。只供查看，导入时不恢复。",
+);
+
+export const DEVICE_ACTION_SCHEMA: JsonSchema = objectOf(
+  {
+    id: { type: "string", pattern: "^dact_[0-9a-f]{32}$" },
+    deviceId: text(1, 64),
+    action: text(3, 64),
+    schemaVersion: integer(1),
+    actionKind: enumOf(ACTION_KINDS),
+    risk: enumOf(ACTION_RISK_LEVELS),
+    ownerPresence: bool,
+    approvalId: nullable(text(1, 128)),
+    classification: enumOf(CLASSIFICATIONS),
+    state: enumOf(DEVICE_ACTION_RECORD_STATES),
+    reasonCode: nullable(enumOf(DEVICE_ACTION_REASON_CODES)),
+    createdAt: timestamp,
+    expiresAt: timestamp,
+    deliveredAt: nullable(timestamp),
+    finishedAt: nullable(timestamp),
+    request: exportedPayload,
+    result: exportedPayload,
+  },
+  [],
+  "Himawari 让一台设备做的一件事：动作名、状态、风险档位、参数和明细（request）、设备读回的结果（result）。只供查看，导入时不恢复。",
+);
+
 export const CONSOLIDATION_SCHEMA: JsonSchema = objectOf(
   {
     id: text(1, 512),
@@ -499,6 +538,8 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       trackPoints: integer(0),
       perceptionSettings: integer(0),
       limitUsage: integer(0),
+      devicePolicies: integer(0),
+      deviceActions: integer(0),
       consolidations: integer(0),
       consolidationChanges: integer(0),
       decisions: integer(0),
@@ -522,6 +563,8 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       "trackPoints",
       "perceptionSettings",
       "limitUsage",
+      "devicePolicies",
+      "deviceActions",
       "consolidations",
       "consolidationChanges",
       "decisions",
@@ -555,7 +598,9 @@ export const SCHEMA_FILES: readonly { readonly path: string; readonly schema: Js
   Object.freeze([
     { path: "schema/consolidations.schema.json", schema: CONSOLIDATION_SCHEMA },
     { path: "schema/decisions.schema.json", schema: DECISION_SCHEMA },
+    { path: "schema/device-actions.schema.json", schema: DEVICE_ACTION_SCHEMA },
     { path: "schema/device-mirror-items.schema.json", schema: DEVICE_MIRROR_ITEM_SCHEMA },
+    { path: "schema/device-policies.schema.json", schema: DEVICE_POLICY_SCHEMA },
     { path: "schema/evidence.schema.json", schema: EVIDENCE_SCHEMA },
     { path: "schema/import-batches.schema.json", schema: IMPORT_BATCH_SCHEMA },
     { path: "schema/limit-usage.schema.json", schema: LIMIT_USAGE_SCHEMA },
@@ -581,6 +626,8 @@ export const DATA_FILES = Object.freeze({
   trackPoints: "data/track-points.jsonl",
   perceptionSettings: "data/perception-settings.jsonl",
   limitUsage: "data/limit-usage.jsonl",
+  devicePolicies: "data/device-policies.jsonl",
+  deviceActions: "data/device-actions.jsonl",
   consolidations: "data/consolidations.jsonl",
   decisions: "data/decisions.jsonl",
   rules: "data/rules.jsonl",
@@ -593,6 +640,8 @@ export const PERCEPTION_FILE_KEYS = [
   "trackPoints",
   "perceptionSettings",
   "limitUsage",
+  "devicePolicies",
+  "deviceActions",
 ] as const;
 export type PerceptionFileKey = (typeof PERCEPTION_FILE_KEYS)[number];
 
@@ -604,6 +653,8 @@ export const PERCEPTION_FILE_SCHEMAS: Readonly<Record<PerceptionFileKey, JsonSch
     trackPoints: TRACK_POINT_SCHEMA,
     perceptionSettings: PERCEPTION_SETTINGS_SCHEMA,
     limitUsage: LIMIT_USAGE_SCHEMA,
+    devicePolicies: DEVICE_POLICY_SCHEMA,
+    deviceActions: DEVICE_ACTION_SCHEMA,
   });
 
 export const EMPTY_PERCEPTION_COUNTS: Readonly<Record<PerceptionFileKey, number>> = Object.freeze(

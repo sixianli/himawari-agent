@@ -350,6 +350,10 @@ export interface PerceptionConfiguration {
   readonly extractMaximumCandidates: number;
   readonly extractBatchEpisodes: number;
   readonly runReadMaximumRecords: number;
+  readonly actionExpirySeconds: number;
+  readonly actionPresenceExpirySeconds: number;
+  readonly actionWaitSeconds: number;
+  readonly actionClaimBatch: number;
 }
 
 export const PERCEPTION_CONFIGURATION_DEFAULTS: PerceptionConfiguration = Object.freeze({
@@ -376,6 +380,10 @@ export const PERCEPTION_CONFIGURATION_DEFAULTS: PerceptionConfiguration = Object
   extractMaximumCandidates: 12,
   extractBatchEpisodes: 4,
   runReadMaximumRecords: 50,
+  actionExpirySeconds: 600,
+  actionPresenceExpirySeconds: 120,
+  actionWaitSeconds: 20,
+  actionClaimBatch: 20,
 });
 
 export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
@@ -404,6 +412,10 @@ export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
   extractMaximumCandidates: [1, 50],
   extractBatchEpisodes: [1, 50],
   runReadMaximumRecords: [1, 500],
+  actionExpirySeconds: [30, 86_400],
+  actionPresenceExpirySeconds: [30, 3600],
+  actionWaitSeconds: [0, 120],
+  actionClaimBatch: [1, 200],
 });
 
 export const PERCEPTION_RETENTION_KEYS = ["track", "surroundings"] as const;

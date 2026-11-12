@@ -47,6 +47,7 @@ export * from "./web-provider-failure.js";
 export * from "./web-push-sender.js";
 export * from "./workspaces/index.js";
 export * from "./device-request-signature.js";
+export * from "./device-action-hub.js";
 export * from "./device-api-routes.js";
 export * from "./paired-device-service.js";
 export * from "./perception-service.js";

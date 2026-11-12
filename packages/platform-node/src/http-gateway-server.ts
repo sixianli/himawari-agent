@@ -6,7 +6,9 @@ import {
   type AgentGatewayV2Port,
   type AgentThreadGatewayPort,
   ApplicationPortError,
+  type DeviceActionService,
   type DeviceConfiguration,
+  type PairedDeviceScope,
   type GatewayAuthenticationContext,
   type GatewayV2StreamItem,
   PORT_ERROR_CODES,
@@ -33,6 +35,7 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
+import type { DeviceActionHub } from "./device-action-hub.js";
 import { type DevicePairingAccess, registerDeviceApiRoutes } from "./device-api-routes.js";
 import { DeviceSignatureError } from "./device-request-signature.js";
 import {
@@ -125,6 +128,10 @@ export interface HttpGatewayServerOptions {
     readonly configuration: () => DeviceConfiguration;
     readonly pairingAccess?: DevicePairingAccess;
     readonly perception?: PerceptionService;
+    readonly actions?: {
+      readonly service: (scope: PairedDeviceScope) => DeviceActionService | undefined;
+      readonly hub: DeviceActionHub;
+    };
   };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
@@ -1285,6 +1292,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       configuration: options.devices.configuration,
       ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),
       ...(options.devices.perception ? { perception: options.devices.perception } : {}),
+      ...(options.devices.actions ? { actions: options.devices.actions } : {}),
       authority: {
         agentId: browserConfiguration.agentId,
         deploymentId: browserConfiguration.deploymentId,

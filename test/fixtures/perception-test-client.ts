@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
+import path from "node:path";
+import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { expect } from "vitest";
 import {
   agentId,
@@ -132,4 +134,127 @@ export async function upload(
     payload: Buffer.from(bytes),
   });
   return reply(response);
+}
+
+export async function addRun(
+  h: Harness,
+  runId: string,
+  sourceType: "user_message" | "schedule" = "user_message",
+) {
+  const payloads = h.repository.payloadStore(ownerId, agentId);
+  if (!(await payloads.get("payload")))
+    await payloads.put(
+      await h.protector.protect({
+        ownerId,
+        agentId,
+        ref: "payload",
+        dataClassification: "private",
+        contentType: "text/plain",
+        plaintext: new TextEncoder().encode("hello"),
+        createdAt: h.clock.now(),
+      }),
+    );
+  const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
+  try {
+    database
+      .prepare(
+        `INSERT INTO triggers (
+          id, owner_id, agent_id, thread_id, idempotency_key, source_type, source_id,
+          payload_ref, source_proof_ref, occurred_at
+        ) VALUES (?, ?, ?, NULL, ?, ?, ?, 'payload', 'proof', ?)`,
+      )
+      .run(`trigger-${runId}`, ownerId, agentId, `key-${runId}`, sourceType, runId, h.clock.now());
+    database
+      .prepare(
+        `INSERT INTO runs (
+          id, owner_id, agent_id, thread_id, session_id, trigger_id, revision, status,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, NULL, ?, ?, 1, 'running', ?, ?)`,
+      )
+      .run(
+        runId,
+        ownerId,
+        agentId,
+        h.webAuthentication.sessionId,
+        `trigger-${runId}`,
+        h.clock.now(),
+        h.clock.now(),
+      );
+  } finally {
+    database.close();
+  }
+}
+
+export interface DeviceSimulator {
+  readonly frames: string[];
+  readonly claimed: Record<string, unknown>[];
+  readonly reports: { status: number; body: Record<string, unknown> }[];
+  readonly close: () => Promise<void>;
+}
+
+export async function connectDevice(
+  h: Harness,
+  client: PairedClient,
+  respond: (delivery: Record<string, unknown>) => Record<string, unknown> | undefined = () =>
+    undefined,
+): Promise<DeviceSimulator> {
+  const request = signedRequest(h, client, { method: "GET", path: "/api/device/v1/stream" });
+  const url = new URL(request.url);
+  const response = await h.app.inject({
+    method: "GET",
+    url: url.pathname + url.search,
+    headers: request.headers,
+    payloadAsStream: true,
+  });
+  expect(response.statusCode).toBe(200);
+  const stream = response.stream();
+  const frames: string[] = [];
+  const claimed: Record<string, unknown>[] = [];
+  const reports: { status: number; body: Record<string, unknown> }[] = [];
+  let work: Promise<void> = Promise.resolve();
+  let buffered = "";
+  let first: () => void = () => undefined;
+  const ready = new Promise<void>((resolve) => {
+    first = resolve;
+  });
+  const serve = async () => {
+    const result = await devicePost(h, client, "actions/claim", {});
+    if (result.status !== 200) return;
+    for (const delivery of result.body["actions"] as Record<string, unknown>[]) {
+      claimed.push(delivery);
+      const report = respond(delivery);
+      if (report)
+        reports.push(
+          await devicePost(h, client, "actions/result", { id: delivery["id"], ...report }),
+        );
+    }
+  };
+  stream.on("data", (chunk: Buffer) => {
+    buffered += chunk.toString("utf8");
+    const parts = buffered.split("\n\n");
+    buffered = parts.pop() ?? "";
+    for (const frame of parts) {
+      frames.push(frame);
+      if (!frame.includes("event: device.actions")) continue;
+      work = work.then(serve);
+      first();
+    }
+  });
+  await Promise.race([
+    ready,
+    new Promise((_resolve, reject) =>
+      setTimeout(() => reject(new Error("device stream sent no action signal")), 3000),
+    ),
+  ]);
+  await work;
+  return {
+    frames,
+    claimed,
+    reports,
+    close: async () => {
+      await work;
+      stream.destroy();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    },
+  };
 }

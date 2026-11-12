@@ -18,7 +18,7 @@ import {
 } from "../src/index.ts";
 
 const temporaryDirectories: string[] = [];
-const CURRENT_SCHEMA_SEQUENCE = 96;
+const CURRENT_SCHEMA_SEQUENCE = 97;
 
 afterEach(async () => {
   await Promise.all(
@@ -142,9 +142,9 @@ describe("immutable SQLite migration engine", () => {
           29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
           51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72,
           73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94,
-          95, 96,
+          95, 96, 97,
         ],
-        currentSequence: 96,
+        currentSequence: 97,
       });
       expect(readMigrationLedger(database).slice(0, 28)).toEqual(before);
       expect(database.pragma("foreign_key_check")).toEqual([]);
@@ -173,9 +173,9 @@ describe("immutable SQLite migration engine", () => {
         appliedSequences: [
           40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61,
           62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83,
-          84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96,
+          84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97,
         ],
-        currentSequence: 96,
+        currentSequence: 97,
       });
       expect(readMigrationLedger(database).slice(0, 39)).toEqual(ledger);
       expect(
@@ -208,9 +208,9 @@ describe("immutable SQLite migration engine", () => {
         appliedSequences: [
           41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62,
           63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84,
-          85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96,
+          85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97,
         ],
-        currentSequence: 96,
+        currentSequence: 97,
       });
       expect(readMigrationLedger(database).slice(0, 40)).toEqual(before);
       expect(
@@ -340,9 +340,9 @@ it("preserves schema 43 history and bars writers that cannot read queue authorit
       appliedSequences: [
         44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
         67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
-        90, 91, 92, 93, 94, 95, 96,
+        90, 91, 92, 93, 94, 95, 96, 97,
       ],
-      currentSequence: 96,
+      currentSequence: 97,
     });
     expect(readMigrationLedger(database).slice(0, 43)).toEqual(history);
     expect(
@@ -352,7 +352,7 @@ it("preserves schema 43 history and bars writers that cannot read queue authorit
       () => assertWritableSchema(database, 43),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 96)).not.toThrow();
+    expect(() => assertWritableSchema(database, 97)).not.toThrow();
     expect(database.pragma("foreign_key_check")).toEqual([]);
   } finally {
     database.close();
@@ -371,16 +371,16 @@ it("preserves schema 44 history and fences writers without queued Pi recovery", 
       appliedSequences: [
         45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
         68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90,
-        91, 92, 93, 94, 95, 96,
+        91, 92, 93, 94, 95, 96, 97,
       ],
-      currentSequence: 96,
+      currentSequence: 97,
     });
     expect(readMigrationLedger(database).slice(0, 44)).toEqual(history);
     expectMigrationCode(
       () => assertWritableSchema(database, 44),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 96)).not.toThrow();
+    expect(() => assertWritableSchema(database, 97)).not.toThrow();
     expect(database.pragma("foreign_key_check")).toEqual([]);
   } finally {
     database.close();
@@ -399,16 +399,16 @@ it("preserves schema 45 history and fences writers without directory move claims
       appliedSequences: [
         46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
         69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91,
-        92, 93, 94, 95, 96,
+        92, 93, 94, 95, 96, 97,
       ],
-      currentSequence: 96,
+      currentSequence: 97,
     });
     expect(readMigrationLedger(database).slice(0, 45)).toEqual(history);
     expectMigrationCode(
       () => assertWritableSchema(database, 45),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 96)).not.toThrow();
+    expect(() => assertWritableSchema(database, 97)).not.toThrow();
     expect(database.pragma("foreign_key_check")).toEqual([]);
   } finally {
     database.close();
@@ -427,16 +427,16 @@ it("preserves schema 46 history and rejects writers that ignore copy authority a
       appliedSequences: [
         47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69,
         70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92,
-        93, 94, 95, 96,
+        93, 94, 95, 96, 97,
       ],
-      currentSequence: 96,
+      currentSequence: 97,
     });
     expect(readMigrationLedger(database).slice(0, 46)).toEqual(history);
     expectMigrationCode(
       () => assertWritableSchema(database, 46),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 96)).not.toThrow();
+    expect(() => assertWritableSchema(database, 97)).not.toThrow();
     expect(database.pragma("foreign_key_check")).toEqual([]);
   } finally {
     database.close();
@@ -455,16 +455,16 @@ it("preserves schema 47 history and fences writers that cannot keep task environ
       appliedSequences: [
         48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70,
         71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93,
-        94, 95, 96,
+        94, 95, 96, 97,
       ],
-      currentSequence: 96,
+      currentSequence: 97,
     });
     expect(readMigrationLedger(database).slice(0, 47)).toEqual(history);
     expectMigrationCode(
       () => assertWritableSchema(database, 47),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 96)).not.toThrow();
+    expect(() => assertWritableSchema(database, 97)).not.toThrow();
     expect(database.pragma("foreign_key_check")).toEqual([]);
   } finally {
     database.close();
@@ -483,16 +483,16 @@ it("preserves schema 48 history and fences writers that cannot read thread title
       appliedSequences: [
         49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71,
         72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94,
-        95, 96,
+        95, 96, 97,
       ],
-      currentSequence: 96,
+      currentSequence: 97,
     });
     expect(readMigrationLedger(database).slice(0, 48)).toEqual(history);
     expectMigrationCode(
       () => assertWritableSchema(database, 48),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 96)).not.toThrow();
+    expect(() => assertWritableSchema(database, 97)).not.toThrow();
     expect(
       database
         .prepare("SELECT 1 FROM pragma_table_info('model_budget_accounts') WHERE name = ?")
@@ -520,9 +520,9 @@ it("preserves schema 49 history and fences writers without administrator reserva
       appliedSequences: [
         50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72,
         73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
-        96,
+        96, 97,
       ],
-      currentSequence: 96,
+      currentSequence: 97,
     });
     expect(readMigrationLedger(database).slice(0, 49)).toEqual(history);
     expect(
@@ -532,14 +532,14 @@ it("preserves schema 49 history and fences writers without administrator reserva
         )
         .all(),
     ).toEqual([
-      { key: "current_sequence", value: "96" },
-      { key: "minimum_writer_sequence", value: "96" },
+      { key: "current_sequence", value: "97" },
+      { key: "minimum_writer_sequence", value: "97" },
     ]);
     expectMigrationCode(
       () => assertWritableSchema(database, 49),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 96)).not.toThrow();
+    expect(() => assertWritableSchema(database, 97)).not.toThrow();
     expect(
       database.prepare("SELECT count(*) FROM sandbox_reservation_release_receipts").pluck().get(),
     ).toBe(0);

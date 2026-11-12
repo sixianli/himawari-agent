@@ -35,6 +35,7 @@ export * from "./memory-consolidation.js";
 export * from "./memory-dates.js";
 export * from "./memory-episodes.js";
 export * from "./device-limits.js";
+export * from "./device-actions.js";
 export * from "./paired-devices.js";
 export * from "./perception.js";
 export * from "./usage-limits.js";

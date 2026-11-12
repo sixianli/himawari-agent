@@ -85,6 +85,7 @@ import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryCaptureBacklogOperations } from "./sqlite-memory-capture-backlog-operations.ts";
 import { SqliteMemoryCheckupOperations } from "./sqlite-memory-checkup-operations.ts";
 import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
+import { SqliteDeviceActionOperations } from "./sqlite-device-action-operations.ts";
 import { SqlitePairedDeviceOperations } from "./sqlite-paired-device-operations.ts";
 import { SqlitePerceptionOperations } from "./sqlite-perception-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
@@ -380,6 +381,7 @@ export class SqliteDurableOperations {
   private readonly realEval: SqliteRealEvalOperations;
   private readonly webPush: SqliteWebPushOperations;
   private readonly pairedDevices: SqlitePairedDeviceOperations;
+  private readonly deviceActions: SqliteDeviceActionOperations;
   private readonly perception: SqlitePerceptionOperations;
   private readonly threadArtifacts: SqliteThreadArtifactOperations;
   private readonly threadPromptBundles: SqliteThreadPromptBundleOperations;
@@ -482,6 +484,7 @@ export class SqliteDurableOperations {
     this.realEval = new SqliteRealEvalOperations(database, fail, assertDiskHeadroom);
     this.webPush = new SqliteWebPushOperations(database, fail, assertDiskHeadroom);
     this.pairedDevices = new SqlitePairedDeviceOperations(database, fail, assertDiskHeadroom);
+    this.deviceActions = new SqliteDeviceActionOperations(database, fail, assertDiskHeadroom);
     this.perception = new SqlitePerceptionOperations(database, fail, assertDiskHeadroom);
     this.threadArtifacts = new SqliteThreadArtifactOperations(database, fail, assertDiskHeadroom);
     this.threadPromptBundles = new SqliteThreadPromptBundleOperations(
@@ -617,6 +620,8 @@ export class SqliteDurableOperations {
     if (operation.startsWith("webPush.")) return this.webPush.execute(operation, payload);
     if (operation.startsWith("pairedDevices."))
       return this.pairedDevices.execute(operation, payload);
+    if (operation.startsWith("deviceActions."))
+      return this.deviceActions.execute(operation, payload);
     if (operation.startsWith("perception.")) return this.perception.execute(operation, payload);
     if (operation.startsWith("threadArtifact."))
       return this.threadArtifacts.execute(operation, payload);

@@ -32,6 +32,7 @@ import {
   ThreadCommandService,
   ThreadDeletionCoordinationService,
   ThreadExecutionProjection,
+  type DeviceActionService,
   ThreadForkService,
   type ThreadGatewayAccessPolicyPort,
   ThreadQueryService,
@@ -70,6 +71,7 @@ import {
   IdentityGatewayError,
   type JwksFetcher,
   OwnerBootstrapService,
+  type DeviceActionHub,
   PairedDeviceService,
   type PerceptionLimitWarning,
   PerceptionService,
@@ -204,6 +206,10 @@ export interface ProductionHttpCompositionOptions {
   readonly onCommandAccepted?: (path: string) => void;
   readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
+  readonly deviceActions?: {
+    readonly service: DeviceActionService;
+    readonly hub: DeviceActionHub;
+  };
   readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
   readonly onPerceptionLimitWarning?: (warning: PerceptionLimitWarning) => void;
   readonly health?: RuntimeHealthModel;
@@ -1291,6 +1297,17 @@ export async function createProductionHttpComposition(
       configuration: () => deviceConfiguration,
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
       perception,
+      ...(options.deviceActions
+        ? {
+            actions: {
+              service: (scope) =>
+                scope.ownerId === ownerId && scope.agentId === agentId
+                  ? options.deviceActions?.service
+                  : undefined,
+              hub: options.deviceActions.hub,
+            },
+          }
+        : {}),
     },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
     ...(options.onSlowRequest ? { onSlowRequest: options.onSlowRequest } : {}),

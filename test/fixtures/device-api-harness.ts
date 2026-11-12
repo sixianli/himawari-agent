@@ -5,12 +5,17 @@ import path from "node:path";
 import {
   AgentThreadGatewayService,
   DEVICE_CONFIGURATION_DEFAULTS,
+  type DeviceActionAuthorizationPort,
+  type DeviceActionOpenRequestPort,
+  type DeviceActionRecord,
+  type DeviceActionRegistry,
   type DeviceConfiguration,
   defaultDeviceHardLimits,
   type GatewayAuthenticationContext,
   PERCEPTION_CONFIGURATION_DEFAULTS,
   type PerceptionConfiguration,
   ProductThreadGatewayAdapter,
+  ReadOnlyDeviceActionAuthorization,
   ThreadCommandService,
   ThreadDeletionCoordinationService,
   ThreadExecutionProjection,
@@ -34,6 +39,7 @@ import {
 import {
   BrowserTextPayloadReader,
   buildHttpGatewayServer,
+  DeviceActionHub,
   type DevicePairingAccess,
   EnvelopePayloadProtector,
   PairedDeviceService,
@@ -51,6 +57,7 @@ import {
 } from "@himawari-agent/testing";
 import type { FastifyInstance } from "fastify";
 import { expect } from "vitest";
+import { createProductionDeviceActions } from "../../apps/agent-service/src/production-device-actions.ts";
 import {
   ProductionHttpPayloadAdmission,
   ProductionThreadGatewayAccessPolicy,
@@ -97,6 +104,11 @@ export interface Harness {
   readonly limitWarnings: PerceptionLimitWarning[];
   readonly readText: (contentRef: string) => Promise<string | undefined>;
   readonly protector: EnvelopePayloadProtector;
+  readonly actions: ReturnType<typeof createProductionDeviceActions> & {
+    readonly hub: DeviceActionHub;
+    readonly authorization: { current: DeviceActionAuthorizationPort | undefined };
+    readonly openRequests: DeviceActionRecord[];
+  };
 }
 
 export async function harness(
@@ -104,6 +116,7 @@ export async function harness(
     readonly origin?: string;
     readonly staticRoot?: string;
     readonly pairingAccess?: DevicePairingAccess;
+    readonly actionRegistry?: DeviceActionRegistry;
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -242,6 +255,35 @@ export async function harness(
     now,
   });
   await perception.prepareDirectories();
+  const hub = new DeviceActionHub();
+  const authorization: { current: DeviceActionAuthorizationPort | undefined } = {
+    current: undefined,
+  };
+  const openRequests: DeviceActionRecord[] = [];
+  const requestOpen: DeviceActionOpenRequestPort = {
+    requestOpen: async ({ record }) => {
+      openRequests.push(record);
+    },
+  };
+  const actions = createProductionDeviceActions({
+    scope: { ownerId, agentId },
+    store: repository.deviceActions(),
+    perception: repository.perception(),
+    devices: (scope) => repository.pairedDevices().listDevices(scope),
+    ledger: repository.decisionLedger(),
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector,
+    delivery: hub,
+    configuration: () => perceptionConfiguration.current,
+    timeZone: timeZone.current,
+    now: () => clock.now(),
+    openRequests: requestOpen,
+    authorization: {
+      authorize: async (intent) =>
+        (authorization.current ?? new ReadOnlyDeviceActionAuthorization()).authorize(intent),
+    },
+    ...(options.actionRegistry ? { registry: options.actionRegistry } : {}),
+  });
   const app = buildHttpGatewayServer({
     publicOrigin,
     staticRoot: options.staticRoot ?? stateRoot,
@@ -289,6 +331,11 @@ export async function harness(
       configuration: () => configuration.current,
       ...(options.pairingAccess ? { pairingAccess: options.pairingAccess } : {}),
       perception,
+      actions: {
+        service: (scope) =>
+          scope.ownerId === ownerId && scope.agentId === agentId ? actions.service : undefined,
+        hub,
+      },
     },
   });
   await app.ready();
@@ -308,6 +355,7 @@ export async function harness(
     ownerVoiceQualified,
     limitWarnings,
     protector,
+    actions: { ...actions, hub, authorization, openRequests },
     readText: async (contentRef) => {
       const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
       if (!payload) return undefined;

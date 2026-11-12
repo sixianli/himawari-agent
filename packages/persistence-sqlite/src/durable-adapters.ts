@@ -33,6 +33,7 @@ import type {
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerRuleStorePort,
+  DeviceActionStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
   PerceptionStorePort,
@@ -1141,6 +1142,23 @@ export class SqliteDurableAdapters {
       retireQuestion: (input) => this.context.write("realEval.retireQuestion", input),
       recordRun: (input) => this.context.write("realEval.recordRun", input),
       listRuns: (input) => this.context.read("realEval.listRuns", input),
+    });
+  }
+
+  deviceActions(): DeviceActionStorePort {
+    return Object.freeze<DeviceActionStorePort>({
+      insert: (input) => this.context.write("deviceActions.insert", input),
+      read: (input) => this.context.read("deviceActions.read", input),
+      list: (input) => this.context.read("deviceActions.list", input),
+      settleDue: (input) => this.context.write("deviceActions.settleDue", input),
+      claim: (input) => this.context.write("deviceActions.claim", input),
+      report: (input) => this.context.write("deviceActions.report", input),
+      forget: (input) => this.context.write("deviceActions.forget", input),
+      decide: (input) => this.context.write("deviceActions.decide", input),
+      setSupportedActions: (input) =>
+        this.context.write("deviceActions.setSupportedActions", input),
+      readPolicy: (input) => this.context.read("deviceActions.readPolicy", input),
+      writePolicy: (input) => this.context.write("deviceActions.writePolicy", input),
     });
   }
 

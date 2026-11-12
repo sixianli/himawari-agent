@@ -1431,6 +1431,7 @@ const decisionChainSnapshotSchema = object({
         "limit_change",
         "delivery_timing",
         "proposal",
+        "device_action",
       ]),
       decidedAt: timestamp,
       outcome: boundedString(64),
