@@ -10,6 +10,7 @@ public struct ChatView: View {
     @State private var creating = false
     @State private var createFailed = false
     @State private var createRequestId = ChatStore.newRequestId()
+    @State private var bannerHeight: CGFloat = 0
     @FocusState private var inputFocused: Bool
     @Environment(\.transcriptScrollsToTopAfter) private var scrollToTopAfter
 
@@ -38,6 +39,7 @@ public struct ChatView: View {
                 if store.connection != .online, threadId != nil {
                     OfflineBanner()
                         .padding(.top, 2)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bannerHeight = $0 }
                         .transition(.opacity)
                 }
                 Spacer(minLength: 0)
@@ -121,7 +123,7 @@ public struct ChatView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 84)
+            .padding(.top, 84 + (store.connection != .online ? bannerHeight : 0))
             .padding(.bottom, 110)
         }
         .defaultScrollAnchor(.top, for: .alignment)

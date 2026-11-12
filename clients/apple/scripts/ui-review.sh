@@ -92,6 +92,8 @@ launch() {
 }
 
 last_shot=""
+inspector="$derived/compare-snapshots"
+xcrun swiftc -O "$root/scripts/compare-snapshots.swift" -o "$inspector"
 
 settle() {
   local scene="$1" file="$2" previous="" current="" tries=0 launches=1
@@ -99,7 +101,7 @@ settle() {
   while :; do
     xcrun simctl io "$udid" screenshot --type=png "$file" >/dev/null
     current="$(shasum -a 256 "$file" | cut -d' ' -f1)"
-    if [ "$current" = "$previous" ] && [ "$current" != "$last_shot" ]; then
+    if [ "$current" = "$previous" ] && [ "$current" != "$last_shot" ] && ! "$inspector" --launch-screen "$file"; then
       last_shot="$current"
       return 0
     fi
@@ -153,7 +155,7 @@ xcrun simctl terminate "$udid" "$bundle" 2>/dev/null || true
 
 if [ "$mode" = "check" ]; then
   missing_in "$snapshots" || { echo "UI_REVIEW_FAILED approved snapshots are missing scenes; review them and run --approve" >&2; exit 1; }
-  xcrun swift "$root/scripts/compare-snapshots.swift" "$snapshots" "$shots"
+  "$inspector" "$snapshots" "$shots"
   exit $?
 fi
 

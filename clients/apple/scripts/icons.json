@@ -9,11 +9,7 @@
   "calendar": 1.6,
   "calendar@frame": {
     "stroke": 1.6,
-    "drop": [
-      "M4 11h16",
-      "M11 15h1",
-      "M12 15v3"
-    ]
+    "drop": ["M4 11h16", "M11 15h1", "M12 15v3"]
   },
   "camera": 1.6,
   "car": 1.6,

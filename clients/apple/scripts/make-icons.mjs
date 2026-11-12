@@ -31,7 +31,10 @@ for (const [key, spec] of Object.entries(icons)) {
   for (const path of drop) {
     const element = `<path d="${path}" />`;
     if (!trimmed.includes(element)) throw new Error(`path not found in ${name}: ${path}`);
-    trimmed = trimmed.replace(new RegExp(`\\s*${element.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}`, "u"), "");
+    trimmed = trimmed.replace(
+      new RegExp(`\\s*${element.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}`, "u"),
+      "",
+    );
   }
   const svg = trimmed
     .replace('stroke-width="2"', `stroke-width="${strokeWidth}"`)
