@@ -35,8 +35,8 @@ date: "2026-11-12"
 2. 表里每一行的状态和字段有固定的搭配。`packages/persistence-sqlite/src/migrations/0093_external_memory_proposals.sql:24-28`：“`CHECK ((status = 'pending') = (decided_at IS NULL))`”“`CHECK (content_ref IS NOT NULL OR status IN ('rejected', 'superseded'))`”，另有只有已保存的能指向记忆、只有被替换的能指向替换它的提议、只有已保存或已拒绝的能属于一批。
 3. 没被替换的提议，正文摘要不能重复。同文件 31-33 行：“`CREATE UNIQUE INDEX external_memory_proposals_text_index ON external_memory_proposals(owner_id, agent_id, text_sha256) WHERE status <> 'superseded'`”。
 4. 客户端固定编号和「不带编号送过」各有一张表。同文件 52-68 行：`external_memory_proposal_keys` 的主键是“`(owner_id, agent_id, client, source_key)`”，`external_memory_proposal_unkeyed` 的主键是“`(proposal_id, client)`”。
-5. 拒绝的正文 30 天后删掉，只留摘要。`apps/agent-service/src/production-mcp-memory-writer.ts:40`：“`export const EXTERNAL_PROPOSAL_REJECTED_TEXT_DAYS = 30;`”。所以导出里有的提议没有正文。
-6. 网关命令只回一个结果编号。`packages/gateway-contracts/src/contracts-v2.ts:2331`：“`resultRef: nullable(machineString)`”。`memory.external.respond` 的结果编号就是这一批的批次号（`apps/agent-service/src/production-memory-control.ts` 的 `#externalRespond`：“`return { resultRef: batchId, replayed: false };`”），概况里的 `externalProposals.batches` 按批次给出保存和不要各几条。
+5. 拒绝的正文 30 天后删掉，只留摘要。`apps/agent-service/src/production-mcp-memory-writer.ts:45`：“`export const EXTERNAL_PROPOSAL_REJECTED_TEXT_DAYS = 30;`”。所以导出里有的提议没有正文。
+6. 网关命令只回一个结果编号。`packages/gateway-contracts/src/contracts-v2.ts:2332`：“`resultRef: nullable(machineString)`”。`memory.external.respond` 的结果编号就是这一批的批次号（`apps/agent-service/src/production-memory-control.ts` 的 `#externalRespond`：“`return { resultRef: batchId, replayed: false };`”），概况里的 `externalProposals.batches` 按批次给出保存和不要各几条。
 7. 数据导出遇到新数据时的先例：[ADR 0233 决定 1](0233-rule-book-joins-the-data-export.md#decision)：“格式升到 `himawari.data-export.v2`。v1 的导出文件导入时整份拒绝”；机密原文只进口令加密的封存文件，导入只进空库（[ADR 0200 决定 3、6](0200-portable-export-of-memories-and-decisions.md#decision)）。
 
 <a id="decision"></a>
@@ -56,12 +56,12 @@ date: "2026-11-12"
 5. **新增两个文件：**
    - `data/external-memory-proposals.jsonl`：每行一条提议，全部状态都导出（待确认、已保存、已拒绝、被替换）。字段是表里的各列（`id`、`subjectRef`、`client`、`sourceKey`、`textSha256`、`normalization`、`category`、`classification`、`status`、`receivedAt`、`decidedAt`、`batchId`、`memoryId`、`supersededBy`）加上正文 `content`（没有正文时为 null）、`keys`（各客户端的固定编号现在指向这一条的）和 `unkeyedClients`（不带编号送过这段正文的客户端）。
    - `schema/external-memory-proposals.schema.json`：这一类数据的 JSON Schema。
-   - 清单 `counts` 多一项 `externalProposals`；`omitted` 里原来那条“本版导出格式还不含这张表”删掉。
+   - 清单 `counts` 多一项 `externalProposals`。
 6. **机密：**正文按 ADR 0200 的规则处理，像机密的正文在明文层只放遮盖后的样子，原文进封存文件 `originals["externalProposal/<编号>/content"]`。这种情况下正文摘要 `textSha256` 在明文层写 null，摘要放进 `originals["externalProposal/<编号>/textSha256"]`：一段短的机密正文，光凭摘要就可能被逐个试出来。客户端名、固定编号和 `subjectRef` 按 ADR 0200 的短文字规则处理；占位编号接着库里已有占位的最大编号往后排时，也算上提议、固定编号、不带编号的客户端和规则里已有的占位，免得导入过一次的库再导出时两个不同原文用了同一个占位、导不回去。没有正文的行（拒绝满 30 天、被替换）摘要照常写在明文层。
 7. **链接：**正文和任何一条受限（restricted）记忆相同的提议（导出时读出受限记忆的当前文字和历史版本，按提议的规范化方式算摘要逐条比较），以及保存进受限记忆的提议和与它摘要相同的提议，整条不导出，明文和封存文件里都没有，清单 `omitted` 写条数；受限记忆里读不出文字的版本（密文缺失或解不开）没法比较，另在 `omitted` 写条数，不让整份导出失败：它的正文就是那条受限记忆的文字，和受限记忆一样不导出（[ADR 0200](0200-portable-export-of-memories-and-decisions.md#decision)）。其余已保存的提议，指向的记忆没导出（例如已删除）、导入时被跳过、或库里本来就没有记忆链接时，`memoryId` 和 `batchId` 一起置空，提议仍是已保存：没有记忆可撤销，这一条就不该再算在可以撤销的那一批里；`supersededBy` 指向的提议不在导出里时同样置空。
 8. **校验：**导入前除已有各项外，还检查提议编号不重复；每行的状态和字段搭配符合前提 2；收到和处理时间是库里存的格式（`2026-11-12T00:00:00.000Z` 这样，同表上的 `GLOB` 约束）；正文被扣留和摘要不在明文里是同一件事；正文的分级和提议的分级一致；同一个客户端的同一个固定编号只指向一条；没被替换的提议摘要不重复（被扣留的摘要从封存文件取出后再查一次，试导入也查）；`memoryId` 在导出的记忆里，`supersededBy` 在导出的提议里；`counts.externalProposals` 和文件行数一致。任何一项不符整份拒绝，什么都不写。
 9. **导入：**目标库的 `external_memory_proposals` 也必须为空。正文重新加密存进去，提议、固定编号和不带编号的客户端在同一个事务里写入。正文或摘要被扣留、又没给口令的提议整条跳过，导入报告写 `externalProposalsWithoutOriginal` 条数；跳过的提议被别的提议指着时，那个链接置空。
-10. **门槛：**`npm run check:data-export` 加跑 `test/integration/data-export-external-proposals.test.ts`，通过条数下限从 82 提到 104。网页由 `test/integration/external-proposals-browser.test.ts`（真实浏览器）覆盖正向和反向，`npm run check:layout` 加一个「来自其他 agent」场景，检查电脑和手机宽度下不溢出。
+10. **门槛：**`npm run check:data-export` 加跑 `test/integration/data-export-external-proposals.test.ts`，通过条数下限提到 104（`scripts/check-data-export.mjs` 的 `REQUIRED`）。网页由 `test/integration/external-proposals-browser.test.ts`（真实浏览器）覆盖正向和反向，`npm run check:layout` 加一个「来自其他 agent」场景，检查电脑和手机宽度下不溢出。
 11. 不加迁移。
 
 <a id="industry"></a>
