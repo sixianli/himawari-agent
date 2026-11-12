@@ -557,3 +557,24 @@ it("reports how many lines of a file the model has written while it is still wri
   expect(afterWriting.label).not.toBe("chat.activity.writing");
   expect(afterWriting.writing).toBeUndefined();
 });
+
+describe("[ICON-2] activity on a merged tool step", () => {
+  it("keeps the model's sentence and icon when the ended record carries none", () => {
+    const tool = { kind: "tool" as const, name: "web_search" };
+    const [item] = executionItems([
+      record(1, 1, { ...tool, phase: "updated", activity: "查天气", activityIcon: "cloud" }),
+      record(2, 2, { ...tool, phase: "started", activity: "查天气", activityIcon: "cloud" }),
+      record(3, 3, { ...tool, phase: "completed" }),
+    ]);
+    expect(item).toMatchObject({ phase: "completed", activity: "查天气", activityIcon: "cloud" });
+  });
+
+  it("takes the later sentence together with its own icon", () => {
+    const tool = { kind: "tool" as const, name: "web_search" };
+    const [item] = executionItems([
+      record(1, 1, { ...tool, phase: "updated", activity: "搜索网页", activityIcon: "tools" }),
+      record(2, 2, { ...tool, phase: "started", activity: "查天气", activityIcon: "cloud" }),
+    ]);
+    expect(item).toMatchObject({ activity: "查天气", activityIcon: "cloud" });
+  });
+});

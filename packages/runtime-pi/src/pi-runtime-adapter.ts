@@ -1381,16 +1381,17 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         },
         hasHistory: projection.nativeHistory !== undefined || projection.history.length > 0,
       });
+      const handleToolsCarryActivity =
+        !bundle || frozenDefinitions.some(({ parameters }) => carriesToolActivity(parameters));
+      const runToolDefinition = (descriptor: RuntimeToolDescriptor) =>
+        this.toolDefinition(descriptor, handleToolsCarryActivity || !isHandleTool(descriptor));
       const systemPrompt =
         bundle?.systemPrompt ??
-        productSystemPrompt(
-          projection.systemInstruction,
-          descriptors.map((descriptor) => this.toolDefinition(descriptor)),
-        );
+        productSystemPrompt(projection.systemInstruction, descriptors.map(runToolDefinition));
       const requestTools = bundle
         ? [
             ...(JSON.parse(bundle.tools) as Tool[]).map(providerTool),
-            ...handleDescriptors.map((descriptor) => providerTool(this.toolDefinition(descriptor))),
+            ...handleDescriptors.map((descriptor) => providerTool(runToolDefinition(descriptor))),
           ]
         : undefined;
       if (handleDescriptors.length > 0)
@@ -1469,7 +1470,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       }
       const activityTools = new Set(
         descriptors
-          .filter((descriptor) => carriesToolActivity(this.toolDefinition(descriptor).parameters))
+          .filter((descriptor) => carriesToolActivity(runToolDefinition(descriptor).parameters))
           .map(({ name }) => name),
       );
       const settingsManager = SettingsManager.inMemory(
@@ -1706,7 +1707,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         noTools: "all",
         tools: descriptors.map(({ name }) => name),
         customTools: descriptors.map((descriptor) =>
-          this.createTool(request, descriptor, {
+          this.createTool(request, descriptor, runToolDefinition(descriptor), {
             completedResult: (toolCallId) => {
               const result = restored?.completedResult(toolCallId, descriptor.name);
               if (result) replayedResults.add(toolCallId);
@@ -2033,7 +2034,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     }
   }
 
-  private toolDefinition(descriptor: RuntimeToolDescriptor): PiToolDefinitionText {
+  private toolDefinition(descriptor: RuntimeToolDescriptor, activity = true): PiToolDefinitionText {
+    const withActivity = <Parameters>(parameters: Parameters): Parameters =>
+      activity ? withToolActivityParameters(parameters) : parameters;
     const unavailable = async (): Promise<never> => {
       throw new Error("PI_AGENT_SERVICE_FILE_IO_FORBIDDEN");
     };
@@ -2060,7 +2063,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         name: builtin.name,
         label: builtin.label,
         description: text.description,
-        parameters: withToolActivityParameters(text.parameters),
+        parameters: withActivity(text.parameters),
         ...(builtin.promptSnippet === undefined ? {} : { promptSnippet: builtin.promptSnippet }),
         ...(text.promptGuidelines === undefined
           ? {}
@@ -2074,13 +2077,14 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       name: descriptor.name,
       label: descriptor.name,
       description: "description" in descriptor ? descriptor.description : "",
-      parameters: withToolActivityParameters(descriptor.parameters as ToolDefinition["parameters"]),
+      parameters: withActivity(descriptor.parameters as ToolDefinition["parameters"]),
     };
   }
 
   private createTool(
     request: RuntimeRequest,
     descriptor: RuntimeToolDescriptor,
+    definition: PiToolDefinitionText,
     reconciliation: {
       completedResult(
         toolCallId: string,
@@ -2096,7 +2100,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       ): void;
     },
   ): ToolDefinition {
-    const definition = this.toolDefinition(descriptor);
     const parallel = "executionMode" in descriptor && descriptor.executionMode === "parallel";
     if (
       parallel &&

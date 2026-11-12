@@ -54,6 +54,13 @@ function text(value: unknown): string {
       : value
     : "";
 }
+function oneLine(value: string): string {
+  return value
+    .replace(/[\p{Cc}\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
 function toolActivity(
   value: unknown,
   toolName: string,
@@ -70,7 +77,7 @@ function toolActivity(
   } = object(value);
   const activity =
     (typeof rawActivity === "string"
-      ? [...rawActivity.trim()].slice(0, PROCESS_ACTIVITY_MAX_LENGTH).join("")
+      ? [...oneLine(rawActivity)].slice(0, PROCESS_ACTIVITY_MAX_LENGTH).join("")
       : "") || processStepText(toolName, locale);
   const icon = typeof rawIcon === "string" ? rawIcon.trim() : "";
   return {

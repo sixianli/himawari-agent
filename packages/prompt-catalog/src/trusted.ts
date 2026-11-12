@@ -1,3 +1,4 @@
+import * as activity from "./activity.js";
 import * as background from "./background.js";
 import * as chat from "./chat.js";
 import { trustedPromptTexts } from "./entry.js";
@@ -9,7 +10,7 @@ import * as runtime from "./runtime.js";
 import * as tools from "./tools.js";
 
 export const TRUSTED_PROMPT_TEXTS: readonly string[] = trustedPromptTexts(
-  [background, chat, evaluation, mail, memory, review, runtime, tools].flatMap((module) =>
+  [activity, background, chat, evaluation, mail, memory, review, runtime, tools].flatMap((module) =>
     Object.values(module),
   ),
 );

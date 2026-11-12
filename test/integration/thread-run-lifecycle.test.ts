@@ -3840,7 +3840,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         id: "call-weather",
         arguments: {
           query: "东京 明天 天气",
-          activity: "  查东京明天的天气  ",
+          activity: "  查东京\n明天的\u202e天气\u0007  ",
           activityIcon: "cloud",
         },
       },
@@ -3903,10 +3903,10 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     const tools = records.filter((record) => record.kind === "tool");
     expect(tools).toHaveLength(6);
     expect(tools.map(({ activity, activityIcon }) => [activity, activityIcon])).toEqual([
-      ["查东京明天的天气", "cloud"],
+      ["查东京 明天的 天气", "cloud"],
       ["查资料", "tools"],
       ["搜索网页", "cloud"],
-      ["查东京明天的天气", "cloud"],
+      ["查东京 明天的 天气", "cloud"],
       ["查资料", "tools"],
       ["搜索网页", "cloud"],
     ]);
