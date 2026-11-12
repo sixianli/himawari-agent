@@ -282,6 +282,59 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
       }
     });
 
+    it("[I-94] still refuses a different data classification on a background occurrence account", async () => {
+      const resource = await fixture();
+      try {
+        const state = resource.repository.backgroundWorkState();
+        const created = await state.createOccurrence(occurrence());
+        const admitted = await state.reserveAdmission({
+          occurrenceId: created.id,
+          expectedRevision: created.revision,
+          runId: RUN_ID,
+          authority: AUTHORITY,
+          limits: LIMITS,
+          admittedAt: NOW,
+        });
+        const claimed = await state.claimOccurrence({
+          occurrenceId: admitted.occurrence.id,
+          expectedRevision: admitted.occurrence.revision,
+          authority: AUTHORITY,
+          leaseId: "work-lease-classification",
+          holderId: "worker-classification",
+          claimedAt: NOW,
+          expiresAt: FAR_FUTURE,
+        });
+        if (!claimed.workLease) throw new Error("Expected a claimed occurrence");
+        const budget = resource.repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+          leaseId: AUTHORITY_LEASE_ID,
+          fencingToken: 1,
+        });
+        const parent = {
+          kind: "occurrence" as const,
+          occurrenceId: claimed.id,
+          expectedRevision: claimed.revision,
+          workLeaseId: claimed.workLease.id,
+          workLeaseHolderId: claimed.workLease.holderId,
+        };
+        const reserve = (operationKey: string, dataClassification: "private" | "sensitive") =>
+          budget.reserve({
+            parent,
+            operationKey,
+            modelRef: "approved-model-v1",
+            dataClassification,
+            estimatedCostMicros: 1,
+            reservedAt: NOW,
+          });
+        await reserve("classification-private", "private");
+        await expect(reserve("classification-sensitive", "sensitive")).rejects.toMatchObject({
+          code: "PORT_CONFLICT",
+          message: "Budget account classification is immutable",
+        });
+      } finally {
+        await resource.repository.close();
+      }
+    });
+
     it("routes an unknown child on an expired occurrence lease only to reconciliation", async () => {
       const resource = await fixture();
       try {
@@ -1175,14 +1228,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
             estimatedCostMicros: 1,
           }),
         ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
-        await expect(
-          budget.reserve({
-            ...reserveInput,
-            operationKey: "model-call-higher-classification",
-            dataClassification: "sensitive",
-            estimatedCostMicros: 1,
-          }),
-        ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
         await expect(
           budget.settle({
             parent: { kind: "run", runId: RUN_ID },
@@ -2123,6 +2168,71 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
         });
         expect(snapshot?.allocations).toHaveLength(1);
         expect(snapshot?.allocations[0]?.status).toBe("started");
+      } finally {
+        await fixtureState.resource.repository.close();
+      }
+    });
+
+    it("[I-94] lets a Run account take a higher-classification call such as an embedding", async () => {
+      const fixtureState = await identityFixture();
+      try {
+        const run = (slot: string, dataClassification: "private" | "sensitive") =>
+          fixtureState.identity.begin(
+            identityInput(fixtureState.claim, { logicalSlot: slot, dataClassification }),
+          );
+        expect((await run("chat-stream", "private")).disposition).toBe("fresh");
+        expect((await run("embedding:memory-episode", "sensitive")).disposition).toBe("fresh");
+        const snapshot = await fixtureState.budget.read({
+          parent: { kind: "run", runId: RUN_ID },
+          limit: 10,
+        });
+        expect(snapshot?.account.dataClassification).toBe("sensitive");
+        expect(snapshot?.allocations.map((item) => item.dataClassification).sort()).toEqual([
+          "private",
+          "sensitive",
+        ]);
+      } finally {
+        await fixtureState.resource.repository.close();
+      }
+    });
+
+    it("[I-94] lets auxiliary calls of one Run use different data classifications", async () => {
+      const fixtureState = await identityFixture();
+      try {
+        const auxiliary = (
+          slot: string,
+          dataClassification: "private" | "sensitive",
+          overrides: Partial<ModelInvocationIdentityBeginInput> = {},
+        ) =>
+          identityInput(fixtureState.claim, {
+            logicalSlot: slot,
+            source: "model-port",
+            budgetAccount: "thread-title",
+            dataClassification,
+            ...overrides,
+          });
+        const capture = await fixtureState.identity.begin(
+          auxiliary(`memory-capture:${RUN_ID}`, "private"),
+        );
+        expect(capture.disposition).toBe("fresh");
+        const episode = await fixtureState.identity.begin(
+          auxiliary(`memory-episode-0:${RUN_ID}`, "sensitive"),
+        );
+        expect(episode.disposition).toBe("fresh");
+        const lowerAgain = await fixtureState.identity.begin(
+          auxiliary(`memory-episode-1:${RUN_ID}`, "private"),
+        );
+        expect(lowerAgain.disposition).toBe("fresh");
+        const snapshot = await fixtureState.budget.read({
+          parent: { kind: "thread-title", runId: RUN_ID },
+          limit: 10,
+        });
+        expect(snapshot?.allocations.map((item) => item.dataClassification).sort()).toEqual([
+          "private",
+          "private",
+          "sensitive",
+        ]);
+        expect(snapshot?.account.dataClassification).toBe("sensitive");
       } finally {
         await fixtureState.resource.repository.close();
       }
