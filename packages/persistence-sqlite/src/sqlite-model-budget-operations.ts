@@ -488,10 +488,14 @@ export class SqliteModelBudgetOperations {
         "Occurrence budget account must be admitted before model allocation",
       );
     }
-    const account =
+    let account =
       existingAccount ??
       this.insertAccount(scope.ownerId, scope.agentId, input.parent, input.dataClassification);
-    this.assertAccountClassification(account, input.dataClassification);
+    if (input.parent.kind === "thread-title" || input.parent.kind === "run") {
+      account = this.raiseAccountClassification(account, input.dataClassification);
+    } else {
+      this.assertAccountClassification(account, input.dataClassification);
+    }
     let nextReserved: number;
     if (input.parent.kind === "occurrence") {
       const outstanding = this.outstandingChildReservation(
@@ -1461,6 +1465,24 @@ export class SqliteModelBudgetOperations {
     ) {
       this.fail("PORT_CONFLICT", "Budget account parent identity is inconsistent");
     }
+  }
+
+  private raiseAccountClassification(
+    account: AccountRow,
+    dataClassification: ModelClassification,
+  ): AccountRow {
+    if (classificationRank(dataClassification) <= classificationRank(account.dataClassification))
+      return account;
+    this.database
+      .prepare(
+        `UPDATE model_budget_accounts SET data_classification = ?
+         WHERE owner_id = ? AND agent_id = ? AND account_id = ?`,
+      )
+      .run(dataClassification, account.ownerId, account.agentId, account.accountId);
+    return (
+      this.readAccount(account.ownerId, account.agentId, account.accountId) ??
+      this.fail("PORT_INVALID_OPERATION", "Budget account could not be read")
+    );
   }
 
   private assertAccountClassification(
