@@ -572,7 +572,7 @@ describe("[ICON-2] activity on a merged tool step", () => {
   it("takes the later sentence together with its own icon", () => {
     const tool = { kind: "tool" as const, name: "web_search" };
     const [item] = executionItems([
-      record(1, 1, { ...tool, phase: "updated", activity: "搜索网页", activityIcon: "tools" }),
+      record(1, 1, { ...tool, phase: "updated", activity: "搜索网页", activityIcon: "puzzle" }),
       record(2, 2, { ...tool, phase: "started", activity: "查天气", activityIcon: "cloud" }),
     ]);
     expect(item).toMatchObject({ activity: "查天气", activityIcon: "cloud" });

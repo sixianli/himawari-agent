@@ -446,5 +446,8 @@ describe("[ICON-1] the icon names the model is told are the names the server acc
     );
     expect(told).toEqual([...catalog.PROCESS_ACTIVITY_ICONS]);
     expect(new Set(told).size).toBe(36);
+    expect(catalog.TOOL_ACTIVITY_ICON_PARAMETER.text).toContain(
+      `都不贴近时用 ${catalog.PROCESS_ACTIVITY_FALLBACK_ICON}。`,
+    );
   });
 });

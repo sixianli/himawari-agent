@@ -1,0 +1,3 @@
+{"id": "r5-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "还残留一个旧图标名，虽是测试但不是“改全了”", "valid": true, "class": "error", "severity": "low", "trigger": "以后网页合并加图标名校验", "consequence": "这条测试会误伤", "modelSeverity": "低"}
+{"id": "r5-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“老对话不受影响”只对这三个名字成立，对整个 PR 不成立", "valid": false, "class": "error"}
+{"id": "r5-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "参数说明里的兜底名没有直接自动检查", "valid": true, "class": "error", "severity": "low", "trigger": "以后只改退回图标常量或只改参数说明", "consequence": "模型被告知的退回名和服务器用的不一致", "modelSeverity": "提示"}
