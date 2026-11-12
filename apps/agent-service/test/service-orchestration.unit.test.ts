@@ -287,6 +287,7 @@ beforeEach(() => {
     "capabilityInvocationResultPort",
     "memoryIndex",
     "memoryEpisodes",
+    "externalMemoryProposals",
     "memoryConsolidation",
     "threadRepository",
     "sensitiveInterceptions",
