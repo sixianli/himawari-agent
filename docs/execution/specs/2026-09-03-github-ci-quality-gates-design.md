@@ -85,7 +85,7 @@ date: "2026-09-03"
 | CI-A09 | 上游失败、取消、跳过、少一个矩阵成员、旧报告或空报告 | `ci/required` 不成功，且报告具体原因 |
 | CI-A10 | PR、fork、Dependabot、默认分支 push 或手动运行 | 以正确 revision 和最小权限执行；需批准的 fork 运行在批准前不成功；不向 PR 提供生产凭据或主机入口，输出符合公开可读要求 |
 | CI-A11 | 公开仓库具备规则管理权限且 Owner 授权启用强制门禁 | GitHub 只接受最新组合的必需检查；失败 PR 无法合并；只读回读与实测一致，不以账户升级为前置任务 |
-| CI-A12 | 周期质量检测运行或向 S9 提交 CI 证据 | 输出独立 artifact，绑定来源和平台，不写产品资格状态，不修改历史 evidence |
+| CI-A12 | 周期质量检测运行或向 S9 提交 CI 证据 | 检测结果写进独立的作业摘要，绑定来源和平台，不写产品资格状态，不修改历史 evidence |
 | CI-A13 | 对门禁运行受控负向样例 | 每项不合格样例均被拒绝；正向对照通过；失败退出码不能被吞掉 |
 | CI-A14 | 工具升级、检查失败、交付或恢复执行 | 有版本、复现命令、证据、耗时和未关闭项；当前事实文档与实际启用状态一致 |
 
@@ -93,7 +93,7 @@ date: "2026-09-03"
 
 ### 1. 政策、执行与结果各有一个责任方
 
-仓库内 CI 政策描述检查身份、矩阵、测试分组、阈值和证据要求。Node 工具负责执行命令及校验报告。GitHub workflow 只负责调度、权限、隔离和 artifact 传递。GitHub Ruleset 只消费最终检查，不复制阈值或测试选择逻辑。
+仓库内 CI 政策描述检查身份、矩阵、测试分组、阈值和证据要求。Node 工具负责执行命令及校验报告。GitHub workflow 只负责调度、权限、隔离，以及经 CI 服务器共享目录传递作业之间的文件。GitHub Ruleset 只消费最终检查，不复制阈值或测试选择逻辑。
 
 不增加产品 package、数据库表、常驻服务或 CI 专用 Agent。执行工具沿用仓库的 `.mjs` 约定，在 JSON 边界做 schema 校验，内部使用已经验证的数据。小型纯函数处理集合、状态与摘要，外部命令和文件系统调用保留在边界。
 
@@ -247,7 +247,7 @@ PR 的增量范围取目标分支与 head 的 merge-base 到 head。默认分支
 
 公开仓库可使用 GitHub CodeQL/code scanning、Dependency Review 和 SARIF 接收能力，不再标记为私有仓库能力受限。功能可用不等于已配置。首期必需门禁仍采用机器密钥、Gitleaks 和 Semgrep CE 扫描，以保留本地复现与统一例外判定；GitHub 原生能力可作为后续补充，接入前需明确检查身份、启用配置、权限、失败语义与正反验证，并同步本 Spec 和 Plan。Dependency Review 的增量检查不能替代完整依赖复扫，上传 SARIF 成功也不能代替安全判定。
 
-JSON、JUnit、LCOV、日志、截图和 trace 均按公开可读材料准备。公开仓库的 Actions artifacts 可由登录且有仓库读取权限的用户下载，不是私密证据存储。上传只允许明确列出的合成测试输出、构建产物与遮盖报告，禁止打包整个工作区、环境变量转储、真实状态目录、数据库、Secret 或用户正文。遮盖覆盖日志输出和失败路径，不能只在最终归档阶段处理；需要保密的 S9 主机证据保留在另行批准的受限位置。
+JSON、JUnit、LCOV、日志、截图和 trace 均按公开可读材料准备。2026-11-12 起 CI 不再上传 GitHub 产物（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)），但作业日志和作业摘要同样可由有仓库读取权限的用户查看，不是私密证据存储。公开目录只允许明确列出的合成测试输出、构建产物与遮盖报告，禁止打包整个工作区、环境变量转储、真实状态目录、数据库、Secret 或用户正文。遮盖覆盖日志输出和失败路径，不能只在最终归档阶段处理；需要保密的 S9 主机证据保留在另行批准的受限位置。
 
 ### 8. 汇总器必须拒绝不完整成功
 
@@ -259,7 +259,7 @@ JSON、JUnit、LCOV、日志、截图和 trace 均按公开可读材料准备。
 
 完整门禁只接受同一次 workflow attempt 的证据。仅重跑失败 job 会复用之前成功 job 的旧报告，初始设计明确不接受这种混合结果；恢复时使用完整工作流重跑。单个检查中的有界下载重试仍属于同一 attempt，必须记录次数。
 
-只有全部条件成立才输出 `passed`。报告缺失、结果 `neutral/skipped/cancelled`、上游安装错误、超时、artifact 上传失败和未执行扫描一律不成功。日志和证据上传可以在失败后执行，但不能吞掉原始退出码。
+只有全部条件成立才输出 `passed`。报告缺失、结果 `neutral/skipped/cancelled`、上游安装错误、超时、报告放入共享目录失败和未执行扫描一律不成功。诊断写进作业摘要可以在失败后执行，但不能吞掉原始退出码。
 
 ### 9. 触发、并发、权限与信任边界
 
@@ -271,7 +271,7 @@ PR 记录 head SHA、base SHA 和实际 tested merge SHA，不擅自将 checkout
 
 同一 PR 的更新可取消较旧 CI。concurrency key 包含 workflow、event 和 PR/ref，避免不同 workflow 相互取消。默认分支交付记录使用唯一 run key，不取消前一个已开始的构建验证。矩阵 `fail-fast: false` 保留完整诊断，不降低总体失败条件。
 
-默认 `GITHUB_TOKEN` 只有 `contents: read`，checkout 使用 `persist-credentials: false`。确有 artifact 元数据读取需要的 job 单独申请 `actions: read`。不配置任何 write、`id-token: write` 或生产 Secret。Action 固定完整提交 SHA；工具下载验证摘要，直接调用锁定本地 executable，不让 `npx` 自动安装未知最新版。
+默认 `GITHUB_TOKEN` 只有 `contents: read`，checkout 使用 `persist-credentials: false`。确有读取运行、作业或作业日志需要的 job（`main.yml` 取回汇总结论）单独申请 `actions: read`。不配置任何 write、`id-token: write` 或生产 Secret。Action 固定完整提交 SHA；工具下载验证摘要，直接调用锁定本地 executable，不让 `npx` 自动安装未知最新版。
 
 不使用 `pull_request_target` 执行 PR 代码，不通过有写权限的 `workflow_run` 接收并执行不可信产物。PR 标题、分支和其他用户输入通过环境变量传给受控参数解析，不直接拼接进 shell。报告始终按数据解析，禁止执行其中命令或解包路径穿越条目。
 
@@ -288,7 +288,7 @@ main 路径选择器仅接受固定仓库的真实 main push。轻量确认必�
 - 当前提交是一次 merge commit，第一父提交恰好是 push.before，第二父提交是同仓库已合并 PR 的 head；squash、rebase、多次合并打包推送、直接提交走完整 CI。
 - `.github/`、`ci/`、`scripts/ci/` 在此次合并中没有变化；验证逻辑更新后的首次 main 推送仍执行全套。
 - 固定 GitHub API 返回对应 head 的成功 `pull_request` CI；完成时间不超过 24 小时，工作流路径为 `.github/workflows/ci.yml`。手动 CI 不适用。
-- 按 API 列出该 run/attempt 的作业，只认唯一一个结论为成功的 `ci/required`，下载它的日志并取出唯一一段汇总结论，校验值不符、缺失、出现两段都拒绝（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)）。GateSummary 必须 passed，矩阵完整且唯一，无失败、缺项或失败原因。
+- 按 API 列出该 run/attempt 的作业，要求名字是 `ci/required` 的作业恰好一个且结论为成功，下载它的日志并取出唯一一段汇总结论，校验值不符、缺失、出现两段都拒绝（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)）。GateSummary 必须 passed，矩阵完整且唯一，无失败、缺项或失败原因。
 - gate/context 的 repository、event、runId、attempt、base/head/tested SHA、政策及工具链摘要一致。通过 GitHub commit API 独立核对被测 merge 的两个父提交和完整源码树；源码树必须等于实际 main 提交。
 
 API 不可用、下载失败、证据缺失、内容或配置不一致均选择原有完整 CI；不伪造新的完整门禁结论。路径选择本身异常时也调度完整 CI，基础设施异常仍可使外层 workflow 失败。确认 job 启动时再次核验证据；此后构建、安全或启动检查失败直接失败，不通过重跑掩盖失败。
@@ -317,7 +317,7 @@ npm 下载和固定工具的 downloads/wheels 归档不再通过 cache Action �
 
 scale 使用固定数据形状、seed 和受控临时目录，输出本次 run 的报告，不写入 `test/integration/qualification/evidence`。比较性能时记录硬件、runner image、样本数和 p50/p95/p99/max；跨硬件变化只报告不可比，不能伪造退化结论。产品绝对目标沿用 S9，不重新定义。
 
-记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟（2026-11-08 起没有 test 和 node-floor 作业）、scale 60 分钟、汇总 5 分钟；现行时限以 `ci/policy.json` 为准：build 和 browser 90 分钟，汇总 15 分钟，其余 60 分钟。超时是资源上限，不是实测性能承诺。完整报告和诊断 screenshot/trace 都只在 GitHub 上保留 1 天（2026-11-06 起，原为 30 天和 7 天，见 [ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)）；缺少保留能力要明确报告。
+记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟（2026-11-08 起没有 test 和 node-floor 作业）、scale 60 分钟、汇总 5 分钟；现行时限以 `ci/policy.json` 为准：build 和 browser 90 分钟，汇总 15 分钟，其余 60 分钟。超时是资源上限，不是实测性能承诺。2026-11-12 起完整报告和诊断 screenshot/trace 都不再上传到 GitHub（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)，取代 [ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md) 的“保留 1 天”）：`ci.yml` 的完整报告只在本次运行的共享目录里，汇总作业结束时删除；`quality.yml` 的完整报告随作业结束丢弃；GitHub 上只留作业日志和作业摘要（每个文本文件最后 40 行，总量不超过 64 KiB），仓库设置的保留期为 3 天。要看完整材料，需要在 CI 服务器上重跑，或在本地按同样的命令运行。
 
 公开仓库使用标准 GitHub 托管 runner 的 Actions 运行免费；仍需遵守并发、执行时间、存储和保留限制，不据此移除超时或扩大资源。更大规格 runner、付费服务或外部 provider 不因仓库公开而获得授权。
 
@@ -373,7 +373,7 @@ Plan 必须按 CI-A01 至 CI-A14 建立双向映射。机械验证与真实 GitH
 5. 合成 Secret 的历史提交后删除、到期例外、安全规则未加载；另验证安全入口不调用 advisory API。
 6. 新增未导入生产文件、删测降低覆盖率、同 PR 降低 baseline 和空分母伪造成功。
 7. fixture 页面交互破坏、JS 异常和自动无障碍阻断项。
-8. fork 等待批准时无成功结果，批准后与 Dependabot 分别以受限权限完成普通检查；PR head/base 变化使旧结果失效，公开日志和 artifact 无合成敏感哨兵原文。
+8. fork 等待批准时无成功结果，批准后与 Dependabot 分别以受限权限完成普通检查；PR head/base 变化使旧结果失效，公开日志和作业摘要无合成敏感哨兵原文。
 9. 真正绿色对照可满足规则，故意红色 PR 在 GitHub 无法合并；测试不实际合并或部署。
 
 仓库内正反样例在临时 fixture repo 中运行，不污染真实分支历史。涉及 GitHub 的样例 PR、push、取消运行和设置变更必须先获授权。CI 自身不可用时保留失败状态，不能以人工勾选代替负向验收。

@@ -5,10 +5,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   LINE_CHARACTERS,
   main,
+  READ_LIMIT_BYTES,
   renderSummary,
   SUMMARY_LIMIT_BYTES,
   TAIL_LINES,
 } from "../../scripts/ci/ci-summary.mjs";
+import { gateSummaryMarkdown } from "../../scripts/ci/required.mjs";
 
 const roots = [];
 afterEach(() => {
@@ -60,6 +62,34 @@ describe("诊断写进作业摘要", () => {
     expect(Buffer.byteLength(text)).toBeLessThanOrEqual(SUMMARY_LIMIT_BYTES);
     expect(text).toMatch(/其余 \d+ 个文件超出 65536 字节的摘要上限，没有显示。/u);
   });
+  it("超大文件只读末尾一段，控制字符被替换", () => {
+    const big = `${"h".repeat(READ_LIMIT_BYTES)}\nhead-only\n${"t\n".repeat(10)}last \u001b[31mred\u0007\n`;
+    const text = renderSummary({ title: "t", from: folder({ "big.log": big }) });
+    expect(text).toContain("last ?[31mred?");
+    expect(text).not.toContain("\u001b");
+    expect(text).not.toContain("\u0007");
+    expect(text).toContain(`只显示最后 ${TAIL_LINES} 行`);
+    const noNewline = renderSummary({
+      title: "t",
+      from: folder({ "one-line.log": "x".repeat(READ_LIMIT_BYTES + 10) }),
+    });
+    expect(noNewline).toContain("二进制文件");
+  });
+  it("NUL 出现在文件末尾也按二进制处理", () => {
+    const text = renderSummary({
+      title: "t",
+      from: folder({ "late.bin": Buffer.concat([Buffer.alloc(9000, 0x61), Buffer.from([0])]) }),
+    });
+    expect(text).toContain("`late.bin`：二进制文件");
+  });
+  it("最后一个文件放得下时不因预留的说明文字被挤掉", () => {
+    const content = "z".repeat(200);
+    const header = "### t\n\n";
+    const section = `#### \`only.log\`（${content.length} 字节）\n\n\`\`\`\`text\n${content}\n\`\`\`\`\n\n`;
+    const limit = Buffer.byteLength(header) + Buffer.byteLength(section);
+    const text = renderSummary({ title: "t", from: folder({ "only.log": content }), limit });
+    expect(text).toBe(header + section);
+  });
   it("代码块里的四个反引号不会提前结束代码块", () => {
     const text = renderSummary({ title: "t", from: folder({ "x.md": "a\n````\nb\n" }) });
     expect(text.split("````").length).toBe(3);
@@ -82,5 +112,29 @@ describe("诊断写进作业摘要", () => {
     expect(() => main(["--other", "x"], { GITHUB_STEP_SUMMARY: target })).toThrow(
       "CI_SUMMARY_ARGUMENTS",
     );
+  });
+});
+
+describe("ci/required 的作业摘要表", () => {
+  it("失败原因里的密钥、竖线和换行不会进表格", () => {
+    const text = gateSummaryMarkdown({
+      status: "failed",
+      observed: ["build/linux-x64"],
+      expected: ["build/linux-x64"],
+      missing: [],
+      checks: [
+        {
+          checkId: "build",
+          matrixKey: "linux-x64",
+          status: "failed",
+          reasons: [`Unsafe report path: a|b\n| forged | row | ${secret}`],
+        },
+      ],
+    });
+    expect(text).not.toContain(secret);
+    const rows = text.split("\n").filter((line) => line.startsWith("| build"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].split("|")).toHaveLength(5);
+    expect(text).not.toContain("| forged |");
   });
 });

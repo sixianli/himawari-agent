@@ -251,6 +251,7 @@ it.each([
   "gate-job-failed",
   "wrong-attempt",
   "two-gate-jobs",
+  "extra-failed-gate-job",
   "fork",
   "no-gate-in-log",
   "two-gates-in-log",
@@ -264,6 +265,8 @@ it.each([
   if (mode === "gate-job-failed") data[2].jobs[1].conclusion = "failure";
   if (mode === "wrong-attempt") data[2].jobs[1].run_attempt = 1;
   if (mode === "two-gate-jobs") data[2].jobs.push({ ...data[2].jobs[1], id: 790 });
+  if (mode === "extra-failed-gate-job")
+    data[2].jobs.push({ ...data[2].jobs[1], id: 790, conclusion: "failure" });
   if (mode === "fork") data[0][0].head.repo.full_name = "someone/fork";
   if (mode === "no-gate-in-log") log = timestamped("passed: 7/7 reports");
   if (mode === "two-gates-in-log") log = `${log}\n${gateLog()}`;

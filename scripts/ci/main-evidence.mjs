@@ -159,15 +159,16 @@ export async function discoverEvidence({
     `/repos/${repository}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`,
   );
   assert(Array.isArray(jobs.jobs) && jobs.jobs.length < 100, "MAIN_JOB_LIST");
-  const gates = jobs.jobs.filter(
-    (job) =>
-      job.name === "ci/required" &&
-      job.run_id === run.id &&
-      job.run_attempt === run.run_attempt &&
-      job.status === "completed" &&
-      job.conclusion === "success",
+  const gates = jobs.jobs.filter((job) => job.name === "ci/required");
+  assert(
+    gates.length === 1 &&
+      positive(gates[0].id) &&
+      gates[0].run_id === run.id &&
+      gates[0].run_attempt === run.run_attempt &&
+      gates[0].status === "completed" &&
+      gates[0].conclusion === "success",
+    "MAIN_GATE_JOB_REQUIRED",
   );
-  assert(gates.length === 1 && positive(gates[0].id), "MAIN_GATE_JOB_REQUIRED");
   const gate = decodeGate(await logs(`/repos/${repository}/actions/jobs/${gates[0].id}/logs`));
   return {
     candidate: {

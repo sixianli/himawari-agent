@@ -1,4 +1,12 @@
-import { appendFileSync, existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  lstatSync,
+  openSync,
+  readdirSync,
+  readSync,
+} from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { redactText } from "./redact-text.mjs";
@@ -6,7 +14,8 @@ import { redactText } from "./redact-text.mjs";
 export const SUMMARY_LIMIT_BYTES = 64 * 1024;
 export const TAIL_LINES = 40;
 export const LINE_CHARACTERS = 500;
-const SAMPLE_BYTES = 8192;
+export const READ_LIMIT_BYTES = 256 * 1024;
+const FOOTER_RESERVE_BYTES = 256;
 
 function listFiles(root) {
   const files = [];
@@ -27,21 +36,43 @@ function listFiles(root) {
   return files.sort((a, b) => (a.relative < b.relative ? -1 : a.relative > b.relative ? 1 : 0));
 }
 
-function textTail(bytes) {
-  if (bytes.subarray(0, SAMPLE_BYTES).includes(0)) return null;
+function readTail(file) {
+  const length = Math.min(file.size, READ_LIMIT_BYTES);
+  const bytes = Buffer.alloc(length);
+  const handle = openSync(file.full, "r");
+  try {
+    readSync(handle, bytes, 0, length, file.size - length);
+  } finally {
+    closeSync(handle);
+  }
+  return bytes;
+}
+
+function textTail(file) {
+  let bytes = readTail(file);
+  if (bytes.includes(0)) return null;
+  if (file.size > bytes.length) {
+    const newline = bytes.indexOf(0x0a);
+    if (newline < 0) return null;
+    bytes = bytes.subarray(newline + 1);
+  }
   let text;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     return null;
   }
-  const lines = redactText(text).replace(/\r\n?/gu, "\n").replace(/\n$/u, "").split("\n");
+  const lines = redactText(text)
+    .replace(/\r\n?/gu, "\n")
+    .replace(/\n$/u, "")
+    .replace(/[^\P{Cc}\n\t]/gu, "?")
+    .split("\n");
   const tail = lines
     .slice(-TAIL_LINES)
     .map((line) => (line.length > LINE_CHARACTERS ? `${line.slice(0, LINE_CHARACTERS)}…` : line))
     .join("\n");
   return {
-    omitted: Math.max(0, lines.length - TAIL_LINES),
+    omitted: file.size > bytes.length || lines.length > TAIL_LINES,
     text: tail.replaceAll("````", "` ` ` `"),
   };
 }
@@ -57,14 +88,16 @@ export function renderSummary({ title, from, limit = SUMMARY_LIMIT_BYTES }) {
   let used = Buffer.byteLength(header);
   let shown = 0;
   for (const file of files) {
-    const tail = textTail(readFileSync(file.full));
+    const tail = textTail(file);
     const name = safeName(file.relative);
     const section =
       tail === null
         ? `- \`${name}\`：二进制文件，${file.size} 字节，内容不显示\n\n`
         : `#### \`${name}\`（${file.size} 字节${tail.omitted ? `，只显示最后 ${TAIL_LINES} 行` : ""}）\n\n\`\`\`\`text\n${tail.text}\n\`\`\`\`\n\n`;
+    const remaining = files.length - shown - 1;
     const footer = `其余 ${files.length - shown} 个文件超出 ${limit} 字节的摘要上限，没有显示。\n`;
-    if (used + Buffer.byteLength(section) + Buffer.byteLength(footer) > limit) {
+    const reserve = remaining > 0 ? FOOTER_RESERVE_BYTES : 0;
+    if (used + Buffer.byteLength(section) + reserve > limit) {
       sections.push(footer);
       break;
     }
