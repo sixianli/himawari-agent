@@ -105,6 +105,9 @@ export function CorrectionReviewSection({
                 : message("review.upstreamGone")}
             </small>
           ))}
+          {item.sources.some(({ truncated }) => truncated) ? (
+            <small data-review-truncated=""> {message("review.truncated")}</small>
+          ) : null}
           <p className="memory-text">{item.text}</p>
           <div className="actions">
             <ActionButton variant="secondary" onClick={() => onOpenMemory(item.memoryId)}>

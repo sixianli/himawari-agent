@@ -606,6 +606,7 @@ export class ProductionMemoryControl {
         upstreamText: await textOf(item.upstreamMemoryId),
         reason: item.reason,
         depth: item.depth,
+        truncated: item.truncated,
         flaggedAt: item.flaggedAt,
       });
     }

@@ -805,6 +805,7 @@ export const MESSAGE_IDS = [
   "review.reason",
   "review.upstream",
   "review.upstreamGone",
+  "review.truncated",
   "review.open",
   "review.dismiss",
   "review.suspendReason",

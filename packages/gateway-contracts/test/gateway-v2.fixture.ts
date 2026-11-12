@@ -835,6 +835,7 @@ export const governanceMessages = [
         upstreamText: "Andy 在办日本签证续签",
         reason: "memory_edited",
         depth: 1,
+        truncated: false,
         flaggedAt: "2026-11-11T00:00:00.000Z",
       },
     ],

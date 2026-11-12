@@ -30,6 +30,7 @@ const flagged: MemoryReview = {
       upstreamText: "Andy 在办日本签证续签",
       reason: "memory_edited",
       depth: 2,
+      truncated: true,
       flaggedAt: "2026-11-12T00:00:00.000Z",
     },
     {
@@ -39,6 +40,7 @@ const flagged: MemoryReview = {
       upstreamText: null,
       reason: "owner_reported",
       depth: 1,
+      truncated: false,
       flaggedAt: "2026-11-12T00:00:00.000Z",
     },
   ],
@@ -113,6 +115,7 @@ describe("[P4-1] memories and rules to recheck after a memory edit", () => {
     expect(container.querySelectorAll("[data-review-memory]")).toHaveLength(1);
     expect(text).toContain("它依据的记忆被改了 · 依据的记忆：Andy 在办日本签证续签");
     expect(text).toContain("你指出它也该跟着改 · 依据的记忆已经删除");
+    expect(text).toContain("依据它推出来的记忆太多，超过上限的没有标出");
     expect(text).toContain("已暂停：来源记忆读下来和原规则对不上");
     expect(text).toContain("系统建议改成：日本和韩国入管局相关的邮件一律提醒");
     expect(text).toContain("等系统自动核对（核对完之前照常执行）");

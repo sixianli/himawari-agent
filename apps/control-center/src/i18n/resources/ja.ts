@@ -918,6 +918,7 @@ export const messages = {
     "{r, select, memory_edited {根拠の記憶が直されました} memory_superseded {根拠の記憶が新しい内容に置き換わりました} memory_removed {根拠の記憶が削除かアーカイブされました} memory_restored {根拠の記憶が元に戻されました} memory_reclassified {根拠の記憶の分類が変わりました} owner_reported {あなたが一緒に直すべきと指摘しました} other {根拠の記憶が変わりました}}",
   "review.upstream": "根拠の記憶：{t}",
   "review.upstreamGone": "根拠の記憶は削除済みです",
+  "review.truncated": "これを根拠にした記憶が多すぎて、上限を超えた分にはフラグを付けていません",
   "review.open": "開いて直す",
   "review.dismiss": "問題なし",
   "review.suspendReason":
@@ -1507,7 +1508,7 @@ export const messages = {
   "weekly.prereview.title": "モデル事前採点の一致率",
   "weekly.correction.title": "記憶の修正に伴う再確認フラグの一致率",
   "weekly.correction.agreed": "システムが {n} 件にフラグ、あなたが認めたのは {k} 件",
-  "weekly.correction.missed": "見落とし：あなたが一緒に直すべきと指摘し、フラグがなかったもの",
+  "weekly.correction.missed": "フラグ漏れ：あなたが一緒に直すべきと指摘し、フラグがなかったもの",
   "weekly.correction.open": "再確認リストであなたの対応待ち",
   "weekly.correction.note":
     "累計の数字で、週ごとではありません。記憶を直したり消したりすると、それを根拠にした記憶とそれから決めたルールに再確認のフラグが付きます。再確認リストで対応したものだけを数えます。ルールで「提案を採用」か「停止を確定」、記憶を直した場合は認めたことに、「元のルールに戻す」「問題なし」は認めなかったことになります。未対応は数えません。対応済みが 5 件未満のときはサンプル不足とだけ表示します。",

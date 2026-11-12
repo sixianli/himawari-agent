@@ -861,6 +861,7 @@ export const messages = {
     "{r, select, memory_edited {它依据的记忆被改了} memory_superseded {它依据的记忆被新说法取代了} memory_removed {它依据的记忆被删除或归档了} memory_restored {它依据的记忆被恢复了} memory_reclassified {它依据的记忆换了分类} owner_reported {你指出它也该跟着改} other {它依据的记忆变了}}",
   "review.upstream": "依据的记忆：{t}",
   "review.upstreamGone": "依据的记忆已经删除",
+  "review.truncated": "依据它推出来的记忆太多，超过上限的没有标出",
   "review.open": "打开修改",
   "review.dismiss": "看过没问题",
   "review.suspendReason":
@@ -1408,7 +1409,7 @@ export const messages = {
   "weekly.prereview.title": "模型预评一致率",
   "weekly.correction.title": "改记忆后跟着标的一致率",
   "weekly.correction.agreed": "系统标了 {n} 条，你认可 {k} 条",
-  "weekly.correction.missed": "漏报：你指出还该跟着改、系统没标到的",
+  "weekly.correction.missed": "漏标：你指出还该跟着改、系统没标到的",
   "weekly.correction.open": "还在待重审列表里等你处理",
   "weekly.correction.note":
     "累计数字，不分周。你改、删一条记忆后，系统把依据它推出来的记忆和由它定的规则标成待重审。只算你在待重审列表里处理过的：规则点“采用建议”或“确认暂停”、记忆被你改过，算认可；规则点“恢复原规则”、记忆点“看过没问题”，算不认可。没处理的不算。处理过的少于 5 条时只显示样本不足。",

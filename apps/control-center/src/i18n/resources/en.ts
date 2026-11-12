@@ -912,6 +912,8 @@ export const messages = {
     "{r, select, memory_edited {a memory it is based on was edited} memory_superseded {a memory it is based on was replaced by a newer statement} memory_removed {a memory it is based on was deleted or archived} memory_restored {a memory it is based on was restored} memory_reclassified {a memory it is based on changed category} owner_reported {you said it should change too} other {a memory it is based on changed}}",
   "review.upstream": "Based on: {t}",
   "review.upstreamGone": "The memory it was based on is deleted",
+  "review.truncated":
+    "Too many memories are inferred from it; those past the limit are not flagged",
   "review.open": "Open to edit",
   "review.dismiss": "Looks fine",
   "review.suspendReason":

@@ -1699,6 +1699,7 @@ const memoryReviewSnapshotSchema = object({
         upstreamText: nullable(boundedString(200)),
         reason: enumeration(MEMORY_REVIEW_REASONS),
         depth: integer(1),
+        truncated: booleanValue,
         flaggedAt: timestamp,
       }),
     ),
