@@ -78,6 +78,7 @@ import {
   SERVICE_RUNTIME_ERROR_CODES,
   SystemdCredentialSecretSource,
   SystemdProviderSecretSource,
+  portErrorSite,
   stableErrorCode,
   TypeSafeJevTransport,
   writeAgentServiceBootBinding,
@@ -176,6 +177,11 @@ import {
   resolveCodingNetworkFacts,
   WorkspaceAutoAuthorization,
 } from "./workspace-auto-authorization.js";
+
+function siteField(error: unknown): { readonly site?: string } {
+  const site = portErrorSite(error);
+  return site === undefined ? {} : { site };
+}
 
 export const AGENT_SERVICE_ERROR_CODES = Object.freeze({
   AUTHORITY_INACTIVE: "AGENT_AUTHORITY_INACTIVE",
@@ -2575,6 +2581,7 @@ export async function startTenantRuntime(
             component: "agent-service",
             event: "thread-title.failed",
             code: stableErrorCode(error),
+            ...siteField(error),
           }),
         ...(modelComposition.composition.generateText
           ? {
@@ -2595,6 +2602,7 @@ export async function startTenantRuntime(
                             component: "agent-service",
                             event: "memory-episode.failed",
                             code: stableErrorCode(error),
+                            ...siteField(error),
                           }),
                       },
                     }
@@ -2624,6 +2632,7 @@ export async function startTenantRuntime(
                             component: "agent-service",
                             event: "memory-consolidation.failed",
                             code: stableErrorCode(error),
+                            ...siteField(error),
                           }),
                       },
                     }
@@ -2656,6 +2665,7 @@ export async function startTenantRuntime(
                     component: "agent-service",
                     event: "memory-capture.failed",
                     code: stableErrorCode(error),
+                    ...siteField(error),
                   }),
               },
             }
