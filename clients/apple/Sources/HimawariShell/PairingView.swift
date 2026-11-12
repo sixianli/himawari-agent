@@ -29,6 +29,8 @@ struct PairingView: View {
     @ViewBuilder
     private var content: some View {
         switch model.phase {
+        case let .confirmingServer(host):
+            confirmServer(host)
         case let .waitingForConfirmation(number):
             waiting(number)
         case let .unpaired(problem?) where problem == .unreachable:
@@ -117,6 +119,38 @@ struct PairingView: View {
         .hmShadow(DesignTokens.Shadows.lift)
     }
 
+    private func confirmServer(_ host: String) -> some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 30) {
+                SunflowerMark(detail: .full)
+                    .frame(width: DesignTokens.Pairing.waitingMark, height: DesignTokens.Pairing.waitingMark)
+                VStack(spacing: 12) {
+                    Text(host)
+                        .font(.system(size: DesignTokens.TypeScale.title1.size, weight: .bold))
+                        .foregroundStyle(Color.hmText)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.5)
+                        .textSelection(.enabled)
+                    Text(L.text("pairing.serverCaption"))
+                        .hmType(DesignTokens.TypeScale.secondary)
+                        .foregroundStyle(Color.hmMuted)
+                }
+            }
+            .padding(.top, DesignTokens.Pairing.waitingTop)
+            Spacer(minLength: 24)
+            HStack(spacing: 12) {
+                Button(L.text("pairing.cancel")) {
+                    model.declineScannedServer()
+                    scanning = true
+                }
+                .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+                Button(L.text("pairing.connect")) { model.connectToScannedServer() }
+                    .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+            }
+        }
+    }
+
     private func waiting(_ number: String) -> some View {
         VStack(spacing: 0) {
             VStack(spacing: 30) {
@@ -134,7 +168,7 @@ struct PairingView: View {
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
                 }
-                Text(L.format("pairing.waitingDevice", model.deviceDisplayName))
+                Text(L.format("pairing.waitingServer", model.serverHost ?? ""))
                     .hmType(DesignTokens.TypeScale.secondary)
                     .foregroundStyle(Color.hmMuted)
             }
@@ -244,7 +278,7 @@ struct PairingScanner: View {
             #endif
             ScannerCloseButton(Text(L.text("common.close")), action: cancel)
                 .padding(.leading, DesignTokens.Size.pagePaddingX)
-                .padding(.top, DesignTokens.Size.navTop - Layout.prototypeSafeAreaTop)
+                .frame(height: DesignTokens.Size.navBarHeight)
         }
     }
 }

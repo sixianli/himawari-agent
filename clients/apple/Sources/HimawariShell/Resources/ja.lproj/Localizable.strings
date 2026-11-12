@@ -21,7 +21,7 @@
 "settings" = "自分と設定";
 "placeholder.notConnected" = "このページはまだつながっていません";
 "common.close" = "閉じる";
-"pairing.waitingDevice" = "%@ · 待っています";
+"pairing.waitingServer" = "%@ · 待っています";
 "pairing.retry" = "もう一度";
 "pairing.rescan" = "もう一度読み取る";
 "pairing.aim" = "パソコンのコードに向けてください";
@@ -33,3 +33,5 @@
 "pairing.problem.keys.title" = "この iPhone では鍵を作れません";
 "pairing.problem.expired.ttlMinutes" = "コードの有効期限は %d 分です。";
 "pairing.problem.expired.ttlSeconds" = "コードの有効期限は %d 秒です。";
+"pairing.serverCaption" = "QR コードに書かれたサーバー";
+"pairing.connect" = "接続";

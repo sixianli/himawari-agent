@@ -21,7 +21,7 @@
 "settings" = "Me and settings";
 "placeholder.notConnected" = "This page isn't connected yet";
 "common.close" = "Close";
-"pairing.waitingDevice" = "%@ · Waiting";
+"pairing.waitingServer" = "%@ · Waiting";
 "pairing.retry" = "Try again";
 "pairing.rescan" = "Scan again";
 "pairing.aim" = "Point at the code on your computer";
@@ -33,3 +33,5 @@
 "pairing.problem.keys.title" = "This iPhone can’t create keys";
 "pairing.problem.expired.ttlMinutes" = "Each code works for %d minutes. ";
 "pairing.problem.expired.ttlSeconds" = "Each code works for %d seconds. ";
+"pairing.serverCaption" = "Server in the QR code";
+"pairing.connect" = "Connect";

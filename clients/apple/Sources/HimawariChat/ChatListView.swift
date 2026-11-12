@@ -44,7 +44,7 @@ public struct ChatListView: View {
             .refreshable { await store.refreshThreads() }
 
             GlassCircleButton(Text(L.text("chat.new")), action: { open(nil) }) {
-                Icon(.plus, size: DesignTokens.IconSize.glassButton)
+                Icon(.edit, size: DesignTokens.IconSize.glassButton)
             }
             .padding(.trailing, 16)
             .padding(.top, 10)

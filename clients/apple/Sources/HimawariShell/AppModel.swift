@@ -9,6 +9,7 @@ import UIKit
 
 public enum AppPhase: Equatable {
     case unpaired(PairingProblem?)
+    case confirmingServer(host: String)
     case submitting
     case waitingForConfirmation(number: String)
     case active
@@ -75,7 +76,40 @@ public final class AppModel {
 
     public func pair(scanned text: String) {
         guard phase != .submitting else { return }
-        lastScanned = text
+        do {
+            let invitation = try PairingInvitation.parse(text)
+            lastScanned = text
+            phase = .confirmingServer(host: Self.host(invitation.origin))
+        } catch {
+            lastScanned = nil
+            phase = .unpaired(PairingProblem.from(error))
+        }
+    }
+
+    public func connectToScannedServer() {
+        guard case .confirmingServer = phase, let lastScanned else { return }
+        submit(lastScanned)
+    }
+
+    public func declineScannedServer() {
+        lastScanned = nil
+        keysMadeFor = nil
+        phase = .unpaired(nil)
+    }
+
+    public var serverHost: String? {
+        if case let .confirmingServer(host) = phase { return host }
+        return record.map { Self.host($0.origin) }
+    }
+
+    static func host(_ origin: URL) -> String {
+        let host = origin.host ?? origin.absoluteString
+        if let port = origin.port { return "\(host):\(port)" }
+        return host
+    }
+
+    private func submit(_ text: String) {
+        guard phase != .submitting else { return }
         phase = .submitting
         Task {
             do {
@@ -141,17 +175,13 @@ public final class AppModel {
             phase = .unpaired(nil)
             return
         }
-        pair(scanned: lastScanned)
+        submit(lastScanned)
     }
 
     public func dismissProblem() {
         lastScanned = nil
         keysMadeFor = nil
         phase = .unpaired(nil)
-    }
-
-    public var deviceDisplayName: String {
-        Self.deviceName
     }
 
     private func waitForConfirmation() {

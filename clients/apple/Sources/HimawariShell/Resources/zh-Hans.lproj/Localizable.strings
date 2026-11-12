@@ -21,7 +21,7 @@
 "settings" = "我和设置";
 "placeholder.notConnected" = "这一页还没接上";
 "common.close" = "关闭";
-"pairing.waitingDevice" = "%@ · 正在等";
+"pairing.waitingServer" = "%@ · 正在等";
 "pairing.retry" = "再试一次";
 "pairing.rescan" = "重新扫码";
 "pairing.aim" = "对准电脑上的码";
@@ -33,3 +33,5 @@
 "pairing.problem.keys.title" = "这台 iPhone 建不了密钥";
 "pairing.problem.expired.ttlMinutes" = "一个码只管 %d 分钟。";
 "pairing.problem.expired.ttlSeconds" = "一个码只管 %d 秒。";
+"pairing.serverCaption" = "二维码里写的服务器";
+"pairing.connect" = "连接";
