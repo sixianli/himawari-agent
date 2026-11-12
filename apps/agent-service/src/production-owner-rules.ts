@@ -541,8 +541,10 @@ export class ProductionOwnerRuleWriter {
     const scope = this.#scope();
     const store = this.#options.proposals;
     const now = this.#options.clock.now();
-    const waiting = await store.listPending({ ...scope, now, limit: this.#limit() });
-    for (const row of waiting.proposals) {
+    const waiting = await store
+      .listPending({ ...scope, now, limit: this.#limit() })
+      .catch(() => undefined);
+    for (const row of waiting?.proposals ?? []) {
       const evidence = row.evidenceRef
         ? await this.#readProposal(row.evidenceRef).catch(() => undefined)
         : undefined;
@@ -559,13 +561,15 @@ export class ProductionOwnerRuleWriter {
         covered = false;
       }
       if (covered)
-        await store.decide({
-          ...scope,
-          proposalId: row.proposalId,
-          from: "pending",
-          to: "accepted",
-          now,
-        });
+        await store
+          .decide({
+            ...scope,
+            proposalId: row.proposalId,
+            from: "pending",
+            to: "accepted",
+            now,
+          })
+          .catch(() => false);
     }
   }
 

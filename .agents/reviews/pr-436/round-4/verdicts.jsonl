@@ -1,0 +1,5 @@
+{"id": "d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 中：`#settle` 成了规则生效之后新增的可失败写库步骤，失败会让“确认”报错并把提议退回待采纳，随后还能“拒绝”，造成规则已生效却显示已拒绝", "valid": true, "class": "error", "severity": "medium-high", "trigger": "规则写入成功后整理其他待采纳提议时写库失败", "consequence": "采纳报错并退回待采纳，规则却已生效", "modelSeverity": "中", "reason": "属实；整理改为尽力而为，失败不影响采纳结果"}
+{"id": "d2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 低：重置旧提议时“恢复原载荷”是静默 best-effort，恢复失败会永久丢掉旧依据，和文档的承诺不一致", "valid": true, "class": "better", "modelSeverity": "低", "reason": "要连续两次存储失败才出现；文档已改成“尽力写回”；彻底消除要换成新引用再切换，列给 Andy"}
+{"id": "d3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 低：先删旧载荷再写新载荷留下并发读窗口", "valid": true, "class": "better", "modelSeverity": "低", "reason": "窗口内只是这一次读不到依据，重试即可；同上，列给 Andy"}
+{"id": "d4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. 低：文档“写表失败或已满时把刚写的载荷删掉”对 pending 且载荷缺失的场景不成立", "valid": true, "class": "better", "modelSeverity": "低", "reason": "文档措辞已改"}
+{"id": "d5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 5. 低：测试缺口（不是错误，但覆盖不完整）", "valid": true, "class": "better", "modelSeverity": "低", "reason": "已补整理失败时仍采纳成功的用例"}

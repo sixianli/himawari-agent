@@ -2631,6 +2631,28 @@ describe("production memory capture", () => {
       expect(await context.ruleWriter.list()).toHaveLength(1);
     });
 
+    it("still adopts the proposal when tidying the other waiting proposals fails", async () => {
+      const { context, inferred } = await prepared();
+      const proposal = await inferred("tidy.example");
+      const store = context.repository.ownerRuleProposals();
+      const writer = context.ruleWriterWith({
+        proposals: {
+          propose: (input) => store.propose(input),
+          read: (input) => store.read(input),
+          decide: (input) => store.decide(input),
+          listPending: async () => {
+            throw new Error("list failed");
+          },
+        },
+      });
+      const receipt = await writer.confirm(proposal["proposalId"] as string);
+      expect(receipt.status).toBe("active");
+      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(0);
+      await expect(
+        context.ruleWriter.reject(proposal["proposalId"] as string),
+      ).rejects.toMatchObject({ code: "RULE_PROPOSAL_ACCEPTED" });
+    });
+
     it("keeps the old basis and the old state when writing the new basis fails", async () => {
       const { context, inferred } = await prepared();
       const first = await inferred("fail.example");
