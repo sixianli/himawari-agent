@@ -84,6 +84,7 @@ import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory
 import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryCaptureBacklogOperations } from "./sqlite-memory-capture-backlog-operations.ts";
 import { SqliteMemoryCheckupOperations } from "./sqlite-memory-checkup-operations.ts";
+import { SqliteMemoryConversationReviewOperations } from "./sqlite-memory-conversation-review-operations.ts";
 import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
 import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
@@ -367,6 +368,7 @@ export class SqliteDurableOperations {
   private readonly ownerRules: SqliteOwnerRuleOperations;
   private readonly memoryCaptureBacklog: SqliteMemoryCaptureBacklogOperations;
   private readonly memoryCheckup: SqliteMemoryCheckupOperations;
+  private readonly memoryConversationReview: SqliteMemoryConversationReviewOperations;
   private readonly reviewPrereview: SqliteReviewPrereviewOperations;
   private readonly externalMemoryProposals: SqliteExternalMemoryProposalOperations;
   private readonly proactive: SqliteProactiveOperations;
@@ -455,6 +457,11 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
     );
     this.memoryCheckup = new SqliteMemoryCheckupOperations(database, fail, assertDiskHeadroom);
+    this.memoryConversationReview = new SqliteMemoryConversationReviewOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.reviewPrereview = new SqliteReviewPrereviewOperations(database, fail, assertDiskHeadroom);
     this.externalMemoryProposals = new SqliteExternalMemoryProposalOperations(
       database,
@@ -593,6 +600,8 @@ export class SqliteDurableOperations {
       return this.memoryCaptureBacklog.execute(operation, payload);
     if (operation.startsWith("memoryCheckup."))
       return this.memoryCheckup.execute(operation, payload);
+    if (operation.startsWith("memoryConversationReview."))
+      return this.memoryConversationReview.execute(operation, payload);
     if (operation.startsWith("reviewPrereview."))
       return this.reviewPrereview.execute(operation, payload);
     if (operation.startsWith("externalMemoryProposal."))

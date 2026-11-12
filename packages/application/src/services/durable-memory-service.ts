@@ -134,8 +134,11 @@ export class DurableMemoryService {
           existing.sourceRefs.length === proposal.memory.sourceRefs.length &&
           existing.sourceRefs.every((source) => proposal.memory.sourceRefs.includes(source));
         if (sameProposal) {
-          if (existing.status === "active")
+          if (existing.status === "active") {
             await this.proposeProjection(existing, "upsert", generationId);
+            if (proposal.supersedes)
+              await this.supersede(proposal.supersedes, existing, generationId);
+          }
           return existing;
         }
         throw new ApplicationPortError(

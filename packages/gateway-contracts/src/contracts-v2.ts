@@ -69,6 +69,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "decision.email.snapshot",
   "memory.approval.respond",
   "memory.tidy.undo",
+  "memory.conversationReview.undo",
   "memory.reminder.respond",
   "memory.reminder.create",
   "memory.rules.read",
@@ -1486,6 +1487,20 @@ const memoryOverviewSnapshotSchema = object({
         undoable: booleanValue,
       }),
     ),
+    conversationReviews: array(
+      object({
+        reviewId: machineString,
+        finishedAt: timestamp,
+        undone: booleanValue,
+        undoable: booleanValue,
+        changes: array(
+          object({
+            memoryId: machineString,
+            action: enumeration(["created", "superseded", "confirmed"]),
+          }),
+        ),
+      }),
+    ),
     reminders: array(
       object({
         reminderId: machineString,
@@ -1591,6 +1606,10 @@ const memoryOverviewSnapshotSchema = object({
 const memoryTidyUndoCommandSchema = object({
   ...commandEnvelope("memory.tidy.undo"),
   payload: object({ changeId: machineString }),
+});
+const memoryConversationReviewUndoCommandSchema = object({
+  ...commandEnvelope("memory.conversationReview.undo"),
+  payload: object({ reviewId: machineString }),
 });
 const memoryReminderRespondCommandSchema = object({
   ...commandEnvelope("memory.reminder.respond"),
@@ -2644,6 +2663,7 @@ const schemasByType = {
   "decision.email.snapshot": decisionEmailSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
+  "memory.conversationReview.undo": memoryConversationReviewUndoCommandSchema,
   "memory.reminder.respond": memoryReminderRespondCommandSchema,
   "memory.reminder.create": memoryReminderCreateCommandSchema,
   "memory.rules.read": memoryRulesQuerySchema,

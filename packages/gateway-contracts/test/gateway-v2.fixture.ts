@@ -714,6 +714,18 @@ export const governanceMessages = [
         undoable: true,
       },
     ],
+    conversationReviews: [
+      {
+        reviewId: "memory-review:episode:day_summary:thread-01:1",
+        finishedAt: "2026-09-11T00:00:02.000Z",
+        undone: false,
+        undoable: true,
+        changes: [
+          { memoryId: "memory-04", action: "created" },
+          { memoryId: "memory-02", action: "superseded" },
+        ],
+      },
+    ],
     reminders: [
       {
         reminderId: "reminder:memory-01",
@@ -767,6 +779,9 @@ export const governanceMessages = [
   }),
   fixture("command", "memory.tidy.undo", {
     changeId: "memory-consolidation:agent-01:2026-09-11:c1",
+  }),
+  fixture("command", "memory.conversationReview.undo", {
+    reviewId: "memory-review:episode:day_summary:thread-01:1",
   }),
   fixture("command", "memory.reminder.respond", {
     reminderId: "reminder:memory-01",
