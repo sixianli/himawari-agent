@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import type { CapabilityManifest, CapabilityRegistryRecord } from "@himawari-agent/application";
+import {
+  type CapabilityManifest,
+  type CapabilityRegistryRecord,
+  type CapabilityRuntimeQualification,
+  PORT_ERROR_CODES,
+} from "@himawari-agent/application";
 import { createDeviceId } from "@himawari-agent/domain";
-import { SANDBOX_RUNTIME_VERSION } from "@himawari-agent/execution-contracts";
 import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import Database from "better-sqlite3";
 import { afterEach, expect, it } from "vitest";
@@ -75,197 +79,139 @@ function record(): CapabilityRegistryRecord {
   };
 }
 
-type Json = Record<string, unknown>;
-type DeploymentKind = "matching" | "digest-mismatch" | "unqualified";
+const ENDPOINT_DIGEST = `sha256:${"d".repeat(64)}`;
 
-const PLATFORM = process.platform === "darwin" ? "darwin" : "linux";
-const HOST = "host:reactivate-fixture";
-const PROFILE = "host-readonly.v1";
-const RUNTIME_DIGEST = "d".repeat(64);
-const RUNNER_DIGEST = "c".repeat(64);
-const RUNTIME_ROOT = "/opt/himawari/releases/reactivate/capabilities";
-
-function programManifest(integrityHex: string): Json {
-  const digest = `sha256:${integrityHex}`;
+function endpointManifest(version: string): CapabilityManifest {
   return {
     manifestVersion: "capability.v2",
     ref: CAPABILITY_REF,
-    displayName: "Reactivation fixture",
-    version: "1.0.0",
-    source: { type: "program", locator: "artifact:reactivate-fixture" },
-    sourceIdentity: "publisher:himawari",
-    integrity: digest,
+    displayName: "Production capability",
+    version,
+    source: { type: "remote_api", locator: "endpoint:production-capability" },
+    sourceIdentity: "publisher:fixture",
+    integrity: ENDPOINT_DIGEST,
     artifact: {
-      digest,
-      signatureStatus: "verified",
-      signerRef: "signer:host-qualification",
+      digest: ENDPOINT_DIGEST,
+      signatureStatus: "not_applicable",
+      signerRef: null,
       rollbackArtifactRef: null,
     },
-    operations: ["execute"],
+    operations: ["invoke"],
     permissionRefs: [],
-    isolation: "sandbox",
-    scopes: {
-      dataClassifications: ["private"],
-      network: [],
-      filesystem: ["workspace:reactivate"],
-      secrets: [],
-    },
-    cost: { currency: "USD", maxMicrosPerInvocation: 0 },
-    health: { status: "healthy", checkedAt: T1 },
-    reviewedBy: OWNER_ID,
-    reviewedAt: T1,
+    isolation: "remote",
+    scopes: { dataClassifications: ["public"], network: [], filesystem: [], secrets: [] },
+    cost: { currency: "USD", maxMicrosPerInvocation: 100 },
+    health: { status: "healthy", checkedAt: T0 },
+    reviewedBy: null,
+    reviewedAt: null,
     contractCompatibility: ["capability-conformance.v1"],
     runtime: {
-      kind: "program",
-      argv: [`${RUNTIME_ROOT}/node/bin/node`, `${RUNTIME_ROOT}/runners/r.mjs`, HOST, "reactivate"],
-      environmentKeys: [],
-      workdirRef: "workspace:reactivate",
-      stdin: "protected_payload",
-      stdout: "protected_payload",
-      subprocesses: [],
-      network: [],
-      filesystem: ["workspace:reactivate"],
+      kind: "remote_api",
+      endpointIdentity: "endpoint:production-capability",
+      protectedReferenceOnly: true,
     },
   };
 }
 
-function deploymentEntry(manifest: Json, suitable: boolean): Json {
-  const executable = `${RUNTIME_ROOT}/node/bin/node`;
-  const runnerPath = `${RUNTIME_ROOT}/runners/r.mjs`;
+function qualificationFor(checkedAt: string): CapabilityRuntimeQualification {
   return {
-    manifest,
-    qualification: {
-      qualificationVersion: "capability-runtime-qualification.v1",
-      platform: PLATFORM,
-      runtimeIdentity: `srt:${SANDBOX_RUNTIME_VERSION}`,
-      productionSuitable: suitable,
-      artifactDigest: manifest["integrity"],
-      enforcement: {
-        filesystem: true,
-        network: true,
-        processes: true,
-        secrets: true,
-        resourceCeilings: false,
-        termination: PLATFORM === "linux",
-      },
-      reasonCodes: suitable ? [] : ["fixture_not_suitable"],
-      checkedAt: T1,
-      sandbox: {
-        schemaVersion: "sandbox-runtime-qualification.v1",
-        qualificationRef: "qualification:reactivate",
-        hostId: HOST,
-        profileRef: PROFILE,
-        srtVersion: SANDBOX_RUNTIME_VERSION,
-        platform: PLATFORM,
-        architecture: PLATFORM === "darwin" ? "arm64" : "x64",
-        osRelease: "27.0.0",
-        runtimeDigest: RUNTIME_DIGEST,
-        runnerDigest: RUNNER_DIGEST,
-        evidenceDigest: "f".repeat(64),
-        resourceMode: "observe_and_stop",
-        terminationMode: PLATFORM === "darwin" ? "best_effort" : "verified_tree",
-        guarantees: [
-          "filesystem_default_deny",
-          "network_allowlist",
-          "clean_environment",
-          "bounded_output",
-          "wall_clock_stop",
-          "resource_observation",
-          "durable_start_admission",
-          "unknown_quarantine",
-          "restart_reconciliation",
-          ...(PLATFORM === "darwin"
-            ? ["best_effort_stop"]
-            : ["task_tree_termination", "worker_crash_cleanup"]),
-        ],
-        limitations: PLATFORM === "darwin" ? ["detached_descendants_may_survive_stop"] : [],
-      },
+    qualificationVersion: "capability-runtime-qualification.v1",
+    platform: process.platform === "darwin" ? "darwin" : "linux",
+    runtimeIdentity: "fixture-endpoint-qualifier:v1",
+    productionSuitable: true,
+    artifactDigest: ENDPOINT_DIGEST,
+    enforcement: {
+      filesystem: true,
+      network: true,
+      processes: true,
+      secrets: true,
+      resourceCeilings: true,
+      termination: true,
     },
-    binding: {
-      kind: "sandbox",
-      value: {
-        schemaVersion: "sandbox-host-binding.v1",
-        capabilityRef: CAPABILITY_REF,
-        capabilityVersion: manifest["version"],
-        artifactDigest: manifest["integrity"],
-        hostId: HOST,
-        profileRef: PROFILE,
-        runtimeRoot: RUNTIME_ROOT,
-        runtimeDigest: RUNTIME_DIGEST,
-        executable: { path: executable, sha256: "a".repeat(64) },
-        runner: { path: runnerPath, sha256: RUNNER_DIGEST },
-        privateRoot: "/var/private-jobs",
-        roots: [
-          {
-            canonicalRootId: "root:reactivate",
-            canonicalPath: "/work/project",
-            device: "1",
-            inode: "2",
-          },
-        ],
-        readOnlyToolchainPaths: ["/usr/bin"],
-        protectedPaths: [],
-        allowedDomains: [],
-        maximumResourceCeiling: {
-          maxWallTimeMs: 10_000,
-          maxCpuTimeMs: 10_000,
-          maxMemoryBytes: 64 * 1024 * 1024,
-          maxOutputBytes: 16_384,
-          maxProgressEvents: 32,
-        },
-      },
-    },
+    reasonCodes: [],
+    checkedAt,
   };
 }
 
-async function writeDeployment(kind: DeploymentKind) {
-  const root = await mkdtemp(path.join(tmpdir(), "himawari-reactivate-"));
+async function writeDeployment(options: {
+  readonly versions: readonly string[];
+  readonly digest?: string;
+}) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "himawari-capability-gateway-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
+  const snapshotPath = path.join(root, "deployment.json");
   const bytes = Buffer.from(
     JSON.stringify({
       schemaVersion: "capability-deployment.v1",
-      capabilities: [deploymentEntry(programManifest(RUNNER_DIGEST), kind !== "unqualified")],
+      capabilities: options.versions.map((version) => ({
+        manifest: endpointManifest(version),
+        qualification: qualificationFor(T0),
+        binding: {
+          kind: "endpoint",
+          value: {
+            endpointIdentity: "endpoint:production-capability",
+            artifactDigest: ENDPOINT_DIGEST,
+            url: "https://capability.example.test",
+            allowedMethods: ["POST"],
+            operations: { invoke: { method: "POST", path: "/invoke", secretHeaders: {} } },
+            productionSuitable: true,
+            allowLoopbackQualification: false,
+          },
+        },
+      })),
     }),
+    "utf8",
   );
-  const snapshotPath = path.join(root, "snapshot.json");
   await writeFile(snapshotPath, bytes, { mode: 0o600 });
-  await chmod(snapshotPath, 0o600);
   return {
     snapshotPath,
-    sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+    sha256: options.digest ?? `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
   };
 }
 
-async function fixture(deployment?: DeploymentKind) {
-  const deployed = deployment ? await writeDeployment(deployment) : undefined;
+async function withPreviousVersion(f: Awaited<ReturnType<typeof fixture>>, version: string) {
+  await f.capabilities.save(
+    {
+      ...record(),
+      rollbackDeclaration: endpointManifest(version),
+      rollbackQualification: qualificationFor(T0),
+      runtimeQualification: qualificationFor(T0),
+      revision: 2,
+    },
+    1,
+  );
+}
+
+const rollbackMessage = (
+  f: Awaited<ReturnType<typeof fixture>>,
+  key: string,
+  recentAuthenticationRef: string | null,
+) =>
+  f.message(
+    "command",
+    "capability.rollback",
+    {
+      capabilityRef: CAPABILITY_REF,
+      expectedRevision: 2,
+      reasonCode: "owner_rollback",
+      recentAuthenticationRef,
+    },
+    key,
+  );
+
+async function fixture(deployment?: {
+  readonly versions: readonly string[];
+  readonly digest?: string;
+}) {
   const resource = await openRepository(true);
   cleanups.push(async () => {
     await resource.repository.close();
     await rm(resource.stateRoot, { recursive: true, force: true });
   });
   const { repository } = resource;
-  let nowValue = T1;
-  const clock = { now: () => nowValue };
-  const capabilityLifecycle = createProductionCapabilityLifecycle({
-    configuration: {
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      ...(deployed ? { capabilityDeployment: deployed } : {}),
-    },
-    repository,
-    clock,
-  });
+  const clock = { now: () => T1 };
   const capabilities = repository.capabilityStore(OWNER_ID, AGENT_ID);
-  await capabilities.create(
-    deployment
-      ? {
-          ...record(),
-          declaration: programManifest(
-            deployment === "digest-mismatch" ? "9".repeat(64) : RUNNER_DIGEST,
-          ) as unknown as CapabilityManifest,
-        }
-      : record(),
-  );
+  await capabilities.create(record());
   await capabilities.createExecutionHandle({ ...handle(), capabilityRef: CAPABILITY_REF });
   const seedDatabase = new Database(path.join(resource.stateRoot, "product.sqlite"));
   seedDatabase
@@ -307,6 +253,7 @@ async function fixture(deployment?: DeploymentKind) {
       null,
     );
   }
+  const capabilityDeployment = deployment ? await writeDeployment(deployment) : undefined;
   const gateway = createProductionApprovalGateway({
     configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
     repository,
@@ -328,7 +275,15 @@ async function fixture(deployment?: DeploymentKind) {
         };
       },
     },
-    capabilityLifecycle,
+    capabilityLifecycle: createProductionCapabilityLifecycle({
+      configuration: {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ...(capabilityDeployment ? { capabilityDeployment } : {}),
+      },
+      repository,
+      clock,
+    }),
   });
   const authentication = {
     ownerId: OWNER_ID,
@@ -356,19 +311,7 @@ async function fixture(deployment?: DeploymentKind) {
     });
     return parsed as Parameters<typeof gateway.request>[1];
   };
-  return {
-    repository,
-    stateRoot: resource.stateRoot,
-    setNow: (value: string) => {
-      nowValue = value;
-    },
-    deployed,
-    capabilities,
-    capabilityLifecycle,
-    gateway,
-    authentication,
-    message,
-  };
+  return { repository, capabilities, gateway, authentication, message };
 }
 
 it("lists and shows a capability from the real store", async () => {
@@ -430,7 +373,11 @@ it("refuses disable without recent authentication, then disables and reports the
     f.message("query", "capability.detail", { capabilityRef: CAPABILITY_REF }),
   );
   expect(detail).toMatchObject({
-    payload: { lifecycle: "disabled", lastInvalidation: { cancelledScheduledJobs: 2 } },
+    payload: {
+      lifecycle: "disabled",
+      lastInvalidation: { cancelledScheduledJobs: 2 },
+      dependencyTaskRefs: [],
+    },
   });
 });
 
@@ -458,155 +405,118 @@ it("refuses rollback when there is no previous version", async () => {
   });
 });
 
-async function disabledFixture(deployment: DeploymentKind) {
-  const f = await fixture(deployment);
-  await f.gateway.request(
-    f.authentication,
-    f.message(
-      "command",
-      "capability.disable",
-      {
-        capabilityRef: CAPABILITY_REF,
-        expectedRevision: 1,
-        reasonCode: "owner_disabled",
-        recentAuthenticationRef: f.authentication.authenticationRef,
+it("refuses rollback when the previous version is not in the deployment snapshot and says why", async () => {
+  const f = await fixture();
+  const previous = { ...manifest(), version: "0.9.0" };
+  await f.capabilities.save(
+    {
+      ...record(),
+      rollbackDeclaration: previous,
+      runtimeQualification: {
+        qualificationVersion: "capability-runtime-qualification.v1",
+        platform: "linux",
+        runtimeIdentity: "fixture",
+        productionSuitable: true,
+        artifactDigest: HASH,
+        enforcement: {
+          filesystem: true,
+          network: true,
+          processes: true,
+          secrets: true,
+          resourceCeilings: true,
+          termination: true,
+        },
+        reasonCodes: [],
+        checkedAt: T0,
       },
-      "disable-first",
-    ),
+      revision: 2,
+    },
+    1,
   );
-  const reactivate = (
-    recentAuthenticationRef: string | null,
-    key: string,
-    expectedRevision = 2,
-  ) =>
-    f.message(
-      "command",
-      "capability.reactivate",
-      {
-        capabilityRef: CAPABILITY_REF,
-        expectedRevision,
-        reasonCode: "owner_reactivated",
-        recentAuthenticationRef,
-      },
-      key,
-    );
-  return { ...f, reactivate };
-}
-
-it("refuses reactivation without recent authentication and leaves the capability disabled", async () => {
-  const f = await disabledFixture("matching");
   await expect(
-    f.gateway.request(f.authentication, f.reactivate(null, "reactivate-none")),
-  ).rejects.toThrow("RECENT_AUTH_REQUIRED");
-  await expect(
-    f.gateway.request(f.authentication, f.reactivate("session:other", "reactivate-other")),
-  ).rejects.toThrow("RECENT_AUTH_REQUIRED");
+    f.gateway.request(
+      f.authentication,
+      f.message(
+        "command",
+        "capability.rollback",
+        {
+          capabilityRef: CAPABILITY_REF,
+          expectedRevision: 2,
+          reasonCode: "owner_rollback",
+          recentAuthenticationRef: f.authentication.authenticationRef,
+        },
+        "rollback-not-in-snapshot",
+      ),
+    ),
+  ).rejects.toMatchObject({
+    code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+    details: { reasons: "capability_deployment_not_configured" },
+  });
   expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({
-    lifecycle: "disabled",
+    lifecycle: "active",
     revision: 2,
   });
 });
 
-it("keeps the capability disabled when the installed artifact digest does not match", async () => {
-  const f = await disabledFixture("digest-mismatch");
-  await expect(
-    f.gateway.request(
-      f.authentication,
-      f.reactivate(f.authentication.authenticationRef, "reactivate-digest"),
-    ),
-  ).rejects.toBeDefined();
-  expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({
-    lifecycle: "disabled",
-    revision: 2,
-  });
-});
-
-it("keeps the capability disabled when the runtime qualification fails", async () => {
-  const f = await disabledFixture("unqualified");
-  await expect(
-    f.gateway.request(
-      f.authentication,
-      f.reactivate(f.authentication.authenticationRef, "reactivate-unqualified"),
-    ),
-  ).rejects.toBeDefined();
-  expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({
-    lifecycle: "disabled",
-    revision: 2,
-  });
-});
-
-it("rejects a reactivation for a stale revision", async () => {
-  const f = await disabledFixture("matching");
-  await expect(
-    f.gateway.request(
-      f.authentication,
-      f.reactivate(f.authentication.authenticationRef, "reactivate-stale", 1),
-    ),
-  ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
-  expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({ lifecycle: "disabled" });
-});
-
-it("still refuses to activate a disabled capability directly", async () => {
-  const f = await disabledFixture("matching");
-  await expect(f.capabilityLifecycle.activate(CAPABILITY_REF)).rejects.toBeDefined();
-  expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({ lifecycle: "disabled" });
-});
-
-it("reactivates a disabled capability without restoring handles or scheduled jobs", async () => {
-  const f = await disabledFixture("matching");
+it("rolls back to the previous version when the deployment snapshot carries it", async () => {
+  const f = await fixture({ versions: ["0.9.0"] });
+  await withPreviousVersion(f, "0.9.0");
   await f.gateway.request(
     f.authentication,
-    f.reactivate(f.authentication.authenticationRef, "reactivate-ok"),
+    rollbackMessage(f, "rollback-ok", f.authentication.authenticationRef),
   );
   expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({
     lifecycle: "active",
     revision: 3,
-    lastInvalidation: { lifecycle: "disabled", cancelledScheduledJobs: 2 },
+    declaration: { version: "0.9.0" },
+    rollbackDeclaration: null,
+    lastVersionTransition: { fromVersion: "1.0.0", toVersion: "0.9.0", outcome: "rolled_back" },
   });
   await expect(f.capabilities.getExecutionHandle(handle().ref)).resolves.toMatchObject({
     revokedAt: T1,
   });
-  const database = new Database(path.join(f.stateRoot, "product.sqlite"), { readonly: true });
-  const statuses = database
-    .prepare("SELECT status FROM scheduled_jobs WHERE json_extract(record_json, '$.capabilityRef') = ?")
-    .all(CAPABILITY_REF) as Array<{ status: string }>;
-  database.close();
-  expect(statuses).toHaveLength(2);
-  expect(statuses.every(({ status }) => status === "revoked")).toBe(true);
-  const list = await f.gateway.request(
-    f.authentication,
-    f.message("query", "capability.list", { lifecycle: "active", afterCursor: null, limit: 50 }),
-  );
-  expect(JSON.stringify(list)).toContain(CAPABILITY_REF);
-  await expect(f.capabilityLifecycle.authorizedManifests()).resolves.toHaveLength(1);
-  const replay = await f.gateway.request(
-    f.authentication,
-    f.reactivate(f.authentication.authenticationRef, "reactivate-ok"),
-  );
-  expect(JSON.stringify(replay)).toContain("revision-3");
 });
 
-it("reactivates long after startup because the snapshot admitted at startup is reused", async () => {
-  const f = await disabledFixture("matching");
-  f.setNow("2026-09-05T00:00:00.000Z");
-  await f.gateway.request(
-    f.authentication,
-    f.reactivate(f.authentication.authenticationRef, "reactivate-later"),
-  );
-  expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({ lifecycle: "active" });
-});
-
-it("keeps the capability disabled when the installed snapshot changed after startup", async () => {
-  const f = await disabledFixture("matching");
-  await writeFile(f.deployed?.snapshotPath ?? "", "{}", { mode: 0o600 });
+it("refuses rollback and names the reason when the snapshot lacks the previous version", async () => {
+  const f = await fixture({ versions: ["2.0.0"] });
+  await withPreviousVersion(f, "0.9.0");
   await expect(
     f.gateway.request(
       f.authentication,
-      f.reactivate(f.authentication.authenticationRef, "reactivate-changed"),
+      rollbackMessage(f, "rollback-missing", f.authentication.authenticationRef),
     ),
-  ).rejects.toBeDefined();
-  expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({
-    lifecycle: "disabled",
-    revision: 2,
+  ).rejects.toMatchObject({
+    code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+    details: { reasons: "capability_not_in_deployment_snapshot" },
   });
+  expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({ revision: 2 });
+});
+
+it("refuses rollback and names the reason when the snapshot cannot be read", async () => {
+  const f = await fixture({ versions: ["0.9.0"], digest: `sha256:${"1".repeat(64)}` });
+  await withPreviousVersion(f, "0.9.0");
+  await expect(
+    f.gateway.request(
+      f.authentication,
+      rollbackMessage(f, "rollback-unreadable", f.authentication.authenticationRef),
+    ),
+  ).rejects.toMatchObject({
+    code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+    details: { reasons: "capability_deployment_snapshot_unreadable" },
+  });
+  expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({ revision: 2 });
+});
+
+it("refuses rollback without matching recent authentication and leaves state unchanged", async () => {
+  const f = await fixture({ versions: ["0.9.0"] });
+  await withPreviousVersion(f, "0.9.0");
+  for (const ref of [null, "session:another-device"]) {
+    await expect(
+      f.gateway.request(f.authentication, rollbackMessage(f, `rollback-auth-${ref}`, ref)),
+    ).rejects.toThrow("RECENT_AUTH_REQUIRED");
+    expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({
+      revision: 2,
+      declaration: { version: "1.0.0" },
+    });
+  }
 });
