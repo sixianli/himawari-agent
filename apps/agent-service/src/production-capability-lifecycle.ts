@@ -3,6 +3,7 @@ import {
   type CapabilityArtifactVerification,
   CapabilityLifecycleService,
   type CapabilityManifest,
+  type CapabilityReactivationVerifierPort,
   type CapabilityRuntimeQualification,
   type ClockPort,
   PORT_ERROR_CODES,
@@ -29,6 +30,7 @@ export function createProductionCapabilityLifecycle(options: {
   >;
   readonly repository: SqliteProductStateRepository;
   readonly clock: ClockPort;
+  readonly reactivation?: CapabilityReactivationVerifierPort;
 }): CapabilityLifecycleService {
   const { configuration, repository, clock } = options;
   const deployment = configuration.capabilityDeployment;
@@ -54,6 +56,7 @@ export function createProductionCapabilityLifecycle(options: {
   return new CapabilityLifecycleService({
     store: repository.capabilityStore(configuration.ownerId, configuration.agentId),
     clock,
+    ...(options.reactivation ? { reactivation: options.reactivation } : {}),
     artifacts: {
       verify: async (manifest): Promise<CapabilityArtifactVerification> => {
         const { entry, reason } = await entryFor(manifest);

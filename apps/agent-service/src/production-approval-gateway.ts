@@ -69,6 +69,9 @@ export const PRODUCTION_CAPABILITY_OPERATIONS = Object.freeze([
   "capability.detail",
   "capability.disable",
   "capability.rollback",
+] as const);
+
+export const PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS = Object.freeze([
   "capability.reactivate",
 ] as const);
 
@@ -91,6 +94,7 @@ export function createProductionApprovalGateway(options: {
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
   readonly serverStatusControl?: ProductionServerStatusControl;
   readonly capabilityLifecycle?: CapabilityLifecycleService;
+  readonly capabilityReactivationAvailable?: boolean;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -280,6 +284,9 @@ export function createProductionApprovalGateway(options: {
         : []),
       ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
       ...(options.capabilityLifecycle ? PRODUCTION_CAPABILITY_OPERATIONS : []),
+      ...(options.capabilityLifecycle && options.capabilityReactivationAvailable
+        ? PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS
+        : []),
     ],
     reads,
     controlPlane,

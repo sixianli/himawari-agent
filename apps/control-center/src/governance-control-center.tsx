@@ -838,9 +838,15 @@ export function useGovernanceControlCenter({
 
   const itemRefs =
     listSnapshot?.type === "collection.snapshot" ? listSnapshot.payload.itemRefs : [];
+  const installedOperations = configuration?.installedGatewayV2Operations;
   const actions = useMemo(
-    () => (detailSnapshot ? detailActions(detailSnapshot) : []),
-    [detailSnapshot],
+    () =>
+      (detailSnapshot ? detailActions(detailSnapshot) : []).filter(
+        (candidate) =>
+          installedOperations === undefined ||
+          installedOperations.includes(actionIdentity(candidate).commandType),
+      ),
+    [detailSnapshot, installedOperations],
   );
 
   const list = (
@@ -946,6 +952,9 @@ export function useGovernanceControlCenter({
           unavailableTitle={message("governance.actionUnavailable")}
         >
           <p>{message("governance.actionDescription")}</p>
+          {action.kind === "capability.reactivate" ? (
+            <p>{message("governance.reactivateCapabilityDescription")}</p>
+          ) : null}
           <code>{actionIdentity(action).objectRef}</code>
         </GovernedActionDialog>
       ) : null}

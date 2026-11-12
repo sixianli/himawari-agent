@@ -593,6 +593,8 @@ export const messages = {
   "governance.disableCapability": "停用能力",
   "governance.rollbackCapability": "回退能力版本",
   "governance.reactivateCapability": "重新启用能力",
+  "governance.reactivateCapabilityDescription":
+    "重新启用前会核对安装包和上线时的检查结果。停用时撤销的句柄和取消的定时任务不会恢复。",
   "governance.conflictTitle": "其他客户端已更新此治理对象",
   "governance.conflictDescription": "已重新读取最新修订；请核对后再明确提交，旧操作不会静默覆盖。",
   "governance.offlineNoMutation": "离线时治理命令不会在浏览器本地生效。",

@@ -103,6 +103,7 @@ import { strictModeUnavailableTools } from "./production-execution-environment.j
 import { createProductionFileReadServices } from "./production-file-read-services.js";
 import { ProductionGapExport } from "./production-gap-export.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
+import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import {
   createProductionHttpComposition,
   type ProductionHttpComposition,
@@ -2788,6 +2789,11 @@ export async function startTenantRuntime(
       if (configuration.runPolicy?.mcpRead !== undefined && !mcpRead)
         throw new Error("MCP_READ_RUNTIME_UNAVAILABLE");
       http = await createProductionHttpComposition({
+        capabilityReactivation: createProductionCapabilityReactivationVerifier({
+          configuration,
+          layout,
+          trustedPeerBinding: () => peerBinding,
+        }),
         ...(input.listen?.kind === "unix" ? { listenUnixSocketPath: input.listen.path } : {}),
         live,
         webPush: { presence: webPushPresence, push: webPush },

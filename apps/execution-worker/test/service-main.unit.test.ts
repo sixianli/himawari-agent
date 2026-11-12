@@ -4,8 +4,10 @@ import path from "node:path";
 import { Writable } from "node:stream";
 import {
   initializeStateRoot,
+  readWorkerQualifiedDeployment,
   writeAgentServiceBootBinding,
   writeAuthorityFile,
+  writeWorkerQualifiedDeployment,
 } from "@himawari-agent/platform-node";
 import { createV02Fixture } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -188,6 +190,29 @@ describe("execution Worker service main", () => {
     expect(qualification.started).toBe(1);
     expect(JSON.parse(diagnostics.text())).toMatchObject({
       code: EXECUTION_WORKER_SERVICE_ERROR_CODES.STARTUP_TIMEOUT,
+    });
+  }, 5_000);
+
+  it("clears an earlier boot's qualified record and publishes none when startup fails", async () => {
+    const { configurationPath, layout } = await fixture();
+    await writeWorkerQualifiedDeployment(layout, {
+      workerInstanceId: `execution-worker:${FIXTURE_SCOPE.authority.deploymentId}`,
+      workerBootId: "worker-boot:old",
+      deploymentId: FIXTURE_SCOPE.authority.deploymentId,
+      snapshotDigest: `sha256:${"a".repeat(64)}`,
+    });
+    const diagnostics = capture();
+
+    await expect(
+      runExecutionWorkerService(
+        serviceArguments(configurationPath),
+        diagnostics.stream,
+        diagnostics.stream,
+        FAST_STARTUP_TIMING,
+      ),
+    ).resolves.toBe(1);
+    await expect(readWorkerQualifiedDeployment(layout)).rejects.toMatchObject({
+      code: "STATE_ROOT_BOOT_BINDING_INVALID",
     });
   }, 5_000);
 

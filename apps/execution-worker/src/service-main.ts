@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EXECUTION_V2_SCHEMA_VERSION } from "@himawari-agent/execution-contracts";
 import {
+  clearWorkerQualifiedDeployment,
   ExecutionUdsServer,
   initializeStateRoot,
   JsonFileConfigurationPort,
@@ -11,6 +12,7 @@ import {
   stableErrorCode,
   waitForTerminationSignal,
   writeServiceDiagnostic,
+  writeWorkerQualifiedDeployment,
   writeWorkerServiceBootBinding,
 } from "@himawari-agent/platform-node";
 import {
@@ -158,6 +160,7 @@ export async function runExecutionWorkerService(
     }
     const workerInstanceId = `execution-worker:${configuration.deploymentId}`;
     const workerBootId = `worker-boot:${randomUUID()}`;
+    await clearWorkerQualifiedDeployment(layout);
     const credential = await readRestrictedExecutionTokenFile(args.workerTokenPath);
     const [binding, qualified] = await bindingThenQualification(
       waitForAgentBinding({
@@ -169,6 +172,12 @@ export async function runExecutionWorkerService(
       }),
       qualifyProductionWorkerDeployment({ configuration }),
     );
+    await writeWorkerQualifiedDeployment(layout, {
+      workerInstanceId,
+      workerBootId,
+      deploymentId: configuration.deploymentId,
+      snapshotDigest: qualified.deployment.snapshotDigest,
+    });
     composition = await createProductionWorkerComposition(
       {
         configuration,
