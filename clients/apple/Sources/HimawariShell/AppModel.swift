@@ -262,6 +262,7 @@ public final class AppModel {
             let configuration = try await api.configuration()
             self.configuration = configuration
             heartbeat.seconds = TimeInterval(configuration.heartbeatSeconds)
+            chat?.streamConnections = configuration.streamConnections
         } catch let error as DeviceAPIError where error.isRevoked {
             forget(problem: .removed)
         } catch {
@@ -277,6 +278,7 @@ public final class AppModel {
                 let configuration = try await api.configuration()
                 self.configuration = configuration
                 heartbeat.seconds = TimeInterval(configuration.heartbeatSeconds)
+                chat?.streamConnections = configuration.streamConnections
                 configurationRetry = nil
             } catch let error as DeviceAPIError where error.isRevoked {
                 forget(problem: .removed)

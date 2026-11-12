@@ -99,8 +99,11 @@ public final class ChatStore {
         unwatch()
     }
 
+    public var streamConnections: Int?
+
     public func watch(_ threadId: String) {
         guard !frozen else { return }
+        if let streamConnections, streamConnections < 2 { return }
         if watched?.threadId == threadId { return }
         unwatch()
         let stream = DeviceEventStream(http: api.http, path: "threads/\(threadId)/execution-stream", cursors: nil, heartbeat: heartbeatSeconds)

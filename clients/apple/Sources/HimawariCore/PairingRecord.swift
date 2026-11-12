@@ -36,6 +36,7 @@ public enum PairingProblem: Sendable, Equatable {
             switch code {
             case "DEVICE_PAIRING_CODE_EXPIRED": return .codeExpired(ttlSeconds: ttl.flatMap { $0 > 0 ? $0 : nil })
             case "DEVICE_PAIRING_CODE_USED": return .codeUsed
+            case "DEVICE_REVOKED": return .removed
             case "DEVICE_PAIRING_CODE_INVALID", "DEVICE_PAIRING_REQUEST_INVALID": return .codeInvalid
             default: return status >= 500 ? .unreachable : .codeInvalid
             }

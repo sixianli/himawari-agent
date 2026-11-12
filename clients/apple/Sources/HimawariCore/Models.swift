@@ -43,6 +43,7 @@ public struct DeviceConfiguration: Codable, Sendable, Equatable {
     public let connectionMaxSeconds: Int
     public let signatureToleranceSeconds: Int
     public let limits: [DeviceLimit]
+    public let streamConnections: Int?
 
     public func limit(_ key: String) -> Int64? {
         limits.first { $0.key == key }?.value
