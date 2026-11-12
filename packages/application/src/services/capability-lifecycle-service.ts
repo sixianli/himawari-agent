@@ -658,7 +658,7 @@ export class CapabilityLifecycleService {
     if (
       !qualification.productionSuitable ||
       qualification.artifactDigest !== manifest.integrity ||
-      Object.values(qualification.enforcement).some((enforced) => !enforced)
+      !qualificationEnforcementHolds(qualification)
     ) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
@@ -757,4 +757,17 @@ export class CapabilityLifecycleService {
       `Capability ${current.ref} cannot move from ${current.lifecycle} to ${requested}`,
     );
   }
+}
+
+function qualificationEnforcementHolds(qualification: CapabilityRuntimeQualification): boolean {
+  const { enforcement, sandbox } = qualification;
+  if (!sandbox) return Object.values(enforcement).every(Boolean);
+  return (
+    enforcement.filesystem &&
+    enforcement.network &&
+    enforcement.processes &&
+    enforcement.secrets &&
+    !enforcement.resourceCeilings &&
+    enforcement.termination === (sandbox.terminationMode === "verified_tree")
+  );
 }
