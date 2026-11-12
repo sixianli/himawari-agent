@@ -307,6 +307,7 @@ function memoryFixture(): MemoryOverview {
     ],
     people: [],
     imports: [],
+    externalProposals: { total: 0, items: [], batches: [] },
     capturePaused: false,
     generatedAt: NOW.toISOString(),
   } as unknown as MemoryOverview;

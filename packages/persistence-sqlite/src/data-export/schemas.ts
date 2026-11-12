@@ -1,6 +1,6 @@
 import type { JsonSchema } from "./schema.js";
 
-export const FORMAT_VERSION = "himawari.data-export.v2" as const;
+export const FORMAT_VERSION = "himawari.data-export.v3" as const;
 
 const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
 const CATEGORIES = [
@@ -148,6 +148,55 @@ export const IMPORT_BATCH_SCHEMA: JsonSchema = objectOf(
   },
   [],
   "一次从别处导入记忆的批次。",
+);
+
+export const EXTERNAL_PROPOSAL_CATEGORIES = [
+  "identity",
+  "preference",
+  "relationship",
+  "goal",
+  "project",
+  "health",
+  "finance",
+  "event",
+  "other",
+] as const;
+export const EXTERNAL_PROPOSAL_STATUSES = [
+  "pending",
+  "committed",
+  "rejected",
+  "superseded",
+] as const;
+
+export const externalProposalTextKey = (id: string): string => `externalProposal/${id}/content`;
+export const externalProposalDigestKey = (id: string): string =>
+  `externalProposal/${id}/textSha256`;
+
+export const EXTERNAL_PROPOSAL_SCHEMA: JsonSchema = objectOf(
+  {
+    id: text(1, 128),
+    subjectRef: text(1, 128),
+    client: text(1, 64),
+    sourceKey: nullable(text(1, 200)),
+    textSha256: nullable({ type: "string", pattern: "^[0-9a-f]{64}$" }),
+    normalization: text(1, 64),
+    category: enumOf(EXTERNAL_PROPOSAL_CATEGORIES),
+    classification: enumOf(["private", "sensitive"]),
+    status: enumOf(EXTERNAL_PROPOSAL_STATUSES),
+    receivedAt: timestamp,
+    decidedAt: nullable(timestamp),
+    batchId: nullable(text(1, 128)),
+    memoryId: nullable(text(1, 512)),
+    supersededBy: nullable(text(1, 128)),
+    content: nullableText,
+    keys: {
+      type: "array",
+      items: objectOf({ client: text(1, 64), sourceKey: text(1, 200) }),
+    },
+    unkeyedClients: { type: "array", items: text(1, 64) },
+  },
+  [],
+  "其他 agent 通过 MCP 提议的一条记忆和它的处理结果。content 为 null 表示正文已按规则删掉（拒绝满 30 天，或被替换）。content 被扣留时 textSha256 为 null，摘要和原文一起在密封文件里。keys 是各客户端的固定编号现在指向这一条的；unkeyedClients 是不带编号送过这段正文的客户端。",
 );
 
 export const CONSOLIDATION_SCHEMA: JsonSchema = objectOf(
@@ -431,6 +480,7 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       markdownMemories: integer(0),
       rules: integer(0),
       enforcedRules: integer(0),
+      externalProposals: integer(0),
       ruleHistoryVersions: integer(0),
       sealedOriginals: integer(0),
       sealedEvidenceRows: integer(0),
@@ -449,6 +499,7 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       "markdownMemories",
       "rules",
       "enforcedRules",
+      "externalProposals",
       "ruleHistoryVersions",
       "sealedOriginals",
       "sealedEvidenceRows",
@@ -477,6 +528,7 @@ export const SCHEMA_FILES: readonly { readonly path: string; readonly schema: Js
     { path: "schema/conversation-reviews.schema.json", schema: CONVERSATION_REVIEW_SCHEMA },
     { path: "schema/decisions.schema.json", schema: DECISION_SCHEMA },
     { path: "schema/evidence.schema.json", schema: EVIDENCE_SCHEMA },
+    { path: "schema/external-memory-proposals.schema.json", schema: EXTERNAL_PROPOSAL_SCHEMA },
     { path: "schema/import-batches.schema.json", schema: IMPORT_BATCH_SCHEMA },
     { path: "schema/manifest.schema.json", schema: MANIFEST_SCHEMA },
     { path: "schema/memories.schema.json", schema: MEMORY_SCHEMA },
@@ -492,6 +544,7 @@ export const DATA_FILES = Object.freeze({
   conversationReviews: "data/conversation-reviews.jsonl",
   decisions: "data/decisions.jsonl",
   rules: "data/rules.jsonl",
+  externalProposals: "data/external-memory-proposals.jsonl",
 } as const);
 
 export const SEALED_FILE = "sealed/sealed.enc";
