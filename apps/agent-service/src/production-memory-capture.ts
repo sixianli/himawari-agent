@@ -161,6 +161,25 @@ export interface SupportCheck {
   readonly quote: string;
 }
 
+export class SupportVerdictCache {
+  readonly #known = new Map<string, boolean>();
+
+  get(check: SupportCheck): boolean | undefined {
+    return this.#known.get(this.#key(check));
+  }
+
+  set(check: SupportCheck, verdict: boolean): void {
+    if (this.#known.size >= MAXIMUM_SUPPORT_CACHE) this.#known.clear();
+    this.#known.set(this.#key(check), verdict);
+  }
+
+  #key(check: SupportCheck): string {
+    return createHash("sha256")
+      .update(`${SUPPORT_JUDGE_VERSION}\u0000${check.memoryText}\u0000${check.quote}`)
+      .digest("hex");
+  }
+}
+
 export function supportCheckKey(memoryId: string, quote: string): string {
   return `${memoryId}\u0000${quote}`;
 }
@@ -751,7 +770,7 @@ export class ProductionMemoryCapture {
   readonly #pending = new Map<string, { work: Promise<void>; admitted: Promise<void> }>();
   readonly #captured = new Set<string>();
   readonly #busy = new Set<string>();
-  readonly #supportCache = new Map<string, boolean>();
+  readonly #supportCache = new SupportVerdictCache();
   readonly #settled = new Set<string>();
   #stopping = false;
   private readonly options: ProductionMemoryCaptureOptions;
@@ -1129,10 +1148,7 @@ export class ProductionMemoryCapture {
   ): Promise<ReadonlyMap<string, boolean>> {
     const verdicts = new Map<string, boolean>();
     for (const [index, check] of checks.entries()) {
-      const cacheKey = createHash("sha256")
-        .update(`${SUPPORT_JUDGE_VERSION}\u0000${check.memoryText}\u0000${check.quote}`)
-        .digest("hex");
-      const known = this.#supportCache.get(cacheKey);
+      const known = this.#supportCache.get(check);
       if (known !== undefined) {
         verdicts.set(check.key, known);
         continue;
@@ -1154,10 +1170,7 @@ export class ProductionMemoryCapture {
           this.options.onFailure(error);
         },
       );
-      if (settled) {
-        if (this.#supportCache.size >= MAXIMUM_SUPPORT_CACHE) this.#supportCache.clear();
-        this.#supportCache.set(cacheKey, verdict);
-      }
+      if (settled) this.#supportCache.set(check, verdict);
       verdicts.set(check.key, verdict);
     }
     return verdicts;

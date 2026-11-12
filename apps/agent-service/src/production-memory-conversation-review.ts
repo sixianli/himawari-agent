@@ -48,6 +48,7 @@ import {
   parseMemoryCandidates,
   parseSupportVerdict,
   type SupportCheck,
+  SupportVerdictCache,
 } from "./production-memory-capture.js";
 
 type MemoryId = ProductMemoryRecord["id"];
@@ -415,6 +416,7 @@ export class ProductionMemoryConversationReview {
   readonly #options: ProductionMemoryConversationReviewOptions;
   readonly #pending = new Map<string, Promise<void>>();
   #attemptedAt = Number.NEGATIVE_INFINITY;
+  readonly #supportCache = new SupportVerdictCache();
   #stopping = false;
 
   constructor(options: ProductionMemoryConversationReviewOptions) {
@@ -742,7 +744,7 @@ export class ProductionMemoryConversationReview {
     const parsed =
       first.supportChecks.length === 0
         ? first
-        : parse(await this.#judgeSupport(request, review, first.supportChecks));
+        : parse(await this.#judgeSupport(plan, first.supportChecks));
     const changes: MemoryConversationReviewChange[] = [];
     for (const group of parsed.groups)
       changes.push(...(await this.#commit(plan, group, parsed.skipped)));
@@ -752,29 +754,39 @@ export class ProductionMemoryConversationReview {
   }
 
   async #judgeSupport(
-    request: RuntimeRequest,
-    review: MemoryConversationReview,
+    plan: ReviewPlan,
     checks: readonly SupportCheck[],
   ): Promise<ReadonlyMap<string, boolean>> {
+    const { review, request } = plan;
     const verdicts = new Map<string, boolean>();
     for (const [index, check] of checks.entries()) {
       if (verdicts.has(check.key)) continue;
+      const known = this.#supportCache.get(check);
+      if (known !== undefined) {
+        verdicts.set(check.key, known);
+        continue;
+      }
+      if (this.#stopping) throw new Error("MEMORY_CONVERSATION_REVIEW_STOPPING");
+      await this.#options.assertActive();
       const prompt = memoryConfirmationJudgePrompt(check.memoryText, check.quote);
-      verdicts.set(
-        check.key,
-        await judgeOrDefault(
-          {
-            ask: (attempt) =>
-              this.#options.generate(request, prompt, () => {}, {
-                invocationId: `${review.id}:${review.attempts}:support:${index}:${attempt}`,
-                retryToolCall: false,
-              }),
-            parse: parseSupportVerdict,
-          },
-          false,
-          this.#options.onFailure,
-        ),
+      let settled = true;
+      const verdict = await judgeOrDefault(
+        {
+          ask: (attempt) =>
+            this.#options.generate(request, prompt, () => {}, {
+              invocationId: `${review.id}:${review.attempts}:support:${index}:${attempt}`,
+              retryToolCall: false,
+            }),
+          parse: parseSupportVerdict,
+        },
+        false,
+        (error) => {
+          settled = false;
+          this.#options.onFailure(error);
+        },
       );
+      if (settled) this.#supportCache.set(check, verdict);
+      verdicts.set(check.key, verdict);
     }
     return verdicts;
   }
