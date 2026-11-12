@@ -10,7 +10,6 @@
     "@himawari-agent/application": "0.0.0",
     "@himawari-agent/domain": "0.0.0",
     "@himawari-agent/execution-contracts": "0.0.0",
-    "@himawari-agent/gateway-contracts": "0.0.0",
-    "@octokit/app": "16.1.4"
+    "@himawari-agent/gateway-contracts": "0.0.0"
   }
 }
