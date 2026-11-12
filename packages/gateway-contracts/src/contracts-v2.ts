@@ -81,6 +81,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.person.respond",
   "memory.import.commit",
   "memory.import.undo",
+  "memory.external.respond",
+  "memory.external.undo",
   "github.monitor.set_state",
   "memory.mutate",
   "grant.revoke",
@@ -1031,6 +1033,11 @@ export const MEMORY_CATEGORY_NAMES = [
   "other",
 ] as const;
 export const MEMORY_SENSITIVE_CATEGORY_NAMES = ["health", "finance"] as const;
+export const MEMORY_EXTERNAL_CATEGORY_NAMES = MEMORY_CATEGORY_NAMES.filter(
+  (category): category is Exclude<(typeof MEMORY_CATEGORY_NAMES)[number], "rule"> =>
+    category !== "rule",
+);
+export const MEMORY_EXTERNAL_RESPOND_MAXIMUM = 500;
 export const MEMORY_HISTORY_KIND_NAMES = [
   "created",
   "updated",
@@ -1396,6 +1403,27 @@ const memoryOverviewSnapshotSchema = object({
         requestedAt: timestamp,
       }),
     ),
+    externalProposals: object({
+      total: integer(0),
+      items: array(
+        object({
+          proposalId: machineString,
+          text: boundedString(2000),
+          category: enumeration(MEMORY_EXTERNAL_CATEGORY_NAMES),
+          dataClassification: enumeration(["private", "sensitive"]),
+          client: boundedString(64),
+          receivedAt: timestamp,
+        }),
+      ),
+      batches: array(
+        object({
+          batchId: machineString,
+          decidedAt: timestamp,
+          committed: integer(0),
+          rejected: integer(0),
+        }),
+      ),
+    }),
     generatedAt: timestamp,
   }),
 });
@@ -1499,6 +1527,34 @@ const memoryImportCommitCommandSchema = object({
 });
 const memoryImportUndoCommandSchema = object({
   ...commandEnvelope("memory.import.undo"),
+  payload: object({ batchId: machineString }),
+});
+const memoryExternalRespondItemsSchema = array(
+  object({
+    proposalId: machineString,
+    decision: enumeration(["keep", "reject"]),
+    editedText: nullable(boundedString(2000)),
+  }),
+);
+const memoryExternalRespondCommandSchema = object({
+  ...commandEnvelope("memory.external.respond"),
+  payload: object({
+    items: {
+      parse(input, path = "$.payload.items") {
+        const items = memoryExternalRespondItemsSchema.parse(input, path);
+        if (items.length < 1 || items.length > MEMORY_EXTERNAL_RESPOND_MAXIMUM)
+          throw new ContractValidationError(path, "must hold 1 to 500 items");
+        if (new Set(items.map(({ proposalId }) => proposalId)).size !== items.length)
+          throw new ContractValidationError(path, "must not repeat a proposal");
+        if (items.some(({ decision, editedText }) => decision === "reject" && editedText !== null))
+          throw new ContractValidationError(path, "a rejected proposal cannot carry edited text");
+        return items;
+      },
+    },
+  }),
+});
+const memoryExternalUndoCommandSchema = object({
+  ...commandEnvelope("memory.external.undo"),
   payload: object({ batchId: machineString }),
 });
 const memoryApprovalRespondCommandSchema = object({
@@ -2393,6 +2449,8 @@ const schemasByType = {
   "memory.person.respond": memoryPersonRespondCommandSchema,
   "memory.import.commit": memoryImportCommitCommandSchema,
   "memory.import.undo": memoryImportUndoCommandSchema,
+  "memory.external.respond": memoryExternalRespondCommandSchema,
+  "memory.external.undo": memoryExternalUndoCommandSchema,
   "github.monitor.set_state": setGitHubMonitorStateCommandSchema,
   "memory.mutate": mutateMemoryCommandSchema,
   "grant.revoke": revokeGrantCommandSchema,

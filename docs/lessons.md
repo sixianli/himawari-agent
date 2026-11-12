@@ -179,6 +179,10 @@ date: "2026-10-13"
   - 停止文件引用的日志、附录、证据编号必须真实存在；缺失的一律退回。
   - 写审核结论前，在测试主机上列出仍在运行的测试进程，确认停止文件描述的测试确实已经结束。
   - 看测试结果时同时看用时和预算的差距，余量很小时立即记下，不等超时才发现。
+- 硬约束（2026-11-12 起，Andy 在 P5 记忆中心总方案设计线程选了“加”）：这一节“门槛”那一条写于它出现之前，方案里关于代码现状的说法现在有自动门槛。
+  - 门槛是什么：复核脚本的 `--mode plan-claims` 让低价模型把方案或 ADR 里每一句讲代码、仓库文档现状的话列出来，逐条对着代码给“一致、不一致、找不到”，附文件、行号和代码原文，记进方案讨论记录目录。合并检查 `node scripts/model-review/opencode-review.mjs --assert-reviewed --pr <编号>` 在 PR 新增了 `docs/adr/` 下的 ADR 时，要求有对当前内容（SHA-256 一致）的记录，所有引用的文件和代码原文在 HEAD 里真实存在，每条“不一致”和“找不到”都有线程写的 `model-wrong` 判断并附代码原文，否则不通过（`claims-unchecked`、`claims-stale`、`claims-unjudged` 等）。代码在 `scripts/model-review/plan-claims.mjs`，测试在 `test/tooling/plan-claims-gate.test.mjs`，做法见[核对代码说法](../.agents/instructions/model-review.md#plan-claims)。
+  - 复现：把 P5 总方案出错的那句“`maskSensitiveTexts` 输出的占位编号随前面内容变化”原样放进一份方案，这一步必须报“不一致”，没有判断时合并检查报 `claims-unjudged`；把那句改成“输出前把占位编号去掉”后通过。自动测试里的反向用例见 `test/tooling/plan-claims-gate.test.mjs` 里名字带 `[claims gate]` 的用例；用真实模型实测的结果见这件事的记录目录 `.agents/reviews/topic-plan-claims-gate/`。
+  - 限制：低价模型自己也会看错、也会漏列说法；门槛保证的是“列出的每一句都被对着真实代码看过一遍，每条对不上的都有人处理过”，不保证“没有漏列”，更不保证方案一定对。它只管 PR 里新增的 ADR，放在仓库外的整合方案要先提交进分支才能核。合并前的代码复核照旧。
 - 再次发生的证据：
   - 2026-10-13 opencode 在 `feff37b` 自报文档校验“从 6 个错误降到 2 个”，干净检出上实际是从 2 个变成 4 个（见上一条）。
   - 同日 R2-T1 的停止文件写 `npm run check` 通过，Claude 审核通过（`e00e641`）；第 20 批核实，`e00e641` 的 `test/integration/product-path-browser.test.ts` 按 `biome lint --error-on-warnings` 退出码为 1。

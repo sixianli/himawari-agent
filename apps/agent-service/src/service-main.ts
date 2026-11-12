@@ -2180,6 +2180,17 @@ export async function startTenantRuntime(
       } else if (gapExportRef !== undefined && museIntakeConfiguration?.enabled === true) {
         throw new Error("GAP_EXPORT_RUNTIME_UNAVAILABLE");
       }
+      const externalProposals = new ProductionMcpMemoryWriter({
+        configuration,
+        memory: durableMemory,
+        state: repository.productMemoryState(),
+        book: repository.memoryBook(),
+        ledger: repository.decisionLedger(),
+        proposals: repository.externalMemoryProposals(),
+        payloads,
+        protector: recallProtector,
+        clock: { now: () => clock.now() },
+      });
       const mcpReadConfiguration = configuration.runPolicy?.mcpRead;
       const mcpIdentity =
         configuration.identity && configuration.identity.kind !== "built-in"
@@ -2215,16 +2226,7 @@ export async function startTenantRuntime(
           ...(mcpReadConfiguration.proposals
             ? {
                 write: {
-                  proposals: new ProductionMcpMemoryWriter({
-                    configuration,
-                    memory: durableMemory,
-                    state: repository.productMemoryState(),
-                    book: repository.memoryBook(),
-                    ledger: repository.decisionLedger(),
-                    payloads,
-                    protector: recallProtector,
-                    clock: { now: () => clock.now() },
-                  }),
+                  proposals: externalProposals,
                   rules: new ProductionMcpRuleWriter({
                     configuration,
                     rules: ownerRuleWriter,
@@ -2738,6 +2740,7 @@ export async function startTenantRuntime(
         ...(observation ? { observation } : {}),
         memory: {
           service: activeDurableMemory,
+          externalProposals,
           onAudit: (record) => {
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
