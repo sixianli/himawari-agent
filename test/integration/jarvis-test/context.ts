@@ -197,7 +197,7 @@ export async function assembleContext(
             category: memory.category,
             importancePermille: memory.importance,
             entities: memory.entities ?? [],
-            validFrom: memory.recordedAt,
+            validFrom: memory.validFrom ?? memory.recordedAt,
             validTo: null,
             supersededBy: null,
             evidenceVerified: true,

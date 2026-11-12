@@ -281,3 +281,30 @@ export const MEMORY_DATE_UPCOMING = templatePrompt({
   output: "free-text",
   segments: [text("（"), slot("from"), text(" 起）")],
 });
+
+export const OWNER_AGENDA_DATED = templatePrompt({
+  id: "memory.agenda.dated",
+  purpose: "近期安排里一条没设提醒、只有日期的记忆前面的日期标记",
+  usedBy: ["packages/application/src/services/owner-profile-service.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [slot("day"), text("（没设提醒）")],
+});
+
+export const OWNER_AGENDA_ENDING = templatePrompt({
+  id: "memory.agenda.ending",
+  purpose: "近期安排里一条没设提醒、在这一天到期的记忆前面的日期标记",
+  usedBy: ["packages/application/src/services/owner-profile-service.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [slot("day"), text("截止（没设提醒）")],
+});
+
+export const OWNER_AGENDA_OMITTED = templatePrompt({
+  id: "memory.agenda.omitted",
+  purpose: "近期安排放不下时，告诉模型还有几项没有列出",
+  usedBy: ["packages/application/src/services/owner-profile-service.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [text("（另有 "), slot("count"), text(" 项因篇幅没有列出。）")],
+});

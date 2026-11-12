@@ -170,9 +170,9 @@
     }
   },
   "chat.identity": {
-    "sha256": "fda7f9520b2b825ba99e9de6198aafaead9b430560ab0955a8b18fbe055d2103",
-    "changedIn": "ADR 0166",
-    "reason": "W-05、W-09、W-12、W-21、W-24：资料标记改中文并给主人的要求单独标记；提醒成功后说事情时间和提醒时刻；删掉和回答语言规则重复的一句；审批写成系统自动发起的事实"
+    "sha256": "35e600b78cdeb3525ddd9047946f457c9bcd9983cd4bc833303757126fa0d61b",
+    "changedIn": "主动提议第 0 步",
+    "reason": "Andy 2026-11-12 同意的“主动提议下一步”方案第 0 步：对话里提下一步之前先查清楚再提具体做法；近期安排加入没设提醒的带日期记忆，放不下时写明还有几项"
   },
   "chat.runtime-environment.document-skill": {
     "sha256": "1267983f39421d48fa7a9a5680a1c2a7224d13084a16fe64e1bed0d9ec57a805",
@@ -533,6 +533,21 @@
     "sha256": "881b14437ad5dc2a42e6495240f40abeb4ff7d101bdd908e34f147560eb556ed",
     "changedIn": "ADR 0219",
     "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
+  },
+  "memory.agenda.dated": {
+    "sha256": "56c77d017656c575228488f80192d8a2c425afcefd321e63e343772bfa47d977",
+    "changedIn": "主动提议第 0 步",
+    "reason": "Andy 2026-11-12 同意的“主动提议下一步”方案第 0 步：对话里提下一步之前先查清楚再提具体做法；近期安排加入没设提醒的带日期记忆，放不下时写明还有几项"
+  },
+  "memory.agenda.ending": {
+    "sha256": "923da45bb6f7a2b6e2f18e1fcef5943d498a2416efc7d4b2a527bc7f72d65c38",
+    "changedIn": "主动提议第 0 步",
+    "reason": "Andy 2026-11-12 同意的“主动提议下一步”方案第 0 步：对话里提下一步之前先查清楚再提具体做法；近期安排加入没设提醒的带日期记忆，放不下时写明还有几项"
+  },
+  "memory.agenda.omitted": {
+    "sha256": "135300a696b772e9adb68a7bb733c83a28d0c2db39793f31bb1adf3f8c0d7790",
+    "changedIn": "主动提议第 0 步",
+    "reason": "Andy 2026-11-12 同意的“主动提议下一步”方案第 0 步：对话里提下一步之前先查清楚再提具体做法；近期安排加入没设提醒的带日期记忆，放不下时写明还有几项"
   },
   "memory.capture": {
     "sha256": "951c3556271b7e3e72b6aa91f48292aeb7505014e928f56036f5e3c849f8a445",

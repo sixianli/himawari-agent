@@ -41,6 +41,13 @@ const descriptors: RuntimeToolDescriptor[] = [
     description: "fixture",
     parameters: { type: "object" },
   },
+  {
+    name: "web_search",
+    capabilityRef: "web.search.web_search",
+    capabilityHandleRef: null,
+    description: "fixture",
+    parameters: { type: "object" },
+  },
 ];
 
 function caseById(id: string) {
@@ -59,6 +66,7 @@ async function toolsFor(id: string) {
     descriptors,
     workspaceRoot,
     failures: item.failures ?? [],
+    ...(item.toolResults ? { toolResults: item.toolResults } : {}),
     ...(item.permissions ? { permissions: item.permissions } : {}),
     steps,
   });
@@ -92,6 +100,30 @@ describe("Jarvis Test live tools", () => {
         args: { path: "inbox/2026-10-30-amazon-refund.txt" },
       }),
     ]);
+  });
+
+  it("answers a search with the case's prepared results in order and repeats the last one", async () => {
+    const { run, steps } = await toolsFor("9a");
+    const first = await run("web_search", { query: "东京 明天 天气" });
+    expect(first.outcome).toBe("succeeded");
+    expect(first.modelContent).toContain("11月3日（周二）：雨");
+    expect(first.modelContent).not.toContain("11月4日");
+    const second = await run("web_search", { query: "东京 后天 天气" });
+    expect(second.modelContent).toContain("11月4日（周三）：晴");
+    const third = await run("web_search", { query: "东京 一周天气" });
+    expect(third.modelContent).toBe(second.modelContent);
+    expect(steps.map((step) => step.kind === "tool" && step.isError)).toEqual([
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  it("REVERSE: keeps search unavailable in a case that prepared no results", async () => {
+    const { run } = await toolsFor("6a");
+    const result = await run("web_search", { query: "东京 明天 天气" });
+    expect(result.outcome).toBe("failed");
+    expect(result.modelContent).toContain("评测环境没有联网");
   });
 
   it("refuses every write in the read-only folder, through tools and shell alike", async () => {
