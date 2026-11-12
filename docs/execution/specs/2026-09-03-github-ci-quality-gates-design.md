@@ -126,7 +126,7 @@ date: "2026-09-03"
 
 2026-11-06 起 CI 不再使用 GitHub 缓存，每个任务都从锁定的下载地址重新下载并校验，以免产生 GitHub 存储费（[ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)）。每次仍执行锁文件安装；不跨平台传递 `node_modules`。
 
-作业之间的文件不经 GitHub 产物存储，放在 CI VPS 的共享目录 `/srv/gh-runner-share/<运行号-尝试号>/<作业-成员>/`（[ADR 0238](../../adr/0238-ci-job-files-stay-on-the-ci-vps.md)）：每个作业成员用 `scripts/ci/run-share.mjs put` 放入完整报告，并把内容摘要写进作业输出；`browser`、`coverage` 用 `needs.build.outputs.linux-x64` 的摘要取构建，`ci/required` 按 `needs` 里的摘要逐个取回报告，核对不一致即失败，入口检查（草稿、上游取消）通过后，结束时不论成败删掉本次运行的目录；入口检查失败的运行由 CI 服务器每小时的清理在 6 小时后删掉（[ADR 0241](../../adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md)）。GitHub 上只留 `gate-` 汇总结论和 1 天的失败诊断。`ci.yml` 的所有作业都只有只读权限；`main.yml` 的 `full` 作业以可复用工作流（被别的工作流整个调用的工作流）的方式调用 `ci.yml`，不单独授予权限，沿用工作流级的只读权限。被调用的工作流拿不到超过调用方的权限，`npm run check:ci-policy` 核对 `ci.yml` 每个作业要的权限都在调用方给的范围内，否则整轮会在启动前失败（事故 I-93）。
+作业之间的文件不经 GitHub 产物存储，放在 CI VPS 的共享目录 `/srv/gh-runner-share/<运行号-尝试号>/<作业-成员>/`（[ADR 0238](../../adr/0238-ci-job-files-stay-on-the-ci-vps.md)）：每个作业成员用 `scripts/ci/run-share.mjs put` 放入完整报告，并把内容摘要写进作业输出；`browser`、`coverage` 用 `needs.build.outputs.linux-x64` 的摘要取构建，`ci/required` 按 `needs` 里的摘要逐个取回报告，核对不一致即失败，入口检查（草稿、上游取消）通过后，结束时不论成败删掉本次运行的目录；入口检查失败的运行由 CI 服务器每小时的清理在 6 小时后删掉（[ADR 0241](../../adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md)）。2026-11-12 起 CI 完全不用 GitHub 产物（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)）：`ci/required` 把汇总结论（几 KB 的 JSON，经 base64 编码，前后有开始和结束标记并附 SHA-256 校验值）打印进自己的步骤日志，同时把各检查的结果表写进作业摘要（GitHub 运行页面上每个作业下方显示的一段 Markdown）；其他作业把失败诊断写进作业摘要，每个文本文件只显示最后 40 行、先遮盖像密钥的内容、总量不超过 64 KiB，截图、trace 这类二进制文件只列名字和大小。三个工作流用到 `actions/upload-artifact` 或 `actions/download-artifact` 时 `npm run check:ci-policy` 失败。`ci.yml` 的所有作业都只有只读权限；`main.yml` 的 `full` 作业以可复用工作流（被别的工作流整个调用的工作流）的方式调用 `ci.yml`，不单独授予权限，沿用工作流级的只读权限。被调用的工作流拿不到超过调用方的权限，`npm run check:ci-policy` 核对 `ci.yml` 每个作业要的权限都在调用方给的范围内，否则整轮会在启动前失败（事故 I-93）。
 
 文档治理运行依赖放在仓库内的固定工具目录，保留上游 Skill 来源、许可依据、完整依赖闭包和内容摘要。采用原始 `validate_docs.py`、其导入模块及必需资源，不另写文档规则。更新由显式同步工具整体完成，CI 只读验证。来源或许可未明确时该任务未完成，不能静默跳过文档检查。
 
@@ -288,12 +288,12 @@ main 路径选择器仅接受固定仓库的真实 main push。轻量确认必�
 - 当前提交是一次 merge commit，第一父提交恰好是 push.before，第二父提交是同仓库已合并 PR 的 head；squash、rebase、多次合并打包推送、直接提交走完整 CI。
 - `.github/`、`ci/`、`scripts/ci/` 在此次合并中没有变化；验证逻辑更新后的首次 main 推送仍执行全套。
 - 固定 GitHub API 返回对应 head 的成功 `pull_request` CI；完成时间不超过 24 小时，工作流路径为 `.github/workflows/ci.yml`。手动 CI 不适用。
-- 按 API 返回的不可变 artifact ID 下载该 run/attempt 的 gate，拒绝过期或重复 gate。GateSummary 必须 passed，矩阵完整且唯一，无失败、缺项或失败原因。
+- 按 API 列出该 run/attempt 的作业，只认唯一一个结论为成功的 `ci/required`，下载它的日志并取出唯一一段汇总结论，校验值不符、缺失、出现两段都拒绝（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)）。GateSummary 必须 passed，矩阵完整且唯一，无失败、缺项或失败原因。
 - gate/context 的 repository、event、runId、attempt、base/head/tested SHA、政策及工具链摘要一致。通过 GitHub commit API 独立核对被测 merge 的两个父提交和完整源码树；源码树必须等于实际 main 提交。
 
 API 不可用、下载失败、证据缺失、内容或配置不一致均选择原有完整 CI；不伪造新的完整门禁结论。路径选择本身异常时也调度完整 CI，基础设施异常仍可使外层 workflow 失败。确认 job 启动时再次核验证据；此后构建、安全或启动检查失败直接失败，不通过重跑掩盖失败。
 
-轻量确认在实际 main 提交上重新生成 Linux 构建产物，运行现有机器密钥、Gitleaks、Semgrep 检查，并使用本轮产物执行完整的 `installable-node-services.test.ts` 安装、启动、停止与恢复测试。输出独立的 `main-confirmation` 记录，引用先前 PR run/attempt；不将先前 gate 改写为当前 GateSummary，也不将 PR 产物冒充 main 发布产物。上传到 GitHub 的 `main-confirmation-` 报告只含日志和 JSON，不含构建归档（`publish.mjs --artifacts omit`，[ADR 0238](../../adr/0238-ci-job-files-stay-on-the-ci-vps.md)），归档摘要记在 `summary.json` 的 `artifactSha256`。这份确认不替代 S9 全套资格或授权生产部署；需要完整 push GateSummary 的交接仍显式运行完整 CI。
+轻量确认在实际 main 提交上重新生成 Linux 构建产物，运行现有机器密钥、Gitleaks、Semgrep 检查，并使用本轮产物执行完整的 `installable-node-services.test.ts` 安装、启动、停止与恢复测试。输出独立的 `main-confirmation` 记录，引用先前 PR run/attempt；不将先前 gate 改写为当前 GateSummary，也不将 PR 产物冒充 main 发布产物。确认作业自己重新查找并取回 PR 的汇总结论再核对一遍，不从路径选择作业接收文件；确认报告写进作业摘要，只含日志和 JSON，不含构建归档（`publish.mjs --artifacts omit`，[ADR 0238](../../adr/0238-ci-job-files-stay-on-the-ci-vps.md)），归档摘要记在 `summary.json` 的 `artifactSha256`。这份确认不替代 S9 全套资格或授权生产部署；需要完整 push GateSummary 的交接仍显式运行完整 CI。
 
 npm 下载和固定工具的 downloads/wheels 归档不再通过 cache Action 复用（[ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)），每个任务都重新下载；工具每次从已验证归档重新安装。仍校验下载完整性、执行锁文件安装和原生探针；损坏下载按现有校验拒绝。
 

@@ -36,6 +36,8 @@ export const REQUIRED_ENTRY_SCRIPT = [
 export const REQUIRED_AFTER_ENTRY = githubExpression(
   "always() && steps.entry.outcome == 'success'",
 );
+export const REQUIRED_GATE_COMMAND =
+  '.ci-output/tools/bin/node scripts/ci/required.mjs --reports .ci-output/reports --output .ci-output/gate --base "$CI_BASE"';
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
@@ -475,6 +477,10 @@ export function validateWorkflow(policy, source, toolchain) {
     assert(Array.isArray(job.steps) && job.steps.length > 0, `Empty job: ${check.id}`);
     for (const step of job.steps) {
       assert(
+        !/^actions\/(?:upload|download)-artifact@/u.test(step.uses ?? ""),
+        `GitHub artifacts are not used; reports stay on the runner share and diagnostics go to the job summary: ${check.id}`,
+      );
+      assert(
         step["continue-on-error"] === undefined || step["continue-on-error"] === false,
         `Step can hide failure: ${check.id}`,
       );
@@ -499,18 +505,6 @@ export function validateWorkflow(policy, source, toolchain) {
         job.steps.some((step) => step.run === chromiumInstall),
         `Job runs browser tests without installing Chromium: ${check.id}`,
       );
-    assert(
-      !job.steps.some((step) => /^actions\/download-artifact@/u.test(step.uses ?? "")),
-      `Jobs must take reports and builds from the runner share, not GitHub artifacts: ${check.id}`,
-    );
-    const uploadPath =
-      check.id === "required" ? ".ci-output/gate/" : ".ci-output/public/diagnostics/";
-    assert(
-      job.steps
-        .filter((step) => /^actions\/upload-artifact@/u.test(step.uses ?? ""))
-        .every((step) => step.with?.path === uploadPath && step.with?.["retention-days"] === 1),
-      `Jobs may upload only ${uploadPath} to GitHub for one day: ${check.id}`,
-    );
     if (check.id === "required") {
       const [entry] = job.steps;
       assert(
@@ -543,12 +537,14 @@ export function validateWorkflow(policy, source, toolchain) {
           .every((step) => step.if === undefined || step.if === REQUIRED_AFTER_ENTRY),
         "Required runs nothing after a failed entry check",
       );
-      const gateUploads = job.steps.filter((step) =>
-        /^actions\/upload-artifact@/u.test(step.uses ?? ""),
-      );
       assert(
-        gateUploads.length === 1 && gateUploads[0].if === REQUIRED_AFTER_ENTRY,
-        "Required uploads its gate even when the gate fails, but only after the entry check passed",
+        job.steps.some(
+          (step) =>
+            step.run === REQUIRED_GATE_COMMAND &&
+            step.env?.CI_NEEDS === githubExpression("toJSON(needs)") &&
+            step.if === undefined,
+        ),
+        "Required must print its gate into the ci/required log, where main reads it",
       );
     } else {
       const shares = job.steps.filter((step) => step.run?.includes("scripts/ci/run-share.mjs put"));
@@ -558,6 +554,14 @@ export function validateWorkflow(policy, source, toolchain) {
           shares[0].run ===
             `.ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "${check.id}-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"`,
         `Job must put its reports on the runner share exactly once: ${check.id}`,
+      );
+      const summaries = job.steps.filter((step) => step.run?.includes("scripts/ci/ci-summary.mjs"));
+      assert(
+        summaries.length === 1 &&
+          summaries[0].if === githubExpression("always() && steps.publish.outcome == 'success'") &&
+          summaries[0].run ===
+            `.ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "${check.id}/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics`,
+        `Job must write its diagnostics into the job summary exactly once: ${check.id}`,
       );
       const members = activeMembers(check)
         .map((member) => member.key)
