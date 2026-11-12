@@ -7,12 +7,14 @@ import { describe, expect, it } from "vitest";
 import {
   assertReviewed,
   buildPrompt,
+  claimsFileSecretLike,
   expectedTools,
   parseArgs,
   parseUsage,
   REVIEW_MODELS,
   REVIEWS_DIR,
   reviewConfig,
+  setRegisteredTestValues,
 } from "../../scripts/model-review/opencode-review.mjs";
 import { validateTask } from "../../scripts/model-review/delegate.mjs";
 import {
@@ -417,6 +419,17 @@ describe("plan claims check: the merge gate", () => {
       f.commit({ [path]: "# 方案\n" }, "adr named like a key");
       expect(claimsOnly(f.check())).toEqual([`claims-name-unsupported ${path}`]);
     });
+  });
+
+  it("[claims] a registered test value in the file name is refused before anything is recorded", () => {
+    const value = ["abcdef", "123456"].join("");
+    setRegisteredTestValues([value]);
+    try {
+      expect(claimsFileSecretLike(`docs/adr/0305-${value}.md`)).toBe(true);
+      expect(claimsFileSecretLike("docs/adr/0305-plain.md")).toBe(false);
+    } finally {
+      setRegisteredTestValues([]);
+    }
   });
 
   it("[claims] a numbered or full-width prefix before CLAIM is reported too", () => {

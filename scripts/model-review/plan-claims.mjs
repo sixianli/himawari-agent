@@ -45,7 +45,7 @@ export function parseClaims(text) {
     const line = raw.replace(/^\s*(?:[-*>]\s+)?/, "");
     const number = index + 1;
     if (!line.startsWith("CLAIM|")) {
-      if (/^(?:\p{N}+[.．)）、]\s*)?[`*"'“#]*CLAIM(?![A-Za-z])/u.test(line))
+      if (/^(?:[\p{N}\p{L}]{1,3}[.．)）、:：]\s*)?[`*"'“#]*CLAIM(?![A-Za-z])/u.test(line))
         problems.push(`line-${number}-malformed`);
       continue;
     }

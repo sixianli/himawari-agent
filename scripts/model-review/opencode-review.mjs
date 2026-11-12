@@ -1375,7 +1375,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     mainRef,
     reviewsDir: REVIEWS_DIR,
     parseUsage,
-    looksSecret: (text) => maskSecretLike(text) !== text,
+    looksSecret: claimsFileSecretLike,
   });
   const claimsOwned = new Set(claims.files);
   const unreviewed = (from, to) =>
@@ -2672,6 +2672,10 @@ function maskSecretLikeDeep(value) {
   return value;
 }
 
+export function claimsFileSecretLike(file) {
+  return maskSecretLike(file) !== file;
+}
+
 export function ledgerLine(record) {
   return `${JSON.stringify(maskSecretLikeDeep(record))}\n`;
 }
@@ -2761,10 +2765,7 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     else if (key === "--brief") options.brief = resolve(take());
     else if (key === "--claims-file") {
       options.claimsFile = take();
-      if (
-        !validClaimsFile(options.claimsFile) ||
-        maskSecretLike(options.claimsFile) !== options.claimsFile
-      )
+      if (!validClaimsFile(options.claimsFile) || claimsFileSecretLike(options.claimsFile))
         throw new Error("ARG_INVALID --claims-file");
     } else if (key === "--out") options.out = resolve(take());
     else if (key === "--pr") {
@@ -3116,6 +3117,8 @@ async function main() {
   const timeoutMs = options.timeoutMinutes * 60 * 1000;
   const commits = resolveCommits(options.repo, options);
   registerTestValuesFromRefs(options.repo, [commits.base ?? commits.head, "origin/main"]);
+  if (options.claimsFile && claimsFileSecretLike(options.claimsFile))
+    throw new Error(`CLAIMS_FILE_SECRET_LIKE ${options.claimsFile}`);
   const claimsMode = options.mode === "plan-claims";
   const claimsBlob = claimsMode
     ? claimsBlobAt(options.repo, commits.head, options.claimsFile)
