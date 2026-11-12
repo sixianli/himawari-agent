@@ -239,6 +239,7 @@ describe("production model composition", () => {
 
     expect(runtime.refreshes).toEqual([{ allowNetwork: false }]);
     await composition.close();
+    expect(runtime.refreshes).toEqual([{ allowNetwork: false }]);
   });
 
   it("rejects unsafe secret sources and conflicting canonical descriptors", () => {

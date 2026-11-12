@@ -87,7 +87,10 @@ describe("v0.2 coverage baseline", () => {
     const result = runChecker(shortManifest);
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain(`coverage manifest is missing ${dropped}`);
+    expect(result.stderr.trim().split("\n")).toEqual([
+      "v0.2 coverage check failed:",
+      `- coverage manifest is missing ${dropped}`,
+    ]);
   });
 
   it("rejects an acceptance without a verification entrypoint", async () => {
