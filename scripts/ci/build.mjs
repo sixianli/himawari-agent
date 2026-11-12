@@ -7,7 +7,7 @@ import { collectArtifactFiles, contentDigest, digestFile } from "./artifact-file
 import { outputPath, verifyContext } from "./context.mjs";
 import { fileSha256, parseArguments, repositoryRoot } from "./contracts.mjs";
 import { execute } from "./execute.mjs";
-import { buildPlatformKey } from "./platforms.mjs";
+import { artifactPlatformKey } from "./platforms.mjs";
 import { redactText } from "./redact-text.mjs";
 import {
   assertArtifactRecord,
@@ -131,7 +131,7 @@ export async function build({
     );
     await verifyExtractedArtifact(payload, { root, context });
     checks.push("complete-content-verification");
-    const platform = buildPlatformKey();
+    const platform = artifactPlatformKey();
     const archive = path.join(
       destination,
       `${platform}-abi${process.versions.modules}-${context.testedSha}-${context.runId}-${context.attempt}.tar.gz`,

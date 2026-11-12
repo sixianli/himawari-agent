@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { loadToolchainLock, validateToolchainLock } from "../../scripts/ci/install-tools.mjs";
-import { buildPlatformKey, supportedPlatforms } from "../../scripts/ci/platforms.mjs";
+import {
+  artifactPlatformKey,
+  buildPlatformKey,
+  supportedPlatforms,
+} from "../../scripts/ci/platforms.mjs";
 
 describe("toolchain platforms", () => {
   it("names the three supported platforms for builds", () => {
@@ -18,6 +22,15 @@ describe("toolchain platforms", () => {
       ["to", "String"],
     ])
       expect(() => buildPlatformKey(os, arch)).toThrow("CI_PLATFORM_UNSUPPORTED");
+  });
+
+  it("lets only macOS and linux-x64 produce or consume build artifacts", () => {
+    expect(artifactPlatformKey("darwin", "arm64")).toBe("macos-arm64");
+    expect(artifactPlatformKey("linux", "x64")).toBe("linux-x64");
+    expect(() => artifactPlatformKey("linux", "arm64")).toThrow(
+      "CI_ARTIFACT_PLATFORM_UNSUPPORTED: linux-arm64",
+    );
+    expect(() => artifactPlatformKey("win32", "x64")).toThrow("CI_PLATFORM_UNSUPPORTED");
   });
 
   it("pins aarch64 downloads for linux-arm64 at the same versions as linux-x64", () => {
@@ -63,6 +76,53 @@ describe("toolchain platforms", () => {
     const lock = structuredClone(loadToolchainLock());
     swaps.node(lock)["linux-arm64"] = swaps.gitleaks(lock)["linux-arm64"];
     expect(() => validateToolchainLock(lock)).toThrow("linux-arm64 的 node 下载物文件名");
+  });
+
+  it("rejects actionlint and gitleaks files swapped inside the same platform", () => {
+    for (const platform of supportedPlatforms()) {
+      const lock = structuredClone(loadToolchainLock());
+      const actionlint = swaps.actionlint(lock)[platform];
+      swaps.actionlint(lock)[platform] = swaps.gitleaks(lock)[platform];
+      expect(() => validateToolchainLock(lock)).toThrow(`${platform} 的 actionlint 下载物文件名`);
+      const other = structuredClone(loadToolchainLock());
+      swaps.gitleaks(other)[platform] = actionlint;
+      expect(() => validateToolchainLock(other)).toThrow(`${platform} 的 gitleaks 下载物文件名`);
+    }
+  });
+
+  for (const [kind, select] of Object.entries(swaps))
+    it(`rejects a linux-arm64 ${kind} file placed in the linux-x64 or macOS entry`, () => {
+      for (const platform of ["linux-x64", "darwin-arm64"]) {
+        const lock = structuredClone(loadToolchainLock());
+        select(lock)[platform] = select(lock)["linux-arm64"];
+        expect(() => validateToolchainLock(lock)).toThrow(`${platform} 的 ${kind} 下载物文件名`);
+      }
+    });
+
+  it("rejects a download whose file name carries another version than the lock states", () => {
+    const bump = (text) =>
+      text.replace(/(\d+)\.(\d+)\.(\d+)/, (_all, a, b, c) => `${a}.${b}.${Number(c) + 1}`);
+    for (const [kind, select] of Object.entries(swaps))
+      for (const platform of supportedPlatforms()) {
+        const lock = structuredClone(loadToolchainLock());
+        const entry = select(lock)[platform];
+        const filename = bump(entry.filename);
+        expect(filename).not.toBe(entry.filename);
+        select(lock)[platform] = {
+          ...entry,
+          filename,
+          url: entry.url.slice(0, entry.url.lastIndexOf("/") + 1) + filename,
+        };
+        expect(() => validateToolchainLock(lock)).toThrow(`${platform} 的 ${kind} 下载物文件名`);
+      }
+  });
+
+  it("rejects linux-arm64 wheels placed in the linux-x64 or macOS Semgrep closure", () => {
+    for (const platform of ["linux-x64", "darwin-arm64"]) {
+      const lock = structuredClone(loadToolchainLock());
+      lock.tools.semgrep.wheels[platform] = lock.tools.semgrep.wheels["linux-arm64"];
+      expect(() => validateToolchainLock(lock)).toThrow(`${platform} 的 wheel 下载物文件名`);
+    }
   });
 
   it("rejects linux-x64 or macOS wheels placed in the linux-arm64 Semgrep closure", () => {

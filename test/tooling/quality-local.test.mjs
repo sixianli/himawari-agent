@@ -568,19 +568,27 @@ describe("local shared-runner boundary", () => {
       Object.defineProperty(process, "arch", arch);
     }
   });
-  it("labels a linux-arm64 run with its own platform name, not linux-x64", async () => {
+  it("on linux-arm64 runs the three checks that need no build artifact and labels them linux-arm64", async () => {
     const platform = Object.getOwnPropertyDescriptor(process, "platform");
     const arch = Object.getOwnPropertyDescriptor(process, "arch");
     try {
       Object.defineProperty(process, "platform", { value: "linux" });
       Object.defineProperty(process, "arch", { value: "arm64" });
-      const summary = await runLocal();
-      expect(summary.platform).toBe("linux-arm64");
-      expect(
-        state.calls
-          .filter((entry) => entry.name === "check" && entry.checkId === "build")
-          .map((entry) => entry.matrixKey),
-      ).toEqual(["linux-arm64"]);
+      for (const check of ["policy", "static", "security"]) {
+        state.calls.length = 0;
+        const summary = await runLocal({ check, output: `.ci-output/local-${check}` });
+        expect(summary.platform).toBe("linux-arm64");
+        expect(
+          state.calls.filter((entry) => entry.name === "check").map((entry) => entry.checkId),
+        ).toEqual([check]);
+      }
+      state.calls.length = 0;
+      for (const check of [undefined, "build", "coverage"])
+        await expect(
+          runLocal({ check, output: `.ci-output/local-refused-${check}` }),
+        ).rejects.toThrow("CI_ARTIFACT_PLATFORM_UNSUPPORTED: linux-arm64");
+      expect(state.calls).toEqual([]);
+      expect(existsSync(path.join(state.root, ".ci-output/local-refused-build"))).toBe(false);
     } finally {
       Object.defineProperty(process, "platform", platform);
       Object.defineProperty(process, "arch", arch);

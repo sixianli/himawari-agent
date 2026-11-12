@@ -4,7 +4,12 @@ import { pathToFileURL } from "node:url";
 import { createContext, outputPath, verifyContext } from "./context.mjs";
 import { parseArguments, readJson, repositoryRoot } from "./contracts.mjs";
 import { verifyInstalledTools } from "./install-tools.mjs";
-import { buildPlatformKey, hostPlatform, supportedPlatforms } from "./platforms.mjs";
+import {
+  artifactPlatformKey,
+  buildPlatformKey,
+  hostPlatform,
+  supportedPlatforms,
+} from "./platforms.mjs";
 import { publish } from "./publish.mjs";
 import { runCheck } from "./run.mjs";
 import { redactText } from "./security-redaction.mjs";
@@ -22,6 +27,7 @@ export async function local({
     throw new Error("CI_LOCAL_PLATFORM_UNSUPPORTED");
   if (check && !["policy", "static", "build", "coverage", "security"].includes(check))
     throw new Error("CI_LOCAL_CHECK_UNSUPPORTED");
+  if (!check || check === "build" || check === "coverage") artifactPlatformKey();
   if (!existsSync(path.join(toolsDirectory, "installation.json")))
     throw new Error("CI_LOCAL_TOOLS_REQUIRED: npm run ci:tools，然后使用 --tools 指定该目录");
   if (process.env.GITHUB_ACTIONS === "true")

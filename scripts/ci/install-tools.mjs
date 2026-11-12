@@ -78,29 +78,51 @@ function license(value) {
   digest(value.sha256, "许可证据摘要");
 }
 
-const ARCHITECTURE_FILENAMES = Object.freeze({
+const escaped = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const exactly = (filename) => new RegExp(`^${escaped(filename)}$`);
+const PLATFORM_FILENAMES = Object.freeze({
+  "darwin-arm64": Object.freeze({
+    node: (version) => exactly(`node-v${version}-darwin-arm64.tar.gz`),
+    python: (version) =>
+      exactly(`cpython-${version}-aarch64-apple-darwin-install_only_stripped.tar.gz`),
+    actionlint: (version) => exactly(`actionlint_${version}_darwin_arm64.tar.gz`),
+    gitleaks: (version) => exactly(`gitleaks_${version}_darwin_arm64.tar.gz`),
+    wheel: () => /(?:-macosx_\d+_\d+_(?:arm64|universal2)|-none-any)\.whl$/,
+  }),
+  "linux-x64": Object.freeze({
+    node: (version) => exactly(`node-v${version}-linux-x64.tar.gz`),
+    python: (version) =>
+      exactly(`cpython-${version}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz`),
+    actionlint: (version) => exactly(`actionlint_${version}_linux_amd64.tar.gz`),
+    gitleaks: (version) => exactly(`gitleaks_${version}_linux_x64.tar.gz`),
+    wheel: () => /(?:_x86_64|-none-any)\.whl$/,
+  }),
   "linux-arm64": Object.freeze({
-    node: /-linux-arm64\.tar\.gz$/,
-    python: /-aarch64-unknown-linux-gnu-/,
-    actionlint: /_linux_arm64\.tar\.gz$/,
-    gitleaks: /_linux_arm64\.tar\.gz$/,
-    wheel: /(?:_aarch64|-none-any)\.whl$/,
+    node: (version) => exactly(`node-v${version}-linux-arm64.tar.gz`),
+    python: (version) =>
+      exactly(`cpython-${version}-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz`),
+    actionlint: (version) => exactly(`actionlint_${version}_linux_arm64.tar.gz`),
+    gitleaks: (version) => exactly(`gitleaks_${version}_linux_arm64.tar.gz`),
+    wheel: () => /(?:_aarch64|-none-any)\.whl$/,
   }),
 });
 
-function platformFilename(platform, kind, filename) {
-  const expected = ARCHITECTURE_FILENAMES[platform]?.[kind];
+function platformFilename(platform, kind, version, filename) {
+  const rule = Object.hasOwn(PLATFORM_FILENAMES, platform)
+    ? PLATFORM_FILENAMES[platform][kind]
+    : undefined;
+  assert(rule, `${platform} 的 ${kind} 下载物没有文件名规则`);
   assert(
-    !expected || expected.test(filename),
-    `${platform} 的 ${kind} 下载物文件名不是这个平台的: ${filename}`,
+    rule(version).test(filename),
+    `${platform} 的 ${kind} 下载物文件名不是这个平台、这个工具、这个版本的: ${filename}`,
   );
 }
 
-function platformArtifacts(value, kind) {
+function platformArtifacts(value, kind, version) {
   fields(value, platforms, "平台下载物");
   for (const [platform, item] of Object.entries(value)) {
     artifact(item);
-    platformFilename(platform, kind, item.filename);
+    platformFilename(platform, kind, version, item.filename);
   }
 }
 
@@ -115,9 +137,9 @@ export function validateToolchainLock(lock) {
   assert(lock.node.baseline === "22.22.3", "Node 基线不符合已确认合同");
   license(lock.node.license);
   fields(lock.node.releases, [lock.node.baseline], "Node releases");
-  for (const release of Object.values(lock.node.releases)) {
+  for (const [version, release] of Object.entries(lock.node.releases)) {
     fields(release, ["artifacts", "headers"], "Node release");
-    platformArtifacts(release.artifacts, "node");
+    platformArtifacts(release.artifacts, "node", version);
     artifact(release.headers);
   }
   fields(lock.npm, ["version", "artifact", "license"], "npm");
@@ -140,7 +162,11 @@ export function validateToolchainLock(lock) {
   );
   license(lock.python.license);
   license(lock.python.buildLicense);
-  platformArtifacts(lock.python.artifacts, "python");
+  platformArtifacts(
+    lock.python.artifacts,
+    "python",
+    `${lock.python.version}+${lock.python.release}`,
+  );
   assert(Array.isArray(lock.actions), "Actions 清单缺失");
   const expectedActions = ["actions/checkout", "actions/setup-node", "actions/setup-python"].sort();
   assert(
@@ -162,7 +188,7 @@ export function validateToolchainLock(lock) {
     fields(tool, ["version", "license", "artifacts"], name);
     assert(/^\d+\.\d+\.\d+$/.test(tool.version), `${name} 版本不精确`);
     license(tool.license);
-    platformArtifacts(tool.artifacts, name);
+    platformArtifacts(tool.artifacts, name, tool.version);
   }
   const semgrep = lock.tools.semgrep;
   fields(semgrep, ["version", "edition", "license", "wheels"], "Semgrep");
@@ -185,7 +211,7 @@ export function validateToolchainLock(lock) {
       assert(!names.has(name), "重复 wheel 包");
       names.add(name);
       artifact({ filename: wheel.filename, url: wheel.url, sha256: wheel.sha256 });
-      platformFilename(platform, "wheel", wheel.filename);
+      platformFilename(platform, "wheel", wheel.version, wheel.filename);
       assert(
         wheel.filename.endsWith(".whl") && new URL(wheel.url).hostname === "files.pythonhosted.org",
         "只允许官方 PyPI wheel",
