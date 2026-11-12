@@ -80,6 +80,7 @@ struct PairingView: View {
                         .frame(maxWidth: .infinity)
                         .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Pairing.bannerRadius, style: .continuous))
                         .hmShadow(DesignTokens.Shadows.lift)
+                        .padding(.bottom, -7)
                 }
                 SunflowerMark(detail: .full, growing: model.phase == .submitting)
                     .frame(width: DesignTokens.Size.pairingMark, height: DesignTokens.Size.pairingMark)
@@ -90,6 +91,7 @@ struct PairingView: View {
                         .multilineTextAlignment(.center)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
+                        .offset(y: removed ? -4 : -3)
                     Text(L.text("pairing.subtitle"))
                         .font(DesignTokens.TypeScale.body.font)
                         .hmLineHeight(DesignTokens.TypeScale.body.size * 1.5)
