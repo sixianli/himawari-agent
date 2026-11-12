@@ -2509,6 +2509,26 @@ describe("production memory capture", () => {
       );
       await make("one.example");
       expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
+      for (const digit of ["a", "b"])
+        await context.repository.ownerProposals().propose({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          proposalId: `next-step:${digit.repeat(32)}`,
+          type: "other",
+          summary: "上限调低之前就在的提议",
+          effect: "上限调低之前就在的提议",
+          origin: "inferred",
+          threadId: null,
+          sourceRef: null,
+          sourceVersion: null,
+          fingerprint: digit.repeat(64),
+          evidenceRef: null,
+          now: context.clock.value,
+          expiresAt: new Date(Date.parse(context.clock.value) + 86_400_000).toISOString(),
+          pendingLimit: 20,
+        });
+      const over = await tight.list();
+      expect([over.proposals.length, over.pendingCount]).toEqual([3, 3]);
     });
 
     it("gives the same proposal id however the parameters are ordered, and shows no evidence for one stored without it", async () => {
