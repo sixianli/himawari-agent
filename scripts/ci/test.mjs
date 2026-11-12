@@ -7,6 +7,7 @@ import { resolvePolicySource, validateVitestProjects } from "./check-policy.mjs"
 import { outputPath, verifyContext } from "./context.mjs";
 import { parseArguments, repositoryRoot } from "./contracts.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
+import { buildPlatformKey } from "./platforms.mjs";
 import { testWorkerCount } from "./test-concurrency.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
 
@@ -148,7 +149,7 @@ export async function runTests({
     artifact: {
       path: archive,
       sha256: verified.sha256,
-      platform: verified.manifest.platform.os === "darwin" ? "macos-arm64" : "linux-x64",
+      platform: buildPlatformKey(verified.manifest.platform.os, verified.manifest.platform.arch),
     },
     exitCode,
   };

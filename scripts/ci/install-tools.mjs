@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { supportedPlatforms } from "./platforms.mjs";
 import {
   cacheEnvironmentKey,
   downloadVerified,
@@ -22,7 +23,7 @@ import {
 } from "./verified-download.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const platforms = ["darwin-arm64", "linux-x64"];
+const platforms = supportedPlatforms();
 const downloadHosts = new Set([
   "nodejs.org",
   "github.com",
@@ -77,9 +78,30 @@ function license(value) {
   digest(value.sha256, "许可证据摘要");
 }
 
-function platformArtifacts(value) {
+const ARCHITECTURE_FILENAMES = Object.freeze({
+  "linux-arm64": Object.freeze({
+    node: /-linux-arm64\.tar\.gz$/,
+    python: /-aarch64-unknown-linux-gnu-/,
+    actionlint: /_linux_arm64\.tar\.gz$/,
+    gitleaks: /_linux_arm64\.tar\.gz$/,
+    wheel: /(?:_aarch64|-none-any)\.whl$/,
+  }),
+});
+
+function platformFilename(platform, kind, filename) {
+  const expected = ARCHITECTURE_FILENAMES[platform]?.[kind];
+  assert(
+    !expected || expected.test(filename),
+    `${platform} 的 ${kind} 下载物文件名不是这个平台的: ${filename}`,
+  );
+}
+
+function platformArtifacts(value, kind) {
   fields(value, platforms, "平台下载物");
-  for (const item of Object.values(value)) artifact(item);
+  for (const [platform, item] of Object.entries(value)) {
+    artifact(item);
+    platformFilename(platform, kind, item.filename);
+  }
 }
 
 export function validateToolchainLock(lock) {
@@ -95,7 +117,7 @@ export function validateToolchainLock(lock) {
   fields(lock.node.releases, [lock.node.baseline], "Node releases");
   for (const release of Object.values(lock.node.releases)) {
     fields(release, ["artifacts", "headers"], "Node release");
-    platformArtifacts(release.artifacts);
+    platformArtifacts(release.artifacts, "node");
     artifact(release.headers);
   }
   fields(lock.npm, ["version", "artifact", "license"], "npm");
@@ -118,7 +140,7 @@ export function validateToolchainLock(lock) {
   );
   license(lock.python.license);
   license(lock.python.buildLicense);
-  platformArtifacts(lock.python.artifacts);
+  platformArtifacts(lock.python.artifacts, "python");
   assert(Array.isArray(lock.actions), "Actions 清单缺失");
   const expectedActions = ["actions/checkout", "actions/setup-node", "actions/setup-python"].sort();
   assert(
@@ -140,7 +162,7 @@ export function validateToolchainLock(lock) {
     fields(tool, ["version", "license", "artifacts"], name);
     assert(/^\d+\.\d+\.\d+$/.test(tool.version), `${name} 版本不精确`);
     license(tool.license);
-    platformArtifacts(tool.artifacts);
+    platformArtifacts(tool.artifacts, name);
   }
   const semgrep = lock.tools.semgrep;
   fields(semgrep, ["version", "edition", "license", "wheels"], "Semgrep");
@@ -150,7 +172,7 @@ export function validateToolchainLock(lock) {
   );
   license(semgrep.license);
   fields(semgrep.wheels, platforms, "Semgrep wheels");
-  for (const wheels of Object.values(semgrep.wheels)) {
+  for (const [platform, wheels] of Object.entries(semgrep.wheels)) {
     assert(Array.isArray(wheels) && wheels.length > 0, "Semgrep wheel 闭包缺失");
     const names = new Set();
     for (const wheel of wheels) {
@@ -163,6 +185,7 @@ export function validateToolchainLock(lock) {
       assert(!names.has(name), "重复 wheel 包");
       names.add(name);
       artifact({ filename: wheel.filename, url: wheel.url, sha256: wheel.sha256 });
+      platformFilename(platform, "wheel", wheel.filename);
       assert(
         wheel.filename.endsWith(".whl") && new URL(wheel.url).hostname === "files.pythonhosted.org",
         "只允许官方 PyPI wheel",

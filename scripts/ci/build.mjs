@@ -7,6 +7,7 @@ import { collectArtifactFiles, contentDigest, digestFile } from "./artifact-file
 import { outputPath, verifyContext } from "./context.mjs";
 import { fileSha256, parseArguments, repositoryRoot } from "./contracts.mjs";
 import { execute } from "./execute.mjs";
+import { buildPlatformKey } from "./platforms.mjs";
 import { redactText } from "./redact-text.mjs";
 import {
   assertArtifactRecord,
@@ -130,7 +131,7 @@ export async function build({
     );
     await verifyExtractedArtifact(payload, { root, context });
     checks.push("complete-content-verification");
-    const platform = process.platform === "darwin" ? "macos-arm64" : "linux-x64";
+    const platform = buildPlatformKey();
     const archive = path.join(
       destination,
       `${platform}-abi${process.versions.modules}-${context.testedSha}-${context.runId}-${context.attempt}.tar.gz`,

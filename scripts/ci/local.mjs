@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { createContext, outputPath, verifyContext } from "./context.mjs";
 import { parseArguments, readJson, repositoryRoot } from "./contracts.mjs";
 import { verifyInstalledTools } from "./install-tools.mjs";
+import { buildPlatformKey, hostPlatform, supportedPlatforms } from "./platforms.mjs";
 import { publish } from "./publish.mjs";
 import { runCheck } from "./run.mjs";
 import { redactText } from "./security-redaction.mjs";
@@ -17,12 +18,7 @@ export async function local({
   artifact,
   root = repositoryRoot,
 }) {
-  if (
-    !(
-      (process.platform === "darwin" && process.arch === "arm64") ||
-      (process.platform === "linux" && process.arch === "x64")
-    )
-  )
+  if (!supportedPlatforms().includes(hostPlatform()))
     throw new Error("CI_LOCAL_PLATFORM_UNSUPPORTED");
   if (check && !["policy", "static", "build", "coverage", "security"].includes(check))
     throw new Error("CI_LOCAL_CHECK_UNSUPPORTED");
@@ -35,7 +31,7 @@ export async function local({
   if (existsSync(directory)) throw new Error("CI_LOCAL_OUTPUT_EXISTS");
   mkdirSync(directory, { recursive: true });
   writeFileSync(path.join(directory, "context.json"), `${JSON.stringify(identity, null, 2)}\n`);
-  const platform = process.platform === "darwin" ? "macos-arm64" : "linux-x64";
+  const platform = buildPlatformKey();
   const results = [];
   const publicationFailures = [];
   const execute = async (checkId, matrixKey = "default", input) => {
