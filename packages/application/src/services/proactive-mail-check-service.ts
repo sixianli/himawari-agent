@@ -901,10 +901,6 @@ export class ProactiveMailCheckService {
       const hits = wholeThreadHitIds(item, rules);
       if (hits.length > 0) wholeThreadHits.set(item.messageId, hits);
     }
-    const relatedSignal = AbortSignal.any([
-      controller.signal,
-      AbortSignal.timeout(Math.floor(this.#options.limits.perCheckMs / 2)),
-    ]);
     const referenceSignal = AbortSignal.any([
       controller.signal,
       AbortSignal.timeout(Math.floor(this.#options.limits.perCheckMs / 6)),
@@ -925,7 +921,22 @@ export class ProactiveMailCheckService {
               [],
               { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits }.perMail,
               new Map<string, RelatedView>(),
-              [],
+              this.#options.recentSummaries === undefined
+                ? []
+                : [
+                    {
+                      id: "reserve",
+                      day: startedAt.slice(0, 10),
+                      text: "。".repeat(
+                        Math.max(
+                          0,
+                          { ...DEFAULT_PROACTIVE_SUMMARY_LIMITS, ...this.#options.summaryLimits }
+                            .characters,
+                        ),
+                      ),
+                      dataClassification: "private",
+                    },
+                  ],
             ),
           );
     const referenceBudget = {
@@ -940,6 +951,10 @@ export class ProactiveMailCheckService {
         ? new Map<string, readonly string[]>()
         : await this.#references(candidates, deadlineAt, referenceSignal, trace, referenceBudget);
     costMicros += referenceBudget.costMicros;
+    const relatedSignal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(Math.floor(this.#options.limits.perCheckMs / 2)),
+    ]);
     const relatedViews =
       spentToday >= this.#options.limits.dailyCostMicros
         ? new Map<string, RelatedView>()

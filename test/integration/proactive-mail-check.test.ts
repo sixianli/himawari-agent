@@ -2649,7 +2649,7 @@ describe("proactive Gmail check acceptance", () => {
       expect(queries).toEqual([`"${ORDER}" -in:trash -in:spam`]);
     });
 
-    it("REVERSE: a number the model invented, one that is not in the mail word for word, or a date is never searched", async () => {
+    it("REVERSE: a number the model invented, one that is not in the mail word for word, or a YYYY-MM-DD date is never searched", async () => {
       const { queries } = await searchedFor((h) =>
         h.scriptReferences([
           {
