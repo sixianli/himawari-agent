@@ -789,7 +789,7 @@ export class SqliteDecisionLedgerOperations {
       this.fail("PORT_INVALID_OPERATION", "Ledger rule ids are invalid");
     const statement = this.database.prepare(
       `SELECT id, kind, checked_at AS decidedAt FROM decision_ledger
-       WHERE owner_id = ? AND agent_id = ? AND json_array_length(inputs, '$.ruleIds') > 0
+       WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive' AND json_array_length(inputs, '$.ruleIds') > 0
          AND EXISTS (
            SELECT 1 FROM json_each(decision_ledger.inputs, '$.ruleIds') AS ref
            WHERE ref.value = ? OR substr(ref.value, 1, length(?) + 1) = ? || '@'

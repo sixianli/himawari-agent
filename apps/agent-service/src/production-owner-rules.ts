@@ -808,7 +808,12 @@ export class ProductionOwnerRuleTools {
     const names = Object.keys(args);
     if (invocation.capabilityRef === RULE_LIST_CAPABILITY_REF) {
       if (names.length > 0) throw new OwnerRuleError("RULE_INPUT_INVALID");
-      return { rules: await this.#writer.list() };
+      const rules = await this.#writer.list();
+      return {
+        rules: rules.map(
+          ({ revision: _revision, sourceMemoryId: _sourceMemoryId, ...rule }) => rule,
+        ),
+      };
     }
     if (invocation.capabilityRef === RULE_UNDO_CAPABILITY_REF) {
       const ruleId = args["ruleId"];

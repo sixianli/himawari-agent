@@ -491,8 +491,8 @@ export class ProductionMemoryControl {
     const text = await this.readText(record.contentRef).catch(() => null);
     const suffix = `\n${summary}`;
     if (text === null || !text.endsWith(suffix)) return null;
-    const quote = text.slice(0, text.length - suffix.length);
-    return quote.length > 0 && Array.from(quote).length <= 500 ? quote : null;
+    const quote = singleLine(text.slice(0, text.length - suffix.length));
+    return quote.length > 0 && quote.length <= 500 ? quote : null;
   }
 
   async #ruleLastUsed(

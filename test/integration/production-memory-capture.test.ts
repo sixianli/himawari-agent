@@ -1873,6 +1873,7 @@ describe("production memory capture", () => {
     await context.capture.start(context.request);
     await context.capture.stop();
     await context.turn("owner", sentence, null);
+    await context.turn("owner", "日本入管局相关的邮件\n以后必须通知我", null);
     const immigration = { senderDomains: ["isa.go.jp"], phrases: ["在留資格"] };
     const tool = (capabilityRef: string, args: Record<string, unknown>, id: string) =>
       context.ruleTools.run({
@@ -1908,23 +1909,70 @@ describe("production memory capture", () => {
     const detail = (await listed()).find(({ ruleId }) => ruleId === created["ruleId"]);
     expect(detail).toMatchObject({ quote: sentence, changes: 0, lastUsed: null });
     await context.repository.decisionLedger().append({
-      id: "rule-used-1",
+      id: "rule-review-1",
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
       kind: "rule_review",
-      decidedAt: "2026-11-11T08:00:00.000Z",
+      decidedAt: "2026-11-11T09:00:00.000Z",
       outcome: "needs_review",
-      reasonCode: "rule_used",
+      reasonCode: "source_memory_changed",
       subjectRef: null,
-      inputs: { memoryIds: [], ruleIds: [`${created["ruleId"]}@1`] },
+      inputs: { memoryIds: [], ruleIds: [created["ruleId"]] },
       reasonRef: null,
       contentRef: null,
       costMicros: 0,
       durationMs: 0,
     } as never);
+    expect(
+      (await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.lastUsed,
+    ).toBeNull();
+    await context.repository.proactive().record({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      decision: {
+        id: "rule-used-1",
+        scenario: "gmail",
+        checkedAt: "2026-11-11T08:00:00.000Z",
+        counts: {
+          fetched: 0,
+          skipped: 0,
+          judged: 0,
+          act: 0,
+          know: 0,
+          check: 0,
+          ignore: 0,
+          floorRaised: 0,
+          pushed: 0,
+        },
+        verdict: "silent",
+        reasonCode: "nothing_new",
+        pushSourceKey: null,
+        costMicros: 0,
+        durationMs: 1,
+        ownerRating: null,
+        ratedAt: null,
+      },
+      inputs: {
+        ruleIds: [`${created["ruleId"]}@1`],
+        sourceIds: [],
+        floorHits: {},
+        memoryInjected: false,
+        memoryIds: [],
+        usedMemoryIds: [],
+        tentativeMemoryIds: [],
+        memoryByMail: {},
+        memoryRecall: "off",
+      },
+      modelPayloads: [],
+      processed: [],
+      insights: [],
+      repliedThreads: [],
+      push: null,
+      cursor: null,
+    } as never);
     expect((await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.lastUsed).toEqual({
       at: "2026-11-11T08:00:00.000Z",
-      kind: "rule_review",
+      kind: "proactive",
       decisionId: "rule-used-1",
     });
     const ruleMemory = await context.repository
@@ -2121,6 +2169,24 @@ describe("production memory capture", () => {
     expect(
       (await tool("rule.list", {}, "call-list"))["rules"] as { ruleId: string }[],
     ).toHaveLength(1);
+    const listedRules = (await tool("rule.list", {}, "call-list-shape"))["rules"] as Record<
+      string,
+      unknown
+    >[];
+    expect(Object.keys(listedRules[0] ?? {})).not.toEqual(expect.arrayContaining(["revision"]));
+    expect(Object.keys(listedRules[0] ?? {})).not.toContain("sourceMemoryId");
+    const multiline = await set(
+      { quote: "日本入管局相关的邮件\n以后必须通知我", params: immigration },
+      "call-multiline",
+    );
+    const multilineDetail = (await listed()).find(({ ruleId }) => ruleId === multiline["ruleId"]);
+    expect(multilineDetail?.quote).toBe("日本入管局相关的邮件 以后必须通知我");
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: multiline["ruleId"], action: "undo" },
+      "undo-multiline",
+    );
     await expect(
       command(
         context.control,
