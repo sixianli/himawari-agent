@@ -29,6 +29,7 @@ function ledger(failAfter: number) {
   const audit: AuditLedgerPort = {
     async append(record) {
       if (records.length >= failAfter) throw new Error("audit store unavailable");
+      if (records.some((existing) => existing.id === record.id)) throw new Error("PORT_DUPLICATE");
       records.push(record);
     },
     async listByAgent() {
@@ -71,13 +72,20 @@ const failing = {
 } as unknown as AgentGatewayV2Port;
 
 describe("[第11批] 设备网关审计", () => {
-  it("同一毫秒内受理排在完成之前", async () => {
+  it.each([
+    ["completed", succeeding],
+    ["failed", failing],
+  ] as const)("同一次请求的审计共用一个前缀，同一毫秒内受理排在%s之前", async (outcome, v2) => {
     const { audit, records } = ledger(Number.POSITIVE_INFINITY);
-    await dispatch(audit, succeeding);
-    expect(records.map((record) => record.outcome)).toEqual(["accepted", "completed"]);
+    await dispatch(audit, v2).catch(() => undefined);
+    expect(records.map((record) => record.outcome)).toEqual(["accepted", outcome]);
+    const [accepted, finished] = records.map((record) => record.id);
+    const prefix = accepted?.slice(0, -":accepted".length);
+    expect(accepted).toMatch(/^audit:device-gateway:[0-9a-f-]{36}:accepted$/u);
+    expect(finished).toBe(`${prefix}:${outcome}`);
     expect([...records].sort((a, b) => a.id.localeCompare(b.id)).map((r) => r.outcome)).toEqual([
       "accepted",
-      "completed",
+      outcome,
     ]);
   });
 
