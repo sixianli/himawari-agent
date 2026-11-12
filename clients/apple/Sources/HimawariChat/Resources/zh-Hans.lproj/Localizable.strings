@@ -12,3 +12,9 @@
 "chat.createFailed" = "新对话没建成，稍后再试";
 "common.ok" = "好";
 "time.yesterday" = "昨天";
+"process.thinking" = "在想";
+"process.finished" = "做完";
+"process.stopped" = "停了";
+"process.seconds" = "%d 秒";
+"process.expand" = "点开看每一步";
+"process.collapse" = "收起";

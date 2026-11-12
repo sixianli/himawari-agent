@@ -79,6 +79,29 @@ public final class DeviceAPI: Sendable {
 
     public static let textBatchLimit = 100
 
+    public func execution(threadId: String, runId: String, afterSequence: Int = 0) async throws -> ExecutionPage {
+        let data = try await http.send(DeviceRequest(
+            method: "GET",
+            path: "threads/\(threadId)/runs/\(runId)/execution",
+            query: [URLQueryItem(name: "after", value: String(afterSequence))]
+        ))
+        do {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .custom(Self.timestamp)
+            return try decoder.decode(GatewayEnvelope<ExecutionPage>.self, from: data).payload
+        } catch {
+            throw DeviceAPIError.invalidResponse
+        }
+    }
+
+    static func timestamp(_ decoder: Decoder) throws -> Date {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value) { return date }
+        throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "timestamp"))
+    }
+
     public func texts(for refs: [String]) async throws -> [String: String] {
         var result: [String: String] = [:]
         var seen = Set<String>()

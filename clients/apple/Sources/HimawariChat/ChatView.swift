@@ -76,8 +76,16 @@ public struct ChatView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
                 if let threadId {
-                    ForEach(store.messages(in: threadId)) { message in
-                        MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
+                    ForEach(store.transcript(in: threadId)) { item in
+                        switch item {
+                        case let .message(message):
+                            MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
+                        case let .process(runId):
+                            if let line = store.processLine(for: runId, in: threadId) {
+                                ProcessRowView(line: line)
+                                    .task(id: runId) { await store.loadExecution(runId, in: threadId) }
+                            }
+                        }
                     }
                     if let streaming = store.streamingText(in: threadId) {
                         MessageRow(role: .agent, text: streaming, failed: false)

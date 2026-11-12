@@ -12,3 +12,9 @@
 "chat.createFailed" = "Couldn't start a new chat. Try again later.";
 "common.ok" = "OK";
 "time.yesterday" = "Yesterday";
+"process.thinking" = "Thinking";
+"process.finished" = "Done";
+"process.stopped" = "Stopped";
+"process.seconds" = "%d s";
+"process.expand" = "Show each step";
+"process.collapse" = "Hide steps";

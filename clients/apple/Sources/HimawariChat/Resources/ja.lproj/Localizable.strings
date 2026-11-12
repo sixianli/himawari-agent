@@ -12,3 +12,9 @@
 "chat.createFailed" = "新しい会話を作れませんでした。あとでもう一度試してください。";
 "common.ok" = "OK";
 "time.yesterday" = "昨日";
+"process.thinking" = "考え中";
+"process.finished" = "完了";
+"process.stopped" = "止めました";
+"process.seconds" = "%d 秒";
+"process.expand" = "各ステップを表示";
+"process.collapse" = "閉じる";

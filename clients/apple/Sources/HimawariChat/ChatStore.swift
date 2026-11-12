@@ -2,6 +2,18 @@ import Foundation
 import HimawariCore
 import Observation
 
+public enum TranscriptItem: Identifiable, Equatable {
+    case message(ThreadMessage)
+    case process(runId: String)
+
+    public var id: String {
+        switch self {
+        case let .message(message): "message:\(message.messageId)"
+        case let .process(runId): "process:\(runId)"
+        }
+    }
+}
+
 public enum ChatConnection: Sendable, Equatable {
     case offline
     case connecting
@@ -18,6 +30,7 @@ public final class ChatStore {
     public private(set) var streaming: [String: StreamingReply] = [:]
     public private(set) var connection: ChatConnection = .offline
     public private(set) var loadingThreads = false
+    public private(set) var executions: [String: [ExecutionRecord]] = [:]
 
     @ObservationIgnored private let api: DeviceAPI
     @ObservationIgnored private let outbox: Outbox
@@ -27,6 +40,7 @@ public final class ChatStore {
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
     @ObservationIgnored private var flushing = false
     @ObservationIgnored private var pendingTextRefs: Set<String> = []
+    @ObservationIgnored private var loadingExecutions: Set<String> = []
     @ObservationIgnored private let heartbeatSeconds: @Sendable () -> TimeInterval
     @ObservationIgnored private var watched: (threadId: String, stream: DeviceEventStream, task: Task<Void, Never>)?
     @ObservationIgnored private let answerLocale: AnswerLocale
@@ -162,6 +176,51 @@ public final class ChatStore {
         }
     }
 
+    public func run(_ runId: String, in threadId: String) -> ThreadRunSummary? {
+        details[threadId]?.runs.first { $0.runId == runId }
+    }
+
+    public func processLine(for runId: String, in threadId: String) -> ProcessLine? {
+        guard let run = run(runId, in: threadId) else { return nil }
+        return ProcessLine.make(records: executions[runId] ?? [], runStatus: run.status)
+    }
+
+    public func transcript(in threadId: String) -> [TranscriptItem] {
+        let messages = messages(in: threadId)
+        let runs = details[threadId]?.runs ?? []
+        var shown = Set<String>()
+        var items: [TranscriptItem] = []
+        for message in messages {
+            if message.role == .agent, let runId = message.runId, !shown.contains(runId), runs.contains(where: { $0.runId == runId }) {
+                shown.insert(runId)
+                items.append(.process(runId: runId))
+            }
+            items.append(.message(message))
+        }
+        for run in runs where !shown.contains(run.runId) && !ProcessLine.terminalRunStatuses.contains(run.status) {
+            items.append(.process(runId: run.runId))
+        }
+        return items
+    }
+
+    public func loadExecution(_ runId: String, in threadId: String) async {
+        guard !loadingExecutions.contains(runId) else { return }
+        loadingExecutions.insert(runId)
+        defer { loadingExecutions.remove(runId) }
+        var records = executions[runId] ?? []
+        do {
+            while true {
+                let page = try await api.execution(threadId: threadId, runId: runId, afterSequence: records.map(\.sequence).max() ?? 0)
+                let known = Set(records.map(\.id))
+                records += page.records.filter { !known.contains($0.id) }
+                guard page.nextSequence != nil, !page.records.isEmpty else { break }
+            }
+            executions[runId] = records.sorted { $0.sequence < $1.sequence }
+        } catch {
+            await handle(error)
+        }
+    }
+
     public func prefetch(_ threadId: String) {
         guard details[threadId] == nil else { return }
         Task { await load(threadId) }
@@ -226,8 +285,11 @@ public final class ChatStore {
             var reply = streaming[chunk.threadId].flatMap { $0.runId == chunk.runId ? $0 : nil } ?? StreamingReply(runId: chunk.runId)
             reply.apply(chunk)
             streaming[chunk.threadId] = reply
-        case let .executionChanged(threadId, _):
-            if details[threadId] != nil { await load(threadId) }
+        case let .executionChanged(threadId, runId):
+            if details[threadId] != nil {
+                await load(threadId)
+                await loadExecution(runId, in: threadId)
+            }
         case .unavailable:
             break
         case .resyncRequired:

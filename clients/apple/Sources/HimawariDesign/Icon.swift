@@ -5,23 +5,57 @@ public enum IconName: String, CaseIterable, Sendable {
     case affiliate
     case alertCircle = "alert-circle"
     case arrowUp = "arrow-up"
+    case bell
+    case bulb
+    case calculator
     case calendar
     case camera
+    case car
+    case check
+    case checklist
     case chevronLeft = "chevron-left"
     case chevronRight = "chevron-right"
     case circleCheck = "circle-check"
+    case cloud
+    case creditCard = "credit-card"
+    case currentLocation = "current-location"
+    case deviceMobile = "device-mobile"
+    case download
+    case ear
     case edit
+    case eye
+    case filePencil = "file-pencil"
     case fileText = "file-text"
+    case handStop = "hand-stop"
+    case heartRateMonitor = "heart-rate-monitor"
+    case history
+    case homeBolt = "home-bolt"
+    case listCheck = "list-check"
+    case mail
     case mapPin = "map-pin"
     case message
+    case message2 = "message-2"
     case microphone
+    case pencilPlus = "pencil-plus"
+    case phone
     case photo
+    case plane
+    case playerStop = "player-stop"
     case plus
     case scan
     case search
     case server
+    case stack2 = "stack-2"
     case sun
+    case table
+    case terminal2 = "terminal-2"
+    case tools
+    case train
     case user
+    case users
+    case walk
+    case world
+    case worldSearch = "world-search"
     case x
 }
 
