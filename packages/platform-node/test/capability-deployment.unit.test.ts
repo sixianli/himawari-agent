@@ -522,7 +522,7 @@ describe("capability deployment snapshot loader", () => {
     [
       "another runtime identity",
       (qualification: JsonObject) => {
-        qualification["runtimeIdentity"] = "other-runtime";
+        qualification["runtimeIdentity"] = `srt:${SANDBOX_RUNTIME_VERSION}-other`;
       },
     ],
     [
