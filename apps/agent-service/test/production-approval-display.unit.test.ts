@@ -1,3 +1,4 @@
+import { APPROVAL_DISPLAY_BODY_MAX_CHARACTERS } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
 import {
   createApprovalDisplayBuilder,
@@ -93,5 +94,19 @@ describe("approval display facts", () => {
       bodyPreview: "ls",
       origin: { threadId: "thread-2", threadTitle: null },
     });
+  });
+
+  it("produces the longest preview and title the gateway contract accepts, and no longer", async () => {
+    const build = createApprovalDisplayBuilder({
+      maximumCharacters: 100_000,
+      threadTitle: async () => "题".repeat(5000),
+    });
+    const shown = await build({
+      threadId: "thread-1",
+      tool: "bash",
+      arguments: { command: "x".repeat(50_000) },
+    })();
+    expect([...(shown.bodyPreview ?? "")]).toHaveLength(APPROVAL_DISPLAY_BODY_MAX_CHARACTERS);
+    expect([...(shown.origin?.threadTitle ?? "")]).toHaveLength(121);
   });
 });

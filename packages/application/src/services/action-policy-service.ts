@@ -498,7 +498,7 @@ export class ActionPolicyService {
       if (!options.builtDisplay) {
         options.builtDisplay = await this.approvalDisplay(options.display);
         options.signal?.throwIfAborted();
-        return this.evaluateCurrent(source, options, allowReview);
+        return this.evaluateCurrent(intent, options, allowReview);
       }
       const display = options.builtDisplay;
       const request: GovernedApprovalRequest = Object.freeze({
