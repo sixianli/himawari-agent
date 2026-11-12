@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:afdd0b970b313c51ad76f5f5755b2fa13f58692be4b7e2228ad8146a5040fb42"
+contract_sha256: "sha256:b0cb15a835a3cdc46e1652d484bfdfe7fe6694fe460126cb369229edf40f9562"
 supersedes: "docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md"
 superseded_by: ""
 date: "2026-11-07"
@@ -166,7 +166,7 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 
 汇总作业改成只在 `ci-vps-gate` 上跑之后，第 3 个 runner 停了，所有 PR 的 `ci/required` 都会一直排队（不会被当成通过）。修好之前，在 Mac 上从仓库根目录运行：
 
-- `scripts/operations/ci-runner/gate-fallback.sh on`：把 `ci-vps-gate` 标签加到 `ci-vps-1` 上，汇总作业改由第 1 个 runner 接，不用改代码。成功时打印 `GATE_FALLBACK_ON ci-vps-1`。`ci-vps-1` 不带 `ci-vps` 标签（runner 处于暂停）时拒绝，先运行 `resume-runners.sh`；`ci-vps-1` 在 GitHub 上不是 `online` 时也拒绝（它自己也接不了任务），打印 `GATE_FALLBACK_FAILED ci-vps-1 is offline`，标签不动。
+- `scripts/operations/ci-runner/gate-fallback.sh on`：把 `ci-vps-gate` 标签加到 `ci-vps-1` 上，汇总作业改由第 1 个 runner 接，不用改代码。成功时打印 `GATE_FALLBACK_ON ci-vps-1`。`ci-vps-1` 不带 `ci-vps` 标签（runner 处于暂停）时拒绝，先运行 `resume-runners.sh`；`ci-vps-1` 在 GitHub 上不是 `online` 时也拒绝（它自己也接不了任务），打印以 `GATE_FALLBACK_FAILED ci-vps-1 is offline` 开头的一行，标签不动。加上标签时如果 `ci-vps-gate` 在 GitHub 上还是 `online`，脚本多打印一行 `note:`，提醒两个 runner 都会接汇总作业。
 - `scripts/operations/ci-runner/gate-fallback.sh off`：第 3 个 runner 修好并在线之后运行，去掉这个标签，打印 `GATE_FALLBACK_OFF ci-vps-1`。
 - 这个脚本只改 GitHub 上的标签，不连 VPS，和暂停、恢复共用同一把锁。读不到 GitHub、标签没加上或没去掉时打印 `GATE_FALLBACK_FAILED` 和原因，以退出码 1 结束。
 - 应急期间运行过 `pause-runners.sh` 的话，应急标签会被一起去掉；`resume-runners.sh` 之后如果第 3 个 runner 还没修好，再运行一次 `gate-fallback.sh on`。

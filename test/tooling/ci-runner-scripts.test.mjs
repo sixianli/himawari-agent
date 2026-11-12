@@ -1812,6 +1812,23 @@ describe("gate-fallback.sh", () => {
     expect(box.managedLabels()["ci-vps-1"]).toEqual(["ci-vps"]);
   });
 
+  it("on warns when the gate runner is still online, and says nothing extra when it is offline", () => {
+    const online = threeRunners();
+    online.set("online-from", 1);
+    expect(fallback(online, "on").stdout).toContain("note: ci-vps-gate is online");
+    const offline = threeRunners();
+    writeFileSync(
+      path.join(offline.root, "bin", "gh"),
+      readFileSync(path.join(offline.root, "bin", "gh"), "utf8").replace(
+        '(n >= o) ? "online" : "offline"',
+        '($2 == "ci-vps-gate") ? "offline" : "online"',
+      ),
+    );
+    const result = fallback(offline, "on");
+    expect(result.stdout).toContain("GATE_FALLBACK_ON ci-vps-1");
+    expect(result.stdout).not.toContain("note:");
+  });
+
   it("on is refused while the runners are paused", () => {
     const box = threeRunners({ labelled: false });
     const result = fallback(box, "on");

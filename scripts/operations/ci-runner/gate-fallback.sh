@@ -16,6 +16,8 @@ esac
 take_lock
 runner_select 1
 FALLBACK=$RUNNER_NAME
+runner_select 3
+GATE=$RUNNER_NAME
 TABLE=$(github_runners) || { echo "GATE_FALLBACK_FAILED could not list runners on GitHub; labels untouched"; exit 1; }
 COUNT=$(runner_field "$TABLE" "$FALLBACK" 1 | grep -c .)
 [ "$COUNT" = 1 ] || { echo "GATE_FALLBACK_FAILED GitHub has $COUNT runners named $FALLBACK; labels untouched"; exit 1; }
@@ -38,6 +40,7 @@ if [ "$WANTED" = on ]; then
   TABLE=$(github_runners) || TABLE=""
   carries_gate_label "$TABLE" || { echo "GATE_FALLBACK_FAILED $RUNNER_GATE_LABEL is not on $FALLBACK"; exit 1; }
   echo "GATE_FALLBACK_ON $FALLBACK now also takes $RUNNER_GATE_LABEL jobs (status=$(runner_field "$TABLE" "$FALLBACK" 3))"
+  [ "$(runner_field "$TABLE" "$GATE" 3)" != online ] || echo "note: $GATE is online on GitHub, so both runners now take these jobs; run gate-fallback.sh off unless it is stuck"
   echo "pause-runners.sh removes this label; after resume-runners.sh run gate-fallback.sh on again if the gate runner is still down"
   exit 0
 fi
