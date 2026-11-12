@@ -78,7 +78,8 @@ struct PairingView: View {
                         .padding(.vertical, 12)
                         .padding(.horizontal, 18)
                         .frame(maxWidth: .infinity)
-                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: DesignTokens.Pairing.bannerRadius, style: .continuous))
+                        .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Pairing.bannerRadius, style: .continuous))
+                        .hmShadow(DesignTokens.Shadows.lift)
                 }
                 SunflowerMark(detail: .full, growing: model.phase == .submitting)
                     .frame(width: DesignTokens.Size.pairingMark, height: DesignTokens.Size.pairingMark)
@@ -86,11 +87,13 @@ struct PairingView: View {
                     Text(L.text("pairing.hello"))
                         .font(.system(size: removed ? DesignTokens.Pairing.removedTitleSize : DesignTokens.TypeScale.title1.size, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.hmText)
+                        .hmLineHeight((removed ? DesignTokens.Pairing.removedTitleSize : DesignTokens.TypeScale.title1.size) * 1.2)
                         .multilineTextAlignment(.center)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                     Text(L.text("pairing.subtitle"))
-                        .hmType(DesignTokens.TypeScale.body)
+                        .font(DesignTokens.TypeScale.body.font)
+                        .hmLineHeight(DesignTokens.TypeScale.body.size * 1.5)
                         .foregroundStyle(Color.hmMuted)
                         .multilineTextAlignment(.center)
                 }
@@ -178,7 +181,7 @@ struct PairingView: View {
                         .accessibilityLabel(Text(number.replacingOccurrences(of: " ", with: "")))
                     Text(L.text("pairing.waiting"))
                         .font(.himawari(DesignTokens.Pairing.waitingTextSize, weight: .semibold))
-                        .lineSpacing(DesignTokens.Pairing.waitingTextSize * 0.3)
+                        .hmLineHeight(DesignTokens.Pairing.waitingTextSize * 1.5)
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
                 }
@@ -203,7 +206,7 @@ struct PairingView: View {
                     .multilineTextAlignment(.center)
                 Text(Self.detail(problem))
                     .font(DesignTokens.TypeScale.body.font)
-                    .lineSpacing(DesignTokens.TypeScale.body.size * 0.3)
+                    .hmLineHeight(DesignTokens.TypeScale.body.size * 1.5)
                     .foregroundStyle(Color.hmMuted)
                     .multilineTextAlignment(.center)
             }

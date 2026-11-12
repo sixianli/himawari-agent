@@ -231,17 +231,19 @@ public struct EdgeFade: View {
 
     private let edge: Edge
     private let height: CGFloat
+    private let solid: CGFloat
 
-    public init(_ edge: Edge, height: CGFloat) {
+    public init(_ edge: Edge, height: CGFloat, solid: CGFloat) {
         self.edge = edge
         self.height = height
+        self.solid = solid
     }
 
     public var body: some View {
         LinearGradient(
             stops: [
                 .init(color: Color.hmBackground, location: 0),
-                .init(color: Color.hmBackground, location: 0.4),
+                .init(color: Color.hmBackground, location: solid),
                 .init(color: Color.hmBackground.opacity(0), location: 1),
             ],
             startPoint: edge == .top ? .top : .bottom,

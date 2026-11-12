@@ -69,11 +69,6 @@ public struct TypeToken: Sendable {
         }
     }
 
-    public var lineSpacing: CGFloat {
-        guard let lineHeight else { return 0 }
-        return max(0, lineHeight - size * 1.2)
-    }
-
     @MainActor
     public var font: Font {
         switch face {
@@ -91,11 +86,20 @@ extension View {
 
     @MainActor
     public func hmType(_ token: TypeToken) -> some View {
-        font(token.font).tracking(token.tracking).lineSpacing(token.lineSpacing)
+        font(token.font).tracking(token.tracking).hmLineHeight(token.lineHeight)
     }
 
     public func hmType(_ token: TypeToken, design: Font.Design) -> some View {
-        font(.system(size: token.size, weight: token.fontWeight, design: design)).tracking(token.tracking).lineSpacing(token.lineSpacing)
+        font(.system(size: token.size, weight: token.fontWeight, design: design)).tracking(token.tracking).hmLineHeight(token.lineHeight)
+    }
+
+    @ViewBuilder
+    public func hmLineHeight(_ points: CGFloat?) -> some View {
+        if let points {
+            lineHeight(.exact(points: points))
+        } else {
+            self
+        }
     }
 }
 

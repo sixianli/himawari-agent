@@ -107,8 +107,8 @@ struct MainTabsView: View {
 
     private var bars: some View {
         ZStack(alignment: .bottom) {
-            EdgeFade(.bottom, height: DesignTokens.Size.fadeTabBar).ignoresSafeArea()
-            HStack(spacing: 14) {
+            EdgeFade(.bottom, height: DesignTokens.Size.fadeTabBar, solid: 0.3)
+            HStack(spacing: 0) {
                 FloatingTabBar(selection: $tab, tabs: [
                     FloatingTab(id: MainTab.today, title: Text(L.text("tab.today"))) {
                         TimelineView(.everyMinute) { context in
@@ -119,14 +119,16 @@ struct MainTabsView: View {
                     FloatingTab(id: MainTab.memory, title: Text(L.text("tab.memory"))) { Icon(.affiliate) },
                 ])
                 .frame(maxWidth: DesignTokens.Size.tabBarWidth)
-                Spacer(minLength: 0)
+                .layoutPriority(1)
+                Spacer(minLength: 12)
                 SunflowerButton(Text(L.text("talk"))) {
                     withAnimation(.snappy) { openThread = OpenThread(threadId: nil) }
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+            .padding(.bottom, 26)
         }
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 }
 

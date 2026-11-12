@@ -14,12 +14,18 @@ public struct ChatListView: View {
 
     public var body: some View {
         ZStack(alignment: .topTrailing) {
+            if store.threads.isEmpty && !store.loadingThreads {
+                VStack(alignment: .leading, spacing: 0) {
+                    ScreenTitle(Text(L.text("chat.title"))).hidden()
+                    ChatListEmptyState()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
+                .ignoresSafeArea(.container, edges: .bottom)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     ScreenTitle(Text(L.text("chat.title")))
-                    if store.threads.isEmpty && !store.loadingThreads {
-                        ChatListEmptyState()
-                    }
                     LazyVStack(spacing: 0) {
                         ForEach(Array(store.threads.enumerated()), id: \.element.id) { index, thread in
                             Button {
@@ -103,6 +109,7 @@ struct ChatListEmptyState: View {
                 .foregroundStyle(Color.hmMuted)
                 .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.emptyMinHeight)
+        .padding(.bottom, DesignTokens.Size.fadeTabBar - 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

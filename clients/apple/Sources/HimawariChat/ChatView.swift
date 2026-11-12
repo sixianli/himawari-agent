@@ -34,6 +34,9 @@ public struct ChatView: View {
             } else {
                 transcript
             }
+            EdgeFade(.top, height: DesignTokens.Size.fadeTop, solid: 0.45)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .ignoresSafeArea()
             VStack(spacing: 0) {
                 header
                 if store.connection != .online, threadId != nil {
@@ -46,7 +49,7 @@ public struct ChatView: View {
                 ChatInputBar(text: $draft, focused: $inputFocused, sending: creating, send: submit)
                     .padding(.horizontal, DesignTokens.Size.composerInsetX)
                     .padding(.bottom, DesignTokens.Size.composerBottom)
-                    .background(alignment: .bottom) { EdgeFade(.bottom, height: DesignTokens.Size.fadeComposer).ignoresSafeArea() }
+                    .background(alignment: .bottom) { EdgeFade(.bottom, height: DesignTokens.Size.fadeComposer, solid: 0.4).ignoresSafeArea() }
             }
             .ignoresSafeArea(.container, edges: .bottom)
         }
@@ -66,7 +69,6 @@ public struct ChatView: View {
 
     private var header: some View {
         ZStack {
-            EdgeFade(.top, height: DesignTokens.Size.fadeTop).ignoresSafeArea()
             HStack {
                 GlassCircleButton(Text(L.text("chat.back")), action: close) {
                     Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
@@ -123,7 +125,7 @@ public struct ChatView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 84 + (store.connection != .online ? bannerHeight : 0))
+            .padding(.top, store.connection != .online ? 94 + bannerHeight : 73)
             .padding(.bottom, 110)
         }
         .defaultScrollAnchor(.top, for: .alignment)
@@ -169,7 +171,7 @@ struct MessageRow: View {
         case .agent:
             Text(text ?? "")
                 .font(.himawari(DesignTokens.TypeScale.answer.size, weight: .medium))
-                .lineSpacing(DesignTokens.TypeScale.answer.lineSpacing)
+                .hmLineHeight(DesignTokens.TypeScale.answer.lineHeight)
                 .foregroundStyle(failed ? Color.hmMuted : Color.hmText)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
@@ -211,7 +213,7 @@ struct StreamingAnswer: View {
             + Text(Image(size: CGSize(width: DesignTokens.Size.streamingDot, height: DesignTokens.Size.streamingDot)) { context in
                 context.fill(Path(ellipseIn: CGRect(x: 0, y: 0, width: DesignTokens.Size.streamingDot, height: DesignTokens.Size.streamingDot)), with: .color(DesignTokens.Colors.streamingDot.color))
             }))
-            .lineSpacing(DesignTokens.TypeScale.answer.lineSpacing)
+            .hmLineHeight(DesignTokens.TypeScale.answer.lineHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -229,8 +231,8 @@ struct NewChatPrompt: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             RadialGradient(colors: [Color.hmGlow, .clear], center: .center, startRadius: 0, endRadius: DesignTokens.Size.newChatGlowRadius / 2)
-                .ignoresSafeArea()
         }
+        .ignoresSafeArea(.container)
     }
 }
 
@@ -289,6 +291,8 @@ struct QueuedMessageRow: View {
             .hmType(DesignTokens.TypeScale.caption)
             .buttonStyle(.plain)
             .frame(minHeight: DesignTokens.Size.minTapTarget)
+            .contentShape(Rectangle())
+            .padding(.vertical, -(DesignTokens.Size.minTapTarget - (DesignTokens.TypeScale.caption.lineHeight ?? DesignTokens.Size.minTapTarget)) / 2)
             .padding(.trailing, 6)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)

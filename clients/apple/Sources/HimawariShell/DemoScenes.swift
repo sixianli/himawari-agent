@@ -68,7 +68,7 @@ struct DemoSceneView: View {
                 .environment(\.listClock, DemoChatFixtures.now.addingTimeInterval(-3 * 86_400))
         case .motionTabs:
             tabs(DemoChatFixtures.chatList())
-                .environment(\.tabsCycleEvery, 1.2)
+                .environment(\.tabsCycleEvery, 3)
         case .chat:
             chat(DemoChatFixtures.answered())
         case .chatNew:
@@ -84,10 +84,10 @@ struct DemoSceneView: View {
                 .environment(\.processStepsOpenAfter, 1)
         case .motionSheet:
             chat(DemoChatFixtures.answered())
-                .environment(\.processStepsOpenAfter, 1.5)
+                .environment(\.processStepsOpenAfter, 4)
         case .motionScroll:
             chat(DemoChatFixtures.longConversation())
-                .environment(\.transcriptScrollsToTopAfter, 1.5)
+                .environment(\.transcriptScrollsToTopAfter, 4)
         case .pairing:
             PairingView(model: .demo(.unpaired(nil)))
         case .pairingScan:

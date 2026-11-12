@@ -167,11 +167,16 @@ for appearance in light dark; do
       motion-*)
         [ "$mode" = "check" ] && continue
         raw="$shots/$scene-$appearance.mov"
+        launch "$scene"
+        waited=0
+        until shown "$scene"; do
+          [ "$waited" -lt 40 ] || { echo "UI_REVIEW_FAILED $raw: scene $scene never reported that it was on screen" >&2; exit 1; }
+          sleep 1
+          waited=$((waited + 1))
+        done
         xcrun simctl io "$udid" recordVideo --codec=h264 --force "$raw" >/dev/null 2>&1 &
         recorder=$!
-        sleep 1
-        launch "$scene"
-        sleep 7
+        sleep 13
         kill -INT "$recorder"
         wait "$recorder" || true
         if command -v avconvert >/dev/null; then
