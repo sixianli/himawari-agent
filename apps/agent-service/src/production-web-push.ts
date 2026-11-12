@@ -150,7 +150,34 @@ export function webPushPayload(notification: WebPushNotification): string {
   );
 }
 
+export type PushContent =
+  | { readonly expired: true }
+  | {
+      readonly expired: false;
+      readonly build: (locale: WebPushLocale) => Omit<WebPushNotification, "badge" | "tag">;
+    };
+
+export interface PushCompanionChannel {
+  deliver(input: {
+    readonly now: string;
+    readonly approvals: readonly ApprovalRequest[];
+    readonly badge: number;
+    readonly kinds: readonly WebPushOutboxItem["kind"][];
+    readonly accountLocale: WebPushLocale | null;
+    readonly visible: boolean;
+    readonly content: (item: WebPushOutboxItem) => Promise<PushContent>;
+  }): Promise<void>;
+  maintain(input: {
+    readonly now: string;
+    readonly approvals: readonly ApprovalRequest[];
+    readonly reminders: readonly MemoryReminder[];
+    readonly accountLocale: WebPushLocale | null;
+    readonly visible: boolean;
+  }): Promise<void>;
+}
+
 export interface ProductionWebPushOptions {
+  readonly companion?: PushCompanionChannel;
   readonly ownerId: RuntimeRequest["ownerId"];
   readonly agentId: RuntimeRequest["agentId"];
   readonly store: WebPushStorePort;
@@ -192,12 +219,7 @@ export interface ProactivePushSource {
   >;
 }
 
-type Content =
-  | { readonly expired: true }
-  | {
-      readonly expired: false;
-      readonly build: (locale: WebPushLocale) => Omit<WebPushNotification, "badge" | "tag">;
-    };
+type Content = PushContent;
 
 export class ProductionWebPush {
   readonly #options: ProductionWebPushOptions;
@@ -304,6 +326,13 @@ export class ProductionWebPush {
     ).filter(({ remindAt }) => Date.parse(now) - Date.parse(remindAt) <= REMINDER_WINDOW_MS);
     await this.#collect(now, approvals, reminders);
     await this.#deliver(now, approvals, reminders.length + approvals.length);
+    await this.#options.companion?.maintain({
+      now,
+      approvals,
+      reminders,
+      accountLocale: (await this.#options.readLocale?.()) ?? null,
+      visible: this.#options.presence.anyVisible(now),
+    });
     await this.#options.store.prune({
       ownerId: this.#options.ownerId,
       agentId: this.#options.agentId,
@@ -396,12 +425,27 @@ export class ProductionWebPush {
 
   async #deliver(now: string, approvals: readonly ApprovalRequest[], badge: number): Promise<void> {
     const { ownerId, agentId, store } = this.#options;
-    const due = await store.listDue({ ownerId, agentId, now, limit: SEND_BATCH });
-    if (due.length === 0) return;
     const kinds = await store.readKinds({ ownerId, agentId });
     const accountLocale = (await this.#options.readLocale?.()) ?? null;
     const visible = this.#options.presence.anyVisible(now);
     const contents = new Map<string, Content>();
+    const contentOf = async (item: WebPushOutboxItem): Promise<Content> => {
+      const cached = contents.get(item.sourceKey);
+      if (cached) return cached;
+      const built = await this.#content(item, approvals, now);
+      contents.set(item.sourceKey, built);
+      return built;
+    };
+    await this.#options.companion?.deliver({
+      now,
+      approvals,
+      badge,
+      kinds,
+      accountLocale,
+      visible,
+      content: contentOf,
+    });
+    const due = await store.listDue({ ownerId, agentId, now, limit: SEND_BATCH });
     for (const entry of due) {
       const { item } = entry;
       if (Date.parse(now) >= Date.parse(item.expiresAt)) {
@@ -412,10 +456,8 @@ export class ProductionWebPush {
         await this.#record(entry, now, "suppressed", "WEB_PUSH_KIND_OFF");
         continue;
       }
-      if (!contents.has(item.sourceKey))
-        contents.set(item.sourceKey, await this.#content(item, approvals, now));
-      const content = contents.get(item.sourceKey);
-      if (!content || content.expired) {
+      const content = await contentOf(item);
+      if (content.expired) {
         await this.#record(entry, now, "expired", null);
         continue;
       }

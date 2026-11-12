@@ -57,6 +57,7 @@ import {
   DEVICE_ACCESS_SECRET_PURPOSES,
   type DeviceGatewayAuditFailure,
   type DevicePairingAccess,
+  DevicePushService,
   digestIdentityCredential,
   EnvelopePayloadProtector,
   type HostProviderSecretSource,
@@ -88,6 +89,7 @@ import {
   type UnixSocketIdentity,
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { ProductionApplePush } from "./production-apple-push.js";
 import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
@@ -200,6 +202,7 @@ export interface ProductionHttpCompositionOptions {
   readonly onDeviceAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
   readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
+  readonly onDevicePushFailed?: (error: unknown) => void;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
@@ -225,6 +228,7 @@ export interface ProductionHttpCompositionOptions {
   readonly webPush?: {
     readonly presence: WebPushPresence;
     readonly push: ProductionWebPush | undefined;
+    readonly applePush?: ProductionApplePush;
   };
   readonly proactive?: ProductionProactive;
   readonly museIntake?: ProductionMuseIntake;
@@ -1178,6 +1182,20 @@ export async function createProductionHttpComposition(
     now,
     ...(options.onDeviceWarning ? { onWarning: options.onDeviceWarning } : {}),
   });
+  const pushPresence = options.webPush?.presence ?? new WebPushPresence();
+  const applePush = options.webPush?.applePush;
+  const devicePush = new DevicePushService({
+    store: repository.applePush(),
+    reactions: repository.webPush(),
+    configuration: () => (applePush ? configuration.runPolicy?.applePush : undefined),
+    now,
+    onPresence: (deviceId, visible, at) => pushPresence.beat(`device:${deviceId}`, visible, at),
+    onRegistered: (_deviceId, pushType) => {
+      if (pushType === "widgets") applePush?.requestWidgetRefresh();
+    },
+    onRevoke: async (deviceId) => applePush?.wipeDevice(deviceId),
+    ...(options.onDevicePushFailed ? { onFailure: options.onDevicePushFailed } : {}),
+  });
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     repository,
@@ -1191,7 +1209,7 @@ export async function createProductionHttpComposition(
     webPushControl: new ProductionWebPushControl({
       configuration,
       store: repository.webPush(),
-      presence: options.webPush?.presence ?? new WebPushPresence(),
+      presence: pushPresence,
       push: options.webPush?.push,
       clock: { now: clock },
     }),
@@ -1250,6 +1268,7 @@ export async function createProductionHttpComposition(
       service: pairedDevices,
       configuration: () => deviceConfiguration,
       audit: repository.auditLedger(),
+      push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
     },

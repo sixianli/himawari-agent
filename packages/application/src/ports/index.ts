@@ -34,6 +34,7 @@ export * from "./memory-checkup.js";
 export * from "./memory-consolidation.js";
 export * from "./memory-dates.js";
 export * from "./memory-episodes.js";
+export * from "./apple-push.js";
 export * from "./device-limits.js";
 export * from "./paired-devices.js";
 export * from "./memory-projection.js";

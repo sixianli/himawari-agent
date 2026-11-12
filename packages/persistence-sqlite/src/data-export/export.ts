@@ -571,6 +571,11 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
         "是凭据，不导出；设备的名字、种类和状态在 data/paired-devices.jsonl 里，只供查看，导入时不恢复，换库后设备要重新配对",
     },
     {
+      what: "苹果推送令牌和通知按钮凭据",
+      count: null,
+      reason: "是凭据，不导出；换库后设备重新配对时会重新登记推送令牌，旧通知上的按钮失效",
+    },
+    {
       what: "记忆评测的题库和每次评测的分数",
       count: null,
       reason:

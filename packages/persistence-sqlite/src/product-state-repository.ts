@@ -1,5 +1,6 @@
 import path from "node:path";
 import type {
+  ApplePushStorePort,
   AttentionStatePort,
   AuditLedgerPort,
   AuthorityFence,
@@ -602,6 +603,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   webPush(): WebPushStorePort {
     return this.durable.webPush();
+  }
+
+  applePush(): ApplePushStorePort {
+    return this.durable.applePush();
   }
 
   pairedDevices(): PairedDeviceStorePort {

@@ -139,6 +139,7 @@ function withServerFilledReferences(
 export async function dispatchDeviceGatewayRequest(input: {
   readonly request: DeviceGatewayRequest;
   readonly confirmed: boolean;
+  readonly notificationAction?: boolean;
   readonly pairedDeviceId: string;
   readonly authentication: GatewayAuthenticationContext;
   readonly authority: DeviceGatewayAuthority;
@@ -147,11 +148,13 @@ export async function dispatchDeviceGatewayRequest(input: {
   readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly now: () => Date;
 }): Promise<unknown> {
-  if (input.request.tier === "change" && !input.confirmed)
+  if (input.request.tier === "change" && !input.confirmed && !input.notificationAction)
     throw new DeviceGatewayError(DEVICE_GATEWAY_ERROR_CODES.CONFIRM_REQUIRED, 403);
   if (input.request.tier === "read" || input.request.tier === "routine") return forward(input);
   const attempt = randomUUID();
-  const action = `device.gateway.${input.request.tier}`;
+  const action = input.notificationAction
+    ? "device.notification.action"
+    : `device.gateway.${input.request.tier}`;
   const targetRef = `${input.pairedDeviceId}:${input.request.entry.gateway}:${input.request.entry.type}`;
   const record = (outcome: "accepted" | "completed" | "failed") =>
     input.audit.append({

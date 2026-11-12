@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   AgentThreadGatewayService,
+  type ApplePushConfiguration,
   createProactiveSeal,
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceConfiguration,
@@ -35,6 +36,7 @@ import {
   BrowserTextPayloadReader,
   buildHttpGatewayServer,
   type DevicePairingAccess,
+  DevicePushService,
   EnvelopePayloadProtector,
   PairedDeviceService,
   type PairedDeviceWarning,
@@ -90,6 +92,10 @@ export interface Harness {
   readonly ownerActive: { current: boolean };
   readonly webAuthentication: GatewayAuthenticationContext;
   readonly warnings: PairedDeviceWarning[];
+  readonly stateRoot: string;
+  readonly presence: { deviceId: string; visible: boolean }[];
+  readonly registered: { deviceId: string; pushType: string }[];
+  readonly revoking: string[];
 }
 
 export async function harness(
@@ -97,6 +103,7 @@ export async function harness(
     readonly origin?: string;
     readonly staticRoot?: string;
     readonly pairingAccess?: DevicePairingAccess;
+    readonly applePush?: ApplePushConfiguration;
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -245,6 +252,9 @@ export async function harness(
   const ownerActive = { current: true };
   const warnings: PairedDeviceWarning[] = [];
   const csrf = new SessionBoundCsrfService({ key: csrfKey, now });
+  const presence: Harness["presence"] = [];
+  const registered: Harness["registered"] = [];
+  const revoking: string[] = [];
   const app = buildHttpGatewayServer({
     publicOrigin,
     staticRoot: options.staticRoot ?? stateRoot,
@@ -303,6 +313,17 @@ export async function harness(
       }),
       configuration: () => configuration.current,
       audit: repository.auditLedger(),
+      push: new DevicePushService({
+        store: repository.applePush(),
+        reactions: repository.webPush(),
+        configuration: () => options.applePush,
+        now,
+        onPresence: (deviceId, visible) => presence.push({ deviceId, visible }),
+        onRegistered: (deviceId, pushType) => registered.push({ deviceId, pushType }),
+        onRevoke: async (deviceId) => {
+          revoking.push(deviceId);
+        },
+      }),
       ...(options.pairingAccess ? { pairingAccess: options.pairingAccess } : {}),
     },
   });
@@ -316,6 +337,10 @@ export async function harness(
     ownerActive,
     webAuthentication,
     warnings,
+    stateRoot,
+    presence,
+    registered,
+    revoking,
     webHeaders: async () => ({
       host: new URL(publicOrigin).host,
       origin: publicOrigin,
@@ -349,7 +374,11 @@ export function pairingCode(uri: unknown): string {
   return (JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as { code: string }).code;
 }
 
-export async function pair(h: Harness, name = "Andy iPhone") {
+export async function pair(
+  h: Harness,
+  name = "Andy iPhone",
+  kind: "iphone" | "watch" | "mac" = "iphone",
+) {
   const started = await web(h, "pairing-codes");
   expect(started.status).toBe(201);
   const keys = generateDeviceTestKeyPair();
@@ -360,7 +389,7 @@ export async function pair(h: Harness, name = "Andy iPhone") {
     headers: { host: new URL(h.origin).host, "content-type": "application/json" },
     payload: JSON.stringify({
       pairingCode: pairingCode(started.body["pairingUri"]),
-      kind: "iphone",
+      kind,
       name,
       releaseChannel: "direct",
       devicePublicKey: keys.publicKeySpkiBase64,
@@ -370,8 +399,12 @@ export async function pair(h: Harness, name = "Andy iPhone") {
   return { response, keys, confirmKeys, code: pairingCode(started.body["pairingUri"]) };
 }
 
-export async function pairAndConfirm(h: Harness): Promise<PairedClient> {
-  const paired = await pair(h);
+export async function pairAndConfirm(
+  h: Harness,
+  name?: string,
+  kind?: "iphone" | "watch" | "mac",
+): Promise<PairedClient> {
+  const paired = await pair(h, name, kind);
   expect(paired.response.statusCode).toBe(201);
   const device = (paired.response.json() as { device: { id: string; revision: number } }).device;
   const confirmed = await web(h, "confirm", {
