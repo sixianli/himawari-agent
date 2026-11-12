@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CLIENT_CAPABILITY_TABLE,
+  CLIENT_PAGE_TABLE,
   CLIENT_GATEWAY_MESSAGE_TYPES,
   CLIENT_GATEWAY_SCHEMAS,
   CLIENT_GATEWAYS,
@@ -138,5 +139,28 @@ describe("[第11批] 客户端能力表", () => {
 
   it("任务页的 GitHub 监控开关手机上不做", () => {
     expect(findClientCapability("v2", "github.monitor.set_state")?.tier).toBe("not_on_phone");
+  });
+
+  it("运维类页面留在网页：三页和它们的消息类型手机上不做，点头和服务器状态不受影响", () => {
+    for (const webPage of ["host-workspaces", "workers", "health-deployment"]) {
+      const page = CLIENT_PAGE_TABLE.find((entry) => entry.webPage === webPage);
+      expect(page && "notOnPhone" in page ? page.notOnPhone : undefined, webPage).toContain(
+        "多端分工",
+      );
+    }
+    const operations = CLIENT_CAPABILITY_TABLE.filter(
+      (entry) =>
+        entry.gateway === "v2" &&
+        (entry.type.startsWith("workspace.") ||
+          entry.type.startsWith("host.") ||
+          entry.type.startsWith("delegation.")),
+    );
+    expect(operations.length).toBeGreaterThanOrEqual(12);
+    for (const entry of operations) {
+      expect(entry.tier, entry.type).toBe("not_on_phone");
+      expect(entry.reason, entry.type).toContain("多端分工");
+    }
+    expect(findClientCapability("v2", "approval.respond")?.tier).toBe("change");
+    expect(findClientCapability("v2", "capability.list")?.tier).toBe("read");
   });
 });

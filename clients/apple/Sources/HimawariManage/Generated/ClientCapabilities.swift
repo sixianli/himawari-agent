@@ -41,10 +41,7 @@ public enum NativePage: String, Sendable, CaseIterable {
     case settingsAuthorizations = "settings.authorizations"
     case settingsCapabilities = "settings.capabilities"
     case settingsDevices = "settings.devices"
-    case settingsHealth = "settings.health"
     case settingsImprovements = "settings.improvements"
-    case settingsWorkers = "settings.workers"
-    case settingsWorkspaces = "settings.workspaces"
     case todayApprovals = "today.approvals"
     case todaySuggestions = "today.suggestions"
 }
@@ -116,13 +113,13 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v2, type: "capability.update.respond", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: []),
         ClientCapability(gateway: .v2, type: "capability.disable", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: []),
         ClientCapability(gateway: .v2, type: "capability.rollback", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: []),
-        ClientCapability(gateway: .v2, type: "host.file.prepare", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: []),
-        ClientCapability(gateway: .v2, type: "host.file.execute", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: []),
-        ClientCapability(gateway: .v2, type: "workspace.copy.create", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: []),
-        ClientCapability(gateway: .v2, type: "workspace.copy.prepare", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: []),
-        ClientCapability(gateway: .v2, type: "workspace.copy.select", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: []),
-        ClientCapability(gateway: .v2, type: "workspace.stage", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: []),
-        ClientCapability(gateway: .v2, type: "workspace.commit", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: []),
+        ClientCapability(gateway: .v2, type: "host.file.prepare", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: []),
+        ClientCapability(gateway: .v2, type: "host.file.execute", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: []),
+        ClientCapability(gateway: .v2, type: "workspace.copy.create", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: []),
+        ClientCapability(gateway: .v2, type: "workspace.copy.prepare", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: []),
+        ClientCapability(gateway: .v2, type: "workspace.copy.select", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: []),
+        ClientCapability(gateway: .v2, type: "workspace.stage", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: []),
+        ClientCapability(gateway: .v2, type: "workspace.commit", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: []),
         ClientCapability(gateway: .v2, type: "suggestion.respond", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: []),
         ClientCapability(gateway: .v2, type: "reflection.configure", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: []),
         ClientCapability(gateway: .v2, type: "improvement.review", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: []),
@@ -133,14 +130,14 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v2, type: "capability.detail", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: []),
         ClientCapability(gateway: .v2, type: "grant.list", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: []),
         ClientCapability(gateway: .v2, type: "grant.detail", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: []),
-        ClientCapability(gateway: .v2, type: "host.directory.detail", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: []),
-        ClientCapability(gateway: .v2, type: "workspace.detail", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: []),
-        ClientCapability(gateway: .v2, type: "workspace.list", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: []),
+        ClientCapability(gateway: .v2, type: "host.directory.detail", kind: .query, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: []),
+        ClientCapability(gateway: .v2, type: "workspace.detail", kind: .query, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: []),
+        ClientCapability(gateway: .v2, type: "workspace.list", kind: .query, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: []),
         ClientCapability(gateway: .v2, type: "suggestion.list", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: []),
         ClientCapability(gateway: .v2, type: "suggestion.detail", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: []),
         ClientCapability(gateway: .v2, type: "reflection.detail", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: []),
-        ClientCapability(gateway: .v2, type: "delegation.detail", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: []),
-        ClientCapability(gateway: .v2, type: "delegation.list", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: []),
+        ClientCapability(gateway: .v2, type: "delegation.detail", kind: .query, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: []),
+        ClientCapability(gateway: .v2, type: "delegation.list", kind: .query, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: []),
         ClientCapability(gateway: .v2, type: "improvement.list", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: []),
         ClientCapability(gateway: .v2, type: "improvement.detail", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: []),
         ClientCapability(gateway: .threadV3, type: "thread.create", kind: .command, tier: .routine, tightenPayload: nil, tightenOpenKeys: []),

@@ -89,6 +89,7 @@ const DEVICE_FEEDBACK = "手机上的通知反馈走设备接口 POST feedback";
 const INTERNAL_ONLY = "只由服务器内部在回答生成完成时调用，网页也不直接发";
 const NO_V1_IN_PRODUCTION =
   "生产服务没有装最早那套网关（v1），网页也已改用对话网关和 v2；手机走同样的两套";
+const WEB_OPERATIONS_ONLY = "多端分工：运维类页面留在网页（Andy 2026-11-12）";
 const WEB_TASKS_ONLY =
   "网页的任务页约定还没定（contractStatus 是 missing），这条命令只在那一页用；网页定了约定后再补原生页";
 
@@ -159,13 +160,13 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   change("v2", "capability.update.respond"),
   change("v2", "capability.disable"),
   change("v2", "capability.rollback"),
-  change("v2", "host.file.prepare"),
-  change("v2", "host.file.execute"),
-  change("v2", "workspace.copy.create"),
-  change("v2", "workspace.copy.prepare"),
-  change("v2", "workspace.copy.select"),
-  change("v2", "workspace.stage"),
-  change("v2", "workspace.commit"),
+  notOnPhone("v2", "host.file.prepare", "command", WEB_OPERATIONS_ONLY),
+  notOnPhone("v2", "host.file.execute", "command", WEB_OPERATIONS_ONLY),
+  notOnPhone("v2", "workspace.copy.create", "command", WEB_OPERATIONS_ONLY),
+  notOnPhone("v2", "workspace.copy.prepare", "command", WEB_OPERATIONS_ONLY),
+  notOnPhone("v2", "workspace.copy.select", "command", WEB_OPERATIONS_ONLY),
+  notOnPhone("v2", "workspace.stage", "command", WEB_OPERATIONS_ONLY),
+  notOnPhone("v2", "workspace.commit", "command", WEB_OPERATIONS_ONLY),
   change("v2", "suggestion.respond"),
   change("v2", "reflection.configure"),
   change("v2", "improvement.review"),
@@ -176,14 +177,14 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   query("v2", "capability.detail"),
   query("v2", "grant.list"),
   query("v2", "grant.detail"),
-  query("v2", "host.directory.detail"),
-  query("v2", "workspace.detail"),
-  query("v2", "workspace.list"),
+  notOnPhone("v2", "host.directory.detail", "query", WEB_OPERATIONS_ONLY),
+  notOnPhone("v2", "workspace.detail", "query", WEB_OPERATIONS_ONLY),
+  notOnPhone("v2", "workspace.list", "query", WEB_OPERATIONS_ONLY),
   query("v2", "suggestion.list"),
   query("v2", "suggestion.detail"),
   query("v2", "reflection.detail"),
-  query("v2", "delegation.detail"),
-  query("v2", "delegation.list"),
+  notOnPhone("v2", "delegation.detail", "query", WEB_OPERATIONS_ONLY),
+  notOnPhone("v2", "delegation.list", "query", WEB_OPERATIONS_ONLY),
   query("v2", "improvement.list"),
   query("v2", "improvement.detail"),
 
@@ -297,10 +298,10 @@ export const CLIENT_PAGE_TABLE: readonly ClientPageEntry[] = Object.freeze([
   { webPage: "memory", nativePage: "memory" },
   { webPage: "capabilities-adapters", nativePage: "settings.capabilities" },
   { webPage: "authorizations-grants", nativePage: "settings.authorizations" },
-  { webPage: "host-workspaces", nativePage: "settings.workspaces" },
+  { webPage: "host-workspaces", notOnPhone: WEB_OPERATIONS_ONLY },
   { webPage: "suggestions", nativePage: "today.suggestions" },
   { webPage: "reflection", nativePage: "memory.reflection" },
-  { webPage: "workers", nativePage: "settings.workers" },
+  { webPage: "workers", notOnPhone: WEB_OPERATIONS_ONLY },
   { webPage: "improvements", nativePage: "settings.improvements" },
   { webPage: "trace", notOnPhone: WEB_CONTRACT_MISSING },
   { webPage: "settings", notOnPhone: WEB_CONTRACT_MISSING },
@@ -309,9 +310,5 @@ export const CLIENT_PAGE_TABLE: readonly ClientPageEntry[] = Object.freeze([
     nativePage: "settings.devices",
     noGatewayTypes: "等设备管理的网关类型",
   },
-  {
-    webPage: "health-deployment",
-    nativePage: "settings.health",
-    noGatewayTypes: "等服务器状态查询",
-  },
+  { webPage: "health-deployment", notOnPhone: WEB_OPERATIONS_ONLY },
 ]);

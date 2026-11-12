@@ -469,6 +469,17 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     expect(legacy.statusCode).toBe(403);
     expect(legacy.json()).toEqual({ error: { code: "DEVICE_GATEWAY_NOT_ON_PHONE" } });
 
+    const issued = await challenge(h, client);
+    const commit = await gateway(
+      h,
+      client,
+      gatewayBody({ gateway: "v2", type: "workspace.commit", payload: {} }),
+      { nonce: issued.challenge },
+    );
+    expect(commit.statusCode).toBe(403);
+    expect(commit.json()).toEqual({ error: { code: "DEVICE_GATEWAY_NOT_ON_PHONE" } });
+    expect(await auditTrail(h)).toEqual([]);
+
     const unknown = await gateway(
       h,
       client,
