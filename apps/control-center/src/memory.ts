@@ -12,6 +12,7 @@ export type MemoryOverview = Extract<
 export type MemoryItem = MemoryOverview["memories"][number];
 export type PendingMemory = MemoryOverview["pending"][number];
 export type MemoryTidyUp = MemoryOverview["tidyUps"][number];
+export type MemoryConversationReview = MemoryOverview["conversationReviews"][number];
 export type MemoryReminder = MemoryOverview["reminders"][number];
 export type MemoryImportSource = MemoryOverview["imports"][number]["source"];
 export type OwnerRule = Extract<
@@ -42,6 +43,7 @@ export interface MemoryModel {
   readonly setPinned: (item: MemoryItem, pinned: boolean) => Promise<boolean>;
   readonly markViewed: () => Promise<boolean>;
   readonly undoTidy: (item: MemoryTidyUp) => Promise<boolean>;
+  readonly undoReview: (item: MemoryConversationReview) => Promise<boolean>;
   readonly respondReminder: (
     item: { readonly reminderId: string },
     action: "dismiss" | "snooze" | "cancel",
@@ -199,6 +201,8 @@ export function useMemory(input: {
     setPinned: (item, pinned) => mutate(item, pinned ? "pin" : "unpin"),
     markViewed: () => send("memory.page.viewed", () => ({})),
     undoTidy: (item) => send("memory.tidy.undo", () => ({ changeId: item.changeId })),
+    undoReview: (item) =>
+      send("memory.conversationReview.undo", () => ({ reviewId: item.reviewId })),
     respondReminder: (item, action) =>
       send("memory.reminder.respond", () => ({ reminderId: item.reminderId, action })),
     createReminder: (text, due, repeat) =>
