@@ -21,6 +21,7 @@ export const REDACTOR_ONLY_FILES = Object.freeze([
   "packages/sensitive-capture/src/restoration.ts",
   "packages/sensitive-capture/src/identifiers.ts",
   "packages/application/src/services/model-egress.ts",
+  "packages/application/src/services/perception-extraction.ts",
   "packages/platform-node/src/files/pi-output-export.ts",
   "apps/agent-service/src/production-gap-export.ts",
 ]);

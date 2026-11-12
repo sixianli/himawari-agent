@@ -275,6 +275,31 @@ describe("data export: perception", () => {
     expect(empty.manifest.counts.perceptionRecords).toBe(0);
   });
 
+  it("[P1-6][reverse] extraction progress and spoken-command utterance ids appear in no exported file", async () => {
+    const source = await seeded();
+    source.database
+      .prepare(
+        `INSERT INTO perception_extractions
+           (episode_id, owner_id, agent_id, status, attempts, record_count, next_attempt_at,
+            error_code, cost_micros, updated_at)
+         VALUES (?, ?, ?, 'failed', 3, 1, NULL, 'EXTRACTION_HIDDEN_MARK', 4242, ?)`,
+      )
+      .run(episodeId, source.ownerId, source.agentId, NOW);
+    source.database
+      .prepare(
+        `INSERT INTO perception_command_utterances (owner_id, agent_id, utterance_id, recorded_at)
+         VALUES (?, ?, 'utterance-hidden-mark-0001', ?)`,
+      )
+      .run(source.ownerId, source.agentId, NOW);
+    const { files } = await exportOf(source);
+    expect(files.size).toBeGreaterThan(0);
+    for (const [path, bytes] of files) {
+      const text = decoder.decode(bytes);
+      for (const hidden of ["EXTRACTION_HIDDEN_MARK", "utterance-hidden-mark-0001"])
+        expect(text, path).not.toContain(hidden);
+    }
+  });
+
   it("[P1-6][reverse] a perception line with an unknown field is refused and import restores no perception data", async () => {
     const source = await seeded();
     const { files } = await exportOf(source);

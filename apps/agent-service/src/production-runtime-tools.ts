@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   ApplicationPortError,
+  type OriginGatedEffect,
   type CapabilityExecutionHandleStorePort,
   type CapabilityInvocationAuthority,
   type CapabilityInvocationReceiptPort,
@@ -49,6 +50,7 @@ import {
   TOOL_RESULT_RECALL_UNAVAILABLE,
   TOOL_RESULT_REMINDER_MEMORY_NOT_READY,
   TOOL_RESULT_REMINDER_REJECTED,
+  TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
   TOOL_RESULT_RULE_REJECTED,
   TOOL_RESULT_REMINDER_UNAVAILABLE,
   TOOL_SAVE_COPY,
@@ -85,8 +87,18 @@ import {
   type ProductionMemoryRecall,
 } from "./production-memory-recall.js";
 import {
+  PERCEPTION_READ_CAPABILITY_REF,
+  PERCEPTION_TOOL_CAPABILITY_REFS,
+  PerceptionToolError,
+  type ProductionPerceptionTools,
+  perceptionReadUnavailable,
+  perceptionToolDescriptors,
+} from "./production-perception-tools.js";
+import {
   type ProductionReminderTools,
   REMINDER_CAPABILITY_REFS,
+  REMINDER_LIST_CAPABILITY_REF,
+  REMINDER_SET_CAPABILITY_REF,
   ReminderInputError,
   reminderToolDescriptors,
 } from "./production-reminder-writer.js";
@@ -95,6 +107,7 @@ import {
   ownerRuleToolDescriptors,
   type ProductionOwnerRuleTools,
   RULE_CAPABILITY_REFS,
+  RULE_LIST_CAPABILITY_REF,
 } from "./production-owner-rules.js";
 import {
   SANDBOX_TOOL_RESULT_LOST,
@@ -316,6 +329,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly memoryRecall?: Pick<ProductionMemoryRecall, "recallWithClassification">;
   readonly reminders?: Pick<ProductionReminderTools, "run">;
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
+  readonly perception?: Pick<ProductionPerceptionTools, "run" | "gate">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
@@ -561,6 +575,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#options.memoryRecall) descriptors.push(memoryRecallDescriptor());
     if (this.#options.reminders) descriptors.push(...reminderToolDescriptors());
     if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
+    if (this.#options.perception) descriptors.push(...perceptionToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
     return descriptors;
   }
@@ -606,19 +621,56 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       RULE_CAPABILITY_REFS.includes(invocation.capabilityRef)
     );
   }
+  #isPerception(invocation: RuntimeToolInvocation) {
+    return (
+      invocation.capabilityHandleRef === null &&
+      PERCEPTION_TOOL_CAPABILITY_REFS.includes(invocation.capabilityRef)
+    );
+  }
+  async #perception(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
+    const perception = this.#options.perception;
+    return this.#ownerScoped(
+      invocation,
+      "perception",
+      perception ? (call) => perception.run(call) : undefined,
+      (error) =>
+        error instanceof PerceptionToolError
+          ? { errorCode: error.code, note: error.note }
+          : invocation.capabilityRef === PERCEPTION_READ_CAPABILITY_REF
+            ? perceptionReadUnavailable()
+            : {
+                errorCode: "DEVICE_ACTION_UNAVAILABLE",
+                note: TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE.text,
+              },
+    );
+  }
+  async #originGate(invocation: RuntimeToolInvocation, effect: OriginGatedEffect) {
+    const decision = await this.#options.perception?.gate(invocation, effect);
+    if (decision && decision.errorCode !== null)
+      throw new PerceptionToolError(decision.errorCode, decision.note ?? "");
+  }
   async #ownerRule(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
     const rules = this.#options.ownerRules;
     return this.#ownerScoped(
       invocation,
       "rule",
-      rules ? async (call) => ({ value: await rules.run(call) }) : undefined,
-      (error) => ({
-        errorCode: error instanceof OwnerRuleError ? error.code : "RULE_UNAVAILABLE",
-        note:
-          error instanceof OwnerRuleError && error.detail
-            ? `${TOOL_RESULT_RULE_REJECTED.text}（${error.detail.slice(0, 200)}）`
-            : TOOL_RESULT_RULE_REJECTED.text,
-      }),
+      rules
+        ? async (call) => {
+            if (call.capabilityRef !== RULE_LIST_CAPABILITY_REF)
+              await this.#originGate(call, "rule_change");
+            return { value: await rules.run(call) };
+          }
+        : undefined,
+      (error) =>
+        error instanceof PerceptionToolError
+          ? { errorCode: error.code, note: error.note }
+          : {
+              errorCode: error instanceof OwnerRuleError ? error.code : "RULE_UNAVAILABLE",
+              note:
+                error instanceof OwnerRuleError && error.detail
+                  ? `${TOOL_RESULT_RULE_REJECTED.text}（${error.detail.slice(0, 200)}）`
+                  : TOOL_RESULT_RULE_REJECTED.text,
+            },
     );
   }
   #isMemoryRecall(invocation: RuntimeToolInvocation) {
@@ -655,8 +707,22 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     return this.#ownerScoped(
       invocation,
       "reminder",
-      reminders ? async (call) => ({ value: await reminders.run(call) }) : undefined,
+      reminders
+        ? async (call) => {
+            if (call.capabilityRef === REMINDER_LIST_CAPABILITY_REF)
+              return { value: await reminders.run(call) };
+            await this.#originGate(
+              call,
+              call.capabilityRef === REMINDER_SET_CAPABILITY_REF
+                ? "reminder_create"
+                : "reminder_cancel",
+            );
+            return { value: await reminders.run(call) };
+          }
+        : undefined,
       (error) => {
+        if (error instanceof PerceptionToolError)
+          return { errorCode: error.code, note: error.note };
         const errorCode = error instanceof ReminderInputError ? error.code : "REMINDER_UNAVAILABLE";
         return {
           errorCode,
@@ -672,7 +738,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScoped(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "reminder" | "rule",
+    marker: "recall" | "reminder" | "rule" | "perception",
     run:
       | ((call: RuntimeToolInvocation) => Promise<{
           readonly value: unknown;
@@ -782,6 +848,14 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         allowed: this.#exposed.has(invocation.runId) && this.#options.ownerRules !== undefined,
         permissionDecisionRef: `owner-rule:${digest([invocation.runId, invocation.toolCallId])}`,
         reasonCode: "OWNER_RULE_OWNER_SCOPE",
+      };
+    }
+    if (this.#isPerception(invocation)) {
+      await this.#options.assertRunActive(invocation.runId);
+      return {
+        allowed: this.#exposed.has(invocation.runId) && this.#options.perception !== undefined,
+        permissionDecisionRef: `perception:${digest([invocation.runId, invocation.toolCallId])}`,
+        reasonCode: "PERCEPTION_OWNER_SCOPE",
       };
     }
     if (this.#isMemoryRecall(invocation)) {
@@ -1116,6 +1190,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#isMemoryRecall(invocation)) return this.#recall(invocation);
     if (this.#isReminder(invocation)) return this.#reminder(invocation);
     if (this.#isOwnerRule(invocation)) return this.#ownerRule(invocation);
+    if (this.#isPerception(invocation)) return this.#perception(invocation);
     if (this.#background && this.#codingTool(invocation) === "bash") {
       const key = digest([invocation.runId, invocation.toolCallId]);
       const command = await this.#commandDeadline(invocation, true);

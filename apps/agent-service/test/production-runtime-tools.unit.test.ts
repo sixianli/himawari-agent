@@ -1546,6 +1546,103 @@ it("offers reminder tools last, runs them once per call and tells the model why 
   expect(broken).toMatchObject({ outcome: "failed", errorCode: "REMINDER_UNAVAILABLE" });
 });
 
+it("[iOS-5] offers the two perception tools last and does nothing consequential once the run read outside content", async () => {
+  const f = fixture();
+  const reminder = vi.fn(async () => ({ created: true, reminderId: "reminder:a" }));
+  const rule = vi.fn(async () => ({ saved: true }));
+  const perception = vi.fn(async () => ({ value: { records: [] } }));
+  const blocked = { current: false };
+  const gate = vi.fn(async (_call: RuntimeToolInvocation, effect: string) => ({
+    verdict: blocked.current ? ("confirm" as const) : ("proceed" as const),
+    effect: effect as "reminder_create",
+    initiator: "owner" as const,
+    recordIds: blocked.current ? ["perception:a"] : [],
+    errorCode: blocked.current ? "PERCEPTION_ORIGIN_CONFIRMATION_REQUIRED" : null,
+    note: blocked.current ? "这一步没做，原因是这一轮里你读过不可信的外来内容" : null,
+  }));
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    reminders: { run: reminder },
+    ownerRules: { run: rule },
+    perception: { run: perception, gate },
+  });
+  const definitions = await tools.listAuthorized(invocation.runId, [
+    invocation.capabilityHandleRef,
+  ]);
+  expect(definitions.map(({ name }) => name).slice(-2)).toEqual([
+    "device_action",
+    "perception_read",
+  ]);
+  const base = { ...invocation, capabilityHandleRef: null };
+  const read = { ...base, toolCallId: "p-read", capabilityRef: "perception.read", arguments: {} };
+  expect((await tools.preflight(read)).allowed).toBe(true);
+  expect(await tools.execute(read)).toMatchObject({ outcome: "succeeded" });
+  const set = (toolCallId: string) => ({
+    ...base,
+    toolCallId,
+    capabilityRef: "reminder.set",
+    arguments: { text: "交周报", due: "2026-11-06T15:00" },
+  });
+  expect(await tools.execute(set("set-before"))).toMatchObject({ outcome: "succeeded" });
+  expect(reminder).toHaveBeenCalledTimes(1);
+  blocked.current = true;
+  const refused = await tools.execute(set("set-after"));
+  expect(refused).toMatchObject({
+    outcome: "failed",
+    errorCode: "PERCEPTION_ORIGIN_CONFIRMATION_REQUIRED",
+  });
+  expect(refused.modelContent).toContain("这一步没做");
+  expect(reminder).toHaveBeenCalledTimes(1);
+  for (const capabilityRef of ["reminder.cancel", "rule.set", "rule.undo"])
+    expect(
+      await tools.execute({
+        ...base,
+        toolCallId: `x-${capabilityRef}`,
+        capabilityRef,
+        arguments: {},
+      }),
+    ).toMatchObject({ outcome: "failed", errorCode: "PERCEPTION_ORIGIN_CONFIRMATION_REQUIRED" });
+  expect(reminder).toHaveBeenCalledTimes(1);
+  expect(rule).not.toHaveBeenCalled();
+  for (const capabilityRef of ["reminder.list", "rule.list"])
+    expect(
+      await tools.execute({
+        ...base,
+        toolCallId: `l-${capabilityRef}`,
+        capabilityRef,
+        arguments: {},
+      }),
+    ).toMatchObject({ outcome: "succeeded" });
+  expect(gate.mock.calls.map(([, effect]) => effect)).toEqual([
+    "reminder_create",
+    "reminder_create",
+    "reminder_cancel",
+    "rule_change",
+    "rule_change",
+  ]);
+});
+
+it("[iOS-5] does not offer or allow the perception tools when they are not configured", async () => {
+  const f = fixture();
+  const tools = f.tool();
+  const names = (
+    await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])
+  ).map((definition) => definition.name);
+  expect(names).not.toContain("perception_read");
+  expect(names).not.toContain("device_action");
+  for (const capabilityRef of ["perception.read", "device.action"])
+    expect(
+      (
+        await tools.preflight({
+          ...invocation,
+          capabilityRef,
+          capabilityHandleRef: null,
+          arguments: {},
+        })
+      ).allowed,
+    ).toBe(false);
+});
+
 it("does not offer or allow reminder tools when reminders are not configured", async () => {
   const f = fixture();
   const tools = f.tool();

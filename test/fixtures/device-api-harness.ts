@@ -96,6 +96,7 @@ export interface Harness {
   readonly ownerVoiceQualified: { current: boolean };
   readonly limitWarnings: PerceptionLimitWarning[];
   readonly readText: (contentRef: string) => Promise<string | undefined>;
+  readonly protector: EnvelopePayloadProtector;
 }
 
 export async function harness(
@@ -306,6 +307,7 @@ export async function harness(
     timeZone,
     ownerVoiceQualified,
     limitWarnings,
+    protector,
     readText: async (contentRef) => {
       const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
       if (!payload) return undefined;

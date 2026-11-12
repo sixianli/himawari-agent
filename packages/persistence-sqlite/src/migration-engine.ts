@@ -742,6 +742,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0095_perception_records.sql",
   },
+  {
+    sequence: 96,
+    name: "perception_extraction",
+    changeSet: "perception-extraction",
+    phase: "expand" as const,
+    file: "0096_perception_extraction.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =
