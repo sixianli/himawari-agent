@@ -1,0 +1,139 @@
+{
+  "now": "2026-11-12T12:30:00+09:00",
+  "timeZone": "Asia/Tokyo",
+  "cases": [
+    {
+      "id": "zh-standing-1",
+      "sentence": "以后邮件里出现入管局的，一律提醒我",
+      "expect": "standing"
+    },
+    { "id": "zh-standing-2", "sentence": "夜里别提醒我", "expect": "standing" },
+    { "id": "zh-standing-3", "sentence": "以后订阅相关的邮件必须通知我", "expect": "standing" },
+    {
+      "id": "zh-standing-4",
+      "sentence": "每天晚上十一点到早上七点别推送给我",
+      "expect": "standing"
+    },
+    { "id": "zh-standing-5", "sentence": "周末一律不要提醒我", "expect": "standing" },
+    {
+      "id": "zh-standing-6",
+      "sentence": "以后涉及退款的邮件必须读完整个邮件串再判断",
+      "expect": "standing"
+    },
+    {
+      "id": "zh-standing-7",
+      "sentence": "从现在起，房东的来信每次都要通知我",
+      "expect": "standing"
+    },
+    { "id": "zh-standing-8", "sentence": "今年起每次税务局来信都提醒我", "expect": "standing" },
+    {
+      "id": "ja-standing-1",
+      "sentence": "今後、入管からのメールは必ず通知してください",
+      "expect": "standing"
+    },
+    { "id": "ja-standing-2", "sentence": "夜は通知しないでほしい", "expect": "standing" },
+    {
+      "id": "ja-standing-3",
+      "sentence": "税務署からのメールはこれからずっと通知して",
+      "expect": "standing"
+    },
+    {
+      "id": "en-standing-1",
+      "sentence": "From now on, always flag emails from the immigration bureau",
+      "expect": "standing"
+    },
+    { "id": "en-standing-2", "sentence": "Never notify me on weekends", "expect": "standing" },
+    { "id": "en-standing-3", "sentence": "Don't ping me at night", "expect": "standing" },
+    {
+      "id": "zh-until-1",
+      "sentence": "今晚别提醒我",
+      "expect": "until",
+      "window": ["2026-11-12T20:00", "2026-11-13T10:00"]
+    },
+    {
+      "id": "zh-until-2",
+      "sentence": "今天别发邮件提醒了",
+      "expect": "until",
+      "window": ["2026-11-12T18:00", "2026-11-13T10:00"]
+    },
+    {
+      "id": "zh-until-3",
+      "sentence": "这个周末别提醒我",
+      "expect": "until",
+      "window": ["2026-11-15T18:00", "2026-11-16T10:00"]
+    },
+    {
+      "id": "zh-until-4",
+      "sentence": "明天一整天别提醒我",
+      "expect": "until",
+      "window": ["2026-11-13T20:00", "2026-11-14T10:00"]
+    },
+    {
+      "id": "zh-until-5",
+      "sentence": "下周一之前别提醒我",
+      "expect": "until",
+      "window": ["2026-11-15T20:00", "2026-11-16T12:00"]
+    },
+    {
+      "id": "zh-until-6",
+      "sentence": "到下周三为止，入管局的邮件一律提醒我",
+      "expect": "until",
+      "window": ["2026-11-18T00:00", "2026-11-19T10:00"]
+    },
+    {
+      "id": "zh-until-7",
+      "sentence": "这个月底之前，涉及房租的邮件必须通知我",
+      "expect": "until",
+      "window": ["2026-11-30T00:00", "2026-12-01T10:00"]
+    },
+    {
+      "id": "ja-until-1",
+      "sentence": "今晩は通知しないで",
+      "expect": "until",
+      "window": ["2026-11-12T20:00", "2026-11-13T10:00"]
+    },
+    {
+      "id": "ja-until-2",
+      "sentence": "出張中の12月3日までは通知しないでください",
+      "expect": "until",
+      "window": ["2026-12-03T00:00", "2026-12-04T10:00"]
+    },
+    {
+      "id": "en-until-1",
+      "sentence": "Don't notify me tonight",
+      "expect": "until",
+      "window": ["2026-11-12T20:00", "2026-11-13T10:00"]
+    },
+    {
+      "id": "en-until-2",
+      "sentence": "Don't remind me until Friday morning",
+      "expect": "until",
+      "window": ["2026-11-13T00:00", "2026-11-13T13:00"]
+    },
+    {
+      "id": "en-until-3",
+      "sentence": "For the next three days, always notify me about emails from my landlord",
+      "expect": "until",
+      "window": ["2026-11-15T00:00", "2026-11-16T10:00"]
+    },
+    { "id": "zh-item-1", "sentence": "这封先不用管", "expect": "this_item" },
+    { "id": "zh-item-2", "sentence": "这封必须提醒我", "expect": "this_item" },
+    { "id": "zh-item-3", "sentence": "这封先不用管，以后再说", "expect": "this_item" },
+    { "id": "zh-item-4", "sentence": "刚才那封不用提醒我了", "expect": "this_item" },
+    { "id": "zh-item-5", "sentence": "这次回答短一点", "expect": "this_item" },
+    { "id": "ja-item-1", "sentence": "今回だけは通知しないで", "expect": "this_item" },
+    {
+      "id": "en-item-1",
+      "sentence": "Just this once, skip the notification",
+      "expect": "this_item"
+    },
+    { "id": "en-item-2", "sentence": "Ignore that last email, please", "expect": "this_item" },
+    { "id": "zh-unclear-1", "sentence": "先别提醒我", "expect": "unclear" },
+    { "id": "zh-unclear-2", "sentence": "下个月起，涉及保险的邮件通知我", "expect": "unclear" },
+    { "id": "zh-unclear-3", "sentence": "最近别提醒我了", "expect": "unclear" },
+    { "id": "zh-unclear-4", "sentence": "回头再说，那类邮件先不要通知", "expect": "unclear" },
+    { "id": "ja-unclear-1", "sentence": "しばらく通知しないで", "expect": "unclear" },
+    { "id": "en-unclear-1", "sentence": "Stop notifying me for a while", "expect": "unclear" },
+    { "id": "en-unclear-2", "sentence": "Hold off on those alerts for now", "expect": "unclear" }
+  ]
+}

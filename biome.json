@@ -35,7 +35,8 @@
         "test/qualification/evidence/**",
         "test/fixtures/memory-evaluation/embeddings-*.json",
         "evals/owner-rule/*.json",
-        "evals/memory-capture/*.json"
+        "evals/memory-capture/*.json",
+        "evals/rule-scope/*.json"
       ],
       "formatter": {
         "enabled": false
