@@ -1079,6 +1079,11 @@ describe("opencode review merge gate", () => {
       expect(f.check().problems).toEqual(["no-complete-round"]);
       f.writeLedger([
         ok(1, f.reviewed, deepseek, { outcome: "api-error" }),
+        ok(2, f.reviewed, glm, { substitute: true, substituteFor: deepseek }),
+      ]);
+      expect(f.check().problems).toEqual(["no-complete-round"]);
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek, { outcome: "api-error" }),
         ok(1, f.reviewed, glm, { substitute: true, substituteFor: deepseek }),
       ]);
       expect(f.check()).toMatchObject({ round: 1, reviewed: f.reviewed, problems: [] });

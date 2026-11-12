@@ -134,7 +134,7 @@ export function delegationPrompt(task) {
   const command = `node scripts/model-review/opencode-review.mjs ${argv.join(" ")}`;
   const retryText =
     task.round === undefined
-      ? `只有一种情况可以补跑：某个模型的 REVIEW_RESULT 里 outcome 是 ${RETRYABLE_OUTCOMES.join(" 或 ")} 时，只对那一个模型补跑一次，命令是上面那条去掉 --models 后，加 --round <那一轮的序号> --models <那个模型的短名>。补跑照样受 --approved-usd 和脚本的先问门槛约束，遇到 BUDGET_NEEDS_APPROVAL 就停下报告。`
+      ? `只有一种情况可以补跑：某个模型的 REVIEW_RESULT 里 outcome 是 ${RETRYABLE_OUTCOMES.join(" 或 ")} 时，只对那一个模型补跑一次，命令是上面那条去掉 --models 和它后面的值之后，加 --round <那一轮的序号> --models <那个模型的短名>。补跑照样受 --approved-usd 和脚本的先问门槛约束，遇到 BUDGET_NEEDS_APPROVAL 就停下报告。`
       : "这条命令本身就是补跑，不再补跑。";
   return `你是 himawari-agent 的复核执行线程，只负责跑一次模型复核并把原始记录推回分支；你不做判断、不改代码。
 
@@ -364,8 +364,8 @@ export function checkResult(task, { repo, fetch = true }) {
     added.some(
       (record) =>
         record.outcome === "ok" &&
-        ((record.model === model && !record.substitute) ||
-          (record.substitute && record.substituteFor === model)),
+        ((record.model === model && record.substitute === undefined) ||
+          (record.substitute === true && record.substituteFor === model)),
     );
   const notOk = expectedModels.filter((model) => !finished(model));
   const estimated = added.some((record) => record.costUnknown || record.inFlight);
