@@ -69,7 +69,7 @@ Andy 2026-11-11 21:32（日本时间）同意开工：“那这样，我们先�
 
 **会动到的地方：**
 
-- 新建：一份迁移（`devices`、`device_pairing_codes`、`device_request_nonces` 三张表）；设备身份的服务和存储；按 RFC 9421 验签的模块；设备接口的路由；测试客户端（用真的 P-256 密钥签名，放在 `packages/testing`）；`test/integration/device-api.test.ts`、`test/integration/device-connection.test.ts`。
+- 新建：一份迁移（`paired_devices`、`device_pairing_codes`、`device_request_nonces` 三张表；`devices` 这个名字已被网页登录的浏览器设备表占用）；设备身份的服务和存储；按 RFC 9421 验签的模块；设备接口的路由；测试客户端（用真的 P-256 密钥签名，放在 `packages/testing`）；`test/integration/device-api.test.ts`、`test/integration/device-connection.test.ts`。
 - 修改：`packages/platform-node/src/http-gateway-server.ts`（挂上 `/api/device/v1/`，这组路径不走浏览器的同源检查，走设备验签）；表结构目录和数据导出（设备的名字和种类导出，凭据类不导出）；配置解析（签名容许的时间差、心跳间隔、连接最长寿命）；网页“设置”里加“设备”页（三种语言）。
 - 不动：对话、记忆、审批的现有逻辑；发给模型的任何内容（这一批不加工具、不加提示词）。
 
