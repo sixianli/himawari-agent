@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { CapabilityLifecycleService } from "@himawari-agent/application";
+import {
+  CapabilityLifecycleService,
+  type CapabilityRuntimeQualification,
+} from "@himawari-agent/application";
 import { SANDBOX_RUNTIME_VERSION } from "@himawari-agent/execution-contracts";
 import { loadCapabilityDeploymentSnapshot } from "@himawari-agent/platform-node";
 import { InMemoryCapabilityRegistryStore, ManualClock } from "@himawari-agent/testing";
@@ -14,6 +17,7 @@ const PLATFORM = process.platform === "darwin" ? "darwin" : "linux";
 const HOST = "host:qualification-lifecycle";
 const REF = "sandbox-qualification-lifecycle";
 const RUNNER = "c".repeat(64);
+const NEXT_RUNNER = "e".repeat(64);
 const NOW = "2026-11-12T00:00:00.000Z";
 const roots: string[] = [];
 
@@ -21,8 +25,8 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-function entry(): Json {
-  const digest = `sha256:${RUNNER}`;
+function entry(version: string, runner: string): Json {
+  const digest = `sha256:${runner}`;
   const runtimeRoot = "/opt/himawari/releases/first/capabilities";
   const executable = `${runtimeRoot}/node/bin/node`;
   const runnerPath = `${runtimeRoot}/runners/${REF}.mjs`;
@@ -37,7 +41,7 @@ function entry(): Json {
     manifestVersion: "capability.v2",
     ref: REF,
     displayName: "Sandbox qualification lifecycle",
-    version: "1.0.0",
+    version,
     source: { type: "program", locator: `artifact:${REF}` },
     sourceIdentity: "publisher:himawari",
     integrity: digest,
@@ -101,7 +105,7 @@ function entry(): Json {
         architecture: PLATFORM === "darwin" ? "arm64" : "x64",
         osRelease: "27.0.0",
         runtimeDigest: "d".repeat(64),
-        runnerDigest: RUNNER,
+        runnerDigest: runner,
         evidenceDigest: "f".repeat(64),
         resourceMode: "observe_and_stop",
         terminationMode: PLATFORM === "darwin" ? "best_effort" : "verified_tree",
@@ -127,14 +131,14 @@ function entry(): Json {
       value: {
         schemaVersion: "sandbox-host-binding.v1",
         capabilityRef: REF,
-        capabilityVersion: "1.0.0",
+        capabilityVersion: version,
         artifactDigest: digest,
         hostId: HOST,
         profileRef: "host-readonly.v1",
         runtimeRoot,
         runtimeDigest: "d".repeat(64),
         executable: { path: executable, sha256: "a".repeat(64) },
-        runner: { path: runnerPath, sha256: RUNNER },
+        runner: { path: runnerPath, sha256: runner },
         privateRoot: "/var/private-jobs",
         roots: [
           {
@@ -153,116 +157,170 @@ function entry(): Json {
   };
 }
 
-async function loadSnapshot(change?: (value: Json) => void) {
+async function loadSnapshot(version = "1.0.0", runner = RUNNER) {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), "himawari-qualify-lifecycle-")));
   roots.push(root);
-  const capability = entry();
-  change?.(capability);
   const bytes = Buffer.from(
-    JSON.stringify({ schemaVersion: "capability-deployment.v1", capabilities: [capability] }),
+    JSON.stringify({
+      schemaVersion: "capability-deployment.v1",
+      capabilities: [entry(version, runner)],
+    }),
   );
   const snapshotPath = path.join(root, "capabilities.json");
   await writeFile(snapshotPath, bytes, { mode: 0o600 });
-  return loadCapabilityDeploymentSnapshot({
+  const deployment = await loadCapabilityDeploymentSnapshot({
     snapshotPath,
     sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
     now: () => NOW,
   });
+  const [capability] = deployment.snapshot.capabilities;
+  if (!capability) throw new Error("snapshot has no capability");
+  return capability;
 }
 
-function lifecycleFor(deployment: Awaited<ReturnType<typeof loadSnapshot>>) {
-  const clock = new ManualClock(NOW);
-  const store = new InMemoryCapabilityRegistryStore();
-  const lifecycle = new CapabilityLifecycleService({
-    store,
-    clock,
+type Loaded = Awaited<ReturnType<typeof loadSnapshot>>;
+type Change = (qualification: CapabilityRuntimeQualification) => CapabilityRuntimeQualification;
+
+function lifecycleFor(loaded: readonly Loaded[], change: Change = (value) => value) {
+  return new CapabilityLifecycleService({
+    store: new InMemoryCapabilityRegistryStore(),
+    clock: new ManualClock(NOW),
     artifacts: {
-      verify: async (candidate) => ({
-        verificationVersion: "capability-artifact-verification.v1",
-        artifactDigest: candidate.integrity,
-        signatureStatus: candidate.artifact.signatureStatus,
-        signerRef: candidate.artifact.signerRef,
-        verified: true,
-        reasonCodes: [],
-        verifiedAt: NOW,
-      }),
+      verify: async (candidate) => {
+        const known = loaded.some((item) => item.manifest.integrity === candidate.integrity);
+        return {
+          verificationVersion: "capability-artifact-verification.v1",
+          artifactDigest: candidate.integrity,
+          signatureStatus: candidate.artifact.signatureStatus,
+          signerRef: candidate.artifact.signerRef,
+          verified: known,
+          reasonCodes: known ? [] : ["CAPABILITY_ARTIFACT_DIGEST_MISMATCH"],
+          verifiedAt: NOW,
+        };
+      },
     },
     runtime: {
       qualify: async (candidate) => {
-        const found = deployment.snapshot.capabilities.find(
-          (item) => item.manifest.ref === candidate.ref,
-        );
+        const found = loaded.find((item) => item.manifest.integrity === candidate.integrity);
         if (!found) throw new Error("capability missing from snapshot");
-        return found.qualification;
+        return change(found.qualification);
       },
     },
   });
-  return lifecycle;
 }
 
-async function approveInstall(lifecycle: CapabilityLifecycleService, manifest: never) {
-  await lifecycle.discover(manifest);
+async function approveInstall(lifecycle: CapabilityLifecycleService, loaded: Loaded) {
+  await lifecycle.discover(loaded.manifest);
   await lifecycle.reviewRequired(REF);
   await lifecycle.recordSourceReview(REF, { reviewer: "owner:lifecycle", reviewedAt: NOW });
   await lifecycle.approveInstallation(REF, "approval-install-lifecycle");
 }
 
+async function rejected(change: Change) {
+  const loaded = await loadSnapshot();
+  const lifecycle = lifecycleFor([loaded], change);
+  await approveInstall(lifecycle, loaded);
+  await expect(lifecycle.activate(REF)).rejects.toThrow("runtime qualification failed");
+}
+
 describe("sandbox capability qualification through the lifecycle service", () => {
   it("activates a capability whose sandbox evidence honestly reports no kernel resource ceiling", async () => {
-    const deployment = await loadSnapshot();
-    const [manifest] = deployment.manifests;
-    if (!manifest) throw new Error("snapshot has no capability");
-    expect(deployment.snapshot.capabilities[0]?.qualification.enforcement.resourceCeilings).toBe(
-      false,
-    );
-    const lifecycle = lifecycleFor(deployment);
-    await approveInstall(lifecycle, manifest as never);
+    const loaded = await loadSnapshot();
+    expect(loaded.qualification.enforcement.resourceCeilings).toBe(false);
+    const lifecycle = lifecycleFor([loaded]);
+    await approveInstall(lifecycle, loaded);
     const active = await lifecycle.activate(REF);
     expect(active.lifecycle).toBe("active");
     expect(active.runtimeQualification?.sandbox?.resourceMode).toBe("observe_and_stop");
   });
 
-  it("rejects sandbox evidence when a filesystem, network, process or secret control is not enforced", async () => {
-    for (const control of ["filesystem", "network", "processes", "secrets"] as const) {
-      const deployment = await loadSnapshot();
-      const [manifest] = deployment.manifests;
-      if (!manifest) throw new Error("snapshot has no capability");
-      const lifecycle = lifecycleFor({
-        ...deployment,
-        snapshot: {
-          ...deployment.snapshot,
-          capabilities: deployment.snapshot.capabilities.map((item) => ({
-            ...item,
-            qualification: {
-              ...item.qualification,
-              enforcement: { ...item.qualification.enforcement, [control]: false },
-            },
-          })),
-        },
-      });
-      await approveInstall(lifecycle, manifest as never);
-      await expect(lifecycle.activate(REF)).rejects.toThrow("runtime qualification failed");
-    }
+  it("activates an approved update and rolls it back with sandbox evidence", async () => {
+    const first = await loadSnapshot();
+    const next = await loadSnapshot("1.0.1", NEXT_RUNNER);
+    const lifecycle = lifecycleFor([first, next]);
+    await approveInstall(lifecycle, first);
+    await lifecycle.activate(REF);
+    const proposed = await lifecycle.proposeUpdate(REF, next.manifest, {
+      policyRef: "owner-policy-update",
+      allowAutomaticCompatibleUpdates: true,
+    });
+    if (proposed.lifecycle === "update_proposed")
+      await lifecycle.approveUpdate(REF, "approval-update-lifecycle");
+    const updated = await lifecycle.activateUpdate(REF);
+    expect(updated).toMatchObject({
+      lifecycle: "active",
+      declaration: { version: "1.0.1" },
+      runtimeQualification: { artifactDigest: next.manifest.integrity },
+    });
+    const rolledBack = await lifecycle.rollback(REF);
+    expect(rolledBack).toMatchObject({
+      lifecycle: "active",
+      declaration: { version: "1.0.0" },
+      runtimeQualification: { artifactDigest: first.manifest.integrity },
+    });
+  });
+
+  it("refuses an update whose sandbox qualification claims a kernel resource ceiling", async () => {
+    const first = await loadSnapshot();
+    const next = await loadSnapshot("1.0.1", NEXT_RUNNER);
+    const lifecycle = lifecycleFor([first, next], (value) =>
+      value.artifactDigest === next.manifest.integrity
+        ? { ...value, enforcement: { ...value.enforcement, resourceCeilings: true } }
+        : value,
+    );
+    await approveInstall(lifecycle, first);
+    await lifecycle.activate(REF);
+    const proposed = await lifecycle.proposeUpdate(REF, next.manifest, {
+      policyRef: "owner-policy-update",
+      allowAutomaticCompatibleUpdates: true,
+    });
+    if (proposed.lifecycle === "update_proposed")
+      await lifecycle.approveUpdate(REF, "approval-update-lifecycle");
+    await expect(lifecycle.activateUpdate(REF)).rejects.toThrow("runtime qualification failed");
+  });
+
+  it.each([
+    "filesystem",
+    "network",
+    "processes",
+    "secrets",
+  ] as const)("rejects sandbox evidence when %s is not enforced", async (control) => {
+    await rejected((value) => ({
+      ...value,
+      enforcement: { ...value.enforcement, [control]: false },
+    }));
   });
 
   it("rejects a sandbox qualification that claims a kernel resource ceiling the evidence does not give", async () => {
-    const deployment = await loadSnapshot();
-    const [manifest] = deployment.manifests;
-    if (!manifest) throw new Error("snapshot has no capability");
-    const lifecycle = lifecycleFor({
-      ...deployment,
-      snapshot: {
-        ...deployment.snapshot,
-        capabilities: deployment.snapshot.capabilities.map((item) => ({
-          ...item,
-          qualification: {
-            ...item.qualification,
-            enforcement: { ...item.qualification.enforcement, resourceCeilings: true },
-          },
-        })),
-      },
-    });
-    await approveInstall(lifecycle, manifest as never);
-    await expect(lifecycle.activate(REF)).rejects.toThrow("runtime qualification failed");
+    await rejected((value) => ({
+      ...value,
+      enforcement: { ...value.enforcement, resourceCeilings: true },
+    }));
+  });
+
+  it("rejects a sandbox qualification whose termination claim contradicts its evidence", async () => {
+    await rejected((value) => ({
+      ...value,
+      enforcement: { ...value.enforcement, termination: !value.enforcement.termination },
+    }));
+  });
+
+  it("rejects sandbox evidence for another platform or another runtime identity", async () => {
+    await rejected((value) => ({
+      ...value,
+      platform: value.platform === "linux" ? "darwin" : "linux",
+    }));
+    await rejected((value) => ({ ...value, runtimeIdentity: "srt:0.0.0-other" }));
+  });
+
+  it("still requires every control when a qualification carries no sandbox evidence", async () => {
+    await rejected(({ sandbox: _sandbox, ...value }) => value);
+    const loaded = await loadSnapshot();
+    const lifecycle = lifecycleFor([loaded], ({ sandbox: _sandbox, ...value }) => ({
+      ...value,
+      enforcement: { ...value.enforcement, resourceCeilings: true, termination: true },
+    }));
+    await approveInstall(lifecycle, loaded);
+    await expect(lifecycle.activate(REF)).resolves.toMatchObject({ lifecycle: "active" });
   });
 });

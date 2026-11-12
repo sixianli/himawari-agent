@@ -763,6 +763,8 @@ function qualificationEnforcementHolds(qualification: CapabilityRuntimeQualifica
   const { enforcement, sandbox } = qualification;
   if (!sandbox) return Object.values(enforcement).every(Boolean);
   return (
+    sandbox.platform === qualification.platform &&
+    qualification.runtimeIdentity === `srt:${sandbox.srtVersion}` &&
     enforcement.filesystem &&
     enforcement.network &&
     enforcement.processes &&
