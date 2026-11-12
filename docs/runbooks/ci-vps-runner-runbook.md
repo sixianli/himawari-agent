@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:fcfda7ac3bc85dbb980e9dfa7d2ffb2bade4325fef1698cbe0d39441254613a4"
+contract_sha256: "sha256:528e3003ba00ff994a622dff2ccf52645e1d54aff7ee0b0657a62dd73e766c89"
 supersedes: "docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md"
 superseded_by: ""
 date: "2026-11-07"
@@ -65,7 +65,7 @@ date: "2026-11-07"
 - 防火墙规则只对三个 runner 账号生效（一条规则同时匹配这几个账号的 uid）：拒绝它访问私有网段（`10/8`、`100.64/10`、`172.16/12`、`192.168/16`、`fc00::/7`、`fe80::/10`）和 `169.254.0.0/16`（云主机的元数据服务地址），以及本机任何地址（回环地址、公网 IPv4 和 IPv6 都算，规则写作 `fib daddr type local`）上端口名单里的 TCP 端口（DNS 的 53 端口除外）。名单在每次生成规则时取当时在监听的端口，再加上上一份规则里已有的端口。访问互联网不受影响。防火墙不管 UDP 和本机的 Unix 套接字（同一台机器上进程之间通信用的文件形式的接口）：Unix 套接字靠文件权限挡住，Docker 的控制接口另外被藏起来。
 - 同一个 runner 上的所有任务都以同一个账号运行，所以一个任务能读到这个 runner 自己的注册凭证，也能改 runner 的安装文件和后面任务的残留。仓库是私有的，只有 Andy 和他自己的代理线程会推送，所以接受这一点。这也是三个 runner 都不给 docker 组的原因：docker 组等于 root，一个任务就能拿到整台机器。怀疑 runner 被改过时，按 [Rollback](#rollback) 完整卸载后重新安装、注册；只重新运行安装脚本不会重新解压 runner。
 - VPS 只跑 CI，所以 runner 不限 CPU，CPU 和磁盘优先级用系统默认。每个检查 runner 内存最多 15 GB（`MemoryHigh=14G`、`MemoryMax=15G`），不用交换分区，最多 2048 个进程。两个检查 runner 的服务都放在 `gh-runners.slice`（把几个服务放进同一个资源分组、一起设上限的单元）里，合计内存最多 18 GB（`MemoryHigh=17G`、`MemoryMax=18G`），最多 4096 个进程。汇总 runner 单独放在 `ghgate.slice` 里：预留 2 GB（`MemoryMin=2G`，检查任务把内存吃满时系统也不会先回收它这一份），上限也是 2 GB，最多 1024 个进程。这个分组的名字不带短横线，因为 systemd 把名字里的短横线当成上下级（`gh-runners.slice` 实际挂在 `gh.slice` 下面），而预留内存要每一级上级都设了才生效。两个分组合计 20 GB，留出的约 2 GB 让 ssh 在 runner 用满自己的内存时仍能登录。
-- 每个任务开始前检查 runner 目录所在磁盘（就是根盘）的可用空间，低于 16 GiB（两个任务可能同时占盘）或读不出数字时都拒绝这个任务；任务结束后删除它的检出和 `_work/_temp`；每小时的定时清理删除三天前的 `_work` 残留和 14 天前的 runner 诊断日志，哪个 runner 有任务在跑就跳过它，查不出有没有任务时也跳过并以退出码 1 结束；共享目录里超过 6 小时没变的运行目录（汇总作业被取消或 runner 崩溃时留下的）不论有没有任务都删掉。
+- 每个任务开始前检查 runner 目录所在磁盘（就是根盘）的可用空间，低于 16 GiB（两个检查任务可能同时占盘，汇总任务占得很少）或读不出数字时都拒绝这个任务；任务结束后删除它的检出和 `_work/_temp`；每小时的定时清理删除三天前的 `_work` 残留和 14 天前的 runner 诊断日志，哪个 runner 有任务在跑就跳过它，查不出有没有任务时也跳过并以退出码 1 结束；共享目录里超过 6 小时没变的运行目录（汇总作业被取消或 runner 崩溃时留下的）不论有没有任务都删掉。
 
 [↑ 返回阅读导航](#contents)
 
@@ -146,7 +146,7 @@ date: "2026-11-07"
 
 ### 暂停和恢复
 
-VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时才用。两个入口都在 Andy 的 Mac 上、从仓库根目录运行，用 Andy 已登录的 `gh` 改 runner 标签，用 `ssh` 和 `scp`（选项 `BatchMode=yes`、`ConnectTimeout=20`、`ServerAliveInterval=15`）操作 VPS，地址默认 `ubuntu@158.69.191.249`，可用环境变量 `CI_VPS_SSH` 改；每条远程命令先核对主机名是 `ci-vps`，不是就以退出码 68 结束。VPS 上不放任何 GitHub 凭证。两个入口共用一把锁（`.ci-output/ci-runner-pause.lock` 目录），同时只能跑一个，否则以退出码 75 打印 `RUNNER_LOCKED`；进程被强杀留下的锁目录要手动删掉。做法和理由见 [ADR 0169](../adr/0169-pause-runners-by-removing-the-label.md)。
+VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时才用，三个 runner 一起暂停、一起恢复。两个入口都在 Andy 的 Mac 上、从仓库根目录运行，用 Andy 已登录的 `gh` 改 runner 标签，用 `ssh` 和 `scp`（选项 `BatchMode=yes`、`ConnectTimeout=20`、`ServerAliveInterval=15`）操作 VPS，地址默认 `ubuntu@158.69.191.249`，可用环境变量 `CI_VPS_SSH` 改；每条远程命令先核对主机名是 `ci-vps`，不是就以退出码 68 结束。VPS 上不放任何 GitHub 凭证。两个入口共用一把锁（`.ci-output/ci-runner-pause.lock` 目录），同时只能跑一个，否则以退出码 75 打印 `RUNNER_LOCKED`；进程被强杀留下的锁目录要手动删掉。做法和理由见 [ADR 0169](../adr/0169-pause-runners-by-removing-the-label.md)。
 
 - 暂停：`scripts/operations/ci-runner/pause-runners.sh`。暂停可能要等到最长任务的时限（`ci/policy.json` 里最大的 `timeoutMinutes`）加 5 分钟，代理要在后台运行它。
   1. 把三个脚本传到 VPS，读 VPS 上注册过（服务已启用）的 runner，和 GitHub 上的 runner 对账（只建了账号、还没注册的 runner 不算）：VPS 上的每个 runner 在 GitHub 上必须恰好有一个同名的，GitHub 上带 `ci-vps` 或 `ci-vps-gate` 标签的 runner 也必须都装在 VPS 上。对不上就打印 `RUNNER_PAUSE_FAILED` 和原因，不改标签、不停服务（VPS 上的三个脚本已经更新为仓库里的版本）。
@@ -154,7 +154,7 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
   3. 每 30 秒查一次 GitHub：这些 runner 都显示 `busy=false` 时，在 VPS 上运行 `runner-pause.sh --labels-removed 90`。它连续观察 90 秒，期间每 10 秒查一次本机有没有 `Runner.Worker`，一直没有才停全部服务，打印 `RUNNER_PAUSED`；中途看到任务就打印 `RUNNER_STILL_BUSY`，以退出码 2 结束、不停服务，Mac 侧接着等。
   4. 成功时打印 `RUNNER_PAUSED labels=removed services=stopped`。
   5. 到了等待上限还有任务，打印 `RUNNER_PAUSE_INCOMPLETE labels=removed services=<每个服务当时的状态>` 和还在忙的 runner（一直读不到 GitHub 时写 `(could not read GitHub)`），以退出码 2 结束。服务状态读不到时写 `services=unknown`。VPS 那一步出错（例如只停掉了一个服务）时，打印 `RUNNER_PAUSE_INCOMPLETE labels=removed services=<每个服务当时的状态>`，以退出码 1 结束；等待期间被 Ctrl-C、`TERM` 或 `HUP` 打断时，打印同样一行并加上 `interrupted`，以退出码 130 结束。这几种情况下标签都保持去掉，还在跑的服务跑完手上的任务，不会再接新任务；重新运行 `pause-runners.sh` 即可，或运行 `resume-runners.sh` 撤销。
-- 恢复：`scripts/operations/ci-runner/resume-runners.sh`。它先像暂停一样对账，对不上就打印 `RUNNER_RESUME_FAILED` 和原因，不加标签、不启动服务；再给每个 runner 加回它自己的标签（检查 runner 加 `ci-vps`，汇总 runner 加 `ci-vps-gate`，不会给汇总 runner 加 `ci-vps`；应急标签不会自动加回）并读一遍确认，有没加上、读不到、或者某个 runner 只带着别人的标签（状态 `foreign`）的就打印 `RUNNER_RESUME_INCOMPLETE labels: <每个 runner 的标签状态>; services not started`，不启动服务；然后在 VPS 上运行 `runner-resume.sh`，只启动已注册（服务已启用）的 runner；最后等 GitHub 显示它们 `online`（最多 5 分钟），打印 `RUNNER_RESUMED labels=restored`。先加标签再启动，是因为后加的标签不会让排队的任务派下来，原因和证据见 [ADR 0172](../adr/0172-resume-runners-labels-first.md)；runner 没启动时是 `offline`，不会接任务，所以标签先加回去没有影响。服务没起来时打印 `RUNNER_RESUME_FAILED services=<每个服务当时的状态> labels=restored`；5 分钟内没上线打印 `RUNNER_RESUME_INCOMPLETE services=<各服务状态> labels=restored` 和没上线的 runner（一直读不到 GitHub 时写 `(could not read GitHub)`）；对账之后任何时候被 Ctrl-C、`TERM` 或 `HUP` 打断，打印 `RUNNER_RESUME_INCOMPLETE interrupted`、各服务状态和每个 runner 的标签状态（`on` 只带自己的标签、`extra` 另外还带着应急标签、`off`、`foreign`、`unread`），以退出码 130 结束。这几种情况下排队的任务都继续排队，不会失败，处理后重新运行即可。如果恢复后 runner 在线、带着标签，排队的任务仍然超过 10 分钟不派，重启其中一个 runner 服务（`sudo -n systemctl restart gh-runner.service`），并把这次现象记进 ADR 0172 的后果。
+- 恢复：`scripts/operations/ci-runner/resume-runners.sh`。它先像暂停一样对账，对不上就打印 `RUNNER_RESUME_FAILED` 和原因，不加标签、不启动服务；再给每个 runner 加回它自己的标签（检查 runner 加 `ci-vps`，汇总 runner 加 `ci-vps-gate`，不会给汇总 runner 加 `ci-vps`；应急标签不会自动加回）并读一遍确认，有没加上、读不到、或者某个 runner 只带着别人的标签（状态 `foreign`）的就打印 `RUNNER_RESUME_INCOMPLETE labels: <每个 runner 的标签状态>; services not started`，不启动服务；某个 runner 除了自己的标签还带着别人的标签（状态 `mixed`，例如汇总 runner 带着 `ci-vps`，或 `ci-vps-2` 带着 `ci-vps-gate`）时同样不启动服务，要先在 GitHub 上去掉那个多出来的标签再重新运行，唯一允许的是 `ci-vps-1` 带着应急用的 `ci-vps-gate`（状态 `extra`）；然后在 VPS 上运行 `runner-resume.sh`，只启动已注册（服务已启用）的 runner；最后等 GitHub 显示它们 `online`（最多 5 分钟），打印 `RUNNER_RESUMED labels=restored`。先加标签再启动，是因为后加的标签不会让排队的任务派下来，原因和证据见 [ADR 0172](../adr/0172-resume-runners-labels-first.md)；runner 没启动时是 `offline`，不会接任务，所以标签先加回去没有影响。服务没起来时打印 `RUNNER_RESUME_FAILED services=<每个服务当时的状态> labels=restored`；5 分钟内没上线打印 `RUNNER_RESUME_INCOMPLETE services=<各服务状态> labels=restored` 和没上线的 runner（一直读不到 GitHub 时写 `(could not read GitHub)`）；对账之后任何时候被 Ctrl-C、`TERM` 或 `HUP` 打断，打印 `RUNNER_RESUME_INCOMPLETE interrupted`、各服务状态和每个 runner 的标签状态（`on` 只带自己的标签、`extra` 另外还带着应急标签、`mixed` 另外还带着不该有的别人的标签、`off`、`foreign`、`unread`），以退出码 130 结束。这几种情况下排队的任务都继续排队，不会失败，处理后重新运行即可。如果恢复后 runner 在线、带着标签，排队的任务仍然超过 10 分钟不派，重启其中一个 runner 服务（`sudo -n systemctl restart gh-runner.service`），并把这次现象记进 ADR 0172 的后果。
 - 暂停期间新的 CI 任务在 GitHub 上排队；**排队超过 24 小时的任务会被 GitHub 判为失败**，所以暂停不要超过一天。GitHub 大约 1 分钟后才把停掉的 runner 显示为 `offline`。
 - 暂停期间 VPS 重启：服务会自己起来。按 runner 源码（[`ConfigurationManager.cs`](https://github.com/actions/runner/blob/main/src/Runner.Listener/Configuration/ConfigurationManager.cs)），标签只在配置（`config.sh`）时发给 GitHub，所以重启后标签应该还是去掉的、不会接任务；但启动会话的代码没有核对，也没实测过，重启后先用 `gh api` 看一眼标签。之后照常运行 `resume-runners.sh`。不要在暂停期间重新注册 runner（`config.sh --replace` 会重置标签）。
 - `runner-pause.sh` 不带 `--labels-removed` 时以退出码 64 拒绝：直接在 VPS 上停服务会让 GitHub 在停之前的空档里派来的任务被取消。
@@ -166,7 +166,7 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 
 汇总作业改成只在 `ci-vps-gate` 上跑之后，第 3 个 runner 停了，所有 PR 的 `ci/required` 都会一直排队（不会被当成通过）。修好之前，在 Mac 上从仓库根目录运行：
 
-- `scripts/operations/ci-runner/gate-fallback.sh on`：把 `ci-vps-gate` 标签加到 `ci-vps-1` 上，汇总作业改由第 1 个 runner 接，不用改代码。成功时打印 `GATE_FALLBACK_ON ci-vps-1`。`ci-vps-1` 不带 `ci-vps` 标签（runner 处于暂停）时拒绝，先运行 `resume-runners.sh`。
+- `scripts/operations/ci-runner/gate-fallback.sh on`：把 `ci-vps-gate` 标签加到 `ci-vps-1` 上，汇总作业改由第 1 个 runner 接，不用改代码。成功时打印 `GATE_FALLBACK_ON ci-vps-1`。`ci-vps-1` 不带 `ci-vps` 标签（runner 处于暂停）时拒绝，先运行 `resume-runners.sh`；`ci-vps-1` 在 GitHub 上不是 `online` 时也拒绝（它自己也接不了任务），打印 `GATE_FALLBACK_FAILED ci-vps-1 is offline`，标签不动。
 - `scripts/operations/ci-runner/gate-fallback.sh off`：第 3 个 runner 修好并在线之后运行，去掉这个标签，打印 `GATE_FALLBACK_OFF ci-vps-1`。
 - 这个脚本只改 GitHub 上的标签，不连 VPS，和暂停、恢复共用同一把锁。读不到 GitHub、标签没加上或没去掉时打印 `GATE_FALLBACK_FAILED` 和原因，以退出码 1 结束。
 - 应急期间运行过 `pause-runners.sh` 的话，应急标签会被一起去掉；`resume-runners.sh` 之后如果第 3 个 runner 还没修好，再运行一次 `gate-fallback.sh on`。
@@ -272,9 +272,9 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 | --- | --- | --- |
 | 日志反复出现 `A session for this runner already exists` 和 `Conflict` | `journalctl -u gh-runner.service --since -10min`（第 2 个看 `gh-runner-2.service`，第 3 个看 `gh-runner-gate.service`） | runner 上次没来得及注销会话（例如进程被强杀）。GitHub 端的旧会话约 2 到 3 分钟后过期，runner 会自己重连，不用处理。正常重启也出现时，检查服务的启动命令是不是 `bin/runsvc.sh`、停止信号是不是 `SIGTERM`。 |
 | GitHub 显示 `offline` | Preflight 第 3、7 项；对应服务的 `journalctl -u` | 服务停着就在 Mac 上运行 `resume-runners.sh`；服务在跑但连不上，看日志里的网络错误，VPS 断网时只能等，或在 OVH 控制台看机器状态。 |
-| 任务报 `below the 16 GiB floor; job refused` | `df -h /`；三个 runner 的 `disk.log` 末尾几行 | 先报告 Andy；只能清 `/srv/gh-runner/runner/_work`、`/srv/gh-runner-2/runner/_work` 下没有任务在用的旧目录，其他东西不删。 |
+| 任务报 `below the 16 GiB floor; job refused` | `df -h /`；三个 runner 的 `disk.log` 末尾几行 | 先报告 Andy；只能清 `/srv/gh-runner/runner/_work`、`/srv/gh-runner-2/runner/_work`、`/srv/gh-runner-gate/runner/_work` 下没有任务在用的旧目录，其他东西不删。 |
 | 任务访问本机服务、私有网段或元数据服务地址失败 | `sudo -n nft list table inet gh_runner` | 防火墙按设计拒绝。确实需要时先问 Andy，不自行放开。 |
-| 正在跑的任务日志里出现 `The runner has received a shutdown signal` | `sudo journalctl -u gh-runner -u gh-runner-2 --since <时间>` 里有 `Stopping gh-runner`，同一时段 `/var/log/unattended-upgrades/unattended-upgrades.log` 有升级记录 | 自动安全更新之后 needrestart 重启了 runner。确认 `/etc/needrestart/conf.d/50ci-vps-gh-runner.conf` 还在；不在就重新运行 `prepare-vps.sh`。被杀掉的运行在 GitHub 上重跑。runner 要用上新库时，等三个 runner 都空闲再 `sudo systemctl restart gh-runner gh-runner-2 gh-runner-gate`。 |
+| 正在跑的任务日志里出现 `The runner has received a shutdown signal` | `sudo journalctl -u gh-runner -u gh-runner-2 -u gh-runner-gate --since <时间>` 里有 `Stopping gh-runner`，同一时段 `/var/log/unattended-upgrades/unattended-upgrades.log` 有升级记录 | 自动安全更新之后 needrestart 重启了 runner。确认 `/etc/needrestart/conf.d/50ci-vps-gh-runner.conf` 还在；不在就重新运行 `prepare-vps.sh`。被杀掉的运行在 GitHub 上重跑。runner 要用上新库时，等三个 runner 都空闲再 `sudo systemctl restart gh-runner gh-runner-2 gh-runner-gate`。 |
 | 任务装浏览器时要 root | 看是否用了 `playwright install --with-deps` | 准备脚本已装好浏览器的系统库，workflow 里去掉 `--with-deps`；Playwright 升级后重新运行 `prepare-vps.sh`（先把里面的版本号改成新的）。 |
 | CI 作业在“放进 CI 服务器”或“取构建”步骤失败，报 `CI_SHARE_ROOT_REQUIRED` 或 `CI_SHARE_ROOT_INVALID` | `stat -c '%a %U %G' /srv/gh-runner-share`；`systemctl show gh-runner.service -p SupplementaryGroups -p Environment` | 共享目录或组没装：先 `pause-runners.sh`，再重新运行 `install-runner.sh`，最后 `resume-runners.sh`。 |
 | 一个 runner 取另一个 runner 放的文件时报 `EACCES`（没有权限） | `stat -c '%a %U %G' /srv/gh-runner-share` 应为 `2770 root gh-ci-share`；`ls -ld /srv/gh-runner-share/*` 的组都应是 `gh-ci-share` | 共享目录的 setgid 位（让子目录继承组的权限位）丢了：先 `pause-runners.sh`，重新运行 `install-runner.sh`，删掉组不对的运行目录，再 `resume-runners.sh`。 |

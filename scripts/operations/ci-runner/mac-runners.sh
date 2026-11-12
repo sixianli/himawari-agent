@@ -79,7 +79,9 @@ own_label() {
 }
 
 label_states() {
-  local names=$1 table=$2 name count labels own states=""
+  local names=$1 table=$2 name count labels own fallback states=""
+  runner_select 1
+  fallback=$RUNNER_NAME
   for name in $names; do
     count=$(runner_field "$table" "$name" 1 | grep -c .)
     labels=$(runner_field "$table" "$name" 5)
@@ -90,8 +92,10 @@ label_states() {
       states="$states $name=on"
     elif [ -z "$(managed_labels_on "$labels")" ]; then
       states="$states $name=off"
-    elif has_label "$labels" "$own"; then
+    elif [ "$name" = "$fallback" ] && [ "$(managed_labels_on "$labels")" = "$RUNNER_CHECK_LABEL $RUNNER_GATE_LABEL" ]; then
       states="$states $name=extra"
+    elif has_label "$labels" "$own"; then
+      states="$states $name=mixed"
     else
       states="$states $name=foreign"
     fi

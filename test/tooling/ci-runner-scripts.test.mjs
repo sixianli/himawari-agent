@@ -1703,6 +1703,49 @@ describe("pause and resume with the gate runner", () => {
     expect(box.lines().some((line) => /^ssh .*runner-resume\.sh/.test(line))).toBe(false);
   });
 
+  it.each([
+    [
+      "the gate runner also carries the check label",
+      [
+        [11, "ci-vps-1"],
+        [12, "ci-vps-2"],
+        [13, "ci-vps-gate", ["ci-vps-gate", "ci-vps"]],
+      ],
+      "ci-vps-gate=mixed",
+    ],
+    [
+      "the second check runner also carries the gate label",
+      [
+        [11, "ci-vps-1"],
+        [12, "ci-vps-2", ["ci-vps", "ci-vps-gate"]],
+        [13, "ci-vps-gate"],
+      ],
+      "ci-vps-2=mixed",
+    ],
+  ])("resume does not start services while %s", (_, runners, state) => {
+    const box = threeRunners({ runners });
+    box.set("online-from", 1);
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(state);
+    expect(result.stdout).toContain("RUNNER_RESUME_INCOMPLETE");
+    expect(box.lines().some((line) => /^ssh .*runner-resume\.sh/.test(line))).toBe(false);
+  });
+
+  it("resume starts services while the first check runner carries the fallback gate label", () => {
+    const box = threeRunners({
+      runners: [
+        [11, "ci-vps-1", ["ci-vps", "ci-vps-gate"]],
+        [12, "ci-vps-2"],
+        [13, "ci-vps-gate"],
+      ],
+    });
+    box.set("online-from", 1);
+    const result = box.mac("resume-runners.sh");
+    expect(result.stdout).toContain("RUNNER_RESUMED");
+    expect(result.status).toBe(0);
+  });
+
   it("pause and resume refuse to act when GitHub has a ci-vps-gate runner that is not on the VPS", () => {
     const box = threeRunners({ vpsNames: ["ci-vps-1", "ci-vps-2"] });
     const result = box.mac("pause-runners.sh");
@@ -1733,6 +1776,7 @@ describe("gate-fallback.sh", () => {
 
   it("on adds ci-vps-gate to the first check runner only, off takes it away again", () => {
     const box = threeRunners();
+    box.set("online-from", 1);
     const on = fallback(box, "on");
     expect(on.stdout).toContain("GATE_FALLBACK_ON ci-vps-1");
     expect(on.status).toBe(0);
@@ -1748,6 +1792,15 @@ describe("gate-fallback.sh", () => {
     expect(existsSync(path.join(box.root, "lock"))).toBe(false);
   });
 
+  it("on is refused while the first check runner is offline, because it could not take the jobs either", () => {
+    const box = threeRunners();
+    box.set("online-from", 99);
+    const result = fallback(box, "on");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("GATE_FALLBACK_FAILED ci-vps-1 is offline");
+    expect(box.managedLabels()["ci-vps-1"]).toEqual(["ci-vps"]);
+  });
+
   it("on is refused while the runners are paused", () => {
     const box = threeRunners({ labelled: false });
     const result = fallback(box, "on");
@@ -1758,6 +1811,7 @@ describe("gate-fallback.sh", () => {
 
   it("on reports failure when GitHub did not take the label", () => {
     const box = threeRunners();
+    box.set("online-from", 1);
     box.set("fail-add-11", "");
     const result = fallback(box, "on");
     expect(result.status).toBe(1);

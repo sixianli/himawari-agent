@@ -30,6 +30,10 @@ if [ "$WANTED" = on ]; then
     echo "GATE_FALLBACK_FAILED $FALLBACK does not carry $RUNNER_CHECK_LABEL, so the runners are paused; run resume-runners.sh first"
     exit 1
   }
+  [ "$(runner_field "$TABLE" "$FALLBACK" 3)" = online ] || {
+    echo "GATE_FALLBACK_FAILED $FALLBACK is $(runner_field "$TABLE" "$FALLBACK" 3) on GitHub, so it could not take the jobs either; labels untouched"
+    exit 1
+  }
   carries_gate_label "$TABLE" || add_label "$ID" "$RUNNER_GATE_LABEL" || echo "could not add $RUNNER_GATE_LABEL to $FALLBACK"
   TABLE=$(github_runners) || TABLE=""
   carries_gate_label "$TABLE" || { echo "GATE_FALLBACK_FAILED $RUNNER_GATE_LABEL is not on $FALLBACK"; exit 1; }
