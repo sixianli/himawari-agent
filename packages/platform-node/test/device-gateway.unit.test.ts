@@ -119,6 +119,18 @@ describe("[第11批] 设备网关审计", () => {
     ]);
   });
 
+  it.each([
+    ["completed", succeeding],
+    ["failed", failing],
+  ] as const)("报日志的回调自己出错时，记%s的结果和错误照常返回", async (outcome, v2) => {
+    const { audit } = ledger(1);
+    const settled = dispatch(audit, v2, () => {
+      throw new Error("diagnostic sink failed");
+    });
+    if (outcome === "completed") await expect(settled).resolves.toEqual({ ok: true });
+    else await expect(settled).rejects.toThrow("downstream failed");
+  });
+
   it("执行后记完成失败时，已执行的结果照常返回，受理记录还在", async () => {
     const { audit, records } = ledger(1);
     await expect(dispatch(audit, succeeding)).resolves.toEqual({ ok: true });

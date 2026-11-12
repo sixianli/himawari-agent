@@ -165,7 +165,9 @@ export async function dispatchDeviceGatewayRequest(input: {
     });
   const settle = (outcome: "completed" | "failed") =>
     record(outcome).catch((error: unknown) =>
-      input.onAuditFailed?.({ action, targetRef, outcome, error }),
+      Promise.resolve()
+        .then(() => input.onAuditFailed?.({ action, targetRef, outcome, error }))
+        .catch(() => undefined),
     );
   await record("accepted");
   let result: unknown;
