@@ -232,6 +232,10 @@ export class SqlitePairedDeviceOperations {
       this.database
         .prepare("UPDATE paired_devices SET name = ?, revision = revision + 1 WHERE id = ?")
         .run(name, device.id);
+      if (device.webDeviceId)
+        this.database
+          .prepare("UPDATE devices SET label = ?, revision = revision + 1 WHERE id = ?")
+          .run(name, device.webDeviceId);
       return this.requireDevice(device.id);
     })();
   }

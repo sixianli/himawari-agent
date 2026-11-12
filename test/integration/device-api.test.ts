@@ -882,6 +882,24 @@ describe("[P1-1] device client routes", () => {
     await h.repository.close();
   });
 
+  it("renames the confirmed device and its signed-in browser entry together", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const renamed = await web(h, "rename", {
+      deviceId: client.deviceId,
+      expectedRevision: client.revision,
+      name: "客厅 Mac",
+    });
+    expect(renamed.status).toBe(200);
+    const stored = await h.repository.pairedDevices().readDevice(client.deviceId);
+    const browserDevices = await h.repository.sessionDeviceState().listDevices(ownerId, false);
+    expect(browserDevices.find((device) => device.id === stored?.webDeviceId)?.label).toBe(
+      "客厅 Mac",
+    );
+    expect(browserDevices.map((device) => device.label)).not.toContain("Andy iPhone");
+    await h.repository.close();
+  });
+
   it("accepts a device body above the browser limit when the device limit allows it", async () => {
     const h = await harness();
     h.configuration.current = {
