@@ -2578,6 +2578,16 @@ export async function startTenantRuntime(
             code: failure.code,
             ...(failure.reason === null ? {} : { reason: failure.reason }),
           }),
+        onModelRequestRejected: (request, rejection) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "model.request_rejected",
+            runId: request.runId,
+            status: rejection.status,
+            ...(rejection.retryAfter === null ? {} : { retryAfter: rejection.retryAfter }),
+            ...(rejection.shouldRetry === null ? {} : { shouldRetry: rejection.shouldRetry }),
+            ...(rejection.host === null ? {} : { host: rejection.host }),
+          }),
         onCompactionSummaryRequest: (request, summary) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
