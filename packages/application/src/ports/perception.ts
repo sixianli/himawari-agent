@@ -341,6 +341,7 @@ export interface PerceptionConfiguration {
   readonly readMaximumRecords: number;
   readonly readMaximumCharacters: number;
   readonly readMaximumDays: number;
+  readonly readMaximumScanned: number;
   readonly extractIntervalSeconds: number;
   readonly extractMaximumAttempts: number;
   readonly extractRetrySeconds: number;
@@ -367,6 +368,7 @@ export const PERCEPTION_CONFIGURATION_DEFAULTS: PerceptionConfiguration = Object
   readMaximumRecords: 50,
   readMaximumCharacters: 8000,
   readMaximumDays: 31,
+  readMaximumScanned: 5000,
   extractIntervalSeconds: 60,
   extractMaximumAttempts: 5,
   extractRetrySeconds: 300,
@@ -395,6 +397,7 @@ export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
   readMaximumRecords: [1, 500],
   readMaximumCharacters: [200, 200_000],
   readMaximumDays: [1, 366],
+  readMaximumScanned: [500, 200_000],
   extractIntervalSeconds: [5, 24 * 3600],
   extractMaximumAttempts: [1, 20],
   extractRetrySeconds: [10, 24 * 3600],

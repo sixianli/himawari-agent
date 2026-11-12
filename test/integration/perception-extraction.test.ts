@@ -495,6 +495,57 @@ describe("[iOS-5] perception extraction turns a finished episode into memories a
     expect(await s.memories()).toHaveLength(1);
   });
 
+  it("does not count days spent waiting for the cost limit as failed attempts", async () => {
+    const s = await setup();
+    await ingest(s.h, s.client, [owner(s.h, "我对花生过敏")]);
+    s.closeEpisode();
+    s.configuration.current = { ...PERCEPTION_CONFIGURATION_DEFAULTS, extractMaximumAttempts: 2 };
+    s.scripted.estimateMicros = 2_000_000;
+    for (let day = 0; day < 3; day += 1) {
+      expect(await s.service.runOnce()).toMatchObject({ waitingBudget: 1 });
+      s.h.clock.advance(86_400_000);
+    }
+    s.scripted.estimateMicros = 200;
+    s.scripted.replies.push(new Error("MODEL_DOWN"));
+    expect(await s.service.runOnce()).toMatchObject({ retry: 1, failed: 0 });
+    expect(await s.extraction()).toEqual([
+      expect.objectContaining({ status: "retry", attempts: 1, errorCode: "MODEL_DOWN" }),
+    ]);
+  });
+
+  it("hands over the same proposal id and writes no second ledger row when an episode is extracted again", async () => {
+    const s = await setup();
+    const plan = owner(s.h, "周六中午和小林吃饭，得提前订位");
+    await ingest(s.h, s.client, [plan]);
+    s.closeEpisode();
+    const answer = reply({
+      candidates: [candidate("主人周六中午和小林吃饭", "周六中午和小林吃饭", [plan.id])],
+      proposals: [
+        { what: "周六中午和小林吃饭前替主人订位", quote: "得提前订位", recordIds: [plan.id] },
+      ],
+    });
+    s.scripted.replies.push(answer, answer);
+    expect(await s.service.runOnce()).toMatchObject({ done: 1, proposals: 1 });
+    const database = openQualifiedDatabase(path.join(s.h.stateRoot, "product.sqlite"));
+    try {
+      database.prepare("UPDATE perception_extractions SET record_count = record_count + 1").run();
+    } finally {
+      database.close();
+    }
+    expect(await s.service.runOnce()).toMatchObject({ done: 1, proposals: 1 });
+    expect(s.received).toHaveLength(2);
+    expect(new Set(s.received.map(({ id }) => id)).size).toBe(1);
+    expect(await s.memories()).toHaveLength(1);
+    const rows = await s.h.repository.decisionLedger().list({
+      ...perceptionScope,
+      kind: "proposal",
+      since: SINCE,
+      limit: 100,
+    });
+    expect(rows).toHaveLength(1);
+    expect(await s.ledger()).toHaveLength(1);
+  });
+
   it("retries a failed model call a limited number of times and then marks the episode failed", async () => {
     const s = await setup();
     await ingest(s.h, s.client, [owner(s.h, "今天有点累")]);
@@ -586,6 +637,10 @@ describe("[iOS-5] a memory's sources carry their type", () => {
         sourceRefs: ["not-a-record"],
         sourceTypes: { "not-a-record": "perception" },
       }),
+    ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+    const ghost = `perception:${"0".repeat(32)}`;
+    await expect(
+      copy("ghost", { sourceRefs: [ghost], sourceTypes: { [ghost]: "perception" } }),
     ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
     await expect(
       copy("unknown-type", {

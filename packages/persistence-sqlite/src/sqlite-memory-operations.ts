@@ -27,15 +27,10 @@ import type {
   ThreadId,
 } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
+import { isKnownMemorySourceType, PERCEPTION_MEMORY_SOURCE_ID } from "./memory-source-types.ts";
 import { insertLedgerRow, validateLedgerWrite } from "./sqlite-decision-ledger-operations.ts";
 import { insertConsolidationWrite } from "./sqlite-memory-consolidation-operations.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
-
-const KNOWN_SOURCE_TYPES: Readonly<Record<MemorySourceType, true>> = Object.freeze({
-  reference: true,
-  perception: true,
-});
-const PERCEPTION_SOURCE_ID = /^perception:[A-Za-z0-9_-]{16,64}$/u;
 
 interface MemoryRow {
   readonly id: string;
@@ -885,16 +880,33 @@ export class SqliteMemoryOperations {
         `INSERT INTO memory_provenance (memory_id, source_type, source_id, source_deleted)
         VALUES (?, ?, ?, 0) ON CONFLICT DO NOTHING`,
       );
+      const recordedSource = this.database
+        .prepare(
+          "SELECT 1 FROM memory_provenance WHERE memory_id = ? AND source_type = ? AND source_id = ?",
+        )
+        .pluck();
+      const perceptionRecord = this.database
+        .prepare(
+          `SELECT 1 FROM perception_records
+            WHERE id = ? AND owner_id = ? AND agent_id = ? AND status = 'active'`,
+        )
+        .pluck();
       const sourceTypes = input.memory.sourceTypes ?? {};
       for (const sourceRef of Object.keys(sourceTypes))
         if (!input.memory.sourceRefs.includes(sourceRef))
           this.fail("PORT_INVALID_OPERATION", "Memory source type names an unknown source");
       for (const sourceRef of [...new Set(input.memory.sourceRefs)]) {
         const sourceType = sourceTypes[sourceRef] ?? "reference";
-        if (!Object.hasOwn(KNOWN_SOURCE_TYPES, sourceType))
+        if (!isKnownMemorySourceType(sourceType))
           this.fail("PORT_INVALID_OPERATION", "Memory source type is not registered");
-        if (sourceType === "perception" && !PERCEPTION_SOURCE_ID.test(sourceRef))
+        if (sourceType === "perception" && !PERCEPTION_MEMORY_SOURCE_ID.test(sourceRef))
           this.fail("PORT_INVALID_OPERATION", "Perception memory source id is invalid");
+        if (
+          sourceType === "perception" &&
+          !recordedSource.get(input.memory.id, sourceType, sourceRef) &&
+          !perceptionRecord.get(sourceRef, input.memory.ownerId, input.memory.agentId)
+        )
+          this.fail("PORT_INVALID_OPERATION", "Perception memory source does not exist");
         insertSource.run(input.memory.id, sourceType, sourceRef);
       }
       return this.read(input.memory.id) as ProductMemoryRecord;

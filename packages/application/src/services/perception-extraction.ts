@@ -342,6 +342,8 @@ export type PerceptionProposalSourceKind = (typeof PERCEPTION_PROPOSAL_SOURCE_KI
 export const PERCEPTION_PROPOSAL_TRUST = ["owner", "external"] as const;
 export type PerceptionProposalTrust = (typeof PERCEPTION_PROPOSAL_TRUST)[number];
 
+const COMMAND_UTTERANCE_BATCH = 1000;
+
 export interface PerceptionProposalSource {
   readonly recordType: PerceptionRecord["type"];
   readonly origin: PerceptionRecord["origin"];
@@ -529,9 +531,14 @@ export class PerceptionExtractionService {
     const utterances = records.flatMap((record) =>
       typeof record.evidence["utteranceId"] === "string" ? [record.evidence["utteranceId"]] : [],
     );
-    const commands = new Set(
-      await store.commandUtterances({ ...scope, utteranceIds: [...new Set(utterances)].sort() }),
-    );
+    const distinct = [...new Set(utterances)].sort();
+    const commands = new Set<string>();
+    for (let start = 0; start < distinct.length; start += COMMAND_UTTERANCE_BATCH)
+      for (const id of await store.commandUtterances({
+        ...scope,
+        utteranceIds: distinct.slice(start, start + COMMAND_UTTERANCE_BATCH),
+      }))
+        commands.add(id);
     const sources: PerceptionExtractionSource[] = [];
     for (const record of records) {
       if (!isModelVisible(record.dataClassification)) continue;
