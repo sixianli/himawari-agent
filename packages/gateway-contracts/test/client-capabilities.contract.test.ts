@@ -78,6 +78,7 @@ describe("[第11批] 客户端能力表", () => {
     expect(push && requiredClientTier(push, { kind: "reminder", enabled: false })).toBe("tighten");
     expect(push && requiredClientTier(push, { kind: "run", enabled: true })).toBe("change");
     expect(push && requiredClientTier(push, { kind: "run" })).toBe("change");
+    expect(push && requiredClientTier(push, { enabled: false })).toBe("change");
     expect(push && requiredClientTier(push, { kind: "run", enabled: "false" })).toBe("change");
     expect(push && requiredClientTier(push, { kind: "run", enabled: null })).toBe("change");
     expect(push && requiredClientTier(push, { kind: "run", enabled: false, extra: false })).toBe(

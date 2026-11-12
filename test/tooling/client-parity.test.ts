@@ -95,9 +95,10 @@ public struct ClientCapability: Sendable, Hashable {
     public let tightenPayload: [String: Bool]?
     public let tightenOpenKeys: [String]
 
-    public func requiredTier(payloadFlags: [String: Bool]?) -> ClientCapabilityTier {
-        guard let tightenPayload, let payloadFlags, payloadFlags == tightenPayload else { return tier }
-        return .tighten
+    public func requiredTier(payloadKeys: Set<String>, payloadFlags: [String: Bool]?) -> ClientCapabilityTier {
+        guard let tightenPayload, let payloadFlags, Set(tightenOpenKeys).isSubset(of: payloadKeys) else { return tier }
+        let checked = payloadFlags.filter { !tightenOpenKeys.contains($0.key) }
+        return checked == tightenPayload ? .tighten : tier
     }
 }
 

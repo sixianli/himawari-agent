@@ -265,6 +265,7 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
         payload: { kind: "run", enabled: false },
       }),
     );
+    expect(off.statusCode).toBe(501);
     expect(off.json()).toEqual({ error: { code: "PORT_OPERATION_NOT_INSTALLED" } });
     const on = await gateway(
       h,

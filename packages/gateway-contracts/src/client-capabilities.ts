@@ -268,6 +268,7 @@ function sameFlags(
   const actual = payload as Record<string, unknown>;
   const keys = Object.keys(actual).filter((key) => !openKeys.includes(key));
   return (
+    openKeys.every((key) => Object.hasOwn(actual, key)) &&
     keys.length === Object.keys(expected).length &&
     keys.every((key) => Object.hasOwn(expected, key) && actual[key] === expected[key])
   );
