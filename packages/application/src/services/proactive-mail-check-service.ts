@@ -929,7 +929,7 @@ export class ProactiveMailCheckService {
               [],
               { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits }.perMail,
               new Map<string, RelatedView>(),
-              this.#options.recentSummaries === undefined
+              this.#summariesOff()
                 ? []
                 : [
                     {
@@ -991,7 +991,7 @@ export class ProactiveMailCheckService {
               this.#batchMemories(firstBatch, recalled.hits),
               bodyLimits.perMail,
               relatedViews,
-              this.#options.recentSummaries === undefined
+              this.#summariesOff()
                 ? []
                 : [
                     {
@@ -1508,6 +1508,16 @@ export class ProactiveMailCheckService {
       costMicros,
       failure: truncated ? "MODEL_OUTPUT_TRUNCATED" : "MODEL_OUTPUT_INVALID",
     };
+  }
+
+  #summariesOff(): boolean {
+    const limits = { ...DEFAULT_PROACTIVE_SUMMARY_LIMITS, ...this.#options.summaryLimits };
+    return (
+      this.#options.recentSummaries === undefined ||
+      limits.days < 1 ||
+      limits.perCheck < 1 ||
+      limits.characters < 1
+    );
   }
 
   async #summaries(
