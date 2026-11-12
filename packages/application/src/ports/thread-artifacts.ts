@@ -91,7 +91,7 @@ export interface ChangedFilesQuery extends ThreadArtifactScope {
 export interface ChangedFile {
   readonly path: string;
   readonly threadId: string;
-  readonly source: Exclude<ThreadArtifactSource, "upload">;
+  readonly source: string;
   readonly versions: number;
   readonly changedAt: string;
   readonly deletedAt: string | null;

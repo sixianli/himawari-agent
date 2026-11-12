@@ -2119,7 +2119,6 @@ export const workspaceListQuerySchema = object({
 });
 
 export const WORKSPACE_CHANGE_STATES = ["changed", "deleted"] as const;
-export const WORKSPACE_CHANGE_SOURCES = ["write", "edit", "bash"] as const;
 export const WORKSPACE_RECORDING_MODES = ["direct", "copy"] as const;
 const workspaceChangesQuerySchema = object({
   ...envelope("query", "workspace.changes.read"),
@@ -2145,7 +2144,7 @@ const workspaceChangesSnapshotSchema = object({
       object({
         path: boundedString(1024),
         state: enumeration(WORKSPACE_CHANGE_STATES),
-        source: enumeration(WORKSPACE_CHANGE_SOURCES),
+        source: machineString,
         threadId: machineString,
         versions: integer(1),
         changedAt: timestamp,
