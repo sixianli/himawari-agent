@@ -20,6 +20,7 @@ import {
 const qualification = vi.hoisted(() => ({
   started: 0,
   admittedSnapshotDigest: undefined as string | undefined,
+  rejectAfterBinding: undefined as (() => Promise<void>) | undefined,
   beforeCompositionFails: undefined as (() => Promise<void>) | undefined,
 }));
 
@@ -31,6 +32,10 @@ vi.mock("../src/production-worker-composition.js", async (original) => {
       options: Parameters<typeof actual.qualifyProductionWorkerDeployment>[0],
     ) => {
       qualification.started += 1;
+      if (qualification.rejectAfterBinding)
+        return qualification.rejectAfterBinding().then(() => {
+          throw new Error("QUALIFICATION_FAILED_AFTER_BINDING");
+        });
       if (qualification.admittedSnapshotDigest)
         return Promise.resolve({
           deployment: { snapshotDigest: qualification.admittedSnapshotDigest, manifests: [] },
@@ -59,6 +64,7 @@ const FAST_STARTUP_TIMING = Object.freeze({
 afterEach(async () => {
   qualification.started = 0;
   qualification.admittedSnapshotDigest = undefined;
+  qualification.rejectAfterBinding = undefined;
   qualification.beforeCompositionFails = undefined;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -235,6 +241,49 @@ describe("execution Worker service main", () => {
       code: "STATE_ROOT_BOOT_BINDING_INVALID",
     });
   }, 5_000);
+
+  it("publishes no qualified record when the Agent binding arrives but the checks fail", async () => {
+    const { configurationPath, layout, currentAuthority } = await fixture();
+    let bound = false;
+    let publishedBeforeChecksFailed: boolean | undefined;
+    qualification.rejectAfterBinding = async () => {
+      while (!bound) await new Promise<void>((resolve) => setTimeout(resolve, 2));
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      publishedBeforeChecksFailed = await readWorkerQualifiedDeployment(layout).then(
+        () => true,
+        () => false,
+      );
+    };
+    const diagnostics = capture();
+    const running = runExecutionWorkerService(
+      serviceArguments(configurationPath),
+      diagnostics.stream,
+      diagnostics.stream,
+      { startupWaitTimeoutMs: 4_000, startupRetryDelayMs: 1 },
+    );
+    let workerBootId: string | undefined;
+    for (let attempt = 0; attempt < 2_000 && !workerBootId; attempt += 1) {
+      workerBootId = (await readWorkerServiceBootBinding(layout).catch(() => undefined))
+        ?.workerBootId;
+      if (!workerBootId) await new Promise<void>((resolve) => setTimeout(resolve, 2));
+    }
+    await writeAgentServiceBootBinding(layout, {
+      workerInstanceId: `execution-worker:${FIXTURE_SCOPE.authority.deploymentId}`,
+      workerBootId: workerBootId as string,
+      agentServiceInstanceId: `agent-service:${FIXTURE_SCOPE.authority.deploymentId}`,
+      agentServiceBootId: "agent-service-boot:current",
+      authorityLeaseId: "authority:worker-service-main:current",
+      authority: currentAuthority,
+    });
+    bound = true;
+
+    await expect(running).resolves.toBe(1);
+    expect(diagnostics.text()).toContain("service.failed");
+    expect(publishedBeforeChecksFailed).toBe(false);
+    await expect(readWorkerQualifiedDeployment(layout)).rejects.toMatchObject({
+      code: "STATE_ROOT_BOOT_BINDING_INVALID",
+    });
+  }, 10_000);
 
   it("publishes the qualified record only after its checks pass and removes it when startup then fails", async () => {
     const { configurationPath, layout, currentAuthority } = await fixture();

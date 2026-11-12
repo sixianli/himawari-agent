@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { CapabilityManifest, CapabilityRegistryRecord } from "@himawari-agent/application";
@@ -97,7 +97,14 @@ async function fixture(
     readonly recordIntegrity?: string;
     readonly recordVersion?: string;
     readonly withDeployment?: boolean;
-    readonly published?: "none" | { readonly workerBootId?: string; readonly digest?: string };
+    readonly published?:
+      | "none"
+      | {
+          readonly workerBootId?: string;
+          readonly workerInstanceId?: string;
+          readonly deploymentId?: string;
+          readonly digest?: string;
+        };
     readonly withVerifier?: boolean;
   } = {},
 ) {
@@ -125,9 +132,9 @@ async function fixture(
   };
   if (options.published !== "none") {
     await writeWorkerQualifiedDeployment(layout, {
-      workerInstanceId: WORKER_INSTANCE,
+      workerInstanceId: options.published?.workerInstanceId ?? WORKER_INSTANCE,
       workerBootId: options.published?.workerBootId ?? WORKER_BOOT,
-      deploymentId: DEPLOYMENT_ID,
+      deploymentId: createDeploymentId(options.published?.deploymentId ?? DEPLOYMENT_ID),
       snapshotDigest: options.published?.digest ?? capabilityDeployment.sha256,
     });
   }
@@ -402,6 +409,31 @@ it("refuses a record published by an earlier worker boot", async () => {
     refusedWith(CAPABILITY_REACTIVATION_REASONS.WORKER_BOOT_MISMATCH),
   );
   await f.stillDisabled();
+});
+
+it.each([{ workerInstanceId: "execution-worker:other" }, { deploymentId: "deployment-other" }])(
+  "refuses a record published for another worker or deployment (%o)",
+  async (published) => {
+    const f = await fixture({ published });
+    await expect(f.reactivate("other-peer")).rejects.toMatchObject(
+      refusedWith(CAPABILITY_REACTIVATION_REASONS.WORKER_BOOT_MISMATCH),
+    );
+    await f.stillDisabled();
+  },
+);
+
+it("refuses a published record larger than the runtime record limit", async () => {
+  const f = await fixture();
+  const file = path.join(f.layout.runtime, "execution-worker.qualified.json");
+  const record = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
+  await writeFile(file, `${JSON.stringify(record)}${" ".repeat(16_384)}`, { mode: 0o600 });
+  await expect(f.reactivate("oversized")).rejects.toMatchObject(
+    refusedWith(CAPABILITY_REACTIVATION_REASONS.WORKER_NOT_QUALIFIED),
+  );
+  await f.stillDisabled();
+  await writeFile(file, JSON.stringify(record), { mode: 0o600 });
+  await f.reactivate("right-size");
+  expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({ lifecycle: "active" });
 });
 
 it("refuses when the worker admitted a different snapshot", async () => {
