@@ -5,6 +5,7 @@ import {
   MAIL_JUDGMENT_MEMORIES_HEADER,
   MAIL_JUDGMENT_TENTATIVE_NOTE,
   MAIL_JUDGMENT_NOW,
+  MAIL_REFERENCE_EXTRACTION,
   MAIL_JUDGMENT_RECENT_SUMMARIES_HEADER,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
@@ -47,6 +48,7 @@ import {
   locateMaskedValues,
   maskSensitiveText,
 } from "@himawari-agent/sensitive-capture";
+import { parseMailReferences } from "./proactive-references.js";
 import { mailBodyWindow, plainModelText, windowMailBody } from "./proactive-mail-body.js";
 import {
   applyFloor,
@@ -434,6 +436,18 @@ function baseMailView(item: ProactiveSourceItem, bodyLimit: number): ProactiveMa
   return view;
 }
 
+export function mailReferencePrompt(items: readonly ProactiveSourceItem[], bodyLimit: number): string {
+  return [
+    MAIL_REFERENCE_EXTRACTION.text,
+    JSON.stringify(
+      items.map((item) => {
+        const { id, subject, body, snippet } = proactiveMailView(item, bodyLimit).json;
+        return { id, subject, ...(body === undefined ? { snippet } : { body }) };
+      }),
+    ),
+  ].join("\n");
+}
+
 export function proactivePrompt(
   items: readonly ProactiveSourceItem[],
   now: string,
@@ -644,12 +658,40 @@ export class ProactiveMailCheckService {
     return rules;
   }
 
+  async #references(
+    candidates: readonly ProactiveSourceItem[],
+    deadlineAt: string,
+    signal: AbortSignal,
+    trace: CheckTrace,
+    budget: { readonly spentToday: number; costMicros: number },
+  ): Promise<ReadonlyMap<string, readonly string[]>> {
+    const references = new Map<string, readonly string[]>();
+    const perMail = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits }.perMail;
+    const size = this.#options.batchSize ?? DEFAULT_BATCH_SIZE;
+    for (let start = 0; start < candidates.length; start += size) {
+      if (signal.aborted) break;
+      const batch = candidates.slice(start, start + size);
+      const prompt = mailReferencePrompt(batch, perMail);
+      const estimate = this.#options.limits.estimateCostMicros(prompt);
+      if (budget.spentToday + budget.costMicros + estimate > this.#options.limits.dailyCostMicros)
+        break;
+      try {
+        const call = await this.#invoke(prompt, "private", deadlineAt, signal, trace);
+        budget.costMicros += call.costMicros;
+        if (call.failure !== null || !call.completed) continue;
+        for (const [id, found] of parseMailReferences(call.output, batch)) references.set(id, found);
+      } catch {}
+    }
+    return references;
+  }
+
   async #related(
     token: string,
     allCandidates: readonly ProactiveSourceItem[],
     wholeThread: ReadonlySet<string>,
     signal: AbortSignal,
     trace: CheckTrace,
+    references: ReadonlyMap<string, readonly string[]> = new Map(),
   ): Promise<ReadonlyMap<string, RelatedView>> {
     const { reader, clock } = this.#options;
     const views = new Map<string, RelatedView>();
@@ -668,6 +710,7 @@ export class ProactiveMailCheckService {
         items: candidates,
         limits,
         ...(wholeThread.size > 0 ? { wholeThread } : {}),
+        references,
         signal,
       });
       requests = fetched.requests;
@@ -844,6 +887,17 @@ export class ProactiveMailCheckService {
       const hits = wholeThreadHitIds(item, rules);
       if (hits.length > 0) wholeThreadHits.set(item.messageId, hits);
     }
+    const relatedSignal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(Math.floor(this.#options.limits.perCheckMs / 2)),
+    ]);
+    const referenceBudget = { spentToday, costMicros: 0 };
+    const references =
+      spentToday >= this.#options.limits.dailyCostMicros ||
+      this.#options.reader.related === undefined
+        ? new Map<string, readonly string[]>()
+        : await this.#references(candidates, deadlineAt, relatedSignal, trace, referenceBudget);
+    costMicros += referenceBudget.costMicros;
     const relatedViews =
       spentToday >= this.#options.limits.dailyCostMicros
         ? new Map<string, RelatedView>()
@@ -851,11 +905,9 @@ export class ProactiveMailCheckService {
             token,
             candidates,
             new Set(wholeThreadHits.keys()),
-            AbortSignal.any([
-              controller.signal,
-              AbortSignal.timeout(Math.floor(this.#options.limits.perCheckMs / 2)),
-            ]),
+            relatedSignal,
             trace,
+            references,
           );
     const bodyLimits = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits };
     let batchSize = this.#options.batchSize ?? DEFAULT_BATCH_SIZE;

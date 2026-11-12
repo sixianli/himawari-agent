@@ -31,6 +31,7 @@ import {
   ManualClock,
   ScriptedModelPort,
 } from "@himawari-agent/testing";
+import { MAIL_REFERENCE_EXTRACTION } from "@himawari-agent/prompt-catalog";
 import { afterEach, describe, expect, it } from "vitest";
 import { createProactiveRecentSummaries } from "../../apps/agent-service/src/production-proactive-summaries.ts";
 import { applyBackoffWrites } from "../../packages/persistence-sqlite/src/proactive-push-backoff.ts";
@@ -211,6 +212,46 @@ describe("proactive Gmail check acceptance", () => {
     const models: ScriptedModelPort[] = [];
     let scripted = new ScriptedModelPort([descriptor], []);
     const queued: ScriptedModelPort[] = [];
+    const referencePrompts: string[] = [];
+    const referenceQueue: ScriptedModelPort[] = [];
+    let referenceCall = false;
+    const referenceEvents = (text: string, cost: number): ModelInvocationEvent[] => {
+      const ref = `reference-output-${outputs.size + 1}`;
+      outputs.set(ref, text);
+      return [
+        { type: "model.started", invocationId: "scripted", occurredAt: clock.now() },
+        {
+          type: "model.output",
+          invocationId: "scripted",
+          sequence: 1,
+          payloadRef: ref,
+          occurredAt: clock.now(),
+        },
+        {
+          type: "model.completed",
+          invocationId: "scripted",
+          inputTokens: 100,
+          outputTokens: 50,
+          costMicros: cost,
+          latencyMs: 10,
+          occurredAt: clock.now(),
+        },
+      ];
+    };
+    const scriptReferences = (
+      entries: readonly { readonly id: string; readonly references: readonly string[] }[],
+      cost = 0,
+    ) => {
+      referenceQueue.push(
+        new ScriptedModelPort(
+          [descriptor],
+          referenceEvents(JSON.stringify({ items: entries }), cost),
+        ),
+      );
+    };
+    const scriptReferencesRaw = (text: string, cost = 0) => {
+      referenceQueue.push(new ScriptedModelPort([descriptor], referenceEvents(text, cost)));
+    };
     const script = (entries: readonly Scripted[], cost = options.cost ?? 300) => {
       const ref = `output-${outputs.size + 1}`;
       outputs.set(
@@ -319,11 +360,17 @@ describe("proactive Gmail check acceptance", () => {
       reader,
       model: {
         get model() {
+          if (referenceCall)
+            return (
+              referenceQueue.shift() ??
+              new ScriptedModelPort([descriptor], referenceEvents('{"items":[]}', 0))
+            );
           return queued.shift() ?? scripted;
         },
         modelRef: MODEL_REF,
         async prepare({ invocationId, prompt, deadlineAt, dataClassification }) {
-          prompts.push(prompt);
+          referenceCall = prompt.startsWith(MAIL_REFERENCE_EXTRACTION.text);
+          (referenceCall ? referencePrompts : prompts).push(prompt);
           deadlines.push(deadlineAt);
           labels.push(dataClassification);
           const inputRef = `input-${invocationId}`;
@@ -386,6 +433,9 @@ describe("proactive Gmail check acceptance", () => {
       service,
       overview,
       prompts,
+      referencePrompts,
+      scriptReferences,
+      scriptReferencesRaw,
       deadlines,
       labels,
       invocations,
@@ -2473,8 +2523,11 @@ describe("proactive Gmail check acceptance", () => {
       const counter = { requests: 0 };
       h.reader.related = (input) => findRelatedMail({ ...input, transport: transport(counter) });
       h.reader.items = [today];
+      h.scriptReferences([{ id: "closing", references: [ORDER] }]);
       h.script([{ id: "closing", result: "act", todo: "补充破损照片", priority: "high" }]);
       await h.service.run();
+      expect(h.referencePrompts).toHaveLength(1);
+      expect(h.referencePrompts[0]).toContain(ORDER);
       const prompt = itemsPart(h.prompts[0] ?? "");
       expect(prompt).toContain('"related":[');
       expect(prompt).toContain("返金を申請します");
@@ -2496,6 +2549,80 @@ describe("proactive Gmail check acceptance", () => {
       });
       expect(entry?.inputs.relatedStats?.characters).toBeGreaterThan(0);
       expect(entry?.inputs.relatedFailedSteps).toEqual([]);
+    });
+
+    const searchedFor = async (
+      configure: (h: Awaited<ReturnType<typeof harness>>) => void,
+      item = today,
+    ) => {
+      const h = await harness();
+      const queries: string[] = [];
+      h.reader.related = (input) =>
+        findRelatedMail({
+          ...input,
+          transport: {
+            ...transport({ requests: 0 }),
+            async search(query: string) {
+              queries.push(query);
+              return [];
+            },
+          },
+        });
+      h.reader.items = [item];
+      configure(h);
+      h.script([{ id: item.messageId, result: "ignore" }]);
+      await h.service.run();
+      return { h, queries: queries.filter((query) => !query.startsWith("subject:")) };
+    };
+
+    it("searches only for the numbers the model found that really appear in the mail", async () => {
+      const { queries } = await searchedFor((h) =>
+        h.scriptReferences([{ id: "closing", references: [ORDER] }]),
+      );
+      expect(queries).toEqual([`"${ORDER}" -in:trash -in:spam`]);
+    });
+
+    it("REVERSE: a number the model invented, a phone number or a date is never searched", async () => {
+      const { queries } = await searchedFor((h) =>
+        h.scriptReferences([
+          {
+            id: "closing",
+            references: [
+              "999-0000000-1111111",
+              "03-1234-5678",
+              "2026-11-07",
+              "12345",
+              ORDER.slice(0, 5),
+            ],
+          },
+        ]),
+      );
+      expect(queries).toEqual([]);
+    });
+
+    it.each([
+      ["a made-up status", '{"items":[{"id":"closing","references":"maybe"}]}'],
+      ["plain text", "该邮件没有单号"],
+      ["an unknown mail id", `{"items":[{"id":"other","references":["${ORDER}"]}]}`],
+    ])("REVERSE: %s from the model means no number search at all", async (_name, raw) => {
+      const { queries } = await searchedFor((h) => h.scriptReferencesRaw(raw));
+      expect(queries).toEqual([]);
+    });
+
+    it("REVERSE: a plain label with a number in the mail is no longer searched when the model says there is none", async () => {
+      const { queries } = await searchedFor((h) =>
+        h.scriptReferences([{ id: "closing", references: [] }]),
+      );
+      expect(queries).toEqual([]);
+    });
+
+    it("skips the number extraction once the daily cap leaves no room for it", async () => {
+      const capped = await harness({ dailyCostMicros: 50 });
+      capped.reader.related = (input) =>
+        findRelatedMail({ ...input, transport: transport({ requests: 0 }) });
+      capped.reader.items = [today];
+      await capped.service.run();
+      expect(capped.referencePrompts).toEqual([]);
     });
 
     it("negative: a mail that shares only the sender gets no history and no failure mark", async () => {

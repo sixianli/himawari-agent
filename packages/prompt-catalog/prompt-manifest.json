@@ -344,6 +344,11 @@
     "changedIn": "ADR 0179",
     "reason": "新增：邮件判断里有待确认记忆时，说明它们只是线索，不是事实"
   },
+  "mail.reference-extraction": {
+    "sha256": "4ac1d2d20e0884b127009a1ff0aa114e176fc39ccc1fc3bffae9f9200eff84da",
+    "changedIn": "ADR 0247",
+    "reason": "新增：从新邮件里抽取订单号等单号，取代关键词正则"
+  },
   "mcp.find-memories": {
     "sha256": "b237866524c80554f6c6b7196603727f09c43dd92f6e05fe7ea57f173a916fa6",
     "changedIn": "ADR 0242",
