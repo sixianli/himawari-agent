@@ -310,6 +310,26 @@ describe("[WC-1] folder changes read", () => {
       expect(warnings.map((event) => event["event"])).toEqual(["workspace.changes.item_skipped"]);
       const rest = await read(control(), { afterPath: "b.py" });
       expect(rest.items.map((item) => item.path)).toEqual(["c.py"]);
+      for (const name of ["b\u0001x.py", "b\u0002x.py", "b\u0003x.py"])
+        await store.register({ ...scope, artifact: artifact(name, { createdAt: at(9) }) });
+      const walked: string[] = [];
+      let after: string | null = null;
+      let sawIncomplete = false;
+      for (let step = 0; step < 10; step += 1) {
+        const one = await control().query(query({ limit: 1, afterPath: after }));
+        expect(() => gatewayV2MessageSchema.parse(one)).not.toThrow();
+        const payload = one.payload as unknown as {
+          items: { path: string }[];
+          nextAfterPath: string | null;
+          incomplete: boolean;
+        };
+        walked.push(...payload.items.map((item) => item.path));
+        sawIncomplete ||= payload.incomplete;
+        after = payload.nextAfterPath;
+        if (after === null) break;
+      }
+      expect(walked).toEqual(["a.py", "b.py", "c.py"]);
+      expect(sawIncomplete).toBe(true);
     } finally {
       await repository.close();
     }
@@ -643,6 +663,17 @@ describe("[WC-1] folder changes read", () => {
           overlapped: false,
         }),
       ).toBe(false);
+      expect(
+        await artifacts.recordDeleted({
+          ...scope,
+          threadId: "thread-1",
+          runId: "run-1",
+          toolCallId: "call-deleted-control",
+          paths: ["gone\nfile.txt"],
+          grant: { id: GRANT } as HostDirectoryGrant,
+          overlapped: false,
+        }),
+      ).toBe(true);
       expect(
         await artifacts.recordDeleted({
           ...scope,

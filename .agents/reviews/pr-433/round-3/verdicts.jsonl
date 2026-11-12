@@ -1,0 +1,6 @@
+{"id": "1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 中 —— `nextAfterPath` 回退到 `null` 会让后续合格文件永远翻不到（本轮新引入）", "valid": true, "class": "error", "severity": "medium-high", "trigger": "一页里全是路径带控制字符的旧记录（例如每页只取 1 条时正好轮到它）", "consequence": "翻页提前结束，排在后面的合格文件读不到（响应会标不完整，但文件确实少了）", "modelSeverity": "中"}
+{"id": "2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 低 —— 新增的 `revokedAt` 必填校验会让记录静默消失，而列表仍显示 `truncated: false`", "valid": true, "class": "better"}
+{"id": "3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 低 —— `recordDeleted` 没有做控制字符过滤，和文档“带控制字符不登记并标不完整”不一致", "valid": true, "class": "error", "severity": "low", "trigger": "命令删掉一个路径带控制字符的文件", "consequence": "这次删除既不登记也不标不完整，和文档说的不一致", "modelSeverity": "低"}
+{"id": "4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. 低 —— 资源/并发：恢复时的 `Promise.all` 无上限；`changedFiles` 每页全表窗口扫描", "valid": true, "class": "better"}
+{"id": "5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 5. 低 —— `configuredWorkspaceRoot` 的说法不准确，而且它确实会改到模型可见的运行环境说明", "valid": false, "class": "error"}
+{"id": "6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 6. 提示（非缺陷）—— `fileCount` 包含被跳过的坏路径", "valid": true, "class": "better"}

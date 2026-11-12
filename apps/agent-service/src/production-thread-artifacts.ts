@@ -196,8 +196,9 @@ export class ProductionThreadArtifacts {
     readonly grant: HostDirectoryGrant;
     readonly overlapped: boolean;
   }): Promise<boolean> {
-    let paths = input.paths.filter((path) => !skipsThreadArtifact(path));
-    let unknown = false;
+    const tracked = input.paths.filter((path) => !skipsThreadArtifact(path));
+    let paths = tracked.filter((path) => !hasControlCharacter(path));
+    let unknown = paths.length < tracked.length;
     if (input.overlapped)
       paths = (
         await Promise.all(

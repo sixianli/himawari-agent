@@ -1,4 +1,5 @@
 import {
+  type ChangedFilesPage,
   type ClockPort,
   HOST_DIRECTORY_GRANT_STATE_PREFIX,
   type HostDirectoryGrant,
@@ -135,9 +136,6 @@ export class ProductionWorkspaceChangesControl {
     const { grantId, threadId, afterPath, limit } = query.payload;
     const { ownerId, agentId, runPolicy } = this.#options.configuration;
     const matched = runPolicy?.coding?.grantId === grantId;
-    const page = matched
-      ? await this.#options.changes.changedFiles({ ownerId, agentId, threadId, afterPath, limit })
-      : { items: [], nextAfterPath: null, fileCount: 0 };
     const copy =
       matched && threadId !== null
         ? (await this.#options.readState(`workspace-copy-selection:${threadId}`))?.value[
@@ -153,29 +151,46 @@ export class ProductionWorkspaceChangesControl {
           undefined);
     const displayPath = matched ? await this.#options.displayPath() : null;
     const now = this.#options.clock.now();
-    const items = page.items.flatMap((item) => {
-      try {
-        return [
-          workspaceChangeItemSchema.parse({
-            path: item.path,
-            state: item.deletedAt === null ? "changed" : "deleted",
-            source: item.source,
+    type Item = ReturnType<typeof workspaceChangeItemSchema.parse>;
+    let items: Item[] = [];
+    let skipped = false;
+    let from = afterPath;
+    let page: ChangedFilesPage = { items: [], nextAfterPath: null, fileCount: 0 };
+    while (matched) {
+      page = await this.#options.changes.changedFiles({
+        ownerId,
+        agentId,
+        threadId,
+        afterPath: from,
+        limit,
+      });
+      items = page.items.flatMap((item) => {
+        try {
+          return [
+            workspaceChangeItemSchema.parse({
+              path: item.path,
+              state: item.deletedAt === null ? "changed" : "deleted",
+              source: item.source,
+              threadId: item.threadId,
+              versions: item.versions,
+              changedAt: item.changedAt,
+              deletedAt: item.deletedAt,
+            }),
+          ];
+        } catch (error) {
+          skipped = true;
+          this.#warn({
+            event: "workspace.changes.item_skipped",
             threadId: item.threadId,
-            versions: item.versions,
-            changedAt: item.changedAt,
-            deletedAt: item.deletedAt,
-          }),
-        ];
-      } catch (error) {
-        this.#warn({
-          event: "workspace.changes.item_skipped",
-          threadId: item.threadId,
-          code: error instanceof Error ? error.name : "WORKSPACE_CHANGE_ITEM_INVALID",
-          at: now,
-        });
-        return [];
-      }
-    });
+            code: error instanceof Error ? error.name : "WORKSPACE_CHANGE_ITEM_INVALID",
+            at: now,
+          });
+          return [];
+        }
+      });
+      if (items.length > 0 || page.nextAfterPath === null) break;
+      from = page.nextAfterPath;
+    }
     return {
       ...query,
       kind: "snapshot",
@@ -189,7 +204,7 @@ export class ProductionWorkspaceChangesControl {
         threadId,
         recording: typeof copy === "string" ? "copy" : "direct",
         fileCount: page.fileCount,
-        incomplete: incomplete || items.length < page.items.length,
+        incomplete: incomplete || skipped,
         skippedDirectories: [...THREAD_ARTIFACT_SKIPPED_DIRECTORIES],
         items,
         nextAfterPath:
