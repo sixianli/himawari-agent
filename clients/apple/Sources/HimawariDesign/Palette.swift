@@ -121,6 +121,7 @@ extension Color {
 }
 
 extension Text {
+    @MainActor
     public func hmText(_ token: TypeToken) -> Text {
         font(token.font).tracking(token.tracking)
     }
