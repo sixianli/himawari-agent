@@ -56,6 +56,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
+  "proposals.read",
+  "proposals.snapshot",
+  "proposal.respond",
   "sensitive.interceptions.read",
   "sensitive.interceptions.snapshot",
   "sensitive.interceptions.clear",
@@ -74,8 +77,6 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.reminder.create",
   "memory.rules.read",
   "memory.rules.snapshot",
-  "memory.ruleProposals.read",
-  "memory.ruleProposals.snapshot",
   "memory.rule.respond",
   "memory.create",
   "memory.category.set",
@@ -1628,7 +1629,9 @@ const memoryReminderCreateCommandSchema = object({
     repeat: enumeration(["none", "yearly"]),
   }),
 });
-export const OWNER_RULE_ACTIONS = ["undo", "confirm", "reconfirm", "reject"] as const;
+export const OWNER_RULE_ACTIONS = ["undo", "confirm", "reconfirm"] as const;
+export const PROPOSAL_ACTIONS = ["adopt", "reject"] as const;
+export const PROPOSAL_ORIGINS = ["owner_said", "inferred", "external_agent"] as const;
 const memoryRulesQuerySchema = object({
   ...envelope("query", "memory.rules.read"),
   payload: object({}),
@@ -1649,34 +1652,35 @@ const memoryRulesSnapshotSchema = object({
     generatedAt: timestamp,
   }),
 });
-const memoryRuleProposalsQuerySchema = object({
-  ...envelope("query", "memory.ruleProposals.read"),
+const proposalsQuerySchema = object({
+  ...envelope("query", "proposals.read"),
   payload: object({}),
 });
-const memoryRuleProposalsSnapshotSchema = object({
-  ...envelope("snapshot", "memory.ruleProposals.snapshot"),
+const proposalsSnapshotSchema = object({
+  ...envelope("snapshot", "proposals.snapshot"),
   payload: object({
     proposals: array(
       object({
         proposalId: machineString,
+        version: integer(1),
+        fingerprint: machineString,
         type: boundedString(64),
         summary: boundedString(200),
-        origin: enumeration(["owner_said", "inferred"]),
-        quote: nullable(boundedString(500)),
-        trials: array(
+        effect: boundedString(200),
+        origin: enumeration(PROPOSAL_ORIGINS),
+        adoptable: booleanValue,
+        evidence: array(
           object({
-            from: nullable(boundedString(200)),
-            subject: nullable(boundedString(200)),
-            hit: booleanValue,
-          }),
-        ),
-        replay: nullable(
-          object({
-            days: integer(0),
-            mailsChecked: integer(0),
-            mailsHit: integer(0),
-            changed: integer(0),
-            truncated: booleanValue,
+            kind: boundedString(64),
+            text: nullable(boundedString(500)),
+            sources: array(object({ kind: boundedString(64), ref: boundedString(256) })),
+            figures: array(
+              object({
+                name: boundedString(64),
+                value: integer(Number.MIN_SAFE_INTEGER),
+                definition: boundedString(200),
+              }),
+            ),
           }),
         ),
         proposedAt: timestamp,
@@ -1688,6 +1692,15 @@ const memoryRuleProposalsSnapshotSchema = object({
     limit: integer(1),
     expiresAfterDays: integer(1),
     generatedAt: timestamp,
+  }),
+});
+const proposalRespondCommandSchema = object({
+  ...commandEnvelope("proposal.respond"),
+  payload: object({
+    proposalId: machineString,
+    expectedVersion: integer(1),
+    fingerprint: machineString,
+    action: enumeration(PROPOSAL_ACTIONS),
   }),
 });
 const memoryRuleRespondCommandSchema = object({
@@ -2648,6 +2661,9 @@ const schemasByType = {
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
+  "proposals.read": proposalsQuerySchema,
+  "proposals.snapshot": proposalsSnapshotSchema,
+  "proposal.respond": proposalRespondCommandSchema,
   "device.list.read": deviceListQuerySchema,
   "device.list.snapshot": deviceListSnapshotSchema,
   "device.pairing.start": devicePairingStartCommandSchema,
@@ -2674,8 +2690,6 @@ const schemasByType = {
   "memory.reminder.create": memoryReminderCreateCommandSchema,
   "memory.rules.read": memoryRulesQuerySchema,
   "memory.rules.snapshot": memoryRulesSnapshotSchema,
-  "memory.ruleProposals.read": memoryRuleProposalsQuerySchema,
-  "memory.ruleProposals.snapshot": memoryRuleProposalsSnapshotSchema,
   "memory.rule.respond": memoryRuleRespondCommandSchema,
   "memory.create": memoryCreateCommandSchema,
   "memory.category.set": memoryCategorySetCommandSchema,

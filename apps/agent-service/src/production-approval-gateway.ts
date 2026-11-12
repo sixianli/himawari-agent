@@ -37,6 +37,10 @@ import {
   type ProductionOwnerPreferencesControl,
 } from "./production-owner-preferences-control.js";
 import {
+  PRODUCTION_PROPOSAL_OPERATIONS,
+  type ProductionProposalControl,
+} from "./production-proposal-control.js";
+import {
   PRODUCTION_PROACTIVE_OPERATIONS,
   type ProductionProactive,
 } from "./production-proactive.js";
@@ -79,6 +83,7 @@ export function createProductionApprovalGateway(options: {
   readonly museControl?: Pick<ProductionMuseControl, "query" | "execute">;
   readonly observationControl?: Pick<ProductionObservation, "query" | "execute">;
   readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
+  readonly proposalControl?: Pick<ProductionProposalControl, "query" | "execute">;
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
   readonly serverStatusControl?: ProductionServerStatusControl;
 }) {
@@ -120,12 +125,14 @@ export function createProductionApprovalGateway(options: {
                   ? options.museControl.query(query)
                   : query.type.startsWith("owner.preferences.") && options.ownerPreferencesControl
                     ? options.ownerPreferencesControl.query(query)
-                    : query.type.startsWith("sensitive.interceptions.") &&
-                        options.sensitiveInterceptionsControl
-                      ? options.sensitiveInterceptionsControl.query(query)
-                      : query.type.startsWith("server.status.") && options.serverStatusControl
-                        ? options.serverStatusControl.query(query)
-                        : searchAuthorization.query(query),
+                    : query.type.startsWith("proposals.") && options.proposalControl
+                      ? options.proposalControl.query(query)
+                      : query.type.startsWith("sensitive.interceptions.") &&
+                          options.sensitiveInterceptionsControl
+                        ? options.sensitiveInterceptionsControl.query(query)
+                        : query.type.startsWith("server.status.") && options.serverStatusControl
+                          ? options.serverStatusControl.query(query)
+                          : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -233,6 +240,8 @@ export function createProductionApprovalGateway(options: {
           return options.museControl.execute(command);
         if (command.type.startsWith("owner.preferences.") && options.ownerPreferencesControl)
           return options.ownerPreferencesControl.execute(command);
+        if (command.type.startsWith("proposal.") && options.proposalControl)
+          return options.proposalControl.execute(command);
         if (
           command.type.startsWith("sensitive.interceptions.") &&
           options.sensitiveInterceptionsControl
@@ -263,6 +272,7 @@ export function createProductionApprovalGateway(options: {
       ...(options.museControl ? PRODUCTION_MUSE_OPERATIONS : []),
       ...(options.observationControl ? PRODUCTION_OBSERVATION_OPERATIONS : []),
       ...(options.ownerPreferencesControl ? PRODUCTION_OWNER_PREFERENCE_OPERATIONS : []),
+      ...(options.proposalControl ? PRODUCTION_PROPOSAL_OPERATIONS : []),
       ...(options.sensitiveInterceptionsControl
         ? PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS
         : []),

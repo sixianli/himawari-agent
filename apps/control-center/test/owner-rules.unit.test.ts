@@ -7,7 +7,12 @@ import { OwnerRulesSection, RuleReceiptCard } from "../src/components/rule-recei
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../src/gateway-client.ts";
 import type { MessageId } from "../src/i18n/message-ids.ts";
 import { messages } from "../src/i18n/resources/zh-CN.ts";
-import { type OwnerRule, useMemory } from "../src/memory.ts";
+import {
+  type OwnerRule,
+  type PendingProposal,
+  type PendingProposals,
+  useMemory,
+} from "../src/memory.ts";
 
 const intl = createIntl({ locale: "zh-CN", messages });
 const message = (id: MessageId, values?: Record<string, string | number>) =>
@@ -65,6 +70,39 @@ const active = {
   replayed: false,
 };
 
+const respondProposal = vi.fn(async () => true);
+const FINGERPRINT = "ab".repeat(32);
+const proposal = (over: Partial<PendingProposal> = {}): PendingProposal => ({
+  proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
+  version: 3,
+  fingerprint: FINGERPRINT,
+  type: "owner_rule",
+  summary: "入管局的邮件一律提醒",
+  effect: "入管局的邮件一律提醒",
+  origin: "inferred",
+  adoptable: true,
+  evidence: [
+    { kind: "owner_words", text: "入管局的邮件别漏了", sources: [], figures: [] },
+    {
+      kind: "mail_replay",
+      text: null,
+      sources: [{ kind: "web_page", ref: "https://example.test/a" }],
+      figures: [{ name: "mailsHit", value: 3, definition: "规则命中的邮件数" }],
+    },
+  ],
+  proposedAt: "2026-11-11T00:00:00.000Z",
+  expiresAt: "2026-12-11T00:00:00.000Z",
+  refusedBefore: 0,
+  ...over,
+});
+const waiting: PendingProposals = {
+  proposals: [proposal()],
+  pendingCount: 1,
+  limit: 20,
+  expiresAfterDays: 30,
+  generatedAt: "2026-11-11T00:00:00.000Z",
+};
+
 const rule = (change: Partial<OwnerRule> = {}): OwnerRule => ({
   ruleId: "owner:0123456789abcdef01234567",
   type: "mail_read_whole_thread",
@@ -95,6 +133,7 @@ async function press(label: string) {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.resetAllMocks();
+  respondProposal.mockImplementation(async () => true);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -111,7 +150,7 @@ describe("[P2-3] standing rules on the web page", () => {
     await show(
       h(RuleReceiptCard, {
         output: JSON.stringify(active),
-        memory: { respondRule, busy: false },
+        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
         message,
       }),
     );
@@ -143,7 +182,7 @@ describe("[P2-3] standing rules on the web page", () => {
           proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
           replay: null,
         }),
-        memory: { respondRule, busy: false },
+        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
         message,
       }),
     );
@@ -157,9 +196,39 @@ describe("[P2-3] standing rules on the web page", () => {
     );
     await show(
       h(RuleReceiptCard, {
+        key: "refuse",
+        output: JSON.stringify({
+          ...active,
+          status: "proposed",
+          ruleId: null,
+          proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
+        }),
+        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
+        message,
+      }),
+    );
+    await press("不要");
+    expect(respondProposal).toHaveBeenCalledWith(waiting.proposals[0], "reject");
+    expect(buttons()).toEqual([]);
+    await show(
+      h(RuleReceiptCard, {
+        key: "gone",
+        output: JSON.stringify({
+          ...active,
+          status: "proposed",
+          ruleId: null,
+          proposalId: "rule-proposal:ffffffffffffffffffffffffffffffff",
+        }),
+        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
+        message,
+      }),
+    );
+    expect(buttons()).toEqual(["生效"]);
+    await show(
+      h(RuleReceiptCard, {
         key: "soft",
         output: JSON.stringify({ ...active, status: "soft", ruleId: null, trials: [] }),
-        memory: { respondRule, busy: false },
+        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
         message,
       }),
     );
@@ -170,7 +239,7 @@ describe("[P2-3] standing rules on the web page", () => {
       h(RuleReceiptCard, {
         key: "failed",
         output: "这次没有记成规则",
-        memory: { respondRule, busy: false },
+        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
         message,
       }),
     );
@@ -181,7 +250,12 @@ describe("[P2-3] standing rules on the web page", () => {
     await show(
       h(RuleReceiptCard, {
         output: JSON.stringify({ ...active, type: "mail_read_whole_thread" }),
-        memory: { respondRule: vi.fn(async () => true), busy: false },
+        memory: {
+          proposals: null,
+          respondRule: vi.fn(async () => true),
+          respondProposal: vi.fn(),
+          busy: false,
+        },
         message,
       }),
     );
@@ -199,7 +273,6 @@ describe("[P2-3] standing rules on the web page", () => {
             rule({ ruleId: "owner:b", status: "needs_review", summary: "入管局的邮件一律提醒" }),
             rule({ ruleId: "owner:c", enforced: false, summary: "读不懂的规则" }),
           ],
-          proposals: null,
           respondRule,
           busy: false,
         },
@@ -219,94 +292,7 @@ describe("[P2-3] standing rules on the web page", () => {
   it("REVERSE: shows no rules section when there are no rules", async () => {
     await show(
       h(OwnerRulesSection, {
-        memory: { rules: [], proposals: null, respondRule: vi.fn(), busy: false },
-        message,
-      }),
-    );
-    expect(container.textContent).toBe("");
-  });
-
-  const proposal = (over: Record<string, unknown> = {}) => ({
-    proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
-    type: "mail_must_notify",
-    summary: "入管局的邮件一律提醒",
-    origin: "inferred" as "inferred" | "owner_said",
-    quote: "入管局的邮件别漏了" as string | null,
-    trials: [{ from: "info@mail.isa.go.jp", subject: "Hello", hit: true }],
-    replay: { days: 30, mailsChecked: 120, mailsHit: 3, changed: 2, truncated: false },
-    proposedAt: "2026-11-11T00:00:00.000Z",
-    expiresAt: "2026-12-11T00:00:00.000Z",
-    refusedBefore: 0,
-    ...over,
-  });
-
-  it("lists waiting proposals with who they came from, the basis, the limit and the day they expire, and sends adopt and refuse", async () => {
-    const respondRule = vi.fn(async () => true);
-    await show(
-      h(OwnerRulesSection, {
-        memory: {
-          rules: [],
-          proposals: {
-            proposals: [
-              proposal(),
-              proposal({
-                proposalId: "rule-proposal:ffffffffffffffffffffffffffffffff",
-                origin: "owner_said",
-                quote: null,
-                trials: [],
-                replay: null,
-                refusedBefore: 2,
-              }),
-            ],
-            pendingCount: 2,
-            limit: 20,
-            expiresAfterDays: 30,
-            generatedAt: "2026-11-11T00:00:00.000Z",
-          },
-          respondRule,
-          busy: false,
-        },
-        message,
-      }),
-    );
-    const text = container.textContent ?? "";
-    expect(text).toContain("待采纳的规则 · 2 条");
-    expect(text).toContain("已用 2 条，最多 20 条");
-    expect(text).toContain("30 天内不处理会自动过期");
-    expect(text).toContain("Himawari 推断的，不是你的原话");
-    expect(text).toContain("你说过的话");
-    expect(text).toContain("2026-12-11 过期");
-    expect(text).toContain("入管局的邮件别漏了");
-    expect(text).toContain("规则命中 3 封");
-    expect(text).toContain("没有记录");
-    expect(text).toContain("你之前不要过 2 次");
-    await press("生效");
-    expect(respondRule).toHaveBeenCalledWith(
-      "rule-proposal:0123456789abcdef0123456789abcdef",
-      "confirm",
-    );
-    await press("不要");
-    expect(respondRule).toHaveBeenLastCalledWith(
-      "rule-proposal:0123456789abcdef0123456789abcdef",
-      "reject",
-    );
-  });
-
-  it("REVERSE: shows no waiting-proposal section when none are waiting", async () => {
-    await show(
-      h(OwnerRulesSection, {
-        memory: {
-          rules: [],
-          proposals: {
-            proposals: [],
-            pendingCount: 0,
-            limit: 20,
-            expiresAfterDays: 30,
-            generatedAt: "2026-11-11T00:00:00.000Z",
-          },
-          respondRule: vi.fn(),
-          busy: false,
-        },
+        memory: { rules: [], respondRule: vi.fn(), busy: false },
         message,
       }),
     );
@@ -340,6 +326,18 @@ describe("[P2-3] standing rules on the web page", () => {
     expect(mutate.mock.calls.at(-1)?.[0]).toMatchObject({
       type: "memory.rule.respond",
       payload: { target: "owner:0123456789abcdef01234567", action: "undo" },
+    });
+    await act(async () => {
+      await seen.model?.respondProposal(proposal(), "adopt");
+    });
+    expect(mutate.mock.calls.at(-1)?.[0]).toMatchObject({
+      type: "proposal.respond",
+      payload: {
+        proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
+        expectedVersion: 3,
+        fingerprint: FINGERPRINT,
+        action: "adopt",
+      },
     });
   });
 });

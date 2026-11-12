@@ -25,18 +25,23 @@ export type OwnerRule = Extract<
   GatewayV2Snapshot,
   { type: "memory.rules.snapshot" }
 >["payload"]["rules"][number];
-export type RuleProposals = Extract<
+export type PendingProposals = Extract<
   GatewayV2Snapshot,
-  { type: "memory.ruleProposals.snapshot" }
+  { type: "proposals.snapshot" }
 >["payload"];
-export type RuleProposal = RuleProposals["proposals"][number];
-export type OwnerRuleAction = "undo" | "confirm" | "reconfirm" | "reject";
+export type PendingProposal = PendingProposals["proposals"][number];
+export type OwnerRuleAction = "undo" | "confirm" | "reconfirm";
+export type ProposalAction = "adopt" | "reject";
 const REMINDER_REFRESH_MS = 300_000;
 
 export interface MemoryModel {
   readonly overview: MemoryOverview | null;
   readonly rules: readonly OwnerRule[];
-  readonly proposals: RuleProposals | null;
+  readonly proposals: PendingProposals | null;
+  readonly respondProposal: (
+    proposal: Pick<PendingProposal, "proposalId" | "version" | "fingerprint">,
+    action: ProposalAction,
+  ) => Promise<boolean>;
   readonly respondRule: (target: string, action: OwnerRuleAction) => Promise<boolean>;
   readonly failed: boolean;
   readonly busy: boolean;
@@ -96,8 +101,8 @@ export function useMemory(input: {
   const rulesAvailable =
     configuration?.installedGatewayV2Operations?.includes("memory.rules.read") ?? false;
   const proposalsAvailable =
-    configuration?.installedGatewayV2Operations?.includes("memory.ruleProposals.read") ?? false;
-  const [proposals, setProposals] = useState<RuleProposals | null>(null);
+    configuration?.installedGatewayV2Operations?.includes("proposals.read") ?? false;
+  const [proposals, setProposals] = useState<PendingProposals | null>(null);
   const [overview, setOverview] = useState<MemoryOverview | null>(null);
   const [rules, setRules] = useState<readonly OwnerRule[]>([]);
   const [failed, setFailed] = useState(false);
@@ -132,9 +137,9 @@ export function useMemory(input: {
         });
     if (proposalsAvailable)
       void client
-        .query(queryMessage(configuration, "memory.ruleProposals.read", {}))
+        .query(queryMessage(configuration, "proposals.read", {}))
         .then((result) => {
-          if (result.type !== "memory.ruleProposals.snapshot") throw new Error("PROPOSALS_INVALID");
+          if (result.type !== "proposals.snapshot") throw new Error("PROPOSALS_INVALID");
           if (!disposed) setProposals(result.payload);
         })
         .catch(() => {
@@ -191,6 +196,13 @@ export function useMemory(input: {
     rules,
     proposals,
     respondRule: (target, action) => send("memory.rule.respond", () => ({ target, action })),
+    respondProposal: ({ proposalId, version, fingerprint }, action) =>
+      send("proposal.respond", () => ({
+        proposalId,
+        expectedVersion: version,
+        fingerprint,
+        action,
+      })),
     failed,
     busy,
     checkSource: async (memoryId) => {

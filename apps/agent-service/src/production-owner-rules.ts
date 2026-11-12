@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
   ApplicationPortError,
   type ClockPort,
@@ -8,8 +8,6 @@ import {
   type MemoryBookStorePort,
   OWNER_RULE_ID_PREFIX,
   OWNER_RULE_SUMMARY_LIMIT,
-  type OwnerRuleProposalOrigin,
-  type OwnerRuleProposalStorePort,
   type OwnerRuleReplayResult,
   type OwnerRuleStorePort,
   ownerRuleRecord,
@@ -32,6 +30,12 @@ import {
 } from "@himawari-agent/application";
 import { TOOL_RULE_LIST, TOOL_RULE_SET, TOOL_RULE_UNDO } from "@himawari-agent/prompt-catalog";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
+import {
+  canonicalJson,
+  type ProductionProposalBox,
+  ProposalError,
+  type ProposalEvidence,
+} from "./production-proposals.js";
 
 export const RULE_SET_CAPABILITY_REF = "rule.set";
 export const RULE_LIST_CAPABILITY_REF = "rule.list";
@@ -52,12 +56,7 @@ const OWNER_MESSAGES_CHECKED = 6;
 const MESSAGES_SCANNED = 200;
 const SET_ARGUMENTS = ["quote", "inferred", "type", "params", "summary"];
 const ACTIVE_RULE_LIMIT = 32;
-export const PENDING_PROPOSAL_LIMIT = 20;
-const PENDING_PROPOSAL_CEILING = 200;
-const EVIDENCE_SWEEP_BATCH = 100;
-const PENDING_PROPOSAL_TTL_CEILING_DAYS = 3650;
-export const PENDING_PROPOSAL_TTL_DAYS = 30;
-const DAY_MS = 86_400_000;
+export const RULE_PROPOSAL_TYPE = "owner_rule";
 const PROPOSAL_ID_PATTERN = /^rule-proposal:[0-9a-f]{32}$/u;
 const STANDING_MARKERS = [
   "以后",
@@ -146,7 +145,6 @@ export type OwnerRuleErrorCode =
   | "RULE_UNAVAILABLE"
   | "RULE_PROPOSALS_FULL"
   | "RULE_PROPOSAL_REJECTED"
-  | "RULE_PROPOSAL_ACCEPTED"
   | "RULE_PROPOSAL_EXPIRED";
 
 export class OwnerRuleError extends Error {
@@ -263,31 +261,6 @@ interface Proposal {
   readonly replay?: RuleReplay | null;
 }
 
-export interface PendingRuleProposal {
-  readonly proposalId: string;
-  readonly type: string;
-  readonly summary: string;
-  readonly origin: OwnerRuleProposalOrigin;
-  readonly quote: string | null;
-  readonly trials: readonly RuleTrial[];
-  readonly replay: RuleReplay | null;
-  readonly proposedAt: string;
-  readonly expiresAt: string;
-  readonly refusedBefore: number;
-}
-
-export interface PendingRuleProposals {
-  readonly proposals: readonly PendingRuleProposal[];
-  readonly pendingCount: number;
-  readonly limit: number;
-  readonly expiresAfterDays: number;
-}
-
-export interface RejectedRuleProposal {
-  readonly proposalId: string;
-  readonly replayed: boolean;
-}
-
 export interface RulePreview {
   readonly type: string;
   readonly params: unknown;
@@ -307,9 +280,7 @@ export interface ProductionOwnerRuleWriterOptions {
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
   readonly replay?: (rule: RuleRecord) => Promise<RuleReplay>;
-  readonly proposals: OwnerRuleProposalStorePort;
-  readonly proposalLimit?: number;
-  readonly proposalTtlDays?: number;
+  readonly box: ProductionProposalBox;
 }
 
 function hash(value: string): string {
@@ -355,6 +326,67 @@ function evidenceOf(value: unknown): Proposal | undefined {
       : [],
     replay: replayed ? (replay as RuleReplay) : null,
   };
+}
+
+function ruleEvidence(
+  quote: string,
+  threadId: string | null,
+  trials: readonly RuleTrial[],
+  replay: RuleReplay | null,
+): readonly ProposalEvidence[] {
+  const flag = (value: boolean) => (value ? 1 : 0);
+  return [
+    {
+      kind: "owner_words",
+      text: quote,
+      sources: threadId === null ? [] : [{ kind: "thread", ref: threadId }],
+      figures: [],
+    },
+    ...trials.map((trial) => ({
+      kind: "mail_trial",
+      text: `${trial.from}: ${trial.subject}`,
+      sources: [],
+      figures: [
+        {
+          name: "hit",
+          value: flag(trial.hit),
+          definition: "这封示例邮件按这条规则会不会提醒：1 会，0 不会",
+        },
+      ],
+    })),
+    ...(replay
+      ? [
+          {
+            kind: "mail_replay",
+            text: null,
+            sources: [],
+            figures: [
+              { name: "days", value: replay.days, definition: "回看了最近多少天收到的邮件" },
+              {
+                name: "mailsChecked",
+                value: replay.mailsChecked,
+                definition: "回看时检查了多少封邮件",
+              },
+              {
+                name: "mailsHit",
+                value: replay.mailsHit,
+                definition: "其中多少封按这条规则会提醒",
+              },
+              {
+                name: "changed",
+                value: replay.changed,
+                definition: "其中多少封的结果会和现在不一样",
+              },
+              {
+                name: "truncated",
+                value: flag(replay.truncated),
+                definition: "邮件太多没有看完时为 1，这时上面的数字是至少",
+              },
+            ],
+          },
+        ]
+      : []),
+  ];
 }
 
 function trialsOf(rule: RuleRecord): readonly RuleTrial[] {
@@ -408,19 +440,6 @@ function saysWholeClauses(text: string, quote: readonly string[]): boolean {
   return false;
 }
 
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value !== null && typeof value === "object")
-    return `{${Object.keys(value)
-      .sort()
-      .filter((key) => (value as Record<string, unknown>)[key] !== undefined)
-      .map(
-        (key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`,
-      )
-      .join(",")}}`;
-  return JSON.stringify(value) ?? "null";
-}
-
 function sameRule(parameters: unknown, type: string, params: unknown): boolean {
   const record = (parameters ?? {}) as Record<string, unknown>;
   return record["type"] === type && JSON.stringify(record["params"]) === JSON.stringify(params);
@@ -438,18 +457,19 @@ export class ProductionOwnerRuleWriter {
   readonly #options: ProductionOwnerRuleWriterOptions;
 
   constructor(options: ProductionOwnerRuleWriterOptions) {
-    const { proposalLimit = PENDING_PROPOSAL_LIMIT, proposalTtlDays = PENDING_PROPOSAL_TTL_DAYS } =
-      options;
-    if (
-      !Number.isInteger(proposalLimit) ||
-      proposalLimit < 1 ||
-      proposalLimit > PENDING_PROPOSAL_CEILING ||
-      !Number.isInteger(proposalTtlDays) ||
-      proposalTtlDays < 1 ||
-      proposalTtlDays > PENDING_PROPOSAL_TTL_CEILING_DAYS
-    )
-      throw new RangeError("Owner rule proposal limit or lifetime is out of range");
     this.#options = options;
+    options.box.register(RULE_PROPOSAL_TYPE, {
+      adopt: async ({ threadId, data }) => {
+        const stored = evidenceOf(data);
+        if (!stored) throw new OwnerRuleError("RULE_NOT_FOUND");
+        const receipt = await this.#activate({ ...stored, threadId }, stored.replay ?? null);
+        return { resultRef: receipt.ruleId ?? "owner-rule", detail: receipt };
+      },
+      settled: async () => {
+        const live = await this.#options.rules.list({ ...this.#scope(), includeRetired: false });
+        return (data) => this.#covers(live.map((rule) => rule.parameters))(data);
+      },
+    });
   }
 
   #scope() {
@@ -592,43 +612,21 @@ export class ProductionOwnerRuleWriter {
     }
   }
 
-  async #settle(enforced: readonly (readonly [string, unknown])[]): Promise<void> {
-    if (enforced.length === 0) return;
-    const scope = this.#scope();
-    const store = this.#options.proposals;
-    const now = this.#options.clock.now();
-    const waiting = await store
-      .listPending({ ...scope, now, limit: this.#limit() })
-      .catch(() => undefined);
-    for (const row of waiting?.proposals ?? []) {
-      const evidence = row.evidenceRef
-        ? await this.#readProposal(row.evidenceRef).catch(() => undefined)
-        : undefined;
-      if (!evidence) continue;
-      let covered = false;
-      try {
-        const parsed = parseOwnerRuleParameters({
-          type: evidence.type,
-          params: evidence.params,
-          summary: evidence.summary,
-        });
-        covered = enforced.some(([type, params]) =>
-          sameRule({ type: parsed.type, params: parsed.params }, type, params),
-        );
-      } catch {
-        covered = false;
-      }
-      if (covered)
-        await store
-          .decide({
-            ...scope,
-            proposalId: row.proposalId,
-            from: "pending",
-            to: "accepted",
-            now,
-          })
-          .catch(() => false);
-    }
+  #covers(enforced: readonly unknown[]): (data: unknown) => boolean {
+    return (data) => {
+      const stored = evidenceOf(data);
+      if (!stored) return false;
+      const parsed = parseOwnerRuleParameters({
+        type: stored.type,
+        params: stored.params,
+        summary: stored.summary,
+      });
+      return enforced.some((parameters) => sameRule(parameters, parsed.type, parsed.params));
+    };
+  }
+
+  #settle(type: string, params: unknown): Promise<void> {
+    return this.#options.box.settle(RULE_PROPOSAL_TYPE, this.#covers([{ type, params }]));
   }
 
   async #activate(proposal: Proposal, replayed: RuleReplay | null): Promise<RuleReceipt> {
@@ -645,7 +643,7 @@ export class ProductionOwnerRuleWriter {
     );
     if (same) {
       await this.reconfirm(same.ruleId);
-      await this.#settle([[parsed.type, parsed.params]]);
+      await this.#settle(parsed.type, parsed.params);
       return Object.freeze({
         status: "active",
         ruleId: same.ruleId,
@@ -700,7 +698,7 @@ export class ProductionOwnerRuleWriter {
         throw new OwnerRuleError("RULE_UNAVAILABLE");
       }
     }
-    await this.#settle([[parsed.type, parsed.params]]);
+    await this.#settle(parsed.type, parsed.params);
     return Object.freeze({
       status: "active",
       ruleId,
@@ -802,44 +800,28 @@ export class ProductionOwnerRuleWriter {
       ]),
     ).slice(0, 32)}`;
     const trials = trialsOf(draft);
-    const evidence = JSON.stringify({ ...proposal, trials, replay: replayed });
-    if (input.listed === false) await this.#writeText(proposalId, evidence);
+    const stored = { ...proposal, trials, replay: replayed };
+    if (input.listed === false) await this.#writeText(proposalId, JSON.stringify(stored));
     else {
-      const scope = this.#scope();
-      const store = this.#options.proposals;
-      const now = this.#options.clock.now();
-      const live = await this.#options.rules.list({ ...scope, includeRetired: false });
+      const live = await this.#options.rules.list({ ...this.#scope(), includeRetired: false });
       if (live.some((row) => sameRule(row.parameters, normalized.type, normalized.params)))
         return this.#activate(proposal, replayed);
-      const existing = await store.read({ ...scope, proposalId, now });
-      const payloads = this.#options.payloads;
-      const evidenceRef = `${proposalId}:${hash(`${proposalId}\n${now}\n${randomUUID()}`).slice(0, 16)}`;
-      const drop = () => payloads.delete(evidenceRef as never).catch(() => false);
-      const expiresAt = new Date(Date.parse(now) + this.#ttlDays() * DAY_MS).toISOString();
-      await this.#writeText(evidenceRef, evidence);
-      const outcome = await store
+      await this.#options.box
         .propose({
-          ...scope,
           proposalId,
-          ruleType: normalized.type,
+          type: RULE_PROPOSAL_TYPE,
           summary: normalized.summary,
+          effect: normalized.summary,
           origin: ownerSaid ? "owner_said" : "inferred",
           threadId: input.threadId,
-          evidenceRef,
-          now,
-          expiresAt,
-          pendingLimit: this.#limit(),
+          evidence: ruleEvidence(quote, input.threadId, trials, replayed),
+          data: stored,
         })
-        .catch(async (error: unknown) => {
-          await drop();
-          throw error;
+        .catch((error: unknown) => {
+          throw error instanceof ProposalError && error.code === "PROPOSALS_FULL"
+            ? new OwnerRuleError("RULE_PROPOSALS_FULL", error.detail)
+            : error;
         });
-      if (outcome === "limit_reached") {
-        await drop();
-        throw new OwnerRuleError("RULE_PROPOSALS_FULL", String(this.#limit()));
-      }
-      if (existing?.evidenceRef && existing.evidenceRef !== evidenceRef)
-        await payloads.delete(existing.evidenceRef as never).catch(() => false);
     }
     return Object.freeze({
       status: "proposed",
@@ -855,14 +837,6 @@ export class ProductionOwnerRuleWriter {
     });
   }
 
-  #limit(): number {
-    return this.#options.proposalLimit ?? PENDING_PROPOSAL_LIMIT;
-  }
-
-  #ttlDays(): number {
-    return this.#options.proposalTtlDays ?? PENDING_PROPOSAL_TTL_DAYS;
-  }
-
   async #readProposal(ref: string): Promise<Proposal | undefined> {
     const text = await this.#readText(ref);
     if (text === undefined) return undefined;
@@ -875,132 +849,22 @@ export class ProductionOwnerRuleWriter {
 
   async confirm(proposalId: string): Promise<RuleReceipt> {
     if (!PROPOSAL_ID_PATTERN.test(proposalId)) throw new OwnerRuleError("RULE_NOT_FOUND");
-    const scope = this.#scope();
-    const store = this.#options.proposals;
-    let row = await store.read({ ...scope, proposalId, now: this.#options.clock.now() });
-    let claimed = false;
-    if (row) {
-      if (row.status === "rejected") throw new OwnerRuleError("RULE_PROPOSAL_REJECTED");
-      if (row.status === "expired") throw new OwnerRuleError("RULE_PROPOSAL_EXPIRED");
-      if (row.status === "pending") {
-        const won = await store.decide({
-          ...scope,
-          proposalId,
-          from: "pending",
-          to: "accepted",
-          now: this.#options.clock.now(),
-        });
-        if (won) claimed = true;
-        else {
-          row = await store.read({ ...scope, proposalId, now: this.#options.clock.now() });
-          if (row?.status === "rejected") throw new OwnerRuleError("RULE_PROPOSAL_REJECTED");
-          if (row?.status === "expired") throw new OwnerRuleError("RULE_PROPOSAL_EXPIRED");
-        }
-      }
+    if (await this.#options.box.read(proposalId)) {
+      const adopted = await this.#options.box.adopt(proposalId).catch((error: unknown) => {
+        if (!(error instanceof ProposalError)) throw error;
+        throw new OwnerRuleError(
+          error.code === "PROPOSAL_REJECTED"
+            ? "RULE_PROPOSAL_REJECTED"
+            : error.code === "PROPOSAL_EXPIRED"
+              ? "RULE_PROPOSAL_EXPIRED"
+              : "RULE_NOT_FOUND",
+        );
+      });
+      return adopted.detail as RuleReceipt;
     }
-    const release = async (): Promise<void> => {
-      if (claimed)
-        await store
-          .decide({
-            ...scope,
-            proposalId,
-            from: "accepted",
-            to: "pending",
-            now: this.#options.clock.now(),
-          })
-          .catch(() => undefined);
-    };
-    const stored = await this.#readProposal(row?.evidenceRef ?? proposalId);
-    if (!stored) {
-      await release();
-      throw new OwnerRuleError("RULE_NOT_FOUND");
-    }
-    const proposal = row ? { ...stored, threadId: row.threadId } : stored;
-    try {
-      return await this.#activate(proposal, proposal.replay ?? null);
-    } catch (error) {
-      await release();
-      throw error;
-    }
-  }
-
-  async #sweep(): Promise<void> {
-    const scope = this.#scope();
-    const store = this.#options.proposals;
-    const settled = await store
-      .settledEvidence({ ...scope, now: this.#options.clock.now(), limit: EVIDENCE_SWEEP_BATCH })
-      .catch(() => []);
-    for (const { proposalId, evidenceRef } of settled) {
-      const gone = await this.#options.payloads
-        .delete(evidenceRef as never)
-        .then(() => true)
-        .catch(() => false);
-      if (gone) await store.clearEvidence({ ...scope, proposalId, evidenceRef }).catch(() => false);
-    }
-  }
-
-  async reject(proposalId: string): Promise<RejectedRuleProposal> {
-    if (!PROPOSAL_ID_PATTERN.test(proposalId)) throw new OwnerRuleError("RULE_NOT_FOUND");
-    const scope = this.#scope();
-    const store = this.#options.proposals;
-    const now = this.#options.clock.now();
-    const decide = () =>
-      store.decide({ ...scope, proposalId, from: "pending", to: "rejected", now });
-    const refused = async (): Promise<RejectedRuleProposal> => {
-      await this.#sweep();
-      return Object.freeze({ proposalId, replayed: false });
-    };
-    if (await decide()) return refused();
-    let row = await store.read({ ...scope, proposalId, now });
-    if (row?.status === "pending" && (await decide())) return refused();
-    row = await store.read({ ...scope, proposalId, now });
-    if (!row) throw new OwnerRuleError("RULE_NOT_FOUND");
-    if (row.status === "rejected") return Object.freeze({ proposalId, replayed: true });
-    if (row.status === "accepted") throw new OwnerRuleError("RULE_PROPOSAL_ACCEPTED");
-    throw new OwnerRuleError("RULE_PROPOSAL_EXPIRED");
-  }
-
-  async listProposals(): Promise<PendingRuleProposals> {
-    const now = this.#options.clock.now();
-    await this.#sweep();
-    const live = await this.#options.rules.list({ ...this.#scope(), includeRetired: false });
-    await this.#settle(
-      live.flatMap((rule) => {
-        const { type, params } = (rule.parameters ?? {}) as Record<string, unknown>;
-        return typeof type === "string" ? [[type, params] as const] : [];
-      }),
-    );
-    const listed = await this.#options.proposals.listPending({
-      ...this.#scope(),
-      now,
-      limit: this.#limit(),
-    });
-    const proposals: PendingRuleProposal[] = [];
-    for (const row of listed.proposals) {
-      const evidence = row.evidenceRef
-        ? await this.#readProposal(row.evidenceRef).catch(() => undefined)
-        : undefined;
-      proposals.push(
-        Object.freeze({
-          proposalId: row.proposalId,
-          type: row.ruleType,
-          summary: row.summary,
-          origin: row.origin,
-          quote: evidence?.quote ?? null,
-          trials: evidence?.trials ?? [],
-          replay: evidence?.replay ?? null,
-          proposedAt: row.proposedAt,
-          expiresAt: row.expiresAt,
-          refusedBefore: row.rejectCount,
-        }),
-      );
-    }
-    return Object.freeze({
-      proposals: Object.freeze(proposals),
-      pendingCount: listed.pendingCount,
-      limit: this.#limit(),
-      expiresAfterDays: this.#ttlDays(),
-    });
+    const stored = await this.#readProposal(proposalId);
+    if (!stored) throw new OwnerRuleError("RULE_NOT_FOUND");
+    return this.#activate(stored, stored.replay ?? null);
   }
 
   async storedFor(key: string): Promise<boolean> {

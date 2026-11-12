@@ -932,18 +932,7 @@ export const messages = {
     "The replay uses what was stored at the time. Ignored mails only kept the sender and subject, so the numbers are estimates and may be too high or too low.",
   "rules.receipt.replayNone": "The replay couldn't run this time; the rule is in effect anyway.",
   "rules.receipt.confirm": "Apply",
-  "rules.pending.title": "Rules waiting for you · {count}",
-  "rules.pending.note":
-    "These are suggested rules. Tap Apply and they take effect; tap Don't want and nothing is written. {count} of {limit} slots used; one you leave alone expires after {days} days.",
-  "rules.pending.origin":
-    "{o, select, owner_said {Something you said} other {Himawari's inference, not your own words}}",
-  "rules.pending.evidence": "See the basis",
-  "rules.pending.noEvidence": "No record",
-  "rules.pending.replay":
-    "Replay when it was suggested: of {checked} mails decided in the last {days} days, the rule matches {hit}, and {changed} of them would be judged differently.",
-  "rules.pending.expires": "Expires {date}",
-  "rules.pending.refused": "You declined it {count} time(s) before",
-  "rules.pending.reject": "Don't want",
+  "proposals.reject": "Don't want",
   "memory.page.carry.title": "Brought into every conversation",
   "memory.page.carry.summary": "{count} memories · {used} of {limit} characters used",
   "memory.page.carry.queued": "{count} more do not fit",

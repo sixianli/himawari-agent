@@ -42,7 +42,7 @@ import type {
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
-  OwnerRuleProposalStorePort,
+  OwnerProposalStorePort,
   OwnerRuleStorePort,
   PayloadStorePort,
   ProactiveStorePort,
@@ -557,8 +557,8 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.ownerRules();
   }
 
-  ownerRuleProposals(): OwnerRuleProposalStorePort {
-    return this.durable.ownerRuleProposals();
+  ownerProposals(): OwnerProposalStorePort {
+    return this.durable.ownerProposals();
   }
 
   memoryReminders(): MemoryReminderStorePort {

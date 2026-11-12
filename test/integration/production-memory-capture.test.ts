@@ -1,3 +1,5 @@
+import { ProductionProposalControl } from "../../apps/agent-service/src/production-proposal-control.ts";
+import { ProductionProposalBox } from "../../apps/agent-service/src/production-proposals.ts";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -272,13 +274,33 @@ describe("production memory capture", () => {
       }) as unknown as RuntimeRequest;
     await turn("owner", message, "run-memory-capture");
     const clock = { value: T0 };
+    const boxWith = (extra: Partial<ConstructorParameters<typeof ProductionProposalBox>[0]> = {}) =>
+      new ProductionProposalBox({
+        configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        store: repository.ownerProposals(),
+        payloads,
+        protector: adapters.payloadProtector,
+        clock: { now: () => clock.value },
+        ...extra,
+      });
     const ruleWriterWith = (
-      extra: Partial<ConstructorParameters<typeof ProductionOwnerRuleWriter>[0]> = {},
-    ) =>
-      new ProductionOwnerRuleWriter({
+      extra: Partial<ConstructorParameters<typeof ProductionOwnerRuleWriter>[0]> & {
+        readonly proposals?: ConstructorParameters<typeof ProductionProposalBox>[0]["store"];
+        readonly proposalLimit?: number;
+        readonly proposalTtlDays?: number;
+      } = {},
+    ) => {
+      const { proposals, proposalLimit, proposalTtlDays, ...rest } = extra;
+      return new ProductionOwnerRuleWriter({
         configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
         rules: repository.ownerRules(),
-        proposals: repository.ownerRuleProposals(),
+        box: boxWith({
+          ...(proposals ? { store: proposals } : {}),
+          ...(proposalLimit === undefined ? {} : { limit: proposalLimit }),
+          ...(proposalTtlDays === undefined ? {} : { ttlDays: proposalTtlDays }),
+          ...(rest.protector ? { protector: rest.protector } : {}),
+          ...(rest.configuration ? { configuration: rest.configuration } : {}),
+        }),
         memory,
         memories: repository.productMemoryState(),
         book: repository.memoryBook(),
@@ -286,9 +308,27 @@ describe("production memory capture", () => {
         payloads,
         protector: adapters.payloadProtector,
         clock: { now: () => clock.value },
-        ...extra,
+        ...rest,
       });
-    const ruleWriter = ruleWriterWith();
+    };
+    const box = boxWith();
+    const ruleWriter = new ProductionOwnerRuleWriter({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      rules: repository.ownerRules(),
+      box,
+      memory,
+      memories: repository.productMemoryState(),
+      book: repository.memoryBook(),
+      threads: repository.threadRepository(),
+      payloads,
+      protector: adapters.payloadProtector,
+      clock: { now: () => clock.value },
+    });
+    const proposalControl = new ProductionProposalControl({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      box,
+      clock: { now: () => clock.value },
+    });
     const control = new ProductionMemoryControl({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       state: repository.productMemoryState(),
@@ -382,6 +422,9 @@ describe("production memory capture", () => {
       ruleTools: new ProductionOwnerRuleTools(ruleWriter),
       ruleWriter,
       ruleWriterWith,
+      box,
+      boxWith,
+      proposalControl,
       protector: adapters.payloadProtector,
       protect,
       request: requestFor("run-memory-capture"),
@@ -2146,20 +2189,72 @@ describe("production memory capture", () => {
 
   describe("[A-1] rule proposals waiting for the owner", () => {
     const sentence = "日本入管局相关的邮件以后必须通知我";
-    const proposalsQuery = async (control: ProductionMemoryControl) => {
-      const snapshot = await control.query({
+    const proposalsQuery = async (context: Awaited<ReturnType<typeof setup>>) => {
+      const snapshot = await context.proposalControl.query({
         ...envelope,
         kind: "query",
-        type: "memory.ruleProposals.read",
+        type: "proposals.read",
         payload: {},
       } as never);
-      if (snapshot.type !== "memory.ruleProposals.snapshot") throw new Error("snapshot");
+      if (snapshot.type !== "proposals.snapshot") throw new Error("snapshot");
       const { idempotencyKey: _key, ...wire } = snapshot as typeof snapshot & {
         idempotencyKey?: string;
       };
       gatewayV2MessageSchema.parse(wire);
-      return snapshot;
+      return {
+        ...snapshot,
+        payload: {
+          ...snapshot.payload,
+          proposals: snapshot.payload.proposals.map((item) => {
+            const replay = item.evidence.find((entry) => entry.kind === "mail_replay");
+            const figure = (name: string) =>
+              replay?.figures.find((entry) => entry.name === name)?.value ?? 0;
+            return {
+              ...item,
+              quote: item.evidence.find((entry) => entry.kind === "owner_words")?.text ?? null,
+              trials: item.evidence.filter((entry) => entry.kind === "mail_trial"),
+              replay: replay
+                ? {
+                    days: figure("days"),
+                    mailsChecked: figure("mailsChecked"),
+                    mailsHit: figure("mailsHit"),
+                    changed: figure("changed"),
+                    truncated: figure("truncated") === 1,
+                  }
+                : null,
+            };
+          }),
+        },
+      };
     };
+    const shownVersion = (context: Awaited<ReturnType<typeof setup>>, proposalId: unknown) => {
+      let row: { version: number; fingerprint: string } | undefined;
+      context.sql((database) => {
+        row = database
+          .prepare("SELECT version, fingerprint FROM owner_proposals WHERE id = ?")
+          .get(String(proposalId)) as typeof row;
+      });
+      return row ?? { version: 1, fingerprint: "0".repeat(64) };
+    };
+    const respond = async (
+      context: Awaited<ReturnType<typeof setup>>,
+      proposalId: unknown,
+      action: string,
+      key: string,
+      seen = shownVersion(context, proposalId),
+    ) =>
+      context.proposalControl.execute({
+        ...envelope,
+        idempotencyKey: key,
+        kind: "command",
+        type: "proposal.respond",
+        payload: {
+          proposalId,
+          action,
+          expectedVersion: seen.version,
+          fingerprint: seen.fingerprint,
+        },
+      } as never);
     const counts = (context: Awaited<ReturnType<typeof setup>>) => {
       const found = { rules: 0, memories: 0 };
       context.sql((database) => {
@@ -2215,7 +2310,7 @@ describe("production memory capture", () => {
       const withReplay = new ProductionOwnerRuleTools(
         context.ruleWriterWith({ replay: async () => replay }),
       );
-      expect((await proposalsQuery(context.control)).payload).toMatchObject({
+      expect((await proposalsQuery(context)).payload).toMatchObject({
         proposals: [],
         pendingCount: 0,
         limit: 20,
@@ -2229,7 +2324,7 @@ describe("production memory capture", () => {
       );
       expect(guessed).toMatchObject({ status: "proposed" });
       expect(said).toMatchObject({ status: "proposed" });
-      const first = await proposalsQuery(context.control);
+      const first = await proposalsQuery(context);
       expect(first.payload.proposals.map((item) => item.proposalId).sort()).toEqual(
         [guessed["proposalId"], said["proposalId"]].sort(),
       );
@@ -2250,26 +2345,15 @@ describe("production memory capture", () => {
         replay: { days: 30, mailsChecked: 12, mailsHit: 2, changed: 1, truncated: false },
       });
       const { generatedAt: _first, ...firstPayload } = first.payload;
-      const { generatedAt: _second, ...secondPayload } = (await proposalsQuery(context.control))
-        .payload;
+      const { generatedAt: _second, ...secondPayload } = (await proposalsQuery(context)).payload;
       expect(JSON.stringify(secondPayload)).toBe(JSON.stringify(firstPayload));
 
       const before = counts(context);
-      await command(
-        context.control,
-        "memory.rule.respond",
-        { target: guessed["proposalId"], action: "confirm" },
-        "adopt-1",
-      );
+      await respond(context, guessed["proposalId"], "adopt", "adopt-1");
       expect(counts(context)).toEqual({ rules: before.rules + 1, memories: before.memories + 1 });
-      await command(
-        context.control,
-        "memory.rule.respond",
-        { target: guessed["proposalId"], action: "confirm" },
-        "adopt-2",
-      );
+      await respond(context, guessed["proposalId"], "adopt", "adopt-2");
       expect(counts(context)).toEqual({ rules: before.rules + 1, memories: before.memories + 1 });
-      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(1);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
       const rule = (await context.ruleWriter.list())[0];
       expect(rule).toMatchObject({ status: "active", enforced: true });
       await command(
@@ -2285,38 +2369,23 @@ describe("production memory capture", () => {
       const { context, inferred } = await prepared();
       const proposal = await inferred("isa.go.jp");
       const before = counts(context);
-      await command(
-        context.control,
-        "memory.rule.respond",
-        { target: proposal["proposalId"], action: "reject" },
-        "reject-1",
-      );
+      await respond(context, proposal["proposalId"], "reject", "reject-1");
       expect(counts(context)).toEqual(before);
       expect(await context.ruleWriter.list()).toEqual([]);
-      expect((await proposalsQuery(context.control)).payload.proposals).toEqual([]);
+      expect((await proposalsQuery(context)).payload.proposals).toEqual([]);
       await expect(
-        command(
-          context.control,
-          "memory.rule.respond",
-          { target: proposal["proposalId"], action: "confirm" },
-          "adopt-refused",
-        ),
-      ).rejects.toThrow("RULE_PROPOSAL_REJECTED");
+        respond(context, proposal["proposalId"], "adopt", "adopt-refused"),
+      ).rejects.toThrow("PROPOSAL_REJECTED");
       expect(counts(context)).toEqual(before);
-      await command(
-        context.control,
-        "memory.rule.respond",
-        { target: proposal["proposalId"], action: "reject" },
-        "reject-2",
-      );
+      await respond(context, proposal["proposalId"], "reject", "reject-2");
       await expect(
-        command(
-          context.control,
-          "memory.rule.respond",
-          { target: "rule-proposal:00000000000000000000000000000000", action: "reject" },
+        respond(
+          context,
+          "rule-proposal:00000000000000000000000000000000",
+          "reject",
           "reject-missing",
         ),
-      ).rejects.toThrow("RULE_NOT_FOUND");
+      ).rejects.toThrow("PROPOSAL_NOT_FOUND");
       await expect(
         command(
           context.control,
@@ -2329,24 +2398,14 @@ describe("production memory capture", () => {
 
       const again = await inferred("isa.go.jp", "call-again");
       expect(again["proposalId"]).toBe(proposal["proposalId"]);
-      const listed = (await proposalsQuery(context.control)).payload;
+      const listed = (await proposalsQuery(context)).payload;
       expect(listed.proposals).toMatchObject([
         { proposalId: proposal["proposalId"], refusedBefore: 1 },
       ]);
-      await command(
-        context.control,
-        "memory.rule.respond",
-        { target: proposal["proposalId"], action: "confirm" },
-        "adopt-after-again",
-      );
+      await respond(context, proposal["proposalId"], "adopt", "adopt-after-again");
       await expect(
-        command(
-          context.control,
-          "memory.rule.respond",
-          { target: proposal["proposalId"], action: "reject" },
-          "reject-adopted",
-        ),
-      ).rejects.toThrow("RULE_PROPOSAL_ACCEPTED");
+        respond(context, proposal["proposalId"], "reject", "reject-adopted"),
+      ).rejects.toThrow("PROPOSAL_ACCEPTED");
     });
 
     it("lets only one of a simultaneous adopt and refuse win", async () => {
@@ -2396,12 +2455,12 @@ describe("production memory capture", () => {
         listed: false,
       });
       expect(receipt).toMatchObject({ status: "proposed" });
-      expect((await proposalsQuery(context.control)).payload.proposals).toEqual([]);
+      expect((await proposalsQuery(context)).payload.proposals).toEqual([]);
       expect(await context.ruleWriter.confirm(receipt.proposalId ?? "")).toMatchObject({
         status: "active",
       });
-      await expect(context.ruleWriter.reject(receipt.proposalId ?? "")).rejects.toMatchObject({
-        code: "RULE_NOT_FOUND",
+      await expect(context.box.reject(receipt.proposalId ?? "")).rejects.toMatchObject({
+        code: "PROPOSAL_NOT_FOUND",
       });
     });
 
@@ -2420,24 +2479,19 @@ describe("production memory capture", () => {
       await make("two.example");
       await expect(make("three.example")).rejects.toMatchObject({ code: "RULE_PROPOSALS_FULL" });
       await make("one.example");
-      const full = (await proposalsQuery(context.control)).payload;
+      const full = (await proposalsQuery(context)).payload;
       expect(full.pendingCount).toBe(2);
       expect(full.limit).toBe(20);
       context.clock.value = new Date(Date.parse(T0) + 3 * 86_400_000).toISOString();
-      expect((await proposalsQuery(context.control)).payload).toMatchObject({
+      expect((await proposalsQuery(context)).payload).toMatchObject({
         proposals: [],
         pendingCount: 0,
       });
-      await expect(
-        command(
-          context.control,
-          "memory.rule.respond",
-          { target: one["proposalId"], action: "confirm" },
-          "adopt-expired",
-        ),
-      ).rejects.toThrow("RULE_PROPOSAL_EXPIRED");
+      await expect(respond(context, one["proposalId"], "adopt", "adopt-expired")).rejects.toThrow(
+        "PROPOSAL_EXPIRED",
+      );
       await make("one.example");
-      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(1);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
     });
 
     it("gives the same proposal id however the parameters are ordered, and shows no evidence for one stored without it", async () => {
@@ -2459,24 +2513,28 @@ describe("production memory capture", () => {
         "call-order-2",
       );
       expect(two["proposalId"]).toBe(one["proposalId"]);
-      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(1);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
 
       const oldRef = "rule-proposal:ffffffffffffffffffffffffffffffff";
       await context.protect(oldRef, JSON.stringify({ key: "k", type: "mail_must_notify" }));
-      await context.repository.ownerRuleProposals().propose({
+      await context.repository.ownerProposals().propose({
         ownerId: OWNER_ID,
         agentId: AGENT_ID,
         proposalId: oldRef,
-        ruleType: "mail_must_notify",
+        type: "owner_rule",
         summary: "旧提议",
+        effect: "旧提议",
         origin: "inferred",
         threadId: null,
+        sourceRef: null,
+        sourceVersion: null,
+        fingerprint: "e".repeat(64),
         evidenceRef: oldRef,
         now: T0,
         expiresAt: "2026-11-24T12:00:00.000Z",
         pendingLimit: 20,
       } as never);
-      const listed = (await proposalsQuery(context.control)).payload.proposals;
+      const listed = (await proposalsQuery(context)).payload.proposals;
       expect(listed.find((item) => item.proposalId === oldRef)).toMatchObject({
         quote: null,
         trials: [],
@@ -2487,12 +2545,7 @@ describe("production memory capture", () => {
     it("rewrites the basis when a proposal comes back, and drops what it wrote when the list is full", async () => {
       const { context, set, inferred } = await prepared();
       const first = await inferred("a.example");
-      await command(
-        context.control,
-        "memory.rule.respond",
-        { target: first["proposalId"], action: "reject" },
-        "reject-a",
-      );
+      await respond(context, first["proposalId"], "reject", "reject-a");
       const withReplay = new ProductionOwnerRuleTools(
         context.ruleWriterWith({
           replay: async () => ({
@@ -2511,13 +2564,13 @@ describe("production memory capture", () => {
         "call-a-again",
         withReplay,
       );
-      const back = (await proposalsQuery(context.control)).payload.proposals[0];
+      const back = (await proposalsQuery(context)).payload.proposals[0];
       expect(back).toMatchObject({ refusedBefore: 1, replay: { mailsChecked: 9 } });
       await set(
         { quote: sentence, inferred: true, params: { senderDomains: ["a.example"] } },
         "call-a-third",
       );
-      expect((await proposalsQuery(context.control)).payload.proposals[0]?.replay).toBeNull();
+      expect((await proposalsQuery(context)).payload.proposals[0]?.replay).toBeNull();
 
       const small = new ProductionOwnerRuleTools(context.ruleWriterWith({ proposalLimit: 1 }));
       const refs = () => {
@@ -2544,29 +2597,24 @@ describe("production memory capture", () => {
     it("does not stack a waiting proposal on a rule that is already enforced, and puts the source back as the latest one", async () => {
       const { context, set, inferred } = await prepared();
       const proposal = await inferred("moj.go.jp");
-      await command(
-        context.control,
-        "memory.rule.respond",
-        { target: proposal["proposalId"], action: "confirm" },
-        "adopt-moj",
-      );
+      await respond(context, proposal["proposalId"], "adopt", "adopt-moj");
       const again = await inferred("moj.go.jp", "call-moj-again");
       expect(again).toMatchObject({ status: "active", replayed: true });
-      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(0);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
       const rule = (await context.ruleWriter.list())[0];
       await context.ruleWriter.undo(rule?.ruleId ?? "");
       await inferred("moj.go.jp", "call-moj-after-undo");
-      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(1);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
 
       const other = "入管局相关的邮件";
-      const known = (await proposalsQuery(context.control)).payload.proposals.map(
+      const known = (await proposalsQuery(context)).payload.proposals.map(
         (item) => item.proposalId,
       );
       await set(
         { quote: other, inferred: true, params: { senderDomains: ["pending.example"] } },
         "call-pending-inferred",
       );
-      const before = (await proposalsQuery(context.control)).payload.proposals.find(
+      const before = (await proposalsQuery(context)).payload.proposals.find(
         (item) => !known.includes(item.proposalId),
       );
       expect(before?.origin).toBe("inferred");
@@ -2575,7 +2623,7 @@ describe("production memory capture", () => {
         { quote: other, inferred: false, params: { senderDomains: ["pending.example"] } },
         "call-pending-said",
       );
-      const after = (await proposalsQuery(context.control)).payload.proposals.filter(
+      const after = (await proposalsQuery(context)).payload.proposals.filter(
         (item) => item.proposalId === before?.proposalId,
       );
       expect(after).toHaveLength(1);
@@ -2585,12 +2633,7 @@ describe("production memory capture", () => {
     it("does not queue a proposal for a rule that is already enforced even when it is worded differently", async () => {
       const { context, set, inferred } = await prepared();
       const proposal = await inferred("same.example");
-      await command(
-        context.control,
-        "memory.rule.respond",
-        { target: proposal["proposalId"], action: "confirm" },
-        "adopt-same",
-      );
+      await respond(context, proposal["proposalId"], "adopt", "adopt-same");
       const again = await set(
         {
           quote: "入管局相关的邮件",
@@ -2601,7 +2644,7 @@ describe("production memory capture", () => {
         "call-same-reworded",
       );
       expect(again).toMatchObject({ status: "active" });
-      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(0);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
     });
 
     it("takes waiting proposals for the same rule off the list once that rule is enforced", async () => {
@@ -2617,14 +2660,9 @@ describe("production memory capture", () => {
         "call-twin-reworded",
       );
       await inferred("apart.example");
-      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(3);
-      await command(
-        context.control,
-        "memory.rule.respond",
-        { target: first["proposalId"], action: "confirm" },
-        "adopt-twin",
-      );
-      const left = (await proposalsQuery(context.control)).payload;
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(3);
+      await respond(context, first["proposalId"], "adopt", "adopt-twin");
+      const left = (await proposalsQuery(context)).payload;
       expect(left.pendingCount).toBe(1);
       expect(await context.ruleWriter.list()).toHaveLength(1);
     });
@@ -2632,7 +2670,7 @@ describe("production memory capture", () => {
     it("still adopts the proposal when tidying the other waiting proposals fails", async () => {
       const { context, inferred } = await prepared();
       const proposal = await inferred("tidy.example");
-      const store = context.repository.ownerRuleProposals();
+      const store = context.repository.ownerProposals();
       const writer = context.ruleWriterWith({
         proposals: {
           ...store,
@@ -2643,7 +2681,7 @@ describe("production memory capture", () => {
       });
       const receipt = await writer.confirm(proposal["proposalId"] as string);
       expect(receipt.status).toBe("active");
-      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(0);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
       const twin = await inferred("tidy-two.example");
       await context.ruleWriter.create({
         key: "tidy-two-reworded",
@@ -2666,9 +2704,9 @@ describe("production memory capture", () => {
       });
       expect((await second.confirm(twin["proposalId"] as string)).status).toBe("active");
       expect(decisions).toBe(2);
-      await expect(
-        context.ruleWriter.reject(proposal["proposalId"] as string),
-      ).rejects.toMatchObject({ code: "RULE_PROPOSAL_ACCEPTED" });
+      await expect(context.box.reject(proposal["proposalId"] as string)).rejects.toMatchObject({
+        code: "PROPOSAL_ACCEPTED",
+      });
     });
 
     it("removes the basis of a refused or expired proposal, tidies a leftover card when the list is read, and shows only clean text", async () => {
@@ -2680,7 +2718,7 @@ describe("production memory capture", () => {
             .prepare(
               `SELECT evidence_ref AS ref,
                  (SELECT COUNT(*) FROM payloads WHERE payloads.ref = evidence_ref) AS kept
-               FROM owner_rule_proposals ORDER BY proposed_at, id`,
+               FROM owner_proposals ORDER BY proposed_at, id`,
             )
             .all() as { ref: string | null; kept: number }[])
             found.push(row);
@@ -2700,7 +2738,7 @@ describe("production memory capture", () => {
       };
       const refused = await inferred("refused.example");
       expect(stored()).toMatchObject([{ kept: 1 }]);
-      await context.ruleWriter.reject(refused["proposalId"] as string);
+      await context.box.reject(refused["proposalId"] as string);
       expect(stored()).toEqual([{ ref: null, kept: 0 }]);
       expect(payloadCount()).toBe(0);
 
@@ -2712,41 +2750,48 @@ describe("production memory capture", () => {
         },
         "call-bidi",
       );
-      const shown = (await proposalsQuery(context.control)).payload.proposals;
+      const shown = (await proposalsQuery(context)).payload.proposals;
       expect(shown.map((item) => item.quote)).toEqual(["入管局相关的邮件"]);
 
       const broken = "rule-proposal:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
       await context.protect(
         broken,
         JSON.stringify({
-          key: "k",
-          type: "mail_must_notify",
-          summary: "坏依据",
-          quote: "原话",
-          trials: "not-a-list",
-          replay: { days: "many" },
+          evidence: [
+            { kind: "owner_words", text: "原话", sources: "x", figures: [{ name: "n" }] },
+            "junk",
+            { text: "没有种类" },
+          ],
+          data: "not-a-rule",
         }),
       );
-      await context.repository.ownerRuleProposals().propose({
+      await context.repository.ownerProposals().propose({
         ownerId: OWNER_ID,
         agentId: AGENT_ID,
         proposalId: broken,
-        ruleType: "mail_must_notify",
+        type: "owner_rule",
         summary: "坏依据",
+        effect: "坏依据",
         origin: "inferred",
         threadId: null,
+        sourceRef: null,
+        sourceVersion: null,
+        fingerprint: "e".repeat(64),
         evidenceRef: broken,
         now: T0,
         expiresAt: "2026-11-24T12:00:00.000Z",
         pendingLimit: 20,
       });
       expect(
-        (await proposalsQuery(context.control)).payload.proposals.find(
+        (await proposalsQuery(context)).payload.proposals.find(
           (item) => item.proposalId === broken,
         ),
-      ).toMatchObject({ quote: "原话", trials: [], replay: null });
+      ).toMatchObject({
+        quote: "原话",
+        evidence: [{ kind: "owner_words", text: "原话", sources: [], figures: [] }],
+      });
 
-      const store = context.repository.ownerRuleProposals();
+      const store = context.repository.ownerProposals();
       const first = await inferred("left.example");
       await set(
         {
@@ -2770,12 +2815,12 @@ describe("production memory capture", () => {
       context.sql((database) => {
         waiting = (
           database
-            .prepare("SELECT COUNT(*) AS n FROM owner_rule_proposals WHERE status = 'pending'")
+            .prepare("SELECT COUNT(*) AS n FROM owner_proposals WHERE status = 'pending'")
             .get() as { n: number }
         ).n;
       });
       expect(waiting).toBe(3);
-      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(2);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(2);
 
       expect(() => context.ruleWriterWith({ proposalLimit: 201 })).toThrow(RangeError);
       expect(() => context.ruleWriterWith({ proposalTtlDays: 0 })).toThrow(RangeError);
@@ -2785,10 +2830,14 @@ describe("production memory capture", () => {
           ownerId: OWNER_ID,
           agentId: AGENT_ID,
           proposalId: broken,
-          ruleType: "mail_must_notify",
+          type: "owner_rule",
           summary: "坏依据",
+          effect: "坏依据",
           origin: "inferred",
           threadId: null,
+          sourceRef: null,
+          sourceVersion: null,
+          fingerprint: "e".repeat(64),
           evidenceRef: broken,
           now: T0,
           expiresAt: "2026-11-24T12:00:00.000Z",
@@ -2798,7 +2847,7 @@ describe("production memory capture", () => {
       context.sql((database) => {
         database
           .prepare(
-            "DELETE FROM payloads WHERE ref IN (SELECT evidence_ref FROM owner_rule_proposals WHERE status = 'pending' AND summary = '入管局的邮件一律提醒')",
+            "DELETE FROM payloads WHERE ref IN (SELECT evidence_ref FROM owner_proposals WHERE status = 'pending' AND summary = '入管局的邮件一律提醒')",
           )
           .run();
       });
@@ -2815,7 +2864,7 @@ describe("production memory capture", () => {
       expect(payloadCount()).toBe(4);
 
       context.clock.value = new Date(Date.parse(T0) + 31 * 86_400_000).toISOString();
-      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(0);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
       expect(stored().filter((row) => row.kept > 0)).toHaveLength(2);
       expect(stored().filter((row) => row.ref === null)).toHaveLength(3);
       expect(payloadCount()).toBe(2);
@@ -2824,11 +2873,137 @@ describe("production memory capture", () => {
       expect(payloadCount()).toBe(3);
     });
 
+    it("holds a proposal that has nothing to do with mail or rules: listed with its basis, refusable, and not adoptable until something registers for its type", async () => {
+      const { context } = await prepared();
+      const proposalId = `next-step:${"7".repeat(32)}`;
+      const propose = (
+        data: unknown = { query: "新款手机" },
+        source?: { ref: string; version: string | null },
+      ) =>
+        context.box.propose({
+          ...(source ? { source } : {}),
+          proposalId,
+          type: "price_search",
+          summary: "要不要我去查哪个平台的新款手机最便宜",
+          effect: "采纳后我会去几个购物平台比价，把结果发给你",
+          origin: "inferred",
+          threadId: THREAD_ID,
+          evidence: [
+            {
+              kind: "watched_video",
+              text: "你看了一个讲新款手机的视频",
+              sources: [
+                { kind: "web_page", ref: "https://video.example/watch?v=1" },
+                { kind: "thread", ref: THREAD_ID },
+              ],
+              figures: [{ name: "minutes", value: 14, definition: "这个视频你看了多少分钟" }],
+            },
+          ],
+          data,
+        });
+      await propose();
+      const listed = (await proposalsQuery(context)).payload;
+      expect(listed.pendingCount).toBe(1);
+      expect(listed.proposals[0]).toMatchObject({
+        proposalId,
+        type: "price_search",
+        summary: "要不要我去查哪个平台的新款手机最便宜",
+        effect: "采纳后我会去几个购物平台比价，把结果发给你",
+        origin: "inferred",
+        adoptable: false,
+        evidence: [
+          {
+            kind: "watched_video",
+            text: "你看了一个讲新款手机的视频",
+            sources: [
+              { kind: "web_page", ref: "https://video.example/watch?v=1" },
+              { kind: "thread", ref: THREAD_ID },
+            ],
+            figures: [{ name: "minutes", value: 14, definition: "这个视频你看了多少分钟" }],
+          },
+        ],
+      });
+      const first = {
+        version: listed.proposals[0]?.version,
+        fingerprint: listed.proposals[0]?.fingerprint,
+      };
+      expect(first).toEqual({ version: 1, fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/u) });
+      await propose();
+      expect((await proposalsQuery(context)).payload.proposals[0]).toMatchObject(first);
+      await propose({ query: "新款手机 256GB" }, { ref: "video:1", version: "2026-11-12" });
+      const changed = (await proposalsQuery(context)).payload.proposals[0];
+      expect(changed?.version).toBe(2);
+      expect(changed?.fingerprint).not.toBe(first.fingerprint);
+      expect(await context.box.read(proposalId)).toMatchObject({
+        sourceRef: "video:1",
+        sourceVersion: "2026-11-12",
+      });
+      const before = counts(context);
+      for (const action of ["adopt", "reject"])
+        await expect(
+          respond(context, proposalId, action, `stale-${action}`, first as never),
+        ).rejects.toThrow("PROPOSAL_CHANGED");
+      await expect(
+        respond(context, proposalId, "reject", "wrong-fingerprint", {
+          version: 2,
+          fingerprint: first.fingerprint as string,
+        }),
+      ).rejects.toThrow("PROPOSAL_CHANGED");
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
+      await expect(respond(context, proposalId, "adopt", "adopt-other")).rejects.toThrow(
+        "PROPOSAL_TYPE_NOT_ADOPTABLE",
+      );
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
+      expect(counts(context)).toEqual(before);
+      await expect(
+        command(
+          context.control,
+          "memory.rule.respond",
+          { target: proposalId, action: "confirm" },
+          "confirm-other",
+        ),
+      ).rejects.toThrow("RULE_NOT_FOUND");
+      await expect(
+        command(
+          context.control,
+          "memory.rule.respond",
+          { target: proposalId, action: "reject" },
+          "reject-through-rules",
+        ),
+      ).rejects.toThrow("MEMORY_RULE_ACTION_UNKNOWN");
+      await expect(respond(context, proposalId, "postpone", "unknown-action")).rejects.toThrow(
+        "PROPOSAL_ACTION_UNKNOWN",
+      );
+      expect(await respond(context, proposalId, "reject", "reject-other")).toMatchObject({
+        replayed: false,
+      });
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
+      expect(counts(context)).toEqual(before);
+
+      await propose();
+      const adopted: unknown[] = [];
+      context.box.register("price_search", {
+        adopt: async ({ data }) => {
+          adopted.push(data);
+          return { resultRef: "price-search:1" };
+        },
+      });
+      expect((await proposalsQuery(context)).payload.proposals[0]).toMatchObject({
+        adoptable: true,
+        refusedBefore: 1,
+      });
+      expect(await respond(context, proposalId, "adopt", "adopt-registered")).toMatchObject({
+        resultRef: "price-search:1",
+      });
+      expect(adopted).toEqual([{ query: "新款手机" }]);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
+    });
+
     it("keeps the old basis and the old state when writing the new basis fails", async () => {
       const { context, inferred } = await prepared();
       const first = await inferred("fail.example");
       const id = first["proposalId"] as string;
-      await context.ruleWriter.reject(id);
+      await context.box.reject(id);
       const real = context.ruleWriterWith();
       let failures = 1;
       const failing = context.ruleWriterWith({
@@ -2852,10 +3027,10 @@ describe("production memory capture", () => {
           threadId: THREAD_ID,
         }),
       ).rejects.toThrow("protect failed");
-      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(0);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
       await expect(real.confirm(id)).rejects.toMatchObject({ code: "RULE_PROPOSAL_REJECTED" });
       await inferred("fail.example", "call-fail-again");
-      const back = (await proposalsQuery(context.control)).payload.proposals;
+      const back = (await proposalsQuery(context)).payload.proposals;
       expect(back).toHaveLength(1);
       expect(back[0]?.quote).toBe(sentence);
     });
@@ -2884,7 +3059,7 @@ describe("production memory capture", () => {
       const { context, inferred } = await prepared();
       const proposal = await inferred("gone.example");
       context.sql((database) => {
-        database.prepare("UPDATE owner_rule_proposals SET thread_id = NULL").run();
+        database.prepare("UPDATE owner_proposals SET thread_id = NULL").run();
       });
       const receipt = await context.ruleWriter.confirm(proposal["proposalId"] as string);
       expect(
@@ -2913,7 +3088,7 @@ describe("production memory capture", () => {
         threadId: null,
       });
       expect(theirs.proposalId).not.toBe(mine["proposalId"]);
-      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(1);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
     });
   });
 

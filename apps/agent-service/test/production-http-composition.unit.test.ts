@@ -364,6 +364,8 @@ describe("production HTTP composition", () => {
           "push.feedback.record",
           "owner.preferences.read",
           "owner.preferences.set",
+          "proposals.read",
+          "proposal.respond",
           "sensitive.interceptions.read",
           "sensitive.interceptions.clear",
           "server.status.read",

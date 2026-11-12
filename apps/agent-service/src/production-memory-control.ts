@@ -65,7 +65,6 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.reminder.respond",
   "memory.reminder.create",
   "memory.rules.read",
-  "memory.ruleProposals.read",
   "memory.rule.respond",
   "memory.create",
   "memory.category.set",
@@ -165,7 +164,7 @@ export async function findSourceMessageIds(
 
 export type OwnerRuleControl = Pick<
   ProductionOwnerRuleWriter,
-  "list" | "undo" | "confirm" | "reconfirm" | "reject" | "listProposals"
+  "list" | "undo" | "confirm" | "reconfirm"
 >;
 
 export class ProductionMemoryControl {
@@ -530,55 +529,6 @@ export class ProductionMemoryControl {
     };
   }
 
-  async #ruleProposals(
-    query: Extract<GatewayV2Query, { type: "memory.ruleProposals.read" }>,
-  ): Promise<GatewayV2Snapshot> {
-    const control = this.options.ownerRules;
-    if (!control)
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.INVALID_OPERATION,
-        "MEMORY_OPERATION_NOT_INSTALLED",
-      );
-    const listed = await control.listProposals();
-    const clip = (text: string, maximum: number) =>
-      singleLine(text.replace(/\p{Bidi_Control}/gu, "")).slice(0, maximum) || null;
-    return {
-      ...query,
-      kind: "snapshot",
-      type: "memory.ruleProposals.snapshot",
-      payload: {
-        proposals: listed.proposals.map((proposal) => ({
-          proposalId: proposal.proposalId,
-          type: proposal.type.slice(0, 64),
-          summary: Array.from(proposal.summary).slice(0, 200).join(""),
-          origin: proposal.origin,
-          quote: proposal.quote === null ? null : clip(proposal.quote, 500),
-          trials: proposal.trials.slice(0, 10).map((trial) => ({
-            from: clip(trial.from, 200),
-            subject: clip(trial.subject, 200),
-            hit: trial.hit,
-          })),
-          replay: proposal.replay
-            ? {
-                days: proposal.replay.days,
-                mailsChecked: proposal.replay.mailsChecked,
-                mailsHit: proposal.replay.mailsHit,
-                changed: proposal.replay.changed,
-                truncated: proposal.replay.truncated,
-              }
-            : null,
-          proposedAt: proposal.proposedAt,
-          expiresAt: proposal.expiresAt,
-          refusedBefore: proposal.refusedBefore,
-        })),
-        pendingCount: listed.pendingCount,
-        limit: listed.limit,
-        expiresAfterDays: listed.expiresAfterDays,
-        generatedAt: this.options.clock.now(),
-      },
-    };
-  }
-
   async #memoryViews(
     records: readonly ProductMemoryRecord[],
     keepUnreadable: boolean,
@@ -744,7 +694,6 @@ export class ProductionMemoryControl {
     if (query.type === "memory.basis.read") return this.#basisChain(query);
     if (query.type === "decision.chain.read") return this.#decisionChain(query);
     if (query.type === "memory.rules.read") return this.#rules(query);
-    if (query.type === "memory.ruleProposals.read") return this.#ruleProposals(query);
     if (query.type !== "memory.overview.read") throw new Error("MEMORY_OPERATION_NOT_INSTALLED");
     const { ownerId, agentId } = this.options.configuration;
     const scope = this.#scope();
@@ -1281,10 +1230,6 @@ export class ProductionMemoryControl {
         if (action === "confirm") {
           const receipt = await control.confirm(target);
           return { resultRef: receipt.ruleId ?? target, replayed: false };
-        }
-        if (action === "reject") {
-          const rejected = await control.reject(target);
-          return { resultRef: rejected.proposalId, replayed: rejected.replayed };
         }
         if (action === "reconfirm")
           return { resultRef: (await control.reconfirm(target)).ruleId, replayed: false };

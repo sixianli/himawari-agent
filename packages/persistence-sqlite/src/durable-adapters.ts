@@ -33,7 +33,7 @@ import type {
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
-  OwnerRuleProposalStorePort,
+  OwnerProposalStorePort,
   OwnerRuleStorePort,
   PayloadStorePort,
   ProactiveStorePort,
@@ -1016,14 +1016,14 @@ export class SqliteDurableAdapters {
     });
   }
 
-  ownerRuleProposals(): OwnerRuleProposalStorePort {
-    return Object.freeze<OwnerRuleProposalStorePort>({
-      propose: (input) => this.context.write("ownerRuleProposal.propose", input),
-      read: (input) => this.context.write("ownerRuleProposal.read", input),
-      listPending: (input) => this.context.write("ownerRuleProposal.listPending", input),
-      decide: (input) => this.context.write("ownerRuleProposal.decide", input),
-      settledEvidence: (input) => this.context.write("ownerRuleProposal.settledEvidence", input),
-      clearEvidence: (input) => this.context.write("ownerRuleProposal.clearEvidence", input),
+  ownerProposals(): OwnerProposalStorePort {
+    return Object.freeze<OwnerProposalStorePort>({
+      propose: (input) => this.context.write("ownerProposal.propose", input),
+      read: (input) => this.context.write("ownerProposal.read", input),
+      listPending: (input) => this.context.write("ownerProposal.listPending", input),
+      decide: (input) => this.context.write("ownerProposal.decide", input),
+      settledEvidence: (input) => this.context.write("ownerProposal.settledEvidence", input),
+      clearEvidence: (input) => this.context.write("ownerProposal.clearEvidence", input),
     });
   }
 

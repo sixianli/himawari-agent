@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { MessageId } from "../i18n/message-ids.js";
-import type { MemoryModel, OwnerRuleAction } from "../memory.js";
+import type { MemoryModel, OwnerRuleAction, PendingProposal, ProposalAction } from "../memory.js";
 import { ActionButton } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
@@ -87,14 +87,20 @@ export function RuleReceiptCard({
   message,
 }: {
   output: string;
-  memory: Pick<MemoryModel, "respondRule" | "busy">;
+  memory: Pick<MemoryModel, "proposals" | "respondRule" | "respondProposal" | "busy">;
   message: Message;
 }) {
   const receipt = parseRuleReceipt(output);
-  const [done, setDone] = useState<OwnerRuleAction | null>(null);
+  const [done, setDone] = useState<OwnerRuleAction | ProposalAction | null>(null);
   if (!receipt) return null;
   const act = async (target: string, action: OwnerRuleAction) => {
     if (await memory.respondRule(target, action)) setDone(action);
+  };
+  const waiting = memory.proposals?.proposals.find(
+    ({ proposalId }) => proposalId === receipt.proposalId,
+  );
+  const refuse = async (proposal: PendingProposal) => {
+    if (await memory.respondProposal(proposal, "reject")) setDone("reject");
   };
   return (
     <section className="memory-card rule-receipt" aria-label={message("rules.receipt.label")}>
@@ -172,13 +178,13 @@ export function RuleReceiptCard({
               {message("rules.receipt.confirm")}
             </ActionButton>
           ) : null}
-          {receipt.status === "proposed" && receipt.proposalId ? (
+          {receipt.status === "proposed" && waiting ? (
             <ActionButton
               variant="quiet"
               disabled={memory.busy}
-              onClick={() => void act(receipt.proposalId ?? "", "reject")}
+              onClick={() => void refuse(waiting)}
             >
-              {message("rules.pending.reject")}
+              {message("proposals.reject")}
             </ActionButton>
           ) : null}
         </div>
@@ -187,112 +193,16 @@ export function RuleReceiptCard({
   );
 }
 
-function PendingRuleProposals({
-  memory,
-  message,
-}: {
-  memory: Pick<MemoryModel, "proposals" | "respondRule" | "busy">;
-  message: Message;
-}) {
-  const pending = memory.proposals;
-  if (!pending || !pending.proposals.length) return null;
-  return (
-    <section
-      id="memory-rule-proposals"
-      className="memory-confirm"
-      aria-label={message("rules.pending.title", { count: pending.pendingCount })}
-    >
-      <h4>{message("rules.pending.title", { count: pending.pendingCount })}</h4>
-      <p className="settings-note">
-        {message("rules.pending.note", {
-          count: pending.pendingCount,
-          limit: pending.limit,
-          days: pending.expiresAfterDays,
-        })}
-      </p>
-      {pending.proposals.map((proposal) => (
-        <section
-          className="memory-card"
-          key={proposal.proposalId}
-          data-proposal={proposal.proposalId}
-        >
-          <span className="memory-tag" data-kind="rule" data-origin={proposal.origin}>
-            {message("rules.type", { t: proposal.type })}
-          </span>
-          <small> {message("rules.pending.origin", { o: proposal.origin })}</small>
-          <p className="memory-text">{proposal.summary}</p>
-          <small>
-            {message("rules.pending.expires", { date: proposal.expiresAt.slice(0, 10) })}
-          </small>
-          {proposal.refusedBefore > 0 ? (
-            <small> {message("rules.pending.refused", { count: proposal.refusedBefore })}</small>
-          ) : null}
-          <details>
-            <summary>{message("rules.pending.evidence")}</summary>
-            {proposal.quote === null && !proposal.trials.length && proposal.replay === null ? (
-              <p className="settings-note">{message("rules.pending.noEvidence")}</p>
-            ) : (
-              <>
-                {proposal.quote === null ? null : <blockquote>{proposal.quote}</blockquote>}
-                {proposal.trials.length ? (
-                  <ul className="rule-trials">
-                    {proposal.trials.map((trial, index) => (
-                      <li key={`${index}-${trial.from ?? ""}`} data-hit={String(trial.hit)}>
-                        {message("rules.receipt.trial", {
-                          hit: String(trial.hit),
-                          from: trial.from ?? "",
-                          subject: trial.subject ?? "",
-                        })}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                {proposal.replay ? (
-                  <p className="settings-note">
-                    {message("rules.pending.replay", {
-                      days: proposal.replay.days,
-                      checked: proposal.replay.mailsChecked,
-                      hit: proposal.replay.mailsHit,
-                      changed: proposal.replay.changed,
-                    })}
-                  </p>
-                ) : null}
-              </>
-            )}
-          </details>
-          <div className="actions">
-            <ActionButton
-              disabled={memory.busy}
-              onClick={() => void memory.respondRule(proposal.proposalId, "confirm")}
-            >
-              {message("rules.receipt.confirm")}
-            </ActionButton>
-            <ActionButton
-              variant="quiet"
-              disabled={memory.busy}
-              onClick={() => void memory.respondRule(proposal.proposalId, "reject")}
-            >
-              {message("rules.pending.reject")}
-            </ActionButton>
-          </div>
-        </section>
-      ))}
-    </section>
-  );
-}
-
 export function OwnerRulesSection({
   memory,
   message,
 }: {
-  memory: Pick<MemoryModel, "rules" | "proposals" | "respondRule" | "busy">;
+  memory: Pick<MemoryModel, "rules" | "respondRule" | "busy">;
   message: Message;
 }) {
-  const proposals = <PendingRuleProposals memory={memory} message={message} />;
-  if (!memory.rules.length) return proposals;
+  if (!memory.rules.length) return null;
   return (
     <>
-      {proposals}
       <section
         id="memory-rules"
         className="memory-confirm"

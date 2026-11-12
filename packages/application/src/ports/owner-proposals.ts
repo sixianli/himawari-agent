@@ -1,16 +1,21 @@
 import type { OwnerRuleScope } from "./owner-rules.js";
 
-export type OwnerRuleProposalStatus = "pending" | "accepted" | "rejected" | "expired";
-export type OwnerRuleProposalOrigin = "owner_said" | "inferred";
+export type OwnerProposalStatus = "pending" | "accepted" | "rejected" | "expired";
+export type OwnerProposalOrigin = "owner_said" | "inferred" | "external_agent";
 
-export interface StoredOwnerRuleProposal {
+export interface StoredOwnerProposal {
   readonly proposalId: string;
-  readonly ruleType: string;
+  readonly type: string;
   readonly summary: string;
-  readonly origin: OwnerRuleProposalOrigin;
+  readonly effect: string;
+  readonly origin: OwnerProposalOrigin;
   readonly threadId: string | null;
+  readonly sourceRef: string | null;
+  readonly sourceVersion: string | null;
+  readonly version: number;
+  readonly fingerprint: string;
   readonly evidenceRef: string | null;
-  readonly status: OwnerRuleProposalStatus;
+  readonly status: OwnerProposalStatus;
   readonly proposedAt: string;
   readonly expiresAt: string;
   readonly decidedAt: string | null;
@@ -19,37 +24,47 @@ export interface StoredOwnerRuleProposal {
   readonly lastRejectedAt: string | null;
 }
 
-export type OwnerRuleProposalOutcome = "created" | "reopened" | "refreshed" | "limit_reached";
+export interface OwnerProposalVersion {
+  readonly version: number;
+  readonly fingerprint: string;
+}
 
-export interface OwnerRuleProposalStorePort {
+export type OwnerProposalOutcome = "created" | "reopened" | "refreshed" | "limit_reached";
+
+export interface OwnerProposalStorePort {
   propose(
     input: OwnerRuleScope & {
       readonly proposalId: string;
-      readonly ruleType: string;
+      readonly type: string;
       readonly summary: string;
-      readonly origin: OwnerRuleProposalOrigin;
+      readonly effect: string;
+      readonly origin: OwnerProposalOrigin;
       readonly threadId: string | null;
+      readonly sourceRef: string | null;
+      readonly sourceVersion: string | null;
+      readonly fingerprint: string;
       readonly evidenceRef: string | null;
       readonly now: string;
       readonly expiresAt: string;
       readonly pendingLimit: number;
     },
-  ): Promise<OwnerRuleProposalOutcome>;
+  ): Promise<OwnerProposalOutcome>;
   read(
     input: OwnerRuleScope & { readonly proposalId: string; readonly now: string },
-  ): Promise<StoredOwnerRuleProposal | undefined>;
+  ): Promise<StoredOwnerProposal | undefined>;
   listPending(input: OwnerRuleScope & { readonly now: string; readonly limit: number }): Promise<{
-    readonly proposals: readonly StoredOwnerRuleProposal[];
+    readonly proposals: readonly StoredOwnerProposal[];
     readonly pendingCount: number;
   }>;
   decide(
     input: OwnerRuleScope & {
       readonly proposalId: string;
-      readonly from: OwnerRuleProposalStatus;
-      readonly to: Exclude<OwnerRuleProposalStatus, "expired">;
+      readonly from: OwnerProposalStatus;
+      readonly to: Exclude<OwnerProposalStatus, "expired">;
+      readonly expected?: OwnerProposalVersion;
       readonly now: string;
     },
-  ): Promise<StoredOwnerRuleProposal | undefined>;
+  ): Promise<StoredOwnerProposal | undefined>;
   settledEvidence(
     input: OwnerRuleScope & { readonly now: string; readonly limit: number },
   ): Promise<readonly { readonly proposalId: string; readonly evidenceRef: string }[]>;

@@ -737,10 +737,10 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 95,
-    name: "owner_rule_proposals",
-    changeSet: "owner-rule-proposals",
+    name: "owner_proposals",
+    changeSet: "owner-proposals",
     phase: "expand" as const,
-    file: "0095_owner_rule_proposals.sql",
+    file: "0095_owner_proposals.sql",
   },
 ] as const;
 
