@@ -436,15 +436,17 @@ export class ProductionWebPush {
       contents.set(item.sourceKey, built);
       return built;
     };
-    await this.#options.companion?.deliver({
-      now,
-      approvals,
-      badge,
-      kinds,
-      accountLocale,
-      visible,
-      content: contentOf,
-    });
+    await this.#options.companion
+      ?.deliver({
+        now,
+        approvals,
+        badge,
+        kinds,
+        accountLocale,
+        visible,
+        content: contentOf,
+      })
+      .catch(this.#options.onFailure);
     const due = await store.listDue({ ownerId, agentId, now, limit: SEND_BATCH });
     for (const entry of due) {
       const { item } = entry;

@@ -46,6 +46,7 @@ import {
   sqliteLibraryVersion,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  APPLE_PUSH_SECRET_PURPOSE,
   assertProductionSecretSource,
   BoundedJwksFetcher,
   CloudflareAccessJwtVerifier,
@@ -2388,7 +2389,7 @@ export async function startTenantRuntime(
         const applePushSecret = applePushConfiguration
           ? configuration.secretReferences.find(
               ({ ref, purpose }) =>
-                ref === applePushConfiguration.secretRef && purpose === "apple-push",
+                ref === applePushConfiguration.secretRef && purpose === APPLE_PUSH_SECRET_PURPOSE,
             )
           : undefined;
         if (applePushConfiguration && applePushSecret) {

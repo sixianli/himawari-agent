@@ -30,6 +30,7 @@ const SEND_BATCH = 50;
 const PAYLOAD_BYTES = 4_096;
 const WIDGET_EXPIRY_SECONDS = 3_600;
 const ACTIVITY_BATCH = 20;
+const ACTIVITY_READ_BATCH = 500;
 const TOKEN_PRUNE_AFTER_MS = 7 * 24 * 3_600_000;
 const TERMINAL_PHASES: ReadonlySet<AppleLiveActivityPhase> = new Set([
   "completed",
@@ -153,6 +154,10 @@ export class ProductionApplePush implements PushCompanionChannel {
     { readonly attempts: number; readonly notBefore: number }
   >();
   readonly #activitySent = new Map<string, { readonly phase: string; readonly at: number }>();
+  readonly #activityRetries = new Map<
+    string,
+    { readonly phase: string; readonly attempts: number; readonly notBefore: number }
+  >();
   #widgetsDirtyForAll = true;
   #homeDigest: string | undefined;
 
@@ -482,8 +487,8 @@ export class ProductionApplePush implements PushCompanionChannel {
       pushType: "liveactivity",
     });
     const registered = new Set(registrations.map(({ id }) => id));
-    for (const id of this.#activitySent.keys())
-      if (!registered.has(id)) this.#activitySent.delete(id);
+    for (const sent of [this.#activitySent, this.#activityRetries])
+      for (const id of sent.keys()) if (!registered.has(id)) sent.delete(id);
     if (registrations.length === 0) {
       this.#activityStarts.clear();
       return;
@@ -503,14 +508,22 @@ export class ProductionApplePush implements PushCompanionChannel {
         ).toISOString(),
         limit: ACTIVITY_BATCH,
       });
-      if (runs.length < ACTIVITY_BATCH) {
-        const unfinished = new Set(runs.map(({ runId }) => runId));
-        const devices = new Set(starters.map(({ deviceId }) => deviceId));
-        for (const key of this.#activityStarts.keys()) {
-          const separator = key.indexOf("\n");
-          if (!unfinished.has(key.slice(separator + 1)) || !devices.has(key.slice(0, separator)))
-            this.#activityStarts.delete(key);
-        }
+      const devices = new Set(starters.map(({ deviceId }) => deviceId));
+      const remembered = [...this.#activityStarts.keys()].slice(0, ACTIVITY_READ_BATCH);
+      const unfinished = new Set(
+        (
+          await store.readActivityRuns({
+            ...this.#scope(),
+            runIds: [...new Set(remembered.map((key) => key.slice(key.indexOf("\n") + 1)))],
+          })
+        )
+          .filter(({ status }) => !TERMINAL_PHASES.has(liveActivityPhase(status)))
+          .map(({ runId }) => runId),
+      );
+      for (const key of remembered) {
+        const separator = key.indexOf("\n");
+        if (!unfinished.has(key.slice(separator + 1)) || !devices.has(key.slice(0, separator)))
+          this.#activityStarts.delete(key);
       }
       for (const run of visible ? [] : runs)
         for (const registration of starters) {
@@ -551,11 +564,10 @@ export class ProductionApplePush implements PushCompanionChannel {
           this.#activityStarts.set(key, {
             attempts,
             notBefore:
-              result.kind === "rate_limited"
-                ? at + RATE_LIMIT_DELAY_MS
-                : result.kind === "retry" && attempts <= RETRY_DELAYS_MS.length
-                  ? at + (RETRY_DELAYS_MS[attempts - 1] ?? RATE_LIMIT_DELAY_MS)
-                  : Number.POSITIVE_INFINITY,
+              (result.kind === "rate_limited" || result.kind === "retry") &&
+              attempts <= RETRY_DELAYS_MS.length
+                ? at + (RETRY_DELAYS_MS[attempts - 1] ?? RATE_LIMIT_DELAY_MS)
+                : Number.POSITIVE_INFINITY,
           });
           await this.#applyRegistrationOutcome(registration, result, now);
         }
@@ -578,6 +590,9 @@ export class ProductionApplePush implements PushCompanionChannel {
       if (sent?.phase === phase) continue;
       if (!terminal && sent && at - sent.at < minimum) continue;
       if (!this.#configured(registration)) continue;
+      const retried = this.#activityRetries.get(registration.id);
+      const earlier = retried?.phase === phase ? retried : undefined;
+      if (earlier && at < earlier.notBefore) continue;
       const result = await this.#transmit("liveactivity", terminal ? "end" : "update", {
         token: registration.token,
         environment: registration.environment,
@@ -600,17 +615,28 @@ export class ProductionApplePush implements PushCompanionChannel {
           },
         }),
       });
-      if (result.kind === "sent" || result.kind === "gone") {
-        this.#activitySent.set(registration.id, { phase, at });
-        if (terminal || result.kind === "gone") {
-          this.#activitySent.delete(registration.id);
-          await store.removeRegistration({
-            ...this.#scope(),
-            deviceId: registration.deviceId,
-            pushType: "liveactivity",
-            activityRef: registration.activityRef,
-          });
-        }
+      const attempts = (earlier?.attempts ?? 0) + 1;
+      if (
+        (result.kind === "retry" || result.kind === "rate_limited") &&
+        attempts <= RETRY_DELAYS_MS.length
+      ) {
+        this.#activityRetries.set(registration.id, {
+          phase,
+          attempts,
+          notBefore: at + (RETRY_DELAYS_MS[attempts - 1] ?? RATE_LIMIT_DELAY_MS),
+        });
+        continue;
+      }
+      this.#activityRetries.delete(registration.id);
+      this.#activitySent.set(registration.id, { phase, at });
+      if (terminal || result.kind === "gone") {
+        this.#activitySent.delete(registration.id);
+        await store.removeRegistration({
+          ...this.#scope(),
+          deviceId: registration.deviceId,
+          pushType: "liveactivity",
+          activityRef: registration.activityRef,
+        });
       }
     }
   }

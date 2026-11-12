@@ -730,6 +730,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         const approval = token.approval;
         if (approval === null)
           throw new DevicePushError(DEVICE_PUSH_ERROR_CODES.ACTION_INVALID, 410);
+        const decisions = { approve: "approved", deny: "denied" } as const;
         const reference = token.tokenHash.slice(0, 40);
         try {
           return options.sendJson(
@@ -746,7 +747,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
                 payload: {
                   approvalRequestId: approval.requestId,
                   expectedRevision: approval.revision,
-                  decision: token.action === "approve" ? "approved" : "denied",
+                  decision: decisions[token.action],
                   semanticSnapshotHash: approval.snapshotHash,
                   editedPayloadRef: null,
                   recentAuthenticationRef: DEVICE_REFERENCE_PLACEHOLDER,

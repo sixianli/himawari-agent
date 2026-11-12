@@ -6,6 +6,7 @@ import type {
 } from "@himawari-agent/application";
 import {
   APPLE_PUSH_ACTIVITY_REF_PATTERN,
+  APPLE_PUSH_CONFIGURATION_BOUNDS,
   APPLE_PUSH_ENVIRONMENTS,
   APPLE_PUSH_TOKEN_PATTERN,
   APPLE_PUSH_TOPIC_PATTERN,
@@ -173,7 +174,10 @@ export class SqliteApplePushOperations {
       !APPLE_PUSH_TOPIC_PATTERN.test(input.topic) ||
       !LOCALES.includes(input.locale) ||
       !Number.isSafeInteger(input.activityLimit) ||
-      input.activityLimit < 1 ||
+      input.activityLimit <
+        APPLE_PUSH_CONFIGURATION_BOUNDS.liveActivityRegistrationsPerDevice.minimum ||
+      input.activityLimit >
+        APPLE_PUSH_CONFIGURATION_BOUNDS.liveActivityRegistrationsPerDevice.maximum ||
       (input.pushType === "liveactivity"
         ? input.activityRef !== "" && !APPLE_PUSH_ACTIVITY_REF_PATTERN.test(input.activityRef)
         : input.activityRef !== "")

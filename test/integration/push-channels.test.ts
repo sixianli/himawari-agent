@@ -847,4 +847,46 @@ describe("[IOS-4] push channels", () => {
     expect(Buffer.byteLength(payload, "utf8")).toBeLessThanOrEqual(4_096);
     expect(JSON.parse(payload).aps.alert.title.endsWith("…")).toBe(true);
   });
+
+  it("[IOS-4] stops trying to start a Live Activity after Apple keeps rate limiting it", async () => {
+    const context = await setup({ liveActivityStartAfterSeconds: 30 });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "liveactivity");
+    context.setClock(T0);
+    context.run("run-long", "running", T0);
+    context.apns.respond = () => ({ status: 429, reason: "TooManyRequests" });
+    for (const seconds of [31, 60, 92, 200, 400, 700, 1_400, 2_400, 4_800]) {
+      context.setClock(at(T0, seconds));
+      await context.push.tick();
+    }
+    expect(context.apns.ofType("liveactivity")).toHaveLength(4);
+  });
+
+  it("[IOS-4] waits before sending a Live Activity update again after a server error, and gives up on that phase after the last retry", async () => {
+    const context = await setup({ liveActivityUpdateMinimumSeconds: 1 });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "liveactivity", "run-long");
+    context.setClock(T0);
+    context.run("run-long", "running", T0);
+    context.apns.respond = () => ({ status: 503, reason: "ServiceUnavailable" });
+    for (const seconds of [1, 11, 21, 62, 100, 400, 1_400, 2_400, 4_800]) {
+      context.setClock(at(T0, seconds));
+      await context.push.tick();
+    }
+    expect(context.apns.ofType("liveactivity")).toHaveLength(4);
+  });
+
+  it("[IOS-4] still delivers through web push when the Apple side throws", async () => {
+    const context = await setup();
+    await context.subscribe("laptop");
+    const broken = new Error("APPLE_SIDE_BROKEN");
+    (context.applePush as { deliver: unknown }).deliver = async () => {
+      throw broken;
+    };
+    context.setClock(T0);
+    context.reminder("r1");
+    await context.push.tick();
+    expect(context.webRequests).toEqual(["/laptop"]);
+    expect(context.failures).toContain(broken);
+  });
 });

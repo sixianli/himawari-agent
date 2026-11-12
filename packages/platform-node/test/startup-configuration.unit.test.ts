@@ -1481,6 +1481,7 @@ it("[IOS-4] accepts Apple push only with an apple-push secret, web push, Apple i
     { ...base, topics: [] },
     { ...base, topics: ["win.siyi.himawari", "win.siyi.himawari"] },
     { ...base, topics: ["bad topic"] },
+    { ...base, topics: [`w${"a".repeat(232)}`] },
     { ...base, environments: ["staging"] },
     { ...base, environments: [] },
     { ...base, widgetRefreshMinimumSeconds: 0 },

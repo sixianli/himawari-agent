@@ -654,4 +654,18 @@ describe("[IOS-4] 通知反馈和在线状态", () => {
       ).toBe("revoked");
     }
   });
+
+  it("凭据上的动作不是同意也不是不同意时被拒，凭据不作废，审批保持原样", async () => {
+    const h = await start();
+    const client = await pairAndConfirm(h);
+    const approval = await seedApproval(h, client, "unknown-action", false);
+    const tokens = await issue(h, client.deviceId, approval);
+    sql(h, (database) =>
+      database.prepare("UPDATE notification_action_tokens SET action = 'cancel'").run(),
+    );
+    const response = await post(h, client, "approvals/respond", { token: tokens.approve });
+    expect([response.statusCode, response.json()]).toEqual([410, INVALID]);
+    expect(usedTokens(h)).toBe(0);
+    expect(await status(h, approval)).toEqual({ status: "pending", revision: 1 });
+  });
 });

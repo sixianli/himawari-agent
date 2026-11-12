@@ -19,7 +19,7 @@ export const NOTIFICATION_ACTIONS = ["approve", "deny"] as const;
 export type NotificationAction = (typeof NOTIFICATION_ACTIONS)[number];
 
 export const APPLE_PUSH_TOKEN_PATTERN = /^(?:[0-9a-f]{2}){1,256}$/u;
-export const APPLE_PUSH_TOPIC_PATTERN = /^[A-Za-z0-9][A-Za-z0-9.-]{0,254}$/u;
+export const APPLE_PUSH_TOPIC_PATTERN = /^[A-Za-z0-9][A-Za-z0-9.-]{0,231}$/u;
 export const APPLE_PUSH_ACTIVITY_REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
 export interface ApplePushConfiguration {
