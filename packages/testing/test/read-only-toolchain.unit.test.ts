@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -33,10 +33,7 @@ describe("read-only toolchain paths", () => {
     const result = await resolveReadOnlyToolchainPaths([at("usr/bin"), at("optional"), at("lib")], {
       optional: [at("optional")],
     });
-    expect(result).toEqual([
-      await import("node:fs/promises").then((fs) => fs.realpath(at("usr/bin"))),
-      await import("node:fs/promises").then((fs) => fs.realpath(at("usr/lib"))),
-    ]);
+    expect(result).toEqual([await realpath(at("usr/bin")), await realpath(at("usr/lib"))]);
   });
 
   it("resolves an optional entry that exists, so x86 hosts keep their /lib64 entry", async () => {
@@ -94,15 +91,20 @@ describe("read-only toolchain paths", () => {
   });
 
   it("returns the real path of the default optional entry only when this host has it", async () => {
-    const expected = await realpath("/lib64").then(
-      async (resolved) => [await realpath("/usr/lib"), resolved],
-      async () => [await realpath("/usr/lib")],
+    const present = await lstat("/lib64").then(
+      () => true,
+      (error) => {
+        if (error?.code === "ENOENT") return false;
+        throw error;
+      },
     );
+    const usrLib = await realpath("/usr/lib");
+    const expected = present ? [usrLib, await realpath("/lib64")] : [usrLib];
     const result = await resolveReadOnlyToolchainPaths(["/usr/lib", "/lib64"], { dedupe: false });
     expect(result).toEqual(expected);
   });
 
-  it("is used by every fixture that builds a read-only toolchain list", async () => {
+  it("is used by the four changed fixtures", async () => {
     const callers = [
       "test/fixtures/product-path-harness.ts",
       "test/fixtures/mac-sandbox-deployment.ts",
