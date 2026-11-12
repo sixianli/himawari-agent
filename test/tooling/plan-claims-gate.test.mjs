@@ -410,7 +410,7 @@ describe("plan claims check: the merge gate", () => {
     }));
 
   it("[claims gate] a file name that looks like a secret is still recorded in a ledger the gate can read", () => {
-    const path = "docs/adr/0304-sk-abcdefghijklmnopqrstuv.md";
+    const path = `docs/adr/0304-${["sk", "abcdefghijklmnopqrstuv"].join("-")}.md`;
     const text = `# 方案\n\n${RIGHT_SENTENCE}。\n`;
     return withFixture({ withAdr: false }, (f) => {
       f.commit({ [path]: text }, "adr named like a key");
