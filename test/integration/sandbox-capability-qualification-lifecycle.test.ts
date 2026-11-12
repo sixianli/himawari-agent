@@ -279,17 +279,15 @@ describe("sandbox capability qualification through the lifecycle service", () =>
     await expect(lifecycle.activateUpdate(REF)).rejects.toThrow("runtime qualification failed");
   });
 
-  it.each([
-    "filesystem",
-    "network",
-    "processes",
-    "secrets",
-  ] as const)("rejects sandbox evidence when %s is not enforced", async (control) => {
-    await rejected((value) => ({
-      ...value,
-      enforcement: { ...value.enforcement, [control]: false },
-    }));
-  });
+  it.each(["filesystem", "network", "processes", "secrets"] as const)(
+    "rejects sandbox evidence when %s is not enforced",
+    async (control) => {
+      await rejected((value) => ({
+        ...value,
+        enforcement: { ...value.enforcement, [control]: false },
+      }));
+    },
+  );
 
   it("rejects a sandbox qualification that claims a kernel resource ceiling the evidence does not give", async () => {
     await rejected((value) => ({
