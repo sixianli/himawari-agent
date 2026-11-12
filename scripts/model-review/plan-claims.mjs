@@ -143,11 +143,19 @@ function fragmentsInOrder(fragments, haystack) {
 export function quoteInText(quote, text) {
   const haystack = collapse(text);
   const elided = quoteFragments(quote, /…|\.\.\./);
-  return (
-    (elided.length > 0 &&
-      elided.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))) ||
-    fragmentsInOrder(quoteFragments(quote, /…|\.\.\.|；/), haystack)
-  );
+  if (
+    elided.length > 0 &&
+    elided.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))
+  )
+    return true;
+  if (elided.length > 1) {
+    const pieces = quoteFragments(quote, /…|\.\.\.|；/);
+    return (
+      pieces.length > 0 &&
+      pieces.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))
+    );
+  }
+  return fragmentsInOrder(quoteFragments(quote, /；/), haystack);
 }
 
 function claimEvidenceProblem(repo, head, claim) {

@@ -220,7 +220,10 @@ describe("plan claims check: reading the model's answer", () => {
     expect(quoteInText("；", text)).toBe(false);
     expect(quoteInText("MemoryMax=20G；MemoryHigh=19G", text)).toBe(false);
     expect(quoteInText("MemoryHigh=19G；MemoryHigh=19G", text)).toBe(false);
-    expect(quoteInText("第二步；note: 第一步", text)).toBe(false);
+    expect(quoteInText("MemoryMax=20G；note: 第一步", text)).toBe(true);
+    expect(quoteInText("note: 第一步；MemoryMax=20G", text)).toBe(false);
+    expect(quoteInText("note: 第一步 … MemoryMax=20G；MemoryHigh=19G", text)).toBe(true);
+    expect(quoteInText("note: 第一步 … MemoryMax=21G；MemoryHigh=19G", text)).toBe(false);
   });
 
   it("[claims] checks the verdict file line by line", () => {
