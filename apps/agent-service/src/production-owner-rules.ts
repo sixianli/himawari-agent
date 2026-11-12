@@ -698,6 +698,7 @@ export class ProductionOwnerRuleWriter {
     const proposalId = `rule-proposal:${hash(
       canonicalJson([
         this.#scope().ownerId,
+        this.#scope().agentId,
         normalized.type,
         normalized.params,
         normalized.summary,
@@ -705,24 +706,47 @@ export class ProductionOwnerRuleWriter {
       ]),
     ).slice(0, 32)}`;
     const trials = trialsOf(draft);
-    if (input.listed !== false) {
+    const evidence = JSON.stringify({ ...proposal, trials, replay: replayed });
+    if (input.listed === false) await this.#writeText(proposalId, evidence);
+    else {
+      const scope = this.#scope();
+      const store = this.#options.proposals;
       const now = this.#options.clock.now();
-      const outcome = await this.#options.proposals.propose({
-        ...this.#scope(),
-        proposalId,
-        ruleType: normalized.type,
-        summary: normalized.summary,
-        origin: ownerSaid ? "owner_said" : "inferred",
-        threadId: input.threadId,
-        evidenceRef: proposalId,
-        now,
-        expiresAt: new Date(Date.parse(now) + this.#ttlDays() * DAY_MS).toISOString(),
-        pendingLimit: this.#limit(),
-      });
-      if (outcome === "limit_reached")
+      const existing = await store.read({ ...scope, proposalId, now });
+      if (existing?.status === "accepted") {
+        const live = await this.#options.rules.list({ ...scope, includeRetired: false });
+        if (live.some((row) => sameRule(row.parameters, normalized.type, normalized.params)))
+          return this.#activate(proposal, replayed);
+      }
+      const payloads = this.#options.payloads;
+      if (existing?.status !== "pending") await payloads.delete(proposalId as never);
+      const fresh = (await payloads.get(proposalId as never)) === undefined;
+      await this.#writeText(proposalId, evidence);
+      const drop = async (): Promise<void> => {
+        if (fresh) await payloads.delete(proposalId as never).catch(() => false);
+      };
+      const outcome = await store
+        .propose({
+          ...scope,
+          proposalId,
+          ruleType: normalized.type,
+          summary: normalized.summary,
+          origin: ownerSaid ? "owner_said" : "inferred",
+          threadId: input.threadId,
+          evidenceRef: proposalId,
+          now,
+          expiresAt: new Date(Date.parse(now) + this.#ttlDays() * DAY_MS).toISOString(),
+          pendingLimit: this.#limit(),
+        })
+        .catch(async (error: unknown) => {
+          await drop();
+          throw error;
+        });
+      if (outcome === "limit_reached") {
+        await drop();
         throw new OwnerRuleError("RULE_PROPOSALS_FULL", String(this.#limit()));
+      }
     }
-    await this.#writeText(proposalId, JSON.stringify({ ...proposal, trials, replay: replayed }));
     return Object.freeze({
       status: "proposed",
       ruleId: null,
@@ -792,11 +816,12 @@ export class ProductionOwnerRuleWriter {
           })
           .catch(() => undefined);
     };
-    const proposal = await this.#readProposal(proposalId);
-    if (!proposal) {
+    const stored = await this.#readProposal(proposalId);
+    if (!stored) {
       await release();
       throw new OwnerRuleError("RULE_NOT_FOUND");
     }
+    const proposal = row ? { ...stored, threadId: row.threadId } : stored;
     try {
       return await this.#activate(proposal, proposal.replay ?? null);
     } catch (error) {

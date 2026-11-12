@@ -104,10 +104,18 @@ export class SqliteOwnerRuleProposalOperations {
       if (existing?.status === "pending") {
         this.database
           .prepare(
-            `UPDATE owner_rule_proposals SET expires_at = ?, proposed_count = proposed_count + 1
+            `UPDATE owner_rule_proposals SET expires_at = ?, origin = ?, thread_id = ?,
+               proposed_count = proposed_count + 1
              WHERE owner_id = ? AND agent_id = ? AND id = ?`,
           )
-          .run(input.expiresAt, input.ownerId, input.agentId, proposalId);
+          .run(
+            input.expiresAt,
+            input.origin,
+            input.threadId,
+            input.ownerId,
+            input.agentId,
+            proposalId,
+          );
         return "refreshed";
       }
       const pending = (
