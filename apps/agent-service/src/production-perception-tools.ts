@@ -42,6 +42,7 @@ import {
   TOOL_RESULT_DEVICE_ACTION_RESULT_UNKNOWN,
   TOOL_RESULT_DEVICE_ACTION_SUCCEEDED,
   TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
+  TOOL_RESULT_DEVICE_ACTION_UNCONFIRMED,
   TOOL_RESULT_DEVICE_ACTION_UNKNOWN,
   TOOL_RESULT_DEVICE_ACTION_UNSUPPORTED,
   TOOL_RESULT_DEVICE_ACTION_WAITING_OWNER,
@@ -69,6 +70,7 @@ const ACTION_ARGUMENTS = ["action", "device", "arguments"];
 const LOCAL_TIME = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/u;
 const DAY_MS = 86_400_000;
 const SCAN_PAGE = 500;
+export const DEVICE_ACTION_UNCONFIRMED_CODE = "DEVICE_ACTION_CONFIRMATION_REQUIRED";
 
 export const DEVICE_ACTION_STATES = [
   "queued",
@@ -521,8 +523,8 @@ export class ProductionPerceptionTools {
     };
     if (definition.confirm && (await this.#options.confirm?.(request)) !== true)
       throw new PerceptionToolError(
-        "DEVICE_ACTION_UNAVAILABLE",
-        TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE.text,
+        DEVICE_ACTION_UNCONFIRMED_CODE,
+        TOOL_RESULT_DEVICE_ACTION_UNCONFIRMED.text,
       );
     const outcome = await this.#options.perform(request);
     return {

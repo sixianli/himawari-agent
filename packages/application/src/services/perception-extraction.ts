@@ -342,7 +342,15 @@ export type PerceptionProposalSourceKind = (typeof PERCEPTION_PROPOSAL_SOURCE_KI
 export const PERCEPTION_PROPOSAL_TRUST = ["owner", "external"] as const;
 export type PerceptionProposalTrust = (typeof PERCEPTION_PROPOSAL_TRUST)[number];
 
-const COMMAND_UTTERANCE_BATCH = 1000;
+export const COMMAND_UTTERANCE_BATCH = 1000;
+
+export function commandUtteranceBatches(utteranceIds: readonly string[]): string[][] {
+  const distinct = [...new Set(utteranceIds)].sort();
+  const batches: string[][] = [];
+  for (let start = 0; start < distinct.length; start += COMMAND_UTTERANCE_BATCH)
+    batches.push(distinct.slice(start, start + COMMAND_UTTERANCE_BATCH));
+  return batches;
+}
 
 export interface PerceptionProposalSource {
   readonly recordType: PerceptionRecord["type"];
@@ -531,14 +539,9 @@ export class PerceptionExtractionService {
     const utterances = records.flatMap((record) =>
       typeof record.evidence["utteranceId"] === "string" ? [record.evidence["utteranceId"]] : [],
     );
-    const distinct = [...new Set(utterances)].sort();
     const commands = new Set<string>();
-    for (let start = 0; start < distinct.length; start += COMMAND_UTTERANCE_BATCH)
-      for (const id of await store.commandUtterances({
-        ...scope,
-        utteranceIds: distinct.slice(start, start + COMMAND_UTTERANCE_BATCH),
-      }))
-        commands.add(id);
+    for (const utteranceIds of commandUtteranceBatches(utterances))
+      for (const id of await store.commandUtterances({ ...scope, utteranceIds })) commands.add(id);
     const sources: PerceptionExtractionSource[] = [];
     for (const record of records) {
       if (!isModelVisible(record.dataClassification)) continue;

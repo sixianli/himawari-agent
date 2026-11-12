@@ -4,6 +4,7 @@ import {
   memorySources,
   PERCEPTION_CONFIGURATION_DEFAULTS,
   PERCEPTION_REASON_CODES,
+  PERCEPTION_RECORD_ID_PATTERN,
   type PerceptionExtractionModel,
   type ProductMemoryRecord,
   type VerifiedPerceptionProposal,
@@ -13,6 +14,7 @@ import { type Embedder, HybridMemoryProvider } from "@himawari-agent/memory-engi
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { sequentialPlaceholderTag } from "@himawari-agent/sensitive-capture";
 import { afterEach, describe, expect, it } from "vitest";
+import { PERCEPTION_MEMORY_SOURCE_ID } from "../../packages/persistence-sqlite/src/memory-source-types.ts";
 import { createPerceptionExtractionService } from "../../apps/agent-service/src/production-perception-extraction.ts";
 import { ProductionReminderWriter } from "../../apps/agent-service/src/production-reminder-writer.ts";
 import {
@@ -638,6 +640,34 @@ describe("[iOS-5] a memory's sources carry their type", () => {
         sourceTypes: { "not-a-record": "perception" },
       }),
     ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+    expect(PERCEPTION_MEMORY_SOURCE_ID.source).toBe(PERCEPTION_RECORD_ID_PATTERN.source);
+    expect(PERCEPTION_MEMORY_SOURCE_ID.flags).toBe(PERCEPTION_RECORD_ID_PATTERN.flags);
+    const gone = owner(s.h, "这句话随后被删掉", 30);
+    await ingest(s.h, s.client, [gone]);
+    const database = openQualifiedDatabase(path.join(s.h.stateRoot, "product.sqlite"));
+    try {
+      expect(
+        database
+          .prepare("UPDATE perception_records SET status = 'deleted' WHERE id IN (?, ?)")
+          .run(gone.id, said.id).changes,
+      ).toBe(2);
+    } finally {
+      database.close();
+    }
+    await expect(
+      copy("gone", { sourceRefs: [gone.id], sourceTypes: { [gone.id]: "perception" } }),
+    ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+    await expect(
+      state.save(
+        {
+          ...stored,
+          revision: stored.revision + 1,
+          sourceRefs: [said.id],
+          sourceTypes: { [said.id]: "perception" },
+        },
+        stored.revision,
+      ),
+    ).resolves.toBeDefined();
     const ghost = `perception:${"0".repeat(32)}`;
     await expect(
       copy("ghost", { sourceRefs: [ghost], sourceTypes: { [ghost]: "perception" } }),

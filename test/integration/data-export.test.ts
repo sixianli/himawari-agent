@@ -687,6 +687,12 @@ describe("data export: determinism and the directory", () => {
         .run(type, id);
       const refused = await side(`target-bad-${type}`);
       await expect(
+        importInto(refused, (await exportOf(bad)).files, {
+          passphrase: PASSPHRASE,
+          dryRun: true,
+        }),
+      ).rejects.toMatchObject({ code: DATA_EXPORT_ERROR_CODES.LINE_INVALID });
+      await expect(
         importInto(refused, (await exportOf(bad)).files, { passphrase: PASSPHRASE }),
       ).rejects.toMatchObject({ code: DATA_EXPORT_ERROR_CODES.LINE_INVALID });
       expect(counts(refused)["memories"]).toBe(0);

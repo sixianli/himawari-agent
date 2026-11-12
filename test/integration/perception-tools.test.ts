@@ -13,6 +13,7 @@ import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   type DeviceActionDefinition,
+  DEVICE_ACTION_UNCONFIRMED_CODE,
   type DeviceActionRequest,
   PerceptionToolError,
   ProductionPerceptionTools,
@@ -436,7 +437,10 @@ describe("[iOS-5] device_action describes what is possible and refuses what is n
             arguments: { eventId: "event-1" },
           }),
         ),
-      ).rejects.toMatchObject({ code: "DEVICE_ACTION_UNAVAILABLE" });
+      ).rejects.toMatchObject({
+        code: DEVICE_ACTION_UNCONFIRMED_CODE,
+        note: expect.stringContaining("没有拿到主人的确认"),
+      });
       expect(performed).toEqual([]);
       const reading = await tools.run(
         call("run-owner", "device.action", {
