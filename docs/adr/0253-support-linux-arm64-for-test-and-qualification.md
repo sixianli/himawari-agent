@@ -1,7 +1,7 @@
 ---
 status: active
 document_type: adr
-decision_status: proposed
+decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-12"
@@ -50,7 +50,7 @@ Andy 有一台 Oracle 东京区的 ARM 云服务器（aarch64，即 64 位 ARM �
 
 ## Andy 的原话
 
-2026-11-12 14:40 JST，Andy 对“在 Oracle 这台机器上做 ARM 出包和跑测试，观察一周，线上不动”回“开”。同日 14:52 对阶段 0（只在那台机器上装工具、跑测试）回“同意”。同日 17:54 在决定卡“同意花最多 1 美元请 DeepSeek 和 GLM 讨论 ARM 阶段 1 方案吗”上选了“同意，上限 1 美元”。本 ADR 的决定本身还没有得到 Andy 同意，所以状态是提议。
+2026-11-12 14:40 JST，Andy 对“在 Oracle 这台机器上做 ARM 出包和跑测试，观察一周，线上不动”回“开”。同日 14:52 对阶段 0（只在那台机器上装工具、跑测试）回“同意”。同日 17:54 在决定卡“同意花最多 1 美元请 DeepSeek 和 GLM 讨论 ARM 阶段 1 方案吗”上选了“同意，上限 1 美元”。同日 18:56，Andy 在决定卡“同意按这份 ARM 方案分四个 PR 动工吗”上选了“同意，四个 PR 按顺序做”。
 
 [↑ 返回阅读导航](#contents)
 
