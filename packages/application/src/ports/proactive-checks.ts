@@ -427,6 +427,7 @@ export interface ProactiveStorePort {
       readonly enabled: boolean;
       readonly perDay: number;
       readonly perCheck: number;
+      readonly changeId: string;
       readonly now: string;
     },
   ): Promise<void>;

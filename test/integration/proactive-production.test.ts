@@ -504,9 +504,22 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
         intake: "reader",
         trust: "external",
         enabled: true,
-        perDay: { limit: 5_000, defaultLimit: 5_000, minimum: 1, maximum: 1_000_000 },
-        perCheck: { limit: 500, defaultLimit: 500, minimum: 1, maximum: 10_000 },
-        usedToday: 0,
+        perDay: {
+          limit: 5_000,
+          defaultLimit: 5_000,
+          minimum: 1,
+          maximum: 1_000_000,
+          used: 0,
+          resetsAt: "2026-11-04T15:00:00.000Z",
+          onReach: "hold_until_reset",
+        },
+        perCheck: {
+          limit: 500,
+          defaultLimit: 500,
+          minimum: 1,
+          maximum: 10_000,
+          onReach: "hold_until_next_check",
+        },
         dailyLimitReached: false,
         updatedAt: null,
       },
@@ -523,7 +536,22 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     expect((await h.overview()).decisions).toEqual([]);
     expect(h.prompts).toEqual([]);
     expect(await sources()).toMatchObject([
-      { enabled: false, perDay: { limit: 40 }, perCheck: { limit: 1 }, usedToday: 0 },
+      { enabled: false, perDay: { limit: 40, used: 0 }, perCheck: { limit: 1 } },
+    ]);
+    const changes = async () =>
+      (
+        await h.ledger.list({
+          ...scope,
+          kind: "limit_change",
+          since: "2026-11-01T00:00:00.000Z",
+          limit: 20,
+        })
+      )
+        .map(({ inputs }) => inputs.limitChange)
+        .sort((left, right) => (left?.key ?? "").localeCompare(right?.key ?? ""));
+    expect(await changes()).toEqual([
+      { key: "proactive.source.gmail.perCheck", from: 500, to: 1 },
+      { key: "proactive.source.gmail.perDay", from: 5_000, to: 40 },
     ]);
 
     await h.command("proactive.source.settings.set", {
@@ -535,7 +563,14 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     h.script([{ id: "demo-ja-mockups", result: "ignore", confidence: "sure" }]);
     await h.proactive.tick();
     expect((await h.overview()).decisions).toMatchObject([{ counts: { fetched: 1 } }]);
-    expect(await sources()).toMatchObject([{ enabled: true, usedToday: 1 }]);
+    expect(await sources()).toMatchObject([{ enabled: true, perDay: { used: 1 } }]);
+    expect(await changes()).toHaveLength(2);
+
+    await h.command("proactive.source.switch_off", { source: "gmail" });
+    expect(await sources()).toMatchObject([
+      { enabled: false, perDay: { limit: 40 }, perCheck: { limit: 1 } },
+    ]);
+    expect(await changes()).toHaveLength(2);
     expect(h.failures).toEqual([]);
   });
 
@@ -571,6 +606,20 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     await expect(
       h.command("proactive.source.manage", { source: "test_notes", action: "disconnect" }),
     ).rejects.toThrow("PROACTIVE_SOURCE_NOT_REGISTERED");
+    await expect(
+      h.command("proactive.source.switch_off", { source: "test_notes" }),
+    ).rejects.toThrow("PROACTIVE_SOURCE_NOT_REGISTERED");
+    expect(() =>
+      message("command", "proactive.source.switch_off", { source: "gmail", enabled: true }),
+    ).toThrow(/unknown field/u);
+    expect(
+      await h.ledger.list({
+        ...scope,
+        kind: "limit_change",
+        since: "2026-11-01T00:00:00.000Z",
+        limit: 20,
+      }),
+    ).toEqual([]);
     expect((await h.overview()).connection.status).toBe("connected");
     expect(
       await h.proactive.recordEntry({

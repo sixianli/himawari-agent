@@ -191,6 +191,15 @@ export function defaultProactiveSourceSettings(
   });
 }
 
+export const PROACTIVE_SOURCE_LIMIT_ON_REACH = Object.freeze({
+  perDay: "hold_until_reset",
+  perCheck: "hold_until_next_check",
+} as const);
+
+export function proactiveSourceLimitKey(source: string, limit: "perDay" | "perCheck"): string {
+  return `proactive.source.${source}.${limit}`;
+}
+
 export function proactiveSourceLimitsValid(
   definition: Pick<ProactiveSourceDefinition, "safetyLimits">,
   limits: { readonly perDay: unknown; readonly perCheck: unknown },

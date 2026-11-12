@@ -210,6 +210,10 @@ export function startOfZonedDay(at: string, timeZone: string): string {
   return zonedTime(zonedParts(at, timeZone), 0, timeZone);
 }
 
+export function startOfNextZonedDay(at: string, timeZone: string): string {
+  return zonedTime(shiftDays(zonedParts(at, timeZone), 1), 0, timeZone);
+}
+
 function clockMinutes(value: string): number {
   const [hours, minutes] = value.split(":").map(Number);
   return (hours ?? 0) * 60 + (minutes ?? 0);

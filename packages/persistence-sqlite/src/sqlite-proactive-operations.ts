@@ -12,12 +12,14 @@ import type {
   ProactiveSettings,
   ProactiveStorePort,
 } from "@himawari-agent/application";
+import { LIMIT_CHANGE_REASON_CODE } from "@himawari-agent/application/decision-ledger";
 import {
   defaultProactiveSourceSettings,
   PROACTIVE_SOURCES,
   type ProactiveSource,
   type ProactiveSourceSafetyLimits,
   type ProactiveSourceSettings,
+  proactiveSourceLimitKey,
   proactiveSourceLimitsValid,
 } from "@himawari-agent/application/proactive-sources";
 import type Database from "better-sqlite3";
@@ -28,6 +30,7 @@ import {
   previewBackoff,
   restoreBackoff,
 } from "./proactive-push-backoff.ts";
+import { insertLedgerRow } from "./sqlite-decision-ledger-operations.ts";
 import { summaryInputsValid } from "./sqlite-decision-summary-inputs.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { insertObservationEvent } from "./sqlite-observation-operations.ts";
@@ -289,8 +292,43 @@ export class SqliteProactiveOperations {
     this.assertDiskHeadroom();
     const definition = this.source(input.source);
     this.time(input.now);
-    if (typeof input.enabled !== "boolean" || !proactiveSourceLimitsValid(definition, input))
+    if (
+      typeof input.enabled !== "boolean" ||
+      !proactiveSourceLimitsValid(definition, input) ||
+      typeof input.changeId !== "string" ||
+      input.changeId.length < 1 ||
+      input.changeId.length > 128
+    )
       this.invalid("Proactive source settings are invalid");
+    const current =
+      this.listSourceSettings(input).find(({ source }) => source === definition.name) ??
+      defaultProactiveSourceSettings(definition);
+    for (const key of ["perDay", "perCheck"] as const) {
+      if (current[key] === input[key]) continue;
+      insertLedgerRow(this.database, {
+        id: `${input.changeId}:${key}`,
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        kind: "limit_change",
+        decidedAt: input.now,
+        outcome: "changed",
+        reasonCode: LIMIT_CHANGE_REASON_CODE,
+        subjectRef: `limit:${proactiveSourceLimitKey(definition.name, key)}`,
+        inputs: {
+          memoryIds: [],
+          ruleIds: [],
+          limitChange: {
+            key: proactiveSourceLimitKey(definition.name, key),
+            from: current[key],
+            to: input[key],
+          },
+        },
+        reasonRef: null,
+        contentRef: null,
+        costMicros: 0,
+        durationMs: 0,
+      });
+    }
     this.database
       .prepare(
         `INSERT INTO proactive_source_settings (

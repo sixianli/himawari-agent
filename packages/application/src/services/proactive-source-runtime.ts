@@ -1,6 +1,5 @@
 import type {
   ProactiveDecision,
-  ProactivePriority,
   ProactiveScope,
   ProactiveSealPort,
   ProactiveSourceReader,
@@ -90,14 +89,17 @@ export function limitedSourceReader<
   }) as Reader;
 }
 
+export const PROGRAM_ENTRY_RESULTS = ["act", "check"] as const;
+export const PROGRAM_ENTRY_PRIORITIES = ["high", "medium", null] as const;
+
 export interface ProactiveProgramEntry {
   readonly source: ProactiveSource;
   readonly entryId: string;
   readonly summary: string;
   readonly reason: string;
   readonly link: string;
-  readonly result: "act" | "check";
-  readonly priority: Exclude<ProactivePriority, "low"> | null;
+  readonly result: (typeof PROGRAM_ENTRY_RESULTS)[number];
+  readonly priority: (typeof PROGRAM_ENTRY_PRIORITIES)[number];
   readonly dueAt: string | null;
   readonly deliverAt: string | null;
 }
@@ -112,7 +114,8 @@ export type ProactiveProgramEntryOutcome =
         | "already_recorded"
         | "daily_limit"
         | "source_not_registered"
-        | "source_has_reader";
+        | "source_has_reader"
+        | "entry_invalid";
     };
 
 export interface ProactiveProgramEntryOptions {
@@ -135,6 +138,16 @@ export async function recordProactiveProgramEntry(
   if (definition === undefined) return { kind: "not_recorded", reason: "source_not_registered" };
   if (definition.intake !== "written_by_program")
     return { kind: "not_recorded", reason: "source_has_reader" };
+  if (
+    !(PROGRAM_ENTRY_RESULTS as readonly unknown[]).includes(entry.result) ||
+    !(PROGRAM_ENTRY_PRIORITIES as readonly unknown[]).includes(entry.priority) ||
+    typeof entry.entryId !== "string" ||
+    entry.entryId.length < 1 ||
+    entry.entryId.length > 256 ||
+    typeof entry.summary !== "string" ||
+    entry.summary.trim().length < 1
+  )
+    return { kind: "not_recorded", reason: "entry_invalid" };
   const settings = await store.readSettings(scope);
   if (!settings.enabled) return { kind: "not_recorded", reason: "proactive_off" };
   const sourceSettings = await readProactiveSourceSettings(store, scope, entry.source);

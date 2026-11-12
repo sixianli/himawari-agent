@@ -48,6 +48,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.sources.read",
   "proactive.sources.snapshot",
   "proactive.source.settings.set",
+  "proactive.source.switch_off",
   "muse.overview.read",
   "muse.overview.snapshot",
   "muse.item.rate",
@@ -963,12 +964,12 @@ const proactiveBackoffRestoreCommandSchema = object({
   ...commandEnvelope("proactive.backoff.restore"),
   payload: object({ classKey: nullable(boundedString(128)) }),
 });
-const proactiveSafetyLimitSchema = object({
+const proactiveSafetyLimitShape = {
   limit: integer(1),
   defaultLimit: integer(1),
   minimum: integer(1),
   maximum: integer(1),
-});
+};
 const proactiveSourcesQuerySchema = object({
   ...envelope("query", "proactive.sources.read"),
   payload: object({}),
@@ -982,9 +983,16 @@ const proactiveSourcesSnapshotSchema = object({
         intake: enumeration(["reader", "written_by_program"]),
         trust: enumeration(["owner", "external"]),
         enabled: booleanValue,
-        perDay: proactiveSafetyLimitSchema,
-        perCheck: proactiveSafetyLimitSchema,
-        usedToday: integer(0),
+        perDay: object({
+          ...proactiveSafetyLimitShape,
+          used: integer(0),
+          resetsAt: timestamp,
+          onReach: literal("hold_until_reset"),
+        }),
+        perCheck: object({
+          ...proactiveSafetyLimitShape,
+          onReach: literal("hold_until_next_check"),
+        }),
         dailyLimitReached: booleanValue,
         updatedAt: nullable(timestamp),
       }),
@@ -1000,6 +1008,10 @@ const proactiveSourceSettingsSetCommandSchema = object({
     perDay: integer(1),
     perCheck: integer(1),
   }),
+});
+const proactiveSourceSwitchOffCommandSchema = object({
+  ...commandEnvelope("proactive.source.switch_off"),
+  payload: object({ source: proactiveSourceName }),
 });
 const museOverviewQuerySchema = object({
   ...envelope("query", "muse.overview.read"),
@@ -2781,6 +2793,7 @@ const schemasByType = {
   "proactive.sources.read": proactiveSourcesQuerySchema,
   "proactive.sources.snapshot": proactiveSourcesSnapshotSchema,
   "proactive.source.settings.set": proactiveSourceSettingsSetCommandSchema,
+  "proactive.source.switch_off": proactiveSourceSwitchOffCommandSchema,
   "muse.overview.read": museOverviewQuerySchema,
   "muse.overview.snapshot": museOverviewSnapshotSchema,
   "muse.item.rate": museItemRateCommandSchema,

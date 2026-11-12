@@ -531,6 +531,7 @@ describe("[iOS-7] proactive source registry", () => {
         enabled: true,
         perDay: 10,
         perCheck: 5,
+        changeId: "change-1",
         now: h.clock.now(),
       }),
     ).rejects.toThrow(/not registered/u);
@@ -558,6 +559,7 @@ describe("[iOS-7] proactive source registry", () => {
       enabled: true,
       perDay: 3,
       perCheck: 2,
+      changeId: "change-1",
       now: h.clock.now(),
     });
     await expect(
@@ -567,6 +569,7 @@ describe("[iOS-7] proactive source registry", () => {
         enabled: true,
         perDay: 0,
         perCheck: 2,
+        changeId: "change-2",
         now: h.clock.now(),
       }),
     ).rejects.toThrow(/settings are invalid/u);
@@ -693,12 +696,20 @@ describe("[iOS-7] proactive source registry", () => {
     expect(
       await h.entry({ ...base, source: "nowhere" as ProactiveSource, entryId: "x", summary: "x" }),
     ).toEqual({ kind: "not_recorded", reason: "source_not_registered" });
+    for (const invalid of [
+      { result: "know", priority: null },
+      { result: "act", priority: "low" },
+      { result: "act", priority: null, summary: " " },
+    ])
+      expect(
+        await h.entry({ ...base, source: FEED, entryId: "bad", summary: "x", ...invalid } as never),
+      ).toEqual({ kind: "not_recorded", reason: "entry_invalid" });
     const settings = { ...scope, source: FEED, perCheck: 5, now: h.clock.now() };
-    await h.store.writeSourceSettings({ ...settings, enabled: true, perDay: 1 });
+    await h.store.writeSourceSettings({ ...settings, changeId: "c1", enabled: true, perDay: 1 });
     expect(await feed("two")).toEqual({ kind: "not_recorded", reason: "daily_limit" });
-    await h.store.writeSourceSettings({ ...settings, enabled: false, perDay: 50 });
+    await h.store.writeSourceSettings({ ...settings, changeId: "c2", enabled: false, perDay: 50 });
     expect(await feed("two")).toEqual({ kind: "not_recorded", reason: "source_off" });
-    await h.store.writeSourceSettings({ ...settings, enabled: true, perDay: 50 });
+    await h.store.writeSourceSettings({ ...settings, changeId: "c3", enabled: true, perDay: 50 });
     await h.store.writeSettings({
       ...scope,
       enabled: false,

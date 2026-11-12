@@ -37,7 +37,9 @@ import {
   type ProactiveSourceRegistry,
   type ProactiveSourceRunner,
   type ProactiveStorePort,
+  PROACTIVE_SOURCE_LIMIT_ON_REACH,
   proactiveSourceLimitsValid,
+  readProactiveSourceSettings,
   parseReviewKey,
   ReviewPrereviewService,
   type ReviewPrereviewStorePort,
@@ -45,6 +47,7 @@ import {
   readDailyReview,
   readProactiveOverview,
   recordProactiveProgramEntry,
+  startOfNextZonedDay,
   startOfZonedDay,
   type WebPushFeedback,
 } from "@himawari-agent/application";
@@ -76,6 +79,7 @@ export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
   "proactive.backoff.restore",
   "proactive.sources.read",
   "proactive.source.settings.set",
+  "proactive.source.switch_off",
 ] as const);
 
 export const PROACTIVE_GOOGLE_START_PATH = "/api/proactive/v1/google/start";
@@ -611,6 +615,7 @@ export class ProductionProactive {
     if (query.type === "proactive.sources.read") {
       const { scope, store, clock, timeZone } = this.#options;
       const since = startOfZonedDay(clock.now(), timeZone);
+      const resetsAt = startOfNextZonedDay(clock.now(), timeZone);
       const settings = new Map(
         (await store.listSourceSettings(scope)).map((entry) => [entry.source, entry]),
       );
@@ -624,9 +629,18 @@ export class ProductionProactive {
           intake: definition.intake,
           trust: definition.trust,
           enabled: entry.enabled,
-          perDay: { limit: entry.perDay, ...definition.safetyLimits.perDay },
-          perCheck: { limit: entry.perCheck, ...definition.safetyLimits.perCheck },
-          usedToday,
+          perDay: {
+            limit: entry.perDay,
+            ...definition.safetyLimits.perDay,
+            used: usedToday,
+            resetsAt,
+            onReach: PROACTIVE_SOURCE_LIMIT_ON_REACH.perDay,
+          },
+          perCheck: {
+            limit: entry.perCheck,
+            ...definition.safetyLimits.perCheck,
+            onReach: PROACTIVE_SOURCE_LIMIT_ON_REACH.perCheck,
+          },
           dailyLimitReached: usedToday >= entry.perDay,
           updatedAt: entry.updatedAt,
         });
@@ -893,9 +907,34 @@ export class ProductionProactive {
           enabled,
           perDay,
           perCheck,
+          changeId: this.#options.ids.next("limit-change"),
           now,
         });
         return { resultRef: `proactive-source-settings:${definition.name}`, replayed: false };
+      }
+      case "proactive.source.switch_off": {
+        const definition = this.#registry.get(command.payload.source);
+        if (definition === undefined)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "PROACTIVE_SOURCE_NOT_REGISTERED",
+          );
+        const current = await readProactiveSourceSettings(store, scope, definition.name);
+        if (current === undefined)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "PROACTIVE_SOURCE_NOT_REGISTERED",
+          );
+        await store.writeSourceSettings({
+          ...scope,
+          source: definition.name,
+          enabled: false,
+          perDay: current.perDay,
+          perCheck: current.perCheck,
+          changeId: this.#options.ids.next("limit-change"),
+          now,
+        });
+        return { resultRef: `proactive-source-off:${definition.name}`, replayed: false };
       }
       case "proactive.source.manage": {
         if (command.payload.action === "clear_records") {

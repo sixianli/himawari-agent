@@ -25,7 +25,9 @@
 8. `ProactiveObservationPort`：邮件判断里值得提醒的 act 条目在决策记录写完之后交出去；生产没有接，决策记录 `inputs.observations` 写 `handedOff` 和 `sink`；接收方抛错不影响这次检查。
 9. 导入（`packages/persistence-sqlite/src/data-export/import.ts`）在写任何行之前拒绝没登记的来源名。
 10. `apps/agent-service/src/production-proactive.ts`：登记了读取型来源却没有对应的运行器时构造函数抛 `PROACTIVE_SOURCE_READER_MISSING`；来源开关关着时这个来源不检查；`proactive.source.manage` 和 `proactive.source.settings.set` 拒绝没登记的来源。
-11. 新检查 `scripts/check-proactive-sources.mjs` 要求 18 条 `[iOS-7]` 用例按名字都通过。
+11. `proactive.sources.read` 给每个来源返回两个上限的当前值、默认值、范围、今天已用条数、清零时刻（主人时区的下一个零点）和到上限后的做法；`proactive.source.settings.set` 改了上限时，`writeSourceSettings` 在同一个数据库事务里写 `limit_change` 决策记录（值没变不写）；`proactive.source.switch_off` 的正文恰好是 `{source}`，只关开关、不动上限。
+12. `recordProactiveProgramEntry` 用程序校验拒绝 `know`、`low` 优先级和空摘要（返回 `entry_invalid`），表上没有这条约束。
+13. 新检查 `scripts/check-proactive-sources.mjs` 要求 18 条 `[iOS-7]` 用例按名字都通过。
 
 ## 已知没做
 
