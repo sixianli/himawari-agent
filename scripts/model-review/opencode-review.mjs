@@ -43,6 +43,7 @@ import {
   blobAt as claimsBlobAt,
   blobSha256 as claimsBlobSha256,
   parseClaims,
+  safe,
   validClaimsFile,
 } from "./plan-claims.mjs";
 import { GUARD_ENV } from "./spend-guard.mjs";
@@ -1708,7 +1709,7 @@ export function parseUsage(text, path) {
         (validClaimsFile(record.claimsFile) &&
           /^[0-9a-f]{64}$/.test(record.claimsSha256 ?? "") &&
           REVIEW_MODELS.includes(record.model) &&
-          typeof record.at === "string" &&
+          /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(record.at ?? "") &&
           Number.isFinite(Date.parse(record.at)));
       const gatewayValid =
         record?.gateway === undefined ||
@@ -3363,7 +3364,7 @@ async function main() {
         );
         for (const claim of flagged)
           console.log(
-            `CLAIMS_FLAGGED ${name} ${claim.id} ${claim.verdict} ${printable(claim.location)}`,
+            `CLAIMS_FLAGGED ${name} ${claim.id} ${claim.verdict} ${safe(claim.location)}`,
           );
         if (claims.length === 0 || problems.length > 0) {
           console.log(`CLAIMS_PARSE_FAILED ${name}`);

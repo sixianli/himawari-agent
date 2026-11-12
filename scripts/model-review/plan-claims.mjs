@@ -6,7 +6,7 @@ export const CLAIM_PROBLEM_VERDICTS = ["不一致", "找不到"];
 export const CLAIM_OUTCOMES = ["plan-fixed", "model-wrong"];
 export const CLAIMS_FILE_PATTERN = /^[\p{L}\p{N}._][\p{L}\p{N}._/-]*\.md$/u;
 export const ADR_PATH_PATTERN = /^docs\/adr\/\d{4}-[^/]+\.md$/;
-const safe = (text) => String(text).replace(/[\p{Cc}\u2028\u2029]/gu, "?");
+export const safe = (text) => String(text).replace(/[\p{Cc}\u2028\u2029]/gu, "?");
 export const CLAIM_ID_PATTERN = /^[A-Za-z0-9._-]{1,40}$/;
 export const CLAIMS_VERDICTS_FILE = "claims-verdicts.jsonl";
 export const EVIDENCE_MIN_CHARS = 8;
@@ -43,8 +43,11 @@ export function parseClaims(text) {
   const seen = new Set();
   for (const [index, raw] of text.split("\n").entries()) {
     const line = raw.replace(/^\s*(?:[-*>]\s+)?/, "");
-    if (!line.startsWith("CLAIM|")) continue;
     const number = index + 1;
+    if (!line.startsWith("CLAIM|")) {
+      if (/^[`*"'“]*CLAIM\b/.test(line)) problems.push(`line-${number}-malformed`);
+      continue;
+    }
     const parts = line.split("|");
     const [, id = "", verdict = "", location = "", sentence = ""] = parts.map((part) =>
       part.trim(),

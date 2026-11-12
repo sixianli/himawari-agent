@@ -178,6 +178,20 @@ describe("plan claims check: reading the model's answer", () => {
     expect(problems).toEqual(["line-1-malformed", "line-2-malformed", "line-4-duplicate-id 3"]);
   });
 
+  it("[claims] a line that looks like a claim but is not in the format is reported, not skipped", () => {
+    const { claims, problems } = parseClaims(
+      [
+        "CLAIM 1 | 一致 | a.ts:1 | 句 | 码",
+        "`CLAIM|2|一致|a.ts:1|句|码`",
+        "CLAIM：3",
+        claimLine("4", "一致", "a.ts:1", "句", "const a = 1"),
+        "普通文字里提到 CLAIM 这个词不算",
+      ].join("\n"),
+    );
+    expect(claims.map((claim) => claim.id)).toEqual(["4"]);
+    expect(problems).toEqual(["line-1-malformed", "line-2-malformed", "line-3-malformed"]);
+  });
+
   it("[claims] finds a code quote through changed spacing and elided parts, and refuses an invented one", () => {
     const text = "function f() {\n  return   a\n    + b;\n}\n";
     expect(quoteInText("return a + b;", text)).toBe(true);
@@ -499,6 +513,13 @@ describe("plan claims check: the merge gate", () => {
       expect(claimsOnly(f.check())).toEqual(["claims-name-unsupported docs/adr/0301-has space.md"]);
     }));
 
+  it("[claims gate] a file name with a tab or a newline is reported on one clean line", () =>
+    withFixture({ withAdr: false }, (f) => {
+      f.commit({ "docs/adr/0303-a\tb\nc.md": "# 方案\n" }, "adr with control characters");
+      const [problem] = claimsOnly(f.check());
+      expect(problem).toBe("claims-name-unsupported docs/adr/0303-a?b?c.md");
+    }));
+
   it("[claims gate] an ADR with a non-ASCII name can be checked like any other", () => {
     const path = "docs/adr/0302-中文方案.md";
     const text = `# 方案\n\n${RIGHT_SENTENCE}。\n`;
@@ -533,6 +554,9 @@ describe("plan claims check: the merge gate", () => {
     const line = (extra) => `${JSON.stringify({ ...base, ...extra })}\n`;
     expect(parseUsage(line({ at: "2026-11-12T00:00:00.000Z", model: deepseek }), "u").length).toBe(
       1,
+    );
+    expect(() => parseUsage(line({ at: "2026-11-12 00:00", model: deepseek }), "u")).toThrow(
+      "USAGE_LEDGER_INVALID",
     );
     expect(() => parseUsage(line({ at: "t", model: deepseek }), "u")).toThrow(
       "USAGE_LEDGER_INVALID",
