@@ -8,7 +8,7 @@ date: "2026-11-11"
 
 # Himawari 的身体：实施计划
 
-**来源：** [SOURCE: docs/execution/specs/2026-11-11-apple-device-body-design.md]、[SOURCE: docs/adr/0229-native-apple-clients-and-device-api.md]、[SOURCE: docs/adr/0230-perception-records-and-memories-inferred-from-perception.md]
+**来源：** [SOURCE: docs/execution/specs/2026-11-11-apple-device-body-design.md]、[SOURCE: docs/adr/0229-native-apple-clients-and-device-api.md]、[SOURCE: docs/adr/0230-perception-records-and-memories-inferred-from-perception.md]、[SOURCE: docs/adr/0247-apple-clients-are-fully-native-with-a-capability-table.md]
 
 **目标：** 按详细设计，把 iPhone、Apple Watch、Mac 三个客户端和服务器端的设备接口、感知记录、苹果推送、设备工具分批做出来。
 
