@@ -17,6 +17,8 @@ export interface PortableSnapshot {
   readonly runs: readonly Row[];
   readonly changes: readonly Row[];
   readonly basis: readonly Row[];
+  readonly reviews: readonly Row[];
+  readonly reviewChanges: readonly Row[];
   readonly decisions: readonly Row[];
   readonly signals: readonly Row[];
   readonly decisionPayloads: readonly Row[];
@@ -125,6 +127,19 @@ export function readSnapshot(
         WHERE change_id IN (SELECT id FROM memory_consolidation_changes
           WHERE owner_id = @ownerId AND agent_id = @agentId)
         ORDER BY change_id, position`,
+      );
+      const reviews = all(
+        `SELECT id, day, status, attempts, error_code, started_at, finished_at, undone_at
+        FROM memory_conversation_reviews WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY started_at, id`,
+      );
+      const reviewChanges = all(
+        `SELECT review_id, memory_id, action, after_revision, before_superseded_by,
+          before_valid_to, created_at, undone_revision
+        FROM memory_conversation_review_changes WHERE after_revision IS NOT NULL AND review_id IN (
+          SELECT id FROM memory_conversation_reviews
+          WHERE owner_id = @ownerId AND agent_id = @agentId)
+        ORDER BY review_id, created_at, memory_id`,
       );
       const decisions = all(
         `SELECT id, kind, scenario, checked_at, counts, verdict, outcome, reason_code,
@@ -275,6 +290,8 @@ export function readSnapshot(
         runs,
         changes,
         basis,
+        reviews,
+        reviewChanges,
         decisions,
         signals,
         decisionPayloads,

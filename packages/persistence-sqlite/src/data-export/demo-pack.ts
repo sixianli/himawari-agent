@@ -156,6 +156,7 @@ export function buildDemoPack(options: DemoPackOptions): {
   put(DATA_FILES.consolidations, "data", "", 0);
   put(DATA_FILES.decisions, "data", "", 0);
   put(DATA_FILES.rules, "data", "", 0);
+  put(DATA_FILES.conversationReviews, "data", "", 0);
   for (const { path, schema } of SCHEMA_FILES)
     put(path, "schema", `${JSON.stringify(schema, null, 2)}\n`, 0);
   const markdown = renderMemoryMarkdown(memoryLines as unknown as readonly MarkdownMemory[]);
@@ -172,6 +173,8 @@ export function buildDemoPack(options: DemoPackOptions): {
     consolidationChanges: 0,
     decisions: 0,
     decisionSignals: 0,
+    conversationReviews: 0,
+    conversationReviewChanges: 0,
     markdownMemories: markdown.count,
     sealedOriginals: 0,
     sealedEvidenceRows: 0,
