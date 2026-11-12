@@ -87,16 +87,17 @@ export class PushGate {
       const base = Math.floor(Date.parse(input.now) / MINUTE_MS) * MINUTE_MS;
       const limit = Date.parse(input.now) + PUSH_DEFER_CAP_MS;
       let until: string | null = null;
+      const refSet = new Set(first.map(({ id, revision }) => ruleRef(id, revision)));
       for (let at = base + MINUTE_MS; at <= limit; at += MINUTE_MS) {
         const candidate = new Date(at).toISOString();
-        if (hitsAt(candidate).length === 0) {
+        const hits = hitsAt(candidate);
+        if (hits.length === 0) {
           until = candidate;
           break;
         }
+        for (const { id, revision } of hits) refSet.add(ruleRef(id, revision));
       }
-      const refs = [...new Set(first.map(({ id, revision }) => ruleRef(id, revision)))]
-        .sort()
-        .slice(0, 16);
+      const refs = [...refSet].sort().slice(0, 16);
       return Object.freeze({
         action: "defer",
         until: until ?? new Date(limit).toISOString(),

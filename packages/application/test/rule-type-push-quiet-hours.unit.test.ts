@@ -149,5 +149,13 @@ describe("[rule-type:push_quiet_hours]", () => {
       ),
     ).toBe(true);
     expect(unreadablePushRule(row("push_quiet_hours 坏了"))).toBe(true);
+    expect(unreadablePushRule(row({ type: "push_quiet_hour", summary: "夜里", params: {} }))).toBe(
+      true,
+    );
+    expect(
+      unreadablePushRule(
+        row({ type: "mail_must_notify", summary: "mail", params: { phrases: [] } }),
+      ),
+    ).toBe(false);
   });
 });

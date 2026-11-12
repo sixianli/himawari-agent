@@ -425,6 +425,11 @@ export function unreadablePushRule(
 ): boolean {
   if (row.status === "retired" || enforceableOwnerRule(row, registry) !== undefined) return false;
   const text = typeof row.parameters === "string" ? row.parameters : JSON.stringify(row.parameters);
+  const declared =
+    typeof row.parameters === "object" && row.parameters !== null
+      ? (row.parameters as Record<string, unknown>)["type"]
+      : undefined;
+  if (typeof declared === "string" && declared.startsWith("push_")) return true;
   return registry.some(({ id, gate }) => gate === "push_delivery" && (text ?? "").includes(id));
 }
 

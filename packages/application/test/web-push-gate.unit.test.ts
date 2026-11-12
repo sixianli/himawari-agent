@@ -38,6 +38,28 @@ describe("[HR-4] push gate", () => {
     });
   });
 
+  it("names every rule that held the push, including one that starts after the first ends", () => {
+    const late = ownerRuleRecord({
+      ruleId: "owner:late",
+      revision: 1,
+      status: "active",
+      source: "test",
+      parameters: {
+        type: "push_quiet_hours",
+        summary: "凌晨别提醒我",
+        params: { periods: [{ days: ALL_DAYS, start: "02:00", end: "07:00" }] },
+      },
+    });
+    const early = rule([{ days: ALL_DAYS, start: "23:00", end: "02:00" }]);
+    const decision = at("2026-11-11T14:30:00.000Z", "run_result", [early, late]);
+    expect(decision).toEqual({
+      action: "defer",
+      until: "2026-11-11T22:00:00.000Z",
+      capped: false,
+      ruleRefs: ["owner:late@1", "owner:night@2"],
+    });
+  });
+
   it("delivers outside the quiet period and the instant it ends", () => {
     expect(at("2026-11-11T03:00:00.000Z", "run_result")).toEqual({
       action: "deliver",
