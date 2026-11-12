@@ -5,7 +5,14 @@ import { fileURLToPath } from "node:url";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const INVENTORY_PATH = "scripts/platform-assumptions.json";
-export const SCANNED_DIRECTORIES = Object.freeze(["apps", "packages", "scripts", "test", "ci"]);
+export const SCANNED_DIRECTORIES = Object.freeze([
+  "apps",
+  "packages",
+  "scripts",
+  "test",
+  "ci",
+  ".github",
+]);
 const SKIPPED_DIRECTORIES = new Set([
   "node_modules",
   ".git",
@@ -35,10 +42,13 @@ const EXCLUDED_FILES = new Set([
   "test/tooling/platform-assumptions.test.mjs",
 ]);
 export const PLATFORM_ASSUMPTIONS = Object.freeze({
-  lib64: /\/lib64(?![\w-])/g,
+  lib64: /(?:\/|["'])lib64(?![\w-])/g,
   "linux-x64": /linux-x64/g,
-  "arch-x64": /\barch\s*[!=]==?\s*["']x64["']/g,
-  x86_64: /x86_64/g,
+  "arch-x64": /\barch\s*(?:[!=]==?|:)\s*["']x64["']/g,
+  x86_64: /x86_64/gi,
+  amd64: /amd64/gi,
+  "fixed-hostname":
+    /hostname\(\)\s*[!=]==?\s*["'](?!__PKT_)[^"'\n]+["']|[eE]qual\(\s*(?:[\w.]*\.)?(?:get)?hostname\(\)\s*,\s*["'](?!__PKT_)[^"'\n]+["']/g,
   "python-3.12.10-archive": /python-3\.12\.10\.tar\.gz/g,
 });
 
@@ -93,38 +103,64 @@ export function comparePlatformAssumptions(recorded, observed) {
   return problems;
 }
 
-function main() {
-  const observed = scanPlatformAssumptions();
-  const inventory = path.join(repositoryRoot, INVENTORY_PATH);
-  if (process.argv.includes("--write")) {
+function describeProblem(problem) {
+  if (problem.kind === "added")
+    return `PLATFORM_ASSUMPTION_ADDED ${problem.name} ${problem.file} 清单记 ${problem.expected} 处，现在 ${problem.actual} 处：新写死了一处 x86 的目录、平台名或主机名。改成按机器或按目标平台取；确实只属于 x86 的，在 ${INVENTORY_PATH} 里改这一行的数并在 PR 里说明原因`;
+  if (problem.kind === "stale")
+    return `PLATFORM_ASSUMPTION_STALE ${problem.name} ${problem.file} 清单记 ${problem.expected} 处，现在 ${problem.actual} 处：去掉了写死的地方，把 ${INVENTORY_PATH} 里这一行改成现在的数（0 就删掉这一行）`;
+  return `PLATFORM_ASSUMPTION_UNKNOWN ${problem.name} 清单里有检查不认识的类别`;
+}
+
+function readInventory(inventory) {
+  let text;
+  try {
+    text = readFileSync(inventory, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  }
+  return JSON.parse(text);
+}
+
+export function runPlatformAssumptionsCheck({
+  root = repositoryRoot,
+  write = false,
+  log = console.log,
+  error = console.error,
+} = {}) {
+  const observed = scanPlatformAssumptions(root);
+  const inventory = path.join(root, INVENTORY_PATH);
+  let recorded;
+  try {
+    recorded = readInventory(inventory);
+  } catch {
+    error(`PLATFORM_ASSUMPTIONS_INVENTORY_INVALID ${INVENTORY_PATH} 不是合法的 JSON`);
+    if (!write) return 1;
+  }
+  if (write) {
+    for (const problem of comparePlatformAssumptions(recorded ?? {}, observed))
+      log(
+        `PLATFORM_ASSUMPTIONS_CHANGED ${problem.kind} ${problem.name} ${problem.file} ${problem.expected} -> ${problem.actual}`,
+      );
     writeFileSync(inventory, `${JSON.stringify(observed, null, 2)}\n`);
-    console.log(`PLATFORM_ASSUMPTIONS written ${INVENTORY_PATH}`);
+    log(`PLATFORM_ASSUMPTIONS written ${INVENTORY_PATH}`);
     return 0;
   }
-  const recorded = JSON.parse(readFileSync(inventory, "utf8"));
-  const problems = comparePlatformAssumptions(recorded, observed);
-  for (const problem of problems) {
-    if (problem.kind === "added")
-      console.error(
-        `PLATFORM_ASSUMPTION_ADDED ${problem.name} ${problem.file} 清单记 ${problem.expected} 处，现在 ${problem.actual} 处：新写死了一处 x86 的目录或平台名。改成按机器或按目标平台取；确实只属于 x86 的，在 ${INVENTORY_PATH} 里改这一行的数并在 PR 里说明原因`,
-      );
-    else if (problem.kind === "stale")
-      console.error(
-        `PLATFORM_ASSUMPTION_STALE ${problem.name} ${problem.file} 清单记 ${problem.expected} 处，现在 ${problem.actual} 处：去掉了写死的地方，把 ${INVENTORY_PATH} 里这一行改成现在的数（0 就删掉这一行）`,
-      );
-    else console.error(`PLATFORM_ASSUMPTION_UNKNOWN ${problem.name} 清单里有检查不认识的类别`);
+  if (recorded === undefined) {
+    error(`PLATFORM_ASSUMPTIONS_INVENTORY_MISSING ${INVENTORY_PATH}`);
+    return 1;
   }
+  const problems = comparePlatformAssumptions(recorded, observed);
+  for (const problem of problems) error(describeProblem(problem));
   if (problems.length > 0) return 1;
   const total = Object.values(observed).reduce(
     (sum, files) => sum + Object.values(files).reduce((inner, count) => inner + count, 0),
     0,
   );
-  console.log(
-    `PLATFORM_ASSUMPTIONS passed kinds=${Object.keys(observed).length} occurrences=${total}`,
-  );
+  log(`PLATFORM_ASSUMPTIONS passed kinds=${Object.keys(observed).length} occurrences=${total}`);
   return 0;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  process.exitCode = main();
+  process.exitCode = runPlatformAssumptionsCheck({ write: process.argv.includes("--write") });
 }
