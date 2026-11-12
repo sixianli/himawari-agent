@@ -731,9 +731,16 @@ describe(
       });
       expect(readFileSync(stepSummary, "utf8")).toContain("### ci/required：通过");
       process.stdout.write.mockClear();
-      vi.stubEnv("CI_NEEDS", JSON.stringify({ ...f.needs, coverage: { result: "cancelled" } }));
+      const leaked = `ghp_${"C".repeat(36)}`;
+      vi.stubEnv(
+        "CI_NEEDS",
+        JSON.stringify({ ...f.needs, coverage: { result: `cancelled ${leaked}` } }),
+      );
       await entry("required.mjs", ["--reports", f.reports, "--output", ".ci-output/cancelled"]);
       expect(process.exitCode).toBe(1);
+      const printedFailure = process.stdout.write.mock.calls.map(([text]) => String(text)).join("");
+      expect(JSON.stringify(decodeGate(printedFailure))).not.toContain(leaked);
+      expect(readFileSync(stepSummary, "utf8")).not.toContain(leaked);
       expect(readJson(path.join(state.root, ".ci-output/cancelled/summary.json")).status).toBe(
         "failed",
       );

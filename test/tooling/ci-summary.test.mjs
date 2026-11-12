@@ -83,6 +83,14 @@ describe("诊断写进作业摘要", () => {
     expect(text).not.toContain("KEYBODY");
     expect(text).toContain("`key.log`：二进制文件");
   });
+  it("遮盖规则不认的私钥标签也让整份文件不显示", () => {
+    const marker = ["-----", "BEGIN", " SSH2 ENCRYPTED", " PRIVATE KEY-----"].join("");
+    const text = renderSummary({
+      title: "t",
+      from: folder({ "ssh2.log": `${marker}\nBODYLINE\n` }),
+    });
+    expect(text).not.toContain("BODYLINE");
+  });
   it("截断点落在多字节字符中间时从下一行开始显示", () => {
     const big = `${"字".repeat(READ_LIMIT_BYTES / 3 + 1)}\n尾行内容\n`;
     const text = renderSummary({ title: "t", from: folder({ "wide.log": big }) });

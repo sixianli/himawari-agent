@@ -49,7 +49,12 @@ function readTail(file) {
 }
 
 function textTail(file) {
-  let bytes = readTail(file);
+  let bytes;
+  try {
+    bytes = readTail(file);
+  } catch {
+    return null;
+  }
   if (bytes === null || bytes.includes(0)) return null;
   if (file.size > bytes.length) {
     const newline = bytes.indexOf(0x0a);
@@ -63,7 +68,7 @@ function textTail(file) {
     return null;
   }
   const redacted = redactText(text);
-  if (/-----(?:BEGIN|END) [A-Z ]*PRIVATE KEY-----/u.test(redacted)) return null;
+  if (/-----(?:BEGIN|END) [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----/u.test(redacted)) return null;
   const lines = redacted
     .replace(/\r\n?/gu, "\n")
     .replace(/\n$/u, "")
