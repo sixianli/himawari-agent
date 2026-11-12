@@ -9,6 +9,7 @@ import {
   type PortableFiles,
   proposalTextDigest,
   SEALED_FILE,
+  sealJson,
   sha256Hex,
   unsealJson,
 } from "@himawari-agent/persistence-sqlite";
@@ -507,6 +508,12 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
       status: "rejected",
       batchId: "batch-1",
     });
+    await seedProposal(source, {
+      id: "proposal-rejected-kept",
+      text: "主人不想记下的事",
+      status: "rejected",
+      batchId: "batch-1",
+    });
     const { files } = await exportOf(source);
     const line = (from: PortableFiles) =>
       JSON.parse(
@@ -526,11 +533,11 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
     expect(
       target.database
         .prepare(
-          "SELECT batch_id FROM external_memory_proposals WHERE id = 'proposal-rejected-old'",
+          "SELECT coalesce(batch_id, '-') FROM external_memory_proposals WHERE id LIKE 'proposal-rejected-%' ORDER BY id",
         )
         .pluck()
-        .get(),
-    ).toBeNull();
+        .all(),
+    ).toEqual(["batch-1", "-"]);
   });
 
   it("imports a replaced proposal and a waiting one that share the same text digest", async () => {
@@ -748,6 +755,21 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
     expect(
       target.database.prepare("SELECT COUNT(*) FROM external_memory_proposals").pluck().get(),
     ).toBe(0);
+  });
+
+  it("[reverse] refuses a withheld proposal whose sealed digest does not match its text", async () => {
+    const { files } = await exportOf(await seeded());
+    const sealed = (await unsealJson(PASSPHRASE, files.get(SEALED_FILE) ?? new Uint8Array())) as {
+      originals: Record<string, string>;
+    };
+    sealed.originals["externalProposal/proposal-secret/textSha256"] = "0".repeat(64);
+    const next: PortableFiles = new Map(files).set(SEALED_FILE, await sealJson(PASSPHRASE, sealed));
+    const failure = await importInto(
+      await side("sealed"),
+      rehash(next, (t) => t),
+      PASSPHRASE,
+    ).catch((e: unknown) => e);
+    expect((failure as DataExportError).code).toBe(DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH);
   });
 
   it("[reverse] refuses to import into a database that already holds proposals", async () => {
