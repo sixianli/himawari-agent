@@ -3904,10 +3904,10 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     expect(tools).toHaveLength(6);
     expect(tools.map(({ activity, activityIcon }) => [activity, activityIcon])).toEqual([
       ["查东京 明天的 天气", "cloud"],
-      ["查资料", "tools"],
+      ["查资料", "puzzle"],
       ["搜索网页", "cloud"],
       ["查东京 明天的 天气", "cloud"],
-      ["查资料", "tools"],
+      ["查资料", "puzzle"],
       ["搜索网页", "cloud"],
     ]);
     for (const tool of tools) {

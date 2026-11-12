@@ -50,9 +50,9 @@ date: "2026-11-12"
 ## 决定
 
 1. **参数。**`toolDefinition()` 给每个参数结构是对象的工具加两个可选的字符串参数：`activity`（一句话说这一步在做什么）和 `activityIcon`（图标名）。工具自己已经有同名参数的，不加，也不删它的参数（它的说明文字和这里的逐字相同时除外，那时按加过处理，执行前删掉）。两项都不进 `required`。说明文字在 `packages/prompt-catalog/src/activity.ts`。只因执行句柄出现、不冻结的工具，只在这一轮实际用的冻结工具（对话冻结时存下的那份）带这两个参数时才带：它们不进冻结的系统提示，系统提示里有没有图标表只由冻结的工具决定。
-2. **图标表在系统提示里只列一次。**按[详细设计](https://github.com/sixianli/himawari-agent/blob/f7cbbf01ce61df6c3927e99c0e8407bc0a59fbe0/docs/execution/specs/2026-11-11-apple-device-body-design.md#process-row-icons)，40 个图标里“结果”那 4 个（`hand-stop`、`alert-circle`、`player-stop`、`check`）是服务器知道的状态，不给模型挑；其余 36 个连同每个名字的意思写成系统提示里的“过程图标”一节，只要有一个工具带这两个参数就加上。参数说明里只写“从系统提示‘过程图标’一节挑”，不在每个工具里重复列 36 个名字。参数类型是字符串，不用枚举：名字不在表里时不让工具调用失败，由服务器换成 `tools`。
+2. **图标表在系统提示里只列一次。**按[详细设计](https://github.com/sixianli/himawari-agent/blob/f7cbbf01ce61df6c3927e99c0e8407bc0a59fbe0/docs/execution/specs/2026-11-11-apple-device-body-design.md#process-row-icons)，40 个图标里“结果”那 4 个（`hand-stop`、`alert-circle`、`player-stop`、`check`）是服务器知道的状态，不给模型挑；其余 36 个（Andy 2026-11-12 下午改了三个名字：待办 `checklist` 改 `clipboard-list`，别的工具 `tools` 改 `puzzle`，健康数据 `heart-rate-monitor` 改 `heartbeat`，经设计线程转来）连同每个名字的意思写成系统提示里的“过程图标”一节，只要有一个工具带这两个参数就加上。参数说明里只写“从系统提示‘过程图标’一节挑”，不在每个工具里重复列 36 个名字。参数类型是字符串，不用枚举：名字不在表里时不让工具调用失败，由服务器换成 `puzzle`（“别的工具”）。
 3. **执行前取走。**在已有的隐藏扩展 `himawari-tool-outcomes` 的 `tool_call` 钩子里，对加过这两个参数的工具，从 `event.input` 删掉它们（前提 2）。所以权限判断（`preflight`）、审批、工具本身和“工具循环停止”的判断看到的都是去掉后的参数。这是 Pi 官方写法，不新增偏离。
-4. **随过程记录发出。**`ThreadExecutionProjection` 生成 `kind` 为 `tool` 的过程记录时，从模型的参数里取出这两项：`activity` 把换行、控制字符和双向控制符换成空格，连续空白并成一个，去掉首尾空白，最多 80 个字符（参数说明里请模型写 30 个字以内，80 是服务器的硬上限）；`activityIcon` 在 36 个名字之内就原样给，否则给 `tools`。记录的 `input` 里不再有这两项。网关契约 `threadExecutionRecordSchema` 加这两个字段。网页按 `itemId` 合并同一步的多条记录时，空值不覆盖已有的值；执行结束的那条记录两个字段为空字符串。
+4. **随过程记录发出。**`ThreadExecutionProjection` 生成 `kind` 为 `tool` 的过程记录时，从模型的参数里取出这两项：`activity` 把换行、控制字符和双向控制符换成空格，连续空白并成一个，去掉首尾空白，最多 80 个字符（参数说明里请模型写 30 个字以内，80 是服务器的硬上限）；`activityIcon` 在 36 个名字之内就原样给，否则给 `puzzle`。记录的 `input` 里不再有这两项。网关契约 `threadExecutionRecordSchema` 加这两个字段。网页按 `itemId` 合并同一步的多条记录时，空值不覆盖已有的值；执行结束的那条记录两个字段为空字符串。
 5. **退回。**模型没给 `activity` 时，服务器按这个对话的回答语言（`thread.answerLocale`）用模板补一句，例如“搜索网页”。模板和“工具名对到哪一类”的表放在 `packages/gateway-contracts/src/process-step.ts`，三种语言一份，手机和服务器共用，手机不再看到 `web_search` 这类工具名。网页的过程区仍从自己的 i18n 文字表取同样的句子，`apps/control-center/test/step-summary.unit.test.ts` 的 `[ICON-3]` 锁住网页那几条和共享表逐字相同；网页按工具名分类也改用共享表的 `processStepKind`。
 
 [返回阅读导航](#contents)
@@ -90,7 +90,7 @@ date: "2026-11-12"
 - **退回的句子在读取时生成。**过程记录每次读取时按这个对话当时的回答语言补模板句子，所以改了回答语言之后，旧步骤里退回的那句也跟着换语言；模型自己写的句子不变。这只影响显示，不影响发给模型的内容。
 - **服务器按参数名取这两项。**生成过程记录时不知道工具的参数结构，所以工具自己若有叫 `activity` 或 `activityIcon` 的参数，它的值也会被当成过程行的句子和图标，并从记录的 `input` 里拿掉；工具执行拿到的参数不受影响。目前生产里没有这样的工具。
 - **网页暂时不显示模型写的那句话。**网页的过程区仍按界面语言显示模板句子；要不要改用模型那句话，按详细设计“网页的过程区可以用同一句话”另行决定，改了要做真实网页上的正反两种验收。注意模板句子在服务器那边按回答语言，在网页上按界面语言，两者可能不同。
-- **测试。**`packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts` 的 `[ICON-1]` 用真实的 Pi 1.5.0 会话和假模型锁住：工具定义带这两个参数、系统提示只出现一次图标表、工具执行和权限判断拿到的参数里没有它们、工具自己的同名参数原样保留、过程事件和下一次请求的历史里仍有它们，并锁住没有冻结工具、或者沿用的冻结工具（例如升级前冻结的旧版）不带这两个参数时，执行句柄带来的工具也不带、系统提示里没有图标表，沿用的冻结工具带参数时句柄工具也带；还锁住模型每次换一句 `activity` 时，同样的调用仍会被工具循环停止拦下（Pi 1.5.0 的 `tool_call` 和 `tool_result` 钩子拿的是同一个参数对象）。`test/integration/thread-run-lifecycle.test.ts` 的 `[ICON-2]` 用真实 SQLite 锁住过程记录的两个字段、句子里的换行和控制字符被换掉、退回 `tools`、`input` 里不再有它们，并用网关契约逐条解析。
+- **测试。**`packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts` 的 `[ICON-1]` 用真实的 Pi 1.5.0 会话和假模型锁住：工具定义带这两个参数、系统提示只出现一次图标表、工具执行和权限判断拿到的参数里没有它们、工具自己的同名参数原样保留、过程事件和下一次请求的历史里仍有它们，并锁住没有冻结工具、或者沿用的冻结工具（例如升级前冻结的旧版）不带这两个参数时，执行句柄带来的工具也不带、系统提示里没有图标表，沿用的冻结工具带参数时句柄工具也带；还锁住模型每次换一句 `activity` 时，同样的调用仍会被工具循环停止拦下（Pi 1.5.0 的 `tool_call` 和 `tool_result` 钩子拿的是同一个参数对象）。`test/integration/thread-run-lifecycle.test.ts` 的 `[ICON-2]` 用真实 SQLite 锁住过程记录的两个字段、句子里的换行和控制字符被换掉、退回 `puzzle`、`input` 里不再有它们，并用网关契约逐条解析。
 - **请求字节的对照文件更新了。**`packages/runtime-pi/test/fixtures/d4-golden-requests.json` 的两条请求体换成带新参数和图标表的版本，其他字段不变。
 
 [返回阅读导航](#contents)

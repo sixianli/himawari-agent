@@ -12,7 +12,7 @@ export const PROCESS_ACTIVITY_ICONS = Object.freeze([
   "mail",
   "message-2",
   "phone",
-  "checklist",
+  "clipboard-list",
   "train",
   "car",
   "walk",
@@ -30,18 +30,18 @@ export const PROCESS_ACTIVITY_ICONS = Object.freeze([
   "credit-card",
   "download",
   "users",
-  "tools",
+  "puzzle",
   "ear",
   "eye",
   "current-location",
-  "heart-rate-monitor",
+  "heartbeat",
   "device-mobile",
   "home-bolt",
 ] as const);
 
 export type ProcessActivityIcon = (typeof PROCESS_ACTIVITY_ICONS)[number];
 
-export const PROCESS_ACTIVITY_FALLBACK_ICON: ProcessActivityIcon = "tools";
+export const PROCESS_ACTIVITY_FALLBACK_ICON: ProcessActivityIcon = "puzzle";
 export const PROCESS_ACTIVITY_MAX_LENGTH = 80;
 export const TOOL_ACTIVITY_PARAMETER_NAME = "activity";
 export const TOOL_ACTIVITY_ICON_PARAMETER_NAME = "activityIcon";
@@ -61,7 +61,7 @@ export const TOOL_ACTIVITY_ICON_PARAMETER = fixedPrompt({
   usedBy: ["packages/runtime-pi/src/tool-activity.ts"],
   layer: "tools",
   output: "free-text",
-  text: "可选。和 activity 一起给，从系统提示“过程图标”一节的名字里挑最贴近这一步的一个，原样照抄；都不贴近时用 tools。",
+  text: "可选。和 activity 一起给，从系统提示“过程图标”一节的名字里挑最贴近这一步的一个，原样照抄；都不贴近时用 puzzle。",
 });
 
 export const CHAT_PROCESS_ICONS_SECTION = fixedPrompt({
@@ -73,10 +73,10 @@ export const CHAT_PROCESS_ICONS_SECTION = fixedPrompt({
   text: [
     "过程图标：调用任何工具时，都可以顺带给 activity（一句话说这一步在做什么）和 activityIcon（下面的名字之一），主人会在过程行上看到它们。",
     "- 想和记：bulb 想办法，affiliate 找关联，pencil-plus 记下新的事，list-check 核对清单，history 回看以前，stack-2 整理一批东西",
-    "- 日程和消息：calendar 日程，bell 提醒，mail 邮件，message-2 消息，phone 电话，checklist 待办",
+    "- 日程和消息：calendar 日程，bell 提醒，mail 邮件，message-2 消息，phone 电话，clipboard-list 待办",
     "- 出门：train 电车，car 开车或打车，walk 步行，plane 航班，map-pin 地点，cloud 天气",
     "- 上网和文件：world-search 搜索网页，world 打开网页，file-text 读文件，file-pencil 改文件，table 表格，photo 图片",
-    "- 动手做：terminal-2 运行命令，calculator 计算，credit-card 付款或账单，download 下载，users 联系人或别人，tools 其他",
-    "- 设备和感知：ear 听，eye 看，current-location 当前位置，heart-rate-monitor 健康数据，device-mobile 手机，home-bolt 家里的设备",
+    "- 动手做：terminal-2 运行命令，calculator 计算，credit-card 付款或账单，download 下载，users 联系人或别人，puzzle 其他",
+    "- 设备和感知：ear 听，eye 看，current-location 当前位置，heartbeat 健康数据，device-mobile 手机，home-bolt 家里的设备",
   ].join("\n"),
 });
