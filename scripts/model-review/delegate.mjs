@@ -54,7 +54,7 @@ export function validateTask(task) {
     task.replyTo === undefined || SESSION_PATTERN.test(task.replyTo),
     "DELEGATE_INVALID reply-to",
   );
-  requireValue(MODES.includes(task.mode), "DELEGATE_INVALID mode");
+  requireValue(MODES.includes(task.mode) && task.mode !== "plan-claims", "DELEGATE_INVALID mode");
   requireValue(COMMIT_PATTERN.test(task.head ?? ""), "DELEGATE_INVALID head");
   requireValue(task.base === undefined || COMMIT_PATTERN.test(task.base), "DELEGATE_INVALID base");
   requireValue(
