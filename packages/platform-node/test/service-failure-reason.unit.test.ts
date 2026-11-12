@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   failureReason,
+  portErrorSite,
   SERVICE_RUNTIME_ERROR_CODES,
   stableErrorCode,
 } from "../src/service-runtime.js";
@@ -24,5 +25,27 @@ describe("[I-75] a startup failure says why", () => {
 
   it("names only the type when the thrown value is not an error", () => {
     expect(failureReason("secret text")).toBe("string");
+  });
+});
+
+describe("[I-94] a port conflict says which check refused", () => {
+  it("returns the refusing check's message for a PORT_ error", () => {
+    const error = Object.assign(new Error("Budget account classification is immutable"), {
+      code: "PORT_CONFLICT",
+    });
+    expect(portErrorSite(error)).toBe("Budget account classification is immutable");
+  });
+
+  it("is cut to 200 characters", () => {
+    const error = Object.assign(new Error("x".repeat(500)), { code: "PORT_CONFLICT" });
+    expect(portErrorSite(error)?.length).toBe(200);
+  });
+
+  it("adds nothing for errors that are not port errors", () => {
+    expect(portErrorSite(new Error("MEMORY_CAPTURE_FAILED"))).toBeUndefined();
+    expect(portErrorSite(Object.assign(new Error("secret"), { code: "AI_GATEWAY_X" }))).toBe(
+      undefined,
+    );
+    expect(portErrorSite("PORT_CONFLICT")).toBeUndefined();
   });
 });
