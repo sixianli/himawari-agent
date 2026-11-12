@@ -211,7 +211,7 @@ export function executionItems(records: readonly ThreadExecutionRecord[]) {
         (record.kind === "tool" && record.phase === "updated" ? record.occurredAt : null),
       input: record.input || previous?.input || "",
       activity: record.activity || previous?.activity || "",
-      activityIcon: record.activity ? record.activityIcon : previous?.activityIcon || "",
+      activityIcon: record.activityIcon || previous?.activityIcon || "",
       text: record.text || previous?.text || "",
       startedAt:
         previous?.startedAt ??

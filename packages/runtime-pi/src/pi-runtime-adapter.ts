@@ -1382,7 +1382,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         hasHistory: projection.nativeHistory !== undefined || projection.history.length > 0,
       });
       const handleToolsCarryActivity =
-        !bundle || frozenDefinitions.some(({ parameters }) => carriesToolActivity(parameters));
+        !bundle ||
+        (JSON.parse(bundle.tools) as { readonly parameters: unknown }[]).some(({ parameters }) =>
+          carriesToolActivity(parameters),
+        );
       const runToolDefinition = (descriptor: RuntimeToolDescriptor) =>
         this.toolDefinition(descriptor, handleToolsCarryActivity || !isHandleTool(descriptor));
       const systemPrompt =

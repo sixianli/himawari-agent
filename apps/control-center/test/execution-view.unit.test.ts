@@ -577,4 +577,13 @@ describe("[ICON-2] activity on a merged tool step", () => {
     ]);
     expect(item).toMatchObject({ activity: "查天气", activityIcon: "cloud" });
   });
+
+  it("keeps the earlier icon when a later record has a sentence but no icon", () => {
+    const tool = { kind: "tool" as const, name: "web_search" };
+    const [item] = executionItems([
+      record(1, 1, { ...tool, phase: "updated", activity: "查天气", activityIcon: "cloud" }),
+      record(2, 2, { ...tool, phase: "started", activity: "查天气", activityIcon: "" }),
+    ]);
+    expect(item).toMatchObject({ activity: "查天气", activityIcon: "cloud" });
+  });
 });

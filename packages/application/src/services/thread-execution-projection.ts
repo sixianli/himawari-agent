@@ -56,7 +56,7 @@ function text(value: unknown): string {
 }
 function oneLine(value: string): string {
   return value
-    .replace(/[\p{Cc}\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/gu, " ")
+    .replace(/[\p{Cc}\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/gu, " ")
     .replace(/\s+/gu, " ")
     .trim();
 }
