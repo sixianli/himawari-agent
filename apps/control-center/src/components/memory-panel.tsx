@@ -26,6 +26,7 @@ export function openNotificationSettings() {
 export function TextEditor({
   initial,
   placeholder,
+  maxLength = 500,
   busy,
   message,
   onSave,
@@ -33,6 +34,7 @@ export function TextEditor({
 }: {
   initial: string;
   placeholder?: string;
+  maxLength?: number;
   busy: boolean;
   message: Message;
   onSave: (text: string) => void;
@@ -45,7 +47,7 @@ export function TextEditor({
     <div className="memory-editor">
       <textarea
         aria-label={message("memory.editAction")}
-        maxLength={500}
+        maxLength={maxLength}
         placeholder={placeholder}
         value={text}
         onChange={(event) => setText(event.currentTarget.value)}

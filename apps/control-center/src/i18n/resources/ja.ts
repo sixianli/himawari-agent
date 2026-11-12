@@ -762,7 +762,12 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {すべて} new {新規} drop {覚えない・削除} tidy {記憶の整理} correct {訂正} other {インポート}}",
   "memory.page.event":
-    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} hold {食い違いを発見} other {推測}}",
+    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} hold {食い違いを発見} review {会話の振り返り} other {推測}}",
+  "memory.page.reviewed":
+    "会話を振り返りました：新規 {created} 件、置き換え {superseded} 件、確認 {confirmed} 件",
+  "memory.page.reviewItem":
+    "{action, select, created {新規} superseded {もう当てはまらない} other {確認済み}}：{text}",
+  "memory.page.reviewQuote": "（発言：{quote}）",
   "memory.page.imported":
     "{source, select, codex {Codex} assistant {他の AI} other {Himawari のエクスポート}}から {count} 件インポート",
   "memory.page.goConfirm": "確認する",
@@ -894,6 +899,24 @@ export const messages = {
   "memory.page.changeNo": "{n} 回目の変更",
   "memory.page.seeAllChanges": "この記憶の変更をすべて見る",
   "memory.page.confirmTitle": "確認が必要 · {count} 件",
+  "memory.external.title": "他の agent から · 確認待ち {count} 件",
+  "memory.external.note":
+    "他の agent が保存を提案した記憶です。あなたが保存するまで正式な記憶にはならず、Himawari も他の agent も読めません。送り元の名前は相手の自己申告で、確認していません。",
+  "memory.external.partial": "全 {total} 件、最初の {shown} 件を表示",
+  "memory.external.result": "この回：保存 {kept} 件、保存しない {rejected} 件",
+  "memory.external.resultLeft":
+    "この回：保存 {kept} 件、保存しない {rejected} 件。{left} 件は処理できませんでした。別の場所で処理済みか、下の確認待ちに残っています",
+  "memory.external.all": "すべて選択",
+  "memory.external.sensitive": "機微な記憶として保存",
+  "memory.external.from": "自己申告：{client} · {time}",
+  "memory.external.edit": "直してから保存",
+  "memory.external.keep": "選択したものを保存（{count}）",
+  "memory.external.reject": "選択したものを保存しない（{count}）",
+  "memory.external.batches": "最近処理した回",
+  "memory.external.batch": "{time} · 保存 {kept} 件、保存しない {rejected} 件",
+  "memory.external.undo": "この回を取り消す",
+  "memory.external.reviewHint": "他の agent から届いた記憶 {count} 件が確認を待っています。",
+  "memory.external.go": "確認する",
   "rules.title": "常設ルール · {count} 件",
   "rules.note":
     "これらのルールはモデルの記憶ではなく、プログラムが必ず守ります。取り消すと次のメール確認から適用されません。",

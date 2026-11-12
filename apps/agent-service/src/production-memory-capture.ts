@@ -660,6 +660,7 @@ export function createProductionAutomaticMemory(
 export interface MemoryCaptureCall {
   readonly invocationId: string;
   readonly retryToolCall: boolean;
+  readonly maxOutputTokens?: number;
 }
 
 export interface ProductionMemoryCaptureOptions {

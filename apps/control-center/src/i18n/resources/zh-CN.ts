@@ -711,7 +711,12 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {全部变化} new {新记住} drop {不记和删除} tidy {整理记忆} correct {更正} other {导入}}",
   "memory.page.event":
-    "{e, select, new {新记住} dropped {已不记} deleted {已删除} correct {更正} import {导入} merge {合并重复} supersede {取代旧说法} archive {归档} hold {发现说法不一} other {新推测}}",
+    "{e, select, new {新记住} dropped {已不记} deleted {已删除} correct {更正} import {导入} merge {合并重复} supersede {取代旧说法} archive {归档} hold {发现说法不一} review {回看对话} other {新推测}}",
+  "memory.page.reviewed":
+    "回看了一段对话：新记住 {created} 条，取代旧说法 {superseded} 条，确认 {confirmed} 条",
+  "memory.page.reviewItem":
+    "{action, select, created {新记住} superseded {不再成立} other {已确认}}：{text}",
+  "memory.page.reviewQuote": "（原话：{quote}）",
   "memory.page.imported":
     "从 {source, select, codex {Codex} assistant {其他 AI} other {Himawari 导出文件}} 导入 {count} 条",
   "memory.page.goConfirm": "去确认",
@@ -839,6 +844,24 @@ export const messages = {
   "memory.page.changeNo": "第 {n} 次变化",
   "memory.page.seeAllChanges": "看这条记忆的全部变化",
   "memory.page.confirmTitle": "需要你确认 · {count} 条",
+  "memory.external.title": "来自其他 agent · {count} 条待确认",
+  "memory.external.note":
+    "其他 agent 提议存下的记忆，你保存后才会成为正式记忆；保存之前 Himawari 和其他 agent 都读不到。来源名是对方自己报的，没有核实。",
+  "memory.external.partial": "共 {total} 条，显示前 {shown} 条",
+  "memory.external.result": "这一批保存了 {kept} 条，不要 {rejected} 条",
+  "memory.external.resultLeft":
+    "这一批保存了 {kept} 条，不要 {rejected} 条；另有 {left} 条没处理成，可能已经在别处处理过，或者还在下面的待确认里",
+  "memory.external.all": "全选",
+  "memory.external.sensitive": "会按敏感记忆保存",
+  "memory.external.from": "自称：{client} · {time}",
+  "memory.external.edit": "改一下再保存",
+  "memory.external.keep": "保存所选（{count}）",
+  "memory.external.reject": "不要所选（{count}）",
+  "memory.external.batches": "最近处理的几批",
+  "memory.external.batch": "{time} · 保存 {kept} 条，不要 {rejected} 条",
+  "memory.external.undo": "撤销这一批",
+  "memory.external.reviewHint": "其他 agent 送来的 {count} 条记忆等你确认。",
+  "memory.external.go": "去确认",
   "rules.title": "长期规则 · {count} 条",
   "rules.note": "这些规则由程序强制执行，不靠模型记住。撤销后下一次检查邮件时就不再执行。",
   "rules.type":

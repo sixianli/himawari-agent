@@ -593,6 +593,25 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "memory.conversation-review": {
+    "sha256": "9b9fc6c0068093938dd12a124c53306fdba877716daa200de1ea94075a5ed530",
+    "changedIn": "ADR 0231",
+    "reason": "初次登记：每天回看一段已经结束的对话，补记跨几条消息才完整的信息，找出被推翻的旧记忆；字段规则和每轮抽取共用同一份文字",
+    "emphasis": {
+      "kind": "hard-condition",
+      "phrases": ["supersede 和 unchanged 必须填 existingMemoryId", "每条都必须填"],
+      "evidence": [
+        "apps/agent-service/src/production-memory-capture.ts#(requestedDecision !== \"create\" && existing === null)",
+        "apps/agent-service/src/production-memory-capture.ts#const evidenceRejected"
+      ],
+      "reason": "回看把每条候选交给每轮抽取同一个解析函数：非 create 的候选没有有效的 existingMemoryId 整条作废；quote 对不上 messageId 那条主人消息的原话会被拒"
+    }
+  },
+  "memory.conversation-review.day": {
+    "sha256": "0299f9a2367cdb92f9eb7292fd9f87ebf498863f59c74a86eb9f3190736da0f5",
+    "changedIn": "ADR 0231",
+    "reason": "初次登记：回看提示词最后一行带今天的日期，每天会变，所以放在最后"
+  },
   "memory.date.ongoing": {
     "sha256": "2e254e51b948538ef3e6edf6362cafe1b73eb1b2ed73e9f6dc9ca31a4fd72ac1",
     "changedIn": "ADR 0199",

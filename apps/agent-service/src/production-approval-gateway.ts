@@ -45,6 +45,10 @@ import {
   type ProductionSensitiveInterceptionsControl,
 } from "./production-sensitive-interceptions-control.js";
 import {
+  PRODUCTION_SERVER_STATUS_OPERATIONS,
+  type ProductionServerStatusControl,
+} from "./production-server-status-control.js";
+import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
   type ProductionWebPushControl,
 } from "./production-web-push-control.js";
@@ -76,6 +80,7 @@ export function createProductionApprovalGateway(options: {
   readonly observationControl?: Pick<ProductionObservation, "query" | "execute">;
   readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
+  readonly serverStatusControl?: ProductionServerStatusControl;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -118,7 +123,9 @@ export function createProductionApprovalGateway(options: {
                     : query.type.startsWith("sensitive.interceptions.") &&
                         options.sensitiveInterceptionsControl
                       ? options.sensitiveInterceptionsControl.query(query)
-                      : searchAuthorization.query(query),
+                      : query.type.startsWith("server.status.") && options.serverStatusControl
+                        ? options.serverStatusControl.query(query)
+                        : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -259,6 +266,7 @@ export function createProductionApprovalGateway(options: {
       ...(options.sensitiveInterceptionsControl
         ? PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS
         : []),
+      ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
     ],
     reads,
     controlPlane,

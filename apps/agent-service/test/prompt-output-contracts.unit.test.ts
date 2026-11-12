@@ -4,6 +4,7 @@ import type { PromptEntry } from "@himawari-agent/prompt-catalog";
 import * as catalog from "@himawari-agent/prompt-catalog";
 import { describe, expect, it } from "vitest";
 import * as capture from "../src/production-memory-capture.js";
+import * as review from "../src/production-memory-conversation-review.js";
 
 const message = "我下周三要去大阪出差，记得提醒我前一天订酒店。";
 const memory = {
@@ -54,6 +55,7 @@ const isEntry = (value: unknown): value is PromptEntry =>
 const PARSERS: Readonly<Record<string, unknown>> = {
   parseMemoryCandidates: capture.parseMemoryCandidates,
   parseSupportVerdict: capture.parseSupportVerdict,
+  parseConversationReview: review.parseConversationReview,
   parseJudgements: application.parseJudgements,
   parseMailReferences: application.parseMailReferences,
   parseAutomaticReviewDecision: application.parseAutomaticReviewDecision,
@@ -93,6 +95,7 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         "mail.reference-extraction",
         "memory.capture",
         "memory.confirmation-judge",
+        "memory.conversation-review",
         "review.prereview",
         "review.typesafe-questions",
       ].sort(),
