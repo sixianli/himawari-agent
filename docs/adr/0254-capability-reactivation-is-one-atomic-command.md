@@ -117,7 +117,7 @@ date: "2026-11-12"
 
 ## 已知问题
 
-- `CapabilityLifecycleService` 的 `qualify` 要求资格记录的六项管控全部为真（`Object.values(qualification.enforcement).some((enforced) => !enforced)`），而部署快照加载器要求带沙箱证据的记录 `resourceCeilings` 为假（`checkedEnforcement.resourceCeilings !== false`）。两处要求相反：加载器放行的带沙箱证据的资格记录，`resourceCeilings` 一定为假，交给 `qualify` 的这项判断就一定不过。重新启用不走 `qualify`，不受影响；受影响的是安装批准后的激活、更新激活和退回。本 PR 不修，已报给协调者另开任务。
+- 已解决（PR 439）：写这份 ADR 时，`CapabilityLifecycleService` 的 `qualify` 要求资格记录的六项管控全部为真，而部署快照加载器要求带沙箱证据的记录 `resourceCeilings` 为假，两处相反，加载器放行的记录过不了 `qualify`。现在两处共用 `packages/execution-contracts/src/sandbox-qualification-v1.ts` 里的 `sandboxEnforcementClaimsMatchEvidence` 和 `sandboxRequiredControlsEnforced`。重新启用不走 `qualify`，前后都不受影响。
 - 执行进程“现场检查通过后才写出记录”的顺序，由 `apps/execution-worker/test/service-main.unit.test.ts` 保证：现场检查没通过时没有记录、上一次的记录被删掉；检查通过之前读不到记录，通过之后、装配之前读得到，随后装配失败时记录被删掉。这条测试里现场检查和装配两步是替换掉的，其余是真实启动流程。用真实的现场检查完整启动成功、正常停止时删掉记录，这两条没有自动测试，要在有上线包的环境里用进程级测试或上线后的读回确认。
 
 [↑ 返回阅读导航](#contents)
