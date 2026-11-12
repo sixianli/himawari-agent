@@ -92,6 +92,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "capability.update.respond",
   "capability.disable",
   "capability.rollback",
+  "capability.reactivate",
   "host.file.prepare",
   "host.file.execute",
   "workspace.copy.create",
@@ -1923,6 +1924,16 @@ export const rollbackCapabilityCommandSchema = object({
   }),
 });
 
+export const reactivateCapabilityCommandSchema = object({
+  ...commandEnvelope("capability.reactivate"),
+  payload: object({
+    capabilityRef: machineString,
+    expectedRevision: integer(1),
+    reasonCode: machineString,
+    recentAuthenticationRef: nullable(machineString),
+  }),
+});
+
 const hostFileOperationSchema = enumeration([
   "read",
   "create",
@@ -2657,6 +2668,7 @@ const schemasByType = {
   "capability.update.respond": respondCapabilityUpdateCommandSchema,
   "capability.disable": disableCapabilityCommandSchema,
   "capability.rollback": rollbackCapabilityCommandSchema,
+  "capability.reactivate": reactivateCapabilityCommandSchema,
   "host.file.prepare": prepareHostFileCommandSchema,
   "host.file.execute": executeHostFileCommandSchema,
   "workspace.copy.create": createWorkspaceCopyCommandSchema,

@@ -637,6 +637,7 @@ export const messages = {
   "governance.denyUpdate": "更新を拒否",
   "governance.disableCapability": "機能を無効化",
   "governance.rollbackCapability": "機能バージョンを戻す",
+  "governance.reactivateCapability": "機能を再有効化",
   "governance.conflictTitle": "別のクライアントがガバナンス対象を更新しました",
   "governance.conflictDescription":
     "最新リビジョンを再取得しました。確認後に明示的に再送信してください。古い操作は暗黙に上書きしません。",

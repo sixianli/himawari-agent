@@ -10,6 +10,8 @@ import type { SqliteProductStateRepository } from "@himawari-agent/persistence-s
 import {
   type CapabilityDeploymentEntry,
   CapabilityDeploymentSnapshotLoader,
+  type LoadedCapabilityDeployment,
+  revalidateCapabilityDeploymentSnapshot,
 } from "@himawari-agent/platform-node";
 
 const NOT_IN_DEPLOYMENT = "capability_not_in_deployment_snapshot";
@@ -24,15 +26,18 @@ export function createProductionCapabilityLifecycle(options: {
 }): CapabilityLifecycleService {
   const { configuration, repository, clock } = options;
   const deployment = configuration.capabilityDeployment;
-  const loader = deployment
+  const admitted: Promise<LoadedCapabilityDeployment | undefined> = deployment
     ? new CapabilityDeploymentSnapshotLoader({ ...deployment, now: () => clock.now() })
-    : undefined;
+        .load()
+        .catch(() => undefined)
+    : Promise.resolve(undefined);
   const entryFor = async (
     manifest: CapabilityManifest,
   ): Promise<CapabilityDeploymentEntry | undefined> => {
-    if (!loader) return undefined;
-    const loaded = await loader.load();
-    return loaded.snapshot.capabilities.find(
+    const loaded = await admitted;
+    if (!loaded) return undefined;
+    const current = await revalidateCapabilityDeploymentSnapshot(loaded);
+    return current.snapshot.capabilities.find(
       ({ manifest: candidate }) =>
         candidate.ref === manifest.ref &&
         candidate.version === manifest.version &&

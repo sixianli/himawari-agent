@@ -89,6 +89,14 @@ export function validateCapabilityManifest(manifest: CapabilityManifest): void {
   }
 }
 
+function requiredEnforcement(qualification: CapabilityRuntimeQualification): boolean[] {
+  const { filesystem, network, processes, secrets, resourceCeilings, termination } =
+    qualification.enforcement;
+  return qualification.sandbox
+    ? [filesystem, network, processes, secrets]
+    : [filesystem, network, processes, secrets, resourceCeilings, termination];
+}
+
 function semanticMajor(version: string): number {
   return Number(version.split(".", 1)[0]);
 }
@@ -618,6 +626,22 @@ export class CapabilityLifecycleService {
     );
   }
 
+  async reactivate(
+    capabilityRef: string,
+    expectedRevision?: number,
+  ): Promise<CapabilityRegistryRecord> {
+    const current = await this.require(capabilityRef, expectedRevision);
+    if (current.lifecycle !== "disabled") return this.invalid(current, "active");
+    const manifest = manifestFrom(current.declaration);
+    if (!manifest.reviewedBy || !manifest.reviewedAt) return this.invalid(current, "active");
+    const qualified = await this.qualify(manifest);
+    return this.save(current, {
+      lifecycle: "active",
+      declaration: qualified.manifest,
+      runtimeQualification: qualified.qualification,
+    });
+  }
+
   disable(capabilityRef: string, expectedRevision?: number): Promise<CapabilityRegistryRecord> {
     return this.invalidate(capabilityRef, "disabled", ["active"], expectedRevision);
   }
@@ -658,7 +682,7 @@ export class CapabilityLifecycleService {
     if (
       !qualification.productionSuitable ||
       qualification.artifactDigest !== manifest.integrity ||
-      Object.values(qualification.enforcement).some((enforced) => !enforced)
+      requiredEnforcement(qualification).some((enforced) => !enforced)
     ) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
