@@ -8,6 +8,7 @@ import {
   assertReviewed,
   buildPrompt,
   expectedTools,
+  ledgerLine,
   parseArgs,
   parseUsage,
   REVIEW_MODELS,
@@ -184,12 +185,20 @@ describe("plan claims check: reading the model's answer", () => {
         "CLAIM 1 | 一致 | a.ts:1 | 句 | 码",
         "`CLAIM|2|一致|a.ts:1|句|码`",
         "CLAIM：3",
+        "1. CLAIM|5|一致|a.ts:1|句|码",
+        "CLAIM_6|一致|a.ts:1|句|码",
         claimLine("4", "一致", "a.ts:1", "句", "const a = 1"),
         "普通文字里提到 CLAIM 这个词不算",
       ].join("\n"),
     );
     expect(claims.map((claim) => claim.id)).toEqual(["4"]);
-    expect(problems).toEqual(["line-1-malformed", "line-2-malformed", "line-3-malformed"]);
+    expect(problems).toEqual([
+      "line-1-malformed",
+      "line-2-malformed",
+      "line-3-malformed",
+      "line-4-malformed",
+      "line-5-malformed",
+    ]);
   });
 
   it("[claims] finds a code quote through changed spacing and elided parts, and refuses an invented one", () => {
@@ -382,7 +391,36 @@ describe("plan claims check: the merge gate", () => {
       expect(f.check().problems).toEqual([`claims-none ${ADR} deepseek-v4.1-flash`]);
     }));
 
-  it("[claims gate] a failed run does not count, and the latest run decides when there are several", () =>
+  it("[claims gate] re-running until the answer happens to be all consistent does not erase the earlier flagged run", () =>
+    withFixture({ adrText: `# 方案\n\n${WRONG_SENTENCE}。\n` }, (f) => {
+      f.writeClaims({ answer: wrongAnswer() });
+      f.writeClaims({
+        answer: consistentAnswer(),
+        record: f.claimsRecord({ at: "2026-11-12T05:00:00.000Z" }),
+        topic: "plan-lucky",
+      });
+      expect(f.check().problems).toEqual([`claims-unjudged ${ADR} deepseek-v4.1-flash 2 不一致`]);
+      f.writeClaims({
+        answer: wrongAnswer(),
+        verdicts: modelWrongVerdict(),
+        record: f.claimsRecord(),
+        topic: "plan-x",
+      });
+      expect(f.check().problems).toEqual([]);
+    }));
+
+  it("[claims gate] a file name that looks like a secret is still recorded in a ledger the gate can read", () => {
+    const path = "docs/adr/0304-sk-abcdefghijklmnopqrstuv.md";
+    const text = `# 方案\n\n${RIGHT_SENTENCE}。\n`;
+    return withFixture({ withAdr: false }, (f) => {
+      f.commit({ [path]: text }, "adr named like a key");
+      const line = ledgerLine(f.claimsRecord({ claimsFile: path, claimsSha256: sha(text) }));
+      expect(JSON.parse(line).claimsFile).toBe(path);
+      expect(parseUsage(line, "u")[0].claimsFile).toBe(path);
+    });
+  });
+
+  it("[claims gate] a failed run does not count, and every run of the same text has to pass", () =>
     withFixture({}, (f) => {
       f.writeClaims({
         answer: consistentAnswer(),
@@ -496,11 +534,13 @@ describe("plan claims check: the merge gate", () => {
         record: f.claimsRecord({ at: "2026-11-12T04:00:00.000Z" }),
         topic: "plan-v",
       });
-      expect(claimsOnly(f.check())).toEqual([
+      const both = claimsOnly(f.check());
+      expect(both).toHaveLength(2);
+      expect(both).toContainEqual(
         expect.stringMatching(
           /^claims-verdicts-invalid CLAIM_VERDICTS_INVALID .*claims-verdicts\.jsonl:1$/,
         ),
-      ]);
+      );
       f.commit({ [`${REVIEWS_DIR}/topic-broken/usage.jsonl`]: "not json\n" }, "broken ledger");
       expect(claimsOnly(f.check())).toContain(
         `claims-ledger-invalid ${REVIEWS_DIR}/topic-broken/usage.jsonl`,

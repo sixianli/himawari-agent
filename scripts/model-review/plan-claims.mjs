@@ -45,7 +45,8 @@ export function parseClaims(text) {
     const line = raw.replace(/^\s*(?:[-*>]\s+)?/, "");
     const number = index + 1;
     if (!line.startsWith("CLAIM|")) {
-      if (/^[`*"'“]*CLAIM\b/.test(line)) problems.push(`line-${number}-malformed`);
+      if (/^(?:\d+[.)]\s+)?[`*"'“#]*CLAIM(?![A-Za-z])/u.test(line))
+        problems.push(`line-${number}-malformed`);
       continue;
     }
     const parts = line.split("|");
@@ -226,75 +227,76 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage }) 
       problems.push(own.length > 0 ? `claims-stale ${label}` : `claims-unchecked ${label}`);
       continue;
     }
-    const latest = matching.reduce((best, record) =>
-      Date.parse(record.at) > Date.parse(best.at) ||
-      (Date.parse(record.at) === Date.parse(best.at) && record.order > best.order)
-        ? record
-        : best,
-    );
-    const round = matching.filter(
-      (record) => record.dir === latest.dir && (record.round ?? 1) === (latest.round ?? 1),
-    );
-    const lastByModel = new Map();
-    for (const record of round) lastByModel.set(record.model, record);
-    const done = [...lastByModel.values()].filter((record) => record.outcome === "ok");
-    if (done.length === 0) {
-      problems.push(`claims-run-failed ${label}`);
-      continue;
+    const groups = new Map();
+    for (const record of matching) {
+      const key = `${record.dir}\0${record.round ?? 1}`;
+      groups.set(key, [...(groups.get(key) ?? []), record]);
     }
-    for (const record of done) {
-      const roundDir = `${latest.dir}/round-${record.round ?? 1}`;
-      const short = safe(record.model.split("/").pop());
-      const answerPath = `${roundDir}/${short}.md`;
-      const answer = blobAt(repo, head, answerPath);
-      if (answer === null) {
-        problems.push(`claims-answer-missing ${label} ${short}`);
-        continue;
-      }
-      const { claims, problems: parseProblems } = parseClaims(answer.toString("utf8"));
-      for (const detail of parseProblems)
-        problems.push(`claims-answer-invalid ${label} ${short} ${detail}`);
-      if (claims.length === 0) {
-        problems.push(`claims-none ${label} ${short}`);
-        continue;
-      }
-      for (const claim of claims) {
-        const why = claimEvidenceProblem(repo, head, claim);
-        if (why) problems.push(`claims-evidence ${label} ${short} ${claim.id} ${why}`);
-      }
-      const verdictsPath = `${roundDir}/${CLAIMS_VERDICTS_FILE}`;
-      const verdictsText = blobAt(repo, head, verdictsPath);
-      let verdicts = [];
-      if (verdictsText !== null) {
-        try {
-          verdicts = parseClaimVerdicts(verdictsText.toString("utf8"), verdictsPath);
-        } catch (error) {
-          problems.push(`claims-verdicts-invalid ${safe(error.message)}`);
+    let anyDone = false;
+    for (const group of groups.values()) {
+      const latest = group[0];
+      const lastByModel = new Map();
+      for (const record of group) lastByModel.set(record.model, record);
+      const done = [...lastByModel.values()].filter((record) => record.outcome === "ok");
+      if (done.length === 0) continue;
+      anyDone = true;
+      for (const record of done) {
+        const roundDir = `${latest.dir}/round-${record.round ?? 1}`;
+        const short = safe(record.model.split("/").pop());
+        const answerPath = `${roundDir}/${short}.md`;
+        const answer = blobAt(repo, head, answerPath);
+        if (answer === null) {
+          problems.push(`claims-answer-missing ${label} ${short}`);
           continue;
         }
-      }
-      const answerText = answer.toString("utf8");
-      for (const claim of claims.filter((item) => CLAIM_PROBLEM_VERDICTS.includes(item.verdict))) {
-        const verdict = verdicts.find(
-          (item) => item.model === record.model && item.id === claim.id,
-        );
-        if (!verdict || verdict.outcome !== "model-wrong") {
-          problems.push(`claims-unjudged ${label} ${short} ${claim.id} ${claim.verdict}`);
+        const { claims, problems: parseProblems } = parseClaims(answer.toString("utf8"));
+        for (const detail of parseProblems)
+          problems.push(`claims-answer-invalid ${label} ${short} ${detail}`);
+        if (claims.length === 0) {
+          problems.push(`claims-none ${label} ${short}`);
           continue;
         }
-        const evidenceBlob = validEvidencePath(verdict.evidenceFile)
-          ? blobAt(repo, head, verdict.evidenceFile)
-          : null;
-        if (
-          evidenceBlob === null ||
-          collapse(verdict.evidence).length < EVIDENCE_MIN_CHARS ||
-          !collapse(evidenceBlob.toString("utf8")).includes(collapse(verdict.evidence))
-        )
-          problems.push(`claims-verdict-evidence ${label} ${short} ${claim.id}`);
-        if (!collapse(answerText).includes(collapse(verdict.quote)))
-          problems.push(`claims-verdict-quote ${label} ${short} ${claim.id}`);
+        for (const claim of claims) {
+          const why = claimEvidenceProblem(repo, head, claim);
+          if (why) problems.push(`claims-evidence ${label} ${short} ${claim.id} ${why}`);
+        }
+        const verdictsPath = `${roundDir}/${CLAIMS_VERDICTS_FILE}`;
+        const verdictsText = blobAt(repo, head, verdictsPath);
+        let verdicts = [];
+        if (verdictsText !== null) {
+          try {
+            verdicts = parseClaimVerdicts(verdictsText.toString("utf8"), verdictsPath);
+          } catch (error) {
+            problems.push(`claims-verdicts-invalid ${safe(error.message)}`);
+            continue;
+          }
+        }
+        const answerText = answer.toString("utf8");
+        for (const claim of claims.filter((item) =>
+          CLAIM_PROBLEM_VERDICTS.includes(item.verdict),
+        )) {
+          const verdict = verdicts.find(
+            (item) => item.model === record.model && item.id === claim.id,
+          );
+          if (!verdict || verdict.outcome !== "model-wrong") {
+            problems.push(`claims-unjudged ${label} ${short} ${claim.id} ${claim.verdict}`);
+            continue;
+          }
+          const evidenceBlob = validEvidencePath(verdict.evidenceFile)
+            ? blobAt(repo, head, verdict.evidenceFile)
+            : null;
+          if (
+            evidenceBlob === null ||
+            collapse(verdict.evidence).length < EVIDENCE_MIN_CHARS ||
+            !collapse(evidenceBlob.toString("utf8")).includes(collapse(verdict.evidence))
+          )
+            problems.push(`claims-verdict-evidence ${label} ${short} ${claim.id}`);
+          if (!collapse(answerText).includes(collapse(verdict.quote)))
+            problems.push(`claims-verdict-quote ${label} ${short} ${claim.id}`);
+        }
       }
     }
+    if (!anyDone) problems.push(`claims-run-failed ${label}`);
   }
   return { problems, files };
 }

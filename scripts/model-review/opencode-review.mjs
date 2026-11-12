@@ -2672,7 +2672,10 @@ function maskSecretLikeDeep(value) {
 }
 
 export function ledgerLine(record) {
-  return `${JSON.stringify(maskSecretLikeDeep(record))}\n`;
+  const masked = maskSecretLikeDeep(record);
+  if (record.mode === "plan-claims")
+    return `${JSON.stringify({ ...masked, claimsFile: record.claimsFile })}\n`;
+  return `${JSON.stringify(masked)}\n`;
 }
 
 function recordFileProblems(repo, files) {

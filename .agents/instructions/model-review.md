@@ -33,7 +33,7 @@
    - 模型看错了：在这一轮目录里的 `claims-verdicts.jsonl` 加一行 JSON：`{"id":"<序号>","model":"<模型全名>","quote":"<答案里那条 CLAIM 行，逐字>","outcome":"model-wrong","evidenceFile":"<仓库里的文件路径>","evidence":"<那个文件里逐字存在的代码原文，不少于 8 个字符>"}`。改了方案的记 `"outcome":"plan-fixed"` 加 `"change":"<改了什么>"`，只当备忘；它不能让“当前内容那一轮”里的条目过关，因为那一轮核的已经是改后的内容。同一个模型的同一个序号只写一行，写了两行整份文件作废（`claims-verdicts-invalid`）。
 5. 合并检查（`--assert-reviewed`）：PR 相对 `--main-ref`（默认 `origin/main`）新增了 `docs/adr/NNNN-*.md` 时，对每个新增的 ADR 要求：
    - 有一条 `plan-claims` 记录，记的文件路径和内容摘要（SHA-256）与 HEAD 里这个 ADR 的当前内容一致；内容改过一个字节就不一致，报 `claims-stale`，必须对新内容重核；根本没有记录报 `claims-unchecked`。这样定的原因：核对对象是“交给人看的那份文字”，改一句就可能改变一条说法的真假；单次约 0.1 美元，比漏掉错误便宜。
-   - 以最晚的那一轮为准（同一内容多次重跑，只看最后一轮，所以不能靠重跑到碰巧全一致来蒙混；每次重跑的花费都在账本里）。这一轮没有任何模型 `ok` 报 `claims-run-failed`；答案文件缺失 `claims-answer-missing`；一行都解析不出 `claims-none`；格式坏了或序号重复 `claims-answer-invalid`。
+   - 同一内容（摘要一致）的每一次有结果的运行都要过关，不是只看最后一轮：前面某一轮标出了“不一致”或“找不到”，哪怕后来重跑换出了全一致的结果，那一轮的条目也还要有 `model-wrong` 判断。所以不能靠重跑到碰巧全一致来蒙混。这个内容没有任何一轮里有模型 `ok`，报 `claims-run-failed`（失败的运行不用判断，也不算数）；答案文件缺失 `claims-answer-missing`；一行都解析不出 `claims-none`；格式坏了或序号重复 `claims-answer-invalid`。
    - 每一条（含“一致”）的“文件:行”都要在 HEAD 里存在、行号不超出文件，代码原文逐字（空白不计，可用 `…` 省略中间）出现在那个文件里，否则报 `claims-evidence <ADR> <模型> <序号> <原因>`：模型没读到代码、编了引文，都过不了。核对用的是 HEAD 里的文件：引用的那几行后来被改掉、不再逐字存在，就要重核；但行还在、周围的代码改了意思时，脚本发现不了。每个引文片段至少 4 个字符，行号从 1 起。
    - 每条“不一致”和“找不到”都要有 `model-wrong` 判断，且 `evidence` 真的是 `evidenceFile` 里的原文、`quote` 真的是答案里的原文，否则报 `claims-unjudged` 或 `claims-verdict-evidence`、`claims-verdict-quote`。
    - 这一步用到的记录文件（对这个 ADR 跑过的所有 `plan-claims` 轮次的目录和那份 `usage.jsonl`）不算“PR 自己的未复核改动”，所以补记录不必为此再复核一轮；它们照样做像密钥的文字检查。
