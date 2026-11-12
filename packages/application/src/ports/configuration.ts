@@ -299,8 +299,14 @@ export interface McpReadConfiguration {
   readonly proposals?: true;
 }
 
+export interface OwnerProposalConfiguration {
+  readonly pendingLimit?: number;
+  readonly expiresAfterDays?: number;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly ownerProposals?: OwnerProposalConfiguration;
   readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
   readonly mcpRead?: McpReadConfiguration;

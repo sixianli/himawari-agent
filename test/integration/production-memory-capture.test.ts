@@ -296,10 +296,16 @@ describe("production memory capture", () => {
         rules: repository.ownerRules(),
         box: boxWith({
           ...(proposals ? { store: proposals } : {}),
-          ...(proposalLimit === undefined ? {} : { limit: proposalLimit }),
-          ...(proposalTtlDays === undefined ? {} : { ttlDays: proposalTtlDays }),
           ...(rest.protector ? { protector: rest.protector } : {}),
-          ...(rest.configuration ? { configuration: rest.configuration } : {}),
+          configuration: {
+            ...(rest.configuration ?? { ownerId: OWNER_ID, agentId: AGENT_ID }),
+            runPolicy: {
+              ownerProposals: {
+                ...(proposalLimit === undefined ? {} : { pendingLimit: proposalLimit }),
+                ...(proposalTtlDays === undefined ? {} : { expiresAfterDays: proposalTtlDays }),
+              },
+            },
+          },
         }),
         memory,
         memories: repository.productMemoryState(),

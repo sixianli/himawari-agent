@@ -98,13 +98,13 @@ export interface PendingProposals {
 }
 
 export interface ProductionProposalBoxOptions {
-  readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
+  readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId"> & {
+    readonly runPolicy?: Pick<NonNullable<ProductConfiguration["runPolicy"]>, "ownerProposals">;
+  };
   readonly store: OwnerProposalStorePort;
   readonly payloads: PayloadStorePort;
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
-  readonly limit?: number;
-  readonly ttlDays?: number;
 }
 
 interface StoredBasis {
@@ -169,7 +169,8 @@ export class ProductionProposalBox {
   readonly #handlers = new Map<string, ProposalHandler>();
 
   constructor(options: ProductionProposalBoxOptions) {
-    const { limit = PENDING_PROPOSAL_LIMIT, ttlDays = PENDING_PROPOSAL_TTL_DAYS } = options;
+    this.#options = options;
+    const { limit, ttlDays } = this;
     if (
       !Number.isInteger(limit) ||
       limit < 1 ||
@@ -179,15 +180,19 @@ export class ProductionProposalBox {
       ttlDays > PENDING_PROPOSAL_TTL_CEILING_DAYS
     )
       throw new RangeError("Proposal limit or lifetime is out of range");
-    this.#options = options;
   }
 
   get limit(): number {
-    return this.#options.limit ?? PENDING_PROPOSAL_LIMIT;
+    return (
+      this.#options.configuration.runPolicy?.ownerProposals?.pendingLimit ?? PENDING_PROPOSAL_LIMIT
+    );
   }
 
   get ttlDays(): number {
-    return this.#options.ttlDays ?? PENDING_PROPOSAL_TTL_DAYS;
+    return (
+      this.#options.configuration.runPolicy?.ownerProposals?.expiresAfterDays ??
+      PENDING_PROPOSAL_TTL_DAYS
+    );
   }
 
   register(type: string, handler: ProposalHandler): void {
