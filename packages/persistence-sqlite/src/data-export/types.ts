@@ -18,6 +18,8 @@ export interface PortableCounts {
   importBatches: number;
   consolidations: number;
   consolidationChanges: number;
+  conversationReviews: number;
+  conversationReviewChanges: number;
   decisions: number;
   decisionSignals: number;
   markdownMemories: number;

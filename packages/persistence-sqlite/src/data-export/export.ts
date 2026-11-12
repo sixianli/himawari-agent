@@ -354,6 +354,34 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     };
   });
 
+  const changesByReview = group(snapshot.reviewChanges, "review_id");
+  let conversationReviewChanges = 0;
+  const reviewLines: JsonValue[] = snapshot.reviews.map((review) => {
+    const changes: JsonValue[] = (changesByReview.get(str(review["id"])) ?? [])
+      .filter((change) => memoryIds.has(str(change["memory_id"])))
+      .map((change) => ({
+        memoryId: str(change["memory_id"]),
+        action: str(change["action"]),
+        afterRevision: num(change["after_revision"]),
+        beforeSupersededBy: keepMemoryRef(optionalString(change["before_superseded_by"])),
+        beforeValidTo: optionalString(change["before_valid_to"]),
+        createdAt: str(change["created_at"]),
+        undoneRevision: change["undone_revision"] === null ? null : num(change["undone_revision"]),
+      }));
+    conversationReviewChanges += changes.length;
+    return {
+      id: str(review["id"]),
+      day: str(review["day"]),
+      status: str(review["status"]),
+      attempts: num(review["attempts"]),
+      errorCode: optionalString(review["error_code"]),
+      startedAt: str(review["started_at"]),
+      finishedAt: optionalString(review["finished_at"]),
+      undoneAt: optionalString(review["undone_at"]),
+      changes,
+    };
+  });
+
   const signals = group(snapshot.signals, "decision_id");
   let decisionSignals = 0;
   const decisionLines: JsonValue[] = snapshot.decisions.map((row) => {
@@ -557,6 +585,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   put(DATA_FILES.people, "data", jsonLines(peopleLines), peopleLines.length);
   put(DATA_FILES.importBatches, "data", jsonLines(batchLines), batchLines.length);
   put(DATA_FILES.consolidations, "data", jsonLines(consolidationLines), consolidationLines.length);
+  put(DATA_FILES.conversationReviews, "data", jsonLines(reviewLines), reviewLines.length);
   put(DATA_FILES.decisions, "data", jsonLines(decisionLines), decisionLines.length);
   const rulesText = jsonLines(ruleLines as unknown as readonly JsonValue[]);
   for (const [index, line] of rulesText.split("\n").entries())
@@ -656,6 +685,8 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     importBatches: batchLines.length,
     consolidations: consolidationLines.length,
     consolidationChanges,
+    conversationReviews: reviewLines.length,
+    conversationReviewChanges,
     decisions: decisionLines.length,
     decisionSignals,
     markdownMemories: markdown.count,

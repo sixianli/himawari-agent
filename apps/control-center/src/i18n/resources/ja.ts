@@ -762,7 +762,12 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {すべて} new {新規} drop {覚えない・削除} tidy {記憶の整理} correct {訂正} other {インポート}}",
   "memory.page.event":
-    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} hold {食い違いを発見} other {推測}}",
+    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} hold {食い違いを発見} review {会話の振り返り} other {推測}}",
+  "memory.page.reviewed":
+    "会話を振り返りました：新規 {created} 件、置き換え {superseded} 件、確認 {confirmed} 件",
+  "memory.page.reviewItem":
+    "{action, select, created {新規} superseded {もう当てはまらない} other {確認済み}}：{text}",
+  "memory.page.reviewQuote": "（発言：{quote}）",
   "memory.page.imported":
     "{source, select, codex {Codex} assistant {他の AI} other {Himawari のエクスポート}}から {count} 件インポート",
   "memory.page.goConfirm": "確認する",

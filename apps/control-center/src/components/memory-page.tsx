@@ -1808,6 +1808,36 @@ function TimelineTab({
           (item.action === "reflect" || item.action === "hold") && waiting.has(item.memoryId),
       }),
     ),
+    ...overview.conversationReviews.map((item): Event => {
+      const count = (action: string) =>
+        item.changes.filter((change) => change.action === action).length;
+      return {
+        key: item.reviewId,
+        at: item.finishedAt,
+        type: "tidy",
+        kind: "review",
+        text: message("memory.page.reviewed", {
+          created: count("created"),
+          superseded: count("superseded"),
+          confirmed: count("confirmed"),
+        }),
+        note: item.changes
+          .flatMap(({ memoryId, action }) => {
+            const found = overview.memories.find((entry) => entry.memoryId === memoryId);
+            if (!found) return [];
+            const quote = found.history.find((entry) => entry.quote)?.quote ?? null;
+            return [
+              message("memory.page.reviewItem", { action, text: found.text }) +
+                (quote ? message("memory.page.reviewQuote", { quote }) : ""),
+            ];
+          })
+          .join(" "),
+        undone: item.undone,
+        ...(!item.undone && !item.undoable
+          ? { locked: true }
+          : { undo: () => void memory.undoReview(item) }),
+      };
+    }),
     ...overview.imports.map(
       (item): Event => ({
         key: item.batchId,

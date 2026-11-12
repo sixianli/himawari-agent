@@ -81,6 +81,7 @@ const EMPTY_TARGET_TABLES = [
   "memory_people",
   "memory_import_batches",
   "memory_consolidation_runs",
+  "memory_conversation_reviews",
   "source_insights",
   "proactive_processed_messages",
   "muse_reference_entries",
@@ -336,6 +337,8 @@ export async function importPortableExport(
     importBatches: parsed.importBatches.length,
     consolidations: parsed.consolidations.length,
     consolidationChanges: 0,
+    conversationReviews: parsed.conversationReviews.length,
+    conversationReviewChanges: 0,
     decisions: parsed.decisions.length,
     decisionSignals: parsed.decisions.reduce((total, { signals }) => total + signals.length, 0),
     markdownMemories: parsed.manifest.counts.markdownMemories,
@@ -353,6 +356,14 @@ export async function importPortableExport(
     changes: run.changes.filter(({ memoryId }) => importedMemoryIds.has(memoryId)),
   }));
   imported.consolidationChanges = keptChanges.reduce(
+    (total, { changes }) => total + changes.length,
+    0,
+  );
+  const keptReviews = parsed.conversationReviews.map((review) => ({
+    review,
+    changes: review.changes.filter(({ memoryId }) => importedMemoryIds.has(memoryId)),
+  }));
+  imported.conversationReviewChanges = keptReviews.reduce(
     (total, { changes }) => total + changes.length,
     0,
   );
@@ -506,11 +517,9 @@ export async function importPortableExport(
           pin.run(item.id, ownerId, agentId, item.pin.pinned ? 1 : 0, item.pin.updatedAt);
       }
       const indexable = plans.filter(({ memory: item }) => item.status === "active");
-      if (indexable.length > 0) {
-        const suffix = randomUUID();
-        const threadId = `data-import-thread-${suffix}`;
-        const checkpointId = `data-import-checkpoint-${suffix}`;
-        const generationId = `data-import-generation-${suffix}`;
+      const suffix = randomUUID();
+      const threadId = `data-import-thread-${suffix}`;
+      if (indexable.length > 0 || keptReviews.length > 0)
         database
           .prepare(
             `INSERT INTO threads (
@@ -518,6 +527,9 @@ export async function importPortableExport(
             ) VALUES (?, ?, ?, 1, 'open', ?, ?, ?)`,
           )
           .run(threadId, ownerId, agentId, now, now, now);
+      if (indexable.length > 0) {
+        const checkpointId = `data-import-checkpoint-${suffix}`;
+        const generationId = `data-import-generation-${suffix}`;
         database
           .prepare(
             `INSERT INTO thread_checkpoint_jobs (
@@ -597,6 +609,44 @@ export async function importPortableExport(
           const kept = entry.basis.filter((id) => importedMemoryIds.has(id));
           for (const [position, id] of kept.entries()) basis.run(entry.id, position, id);
         }
+      }
+      const review = database.prepare(
+        `INSERT INTO memory_conversation_reviews (id, owner_id, agent_id, thread_id, episode_id, episode_created_at, day, status, attempts, output_ref, error_code, started_at, finished_at, undone_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+      );
+      const reviewChange = database.prepare(
+        `INSERT INTO memory_conversation_review_changes (review_id, memory_id, action, source_message_id, after_revision, before_superseded_by, before_valid_to, created_at, undone_revision)
+        VALUES (?, ?, ?, 'data-import', ?, ?, ?, ?, ?)`,
+      );
+      for (const { review: item, changes } of keptReviews) {
+        review.run(
+          item.id,
+          ownerId,
+          agentId,
+          threadId,
+          `data-import-episode:${item.id}`,
+          item.startedAt,
+          item.day,
+          item.status,
+          item.attempts,
+          item.errorCode,
+          item.startedAt,
+          item.finishedAt,
+          item.undoneAt,
+        );
+        for (const entry of changes)
+          reviewChange.run(
+            item.id,
+            entry.memoryId,
+            entry.action,
+            entry.afterRevision,
+            entry.beforeSupersededBy !== null && importedMemoryIds.has(entry.beforeSupersededBy)
+              ? entry.beforeSupersededBy
+              : null,
+            entry.beforeValidTo,
+            entry.createdAt,
+            entry.undoneRevision,
+          );
       }
       const decision = database.prepare(
         `INSERT INTO decision_ledger (id, owner_id, agent_id, kind, scenario, checked_at, counts, verdict, outcome, reason_code, subject_ref, inputs, reason_ref, content_ref, push_source_key, cost_micros, duration_ms, owner_rating, rated_at, category, confidence_permille, inferred)

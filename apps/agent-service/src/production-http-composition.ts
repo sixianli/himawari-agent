@@ -34,7 +34,7 @@ import {
   ThreadQueryService,
 } from "@himawari-agent/application";
 import type { ThreadExecutionEnvironment } from "@himawari-agent/gateway-contracts";
-import { MemoryConsolidationService } from "@himawari-agent/memory-engine";
+import { MemoryConsolidationService, undoConversationReview } from "@himawari-agent/memory-engine";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
@@ -117,6 +117,10 @@ import {
   PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
   ProductionSensitiveInterceptionsControl,
 } from "./production-sensitive-interceptions-control.js";
+import {
+  PRODUCTION_SERVER_STATUS_OPERATIONS,
+  ProductionServerStatusControl,
+} from "./production-server-status-control.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -683,6 +687,7 @@ function routeOptions(
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
+        ...PRODUCTION_SERVER_STATUS_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1082,6 +1087,23 @@ export async function createProductionHttpComposition(
           store: repository.memoryConsolidation(),
           undo: (changeId) => memoryTidyUp?.undo(changeId) ?? Promise.resolve(),
         },
+        conversationReviews: {
+          store: repository.memoryConversationReviews(),
+          undo: (reviewId) =>
+            options.memory
+              ? undoConversationReview(
+                  {
+                    store: repository.memoryConversationReviews(),
+                    state: repository.productMemoryState(),
+                    memory: options.memory.service,
+                    generationFor: async (memoryId) =>
+                      (await memoryJobs.listByMemory(memoryId)).at(-1)?.generationId,
+                    now: clock,
+                  },
+                  reviewId,
+                )
+              : Promise.resolve(),
+        },
         reminders: repository.memoryReminders(),
         ownerRules: new ProductionOwnerRuleWriter({
           configuration,
@@ -1141,6 +1163,11 @@ export async function createProductionHttpComposition(
       store: repository.sensitiveInterceptions(),
       clock: { now: clock },
       beforeRead: () => flushSensitiveInterceptions(repository),
+    }),
+    serverStatusControl: new ProductionServerStatusControl({
+      configuration,
+      health,
+      clock: { now: clock },
     }),
   });
   const app = buildHttpGatewayServer({
