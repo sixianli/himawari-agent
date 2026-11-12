@@ -1430,6 +1430,7 @@ const decisionChainSnapshotSchema = object({
         "rule_review",
         "limit_change",
         "delivery_timing",
+        "proposal",
       ]),
       decidedAt: timestamp,
       outcome: boundedString(64),

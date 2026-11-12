@@ -39,6 +39,7 @@ export const DECISION_KINDS = [
   "rule_review",
   "limit_change",
   "delivery_timing",
+  "proposal",
 ] as const;
 
 export type DecisionKind = (typeof DECISION_KINDS)[number];
@@ -61,6 +62,18 @@ export const DECISION_OUTCOMES = {
   rule_review: ["needs_review"],
   limit_change: ["changed"],
   delivery_timing: ["delivered", "deferred", "deadline_reached", "shown_in_app"],
+  proposal: [
+    "proposed",
+    "blocked",
+    "accepted",
+    "dismissed",
+    "expired",
+    "executed",
+    "failed",
+    "undone",
+    "not_proposed",
+    "superseded",
+  ],
 } as const satisfies Record<LedgerWriteKind, readonly string[]>;
 
 export const EXTERNAL_PROPOSAL_REASON_PREFIX = "mcp_proposal_";

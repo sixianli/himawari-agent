@@ -24,7 +24,7 @@ CREATE TABLE decision_ledger (
     kind IN (
       'proactive', 'memory_candidate', 'consolidation', 'context_truncation',
       'retrieval_degrade', 'external_read', 'rule_review',
-      'limit_change', 'delivery_timing'
+      'limit_change', 'delivery_timing', 'proposal'
     )
   ),
   scenario TEXT CHECK (scenario IS NULL OR scenario IN ('gmail')),
@@ -78,6 +78,9 @@ CREATE TABLE decision_ledger (
     (kind = 'limit_change' AND outcome = 'changed') OR
     (kind = 'delivery_timing' AND outcome IN (
       'delivered', 'deferred', 'deadline_reached', 'shown_in_app'
+    )) OR
+    (kind = 'proposal' AND outcome IN (
+      'proposed', 'blocked', 'accepted', 'dismissed', 'expired', 'executed', 'failed', 'undone', 'not_proposed', 'superseded'
     ))
   )
 ) STRICT;

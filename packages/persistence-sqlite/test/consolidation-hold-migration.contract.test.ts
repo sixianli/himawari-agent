@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DECISION_OUTCOMES } from "@himawari-agent/application";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -54,9 +55,9 @@ function dump(database: Database) {
           sql: entry.sql
             ?.replace(/\s+/gu, " ")
             .replace(/, 'hold'/gu, "")
-            .replace(", 'limit_change', 'delivery_timing'", "")
+            .replace(", 'limit_change', 'delivery_timing', 'proposal'", "")
             .replace(
-              " OR (kind = 'limit_change' AND outcome = 'changed') OR (kind = 'delivery_timing' AND outcome IN ( 'delivered', 'deferred', 'deadline_reached', 'shown_in_app' ))",
+              " OR (kind = 'limit_change' AND outcome = 'changed') OR (kind = 'delivery_timing' AND outcome IN ( 'delivered', 'deferred', 'deadline_reached', 'shown_in_app' )) OR (kind = 'proposal' AND outcome IN ( 'proposed', 'blocked', 'accepted', 'dismissed', 'expired', 'executed', 'failed', 'undone', 'not_proposed', 'superseded' ))",
               "",
             ),
         };
@@ -210,6 +211,9 @@ describe("consolidation hold migration", () => {
         .run(`d-${kind}-${outcome}`, OWNER, AGENT, kind, T0, outcome);
     expect(ledger("limit_change", "changed").changes).toBe(1);
     expect(ledger("delivery_timing", "deferred").changes).toBe(1);
+    for (const outcome of DECISION_OUTCOMES.proposal)
+      expect(ledger("proposal", outcome).changes).toBe(1);
+    expect(() => ledger("proposal", "changed")).toThrow(/CHECK/u);
     expect(() => ledger("limit_change", "deferred")).toThrow(/CHECK/u);
     expect(() => ledger("no_such_kind", "changed")).toThrow(/CHECK/u);
     expect(database.prepare("SELECT count(*) FROM source_insights").pluck().get()).toBe(1);
