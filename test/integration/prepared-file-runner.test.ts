@@ -28,6 +28,7 @@ import {
   verifyPiWriteEvidence,
 } from "@himawari-agent/platform-node";
 import { compileSandboxPolicy, prepareSandboxJobHost } from "@himawari-agent/runtime-sandbox";
+import { resolveReadOnlyToolchainPaths } from "@himawari-agent/testing/read-only-toolchain";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { prepareProductionFile } from "../../apps/agent-service/src/production-file-preparation.ts";
@@ -262,33 +263,27 @@ async function run(input: PiRunnerInput) {
       workspace: input.workspace,
       writable: true,
       privateDirectory: input.privateDirectory,
-      readOnlyToolchainPaths: [
-        ...new Set(
-          await Promise.all(
-            [
-              runtimeRoot,
-              process.execPath,
-              "/bin",
-              "/usr/bin",
-              "/usr/lib",
-              ...(process.platform === "darwin"
-                ? ["/System"]
-                : [
-                    "/lib",
-                    "/lib64",
-                    "/proc",
-                    "/dev",
-                    path.resolve(
-                      path.dirname(
-                        createRequire(import.meta.url).resolve("@anthropic-ai/sandbox-runtime"),
-                      ),
-                      "../vendor/seccomp",
-                    ),
-                  ]),
-            ].map((filename) => realpath(filename)),
-          ),
-        ),
-      ],
+      readOnlyToolchainPaths: await resolveReadOnlyToolchainPaths([
+        runtimeRoot,
+        process.execPath,
+        "/bin",
+        "/usr/bin",
+        "/usr/lib",
+        ...(process.platform === "darwin"
+          ? ["/System"]
+          : [
+              "/lib",
+              "/lib64",
+              "/proc",
+              "/dev",
+              path.resolve(
+                path.dirname(
+                  createRequire(import.meta.url).resolve("@anthropic-ai/sandbox-runtime"),
+                ),
+                "../vendor/seccomp",
+              ),
+            ]),
+      ]),
       protectedPaths: [],
       allowedDomains: [],
     };

@@ -6,6 +6,7 @@ import path from "node:path";
 import type { SandboxExecutionPlan } from "@himawari-agent/application";
 import { SANDBOX_RUNTIME_VERSION } from "@himawari-agent/execution-contracts";
 import { digestSandboxRuntime } from "@himawari-agent/platform-node";
+import { resolveReadOnlyToolchainPaths } from "@himawari-agent/testing/read-only-toolchain";
 
 export async function macSandboxDeployment(
   root: string,
@@ -132,7 +133,7 @@ exit 21
         inode: String(metadata.ino),
       },
     ],
-    readOnlyToolchainPaths: await Promise.all(
+    readOnlyToolchainPaths: await resolveReadOnlyToolchainPaths(
       [
         ...(process.env["HIMAWARI_QUALIFY_INSTALLED_RUNTIME"]
           ? [process.env["HIMAWARI_QUALIFY_INSTALLED_RUNTIME"]]
@@ -154,7 +155,8 @@ exit 21
               ),
             ]),
         "/dev",
-      ].map((entry) => realpath(entry)),
+      ],
+      { dedupe: false },
     ),
     protectedPaths: [path.join(workspace, ".env")],
     allowedDomains: revokeNetwork ? ["registry.npmjs.org:443"] : [],

@@ -10,9 +10,9 @@ import {
 } from "@himawari-agent/execution-contracts";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { createProductionSandboxControl } from "../../apps/agent-service/src/production-sandbox-control.ts";
+import { expectTestRuntimeFile, installTestNodeRuntime } from "../fixtures/node-runtime.ts";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import { openSandboxJournal } from "../fixtures/sqlite-capability-invocation-fixture.ts";
-import { expectTestRuntimeFile, installTestNodeRuntime } from "../fixtures/node-runtime.ts";
 
 const launch = vi.hoisted(() => ({
   hook: "",
@@ -83,11 +83,13 @@ vi.mock("node:child_process", async (original) => {
     },
   };
 });
+
+import { resolveReadOnlyToolchainPaths } from "@himawari-agent/testing/read-only-toolchain";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { prepareSandboxJobHost } from "../../packages/runtime-sandbox/src/job-host.ts";
-import { prepareJobPolicy } from "../../packages/runtime-sandbox/src/job-policy.ts";
 import { readJobHostFinalEvidence } from "../../packages/runtime-sandbox/src/job-host-control.ts";
 import { claimJobHostLaunch } from "../../packages/runtime-sandbox/src/job-host-launch-decision.ts";
-import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import { prepareJobPolicy } from "../../packages/runtime-sandbox/src/job-policy.ts";
 
 const cleanups: Array<() => Promise<unknown>> = [];
 let runtimeRoot = path.resolve("dist/node-runtime");
@@ -577,23 +579,17 @@ async function r2t10Host(input: {
     ...(input.launchCommand ? { launchCommand: input.launchCommand } : {}),
     ...(input.gateDelaySeconds ? { gateDelaySeconds: input.gateDelaySeconds } : {}),
   });
-  const toolchain = [
-    ...new Set(
-      await Promise.all(
-        [
-          "/bin",
-          "/usr/bin",
-          "/usr/lib",
-          "/lib",
-          "/lib64",
-          "/proc",
-          "/dev",
-          path.dirname(process.execPath),
-          path.join(runtimeRoot, "node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp"),
-        ].map((filename) => realpath(filename)),
-      ),
-    ),
-  ];
+  const toolchain = await resolveReadOnlyToolchainPaths([
+    "/bin",
+    "/usr/bin",
+    "/usr/lib",
+    "/lib",
+    "/lib64",
+    "/proc",
+    "/dev",
+    path.dirname(process.execPath),
+    path.join(runtimeRoot, "node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp"),
+  ]);
   const { policy, compiled } = await prepareJobPolicy({
     workspace: null,
     privateRoot: root,
