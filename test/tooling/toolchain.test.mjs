@@ -80,7 +80,17 @@ describe("固定工具身份", () => {
   it("锁定双方平台、完整 Action SHA、扫描工具和 wheel 闭包", () => {
     const lock = loadToolchainLock(root);
     expect(validateToolchainLock(lock)).toBe(lock);
-    expect(lock.actions).toHaveLength(5);
+    expect(lock.actions.map((action) => action.repository).sort()).toEqual([
+      "actions/checkout",
+      "actions/setup-node",
+      "actions/setup-python",
+    ]);
+    expect(() =>
+      validateToolchainLock({
+        ...lock,
+        actions: [...lock.actions, { ...lock.actions[0], repository: "actions/upload-artifact" }],
+      }),
+    ).toThrow("Action 集合缺失、重复或未知");
     expect(lock.tools.semgrep.wheels["linux-x64"].length).toBeGreaterThan(1);
     expect(lock.tools.semgrep.wheels["darwin-arm64"].length).toBeGreaterThan(1);
   });
