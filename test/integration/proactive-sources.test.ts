@@ -344,9 +344,12 @@ describe("[iOS-7] proactive source registry", () => {
         opened.close();
       }
     };
-    const entry = (input: Parameters<typeof recordProactiveProgramEntry>[1]) =>
+    const entry = (
+      input: Parameters<typeof recordProactiveProgramEntry>[1],
+      through: typeof store = store,
+    ) =>
       recordProactiveProgramEntry(
-        { scope, store, seal, clock, ids, timeZone: TIME_ZONE, registry },
+        { scope, store: through, seal, clock, ids, timeZone: TIME_ZONE, registry },
         input,
       );
     const exported = async () => {
@@ -558,7 +561,7 @@ describe("[iOS-7] proactive source registry", () => {
       ["mail-1", () => Promise.reject(new Error("RECEIVER_DOWN"))],
       ["mail-2", () => new Promise<void>(() => undefined)],
     ] as const) {
-      const gmail = h.checker("gmail", { receive, perCheckMs: 50 });
+      const gmail = h.checker("gmail", { receive, perCheckMs: 600_000 });
       gmail.reader.items = [mail("gmail", id)];
       h.script([{ id, result: "act", todo: "回复周末安排" }]);
       expect(await gmail.service.run()).toMatchObject({ verdict: "pushed" });
@@ -753,11 +756,45 @@ describe("[iOS-7] proactive source registry", () => {
       { result: "act", priority: null, dueAt: "tomorrow" },
       { result: "act", priority: null, deliverAt: "9999" },
       { result: "act", priority: null, deliverAt: "2026-11-04T15:00:00+09:00" },
+      { result: "act", priority: null, dueAt: `2026-11-04T15:00:00.000Z${" ".repeat(100)}` },
+      { result: "act", priority: null, link: "javascript:alert(1)" },
+      { result: "act", priority: null, link: "data:text/html,x" },
+      { result: "act", priority: null, link: "http://example.com/a" },
+      { result: "act", priority: null, link: "not a link" },
     ])
       expect(
         await h.entry({ ...base, source: FEED, entryId: "bad", summary: "x", ...invalid } as never),
       ).toEqual({ kind: "not_recorded", reason: "entry_invalid" });
+    expect(await h.entry(null as never)).toEqual({ kind: "not_recorded", reason: "entry_invalid" });
+    expect(
+      (
+        await h.entry({
+          ...base,
+          source: FEED,
+          entryId: "linked",
+          summary: "linked",
+          link: "https://example.com/a",
+        })
+      ).kind,
+    ).toBe("recorded");
     const settings = { ...scope, source: FEED, perCheck: 5, now: h.clock.now() };
+    await h.store.writeSourceSettings({ ...settings, changeId: "c0", enabled: true, perDay: 50 });
+    const loweredMidway = {
+      ...h.store,
+      processedSince: async (input: Parameters<typeof h.store.processedSince>[0]) => {
+        const used = await h.store.processedSince(input);
+        await h.store.writeSourceSettings({
+          ...settings,
+          changeId: "c-midway",
+          enabled: true,
+          perDay: 2,
+        });
+        return used;
+      },
+    };
+    expect(
+      await h.entry({ ...base, source: FEED, entryId: "midway", summary: "midway" }, loweredMidway),
+    ).toEqual({ kind: "not_recorded", reason: "daily_limit" });
     await h.store.writeSourceSettings({ ...settings, changeId: "c1", enabled: true, perDay: 1 });
     expect(await feed("two")).toEqual({ kind: "not_recorded", reason: "daily_limit" });
     await h.store.writeSourceSettings({ ...settings, changeId: "c2", enabled: false, perDay: 50 });
@@ -771,9 +808,9 @@ describe("[iOS-7] proactive source registry", () => {
       now: h.clock.now(),
     });
     expect(await feed("two")).toEqual({ kind: "not_recorded", reason: "proactive_off" });
-    expect(h.query("SELECT message_id FROM proactive_processed_messages")).toEqual([
-      { message_id: "one" },
-    ]);
+    expect(
+      h.query("SELECT message_id FROM proactive_processed_messages ORDER BY message_id"),
+    ).toEqual([{ message_id: "linked" }, { message_id: "one" }]);
   });
 
   it("[iOS-7][reverse] two writers racing on one entry, or on the last slot of the day, record it once", async () => {

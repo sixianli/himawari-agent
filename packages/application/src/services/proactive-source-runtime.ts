@@ -128,9 +128,21 @@ export interface ProactiveProgramEntryOptions {
   readonly onLimit?: (hit: ProactiveSourceLimitHit) => void;
 }
 
+const PROGRAM_ENTRY_TIME_LENGTH_LIMIT = 40;
+
+function httpsLinkOrEmpty(value: unknown): boolean {
+  if (typeof value !== "string" || value.length > PROGRAM_ENTRY_TEXT_LIMIT) return false;
+  if (value === "") return true;
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function isoTimeOrNull(value: unknown): boolean {
   if (value === null) return true;
-  if (typeof value !== "string") return false;
+  if (typeof value !== "string" || value.length > PROGRAM_ENTRY_TIME_LENGTH_LIMIT) return false;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
@@ -140,6 +152,8 @@ export async function recordProactiveProgramEntry(
   entry: ProactiveProgramEntry,
 ): Promise<ProactiveProgramEntryOutcome> {
   const { scope, store, seal, clock, ids } = options;
+  if (typeof entry !== "object" || entry === null)
+    return { kind: "not_recorded", reason: "entry_invalid" };
   const definition = (options.registry ?? PROACTIVE_SOURCES).get(entry.source);
   if (definition === undefined) return { kind: "not_recorded", reason: "source_not_registered" };
   if (definition.intake !== "written_by_program")
@@ -155,8 +169,7 @@ export async function recordProactiveProgramEntry(
     entry.summary.length > PROGRAM_ENTRY_TEXT_LIMIT ||
     typeof entry.reason !== "string" ||
     entry.reason.length > PROGRAM_ENTRY_TEXT_LIMIT ||
-    typeof entry.link !== "string" ||
-    entry.link.length > PROGRAM_ENTRY_TEXT_LIMIT ||
+    !httpsLinkOrEmpty(entry.link) ||
     !isoTimeOrNull(entry.dueAt) ||
     !isoTimeOrNull(entry.deliverAt)
   )

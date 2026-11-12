@@ -1812,16 +1812,10 @@ export class ProactiveMailCheckService {
           observedAt: input.startedAt,
         };
       });
-      let timer: ReturnType<typeof setTimeout> | undefined;
       const sink = this.#options.observations;
-      await Promise.race([
-        Promise.resolve().then(() => sink.receive(observations)),
-        new Promise<void>((resolve) => {
-          timer = setTimeout(resolve, this.#options.limits.perCheckMs);
-        }),
-      ])
-        .catch(() => undefined)
-        .finally(() => clearTimeout(timer));
+      void Promise.resolve()
+        .then(() => sink.receive(observations))
+        .catch(() => undefined);
     }
     return decision;
   }

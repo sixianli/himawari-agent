@@ -946,7 +946,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "proactive_source_settings",
     "ProactiveStorePort",
-    "one row per registered proactive source the owner has changed: its switch and its two safety limits (items per day, items per check); sources without a row use the defaults in the source registry; never exported",
+    "one row per registered proactive source the owner has changed: its switch and its two safety limits (items per day, items per check); sources without a row use the defaults in the source registry; not exported, so a restored Agent starts from those defaults",
     "metadata_only",
     "cascade with Owner or Agent deletion",
   ),
