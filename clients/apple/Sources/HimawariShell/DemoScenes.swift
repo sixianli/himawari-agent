@@ -40,13 +40,15 @@ enum DemoScene: String, CaseIterable {
 
 struct DemoSceneView: View {
     let scene: DemoScene
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         content
             .environment(\.listClock, DemoChatFixtures.now)
             .environment(\.stillFrames, !scene.rawValue.hasPrefix("motion-"))
             .onAppear { SerifFace.shared.prepare() }
-            .task {
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
                 try? await Task.sleep(for: .milliseconds(300))
                 guard !Task.isCancelled else { return }
                 let marker = FileManager.default.temporaryDirectory.appendingPathComponent(DemoScene.shownMarker)

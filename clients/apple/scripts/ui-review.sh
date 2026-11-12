@@ -9,6 +9,8 @@ device_name="Himawari 390pt"
 device_type="com.apple.CoreSimulator.SimDeviceType.iPhone-16e"
 expected_width=1170
 derived="$root/ui-review/DerivedData"
+calm_below=40
+calm_patience=600
 
 usage() {
   echo "usage: clients/apple/scripts/ui-review.sh [--check | --approve] [--out DIR]" >&2
@@ -76,6 +78,28 @@ if ! xcrun simctl list devices booted | grep -qF "$udid"; then
 fi
 xcrun simctl boot "$udid" 2>/dev/null || true
 xcrun simctl bootstatus "$udid" -b >/dev/null
+simulator_launchd="$(pgrep -f "launchd_sim .*$udid" | head -1 || true)"
+[ -n "$simulator_launchd" ] || { echo "UI_REVIEW_FAILED cannot find the simulator's launchd_sim process for $udid" >&2; exit 1; }
+
+simulator_load() {
+  ps -A -o ppid=,%cpu= | awk -v parent="$simulator_launchd" '$1 == parent { total += $2 } END { printf "%d", total }'
+}
+
+calm() {
+  [ "$(simulator_load)" -lt "$calm_below" ]
+}
+
+wait_until_calm() {
+  local quiet=0 waited=0
+  while [ "$quiet" -lt 3 ]; do
+    if calm; then quiet=$((quiet + 1)); else quiet=0; fi
+    [ "$waited" -lt "$calm_patience" ] || { echo "UI_REVIEW_FAILED simulator stayed busy for ${calm_patience}s (load $(simulator_load)%, limit ${calm_below}%)" >&2; exit 1; }
+    sleep 2
+    waited=$((waited + 2))
+  done
+}
+
+wait_until_calm
 xcrun simctl status_bar "$udid" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
 xcrun simctl install "$udid" "$app"
 
@@ -106,7 +130,7 @@ case "$marker" in */tmp/?*) ;; *) echo "UI_REVIEW_FAILED cannot locate the scene
 settle() {
   local scene="$1" file="$2" previous="" current="" tries=0 launches=1
   while :; do
-    if shown "$scene"; then
+    if shown "$scene" && calm; then
       xcrun simctl io "$udid" screenshot --type=png "$file" >/dev/null
       current="$(shasum -a 256 "$file" | cut -d' ' -f1)"
       if [ "$current" = "$previous" ] && [ "$current" != "$last_shot" ]; then
@@ -114,10 +138,12 @@ settle() {
         return 0
       fi
       previous="$current"
+    else
+      previous=""
     fi
     tries=$((tries + 1))
-    if [ "$tries" -ge 20 ]; then
-      [ "$launches" -lt 3 ] || { echo "UI_REVIEW_FAILED $file: scene $scene $(shown "$scene" && echo "kept changing or repeated the previous screen" || echo "never reported that it was on screen")" >&2; exit 1; }
+    if [ "$tries" -ge 40 ]; then
+      [ "$launches" -lt 3 ] || { echo "UI_REVIEW_FAILED $file: scene $scene $(shown "$scene" && echo "kept changing, repeated the previous screen, or the simulator stayed busy (load $(simulator_load)%)" || echo "never reported that it was on screen")" >&2; exit 1; }
       launches=$((launches + 1))
       tries=0
       previous=""
@@ -130,10 +156,12 @@ settle() {
 xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true >/dev/null 2>&1 || true
 launch "${scenes[0]}"
 sleep 8
+wait_until_calm
 
 for appearance in light dark; do
   xcrun simctl ui "$udid" appearance "$appearance"
   sleep 3
+  wait_until_calm
   for scene in "${scenes[@]}"; do
     case "$scene" in
       motion-*)
