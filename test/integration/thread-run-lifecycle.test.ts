@@ -3905,10 +3905,10 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     expect(tools.map(({ activity, activityIcon }) => [activity, activityIcon])).toEqual([
       ["查东京明天的天气", "cloud"],
       ["查资料", "tools"],
-      ["", ""],
+      ["搜索网页", "cloud"],
       ["查东京明天的天气", "cloud"],
       ["查资料", "tools"],
-      ["", ""],
+      ["搜索网页", "cloud"],
     ]);
     for (const tool of tools) {
       expect(tool.input).not.toContain("activity");

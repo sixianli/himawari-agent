@@ -5,7 +5,7 @@ import {
   createRunId,
   createThreadId,
 } from "@himawari-agent/domain";
-import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
+import { processStepText, type ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
 import {
   PROCESS_ACTIVITY_FALLBACK_ICON,
   PROCESS_ACTIVITY_ICONS,
@@ -54,7 +54,11 @@ function text(value: unknown): string {
       : value
     : "";
 }
-function toolActivity(value: unknown): {
+function toolActivity(
+  value: unknown,
+  toolName: string,
+  locale: string,
+): {
   readonly input: string;
   readonly activity: string;
   readonly activityIcon: string;
@@ -65,9 +69,9 @@ function toolActivity(value: unknown): {
     ...rest
   } = object(value);
   const activity =
-    typeof rawActivity === "string"
+    (typeof rawActivity === "string"
       ? [...rawActivity.trim()].slice(0, PROCESS_ACTIVITY_MAX_LENGTH).join("")
-      : "";
+      : "") || processStepText(toolName, locale);
   const icon = typeof rawIcon === "string" ? rawIcon.trim() : "";
   return {
     input: text(
@@ -78,11 +82,9 @@ function toolActivity(value: unknown): {
       ),
     ),
     activity,
-    activityIcon: !activity
-      ? ""
-      : (PROCESS_ACTIVITY_ICONS as readonly string[]).includes(icon)
-        ? icon
-        : PROCESS_ACTIVITY_FALLBACK_ICON,
+    activityIcon: (PROCESS_ACTIVITY_ICONS as readonly string[]).includes(icon)
+      ? icon
+      : PROCESS_ACTIVITY_FALLBACK_ICON,
   };
 }
 
@@ -299,7 +301,7 @@ export class ThreadExecutionProjection {
                 kind: "tool",
                 phase: "updated",
                 name: text(call["name"]),
-                ...toolActivity(call["arguments"]),
+                ...toolActivity(call["arguments"], text(call["name"]), thread.answerLocale),
               });
             }
           } else {
@@ -320,7 +322,7 @@ export class ThreadExecutionProjection {
                 kind: "tool",
                 phase: "updated",
                 name: text(call["name"]),
-                input: toolActivity(call["arguments"]).input,
+                ...toolActivity(call["arguments"], text(call["name"]), thread.answerLocale),
               });
               records.push({
                 ...base,
@@ -496,7 +498,13 @@ export class ThreadExecutionProjection {
             text: text(tool["description"]),
             phase: ended ? (failed ? "failed" : "completed") : "started",
             name: text(tool["toolName"]) || text(envelope["capabilityRef"]),
-            ...(ended ? {} : toolActivity(tool["arguments"])),
+            ...(ended
+              ? {}
+              : toolActivity(
+                  tool["arguments"],
+                  text(tool["toolName"]) || text(envelope["capabilityRef"]),
+                  thread.answerLocale,
+                )),
             output: ended ? text(visibleText(result["content"])) : "",
           });
         } else if (

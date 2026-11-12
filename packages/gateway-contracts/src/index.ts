@@ -9,3 +9,4 @@ export {
   modelRefString,
 } from "./validation.js";
 export * from "./memory-source.js";
+export * from "./process-step.js";

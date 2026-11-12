@@ -1,52 +1,10 @@
+import { type ProcessStepKind, processStepKind } from "@himawari-agent/gateway-contracts";
 import type { MessageId } from "./i18n/message-ids.js";
 
-type StepKind =
-  | "search"
-  | "recall"
-  | "reminder"
-  | "rule"
-  | "fetch"
-  | "read"
-  | "write"
-  | "edit"
-  | "list"
-  | "find"
-  | "grep"
-  | "command"
-  | "move"
-  | "save"
-  | "taskStart"
-  | "task"
-  | "authorized"
-  | "other";
-
-const kinds: Readonly<Record<string, StepKind>> = {
-  web_search: "search",
-  web_fetch: "fetch",
-  recall: "recall",
-  reminder_set: "reminder",
-  reminder_list: "reminder",
-  reminder_cancel: "reminder",
-  rule_set: "rule",
-  rule_list: "rule",
-  rule_undo: "rule",
-  read: "read",
-  write: "write",
-  edit: "edit",
-  ls: "list",
-  find: "find",
-  grep: "grep",
-  bash: "command",
-  move_directory: "move",
-  save_copy: "save",
-  execution_task_start: "taskStart",
-  execution_task_status: "task",
-  execution_task_output: "task",
-  execution_task_cancel: "task",
-};
+type StepKind = ProcessStepKind;
 
 function stepKind(name: string): StepKind {
-  return kinds[name] ?? (name.startsWith("authorized_") ? "authorized" : "other");
+  return processStepKind(name);
 }
 
 function argumentsOf(input: string): Record<string, unknown> {

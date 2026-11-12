@@ -52,8 +52,8 @@ date: "2026-11-12"
 1. **参数。**`toolDefinition()` 给每个参数结构是对象的工具加两个可选的字符串参数：`activity`（一句话说这一步在做什么）和 `activityIcon`（图标名）。工具自己已经有同名参数的，不加，也不删它的参数。两项都不进 `required`。说明文字在 `packages/prompt-catalog/src/activity.ts`。
 2. **图标表在系统提示里只列一次。**按[详细设计](https://github.com/sixianli/himawari-agent/blob/f7cbbf01ce61df6c3927e99c0e8407bc0a59fbe0/docs/execution/specs/2026-11-11-apple-device-body-design.md#process-row-icons)，40 个图标里“结果”那 4 个（`hand-stop`、`alert-circle`、`player-stop`、`check`）是服务器知道的状态，不给模型挑；其余 36 个连同每个名字的意思写成系统提示里的“过程图标”一节，只要有一个工具带这两个参数就加上。参数说明里只写“从系统提示‘过程图标’一节挑”，不在每个工具里重复列 36 个名字。参数类型是字符串，不用枚举：名字不在表里时不让工具调用失败，由服务器换成 `tools`。
 3. **执行前取走。**在已有的隐藏扩展 `himawari-tool-outcomes` 的 `tool_call` 钩子里，对加过这两个参数的工具，从 `event.input` 删掉它们（前提 2）。所以权限判断（`preflight`）、审批、工具本身和“工具循环停止”的判断看到的都是去掉后的参数。这是 Pi 官方写法，不新增偏离。
-4. **随过程记录发出。**`ThreadExecutionProjection` 生成 `kind` 为 `tool` 的过程记录时，从模型的参数里取出这两项：`activity` 去掉首尾空白、最多 80 个字符；`activityIcon` 在 36 个名字之内就原样给，模型给了那句话但图标没给或不在表里就给 `tools`，那句话也没给时两个都是空字符串。记录的 `input` 里不再有这两项。网关契约 `threadExecutionRecordSchema` 加这两个字段。网页按 `itemId` 合并同一步的多条记录时，空值不覆盖已有的值。
-5. **退回。**两个值都为空时，网页仍用现在的模板句子和图标；手机显示这一步的名称、图标用 `tools`。模板不搬到服务器：模板要三种语言，在网页的 i18n 里。
+4. **随过程记录发出。**`ThreadExecutionProjection` 生成 `kind` 为 `tool` 的过程记录时，从模型的参数里取出这两项：`activity` 去掉首尾空白、最多 80 个字符；`activityIcon` 在 36 个名字之内就原样给，否则给 `tools`。记录的 `input` 里不再有这两项。网关契约 `threadExecutionRecordSchema` 加这两个字段。网页按 `itemId` 合并同一步的多条记录时，空值不覆盖已有的值；执行结束的那条记录两个字段为空字符串。
+5. **退回。**模型没给 `activity` 时，服务器按这个对话的回答语言（`thread.answerLocale`）用模板补一句，例如“搜索网页”。模板和“工具名对到哪一类”的表放在 `packages/gateway-contracts/src/process-step.ts`，三种语言一份，手机和服务器共用，手机不再看到 `web_search` 这类工具名。网页的过程区仍从自己的 i18n 文字表取同样的句子，`apps/control-center/test/step-summary.unit.test.ts` 的 `[ICON-3]` 锁住网页那几条和共享表逐字相同；网页按工具名分类也改用共享表的 `processStepKind`。
 
 [返回阅读导航](#contents)
 
@@ -87,7 +87,7 @@ date: "2026-11-12"
 - **老对话的请求开头换新一次。**每个工具的参数结构都变了，按 `toolSchemaChanged` 每个老对话下一轮换新一次冻结的系统提示和工具，那一轮按全价算输入（Andy 已同意，前提 1）。之后同一对话照常只追加。
 - **对话记录里保留模型的原样参数。**模型下一轮看到的历史里，工具调用仍带着它自己写的 `activity` 和 `activityIcon`（前提 4），这符合只追加，不改历史。
 - **网关契约变了。**过程记录多了两个必填字段，旧版网页和旧版手机解析新记录会报“unknown field”。网页和服务器一起上线；手机客户端在 iOS 第 2 批按新形状解析。
-- **网页暂时不显示这句话。**网页的过程区仍用模板句子；要不要改用模型那句话，按详细设计“网页的过程区可以用同一句话”另行决定，改了要做真实网页上的正反两种验收。
+- **网页暂时不显示模型写的那句话。**网页的过程区仍按界面语言显示模板句子；要不要改用模型那句话，按详细设计“网页的过程区可以用同一句话”另行决定，改了要做真实网页上的正反两种验收。注意模板句子在服务器那边按回答语言，在网页上按界面语言，两者可能不同。
 - **测试。**`packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts` 的 `[ICON-1]` 用真实的 Pi 1.5.0 会话和假模型锁住：工具定义带这两个参数、系统提示只出现一次图标表、工具执行和权限判断拿到的参数里没有它们、工具自己的同名参数原样保留、过程事件里仍有它们。`test/integration/thread-run-lifecycle.test.ts` 的 `[ICON-2]` 用真实 SQLite 锁住过程记录的两个字段、退回 `tools`、`input` 里不再有它们，并用网关契约逐条解析。
 - **请求字节的对照文件更新了。**`packages/runtime-pi/test/fixtures/d4-golden-requests.json` 的两条请求体换成带新参数和图标表的版本，其他字段不变。
 
