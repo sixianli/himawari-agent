@@ -17,3 +17,9 @@ export { processGroupPresent, readProcessStartToken } from "./process-identity.t
 export * from "./policy.js";
 export * from "./qualification.js";
 export type { PinnedImage } from "./execution-backend/container-records.ts";
+export {
+  forkLocalJobHost,
+  type JobHostLauncher,
+  type JobHostTransport,
+  localJobHostTransport,
+} from "./job-host-transport.ts";

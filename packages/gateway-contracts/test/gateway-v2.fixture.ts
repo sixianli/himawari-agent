@@ -231,6 +231,7 @@ export const governanceMessages = [
     ],
     folded: { total: 0, items: [] },
     memoryUnusedDays: 90,
+    hiddenByModel: 0,
     generatedAt: "2026-11-04T01:00:00.000Z",
   }),
   fixture("command", "proactive.review.rate", {
@@ -317,6 +318,15 @@ export const governanceMessages = [
           { signal: "undone", decisions: 0, events: 0, medianDelayMs: null, rate: null },
           { signal: "replied", decisions: 0, events: 0, medianDelayMs: null, rate: null },
         ],
+      },
+      prereview: {
+        agreementPermille: 900,
+        confidencePermille: 800,
+        reductionEnabled: false,
+        auditPermille: 200,
+        minimumPairs: 35,
+        otherVersions: 0,
+        groups: [],
       },
     },
     generatedAt: "2026-11-04T01:00:00.000Z",
@@ -603,6 +613,27 @@ export const governanceMessages = [
         requestedAt: "2026-09-11T00:00:00.000Z",
       },
     ],
+    externalProposals: {
+      total: 1,
+      items: [
+        {
+          proposalId: "external-proposal-01",
+          text: "主人每天早上只喝无糖的燕麦拿铁",
+          category: "preference",
+          dataClassification: "private",
+          client: "muse",
+          receivedAt: "2026-09-11T00:00:00.000Z",
+        },
+      ],
+      batches: [
+        {
+          batchId: "external-batch-01",
+          decidedAt: "2026-09-11T01:00:00.000Z",
+          committed: 2,
+          rejected: 1,
+        },
+      ],
+    },
     tidyUps: [
       {
         changeId: "memory-consolidation:agent-01:2026-09-11:c1",
@@ -744,6 +775,14 @@ export const governanceMessages = [
     items: [{ contentRef: "payload-04", category: "rule", subCategory: null }],
   }),
   fixture("command", "memory.import.undo", { batchId: "memory-import-01" }),
+  fixture("command", "memory.external.respond", {
+    items: [
+      { proposalId: "external-proposal-01", decision: "keep", editedText: null },
+      { proposalId: "external-proposal-02", decision: "keep", editedText: "主人喜欢燕麦拿铁" },
+      { proposalId: "external-proposal-03", decision: "reject", editedText: null },
+    ],
+  }),
+  fixture("command", "memory.external.undo", { batchId: "external-batch-01" }),
   fixture("command", "memory.approval.respond", {
     requestId: "memory-approval-01",
     resolution: "approved",

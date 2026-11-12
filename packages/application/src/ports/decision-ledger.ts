@@ -4,6 +4,7 @@ import type {
   MailJudgment,
   MuseEntryRow,
 } from "@himawari-agent/calibration";
+import type { PrereviewWeekRow } from "@himawari-agent/calibration/prereview";
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
 import type { RuleBookVersion } from "../rules/rule-ref.js";
 import type { ProactiveScope } from "./proactive-checks.js";
@@ -13,6 +14,7 @@ export interface CalibrationRowsSnapshot {
   readonly entries: readonly MuseEntryRow[];
   readonly mailJudgments: readonly (readonly [string, MailJudgment])[];
   readonly signals: readonly ImplicitSignalRow[];
+  readonly prereviews: readonly PrereviewWeekRow[];
 }
 
 export const DECISION_SIGNALS = ["opened", "undone", "replied"] as const;
@@ -62,6 +64,8 @@ export const EXTERNAL_PROPOSAL_REASON_PREFIX = "mcp_proposal_";
 export const EXTERNAL_PROPOSAL_REASON_CODES = {
   kept: `${EXTERNAL_PROPOSAL_REASON_PREFIX}kept`,
   declined: `${EXTERNAL_PROPOSAL_REASON_PREFIX}declined`,
+  pending: `${EXTERNAL_PROPOSAL_REASON_PREFIX}pending`,
+  superseded: `${EXTERNAL_PROPOSAL_REASON_PREFIX}superseded`,
 } as const;
 
 export const MEMORY_CAPTURE_FAILURE_OUTCOMES = [

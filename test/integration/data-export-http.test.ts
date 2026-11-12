@@ -16,6 +16,7 @@ import {
   SECRETS,
   type Side,
   seedEverything,
+  seedMemory,
 } from "./data-export-fixture.ts";
 
 const open: Array<{ close: () => Promise<unknown> }> = [];
@@ -85,8 +86,12 @@ describe("[P1-6] 网页导出接口", () => {
     expect(Number(response.headers["x-himawari-export-memories"])).toBe(manifest.counts.memories);
     expect(manifest.counts.memories).toBeGreaterThan(0);
     expect(manifest.withheld.memories).toBe(3);
-    expect(manifest.withheld.texts).toBe(6);
-    expect(Number(response.headers["x-himawari-export-withheld"])).toBe(6);
+    expect(manifest.withheld.texts).toBe(8);
+    expect(manifest.withheld.rules).toBe(1);
+    expect(Number(response.headers["x-himawari-export-withheld"])).toBe(8);
+    expect(Number(response.headers["x-himawari-export-rules"])).toBe(4);
+    expect(manifest.counts.enforcedRules).toBe(4);
+    expect(files.has("RULES.md")).toBe(true);
     expect(files.has("sealed/sealed.enc")).toBe(false);
     const everything = Buffer.concat([...files.values()].map((file) => Buffer.from(file))).toString(
       "utf8",
@@ -103,12 +108,25 @@ describe("[P1-6] 网页导出接口", () => {
     const app = await service(side);
     const response = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
     expect(response.statusCode).toBe(200);
-    expect(Number(response.headers["x-himawari-export-withheld"])).toBe(7);
+    expect(Number(response.headers["x-himawari-export-withheld"])).toBe(9);
     const text = Object.values(unzipSync(new Uint8Array(response.rawPayload)))
       .map((file) => Buffer.from(file).toString("utf8"))
       .join("\n");
     expect(text).not.toContain(SECRET_API_KEY);
     expect(text).toContain("[已扣留:");
+  });
+
+  it("反向：没有任何规则时，响应头的规则条数是 0，压缩包照常带 RULES.md", async () => {
+    const side = await openSide("http-no-rules");
+    await seedMemory(side, { id: "m-only", text: "喜欢喝茶" });
+    const app = await service(side);
+    const response = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["x-himawari-export-rules"]).toBe("0");
+    const entries = unzipSync(new Uint8Array(response.rawPayload));
+    expect(
+      Buffer.from(entries[`${DATA_EXPORT_ARCHIVE_ROOT}/RULES.md`] ?? []).toString("utf8"),
+    ).toContain("共 0 条存下来的规则");
   });
 
   it("反向：没有登录、换了主人、跨站来源都被拒，且不返回任何数据", async () => {

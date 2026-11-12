@@ -860,6 +860,7 @@ function memoryOverview() {
       },
       { kind: "relationship", lines: lines(["memory-peikun", "memory-lilei"]) },
     ],
+    externalProposals: { total: 0, items: [], batches: [] },
     pending: [],
     generatedAt: now,
   };
@@ -1048,6 +1049,54 @@ function weeklySnapshot(withMails = false) {
           },
         ],
       },
+      prereview: {
+        agreementPermille: 900,
+        confidencePermille: 800,
+        reductionEnabled: false,
+        auditPermille: 200,
+        minimumPairs: 35,
+        otherVersions: withMails ? 2 : 0,
+        groups: withMails
+          ? [
+              {
+                group: "proactive_silent",
+                prereviewed: 40,
+                unsure: 6,
+                paired: 30,
+                agreement: rate(27, 30),
+                kappa: 0.61,
+                balancedAccuracy: 0.8,
+                ownerUseful: rate(25, 30),
+                hidden: rate(20, 22),
+                confusion: [
+                  { model: "useful", owner: "useful", count: 24 },
+                  { model: "useful", owner: "missed", count: 2 },
+                  { model: "missed", owner: "useful", count: 1 },
+                  { model: "missed", owner: "missed", count: 3 },
+                ],
+                gate: { open: false, reason: "insufficient", requiredAgreement: 0.97 },
+              },
+            ]
+          : [
+              "proactive_pushed",
+              "proactive_silent",
+              "memory_skipped",
+              "memory_kept",
+              "consolidation",
+            ].map((group) => ({
+              group,
+              prereviewed: 0,
+              unsure: 0,
+              paired: 0,
+              agreement: null,
+              kappa: null,
+              balancedAccuracy: null,
+              ownerUseful: null,
+              hidden: null,
+              confusion: [],
+              gate: null,
+            })),
+      },
     },
     generatedAt: now,
   };
@@ -1073,7 +1122,7 @@ function unsetWeeklySnapshot() {
   };
 }
 
-function reviewSnapshot() {
+function reviewSnapshot(prereviewHidden = 0) {
   const texts = [
     "我最近想吃牛肉，下周去大阪出差的时候想顺便找一家评价不错的烤肉店，最好是靠近车站的",
     "明天下午三点去银行办理住民税的缴纳手续",
@@ -1140,6 +1189,7 @@ function reviewSnapshot() {
     ],
     folded: { total: 7, items: Array.from({ length: 7 }, (_, index) => item(index, true)) },
     memoryUnusedDays: 90,
+    hiddenByModel: prereviewHidden,
     generatedAt: now,
   };
 }
@@ -1393,7 +1443,11 @@ function handleOperationsQuery(message, request) {
       return memoryFixture
         ? {
             ...envelope("snapshot", "proactive.review.snapshot"),
-            payload: reviewSnapshot(),
+            payload: reviewSnapshot(
+              /(^|;\s*)himawari-fixture-prereview=on(;|$)/.test(request.headers.cookie ?? "")
+                ? 3
+                : 0,
+            ),
           }
         : undefined;
     case "proactive.weekly.read":

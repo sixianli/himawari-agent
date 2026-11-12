@@ -23,9 +23,19 @@ import { integrationWorkerLimits, testWorkerCount } from "./test-concurrency.mjs
 
 const sorted = (values) => [...values].sort();
 const sameSet = (left, right) => JSON.stringify(sorted(left)) === JSON.stringify(sorted(right));
-const DRAFT_SKIPPED_CHECKS = ["browser", "coverage"];
-const DRAFT_SKIP_CONDITION =
+export const DRAFT_SKIP_CONDITION =
   "github.event_name != 'pull_request' || github.event.pull_request.draft != true";
+export const REQUIRED_DRAFT =
+  "github.event_name == 'pull_request' && github.event.pull_request.draft == true";
+export const REQUIRED_CANCELLED = "contains(needs.*.result, 'cancelled')";
+export const REQUIRED_ENTRY_SCRIPT = [
+  'if [ "$CI_DRAFT" != false ]; then echo "CI_DRAFT_UNVERIFIED 草稿 PR 不跑 CI，标成准备合并后才跑完整检查"; exit 1; fi',
+  'if [ "$CI_CANCELLED" != false ]; then echo "CI_UPSTREAM_CANCELLED 上游作业被取消，这一轮不算数"; exit 1; fi',
+  "",
+].join("\n");
+export const REQUIRED_AFTER_ENTRY = githubExpression(
+  "always() && steps.entry.outcome == 'success'",
+);
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
@@ -322,16 +332,14 @@ export function validatePolicy(
   return policy;
 }
 
-function requireReadPermissions(permissions, label, root = false, allowArtifactDeletion = false) {
+function requireReadPermissions(permissions, label, root = false) {
   assert(
     permissions && typeof permissions === "object" && !Array.isArray(permissions),
     `${label}: permissions must be explicit`,
   );
   assert(
     Object.entries(permissions).every(
-      ([key, value]) =>
-        ["contents", "actions", "pull-requests"].includes(key) &&
-        (value === "read" || (allowArtifactDeletion && key === "actions" && value === "write")),
+      ([key, value]) => ["contents", "actions", "pull-requests"].includes(key) && value === "read",
     ),
     `${label}: write or unknown permissions`,
   );
@@ -369,7 +377,6 @@ export function validateWorkflow(policy, source, toolchain) {
       "synchronize",
       "reopened",
       "ready_for_review",
-      "edited",
     ]),
     "PR activity types are incomplete",
   );
@@ -388,13 +395,12 @@ export function validateWorkflow(policy, source, toolchain) {
     "github.event_name",
     "github.event.pull_request.number || github.ref",
     "github.event_name == 'push' && github.run_id || ''",
-    "github.event.action == 'edited' && 'edited' || ''",
   ]
     .map(githubExpression)
     .join("-");
   assert(
     workflow.concurrency.group === concurrencyGroup,
-    "Concurrency must identify the actual workflow, event, PR/ref, and give push and edited runs their own group",
+    "Concurrency must identify the actual workflow, event, PR/ref, and give push runs their own group",
   );
   assert(
     workflow.concurrency["cancel-in-progress"] ===
@@ -431,19 +437,17 @@ export function validateWorkflow(policy, source, toolchain) {
       !job.uses && !job.container && !job.environment && !job.secrets,
       `Unsupported execution boundary: ${check.id}`,
     );
-    if (job.permissions)
-      requireReadPermissions(job.permissions, check.id, false, check.id === "required");
+    if (job.permissions) requireReadPermissions(job.permissions, check.id);
     if (check.id === "required")
       assert(
         job.name === "ci/required" && ["always()", githubExpression("always()")].includes(job.if),
         "required must use always() and ci/required",
       );
-    else if (DRAFT_SKIPPED_CHECKS.includes(check.id))
+    else
       assert(
         job.if === githubExpression(DRAFT_SKIP_CONDITION),
-        `Only the draft condition may skip: ${check.id}`,
+        `Every check job must skip draft pull requests and nothing else: ${check.id}`,
       );
-    else assert(job.if === undefined, `Required job cannot be conditional: ${check.id}`);
     if (check.members.length > 1) {
       assert(
         job["runs-on"] === githubExpression("matrix.runner"),
@@ -495,18 +499,91 @@ export function validateWorkflow(policy, source, toolchain) {
         job.steps.some((step) => step.run === chromiumInstall),
         `Job runs browser tests without installing Chromium: ${check.id}`,
       );
-    if (check.id === "coverage") {
-      const downloads = job.steps.filter((step) =>
-        step.uses?.startsWith("actions/download-artifact@"),
+    assert(
+      !job.steps.some((step) => /^actions\/download-artifact@/u.test(step.uses ?? "")),
+      `Jobs must take reports and builds from the runner share, not GitHub artifacts: ${check.id}`,
+    );
+    const uploadPath =
+      check.id === "required" ? ".ci-output/gate/" : ".ci-output/public/diagnostics/";
+    assert(
+      job.steps
+        .filter((step) => /^actions\/upload-artifact@/u.test(step.uses ?? ""))
+        .every((step) => step.with?.path === uploadPath && step.with?.["retention-days"] === 1),
+      `Jobs may upload only ${uploadPath} to GitHub for one day: ${check.id}`,
+    );
+    if (check.id === "required") {
+      const [entry] = job.steps;
+      assert(
+        entry?.id === "entry" &&
+          entry.if === undefined &&
+          entry.uses === undefined &&
+          entry.env?.CI_DRAFT === githubExpression(REQUIRED_DRAFT) &&
+          entry.env?.CI_CANCELLED === githubExpression(REQUIRED_CANCELLED) &&
+          entry.run === REQUIRED_ENTRY_SCRIPT,
+        "Required must first fail draft and cancelled runs before installing anything",
       );
       assert(
-        downloads.length === 1 &&
-          downloads[0].if === undefined &&
-          downloads[0].with?.["artifact-ids"] === githubExpression("needs.build.outputs.linux") &&
-          downloads[0].with?.path === ".ci-output/input" &&
-          downloads[0].with?.["merge-multiple"] === true,
-        "Coverage must download this attempt's Linux build by artifact ID",
+        job.steps.some(
+          (step) =>
+            step.run ===
+              ".ci-output/tools/bin/node scripts/ci/run-share.mjs collect --to .ci-output/reports" &&
+            step.env?.CI_NEEDS === githubExpression("toJSON(needs)") &&
+            step.if === undefined,
+        ) &&
+          job.steps.some(
+            (step) =>
+              step.run === ".ci-output/tools/bin/node scripts/ci/run-share.mjs remove" &&
+              step.if === REQUIRED_AFTER_ENTRY,
+          ),
+        "Required must collect digest-checked reports from the runner share and always remove the run directory",
       );
+      assert(
+        job.steps
+          .slice(1)
+          .every((step) => step.if === undefined || step.if === REQUIRED_AFTER_ENTRY),
+        "Required runs nothing after a failed entry check",
+      );
+      const gateUploads = job.steps.filter((step) =>
+        /^actions\/upload-artifact@/u.test(step.uses ?? ""),
+      );
+      assert(
+        gateUploads.length === 1 && gateUploads[0].if === REQUIRED_AFTER_ENTRY,
+        "Required uploads its gate even when the gate fails, but only after the entry check passed",
+      );
+    } else {
+      const shares = job.steps.filter((step) => step.run?.includes("scripts/ci/run-share.mjs put"));
+      assert(
+        shares.length === 1 &&
+          shares[0].id === "share" &&
+          shares[0].run ===
+            `.ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "${check.id}-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"`,
+        `Job must put its reports on the runner share exactly once: ${check.id}`,
+      );
+      const members = activeMembers(check)
+        .map((member) => member.key)
+        .sort();
+      assert(
+        JSON.stringify(Object.keys(job.outputs ?? {}).sort()) === JSON.stringify(members) &&
+          members.every(
+            (member) => job.outputs[member] === githubExpression(`steps.share.outputs.${member}`),
+          ),
+        `Job must expose one report digest per matrix member: ${check.id}`,
+      );
+    }
+    if (check.id === "coverage" || check.id === "browser") {
+      const fetches = job.steps.filter((step) =>
+        step.run?.includes("scripts/ci/run-share.mjs get"),
+      );
+      assert(
+        fetches.length === 1 &&
+          fetches[0].if === undefined &&
+          fetches[0].env?.CI_BUILD_DIGEST === githubExpression("needs.build.outputs.linux-x64") &&
+          fetches[0].run ===
+            '.ci-output/tools/bin/node scripts/ci/run-share.mjs get --name build-linux-x64 --digest "$CI_BUILD_DIGEST" --to .ci-output/input',
+        `${check.id} must take this attempt's Linux build from the runner share by digest`,
+      );
+    }
+    if (check.id === "coverage") {
       const executions = job.steps.filter((step) => step.run?.includes("scripts/ci/run.mjs"));
       assert(
         executions.length === 1 &&

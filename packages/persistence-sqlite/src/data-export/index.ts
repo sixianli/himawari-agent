@@ -1,5 +1,12 @@
 export { canonicalJson, sha256Hex } from "./canonical.js";
-export { readPortableDirectory, writePortableDirectory } from "./directory.js";
+export {
+  buildDemoPack,
+  DEMO_PACK_ERROR_CODES,
+  type DemoPackOptions,
+  demoMemoryId,
+  demoPersonId,
+} from "./demo-pack.js";
+export { type ReadLimits, readPortableDirectory, writePortableDirectory } from "./directory.js";
 export { buildPortableExport, type ExportOptions, type ExportResult } from "./export.js";
 export { type ImportOptions, type ImportReport, importPortableExport } from "./import.js";
 export { foldText, MEMORY_ID_PATTERN } from "./markdown.js";
@@ -23,3 +30,12 @@ export {
   parsePortable,
   verifyIntegrity,
 } from "./verify.js";
+export {
+  CHAT_EXPORT_TOO_LARGE,
+  type ChatExportOptions,
+  type ChatExportResult,
+  type ChatManifest,
+  buildChatExport,
+} from "./chats.js";
+export { verifyChatExport } from "./chats-verify.js";
+export { CHAT_FORMAT_VERSION, CHAT_SEALED_FILE } from "./chat-schemas.js";

@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: "docs/adr/0081-isolated-instance-per-person.md"
-superseded_by: ""
+superseded_by: "docs/adr/0234-one-program-per-person-database-file.md"
 date: "2026-10-26"
 ---
 

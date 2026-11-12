@@ -116,3 +116,9 @@ date: "2026-10-26"
 - [ADR 0083：每人一个独立实例，主人也走 Cloudflare 入口](0083-isolated-instance-per-person-with-owner-entry.md)
 
 [↑ 返回阅读导航](#contents)
+
+<a id="multi-user-follow-up"></a>
+
+## 2026-11-11 后续：多人使用
+
+[ADR 0234](0234-one-program-per-person-database-file.md) 取代 ADR 0083：多人不再是“每人一个实例”，而是一个程序、每人一个数据库文件。第 8 条预留的“按实例文件扩容”因此不再用于多人；Andy 的生产实例文件照旧。本 ADR 的决定不变。

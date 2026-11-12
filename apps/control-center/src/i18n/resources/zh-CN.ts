@@ -721,13 +721,13 @@ export const messages = {
     "从 {source, select, codex {Codex} assistant {其他 AI} other {Himawari 导出文件}} 导入 {count} 条",
   "memory.page.goConfirm": "去确认",
   "memory.page.import": "导入记忆",
-  "memory.page.export": "导出全部记忆",
+  "memory.page.export": "导出记忆和规则",
   "memory.page.sourceTitle":
     "{s, select, codex {Codex} assistant {ChatGPT、Claude 等其他 AI} other {旧版 Himawari 导出的 JSON 文件}}",
   "memory.page.sourceHelp":
     "{s, select, codex {选 Codex 的记忆文件（memory_summary.md、MEMORY.md）} assistant {让它把关于你的记忆列出来，再贴到这里} other {只认以前下载的 himawari-memories.json；新版导出的压缩包不能在这里导入}}",
   "memory.page.fileHelp":
-    "{s, select, codex {选 memory_summary.md、MEMORY.md，也可以加上你写给 Codex 的 AGENTS.md，可以多选。记忆文件在 Mac 的 ~/.codex/memories/，AGENTS.md 在 ~/.codex/；在选择文件的窗口里按 ⌘⇧G 输入路径就能进入隐藏文件夹。} other {选以前下载的 himawari-memories.json。现在的“导出全部记忆”给的是压缩包，只用于备份和换机（解压后，用命令行导入里面的 himawari-export 文件夹），网页里不能导入。}}",
+    "{s, select, codex {选 memory_summary.md、MEMORY.md，也可以加上你写给 Codex 的 AGENTS.md，可以多选。记忆文件在 Mac 的 ~/.codex/memories/，AGENTS.md 在 ~/.codex/；在选择文件的窗口里按 ⌘⇧G 输入路径就能进入隐藏文件夹。} other {选以前下载的 himawari-memories.json。现在的“导出记忆和规则”给的是压缩包，只用于备份和换机（解压后，用命令行导入里面的 himawari-export 文件夹），网页里不能导入。}}",
   "memory.page.aiStep1": "第 1 步：复制下面这段话，发给你在用的 AI。",
   "memory.page.aiPrompt":
     "请把你记住的关于我的所有信息逐条列出来，包括我的身份、偏好、习惯、正在做的事、身边的人，以及我对你提过的做事要求。每条一行，以“- ”开头，尽量用我当时的原话。不要列出密码、证件号、银行卡号这类信息。只列信息，不要加解释。",
@@ -745,13 +745,23 @@ export const messages = {
   "memory.page.importEmpty": "没有找到可以导入的内容。确认选对了文件，或贴的是那个 AI 的回答。",
   "memory.page.importTooBig": "单个文件不能超过 200 KB，请拆开分几次导入。",
   "memory.page.importUnreadable": "文件读不出来，或者格式不对。",
-  "memory.page.exportTitle": "导出全部记忆和决策记录",
+  "memory.page.exportTitle": "导出记忆、长期规则和决策记录",
   "memory.page.exportNote":
-    "得到一个压缩包：里面有逐条的 JSON Lines 数据，也有能直接读的 Markdown。密码、证件号等机密只留占位符；回收站里的记忆，以及健康、财务等敏感主题的记忆也会导出，其中的正文除机密外是明文，请妥善保管。要连机密一起带走，请用命令行加密导出。",
+    "得到一个压缩包：里面有逐条的 JSON Lines 数据，也有能直接读的 Markdown，长期规则连同每条的出处和修改历史一起导出，可以直接读 RULES.md。密码、证件号等机密只留占位符；回收站里的记忆，以及健康、财务等敏感主题的记忆也会导出，其中的正文除机密外是明文，请妥善保管。要连机密一起带走，请用命令行加密导出。",
   "memory.page.download": "下载导出文件",
   "memory.page.exportWorking": "正在生成导出文件……",
-  "memory.page.exportDone": "已导出 {count} 条记忆；{withheld} 处敏感内容只留了占位符。",
+  "memory.page.exportDone":
+    "已导出 {count} 条记忆、{rules} 条正在执行的长期规则；{withheld} 处敏感内容只留了占位符。",
   "memory.page.exportFailed": "导出失败，请稍后再试。",
+  "memory.page.chatExport": "导出聊天记录",
+  "memory.page.chatExportTitle": "导出全部聊天记录",
+  "memory.page.chatExportNote":
+    "得到一个压缩包：data/threads.jsonl 是逐个对话的数据，chats/ 下每个对话一个能直接读的 Markdown。密码、证件号等机密只留占位符；回收站里的对话也会导出，其中的正文除机密外是明文，请妥善保管。附件只带清单（名字、大小、类型），不带文件本体。聊天记录只能带走，不能再导入。要连机密一起带走，请用命令行加密导出。",
+  "memory.page.chatDownload": "下载聊天记录",
+  "memory.page.chatExportDone":
+    "已导出 {threads} 个对话、{messages} 条消息；{withheld} 条含机密的消息只留了占位符。",
+  "memory.page.chatExportTooLarge":
+    "聊天记录太多，网页放不下一次导出。请在服务器上用命令行导出（himawari-admin data export-chats）。",
   "capabilities.title": "能力与适配器",
   "authorizations.title": "授权与 Grant",
   "trace.title": "追踪",
@@ -970,6 +980,8 @@ export const messages = {
   "dailyReview.title": "每天打分",
   "dailyReview.count": "今天 {count} 条",
   "dailyReview.countLeft": "今天 {count} 条，另有 {left} 条没抽到",
+  "dailyReview.hiddenByModel":
+    "另有 {count} 条模型已预评为有用、而且有把握，按你开的减量设置这次没给你看",
   "dailyReview.note": "没抽到的明天可能再出现，7 天后不再出现。",
   "dailyReview.tag.pushed": "读完邮件提醒了你",
   "dailyReview.tag.silent": "读完邮件没提醒",
@@ -1149,7 +1161,7 @@ export const messages = {
     "断开后会在 Google 撤销授权，并删掉所有从邮件里提炼的待办和要点。确定断开？",
   "proactive.apps.disconnected": "已断开，并在 Google 撤销了授权。",
   "proactive.apps.outcome":
-    "{o, select, connected {已连接 Gmail。第一次检查马上开始。} denied {你在 Google 页面没有同意，所以没有连接。} other {连接没有成功，请再试一次。}}",
+    "{o, select, connected {已连接 Gmail。第一次检查马上开始。} denied {你在 Google 页面没有同意，所以没有连接。} demo {体验版用的是示范收件箱，不能连接你自己的邮箱。示范收件箱已就绪。} other {连接没有成功，请再试一次。}}",
   "proactive.apps.what": "Himawari 会读什么、发给谁",
   "proactive.apps.what1":
     "只读邮件；不归档、不打标签、不回信。判断一封新邮件时，还会查同一件事以前的往来邮件（包括已归档和你发出的），一并发给模型",
@@ -1370,6 +1382,21 @@ export const messages = {
   "weekly.implicit.def":
     "这三个信号是不需要你动手评价就能看到的事，只当观察，不当作你的打分，不和上面的打分比例混在一起算，也不会用来自动改任何门槛。分母是这一周推送过提醒的决策；同一条决策出现多次同类信号只算一次。",
   "weekly.goRate": "去「提醒」打分",
+  "weekly.prereview.title": "模型预评一致率",
+  "weekly.prereview.empty": "这一周还没有模型预评过、你也打过分的决策。",
+  "weekly.prereview.emptyCurrent": "这一周还没有当前这一版模型和提示词做的预评。",
+  "weekly.prereview.counts": "预评 {rated} 条 · 模型拿不准 {unsure} 条 · 你也评过 {paired} 条",
+  "weekly.prereview.gate":
+    "{r, select, open {按这一周的配对已过门槛} insufficient {这一周对数不够，还不能判断} below_threshold {按这一周的配对，一致率没到门槛} other {没比“全当有用”猜得更准}}",
+  "weekly.prereview.audit": "模型有把握评“有用”的里，你也评有用 {k}/{n}",
+  "weekly.prereview.otherVersions": "另有 {n} 条预评来自旧的模型或提示词版本，不进上面的比例。",
+  "weekly.prereview.reductionOn":
+    "自动减少已开启：过了门槛的类别，「每天打分」只给你看模型拿不准或和你以往打分冲突的那些，另随机留 {audit} 抽查。",
+  "weekly.prereview.reductionOff": "自动减少没有开启：「每天打分」仍给你看全部待打分的决策。",
+  "weekly.prereview.def":
+    "模型会先给每条待打分的决策评一次（有用 / 不需要 / 漏了），单独存放，不写进你的打分。一致率 = 你也评过的那些里，模型和你评得一样的比例。",
+  "weekly.prereview.gateDef":
+    "门槛：模型有把握（信心不低于 {confidence}）评“有用”的那些里，和你一致的比例按 95% Wilson 区间下限不低于 {agreement}，并且高于“全当有用”这种猜法；至少要 {n} 对才可能过。",
   "sensitive.title": "敏感信息拦截记录",
   "sensitive.count": "共 {count} 条记录",
   "sensitive.none": "还没有拦下过敏感信息",
@@ -1408,6 +1435,7 @@ export const messages = {
   "sensitive.purpose.memory-consolidation": "合并记忆",
   "sensitive.purpose.mail-judgment": "邮件判断",
   "sensitive.purpose.action-review": "动作复核",
+  "sensitive.purpose.review-prereview": "模型预评",
   "sensitive.purpose.other": "其他",
   "sensitive.maskedOnce": "{time} 遮住 1 次",
   "sensitive.maskedMany": "{time} 第一次遮住，之后 {later} 次发送都已遮住",

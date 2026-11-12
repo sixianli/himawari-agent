@@ -26,6 +26,7 @@ import {
   SECRET_MAIL_BODY,
   SECRET_PASSWORD,
   SECRETS,
+  putPayload,
   type Side,
   seedEverything,
   seedMemory,
@@ -112,6 +113,7 @@ function counts(target: Side): Record<string, number> {
     batches: one("memory_import_batches"),
     runs: one("memory_consolidation_runs"),
     payloads: one("payloads"),
+    prereviews: one("decision_prereviews"),
   };
 }
 
@@ -151,6 +153,7 @@ describe("data export: round trip", () => {
       memoriesWithoutOriginal: 0,
       historyEventsWithoutOriginal: 0,
       decisionTextsWithoutOriginal: 0,
+      rulesWithoutOriginal: 0,
       evidenceNotImported: false,
     });
     const second = await exportOf(target, { evidence: true });
@@ -286,6 +289,37 @@ describe("data export: round trip", () => {
     ).toEqual({ owner_rating: "useful", rated_at: "2026-11-03T00:00:00.000Z" });
     expect(counts(target)["signals"]).toBe(1);
     expect(counts(target)["history"]).toBeGreaterThanOrEqual(3);
+  });
+
+  it("[P4-8] carries model pre-ratings through export and import without touching the owner's rating", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source, { evidence: true });
+    const target = await side("target-prereview");
+    await importInto(target, files, { passphrase: PASSPHRASE });
+    const read = (from: Side) =>
+      from.database
+        .prepare(
+          `SELECT id, decision_id, message_id, calibration_group, status, rating,
+            confidence_permille, history_conflict, failure_code, cost_micros, text_digest
+          FROM decision_prereviews ORDER BY id`,
+        )
+        .all();
+    expect(read(target)).toEqual(read(source));
+    expect(read(target)).toHaveLength(3);
+    expect(
+      target.database
+        .prepare("SELECT owner_rating FROM decision_ledger WHERE id = 'd-candidate'")
+        .pluck()
+        .get(),
+    ).toBeNull();
+  });
+
+  it("[P4-8][reverse] pre-ratings are not imported without the passphrase", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source, { evidence: true });
+    const target = await side("target-prereview-nopass");
+    await importInto(target, files);
+    expect(counts(target)["prereviews"]).toBe(0);
   });
 
   it("[P1-6][reverse] a changed rating, a deleted line or a changed text makes the comparison fail", async () => {
@@ -427,7 +461,16 @@ describe("data export: manifest and files are checked before anything is written
       "an unknown format version",
       (files) => {
         const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
-        manifest.format = "himawari.data-export.v2";
+        manifest.format = "himawari.data-export.v3";
+        return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
+      },
+      DATA_EXPORT_ERROR_CODES.FORMAT_UNSUPPORTED,
+    ],
+    [
+      "an export in the old v1 format, which had no rule book",
+      (files) => {
+        const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
+        manifest.format = "himawari.data-export.v1";
         return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
       },
       DATA_EXPORT_ERROR_CODES.FORMAT_UNSUPPORTED,
@@ -729,6 +772,28 @@ describe("data export: determinism and the directory", () => {
     await expect(importInto(target, files, { passphrase: PASSPHRASE })).rejects.toMatchObject({
       code: DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY,
     });
+  });
+  it("[P1-6] [P4-5] names the memory eval question bank as left out and still imports cleanly", async () => {
+    const source = await seeded();
+    const questionText = "评测题干：我早上一般喝什么咖啡？";
+    await putPayload(source, "real-eval-question-1", questionText);
+    source.database
+      .prepare(
+        `INSERT INTO real_eval_questions (
+          id, owner_id, agent_id, memory_id, memory_revision, kind, question_ref,
+          question_model, prompt_sha256, created_at
+        ) VALUES ('q-1', ?, ?, 'm-plain', 1, 'preference', 'real-eval-question-1', 'eval-model', ?, ?)`,
+      )
+      .run(source.ownerId, source.agentId, "d".repeat(64), NOW);
+    const { files, manifest } = await exportOf(source);
+    expect(manifest.omitted.map(({ what }) => what)).toContain("记忆评测的题库和每次评测的分数");
+    for (const [path, bytes] of files)
+      expect(decoder.decode(bytes), path).not.toContain("我早上一般喝什么咖啡");
+    const target = await side("eval-bank-left-out");
+    await importInto(target, files, { passphrase: PASSPHRASE });
+    expect(
+      target.database.prepare("SELECT COUNT(*) AS count FROM real_eval_questions").get(),
+    ).toEqual({ count: 0 });
   });
   it("[P1-6] two different secrets in names and source ids stay distinct and round-trip", async () => {
     const source = await seeded();

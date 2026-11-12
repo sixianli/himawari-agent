@@ -282,6 +282,7 @@ function reviewFixture(): ProactiveReview {
       ],
     },
     memoryUnusedDays: 90,
+    hiddenByModel: 0,
     generatedAt: NOW.toISOString(),
   };
 }
@@ -988,6 +989,20 @@ describe("[PG-15] proactive settings", () => {
     await click("#apps .proactive-app", "连接 Gmail");
     expect(assign).toHaveBeenCalledWith("/api/proactive/v1/google/start");
   });
+
+  it("[P6-demo] tells a trial user that the sample inbox is in use, in a calm tone", async () => {
+    await act(async () => root.render(h(Settings, { outcome: "demo" })));
+    await flush();
+    expect(text("#apps")).toContain("体验版用的是示范收件箱，不能连接你自己的邮箱");
+    expect(
+      document.querySelector("#apps .proactive-outcome")?.getAttribute("data-tone"),
+    ).toBeNull();
+    await act(async () => root.render(h(Settings, { outcome: "failed" })));
+    await flush();
+    expect(document.querySelector("#apps .proactive-outcome")?.getAttribute("data-tone")).toBe(
+      "warn",
+    );
+  });
 });
 
 describe("[PG-15] opening from a push or the Google callback", () => {
@@ -1007,6 +1022,12 @@ describe("[PG-15] opening from a push or the Google callback", () => {
       ),
     ).toEqual({ reminder: null, settings: "tools", gmail: "connected" });
     expect(replaceState).toHaveBeenLastCalledWith(null, "", "/");
+    expect(
+      readLaunchIntent(
+        { href: "https://himawari.example/?settings=apps&gmail=demo" },
+        { replaceState, state: null },
+      ),
+    ).toEqual({ reminder: null, settings: "tools", gmail: "demo" });
     expect(
       readLaunchIntent(
         { href: "https://himawari.example/?reminder=%3Cscript%3E&gmail=other" },

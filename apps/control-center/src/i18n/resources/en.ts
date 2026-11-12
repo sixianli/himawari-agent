@@ -765,13 +765,13 @@ export const messages = {
     "Imported {count} from {source, select, codex {Codex} assistant {another AI} other {a Himawari export}}",
   "memory.page.goConfirm": "Review",
   "memory.page.import": "Import memories",
-  "memory.page.export": "Export all memories",
+  "memory.page.export": "Export memories and rules",
   "memory.page.sourceTitle":
     "{s, select, codex {Codex} assistant {ChatGPT, Claude or another AI} other {An old Himawari export (JSON)}}",
   "memory.page.sourceHelp":
     "{s, select, codex {Pick Codex memory files (memory_summary.md, MEMORY.md)} assistant {Ask it to list what it knows about you, then paste the answer} other {Only the himawari-memories.json downloaded earlier; the zip from the current export cannot be imported here}}",
   "memory.page.fileHelp":
-    "{s, select, codex {Pick memory_summary.md and MEMORY.md, and optionally your AGENTS.md. The files are in ~/.codex/memories/ and ~/.codex/ on your Mac; press ⌘⇧G in the file picker to type the path.} other {Pick a himawari-memories.json downloaded earlier. Export all memories now gives a zip for backup and moving machines (unzip it, then import the himawari-export folder inside with the command line), not importable here.}}",
+    "{s, select, codex {Pick memory_summary.md and MEMORY.md, and optionally your AGENTS.md. The files are in ~/.codex/memories/ and ~/.codex/ on your Mac; press ⌘⇧G in the file picker to type the path.} other {Pick a himawari-memories.json downloaded earlier. Export memories and rules now gives a zip for backup and moving machines (unzip it, then import the himawari-export folder inside with the command line), not importable here.}}",
   "memory.page.aiStep1": "Step 1: copy this message and send it to the AI you use.",
   "memory.page.aiPrompt":
     "List everything you remember about me, one item per line starting with “- ”: who I am, my preferences and habits, what I am working on, the people around me, and the rules I asked you to follow. Use my own words where you can. Leave out passwords, ID numbers and card numbers. List only the items, without explanations.",
@@ -790,14 +790,23 @@ export const messages = {
     "Nothing to import was found. Check the file, or that you pasted the AI's answer.",
   "memory.page.importTooBig": "Each file must be under 200 KB; split it and import in parts.",
   "memory.page.importUnreadable": "The file could not be read or is in the wrong format.",
-  "memory.page.exportTitle": "Export all memories and decision records",
+  "memory.page.exportTitle": "Export memories, standing rules and decision records",
   "memory.page.exportNote":
-    "You get one zip with per-item JSON Lines data and readable Markdown. Passwords, ID numbers and similar secrets stay as placeholders; memories in the trash and sensitive-topic memories such as health or money are exported too, and apart from the secrets their text is plain, so keep the zip safe. Use the command line encrypted export to take the secrets out too.",
+    "You get one zip with per-item JSON Lines data and readable Markdown; standing rules come with their sources and change history, readable in RULES.md. Passwords, ID numbers and similar secrets stay as placeholders; memories in the trash and sensitive-topic memories such as health or money are exported too, and apart from the secrets their text is plain, so keep the zip safe. Use the command line encrypted export to take the secrets out too.",
   "memory.page.download": "Download export",
   "memory.page.exportWorking": "Preparing the export…",
   "memory.page.exportDone":
-    "Exported {count} memories; {withheld} sensitive text places were left as placeholders.",
+    "Exported {count} memories and {rules} standing rules in force; {withheld} sensitive text places were left as placeholders.",
   "memory.page.exportFailed": "The export failed. Please try again later.",
+  "memory.page.chatExport": "Export chats",
+  "memory.page.chatExportTitle": "Export all chats",
+  "memory.page.chatExportNote":
+    "You get one zip: data/threads.jsonl holds every conversation as data, and chats/ has one readable Markdown file per conversation. Passwords, ID numbers and other secrets are left as placeholders. Conversations in the trash are exported too, and apart from secrets their text is plain, so keep the file safe. Attachments come only as a list (name, size, type), not the files themselves. Chats can be taken away but not imported back. To take the secrets too, use the encrypted export on the command line.",
+  "memory.page.chatDownload": "Download chats",
+  "memory.page.chatExportDone":
+    "Exported {threads, plural, one {# conversation} other {# conversations}} and {messages, plural, one {# message} other {# messages}}; {withheld, plural, one {# message with a secret was left as a placeholder} other {# messages with secrets were left as placeholders}}.",
+  "memory.page.chatExportTooLarge":
+    "There are too many chats to export from the web in one go. Please export on the server with the command line (himawari-admin data export-chats).",
   "capabilities.title": "Capabilities and adapters",
   "authorizations.title": "Authorizations and grants",
   "trace.title": "Trace",
@@ -1033,6 +1042,8 @@ export const messages = {
   "dailyReview.count": "{count, plural, one {# item} other {# items}} today",
   "dailyReview.countLeft":
     "{count, plural, one {# item} other {# items}} today, {left} more not picked",
+  "dailyReview.hiddenByModel":
+    "{count, plural, one {# more item was} other {# more items were}} pre-rated useful by the model with confidence, so the reduction you turned on left {count, plural, one {it} other {them}} out this time",
   "dailyReview.note": "Items not picked may show up tomorrow, and drop off after 7 days.",
   "dailyReview.tag.pushed": "Read mail and reminded you",
   "dailyReview.tag.silent": "Read mail, no reminder",
@@ -1227,7 +1238,7 @@ export const messages = {
     "Disconnecting revokes access at Google and deletes every to-do and key point extracted from your mail. Disconnect?",
   "proactive.apps.disconnected": "Disconnected, and access was revoked at Google.",
   "proactive.apps.outcome":
-    "{o, select, connected {Gmail connected. The first check starts now.} denied {You didn’t allow access on the Google page, so nothing was connected.} other {Connecting didn’t work. Please try again.}}",
+    "{o, select, connected {Gmail connected. The first check starts now.} denied {You didn’t allow access on the Google page, so nothing was connected.} demo {This trial uses a sample inbox, so your own mailbox can’t be connected. The sample inbox is ready.} other {Connecting didn’t work. Please try again.}}",
   "proactive.apps.what": "What Himawari reads and who receives it",
   "proactive.apps.what1":
     "Read-only; never archives, labels or replies. To judge a new mail it also looks up earlier mail about the same matter (including archived mail and mail you sent) and sends that to the model too",
@@ -1482,6 +1493,24 @@ export const messages = {
   "weekly.implicit.def":
     "These three signals are what can be observed without you rating anything. They are observations only: they are not your ratings, they are never mixed into the rating shares above, and they never change any threshold automatically. The denominator is this week's decisions that sent a reminder; repeats of the same signal on one decision count once.",
   "weekly.goRate": "Rate them in “Reminders”",
+  "weekly.prereview.title": "Model pre-rating agreement",
+  "weekly.prereview.empty": "No decision this week has both a model pre-rating and your rating.",
+  "weekly.prereview.emptyCurrent":
+    "No pre-rating this week from the current model and prompt version.",
+  "weekly.prereview.counts": "Pre-rated {rated} · model unsure {unsure} · you also rated {paired}",
+  "weekly.prereview.gate":
+    "{r, select, open {Past the bar on this week’s pairs} insufficient {Too few pairs this week to judge} below_threshold {Below the bar on this week’s pairs} other {No better than calling everything useful}}",
+  "weekly.prereview.audit": "Of the confident “useful” calls, you also said useful {k}/{n}",
+  "weekly.prereview.otherVersions":
+    "{n} more pre-ratings came from an older model or prompt version and are left out.",
+  "weekly.prereview.reductionOn":
+    "Auto-reduction is on: for types past the bar, daily rating shows only items the model is unsure about or that conflict with your past ratings, plus a random {audit} for spot checks.",
+  "weekly.prereview.reductionOff":
+    "Auto-reduction is off: daily rating still shows every decision waiting for you.",
+  "weekly.prereview.def":
+    "The model rates each decision waiting for you first (useful / not needed / missed). These are stored separately and never written into your rating. Agreement is the share of items you also rated where the model and you agree.",
+  "weekly.prereview.gateDef":
+    "The bar: among confident (at least {confidence}) “useful” calls, the 95% Wilson lower bound of agreement must be at least {agreement} and above simply calling everything useful; at least {n} pairs are needed to pass.",
   "sensitive.title": "Blocked sensitive information",
   "sensitive.count": "{count, plural, one {# record} other {# records}}",
   "sensitive.none": "Nothing sensitive has been blocked yet",
@@ -1520,6 +1549,7 @@ export const messages = {
   "sensitive.purpose.memory-consolidation": "merging memories",
   "sensitive.purpose.mail-judgment": "email check",
   "sensitive.purpose.action-review": "action review",
+  "sensitive.purpose.review-prereview": "model pre-rating",
   "sensitive.purpose.other": "other",
   "sensitive.maskedOnce": "{time} hidden once",
   "sensitive.maskedMany":

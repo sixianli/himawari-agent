@@ -132,7 +132,6 @@ export type OwnerRuleErrorCode =
   | "RULE_PARAMETERS_INVALID"
   | "RULE_NOT_FOUND"
   | "RULE_MEMORY_NOT_READY"
-  | "RULE_TEXT_REFUSED"
   | "RULE_LIMIT_REACHED"
   | "RULE_NOT_EXPLICIT"
   | "RULE_UNAVAILABLE";
@@ -406,8 +405,7 @@ export class ProductionOwnerRuleWriter {
         }),
       );
     const payload = await this.#options.payloads.get(ref);
-    if (!payload || payload.dataClassification === "restricted")
-      throw new OwnerRuleError("RULE_TEXT_REFUSED");
+    if (!payload) throw new OwnerRuleError("RULE_UNAVAILABLE");
     return payload.dataClassification;
   }
 

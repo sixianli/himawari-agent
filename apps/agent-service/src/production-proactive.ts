@@ -3,14 +3,21 @@ import {
   ApplicationPortError,
   type ClockPort,
   type DailyReview,
+  type DailyReviewMemoryText,
+  type DataClassification,
   type DecisionLedgerPort,
   type IdGeneratorPort,
+  listDailyReviewSubjects,
   type MemoryCheckupService,
+  OwnerRuleReplay,
+  type OwnerRuleReplayResult,
+  type OwnerRuleStorePort,
   PORT_ERROR_CODES,
+  type PrereviewRunResult,
   type ProactiveConfiguration,
   type ProactiveDecision,
-  ProactiveMailCheckService,
   type ProactiveMailCheckOptions,
+  ProactiveMailCheckService,
   type ProactiveMemoryRecall,
   type ProactiveModelInvoker,
   type ProactiveOverview,
@@ -19,13 +26,11 @@ import {
   type ProactiveScope,
   type ProactiveSealPort,
   type ProactiveSourceReader,
-  type OwnerRuleStorePort,
-  OwnerRuleReplay,
-  type OwnerRuleReplayResult,
-  type RuleRecord,
   type ProactiveStorePort,
   parseReviewKey,
-  type DailyReviewMemoryText,
+  ReviewPrereviewService,
+  type ReviewPrereviewStorePort,
+  type RuleRecord,
   readDailyReview,
   readProactiveOverview,
   type WebPushFeedback,
@@ -35,7 +40,14 @@ import type {
   GatewayV2Query,
   GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
-import type { GoogleOAuth } from "@himawari-agent/platform-node";
+import {
+  DEMO_MAILBOX_ACCOUNT,
+  DEMO_MAILBOX_SETTINGS_RETURN,
+  demoMailboxToken,
+  demoMailboxTokenLocale,
+  type GoogleOAuth,
+  isDemoMailboxToken,
+} from "@himawari-agent/platform-node";
 import type { ProactivePushSource } from "./production-web-push.js";
 
 export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
@@ -54,6 +66,7 @@ export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
 export const PROACTIVE_GOOGLE_START_PATH = "/api/proactive/v1/google/start";
 export const PROACTIVE_GOOGLE_CALLBACK_PATH = "/api/proactive/v1/google/callback";
 export const PROACTIVE_MAX_OUTPUT_TOKENS = 4096;
+export const PREREVIEW_MAX_OUTPUT_TOKENS = 1024;
 
 const STATE_TTL_MS = 10 * 60_000;
 const MAX_PENDING_STATES = 20;
@@ -152,6 +165,14 @@ export interface ProductionProactiveOptions {
   readonly ledger: Pick<DecisionLedgerPort, "listReviewPool" | "rateMany">;
   readonly readMemoryText: (ref: string) => Promise<string | undefined>;
   readonly readMemory?: (memoryId: string) => Promise<DailyReviewMemoryText | undefined>;
+  readonly readMemoryClassification?: (ref: string) => Promise<DataClassification | undefined>;
+  readonly prereview?: {
+    readonly store: ReviewPrereviewStorePort;
+    readonly model: ProactiveModelInvoker;
+    readonly digest: (text: string) => string;
+    readonly estimateCostMicros: (prompt: string) => number;
+  };
+  readonly onPrereview?: (result: PrereviewRunResult) => void;
   readonly checkup?: Pick<MemoryCheckupService, "week" | "act" | "undo">;
   readonly estimateCostMicros: (prompt: string) => number;
   readonly feedback: (sentFrom: string) => Promise<readonly WebPushFeedback[]>;
@@ -167,6 +188,7 @@ export type ProactiveAuthorizationOutcome = "connected" | "denied" | "failed";
 export class ProductionProactive {
   readonly #options: ProductionProactiveOptions;
   readonly #service: ProactiveMailCheckService;
+  readonly #prereview: ReviewPrereviewService | undefined;
   readonly #states = new Map<string, { readonly owner: string; readonly expiresAt: number }>();
   #timer: ReturnType<typeof setInterval> | undefined;
   #running: Promise<void> | undefined;
@@ -206,13 +228,104 @@ export class ProductionProactive {
       },
       ...(options.onMasked ? { onMasked: options.onMasked } : {}),
     });
+    const prereview = options.prereview;
+    this.#prereview = prereview
+      ? new ReviewPrereviewService({
+          scope: options.scope,
+          store: prereview.store,
+          model: prereview.model,
+          settings: options.configuration.reviewPrereview,
+          timeZone: options.timeZone,
+          clock: options.clock,
+          digest: prereview.digest,
+          estimateCostMicros: prereview.estimateCostMicros,
+          subjects: async () => listDailyReviewSubjects(await this.#reviewSources()),
+        })
+      : undefined;
+  }
+
+  async #reviewSources() {
+    const options = this.#options;
+    return {
+      scope: options.scope,
+      ledger: options.ledger,
+      overview: await this.overview(),
+      readMemoryText: options.readMemoryText,
+      ...(options.readMemory ? { readMemory: options.readMemory } : {}),
+      ...(options.readMemoryClassification
+        ? { readMemoryClassification: options.readMemoryClassification }
+        : {}),
+      timeZone: options.timeZone,
+      now: options.clock.now(),
+    };
   }
 
   start(): void {
     if (this.#timer) return;
     this.#timer = setInterval(() => void this.tick(), this.#options.configuration.intervalMs);
     this.#timer.unref?.();
-    void this.tick();
+    if (!this.#options.configuration.demoInbox) {
+      void this.tick();
+      return;
+    }
+    void this.seedDemoInbox()
+      .catch(this.#options.onFailure)
+      .then(() => this.tick());
+  }
+
+  async seedDemoInbox(options: { readonly restore?: boolean } = {}): Promise<void> {
+    const { scope, store, seal, clock } = this.#options;
+    const demoInbox = this.#options.configuration.demoInbox;
+    if (!demoInbox) return;
+    const existing = await store.readConnection({ ...scope, source: "gmail" });
+    const settings = await store.readSettings(scope);
+    if (existing) {
+      const token = await seal.open({ ...scope, ref: existing.tokenRef });
+      if (token === undefined) {
+        if (!options.restore) return;
+      } else if (!isDemoMailboxToken(token)) return;
+      else if (existing.status === "connected" && demoMailboxTokenLocale(token) === demoInbox)
+        return;
+    } else if (!options.restore && settings.updatedAt !== null) return;
+    const now = clock.now();
+    const sealed: string[] = [];
+    let released: readonly string[];
+    try {
+      const accountRef = await seal.seal({ ...scope, text: DEMO_MAILBOX_ACCOUNT, at: now });
+      sealed.push(accountRef);
+      const tokenRef = await seal.seal({
+        ...scope,
+        text: demoMailboxToken(demoInbox, now),
+        at: now,
+      });
+      sealed.push(tokenRef);
+      released = await store.saveConnection({
+        ...scope,
+        connection: {
+          source: "gmail",
+          accountRef,
+          tokenRef,
+          cursor: null,
+          status: "connected",
+          connectedAt: now,
+          updatedAt: now,
+        },
+      });
+    } catch (error) {
+      await seal.release({ ...scope, refs: sealed }).catch(() => undefined);
+      throw error;
+    }
+    if (released.length > 0) await seal.release({ ...scope, refs: released });
+    await store.writeSettings({ ...scope, ...settings, enabled: true, now });
+  }
+
+  async authorizationRedirect(owner: string): Promise<string> {
+    if (this.#options.configuration.demoInbox) {
+      await this.seedDemoInbox({ restore: true });
+      void this.tick();
+      return DEMO_MAILBOX_SETTINGS_RETURN;
+    }
+    return this.beginAuthorization(owner);
   }
 
   async stop(): Promise<void> {
@@ -222,16 +335,41 @@ export class ProductionProactive {
   }
 
   tick(): Promise<void> {
-    this.#running ??= this.#service
-      .run()
+    this.#running ??= this.#checkable()
+      .then((checkable) => (checkable ? this.#service.run() : undefined))
       .then((decision) => {
         if (decision) this.#options.onDecision?.(decision);
       })
       .catch(this.#options.onFailure)
+      .then(async () => {
+        await this.prereview();
+      })
       .finally(() => {
         this.#running = undefined;
       });
     return this.#running;
+  }
+
+  async prereview(): Promise<PrereviewRunResult | undefined> {
+    if (!this.#prereview) return undefined;
+    try {
+      const result = await this.#prereview.run();
+      this.#options.onPrereview?.(result);
+      return result;
+    } catch (error) {
+      this.#options.onFailure(error);
+      return undefined;
+    }
+  }
+
+  async #checkable(): Promise<boolean> {
+    if (!this.#options.configuration.demoInbox) return true;
+    const { scope, store, seal } = this.#options;
+    if (!(await store.readSettings(scope)).enabled) return false;
+    const connection = await store.readConnection({ ...scope, source: "gmail" });
+    if (!connection) return true;
+    const token = await seal.open({ ...scope, ref: connection.tokenRef });
+    return token === undefined || isDemoMailboxToken(token);
   }
 
   async replayRule(rule: RuleRecord): Promise<OwnerRuleReplayResult> {
@@ -346,14 +484,20 @@ export class ProductionProactive {
             this.#options.onFailure(error);
             return [];
           });
+    const prereview = this.#prereview;
     return readDailyReview({
-      scope: this.#options.scope,
-      ledger: this.#options.ledger,
-      overview: await this.overview(),
-      readMemoryText: this.#options.readMemoryText,
-      ...(this.#options.readMemory ? { readMemory: this.#options.readMemory } : {}),
-      timeZone: this.#options.timeZone,
-      now: this.#options.clock.now(),
+      ...(await this.#reviewSources()),
+      ...(prereview
+        ? {
+            hideByModel: (candidates) =>
+              options.strict
+                ? prereview.hiddenByModel(candidates)
+                : prereview.hiddenByModel(candidates).catch((error: unknown) => {
+                    this.#options.onFailure(error);
+                    return new Set<string>();
+                  }),
+          }
+        : {}),
       budgetSeconds: this.#options.configuration.reviewBudgetSeconds,
       secondsPerItem: this.#options.configuration.reviewSecondsPerItem,
       silentShare: this.#options.configuration.reviewSilentSharePermille,
@@ -381,6 +525,7 @@ export class ProductionProactive {
           capacity: review.capacity,
           sampled: review.sampled,
           notSampled: review.notSampled,
+          hiddenByModel: review.hiddenByModel,
           items: review.items.map(item),
           folded: { total: review.folded.total, items: review.folded.items.map(item) },
           memoryUnusedDays: this.#options.configuration.reviewMemoryUnusedDays,
@@ -619,6 +764,11 @@ export class ProductionProactive {
         const connection = await store.readConnection({ ...scope, source: "gmail" });
         if (connection) {
           const token = await seal.open({ ...scope, ref: connection.tokenRef });
+          if (token && this.#options.configuration.demoInbox && !isDemoMailboxToken(token))
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.INVALID_OPERATION,
+              "PROACTIVE_DEMO_KEEPS_REAL_CONNECTION",
+            );
           if (token) await this.#options.oauth.revoke(token).catch(() => false);
         }
         const released = await store.removeSource({ ...scope, source: "gmail" });

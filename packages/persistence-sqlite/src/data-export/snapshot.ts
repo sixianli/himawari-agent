@@ -25,9 +25,13 @@ export interface PortableSnapshot {
   readonly sourceInsights: readonly Row[];
   readonly processedMessages: readonly Row[];
   readonly museEntries: readonly Row[];
+  readonly rules: readonly Row[];
+  readonly ruleHistory: readonly Row[];
+  readonly prereviews: readonly Row[];
   readonly payloads: ReadonlyMap<string, PayloadRecord | { readonly unavailable: true }>;
   readonly omittedMemories: number;
   readonly restrictedMemories: number;
+  readonly externalProposals: number;
 }
 
 const EXPORTABLE_STATUSES = "('active', 'archived', 'trashed')";
@@ -63,6 +67,10 @@ export function readSnapshot(
       const restrictedMemories = count(
         `SELECT COUNT(*) FROM memory_records WHERE owner_id = @ownerId AND agent_id = @agentId
           AND status IN ${EXPORTABLE_STATUSES} AND classification = 'restricted'`,
+      );
+      const externalProposals = count(
+        `SELECT COUNT(*) FROM external_memory_proposals
+          WHERE owner_id = @ownerId AND agent_id = @agentId AND status <> 'committed'`,
       );
       const history = all(
         `SELECT memory_id, kind, content_ref, stance, quote_ref, source_deleted, occurred_at
@@ -178,6 +186,26 @@ export function readSnapshot(
             ORDER BY muse_at, id`,
           )
         : [];
+      const rules = all(
+        `SELECT rule_id, revision, parameters, status, source, source_memory_id, updated_at
+        FROM rule_book_rules WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY rule_id`,
+      );
+      const ruleHistory = all(
+        `SELECT rule_id, revision, parameters, status, source, source_memory_id, change_reason,
+          changed_at
+        FROM rule_book_history WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY rule_id, revision`,
+      );
+      const prereviews = withEvidence
+        ? all(
+            `SELECT id, decision_id, mail_source, message_id, calibration_group, category, status,
+              rating, confidence_permille, history_conflict, failure_code, model_ref, prompt_id,
+              text_digest, data_classification, cost_micros, duration_ms, created_at
+            FROM decision_prereviews WHERE owner_id = @ownerId AND agent_id = @agentId
+            ORDER BY created_at, id`,
+          )
+        : [];
       const refs = new Set<string>();
       for (const row of [
         ...memories,
@@ -270,9 +298,13 @@ export function readSnapshot(
         sourceInsights,
         processedMessages,
         museEntries,
+        rules,
+        ruleHistory,
+        prereviews,
         payloads,
         omittedMemories,
         restrictedMemories,
+        externalProposals,
       };
     })
     .deferred();

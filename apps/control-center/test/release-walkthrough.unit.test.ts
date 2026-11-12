@@ -47,6 +47,7 @@ const memoryOverview = {
   profile: [],
   profileUsage: { used: 0, limit: 2000, pinned: 0, queued: [] },
   lastViewedAt: null,
+  externalProposals: { total: 0, items: [], batches: [] },
   pending: [],
   tidyUps: [],
   conversationReviews: [],

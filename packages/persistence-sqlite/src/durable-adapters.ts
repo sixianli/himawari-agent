@@ -12,32 +12,35 @@ import type {
   CapabilityRegistryStorePort,
   DecisionLedgerPort,
   ExecutionEnvironmentStorePort,
+  ExternalMemoryProposalStorePort,
   GapCaseMarkPort,
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
   LedgerObservationPort,
   MemoryBookStorePort,
+  MemoryCaptureBacklogPort,
+  MemoryCheckupStorePort,
   MemoryConsolidationStorePort,
   MemoryConversationReviewStorePort,
   MemoryEpisodeStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
-  MemoryCaptureBacklogPort,
-  MemoryCheckupStorePort,
   MemoryReminderStorePort,
-  OwnerRuleStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
+  OwnerRuleStorePort,
   PayloadStorePort,
   ProactiveStorePort,
   ProductMemoryStatePort,
+  RealEvalStorePort,
   ReliableEventPort,
   ReliableEventSinkPort,
+  ReviewPrereviewStorePort,
   RunCheckpointStore,
   RunDispatchCandidate,
   RunDispatchPort,
@@ -977,6 +980,32 @@ export class SqliteDurableAdapters {
     });
   }
 
+  reviewPrereview(): ReviewPrereviewStorePort {
+    return Object.freeze<ReviewPrereviewStorePort>({
+      listDone: (input) => this.context.read("reviewPrereview.listDone", input),
+      listRecentFailures: (input) => this.context.read("reviewPrereview.listRecentFailures", input),
+      countSince: (input) => this.context.read("reviewPrereview.countSince", input),
+      ownerHistory: (input) => this.context.read("reviewPrereview.ownerHistory", input),
+      listPairs: (input) => this.context.read("reviewPrereview.listPairs", input),
+      record: (input) => this.context.write("reviewPrereview.record", input),
+      recordFailure: (input) => this.context.write("reviewPrereview.recordFailure", input),
+    });
+  }
+
+  externalMemoryProposals(): ExternalMemoryProposalStorePort {
+    return Object.freeze<ExternalMemoryProposalStorePort>({
+      submit: (input) => this.context.write("externalMemoryProposal.submit", input),
+      read: (input) => this.context.read("externalMemoryProposal.read", input),
+      listPending: (input) => this.context.read("externalMemoryProposal.listPending", input),
+      decide: (input) => this.context.write("externalMemoryProposal.decide", input),
+      listBatch: (input) => this.context.read("externalMemoryProposal.listBatch", input),
+      listBatches: (input) => this.context.read("externalMemoryProposal.listBatches", input),
+      reopenBatch: (input) => this.context.write("externalMemoryProposal.reopenBatch", input),
+      dropDiscardedText: (input) =>
+        this.context.write("externalMemoryProposal.dropDiscardedText", input),
+    });
+  }
+
   ownerRules(): OwnerRuleStorePort {
     return Object.freeze<OwnerRuleStorePort>({
       list: (input) => this.context.read("ownerRule.list", input),
@@ -1122,6 +1151,16 @@ export class SqliteDurableAdapters {
     return Object.freeze<ModelUsageStorePort>({
       record: (input) => this.context.write("modelUsage.record", input),
       isFollowUpTurn: (input) => this.context.read("modelUsage.isFollowUpTurn", input),
+    });
+  }
+
+  realEval(): RealEvalStorePort {
+    return Object.freeze<RealEvalStorePort>({
+      listQuestions: (input) => this.context.read("realEval.listQuestions", input),
+      addQuestion: (input) => this.context.write("realEval.addQuestion", input),
+      retireQuestion: (input) => this.context.write("realEval.retireQuestion", input),
+      recordRun: (input) => this.context.write("realEval.recordRun", input),
+      listRuns: (input) => this.context.read("realEval.listRuns", input),
     });
   }
 

@@ -878,6 +878,7 @@ describe("opencode review process cleanup", () => {
     const linux = (read) => processState(42, { platform: "linux", read });
     expect(linux(() => "42 (sleep) S 1 42")).toBe("S");
     expect(linux(failing("ENOENT"))).toBe("gone");
+    expect(linux(failing("ESRCH"))).toBe("gone");
     expect(() => linux(failing("EACCES"))).toThrow("EACCES");
     const darwin = (signal) => processState(42, { platform: "darwin", signal });
     expect(darwin(() => true)).toBe("alive");
