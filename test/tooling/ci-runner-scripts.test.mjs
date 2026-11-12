@@ -1576,7 +1576,7 @@ describe("uninstall-runner.sh", () => {
       encoding: "utf8",
       env: { PATH: `${box.root}/bin:${process.env.PATH}`, HOME: box.root },
     });
-    expect(result.stderr).not.toContain("UNINSTALL_INCOMPLETE");
+    expect(result.stderr, result.stderr).not.toContain("UNINSTALL_INCOMPLETE");
     expect(result.status).toBe(0);
     const calls = box.calls();
     expect(calls).toContain("systemctl disable --now gh-runner-2.service\n");
@@ -1909,7 +1909,8 @@ describe("uninstall-runner.sh with the gate runner", () => {
     const inner = [
       `scripts="${box.root}/scripts"`,
       `mkdir -p "$scripts" && mount --bind "${scripts}" "$scripts" || exit 92`,
-      "for dir in /srv /etc/systemd/system /etc/gh-runner /etc/sudoers.d; do [ -d $dir ] || continue; mount -t tmpfs tmpfs $dir || exit 91; done",
+      "mount -t tmpfs tmpfs /srv && mount -t tmpfs tmpfs /etc || exit 91",
+      "mkdir -p /etc/systemd/system /etc/sudoers.d || exit 91",
       'exec bash "$scripts/uninstall-runner.sh" all',
     ].join("\n");
     const result = spawnSync("bwrap", asRootInPrivateMounts(inner), {
@@ -1917,7 +1918,7 @@ describe("uninstall-runner.sh with the gate runner", () => {
       env: { PATH: `${box.root}/bin:${process.env.PATH}`, HOME: box.root },
     });
     const calls = box.calls();
-    expect(result.stderr).not.toContain("UNINSTALL_INCOMPLETE");
+    expect(result.stderr, result.stderr).not.toContain("UNINSTALL_INCOMPLETE");
     expect(calls).toContain("systemctl disable --now gh-runner-gate.service\n");
     expect(calls).toContain("userdel gh-runner-gate\n");
     expect(calls).toContain("rm -rf /srv/gh-runner-gate\n");
