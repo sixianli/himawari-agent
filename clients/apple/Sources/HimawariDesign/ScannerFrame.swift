@@ -9,7 +9,7 @@ public struct ScannerFrame: View {
 
     public var body: some View {
         GeometryReader { proxy in
-            let side = Layout.scannerWindowSize
+            let side = DesignTokens.Scanner.window
             let window = CGRect(
                 x: (proxy.size.width - side) / 2,
                 y: (proxy.size.height - side) / 2 - 20,
@@ -19,11 +19,11 @@ public struct ScannerFrame: View {
             ZStack {
                 Path { path in
                     path.addRect(CGRect(origin: .zero, size: proxy.size))
-                    path.addRoundedRect(in: window, cornerSize: CGSize(width: Layout.scannerWindowRadius, height: Layout.scannerWindowRadius), style: .continuous)
+                    path.addRoundedRect(in: window, cornerSize: CGSize(width: DesignTokens.Scanner.radius, height: DesignTokens.Scanner.radius), style: .continuous)
                 }
-                .fill(Color.black.opacity(Layout.scannerDimOpacity), style: FillStyle(eoFill: true))
-                RoundedRectangle(cornerRadius: Layout.scannerWindowRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(Layout.scannerStrokeOpacity), lineWidth: Layout.scannerWindowStroke)
+                .fill(Color.black.opacity(DesignTokens.Scanner.scrimOpacity), style: FillStyle(eoFill: true))
+                RoundedRectangle(cornerRadius: DesignTokens.Scanner.radius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(DesignTokens.Scanner.strokeOpacity), lineWidth: DesignTokens.Scanner.stroke)
                     .frame(width: side, height: side)
                     .position(x: window.midX, y: window.midY)
                 caption
@@ -51,7 +51,7 @@ public struct ScannerCloseButton: View {
             Icon(.x, size: DesignTokens.IconSize.glassButton)
                 .foregroundStyle(Color.white)
                 .frame(width: DesignTokens.Size.glassButton, height: DesignTokens.Size.glassButton)
-                .background(Color.white.opacity(Layout.scannerCloseOpacity), in: Circle())
+                .background(Color.white.opacity(DesignTokens.Scanner.closeButtonFillOpacity), in: Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)

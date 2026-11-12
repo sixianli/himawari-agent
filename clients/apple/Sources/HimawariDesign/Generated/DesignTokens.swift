@@ -61,13 +61,18 @@ public enum DesignTokens {
         public static let composerWidth: CGFloat = 366
         public static let emptyMark: CGFloat = 92
         public static let emptyMarkNewChat: CGFloat = 96
+        public static let emptyMinHeight: CGFloat = 300
         public static let fadeComposer: CGFloat = 130
         public static let fadeTabBar: CGFloat = 140
         public static let fadeTop: CGFloat = 110
         public static let glassButton: CGFloat = 48
+        public static let minTapTarget: CGFloat = 44
+        public static let navBarHeight: CGFloat = 64
         public static let navTop: CGFloat = 54
+        public static let newChatGlowRadius: CGFloat = 300
         public static let offlineBannerPaddingVertical: CGFloat = 9
         public static let offlineBannerPaddingHorizontal: CGFloat = 16
+        public static let offlineDot: CGFloat = 8
         public static let pagePaddingX: CGFloat = 16
         public static let pairingMark: CGFloat = 140
         public static let pill: CGFloat = 46
@@ -83,6 +88,7 @@ public enum DesignTokens {
         public static let switchHeight: CGFloat = 32
         public static let switchKnob: CGFloat = 28
         public static let tabBarHeight: CGFloat = 64
+        public static let tabBarReserve: CGFloat = 80
         public static let tabBarWidth: CGFloat = 282
         public static let usageBar: CGFloat = 6
     }
@@ -106,6 +112,36 @@ public enum DesignTokens {
 
     public enum Opacity {
         public static let emptyMark: Double = 0.55
+    }
+
+    public enum Pairing {
+        public static let bannerRadius: CGFloat = 22
+        public static let errorIcon: CGFloat = 72
+        public static let errorTitleSize: CGFloat = 26
+        public static let errorTop: CGFloat = 156
+        public static let glowCenterY: CGFloat = 210
+        public static let glowRadius: CGFloat = 310
+        public static let homeGap: CGFloat = 36
+        public static let homeTop: CGFloat = 66
+        public static let paddingBottom: CGFloat = 44
+        public static let paddingX: CGFloat = 24
+        public static let removedBannerTop: CGFloat = 6
+        public static let removedTitleSize: CGFloat = 31
+        public static let stepCardRadius: CGFloat = 22
+        public static let stepNumberWidth: CGFloat = 20
+        public static let stepRowHeight: CGFloat = 56
+        public static let waitingMark: CGFloat = 120
+        public static let waitingTextSize: CGFloat = 22
+        public static let waitingTop: CGFloat = 86
+    }
+
+    public enum Scanner {
+        public static let closeButtonFillOpacity: CGFloat = 0.18
+        public static let radius: CGFloat = 36
+        public static let scrimOpacity: CGFloat = 0.45
+        public static let stroke: CGFloat = 3
+        public static let strokeOpacity: CGFloat = 0.9
+        public static let window: CGFloat = 250
     }
 
     public enum TypeScale {

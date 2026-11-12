@@ -11,8 +11,8 @@ struct PairingView: View {
 
     var body: some View {
         content
-            .padding(.horizontal, Layout.pairingPaddingX)
-            .padding(.bottom, Layout.pairingPaddingBottom)
+            .padding(.horizontal, DesignTokens.Pairing.paddingX)
+            .padding(.bottom, DesignTokens.Pairing.paddingBottom)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background { PairingGlow() }
             .animation(.easeInOut(duration: 0.25), value: model.phase)
@@ -54,7 +54,7 @@ struct PairingView: View {
 
     private func home(removed: Bool) -> some View {
         VStack(spacing: 0) {
-            VStack(spacing: Layout.pairingHomeGap) {
+            VStack(spacing: DesignTokens.Pairing.homeGap) {
                 if removed {
                     Text(L.text("pairing.problem.removed"))
                         .hmType(DesignTokens.TypeScale.secondary)
@@ -63,13 +63,13 @@ struct PairingView: View {
                         .padding(.vertical, 12)
                         .padding(.horizontal, 18)
                         .frame(maxWidth: .infinity)
-                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Layout.pairingBannerRadius, style: .continuous))
+                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: DesignTokens.Pairing.bannerRadius, style: .continuous))
                 }
                 SunflowerMark(detail: .full, growing: model.phase == .submitting)
                     .frame(width: DesignTokens.Size.pairingMark, height: DesignTokens.Size.pairingMark)
                 VStack(spacing: 10) {
                     Text(L.text("pairing.hello"))
-                        .font(.system(size: removed ? Layout.pairingRemovedTitleSize : DesignTokens.TypeScale.title1.size, weight: .bold, design: .rounded))
+                        .font(.system(size: removed ? DesignTokens.Pairing.removedTitleSize : DesignTokens.TypeScale.title1.size, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
                         .lineLimit(1)
@@ -83,7 +83,7 @@ struct PairingView: View {
                     steps
                 }
             }
-            .padding(.top, removed ? Layout.pairingRemovedTop : Layout.pairingHomeTop)
+            .padding(.top, removed ? DesignTokens.Pairing.removedBannerTop : DesignTokens.Pairing.homeTop)
             Spacer(minLength: 24)
             if model.phase == .submitting {
                 Button {} label: { ProgressView().tint(Color.hmOnText) }
@@ -102,18 +102,18 @@ struct PairingView: View {
                     Text(index, format: .number)
                         .font(.rounded(DesignTokens.TypeScale.body.size, weight: .bold))
                         .foregroundStyle(Color.hmSun)
-                        .frame(width: Layout.pairingStepNumberWidth, alignment: .leading)
+                        .frame(width: DesignTokens.Pairing.stepNumberWidth, alignment: .leading)
                     Text(L.text("pairing.step\(index)"))
                         .hmType(DesignTokens.TypeScale.body)
                         .foregroundStyle(Color.hmText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(minHeight: Layout.pairingStepRowHeight)
+                .frame(minHeight: DesignTokens.Pairing.stepRowHeight)
                 if index < 3 { RowSeparator() }
             }
         }
         .padding(.horizontal, 18)
-        .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: Layout.pairingCardRadius, style: .continuous))
+        .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Pairing.stepCardRadius, style: .continuous))
         .hmShadow(DesignTokens.Shadows.lift)
     }
 
@@ -121,7 +121,7 @@ struct PairingView: View {
         VStack(spacing: 0) {
             VStack(spacing: 30) {
                 SunflowerMark(detail: .full, growing: true)
-                    .frame(width: Layout.pairingWaitingMarkSize, height: Layout.pairingWaitingMarkSize)
+                    .frame(width: DesignTokens.Pairing.waitingMark, height: DesignTokens.Pairing.waitingMark)
                 VStack(spacing: 12) {
                     Text(number)
                         .hmType(DesignTokens.TypeScale.pairingNumber)
@@ -129,8 +129,8 @@ struct PairingView: View {
                         .foregroundStyle(Color.hmText)
                         .accessibilityLabel(Text(number.replacingOccurrences(of: " ", with: "")))
                     Text(L.text("pairing.waiting"))
-                        .font(.himawari(Layout.pairingWaitingTextSize, weight: .semibold))
-                        .lineSpacing(Layout.pairingWaitingTextSize * 0.3)
+                        .font(.himawari(DesignTokens.Pairing.waitingTextSize, weight: .semibold))
+                        .lineSpacing(DesignTokens.Pairing.waitingTextSize * 0.3)
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
                 }
@@ -138,7 +138,7 @@ struct PairingView: View {
                     .hmType(DesignTokens.TypeScale.secondary)
                     .foregroundStyle(Color.hmMuted)
             }
-            .padding(.top, Layout.pairingWaitingTop)
+            .padding(.top, DesignTokens.Pairing.waitingTop)
             Spacer(minLength: 24)
             linkButton(L.text("pairing.cancel")) { model.cancelPairing() }
         }
@@ -147,10 +147,10 @@ struct PairingView: View {
     private func problemPage<Actions: View>(icon: IconName, tint: Color, problem: PairingProblem, @ViewBuilder actions: () -> Actions) -> some View {
         VStack(spacing: 0) {
             VStack(spacing: 22) {
-                Icon(icon, size: Layout.pairingProblemIconSize)
+                Icon(icon, size: DesignTokens.Pairing.errorIcon)
                     .foregroundStyle(tint)
                 Text(L.text("pairing.problem.\(Self.key(problem)).title"))
-                    .font(.himawari(Layout.pairingProblemTitleSize, weight: .semibold))
+                    .font(.himawari(DesignTokens.Pairing.errorTitleSize, weight: .semibold))
                     .foregroundStyle(Color.hmText)
                     .multilineTextAlignment(.center)
                 Text(Self.detail(problem))
@@ -159,7 +159,7 @@ struct PairingView: View {
                     .foregroundStyle(Color.hmMuted)
                     .multilineTextAlignment(.center)
             }
-            .padding(.top, Layout.pairingProblemTop)
+            .padding(.top, DesignTokens.Pairing.errorTop)
             Spacer(minLength: 24)
             actions()
         }
@@ -182,7 +182,7 @@ struct PairingView: View {
         Button(title, action: action)
             .hmType(DesignTokens.TypeScale.body)
             .foregroundStyle(Color.hmSun)
-            .frame(minHeight: Layout.minimumTapTarget)
+            .frame(minHeight: DesignTokens.Size.minTapTarget)
             .buttonStyle(.plain)
     }
 
@@ -215,9 +215,9 @@ struct PairingGlow: View {
                 Color.hmBackground
                 RadialGradient(
                     colors: [Color.hmGlow, .clear],
-                    center: UnitPoint(x: 0.5, y: Layout.pairingGlowCenterY / max(proxy.size.height, 1)),
+                    center: UnitPoint(x: 0.5, y: DesignTokens.Pairing.glowCenterY / max(proxy.size.height, 1)),
                     startRadius: 0,
-                    endRadius: Layout.pairingGlowRadius
+                    endRadius: DesignTokens.Pairing.glowRadius
                 )
             }
         }

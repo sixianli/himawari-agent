@@ -96,6 +96,8 @@ export function generate(tokens) {
   scalars("IconSize", tokens.icon);
   scalars("ProcessRow", tokens.processRow);
   scalars("Opacity", tokens.opacity, "Double");
+  scalars("Pairing", tokens.pairing ?? {});
+  scalars("Scanner", tokens.scanner ?? {});
   lines.push("    public enum TypeScale {");
   for (const name of Object.keys(tokens.type).sort()) {
     const value = tokens.type[name];

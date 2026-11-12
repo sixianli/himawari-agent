@@ -80,7 +80,7 @@ public struct ChatView: View {
                 .padding(.horizontal, 76)
                 .accessibilityAddTraits(.isHeader)
         }
-        .frame(height: Layout.navBarHeight)
+        .frame(height: DesignTokens.Size.navBarHeight)
     }
 
     private var transcript: some View {
@@ -214,7 +214,7 @@ struct NewChatPrompt: View {
         .padding(.bottom, DesignTokens.Size.fadeTabBar - 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
-            RadialGradient(colors: [Color.hmGlow, .clear], center: .center, startRadius: 0, endRadius: Layout.newChatGlowRadius / 2)
+            RadialGradient(colors: [Color.hmGlow, .clear], center: .center, startRadius: 0, endRadius: DesignTokens.Size.newChatGlowRadius / 2)
                 .ignoresSafeArea()
         }
     }
@@ -225,7 +225,7 @@ struct OfflineBanner: View {
         HStack(spacing: 8) {
             Circle()
                 .fill(Color.hmMuted)
-                .frame(width: Layout.offlineDotSize, height: Layout.offlineDotSize)
+                .frame(width: DesignTokens.Size.offlineDot, height: DesignTokens.Size.offlineDot)
             Text(L.text("chat.offline"))
                 .hmType(DesignTokens.TypeScale.offlineBanner)
                 .foregroundStyle(Color.hmText)
@@ -274,7 +274,7 @@ struct QueuedMessageRow: View {
             }
             .hmType(DesignTokens.TypeScale.caption)
             .buttonStyle(.plain)
-            .frame(minHeight: Layout.minimumTapTarget)
+            .frame(minHeight: DesignTokens.Size.minTapTarget)
             .padding(.trailing, 6)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)

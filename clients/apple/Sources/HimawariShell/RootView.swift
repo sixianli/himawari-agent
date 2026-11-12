@@ -53,7 +53,7 @@ struct MainTabsView: View {
                 .transition(.move(edge: .trailing))
             } else {
                 content
-                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: Layout.tabBarInset) }
+                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: DesignTokens.Size.tabBarReserve) }
                     .overlay(alignment: .bottom) { bars }
                     .transition(.opacity)
             }

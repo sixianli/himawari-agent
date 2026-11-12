@@ -102,6 +102,6 @@ struct ChatListEmptyState: View {
                 .foregroundStyle(Color.hmMuted)
                 .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity, minHeight: Layout.emptyStateMinHeight)
+        .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.emptyMinHeight)
     }
 }
