@@ -74,6 +74,7 @@ export interface MemoryConsolidationStorePort {
   listHeldPairs(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
+    readonly openOnly?: boolean;
   }): Promise<readonly (readonly [MemoryId, MemoryId])[]>;
   readChange(id: string): Promise<MemoryConsolidationChange | undefined>;
   readBasis(changeId: string): Promise<readonly MemoryId[]>;

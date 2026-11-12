@@ -3,7 +3,15 @@ import type { PayloadRecord } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
 import type { JsonValue } from "./canonical.js";
 import { validateAgainst } from "./schema.js";
-import { SEALED_FILE, SEALED_SCHEMA } from "./schemas.js";
+import { RULE_PARAMETERS_MAXIMUM_LENGTH, SEALED_FILE, SEALED_SCHEMA } from "./schemas.js";
+import {
+  assertRuleHistory,
+  enforcedRuleCount,
+  type PortableRule,
+  type PortableRuleVersion,
+  ruleParametersKey,
+  storedRuleProblem,
+} from "./rules.js";
 import { unsealJson } from "./seal.js";
 import {
   DATA_EXPORT_ERROR_CODES,
@@ -32,6 +40,7 @@ export interface ImportReport {
     readonly memoriesWithoutOriginal: number;
     readonly historyEventsWithoutOriginal: number;
     readonly decisionTextsWithoutOriginal: number;
+    readonly rulesWithoutOriginal: number;
     readonly evidenceNotImported: boolean;
   };
 }
@@ -48,6 +57,7 @@ interface Sealed {
     readonly sourceInsights: readonly Record<string, unknown>[];
     readonly processedMessages: readonly Record<string, unknown>[];
     readonly museEntries: readonly Record<string, unknown>[];
+    readonly prereviews: readonly Record<string, unknown>[];
   } | null;
 }
 
@@ -59,9 +69,12 @@ const EMPTY_TARGET_TABLES = [
   "memory_people",
   "memory_import_batches",
   "memory_consolidation_runs",
+  "memory_conversation_reviews",
   "source_insights",
   "proactive_processed_messages",
   "muse_reference_entries",
+  "rule_book_rules",
+  "rule_book_history",
 ] as const;
 
 function assertEmptyTarget(database: Database.Database, scope: ExportScope): void {
@@ -97,10 +110,15 @@ export async function importPortableExport(
   }
   assertEmptyTarget(options.database, options.scope);
 
-  const original = (key: string, text: ParsedText): string | null => {
-    if (text.withheld !== true) return text.text;
-    return sealed?.originals[key] ?? null;
+  const sealedText = (key: string): string | null => {
+    const value: unknown = sealed?.originals[key];
+    if (value === undefined) return null;
+    if (typeof value !== "string")
+      throw new DataExportError(DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH, `${key} 的原文不是文字`);
+    return value;
   };
+  const original = (key: string, text: ParsedText): string | null =>
+    text.withheld === true ? sealedText(key) : text.text;
 
   const skippedMemories = new Set<string>();
   let historyWithout = 0;
@@ -217,6 +235,46 @@ export async function importPortableExport(
   }
 
   const importedMemoryIds = new Set(plans.map(({ memory }) => memory.id));
+  const keptMemoryLink = (id: string | null): string | null =>
+    id !== null && importedMemoryIds.has(id) ? id : null;
+  const restoreVersion = <T extends PortableRuleVersion | PortableRule>(
+    ruleId: string,
+    version: T,
+    key: string,
+  ): T | null => {
+    if (version.withheld !== true) return version;
+    const parameters = sealedText(key);
+    if (parameters === null) return null;
+    if ([...parameters].length > RULE_PARAMETERS_MAXIMUM_LENGTH)
+      throw new DataExportError(
+        DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH,
+        `规则 ${ruleId} 的原文超过上限`,
+      );
+    const restored = { ...version, parameters } as T;
+    const problem = storedRuleProblem(ruleId, restored);
+    if (problem !== null) throw new DataExportError(DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH, problem);
+    return restored;
+  };
+  let rulesWithout = 0;
+  const rulePlans: { rule: PortableRule; history: PortableRuleVersion[] }[] = [];
+  for (const rule of parsed.rules) {
+    const current = restoreVersion(rule.ruleId, rule, ruleParametersKey(rule.ruleId));
+    const history = rule.history.map((version) =>
+      restoreVersion(rule.ruleId, version, ruleParametersKey(rule.ruleId, version.revision)),
+    );
+    if (current === null || history.some((version) => version === null)) {
+      rulesWithout += 1;
+      continue;
+    }
+    assertRuleHistory({ ...current, history: history as PortableRuleVersion[] });
+    rulePlans.push({
+      rule: { ...current, sourceMemoryId: keptMemoryLink(current.sourceMemoryId) },
+      history: (history as PortableRuleVersion[]).map((version) => ({
+        ...version,
+        sourceMemoryId: keptMemoryLink(version.sourceMemoryId),
+      })),
+    });
+  }
   const imported: PortableCounts = {
     memories: plans.length,
     memoryHistoryEvents: plans.reduce((total, { history }) => total + history.length, 0),
@@ -224,9 +282,14 @@ export async function importPortableExport(
     importBatches: parsed.importBatches.length,
     consolidations: parsed.consolidations.length,
     consolidationChanges: 0,
+    conversationReviews: parsed.conversationReviews.length,
+    conversationReviewChanges: 0,
     decisions: parsed.decisions.length,
     decisionSignals: parsed.decisions.reduce((total, { signals }) => total + signals.length, 0),
     markdownMemories: parsed.manifest.counts.markdownMemories,
+    rules: rulePlans.length,
+    enforcedRules: enforcedRuleCount(rulePlans.map(({ rule }) => rule)),
+    ruleHistoryVersions: rulePlans.reduce((total, { history }) => total + history.length, 0),
     sealedOriginals: options.passphrase === undefined ? 0 : parsed.manifest.counts.sealedOriginals,
     sealedEvidenceRows: evidence
       ? Object.values(evidence).reduce((total, rows) => total + rows.length, 0)
@@ -240,6 +303,14 @@ export async function importPortableExport(
     (total, { changes }) => total + changes.length,
     0,
   );
+  const keptReviews = parsed.conversationReviews.map((review) => ({
+    review,
+    changes: review.changes.filter(({ memoryId }) => importedMemoryIds.has(memoryId)),
+  }));
+  imported.conversationReviewChanges = keptReviews.reduce(
+    (total, { changes }) => total + changes.length,
+    0,
+  );
 
   const report = (dryRun: boolean): ImportReport => ({
     dryRun,
@@ -248,6 +319,7 @@ export async function importPortableExport(
       memoriesWithoutOriginal: skippedMemories.size,
       historyEventsWithoutOriginal: historyWithout,
       decisionTextsWithoutOriginal: decisionWithout,
+      rulesWithoutOriginal: rulesWithout,
       evidenceNotImported: evidence === null && parsed.manifest.counts.sealedEvidenceRows > 0,
     },
   });
@@ -388,11 +460,9 @@ export async function importPortableExport(
           pin.run(item.id, ownerId, agentId, item.pin.pinned ? 1 : 0, item.pin.updatedAt);
       }
       const indexable = plans.filter(({ memory: item }) => item.status === "active");
-      if (indexable.length > 0) {
-        const suffix = randomUUID();
-        const threadId = `data-import-thread-${suffix}`;
-        const checkpointId = `data-import-checkpoint-${suffix}`;
-        const generationId = `data-import-generation-${suffix}`;
+      const suffix = randomUUID();
+      const threadId = `data-import-thread-${suffix}`;
+      if (indexable.length > 0 || keptReviews.length > 0)
         database
           .prepare(
             `INSERT INTO threads (
@@ -400,6 +470,9 @@ export async function importPortableExport(
             ) VALUES (?, ?, ?, 1, 'open', ?, ?, ?)`,
           )
           .run(threadId, ownerId, agentId, now, now, now);
+      if (indexable.length > 0) {
+        const checkpointId = `data-import-checkpoint-${suffix}`;
+        const generationId = `data-import-generation-${suffix}`;
         database
           .prepare(
             `INSERT INTO thread_checkpoint_jobs (
@@ -480,6 +553,44 @@ export async function importPortableExport(
           for (const [position, id] of kept.entries()) basis.run(entry.id, position, id);
         }
       }
+      const review = database.prepare(
+        `INSERT INTO memory_conversation_reviews (id, owner_id, agent_id, thread_id, episode_id, episode_created_at, day, status, attempts, output_ref, error_code, started_at, finished_at, undone_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+      );
+      const reviewChange = database.prepare(
+        `INSERT INTO memory_conversation_review_changes (review_id, memory_id, action, source_message_id, after_revision, before_superseded_by, before_valid_to, created_at, undone_revision)
+        VALUES (?, ?, ?, 'data-import', ?, ?, ?, ?, ?)`,
+      );
+      for (const { review: item, changes } of keptReviews) {
+        review.run(
+          item.id,
+          ownerId,
+          agentId,
+          threadId,
+          `data-import-episode:${item.id}`,
+          item.startedAt,
+          item.day,
+          item.status,
+          item.attempts,
+          item.errorCode,
+          item.startedAt,
+          item.finishedAt,
+          item.undoneAt,
+        );
+        for (const entry of changes)
+          reviewChange.run(
+            item.id,
+            entry.memoryId,
+            entry.action,
+            entry.afterRevision,
+            entry.beforeSupersededBy !== null && importedMemoryIds.has(entry.beforeSupersededBy)
+              ? entry.beforeSupersededBy
+              : null,
+            entry.beforeValidTo,
+            entry.createdAt,
+            entry.undoneRevision,
+          );
+      }
       const decision = database.prepare(
         `INSERT INTO decision_ledger (id, owner_id, agent_id, kind, scenario, checked_at, counts, verdict, outcome, reason_code, subject_ref, inputs, reason_ref, content_ref, push_source_key, cost_micros, duration_ms, owner_rating, rated_at, category, confidence_permille, inferred)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -526,6 +637,40 @@ export async function importPortableExport(
             JSON.stringify(entry.detail),
             entry.sourceRef,
             entry.recordedAt,
+          );
+      }
+      const ruleRow = database.prepare(
+        `INSERT INTO rule_book_rules (owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const ruleVersion = database.prepare(
+        `INSERT INTO rule_book_history (owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, change_reason, changed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const { rule, history: versions } of rulePlans) {
+        ruleRow.run(
+          ownerId,
+          agentId,
+          rule.ruleId,
+          rule.revision,
+          rule.parameters,
+          rule.status,
+          rule.source,
+          rule.sourceMemoryId,
+          rule.updatedAt,
+        );
+        for (const version of versions)
+          ruleVersion.run(
+            ownerId,
+            agentId,
+            rule.ruleId,
+            version.revision,
+            version.parameters,
+            version.status,
+            version.source,
+            version.sourceMemoryId,
+            version.changeReason,
+            version.changedAt,
           );
       }
       if (evidence) writeEvidence(database, ownerId, agentId, evidence, evidenceRefs);
@@ -611,6 +756,33 @@ function writeEvidence(
       row["intakeItemKey"],
       row["recordedAt"],
       row["pairedMessageId"],
+    );
+  const prereview = database.prepare(
+    `INSERT INTO decision_prereviews (id, owner_id, agent_id, decision_id, mail_source, message_id, calibration_group, category, status, rating, confidence_permille, history_conflict, failure_code, model_ref, prompt_id, text_digest, data_classification, cost_micros, duration_ms, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const row of evidence.prereviews ?? [])
+    prereview.run(
+      row["id"],
+      ownerId,
+      agentId,
+      row["decisionId"],
+      row["mailSource"],
+      row["messageId"],
+      row["group"],
+      row["category"],
+      row["status"],
+      row["rating"],
+      row["confidencePermille"],
+      bit(row["historyConflict"]),
+      row["failureCode"],
+      row["modelRef"],
+      row["promptId"],
+      row["textDigest"],
+      row["dataClassification"],
+      row["costMicros"],
+      row["durationMs"],
+      row["createdAt"],
     );
 }
 

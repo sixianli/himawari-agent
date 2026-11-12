@@ -1,11 +1,20 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DurableMemoryService } from "@himawari-agent/application";
+import {
+  classificationRank,
+  DEFAULT_MEMORY_ATTRIBUTES,
+  DurableMemoryService,
+  type DataClassification,
+  type MemoryCategory,
+  OwnerProfileService,
+} from "@himawari-agent/application";
 import {
   createAgentId,
   createMemoryGenerationId,
+  createMemoryId,
   createOwnerId,
   createThreadId,
 } from "@himawari-agent/domain";
@@ -32,6 +41,7 @@ import {
 } from "../../apps/agent-service/src/production-mcp-read.ts";
 import { ProductionMemoryRecall } from "../../apps/agent-service/src/production-memory-recall.ts";
 import { ProductionReminderWriter } from "../../apps/agent-service/src/production-reminder-writer.ts";
+import { createMcpAccess } from "../../apps/agent-service/test/fixtures/mcp-access.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-mcp-read");
@@ -41,7 +51,6 @@ const GENERATION_ID = createMemoryGenerationId("generation-mcp-read");
 const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
 const NOW = "2026-11-11T03:00:00.000Z";
 const SINCE = "1970-01-01T00:00:00.000Z";
-const SECRET = "mcp-read-test-secret-0123456789abcdef";
 const TIME_ZONE = "Asia/Tokyo";
 const DENTIST = "明天上午十点去牙医复诊";
 const WIFI = "家里 Wi-Fi 密码：Sunflower-8841";
@@ -54,13 +63,30 @@ const TOPICS = ["牙医", "Wi-Fi", "京都"];
 const embedder: Embedder = {
   model: "fixture-embedding",
   dimensions: 4,
-  async embed(text: string) {
-    const hits = TOPICS.map((topic) => (text.includes(topic) ? 1 : 0));
-    return new Float32Array([...hits, hits.some(Boolean) ? 0 : 1]);
+  async embedQuery(text: string) {
+    return topicVector(text);
+  },
+  async embedDocument(text: string) {
+    return topicVector(text);
   },
 };
 
+function topicVector(text: string): Float32Array {
+  const hits = TOPICS.map((topic) => (text.includes(topic) ? 1 : 0));
+  return new Float32Array([...hits, hits.some(Boolean) ? 0 : 1]);
+}
+
 type Era = "legacy" | "modern";
+
+interface StartHere {
+  readonly profile: {
+    readonly version: string;
+    readonly sections: readonly { readonly items: readonly string[] }[];
+    readonly omitted?: string;
+  };
+  readonly rules: { readonly note: string; readonly items: readonly string[] };
+  readonly today: { readonly today: string; readonly recentDays: readonly unknown[] };
+}
 
 describe("[P5-1] read-only MCP entry over HTTP", () => {
   useSqliteContractExecution("direct");
@@ -79,6 +105,10 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       readonly failReminders?: boolean;
       readonly loseTodaySummary?: boolean;
       readonly withoutSummaries?: boolean;
+      readonly binding?: { readonly status?: "disabled"; readonly ownerId?: string };
+      readonly failBinding?: boolean;
+      readonly readCeiling?: Exclude<DataClassification, "restricted">;
+      readonly sensitiveSummary?: boolean;
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-mcp-read-"));
@@ -208,14 +238,20 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     await writer.create({ key: "trip", text: TRIP, due: "2026-11-13T13:00", repeat: "none" });
     await memory.runProjectionBatch(10);
     const episodeStore = repository.memoryEpisodes();
-    const seedSummary = async (id: string, day: string, text: string, sequence: number) => {
+    const seedSummary = async (
+      id: string,
+      day: string,
+      text: string,
+      sequence: number,
+      classification: DataClassification = "private",
+    ) => {
       const contentRef = `payload:episode:${id}` as Parameters<typeof payloads.get>[0];
       await payloads.put(
         await adapters.payloadProtector.protect({
           ...scope,
           ref: contentRef,
           contentType: "text/plain",
-          dataClassification: "private",
+          dataClassification: classification,
           plaintext: new TextEncoder().encode(text),
           createdAt: NOW,
         }),
@@ -227,7 +263,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         day,
         source: "day_summary",
         contentRef,
-        dataClassification: "private",
+        dataClassification: classification,
         firstSequence: sequence,
         lastSequence: sequence,
         startedAt: `${day}T01:00:00.000Z`,
@@ -239,6 +275,14 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     };
     await seedSummary("episode-older", "2026-11-08", OLDER, 1);
     await seedSummary("episode-yesterday", "2026-11-10", YESTERDAY, 2);
+    if (options.sensitiveSummary)
+      await seedSummary(
+        "episode-sensitive",
+        "2026-11-11",
+        "今天陪主人去医院复查慢性病",
+        4,
+        "sensitive",
+      );
     if (options.loseTodaySummary) await seedSummary("episode-today-lost", "2026-11-11", "lost", 3);
     const episodes = new MemoryEpisodeService({
       store: episodeStore,
@@ -274,13 +318,39 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     const failures: unknown[] = [];
     const summaryFailures: unknown[] = [];
     const settingsStore = repository.proactive();
+    const access = await createMcpAccess(() => new Date(clock.now()));
+    const owners = repository.ownerIdentityState();
+    await owners.bindFirstOwner({
+      ownerId: OWNER_ID,
+      externalSubjectRef: await access.ownerSubjectRef(),
+      boundAt: clock.now(),
+    });
     const mcp = new ProductionMcpRead({
       scope,
       clock,
-      secret: SECRET,
+      access: access.verifier,
+      owners: {
+        readBySubject: async (externalSubjectRef) => {
+          if (options.failBinding) throw new Error("OWNER_BINDING_STORE_DOWN");
+          const binding = await owners.readBySubject(externalSubjectRef);
+          return binding && options.binding
+            ? ({ ...binding, ...options.binding } as typeof binding)
+            : binding;
+        },
+      },
       timeZone: TIME_ZONE,
+      ...(options.readCeiling ? { readCeiling: options.readCeiling } : {}),
       requestTimeoutMs: 30_000,
       sources: {
+        profile: (maxClassification) =>
+          new OwnerProfileService({
+            state: repository.productMemoryState(),
+            pins: repository.memoryBook(),
+            readText: async (record) => readText(record.contentRef),
+            storeText: async () => undefined,
+            digest: (text) => createHash("sha256").update(text).digest("hex"),
+            timeZone: TIME_ZONE,
+          }).outline({ ...scope, maxClassification, now: clock.now() }),
         recall: (args, within) => recall.recallOutsideRun(args, within),
         embedOutsideRun: async (context, operation) => {
           embeddingContexts.push({
@@ -290,22 +360,34 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
           context.costMicros += 7;
           return operation();
         },
-        reminders: async (windowMs) => {
+        reminders: async (windowMs, ceiling) => {
           if (options.failReminders) throw new Error("REMINDER_STORE_DOWN");
-          return writer.list(windowMs);
+          return writer.list(windowMs, ceiling);
         },
         settings: () => settingsStore.readSettings(scope),
         ownerRules: () => repository.ownerRules().list({ ...scope, includeRetired: false }),
         ...(options.withoutSummaries
           ? {}
           : {
-              summaries: async ({ days, limit }: { days: number; limit: number }) => {
+              summaries: async ({
+                days,
+                limit,
+                maxClassification,
+              }: {
+                days: number;
+                limit: number;
+                maxClassification?: DataClassification;
+              }) => {
                 if (options.failSummaries) throw new Error("SUMMARY_STORE_DOWN");
                 const found = await episodes.recent({
                   ...scope,
                   days,
                   limit,
-                  allowedClassifications: ["public", "private", "sensitive"],
+                  allowedClassifications: (["public", "private", "sensitive"] as const).filter(
+                    (classification) =>
+                      maxClassification === undefined ||
+                      classificationRank(classification) <= classificationRank(maxClassification),
+                  ),
                 });
                 return {
                   partial: found.partial,
@@ -335,14 +417,16 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     const url = new URL(
       `http://127.0.0.1:${(app.server.address() as AddressInfo).port}${MCP_READ_PATH}`,
     );
-    const connect = async (era: Era, secret: string = SECRET) => {
+    const connect = async (era: Era, assertion?: string) => {
       const client = new Client(
         { name: `mcp-read-test-${era}`, version: "1.0.0" },
         era === "modern" ? { versionNegotiation: { mode: { pin: "2026-07-28" } } } : {},
       );
       await client.connect(
         new StreamableHTTPClientTransport(url, {
-          requestInit: { headers: { authorization: `Bearer ${secret}` } },
+          requestInit: {
+            headers: { "cf-access-jwt-assertion": assertion ?? (await access.sign()) },
+          },
         }),
       );
       closers.push(() => client.close());
@@ -359,9 +443,51 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     };
     const recordFields = async (decisionId: string) =>
       (await repository.decisionLedger().read({ ...scope, decisionId }))?.inputFields ?? [];
+    const seedProfile = async (
+      id: string,
+      category: MemoryCategory,
+      importancePermille: number,
+      text: string,
+      classification: DataClassification = "private",
+    ) => {
+      const contentRef = `payload:profile:${id}` as Parameters<typeof payloads.get>[0];
+      await payloads.put(
+        await adapters.payloadProtector.protect({
+          ...scope,
+          ref: contentRef,
+          contentType: "text/plain",
+          dataClassification: classification,
+          plaintext: new TextEncoder().encode(text),
+          createdAt: NOW,
+        }),
+      );
+      await repository.productMemoryState().save(
+        {
+          id: createMemoryId(id),
+          ...scope,
+          revision: 1,
+          status: "active",
+          contentRef,
+          dataClassification: classification,
+          sourceThreadId: null,
+          sourceRefs: [`message-${id}`],
+          inference: false,
+          confidencePermille: 950,
+          policyVersion: "memory-capture:v2",
+          providerRecordId: null,
+          lastUsedAt: null,
+          updatedAt: NOW,
+          attributes: { ...DEFAULT_MEMORY_ATTRIBUTES, category, importancePermille, validTo: null },
+        },
+        null,
+      );
+    };
     return {
       url,
+      seedProfile,
+      runProjection: () => memory.runProjectionBatch(20),
       connect,
+      access,
       call,
       ledger,
       recordFields,
@@ -373,7 +499,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
   }
 
   it.each(["legacy", "modern"] as const)(
-    "lists the three read-only tools in a fixed order to a %s client",
+    "lists the read-only tools in a fixed order to a %s client",
     async (era) => {
       const f = await setup();
       const client = await f.connect(era);
@@ -587,7 +713,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(row).toMatchObject({ reasonCode: "rule_book", outcome: "read" });
   });
 
-  it("rejects requests without the token or with a wrong one, and records nothing", async () => {
+  it("rejects requests without a valid Cloudflare Access assertion, and records nothing", async () => {
     const f = await setup();
     const bare = await fetch(f.url, {
       method: "POST",
@@ -598,10 +724,117 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
     });
     expect(bare.status).toBe(401);
-    expect(bare.headers.get("www-authenticate")).toMatch(/^Bearer/u);
-    await expect(f.connect("legacy", "wrong-secret-0123456789abcdef0123456789")).rejects.toThrow();
-    await expect(f.connect("modern", "wrong-secret-0123456789abcdef0123456789")).rejects.toThrow();
+    expect(bare.headers.get("www-authenticate")).toBeNull();
+    const withBearer = await fetch(f.url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        authorization: ["Bearer", "m".repeat(40)].join(" "),
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    });
+    expect(withBearer.status).toBe(401);
+    expect(withBearer.headers.get("www-authenticate")).toBeNull();
+    for (const assertion of [
+      await f.access.signWithForeignKey(),
+      await f.access.sign({ audience: "another-app" }),
+      await f.access.sign({ expiresInSeconds: -120 }),
+      await f.access.sign({ subject: "someone-else-in-the-access-team" }),
+    ]) {
+      const rejected = await fetch(f.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "cf-access-jwt-assertion": assertion,
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      });
+      expect(rejected.status).toBe(401);
+      expect(rejected.headers.get("www-authenticate")).toBeNull();
+    }
+    await expect(f.connect("legacy", await f.access.signWithForeignKey())).rejects.toThrow();
+    await expect(
+      f.connect("modern", await f.access.sign({ audience: "another-app" })),
+    ).rejects.toThrow();
+    await expect(
+      f.connect("modern", await f.access.sign({ expiresInSeconds: -120 })),
+    ).rejects.toThrow();
     expect(await f.ledger()).toEqual([]);
+    expect(f.failures).toHaveLength(7);
+    expect(f.failures).toEqual(
+      Array.from({ length: 7 }, () => expect.objectContaining({ code: expect.any(String) })),
+    );
+    expect(f.failures[3]).toEqual({ code: "MCP_ACCESS_OWNER_NOT_BOUND" });
+  });
+
+  it.each([
+    ["a disabled binding", { status: "disabled" as const }],
+    ["a binding for another owner", { ownerId: "owner-someone-else" }],
+  ])("rejects the bound subject when it has %s", async (_label, binding) => {
+    const f = await setup({ binding });
+    await expect(f.connect("modern")).rejects.toThrow();
+    expect(f.failures).toEqual([{ code: "MCP_ACCESS_OWNER_NOT_BOUND" }]);
+    expect(await f.ledger()).toEqual([]);
+  });
+
+  it("answers 503, not 401, when the owner binding cannot be read, and limits it like a signed-in request", async () => {
+    const f = await setup({ failBinding: true });
+    const post = async () =>
+      fetch(f.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "cf-access-jwt-assertion": await f.access.sign(),
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      });
+    for (let attempt = 0; attempt < 30; attempt += 1) expect((await post()).status).toBe(503);
+    expect((await post()).status).toBe(429);
+    expect(f.failures).toHaveLength(30);
+  });
+
+  it("answers 429 after 30 signed-in requests a minute, without using up the rejected-request allowance", async () => {
+    const f = await setup();
+    const post = async (assertion: string) =>
+      (
+        await fetch(f.url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json, text/event-stream",
+            "cf-access-jwt-assertion": assertion,
+          },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+        })
+      ).status;
+    const owner = await f.access.sign();
+    for (let attempt = 0; attempt < 30; attempt += 1) expect(await post(owner)).not.toBe(429);
+    expect(await post(owner)).toBe(429);
+    expect(await post(await f.access.signWithForeignKey())).toBe(401);
+  });
+
+  it("answers 429 after 60 rejected assertions a minute, logs only the 401s, and still serves a valid sign-in", async () => {
+    const f = await setup();
+    const forged = await f.access.signWithForeignKey();
+    const post = () =>
+      fetch(f.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "cf-access-jwt-assertion": forged,
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      });
+    for (let attempt = 0; attempt < 60; attempt += 1) expect((await post()).status).toBe(401);
+    const limited = await post();
+    expect(limited.status).toBe(429);
+    expect(f.failures).toHaveLength(60);
+    const modern = await f.connect("modern");
+    expect((await modern.listTools()).tools.length).toBeGreaterThan(0);
   });
 
   it("answers a failed read as a tool error and records it as failed", async () => {
@@ -624,5 +857,187 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(found.text).not.toContain("牙医");
     expect(found.text).not.toContain("LEDGER_WRITE_DOWN");
     expect(f.failures.length).toBeGreaterThan(0);
+  });
+
+  describe("[P5-A] start_here and auto lookup", () => {
+    it("gives the profile, the rule summaries and today's context in a fixed order, and the server carries instructions", async () => {
+      const f = await setup();
+      await f.seedProfile("memory-name", "identity", 800, "主人叫 Andy，住在东京");
+      await f.seedProfile("memory-tea", "preference", 700, "只喝无糖绿茶");
+      const client = await f.connect("modern");
+      expect(client.getInstructions()).toContain("start_here");
+      const first = await f.call(client, "start_here");
+      expect(first.result.isError).not.toBe(true);
+      const output = JSON.parse(first.text) as StartHere;
+      expect(Object.keys(output)).toEqual(["profile", "rules", "today"]);
+      expect(output["profile"].sections.flatMap((section) => section.items)).toEqual([
+        expect.stringContaining("主人叫 Andy，住在东京"),
+        expect.stringContaining("只喝无糖绿茶"),
+      ]);
+      expect(output["profile"].version).toMatch(/^[0-9a-f]{12}$/u);
+      expect(output["rules"].items).toEqual(["退款邮件先读完整串", "日本入管局相关的邮件一律提醒"]);
+      expect(first.text).not.toContain("撤销了的规则");
+      expect(output["rules"].note).toContain("必定执行");
+      expect(first.text).not.toContain("owner:");
+      expect(first.text).not.toContain("memory-name");
+      expect(first.text).not.toContain("senderDomains");
+      expect(output["today"].today).toBe("2026-11-11");
+      expect(output["today"].recentDays.length).toBeGreaterThan(0);
+      const second = await f.call(client, "start_here");
+      expect(second.text).toBe(first.text);
+      const [row] = await f.ledger();
+      expect(row).toMatchObject({ reasonCode: "start_here", outcome: "read" });
+      expect(row?.inputs.memoryIds).toEqual(
+        expect.arrayContaining(["memory-name", "memory-tea", "memory:reminder:dentist"]),
+      );
+      expect(row?.inputs.summaryRead).toBe("ok");
+    });
+
+    it("keeps the stable part the same when only today's part changes", async () => {
+      const f = await setup();
+      await f.seedProfile("memory-name", "identity", 800, "主人叫 Andy");
+      const client = await f.connect("modern");
+      const before = JSON.parse((await f.call(client, "start_here")).text);
+      await f.writer.create({
+        key: "extra",
+        text: "明天下午三点开会",
+        due: "2026-11-12T15:00",
+        repeat: "none",
+      });
+      const after = JSON.parse((await f.call(client, "start_here")).text);
+      expect(after.today).not.toEqual(before.today);
+      expect(JSON.stringify(after.profile)).toBe(JSON.stringify(before.profile));
+      expect(JSON.stringify(after.rules)).toBe(JSON.stringify(before.rules));
+    });
+
+    it("holds sensitive memories back by default and shows them only when the ceiling allows", async () => {
+      const secretLine = "主人正在治疗一种慢性病";
+      const hidden = await setup();
+      await hidden.seedProfile("memory-health", "identity", 900, secretLine, "sensitive");
+      const hiddenClient = await hidden.connect("modern");
+      expect((await hidden.call(hiddenClient, "start_here")).text).not.toContain(secretLine);
+      const open = await setup({ readCeiling: "sensitive" });
+      await open.seedProfile("memory-health", "identity", 900, secretLine, "sensitive");
+      const openClient = await open.connect("modern");
+      expect((await open.call(openClient, "start_here")).text).toContain(secretLine);
+    });
+
+    it("REVERSE: leaves sensitive reminders and sensitive day summaries out of today under the default ceiling", async () => {
+      const hidden = await setup({ sensitiveSummary: true });
+      const hiddenClient = await hidden.connect("modern");
+      const closed = await hidden.call(hiddenClient, "start_here");
+      expect(closed.text).not.toContain("Wi-Fi");
+      expect(closed.text).not.toContain("慢性病");
+      expect(closed.text).toContain("牙医");
+      const open = await setup({ sensitiveSummary: true, readCeiling: "sensitive" });
+      const openClient = await open.connect("modern");
+      const opened = await open.call(openClient, "start_here");
+      expect(opened.text).toContain("Wi-Fi");
+      expect(opened.text).toContain("慢性病");
+    });
+
+    it("fills today with eligible reminders when sensitive ones come first", async () => {
+      const f = await setup();
+      for (let index = 0; index < 22; index += 1)
+        await f.writer.create({
+          key: `secret-${index}`,
+          text: `家里 Wi-Fi 密码：Key-${index}-abc`,
+          due: `2026-11-12T08:${String(index).padStart(2, "0")}`,
+          repeat: "none",
+        });
+      const client = await f.connect("modern");
+      const output = JSON.parse((await f.call(client, "start_here")).text) as StartHere;
+      const texts = (output.today as unknown as { reminders: { text: string }[] }).reminders.map(
+        ({ text }) => text,
+      );
+      expect(texts).toContain(DENTIST);
+      expect(texts.some((text) => text.includes("Wi-Fi"))).toBe(false);
+    });
+
+    it("says there may be more reminders when the scan ends before enough eligible ones are found", async () => {
+      const f = await setup();
+      for (let index = 0; index < 201; index += 1)
+        await f.writer.create({
+          key: `crowd-${index}`,
+          text: `家里 Wi-Fi 密码：Crowd-${index}-abc`,
+          due: `2026-11-12T${String(Math.floor(index / 60) + 4).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}`,
+          repeat: "none",
+        });
+      const client = await f.connect("modern");
+      const output = JSON.parse((await f.call(client, "start_here")).text) as {
+        today: { more?: boolean };
+      };
+      expect(output.today.more).toBe(true);
+    });
+
+    it("keeps the profile version free of masked secrets", async () => {
+      const versionFor = async (secret: string) => {
+        const f = await setup();
+        await f.seedProfile("memory-note", "preference", 800, `备用门禁密码：${secret}`);
+        const client = await f.connect("modern");
+        const output = JSON.parse((await f.call(client, "start_here")).text) as StartHere;
+        return output.profile.version;
+      };
+      expect(await versionFor("Maple-7712-x")).toBe(await versionFor("Birch-1983-y"));
+    });
+
+    it("stays inside the profile budget and says how many lines were left out", async () => {
+      const f = await setup();
+      for (let index = 0; index < 40; index += 1)
+        await f.seedProfile(
+          `memory-fact-${String(index).padStart(2, "0")}`,
+          "preference",
+          700,
+          `偏好${index}：${"很长的说明".repeat(20)}`,
+        );
+      const client = await f.connect("modern");
+      const output = JSON.parse((await f.call(client, "start_here")).text) as StartHere;
+      const lines = output.profile.sections.flatMap((section) => section.items);
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines.length).toBeLessThan(40);
+      expect(lines.join("").length).toBeLessThanOrEqual(2000);
+      expect(output.profile.omitted).toContain(`${40 - lines.length} 条`);
+    });
+
+    it("auto returns at most three memories where a plain lookup returns more", async () => {
+      const f = await setup();
+      for (let index = 0; index < 5; index += 1)
+        await f.writer.create({
+          key: `dentist-extra-${index}`,
+          text: `牙医第${index}次复诊的注意事项`,
+          due: "2026-11-20T10:00",
+          repeat: "none",
+        });
+      await f.runProjection();
+      const client = await f.connect("modern");
+      const plain = JSON.parse(
+        (await f.call(client, "find_memories", { query: "牙医", limit: 10 })).text,
+      ) as { memories: unknown[] };
+      expect(plain.memories.length).toBeGreaterThan(3);
+      const found = await f.call(client, "find_memories", { query: "牙医", limit: 10, auto: true });
+      const output = JSON.parse(found.text) as { memories: { text: string }[] };
+      expect(output.memories.length).toBe(3);
+    });
+
+    it("REVERSE: auto on an unrelated question returns nothing at all, without the empty-result note", async () => {
+      const f = await setup();
+      const client = await f.connect("modern");
+      const found = await f.call(client, "find_memories", { query: "量子色动力学", auto: true });
+      const output = JSON.parse(found.text) as Record<string, unknown>;
+      expect(output["memories"]).toEqual([]);
+      expect(output["conversations"]).toEqual([]);
+      expect(output).not.toHaveProperty("note");
+      const plain = JSON.parse(
+        (await f.call(client, "find_memories", { query: "量子色动力学" })).text,
+      ) as Record<string, unknown>;
+      expect(plain).toHaveProperty("note");
+    });
+
+    it("rejects a non-boolean auto", async () => {
+      const f = await setup();
+      const client = await f.connect("modern");
+      const found = await f.call(client, "find_memories", { query: "牙医", auto: "yes" });
+      expect(found.result.isError).toBe(true);
+    });
   });
 });

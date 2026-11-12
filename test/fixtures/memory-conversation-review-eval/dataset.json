@@ -1,0 +1,500 @@
+{
+  "day": "2026-11-08",
+  "timeZone": "Asia/Tokyo",
+  "items": [
+    {
+      "id": "job-across-turns",
+      "group": "supersede",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T01:00:00.000Z",
+          "text": "我换工作了"
+        },
+        {
+          "id": "msg-2",
+          "role": "agent",
+          "at": "2026-11-08T01:00:00.000Z",
+          "text": "恭喜！新工作在哪里？"
+        },
+        {
+          "id": "msg-3",
+          "role": "owner",
+          "at": "2026-11-08T01:01:00.000Z",
+          "text": "在乐天，做推荐系统"
+        }
+      ],
+      "existing": [
+        {
+          "id": "m-job",
+          "recordedOn": "2026-10-01",
+          "text": "主人在 LINE 工作",
+          "tentative": false,
+          "category": "identity",
+          "confidence": 900
+        }
+      ],
+      "expect": {
+        "creates": [["乐天"]],
+        "supersedes": ["m-job"],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "moved",
+      "group": "supersede",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T02:00:00.000Z",
+          "text": "上周末搬家累死了，现在住北区了"
+        }
+      ],
+      "existing": [
+        {
+          "id": "m-home",
+          "recordedOn": "2026-10-01",
+          "text": "主人住在东京都足立区",
+          "tentative": false,
+          "category": "identity",
+          "confidence": 900
+        }
+      ],
+      "expect": {
+        "creates": [["北区"]],
+        "supersedes": ["m-home"],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "trip-cancelled",
+      "group": "supersede",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T03:00:00.000Z",
+          "text": "下个月京都那趟旅行取消了，酒店也退了"
+        }
+      ],
+      "existing": [
+        {
+          "id": "m-trip",
+          "recordedOn": "2026-10-20",
+          "text": "主人下个月要去京都旅行",
+          "tentative": false,
+          "category": "identity",
+          "confidence": 900
+        }
+      ],
+      "expect": {
+        "creates": [["取消"]],
+        "supersedes": ["m-trip"],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "promotion",
+      "group": "supersede",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T04:00:00.000Z",
+          "text": "跟你说个好消息，我升职当技术经理了"
+        }
+      ],
+      "existing": [
+        {
+          "id": "m-role",
+          "recordedOn": "2026-10-01",
+          "text": "主人是后端工程师",
+          "tentative": false,
+          "category": "identity",
+          "confidence": 900
+        }
+      ],
+      "expect": {
+        "creates": [["技术经理"]],
+        "supersedes": ["m-role"],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "context-not-replace",
+      "group": "context",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T05:00:00.000Z",
+          "text": "出差的时候我就随便喝便利店的牛奶"
+        }
+      ],
+      "existing": [
+        {
+          "id": "m-milk",
+          "recordedOn": "2026-10-01",
+          "text": "主人平时喝明治的牛奶",
+          "tentative": false,
+          "category": "identity",
+          "confidence": 900
+        }
+      ],
+      "expect": {
+        "creates": [],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": ["m-milk"]
+      }
+    },
+    {
+      "id": "confirm-tentative",
+      "group": "confirm",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T06:00:00.000Z",
+          "text": "我真的很爱听爵士，尤其是 Bill Evans"
+        }
+      ],
+      "existing": [
+        {
+          "id": "m-jazz",
+          "recordedOn": "2026-10-10",
+          "text": "主人可能喜欢爵士乐",
+          "tentative": true,
+          "category": "preference",
+          "confidence": 700
+        }
+      ],
+      "expect": {
+        "creates": [],
+        "supersedes": [],
+        "confirms": ["m-jazz"],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "rule-no-tables",
+      "group": "create",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T07:00:00.000Z",
+          "text": "帮我比较一下这两个方案"
+        },
+        {
+          "id": "msg-2",
+          "role": "agent",
+          "at": "2026-11-08T07:00:00.000Z",
+          "text": "| 方案 | 优点 |\n|---|---|"
+        },
+        {
+          "id": "msg-3",
+          "role": "owner",
+          "at": "2026-11-08T07:01:00.000Z",
+          "text": "以后回答别用表格，我手机上看不清"
+        }
+      ],
+      "existing": [],
+      "expect": {
+        "creates": [["表格"]],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "daughter",
+      "group": "create",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T08:00:00.000Z",
+          "text": "我女儿叫小葵，今年刚上小学一年级"
+        }
+      ],
+      "existing": [],
+      "expect": {
+        "creates": [["小葵"]],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "jlpt-goal",
+      "group": "create",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T09:00:00.000Z",
+          "text": "我在准备 JLPT N1，12 月初考试"
+        }
+      ],
+      "existing": [],
+      "expect": {
+        "creates": [["N1"]],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "cat",
+      "group": "create",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T10:00:00.000Z",
+          "text": "我家猫叫团子，三岁了，特别黏人"
+        }
+      ],
+      "existing": [],
+      "expect": {
+        "creates": [["团子"]],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "call-me",
+      "group": "create",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T11:00:00.000Z",
+          "text": "以后叫我 Andy 就行，别叫主人"
+        }
+      ],
+      "existing": [],
+      "expect": {
+        "creates": [["Andy"]],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "weather",
+      "group": "none",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T12:00:00.000Z",
+          "text": "今天东京好冷啊"
+        },
+        {
+          "id": "msg-2",
+          "role": "agent",
+          "at": "2026-11-08T12:00:00.000Z",
+          "text": "是的，最高气温只有 9 度。"
+        }
+      ],
+      "existing": [],
+      "expect": {
+        "creates": [],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "one-off-task",
+      "group": "none",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T13:00:00.000Z",
+          "text": "帮我把这段话翻译成英文：明天的会议改到三点"
+        }
+      ],
+      "existing": [],
+      "expect": {
+        "creates": [],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "health",
+      "group": "none",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T14:00:00.000Z",
+          "text": "医生说我血压有点高，让我少吃盐"
+        }
+      ],
+      "existing": [],
+      "expect": {
+        "creates": [],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "third-party",
+      "group": "none",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T15:00:00.000Z",
+          "text": "我同事小王最近在闹离婚，挺惨的"
+        }
+      ],
+      "existing": [],
+      "expect": {
+        "creates": [],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "duplicate",
+      "group": "none",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T16:00:00.000Z",
+          "text": "咖啡我一直都是黑咖啡，不加糖"
+        }
+      ],
+      "existing": [
+        {
+          "id": "m-coffee",
+          "recordedOn": "2026-09-01",
+          "text": "主人喝咖啡不加糖",
+          "tentative": false,
+          "category": "identity",
+          "confidence": 900
+        }
+      ],
+      "expect": {
+        "creates": [],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": ["m-coffee"]
+      }
+    },
+    {
+      "id": "agent-words",
+      "group": "none",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T17:00:00.000Z",
+          "text": "推荐一本书"
+        },
+        {
+          "id": "msg-2",
+          "role": "agent",
+          "at": "2026-11-08T17:00:00.000Z",
+          "text": "推荐《三体》，这是一部很受欢迎的科幻小说。"
+        },
+        {
+          "id": "msg-3",
+          "role": "owner",
+          "at": "2026-11-08T17:01:00.000Z",
+          "text": "好的谢谢"
+        }
+      ],
+      "existing": [],
+      "expect": {
+        "creates": [],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "hypothetical",
+      "group": "none",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T18:00:00.000Z",
+          "text": "如果我搬去大阪，通勤会不会方便点"
+        }
+      ],
+      "existing": [
+        {
+          "id": "m-home2",
+          "recordedOn": "2026-10-01",
+          "text": "主人住在东京都北区",
+          "tentative": false,
+          "category": "identity",
+          "confidence": 900
+        }
+      ],
+      "expect": {
+        "creates": [],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": ["m-home2"]
+      }
+    },
+    {
+      "id": "lunch",
+      "group": "none",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T19:00:00.000Z",
+          "text": "今天中午吃了一碗拉面"
+        }
+      ],
+      "existing": [],
+      "expect": {
+        "creates": [],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    },
+    {
+      "id": "joke",
+      "group": "none",
+      "messages": [
+        {
+          "id": "msg-1",
+          "role": "owner",
+          "at": "2026-11-08T20:00:00.000Z",
+          "text": "我要是中了彩票就去买游艇，哈哈"
+        }
+      ],
+      "existing": [],
+      "expect": {
+        "creates": [],
+        "supersedes": [],
+        "confirms": [],
+        "forbidSupersede": []
+      }
+    }
+  ]
+}

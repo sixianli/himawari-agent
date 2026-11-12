@@ -762,18 +762,23 @@ export const messages = {
   "memory.page.filter":
     "{f, select, all {すべて} new {新規} drop {覚えない・削除} tidy {記憶の整理} correct {訂正} other {インポート}}",
   "memory.page.event":
-    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} hold {食い違いを発見} other {推測}}",
+    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} hold {食い違いを発見} review {会話の振り返り} other {推測}}",
+  "memory.page.reviewed":
+    "会話を振り返りました：新規 {created} 件、置き換え {superseded} 件、確認 {confirmed} 件",
+  "memory.page.reviewItem":
+    "{action, select, created {新規} superseded {もう当てはまらない} other {確認済み}}：{text}",
+  "memory.page.reviewQuote": "（発言：{quote}）",
   "memory.page.imported":
     "{source, select, codex {Codex} assistant {他の AI} other {Himawari のエクスポート}}から {count} 件インポート",
   "memory.page.goConfirm": "確認する",
   "memory.page.import": "記憶をインポート",
-  "memory.page.export": "すべての記憶をエクスポート",
+  "memory.page.export": "記憶とルールをエクスポート",
   "memory.page.sourceTitle":
     "{s, select, codex {Codex} assistant {ChatGPT・Claude など} other {旧版 Himawari のエクスポート（JSON）}}",
   "memory.page.sourceHelp":
     "{s, select, codex {Codex の記憶ファイル（memory_summary.md、MEMORY.md）を選択} assistant {あなたについての記憶を書き出してもらい、貼り付け} other {以前保存した himawari-memories.json のみ。新しい zip はここでは取り込めません}}",
   "memory.page.fileHelp":
-    "{s, select, codex {memory_summary.md と MEMORY.md、必要なら AGENTS.md を選びます。Mac の ~/.codex/memories/ と ~/.codex/ にあります。ファイル選択で ⌘⇧G を押すとパスを入力できます。} other {以前保存した himawari-memories.json を選びます。いまの「すべての記憶をエクスポート」は zip で、バックアップと移行用（展開し、中の himawari-export フォルダーをコマンドラインで取り込み）です。ここでは取り込めません。}}",
+    "{s, select, codex {memory_summary.md と MEMORY.md、必要なら AGENTS.md を選びます。Mac の ~/.codex/memories/ と ~/.codex/ にあります。ファイル選択で ⌘⇧G を押すとパスを入力できます。} other {以前保存した himawari-memories.json を選びます。いまの「記憶とルールをエクスポート」は zip で、バックアップと移行用（展開し、中の himawari-export フォルダーをコマンドラインで取り込み）です。ここでは取り込めません。}}",
   "memory.page.aiStep1": "手順 1：次の文をコピーして、使っている AI に送ります。",
   "memory.page.aiPrompt":
     "あなたが覚えている私についての情報を、1 行 1 件、「- 」で始めてすべて書き出してください。私の身元、好み、習慣、取り組んでいること、周りの人、私が頼んだルールを含め、できるだけ私の言葉で。パスワード、身分証番号、カード番号は書かないでください。説明は不要です。",
@@ -793,15 +798,24 @@ export const messages = {
     "取り込める内容が見つかりません。ファイルや貼り付けた内容を確認してください。",
   "memory.page.importTooBig": "1 ファイル 200 KB までです。分けて取り込んでください。",
   "memory.page.importUnreadable": "ファイルを読めないか、形式が違います。",
-  "memory.page.exportTitle": "すべての記憶と判断記録をエクスポート",
+  "memory.page.exportTitle": "記憶・常設ルール・判断記録をエクスポート",
   "memory.page.exportNote":
-    "項目ごとの JSON Lines データと、そのまま読める Markdown を含む zip を受け取ります。パスワードや ID 番号などの秘密はプレースホルダーのままです。ごみ箱の記憶や、健康・お金など機微なテーマの記憶も書き出され、秘密以外の本文は平文なので、zip を大切に保管してください。秘密も含めて持ち出すにはコマンドラインの暗号化エクスポートを使ってください。",
+    "項目ごとの JSON Lines データと、そのまま読める Markdown を含む zip を受け取ります。常設ルールは出どころと変更履歴ごと書き出され、RULES.md で読めます。パスワードや ID 番号などの秘密はプレースホルダーのままです。ごみ箱の記憶や、健康・お金など機微なテーマの記憶も書き出され、秘密以外の本文は平文なので、zip を大切に保管してください。秘密も含めて持ち出すにはコマンドラインの暗号化エクスポートを使ってください。",
   "memory.page.download": "エクスポートをダウンロード",
   "memory.page.exportWorking": "エクスポートを作成しています…",
   "memory.page.exportDone":
-    "記憶 {count} 件をエクスポートしました。機微な内容 {withheld} 箇所はプレースホルダーのままです。",
+    "記憶 {count} 件と、有効な常設ルール {rules} 件をエクスポートしました。機微な内容 {withheld} 箇所はプレースホルダーのままです。",
   "memory.page.exportFailed":
     "エクスポートに失敗しました。しばらくしてからもう一度お試しください。",
+  "memory.page.chatExport": "チャット履歴を書き出す",
+  "memory.page.chatExportTitle": "チャット履歴をすべて書き出す",
+  "memory.page.chatExportNote":
+    "zip ファイルが1つ手に入ります。data/threads.jsonl に会話ごとのデータが、chats/ にそのまま読める会話ごとの Markdown が入っています。パスワードや身分証番号などの機密はプレースホルダーだけが残ります。ごみ箱の中の会話も書き出され、機密以外の本文は平文なので、大切に保管してください。添付ファイルは一覧（名前・サイズ・種類）だけで、ファイル本体は含まれません。チャット履歴は持ち出し専用で、取り込み直すことはできません。機密も一緒に持ち出すには、コマンドラインの暗号化書き出しを使ってください。",
+  "memory.page.chatDownload": "チャット履歴をダウンロード",
+  "memory.page.chatExportDone":
+    "{threads}件の会話、{messages}件のメッセージを書き出しました。機密を含む{withheld}件のメッセージはプレースホルダーだけが残っています。",
+  "memory.page.chatExportTooLarge":
+    "チャット履歴が多すぎて、Web から一度に書き出せません。サーバー上でコマンドライン（himawari-admin data export-chats）を使って書き出してください。",
   "capabilities.title": "機能とアダプター",
   "authorizations.title": "認可と Grant",
   "trace.title": "トレース",
@@ -1028,6 +1042,8 @@ export const messages = {
   "dailyReview.title": "毎日の採点",
   "dailyReview.count": "今日 {count} 件",
   "dailyReview.countLeft": "今日 {count} 件、ほかに {left} 件は選ばれていません",
+  "dailyReview.hiddenByModel":
+    "ほかに {count} 件は、モデルの事前採点で「役に立った」と自信を持って判断されたため、あなたが有効にした削減設定により今回は表示していません",
   "dailyReview.note": "選ばれなかったものは明日また出ることがあり、7 日たつと出なくなります。",
   "dailyReview.tag.pushed": "メールを読んで通知した",
   "dailyReview.tag.silent": "メールを読んで通知しなかった",
@@ -1060,6 +1076,21 @@ export const messages = {
   "dailyReview.folded": "その他の判断 · {count} 件",
   "dailyReview.expand": "開く",
   "dailyReview.back": "戻る",
+  "dailyReview.checkup.reason.conflict": "2 つの記憶が食い違っています",
+  "dailyReview.checkup.reason.unused": "{days} 日間使われていません",
+  "dailyReview.checkup.reason.lowConfidence": "Himawari の確信が低い記憶",
+  "dailyReview.checkup.reason.sourceUnavailable": "出どころが見つかりません",
+  "dailyReview.checkup.newer": "新：{text}",
+  "dailyReview.checkup.older": "旧：{text}",
+  "dailyReview.checkup.confirm": "問題なし",
+  "dailyReview.checkup.keepBoth": "両方残す",
+  "dailyReview.checkup.replace": "古い方を置き換える",
+  "dailyReview.checkup.delete": "削除",
+  "dailyReview.checkup.deleteNewer": "新しい方を削除",
+  "dailyReview.checkup.done.confirm": "確認済み",
+  "dailyReview.checkup.done.delete": "削除済み",
+  "dailyReview.checkup.done.merge": "置き換え済み",
+  "dailyReview.checkup.undo": "取り消す",
   "proactive.log.range": "直近 30 日 · {days} 日分を記録",
   "proactive.log.empty":
     "まだ確認の記録はありません。Gmail をつなぐと 15 分ごとに 1 行記録します。",
@@ -1206,7 +1237,7 @@ export const messages = {
     "切断すると Google 側の許可を取り消し、メールから抜き出した対応事項と要点をすべて削除します。切断しますか？",
   "proactive.apps.disconnected": "切断し、Google 側の許可も取り消しました。",
   "proactive.apps.outcome":
-    "{o, select, connected {Gmail に接続しました。最初の確認をすぐに始めます。} denied {Google の画面で許可されなかったため、接続していません。} other {接続できませんでした。もう一度お試しください。}}",
+    "{o, select, connected {Gmail に接続しました。最初の確認をすぐに始めます。} denied {Google の画面で許可されなかったため、接続していません。} demo {体験版ではサンプルの受信トレイを使うため、ご自身のメールには接続できません。サンプルの受信トレイは準備できています。} other {接続できませんでした。もう一度お試しください。}}",
   "proactive.apps.what": "Himawari が読むものと送り先",
   "proactive.apps.what1":
     "メールを読むだけ。アーカイブ・ラベル付け・返信はしません。新着メールを判断するとき、同じ件のこれまでのやり取り（アーカイブ済みや自分が送ったメールを含む）も探して、あわせてモデルに送ります",
@@ -1449,6 +1480,25 @@ export const messages = {
   "weekly.implicit.def":
     "この 3 つのシグナルは、あなたが評価しなくても観察できることです。観察だけで、あなたの評価としては扱わず、上の評価の割合と混ぜて計算せず、しきい値を自動で変えることにも使いません。分母は今週、通知を送った判断です。同じ判断に同じシグナルが何度あっても 1 回と数えます。",
   "weekly.goRate": "「リマインダー」で採点する",
+  "weekly.prereview.title": "モデル事前採点の一致率",
+  "weekly.prereview.empty": "今週は、モデルの事前採点とあなたの採点が両方ある判断がありません。",
+  "weekly.prereview.emptyCurrent":
+    "今週は現在のモデルとプロンプトの版による事前採点がまだありません。",
+  "weekly.prereview.counts":
+    "事前採点 {rated} 件 · モデルが迷った {unsure} 件 · あなたも採点 {paired} 件",
+  "weekly.prereview.gate":
+    "{r, select, open {今週の組では基準を満たした} insufficient {今週は件数が足りず判断できません} below_threshold {今週の組では一致率が基準未満} other {「全部役に立った」と当てるのと変わりません}}",
+  "weekly.prereview.audit": "自信のある「役に立った」のうち、あなたも役に立ったと評価 {k}/{n}",
+  "weekly.prereview.otherVersions":
+    "ほかに {n} 件は古いモデルまたはプロンプトの版によるもので、上の比率に含めません。",
+  "weekly.prereview.reductionOn":
+    "自動削減はオン：基準を満たした種類では、「毎日の採点」にモデルが迷ったものや過去の採点と食い違うものだけを出し、さらに {audit} を抜き取りで残します。",
+  "weekly.prereview.reductionOff":
+    "自動削減はオフ：「毎日の採点」には採点待ちの判断をすべて表示します。",
+  "weekly.prereview.def":
+    "モデルは採点待ちの判断を先に採点します（役に立った / 不要 / 見落とし）。これは別に保存し、あなたの採点には書き込みません。一致率は、あなたも採点したもののうちモデルと一致した割合です。",
+  "weekly.prereview.gateDef":
+    "基準：自信（{confidence} 以上）のある「役に立った」のうち、一致率の 95% Wilson 下限が {agreement} 以上で、かつ「全部役に立った」と当てるより高いこと。通過には少なくとも {n} 組が必要です。",
   "sensitive.title": "機密情報のブロック記録",
   "sensitive.count": "{count} 件の記録",
   "sensitive.none": "機密情報をブロックした記録はまだありません",
@@ -1487,6 +1537,7 @@ export const messages = {
   "sensitive.purpose.memory-consolidation": "記憶の統合",
   "sensitive.purpose.mail-judgment": "メールの判定",
   "sensitive.purpose.action-review": "操作の確認",
+  "sensitive.purpose.review-prereview": "モデルの事前採点",
   "sensitive.purpose.other": "その他",
   "sensitive.maskedOnce": "{time} 1 回隠しました",
   "sensitive.maskedMany": "{time} 最初に隠し、その後の {later} 回の送信でも隠しました",

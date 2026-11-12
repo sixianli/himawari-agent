@@ -1,0 +1,597 @@
+{
+  "schema": "himawari-memory-retrieval-eval.v1",
+  "note": "P3-1 留出题（2026-11-11 新写）：记忆和主题库相同，问题全部新写，用来检查在主题库上选的门槛是否只是凑巧。合成数据，不含 Andy 的真实记忆。expected 为空表示这句话没有相关记忆。",
+  "today": "2026-10-29T00:00:00.000Z",
+  "memories": [
+    {
+      "id": "colleague-lin",
+      "text": "主人有一个前同事叫林峰。",
+      "category": "relationship",
+      "importancePermille": 600,
+      "entities": ["林峰"]
+    },
+    {
+      "id": "colleague-zhou",
+      "text": "主人有一个前同事叫周岚。",
+      "category": "relationship",
+      "importancePermille": 600,
+      "entities": ["周岚"]
+    },
+    {
+      "id": "lin-zhou-friends",
+      "text": "林峰和周岚是大学同学。",
+      "category": "relationship",
+      "importancePermille": 500,
+      "entities": ["林峰", "周岚"]
+    },
+    {
+      "id": "wife",
+      "text": "主人的妻子叫苏晴。",
+      "category": "relationship",
+      "importancePermille": 900,
+      "entities": ["苏晴"]
+    },
+    {
+      "id": "daughter",
+      "text": "主人有一个女儿，叫小禾。",
+      "category": "relationship",
+      "importancePermille": 900,
+      "entities": ["小禾"]
+    },
+    {
+      "id": "home",
+      "text": "主人住在大阪市北区。",
+      "category": "identity",
+      "importancePermille": 800,
+      "entities": ["大阪", "北区"]
+    },
+    {
+      "id": "color",
+      "text": "主人最喜欢绿色。",
+      "category": "preference",
+      "importancePermille": 700,
+      "entities": []
+    },
+    {
+      "id": "latte",
+      "text": "我喜欢喝拿铁",
+      "category": "preference",
+      "importancePermille": 600,
+      "entities": []
+    },
+    {
+      "id": "crowds",
+      "text": "主人不喜欢人多的地方。",
+      "category": "preference",
+      "importancePermille": 700,
+      "entities": []
+    },
+    {
+      "id": "shy",
+      "text": "主人不爱出去玩，有社恐。",
+      "category": "preference",
+      "importancePermille": 700,
+      "entities": []
+    },
+    {
+      "id": "vegetarian",
+      "text": "主人从2026年9月起开始吃素。",
+      "category": "preference",
+      "importancePermille": 800,
+      "entities": []
+    },
+    {
+      "id": "cilantro",
+      "text": "主人不吃香菜。",
+      "category": "preference",
+      "importancePermille": 600,
+      "entities": []
+    },
+    {
+      "id": "cat",
+      "text": "主人养了一只猫叫团子。",
+      "category": "relationship",
+      "importancePermille": 700,
+      "entities": ["团子"]
+    },
+    {
+      "id": "peanut",
+      "text": "主人对花生过敏。",
+      "category": "health",
+      "importancePermille": 900,
+      "entities": ["花生"]
+    },
+    {
+      "id": "badminton",
+      "text": "主人每周三晚上打羽毛球。",
+      "category": "event",
+      "importancePermille": 600,
+      "entities": []
+    },
+    {
+      "id": "laptop",
+      "text": "主人用的电脑是 MacBook Air。",
+      "category": "other",
+      "importancePermille": 500,
+      "entities": ["MacBook Air"]
+    },
+    {
+      "id": "car",
+      "text": "主人开一辆白色丰田卡罗拉。",
+      "category": "other",
+      "importancePermille": 500,
+      "entities": ["丰田"]
+    },
+    {
+      "id": "birthday",
+      "text": "主人的生日是3月14日。",
+      "category": "identity",
+      "importancePermille": 800,
+      "entities": []
+    },
+    {
+      "id": "mother",
+      "text": "主人的母亲住在成都。",
+      "category": "relationship",
+      "importancePermille": 700,
+      "entities": ["成都"]
+    },
+    {
+      "id": "japanese",
+      "text": "主人在准备日语 N2 考试。",
+      "category": "project",
+      "importancePermille": 600,
+      "entities": ["N2"]
+    },
+    {
+      "id": "job",
+      "text": "主人正在找 AI Agent 工程师的工作。",
+      "category": "project",
+      "importancePermille": 800,
+      "entities": []
+    },
+    {
+      "id": "library",
+      "text": "主人周末常去图书馆。",
+      "category": "event",
+      "importancePermille": 500,
+      "entities": []
+    },
+    {
+      "id": "dentist",
+      "text": "主人的牙医诊所在梅田。",
+      "category": "other",
+      "importancePermille": 500,
+      "entities": ["梅田"]
+    },
+    {
+      "id": "test-server",
+      "text": "主人的测试机叫 Hermes。",
+      "category": "project",
+      "importancePermille": 600,
+      "entities": ["Hermes"]
+    }
+  ],
+  "queries": [
+    {
+      "id": "h-inf-0",
+      "text": "周五晚上想约朋友出去，帮我选个地方",
+      "expected": ["shy", "crowds"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-1",
+      "text": "推荐一家适合我的火锅店",
+      "expected": ["vegetarian", "cilantro", "peanut"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-2",
+      "text": "帮我做一份这周的晚餐菜单",
+      "expected": ["vegetarian", "cilantro", "peanut"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-3",
+      "text": "我想买个手机壳，什么颜色好",
+      "expected": ["color"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-4",
+      "text": "家里该买点什么宠物用品",
+      "expected": ["cat"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-5",
+      "text": "下周三晚上能约个会吗",
+      "expected": ["badminton"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-6",
+      "text": "我生日那天该怎么过",
+      "expected": ["birthday"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-7",
+      "text": "下个月春假去哪玩比较好",
+      "expected": ["shy", "crowds"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-8",
+      "text": "给我推荐几本备考的书",
+      "expected": ["japanese"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-9",
+      "text": "帮我写一封求职信",
+      "expected": ["job"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-10",
+      "text": "最近牙有点疼",
+      "expected": ["dentist"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-11",
+      "text": "车该做保养了",
+      "expected": ["car"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-12",
+      "text": "电脑越来越卡怎么办",
+      "expected": ["laptop"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-13",
+      "text": "母亲节快到了，帮我想想怎么安排",
+      "expected": ["mother"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-14",
+      "text": "结婚纪念日送什么好",
+      "expected": ["wife"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-15",
+      "text": "孩子的幼儿园有什么推荐",
+      "expected": ["daughter", "home"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-16",
+      "text": "附近有什么好吃的早餐店",
+      "expected": ["home"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-17",
+      "text": "帮我准备面试常见问题",
+      "expected": ["job"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-18",
+      "text": "早上来点提神的",
+      "expected": ["latte"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-19",
+      "text": "这个蛋糕里有坚果，我能吃吗",
+      "expected": ["peanut"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-20",
+      "text": "帮我找个周末能安静看书的地方",
+      "expected": ["library", "crowds"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-21",
+      "text": "测试环境的磁盘满了",
+      "expected": ["test-server"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-22",
+      "text": "想给老同事们组个饭局",
+      "expected": ["colleague-lin", "colleague-zhou", "lin-zhou-friends"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-23",
+      "text": "圣诞节要不要去环球影城",
+      "expected": ["crowds", "shy"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-24",
+      "text": "帮我规划一个回国探亲的行程",
+      "expected": ["mother"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-25",
+      "text": "周末有什么运动可以做",
+      "expected": ["badminton"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-26",
+      "text": "买个新包，选什么颜色",
+      "expected": ["color"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-27",
+      "text": "帮我练习一下日语听力",
+      "expected": ["japanese"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-28",
+      "text": "全家周末一起出去玩去哪",
+      "expected": ["wife", "daughter", "shy", "crowds"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-inf-29",
+      "text": "点一份沙拉要什么配料",
+      "expected": ["vegetarian", "cilantro", "peanut"],
+      "kind": "inferential"
+    },
+    {
+      "id": "h-dir-0",
+      "text": "林峰现在在做什么工作",
+      "expected": ["colleague-lin", "lin-zhou-friends"],
+      "kind": "direct"
+    },
+    {
+      "id": "h-dir-1",
+      "text": "苏晴喜欢什么",
+      "expected": ["wife"],
+      "kind": "direct"
+    },
+    {
+      "id": "h-dir-2",
+      "text": "小禾几岁了",
+      "expected": ["daughter"],
+      "kind": "direct"
+    },
+    {
+      "id": "h-dir-3",
+      "text": "团子最近吃得少",
+      "expected": ["cat"],
+      "kind": "direct"
+    },
+    {
+      "id": "h-dir-4",
+      "text": "梅田那家诊所几点开门",
+      "expected": ["dentist"],
+      "kind": "direct"
+    },
+    {
+      "id": "h-dir-5",
+      "text": "N2 考试什么时候报名",
+      "expected": ["japanese"],
+      "kind": "direct"
+    },
+    {
+      "id": "h-dir-6",
+      "text": "我的 MacBook Air 电池不耐用",
+      "expected": ["laptop"],
+      "kind": "direct"
+    },
+    {
+      "id": "h-dir-7",
+      "text": "丰田的保养周期是多久",
+      "expected": ["car"],
+      "kind": "direct"
+    },
+    {
+      "id": "h-dir-8",
+      "text": "成都最近天气怎么样，我妈那边冷吗",
+      "expected": ["mother"],
+      "kind": "direct"
+    },
+    {
+      "id": "h-dir-9",
+      "text": "我对哪些食物过敏",
+      "expected": ["peanut"],
+      "kind": "direct"
+    },
+    {
+      "id": "h-unr-0",
+      "text": "帮我查一下美元兑日元汇率",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-1",
+      "text": "把这段话改得正式一点",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-2",
+      "text": "写一个冒泡排序",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-3",
+      "text": "明天东京会下雨吗",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-4",
+      "text": "什么是量子计算",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-5",
+      "text": "帮我算一下 23 乘以 47",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-6",
+      "text": "刚才那段代码再优化一下",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-7",
+      "text": "给我讲个笑话",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-8",
+      "text": "帮我生成一个 UUID",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-9",
+      "text": "git rebase 和 merge 有什么区别",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-10",
+      "text": "打开这个网页看看",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-11",
+      "text": "删除临时文件",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-12",
+      "text": "今天星期几",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-13",
+      "text": "这篇论文讲了什么",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-14",
+      "text": "帮我列个待办清单",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-15",
+      "text": "嗯",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-16",
+      "text": "没事了",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-17",
+      "text": "谢谢",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-18",
+      "text": "你是谁",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-19",
+      "text": "把字体改大一点",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-20",
+      "text": "重新试一次",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-21",
+      "text": "总结这封邮件",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-22",
+      "text": "Python 怎么读 JSON 文件",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-23",
+      "text": "帮我画一张流程图",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-24",
+      "text": "世界上最高的山是哪座",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-25",
+      "text": "比特币现在多少钱",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-26",
+      "text": "怎么配置 nginx 反向代理",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-27",
+      "text": "这个报错是什么意思：ECONNRESET",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-28",
+      "text": "把图片压缩一下",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "h-unr-29",
+      "text": "停止刚才的任务",
+      "expected": [],
+      "kind": "unrelated"
+    }
+  ]
+}

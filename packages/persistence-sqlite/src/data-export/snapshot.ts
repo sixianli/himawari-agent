@@ -17,15 +17,21 @@ export interface PortableSnapshot {
   readonly runs: readonly Row[];
   readonly changes: readonly Row[];
   readonly basis: readonly Row[];
+  readonly reviews: readonly Row[];
+  readonly reviewChanges: readonly Row[];
   readonly decisions: readonly Row[];
   readonly signals: readonly Row[];
   readonly decisionPayloads: readonly Row[];
   readonly sourceInsights: readonly Row[];
   readonly processedMessages: readonly Row[];
   readonly museEntries: readonly Row[];
+  readonly rules: readonly Row[];
+  readonly ruleHistory: readonly Row[];
+  readonly prereviews: readonly Row[];
   readonly payloads: ReadonlyMap<string, PayloadRecord | { readonly unavailable: true }>;
   readonly omittedMemories: number;
   readonly restrictedMemories: number;
+  readonly externalProposals: number;
 }
 
 const EXPORTABLE_STATUSES = "('active', 'archived', 'trashed')";
@@ -61,6 +67,10 @@ export function readSnapshot(
       const restrictedMemories = count(
         `SELECT COUNT(*) FROM memory_records WHERE owner_id = @ownerId AND agent_id = @agentId
           AND status IN ${EXPORTABLE_STATUSES} AND classification = 'restricted'`,
+      );
+      const externalProposals = count(
+        `SELECT COUNT(*) FROM external_memory_proposals
+          WHERE owner_id = @ownerId AND agent_id = @agentId AND status <> 'committed'`,
       );
       const history = all(
         `SELECT memory_id, kind, content_ref, stance, quote_ref, source_deleted, occurred_at
@@ -118,6 +128,19 @@ export function readSnapshot(
           WHERE owner_id = @ownerId AND agent_id = @agentId)
         ORDER BY change_id, position`,
       );
+      const reviews = all(
+        `SELECT id, day, status, attempts, error_code, started_at, finished_at, undone_at
+        FROM memory_conversation_reviews WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY started_at, id`,
+      );
+      const reviewChanges = all(
+        `SELECT review_id, memory_id, action, after_revision, before_superseded_by,
+          before_valid_to, created_at, undone_revision
+        FROM memory_conversation_review_changes WHERE after_revision IS NOT NULL AND review_id IN (
+          SELECT id FROM memory_conversation_reviews
+          WHERE owner_id = @ownerId AND agent_id = @agentId)
+        ORDER BY review_id, created_at, memory_id`,
+      );
       const decisions = all(
         `SELECT id, kind, scenario, checked_at, counts, verdict, outcome, reason_code,
           subject_ref, inputs, reason_ref, content_ref, push_source_key, cost_micros,
@@ -161,6 +184,26 @@ export function readSnapshot(
               paired_decision_id, intake_item_key, recorded_at, paired_message_id
             FROM muse_reference_entries WHERE owner_id = @ownerId AND agent_id = @agentId
             ORDER BY muse_at, id`,
+          )
+        : [];
+      const rules = all(
+        `SELECT rule_id, revision, parameters, status, source, source_memory_id, updated_at
+        FROM rule_book_rules WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY rule_id`,
+      );
+      const ruleHistory = all(
+        `SELECT rule_id, revision, parameters, status, source, source_memory_id, change_reason,
+          changed_at
+        FROM rule_book_history WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY rule_id, revision`,
+      );
+      const prereviews = withEvidence
+        ? all(
+            `SELECT id, decision_id, mail_source, message_id, calibration_group, category, status,
+              rating, confidence_permille, history_conflict, failure_code, model_ref, prompt_id,
+              text_digest, data_classification, cost_micros, duration_ms, created_at
+            FROM decision_prereviews WHERE owner_id = @ownerId AND agent_id = @agentId
+            ORDER BY created_at, id`,
           )
         : [];
       const refs = new Set<string>();
@@ -247,15 +290,21 @@ export function readSnapshot(
         runs,
         changes,
         basis,
+        reviews,
+        reviewChanges,
         decisions,
         signals,
         decisionPayloads,
         sourceInsights,
         processedMessages,
         museEntries,
+        rules,
+        ruleHistory,
+        prereviews,
         payloads,
         omittedMemories,
         restrictedMemories,
+        externalProposals,
       };
     })
     .deferred();

@@ -27,8 +27,8 @@ import type {
 } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import { insertLedgerRow, validateLedgerWrite } from "./sqlite-decision-ledger-operations.ts";
-import { insertConsolidationWrite } from "./sqlite-memory-consolidation-operations.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import { insertConsolidationWrite } from "./sqlite-memory-consolidation-operations.ts";
 
 interface MemoryRow {
   readonly id: string;
@@ -461,6 +461,7 @@ export class SqliteMemoryOperations {
             agentId: AgentId;
             model: string;
             dimensions: number;
+            after?: { createdAt: string; id: string };
             limit: number;
           },
         );
@@ -480,6 +481,15 @@ export class SqliteMemoryOperations {
             fromDay: string;
             toDay: string;
             allowedClassifications: readonly string[];
+            limit: number;
+          },
+        );
+      case "memoryEpisode.listDaySummariesAfter":
+        return this.listDaySummariesAfter(
+          payload as {
+            ownerId: OwnerId;
+            agentId: AgentId;
+            after: { createdAt: string; episodeId: string } | null;
             limit: number;
           },
         );
@@ -1485,10 +1495,20 @@ export class SqliteMemoryOperations {
     agentId: AgentId;
     model: string;
     dimensions: number;
+    after?: { createdAt: string; id: string };
     limit: number;
   }): readonly MemoryEpisode[] {
     if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100) {
       this.fail("PORT_INVALID_OPERATION", "Memory episode listing limit must be between 1 and 100");
+    }
+    if (
+      input.after !== undefined &&
+      (typeof input.after?.createdAt !== "string" || typeof input.after?.id !== "string")
+    ) {
+      this.fail(
+        "PORT_INVALID_OPERATION",
+        "Memory episode listing position must name a time and an id",
+      );
     }
     return (
       this.database
@@ -1498,9 +1518,18 @@ export class SqliteMemoryOperations {
           WHERE e.owner_id = @ownerId AND e.agent_id = @agentId
             AND (e.embedding_model IS NULL OR e.embedding_model != @model
               OR e.embedding_dimensions != @dimensions)
+            AND (@afterCreatedAt IS NULL OR (e.created_at, e.id) > (@afterCreatedAt, @afterId))
           ORDER BY e.created_at, e.id LIMIT @limit`,
         )
-        .all(input) as EpisodeRow[]
+        .all({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          model: input.model,
+          dimensions: input.dimensions,
+          afterCreatedAt: input.after?.createdAt ?? null,
+          afterId: input.after?.id ?? null,
+          limit: input.limit,
+        }) as EpisodeRow[]
     ).map((row) => this.episodeFromRow(row));
   }
 
@@ -1541,6 +1570,44 @@ export class SqliteMemoryOperations {
           fromDay: input.fromDay,
           toDay: input.toDay,
           classifications: JSON.stringify(input.allowedClassifications),
+          limit: input.limit,
+        }) as EpisodeRow[]
+    ).map((row) => this.episodeFromRow(row));
+  }
+
+  private listDaySummariesAfter(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    after: { createdAt: string; episodeId: string } | null;
+    limit: number;
+  }): readonly MemoryEpisode[] {
+    const after = input.after;
+    if (
+      !Number.isSafeInteger(input.limit) ||
+      input.limit < 1 ||
+      input.limit > 100 ||
+      (after !== null &&
+        (typeof after !== "object" ||
+          typeof after.createdAt !== "string" ||
+          typeof after.episodeId !== "string" ||
+          Number.isNaN(Date.parse(after.createdAt))))
+    ) {
+      this.fail("PORT_INVALID_OPERATION", "Memory day summary position is invalid");
+    }
+    return (
+      this.database
+        .prepare(
+          `SELECT ${episodeColumns} FROM memory_episodes e
+          WHERE e.owner_id = @ownerId AND e.agent_id = @agentId AND e.source = 'day_summary'
+            AND (@afterCreatedAt IS NULL OR e.created_at > @afterCreatedAt
+              OR (e.created_at = @afterCreatedAt AND e.id > @afterId))
+          ORDER BY e.created_at ASC, e.id ASC LIMIT @limit`,
+        )
+        .all({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          afterCreatedAt: after?.createdAt ?? null,
+          afterId: after?.episodeId ?? null,
           limit: input.limit,
         }) as EpisodeRow[]
     ).map((row) => this.episodeFromRow(row));

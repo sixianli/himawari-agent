@@ -26,6 +26,7 @@ export type DecisionChain = Extract<
   { type: "decision.chain.snapshot" }
 >["payload"];
 export type ProactiveReviewItem = ProactiveReview["items"][number];
+export type ProactiveCheckupAction = "confirm" | "delete" | "merge" | "undo";
 export interface ProactiveReviewRating {
   readonly key: string;
   readonly rating: ProactiveRating | null;
@@ -78,6 +79,11 @@ export interface ProactiveModel {
     rating: ProactiveRating | null,
   ) => Promise<boolean>;
   readonly rateReview: (ratings: readonly ProactiveReviewRating[]) => Promise<boolean>;
+  readonly actCheckup: (
+    key: string,
+    action: ProactiveCheckupAction,
+    keep?: string | null,
+  ) => Promise<boolean>;
   readonly saveSettings: (settings: ProactiveSettings) => Promise<boolean>;
   readonly disconnect: () => Promise<boolean>;
   readonly clearRecords: () => Promise<boolean>;
@@ -238,6 +244,8 @@ export function useProactive(input: {
       send("proactive.review.rate", {
         ratings: ratings.map(({ key, rating }) => ({ key, rating })),
       }),
+    actCheckup: (key, action, keep = null) =>
+      send("proactive.review.checkup", { key, action, keep }),
     saveSettings: (settings) =>
       send("proactive.settings.set", {
         enabled: settings.enabled,
@@ -315,7 +323,7 @@ export function reminderFocusOf(event: Event): string | null {
   return typeof detail === "string" ? detail : null;
 }
 
-export type GmailOutcome = "connected" | "failed" | "denied";
+export type GmailOutcome = "connected" | "failed" | "denied" | "demo";
 export interface LaunchIntent {
   readonly reminder: string | null;
   readonly settings: SettingsTab | null;
@@ -339,7 +347,10 @@ export function readLaunchIntent(
   return {
     reminder: reminder && LAUNCH_ID.test(reminder) ? reminder : null,
     settings: settings === "apps" ? "tools" : settings === "notifications" ? "notifications" : null,
-    gmail: gmail === "connected" || gmail === "failed" || gmail === "denied" ? gmail : null,
+    gmail:
+      gmail === "connected" || gmail === "failed" || gmail === "denied" || gmail === "demo"
+        ? gmail
+        : null,
   };
 }
 

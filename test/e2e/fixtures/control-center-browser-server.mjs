@@ -16,6 +16,8 @@ if (!Number.isInteger(port) || port < 0 || port > 65535)
 const now = "2026-08-27T00:00:00.000Z";
 const executionQualification = process.env.HIMAWARI_EXECUTION_FIXTURE === "1";
 const memoryFixture = process.env.HIMAWARI_MEMORY_FIXTURE === "1";
+const reviewFixture = memoryFixture && process.env.HIMAWARI_MEMORY_REVIEW_FIXTURE === "1";
+const reviewFixtureState = { undone: false, commands: [] };
 const pinnedCharacters = Number(process.env.HIMAWARI_PROFILE_PINNED_CHARACTERS ?? "0");
 const executionRecords = new Map();
 const executionStates = new Map();
@@ -758,6 +760,27 @@ function memoryOverview() {
     }),
     item("memory-peikun", "陪坤是主人的前同事", "relationship"),
     item("memory-lilei", "李雷是主人的前同事", "relationship"),
+    ...(reviewFixture
+      ? [
+          item("memory-review-german", "主人在学德语", "goal", {
+            status: reviewFixtureState.undone ? "archived" : "active",
+            revision: reviewFixtureState.undone ? 2 : 1,
+            recordedAt: "2026-10-29T01:00:00.000Z",
+            history: [
+              {
+                historyId: 1,
+                kind: "created",
+                text: "主人在学德语",
+                stance: null,
+                quote: "我最近每天晚上学一小时德语",
+                sourceThreadId: "thread-main",
+                sourceDeleted: false,
+                at: "2026-10-29T01:00:00.000Z",
+              },
+            ],
+          }),
+        ]
+      : []),
   ];
   const lines = (ids) =>
     ids.map((memoryId) => {
@@ -767,6 +790,17 @@ function memoryOverview() {
   return {
     memories,
     tidyUps: [],
+    conversationReviews: reviewFixture
+      ? [
+          {
+            reviewId: "memory-review:episode-1",
+            finishedAt: "2026-10-29T01:00:00.000Z",
+            undone: reviewFixtureState.undone,
+            undoable: true,
+            changes: [{ memoryId: "memory-review-german", action: "created" }],
+          },
+        ]
+      : [],
     reminders: [],
     upcoming: [
       {
@@ -826,6 +860,7 @@ function memoryOverview() {
       },
       { kind: "relationship", lines: lines(["memory-peikun", "memory-lilei"]) },
     ],
+    externalProposals: { total: 0, items: [], batches: [] },
     pending: [],
     generatedAt: now,
   };
@@ -1014,6 +1049,54 @@ function weeklySnapshot(withMails = false) {
           },
         ],
       },
+      prereview: {
+        agreementPermille: 900,
+        confidencePermille: 800,
+        reductionEnabled: false,
+        auditPermille: 200,
+        minimumPairs: 35,
+        otherVersions: withMails ? 2 : 0,
+        groups: withMails
+          ? [
+              {
+                group: "proactive_silent",
+                prereviewed: 40,
+                unsure: 6,
+                paired: 30,
+                agreement: rate(27, 30),
+                kappa: 0.61,
+                balancedAccuracy: 0.8,
+                ownerUseful: rate(25, 30),
+                hidden: rate(20, 22),
+                confusion: [
+                  { model: "useful", owner: "useful", count: 24 },
+                  { model: "useful", owner: "missed", count: 2 },
+                  { model: "missed", owner: "useful", count: 1 },
+                  { model: "missed", owner: "missed", count: 3 },
+                ],
+                gate: { open: false, reason: "insufficient", requiredAgreement: 0.97 },
+              },
+            ]
+          : [
+              "proactive_pushed",
+              "proactive_silent",
+              "memory_skipped",
+              "memory_kept",
+              "consolidation",
+            ].map((group) => ({
+              group,
+              prereviewed: 0,
+              unsure: 0,
+              paired: 0,
+              agreement: null,
+              kappa: null,
+              balancedAccuracy: null,
+              ownerUseful: null,
+              hidden: null,
+              confusion: [],
+              gate: null,
+            })),
+      },
     },
     generatedAt: now,
   };
@@ -1039,7 +1122,7 @@ function unsetWeeklySnapshot() {
   };
 }
 
-function reviewSnapshot() {
+function reviewSnapshot(prereviewHidden = 0) {
   const texts = [
     "我最近想吃牛肉，下周去大阪出差的时候想顺便找一家评价不错的烤肉店，最好是靠近车站的",
     "明天下午三点去银行办理住民税的缴纳手续",
@@ -1068,15 +1151,45 @@ function reviewSnapshot() {
       textHidden: false,
       category: null,
       fetched: kind === "proactive" ? 12 : null,
+      checkup: null,
     };
   };
+  const checkup = (index, reason, related) => ({
+    key: `checkup:fixture-c-${index}`,
+    source: "checkup",
+    kind: "checkup",
+    outcome: "pending",
+    decidedAt: "2026-08-24T15:00:00.000Z",
+    acted: false,
+    rating: null,
+    text: texts[index % texts.length],
+    textHidden: false,
+    category: null,
+    fetched: null,
+    checkup: {
+      reason,
+      action: null,
+      memoryId: `memory:fixture-c-${index}`,
+      relatedMemoryId: related ? `memory:fixture-c-${index}-old` : null,
+      relatedText: related ? texts[(index + 1) % texts.length] : "",
+      keptMemoryId: null,
+    },
+  });
   return {
     day: now,
     capacity: 24,
     sampled: 24,
     notSampled: 9,
-    items: Array.from({ length: 24 }, (_, index) => item(index, false)),
+    items: [
+      item(0, false),
+      checkup(0, "conflict", true),
+      item(1, false),
+      checkup(1, "unused", false),
+      ...Array.from({ length: 20 }, (_, index) => item(index + 2, false)),
+    ],
     folded: { total: 7, items: Array.from({ length: 7 }, (_, index) => item(index, true)) },
+    memoryUnusedDays: 90,
+    hiddenByModel: prereviewHidden,
     generatedAt: now,
   };
 }
@@ -1330,7 +1443,11 @@ function handleOperationsQuery(message, request) {
       return memoryFixture
         ? {
             ...envelope("snapshot", "proactive.review.snapshot"),
-            payload: reviewSnapshot(),
+            payload: reviewSnapshot(
+              /(^|;\s*)himawari-fixture-prereview=on(;|$)/.test(request.headers.cookie ?? "")
+                ? 3
+                : 0,
+            ),
           }
         : undefined;
     case "proactive.weekly.read":
@@ -2038,6 +2155,7 @@ async function handleRequest(request, response) {
               "sensitive.interceptions.clear",
               "proactive.review.read",
               "proactive.review.rate",
+              "proactive.review.checkup",
               "proactive.weekly.read",
               "decision.chain.read",
               "decision.email.read",
@@ -2432,6 +2550,12 @@ async function handleRequest(request, response) {
         sensitiveFixtureState.commands.push({ type: message.type, payload: message.payload });
         sensitiveFixtureState.items = [];
         json(response, 200, { resultRef: "sensitive-interceptions-cleared", replayed: false });
+        return;
+      }
+      if (reviewFixture && message.type === "memory.conversationReview.undo") {
+        reviewFixtureState.commands.push({ type: message.type, payload: message.payload });
+        reviewFixtureState.undone = true;
+        json(response, 200, { resultRef: "memory-review-undone", replayed: false });
         return;
       }
       const muse = memoryFixture ? handleMuseCommand(message) : null;

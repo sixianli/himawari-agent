@@ -168,6 +168,59 @@ describe("Gateway v2 fail-closed validation", () => {
         expiresAt: "2026-08-26T01:00:00.000Z",
       }),
     ],
+    [
+      "[P4-6] memory checkup merge without the memory to keep",
+      fixture("command", "proactive.review.checkup", {
+        key: "checkup:checkup-01",
+        action: "merge",
+        keep: null,
+      }),
+    ],
+    [
+      "[P4-6] memory checkup confirm that names a memory to keep",
+      fixture("command", "proactive.review.checkup", {
+        key: "checkup:checkup-01",
+        action: "confirm",
+        keep: "memory-02",
+      }),
+    ],
+    [
+      "[P4-6] memory checkup with an unknown action",
+      fixture("command", "proactive.review.checkup", {
+        key: "checkup:checkup-01",
+        action: "rate",
+        keep: null,
+      }),
+    ],
+    [
+      "[P5-3] external proposal rejected with edited text",
+      fixture("command", "memory.external.respond", {
+        items: [{ proposalId: "external-proposal-01", decision: "reject", editedText: "改过的" }],
+      }),
+    ],
+    [
+      "[P5-3] external proposal answered twice in one batch",
+      fixture("command", "memory.external.respond", {
+        items: [
+          { proposalId: "external-proposal-01", decision: "keep", editedText: null },
+          { proposalId: "external-proposal-01", decision: "reject", editedText: null },
+        ],
+      }),
+    ],
+    [
+      "[P5-3] external proposal batch with no items",
+      fixture("command", "memory.external.respond", { items: [] }),
+    ],
+    [
+      "[P5-3] external proposal batch over 500 items",
+      fixture("command", "memory.external.respond", {
+        items: Array.from({ length: 501 }, (_unused, index) => ({
+          proposalId: `external-proposal-${index}`,
+          decision: "keep",
+          editedText: null,
+        })),
+      }),
+    ],
     ["push surface is absent", { ...messages[0], type: "workspace.push" }],
     ["unknown message type", { ...messages[0], type: "provider.github.raw" }],
   ])("rejects %s", (_case, input) => {

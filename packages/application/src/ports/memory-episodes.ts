@@ -59,6 +59,7 @@ export interface MemoryEpisodeStorePort {
     readonly agentId: AgentId;
     readonly model: string;
     readonly dimensions: number;
+    readonly after?: { readonly createdAt: string; readonly id: string };
     readonly limit: number;
   }): Promise<readonly MemoryEpisode[]>;
   attachEmbedding(input: {
@@ -79,4 +80,15 @@ export interface MemoryEpisodeStorePort {
     readonly allowedClassifications: readonly DataClassification[];
     readonly limit: number;
   }): Promise<readonly MemoryEpisode[]>;
+  listDaySummariesAfter(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly after: MemoryEpisodePosition | null;
+    readonly limit: number;
+  }): Promise<readonly MemoryEpisode[]>;
+}
+
+export interface MemoryEpisodePosition {
+  readonly createdAt: string;
+  readonly episodeId: string;
 }

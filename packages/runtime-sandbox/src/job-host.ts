@@ -9,7 +9,6 @@ import type { JobHostControlBinding } from "./job-host-control.js";
 import {
   authenticateJobHostEnvelope,
   decodeJobHostOutput,
-  forkJobHost,
   JOB_HOST_RESULT_REASONS,
   jobHostResultNetwork,
   jobHostResultResources,
@@ -25,6 +24,7 @@ import {
   type JobHostSupervision,
   parseJobHostRequest,
 } from "./job-host-protocol.ts";
+import { forkLocalJobHost, type JobHostLauncher } from "./job-host-transport.ts";
 
 const JOB_HOST_STDERR_TAIL_BYTES = 4096;
 
@@ -54,6 +54,7 @@ export function prepareSandboxJobHost(
   controlDirectory?: string,
   assertNetworkAuthority?: () => Promise<void>,
   preparedControl?: JobHostControlBinding,
+  launcher: JobHostLauncher = forkLocalJobHost,
 ): SandboxJobHost {
   const request = parseJobHostRequest(value);
   if (request.policy.allowedDomains.length && !assertNetworkAuthority)
@@ -90,7 +91,7 @@ export function prepareSandboxJobHost(
   let authorityCheckId = 0;
   let authorityChecksPending = 0;
   let workerSequence = 0;
-  const child = forkJobHost(request);
+  const child = launcher(request);
   let resolveReady!: () => void;
   let rejectReady!: (error: Error) => void;
   const ready = new Promise<void>((resolve, reject) => {
@@ -127,16 +128,10 @@ export function prepareSandboxJobHost(
   const stderr: Buffer[] = [];
   let completion: Record<string, unknown> | undefined;
   let forceTimer: ReturnType<typeof setTimeout> | undefined;
-  const killGroup = (pid: number | undefined) => {
-    if (pid)
-      try {
-        process.kill(-pid, "SIGKILL");
-      } catch {}
-  };
   const force = () => {
-    if (!childExited && !ended) killGroup(child.pid);
+    if (!childExited && !ended) child.killGroup();
   };
-  child.once("exit", () => {
+  child.onceExit(() => {
     childExited = true;
   });
   const send = (message: {
@@ -156,9 +151,7 @@ export function prepareSandboxJobHost(
           sequence: ++workerSequence,
           observedAt: new Date().toISOString(),
         },
-        (error) => {
-          if (error) force();
-        },
+        force,
       );
   };
   const cancel = (reason = "cancelled") => {
@@ -238,12 +231,12 @@ export function prepareSandboxJobHost(
     Math.min(JOB_HOST_STARTUP_WINDOW_MS, Math.max(1, deadlineRemainingMs)),
   );
   let hostStderrTail: Buffer = Buffer.alloc(0);
-  child.stderr?.on("data", (chunk: Buffer | string) => {
+  child.onStderr((chunk: Buffer | string) => {
     hostStderrTail = Buffer.concat([hostStderrTail, Buffer.from(chunk)]).subarray(
       -JOB_HOST_STDERR_TAIL_BYTES,
     );
   });
-  child.on("message", (value: unknown) => {
+  child.onMessage((value: unknown) => {
     if (!value || typeof value !== "object" || !("type" in value)) {
       cancel("host_failure");
       return;
@@ -389,11 +382,11 @@ export function prepareSandboxJobHost(
       forceTimer ??= setTimeout(force, request.cleanupTimeoutMs);
     } else cancel("host_failure");
   });
-  child.once("error", () => {
+  child.onceError(() => {
     rejectReady(new Error("JOB_HOST_START_FAILED"));
     force();
   });
-  child.once("close", (exitCode: number | null, signal: NodeJS.Signals | null) => {
+  child.onceClose((exitCode: number | null, signal: NodeJS.Signals | null) => {
     if (starting)
       process.stderr.write(
         `${JSON.stringify({

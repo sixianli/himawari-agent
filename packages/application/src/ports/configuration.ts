@@ -1,4 +1,4 @@
-import type { AgentId, DeploymentId, OwnerId } from "@himawari-agent/domain";
+import type { AgentId, DeploymentId, DemoLocale, OwnerId } from "@himawari-agent/domain";
 import type { DataClassification } from "./common.js";
 import type { ModelProviderRouting } from "./intelligence.js";
 import type { WebProviderId } from "./web-providers.js";
@@ -62,6 +62,7 @@ export type ConfiguredGenerationModelDescriptor =
 export interface ConfiguredEmbeddingModelDescriptor extends ConfiguredModelDescriptorBase {
   readonly role: "embedding";
   readonly dimensions: number;
+  readonly artifactSha256?: string;
 }
 
 export type ConfiguredModelDescriptor =
@@ -76,6 +77,16 @@ export interface ConfiguredMemoryDescriptor {
   readonly dimensions: number;
   readonly minimumSimilarity?: number;
   readonly retrieval?: ConfiguredMemoryRetrieval;
+  readonly conversationReview?: ConfiguredConversationReview;
+}
+
+export interface ConfiguredConversationReview {
+  readonly enabled?: boolean;
+  readonly maximumSegmentsPerDay?: number;
+  readonly maximumSourceCharacters?: number;
+  readonly maximumRelatedMemories?: number;
+  readonly maximumNewMemoriesPerDay?: number;
+  readonly maximumOutputTokens?: number;
 }
 
 export interface ConfiguredMemoryRetrieval {
@@ -182,7 +193,9 @@ export interface FileReadRouteConfiguration {
 
 export type PublicSearchRouteConfiguration = (
   | FileReadRouteConfiguration
-  | (Omit<FileReadRouteConfiguration, "grantId"> & { readonly scopeSource: "private_temp" })
+  | (Omit<FileReadRouteConfiguration, "grantId"> & {
+      readonly scopeSource: "private_temp";
+    })
 ) &
   WebProviderRouteConfiguration;
 
@@ -222,7 +235,8 @@ export interface ProactiveGmailConfiguration {
 
 export interface ProactiveConfiguration {
   readonly modelRef: string;
-  readonly gmail: ProactiveGmailConfiguration;
+  readonly gmail?: ProactiveGmailConfiguration;
+  readonly demoInbox?: DemoLocale;
   readonly intervalMs: number;
   readonly perCheckMs: number;
   readonly dailyCostMicros: number;
@@ -236,11 +250,30 @@ export interface ProactiveConfiguration {
   readonly wholeThreadCharactersPerMail: number;
   readonly ruleReplayDays: number;
   readonly ruleReplayMailsPerOutcome: number;
-  readonly memoryMinimumSimilarity: number;
+  readonly memoryMinimumSimilarity?: number;
   readonly reviewBudgetSeconds: number;
   readonly reviewSecondsPerItem: number;
   readonly reviewSilentSharePermille: number;
+  readonly reviewPrereview: ReviewPrereviewConfiguration;
+  readonly reviewMemoryUnusedDays: number;
   readonly backoffThreshold: number;
+}
+
+export interface ReviewPrereviewConfiguration {
+  readonly enabled: boolean;
+  readonly dailyLimit: number;
+  readonly dailyCostMicros: number;
+  readonly perRun: number;
+  readonly requestTimeoutMs: number;
+  readonly historyDays: number;
+  readonly historyMinimum: number;
+  readonly reduction: {
+    readonly enabled: boolean;
+    readonly hiddenAgreementPermille: number;
+    readonly confidencePermille: number;
+    readonly auditPermille: number;
+    readonly windowDays: number;
+  };
 }
 
 export interface MuseIntakeConfiguration {
@@ -249,13 +282,26 @@ export interface MuseIntakeConfiguration {
   readonly gapExportSecretRef?: string;
 }
 
+export const REAL_EVAL_MODES = ["off", "once", "weekly"] as const;
+export type RealEvalMode = (typeof REAL_EVAL_MODES)[number];
+export const REAL_EVAL_WEEKLY_CAP_MICROS_MAXIMUM = 500_000;
+
+export interface RealEvalConfiguration {
+  readonly mode: RealEvalMode;
+  readonly modelRef: string;
+  readonly weeklyCapMicros: number;
+  readonly newMemoriesPerRun: number;
+  readonly requestTimeoutMs: number;
+}
+
 export interface McpReadConfiguration {
-  readonly secretRef: string;
-  readonly writeSecretRef?: string;
+  readonly audience: string;
+  readonly proposals?: true;
 }
 
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
   readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;

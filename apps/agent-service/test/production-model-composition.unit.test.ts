@@ -9,7 +9,11 @@ import type {
   ModelInvocationPermit,
   RunExecutionSource,
 } from "@himawari-agent/application";
-import { ModelInvocationAdmissionService } from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  ModelInvocationAdmissionService,
+  PORT_ERROR_CODES,
+} from "@himawari-agent/application";
 import type { EmbeddingBoundary, EmbeddingResponse } from "@himawari-agent/memory-engine";
 import {
   applyMigrations,
@@ -92,16 +96,15 @@ const descriptors = [primaryModel] as const;
 
 class RecordingRuntime {
   readonly models = new Map<string, unknown>();
-  readonly removedProviders: string[] = [];
+  readonly refreshes: { readonly allowNetwork?: boolean }[] = [];
 
   getModel(providerId: string, modelId: string): unknown | undefined {
     return this.models.get(`${providerId}:${modelId}`);
   }
 
-  registerProvider(providerId: string, config: Readonly<Record<string, unknown>>): void {
-    const models = config["models"];
-    if (!Array.isArray(models)) throw new Error("models missing");
-    for (const model of models) {
+  registerNativeProvider(provider: { readonly id: string; getModels(): readonly unknown[] }): void {
+    const providerId = provider.id;
+    for (const model of provider.getModels()) {
       if (model === null || typeof model !== "object" || Array.isArray(model)) {
         throw new Error("model invalid");
       }
@@ -111,10 +114,8 @@ class RecordingRuntime {
     }
   }
 
-  async setRuntimeApiKey(): Promise<void> {}
-
-  async removeRuntimeApiKey(providerId: string): Promise<void> {
-    this.removedProviders.push(providerId);
+  async refresh(options: { readonly allowNetwork?: boolean }): Promise<void> {
+    this.refreshes.push(options);
   }
 }
 
@@ -236,8 +237,9 @@ describe("production model composition", () => {
     expect(composition.transport).toBeDefined();
     expect(composition.payloadBoundary).toBeDefined();
 
+    expect(runtime.refreshes).toEqual([{ allowNetwork: false }]);
     await composition.close();
-    expect(runtime.removedProviders).toEqual([]);
+    expect(runtime.refreshes).toEqual([{ allowNetwork: false }]);
   });
 
   it("rejects unsafe secret sources and conflicting canonical descriptors", () => {
@@ -608,7 +610,7 @@ describe("production model composition", () => {
     await composition.close();
   });
 
-  it("[I-23] refuses to start memory search without a relevance threshold for the embedding model", async () => {
+  it("[I-23] refuses to start memory search for an embedding model without a calibrated relevance threshold", async () => {
     const base = selectedEmbeddingConfiguration(temporaryDirectory);
     const configuration = {
       ...base,
@@ -633,14 +635,14 @@ describe("production model composition", () => {
         ...options,
         configuration,
       }),
-    ).rejects.toThrow("MEMORY_MINIMUM_SIMILARITY_REQUIRED");
+    ).rejects.toThrow("EMBEDDING_PROFILE_UNKNOWN");
     const configured = await createProductionMemoryCompositionFromConfiguration({
       onVectorFailure: () => {},
       egress: testModelEgress(),
       ...options,
       configuration: {
-        ...configuration,
-        memory: { ...configuration.memory, minimumSimilarity: 0.7 },
+        ...base,
+        memory: { ...base.memory, minimumSimilarity: 0.7 },
       },
     });
     expect(configured.projection.minimumSimilarity).toBe(0.7);
@@ -850,6 +852,10 @@ it("propagates Run cancellation and remaining deadline to embedding and retains 
   const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
   let boundary: EmbeddingBoundary | undefined;
   const controller = new AbortController();
+  let searchCancelled: ((error: unknown) => boolean) | undefined;
+  const providerDown = new Error("PROVIDER_DOWN");
+  const cancelledBefore: (boolean | null)[] = [];
+  const cancelledAfter: (boolean | null)[] = [];
   const now = "2026-09-06T00:00:00.000Z";
   const permit: ModelInvocationPermit = {
     assertActive: vi.fn(async () => {}),
@@ -867,18 +873,29 @@ it("propagates Run cancellation and remaining deadline to embedding and retains 
   const memory = createProductionRunMemory({
     configuration,
     projection: {
-      bindEmbeddingBoundary: (value) => {
+      bindEmbeddingBoundary: (value, _timeoutMs, cancelled) => {
         boundary = value;
+        searchCancelled = cancelled;
       },
     },
     payloads: { get: async () => ({ dataClassification: "private" }) as never },
     memory: {
       search: async () => {
         if (!boundary) throw new Error("BOUNDARY_MISSING");
-        await boundary(
-          { model: "alibaba/qwen3-embedding-8b", input: "query", dimensions: 4096 },
-          send,
-        );
+        cancelledBefore.push(searchCancelled?.(providerDown) ?? null);
+        try {
+          await boundary(
+            {
+              identity: "fixture",
+              model: "alibaba/qwen3-embedding-8b",
+              input: "query",
+              dimensions: 4096,
+            },
+            send,
+          );
+        } finally {
+          cancelledAfter.push(searchCancelled?.(providerDown) ?? null);
+        }
         return [];
       },
     },
@@ -909,6 +926,110 @@ it("propagates Run cancellation and remaining deadline to embedding and retains 
     memory.search({ ...request, signal: new AbortController().signal, deadlineAt: now }),
   ).rejects.toThrow("EMBEDDING_DEADLINE_EXCEEDED");
   expect(send).toHaveBeenCalledTimes(1);
+  expect(cancelledBefore).toEqual([false, false]);
+  expect(cancelledAfter).toEqual([true, false]);
+  expect(searchCancelled?.(providerDown)).toBe(false);
+});
+
+it("[P3-2] a memory tool search whose Run lost its execution lease while embedding leaves no retrieval-degrade record", async () => {
+  const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
+  let boundary: EmbeddingBoundary | undefined;
+  let searchCancelled: ((error: unknown) => boolean) | undefined;
+  const now = "2026-09-06T00:00:00.000Z";
+  let leaseHeld = true;
+  const leaseError = () =>
+    new ApplicationPortError(
+      PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+      "Run execution lease is no longer active",
+    );
+  const permit: ModelInvocationPermit = {
+    assertActive: vi.fn(async () => {
+      if (!leaseHeld)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          "Run execution lease is no longer active",
+        );
+    }),
+    markStarted: vi.fn(async () => {}),
+    releaseReserved: vi.fn(async () => {
+      if (!leaseHeld) throw leaseError();
+    }),
+    settle: vi.fn(async () => {}),
+    markUnknown: vi.fn(async () => {}),
+  };
+  const memory = createProductionRunMemory({
+    configuration,
+    projection: {
+      bindEmbeddingBoundary: (value, _timeoutMs, cancelled) => {
+        boundary = value;
+        searchCancelled = cancelled;
+      },
+    },
+    payloads: { get: async () => undefined },
+    memory: { search: async () => [] },
+    admission: async () => ({ begin: async () => ({ disposition: "fresh", permit }) }) as never,
+    budget: {} as never,
+    assertActive: async () => {},
+    now: () => now,
+    diagnostic: () => {
+      throw new Error("LOG_SINK_DOWN");
+    },
+  });
+  const recorded: boolean[] = [];
+  const toolSearch = (send: () => Promise<never>) =>
+    memory.embedWithin(
+      {
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        runId: "run-tool-embedding" as never,
+        executionLease: {} as never,
+        deadlineAt: "2026-09-06T00:00:05.000Z",
+        dataClassification: "private",
+        slot: "memory-recall:call-1",
+      },
+      async () => {
+        if (!boundary || !searchCancelled) throw new Error("BOUNDARY_MISSING");
+        try {
+          await boundary(
+            {
+              identity: "fixture",
+              model: "alibaba/qwen3-embedding-8b",
+              input: "query",
+              dimensions: 4096,
+            },
+            send,
+          );
+        } catch (error) {
+          recorded.push(!searchCancelled(error));
+        }
+      },
+    );
+  leaseHeld = false;
+  await toolSearch(async () => {
+    throw new Error("SEND_AFTER_LEASE_LOST");
+  });
+  leaseHeld = true;
+  await toolSearch(async () => {
+    throw new ApplicationPortError(PORT_ERROR_CODES.PROVIDER_FAILURE, "EMBEDDING_HTTP_FAILURE");
+  });
+  await toolSearch(async () => {
+    throw new ApplicationPortError(
+      PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+      "EMBEDDING_BOUNDARY_REQUIRED",
+    );
+  });
+  const mailController = new AbortController();
+  await memory.embedForExternalRead(
+    { deadlineAt: "2026-09-06T00:00:05.000Z", signal: mailController.signal, costMicros: 0 },
+    async () => {
+      if (!searchCancelled) throw new Error("BOUNDARY_MISSING");
+      const failure = new Error("TRANSPORT_CLOSED");
+      recorded.push(!searchCancelled(failure));
+      mailController.abort(new Error("CLIENT_GONE"));
+      recorded.push(!searchCancelled(failure));
+    },
+  );
+  expect(recorded).toEqual([false, true, true, true, false]);
 });
 
 it("gives a slow memory-search embedding three seconds, then asks once more under a new invocation", async () => {
@@ -970,7 +1091,12 @@ it("gives a slow memory-search embedding three seconds, then asks once more unde
       search: async () => {
         if (!boundary) throw new Error("BOUNDARY_MISSING");
         await boundary(
-          { model: "alibaba/qwen3-embedding-8b", input: "query", dimensions: 4096 },
+          {
+            identity: "fixture",
+            model: "alibaba/qwen3-embedding-8b",
+            input: "query",
+            dimensions: 4096,
+          },
           send,
         );
         return [];
@@ -1069,7 +1195,12 @@ it("retries only unstarted projection reservations and never repeats an uncertai
       async () => {
         if (!boundary) throw new Error("BOUNDARY_MISSING");
         await boundary(
-          { model: "alibaba/qwen3-embedding-8b", input: "memory", dimensions: 4096 },
+          {
+            identity: "fixture",
+            model: "alibaba/qwen3-embedding-8b",
+            input: "memory",
+            dimensions: 4096,
+          },
           send,
         );
         return "provider-memory-1";
@@ -1517,6 +1648,39 @@ it("[PG-12] judges mail through the selected Pi transport with its own invocatio
   }
 });
 
+it("[P4-5] releases the stored prompt when a proactive call cannot get its secret handle", async () => {
+  const adapters = createReferenceAdapterSet();
+  const prepared = compositionOptions(adapters, {
+    runtimeFactory: { create: async () => new RecordingRuntime() as unknown as PiModelRuntime },
+  });
+  const released: string[][] = [];
+  const release = adapters.payload.delete.bind(adapters.payload);
+  vi.spyOn(adapters.payload, "delete").mockImplementation(async (ref) => {
+    released.push([ref]);
+    return release(ref);
+  });
+  vi.spyOn(prepared.options.handles, "issueHandle").mockRejectedValue(new Error("HANDLE_FAILED"));
+  const composition = createProductionModelComposition(prepared.options);
+  try {
+    const invoker = composition.proactiveModel(primaryModel.ref, {
+      maxOutputTokens: 256,
+      requestTimeoutMs: 60_000,
+    });
+    await expect(
+      invoker.prepare({
+        invocationId: "handle-fails",
+        prompt: "判断这些新邮件",
+        dataClassification: "private",
+        deadlineAt: "2099-01-01T00:00:00.000Z",
+      }),
+    ).rejects.toThrow("HANDLE_FAILED");
+    expect(released).toHaveLength(1);
+    expect(await adapters.payload.get(released[0]?.[0] as never)).toBeUndefined();
+  } finally {
+    await composition.close();
+  }
+});
+
 function embeddingAccountingFixture(mode: "query" | "projection", response: unknown) {
   const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
   let boundary: EmbeddingBoundary | undefined;
@@ -1553,7 +1717,12 @@ function embeddingAccountingFixture(mode: "query" | "projection", response: unkn
   const invoke = () => {
     if (!boundary) throw new Error("BOUNDARY_MISSING");
     return boundary(
-      { model: "alibaba/qwen3-embedding-8b", input: "memory", dimensions: 4096 },
+      {
+        identity: "fixture",
+        model: "alibaba/qwen3-embedding-8b",
+        input: "memory",
+        dimensions: 4096,
+      },
       send,
     );
   };

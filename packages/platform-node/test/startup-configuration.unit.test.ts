@@ -162,6 +162,66 @@ describe("strict product configuration", () => {
       ).toThrow();
   });
 
+  it("[P3-1] accepts a local ONNX embedding profile only with a pinned artifact, no secret and no cost", () => {
+    const artifactSha256 = "a".repeat(64);
+    const local = {
+      ref: "model-embedding",
+      role: "embedding",
+      provider: "local-onnx",
+      model: "jina-embeddings-v5-text-small-retrieval-int8",
+      version: "artifact-v1",
+      capabilities: ["embedding"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      dimensions: 1024,
+      allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
+      disclosure: "local_only",
+      secretRef: null,
+      artifactSha256,
+    };
+    const withEmbedding = (change: Record<string, unknown>) => {
+      const input = config(path.join(tmpdir(), "himawari-local-embedding"));
+      const models = input["modelDescriptors"] as Record<string, unknown>[];
+      input["modelDescriptors"] = [models[0], { ...local, ...change }];
+      input["memory"] = {
+        ...(input["memory"] as Record<string, unknown>),
+        dimensions: (change["dimensions"] as number | undefined) ?? 1024,
+      };
+      input["secretReferences"] = (input["secretReferences"] as Record<string, unknown>[]).filter(
+        ({ ref }) => ref !== "provider-embedding",
+      );
+      return input;
+    };
+    const parsed = parseProductConfiguration(withEmbedding({}), "2026-11-11T00:00:00.000Z");
+    expect(parsed.modelDescriptors.find(({ role }) => role === "embedding")).toMatchObject({
+      provider: "local-onnx",
+      artifactSha256,
+    });
+    for (const [change, reason] of [
+      [{ disclosure: "trusted_remote" }, "must be local_only"],
+      [{ secretRef: "provider-embedding" }, "must be null"],
+      [{ cost: { input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0 } }, "must be zero"],
+      [{ artifactSha256: undefined }, "is required for local-onnx"],
+      [{ artifactSha256: "A".repeat(64) }, "lowercase sha256"],
+      [{ model: "jina-embeddings-v5-text-small" }, "not a known embedding profile"],
+      [{ dimensions: 768 }, "must be one of 1024"],
+    ] as const)
+      expect(() =>
+        parseProductConfiguration(withEmbedding(change), "2026-11-11T00:00:00.000Z"),
+      ).toThrow(
+        expect.objectContaining({
+          details: expect.objectContaining({ reason: expect.stringContaining(reason) }),
+        }),
+      );
+    const gateway = config(path.join(tmpdir(), "himawari-local-embedding"));
+    const models = gateway["modelDescriptors"] as Record<string, unknown>[];
+    gateway["modelDescriptors"] = [models[0], { ...models[1], artifactSha256 }];
+    expect(() => parseProductConfiguration(gateway, "2026-11-11T00:00:00.000Z")).toThrow(
+      expect.objectContaining({
+        details: expect.objectContaining({ reason: "is only supported for local-onnx" }),
+      }),
+    );
+  });
+
   it("accepts memory retrieval tuning only as non-negative numbers below 1 and a boolean dedupe switch", () => {
     const withRetrieval = (retrieval: unknown) => {
       const input = config(path.join(tmpdir(), "himawari-memory-retrieval"));
@@ -1401,11 +1461,45 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     wholeThreadCharactersPerMail: 60_000,
     ruleReplayDays: 30,
     ruleReplayMailsPerOutcome: 300,
-    memoryMinimumSimilarity: 0.45,
     reviewBudgetSeconds: 120,
     reviewSecondsPerItem: 5,
     reviewSilentSharePermille: 500,
+    reviewPrereview: {
+      enabled: true,
+      dailyLimit: 50,
+      dailyCostMicros: 100_000,
+      perRun: 10,
+      requestTimeoutMs: 30_000,
+      historyDays: 28,
+      historyMinimum: 20,
+      reduction: {
+        enabled: false,
+        hiddenAgreementPermille: 900,
+        confidencePermille: 800,
+        auditPermille: 200,
+        windowDays: 28,
+      },
+    },
+    reviewMemoryUnusedDays: 90,
     backoffThreshold: 3,
+  });
+  raw["runPolicy"] = {
+    ...policy,
+    proactive: {
+      ...proactive,
+      reviewPrereview: {
+        dailyLimit: 20,
+        reduction: { enabled: true, hiddenAgreementPermille: 950 },
+      },
+    },
+  };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive
+      ?.reviewPrereview,
+  ).toMatchObject({
+    enabled: true,
+    dailyLimit: 20,
+    reduction: { enabled: true, hiddenAgreementPermille: 950, auditPermille: 200 },
   });
   raw["runPolicy"] = {
     ...policy,
@@ -1414,6 +1508,7 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
       reviewBudgetSeconds: 300,
       reviewSecondsPerItem: 10,
       reviewSilentSharePermille: 200,
+      reviewMemoryUnusedDays: 30,
       backoffThreshold: 5,
     },
   };
@@ -1423,6 +1518,7 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     reviewBudgetSeconds: 300,
     reviewSecondsPerItem: 10,
     reviewSilentSharePermille: 200,
+    reviewMemoryUnusedDays: 30,
     backoffThreshold: 5,
   });
   raw["runPolicy"] = {
@@ -1450,6 +1546,14 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, reviewSecondsPerItem: 0 },
     { ...proactive, reviewSilentSharePermille: 1_001 },
     { ...proactive, reviewSilentSharePermille: -1 },
+    { ...proactive, reviewPrereview: { dailyLimit: 0 } },
+    { ...proactive, reviewPrereview: { enabled: "yes" } },
+    { ...proactive, reviewPrereview: { unknown: 1 } },
+    { ...proactive, reviewPrereview: { reduction: { auditPermille: 0 } } },
+    { ...proactive, reviewPrereview: { reduction: { hiddenAgreementPermille: 1_000 } } },
+    { ...proactive, reviewPrereview: { reduction: { threshold: 900 } } },
+    { ...proactive, reviewMemoryUnusedDays: 6 },
+    { ...proactive, reviewMemoryUnusedDays: 3_651 },
     { ...proactive, backoffThreshold: 11 },
     { ...proactive, backoffThreshold: -1 },
     { ...proactive, relatedMailsPerMail: 51 },
@@ -1465,8 +1569,8 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
   }
 });
 
-it("[P5-1] accepts the MCP read entry only with one secret whose purpose is mcp-read", () => {
-  const raw = config("/tmp/himawari-mcp-read-config");
+it("[P6-demo] accepts a fake inbox in place of Gmail, in one of the offered languages, and never both at once", () => {
+  const raw = config("/tmp/himawari-demo-inbox-config");
   const policy = {
     version: "1",
     systemInstruction: "test",
@@ -1476,59 +1580,133 @@ it("[P5-1] accepts the MCP read entry only with one secret whose purpose is mcp-
   const references = raw["secretReferences"] as unknown[];
   raw["secretReferences"] = [
     ...references,
-    { ref: "mcp-read-secret", version: "v1", purpose: "mcp-read", scope: "agent" },
-    { ref: "other-secret", version: "v1", purpose: "google-oauth-client", scope: "agent" },
+    { ref: "google-oauth", version: "v1", purpose: "google-oauth-client", scope: "agent" },
   ];
-  const mcpRead = { secretRef: "mcp-read-secret" };
-  raw["runPolicy"] = { ...policy, mcpRead };
-  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead).toEqual(
-    mcpRead,
-  );
+  const gmail = {
+    clientId: "123-abc.apps.googleusercontent.com",
+    clientSecretRef: "google-oauth",
+  };
+  for (const locale of ["ja", "en"]) {
+    raw["runPolicy"] = { ...policy, proactive: { modelRef: "model-primary", demoInbox: locale } };
+    const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive;
+    expect(parsed?.demoInbox).toBe(locale);
+    expect(parsed).not.toHaveProperty("gmail");
+  }
+  for (const invalid of [
+    { modelRef: "model-primary" },
+    { modelRef: "model-primary", gmail, demoInbox: "ja" },
+    { modelRef: "model-primary", demoInbox: "zh-CN" },
+    { modelRef: "model-primary", demoInbox: "" },
+    { modelRef: "model-primary", demoInbox: true },
+  ]) {
+    raw["runPolicy"] = { ...policy, proactive: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});
+
+it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own audience and no shared secret", () => {
+  const raw = config("/tmp/himawari-mcp-access-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const accessIdentity = {
+    issuer: "https://team.cloudflareaccess.com",
+    audience: "access-audience-v1",
+    jwksUrl: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
+    jwksCacheMilliseconds: 300_000,
+    jwksTimeoutMilliseconds: 2_000,
+    jwksMaximumBodyBytes: 65_536,
+    clockToleranceSeconds: 30,
+    identityLookupTimeoutMilliseconds: 2_000,
+    identityLookupMaximumBodyBytes: 65_536,
+    recentAuthentication: { maximumAgeMilliseconds: 900_000, clockSkewMilliseconds: 30_000 },
+    bootstrap: {
+      enabled: true,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      tokenSecretRef: "identity-bootstrap",
+    },
+    csrf: { keySecretRef: "identity-csrf", ttlMilliseconds: 1_800_000 },
+  };
+  raw["secretReferences"] = [
+    ...(raw["secretReferences"] as unknown[]),
+    { ref: "identity-bootstrap", version: "v1", purpose: "identity-bootstrap", scope: "agent" },
+    { ref: "identity-csrf", version: "v1", purpose: "identity-csrf", scope: "agent" },
+  ];
+  raw["http"] = {
+    listenHost: "127.0.0.1",
+    listenPort: 8787,
+    staticRoot: path.join("/tmp/himawari-mcp-access-config", "browser"),
+    sessionCookieName: "himawari_session",
+    maximumBodyBytes: 262_144,
+    maximumStaticAssetBytes: 8 * 1024 * 1024,
+    heartbeatMilliseconds: 15_000,
+  };
+  raw["identity"] = accessIdentity;
+  for (const mcpRead of [
+    { audience: "mcp-access-audience" },
+    { audience: "mcp-access-audience", proposals: true },
+  ]) {
+    raw["runPolicy"] = { ...policy, mcpRead };
+    expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead).toEqual(
+      mcpRead,
+    );
+  }
   raw["runPolicy"] = { ...policy };
   expect(
     parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead,
   ).toBeUndefined();
   for (const invalid of [
     {},
-    { secretRef: "other-secret" },
-    { secretRef: "missing-secret" },
-    { ...mcpRead, secret: "inline" },
-    "mcp-read-secret",
+    { secretRef: "mcp-read-secret" },
+    { audience: "mcp-access-audience", secretRef: "mcp-read-secret" },
+    { audience: "mcp-access-audience", writeSecretRef: "mcp-write-secret" },
+    { audience: "mcp-access-audience", proposals: false },
+    { audience: "mcp access audience" },
+    "mcp-access-audience",
   ]) {
     raw["runPolicy"] = { ...policy, mcpRead: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
-});
-
-it("[P5-2] accepts an MCP write secret only when it is a separate mcp-write secret", () => {
-  const raw = config("/tmp/himawari-mcp-write-config");
-  const policy = {
-    version: "1",
-    systemInstruction: "test",
-    memoryLimit: 10,
-    maxSelectedMemories: 1,
-  };
-  const references = raw["secretReferences"] as unknown[];
-  raw["secretReferences"] = [
-    ...references,
-    { ref: "mcp-read-secret", version: "v1", purpose: "mcp-read", scope: "agent" },
-    { ref: "mcp-write-secret", version: "v1", purpose: "mcp-write", scope: "agent" },
-    { ref: "other-secret", version: "v1", purpose: "google-oauth-client", scope: "agent" },
-  ];
-  const mcpRead = { secretRef: "mcp-read-secret", writeSecretRef: "mcp-write-secret" };
-  raw["runPolicy"] = { ...policy, mcpRead };
-  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead).toEqual(
-    mcpRead,
+  const webAudience = (raw["identity"] as { audience: string }).audience;
+  raw["runPolicy"] = { ...policy, mcpRead: { audience: webAudience } };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: {
+        field: "configuration.runPolicy.mcpRead.audience",
+        reason: "must differ from configuration.identity.audience",
+      },
+    }),
   );
-  for (const invalid of [
-    { secretRef: "mcp-read-secret", writeSecretRef: "mcp-read-secret" },
-    { secretRef: "mcp-read-secret", writeSecretRef: "other-secret" },
-    { secretRef: "mcp-read-secret", writeSecretRef: "missing-secret" },
-    { secretRef: "mcp-read-secret", writeSecretRef: 1 },
-  ]) {
-    raw["runPolicy"] = { ...policy, mcpRead: invalid };
-    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
-  }
+  raw["runPolicy"] = { ...policy, mcpRead: { audience: "mcp-access-audience" } };
+  const withoutIdentity = { ...raw };
+  delete withoutIdentity["http"];
+  delete withoutIdentity["identity"];
+  expect(() => parseProductConfiguration(withoutIdentity, "2026-09-06T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: {
+        field: "configuration.runPolicy.mcpRead",
+        reason: "requires configuration.identity to use Cloudflare Access",
+      },
+    }),
+  );
+  raw["identity"] = {
+    kind: "built-in",
+    sessionIdleMilliseconds: 86_400_000,
+    sessionAbsoluteMilliseconds: 604_800_000,
+    recentAuthentication: { maximumAgeMilliseconds: 900_000, clockSkewMilliseconds: 30_000 },
+    csrf: { keySecretRef: "identity-csrf", ttlMilliseconds: 1_800_000 },
+  };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: {
+        field: "configuration.runPolicy.mcpRead",
+        reason: "requires configuration.identity to use Cloudflare Access",
+      },
+    }),
+  );
 });
 
 it("accepts Muse intake only with a boolean switch and one secret whose purpose is muse-intake", () => {
@@ -1572,4 +1750,92 @@ it("accepts Muse intake only with a boolean switch and one secret whose purpose 
     raw["runPolicy"] = { ...policy, museIntake: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
+});
+
+it("[P4-5] accepts a real memory eval with a model that may see private and sensitive data and a weekly cap of at most 0.5 USD", () => {
+  const raw = config("/tmp/himawari-real-eval-config");
+  const descriptors = raw["modelDescriptors"] as Record<string, unknown>[];
+  const primary = descriptors.find(({ ref }) => ref === "model-primary");
+  if (!primary) throw new Error("fixture model missing");
+  primary["allowedDataClassifications"] = ["public", "private", "sensitive"];
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const realEval = {
+    mode: "once",
+    modelRef: "model-primary",
+    weeklyCapMicros: 500_000,
+    newMemoriesPerRun: 50,
+    requestTimeoutMs: 60_000,
+  };
+  raw["runPolicy"] = { ...policy, realEval };
+  expect(parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z").runPolicy?.realEval).toEqual(
+    realEval,
+  );
+  for (const invalid of [
+    { ...realEval, mode: "daily" },
+    { ...realEval, modelRef: "model-embedding" },
+    { ...realEval, modelRef: "model-missing" },
+    { ...realEval, weeklyCapMicros: 500_001 },
+    { ...realEval, weeklyCapMicros: 0 },
+    { ...realEval, newMemoriesPerRun: 0 },
+    { ...realEval, newMemoriesPerRun: 201 },
+    { ...realEval, requestTimeoutMs: 10 },
+    { ...realEval, budgetKey: "production" },
+  ]) {
+    raw["runPolicy"] = { ...policy, realEval: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow();
+  }
+  const embedding = descriptors.find(({ ref }) => ref === "model-embedding");
+  if (!embedding) throw new Error("fixture embedding missing");
+  embedding["allowedDataClassifications"] = ["public", "private"];
+  raw["runPolicy"] = { ...policy, realEval };
+  expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: expect.objectContaining({ field: "configuration.runPolicy.realEval.mode" }),
+    }),
+  );
+  raw["runPolicy"] = { ...policy, realEval: { ...realEval, mode: "off" } };
+  expect(parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z").runPolicy?.realEval?.mode).toBe(
+    "off",
+  );
+  embedding["allowedDataClassifications"] = ["public", "private", "sensitive", "restricted"];
+  descriptors.push({
+    ref: "model-specialist",
+    role: "specialist",
+    provider: "typesafe",
+    model: "jev-latest",
+    modelVersion: "jev-1.13.0",
+    version: "snapshot-1",
+    priority: 2,
+    name: "Jev reviewer",
+    api: "typesafe-systemone",
+    capabilities: ["text"],
+    cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+    allowedDataClassifications: ["private", "sensitive"],
+    disclosure: "external_remote",
+    secretRef: "provider-specialist",
+  });
+  (raw["secretReferences"] as Record<string, unknown>[]).push({
+    ref: "provider-specialist",
+    version: "v1",
+    purpose: "model-auth",
+    scope: "model-specialist",
+  });
+  raw["runPolicy"] = { ...policy, realEval: { ...realEval, modelRef: "model-specialist" } };
+  expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: expect.objectContaining({ field: "configuration.runPolicy.realEval.modelRef" }),
+    }),
+  );
+  primary["allowedDataClassifications"] = ["public", "private"];
+  raw["runPolicy"] = { ...policy, realEval };
+  expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: expect.objectContaining({ field: "configuration.runPolicy.realEval.modelRef" }),
+    }),
+  );
 });

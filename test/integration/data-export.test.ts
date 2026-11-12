@@ -18,6 +18,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { createDataExportTextPolicy } from "@himawari-agent/platform-node";
 import { afterEach, describe, expect, it } from "vitest";
+import { SqliteMemoryConversationReviewOperations } from "../../packages/persistence-sqlite/src/sqlite-memory-conversation-review-operations.ts";
 import {
   openSide,
   SECRET_API_KEY,
@@ -25,6 +26,7 @@ import {
   SECRET_MAIL_BODY,
   SECRET_PASSWORD,
   SECRETS,
+  putPayload,
   type Side,
   seedEverything,
   seedMemory,
@@ -59,7 +61,11 @@ async function seeded(): Promise<Side> {
 
 function exportOf(
   from: Side,
-  options: { seal?: boolean; evidence?: boolean; textPolicy?: typeof policy } = {},
+  options: {
+    seal?: boolean;
+    evidence?: boolean;
+    textPolicy?: typeof policy;
+  } = {},
 ) {
   return buildPortableExport({
     database: from.database,
@@ -107,6 +113,7 @@ function counts(target: Side): Record<string, number> {
     batches: one("memory_import_batches"),
     runs: one("memory_consolidation_runs"),
     payloads: one("payloads"),
+    prereviews: one("decision_prereviews"),
   };
 }
 
@@ -115,7 +122,13 @@ function rehash(
   mutate: (path: string, bytes: Uint8Array) => Uint8Array,
 ): PortableFiles {
   const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE))) as {
-    files: { path: string; bytes: number; lines: number; sha256: string; role: string }[];
+    files: {
+      path: string;
+      bytes: number;
+      lines: number;
+      sha256: string;
+      role: string;
+    }[];
   };
   const next: PortableFiles = new Map();
   for (const [path, bytes] of files)
@@ -140,6 +153,7 @@ describe("data export: round trip", () => {
       memoriesWithoutOriginal: 0,
       historyEventsWithoutOriginal: 0,
       decisionTextsWithoutOriginal: 0,
+      rulesWithoutOriginal: 0,
       evidenceNotImported: false,
     });
     const second = await exportOf(target, { evidence: true });
@@ -154,6 +168,105 @@ describe("data export: round trip", () => {
     expect(first.manifest.counts.memories).toBe(8);
     expect(first.manifest.counts.decisions).toBe(7);
     expect(first.manifest.counts.sealedEvidenceRows).toBeGreaterThan(0);
+  });
+
+  it("[DREAM][P1-6] carries conversation reviews and their changes, without conversation ids", async () => {
+    const source = await seeded();
+    const first = await exportOf(source);
+    expect(first.manifest.counts.conversationReviews).toBe(2);
+    expect(first.manifest.counts.conversationReviewChanges).toBe(3);
+    const lines = decoder.decode(first.files.get("data/conversation-reviews.jsonl"));
+    expect(lines).not.toMatch(/episode-1|message-1|thread-review|payload-review-output/u);
+    expect(lines).not.toContain("m-pending");
+    const target = await side("reviews");
+    const report = await importInto(target, first.files, { passphrase: PASSPHRASE });
+    expect(report.imported.conversationReviews).toBe(2);
+    expect(report.imported.conversationReviewChanges).toBe(3);
+    const rows = target.database
+      .prepare(
+        `SELECT r.id, r.status, r.attempts, r.output_ref, t.archived_at IS NOT NULL AS archived,
+          (SELECT COUNT(*) FROM memory_conversation_review_changes c WHERE c.review_id = r.id) AS changes
+        FROM memory_conversation_reviews r JOIN threads t ON t.id = r.thread_id ORDER BY r.id`,
+      )
+      .all();
+    expect(rows).toEqual([
+      {
+        id: "review-1",
+        status: "completed",
+        attempts: 1,
+        output_ref: null,
+        archived: 1,
+        changes: 3,
+      },
+      { id: "review-2", status: "gave_up", attempts: 3, output_ref: null, archived: 1, changes: 0 },
+    ]);
+    expect(
+      target.database
+        .prepare(
+          "SELECT memory_id, undone_revision FROM memory_conversation_review_changes WHERE undone_revision IS NOT NULL",
+        )
+        .all(),
+    ).toEqual([{ memory_id: "m-archived", undone_revision: 2 }]);
+    const reviews = new SqliteMemoryConversationReviewOperations(
+      target.database,
+      (code: string, message: string) => {
+        throw new Error(`${code}: ${message}`);
+      },
+      () => {},
+    );
+    expect(
+      reviews.execute("memoryConversationReview.position", {
+        ownerId: target.ownerId,
+        agentId: target.agentId,
+      }),
+    ).toBeNull();
+  });
+
+  it("[P3-1] the search index and its vectors stay out of the export, sealed part included", async () => {
+    const source = await seeded();
+    const memoryId = source.database
+      .prepare("SELECT id FROM memory_records WHERE status = 'active' ORDER BY id LIMIT 1")
+      .pluck()
+      .get() as string;
+    const vector = Buffer.alloc(16);
+    for (const [index, value] of [0.123456, -0.654321, 0.987654, -0.246813].entries())
+      vector.writeFloatLE(value, index * 4);
+    const indexed = source.database
+      .prepare(
+        `INSERT INTO memory_search_index (memory_id, owner_id, agent_id, memory_revision,
+           embedding_model, embedding_dimensions, embedding, indexed_at)
+         SELECT id, owner_id, agent_id, revision, 'jina-fixture#1', 4, ?, ? FROM memory_records WHERE id = ?`,
+      )
+      .run(vector, NOW, memoryId);
+    source.database
+      .prepare("INSERT INTO memory_search_terms (rowid, terms) VALUES (?, 'zebrapluto')")
+      .run(indexed.lastInsertRowid);
+    expect(indexed.changes).toBe(1);
+    expect(
+      source.database
+        .prepare(
+          `SELECT embedding FROM memory_search_index WHERE rowid = ?
+             AND rowid IN (SELECT rowid FROM memory_search_terms WHERE memory_search_terms MATCH 'zebrapluto')`,
+        )
+        .pluck()
+        .get(indexed.lastInsertRowid),
+    ).toEqual(vector);
+    const exported = await exportOf(source, { evidence: true });
+    const sealed = canonicalJson(
+      await unsealJson(PASSPHRASE, exported.files.get(SEALED_FILE) ?? new Uint8Array()),
+    );
+    const everything = Buffer.concat([
+      ...[...exported.files.values()].map((bytes) => Buffer.from(bytes)),
+      Buffer.from(sealed),
+    ]);
+    for (const form of [
+      vector,
+      Buffer.from(vector.toString("base64")),
+      Buffer.from(vector.toString("hex")),
+    ])
+      expect(everything.includes(form)).toBe(false);
+    expect(everything.includes(Buffer.from("zebrapluto"))).toBe(false);
+    expect(everything.includes(Buffer.from("jina-fixture#1"))).toBe(false);
   });
 
   it("[P1-6] keeps every version of a memory, the owner's rating and the signals", async () => {
@@ -176,6 +289,37 @@ describe("data export: round trip", () => {
     ).toEqual({ owner_rating: "useful", rated_at: "2026-11-03T00:00:00.000Z" });
     expect(counts(target)["signals"]).toBe(1);
     expect(counts(target)["history"]).toBeGreaterThanOrEqual(3);
+  });
+
+  it("[P4-8] carries model pre-ratings through export and import without touching the owner's rating", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source, { evidence: true });
+    const target = await side("target-prereview");
+    await importInto(target, files, { passphrase: PASSPHRASE });
+    const read = (from: Side) =>
+      from.database
+        .prepare(
+          `SELECT id, decision_id, message_id, calibration_group, status, rating,
+            confidence_permille, history_conflict, failure_code, cost_micros, text_digest
+          FROM decision_prereviews ORDER BY id`,
+        )
+        .all();
+    expect(read(target)).toEqual(read(source));
+    expect(read(target)).toHaveLength(3);
+    expect(
+      target.database
+        .prepare("SELECT owner_rating FROM decision_ledger WHERE id = 'd-candidate'")
+        .pluck()
+        .get(),
+    ).toBeNull();
+  });
+
+  it("[P4-8][reverse] pre-ratings are not imported without the passphrase", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source, { evidence: true });
+    const target = await side("target-prereview-nopass");
+    await importInto(target, files);
+    expect(counts(target)["prereviews"]).toBe(0);
   });
 
   it("[P1-6][reverse] a changed rating, a deleted line or a changed text makes the comparison fail", async () => {
@@ -317,7 +461,16 @@ describe("data export: manifest and files are checked before anything is written
       "an unknown format version",
       (files) => {
         const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
-        manifest.format = "himawari.data-export.v2";
+        manifest.format = "himawari.data-export.v3";
+        return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
+      },
+      DATA_EXPORT_ERROR_CODES.FORMAT_UNSUPPORTED,
+    ],
+    [
+      "an export in the old v1 format, which had no rule book",
+      (files) => {
+        const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
+        manifest.format = "himawari.data-export.v1";
         return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
       },
       DATA_EXPORT_ERROR_CODES.FORMAT_UNSUPPORTED,
@@ -350,6 +503,18 @@ describe("data export: manifest and files are checked before anything is written
           path === "data/consolidations.jsonl"
             ? encoder.encode(
                 decoder.decode(bytes).replace('"memoryId":"m-archived"', '"memoryId":"m-ghost"'),
+              )
+            : bytes,
+        ),
+      DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
+    ],
+    [
+      "a conversation review change on a memory that is not in the file (hashes recomputed)",
+      (files) =>
+        rehash(files, (path, bytes) =>
+          path === "data/conversation-reviews.jsonl"
+            ? encoder.encode(
+                decoder.decode(bytes).replace('"memoryId":"m-plain"', '"memoryId":"m-ghost"'),
               )
             : bytes,
         ),
@@ -607,6 +772,28 @@ describe("data export: determinism and the directory", () => {
     await expect(importInto(target, files, { passphrase: PASSPHRASE })).rejects.toMatchObject({
       code: DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY,
     });
+  });
+  it("[P1-6] [P4-5] names the memory eval question bank as left out and still imports cleanly", async () => {
+    const source = await seeded();
+    const questionText = "评测题干：我早上一般喝什么咖啡？";
+    await putPayload(source, "real-eval-question-1", questionText);
+    source.database
+      .prepare(
+        `INSERT INTO real_eval_questions (
+          id, owner_id, agent_id, memory_id, memory_revision, kind, question_ref,
+          question_model, prompt_sha256, created_at
+        ) VALUES ('q-1', ?, ?, 'm-plain', 1, 'preference', 'real-eval-question-1', 'eval-model', ?, ?)`,
+      )
+      .run(source.ownerId, source.agentId, "d".repeat(64), NOW);
+    const { files, manifest } = await exportOf(source);
+    expect(manifest.omitted.map(({ what }) => what)).toContain("记忆评测的题库和每次评测的分数");
+    for (const [path, bytes] of files)
+      expect(decoder.decode(bytes), path).not.toContain("我早上一般喝什么咖啡");
+    const target = await side("eval-bank-left-out");
+    await importInto(target, files, { passphrase: PASSPHRASE });
+    expect(
+      target.database.prepare("SELECT COUNT(*) AS count FROM real_eval_questions").get(),
+    ).toEqual({ count: 0 });
   });
   it("[P1-6] two different secrets in names and source ids stay distinct and round-trip", async () => {
     const source = await seeded();

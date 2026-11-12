@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
+amended_by: "docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md"
 date: "2026-11-11"
 ---
 
@@ -57,6 +58,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - 没有配置这个密钥时，路由不注册。配置了却建不起这个入口（例如记忆功能没开，或者没开网页服务）时，服务启动失败（`MCP_READ_RUNTIME_UNAVAILABLE`），不会悄悄不注册。
    - 上线到公网时，在 Cloudflare 上给这条路径加一条服务令牌策略，做法和 Muse 推送入口一样。这样有两层鉴权，任何一层失效，另一层仍挡着。这一步属于生产改动，要等 Andy 同意。
    - 不实现 OAuth 2.1 授权服务。理由见前提 1–3：鉴权本身不是规范的必选项，而 Claude Code 和 Codex 都支持带固定令牌头。
+   - 2026-11-11 起：本条的固定令牌认证由 [ADR 0227](0227-mcp-entry-checks-cloudflare-access-sign-in.md) 取代。入口改为校验 Cloudflare Access 凭证，因为 Claude 应用和 Muse 接不上固定令牌。本条原文保留不改。
 2. **协议用官方 SDK 的 `createMcpHandler`。** 它按 2026-07-28 版服务；还没升级的客户端发来的老版本请求，由它自带的无状态兼容方式接住。
    - 路径是 `/api/mcp/v1`，挂在现有的 Fastify 上。工具调用走 `POST`；同一路径也接 `GET` 和 `DELETE`，同样先过鉴权，再交给 SDK 按规范处理。Fastify 的请求先转成标准的 Web `Request`，交给 `handler.fetch`，再把返回结果写回 Fastify 的响应。
    - 不新增依赖 `@modelcontextprotocol/node`。它要额外引入 Hono 一套框架，而 `handler.fetch` 本来就是官方提供的标准入口。
@@ -66,6 +68,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - **`today_context`（今日上下文）**：返回主人所在时区的今天日期、现在的时间，以及 48 小时内的提醒。提醒复用 `ProductionReminderWriter.list` 来取，它加了一个时间窗口参数。近一两天的对话摘要等任务 P3-6 合并后再加。后续：已补上，见决定 7。
    - **`rule_book`（规则手册）**：返回 `ruleBookFor(settings)` 列出的每条规则，包括编号、版本、作用在哪一步、结果、来源、状态。主人自己设的规则还带上设置值，即重要发件人名单和静默时段。
      - 不返回规则的表达式。理由是 [ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md) 原话 “用户在界面看到的是试算例子，不是代码”。
+   - 2026-11-12 起：[ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 2、3 在这三个工具之外加 `start_here`，并给 `find_memories` 加 `project`、`auto` 两个可选参数；决定 4 给每个接入加读取级别上限，连同 `today_context` 在内的四个读工具都受它管。`start_here` 和 `auto` 已经做出来（PR 413，2026-11-12 合并），`start_here` 按读取上限过滤，默认到 private；`project` 参数和另外三个读工具的上限，在对应的编码任务合并之前仍按本条。本条原文保留不改。
 4. **返回给外部之前，先遮掉敏感内容。** 返回值里的全部文字一起交给新加的 `maskSensitiveTexts` 遮好再发出去。这个函数在专门识别敏感内容的包 `@himawari-agent/sensitive-capture`，内部调用 `redactForEgress`，和 Himawari 自己发给模型的出口用同一套规则：机器密钥、密码、验证码、银行卡号、证件号。
    - 一次返回里先过一遍所有文字，记下认出的密码、验证码，再遮第二遍。这样同一个密码在一段里被点名、在另一段里单独出现时，两处都遮掉，和模型出口记住已点名值的做法一致。返回给对方的占位符只写类别（例如 `[密码]`），不带序号，所以同一段文字的遮法不随这次一起返回的其他无关内容变化。银行卡照现有规则保留尾号四位（`[银行卡 尾号1234]`），其余类别不含原值的任何信息。
    - 限制：只有这次返回的文字里有一处把这个值点名为密码或验证码，别处单独出现的同一个值才会被遮。一条记忆里只写了值、没写「密码」之类的字样，又没有和点名的那条一起返回时，它原样发出；这和 Himawari 自己的模型出口按对话记住点名值是同一种限制，只是这里的范围是一次返回。
@@ -78,6 +81,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - `ruleIds` 写空数组：按 [ADR 0215](0215-decision-record-points-at-the-rule-version.md) 决定 1，`ruleIds` 只记真正起了作用的规则和修订号；外部读取规则手册时没有哪条规则在做判断，和那份 ADR 决定 2 的记忆候选记录一样留空。
    - `costMicros` 写这次算问题向量花的钱；读取中途失败时，也写失败前已经花掉的钱（找记忆时两路检索都结束后才报失败，所以另一路的嵌入费也算在内）。
    - 决策记录写不进去时，这次读取按失败处理：不把内容交给对方，只回工具错误。这样「每次外部读取都有一条记录」始终成立。
+   - 2026-11-12 起：[ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 1 把来源从 `mcp-client:<客户端名>` 改成服务端生成的接入编号；决定 13 让钩子每句话自动搜的读取里空手而归的只在按天的统计表里计数、不写决策记录，交出了内容的仍然每次一条。对应的编码任务合并之前，代码仍按本条。本条原文保留不改。
 6. **工具说明文字登记进提示词目录**，编号是 `mcp.find-memories`、`mcp.today-context`、`mcp.rule-book`、`mcp.tool-result-failed`。Himawari 自己发给模型的请求一个字节都不变。
 7. **（2026-11-11 补，P3-6 合并后）`today_context` 带上今天和昨天的对话摘要。**
    - 用 [ADR 0216](0216-gmail-check-reads-recent-day-summaries.md) 新加的 `MemoryEpisodeService.recent`，按主人时区取今天和昨天的日摘要，最多 8 段，只取模型可见的分级。只读已经生成的摘要，不补生成，所以外部读取不花模型的钱。
@@ -127,6 +131,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
   - `packages/sensitive-capture/test/redaction.unit.test.ts`：`maskSensitiveTexts` 不论顺序都遮掉点名过的值，同一段文字的遮法不受无关内容影响。
   - `packages/platform-node/test/startup-configuration.unit.test.ts`：`runPolicy.mcpRead` 只接受一把用途是 `mcp-read` 的密钥。后续：[ADR 0225](0225-external-agents-propose-memory-with-in-client-confirmation.md) 加的写令牌 `writeSecretRef` 只接受一把用途是 `mcp-write`、和只读令牌不同的密钥，同一个测试文件覆盖。
   - `apps/agent-service/test/production-mail-embedding.unit.test.ts` 覆盖不属于任何一轮对话的嵌入入口。
+  - 2026-11-11 起：上面几条里关于令牌的测试已按 [ADR 0227](0227-mcp-entry-checks-cloudflare-access-sign-in.md) 改成校验 Cloudflare Access 凭证，`runPolicy.mcpRead` 也改成 `{ audience, proposals? }`，旧的密钥配置会被拒绝。以上原文保留不改。
 
 [返回阅读导航](#contents)
 

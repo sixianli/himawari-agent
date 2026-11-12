@@ -1,7 +1,9 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import type {
   AuthorityFence,
   ProductConfiguration,
@@ -37,6 +39,7 @@ import {
   type ProductionMcpReadOptions,
 } from "../src/production-mcp-read.js";
 import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
+import { createMcpAccess } from "./fixtures/mcp-access.js";
 
 const ORIGIN = "https://agent.example.test";
 const ISSUER = "https://team.cloudflareaccess.com";
@@ -363,6 +366,7 @@ describe("production HTTP composition", () => {
           "owner.preferences.set",
           "sensitive.interceptions.read",
           "sensitive.interceptions.clear",
+          "server.status.read",
         ],
         healthDependenciesAvailable: true,
       });
@@ -856,7 +860,7 @@ describe("production HTTP composition", () => {
     }
   });
 
-  it("[P5-1] serves the MCP read entry through the real composition with only its bearer token", async () => {
+  it("[P5-3] serves the MCP read entry through the real composition only with a Cloudflare Access assertion", async () => {
     const paths = await fixture();
     const config = configuration(paths);
     const repository = await SqliteProductStateRepository.open({
@@ -865,16 +869,23 @@ describe("production HTTP composition", () => {
       minimumFreeBytes: 0,
       now: () => NOW.toISOString(),
     });
-    const secret = "m".repeat(40);
+    const access = await createMcpAccess(() => new Date(NOW));
     const recorded: string[] = [];
     const scope = {
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
     } as unknown as ProductionMcpReadOptions["scope"];
+    const owners = repository.ownerIdentityState();
+    await owners.bindFirstOwner({
+      ownerId: scope.ownerId,
+      externalSubjectRef: await access.ownerSubjectRef(),
+      boundAt: NOW.toISOString(),
+    });
     const mcpRead = new ProductionMcpRead({
       scope,
       clock: { now: () => NOW.toISOString() },
-      secret,
+      access: access.verifier,
+      owners,
       timeZone: "Asia/Tokyo",
       requestTimeoutMs: 5_000,
       sources: {
@@ -902,7 +913,7 @@ describe("production HTTP composition", () => {
       mcpRead,
     });
     try {
-      const call = (authorization?: string) =>
+      const call = (assertion?: string) =>
         composition.app.inject({
           method: "POST",
           url: MCP_READ_PATH,
@@ -911,7 +922,7 @@ describe("production HTTP composition", () => {
             accept: "application/json, text/event-stream",
             "content-type": "application/json",
             "mcp-protocol-version": "2025-06-18",
-            ...(authorization ? { authorization } : {}),
+            ...(assertion ? { "cf-access-jwt-assertion": assertion } : {}),
           },
           payload: {
             jsonrpc: "2.0",
@@ -923,7 +934,7 @@ describe("production HTTP composition", () => {
       const denied = await call();
       expect(denied.statusCode).toBe(401);
       expect(recorded).toEqual([]);
-      const served = await call(["Bearer", secret].join(" "));
+      const served = await call(await access.sign());
       expect(served.statusCode).toBe(200);
       expect(served.body).toContain("2026");
       expect(recorded).toEqual(["today_context"]);
@@ -1085,6 +1096,63 @@ describe("production HTTP composition", () => {
         type: "owner.preferences.snapshot",
         payload: { ...saved, revision: 1 },
       });
+      const serverStatus = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, second.cookie),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "server.status.read"),
+          kind: "query",
+          payload: {},
+        },
+      });
+      expect(serverStatus.statusCode, serverStatus.body).toBe(200);
+      const webStatus = await running.composition.app.inject({
+        method: "GET",
+        url: "/api/health/v1/dependencies",
+        headers: requestHeaders(token, second.cookie),
+      });
+      const phoneStatus = serverStatus.json() as {
+        type: string;
+        payload: {
+          live: boolean;
+          ready: boolean;
+          status: string;
+          dependencies: {
+            name: string;
+            required: boolean;
+            status: string;
+            reasonCode: string | null;
+          }[];
+        };
+      };
+      const webBody = webStatus.json() as typeof phoneStatus.payload;
+      expect(gatewayV2MessageSchema.parseJson(serverStatus.body).type).toBe(
+        "server.status.snapshot",
+      );
+      expect(phoneStatus.type).toBe("server.status.snapshot");
+      expect(phoneStatus.payload.live).toBe(webBody.live);
+      expect(phoneStatus.payload.ready).toBe(webBody.ready);
+      expect(phoneStatus.payload.status).toBe(webBody.status);
+      expect(phoneStatus.payload.dependencies).toEqual(
+        webBody.dependencies.map(({ name, required, status, reasonCode }) => ({
+          name,
+          required,
+          status,
+          reasonCode,
+        })),
+      );
+      const withoutSession = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, "", undefined),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "server.status.read"),
+          kind: "query",
+          payload: {},
+        },
+      });
+      expect(withoutSession.statusCode, withoutSession.body).toBe(401);
       const readInterceptions = async () => {
         const response = await running.composition.app.inject({
           method: "POST",
@@ -1257,6 +1325,94 @@ describe("production HTTP startup rejection contracts", () => {
       expect(reachable).toBe(true);
     } finally {
       await composition.close();
+      await repository.close();
+    }
+  });
+  async function unixComposition(socketPath: string) {
+    const paths = await fixture();
+    const raw = rawConfiguration(paths);
+    const parsed = parseProductConfiguration(raw, NOW.toISOString());
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: paths.stateRoot,
+      databasePath: paths.databasePath,
+      minimumFreeBytes: 0,
+      now: () => NOW.toISOString(),
+    });
+    const create = () =>
+      createProductionHttpComposition({
+        configuration: parsed,
+        repository,
+        authority: () => authority(parsed),
+        secretSources: secretSources(),
+        now: () => new Date(NOW),
+        listenUnixSocketPath: socketPath,
+      });
+    return { repository, create };
+  }
+  function getOverSocket(socketPath: string, requestPath: string): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const request = httpRequest({ socketPath, path: requestPath, method: "GET" }, (response) => {
+        response.resume();
+        resolve(response.statusCode ?? 0);
+      });
+      request.once("error", reject);
+      request.end();
+    });
+  }
+  it("[MU-A] listens on a unix socket (directory 0700, file 0600) and leaves nothing behind after stop and restart", async () => {
+    const socketPath = path.join(
+      await mkdtemp(path.join(tmpdir(), "himawari-mu-")),
+      "run",
+      "web.sock",
+    );
+    roots.push(path.dirname(path.dirname(socketPath)));
+    const { repository, create } = await unixComposition(socketPath);
+    try {
+      for (let round = 0; round < 2; round += 1) {
+        const composition = await create();
+        expect(await composition.listen()).toBe(socketPath);
+        expect((await stat(socketPath)).mode & 0o777).toBe(0o600);
+        expect((await stat(path.dirname(socketPath))).mode & 0o777).toBe(0o700);
+        expect(await getOverSocket(socketPath, "/health/live")).toBeGreaterThan(0);
+        await composition.close();
+        await expect(lstat(socketPath)).rejects.toMatchObject({ code: "ENOENT" });
+      }
+    } finally {
+      await repository.close();
+    }
+  });
+  it("[MU-A] refuses a socket directory that already exists with open permissions and leaves it untouched", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-mu-open-"));
+    roots.push(directory);
+    await chmod(directory, 0o755);
+    const { repository, create } = await unixComposition(path.join(directory, "web.sock"));
+    try {
+      const composition = await create();
+      await expect(composition.listen()).rejects.toThrow(/private directory/u);
+      await composition.close();
+      expect((await stat(directory)).mode & 0o777).toBe(0o755);
+    } finally {
+      await repository.close();
+    }
+  });
+  it("[MU-A] rejects a relative or non-normalized unix socket path", async () => {
+    for (const socketPath of ["web.sock", `${tmpdir()}/a/../web.sock`]) {
+      const { repository, create } = await unixComposition(socketPath);
+      try {
+        await expect(create()).rejects.toMatchObject({
+          code: "PRODUCTION_HTTP_CONFIGURATION_INCOMPLETE",
+        });
+      } finally {
+        await repository.close();
+      }
+    }
+  });
+  it("[MU-A] rejects a unix socket path over the platform limit before binding", async () => {
+    const socketPath = path.join(tmpdir(), "x".repeat(120), "web.sock");
+    const { repository, create } = await unixComposition(socketPath);
+    try {
+      await expect(create()).rejects.toThrow(/exceeds/u);
+    } finally {
       await repository.close();
     }
   });

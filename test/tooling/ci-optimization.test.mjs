@@ -1,11 +1,17 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { DRAFT_SKIP_CONDITION, REQUIRED_AFTER_ENTRY } from "../../scripts/ci/check-policy.mjs";
+import { githubExpression } from "../../scripts/ci/contracts.mjs";
 import { gateLock } from "../../scripts/ci/install-gate-dependencies.mjs";
 import { confirmMain, publishMainMetadata } from "../../scripts/ci/main-confirm.mjs";
-import { validateMainWorkflow } from "../../scripts/ci/main-workflow.mjs";
+import {
+  validateCallerGrantsCalledPermissions,
+  validateMainWorkflow,
+} from "../../scripts/ci/main-workflow.mjs";
 
 const temporary = [];
 afterEach(() => {
@@ -124,19 +130,125 @@ it("main 工作流不能隐藏检查失败或关闭完整 CI 回退", () => {
   ).toThrow("runtime");
 });
 
-it("完整 CI 只在汇总通过后删除本次运行的报告产物，且写权限只给汇总 job", () => {
-  const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
-  const required = workflow.jobs.required;
-  expect(required.permissions).toEqual({
-    contents: "read",
-    actions: "write",
-    "pull-requests": "read",
+describe("[I-93] main 调用完整 CI 时授予的权限覆盖 ci.yml 每个 job 要的权限，否则整轮 startup_failure", () => {
+  const ci = readFileSync(".github/workflows/ci.yml", "utf8");
+  const main = readFileSync(".github/workflows/main.yml", "utf8");
+  const tools = JSON.parse(readFileSync("ci/toolchain-lock.json", "utf8"));
+  const caller = (granted) =>
+    `permissions:\n  contents: read\n  actions: read\njobs:\n  full:\n    uses: ./.github/workflows/ci.yml\n${granted}`;
+  const called = (jobPermissions) =>
+    `permissions:\n  contents: read\njobs:\n  required:\n    permissions:\n${jobPermissions}`;
+  it("仓库里的 main.yml 和 ci.yml 通过，并且这项检查在 check:ci-policy 里", () => {
+    expect(validateCallerGrantsCalledPermissions(main, ci)).toEqual({ scopes: 3 });
+    expect(readFileSync("scripts/ci/check-policy.mjs", "utf8")).toContain(
+      "validateCallerGrantsCalledPermissions(mainWorkflow",
+    );
   });
-  const steps = required.steps;
+  it("被调用方的 job 要 write、调用方只给 read 时失败", () => {
+    expect(() =>
+      validateCallerGrantsCalledPermissions(
+        caller("    permissions:\n      contents: read\n      actions: read\n"),
+        called("      actions: write\n"),
+      ),
+    ).toThrow("full-grants-actions-write");
+  });
+  it("调用方没写 job 级权限时按工作流级权限算", () => {
+    expect(() =>
+      validateCallerGrantsCalledPermissions(caller(""), called("      actions: write\n")),
+    ).toThrow("full-grants-actions-write");
+    expect(
+      validateCallerGrantsCalledPermissions(caller(""), called("      actions: read\n")),
+    ).toEqual({ scopes: 2 });
+  });
+  it("权限写成 write-all、read-all 这类字符串时按无效失败，空映射不申请任何权限", () => {
+    for (const shorthand of ["write-all", "read-all"]) {
+      expect(() =>
+        validateCallerGrantsCalledPermissions(caller(""), `permissions: ${shorthand}\njobs: {}\n`),
+      ).toThrow("full-grants-invalid");
+      expect(() =>
+        validateCallerGrantsCalledPermissions(
+          `permissions: ${shorthand}\njobs:\n  full:\n    uses: x\n`,
+          called("      actions: read\n"),
+        ),
+      ).toThrow("full-grants-invalid");
+    }
+    expect(
+      validateCallerGrantsCalledPermissions(
+        caller(""),
+        "permissions: {}\njobs:\n  a:\n    permissions: {}\n",
+      ),
+    ).toEqual({ scopes: 2 });
+  });
+  it("被调用方顶层或 job 新增调用方没给的权限时失败", () => {
+    expect(() =>
+      validateCallerGrantsCalledPermissions(
+        main,
+        ci.replace("permissions:\n", "permissions:\n  issues: read\n"),
+      ),
+    ).toThrow("full-grants-issues-read");
+  });
+  it("完整 CI 的某个 job 重新申请 actions: write 时调用检查失败", () => {
+    const writing = ci.replace(
+      "  required:\n",
+      "  required:\n    permissions:\n      contents: read\n      actions: write\n",
+    );
+    expect(writing).not.toBe(ci);
+    expect(() => validateCallerGrantsCalledPermissions(main, writing)).toThrow(
+      "full-grants-actions-write",
+    );
+  });
+  it("main 的 full 不得单独授予权限", () => {
+    const granted = main.replace(
+      "    needs: plan\n    if:",
+      "    needs: plan\n    permissions:\n      contents: read\n    if:",
+    );
+    expect(granted).not.toBe(main);
+    expect(() => validateMainWorkflow(granted, tools)).toThrow("full-inputs");
+  });
+});
+
+it("job 之间的文件经 CI 服务器传递：汇总先收齐再判定、入口检查通过后不论成败删掉本次目录，任何 job 都没有写权限", () => {
+  const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
+  const steps = workflow.jobs.required.steps;
+  const collect = steps.findIndex((step) => step.run?.includes("run-share.mjs collect"));
   const gate = steps.findIndex((step) => step.run?.includes("required.mjs"));
-  const removal = steps.findIndex((step) => step.run?.includes("delete-run-reports.mjs"));
+  const removal = steps.findIndex((step) => step.run?.includes("run-share.mjs remove"));
+  expect(collect).toBeGreaterThanOrEqual(0);
+  expect(gate).toBeGreaterThan(collect);
   expect(removal).toBeGreaterThan(gate);
-  expect(steps[removal].if).toBe("success()");
-  for (const [id, job] of Object.entries(workflow.jobs))
-    if (id !== "required") expect(JSON.stringify(job.permissions ?? {})).not.toContain("write");
+  expect(steps[removal].if).toBe(REQUIRED_AFTER_ENTRY);
+  for (const job of Object.values(workflow.jobs)) {
+    expect(JSON.stringify(job.permissions ?? {})).not.toContain("write");
+    for (const step of job.steps ?? [])
+      expect(step.uses ?? "").not.toContain("actions/download-artifact");
+  }
+});
+
+describe("草稿和被取消的运行不占 runner", () => {
+  const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
+  const entry = workflow.jobs.required.steps[0];
+  const runEntry = (env) =>
+    spawnSync("bash", ["--noprofile", "--norc", "-e", "-o", "pipefail", "-c", entry.run], {
+      encoding: "utf8",
+      env: { PATH: process.env.PATH, ...env },
+    });
+  it("汇总作业第一步就判草稿和被取消的运行失败，排在检出和装工具之前", () => {
+    expect(entry.id).toBe("entry");
+    expect(entry.uses).toBeUndefined();
+    expect(workflow.on.pull_request.types).not.toContain("edited");
+    for (const [id, job] of Object.entries(workflow.jobs))
+      if (id !== "required") expect(job.if).toBe(githubExpression(DRAFT_SKIP_CONDITION));
+  });
+  it.each([
+    [{ CI_DRAFT: "true", CI_CANCELLED: "false" }, 1, "CI_DRAFT_UNVERIFIED"],
+    [{ CI_DRAFT: "false", CI_CANCELLED: "true" }, 1, "CI_UPSTREAM_CANCELLED"],
+    [{ CI_DRAFT: "", CI_CANCELLED: "false" }, 1, "CI_DRAFT_UNVERIFIED"],
+    [{ CI_DRAFT: "false", CI_CANCELLED: "" }, 1, "CI_UPSTREAM_CANCELLED"],
+    [{ CI_DRAFT: "false", CI_CANCELLED: "false" }, 0, ""],
+  ])("入口检查 %j 退出 %i", (env, status, marker) => {
+    const result = runEntry(env);
+    expect(result.status).toBe(status);
+    if (marker) expect(result.stdout).toContain(marker);
+    else expect(result.stdout).toBe("");
+  });
 });

@@ -205,6 +205,7 @@ describe("Cloudflare Access JWT verification", () => {
   it("validates RS256 claims and refreshes a bounded JWKS cache on kid rotation", async () => {
     let current = firstJwks;
     let fetches = 0;
+    let now = NOW;
     const verifier = new CloudflareAccessJwtVerifier({
       issuer: ISSUER,
       audience: AUDIENCE,
@@ -215,10 +216,11 @@ describe("Cloudflare Access JWT verification", () => {
           return current;
         },
       },
-      now: () => NOW,
+      now: () => now,
     });
     const first = await verifier.verify(await token({}));
     current = secondJwks;
+    now = new Date(NOW.valueOf() + 30_000);
     const second = await verifier.verify(
       await token({ key: secondPrivateKey, kid: "key-02", subject: "subject-02" }),
     );
@@ -226,6 +228,144 @@ describe("Cloudflare Access JWT verification", () => {
     expect(first.externalSubjectRef).toMatch(/^sha256:/);
     expect(second.externalSubjectRef).not.toBe(first.externalSubjectRef);
     expect(fetches).toBe(2);
+  });
+
+  it("refetches the JWKS for an unknown kid at most once per 30 seconds, however many requests ask", async () => {
+    let fetches = 0;
+    let now = NOW;
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      jwksFetcher: {
+        async fetch() {
+          fetches += 1;
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          return firstJwks;
+        },
+      },
+      now: () => now,
+    });
+    const known = await token({});
+    const unknown = await token({ key: secondPrivateKey, kid: "key-02" });
+
+    await Promise.all(Array.from({ length: 10 }, () => verifier.verify(known)));
+    expect(fetches).toBe(1);
+
+    now = new Date(NOW.valueOf() + 29_999);
+    const flood = await Promise.allSettled(
+      Array.from({ length: 50 }, () => verifier.verify(unknown)),
+    );
+    expect(flood.every((result) => result.status === "rejected")).toBe(true);
+    expect(fetches).toBe(1);
+
+    now = new Date(NOW.valueOf() + 30_000);
+    const later = await Promise.allSettled(
+      Array.from({ length: 50 }, () => verifier.verify(unknown)),
+    );
+    expect(later.every((result) => result.status === "rejected")).toBe(true);
+    expect(fetches).toBe(2);
+    await expect(verifier.verify(known)).resolves.toMatchObject({ issuer: ISSUER });
+    expect(fetches).toBe(2);
+  });
+
+  it("does not retry a failed JWKS download for 30 seconds, then tries again", async () => {
+    let fetches = 0;
+    let available = false;
+    let now = NOW;
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      jwksFetcher: {
+        async fetch() {
+          fetches += 1;
+          if (!available) throw new Error("JWKS_DOWN");
+          return firstJwks;
+        },
+      },
+      now: () => now,
+    });
+    const known = await token({});
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await expect(verifier.verify(known)).rejects.toMatchObject({
+        code: IDENTITY_GATEWAY_ERROR_CODES.ASSERTION_INVALID,
+      });
+    }
+    expect(fetches).toBe(1);
+    available = true;
+    now = new Date(NOW.valueOf() + 29_999);
+    await expect(verifier.verify(known)).rejects.toMatchObject({
+      code: IDENTITY_GATEWAY_ERROR_CODES.ASSERTION_INVALID,
+    });
+    expect(fetches).toBe(1);
+    now = new Date(NOW.valueOf() + 30_000);
+    await expect(verifier.verify(known)).resolves.toMatchObject({ issuer: ISSUER });
+    expect(fetches).toBe(2);
+  });
+
+  it("never verifies with an expired JWKS cache after a failed refresh", async () => {
+    let fetches = 0;
+    let available = true;
+    let now = NOW;
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      cacheMilliseconds: 1_000,
+      jwksFetcher: {
+        async fetch() {
+          fetches += 1;
+          if (!available) throw new Error("JWKS_DOWN");
+          return firstJwks;
+        },
+      },
+      now: () => now,
+    });
+    const known = await token({ expiresAt: Math.floor(NOW.valueOf() / 1000) + 600 });
+    await expect(verifier.verify(known)).resolves.toMatchObject({ issuer: ISSUER });
+    available = false;
+    now = new Date(NOW.valueOf() + 40_000);
+    await expect(verifier.verify(known)).rejects.toMatchObject({
+      code: IDENTITY_GATEWAY_ERROR_CODES.ASSERTION_INVALID,
+    });
+    now = new Date(NOW.valueOf() + 50_000);
+    await expect(verifier.verify(known)).rejects.toMatchObject({
+      code: IDENTITY_GATEWAY_ERROR_CODES.ASSERTION_INVALID,
+    });
+    expect(fetches).toBe(2);
+  });
+
+  it("keeps verifying known keys from a fresh cache while a forced refresh is still downloading", async () => {
+    let fetches = 0;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let now = NOW;
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      jwksFetcher: {
+        async fetch() {
+          fetches += 1;
+          if (fetches > 1) await gate;
+          return firstJwks;
+        },
+      },
+      now: () => now,
+    });
+    const known = await token({});
+    await verifier.verify(known);
+    now = new Date(NOW.valueOf() + 30_000);
+    const forced = verifier.verify(await token({ key: secondPrivateKey, kid: "key-02" }));
+    await vi.waitFor(() => expect(fetches).toBe(2));
+    await expect(verifier.verify(known)).resolves.toMatchObject({ issuer: ISSUER });
+    release();
+    await expect(forced).rejects.toMatchObject({
+      code: IDENTITY_GATEWAY_ERROR_CODES.ASSERTION_INVALID,
+    });
   });
 
   it.each([

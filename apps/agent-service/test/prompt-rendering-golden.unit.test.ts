@@ -4,16 +4,23 @@ import type { ProactiveSourceItem } from "@himawari-agent/application";
 import {
   EGRESS_PLACEHOLDER_LEGEND,
   EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE,
+  EMBEDDING_PROFILES,
+  embeddingDocumentText,
+  embeddingQueryText,
+  JINA_V5_SMALL_INT8_PROFILE,
   proactivePrompt,
+  QWEN3_EMBEDDING_8B_PROFILE,
 } from "@himawari-agent/application";
+import { consolidationPrompt, episodeSummaryPrompt } from "@himawari-agent/memory-engine";
+import * as catalog from "@himawari-agent/prompt-catalog";
 import {
-  consolidationPrompt,
-  episodeSummaryPrompt,
-  QWEN3_MEMORY_QUERY_INSTRUCTION,
-} from "@himawari-agent/memory-engine";
+  MEMORY_EMBEDDING_QUERY_INSTRUCTION,
+  TRUSTED_PROMPT_TEXTS,
+} from "@himawari-agent/prompt-catalog";
 import { describe, expect, it } from "vitest";
 import { managedTaskDescriptors } from "../src/production-managed-tasks.js";
 import { memoryCapturePrompt } from "../src/production-memory-capture.js";
+import { conversationReviewPrompt } from "../src/production-memory-conversation-review.js";
 import { memoryRecallDescriptor } from "../src/production-memory-recall.js";
 import { reminderToolDescriptors } from "../src/production-reminder-writer.js";
 import {
@@ -40,6 +47,7 @@ const GOLDEN_NAMES = [
   "mail.judgment.recent-summaries",
   "memory.capture",
   "memory.consolidation",
+  "memory.conversation-review",
   "memory.embedding-query-instruction",
   "memory.episode-summary",
   "tools.definitions",
@@ -190,6 +198,45 @@ describe("[PROMPT-GOLDEN] rendered prompts stay byte-identical while text moves 
       ),
     ).toMatchFileSnapshot(golden("memory.consolidation"));
     await expect(
+      conversationReviewPrompt({
+        messages: [
+          {
+            id: "message-1",
+            role: "owner",
+            messageSentAt: "2026-11-10T01:01:00.000Z",
+            text: "下周三我要去大阪出差。",
+          },
+          {
+            id: "message-2",
+            role: "agent",
+            messageSentAt: "2026-11-10T01:02:00.000Z",
+            text: "好的，记得带充电器。",
+          },
+          {
+            id: "message-3",
+            role: "owner",
+            messageSentAt: "2026-11-10T01:03:00.000Z",
+            text: "大阪取消了，改成去京都。",
+          },
+        ],
+        existing: [
+          {
+            id: "memory-1" as Parameters<
+              typeof conversationReviewPrompt
+            >[0]["existing"][number]["id"],
+            recordedOn: "2026-11-03",
+            text: "主人下周三去大阪出差",
+            stance: null,
+            tentative: false,
+          },
+        ],
+        subCategories: { work: ["出差"] },
+        people: [],
+        timeZone: "Asia/Tokyo",
+        day: "2026-11-11",
+      }),
+    ).toMatchFileSnapshot(golden("memory.conversation-review"));
+    await expect(
       episodeSummaryPrompt({
         ownerId: "owner-1",
         agentId: "agent-1",
@@ -244,8 +291,42 @@ describe("[PROMPT-GOLDEN] rendered prompts stay byte-identical while text moves 
         ],
       ),
     ).toMatchFileSnapshot(golden("mail.judgment.recent-summaries"));
-    await expect(QWEN3_MEMORY_QUERY_INSTRUCTION).toMatchFileSnapshot(
+    await expect(MEMORY_EMBEDDING_QUERY_INSTRUCTION.text).toMatchFileSnapshot(
       golden("memory.embedding-query-instruction"),
     );
+  });
+
+  it("[P3-1] each embedding profile turns a query and a document into exactly the bytes its stored vectors were made from", () => {
+    expect(embeddingQueryText(QWEN3_EMBEDDING_8B_PROFILE, "晚饭")).toBe(
+      "Instruct: Given a question from the owner of a personal assistant, retrieve the remembered facts about the owner that help answer it\nQuery:晚饭",
+    );
+    expect(embeddingDocumentText(QWEN3_EMBEDDING_8B_PROFILE, "主人爱吃面")).toBe("主人爱吃面");
+    expect(embeddingQueryText(JINA_V5_SMALL_INT8_PROFILE, "晚饭")).toBe("Query: 晚饭");
+    expect(embeddingDocumentText(JINA_V5_SMALL_INT8_PROFILE, "主人爱吃面")).toBe(
+      "Document: 主人爱吃面",
+    );
+    const gemma = EMBEDDING_PROFILES.find(({ model }) => model === "embeddinggemma-2-fp32");
+    if (!gemma) throw new Error("GEMMA_PROFILE_MISSING");
+    expect(embeddingQueryText(gemma, "晚饭")).toBe("task: search result | query: 晚饭");
+    expect(embeddingDocumentText(gemma, "主人爱吃面")).toBe("title: none | text: 主人爱吃面");
+  });
+
+  it("[P3-1] embedding prefixes add nothing to the fixed texts that egress redaction skips, so no earlier conversation is masked differently", () => {
+    const embeddingTexts = Object.values(catalog).flatMap((entry) =>
+      typeof entry === "object" &&
+      entry !== null &&
+      "layer" in entry &&
+      entry.layer === "embedding" &&
+      "segments" in entry &&
+      Array.isArray(entry.segments)
+        ? entry.segments.flatMap((segment: { kind: string; text?: string }) =>
+            segment.kind === "text" && segment.text ? [segment.text] : [],
+          )
+        : [],
+    );
+    expect(embeddingTexts.length).toBeGreaterThan(4);
+    expect([
+      ...new Set(embeddingTexts.filter((text) => TRUSTED_PROMPT_TEXTS.includes(text))),
+    ]).toEqual([MEMORY_EMBEDDING_QUERY_INSTRUCTION.text]);
   });
 });

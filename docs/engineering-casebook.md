@@ -111,7 +111,11 @@ date: "2026-10-26"
   84. [AI 代码复核一个 PR 花 0.79 美元：第 2 轮起只用一个模型，低严重度意见改完不再复核](#case-cheaper-code-review)
   85. [没人输入验证码，拦截记录里却天天有“验证码”：敏感信息检查把 Himawari 自己写的指令当成了外来内容](#case-trusted-prompt-text)
   86. [底层 Agent 框架跨大版本升级：Pi 从 0.84.2 升到 1.5.0，老对话的缓存一个字节都没变](#case-pi-1-5-upgrade)
+  87. [记忆评测全是合成题：改用主人确认过的记忆和原话自动出题、判分，每周跑一次](#case-real-memory-eval)
   88. [三路检索合并后怎么划“相关”的线：RRF 分数划不了线，用相似度加少量加分，权重和余量用评测扫出来](#case-relevance-cutoff)
+  89. [其他 agent 往记忆里写东西，确认框弹不出来怎么办：先存成“待确认”，主人在自己的界面里批](#case-external-memory-proposals)
+  90. [让模型替主人先打一遍分，什么时候才敢少给主人看：一致率按区间下限算，还要比瞎猜准](#case-model-prereview)
+  91. [对外开了 MCP 入口，别的 agent 却未必来读来存：补上触发和身份，把 Himawari 做成记忆中心](#case-memory-hub)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -133,11 +137,11 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval)、[其他 agent 写记忆先待确认](#case-external-memory-proposals)、[别的 agent 共用一个记忆中心](#case-memory-hub) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction)、[自己写的指令不该被当成外来内容检查](#case-trusted-prompt-text)、[沙箱保护不能静默失效](#case-srt-locked-seccomp-helper) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes)、[所有模型请求只走一个出口](#case-model-egress-redaction)、[发给模型的内容只追加](#case-append-only-prefix)、[Pi 升到 1.5.0](#case-pi-1-5-upgrade) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes)、[所有模型请求只走一个出口](#case-model-egress-redaction)、[发给模型的内容只追加](#case-append-only-prefix)、[Pi 升到 1.5.0](#case-pi-1-5-upgrade)、[模型预评什么时候能少给主人看](#case-model-prereview) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
 | Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle)、[回答写完才整块出现](#case-streaming-answers) |
@@ -145,7 +149,7 @@ date: "2026-10-26"
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail)、[设置各端同步：版本号防旧设备覆盖](#case-settings-everywhere)、[通知设置点了没反应](#case-push-ready-hang) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt)、[产品愿景定为顶层文档](#case-product-vision) |
-| 产品判断：定位、差异化和用评测证明产品价值 | [产品愿景定为顶层文档](#case-product-vision)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[推送反馈记录](#case-push-feedback)、[多用户隔离](#case-multi-user)、[要不要做 iOS App](#case-mobile-client)、[主动看邮件不乱打扰](#case-proactive-gmail)、[记忆要不要改成主模型自己存](#case-memory-capture-eval) |
+| 产品判断：定位、差异化和用评测证明产品价值 | [产品愿景定为顶层文档](#case-product-vision)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[推送反馈记录](#case-push-feedback)、[多用户隔离](#case-multi-user)、[要不要做 iOS App](#case-mobile-client)、[主动看邮件不乱打扰](#case-proactive-gmail)、[记忆要不要改成主模型自己存](#case-memory-capture-eval)、[用真实记忆每周评测](#case-real-memory-eval) |
 
 [返回目录](#contents)
 
@@ -1179,11 +1183,15 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 [ADR 0081](adr/0081-isolated-instance-per-person.md)；Idea `docs/ideas/IDEA-20261026-001-per-person-isolated-himawari.md`；Backlog `docs/backlog/BL-20261026-003-isolated-instance-per-person.md`；评估文档 <https://claude.ai/artifact/77cUajUv5MWWHHMH8m2g1N>；[PR #37](https://github.com/sixianli/himawari-agent/pull/37)。
 
+**后续（2026-11-11）**
+
+重新评估后，Andy 定了两个前提：生产机只有一台、不多花服务器钱，目标是 10 到 20 人。每人一套实例大概率放不下（推断，没有实测），所以 [ADR 0234](adr/0234-one-program-per-person-database-file.md) 取代了 ADR 0083，改成一个程序、每人一个数据库文件、每人一个专属执行账号；模型用 Andy 已有的套餐（对话模型按 ADR 0117 的顺序，可能先用 CodeBuddy 免费额度）、不用 Vercel 的 key，每人每月上限由 Andy 在管理页配置。上面“先选 silo”的取舍是当时单机、两三个熟人的前提下做的；放弃的理由是内存和磁盘要乘以人数，代价是隔离从“结构上分开”降为“三道防线加系统账号”，并接受主程序崩了所有人一起断。结果数据还没有：量机器是开工第一步。
+
 **后续（2026-10-26）**
 
 评估 iOS App 时决定 Andy 的手机也走 Cloudflare 入口，所以 [ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md) 取代了 ADR 0081，只改了“Andy 自己继续走 ssh 隧道”这一句，其余决定不变。详见[案例 21](#case-mobile-client)。
 
-**面试 30 秒版**
+**面试 30 秒版（2026-10 的版本；现行做法见上面 2026-11-11 的后续）**
 
 “个人 Agent 要分享给家人朋友，各自的记忆必须隔离。我先盘点代码：数据库每张表已经带主人 ID，单用户写死在配置、登录、密钥和后台任务。对照 AWS 的 silo / pool 模型，我没有马上改成一个实例分用户，因为漏一个过滤条件就会泄露别人的记忆；先给每人起一个独立实例，前面用 Cloudflare Access 只放行邀请的邮箱，不开放注册，避免陌生人刷爆模型费用。用户超过五人再迁到 pool，先写隔离测试。”
 
@@ -2821,11 +2829,15 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 
 **相关 ADR/PR**
 
-PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，没有新 ADR。改成本机模型这一步 Andy 2026-10-28 决定以后再做，记为 [BL-20261028-008](backlog/BL-20261028-008-local-memory-embedding.md)，动手时另写 ADR。
+PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，没有新 ADR。改成本机模型这一步 Andy 2026-10-28 决定以后再做，记为 [BL-20261028-008](archive/backlog/BL-20261028-008-local-memory-embedding.md)，动手时另写 ADR。
 
 **面试 30 秒版**
 
 “用户看到‘找到 0 条记忆’也花了 1.4 秒。我没有猜，用生产库里已有的时间点把这一步拆成五段，发现 88% 是一次向量化网络请求。看响应头才知道，东京的请求被网关转到悉尼，再去美国的供应商，绕了两段跨洋路。能在代码里改的，是照 OpenAI SDK 的做法改用 base64 返回格式，数值逐位相同，生产机上实测从 1.05 秒降到 0.77 秒。绕路本身是网关路由，根治只能在本机算向量，小模型 90 毫秒，但准确度和内存是产品取舍，我把数据摆给产品负责人来选。”
+
+**后续（2026-11-11）：改在本机算向量（P3-1）**
+
+候选报告比较了三个能在生产机 CPU 上跑的模型，Andy 选了 jina-embeddings-v5-text-small-retrieval 的 int8 量化版。按 [ADR 0224](adr/0224-memory-embedding-runs-on-the-host.md)，向量在服务进程里用 ONNX Runtime 计算，外网 Qwen3-8B 保留为可选；每个嵌入模型登记成一份档案，门槛跟着模型走，换模型只改配置。本机请求仍走统一出口，遮盖和记账不漏。合成评测集真实代码路径实测（门槛 0.30，数字出自 ADR 0224）：主评测集命中 90%（网关 8B 在 0.6 门槛下 80%），留出集 70%；查询中位数约 35 毫秒，加载约 3.7 秒，进程多占约 1.35 GB。生产上线后的中位数未测量。代价是许可为 CC BY-NC 4.0，对外收费前要换成 Apache 2.0 的 Qwen3-0.6B（已登记好档案）。检索索引的威胁模型另写在 [记忆检索索引的威胁模型](memory-index-threat-model.md)。
 
 [返回目录](#contents)
 
@@ -5470,6 +5482,126 @@ Pi 在 0.86 和 0.87 改了两处核心约定：发给模型的请求不再分�
 
 [返回目录](#contents)
 
+<a id="case-real-memory-eval"></a>
+
+## 案例 87：记忆系统的评测全是合成题：改用主人自己确认过的记忆和原话自动出题、判分，每周跑一次
+
+**背景与现象**
+
+2026-11-11 之前，判断 Himawari 的记忆系统好不好，靠的是四个合成评测集：
+
+- `evals/memory-retrieval`（检索）：`dataset.json` 第 3 行写明“合成数据，不含 Andy 的真实记忆”。
+- `evals/memory-capture`（捕获，见[案例 78](#case-memory-capture-eval)）。
+- `test/integration/memory-evaluation.test.ts`（端到端回忆）。
+- `evals/jarvis-test`（Jarvis Test，产品愿景里的十条验收题，见[案例 39](#case-jarvis-test-evals)）。
+
+这些题由写代码的人想出来，量的是“我们想象中的记忆分布”。Andy 真实记下的东西更杂，例如口语、日期、改过口的偏好、敏感内容。合成题分数高，不等于对 Andy 本人好用。任务块 P4-5 要求：从 Andy 确认过的记忆和原话里自动出题、自动判分，每周自动更新；合成集保留做对照。
+
+**为什么需要这样一个评测集（根因）**
+
+不是故障，是“尺子量错了对象”，原因有三条：
+
+1. **题目来源有偏。** 合成题和代码出自同一个人之手，题目天然偏向现有实现能答对的样子。案例 78 的“局限”一节已经写过这一点：“题目和标准答案由 Claude 一人写，可能偏向 A”。
+2. **分布不同。** 真实记忆里有大量改写过的、带日期的、敏感级别的内容，合成集覆盖不到。
+3. **看不出趋势。** 合成集是固定的，系统改动后同一批题分数不变，不代表 Andy 新记下的内容也能答对。
+
+**我们的方案（这个评测集是怎么做出来的）**
+
+整体流程：每周一次在生产服务进程里跑（`runPolicy.realEval.mode`：`off` 不跑、`once` 手动跑一轮并写抽查样本、`weekly` 每周）。一轮分五步：
+
+1. **退役旧题。** 题对应的记忆被删、被取代、变成待确认、过期、或被改过（版本号变了），旧题退役、不再计分。
+2. **给新记忆出题。** 按记忆编号顺序，取还没有在用题的已确认记忆（状态 active 且 `tentative` 为假），每轮最多为 `newMemoriesPerRun` 条记忆出题；读取（解密）出错的记忆跳过、不占名额，下一轮排到最后再试；一轮最多读名额 4 倍的记忆，免得一批坏记忆让一轮读个没完。
+3. **作答。** 先答本周新题，再答固定面板（以前就在题库里的题）。作答前按和对话相同的规则选档案和检索记忆，再发给模型。
+4. **判分。** 先快判，快判不了再交判分模型。
+5. **记分。** 只把分数、计数和标识写进 `real_eval_runs`，不含正文。
+
+为什么要在生产服务进程里跑：记忆正文和原话在生产库里是加密保存的，只有服务进程能解密（评测在 `production-real-eval.ts` 里用服务进程传入的 `realEvalProtector` 解密）。所以出题、作答、判分都在生产上做，真实内容不进仓库。题干也加密存进题库表 `real_eval_questions`，删除记忆时外键级联删题，治理删除顺带删掉题干。
+
+**题目和答案是怎么生成的**
+
+- **标准答案不另写，就是原话。**
+  - 每道题记下“出自哪条记忆、哪个版本”。判分时从原记忆和主人当时的原话（记忆历史里的 `quote_ref`）现读，题库里不复制答案。
+  - 所以记忆一改，答案自动跟着变，旧题退役。
+- **出题：** 模型只写题干。出题提示词 `eval.real-memory.question` 要求：
+  - 问“主人过去的事实或偏好”，像主人随口问的一句话；
+  - 题型填 `fact`（事实）、`preference`（偏好）或 `time`（时间）；
+  - 题干不得透露答案。
+- **反向用例（拒答题）：**
+  - 出题模型可以为每条记忆另出一道拒答题：形式一样，但把对象换成记忆里没有的人或事，例如“我早上喝什么？”配“我妹妹早上喝什么？”；出不了时可以不出。
+  - 正确回答是“我没有这条记忆”，用来检查会不会编造。
+  - 这一类对应 LongMemEval 的 abstention（拒答）题。
+- **题干当不可信输入检查：** 下面任何一条不过，这道题就丢弃。
+  - 限长 4 到 120 字，只能是一行，不能有花括号、尖括号这类字符，必须是规定的 JSON 结构。
+  - 泄题检查：
+    - 和原话或记忆正文有连续 6 个字相同，算泄题；
+    - 含同一个两位以上数字，算泄题；
+    - 含同一个日期时刻也算泄题，“十二月”和“12 月”、“七点”和“7:00”算同一个；“一点”要有“下午”“钟”这类时间字眼才算钟点。
+  - 含银行卡号、密码这类敏感值。
+  - 被丢弃或模型拒绝出题的记忆版本，以后不再问，免得每周重复花钱；只有模型回的不是合法 JSON、或者记忆读取出错时，下次照常再问。
+- **作答：** 和对话走同一套记忆选取。
+  - 档案用 `OwnerProfileService.compose`。
+  - 检索用同一个记忆搜索、同样的 `memoryLimit` 和 `maxSelectedMemories`，检索不改记忆的使用计数。
+  - 检索时用题目所出自那条记忆的数据分级去调向量模型。
+- **判分：**
+  - 回答完整包含原话（归一化后至少 8 个字）直接判对，不花钱。
+  - 其余交判分模型，三选一：`correct`、`wrong`、`abstained`。
+- **报告的分数分开算：**
+  - 固定面板（看趋势）、本周新题、拒答题、检索命中（标准记忆有没有被选进作答材料）。
+  - 每项附 Wilson 区间（小样本下比例的置信区间），不足 5 题不出比例。
+- **决策评测这次只计数：**
+  - 从决策记录取主人评价过的系统主动提醒、系统没存下的记忆、记忆整理三类决策，主人评“有用”算做对。
+  - 重放当时的输入要用到决策记录里没有的证据，等某组评价满 5 条再做。
+
+**方案讨论与备选**
+
+- **作答时只给问题、不给检索结果：** 量不到记忆系统，放弃。
+- **复用对话的 `ContextFormationService`：** 它绑定一次对话运行（运行编号、执行租约），评测没有运行。改为按同样规则选档案和记忆，代价是分数量的是“档案加一次检索”，不含 `recall` 工具和对话历史。
+- **数据导出带上题库：** 题库是可以从记忆重新生成的派生数据，不导出。
+- **费用怎么控：**
+  - Andy 定了用第二个 OpenCode Go 账号，经 Magpie 单独一组路由，每周硬上限 0.5 美元。
+  - 代码里的防线经三轮复核逐步收紧：
+    - 上限按最近 7 天所有运行累计；
+    - 每次调用前按“输入 UTF-8 字节数 + 两倍最大输出”预估，token 数不会超过字节数；
+    - 实际费用一超就停；
+    - 调用失败、服务方报的费用缺失时按预估记账；
+    - 检索向量也先预留。
+- **抽查样本：** 第一次手动跑，把约 30 道题、回答、判分和对应的记忆正文、原话写到状态目录（权限 0600；敏感值按统一出口的默认遮盖规则遮掉，其余正文照原样）给 Andy 看。满 7 天删除，这样被删的记忆不会长期留在文件里。
+
+**业界主流做法**
+
+- ✅ LongMemEval（<https://arxiv.org/abs/2410.10813>）：量长期记忆的五项能力，原文 “information extraction, multi-session reasoning, temporal reasoning, knowledge updates, and abstention”，共 “500 meticulously curated questions”。商用助手表现原文是 “a 30% accuracy drop”。
+- ✅ LongMemEval 仓库（<https://github.com/xiaowu0162/LongMemEval>）：
+  - 判分用模型，原文 “python3 evaluate_qa.py gpt-4o your_hypothesis_file …”；
+  - 拒答题单独标出，原文 “If `question_id` ends with `_abs`, then the question is an `abstention` question”。
+- ✅ Mem0 论文（<https://arxiv.org/abs/2504.19413>）：在 LOCOMO 上用 “LLM-as-a-Judge metric” 比较各家记忆系统。
+
+**对比与取舍**
+
+- **相同：** 问答加模型判对错，换说法也算对，拒答题单独统计。
+- **不同 1：题目来源。** 业界用公开的合成对话；我们用主人自己的记忆和原话。所以只能和自己的历史比，不能和论文数字直接比。
+- **不同 2：判分模型。** 官方用 GPT-4o；项目禁用这类贵模型（[ADR 0111](adr/0111-no-expensive-models-anywhere.md)），换成低价模型。判分可能判错，第一次抽查时用 Andy 标出的判错条目算判分和人工的一致率。
+- **不同 3：先快判。** 回答包含原话就不调判分模型，省钱。
+- **放弃：** 题库偏向没被改写过的记忆。改写时没存新原话的记忆取不到原话，不出题。
+
+**结果数据**
+
+- **真实分数：未测量。** 生产第一轮（`mode: once`）还没跑，跑完把抽查结果和基线数字追加到本案例后。
+- **测试：** 第 0 层相关测试 126 条通过；`npm run check` 48 步全过（提交 1c9f8477、34dd5826 的提交说明）。
+- **集成测试：** 在真实 SQLite 和混合检索上跑。变异验证：去掉“只用已确认记忆”的过滤，4 条集成测试全部失败。
+- **代码复核：** 截至第 10 轮（第 1 轮 DeepSeek 和 GLM，之后只用 DeepSeek），累计 1.39 美元，见 `.agents/reviews/pr-378/usage.jsonl` 的 `REVIEW_SPENT_TOTAL`。后几轮抓到的多是错误路径：进程崩在某一步时花费会不会漏算或重复算、一条记忆解密失败会不会让整轮停摆、删不掉的题干有没有人再删。
+- **复核里抓到一个我自己引入的 bug。** 第 1 轮为了“退役题顺手删题干”加的代码，会撞上题库表 `question_ref` 的 `ON DELETE RESTRICT` 外键，整轮评测失败。原来的单元测试用的是假存储，测不出来。补了用真实 SQLite 的集成用例：把那行代码加回去，worker 和 direct 两条用例都失败。
+- **LongMemEval 行业对照：未测量。** 等本机向量模型（P3-1）合并后再跑，跑前报费用。
+
+**相关 ADR/PR**
+
+[ADR 0239](adr/0239-real-memory-eval-sets.md)、PR #378、[ADR 0115](adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)（检索评测，改为对照）、[案例 78](#case-memory-capture-eval)、[案例 39](#case-jarvis-test-evals)。
+
+**面试 30 秒版**
+
+“我们的记忆评测原来全是合成题，题和代码出自同一个人，天然偏向现有实现。我改成在生产上直接用主人确认过的记忆出题：标准答案就是主人当时的原话，模型只写题干，题干要过泄题检查，连汉字日期和阿拉伯数字的对应都查。多数题还配一道问不存在的事的拒答题，测会不会编造。作答走和对话一样的检索，回答包含原话就直接判对，其余交低价模型判分。每周最多花 0.5 美元，按 7 天累计挡在代码里。复核时还抓到我自己引入的一个外键冲突，补了真实数据库的回归测试。”
+
+[返回目录](#contents)
+
 <a id="case-relevance-cutoff"></a>
 
 ## 案例 88：三路检索合并后怎么划“相关”的线：RRF 分数划不了线，用相似度加少量加分，权重和余量用评测扫出来
@@ -5555,6 +5687,155 @@ Pi 在 0.86 和 0.87 改了两处核心约定：发给模型的请求不再分�
 **面试 30 秒版**
 
 “我们的记忆检索是向量、关键词、实体三路，用 RRF 合并。只有向量路有门槛，一个关键词撞上就会带出无关记忆。最直观的做法是在 RRF 分数上划线，但 RRF 只看名次，离线一扫就是断崖：要么什么都挡不住，要么召回从 77% 掉到 49%。我改成用唯一能跨查询比较的余弦相似度做底，关键词和实体只补有上限的少量分数。权重和余量是把三路原始候选录下来、离线扫几百组参数定的，取稳定区域的中间值。原本最优的余量 0.03 离召回标准线只差 0.1 个点，嵌入每次有 0.01 的抖动，所以退到 0.05。结果准确率从 85.4% 升到 89.1%，召回不降；完成标准和一个反向用例都写进了测试。”
+
+[返回目录](#contents)
+
+<a id="case-external-memory-proposals"></a>
+
+## 案例 89：其他 agent 往记忆里写东西，确认框弹不出来怎么办：先存成“待确认”，主人在自己的界面里批
+
+**背景与现象**
+
+Andy 想让 Muse（他的另一个 agent）、Claude Code 和 Claude App 通过 MCP（Model Context Protocol，让 agent 调用外部工具的开放协议）往 Himawari 里写记忆。P5-2 先做了“在客户端里弹确认框，主人点同意才保存”（ADR 0225）。实测发现两个问题：Claude 桌面 App 声明支持确认框却不显示，约 10 毫秒后自动回拒绝（[anthropics/claude-code#105334](https://github.com/anthropics/claude-code/issues/105334)）；Muse 这类后台 agent 根本没有界面。结果是这些客户端提的记忆要么被当成“主人拒绝了”，要么什么都没留下。
+
+**根因**
+
+确认这一步放在了客户端里，而客户端能不能弹框、弹了主人能不能看到，Himawari 控制不了。MCP 规范也不保证客户端会显示确认框或带着答案重发（ADR 0228 前提 2）。
+
+**我们的方案**
+
+- 新表 `external_memory_proposals`（迁移 0093）：第一次调用就存一条“待确认”的提议，正文加密存在 payload（Himawari 存加密正文的表）里，不进记忆表、不进检索索引，模型读不到。
+- 客户端能弹框、主人点了同意就直接保存；点了拒绝记为已拒绝；弹不出来、取消、不到 1.5 秒就回来的回答（看不到框的客户端）一律留在“待确认”。
+- 主人在 Himawari 网页上批量保存、改字后保存、拒绝，整批可以撤销；保存时正文和已有记忆相同的，只挂到那条记忆上，不存第二份。
+- 按正文去重（不按客户端）：已保存的回“已经保存过”，拒绝过的回“拒绝过”；拒绝的正文 30 天后删掉，只留摘要继续挡住同样的话。同一个 `key`（客户端给这条记忆起的固定名字）送来新正文时，替换旧的待确认提议。
+- 新增批量工具 `propose_memories`，一次 1–50 条，每条单独返回状态，给 Muse 这种一次要交很多条的 agent 用。
+
+**方案讨论与备选**
+
+- 用已有的“tentative（暂定）记忆”当待确认：模型能看到，违反“确认后才存”，放弃。
+- 复用敏感记忆的审批表：字段对不上，两种审批会在界面上被一键一起点掉，放弃。
+- 待确认 30 天自动过期：等于悄悄丢掉主人的数据，放弃。
+- 把“取消”当拒绝（P5-2 原做法）：规范里取消是“没做选择”，当成拒绝会让同样的话以后再也提不进来，放弃。
+
+**业界主流做法**
+
+- ✅ [MCP 规范 2026-07-28 版，Tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)：“there SHOULD always be a human in the loop with the ability to deny tool invocations”。
+- ✅ [Claude 帮助中心：导入和导出记忆](https://support.claude.com/en/articles/12123587-import-and-export-your-memory-from-claude)：导入的记忆直接保存，事后在记忆面板里查看和删除。
+
+**对比与取舍**
+
+和 MCP 规范一样坚持“人来把关”，但不依赖客户端弹框，把确认挪到 Himawari 自己的界面里异步做，任何客户端都适用。比 Claude 的导入更严：确认前模型完全看不到。代价是主人要多做一步批量确认，所以做了批量保存和整批撤销。
+
+**结果数据**
+
+- `test/integration/mcp-write.test.ts` 34 条通过；反向验证：把“取消”改回拒绝、关掉按正文去重、提交时直接保存，分别让 1、7、1 条用例失败（2026-11-11 本线程实跑）。
+- 生产上的待确认条数、确认耗时：未测量（还没上线）。
+
+**相关 ADR/PR**
+
+[ADR 0228](adr/0228-external-memory-proposals-wait-for-owner-confirmation.md)（部分取代 [ADR 0225](adr/0225-external-agents-propose-memory-with-in-client-confirmation.md) 决定 2、3、6）、迁移 0093、PR #389（同一任务的 Cloudflare 登录部分）。
+
+**面试 30 秒版**
+
+“我让别的 agent 通过 MCP 往个人 agent 的记忆里写东西，最初是在客户端弹确认框。结果 Claude 桌面 App 不显示确认框、10 毫秒后自动回拒绝，后台 agent 根本没有界面。根因是确认放在了我控制不了的客户端里。我改成第一次调用就存成‘待确认’，模型完全看不到，主人在自己的网页上批量确认、可以整批撤销；按正文去重，拒绝过的话不会再来烦他。”
+
+[返回目录](#contents)
+
+<a id="case-model-prereview"></a>
+
+## 案例 90：让模型替主人先打一遍分，什么时候才敢少给主人看：一致率按区间下限算，还要比瞎猜准
+
+**背景与现象**
+
+Himawari 的每个关键判断（读完邮件提醒没提醒、记忆存没存、整理记忆对不对）都写一条决策记录，Andy 在「每天打分」里逐条评“有用 / 不需要 / 漏了”，周报按这些打分算出各类判断的准确度。产品愿景写明，Andy 的审核带宽是实际瓶颈（`docs/product-vision.md:196`）。实施清单 P4-8 要求：先让模型给每条待打分的决策预评，预评不能写进 Andy 的打分；模型和 Andy 足够一致时，「每天打分」只给他看模型拿不准的。
+
+**根因**
+
+这不是 bug，难点在“什么时候能信模型”：样本少时，10 条全对也显示 100%；而且如果 Andy 在某类判断里本来就 95% 评“有用”，模型只要全评“有用”就有 95% 一致，看起来很准，其实什么都没学到。
+
+**我们的方案**
+
+- 预评单独一张表 `decision_prereviews`，不许改，只随所属决策或邮件记录删除；Andy 的打分仍只在原来的列里，发给模型的请求里也不带他的打分。
+- 一致率只看会被隐藏的那部分：模型评“有用”、把握不低于 800（满分 1000）、且和 Andy 以往打分不冲突。这部分的一致比例按 Wilson 区间下限不低于 90%，而且要高于“全当有用”这种猜法（Andy 评“有用”的比例的 Wilson 上限），才算过门槛。
+- 自动减少默认关闭；打开后，隐藏前再核对一次文字摘要，文字变了就不隐藏；按条目哈希固定留 20% 给 Andy 抽查，好让一致率在隐藏开始后还能继续更新。
+- 每天最多 50 次调用，尝试次数和费用从表里数，重启不会重置；失败也记一行带费用，24 小时内不重试。
+- 周报脚本和网页周报都显示每类判断的预评数、拿不准数、配对数、一致率和区间、kappa（扣掉碰巧一致之后的一致程度）、门槛结论。
+
+**方案讨论与备选**
+
+- 把预评写成决策记录的新列：省一张表，但写错列就会冒充 Andy 的打分，放弃。
+- 用点估计做门槛：样本少时形同虚设，放弃。
+- 隐藏后不留抽查：一致率会冻结在开启那一刻，模型变差也看不出来，放弃。
+- 配对时再核对文字摘要：要在读周报时重读全部原文，暂不做；只在隐藏前核对，写进 ADR。
+
+**业界主流做法**
+
+- ✅ [Zheng 等，Judging LLM-as-a-Judge](https://arxiv.org/abs/2306.05685)：用模型当裁判之前，先量它和人的一致率，原文：“achieving over 80% agreement, the same level of agreement between humans”。
+- ✅ [维基百科：二项比例置信区间](https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval)：Wilson 区间“can be safely employed with small samples and skewed observations”。
+
+**对比与取舍**
+
+和论文一样，先用人打过分的样本量出一致率再决定信不信模型；不同的是，我们不看整体一致率，只看“会被隐藏”的那部分，并且要求比“全当有用”更准，因为隐藏错的代价是 Andy 看不到本该纠正的判断。代价是门槛更难过：90% 门槛下至少要 35 对才可能过。
+
+**结果数据**
+
+- 门槛最少配对数 35：`packages/calibration/src/prereview.ts` 的 `minimumPairsToPass(900)`，单元测试覆盖。
+- 生产上的一致率、隐藏条数：未测量（自动减少默认关闭，还没上线）。
+
+**相关 ADR/PR**
+
+[ADR 0237](adr/0237-model-pre-rates-waiting-decisions.md)、PR #373、迁移 0091。
+
+**面试 30 秒版**
+
+“主人每天要给 agent 的判断打分，我让模型先预评一遍，想在一致率够高时少给他看。难点是一致率会骗人：样本少时 10/10 也是 100%，主人本来 95% 评‘有用’时模型全评‘有用’也有 95%。所以门槛用 Wilson 区间下限，还必须高于‘全当有用’的上限，只算会被隐藏的那部分；隐藏后固定留 20% 抽查，让一致率持续更新。预评单独存表，绝不进主人的打分。”
+
+[返回目录](#contents)
+
+<a id="case-memory-hub"></a>
+
+## 案例 91：对外开了 MCP 入口，别的 agent 却未必来读来存：补上触发和身份，把 Himawari 做成记忆中心
+
+**背景与现象**
+主人同时用好几个 AI agent（Claude Code、Codex、ChatGPT 这类编码或对话程序），每家各记各的，换一家就要重新教一遍。他要 Himawari 当“记忆中心”：别家产生的记忆能存进来，换任何一家都能来读他的记忆、规则和习惯。项目已经做了对外的 MCP 入口（MCP 即 Model Context Protocol，让 AI 程序调用外部工具的开放接口）、三个只读工具和两个提议工具（ADR 0219、0225、0226、0227）。回头审视时发现：入口做完了，却没有任何机制保证对方真的会用。
+
+**根因**
+读代码和业界资料后确认缺三样，都不是“接入步骤写得不够清楚”能解决的：
+
+- 触发。读和存都要对方的模型自己想起来调用工具；服务创建时连使用说明都没带（`production-mcp-read.ts` 里 `new McpServer(…)` 没传 `instructions`）。
+- 身份。所有客户端都用主人本人的登录，名字是对方自报的（ADR 0227 后果一节原话：“来源只能靠客户端自称”），所以没法按 agent 暂停、撤销或限制范围。
+- 范围。外部读取能读到 sensitive（敏感）级别的记忆，对外只按格式遮密码、验证码、证件号、银行卡号这类值，不按级别整条隐藏（`production-memory-recall.ts` 用 `modelVisibleClassifications()`，即 public、private、sensitive 三级）。这一条是方案审核时对着代码查出来的；此前的文档没有把它当作对外暴露的范围来处理。
+
+**我们的方案**
+[ADR 0242](adr/0242-external-agents-join-the-memory-hub-through-one-entry.md)。门仍然只有 MCP 一个；读一个动作（`start_here`，一次给出主人概况、习惯、规则摘要和今天的情况），推一个动作（`sync_memories`，对方把自己已经记好的笔记成批推过来，可以重复推，改了认得出；装了助手程序的那一档，删了也认得出）。触发按对方的能力分四档：能跑钩子（agent 在固定时刻自动执行的一条命令）的，装一个只读的小助手程序，开场自动读、每句话自动搜、对话结束自动推，全程不经对方模型；没有钩子的降档，如实标为“尽力而为”或手动。身份改成主人在网页上建接入，带密钥的专属网址定身份，读取级别默认到 private。关于主人的内容先进待确认，项目笔记单独存。
+
+**方案讨论与备选**
+
+- 把别家的原始对话送来，由 Himawari 的模型抽取记忆：主人当场否了，编码对话动辄十万 token，太贵。改成同步对方已经记好的笔记文件，服务端不调模型。
+- 只挂 MCP，靠使用说明：做起来最省，但正是原来的问题。只留给没有钩子的客户端，并在产品里标明不可靠。
+- 每家写一个专用对接：等于写死名单。改成向导里勾选对方的能力，各家步骤是数据。
+- 线程第一版方案有六处会出错，由两个低价模型独立出方案、再审核线程方案时查出，全部改掉。最重的几处：拿自报的名字当权限；项目笔记不经确认直接存，敏感内容标错类就能绕过确认；拿对方的文件路径拼记忆编号，过不了编号格式校验；用 `mcp_tool` 钩子推送，而它读不了文件。讨论共花 0.26 美元。
+- 两个模型也有说错的：一家说外部读取的上限是 public，对着代码核对后不成立；另一家说遮盖的占位编号会随前面内容变化，线程没核对就采纳了，写进了方案，后来被编码线程实测和合并前复核指出不成立，又撤掉。教训是模型的意见要逐条对代码核实后才采纳。
+
+**业界主流做法**
+
+- ✅ Claude 的记忆导入（[帮助页](https://support.claude.com/en/articles/12123587-import-and-export-your-memory-from-claude)）：“Memory imports are experimental and still in active development”。大厂只做一次性搬进来，不做别家持续来读来存。
+- ✅ mem0 的 Codex 接入（[文档](https://docs.mem0.ai/integrations/codex.md)）：完整版用钩子，只挂 MCP 的简版读写靠模型自己调用。
+- ✅ Supermemory 博客（[原文](https://supermemory.ai/blog/how-to-make-your-mcp-clients-share-context-with-supermemory-mcp.md)，厂商自述）：“the model may not call a tool on its own”“The plugins hook into the agent instead, so nothing waits on the model's judgment.”
+- ✅ Claude Code 钩子文档（[Hooks](https://code.claude.com/docs/en/hooks)）：`mcp_tool` 钩子“call a tool on a configured MCP server”，“The hook never starts an OAuth flow”；命令钩子的输出“Claude Code adds plain-text stdout as context that Claude can see and act on”。
+- ✅ Claude Code 记忆文档（[Memory](https://code.claude.com/docs/en/memory)）：“Each project gets its own memory directory at `~/.claude/projects/<project>/memory/`”。
+
+**对比与取舍**
+和 mem0、Supermemory 相同的是“MCP 当通用入口，钩子补触发”。不同的有两点：它们采集对话原文再抽取，我们只同步对方已经写好的笔记，省掉模型费用，代价是只能拿到对方愿意记下来的东西；我们每个接入一把密钥，能单独暂停、撤销和限制读取级别，代价是主人接一个新 agent 要多点一次。
+
+**结果数据**
+未测量：写本案例时只有决定，还没有实施。讨论费用 0.26 美元，出处是 `.agents/reviews/topic-p5-memory-hub/usage.jsonl`。实施后补“自动读取、自动同步各多少次，空手而归多少次”。
+
+**相关 ADR/PR**
+[ADR 0242](adr/0242-external-agents-join-the-memory-hub-through-one-entry.md)；被它改掉部分决定的 [ADR 0219](adr/0219-read-only-mcp-entry-with-static-token.md)、[ADR 0225](adr/0225-external-agents-propose-memory-with-in-client-confirmation.md)、[ADR 0226](adr/0226-external-agents-propose-rules-through-the-rule-proposal-flow.md)、[ADR 0227](adr/0227-mcp-entry-checks-cloudflare-access-sign-in.md)；PR #411。
+
+**面试 30 秒版**
+“我给个人 agent 开了 MCP 入口，想让别的 AI 都来读写同一份记忆，做完才发现入口不等于会被用：读和存都靠对方模型自觉，身份是自报的，敏感记忆也读得到。我重做了方案：读和推各一个动作，能跑钩子的客户端装一个只读的小助手，开场自动读、结束自动把它记的笔记推过来；每个接入由主人建、有自己的密钥和读取上限；不采集对话原文，所以不花模型的钱。方案让两个低价模型独立审了一遍，查出我原稿六处会出错，花了 0.26 美元。”
 
 [返回目录](#contents)
 

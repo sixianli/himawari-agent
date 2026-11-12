@@ -18,9 +18,14 @@ export interface PortableCounts {
   importBatches: number;
   consolidations: number;
   consolidationChanges: number;
+  conversationReviews: number;
+  conversationReviewChanges: number;
   decisions: number;
   decisionSignals: number;
   markdownMemories: number;
+  rules: number;
+  enforcedRules: number;
+  ruleHistoryVersions: number;
   sealedOriginals: number;
   sealedEvidenceRows: number;
 }
@@ -42,6 +47,7 @@ export interface PortableManifest {
     readonly texts: number;
     readonly memories: number;
     readonly decisions: number;
+    readonly rules: number;
   };
   readonly omitted: readonly {
     readonly what: string;

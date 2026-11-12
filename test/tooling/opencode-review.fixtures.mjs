@@ -47,7 +47,8 @@ export function processState(
     }
     return read(`/proc/${pid}/stat`, "utf8").split(") ")[1]?.[0];
   } catch (error) {
-    if (error.code === (platform === "linux" ? "ENOENT" : "ESRCH")) return "gone";
+    const goneCodes = platform === "linux" ? ["ENOENT", "ESRCH"] : ["ESRCH"];
+    if (goneCodes.includes(error.code)) return "gone";
     throw error;
   }
 }

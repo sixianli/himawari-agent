@@ -179,7 +179,7 @@ describe("[P4-1] RuleReviewService", () => {
     for (const source of [
       null,
       memory({ status: "trashed" }),
-      memory({ attributes: { category: "preference" } as ProductMemoryRecord["attributes"] }),
+      memory({ attributes: { category: "preference" } } as Partial<ProductMemoryRecord>),
     ]) {
       const run = harness("{}", source);
       expect(await run.service.run()).toEqual([{ ruleId: "owner:boss", outcome: "suspended" }]);

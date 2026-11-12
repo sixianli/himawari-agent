@@ -151,7 +151,9 @@ export class SqliteMemoryConsolidationOperations {
       case "memoryConsolidation.listChanges":
         return this.listChanges(payload as { ownerId: OwnerId; agentId: AgentId; limit: number });
       case "memoryConsolidation.listHeldPairs":
-        return this.listHeldPairs(payload as { ownerId: OwnerId; agentId: AgentId });
+        return this.listHeldPairs(
+          payload as { ownerId: OwnerId; agentId: AgentId; openOnly?: boolean },
+        );
       case "memoryConsolidation.readChange":
         return this.readChange((payload as { id: string }).id);
       case "memoryConsolidation.readBasis":
@@ -276,6 +278,7 @@ export class SqliteMemoryConsolidationOperations {
   private listHeldPairs(input: {
     ownerId: OwnerId;
     agentId: AgentId;
+    openOnly?: boolean;
   }): readonly (readonly [MemoryId, MemoryId])[] {
     return Object.freeze(
       (
@@ -284,7 +287,7 @@ export class SqliteMemoryConsolidationOperations {
             `SELECT memory_id AS memoryId, related_memory_id AS relatedMemoryId
             FROM memory_consolidation_changes
             WHERE owner_id = ? AND agent_id = ? AND action = 'hold' AND related_memory_id IS NOT NULL
-            ORDER BY id`,
+            ${input.openOnly === true ? "AND undone_at IS NULL ORDER BY created_at DESC, id DESC" : "ORDER BY id"}`,
           )
           .all(input.ownerId, input.agentId) as {
           memoryId: MemoryId;

@@ -4,10 +4,39 @@ import { githubExpression as expression, linuxRunnerLabel } from "./contracts.mj
 const assert = (value, code) => {
   if (!value) throw new Error(`MAIN_WORKFLOW:${code}`);
 };
-export function validateMainWorkflow(source, lock) {
+const permissionRank = { none: 0, read: 1, write: 2 };
+const parseWorkflow = (source) => {
   const document = parseDocument(source, { uniqueKeys: true, maxAliasCount: 0 });
   assert(!document.errors.length, "YAML");
-  const w = document.toJS({ maxAliasCount: 0 });
+  return document.toJS({ maxAliasCount: 0 });
+};
+
+export function validateCallerGrantsCalledPermissions(mainSource, ciSource) {
+  const main = parseWorkflow(mainSource);
+  const ci = parseWorkflow(ciSource);
+  const mapping = (permissions) => {
+    assert(
+      permissions === undefined ||
+        (permissions !== null && typeof permissions === "object" && !Array.isArray(permissions)),
+      "full-grants-invalid",
+    );
+    return permissions ?? {};
+  };
+  const granted = mapping(main.jobs?.full?.permissions ?? main.permissions);
+  const requested = [
+    ci.permissions,
+    ...Object.values(ci.jobs ?? {}).map((job) => job?.permissions),
+  ];
+  for (const permissions of requested)
+    for (const [scope, level] of Object.entries(mapping(permissions)))
+      assert(
+        (permissionRank[granted[scope]] ?? 0) >= (permissionRank[level] ?? 3),
+        `full-grants-${scope}-${level}`,
+      );
+  return { scopes: Object.keys(granted).length };
+}
+export function validateMainWorkflow(source, lock) {
+  const w = parseWorkflow(source);
   assert(JSON.stringify(w.on) === JSON.stringify({ push: { branches: ["main"] } }), "events");
   assert(
     JSON.stringify(w.permissions) ===
@@ -28,7 +57,7 @@ export function validateMainWorkflow(source, lock) {
         "always() && (needs.plan.result != 'success' || needs.plan.outputs.mode != 'light')",
     "fallback",
   );
-  assert(!full.secrets && !full.permissions && !full.with, "full-inputs");
+  assert(!full.secrets && !full.with && !full.permissions, "full-inputs");
   assert(
     confirm.needs === "plan" &&
       confirm.if === "needs.plan.result == 'success' && needs.plan.outputs.mode == 'light'",
