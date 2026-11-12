@@ -1,0 +1,1 @@
+{"id": "35", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|35|找不到|-|现在服务器没有任何一处把“Himawari 主动找主人的事”汇在一起，也没有一个各类事情之间能比较的要紧程度|-", "outcome": "model-wrong", "evidenceFile": "packages/gateway-contracts/src/contracts-v2.ts", "evidence": "\"proactive.overview.read\""}
