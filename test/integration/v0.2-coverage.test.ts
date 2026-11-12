@@ -14,7 +14,7 @@ interface MutableCoverageManifest {
   prd: {
     sha256: string;
   };
-  requirements: unknown[];
+  requirements: Array<{ id: string }>;
   specifications: Array<{
     acceptances: Array<{
       id: string;
@@ -74,6 +74,20 @@ describe("v0.2 coverage baseline", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("PRD digest differs");
     expect(result.stderr).toContain("S0 recorded PRD digest differs from manifest");
+  });
+
+  it("rejects a manifest that drops a requirement listed in the S0 coverage matrix", async () => {
+    let dropped = "";
+    const shortManifest = await changedManifest((manifest) => {
+      const requirement = manifest.requirements.pop();
+      if (!requirement) throw new Error("fixture has no requirements");
+      dropped = requirement.id;
+    });
+
+    const result = runChecker(shortManifest);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`coverage manifest is missing ${dropped}`);
   });
 
   it("rejects an acceptance without a verification entrypoint", async () => {

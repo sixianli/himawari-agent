@@ -237,8 +237,8 @@ describe("production model composition", () => {
     expect(composition.transport).toBeDefined();
     expect(composition.payloadBoundary).toBeDefined();
 
-    await composition.close();
     expect(runtime.refreshes).toEqual([{ allowNetwork: false }]);
+    await composition.close();
   });
 
   it("rejects unsafe secret sources and conflicting canonical descriptors", () => {
