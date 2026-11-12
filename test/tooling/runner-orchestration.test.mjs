@@ -244,7 +244,7 @@ vi.mock("../../scripts/ci/check-security.mjs", () => ({
             {
               id: "security-exceptions",
               status: "infrastructure_failed",
-              error: "unexpected token near sk-live-0123456789abcdef",
+              error: "Unexpected token } in JSON at position 41 of the reviewed baseline",
             },
           ]
         : [{ id: "gitleaks", status: "passed" }],

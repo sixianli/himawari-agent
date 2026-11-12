@@ -6,7 +6,7 @@
 
 - 第 1 条（ARM 上 policy 检查里的 tooling 测试会失败）：新增 `test/tooling/artifact-host.mjs`，导出 `useArtifactCapableHost()`。它在测试文件开始前判断主机，如果不是 darwin-arm64 或 linux-x64，就把 `process.platform`、`process.arch` 临时改成 linux、x64，文件跑完恢复。`pipeline.test.mjs`、`runner.test.mjs`、`test-timeout-entry.test.mjs`、`runner-orchestration.test.mjs`、`quality-local.test.mjs`、`gate-lifecycle.test.mjs` 在文件顶层调用它。这些文件测的是构建、浏览器、覆盖率的流程，用的是假的执行函数，不依赖本机架构。验证办法：用预加载脚本把 `scripts/ci/` 和 `test/tooling/` 里读到的 `process.arch` 改成 arm64 跑这些文件，改之前 6 个文件 135 条里 59 条失败，改之后全过；整个 tooling 项目在这种模拟下和不模拟时相比，多出的失败只剩 review-gateway.test.mjs 的 5 条，那是模拟本身造成的（它按 arm64 下载了 Magpie 的可执行文件，在 x64 容器里跑不起来）；真 ARM 机器上没跑过。
 - `runner-orchestration.test.mjs` 里模拟 linux-arm64 的那条用例，改 `process.platform`、`process.arch` 时不再展开原描述符（原描述符是访问器时会报错）。
-- 第 2 条：`scripts/ci/run.mjs` 的 security 日志行只在 `entry.error` 是全大写加下划线的错误码时才带上它；测试加了一条带像密钥文字的 error。
+- 第 2 条：`scripts/ci/run.mjs` 的 security 日志行只在 `entry.error` 是全大写加下划线的错误码时才带上它；测试加了一条 error 是报错原文的扫描项。
 
 请重点核对：
 
