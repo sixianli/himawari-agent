@@ -1899,6 +1899,8 @@ describe("production memory capture", () => {
         payload: {},
       } as never);
       if (snapshot.type !== "memory.rules.snapshot") throw new Error("snapshot");
+      const { idempotencyKey: _, ...parsable } = snapshot as Record<string, unknown>;
+      gatewayV2MessageSchema.parse(parsable);
       return snapshot.payload.rules;
     };
 
@@ -2181,12 +2183,12 @@ describe("production memory capture", () => {
     );
     const multilineDetail = (await listed()).find(({ ruleId }) => ruleId === multiline["ruleId"]);
     expect(multilineDetail?.quote).toBe("日本入管局相关的邮件 以后必须通知我");
-    await command(
-      context.control,
-      "memory.rule.respond",
-      { target: multiline["ruleId"], action: "undo" },
-      "undo-multiline",
-    );
+    const undone = (
+      await tool("rule.undo", { ruleId: multiline["ruleId"] }, "call-undo-multiline")
+    )["undone"] as Record<string, unknown>;
+    expect(undone).toMatchObject({ ruleId: multiline["ruleId"], status: "retired" });
+    expect(Object.keys(undone)).not.toContain("revision");
+    expect(Object.keys(undone)).not.toContain("sourceMemoryId");
     await expect(
       command(
         context.control,

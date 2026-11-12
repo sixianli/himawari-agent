@@ -507,8 +507,15 @@ export class ProductionMemoryControl {
     const ledger = this.options.ledger;
     if (!ledger || ruleIds.size === 0) return found;
     const { ownerId, agentId } = this.options.configuration;
-    for (const use of await ledger.lastRuleUses({ ownerId, agentId, ruleIds: [...ruleIds] }))
-      found.set(use.ruleId, { at: use.decidedAt, kind: use.kind, decisionId: use.decisionId });
+    const all = [...ruleIds];
+    for (let start = 0; start < all.length; start += 64)
+      for (const use of await ledger.lastRuleUses({
+        ownerId,
+        agentId,
+        ruleIds: all.slice(start, start + 64),
+      }))
+        if (/^[A-Za-z0-9._:-]{1,128}$/u.test(use.decisionId))
+          found.set(use.ruleId, { at: use.decidedAt, kind: use.kind, decisionId: use.decisionId });
     return found;
   }
 

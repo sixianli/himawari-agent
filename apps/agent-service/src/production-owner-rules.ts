@@ -796,6 +796,12 @@ export class ProductionOwnerRuleWriter {
   }
 }
 
+const modelVisibleRule = ({
+  revision: _revision,
+  sourceMemoryId: _sourceMemoryId,
+  ...rule
+}: ListedOwnerRule) => rule;
+
 export class ProductionOwnerRuleTools {
   readonly #writer: Pick<ProductionOwnerRuleWriter, "create" | "list" | "undo">;
 
@@ -808,18 +814,13 @@ export class ProductionOwnerRuleTools {
     const names = Object.keys(args);
     if (invocation.capabilityRef === RULE_LIST_CAPABILITY_REF) {
       if (names.length > 0) throw new OwnerRuleError("RULE_INPUT_INVALID");
-      const rules = await this.#writer.list();
-      return {
-        rules: rules.map(
-          ({ revision: _revision, sourceMemoryId: _sourceMemoryId, ...rule }) => rule,
-        ),
-      };
+      return { rules: (await this.#writer.list()).map(modelVisibleRule) };
     }
     if (invocation.capabilityRef === RULE_UNDO_CAPABILITY_REF) {
       const ruleId = args["ruleId"];
       if (typeof ruleId !== "string" || names.some((name) => name !== "ruleId"))
         throw new OwnerRuleError("RULE_INPUT_INVALID");
-      return { undone: await this.#writer.undo(ruleId) };
+      return { undone: modelVisibleRule(await this.#writer.undo(ruleId)) };
     }
     if (invocation.capabilityRef !== RULE_SET_CAPABILITY_REF)
       throw new OwnerRuleError("RULE_INPUT_INVALID");
