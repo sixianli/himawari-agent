@@ -1,0 +1,2 @@
+{"id": "r4-ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新增条目的 `sourceProofSha256` 只有格式校验，没有和真实 tarball 交叉核对", "valid": true, "class": "improvement", "severity": "low", "trigger": "有人手写一个错误的 sourceProofSha256", "consequence": "检查不会发现；原有缺口，本 PR 的值由脚本从 tarball 算出", "modelSeverity": "low"}
+{"id": "r4-ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "四个新 mcp-* 条目把 `expiresAt` 放在 `path` 前面", "valid": true, "class": "improvement", "severity": "low", "trigger": "人工比对条目", "consequence": "字段顺序不一致，JSON 含义不变", "modelSeverity": "low"}
