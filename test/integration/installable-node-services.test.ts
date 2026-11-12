@@ -466,7 +466,7 @@ describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
       externalDependencies: {
         "@earendil-works/pi-ai": "1.5.0",
         "@earendil-works/pi-coding-agent": "1.5.0",
-        "@modelcontextprotocol/client": "2.0.0",
+        "@modelcontextprotocol/client": "2.3.1",
       },
     });
     await expect(

@@ -18,6 +18,6 @@
     "@himawari-agent/gateway-contracts": "0.0.0"
   },
   "devDependencies": {
-    "vitest": "4.1.12"
+    "vitest": "4.1.9"
   }
 }
