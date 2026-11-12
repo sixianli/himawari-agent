@@ -91,25 +91,38 @@ launch() {
     -HimawariDemoScene "$1" -AppleLanguages "(zh-Hans)" -AppleLocale zh_CN >/dev/null
 }
 
+last_shot=""
+
 settle() {
-  local file="$1" previous="" current="" tries=0
+  local scene="$1" file="$2" previous="" current="" tries=0 launches=1
   sleep 2
-  while [ "$tries" -lt 10 ]; do
+  while :; do
     xcrun simctl io "$udid" screenshot --type=png "$file" >/dev/null
     current="$(shasum -a 256 "$file" | cut -d' ' -f1)"
-    [ "$current" = "$previous" ] && return 0
+    if [ "$current" = "$previous" ] && [ "$current" != "$last_shot" ]; then
+      last_shot="$current"
+      return 0
+    fi
     previous="$current"
     tries=$((tries + 1))
+    if [ "$tries" -ge 12 ]; then
+      [ "$launches" -lt 3 ] || { echo "UI_REVIEW_FAILED $file never settled into a new screen" >&2; exit 1; }
+      launches=$((launches + 1))
+      tries=0
+      launch "$scene"
+      sleep 3
+    fi
     sleep 1
   done
-  echo "UI_REVIEW_UNSTABLE $file still changing after $tries tries" >&2
 }
 
+xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true >/dev/null 2>&1 || true
 launch "${scenes[0]}"
 sleep 8
 
 for appearance in light dark; do
   xcrun simctl ui "$udid" appearance "$appearance"
+  sleep 3
   for scene in "${scenes[@]}"; do
     case "$scene" in
       motion-*)
@@ -129,7 +142,7 @@ for appearance in light dark; do
       *)
         launch "$scene"
         file="$shots/$scene-$appearance.png"
-        settle "$file"
+        settle "$scene" "$file"
         width="$(sips -g pixelWidth "$file" | awk '/pixelWidth/ {print $2}')"
         [ "$width" = "$expected_width" ] || { echo "UI_REVIEW_FAILED $file is $width px wide, expected $expected_width (390 pt at 3x)" >&2; exit 1; }
         ;;

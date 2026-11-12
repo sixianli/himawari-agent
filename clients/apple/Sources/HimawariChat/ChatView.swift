@@ -54,8 +54,6 @@ public struct ChatView: View {
             if let threadId {
                 store.watch(threadId)
                 await store.load(threadId)
-            } else {
-                inputFocused = true
             }
         }
         .onDisappear { store.unwatch() }
@@ -74,7 +72,7 @@ public struct ChatView: View {
                 Spacer()
             }
             .padding(.horizontal, 16)
-            Text(title)
+            Text(threadId == nil ? "" : title)
                 .hmType(DesignTokens.TypeScale.navTitle)
                 .foregroundStyle(Color.hmText)
                 .lineLimit(1)
@@ -126,7 +124,9 @@ public struct ChatView: View {
             .padding(.top, 84)
             .padding(.bottom, 110)
         }
-        .defaultScrollAnchor(.bottom)
+        .defaultScrollAnchor(.top, for: .alignment)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
         .scrollIndicators(.hidden)
     }
