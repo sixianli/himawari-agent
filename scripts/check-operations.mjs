@@ -137,6 +137,13 @@ export function readInstalledArrays(text) {
   return arrays;
 }
 
+function withoutInstalledArrays(text) {
+  let stripped = text;
+  for (const match of text.matchAll(GATEWAY_ARRAY_PATTERN))
+    stripped = stripped.replace(balancedArray(text, match.index + match[0].length - 1), "");
+  return stripped;
+}
+
 export function readRouteBranches(text) {
   const events = [];
   for (const match of text.matchAll(
@@ -173,7 +180,7 @@ export function readInventoryOperations(text) {
     [...text.matchAll(/surface\.id\s*===\s*"([^"]+)"/g)].map((match) => match[1]),
   );
   const declared = [];
-  const parts = text.split(/\n\s*id:\s*"/).slice(1);
+  const parts = text.split(/(?<![\w.])id:\s*"/).slice(1);
   for (const part of parts) {
     const id = part.slice(0, part.indexOf('"'));
     if (exemptIds.has(id)) continue;
@@ -196,7 +203,7 @@ function checkInstalledRouting({ root, files, lists, contractKinds, backendTexts
   const withField = (field) =>
     files
       .map((file) => ({ file, text: readCached(file) }))
-      .filter(({ text }) => new RegExp(`${field}\\s*:\\s*\\[`).test(text));
+      .filter(({ text }) => new RegExp(`${field}\\s*[:=]\\s*\\[`).test(text));
   const gateways = withField("installedOperations");
   if (gateways.length === 0) {
     if (lists.length > 0) errors.push("OPERATIONS_GATEWAY_MISSING");
@@ -230,8 +237,8 @@ function checkInstalledRouting({ root, files, lists, contractKinds, backendTexts
     for (const listName of advertised)
       if (!installed.has(listName)) errors.push(`OPERATION_LIST_NOT_IN_GATEWAY ${listName}`);
   }
-  const handlerTexts = backendTexts.filter((text) => !/installedOperations\s*:\s*\[/.test(text));
-  const branches = gateways.flatMap(({ text }) => readRouteBranches(text));
+  const handlerTexts = backendTexts.filter((text) => !/installedOperations\s*[:=]\s*\[/.test(text));
+  const branches = gateways.flatMap(({ text }) => readRouteBranches(withoutInstalledArrays(text)));
   for (const list of lists) {
     if (!installed.has(list.listName)) continue;
     const option = [...optionList].find(([, listName]) => listName === list.listName)?.[0];
@@ -328,9 +335,12 @@ export function checkOperations(root = repositoryRoot) {
 
   const ledgerPath = path.join(root, PENDING_LEDGER);
   let pending = {};
+  let undeployed = {};
   if (existsSync(ledgerPath)) {
     try {
-      pending = JSON.parse(readFileSync(ledgerPath, "utf8")).operations ?? {};
+      const ledger = JSON.parse(readFileSync(ledgerPath, "utf8"));
+      pending = ledger.operations ?? {};
+      undeployed = ledger.notInstalled ?? {};
     } catch {
       errors.push("OPERATIONS_LEDGER_UNREADABLE");
     }
@@ -379,10 +389,15 @@ export function checkOperations(root = repositoryRoot) {
     for (const { id, name } of declared) {
       if (routing.installedNames.has(name)) continue;
       notInstalled.add(name);
-      if (pending[name] === undefined)
+      if (pending[name] === undefined && undeployed[name] === undefined)
         errors.push(`OPERATION_DECLARED_NOT_INSTALLED ${name} (${id})`);
     }
   }
+  for (const name of Object.keys(undeployed))
+    if (routing.installedNames.has(name))
+      errors.push(
+        `OPERATION_NOT_INSTALLED_BUT_INSTALLED ${name} 已安装，从 ${PENDING_LEDGER} 的 notInstalled 移除`,
+      );
 
   const report = [];
   for (const { name, kind } of operations) {
@@ -395,10 +410,10 @@ export function checkOperations(root = repositoryRoot) {
     const reason = pending[name];
     if (missing.length > 0 && reason === undefined)
       errors.push(`OPERATION_INCOMPLETE ${name} 缺：${missing.join("、")}`);
-    if (missing.length === 0 && reason !== undefined && !notInstalled.has(name))
+    if (missing.length === 0 && reason !== undefined)
       errors.push(`OPERATION_PENDING_BUT_COMPLETE ${name} 已齐全，从 ${PENDING_LEDGER} 移除`);
   }
-  for (const [name, reason] of Object.entries(pending)) {
+  for (const [name, reason] of [...Object.entries(pending), ...Object.entries(undeployed)]) {
     if (!contractNames.has(name)) errors.push(`OPERATION_PENDING_NOT_IN_CONTRACT ${name}`);
     if (typeof reason !== "string" || reason.trim().length < MINIMUM_REASON_LENGTH)
       errors.push(`OPERATION_PENDING_REASON_MISSING ${name}`);

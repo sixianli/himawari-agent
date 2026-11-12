@@ -19,12 +19,12 @@ const b = object({ ...commandEnvelope("demo.write") });
 const c = object({ ...envelope("snapshot", "demo.snapshot") });
 `;
 
-function tree(files, ledger = {}) {
+function tree(files, ledger = {}, notInstalled = {}) {
   const root = mkdtempSync(join(tmpdir(), "operations-check-"));
   roots.push(root);
   const all = {
     "packages/gateway-contracts/src/contracts-v2.ts": contract,
-    "ci/operations-pending.json": JSON.stringify({ operations: ledger }),
+    "ci/operations-pending.json": JSON.stringify({ operations: ledger, notInstalled }),
     "ci/operations-removed.json": JSON.stringify({ removed: {} }),
     ...files,
   };
@@ -391,9 +391,49 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     ]);
   });
 
-  it("[四处一致] accepts a declared but uninstalled operation with a pending reason", () => {
+  it("[四处一致] accepts a declared but uninstalled operation with a reason in notInstalled", () => {
     const reason = "契约和页面已有，生产还没装配";
-    expect(checkOperations(tree(later, { "demo.later": reason })).errors).toEqual([]);
+    expect(checkOperations(tree(later, {}, { "demo.later": reason })).errors).toEqual([]);
+  });
+
+  it("[四处一致] a notInstalled entry does not hide a missing implementation", () => {
+    const reason = "契约和页面已有，生产还没装配";
+    const files = { ...later, "apps/agent-service/src/later.ts": "const nothing = 1;" };
+    expect(checkOperations(tree(files, {}, { "demo.later": reason })).errors).toEqual([
+      "OPERATION_INCOMPLETE demo.later 缺：后端实现",
+    ]);
+  });
+
+  it("[四处一致] asks to remove a notInstalled entry once the operation is installed", () => {
+    const reason = "契约和页面已有，生产还没装配";
+    expect(checkOperations(tree(wired, {}, { "demo.write": reason })).errors).toEqual([
+      "OPERATION_NOT_INSTALLED_BUT_INSTALLED demo.write 已安装，从 ci/operations-pending.json 的 notInstalled 移除",
+    ]);
+  });
+
+  it("[四处一致] reads an inventory entry written inline and an assignment-style array", () => {
+    const inline = `export function isSurfaceInstalled(surface) { return surface.id === "threads"; }
+export const CONTROL_CENTER_SURFACE_INVENTORY = [{ id: "demo", queries: ["demo.read"], mutations: ["demo.write", "demo.later"] }];`;
+    expect(checkOperations(tree({ ...later, [inventoryFile]: inline })).errors).toEqual([
+      "OPERATION_DECLARED_NOT_INSTALLED demo.later (demo)",
+    ]);
+    const assigned = {
+      ...wired,
+      [compositionFile]: "installedGatewayV2Operations = [ ...PRODUCTION_DEMO_OPERATIONS ];",
+    };
+    expect(checkOperations(tree(assigned)).errors).toEqual([]);
+  });
+
+  it("[四处一致] does not let the installed array bodies pair with a dangling predicate", () => {
+    const dangling = {
+      ...wired,
+      [gatewayFile]: `const tail = command.type.startsWith("demo.");
+const other = { installedOperations: [ ...(options.otherControl ? PRODUCTION_OTHER_OPERATIONS : []) ] };
+${gateway()}`,
+    };
+    expect(checkOperations(tree(dangling)).errors).toEqual([
+      "OPERATION_LIST_NOT_ADVERTISED PRODUCTION_OTHER_OPERATIONS",
+    ]);
   });
 
   it("passes on the real repository", () => {
