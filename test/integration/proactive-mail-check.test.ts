@@ -2703,7 +2703,7 @@ describe("proactive Gmail check acceptance", () => {
       expect(tight.prompts).toHaveLength(1);
     });
 
-    it("REVERSE: the number extraction never spends more than a tenth of the day's allowance", async () => {
+    it("REVERSE: the number extraction plans at most a tenth of the day's allowance", async () => {
       const h = await harness({ dailyCostMicros: 1_000, batchSize: 1 });
       h.reader.related = (input) =>
         findRelatedMail({ ...input, transport: transport({ requests: 0 }) });
@@ -3612,6 +3612,21 @@ describe("proactive Gmail check acceptance", () => {
       expect(h.invocations()).toBe(1);
       expect(h.prompts[0]).not.toContain("暂停记忆时说的话");
       expect(h.query("SELECT COUNT(*) AS n FROM memory_episodes")[0]).toEqual({ n: 0 });
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({ summaryGenerated: 0, summaryInjected: false });
+    });
+
+    it("judges as usual and reads no summary when the summary limits switch them off", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({
+        recentSummaries: summariesFor(world),
+        summaryLimits: { characters: 0 },
+        dailyCostMicros: 250,
+      });
+      h.reader.items = [mail("plain")];
+      h.script([{ id: "plain", result: "ignore" }]);
+      await h.service.run();
+      expect(h.invocations()).toBe(1);
       const [entry] = await ledgerRows(h);
       expect(entry?.inputs).toMatchObject({ summaryGenerated: 0, summaryInjected: false });
     });
