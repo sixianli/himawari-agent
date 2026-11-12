@@ -257,7 +257,7 @@ export function configuredWorkspaceRoot(
       grant.id !== route.grantId ||
       grant.hostId !== route.hostId ||
       grant.revokedAt ||
-      grant.expiresAt <= clock.now() ||
+      !(Date.parse(grant.expiresAt) > Date.parse(clock.now())) ||
       typeof grant.displayPath !== "string"
     )
       return null;

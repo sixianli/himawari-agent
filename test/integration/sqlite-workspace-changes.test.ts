@@ -8,7 +8,7 @@ import type {
   ThreadArtifactSource,
 } from "@himawari-agent/application";
 import { createAgentId, createAuthorityLeaseId, createOwnerId } from "@himawari-agent/domain";
-import type { GatewayV2Query } from "@himawari-agent/gateway-contracts";
+import { type GatewayV2Query, gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -22,7 +22,11 @@ import {
   THREAD_ARTIFACTS_PER_CALL,
 } from "../../apps/agent-service/src/production-thread-artifacts.ts";
 import { createWorkspaceChangeMarks } from "../../apps/agent-service/src/production-workspace-change-marks.ts";
-import { ProductionWorkspaceChangesControl } from "../../apps/agent-service/src/production-workspace-changes-control.ts";
+import {
+  ProductionWorkspaceChangesControl,
+  WORKSPACE_FOLDER_LIST_LIMIT,
+  WORKSPACE_FOLDER_SCAN_PAGES,
+} from "../../apps/agent-service/src/production-workspace-changes-control.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-workspace-changes");
@@ -251,7 +255,7 @@ describe("[WC-1] folder changes read", () => {
   });
 
   it("[WC-2] counts each changed path once, flags deletions, and ignores uploads", async () => {
-    const { repository, store, control } = await open();
+    const { repository, store, control, warnings } = await open();
     try {
       await store.register({ ...scope, artifact: artifact("a.py", { createdAt: at(1) }) });
       await store.register({
@@ -290,6 +294,22 @@ describe("[WC-1] folder changes read", () => {
         ["c.py", "deleted", 1],
       ]);
       expect(result.items[0]).toMatchObject({ source: "edit", threadId: "thread-1" });
+      expect(result.incomplete).toBe(false);
+      await store.register({
+        ...scope,
+        artifact: artifact("b\nbroken.py", { createdAt: at(8) }),
+      });
+      const withBroken = await control().query(query({ limit: 2, afterPath: "a.py" }));
+      expect(() => gatewayV2MessageSchema.parse(withBroken)).not.toThrow();
+      expect(withBroken.payload).toMatchObject({
+        fileCount: 4,
+        incomplete: true,
+        items: [{ path: "b.py" }],
+        nextAfterPath: "b.py",
+      });
+      expect(warnings.map((event) => event["event"])).toEqual(["workspace.changes.item_skipped"]);
+      const rest = await read(control(), { afterPath: "b.py" });
+      expect(rest.items.map((item) => item.path)).toEqual(["c.py"]);
     } finally {
       await repository.close();
     }
@@ -476,6 +496,7 @@ describe("[WC-1] folder changes read", () => {
       ["grant-not-a-date", { expiresAt: "someday" }],
       ["grant-wrong-id", { id: "not the key" }],
       ["grant-no-path", { displayPath: 7 }],
+      ["grant-no-revoked", { revokedAt: undefined }],
     ]);
     try {
       const request = { ...query({}), type: "workspace.folders.read", payload: {} } as never;
@@ -492,6 +513,7 @@ describe("[WC-1] folder changes read", () => {
       expect(payload.truncated).toBe(false);
       expect(warnings.map((event) => event["key"]).sort()).toEqual([
         "host-workspace:directory-grant:grant-no-path",
+        "host-workspace:directory-grant:grant-no-revoked",
         "host-workspace:directory-grant:grant-not-a-date",
         "host-workspace:directory-grant:grant-wrong-id",
       ]);
@@ -516,6 +538,24 @@ describe("[WC-1] folder changes read", () => {
       expect(payload.folders).toHaveLength(200);
       expect(payload.folders[0]?.grantId).toBe("grant-a");
       expect(payload.truncated).toBe(true);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[WC-9] stops reading after a fixed number of pages of dead folders and says the list is cut", async () => {
+    const { repository, control } = await open(
+      Array.from(
+        { length: WORKSPACE_FOLDER_SCAN_PAGES * (WORKSPACE_FOLDER_LIST_LIMIT + 1) },
+        (_, index) => [`dead-${String(index).padStart(5, "0")}`, { revokedAt: T0 }] as const,
+      ),
+    );
+    try {
+      const request = { ...query({}), type: "workspace.folders.read", payload: {} } as never;
+      expect((await control().query(request)).payload).toMatchObject({
+        folders: [],
+        truncated: true,
+      });
     } finally {
       await repository.close();
     }
@@ -570,6 +610,12 @@ describe("[WC-1] folder changes read", () => {
       await artifacts.record(recording(["readme.md"]));
       expect(incomplete).toBe(1);
       readable = true;
+      incomplete = 0;
+      const readsBefore = reads;
+      await artifacts.record(recording(["line\nbreak.txt"], { toolCallId: "call-control" }));
+      expect(incomplete).toBe(1);
+      expect(reads).toBe(readsBefore);
+      expect((await read(control())).fileCount).toBe(0);
       incomplete = 0;
       await artifacts.record(
         recording(

@@ -2151,6 +2151,15 @@ const workspaceChangesQuerySchema = object({
     limit: integer(1, 200),
   }),
 });
+export const workspaceChangeItemSchema = object({
+  path: boundedString(1024),
+  state: enumeration(WORKSPACE_CHANGE_STATES),
+  source: machineString,
+  threadId: machineString,
+  versions: integer(1),
+  changedAt: timestamp,
+  deletedAt: nullable(timestamp),
+});
 const workspaceChangesSnapshotSchema = object({
   ...envelope("snapshot", "workspace.changes.snapshot"),
   payload: object({
@@ -2163,17 +2172,7 @@ const workspaceChangesSnapshotSchema = object({
     fileCount: integer(0),
     incomplete: booleanValue,
     skippedDirectories: array(boundedString(256)),
-    items: array(
-      object({
-        path: boundedString(1024),
-        state: enumeration(WORKSPACE_CHANGE_STATES),
-        source: machineString,
-        threadId: machineString,
-        versions: integer(1),
-        changedAt: timestamp,
-        deletedAt: nullable(timestamp),
-      }),
-    ),
+    items: array(workspaceChangeItemSchema),
     nextAfterPath: nullable(boundedString(1024)),
     generatedAt: timestamp,
   }),

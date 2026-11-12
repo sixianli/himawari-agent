@@ -1529,9 +1529,10 @@ it("[FD-1] does not register anything when the write failed", async () => {
 });
 
 it("[WC-7] a restart after the change record was saved still records the files and does not report complete by silence", async () => {
-  const { f, ledger, services, call, rows } = artifactFixture({ "out.csv": "a" });
+  const { f, ledger, services, call, rows, threadArtifacts } = artifactFixture({ "out.csv": "a" });
+  const recordDeleted = vi.spyOn(threadArtifacts, "recordDeleted");
   await f.ctx.save("workspace-changes", {
-    ...ledgerRecord([fileChange("out.csv")]),
+    ...ledgerRecord([fileChange("out.csv"), fileChange("old.txt", "deleted")]),
     runId: call.runId,
   });
   const markIncomplete = vi.fn(async () => undefined);
@@ -1541,6 +1542,15 @@ it("[WC-7] a restart after the change record was saved still records the files a
   expect(rows.map((row) => row.path)).toEqual(["out.csv"]);
   expect(f.values.get("workspace-artifacts")).toEqual({ dropped: false });
   expect(markIncomplete).not.toHaveBeenCalled();
+  expect(recordDeleted).toHaveBeenCalledWith(
+    expect.objectContaining({ paths: ["old.txt"], overlapped: true }),
+  );
+  expect(rows[0]).toMatchObject({ overlapped: true });
+  const fresh = artifactFixture({});
+  const freshDeleted = vi.spyOn(fresh.threadArtifacts, "recordDeleted");
+  fresh.ledger.record.mockResolvedValue(ledgerRecord([fileChange("old.txt", "deleted")]) as never);
+  await executeProductionCodingRequest(fresh.call, "bash", fresh.services, fresh.f.ctx);
+  expect(freshDeleted).toHaveBeenCalledWith(expect.objectContaining({ overlapped: false }));
   await executeProductionCodingRequest(call, "bash", withMarks, f.ctx);
   expect(rows).toHaveLength(1);
 

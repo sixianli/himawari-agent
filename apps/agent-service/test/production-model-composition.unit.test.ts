@@ -845,6 +845,24 @@ describe("Run capability notice", () => {
       await configuredWorkspaceRoot(configuration, read({ ...grant, hostId: "other" }), clock)(),
     ).toBeNull();
     expect(await configuredWorkspaceRoot(configuration, read(undefined), clock)()).toBeNull();
+    const justExpiredWithOffset = new Date(Date.parse(now) - 1000 + 9 * 3_600_000)
+      .toISOString()
+      .replace("Z", "+09:00");
+    expect(justExpiredWithOffset > now).toBe(true);
+    expect(
+      await configuredWorkspaceRoot(
+        configuration,
+        read({ ...grant, expiresAt: justExpiredWithOffset }),
+        clock,
+      )(),
+    ).toBeNull();
+    expect(
+      await configuredWorkspaceRoot(
+        configuration,
+        read({ ...grant, expiresAt: "someday" }),
+        clock,
+      )(),
+    ).toBeNull();
   });
 });
 

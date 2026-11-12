@@ -583,6 +583,7 @@ export async function executeProductionCodingRequest(
     let changes = (await ctx.load("workspace-changes")) as
       | (Record<string, unknown> & { readonly summary: string })
       | undefined;
+    const resumed = changes !== undefined;
     if (!changes) {
       const identity = {
         runId: call.runId,
@@ -617,7 +618,7 @@ export async function executeProductionCodingRequest(
         binding.threadId,
         grant,
         "bash",
-        overlapped,
+        overlapped || resumed,
         [...ledgerCandidates(changes)],
       );
       const droppedDeleted =
@@ -629,7 +630,7 @@ export async function executeProductionCodingRequest(
           toolCallId: call.toolCallId,
           paths: ledgerDeletedPaths(changes),
           grant,
-          overlapped,
+          overlapped: overlapped || resumed,
         })) ?? false;
       artifacts = (
         await ctx.save("workspace-artifacts", { dropped: droppedChanged || droppedDeleted })

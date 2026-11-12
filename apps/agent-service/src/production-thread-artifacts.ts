@@ -114,6 +114,14 @@ export function classifyThreadArtifact(path: string): {
   return { kind: "other", mediaType: "application/octet-stream" };
 }
 
+export function hasControlCharacter(path: string): boolean {
+  for (let index = 0; index < path.length; index += 1) {
+    const code = path.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
 export function skipsThreadArtifact(path: string): boolean {
   return path.split("/").some((part) => SKIPPED_DIRECTORIES.has(part));
 }
@@ -284,6 +292,10 @@ export class ProductionThreadArtifacts {
     const seen = new Set<string>();
     for (const candidate of input.candidates) {
       if (seen.has(candidate.path) || skipsThreadArtifact(candidate.path)) continue;
+      if (hasControlCharacter(candidate.path)) {
+        input.onIncomplete?.();
+        continue;
+      }
       if (seen.size >= THREAD_ARTIFACTS_PER_CALL) {
         input.onIncomplete?.();
         break;
