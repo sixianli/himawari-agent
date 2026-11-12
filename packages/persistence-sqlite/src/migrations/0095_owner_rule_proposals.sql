@@ -1,5 +1,5 @@
 CREATE TABLE owner_rule_proposals (
-  id TEXT NOT NULL CHECK (length(id) BETWEEN 1 AND 128),
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
   owner_id TEXT NOT NULL REFERENCES owners(id) ON DELETE CASCADE,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
   rule_type TEXT NOT NULL CHECK (length(rule_type) BETWEEN 1 AND 64),
@@ -17,8 +17,7 @@ CREATE TABLE owner_rule_proposals (
     last_rejected_at IS NULL OR last_rejected_at GLOB '????-??-??T??:??:??.???Z'
   ),
   CHECK ((status = 'pending') = (decided_at IS NULL)),
-  CHECK (reject_count = 0 OR last_rejected_at IS NOT NULL),
-  PRIMARY KEY (owner_id, agent_id, id)
+  CHECK (reject_count = 0 OR last_rejected_at IS NOT NULL)
 ) STRICT;
 
 CREATE INDEX owner_rule_proposals_pending_index

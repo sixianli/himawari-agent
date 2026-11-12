@@ -2559,16 +2559,70 @@ describe("production memory capture", () => {
       await inferred("moj.go.jp", "call-moj-after-undo");
       expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(1);
 
-      const pending = await inferred("pending.example");
+      const other = "入管局相关的邮件";
+      const known = (await proposalsQuery(context.control)).payload.proposals.map(
+        (item) => item.proposalId,
+      );
       await set(
-        { quote: "入管局相关的邮件", params: { senderDomains: ["pending.example"] } },
+        { quote: other, inferred: true, params: { senderDomains: ["pending.example"] } },
+        "call-pending-inferred",
+      );
+      const before = (await proposalsQuery(context.control)).payload.proposals.find(
+        (item) => !known.includes(item.proposalId),
+      );
+      expect(before?.origin).toBe("inferred");
+      expect(before).not.toBeUndefined();
+      await set(
+        { quote: other, inferred: false, params: { senderDomains: ["pending.example"] } },
         "call-pending-said",
       );
-      expect(pending["proposalId"]).not.toBeUndefined();
-      const origins = (await proposalsQuery(context.control)).payload.proposals.map(
-        (item) => item.origin,
+      const after = (await proposalsQuery(context.control)).payload.proposals.filter(
+        (item) => item.proposalId === before?.proposalId,
       );
-      expect(origins).toContain("owner_said");
+      expect(after).toHaveLength(1);
+      expect(after[0]?.origin).toBe("owner_said");
+    });
+
+    it("does not queue a proposal for a rule that is already enforced even when it is worded differently", async () => {
+      const { context, set, inferred } = await prepared();
+      const proposal = await inferred("same.example");
+      await command(
+        context.control,
+        "memory.rule.respond",
+        { target: proposal["proposalId"], action: "confirm" },
+        "adopt-same",
+      );
+      const again = await set(
+        {
+          quote: "入管局相关的邮件",
+          inferred: true,
+          summary: "另一种说法",
+          params: { senderDomains: ["same.example"] },
+        },
+        "call-same-reworded",
+      );
+      expect(again).toMatchObject({ status: "active" });
+      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(0);
+    });
+
+    it("lets an adopted card be adopted again after its rule was undone, even when the list is full", async () => {
+      const { context, set } = await prepared();
+      const small = new ProductionOwnerRuleTools(context.ruleWriterWith({ proposalLimit: 1 }));
+      const first = await set(
+        { quote: sentence, inferred: true, params: { senderDomains: ["card.example"] } },
+        "call-card",
+        small,
+      );
+      const writer = context.ruleWriterWith({ proposalLimit: 1 });
+      await writer.confirm(first["proposalId"] as string);
+      await context.ruleWriter.undo((await context.ruleWriter.list())[0]?.ruleId ?? "");
+      await set(
+        { quote: sentence, inferred: true, params: { senderDomains: ["filler.example"] } },
+        "call-filler",
+        small,
+      );
+      const receipt = await writer.confirm(first["proposalId"] as string);
+      expect(receipt.status).toBe("active");
     });
 
     it("adopts a proposal whose source conversation is gone, without pointing the memory at it", async () => {

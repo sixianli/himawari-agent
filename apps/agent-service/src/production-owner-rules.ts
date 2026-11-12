@@ -712,21 +712,12 @@ export class ProductionOwnerRuleWriter {
       const scope = this.#scope();
       const store = this.#options.proposals;
       const now = this.#options.clock.now();
+      const live = await this.#options.rules.list({ ...scope, includeRetired: false });
+      if (live.some((row) => sameRule(row.parameters, normalized.type, normalized.params)))
+        return this.#activate(proposal, replayed);
       const existing = await store.read({ ...scope, proposalId, now });
-      if (existing?.status === "accepted") {
-        const live = await this.#options.rules.list({ ...scope, includeRetired: false });
-        if (live.some((row) => sameRule(row.parameters, normalized.type, normalized.params)))
-          return this.#activate(proposal, replayed);
-      }
-      const payloads = this.#options.payloads;
-      if (existing?.status !== "pending") await payloads.delete(proposalId as never);
-      const fresh = (await payloads.get(proposalId as never)) === undefined;
-      await this.#writeText(proposalId, evidence);
-      const drop = async (): Promise<void> => {
-        if (fresh) await payloads.delete(proposalId as never).catch(() => false);
-      };
-      const outcome = await store
-        .propose({
+      const propose = () =>
+        store.propose({
           ...scope,
           proposalId,
           ruleType: normalized.type,
@@ -737,14 +728,27 @@ export class ProductionOwnerRuleWriter {
           now,
           expiresAt: new Date(Date.parse(now) + this.#ttlDays() * DAY_MS).toISOString(),
           pendingLimit: this.#limit(),
-        })
-        .catch(async (error: unknown) => {
+        });
+      const payloads = this.#options.payloads;
+      if (existing) {
+        if ((await propose()) === "limit_reached")
+          throw new OwnerRuleError("RULE_PROPOSALS_FULL", String(this.#limit()));
+        if (existing.status !== "pending") await payloads.delete(proposalId as never);
+        await this.#writeText(proposalId, evidence);
+      } else {
+        const fresh = (await payloads.get(proposalId as never)) === undefined;
+        await this.#writeText(proposalId, evidence);
+        const drop = async (): Promise<void> => {
+          if (fresh) await payloads.delete(proposalId as never).catch(() => false);
+        };
+        const outcome = await propose().catch(async (error: unknown) => {
           await drop();
           throw error;
         });
-      if (outcome === "limit_reached") {
-        await drop();
-        throw new OwnerRuleError("RULE_PROPOSALS_FULL", String(this.#limit()));
+        if (outcome === "limit_reached") {
+          await drop();
+          throw new OwnerRuleError("RULE_PROPOSALS_FULL", String(this.#limit()));
+        }
       }
     }
     return Object.freeze({
@@ -835,9 +839,13 @@ export class ProductionOwnerRuleWriter {
     const scope = this.#scope();
     const store = this.#options.proposals;
     const now = this.#options.clock.now();
-    const won = await store.decide({ ...scope, proposalId, from: "pending", to: "rejected", now });
-    if (won) return Object.freeze({ proposalId, replayed: false });
-    const row = await store.read({ ...scope, proposalId, now });
+    const decide = () =>
+      store.decide({ ...scope, proposalId, from: "pending", to: "rejected", now });
+    if (await decide()) return Object.freeze({ proposalId, replayed: false });
+    let row = await store.read({ ...scope, proposalId, now });
+    if (row?.status === "pending" && (await decide()))
+      return Object.freeze({ proposalId, replayed: false });
+    row = await store.read({ ...scope, proposalId, now });
     if (!row) throw new OwnerRuleError("RULE_NOT_FOUND");
     if (row.status === "rejected") return Object.freeze({ proposalId, replayed: true });
     if (row.status === "accepted") throw new OwnerRuleError("RULE_PROPOSAL_ACCEPTED");
