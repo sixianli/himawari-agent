@@ -9,6 +9,7 @@ export const MODEL_USAGE_PURPOSES = [
   "mail-judgment",
   "action-review",
   "review-prereview",
+  "home-urgency",
   "other",
 ] as const;
 

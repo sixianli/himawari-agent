@@ -88,7 +88,11 @@ import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
 import { registerDataExportRoute } from "./production-data-export.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
-import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
+import {
+  PRODUCTION_HOME_OPERATIONS,
+  ProductionHomeControl,
+  type ProductionHomeUrgencyOptions,
+} from "./production-home.js";
 import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import {
@@ -188,6 +192,7 @@ export interface ProductionHttpCompositionOptions {
   readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
+  readonly homeUrgency?: Omit<ProductionHomeUrgencyOptions, "scope" | "store" | "onFailure">;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
@@ -245,7 +250,7 @@ export interface ProductionHttpComposition {
   readonly payloadAdmission: HttpGatewayPayloadAdmissionPort;
   readonly health: RuntimeHealthModel;
   readonly metrics: RuntimeMetricsRegistry;
-  readonly home: Pick<ProductionHomeControl, "awaitingCount">;
+  readonly home: Pick<ProductionHomeControl, "awaitingCount" | "approvalCopy" | "score">;
   listen(): Promise<string>;
   close(): Promise<void>;
 }
@@ -1175,6 +1180,20 @@ export async function createProductionHttpComposition(
         source,
         error: error instanceof Error ? error.message : String(error),
       }),
+    ...(options.homeUrgency
+      ? {
+          urgency: {
+            ...options.homeUrgency,
+            scope: { ownerId, agentId },
+            store: repository.homeUrgency(),
+            onFailure: (error) =>
+              options.onHomeDiagnostic?.({
+                event: "home.urgency_failed",
+                error: error instanceof Error ? error.message : String(error),
+              }),
+          },
+        }
+      : {}),
   });
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
@@ -1306,6 +1325,7 @@ export async function createProductionHttpComposition(
           port: httpConfiguration.listenPort,
         });
         searchIndexer.start();
+        home.startScoring();
         return address;
       }
       await prepareUnixSocketPath(unixSocketPath, { adoptExistingDirectory: false });
@@ -1318,10 +1338,12 @@ export async function createProductionHttpComposition(
         throw error;
       }
       searchIndexer.start();
+      home.startScoring();
       return unixSocketPath;
     },
     close: async () => {
       searchIndexer.stop();
+      home.stopScoring();
       try {
         await app.close();
       } finally {

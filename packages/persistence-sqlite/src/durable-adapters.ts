@@ -41,6 +41,7 @@ import type {
   ReliableEventPort,
   ReliableEventSinkPort,
   ReviewPrereviewStorePort,
+  HomeUrgencyStorePort,
   RunCheckpointStore,
   RunDispatchCandidate,
   RunDispatchPort,
@@ -1005,6 +1006,15 @@ export class SqliteDurableAdapters {
       reopenBatch: (input) => this.context.write("externalMemoryProposal.reopenBatch", input),
       dropDiscardedText: (input) =>
         this.context.write("externalMemoryProposal.dropDiscardedText", input),
+    });
+  }
+
+  homeUrgency(): HomeUrgencyStorePort {
+    return Object.freeze<HomeUrgencyStorePort>({
+      listScores: (input) => this.context.read("homeUrgency.listScores", input),
+      listRecentFailures: (input) => this.context.read("homeUrgency.listRecentFailures", input),
+      countSince: (input) => this.context.read("homeUrgency.countSince", input),
+      recordCall: (input) => this.context.write("homeUrgency.recordCall", input),
     });
   }
 

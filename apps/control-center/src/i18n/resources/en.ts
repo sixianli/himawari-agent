@@ -1568,6 +1568,7 @@ export const messages = {
   "sensitive.purpose.mail-judgment": "email check",
   "sensitive.purpose.action-review": "action review",
   "sensitive.purpose.review-prereview": "model pre-rating",
+  "sensitive.purpose.home-urgency": "home urgency scoring",
   "sensitive.purpose.other": "other",
   "sensitive.maskedOnce": "{time} hidden once",
   "sensitive.maskedMany":

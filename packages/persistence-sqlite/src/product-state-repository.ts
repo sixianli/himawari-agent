@@ -51,6 +51,7 @@ import type {
   ReliableEventPort,
   ReliableEventRecord,
   ReviewPrereviewStorePort,
+  HomeUrgencyStorePort,
   RunCheckpointStore,
   RunDispatchPort,
   RunExecutionSourcePort,
@@ -566,6 +567,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   reviewPrereview(): ReviewPrereviewStorePort {
     return this.durable.reviewPrereview();
+  }
+
+  homeUrgency(): HomeUrgencyStorePort {
+    return this.durable.homeUrgency();
   }
 
   externalMemoryProposals(): ExternalMemoryProposalStorePort {

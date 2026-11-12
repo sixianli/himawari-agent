@@ -1783,6 +1783,75 @@ it("accepts Muse intake only with a boolean switch and one secret whose purpose 
   }
 });
 
+it("accepts home urgency scoring settings, fills in the defaults, and refuses values out of range", () => {
+  const raw = config("/tmp/himawari-home-urgency-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  raw["runPolicy"] = { ...policy, homeUrgency: {} };
+  expect(parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy?.homeUrgency).toEqual(
+    {
+      enabled: true,
+      dailyLimit: 1_000,
+      dailyCostMicros: 1_000_000,
+      perCall: 20,
+      referenceLimit: 30,
+      requestTimeoutMs: 30_000,
+      checkIntervalSeconds: 60,
+      retryAfterHours: 24,
+      affirmLabelMax: { "zh-CN": 6, ja: 8, en: 16 },
+    },
+  );
+  raw["runPolicy"] = {
+    ...policy,
+    homeUrgency: {
+      enabled: false,
+      modelRef: "model-primary",
+      dailyLimit: 0,
+      perCall: 5,
+      affirmLabelMax: { "zh-CN": 4, fr: 12 },
+    },
+  };
+  expect(
+    parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy?.homeUrgency,
+  ).toMatchObject({
+    enabled: false,
+    modelRef: "model-primary",
+    dailyLimit: 0,
+    perCall: 5,
+    referenceLimit: 30,
+    affirmLabelMax: { "zh-CN": 4, fr: 12 },
+  });
+  raw["runPolicy"] = policy;
+  expect(
+    parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy?.homeUrgency,
+  ).toBeUndefined();
+  for (const invalid of [
+    { enabled: "yes" },
+    { unknown: 1 },
+    { modelRef: "model-embedding" },
+    { modelRef: "model-missing" },
+    { dailyLimit: -1 },
+    { dailyLimit: 100_001 },
+    { perCall: 0 },
+    { perCall: 51 },
+    { referenceLimit: 201 },
+    { requestTimeoutMs: 10 },
+    { checkIntervalSeconds: 5 },
+    { retryAfterHours: 0 },
+    { affirmLabelMax: { "zh-CN": 0 } },
+    { affirmLabelMax: { "zh-CN": 65 } },
+    { affirmLabelMax: { "not a tag": 6 } },
+    { affirmLabelMax: [6] },
+  ]) {
+    raw["runPolicy"] = { ...policy, homeUrgency: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z")).toThrow();
+  }
+});
+
 it("[P4-5] accepts a real memory eval with a model that may see private and sensitive data and a weekly cap of at most 0.5 USD", () => {
   const raw = config("/tmp/himawari-real-eval-config");
   const descriptors = raw["modelDescriptors"] as Record<string, unknown>[];

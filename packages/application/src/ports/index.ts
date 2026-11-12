@@ -50,6 +50,7 @@ export * from "./proactivity.js";
 export * from "./real-eval.js";
 export * from "./recent-authentication.js";
 export * from "./review-prereview.js";
+export * from "./home-urgency.js";
 export * from "./run-checkpoints.js";
 export * from "./run-dispatch.js";
 export * from "./run-execution-source.js";

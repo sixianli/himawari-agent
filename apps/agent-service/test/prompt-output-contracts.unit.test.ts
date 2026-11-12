@@ -60,6 +60,7 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseGeneratedQuestion: application.parseGeneratedQuestion,
   parseJudgeVerdict: application.parseJudgeVerdict,
   parsePrereview: application.parsePrereview,
+  parseHomeUrgency: application.parseHomeUrgency,
 };
 
 const NOT_COVERED = new Set(["memory.consolidation", "memory.consolidation.format"]);
@@ -87,6 +88,7 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
       [
         "eval.real-memory.judge",
         "eval.real-memory.question",
+        "home.urgency",
         "mail.judgment",
         "memory.capture",
         "memory.conversation-review",
@@ -155,6 +157,23 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
     expect(application.parseJudgeVerdict(JSON.stringify({ verdict: "correct" }))).toBe("correct");
     expect(application.parseJudgeVerdict(JSON.stringify({ result: "correct" }))).toBeNull();
     expect(application.parseJudgeVerdict("答对了")).toBeNull();
+  });
+
+  it("home urgency: accepts the items JSON the prompt asks for, and rejects a renamed key and plain text", () => {
+    expect(
+      application
+        .parseHomeUrgency(
+          JSON.stringify({
+            items: [{ n: 1, score: 640, sentence: "给田中发确认邮件", affirm: "发出去" }],
+          }),
+          1,
+        )
+        .get(1),
+    ).toEqual({ score: 640, sentence: "给田中发确认邮件", affirm: "发出去" });
+    expect(
+      application.parseHomeUrgency(JSON.stringify({ scores: [{ n: 1, score: 640 }] }), 1).size,
+    ).toBe(0);
+    expect(application.parseHomeUrgency("第一件最要紧。", 1).size).toBe(0);
   });
 
   it("mail judgment: rejects a renamed top-level key and plain text", () => {
