@@ -88,18 +88,29 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     throw new DataExportError(DATA_EXPORT_ERROR_CODES.EVIDENCE_REQUIRES_SEAL);
   const snapshot = readSnapshot(options.database, options.scope, options.withEvidence === true);
   const texts = new Map<string, string>();
+  const restrictedRefs = new Set(
+    snapshot.restrictedMemoryTexts.map((row) => str(row["content_ref"])),
+  );
+  let unreadableRestricted = 0;
   for (const [ref, payload] of snapshot.payloads) {
-    if ("unavailable" in payload) continue;
-    texts.set(
-      ref,
+    if ("unavailable" in payload) {
+      if (restrictedRefs.has(ref)) unreadableRestricted += 1;
+      continue;
+    }
+    const read = async () =>
       decoder.decode(
         await options.protector.unprotect({
           ownerId: options.scope.ownerId,
           agentId: options.scope.agentId,
           payload,
         }),
-      ),
-    );
+      );
+    if (!restrictedRefs.has(ref)) texts.set(ref, await read());
+    else {
+      const text = await read().catch(() => null);
+      if (text === null) unreadableRestricted += 1;
+      else texts.set(ref, text);
+    }
   }
   const originals: { [key: string]: JsonValue } = {};
   const withheldKeys = new Set<string>();
@@ -593,7 +604,13 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     {
       what: "保存进受限（restricted）记忆的其他 agent 提议，以及正文和它相同的提议",
       count: restrictedProposals,
-      reason: "正文就是那条受限记忆的文字，和受限记忆一样不导出，明文和封存文件里都没有",
+      reason:
+        "正文和受限记忆的文字相同，或已保存进受限记忆；和受限记忆一样不导出，明文和封存文件里都没有",
+    },
+    {
+      what: "读不出文字、没法和提议比较的受限（restricted）记忆版本",
+      count: unreadableRestricted,
+      reason: "密文缺失或解不开；和它同文的提议认不出来，会照常导出",
     },
     {
       what: "写入时原文已被删除的历史版本和引用原话",

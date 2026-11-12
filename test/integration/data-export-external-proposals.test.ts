@@ -314,6 +314,17 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
       id: "memory-restricted",
       text: restricted,
       classification: "restricted",
+      versions: [{ kind: "created", text: "受限记忆的旧版本", at: "2026-11-01T00:00:00.000Z" }],
+    });
+    await seedMemory(source, { id: "memory-broken", text: "坏掉的", classification: "restricted" });
+    source.database
+      .prepare("UPDATE payloads SET ciphertext = x'00' WHERE ref = 'payload-memory-broken'")
+      .run();
+    await seedProposal(source, {
+      id: "proposal-restricted-old",
+      text: "受限记忆的旧版本",
+      status: "pending",
+      textSha256: proposalTextDigest("受限记忆的旧版本"),
     });
     await seedProposal(source, {
       id: "proposal-restricted-link",
@@ -342,6 +353,7 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
       "proposal-restricted-link",
       "proposal-restricted-pending",
       "proposal-restricted-copy",
+      "受限记忆的旧版本",
     ];
     for (const [path, bytes] of files)
       if (path !== SEALED_FILE)
@@ -352,7 +364,8 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
     expect(
       manifest.omitted.find(({ what }) => what.includes("受限（restricted）记忆的其他 agent 提议"))
         ?.count,
-    ).toBe(3);
+    ).toBe(4);
+    expect(manifest.omitted.find(({ what }) => what.includes("没法和提议比较"))?.count).toBe(1);
     const target = await side("proposals-restricted");
     const report = await importInto(target, files, PASSPHRASE);
     expect(report.imported.externalProposals).toBe(5);
