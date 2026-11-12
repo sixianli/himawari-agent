@@ -69,6 +69,7 @@ export interface ControlCenterRuntimeConfiguration {
   readonly healthDependenciesAvailable?: boolean;
   readonly filesAvailable?: boolean;
   readonly filePreviewAvailable?: boolean;
+  readonly installedDeviceApi?: boolean;
   readonly installedGatewayV2Operations?: readonly string[];
   readonly ownerId: string;
   readonly agentId: string;
@@ -131,6 +132,7 @@ export async function loadRuntimeConfiguration(
     readonly healthDependenciesAvailable?: unknown;
     readonly filesAvailable?: unknown;
     readonly filePreviewAvailable?: unknown;
+    readonly installedDeviceApi?: unknown;
     readonly installedGatewayV2Operations?: unknown;
     readonly ownerId?: unknown;
     readonly agentId?: unknown;
@@ -257,6 +259,7 @@ export async function loadRuntimeConfiguration(
     healthDependenciesAvailable: value.healthDependenciesAvailable === true,
     filesAvailable: value.filesAvailable === true,
     filePreviewAvailable: value.filesAvailable === true && value.filePreviewAvailable === true,
+    installedDeviceApi: value.installedDeviceApi === true,
     recentAuthenticationRef,
     primaryModel: normalizedPrimary,
     primaryModelRef,

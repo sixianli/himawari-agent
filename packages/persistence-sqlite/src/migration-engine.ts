@@ -721,6 +721,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0092_real_eval.sql",
   },
+  {
+    sequence: 93,
+    name: "paired_devices",
+    changeSet: "paired-devices",
+    phase: "expand" as const,
+    file: "0093_paired_devices.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

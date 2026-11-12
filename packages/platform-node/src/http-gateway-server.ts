@@ -6,6 +6,7 @@ import {
   type AgentGatewayV2Port,
   type AgentThreadGatewayPort,
   ApplicationPortError,
+  type DeviceConfiguration,
   type GatewayAuthenticationContext,
   type GatewayV2StreamItem,
   PORT_ERROR_CODES,
@@ -32,6 +33,13 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
+import { registerDeviceApiRoutes } from "./device-api-routes.js";
+import { DeviceSignatureError } from "./device-request-signature.js";
+import {
+  PAIRED_DEVICE_ERROR_CODES,
+  PairedDeviceError,
+  type PairedDeviceService,
+} from "./paired-device-service.js";
 import { withPreviewStorage } from "./preview-page-storage.js";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
 
@@ -111,6 +119,10 @@ export interface HttpGatewayServerOptions {
   readonly maximumBodyBytes?: number;
   readonly maximumStaticAssetBytes?: number;
   readonly heartbeatMilliseconds?: number;
+  readonly devices?: {
+    readonly service: PairedDeviceService;
+    readonly configuration: () => DeviceConfiguration;
+  };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
   readonly browserConfiguration?: {
@@ -806,6 +818,12 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
   });
 
   const previewOrigin = options.previewOrigin ? new URL(options.previewOrigin) : undefined;
+  const deviceApiInstalled = Boolean(
+    options.devices &&
+      options.threadGateway &&
+      options.payloadAdmission &&
+      options.browserConfiguration,
+  );
   if (
     previewOrigin &&
     (previewOrigin.origin !== options.previewOrigin || previewOrigin.host === publicOrigin.host)
@@ -872,6 +890,19 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
   });
 
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof PairedDeviceError) {
+      sendJson(reply, error.statusCode, { error: { code: error.code } });
+      return;
+    }
+    if (error instanceof DeviceSignatureError) {
+      sendJson(reply, 401, {
+        error: {
+          code: error.code,
+          ...(error.serverTime === undefined ? {} : { serverTime: error.serverTime }),
+        },
+      });
+      return;
+    }
     if (error instanceof HttpGatewayError) {
       sendJson(reply, error.statusCode, { error: { code: error.code } });
       return;
@@ -966,6 +997,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         healthDependenciesAvailable: options.health !== undefined,
         filesAvailable: options.files !== undefined,
         filePreviewAvailable: options.files !== undefined && previewOrigin !== undefined,
+        installedDeviceApi: deviceApiInstalled,
         agentId: configuration.agentId,
         deploymentId: configuration.deploymentId,
         authorityEpoch: configuration.authorityEpoch,
@@ -1226,6 +1258,72 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         },
       );
     }
+  }
+
+  if (
+    options.devices &&
+    options.threadGateway &&
+    options.payloadAdmission &&
+    options.browserConfiguration
+  ) {
+    const payloadAdmission = options.payloadAdmission;
+    const browserConfiguration = options.browserConfiguration;
+    registerDeviceApiRoutes(app, {
+      publicOrigin,
+      devices: options.devices.service,
+      configuration: options.devices.configuration,
+      authority: {
+        agentId: browserConfiguration.agentId,
+        deploymentId: browserConfiguration.deploymentId,
+        authorityEpoch: browserConfiguration.authorityEpoch,
+        fencingToken: browserConfiguration.fencingToken,
+      },
+      threadGateway: options.threadGateway,
+      protectText: async (input) =>
+        (
+          await payloadAdmission.protect({
+            authentication: input.authentication,
+            idempotencyKey: input.idempotencyKey,
+            content: input.content,
+            dataClassification: "private",
+            contentType: "text/plain",
+          })
+        ).payloadRef,
+      streamThreadEvents: streamThreadGatewayEvents,
+      webAuthenticate: (request) => {
+        assertMutationBoundary(request, publicOrigin);
+        return authenticate(request, options);
+      },
+      webMutationGuard: async (request, authentication) => {
+        const accepted = await options.csrf.verify({
+          authentication,
+          token: header(request, "x-csrf-token"),
+          method: request.method,
+          path: requestPath(request),
+        });
+        if (!accepted) throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.CSRF_REJECTED, 403);
+      },
+      setStreamHeaders: (reply) => {
+        setSecurityHeaders(reply, previewOrigin);
+        reply
+          .header("cache-control", "no-cache, no-store")
+          .header("connection", "keep-alive")
+          .header("x-accel-buffering", "no")
+          .type(SSE_CONTENT_TYPE);
+      },
+      sendJson,
+      rejectNotAllowed: () => {
+        throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PATH_NOT_ALLOWED, 404);
+      },
+      rejectBody: (statusCode) => {
+        if (statusCode === 413)
+          throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.BODY_TOO_LARGE, 413);
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, statusCode);
+      },
+      rejectError: (error) => {
+        throw error;
+      },
+    });
   }
 
   if (options.payloadAdmission) {

@@ -38,6 +38,7 @@ export * from "./ledger-observation.js";
 export * from "./model-usage.js";
 export * from "./device-limits.js";
 export * from "./real-eval.js";
+export * from "./paired-devices.js";
 export * from "./web-push.js";
 export * from "./memory-projection.js";
 export * from "./model-budget.js";

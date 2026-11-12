@@ -12,6 +12,8 @@ import type {
 import {
   AgentThreadGatewayService,
   ApplicationPortError,
+  DEVICE_CONFIGURATION_DEFAULTS,
+  defaultDeviceHardLimits,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
@@ -76,6 +78,7 @@ import {
   SessionBoundCsrfService,
   ThreadSearchBackgroundIndexer,
   ThreadSearchProjector,
+  PairedDeviceService,
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
@@ -443,7 +446,7 @@ export class ProductionThreadGatewayAccessPolicy implements ThreadGatewayAccessP
   }
 }
 
-class ProductionHttpPayloadAdmission implements HttpGatewayPayloadAdmissionPort {
+export class ProductionHttpPayloadAdmission implements HttpGatewayPayloadAdmissionPort {
   readonly #ownerId: OwnerId;
   readonly #agentId: AgentId;
   readonly #sessions: SessionDeviceStatePort;
@@ -735,6 +738,10 @@ export async function createProductionHttpComposition(
   const agentId = configuration.agentId;
   const identityState = scopedIdentityState(repository.ownerIdentityState(), ownerId);
   const sessionsState = repository.sessionDeviceState();
+  const deviceConfiguration = configuration.runPolicy?.device ?? {
+    ...DEVICE_CONFIGURATION_DEFAULTS,
+    limits: defaultDeviceHardLimits(),
+  };
   const payloadKey = soleSecret(configuration, "payload-encryption");
   const payloadProtector = new EnvelopePayloadProtector({
     keys: secretSources.keys,
@@ -1162,6 +1169,20 @@ export async function createProductionHttpComposition(
     gatewayV2,
     threadSearch,
     files,
+    devices: {
+      service: new PairedDeviceService({
+        store: repository.pairedDevices(),
+        sessions: sessionsState,
+        configuration: () => deviceConfiguration,
+        ownerActive: async (scope) => {
+          if (scope.ownerId !== ownerId || scope.agentId !== agentId) return false;
+          if (identityConfiguration.kind === "built-in") return true;
+          return (await identityState.readByOwner(ownerId))?.status === "active";
+        },
+        now,
+      }),
+      configuration: () => deviceConfiguration,
+    },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
     ...(options.onSlowRequest ? { onSlowRequest: options.onSlowRequest } : {}),
   });

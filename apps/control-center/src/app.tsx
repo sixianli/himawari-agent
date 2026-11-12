@@ -14,6 +14,7 @@ import {
   type ControlCenterUiLocale,
   THREAD_CURSOR_STORAGE_KEY,
 } from "./browser-storage.js";
+import { DeviceSettings } from "./components/device-settings.js";
 import { SignOutSetting } from "./components/sign-out-setting.js";
 import { AccountDevices, AccountLogin, accountRequest } from "./components/account-login.js";
 import { BrowserEntryScreen } from "./components/browser-entry-screen.js";
@@ -593,6 +594,11 @@ function LocalizedControlCenterApp({
             {muse ? <MuseDataSettings muse={muse} message={message} /> : null}
           </>
         )
+      }
+      settingsDevices={
+        configuration?.installedDeviceApi ? (
+          <DeviceSettings csrfToken={configuration.csrfToken} message={message} />
+        ) : undefined
       }
       settingsNotifications={
         (client && configuration?.installedGatewayV2Operations?.includes("push.status.read")) ||

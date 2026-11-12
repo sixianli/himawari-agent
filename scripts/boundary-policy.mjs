@@ -151,6 +151,7 @@ export const browserExternalPackages = new Set([
   "react-intl",
   "marked",
   "pdfjs-dist",
+  "qrcode-generator",
   "docx-preview",
   "exceljs",
   "fflate",

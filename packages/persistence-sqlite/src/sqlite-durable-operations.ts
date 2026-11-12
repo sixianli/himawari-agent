@@ -92,6 +92,7 @@ import { SqliteLedgerObservationOperations } from "./sqlite-observation-operatio
 import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
 import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
 import { SqliteRealEvalOperations } from "./sqlite-real-eval-operations.ts";
+import { SqlitePairedDeviceOperations } from "./sqlite-paired-device-operations.ts";
 import { SqliteWebPushOperations } from "./sqlite-web-push-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
 import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
@@ -375,6 +376,7 @@ export class SqliteDurableOperations {
   private readonly modelUsage: SqliteModelUsageOperations;
   private readonly realEval: SqliteRealEvalOperations;
   private readonly webPush: SqliteWebPushOperations;
+  private readonly pairedDevices: SqlitePairedDeviceOperations;
   private readonly threadArtifacts: SqliteThreadArtifactOperations;
   private readonly threadPromptBundles: SqliteThreadPromptBundleOperations;
   private readonly sensitiveInterceptions: SqliteSensitiveInterceptionOperations;
@@ -470,6 +472,7 @@ export class SqliteDurableOperations {
     this.modelUsage = new SqliteModelUsageOperations(database, fail, assertDiskHeadroom);
     this.realEval = new SqliteRealEvalOperations(database, fail, assertDiskHeadroom);
     this.webPush = new SqliteWebPushOperations(database, fail, assertDiskHeadroom);
+    this.pairedDevices = new SqlitePairedDeviceOperations(database, fail, assertDiskHeadroom);
     this.threadArtifacts = new SqliteThreadArtifactOperations(database, fail, assertDiskHeadroom);
     this.threadPromptBundles = new SqliteThreadPromptBundleOperations(
       database,
@@ -600,6 +603,8 @@ export class SqliteDurableOperations {
     if (operation.startsWith("modelUsage.")) return this.modelUsage.execute(operation, payload);
     if (operation.startsWith("realEval.")) return this.realEval.execute(operation, payload);
     if (operation.startsWith("webPush.")) return this.webPush.execute(operation, payload);
+    if (operation.startsWith("pairedDevices."))
+      return this.pairedDevices.execute(operation, payload);
     if (operation.startsWith("threadArtifact."))
       return this.threadArtifacts.execute(operation, payload);
     if (operation.startsWith("threadPromptBundle."))

@@ -41,6 +41,7 @@ import type {
   LedgerObservationPort,
   ModelUsageStorePort,
   RealEvalStorePort,
+  PairedDeviceStorePort,
   WebPushStorePort,
   MemoryBookStorePort,
   MemoryIndexStorePort,
@@ -596,6 +597,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   webPush(): WebPushStorePort {
     return this.durable.webPush();
+  }
+
+  pairedDevices(): PairedDeviceStorePort {
+    return this.durable.pairedDevices();
   }
 
   proactive(): ProactiveStorePort {
