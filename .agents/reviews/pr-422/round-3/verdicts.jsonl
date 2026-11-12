@@ -1,0 +1,1 @@
+{"id": "r3-ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`npm run check` 并不校验工作区里的这份候选文件", "valid": true, "class": "improvement", "severity": "low", "trigger": "只凭 npm run check 判断例外文件正确", "consequence": "产物成员字节和命中数只有 CI 核对；已另跑 validateSecurityExceptions", "modelSeverity": "low"}
