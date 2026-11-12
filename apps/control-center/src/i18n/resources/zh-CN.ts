@@ -1454,6 +1454,7 @@ export const messages = {
   "devices.listLabel": "配对的设备",
   "devices.pendingNotice": "有一台叫“{name}”的{kind}想配对。不认识就点“移除”。",
   "devices.revoked": "{kind}，已移除",
+  "devices.pairingNumber": "核对数字 {number}：和设备上显示的一样再点“确认”。",
   "devices.confirm": "确认",
   "devices.rename": "改名",
   "devices.name": "设备名",

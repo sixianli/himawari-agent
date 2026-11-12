@@ -16,6 +16,8 @@ const deviceColumns = `id, owner_id AS ownerId, agent_id AS agentId, revision, k
   web_device_id AS webDeviceId, web_session_id AS webSessionId, paired_at AS pairedAt, confirmed_at AS confirmedAt,
   revoked_at AS revokedAt, last_seen_at AS lastSeenAt`;
 
+export const INTERNAL_SESSION_NEVER_RECENTLY_AUTHENTICATED = "1970-01-01T00:00:00.000Z";
+
 type DeviceRow = Omit<PairedDevice, "supportedActions"> & { readonly supportedActions: string };
 
 function toDevice(row: DeviceRow): PairedDevice {
@@ -83,8 +85,11 @@ export class SqlitePairedDeviceOperations {
       this.fail("PORT_INVALID_OPERATION", "Pairing code is invalid");
     this.database.transaction(() => {
       this.database
-        .prepare("DELETE FROM device_pairing_codes WHERE expires_at <= ? OR used_at IS NOT NULL")
-        .run(now);
+        .prepare(
+          `DELETE FROM device_pairing_codes
+            WHERE expires_at <= ? OR used_at IS NOT NULL OR (owner_id = ? AND agent_id = ?)`,
+        )
+        .run(now, input.ownerId, input.agentId);
       this.database
         .prepare(
           `INSERT INTO device_pairing_codes
@@ -202,7 +207,7 @@ export class SqlitePairedDeviceOperations {
           input.webAuthenticationRef,
           now,
           now,
-          now,
+          INTERNAL_SESSION_NEVER_RECENTLY_AUTHENTICATED,
         );
       this.database
         .prepare(

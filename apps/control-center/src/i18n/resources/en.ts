@@ -1572,6 +1572,8 @@ export const messages = {
   "devices.pendingNotice":
     "A {kind} named “{name}” wants to pair. If you don't recognize it, remove it.",
   "devices.revoked": "{kind}, removed",
+  "devices.pairingNumber":
+    "Check number {number}. Confirm only if your device shows the same number.",
   "devices.confirm": "Confirm",
   "devices.rename": "Rename",
   "devices.name": "Device name",

@@ -41,6 +41,7 @@ import type { SqliteProductStateRepository } from "@himawari-agent/persistence-s
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
   assertProductionSecretSource,
+  assertUnixSocketPathLength,
   authenticateHttpRequest,
   BoundedJwksFetcher,
   BrowserTextPayloadReader,
@@ -50,6 +51,7 @@ import {
   buildHttpGatewayServer,
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
+  DEVICE_ACCESS_SECRET_PURPOSES,
   digestIdentityCredential,
   EnvelopePayloadProtector,
   type HostProviderSecretSource,
@@ -63,22 +65,21 @@ import {
   IdentityGatewayError,
   type JwksFetcher,
   OwnerBootstrapService,
-  prepareUnixSocketPath,
-  removeUnixSocketFile,
-  sealUnixSocket,
-  type UnixSocketIdentity,
-  assertUnixSocketPathLength,
+  PairedDeviceService,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
+  prepareUnixSocketPath,
   RuntimeHealthModel,
   RuntimeMetricsRegistry,
   registerBuiltInIdentityRoutes,
   registerIdentityAuthenticationRoutes,
+  removeUnixSocketFile,
   ScopedThreadSearchTokenizer,
   SessionBoundCsrfService,
+  sealUnixSocket,
   ThreadSearchBackgroundIndexer,
   ThreadSearchProjector,
-  PairedDeviceService,
+  type UnixSocketIdentity,
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
@@ -89,13 +90,12 @@ import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
 import { registerDataExportRoute } from "./production-data-export.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
+import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
 } from "./production-memory-control.js";
-import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
-import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
 import {
   PRODUCTION_MUSE_OPERATIONS,
@@ -109,6 +109,7 @@ import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   ProductionOwnerPreferencesControl,
 } from "./production-owner-preferences-control.js";
+import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
   PROACTIVE_GOOGLE_START_PATH,
@@ -742,6 +743,23 @@ export async function createProductionHttpComposition(
     ...DEVICE_CONFIGURATION_DEFAULTS,
     limits: defaultDeviceHardLimits(),
   };
+  const deviceAccessSecrets = DEVICE_ACCESS_SECRET_PURPOSES.map((purpose) =>
+    configuration.secretReferences.find((entry) => entry.purpose === purpose),
+  );
+  const [deviceAccessClientId, deviceAccessClientSecret] = deviceAccessSecrets;
+  const devicePairingAccess =
+    deviceAccessClientId && deviceAccessClientSecret
+      ? {
+          clientId: await secretSources.provider.resolve(
+            deviceAccessClientId.ref,
+            deviceAccessClientId.version,
+          ),
+          clientSecret: await secretSources.provider.resolve(
+            deviceAccessClientSecret.ref,
+            deviceAccessClientSecret.version,
+          ),
+        }
+      : undefined;
   const payloadKey = soleSecret(configuration, "payload-encryption");
   const payloadProtector = new EnvelopePayloadProtector({
     keys: secretSources.keys,
@@ -1182,6 +1200,7 @@ export async function createProductionHttpComposition(
         now,
       }),
       configuration: () => deviceConfiguration,
+      ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
     },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
     ...(options.onSlowRequest ? { onSlowRequest: options.onSlowRequest } : {}),

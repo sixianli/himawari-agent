@@ -1557,6 +1557,8 @@ export const messages = {
   "devices.pendingNotice":
     "「{name}」という {kind} がペアリングを求めています。心当たりがなければ削除してください。",
   "devices.revoked": "{kind}・削除済み",
+  "devices.pairingNumber":
+    "確認番号 {number}：デバイスの表示と同じ場合だけ「確認」を押してください。",
   "devices.confirm": "確認",
   "devices.rename": "名前を変更",
   "devices.name": "デバイス名",

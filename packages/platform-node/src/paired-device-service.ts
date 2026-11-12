@@ -84,6 +84,10 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
   return Object.keys(value).every((key) => keys.includes(key));
 }
 
+function canonicalSpki(value: string): string {
+  return publicKeyFromSpkiBase64(value).export({ format: "der", type: "spki" }).toString("base64");
+}
+
 export class PairedDeviceService {
   readonly #options: PairedDeviceServiceOptions;
   readonly #owners: PairedDeviceOwnerDirectory;
@@ -151,12 +155,16 @@ export class PairedDeviceService {
       input["devicePublicKey"] === input["confirmPublicKey"]
     )
       throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_REQUEST_INVALID, 400);
+    let devicePublicKey: string;
+    let confirmPublicKey: string;
     try {
-      publicKeyFromSpkiBase64(input["devicePublicKey"]);
-      publicKeyFromSpkiBase64(input["confirmPublicKey"]);
+      devicePublicKey = canonicalSpki(input["devicePublicKey"]);
+      confirmPublicKey = canonicalSpki(input["confirmPublicKey"]);
     } catch {
       throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_REQUEST_INVALID, 400);
     }
+    if (devicePublicKey === confirmPublicKey)
+      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_REQUEST_INVALID, 400);
     const result = await this.#options.store.redeemPairingCode({
       codeHash: hashCode(input["pairingCode"]),
       now: this.#now().toISOString(),
@@ -165,8 +173,8 @@ export class PairedDeviceService {
         kind: input["kind"] as PairedDeviceKind,
         name,
         releaseChannel: input["releaseChannel"] as PairedDeviceReleaseChannel,
-        devicePublicKey: input["devicePublicKey"],
-        confirmPublicKey: input["confirmPublicKey"],
+        devicePublicKey,
+        confirmPublicKey,
       },
     });
     switch (result.kind) {

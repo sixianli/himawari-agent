@@ -11,6 +11,7 @@ import {
   ProductThreadGatewayAdapter,
   ThreadCommandService,
   ThreadDeletionCoordinationService,
+  ThreadExecutionProjection,
   ThreadForkService,
   ThreadQueryService,
 } from "@himawari-agent/application";
@@ -29,7 +30,9 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  BrowserTextPayloadReader,
   buildHttpGatewayServer,
+  type DevicePairingAccess,
   EnvelopePayloadProtector,
   PairedDeviceService,
   SessionBoundCsrfService,
@@ -83,7 +86,11 @@ export interface Harness {
 }
 
 export async function harness(
-  options: { readonly origin?: string; readonly staticRoot?: string } = {},
+  options: {
+    readonly origin?: string;
+    readonly staticRoot?: string;
+    readonly pairingAccess?: DevicePairingAccess;
+  } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
   const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-device-api-"));
@@ -145,6 +152,14 @@ export async function harness(
     authenticationRef: webSession.authenticationRef,
     sessionId: webSession.id,
   };
+  const protector = new EnvelopePayloadProtector({
+    keys: {
+      kind: "memory-development",
+      productionSuitable: false,
+      resolve: async () => new Uint8Array(32).fill(9),
+    },
+    activeKey: { keyRef: "test-kek", kekVersion: "v1", dekVersion: "v1" },
+  });
   const threads = repository.threadRepository();
   const commands = new ThreadCommandService({
     repository: threads,
@@ -165,19 +180,18 @@ export async function harness(
           clock,
           authority: () => authority,
         }),
+        execution: new ThreadExecutionProjection({
+          threads,
+          trace: repository.traceStore(),
+          payloads: (owner, agent) =>
+            repository.payloadStore(createOwnerId(owner), createAgentId(agent)),
+          protector,
+        }),
         clock,
         waitForEvents: async () => new Promise((resolve) => setTimeout(resolve, 20)),
       });
       return { controlPlane: adapter, reads: adapter };
     })(),
-  });
-  const protector = new EnvelopePayloadProtector({
-    keys: {
-      kind: "memory-development",
-      productionSuitable: false,
-      resolve: async () => new Uint8Array(32).fill(9),
-    },
-    activeKey: { keyRef: "test-kek", kekVersion: "v1", dekVersion: "v1" },
   });
   const configuration = {
     current: {
@@ -218,6 +232,11 @@ export async function harness(
       protector,
       clock: () => clock.now(),
     }),
+    payloadRead: new BrowserTextPayloadReader({
+      payloads: (owner, agent) =>
+        repository.payloadStore(createOwnerId(owner), createAgentId(agent)),
+      protector,
+    }),
     browserConfiguration: {
       agentId,
       deploymentId,
@@ -234,6 +253,7 @@ export async function harness(
         now,
       }),
       configuration: () => configuration.current,
+      ...(options.pairingAccess ? { pairingAccess: options.pairingAccess } : {}),
     },
   });
   await app.ready();

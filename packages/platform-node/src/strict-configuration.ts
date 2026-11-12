@@ -1466,6 +1466,11 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   });
 }
 
+export const DEVICE_ACCESS_SECRET_PURPOSES = [
+  "device-access-client-id",
+  "device-access-client-secret",
+] as const;
+
 export function parseProductConfiguration(value: unknown, loadedAt: string): ProductConfiguration {
   const input = record(value, "configuration");
   rejectUnknown(
@@ -1642,6 +1647,15 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       identity.csrf.keySecretRef,
       "identity-csrf",
       "configuration.identity.csrf.keySecretRef",
+    );
+  }
+  const deviceAccessCounts = DEVICE_ACCESS_SECRET_PURPOSES.map(
+    (purpose) => secretReferences.filter((entry) => entry.purpose === purpose).length,
+  );
+  if (deviceAccessCounts.some((count) => count > 1) || new Set(deviceAccessCounts).size > 1) {
+    throw invalid(
+      "configuration.secretReferences",
+      "must declare the device access client id and secret together, at most once each",
     );
   }
   const secretReferenceNames = new Set(secretReferences.map(({ ref }) => ref));
