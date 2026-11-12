@@ -457,6 +457,8 @@ export function mailReferencePrompt(
   ].join("\n");
 }
 
+const REFERENCE_SHARE_DENOMINATOR = 10;
+
 export function proactivePrompt(
   items: readonly ProactiveSourceItem[],
   now: string,
@@ -678,11 +680,17 @@ export class ProactiveMailCheckService {
     const references = new Map<string, readonly string[]>();
     const perMail = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits }.perMail;
     const size = this.#options.batchSize ?? DEFAULT_BATCH_SIZE;
+    const allowance = Math.floor(
+      this.#options.limits.dailyCostMicros / REFERENCE_SHARE_DENOMINATOR,
+    );
+    let planned = 0;
     for (let start = 0; start < candidates.length; start += size) {
       if (signal.aborted) break;
       const batch = candidates.slice(start, start + size);
       const prompt = mailReferencePrompt(batch, perMail);
       const estimate = this.#options.limits.estimateCostMicros(prompt);
+      if (planned + estimate > allowance) break;
+      planned += estimate;
       if (
         budget.spentToday + budget.costMicros + budget.reserveMicros + estimate >
         this.#options.limits.dailyCostMicros

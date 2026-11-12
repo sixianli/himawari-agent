@@ -2649,7 +2649,7 @@ describe("proactive Gmail check acceptance", () => {
       expect(queries).toEqual([`"${ORDER}" -in:trash -in:spam`]);
     });
 
-    it("REVERSE: a number the model invented, one that is not in the mail word for word, or a YYYY-MM-DD date is never searched", async () => {
+    it("REVERSE: a number the model invented, or one that is not in the mail word for word, is never searched", async () => {
       const { queries } = await searchedFor((h) =>
         h.scriptReferences([
           {
@@ -2701,6 +2701,24 @@ describe("proactive Gmail check acceptance", () => {
       await tight.service.run();
       expect(tight.referencePrompts).toEqual([]);
       expect(tight.prompts).toHaveLength(1);
+    });
+
+    it("REVERSE: the number extraction never spends more than a tenth of the day's allowance", async () => {
+      const h = await harness({ dailyCostMicros: 1_000, batchSize: 1 });
+      h.reader.related = (input) =>
+        findRelatedMail({ ...input, transport: transport({ requests: 0 }) });
+      h.reader.items = [
+        today,
+        mail("second", { body: `ご注文番号 ${ORDER} の別件です。` }),
+        mail("third", { body: `ご注文番号 ${ORDER} のさらに別件です。` }),
+      ];
+      h.script([
+        { id: "closing", result: "ignore" },
+        { id: "second", result: "ignore" },
+        { id: "third", result: "ignore" },
+      ]);
+      await h.service.run();
+      expect(h.referencePrompts).toHaveLength(1);
     });
 
     it("negative: a mail that shares only the sender gets no history and no failure mark", async () => {
