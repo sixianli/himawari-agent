@@ -1322,6 +1322,7 @@ export const MESSAGE_IDS = [
   "devices.listLabel",
   "devices.pendingNotice",
   "devices.revoked",
+  "devices.pairingNumber",
   "devices.confirm",
   "devices.rename",
   "devices.name",
@@ -1691,4 +1692,5 @@ export const MESSAGE_SAMPLE_VALUES: Readonly<
   "devices.qrHelp": { time: "09:15" },
   "devices.pendingNotice": { kind: "iPhone", name: "Andy iPhone" },
   "devices.revoked": { kind: "iPhone" },
+  "devices.pairingNumber": { number: "482 913" },
 });

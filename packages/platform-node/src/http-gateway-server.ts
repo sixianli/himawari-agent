@@ -34,7 +34,7 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
-import { registerDeviceApiRoutes } from "./device-api-routes.js";
+import { type DevicePairingAccess, registerDeviceApiRoutes } from "./device-api-routes.js";
 import { DeviceGatewayError } from "./device-gateway.js";
 import { DeviceSignatureError } from "./device-request-signature.js";
 import {
@@ -125,6 +125,7 @@ export interface HttpGatewayServerOptions {
     readonly service: PairedDeviceService;
     readonly configuration: () => DeviceConfiguration;
     readonly audit?: AuditLedgerPort;
+    readonly pairingAccess?: DevicePairingAccess;
   };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
@@ -608,6 +609,7 @@ async function* streamThreadGatewayEvents(input: {
   readonly authentication: GatewayAuthenticationContext;
   readonly subscription: ThreadGatewaySubscription;
   readonly heartbeatMilliseconds: number;
+  readonly include?: (event: ThreadGatewayEvent) => boolean;
 }): AsyncGenerator<string> {
   yield ": connected\n\n";
   const controller = new AbortController();
@@ -662,7 +664,13 @@ async function* streamThreadGatewayEvents(input: {
       }
       if (result.value.done) return;
       const event = result.value.value;
-      yield serializeSse({ event: "message", id: event.payload.cursor, data: event });
+      yield input.include && !input.include(event)
+        ? serializeSse({
+            event: "device.scanned",
+            id: event.payload.cursor,
+            data: { cursor: event.payload.cursor },
+          })
+        : serializeSse({ event: "message", id: event.payload.cursor, data: event });
       pending = iterator.next();
     }
   } finally {
@@ -1271,10 +1279,12 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
   ) {
     const payloadAdmission = options.payloadAdmission;
     const browserConfiguration = options.browserConfiguration;
+    const deviceWatchExecution = options.threadGateway.watchExecution?.bind(options.threadGateway);
     registerDeviceApiRoutes(app, {
       publicOrigin,
       devices: options.devices.service,
       configuration: options.devices.configuration,
+      ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),
       authority: {
         agentId: browserConfiguration.agentId,
         deploymentId: browserConfiguration.deploymentId,
@@ -1299,6 +1309,22 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
           })
         ).payloadRef,
       streamThreadEvents: streamThreadGatewayEvents,
+      ...(options.payloadRead
+        ? {
+            readPayload: ({ authentication, payloadRef }) =>
+              (options.payloadRead as HttpGatewayPayloadReadPort).read({
+                authentication,
+                agentId: browserConfiguration.agentId,
+                payloadRef,
+              }),
+          }
+        : {}),
+      ...(deviceWatchExecution
+        ? {
+            streamExecution: (input) =>
+              streamThreadExecutionEvents({ ...input, watch: deviceWatchExecution }),
+          }
+        : {}),
       webAuthenticate: (request) => {
         assertMutationBoundary(request, publicOrigin);
         return authenticate(request, options);

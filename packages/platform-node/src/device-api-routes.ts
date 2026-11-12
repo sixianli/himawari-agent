@@ -3,16 +3,20 @@ import { Readable } from "node:stream";
 import {
   type AgentThreadGatewayPort,
   type AuditLedgerPort,
+  ApplicationPortError,
   DEVICE_HARD_LIMIT_KEYS,
   DEVICE_HARD_LIMITS,
   type DeviceConfiguration,
   type GatewayAuthenticationContext,
   type PairedDevice,
   type PairedDeviceScope,
+  PORT_ERROR_CODES,
   type ThreadGatewayRequestMessage,
 } from "@himawari-agent/application";
 import {
   THREAD_GATEWAY_SCHEMA_VERSION,
+  type ThreadExecutionEventsSubscription,
+  type ThreadGatewayEvent,
   type ThreadGatewaySubscription,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
@@ -32,6 +36,8 @@ import {
 export const DEVICE_API_PREFIX = "/api/device/v1" as const;
 export const DEVICE_MANAGEMENT_PREFIX = "/api/devices/v1" as const;
 
+const THREAD_ID_SEGMENT = "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}";
+
 export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "pair", signed: false },
   { method: "GET", path: "config", signed: true },
@@ -41,7 +47,37 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "approvals/challenge", signed: true },
   { method: "POST", path: "gateway", signed: true },
   { method: "POST", path: "payloads/text/new", signed: true },
+  { method: "POST", path: "threads", signed: true },
+  { method: "GET", path: "threads/{threadId}", signed: true },
+  { method: "GET", path: "threads/{threadId}/execution-stream", signed: true },
+  { method: "GET", path: "threads/{threadId}/runs/{runId}/execution", signed: true },
+  { method: "POST", path: "payloads/text", signed: true },
 ] as const);
+
+const DEVICE_ROUTE_PATTERNS = DEVICE_API_ROUTES.map((route) => ({
+  method: route.method,
+  pattern: new RegExp(
+    `^${route.path.replace("{threadId}", THREAD_ID_SEGMENT).replace("{runId}", THREAD_ID_SEGMENT)}$`,
+    "u",
+  ),
+}));
+
+export const DEVICE_PAYLOAD_TEXT_MAXIMUM_REFS = 100;
+
+export const DEVICE_THREAD_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "thread.create",
+  "thread.fork",
+  "thread.rename",
+  "thread.archive",
+  "thread.restore",
+  "thread.trash",
+  "thread.delete_permanently",
+  "thread.message.submit",
+  "thread.message.submit_configured",
+  "thread.message.commit_assistant",
+  "thread.run.cancel",
+  "thread.task.resolve",
+]);
 
 const MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/u;
 const MACHINE_STRING = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
@@ -56,7 +92,13 @@ export interface DeviceApiAuthority {
   readonly fencingToken: number;
 }
 
+export interface DevicePairingAccess {
+  readonly clientId: string;
+  readonly clientSecret: string;
+}
+
 export interface DeviceApiRouteOptions {
+  readonly pairingAccess?: DevicePairingAccess;
   readonly publicOrigin: URL;
   readonly devices: PairedDeviceService;
   readonly configuration: () => DeviceConfiguration;
@@ -74,6 +116,21 @@ export interface DeviceApiRouteOptions {
     readonly gateway: AgentThreadGatewayPort;
     readonly authentication: GatewayAuthenticationContext;
     readonly subscription: ThreadGatewaySubscription;
+    readonly heartbeatMilliseconds: number;
+    readonly revalidate: () => Promise<void>;
+    readonly include: (event: ThreadGatewayEvent) => boolean;
+  }) => AsyncGenerator<string>;
+  readonly readPayload?: (input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly payloadRef: string;
+  }) => Promise<{
+    readonly content: string;
+    readonly dataClassification: string;
+    readonly contentType: string;
+  }>;
+  readonly streamExecution?: (input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly subscription: ThreadExecutionEventsSubscription;
     readonly heartbeatMilliseconds: number;
     readonly revalidate: () => Promise<void>;
   }) => AsyncGenerator<string>;
@@ -104,12 +161,33 @@ function requestPath(request: FastifyRequest): string {
   return request.url.split("?", 1)[0] ?? request.url;
 }
 
+function isNotFound(error: unknown): boolean {
+  return error instanceof ApplicationPortError && error.code === PORT_ERROR_CODES.NOT_FOUND;
+}
+
+function pairingAccessFields({ clientId, clientSecret }: DevicePairingAccess) {
+  return { clientId, clientSecret };
+}
+
 function stableSuffix(deviceId: string, messageId: string): string {
   return createHash("sha256").update(`${deviceId}\n${messageId}`).digest("hex").slice(0, 40);
 }
 
+export function devicePairingNumber(input: {
+  readonly devicePublicKey: string;
+  readonly confirmPublicKey: string;
+}): string {
+  const digest = createHash("sha256")
+    .update(Buffer.from("himawari-pairing-v1", "utf8"))
+    .update(Buffer.from(input.devicePublicKey, "base64"))
+    .update(Buffer.from(input.confirmPublicKey, "base64"))
+    .digest();
+  return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, "0");
+}
+
 function presentDevice(device: PairedDevice) {
   return {
+    pairingNumber: device.status === "pending" ? devicePairingNumber(device) : null,
     id: device.id,
     revision: device.revision,
     kind: device.kind,
@@ -173,6 +251,9 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
 
   app.register(
     async (device) => {
+      device.addHook("onRoute", (route) => {
+        route.bodyLimit = DEVICE_HARD_LIMITS["device.request.body_bytes"].maximum;
+      });
       device.removeAllContentTypeParsers();
       device.addContentTypeParser("*", { parseAs: "buffer" }, (_request, body, done) =>
         done(null, body),
@@ -180,7 +261,9 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
       device.addHook("onRequest", async (request) => {
         const path = requestPath(request).slice(DEVICE_API_PREFIX.length + 1);
         if (
-          !DEVICE_API_ROUTES.some((route) => route.method === request.method && route.path === path)
+          !DEVICE_ROUTE_PATTERNS.some(
+            (route) => route.method === request.method && route.pattern.test(path),
+          )
         )
           options.rejectNotAllowed();
         const limit = options.configuration().limits["device.request.body_bytes"];
@@ -223,6 +306,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         return options.rejectBody(400);
       };
 
+      device.all("/", async () => options.rejectNotAllowed());
       device.all("/*", async () => options.rejectNotAllowed());
 
       device.post("/pair", async (request, reply) => {
@@ -241,27 +325,47 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         });
       });
 
+      const envelope = (
+        authenticated: {
+          readonly authentication: GatewayAuthenticationContext;
+          readonly device: PairedDevice;
+        },
+        kind: "query" | "command" | "subscription",
+        type: string,
+        messageId: string,
+      ) => ({
+        schemaVersion: THREAD_GATEWAY_SCHEMA_VERSION,
+        kind,
+        type,
+        messageId,
+        correlationId: `device:${authenticated.device.id}`,
+        causationId: null,
+        scope: {
+          ownerId: authenticated.authentication.ownerId,
+          agentId: options.authority.agentId,
+        },
+        authority: {
+          deploymentId: options.authority.deploymentId,
+          authorityEpoch: options.authority.authorityEpoch,
+          fencingToken: options.authority.fencingToken,
+        },
+        actor: { actorType: "owner", actorId: authenticated.authentication.ownerId },
+      });
+
       device.get("/threads", async (request, reply) => {
-        const { authentication } = await authenticate(request);
+        const authenticated = await authenticate(request);
         const query = new URLSearchParams(rawQuery(request));
         const afterCursor = query.get("after");
         if (afterCursor !== null && !MACHINE_STRING.test(afterCursor)) options.rejectBody(400);
         const response = await options.threadGateway.request(
-          authentication,
+          authenticated.authentication,
           threadGatewayMessageSchema.parse({
-            schemaVersion: THREAD_GATEWAY_SCHEMA_VERSION,
-            kind: "query",
-            type: "thread.list",
-            messageId: `device-query:${stableSuffix(authentication.deviceId, now().toISOString())}`,
-            correlationId: `device:${authentication.deviceId}`.slice(0, 128),
-            causationId: null,
-            scope: { ownerId: authentication.ownerId, agentId: options.authority.agentId },
-            authority: {
-              deploymentId: options.authority.deploymentId,
-              authorityEpoch: options.authority.authorityEpoch,
-              fencingToken: options.authority.fencingToken,
-            },
-            actor: { actorType: "owner", actorId: authentication.ownerId },
+            ...envelope(
+              authenticated,
+              "query",
+              "thread.list",
+              `device-query:${stableSuffix(authenticated.device.id, now().toISOString())}`,
+            ),
             payload: {
               statuses: ["active"],
               pinnedOnly: false,
@@ -271,6 +375,140 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           }) as ThreadGatewayRequestMessage,
         );
         return options.sendJson(reply, 200, response);
+      });
+
+      const threadIdOf = (request: FastifyRequest) => {
+        const threadId = requestPath(request)
+          .slice(DEVICE_API_PREFIX.length + "/threads/".length)
+          .split("/", 1)[0];
+        if (!threadId || !MACHINE_STRING.test(threadId)) options.rejectBody(400);
+        return threadId as string;
+      };
+
+      device.post("/threads", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const { authentication } = authenticated;
+        const body = json(request);
+        if (
+          Object.keys(body).some((key) => !["requestId", "answerLocale"].includes(key)) ||
+          typeof body["requestId"] !== "string" ||
+          !MESSAGE_ID_PATTERN.test(body["requestId"]) ||
+          !["zh-CN", "en", "ja"].includes(String(body["answerLocale"]))
+        )
+          options.rejectBody(400);
+        const suffix = stableSuffix(authenticated.device.id, `thread:${body["requestId"]}`);
+        const resultRef = await options.protectText({
+          authentication,
+          idempotencyKey: `device-thread-result:${suffix}`,
+          content: "thread-action:create",
+        });
+        const command = threadGatewayMessageSchema.parse({
+          ...envelope(authenticated, "command", "thread.create", `command:thread:${suffix}`),
+          idempotencyKey: `device-thread:${suffix}`,
+          payload: {
+            threadId: `thread-device-${suffix.slice(0, 32)}`,
+            answerLocale: body["answerLocale"],
+            resultRef,
+          },
+        }) as ThreadGatewayRequestMessage;
+        return options.sendJson(
+          reply,
+          200,
+          await options.threadGateway.request(authentication, command),
+        );
+      });
+
+      device.get("/threads/*", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const { authentication } = authenticated;
+        const threadId = threadIdOf(request);
+        if (requestPath(request).endsWith("/execution-stream")) {
+          if (!options.streamExecution) return options.rejectNotAllowed();
+          const configuration = options.configuration();
+          const subscription = threadGatewayMessageSchema.parse({
+            ...envelope(
+              authenticated,
+              "subscription",
+              "thread.execution_events",
+              `device-execution:${stableSuffix(authenticated.device.id, `${threadId}\n${now().toISOString()}`)}`,
+            ),
+            payload: { threadId },
+          }) as ThreadExecutionEventsSubscription;
+          const stream = Readable.from(
+            bounded(
+              options.streamExecution({
+                authentication,
+                subscription,
+                heartbeatMilliseconds: configuration.heartbeatSeconds * 1000,
+                revalidate: async () => {
+                  if (!(await options.devices.stillActive(authenticated.device.id)))
+                    throw new Error(PAIRED_DEVICE_ERROR_CODES.DEVICE_REVOKED);
+                },
+              }),
+              configuration.connectionMaxSeconds * 1000,
+            ),
+          );
+          options.setStreamHeaders(reply);
+          return reply.send(stream);
+        }
+        const after = new URLSearchParams(rawQuery(request)).get("after") ?? "0";
+        if (!/^(0|[1-9][0-9]{0,15})$/u.test(after)) options.rejectBody(400);
+        const segments = requestPath(request)
+          .slice(DEVICE_API_PREFIX.length + "/threads/".length)
+          .split("/");
+        const runId = segments.length === 4 ? segments[2] : undefined;
+        if (runId !== undefined && !MACHINE_STRING.test(runId)) options.rejectBody(400);
+        const query = threadGatewayMessageSchema.parse({
+          ...envelope(
+            authenticated,
+            "query",
+            runId === undefined ? "thread.detail" : "thread.execution",
+            `device-query:${stableSuffix(authenticated.device.id, `${threadId}\n${runId ?? ""}\n${now().toISOString()}`)}`,
+          ),
+          payload: {
+            threadId,
+            ...(runId === undefined ? {} : { runId }),
+            afterSequence: Number(after),
+            limit: 200,
+          },
+        }) as ThreadGatewayRequestMessage;
+        return options.sendJson(
+          reply,
+          200,
+          await options.threadGateway.request(authentication, query),
+        );
+      });
+
+      device.post("/payloads/text", async (request, reply) => {
+        const { authentication } = await authenticate(request);
+        if (!options.readPayload) return options.rejectNotAllowed();
+        const body = json(request);
+        const refs = body["refs"];
+        if (
+          Object.keys(body).some((key) => key !== "refs") ||
+          !Array.isArray(refs) ||
+          refs.length === 0 ||
+          refs.some((ref) => typeof ref !== "string" || !MACHINE_STRING.test(ref)) ||
+          new Set(refs).size !== refs.length
+        )
+          options.rejectBody(400);
+        if ((refs as string[]).length > DEVICE_PAYLOAD_TEXT_MAXIMUM_REFS) options.rejectBody(413);
+        const readPayload = options.readPayload;
+        const items: Record<string, unknown> = {};
+        for (const payloadRef of refs as string[]) {
+          try {
+            const payload = await readPayload({ authentication, payloadRef });
+            items[payloadRef] = {
+              text: payload.content,
+              contentType: payload.contentType,
+              dataClassification: payload.dataClassification,
+            };
+          } catch (error) {
+            if (!isNotFound(error)) throw error;
+            items[payloadRef] = null;
+          }
+        }
+        return options.sendJson(reply, 200, { items });
       });
 
       device.post("/messages", async (request, reply) => {
@@ -417,6 +655,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
               authentication,
               subscription,
               heartbeatMilliseconds: configuration.heartbeatSeconds * 1000,
+              include: (event) => DEVICE_THREAD_EVENT_TYPES.has(event.payload.eventType),
               revalidate: async () => {
                 if (!(await options.devices.stillActive(authenticated.device.id)))
                   throw new Error(PAIRED_DEVICE_ERROR_CODES.DEVICE_REVOKED);
@@ -437,11 +676,21 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
     await options.webMutationGuard(request, authentication);
     return authentication;
   };
-  const deviceAction = (request: FastifyRequest) => {
+  const emptyBody = (request: FastifyRequest) => {
+    const body = request.body;
+    if (
+      body !== undefined &&
+      body !== null &&
+      (typeof body !== "object" || Array.isArray(body) || Object.keys(body).length > 0)
+    )
+      options.rejectBody(400);
+  };
+  const deviceAction = (request: FastifyRequest, extra: readonly string[] = []) => {
     const body = request.body as Record<string, unknown> | undefined;
     if (
       !body ||
       typeof body !== "object" ||
+      Object.keys(body).some((key) => !["deviceId", "expectedRevision", ...extra].includes(key)) ||
       typeof body["deviceId"] !== "string" ||
       !/^dev_[A-Za-z0-9_-]{22}$/u.test(body["deviceId"]) ||
       !Number.isSafeInteger(body["expectedRevision"]) ||
@@ -453,6 +702,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
 
   app.post(`${DEVICE_MANAGEMENT_PREFIX}/list`, async (request, reply) => {
     const authentication = await managed(request);
+    emptyBody(request);
     const devices = await options.devices.list(scope(authentication));
     return options.sendJson(reply, 200, {
       devices: devices.map(presentDevice),
@@ -462,6 +712,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
 
   app.post(`${DEVICE_MANAGEMENT_PREFIX}/pairing-codes`, async (request, reply) => {
     const authentication = await managed(request);
+    emptyBody(request);
     if (!authentication.sessionId) options.rejectBody(403);
     const pairing = await options.devices.startPairing({
       ...scope(authentication),
@@ -470,7 +721,16 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
     return options.sendJson(reply, 201, {
       expiresAt: pairing.expiresAt,
       pairingUri: `himawari-pair:${Buffer.from(
-        JSON.stringify({ v: 1, origin: options.publicOrigin.origin, code: pairing.code }),
+        JSON.stringify({
+          v: 1,
+          origin: options.publicOrigin.origin,
+          code: pairing.code,
+          ...(options.pairingAccess
+            ? {
+                access: pairingAccessFields(options.pairingAccess),
+              }
+            : {}),
+        }),
       ).toString("base64url")}`,
     });
   });
@@ -484,7 +744,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
 
   app.post(`${DEVICE_MANAGEMENT_PREFIX}/rename`, async (request, reply) => {
     const authentication = await managed(request);
-    const body = deviceAction(request);
+    const body = deviceAction(request, ["name"]);
     if (typeof body.name !== "string") options.rejectBody(400);
     const device = await options.devices.rename({
       ...scope(authentication),

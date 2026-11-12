@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   CONFIGURATION_ERROR_CODES,
   CONFIGURATION_SCHEMA_VERSION,
+  DEVICE_ACCESS_SECRET_PURPOSES,
   DRAIN_PHASES,
   initializeStateRoot,
   JsonFileConfigurationPort,
@@ -1865,4 +1866,36 @@ it("[P4-5] accepts a real memory eval with a model that may see private and sens
       details: expect.objectContaining({ field: "configuration.runPolicy.realEval.modelRef" }),
     }),
   );
+});
+
+it("[P1-1] accepts the device access client id and secret only as one declared pair", () => {
+  const at = "2026-11-12T00:00:00.000Z";
+  const withAccess = (purposes: readonly string[]) => {
+    const raw = config("/tmp/himawari-device-access");
+    raw["secretReferences"] = [
+      ...(raw["secretReferences"] as Record<string, unknown>[]),
+      ...purposes.map((purpose, index) => ({
+        ref: `device-access-${index}`,
+        version: "v1",
+        purpose,
+        scope: "agent",
+      })),
+    ];
+    return () => parseProductConfiguration(raw, at);
+  };
+  expect(withAccess([])).not.toThrow();
+  expect(withAccess([...DEVICE_ACCESS_SECRET_PURPOSES])).not.toThrow();
+  for (const purposes of [
+    ["device-access-client-id"],
+    ["device-access-client-secret"],
+    [...DEVICE_ACCESS_SECRET_PURPOSES, "device-access-client-id"],
+    [...DEVICE_ACCESS_SECRET_PURPOSES, ...DEVICE_ACCESS_SECRET_PURPOSES],
+  ])
+    expect(withAccess(purposes), purposes.join(",")).toThrow(
+      expect.objectContaining({
+        details: expect.objectContaining({
+          reason: expect.stringContaining("device access client id and secret"),
+        }),
+      }),
+    );
 });

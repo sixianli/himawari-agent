@@ -13,6 +13,7 @@ import {
   RecentAuthenticationGuard,
   ThreadCommandService,
   ThreadDeletionCoordinationService,
+  ThreadExecutionProjection,
   ThreadForkService,
   ThreadQueryService,
 } from "@himawari-agent/application";
@@ -31,7 +32,9 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  BrowserTextPayloadReader,
   buildHttpGatewayServer,
+  type DevicePairingAccess,
   EnvelopePayloadProtector,
   PairedDeviceService,
   SessionBoundCsrfService,
@@ -88,7 +91,11 @@ export interface Harness {
 }
 
 export async function harness(
-  options: { readonly origin?: string; readonly staticRoot?: string } = {},
+  options: {
+    readonly origin?: string;
+    readonly staticRoot?: string;
+    readonly pairingAccess?: DevicePairingAccess;
+  } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
   const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-device-api-"));
@@ -162,6 +169,14 @@ export async function harness(
     authenticationRef: webSession.authenticationRef,
     sessionId: webSession.id,
   };
+  const protector = new EnvelopePayloadProtector({
+    keys: {
+      kind: "memory-development",
+      productionSuitable: false,
+      resolve: async () => new Uint8Array(32).fill(9),
+    },
+    activeKey: { keyRef: "test-kek", kekVersion: "v1", dekVersion: "v1" },
+  });
   const threads = repository.threadRepository();
   const commands = new ThreadCommandService({
     repository: threads,
@@ -183,19 +198,18 @@ export async function harness(
           authority: () => authority,
           recentAuthentication,
         }),
+        execution: new ThreadExecutionProjection({
+          threads,
+          trace: repository.traceStore(),
+          payloads: (owner, agent) =>
+            repository.payloadStore(createOwnerId(owner), createAgentId(agent)),
+          protector,
+        }),
         clock,
         waitForEvents: async () => new Promise((resolve) => setTimeout(resolve, 20)),
       });
       return { controlPlane: adapter, reads: adapter };
     })(),
-  });
-  const protector = new EnvelopePayloadProtector({
-    keys: {
-      kind: "memory-development",
-      productionSuitable: false,
-      resolve: async () => new Uint8Array(32).fill(9),
-    },
-    activeKey: { keyRef: "test-kek", kekVersion: "v1", dekVersion: "v1" },
   });
   const threadAccess = new ProductionThreadGatewayAccessPolicy({ ownerId, agentId, sessions });
   const ids = { next: (namespace: string) => `${namespace}:${randomUUID()}` };
@@ -259,6 +273,11 @@ export async function harness(
       protector,
       clock: () => clock.now(),
     }),
+    payloadRead: new BrowserTextPayloadReader({
+      payloads: (owner, agent) =>
+        repository.payloadStore(createOwnerId(owner), createAgentId(agent)),
+      protector,
+    }),
     browserConfiguration: {
       agentId,
       deploymentId,
@@ -280,6 +299,7 @@ export async function harness(
       }),
       configuration: () => configuration.current,
       audit: repository.auditLedger(),
+      ...(options.pairingAccess ? { pairingAccess: options.pairingAccess } : {}),
     },
   });
   await app.ready();
@@ -386,7 +406,12 @@ export async function send(h: Harness, request: ReturnType<typeof buildDeviceTes
   });
 }
 
-export async function createThread(h: Harness, threadId: string) {
+export async function threadCommand(
+  h: Harness,
+  type: string,
+  idempotencyKey: string,
+  payload: (resultRef: string) => Record<string, unknown>,
+) {
   const resultRef = (
     await new ProductionHttpPayloadAdmission({
       ownerId,
@@ -404,8 +429,8 @@ export async function createThread(h: Harness, threadId: string) {
       clock: () => h.clock.now(),
     }).protect({
       authentication: h.webAuthentication,
-      idempotencyKey: `create:${threadId}`,
-      content: "thread-action:create",
+      idempotencyKey,
+      content: `thread-action:${type}`,
       dataClassification: "private",
       contentType: "text/plain",
     })
@@ -413,20 +438,28 @@ export async function createThread(h: Harness, threadId: string) {
   const response = await h.app.inject({
     method: "POST",
     url: "/api/gateway/thread/v3/commands",
-    headers: { ...(await h.webHeaders()), "idempotency-key": `create:${threadId}` },
+    headers: { ...(await h.webHeaders()), "idempotency-key": idempotencyKey },
     payload: JSON.stringify({
       schemaVersion: "gateway.thread.v3",
       kind: "command",
-      type: "thread.create",
-      messageId: `message:create:${threadId}`,
-      correlationId: "correlation:create",
+      type,
+      messageId: `message:${idempotencyKey}`,
+      correlationId: "correlation:device-test",
       causationId: null,
       scope: { ownerId, agentId },
       authority,
       actor: { actorType: "owner", actorId: ownerId },
-      idempotencyKey: `create:${threadId}`,
-      payload: { threadId, answerLocale: "zh-CN", resultRef },
+      idempotencyKey,
+      payload: payload(resultRef),
     }),
   });
-  expect(response.statusCode).toBe(200);
+  expect(response.statusCode, response.body).toBe(200);
+}
+
+export async function createThread(h: Harness, threadId: string) {
+  await threadCommand(h, "thread.create", `create:${threadId}`, (resultRef) => ({
+    threadId,
+    answerLocale: "zh-CN",
+    resultRef,
+  }));
 }

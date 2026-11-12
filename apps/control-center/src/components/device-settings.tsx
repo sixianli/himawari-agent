@@ -29,6 +29,7 @@ export interface PairedDeviceView {
   readonly status: "pending" | "active" | "revoked";
   readonly pairedAt: string;
   readonly lastSeenAt: string | null;
+  readonly pairingNumber: string | null;
 }
 
 export interface DeviceLimitView {
@@ -152,6 +153,13 @@ function DeviceRow({
                 ? message("devices.revoked", { kind })
                 : kind}
           </span>
+          {device.status === "pending" && device.pairingNumber ? (
+            <span className="device-detail" data-pairing-number={device.pairingNumber}>
+              {message("devices.pairingNumber", {
+                number: `${device.pairingNumber.slice(0, 3)} ${device.pairingNumber.slice(3)}`,
+              })}
+            </span>
+          ) : null}
         </div>
       )}
       {device.status === "revoked" ? null : (

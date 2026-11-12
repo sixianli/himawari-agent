@@ -3,8 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { type Browser, chromium, type Page, expect as uiExpect } from "@playwright/test";
+import { devicePairingNumber } from "@himawari-agent/platform-node";
 import { generateDeviceTestKeyPair } from "@himawari-agent/testing";
+import { type Browser, chromium, type Page, expect as uiExpect } from "@playwright/test";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { launchChromium } from "../fixtures/chromium-launch.ts";
 import {
@@ -95,6 +96,7 @@ async function pairFromPage(h: Harness, page: Page, name: string) {
   expect(await qr.locator("path").getAttribute("d")).toMatch(/^M\d/u);
   const uri = await qr.getAttribute("data-pairing-uri");
   const keys = generateDeviceTestKeyPair();
+  const confirmPublicKey = generateDeviceTestKeyPair().publicKeySpkiBase64;
   const response = await h.app.inject({
     method: "POST",
     url: "/api/device/v1/pair",
@@ -105,7 +107,7 @@ async function pairFromPage(h: Harness, page: Page, name: string) {
       name,
       releaseChannel: "direct",
       devicePublicKey: keys.publicKeySpkiBase64,
-      confirmPublicKey: generateDeviceTestKeyPair().publicKeySpkiBase64,
+      confirmPublicKey,
     }),
   });
   expect(response.statusCode).toBe(201);
@@ -115,6 +117,10 @@ async function pairFromPage(h: Harness, page: Page, name: string) {
     keys,
     confirmKeys: keys,
     revision: 0,
+    pairingNumber: devicePairingNumber({
+      devicePublicKey: keys.publicKeySpkiBase64,
+      confirmPublicKey,
+    }),
     row: page.locator(`.device-row[data-device-id="${device.id}"]`),
   };
 }
@@ -151,12 +157,16 @@ describe("[P1-1] 设置里的“设备”页（真实网页验收）", () => {
     const client = await pairFromPage(h, page, "Andy iPhone");
     await uiExpect(client.row).toHaveAttribute("data-status", "pending", { timeout: 10_000 });
     await uiExpect(client.row).toContainText("有一台叫“Andy iPhone”的iPhone想配对");
+    await uiExpect(client.row).toContainText(
+      `核对数字 ${client.pairingNumber.slice(0, 3)} ${client.pairingNumber.slice(3)}：`,
+    );
     const shots = process.env["HIMAWARI_DEVICE_SHOTS"];
     if (shots) await page.screenshot({ path: path.join(shots, "devices-pending.png") });
     expect(await deviceConfigStatus(h, client)).toBe(403);
 
     await client.row.getByRole("button", { name: "确认", exact: true }).click();
     await uiExpect(client.row).toHaveAttribute("data-status", "active");
+    await uiExpect(client.row).not.toContainText("核对数字");
     await uiExpect(page.getByRole("img", { name: "配对二维码" })).toHaveCount(0);
     expect(await deviceConfigStatus(h, client)).toBe(200);
 
