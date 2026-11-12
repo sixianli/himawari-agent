@@ -1,3 +1,6 @@
+import { readdir } from "node:fs/promises";
+import path from "node:path";
+import Database from "better-sqlite3";
 import { ownerDayBounds } from "@himawari-agent/application";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -139,7 +142,7 @@ describe("usage limits", () => {
     });
   });
 
-  it("never lets concurrent reservations pass the limit", async () => {
+  it("never lets overlapping reservations pass the limit", async () => {
     const h = await harness();
     const store = h.repository.perception();
     const periodStart = ownerDayBounds(h.clock.now(), h.timeZone.current).start;
@@ -238,6 +241,74 @@ describe("usage limits", () => {
       reached: ["perception.media.daily_bytes"],
     });
     expect((await limitView(h, "perception.media.daily_bytes")).used).toBe(30);
+    expect(await readdir(path.join(h.stateRoot, "device-uploads", "media"))).toEqual([
+      sha256(Buffer.from("a".repeat(30))),
+    ]);
+  });
+
+  it("counts every image and screen capture against the daily image limit and never audio", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await setLimit(h, "perception.images.daily", 2);
+    const send = async (content: string, batchId: string, mediaKind: string) => {
+      const bytes = Buffer.from(content);
+      const begun = await beginUpload(h, client, {
+        purpose: "media",
+        sha256: sha256(bytes),
+        bytes: bytes.length,
+        batchId,
+        mediaKind,
+        ...(mediaKind === "audio" ? { durationMs: 1000 } : {}),
+      });
+      expect(begun.status, JSON.stringify(begun.body)).toBe(201);
+      return (await upload(h, begun.target, bytes)).body;
+    };
+    expect(await send("image-one", "media-batch-00000000i1", "image")).toMatchObject({
+      stored: true,
+    });
+    expect(await send("screen-one", "media-batch-00000000i2", "screen")).toMatchObject({
+      stored: true,
+    });
+    expect(await send("image-two", "media-batch-00000000i3", "image")).toMatchObject({
+      stored: false,
+      reached: ["perception.images.daily"],
+    });
+    expect(await send("some-audio", "media-batch-00000000i4", "audio")).toMatchObject({
+      stored: true,
+    });
+    expect((await limitView(h, "perception.images.daily")).used).toBe(2);
+    expect((await readdir(path.join(h.stateRoot, "device-uploads", "media"))).sort()).toEqual(
+      ["image-one", "screen-one", "some-audio"].map((text) => sha256(Buffer.from(text))).sort(),
+    );
+  });
+
+  it("keeps no stored text for records the daily limit turned away", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await setLimit(h, "perception.records.daily", 1);
+    const result = await ingest(h, client, [
+      utterance(h, "留下的一句", { seconds: -8 }),
+      utterance(h, "被挡下的一句", { seconds: -6 }),
+      utterance(h, "也被挡下的一句", { seconds: -4 }),
+    ]);
+    expect(result.outcomes.map(({ outcome }) => outcome)).toEqual([
+      "stored",
+      "limit_reached",
+      "limit_reached",
+    ]);
+    const database = new Database(path.join(h.stateRoot, "product.sqlite"), { readonly: true });
+    try {
+      expect(
+        database
+          .prepare(
+            `SELECT (SELECT COUNT(*) FROM payloads WHERE ref LIKE 'payload:http:%') AS payloads,
+                    (SELECT COUNT(*) FROM perception_records WHERE content_ref IS NOT NULL) AS texts`,
+          )
+          .get(),
+      ).toEqual({ payloads: 1, texts: 1 });
+    } finally {
+      database.close();
+    }
   });
 
   it("serves usage and configuration to a device and takes the numbers a device reports", async () => {

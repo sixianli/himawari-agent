@@ -177,6 +177,7 @@ interface ParsedRecord {
 export class PerceptionService {
   readonly #options: PerceptionServiceOptions;
   readonly #consuming = new Set<string>();
+  readonly #placing = new Set<string>();
   readonly #prunedAt = new Map<string, number>();
 
   constructor(options: PerceptionServiceOptions) {
@@ -512,7 +513,7 @@ export class PerceptionService {
     const stored =
       prepared.length === 0
         ? { outcomes: [], reached: [] }
-        : await this.#options.store.ingestRecords({
+        : await this.#ingestPrepared(scope, prepared, {
             ...scope,
             deviceId: input.deviceId,
             now: now.toISOString(),
@@ -592,7 +593,7 @@ export class PerceptionService {
       ...this.#scope(scope),
       now: now.toISOString(),
     });
-    return this.#options.store.prune({
+    const pruned = await this.#options.store.prune({
       ...this.#scope(scope),
       now: now.toISOString(),
       trackBeforeMs: now.getTime() - retention.track * day,
@@ -600,7 +601,12 @@ export class PerceptionService {
       surroundingsTypes: PERCEPTION_RECORD_TYPE_NAMES.filter(
         (type) => PERCEPTION_RECORD_TYPES[type].retention === "surroundings",
       ),
+      mediaBefore: new Date(
+        now.getTime() - this.#options.configuration().mediaRetentionDays * day,
+      ).toISOString(),
     });
+    await this.#sweepMedia();
+    return pruned;
   }
 
   async syncMirror(input: {
@@ -848,8 +854,39 @@ export class PerceptionService {
     return Object.freeze({ grant, replay: null });
   }
 
+  async #ingestPrepared(
+    scope: PerceptionScope,
+    prepared: readonly PerceptionRecordInput[],
+    input: Parameters<PerceptionStorePort["ingestRecords"]>[0],
+  ) {
+    try {
+      return await this.#options.store.ingestRecords(input);
+    } finally {
+      await this.#options.store.releaseContent({
+        ...scope,
+        refs: prepared.flatMap(({ contentRef }) => (contentRef === null ? [] : [contentRef])),
+      });
+    }
+  }
+
+  async #sweepMedia(): Promise<void> {
+    const names = (await readdir(this.#media())).filter((name) => /^[0-9a-f]{64}$/u.test(name));
+    const known = new Set(await this.#options.store.knownMediaDigests({ digests: names }));
+    for (const name of names)
+      if (!known.has(name) && !this.#placing.has(name))
+        await rm(path.join(this.#media(), name), { force: true });
+  }
+
   async #lines(upload: ReceivedUpload, maximumLines: number, key: string): Promise<unknown[]> {
-    const cap = this.#options.deviceConfiguration().limits["device.upload.expanded_bytes"];
+    const limits = this.#options.deviceConfiguration().limits;
+    const cap = limits["device.upload.expanded_bytes"];
+    const lineCap = limits["device.request.body_bytes"];
+    const tooLong = (): never => {
+      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.UPLOAD_EXPANDED_TOO_LARGE, 413, {
+        limit: lineCap,
+        key: "device.request.body_bytes",
+      });
+    };
     const source = createReadStream(upload.file);
     const expanded = upload.gzip ? source.pipe(createGunzip()) : source;
     source.once("error", (error) => expanded.destroy(error));
@@ -857,6 +894,7 @@ export class PerceptionService {
     const lines: unknown[] = [];
     const take = (line: string) => {
       if (line.trim().length === 0) return;
+      if (Buffer.byteLength(line) > lineCap) tooLong();
       if (lines.length >= maximumLines)
         throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.BATCH_TOO_LARGE, 413, {
           limit: maximumLines,
@@ -880,6 +918,7 @@ export class PerceptionService {
           });
         const parts = (pending + decoder.write(chunk)).split("\n");
         pending = parts.pop() ?? "";
+        if (pending.length > lineCap) tooLong();
         for (const part of parts) take(part);
       }
       take(pending + decoder.end());
@@ -947,38 +986,55 @@ export class PerceptionService {
         const settings = await this.settings(scope);
         const now = this.#now();
         const bounds = ownerDayBounds(now.toISOString(), this.#options.timeZone());
-        const stored = await this.#options.store.recordMedia({
-          ...scope,
-          periodStart: bounds.start,
-          item: {
-            id: `media:${grant.sha256}`,
-            deviceId: grant.deviceId,
-            kind: grant.mediaKind as PerceptionMediaKind,
-            bytes: grant.bytes,
-            sha256: grant.sha256,
-            milliseconds: grant.mediaMilliseconds,
-            receivedAt: now.toISOString(),
-          },
-          reservations: [
-            {
-              key: "perception.media.daily_bytes",
-              amount: grant.bytes,
-              limit: this.#limit(settings, "perception.media.daily_bytes"),
-            },
-            ...(grant.mediaMilliseconds === null
-              ? []
-              : [
-                  {
-                    key: "perception.server_asr.daily",
-                    amount: grant.mediaMilliseconds,
-                    limit: this.#limit(settings, "perception.server_asr.daily"),
-                  },
-                ]),
-          ],
-        });
-        if (stored.stored) await rename(upload.file, path.join(this.#media(), grant.sha256));
+        const final = path.join(this.#media(), grant.sha256);
+        const image = grant.mediaKind === "image" || grant.mediaKind === "screen";
+        this.#placing.add(grant.sha256);
+        const stored = await rename(upload.file, final)
+          .then(() =>
+            this.#options.store.recordMedia({
+              ...scope,
+              periodStart: bounds.start,
+              item: {
+                id: `media:${grant.sha256}`,
+                deviceId: grant.deviceId,
+                kind: grant.mediaKind as PerceptionMediaKind,
+                bytes: grant.bytes,
+                sha256: grant.sha256,
+                milliseconds: grant.mediaMilliseconds,
+                receivedAt: now.toISOString(),
+              },
+              reservations: [
+                {
+                  key: "perception.media.daily_bytes",
+                  amount: grant.bytes,
+                  limit: this.#limit(settings, "perception.media.daily_bytes"),
+                },
+                ...(image
+                  ? [
+                      {
+                        key: "perception.images.daily",
+                        amount: 1,
+                        limit: this.#limit(settings, "perception.images.daily"),
+                      },
+                    ]
+                  : []),
+                ...(grant.mediaMilliseconds === null
+                  ? []
+                  : [
+                      {
+                        key: "perception.server_asr.daily",
+                        amount: grant.mediaMilliseconds,
+                        limit: this.#limit(settings, "perception.server_asr.daily"),
+                      },
+                    ]),
+              ],
+            }),
+          )
+          .finally(() => this.#placing.delete(grant.sha256));
+        if (!stored.stored && !stored.duplicate) await rm(final, { force: true });
         await this.#afterWrite(scope, settings, bounds.start, [
           "perception.media.daily_bytes",
+          "perception.images.daily",
           "perception.server_asr.daily",
         ]);
         result = {

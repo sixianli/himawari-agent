@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
@@ -158,6 +158,67 @@ describe("device background uploads", () => {
       ids: file.ids,
     });
     expect(known).toEqual([]);
+  });
+
+  it("takes a file larger than a signed request may be and refuses a single line that large", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const requestLimit = h.configuration.current.limits["device.request.body_bytes"];
+    const audio = Buffer.alloc(requestLimit * 17, 7);
+    const media = await beginUpload(h, client, {
+      purpose: "media",
+      sha256: sha256(audio),
+      bytes: audio.length,
+      batchId: "media-batch-000000big1",
+      mediaKind: "audio",
+      durationMs: 1000,
+    });
+    expect(media.status, JSON.stringify(media.body)).toBe(201);
+    expect((await upload(h, media.target, audio)).body).toMatchObject({ stored: true });
+
+    const id = recordId();
+    const line = Buffer.from(
+      `${JSON.stringify({ ...power(h, -1, id), padding: "x".repeat(requestLimit) })}\n`,
+    );
+    const begun = await beginUpload(h, client, {
+      purpose: "perception",
+      sha256: sha256(line),
+      bytes: line.length,
+      recordIdFirst: id,
+      recordIdLast: id,
+    });
+    expect(begun.status, JSON.stringify(begun.body)).toBe(201);
+    const refused = await upload(h, begun.target, line);
+    expect([refused.status, refused.code, refused.body["error"]]).toEqual([
+      413,
+      "DEVICE_UPLOAD_EXPANDED_TOO_LARGE",
+      expect.objectContaining({ key: "device.request.body_bytes", limit: requestLimit }),
+    ]);
+    expect(await readdir(path.join(h.stateRoot, "device-uploads", "incoming"))).toEqual([]);
+  });
+
+  it("deletes raw media past its retention and files no record points at", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const bytes = Buffer.from("kept-image");
+    const begun = await beginUpload(h, client, {
+      purpose: "media",
+      sha256: sha256(bytes),
+      bytes: bytes.length,
+      batchId: "media-batch-0000000ret1",
+      mediaKind: "image",
+    });
+    expect(begun.status, JSON.stringify(begun.body)).toBe(201);
+    expect((await upload(h, begun.target, bytes)).body).toMatchObject({ stored: true });
+    const directory = path.join(h.stateRoot, "device-uploads", "media");
+    const stray = sha256(Buffer.from("no-row-for-this"));
+    await writeFile(path.join(directory, stray), "left behind");
+    expect((await readdir(directory)).sort()).toEqual([sha256(bytes), stray].sort());
+    expect((await h.perception.prune(perceptionScope)).media).toBe(0);
+    expect(await readdir(directory)).toEqual([sha256(bytes)]);
+    h.clock.advance((h.perceptionConfiguration.current.mediaRetentionDays + 1) * 86_400_000);
+    expect((await h.perception.prune(perceptionScope)).media).toBe(1);
+    expect(await readdir(directory)).toEqual([]);
   });
 
   it("refuses records outside the id range the grant was issued for", async () => {

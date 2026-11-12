@@ -1,3 +1,5 @@
+import { ownerDayBounds } from "@himawari-agent/application";
+import { createOwnerId } from "@himawari-agent/domain";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   harness,
@@ -33,6 +35,18 @@ describe("perception records", () => {
     });
     expect(page.total).toBe(2);
     expect(page.rows).toHaveLength(2);
+    const ids = records.map(({ id }) => id);
+    const store = h.repository.perception();
+    expect([...(await store.knownRecordIds({ ...perceptionScope, ids }))].sort()).toEqual(
+      [...ids].sort(),
+    );
+    expect(
+      await store.knownRecordIds({
+        ...perceptionScope,
+        ownerId: createOwnerId("owner-someone-else"),
+        ids,
+      }),
+    ).toEqual([]);
   });
 
   it("keeps every record as origin other until owner voice recognition is qualified", async () => {
@@ -121,6 +135,43 @@ describe("perception records", () => {
       cursor: null,
     });
     expect(detail?.records.map(({ id }) => id)).toEqual([first.id, second.id]);
+  });
+
+  it("ends an episode at the owner's midnight so each day lists its own records", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const midnight = Date.parse(ownerDayBounds(h.clock.now(), h.timeZone.current).start);
+    const offset = (seconds: number) =>
+      Math.round((midnight - Date.parse(h.clock.now())) / 1000) + seconds;
+    const before = utterance(h, "睡前说的", { seconds: offset(-10) });
+    const after = utterance(h, "过了零点说的", { seconds: offset(10) });
+    const result = await ingest(h, client, [before, after]);
+    expect(result.outcomes.map(({ outcome }) => outcome)).toEqual(["stored", "stored"]);
+    const today = ownerDayBounds(h.clock.now(), h.timeZone.current).day;
+    const yesterday = ownerDayBounds(
+      new Date(midnight - 1000).toISOString(),
+      h.timeZone.current,
+    ).day;
+    const texts = async (day: string) => {
+      const page = await h.perception.listDay({
+        scope: perceptionScope,
+        day,
+        sense: null,
+        types: null,
+        cursor: null,
+      });
+      const rows = await Promise.all(
+        page.rows.map(async (row) =>
+          row.kind === "episode"
+            ? [row.episode.recordCount, await h.readText(row.overview.lead?.contentRef ?? "")]
+            : ["record"],
+        ),
+      );
+      return [page.total, rows];
+    };
+    expect(await texts(yesterday)).toEqual([1, [[1, "睡前说的"]]]);
+    expect(await texts(today)).toEqual([1, [[1, "过了零点说的"]]]);
+    expect((await h.perception.status(perceptionScope)).todayCount).toBe(1);
   });
 
   it("counts today with the same query the list uses and both drop together when a row is removed", async () => {

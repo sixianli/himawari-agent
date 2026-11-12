@@ -656,7 +656,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       what: "上传凭据，和还没处理的原始音频、图片、屏幕画面",
       count: null,
       reason:
-        "上传凭据是凭据，不导出；原始材料处理完就删，不属于长期数据。感知记录、一段经历、镜像、轨迹、建议、感知设置和用量在 data/ 下各有一个文件，只供查看，导入时不恢复",
+        "上传凭据是凭据，不导出；原始材料只是等待处理的临时文件，最多保留到配置的天数（runPolicy.perception.mediaRetentionDays）就删，不属于长期数据。感知记录、一段经历、镜像、轨迹、建议、感知设置和用量在 data/ 下各有一个文件，只供查看，导入时不恢复",
     },
     {
       what: "记忆评测的题库和每次评测的分数",

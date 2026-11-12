@@ -216,10 +216,32 @@ export class SqlitePerceptionOperations {
       this.database
         .prepare(
           `SELECT id FROM perception_records
-            WHERE id IN (SELECT value FROM json_each(?))`,
+            WHERE owner_id = ? AND agent_id = ? AND id IN (SELECT value FROM json_each(?))`,
         )
-        .all(JSON.stringify(input.ids)) as { id: string }[]
+        .all(input.ownerId, input.agentId, JSON.stringify(input.ids)) as { id: string }[]
     ).map((row) => row.id);
+  }
+
+  protected op_releaseContent(input: Input<"releaseContent">): number {
+    if (input.refs.length === 0) return 0;
+    return this.database
+      .prepare(
+        `DELETE FROM payloads
+          WHERE owner_id = ? AND agent_id = ? AND ref IN (SELECT value FROM json_each(?))
+            AND NOT EXISTS (SELECT 1 FROM perception_records WHERE content_ref = payloads.ref)`,
+      )
+      .run(input.ownerId, input.agentId, JSON.stringify(input.refs)).changes;
+  }
+
+  protected op_knownMediaDigests(input: Input<"knownMediaDigests">): readonly string[] {
+    if (input.digests.length === 0) return [];
+    return this.database
+      .prepare(
+        `SELECT DISTINCT sha256 FROM perception_media_items
+          WHERE sha256 IN (SELECT value FROM json_each(?))`,
+      )
+      .pluck()
+      .all(JSON.stringify(input.digests)) as string[];
   }
 
   private used(scope: PerceptionScope, key: string, periodStart: string): number {
@@ -387,6 +409,7 @@ export class SqlitePerceptionOperations {
         `UPDATE perception_records SET episode_id = @episodeId
           WHERE owner_id = @ownerId AND agent_id = @agentId AND status = 'active'
             AND episode_id IS NULL
+            AND local_day = (SELECT local_day FROM perception_episodes WHERE id = @episodeId)
             AND type NOT IN (SELECT value FROM json_each(@excluded))
             AND occurred_at_ms BETWEEN
               (SELECT started_at_ms FROM perception_episodes WHERE id = @episodeId) AND
@@ -426,24 +449,25 @@ export class SqlitePerceptionOperations {
       const inside = this.database
         .prepare(
           `SELECT id FROM perception_episodes
-            WHERE owner_id = ? AND agent_id = ? AND status = 'active'
+            WHERE owner_id = ? AND agent_id = ? AND status = 'active' AND local_day = ?
               AND started_at_ms <= ? AND ended_at_ms >= ?
             ORDER BY started_at_ms DESC, id LIMIT 1`,
         )
-        .get(input.ownerId, input.agentId, at, at) as { id: string } | undefined;
+        .get(input.ownerId, input.agentId, record.localDay, at, at) as { id: string } | undefined;
       return inside?.id ?? null;
     }
     const candidates = this.database
       .prepare(
         `SELECT id, started_at_ms AS startedAtMs, ended_at_ms AS endedAtMs
            FROM perception_episodes
-          WHERE owner_id = ? AND agent_id = ? AND status = 'active'
+          WHERE owner_id = ? AND agent_id = ? AND status = 'active' AND local_day = ?
             AND started_at_ms <= ? AND ended_at_ms >= ?
           ORDER BY started_at_ms, id`,
       )
       .all(
         input.ownerId,
         input.agentId,
+        record.localDay,
         at + input.episodeSilenceMs,
         at - input.episodeSilenceMs,
       ) as { id: string; startedAtMs: number; endedAtMs: number }[];
@@ -486,11 +510,10 @@ export class SqlitePerceptionOperations {
       this.database
         .prepare(
           `UPDATE perception_episodes SET started_at_ms = ?, ended_at_ms = ?,
-                  local_day = CASE WHEN ? < started_at_ms THEN ? ELSE local_day END,
                   record_count = record_count + 1
             WHERE id = ?`,
         )
-        .run(startedAtMs, endedAtMs, at, record.localDay, episode.id);
+        .run(startedAtMs, endedAtMs, episode.id);
       return episode.id;
     }
     const id = `episode:${createHash("sha256").update(record.id).digest("hex").slice(0, 32)}`;
@@ -863,8 +886,10 @@ export class SqlitePerceptionOperations {
     return this.database.transaction(() => {
       if (
         this.database
-          .prepare("SELECT 1 FROM perception_media_items WHERE id = ?")
-          .get(input.item.id)
+          .prepare(
+            "SELECT 1 FROM perception_media_items WHERE id = ? AND owner_id = ? AND agent_id = ?",
+          )
+          .get(input.item.id, input.ownerId, input.agentId)
       )
         return Object.freeze({ stored: false, duplicate: true, reached: null });
       for (const reservation of input.reservations) {
@@ -1082,7 +1107,13 @@ export class SqlitePerceptionOperations {
             WHERE owner_id = ? AND agent_id = ? AND expires_at <= ?`,
         )
         .run(input.ownerId, input.agentId, now).changes;
-      return Object.freeze({ trackPoints, records, grants });
+      const media = this.database
+        .prepare(
+          `DELETE FROM perception_media_items
+            WHERE owner_id = ? AND agent_id = ? AND received_at < ?`,
+        )
+        .run(input.ownerId, input.agentId, this.time(input.mediaBefore)).changes;
+      return Object.freeze({ trackPoints, records, grants, media });
     })();
   }
 }

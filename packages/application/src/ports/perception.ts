@@ -350,6 +350,7 @@ export interface PerceptionConfiguration {
   readonly pruneIntervalSeconds: number;
   readonly listPageRows: number;
   readonly previewCharacters: number;
+  readonly mediaRetentionDays: number;
 }
 
 export const PERCEPTION_CONFIGURATION_DEFAULTS: PerceptionConfiguration = Object.freeze({
@@ -363,6 +364,7 @@ export const PERCEPTION_CONFIGURATION_DEFAULTS: PerceptionConfiguration = Object
   pruneIntervalSeconds: 3600,
   listPageRows: 100,
   previewCharacters: 200,
+  mediaRetentionDays: 7,
 });
 
 export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
@@ -378,6 +380,7 @@ export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
   pruneIntervalSeconds: [60, 24 * 3600],
   listPageRows: [1, 500],
   previewCharacters: [20, 2000],
+  mediaRetentionDays: [1, 90],
 });
 
 export const PERCEPTION_RETENTION_KEYS = ["track", "surroundings"] as const;
@@ -563,6 +566,8 @@ export interface PerceptionStorePort {
   knownRecordIds(
     input: PerceptionScope & { readonly ids: readonly string[] },
   ): Promise<readonly string[]>;
+  releaseContent(input: PerceptionScope & { readonly refs: readonly string[] }): Promise<number>;
+  knownMediaDigests(input: { readonly digests: readonly string[] }): Promise<readonly string[]>;
   ingestRecords(
     input: PerceptionScope & {
       readonly deviceId: string;
@@ -715,6 +720,12 @@ export interface PerceptionStorePort {
       readonly trackBeforeMs: number;
       readonly surroundingsBeforeMs: number;
       readonly surroundingsTypes: readonly PerceptionRecordType[];
+      readonly mediaBefore: string;
     },
-  ): Promise<{ readonly trackPoints: number; readonly records: number; readonly grants: number }>;
+  ): Promise<{
+    readonly trackPoints: number;
+    readonly records: number;
+    readonly grants: number;
+    readonly media: number;
+  }>;
 }
