@@ -569,8 +569,6 @@ export const MESSAGE_IDS = [
   "governance.denyUpdate",
   "governance.disableCapability",
   "governance.rollbackCapability",
-  "governance.reactivateCapability",
-  "governance.reactivateCapabilityDescription",
   "governance.conflictTitle",
   "governance.conflictDescription",
   "governance.offlineNoMutation",

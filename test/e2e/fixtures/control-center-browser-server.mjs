@@ -1722,7 +1722,6 @@ function governanceTarget(message) {
     case "capability.update.respond":
     case "capability.disable":
     case "capability.rollback":
-    case "capability.reactivate":
       return capabilities.get(message.payload.capabilityRef);
     default:
       return undefined;
@@ -1739,7 +1738,6 @@ function handleGovernanceCommand(message) {
       "capability.update.respond",
       "capability.disable",
       "capability.rollback",
-      "capability.reactivate",
     ].includes(message.type)
   ) {
     return null;
@@ -1842,13 +1840,6 @@ function handleGovernanceCommand(message) {
       target.revision += 1;
       target.lifecycle = "disabled";
       target.healthStatus = "unknown";
-      break;
-    case "capability.reactivate":
-      if (target.lifecycle !== "disabled") {
-        return { status: 409, body: { error: { code: "PORT_CONFLICT" } } };
-      }
-      target.revision += 1;
-      target.lifecycle = "active";
       break;
     case "capability.rollback": {
       if (target.lifecycle !== "active" || !target.rollbackVersion) {
@@ -2227,7 +2218,6 @@ async function handleRequest(request, response) {
         "capability.update.respond",
         "capability.disable",
         "capability.rollback",
-        "capability.reactivate",
         "grant.list",
         "grant.detail",
         "grant.revoke",

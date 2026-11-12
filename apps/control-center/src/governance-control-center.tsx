@@ -38,8 +38,7 @@ type GovernanceAction =
   | { readonly kind: "capability.update.approve"; readonly snapshot: CapabilitySnapshot }
   | { readonly kind: "capability.update.deny"; readonly snapshot: CapabilitySnapshot }
   | { readonly kind: "capability.disable"; readonly snapshot: CapabilitySnapshot }
-  | { readonly kind: "capability.rollback"; readonly snapshot: CapabilitySnapshot }
-  | { readonly kind: "capability.reactivate"; readonly snapshot: CapabilitySnapshot };
+  | { readonly kind: "capability.rollback"; readonly snapshot: CapabilitySnapshot };
 
 interface UseGovernanceControlCenterInput {
   readonly active: boolean;
@@ -148,7 +147,6 @@ function actionDestructive(action: GovernanceAction): boolean {
     action.kind === "capability.install" ||
     action.kind === "capability.disable" ||
     action.kind === "capability.rollback" ||
-    action.kind === "capability.reactivate" ||
     (action.kind === "approval.approve" && action.snapshot.payload.recentAuthenticationRequired)
   );
 }
@@ -173,8 +171,6 @@ function actionLabel(action: GovernanceAction): MessageId {
       return "governance.disableCapability";
     case "capability.rollback":
       return "governance.rollbackCapability";
-    case "capability.reactivate":
-      return "governance.reactivateCapability";
   }
 }
 
@@ -206,9 +202,7 @@ function actionIdentity(action: GovernanceAction): {
               ? "capability.update.respond"
               : action.kind === "capability.disable"
                 ? "capability.disable"
-                : action.kind === "capability.reactivate"
-                  ? "capability.reactivate"
-                  : "capability.rollback";
+                : "capability.rollback";
   return { commandType, objectRef, operationKey, revision: snapshot.payload.revision };
 }
 
@@ -241,8 +235,6 @@ function detailActions(snapshot: GovernanceDetailSnapshot): readonly GovernanceA
           ? ([{ kind: "capability.rollback", snapshot }] as const)
           : []),
       ];
-    case "disabled":
-      return [{ kind: "capability.reactivate", snapshot }];
     default:
       return [];
   }
@@ -780,19 +772,6 @@ export function useGovernanceControlCenter({
             { risk, authorizationRef, idempotencyKey },
           );
           break;
-        case "capability.reactivate":
-          command = commandMessage(
-            configuration,
-            "capability.reactivate",
-            {
-              capabilityRef: action.snapshot.payload.capabilityRef,
-              expectedRevision: action.snapshot.payload.revision,
-              reasonCode: "owner_reactivated_from_control_center",
-              recentAuthenticationRef: configuration.recentAuthenticationRef ?? null,
-            },
-            { risk, authorizationRef, idempotencyKey },
-          );
-          break;
         case "capability.rollback":
           command = commandMessage(
             configuration,
@@ -951,9 +930,6 @@ export function useGovernanceControlCenter({
           unavailableTitle={message("governance.actionUnavailable")}
         >
           <p>{message("governance.actionDescription")}</p>
-          {action.kind === "capability.reactivate" ? (
-            <p>{message("governance.reactivateCapabilityDescription")}</p>
-          ) : null}
           <code>{actionIdentity(action).objectRef}</code>
         </GovernedActionDialog>
       ) : null}

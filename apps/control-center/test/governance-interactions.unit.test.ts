@@ -297,14 +297,6 @@ describe("governance page action contracts", () => {
         recentAuthenticationRef: "recent-auth-01",
       },
     ],
-    [
-      "capabilities-adapters",
-      "capability",
-      "disabled",
-      "governance.reactivateCapability",
-      "capability.reactivate",
-      { reasonCode: "owner_reactivated_from_control_center", recentAuthenticationRef: "recent-auth-01" },
-    ],
   ] as const;
   it.each(actions)(
     "binds %s %s %s %s to the reviewed revision",

@@ -224,7 +224,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
       "capability.update.respond",
       "capability.disable",
       "capability.rollback",
-      "capability.reactivate",
     ],
     mutationsOfferedWhenInstalled: true,
     revisionControl: ["CapabilityRegistryRecord.revision", "idempotencyKey"],

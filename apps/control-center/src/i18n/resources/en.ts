@@ -631,9 +631,6 @@ export const messages = {
   "governance.denyUpdate": "Deny update",
   "governance.disableCapability": "Disable capability",
   "governance.rollbackCapability": "Roll back capability version",
-  "governance.reactivateCapability": "Reactivate capability",
-  "governance.reactivateCapabilityDescription":
-    "Before reactivating, the installed package and the checks recorded at deployment are verified. Handles revoked and scheduled jobs cancelled when it was disabled are not restored.",
   "governance.conflictTitle": "Another client updated this governance object",
   "governance.conflictDescription":
     "The latest revision has been read back. Review it before explicitly submitting again; the old action will not overwrite it silently.",
