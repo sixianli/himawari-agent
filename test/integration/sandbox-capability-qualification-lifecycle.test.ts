@@ -311,6 +311,21 @@ describe("sandbox capability qualification through the lifecycle service", () =>
     await rejected((value) => ({ ...value, runtimeIdentity: "srt:0.0.0-other" }));
   });
 
+  it("rejects sandbox evidence that the sandbox qualification contract does not accept", async () => {
+    await rejected((value) => {
+      if (!value.sandbox) throw new Error("snapshot has no sandbox evidence");
+      const linux = value.sandbox.platform === "linux";
+      return {
+        ...value,
+        enforcement: { ...value.enforcement, termination: !linux },
+        sandbox: {
+          ...value.sandbox,
+          terminationMode: linux ? "best_effort" : "verified_tree",
+        },
+      };
+    });
+  });
+
   it("still requires every control when a qualification carries no sandbox evidence", async () => {
     await rejected(({ sandbox: _sandbox, ...value }) => value);
     const loaded = await loadSnapshot();
