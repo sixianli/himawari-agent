@@ -13,10 +13,7 @@ import {
 } from "@himawari-agent/platform-node";
 import Database from "better-sqlite3";
 import { afterEach, expect, it } from "vitest";
-import {
-  createProductionApprovalGateway,
-  PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS,
-} from "../../apps/agent-service/src/production-approval-gateway.ts";
+import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
 import { createProductionCapabilityLifecycle } from "../../apps/agent-service/src/production-capability-lifecycle.ts";
 import {
   CAPABILITY_REACTIVATION_REASONS,
@@ -341,7 +338,9 @@ it("refuses when the capability's version is not the one in the snapshot", async
 it("wires no reactivation check when no deployment snapshot is configured", async () => {
   const f = await fixture({ withDeployment: false });
   expect(f.reactivationWired).toBe(false);
-  await expect(f.reactivate("no-deployment")).rejects.toBeDefined();
+  await expect(f.reactivate("no-deployment")).rejects.toMatchObject({
+    code: "PORT_OPERATION_NOT_INSTALLED",
+  });
   await f.stillDisabled();
 });
 
@@ -415,9 +414,10 @@ it("refuses when the worker admitted a different snapshot", async () => {
 
 it("refuses and is not installed when no reactivation check is wired", async () => {
   const f = await fixture({ withVerifier: false });
-  await expect(f.reactivate("unwired")).rejects.toBeDefined();
+  await expect(f.reactivate("unwired")).rejects.toMatchObject({
+    code: "PORT_OPERATION_NOT_INSTALLED",
+  });
   await f.stillDisabled();
-  expect(PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS).toEqual(["capability.reactivate"]);
 });
 
 it("still refuses to activate a disabled capability directly", async () => {

@@ -225,6 +225,7 @@ export async function runExecutionWorkerService(
     await server.stop();
     await composition.close();
     composition = undefined;
+    await clearWorkerQualifiedDeployment(layout);
     writeServiceDiagnostic(output, { component: "execution-worker", event: "service.stopped" });
     return 0;
   } catch (error) {
