@@ -83,7 +83,7 @@ CREATE TABLE decision_ledger (
       'delivered', 'deferred', 'deadline_reached', 'shown_in_app'
     )) OR
     (kind = 'proposal' AND outcome IN (
-      'proposed', 'blocked', 'accepted', 'dismissed', 'expired', 'executed', 'failed', 'undone', 'not_proposed', 'superseded'
+      'proposed', 'blocked', 'accepted', 'dismissed', 'expired', 'executed', 'failed', 'undone', 'not_proposed', 'superseded', 'told'
     ))
   )
 ) STRICT;
