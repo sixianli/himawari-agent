@@ -21,6 +21,7 @@ enum DemoScene: String, CaseIterable {
     case chatOffline = "16-chat-states-4-offline"
     case chatAnswering = "16-chat-states-5-answering"
     case chatSteps = "16-chat-states-6-steps"
+    case tabTodayOneDigit = "tab-today-1-digit"
     case motionShimmer = "motion-shimmer"
     case motionTabs = "motion-tab-switch"
     case motionSheet = "motion-sheet"
@@ -53,6 +54,9 @@ struct DemoSceneView: View {
             tabs(DemoChatFixtures.chatList())
         case .chatEmpty:
             tabs(DemoChatState())
+        case .tabTodayOneDigit:
+            tabs(DemoChatFixtures.chatList())
+                .environment(\.listClock, DemoChatFixtures.now.addingTimeInterval(-3 * 86_400))
         case .motionTabs:
             tabs(DemoChatFixtures.chatList())
                 .environment(\.tabsCycleEvery, 1.2)

@@ -50,6 +50,7 @@ struct MainTabsView: View {
     @State private var openThread: OpenThread?
     @State private var settingsOpen = false
     @Environment(\.tabsCycleEvery) private var cycleEvery
+    @Environment(\.listClock) private var listClock
 
     init(model: AppModel, chat: ChatStore, tab: MainTab = .chats) {
         self.model = model
@@ -109,7 +110,11 @@ struct MainTabsView: View {
             EdgeFade(.bottom, height: DesignTokens.Size.fadeTabBar).ignoresSafeArea()
             HStack(spacing: 14) {
                 FloatingTabBar(selection: $tab, tabs: [
-                    FloatingTab(id: MainTab.today, title: Text(L.text("tab.today"))) { Icon(ChromeIcon.todayTab) },
+                    FloatingTab(id: MainTab.today, title: Text(L.text("tab.today"))) {
+                        TimelineView(.everyMinute) { context in
+                            TodayTabIcon(day: TodayNumber.day(at: listClock ?? context.date))
+                        }
+                    },
                     FloatingTab(id: MainTab.chats, title: Text(L.text("tab.chats"))) { Icon(.message) },
                     FloatingTab(id: MainTab.memory, title: Text(L.text("tab.memory"))) { Icon(.affiliate) },
                 ])

@@ -10,6 +10,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case bulb
     case calculator
     case calendar
+    case calendarFrame = "calendar-frame"
     case camera
     case car
     case check
@@ -23,7 +24,6 @@ public enum IconName: String, CaseIterable, Sendable {
     case deviceMobile = "device-mobile"
     case download
     case ear
-    case edit
     case eye
     case filePencil = "file-pencil"
     case fileText = "file-text"
@@ -36,6 +36,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case mapPin = "map-pin"
     case message
     case message2 = "message-2"
+    case messagePlus = "message-plus"
     case microphone
     case pencilPlus = "pencil-plus"
     case phone
@@ -48,7 +49,6 @@ public enum IconName: String, CaseIterable, Sendable {
     case server
     case serverLarge = "server-large"
     case stack2 = "stack-2"
-    case sun
     case table
     case terminal2 = "terminal-2"
     case tools
@@ -103,6 +103,33 @@ public struct ThirdPartyLicense: Identifiable, Sendable {
 }
 
 public enum ChromeIcon {
-    public static let todayTab: IconName = .sun
-    public static let newChat: IconName = .edit
+    public static let newChat: IconName = .messagePlus
+}
+
+public struct TodayTabIcon: View {
+    private static let grid: CGFloat = 24
+    private static let baseline: CGFloat = 17.7
+    private static let numberSize: CGFloat = 9.5
+
+    private let day: Int
+    private let size: CGFloat
+
+    public init(day: Int, size: CGFloat = 26) {
+        self.day = day
+        self.size = size
+    }
+
+    public var body: some View {
+        let scale = size / Self.grid
+        ZStack(alignment: Alignment(horizontal: .center, vertical: .firstTextBaseline)) {
+            Icon(.calendarFrame, size: size)
+                .alignmentGuide(.firstTextBaseline) { _ in Self.baseline * scale }
+            Text(String(day))
+                .font(.system(size: Self.numberSize * scale, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .fixedSize()
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
 }
