@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   readSync,
+  realpathSync,
 } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -18,6 +19,8 @@ export const FAILED_LOG_TAIL_LINES = 120;
 export const LINE_CHARACTERS = 500;
 export const READ_LIMIT_BYTES = 256 * 1024;
 const FOOTER_RESERVE_BYTES = 512;
+const PRIVATE_KEY_MARKER = /-----(?:BEGIN|END) [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----/u;
+const ANSI_COLOR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "gu");
 
 function listFiles(root) {
   const files = [];
@@ -70,8 +73,9 @@ function textTail(file, tailLines) {
     return null;
   }
   const redacted = redactText(text);
-  if (/-----(?:BEGIN|END) [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----/u.test(redacted)) return null;
+  if (PRIVATE_KEY_MARKER.test(redacted)) return null;
   const lines = redacted
+    .replace(ANSI_COLOR, "")
     .replace(/\r\n?/gu, "\n")
     .replace(/\n$/u, "")
     .replace(/[^\P{Cc}\n\t]|[\p{Zl}\p{Zp}]/gu, "?")
@@ -104,6 +108,13 @@ export function renderSummary({
   ];
   if (files.length === 0) return "";
   const header = `### ${title}\n\n`;
+  const footerFrom = (start) => {
+    const names = files
+      .slice(start, start + 5)
+      .map((entry) => `\`${safeName(entry.relative).slice(0, 40)}\``)
+      .join("、");
+    return `其余 ${files.length - start} 个文件超出 ${limit} 字节的摘要上限，没有显示（${names}${files.length - start > 5 ? " 等" : ""}）。\n`;
+  };
   const sections = [];
   let used = Buffer.byteLength(header);
   let shown = 0;
@@ -114,15 +125,9 @@ export function renderSummary({
       tail === null
         ? `- \`${name}\`：二进制文件，${file.size} 字节，内容不显示\n\n`
         : `#### \`${name}\`（${file.size} 字节${tail.omitted ? `，只显示最后 ${tailLines} 行` : ""}）\n\n\`\`\`\`text\n${tail.text}\n\`\`\`\`\n\n`;
-    const remaining = files.length - shown - 1;
-    const omitted = files
-      .slice(shown, shown + 5)
-      .map((entry) => `\`${safeName(entry.relative).slice(0, 40)}\``)
-      .join("、");
-    const footer = `其余 ${files.length - shown} 个文件超出 ${limit} 字节的摘要上限，没有显示（${omitted}${files.length - shown > 5 ? " 等" : ""}）。\n`;
-    const reserve = remaining > 0 ? FOOTER_RESERVE_BYTES : 0;
+    const reserve = shown + 1 < files.length ? Buffer.byteLength(footerFrom(shown + 1)) : 0;
     if (used + Buffer.byteLength(section) + reserve > limit) {
-      sections.push(footer);
+      sections.push(footerFrom(shown));
       break;
     }
     sections.push(section);
@@ -136,13 +141,21 @@ export const FAILED_TESTS_SHOWN = 30;
 export const FAILURE_MESSAGE_LINES = 20;
 const REPORT_JSON_LIMIT_BYTES = 64 * 1024 * 1024;
 
-function publishedResult(reports) {
+function readJsonInside(reports, relative) {
   try {
-    const result = JSON.parse(readFileSync(path.join(reports, "result.json"), "utf8"));
-    return result && typeof result === "object" && Array.isArray(result.reports) ? result : null;
+    const full = path.join(reports, relative);
+    const stat = lstatSync(full);
+    if (!stat.isFile() || stat.size > REPORT_JSON_LIMIT_BYTES) return null;
+    if (!realpathSync(full).startsWith(`${realpathSync(reports)}${path.sep}`)) return null;
+    return JSON.parse(readFileSync(full, "utf8"));
   } catch {
     return null;
   }
+}
+
+function publishedResult(reports) {
+  const result = readJsonInside(reports, "result.json");
+  return result && typeof result === "object" && Array.isArray(result.reports) ? result : null;
 }
 
 const reportPaths = (result, kind, extension) =>
@@ -154,16 +167,15 @@ const reportPaths = (result, kind, extension) =>
     .map((report) => report.path.split(path.sep).join("/"))
     .filter((relative) => !path.isAbsolute(relative) && !relative.split("/").includes(".."));
 
-const ANSI_COLOR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "gu");
-
-const cleanLine = (value) =>
-  redactText(String(value))
-    .replace(ANSI_COLOR, "")
-    .replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, "?");
+function cleanLine(value) {
+  const redacted = redactText(String(value));
+  if (PRIVATE_KEY_MARKER.test(redacted)) return "?";
+  return redacted.replace(ANSI_COLOR, "").replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, "?");
+}
 
 function failureMessage(value) {
   const redacted = redactText(String(value ?? ""));
-  if (/-----(?:BEGIN|END) [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----/u.test(redacted)) return "";
+  if (PRIVATE_KEY_MARKER.test(redacted)) return "";
   return redacted
     .replace(ANSI_COLOR, "")
     .replace(/\r\n?/gu, "\n")
@@ -178,15 +190,7 @@ function failureMessage(value) {
 function failedTests(reports, result) {
   const failures = [];
   for (const relative of reportPaths(result, "json", ".json").sort()) {
-    let report;
-    try {
-      const full = path.join(reports, relative);
-      const stat = lstatSync(full);
-      if (!stat.isFile() || stat.size > REPORT_JSON_LIMIT_BYTES) continue;
-      report = JSON.parse(readFileSync(full, "utf8"));
-    } catch {
-      continue;
-    }
+    const report = readJsonInside(reports, relative);
     if (!Array.isArray(report?.testResults)) continue;
     for (const file of report.testResults) {
       const name = typeof file?.name === "string" ? file.name : "?";
@@ -232,16 +236,12 @@ function renderFailedTests({ title, reports, result, limit }) {
 }
 
 function failedCommandLogs(reports) {
-  try {
-    const details = JSON.parse(readFileSync(path.join(reports, "details.json"), "utf8"));
-    return new Set(
-      details.commands
-        .filter((command) => command.exitCode !== 0 && typeof command.name === "string")
-        .map((command) => `${command.name}.log`),
-    );
-  } catch {
-    return new Set();
-  }
+  const details = readJsonInside(reports, "details.json");
+  return new Set(
+    (Array.isArray(details?.commands) ? details.commands : [])
+      .filter((command) => command?.exitCode !== 0 && typeof command?.name === "string")
+      .map((command) => `${command.name}.log`),
+  );
 }
 
 export function renderFailedLogs({ title, reports, limit = SUMMARY_LIMIT_BYTES }) {

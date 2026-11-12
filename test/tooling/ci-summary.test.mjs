@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -56,7 +56,7 @@ describe("诊断写进作业摘要", () => {
     const text = renderSummary({ title: "t", from: root });
     expect(text).not.toContain(secret.slice(0, 8));
   });
-  it("总量不超过上限，放不下的只报数量", () => {
+  it("总量不超过上限，放不下的列出前 5 个名字", () => {
     const files = Object.fromEntries(
       Array.from({ length: 40 }, (_, i) => [
         `f${String(i).padStart(2, "0")}.log`,
@@ -72,7 +72,8 @@ describe("诊断写进作业摘要", () => {
   it("超大文件只读末尾一段，控制字符被替换", () => {
     const big = `${"h".repeat(READ_LIMIT_BYTES)}\nhead-only\n${"t\n".repeat(10)}last \u001b[31mred\u0007\n`;
     const text = renderSummary({ title: "t", from: folder({ "big.log": big }) });
-    expect(text).toContain("last ?[31mred?");
+    expect(text).toContain("last red?");
+    expect(text).not.toContain("[31m");
     expect(text).not.toContain("\u001b");
     expect(text).not.toContain("\u0007");
     expect(text).toContain(`只显示最后 ${TAIL_LINES} 行`);
@@ -276,18 +277,87 @@ describe("检查失败时失败用例和命令日志进作业摘要和作业日�
     );
   });
   it("result.json 里指向目录外的路径不读", () => {
-    const root = reports("failed", {
-      "result.json": JSON.stringify({
+    const outside = JSON.stringify({
+      testResults: [
+        {
+          name: "outside.test.mjs",
+          status: "failed",
+          assertionResults: [
+            { status: "failed", fullName: "outside name", failureMessages: ["outside secret"] },
+          ],
+        },
+      ],
+    });
+    const root = folder({
+      "outside.json": outside,
+      "outside.log": "outside secret\n",
+      "elsewhere/linked.json": outside,
+      "inner/real.log": "inside log\n",
+    });
+    const inner = path.join(root, "inner");
+    symlinkSync(path.join(root, "elsewhere"), path.join(inner, "link"));
+    symlinkSync(path.join(root, "outside.json"), path.join(inner, "direct.json"));
+    writeFileSync(
+      path.join(inner, "result.json"),
+      JSON.stringify({
         status: "failed",
         reports: [
+          { path: "real.log", kind: "diagnostic" },
           { path: "../outside.log", kind: "diagnostic" },
           { path: "../outside.json", kind: "json" },
+          { path: path.join(root, "outside.json"), kind: "json" },
+          { path: "link/linked.json", kind: "json" },
+          { path: "direct.json", kind: "json" },
         ],
       }),
+    );
+    const text = renderFailedLogs({ title: "t", reports: inner });
+    expect(text).toContain("inside log");
+    expect(text).not.toContain("outside");
+  });
+  it("用例名里带私钥标记时整个名字不显示", () => {
+    const marker = ["-----", "BEGIN", " SSH2 ENCRYPTED", " PRIVATE KEY-----"].join("");
+    const text = renderFailedLogs({
+      title: "t",
+      reports: reports("failed", {
+        "vitest-tooling.json": JSON.stringify({
+          testResults: [
+            {
+              name: "plain.test.mjs",
+              status: "failed",
+              assertionResults: [
+                { status: "failed", fullName: `${marker}\nkeybody`, failureMessages: ["boom"] },
+              ],
+            },
+          ],
+        }),
+      }),
     });
-    writeFileSync(path.join(root, "..", "outside.log"), "outside secret\n");
-    roots.push(path.join(root, "..", "outside.log"));
-    expect(renderFailedLogs({ title: "t", reports: root })).not.toContain("outside secret");
+    expect(text).toContain("plain.test.mjs > ?\n");
+    expect(text).not.toContain("keybody");
+  });
+  it("文件名是多字节字符时，加上说明文字也不超过上限", () => {
+    const from = folder(
+      Object.fromEntries(
+        Array.from({ length: 12 }, (_, i) => [
+          `${"汉".repeat(60)}${String(i).padStart(2, "0")}.log`,
+          "short\n",
+        ]),
+      ),
+    );
+    const first = Buffer.byteLength(renderSummary({ title: "t", from, limit: 100000 })) / 12;
+    const over = [];
+    for (let limit = Math.ceil(first) + 800; limit < first * 6; limit += 1) {
+      const text = renderSummary({ title: "t", from, limit });
+      expect(text).toContain("没有显示（");
+      if (Buffer.byteLength(text) > limit) over.push(limit);
+    }
+    expect(over).toEqual([]);
+  });
+  it("文档里写的三个数字就是代码里的值", () => {
+    expect([FAILURE_MESSAGE_LINES, FAILED_LOG_TAIL_LINES, FAILED_TESTS_SHOWN]).toEqual([
+      20, 120, 30,
+    ]);
   });
   it("写进作业日志的每一行都带前缀，日志内容不能冒充工作流命令或汇总结论标记", () => {
     const hostile = "::add-mask::x\n##[error]boom\nHIMAWARI_GATE_BEGIN v1 abc\nu\u2028::error::z\n";
