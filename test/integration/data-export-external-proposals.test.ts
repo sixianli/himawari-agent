@@ -7,8 +7,10 @@ import {
   importPortableExport,
   MANIFEST_FILE,
   type PortableFiles,
+  proposalTextDigest,
   SEALED_FILE,
   sha256Hex,
+  unsealJson,
 } from "@himawari-agent/persistence-sqlite";
 import { createDataExportTextPolicy } from "@himawari-agent/platform-node";
 import { afterEach, describe, expect, it } from "vitest";
@@ -305,7 +307,66 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
     expect(imported.texts["proposal-pending"]).toBe("主人周末喜欢去镰仓");
   });
 
-  it("[reverse] leaves out a proposal saved into a restricted memory and every proposal with the same text, sealed file included", async () => {
+  it("[reverse] leaves out every proposal whose text is a restricted memory's text, linked or not, in the plain files and the sealed file", async () => {
+    const source = await seeded();
+    const restricted = "受限的记忆正文";
+    await seedMemory(source, {
+      id: "memory-restricted",
+      text: restricted,
+      classification: "restricted",
+    });
+    await seedProposal(source, {
+      id: "proposal-restricted-link",
+      text: "改过文字之前的原话",
+      status: "committed",
+      batchId: "batch-2",
+      memoryId: "memory-restricted",
+    });
+    await seedProposal(source, {
+      id: "proposal-restricted-pending",
+      text: ` ${restricted}\u200b `,
+      status: "pending",
+      textSha256: proposalTextDigest(restricted),
+    });
+    await seedProposal(source, {
+      id: "proposal-restricted-copy",
+      text: null,
+      status: "superseded",
+      textSha256: proposalTextDigest(restricted),
+    });
+    const { files, manifest } = await exportOf(source);
+    const hidden = [
+      restricted,
+      "改过文字之前的原话",
+      proposalTextDigest(restricted),
+      "proposal-restricted-link",
+      "proposal-restricted-pending",
+      "proposal-restricted-copy",
+    ];
+    for (const [path, bytes] of files)
+      if (path !== SEALED_FILE)
+        for (const value of hidden) expect(decoder.decode(bytes)).not.toContain(value);
+    const sealed = await unsealJson(PASSPHRASE, files.get(SEALED_FILE) ?? new Uint8Array());
+    for (const value of hidden) expect(JSON.stringify(sealed)).not.toContain(value);
+    expect(manifest.counts.externalProposals).toBe(5);
+    expect(
+      manifest.omitted.find(({ what }) => what.includes("受限（restricted）记忆的其他 agent 提议"))
+        ?.count,
+    ).toBe(3);
+    const target = await side("proposals-restricted");
+    const report = await importInto(target, files, PASSPHRASE);
+    expect(report.imported.externalProposals).toBe(5);
+    expect(
+      target.database
+        .prepare(
+          "SELECT COUNT(*) FROM external_memory_proposals WHERE id LIKE 'proposal-restricted%'",
+        )
+        .pluck()
+        .get(),
+    ).toBe(0);
+  });
+
+  it("keeps a proposal whose text only resembles a restricted memory", async () => {
     const source = await seeded();
     await seedMemory(source, {
       id: "memory-restricted",
@@ -313,47 +374,13 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
       classification: "restricted",
     });
     await seedProposal(source, {
-      id: "proposal-restricted-link",
-      text: "受限的记忆正文",
-      status: "committed",
-      batchId: "batch-2",
-      memoryId: "memory-restricted",
-      textSha256: digest("受限的记忆正文"),
+      id: "proposal-similar",
+      text: "受限的记忆正文之外的另一句",
+      status: "pending",
+      textSha256: proposalTextDigest("受限的记忆正文之外的另一句"),
     });
-    await seedProposal(source, {
-      id: "proposal-restricted-copy",
-      text: "受限的记忆正文",
-      status: "superseded",
-      textSha256: digest("受限的记忆正文"),
-    });
-    const { files, manifest } = await exportOf(source);
-    for (const [path, bytes] of files)
-      if (path !== SEALED_FILE)
-        for (const hidden of [
-          "受限的记忆正文",
-          digest("受限的记忆正文"),
-          "proposal-restricted-link",
-          "proposal-restricted-copy",
-        ])
-          expect(decoder.decode(bytes)).not.toContain(hidden);
-    expect(manifest.counts.externalProposals).toBe(5);
-    expect(
-      manifest.omitted.find(({ what }) => what.includes("受限（restricted）记忆的其他 agent 提议"))
-        ?.count,
-    ).toBe(2);
-    const target = await side("proposals-restricted");
-    const report = await importInto(target, files, PASSPHRASE);
-    expect(report.imported.externalProposals).toBe(5);
-    expect(
-      target.database
-        .prepare(
-          "SELECT COUNT(*) FROM external_memory_proposals WHERE id LIKE 'proposal-restricted%' OR text_sha256 = ?",
-        )
-        .pluck()
-        .get(digest("受限的记忆正文")),
-    ).toBe(0);
-    const texts = await proposalRows(target);
-    expect(JSON.stringify(texts.texts)).not.toContain("受限的记忆正文");
+    const { manifest } = await exportOf(source);
+    expect(manifest.counts.externalProposals).toBe(6);
   });
 
   it("drops the batch of a saved proposal whose memory was already deleted, so the batch does not count it", async () => {

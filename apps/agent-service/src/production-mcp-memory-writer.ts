@@ -21,7 +21,9 @@ import {
   EXTERNAL_PROPOSAL_TEXT_MAXIMUM,
   MEMORY_SENSITIVE_CATEGORY_NAMES,
 } from "@himawari-agent/gateway-contracts";
+import { normalizeProposalText, proposalTextDigest } from "@himawari-agent/persistence-sqlite";
 export { EXTERNAL_PROPOSAL_TEXT_MAXIMUM };
+
 import {
   classificationWithIdentifiers,
   scanMachineSecrets,
@@ -53,7 +55,6 @@ export const EXTERNAL_PROPOSAL_CATEGORIES = [
   "other",
 ] as const satisfies readonly MemoryCategory[];
 const EXTERNAL_PROPOSAL_IMPORTANCE = 500;
-const INVISIBLE_FORMATTING = /[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/gu;
 const DAY_MS = 86_400_000;
 
 export type ExternalProposalCategory = (typeof EXTERNAL_PROPOSAL_CATEGORIES)[number];
@@ -82,13 +83,7 @@ export interface ExternalProposalDecisionInput {
   readonly started: number;
 }
 
-export function normalizeProposalText(text: string): string {
-  return text.normalize("NFC").replace(INVISIBLE_FORMATTING, " ").replace(/ {2,}/gu, " ").trim();
-}
-
-export function proposalTextDigest(text: string): string {
-  return createHash("sha256").update(normalizeProposalText(text)).digest("hex");
-}
+export { normalizeProposalText, proposalTextDigest };
 
 export function proposalHasMachineSecret(text: string): boolean {
   return scanMachineSecrets(text).length > 0;

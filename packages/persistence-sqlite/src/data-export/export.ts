@@ -1,5 +1,6 @@
 import type { PayloadRecord } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
+import { proposalTextDigest } from "../external-proposal-text.js";
 import { canonicalJson, type JsonValue, jsonLines, sha256Hex } from "./canonical.js";
 import { type MarkdownMemory, renderMemoryMarkdown } from "./markdown.js";
 import {
@@ -468,10 +469,25 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   });
   const ruleHistoryVersions = ruleLines.reduce((total, { history }) => total + history.length, 0);
 
-  const proposalIds = new Set(snapshot.externalProposals.map((row) => str(row["id"])));
+  const restrictedDigests = new Set<string>();
+  for (const row of snapshot.restrictedMemoryTexts) {
+    const text = texts.get(str(row["content_ref"]));
+    if (text !== undefined) restrictedDigests.add(proposalTextDigest(text));
+  }
+  for (const row of snapshot.externalProposals)
+    if (row["restricted_link"] === 1) restrictedDigests.add(str(row["text_sha256"]));
+  const restrictedProposal = (row: Row): boolean => {
+    if (row["restricted_link"] === 1 || restrictedDigests.has(str(row["text_sha256"]))) return true;
+    const contentRef = optionalString(row["content_ref"]);
+    const text = contentRef === null ? undefined : texts.get(contentRef);
+    return text !== undefined && restrictedDigests.has(proposalTextDigest(text));
+  };
+  const exportedProposals = snapshot.externalProposals.filter((row) => !restrictedProposal(row));
+  const restrictedProposals = snapshot.externalProposals.length - exportedProposals.length;
+  const proposalIds = new Set(exportedProposals.map((row) => str(row["id"])));
   const proposalKeys = group(snapshot.externalProposalKeys, "proposal_id");
   const proposalUnkeyed = group(snapshot.externalProposalUnkeyed, "proposal_id");
-  const proposalLines: JsonValue[] = snapshot.externalProposals.map((row) => {
+  const proposalLines: JsonValue[] = exportedProposals.map((row) => {
     const id = str(row["id"]);
     const contentRef = optionalString(row["content_ref"]);
     const content =
@@ -576,7 +592,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     },
     {
       what: "保存进受限（restricted）记忆的其他 agent 提议，以及正文和它相同的提议",
-      count: snapshot.restrictedProposals,
+      count: restrictedProposals,
       reason: "正文就是那条受限记忆的文字，和受限记忆一样不导出，明文和封存文件里都没有",
     },
     {
