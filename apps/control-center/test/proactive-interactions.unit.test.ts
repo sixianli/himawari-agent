@@ -1085,15 +1085,15 @@ describe("[P1-3] the basis drawer of a decision record", () => {
       items: [
         {
           ruleId: "floor_money_words",
-          revision: 1,
+          revision: 2,
           current: true,
           kind: "money_words",
           origin: "built_in",
-          source: "ADR 0106 第 4 条；ADR 0209",
+          source: "ADR 0106 第 4 条；ADR 0209；ADR 0248",
           status: "active",
           changedAt: null,
           memory: null,
-          wording: { values: ["账单", "invoice"], quietHours: [], amount: null },
+          wording: { values: [], quietHours: [], amount: null },
           tests: { state: "passed", total: 5, failedAt: null },
           mailCount: 2,
         },
@@ -1205,8 +1205,9 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     const drawer = text(".decision-chain");
     expect(drawer).toContain("命中的规则");
     expect(drawer).toContain("内置规则");
-    expect(drawer).toContain("出处：ADR 0106 第 4 条；ADR 0209 · 第 1 版");
-    expect(drawer).toContain("词表：账单、invoice");
+    expect(drawer).toContain("出处：ADR 0106 第 4 条；ADR 0209；ADR 0248 · 第 2 版");
+    expect(drawer).toContain("模型逐封判断");
+    expect(drawer).not.toContain("词表：");
     expect(drawer).toContain("测试：5 条例子全部通过");
     expect(drawer).toContain("原话：银行的信一律提醒我");
     expect(drawer).toContain("重要名单：bank.example");

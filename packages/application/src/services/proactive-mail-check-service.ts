@@ -63,7 +63,12 @@ import {
   startOfZonedDay,
   suppressPushHits,
 } from "./proactive-rules.js";
-import { type MailAmount, parseMailAmount } from "../rules/amount.js";
+import {
+  type MailAmount,
+  type MoneyState,
+  parseMailAmount,
+  parseMailMoney,
+} from "../rules/amount.js";
 import { assertRuleExamples, type RuleRecord, ruleBookFor } from "../rules/rule-book.js";
 import { enforceableOwnerRule } from "../rules/rule-types.js";
 import type { OwnerRuleStorePort } from "../ports/owner-rules.js";
@@ -240,6 +245,7 @@ interface Judgement {
   readonly priority: ProactivePriority | null;
   readonly usedMemoryIds: readonly string[];
   readonly amount: MailAmount;
+  readonly money: MoneyState;
 }
 
 type Stop = "capped" | "capped_daily" | "failed" | null;
@@ -436,7 +442,10 @@ function baseMailView(item: ProactiveSourceItem, bodyLimit: number): ProactiveMa
   return view;
 }
 
-export function mailReferencePrompt(items: readonly ProactiveSourceItem[], bodyLimit: number): string {
+export function mailReferencePrompt(
+  items: readonly ProactiveSourceItem[],
+  bodyLimit: number,
+): string {
   return [
     MAIL_REFERENCE_EXTRACTION.text,
     JSON.stringify(
@@ -585,6 +594,7 @@ export function parseJudgements(
       todo: plainModelText(typeof entry["todo"] === "string" ? entry["todo"] : "", 200),
       reason: plainModelText(typeof entry["reason"] === "string" ? entry["reason"] : "", 200),
       dueAt: instant(entry["dueAt"]),
+      money: parseMailMoney(entry["money"]),
       amount: parseMailAmount(
         ["act", "know", "check"].includes(result as string) ? entry["amount"] : undefined,
         bodyComplete(item),
@@ -679,7 +689,8 @@ export class ProactiveMailCheckService {
         const call = await this.#invoke(prompt, "private", deadlineAt, signal, trace);
         budget.costMicros += call.costMicros;
         if (call.failure !== null || !call.completed) continue;
-        for (const [id, found] of parseMailReferences(call.output, batch)) references.set(id, found);
+        for (const [id, found] of parseMailReferences(call.output, batch))
+          references.set(id, found);
       } catch {}
     }
     return references;
@@ -1021,10 +1032,12 @@ export class ProactiveMailCheckService {
     const ruleHits: Record<string, readonly string[]> = {};
     const settled = new Map<string, { readonly result: ProactiveResult; readonly sure: boolean }>();
     for (const item of candidates) {
-      const floorIds = item.sentByOwner ? [] : floorHitIds(item, rules);
+      const judgement = judged.get(item.messageId);
+      const floorIds = item.sentByOwner
+        ? []
+        : floorHitIds(item, rules, judgement?.money ?? "unknown");
       const floor = floorIds.length > 0;
       if (floor) floorHits[item.messageId] = floorIds;
-      const judgement = judged.get(item.messageId);
       if (!judgement) {
         const ruled =
           stop === "capped_daily" && !item.sentByOwner

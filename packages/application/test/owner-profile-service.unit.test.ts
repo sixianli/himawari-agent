@@ -371,6 +371,7 @@ describe("owner profile composition", () => {
       content_folded: "",
       text_words: [],
       content_words: [],
+      money_state: "unknown",
       amount_state: "missing",
       amount_minor: 0,
       amount_currency: "",

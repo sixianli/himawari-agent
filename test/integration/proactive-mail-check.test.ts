@@ -67,6 +67,7 @@ interface Scripted {
   readonly reason?: string;
   readonly usedMemoryIds?: readonly string[];
   readonly amount?: unknown;
+  readonly money?: "yes" | "no";
 }
 
 function mail(
@@ -1321,9 +1322,9 @@ describe("proactive Gmail check acceptance", () => {
     ];
     h.script([
       { id: "points", result: "act", todo: "兑换积分", priority: "low" },
-      { id: "bill", result: "act", todo: "11/20 前付电费", priority: "low" },
+      { id: "bill", result: "act", todo: "11/20 前付电费", priority: "low", money: "yes" },
       { id: "ward", result: "act", todo: "办手续", priority: "low" },
-      { id: "tax", result: "act", todo: "缴税", priority: "medium" },
+      { id: "tax", result: "act", todo: "缴税", priority: "medium", money: "yes" },
     ]);
     const decision = await h.service.run();
     expect(decision?.counts).toMatchObject({ judged: 4, ignore: 1, know: 2, act: 1 });
@@ -1443,13 +1444,78 @@ describe("proactive Gmail check acceptance", () => {
     ];
     h.script([
       { id: "friend", result: "know", todo: "朋友约周六" },
-      { id: "bill", result: "know", todo: "电费账单已出" },
+      { id: "bill", result: "know", todo: "电费账单已出", money: "yes" },
     ]);
     const decision = await h.service.run();
     expect(decision?.counts).toMatchObject({ know: 1, ignore: 1 });
     const overview = await h.overview();
     expect(overview.insights.map(({ summary }) => summary)).toEqual(["电费账单已出"]);
     expect(overview.audit.items.map(({ messageId }) => messageId)).toEqual(["friend"]);
+  });
+
+  describe("[T7] the money floor follows the model's yes or no, not a word list", () => {
+    const deduction = () =>
+      mail("deduction", {
+        from: "カード <info@card.example.com>",
+        fromAddress: "info@card.example.com",
+        subject: "扣款成功通知",
+        snippet: "引落 payment invoice",
+      });
+
+    it("raises an ignored mail to worth-knowing when the model says it is about money", async () => {
+      const h = await harness();
+      h.reader.items = [mail("plain", { subject: "Lunch on Friday", snippet: "see you" })];
+      h.script([{ id: "plain", result: "ignore", money: "yes" }]);
+      const decision = await h.service.run();
+      expect(decision?.counts).toMatchObject({ know: 1 });
+      const [entry] = await h.ledger.list({
+        ...scope,
+        kind: "proactive",
+        since: "2026-11-01T00:00:00.000Z",
+        limit: 5,
+      });
+      expect(entry?.inputs.floorHits).toEqual({ plain: ["floor_money_words"] });
+    });
+
+    it.each([
+      ["says no", { money: "no" as const }],
+      ["leaves the field out", {}],
+    ])(
+      "REVERSE: a mail full of money words stays ignored when the model %s",
+      async (_name, extra) => {
+        const h = await harness();
+        h.reader.items = [deduction()];
+        h.script([{ id: "deduction", result: "ignore", ...extra }]);
+        const decision = await h.service.run();
+        expect(decision?.counts).toMatchObject({ ignore: 1, know: 0 });
+        const [entry] = await h.ledger.list({
+          ...scope,
+          kind: "proactive",
+          since: "2026-11-01T00:00:00.000Z",
+          limit: 5,
+        });
+        expect(entry?.inputs.floorHits).toEqual({});
+      },
+    );
+
+    it("REVERSE: a value that is not exactly yes or no counts as unknown and raises nothing", async () => {
+      const h = await harness();
+      h.reader.items = [deduction()];
+      h.scriptRaw(
+        "completed",
+        '{"items":[{"id":"deduction","result":"ignore","confidence":"sure","money":"maybe"}]}',
+      );
+      const decision = await h.service.run();
+      expect(decision?.counts).toMatchObject({ ignore: 1, know: 0 });
+    });
+
+    it("tells the model to write the money answer for every mail, including ignored ones", async () => {
+      const h = await harness();
+      h.reader.items = [deduction()];
+      h.script([{ id: "deduction", result: "ignore", money: "no" }]);
+      await h.service.run();
+      expect(h.prompts[0]).toContain('"money"');
+    });
   });
 
   it("[PG-18] re-judges already stored worth-knowing rows by the same rule when the page is read", async () => {
@@ -1465,7 +1531,7 @@ describe("proactive Gmail check acceptance", () => {
     ];
     h.script([
       { id: "friend", result: "act", todo: "回复朋友", priority: "medium" },
-      { id: "bill", result: "act", todo: "电费账单已出", priority: "medium" },
+      { id: "bill", result: "act", todo: "电费账单已出", priority: "medium", money: "yes" },
     ]);
     await h.service.run();
     const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
@@ -1499,7 +1565,7 @@ describe("proactive Gmail check acceptance", () => {
         snippet: "お支払い期限は 11/20 です",
       }),
     ];
-    h.script([{ id: "snippet-bill", result: "know", todo: "11/20 前要处理" }]);
+    h.script([{ id: "snippet-bill", result: "know", todo: "11/20 前要处理", money: "yes" }]);
     await h.service.run();
     const overview = await h.overview();
     expect(overview.insights.map(({ summary }) => summary)).toEqual(["11/20 前要处理"]);
@@ -1631,7 +1697,7 @@ describe("proactive Gmail check acceptance", () => {
         body: FULL_BODY,
         ...overrides,
       });
-    const act = (amount?: unknown) =>
+    const act = (amount?: unknown, money?: "yes") =>
       ({
         id: "due",
         result: "act",
@@ -1639,6 +1705,7 @@ describe("proactive Gmail check acceptance", () => {
         priority: "high",
         dueAt: "2026-11-05T14:59:00Z",
         ...(amount === undefined ? {} : { amount }),
+        ...(money === undefined ? {} : { money }),
       }) as const;
     const yen = (value: string, confidence = "sure", currency = "JPY") => ({
       value,
@@ -1687,7 +1754,7 @@ describe("proactive Gmail check acceptance", () => {
     it("REVERSE: never holds back a mail a floor rule hit, even with a small sure amount", async () => {
       const h = await harness({ ownerRules: smallYen() });
       h.reader.items = [due({ subject: "お支払い料金のお知らせ" })];
-      h.script([act(yen("500"))]);
+      h.script([act(yen("500"), "yes")]);
       expect(await h.service.run()).toMatchObject({ verdict: "pushed" });
       const [entry] = await ledgerRows(h);
       expect(entry?.inputs.ruleHits).toEqual({});
@@ -1719,7 +1786,7 @@ describe("proactive Gmail check acceptance", () => {
       const h = await harness();
       h.reader.items = [moneyMail("bill"), mail("friend")];
       h.script([
-        { id: "bill", result: "know", todo: "电费", reason: "账单" },
+        { id: "bill", result: "know", todo: "电费", reason: "账单", money: "yes" },
         { id: "friend", result: "ignore" },
       ]);
       const decision = await h.service.run();
@@ -1733,7 +1800,7 @@ describe("proactive Gmail check acceptance", () => {
       const [entry] = await ledgerRows(h);
       expect(entry?.id).toBe(decision?.id);
       expect(entry?.inputs.sourceIds).toEqual(["bill", "friend"]);
-      expect(entry?.inputs.ruleIds).toEqual(["floor_money_words@1"]);
+      expect(entry?.inputs.ruleIds).toEqual(["floor_money_words@2"]);
       expect(entry?.inputs.floorHits).toEqual({ bill: ["floor_money_words"] });
       expect(entry?.inputs.memoryIds).toEqual([]);
       expect(entry?.inputs.memoryInjected).toBe(false);
@@ -1852,7 +1919,7 @@ describe("proactive Gmail check acceptance", () => {
     it("keeps the ledger row and its inputs but not the prompt and answers when Gmail is disconnected", async () => {
       const h = await harness();
       h.reader.items = [moneyMail("bill")];
-      h.script([{ id: "bill", result: "know", todo: "x", reason: "y" }]);
+      h.script([{ id: "bill", result: "know", todo: "x", reason: "y", money: "yes" }]);
       const decision = await h.service.run();
       const [first] = await h.store.readDecisionPayloads({
         ...scope,
@@ -2231,7 +2298,7 @@ describe("proactive Gmail check acceptance", () => {
       };
       const mine = await harness();
       mine.reader.items = [own("paid", text)];
-      mine.script([{ id: "paid", result: "ignore" }]);
+      mine.script([{ id: "paid", result: "ignore", money: "yes" }]);
       const sent = await mine.service.run();
       expect(sent?.counts).toMatchObject({ judged: 1, ignore: 1, floorRaised: 0 });
       expect((await mine.overview()).insights).toHaveLength(0);
@@ -2240,7 +2307,7 @@ describe("proactive Gmail check acceptance", () => {
       received.reader.items = [
         mail("bill", { subject: "請求書の件", snippet: "お支払いのお願い" }),
       ];
-      received.script([{ id: "bill", result: "ignore" }]);
+      received.script([{ id: "bill", result: "ignore", money: "yes" }]);
       const raised = await received.service.run();
       expect(raised?.counts).toMatchObject({ floorRaised: 1 });
     });
@@ -3007,7 +3074,7 @@ describe("proactive Gmail check acceptance", () => {
       h.reader.items = [
         mail("refund", { threadId: "thread-refund", subject: "返金完了のお知らせ", snippet: "" }),
       ];
-      h.script([{ id: "refund", result: "know" }]);
+      h.script([{ id: "refund", result: "know", money: "yes" }]);
       const decision = await h.service.run();
       expect(decision?.counts).toMatchObject({ know: 1, check: 0, pushed: 0 });
       const [entry] = await ledgerRows(h);
