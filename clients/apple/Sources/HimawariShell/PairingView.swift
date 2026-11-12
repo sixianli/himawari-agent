@@ -87,7 +87,6 @@ struct PairingView: View {
                     Text(L.text("pairing.hello"))
                         .font(.system(size: removed ? DesignTokens.Pairing.removedTitleSize : DesignTokens.TypeScale.title1.size, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.hmText)
-                        .hmLineHeight((removed ? DesignTokens.Pairing.removedTitleSize : DesignTokens.TypeScale.title1.size) * 1.2)
                         .multilineTextAlignment(.center)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
