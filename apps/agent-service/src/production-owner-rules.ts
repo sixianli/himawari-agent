@@ -22,6 +22,7 @@ import {
   RULE_TYPES,
   type RuleRecord,
   RuleTypeError,
+  ruleExpiredAt,
   type RuntimeToolDescriptor,
   type RuntimeToolInvocation,
   type StoredOwnerRule,
@@ -31,6 +32,15 @@ import {
 } from "@himawari-agent/application";
 import { TOOL_RULE_LIST, TOOL_RULE_SET, TOOL_RULE_UNDO } from "@himawari-agent/prompt-catalog";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
+import {
+  parseRuleScope,
+  RULE_SCOPE_DEFAULT_MAX_DAYS,
+  type RuleScope,
+  type RuleScopeVerdict,
+  type RuleScopeVerifier,
+  reconcileScope,
+  scopeContext,
+} from "./production-rule-scope.js";
 
 export const RULE_SET_CAPABILITY_REF = "rule.set";
 export const RULE_LIST_CAPABILITY_REF = "rule.list";
@@ -49,194 +59,8 @@ const QUOTE_MINIMUM = 4;
 const CLAUSE_BREAK = /[\n\r。！？!?；;，,、…：:]+/u;
 const OWNER_MESSAGES_CHECKED = 6;
 const MESSAGES_SCANNED = 200;
-const SET_ARGUMENTS = ["quote", "inferred", "type", "params", "summary"];
+const SET_ARGUMENTS = ["quote", "inferred", "type", "params", "summary", "scope"];
 const ACTIVE_RULE_LIMIT = 32;
-const STANDING_MARKERS = [
-  "以后",
-  "以後",
-  "今后",
-  "今後",
-  "一律",
-  "必须",
-  "必需",
-  "每次",
-  "总是",
-  "永远",
-  "都要",
-  "都得",
-  "不许",
-  "不要再",
-  "必ず",
-  "いつも",
-  "毎回",
-  "常に",
-  "always",
-  "never",
-  "every time",
-  "from now on",
-  "whenever",
-  "must",
-].map(foldText);
-const QUIET_REQUEST_MARKERS = [
-  "别提醒我",
-  "不要提醒我",
-  "别通知我",
-  "不要通知我",
-  "别打扰我",
-  "不要打扰我",
-  "通知しないで",
-  "邪魔しないで",
-  "don't remind me",
-  "do not remind me",
-  "don't notify me",
-  "do not notify me",
-  "don't disturb me",
-  "do not disturb me",
-].map(foldText);
-const RECURRING_TIME_MARKERS = [
-  "夜里",
-  "夜间",
-  "夜晚",
-  "晚上",
-  "半夜",
-  "深夜",
-  "凌晨",
-  "早上",
-  "每天",
-  "每晚",
-  "平时",
-  "周末",
-  "工作日",
-  "夜は",
-  "夜間",
-  "毎晩",
-  "毎日",
-  "平日",
-  "週末",
-  "overnight",
-  "at night",
-  "nights",
-  "evenings",
-  "weekends",
-  "weekdays",
-  "daily",
-].map(foldText);
-const ONE_OFF_MARKERS = [
-  "这封",
-  "这一封",
-  "这条",
-  "这次",
-  "这回",
-  "本次",
-  "此次",
-  "这一次",
-  "此邮件",
-  "那封",
-  "刚才",
-  "今天",
-  "今晚",
-  "现在",
-  "正在",
-  "一会",
-  "等会",
-  "待会",
-  "今夜",
-  "今晩",
-  "right now",
-  "这个月",
-  "本月",
-  "下个月",
-  "上个月",
-  "今年",
-  "明年",
-  "去年",
-  "本季",
-  "这个季度",
-  "下个季度",
-  "this month",
-  "next month",
-  "last month",
-  "this year",
-  "next year",
-  "last year",
-  "今月",
-  "来月",
-  "来年",
-  "下周",
-  "下个",
-  "下星期",
-  "这个周",
-  "这周",
-  "本周",
-  "这个星期",
-  "后天",
-  "大后天",
-  "这两天",
-  "这阵子",
-  "昨天",
-  "昨晚",
-  "上周",
-  "上个",
-  "next week",
-  "next weekend",
-  "this week",
-  "this weekend",
-  "these days",
-  "yesterday",
-  "last night",
-  "last week",
-  "来週",
-  "今週",
-  "明後日",
-  "明天",
-  "明早",
-  "明晚",
-  "明日",
-  "暂时",
-  "目前",
-  "眼下",
-  "这几天",
-  "最近",
-  "先别",
-  "tomorrow",
-  "temporarily",
-  "for the time being",
-  "しばらく",
-  "明日は",
-  "for now",
-  "この",
-  "今回",
-  "今日",
-  "this one",
-  "this time",
-  "this email",
-  "this mail",
-  "this message",
-  "today",
-  "tonight",
-  "再说",
-  "再看",
-  "再讲",
-  "再议",
-  "改天",
-  "回头",
-  "あとで",
-  "later",
-  "we'll see",
-].map(foldText);
-const STANDING_STARTS = [
-  "从现在起",
-  "从现在开始",
-  "现在起",
-  "从今天起",
-  "从今天开始",
-  "今天起",
-  "今天开始",
-  "今日から",
-  "今日以降",
-  "starting today",
-  "from today",
-].map(foldText);
 
 type MemoryId = ProductMemoryRecord["id"];
 type ThreadId = Parameters<ThreadRepositoryPort["read"]>[2];
@@ -251,6 +75,9 @@ export type OwnerRuleErrorCode =
   | "RULE_MEMORY_NOT_READY"
   | "RULE_LIMIT_REACHED"
   | "RULE_NOT_EXPLICIT"
+  | "RULE_SCOPE_THIS_ITEM"
+  | "RULE_SCOPE_UNCLEAR"
+  | "RULE_EXPIRED"
   | "RULE_UNAVAILABLE";
 
 export class OwnerRuleError extends Error {
@@ -324,8 +151,30 @@ export function ownerRuleToolDescriptors(
             additionalProperties: false,
           },
           summary: { type: "string", minLength: 1, maxLength: OWNER_RULE_SUMMARY_LIMIT },
+          scope: {
+            oneOf: [
+              {
+                type: "object",
+                properties: { kind: { type: "string", enum: ["standing"] } },
+                required: ["kind"],
+                additionalProperties: false,
+              },
+              {
+                type: "object",
+                properties: {
+                  kind: { type: "string", enum: ["until"] },
+                  until: {
+                    type: "string",
+                    pattern: "^\\d{4}-\\d{2}-\\d{2}T([01][0-9]|2[0-3]):[0-5][0-9]$",
+                  },
+                },
+                required: ["kind", "until"],
+                additionalProperties: false,
+              },
+            ],
+          },
         },
-        required: ["quote", "inferred", "type", "summary"],
+        required: ["quote", "inferred", "type", "summary", "scope"],
         additionalProperties: false,
       },
     },
@@ -370,6 +219,7 @@ export interface RuleReceipt {
   readonly trials: readonly RuleTrial[];
   readonly replay: RuleReplay | null;
   readonly replayed: boolean;
+  readonly expiresAt: string | null;
 }
 
 export interface ListedOwnerRule {
@@ -379,6 +229,8 @@ export interface ListedOwnerRule {
   readonly status: StoredOwnerRule["status"];
   readonly enforced: boolean;
   readonly updatedAt: string;
+  readonly expiresAt: string | null;
+  readonly expired: boolean;
 }
 
 interface Proposal {
@@ -389,6 +241,7 @@ interface Proposal {
   readonly quote: string;
   readonly threadId: string | null;
   readonly source?: string;
+  readonly expiresAt?: string | null;
 }
 
 export interface RulePreview {
@@ -410,6 +263,11 @@ export interface ProductionOwnerRuleWriterOptions {
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
   readonly replay?: (rule: RuleRecord) => Promise<RuleReplay>;
+  readonly timeZone?: string;
+  readonly scope?: {
+    readonly verifier?: RuleScopeVerifier;
+    readonly maxDays?: number;
+  };
 }
 
 function hash(value: string): string {
@@ -440,33 +298,6 @@ function trialsOf(rule: RuleRecord): readonly RuleTrial[] {
   });
 }
 
-function containsMarker(clause: string, marker: string): boolean {
-  if (!/^[a-z' ]+$/u.test(marker))
-    return clause.replace(/\s+/gu, "").includes(marker.replace(/\s+/gu, ""));
-  const words = marker.trim().split(/\s+/u).join("\\s+");
-  return new RegExp(`(?<![a-z0-9_'])${words}(?![a-z0-9_'])`, "u").test(clause);
-}
-
-export function isStandingQuote(quote: string): boolean {
-  const whole = STANDING_STARTS.reduce(
-    (text, start) => text.replaceAll(start, " | "),
-    foldText(quote).replace(/\s+/gu, " "),
-  );
-  if (ONE_OFF_MARKERS.some((marker) => containsMarker(whole, marker))) return false;
-  return foldText(quote)
-    .split(CLAUSE_BREAK)
-    .map((clause) => clause.replace(/\s+/gu, " ").trim())
-    .filter((clause) => clause.length > 0)
-    .some((clause) => {
-      const rest = STANDING_STARTS.reduce((text, start) => text.replaceAll(start, " | "), clause);
-      return (
-        STANDING_MARKERS.some((marker) => containsMarker(rest, marker)) ||
-        (QUIET_REQUEST_MARKERS.some((marker) => containsMarker(rest, marker)) &&
-          RECURRING_TIME_MARKERS.some((marker) => containsMarker(rest, marker)))
-      );
-    });
-}
-
 function clausesOf(text: string): readonly string[] {
   return foldText(text)
     .split(CLAUSE_BREAK)
@@ -486,9 +317,23 @@ function saysWholeClauses(text: string, quote: readonly string[]): boolean {
   return false;
 }
 
-function sameRule(parameters: unknown, type: string, params: unknown): boolean {
+function sameRule(
+  parameters: unknown,
+  type: string,
+  params: unknown,
+  expiresAt: string | null,
+): boolean {
   const record = (parameters ?? {}) as Record<string, unknown>;
-  return record["type"] === type && JSON.stringify(record["params"]) === JSON.stringify(params);
+  return (
+    record["type"] === type &&
+    JSON.stringify(record["params"]) === JSON.stringify(params) &&
+    (typeof record["expiresAt"] === "string" ? record["expiresAt"] : null) === expiresAt
+  );
+}
+
+function expiryOf(parameters: unknown): string | null {
+  const record = (parameters ?? {}) as Record<string, unknown>;
+  return typeof record["expiresAt"] === "string" ? record["expiresAt"] : null;
 }
 
 function summaryOf(parameters: unknown): { readonly type: string; readonly summary: string } {
@@ -531,11 +376,11 @@ export class ProductionOwnerRuleWriter {
     return undefined;
   }
 
-  async #ownerSaid(threadId: string | null, quote: string): Promise<boolean> {
-    if (threadId === null) return false;
+  async #ownerMessage(threadId: string | null, quote: string): Promise<string | undefined> {
+    if (threadId === null) return undefined;
     const { ownerId, agentId } = this.#scope();
     const thread = await this.#options.threads.read(ownerId, agentId, threadId as ThreadId);
-    if (!thread) return false;
+    if (!thread) return undefined;
     const messages = await this.#options.threads.listMessages(
       ownerId,
       agentId,
@@ -548,9 +393,9 @@ export class ProductionOwnerRuleWriter {
       .slice(-OWNER_MESSAGES_CHECKED);
     for (const message of owners) {
       const text = await this.#readText(message.contentRef);
-      if (text !== undefined && quotesWholeClauses(text, quote)) return true;
+      if (text !== undefined && quotesWholeClauses(text, quote)) return text;
     }
-    return false;
+    return undefined;
   }
 
   async #writeText(ref: string, text: string): Promise<string> {
@@ -576,6 +421,7 @@ export class ProductionOwnerRuleWriter {
     readonly text: string;
     readonly category: "rule" | "preference";
     readonly threadId: string | null;
+    readonly expiresAt: string | null;
   }): Promise<MemoryId> {
     const generation: GenerationId | undefined = await this.#options.book.latestGeneration(
       this.#scope(),
@@ -606,7 +452,7 @@ export class ProductionOwnerRuleWriter {
             importancePermille: RULE_IMPORTANCE,
             entities: [],
             validFrom: null,
-            validTo: null,
+            validTo: input.expiresAt,
             supersededBy: null,
             evidenceVerified: false,
           },
@@ -617,7 +463,24 @@ export class ProductionOwnerRuleWriter {
     return memoryId;
   }
 
-  #draft(type: string, params: unknown, summary: string): RuleRecord {
+  #now(): string {
+    return this.#options.clock.now();
+  }
+
+  #timeZone(): string {
+    return this.#options.timeZone ?? "UTC";
+  }
+
+  #maxDays(): number {
+    return this.#options.scope?.maxDays ?? RULE_SCOPE_DEFAULT_MAX_DAYS;
+  }
+
+  #draft(
+    type: string,
+    params: unknown,
+    summary: string,
+    expiresAt: string | null = null,
+  ): RuleRecord {
     try {
       writableRuleType(type);
       return ownerRuleRecord({
@@ -625,7 +488,7 @@ export class ProductionOwnerRuleWriter {
         revision: 1,
         status: "active",
         source: "draft",
-        parameters: { type, params, summary },
+        parameters: { type, params, summary, ...(expiresAt ? { expiresAt } : {}) },
       });
     } catch (error) {
       if (error instanceof RuleTypeError)
@@ -647,16 +510,27 @@ export class ProductionOwnerRuleWriter {
   }
 
   async #activate(proposal: Proposal, replayed: RuleReplay | null): Promise<RuleReceipt> {
-    const draft = this.#draft(proposal.type, proposal.params, proposal.summary);
+    const expiresAt = proposal.expiresAt ?? null;
+    if (expiresAt !== null && ruleExpiredAt({ expiresAt }, this.#now()))
+      throw new OwnerRuleError("RULE_EXPIRED", "这条规矩已经到期，请主人重新说一遍");
+    const draft = this.#draft(proposal.type, proposal.params, proposal.summary, expiresAt);
     const parsed = parseOwnerRuleParameters({
       type: proposal.type,
       params: proposal.params,
       summary: proposal.summary,
+      ...(expiresAt ? { expiresAt } : {}),
     });
     const ruleId = `${OWNER_RULE_ID_PREFIX}${hash(proposal.key).slice(0, 24)}`;
-    const existing = await this.#options.rules.list({ ...this.#scope(), includeRetired: false });
+    const listed = await this.#options.rules.list({ ...this.#scope(), includeRetired: false });
+    const existing = listed.filter(
+      (row) =>
+        row.ruleId === ruleId ||
+        !ruleExpiredAt({ expiresAt: expiryOf(row.parameters) }, this.#now()),
+    );
     const same = existing.find(
-      (row) => row.ruleId !== ruleId && sameRule(row.parameters, parsed.type, parsed.params),
+      (row) =>
+        row.ruleId !== ruleId &&
+        sameRule(row.parameters, parsed.type, parsed.params, parsed.expiresAt),
     );
     if (same) {
       await this.reconfirm(same.ruleId);
@@ -671,6 +545,7 @@ export class ProductionOwnerRuleWriter {
         trials: trialsOf(draft),
         replay: replayed,
         replayed: true,
+        expiresAt: parsed.expiresAt,
       });
     }
     if (!existing.some((row) => row.ruleId === ruleId) && existing.length >= ACTIVE_RULE_LIMIT)
@@ -682,12 +557,18 @@ export class ProductionOwnerRuleWriter {
       text: `${proposal.quote}\n${parsed.summary}`,
       category: "rule",
       threadId: proposal.threadId,
+      expiresAt: parsed.expiresAt,
     });
     const outcome = await this.#options.rules
       .create({
         ...this.#scope(),
         ruleId,
-        parameters: { type: parsed.type, params: parsed.params, summary: parsed.summary },
+        parameters: {
+          type: parsed.type,
+          params: parsed.params,
+          summary: parsed.summary,
+          ...(parsed.expiresAt ? { expiresAt: parsed.expiresAt } : {}),
+        },
         source: (proposal.source ?? `chat:${proposal.threadId ?? "none"}`).slice(0, 256),
         sourceMemoryId: memoryId,
         now: this.#options.clock.now(),
@@ -725,6 +606,7 @@ export class ProductionOwnerRuleWriter {
       trials: trialsOf(draft),
       replay: replayed,
       replayed: outcome === "replayed",
+      expiresAt: parsed.expiresAt,
     });
   }
 
@@ -748,6 +630,49 @@ export class ProductionOwnerRuleWriter {
     });
   }
 
+  async #resolveScope(input: {
+    readonly scope: unknown;
+    readonly quote: string;
+    readonly inferred: boolean;
+    readonly threadId: string | null;
+  }): Promise<ReturnType<typeof reconcileScope>> {
+    const now = this.#now();
+    const timeZone = this.#timeZone();
+    const maxDays = this.#maxDays();
+    const main: RuleScope | undefined = parseRuleScope(input.scope, { now, timeZone, maxDays });
+    if (!main)
+      throw new OwnerRuleError(
+        "RULE_INPUT_INVALID",
+        "scope 不对：长期写 {kind:standing}；限时写 {kind:until, until:当地时间 YYYY-MM-DDTHH:MM}，必须晚于现在、一年之内",
+      );
+    const message = input.inferred
+      ? undefined
+      : await this.#ownerMessage(input.threadId, input.quote);
+    const verifier = this.#options.scope?.verifier;
+    let verdict: RuleScopeVerdict | undefined;
+    if (verifier && message !== undefined && !input.inferred) {
+      try {
+        verdict = await verifier.verify({
+          quote: input.quote,
+          context: scopeContext(message, input.quote),
+          now,
+          timeZone,
+        });
+      } catch {
+        verdict = undefined;
+      }
+    }
+    return reconcileScope({
+      main,
+      inferred: input.inferred,
+      ownerSaid: message !== undefined,
+      verifier,
+      verdict,
+      now,
+      maxDays,
+    });
+  }
+
   async create(input: {
     readonly key: string;
     readonly quote: string;
@@ -757,20 +682,40 @@ export class ProductionOwnerRuleWriter {
     readonly summary: string;
     readonly threadId: string | null;
     readonly source?: string;
+    readonly scope?: unknown;
   }): Promise<RuleReceipt> {
     const quote = input.quote.trim();
     const summary = input.summary.trim();
     if (quote.length === 0 || quote.length > QUOTE_LIMIT || /\p{Surrogate}/u.test(quote))
       throw new OwnerRuleError("RULE_INPUT_INVALID", "quote");
+    if (input.type === SOFT_TYPE && !validRuleSummary(summary))
+      throw new OwnerRuleError("RULE_INPUT_INVALID", "summary");
+    const outcome = await this.#resolveScope({
+      scope: input.scope,
+      quote,
+      inferred: input.inferred,
+      threadId: input.threadId,
+    });
+    if (outcome.kind === "ask") {
+      if (outcome.reason === "this_item")
+        throw new OwnerRuleError(
+          "RULE_SCOPE_THIS_ITEM",
+          "这句话只针对眼前这一件事，不是规矩；不要立规则，直接按它处理这一件",
+        );
+      throw new OwnerRuleError(
+        "RULE_SCOPE_UNCLEAR",
+        "没法确定这条规矩管多久；请问主人：长期有效、到什么时候为止，还是只这一次",
+      );
+    }
     if (input.type === SOFT_TYPE) {
-      if (!validRuleSummary(summary)) throw new OwnerRuleError("RULE_INPUT_INVALID", "summary");
-      if (input.inferred || !(await this.#ownerSaid(input.threadId, quote)))
+      if (outcome.kind !== "activate")
         throw new OwnerRuleError("RULE_NOT_EXPLICIT", "偏好只记主人的原话");
       const memoryId = await this.#writeMemory({
         key: input.key,
         text: `${quote}\n${summary}`,
         category: "preference",
         threadId: input.threadId,
+        expiresAt: outcome.expiresAt,
       });
       return Object.freeze({
         status: "soft",
@@ -783,9 +728,10 @@ export class ProductionOwnerRuleWriter {
         trials: [],
         replay: null,
         replayed: false,
+        expiresAt: outcome.expiresAt,
       });
     }
-    const draft = this.#draft(input.type, input.params, input.summary);
+    const draft = this.#draft(input.type, input.params, input.summary, outcome.expiresAt);
     const replayed = await this.#replay(draft);
     const proposal: Proposal = {
       key: input.key,
@@ -794,15 +740,15 @@ export class ProductionOwnerRuleWriter {
       summary,
       quote,
       threadId: input.threadId,
+      expiresAt: outcome.expiresAt,
       ...(input.source === undefined ? {} : { source: input.source }),
     };
-    const explicit =
-      !input.inferred && isStandingQuote(quote) && (await this.#ownerSaid(input.threadId, quote));
-    if (explicit) return this.#activate(proposal, replayed);
+    if (outcome.kind === "activate") return this.#activate(proposal, replayed);
     const normalized = parseOwnerRuleParameters({
       type: input.type,
       params: input.params,
       summary,
+      ...(outcome.expiresAt ? { expiresAt: outcome.expiresAt } : {}),
     });
     const proposalId = `rule-proposal:${hash(
       JSON.stringify([
@@ -811,6 +757,7 @@ export class ProductionOwnerRuleWriter {
         normalized.params,
         normalized.summary,
         quote,
+        normalized.expiresAt,
       ]),
     ).slice(0, 32)}`;
     await this.#writeText(proposalId, JSON.stringify(proposal));
@@ -825,6 +772,7 @@ export class ProductionOwnerRuleWriter {
       trials: trialsOf(draft),
       replay: replayed,
       replayed: false,
+      expiresAt: outcome.expiresAt,
     });
   }
 
@@ -851,8 +799,10 @@ export class ProductionOwnerRuleWriter {
         type,
         summary,
         status: row.status,
-        enforced: enforceableOwnerRule(row) !== undefined,
+        enforced: enforceableOwnerRule(row, undefined, this.#now()) !== undefined,
         updatedAt: row.updatedAt,
+        expiresAt: expiryOf(row.parameters),
+        expired: ruleExpiredAt({ expiresAt: expiryOf(row.parameters) }, this.#now()),
       });
     });
   }
@@ -862,6 +812,8 @@ export class ProductionOwnerRuleWriter {
       throw new OwnerRuleError("RULE_NOT_FOUND");
     const current = await this.#options.rules.read({ ...this.#scope(), ruleId });
     if (!current || current.status === "retired") throw new OwnerRuleError("RULE_NOT_FOUND");
+    if (ruleExpiredAt({ expiresAt: expiryOf(current.parameters) }, this.#now()))
+      throw new OwnerRuleError("RULE_EXPIRED", "已到期，请主人重新说一遍");
     if (enforceableOwnerRule(current) === undefined) throw new OwnerRuleError("RULE_UNAVAILABLE");
     const revivedMemory = current.sourceMemoryId
       ? await this.#reviveMemory(current.sourceMemoryId as MemoryId)
@@ -889,6 +841,8 @@ export class ProductionOwnerRuleWriter {
       status: changed.status,
       enforced: true,
       updatedAt: changed.updatedAt,
+      expiresAt: expiryOf(changed.parameters),
+      expired: false,
     });
   }
 
@@ -946,6 +900,8 @@ export class ProductionOwnerRuleWriter {
       status: "retired",
       enforced: false,
       updatedAt: this.#options.clock.now(),
+      expiresAt: expiryOf(current.parameters),
+      expired: ruleExpiredAt({ expiresAt: expiryOf(current.parameters) }, this.#now()),
     });
   }
 }
@@ -972,7 +928,7 @@ export class ProductionOwnerRuleTools {
     }
     if (invocation.capabilityRef !== RULE_SET_CAPABILITY_REF)
       throw new OwnerRuleError("RULE_INPUT_INVALID");
-    const { quote, inferred, type, params, summary } = args;
+    const { quote, inferred, type, params, summary, scope } = args;
     if (
       typeof quote !== "string" ||
       typeof inferred !== "boolean" ||
@@ -988,6 +944,7 @@ export class ProductionOwnerRuleTools {
       type,
       params,
       summary,
+      scope,
       threadId: invocation.context?.threadId ?? null,
     });
   }

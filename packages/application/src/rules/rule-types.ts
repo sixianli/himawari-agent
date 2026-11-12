@@ -11,6 +11,7 @@ import {
   type RuleOutcome,
   type RuleRecord,
   type RuleStatus,
+  ruleExpiredAt,
 } from "./rule-book.js";
 
 export const OWNER_RULE_ID_PREFIX = "owner:";
@@ -365,6 +366,24 @@ export interface OwnerRuleParameters {
   readonly type: string;
   readonly params: RuleParameters;
   readonly summary: string;
+  readonly expiresAt: string | null;
+}
+
+const OWNER_RULE_PARAMETER_KEYS: ReadonlySet<string> = new Set([
+  "type",
+  "params",
+  "summary",
+  "expiresAt",
+]);
+
+export function normalizeExpiry(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/u.test(value))
+    invalid("规则到期时刻格式不对");
+  const time = Date.parse(value);
+  if (!Number.isFinite(time) || !/(Z|[+-]\d{2}:\d{2})$/u.test(value))
+    invalid("规则到期时刻格式不对");
+  return new Date(time).toISOString();
 }
 
 export function validRuleSummary(summary: string): boolean {
@@ -383,6 +402,8 @@ export function parseOwnerRuleParameters(
   if (typeof value !== "object" || value === null || Array.isArray(value))
     invalid("规则参数必须是对象");
   const record = value as Record<string, unknown>;
+  for (const key of Object.keys(record))
+    if (!OWNER_RULE_PARAMETER_KEYS.has(key)) invalid(`规则参数里有不认识的项：${key}`);
   const type = record["type"];
   const summary = record["summary"];
   if (typeof type !== "string") invalid("规则参数缺少类型");
@@ -390,9 +411,10 @@ export function parseOwnerRuleParameters(
     invalid(`规则说明必须是 1 到 ${OWNER_RULE_SUMMARY_LIMIT} 个字，不能有换行或不可见字符`);
   const definition = ruleType(type, registry);
   const params = definition.parse(record["params"]);
+  const expiresAt = normalizeExpiry(record["expiresAt"]);
   if (JSON.stringify({ type, params, summary: summary.trim() }).length > OWNER_RULE_STORED_LIMIT)
     invalid("规则参数太长，请减少条目");
-  return Object.freeze({ type, params, summary: summary.trim(), definition });
+  return Object.freeze({ type, params, summary: summary.trim(), expiresAt, definition });
 }
 
 export function ownerRuleRecord(
@@ -412,6 +434,7 @@ export function ownerRuleRecord(
     source: row.source,
     status: row.status,
     examples: parsed.definition.examples(parsed.params),
+    expiresAt: parsed.expiresAt,
   });
   if (!rule.examples.some(({ hit }) => hit))
     invalid("这条规则按现在的参数不会命中任何情形，不会生效");
@@ -436,10 +459,12 @@ export function unreadablePushRule(
 export function enforceableOwnerRule(
   row: OwnerRuleRow,
   registry: readonly RuleTypeDefinition[] = RULE_TYPES,
+  now?: string,
 ): RuleRecord | undefined {
   if (row.status === "retired") return undefined;
   try {
-    return ownerRuleRecord(row, registry);
+    const rule = ownerRuleRecord(row, registry);
+    return now !== undefined && ruleExpiredAt(rule, now) ? undefined : rule;
   } catch (error) {
     if (error instanceof RuleTypeError) return undefined;
     throw error;

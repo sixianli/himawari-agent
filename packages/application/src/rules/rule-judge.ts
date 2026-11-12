@@ -2,6 +2,7 @@ import type { RuleGate } from "./field-catalog.js";
 import {
   type RuleOutcome,
   type RuleRecord,
+  ruleExpiredAt,
   ruleIsEnforced,
   usesAmountFields,
 } from "./rule-book.js";
@@ -26,10 +27,16 @@ const CACHE_LIMIT = 256;
 export class RuleJudge {
   readonly #compiled = new Map<string, CompiledRuleExpression>();
 
-  decide(gate: RuleGate, facts: RuleFacts, rules: readonly RuleRecord[]): RuleDecision {
+  decide(
+    gate: RuleGate,
+    facts: RuleFacts,
+    rules: readonly RuleRecord[],
+    at?: string,
+  ): RuleDecision {
     const hits: RuleHit[] = [];
     for (const rule of rules) {
       if (rule.gate !== gate || !ruleIsEnforced(rule.status)) continue;
+      if (at !== undefined && ruleExpiredAt(rule, at)) continue;
       if (usesAmountFields(rule) && facts["amount_state"] !== "known") continue;
       if (this.#compile(rule).evaluate(facts))
         hits.push(Object.freeze({ id: rule.id, revision: rule.revision, outcome: rule.outcome }));

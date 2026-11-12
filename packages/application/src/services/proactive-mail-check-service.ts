@@ -638,7 +638,7 @@ export class ProactiveMailCheckService {
     if (!store) return [];
     const rules: RuleRecord[] = [];
     for (const row of await store.list({ ...this.#options.scope, includeRetired: false })) {
-      const rule = enforceableOwnerRule(row);
+      const rule = enforceableOwnerRule(row, undefined, this.#options.clock.now());
       if (rule) rules.push(rule);
     }
     return rules;

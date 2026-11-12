@@ -30,6 +30,11 @@ export interface RuleRecord {
   readonly source: string;
   readonly status: RuleStatus;
   readonly examples: readonly RuleExample[];
+  readonly expiresAt?: string | null;
+}
+
+export function ruleExpiredAt(rule: Pick<RuleRecord, "expiresAt">, at: string): boolean {
+  return rule.expiresAt != null && Date.parse(rule.expiresAt) <= Date.parse(at);
 }
 
 export const RULE_IDS = Object.freeze({

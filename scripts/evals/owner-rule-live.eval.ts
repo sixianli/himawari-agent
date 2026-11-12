@@ -4,7 +4,6 @@ import { CHAT_ANSWER_LANGUAGE, CHAT_IDENTITY } from "@himawari-agent/prompt-cata
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { describe, expect, it } from "vitest";
 import {
-  isStandingQuote,
   quotesWholeClauses,
   ownerRuleToolDescriptors,
 } from "../../apps/agent-service/src/production-owner-rules.ts";
@@ -155,7 +154,8 @@ function grade(item: Case, message: Record<string, unknown>): Omit<Outcome, "mod
   if (!quotesWholeClauses(item.sentence, quote)) reasons.push("quote 不是主人原话里的整句");
   if (item.expect === "soft")
     return { caseId: item.id, pass: !reasons.length, reasons, call: args };
-  if (!isStandingQuote(quote)) reasons.push("quote 没有表示一直有效的字样");
+  const scope = args["scope"] as Record<string, unknown> | undefined;
+  if (scope?.["kind"] !== "standing" && scope?.["kind"] !== "until") reasons.push("没有写 scope");
   let rule: ReturnType<typeof ownerRuleRecord>;
   try {
     rule = ownerRuleRecord({

@@ -39,8 +39,12 @@ import {
   parseMemoryCandidates,
 } from "../../apps/agent-service/src/production-memory-capture.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
+import type {
+  RuleScopeVerdict,
+  RuleScopeVerifier,
+  RuleScopeVerifierInput,
+} from "../../apps/agent-service/src/production-rule-scope.ts";
 import {
-  isStandingQuote,
   ProductionOwnerRuleTools,
   ProductionOwnerRuleWriter,
 } from "../../apps/agent-service/src/production-owner-rules.ts";
@@ -95,7 +99,14 @@ describe("production memory capture", () => {
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function setup(message: string, output: string | Error) {
+  async function setup(
+    message: string,
+    output: string | Error,
+    scopeOptions: {
+      readonly verifier?: RuleScopeVerifier;
+      readonly timeZone?: string;
+    } = {},
+  ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-memory-capture-"));
     directories.push(stateRoot);
     const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
@@ -282,6 +293,8 @@ describe("production memory capture", () => {
       payloads,
       protector: adapters.payloadProtector,
       clock: { now: () => clock.value },
+      ...(scopeOptions.timeZone ? { timeZone: scopeOptions.timeZone } : {}),
+      ...(scopeOptions.verifier ? { scope: { verifier: scopeOptions.verifier } } : {}),
     });
     const control = new ProductionMemoryControl({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
@@ -1907,6 +1920,174 @@ describe("production memory capture", () => {
     });
   });
 
+  it("[RS-1] reads how long a sentence lasts from the main model and a second reader, and expires timed rules", async () => {
+    let verdict: RuleScopeVerdict | undefined | Error;
+    const calls: RuleScopeVerifierInput[] = [];
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+      {
+        timeZone: "Asia/Tokyo",
+        verifier: {
+          async verify(input) {
+            calls.push(input);
+            if (verdict instanceof Error) throw verdict;
+            return verdict;
+          },
+        },
+      },
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const tool = (capabilityRef: string, args: Record<string, unknown>, id: string) =>
+      context.ruleTools.run({
+        runId: createRunId("run-rule-scope"),
+        toolCallId: id,
+        capabilityRef,
+        capabilityHandleRef: null,
+        arguments: args,
+        dataClassification: "private",
+        context: { threadId: THREAD_ID },
+      } as never) as Promise<Record<string, unknown>>;
+    let counter = 0;
+    const say = async (
+      quote: string,
+      args: Record<string, unknown>,
+      verifier: RuleScopeVerdict | undefined | Error,
+    ) => {
+      counter += 1;
+      verdict = verifier;
+      await context.turn("owner", quote, null);
+      return tool(
+        "rule.set",
+        {
+          quote,
+          inferred: false,
+          type: "push_quiet_hours",
+          summary: "夜里不提醒",
+          params: {
+            periods: [
+              { days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: `0${(counter % 8) + 1}:00` },
+            ],
+          },
+          ...args,
+        },
+        `call-scope-${counter}`,
+      );
+    };
+    const standing = { kind: "standing" };
+    const until = { kind: "until", until: "2026-10-26T07:00" };
+    const listed = async () =>
+      (await tool("rule.list", {}, "list"))["rules"] as Record<string, unknown>[];
+
+    const forever = await say(
+      "夜里别提醒我",
+      { scope: standing },
+      { scope: "standing", until: null, evidence: "夜里" },
+    );
+    expect(forever).toMatchObject({ status: "active", expiresAt: null });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ quote: "夜里别提醒我", timeZone: "Asia/Tokyo", now: T0 });
+    expect(calls[0]?.context).toContain("夜里别提醒我");
+
+    const tonight = await say(
+      "今晚别提醒我，到明早七点",
+      { scope: until },
+      { scope: "until", until: "2026-10-25T22:30:00.000Z", evidence: "今晚" },
+    );
+    expect(tonight).toMatchObject({ status: "active", expiresAt: "2026-10-25T22:00:00.000Z" });
+
+    await expect(
+      say(
+        "这封先别提醒我",
+        { scope: until },
+        { scope: "this_item", until: null, evidence: "这封" },
+      ),
+    ).rejects.toMatchObject({ code: "RULE_SCOPE_THIS_ITEM" });
+    await expect(
+      say("先别提醒我", { scope: until }, { scope: "unclear", until: null, evidence: null }),
+    ).rejects.toMatchObject({ code: "RULE_SCOPE_UNCLEAR" });
+    await expect(
+      say(
+        "晚上别提醒我，这周",
+        { scope: until },
+        { scope: "standing", until: null, evidence: "晚上" },
+      ),
+    ).rejects.toMatchObject({ code: "RULE_SCOPE_UNCLEAR" });
+    await expect(
+      say(
+        "明晚别提醒我",
+        { scope: until },
+        { scope: "until", until: "2026-10-26T01:00:00.000Z", evidence: "明晚" },
+      ),
+    ).rejects.toMatchObject({ code: "RULE_SCOPE_UNCLEAR" });
+    await expect(
+      say("不要提醒我了", { scope: { kind: "until", until: "2026-10-25T20:00" } }, undefined),
+    ).rejects.toMatchObject({
+      code: "RULE_INPUT_INVALID",
+    });
+    expect(await listed()).toHaveLength(2);
+
+    const proposalIds: unknown[] = [];
+    for (const [name, outcome] of [
+      ["verifier down", new Error("down")],
+      ["verifier empty", undefined],
+    ] as const) {
+      const proposed = await say(`${name}，夜里别提醒我`, { scope: until }, outcome);
+      expect(proposed, name).toMatchObject({
+        status: "proposed",
+        ruleId: null,
+        expiresAt: "2026-10-25T22:00:00.000Z",
+      });
+      proposalIds.push(proposed["proposalId"]);
+    }
+    const inferred = await say(
+      "夜晚别提醒我",
+      { scope: standing, inferred: true },
+      { scope: "standing", until: null, evidence: "夜晚" },
+    );
+    expect(inferred).toMatchObject({ status: "proposed" });
+    const callsBefore = calls.length;
+    await say("深夜别提醒我", { scope: standing, inferred: true }, undefined);
+    expect(calls.length).toBe(callsBefore);
+    expect(await listed()).toHaveLength(2);
+
+    context.clock.value = "2026-10-25T22:00:01.000Z";
+    const rules = await listed();
+    expect(rules.find(({ ruleId }) => ruleId === tonight["ruleId"])).toMatchObject({
+      expired: true,
+      enforced: false,
+      expiresAt: "2026-10-25T22:00:00.000Z",
+    });
+    expect(rules.find(({ ruleId }) => ruleId === forever["ruleId"])).toMatchObject({
+      expired: false,
+      enforced: true,
+    });
+    await expect(
+      command(
+        context.control,
+        "memory.rule.respond",
+        { target: proposalIds[0], action: "confirm" },
+        "confirm-expired",
+      ),
+    ).rejects.toThrow("RULE_EXPIRED");
+    await expect(
+      command(
+        context.control,
+        "memory.rule.respond",
+        { target: tonight["ruleId"], action: "reconfirm" },
+        "reconfirm-expired",
+      ),
+    ).rejects.toThrow("RULE_EXPIRED");
+    const again = await say(
+      "今晚别提醒我，到明早七点",
+      { scope: { kind: "until", until: "2026-10-26T09:00" } },
+      { scope: "until", until: "2026-10-26T00:00:00.000Z", evidence: "今晚" },
+    );
+    expect(again).toMatchObject({ status: "active", replayed: false });
+    expect(again["ruleId"]).not.toBe(tonight["ruleId"]);
+  });
+
   it("[P2-3] turns the owner's standing sentence into an enforced rule, keeps inferred ones as proposals, and undoes one from the page", async () => {
     const sentence = "日本入管局相关的邮件以后必须通知我";
     const context = await setup(
@@ -1967,7 +2148,6 @@ describe("production memory capture", () => {
     for (const [name, args] of [
       ["not said", { quote: "订阅相关的以后必须提醒我" }],
       ["fragment of a one-off sentence", { quote: "必须提醒我" }],
-      ["whole one-off clause", { quote: "这封必须提醒我" }],
       ["no standing words", { quote: "入管局相关的邮件" }],
       ["inferred", { quote: sentence, inferred: true }],
     ] as const) {
@@ -1979,7 +2159,7 @@ describe("production memory capture", () => {
       expect(proposed["proposalId"], name).toMatch(/^rule-proposal:[0-9a-f]{32}$/u);
       proposals.add(proposed["proposalId"]);
     }
-    expect(proposals.size).toBe(5);
+    expect(proposals.size).toBe(4);
     const again = await set(
       { quote: "必须提醒我", params: { senderDomains: ["moj.go.jp"] } },
       "call-fragment-again",
@@ -2094,49 +2274,6 @@ describe("production memory capture", () => {
     expect(
       await context.repository.productMemoryState().read(created["memoryId"] as never),
     ).toMatchObject({ status: "active" });
-    expect(isStandingQuote("从今天开始，以后每次收到入管局的邮件都必须提醒我")).toBe(true);
-    expect(isStandingQuote("刚才那封必须提醒我")).toBe(false);
-    expect(isStandingQuote("这封必须提醒我")).toBe(false);
-    expect(isStandingQuote("这封先不用管，以后再说")).toBe(false);
-    expect(isStandingQuote("夜里别提醒我")).toBe(true);
-    expect(isStandingQuote("今晚别提醒我")).toBe(false);
-    expect(isStandingQuote("这次别提醒我")).toBe(false);
-    expect(isStandingQuote("提醒我")).toBe(false);
-    expect(isStandingQuote("现在别提醒我")).toBe(false);
-    expect(isStandingQuote("我在开会，一会别打扰我")).toBe(false);
-    expect(isStandingQuote("今夜は通知しないで")).toBe(false);
-    expect(isStandingQuote("do not disturb me right now")).toBe(false);
-    expect(isStandingQuote("从现在起夜里别提醒我")).toBe(true);
-    expect(isStandingQuote("晚上别提醒我")).toBe(true);
-    expect(isStandingQuote("周末别打扰我")).toBe(true);
-    expect(isStandingQuote("don't remind me at night")).toBe(true);
-    expect(isStandingQuote("别提醒我")).toBe(false);
-    expect(isStandingQuote("明天别提醒我")).toBe(false);
-    expect(isStandingQuote("暂时别提醒我")).toBe(false);
-    expect(isStandingQuote("先别提醒我")).toBe(false);
-    expect(isStandingQuote("明天晚上别提醒我")).toBe(false);
-    expect(isStandingQuote("don't remind me tomorrow")).toBe(false);
-    expect(isStandingQuote("这个周末别提醒我")).toBe(false);
-    expect(isStandingQuote("下周三晚上别提醒我")).toBe(false);
-    expect(isStandingQuote("后天晚上别提醒我")).toBe(false);
-    expect(isStandingQuote("昨晚别提醒我")).toBe(false);
-    expect(isStandingQuote("这个月晚上别提醒我")).toBe(false);
-    expect(isStandingQuote("明年夜里别提醒我")).toBe(false);
-    expect(isStandingQuote("这个月，晚上别提醒我")).toBe(false);
-    expect(isStandingQuote("下个月起，晚上别提醒我")).toBe(false);
-    expect(isStandingQuote("今年先这样，以后夜里别提醒我")).toBe(false);
-    expect(isStandingQuote("从今天开始，以后夜里别提醒我")).toBe(true);
-    expect(isStandingQuote("本季度夜里别提醒我")).toBe(false);
-    expect(isStandingQuote("don't remind me at night this month")).toBe(false);
-    expect(isStandingQuote("don't remind me this weekend")).toBe(false);
-    expect(isStandingQuote("don't remind me next week at night")).toBe(false);
-    expect(isStandingQuote("今天先这样，以后再看")).toBe(false);
-    expect(isStandingQuote("今天起每次都提醒我")).toBe(true);
-    expect(isStandingQuote("From now on, always tell me about refunds")).toBe(true);
-    expect(isStandingQuote("please pass the mustard")).toBe(false);
-    expect(isStandingQuote("nevertheless send it")).toBe(false);
-    expect(isStandingQuote("use must2fa for the login")).toBe(false);
-    expect(isStandingQuote("check never_x logs")).toBe(false);
 
     await context.memory.archive(
       created["memoryId"] as never,

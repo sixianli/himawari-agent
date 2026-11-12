@@ -827,14 +827,9 @@
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
   },
   "tools.rule-set": {
-    "sha256": "1aae04d93f2d0d6124af412b1226339eb3522cfe68f22c81a11a4165009e945b",
-    "changedIn": "ADR 0244",
-    "reason": "硬规则第 4 步：rule_set 增加 push_quiet_hours 规则类型（夜里指定类别的推送等到静默结束再发）",
-    "emphasis": {
-      "kind": "not-tone",
-      "phrases": ["以后……一律……", "……必须提醒我", "“以后”“一律”“必须”"],
-      "reason": "这几处是在举主人原话的例子、说明 quote 要带哪些字样，不是对模型加重语气"
-    }
+    "sha256": "f1722d05a044ec2f0796d438e6974c626a00053c13f89a07d6e1bcb37cb1ab27",
+    "changedIn": "ADR 0252",
+    "reason": "规则时效交给模型读整句判断：rule_set 增加 scope（长期或到某时刻为止），去掉词表式的字样要求"
   },
   "tools.rule-undo": {
     "sha256": "6b86761eeba8793f4420ba7cb691b4656871582ff885a8947726e4a8cd883e32",

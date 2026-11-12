@@ -80,6 +80,7 @@ export class PushGate {
             "push_delivery",
             pushDeliveryFacts(input.pushClass, at, input.timeZone),
             input.rules,
+            at,
           )
           .hits.filter(({ outcome }) => outcome === "defer_to_quiet_hours");
       const first = hitsAt(input.now);

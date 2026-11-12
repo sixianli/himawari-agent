@@ -270,12 +270,12 @@ function ruleParameters(rule: RuleRecord, settings: ProactiveSettings): Record<s
   return {};
 }
 
-function ownerRuleEntry(row: StoredOwnerRule): Record<string, unknown> {
+function ownerRuleEntry(row: StoredOwnerRule, now: string): Record<string, unknown> {
   const stored =
     row.parameters !== null && typeof row.parameters === "object"
       ? (row.parameters as Record<string, unknown>)
       : {};
-  const enforced = enforcedOwnerRule(row);
+  const enforced = enforcedOwnerRule(row, now);
   const rule = enforced?.rule;
   return {
     id: row.ruleId,
@@ -284,6 +284,7 @@ function ownerRuleEntry(row: StoredOwnerRule): Record<string, unknown> {
     origin: "owner_setting",
     source: row.source,
     status: row.status,
+    ...(typeof stored["expiresAt"] === "string" ? { expiresAt: stored["expiresAt"] } : {}),
     enforced: rule !== undefined,
     ...(enforced
       ? { type: enforced.type, summary: enforced.summary, parameters: enforced.params }
@@ -294,7 +295,10 @@ function ownerRuleEntry(row: StoredOwnerRule): Record<string, unknown> {
   };
 }
 
-function enforcedOwnerRule(row: StoredOwnerRule):
+function enforcedOwnerRule(
+  row: StoredOwnerRule,
+  now: string,
+):
   | {
       readonly rule: RuleRecord;
       readonly type: string;
@@ -303,7 +307,7 @@ function enforcedOwnerRule(row: StoredOwnerRule):
     }
   | undefined {
   try {
-    const rule = enforceableOwnerRule(row);
+    const rule = enforceableOwnerRule(row, undefined, now);
     if (!rule) return undefined;
     const parsed = parseOwnerRuleParameters(row.parameters);
     return { rule, type: parsed.type, summary: parsed.summary, params: parsed.params };
@@ -980,7 +984,7 @@ export class ProductionMcpRead {
             status: rule.status,
             ...ruleParameters(rule, settings),
           })),
-          ...owned.map(ownerRuleEntry),
+          ...owned.map((row) => ownerRuleEntry(row, this.#options.clock.now())),
         ],
       },
       memoryIds: [],
