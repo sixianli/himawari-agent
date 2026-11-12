@@ -25,7 +25,7 @@ date: "2026-11-12"
 
 ## 背景
 
-[ADR 0228](0228-external-memory-proposals-wait-for-owner-confirmation.md) 定了后端：其他 agent（例如 Muse、Claude Code 这类能通过 MCP 连到 Himawari 的程序）提议的记忆先存进 `external_memory_proposals` 表，叫「待确认」，Andy 在 Himawari 里确认后才保存。那个 PR 为了让改表队列先放行，把网页、每天打分里的提示和数据导出留给了下一个 PR，也就是本 ADR 对应的 PR（任务 P5-3 PR A2）。这个 PR 不改表。
+[ADR 0228](0228-external-memory-proposals-wait-for-owner-confirmation.md) 定了后端：其他 agent（例如 Muse、Claude Code 这类能通过 MCP 连到 Himawari 的程序）提议的记忆先存进 `external_memory_proposals` 表，叫「待确认」，Andy 在 Himawari 里确认后才保存。那个 PR 为了让改表队列先放行，把网页、每天打分里的提示和数据导出留给了下一个 PR，本 ADR 定的就是这几件事。这个 PR 不改表。
 
 <a id="premises"></a>
 
@@ -96,6 +96,5 @@ date: "2026-11-12"
 - [ADR 0228](0228-external-memory-proposals-wait-for-owner-confirmation.md)：待确认表和确认、撤销的后端。
 - [ADR 0200](0200-portable-export-of-memories-and-decisions.md)、[ADR 0233](0233-rule-book-joins-the-data-export.md)：数据导出 v1、v2。
 - [ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md)：记忆中心总方案。
-- 代码：`apps/control-center/src/components/external-proposals.tsx`、`packages/persistence-sqlite/src/data-export/export.ts`、`verify.ts`、`import.ts`。
 
 [返回阅读导航](#contents)
