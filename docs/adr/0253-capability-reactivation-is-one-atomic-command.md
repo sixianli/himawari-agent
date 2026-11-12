@@ -30,7 +30,7 @@ date: "2026-11-12"
 2. 现有的“激活”只接受“安装已批准”：同文件 `activate` 里 `current.lifecycle !== "installation_approved"` 时抛错。所以已停用的能力不能直接激活。
 3. 停用时同一个事务撤销该能力的执行句柄并取消它名下的定时任务：`packages/persistence-sqlite/src/sqlite-durable-operations.ts` 的 `invalidateCapabilityAuthority`，把任务状态写成 `revoked` 并把个数存进 `lastInvalidation.cancelledScheduledJobs`。
 4. 服务器端验最近认证的办法：`packages/application/src/services/recent-authentication-service.ts` 的 `assertRecentAuthentication` 在 `expectedAuthenticationRef` 为空或不等于当前会话的 `authenticationRef` 时拒绝。
-5. 手机只填占位值 `device`、由服务器代填认证引用：`packages/platform-node/src/device-gateway.ts` 的 `DEVICE_REFERENCE_PLACEHOLDER` 和 `withServerFilledReferences`（这个文件在 PR 426 里，本 PR 的基底分支里还没有）。
+5. 本仓库现有的网关契约里，`capability.disable` 和 `capability.rollback` 的载荷都带 `recentAuthenticationRef`（`packages/gateway-contracts/src/contracts-v2.ts` 里 `disableCapabilityCommandSchema`、`rollbackCapabilityCommandSchema`）。
 6. 生产里“核对安装包”和“资格检查”都读部署快照：`apps/agent-service/src/production-capability-lifecycle.ts` 的 `artifacts.verify` 和 `runtime.qualify` 都用 `entryFor` 在快照里找同编号、同版本、同摘要的条目。
 7. 快照加载时，资格记录的 `checkedAt` 距加载时刻不能超过 5 分钟：`packages/platform-node/src/capabilities/capability-deployment.ts` 的 `CAPABILITY_DEPLOYMENT_MAX_QUALIFICATION_AGE_MS = 5 * 60 * 1_000` 和 `parseQualification` 里的 `nowMs - checkedAtMs > maximumAgeMs`。
 8. 带沙箱证据的资格记录，部署快照加载器只要求文件系统、网络、进程、密钥四项管控为真，`resourceCeilings` 必须为假：同文件 `checkedEnforcement.resourceCeilings !== false` 和 `requiredControls`。
@@ -51,13 +51,13 @@ date: "2026-11-12"
 
 ## 决定
 
-1. 新增命令 `capability.reactivate`，载荷是能力编号、期望版本号（即 `expectedRevision`，能力记录的修订号）、原因码、最近认证引用。它和 `capability.disable`、`capability.rollback` 一样属于“改”类操作：手机端要面容确认，服务器端核对最近认证。
+1. 新增命令 `capability.reactivate`，载荷是能力编号、期望版本号（即 `expectedRevision`，能力记录的修订号）、原因码、最近认证引用。载荷里的最近认证引用字段和停用、退回的命令相同。本命令归“改”类操作：要面容确认，服务器端核对最近认证。
 2. 顺序：先验最近认证；再读取能力记录并核对期望版本号（不符返回冲突）；状态必须是已停用；对照部署快照核对安装包摘要并取资格记录；全部通过才把状态从已停用直接写成在用。任何一步失败，能力记录一个字节都不变。
 3. 不恢复执行句柄，不恢复被取消的定时任务。`lastInvalidation`（上次停用取消了几个定时任务）原样保留，界面继续显示“它们不会恢复”。
 4. 现有的“已停用直接激活”仍被拒绝（`activate` 不动）；只有这条命令能让已停用的能力回到在用。
 5. 审计：写一条审计记录，动作名是命令类型，复用现有治理命令的审计追加。
 6. 同一条命令重放（恢复场景）：记录已是在用且修订号等于期望加 1 时，直接返回同一结果，不再验证、不重复写。
-7. 手机端：把 `capability.reactivate` 登记进手机能力表，归“改”类。该表在 PR 426 里，PR 426 合并后由第 11 批线程登记；本 PR 只保证契约、已安装清单、路由和处理方四处一致。
+7. 手机端：`capability.reactivate` 要登记进手机能力表，归“改”类，由手机占位值、服务器代填认证引用的那套机制处理；该表和机制在另一个未合并的 PR（426）里，合并后由第 11 批线程登记。本 PR 只保证契约、已安装清单、路由和处理方四处一致。
 8. 顺带修了两处会让生产里的重新启用（以及已有的退回）必定失败的缺陷（见[为什么只对照快照就够](#why-snapshot)）：资格判定对带沙箱证据的记录按加载器同样的四项要求判断；生产部署快照改为启动时加载一次，之后只复核文件摘要。
 
 [↑ 返回阅读导航](#contents)
@@ -79,7 +79,7 @@ date: "2026-11-12"
 顺带发现的两处缺陷，不修的话重新启用在生产里根本用不了：
 
 - 服务里原先要求资格记录的六项管控全部为真，而部署快照加载器要求带沙箱证据的记录 `resourceCeilings` 必须为假（前提 8），所以带沙箱证据的能力永远过不了服务里的资格判定（对已有的“退回”同样成立）。现在带沙箱证据的记录只要求文件系统、网络、进程、密钥四项为真，和加载器一致；不带沙箱证据的记录仍要求六项全真。
-- 原先每次核对都重新加载快照，而加载器要求资格记录 5 分钟内检查过（前提 7），所以启动 5 分钟后任何核对都会因为“资格过旧”失败。现在启动时加载一次，之后只复核文件摘要，和沙箱服务的做法一致。两处都有回归测试，且测试在修之前都复现过失败。
+- 原先每次核对都重新加载快照，而加载器要求资格记录 5 分钟内检查过（前提 7），所以启动 5 分钟后任何核对都会因为“资格过旧”失败。现在启动时加载一次，之后只复核文件摘要，和沙箱服务的做法一致。两处都有回归测试。
 
 [↑ 返回阅读导航](#contents)
 
@@ -90,7 +90,7 @@ date: "2026-11-12"
 - 两步走（先回到待批准安装，再由主人批准）：没采纳。现成的安装批准命令没有面容字段；第二步失败会停在“已批准未激活”，主人看到的状态更多更乱。
 - 重新启用时同时恢复定时任务：没采纳。被取消的任务可能已过期、依赖已变，自动恢复等于不经确认重新授权；主人需要时可以重新建。
 - 重新启用时现场重跑沙箱检查：没采纳，理由见上节；以后需要再另议。
-- 在手机端自己填认证引用：没采纳，沿用设备网关“手机填占位值、服务器代填”的做法（前提 5）。
+- 在手机端自己填认证引用：没采纳，沿用设备网关“手机填占位值、服务器代填”的做法（PR 426 里的机制）。
 
 [↑ 返回阅读导航](#contents)
 
