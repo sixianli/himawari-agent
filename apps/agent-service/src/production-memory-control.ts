@@ -540,7 +540,8 @@ export class ProductionMemoryControl {
         "MEMORY_OPERATION_NOT_INSTALLED",
       );
     const listed = await control.listProposals();
-    const clip = (text: string, maximum: number) => singleLine(text).slice(0, maximum) || null;
+    const clip = (text: string, maximum: number) =>
+      singleLine(text.replace(/\p{Bidi_Control}/gu, "")).slice(0, maximum) || null;
     return {
       ...query,
       kind: "snapshot",

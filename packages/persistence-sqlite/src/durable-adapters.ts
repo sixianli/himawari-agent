@@ -1022,6 +1022,8 @@ export class SqliteDurableAdapters {
       read: (input) => this.context.write("ownerRuleProposal.read", input),
       listPending: (input) => this.context.write("ownerRuleProposal.listPending", input),
       decide: (input) => this.context.write("ownerRuleProposal.decide", input),
+      settledEvidence: (input) => this.context.write("ownerRuleProposal.settledEvidence", input),
+      clearEvidence: (input) => this.context.write("ownerRuleProposal.clearEvidence", input),
     });
   }
 

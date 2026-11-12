@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   ApplicationPortError,
   type ClockPort,
@@ -8,6 +8,7 @@ import {
   type MemoryBookStorePort,
   OWNER_RULE_ID_PREFIX,
   OWNER_RULE_SUMMARY_LIMIT,
+  OWNER_RULE_PROPOSALS_LISTED_MAX,
   type OwnerRuleProposalOrigin,
   type OwnerRuleProposalStorePort,
   type OwnerRuleReplayResult,
@@ -313,6 +314,47 @@ function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function evidenceOf(value: unknown): Proposal | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  const { key, type, summary, quote, threadId, source, trials, replay } = record;
+  if (
+    typeof key !== "string" ||
+    typeof type !== "string" ||
+    typeof summary !== "string" ||
+    typeof quote !== "string"
+  )
+    return undefined;
+  const counts = replay as Record<string, unknown> | null | undefined;
+  const replayed =
+    typeof counts === "object" &&
+    counts !== null &&
+    ["days", "mailsChecked", "mailsHit", "changed"].every((name) =>
+      Number.isSafeInteger(counts[name]),
+    ) &&
+    typeof counts["truncated"] === "boolean";
+  return {
+    key,
+    type,
+    params: record["params"],
+    summary,
+    quote,
+    threadId: typeof threadId === "string" ? threadId : null,
+    ...(typeof source === "string" ? { source } : {}),
+    trials: Array.isArray(trials)
+      ? trials.filter(
+          (trial): trial is RuleTrial =>
+            typeof trial === "object" &&
+            trial !== null &&
+            typeof (trial as RuleTrial).from === "string" &&
+            typeof (trial as RuleTrial).subject === "string" &&
+            typeof (trial as RuleTrial).hit === "boolean",
+        )
+      : [],
+    replay: replayed ? (replay as RuleReplay) : null,
+  };
+}
+
 function trialsOf(rule: RuleRecord): readonly RuleTrial[] {
   return rule.examples.map((example) => {
     const text = String(example.facts["text"] ?? "");
@@ -537,7 +579,8 @@ export class ProductionOwnerRuleWriter {
     }
   }
 
-  async #settle(type: string, params: unknown): Promise<void> {
+  async #settle(enforced: readonly (readonly [string, unknown])[]): Promise<void> {
+    if (enforced.length === 0) return;
     const scope = this.#scope();
     const store = this.#options.proposals;
     const now = this.#options.clock.now();
@@ -556,7 +599,9 @@ export class ProductionOwnerRuleWriter {
           params: evidence.params,
           summary: evidence.summary,
         });
-        covered = sameRule({ type: parsed.type, params: parsed.params }, type, params);
+        covered = enforced.some(([type, params]) =>
+          sameRule({ type: parsed.type, params: parsed.params }, type, params),
+        );
       } catch {
         covered = false;
       }
@@ -587,7 +632,7 @@ export class ProductionOwnerRuleWriter {
     );
     if (same) {
       await this.reconfirm(same.ruleId);
-      await this.#settle(parsed.type, parsed.params);
+      await this.#settle([[parsed.type, parsed.params]]);
       return Object.freeze({
         status: "active",
         ruleId: same.ruleId,
@@ -642,7 +687,7 @@ export class ProductionOwnerRuleWriter {
         throw new OwnerRuleError("RULE_UNAVAILABLE");
       }
     }
-    await this.#settle(parsed.type, parsed.params);
+    await this.#settle([[parsed.type, parsed.params]]);
     return Object.freeze({
       status: "active",
       ruleId,
@@ -754,53 +799,45 @@ export class ProductionOwnerRuleWriter {
       if (live.some((row) => sameRule(row.parameters, normalized.type, normalized.params)))
         return this.#activate(proposal, replayed);
       const existing = await store.read({ ...scope, proposalId, now });
-      const propose = () =>
-        store.propose({
+      const payloads = this.#options.payloads;
+      const kept =
+        existing?.status === "pending" &&
+        existing.evidenceRef !== null &&
+        (await payloads.get(existing.evidenceRef as never)) !== undefined
+          ? existing.evidenceRef
+          : null;
+      const evidenceRef =
+        kept ?? `${proposalId}:${hash(`${proposalId}\n${now}\n${randomUUID()}`).slice(0, 16)}`;
+      const drop = async (): Promise<void> => {
+        if (kept === null) await payloads.delete(evidenceRef as never).catch(() => false);
+      };
+      if (kept === null) await this.#writeText(evidenceRef, evidence);
+      const outcome = await store
+        .propose({
           ...scope,
           proposalId,
           ruleType: normalized.type,
           summary: normalized.summary,
           origin: ownerSaid ? "owner_said" : "inferred",
           threadId: input.threadId,
-          evidenceRef: proposalId,
+          evidenceRef,
           now,
           expiresAt: new Date(Date.parse(now) + this.#ttlDays() * DAY_MS).toISOString(),
           pendingLimit: this.#limit(),
-        });
-      const payloads = this.#options.payloads;
-      if (existing) {
-        const stale = existing.status !== "pending";
-        const prior = stale ? await this.#readText(proposalId).catch(() => undefined) : undefined;
-        const restore = async (): Promise<void> => {
-          if (!stale) return;
-          await payloads.delete(proposalId as never).catch(() => false);
-          if (prior !== undefined) await this.#writeText(proposalId, prior).catch(() => undefined);
-        };
-        if (stale) await payloads.delete(proposalId as never);
-        const outcome = await this.#writeText(proposalId, evidence)
-          .then(propose)
-          .catch(async (error: unknown) => {
-            await restore();
-            throw error;
-          });
-        if (outcome === "limit_reached") {
-          await restore();
-          throw new OwnerRuleError("RULE_PROPOSALS_FULL", String(this.#limit()));
-        }
-      } else {
-        const fresh = (await payloads.get(proposalId as never)) === undefined;
-        await this.#writeText(proposalId, evidence);
-        const drop = async (): Promise<void> => {
-          if (fresh) await payloads.delete(proposalId as never).catch(() => false);
-        };
-        const outcome = await propose().catch(async (error: unknown) => {
+        })
+        .catch(async (error: unknown) => {
           await drop();
           throw error;
         });
-        if (outcome === "limit_reached") {
-          await drop();
-          throw new OwnerRuleError("RULE_PROPOSALS_FULL", String(this.#limit()));
-        }
+      if (outcome === "limit_reached") {
+        await drop();
+        throw new OwnerRuleError("RULE_PROPOSALS_FULL", String(this.#limit()));
+      }
+      if (kept === null) {
+        const stored = await store.read({ ...scope, proposalId, now }).catch(() => undefined);
+        if (stored && stored.evidenceRef !== evidenceRef) await drop();
+        else if (existing?.evidenceRef && existing.evidenceRef !== evidenceRef)
+          await payloads.delete(existing.evidenceRef as never).catch(() => false);
       }
     }
     return Object.freeze({
@@ -818,18 +855,21 @@ export class ProductionOwnerRuleWriter {
   }
 
   #limit(): number {
-    return this.#options.proposalLimit ?? PENDING_PROPOSAL_LIMIT;
+    return Math.min(
+      this.#options.proposalLimit ?? PENDING_PROPOSAL_LIMIT,
+      OWNER_RULE_PROPOSALS_LISTED_MAX,
+    );
   }
 
   #ttlDays(): number {
     return this.#options.proposalTtlDays ?? PENDING_PROPOSAL_TTL_DAYS;
   }
 
-  async #readProposal(proposalId: string): Promise<Proposal | undefined> {
-    const text = await this.#readText(proposalId);
+  async #readProposal(ref: string): Promise<Proposal | undefined> {
+    const text = await this.#readText(ref);
     if (text === undefined) return undefined;
     try {
-      return JSON.parse(text) as Proposal;
+      return evidenceOf(JSON.parse(text));
     } catch {
       return undefined;
     }
@@ -872,7 +912,7 @@ export class ProductionOwnerRuleWriter {
           })
           .catch(() => undefined);
     };
-    const stored = await this.#readProposal(proposalId);
+    const stored = await this.#readProposal(row?.evidenceRef ?? proposalId);
     if (!stored) {
       await release();
       throw new OwnerRuleError("RULE_NOT_FOUND");
@@ -886,6 +926,21 @@ export class ProductionOwnerRuleWriter {
     }
   }
 
+  async #sweep(): Promise<void> {
+    const scope = this.#scope();
+    const store = this.#options.proposals;
+    const settled = await store
+      .settledEvidence({ ...scope, now: this.#options.clock.now(), limit: this.#limit() })
+      .catch(() => []);
+    for (const { proposalId, evidenceRef } of settled) {
+      const gone = await this.#options.payloads
+        .delete(evidenceRef as never)
+        .then(() => true)
+        .catch(() => false);
+      if (gone) await store.clearEvidence({ ...scope, proposalId, evidenceRef }).catch(() => false);
+    }
+  }
+
   async reject(proposalId: string): Promise<RejectedRuleProposal> {
     if (!PROPOSAL_ID_PATTERN.test(proposalId)) throw new OwnerRuleError("RULE_NOT_FOUND");
     const scope = this.#scope();
@@ -893,10 +948,13 @@ export class ProductionOwnerRuleWriter {
     const now = this.#options.clock.now();
     const decide = () =>
       store.decide({ ...scope, proposalId, from: "pending", to: "rejected", now });
-    if (await decide()) return Object.freeze({ proposalId, replayed: false });
-    let row = await store.read({ ...scope, proposalId, now });
-    if (row?.status === "pending" && (await decide()))
+    const refused = async (): Promise<RejectedRuleProposal> => {
+      await this.#sweep();
       return Object.freeze({ proposalId, replayed: false });
+    };
+    if (await decide()) return refused();
+    let row = await store.read({ ...scope, proposalId, now });
+    if (row?.status === "pending" && (await decide())) return refused();
     row = await store.read({ ...scope, proposalId, now });
     if (!row) throw new OwnerRuleError("RULE_NOT_FOUND");
     if (row.status === "rejected") return Object.freeze({ proposalId, replayed: true });
@@ -906,6 +964,14 @@ export class ProductionOwnerRuleWriter {
 
   async listProposals(): Promise<PendingRuleProposals> {
     const now = this.#options.clock.now();
+    await this.#sweep();
+    const live = await this.#options.rules.list({ ...this.#scope(), includeRetired: false });
+    await this.#settle(
+      live.flatMap((rule) => {
+        const { type, params } = (rule.parameters ?? {}) as Record<string, unknown>;
+        return typeof type === "string" ? [[type, params] as const] : [];
+      }),
+    );
     const listed = await this.#options.proposals.listPending({
       ...this.#scope(),
       now,

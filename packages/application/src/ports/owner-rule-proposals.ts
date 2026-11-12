@@ -19,6 +19,8 @@ export interface StoredOwnerRuleProposal {
   readonly lastRejectedAt: string | null;
 }
 
+export const OWNER_RULE_PROPOSALS_LISTED_MAX = 200;
+
 export type OwnerRuleProposalOutcome = "created" | "reopened" | "refreshed" | "limit_reached";
 
 export interface OwnerRuleProposalStorePort {
@@ -50,4 +52,10 @@ export interface OwnerRuleProposalStorePort {
       readonly now: string;
     },
   ): Promise<StoredOwnerRuleProposal | undefined>;
+  settledEvidence(
+    input: OwnerRuleScope & { readonly now: string; readonly limit: number },
+  ): Promise<readonly { readonly proposalId: string; readonly evidenceRef: string }[]>;
+  clearEvidence(
+    input: OwnerRuleScope & { readonly proposalId: string; readonly evidenceRef: string },
+  ): Promise<boolean>;
 }

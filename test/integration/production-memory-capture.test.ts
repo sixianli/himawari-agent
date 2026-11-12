@@ -2637,9 +2637,7 @@ describe("production memory capture", () => {
       const store = context.repository.ownerRuleProposals();
       const writer = context.ruleWriterWith({
         proposals: {
-          propose: (input) => store.propose(input),
-          read: (input) => store.read(input),
-          decide: (input) => store.decide(input),
+          ...store,
           listPending: async () => {
             throw new Error("list failed");
           },
@@ -2661,9 +2659,7 @@ describe("production memory capture", () => {
       let decisions = 0;
       const second = context.ruleWriterWith({
         proposals: {
-          propose: (input) => store.propose(input),
-          read: (input) => store.read(input),
-          listPending: (input) => store.listPending(input),
+          ...store,
           decide: async (input) => {
             if (decisions++ > 0) throw new Error("decide failed");
             return store.decide(input);
@@ -2675,6 +2671,119 @@ describe("production memory capture", () => {
       await expect(
         context.ruleWriter.reject(proposal["proposalId"] as string),
       ).rejects.toMatchObject({ code: "RULE_PROPOSAL_ACCEPTED" });
+    });
+
+    it("removes the basis of a refused or expired proposal, tidies a leftover card when the list is read, and shows only clean text", async () => {
+      const { context, set, inferred } = await prepared();
+      const stored = () => {
+        const found: { ref: string | null; kept: number }[] = [];
+        context.sql((database) => {
+          for (const row of database
+            .prepare(
+              `SELECT evidence_ref AS ref,
+                 (SELECT COUNT(*) FROM payloads WHERE payloads.ref = evidence_ref) AS kept
+               FROM owner_rule_proposals ORDER BY proposed_at, id`,
+            )
+            .all() as { ref: string | null; kept: number }[])
+            found.push(row);
+        });
+        return found;
+      };
+      const payloadCount = () => {
+        let count = 0;
+        context.sql((database) => {
+          count = (
+            database
+              .prepare("SELECT COUNT(*) AS n FROM payloads WHERE ref LIKE 'rule-proposal:%'")
+              .get() as { n: number }
+          ).n;
+        });
+        return count;
+      };
+      const refused = await inferred("refused.example");
+      expect(stored()).toMatchObject([{ kept: 1 }]);
+      await context.ruleWriter.reject(refused["proposalId"] as string);
+      expect(stored()).toEqual([{ ref: null, kept: 0 }]);
+      expect(payloadCount()).toBe(0);
+
+      await set(
+        {
+          quote: "入管局\u202e相关的邮件",
+          inferred: true,
+          params: { senderDomains: ["bidi.example"] },
+        },
+        "call-bidi",
+      );
+      const shown = (await proposalsQuery(context.control)).payload.proposals;
+      expect(shown.map((item) => item.quote)).toEqual(["入管局相关的邮件"]);
+
+      const broken = "rule-proposal:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+      await context.protect(
+        broken,
+        JSON.stringify({
+          key: "k",
+          type: "mail_must_notify",
+          summary: "坏依据",
+          quote: "原话",
+          trials: "not-a-list",
+          replay: { days: "many" },
+        }),
+      );
+      await context.repository.ownerRuleProposals().propose({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        proposalId: broken,
+        ruleType: "mail_must_notify",
+        summary: "坏依据",
+        origin: "inferred",
+        threadId: null,
+        evidenceRef: broken,
+        now: T0,
+        expiresAt: "2026-11-24T12:00:00.000Z",
+        pendingLimit: 20,
+      });
+      expect(
+        (await proposalsQuery(context.control)).payload.proposals.find(
+          (item) => item.proposalId === broken,
+        ),
+      ).toMatchObject({ quote: "原话", trials: [], replay: null });
+
+      const store = context.repository.ownerRuleProposals();
+      const first = await inferred("left.example");
+      await set(
+        {
+          quote: "入管局相关的邮件",
+          inferred: true,
+          summary: "另一种说法",
+          params: { senderDomains: ["left.example"] },
+        },
+        "call-left-reworded",
+      );
+      const untidy = context.ruleWriterWith({
+        proposals: {
+          ...store,
+          listPending: async () => {
+            throw new Error("list failed");
+          },
+        },
+      });
+      await untidy.confirm(first["proposalId"] as string);
+      let waiting = 0;
+      context.sql((database) => {
+        waiting = (
+          database
+            .prepare("SELECT COUNT(*) AS n FROM owner_rule_proposals WHERE status = 'pending'")
+            .get() as { n: number }
+        ).n;
+      });
+      expect(waiting).toBe(3);
+      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(2);
+
+      context.clock.value = new Date(Date.parse(T0) + 31 * 86_400_000).toISOString();
+      expect((await proposalsQuery(context.control)).payload.pendingCount).toBe(0);
+      expect(stored().filter((row) => row.kept > 0)).toHaveLength(2);
+      expect(stored().filter((row) => row.ref === null)).toHaveLength(3);
+      expect(payloadCount()).toBe(2);
     });
 
     it("keeps the old basis and the old state when writing the new basis fails", async () => {

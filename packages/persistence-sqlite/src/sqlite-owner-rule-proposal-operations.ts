@@ -1,7 +1,8 @@
-import type {
-  OwnerRuleProposalOutcome,
-  OwnerRuleProposalStorePort,
-  StoredOwnerRuleProposal,
+import {
+  OWNER_RULE_PROPOSALS_LISTED_MAX,
+  type OwnerRuleProposalOutcome,
+  type OwnerRuleProposalStorePort,
+  type StoredOwnerRuleProposal,
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
@@ -11,7 +12,6 @@ type Input<TName extends keyof OwnerRuleProposalStorePort> = Parameters<
 >[0];
 
 const PROPOSAL_ID = /^rule-proposal:[0-9a-f]{32}$/u;
-const MAX_LISTED = 200;
 
 const columns = `id AS proposalId, rule_type AS ruleType, summary, origin, thread_id AS threadId,
   evidence_ref AS evidenceRef, status, proposed_at AS proposedAt, expires_at AS expiresAt,
@@ -49,6 +49,10 @@ export class SqliteOwnerRuleProposalOperations {
         return this.listPending(payload as Input<"listPending">);
       case "ownerRuleProposal.decide":
         return this.decide(payload as Input<"decide">);
+      case "ownerRuleProposal.settledEvidence":
+        return this.settledEvidence(payload as Input<"settledEvidence">);
+      case "ownerRuleProposal.clearEvidence":
+        return this.clearEvidence(payload as Input<"clearEvidence">);
       default:
         return this.fail(
           "PORT_INVALID_OPERATION",
@@ -105,13 +109,14 @@ export class SqliteOwnerRuleProposalOperations {
         this.database
           .prepare(
             `UPDATE owner_rule_proposals SET expires_at = ?, origin = ?, thread_id = ?,
-               proposed_count = proposed_count + 1
+               evidence_ref = coalesce(evidence_ref, ?), proposed_count = proposed_count + 1
              WHERE owner_id = ? AND agent_id = ? AND id = ?`,
           )
           .run(
             input.expiresAt,
             input.origin,
             input.threadId,
+            input.evidenceRef,
             input.ownerId,
             input.agentId,
             proposalId,
@@ -131,7 +136,7 @@ export class SqliteOwnerRuleProposalOperations {
           .prepare(
             `UPDATE owner_rule_proposals SET status = 'pending', decided_at = NULL, proposed_at = ?,
                expires_at = ?, origin = ?, thread_id = ?, summary = ?, rule_type = ?,
-               evidence_ref = coalesce(evidence_ref, ?), proposed_count = proposed_count + 1
+               evidence_ref = ?, proposed_count = proposed_count + 1
              WHERE owner_id = ? AND agent_id = ? AND id = ?`,
           )
           .run(
@@ -185,7 +190,7 @@ export class SqliteOwnerRuleProposalOperations {
     readonly pendingCount: number;
   } {
     if (!valid(input.now)) this.invalid("Owner rule proposal time is invalid");
-    const limit = Math.min(Math.max(1, Math.trunc(input.limit)), MAX_LISTED);
+    const limit = Math.min(Math.max(1, Math.trunc(input.limit)), OWNER_RULE_PROPOSALS_LISTED_MAX);
     return this.database.transaction(() => {
       this.expire(input.ownerId, input.agentId, input.now);
       const rows = this.database
@@ -238,5 +243,43 @@ export class SqliteOwnerRuleProposalOperations {
         ? undefined
         : this.fetch(input.ownerId, input.agentId, proposalId);
     })();
+  }
+
+  private settledEvidence(
+    input: Input<"settledEvidence">,
+  ): readonly { readonly proposalId: string; readonly evidenceRef: string }[] {
+    if (!valid(input.now)) this.invalid("Owner rule proposal time is invalid");
+    const limit = Math.min(Math.max(1, Math.trunc(input.limit)), OWNER_RULE_PROPOSALS_LISTED_MAX);
+    return this.database.transaction(() => {
+      this.expire(input.ownerId, input.agentId, input.now);
+      return Object.freeze(
+        (
+          this.database
+            .prepare(
+              `SELECT id AS proposalId, evidence_ref AS evidenceRef FROM owner_rule_proposals
+               WHERE owner_id = ? AND agent_id = ? AND status IN ('rejected', 'expired')
+                 AND evidence_ref IS NOT NULL
+               ORDER BY decided_at, id LIMIT ?`,
+            )
+            .all(input.ownerId, input.agentId, limit) as {
+            proposalId: string;
+            evidenceRef: string;
+          }[]
+        ).map((row) => Object.freeze({ ...row })),
+      );
+    })();
+  }
+
+  private clearEvidence(input: Input<"clearEvidence">): boolean {
+    const proposalId = this.proposalId(input.proposalId);
+    return (
+      this.database
+        .prepare(
+          `UPDATE owner_rule_proposals SET evidence_ref = NULL
+           WHERE owner_id = ? AND agent_id = ? AND id = ? AND evidence_ref = ?
+             AND status IN ('rejected', 'expired')`,
+        )
+        .run(input.ownerId, input.agentId, proposalId, input.evidenceRef).changes > 0
+    );
   }
 }
