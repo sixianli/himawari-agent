@@ -123,19 +123,31 @@ function stripQuoteMarks(text) {
   return text.replace(/^[\s`'"“”‘’]+|[\s`'"“”‘’]+$/g, "");
 }
 
+function quoteFragments(quote, separator) {
+  return stripQuoteMarks(quote)
+    .split(separator)
+    .map((fragment) => collapse(stripQuoteMarks(fragment)))
+    .filter((fragment) => fragment !== "");
+}
+
+function fragmentsInOrder(fragments, haystack) {
+  let from = 0;
+  for (const fragment of fragments) {
+    const at = fragment.length >= 4 ? haystack.indexOf(fragment, from) : -1;
+    if (at === -1) return false;
+    from = at + fragment.length;
+  }
+  return fragments.length > 0;
+}
+
 export function quoteInText(quote, text) {
   const haystack = collapse(text);
-  const everyFragmentPresent = (separator) => {
-    const fragments = stripQuoteMarks(quote)
-      .split(separator)
-      .map((fragment) => collapse(stripQuoteMarks(fragment)))
-      .filter((fragment) => fragment !== "");
-    return (
-      fragments.length > 0 &&
-      fragments.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))
-    );
-  };
-  return everyFragmentPresent(/…|\.\.\./) || everyFragmentPresent(/…|\.\.\.|；/);
+  const elided = quoteFragments(quote, /…|\.\.\./);
+  return (
+    (elided.length > 0 &&
+      elided.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))) ||
+    fragmentsInOrder(quoteFragments(quote, /…|\.\.\.|；/), haystack)
+  );
 }
 
 function claimEvidenceProblem(repo, head, claim) {
