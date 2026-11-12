@@ -87,6 +87,23 @@ launch() {
     -HimawariDemoScene "$1" -AppleLanguages "(zh-Hans)" -AppleLocale zh_CN >/dev/null
 }
 
+settle() {
+  local file="$1" previous="" current="" tries=0
+  sleep 2
+  while [ "$tries" -lt 10 ]; do
+    xcrun simctl io "$udid" screenshot --type=png "$file" >/dev/null
+    current="$(shasum -a 256 "$file" | cut -d' ' -f1)"
+    [ "$current" = "$previous" ] && return 0
+    previous="$current"
+    tries=$((tries + 1))
+    sleep 1
+  done
+  echo "UI_REVIEW_UNSTABLE $file still changing after $tries tries" >&2
+}
+
+launch "${scenes[0]}"
+sleep 8
+
 for appearance in light dark; do
   xcrun simctl ui "$udid" appearance "$appearance"
   for scene in "${scenes[@]}"; do
@@ -107,9 +124,8 @@ for appearance in light dark; do
         ;;
       *)
         launch "$scene"
-        sleep 3
         file="$shots/$scene-$appearance.png"
-        xcrun simctl io "$udid" screenshot --type=png "$file" >/dev/null
+        settle "$file"
         width="$(sips -g pixelWidth "$file" | awk '/pixelWidth/ {print $2}')"
         [ "$width" = "$expected_width" ] || { echo "UI_REVIEW_FAILED $file is $width px wide, expected $expected_width (390 pt at 3x)" >&2; exit 1; }
         ;;

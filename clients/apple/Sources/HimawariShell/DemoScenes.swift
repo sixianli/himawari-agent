@@ -68,7 +68,7 @@ struct DemoSceneView: View {
             chat(DemoChatFixtures.answering())
         case .chatSteps:
             chat(DemoChatFixtures.answered())
-                .environment(\.processStepsOpenAfter, 0)
+                .environment(\.processStepsOpenAfter, 1)
         case .motionSheet:
             chat(DemoChatFixtures.answered())
                 .environment(\.processStepsOpenAfter, 1.5)
