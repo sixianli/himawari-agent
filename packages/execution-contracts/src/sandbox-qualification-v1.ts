@@ -89,3 +89,46 @@ export const sandboxRuntimeQualificationSchema: Schema<SandboxRuntimeQualificati
       return record;
     },
   });
+
+export interface SandboxEnforcementClaims {
+  readonly platform: string;
+  readonly runtimeIdentity: unknown;
+  readonly enforcement: {
+    readonly filesystem: boolean;
+    readonly network: boolean;
+    readonly processes: boolean;
+    readonly secrets: boolean;
+    readonly resourceCeilings: boolean;
+    readonly termination: boolean;
+  };
+}
+
+export function sandboxEnforcementClaimsMatchEvidence(
+  claims: SandboxEnforcementClaims,
+  evidence: unknown,
+): boolean {
+  let sandbox: SandboxRuntimeQualification;
+  try {
+    sandbox = sandboxRuntimeQualificationSchema.parse(evidence);
+  } catch (error) {
+    if (error instanceof ContractValidationError) return false;
+    throw error;
+  }
+  return (
+    sandbox.platform === claims.platform &&
+    claims.runtimeIdentity === `srt:${sandbox.srtVersion}` &&
+    claims.enforcement.resourceCeilings === false &&
+    claims.enforcement.termination === (sandbox.platform === "linux")
+  );
+}
+
+export function sandboxRequiredControlsEnforced(
+  enforcement: SandboxEnforcementClaims["enforcement"],
+): boolean {
+  return (
+    enforcement.filesystem === true &&
+    enforcement.network === true &&
+    enforcement.processes === true &&
+    enforcement.secrets === true
+  );
+}
