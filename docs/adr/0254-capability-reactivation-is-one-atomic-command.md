@@ -34,7 +34,7 @@ date: "2026-11-12"
 4. 服务器端验最近认证的办法：`packages/application/src/services/recent-authentication-service.ts` 的 `assertRecentAuthentication` 在 `expectedAuthenticationRef` 为空或不等于当前会话的 `authenticationRef` 时拒绝。
 5. 部署快照加载器要求资格记录的 `checkedAt` 距加载时刻不超过 5 分钟：`packages/platform-node/src/capabilities/capability-deployment.ts` 的 `CAPABILITY_DEPLOYMENT_MAX_QUALIFICATION_AGE_MS = 5 * 60 * 1_000`。这条只管启动时的准入，同文件 `revalidateCapabilityDeploymentSnapshot` 上方的说明原话是 “Qualification freshness gates admission; subsequent jobs still verify snapshot bytes and the actual host/runtime binding.”
 6. 执行进程启动时现场跑一遍资格检查并和快照比对：`apps/execution-worker/src/production-worker-composition.ts` 的 `qualifyProductionWorkerDeployment` 调用 `qualifyDeployment`。
-7. 执行进程的启动绑定是在资格检查完成之前写出的：`apps/execution-worker/src/service-main.ts` 里 `waitForAgentBinding` 和 `qualifyProductionWorkerDeployment` 经 `bindingThenQualification` 一起等，`waitForAgentBinding` 内部调用 `writeWorkerServiceBootBinding`。启动绑定的字段里没有快照摘要：`packages/platform-node/src/state-root-layout.ts` 的 `WORKER_BOOT_BINDING_FIELDS`。
+7. 执行进程写启动绑定不等资格检查完成，两件事并行进行：`apps/execution-worker/src/service-main.ts` 里 `waitForAgentBinding` 和 `qualifyProductionWorkerDeployment` 经 `bindingThenQualification` 一起等，`waitForAgentBinding` 内部调用 `writeWorkerServiceBootBinding`。启动绑定的字段里没有快照摘要：`packages/platform-node/src/state-root-layout.ts` 的 `WORKER_BOOT_BINDING_FIELDS`。
 8. 两个进程成对重启：[ADR 0036](0036-agent-worker-restart-as-a-pair.md) 决定第 1 条“Agent 和 Worker 是一个重启单位”。
 
 [↑ 返回阅读导航](#contents)
@@ -80,7 +80,7 @@ date: "2026-11-12"
 - 现有的启动绑定文件 `execution-worker.boot.json` 的格式和写入时机都不变，agent-service 启动时等的仍是它，启动顺序不受影响。
 - 读写沿用启动绑定的安全做法，和启动绑定共用同一对函数（`commitWorkerRuntimeRecord`、`readWorkerRuntimeRecord`）：临时文件加原子改名、权限 0600；读时拒绝符号链接、组或其他人可读写的文件、属主不是服务账号的文件、多余字段。
 - 两个进程成对重启（前提 8），所以不考虑新旧版本混跑，文件不做旧格式兼容。
-- 上线脚本不用改：`scripts/delivery-mode/` 下只有 `packet-template/systemd/S7-startup-readback.mjs` 读启动绑定（调用 `readWorkerServiceBootBinding`），它读的那份文件没有变。
+- 上线脚本不用改：`scripts/delivery-mode/` 下读启动绑定的有两处，`packet-template/systemd/S7-startup-readback.mjs` 和 `packet-template/acceptance/cloud/probe-source/test/qualification/sandbox-install-restart-probe.mjs`（都调用 `readWorkerServiceBootBinding`），它们读的那份文件没有变。
 
 [↑ 返回阅读导航](#contents)
 
@@ -108,7 +108,7 @@ date: "2026-11-12"
 - 重新启用时同时恢复定时任务：没采纳。被取消的任务可能已过期，自动恢复等于不经确认重新授权。
 - 让重新启用走部署快照加载器，或给加载器传一个很大的最大年龄：没采纳。那条新鲜度规则是启动准入用的（前提 5），放宽它会同时放宽启动准入。
 - 不加文件，只确认执行进程在服务：没采纳。那样“同一份快照”只是假设两个进程的配置相同，不是核对。
-- 把摘要加进现有的启动绑定：没采纳。启动绑定在现场检查之前写出（前提 7），加进去就不能表示“检查已通过”。
+- 把摘要加进现有的启动绑定：没采纳。写启动绑定不等现场检查完成（前提 7），加进去就不能表示“检查已通过”。
 
 [↑ 返回阅读导航](#contents)
 
