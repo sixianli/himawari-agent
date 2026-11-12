@@ -3024,7 +3024,7 @@ describe("production memory capture", () => {
         context.box.propose({
           proposalId: wideId,
           type: "price_search",
-          summary: "😀".repeat(200),
+          summary: "😀".repeat(100),
           effect: "\u202e  采纳后去比价",
           origin: "external_agent",
           threadId: null,
@@ -3039,7 +3039,10 @@ describe("production memory capture", () => {
         { summary: "\u202e \u0007" },
         { effect: "" },
         { type: "t".repeat(65) },
-        { summary: "长".repeat(401) },
+        { summary: "长".repeat(201) },
+        { summary: "😀".repeat(101) },
+        { effect: "长".repeat(201) },
+        { type: "price\u202esearch" },
         { proposalId: "not-an-id" },
       ])
         await expect(wide(invalid)).rejects.toMatchObject({ code: "PROPOSAL_INVALID" });

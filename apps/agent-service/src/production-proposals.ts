@@ -131,7 +131,7 @@ export function shownText(value: string, maximum: number): string {
 }
 
 const TYPE_LENGTH = 64;
-const SENTENCE_LENGTH = 400;
+const SENTENCE_LENGTH = 200;
 
 function sentence(value: unknown, maximum: number): boolean {
   return (
@@ -288,6 +288,7 @@ export class ProductionProposalBox {
     if (
       !PROPOSAL_ID_PATTERN.test(proposalId) ||
       !sentence(input.type, TYPE_LENGTH) ||
+      shownText(input.type, TYPE_LENGTH) !== input.type ||
       !sentence(input.summary, SENTENCE_LENGTH) ||
       !sentence(input.effect, SENTENCE_LENGTH)
     )
@@ -429,7 +430,7 @@ export class ProductionProposalBox {
     const { store } = this.#options;
     const now = this.#options.clock.now();
     const waiting = await store
-      .listPending({ ...scope, now, limit: this.limit })
+      .listPending({ ...scope, now, limit: PENDING_PROPOSAL_CEILING })
       .catch(() => undefined);
     for (const row of waiting?.proposals ?? []) {
       if (row.type !== type) continue;
@@ -477,7 +478,11 @@ export class ProductionProposalBox {
       const covered = await handler.settled?.().catch(() => undefined);
       if (covered) await this.settle(type, covered);
     }
-    const listed = await this.#options.store.listPending({ ...scope, now, limit: this.limit });
+    const listed = await this.#options.store.listPending({
+      ...scope,
+      now,
+      limit: PENDING_PROPOSAL_CEILING,
+    });
     const proposals: PendingProposal[] = [];
     for (const row of listed.proposals) {
       const basis = await this.#readBasis(row.evidenceRef);
