@@ -17,14 +17,17 @@ import {
   ruleBookFor,
 } from "@himawari-agent/application";
 import {
+  MCP_PROPOSE_MEMORIES_RESULT,
   MCP_PROPOSE_MEMORY_ALREADY_SAVED,
   MCP_PROPOSE_MEMORY_CHANGED,
   MCP_PROPOSE_MEMORY_CONFIRM,
   MCP_PROPOSE_MEMORY_DECLINED,
   MCP_PROPOSE_MEMORY_FAILED,
+  MCP_PROPOSE_MEMORY_FULL,
   MCP_PROPOSE_MEMORY_INVALID,
-  MCP_PROPOSE_MEMORY_NOT_READY,
+  MCP_PROPOSE_MEMORY_PENDING,
   MCP_PROPOSE_MEMORY_SAVED,
+  MCP_PROPOSE_MEMORY_SECRET,
   MCP_PROPOSE_MEMORY_SENSITIVE_NOTE,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
   MCP_PROPOSE_NOT_SHOWN,
@@ -45,6 +48,7 @@ import {
   MCP_START_HERE_RULES_OMITTED,
   MCP_START_HERE_RULES_NOTE,
   MCP_TOOL_FIND_MEMORIES,
+  MCP_TOOL_PROPOSE_MEMORIES,
   MCP_TOOL_PROPOSE_MEMORY,
   MCP_TOOL_PROPOSE_RULE,
   MCP_TOOL_RESULT_FAILED,
@@ -75,12 +79,15 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { AdmissionWindows } from "./bearer-admission.js";
 import {
   EXTERNAL_PROPOSAL_CATEGORIES,
+  EXTERNAL_PROPOSAL_KEY_MAXIMUM,
   EXTERNAL_PROPOSAL_TEXT_MAXIMUM,
-  type ExternalMemoryProposal,
   type ExternalProposalCategory,
   type ExternalProposalDecision,
+  type ExternalProposalDecisionInput,
+  type ExternalProposalSubmission,
   normalizeProposalText,
   proposalClassification,
+  proposalHasMachineSecret,
 } from "./production-mcp-memory-writer.js";
 import {
   EXTERNAL_RULE_REASON_MAXIMUM,
@@ -104,7 +111,8 @@ export const MCP_READ_TOOL_NAMES = [
   "today_context",
   "rule_book",
 ] as const;
-export const MCP_WRITE_TOOL_NAMES = ["propose_memory", "propose_rule"] as const;
+export const MCP_WRITE_TOOL_NAMES = ["propose_memory", "propose_memories", "propose_rule"] as const;
+export const MCP_PROPOSE_MEMORIES_MAXIMUM = 50;
 export const MCP_PROPOSAL_CONFIRM_KEY = "confirm";
 export const MCP_PROPOSAL_UNSEEN_ANSWER_MS = 1_500;
 export const MCP_PROPOSAL_STATE_TTL_SECONDS = 600;
@@ -156,11 +164,23 @@ export interface McpReadSources {
   }>;
 }
 
+export interface McpProposalReceipt {
+  readonly id: string;
+  readonly status: "pending" | "committed" | "rejected" | "superseded";
+  readonly receivedAt: string;
+}
+
 export interface McpMemoryProposals {
   readonly ready: () => Promise<boolean>;
+  readonly submit: (input: ExternalProposalSubmission) => Promise<{
+    readonly proposal: McpProposalReceipt;
+    readonly created: boolean;
+    readonly superseded: readonly string[];
+  }>;
+  readonly read: (proposalId: string) => Promise<McpProposalReceipt | undefined>;
   readonly decided: (proposalId: string) => Promise<ExternalProposalDecision | undefined>;
-  readonly keep: (proposal: ExternalMemoryProposal, started: number) => Promise<string>;
-  readonly decline: (proposal: ExternalMemoryProposal, started: number) => Promise<void>;
+  readonly keep: (proposalId: string, input: ExternalProposalDecisionInput) => Promise<string>;
+  readonly decline: (proposalId: string, input: ExternalProposalDecisionInput) => Promise<boolean>;
 }
 
 export interface McpRuleProposals {
@@ -254,6 +274,14 @@ const SUMMARIES_NOT_TRIED: SummaryRead = Object.freeze({
 interface ReadTrace {
   costMicros: number;
   summariesTried: boolean;
+}
+
+function isAlreadyDecided(error: unknown): boolean {
+  return error instanceof Error && error.message === "MCP_PROPOSAL_ALREADY_DECIDED";
+}
+
+function isPendingFull(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("EXTERNAL_MEMORY_PROPOSAL_PENDING_FULL");
 }
 
 function mapStrings(value: unknown, map: (text: string) => string): unknown {
@@ -493,21 +521,24 @@ export class ProductionMcpRead {
       () => this.#ruleBook(),
     );
     const proposals = this.#options.write?.proposals;
+    const subjectRef = context.authInfo?.clientId ?? "";
     if (
       proposals &&
       context.era === "modern" &&
       context.authInfo?.scopes.includes(WRITE_ACCESS) === true
-    )
+    ) {
+      const item = {
+        text: { type: "string", minLength: 1 },
+        category: { type: "string", enum: [...EXTERNAL_PROPOSAL_CATEGORIES] },
+        key: { type: "string", minLength: 1, maxLength: EXTERNAL_PROPOSAL_KEY_MAXIMUM },
+      };
       server.registerTool(
         "propose_memory",
         {
           description: MCP_TOOL_PROPOSE_MEMORY.text,
           inputSchema: fromJsonSchema<JsonObject>({
             type: "object",
-            properties: {
-              text: { type: "string", minLength: 1 },
-              category: { type: "string", enum: [...EXTERNAL_PROPOSAL_CATEGORIES] },
-            },
+            properties: item,
             required: ["text"],
             additionalProperties: false,
           } as never),
@@ -523,9 +554,48 @@ export class ProductionMcpRead {
             proposals,
             args,
             clientNameOf(handlerContext.mcpReq.envelope, userAgent),
+            subjectRef,
             handlerContext,
           ),
       );
+      server.registerTool(
+        "propose_memories",
+        {
+          description: MCP_TOOL_PROPOSE_MEMORIES.text,
+          inputSchema: fromJsonSchema<JsonObject>({
+            type: "object",
+            properties: {
+              items: {
+                type: "array",
+                minItems: 1,
+                maxItems: MCP_PROPOSE_MEMORIES_MAXIMUM,
+                items: {
+                  type: "object",
+                  properties: item,
+                  required: ["text"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["items"],
+            additionalProperties: false,
+          } as never),
+          annotations: {
+            readOnlyHint: false,
+            destructiveHint: false,
+            idempotentHint: false,
+            openWorldHint: false,
+          },
+        },
+        async (args: JsonObject, handlerContext) =>
+          this.#proposeMemories(
+            proposals,
+            args,
+            clientNameOf(handlerContext.mcpReq.envelope, userAgent),
+            subjectRef,
+          ),
+      );
+    }
     const rules = this.#options.write?.rules;
     if (
       rules &&
@@ -728,35 +798,154 @@ export class ProductionMcpRead {
     });
   }
 
-  async #proposeMemory(
-    proposals: McpMemoryProposals,
-    args: JsonObject,
-    client: string,
-    context: ServerContext,
-  ): Promise<CallToolResult | InputRequiredResult> {
-    const started = Date.parse(this.#options.clock.now());
+  #readProposalArgs(args: JsonObject):
+    | {
+        readonly text: string;
+        readonly category: ExternalProposalCategory;
+        readonly sourceKey: string | null;
+      }
+    | "invalid"
+    | "secret" {
     const text = normalizeProposalText(typeof args["text"] === "string" ? args["text"] : "");
     const category = (
       typeof args["category"] === "string" ? args["category"] : "other"
     ) as ExternalProposalCategory;
+    const key = args["key"];
+    const sourceKey = typeof key === "string" ? normalizeProposalText(key) : null;
     if (
       text.length === 0 ||
-      [...text].length > EXTERNAL_PROPOSAL_TEXT_MAXIMUM ||
-      !(EXTERNAL_PROPOSAL_CATEGORIES as readonly string[]).includes(category)
+      text.length > EXTERNAL_PROPOSAL_TEXT_MAXIMUM ||
+      !(EXTERNAL_PROPOSAL_CATEGORIES as readonly string[]).includes(category) ||
+      (key !== undefined &&
+        (sourceKey === null ||
+          sourceKey.length === 0 ||
+          [...sourceKey].length > EXTERNAL_PROPOSAL_KEY_MAXIMUM))
     )
+      return "invalid";
+    if (
+      proposalHasMachineSecret(text) ||
+      (sourceKey !== null && proposalHasMachineSecret(sourceKey))
+    )
+      return "secret";
+    return { text, category, sourceKey };
+  }
+
+  async #settledReply(proposalId: string): Promise<CallToolResult> {
+    const decided = await this.#options.write?.proposals?.decided(proposalId);
+    if (decided === "kept") return proposalReply(MCP_PROPOSE_MEMORY_ALREADY_SAVED.text, false);
+    if (decided === "declined") return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
+    return proposalReply(MCP_PROPOSE_MEMORY_CHANGED.text, true);
+  }
+
+  #pendingReply(proposal: McpProposalReceipt): CallToolResult {
+    return proposalReply(
+      renderPrompt(MCP_PROPOSE_MEMORY_PENDING, {
+        proposalId: proposal.id,
+        receivedAt: proposal.receivedAt,
+      }),
+      false,
+    );
+  }
+
+  async #proposeMemories(
+    proposals: McpMemoryProposals,
+    args: JsonObject,
+    client: string,
+    subjectRef: string,
+  ): Promise<CallToolResult> {
+    const items = Array.isArray(args["items"]) ? args["items"] : [];
+    if (items.length === 0 || items.length > MCP_PROPOSE_MEMORIES_MAXIMUM)
       return proposalReply(MCP_PROPOSE_MEMORY_INVALID.text, true);
+    try {
+      const results: Record<string, unknown>[] = [];
+      const replaced = new Set<string>();
+      for (const [index, raw] of items.entries()) {
+        const parsed =
+          raw !== null && typeof raw === "object" && !Array.isArray(raw)
+            ? this.#readProposalArgs(raw as JsonObject)
+            : "invalid";
+        if (typeof parsed === "string") {
+          results.push({ index, status: parsed });
+          continue;
+        }
+        let submitted: Awaited<ReturnType<McpMemoryProposals["submit"]>>;
+        try {
+          submitted = await proposals.submit({
+            proposalId: randomUUID(),
+            ...parsed,
+            client,
+            subjectRef,
+          });
+        } catch (error) {
+          if (!isPendingFull(error)) throw error;
+          results.push({ index, status: "full" });
+          continue;
+        }
+        const { proposal, superseded } = submitted;
+        for (const id of superseded) replaced.add(id);
+        results.push({
+          index,
+          status:
+            proposal.status === "committed"
+              ? "already_saved"
+              : proposal.status === "rejected"
+                ? "declined_before"
+                : "pending",
+          proposalId: proposal.id,
+          receivedAt: proposal.receivedAt,
+        });
+      }
+      for (const result of results)
+        if (
+          result["status"] === "pending" &&
+          typeof result["proposalId"] === "string" &&
+          replaced.has(result["proposalId"])
+        )
+          result["status"] = "replaced";
+      return proposalReply(
+        JSON.stringify({ note: MCP_PROPOSE_MEMORIES_RESULT.text, results }),
+        false,
+      );
+    } catch (error) {
+      this.#options.onFailure(error);
+      return proposalReply(MCP_PROPOSE_MEMORY_FAILED.text, true);
+    }
+  }
+
+  async #proposeMemory(
+    proposals: McpMemoryProposals,
+    args: JsonObject,
+    client: string,
+    subjectRef: string,
+    context: ServerContext,
+  ): Promise<CallToolResult | InputRequiredResult> {
+    const started = Date.parse(this.#options.clock.now());
+    const parsed = this.#readProposalArgs(args);
+    if (parsed === "invalid") return proposalReply(MCP_PROPOSE_MEMORY_INVALID.text, true);
+    if (parsed === "secret") return proposalReply(MCP_PROPOSE_MEMORY_SECRET.text, true);
+    const { text, category, sourceKey } = parsed;
     const argsHash = createHash("sha256")
-      .update(JSON.stringify([text, category]))
+      .update(JSON.stringify([text, category, sourceKey]))
       .digest("hex");
     const state = context.mcpReq.requestState<ProposalState>();
     try {
       if (state === undefined) {
-        if (!elicitationSupported(context.mcpReq.envelope))
-          return proposalReply(MCP_PROPOSE_MEMORY_UNSUPPORTED.text, true);
-        if (!(await proposals.ready()))
-          return proposalReply(MCP_PROPOSE_MEMORY_NOT_READY.text, true);
+        const { proposal } = await proposals.submit({
+          proposalId: randomUUID(),
+          text,
+          category,
+          sourceKey,
+          client,
+          subjectRef,
+        });
+        if (proposal.status === "committed")
+          return proposalReply(MCP_PROPOSE_MEMORY_ALREADY_SAVED.text, false);
+        if (proposal.status === "rejected")
+          return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
+        if (!elicitationSupported(context.mcpReq.envelope) || !(await proposals.ready()))
+          return this.#pendingReply(proposal);
         return await this.#askConfirmation(
-          { tool: "propose_memory", proposalId: randomUUID(), argsHash, client },
+          { tool: "propose_memory", proposalId: proposal.id, argsHash, client },
           { text, category, client },
           context,
         );
@@ -771,28 +960,38 @@ export class ProductionMcpRead {
         state.argsHash !== argsHash
       )
         return proposalReply(MCP_PROPOSE_MEMORY_CHANGED.text, true);
-      const proposal: ExternalMemoryProposal = {
-        proposalId: state.proposalId,
-        text,
-        category,
-        client: state.client,
-      };
-      return await this.#oneAtATime(state.proposalId, async () => {
-        const decided = await proposals.decided(proposal.proposalId);
+      const proposalId = state.proposalId;
+      return await this.#oneAtATime(proposalId, async () => {
+        const decided = await proposals.decided(proposalId);
         if (decided === "kept") return proposalReply(MCP_PROPOSE_MEMORY_ALREADY_SAVED.text, false);
         if (decided === "declined") return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
+        const proposal = await proposals.read(proposalId);
+        if (decided !== "pending" || !proposal)
+          return proposalReply(MCP_PROPOSE_MEMORY_CHANGED.text, true);
         const answer = inputResponse(context.mcpReq.inputResponses, MCP_PROPOSAL_CONFIRM_KEY);
-        if (answer.kind !== "elicit") return await this.#askConfirmation(state, proposal, context);
+        if (answer.kind !== "elicit")
+          return await this.#askConfirmation(
+            state,
+            { text, category, client: state.client },
+            context,
+          );
         const outcome = mcpProposalAnswer(answer.action, state.askedAt, started);
-        if (outcome === "unseen") return proposalReply(MCP_PROPOSE_NOT_SHOWN.text, true);
+        if (outcome === "unseen" || answer.action === "cancel") return this.#pendingReply(proposal);
         if (outcome === "accepted") {
-          await proposals.keep(proposal, started);
+          try {
+            await proposals.keep(proposalId, { batchId: null, started });
+          } catch (error) {
+            if (!isAlreadyDecided(error)) throw error;
+            return this.#settledReply(proposalId);
+          }
           return proposalReply(MCP_PROPOSE_MEMORY_SAVED.text, false);
         }
-        await proposals.decline(proposal, started);
+        if (!(await proposals.decline(proposalId, { batchId: null, started })))
+          return this.#settledReply(proposalId);
         return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
       });
     } catch (error) {
+      if (isPendingFull(error)) return proposalReply(MCP_PROPOSE_MEMORY_FULL.text, true);
       this.#options.onFailure(error);
       return proposalReply(MCP_PROPOSE_MEMORY_FAILED.text, true);
     }
@@ -815,7 +1014,11 @@ export class ProductionMcpRead {
 
   async #askConfirmation(
     ticket: ProposalTicket,
-    proposal: Pick<ExternalMemoryProposal, "text" | "category" | "client">,
+    proposal: {
+      readonly text: string;
+      readonly category: ExternalProposalCategory;
+      readonly client: string;
+    },
     context: ServerContext,
   ): Promise<InputRequiredResult> {
     const sensitive = proposalClassification(proposal.text, proposal.category) === "sensitive";

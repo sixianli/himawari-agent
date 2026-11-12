@@ -721,6 +721,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0092_real_eval.sql",
   },
+  {
+    sequence: 93,
+    name: "external_memory_proposals",
+    changeSet: "external-memory-proposals",
+    phase: "expand" as const,
+    file: "0093_external_memory_proposals.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =
