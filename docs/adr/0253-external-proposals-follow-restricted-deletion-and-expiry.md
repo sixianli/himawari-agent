@@ -26,7 +26,7 @@ date: "2026-11-12"
 
 ## 背景
 
-[ADR 0246](0246-external-proposals-join-the-data-export-and-web.md) 让其他 agent 的提议（其他 agent 通过 MCP 送来、等 Andy 确认的记忆）进了网页和数据导出。它的 PR 复核留下了五条没做的意见（`.agents/reviews/pr-420/round-1/judgments.md` 的 glm-4，`.agents/reviews/pr-420/round-5/judgments.md` 的 ds5-5 到 ds5-7，以及交付报告里列出的“受限记忆删掉以后摘要留在明文导出里”），协调者要求一起做掉：
+[ADR 0246](0246-external-proposals-join-the-data-export-and-web.md) 让其他 agent 的提议（其他 agent 通过 MCP 送来、等 Andy 确认的记忆）进了网页和数据导出。那个 PR 留下了五条没做的改进，协调者要求一起做掉。下面第一条是 PR 420 交付时另外列出的低风险；其余四条是复核意见，见 `.agents/reviews/pr-420/round-1/judgments.md` 的 glm-4 和 `.agents/reviews/pr-420/round-5/judgments.md` 的 ds5-5 到 ds5-7：
 
 - 受限（restricted）记忆被彻底删除后，保存进它的那条提议的正文摘要还留在库里，下一次导出会以明文写出；短的正文光凭摘要就可能被逐个试出来。
 - 被排除的提议仍参与占位编号的扫描，导出里的占位编号会跳号。
