@@ -214,16 +214,37 @@ describe("构建包源码与日志有各自的检测语义", () => {
       ['apiKey: "$ACME_API_KEY",', "guide.md"],
       [JSON.stringify({ password: ["$", "{DATABASE_PASSWORD}"].join("") }), "config.json"],
       ['const apiKey = "$ACME_API_KEY";', "example.ts"],
+      [['const apiKey = "$', '{TOOLS_KEY_VALUE}";'].join(""), "example.ts"],
+      ["API_KEY=$ACME_API_KEY_VALUE\n", ".env"],
+      [
+        JSON.stringify({
+          sources: ["src/a.ts"],
+          sourcesContent: ['const password = "$DATABASE_PASSWORD";'],
+        }),
+        "a.js.map",
+      ],
     ])
       expect(
         scan(content, name).filter((finding) => finding.rule === "credential-literal"),
       ).toEqual([]);
-    for (const value of ["$acme_api_key_value", "$ACME_API_KEY-extra1", `x${literal}`])
+    for (const value of [
+      "$acme_api_key_value",
+      "$ACME_API_KEY-extra1",
+      "$ABCDEFGHIJKL1234",
+      `x${literal}`,
+    ])
       expect(
         scan(`apiKey: "${value}",`, "guide.md").some(
           (finding) => finding.rule === "credential-literal",
         ),
       ).toBe(true);
+    for (const [content, name] of [
+      ['const password = "$" + "ABCDEFGHIJK1";', "example.ts"],
+      ["API_KEY=$ABCDEFGHIJKL1234\n", ".env"],
+    ])
+      expect(scan(content, name).some((finding) => finding.rule === "credential-literal")).toBe(
+        true,
+      );
   });
   it("JSON及source map嵌入源码仍检测解码后的字面量", () => {
     expect(redactText(JSON.stringify({ password: literal }))).not.toContain(literal);

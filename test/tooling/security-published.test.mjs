@@ -380,3 +380,42 @@ describe("published fixture admission", () => {
     ).rejects.toThrow("PUBLIC_ARTIFACT_CONTAINS_SECRET");
   });
 });
+
+describe("真实台账和当前扫描规则一致", () => {
+  it("每条published-synthetic-fixture登记的命中等于用当前扫描规则扫已安装文件的结果", () => {
+    const ledger = JSON.parse(
+      readFileSync(join(repository, "ci/security-exceptions.json"), "utf8"),
+    );
+    const entries = ledger.exceptions.filter(
+      (entry) => entry.kind === "published-synthetic-fixture",
+    );
+    expect(entries.length).toBeGreaterThan(0);
+    const tally = (findings) =>
+      [
+        ...findings.reduce(
+          (counts, finding) =>
+            counts.set(
+              `${finding.rule}:${finding.digest}`,
+              (counts.get(`${finding.rule}:${finding.digest}`) ?? 0) + 1,
+            ),
+          new Map(),
+        ),
+      ].sort();
+    for (const entry of entries) {
+      const bytes = readFileSync(join(repository, entry.path.replace(/^runtime\//, "")));
+      expect({ path: entry.path, sha: sha(bytes) }).toEqual({
+        path: entry.path,
+        sha: entry.fileSha256,
+      });
+      expect({
+        path: entry.path,
+        findings: tally(findBuildSecrets({ name: entry.path, bytes })),
+      }).toEqual({
+        path: entry.path,
+        findings: entry.findings
+          .map((finding) => [`${finding.rule}:${finding.digest}`, finding.count])
+          .sort(),
+      });
+    }
+  });
+});

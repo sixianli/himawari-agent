@@ -4,7 +4,7 @@ import ts from "typescript";
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const credentialName =
   /^(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|client[_-]?secret|webhook[_-]?secret)$/i;
-const environmentReference = /^\$(?:[A-Z][A-Z0-9_]*|\{[A-Z][A-Z0-9_]*\})$/;
+const environmentReference = /^\$(?:[A-Z_]+|\{[A-Z_]+\})$/;
 const patterns = [
   [
     "private-key",
@@ -50,7 +50,6 @@ function propertyName(node) {
   return "";
 }
 
-/** Public code is data: variable references/calls are not credentials; string values are checked. */
 export function findBuildSecrets({ name, bytes, sentinels = [] }) {
   const text = Buffer.isBuffer(bytes) ? bytes.toString("utf8") : String(bytes);
   const findings = [],
@@ -128,7 +127,6 @@ export function findBuildSecrets({ name, bytes, sentinels = [] }) {
           source(value.sources[index], content);
       });
   } else {
-    // Non-code documents and configuration: only complete quoted values or complete dotenv lines.
     const quoted =
       /\b(api[_-]?key|access[_-]?token|refresh[_-]?token|password|client[_-]?secret|webhook[_-]?secret)["']?\s*[:=]\s*(["'])([^"'\r\n]{12,})\2/gi;
     for (const match of text.matchAll(quoted))
