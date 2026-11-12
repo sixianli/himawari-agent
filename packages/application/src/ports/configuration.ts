@@ -289,6 +289,7 @@ export interface McpReadConfiguration {
 
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly approvalBodyPreviewCharacters?: number;
   readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
   readonly mcpRead?: McpReadConfiguration;

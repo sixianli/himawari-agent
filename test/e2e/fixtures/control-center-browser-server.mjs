@@ -171,6 +171,7 @@ const approvals = new Map(
       expiresAt: "2026-08-28T00:00:00.000Z",
       decidedAt: null,
       grantId: null,
+      display: null,
       intent: { ...approvalIntent, intentId: `intent:${approvalRequestId}` },
       trueResultRef: null,
       generatedAt: now,
@@ -2183,6 +2184,7 @@ async function handleRequest(request, response) {
         expiresAt: "2026-08-28T00:00:00.000Z",
         decidedAt: null,
         grantId: null,
+        display: null,
         intent: {
           ...approvalIntent,
           intentId: `intent:${approvalRequestId}`,

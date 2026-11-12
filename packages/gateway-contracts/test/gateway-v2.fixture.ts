@@ -825,6 +825,7 @@ export const governanceMessages = [
     expiresAt: "2026-08-26T01:00:00.000Z",
     decidedAt: null,
     grantId: null,
+    display: null,
     intent: {
       intentId: "intent-01",
       threadId: "thread-01",
