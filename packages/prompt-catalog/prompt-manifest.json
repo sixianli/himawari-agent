@@ -304,6 +304,11 @@
     "changedIn": "ADR 0219",
     "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
   },
+  "eval.real-memory.leak-judge": {
+    "sha256": "28918cd7f5c42b965548321deb7f78a7f882af0bcb2bcf5751bebec1a1905c02",
+    "changedIn": "ADR 0247",
+    "reason": "新增：评测出题后判断题干有没有透露答案，取代日期数字词表"
+  },
   "eval.real-memory.question": {
     "sha256": "bd9ec88d02e4d3c4b6f21b5dab89941946a27e7727395de39d6489a43a1e2fd8",
     "changedIn": "ADR 0219",
@@ -345,7 +350,7 @@
     "reason": "新增：邮件判断里有待确认记忆时，说明它们只是线索，不是事实"
   },
   "mail.reference-extraction": {
-    "sha256": "4ac1d2d20e0884b127009a1ff0aa114e176fc39ccc1fc3bffae9f9200eff84da",
+    "sha256": "d2b0bb030eb725e1aa8169f3d92d12db31008af3a84db135787563fda757ab51",
     "changedIn": "ADR 0247",
     "reason": "新增：从新邮件里抽取订单号等单号，取代关键词正则"
   },

@@ -59,6 +59,7 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseAutomaticReviewDecision: application.parseAutomaticReviewDecision,
   parseGeneratedQuestion: application.parseGeneratedQuestion,
   parseJudgeVerdict: application.parseJudgeVerdict,
+  parseLeakVerdict: application.parseLeakVerdict,
   parsePrereview: application.parsePrereview,
 };
 
@@ -86,6 +87,7 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
     ).toEqual(
       [
         "eval.real-memory.judge",
+        "eval.real-memory.leak-judge",
         "eval.real-memory.question",
         "mail.judgment",
         "mail.reference-extraction",
