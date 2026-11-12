@@ -1,0 +1,53 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-11-12T01:30:00Z" },
+  "title": "Himawari 苹果设备端原型",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "iPhone：可以点着用",
+      "is_interactive": true,
+      "radius": 44
+    },
+    "Pairing.dc.html": {
+      "x": 470,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "iPhone：第一次配对",
+      "radius": 44
+    },
+    "LockScreen.dc.html": {
+      "x": 940,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "iPhone：锁屏通知和收听状态",
+      "radius": 44
+    },
+    "Watch.dc.html": { "x": 0, "y": 964, "w": 860, "h": 420, "title": "Apple Watch" },
+    "Mac.dc.html": { "x": 940, "y": 964, "w": 960, "h": 600, "title": "Mac：菜单栏" }
+  },
+  "order": [
+    "Main.dc.html",
+    "Pairing.dc.html",
+    "LockScreen.dc.html",
+    "Watch.dc.html",
+    "Mac.dc.html"
+  ],
+  "notes": {
+    "howto": {
+      "x": -420,
+      "y": 0,
+      "w": 340,
+      "text": "第一块画板能点：点它上面的播放键。底部三个页签，右下角的向日葵是“跟 Himawari 说”；右上角是搜索和设置。画板的 Tweaks 里能切深色。内容都是示例数据。",
+      "fill": "orange"
+    }
+  },
+  "designSystems": []
+}
