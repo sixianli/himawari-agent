@@ -368,6 +368,7 @@ describe("production HTTP composition", () => {
           "sensitive.interceptions.clear",
           "server.status.read",
           "workspace.changes.read",
+          "workspace.folders.read",
         ],
         healthDependenciesAvailable: true,
       });
@@ -1158,6 +1159,21 @@ describe("production HTTP composition", () => {
       expect(changesMessage.type).toBe("workspace.changes.snapshot");
       expect(changesMessage).toMatchObject({
         payload: { grantMatched: false, fileCount: 0, items: [], incomplete: false },
+      });
+      const workspaceFolders = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, second.cookie),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "workspace.folders.read"),
+          kind: "query",
+          payload: {},
+        },
+      });
+      expect(workspaceFolders.statusCode, workspaceFolders.body).toBe(200);
+      expect(gatewayV2MessageSchema.parseJson(workspaceFolders.body)).toMatchObject({
+        type: "workspace.folders.snapshot",
+        payload: { folders: [], truncated: false },
       });
       const workspaceChangesWithoutSession = await running.composition.app.inject({
         method: "POST",

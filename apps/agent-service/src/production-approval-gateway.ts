@@ -130,7 +130,8 @@ export function createProductionApprovalGateway(options: {
                       ? options.sensitiveInterceptionsControl.query(query)
                       : query.type.startsWith("server.status.") && options.serverStatusControl
                         ? options.serverStatusControl.query(query)
-                        : query.type.startsWith("workspace.changes.") &&
+                        : (query.type.startsWith("workspace.changes.") ||
+                              query.type.startsWith("workspace.folders.")) &&
                             options.workspaceChangesControl
                           ? options.workspaceChangesControl.query(query)
                           : searchAuthorization.query(query),

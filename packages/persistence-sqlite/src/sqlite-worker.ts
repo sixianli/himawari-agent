@@ -569,6 +569,37 @@ function readScopedState(input: {
   );
 }
 
+function listScopedState(input: {
+  ownerId: string;
+  agentId: string;
+  prefix: string;
+  limit: number;
+}): StateRecord[] {
+  if (
+    input.prefix.length === 0 ||
+    !Number.isSafeInteger(input.limit) ||
+    input.limit < 1 ||
+    input.limit > 500
+  )
+    applicationFailure("PORT_INVALID_OPERATION", "Scoped state listing is invalid", {});
+  return (
+    database
+      .prepare(
+        `SELECT key, owner_id AS ownerId, agent_id AS agentId, revision, value_json AS valueJson
+         FROM product_state_records
+         WHERE owner_id = ? AND agent_id = ? AND key >= ? AND key < ?
+         ORDER BY key LIMIT ?`,
+      )
+      .all(
+        input.ownerId,
+        input.agentId,
+        input.prefix,
+        `${input.prefix}\u{10ffff}`,
+        input.limit,
+      ) as StateRow[]
+  ).flatMap((row) => stateFromRow(row) ?? []);
+}
+
 function readAuthorityRevision(): number {
   const value = database
     .prepare("SELECT value FROM authority_revision WHERE id = 1")
@@ -1015,6 +1046,11 @@ channel.on("message", (request: WorkerRequest) => {
       case "readScopedState":
         value = readScopedState(
           request.payload as { ownerId: string; agentId: string; key: string },
+        );
+        break;
+      case "listScopedState":
+        value = listScopedState(
+          request.payload as { ownerId: string; agentId: string; prefix: string; limit: number },
         );
         break;
       case "read":

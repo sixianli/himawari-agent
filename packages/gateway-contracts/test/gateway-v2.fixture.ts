@@ -447,6 +447,20 @@ export const governanceMessages = [
     ],
     generatedAt: "2026-11-12T03:06:30.000Z",
   }),
+  fixture("query", "workspace.folders.read", {}),
+  fixture("snapshot", "workspace.folders.snapshot", {
+    folders: [
+      {
+        grantId: "grant-coding",
+        hostId: "host-production",
+        displayPath: "/var/lib/himawari/workspace",
+        operations: ["read", "create", "update"],
+        expiresAt: "2027-01-01T00:00:00.000Z",
+      },
+    ],
+    truncated: false,
+    generatedAt: "2026-11-12T03:06:30.000Z",
+  }),
   fixture("query", "workspace.changes.read", {
     grantId: "grant-coding",
     threadId: null,

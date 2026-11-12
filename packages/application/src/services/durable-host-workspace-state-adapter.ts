@@ -231,6 +231,9 @@ export class DurableHostWorkspaceProjectionAdapter implements HostWorkspaceProje
   }
 }
 
+const GRANT_KIND = "directory-grant";
+export const HOST_DIRECTORY_GRANT_STATE_PREFIX = `host-workspace:${GRANT_KIND}:`;
+
 function key(kind: string, id: string): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id))
     throw new ApplicationPortError(
@@ -245,5 +248,5 @@ function json(value: unknown): JsonObject {
 }
 
 export function hostDirectoryGrantStateKey(id: string): string {
-  return key("directory-grant", id);
+  return key(GRANT_KIND, id);
 }

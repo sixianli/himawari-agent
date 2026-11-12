@@ -1180,6 +1180,8 @@ export async function createProductionHttpComposition(
       changes: repository.threadArtifacts(),
       readState: (key) =>
         repository.readScopedState(configuration.ownerId, configuration.agentId, key),
+      listState: (prefix, limit) =>
+        repository.listScopedState(configuration.ownerId, configuration.agentId, prefix, limit),
       displayPath: configuredWorkspaceRoot(configuration, repository, { now: clock }),
       clock: { now: clock },
     }),

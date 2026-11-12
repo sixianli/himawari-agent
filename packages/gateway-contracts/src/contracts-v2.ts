@@ -139,6 +139,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "server.status.snapshot",
   "workspace.changes.read",
   "workspace.changes.snapshot",
+  "workspace.folders.read",
+  "workspace.folders.snapshot",
   "stream.event",
 ] as const;
 
@@ -2120,6 +2122,26 @@ export const workspaceListQuerySchema = object({
 
 export const WORKSPACE_CHANGE_STATES = ["changed", "deleted"] as const;
 export const WORKSPACE_RECORDING_MODES = ["direct", "copy"] as const;
+const workspaceFoldersQuerySchema = object({
+  ...envelope("query", "workspace.folders.read"),
+  payload: object({}),
+});
+const workspaceFoldersSnapshotSchema = object({
+  ...envelope("snapshot", "workspace.folders.snapshot"),
+  payload: object({
+    folders: array(
+      object({
+        grantId: machineString,
+        hostId: machineString,
+        displayPath: boundedString(4096),
+        operations: array(machineString),
+        expiresAt: timestamp,
+      }),
+    ),
+    truncated: booleanValue,
+    generatedAt: timestamp,
+  }),
+});
 const workspaceChangesQuerySchema = object({
   ...envelope("query", "workspace.changes.read"),
   payload: object({
@@ -2652,8 +2674,10 @@ const schemasByType = {
   "device.revoke": deviceRevokeCommandSchema,
   "server.status.read": serverStatusQuerySchema,
   "workspace.changes.read": workspaceChangesQuerySchema,
+  "workspace.folders.read": workspaceFoldersQuerySchema,
   "server.status.snapshot": serverStatusSnapshotSchema,
   "workspace.changes.snapshot": workspaceChangesSnapshotSchema,
+  "workspace.folders.snapshot": workspaceFoldersSnapshotSchema,
   "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
   "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,
   "sensitive.interceptions.clear": sensitiveInterceptionsClearCommandSchema,

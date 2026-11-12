@@ -21,6 +21,7 @@ export function useSqliteContractExecution(execution: "worker" | "direct") {
       let worker: Promise<SqliteExecutionContext> | undefined;
       const workerOwned = new Set([
         "readScopedState",
+        "listScopedState",
         "read",
         "listPending",
         "markPublished",

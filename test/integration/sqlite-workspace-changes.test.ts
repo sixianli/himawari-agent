@@ -122,6 +122,47 @@ describe("[WC-1] folder changes read", () => {
            VALUES (?, ?, ?, 1, 'open', ?, ?)`,
         )
         .run(thread, OWNER_ID, AGENT_ID, T0, T0);
+    database.prepare("INSERT INTO owners (id, revision) VALUES ('owner-stranger', 0)").run();
+    database
+      .prepare(
+        "INSERT INTO agents (id, owner_id, revision) VALUES ('agent-stranger', 'owner-stranger', 0)",
+      )
+      .run();
+    database
+      .prepare("INSERT INTO agents (id, owner_id, revision) VALUES ('agent-sibling', ?, 0)")
+      .run(OWNER_ID);
+    const grantRow = database.prepare(
+      `INSERT INTO product_state_records (key, owner_id, agent_id, revision, value_json, updated_at)
+       VALUES (?, ?, ?, 1, ?, ?)`,
+    );
+    const grant = (id: string, overrides: Record<string, unknown> = {}) =>
+      JSON.stringify({
+        id,
+        revision: 1,
+        hostId: "host-production",
+        canonicalRootId: `root-${id}`,
+        displayPath: `/srv/${id}`,
+        operations: ["read", "create", "update"],
+        expiresAt: "2027-01-01T00:00:00.000Z",
+        revokedAt: null,
+        ...overrides,
+      });
+    for (const [id, owner, agent, overrides] of [
+      ["grant-b", OWNER_ID, AGENT_ID, {}],
+      ["grant-a", OWNER_ID, AGENT_ID, { operations: ["read"] }],
+      ["grant-revoked", OWNER_ID, AGENT_ID, { revokedAt: T0 }],
+      ["grant-expired", OWNER_ID, AGENT_ID, { expiresAt: T0 }],
+      ["grant-stranger", "owner-stranger", "agent-stranger", {}],
+      ["grant-sibling", OWNER_ID, "agent-sibling", {}],
+    ] as const)
+      grantRow.run(`host-workspace:directory-grant:${id}`, owner, agent, grant(id, overrides), T0);
+    grantRow.run(
+      "host-workspace:directory-grant-other:grant-x",
+      OWNER_ID,
+      AGENT_ID,
+      grant("grant-x"),
+      T0,
+    );
     database.pragma("foreign_keys = OFF");
     for (const [run, thread] of [
       ["run-1", "thread-1"],
@@ -150,6 +191,7 @@ describe("[WC-1] folder changes read", () => {
         } as never,
         changes: store,
         readState: (key) => repository.readScopedState(OWNER_ID, AGENT_ID, key),
+        listState: (prefix, limit) => repository.listScopedState(OWNER_ID, AGENT_ID, prefix, limit),
         displayPath: async () => "/var/lib/himawari/workspace",
         clock: { now: () => at(59) },
       });
@@ -332,6 +374,40 @@ describe("[WC-1] folder changes read", () => {
       });
       expect((await read(control(), { threadId: "thread-1" })).recording).toBe("copy");
       expect((await read(control(), { threadId: "thread-2" })).recording).toBe("direct");
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[WC-9] lists the owner's live folders from storage, in a fixed order", async () => {
+    const { repository, control } = await open();
+    try {
+      const request = { ...query({}), type: "workspace.folders.read", payload: {} } as never;
+      const first = await control().query(request);
+      expect(first.type).toBe("workspace.folders.snapshot");
+      expect(first.payload).toEqual({
+        folders: [
+          {
+            grantId: "grant-a",
+            hostId: "host-production",
+            displayPath: "/srv/grant-a",
+            operations: ["read"],
+            expiresAt: "2027-01-01T00:00:00.000Z",
+          },
+          {
+            grantId: "grant-b",
+            hostId: "host-production",
+            displayPath: "/srv/grant-b",
+            operations: ["read", "create", "update"],
+            expiresAt: "2027-01-01T00:00:00.000Z",
+          },
+        ],
+        truncated: false,
+        generatedAt: at(59),
+      });
+      expect(JSON.stringify(await control("grant-other").query(request))).toBe(
+        JSON.stringify(first),
+      );
     } finally {
       await repository.close();
     }
