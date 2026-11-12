@@ -102,10 +102,9 @@ class RecordingRuntime {
     return this.models.get(`${providerId}:${modelId}`);
   }
 
-  registerProvider(providerId: string, config: Readonly<Record<string, unknown>>): void {
-    const models = config["models"];
-    if (!Array.isArray(models)) throw new Error("models missing");
-    for (const model of models) {
+  registerNativeProvider(provider: { readonly id: string; getModels(): readonly unknown[] }): void {
+    const providerId = provider.id;
+    for (const model of provider.getModels()) {
       if (model === null || typeof model !== "object" || Array.isArray(model)) {
         throw new Error("model invalid");
       }
@@ -114,6 +113,8 @@ class RecordingRuntime {
       this.models.set(`${providerId}:${id}`, model);
     }
   }
+
+  async refresh(): Promise<void> {}
 
   async setRuntimeApiKey(): Promise<void> {}
 

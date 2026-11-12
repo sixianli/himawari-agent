@@ -300,7 +300,7 @@ describe("local ONNX embedding runtime", () => {
         [
           "-I",
           "-c",
-          "import ast, json, sys; tree = ast.parse(open(sys.argv[1]).read()); print(json.dumps(next(ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign) and any(getattr(target, 'id', None) == 'SOURCES' for target in node.targets))))",
+          "import json, runpy, sys; print(json.dumps(runpy.run_path(sys.argv[1])['SOURCES']))",
           script,
         ],
         { encoding: "utf8" },
