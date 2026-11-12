@@ -937,14 +937,14 @@ export const messages = {
   "review.suspendReason":
     "{r, select, source_removed {Paused: its source memory was deleted or is no longer a rule} no_longer_standing {Paused: its source memory no longer reads as a standing request} parameters_changed {Paused: its source memory no longer matches the rule} other {Paused}}",
   "review.checking":
-    "The source memory changed; the system checks it before the next mail check (the rule keeps running until then)",
+    "The source memory changed; the system checks it before a mail check (the rule keeps running until then)",
   "review.notChecking":
-    "The source memory changed, but the system cannot check it automatically (the source memory is gone, or the check kept failing). The rule keeps running; please take a look",
+    "The source memory changed, but the system cannot check it automatically (the source memory cannot be found, or the check kept failing). The rule keeps running; please take a look",
   "review.condition":
     "{f, select, senderDomains {Sender domains} senderAddresses {Sender addresses} phrases {Phrases} words {Words} excludePhrases {Excluded phrases} other {Condition}}: {v}",
   "review.textGone": "The text of this memory cannot be read",
   "review.rechecking":
-    "The source memory changed again; the system checks once more before the next mail check (it stays paused until then)",
+    "The source memory changed again; the system checks once more before a mail check (it stays paused until then)",
   "review.suggestion": "Suggested change: {s}",
   "review.adopt": "Use suggestion",
   "review.confirmSuspended": "Turn off for good",

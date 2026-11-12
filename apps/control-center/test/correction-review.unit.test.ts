@@ -130,7 +130,7 @@ describe("[P4-1] memories and rules to recheck after a memory edit", () => {
     expect(
       container.querySelectorAll('[data-review-rule="owner:waiting"] [data-review-condition]'),
     ).toHaveLength(0);
-    expect(text).toContain("下次查邮件前系统自动核对（核对完之前照常执行）");
+    expect(text).toContain("系统会在查邮件前自动核对（核对完之前照常执行）");
     expect(text).not.toContain("来源记忆又变了");
     expect(
       buttonsIn('[data-review-rule="owner:suspended"]').map((button) => button.textContent),
@@ -193,7 +193,7 @@ describe("[P4-1] memories and rules to recheck after a memory edit", () => {
         onOpenMemory: vi.fn(),
       }),
     );
-    expect(container.textContent).toContain("来源记忆又变了，下次查邮件前系统会再核对一次");
+    expect(container.textContent).toContain("来源记忆又变了，系统会在查邮件前再核对一次");
     expect(
       buttonsIn('[data-review-rule="owner:suspended"]').map((button) => button.textContent),
     ).toEqual(["确认停用", "恢复原规则"]);
@@ -211,7 +211,8 @@ describe("[P4-1] memories and rules to recheck after a memory edit", () => {
       }),
     );
     expect(container.textContent).toContain("系统没法自动核对");
-    expect(container.textContent).not.toContain("系统自动核对（核对完之前照常执行）");
+    expect(container.textContent).toContain("找不到来源记忆，或核对连续失败");
+    expect(container.textContent).not.toContain("系统会在查邮件前自动核对");
   });
 
   it("shows nothing when no memory or rule is waiting", async () => {
