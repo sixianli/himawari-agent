@@ -35,3 +35,5 @@
 "pairing.problem.expired.ttlSeconds" = "コードの有効期限は %d 秒です。";
 "pairing.serverCaption" = "QR コードに書かれたサーバー";
 "pairing.connect" = "接続";
+"pairing.problem.keysUnreadable" = "ペアリングと会話は残っています。ロックを解除してここに戻ると自動でやり直します";
+"pairing.problem.keysUnreadable.title" = "この iPhone の鍵が一時的に読めません";

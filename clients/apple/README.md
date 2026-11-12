@@ -101,7 +101,7 @@ clients/apple/scripts/ui-review.sh
 clients/apple/scripts/ui-review.sh --approve
 ```
 
-把这批截图存进 `Tests/Snapshots/iPhone-390/`，成为快照。之后改界面时跑 `clients/apple/scripts/ui-review.sh --check`：重新截图，用 `scripts/compare-snapshots.swift` 逐像素比较，任一张图里颜色差超过 16/255 的像素多于 0.2% 就报 `SNAPSHOT_DIFF` 并失败。
+把这批截图存进 `Tests/Snapshots/iPhone-390/`，成为快照。之后改界面时跑 `clients/apple/scripts/ui-review.sh --check`：重新截图，用 `scripts/compare-snapshots.swift` 逐像素比较，任一张图里颜色差超过 3/255 的像素多于 0.05%（约 1500 个像素，小于一个 44 点见方的图标）就报 `SNAPSHOT_DIFF` 并失败；快照少了哪个场景也失败。比这更小的局部改动拦不住，动效录屏不做自动比对，只交设计线程看。
 
 [返回目录](#apple-clients)
 

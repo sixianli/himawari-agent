@@ -112,7 +112,7 @@ public final class DeviceAPI: Sendable {
             let seen = Set(records.map(\.id))
             records += page.records.filter { !seen.contains($0.id) }
             guard let next = page.nextSequence else { return records.sorted { $0.sequence < $1.sequence } }
-            guard next > after, !page.records.isEmpty else { throw DeviceAPIError.invalidResponse }
+            guard next > after else { throw DeviceAPIError.invalidResponse }
             after = next
         }
         throw DeviceAPIError.invalidResponse

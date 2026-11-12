@@ -23,14 +23,14 @@ public enum ChatConnection: Sendable, Equatable {
 @MainActor
 @Observable
 public final class ChatStore {
-    public private(set) var threads: [ThreadSummary] = []
-    public private(set) var texts: [String: String] = [:]
-    public private(set) var details: [String: ThreadDetail] = [:]
-    public private(set) var queued: [OutboxItem] = []
-    public private(set) var streaming: [String: StreamingReply] = [:]
-    public private(set) var connection: ChatConnection = .offline
+    public internal(set) var threads: [ThreadSummary] = []
+    public internal(set) var texts: [String: String] = [:]
+    public internal(set) var details: [String: ThreadDetail] = [:]
+    public internal(set) var queued: [OutboxItem] = []
+    public internal(set) var streaming: [String: StreamingReply] = [:]
+    public internal(set) var connection: ChatConnection = .offline
     public private(set) var loadingThreads = false
-    public private(set) var executions: [String: [ExecutionRecord]] = [:]
+    public internal(set) var executions: [String: [ExecutionRecord]] = [:]
 
     @ObservationIgnored private let api: DeviceAPI
     @ObservationIgnored private let outbox: Outbox

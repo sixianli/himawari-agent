@@ -90,9 +90,10 @@ public enum PairingNumber {
 
 public enum PairingRequestLimits {
     public static let deviceNameUTF16Units = 64
+    static let hiddenScalars = Set<UInt32>(Array(0x00...0x1F) + Array(0x7F...0x9F) + Array(0x200B...0x200F) + Array(0x202A...0x202E) + Array(0x2066...0x2069) + [0xFEFF])
 
     public static func deviceName(_ raw: String, fallback: String = "iPhone") -> String {
-        let printable = String(String.UnicodeScalarView(raw.unicodeScalars.filter { $0.value >= 0x20 && $0.value != 0x7f }))
+        let printable = String(String.UnicodeScalarView(raw.unicodeScalars.filter { !Self.hiddenScalars.contains($0.value) }))
         var name = ""
         for character in printable.trimmingCharacters(in: .whitespacesAndNewlines) {
             guard name.utf16.count + character.utf16.count <= deviceNameUTF16Units else { break }

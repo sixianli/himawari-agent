@@ -60,7 +60,7 @@ public final class AppModel {
     private func restore() {
         let presence = [keychain.presence(Self.recordAccount), keys.presence(.device), keys.presence(.confirm)]
         if presence.contains(.unreadable) {
-            phase = .unpaired(.keysUnavailable)
+            phase = .unpaired(.keysUnreadable)
             return
         }
         guard let record, presence.allSatisfy({ $0 == .present }) else {
@@ -190,6 +190,10 @@ public final class AppModel {
         forget(problem: nil)
     }
 
+    public func retryReadingKeys() {
+        restore()
+    }
+
     public func retryPairing() {
         guard let lastScanned else {
             phase = .unpaired(nil)
@@ -283,7 +287,7 @@ public final class AppModel {
     }
 
     public func becameActive() {
-        if phase == .unpaired(.keysUnavailable), keychain.presence(Self.recordAccount) != .absent {
+        if phase == .unpaired(.keysUnreadable) {
             restore()
             return
         }

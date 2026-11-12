@@ -35,3 +35,5 @@
 "pairing.problem.expired.ttlSeconds" = "Each code works for %d seconds. ";
 "pairing.serverCaption" = "Server in the QR code";
 "pairing.connect" = "Connect";
+"pairing.problem.keysUnreadable" = "Your pairing and chats are still here. Unlock the phone and come back to try again automatically";
+"pairing.problem.keysUnreadable.title" = "Can’t read this iPhone’s keys right now";

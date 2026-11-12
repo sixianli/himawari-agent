@@ -149,8 +149,9 @@ public enum ProcessLine: Sendable, Equatable {
             default: return .finished(steps: steps, seconds: seconds)
             }
         }
-        if let latest = sorted.last, latest.phase == .waiting,
-           let step = latest.kind == .tool ? steps.first(where: { $0.id == latest.itemId }) : steps.last {
+        if let latest = sorted.last, latest.phase == .waiting {
+            let step = (latest.kind == .tool ? steps.first(where: { $0.id == latest.itemId }) : steps.last)
+                ?? ProcessStep(id: latest.itemId, title: Self.present(latest.activity) ?? "", icon: ProcessIcon.chosen(latest.activityIcon), phase: .waiting, startedAt: latest.occurredAt, endedAt: latest.occurredAt)
             return .waiting(ProcessStep(id: step.id, title: step.title, icon: step.icon, phase: .waiting, startedAt: step.startedAt, endedAt: latest.occurredAt))
         }
         guard let current = steps.last else { return .thinking }

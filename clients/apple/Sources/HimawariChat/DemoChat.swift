@@ -191,7 +191,7 @@ public enum DemoChatFixtures {
     }
 
     public static func answering() -> DemoChatState {
-        let start = Date().addingTimeInterval(-6)
+        let start = now.addingTimeInterval(-6)
         var state = osaka(
             messages: [message("m1", 1, role: "owner", at: start)],
             runs: [("run:0b", "running")],

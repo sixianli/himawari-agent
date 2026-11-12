@@ -55,7 +55,7 @@ struct ProcessRowView: View {
             }
             .animation(.easeInOut(duration: 0.25), value: current.id)
         case let .waiting(step):
-            ProcessLineLabel(icon: .handStop, text: step.title, tint: .hmSun, shimmering: false)
+            ProcessLineLabel(icon: .handStop, text: step.title.isEmpty ? L.text("process.waiting") : step.title, tint: .hmSun, shimmering: false)
         case let .finished(steps, seconds):
             summary(icon: .check, text: L.format("process.didThings", steps.count), steps: steps, seconds: seconds)
         case let .stopped(steps, seconds):

@@ -23,6 +23,7 @@ public enum PairingProblem: Sendable, Equatable {
     case codeInvalid
     case unreachable
     case keysUnavailable
+    case keysUnreadable
     case removed
 
     public static func from(_ error: Error) -> PairingProblem {

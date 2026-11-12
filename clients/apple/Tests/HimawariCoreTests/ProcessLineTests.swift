@@ -98,6 +98,16 @@ import Testing
         #expect(step.phase == .waiting)
     }
 
+    @Test func aRunSuspendedBeforeAnyStepStillWaits() {
+        let records = [record(1, "run", .started, at: 0, kind: .status), record(2, "run", .waiting, at: 1, kind: .status)]
+        guard case let .waiting(step) = ProcessLine.make(records: records, runStatus: "running") else {
+            Issue.record("expected waiting")
+            return
+        }
+        #expect(step.title == "")
+        #expect(step.phase == .waiting)
+    }
+
     @Test func aNewerRecordEndsTheWait() {
         let records = [record(1, "a", .waiting, at: 0, activity: "要给田中发邮件，等你点头", icon: "mail"), record(2, "b", .started, at: 1, activity: "正在发邮件")]
         guard case let .working(current, _) = ProcessLine.make(records: records, runStatus: "running") else {

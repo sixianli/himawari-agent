@@ -13,6 +13,7 @@
 "common.ok" = "OK";
 "time.yesterday" = "Yesterday";
 "process.thinking" = "Thinking";
+"process.waiting" = "Waiting for your approval";
 "process.seconds" = "%d s";
 "process.expand" = "Show each step";
 "process.didThings" = "Did %d things";

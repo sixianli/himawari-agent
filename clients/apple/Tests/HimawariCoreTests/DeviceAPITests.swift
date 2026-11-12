@@ -177,11 +177,11 @@ import Testing
         #expect(exchange.requests.count == 2)
     }
 
-    @Test func executionRecordsRejectAnEmptyPageThatStillPointsFurther() async throws {
-        let exchange = RecordingExchange([executionPage([], next: 5)])
-        await #expect(throws: DeviceAPIError.invalidResponse) {
-            _ = try await api(exchange).executionRecords(threadId: "thread-a", runId: "run-a", known: [])
-        }
+    @Test func executionRecordsKeepPagingPastAPageWhoseEventsWereAllFilteredOut() async throws {
+        let exchange = RecordingExchange([executionPage([], next: 5), executionPage([6], next: nil)])
+        let records = try await api(exchange).executionRecords(threadId: "thread-a", runId: "run-a", known: [])
+        #expect(records.map(\.sequence) == [6])
+        #expect(afters(exchange) == ["0", "5"])
     }
 
     @Test func executionRecordsGiveUpAfterThePageLimit() async throws {
@@ -192,7 +192,7 @@ import Testing
         #expect(exchange.requests.count == DeviceAPI.pageLimit)
     }
 
-    @Test func deviceNameIsTrimmedToTheServerLimitInCharacters() {
+    @Test func deviceNameFitsTheServerLimitInUTF16UnitsWithoutHiddenCharacters() {
         let long = String(repeating: "葵", count: 70)
         #expect(PairingRequestLimits.deviceName("  " + long + "  ").utf16.count == 64)
         let emoji = PairingRequestLimits.deviceName(String(repeating: "🌻", count: 40))
@@ -202,6 +202,7 @@ import Testing
         #expect(family.utf16.count <= 64)
         #expect(family.unicodeScalars.last != "\u{200D}")
         #expect(PairingRequestLimits.deviceName("Andy\u{7}的\niPhone") == "Andy的iPhone")
+        #expect(PairingRequestLimits.deviceName("A\u{202E}B\u{85}C\u{200B}D\u{FEFF}") == "ABCD")
         #expect(PairingRequestLimits.deviceName("Andy 的 iPhone") == "Andy 的 iPhone")
         #expect(PairingRequestLimits.deviceName("   ") == "iPhone")
     }

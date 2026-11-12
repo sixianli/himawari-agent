@@ -24,8 +24,26 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+scenes=()
+while IFS= read -r scene; do scenes+=("$scene"); done < <(sed -nE 's/^ *case [a-zA-Z]+ = "([^"]+)"$/\1/p' "$root/Sources/HimawariShell/DemoScenes.swift")
+[ ${#scenes[@]} -gt 0 ] || { echo "UI_REVIEW_FAILED no demo scenes found" >&2; exit 1; }
+still=()
+for appearance in light dark; do
+  for scene in "${scenes[@]}"; do
+    case "$scene" in motion-*) ;; *) still+=("$scene-$appearance.png") ;; esac
+  done
+done
+
+missing_in() {
+  local dir="$1" name gaps=0
+  for name in "${still[@]}"; do
+    [ -f "$dir/$name" ] || { echo "UI_REVIEW_MISSING $dir/$name" >&2; gaps=1; }
+  done
+  return "$gaps"
+}
+
 if [ "$mode" = "approve" ]; then
-  ls "$out"/*.png >/dev/null 2>&1 || { echo "UI_REVIEW_FAILED no screenshots in $out" >&2; exit 1; }
+  missing_in "$out" || { echo "UI_REVIEW_FAILED $out does not hold every scene in light and dark; run the screenshots again" >&2; exit 1; }
   mkdir -p "$snapshots"
   rm -f "$snapshots"/*.png
   cp "$out"/*.png "$snapshots"/
@@ -33,15 +51,14 @@ if [ "$mode" = "approve" ]; then
   exit 0
 fi
 
-command -v xcrun >/dev/null || { echo "UI_REVIEW_FAILED needs Xcode on a Mac" >&2; exit 1; }
+command -v xcrun >/dev/null && xcodebuild -version >/dev/null 2>&1 || { echo "UI_REVIEW_FAILED needs Xcode on a Mac (xcodebuild -version failed)" >&2; exit 1; }
 
-scenes=()
-while IFS= read -r scene; do scenes+=("$scene"); done < <(sed -nE 's/^ *case [a-zA-Z]+ = "([^"]+)"$/\1/p' "$root/Sources/HimawariShell/DemoScenes.swift")
-[ ${#scenes[@]} -gt 0 ] || { echo "UI_REVIEW_FAILED no demo scenes found" >&2; exit 1; }
 
 xcrun simctl list devicetypes | grep -q "iPhone-16e" || { echo "UI_REVIEW_FAILED iPhone 16e simulator (390 pt wide) is not installed; add it in Xcode > Settings > Components" >&2; exit 1; }
-runtime="$(xcrun simctl list runtimes available | grep -E '^iOS ' | tail -1 | sed -E 's/.* - (com\.apple\.CoreSimulator\.SimRuntime\.[^ ]+).*/\1/')"
-[ -n "$runtime" ] || { echo "UI_REVIEW_FAILED no iOS simulator runtime installed" >&2; exit 1; }
+if ! runtime="$(xcrun simctl list runtimes available | grep -E '^iOS ' | tail -1 | sed -E 's/.* - (com\.apple\.CoreSimulator\.SimRuntime\.[^ ]+).*/\1/')" || [ -z "$runtime" ]; then
+  echo "UI_REVIEW_FAILED no iOS simulator runtime installed; add one in Xcode > Settings > Components" >&2
+  exit 1
+fi
 
 udid="$(xcrun simctl list devices available | grep -F "$device_name (" | head -1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/' || true)"
 if [ -z "$udid" ]; then
@@ -102,6 +119,7 @@ done
 xcrun simctl terminate "$udid" "$bundle" 2>/dev/null || true
 
 if [ "$mode" = "check" ]; then
+  missing_in "$snapshots" || { echo "UI_REVIEW_FAILED approved snapshots are missing scenes; review them and run --approve" >&2; exit 1; }
   xcrun swift "$root/scripts/compare-snapshots.swift" "$snapshots" "$shots"
   exit $?
 fi

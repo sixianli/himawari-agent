@@ -35,3 +35,5 @@
 "pairing.problem.expired.ttlSeconds" = "一个码只管 %d 秒。";
 "pairing.serverCaption" = "二维码里写的服务器";
 "pairing.connect" = "连接";
+"pairing.problem.keysUnreadable" = "配对和对话都还在。解锁手机后回到这里会自动再试";
+"pairing.problem.keysUnreadable.title" = "暂时读不到这台 iPhone 的密钥";
