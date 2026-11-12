@@ -827,6 +827,7 @@ export const MESSAGE_IDS = [
   "review.suspendReason",
   "review.checking",
   "review.condition",
+  "review.rechecking",
   "review.textGone",
   "review.suggestion",
   "review.adopt",

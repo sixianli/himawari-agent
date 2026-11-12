@@ -358,6 +358,9 @@ describe("[P4-1] correction propagation in SQLite", () => {
         .pluck()
         .get(RULE),
     ).toBeNull();
+    expect(run("ruleReview.listOpen", { limit: 10 })).toMatchObject([
+      { ruleId: RULE, status: "suspended", suggestion: null, rechecking: true },
+    ]);
     expect(
       run("ruleReview.act", { ruleId: RULE, expectedRevision: 5, action: "adopt", now: T3 }),
     ).toBe(false);
@@ -365,6 +368,52 @@ describe("[P4-1] correction propagation in SQLite", () => {
       { outcome: "needs_review", reasonCode: "memory_edited", subjectRef: RULE },
       { outcome: "suspended", reasonCode: "parameters_changed", subjectRef: RULE },
       { outcome: "needs_review", reasonCode: "memory_edited", subjectRef: RULE },
+    ]);
+    database.close();
+  });
+
+  it("stores a failed attempt whose reason is that the source memory could not be read", async () => {
+    const { database, run } = await openLatest();
+    memory(database, "m:rule", "rule");
+    rule(database, "m:rule");
+    edit(database, "m:rule", T1);
+    expect(
+      run("ruleReview.recordFailure", {
+        ruleId: RULE,
+        expectedRevision: 2,
+        reason: "source_unreadable",
+        retryAfter: T2,
+        now: T1,
+      }),
+    ).toBe(true);
+    expect(
+      database
+        .prepare("SELECT review_failure FROM rule_book_rules WHERE rule_id = ?")
+        .pluck()
+        .get(RULE),
+    ).toBe("source_unreadable");
+    expect(ruleRow(database)).toMatchObject({ status: "needs_review", attempts: 1 });
+    database.close();
+  });
+
+  it("opens a handled memory again when its upstream changes once more, directly or down the chain", async () => {
+    const { database, run } = await openLatest();
+    for (const id of ["m:a", "m:b", "m:c"]) memory(database, id);
+    reflect(database, "m:b", ["m:a"]);
+    reflect(database, "m:c", ["m:b"]);
+    edit(database, "m:a", T1);
+    run("memoryReview.expand", { now: T1, limit: 20 });
+    run("memoryReview.resolve", { memoryId: "m:b", resolution: "owner_dismissed", now: T2 });
+    run("memoryReview.resolve", { memoryId: "m:c", resolution: "owner_dismissed", now: T2 });
+    expect(openItems(database).map((row) => (row as { status: string }).status)).toEqual([
+      "resolved",
+      "resolved",
+    ]);
+    edit(database, "m:a", T3);
+    run("memoryReview.expand", { now: T3, limit: 20 });
+    expect(openItems(database)).toEqual([
+      { memoryId: "m:b", upstream: "m:a", depth: 1, status: "open" },
+      { memoryId: "m:c", upstream: "m:a", depth: 2, status: "open" },
     ]);
     database.close();
   });

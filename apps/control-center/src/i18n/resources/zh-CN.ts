@@ -888,6 +888,7 @@ export const messages = {
   "review.condition":
     "{f, select, senderDomains {发件域名} senderAddresses {发件地址} phrases {包含短语} words {包含词} excludePhrases {排除短语} other {条件}}：{v}",
   "review.textGone": "这条记忆的文字读不出来",
+  "review.rechecking": "来源记忆又变了，系统会再核对一次（核对完之前保持暂停）",
   "review.suggestion": "系统建议改成：{s}",
   "review.adopt": "采用建议",
   "review.confirmSuspended": "确认停用",

@@ -70,6 +70,7 @@ export interface RuleReviewListItem {
   readonly suggestion: OwnerRuleParameters | null;
   readonly reviewAttempts: number;
   readonly reviewFailure: RuleReviewFailureReason | null;
+  readonly rechecking: boolean;
   readonly updatedAt: string;
 }
 

@@ -627,6 +627,7 @@ export class ProductionMemoryControl {
             })
           : [],
         suspendReason: rule.suspendReason,
+        rechecking: rule.rechecking,
         sourceMemoryId: rule.sourceMemoryId,
         updatedAt: rule.updatedAt,
       }),

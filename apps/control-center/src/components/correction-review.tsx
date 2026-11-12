@@ -55,6 +55,7 @@ export function CorrectionReviewSection({
             {rule.suspendReason
               ? message("review.suspendReason", { r: rule.suspendReason })
               : message("review.checking")}
+            {rule.suspendReason && rule.rechecking ? ` ${message("review.rechecking")}` : null}
           </small>
           <p className="memory-text">{rule.summary}</p>
           {rule.suggestion ? (

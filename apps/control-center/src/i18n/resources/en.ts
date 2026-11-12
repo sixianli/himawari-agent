@@ -941,6 +941,8 @@ export const messages = {
   "review.condition":
     "{f, select, senderDomains {Sender domains} senderAddresses {Sender addresses} phrases {Phrases} words {Words} excludePhrases {Excluded phrases} other {Condition}}: {v}",
   "review.textGone": "The text of this memory cannot be read",
+  "review.rechecking":
+    "The source memory changed again; the system will check once more (it stays paused until then)",
   "review.suggestion": "Suggested change: {s}",
   "review.adopt": "Use suggestion",
   "review.confirmSuspended": "Turn off for good",

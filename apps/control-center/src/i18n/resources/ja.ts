@@ -945,6 +945,7 @@ export const messages = {
   "review.condition":
     "{f, select, senderDomains {送信元ドメイン} senderAddresses {送信元アドレス} phrases {含むフレーズ} words {含む単語} excludePhrases {除外フレーズ} other {条件}}：{v}",
   "review.textGone": "この記憶の文章を読み出せません",
+  "review.rechecking": "元の記憶がまた変わったため、もう一度照合します（終わるまで停止のまま）",
   "review.suggestion": "変更の提案：{s}",
   "review.adopt": "提案を採用",
   "review.confirmSuspended": "無効にする",

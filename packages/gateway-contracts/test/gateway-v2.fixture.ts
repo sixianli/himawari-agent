@@ -848,6 +848,7 @@ export const governanceMessages = [
         suggestion: "日本和韩国入管局相关的邮件一律提醒",
         suggestionConditions: [{ field: "senderDomains", values: ["moj.go.jp", "moj.go.kr"] }],
         suspendReason: "parameters_changed",
+        rechecking: false,
         sourceMemoryId: "memory-01",
         updatedAt: "2026-11-11T00:00:00.000Z",
       },

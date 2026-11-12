@@ -54,13 +54,14 @@ interface RuleRow {
   reviewFailure: string | null;
   suspendReason: string | null;
   suggestion: string | null;
+  reviewAfter: string | null;
   updatedAt: string;
 }
 
 const ruleColumns = `rule_id AS ruleId, revision, status, parameters,
   source_memory_id AS sourceMemoryId, review_attempts AS reviewAttempts,
   review_failure AS reviewFailure, suspend_reason AS suspendReason, suggestion,
-  updated_at AS updatedAt`;
+  review_after AS reviewAfter, updated_at AS updatedAt`;
 
 function validTime(value: unknown): value is string {
   if (typeof value !== "string") return false;
@@ -342,6 +343,10 @@ export class SqliteCorrectionReviewOperations {
             : null,
           reviewAttempts: row.reviewAttempts,
           reviewFailure: row.reviewFailure as RuleReviewListItem["reviewFailure"],
+          rechecking:
+            row.reviewAfter !== null &&
+            row.sourceMemoryId !== null &&
+            row.reviewAttempts < RULE_REVIEW_MAX_ATTEMPTS,
           updatedAt: row.updatedAt,
         }),
       ),

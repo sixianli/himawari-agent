@@ -1724,6 +1724,7 @@ const memoryReviewSnapshotSchema = object({
           }),
         ),
         suspendReason: nullable(enumeration(RULE_SUSPEND_REASONS)),
+        rechecking: booleanValue,
         sourceMemoryId: nullable(machineString),
         updatedAt: timestamp,
       }),

@@ -56,6 +56,7 @@ const flagged: MemoryReview = {
         { field: "excludePhrases", values: ["广告"] },
       ],
       suspendReason: "parameters_changed",
+      rechecking: false,
       sourceMemoryId: "memory-rule",
       updatedAt: "2026-11-12T00:00:00.000Z",
     },
@@ -67,6 +68,7 @@ const flagged: MemoryReview = {
       suggestion: null,
       suggestionConditions: [],
       suspendReason: null,
+      rechecking: true,
       sourceMemoryId: "memory-rule-2",
       updatedAt: "2026-11-12T00:00:00.000Z",
     },
@@ -129,6 +131,7 @@ describe("[P4-1] memories and rules to recheck after a memory edit", () => {
       container.querySelectorAll('[data-review-rule="owner:waiting"] [data-review-condition]'),
     ).toHaveLength(0);
     expect(text).toContain("等系统自动核对（核对完之前照常执行）");
+    expect(text).not.toContain("来源记忆又变了");
     expect(
       buttonsIn('[data-review-rule="owner:suspended"]').map((button) => button.textContent),
     ).toEqual(["采用建议", "确认停用", "恢复原规则"]);
@@ -174,6 +177,26 @@ describe("[P4-1] memories and rules to recheck after a memory edit", () => {
     expect(container.textContent).toContain("这条记忆的文字读不出来");
     await press('[data-review-memory="memory-gone"]', "看过没问题");
     expect(respondReview).toHaveBeenLastCalledWith("memory-gone", "dismiss", null);
+  });
+
+  it("says a paused rule is being checked again once its source changed, and offers no stale suggestion", async () => {
+    const [paused] = flagged.rules;
+    if (!paused) throw new Error("fixture");
+    const requeued: MemoryReview = {
+      ...empty,
+      rules: [{ ...paused, suggestion: null, suggestionConditions: [], rechecking: true }],
+    };
+    await show(
+      h(CorrectionReviewSection, {
+        memory: { review: requeued, respondReview: vi.fn(), busy: false },
+        message,
+        onOpenMemory: vi.fn(),
+      }),
+    );
+    expect(container.textContent).toContain("来源记忆又变了，系统会再核对一次");
+    expect(
+      buttonsIn('[data-review-rule="owner:suspended"]').map((button) => button.textContent),
+    ).toEqual(["确认停用", "恢复原规则"]);
   });
 
   it("shows nothing when no memory or rule is waiting", async () => {
