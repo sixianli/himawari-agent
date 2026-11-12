@@ -11,6 +11,18 @@ public struct HimawariRootView: View {
     public init() {}
 
     public var body: some View {
+        #if DEBUG
+        if let scene = DemoScene.requested {
+            DemoSceneView(scene: scene)
+        } else {
+            app
+        }
+        #else
+        app
+        #endif
+    }
+
+    private var app: some View {
         Group {
             if model.phase == .active, let chat = model.chat {
                 MainTabsView(model: model, chat: chat)
@@ -34,9 +46,16 @@ enum MainTab: Hashable {
 struct MainTabsView: View {
     let model: AppModel
     let chat: ChatStore
-    @State private var tab: MainTab = .chats
+    @State private var tab: MainTab
     @State private var openThread: OpenThread?
     @State private var settingsOpen = false
+    @Environment(\.tabsCycleEvery) private var cycleEvery
+
+    init(model: AppModel, chat: ChatStore, tab: MainTab = .chats) {
+        self.model = model
+        self.chat = chat
+        _tab = State(initialValue: tab)
+    }
 
     struct OpenThread: Equatable {
         let threadId: String?
@@ -56,6 +75,14 @@ struct MainTabsView: View {
                     .safeAreaInset(edge: .bottom) { Color.clear.frame(height: DesignTokens.Size.tabBarReserve) }
                     .overlay(alignment: .bottom) { bars }
                     .transition(.opacity)
+            }
+        }
+        .task {
+            guard let cycleEvery else { return }
+            let order: [MainTab] = [.chats, .today, .memory, .chats]
+            for next in order.dropFirst() {
+                try? await Task.sleep(for: .seconds(cycleEvery))
+                withAnimation(.snappy) { tab = next }
             }
         }
         .fullScreenCover(isPresented: $settingsOpen) {
@@ -112,4 +139,8 @@ struct TodayView: View {
         }
         .himawariScreenBackground()
     }
+}
+
+extension EnvironmentValues {
+    @Entry var tabsCycleEvery: Double? = nil
 }

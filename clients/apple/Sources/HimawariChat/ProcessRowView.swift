@@ -6,11 +6,17 @@ struct ProcessRowView: View {
     let line: ProcessLine
     let failed: Bool
     @State private var showingSteps = false
+    @Environment(\.processStepsOpenAfter) private var openAfter
 
     var body: some View {
         content
             .onChange(of: line) { old, new in
                 Self.reportHaptic(from: old, to: new, failed: failed)
+            }
+            .task {
+                guard let openAfter else { return }
+                try? await Task.sleep(for: .seconds(openAfter))
+                showingSteps = true
             }
     }
 
@@ -173,9 +179,10 @@ struct ProcessLineLabel: View {
 struct ShimmerText: View {
     let text: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.stillFrames) private var stillFrames
 
     var body: some View {
-        if reduceMotion {
+        if reduceMotion || stillFrames {
             label.foregroundStyle(Color.hmMuted)
         } else {
             TimelineView(.animation) { context in
@@ -202,4 +209,10 @@ struct ShimmerText: View {
     private var label: Text {
         Text(text).hmType(DesignTokens.TypeScale.body)
     }
+}
+
+extension EnvironmentValues {
+    @Entry public var processStepsOpenAfter: Double? = nil
+    @Entry public var transcriptScrollsToTopAfter: Double? = nil
+    @Entry public var listClock: Date? = nil
 }

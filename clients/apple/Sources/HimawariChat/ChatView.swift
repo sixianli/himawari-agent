@@ -11,6 +11,7 @@ public struct ChatView: View {
     @State private var createFailed = false
     @State private var createRequestId = ChatStore.newRequestId()
     @FocusState private var inputFocused: Bool
+    @Environment(\.transcriptScrollsToTopAfter) private var scrollToTopAfter
 
     public init(store: ChatStore, threadId: String?, close: @escaping () -> Void) {
         self.store = store
@@ -84,6 +85,17 @@ public struct ChatView: View {
     }
 
     private var transcript: some View {
+        ScrollViewReader { proxy in
+            transcriptScroll
+                .task {
+                    guard let scrollToTopAfter, let threadId, let first = store.transcript(in: threadId).first else { return }
+                    try? await Task.sleep(for: .seconds(scrollToTopAfter))
+                    withAnimation(.easeInOut(duration: 3)) { proxy.scrollTo(first.id, anchor: .top) }
+                }
+        }
+    }
+
+    private var transcriptScroll: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
                 if let threadId {

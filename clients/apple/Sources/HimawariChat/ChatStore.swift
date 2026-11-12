@@ -40,6 +40,7 @@ public final class ChatStore {
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
     @ObservationIgnored private var flushing = false
     @ObservationIgnored private var flushAgain = false
+    @ObservationIgnored var frozen = false
     @ObservationIgnored private var retryTask: Task<Void, Never>?
     @ObservationIgnored private var retryFailures = 0
     @ObservationIgnored private var createdRevisions: [String: Int] = [:]
@@ -70,6 +71,7 @@ public final class ChatStore {
     }
 
     public func start() {
+        guard !frozen else { return }
         stop()
         tasks.append(Task { [weak self] in
             guard let self else { return }
@@ -98,6 +100,7 @@ public final class ChatStore {
     }
 
     public func watch(_ threadId: String) {
+        guard !frozen else { return }
         if watched?.threadId == threadId { return }
         unwatch()
         let stream = DeviceEventStream(http: api.http, path: "threads/\(threadId)/execution-stream", cursors: nil, heartbeat: heartbeatSeconds)
@@ -117,6 +120,7 @@ public final class ChatStore {
     }
 
     public func reconnect() {
+        guard !frozen else { return }
         events.reconnectNow()
         watched?.stream.reconnectNow()
         Task { await flush() }
@@ -147,6 +151,7 @@ public final class ChatStore {
     }
 
     public func refreshThreads() async {
+        guard !frozen else { return }
         loadingThreads = true
         defer { loadingThreads = false }
         do {
@@ -168,6 +173,7 @@ public final class ChatStore {
     }
 
     public func load(_ threadId: String) async {
+        guard !frozen else { return }
         do {
             let detail = try await api.fullThread(threadId)
             details[threadId] = detail
@@ -212,6 +218,7 @@ public final class ChatStore {
     }
 
     public func loadExecution(_ runId: String, in threadId: String) async {
+        guard !frozen else { return }
         guard !loadingExecutions.contains(runId) else { return }
         loadingExecutions.insert(runId)
         defer { loadingExecutions.remove(runId) }
@@ -230,6 +237,7 @@ public final class ChatStore {
     }
 
     public func prefetch(_ threadId: String) {
+        guard !frozen else { return }
         guard details[threadId] == nil else { return }
         Task { await load(threadId) }
     }
@@ -246,6 +254,7 @@ public final class ChatStore {
     }
 
     public func send(_ text: String, in threadId: String) async {
+        guard !frozen else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let revision = details[threadId]?.thread.revision ?? threads.first(where: { $0.threadId == threadId })?.revision ?? createdRevisions[threadId] ?? 1
@@ -264,6 +273,7 @@ public final class ChatStore {
     }
 
     func flush() async {
+        guard !frozen else { return }
         guard !flushing else {
             flushAgain = true
             return

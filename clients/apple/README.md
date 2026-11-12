@@ -8,6 +8,7 @@
 - [在云端跑单元测试](#in-the-cloud)
 - [和服务器对齐的固定测试数据](#vectors)
 - [图标](#icons)
+- [截图对照原型](#ui-review)
 
 <a id="layout"></a>
 ## 代码怎么分
@@ -80,3 +81,27 @@ node clients/apple/scripts/make-icons.mjs /tmp/tabler/package clients/apple/Sour
 脚本把每个 SVG 改好线宽后放进 `Icons.xcassets`（Xcode 的图片资源目录），按模板图片处理；许可证原文和版本号放进 `Licenses/`，以后的致谢页（第 11 批设置页）用 `ThirdPartyLicense.all` 读出来显示，第 2 批还没有界面用它。
 
 [返回目录](#apple-clients)
+
+<a id="ui-review"></a>
+## 截图对照原型
+
+界面要和 Andy 批准的原型逐屏对照。`App` 的调试版带一套示例数据（`Sources/HimawariShell/DemoScenes.swift`，只在调试版里编译）：启动参数 `-HimawariDemoScene <场景名>` 让 App 直接显示某一屏，不连服务器。场景名就是截图文件名，以原型图的编号开头（例如 `16-chat-states-3-sending`），`motion-` 开头的是动效录屏。示例数据的时钟固定在 2026-11-12 15:00，截静态图时关掉动效，所以每次截出来一样。
+
+在 Mac 上一条命令（需要 Xcode 26 和 iPhone 16e 模拟器，宽 390 点）：
+
+```bash
+clients/apple/scripts/ui-review.sh
+```
+
+它建一个叫 “Himawari 390pt” 的模拟器，把状态栏固定成 9:41，编译调试版并装上，浅色、深色各截一遍全部场景（PNG 放 `clients/apple/ui-review/latest/`），并录下动效（微光、切页签、面板弹出、内容在玻璃下滚动；有 `avconvert` 时压成 960×540 的 MP4）。截图宽度不是 1170 像素（390 点 × 3）就报错停下。
+
+设计线程验收通过后：
+
+```bash
+clients/apple/scripts/ui-review.sh --approve
+```
+
+把这批截图存进 `Tests/Snapshots/iPhone-390/`，成为快照。之后改界面时跑 `clients/apple/scripts/ui-review.sh --check`：重新截图，用 `scripts/compare-snapshots.swift` 逐像素比较，任一张图里颜色差超过 16/255 的像素多于 0.2% 就报 `SNAPSHOT_DIFF` 并失败。
+
+[返回目录](#apple-clients)
+

@@ -82,6 +82,7 @@ public struct SunflowerMark: View {
     private let detail: SunflowerDetail
     private let growing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.stillFrames) private var stillFrames
 
     public init(detail: SunflowerDetail = .full, growing: Bool = false) {
         self.detail = detail
@@ -89,7 +90,7 @@ public struct SunflowerMark: View {
     }
 
     public var body: some View {
-        if growing && !reduceMotion {
+        if growing && !reduceMotion && !stillFrames {
             TimelineView(.animation) { context in
                 disc(growth: SunflowerSeeds.resting(detail) + context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 10_000) * 7)
             }
@@ -114,4 +115,8 @@ public struct SunflowerMark: View {
         }
         .accessibilityHidden(true)
     }
+}
+
+extension EnvironmentValues {
+    @Entry public var stillFrames = false
 }

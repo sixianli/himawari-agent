@@ -7,7 +7,12 @@ import VisionKit
 
 struct PairingView: View {
     let model: AppModel
-    @State private var scanning = false
+    @State private var scanning: Bool
+
+    init(model: AppModel, scanning: Bool = false) {
+        self.model = model
+        _scanning = State(initialValue: scanning)
+    }
 
     var body: some View {
         content
@@ -265,6 +270,25 @@ struct PairingScanner: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            #if DEBUG
+            if DemoScene.requested != nil {
+                CameraStandIn()
+                ScannerFrame(caption: Text(L.text("pairing.aim")))
+            } else {
+                camera
+            }
+            #else
+            camera
+            #endif
+            ScannerCloseButton(Text(L.text("common.close")), action: cancel)
+                .padding(.leading, DesignTokens.Size.pagePaddingX)
+                .frame(height: DesignTokens.Size.navBarHeight)
+        }
+    }
+
+    @ViewBuilder
+    private var camera: some View {
+        Group {
             #if canImport(VisionKit) && os(iOS)
             if DataScannerViewController.isSupported && DataScannerViewController.isAvailable {
                 CodeScanner(found: found).ignoresSafeArea()
@@ -276,9 +300,6 @@ struct PairingScanner: View {
             #else
             EmptyStateView(Text(L.text("pairing.cameraUnavailable")))
             #endif
-            ScannerCloseButton(Text(L.text("common.close")), action: cancel)
-                .padding(.leading, DesignTokens.Size.pagePaddingX)
-                .frame(height: DesignTokens.Size.navBarHeight)
         }
     }
 }

@@ -5,6 +5,7 @@ import SwiftUI
 public struct ChatListView: View {
     private let store: ChatStore
     private let open: (String?) -> Void
+    @Environment(\.listClock) private var listClock
 
     public init(store: ChatStore, open: @escaping (String?) -> Void) {
         self.store = store
@@ -27,7 +28,7 @@ public struct ChatListView: View {
                                 ChatListRow(
                                     title: store.title(for: thread) ?? L.text("chat.untitled"),
                                     snippet: store.lastMessageText(in: thread.threadId),
-                                    time: RelativeTime.label(thread.updatedAt),
+                                    time: RelativeTime.label(thread.updatedAt, now: listClock ?? Date()),
                                     showsSeparator: index < store.threads.count - 1
                                 )
                             }

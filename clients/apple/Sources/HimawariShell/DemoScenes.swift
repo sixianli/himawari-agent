@@ -1,0 +1,103 @@
+#if DEBUG
+import Foundation
+import HimawariChat
+import HimawariCore
+import HimawariDesign
+import SwiftUI
+
+enum DemoScene: String, CaseIterable {
+    case chatList = "03-chat-list"
+    case chat = "04-chat"
+    case pairing = "11-pairing"
+    case pairingScan = "15-pairing-flow-1-scan"
+    case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
+    case pairingWaiting = "15-pairing-flow-2-waiting"
+    case pairingExpired = "15-pairing-flow-3-expired"
+    case pairingUnreachable = "15-pairing-flow-4-unreachable"
+    case pairingRemoved = "15-pairing-flow-5-removed"
+    case chatEmpty = "16-chat-states-1-empty"
+    case chatNew = "16-chat-states-2-new"
+    case chatSending = "16-chat-states-3-sending"
+    case chatOffline = "16-chat-states-4-offline"
+    case chatAnswering = "16-chat-states-5-answering"
+    case chatSteps = "16-chat-states-6-steps"
+    case motionShimmer = "motion-shimmer"
+    case motionTabs = "motion-tab-switch"
+    case motionSheet = "motion-sheet"
+    case motionScroll = "motion-scroll-under-glass"
+
+    static let argument = "-HimawariDemoScene"
+    static let demoHost = "himawari.example.com"
+
+    static var requested: DemoScene? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: argument), arguments.indices.contains(index + 1) else { return nil }
+        return DemoScene(rawValue: arguments[index + 1])
+    }
+}
+
+struct DemoSceneView: View {
+    let scene: DemoScene
+
+    var body: some View {
+        content
+            .environment(\.listClock, DemoChatFixtures.now)
+            .environment(\.stillFrames, !scene.rawValue.hasPrefix("motion-"))
+            .onAppear { SerifFace.shared.prepare() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch scene {
+        case .chatList:
+            tabs(DemoChatFixtures.chatList())
+        case .chatEmpty:
+            tabs(DemoChatState())
+        case .motionTabs:
+            tabs(DemoChatFixtures.chatList())
+                .environment(\.tabsCycleEvery, 1.2)
+        case .chat:
+            chat(DemoChatFixtures.answered())
+        case .chatNew:
+            ChatView(store: .demo(DemoChatState()), threadId: nil) {}
+        case .chatSending:
+            chat(DemoChatFixtures.sending())
+        case .chatOffline:
+            chat(DemoChatFixtures.offline())
+        case .chatAnswering, .motionShimmer:
+            chat(DemoChatFixtures.answering())
+        case .chatSteps:
+            chat(DemoChatFixtures.answered())
+                .environment(\.processStepsOpenAfter, 0)
+        case .motionSheet:
+            chat(DemoChatFixtures.answered())
+                .environment(\.processStepsOpenAfter, 1.5)
+        case .motionScroll:
+            chat(DemoChatFixtures.longConversation())
+                .environment(\.transcriptScrollsToTopAfter, 1.5)
+        case .pairing:
+            PairingView(model: .demo(.unpaired(nil)))
+        case .pairingScan:
+            PairingView(model: .demo(.unpaired(nil)), scanning: true)
+        case .pairingConfirmServer:
+            PairingView(model: .demo(.confirmingServer(host: DemoScene.demoHost)))
+        case .pairingWaiting:
+            PairingView(model: .demo(.waitingForConfirmation(number: "482 913"), host: DemoScene.demoHost))
+        case .pairingExpired:
+            PairingView(model: .demo(.unpaired(.codeExpired(ttlSeconds: 600))))
+        case .pairingUnreachable:
+            PairingView(model: .demo(.unpaired(.unreachable)))
+        case .pairingRemoved:
+            PairingView(model: .demo(.unpaired(.removed)))
+        }
+    }
+
+    private func tabs(_ state: DemoChatState) -> some View {
+        MainTabsView(model: .demo(.active), chat: .demo(state))
+    }
+
+    private func chat(_ state: DemoChatState) -> some View {
+        ChatView(store: .demo(state), threadId: DemoChatFixtures.osakaThreadId) {}
+    }
+}
+#endif

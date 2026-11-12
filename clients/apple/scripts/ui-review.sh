@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+mode="record"
+out="$root/ui-review/latest"
+snapshots="$root/Tests/Snapshots/iPhone-390"
+device_name="Himawari 390pt"
+device_type="com.apple.CoreSimulator.SimDeviceType.iPhone-16e"
+expected_width=1170
+derived="$root/ui-review/DerivedData"
+
+usage() {
+  echo "usage: clients/apple/scripts/ui-review.sh [--check | --approve] [--out DIR]" >&2
+  exit 2
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check) mode="check"; shift ;;
+    --approve) mode="approve"; shift ;;
+    --out) [ $# -ge 2 ] || usage; out="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+if [ "$mode" = "approve" ]; then
+  ls "$out"/*.png >/dev/null 2>&1 || { echo "UI_REVIEW_FAILED no screenshots in $out" >&2; exit 1; }
+  mkdir -p "$snapshots"
+  rm -f "$snapshots"/*.png
+  cp "$out"/*.png "$snapshots"/
+  echo "UI_REVIEW_APPROVED $(ls "$snapshots"/*.png | wc -l | tr -d ' ') snapshots -> $snapshots"
+  exit 0
+fi
+
+command -v xcrun >/dev/null || { echo "UI_REVIEW_FAILED needs Xcode on a Mac" >&2; exit 1; }
+
+scenes=()
+while IFS= read -r scene; do scenes+=("$scene"); done < <(sed -nE 's/^ *case [a-zA-Z]+ = "([^"]+)"$/\1/p' "$root/Sources/HimawariShell/DemoScenes.swift")
+[ ${#scenes[@]} -gt 0 ] || { echo "UI_REVIEW_FAILED no demo scenes found" >&2; exit 1; }
+
+xcrun simctl list devicetypes | grep -q "iPhone-16e" || { echo "UI_REVIEW_FAILED iPhone 16e simulator (390 pt wide) is not installed; add it in Xcode > Settings > Components" >&2; exit 1; }
+runtime="$(xcrun simctl list runtimes available | grep -E '^iOS ' | tail -1 | sed -E 's/.* - (com\.apple\.CoreSimulator\.SimRuntime\.[^ ]+).*/\1/')"
+[ -n "$runtime" ] || { echo "UI_REVIEW_FAILED no iOS simulator runtime installed" >&2; exit 1; }
+
+udid="$(xcrun simctl list devices available | grep -F "$device_name (" | head -1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/' || true)"
+if [ -z "$udid" ]; then
+  udid="$(xcrun simctl create "$device_name" "$device_type" "$runtime")"
+fi
+xcrun simctl boot "$udid" 2>/dev/null || true
+xcrun simctl bootstatus "$udid" -b >/dev/null
+xcrun simctl status_bar "$udid" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
+
+echo "UI_REVIEW_BUILD device=$udid"
+xcodebuild -project "$root/App/Himawari.xcodeproj" -scheme Himawari -configuration Debug \
+  -destination "id=$udid" -derivedDataPath "$derived" build -quiet
+app="$derived/Build/Products/Debug-iphonesimulator/Himawari.app"
+bundle="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")"
+xcrun simctl install "$udid" "$app"
+
+shots="$out"
+if [ "$mode" = "check" ]; then
+  shots="$(mktemp -d)"
+fi
+mkdir -p "$shots"
+rm -f "$shots"/*.png "$shots"/*.mp4 "$shots"/*.mov
+
+launch() {
+  xcrun simctl launch --terminate-running-process "$udid" "$bundle" \
+    -HimawariDemoScene "$1" -AppleLanguages "(zh-Hans)" -AppleLocale zh_CN >/dev/null
+}
+
+for appearance in light dark; do
+  xcrun simctl ui "$udid" appearance "$appearance"
+  for scene in "${scenes[@]}"; do
+    case "$scene" in
+      motion-*)
+        [ "$mode" = "check" ] && continue
+        raw="$shots/$scene-$appearance.mov"
+        xcrun simctl io "$udid" recordVideo --codec=h264 --force "$raw" >/dev/null 2>&1 &
+        recorder=$!
+        sleep 1
+        launch "$scene"
+        sleep 7
+        kill -INT "$recorder"
+        wait "$recorder" || true
+        if command -v avconvert >/dev/null; then
+          avconvert --preset Preset960x540 --source "$raw" --output "$shots/$scene-$appearance.mp4" --replace >/dev/null 2>&1 && rm -f "$raw"
+        fi
+        ;;
+      *)
+        launch "$scene"
+        sleep 3
+        file="$shots/$scene-$appearance.png"
+        xcrun simctl io "$udid" screenshot --type=png "$file" >/dev/null
+        width="$(sips -g pixelWidth "$file" | awk '/pixelWidth/ {print $2}')"
+        [ "$width" = "$expected_width" ] || { echo "UI_REVIEW_FAILED $file is $width px wide, expected $expected_width (390 pt at 3x)" >&2; exit 1; }
+        ;;
+    esac
+  done
+done
+xcrun simctl terminate "$udid" "$bundle" 2>/dev/null || true
+
+if [ "$mode" = "check" ]; then
+  xcrun swift "$root/scripts/compare-snapshots.swift" "$snapshots" "$shots"
+  exit $?
+fi
+
+echo "UI_REVIEW_DONE $(ls "$shots"/*.png | wc -l | tr -d ' ') screenshots, $(ls "$shots"/*.mp4 "$shots"/*.mov 2>/dev/null | wc -l | tr -d ' ') clips -> $shots"

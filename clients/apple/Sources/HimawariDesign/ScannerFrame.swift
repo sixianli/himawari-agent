@@ -57,3 +57,11 @@ public struct ScannerCloseButton: View {
         .accessibilityLabel(label)
     }
 }
+
+public struct CameraStandIn: View {
+    public init() {}
+
+    public var body: some View {
+        Color.black.ignoresSafeArea()
+    }
+}

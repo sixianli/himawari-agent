@@ -35,14 +35,18 @@ public final class AppModel {
 
     private static let recordAccount = "pairing-record"
 
-    public init(bundle: Bundle = .main) {
+    public convenience init(bundle: Bundle = .main) {
+        self.init(bundle: bundle, restoring: true)
+    }
+
+    init(bundle: Bundle = .main, restoring: Bool) {
         let service = (bundle.bundleIdentifier ?? "himawari") + ".device"
         keys = SecureEnclaveKeyStore(service: service + ".keys")
         keychain = KeychainValueStore(service: service)
         let channel = bundle.object(forInfoDictionaryKey: "HimawariReleaseChannel") as? String
         releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)) ?? .direct
         api = DeviceAPI(http: DeviceHTTPClient())
-        restore()
+        if restoring { restore() }
     }
 
     private var record: PairingRecord? {
@@ -97,10 +101,21 @@ public final class AppModel {
         phase = .unpaired(nil)
     }
 
+    @ObservationIgnored var demoHost: String?
+
     public var serverHost: String? {
         if case let .confirmingServer(host) = phase { return host }
-        return record.map { Self.host($0.origin) }
+        return record.map { Self.host($0.origin) } ?? demoHost
     }
+
+    #if DEBUG
+    static func demo(_ phase: AppPhase, host: String? = nil) -> AppModel {
+        let model = AppModel(restoring: false)
+        model.phase = phase
+        model.demoHost = host
+        return model
+    }
+    #endif
 
     static func host(_ origin: URL) -> String {
         let host = origin.host ?? origin.absoluteString
