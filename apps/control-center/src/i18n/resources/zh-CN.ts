@@ -884,11 +884,13 @@ export const messages = {
   "review.dismiss": "看过没问题",
   "review.suspendReason":
     "{r, select, source_removed {已暂停：来源记忆删了或不再是规则} no_longer_standing {已暂停：来源记忆读下来已不是长期要求} parameters_changed {已暂停：来源记忆读下来和原规则对不上} other {已暂停}}",
-  "review.checking": "来源记忆改过，等系统自动核对（核对完之前照常执行）",
+  "review.checking": "来源记忆改过，下次查邮件前系统自动核对（核对完之前照常执行）",
+  "review.notChecking":
+    "来源记忆改过，但系统没法自动核对（来源记忆不在了，或核对连续失败），规则照常执行，请你看一下",
   "review.condition":
     "{f, select, senderDomains {发件域名} senderAddresses {发件地址} phrases {包含短语} words {包含词} excludePhrases {排除短语} other {条件}}：{v}",
   "review.textGone": "这条记忆的文字读不出来",
-  "review.rechecking": "来源记忆又变了，系统会再核对一次（核对完之前保持暂停）",
+  "review.rechecking": "来源记忆又变了，下次查邮件前系统会再核对一次（核对完之前保持暂停）",
   "review.suggestion": "系统建议改成：{s}",
   "review.adopt": "采用建议",
   "review.confirmSuspended": "确认停用",

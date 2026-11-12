@@ -301,8 +301,12 @@ describe("[P4-1] correction propagation in SQLite", () => {
       suspendReason: "parameters_changed",
       reviewAfter: null,
     });
-    const [open] = run("ruleReview.listOpen", { limit: 10 }) as { suggestion: unknown }[];
+    const [open] = run("ruleReview.listOpen", { limit: 10 }) as {
+      suggestion: unknown;
+      rechecking: boolean;
+    }[];
     expect(open?.suggestion).toEqual(NEW_BOSS);
+    expect(open?.rechecking).toBe(false);
     expect(
       run("ruleReview.act", { ruleId: RULE, expectedRevision: 3, action: "adopt", now: T3 }),
     ).toBe(true);
@@ -433,6 +437,9 @@ describe("[P4-1] correction propagation in SQLite", () => {
       });
     expect(ruleRow(database)).toMatchObject({ status: "needs_review", attempts: 4 });
     expect(run("ruleReview.listDue", { now: T3, limit: 3 })).toEqual([]);
+    expect(run("ruleReview.listOpen", { limit: 10 })).toMatchObject([
+      { ruleId: RULE, status: "needs_review", rechecking: false },
+    ]);
     expect(
       ledger(database, "rule_review").filter(
         (row) => (row as { outcome: string }).outcome === "recheck_failed",

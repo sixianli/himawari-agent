@@ -941,11 +941,15 @@ export const messages = {
   "review.dismiss": "問題なし",
   "review.suspendReason":
     "{r, select, source_removed {停止中：元の記憶が削除されたか、ルールではなくなりました} no_longer_standing {停止中：元の記憶がもう継続的な指示として読めません} parameters_changed {停止中：元の記憶と今のルールが合いません} other {停止中}}",
-  "review.checking": "元の記憶が変わりました。自動の確認待ちです（確認までは今まで通り実行）",
+  "review.checking":
+    "元の記憶が変わりました。次のメール確認の前に自動で照合します（それまでは今まで通り実行）",
+  "review.notChecking":
+    "元の記憶が変わりましたが、自動で照合できません（元の記憶がないか、照合が続けて失敗）。ルールは今まで通り実行されます。確認してください",
   "review.condition":
     "{f, select, senderDomains {送信元ドメイン} senderAddresses {送信元アドレス} phrases {含むフレーズ} words {含む単語} excludePhrases {除外フレーズ} other {条件}}：{v}",
   "review.textGone": "この記憶の文章を読み出せません",
-  "review.rechecking": "元の記憶がまた変わったため、もう一度照合します（終わるまで停止のまま）",
+  "review.rechecking":
+    "元の記憶がまた変わったため、次のメール確認の前にもう一度照合します（終わるまで停止のまま）",
   "review.suggestion": "変更の提案：{s}",
   "review.adopt": "提案を採用",
   "review.confirmSuspended": "無効にする",

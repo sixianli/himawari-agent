@@ -130,7 +130,7 @@ describe("[P4-1] memories and rules to recheck after a memory edit", () => {
     expect(
       container.querySelectorAll('[data-review-rule="owner:waiting"] [data-review-condition]'),
     ).toHaveLength(0);
-    expect(text).toContain("等系统自动核对（核对完之前照常执行）");
+    expect(text).toContain("下次查邮件前系统自动核对（核对完之前照常执行）");
     expect(text).not.toContain("来源记忆又变了");
     expect(
       buttonsIn('[data-review-rule="owner:suspended"]').map((button) => button.textContent),
@@ -193,10 +193,25 @@ describe("[P4-1] memories and rules to recheck after a memory edit", () => {
         onOpenMemory: vi.fn(),
       }),
     );
-    expect(container.textContent).toContain("来源记忆又变了，系统会再核对一次");
+    expect(container.textContent).toContain("来源记忆又变了，下次查邮件前系统会再核对一次");
     expect(
       buttonsIn('[data-review-rule="owner:suspended"]').map((button) => button.textContent),
     ).toEqual(["确认停用", "恢复原规则"]);
+  });
+
+  it("does not promise an automatic check for a waiting rule the system can no longer check", async () => {
+    const [, waiting] = flagged.rules;
+    if (!waiting) throw new Error("fixture");
+    const stuck: MemoryReview = { ...empty, rules: [{ ...waiting, rechecking: false }] };
+    await show(
+      h(CorrectionReviewSection, {
+        memory: { review: stuck, respondReview: vi.fn(), busy: false },
+        message,
+        onOpenMemory: vi.fn(),
+      }),
+    );
+    expect(container.textContent).toContain("系统没法自动核对");
+    expect(container.textContent).not.toContain("系统自动核对（核对完之前照常执行）");
   });
 
   it("shows nothing when no memory or rule is waiting", async () => {
