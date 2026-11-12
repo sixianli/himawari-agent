@@ -338,6 +338,17 @@ export const SCENES = {
       await page.waitForTimeout(400);
     },
   },
+  memoryExternal: {
+    path: "/threads",
+    act: async (page, text) => {
+      await page.request.post(new URL("/__fixture/external", page.url()).href, {
+        data: { mode: "pending" },
+      });
+      await openSidebarOnPhone(page);
+      await page.getByRole("button", { name: text.memory, exact: true }).first().click();
+      await page.waitForSelector("#memory-external .external-proposal");
+    },
+  },
   reminders: {
     path: "/threads",
     act: async (page, text) => {
