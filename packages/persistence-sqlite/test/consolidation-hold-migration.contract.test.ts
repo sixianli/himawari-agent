@@ -55,6 +55,14 @@ function dump(database: Database) {
           sql: entry.sql
             ?.replace(/\s+/gu, " ")
             .replace(/, 'hold'/gu, "")
+            .replace(
+              /\( length\(source\) BETWEEN 1 AND 64 AND source GLOB '\[a-z\]\*' AND source NOT GLOB '\*\[\^a-z0-9_\]\*' \)/gu,
+              "(source IN ('gmail'))",
+            )
+            .replace(
+              "( scenario IS NULL OR (length(scenario) BETWEEN 1 AND 64 AND scenario GLOB '[a-z]*' AND scenario NOT GLOB '*[^a-z0-9_]*') )",
+              "(scenario IS NULL OR scenario IN ('gmail'))",
+            )
             .replace(", 'limit_change', 'delivery_timing', 'proposal'", "")
             .replace(
               " OR (kind = 'limit_change' AND outcome = 'changed') OR (kind = 'delivery_timing' AND outcome IN ( 'delivered', 'deferred', 'deadline_reached', 'shown_in_app' )) OR (kind = 'proposal' AND outcome IN ( 'proposed', 'blocked', 'accepted', 'dismissed', 'expired', 'executed', 'failed', 'undone', 'not_proposed', 'superseded' ))",

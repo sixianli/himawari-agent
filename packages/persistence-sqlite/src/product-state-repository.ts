@@ -130,6 +130,7 @@ export interface SqliteProductStateRepositoryOptions {
   readonly onSlowOperation?: (operation: SqliteSlowOperation) => void;
   readonly onOperation?: (operation: SqliteTimedOperation) => void;
   readonly extraReadThreadBudget?: SqliteExtraReadThreadBudget;
+  readonly proactiveSources?: SqliteWorkerConfiguration["proactiveSources"];
 }
 
 export interface SqliteCheckpointResult {
@@ -254,6 +255,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
           minimumFreeBytes,
           warningFreeBytes,
           ...(options.qualification ? { qualification: options.qualification } : {}),
+          ...(options.proactiveSources ? { proactiveSources: options.proactiveSources } : {}),
         },
         {
           ...(options.onSlowOperation ? { onSlowOperation: options.onSlowOperation } : {}),
@@ -269,6 +271,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
             minimumFreeBytes,
             warningFreeBytes,
             readOnly: true,
+            ...(options.proactiveSources ? { proactiveSources: options.proactiveSources } : {}),
           },
           {
             ...(options.onSlowOperation ? { onSlowOperation: options.onSlowOperation } : {}),

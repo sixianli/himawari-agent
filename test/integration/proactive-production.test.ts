@@ -1,14 +1,19 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   createProactiveSeal,
   DEFAULT_REVIEW_PREREVIEW,
+  defineProactiveSources,
+  GMAIL_SOURCE,
   type ModelDescriptor,
   type ModelInvocationEvent,
   ownerRuleRecord,
+  type ProactiveSource,
+  type ProactiveSourceRegistry,
   type WebPushSendRequest,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
@@ -62,6 +67,9 @@ const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
 const NOV_4_10AM_JST = "2026-11-04T01:00:00.000Z";
 const ORIGIN = "https://himawari.example";
 const MODEL_REF = "proactive-production-model";
+const GMAIL_REQUEST_GOLDEN = fileURLToPath(
+  new URL("../fixtures/proactive-gmail-request.golden.json", import.meta.url),
+);
 
 const descriptor: ModelDescriptor = {
   ref: MODEL_REF,
@@ -182,7 +190,12 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function setup(options: { readonly demoInbox?: "ja" | "en" } = {}) {
+  async function setup(
+    options: {
+      readonly demoInbox?: "ja" | "en";
+      readonly registry?: ProactiveSourceRegistry<ProactiveSource>;
+    } = {},
+  ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-proactive-production-"));
     directories.push(stateRoot);
     const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
@@ -236,6 +249,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     const outputs = new Map<string, string>();
     let scripted = new ScriptedModelPort([descriptor], []);
     const prompts: string[] = [];
+    const models: ScriptedModelPort[] = [];
     const script = (items: readonly Record<string, unknown>[]) => {
       const ref = `output-${outputs.size + 1}`;
       outputs.set(ref, JSON.stringify({ items }));
@@ -259,6 +273,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
         },
       ];
       scripted = new ScriptedModelPort([descriptor], events);
+      models.push(scripted);
     };
     const webPushStore = repository.webPush();
     const failures: unknown[] = [];
@@ -294,6 +309,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       store,
       seal,
       oauth,
+      ...(options.registry ? { registry: options.registry } : {}),
       reader: options.demoInbox
         ? createDemoMailReader({ now: () => clock.now() })
         : createGmailReader({ oauth, fetch: google.fetch }),
@@ -417,6 +433,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       presence,
       proactive,
       prompts,
+      modelRequests: () => models.flatMap((model) => model.observedRequests()),
       push,
       script,
       seal,
@@ -443,6 +460,132 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     );
     return google.searchParams.get("state") ?? "";
   }
+
+  it("[iOS-7] sends the model the same Gmail judging request, byte for byte, as before sources were registered", async () => {
+    const h = await setup();
+    const state = await connect(h);
+    h.script([
+      {
+        id: "invoice",
+        result: "act",
+        confidence: "sure",
+        todo: "11/5 前付清 SMBC 账单 12,000 円",
+        priority: "high",
+        dueAt: "2026-11-05T14:59:00.000Z",
+        reason: "",
+      },
+    ]);
+    await h.app.inject({
+      method: "GET",
+      url: `${PROACTIVE_GOOGLE_CALLBACK_PATH}?state=${state}&code=code-1&scope=x`,
+      headers: cookie,
+    });
+    await h.proactive.stop();
+    const sent = { prompts: h.prompts, requests: h.modelRequests() };
+    expect(sent.prompts).toHaveLength(1);
+    expect(sent.requests).toHaveLength(1);
+    expect(JSON.parse(await readFile(GMAIL_REQUEST_GOLDEN, "utf8"))).toEqual(sent);
+  });
+
+  it("[iOS-7] lists registered sources with their switch and caps, and a source switched off is not checked", async () => {
+    const h = await setup({ demoInbox: "ja" });
+    await h.proactive.seedDemoInbox();
+    const sources = async () => {
+      const snapshot = await h.proactive.query(
+        message("query", "proactive.sources.read", {}) as GatewayV2Query,
+      );
+      gatewayV2MessageSchema.parse(snapshot);
+      if (snapshot.type !== "proactive.sources.snapshot") throw new Error("unexpected snapshot");
+      return snapshot.payload.sources;
+    };
+    expect(await sources()).toEqual([
+      {
+        source: "gmail",
+        intake: "reader",
+        trust: "external",
+        enabled: true,
+        perDay: { limit: 5_000, defaultLimit: 5_000, minimum: 1, maximum: 1_000_000 },
+        perCheck: { limit: 500, defaultLimit: 500, minimum: 1, maximum: 10_000 },
+        usedToday: 0,
+        dailyLimitReached: false,
+        updatedAt: null,
+      },
+    ]);
+
+    await h.command("proactive.source.settings.set", {
+      source: "gmail",
+      enabled: false,
+      perDay: 40,
+      perCheck: 1,
+    });
+    h.clock.advance(40 * 60_000);
+    await h.proactive.tick();
+    expect((await h.overview()).decisions).toEqual([]);
+    expect(h.prompts).toEqual([]);
+    expect(await sources()).toMatchObject([
+      { enabled: false, perDay: { limit: 40 }, perCheck: { limit: 1 }, usedToday: 0 },
+    ]);
+
+    await h.command("proactive.source.settings.set", {
+      source: "gmail",
+      enabled: true,
+      perDay: 40,
+      perCheck: 1,
+    });
+    h.script([{ id: "demo-ja-mockups", result: "ignore", confidence: "sure" }]);
+    await h.proactive.tick();
+    expect((await h.overview()).decisions).toMatchObject([{ counts: { fetched: 1 } }]);
+    expect(await sources()).toMatchObject([{ enabled: true, usedToday: 1 }]);
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[iOS-7][reverse] will not start with a registered reader source that nobody reads", async () => {
+    const unread = defineProactiveSources([
+      GMAIL_SOURCE,
+      { ...GMAIL_SOURCE, name: "test_notes" },
+    ] as never) as unknown as ProactiveSourceRegistry<ProactiveSource>;
+    await expect(setup({ registry: unread })).rejects.toThrow(
+      "PROACTIVE_SOURCE_READER_MISSING test_notes",
+    );
+  });
+
+  it("[iOS-7][reverse] refuses caps outside the registered range and any source that is not registered", async () => {
+    const h = await setup({ demoInbox: "ja" });
+    await h.proactive.seedDemoInbox();
+    await expect(
+      h.command("proactive.source.settings.set", {
+        source: "gmail",
+        enabled: true,
+        perDay: 1_000_001,
+        perCheck: 5,
+      }),
+    ).rejects.toThrow("PROACTIVE_SOURCE_SETTINGS_INVALID");
+    await expect(
+      h.command("proactive.source.settings.set", {
+        source: "test_notes",
+        enabled: true,
+        perDay: 5,
+        perCheck: 5,
+      }),
+    ).rejects.toThrow("PROACTIVE_SOURCE_SETTINGS_INVALID");
+    await expect(
+      h.command("proactive.source.manage", { source: "test_notes", action: "disconnect" }),
+    ).rejects.toThrow("PROACTIVE_SOURCE_NOT_REGISTERED");
+    expect((await h.overview()).connection.status).toBe("connected");
+    expect(
+      await h.proactive.recordEntry({
+        source: "gmail",
+        entryId: "entry-1",
+        summary: "x",
+        reason: "",
+        link: "",
+        result: "act",
+        priority: null,
+        dueAt: null,
+        deliverAt: null,
+      }),
+    ).toEqual({ kind: "not_recorded", reason: "source_has_reader" });
+  });
 
   it("[PG-12] connects Gmail through Google, checks the inbox and pushes one reminder in the owner's language", async () => {
     const h = await setup();

@@ -12,6 +12,14 @@ import type {
   ProactiveSettings,
   ProactiveStorePort,
 } from "@himawari-agent/application";
+import {
+  defaultProactiveSourceSettings,
+  PROACTIVE_SOURCES,
+  type ProactiveSource,
+  type ProactiveSourceSafetyLimits,
+  type ProactiveSourceSettings,
+  proactiveSourceLimitsValid,
+} from "@himawari-agent/application/proactive-sources";
 import type Database from "better-sqlite3";
 import { recordDecisionSignal } from "./decision-signals.ts";
 import {
@@ -26,7 +34,15 @@ import { insertObservationEvent } from "./sqlite-observation-operations.ts";
 
 type Input<TName extends keyof ProactiveStorePort> = Parameters<ProactiveStorePort[TName]>[0];
 
-const SOURCES = ["gmail"] as const;
+export interface SqliteProactiveSource {
+  readonly name: string;
+  readonly safetyLimits: ProactiveSourceSafetyLimits;
+}
+
+export function registeredSqliteProactiveSources(): readonly SqliteProactiveSource[] {
+  return PROACTIVE_SOURCES.definitions.map(({ name, safetyLimits }) => ({ name, safetyLimits }));
+}
+
 const RESULTS = ["act", "know", "check", "ignore"] as const;
 const INSIGHT_STATUSES = ["open", "replied", "done", "muted"] as const;
 const RATINGS = ["useful", "unneeded", "missed"] as const;
@@ -123,15 +139,18 @@ export class SqliteProactiveOperations {
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
+  private readonly sources: ReadonlyMap<string, SqliteProactiveSource>;
 
   constructor(
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
+    sources: readonly SqliteProactiveSource[] = registeredSqliteProactiveSources(),
   ) {
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
+    this.sources = new Map(sources.map((source) => [source.name, source]));
   }
 
   execute(operation: string, payload: unknown): unknown {
@@ -204,6 +223,12 @@ export class SqliteProactiveOperations {
         return this.readPush(payload as Input<"readPush">);
       case "proactive.readInsights":
         return this.readInsights(payload as Input<"readInsights">);
+      case "proactive.listSourceSettings":
+        return this.listSourceSettings(payload as ProactiveScope);
+      case "proactive.writeSourceSettings":
+        return this.writeSourceSettings(payload as Input<"writeSourceSettings">);
+      case "proactive.processedSince":
+        return this.processedSince(payload as Input<"processedSince">);
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown proactive operation ${operation}`);
     }
@@ -222,8 +247,80 @@ export class SqliteProactiveOperations {
       this.invalid("Proactive limit is invalid");
   }
 
-  private source(value: unknown) {
-    if (!includes(SOURCES, value)) this.invalid("Proactive source is invalid");
+  private source(value: unknown): SqliteProactiveSource {
+    const source = typeof value === "string" ? this.sources.get(value) : undefined;
+    if (source === undefined) return this.invalid("Proactive source is not registered");
+    return source;
+  }
+
+  private listSourceSettings(scope: ProactiveScope): readonly ProactiveSourceSettings[] {
+    const stored = new Map(
+      (
+        this.database
+          .prepare(
+            `SELECT source, enabled, per_day AS perDay, per_check AS perCheck,
+               updated_at AS updatedAt FROM proactive_source_settings
+             WHERE owner_id = ? AND agent_id = ?`,
+          )
+          .all(scope.ownerId, scope.agentId) as {
+          source: string;
+          enabled: number;
+          perDay: number;
+          perCheck: number;
+          updatedAt: string;
+        }[]
+      ).map((row) => [row.source, row]),
+    );
+    return [...this.sources.values()].map((definition) => {
+      const row = stored.get(definition.name);
+      return row
+        ? Object.freeze({
+            source: row.source as ProactiveSource,
+            enabled: row.enabled === 1,
+            perDay: row.perDay,
+            perCheck: row.perCheck,
+            updatedAt: row.updatedAt,
+          })
+        : defaultProactiveSourceSettings(definition);
+    });
+  }
+
+  private writeSourceSettings(input: Input<"writeSourceSettings">): void {
+    this.assertDiskHeadroom();
+    const definition = this.source(input.source);
+    this.time(input.now);
+    if (typeof input.enabled !== "boolean" || !proactiveSourceLimitsValid(definition, input))
+      this.invalid("Proactive source settings are invalid");
+    this.database
+      .prepare(
+        `INSERT INTO proactive_source_settings (
+           owner_id, agent_id, source, enabled, per_day, per_check, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (owner_id, agent_id, source) DO UPDATE SET enabled = excluded.enabled,
+           per_day = excluded.per_day, per_check = excluded.per_check,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        input.ownerId,
+        input.agentId,
+        input.source,
+        input.enabled ? 1 : 0,
+        input.perDay,
+        input.perCheck,
+        input.now,
+      );
+  }
+
+  private processedSince(input: Input<"processedSince">): number {
+    this.source(input.source);
+    this.time(input.since);
+    const row = this.database
+      .prepare(
+        `SELECT COUNT(*) AS total FROM proactive_processed_messages
+         WHERE owner_id = ? AND agent_id = ? AND source = ? AND processed_at >= ?`,
+      )
+      .get(input.ownerId, input.agentId, input.source, input.since) as { total: number };
+    return row.total;
   }
 
   private rating(value: unknown) {
@@ -521,6 +618,15 @@ export class SqliteProactiveOperations {
       const connection = this.readConnection(input);
       const scope = [input.ownerId, input.agentId, input.source] as const;
       this.deleteModelLinks(input, input.source);
+      const removedInsights = new Set(
+        (
+          this.database
+            .prepare(
+              "SELECT id FROM source_insights WHERE owner_id = ? AND agent_id = ? AND source = ?",
+            )
+            .all(...scope) as { id: string }[]
+        ).map(({ id }) => id),
+      );
       this.database
         .prepare("DELETE FROM source_insights WHERE owner_id = ? AND agent_id = ? AND source = ?")
         .run(...scope);
@@ -537,11 +643,23 @@ export class SqliteProactiveOperations {
       this.database
         .prepare("DELETE FROM proactive_push_backoff WHERE owner_id = ? AND agent_id = ?")
         .run(input.ownerId, input.agentId);
-      this.database
+      const pending = this.database
         .prepare(
-          "DELETE FROM proactive_pushes WHERE owner_id = ? AND agent_id = ? AND status = 'pending'",
+          `SELECT id, insight_ids AS insightIds FROM proactive_pushes
+           WHERE owner_id = ? AND agent_id = ? AND status = 'pending'`,
         )
-        .run(input.ownerId, input.agentId);
+        .all(input.ownerId, input.agentId) as { id: string; insightIds: string }[];
+      for (const push of pending) {
+        const kept = (JSON.parse(push.insightIds) as string[]).filter(
+          (id) => !removedInsights.has(id),
+        );
+        if (kept.length === 0)
+          this.database.prepare("DELETE FROM proactive_pushes WHERE id = ?").run(push.id);
+        else
+          this.database
+            .prepare("UPDATE proactive_pushes SET insight_ids = ? WHERE id = ?")
+            .run(JSON.stringify(kept), push.id);
+      }
       if (connection)
         insertObservationEvent(this.database, {
           ownerId: input.ownerId,
@@ -694,6 +812,11 @@ export class SqliteProactiveOperations {
             ([messageId, rules]) =>
               messageId.length < 1 || messageId.length > 256 || !ids(rules, 16),
           ))) ||
+      (inputs.observations !== undefined &&
+        (!Number.isSafeInteger(inputs.observations.handedOff) ||
+          inputs.observations.handedOff < 0 ||
+          inputs.observations.handedOff > MAX_INPUT_IDS ||
+          !["not_connected", "port"].includes(inputs.observations.sink))) ||
       !Array.isArray(modelPayloads) ||
       modelPayloads.length > MAX_MODEL_PAYLOADS ||
       modelPayloads.some(
@@ -714,7 +837,7 @@ export class SqliteProactiveOperations {
     this.validateInputs(input);
     for (const message of input.processed)
       if (
-        !includes(SOURCES, message.source) ||
+        !this.sources.has(message.source) ||
         !(includes(RESULTS, message.outcome) || message.outcome === "skipped") ||
         (message.outcome === "skipped") !== includes(SKIP_REASONS, message.skipReason)
       )
@@ -774,6 +897,14 @@ export class SqliteProactiveOperations {
                   summaryCharacters: input.inputs.summaryCharacters ?? 0,
                   summaryRead: input.inputs.summaryRead,
                   summaryGenerated: input.inputs.summaryGenerated ?? 0,
+                }),
+            ...(input.inputs.observations === undefined
+              ? {}
+              : {
+                  observations: {
+                    handedOff: input.inputs.observations.handedOff,
+                    sink: input.inputs.observations.sink,
+                  },
                 }),
           }),
           decision.pushSourceKey,

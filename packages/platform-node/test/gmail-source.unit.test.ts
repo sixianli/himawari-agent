@@ -1,3 +1,4 @@
+import { flatMailReader } from "@himawari-agent/application";
 import { describe, expect, it } from "vitest";
 import {
   CALENDAR_READONLY_SCOPE,
@@ -98,7 +99,9 @@ const input = (cursor: string | null, unseen = async (ids: readonly string[]) =>
 describe("[PG-11] Gmail read-only source", () => {
   it("[PG-11] reads only new messages from history, skips already judged ids and moves the cursor", async () => {
     const fake = google();
-    const reader = createGmailReader({ oauth: oauth(fake.fetch), fetch: fake.fetch });
+    const reader = flatMailReader(
+      createGmailReader({ oauth: oauth(fake.fetch), fetch: fake.fetch }),
+    );
     const result = await reader.fetch(input("500", async (ids) => ids.filter((id) => id !== "m9")));
     expect(result).toMatchObject({ kind: "items", cursor: "900" });
     if (result.kind !== "items") throw new Error("expected items");
@@ -122,7 +125,9 @@ describe("[PG-11] Gmail read-only source", () => {
 
   it("[PG-11] falls back to the last three days when the history id is too old", async () => {
     const fake = google({ history: 404 });
-    const reader = createGmailReader({ oauth: oauth(fake.fetch), fetch: fake.fetch });
+    const reader = flatMailReader(
+      createGmailReader({ oauth: oauth(fake.fetch), fetch: fake.fetch }),
+    );
     const result = await reader.fetch(input("1"));
     expect(result).toMatchObject({ kind: "items", cursor: "777" });
     const list = fake.calls.find(({ url }) => /\/messages\?/u.test(url));
@@ -138,7 +143,9 @@ describe("[PG-11] Gmail read-only source", () => {
 
   it("[PG-11] reports a revoked refresh token as unauthorized", async () => {
     const fake = google({ grant: "invalid" });
-    const reader = createGmailReader({ oauth: oauth(fake.fetch), fetch: fake.fetch });
+    const reader = flatMailReader(
+      createGmailReader({ oauth: oauth(fake.fetch), fetch: fake.fetch }),
+    );
     expect(await reader.fetch(input("500"))).toEqual({ kind: "unauthorized" });
   });
 
@@ -183,7 +190,9 @@ describe("[PG-11] Gmail read-only source", () => {
 
   it("[PG-10] never calls the Calendar API or any Gmail write endpoint", async () => {
     const fake = google();
-    const reader = createGmailReader({ oauth: oauth(fake.fetch), fetch: fake.fetch });
+    const reader = flatMailReader(
+      createGmailReader({ oauth: oauth(fake.fetch), fetch: fake.fetch }),
+    );
     await reader.fetch(input("500"));
     await reader.fetch(input(null));
     expect(fake.calls.length).toBeGreaterThan(0);

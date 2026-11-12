@@ -8,8 +8,8 @@ import type {
   ProactivePriority,
   ProactiveQuietPeriod,
   ProactiveResult,
-  ProactiveSourceItem,
 } from "../ports/proactive-checks.js";
+import type { ProactiveMail } from "../ports/proactive-sources.js";
 
 const JUDGE = new RuleJudge();
 
@@ -26,7 +26,7 @@ export const FLOOR_RULE_IDS = Object.freeze({
 export type FloorRuleId = (typeof FLOOR_RULE_IDS)[keyof typeof FLOOR_RULE_IDS];
 
 export function floorHitIds(
-  item: ProactiveSourceItem,
+  item: ProactiveMail,
   rules: readonly RuleRecord[],
 ): readonly FloorRuleId[] {
   return JUDGE.decide("mail_item", mailItemFacts(item), rules)
@@ -35,7 +35,7 @@ export function floorHitIds(
 }
 
 function outcomeHits(
-  item: ProactiveSourceItem,
+  item: ProactiveMail,
   rules: readonly RuleRecord[],
   wanted: "require_notify" | "require_whole_thread",
 ): readonly string[] {
@@ -46,21 +46,21 @@ function outcomeHits(
 }
 
 export function wholeThreadHitIds(
-  item: ProactiveSourceItem,
+  item: ProactiveMail,
   rules: readonly RuleRecord[],
 ): readonly string[] {
   return outcomeHits(item, rules, "require_whole_thread");
 }
 
 export function mustNotifyHitIds(
-  item: ProactiveSourceItem,
+  item: ProactiveMail,
   rules: readonly RuleRecord[],
 ): readonly string[] {
   return outcomeHits(item, rules, "require_notify");
 }
 
 export function suppressPushHits(
-  item: ProactiveSourceItem,
+  item: ProactiveMail,
   amount: MailAmount,
   rules: readonly RuleRecord[],
 ): readonly string[] {

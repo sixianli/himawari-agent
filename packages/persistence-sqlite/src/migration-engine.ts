@@ -749,6 +749,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0096_perception_extraction.sql",
   },
+  {
+    sequence: 97,
+    name: "proactive_source_registry",
+    changeSet: "proactive-source-registry",
+    phase: "expand" as const,
+    file: "0097_proactive_source_registry.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

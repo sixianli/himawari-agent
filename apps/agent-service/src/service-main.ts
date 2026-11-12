@@ -1911,6 +1911,12 @@ export async function startTenantRuntime(
           : undefined;
         proactive = new ProductionProactive({
           ...(checkup ? { checkup } : {}),
+          onLimit: (hit) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "proactive.source_limit_reached",
+              ...hit,
+            }),
           onMasked: (sightings) =>
             void mailEgress.reportMasked(
               {

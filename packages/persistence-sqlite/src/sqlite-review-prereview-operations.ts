@@ -14,6 +14,7 @@ import {
 } from "@himawari-agent/calibration";
 import { acceptsPrereview, isPrereviewGroup } from "@himawari-agent/calibration/prereview";
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
+import { GMAIL_SOURCE } from "@himawari-agent/application/proactive-sources";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
@@ -22,7 +23,7 @@ interface Scope {
   readonly agentId: AgentId;
 }
 
-const MAIL_SOURCE = "gmail";
+const MAIL_SOURCE = GMAIL_SOURCE.name;
 const SUBJECT_LIMIT = 2_000;
 const CLASSIFICATIONS: readonly string[] = ["public", "private", "sensitive"];
 

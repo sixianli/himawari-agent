@@ -944,6 +944,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "retain with the Agent; update and deletion are forbidden while the Agent exists",
   ),
   entry(
+    "proactive_source_settings",
+    "ProactiveStorePort",
+    "one row per registered proactive source the owner has changed: its switch and its two safety limits (items per day, items per check); sources without a row use the defaults in the source registry; never exported",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
     "proactive_connections",
     "ProactiveStorePort",
     "one row per connected source; the account and the refresh token live only in protected payloads",

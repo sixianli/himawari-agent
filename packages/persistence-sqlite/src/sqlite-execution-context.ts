@@ -10,6 +10,21 @@ export interface SqliteWorkerConfiguration {
   readonly minimumFreeBytes: number;
   readonly warningFreeBytes: number;
   readonly readOnly?: boolean;
+  readonly proactiveSources?: readonly {
+    readonly name: string;
+    readonly safetyLimits: {
+      readonly perDay: {
+        readonly defaultLimit: number;
+        readonly minimum: number;
+        readonly maximum: number;
+      };
+      readonly perCheck: {
+        readonly defaultLimit: number;
+        readonly minimum: number;
+        readonly maximum: number;
+      };
+    };
+  }[];
   readonly qualification?: {
     readonly crashAt?: "after_state" | "after_result" | "after_event" | "after_commit";
     readonly holdBeforeCommitMs?: number;
