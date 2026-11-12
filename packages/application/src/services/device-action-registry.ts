@@ -154,7 +154,10 @@ export function deviceActionFingerprint(name: string, args: DeviceActionArgument
   const canonical = JSON.stringify(
     Object.keys(args)
       .sort()
-      .map((key) => [key, args[key]]),
+      .map((key) => {
+        const value = args[key];
+        return [key, Array.isArray(value) ? [...(value as string[])].sort() : value];
+      }),
   );
   return bytesToHex(sha256(utf8ToBytes(`${name}\n${canonical}`)));
 }

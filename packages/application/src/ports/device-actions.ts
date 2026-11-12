@@ -16,32 +16,12 @@ export const DEVICE_ACTION_RECORD_STATES = [
 ] as const;
 export type DeviceActionRecordState = (typeof DEVICE_ACTION_RECORD_STATES)[number];
 
-export const DEVICE_ACTION_TRANSITIONS: Readonly<
-  Record<DeviceActionRecordState, readonly DeviceActionRecordState[]>
-> = Object.freeze({
-  waiting_owner: ["queued", "rejected", "expired"],
-  queued: ["delivered", "expired", "rejected"],
-  delivered: ["succeeded", "failed", "result_unknown"],
-  result_unknown: ["succeeded", "failed"],
-  succeeded: [],
-  failed: [],
-  expired: [],
-  rejected: [],
-});
-
 export const DEVICE_ACTION_OPEN_STATES: readonly DeviceActionRecordState[] = Object.freeze([
   "waiting_owner",
   "queued",
   "delivered",
   "result_unknown",
 ]);
-
-export function deviceActionTransitionAllowed(
-  from: DeviceActionRecordState,
-  to: DeviceActionRecordState,
-): boolean {
-  return DEVICE_ACTION_TRANSITIONS[from].includes(to);
-}
 
 export const DEVICE_ACTION_REASON_CODES = [
   "approval_not_connected",
@@ -145,6 +125,9 @@ export type DevicePolicyWriteResult =
 export interface DeviceActionStorePort {
   insert(input: DeviceActionInsert): Promise<DeviceActionInsertResult>;
   read(input: PairedDeviceScope & { readonly id: string }): Promise<DeviceActionRecord | undefined>;
+  readInvocation(
+    input: PairedDeviceScope & { readonly runId: string; readonly toolCallId: string },
+  ): Promise<DeviceActionRecord | undefined>;
   list(
     input: PairedDeviceScope & {
       readonly deviceId: string | null;

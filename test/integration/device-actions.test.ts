@@ -601,6 +601,101 @@ describe("[iOS-9A] an action whose result is unknown is never done twice", () =>
   });
 });
 
+describe("[iOS-9A] review round 1: the same action is recognised however it is asked again", () => {
+  it("[reverse] listing the same attendees in another order while the result is unknown does not send the action again", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["calendar.create"]);
+    h.actions.authorization.current = ownerAllows(true);
+    noWaiting(h);
+    const device = await connectDevice(h, client);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    const invite = (attendees: string[]) =>
+      act("run-1", {
+        action: "calendar.create",
+        arguments: {
+          title: "周会",
+          start: "2026-11-13T15:00",
+          end: "2026-11-13T16:00",
+          attendees,
+        },
+      });
+    await invite(["lin@example.com", "chen@example.com"]);
+    await until(() => device.claimed.length === 1);
+    h.clock.advance(121_000);
+    expect(await invite(["chen@example.com", "lin@example.com"])).toMatchObject({
+      done: false,
+      state: "result_unknown",
+    });
+    await until(() => device.claimed.length >= 2);
+    expect(await rows(h)).toHaveLength(1);
+    expect(device.claimed.filter(({ mode }) => mode === "perform")).toHaveLength(1);
+    await device.close();
+    await h.repository.close();
+  });
+
+  it("replaying the same tool call returns the original record even after its target left the mirror", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["reminder.complete"]);
+    await mirror(h, client, "reminder", [
+      { externalId: "rem-1", data: { title: "交房租", completed: false } },
+    ]);
+    h.actions.authorization.current = ownerAllows(false);
+    noWaiting(h);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    const request = { action: "reminder.complete", arguments: { reminderId: "rem-1" } };
+    expect(await act("run-1", request, "call:fixed")).toMatchObject({ state: "queued" });
+    const removed = await devicePost(h, client, "mirror", {
+      kind: "reminder",
+      mode: "delta",
+      syncId: "sync-remove-000000001",
+      final: true,
+      items: [{ externalId: "rem-1", version: 2, deleted: true }],
+    });
+    expect(removed.status).toBe(200);
+    expect(await act("run-1", request, "call:fixed")).toMatchObject({ state: "queued" });
+    await expect(act("run-1", request, "call:other")).rejects.toMatchObject({
+      note: TOOL_RESULT_DEVICE_ACTION_REASON_TARGET_UNKNOWN.text,
+    });
+    expect(await rows(h)).toHaveLength(1);
+    await h.repository.close();
+  });
+
+  it("[reverse] an action that could not be recorded leaves no stored arguments behind", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["reminder.create"]);
+    h.actions.authorization.current = ownerAllows(false);
+    const device = (await h.repository.pairedDevices().listDevices(perceptionScope))[0];
+    if (!device) throw new Error("device missing");
+    await web(h, "revoke", { deviceId: client.deviceId, expectedRevision: device.revision });
+    await addRun(h, "run-1");
+    await expect(
+      h.actions.service.request({
+        runId: "run-1",
+        toolCallId: "stale-device",
+        dataClassification: "private",
+        device,
+        action: "reminder.create",
+        arguments: { title: "买牛奶" },
+      }),
+    ).rejects.toThrow();
+    const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
+    try {
+      expect(
+        database.prepare("SELECT ref FROM payloads WHERE ref LIKE 'device-action:%'").all(),
+      ).toEqual([]);
+    } finally {
+      database.close();
+    }
+    expect(await rows(h)).toEqual([]);
+    await h.repository.close();
+  });
+});
+
 describe("[iOS-9A] actions that need the owner in person", () => {
   it("[reverse] is not carried out while the device is offline or the owner's presence is unproven", async () => {
     const h = await harness();
@@ -793,6 +888,10 @@ describe("[iOS-9A] each device has its own policy and a revoked device gets noth
       true,
     );
     const device = await connectDevice(h, client, () => ({ outcome: "succeeded", readBack: true }));
+    expect(await act("run-1", { action: "lights.explode" })).toMatchObject({
+      done: false,
+      availableActions: [],
+    });
     const refused = await act("run-1", { action: "home.read", arguments: { room: "客厅" } });
     expect(refused).toMatchObject({
       done: false,

@@ -312,6 +312,12 @@ export class DeviceActionService {
   }): Promise<DeviceActionRequestOutcome> {
     const { scope, store, registry } = this.#options;
     await this.settle();
+    const replayed = await store.readInvocation({
+      ...scope,
+      runId: input.runId,
+      toolCallId: input.toolCallId,
+    });
+    if (replayed) return this.#outcome(replayed);
     const registration = registry.get(input.action);
     if (!registration) return { kind: "invalid", note: null };
     const args = validateDeviceActionArguments(registration.parameters, input.arguments);
@@ -389,31 +395,36 @@ export class DeviceActionService {
       value: { arguments: args, detail },
       dataClassification: input.dataClassification,
     });
-    const inserted = await store.insert({
-      ...scope,
-      id,
-      deviceId: input.device.id,
-      action: input.action,
-      schemaVersion: registration.schemaVersion,
-      argumentsRef,
-      fingerprint: deviceActionFingerprint(input.action, args),
-      actionKind,
-      risk,
-      ownerPresence,
-      approvalId: verdict.decision === "approval" ? verdict.approvalId : null,
-      dataClassification: input.dataClassification,
-      state:
-        verdict.decision === "allow"
-          ? "queued"
-          : verdict.decision === "approval"
-            ? "waiting_owner"
-            : "rejected",
-      reasonCode: verdict.decision === "deny" ? verdict.reasonCode : null,
-      runId: input.runId,
-      toolCallId: input.toolCallId,
-      now,
-      expiresAt,
-    });
+    const inserted = await store
+      .insert({
+        ...scope,
+        id,
+        deviceId: input.device.id,
+        action: input.action,
+        schemaVersion: registration.schemaVersion,
+        argumentsRef,
+        fingerprint: deviceActionFingerprint(input.action, args),
+        actionKind,
+        risk,
+        ownerPresence,
+        approvalId: verdict.decision === "approval" ? verdict.approvalId : null,
+        dataClassification: input.dataClassification,
+        state:
+          verdict.decision === "allow"
+            ? "queued"
+            : verdict.decision === "approval"
+              ? "waiting_owner"
+              : "rejected",
+        reasonCode: verdict.decision === "deny" ? verdict.reasonCode : null,
+        runId: input.runId,
+        toolCallId: input.toolCallId,
+        now,
+        expiresAt,
+      })
+      .catch(async (error: unknown) => {
+        await this.#options.content.discard(argumentsRef);
+        throw error;
+      });
     if (inserted.kind !== "created") {
       await this.#options.content.discard(argumentsRef);
       if (inserted.record.state === "result_unknown" || inserted.record.state === "queued")
@@ -595,16 +606,21 @@ export class DeviceActionService {
         value: { evidence: evidence ?? null, reason: reason ?? null },
         dataClassification: existing.dataClassification,
       });
-    const reported = await store.report({
-      ...scope,
-      id,
-      deviceId,
-      outcome: outcome as DeviceActionReportOutcome,
-      readBack,
-      resultRef: accepted ? resultRef : null,
-      reasonCode: outcome === "succeeded" ? null : "device_reported",
-      now: this.#options.now(),
-    });
+    const reported = await store
+      .report({
+        ...scope,
+        id,
+        deviceId,
+        outcome: outcome as DeviceActionReportOutcome,
+        readBack,
+        resultRef: accepted ? resultRef : null,
+        reasonCode: outcome === "succeeded" ? null : "device_reported",
+        now: this.#options.now(),
+      })
+      .catch(async (error: unknown) => {
+        if (resultRef !== null && accepted) await this.#options.content.discard(resultRef);
+        throw error;
+      });
     if (reported.kind === "not_found" || reported.kind === "wrong_device")
       return { kind: "not_found" };
     if (reported.kind === "not_delivered" || reported.kind === "verify_only")

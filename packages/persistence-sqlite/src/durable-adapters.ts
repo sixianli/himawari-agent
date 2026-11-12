@@ -1149,6 +1149,7 @@ export class SqliteDurableAdapters {
     return Object.freeze<DeviceActionStorePort>({
       insert: (input) => this.context.write("deviceActions.insert", input),
       read: (input) => this.context.read("deviceActions.read", input),
+      readInvocation: (input) => this.context.read("deviceActions.readInvocation", input),
       list: (input) => this.context.read("deviceActions.list", input),
       settleDue: (input) => this.context.write("deviceActions.settleDue", input),
       claim: (input) => this.context.write("deviceActions.claim", input),

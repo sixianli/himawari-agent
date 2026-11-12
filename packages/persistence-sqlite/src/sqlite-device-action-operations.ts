@@ -68,6 +68,8 @@ export class SqliteDeviceActionOperations {
         return this.insert(payload as Input<"insert">);
       case "deviceActions.read":
         return this.read(payload as Input<"read">);
+      case "deviceActions.readInvocation":
+        return this.readInvocation(payload as Input<"readInvocation">);
       case "deviceActions.list":
         return this.list(payload as Input<"list">);
       case "deviceActions.settleDue":
@@ -186,6 +188,16 @@ export class SqliteDeviceActionOperations {
 
   private read(input: Input<"read">): DeviceActionRecord | undefined {
     return this.one(input, input.id);
+  }
+
+  private readInvocation(input: Input<"readInvocation">): DeviceActionRecord | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT ${columns} FROM device_actions
+          WHERE owner_id = ? AND agent_id = ? AND run_id = ? AND tool_call_id = ?`,
+      )
+      .get(input.ownerId, input.agentId, input.runId, input.toolCallId) as Row | undefined;
+    return row ? toRecord(row) : undefined;
   }
 
   private list(input: Input<"list">): readonly DeviceActionRecord[] {

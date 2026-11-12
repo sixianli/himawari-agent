@@ -486,7 +486,9 @@ export class ProductionPerceptionTools {
         value: {
           done: false,
           availableActions: registry
-            .filter(({ name }) => devices.some((target) => target.supportedActions.includes(name)))
+            .filter(({ name }) =>
+              devices.some((target) => (allowed.get(target.id) ?? []).includes(name)),
+            )
             .map(({ name }) => name),
           note: TOOL_RESULT_DEVICE_ACTION_UNKNOWN.text,
         },
