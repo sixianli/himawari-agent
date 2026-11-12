@@ -23,9 +23,19 @@ import { integrationWorkerLimits, testWorkerCount } from "./test-concurrency.mjs
 
 const sorted = (values) => [...values].sort();
 const sameSet = (left, right) => JSON.stringify(sorted(left)) === JSON.stringify(sorted(right));
-const DRAFT_SKIPPED_CHECKS = ["browser", "coverage"];
-const DRAFT_SKIP_CONDITION =
+export const DRAFT_SKIP_CONDITION =
   "github.event_name != 'pull_request' || github.event.pull_request.draft != true";
+export const REQUIRED_DRAFT =
+  "github.event_name == 'pull_request' && github.event.pull_request.draft == true";
+export const REQUIRED_CANCELLED = "contains(needs.*.result, 'cancelled')";
+export const REQUIRED_ENTRY_SCRIPT = [
+  'if [ "$CI_DRAFT" != false ]; then echo "CI_DRAFT_UNVERIFIED 草稿 PR 不跑 CI，标成准备合并后才跑完整检查"; exit 1; fi',
+  'if [ "$CI_CANCELLED" != false ]; then echo "CI_UPSTREAM_CANCELLED 上游作业被取消，这一轮不算数"; exit 1; fi',
+  "",
+].join("\n");
+export const REQUIRED_AFTER_ENTRY = githubExpression(
+  "always() && steps.entry.outcome == 'success'",
+);
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
@@ -367,7 +377,6 @@ export function validateWorkflow(policy, source, toolchain) {
       "synchronize",
       "reopened",
       "ready_for_review",
-      "edited",
     ]),
     "PR activity types are incomplete",
   );
@@ -386,13 +395,12 @@ export function validateWorkflow(policy, source, toolchain) {
     "github.event_name",
     "github.event.pull_request.number || github.ref",
     "github.event_name == 'push' && github.run_id || ''",
-    "github.event.action == 'edited' && 'edited' || ''",
   ]
     .map(githubExpression)
     .join("-");
   assert(
     workflow.concurrency.group === concurrencyGroup,
-    "Concurrency must identify the actual workflow, event, PR/ref, and give push and edited runs their own group",
+    "Concurrency must identify the actual workflow, event, PR/ref, and give push runs their own group",
   );
   assert(
     workflow.concurrency["cancel-in-progress"] ===
@@ -435,12 +443,11 @@ export function validateWorkflow(policy, source, toolchain) {
         job.name === "ci/required" && ["always()", githubExpression("always()")].includes(job.if),
         "required must use always() and ci/required",
       );
-    else if (DRAFT_SKIPPED_CHECKS.includes(check.id))
+    else
       assert(
         job.if === githubExpression(DRAFT_SKIP_CONDITION),
-        `Only the draft condition may skip: ${check.id}`,
+        `Every check job must skip draft pull requests and nothing else: ${check.id}`,
       );
-    else assert(job.if === undefined, `Required job cannot be conditional: ${check.id}`);
     if (check.members.length > 1) {
       assert(
         job["runs-on"] === githubExpression("matrix.runner"),
@@ -505,6 +512,16 @@ export function validateWorkflow(policy, source, toolchain) {
       `Jobs may upload only ${uploadPath} to GitHub for one day: ${check.id}`,
     );
     if (check.id === "required") {
+      const [entry] = job.steps;
+      assert(
+        entry?.id === "entry" &&
+          entry.if === undefined &&
+          entry.uses === undefined &&
+          entry.env?.CI_DRAFT === githubExpression(REQUIRED_DRAFT) &&
+          entry.env?.CI_CANCELLED === githubExpression(REQUIRED_CANCELLED) &&
+          entry.run === REQUIRED_ENTRY_SCRIPT,
+        "Required must first fail draft and cancelled runs before installing anything",
+      );
       assert(
         job.steps.some(
           (step) =>
@@ -516,9 +533,22 @@ export function validateWorkflow(policy, source, toolchain) {
           job.steps.some(
             (step) =>
               step.run === ".ci-output/tools/bin/node scripts/ci/run-share.mjs remove" &&
-              step.if === "always()",
+              step.if === REQUIRED_AFTER_ENTRY,
           ),
         "Required must collect digest-checked reports from the runner share and always remove the run directory",
+      );
+      assert(
+        job.steps
+          .slice(1)
+          .every((step) => step.if === undefined || step.if === REQUIRED_AFTER_ENTRY),
+        "Required runs nothing after a failed entry check",
+      );
+      const gateUploads = job.steps.filter((step) =>
+        /^actions\/upload-artifact@/u.test(step.uses ?? ""),
+      );
+      assert(
+        gateUploads.length === 1 && gateUploads[0].if === REQUIRED_AFTER_ENTRY,
+        "Required uploads its gate even when the gate fails, but only after the entry check passed",
       );
     } else {
       const shares = job.steps.filter((step) => step.run?.includes("scripts/ci/run-share.mjs put"));

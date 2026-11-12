@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
+amended_by: "docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md"
 date: "2026-11-11"
 ---
 
@@ -60,12 +61,14 @@ date: "2026-11-11"
    - `requestState` 用官方 SDK 的 `createRequestStateCodec` 加 HMAC，有效期 10 分钟，绑定调用的方法名（`tools/call`）和令牌种类；工具名、提议编号、参数哈希、确认框里显示的客户端名和发出确认请求的时间（`askedAt`，只用于上面的 1.5 秒判定，不写库）写在签了名的状态里，重发时核对前三项，决策记录用状态里的客户端名，不用重发时对方报的名字。签名密钥在进程启动时随机生成 32 字节，不从令牌派生，所以拿到令牌的人也伪造不了状态。代价是服务重启后正在等确认的提议失效，重新提议即可（生产是单进程）。
    - SDK 选项里关掉兼容垫片（`legacyShim: false`），老版本连接上不注册写工具。
    - 2026-11-11 起：本条的取消处理由 [ADR 0228](0228-external-memory-proposals-wait-for-owner-confirmation.md) 决定 3 取代。取消和判为 `unseen` 的回答不再只记拒绝或什么都不写，而是让提议留在「待确认」里；拒绝（Decline）仍记为已拒绝。
+   - 2026-11-12 起：在客户端里确认的做法由 [ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 6、9 取代：`propose_memory` 换成 `sync_memories`，确认统一在 Himawari 里做，默认仍然每条都要 Andy 确认。对应的编码任务合并之前，代码仍按本条。本条原文保留不改。
 3. **同一个提议只写一次。**
    - 记忆编号是 `memory:mcp:<提议编号>`，正文存在 `memory-content:mcp:<提议编号>`。
    - 重发时先看决策记录里这个提议是否已有「保存」或「拒绝」，再看记忆本身是否存在（包括已删除、回收站里的）；有结论就直接回已有结论，不再写。
    - `requestState` 里存了正文和分类的哈希（按固定字段顺序算）；重发时参数和状态不符，回「内容变了」，不写。
    - 同一个提议的重发在服务里按提议编号排队，一次只处理一个：前一个做完决定，后一个才去查「已决定」。所以同时收到「保存」和「拒绝」时，只有先处理的那个生效，后面的都回已有结论。这只在一个进程里成立；签名密钥本来就只在这个进程里有效，服务重启后旧状态全部失效，所以不会有两个进程处理同一个提议。
    - 2026-11-11 起：本条由 [ADR 0228](0228-external-memory-proposals-wait-for-owner-confirmation.md) 决定 2、3 部分取代。第一次调用就存一条「待确认」提议；同一正文去重改为看提议表里的正文摘要，已保存的回「已经保存过」，已拒绝的回「拒绝过」。
+   - 2026-11-12 起：本条由 [ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 6 取代：`sync_memories` 里同一个稳定编号可以重复推，内容没变不产生任何东西，内容变了算更新并留历史。对应的编码任务合并之前，代码仍按本条。本条原文保留不改。
 4. **决策记录。** 类别 `memory_candidate`。保存记 `kept`、原因码 `mcp_proposal_kept`、`subjectRef` 是记忆编号；拒绝记 `discarded`、原因码 `mcp_proposal_declined`、`subjectRef` 是 `mcp-client:<客户端名>`。正文不进决策记录（`contentRef` 为空）。
    - 拒绝写不进决策记录时，回工具错误，不说「已拒绝」。
    - 每日回顾显示保存的那条，跳过主人拒绝的，和主人在网页上拒绝的提议同样处理。
@@ -77,6 +80,7 @@ date: "2026-11-11"
    - 重要度固定 500，置信度 1000，不是推断。
 6. **客户端不支持确认框时，直接拒绝，不写。** Andy 在 P5-3 里同意了以后改成「先存成待确认，Andy 批量确认」，那部分由 P5-3 做；这里只把这个分支单独写成一处，方便替换。
    - 2026-11-11 起：本条由 [ADR 0228](0228-external-memory-proposals-wait-for-owner-confirmation.md) 决定 3 取代。客户端不支持确认框、记忆本没准备好时，提议留在「待确认」里，等 Andy 在 Himawari 网页上确认。
+   - 2026-11-12 起：本条由 [ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 9 取代：不再区分客户端支不支持确认框，一律进 Himawari 的待确认。对应的编码任务合并之前，代码仍按本条。本条原文保留不改。
 7. **网页和运维报表认出这类记忆。** 记忆页的来源显示「外部 agent 提议、主人确认的」（三种语言），重要度标为主人定的；`scripts/operations/memory-source-report.mjs` 多一类 `external`。
 8. **工具说明和确认文字登记进提示词目录**：`mcp.propose-memory`、`mcp.propose-memory-confirm` 和十个结果文字。Himawari 自己发给模型的请求一个字节都不变。
 

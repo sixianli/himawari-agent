@@ -1,5 +1,6 @@
 import type {
   ClockPort,
+  DataClassification,
   DurableMemoryService,
   MemoryBookStorePort,
   MemoryReminder,
@@ -12,14 +13,15 @@ import type {
   RuntimeToolDescriptor,
   RuntimeToolInvocation,
 } from "@himawari-agent/application";
+import { classificationRank } from "@himawari-agent/application";
 import {
   TOOL_REMINDER_CANCEL,
   TOOL_REMINDER_LIST,
   TOOL_REMINDER_SET,
   TOOL_RESULT_REMINDER_SET,
 } from "@himawari-agent/prompt-catalog";
-import { reminderSchedule } from "./production-memory-capture.js";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
+import { reminderSchedule } from "./production-memory-capture.js";
 
 export const REMINDER_SET_CAPABILITY_REF = "reminder.set";
 export const REMINDER_LIST_CAPABILITY_REF = "reminder.list";
@@ -34,6 +36,7 @@ const REMINDER_POLICY_VERSION = "memory-reminder:v1";
 const REMINDER_IMPORTANCE = 500;
 const MAXIMUM_TEXT = 500;
 const LISTED = 20;
+const CEILING_SCAN_LIMIT = 200;
 const LIST_WINDOW_MS = 2 * 366 * 24 * 3_600_000;
 const SET_ARGUMENTS = ["text", "due", "repeat"];
 const CANCEL_ARGUMENTS = ["reminderId"];
@@ -259,18 +262,24 @@ export class ProductionReminderWriter {
 
   async list(
     windowMs: number = LIST_WINDOW_MS,
+    ceiling?: DataClassification,
   ): Promise<{ readonly reminders: readonly ListedReminder[]; readonly more: boolean }> {
     const now = this.#options.clock.now();
     const upcoming = await this.#options.reminders.listUpcoming({
       ...this.#scope(),
       from: now,
       to: new Date(Date.parse(now) + windowMs).toISOString(),
-      limit: LISTED + 1,
+      limit: ceiling === undefined ? LISTED + 1 : CEILING_SCAN_LIMIT,
     });
     const listed: ListedReminder[] = [];
-    for (const reminder of upcoming.slice(0, LISTED)) {
-      const text = await this.#textOf(reminder);
+    let eligibleAfterListed = false;
+    for (const reminder of ceiling === undefined ? upcoming.slice(0, LISTED) : upcoming) {
+      const text = await this.#textOf(reminder, ceiling);
       if (text === undefined) continue;
+      if (listed.length >= LISTED) {
+        eligibleAfterListed = true;
+        break;
+      }
       listed.push({
         reminderId: reminder.id,
         memoryId: reminder.memoryId,
@@ -280,12 +289,25 @@ export class ProductionReminderWriter {
         repeat: reminder.repeat,
       });
     }
-    return { reminders: listed, more: upcoming.length > LISTED };
+    return {
+      reminders: listed,
+      more:
+        ceiling === undefined
+          ? upcoming.length > LISTED
+          : eligibleAfterListed || upcoming.length >= CEILING_SCAN_LIMIT,
+    };
   }
 
-  async #textOf(reminder: MemoryReminder): Promise<string | undefined> {
+  async #textOf(
+    reminder: MemoryReminder,
+    ceiling?: DataClassification,
+  ): Promise<string | undefined> {
     const memory = await this.#options.state.read(reminder.memoryId);
-    return memory && memory.status === "active" && memory.dataClassification !== "restricted"
+    return memory &&
+      memory.status === "active" &&
+      memory.dataClassification !== "restricted" &&
+      (ceiling === undefined ||
+        classificationRank(memory.dataClassification) <= classificationRank(ceiling))
       ? this.#readText(memory.contentRef)
       : undefined;
   }

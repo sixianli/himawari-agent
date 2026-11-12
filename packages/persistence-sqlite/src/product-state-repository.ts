@@ -111,6 +111,11 @@ import {
   type StateRootLock,
 } from "./state-root-lock.js";
 
+export interface SqliteExtraReadThreadBudget {
+  tryAcquire(): boolean;
+  release(): void;
+}
+
 export interface SqliteProductStateRepositoryOptions {
   readonly stateRoot: string;
   readonly databasePath?: string;
@@ -122,6 +127,7 @@ export interface SqliteProductStateRepositoryOptions {
   readonly qualification?: SqliteWorkerConfiguration["qualification"];
   readonly onSlowOperation?: (operation: SqliteSlowOperation) => void;
   readonly onOperation?: (operation: SqliteTimedOperation) => void;
+  readonly extraReadThreadBudget?: SqliteExtraReadThreadBudget;
 }
 
 export interface SqliteCheckpointResult {
@@ -173,6 +179,8 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
   private readonly readStarts = new Set<Promise<void>>();
   private readonly lock: StateRootLock;
   private readonly now: () => string;
+  private readonly extraReadThreadBudget: SqliteExtraReadThreadBudget | undefined;
+  private extraReadThreads = 0;
   private readonly durable: SqliteDurableAdapters;
   private readonly githubHistory: DurableGitHubMonitorHistoryPolicyPort;
   private closed = false;
@@ -187,6 +195,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     startReadContext: () => Promise<SqliteExecutionContext>;
     lock: StateRootLock;
     now: () => string;
+    extraReadThreadBudget?: SqliteExtraReadThreadBudget;
   }) {
     this.stateRoot = input.stateRoot;
     this.databasePath = input.databasePath;
@@ -195,6 +204,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     this.startReadContext = input.startReadContext;
     this.lock = input.lock;
     this.now = input.now;
+    this.extraReadThreadBudget = input.extraReadThreadBudget;
     this.durable = new SqliteDurableAdapters({
       read: (operation, payload) => this.readRequest(operation, payload),
       write: (operation, payload) => this.writeRequest(operation, payload),
@@ -275,6 +285,9 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
         startReadContext,
         lock,
         now: options.now ?? (() => new Date().toISOString()),
+        ...(options.extraReadThreadBudget
+          ? { extraReadThreadBudget: options.extraReadThreadBudget }
+          : {}),
       });
     } catch (error) {
       await lock.release();
@@ -695,7 +708,16 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
       await Promise.all(this.readContexts.map((read) => read.close()));
       await this.context.close();
     } finally {
-      await this.lock.release();
+      try {
+        while (this.extraReadThreads > 0) {
+          this.extraReadThreads -= 1;
+          try {
+            this.extraReadThreadBudget?.release();
+          } catch {}
+        }
+      } finally {
+        await this.lock.release();
+      }
     }
   }
 
@@ -711,13 +733,22 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     if (
       chosen.pendingCount > 0 &&
       !this.closed &&
-      this.readContexts.length + this.readStarts.size < READ_WORKER_COUNT
+      this.readContexts.length + this.readStarts.size < READ_WORKER_COUNT &&
+      (this.extraReadThreadBudget?.tryAcquire() ?? true)
     ) {
+      const budget = this.extraReadThreadBudget;
+      const release = () => {
+        if (budget) budget.release();
+      };
       const starting: Promise<void> = this.startReadContext()
-        .then((started) => {
-          if (this.closed) return started.close();
-          this.readContexts.push(started);
-        })
+        .then(
+          (started) => {
+            if (this.closed) return started.close().finally(release);
+            this.readContexts.push(started);
+            if (budget) this.extraReadThreads += 1;
+          },
+          () => release(),
+        )
         .catch(() => undefined)
         .finally(() => {
           this.readStarts.delete(starting);

@@ -61,6 +61,11 @@ import {
   IdentityGatewayError,
   type JwksFetcher,
   OwnerBootstrapService,
+  prepareUnixSocketPath,
+  removeUnixSocketFile,
+  sealUnixSocket,
+  type UnixSocketIdentity,
+  assertUnixSocketPathLength,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
   RuntimeHealthModel,
@@ -156,6 +161,7 @@ export interface ProductionHttpCompositionSecretSources {
 }
 
 export interface ProductionHttpCompositionOptions {
+  readonly listenUnixSocketPath?: string;
   readonly modelCatalog?: readonly {
     ref: string;
     model: string;
@@ -704,6 +710,13 @@ export async function createProductionHttpComposition(
   options: ProductionHttpCompositionOptions,
 ): Promise<ProductionHttpComposition> {
   const { configuration, repository, secretSources } = options;
+  const unixSocketPath = options.listenUnixSocketPath;
+  let unixSocketIdentity: UnixSocketIdentity | undefined;
+  if (unixSocketPath !== undefined) {
+    if (!path.isAbsolute(unixSocketPath) || path.normalize(unixSocketPath) !== unixSocketPath)
+      compositionError(PRODUCTION_HTTP_COMPOSITION_ERROR_CODES.CONFIGURATION_INCOMPLETE);
+    assertUnixSocketPathLength(unixSocketPath);
+  }
   const httpConfiguration = configuration.http;
   const identityConfiguration = configuration.identity;
   if (
@@ -1215,16 +1228,39 @@ export async function createProductionHttpComposition(
     health,
     metrics,
     listen: async () => {
-      const address = await app.listen({
-        host: httpConfiguration.listenHost,
-        port: httpConfiguration.listenPort,
-      });
+      if (unixSocketPath === undefined) {
+        const address = await app.listen({
+          host: httpConfiguration.listenHost,
+          port: httpConfiguration.listenPort,
+        });
+        searchIndexer.start();
+        return address;
+      }
+      await prepareUnixSocketPath(unixSocketPath, { adoptExistingDirectory: false });
+      await app.listen({ path: unixSocketPath });
+      try {
+        unixSocketIdentity = await sealUnixSocket(unixSocketPath);
+      } catch (error) {
+        await app.close().catch(() => undefined);
+        await removeUnixSocketFile(unixSocketPath).catch(() => undefined);
+        throw error;
+      }
       searchIndexer.start();
-      return address;
+      return unixSocketPath;
     },
-    close: () => {
+    close: async () => {
       searchIndexer.stop();
-      return app.close();
+      try {
+        await app.close();
+      } finally {
+        if (unixSocketPath !== undefined && unixSocketIdentity !== undefined) {
+          const identity = unixSocketIdentity;
+          unixSocketIdentity = undefined;
+          const current = await lstat(unixSocketPath).catch(() => undefined);
+          if (current && current.dev === identity.dev && current.ino === identity.ino)
+            await removeUnixSocketFile(unixSocketPath);
+        }
+      }
     },
   });
 }
