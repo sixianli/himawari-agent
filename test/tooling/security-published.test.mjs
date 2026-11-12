@@ -172,6 +172,27 @@ describe("published fixture admission", () => {
       reviewStatus: "accepted_base",
     });
   });
+  it("候选台账删掉的条目不再算例外：成员已无命中时通过", () => {
+    const f = fixture();
+    f.accept();
+    f.document.exceptions = [];
+    f.save();
+    const review = f.review();
+    const bytes = Buffer.from("plain public readme\n");
+    review.inspect({ name: f.name, bytes, findings: findBuildSecrets({ name: f.name, bytes }) });
+    expect(review.finish()).toMatchObject({
+      memberCount: 0,
+      removedPublishedPaths: [f.name],
+      approvalBasis: "accepted_base",
+    });
+  });
+  it("候选台账删掉仍有命中的条目时失败", () => {
+    const f = fixture();
+    f.accept();
+    f.document.exceptions = [];
+    f.save();
+    expect(() => f.review().inspect(f)).toThrow("PUBLIC_ARTIFACT_CONTAINS_SECRET");
+  });
   it("只有例外存在的base不能冒充初始化", () => {
     const f = fixture();
     f.git("add", "ci/security-exceptions.json");
@@ -402,6 +423,8 @@ describe("真实台账和当前扫描规则一致", () => {
         ),
       ].sort();
     for (const entry of entries) {
+      expect(entry.path).toMatch(/^runtime\/node_modules\/(?!.*(?:^|\/)\.\.?(?:\/|$))[^\\]+$/);
+      expect(entry.path.startsWith(`runtime/${entry.packageLockPath}/`)).toBe(true);
       const bytes = readFileSync(join(repository, entry.path.replace(/^runtime\//, "")));
       expect({ path: entry.path, sha: sha(bytes) }).toEqual({
         path: entry.path,

@@ -231,6 +231,16 @@ export function loadReviewedExceptions({
   assert(available || source.initialization, "SECURITY_ACCEPTED_EXCEPTIONS_MISSING");
   const bytes = available ? git(root, ["show", `${context.baseSha}:${exceptionPath}`]) : candidate;
   const document = withoutRemovedDependencies(JSON.parse(bytes), dependencies);
+  const publishedPaths = (value) =>
+    new Set(
+      (value.exceptions ?? [])
+        .filter((entry) => entry.kind === "published-synthetic-fixture")
+        .map((entry) => entry.path),
+    );
+  const candidatePublishedPaths = publishedPaths(JSON.parse(candidate));
+  const removedPublishedPaths = [...publishedPaths(document)]
+    .filter((path) => !candidatePublishedPaths.has(path))
+    .sort();
   const exceptions = validateSecurityExceptions(document, { now, ruleIds, dependencies });
   assert(
     available ||
@@ -258,6 +268,7 @@ export function loadReviewedExceptions({
       sourceSha: ownerReview.sourceSha,
       initialization: !available,
       candidateDiffers: sha256(candidate) !== sha256(bytes),
+      removedPublishedPaths,
       approvalBasis: "owner_pr_comment",
       reviewStatus: "owner_approved",
       reviewReference: ownerReview.reference,
@@ -270,6 +281,7 @@ export function loadReviewedExceptions({
     sourceSha: available ? context.baseSha : null,
     initialization: !available,
     candidateDiffers: sha256(candidate) !== sha256(bytes),
+    removedPublishedPaths,
     approvalBasis: available ? "accepted_base" : "initialization_proposal",
     reviewStatus: available ? "accepted_base" : (document.proposal?.status ?? "no_exceptions"),
     proposal: document.proposal ?? null,

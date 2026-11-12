@@ -10,7 +10,6 @@ const assert = (condition, code) => {
   if (!condition) throw new Error(code);
 };
 
-/** Each archive gets its own exact member/finding ledger. No execution context means no exceptions. */
 export function createPublishedFixtureReview({ root, context, now } = {}) {
   if (!context) return null;
   verifyContext(context, { root });
@@ -24,8 +23,9 @@ export function createPublishedFixtureReview({ root, context, now } = {}) {
     dependencies,
     ruleIds: rules.rules.map((rule) => rule.id),
   });
+  const removed = new Set(reviewed.removedPublishedPaths);
   const entries = reviewed.exceptions.filter(
-    (entry) => entry.kind === "published-synthetic-fixture",
+    (entry) => entry.kind === "published-synthetic-fixture" && !removed.has(entry.path),
   );
   const expected = new Map();
   for (const entry of entries) {
@@ -41,7 +41,6 @@ export function createPublishedFixtureReview({ root, context, now } = {}) {
   let findingCount = 0;
   return {
     inspect({ name, bytes, findings }) {
-      // A sentinel is an actual sensitive-payload marker, regardless of any reviewed fixture.
       assert(
         !findings.some((finding) => finding.rule === "sentinel"),
         "PUBLIC_ARTIFACT_CONTAINS_SECRET",
@@ -77,6 +76,7 @@ export function createPublishedFixtureReview({ root, context, now } = {}) {
         approvalBasis: reviewed.approvalBasis,
         reviewStatus: reviewed.reviewStatus,
         candidateDiffers: reviewed.candidateDiffers,
+        removedPublishedPaths: reviewed.removedPublishedPaths,
         context,
         packageLockSha256: sha256(readFileSync(join(root, "package-lock.json"))),
         memberCount: consumed.size,
