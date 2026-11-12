@@ -296,7 +296,7 @@ export interface CapabilityRegistryStorePort {
     expectedRevision: number,
     revokedAt: string,
   ): Promise<CapabilityRegistryRecord>;
-  /** Lists the scheduled jobs (any status) that were created for the capability. */
+  /** Lists the scheduled jobs still depending on the capability (not cancelled). */
   listScheduledJobRefs?(capabilityRef: string): Promise<readonly string[]>;
   /** Atomically switches a capability version and revokes Handles bound to the previous version. */
   switchCapabilityVersion?(

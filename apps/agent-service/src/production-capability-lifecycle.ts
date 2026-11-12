@@ -13,6 +13,12 @@ import {
 } from "@himawari-agent/platform-node";
 
 const NOT_IN_DEPLOYMENT = "capability_not_in_deployment_snapshot";
+const SNAPSHOT_UNREADABLE = "capability_deployment_snapshot_unreadable";
+const NO_DEPLOYMENT = "capability_deployment_not_configured";
+
+type EntryLookup =
+  | { readonly entry: CapabilityDeploymentEntry; readonly reason?: undefined }
+  | { readonly entry?: undefined; readonly reason: string };
 
 export function createProductionCapabilityLifecycle(options: {
   readonly configuration: Pick<
@@ -27,39 +33,43 @@ export function createProductionCapabilityLifecycle(options: {
   const loader = deployment
     ? new CapabilityDeploymentSnapshotLoader({ ...deployment, now: () => clock.now() })
     : undefined;
-  const entryFor = async (
-    manifest: CapabilityManifest,
-  ): Promise<CapabilityDeploymentEntry | undefined> => {
-    if (!loader) return undefined;
-    const loaded = await loader.load();
-    return loaded.snapshot.capabilities.find(
+  const entryFor = async (manifest: CapabilityManifest): Promise<EntryLookup> => {
+    if (!loader) return { reason: NO_DEPLOYMENT };
+    let loaded: Awaited<ReturnType<typeof loader.load>>;
+    try {
+      loaded = await loader.load();
+    } catch {
+      return { reason: SNAPSHOT_UNREADABLE };
+    }
+    const entry = loaded.snapshot.capabilities.find(
       ({ manifest: candidate }) =>
         candidate.ref === manifest.ref &&
         candidate.version === manifest.version &&
         candidate.integrity === manifest.integrity,
     );
+    return entry ? { entry } : { reason: NOT_IN_DEPLOYMENT };
   };
   return new CapabilityLifecycleService({
     store: repository.capabilityStore(configuration.ownerId, configuration.agentId),
     clock,
     artifacts: {
       verify: async (manifest): Promise<CapabilityArtifactVerification> => {
-        const entry = await entryFor(manifest).catch(() => undefined);
+        const { entry, reason } = await entryFor(manifest);
         return {
           verificationVersion: "capability-artifact-verification.v1",
           artifactDigest: entry ? entry.manifest.integrity : manifest.integrity,
           signatureStatus: manifest.artifact.signatureStatus,
           signerRef: manifest.artifact.signerRef,
           verified: entry !== undefined,
-          reasonCodes: entry ? [] : [NOT_IN_DEPLOYMENT],
+          reasonCodes: entry ? [] : [reason],
           verifiedAt: clock.now(),
         };
       },
     },
     runtime: {
       qualify: async (manifest): Promise<CapabilityRuntimeQualification> => {
-        const entry = await entryFor(manifest);
-        if (!entry) throw new Error(NOT_IN_DEPLOYMENT);
+        const { entry, reason } = await entryFor(manifest);
+        if (!entry) throw new Error(reason);
         return entry.qualification;
       },
     },

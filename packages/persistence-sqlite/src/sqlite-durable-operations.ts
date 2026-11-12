@@ -2688,7 +2688,7 @@ export class SqliteDurableOperations {
       this.database
         .prepare(
           `SELECT id FROM scheduled_jobs
-          WHERE owner_id = ? AND agent_id = ?
+          WHERE owner_id = ? AND agent_id = ? AND status != 'revoked'
             AND json_extract(record_json, '$.capabilityRef') = ? ORDER BY id`,
         )
         .all(input.ownerId, input.agentId, input.capabilityRef) as Array<{ id: string }>

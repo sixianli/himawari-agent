@@ -1,6 +1,10 @@
 import { rm } from "node:fs/promises";
 import path from "node:path";
-import type { CapabilityManifest, CapabilityRegistryRecord } from "@himawari-agent/application";
+import {
+  type CapabilityManifest,
+  type CapabilityRegistryRecord,
+  PORT_ERROR_CODES,
+} from "@himawari-agent/application";
 import { createDeviceId } from "@himawari-agent/domain";
 import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import Database from "better-sqlite3";
@@ -238,7 +242,11 @@ it("refuses disable without recent authentication, then disables and reports the
     f.message("query", "capability.detail", { capabilityRef: CAPABILITY_REF }),
   );
   expect(detail).toMatchObject({
-    payload: { lifecycle: "disabled", lastInvalidation: { cancelledScheduledJobs: 2 } },
+    payload: {
+      lifecycle: "disabled",
+      lastInvalidation: { cancelledScheduledJobs: 2 },
+      dependencyTaskRefs: [],
+    },
   });
 });
 
@@ -263,5 +271,58 @@ it("refuses rollback when there is no previous version", async () => {
   expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({
     lifecycle: "active",
     revision: 1,
+  });
+});
+
+it("refuses rollback when the previous version is not in the deployment snapshot and says why", async () => {
+  const f = await fixture();
+  const previous = { ...manifest(), version: "0.9.0" };
+  await f.capabilities.save(
+    {
+      ...record(),
+      rollbackDeclaration: previous,
+      runtimeQualification: {
+        qualificationVersion: "capability-runtime-qualification.v1",
+        platform: "linux",
+        runtimeIdentity: "fixture",
+        productionSuitable: true,
+        artifactDigest: HASH,
+        enforcement: {
+          filesystem: true,
+          network: true,
+          processes: true,
+          secrets: true,
+          resourceCeilings: true,
+          termination: true,
+        },
+        reasonCodes: [],
+        checkedAt: T0,
+      },
+      revision: 2,
+    },
+    1,
+  );
+  await expect(
+    f.gateway.request(
+      f.authentication,
+      f.message(
+        "command",
+        "capability.rollback",
+        {
+          capabilityRef: CAPABILITY_REF,
+          expectedRevision: 2,
+          reasonCode: "owner_rollback",
+          recentAuthenticationRef: f.authentication.authenticationRef,
+        },
+        "rollback-not-in-snapshot",
+      ),
+    ),
+  ).rejects.toMatchObject({
+    code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+    details: { reasons: "capability_deployment_not_configured" },
+  });
+  expect(await f.capabilities.get(CAPABILITY_REF)).toMatchObject({
+    lifecycle: "active",
+    revision: 2,
   });
 });
