@@ -300,10 +300,10 @@ describe("local ONNX embedding runtime", () => {
         [
           "-I",
           "-c",
-          "import ast, json, sys; tree = ast.parse(open(sys.argv[1]).read()); print(json.dumps(next(ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign) and any(getattr(target, 'id', None) == 'SOURCES' for target in node.targets))))",
+          "import json, runpy, sys; print(json.dumps(runpy.run_path(sys.argv[1], run_name='build_artifact_sources')['SOURCES']))",
           script,
         ],
-        { encoding: "utf8" },
+        { encoding: "utf8", timeout: 30_000 },
       ),
     ) as Record<
       string,
@@ -314,6 +314,7 @@ describe("local ONNX embedding runtime", () => {
         model: string;
         externalData: string[];
         quantization: string;
+        files: Record<string, string>;
       }
     >;
     const local = EMBEDDING_PROFILES.filter((profile) => profile.provider === "local-onnx");
@@ -335,6 +336,11 @@ describe("local ONNX embedding runtime", () => {
         externalData: [...(profile.source?.externalData ?? [])],
         quantization: profile.source?.quantization,
       });
+      const files = source?.files ?? {};
+      expect(Object.keys(files)).toEqual(
+        expect.arrayContaining([source?.model, ...(source?.externalData ?? [])]),
+      );
+      for (const digest of Object.values(files)) expect(digest).toMatch(/^[0-9a-f]{64}$/);
     }
   });
 });
