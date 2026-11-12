@@ -86,33 +86,42 @@ fi
 mkdir -p "$shots"
 rm -f "$shots"/*.png "$shots"/*.mp4 "$shots"/*.mov
 
+marker=""
 launch() {
+  [ -z "$marker" ] || rm -f "$marker"
   xcrun simctl launch --terminate-running-process "$udid" "$bundle" \
     -HimawariDemoScene "$1" -AppleLanguages "(zh-Hans)" -AppleLocale zh_CN >/dev/null
+}
+
+shown() {
+  [ -f "$marker" ] && [ "$(cat "$marker")" = "$1" ]
 }
 
 last_shot=""
 inspector="$derived/compare-snapshots"
 xcrun swiftc -O "$root/scripts/compare-snapshots.swift" -o "$inspector"
+marker="$(xcrun simctl get_app_container "$udid" "$bundle" data)/tmp/$(sed -nE 's/^ *static let shownMarker = "([^"]+)"$/\1/p' "$root/Sources/HimawariShell/DemoScenes.swift")"
+case "$marker" in */tmp/?*) ;; *) echo "UI_REVIEW_FAILED cannot locate the scene marker" >&2; exit 1 ;; esac
 
 settle() {
   local scene="$1" file="$2" previous="" current="" tries=0 launches=1
-  sleep 2
   while :; do
-    xcrun simctl io "$udid" screenshot --type=png "$file" >/dev/null
-    current="$(shasum -a 256 "$file" | cut -d' ' -f1)"
-    if [ "$current" = "$previous" ] && [ "$current" != "$last_shot" ] && ! "$inspector" --launch-screen "$file"; then
-      last_shot="$current"
-      return 0
+    if shown "$scene"; then
+      xcrun simctl io "$udid" screenshot --type=png "$file" >/dev/null
+      current="$(shasum -a 256 "$file" | cut -d' ' -f1)"
+      if [ "$current" = "$previous" ] && [ "$current" != "$last_shot" ]; then
+        last_shot="$current"
+        return 0
+      fi
+      previous="$current"
     fi
-    previous="$current"
     tries=$((tries + 1))
-    if [ "$tries" -ge 12 ]; then
-      [ "$launches" -lt 3 ] || { echo "UI_REVIEW_FAILED $file never settled into a new screen" >&2; exit 1; }
+    if [ "$tries" -ge 20 ]; then
+      [ "$launches" -lt 3 ] || { echo "UI_REVIEW_FAILED $file: scene $scene $(shown "$scene" && echo "kept changing or repeated the previous screen" || echo "never reported that it was on screen")" >&2; exit 1; }
       launches=$((launches + 1))
       tries=0
+      previous=""
       launch "$scene"
-      sleep 3
     fi
     sleep 1
   done

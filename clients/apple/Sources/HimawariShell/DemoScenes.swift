@@ -29,6 +29,7 @@ enum DemoScene: String, CaseIterable {
 
     static let argument = "-HimawariDemoScene"
     static let demoHost = "himawari.example.com"
+    static let shownMarker = "himawari-demo-scene-shown"
 
     static var requested: DemoScene? {
         let arguments = ProcessInfo.processInfo.arguments
@@ -45,6 +46,12 @@ struct DemoSceneView: View {
             .environment(\.listClock, DemoChatFixtures.now)
             .environment(\.stillFrames, !scene.rawValue.hasPrefix("motion-"))
             .onAppear { SerifFace.shared.prepare() }
+            .task {
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                let marker = FileManager.default.temporaryDirectory.appendingPathComponent(DemoScene.shownMarker)
+                try? Data(scene.rawValue.utf8).write(to: marker, options: .atomic)
+            }
     }
 
     @ViewBuilder

@@ -33,15 +33,6 @@ func load(_ url: URL) -> Bitmap? {
 let channelTolerance = 3
 let allowedChangedShare = 0.0005
 let arguments = CommandLine.arguments
-if arguments.count == 3, arguments[1] == "--launch-screen" {
-    guard let image = load(URL(fileURLWithPath: arguments[2])) else { exit(2) }
-    var plain = 0
-    for pixel in stride(from: 0, to: image.bytes.count, by: 4) {
-        let red = image.bytes[pixel], green = image.bytes[pixel + 1], blue = image.bytes[pixel + 2]
-        if red == green, green == blue, red == 0 || red == 255 { plain += 1 }
-    }
-    exit(Double(plain) / Double(image.width * image.height) > 0.98 ? 0 : 1)
-}
 guard arguments.count == 3 else {
     FileHandle.standardError.write(Data("usage: compare-snapshots.swift <approved-dir> <fresh-dir>\n".utf8))
     exit(2)
