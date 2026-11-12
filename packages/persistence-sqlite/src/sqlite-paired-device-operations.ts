@@ -107,14 +107,27 @@ export class SqlitePairedDeviceOperations {
       const code = this.database
         .prepare(
           `SELECT owner_id AS ownerId, agent_id AS agentId, expires_at AS expiresAt,
-                  used_at AS usedAt
+                  used_at AS usedAt, device_id AS deviceId
              FROM device_pairing_codes WHERE code_hash = ?`,
         )
         .get(input.codeHash) as
-        | { ownerId: string; agentId: string; expiresAt: string; usedAt: string | null }
+        | {
+            ownerId: string;
+            agentId: string;
+            expiresAt: string;
+            usedAt: string | null;
+            deviceId: string | null;
+          }
         | undefined;
       if (!code) return { kind: "code_invalid" };
-      if (code.usedAt !== null) return { kind: "code_used" };
+      if (code.usedAt !== null) {
+        const redeemed = code.deviceId ? this.readDevice(code.deviceId) : undefined;
+        return redeemed &&
+          redeemed.devicePublicKey === input.device.devicePublicKey &&
+          redeemed.confirmPublicKey === input.device.confirmPublicKey
+          ? { kind: "replayed", device: redeemed }
+          : { kind: "code_used" };
+      }
       if (code.expiresAt <= now) return { kind: "code_expired" };
       const device = input.device;
       this.database

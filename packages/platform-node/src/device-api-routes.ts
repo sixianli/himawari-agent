@@ -315,7 +315,9 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
 
       device.post("/pair", async (request, reply) => {
         const paired = await options.devices.pair(json(request));
-        return options.sendJson(reply, 201, { device: presentDevice(paired) });
+        return options.sendJson(reply, paired.replayed ? 200 : 201, {
+          device: presentDevice(paired.device),
+        });
       });
 
       device.get("/config", async (request, reply) => {

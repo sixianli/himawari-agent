@@ -133,7 +133,9 @@ export class PairedDeviceService {
     return Object.freeze({ code, expiresAt });
   }
 
-  async pair(body: unknown): Promise<PairedDevice> {
+  async pair(
+    body: unknown,
+  ): Promise<{ readonly device: PairedDevice; readonly replayed: boolean }> {
     if (!body || typeof body !== "object" || Array.isArray(body))
       throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_REQUEST_INVALID, 400);
     const input = body as Record<string, unknown>;
@@ -185,7 +187,9 @@ export class PairedDeviceService {
     });
     switch (result.kind) {
       case "paired":
-        return result.device;
+        return { device: result.device, replayed: false };
+      case "replayed":
+        return { device: result.device, replayed: true };
       case "code_expired":
         throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_CODE_EXPIRED, 410, {
           pairingCodeTtlSeconds: PAIRING_CODE_LIFETIME_MILLISECONDS / 1000,

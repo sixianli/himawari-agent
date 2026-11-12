@@ -905,6 +905,71 @@ describe("[P1-1] device client routes", () => {
     await withAccess.repository.close();
   });
 
+  it("returns the same device when a pairing request is retried with the same keys", async () => {
+    const h = await harness();
+    const started = await web(h, "pairing-codes");
+    const keys = generateDeviceTestKeyPair();
+    const confirmKeys = generateDeviceTestKeyPair();
+    const pairWith = (devicePublicKey: string, confirmPublicKey: string) =>
+      h.app.inject({
+        method: "POST",
+        url: "/api/device/v1/pair",
+        headers: { host: "himawari.example", "content-type": "application/json" },
+        payload: JSON.stringify({
+          pairingCode: pairingCode(started.body["pairingUri"]),
+          kind: "iphone",
+          name: "Andy iPhone",
+          releaseChannel: "direct",
+          devicePublicKey,
+          confirmPublicKey,
+        }),
+      });
+    const first = await pairWith(keys.publicKeySpkiBase64, confirmKeys.publicKeySpkiBase64);
+    expect(first.statusCode, first.body).toBe(201);
+    const retried = await pairWith(keys.publicKeySpkiBase64, confirmKeys.publicKeySpkiBase64);
+    expect(retried.statusCode, retried.body).toBe(200);
+    expect(retried.json()).toEqual(first.json());
+    const otherKeys = await pairWith(
+      generateDeviceTestKeyPair().publicKeySpkiBase64,
+      confirmKeys.publicKeySpkiBase64,
+    );
+    expect(otherKeys.statusCode).toBe(409);
+    expect(otherKeys.json()).toMatchObject({ error: { code: "DEVICE_PAIRING_CODE_USED" } });
+    expect((await web(h, "list")).body["devices"]).toHaveLength(1);
+    await h.repository.close();
+  });
+
+  it("answers a refused stream handshake with an error body", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const created = await post(h, client, "threads", {
+      requestId: "device-request-0004",
+      answerLocale: "zh-CN",
+    });
+    const threadId = created.json().payload.threadId as string;
+    const paths = ["/api/device/v1/stream", `/api/device/v1/threads/${threadId}/execution-stream`];
+    for (const path of paths) {
+      const skewed = signedRequest(h, client, {
+        method: "GET",
+        path,
+        createdAtSeconds: Math.floor(Date.parse(h.clock.now()) / 1000) - 3600,
+      });
+      const response = await send(h, skewed);
+      expect(response.statusCode).toBe(401);
+      expect(response.headers["content-type"]).toMatch(/application\/json/u);
+      expect(response.json()).toEqual({
+        error: { code: "DEVICE_SIGNATURE_CLOCK_SKEW", serverTime: h.clock.now() },
+      });
+    }
+    await web(h, "revoke", { deviceId: client.deviceId, expectedRevision: client.revision });
+    for (const path of paths) {
+      const response = await send(h, signedRequest(h, client, { method: "GET", path }));
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: { code: "DEVICE_REVOKED" } });
+    }
+    await h.repository.close();
+  });
+
   it("stores canonical keys and rejects one key used as both device and confirm key", async () => {
     const h = await harness();
     const started = await web(h, "pairing-codes");
