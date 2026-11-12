@@ -2649,7 +2649,7 @@ describe("proactive Gmail check acceptance", () => {
       expect(queries).toEqual([`"${ORDER}" -in:trash -in:spam`]);
     });
 
-    it("REVERSE: a number the model invented, a phone number or a date is never searched", async () => {
+    it("REVERSE: a number the model invented, one that is not in the mail word for word, or a date is never searched", async () => {
       const { queries } = await searchedFor((h) =>
         h.scriptReferences([
           {
@@ -2690,6 +2690,17 @@ describe("proactive Gmail check acceptance", () => {
       capped.reader.items = [today];
       await capped.service.run();
       expect(capped.referencePrompts).toEqual([]);
+    });
+
+    it("REVERSE: the number extraction never takes the room the judgment needs", async () => {
+      const tight = await harness({ dailyCostMicros: 150 });
+      tight.reader.related = (input) =>
+        findRelatedMail({ ...input, transport: transport({ requests: 0 }) });
+      tight.reader.items = [today];
+      tight.script([{ id: today.messageId, result: "ignore" }]);
+      await tight.service.run();
+      expect(tight.referencePrompts).toEqual([]);
+      expect(tight.prompts).toHaveLength(1);
     });
 
     it("negative: a mail that shares only the sender gets no history and no failure mark", async () => {

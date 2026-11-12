@@ -673,7 +673,7 @@ export class ProactiveMailCheckService {
     deadlineAt: string,
     signal: AbortSignal,
     trace: CheckTrace,
-    budget: { readonly spentToday: number; costMicros: number },
+    budget: { readonly spentToday: number; readonly reserveMicros: number; costMicros: number },
   ): Promise<ReadonlyMap<string, readonly string[]>> {
     const references = new Map<string, readonly string[]>();
     const perMail = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits }.perMail;
@@ -683,7 +683,10 @@ export class ProactiveMailCheckService {
       const batch = candidates.slice(start, start + size);
       const prompt = mailReferencePrompt(batch, perMail);
       const estimate = this.#options.limits.estimateCostMicros(prompt);
-      if (budget.spentToday + budget.costMicros + estimate > this.#options.limits.dailyCostMicros)
+      if (
+        budget.spentToday + budget.costMicros + budget.reserveMicros + estimate >
+        this.#options.limits.dailyCostMicros
+      )
         break;
       try {
         const call = await this.#invoke(prompt, "private", deadlineAt, signal, trace);
@@ -902,12 +905,40 @@ export class ProactiveMailCheckService {
       controller.signal,
       AbortSignal.timeout(Math.floor(this.#options.limits.perCheckMs / 2)),
     ]);
-    const referenceBudget = { spentToday, costMicros: 0 };
+    const referenceSignal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(Math.floor(this.#options.limits.perCheckMs / 6)),
+    ]);
+    const referenceReserveMicros =
+      candidates.length === 0
+        ? 0
+        : this.#options.limits.estimateCostMicros(
+            proactivePrompt(
+              this.#fitBatch(
+                candidates,
+                this.#options.batchSize ?? DEFAULT_BATCH_SIZE,
+                { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits },
+                new Map<string, RelatedView>(),
+              ),
+              startedAt,
+              this.#options.timeZone,
+              [],
+              { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits }.perMail,
+              new Map<string, RelatedView>(),
+              [],
+            ),
+          );
+    const referenceBudget = {
+      spentToday,
+      reserveMicros: referenceReserveMicros,
+      costMicros: 0,
+    };
     const references =
       spentToday >= this.#options.limits.dailyCostMicros ||
-      this.#options.reader.related === undefined
+      this.#options.reader.related === undefined ||
+      this.#relatedLimits().perMail < 1
         ? new Map<string, readonly string[]>()
-        : await this.#references(candidates, deadlineAt, relatedSignal, trace, referenceBudget);
+        : await this.#references(candidates, deadlineAt, referenceSignal, trace, referenceBudget);
     costMicros += referenceBudget.costMicros;
     const relatedViews =
       spentToday >= this.#options.limits.dailyCostMicros
@@ -950,7 +981,7 @@ export class ProactiveMailCheckService {
             ),
           );
     const summaryBudget = {
-      spentToday: spentToday + recalled.costMicros,
+      spentToday: spentToday + referenceBudget.costMicros + recalled.costMicros,
       reserveMicros: judgmentReserveMicros,
       costMicros: 0,
     };

@@ -330,8 +330,11 @@ export class RealMemoryEvalService {
           continue;
         }
         const entries: [RealEvalItemKind, string][] = [[generated.kind, generated.question]];
-        if (generated.abstainQuestion !== null && !(await leaksToModel(generated.abstainQuestion)))
-          entries.push(["abstain", generated.abstainQuestion]);
+        if (generated.abstainQuestion !== null) {
+          if (await leaksToModel(generated.abstainQuestion))
+            rejected["leak"] = (rejected["leak"] ?? 0) + 1;
+          else entries.push(["abstain", generated.abstainQuestion]);
+        }
         for (const [kind, questionText] of entries) {
           const createdAt = deps.now();
           const questionRef = await deps.storeQuestion({

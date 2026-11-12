@@ -1127,40 +1127,38 @@ export class ProductionMemoryCapture {
     checks: readonly SupportCheck[],
   ): Promise<ReadonlyMap<string, boolean>> {
     const verdicts = new Map<string, boolean>();
-    await Promise.all(
-      checks.map(async (check, index) => {
-        const cacheKey = createHash("sha256")
-          .update(`${SUPPORT_JUDGE_VERSION}\u0000${check.key}`)
-          .digest("hex");
-        const known = this.#supportCache.get(cacheKey);
-        if (known !== undefined) {
-          verdicts.set(check.key, known);
-          return;
-        }
-        const prompt = memoryConfirmationJudgePrompt(check.memoryText, check.quote);
-        let settled = true;
-        const verdict = await judgeOrDefault(
-          {
-            ask: (attempt) =>
-              this.options.generate(plan.request, prompt, () => {}, {
-                invocationId: `${call.invocationId}:support:${index}:${attempt}`,
-                retryToolCall: false,
-              }),
-            parse: parseSupportVerdict,
-          },
-          false,
-          (error) => {
-            settled = false;
-            this.options.onFailure(error);
-          },
-        );
-        if (settled) {
-          if (this.#supportCache.size >= MAXIMUM_SUPPORT_CACHE) this.#supportCache.clear();
-          this.#supportCache.set(cacheKey, verdict);
-        }
-        verdicts.set(check.key, verdict);
-      }),
-    );
+    for (const [index, check] of checks.entries()) {
+      const cacheKey = createHash("sha256")
+        .update(`${SUPPORT_JUDGE_VERSION}\u0000${check.memoryText}\u0000${check.quote}`)
+        .digest("hex");
+      const known = this.#supportCache.get(cacheKey);
+      if (known !== undefined) {
+        verdicts.set(check.key, known);
+        continue;
+      }
+      const prompt = memoryConfirmationJudgePrompt(check.memoryText, check.quote);
+      let settled = true;
+      const verdict = await judgeOrDefault(
+        {
+          ask: (attempt) =>
+            this.options.generate(plan.request, prompt, () => {}, {
+              invocationId: `${call.invocationId}:support:${index}:${attempt}`,
+              retryToolCall: false,
+            }),
+          parse: parseSupportVerdict,
+        },
+        false,
+        (error) => {
+          settled = false;
+          this.options.onFailure(error);
+        },
+      );
+      if (settled) {
+        if (this.#supportCache.size >= MAXIMUM_SUPPORT_CACHE) this.#supportCache.clear();
+        this.#supportCache.set(cacheKey, verdict);
+      }
+      verdicts.set(check.key, verdict);
+    }
     return verdicts;
   }
 
