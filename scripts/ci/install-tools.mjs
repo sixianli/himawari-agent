@@ -13,6 +13,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hostPlatform, supportedPlatforms } from "./platforms.mjs";
+import { runnerTracking } from "./runner-tracking.mjs";
 import {
   cacheEnvironmentKey,
   downloadVerified,
@@ -359,11 +360,6 @@ export function isolatedEnvironment(directory, binDirectory, { temporaryDirector
     SEMGREP_ENABLE_VERSION_CHECK: "0",
     ...runnerTracking(),
   };
-}
-
-export function runnerTracking(source = process.env) {
-  const id = source.RUNNER_TRACKING_ID;
-  return typeof id === "string" && id !== "" ? { RUNNER_TRACKING_ID: id } : {};
 }
 
 export function verifyRuleFiles(root = repositoryRoot, lock = loadToolchainLock(root)) {

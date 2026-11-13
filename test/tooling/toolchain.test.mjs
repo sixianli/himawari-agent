@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   auditInstalledDependencies,
   auditManifestDependencies,
@@ -22,10 +22,10 @@ import {
   downloadArtifact,
   isolatedEnvironment,
   loadToolchainLock,
-  runnerTracking,
   validateToolchainLock,
   verifyDownload,
 } from "../../scripts/ci/install-tools.mjs";
+import { runnerTracking } from "../../scripts/ci/runner-tracking.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const temporaryDirectories = [];
@@ -281,6 +281,29 @@ describe("固定工具身份", () => {
     });
     expect(runnerTracking({ RUNNER_TRACKING_ID: "" })).toEqual({});
     expect(runnerTracking({})).toEqual({});
+    vi.stubEnv("RUNNER_TRACKING_ID", "github_fixture");
+    try {
+      const tracked = isolatedEnvironment(temporary(), "/fixture/bin");
+      expect(tracked.RUNNER_TRACKING_ID).toBe("github_fixture");
+      expect(
+        execFileSync(
+          process.execPath,
+          ["-e", "process.stdout.write(process.env.RUNNER_TRACKING_ID)"],
+          {
+            env: tracked,
+            encoding: "utf8",
+          },
+        ),
+      ).toBe("github_fixture");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    vi.stubEnv("RUNNER_TRACKING_ID", "");
+    try {
+      expect("RUNNER_TRACKING_ID" in isolatedEnvironment(temporary(), "/fixture/bin")).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

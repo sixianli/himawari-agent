@@ -183,7 +183,7 @@ describe("受控子进程与真实报告", () => {
       }),
     ).toMatchObject({ termination: "timeout", exitCode: 128 });
   });
-  it("子进程带上 runner 的进程追踪号，作业取消后 runner 能找到并结束它", async () => {
+  it("子进程环境带上 runner 的进程追踪号，runner 结束作业时能认出它", async () => {
     const root = directory();
     const log = path.join(root, "tracking.log");
     const previous = process.env.RUNNER_TRACKING_ID;
