@@ -29,6 +29,7 @@ import {
 import { prepareCoverageComparison, retainComparisonEvidence } from "./coverage-comparison.mjs";
 import { coverageProjects, strategyDigest, validateCoveragePolicy } from "./coverage-model.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
+import { startHostLoad } from "./host-load.mjs";
 import { isolatedEnvironment, verifyInstalledTools } from "./install-tools.mjs";
 import { artifactPlatformKey, hostArch, hostOs } from "./platforms.mjs";
 import { observeResources } from "./resources.mjs";
@@ -583,6 +584,7 @@ export async function main(argv = process.argv.slice(2)) {
     if (fileSha256(artifact) !== producer.artifacts[0].sha256)
       throw new Error("CI_ARTIFACT_TRANSFER_DIGEST_MISMATCH");
   }
+  const stopHostLoad = startHostLoad();
   const result = await runCheck({
     checkId: args["--check"],
     matrixKey: args["--matrix"],
@@ -593,6 +595,7 @@ export async function main(argv = process.argv.slice(2)) {
     baselineCandidate: args["--baseline-candidate"],
     comparison: args["--comparison"] && path.resolve(args["--comparison"]),
   });
+  process.stdout.write(`${stopHostLoad()}\n`);
   process.stdout.write(
     `${result.checkId}/${result.matrixKey}: ${result.status} (${result.counts.passed} passed, ${result.counts.failed} failed)\n`,
   );
