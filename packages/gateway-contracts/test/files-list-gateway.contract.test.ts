@@ -56,6 +56,9 @@ describe("files list gateway messages", () => {
         ],
       }),
     );
+    gatewayV2MessageSchema.parse(
+      snapshot({ files: [{ ...file, contentPath: `/${"a".repeat(511)}` }] }),
+    );
   });
 
   it.each([
@@ -80,6 +83,7 @@ describe("files list gateway messages", () => {
     ["an unknown origin", { origin: "copied" }],
     ["a missing deleted flag", { deleted: undefined }],
     ["an extra field", { path: "secret/report.pdf" }],
+    ["a content path over 512 characters", { contentPath: `/${"a".repeat(512)}` }],
   ])("rejects a file with %s", (_name, overrides) => {
     rejects(snapshot({ files: [{ ...file, ...overrides }] }));
   });

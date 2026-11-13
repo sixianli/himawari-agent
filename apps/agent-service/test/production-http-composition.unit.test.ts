@@ -1253,13 +1253,29 @@ describe("production HTTP composition", () => {
         if (parsed.type !== "login.devices.snapshot") throw new Error(parsed.type);
         return parsed.payload.devices;
       };
+      const deviceState = running.repository.sessionDeviceState();
+      const latest = [...(await deviceState.listDevices(OWNER_ID as never, false))]
+        .sort((left, right) => Number(left.id > right.id) - Number(left.id < right.id))
+        .at(-1);
+      if (!latest) throw new Error("no device");
+      const { revision: latestRevision, ...latestDevice } = latest;
+      await deviceState.saveDevice(
+        { ...latestDevice, lastSeenAt: "2099-01-01T00:00:00.000Z" },
+        latestRevision,
+      );
       const before = await loginDevices();
+      expect(before[0]?.deviceId).toBe(latest.id);
       expect(before.length).toBeGreaterThanOrEqual(2);
       expect(before.filter(({ current }) => current)).toHaveLength(1);
-      expect(before.map(({ deviceId }) => deviceId).sort()).toEqual(
-        (await running.repository.sessionDeviceState().listDevices(OWNER_ID as never, false))
-          .map(({ id }) => id)
-          .sort(),
+      expect(before.map(({ deviceId }) => deviceId)).toEqual(
+        [...(await running.repository.sessionDeviceState().listDevices(OWNER_ID as never, false))]
+          .sort((left, right) =>
+            left.lastSeenAt === right.lastSeenAt
+              ? Number(left.id > right.id) - Number(left.id < right.id)
+              : Number(left.lastSeenAt < right.lastSeenAt) -
+                Number(left.lastSeenAt > right.lastSeenAt),
+          )
+          .map(({ id }) => id),
       );
       const current = before.find(({ current }) => current);
       const other = before.find(({ current }) => !current);
@@ -1291,9 +1307,7 @@ describe("production HTTP composition", () => {
       const replayed = await revoke(other?.deviceId ?? "", null, "revoke-other-again");
       expect(replayed.statusCode, replayed.body).toBe(200);
       expect(replayed.json()).toMatchObject({ replayed: true });
-      expect(
-        (await revoke("device-missing", second.authenticationRef, "revoke-missing")).statusCode,
-      ).toBe(404);
+      expect((await revoke("device-missing", null, "revoke-missing")).statusCode).toBe(404);
       expect((await loginDevices()).find(({ current }) => current)?.deviceId).toBe(
         current?.deviceId,
       );

@@ -329,11 +329,12 @@ describe("production memory capture", () => {
       ref: string,
       text: string,
       dataClassification: "private" | "sensitive" = "private",
+      agentId: string = AGENT_ID,
     ) =>
-      payloads.put(
+      (agentId === AGENT_ID ? payloads : repository.payloadStore(OWNER_ID, agentId as never)).put(
         await adapters.payloadProtector.protect({
           ownerId: OWNER_ID,
-          agentId: AGENT_ID,
+          agentId: agentId as never,
           ref,
           dataClassification,
           contentType: "text/plain",
@@ -2345,6 +2346,25 @@ describe("production memory capture", () => {
     expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: null });
     await revise(chain[7] as never, { attributes: { supersededBy: null } });
     expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: chain[7] });
+    context.sql((database) =>
+      database
+        .prepare("INSERT INTO agents (id, owner_id, revision) VALUES ('agent-other', ?, 0)")
+        .run(OWNER_ID),
+    );
+    await context.protect("payload-other-agent", "主人的另一版说法", "private", "agent-other");
+    const foreign = await state.save(
+      {
+        ...((await state.read(newer.id as never)) as object),
+        contentRef: "payload-other-agent",
+        sourceThreadId: null,
+        id: "memory:other-agent-latest",
+        agentId: "agent-other",
+        revision: 1,
+      } as never,
+      null,
+    );
+    await revise(sourceId, { attributes: { supersededBy: foreign.id } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: null });
   });
 
   it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {
