@@ -437,9 +437,11 @@ export class ProductionMemoryControl {
   async #ruleClassification(
     sourceMemoryId: string | null,
   ): Promise<ProductMemoryRecord["dataClassification"]> {
-    if (!sourceMemoryId) return "private";
-    const record = await this.options.state.read(sourceMemoryId as MemoryId);
-    if (!record || record.ownerId !== this.options.configuration.ownerId) return "private";
+    const { ownerId, agentId } = this.options.configuration;
+    const record = sourceMemoryId
+      ? await this.options.state.read(sourceMemoryId as MemoryId).catch(() => undefined)
+      : undefined;
+    if (!record || record.ownerId !== ownerId || record.agentId !== agentId) return "sensitive";
     return classificationRank(record.dataClassification) > classificationRank("private")
       ? record.dataClassification
       : "private";

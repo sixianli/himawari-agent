@@ -552,7 +552,7 @@ export class HomeUrgencyService {
       }
     } finally {
       await authority.release().catch(() => undefined);
-      await model.release(outputs).catch(() => undefined);
+      await model.release([authority.inputRef, ...outputs]).catch(() => undefined);
     }
     const durationMs = Math.max(0, Date.parse(clock.now()) - startedAt);
     return { output: completed ? output : undefined, failure, costMicros, durationMs };

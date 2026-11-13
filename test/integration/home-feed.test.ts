@@ -926,6 +926,17 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
         .run("memory-rule-immigration"),
     );
     expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("sensitive");
+    f.sql((handle) =>
+      handle
+        .prepare("UPDATE memory_records SET classification = 'private' WHERE id = ?")
+        .run("memory-rule-immigration"),
+    );
+    f.sql((handle) =>
+      handle
+        .prepare("UPDATE rule_book_rules SET source_memory_id = NULL WHERE rule_id = ?")
+        .run("owner:immigration"),
+    );
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("sensitive");
   });
 
   it("shows unattended runs and failures without counting them, and never an empty sentence", async () => {

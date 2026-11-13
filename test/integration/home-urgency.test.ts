@@ -177,6 +177,7 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
     let allowed: readonly DataClassification[] = ["public", "private", "sensitive"];
     let titleClassification: DataClassification = "private";
     const results: HomeUrgencyRunResult[] = [];
+    const released: string[] = [];
     const failures: unknown[] = [];
 
     const open = async (
@@ -255,7 +256,9 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
           };
         },
         readOutput: async (ref) => outputs.get(ref) ?? "",
-        release: async () => undefined,
+        release: async (refs) => {
+          released.push(...refs);
+        },
       };
       const home = new ProductionHomeControl({
         settings: DEFAULT_HOME_FEED,
@@ -467,6 +470,7 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
       calls,
       results,
       failures,
+      released,
       advance: (ms: number) => {
         now = new Date(Date.parse(now) + ms).toISOString();
       },
@@ -1265,6 +1269,15 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
         handle.prepare("SELECT COUNT(*) FROM payloads WHERE ref = ?").pluck().get(sentenceRef),
       ),
     ).toBe(0);
+  });
+
+  it("releases the prompt and the reply once the call is over", async () => {
+    const state = await fixture();
+    const { home, recordMail } = await state.open();
+    await recordMail([{ id: "a", summary: "甲" }]);
+    await home.score();
+    expect(state.released.filter((ref) => ref.startsWith("in-"))).toHaveLength(1);
+    expect(state.released.filter((ref) => ref.startsWith("out-"))).toHaveLength(1);
   });
 
   it("stopping waits for a scoring call already under way", async () => {

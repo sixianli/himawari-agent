@@ -2,6 +2,7 @@
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
   type CapabilityDeploymentConfiguration,
   type ConfigurationPort,
   type ConfiguredCompletionsGenerationModelDescriptor,
@@ -20,7 +21,6 @@ import {
   type IdentityConfiguration,
   type IdentityCsrfConfiguration,
   isWebProviderId,
-  APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
   LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
   type ModelProviderRouting,
@@ -1823,11 +1823,12 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     if (
       !descriptor ||
       descriptor.role === "embedding" ||
+      descriptor.api !== "openai-completions" ||
       !descriptor.allowedDataClassifications.includes("private")
     )
       throw invalid(
         "configuration.runPolicy.homeUrgency.modelRef",
-        "must name a configured generation model that accepts private data",
+        "must name a configured openai-completions generation model that accepts private data",
       );
   }
   const realEval = runPolicy?.realEval;
