@@ -1,0 +1,3 @@
+{"id": "1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "## 1. 中：`workspace.folders.read` 会把过不了契约的“仍有效”授权目录静默丢掉，`truncated` 仍为 `false`", "valid": true, "class": "better"}
+{"id": "2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "## 2. 低（I-73 类）：配置允许的 `grantId`/`hostId` 比网关契约宽，配置合法但契约不接受的授权目录会永远列不出来、也查询不到", "valid": true, "class": "better"}
+{"id": "3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "## 3. 低：`workspace.changes.read` 的 `incomplete` 是本页内的，跨页需要调用方自己累积，契约没有强制", "valid": true, "class": "better"}
