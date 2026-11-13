@@ -1,7 +1,7 @@
 <a id="apple-clients"></a>
 # Himawari 苹果客户端
 
-这里是 Himawari 的 iPhone App（以后还有 Apple Watch 和 Mac App）。设计和分批见[详细设计](../../docs/execution/specs/2026-11-11-apple-device-body-design.md)和[实施计划](../../docs/execution/plans/2026-11-11-apple-device-body-plan.md)；界面照 Andy 2026-11-12 批准的原型第 2 版 `docs/assets/apple-clients/2026-11-12-v2/` 做（颜色、尺寸、字号由其中的 `tokens.json` 生成）。现在做到第 2 批：配对、对话列表、聊天。
+这里是 Himawari 的 iPhone App 和 Mac 菜单栏 App（以后还有 Apple Watch）。设计和分批见[详细设计](../../docs/execution/specs/2026-11-11-apple-device-body-design.md)和[实施计划](../../docs/execution/plans/2026-11-11-apple-device-body-plan.md)；界面照 Andy 2026-11-12 批准的原型第 2 版 `docs/assets/apple-clients/2026-11-12-v2/` 做（颜色、尺寸、字号由其中的 `tokens.json` 生成）。现在做到第 2 批：配对、对话列表、聊天。
 
 - [代码怎么分](#layout)
 - [在 Mac 上构建、测试、装到 iPhone](#on-the-mac)
@@ -9,6 +9,7 @@
 - [和服务器对齐的固定测试数据](#vectors)
 - [图标](#icons)
 - [截图对照原型](#ui-review)
+- [Mac 菜单栏 App](#mac-app)
 
 <a id="layout"></a>
 ## 代码怎么分
@@ -22,6 +23,7 @@
 | `HimawariChat` | 对话列表和聊天 | 第 2 批 |
 | `HimawariManage` | 记忆、设置等管理页面；现在只有两个入口占位 | 第 11 批 |
 | `HimawariShell` | 三页签外壳、配对页、整个 App 的状态 | 第 2 批 |
+| `HimawariMac` | Mac 菜单栏 App：菜单栏的向日葵和面板、⌥ 空格输入条、拖文件、动文件前的清单、唯一的设置页、配对窗口。只在 macOS 上编译 | 第 10B 批 |
 
 `App/Himawari.xcodeproj` 是 App 本身的 Xcode 工程，只有一个入口文件 `App/iOS/HimawariApp.swift`，其余代码都从上面的包里来。
 
@@ -105,3 +107,21 @@ clients/apple/scripts/ui-review.sh --approve
 
 [返回目录](#apple-clients)
 
+<a id="mac-app"></a>
+## Mac 菜单栏 App
+
+Mac 上只做原型 Version 46 画板“每一端做什么”里的六样，没有主窗口、聊天窗口和管理页。Xcode 工程里的 `HimawariMac` 目标就是它，入口文件 `App/macOS/HimawariMacApp.swift`，其余代码在 `Sources/HimawariMac/`。
+
+- 配对：Mac 不扫码。电脑网页上点“添加设备”后复制配对链接（以 `himawari-pair:` 开头），在 Mac 的配对窗口里粘贴。
+- 输入条：默认按 ⌥ 空格叫出，快捷键在设置页可改；被别的 App 占用时设置页写明。叫出的那一刻读一次前台 App、正在看的文件和选中的文字（读文件和选中文字要在“系统设置 › 隐私与安全性 › 辅助功能”里允许 Himawari），显示成可以点 × 拿掉的小条，发出前不再刷新。带着的东西先传到服务器换成引用，再照网页附件的格式（`<file name ref bytes kind/>` 标签，和 `apps/control-center/src/draft-attachments.ts` 逐字一致，固定测试数据由 `scripts/make-attachment-fixture.mjs` 从网页代码生成）接在正文后面发出。读不出文字的文件只传文件名和路径。
+- 文件夹和网址规则在 `Sources/HimawariCore/MacAccess.swift`：路径先解开符号链接和 `..` 再按路径分段和允许的文件夹比，只读文件夹不许改；网址只许 `https` 加主机名单。
+
+截图：
+
+```bash
+clients/apple/scripts/mac-ui-review.sh
+```
+
+它编译调试版，用启动参数 `-HimawariMacDemo <文件夹>` 让 App 按 `Sources/HimawariMac/MacDemoScenes.swift` 里的示例数据把每一屏画成 PNG（浅色、深色各一张），放到 `clients/apple/ui-review/mac-latest/`，少一张就报错。
+
+[返回目录](#apple-clients)
