@@ -503,6 +503,16 @@ describe("workspace lifecycle read-only audit", () => {
       );
   });
 
+  it("still reads a database that has a newer timestamped migration, because the repository check reviews those", async () => {
+    const f = await fixture();
+    f.database
+      .prepare(
+        "INSERT INTO schema_migration_ledger (sequence, name, phase, digest, applied_at, migration_id) SELECT MAX(sequence)+1,'future','expand','digest','2026-09-19T00:00:00.000Z','20261114000000' FROM schema_migration_ledger",
+      )
+      .run();
+    expect(auditWorkspaceLifecycle(f.input)).toMatchObject({ rows: expect.any(Array) });
+  });
+
   it("rejects unknown schemas without migrating or creating missing databases", async () => {
     const f = await fixture();
     f.database

@@ -8,6 +8,7 @@ import {
   META_FILE,
   TIMESTAMP_FILE,
   analyzeMigrations,
+  compareOrders,
   replayAll,
 } from "./migration-conflicts/analyze.mjs";
 
@@ -47,6 +48,33 @@ function baseFileNames(ref) {
     "packages/persistence-sqlite/src/migrations/",
   ]);
   return new Set(listing.split("\n").map((line) => line.split("/").pop()));
+}
+
+export function changedExistingFiles(ref, repository = root) {
+  const prefix = "packages/persistence-sqlite/src/migrations/";
+  const run = (args) =>
+    execFileSync("git", args, {
+      cwd: repository,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  const problems = [];
+  const baseFiles = run(["ls-tree", "-r", ref, "--", prefix])
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [meta, file] = line.split("\t");
+      return { blob: meta.split(" ")[2], file: file.slice(prefix.length) };
+    });
+  for (const { blob, file } of baseFiles) {
+    const path = join(repository, prefix, file);
+    if (!existsSync(path)) {
+      problems.push(`EXISTING_MIGRATION_REMOVED ${file}`);
+      continue;
+    }
+    if (run(["hash-object", path]) !== blob) problems.push(`EXISTING_MIGRATION_CHANGED ${file}`);
+  }
+  return problems;
 }
 
 export function loadEntries() {
@@ -122,6 +150,14 @@ function main() {
         `LEGACY_SET_CHANGED expected ${LEGACY_MIGRATION_COUNT} numbered files, found ${legacy.length}`,
       );
     problems.push(...replayAll([...legacy, ...stamped]));
+    const appliedFlag = process.argv.indexOf("--applied");
+    if (appliedFlag !== -1)
+      problems.push(
+        ...compareOrders({
+          entries: [...legacy, ...stamped],
+          appliedIds: process.argv[appliedFlag + 1].split(",").filter(Boolean),
+        }),
+      );
     if (problems.length > 0) {
       for (const problem of problems) console.error(`MIGRATION_CONFLICT ${problem}`);
       process.exit(1);
@@ -138,6 +174,7 @@ function main() {
       `LEGACY_SET_CHANGED expected ${LEGACY_MIGRATION_COUNT} numbered files, found ${legacy.length}`,
     );
   const ref = baseRef();
+  problems.push(...changedExistingFiles(ref));
   const known = baseFileNames(ref);
   const base = [...legacy, ...stamped.filter((entry) => known.has(entry.file))];
   const added = stamped.filter((entry) => !known.has(entry.file));

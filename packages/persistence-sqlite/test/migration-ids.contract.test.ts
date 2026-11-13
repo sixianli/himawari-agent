@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -254,5 +255,17 @@ describe("[MIGRATION-IDS] timestamped migrations", () => {
   it("computes the bundled fingerprint synchronously the same way as the loaded set", async () => {
     const migrations = await loadBundledMigrations();
     expect(bundledSchemaFingerprint()).toBe(describeMigrationSet(migrations).fingerprint);
+  });
+
+  it("refuses a file it does not recognize when computing the bundled fingerprint", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-migration-dir-"));
+    try {
+      await writeFile(path.join(directory, "notes.txt"), "stray");
+      expect(() => bundledSchemaFingerprint(pathToFileURL(`${directory}/`))).toThrow(
+        "Unrecognized file in the migration directory: notes.txt",
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

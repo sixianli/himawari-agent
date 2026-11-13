@@ -8,7 +8,45 @@ const FORBIDDEN = [
 ];
 
 function withoutComments(sql) {
-  return sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ");
+  let output = "";
+  let index = 0;
+  while (index < sql.length) {
+    const char = sql[index];
+    const next = sql[index + 1];
+    if (char === "'" || char === '"' || char === "`" || char === "[") {
+      const close = char === "[" ? "]" : char;
+      let end = index + 1;
+      while (end < sql.length) {
+        if (sql[end] === close) {
+          if (close !== "]" && sql[end + 1] === close) {
+            end += 2;
+            continue;
+          }
+          break;
+        }
+        end += 1;
+      }
+      output += sql.slice(index, end + 1);
+      index = end + 1;
+    } else if (char === "-" && next === "-") {
+      const end = sql.indexOf("\n", index);
+      output += " ";
+      index = end === -1 ? sql.length : end;
+    } else if (char === "/" && next === "*") {
+      const end = sql.indexOf("*/", index + 2);
+      output += " ";
+      index = end === -1 ? sql.length : end + 2;
+    } else {
+      output += char;
+      index += 1;
+    }
+  }
+  return output;
+}
+
+function forbiddenOutsideLiterals(sql) {
+  const stripped = withoutComments(sql).replace(/'(?:[^']|'')*'/g, "''");
+  return FORBIDDEN.filter(({ pattern }) => pattern.test(stripped)).map(({ label }) => label);
 }
 
 function literals(sql) {
@@ -70,8 +108,30 @@ export function diffSnapshots(before, after) {
   return { created, altered, dropped };
 }
 
-function schemaDump(database) {
-  return [...snapshot(database)].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+function schemaDump(database, tables = []) {
+  const structure = [...snapshot(database)].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const rows = tableRows(database);
+  const data = [...tables].sort().map((name) => [name, [...(rows.get(name) ?? [])].sort()]);
+  return JSON.stringify([structure, data]);
+}
+
+function writtenTables(before, after, created) {
+  const written = new Set(created);
+  for (const [name, rows] of after) {
+    const previous = before.get(name);
+    if (!previous || [...rows].some((row) => !previous.has(row))) written.add(name);
+  }
+  return written;
+}
+
+function integrityProblems(database, label) {
+  const problems = [];
+  const integrity = database.pragma("integrity_check", { simple: true });
+  if (integrity !== "ok") problems.push(`INTEGRITY_FAILS ${label}: ${integrity}`);
+  const violations = database.pragma("foreign_key_check");
+  if (violations.length > 0)
+    problems.push(`FOREIGN_KEY_VIOLATION ${label}: ${violations.length} rows`);
+  return problems;
 }
 
 function open() {
@@ -100,10 +160,8 @@ export function analyzeMigrations({ base, added, meta = {} }) {
   for (const entry of added) {
     if (ids.has(entry.id)) problems.push(`DUPLICATE_ID ${entry.id}`);
     ids.add(entry.id);
-    for (const { pattern, label } of FORBIDDEN) {
-      if (pattern.test(withoutComments(entry.sql)))
-        problems.push(`FORBIDDEN_STATEMENT ${entry.file} uses ${label}`);
-    }
+    for (const label of forbiddenOutsideLiterals(entry.sql))
+      problems.push(`FORBIDDEN_STATEMENT ${entry.file} uses ${label}`);
   }
   const baseIds = new Set(base.map((entry) => entry.id));
   for (const entry of added) {
@@ -121,6 +179,7 @@ export function analyzeMigrations({ base, added, meta = {} }) {
   baseline.close();
 
   const touched = new Map();
+  const written = new Map();
   for (const entry of added) {
     const database = cloneFrom(base);
     const rowsBefore = tableRows(database);
@@ -179,6 +238,8 @@ export function analyzeMigrations({ base, added, meta = {} }) {
         }
       }
     }
+    const createdTables = diff.created.filter((key) => key.startsWith("table:")).map(tableOf);
+    written.set(entry.id, writtenTables(rowsBefore, rowsAfter, createdTables));
     touched.set(entry.id, new Set([...diff.created.map(tableOf), ...changedExisting]));
   }
   if (problems.length > 0) return problems;
@@ -205,8 +266,11 @@ export function analyzeMigrations({ base, added, meta = {} }) {
         forward?.close();
         continue;
       }
-      if (JSON.stringify(schemaDump(forward)) !== JSON.stringify(schemaDump(reverse))) {
-        problems.push(`ORDER_DEPENDENT ${left.file} and ${right.file} produce different schemas`);
+      const compared = new Set([...written.get(left.id), ...written.get(right.id)]);
+      if (schemaDump(forward, compared) !== schemaDump(reverse, compared)) {
+        problems.push(
+          `ORDER_DEPENDENT ${left.file} and ${right.file} produce different schemas or data`,
+        );
       }
       forward.close();
       reverse.close();
@@ -219,13 +283,51 @@ export function analyzeMigrations({ base, added, meta = {} }) {
         left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
       ),
     );
-    if (JSON.stringify(schemaDump(production)) !== JSON.stringify(schemaDump(fresh))) {
+    const everything = new Set([...written.values()].flatMap((names) => [...names]));
+    if (schemaDump(production, everything) !== schemaDump(fresh, everything)) {
       problems.push(
         "ORDER_DEPENDENT a fresh database (by id) differs from the production order (applied after the existing ones)",
       );
     }
+    problems.push(...integrityProblems(production, "production order"));
     production.close();
     fresh.close();
+  } catch (error) {
+    problems.push(`FULL_REPLAY_FAILS ${error.message}`);
+  }
+  return problems;
+}
+
+export function compareOrders({ entries, appliedIds }) {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const unknown = appliedIds.filter((id) => !byId.has(id));
+  if (unknown.length > 0) return [`APPLIED_ID_NOT_IN_COMMIT ${unknown.slice(0, 3).join(", ")}`];
+  const applied = appliedIds.map((id) => byId.get(id));
+  const appliedSet = new Set(appliedIds);
+  const pending = entries
+    .filter((entry) => !appliedSet.has(entry.id))
+    .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+  const fresh = [...entries].sort((left, right) =>
+    left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+  );
+  const problems = [];
+  try {
+    const before = cloneFrom(applied);
+    const beforeRows = tableRows(before);
+    const production = cloneFrom([...applied, ...pending]);
+    const afterRows = tableRows(production);
+    const created = [...afterRows.keys()].filter((name) => !beforeRows.has(name));
+    const compared = writtenTables(beforeRows, afterRows, created);
+    const reference = cloneFrom(fresh);
+    if (schemaDump(production, compared) !== schemaDump(reference, compared)) {
+      problems.push(
+        "ORDER_DEPENDENT the production order (existing first, then the pending ones) differs from a fresh database",
+      );
+    }
+    problems.push(...integrityProblems(production, "production order"));
+    before.close();
+    production.close();
+    reference.close();
   } catch (error) {
     problems.push(`FULL_REPLAY_FAILS ${error.message}`);
   }
@@ -238,10 +340,8 @@ export function replayAll(entries) {
   for (const entry of entries) {
     if (seen.has(entry.id)) problems.push(`DUPLICATE_ID ${entry.id}`);
     seen.add(entry.id);
-    for (const { pattern, label } of FORBIDDEN) {
-      if (pattern.test(withoutComments(entry.sql)))
-        problems.push(`FORBIDDEN_STATEMENT ${entry.file} uses ${label}`);
-    }
+    for (const label of forbiddenOutsideLiterals(entry.sql))
+      problems.push(`FORBIDDEN_STATEMENT ${entry.file} uses ${label}`);
   }
   if (problems.length > 0) return problems;
   try {

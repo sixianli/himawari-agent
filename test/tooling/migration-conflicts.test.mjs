@@ -1,6 +1,14 @@
 import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { changedExistingFiles } from "../../scripts/check-migration-conflicts.mjs";
 import { describe, expect, it } from "vitest";
-import { analyzeMigrations, replayAll } from "../../scripts/migration-conflicts/analyze.mjs";
+import {
+  analyzeMigrations,
+  compareOrders,
+  replayAll,
+} from "../../scripts/migration-conflicts/analyze.mjs";
 import { nextMigrationId, validName } from "../../scripts/new-migration.mjs";
 
 const base = [
@@ -181,6 +189,68 @@ describe("reverse cases for data, removed values, escapes and main ordering", ()
   });
 });
 
+describe("data, string literals and the production order", () => {
+  const kinds = [
+    {
+      id: "0001",
+      file: "0001_start.sql",
+      name: "start",
+      sql: "CREATE TABLE kinds (kind TEXT PRIMARY KEY, label TEXT);",
+    },
+  ];
+
+  it("rejects two migrations that write different values under the same key", () => {
+    const added = [
+      entry("20261114000001", "label_a", "INSERT OR REPLACE INTO kinds VALUES ('x', 'a');"),
+      entry("20261114000002", "label_b", "INSERT OR REPLACE INTO kinds VALUES ('x', 'b');"),
+    ];
+    expect(
+      analyzeMigrations({ base: kinds, added }).some((line) => line.startsWith("ORDER_DEPENDENT")),
+    ).toBe(true);
+  });
+
+  it("rejects a migration that deletes rows another new migration inserts", () => {
+    const added = [
+      entry("20261114000001", "insert_x", "INSERT INTO kinds VALUES ('x', 'a');"),
+      entry("20261114000002", "delete_all", "DELETE FROM kinds;"),
+    ];
+    expect(
+      analyzeMigrations({ base: kinds, added }).some((line) => line.startsWith("ORDER_DEPENDENT")),
+    ).toBe(true);
+  });
+
+  it("is not fooled by comment markers inside string literals", () => {
+    const sql =
+      "INSERT INTO kinds VALUES ('/*', 'x'); ATTACH '/tmp/z.db' AS z; INSERT INTO kinds VALUES ('*/', 'y');";
+    expect(
+      analyzeMigrations({ base: kinds, added: [entry("20261114000001", "tricky", sql)] })[0],
+    ).toMatch(/^FORBIDDEN_STATEMENT/);
+    expect(
+      analyzeMigrations({
+        base: kinds,
+        added: [entry("20261114000001", "words", "INSERT INTO kinds VALUES ('attach', 'vacuum');")],
+      }),
+    ).toEqual([]);
+  });
+
+  it("rejects a production order that differs from a fresh database", () => {
+    const first = entry("20261114000001", "add_label", "ALTER TABLE kinds ADD COLUMN extra TEXT;");
+    const second = entry(
+      "20261114000009",
+      "copy",
+      "CREATE TABLE kinds_copy AS SELECT * FROM kinds;",
+    );
+    const entries = [...kinds, first, second];
+    expect(compareOrders({ entries, appliedIds: ["0001", "20261114000009"] })[0]).toMatch(
+      /^ORDER_DEPENDENT/,
+    );
+    expect(compareOrders({ entries, appliedIds: ["0001", "20261114000001"] })).toEqual([]);
+    expect(compareOrders({ entries, appliedIds: ["0001", "99999999999999"] })[0]).toMatch(
+      /^APPLIED_ID_NOT_IN_COMMIT/,
+    );
+  });
+});
+
 describe("full replay", () => {
   it("passes an ordered set that applies and fails one that does not", () => {
     const first = entry("0001", "start", "CREATE TABLE t (id INTEGER);");
@@ -223,5 +293,37 @@ describe("check-migration-conflicts command", () => {
       },
     );
     expect(result.status).not.toBe(0);
+  });
+});
+
+describe("existing migration files stay as they were", () => {
+  it("reports a changed, renamed or removed file", () => {
+    const repository = mkdtempSync(join(tmpdir(), "migration-immutable-"));
+    try {
+      const directory = join(repository, "packages/persistence-sqlite/src/migrations");
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(join(directory, "0001_a.sql"), "CREATE TABLE a (id INTEGER);");
+      writeFileSync(join(directory, "0002_b.sql"), "CREATE TABLE b (id INTEGER);");
+      writeFileSync(join(directory, "0003_c.sql"), "CREATE TABLE c (id INTEGER);");
+      const git = (...args) =>
+        execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], {
+          cwd: repository,
+          stdio: "ignore",
+        });
+      git("init", "-q");
+      git("add", "-A");
+      git("commit", "-q", "-m", "x");
+      expect(changedExistingFiles("HEAD", repository)).toEqual([]);
+      writeFileSync(join(directory, "0001_a.sql"), "CREATE TABLE a (id INTEGER, extra TEXT);");
+      renameSync(join(directory, "0002_b.sql"), join(directory, "0002_renamed.sql"));
+      rmSync(join(directory, "0003_c.sql"));
+      expect(changedExistingFiles("HEAD", repository)).toEqual([
+        "EXISTING_MIGRATION_CHANGED 0001_a.sql",
+        "EXISTING_MIGRATION_REMOVED 0002_b.sql",
+        "EXISTING_MIGRATION_REMOVED 0003_c.sql",
+      ]);
+    } finally {
+      rmSync(repository, { recursive: true, force: true });
+    }
   });
 });

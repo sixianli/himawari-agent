@@ -739,13 +739,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
       expect(saved.prepare("SELECT max(sequence) FROM schema_migration_ledger").pluck().get()).toBe(
         49,
       );
-      expect(
-        saved
-          .prepare(
-            "SELECT key,value FROM schema_metadata WHERE key <> 'schema_fingerprint' ORDER BY key",
-          )
-          .all(),
-      ).toEqual([
+      expect(saved.prepare("SELECT key,value FROM schema_metadata ORDER BY key").all()).toEqual([
         { key: "current_sequence", value: "49" },
         { key: "minimum_writer_sequence", value: "49" },
       ]);
@@ -763,13 +757,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
       expect(
         database.prepare("SELECT max(sequence) FROM schema_migration_ledger").pluck().get(),
       ).toBe(LATEST_MIGRATION_SEQUENCE);
-      expect(
-        database
-          .prepare(
-            "SELECT key,value FROM schema_metadata WHERE key <> 'schema_fingerprint' ORDER BY key",
-          )
-          .all(),
-      ).toEqual([
+      expect(database.prepare("SELECT key,value FROM schema_metadata ORDER BY key").all()).toEqual([
         { key: "current_sequence", value: String(LATEST_MIGRATION_SEQUENCE) },
         { key: "minimum_writer_sequence", value: String(LATEST_MIGRATION_SEQUENCE) },
       ]);
@@ -861,6 +849,21 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
       WHERE key IN ('current_sequence','minimum_writer_sequence')`),
     );
     await rejectsUnchanged(f, inspectArgs(f), "SANDBOX_RESERVATION_ADMIN_SCHEMA_UNSUPPORTED");
+    await rejectsUnchanged(
+      f,
+      confirmArgs(f, listed.digest),
+      "SANDBOX_RESERVATION_ADMIN_SCHEMA_UNSUPPORTED",
+    );
+  });
+
+  it("refuses to write when the applied migrations are a different set of the same size", async () => {
+    const f = await fixture();
+    const listed = await inspect(f);
+    withDatabase(f, (database) =>
+      database.exec(
+        `UPDATE schema_migration_ledger SET digest='${"f".repeat(64)}' WHERE sequence=1`,
+      ),
+    );
     await rejectsUnchanged(
       f,
       confirmArgs(f, listed.digest),

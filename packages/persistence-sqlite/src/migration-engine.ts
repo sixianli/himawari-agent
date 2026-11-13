@@ -776,21 +776,30 @@ export function migrationSetFingerprint(
   return sha256(`himawari.migration-set.v1\n${lines.join("")}`);
 }
 
-export function bundledSchemaFingerprint(): string {
+export function bundledSchemaFingerprint(directory: URL = MIGRATION_FILE_SYNC_DIRECTORY): string {
   const entries = [
     ...bundledMigrationFiles.map((metadata) => ({
       id: legacyMigrationId(metadata.sequence),
       file: metadata.file,
     })),
-    ...readdirSync(MIGRATION_FILE_SYNC_DIRECTORY)
-      .map((file) => ({ file, match: TIMESTAMPED_MIGRATION_FILE.exec(file) }))
-      .filter((entry) => entry.match !== null)
-      .map((entry) => ({ id: (entry.match as RegExpExecArray)[1] as string, file: entry.file })),
+    ...readdirSync(directory).flatMap((file) => {
+      if (bundledMigrationFiles.some((metadata) => metadata.file === file)) return [];
+      if (MIGRATION_META_FILE.test(file)) return [];
+      const match = TIMESTAMPED_MIGRATION_FILE.exec(file);
+      if (!match) {
+        throw new SqliteMigrationError(
+          SQLITE_MIGRATION_ERROR_CODES.DEFINITION_INVALID,
+          `Unrecognized file in the migration directory: ${file}`,
+          { file },
+        );
+      }
+      return [{ id: match[1] as string, file }];
+    }),
   ];
   return migrationSetFingerprint(
     entries.map((entry) => ({
       id: entry.id,
-      digest: sha256(readFileSync(new URL(entry.file, MIGRATION_FILE_SYNC_DIRECTORY), "utf8")),
+      digest: sha256(readFileSync(new URL(entry.file, directory), "utf8")),
     })),
   );
 }
@@ -1002,12 +1011,7 @@ function readMetadataNumber(database: SqliteDatabase, key: string): number {
   return value === undefined ? 0 : Number(value);
 }
 
-function writeSchemaMetadata(
-  database: SqliteDatabase,
-  sequence: number,
-  fingerprint: string,
-  updatedAt: string,
-): void {
+function writeSchemaMetadata(database: SqliteDatabase, sequence: number, updatedAt: string): void {
   const statement = database.prepare(`
     INSERT INTO schema_metadata (key, value, updated_at)
     VALUES (?, ?, ?)
@@ -1015,7 +1019,6 @@ function writeSchemaMetadata(
   `);
   statement.run("current_sequence", String(sequence), updatedAt);
   statement.run("minimum_writer_sequence", String(sequence), updatedAt);
-  statement.run("schema_fingerprint", fingerprint, updatedAt);
 }
 
 function verifySnapshot(
@@ -1128,7 +1131,7 @@ export function applyMigrations(
           migration.id.length === 4 ? null : migration.id,
         );
       applied.push({ id: migration.id, digest: migration.digest });
-      writeSchemaMetadata(database, sequence, migrationSetFingerprint(applied), appliedAt);
+      writeSchemaMetadata(database, sequence, appliedAt);
       return sequence;
     });
     appliedSequences.push(applyOne.immediate());

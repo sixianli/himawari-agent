@@ -117,7 +117,7 @@ date: "2026-11-14"
 
 - 引擎启动时扫描迁移目录，和冻结的旧清单合成一份清单，这是唯一的来源。0001 到冻结时 main 上最后一个四位号的数组原样冻结成“旧清单”，以后不再往里加；`LATEST_MIGRATION_SEQUENCE` 改成这份合成清单的个数（现在取数组最后一项，`migration-engine.ts:747`，冻结后就不会再变，必须改）。
 - 所有扫描迁移目录的脚本（`make-packet.py`、`check-audit-schema-range.mjs` 等）遇到既不是旧四位格式、也不是新时间戳格式的文件一律报错，不许静默跳过。现在它们只认四位号，新文件会被悄悄忽略，打包会以为没有新迁移。
-- 审计脚本 `workspace-lifecycle-audit.mjs` 不再按版本号判断：删掉 `SUPPORTED_SCHEMA_MAX` 和 `version >= 33` 这类按号开关，改成数老清单（`LEGACY_MIGRATION_COUNT`，现在是 95）和检查它读的 16 张表（`AUDIT_READ_TABLES`）都在；版本不低于 95 时表缺了就拒绝，低于 95 的老库保留原来的按版本号读法，因为它们读的表本来就可能还没建。新迁移碰了这些表，`check-audit-schema-range.mjs` 要求在 `AUDIT_REVIEWED_MIGRATIONS` 里登记审计脚本已复核（I-46 要防的就是“新迁移改了审计读的表”）。
+- 审计脚本 `workspace-lifecycle-audit.mjs` 不再按版本号判断：删掉 `SUPPORTED_SCHEMA_MAX` 和 `version >= 33` 这类按号开关，改成数老清单（`LEGACY_MIGRATION_COUNT`，现在是 95）和检查它读的 16 张表（`AUDIT_READ_TABLES`）都在；版本不低于 95 时表缺了就拒绝，低于 95 的老库保留原来的按版本号读法，因为它们读的表本来就可能还没建。新迁移碰了这些表，`check-audit-schema-range.mjs` 要求在 `AUDIT_REVIEWED_MIGRATIONS` 里登记审计脚本已复核（I-46 要防的就是“新迁移改了审计读的表”）。代价：这道复核只在仓库检查里，生产机上直接跑审计脚本时，遇到带编号的新迁移不再像以前那样因“版本太高”而拒绝；这是有意的取舍，因为再写死一个上界就要每个迁移改一次共用的行，那正是要去掉的。
 - 写死版本号的测试改成从清单推算（`docs/lessons.md:667` 已建议的方向）。
 
 ### 三、库里按“跑过哪些”记，晚合的也能补跑（对应根因 1、2）
@@ -130,7 +130,7 @@ date: "2026-11-14"
 ### 四、版本身份改成“个数 + 集合 + 指纹”，回滚保护不变（对应根因 2 带来的连锁）
 
 - 新增一个读取函数 `readSchemaIdentity`，返回 `{ 个数, 排好序的编号, 指纹 }`。指纹 = 对“每行 `<编号> <摘要>`，按编号排序、换行连接”算 SHA-256，不含跑的时间和先后。所有读版本的地方只用它，不再各自 `MAX(sequence)`：引擎的 `assertWritableSchema`（现在只收一个整数，改成收期望的身份）、`sqlite-worker.ts`、恢复点、权限转移、数据导出和聊天导出的清单（`production-data-export.ts:321`、`production-chat-export.ts:53`）、管理命令（`apps/admin-cli/src/` 的 data、memory、thread 命令和 `index.ts`）、沙箱预留管理。
-- `schema_metadata` 的 `current_sequence`、`minimum_writer_sequence` 继续写，值是个数，供只比整数的老代码用；新增 `schema_fingerprint`。
+- `schema_metadata` 的 `current_sequence`、`minimum_writer_sequence` 继续写，值是个数，供只比整数的老代码用。指纹不另存一份：每次都从记录表里的编号和摘要现算（`readSchemaIdentity`），存下来的副本没人读，只会过期。
 - 回滚保护：服务启动时会先跑 `applyMigrations`（`product-state-repository.ts:278`），老程序遇到库里有它不认识的迁移，在 `validateLedger` 报 `UNKNOWN_APPLIED_MIGRATION`、拒绝启动；这和今天回滚跨过一个迁移时完全一样，回滚靠的是上线前的快照。新程序在“个数相同、集合不同”（测试服务器跑过分支版本）时同样拒绝。
 - 备份清单（恢复点、权限转移）和导出清单加可选字段 `schemaFingerprint`，参与原有的认证；改动前的清单没有这个字段，按个数比（那时只有旧清单，个数相同就是同一套）。
 
@@ -156,7 +156,7 @@ date: "2026-11-14"
 
 ## 冲突怎样自动发现
 
-新增检查 `npm run check:migration-conflicts`，加进 `package.json` 的 `check:steps`（`npm run check` 只跑这里列出的步骤，`scripts/run-all-checks.mjs:31`）、CI 和打包（见上一节）。它在内存里建库跑迁移，有超时；耗时在实施时实测后写进本节。
+新增检查 `npm run check:migration-conflicts`，加进 `package.json` 的 `check:steps`（`npm run check` 只跑这里列出的步骤，`scripts/run-all-checks.mjs:31`）、CI 和打包（见上一节）。它在内存里建库跑迁移；打包脚本调它时有 5 分钟上限，其余靠 CI 作业自己的超时（见“后果和风险”）。
 
 起初的设计是“只和本 PR 写代码时看不到的迁移比”（按 `git merge-base` 划分）。DeepSeek 审核指出：PR 只要把 main 并进来，旧的迁移就不再算“看不到的”，过时的重建照样能过；空库里又没有数据，暴露不了“搬旧数据时违反新约束”。所以改成下面三条，都不依赖 PR 什么时候并过 main：
 
@@ -167,7 +167,7 @@ date: "2026-11-14"
    - 顺序乙：全部按编号排序跑（模拟新装的库）。
    - 不同就失败。例如两个迁移都给同一张表 `ADD COLUMN`、而本 PR 的编号更小，两种顺序列的先后不同，会被拦下。
 
-另外，main 上每次合并后 CI 再跑一次第 3 条，顺序甲改为“按迁移文件进入 main 的先后”（从 git 历史取）；打包时在目标提交上再跑一次（硬门槛，不过不打包）。
+另外，main 上的常规检查对全部迁移按编号完整重放一次；打包时在目标提交上再跑一次完整重放，并用生产库已应用的编号做“生产顺序对新库”的结构和数据比较（硬门槛，不过不打包）。“按迁移文件进入 main 的先后”这种从 git 历史取顺序的做法没有做：生产库实际应用的顺序已经由 S0 读出的编号给出，更准。
 
 反向用例（实施时先在未修复的代码上证明会失败）：`perception_records` 场景必须失败，并进 main 后仍必须失败；合法的晚合小号必须通过；编号重复必须失败；两个迁移给同一参照表插不同行必须通过；老程序遇到新记录表的错误码；个数相同、集合不同必须被拒；旧备份、旧导出、打包、S0、S7、S9、raw-copy 的兼容。
 
@@ -229,6 +229,9 @@ date: "2026-11-14"
 - 新迁移多了一道约束：改动已有结构要写 `.meta.json`。这是有意的：这类迁移正是会出事的那类，值得多写两行。
 - 改动面不小：引擎、`readSchemaIdentity` 的十几个使用方、打包和生产机脚本及其测试数据、审计脚本、管理命令、导出导入、冲突检查和反向用例，都在引擎 PR 里一次改完，由现有的打包检查（`run-packet-checks.py`、`make-packet.py` 的拒绝）和新加的测试覆盖。
 - 合并前本地检查依赖 `origin/main` 是最新的；检查开头自动 `git fetch origin main`，拿不到就失败，不默默放行。
+- 检查本身没有总超时，只有打包脚本调它时给了 5 分钟的上限；影子库在内存里同步执行迁移，病态的 SQL 能拖住 CI，这个风险接受，靠 CI 自己的作业超时兜底。
+- 数据导出和聊天导出清单仍只记整数 `migrationSequence`，不加指纹：它描述的是写出它的程序，不是库；导出的来源库在管理命令里已按指纹核对，在服务里已通过启动时的迁移核对。
+- main 合并后的 CI 和打包前的检查，顺序等价只在打包时用 S0 读到的生产库已应用编号做“生产顺序对新库”的比较（`--applied`）；main 上的常规检查只做按编号的完整重放，因为 main 上没有“本次新增”的迁移可以比。
 - 与发给模型的内容无关：迁移编号、指纹都不进模型请求，不影响 KV 缓存（DeepSeek 审核在全仓搜索后说没有发现 `packages/prompt-catalog` 和 Pi 适配器读这些值；这是模型的搜索结论，不是本线程亲自核对的）。
 
 [返回阅读导航](#contents)

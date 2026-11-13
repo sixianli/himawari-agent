@@ -145,8 +145,14 @@ def target_migration_ids(commit):
     return ['%04d' % number for number in legacy] + [entry[0] for entry in timestamped]
 
 
-def check_migration_replay(commit):
-    child = subprocess.run(['node', str(REPO / 'scripts' / 'check-migration-conflicts.mjs'), '--commit', commit], capture_output=True, text=True, check=False)
+def check_migration_replay(commit, applied_ids=None):
+    command = ['node', str(REPO / 'scripts' / 'check-migration-conflicts.mjs'), '--commit', commit]
+    if applied_ids is not None:
+        command += ['--applied', ','.join(applied_ids)]
+    try:
+        child = subprocess.run(command, capture_output=True, text=True, check=False, timeout=300)
+    except subprocess.TimeoutExpired:
+        raise PacketError('MIGRATION_REPLAY_TIMED_OUT ' + commit)
     if child.returncode != 0:
         raise PacketError('MIGRATION_REPLAY_FAILED ' + (child.stderr or child.stdout).strip()[:400])
 
@@ -396,6 +402,8 @@ def schema_parameters(parameters, s0):
     if target < current:
         refuse('PACKET_COMMIT_OLDER_THAN_PRODUCTION_SCHEMA', 'production=' + str(current) + ' commit=' + str(target))
     applied_ids = s0.get('migrationIds')
+    if applied_ids is not None:
+        check_migration_replay(parameters['COMMIT'], applied_ids)
     ledger = migration_ledger(parameters['COMMIT'], current, target, applied_ids) if target != current or applied_ids is not None else []
     return {'CURRENT_SCHEMA': current, 'PREVIOUS_SCHEMA': current - 1, 'MIGRATION_LEDGER': json.dumps(ledger, separators=(',', ':'))}
 
