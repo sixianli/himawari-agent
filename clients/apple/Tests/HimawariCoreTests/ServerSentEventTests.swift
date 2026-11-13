@@ -16,6 +16,14 @@ import Testing
         #expect(events == [ServerSentEvent(event: "x", data: "one\ntwo", id: nil)])
     }
 
+    @Test func endsLinesOnCarriageReturnAloneAndOnCRLFSplitAcrossChunks() {
+        var parser = ServerSentEventParser()
+        #expect(parser.feed("event: x\rdata: one\r").isEmpty)
+        #expect(parser.feed("\ndata: two\r").isEmpty)
+        #expect(parser.feed("\n\r\n") == [ServerSentEvent(event: "x", data: "one\ntwo", id: nil)])
+        #expect(parser.feed("data: three\r\r") == [ServerSentEvent(event: "message", data: "three", id: nil)])
+    }
+
     @Test func commentsAloneDispatchNothing() {
         var parser = ServerSentEventParser()
         #expect(parser.feed(": ping\n\n: ping\n\n").isEmpty)
