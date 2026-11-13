@@ -33,6 +33,7 @@ import { runMemoryCommand } from "./memory-command.js";
 import { runPushCommand } from "./push-command.js";
 import { runSandboxCommand } from "./sandbox-command.js";
 import { lockStoppedTarget } from "./stopped-target-lock.js";
+import { resolveTenantArguments, runTenantCommand } from "./tenant-command.js";
 import { runThreadCommand } from "./thread-command.js";
 import { runWorkspaceCommand } from "./workspace-command.js";
 
@@ -744,11 +745,16 @@ async function deletionCommand(parsed: ParsedAdminCommand, output: NodeJS.Writab
 }
 
 export async function runAdminCli(
-  arguments_: readonly string[],
+  requestedArguments: readonly string[],
   output: NodeJS.WritableStream = process.stdout,
   errorOutput: NodeJS.WritableStream = process.stderr,
 ): Promise<number> {
   try {
+    const arguments_ = await resolveTenantArguments(requestedArguments);
+    if (arguments_[0] === "tenant") {
+      output.write(`${JSON.stringify(await runTenantCommand(arguments_))}\n`);
+      return 0;
+    }
     if (arguments_[0] === "capabilities") {
       output.write(`${JSON.stringify(await runCapabilitiesCommand(arguments_))}\n`);
       return 0;
