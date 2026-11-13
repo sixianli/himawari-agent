@@ -27,6 +27,7 @@ public final class AppModel {
     public private(set) var pairedAt: Date?
 
     @ObservationIgnored public let api: DeviceAPI
+    @ObservationIgnored public let home = HomeFeedModel(source: nil)
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel

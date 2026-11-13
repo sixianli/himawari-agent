@@ -78,10 +78,12 @@ public struct DecisionRow: View {
     private let title: String
     private let detail: String?
     private let status: String
-    private let decline: String
+    private let decline: String?
     private let confirm: String
     private let openLabel: String
     private let busy: Bool
+    private let icon: IconName
+    private let statusTint: Color
     private let open: () -> Void
     private let respond: (Bool) -> Void
 
@@ -89,10 +91,12 @@ public struct DecisionRow: View {
         title: String,
         detail: String?,
         status: String,
-        decline: String,
+        decline: String?,
         confirm: String,
         openLabel: String,
         busy: Bool,
+        icon: IconName = .handStop,
+        statusTint: Color = .hmSun,
         open: @escaping () -> Void,
         respond: @escaping (Bool) -> Void
     ) {
@@ -103,14 +107,16 @@ public struct DecisionRow: View {
         self.confirm = confirm
         self.openLabel = openLabel
         self.busy = busy
+        self.icon = icon
+        self.statusTint = statusTint
         self.open = open
         self.respond = respond
     }
 
     public var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Icon(.handStop, size: DesignTokens.IconSize.todayRow)
-                .foregroundStyle(Color.hmSun)
+            Icon(icon, size: DesignTokens.IconSize.todayRow)
+                .foregroundStyle(statusTint)
                 .frame(height: DesignTokens.TypeScale.body.lineHeight)
             VStack(alignment: .leading, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -129,10 +135,12 @@ public struct DecisionRow: View {
                 HStack(spacing: 6) {
                     Text(status)
                         .hmType(DesignTokens.TypeScale.caption)
-                        .foregroundStyle(Color.hmSun)
+                        .foregroundStyle(statusTint)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Button(decline) { respond(false) }
-                        .buttonStyle(RowPillButtonStyle(filled: false))
+                    if let decline {
+                        Button(decline) { respond(false) }
+                            .buttonStyle(RowPillButtonStyle(filled: false))
+                    }
                     Button(confirm) { respond(true) }
                         .buttonStyle(RowPillButtonStyle(filled: true))
                 }

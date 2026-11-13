@@ -8,6 +8,7 @@
 - [在云端跑单元测试](#in-the-cloud)
 - [和服务器对齐的固定测试数据](#vectors)
 - [图标](#icons)
+- [himawari 字样](#wordmark)
 - [截图对照原型](#ui-review)
 
 <a id="layout"></a>
@@ -21,7 +22,7 @@
 | `HimawariDesign` | 颜色（浅色深色两套）、Himawari 说的话用的衬线字、卡片、胶囊按钮、玻璃圆钮、页签栏、葵盘标志、图标 | 第 2 批；别的批要加共用组件先找第 2 批线程 |
 | `HimawariChat` | 对话列表和聊天 | 第 2 批 |
 | `HimawariManage` | 记忆、设置等管理页面；现在只有两个入口占位 | 第 11 批 |
-| `HimawariShell` | 三页签外壳、配对页、整个 App 的状态 | 第 2 批 |
+| `HimawariShell` | 三页签外壳、“今天”页（`Today/`，按服务器 `home.read` 给的首页条目照原顺序画）、配对页、整个 App 的状态 | 第 2 批；“今天”页由“做 iPhone 今天页”线程做 |
 
 `App/Himawari.xcodeproj` 是 App 本身的 Xcode 工程，只有一个入口文件 `App/iOS/HimawariApp.swift`，其余代码都从上面的包里来。
 
@@ -79,6 +80,20 @@ node clients/apple/scripts/make-icons.mjs /tmp/tabler/package clients/apple/Sour
 ```
 
 脚本把每个 SVG 改好线宽后放进 `Icons.xcassets`（Xcode 的图片资源目录），按模板图片处理；许可证原文和版本号放进 `Licenses/`，以后的致谢页（第 11 批设置页）用 `ThirdPartyLicense.all` 读出来显示，第 2 批还没有界面用它。
+
+[返回目录](#apple-clients)
+
+<a id="wordmark"></a>
+## himawari 字样
+
+“今天”页左上角的 himawari 字样是一张矢量图（`Sources/HimawariDesign/Resources/Icons.xcassets/wordmark.imageset/wordmark.svg`），字形取自 Cormorant Garamond（一款开源衬线字体，SIL OFL 许可证）600 斜体 32 点，App 里不带字体文件。要重新生成（需要 Python 的 `fonttools` 和 `uharfbuzz` 两个包）：
+
+```bash
+mkdir -p /tmp/cormorant && cd /tmp/cormorant && npm pack @fontsource/cormorant-garamond@5.2.6 && tar xzf fontsource-cormorant-garamond-5.2.6.tgz && cd -
+python3 clients/apple/scripts/make-wordmark.py /tmp/cormorant/package/files/cormorant-garamond-latin-600-italic.woff clients/apple/Sources/HimawariDesign/Resources/Icons.xcassets/wordmark.imageset/wordmark.svg
+```
+
+旁边的向日葵不是图片，是照原型的画法（`flower.js`）用代码画的：花瓣、花盘和种子的位置在 `Sources/HimawariCore/CornerFlower.swift`，`Tests/HimawariCoreTests/CornerFlowerTests.swift` 核对每片花瓣的尖和原型算出来的一样。
 
 [返回目录](#apple-clients)
 

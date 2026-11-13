@@ -19,7 +19,6 @@
 "tab.memory" = "記憶";
 "talk" = "Himawari に話す";
 "settings" = "自分と設定";
-"placeholder.notConnected" = "このページはまだつながっていません";
 "common.close" = "閉じる";
 "pairing.waitingServer" = "%@ · 待っています";
 "pairing.retry" = "もう一度";
@@ -41,3 +40,17 @@
 "pairing.problem.storage.title" = "この端末の保存領域を一時的に開けません";
 "pairing.startOver" = "消去して最初からペアリング";
 "pairing.startOver.confirm" = "消去すると、この iPhone に保存した会話と鍵が削除され、もう一度コードを読み取る必要があります。";
+"today.search" = "検索";
+"today.open" = "内容を見る";
+"today.approval.waiting" = "確認待ち";
+"today.fallback.approval" = "確認を待っていることがあります";
+"today.fallback.running" = "あなたの代わりに進めています";
+"today.fallback.problem" = "できなかったことがあります";
+"today.fallback.done" = "あなたの代わりに済ませました";
+"today.fallback.other" = "お知らせがあります";
+"today.upcoming" = "このあと";
+"today.upcoming.today" = "今日 %@";
+"today.upcoming.tonight" = "今夜 %@";
+"today.upcoming.tomorrow" = "明日 %@";
+"today.upcoming.on" = "%@ %@";
+"today.undo" = "元に戻す";
