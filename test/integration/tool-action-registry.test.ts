@@ -16,7 +16,10 @@ import path from "node:path";
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { expect, it, vi } from "vitest";
 import { BuiltInActionRuleSwitches } from "../../apps/agent-service/src/action-rule-switches.js";
-import { ContextExternalContent } from "../../apps/agent-service/src/context-external-content.js";
+import {
+  ContextExternalContent,
+  externalContentKey,
+} from "../../apps/agent-service/src/context-external-content.js";
 import {
   actionRefusalKey,
   OwnerScopeAuthorization,
@@ -756,3 +759,125 @@ it("[ADR-0257] lets the owner switch a just-do-it built-in rule to ask every tim
     await s.close();
   }
 });
+
+it("[ADR-0257] runs an approved call on the facts frozen when it asked, even if the conversation's marks change before the owner answers", async () => {
+  const s = await setup();
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const set = s.call("reminder.set", "call:frozen", { text: "改会议", due: "2026-11-13T15:00" });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "awaiting_approval" });
+    const [pending] = await s.approvals();
+    const key = externalContentKey({ threadId: "thread-capability-invocation", runId: RUN_ID });
+    const marks = await s.repository.readScopedState(OWNER_ID, AGENT_ID, key);
+    expect(marks).toBeDefined();
+    await s.repository.commitStateAndEvents({
+      command: {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        commandType: "context.external_content.mark",
+        idempotencyKey: "test:clear-marks" as never,
+        commandFingerprint: "clear",
+        authority: SERVICE_AUTHORITY.lease,
+      },
+      state: { key, expectedRevision: marks?.revision ?? null, value: { sources: [] } },
+      events: [],
+      resultRef: key,
+      committedAt: T1,
+    });
+    await approve(s, pending);
+    s.advance(5_000);
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+    expect(s.reminders).toHaveBeenCalledTimes(1);
+    expect(await s.approvals()).toHaveLength(1);
+    expect(
+      ((await s.approvals())[0]?.intentSnapshot as GovernedActionIntent).deterministicFacts.map(
+        ({ code }) => code,
+      ),
+    ).toContain("context_external_content");
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] keeps a conversation's marks for every later run in it, so a new turn after compaction still asks", async () => {
+  const s = await setup();
+  try {
+    const source = (runId: string): RunExecutionSourcePort => ({
+      read: async () =>
+        ({
+          runId,
+          threadId: "thread-later",
+          sourceType: "user_message",
+        }) as never,
+    });
+    const store = (runId: string) =>
+      new ContextExternalContent({
+        configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        state: s.repository,
+        source: source(runId),
+        authority: () => SERVICE_AUTHORITY.lease,
+        clock: s.clock,
+      });
+    await store("run-before-compaction").mark("run-before-compaction" as never, "web_fetch");
+    expect(await store("run-after-compaction").read("run-after-compaction" as never)).toEqual([
+      expect.objectContaining({ origin: "web_fetch", firstRunId: "run-before-compaction" }),
+    ]);
+    const other: RunExecutionSourcePort = {
+      read: async () =>
+        ({ runId: "run-other", threadId: "thread-other", sourceType: "user_message" }) as never,
+    };
+    expect(
+      await new ContextExternalContent({
+        configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        state: s.repository,
+        source: other,
+        authority: () => SERVICE_AUTHORITY.lease,
+        clock: s.clock,
+      }).read("run-other" as never),
+    ).toEqual([]);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] REVERSE: without the background refusal rule the same scheduled call would wait for the owner, so the refusal test depends on that rule", async () => {
+  const s = await setup({
+    sourceType: "schedule",
+    rules: BUILT_IN_ACTION_RULES.filter(
+      ({ id }) => id !== ACTION_RULE_IDS.refuseBackgroundAfterExternalContent,
+    ),
+  });
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const set = s.call("reminder.set", "call:background", {
+      due: "2026-11-13T15:00",
+      text: "付款",
+    });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "awaiting_approval" });
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] REVERSE: without the mark a task's output leaves the next reminder preauthorized, so the asking tests depend on the mark", async () => {
+  const s = await setup({ registry: unmarkedTaskOutputRegistry() });
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    expect(await s.externalContent.read(RUN_ID)).toEqual([]);
+    const set = s.call("reminder.set", "call:unmarked", {
+      text: "改会议",
+      due: "2026-11-13T15:00",
+    });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+  } finally {
+    await s.close();
+  }
+});
+
+function unmarkedTaskOutputRegistry() {
+  return new ToolActionRegistry(
+    PRODUCTION_TOOL_ACTION_ROWS.map((row) =>
+      row.capabilityRef === "execution.task.output" ? { ...row, resultOrigin: "owner_data" } : row,
+    ),
+  );
+}
