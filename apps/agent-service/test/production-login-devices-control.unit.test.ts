@@ -23,9 +23,8 @@ const device = (id: string, status: "active" | "revoked" = "active") => ({
   lastSeenAt: NOW,
 });
 
-function control() {
+function control(devices = [device("device-current"), device("device-other")]) {
   const revoked: string[] = [];
-  const devices = [device("device-current"), device("device-other")];
   return {
     revoked,
     control: new ProductionLoginDevicesControl({
@@ -81,4 +80,16 @@ describe("ProductionLoginDevicesControl scope", () => {
       }
     },
   );
+
+  it("shows a long device label with control characters as one line of at most 80 characters", async () => {
+    const { control: devices } = control([
+      { ...device("device-current"), label: `\u0007${"a".repeat(127)}` },
+    ]);
+    const snapshot = await devices.query(
+      { type: "login.devices.read", scope: scope(AGENT), payload: {} } as never,
+      { authentication } as never,
+    );
+    if (snapshot.type !== "login.devices.snapshot") throw new Error(snapshot.type);
+    expect(snapshot.payload.devices.map(({ label }) => label)).toEqual(["a".repeat(80)]);
+  });
 });

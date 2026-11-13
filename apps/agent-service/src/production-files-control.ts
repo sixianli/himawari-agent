@@ -1,6 +1,7 @@
 import {
   ApplicationPortError,
   type ClockPort,
+  type GatewayV2QueryContext,
   PORT_ERROR_CODES,
   type ProductConfiguration,
   type ThreadArtifactStorePort,
@@ -37,10 +38,14 @@ export class ProductionFilesControl {
     this.#options = options;
   }
 
-  async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
+  async query(query: GatewayV2Query, context?: GatewayV2QueryContext): Promise<GatewayV2Snapshot> {
     if (query.type !== "files.list.read") throw new Error("FILES_OPERATION_NOT_INSTALLED");
     const { ownerId, agentId } = this.#options.configuration;
-    if (query.scope.ownerId !== ownerId || query.scope.agentId !== agentId)
+    if (
+      context?.authentication?.ownerId !== ownerId ||
+      query.scope.ownerId !== ownerId ||
+      query.scope.agentId !== agentId
+    )
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_AUTHORITATIVE, "FILES_SCOPE_MISMATCH");
     const page = await this.#options.store
       .list({

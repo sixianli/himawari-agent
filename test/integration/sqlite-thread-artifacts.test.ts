@@ -1,12 +1,15 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type {
-  GatewayAuthenticationContext,
-  PayloadProtectorPort,
-  PayloadStorePort,
-  RuntimeRequest,
-  ThreadArtifactRegistration,
+import {
+  type GatewayAuthenticationContext,
+  type PayloadProtectorPort,
+  type PayloadStorePort,
+  type RuntimeRequest,
+  THREAD_ARTIFACT_KINDS,
+  THREAD_ARTIFACT_LIST_LIMIT,
+  THREAD_ARTIFACT_ORIGINS,
+  type ThreadArtifactRegistration,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId, type ProductThreadMessage } from "@himawari-agent/domain";
 import {
@@ -16,7 +19,12 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { BrowserThreadFiles } from "@himawari-agent/platform-node";
-import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
+import {
+  FILE_LIST_KINDS,
+  FILE_LIST_ORIGINS,
+  FILE_LIST_PAGE_LIMIT,
+  gatewayV2MessageSchema,
+} from "@himawari-agent/gateway-contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { ProductionFilesControl } from "../../apps/agent-service/src/production-files-control.ts";
 import { ProductionThreadArtifacts } from "../../apps/agent-service/src/production-thread-artifacts.ts";
@@ -431,6 +439,15 @@ describe("[FD-1] thread artifact storage", () => {
         store,
         clock: { now: () => T0 },
       });
+      const signedIn = {
+        authentication: {
+          ownerId: OWNER_ID,
+          subjectId: OWNER_ID,
+          deviceId: "device-phone",
+          authenticatedAt: T0,
+          authenticationRef: "authentication:phone",
+        },
+      } as never;
       const query = (payload: Record<string, unknown>, ownerId: string = OWNER_ID) =>
         gatewayV2MessageSchema.parse({
           schemaVersion: "gateway.v2",
@@ -448,7 +465,9 @@ describe("[FD-1] thread artifact storage", () => {
           payload: { kind: null, origin: null, before: null, limit: 2, ...payload },
         });
       const read = async (payload: Record<string, unknown>) => {
-        const snapshot = gatewayV2MessageSchema.parse(await control.query(query(payload) as never));
+        const snapshot = gatewayV2MessageSchema.parse(
+          await control.query(query(payload) as never, signedIn),
+        );
         if (snapshot.type !== "files.list.snapshot") throw new Error("snapshot");
         return snapshot.payload;
       };
@@ -513,9 +532,15 @@ describe("[FD-1] thread artifact storage", () => {
       expect((await read({ limit: 10 })).files.map(({ fileId }) => fileId)).toEqual(
         webPage.items.map(({ id }) => id),
       );
-      await expect(control.query(query({}, "someone-else") as never)).rejects.toMatchObject({
+      await expect(
+        control.query(query({}, "someone-else") as never, signedIn),
+      ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+      await expect(control.query(query({}) as never)).rejects.toMatchObject({
         code: "PORT_NOT_AUTHORITATIVE",
       });
+      expect([...FILE_LIST_KINDS]).toEqual([...THREAD_ARTIFACT_KINDS]);
+      expect([...FILE_LIST_ORIGINS]).toEqual([...THREAD_ARTIFACT_ORIGINS]);
+      expect(FILE_LIST_PAGE_LIMIT).toBeLessThanOrEqual(THREAD_ARTIFACT_LIST_LIMIT);
       expect(() => query({ before: "not a cursor" })).toThrow();
       expect(() => query({ limit: 101 })).toThrow();
       expect(() => query({ kind: "video" })).toThrow();

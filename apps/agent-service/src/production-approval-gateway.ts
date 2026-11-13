@@ -145,7 +145,7 @@ export function createProductionApprovalGateway(options: {
                           : query.type.startsWith("data.export.") && options.dataExportControl
                             ? options.dataExportControl.query(query)
                             : query.type.startsWith("files.") && options.filesControl
-                              ? options.filesControl.query(query)
+                              ? options.filesControl.query(query, context)
                               : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
