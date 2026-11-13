@@ -18,6 +18,7 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
     private var pairingWindow: NSWindow?
     private var observation: Task<Void, Never>?
     private let messages: MessagesSensor
+    private let pairingInbox = PairingInbox()
 
     init(model: MenuBarModel) {
         self.model = model
@@ -152,9 +153,15 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
+    func receivePairingLink(_ url: URL) {
+        pairingInbox.receive(url.absoluteString)
+        guard model.app.phase != .active else { return }
+        showPairing()
+    }
+
     func showPairing() {
         if pairingWindow == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: MacPairingView(model: model.app)))
+            let window = NSWindow(contentViewController: NSHostingController(rootView: MacPairingView(model: model.app, inbox: pairingInbox)))
             window.title = L.text("app.name")
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false

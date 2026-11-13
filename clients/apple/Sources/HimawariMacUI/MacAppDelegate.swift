@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import HimawariCore
 import HimawariDesign
 import HimawariShell
 
@@ -23,6 +24,12 @@ public final class MacAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         let model = MenuBarModel(app: AppModel(kind: .mac), settings: MacSettingsStore())
         controller = MenuBarController(model: model)
+    }
+
+    public func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme == PairingInvitation.scheme {
+            controller?.receivePairingLink(url)
+        }
     }
 
     public func applicationDidBecomeActive(_ notification: Notification) {

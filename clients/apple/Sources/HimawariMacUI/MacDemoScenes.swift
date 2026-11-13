@@ -110,7 +110,7 @@ enum MacDemo {
         case .settings, .settingsShortcutTaken, .settingsMessagesOn, .settingsMessagesNoAccess:
             return AnyView(MacSettingsView(store: store, shortcutState: shortcut, scrolls: false))
         case .pairing:
-            return AnyView(MacPairingView(model: app))
+            return AnyView(MacPairingView(model: app, inbox: PairingInbox()))
         }
     }
 

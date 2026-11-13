@@ -3,10 +3,23 @@ import AppKit
 import HimawariCore
 import HimawariDesign
 import HimawariShell
+import Observation
 import SwiftUI
+
+@MainActor
+@Observable
+final class PairingInbox {
+    var link: String?
+
+    func receive(_ text: String) {
+        guard (try? PairingInvitation.parse(text)) != nil else { return }
+        link = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
 
 struct MacPairingView: View {
     let model: AppModel
+    let inbox: PairingInbox
     @State private var link = ""
 
     var body: some View {
@@ -21,8 +34,18 @@ struct MacPairingView: View {
         .frame(width: DesignTokens.Mac.pairingWidth, alignment: .leading)
         .background(Color.hmBackground)
         .animation(.easeInOut, value: model.phase)
-        .onAppear(perform: fillFromClipboard)
+        .onAppear {
+            takeFromInbox()
+            fillFromClipboard()
+        }
+        .onChange(of: inbox.link) { takeFromInbox() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in fillFromClipboard() }
+    }
+
+    private func takeFromInbox() {
+        guard let received = inbox.link else { return }
+        link = received
+        inbox.link = nil
     }
 
     private func fillFromClipboard() {
