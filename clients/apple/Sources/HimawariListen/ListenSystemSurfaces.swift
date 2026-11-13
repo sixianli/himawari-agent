@@ -16,14 +16,28 @@ final class ListenActivityController {
     }
 
     func update(_ state: ListenLiveState) {
-        guard let current else { return }
-        Task { await current.update(ActivityContent(state: state, staleDate: nil)) }
+        guard let id = current?.id else { return }
+        Task { await Self.update(id: id, state: state) }
     }
 
     func end() {
-        guard let current else { return }
-        self.current = nil
-        Task { await current.end(nil, dismissalPolicy: .immediate) }
+        guard let id = current?.id else { return }
+        current = nil
+        Task { await Self.end(id: id) }
+    }
+
+    private nonisolated static func activity(id: String) -> Activity<ListenActivityAttributes>? {
+        Activity<ListenActivityAttributes>.activities.first { $0.id == id }
+    }
+
+    private nonisolated static func update(id: String, state: ListenLiveState) async {
+        guard let activity = activity(id: id) else { return }
+        await activity.update(ActivityContent(state: state, staleDate: nil))
+    }
+
+    private nonisolated static func end(id: String) async {
+        guard let activity = activity(id: id) else { return }
+        await activity.end(nil, dismissalPolicy: .immediate)
     }
 }
 
