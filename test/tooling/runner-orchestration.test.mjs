@@ -12,6 +12,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useArtifactCapableHost } from "./artifact-host.mjs";
 
 const state = vi.hoisted(() => ({
   root: "",
@@ -236,7 +237,17 @@ vi.mock("../../scripts/ci/check-security.mjs", () => ({
       scannedCount: 42,
       retryCount: 0,
       reportPath,
-      checks: [{ status: state.failSecurity ? "failed" : "passed" }],
+      checks: state.failSecurity
+        ? [
+            { id: "gitleaks", status: "passed" },
+            { id: "semgrep", status: "infrastructure_failed", error: "SECURITY_SCANNER_FAILED" },
+            {
+              id: "security-exceptions",
+              status: "infrastructure_failed",
+              error: "Unexpected token } in JSON at position 41 of the reviewed baseline",
+            },
+          ]
+        : [{ id: "gitleaks", status: "passed" }],
     };
   },
 }));
@@ -292,6 +303,8 @@ const run = (checkId, extra = {}) =>
     ...(checkId === "coverage" ? { artifact: path.join(state.root, "runtime.tar.gz") } : {}),
     ...extra,
   });
+
+useArtifactCapableHost();
 
 describe("共享runner的调度、来源和失败传播", () => {
   it("passes an explicit test root and its temporary directory to child processes", async () => {
@@ -368,6 +381,28 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(state.calls).toEqual([]);
     expect(existsSync(path.join(state.root, ".ci-output/policy"))).toBe(false);
   });
+  it("rejects build, browser and coverage on linux-arm64 before creating output or executing anything", async () => {
+    const original = {
+      platform: Object.getOwnPropertyDescriptor(process, "platform"),
+      arch: Object.getOwnPropertyDescriptor(process, "arch"),
+    };
+    for (const [key, value] of [
+      ["platform", "linux"],
+      ["arch", "arm64"],
+    ])
+      Object.defineProperty(process, key, { value, configurable: true, enumerable: true });
+    try {
+      for (const checkId of ["build", "browser", "coverage"]) {
+        await expect(run(checkId)).rejects.toThrow("CI_ARTIFACT_PLATFORM_UNSUPPORTED: linux-arm64");
+        expect(existsSync(path.join(state.root, `.ci-output/${checkId}`))).toBe(false);
+      }
+      expect(state.calls).toEqual([]);
+    } finally {
+      Object.defineProperty(process, "platform", original.platform);
+      Object.defineProperty(process, "arch", original.arch);
+    }
+  });
+
   it("coverage 在归档身份不符时失败，不开始快照或测试", async () => {
     state.artifactFailure = true;
     const result = await run("coverage");
@@ -727,10 +762,19 @@ describe("共享runner的调度、来源和失败传播", () => {
   it("安全发现和空执行不能变成通过", async () => {
     expect(await run("security")).toMatchObject({ status: "passed", retryCount: 0 });
     state.failSecurity = true;
-    expect(await run("security", { output: ".ci-output/security-fail" })).toMatchObject({
-      status: "failed",
-      retryCount: 0,
-    });
+    const written = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    try {
+      expect(await run("security", { output: ".ci-output/security-fail" })).toMatchObject({
+        status: "failed",
+        retryCount: 0,
+      });
+      expect(written.mock.calls.map(([text]) => text)).toEqual([
+        "security scan semgrep: infrastructure_failed SECURITY_SCANNER_FAILED\n",
+        "security scan security-exceptions: infrastructure_failed\n",
+      ]);
+    } finally {
+      written.mockRestore();
+    }
     state.empty = true;
     expect(
       (
