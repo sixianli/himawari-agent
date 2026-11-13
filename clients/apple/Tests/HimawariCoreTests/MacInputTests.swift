@@ -189,6 +189,18 @@ import Testing
         }
     }
 
+    @Test func aGrantReachedThroughALinkedParentStillCoversFilesThatDoNotExistYet() throws {
+        let root = try TemporaryFolder()
+        let real = root.url.appendingPathComponent("private/var/Downloads")
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: root.url.appendingPathComponent("var"), withDestinationURL: root.url.appendingPathComponent("private/var"))
+        let linked = root.url.appendingPathComponent("var/Downloads").path
+        let grants = [FolderGrant(id: "d", path: linked, access: .readWrite)]
+        #expect(PathPolicy.decide(linked + "/new.pdf", use: .write, grants: grants) == .allowed(grantId: "d", realPath: PathPolicy.realPath(real.path) + "/new.pdf"))
+        #expect(PathPolicy.contains("/private/var/Downloads", "/private/var/Downloads/new.pdf"))
+        #expect(!PathPolicy.contains("/private/var/Downloads", "/var/Downloads/new.pdf"))
+    }
+
     @Test func relativePathsAreRefused() {
         #expect(PathPolicy.decide("Downloads/a.txt", use: .read, grants: []) == .notAbsolute)
     }

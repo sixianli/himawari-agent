@@ -207,7 +207,7 @@ struct MacSettingsView: View {
     static let revealScheme = "himawari-reveal"
 
     static func linked(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text)) ?? AttributedString(text)
+        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
     }
 
     static func text(for problem: MessagesProblem) -> String {

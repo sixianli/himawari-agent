@@ -155,8 +155,8 @@ public enum PathPolicy {
     }
 
     public static func contains(_ folder: String, _ path: String) -> Bool {
-        let base = URL(fileURLWithPath: folder).standardizedFileURL.pathComponents
-        let target = URL(fileURLWithPath: path).standardizedFileURL.pathComponents
+        let base = folder.split(separator: "/")
+        let target = path.split(separator: "/")
         return target.count >= base.count && Array(target.prefix(base.count)) == base
     }
 
