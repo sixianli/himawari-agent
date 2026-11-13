@@ -60,7 +60,7 @@ export const UNCLASSIFIED: MemoryClassification = Object.freeze({
   failed: true,
 });
 
-const DETERMINISTIC_SENSITIVE: MemoryClassification = Object.freeze({
+export const DETERMINISTIC_SENSITIVE: MemoryClassification = Object.freeze({
   category: "other",
   classification: "sensitive",
   topic: "other",

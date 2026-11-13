@@ -560,7 +560,7 @@
   },
   "memory.classification": {
     "sha256": "dd98a816e5e4d4603f7a4b95030c750073ffc940d23032216f679ba318144095",
-    "changedIn": "ADR 0249",
+    "changedIn": "ADR 0260",
     "reason": "新增：主人手动添加和导入的记忆由模型判断类别和是否敏感，代替网页上的词表猜测"
   },
   "memory.confirmation-judge": {

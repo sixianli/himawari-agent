@@ -2778,7 +2778,13 @@ describe("production memory capture", () => {
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-coffee", category: "identity", subCategory: "饮食", pinned: true },
+      {
+        contentRef: "payload-coffee",
+        category: "identity",
+        subCategory: "饮食",
+        topic: null,
+        pinned: true,
+      },
       "manual-coffee",
     );
     await command(
@@ -3347,6 +3353,17 @@ describe("production memory capture", () => {
     expect(context.classifyPrompts).toHaveLength(1);
     expect(context.classifyPrompts[0]).toContain("我不吃药，身体一直很好");
     expect(context.classifyPrompts[0]).not.toContain("110101199003071234");
+    await context.protect("payload-c5", "我最近心情很低落", "sensitive");
+    expect(await classify(["payload-c5"])).toEqual([
+      {
+        contentRef: "payload-c5",
+        category: "other",
+        classification: "sensitive",
+        topic: "other",
+        failed: false,
+      },
+    ]);
+    expect(context.classifyPrompts).toHaveLength(1);
     context.classifyOutputs.push("not json", '{"items":"nope"}');
     expect(await classify(["payload-c1"])).toEqual([
       {
@@ -3382,6 +3399,19 @@ describe("production memory capture", () => {
     await add("payload-bp", "health", null, "t5-bp");
     await add("payload-bp-topic", "preference", "health", "t5-topic");
     await add("payload-plain", "preference", null, "t5-plain");
+    await context.protect("payload-belief", "我每周日去教堂");
+    context.classifyOutputs.push(
+      JSON.stringify({
+        items: [{ id: "0", category: "other", classification: "sensitive", topic: "beliefs" }],
+      }),
+    );
+    await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.classify.read",
+      payload: { contentRefs: ["payload-belief"] },
+    } as never);
+    await add("payload-belief", "other", null, "t5-judged");
     const stored = Object.fromEntries(
       (await overview(context.control)).memories
         .filter(({ memoryId }) => memoryId.startsWith("memory:owner:t5-"))
@@ -3397,8 +3427,9 @@ describe("production memory capture", () => {
     expect(stored).toEqual({
       "t5-id": { dataClassification: "sensitive", topic: "other", raised: true },
       "t5-bp": { dataClassification: "sensitive", topic: "health", raised: true },
-      "t5-topic": { dataClassification: "private", topic: null, raised: false },
+      "t5-topic": { dataClassification: "sensitive", topic: "health", raised: true },
       "t5-plain": { dataClassification: "private", topic: null, raised: false },
+      "t5-judged": { dataClassification: "sensitive", topic: "beliefs", raised: true },
     });
   });
 

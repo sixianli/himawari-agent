@@ -1612,8 +1612,7 @@ describe("memory approval and management", () => {
     expect(text("#settings .memory-import")).toContain("找到 4 条，已勾 2 条");
     protectText.mockClear();
     await click("#settings .memory-import", "导入勾选的 2 条");
-    expect(protectText).toHaveBeenCalledWith("回答不要用表情符号", "private");
-    expect(protectText).toHaveBeenCalledWith("我的密码是 hunter2", "sensitive");
+    expect(protectText).not.toHaveBeenCalled();
     expect(lastCommand()).toMatchObject({
       type: "memory.import.commit",
       payload: {
@@ -1723,6 +1722,46 @@ describe("memory approval and management", () => {
     expect(created).toHaveBeenCalledTimes(1);
     expect(text("#settings")).toContain("导出失败，请稍后再试。");
     clicked.mockRestore();
+  });
+
+  it("[MP-8][T5] keeps the import closed while the server is still sorting the entries", async () => {
+    await render();
+    let answer: (() => void) | undefined;
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const plain = query.getMockImplementation();
+    query.mockImplementation(async (request) => {
+      if (request.type === "memory.classify.read") await answered;
+      return plain?.(request);
+    });
+    await click("#settings .memory-footer", "导入记忆");
+    await click("#settings .memory-sources", "ChatGPT、Claude 等其他 AI");
+    const fields = document.querySelectorAll<HTMLTextAreaElement>(
+      "#settings .memory-import textarea",
+    );
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        fields[1],
+        "- 我喜欢早上跑步\n- 回答不要太长",
+      );
+      fields[1]?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click("#settings .memory-import", "拆成一条条");
+    expect(text("#settings .memory-import")).toContain("分类中");
+    expect(button("#settings .memory-import", "导入勾选").disabled).toBe(true);
+    const boxes = [
+      ...document.querySelectorAll<HTMLInputElement>(
+        "#settings .memory-preview input[type=checkbox]",
+      ),
+    ];
+    expect(boxes.length).toBe(2);
+    expect(boxes.every(({ disabled }) => disabled)).toBe(true);
+    classifyAnswers = [classified("preference"), classified("rule")];
+    await act(async () => answer?.());
+    await act(async () => {});
+    expect(text("#settings .memory-import")).not.toContain("分类中");
+    expect(button("#settings .memory-import", "导入勾选").disabled).toBe(false);
   });
 
   it("[MP-8] keeps adding and importing closed until the first memory is learned and says why", async () => {

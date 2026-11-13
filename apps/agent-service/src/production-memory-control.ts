@@ -39,7 +39,9 @@ import {
 import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
 import { type DecisionChainMemoryView, readDecisionChain } from "./production-decision-chain.js";
 import {
+  DETERMINISTIC_SENSITIVE,
   deterministicallySensitive,
+  type MemoryClassification,
   type ProductionMemoryClassifier,
   UNCLASSIFIED,
 } from "./production-memory-classification.js";
@@ -85,6 +87,7 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.external.respond",
   "memory.external.undo",
 ] as const);
+const SENSITIVE_JUDGMENTS_KEPT = 5000;
 const PINNABLE_CATEGORIES: ReadonlySet<MemoryCategory> = new Set([
   "identity",
   "preference",
@@ -222,6 +225,8 @@ export class ProductionMemoryControl {
     readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
+
+  readonly #sensitiveJudgments = new Map<string, MemoryClassification>();
 
   constructor(options: ProductionMemoryControl["options"]) {
     this.options = options;
@@ -1004,11 +1009,30 @@ export class ProductionMemoryControl {
   async #classify(
     query: Extract<GatewayV2Query, { type: "memory.classify.read" }>,
   ): Promise<ClassifySnapshot> {
-    const texts: string[] = [];
-    for (const ref of query.payload.contentRefs) texts.push(await this.readText(ref));
-    const results = this.options.classifier
-      ? await this.options.classifier.classify(texts)
-      : texts.map(() => UNCLASSIFIED);
+    const results: MemoryClassification[] = [];
+    const pending: { index: number; text: string }[] = [];
+    for (const [index, ref] of query.payload.contentRefs.entries()) {
+      const payload = await this.options.payloads.get(ref);
+      const text = await this.readText(ref);
+      if (payload && classificationRank(payload.dataClassification) > classificationRank("private"))
+        results[index] = DETERMINISTIC_SENSITIVE;
+      else pending.push({ index, text });
+    }
+    const judged = this.options.classifier
+      ? await this.options.classifier.classify(pending.map(({ text }) => text))
+      : pending.map(() => UNCLASSIFIED);
+    for (const [position, { index }] of pending.entries())
+      results[index] = judged[position] ?? UNCLASSIFIED;
+    for (const [index, ref] of query.payload.contentRefs.entries()) {
+      const result = results[index] ?? UNCLASSIFIED;
+      if (result.classification !== "sensitive") continue;
+      this.#sensitiveJudgments.delete(ref);
+      this.#sensitiveJudgments.set(ref, result);
+      for (const oldest of this.#sensitiveJudgments.keys()) {
+        if (this.#sensitiveJudgments.size <= SENSITIVE_JUDGMENTS_KEPT) break;
+        this.#sensitiveJudgments.delete(oldest);
+      }
+    }
     return {
       ...query,
       kind: "snapshot",
@@ -1068,9 +1092,13 @@ export class ProductionMemoryControl {
     this.assertStorable(text);
     if (payload.dataClassification === "restricted")
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
+    const judged = this.#sensitiveJudgments.get(input.contentRef);
     const raised =
       classificationRank(payload.dataClassification) < classificationRank("sensitive") &&
-      (sensitiveCategory(input.category) || deterministicallySensitive(text));
+      (sensitiveCategory(input.category) ||
+        input.topic !== null ||
+        judged !== undefined ||
+        deterministicallySensitive(text));
     const dataClassification: DataClassification = raised
       ? "sensitive"
       : payload.dataClassification;
@@ -1103,7 +1131,9 @@ export class ProductionMemoryControl {
             supersededBy: null,
             evidenceVerified: false,
             ...(dataClassification === "sensitive"
-              ? { sensitiveTopic: input.topic ?? sensitiveTopicFor(input.category) }
+              ? {
+                  sensitiveTopic: input.topic ?? judged?.topic ?? sensitiveTopicFor(input.category),
+                }
               : {}),
             ...(subCategory ? { subCategory } : {}),
             ...(input.importBatchId ? { importBatchId: input.importBatchId } : {}),
@@ -1121,7 +1151,7 @@ export class ProductionMemoryControl {
       contentRef,
       category,
       subCategory,
-      topic,
+      topic: topic ?? null,
       policyVersion: OWNER_POLICY_VERSION,
       importBatchId: null,
     });
@@ -1185,7 +1215,7 @@ export class ProductionMemoryControl {
         contentRef: item.contentRef,
         category: item.category,
         subCategory: item.subCategory,
-        topic: item.topic,
+        topic: item.topic ?? null,
         policyVersion: IMPORT_POLICY_VERSION,
         importBatchId: batchId,
       });

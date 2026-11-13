@@ -1,6 +1,6 @@
 import type { GatewayV2Command, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "./gateway-client.js";
 import type { ImportCandidate, MemoryCategory } from "./memory-import.js";
 import { commandMessage, queryMessage } from "./messages.js";
@@ -114,6 +114,7 @@ export function useMemory(input: {
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
+  const classifiedRefs = useRef(new Map<string, string>());
   useEffect(() => {
     void reload;
     void refreshSignal;
@@ -170,17 +171,22 @@ export function useMemory(input: {
     run(async () =>
       client.mutate(commandMessage(configuration, type, await payload(), { risk: "medium" })),
     );
+  const protectedRef = async (text: string, sensitive: boolean): Promise<string> => {
+    const level = sensitive ? "sensitive" : classificationWithIdentifiers(text, "private");
+    const key = `${level}\u0000${text}`;
+    const known = classifiedRefs.current.get(key);
+    if (known) return known;
+    const ref = await client.protectText(text, level);
+    classifiedRefs.current.set(key, ref);
+    return ref;
+  };
   const classify = async (texts: readonly string[]): Promise<readonly MemoryClassification[]> => {
     if (!operations.includes("memory.classify.read")) return texts.map(() => UNCLASSIFIED);
     const results: MemoryClassification[] = [];
     for (let start = 0; start < texts.length; start += CLASSIFY_BATCH) {
       const chunk = texts.slice(start, start + CLASSIFY_BATCH);
       try {
-        const contentRefs = await Promise.all(
-          chunk.map((text) =>
-            client.protectText(text, classificationWithIdentifiers(text, "private")),
-          ),
-        );
+        const contentRefs = await Promise.all(chunk.map((text) => protectedRef(text, false)));
         const result = await client.query(
           queryMessage(configuration, "memory.classify.read", { contentRefs }),
         );
@@ -284,10 +290,7 @@ export function useMemory(input: {
         const sensitive =
           result.classification === "sensitive" || SENSITIVE_CATEGORIES.has(category);
         return {
-          contentRef: await client.protectText(
-            text,
-            sensitive ? "sensitive" : classificationWithIdentifiers(text, "private"),
-          ),
+          contentRef: await protectedRef(text, sensitive),
           category,
           subCategory: null,
           topic: sensitive ? topicFor(result, category) : null,
@@ -307,10 +310,7 @@ export function useMemory(input: {
           items.map(async (item) => {
             const sensitive = item.sensitive || SENSITIVE_CATEGORIES.has(item.category);
             return {
-              contentRef: await client.protectText(
-                item.text,
-                sensitive ? "sensitive" : classificationWithIdentifiers(item.text, "private"),
-              ),
+              contentRef: await protectedRef(item.text, sensitive),
               category: item.category,
               subCategory: item.subCategory,
               topic: sensitive
