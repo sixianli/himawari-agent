@@ -1,11 +1,13 @@
 import { rm } from "node:fs/promises";
 import {
   ACTION_RULE_IDS,
+  ApplicationPortError,
   ApprovalService,
   BUILT_IN_ACTION_RULES,
   type GovernedActionIntent,
   type GovernedApprovalRequest,
   GrantService,
+  PORT_ERROR_CODES,
   type RuleRecord,
   type RunExecutionSource,
   type RunExecutionSourcePort,
@@ -13,7 +15,10 @@ import {
   ToolActionRegistry,
 } from "@himawari-agent/application";
 import path from "node:path";
-import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
+import {
+  openQualifiedDatabase,
+  type SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
 import { expect, it, vi } from "vitest";
 import { BuiltInActionRuleSwitches } from "../../apps/agent-service/src/action-rule-switches.js";
 import {
@@ -58,13 +63,15 @@ async function openSeededRepository() {
   return resource;
 }
 
+type StateStore = Pick<SqliteProductStateRepository, "readScopedState" | "commitStateAndEvents">;
+
 async function setup(
   options: {
     readonly rules?: readonly RuleRecord[];
     readonly registry?: ToolActionRegistry;
     readonly sourceType?: RunExecutionSource["sourceType"];
     readonly recalledExternal?: boolean;
-    readonly failMark?: boolean;
+    readonly ownerScopeState?: (repository: StateStore) => StateStore;
   } = {},
 ) {
   const resource = await openSeededRepository();
@@ -103,10 +110,21 @@ async function setup(
     memoryIds: ["memory:reminder:x"],
     externalContent: options.recalledExternal === true,
   }));
+  const markFaults = { read: false, write: false };
+  const markState: StateStore = {
+    readScopedState: async (...args) => {
+      if (markFaults.read) throw new Error("STATE_READ_DOWN");
+      return repository.readScopedState(...args);
+    },
+    commitStateAndEvents: async (...args) => {
+      if (markFaults.write) throw new Error("STATE_WRITE_DOWN");
+      return repository.commitStateAndEvents(...args);
+    },
+  };
   const build = () => {
     const externalContent = new ContextExternalContent({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
-      state: repository,
+      state: markState,
       source,
       authority: () => SERVICE_AUTHORITY.lease,
       clock,
@@ -116,7 +134,7 @@ async function setup(
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       store,
       audit: repository.auditLedger(),
-      state: repository,
+      state: options.ownerScopeState ? options.ownerScopeState(repository) : repository,
       authority: () => SERVICE_AUTHORITY.lease,
       source,
       installedCapabilities: { inspect: async () => undefined },
@@ -135,15 +153,7 @@ async function setup(
       ownerRules: { run: rules },
       memoryRecall: { recallWithClassification: recall },
       ownerScope,
-      externalContent: options.failMark
-        ? {
-            read: (runId: Parameters<ContextExternalContent["read"]>[0]) =>
-              externalContent.read(runId),
-            mark: async () => {
-              throw new Error("MARK_DOWN");
-            },
-          }
-        : externalContent,
+      externalContent,
       managedTasks: { execute: managedTasks },
       toolActions: registry,
       clock,
@@ -179,6 +189,7 @@ async function setup(
       return externalContent;
     },
     restart,
+    markFaults,
     managedTasks,
     store,
     repository,
@@ -915,8 +926,9 @@ it("[ADR-0257] refuses the same background call again on replay without turning 
 });
 
 it("[ADR-0257] does not run an outside-content tool whose mark cannot be written, and says it was not sent", async () => {
-  const s = await setup({ failMark: true });
+  const s = await setup();
   try {
+    s.markFaults.write = true;
     expect(
       await s.tools.execute(
         s.call("execution.task.output", "call:unmarkable", { taskId: "task:a" }),
@@ -930,6 +942,107 @@ it("[ADR-0257] does not run an outside-content tool whose mark cannot be written
     expect(await s.tools.execute(s.call("reminder.list", "call:owner-data", {}))).toMatchObject({
       outcome: "succeeded",
     });
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] REVERSE: a replayed call whose marks cannot be read is not reported as never sent, because it may have run before", async () => {
+  const s = await setup();
+  try {
+    const output = s.call("execution.task.output", "call:replayed-output", { taskId: "task:a" });
+    expect(await s.tools.execute(output)).toMatchObject({ outcome: "succeeded" });
+    s.markFaults.read = true;
+    await expect(s.tools.execute(output)).rejects.toThrow("STATE_READ_DOWN");
+    expect(s.managedTasks).toHaveBeenCalledTimes(1);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] keeps a background refusal when another writer recorded it first, and still fails when nothing was recorded", async () => {
+  for (const raced of [true, false]) {
+    let commits = 0;
+    const s = await setup({
+      sourceType: "schedule",
+      ownerScopeState: (repository) => ({
+        readScopedState: (...args) => repository.readScopedState(...args),
+        commitStateAndEvents: async (input) => {
+          if (input.command.commandType !== "authorization.action_rule.refused")
+            return repository.commitStateAndEvents(input);
+          commits += 1;
+          if (raced) await repository.commitStateAndEvents(input);
+          throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "raced");
+        },
+      }),
+    });
+    try {
+      await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+      const set = s.call("reminder.set", "call:raced", { due: "2026-11-13T15:00", text: "付款" });
+      const result = await s.tools.execute(set).catch((error: unknown) => error);
+      expect(commits).toBe(1);
+      if (raced) {
+        expect(result).toMatchObject({ errorCode: "action_rule_refused" });
+        expect(
+          (await s.repository.auditLedger().listByAgent(AGENT_ID, null)).filter(
+            ({ action }) => action === "authorization.action_rule.refused",
+          ),
+        ).toHaveLength(1);
+      } else {
+        expect(result).not.toMatchObject({ errorCode: "action_rule_refused" });
+      }
+      expect(s.reminders).not.toHaveBeenCalled();
+    } finally {
+      await s.close();
+    }
+  }
+});
+
+it("[ADR-0257] retries the owner's rule switch after a concurrent change and gives up on any other failure", async () => {
+  const s = await setup();
+  try {
+    let conflicts = 1;
+    let calls = 0;
+    const flaky = (failure: () => Error) =>
+      new BuiltInActionRuleSwitches({
+        configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        state: {
+          readScopedState: (...args) => s.repository.readScopedState(...args),
+          commitStateAndEvents: async (input) => {
+            calls += 1;
+            if (conflicts > 0) {
+              conflicts -= 1;
+              throw failure();
+            }
+            return s.repository.commitStateAndEvents(input);
+          },
+        },
+        authority: () => SERVICE_AUTHORITY.lease,
+        clock: s.clock,
+      });
+    await flaky(() => new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "raced")).setAskFirst(
+      ACTION_RULE_IDS.preauthorizeOwnerData,
+      true,
+    );
+    expect(calls).toBe(2);
+    const switches = flaky(() => new Error("DISK_DOWN"));
+    expect((await switches.list())[0]?.askFirst).toBe(true);
+    conflicts = 1;
+    calls = 0;
+    await expect(
+      switches.setAskFirst(ACTION_RULE_IDS.preauthorizeOwnerData, false),
+    ).rejects.toThrow("DISK_DOWN");
+    expect(calls).toBe(1);
+    conflicts = 3;
+    calls = 0;
+    await expect(
+      flaky(() => new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "raced")).setAskFirst(
+        ACTION_RULE_IDS.preauthorizeOwnerData,
+        false,
+      ),
+    ).rejects.toThrow("raced");
+    expect(calls).toBe(3);
+    expect((await switches.list())[0]?.askFirst).toBe(true);
   } finally {
     await s.close();
   }

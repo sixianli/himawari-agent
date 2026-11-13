@@ -113,6 +113,7 @@ import {
 import { type StageTiming, stageTiming } from "./production-stage-timing.js";
 import {
   type ContextExternalContent,
+  ExternalContentMarkNotWrittenError,
   originsOf,
   RECALLED_EXTERNAL_RECORD_ORIGIN,
 } from "./context-external-content.js";
@@ -1228,6 +1229,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     try {
       await this.#markExternalContent(invocation);
     } catch (error) {
+      if (!(error instanceof ExternalContentMarkNotWrittenError)) throw error;
       await this.#options.assertRunActive(invocation.runId);
       signal?.throwIfAborted();
       await this.#writeJson(

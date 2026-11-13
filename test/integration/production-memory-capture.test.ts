@@ -8,6 +8,7 @@ import {
   type MemoryProviderProjectionPort,
   OwnerProfileService,
   type ProductMemoryRecord,
+  type RunExecutionSourcePort,
   type RuntimeRequest,
   type ThreadRepositoryPort,
 } from "@himawari-agent/application";
@@ -39,6 +40,11 @@ import {
   ProductionMemoryCapture,
   parseMemoryCandidates,
 } from "../../apps/agent-service/src/production-memory-capture.ts";
+import {
+  ContextExternalContent,
+  externalContentKey,
+  runExternalOrigins,
+} from "../../apps/agent-service/src/context-external-content.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import {
   isStandingQuote,
@@ -210,27 +216,56 @@ describe("production memory capture", () => {
     const calls: MemoryCaptureCall[] = [];
     const outputs: (string | Error)[] = [output];
     const relevant: string[] = [];
-    let externalOrigins: readonly string[] = [];
-    const capture = new ProductionMemoryCapture({
-      sources: {
-        read: async (runId) => {
-          const owner = messages.find((item) => item.role === "owner" && item.runId === runId);
-          if (!owner) return undefined;
-          return {
-            ownerId: OWNER_ID,
-            agentId: AGENT_ID,
-            runId,
-            sessionId: "session" as never,
-            threadId: THREAD_ID,
-            triggerId: "trigger" as never,
-            sourceType: "user_message",
-            sourceId: owner.id,
-            payloadRef: owner.contentRef,
-            dataClassification: "private",
-            occurredAt: T0,
-          };
+    const externalMarks = new Map<string, readonly string[]>();
+    const externalContent = new ContextExternalContent({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      state: {
+        readScopedState: async (_owner, _agent, key) => {
+          const origins = externalMarks.get(key);
+          return origins
+            ? ({
+                revision: 1,
+                value: {
+                  sources: origins.map((origin) => ({
+                    origin,
+                    firstRunId: "run-earlier",
+                    firstSeenAt: T0,
+                  })),
+                },
+              } as never)
+            : undefined;
+        },
+        commitStateAndEvents: async () => {
+          throw new Error("marks are seeded directly in this test");
         },
       },
+      source: { read: (runId) => runSources.read(runId) },
+      authority: () => {
+        throw new Error("marks are seeded directly in this test");
+      },
+      clock: { now: () => T0 },
+    });
+    const runSources: RunExecutionSourcePort = {
+      read: async (runId) => {
+        const owner = messages.find((item) => item.role === "owner" && item.runId === runId);
+        if (!owner) return undefined;
+        return {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId,
+          sessionId: "session" as never,
+          threadId: THREAD_ID,
+          triggerId: "trigger" as never,
+          sourceType: "user_message",
+          sourceId: owner.id,
+          payloadRef: owner.contentRef,
+          dataClassification: "private",
+          occurredAt: T0,
+        };
+      },
+    };
+    const capture = new ProductionMemoryCapture({
+      sources: runSources,
       threads: {
         listMessages: async (_owner, _agent, _thread, afterSequence, limit) =>
           messages.filter(({ sequence }) => sequence > afterSequence).slice(0, limit),
@@ -240,7 +275,7 @@ describe("production memory capture", () => {
       generations: repository.threadDistillationState(),
       state: repository.productMemoryState(),
       relevantMemoryIds: () => relevant as never,
-      externalOrigins: async () => externalOrigins,
+      externalOrigins: runExternalOrigins(externalContent),
       product: memory,
       approvals: repository.sensitiveMemoryApprovals(),
       reminders: repository.memoryReminders(),
@@ -393,8 +428,8 @@ describe("production memory capture", () => {
       capture,
       control,
       actionRules,
-      setExternalOrigins: (origins: readonly string[]) => {
-        externalOrigins = origins;
+      markThread: (threadId: string, origins: readonly string[]) => {
+        externalMarks.set(externalContentKey({ threadId, runId: "" }), origins);
       },
       reminderTools,
       ruleTools: new ProductionOwnerRuleTools(ruleWriter),
@@ -1981,11 +2016,11 @@ describe("production memory capture", () => {
     ).toMatchObject({ status: "active", dataClassification: "sensitive" });
   });
 
-  it("[ADR-0257] marks a memory captured from a conversation that read outside content, and leaves others unmarked", async () => {
+  it("[ADR-0257] marks a memory captured from a conversation that read outside content, and leaves it unmarked when only another conversation did", async () => {
     const output =
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}';
     const marked = await setup("请记住，我最喜欢的颜色是蓝色。", output);
-    marked.setExternalOrigins(["web_fetch"]);
+    marked.markThread(THREAD_ID, ["web_fetch"]);
     await marked.capture.start(marked.request);
     await marked.capture.stop();
     const [captured] = await marked.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
@@ -1993,6 +2028,7 @@ describe("production memory capture", () => {
       expect.arrayContaining([expect.stringMatching(/^external-content:.*\|web_fetch$/u)]),
     );
     const plain = await setup("请记住，我最喜欢的颜色是蓝色。", output);
+    plain.markThread("thread-elsewhere", ["web_fetch"]);
     await plain.capture.start(plain.request);
     await plain.capture.stop();
     const [unmarked] = await plain.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);

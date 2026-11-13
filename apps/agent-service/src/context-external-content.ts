@@ -19,15 +19,38 @@ const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(va
 
 export const CONTEXT_EXTERNAL_CONTENT_KEY_PREFIX = "context-external-content:";
 const WRITE_ATTEMPTS = 5;
+const SOURCE_REF_LIMIT = 512;
+const ORIGIN_IN_REF_LIMIT = 256;
 export const RECALLED_EXTERNAL_RECORD_ORIGIN = "recalled_external_record";
+
+export class ExternalContentMarkNotWrittenError extends Error {
+  constructor(cause: unknown) {
+    super("EXTERNAL_CONTENT_MARK_NOT_WRITTEN", { cause });
+    this.name = "ExternalContentMarkNotWrittenError";
+  }
+}
 
 export function externalContentSourceRefs(
   recordId: string,
   origins: readonly string[],
 ): readonly string[] {
-  return [...new Set(origins)]
+  return [...new Set(origins.map((origin) => origin.slice(0, ORIGIN_IN_REF_LIMIT)))]
     .sort((left, right) => left.localeCompare(right, "en"))
-    .map((origin) => `${EXTERNAL_CONTENT_SOURCE_REF_PREFIX}${recordId}|${origin}`.slice(0, 512));
+    .map((origin) => {
+      const room = SOURCE_REF_LIMIT - EXTERNAL_CONTENT_SOURCE_REF_PREFIX.length - 1 - origin.length;
+      return `${EXTERNAL_CONTENT_SOURCE_REF_PREFIX}${recordId.slice(0, room)}|${origin}`;
+    });
+}
+
+export function runExternalOrigins(content: Pick<ContextExternalContent, "read"> | undefined) {
+  return async (runId: RunId): Promise<readonly string[]> => originsOf(await content?.read(runId));
+}
+
+export function threadExternalOrigins(
+  content: Pick<ContextExternalContent, "readThread"> | undefined,
+) {
+  return async (threadId: string): Promise<readonly string[]> =>
+    originsOf(await content?.readThread(threadId));
 }
 
 export function isConflict(error: unknown): boolean {
@@ -107,6 +130,7 @@ export class ContextExternalContent {
   readonly #source: RunExecutionSourcePort;
   readonly #authority: () => AuthorityFence;
   readonly #clock: ClockPort;
+  readonly #pending = new Map<string, Promise<void>>();
 
   constructor(options: {
     readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
@@ -157,8 +181,19 @@ export class ContextExternalContent {
   async mark(runId: RunId, origin: string): Promise<void> {
     const [scope] = await this.#scopes(runId);
     if (!scope) return;
-    const { ownerId, agentId } = this.#configuration;
     const key = externalContentKey(scope);
+    const previous = this.#pending.get(key) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(() => this.#write(key, runId, origin));
+    this.#pending.set(key, current);
+    try {
+      await current;
+    } finally {
+      if (this.#pending.get(key) === current) this.#pending.delete(key);
+    }
+  }
+
+  async #write(key: string, runId: RunId, origin: string): Promise<void> {
+    const { ownerId, agentId } = this.#configuration;
     let lastError: unknown;
     for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt += 1) {
       const record = await this.#state.readScopedState(ownerId, agentId, key);
@@ -187,10 +222,10 @@ export class ContextExternalContent {
         });
         return;
       } catch (error) {
-        if (!isConflict(error)) throw error;
+        if (!isConflict(error)) throw new ExternalContentMarkNotWrittenError(error);
         lastError = error;
       }
     }
-    throw lastError;
+    throw new ExternalContentMarkNotWrittenError(lastError);
   }
 }

@@ -35,7 +35,8 @@ import { PiAgentRuntimeAdapter, type PiModelBindingPort } from "@himawari-agent/
 import {
   type ContextExternalContent,
   markRecalledExternalRecords,
-  originsOf,
+  runExternalOrigins,
+  threadExternalOrigins,
 } from "./context-external-content.js";
 import type { ProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import type { ProductionBackgroundCommands } from "./production-background-commands.js";
@@ -555,8 +556,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
         relevantMemoryIds: (runId) => recalled.get(runId) ?? [],
         ...(options.externalContent
           ? {
-              externalOrigins: async (runId: RuntimeRequest["runId"]) =>
-                originsOf(await externalContent?.read(runId)),
+              externalOrigins: runExternalOrigins(externalContent),
             }
           : {}),
         product: memoryCaptureOptions.product,
@@ -621,8 +621,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
           ledger: repository.decisionLedger(),
           ...(options.externalContent
             ? {
-                externalOrigins: async (threadId: string) =>
-                  originsOf(await externalContent?.readThread(threadId)),
+                externalOrigins: threadExternalOrigins(externalContent),
               }
             : {}),
           ...(memoryCaptureOptions.timeZone ? { timeZone: memoryCaptureOptions.timeZone } : {}),

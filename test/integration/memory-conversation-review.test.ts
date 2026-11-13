@@ -36,6 +36,11 @@ import {
   DEFAULT_CONVERSATION_REVIEW_SETTINGS,
   ProductionMemoryConversationReview,
 } from "../../apps/agent-service/src/production-memory-conversation-review.ts";
+import {
+  ContextExternalContent,
+  externalContentKey,
+  threadExternalOrigins,
+} from "../../apps/agent-service/src/context-external-content.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-conversation-review");
@@ -122,6 +127,7 @@ describe("[DREAM] daily conversation review", () => {
     readonly failSettles?: number;
     readonly failWrite?: boolean;
     readonly episodeClassification?: "private" | "sensitive";
+    readonly externalMarks?: Readonly<Record<string, readonly string[]>>;
   }) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-conversation-review-"));
     directories.push(stateRoot);
@@ -290,6 +296,37 @@ describe("[DREAM] daily conversation review", () => {
         await reviews.recordChange(change);
       },
     };
+    const externalContent = new ContextExternalContent({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      state: {
+        readScopedState: async (_owner, _agent, key) => {
+          const thread = Object.keys(input.externalMarks ?? {}).find(
+            (threadId) => externalContentKey({ threadId, runId: "" }) === key,
+          );
+          const origins = thread ? input.externalMarks?.[thread] : undefined;
+          return origins
+            ? ({
+                revision: 1,
+                value: {
+                  sources: origins.map((origin) => ({
+                    origin,
+                    firstRunId: "run-earlier",
+                    firstSeenAt: TALK_DAY,
+                  })),
+                },
+              } as never)
+            : undefined;
+        },
+        commitStateAndEvents: async () => {
+          throw new Error("marks are seeded directly in this test");
+        },
+      },
+      source: { read: async () => undefined },
+      authority: () => {
+        throw new Error("marks are seeded directly in this test");
+      },
+      clock: { now: () => clock.value },
+    });
     const review = new ProductionMemoryConversationReview({
       settings: () => ({ ...DEFAULT_CONVERSATION_REVIEW_SETTINGS, ...input.settings }),
       episodes: repository.memoryEpisodes(),
@@ -321,6 +358,7 @@ describe("[DREAM] daily conversation review", () => {
         if (activeChecks === input.failAssertActiveAt) throw new Error("AUTHORITY_LOST");
       },
       externalTag: async () => tag,
+      externalOrigins: threadExternalOrigins(externalContent),
       generate: async (request, prompt, onAdmitted, call) => {
         classifications.push(request.dataClassification);
         prompts.push(prompt);
@@ -408,6 +446,26 @@ describe("[DREAM] daily conversation review", () => {
     expect((await resource.read("osaka"))?.attributes?.supersededBy ?? null).toBeNull();
     expect((await resource.read(kyoto?.record.id ?? ""))?.status).toBe("archived");
     await expect(resource.undo(reviewId)).rejects.toThrow("Conversation review undone");
+  });
+
+  it("[ADR-0257] marks review memories from a conversation that read outside content, and not from another conversation's reads", async () => {
+    const create = output({ messageId: "message-3", decision: "create" });
+    for (const [marks, expected] of [
+      [{ [THREAD_ID]: ["web_fetch"] }, true],
+      [{ "thread-elsewhere": ["web_fetch"] }, false],
+    ] as const) {
+      const resource = await setup({
+        lines: PLAN_CHANGE,
+        outputs: [create],
+        externalMarks: marks,
+      });
+      const [result] = await resource.review.runDue(resource.request);
+      expect(result?.changes.map(({ action }) => action)).toEqual(["created"]);
+      const [created] = await resource.active();
+      expect(
+        created?.record.sourceRefs.some((ref) => /^external-content:.*\|web_fetch$/u.test(ref)),
+      ).toBe(expected);
+    }
   });
 
   it("does not read the same conversation twice and keeps the prompt bytes for the same data", async () => {
