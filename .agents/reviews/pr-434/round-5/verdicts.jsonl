@@ -1,0 +1,1 @@
+{"id": "r5-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低（测试健壮性，推测风险，不影响当前断言）", "valid": false, "class": "better", "severity": null, "modelSeverity": "低", "reason": "review_after 取 updatedAt 和迁移 0095 回填的写法 CASE WHEN status = 'needs_review' THEN updated_at END 一致，模拟的就是真实数据里待重审规则的状态；模型自己写明当前断言不受影响、只是以后接入自动重审时的推测风险，不是会出错的问题，不改"}

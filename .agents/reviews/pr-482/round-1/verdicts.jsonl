@@ -1,0 +1,4 @@
+{"id": "1", "quote": "### 低：新错误信息把未校验的 `branch.type` 直接写进 CI 日志", "valid": true, "class": "better", "modelSeverity": "低", "reason": "成立，可以更好：报告由本仓库 CI 生成，不是外部输入；仍改为 JSON.stringify 后截到 40 字符，命中数截到 200 字符，并加上分支编号。", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "2", "quote": "### 低：详细错误字符串对每条合法分支都会提前构造和序列化", "valid": true, "class": "better", "modelSeverity": "低", "reason": "成立，可以更好：只是每条分支多一次小数组序列化；已改为只在不合法时拼报错。", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "3", "quote": "### 信息：新增测试没有覆盖动机中的 `if` 隐式 else 负数命中形状", "valid": true, "class": "better", "modelSeverity": "信息", "reason": "成立，可以更好：已加 if 隐式 else 为 -2 的用例。", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "4", "quote": "### 信息：删注释合规，但有一条实现理由没有替代记录", "valid": true, "class": "better", "modelSeverity": "信息", "reason": "成立，可以更好：end.column 为 null 的理由写进提交说明。", "model": "opencode-go/deepseek-v4.1-flash"}

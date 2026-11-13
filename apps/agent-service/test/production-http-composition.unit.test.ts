@@ -369,10 +369,12 @@ describe("production HTTP composition", () => {
           "server.status.read",
           "home.read",
           "data.export.start",
+          "data.export.cancel",
           "data.export.status.read",
           "files.list.read",
           "login.devices.read",
           "login.device.revoke",
+          "login.devices.revoke_others",
         ],
         healthDependenciesAvailable: true,
       });
@@ -1229,12 +1231,40 @@ describe("production HTTP composition", () => {
       });
       expect(archive.statusCode).toBe(200);
       expect(archive.rawPayload.byteLength).toBe(exported.result?.sizeBytes);
+      const cancelExport = (id: string, key: string) =>
+        running.composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/commands",
+          headers: { ...requestHeaders(token, second.cookie, second.csrf), "idempotency-key": key },
+          payload: {
+            ...ownerEnvelope(second.authenticationRef, "data.export.cancel"),
+            kind: "command",
+            idempotencyKey: key,
+            payload: { exportId: id },
+          },
+        });
+      expect(
+        (await cancelExport("data-export:AAAAAAAAAAAAAAAAAAAAAA", "data-export-cancel-unknown"))
+          .statusCode,
+      ).toBe(404);
       const exportWithoutSession = await running.composition.app.inject({
         method: "GET",
         url: exported.result?.downloadPath ?? "",
         headers: requestHeaders(token, "", undefined),
       });
       expect(exportWithoutSession.statusCode).toBe(401);
+      const cancelled = await cancelExport(exportId, "data-export-cancel-01");
+      expect(cancelled.statusCode, cancelled.body).toBe(200);
+      expect(cancelled.json()).toMatchObject({ resultRef: exportId, replayed: false });
+      expect(
+        (
+          await running.composition.app.inject({
+            method: "GET",
+            url: exported.result?.downloadPath ?? "",
+            headers: requestHeaders(token, second.cookie),
+          })
+        ).statusCode,
+      ).toBe(404);
       const phoneFiles = await running.composition.app.inject({
         method: "POST",
         url: "/api/gateway/v2/queries",
@@ -1346,6 +1376,43 @@ describe("production HTTP composition", () => {
       expect((await loginDevices()).find(({ current }) => current)?.deviceId).toBe(
         current?.deviceId,
       );
+      for (const id of ["device-extra-1", "device-extra-2"])
+        await deviceState.saveDevice(
+          {
+            id: id as never,
+            ownerId: OWNER_ID as never,
+            label: id,
+            status: "active",
+            firstSeenAt: "2026-11-01T00:00:00.000Z",
+            lastSeenAt: "2026-11-01T00:00:00.000Z",
+          },
+          null,
+        );
+      const revokeOthers = (recentAuthenticationRef: string | null, key: string) =>
+        running.composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/commands",
+          headers: { ...requestHeaders(token, second.cookie, second.csrf), "idempotency-key": key },
+          payload: {
+            ...ownerEnvelope(second.authenticationRef, "login.devices.revoke_others"),
+            kind: "command",
+            idempotencyKey: key,
+            payload: { recentAuthenticationRef },
+          },
+        });
+      const crowded = await loginDevices();
+      expect(crowded.length).toBeGreaterThanOrEqual(3);
+      expect((await revokeOthers(null, "revoke-others-no-recent")).statusCode).not.toBe(200);
+      expect((await loginDevices()).length).toBe(crowded.length);
+      const othersCleared = await revokeOthers(second.authenticationRef, "revoke-others");
+      expect(othersCleared.statusCode, othersCleared.body).toBe(200);
+      expect(othersCleared.json()).toMatchObject({ replayed: false });
+      expect(await loginDevices()).toEqual([
+        expect.objectContaining({ deviceId: current?.deviceId, current: true }),
+      ]);
+      const clearedAgain = await revokeOthers(null, "revoke-others-again");
+      expect(clearedAgain.statusCode, clearedAgain.body).toBe(200);
+      expect(clearedAgain.json()).toMatchObject({ replayed: true });
       const readInterceptions = async () => {
         const response = await running.composition.app.inject({
           method: "POST",

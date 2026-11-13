@@ -178,9 +178,30 @@ export function isWrapUp(request) {
   return JSON.stringify(request.messages ?? []).includes(WRAP_UP_PROMPT);
 }
 
+export function firstChangedMessage(earlier, later) {
+  const index = earlier.messages.findIndex(
+    (message, position) => JSON.stringify(message) !== JSON.stringify(later.messages[position]),
+  );
+  if (index < 0) return "";
+  const before = JSON.stringify(earlier.messages[index] ?? null);
+  const after = JSON.stringify(later.messages[index] ?? null);
+  let at = 0;
+  while (at < before.length && before[at] === after[at]) at += 1;
+  const start = Math.max(0, at - 300);
+  const shown = (text) => `${start > 0 ? "…" : ""}${text.slice(start, at + 1200)}`;
+  return [
+    `message ${index} of ${earlier.messages.length} changed (later request has ${later.messages.length}); first difference at character ${at} of ${before.length} (later ${after.length})`,
+    `earlier: ${shown(before)}`,
+    `later:   ${shown(after)}`,
+  ].join("\n");
+}
+
 export function expectAppendedTo(earlier, later) {
   expect(later.tools).toEqual(earlier.tools);
-  expect(later.messages.slice(0, earlier.messages.length)).toEqual(earlier.messages);
+  expect(
+    later.messages.slice(0, earlier.messages.length),
+    firstChangedMessage(earlier, later),
+  ).toEqual(earlier.messages);
   expect(later.messages.length).toBeGreaterThan(earlier.messages.length);
 }
 

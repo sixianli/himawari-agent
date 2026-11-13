@@ -170,7 +170,6 @@ function position(value, lines, filename, end = false) {
 function location(value, lines, filename) {
   assert(object(value), `missing source-map location: ${filename}`);
   position(value.start, lines, filename);
-  // ast-v8-to-istanbul uses Infinity for the end of a mapped line. JSON encodes it as null.
   position(value.end, lines, filename, true);
   assert(
     value.end.line > value.start.line ||
@@ -231,7 +230,6 @@ export function analyzeCoverage({ coverage, sources, policy, root }) {
         `branch map/count arity differs: ${filename}`,
       );
       for (const [index, loc] of branch.locations.entries()) {
-        // The pinned mapper emits precisely this placeholder for an implicit else.
         if (
           branch.type === "if" &&
           index === 1 &&
@@ -241,7 +239,14 @@ export function analyzeCoverage({ coverage, sources, policy, root }) {
           continue;
         location(loc, lines, filename);
       }
-      assert(record.b[id].every(integer), `invalid branch hit count: ${filename}`);
+      if (!record.b[id].every(integer)) {
+        const type = JSON.stringify(branch.type)?.slice(0, 40);
+        const counts = JSON.stringify(record.b[id]).slice(0, 200);
+        assert(
+          false,
+          `invalid branch hit count: ${filename} branch ${id} line ${branch.loc.start.line} type ${type} counts ${counts}`,
+        );
+      }
     }
     assert(
       Object.keys(record.statementMap).length + Object.keys(record.fnMap).length > 0 ||
@@ -478,8 +483,6 @@ export function evaluateCoverage({
   }
   const incremental = changedMetrics(analysis, changed);
   const failures = [];
-  // Owner-approved on 2026-09-15: only this exact threshold transition may
-  // apply in its proposing PR. All workspace floors still use accepted data.
   const approvedThresholdTransition =
     !initialization &&
     policy.thresholds.changedLines === 90 &&

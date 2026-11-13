@@ -28,7 +28,11 @@ vi.mock("../../scripts/ci/install-tools.mjs", async (original) => ({
   },
 }));
 
-import { runGitleaksGate, runSecurityChecks } from "../../scripts/ci/check-security.mjs";
+import {
+  runGitleaksGate,
+  runSecurityChecks,
+  semgrepTimeoutMs,
+} from "../../scripts/ci/check-security.mjs";
 import { createContext } from "../../scripts/ci/context.mjs";
 import { assertPublicArtifacts } from "../../scripts/ci/security-redaction.mjs";
 
@@ -48,7 +52,6 @@ function json(path, value) {
   write(path, JSON.stringify(value));
 }
 function securityFixture() {
-  // Policy candidates are deliberately uncommitted: base has no CI policy, so this is initialization.
   const directory = temporary(),
     git = (...args) =>
       execFileSync("git", ["-C", directory, ...args], {
@@ -98,7 +101,6 @@ function securityFixture() {
       npmCli: join(root, "node_modules/npm/bin/npm-cli.js"),
     },
   };
-  // semver lookup uses the actual installed dependency, without invoking npm or reaching a registry.
   boundary.tools.executables.npmCli = join(root, "node_modules/semver/package.json");
   boundary.run = (command, args, options) => {
     state.calls.push({ command, args, options });
@@ -210,6 +212,11 @@ describe("安全runner的隔离外部边界", () => {
     const result = await runSecurityChecks(f);
     expect(result.status).toBe("passed");
     expect(result.checks.map((c) => c.id)).toEqual(["machine-secrets", "gitleaks", "semgrep"]);
+    expect(
+      f.calls
+        .filter(({ command }) => command === "/synthetic/semgrep")
+        .map(({ options }) => options.timeout),
+    ).toEqual([semgrepTimeoutMs]);
     const report = JSON.parse(readFileSync(result.reportPath));
     expect(fetch).not.toHaveBeenCalled();
     expect(result.retryCount).toBe(0);

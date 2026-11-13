@@ -4,6 +4,12 @@ REPO=${HIMAWARI_REPO:-sixianli/himawari-agent}
 CI_VPS=${CI_VPS_SSH:-ubuntu@158.69.191.249}
 REMOTE=${CI_RUNNER_DIR:-/home/ubuntu/ci-runner}
 LOCK=${RUNNER_LOCK_DIR:-.ci-output/ci-runner-pause.lock}
+SITE_EXPORT=""
+if [ "$RUNNER_SITE" = arm ]; then
+  CI_VPS=${CI_ARM_SSH:-ubuntu@138.2.31.252}
+  LOCK=${RUNNER_LOCK_DIR:-.ci-output/ci-runner-pause-arm.lock}
+  SITE_EXPORT="export RUNNER_SITE=arm; "
+fi
 POLL=${RUNNER_POLL_SECONDS:-30}
 SSH_OPTIONS=(-o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 
@@ -16,7 +22,7 @@ take_lock() {
 }
 
 vps() {
-  ssh "${SSH_OPTIONS[@]}" "$CI_VPS" "[ \"\$(hostname)\" = $RUNNER_HOST ] || { echo \"not $RUNNER_HOST\" >&2; exit 68; }; $1"
+  ssh "${SSH_OPTIONS[@]}" "$CI_VPS" "$SITE_EXPORT$(runner_host_test) || { echo \"not $RUNNER_HOST\" >&2; exit 68; }; $1"
 }
 
 upload_runner_scripts() {
@@ -80,8 +86,11 @@ own_label() {
 
 label_states() {
   local names=$1 table=$2 name count labels own fallback states=""
-  runner_select 1
-  fallback=$RUNNER_NAME
+  fallback=""
+  if [ "$RUNNER_SITE" = vps ]; then
+    runner_select 1
+    fallback=$RUNNER_NAME
+  fi
   for name in $names; do
     count=$(runner_field "$table" "$name" 1 | grep -c .)
     labels=$(runner_field "$table" "$name" 5)
