@@ -114,7 +114,7 @@ public actor DeviceActionExecutor {
         let current = now()
         for entry in entries where entry.stage == .finished {
             if entry.refused {
-                if let keepUntil = entry.keepUntil, keepUntil < current {
+                if (entry.keepUntil ?? .distantPast) < current {
                     try? journal.update { $0.entries[entry.id] = nil }
                 }
                 continue
@@ -140,7 +140,7 @@ public actor DeviceActionExecutor {
             steps.append(.replayed(id: delivery.id))
             return
         }
-        if delivery.mode == .verify || entry?.stage == .started {
+        if delivery.mode == .verify || entry.map({ $0.stage != .received }) == true {
             await verify(delivery, made: entry?.made, before: entry?.before)
             return
         }
@@ -193,7 +193,7 @@ public actor DeviceActionExecutor {
     }
 
     private func verify(_ delivery: DeviceActionDelivery, made: JSONObject?, before: JSONObject?) async {
-        guard let handler = handlers[delivery.action], await handler.permission.status() == .authorized else {
+        guard let handler = handlers[delivery.action], handler.handles(delivery), await handler.permission.status() == .authorized else {
             return await finish(delivery, .resultUnknown, readBack: false, evidence: nil, reason: .cannotCheck)
         }
         if delivery.readBack == .none {

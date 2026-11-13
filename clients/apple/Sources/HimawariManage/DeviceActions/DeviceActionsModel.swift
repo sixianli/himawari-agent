@@ -71,7 +71,7 @@ public final class DeviceActionsModel {
         } catch DeviceAPIError.server(let status, _, _) where status == 404 {
             approvalsAvailable = false
         } catch {}
-        if let views = try? await api.actionViews(finishedSince: Date().addingTimeInterval(-Self.recentWindow)) {
+        if let views = try? await api.actionViews(finishedSince: api.http.correctedNow.addingTimeInterval(-Self.recentWindow)) {
             recent = views.sorted { $0.updatedAt > $1.updatedAt }
         }
         if let policy = try? await api.actionPolicy() { self.policy = policy }

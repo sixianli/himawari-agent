@@ -28,7 +28,7 @@ struct AlwaysAllowed: DevicePermission {
 }
 
 final class NoteFileActions: DeviceActionHandler, @unchecked Sendable {
-    let names = ["test.note.append", "test.note.touch"]
+    let names = ["test.note.append", "test.note.touch", "test.note.v2"]
     let permission: DevicePermission = AlwaysAllowed()
     let file: URL
 
@@ -250,6 +250,32 @@ struct DeviceActionServerTests {
         let steps = await executor.run()
         #expect(steps.first == .reported(id: id, outcome: .resultUnknown, readBack: false))
         #expect(setup.notes.lines == ["摸一下"])
+    }
+
+    @Test func aNewerVersionOfAnActionIsNeitherDoneNorChecked() async throws {
+        let setup = try await setUp()
+        let (executor, _) = try executor(setup)
+        await executor.run()
+        let body: [String: Any] = ["deviceId": setup.deviceId, "action": "test.note.v2", "arguments": ["text": "新版本"], "toolCallId": "call-h"]
+        let asked = try await setup.control.call("request", body)
+        let id = try #require(asked["actionId"] as? String)
+        #expect(await executor.run() == [.reported(id: id, outcome: .failed, readBack: false)])
+        #expect(setup.notes.lines.isEmpty)
+        let after = try await setup.control.call("request", body.merging(["runId": asked["runId"] ?? ""]) { $1 })
+        #expect(after["reason"] as? String == DeviceActionReason.notSupported.text(.chinese))
+    }
+
+    @Test func aFinishedRecordWithoutAResultIsCheckedNotRedone() async throws {
+        let setup = try await setUp()
+        let (executor, journal) = try executor(setup)
+        await executor.run()
+        let asked = try await ask(setup, "浇花", call: "call-i")
+        let id = try #require(asked["actionId"] as? String)
+        try journal.update {
+            $0.entries[id] = DeviceActionJournalEntry(id: id, action: "test.note.append", stage: .finished, before: nil, made: nil, report: nil, updatedAt: setup.clock.now)
+        }
+        #expect(await executor.run() == [.reported(id: id, outcome: .failed, readBack: true)])
+        #expect(setup.notes.lines.isEmpty)
     }
 
     @Test func aDamagedJournalIsTreatedLikeAReinstall() async throws {
