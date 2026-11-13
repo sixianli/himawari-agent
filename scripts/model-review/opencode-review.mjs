@@ -3293,8 +3293,8 @@ async function main() {
   if (options.mode === "code-review" && !options.selfCheckOnly) {
     const ledgerPath = `${REVIEWS_DIR}/${reviewKey(options)}`;
     let claimsOwned;
-    const skip = () =>
-      (claimsOwned ??= new Set(
+    const skip = () => {
+      claimsOwned ??= new Set(
         claimsProblems({
           repo: options.repo,
           head: commits.head,
@@ -3303,7 +3303,9 @@ async function main() {
           parseUsage,
           looksSecret: claimsFileSecretLike,
         }).files,
-      ));
+      );
+      return claimsOwned;
+    };
     const refused = previousProblem({
       records,
       round,
