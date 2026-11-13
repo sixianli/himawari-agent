@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { runnerTracking } from "./runner-tracking.mjs";
 import { redactText } from "./security-redaction.mjs";
 
 export async function execute(command, args, { cwd, env, log, timeoutMs = 900_000 }) {
@@ -10,7 +11,7 @@ export async function execute(command, args, { cwd, env, log, timeoutMs = 900_00
   let termination;
   const child = spawn(command, args, {
     cwd,
-    env,
+    env: env === undefined ? undefined : { ...env, ...runnerTracking() },
     stdio: ["ignore", "pipe", "pipe"],
     detached: process.platform !== "win32",
   });
