@@ -145,6 +145,7 @@ describe("[WP-3] web push dispatch", () => {
         },
         readMemoryText: async (memory) => `text of ${memory.id}`,
         listApprovals: async () => approvals,
+        awaitingCount: async () => 7,
         runThread: async () => "thread-1",
         threadTitle: async (threadId) =>
           titles.has(threadId) ? { title: titles.get(threadId) ?? null } : null,
@@ -252,7 +253,7 @@ describe("[WP-3] web push dispatch", () => {
     expect(phone[1]?.notification).toMatchObject({
       navigate: `${ORIGIN}/memory`,
       lang: "zh-CN",
-      app_badge: "2",
+      app_badge: "7",
     });
     expect(phone[0]?.notification["navigate"]).toBe(`${ORIGIN}/threads/thread-1`);
     const laptop = sent.filter(({ endpoint }) => endpoint.endsWith("/laptop"));
@@ -293,6 +294,41 @@ describe("[WP-3] web push dispatch", () => {
     context.setClock(at(T0, 30));
     await restarted.tick();
     expect(context.sender.requests).toHaveLength(8);
+  });
+
+  it("[HOME-count] sends no badge when the home count is unavailable or cannot be read, and reads it only when something is sent", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    context.setClock(T0);
+    let reads = 0;
+    const unavailable = context.create({
+      awaitingCount: async () => {
+        reads += 1;
+        return undefined;
+      },
+    });
+    await unavailable.tick();
+    expect(reads).toBe(0);
+    context.reminder("r1", "private");
+    await unavailable.tick();
+    await unavailable.tick();
+    expect(reads).toBe(1);
+    expect(context.sender.notifications()).toHaveLength(1);
+    expect("app_badge" in (context.sender.notifications()[0]?.notification ?? {})).toBe(false);
+    expect(context.failures).toEqual([]);
+
+    context.approval("a1", "high");
+    const broken = context.create({
+      awaitingCount: async () => {
+        throw new Error("home count down");
+      },
+    });
+    await broken.tick();
+    await broken.tick();
+    const sent = context.sender.notifications();
+    expect(sent).toHaveLength(2);
+    expect("app_badge" in (sent[1]?.notification ?? {})).toBe(false);
+    expect(context.failures).toEqual([new Error("home count down")]);
   });
 
   it("[WP-3] hides sensitive reminders and suppresses everything while a page is visible", async () => {
