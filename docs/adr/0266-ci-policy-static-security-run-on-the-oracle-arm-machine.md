@@ -27,7 +27,7 @@ date: "2026-11-13"
 
 ## 背景
 
-CI（每次推送后 GitHub Actions 自动跑的检查）的检查作业原来全部排在 CI 服务器的几个 runner（装在自己机器上、替 GitHub 执行作业的程序）上，开发线程一多就排长队。Andy 租的 Oracle 东京 ARM 机器（4 核、24 GB）上已经装好 `ci-arm-1`、`ci-arm-2` 两个 runner，此前只跑不计入必过结论的试跑工作流。这份 ADR 决定把三项检查正式放到它上面，并修订 [ADR 0253](0253-support-linux-arm64-for-test-and-qualification.md) 里“ARM 不进必过检查”的那一条。
+CI（每次推送后 GitHub Actions 自动跑的检查）的检查作业原来全部排在 CI 服务器的几个 runner（装在自己机器上、替 GitHub 执行作业的程序）上，开发线程一多就排长队。Andy 租的 Oracle 东京 ARM 机器（4 核、24 GB）上已经装好 `ci-arm-1`、`ci-arm-2` 两个 runner。这份 ADR 决定把三项检查正式放到它上面，并修订 [ADR 0253](0253-support-linux-arm64-for-test-and-qualification.md) 里“ARM 不进必过检查”的那一条。
 
 <a id="premises"></a>
 
@@ -66,7 +66,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）的检查作业原来�
 
 | 方案 | 结论 | 原因 |
 | --- | --- | --- |
-| 三项检查切到 ARM，保留 x64 应急 | 采用 | 同时能跑的检查作业从 2 个变成 4 个，Oracle 停机时可退回 |
+| 三项检查切到 ARM，保留 x64 应急 | 采用 | 能接检查作业的 runner 从 3 个（`ci-vps-1`、`ci-vps-2`、`ci-vps-3`）变成 5 个（再加 `ci-arm-1`、`ci-arm-2`），Oracle 停机时可退回 |
 | 继续跑 20 次试跑再切 | 不采用 | Andy 明确要求立刻切，排队正在阻塞整个项目 |
 | 汇总只接受 arm64 | 不采用 | Oracle 被回收或停机时必过检查会一直排队，应急命令也就没用 |
 | build、browser、coverage 也搬到 ARM | 暂不采用 | 它们消费 x64 构建产物，要先有 ARM 产物和覆盖率合并方案 |
