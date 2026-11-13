@@ -456,6 +456,44 @@ describe("HTTP Gateway contract and security boundary", () => {
     }
   });
 
+  it("passes a machine reason through as reasonCode and keeps free text private", async () => {
+    const reasons = ["LOGIN_DEVICES_STILL_CHANGING", "disk headroom"];
+    const { app } = createFixture({
+      async request() {
+        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, reasons.shift() ?? "", {
+          internal: "private detail",
+        });
+      },
+      async *subscribe() {},
+    });
+    const query = () =>
+      app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(),
+        payload: {
+          ...envelope("query", "workspace.list"),
+          schemaVersion: "gateway.v2",
+          risk: "low",
+          authorizationRef: null,
+          authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+          payload: { afterCursor: null, limit: 10 },
+        },
+      });
+    try {
+      const machine = await query();
+      expect(machine.statusCode).toBe(409);
+      expect(machine.json()).toEqual({
+        error: { code: "PORT_CONFLICT", reasonCode: "LOGIN_DEVICES_STILL_CHANGING" },
+      });
+      const text = await query();
+      expect(text.statusCode).toBe(409);
+      expect(text.json()).toEqual({ error: { code: "PORT_CONFLICT" } });
+    } finally {
+      await app.close();
+    }
+  });
+
   const fixtures: ReturnType<typeof createFixture>[] = [];
 
   afterEach(async () => {

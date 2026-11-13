@@ -201,6 +201,7 @@ const IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+
 const DEFAULT_HEARTBEAT_MILLISECONDS = 15_000;
 const SLOW_REQUEST_MILLISECONDS = 2_000;
 const STREAM_PATH = /\/(?:execution-)?events$/;
+const MACHINE_REASON = /^[A-Z][A-Z0-9_]{2,63}$/;
 
 class HttpGatewayError extends Error {
   readonly code: string;
@@ -889,7 +890,12 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             : error.code === PORT_ERROR_CODES.OPERATION_NOT_INSTALLED
               ? 501
               : 409;
-      sendJson(reply, statusCode, { error: { code: error.code } });
+      sendJson(reply, statusCode, {
+        error: {
+          code: error.code,
+          ...(MACHINE_REASON.test(error.message) ? { reasonCode: error.message } : {}),
+        },
+      });
       return;
     }
     const statusCode =
