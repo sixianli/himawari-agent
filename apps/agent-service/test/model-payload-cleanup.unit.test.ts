@@ -41,12 +41,11 @@ class CleanupRuntime {
     const value = this.models.get(`${providerId}:${modelId}`);
     return value ? { ...(value as Record<string, unknown>), provider: providerId } : undefined;
   }
-  registerProvider(providerId: string, config: Readonly<Record<string, unknown>>): void {
-    for (const model of config["models"] as { id: string }[])
-      this.models.set(`${providerId}:${model.id}`, model);
+  registerNativeProvider(provider: { readonly id: string; getModels(): readonly unknown[] }): void {
+    for (const model of provider.getModels() as { id: string }[])
+      this.models.set(`${provider.id}:${model.id}`, model);
   }
-  async setRuntimeApiKey(): Promise<void> {}
-  async removeRuntimeApiKey(): Promise<void> {}
+  async refresh(): Promise<void> {}
   stream(_model: unknown, _context: unknown, options: Record<string, unknown>) {
     const failing = this.failing;
     return (async function* () {

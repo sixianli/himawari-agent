@@ -723,10 +723,31 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 93,
+    name: "external_memory_proposals",
+    changeSet: "external-memory-proposals",
+    phase: "expand" as const,
+    file: "0093_external_memory_proposals.sql",
+  },
+  {
+    sequence: 94,
+    name: "memory_conversation_review",
+    changeSet: "memory-conversation-review",
+    phase: "expand" as const,
+    file: "0094_memory_conversation_review.sql",
+  },
+  {
+    sequence: 95,
+    name: "correction_propagation",
+    changeSet: "correction-propagation",
+    phase: "expand" as const,
+    file: "0095_correction_propagation.sql",
+  },
+  {
+    sequence: 96,
     name: "web_push_gate",
     changeSet: "web-push-gate",
     phase: "expand" as const,
-    file: "0093_web_push_gate.sql",
+    file: "0096_web_push_gate.sql",
   },
 ] as const;
 

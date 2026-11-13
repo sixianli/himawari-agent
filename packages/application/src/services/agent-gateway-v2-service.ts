@@ -42,7 +42,7 @@ export class AgentGatewayV2Service implements AgentGatewayV2Port {
     }
     return message.kind === "command"
       ? this.dependencies.controlPlane.execute({ authentication, command: message })
-      : this.dependencies.reads.query(message);
+      : this.dependencies.reads.query(message, { authentication });
   }
 
   async *subscribe(

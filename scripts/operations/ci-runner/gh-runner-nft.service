@@ -1,7 +1,7 @@
 [Unit]
 Description=Network limits for the GitHub Actions runner accounts
 After=network-pre.target
-Before=gh-runner.service gh-runner-2.service
+Before=gh-runner.service gh-runner-2.service gh-runner-3.service gh-runner-gate.service
 
 [Service]
 Type=oneshot

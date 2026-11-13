@@ -183,6 +183,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
       state: repository.productMemoryState(),
       jobs: repository.memoryProjectionJobs(),
       approvals: repository.sensitiveMemoryApprovals(),
+      unitOfWork: repository.unitOfWork(),
       memory: guarded,
       book: repository.memoryBook(),
       ledger: spiedLedger,
@@ -742,7 +743,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         gmailInputs({
           ruleIds: [
             "floor_important_sender@1",
-            "floor_money_words@1",
+            "floor_money_words@2",
             "quiet_hours@1",
             "suppress_small_amount@1",
           ],
@@ -772,11 +773,12 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
       expect(byId.get("floor_money_words")).toMatchObject({
         kind: "money_words",
         origin: "built_in",
-        source: "ADR 0106 第 4 条；ADR 0209",
+        revision: 2,
+        source: "ADR 0106 第 4 条；ADR 0209；ADR 0248",
         tests: { state: "passed", failedAt: null },
         mailCount: 1,
       });
-      expect(byId.get("floor_money_words")?.wording?.values).toContain("invoice");
+      expect(byId.get("floor_money_words")?.wording?.values).toEqual([]);
       expect(byId.get("quiet_hours")).toMatchObject({
         kind: "quiet_hours",
         revision: 1,
@@ -856,7 +858,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
       f.sql((database) => {
         database
           .prepare(
-            "UPDATE rule_book_rules SET source_memory_id = 'memory-a', status = 'needs_review' WHERE rule_id = 'floor_important_sender'",
+            "UPDATE rule_book_rules SET source_memory_id = 'memory-a', status = 'needs_review', review_after = updated_at WHERE rule_id = 'floor_important_sender'",
           )
           .run();
       });

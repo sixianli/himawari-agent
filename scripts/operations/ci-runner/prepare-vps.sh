@@ -36,7 +36,7 @@ printf 'Unattended-Upgrade::Automatic-Reboot "false";\n' > "$NO_REBOOT_CFG"
 
 printf '%s\n' '$nrconf{override_rc}{qr(^gh-runner)} = 0;' > "$NEEDRESTART_CFG"
 perl -e 'our %nrconf; do "/etc/needrestart/needrestart.conf"; die $@ if $@;
-  for my $unit (qw(gh-runner.service gh-runner-2.service)) {
+  for my $unit (qw(gh-runner.service gh-runner-2.service gh-runner-3.service gh-runner-gate.service)) {
     my $restart = 1;
     for my $re (keys %{$nrconf{override_rc}}) { next unless $unit =~ /$re/; $restart = $nrconf{override_rc}{$re}; last }
     exit 1 if $restart;

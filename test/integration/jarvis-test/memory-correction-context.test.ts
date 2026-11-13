@@ -43,6 +43,42 @@ describe("Jarvis Test #1 memory correction: the material given to the model", ()
   );
 });
 
+describe("Jarvis Test #9 next step: the material given to the model", () => {
+  useSqliteContractExecution("worker");
+  const roots: string[] = [];
+  afterAll(async () => {
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  });
+  const proactiveCases = dataset.cases.filter(({ scenario }) => scenario === "proactive_next_step");
+  const material = async (item: (typeof proactiveCases)[number]) => {
+    const root = await mkdtemp(path.join(tmpdir(), `himawari-jarvis-${item.id}-`));
+    roots.push(root);
+    return (await assembleContext(dataset, item, root)).material;
+  };
+
+  it.each(
+    proactiveCases
+      .filter(({ memories }) => (memories?.length ?? 0) > 0)
+      .map((item) => [item.id, item.title, item] as const),
+  )(
+    "%s %s: lists the dated memory without a reminder in the next seven days",
+    async (_id, _title, item) => {
+      const text = await material(item);
+      expect(text).toContain("主人接下来 7 天的安排");
+      for (const memory of item.memories ?? [])
+        expect(text, memory.id).toContain(`（这 7 天里没有提醒）：${memory.text}`);
+    },
+  );
+
+  it.each(
+    proactiveCases
+      .filter(({ memories }) => (memories?.length ?? 0) === 0)
+      .map((item) => [item.id, item.title, item] as const),
+  )("REVERSE %s %s: carries no agenda when nothing is dated", async (_id, _title, item) => {
+    expect(await material(item)).not.toContain("主人接下来 7 天的安排");
+  });
+});
+
 describe("Jarvis Test fixed today", () => {
   it("keeps every date out of the production system instruction, so the case date reaches the model only in the turn", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "himawari-jarvis-date-"));

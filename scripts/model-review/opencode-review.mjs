@@ -36,15 +36,71 @@ import {
   summarizeGatewayUsage,
   workbuddyAccountUid,
 } from "./gateway.mjs";
+import {
+  CLAIM_PROBLEM_VERDICTS,
+  CLAIMS_LINE_FORMAT,
+  claimsProblems,
+  blobAt as claimsBlobAt,
+  blobSha256 as claimsBlobSha256,
+  parseClaims,
+  safe,
+  validClaimsFile,
+} from "./plan-claims.mjs";
 import { GUARD_ENV } from "./spend-guard.mjs";
 
 export const OPENCODE_VERSION = "1.19.5";
-export const REVIEW_MODELS = ["opencode-go/deepseek-v4.1-flash", "opencode-go/glm-5.3-flash"];
+export const REVIEW_MODELS_CONFIG_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "review-models.json",
+);
+
+export function reviewModelsProblems(config) {
+  const problems = [];
+  const names = (list) =>
+    Array.isArray(list) &&
+    list.length > 0 &&
+    list.every((name) => typeof name === "string" && /^[\w.-]+\/[\w.-]+$/.test(name)) &&
+    new Set(list).size === list.length;
+  if (!names(config?.allowed)) problems.push("allowed");
+  const allowed = names(config?.allowed) ? config.allowed : [];
+  const shortNames = allowed.map((name) => name.split("/").pop());
+  if (new Set(shortNames).size !== shortNames.length) problems.push("allowed.short-name-repeats");
+  if (!names(config?.default) || config.default.some((name) => !allowed.includes(name)))
+    problems.push("default");
+  const substitutes = config?.substitutes;
+  if (
+    substitutes === null ||
+    typeof substitutes !== "object" ||
+    Array.isArray(substitutes) ||
+    Object.entries(substitutes).some(
+      ([from, to]) => !allowed.includes(from) || !allowed.includes(to) || from === to,
+    )
+  )
+    problems.push("substitutes");
+  return problems;
+}
+
+export function readReviewModels(path = REVIEW_MODELS_CONFIG_PATH) {
+  let config;
+  try {
+    config = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    throw new Error(`REVIEW_MODELS_CONFIG_INVALID unreadable ${error.message}`);
+  }
+  const problems = reviewModelsProblems(config);
+  if (problems.length > 0) throw new Error(`REVIEW_MODELS_CONFIG_INVALID ${problems.join(",")}`);
+  return config;
+}
+
+const reviewModels = readReviewModels();
+export const REVIEW_MODELS = reviewModels.allowed;
+export const DEFAULT_REVIEW_MODELS = reviewModels.default;
 export const REASONING_VARIANT = "high";
 export const OUTPUT_TOKEN_MAX = 200000;
 export const MIN_OUTPUT_TOKENS = 100000;
 export const MODEL_OUTPUT_LIMITS = { "deepseek-v4.1-flash": 384000, "glm-5.3-flash": 131072 };
-export const MODES = ["code-review", "plan", "plan-review"];
+export const MODES = ["code-review", "plan", "plan-review", "plan-claims"];
+export const OFFLINE_MODES = ["code-review", "plan-claims"];
 export const GIT_READ_COMMANDS = ["git diff", "git log", "git show", "git blame", "git status"];
 export const WRITE_OR_OUTSIDE_PATTERNS = [
   "*>*",
@@ -92,7 +148,12 @@ export const OWNER_STOPPED = "owner-stopped";
 export const STOP_GRACE_MS = 30000;
 export const GUARD_DEFERS_TO_PARENT = ["cost-unknown", "wrap-up-tool-call", OWNER_STOPPED];
 export const SPEND_GUARD_PATH = join(dirname(fileURLToPath(import.meta.url)), "spend-guard.mjs");
-export const ASK_FIRST_LINE_USD = { "code-review": 1, plan: 0.5, "plan-review": 0.5 };
+export const ASK_FIRST_LINE_USD = {
+  "code-review": 1,
+  plan: 0.5,
+  "plan-review": 0.5,
+  "plan-claims": 0.5,
+};
 export const FOCUS_SENTENCE =
   "做法：先想清楚要回答哪几个问题、需要看哪些文件或资料，再直接去读这些地方；不要漫无目的地浏览代码，也不要用相同或相近的参数反复调用工具。读到的内容一旦足以下结论，就停止调用工具，写出结论；没读到的地方标「未核实」，不要为了查全而一直查下去。";
 export const WRAP_UP_PROMPT =
@@ -184,8 +245,8 @@ export function reviewConfig({ mode, baseURL, wrapUp = false, gateway } = {}) {
       grep: "allow",
       bash,
       edit: "deny",
-      webfetch: mode === "code-review" ? "deny" : "allow",
-      websearch: mode === "code-review" ? "deny" : "allow",
+      webfetch: OFFLINE_MODES.includes(mode) ? "deny" : "allow",
+      websearch: OFFLINE_MODES.includes(mode) ? "deny" : "allow",
       task: "deny",
       todowrite: "deny",
       skill: "deny",
@@ -213,7 +274,7 @@ function askInsteadOfAllow(rule) {
 
 export function expectedTools(mode) {
   const tools = ["bash", "glob", "grep", "read"];
-  if (mode !== "code-review") tools.push("webfetch", "websearch");
+  if (!OFFLINE_MODES.includes(mode)) tools.push("webfetch", "websearch");
   return tools.sort();
 }
 
@@ -257,6 +318,13 @@ const MODE_TEXT = {
       "输出格式：按严重度从高到低排列，每条写：严重度、问题、证据（文件:行引用的代码，或网址和原话）、你建议怎么改。把「证实的」和「推测」分开写。最后写：如果由你来定，你会怎样改这份方案，并逐条回答必答问题。用简体中文。",
     materialTitle: "待审核的方案：",
   },
+  "plan-claims": {
+    role: "你是方案里“关于代码和文档现状的说法”的核对者。",
+    network: "不能上网。",
+    task: "下面是一份还没合并的方案或 ADR。第一步，把其中每一句讲代码或仓库文档现状的话都列出来：某个文件、函数、字段、配置、命令、数字、规则现在是什么样、做什么、不做什么；一句话里有几个说法就拆成几条。方案打算新增或修改什么，不算现状；讲外部网站、第三方产品的话也不算。第二步，逐条自己打开对应的文件核对，给出：一致、不一致、找不到（仓库里没有这个东西，或没读到能证明它的内容）。材料里的说法可能有错，写得再肯定也不能因此判一致；没有亲自读到对应代码，就判找不到。只核对事实，不评价方案好不好，不提建议。",
+    output: `输出格式：每个说法单独一行，不换行，字段之间用竖线分隔，行首写 CLAIM：\n${CLAIMS_LINE_FORMAT}\n序号用 1、2、3……，不重复。文件:行 写你读到证据的那个文件和行号，例如 packages/x/src/y.ts:42；找不到时写 -。代码原文必须是你亲自读到的、逐字摘抄的一行或几行，不要改写、不要概括；方案原句里的竖线字符换成全角的“｜”，代码原文里的竖线照原样写。列完所有 CLAIM 行之后，另起一段，用一两句话写你没能核对的部分。用简体中文。`,
+    materialTitle: "待核对的方案：",
+  },
 };
 
 export const LENS_MODES = ["code-review", "plan-review"];
@@ -281,12 +349,13 @@ export function buildPrompt({ mode, model, questions, head, base, previous, brie
   const lens = lensFor(mode, model);
   const fixed = [
     text.role,
-    `你能用的工具：read、grep、glob${mode === "code-review" ? "" : "、websearch、webfetch"}，以及 ${GIT_READ_COMMANDS.join("、")} 这几条 git 命令。不能修改任何文件，不能运行别的命令。${text.network}`,
+    `你能用的工具：read、grep、glob${OFFLINE_MODES.includes(mode) ? "" : "、websearch、webfetch"}，以及 ${GIT_READ_COMMANDS.join("、")} 这几条 git 命令。不能修改任何文件，不能运行别的命令。${text.network}`,
     text.task,
     FOCUS_SENTENCE,
-    RULE_16_SENTENCE,
-    "必答问题：",
-    ...questions.map((question, index) => `${index + 1}. ${question}`),
+    ...(mode === "plan-claims" ? [] : [RULE_16_SENTENCE]),
+    ...(questions.length > 0
+      ? ["必答问题：", ...questions.map((question, index) => `${index + 1}. ${question}`)]
+      : []),
     ...(lens ? [lens] : []),
     text.output,
   ].join("\n");
@@ -902,14 +971,14 @@ export function wrapUpReason(summary, run) {
 }
 
 export const API_ERROR_RETRY_WAIT_MS = 60000;
-export const SUBSTITUTES = { [REVIEW_MODELS[0]]: REVIEW_MODELS[1] };
+export const SUBSTITUTES = reviewModels.substitutes;
 
 export function apiErrorText(apiError) {
   return `${apiError.statusCode ?? "-"} ${apiError.message}`;
 }
 
-export function substituteFor({ mode, previous, models, runs }) {
-  if (mode !== "code-review" || !previous || models.length !== 1) return null;
+export function substituteFor({ mode, models, runs }) {
+  if (mode !== "code-review" || models.length !== 1) return null;
   const replacement = SUBSTITUTES[models[0]];
   const [run] = runs;
   if (!replacement || run.record.outcome !== "api-error" || run.review.retry !== "retried")
@@ -1141,7 +1210,7 @@ function showAt(repo, commit, path) {
   return shown.status === 0 ? shown.stdout : null;
 }
 
-export function lowFixProblems({ repo, ledgerPath, round, from, to, mainRef }) {
+export function lowFixProblems({ repo, ledgerPath, round, from, to, mainRef, skip }) {
   const problems = [];
   const verdictsPath = `${ledgerPath}/round-${round}/verdicts.jsonl`;
   const text = showAt(repo, to, verdictsPath);
@@ -1174,7 +1243,7 @@ export function lowFixProblems({ repo, ledgerPath, round, from, to, mainRef }) {
   const ownFiles = mainRef ? new Set(unreviewedFiles(repo, from, to, ledgerPath, mainRef)) : null;
   for (const entry of fields) {
     const match = /^(-|\d+)\t(-|\d+)\t([\s\S]+)$/.exec(entry);
-    if (!match || match[3].startsWith(`${ledgerPath}/`)) continue;
+    if (!match || match[3].startsWith(`${ledgerPath}/`) || skip?.has(match[3])) continue;
     if (ownFiles && !ownFiles.has(match[3])) continue;
     const lines = match[1] === "-" ? Infinity : Number(match[1]) + Number(match[2]);
     changes.push({ file: match[3], lines, added: match[1] === "-" ? 0 : Number(match[1]) });
@@ -1208,26 +1277,52 @@ export function coveragePoints(records) {
     const passed = reviews.filter(
       (record) => (record.round ?? 1) === round && record.outcome === "ok",
     );
-    const both = REVIEW_MODELS.every((model) => passed.some((record) => record.model === model));
-    const covering = both
-      ? passed
-      : passed.filter(
-          (record) =>
-            record.model === REVIEW_MODELS[0] ||
-            (record.substitute === true &&
-              record.substituteFor === REVIEW_MODELS[0] &&
-              record.model === SUBSTITUTES[REVIEW_MODELS[0]]),
-        );
+    const inRound = reviews.filter((record) => (record.round ?? 1) === round);
+    const direct = (model) =>
+      passed.some((record) => record.model === model && record.substitute === undefined);
+    const stoodIn = (model) =>
+      inRound.some(
+        (record) =>
+          record.model === model && record.substitute === undefined && record.outcome !== "ok",
+      ) &&
+      passed.some(
+        (record) =>
+          record.substitute === true &&
+          record.substituteFor === model &&
+          record.model === SUBSTITUTES[model],
+      );
+    const requested = [
+      ...new Set(
+        inRound
+          .filter(
+            (record) => record.substitute === undefined && REVIEW_MODELS.includes(record.model),
+          )
+          .map((record) => record.model),
+      ),
+    ];
+    const complete = (models) =>
+      models.length > 0 && models.every((model) => direct(model) || stoodIn(model));
+    const needed = complete(requested)
+      ? requested
+      : complete(DEFAULT_REVIEW_MODELS)
+        ? DEFAULT_REVIEW_MODELS
+        : [];
+    const covering = passed.filter((record) =>
+      record.substitute === true
+        ? needed.includes(record.substituteFor) &&
+          record.model === SUBSTITUTES[record.substituteFor]
+        : record.substitute === undefined && needed.includes(record.model),
+    );
     if (covering.length === 0) continue;
     const heads = [...new Set(covering.map((record) => record.head))];
     if (heads.length !== 1)
       throw new Error(`REVIEW_ROUND_HEADS_DIFFER ${round} ${heads.join(",")}`);
     const previous = [...new Set(covering.map((record) => record.previous ?? null))];
-    const by = both
-      ? "both"
-      : covering.some((record) => record.model === REVIEW_MODELS[0])
-        ? "deepseek"
-        : "substitute";
+    const by = needed.some((model) => !direct(model))
+      ? "substitute"
+      : needed === requested
+        ? "requested"
+        : "default";
     points.push({ round, head: heads[0], previous: previous.length === 1 ? previous[0] : "", by });
     for (const [index, record] of records.entries())
       if (record.mode === "low-fix" && record.round === round)
@@ -1248,7 +1343,7 @@ export function walkChain(points, { isAncestor, lowFixCheck }) {
   let accepted = [];
   let broken = null;
   for (const point of points) {
-    if (point.by === "both" && point.previous === null) {
+    if (point.by !== "low-fix" && point.previous === null) {
       accepted = [point];
       broken = null;
       continue;
@@ -1283,6 +1378,7 @@ export const OVERRIDABLE_PROBLEMS = [
   "chain-broken ",
   "not-ancestor ",
   "low-fix-invalid ",
+  "claims-",
 ];
 
 function changedOutside(repo, from, to, ledgerPath) {
@@ -1344,6 +1440,17 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
   const head = git(["rev-parse", "HEAD"], repo);
   const shown = gitStatus(["show", `HEAD:${ledgerPath}/usage.jsonl`], repo);
   const records = shown.status === 0 ? parseUsage(shown.stdout, `HEAD:${ledgerPath}`) : null;
+  const claims = claimsProblems({
+    repo,
+    head,
+    mainRef,
+    reviewsDir: REVIEWS_DIR,
+    parseUsage,
+    looksSecret: claimsFileSecretLike,
+  });
+  const claimsOwned = new Set(claims.files);
+  const unreviewed = (from, to) =>
+    unreviewedFiles(repo, from, to, ledgerPath, mainRef).filter((file) => !claimsOwned.has(file));
   const isAncestor = (from, to) =>
     gitStatus(["merge-base", "--is-ancestor", from, to], repo).status === 0;
   const sameList = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
@@ -1355,6 +1462,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       from: point.from,
       to: point.head,
       mainRef,
+      skip: claimsOwned,
     });
     const problems = [...check.problems];
     if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike))) {
@@ -1364,6 +1472,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
         round: point.round,
         from: point.from,
         to: point.head,
+        skip: claimsOwned,
       });
       if (legacy.problems.length > 0 || !sameList(point.files, legacy.files.map(maskSecretLike)))
         problems.push("files-differ");
@@ -1395,10 +1504,17 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
   else if (chainProblems.length > 0) problems.push(...chainProblems);
   else if (!isAncestor(complete.head, head)) problems.push(`not-ancestor ${complete.head}`);
   else {
-    outsideFiles = unreviewedFiles(repo, complete.head, head, ledgerPath, mainRef);
+    outsideFiles = unreviewed(complete.head, head);
     for (const file of outsideFiles) problems.push(`unreviewed ${printable(file)}`);
   }
-  problems.push(...recordSecretProblems({ repo, ledgerPath, otherFiles: outsideFiles }));
+  problems.push(...claims.problems);
+  problems.push(
+    ...recordSecretProblems({
+      repo,
+      ledgerPath,
+      otherFiles: [...outsideFiles, ...claims.files],
+    }),
+  );
   if (gitStatus(["rev-parse", "--verify", "--quiet", `${mainRef}^{commit}`], repo).status !== 0)
     problems.push(`main-ref-missing ${printable(mainRef)}`);
   else if (gitStatus(["merge-base", "--is-ancestor", mainRef, head], repo).status !== 0)
@@ -1428,7 +1544,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
           .find(
             (record) =>
               gitStatus(["merge-base", "--is-ancestor", record.head, head], repo).status === 0 &&
-              unreviewedFiles(repo, record.head, head, ledgerPath, mainRef).length === 0,
+              unreviewed(record.head, head).length === 0,
           )
       : undefined;
   const ledgerFile = join(repo, ledgerPath, "usage.jsonl");
@@ -1453,6 +1569,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
             from: complete.head,
             to: head,
             mainRef,
+            skip: claimsOwned,
           })
         : null;
     if (check) reasons.push(...check.problems);
@@ -1659,6 +1776,13 @@ export function parseUsage(text, path) {
           (record.problems === undefined ||
             (Array.isArray(record.problems) &&
               record.problems.every((problem) => typeof problem === "string"))));
+      const claimsValid =
+        record?.mode !== "plan-claims" ||
+        (validClaimsFile(record.claimsFile) &&
+          /^[0-9a-f]{64}$/.test(record.claimsSha256 ?? "") &&
+          REVIEW_MODELS.includes(record.model) &&
+          /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(record.at ?? "") &&
+          Number.isFinite(Date.parse(record.at)));
       const gatewayValid =
         record?.gateway === undefined ||
         (GATEWAYS.includes(record.gateway) &&
@@ -1676,6 +1800,7 @@ export function parseUsage(text, path) {
         !headValid ||
         !overrideValid ||
         !lowFixValid ||
+        !claimsValid ||
         !gatewayValid ||
         !singleLine
       )
@@ -2618,6 +2743,10 @@ function maskSecretLikeDeep(value) {
   return value;
 }
 
+export function claimsFileSecretLike(file) {
+  return maskSecretLike(file) !== file;
+}
+
 export function ledgerLine(record) {
   return `${JSON.stringify(maskSecretLikeDeep(record))}\n`;
 }
@@ -2687,7 +2816,7 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     mode: "code-review",
     repo: repoRoot,
     timeoutMinutes: 25,
-    models: REVIEW_MODELS,
+    models: DEFAULT_REVIEW_MODELS,
   };
   const given = new Set();
   for (let index = 0; index < argv.length; index += 1) {
@@ -2705,7 +2834,11 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     else if (key === "--base") options.base = take();
     else if (key === "--previous") options.previous = take();
     else if (key === "--brief") options.brief = resolve(take());
-    else if (key === "--out") options.out = resolve(take());
+    else if (key === "--claims-file") {
+      options.claimsFile = take();
+      if (!validClaimsFile(options.claimsFile) || claimsFileSecretLike(options.claimsFile))
+        throw new Error("ARG_INVALID --claims-file");
+    } else if (key === "--out") options.out = resolve(take());
     else if (key === "--pr") {
       options.pr = Number(take());
       if (!Number.isSafeInteger(options.pr) || options.pr <= 0) throw new Error("ARG_INVALID --pr");
@@ -2803,16 +2936,14 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
   if (options.acceptLow !== undefined) throw new Error("ARG_ACCEPT_LOW_ONLY_WITH_ASSERT");
   const subcommandOnly = [...given].filter((key) => SUBCOMMAND_ONLY_OPTIONS.includes(key));
   if (subcommandOnly.length > 0) throw new Error(`ARG_NOT_FOR_MODE ${subcommandOnly.join(" ")}`);
-  for (const required of ["head", "brief"]) {
+  const claimsMode = options.mode === "plan-claims";
+  if (claimsMode && options.brief) throw new Error("ARG_BRIEF_NOT_FOR_PLAN_CLAIMS");
+  if (!claimsMode && options.claimsFile) throw new Error("ARG_CLAIMS_FILE_ONLY_FOR_PLAN_CLAIMS");
+  if (claimsMode && !options.claimsFile) throw new Error("ARG_REQUIRED --claims-file");
+  for (const required of claimsMode ? ["head"] : ["head", "brief"]) {
     if (!options[required]) throw new Error(`ARG_REQUIRED --${required}`);
   }
   if (options.mode === "code-review" && !options.base) throw new Error("ARG_REQUIRED --base");
-  if (options.mode === "code-review" && !options.selfCheckOnly) {
-    const firstRound = !options.previous && options.round === undefined;
-    if (firstRound && options.models.length !== REVIEW_MODELS.length)
-      throw new Error("ARG_FIRST_ROUND_NEEDS_BOTH_MODELS");
-    if (options.previous && !given.has("--models")) options.models = [REVIEW_MODELS[0]];
-  }
   if (!options.selfCheckOnly) {
     if (options.out !== undefined) throw new Error("ARG_OUT_ONLY_FOR_SELF_CHECK");
     if (options.pr !== undefined && options.topic !== undefined)
@@ -2882,10 +3013,9 @@ export function gatewayUsageLine(record) {
   return `GATEWAY_USAGE ${record.model} ${parts.length ? parts.join(" ; ") : "none"}${dropped}`;
 }
 
-export function reserveModels({ mode, previous, models }) {
+export function reserveModels({ mode, models }) {
   const substitute = SUBSTITUTES[models[0]];
-  if (mode === "code-review" && previous && models.length === 1 && substitute)
-    return [...models, substitute];
+  if (mode === "code-review" && models.length === 1 && substitute) return [...models, substitute];
   return models;
 }
 
@@ -3050,8 +3180,28 @@ async function main() {
   const timeoutMs = options.timeoutMinutes * 60 * 1000;
   const commits = resolveCommits(options.repo, options);
   registerTestValuesFromRefs(options.repo, [commits.base ?? commits.head, "origin/main"]);
-  const questions = reviewQuestions(questionsSource(options.repo, commits, options.questionsRef));
-  const brief = recordText(readFileSync(options.brief, "utf8"));
+  if (options.claimsFile && claimsFileSecretLike(options.claimsFile))
+    throw new Error(`CLAIMS_FILE_SECRET_LIKE ${options.claimsFile}`);
+  const claimsMode = options.mode === "plan-claims";
+  const claimsBlob = claimsMode
+    ? claimsBlobAt(options.repo, commits.head, options.claimsFile)
+    : null;
+  if (claimsMode && claimsBlob === null)
+    throw new Error(`CLAIMS_FILE_NOT_COMMITTED ${options.claimsFile} ${commits.head}`);
+  const claimsRecord = claimsMode
+    ? {
+        claimsFile: options.claimsFile,
+        claimsSha256: claimsBlobSha256(options.repo, commits.head, options.claimsFile),
+      }
+    : {};
+  const questions = claimsMode
+    ? []
+    : reviewQuestions(questionsSource(options.repo, commits, options.questionsRef));
+  const brief = claimsMode
+    ? recordText(
+        `方案文件：${options.claimsFile}（在提交 ${commits.head} 里的内容）\n\n${claimsBlob.toString("utf8")}`,
+      )
+    : recordText(readFileSync(options.brief, "utf8"));
   const prompts = Object.fromEntries(
     options.models.map((model) => [
       model,
@@ -3195,6 +3345,7 @@ async function main() {
         previous: commits.previous ?? null,
         promptSha256: createHash("sha256").update(prompt).digest("hex"),
         promptFileSha256: createHash("sha256").update(maskSecretLike(prompt)).digest("hex"),
+        ...claimsRecord,
         outcome: review.outcome,
         wrapUp: review.wrapUp,
         wrapUpSkipped: review.wrapUpSkipped,
@@ -3271,6 +3422,25 @@ async function main() {
       if (changed) {
         console.error(changed);
         process.exitCode = 4;
+      }
+    }
+    if (claimsMode) {
+      for (const record of results.filter((item) => item.outcome === "ok")) {
+        const name = record.model.split("/").pop();
+        const answer = readFileSync(join(roundDir, `${name}.md`), "utf8");
+        const { claims, problems } = parseClaims(answer);
+        const flagged = claims.filter((claim) => CLAIM_PROBLEM_VERDICTS.includes(claim.verdict));
+        console.log(
+          `CLAIMS_SUMMARY ${name} round=${round} total=${claims.length} consistent=${claims.length - flagged.length} flagged=${flagged.length} malformed=${problems.length}`,
+        );
+        for (const claim of flagged)
+          console.log(
+            `CLAIMS_FLAGGED ${name} ${claim.id} ${claim.verdict} ${safe(claim.location)}`,
+          );
+        if (claims.length === 0 || problems.length > 0) {
+          console.log(`CLAIMS_PARSE_FAILED ${name}`);
+          process.exitCode = 4;
+        }
       }
     }
     const totalSpent = spentOf(readUsage(options.out));

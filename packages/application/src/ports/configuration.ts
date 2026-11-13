@@ -77,6 +77,16 @@ export interface ConfiguredMemoryDescriptor {
   readonly dimensions: number;
   readonly minimumSimilarity?: number;
   readonly retrieval?: ConfiguredMemoryRetrieval;
+  readonly conversationReview?: ConfiguredConversationReview;
+}
+
+export interface ConfiguredConversationReview {
+  readonly enabled?: boolean;
+  readonly maximumSegmentsPerDay?: number;
+  readonly maximumSourceCharacters?: number;
+  readonly maximumRelatedMemories?: number;
+  readonly maximumNewMemoriesPerDay?: number;
+  readonly maximumOutputTokens?: number;
 }
 
 export interface ConfiguredMemoryRetrieval {
@@ -183,7 +193,9 @@ export interface FileReadRouteConfiguration {
 
 export type PublicSearchRouteConfiguration = (
   | FileReadRouteConfiguration
-  | (Omit<FileReadRouteConfiguration, "grantId"> & { readonly scopeSource: "private_temp" })
+  | (Omit<FileReadRouteConfiguration, "grantId"> & {
+      readonly scopeSource: "private_temp";
+    })
 ) &
   WebProviderRouteConfiguration;
 
@@ -214,6 +226,16 @@ export interface CodingRouteConfiguration extends FileReadRouteConfiguration {
 export interface WebPushConfiguration {
   readonly secretRef: string;
   readonly subject: string;
+}
+
+export interface HomeFeedConfiguration {
+  readonly awaitingLimit: number;
+  readonly otherLimit: number;
+  readonly sourceReadLimit: number;
+  readonly deadlineLeadMinutes: number;
+  readonly recentHours: number;
+  readonly upcomingLimit: number;
+  readonly upcomingDays: number;
 }
 
 export interface ProactiveGmailConfiguration {
@@ -289,10 +311,12 @@ export interface McpReadConfiguration {
 
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly approvalBodyPreviewCharacters?: number;
   readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
   readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;
+  readonly homeFeed?: HomeFeedConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;

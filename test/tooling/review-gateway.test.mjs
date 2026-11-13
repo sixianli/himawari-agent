@@ -817,10 +817,11 @@ describe("review gateway round 4 fixes", () => {
 
 describe("review gateway round 3 fixes", () => {
   it("[gateway] reserves credits for GLM too when it may stand in for DeepSeek", () => {
-    expect(reserveModels({ mode: "code-review", previous: "abc", models: [deepseek] })).toEqual([
-      deepseek,
-      glm,
-    ]);
+    for (const previous of ["abc", undefined])
+      expect(reserveModels({ mode: "code-review", previous, models: [deepseek] })).toEqual([
+        deepseek,
+        glm,
+      ]);
     expect(
       reserveModels({ mode: "code-review", previous: undefined, models: REVIEW_MODELS }),
     ).toEqual(REVIEW_MODELS);
@@ -1020,9 +1021,13 @@ describe("review gateway usage gaps", () => {
   it("[gateway] reports a Magpie binary that cannot start instead of crashing", async () => {
     const root = mkdtempSync(join(tmpdir(), "gateway-spawn-"));
     try {
-      const real = install();
       const live = await startGateway({
-        install: { ...real, binary: join(root, "no-such-magpie") },
+        install: {
+          binary: join(root, "no-such-magpie"),
+          pluginDir: join(root, "plugin"),
+          cacheDir: join(root, "cache"),
+          version: readGatewayLock().magpie.version,
+        },
         config,
         root: join(root, "run"),
         models: [],

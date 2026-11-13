@@ -172,6 +172,56 @@ describe("published fixture admission", () => {
       reviewStatus: "accepted_base",
     });
   });
+  it("候选台账删掉的条目不再算例外：成员已无命中时通过", () => {
+    const f = fixture();
+    f.accept();
+    f.document.exceptions = [];
+    f.save();
+    const review = f.review();
+    const bytes = Buffer.from("plain public readme\n");
+    review.inspect({ name: f.name, bytes, findings: findBuildSecrets({ name: f.name, bytes }) });
+    expect(review.finish()).toMatchObject({
+      memberCount: 0,
+      removedPublishedPaths: [f.name],
+      approvalBasis: "accepted_base",
+    });
+  });
+  it("候选台账删掉仍有命中的条目时失败", () => {
+    const f = fixture();
+    f.accept();
+    f.document.exceptions = [];
+    f.save();
+    expect(() => f.review().inspect(f)).toThrow("PUBLIC_ARTIFACT_CONTAINS_SECRET");
+  });
+  it("候选把例外改到别的路径时，原路径按没有例外处理，新路径也不生效", () => {
+    const f = fixture();
+    f.accept();
+    const moved = "runtime/node_modules/example/OTHER.md";
+    f.document.exceptions = [{ ...f.entry, path: moved, archiveMember: "package/OTHER.md" }];
+    f.save();
+    const review = f.review();
+    expect(() => review.inspect(f)).toThrow("PUBLIC_ARTIFACT_CONTAINS_SECRET");
+    expect(() => review.inspect({ ...f, name: moved })).toThrow("PUBLIC_ARTIFACT_CONTAINS_SECRET");
+    expect(review.finish()).toMatchObject({ memberCount: 0, removedPublishedPaths: [f.name] });
+  });
+  it("base台账结构错误时报受控错误码", () => {
+    const f = fixture();
+    const good = f.document.exceptions;
+    f.document.exceptions = {};
+    f.accept();
+    f.document.exceptions = good;
+    f.save();
+    expect(f.review).toThrow("SECURITY_EXCEPTION_SCHEMA_INVALID");
+  });
+  it("初始化时没有可撤掉的例外", () => {
+    const f = fixture(),
+      review = f.review();
+    review.inspect(f);
+    expect(review.finish()).toMatchObject({
+      approvalBasis: "initialization_proposal",
+      removedPublishedPaths: [],
+    });
+  });
   it("只有例外存在的base不能冒充初始化", () => {
     const f = fixture();
     f.git("add", "ci/security-exceptions.json");
@@ -379,4 +429,52 @@ describe("published fixture admission", () => {
       }),
     ).rejects.toThrow("PUBLIC_ARTIFACT_CONTAINS_SECRET");
   });
+});
+
+const installedFileScanTimeoutMs = 60_000;
+
+describe("真实台账和当前扫描规则一致", () => {
+  it.each([
+    "docs/custom-provider.md",
+    "docs/extensions.md",
+    "docs/mcp.md",
+    "examples/extensions/custom-provider-anthropic/index.ts",
+    "examples/extensions/custom-provider-gitlab-duo/index.ts",
+  ])("PR 431撤掉例外的pi-coding-agent文件%s按当前扫描规则没有命中", (member) => {
+    const name = `runtime/node_modules/@earendil-works/pi-coding-agent/${member}`;
+    const bytes = readFileSync(join(repository, name.replace(/^runtime\//, "")));
+    expect(findBuildSecrets({ name, bytes })).toEqual([]);
+  });
+  const syntheticFixtureEntries = JSON.parse(
+    readFileSync(join(repository, "ci/security-exceptions.json"), "utf8"),
+  ).exceptions.filter((entry) => entry.kind === "published-synthetic-fixture");
+  const tally = (findings) =>
+    [
+      ...findings.reduce(
+        (counts, finding) =>
+          counts.set(
+            `${finding.rule}:${finding.digest}`,
+            (counts.get(`${finding.rule}:${finding.digest}`) ?? 0) + 1,
+          ),
+        new Map(),
+      ),
+    ].sort();
+  it("台账里有published-synthetic-fixture登记", () => {
+    expect(syntheticFixtureEntries.length).toBeGreaterThan(0);
+  });
+  it.each(syntheticFixtureEntries.map((entry) => [entry.path, entry]))(
+    "published-synthetic-fixture登记%s的命中等于用当前扫描规则扫已安装文件的结果",
+    (_path, entry) => {
+      expect(entry.path).toMatch(/^runtime\/node_modules\/(?!.*(?:^|\/)\.\.?(?:\/|$))[^\\]+$/);
+      expect(entry.path.startsWith(`runtime/${entry.packageLockPath}/`)).toBe(true);
+      const bytes = readFileSync(join(repository, entry.path.replace(/^runtime\//, "")));
+      expect(sha(bytes)).toBe(entry.fileSha256);
+      expect(tally(findBuildSecrets({ name: entry.path, bytes }))).toEqual(
+        entry.findings
+          .map((finding) => [`${finding.rule}:${finding.digest}`, finding.count])
+          .sort(),
+      );
+    },
+    installedFileScanTimeoutMs,
+  );
 });

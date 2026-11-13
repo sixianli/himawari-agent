@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { decodeGate } from "./gate-log.mjs";
 
 const repository = "sixianli/himawari-agent";
 const assert = (value, code) => {
@@ -38,6 +39,47 @@ export async function githubJson(
   const text = await response.text();
   assert(text.length <= 2_000_000, "MAIN_API_RESPONSE_LIMIT");
   return JSON.parse(text);
+}
+
+export async function githubLog(
+  endpoint,
+  { token = process.env.HIMAWARI_CI_GITHUB_TOKEN, fetcher = fetch } = {},
+) {
+  assert(
+    endpoint.startsWith(`/repos/${repository}/actions/jobs/`) &&
+      endpoint.endsWith("/logs") &&
+      !endpoint.includes(".."),
+    "MAIN_API_PATH",
+  );
+  const first = await fetcher(`https://api.github.com${endpoint}`, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    redirect: "manual",
+    signal: AbortSignal.timeout(15_000),
+  });
+  let response = first;
+  if (first.status === 302) {
+    let target;
+    try {
+      target = new URL(first.headers.get("location"));
+    } catch {
+      throw new Error("MAIN_LOG_UNAVAILABLE");
+    }
+    assert(
+      target.protocol === "https:" && !target.username && !target.password,
+      "MAIN_LOG_UNAVAILABLE",
+    );
+    response = await fetcher(target.href, {
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+    });
+  }
+  assert(response.ok, "MAIN_LOG_UNAVAILABLE");
+  const text = await response.text();
+  assert(text.length <= 20_000_000, "MAIN_GATE_LOG_LIMIT");
+  return text;
 }
 
 export function pushIdentity({ root = process.cwd(), env = process.env } = {}) {
@@ -77,7 +119,12 @@ export function pushIdentity({ root = process.cwd(), env = process.env } = {}) {
   };
 }
 
-export async function discoverEvidence({ identity, api = githubJson, now = Date.now() }) {
+export async function discoverEvidence({
+  identity,
+  api = githubJson,
+  logs = githubLog,
+  now = Date.now(),
+}) {
   const prs = await api(`/repos/${repository}/commits/${identity.after}/pulls?per_page=100`);
   assert(Array.isArray(prs) && prs.length < 100, "MAIN_PR_LIST");
   const matches = prs.filter(
@@ -108,24 +155,30 @@ export async function discoverEvidence({ identity, api = githubJson, now = Date.
       now - Date.parse(r.updated_at) < 24 * 3600_000,
   );
   assert(run && positive(run.id) && positive(run.run_attempt), "MAIN_SUCCESSFUL_PR_RUN_REQUIRED");
-  const artifacts = await api(`/repos/${repository}/actions/runs/${run.id}/artifacts?per_page=100`);
+  const jobs = await api(
+    `/repos/${repository}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`,
+  );
+  assert(Array.isArray(jobs.jobs) && jobs.jobs.length < 100, "MAIN_JOB_LIST");
+  const gates = jobs.jobs.filter((job) => job.name === "ci/required");
   assert(
-    Array.isArray(artifacts.artifacts) && artifacts.artifacts.length < 100,
-    "MAIN_ARTIFACT_LIST",
+    gates.length === 1 &&
+      positive(gates[0].id) &&
+      gates[0].run_id === run.id &&
+      gates[0].run_attempt === run.run_attempt &&
+      gates[0].status === "completed" &&
+      gates[0].conclusion === "success",
+    "MAIN_GATE_JOB_REQUIRED",
   );
-  const gates = artifacts.artifacts.filter(
-    (a) => a.name === `gate-${run.id}-${run.run_attempt}` && !a.expired,
-  );
-  assert(
-    gates.length === 1 && positive(gates[0].id) && gates[0].size_in_bytes < 1_000_000,
-    "MAIN_GATE_ARTIFACT_REQUIRED",
-  );
+  const gate = decodeGate(await logs(`/repos/${repository}/actions/jobs/${gates[0].id}/logs`));
   return {
-    ...identity,
-    pr: pr.number,
-    runId: run.id,
-    attempt: run.run_attempt,
-    artifactId: gates[0].id,
+    candidate: {
+      ...identity,
+      pr: pr.number,
+      runId: run.id,
+      attempt: run.run_attempt,
+      jobId: gates[0].id,
+    },
+    gate,
   };
 }
 
@@ -192,7 +245,7 @@ export function verifyGate({
 
 export async function main(
   argv = process.argv.slice(2),
-  { root = process.cwd(), env = process.env, api = githubJson } = {},
+  { root = process.cwd(), env = process.env, api = githubJson, logs = githubLog } = {},
 ) {
   const directory = path.join(root, ".ci-output/main-evidence");
   mkdirSync(directory, { recursive: true });
@@ -200,13 +253,11 @@ export async function main(
   try {
     const identity = pushIdentity({ root, env });
     if (argv[0] === "discover") {
-      const candidate = await discoverEvidence({ identity, api });
+      const { candidate, gate } = await discoverEvidence({ identity, api, logs });
+      mkdirSync(path.join(directory, "gate"), { recursive: true });
+      writeFileSync(path.join(directory, "gate/context.json"), JSON.stringify(gate.context));
+      writeFileSync(path.join(directory, "gate/summary.json"), JSON.stringify(gate.summary));
       writeFileSync(path.join(directory, "candidate.json"), JSON.stringify(candidate));
-      if (env.GITHUB_OUTPUT)
-        appendFileSync(
-          env.GITHUB_OUTPUT,
-          `run_id=${candidate.runId}\nartifact_id=${candidate.artifactId}\n`,
-        );
       return candidate;
     }
     assert(argv[0] === "verify", "MAIN_MODE");

@@ -6,7 +6,6 @@ on:
       - synchronize
       - reopened
       - ready_for_review
-      - edited
   workflow_call:
     inputs:
       base_sha:
@@ -22,7 +21,7 @@ permissions:
   contents: read
   pull-requests: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'push' && github.run_id || '' }}-${{ github.event.action == 'edited' && 'edited' || '' }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'push' && github.run_id || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 defaults:
   run:
@@ -30,6 +29,7 @@ defaults:
 jobs:
   policy:
     name: policy
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
     runs-on: ci-vps
     timeout-minutes: 60
     outputs:
@@ -63,16 +63,12 @@ jobs:
         id: share
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "policy-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
-      - name: 保留失败诊断
+      - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-policy-${{ env.CI_MATRIX }}
-          path: .ci-output/public/diagnostics/
-          if-no-files-found: ignore
-          retention-days: 1
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "policy/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   static:
     name: static
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
     runs-on: ci-vps
     needs:
       - policy
@@ -110,16 +106,12 @@ jobs:
         id: share
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "static-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
-      - name: 保留失败诊断
+      - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-static-${{ env.CI_MATRIX }}
-          path: .ci-output/public/diagnostics/
-          if-no-files-found: ignore
-          retention-days: 1
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "static/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   build:
     name: build / ${{ matrix.key }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
     runs-on: ${{ matrix.runner }}
     needs:
       - policy
@@ -162,14 +154,9 @@ jobs:
         id: share
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "build-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
-      - name: 保留失败诊断
+      - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-build-${{ env.CI_MATRIX }}
-          path: .ci-output/public/diagnostics/
-          if-no-files-found: ignore
-          retention-days: 1
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "build/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
     outputs:
       linux-x64: ${{ steps.share.outputs.linux-x64 }}
   browser:
@@ -240,14 +227,9 @@ jobs:
         id: share
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "browser-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
-      - name: 保留失败诊断
+      - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-browser-${{ env.CI_MATRIX }}
-          path: .ci-output/public/diagnostics/
-          if-no-files-found: ignore
-          retention-days: 1
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "browser/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   coverage:
     name: coverage
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
@@ -293,16 +275,12 @@ jobs:
         id: share
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "coverage-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
-      - name: 保留失败诊断
+      - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-coverage-${{ env.CI_MATRIX }}
-          path: .ci-output/public/diagnostics/
-          if-no-files-found: ignore
-          retention-days: 1
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "coverage/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   security:
     name: security
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
     runs-on: ci-vps
     needs:
       - policy
@@ -340,18 +318,13 @@ jobs:
         id: share
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "security-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
-      - name: 保留失败诊断
+      - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-security-${{ env.CI_MATRIX }}
-          path: .ci-output/public/diagnostics/
-          if-no-files-found: ignore
-          retention-days: 1
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "security/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   required:
     name: ci/required
     if: always()
-    runs-on: ci-vps
+    runs-on: ci-vps-gate
     needs:
       - policy
       - static
@@ -366,6 +339,14 @@ jobs:
       CI_BASE: ${{ inputs.base_sha || '' }}
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
     steps:
+      - name: 草稿和被取消的运行直接判失败
+        id: entry
+        env:
+          CI_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == true }}
+          CI_CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
+        run: |
+          if [ "$CI_DRAFT" != false ]; then echo "CI_DRAFT_UNVERIFIED 草稿 PR 不跑 CI，标成准备合并后才跑完整检查"; exit 1; fi
+          if [ "$CI_CANCELLED" != false ]; then echo "CI_UPSTREAM_CANCELLED 上游作业被取消，这一轮不算数"; exit 1; fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
@@ -381,18 +362,10 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs collect --to .ci-output/reports
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
-      - name: 核对全部 job 与报告
+      - name: 核对全部 job 与报告，把汇总结论写进本步骤日志和作业摘要
         run: .ci-output/tools/bin/node scripts/ci/required.mjs --reports .ci-output/reports --output .ci-output/gate --base "$CI_BASE"
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
-      - name: 保留汇总结论
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: gate-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .ci-output/gate/
-          if-no-files-found: error
-          retention-days: 1
       - name: 删除 CI 服务器上本次运行的目录
-        if: always()
+        if: ${{ always() && steps.entry.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs remove

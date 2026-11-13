@@ -6,7 +6,7 @@ import {
   type Embedder,
   indexTerms,
   MemoryEpisodeService,
-  parseTimeScope,
+  requestedTimeScope,
 } from "@himawari-agent/memory-engine";
 import {
   applyMigrations,
@@ -310,19 +310,21 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
         limit: 5,
       }))
         await resource.service.summarize(segment, resource.summarize);
-      const ask = (query: string) =>
+      const ask = (query: string, dates: { from?: string; to?: string } = {}) =>
         resource.service.search({
           ownerId: OWNER_ID,
           agentId: AGENT_ID,
           query,
-          scope: parseTimeScope(query, now.value, "Asia/Tokyo"),
+          scope: requestedTimeScope({ ...dates, includeHistory: false }, "Asia/Tokyo"),
           allowedClassifications: ["public", "private"],
           limit: 3,
         });
-      const found = await ask("前天晚上我和谁吃烤肉了？");
+      const found = await ask("前天晚上我和谁吃烤肉了？", { from: "2026-10-23", to: "2026-10-23" });
       expect(found.map(({ episode }) => episode.day)).toEqual(["2026-10-23"]);
       expect(found[0]?.text).toContain("老周");
-      expect(await ask("上个月我和谁吃烤肉了？")).toEqual([]);
+      expect(await ask("上个月我和谁吃烤肉了？", { from: "2026-09-01", to: "2026-09-30" })).toEqual(
+        [],
+      );
       expect((await ask("我血压怎么样")).map(({ text }) => text).join("")).not.toContain("血压");
     } finally {
       await resource.repository.close();

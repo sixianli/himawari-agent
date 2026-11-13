@@ -1,6 +1,6 @@
 import type { GatewayV2Command, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "./gateway-client.js";
 import type { ImportCandidate, MemoryCategory } from "./memory-import.js";
 import { commandMessage, queryMessage } from "./messages.js";
@@ -12,19 +12,50 @@ export type MemoryOverview = Extract<
 export type MemoryItem = MemoryOverview["memories"][number];
 export type PendingMemory = MemoryOverview["pending"][number];
 export type MemoryTidyUp = MemoryOverview["tidyUps"][number];
+export type MemoryConversationReview = MemoryOverview["conversationReviews"][number];
 export type MemoryReminder = MemoryOverview["reminders"][number];
 export type MemoryImportSource = MemoryOverview["imports"][number]["source"];
+export type ExternalProposal = MemoryOverview["externalProposals"]["items"][number];
+export interface ExternalDecision {
+  readonly proposalId: string;
+  readonly decision: "keep" | "reject";
+  readonly editedText: string | null;
+}
 export type OwnerRule = Extract<
   GatewayV2Snapshot,
   { type: "memory.rules.snapshot" }
 >["payload"]["rules"][number];
 export type OwnerRuleAction = "undo" | "confirm" | "reconfirm";
+export type MemoryReview = Extract<
+  GatewayV2Snapshot,
+  { type: "memory.review.snapshot" }
+>["payload"];
+export type MemoryReviewAction = "dismiss" | "adopt" | "confirm_suspended" | "restore";
+export type MemoryClassification = Omit<
+  Extract<GatewayV2Snapshot, { type: "memory.classify.snapshot" }>["payload"]["items"][number],
+  "contentRef"
+>;
+const CLASSIFY_BATCH = 500;
+const SENSITIVE_CATEGORIES: ReadonlySet<MemoryCategory> = new Set(["health", "finance"]);
+const UNCLASSIFIED: MemoryClassification = Object.freeze({
+  category: "other",
+  classification: "sensitive",
+  topic: "other",
+  failed: true,
+});
 const REMINDER_REFRESH_MS = 300_000;
 
 export interface MemoryModel {
   readonly overview: MemoryOverview | null;
   readonly rules: readonly OwnerRule[];
   readonly respondRule: (target: string, action: OwnerRuleAction) => Promise<boolean>;
+  readonly review: MemoryReview | null;
+  readonly respondReview: (
+    target: string,
+    action: MemoryReviewAction,
+    expectedRevision: number | null,
+  ) => Promise<boolean>;
+  readonly reportMissed: (memoryId: string, upstreamMemoryId: string) => Promise<boolean>;
   readonly failed: boolean;
   readonly busy: boolean;
   readonly respond: (
@@ -42,6 +73,7 @@ export interface MemoryModel {
   readonly setPinned: (item: MemoryItem, pinned: boolean) => Promise<boolean>;
   readonly markViewed: () => Promise<boolean>;
   readonly undoTidy: (item: MemoryTidyUp) => Promise<boolean>;
+  readonly undoReview: (item: MemoryConversationReview) => Promise<boolean>;
   readonly respondReminder: (
     item: { readonly reminderId: string },
     action: "dismiss" | "snooze" | "cancel",
@@ -51,12 +83,12 @@ export interface MemoryModel {
     due: string,
     repeat: "none" | "yearly",
   ) => Promise<boolean>;
+  readonly classify: (texts: readonly string[]) => Promise<readonly MemoryClassification[]>;
   readonly create: (
     text: string,
-    category: MemoryCategory,
-    sensitive: boolean,
-    pinned: boolean,
-  ) => Promise<boolean>;
+    picked: MemoryCategory | null,
+    pinned: (category: MemoryCategory) => boolean,
+  ) => Promise<MemoryCategory | null>;
   readonly setPaused: (paused: boolean) => Promise<boolean>;
   readonly respondPerson: (suggestionId: string, merge: boolean) => Promise<boolean>;
   readonly importCommit: (
@@ -64,7 +96,18 @@ export interface MemoryModel {
     items: readonly ImportCandidate[],
   ) => Promise<boolean>;
   readonly importUndo: (batchId: string) => Promise<boolean>;
+  readonly externalReady: boolean;
+  readonly externalRespond: (items: readonly ExternalDecision[]) => Promise<string | null>;
+  readonly externalUndo: (batchId: string) => Promise<boolean>;
   readonly checkSource: (memoryId: string) => Promise<MemoryItem | null>;
+}
+
+function topicFor(
+  result: MemoryClassification,
+  category: MemoryCategory,
+): NonNullable<MemoryClassification["topic"]> {
+  if (result.classification === "sensitive" && result.topic) return result.topic;
+  return category === "health" || category === "finance" ? category : "other";
 }
 
 export function useMemory(input: {
@@ -80,9 +123,13 @@ export function useMemory(input: {
     configuration?.installedGatewayV2Operations?.includes("memory.rules.read") ?? false;
   const [overview, setOverview] = useState<MemoryOverview | null>(null);
   const [rules, setRules] = useState<readonly OwnerRule[]>([]);
+  const [review, setReview] = useState<MemoryReview | null>(null);
+  const reviewAvailable =
+    configuration?.installedGatewayV2Operations?.includes("memory.review.read") ?? false;
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
+  const classifiedRefs = useRef(new Map<string, string>());
   useEffect(() => {
     void reload;
     void refreshSignal;
@@ -110,10 +157,29 @@ export function useMemory(input: {
         .catch(() => {
           if (!disposed) setFailed(true);
         });
+    if (reviewAvailable)
+      void client
+        .query(queryMessage(configuration, "memory.review.read", {}))
+        .then((result) => {
+          if (result.type !== "memory.review.snapshot") throw new Error("REVIEW_INVALID");
+          if (!disposed) setReview(result.payload);
+        })
+        .catch(() => {
+          if (!disposed) setFailed(true);
+        });
     return () => {
       disposed = true;
     };
-  }, [available, rulesAvailable, client, configuration, connected, reload, refreshSignal]);
+  }, [
+    available,
+    rulesAvailable,
+    reviewAvailable,
+    client,
+    configuration,
+    connected,
+    reload,
+    refreshSignal,
+  ]);
   useEffect(() => {
     if (!available || !connected) return;
     const timer = window.setInterval(() => setReload((value) => value + 1), REMINDER_REFRESH_MS);
@@ -134,10 +200,50 @@ export function useMemory(input: {
     }
   }, []);
   if (!available || !client || !configuration) return null;
+  const operations = configuration.installedGatewayV2Operations ?? [];
   const send = (type: GatewayV2Command["type"], payload: () => unknown | Promise<unknown>) =>
     run(async () =>
       client.mutate(commandMessage(configuration, type, await payload(), { risk: "medium" })),
     );
+  const protectedRef = async (text: string, sensitive: boolean): Promise<string> => {
+    const level = sensitive ? "sensitive" : classificationWithIdentifiers(text, "private");
+    const key = `${level}\u0000${text}`;
+    const known = classifiedRefs.current.get(key);
+    if (known) return known;
+    const ref = await client.protectText(text, level);
+    classifiedRefs.current.set(key, ref);
+    return ref;
+  };
+  const classify = async (texts: readonly string[]): Promise<readonly MemoryClassification[]> => {
+    if (!operations.includes("memory.classify.read")) return texts.map(() => UNCLASSIFIED);
+    const results: MemoryClassification[] = [];
+    for (let start = 0; start < texts.length; start += CLASSIFY_BATCH) {
+      const chunk = texts.slice(start, start + CLASSIFY_BATCH);
+      try {
+        const contentRefs = await Promise.all(chunk.map((text) => protectedRef(text, false)));
+        const result = await client.query(
+          queryMessage(configuration, "memory.classify.read", { contentRefs }),
+        );
+        if (result.type !== "memory.classify.snapshot") throw new Error("CLASSIFY_INVALID");
+        for (const [index, ref] of contentRefs.entries()) {
+          const item = result.payload.items[index];
+          results.push(
+            item && item.contentRef === ref
+              ? {
+                  category: item.category,
+                  classification: item.classification,
+                  topic: item.topic,
+                  failed: item.failed,
+                }
+              : UNCLASSIFIED,
+          );
+        }
+      } catch {
+        results.push(...chunk.map(() => UNCLASSIFIED));
+      }
+    }
+    return results;
+  };
   const mutate = (item: MemoryItem, action: string) =>
     send("memory.mutate", () => ({
       memoryId: item.memoryId,
@@ -150,6 +256,11 @@ export function useMemory(input: {
     overview,
     rules,
     respondRule: (target, action) => send("memory.rule.respond", () => ({ target, action })),
+    review,
+    respondReview: (target, action, expectedRevision) =>
+      send("memory.review.respond", () => ({ target, action, expectedRevision })),
+    reportMissed: (memoryId, upstreamMemoryId) =>
+      send("memory.review.reportMissed", () => ({ memoryId, upstreamMemoryId })),
     failed,
     busy,
     checkSource: async (memoryId) => {
@@ -199,6 +310,8 @@ export function useMemory(input: {
     setPinned: (item, pinned) => mutate(item, pinned ? "pin" : "unpin"),
     markViewed: () => send("memory.page.viewed", () => ({})),
     undoTidy: (item) => send("memory.tidy.undo", () => ({ changeId: item.changeId })),
+    undoReview: (item) =>
+      send("memory.conversationReview.undo", () => ({ reviewId: item.reviewId })),
     respondReminder: (item, action) =>
       send("memory.reminder.respond", () => ({ reminderId: item.reminderId, action })),
     createReminder: (text, due, repeat) =>
@@ -207,16 +320,23 @@ export function useMemory(input: {
         due,
         repeat,
       })),
-    create: (text, category, sensitive, pinned) => {
-      const classification = sensitive
-        ? "sensitive"
-        : classificationWithIdentifiers(text, "private");
-      return send("memory.create", async () => ({
-        contentRef: await client.protectText(text, classification),
-        category,
-        subCategory: null,
-        pinned,
-      }));
+    classify,
+    create: async (text, picked, pinned) => {
+      let category: MemoryCategory = picked ?? "other";
+      const ok = await send("memory.create", async () => {
+        const [result = UNCLASSIFIED] = await classify([text]);
+        category = picked ?? result.category;
+        const sensitive =
+          result.classification === "sensitive" || SENSITIVE_CATEGORIES.has(category);
+        return {
+          contentRef: await protectedRef(text, sensitive),
+          category,
+          subCategory: null,
+          topic: sensitive ? topicFor(result, category) : null,
+          pinned: pinned(category),
+        };
+      });
+      return ok ? category : null;
     },
     setPaused: (paused) => send("memory.settings.set", () => ({ capturePaused: paused })),
     respondPerson: (suggestionId, merge) =>
@@ -226,16 +346,33 @@ export function useMemory(input: {
         batchId: `memory-import-${Date.now()}`,
         source,
         items: await Promise.all(
-          items.map(async (item) => ({
-            contentRef: await client.protectText(
-              item.text,
-              item.sensitive ? "sensitive" : "private",
-            ),
-            category: item.category,
-            subCategory: item.subCategory,
-          })),
+          items.map(async (item) => {
+            const sensitive = item.sensitive || SENSITIVE_CATEGORIES.has(item.category);
+            return {
+              contentRef: await protectedRef(item.text, sensitive),
+              category: item.category,
+              subCategory: item.subCategory,
+              topic: sensitive
+                ? (item.topic ??
+                  (SENSITIVE_CATEGORIES.has(item.category) ? item.category : "other"))
+                : null,
+            };
+          }),
         ),
       })),
     importUndo: (batchId) => send("memory.import.undo", () => ({ batchId })),
+    externalReady:
+      operations.includes("memory.external.respond") && operations.includes("memory.external.undo"),
+    externalRespond: async (items) => {
+      let batchId: string | null = null;
+      const ok = await run(async () => {
+        const result = await client.mutate(
+          commandMessage(configuration, "memory.external.respond", { items }, { risk: "medium" }),
+        );
+        batchId = result.resultRef;
+      });
+      return ok ? batchId : null;
+    },
+    externalUndo: (batchId) => send("memory.external.undo", () => ({ batchId })),
   };
 }

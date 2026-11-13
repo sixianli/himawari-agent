@@ -11,6 +11,7 @@ import {
   type RuleOutcome,
   type RuleRecord,
   type RuleStatus,
+  ruleIsEnforced,
 } from "./rule-book.js";
 
 export const OWNER_RULE_ID_PREFIX = "owner:";
@@ -423,7 +424,8 @@ export function unreadablePushRule(
   row: OwnerRuleRow,
   registry: readonly RuleTypeDefinition[] = RULE_TYPES,
 ): boolean {
-  if (row.status === "retired" || enforceableOwnerRule(row, registry) !== undefined) return false;
+  if (!ruleIsEnforced(row.status) || enforceableOwnerRule(row, registry) !== undefined)
+    return false;
   const text = typeof row.parameters === "string" ? row.parameters : JSON.stringify(row.parameters);
   const declared =
     typeof row.parameters === "object" && row.parameters !== null
@@ -437,7 +439,7 @@ export function enforceableOwnerRule(
   row: OwnerRuleRow,
   registry: readonly RuleTypeDefinition[] = RULE_TYPES,
 ): RuleRecord | undefined {
-  if (row.status === "retired") return undefined;
+  if (!ruleIsEnforced(row.status)) return undefined;
   try {
     return ownerRuleRecord(row, registry);
   } catch (error) {

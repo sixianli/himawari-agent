@@ -167,7 +167,7 @@ async function openMigrated() {
     database,
     path.join(directory, "snapshot.sqlite"),
   );
-  applyMigrations(database, migrations, { snapshot });
+  applyMigrations(database, migrations.slice(0, sequence + 1), { snapshot });
   return { database, before };
 }
 

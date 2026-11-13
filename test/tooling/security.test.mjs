@@ -14,6 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateRawSync, gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { parse } from "yaml";
 import {
   applySecurityExceptions,
   enumerateLockDependencies,
@@ -22,6 +23,7 @@ import {
   loadReviewedExceptions,
   parseGitleaksReport,
   parseSemgrepReport,
+  semgrepTimeoutMs,
   validateGitleaksExecution,
   validateSecurityExceptions,
   verifySyntheticProvenance,
@@ -208,6 +210,43 @@ describe("构建包源码与日志有各自的检测语义", () => {
       ),
     ).toBe(true);
     expect(JSON.stringify(findings)).not.toContain(literal);
+  });
+  it("只引用环境变量名的值不算credential字面量，像密钥的值照样检测", () => {
+    for (const [content, name] of [
+      ['apiKey: "$ACME_API_KEY",', "guide.md"],
+      [JSON.stringify({ password: ["$", "{DATABASE_PASSWORD}"].join("") }), "config.json"],
+      ['const apiKey = "$ACME_API_KEY";', "example.ts"],
+      [['const apiKey = "$', '{TOOLS_KEY_VALUE}";'].join(""), "example.ts"],
+      ["API_KEY=$ACME_API_KEY_VALUE\n", ".env"],
+      [
+        JSON.stringify({
+          sources: ["src/a.ts"],
+          sourcesContent: ['const password = "$DATABASE_PASSWORD";'],
+        }),
+        "a.js.map",
+      ],
+    ])
+      expect(
+        scan(content, name).filter((finding) => finding.rule === "credential-literal"),
+      ).toEqual([]);
+    for (const value of [
+      "$acme_api_key_value",
+      "$ACME_API_KEY-extra1",
+      "$ABCDEFGHIJKL1234",
+      `x${literal}`,
+    ])
+      expect(
+        scan(`apiKey: "${value}",`, "guide.md").some(
+          (finding) => finding.rule === "credential-literal",
+        ),
+      ).toBe(true);
+    for (const [content, name] of [
+      ['const password = "$" + "ABCDEFGHIJK1";', "example.ts"],
+      ["API_KEY=$ABCDEFGHIJKL1234\n", ".env"],
+    ])
+      expect(scan(content, name).some((finding) => finding.rule === "credential-literal")).toBe(
+        true,
+      );
   });
   it("JSON及source map嵌入源码仍检测解码后的字面量", () => {
     expect(redactText(JSON.stringify({ password: literal }))).not.toContain(literal);
@@ -954,5 +993,21 @@ describe("公开输出白名单与敏感哨兵", () => {
         allowed: [{ path: "link.json", kind: "json" }],
       }),
     ).rejects.toThrow("PUBLIC_ARTIFACT_SYMLINK_OR_NOT_FILE");
+  });
+});
+
+describe("semgrep scan time limit", () => {
+  it("leaves room for a full scan on a slower runner and still ends before the job limit", () => {
+    const measuredX64ScanMs = 99_000;
+    const armSlowdownAllowed = 1.5;
+    const workflow = parse(
+      readFileSync(
+        resolve(dirname(fileURLToPath(import.meta.url)), "../../.github/workflows/ci.yml"),
+        "utf8",
+      ),
+    );
+    const jobLimitMs = workflow.jobs.security["timeout-minutes"] * 60_000;
+    expect(semgrepTimeoutMs).toBeGreaterThan(measuredX64ScanMs * armSlowdownAllowed * 2);
+    expect(semgrepTimeoutMs).toBeLessThan(jobLimitMs / 2);
   });
 });

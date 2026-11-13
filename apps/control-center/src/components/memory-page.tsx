@@ -2,7 +2,6 @@ import {
   MEMORY_CATEGORY_NAMES,
   MEMORY_SENSITIVE_CATEGORY_NAMES,
 } from "@himawari-agent/gateway-contracts";
-import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { requestChatExport, requestDataExport } from "../data-export.js";
 import { DEFAULT_UI_LOCALE, useLocaleFormat } from "../i18n/locale-format.js";
@@ -17,7 +16,7 @@ import {
   stanceChart,
 } from "../memory-history.js";
 import {
-  guessCategory,
+  applyImportClassifications,
   type ImportCandidate,
   type ImportParse,
   type MemoryCategory,
@@ -29,10 +28,17 @@ import type { MuseModel } from "../muse.js";
 import type { ProactiveGroup, ProactiveModel } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { Glyph } from "./glyphs.js";
+import { ExternalProposalsSection } from "./external-proposals.js";
 import { MailDecisionPage } from "./mail-decision-page.js";
-import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
+import {
+  MemoryApprovalCard,
+  openMemoryPage,
+  openNotificationSettings,
+  TextEditor,
+} from "./memory-panel.js";
 import { MuseReference } from "./muse-reference.js";
 import { ActionButton, Dropdown, EmptyState } from "./primitives.js";
+import { CorrectionReviewSection } from "./correction-review.js";
 import { OwnerRulesSection } from "./rule-receipt.js";
 import {
   clock,
@@ -390,6 +396,60 @@ function MemoryLine({
   );
 }
 
+function MissedReport({
+  item,
+  memory,
+  message,
+  notify,
+}: {
+  item: MemoryItem;
+  memory: MemoryModel;
+  message: Message;
+  notify: (notice: Notice) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState("");
+  const choices =
+    memory.overview?.memories.filter(
+      (other) => other.memoryId !== item.memoryId && other.status === "active" && live(other),
+    ) ?? [];
+  if (!choices.length) return null;
+  if (!open)
+    return (
+      <ActionButton variant="quiet" onClick={() => setOpen(true)}>
+        {message("memory.page.missed")}
+      </ActionButton>
+    );
+  return (
+    <div className="memory-add-options" data-missed-report="">
+      <label>
+        {message("memory.page.missedPick")}
+        <select value={picked} onChange={(event) => setPicked(event.currentTarget.value)}>
+          <option value="">-</option>
+          {choices.map((other) => (
+            <option key={other.memoryId} value={other.memoryId}>
+              {Array.from(other.text).slice(0, 60).join("")}
+            </option>
+          ))}
+        </select>
+      </label>
+      <ActionButton
+        disabled={memory.busy || !picked}
+        onClick={() =>
+          void memory.reportMissed(picked, item.memoryId).then((ok) => {
+            if (!ok) return;
+            notify({ text: message("memory.page.missedSaved") });
+            setPicked("");
+            setOpen(false);
+          })
+        }
+      >
+        {message("memory.page.missedSubmit")}
+      </ActionButton>
+    </div>
+  );
+}
+
 function MemoryDetail({
   item,
   chain,
@@ -637,6 +697,7 @@ function MemoryDetail({
               >
                 {message("memory.deleteAction")}
               </ActionButton>
+              <MissedReport item={item} memory={memory} message={message} notify={notify} />
             </>
           )}
         </div>
@@ -1048,6 +1109,14 @@ export function RemindersPage({
             >
               {message("reminders.empty")}
             </EmptyState>
+          ) : null}
+          {overview.externalProposals.total > 0 ? (
+            <p className="settings-note reminders-external">
+              {message("memory.external.reviewHint", { count: overview.externalProposals.total })}{" "}
+              <ActionButton variant="quiet" onClick={() => openMemoryPage()}>
+                {message("memory.external.go")}
+              </ActionButton>
+            </p>
           ) : null}
           {proactive ? (
             <ProactiveReviewSection proactive={proactive} message={message} locale={locale} />
@@ -1794,6 +1863,36 @@ function TimelineTab({
           (item.action === "reflect" || item.action === "hold") && waiting.has(item.memoryId),
       }),
     ),
+    ...overview.conversationReviews.map((item): Event => {
+      const count = (action: string) =>
+        item.changes.filter((change) => change.action === action).length;
+      return {
+        key: item.reviewId,
+        at: item.finishedAt,
+        type: "tidy",
+        kind: "review",
+        text: message("memory.page.reviewed", {
+          created: count("created"),
+          superseded: count("superseded"),
+          confirmed: count("confirmed"),
+        }),
+        note: item.changes
+          .flatMap(({ memoryId, action }) => {
+            const found = overview.memories.find((entry) => entry.memoryId === memoryId);
+            if (!found) return [];
+            const quote = found.history.find((entry) => entry.quote)?.quote ?? null;
+            return [
+              message("memory.page.reviewItem", { action, text: found.text }) +
+                (quote ? message("memory.page.reviewQuote", { quote }) : ""),
+            ];
+          })
+          .join(" "),
+        undone: item.undone,
+        ...(!item.undone && !item.undoable
+          ? { locked: true }
+          : { undo: () => void memory.undoReview(item) }),
+      };
+    }),
     ...overview.imports.map(
       (item): Event => ({
         key: item.batchId,
@@ -1890,10 +1989,17 @@ function ImportPanel({
   const existing = (memory.overview?.memories ?? [])
     .filter((item) => item.status !== "trashed")
     .map((item) => item.text);
+  const round = useRef(0);
   const load = (parsed: readonly ImportParse[]) => {
     const all = parsed.flatMap((entry) => entry.items).slice(0, MAXIMUM_IMPORT_ITEMS);
+    const current = ++round.current;
     setItems(all);
     setError(all.length ? "" : message("memory.page.importEmpty"));
+    const waiting = all.filter((item) => item.status === "classifying").map((item) => item.text);
+    if (!waiting.length) return;
+    void memory.classify(waiting).then((results) => {
+      if (round.current === current) setItems(applyImportClassifications(all, results));
+    });
   };
   const read = (files: FileList | null, parse: (name: string, text: string) => ImportParse) => {
     const list = [...(files ?? [])];
@@ -1906,12 +2012,14 @@ function ImportPanel({
       .catch(() => setError(message("memory.page.importUnreadable")));
   };
   const reset = () => {
+    round.current += 1;
     setSource(null);
     setItems([]);
     setError("");
     setPasted("");
   };
   const chosen = items.filter((item) => item.checked);
+  const classifying = items.some((item) => item.status === "classifying");
   const prompt = message("memory.page.aiPrompt");
   return (
     <section className="memory-card memory-import" ref={reveal}>
@@ -1936,7 +2044,7 @@ function ImportPanel({
                   <input
                     type="checkbox"
                     checked={item.checked}
-                    disabled={item.duplicate}
+                    disabled={item.duplicate || item.status === "classifying"}
                     onChange={() =>
                       setItems(
                         items.map((entry, position) =>
@@ -1952,14 +2060,21 @@ function ImportPanel({
                         {message("memory.cat", { c: item.category })}
                         {item.subCategory ? ` · ${item.subCategory}` : ""}
                       </span>
-                      {item.sensitive || item.duplicate || item.coding ? (
+                      {item.sensitive ||
+                      item.duplicate ||
+                      item.coding ||
+                      item.status === "classifying" ? (
                         <span className="memory-tag" data-kind="sensitive">
                           {message("memory.page.importFlag", {
                             f: item.duplicate
                               ? "duplicate"
-                              : item.sensitive
-                                ? "sensitive"
-                                : "coding",
+                              : item.status === "classifying"
+                                ? "classifying"
+                                : item.status === "unclassified"
+                                  ? "unclassified"
+                                  : item.sensitive
+                                    ? "sensitive"
+                                    : "coding",
                           })}
                         </span>
                       ) : null}
@@ -1972,7 +2087,7 @@ function ImportPanel({
           </ul>
           <div className="actions">
             <ActionButton
-              disabled={memory.busy || !chosen.length || !source}
+              disabled={memory.busy || classifying || !chosen.length || !source}
               onClick={() =>
                 source &&
                 void memory.importCommit(source, chosen).then((ok) => {
@@ -2207,23 +2322,20 @@ function AddForm({
   const [text, setText] = useState("");
   const [picked, setPicked] = useState<MemoryCategory | null>(null);
   const [pinned, setPinned] = useState(false);
-  const category = picked ?? guessCategory(text).category;
-  const sensitive =
-    category === "health" ||
-    category === "finance" ||
-    classificationWithIdentifiers(text, "private") === "sensitive";
-  const pinnable = PINNABLE.has(category);
+  const pinnable = picked === null || PINNABLE.has(picked);
   const save = () =>
-    void memory.create(text.trim(), category, sensitive, pinned && pinnable).then((ok) => {
-      if (!ok) return;
-      notify({
-        text: message("memory.page.added", {
-          cat: message("memory.cat", { c: category }),
-          pinned: String(pinned && pinnable),
-        }),
+    void memory
+      .create(text.trim(), picked, (category) => pinned && PINNABLE.has(category))
+      .then((category) => {
+        if (category === null) return;
+        notify({
+          text: message("memory.page.added", {
+            cat: message("memory.cat", { c: category }),
+            pinned: String(pinned && PINNABLE.has(category)),
+          }),
+        });
+        onDone();
       });
-      onDone();
-    });
   return (
     <section className="memory-card" data-kind="add">
       <strong>{message("memory.page.addTitle")}</strong>
@@ -2239,9 +2351,16 @@ function AddForm({
           <label>
             {message("memory.page.topic")}
             <select
-              value={category}
-              onChange={(event) => setPicked(event.currentTarget.value as MemoryCategory)}
+              value={picked ?? ""}
+              onChange={(event) =>
+                setPicked(
+                  event.currentTarget.value === ""
+                    ? null
+                    : (event.currentTarget.value as MemoryCategory),
+                )
+              }
             >
+              <option value="">{message("memory.page.autoCategory")}</option>
               {MEMORY_CATEGORY_NAMES.map((key) => (
                 <option key={key} value={key}>
                   {message("memory.cat", { c: key })}
@@ -2333,8 +2452,17 @@ export function MemoryPage({
       {panel === "add" ? (
         <AddForm memory={memory} message={message} notify={notify} onDone={() => setPanel(null)} />
       ) : null}
+      <ExternalProposalsSection memory={memory} message={message} />
       <ConfirmSection memory={memory} message={message} />
       <OwnerRulesSection memory={memory} message={message} />
+      <CorrectionReviewSection
+        memory={memory}
+        message={message}
+        onOpenMemory={(memoryId) => {
+          setShowId(memoryId);
+          setTab("memories");
+        }}
+      />
       <div role="tablist" className="memory-tabs" aria-label={message("nav.memory")}>
         {tabs.map((item) => (
           <button

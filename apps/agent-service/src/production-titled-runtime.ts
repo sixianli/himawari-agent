@@ -12,6 +12,7 @@ export interface ProductionTitledRuntimeOptions {
   readonly memoryCapture?: BackgroundStart;
   readonly memoryEpisodes?: BackgroundStart;
   readonly memoryConsolidation?: BackgroundStart;
+  readonly memoryConversationReview?: BackgroundStart;
   readonly memoryPaused: () => Promise<boolean>;
 }
 
@@ -24,8 +25,15 @@ const ADMISSION_BARRIER_EVENTS = new Set([
 export function createProductionTitledRuntime(
   options: ProductionTitledRuntimeOptions,
 ): AgentRuntimePort {
-  const { runtime, titles, memoryCapture, memoryEpisodes, memoryConsolidation, memoryPaused } =
-    options;
+  const {
+    runtime,
+    titles,
+    memoryCapture,
+    memoryEpisodes,
+    memoryConsolidation,
+    memoryConversationReview,
+    memoryPaused,
+  } = options;
   return {
     cancel: (runId) => runtime.cancel(runId),
     async *run(request: RuntimeRequest) {
@@ -46,6 +54,7 @@ export function createProductionTitledRuntime(
                 if (paused) return;
                 await memoryEpisodes?.start(request);
                 await memoryConsolidation?.start(request);
+                await memoryConversationReview?.start(request);
               });
         }
         if (ADMISSION_BARRIER_EVENTS.has(event.type)) {

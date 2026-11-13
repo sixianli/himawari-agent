@@ -44,8 +44,7 @@ export function validateMainWorkflow(source, lock) {
     "permissions",
   );
   assert(
-    w.concurrency?.["cancel-in-progress"] === false &&
-      w.concurrency.group === `main-confirmation-${expression("github.run_id")}`,
+    w.concurrency?.["cancel-in-progress"] === false && w.concurrency.group === "main-confirmation",
     "concurrency",
   );
   assert(Object.keys(w.jobs).sort().join(",") === "confirm,full,plan", "jobs");
@@ -64,8 +63,8 @@ export function validateMainWorkflow(source, lock) {
     "confirm-condition",
   );
   assert(
-    plan.outputs?.mode === expression("steps.verify.outputs.mode") &&
-      plan.outputs?.evidence === expression("steps.retain.outputs.artifact-id"),
+    JSON.stringify(plan.outputs) ===
+      JSON.stringify({ mode: expression("steps.verify.outputs.mode") }),
     "outputs",
   );
   const actions = new Map(lock.actions.map((a) => [a.repository, a.sha]));
@@ -82,6 +81,7 @@ export function validateMainWorkflow(source, lock) {
       "boundary",
     );
     for (const step of job.steps) {
+      assert(!/^actions\/(?:upload|download)-artifact@/u.test(step.uses ?? ""), "github-artifact");
       if (step.run) assert(!step.run.includes("\u0024{"), "shell-expression");
       if (step.uses) {
         const [name, sha] = step.uses.split("@");
@@ -89,16 +89,11 @@ export function validateMainWorkflow(source, lock) {
         if (name === "actions/checkout")
           assert(step.with?.["persist-credentials"] === false, "checkout");
       }
-      if (step["continue-on-error"])
-        assert(
-          id === "plan" && step.uses?.startsWith("actions/download-artifact@"),
-          "hidden-failure",
-        );
+      assert(!step["continue-on-error"], "hidden-failure");
     }
   }
   const discover = plan.steps.find((s) => s.id === "candidate");
   const verify = plan.steps.find((s) => s.id === "verify");
-  const download = plan.steps.find((s) => s.uses?.startsWith("actions/download-artifact@"));
   assert(
     discover?.run === "node scripts/ci/main-evidence.mjs discover" && !discover.if,
     "discover",
@@ -108,21 +103,31 @@ export function validateMainWorkflow(source, lock) {
     "verify",
   );
   assert(
-    download?.with?.["run-id"] === expression("steps.candidate.outputs.run_id") &&
-      download.with["artifact-ids"] === expression("steps.candidate.outputs.artifact_id") &&
-      download.with["github-token"] === expression("github.token") &&
-      download.with.path === ".ci-output/main-evidence/gate",
-    "gate-download",
+    discover.env?.HIMAWARI_CI_GITHUB_TOKEN === expression("github.token") &&
+      verify.env?.HIMAWARI_CI_GITHUB_TOKEN === expression("github.token"),
+    "evidence-token",
   );
-  assert(
-    confirm.steps.some(
-      (s) =>
-        s.run === ".ci-output/tools/bin/node scripts/ci/main-confirm.mjs" &&
-        !s.if &&
-        !s["continue-on-error"],
-    ),
-    "confirmation",
+  const rediscover = confirm.steps.findIndex(
+    (s) =>
+      s.run === "node scripts/ci/main-evidence.mjs discover" &&
+      !s.if &&
+      s.env?.HIMAWARI_CI_GITHUB_TOKEN === expression("github.token"),
   );
+  const confirmation = confirm.steps.findIndex(
+    (s) => s.run === ".ci-output/tools/bin/node scripts/ci/main-confirm.mjs" && !s.if,
+  );
+  assert(rediscover >= 0 && confirmation > rediscover, "confirmation");
+  for (const [job, command] of [
+    [
+      plan,
+      'node scripts/ci/ci-summary.mjs --title "main 路径选择" --from .ci-output/main-evidence',
+    ],
+    [
+      confirm,
+      '.ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "main 确认报告" --from .ci-output/main-public',
+    ],
+  ])
+    assert(job.steps.at(-1)?.run === command && job.steps.at(-1).if === "always()", "job-summary");
   assert(!JSON.stringify(w).includes("secrets."), "secrets");
   return { jobs: 3 };
 }

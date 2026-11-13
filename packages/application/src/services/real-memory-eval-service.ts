@@ -15,7 +15,9 @@ import {
   summarizeDecisionEval,
   fastPathVerdict,
   judgePrompt,
+  leakJudgePrompt,
   parseGeneratedQuestion,
+  parseLeakVerdict,
   parseJudgeVerdict,
   pickNewMemories,
   questionPrompt,
@@ -115,6 +117,7 @@ export interface RealEvalSampleItem {
 export const QUESTION_OUTPUT_TOKENS = 400;
 export const ANSWER_OUTPUT_TOKENS = 300;
 export const JUDGE_OUTPUT_TOKENS = 100;
+export const LEAK_JUDGE_OUTPUT_TOKENS = 60;
 export const RECENT_RUNS_FOR_DECLINES = 520;
 export const SOURCE_READS_PER_SLOT = 4;
 
@@ -305,9 +308,33 @@ export class RealMemoryEvalService {
             declined.push(declinedKey(memory.id, memory.revision));
           continue;
         }
+        const leaksToModel = async (questionText: string) => {
+          try {
+            return (
+              (parseLeakVerdict(
+                await call(
+                  leakJudgePrompt({ question: questionText, memory: text, quote }),
+                  LEAK_JUDGE_OUTPUT_TOKENS,
+                  memory.dataClassification,
+                ),
+              ) ?? true) === true
+            );
+          } catch (error) {
+            if (error instanceof RealEvalBudgetExceededError) throw error;
+            return true;
+          }
+        };
+        if (await leaksToModel(generated.question)) {
+          rejected["leak"] = (rejected["leak"] ?? 0) + 1;
+          declined.push(declinedKey(memory.id, memory.revision));
+          continue;
+        }
         const entries: [RealEvalItemKind, string][] = [[generated.kind, generated.question]];
-        if (generated.abstainQuestion !== null)
-          entries.push(["abstain", generated.abstainQuestion]);
+        if (generated.abstainQuestion !== null) {
+          if (await leaksToModel(generated.abstainQuestion))
+            rejected["leak"] = (rejected["leak"] ?? 0) + 1;
+          else entries.push(["abstain", generated.abstainQuestion]);
+        }
         for (const [kind, questionText] of entries) {
           const createdAt = deps.now();
           const questionRef = await deps.storeQuestion({

@@ -34,8 +34,8 @@ import type { ProductionAuthorityLifecycle } from "./production-authority-lifecy
 import type { ProductionBackgroundCommands } from "./production-background-commands.js";
 import { ProductionBackgroundRuns } from "./production-background-runs.js";
 import {
-  ProductionMemoryCapture,
   type MemoryCaptureCall,
+  ProductionMemoryCapture,
   type ProductionMemoryCaptureOptions,
 } from "./production-memory-capture.js";
 import {
@@ -54,6 +54,10 @@ import {
   ProductionMemoryConsolidation,
   type ProductionMemoryConsolidationOptions,
 } from "./production-memory-consolidation.js";
+import {
+  ProductionMemoryConversationReview,
+  type ProductionMemoryConversationReviewOptions,
+} from "./production-memory-conversation-review.js";
 import {
   ProductionMemoryEpisodes,
   type ProductionMemoryEpisodesOptions,
@@ -95,6 +99,10 @@ export interface ProductionRunCompositionOptions {
     readonly consolidation?: Pick<
       ProductionMemoryConsolidationOptions,
       "service" | "search" | "embedWithin" | "onResult" | "onFailure"
+    >;
+    readonly conversationReview?: Pick<
+      ProductionMemoryConversationReviewOptions,
+      "settings" | "search" | "onResult" | "onFailure"
     >;
   };
   readonly recoverMissingToolResult?: (
@@ -139,6 +147,15 @@ export interface ProductionRunCompositionOptions {
   readonly onModelAdmissionFailed?: (
     request: RuntimeRequest,
     failure: { readonly code: string; readonly reason: string | null },
+  ) => void;
+  readonly onModelRequestRejected?: (
+    request: RuntimeRequest,
+    rejection: {
+      readonly status: number;
+      readonly retryAfter: string | null;
+      readonly shouldRetry: string | null;
+      readonly host: string | null;
+    },
   ) => void;
   readonly onCompactionSummaryRequest?: (
     request: RuntimeRequest,
@@ -455,6 +472,9 @@ export function createProductionRunComposition(options: ProductionRunComposition
     ...(options.onModelAdmissionFailed
       ? { onModelAdmissionFailed: options.onModelAdmissionFailed }
       : {}),
+    ...(options.onModelRequestRejected
+      ? { onModelRequestRejected: options.onModelRequestRejected }
+      : {}),
     ...(options.modelUsage ? { usage: options.modelUsage } : {}),
   });
   const titles = options.generateTitle
@@ -515,6 +535,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
         assertActive: () => authority.assertActive(),
         externalTag: () => options.egress.externalTag(),
         backlog: repository.memoryCaptureBacklog(),
+        unitOfWork: repository.unitOfWork(),
         generate: (request, prompt, onAdmitted, call) =>
           auxiliaryMemoryGeneration(request, prompt, onAdmitted, "memory-capture", call),
         onAudit: memoryCaptureOptions.onAudit,
@@ -547,6 +568,31 @@ export function createProductionRunComposition(options: ProductionRunComposition
         now: () => options.clock.now(),
       })
     : undefined;
+  const conversationReviewOptions = memoryCaptureOptions?.conversationReview;
+  const memoryConversationReview =
+    memoryCaptureOptions && conversationReviewOptions
+      ? new ProductionMemoryConversationReview({
+          ...conversationReviewOptions,
+          episodes: repository.memoryEpisodes(),
+          store: repository.memoryConversationReviews(),
+          threads: repository.threadRepository(),
+          state: repository.productMemoryState(),
+          generations: repository.threadDistillationState(),
+          product: memoryCaptureOptions.product,
+          approvals: memoryCaptureOptions.approvals,
+          reminders: repository.memoryReminders(),
+          book: repository.memoryBook(),
+          ledger: repository.decisionLedger(),
+          ...(memoryCaptureOptions.timeZone ? { timeZone: memoryCaptureOptions.timeZone } : {}),
+          payloads,
+          protector,
+          clock,
+          assertActive: () => authority.assertActive(),
+          externalTag: () => options.egress.externalTag(),
+          generate: (request, prompt, onAdmitted, call) =>
+            auxiliaryMemoryGeneration(request, prompt, onAdmitted, "memory-consolidation", call),
+        })
+      : undefined;
   const memoryPaused = () =>
     repository
       .memoryBook()
@@ -614,6 +660,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     ...(memoryCapture ? { memoryCapture } : {}),
     ...(memoryEpisodes ? { memoryEpisodes } : {}),
     ...(memoryConsolidation ? { memoryConsolidation } : {}),
+    ...(memoryConversationReview ? { memoryConversationReview } : {}),
     memoryPaused,
   });
   const runLifecycle = repository.runLifecycle(ownerId, agentId, fence);
