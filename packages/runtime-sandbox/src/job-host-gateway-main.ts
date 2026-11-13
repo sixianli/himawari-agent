@@ -5,6 +5,7 @@ const args = parseJobHostGatewayArgs(process.argv.slice(2), process.env, process
 const server = createServer();
 serveJobHostGateway(server, {
   idleExitMs: args.idleExitMs,
+  controlRoot: args.controlRoot,
   onIdle: () => {
     server.close();
     process.exitCode = 0;

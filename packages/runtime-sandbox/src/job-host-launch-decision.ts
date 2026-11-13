@@ -93,7 +93,10 @@ function signed(
       .digest("hex"),
   };
 }
-function verify(context: JobHostLaunchContext, value: unknown): JobHostLaunchEvidence {
+export function verifyJobHostLaunchEvidence(
+  context: JobHostLaunchContext,
+  value: unknown,
+): JobHostLaunchEvidence {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("SANDBOX_PREPARATION_LAUNCH_EVIDENCE_INVALID");
   const raw = value as Record<string, unknown>;
@@ -166,7 +169,10 @@ export async function readJobHostLaunchDecision(
       metadata.mtimeMs !== current.mtimeMs
     )
       throw new Error("SANDBOX_PREPARATION_LAUNCH_EVIDENCE_INVALID");
-    const result = verify(context, JSON.parse(buffer.subarray(0, bytesRead).toString("utf8")));
+    const result = verifyJobHostLaunchEvidence(
+      context,
+      JSON.parse(buffer.subarray(0, bytesRead).toString("utf8")),
+    );
     await validateContext(context);
     return result;
   } finally {
@@ -192,10 +198,14 @@ async function syncDirectory(context: JobHostLaunchContext): Promise<void> {
   }
   await validateContext(context);
 }
-async function decide(
+export interface JobHostLaunchOutcome {
+  readonly published: boolean;
+  readonly evidence: JobHostLaunchEvidence;
+}
+export async function decideJobHostLaunch(
   context: JobHostLaunchContext,
   decision: JobHostLaunchDecision,
-): Promise<{ published: boolean; evidence: JobHostLaunchEvidence }> {
+): Promise<JobHostLaunchOutcome> {
   await validateContext(context);
   const existing = await readJobHostLaunchDecision(context);
   if (existing) {
@@ -236,18 +246,26 @@ async function decide(
     if (!temporaryRemoved) await unlink(temporary);
   }
 }
-export async function claimJobHostLaunch(context: JobHostLaunchContext): Promise<boolean> {
-  const result = await decide(context, { kind: "launch" });
+export function launchClaimed(result: JobHostLaunchOutcome): boolean {
   return result.published && result.evidence.decision.kind === "launch";
+}
+export function blockedLaunchDecision(stopRequestedAt: string): JobHostLaunchDecision {
+  if (!instant(stopRequestedAt)) throw new Error("SANDBOX_RESERVATION_STOP_FENCE_INVALID");
+  return { kind: "blocked", stopRequestedAt };
+}
+export function launchBlocked(result: JobHostLaunchOutcome, stopRequestedAt: string): boolean {
+  if (result.evidence.decision.kind === "launch") return false;
+  if (result.evidence.decision.stopRequestedAt !== stopRequestedAt)
+    throw new Error("SANDBOX_RESERVATION_STOP_FENCE_INVALID");
+  return true;
+}
+export async function claimJobHostLaunch(context: JobHostLaunchContext): Promise<boolean> {
+  return launchClaimed(await decideJobHostLaunch(context, { kind: "launch" }));
 }
 export async function blockJobHostLaunch(
   context: JobHostLaunchContext,
   stopRequestedAt: string,
 ): Promise<boolean> {
-  if (!instant(stopRequestedAt)) throw new Error("SANDBOX_RESERVATION_STOP_FENCE_INVALID");
-  const result = await decide(context, { kind: "blocked", stopRequestedAt });
-  if (result.evidence.decision.kind === "launch") return false;
-  if (result.evidence.decision.stopRequestedAt !== stopRequestedAt)
-    throw new Error("SANDBOX_RESERVATION_STOP_FENCE_INVALID");
-  return true;
+  const decision = blockedLaunchDecision(stopRequestedAt);
+  return launchBlocked(await decideJobHostLaunch(context, decision), stopRequestedAt);
 }
