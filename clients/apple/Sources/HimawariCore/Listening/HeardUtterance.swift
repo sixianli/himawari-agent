@@ -104,15 +104,46 @@ public enum HeardOutcome: String, Codable, Sendable {
     case paused
 }
 
+public struct HeardUploadResult: Sendable, Equatable {
+    public let outcomes: [String: HeardOutcome]
+    public let reached: [String]
+
+    public init(outcomes: [String: HeardOutcome], reached: [String]) {
+        self.outcomes = outcomes
+        self.reached = reached
+    }
+
+    public static let audioLimitKey = "perception.audio.daily"
+
+    public var audioLimitReached: Bool {
+        reached.contains(Self.audioLimitKey)
+    }
+
+    public var refusal: ListeningStopReason? {
+        let values = Set(outcomes.values)
+        if values.contains(.senseOff) { return .senseOff }
+        if values.contains(.paused) { return .paused }
+        if audioLimitReached { return .dailyAudioLimit }
+        return nil
+    }
+}
+
 extension DeviceAPI {
-    public func upload(heard: [SpeechUtteranceUpload]) async throws -> [String: HeardOutcome] {
+    public func upload(heard: [SpeechUtteranceUpload]) async throws -> HeardUploadResult {
         struct Body: Encodable { let records: [SpeechUtteranceUpload] }
         struct Item: Decodable {
             let id: String
             let outcome: HeardOutcome
         }
-        struct Result: Decodable { let outcomes: [Item] }
+        struct Result: Decodable {
+            let outcomes: [Item]
+            let reached: [String]?
+        }
         let data = try await http.send(DeviceRequest(method: "POST", path: "perception", body: try JSONEncoder().encode(Body(records: heard))))
-        return Dictionary(try decode(Result.self, data).outcomes.map { ($0.id, $0.outcome) }, uniquingKeysWith: { first, _ in first })
+        let result = try decode(Result.self, data)
+        return HeardUploadResult(
+            outcomes: Dictionary(result.outcomes.map { ($0.id, $0.outcome) }, uniquingKeysWith: { first, _ in first }),
+            reached: result.reached ?? []
+        )
     }
 }

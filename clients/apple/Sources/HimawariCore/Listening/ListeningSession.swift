@@ -15,6 +15,7 @@ public enum ListeningStopReason: String, Codable, Sendable, Equatable {
 public enum ListeningDowngradeReason: String, Codable, Sendable, Equatable {
     case batteryLow
     case deviceHot
+    case batteryBudget
 }
 
 public enum ListeningState: Sendable, Equatable {
@@ -40,7 +41,7 @@ public enum ListeningEvent: Sendable, Equatable {
     case resumeFailed(at: Date)
     case audioLimitReached(at: Date, resumesAt: Date)
     case serverRefused(ListeningStopReason, at: Date, resumesAt: Date?)
-    case power(batteryPercent: Int?, charging: Bool, hot: Bool)
+    case power(batteryPercent: Int?, charging: Bool, hot: Bool, budgetSpent: Bool = false)
 }
 
 public struct ListeningPolicy: Sendable, Equatable {
@@ -107,8 +108,16 @@ public struct ListeningSession: Sendable, Equatable {
             state = .stopped(reason, at: at, resumesAt: resumesAt)
             notice = .stopped(reason, resumesAt: resumesAt)
             haptic = .listeningStopped
-        case let (.listening(since, _, current), .power(battery, charging, hot)):
-            let wanted: ListeningDowngradeReason? = hot ? .deviceHot : (!charging && (battery.map { $0 < policy.batteryFloorPercent } ?? false) ? .batteryLow : nil)
+        case let (.listening(since, _, current), .power(battery, charging, hot, budgetSpent)):
+            let wanted: ListeningDowngradeReason? = if hot {
+                .deviceHot
+            } else if !charging && (battery.map { $0 < policy.batteryFloorPercent } ?? false) {
+                .batteryLow
+            } else if budgetSpent {
+                .batteryBudget
+            } else {
+                nil
+            }
             if wanted != current {
                 state = .listening(since: since, mode: wanted == nil ? .full : .nameOnly, downgrade: wanted)
                 notice = wanted.map(ListeningNotice.downgraded) ?? .restored
