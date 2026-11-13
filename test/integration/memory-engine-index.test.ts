@@ -238,6 +238,7 @@ describe.each(["worker", "direct"] as const)("memory engine index through %s", (
     resource: Awaited<ReturnType<typeof fixture>>,
     query: string,
     classifications: ReadonlyArray<"public" | "private" | "sensitive"> = ["public", "private"],
+    includeHistory?: boolean,
   ): Promise<readonly MemoryId[]> {
     resource.content.values.set("payload-query", query);
     const found = await resource.service.search({
@@ -245,6 +246,7 @@ describe.each(["worker", "direct"] as const)("memory engine index through %s", (
       agentId: AGENT_ID,
       queryRef: "payload-query",
       policy: { limit: 3, allowedClassifications: classifications },
+      ...(includeHistory === undefined ? {} : { scope: { includeHistory, from: null, to: null } }),
     });
     return found.map(({ memory }) => memory.id);
   }
@@ -494,9 +496,10 @@ describe.each(["worker", "direct"] as const)("memory engine index through %s", (
         expect.arrayContaining([replacement.id]),
       );
       expect(await search(resource, "我早上喝什么咖啡")).not.toContain("memory-engine-coffee");
-      expect(await search(resource, "我以前早上喝什么咖啡")).toEqual(
+      expect(await search(resource, "我以前早上喝什么咖啡", ["public", "private"], true)).toEqual(
         expect.arrayContaining([replacement.id, "memory-engine-coffee"]),
       );
+      expect(await search(resource, "我以前早上喝什么咖啡")).not.toContain("memory-engine-coffee");
       await resource.service.restore(createMemoryId("memory-engine-coffee"), GENERATION_ID);
       await resource.service.runProjectionBatch(20);
       const state = resource.repository.productMemoryState();

@@ -13,7 +13,7 @@ export type RuleOutcome =
   | "ask_owner"
   | "refuse";
 export type RuleOrigin = "built_in" | "owner_setting";
-export type RuleStatus = "active" | "needs_review" | "retired";
+export type RuleStatus = "active" | "needs_review" | "suspended" | "retired";
 
 export function ruleIsEnforced(status: RuleStatus): boolean {
   return status === "active" || status === "needs_review";

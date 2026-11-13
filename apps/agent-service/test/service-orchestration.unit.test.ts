@@ -730,6 +730,8 @@ function web() {
     "memoryBook",
     "memoryReminders",
     "ownerRules",
+    "ruleReviews",
+    "memoryReviews",
     "memoryProjectionJobs",
     "runPayloadArtifactPort",
     "capabilityStore",

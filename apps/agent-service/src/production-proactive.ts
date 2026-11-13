@@ -29,6 +29,8 @@ import {
   type ProactiveStorePort,
   parseReviewKey,
   ReviewPrereviewService,
+  type RuleReviewReport,
+  type RuleReviewService,
   type ReviewPrereviewStorePort,
   type RuleRecord,
   readDailyReview,
@@ -67,6 +69,7 @@ export const PROACTIVE_GOOGLE_START_PATH = "/api/proactive/v1/google/start";
 export const PROACTIVE_GOOGLE_CALLBACK_PATH = "/api/proactive/v1/google/callback";
 export const PROACTIVE_MAX_OUTPUT_TOKENS = 4096;
 export const PREREVIEW_MAX_OUTPUT_TOKENS = 1024;
+export const RULE_REVIEW_MAX_OUTPUT_TOKENS = 2048;
 
 const STATE_TTL_MS = 10 * 60_000;
 const MAX_PENDING_STATES = 20;
@@ -173,6 +176,8 @@ export interface ProductionProactiveOptions {
     readonly estimateCostMicros: (prompt: string) => number;
   };
   readonly onPrereview?: (result: PrereviewRunResult) => void;
+  readonly ruleReview?: Pick<RuleReviewService, "run">;
+  readonly onRuleReview?: (reports: readonly RuleReviewReport[]) => void;
   readonly checkup?: Pick<MemoryCheckupService, "week" | "act" | "undo">;
   readonly estimateCostMicros: (prompt: string) => number;
   readonly feedback: (sentFrom: string) => Promise<readonly WebPushFeedback[]>;
@@ -336,7 +341,11 @@ export class ProductionProactive {
 
   tick(): Promise<void> {
     this.#running ??= this.#checkable()
-      .then((checkable) => (checkable ? this.#service.run() : undefined))
+      .then(async (checkable) => {
+        if (!checkable) return undefined;
+        await this.reviewRules();
+        return this.#service.run();
+      })
       .then((decision) => {
         if (decision) this.#options.onDecision?.(decision);
       })
@@ -348,6 +357,18 @@ export class ProductionProactive {
         this.#running = undefined;
       });
     return this.#running;
+  }
+
+  async reviewRules(): Promise<readonly RuleReviewReport[]> {
+    if (!this.#options.ruleReview) return [];
+    try {
+      const reports = await this.#options.ruleReview.run();
+      if (reports.length > 0) this.#options.onRuleReview?.(reports);
+      return reports;
+    } catch (error) {
+      this.#options.onFailure(error);
+      return [];
+    }
   }
 
   async prereview(): Promise<PrereviewRunResult | undefined> {

@@ -1,0 +1,5 @@
+{"id": "1", "quote": "### 1. 低：新用例没有覆盖“后一条更短/消息缺失”这两条你点名的路径", "valid": true, "class": "better", "modelSeverity": "低", "reason": "成立，可以更好：只是失败时的提示文字，判定仍由 toEqual 做；不加。", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "2", "quote": "### 2. 信息：作者说“只改测试辅助、测试和文档”，但增量还新增了复核记录并改了账本", "valid": true, "class": "better", "modelSeverity": "信息", "reason": "成立：简报漏写了复核记录，不影响代码。", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "3", "quote": "### 3. 极低（场景罕见）：消息本身为 `null` 且后一条缺失时，提示会说“有差异”但两边都显示 `null`", "valid": true, "class": "better", "modelSeverity": "极低", "reason": "成立，可以更好：请求里的消息不会是 null；不改。", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "4", "quote": "### 4. 极低：`at` 是 UTF-16 code unit 下标，遇到 emoji 时“字符位置”和窗口边界可能与肉眼不符", "valid": true, "class": "better", "modelSeverity": "极低", "reason": "成立，可以更好：只用于定位，不改。", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "5", "quote": "### 5. 极低：诊断窗口扩大后，失败日志可能打印到消息更深处的内容", "valid": true, "class": "better", "modelSeverity": "极低", "reason": "成立，可以更好：测试里的消息都是仓库文件和固定文字，失败诊断本来就会公开前 2000 字符；不改。", "model": "opencode-go/deepseek-v4.1-flash"}
