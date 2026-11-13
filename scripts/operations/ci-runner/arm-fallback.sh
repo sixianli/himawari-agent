@@ -15,16 +15,21 @@ esac
 [ "$RUNNER_SITE" = vps ] || { echo "ARM_FALLBACK_FAILED run it without RUNNER_SITE: it changes the labels of the CI VPS runners"; exit 64; }
 
 take_lock
+TABLE=$(github_runners) || { echo "ARM_FALLBACK_FAILED could not list runners on GitHub; labels untouched"; exit 1; }
 FALLBACKS=""
+UNREGISTERED=""
 for id in $RUNNER_IDS; do
   runner_select "$id"
-  [ "$RUNNER_LABEL" = "$RUNNER_CHECK_LABEL" ] && FALLBACKS="$FALLBACKS $RUNNER_NAME"
+  [ "$RUNNER_LABEL" = "$RUNNER_CHECK_LABEL" ] || continue
+  COUNT=$(runner_field "$TABLE" "$RUNNER_NAME" 1 | grep -c .)
+  case $COUNT in
+    0) UNREGISTERED="$UNREGISTERED $RUNNER_NAME" ;;
+    1) FALLBACKS="$FALLBACKS $RUNNER_NAME" ;;
+    *) echo "ARM_FALLBACK_FAILED GitHub has $COUNT runners named $RUNNER_NAME; labels untouched"; exit 1 ;;
+  esac
 done
-TABLE=$(github_runners) || { echo "ARM_FALLBACK_FAILED could not list runners on GitHub; labels untouched"; exit 1; }
-for name in $FALLBACKS; do
-  COUNT=$(runner_field "$TABLE" "$name" 1 | grep -c .)
-  [ "$COUNT" = 1 ] || { echo "ARM_FALLBACK_FAILED GitHub has $COUNT runners named $name; labels untouched"; exit 1; }
-done
+[ -n "$FALLBACKS" ] || { echo "ARM_FALLBACK_FAILED none of the CI VPS check runners is registered on GitHub; labels untouched"; exit 1; }
+[ -z "$UNREGISTERED" ] || echo "not registered on GitHub, left out:$UNREGISTERED"
 
 carrying() {
   local name found=""

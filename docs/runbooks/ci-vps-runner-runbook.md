@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:a9493fb09fc3e4858df56a8ad8e3939bd6d29cc5d3efe286e17c902a7963fd0e"
+contract_sha256: "sha256:479a7f5bf37ff99c9435fcc0c51a38fa1da3882f29916919c7250481a16c313e"
 supersedes: "docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md"
 superseded_by: ""
 date: "2026-11-07"
@@ -14,7 +14,7 @@ date: "2026-11-07"
 - scripts/operations/ci-runner
 -->
 
-本手册说明 CI VPS（Andy 在 OVH 租的云服务器，Ubuntu 24.04，8 个 vCPU，22 GB 内存，公网地址 `158.69.191.249`，主机名 `ci-vps`）上的 GitHub 自托管 runner（装在自己机器上、替 GitHub 执行 CI 任务的程序；原来两个跑检查、一个只跑汇总作业，2026-11-13 起可再加第 3 个检查 runner `ci-vps-3`，见[安装](#install)第 6 条）怎么准备机器、安装、注册、日常维护、暂停、排错和卸载。为什么这样做见 [ADR 0176](../adr/0176-ci-on-ovh-vps.md)；第 3 个 runner 的理由见 [ADR 0256](../adr/0256-gate-job-gets-its-own-runner.md)。这台机器只跑 CI，不用来跑 Himawari 的开发测试。
+本手册说明 CI VPS（Andy 在 OVH 租的云服务器，Ubuntu 24.04，8 个 vCPU，22 GB 内存，公网地址 `158.69.191.249`，主机名 `ci-vps`）上的 GitHub 自托管 runner（装在自己机器上、替 GitHub 执行 CI 任务的程序；原来两个跑检查、一个只跑汇总作业，2026-11-13 起可再加第 3 个检查 runner `ci-vps-3`，见[安装](#install)第 6 条）怎么准备机器、安装、注册、日常维护、暂停、排错和卸载。为什么这样做见 [ADR 0176](../adr/0176-ci-on-ovh-vps.md)；汇总 runner 的理由见 [ADR 0256](../adr/0256-gate-job-gets-its-own-runner.md)。这台机器只跑 CI，不用来跑 Himawari 的开发测试。
 
 <a id="contents"></a>
 
@@ -24,10 +24,10 @@ date: "2026-11-07"
 - [Authoritative Sources](#authoritative-sources)
 - [Safety and Preconditions](#safety-and-preconditions)：权限、令牌、Docker
 - [Live-State Preflight](#live-state-preflight)：动手前的只读检查
-- [Procedure](#procedure)：准备机器、安装、注册、暂停和恢复、第 3 个 runner 坏了时的应急、[Oracle 的 ARM 机器上的两个 runner](#arm-site)、日常维护、注销 Hermes 上的旧 runner
+- [Procedure](#procedure)：准备机器、安装、注册、暂停和恢复、汇总 runner 坏了时的应急、[Oracle 的 ARM 机器上的两个 runner](#arm-site)、日常维护、注销 Hermes 上的旧 runner
 - [Verification](#verification)
 - [Evidence](#evidence)
-- [Rollback](#rollback)：只卸第 2 个或第 3 个 runner，或全部卸载
+- [Rollback](#rollback)：只卸第 2 个检查 runner、第 3 个检查 runner 或汇总 runner，或全部卸载
 - [Stop Conditions](#stop-conditions)
 - [Troubleshooting](#troubleshooting)
 
@@ -35,7 +35,7 @@ date: "2026-11-07"
 
 ## Scope
 
-- **管的范围**：仓库 `sixianli/himawari-agent` 的三个自托管 runner。`ci-vps-1`（第 1 个）和 `ci-vps-2`（第 2 个）是检查 runner，标签都是 `ci-vps`，`ci.yml` 和 `main.yml` 里写 `runs-on: ci-vps` 的任务派给其中空闲的一个。`ci-vps-gate`（第 3 个）是汇总 runner，标签只有 `ci-vps-gate`，不带 `ci-vps`，所以检查任务不会派给它；`ci.yml` 的汇总作业 `ci/required` 改成 `runs-on: ci-vps-gate` 之后只由它来跑（改工作流的那个 PR 合并之前，它在线但没有任务）。
+- **管的范围**：仓库 `sixianli/himawari-agent` 在 CI VPS 上的四个自托管 runner。`ci-vps-1`、`ci-vps-2` 和 `ci-vps-3`（脚本里的编号是 1、2、6）是检查 runner，标签都是 `ci-vps`，`ci.yml` 和 `main.yml` 里写 `runs-on: ci-vps` 的任务派给其中空闲的一个。`ci-vps-gate`（脚本里的编号是 3）是汇总 runner，标签只有 `ci-vps-gate`，不带 `ci-vps`，所以检查任务不会派给它；`ci.yml` 的汇总作业 `ci/required` 改成 `runs-on: ci-vps-gate` 之后只由它来跑（改工作流的那个 PR 合并之前，它在线但没有任务）。
 - **不管的范围**：`quality.yml` 停用，等另一个 PR 搬到这台机器（ADR 0176 决定第 8 条）；macOS 的构建和测试已暂停；Hermes 只作合并前本地检查的测试主机，它的操作见[测试主机操作 Runbook](test-host-operations-runbook.md)。
 
 各部分的位置：
@@ -49,7 +49,7 @@ date: "2026-11-07"
 | 每小时清理脚本（三个 runner 和共享目录都清） | `/srv/gh-runner/hooks/clean-old.sh` | root，只读 |
 | CI 作业之间传文件的共享目录（每轮运行一个子目录，汇总作业结束就删，见 [ADR 0238](../adr/0238-ci-job-files-stay-on-the-ci-vps.md)） | `/srv/gh-runner-share/`，权限 `2770` | root，组 `gh-ci-share` |
 | 暂停、恢复、应急脚本 | Mac 上的入口 `scripts/operations/ci-runner/pause-runners.sh`、`resume-runners.sh`、`gate-fallback.sh`（只改 GitHub 上的标签，不连 VPS）；前两个每次用 `scp` 把 `runners.sh`、`runner-pause.sh`、`runner-resume.sh` 传到 VPS 的 `/home/ubuntu/ci-runner/` 再运行 | ubuntu |
-| systemd 服务（Linux 管理后台服务的程序） | `/etc/systemd/system/gh-runner.service`、`gh-runner-2.service`、`gh-runner-gate.service`（都由仓库里的模板 `gh-runner.service.in` 生成）、`gh-runners.slice`、`ghgate.slice`、`gh-runner-nft.service`、`gh-runner-clean.service`、`gh-runner-clean.timer` | root |
+| systemd 服务（Linux 管理后台服务的程序） | `/etc/systemd/system/gh-runner.service`、`gh-runner-2.service`、`gh-runner-3.service`、`gh-runner-gate.service`（都由仓库里的模板 `gh-runner.service.in` 生成）、`gh-runners.slice`、`ghgate.slice`、`gh-runner-nft.service`、`gh-runner-clean.service`、`gh-runner-clean.timer` | root |
 | 安装前的备份 | `/var/backups/gh-runner/<时间>/` | root |
 | 防火墙规则 | `/etc/gh-runner/nft.rules`，加载后是 nftables（Linux 自带的防火墙）里的表 `inet gh_runner` | root |
 | ubuntu 启停 runner 的窄 sudo 规则（ubuntu 本来就有免密 sudo，这条规则留着是为了脚本在别的机器上也成立） | `/etc/sudoers.d/91-gh-runner-control` | root |
@@ -104,10 +104,10 @@ date: "2026-11-07"
 1. 主机名是 `ci-vps`：`hostname`。
 2. 用户命名空间限制开着、bwrap 能用：`sysctl -n kernel.apparmor_restrict_unprivileged_userns` 是 `1`；`bwrap --unshare-all --ro-bind /usr /usr --symlink usr/lib64 /lib64 --symlink usr/lib /lib --symlink usr/bin /bin /usr/bin/true` 退出码是 0。
 3. 根盘可用空间：`df -B1 --output=avail /`。低于 16 GiB 时 runner 会拒绝任务，先报告。
-4. 服务状态：`systemctl is-active gh-runner.service gh-runner-2.service gh-runner-gate.service gh-runner-nft.service gh-runner-clean.timer`，五个都应是 `active`（第 3 个 runner 还没装时没有 `gh-runner-gate.service`，其余四个应是 `active`）。
+4. 服务状态：`systemctl is-active gh-runner.service gh-runner-2.service gh-runner-3.service gh-runner-gate.service gh-runner-nft.service gh-runner-clean.timer`，六个都应是 `active`（第 3 个检查 runner 还没装时没有 `gh-runner-3.service`，汇总 runner 还没装时没有 `gh-runner-gate.service`，其余应是 `active`）。
 5. 用户没有多余的组：`id gh-runner`、`id gh-runner-2`、`id gh-runner-gate` 各自只列出自己的一个组。共享目录在：`stat -c '%a %U %G' /srv/gh-runner-share` 是 `2770 root gh-ci-share`。
 6. 防火墙表在：`sudo -n nft list table inet gh_runner` 里有 `fib daddr type local`。
-7. 限额生效：`systemctl show gh-runner.service gh-runner-2.service -p Slice -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight -p Nice -p ExecStart`，两个都应为 `Slice=gh-runners.slice`、`MemoryHigh=15032385536`、`MemoryMax=16106127360`、`MemorySwapMax=0`、`TasksMax=2048`、`CPUQuotaPerSecUSec=infinity`、`CPUWeight=[not set]`、`IOWeight=[not set]`、`Nice=0`，启动命令分别是 `/srv/gh-runner/runner/bin/runsvc.sh` 和 `/srv/gh-runner-2/runner/bin/runsvc.sh`；`systemctl show gh-runners.slice -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight` 应为 `MemoryHigh=18253611008`、`MemoryMax=19327352832`、`MemorySwapMax=0`、`TasksMax=4096`、`CPUQuotaPerSecUSec=infinity`、`CPUWeight=[not set]`、`IOWeight=[not set]`。汇总 runner：`systemctl show gh-runner-gate.service -p Slice -p MemoryMin -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p ExecStart` 应为 `Slice=ghgate.slice`、`MemoryMin=2147483648`、`MemoryHigh=2147483648`、`MemoryMax=2147483648`、`MemorySwapMax=0`、`TasksMax=1024`，启动命令是 `/srv/gh-runner-gate/runner/bin/runsvc.sh`；`systemctl show ghgate.slice -p MemoryMin -p MemoryMax` 应为 `MemoryMin=2147483648`、`MemoryMax=2147483648`；`cat /sys/fs/cgroup/ghgate.slice/memory.min` 应为 `2147483648`（确认预留真的写进了内核）。
+7. 限额生效：`systemctl show gh-runner.service gh-runner-2.service gh-runner-3.service -p Slice -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight -p Nice -p ExecStart`，三个都应为 `Slice=gh-runners.slice`、`MemoryHigh=15032385536`、`MemoryMax=16106127360`、`MemorySwapMax=0`、`TasksMax=2048`、`CPUQuotaPerSecUSec=infinity`、`CPUWeight=[not set]`、`IOWeight=[not set]`、`Nice=0`，启动命令分别是 `/srv/gh-runner/runner/bin/runsvc.sh`、`/srv/gh-runner-2/runner/bin/runsvc.sh` 和 `/srv/gh-runner-3/runner/bin/runsvc.sh`；`systemctl show gh-runners.slice -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight` 应为 `MemoryHigh=18253611008`、`MemoryMax=19327352832`、`MemorySwapMax=0`、`TasksMax=6144`、`CPUQuotaPerSecUSec=infinity`、`CPUWeight=[not set]`、`IOWeight=[not set]`。汇总 runner：`systemctl show gh-runner-gate.service -p Slice -p MemoryMin -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p ExecStart` 应为 `Slice=ghgate.slice`、`MemoryMin=2147483648`、`MemoryHigh=2147483648`、`MemoryMax=2147483648`、`MemorySwapMax=0`、`TasksMax=1024`，启动命令是 `/srv/gh-runner-gate/runner/bin/runsvc.sh`；`systemctl show ghgate.slice -p MemoryMin -p MemoryMax` 应为 `MemoryMin=2147483648`、`MemoryMax=2147483648`；`cat /sys/fs/cgroup/ghgate.slice/memory.min` 应为 `2147483648`（确认预留真的写进了内核）。
 8. GitHub 上的状态（在 Mac 上运行）：`gh api repos/sixianli/himawari-agent/actions/runners --jq '.runners[]|{id,name,status,busy,labels:[.labels[].name]}'`，应看到 `ci-vps-1`、`ci-vps-2`、`ci-vps-gate` 都为 `online`；`ci-vps-1`、`ci-vps-2` 的标签里有 `ci-vps`、没有 `ci-vps-gate`（应急期间 `ci-vps-1` 会多带一个，见[应急](#gate-fallback)），`ci-vps-gate` 的标签里有 `ci-vps-gate`、没有 `ci-vps`。
 9. 有没有任务在跑：`pgrep -u gh-runner -x Runner.Worker; pgrep -u gh-runner-2 -x Runner.Worker; pgrep -u gh-runner-gate -x Runner.Worker`，有输出就是有任务。
 
@@ -163,15 +163,15 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 
 <a id="gate-fallback"></a>
 
-### 第 3 个 runner 坏了时的应急
+### 汇总 runner 坏了时的应急
 
-汇总作业改成只在 `ci-vps-gate` 上跑之后，第 3 个 runner 停了，所有 PR 的 `ci/required` 都会一直排队（不会被当成通过）。修好之前，在 Mac 上从仓库根目录运行：
+汇总作业改成只在 `ci-vps-gate` 上跑之后，汇总 runner 停了，所有 PR 的 `ci/required` 都会一直排队（不会被当成通过）。修好之前，在 Mac 上从仓库根目录运行：
 
 - `scripts/operations/ci-runner/gate-fallback.sh on`：把 `ci-vps-gate` 标签加到 `ci-vps-1` 上，汇总作业改由第 1 个 runner 接，不用改代码。成功时打印 `GATE_FALLBACK_ON ci-vps-1`。`ci-vps-1` 不带 `ci-vps` 标签（runner 处于暂停）时拒绝，先运行 `resume-runners.sh`；`ci-vps-1` 在 GitHub 上不是 `online` 时也拒绝（它自己也接不了任务），打印以 `GATE_FALLBACK_FAILED ci-vps-1 is offline` 开头的一行，标签不动。加上标签时如果 `ci-vps-gate` 在 GitHub 上还是 `online`，脚本多打印一行 `note:`，提醒两个 runner 都会接汇总作业。
-- `scripts/operations/ci-runner/gate-fallback.sh off`：第 3 个 runner 修好并在线之后运行，去掉这个标签，打印 `GATE_FALLBACK_OFF ci-vps-1`。
+- `scripts/operations/ci-runner/gate-fallback.sh off`：汇总 runner 修好并在线之后运行，去掉这个标签，打印 `GATE_FALLBACK_OFF ci-vps-1`。
 - 这个脚本只改 GitHub 上的标签，不连 VPS，和暂停、恢复共用同一把锁。读不到 GitHub、标签没加上或没去掉时打印 `GATE_FALLBACK_FAILED` 和原因，以退出码 1 结束。
-- 应急期间运行过 `pause-runners.sh` 的话，应急标签会被一起去掉；`resume-runners.sh` 之后如果第 3 个 runner 还没修好，再运行一次 `gate-fallback.sh on`。
-- 应急期间汇总作业和检查作业又在同一个队里，排队会回到加第 3 个 runner 之前的样子，所以只是临时办法。
+- 应急期间运行过 `pause-runners.sh` 的话，应急标签会被一起去掉；`resume-runners.sh` 之后如果汇总 runner 还没修好，再运行一次 `gate-fallback.sh on`。
+- 应急期间汇总作业和检查作业又在同一个队里，排队会回到加汇总 runner 之前的样子，所以只是临时办法。
 
 <a id="arm-site"></a>
 
@@ -196,7 +196,7 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 
 **暂停和恢复**：在 Mac 上运行 `RUNNER_SITE=arm scripts/operations/ci-runner/pause-runners.sh` 和 `RUNNER_SITE=arm scripts/operations/ci-runner/resume-runners.sh`，行为和上面[暂停和恢复](#pause-and-resume)一节相同，只是对象换成 ARM 机器上的两个 runner 和 `ci-arm` 标签。两处各有各的锁，暂停一处不影响另一处。
 
-**ARM 机器不在时的应急**：`ci-arm` 的任务会一直排队，不会被当成通过。在 Mac 上运行 `scripts/operations/ci-runner/arm-fallback.sh on`，把 `ci-arm` 标签加到 `ci-vps-1` 和 `ci-vps-2` 上，这些任务改由 CI VPS 接（`ARM_FALLBACK_ON`）；ARM 机器恢复后运行 `arm-fallback.sh off`（`ARM_FALLBACK_OFF`）。两个检查 runner 都不带 `ci-vps` 标签（暂停中）或都不在线时拒绝。应急开着的时候，两处的 `pause-runners.sh` 都会拒绝运行并提示先 `arm-fallback.sh off`：否则 GitHub 会继续把 `ci-arm` 的任务派给正要停的 runner。
+**ARM 机器不在时的应急**：`ci-arm` 的任务会一直排队，不会被当成通过。在 Mac 上运行 `scripts/operations/ci-runner/arm-fallback.sh on`，把 `ci-arm` 标签加到 GitHub 上已注册的检查 runner（`ci-vps-1`、`ci-vps-2`、`ci-vps-3`；还没注册的那个跳过，并打印 `not registered on GitHub, left out:`）上，这些任务改由 CI VPS 接（`ARM_FALLBACK_ON`）；ARM 机器恢复后运行 `arm-fallback.sh off`（`ARM_FALLBACK_OFF`）。一个检查 runner 都没注册、它们不带 `ci-vps` 标签（暂停中）或都不在线时拒绝。应急开着的时候，两处的 `pause-runners.sh` 都会拒绝运行并提示先 `arm-fallback.sh off`：否则 GitHub 会继续把 `ci-arm` 的任务派给正要停的 runner。
 
 **卸载**：在 ARM 机器上 `sudo RUNNER_SITE=arm bash /home/ubuntu/ci-runner/uninstall-runner.sh all`（先在 Mac 上暂停），它删掉两个 runner、交报告的账号和脚本、防火墙规则和共享目录；`5` 只删第 2 个。CI VPS 上取报告的钥匙用 `sudo bash /home/ubuntu/ci-runner/install-gate-remote.sh remove` 删。GitHub 上的 runner 记录照[全部卸载](#rollback)一节的做法另删。
 
@@ -205,11 +205,11 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 ### 日常维护
 
 - **磁盘**：看三个 runner 各自的 `logs/disk.log`，每个任务记一行开始时的可用空间，一行结束时 `_work` 的大小和可用空间。
-- **runner 升级**：runner 会自己升级到 GitHub 要求的版本（它的目录归各自的 runner 账号所有，所以能写）。要换安装脚本里固定的版本时，改 `install-runner.sh` 里的 `VERSION` 和 `SHA256`，SHA-256 从 GitHub 的发布页核对。
+- **runner 升级**：runner 会自己升级到 GitHub 要求的版本（它的目录归各自的 runner 账号所有，所以能写）。要换安装脚本里固定的版本时，改 `install-runner.sh` 里的 `VERSION`，并改 `runners.sh` 里 x64 和 arm64 两处的 `RUNNER_PACKAGE_SHA256`（两个架构的安装包各一个校验值），SHA-256 从 GitHub 的发布页核对。
 - **本机新增了服务**：防火墙只挡端口名单里的端口。之后新开的本机服务端口不在名单里，要刷新规则：先按[暂停和恢复](#pause-and-resume)在 Mac 上运行 `pause-runners.sh`（有 runner 服务在运行时安装脚本以退出码 70 拒绝），再重新运行 `install-runner.sh`（脚本可重复运行，不会重新下载或重建用户，最后会重新加载防火墙规则），最后运行 `resume-runners.sh`。
-- **防火墙表被清掉**：如果有人重启了系统的 `nftables` 服务，而 `/etc/nftables.conf` 里有 `flush ruleset`，表 `inet gh_runner` 会被一并清掉。用 `sudo systemctl restart gh-runner-nft.service gh-runner.service gh-runner-2.service gh-runner-gate.service` 恢复。
+- **防火墙表被清掉**：如果有人重启了系统的 `nftables` 服务，而 `/etc/nftables.conf` 里有 `flush ruleset`，表 `inet gh_runner` 会被一并清掉。用 `sudo systemctl restart gh-runner-nft.service gh-runner.service gh-runner-2.service gh-runner-3.service gh-runner-gate.service` 恢复。
 - **系统更新**：自动安全更新开着，但不自动重启。要重启时先暂停 runner，重启后按 [Live-State Preflight](#live-state-preflight) 核对，再恢复。
-- **重启服务**：`sudo -n /usr/bin/systemctl restart gh-runner.service`（第 2 个是 `gh-runner-2.service`，第 3 个是 `gh-runner-gate.service`）。runner 会先向 GitHub 注销会话再退出，几秒后重新在线。
+- **重启服务**：`sudo -n /usr/bin/systemctl restart gh-runner.service`（第 2 个检查 runner 是 `gh-runner-2.service`，第 3 个检查 runner 是 `gh-runner-3.service`，汇总 runner 是 `gh-runner-gate.service`）。runner 会先向 GitHub 注销会话再退出，几秒后重新在线。
 
 <a id="retire-hermes-runners"></a>
 
@@ -228,9 +228,9 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 
 ## Verification
 
-- GitHub 接口显示 `ci-vps-1`、`ci-vps-2` 和 `ci-vps-gate` 都为 `online`，空闲时 `busy` 为 `false`；前两个的标签有 `self-hosted`、`Linux`、`X64`、`ci-vps`，第 3 个的标签有 `self-hosted`、`Linux`、`X64`、`ci-vps-gate`，没有 `ci-vps`。
-- `journalctl -u gh-runner.service`、`journalctl -u gh-runner-2.service` 和 `journalctl -u gh-runner-gate.service` 最近都出现 `Listening for Jobs`，之后没有 `Conflict`。
-- 分别以 `gh-runner`、`gh-runner-2` 和 `gh-runner-gate` 身份读 `/home/ubuntu/.ssh`、另外两个 runner 的目录都被拒绝；连本机公网地址和 `127.0.0.1` 的 22 端口、`169.254.169.254` 都被拒绝；访问 `https://api.github.com` 正常；在 runner 账号下用 bwrap 建立隔离环境成功。
+- GitHub 接口显示 `ci-vps-1`、`ci-vps-2`、`ci-vps-3` 和 `ci-vps-gate` 都为 `online`，空闲时 `busy` 为 `false`；三个检查 runner 的标签有 `self-hosted`、`Linux`、`X64`、`ci-vps`，`ci-vps-gate` 的标签有 `self-hosted`、`Linux`、`X64`、`ci-vps-gate`，没有 `ci-vps`。
+- `journalctl -u gh-runner.service`、`journalctl -u gh-runner-2.service`、`journalctl -u gh-runner-3.service` 和 `journalctl -u gh-runner-gate.service` 最近都出现 `Listening for Jobs`，之后没有 `Conflict`。
+- 分别以 `gh-runner`、`gh-runner-2`、`gh-runner-3` 和 `gh-runner-gate` 身份读 `/home/ubuntu/.ssh`、其他 runner 的目录都被拒绝；连本机公网地址和 `127.0.0.1` 的 22 端口、`169.254.169.254` 都被拒绝；访问 `https://api.github.com` 正常；在 runner 账号下用 bwrap 建立隔离环境成功。
 - 以 `gh-runner` 身份运行一次 `packages/runtime-sandbox/scripts/check-srt-boundary.mjs`（它不在 `npm run check` 里），记录 bwrap 版本、AppArmor 开关和结果。
 - PR 的检查作业在两个检查 runner 上运行并通过，任务日志开头的 `Runner name` 是 `ci-vps-1` 或 `ci-vps-2`；汇总作业切到 `ci-vps-gate` 之后，`ci/required` 的 `Runner name` 是 `ci-vps-gate`（应急期间是 `ci-vps-1`）；它的“从 CI 服务器收齐”步骤打印 `CI_SHARE_COLLECT 8`，结束后 `/srv/gh-runner-share/` 下没有这一轮的目录；GitHub 上这一轮只留 `gate-` 和失败时的 `diagnostic-` 产物，没有 `report-`。
 
@@ -264,7 +264,7 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 1. 先在 Mac 上运行 `pause-runners.sh`，再在 VPS 上运行 `sudo bash /home/ubuntu/ci-runner/uninstall-runner.sh 6`。做法和“只卸第 2 个 runner”相同，删的是 `gh-runner-3.service`、`/srv/gh-runner-3/` 和 `gh-runner-3` 用户和组。
 2. 在 Mac 上运行 `resume-runners.sh`，再按“只卸第 2 个 runner”的第 3 步从 GitHub 删除 `ci-vps-3`。
 
-**只卸第 3 个 runner**：
+**只卸汇总 runner（`ci-vps-gate`）**：
 
 1. 先确认 `ci.yml` 的汇总作业已经不写 `runs-on: ci-vps-gate`（改回去的 PR 已合并），或者已经运行 `gate-fallback.sh on` 并打算一直让第 1 个 runner 接汇总作业；否则卸掉之后所有 PR 的 `ci/required` 都会一直排队。
 2. 在 Mac 上运行 `pause-runners.sh`，再在 VPS 上运行 `sudo bash /home/ubuntu/ci-runner/uninstall-runner.sh 3`。它停掉并删除 `gh-runner-gate.service`、结束 `gh-runner-gate` 的进程、删除 `/srv/gh-runner-gate/`、删除 `gh-runner-gate` 用户和组，再按剩下的 runner 重新生成防火墙规则和窄 sudo 规则。`ghgate.slice` 文件留着，没有服务用它时不占内存；两个检查 runner 的内存上限仍是 18 GB。
@@ -274,9 +274,9 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 **全部卸载**：
 
 1. 在 Mac 上先停用 `ci.yml` 和 `main.yml`（`gh workflow disable`），免得任务排队等不存在的 runner。
-2. 在 VPS 上运行 `sudo bash /home/ubuntu/ci-runner/uninstall-runner.sh all`。它停掉并删除三个 runner 的服务、两个 slice、防火墙服务和每小时清理，删除防火墙表、`/etc/gh-runner/`、共享目录 `/srv/gh-runner-share/` 和组 `gh-ci-share`、删除窄 sudo 规则，结束三个账号的进程，删除 `/srv/gh-runner/`、`/srv/gh-runner-2/` 和 `/srv/gh-runner-gate/`，再删除三个用户和组。最后逐项核对：全部删干净才打印 `UNINSTALL_OK`；还有残留时打印 `UNINSTALL_INCOMPLETE` 和残留清单，并以退出码 1 结束，按清单手动处理后再运行一次。缺 `nft` 命令时以退出码 66 拒绝，因为删不掉也查不了防火墙表。
-3. 在 Mac 上按“只卸第 2 个 runner”的第 3 步从 GitHub 删除 `ci-vps-1`、`ci-vps-2` 和 `ci-vps-gate`。
-4. 验证：`id gh-runner`、`id gh-runner-2`、`id gh-runner-gate` 都报用户不存在，`/srv/gh-runner`、`/srv/gh-runner-2`、`/srv/gh-runner-gate` 都不存在，`nft list tables` 里没有 `gh_runner`，GitHub 的 runner 列表里没有这三个 runner。
+2. 在 VPS 上运行 `sudo bash /home/ubuntu/ci-runner/uninstall-runner.sh all`。它停掉并删除四个 runner 的服务、两个 slice、防火墙服务和每小时清理，删除防火墙表、`/etc/gh-runner/`、共享目录 `/srv/gh-runner-share/` 和组 `gh-ci-share`、删除窄 sudo 规则，结束四个账号的进程，删除 `/srv/gh-runner/`、`/srv/gh-runner-2/`、`/srv/gh-runner-3/` 和 `/srv/gh-runner-gate/`，再删除四个用户和组。最后逐项核对：全部删干净才打印 `UNINSTALL_OK`；还有残留时打印 `UNINSTALL_INCOMPLETE` 和残留清单，并以退出码 1 结束，按清单手动处理后再运行一次。缺 `nft` 命令时以退出码 66 拒绝，因为删不掉也查不了防火墙表。
+3. 在 Mac 上按“只卸第 2 个 runner”的第 3 步从 GitHub 删除 `ci-vps-1`、`ci-vps-2`、`ci-vps-3` 和 `ci-vps-gate`。
+4. 验证：`id gh-runner`、`id gh-runner-2`、`id gh-runner-3`、`id gh-runner-gate` 都报用户不存在，`/srv/gh-runner`、`/srv/gh-runner-2`、`/srv/gh-runner-3`、`/srv/gh-runner-gate` 都不存在，`nft list tables` 里没有 `gh_runner`，GitHub 的 runner 列表里没有这四个 runner。
 
 不传参数时卸载脚本以退出码 64 拒绝，不删任何东西。
 

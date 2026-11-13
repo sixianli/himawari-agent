@@ -2328,6 +2328,41 @@ describe("[ADR-0260] pause, resume and fallback know about both machines", () =>
     expect(existsSync(path.join(box.root, "lock"))).toBe(false);
   });
 
+  it("arm-fallback.sh leaves out a check runner that is not registered yet and refuses when none is", () => {
+    const twoChecks = [
+      [11, "ci-vps-1"],
+      [12, "ci-vps-2"],
+      [13, "ci-vps-gate"],
+      [14, "ci-arm-1"],
+      [15, "ci-arm-2"],
+    ];
+    const box = fiveRunners({
+      runners: twoChecks,
+      vpsNames: ["ci-vps-1", "ci-vps-2", "ci-vps-gate"],
+    });
+    box.set("online-from", 1);
+    const on = box.mac("arm-fallback.sh", ["on"]);
+    expect(on.stdout).toContain("not registered on GitHub, left out: ci-vps-3");
+    expect(on.stdout).toContain("ARM_FALLBACK_ON ci-vps-1 ci-vps-2 now also take ci-arm jobs");
+    expect(on.status).toBe(0);
+    expect(box.managedLabels()["ci-vps-1"]).toEqual(["ci-vps", "ci-arm"]);
+    expect(box.managedLabels()["ci-vps-2"]).toEqual(["ci-vps", "ci-arm"]);
+    const off = box.mac("arm-fallback.sh", ["off"]);
+    expect(off.stdout).toContain("ARM_FALLBACK_OFF ci-vps-1 ci-vps-2 take only ci-vps jobs");
+    expect(off.status).toBe(0);
+    const none = fiveRunners({
+      runners: twoChecks.filter(([, name]) => !name.startsWith("ci-vps-")),
+      vpsNames: ["ci-vps-gate"],
+    });
+    none.set("online-from", 1);
+    const refused = none.mac("arm-fallback.sh", ["on"]);
+    expect(refused.status).toBe(1);
+    expect(refused.stdout).toContain(
+      "ARM_FALLBACK_FAILED none of the CI VPS check runners is registered on GitHub",
+    );
+    expect(none.lines().some((line) => line.includes("/labels"))).toBe(false);
+  });
+
   it("arm-fallback.sh asks for on or off, refuses RUNNER_SITE=arm, and touches nothing in either case", () => {
     const box = fiveRunners();
     const usage = box.mac("arm-fallback.sh");
@@ -2419,11 +2454,11 @@ describe("[ADR-0260] install-gate-remote.sh keeps the report key on the CI VPS",
     );
     box.fake(
       "ssh-keygen",
-      `${box.record("ssh-keygen")}\nwhile [ $# -gt 1 ]; do shift; done\necho PRIVATE > "$1"\necho "ssh-ed25519 ${"D".repeat(68)} generated-comment" > "$1.pub"`,
+      `${box.record("ssh-keygen")}\n[ "$1" = -y ] && { grep -qx PRIVATE "$3" && echo "ssh-ed25519 ${"D".repeat(68)}"; exit; }\nwhile [ $# -gt 1 ]; do shift; done\necho PRIVATE > "$1"\necho "ssh-ed25519 ${"D".repeat(68)} generated-comment" > "$1.pub"`,
     );
     box.fake(
       "sudo",
-      `${box.record("sudo")}\ncat "${box.root}/ssh-answer" 2> /dev/null\nexit "$(cat "${box.root}/ssh-status" 2> /dev/null || echo 0)"`,
+      `${box.record("sudo")}\necho "ssh: refused by fake" >&2\ncat "${box.root}/ssh-answer" 2> /dev/null\nexit "$(cat "${box.root}/ssh-status" 2> /dev/null || echo 0)"`,
     );
     const inRoot = (commands) => {
       const inner = [
@@ -2433,8 +2468,10 @@ describe("[ADR-0260] install-gate-remote.sh keeps the report key on the CI VPS",
         'mkdir -p "$real/etc" && mount --rbind /etc "$real/etc" || exit 90',
         "mount -t tmpfs tmpfs /etc || exit 91",
         `for entry in "$real/etc"/*; do [ "\${entry##*/}" = gh-runner ] || ln -s "$entry" "/etc/\${entry##*/}"; done`,
-        ...commands.map(
-          (command) => `bash "$real/scripts/install-gate-remote.sh" ${command}; echo "rc=$?"`,
+        ...commands.map((command) =>
+          command.startsWith("! ")
+            ? command.slice(2)
+            : `bash "$real/scripts/install-gate-remote.sh" ${command}; echo "rc=$?"`,
         ),
         'for file in /etc/gh-runner/remote-share/*; do [ -e "$file" ] && echo "$file=$(stat -c %a "$file"):$(cat "$file")"; done',
         'echo "dir=$(stat -c %a /etc/gh-runner/remote-share 2> /dev/null)"',
@@ -2458,6 +2495,20 @@ describe("[ADR-0260] install-gate-remote.sh keeps the report key on the CI VPS",
     expect(calls).toMatch(/^owner root \/etc\/gh-runner\/remote-share\/id_ed25519$/m);
     expect(calls).toMatch(/^owner gh-runner-gate \/etc\/gh-runner\/remote-share\/id_ed25519$/m);
     expect(calls).toMatch(/^owner gh-runner-gate \/etc\/gh-runner\/remote-share$/m);
+  });
+
+  it("key derives the public half again from the kept private key when only the public file was lost", () => {
+    const box = gateBox();
+    const result = box.inRoot(["key", "! rm /etc/gh-runner/remote-share/id_ed25519.pub", "key"]);
+    expect(result.stdout.match(/^rc=\d+$/gm)).toEqual(["rc=0", "rc=0"]);
+    expect(result.stdout.match(/^GATE_REMOTE_KEY ssh-ed25519 D{68}$/gm)).toHaveLength(2);
+    expect(result.stdout).toContain("/etc/gh-runner/remote-share/id_ed25519=440:PRIVATE");
+    expect(result.stdout).toContain(
+      `/etc/gh-runner/remote-share/id_ed25519.pub=444:ssh-ed25519 ${"D".repeat(68)}`,
+    );
+    const keygen = box.calls().match(/^ssh-keygen .*$/gm);
+    expect(keygen).toHaveLength(2);
+    expect(keygen[1]).toBe("ssh-keygen -y -f /etc/gh-runner/remote-share/id_ed25519");
   });
 
   it("trust records the address and pins the host key for exactly that address", () => {
@@ -2517,7 +2568,11 @@ describe("[ADR-0260] install-gate-remote.sh keeps the report key on the CI VPS",
       const result = bad.inRoot(["key", `trust gh-ci-send@192.0.2.20 '${hostKey}'`, "check"]);
       expect(result.stdout.match(/^rc=\d+$/gm)).toEqual(["rc=0", "rc=0", "rc=1"]);
       expect(result.stderr).toContain("GATE_REMOTE_FAILED status=");
+      expect(result.stderr).toContain("ssh said: ssh: refused by fake");
       expect(result.stdout).not.toContain("GATE_REMOTE_OK");
+      expect(readdirSync(bad.root).filter((name) => name.startsWith("gate-remote-check"))).toEqual(
+        [],
+      );
     }
   });
 

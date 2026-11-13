@@ -48,6 +48,11 @@ case "${1:-}" in
       ssh-keygen -q -t ed25519 -N "" -C "" -f "$WORK/id_ed25519"
       install -m 0440 -o root -g "$GATE_USER" "$WORK/id_ed25519" "$KEY"
       install -m 0444 -o root -g root "$WORK/id_ed25519.pub" "$KEY.pub"
+    elif [ ! -s "$KEY.pub" ]; then
+      WORK=$(mktemp -d)
+      trap 'rm -rf "$WORK"' EXIT
+      ssh-keygen -y -f "$KEY" > "$WORK/id_ed25519.pub" || { echo "GATE_REMOTE_FAILED could not derive the public key from $KEY" >&2; exit 1; }
+      install -m 0444 -o root -g root "$WORK/id_ed25519.pub" "$KEY.pub"
     fi
     PUBLIC=$(awk '{print $1 " " $2; exit}' "$KEY.pub")
     [[ "$PUBLIC" =~ ^ssh-ed25519\ [A-Za-z0-9+/=]{60,100}$ ]] || { echo "GATE_REMOTE_FAILED $KEY.pub is not an ed25519 public key" >&2; exit 1; }
@@ -75,15 +80,15 @@ case "${1:-}" in
     done
     TARGET=$(cat "$DIR/target")
     mapfile -t OPTIONS < <(ssh_options)
+    WORK=$(mktemp -d)
+    trap 'rm -rf "$WORK"' EXIT
     STATUS=0
-    ANSWER=$(sudo -u "$GATE_USER" ssh "${OPTIONS[@]}" "$TARGET" 1-1/connection-check 2> "${TMPDIR:-/tmp}/gate-remote-check.$$") || STATUS=$?
+    ANSWER=$(sudo -u "$GATE_USER" ssh "${OPTIONS[@]}" "$TARGET" 1-1/connection-check 2> "$WORK/ssh-errors") || STATUS=$?
     if [ "$ANSWER" = '{"error": "MISSING"}' ]; then
-      rm -f "${TMPDIR:-/tmp}/gate-remote-check.$$"
       echo "GATE_REMOTE_OK $TARGET answered through the fixed command"
       exit 0
     fi
-    echo "GATE_REMOTE_FAILED status=$STATUS answer=${ANSWER:0:200} ssh said: $(head -c 400 "${TMPDIR:-/tmp}/gate-remote-check.$$" | tr '\n' ' ')" >&2
-    rm -f "${TMPDIR:-/tmp}/gate-remote-check.$$"
+    echo "GATE_REMOTE_FAILED status=$STATUS answer=${ANSWER:0:200} ssh said: $(head -c 400 "$WORK/ssh-errors" | tr '\n' ' ')" >&2
     exit 1
     ;;
   remove)
