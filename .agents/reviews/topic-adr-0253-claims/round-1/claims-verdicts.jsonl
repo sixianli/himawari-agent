@@ -1,0 +1,3 @@
+{"id": "2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|2|找不到|-|它的 PR 复核留下了五条没做的意见|-", "outcome": "plan-fixed", "change": "背景改写，写明出处"}
+{"id": "3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|3|不一致|AGENTS.md:52|协调者按 Andy 的长期规则（“可以更好”的意见直接改）要求一起做掉|可以更好的不修改，列给 Andy，他说采纳才改，改完同样再复核。", "outcome": "plan-fixed", "change": "去掉对长期规则的转述，只写协调者要求"}
+{"id": "21", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|21|不一致|packages/persistence-sqlite/src/sqlite-external-memory-proposal-operations.ts:457|同文件 455 行：“`} else if (input.complete) detach.run(member.id, input.ownerId, input.agentId);`”。|        } else if (input.complete) detach.run(member.id, input.ownerId, input.agentId);", "outcome": "plan-fixed", "change": "455 行改为 457 行"}
