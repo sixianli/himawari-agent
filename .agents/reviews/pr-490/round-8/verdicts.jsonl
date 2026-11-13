@@ -1,0 +1,2 @@
+{"id": "R8-ds1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低 — `test/tooling/multi-user-exec.test.mjs:394-402` 的负向断言不足，无法证明“保留 enabled 状态”", "valid": true, "class": "error", "severity": "low", "trigger": "回滚实现多发一条裸 disable", "consequence": "用例仍通过，守不住只停不禁用", "modelSeverity": "低"}
+{"id": "R8-ds2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低 — `test/tooling/multi-user-exec.test.mjs:404-410` 的用例名与模拟场景不符", "valid": true, "class": "error", "severity": "low", "trigger": "用例名和场景不符", "consequence": "名字误导", "modelSeverity": "低"}

@@ -398,10 +398,12 @@ describe("multi-user exec socket rollback and lock", () => {
     expect(() => enableSockets(ledger, io, changed)).toThrow("ENABLE_FAILED");
     undoSockets(changed, io);
     expect(calls).toContain("stop himawari-exec-andyaa.socket");
-    expect(calls).not.toContain("disable --now himawari-exec-andyaa.socket");
+    expect(calls.filter((call) => call.startsWith("disable") && call.includes("andyaa"))).toEqual(
+      [],
+    );
   });
 
-  it("undoes the enable link when enable succeeds but start fails", () => {
+  it("records the change before enable throws so rollback covers it", () => {
     const { calls, io } = fakeSystemctl({}, "himawari-exec-andyaa.socket");
     const changed = [];
     expect(() => enableSockets(ledger, io, changed)).toThrow("ENABLE_FAILED");
