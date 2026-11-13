@@ -1,0 +1,3 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“缓存键带数据分类”没有回归用例", "valid": true, "class": "better"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“停止检查挪到查缓存之前”没有用例", "valid": true, "class": "better"}
+{"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "评测的 `judgeFailures` 只有人工跑，没有自动检查", "valid": true, "class": "better"}

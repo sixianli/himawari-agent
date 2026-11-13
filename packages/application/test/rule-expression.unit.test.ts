@@ -13,6 +13,7 @@ const MAIL = {
   content_folded: "invoice for 引落 \n see attached",
   text_words: ["invoice", "for", "see", "attached"],
   content_words: ["invoice", "for", "see", "attached"],
+  money_state: "unknown",
   amount_state: "missing",
   amount_minor: 0,
   amount_currency: "",

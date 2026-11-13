@@ -121,6 +121,7 @@ describe("[DREAM] daily conversation review", () => {
     readonly failAssertActiveAt?: number;
     readonly failSettles?: number;
     readonly failWrite?: boolean;
+    readonly episodeClassification?: "private" | "sensitive";
   }) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-conversation-review-"));
     directories.push(stateRoot);
@@ -167,7 +168,7 @@ describe("[DREAM] daily conversation review", () => {
     const protect = async (
       ref: string,
       text: string,
-      classification: "private" | "restricted" = "private",
+      classification: "private" | "restricted" | "sensitive" = "private",
     ) =>
       payloads.put(
         await adapters.payloadProtector.protect({
@@ -252,7 +253,7 @@ describe("[DREAM] daily conversation review", () => {
         );
     }
     rows.close();
-    await protect("payload-episode-1", "主人聊了出差计划。");
+    await protect("payload-episode-1", "主人聊了出差计划。", input.episodeClassification);
     await repository.memoryEpisodes().upsert({
       id: "episode:day_summary:thread-conversation-review:1",
       ownerId: OWNER_ID,
@@ -261,7 +262,7 @@ describe("[DREAM] daily conversation review", () => {
       day: "2026-11-10",
       source: "day_summary",
       contentRef: "payload-episode-1",
-      dataClassification: "private",
+      dataClassification: input.episodeClassification ?? "private",
       firstSequence: 1,
       lastSequence: input.lines.length,
       startedAt: TALK_DAY,
@@ -273,6 +274,7 @@ describe("[DREAM] daily conversation review", () => {
     clock.value = REVIEW_TIME;
     const prompts: string[] = [];
     const calls: MemoryCaptureCall[] = [];
+    const classifications: string[] = [];
     const failures: unknown[] = [];
     const outputs = [...input.outputs];
     let activeChecks = 0;
@@ -319,7 +321,8 @@ describe("[DREAM] daily conversation review", () => {
         if (activeChecks === input.failAssertActiveAt) throw new Error("AUTHORITY_LOST");
       },
       externalTag: async () => tag,
-      generate: async (_request, prompt, onAdmitted, call) => {
+      generate: async (request, prompt, onAdmitted, call) => {
+        classifications.push(request.dataClassification);
         prompts.push(prompt);
         calls.push(call);
         onAdmitted();
@@ -364,6 +367,7 @@ describe("[DREAM] daily conversation review", () => {
       memory,
       prompts,
       calls,
+      classifications,
       failures,
       read,
       active,
@@ -630,6 +634,86 @@ describe("[DREAM] daily conversation review", () => {
     expect(changes.map(({ action }) => action)).toEqual(["created"]);
   });
 
+  it.each([
+    ["the judge says the quote is about something else", ['{"supports":false}'], 1],
+    ["the judge answers nonsense twice", ["not json", "still not json"], 2],
+  ])(
+    "[T2] REVERSE: the review asks the judge and does not confirm a tentative memory when %s",
+    async (_name, judge, asked) => {
+      const resource = await setup({
+        lines: PLAN_CHANGE,
+        seeds: [{ ...OSAKA, attributes: { tentative: true } }],
+        outputs: [
+          output({
+            messageId: "message-1",
+            decision: "unchanged",
+            existingMemoryId: "osaka",
+            text: "主人下周三去大阪出差",
+            quote: "下周三我要去大阪出差",
+          }),
+          ...judge,
+        ],
+      });
+      const [result] = await resource.review.runDue(resource.request);
+      expect(result?.changes.map(({ action }) => action)).toEqual([]);
+      expect((await resource.read("osaka"))?.attributes?.tentative).toBe(true);
+      const judgePrompts = resource.prompts.slice(1);
+      expect(judgePrompts).toHaveLength(asked);
+      for (const prompt of judgePrompts) {
+        expect(prompt).toContain("下周三我要去大阪出差");
+        expect(prompt).toContain(OSAKA.text);
+      }
+      expect(new Set(resource.calls.map(({ invocationId }) => invocationId)).size).toBe(asked + 1);
+    },
+  );
+
+  it("[T2] the judge call carries the day's classification, and a settled answer is not asked again in the same process", async () => {
+    const resource = await setup({
+      lines: PLAN_CHANGE,
+      seeds: [{ ...OSAKA, attributes: { tentative: true } }],
+      outputs: [
+        output({
+          messageId: "message-1",
+          decision: "unchanged",
+          existingMemoryId: "osaka",
+          text: "主人下周三去大阪出差",
+          quote: "下周三我要去大阪出差",
+        }),
+        '{"supports":true}',
+      ],
+      failAssertActiveAt: 4,
+      episodeClassification: "sensitive",
+    });
+    await expect(resource.review.runDue(resource.request)).rejects.toThrow("AUTHORITY_LOST");
+    expect((await resource.read("osaka"))?.attributes?.tentative).toBe(true);
+    expect(resource.request.dataClassification).toBe("private");
+    expect(resource.classifications).toEqual(["sensitive", "sensitive"]);
+    await resource.review.runDue(resource.request);
+    expect(resource.prompts).toHaveLength(2);
+    expect((await resource.read("osaka"))?.attributes?.tentative ?? false).toBe(false);
+  });
+
+  it("[T2] REVERSE: the review stops asking the judge once it loses its authority", async () => {
+    const resource = await setup({
+      lines: PLAN_CHANGE,
+      seeds: [{ ...OSAKA, attributes: { tentative: true } }],
+      outputs: [
+        output({
+          messageId: "message-1",
+          decision: "unchanged",
+          existingMemoryId: "osaka",
+          text: "主人下周三去大阪出差",
+          quote: "下周三我要去大阪出差",
+        }),
+        '{"supports":true}',
+      ],
+      failAssertActiveAt: 3,
+    });
+    await expect(resource.review.runDue(resource.request)).rejects.toThrow("AUTHORITY_LOST");
+    expect(resource.prompts).toHaveLength(1);
+    expect((await resource.read("osaka"))?.attributes?.tentative).toBe(true);
+  });
+
   it("[DREAM] REVERSE: a confirmed memory the owner edited after a failed undo is not counted as undone", async () => {
     const resource = await setup({
       lines: PLAN_CHANGE,
@@ -642,6 +726,7 @@ describe("[DREAM] daily conversation review", () => {
           text: "主人下周三去大阪出差",
           quote: "下周三我要去大阪出差",
         }),
+        '{"supports":true}',
       ],
     });
     const [result] = await resource.review.runDue(resource.request);
