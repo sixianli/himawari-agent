@@ -4,7 +4,7 @@ import { parsePortable, verifyIntegrity } from "@himawari-agent/persistence-sqli
 import Fastify from "fastify";
 import { unzipSync } from "fflate";
 import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createStoredZip,
@@ -61,6 +61,7 @@ async function gateway(
     type: string,
     payload: unknown,
     actorType = "owner",
+    key = `key-${randomUUID()}`,
   ) =>
     gatewayV2MessageSchema.parse({
       schemaVersion: "gateway.v2",
@@ -75,9 +76,11 @@ async function gateway(
       scope: { ownerId: side.ownerId, agentId: side.agentId },
       authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
       actor: { actorType, actorId: actorType === "owner" ? side.ownerId : "agent-service" },
-      ...(kind === "command" ? { idempotencyKey: `key-${type}` } : {}),
+      ...(kind === "command" ? { idempotencyKey: key } : {}),
       payload,
     });
+  const startWith = (key: string) =>
+    control.execute(message("command", "data.export.start", {}, "owner", key) as never);
   const start = async (actorType = "owner") =>
     (await control.execute(message("command", "data.export.start", {}, actorType) as never))
       .resultRef;
@@ -124,7 +127,7 @@ async function gateway(
     jobs,
   });
   open.push(app);
-  return { app, start, status, settled };
+  return { app, start, startWith, status, settled };
 }
 
 const asOwner = { cookie: "himawari_session=owner-session" };
@@ -289,7 +292,7 @@ describe("[P1-6] 网页导出接口", () => {
     expect(entries[`${DATA_EXPORT_ARCHIVE_ROOT}/data/a.jsonl`]?.byteLength).toBe(0);
   });
 
-  it("[iOS] 经网关开始导出、查进度、取结果：和网页直接下载是同一份内容", async () => {
+  it("[iOS] 经网关开始导出、查进度、取结果：和网页直接下载用同一套生成逻辑", async () => {
     const side = await openSide("gateway-positive");
     await seedEverything(side);
     const { app, start, status, settled } = await gateway(side);
@@ -316,11 +319,6 @@ describe("[P1-6] 网页导出接口", () => {
     expect(createHash("sha256").update(prepared.rawPayload).digest("hex")).toBe(
       ready.result.sha256,
     );
-    const direct = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
-    expect(Buffer.compare(direct.rawPayload, prepared.rawPayload)).toBe(0);
-    expect(ready.result.memories).toBe(Number(direct.headers["x-himawari-export-memories"]));
-    expect(ready.result.rules).toBe(Number(direct.headers["x-himawari-export-rules"]));
-    expect(ready.result.withheld).toBe(Number(direct.headers["x-himawari-export-withheld"]));
     const again = await app.inject({
       method: "GET",
       url: ready.result.downloadPath,
@@ -328,6 +326,12 @@ describe("[P1-6] 网页导出接口", () => {
     });
     expect(again.statusCode).toBe(200);
     expect((await status(exportId)).state).toBe("ready");
+    const direct = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
+    expect(Buffer.compare(direct.rawPayload, prepared.rawPayload)).toBe(0);
+    expect(ready.result.memories).toBe(Number(direct.headers["x-himawari-export-memories"]));
+    expect(ready.result.rules).toBe(Number(direct.headers["x-himawari-export-rules"]));
+    expect(ready.result.withheld).toBe(Number(direct.headers["x-himawari-export-withheld"]));
+    expect((await status(exportId)).state).toBe("expired");
   });
 
   it("[iOS] 反向：不认识的编号是 expired 且没有结果；没登录、编号不对、编号不合格都拿不到文件", async () => {
@@ -440,5 +444,23 @@ describe("[P1-6] 网页导出接口", () => {
       headers: asOwner,
     });
     expect(late.statusCode).toBe(404);
+  });
+
+  it("[iOS] 同一个确认键重发开始，得到同一个编号且不作废已生成的结果；换一个键才重新生成", async () => {
+    const side = await openSide("gateway-idempotent");
+    await seedEverything(side);
+    const { startWith, settled } = await gateway(side);
+    const first = await startWith("export-key-1");
+    expect(first.replayed).toBe(false);
+    expect((await settled(first.resultRef)).state).toBe("ready");
+    expect(await startWith("export-key-1")).toEqual({
+      resultRef: first.resultRef,
+      replayed: true,
+    });
+    expect((await settled(first.resultRef)).state).toBe("ready");
+    const second = await startWith("export-key-2");
+    expect(second.resultRef).not.toBe(first.resultRef);
+    expect((await settled(second.resultRef)).state).toBe("ready");
+    expect((await settled(first.resultRef)).state).toBe("expired");
   });
 });

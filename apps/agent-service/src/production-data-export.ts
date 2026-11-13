@@ -142,6 +142,7 @@ export interface DataExportJobsOptions {
 
 interface DataExportJob {
   readonly exportId: string;
+  readonly idempotencyKey: string;
   state: "running" | "ready" | "failed";
   readonly startedAt: string;
   finishedAt: string | null;
@@ -172,6 +173,7 @@ export class DataExportJobs {
   async buildNow(): Promise<DataExportArchive> {
     if (this.#building) throw new Error(DATA_EXPORT_BUSY);
     this.#building = true;
+    if (this.#job && this.#job.state !== "running") this.#discard();
     try {
       return await (this.#options.build ?? (() => this.#build()))();
     } finally {
@@ -179,10 +181,19 @@ export class DataExportJobs {
     }
   }
 
-  start(): string {
-    if (this.#job?.state === "running") return this.#job.exportId;
+  #discard(): void {
+    if (this.#release) clearTimeout(this.#release);
+    this.#release = null;
+    this.#job = null;
+  }
+
+  start(idempotencyKey: string): { readonly exportId: string; readonly replayed: boolean } {
+    if (this.#job?.idempotencyKey === idempotencyKey)
+      return { exportId: this.#job.exportId, replayed: true };
+    if (this.#job?.state === "running") return { exportId: this.#job.exportId, replayed: false };
     if (this.#building) throw new Error(DATA_EXPORT_BUSY);
     const job: DataExportJob = {
+      idempotencyKey,
       exportId: `data-export:${randomBytes(16).toString("base64url")}`,
       state: "running",
       startedAt: this.#options.now(),
@@ -191,8 +202,7 @@ export class DataExportJobs {
       expiresAt: null,
       built: null,
     };
-    if (this.#release) clearTimeout(this.#release);
-    this.#release = null;
+    this.#discard();
     this.#job = job;
     const retentionMs = this.#options.retentionMs ?? DATA_EXPORT_RETENTION_MS;
     void this.buildNow().then(
@@ -212,7 +222,7 @@ export class DataExportJobs {
         job.state = "failed";
       },
     );
-    return job.exportId;
+    return { exportId: job.exportId, replayed: false };
   }
 
   view(exportId: string): DataExportJobView {
@@ -231,7 +241,8 @@ export class DataExportJobs {
         expiresAt: null,
         built: null,
       };
-    return { ...job };
+    const { idempotencyKey: _idempotencyKey, ...view } = job;
+    return view;
   }
 
   async #build(): Promise<DataExportArchive> {
@@ -329,7 +340,8 @@ export class ProductionDataExportControl {
     if (command.type !== "data.export.start")
       throw new Error("DATA_EXPORT_OPERATION_NOT_INSTALLED");
     try {
-      return { resultRef: this.#options.jobs.start(), replayed: false };
+      const started = this.#options.jobs.start(command.idempotencyKey);
+      return { resultRef: started.exportId, replayed: started.replayed };
     } catch (error) {
       if (error instanceof Error && error.message === DATA_EXPORT_BUSY)
         throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, DATA_EXPORT_BUSY);
@@ -370,6 +382,8 @@ export function registerDataExportRoute(
       try {
         built = await options.jobs.buildNow();
       } catch (error) {
+        if (error instanceof Error && error.message === DATA_EXPORT_BUSY)
+          return reply.code(429).send();
         request.log.warn({ code: exportFailureCode(error) }, "data export failed");
         return reply.code(500).send();
       }
