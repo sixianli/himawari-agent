@@ -100,7 +100,14 @@ function refuseInitOverResidue(options, config) {
   if (residue.length > 0) throw new Error(`EXEC_INIT_OVER_EXISTING ${residue[0]}`);
 }
 
-function acquireLock(lock) {
+export function releaseLock(lock, held) {
+  try {
+    if (readFileSync(lock, "utf8") === `${process.pid}\n`) rmSync(lock, { force: true });
+  } catch {}
+  closeSync(held);
+}
+
+export function acquireLock(lock) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const descriptor = openSync(lock, "wx", 0o600);
@@ -287,6 +294,24 @@ function retire(options, config, slot) {
     run("usermod", ["--lock", "--expiredate", "1", accountName(slot)]);
 }
 
+export function enableSockets(ledger, io, changed) {
+  for (const entry of ledger.slots) {
+    if (entry.state !== "active") continue;
+    const socket = socketName(entry.slot);
+    const wasActive = io.quiet("systemctl", ["is-active", "--quiet", socket]);
+    const wasEnabled = io.quiet("systemctl", ["is-enabled", "--quiet", socket]);
+    io.run("systemctl", ["enable", "--now", socket]);
+    if (!wasActive || !wasEnabled) changed.push({ slot: entry.slot, wasActive, wasEnabled });
+  }
+}
+
+export function undoSockets(changed, io) {
+  for (const item of changed) {
+    if (!item.wasActive) io.quiet("systemctl", ["disable", "--now", socketName(item.slot)]);
+    else if (!item.wasEnabled) io.quiet("systemctl", ["disable", socketName(item.slot)]);
+  }
+}
+
 function converge(options, config, ledger) {
   const known = knownUnitNames(ledger);
   const enabled = [];
@@ -322,17 +347,11 @@ function converge(options, config, ledger) {
         ...[...units.keys()].map((name) => path.join(options.units, name)),
       ]);
       run("systemctl", ["daemon-reload"]);
-      for (const entry of ledger.slots)
-        if (entry.state === "active") {
-          const wasActive = quiet("systemctl", ["is-active", "--quiet", socketName(entry.slot)]);
-          run("systemctl", ["enable", "--now", socketName(entry.slot)]);
-          if (!wasActive) enabled.push(entry.slot);
-        }
+      enableSockets(ledger, { run, quiet }, enabled);
     }
   } catch (error) {
     let message = error instanceof Error ? error.message : String(error);
-    if (options.systemd)
-      for (const slot of enabled) quiet("systemctl", ["disable", "--now", socketName(slot)]);
+    if (options.systemd) undoSockets(enabled, { run, quiet });
     if (backup !== undefined) {
       try {
         restoreUnits(options, known, backup);
@@ -391,8 +410,7 @@ export function main(argv) {
     converge(options, config, next);
     return status(options, config, readLedger(options.ledger, false));
   } finally {
-    if (readFileSync(lock, "utf8") === `${process.pid}\n`) rmSync(lock, { force: true });
-    closeSync(held);
+    releaseLock(lock, held);
   }
 }
 

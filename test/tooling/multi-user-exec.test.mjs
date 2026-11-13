@@ -1,10 +1,16 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { hardcodedLimits, scan } from "../../scripts/check-multi-user-exec.mjs";
+import {
+  acquireLock,
+  enableSockets,
+  releaseLock,
+  undoSockets,
+} from "../../scripts/operations/multi-user-exec/exec-accounts.mjs";
 import {
   addSlot,
   directoryPlan,
@@ -335,5 +341,82 @@ describe("check:multi-user-exec", () => {
       "CPUQuota = 1",
       "LimitNOFILE=infinity",
     ]);
+  });
+});
+
+describe("multi-user exec socket rollback and lock", () => {
+  const ledger = {
+    version: 1,
+    slots: [
+      { slot: "andyaa", uid: 61001, state: "active" },
+      { slot: "bobbyb", uid: 61002, state: "active" },
+      { slot: "carlcc", uid: 61003, state: "active" },
+    ],
+  };
+
+  function fakeSystemctl(state, failing) {
+    const calls = [];
+    const probe = (args) => {
+      const unit = args[2];
+      if (args[0] === "is-active") return state[unit]?.active === true;
+      if (args[0] === "is-enabled") return state[unit]?.enabled === true;
+      return false;
+    };
+    return {
+      calls,
+      io: {
+        quiet: (_command, args) => {
+          calls.push(args.join(" "));
+          return args[0] === "is-active" || args[0] === "is-enabled" ? probe(args) : true;
+        },
+        run: (_command, args) => {
+          calls.push(args.join(" "));
+          if (failing && args[2] === failing) throw new Error("ENABLE_FAILED");
+        },
+      },
+    };
+  }
+
+  it("leaves sockets that were already running when a later enable fails", () => {
+    const state = {
+      "himawari-exec-andyaa.socket": { active: true, enabled: true },
+      "himawari-exec-bobbyb.socket": { active: true, enabled: false },
+    };
+    const { calls, io } = fakeSystemctl(state, "himawari-exec-carlcc.socket");
+    const changed = [];
+    expect(() => enableSockets(ledger, io, changed)).toThrow("ENABLE_FAILED");
+    undoSockets(changed, io);
+    expect(calls).not.toContain("disable --now himawari-exec-andyaa.socket");
+    expect(calls).not.toContain("disable --now himawari-exec-bobbyb.socket");
+    expect(calls).toContain("disable himawari-exec-bobbyb.socket");
+  });
+
+  it("stops a socket this run started", () => {
+    const { calls, io } = fakeSystemctl({}, "himawari-exec-bobbyb.socket");
+    const changed = [];
+    expect(() => enableSockets(ledger, io, changed)).toThrow("ENABLE_FAILED");
+    undoSockets(changed, io);
+    expect(calls).toContain("disable --now himawari-exec-andyaa.socket");
+  });
+
+  it("keeps a lock that no longer holds our pid and survives a missing lock", () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "hx-lock-"));
+    const lock = path.join(directory, "slots.json.lock");
+    const held = acquireLock(lock);
+    writeFileSync(lock, "1\n");
+    releaseLock(lock, held);
+    expect(readFileSync(lock, "utf8")).toBe("1\n");
+    const second = openSync(path.join(directory, "other"), "w");
+    expect(() => releaseLock(path.join(directory, "missing"), second)).not.toThrow();
+    expect(existsSync(path.join(directory, "missing"))).toBe(false);
+  });
+
+  it("removes its own lock and refuses a live one", () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "hx-lock-"));
+    const lock = path.join(directory, "slots.json.lock");
+    const held = acquireLock(lock);
+    expect(() => acquireLock(lock)).toThrow("EXEC_LOCKED");
+    releaseLock(lock, held);
+    expect(existsSync(lock)).toBe(false);
   });
 });
