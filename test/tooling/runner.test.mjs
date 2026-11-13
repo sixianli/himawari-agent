@@ -191,7 +191,7 @@ describe("受控子进程与真实报告", () => {
     try {
       await execute(
         process.execPath,
-        ["-e", "process.stdout.write(`id=${process.env.RUNNER_TRACKING_ID}`)"],
+        ["-e", "process.stdout.write(['id', process.env.RUNNER_TRACKING_ID].join('='))"],
         {
           cwd: root,
           env: { PATH: process.env.PATH },
