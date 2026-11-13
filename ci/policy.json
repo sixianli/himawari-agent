@@ -162,7 +162,6 @@
         "test/integration/thread-scale-qualification.test.ts",
         "test/integration/openrouter-generation-live.test.ts",
         "test/integration/openrouter-embedding-live.test.ts",
-        "test/integration/job-host-gateway-accounts-qualification.test.ts",
         "test/integration/jarvis-test/live-round.test.ts",
         "test/integration/memory-retrieval-eval/live.test.ts",
         "test/integration/container-execution-backend-qualification.test.ts",
@@ -238,13 +237,6 @@
       "kind": "qualification",
       "project": "qualification-embedding-live",
       "reason": "真实向量 provider 需要单独凭据与授权",
-      "allowedModifiers": ["skipIf"]
-    },
-    {
-      "path": "test/integration/job-host-gateway-accounts-qualification.test.ts",
-      "kind": "qualification",
-      "project": "qualification-job-host-gateway-accounts",
-      "reason": "要用 root 切换到另一个系统账号起网关，普通 CI 账号做不到",
       "allowedModifiers": ["skipIf"]
     },
     {
