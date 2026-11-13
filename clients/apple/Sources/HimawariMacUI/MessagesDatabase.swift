@@ -2,6 +2,7 @@
 import AppKit
 import Foundation
 import HimawariCore
+import HimawariShell
 import SQLite3
 
 enum MessagesDatabaseError: Error, Equatable {
