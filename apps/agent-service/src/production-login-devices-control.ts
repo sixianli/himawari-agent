@@ -28,7 +28,7 @@ export interface ProductionLoginDevicesControlOptions {
 
 const singleLine = (value: string): string => {
   let text = "";
-  for (const character of value.replace(/\p{Cc}/gu, " ").trim()) {
+  for (const character of value.replace(/[\p{Cc}\u202A-\u202E\u2066-\u2069]/gu, " ").trim()) {
     if (text.length + character.length > 80) break;
     text += character;
   }

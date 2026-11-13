@@ -542,6 +542,13 @@ describe("[FD-1] thread artifact storage", () => {
       await expect(control.query(query({}) as never, otherOwner)).rejects.toMatchObject({
         code: "PORT_NOT_AUTHORITATIVE",
       });
+      const otherAgent = {
+        ...(query({}) as object),
+        scope: { ownerId: OWNER_ID, agentId: "agent-other" },
+      };
+      await expect(control.query(otherAgent as never, signedIn)).rejects.toMatchObject({
+        code: "PORT_NOT_AUTHORITATIVE",
+      });
       expect([...FILE_LIST_KINDS]).toEqual([...THREAD_ARTIFACT_KINDS]);
       expect([...FILE_LIST_ORIGINS]).toEqual([...THREAD_ARTIFACT_ORIGINS]);
       expect(FILE_LIST_PAGE_LIMIT).toBeLessThanOrEqual(THREAD_ARTIFACT_LIST_LIMIT);

@@ -3,7 +3,7 @@ import { ProductionFilesControl } from "../src/production-files-control.ts";
 
 describe("ProductionFilesControl", () => {
   it("cuts a long file name to 256 and a long media type to 128 characters", async () => {
-    const file = { id: "f1", threadId: "t1", path: `n/${"n".repeat(300)}`, kind: "document" };
+    const file = { id: "f1", threadId: "t1", path: `n/\u202E${"n".repeat(300)}`, kind: "document" };
     const control = new ProductionFilesControl({
       configuration: { ownerId: "o1", agentId: "a1" } as never,
       store: {
@@ -21,5 +21,6 @@ describe("ProductionFilesControl", () => {
     if (snapshot.type !== "files.list.snapshot") throw new Error(snapshot.type);
     const [entry] = snapshot.payload.files;
     expect([entry?.name.length, entry?.mediaType.length]).toEqual([256, 128]);
+    expect(entry?.name.startsWith("\uFFFDn")).toBe(true);
   });
 });

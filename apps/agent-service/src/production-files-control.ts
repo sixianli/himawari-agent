@@ -18,7 +18,7 @@ export const FILE_CONTENT_PATH_PREFIX = "/api/files/v1/content/";
 
 const displayText = (value: string, maximum = 256): string => {
   let text = "";
-  for (const character of value.replace(/\p{Cc}/gu, "\uFFFD")) {
+  for (const character of value.replace(/[\p{Cc}\u202A-\u202E\u2066-\u2069]/gu, "\uFFFD")) {
     if (text.length + character.length > maximum) break;
     text += character;
   }
