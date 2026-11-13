@@ -391,6 +391,24 @@ describe("multi-user exec socket rollback and lock", () => {
     expect(calls).toContain("disable himawari-exec-bobbyb.socket");
   });
 
+  it("only stops a socket that was enabled but not running", () => {
+    const state = { "himawari-exec-andyaa.socket": { active: false, enabled: true } };
+    const { calls, io } = fakeSystemctl(state, "himawari-exec-andyaa.socket");
+    const changed = [];
+    expect(() => enableSockets(ledger, io, changed)).toThrow("ENABLE_FAILED");
+    undoSockets(changed, io);
+    expect(calls).toContain("stop himawari-exec-andyaa.socket");
+    expect(calls).not.toContain("disable --now himawari-exec-andyaa.socket");
+  });
+
+  it("undoes the enable link when enable succeeds but start fails", () => {
+    const { calls, io } = fakeSystemctl({}, "himawari-exec-andyaa.socket");
+    const changed = [];
+    expect(() => enableSockets(ledger, io, changed)).toThrow("ENABLE_FAILED");
+    undoSockets(changed, io);
+    expect(calls).toContain("disable --now himawari-exec-andyaa.socket");
+  });
+
   it("stops a socket this run started", () => {
     const { calls, io } = fakeSystemctl({}, "himawari-exec-bobbyb.socket");
     const changed = [];

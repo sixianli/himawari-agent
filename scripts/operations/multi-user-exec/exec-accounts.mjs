@@ -300,15 +300,17 @@ export function enableSockets(ledger, io, changed) {
     const socket = socketName(entry.slot);
     const wasActive = io.quiet("systemctl", ["is-active", "--quiet", socket]);
     const wasEnabled = io.quiet("systemctl", ["is-enabled", "--quiet", socket]);
-    io.run("systemctl", ["enable", "--now", socket]);
     if (!wasActive || !wasEnabled) changed.push({ slot: entry.slot, wasActive, wasEnabled });
+    io.run("systemctl", ["enable", "--now", socket]);
   }
 }
 
 export function undoSockets(changed, io) {
   for (const item of changed) {
-    if (!item.wasActive) io.quiet("systemctl", ["disable", "--now", socketName(item.slot)]);
-    else if (!item.wasEnabled) io.quiet("systemctl", ["disable", socketName(item.slot)]);
+    const socket = socketName(item.slot);
+    if (!item.wasActive && !item.wasEnabled) io.quiet("systemctl", ["disable", "--now", socket]);
+    else if (!item.wasActive) io.quiet("systemctl", ["stop", socket]);
+    else if (!item.wasEnabled) io.quiet("systemctl", ["disable", socket]);
   }
 }
 
