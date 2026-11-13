@@ -22,6 +22,7 @@ import {
   downloadArtifact,
   isolatedEnvironment,
   loadToolchainLock,
+  runnerTracking,
   validateToolchainLock,
   verifyDownload,
 } from "../../scripts/ci/install-tools.mjs";
@@ -275,6 +276,11 @@ describe("固定工具身份", () => {
     expect(env.OPENAI_API_KEY).toBeUndefined();
     expect(env.SEMGREP_SEND_METRICS).toBe("off");
     expect(env.PATH.split(":")[0]).toBe("/fixture/bin");
+    expect(runnerTracking({ RUNNER_TRACKING_ID: "github_fixture" })).toEqual({
+      RUNNER_TRACKING_ID: "github_fixture",
+    });
+    expect(runnerTracking({ RUNNER_TRACKING_ID: "" })).toEqual({});
+    expect(runnerTracking({})).toEqual({});
   });
 });
 
