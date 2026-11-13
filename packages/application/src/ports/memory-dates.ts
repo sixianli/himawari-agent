@@ -32,7 +32,7 @@ export function memoryDatesOf(memory: ProductMemoryRecord): MemoryDates {
   });
 }
 
-function localDate(value: string, timeZone: string): string {
+export function memoryLocalDate(value: string, timeZone: string): string {
   if (PLAIN_DATE.test(value)) return value;
   const instant = new Date(value);
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -48,11 +48,13 @@ function localDate(value: string, timeZone: string): string {
 
 export function memoryDateNote(dates: MemoryDates, timeZone: string): string {
   if (dates.validFrom === null && dates.validTo === null)
-    return renderPrompt(MEMORY_DATE_RECORDED, { date: localDate(dates.recordedAt, timeZone) });
-  const from = localDate(dates.validFrom ?? dates.recordedAt, timeZone);
+    return renderPrompt(MEMORY_DATE_RECORDED, {
+      date: memoryLocalDate(dates.recordedAt, timeZone),
+    });
+  const from = memoryLocalDate(dates.validFrom ?? dates.recordedAt, timeZone);
   if (dates.validTo !== null)
-    return renderPrompt(MEMORY_DATE_RANGE, { from, to: localDate(dates.validTo, timeZone) });
-  return from > localDate(dates.recordedAt, timeZone)
+    return renderPrompt(MEMORY_DATE_RANGE, { from, to: memoryLocalDate(dates.validTo, timeZone) });
+  return from > memoryLocalDate(dates.recordedAt, timeZone)
     ? renderPrompt(MEMORY_DATE_UPCOMING, { from })
     : renderPrompt(MEMORY_DATE_ONGOING, { from });
 }
