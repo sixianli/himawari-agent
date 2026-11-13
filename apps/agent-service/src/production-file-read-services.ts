@@ -16,6 +16,7 @@ import {
 } from "@himawari-agent/application";
 import { sandboxWorkspaceCopySchema } from "@himawari-agent/execution-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import { createApprovalDisplayBuilder } from "./production-approval-display.js";
 import type {
   ProductionFileReadServices,
   WebProviderSecretBinding,
@@ -52,8 +53,15 @@ export function createProductionFileReadServices(options: {
   readonly workspaceSnapshotPort?: HostReadOnlyPort & HostWorkspaceSnapshotPort;
   readonly hostWeb?: ProductionHostWeb;
   readonly externalTag?: () => Promise<ExternalRedactionOptions["tag"]>;
+  readonly threadTitle?: (threadId: string) => Promise<string | null>;
 }): ProductionFileReadServices {
   const { configuration, repository, clock, ids } = options;
+  const approvalDisplay = createApprovalDisplayBuilder({
+    ...(options.threadTitle ? { threadTitle: options.threadTitle } : {}),
+    ...(configuration.runPolicy?.approvalBodyPreviewCharacters
+      ? { maximumCharacters: configuration.runPolicy.approvalBodyPreviewCharacters }
+      : {}),
+  });
   const capabilities = repository.capabilityStore(configuration.ownerId, configuration.agentId);
   const policy = new ActionPolicyService({
     store: repository.authorizationStore(),
@@ -300,13 +308,15 @@ export function createProductionFileReadServices(options: {
       }
       return { ...common, revision: stored.revision, grant };
     },
-    authorize: async (intent, signal) => {
+    approvalDisplay,
+    authorize: async (intent, signal, display) => {
       signal?.throwIfAborted();
       await searchAuthorization.authorize(intent);
       await options.workspaceAuto?.authorize(intent);
       return policy.evaluate(intent, {
         uiAvailable: true,
         approvalExpiresAt: intent.expiresAt,
+        ...(display ? { display } : {}),
         ...(signal ? { signal } : {}),
       });
     },

@@ -1,0 +1,5 @@
+{"id": "R2-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 中（潜在）：合约上限与生产端截断各写一份，`displayTitle`/`ruleText` 没给省略号留位置", "valid": true, "class": "better"}
+{"id": "R2-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 中（潜在）：`display` 只有读端合同校验，写入端不校验", "valid": true, "class": "better"}
+{"id": "R2-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 低：遮盖顺序的用例并不能证明“先遮后截”", "valid": true, "class": "better"}
+{"id": "R2-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. 低（潜在，安全）：未处理 Unicode 双向/格式控制字符", "valid": true, "class": "error", "severity": "medium-high", "trigger": "命令、写入内容或路径里带 U+202A–U+202E、U+2066–U+2069 等双向控制字符", "consequence": "审批预览渲染时文字被视觉重排，审批人看到的与实际执行的可能不一致；拿不准按中高。已把这些字符和 U+200E、U+200F、U+061C 一并换成 U+FFFD，补用例", "modelSeverity": "低", "reason": "模型标低；线程判中高，因为后果是误导审批人而不是报错"}
+{"id": "R2-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 5. 低：Spec 与合同文案和结构不一致", "valid": true, "class": "better"}
