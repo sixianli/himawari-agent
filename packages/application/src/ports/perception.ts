@@ -371,6 +371,10 @@ export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
 
 export const PERCEPTION_RETENTION_KEYS = ["track", "surroundings"] as const;
 export type PerceptionRetentionKey = (typeof PERCEPTION_RETENTION_KEYS)[number];
+export const PERCEPTION_RETENTION_CONFIGURATION = Object.freeze({
+  track: "trackRetentionDays",
+  surroundings: "surroundingsRetentionDays",
+} as const satisfies Record<PerceptionRetentionKey, keyof PerceptionConfiguration>);
 
 export interface PerceptionScope {
   readonly ownerId: OwnerId;

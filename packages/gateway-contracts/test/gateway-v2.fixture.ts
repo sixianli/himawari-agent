@@ -444,7 +444,7 @@ export const governanceMessages = [
     day: "2026-11-12",
     todayCount: 3,
     availableSenses: ["hearing", "location", "body"],
-    retention: [{ key: "track", days: 30, defaultDays: 90 }],
+    retention: [{ key: "track", days: 30, defaultDays: 90, minDays: 1, maxDays: 3650 }],
     pauseMaximumSeconds: 86400,
     revision: 4,
     generatedAt: "2026-11-12T03:06:30.000Z",
