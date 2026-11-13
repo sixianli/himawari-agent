@@ -187,6 +187,50 @@ public final class DeviceAPI: Sendable {
         return try outcome(data)
     }
 
+    public func storeAttachment(requestId: String, content: String, as kind: AttachmentKind) async throws -> String {
+        struct Body: Encodable {
+            let requestId: String
+            let content: String
+            let `as`: AttachmentKind
+        }
+        struct Result: Decodable { let ref: String }
+        let body = try JSONEncoder().encode(Body(requestId: requestId, content: content, as: kind))
+        let data = try await http.send(DeviceRequest(method: "POST", path: "attachments", body: body))
+        let ref = try decode(Result.self, data).ref
+        guard !ref.isEmpty else { throw DeviceAPIError.invalidResponse }
+        return ref
+    }
+
+    public func ingest(_ records: [PerceptionRecordUpload]) async throws -> [String: PerceptionIngestOutcome] {
+        struct Body: Encodable { let records: [PerceptionRecordUpload] }
+        struct Item: Decodable {
+            let id: String
+            let outcome: PerceptionIngestOutcome
+        }
+        struct Result: Decodable { let outcomes: [Item] }
+        let data = try await http.send(DeviceRequest(method: "POST", path: "perception", body: try JSONEncoder().encode(Body(records: records))))
+        let outcomes = try decode(Result.self, data).outcomes
+        return Dictionary(outcomes.map { ($0.id, $0.outcome) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    public func uploadMedia(_ data: Data, kind: String, batchId: String, contentType: String) async throws {
+        struct Begin: Encodable {
+            let purpose: String
+            let sha256: String
+            let bytes: Int
+            let batchId: String
+            let mediaKind: String
+        }
+        struct Granted: Decodable {
+            let grant: String
+            let path: String
+            let header: String
+        }
+        let begin = Begin(purpose: "media", sha256: Hashing.sha256(data).map { String(format: "%02x", $0) }.joined(), bytes: data.count, batchId: batchId, mediaKind: kind)
+        let granted = try decode(Granted.self, try await http.send(DeviceRequest(method: "POST", path: "uploads/begin", body: try JSONEncoder().encode(begin))))
+        _ = try await http.upload(path: granted.path, header: granted.header, grant: granted.grant, body: data, contentType: contentType)
+    }
+
     func outcome(_ data: Data) throws -> CommandOutcome {
         struct Head: Decodable { let type: String }
         let head = try decode(Head.self, data)
