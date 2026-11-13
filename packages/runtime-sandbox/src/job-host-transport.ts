@@ -97,7 +97,6 @@ export function gatewayJobHostLauncher(
       clearTimeout(startTimer);
       open = false;
       resolveSpawned(pid);
-      exit();
       for (const listener of closeListeners.splice(0)) listener(exitCode, signal);
       socket.destroy();
     };
@@ -107,10 +106,14 @@ export function gatewayJobHostLauncher(
         if (closed) return;
         const type = frame["type"];
         if (type === "started") {
-          clearTimeout(startTimer);
           const value = frame["pid"];
-          pid =
-            Number.isSafeInteger(value) && (value as number) > 1 ? (value as number) : undefined;
+          if (pid !== undefined || !Number.isSafeInteger(value) || (value as number) <= 1) {
+            fail();
+            close(null, null);
+            return;
+          }
+          clearTimeout(startTimer);
+          pid = value as number;
           resolveSpawned(pid);
         } else if (type === "message") {
           for (const listener of messageListeners) listener(frame["message"]);
@@ -143,10 +146,13 @@ export function gatewayJobHostLauncher(
       if (pid === undefined) fail();
     });
     socket.once("close", () => close(null, null));
-    const startTimer = setTimeout(() => {
-      fail();
-      close(null, null);
-    }, startupWindowMs);
+    const startTimer = setTimeout(
+      () => {
+        fail();
+        close(null, null);
+      },
+      Math.min(startupWindowMs, Math.max(1, Date.parse(request.deadlineAt) - Date.now())),
+    );
     writeGatewayFrame(socket, { type: "launch", request });
     return Object.freeze({
       get pid() {

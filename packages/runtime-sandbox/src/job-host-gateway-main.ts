@@ -1,4 +1,3 @@
-import { chmodSync } from "node:fs";
 import { createServer } from "node:net";
 import { parseJobHostGatewayArgs, serveJobHostGateway } from "./job-host-gateway.ts";
 
@@ -15,6 +14,7 @@ server.on("error", () => {
   process.exitCode = 1;
   server.close();
 });
+const umask = "path" in args.listen ? process.umask(0o177) : undefined;
 server.listen(args.listen, () => {
-  if ("path" in args.listen) chmodSync(args.listen.path, 0o600);
+  if (umask !== undefined) process.umask(umask);
 });

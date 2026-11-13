@@ -51,17 +51,24 @@ export function serveJobHostGateway(
       socket.destroy();
     };
     const launch = (value: unknown) => {
+      const refuse = () => {
+        writeGatewayFrame(socket, { type: "error" });
+        writeGatewayFrame(socket, { type: "close", exitCode: null, signal: null });
+        socket.end();
+      };
       let request: JobHostRequest;
       try {
         request = parseJobHostRequest(value);
       } catch {
-        writeGatewayFrame(socket, { type: "error" });
-        writeGatewayFrame(socket, { type: "close", exitCode: null, signal: null });
-        socket.end();
-        return;
+        return refuse();
       }
       cleanupTimeoutMs = request.cleanupTimeoutMs;
-      const started = fork(request);
+      let started: ChildProcess;
+      try {
+        started = fork(request);
+      } catch {
+        return refuse();
+      }
       child = started;
       children.add(started);
       reconsider();
@@ -128,10 +135,12 @@ export function serveJobHostGateway(
     socket.once("close", () => {
       connections.delete(socket);
       const current = child;
-      if (current?.connected) {
-        current.disconnect();
+      const running = (target: ChildProcess) =>
+        children.has(target) && target.exitCode === null && target.signalCode === null;
+      if (current && running(current)) {
+        if (current.connected) current.disconnect();
         const grace = setTimeout(() => {
-          if (children.has(current)) killGroup(current);
+          if (running(current)) killGroup(current);
         }, cleanupTimeoutMs);
         current.once("exit", () => clearTimeout(grace));
       }

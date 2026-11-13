@@ -67,6 +67,7 @@ describe.skipIf(process.getuid?.() !== 0)("Job Host gateway under another accoun
         if (chunk.toString().includes("listening")) resolve();
       });
       host.once("exit", () => reject(new Error("GATEWAY_HOST_EXITED")));
+      host.once("error", reject);
     });
     const transport = gatewayJobHostLauncher(socketPath)(request());
     const messages: unknown[] = [];

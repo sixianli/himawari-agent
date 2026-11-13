@@ -1,6 +1,6 @@
 import { type ChildProcess, fork, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -270,6 +270,63 @@ describe("Job Host gateway", () => {
     expect(await transport.spawned).toBeUndefined();
   });
 
+  it("kills a Job Host that already let go of its channel once the worker drops", async () => {
+    const { socketPath, gateway, forks } = await startGateway(60000, [
+      "--disconnect-self",
+      "--ignore-disconnect",
+    ]);
+    const socket = connect(socketPath);
+    socket.resume();
+    socket.write(`${JSON.stringify({ type: "launch", request: request() })}\n`);
+    await until(() => gateway.liveJobHosts() === 1 && forks[0]?.connected === false);
+    const ended = new Promise<NodeJS.Signals | null>((resolve) =>
+      forks[0]?.once("exit", (_code, signal) => resolve(signal)),
+    );
+    socket.destroy();
+    expect(await ended).toBe("SIGKILL");
+    await liveJobHostsDrain(gateway);
+  });
+
+  it("answers a Job Host that cannot be forked and keeps serving", async () => {
+    const socketPath = path.join(await directory(), "gateway.sock");
+    const server = createServer();
+    let attempts = 0;
+    serveJobHostGateway(server, {
+      idleExitMs: 60000,
+      onIdle: () => {},
+      fork: () => {
+        attempts += 1;
+        throw new Error("FORK_FAILED");
+      },
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    cleanups.push(() => new Promise<void>((resolve) => server.close(() => resolve())));
+    for (const _ of [1, 2]) {
+      const transport = gatewayJobHostLauncher(socketPath)(request());
+      const seen = observe(transport);
+      expect(await seen.closed).toEqual({ exitCode: null, signal: null });
+      expect(seen.errored()).toBe(true);
+      expect(seen.exited()).toBe(false);
+    }
+    expect(attempts).toBe(2);
+  });
+
+  it("gives up at once when the gateway reports a started Job Host without a process id", async () => {
+    const socketPath = path.join(await directory(), "lying.sock");
+    const lying = createServer((socket) => {
+      socket.write(`${JSON.stringify({ type: "started", pid: null })}\n`);
+    });
+    await new Promise<void>((resolve) => lying.listen(socketPath, resolve));
+    cleanups.push(() => {
+      lying.close();
+    });
+    const transport = gatewayJobHostLauncher(socketPath, 60000)(request());
+    const seen = observe(transport);
+    expect(await seen.closed).toEqual({ exitCode: null, signal: null });
+    expect(seen.errored()).toBe(true);
+    expect(await transport.spawned).toBeUndefined();
+  });
+
   it("goes idle only after every Job Host has ended", async () => {
     const { socketPath, gateway, onIdle } = await startGateway(50);
     const transport = gatewayJobHostLauncher(socketPath)(request());
@@ -334,6 +391,7 @@ describe("Job Host gateway process", () => {
     });
     const exited = new Promise<number | null>((resolve) => gateway.once("exit", resolve));
     await until(() => existsSync(socketPath));
+    expect((await stat(socketPath)).mode & 0o777).toBe(0o600);
     const transport = gatewayJobHostLauncher(socketPath)({ ...request(), policyDigest: "bad" });
     const seen = observe(transport);
     expect(await seen.closed).toEqual({ exitCode: null, signal: null });
