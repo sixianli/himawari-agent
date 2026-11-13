@@ -2955,6 +2955,7 @@ describe("runner machine preparation", () => {
     (name, platform) => {
       const text = readFileSync(path.join(scripts, name), "utf8");
       expect(text).toContain(`node-v$NODE_VERSION-${platform}.tar.gz`);
+      expect(text).toContain(`node_bin="$work/node-v$NODE_VERSION-${platform}/bin"`);
       const node = lock.node.releases[value(text, "NODE_VERSION")]?.artifacts[platform];
       expect(value(text, "PLAYWRIGHT_VERSION")).toBe(playwright);
       expect(node.filename).toBe(`node-v${value(text, "NODE_VERSION")}-${platform}.tar.gz`);
