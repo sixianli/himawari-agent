@@ -14,9 +14,7 @@ import {
   type GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
 import {
-  buildChatExport,
   buildPortableExport,
-  CHAT_EXPORT_TOO_LARGE,
   LATEST_MIGRATION_SEQUENCE,
   openReadOnlyDatabase,
   type PortableFiles,
@@ -31,7 +29,6 @@ import type { FastifyInstance } from "fastify";
 
 export const DATA_EXPORT_PATH = "/api/data-export/v1/archive";
 export const DATA_EXPORT_ARCHIVE_ROOT = "himawari-export";
-export const DATA_EXPORT_CONVERSATIONS_ROOT = "himawari-chats";
 export const DATA_EXPORT_CANCELLED = "DATA_EXPORT_CANCELLED";
 export const DATA_EXPORT_NOT_FOUND = "DATA_EXPORT_NOT_FOUND";
 export const DATA_EXPORT_NOT_CANCELLABLE = "DATA_EXPORT_NOT_CANCELLABLE";
@@ -39,7 +36,6 @@ export const DATA_EXPORT_TOO_LARGE = "DATA_EXPORT_TOO_LARGE";
 export const DATA_EXPORT_BUSY = "DATA_EXPORT_BUSY";
 export const DATA_EXPORT_RETENTION_MS = 10 * 60 * 1000;
 export const DATA_EXPORT_KEY_LIMIT = 64;
-export const DATA_EXPORT_CONVERSATIONS_MAXIMUM_BYTES = 128 * 1024 * 1024;
 const MAXIMUM_ARCHIVE_BYTES = 512 * 1024 * 1024;
 const encoder = new TextEncoder();
 
@@ -61,25 +57,15 @@ export function createStoredZip(
   root: string = DATA_EXPORT_ARCHIVE_ROOT,
   maximumBytes: number = MAXIMUM_ARCHIVE_BYTES,
 ): Uint8Array {
-  return createStoredZipOfFolders([{ root, files }], exportedAt, maximumBytes);
-}
-
-export function createStoredZipOfFolders(
-  folders: readonly { readonly root: string; readonly files: PortableFiles }[],
-  exportedAt: string,
-  maximumBytes: number = MAXIMUM_ARCHIVE_BYTES,
-): Uint8Array {
   const { time, date } = dosDateTime(exportedAt);
-  const entries = folders
-    .flatMap(({ root, files }) =>
-      [...files.entries()].map(([name, content]) => [`${root}/${name}`, content] as const),
-    )
-    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+  const entries = [...files.entries()].sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
   const chunks: Uint8Array[] = [];
   const directory: Uint8Array[] = [];
   let offset = 0;
   for (const [name, content] of entries) {
-    const nameBytes = encoder.encode(name);
+    const nameBytes = encoder.encode(`${root}/${name}`);
     const checksum = crc32(content);
     const local = new DataView(new ArrayBuffer(30));
     local.setUint32(0, 0x04034b50, true);
@@ -135,20 +121,13 @@ export interface DataExportArchive {
   readonly sha256: string;
   readonly memories: number;
   readonly rules: number;
-  readonly conversations: number;
-  readonly messages: number;
   readonly withheld: number;
 }
 
-export type DataExportSection = "memories" | "conversations";
-
 export interface DataExportProgress {
-  readonly stage: DataExportSection | "packing";
-  readonly sections: readonly {
-    readonly section: DataExportSection;
-    readonly textsRead: number;
-    readonly textsTotal: number | null;
-  }[];
+  readonly stage: "reading" | "packing";
+  readonly textsRead: number;
+  readonly textsTotal: number;
 }
 
 export interface DataExportBuildControl {
@@ -174,7 +153,6 @@ export interface DataExportJobsOptions {
   readonly protector: PayloadProtectorPort;
   readonly now: () => string;
   readonly retentionMs?: number;
-  readonly conversationsMaximumBytes?: number;
   readonly build?: (control: DataExportBuildControl) => Promise<DataExportArchive>;
 }
 
@@ -336,71 +314,37 @@ export class DataExportJobs {
   }
 
   async #build({ signal, onProgress }: DataExportBuildControl): Promise<DataExportArchive> {
-    const counted: Record<DataExportSection, { textsRead: number; textsTotal: number | null }> = {
-      memories: { textsRead: 0, textsTotal: null },
-      conversations: { textsRead: 0, textsTotal: null },
-    };
-    const report = (stage: DataExportProgress["stage"]) =>
-      onProgress({
-        stage,
-        sections: (["memories", "conversations"] as const).map((section) => ({
-          section,
-          ...counted[section],
-        })),
-      });
-    const progressOf = (section: DataExportSection) => (textsRead: number, textsTotal: number) => {
-      counted[section] = { textsRead, textsTotal };
-      report(section);
-    };
-    const scope = { ownerId: this.#options.ownerId, agentId: this.#options.agentId };
     const database = openReadOnlyDatabase(this.#options.databasePath);
     try {
-      const memories = await buildPortableExport({
+      let read = { textsRead: 0, textsTotal: 0 };
+      const result = await buildPortableExport({
         database,
-        scope,
+        scope: { ownerId: this.#options.ownerId, agentId: this.#options.agentId },
         migrationSequence: LATEST_MIGRATION_SEQUENCE,
         protector: this.#options.protector,
         policy: createDataExportTextPolicy(),
         now: this.#options.now,
         signal,
-        onProgress: progressOf("memories"),
+        onProgress: (textsRead, textsTotal) => {
+          read = { textsRead, textsTotal };
+          onProgress({ stage: "reading", ...read });
+        },
       });
-      const conversations = await buildChatExport({
-        database,
-        scope,
-        migrationSequence: LATEST_MIGRATION_SEQUENCE,
-        protector: this.#options.protector,
-        policy: createDataExportTextPolicy(),
-        now: this.#options.now,
-        maximumBytes:
-          this.#options.conversationsMaximumBytes ?? DATA_EXPORT_CONVERSATIONS_MAXIMUM_BYTES,
-        signal,
-        onProgress: progressOf("conversations"),
-      });
-      report("packing");
+      onProgress({ stage: "packing", ...read });
       signal.throwIfAborted();
-      const zip = createStoredZipOfFolders(
-        [
-          { root: DATA_EXPORT_ARCHIVE_ROOT, files: memories.files },
-          { root: DATA_EXPORT_CONVERSATIONS_ROOT, files: conversations.files },
-        ],
-        memories.manifest.exportedAt,
-      );
+      const zip = createStoredZip(result.files, result.manifest.exportedAt);
       signal.throwIfAborted();
       const archive = Buffer.from(zip.buffer, zip.byteOffset, zip.byteLength);
       return {
         archive,
-        fileName: `himawari-export-${memories.manifest.exportedAt.slice(0, 10)}.zip`,
+        fileName: `himawari-export-${result.manifest.exportedAt.slice(0, 10)}.zip`,
         sha256: createHash("sha256").update(archive).digest("hex"),
-        memories: memories.manifest.counts.memories,
-        rules: memories.manifest.counts.enforcedRules,
-        conversations: conversations.manifest.counts.threads,
-        messages: conversations.manifest.counts.messages,
+        memories: result.manifest.counts.memories,
+        rules: result.manifest.counts.enforcedRules,
         withheld:
-          memories.manifest.withheld.texts +
-          (memories.manifest.omitted.find(({ what }) => what === SHORT_TEXT_OMISSION_LABEL)
-            ?.count ?? 0) +
-          conversations.manifest.withheld.texts,
+          result.manifest.withheld.texts +
+          (result.manifest.omitted.find(({ what }) => what === SHORT_TEXT_OMISSION_LABEL)?.count ??
+            0),
       };
     } finally {
       database.close();
@@ -452,8 +396,6 @@ export class ProductionDataExportControl {
                 sha256: view.built.sha256,
                 memories: view.built.memories,
                 rules: view.built.rules,
-                conversations: view.built.conversations,
-                messages: view.built.messages,
                 withheld: view.built.withheld,
                 expiresAt: view.expiresAt,
               }
@@ -530,13 +472,6 @@ export function registerDataExportRoute(
       } catch (error) {
         if (error instanceof Error && error.message === DATA_EXPORT_BUSY)
           return reply.code(429).send();
-        if (
-          error instanceof Error &&
-          (error.message === CHAT_EXPORT_TOO_LARGE || error.message === DATA_EXPORT_TOO_LARGE)
-        ) {
-          request.log.warn({ code: error.message }, "data export too large for the web");
-          return reply.code(413).send();
-        }
         request.log.warn({ code: exportFailureCode(error) }, "data export failed");
         return reply.code(500).send();
       }
@@ -547,8 +482,6 @@ export function registerDataExportRoute(
       .header("content-disposition", `attachment; filename="${built.fileName}"`)
       .header("x-himawari-export-memories", String(built.memories))
       .header("x-himawari-export-rules", String(built.rules))
-      .header("x-himawari-export-conversations", String(built.conversations))
-      .header("x-himawari-export-messages", String(built.messages))
       .header("x-himawari-export-withheld", String(built.withheld))
       .send(built.archive);
   });

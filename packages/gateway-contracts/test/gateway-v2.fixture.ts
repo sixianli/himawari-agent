@@ -453,8 +453,6 @@ export const governanceMessages = [
       sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       memories: 12,
       rules: 3,
-      conversations: 40,
-      messages: 812,
       withheld: 1,
       expiresAt: "2026-11-12T00:10:02.000Z",
     },

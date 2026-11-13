@@ -1,10 +1,6 @@
 import path from "node:path";
 import { crc32 } from "node:zlib";
-import {
-  parsePortable,
-  verifyChatExport,
-  verifyIntegrity,
-} from "@himawari-agent/persistence-sqlite";
+import { parsePortable, verifyIntegrity } from "@himawari-agent/persistence-sqlite";
 import Fastify from "fastify";
 import { unzipSync } from "fflate";
 import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
@@ -14,7 +10,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createStoredZip,
   DATA_EXPORT_ARCHIVE_ROOT,
-  DATA_EXPORT_CONVERSATIONS_ROOT,
   DATA_EXPORT_KEY_LIMIT,
   DATA_EXPORT_PATH,
   DataExportJobs,
@@ -29,22 +24,6 @@ import {
   seedEverything,
   seedMemory,
 } from "./data-export-fixture.ts";
-import { seedThread } from "./chat-export-fixture.ts";
-
-function archiveFolders(raw: Buffer) {
-  const folders = {
-    memories: new Map<string, Uint8Array>(),
-    conversations: new Map<string, Uint8Array>(),
-  };
-  for (const [name, content] of Object.entries(unzipSync(new Uint8Array(raw)))) {
-    if (name.startsWith(`${DATA_EXPORT_ARCHIVE_ROOT}/`))
-      folders.memories.set(name.slice(DATA_EXPORT_ARCHIVE_ROOT.length + 1), content);
-    else if (name.startsWith(`${DATA_EXPORT_CONVERSATIONS_ROOT}/`))
-      folders.conversations.set(name.slice(DATA_EXPORT_CONVERSATIONS_ROOT.length + 1), content);
-    else throw new Error(`unexpected entry ${name}`);
-  }
-  return folders;
-}
 
 function pausedAt(side: Side, ref: string) {
   let release = () => {};
@@ -91,7 +70,6 @@ async function gateway(
   side: Side,
   protector: Side["protector"] = side.protector,
   now: () => string = () => "2026-11-02T00:00:00.000Z",
-  conversationsMaximumBytes?: number,
 ) {
   side.database.pragma("wal_checkpoint(TRUNCATE)");
   const app = Fastify();
@@ -101,7 +79,6 @@ async function gateway(
     databasePath: path.join(side.directory, "product.sqlite"),
     protector,
     now,
-    ...(conversationsMaximumBytes === undefined ? {} : { conversationsMaximumBytes }),
   });
   const control = new ProductionDataExportControl({
     configuration: { ownerId: side.ownerId, agentId: side.agentId },
@@ -198,10 +175,12 @@ describe("[P1-6] 网页导出接口", () => {
     expect(response.headers["content-disposition"]).toBe(
       'attachment; filename="himawari-export-2026-11-02.zip"',
     );
-    const { memories: files, conversations } = archiveFolders(response.rawPayload);
-    const chats = verifyChatExport(conversations, side.migrationSequence);
-    expect(Number(response.headers["x-himawari-export-conversations"])).toBe(chats.counts.threads);
-    expect(Number(response.headers["x-himawari-export-messages"])).toBe(chats.counts.messages);
+    const entries = unzipSync(new Uint8Array(response.rawPayload));
+    const files = new Map<string, Uint8Array>();
+    for (const [name, content] of Object.entries(entries)) {
+      expect(name.startsWith(`${DATA_EXPORT_ARCHIVE_ROOT}/`)).toBe(true);
+      files.set(name.slice(DATA_EXPORT_ARCHIVE_ROOT.length + 1), content);
+    }
     const manifest = verifyIntegrity(files, side.migrationSequence);
     parsePortable(files, side.migrationSequence);
     expect(Number(response.headers["x-himawari-export-memories"])).toBe(manifest.counts.memories);
@@ -214,9 +193,9 @@ describe("[P1-6] 网页导出接口", () => {
     expect(manifest.counts.enforcedRules).toBe(4);
     expect(files.has("RULES.md")).toBe(true);
     expect(files.has("sealed/sealed.enc")).toBe(false);
-    const everything = Buffer.concat(
-      [...files.values(), ...conversations.values()].map((file) => Buffer.from(file)),
-    ).toString("utf8");
+    const everything = Buffer.concat([...files.values()].map((file) => Buffer.from(file))).toString(
+      "utf8",
+    );
     for (const secret of SECRETS) expect(everything).not.toContain(secret);
   });
 
@@ -634,51 +613,10 @@ describe("[P1-6] 网页导出接口", () => {
     expect(await status(first.resultRef)).toMatchObject({ state: "ready" });
   });
 
-  it("[iOS] 导出全部数据也带对话：结果给对话和消息个数，和包里对话部分的清单一致", async () => {
-    const side = await openSide("gateway-conversations");
-    await seedEverything(side);
-    await seedThread(side, "chat-a", {
-      title: "周五去大阪",
-      messages: [{ text: "订周五的车票" }, { text: "好的，已经查了班次" }],
-    });
-    await seedThread(side, "chat-b", { title: null, messages: [{ text: "明天提醒我交房租" }] });
-    const { app, start, settled } = await gateway(side);
-    const ready = await settled(await start());
-    if (!ready.result) throw new Error("result");
-    const download = await app.inject({
-      method: "GET",
-      url: ready.result.downloadPath,
-      headers: asOwner,
-    });
-    const { memories, conversations } = archiveFolders(download.rawPayload);
-    const chats = verifyChatExport(conversations, side.migrationSequence);
-    expect(verifyIntegrity(memories, side.migrationSequence).counts.memories).toBe(
-      ready.result.memories,
-    );
-    expect(chats.counts.threads).toBeGreaterThanOrEqual(2);
-    expect(ready.result.conversations).toBe(chats.counts.threads);
-    expect(ready.result.messages).toBe(chats.counts.messages);
-    expect(chats.counts.messages).toBeGreaterThanOrEqual(3);
-    const text = Buffer.concat(
-      [...conversations.values()].map((file) => Buffer.from(file)),
-    ).toString("utf8");
-    expect(text).toContain("订周五的车票");
-    expect(text).toContain("明天提醒我交房租");
-
-    const empty = await openSide("gateway-no-conversations");
-    const none = await gateway(empty);
-    const nothing = await none.settled(await none.start());
-    expect(nothing.result).toMatchObject({ conversations: 0, messages: 0 });
-  });
-
-  it("[iOS] 生成中的进度是真实计数：先记忆、后对话，读完前面一段才开始后面一段，结束后不再给进度", async () => {
+  it("[iOS] 生成中的进度是真实计数：已读出几段文字、一共几段，结束后不再给进度", async () => {
     const side = await openSide("gateway-progress");
     await seedEverything(side);
-    await seedThread(side, "chat-a", {
-      title: "周五去大阪",
-      messages: [{ text: "订周五的车票" }, { text: "好的，已经查了班次" }],
-    });
-    const paused = pausedAt(side, "msg-chat-a-2");
+    const paused = pausedAt(side, "payload-m-plain");
     const { start, status, settled } = await gateway(side, paused.protector);
     const exportId = await start();
     await paused.arrived;
@@ -686,47 +624,19 @@ describe("[P1-6] 网页导出接口", () => {
     expect(running.state).toBe("running");
     expect(running.result).toBeNull();
     if (!running.progress) throw new Error("progress");
-    expect(running.progress.stage).toBe("conversations");
-    const [memoryPart, conversationPart] = running.progress.sections;
-    expect(memoryPart?.section).toBe("memories");
-    expect(memoryPart?.textsTotal).toBeGreaterThan(0);
-    expect(memoryPart?.textsRead).toBe(memoryPart?.textsTotal);
-    expect(conversationPart?.section).toBe("conversations");
-    expect(conversationPart?.textsTotal).toBe(3);
-    expect(conversationPart?.textsRead).toBe(2);
+    expect(running.progress.stage).toBe("reading");
+    expect(running.progress.textsTotal).toBeGreaterThan(running.progress.textsRead);
+    expect(running.progress.textsRead).toBe(paused.calls() - 1);
     paused.release();
     const ready = await settled(exportId);
     expect(ready.state).toBe("ready");
     expect(ready.progress).toBeNull();
-
-    const early = await openSide("gateway-progress-early");
-    await seedEverything(early);
-    const first = pausedAt(early, "payload-m-plain");
-    const beginning = await gateway(early, first.protector);
-    const earlyId = await beginning.start();
-    await first.arrived;
-    const before = await beginning.status(earlyId);
-    expect(before.progress?.stage).toBe("memories");
-    expect(before.progress?.sections[1]).toEqual({
-      section: "conversations",
-      textsRead: 0,
-      textsTotal: null,
-    });
-    expect(before.progress?.sections[0]?.textsRead).toBeLessThan(
-      before.progress?.sections[0]?.textsTotal ?? 0,
-    );
-    first.release();
-    expect((await beginning.settled(earlyId)).state).toBe("ready");
   });
 
-  it("[iOS] 取消正在生成的导出：状态变成 cancelled，放开后也不会变回 ready；重发取消是 replayed，之后能重新开始", async () => {
+  it("[iOS] 取消正在生成的导出：状态变成 cancelled，不再解密，放开后也不会变回 ready；重发取消是 replayed，之后能重新开始", async () => {
     const side = await openSide("gateway-cancel");
     await seedEverything(side);
-    await seedThread(side, "chat-a", {
-      title: "周五去大阪",
-      messages: [{ text: "订周五的车票" }, { text: "好的" }, { text: "再订回程" }],
-    });
-    const paused = pausedAt(side, "title-chat-a");
+    const paused = pausedAt(side, "payload-m-plain");
     const { app, jobs, start, cancel, status, settled } = await gateway(side, paused.protector);
     const exportId = await start();
     await paused.arrived;
@@ -765,7 +675,7 @@ describe("[P1-6] 网页导出接口", () => {
     expect(dropped.statusCode).toBe(404);
   });
 
-  it("[iOS] 反向：取消不认识的编号是 404，取消已失败的是冲突，不是主人发的被拒", async () => {
+  it("[iOS] 反向：取消不认识的编号是 404，取消已失败的是冲突", async () => {
     const side = await openSide("gateway-cancel-negative");
     await seedEverything(side);
     const broken = new Proxy(side.protector, {
@@ -787,38 +697,11 @@ describe("[P1-6] 网页导出接口", () => {
     expect((await settled(failed)).state).toBe("failed");
   });
 
-  it("[iOS] 对话太多超过上限时整份导出失败并说明原因，网页直接下载得到 413，不交出缺了对话的包", async () => {
-    const side = await openSide("gateway-conversations-too-large");
-    await seedEverything(side);
-    await seedThread(side, "chat-a", { title: "周五去大阪", messages: [{ text: "订周五的车票" }] });
-    const { app, start, settled } = await gateway(side, side.protector, undefined, 1);
-    expect(await settled(await start())).toMatchObject({
-      state: "failed",
-      failureCode: "CHAT_EXPORT_TOO_LARGE",
-      result: null,
-    });
-    const direct = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
-    expect(direct.statusCode).toBe(413);
-    expect(direct.rawPayload.byteLength).toBe(0);
-    const roomy = await gateway(side, side.protector, undefined, 1024 * 1024);
-    expect((await roomy.settled(await roomy.start())).state).toBe("ready");
-  });
-
   it("[iOS] 打包快结束时取消，生成完的结果也不会把状态改回 ready", async () => {
     let finish = () => {};
     const finished = new Promise<void>((resolve) => {
       finish = resolve;
     });
-    const built = {
-      archive: Buffer.from("zip"),
-      fileName: "himawari-export-2026-11-02.zip",
-      sha256: "0".repeat(64),
-      memories: 1,
-      rules: 0,
-      conversations: 0,
-      messages: 0,
-      withheld: 0,
-    };
     const jobs = new DataExportJobs({
       ownerId: "owner" as never,
       agentId: "agent" as never,
@@ -827,7 +710,14 @@ describe("[P1-6] 网页导出接口", () => {
       now: () => "2026-11-02T00:00:00.000Z",
       build: async () => {
         await finished;
-        return built;
+        return {
+          archive: Buffer.from("zip"),
+          fileName: "himawari-export-2026-11-02.zip",
+          sha256: "0".repeat(64),
+          memories: 1,
+          rules: 0,
+          withheld: 0,
+        };
       },
     });
     const { exportId } = jobs.start("key-1");

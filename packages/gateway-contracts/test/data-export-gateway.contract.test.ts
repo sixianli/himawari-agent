@@ -11,26 +11,11 @@ const result = {
   sha256: "0".repeat(64),
   memories: 0,
   rules: 0,
-  conversations: 0,
-  messages: 0,
   withheld: 0,
   expiresAt: "2026-11-12T00:10:00.000Z",
 };
 
-const progress = {
-  stage: "memories",
-  sections: [
-    { section: "memories", textsRead: 2, textsTotal: 5 },
-    { section: "conversations", textsRead: 0, textsTotal: null },
-  ],
-};
-
-const withSection = (index: number, overrides: Record<string, unknown>) => ({
-  ...progress,
-  sections: progress.sections.map((section, position) =>
-    position === index ? { ...section, ...overrides } : section,
-  ),
-});
+const progress = { stage: "reading", textsRead: 2, textsTotal: 5 };
 
 function rejects(message: Record<string, unknown>) {
   expect(() => gatewayV2MessageSchema.parse(message)).toThrow(ContractValidationError);
@@ -56,19 +41,13 @@ describe("data export gateway messages", () => {
     expect(gatewayV2MessageSchema.parse(snapshot({})).type).toBe("data.export.status.snapshot");
   });
 
-  it("accepts real progress while running: a section not started yet has no total", () => {
+  it("accepts real progress while running", () => {
     gatewayV2MessageSchema.parse(snapshot({ state: "running", result: null, progress }));
     gatewayV2MessageSchema.parse(
       snapshot({
         state: "running",
         result: null,
-        progress: {
-          stage: "packing",
-          sections: [
-            { section: "memories", textsRead: 5, textsTotal: 5 },
-            { section: "conversations", textsRead: 0, textsTotal: 0 },
-          ],
-        },
+        progress: { stage: "packing", textsRead: 5, textsTotal: 5 },
       }),
     );
   });
@@ -78,27 +57,11 @@ describe("data export gateway messages", () => {
     ["progress on a cancelled export", { state: "cancelled", result: null, progress }],
     [
       "more texts read than the total",
-      { state: "running", result: null, progress: withSection(0, { textsRead: 6 }) },
+      { state: "running", result: null, progress: { ...progress, textsRead: 6 } },
     ],
     [
-      "texts read before the total is known",
-      { state: "running", result: null, progress: withSection(1, { textsRead: 1 }) },
-    ],
-    [
-      "sections out of order",
-      {
-        state: "running",
-        result: null,
-        progress: { ...progress, sections: [...progress.sections].reverse() },
-      },
-    ],
-    [
-      "a missing section",
-      {
-        state: "running",
-        result: null,
-        progress: { ...progress, sections: [progress.sections[0]] },
-      },
+      "an unknown total",
+      { state: "running", result: null, progress: { ...progress, textsTotal: null } },
     ],
     [
       "an unknown stage",
@@ -108,8 +71,6 @@ describe("data export gateway messages", () => {
       "a percentage instead of counts",
       { state: "running", result: null, progress: { ...progress, percent: 40 } },
     ],
-    ["a result without a conversation count", { result: { ...result, conversations: undefined } }],
-    ["a negative message count", { result: { ...result, messages: -1 } }],
   ])("rejects a snapshot with %s", (_name, overrides) => {
     rejects(snapshot(overrides));
   });

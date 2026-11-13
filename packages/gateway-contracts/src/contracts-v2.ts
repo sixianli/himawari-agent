@@ -792,8 +792,7 @@ const serverStatusSnapshotSchema = object({
   }),
 });
 export const DATA_EXPORT_STATES = ["running", "ready", "failed", "cancelled", "expired"] as const;
-export const DATA_EXPORT_SECTIONS = ["memories", "conversations"] as const;
-export const DATA_EXPORT_STAGES = [...DATA_EXPORT_SECTIONS, "packing"] as const;
+export const DATA_EXPORT_STAGES = ["reading", "packing"] as const;
 const patternString = (pattern: RegExp, expected: string): Schema<string> => ({
   parse(input, path = "$") {
     if (typeof input !== "string" || !pattern.test(input))
@@ -826,13 +825,8 @@ const dataExportStatusSnapshotObjectSchema = object({
     progress: nullable(
       object({
         stage: enumeration(DATA_EXPORT_STAGES),
-        sections: array(
-          object({
-            section: enumeration(DATA_EXPORT_SECTIONS),
-            textsRead: integer(0),
-            textsTotal: nullable(integer(0)),
-          }),
-        ),
+        textsRead: integer(0),
+        textsTotal: integer(0),
       }),
     ),
     result: nullable(
@@ -843,8 +837,6 @@ const dataExportStatusSnapshotObjectSchema = object({
         sha256: patternString(/^[0-9a-f]{64}$/u, "expected a SHA-256 hex digest"),
         memories: integer(0),
         rules: integer(0),
-        conversations: integer(0),
-        messages: integer(0),
         withheld: integer(0),
         expiresAt: timestamp,
       }),
@@ -864,22 +856,11 @@ const dataExportStatusSnapshotSchema: Schema<
           `${path}.payload.progress`,
           "expected progress only while the export is running",
         );
-      const sections = progress.sections.map(({ section }) => section);
-      if (sections.join("\n") !== DATA_EXPORT_SECTIONS.join("\n"))
+      if (progress.textsRead > progress.textsTotal)
         throw new ContractValidationError(
-          `${path}.payload.progress.sections`,
-          "expected each export section once, in order",
+          `${path}.payload.progress.textsRead`,
+          "expected texts read to be at most the total",
         );
-      for (const [index, section] of progress.sections.entries())
-        if (
-          section.textsTotal === null
-            ? section.textsRead !== 0
-            : section.textsRead > section.textsTotal
-        )
-          throw new ContractValidationError(
-            `${path}.payload.progress.sections[${index}].textsRead`,
-            "expected texts read to be at most the total",
-          );
     }
     const result = snapshot.payload.result;
     if (result) {
