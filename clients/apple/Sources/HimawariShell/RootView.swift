@@ -103,7 +103,7 @@ struct MainTabsView: View {
                 withAnimation(.snappy) { tab = next }
             }
         }
-        .fullScreenPresentation(isPresented: $settingsOpen) {
+        .hmCover(isPresented: $settingsOpen) {
             SettingsRootView(api: model.api, close: { settingsOpen = false }) {
                 model.senses.map { senses in
                     SensesView(model: senses) { HandoverEntryRows() }

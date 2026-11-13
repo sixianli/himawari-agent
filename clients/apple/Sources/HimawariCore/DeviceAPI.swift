@@ -187,30 +187,13 @@ public final class DeviceAPI: Sendable {
         return try outcome(data)
     }
 
-    public func storeAttachment(requestId: String, content: String, as kind: AttachmentKind) async throws -> String {
-        struct Body: Encodable {
-            let requestId: String
-            let content: String
-            let `as`: AttachmentKind
-        }
-        struct Result: Decodable { let ref: String }
-        let body = try JSONEncoder().encode(Body(requestId: requestId, content: content, as: kind))
-        let data = try await http.send(DeviceRequest(method: "POST", path: "attachments", body: body))
-        let ref = try decode(Result.self, data).ref
-        guard !ref.isEmpty else { throw DeviceAPIError.invalidResponse }
-        return ref
-    }
-
     public func ingest(_ records: [PerceptionRecordUpload]) async throws -> [String: PerceptionIngestOutcome] {
-        struct Body: Encodable { let records: [PerceptionRecordUpload] }
-        struct Item: Decodable {
-            let id: String
-            let outcome: PerceptionIngestOutcome
+        var outcomes: [String: PerceptionIngestOutcome] = [:]
+        for item in try await perceive(records).outcomes where outcomes[item.id] == nil {
+            guard let outcome = PerceptionIngestOutcome(rawValue: item.outcome) else { throw DeviceAPIError.invalidResponse }
+            outcomes[item.id] = outcome
         }
-        struct Result: Decodable { let outcomes: [Item] }
-        let data = try await http.send(DeviceRequest(method: "POST", path: "perception", body: try JSONEncoder().encode(Body(records: records))))
-        let outcomes = try decode(Result.self, data).outcomes
-        return Dictionary(outcomes.map { ($0.id, $0.outcome) }, uniquingKeysWith: { first, _ in first })
+        return outcomes
     }
 
     public func uploadMedia(_ data: Data, kind: String, batchId: String, contentType: String) async throws {

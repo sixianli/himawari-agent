@@ -161,8 +161,8 @@ import Testing
             ids.append(record.id)
             try await queue.add(record)
         }
-        exchange.enqueue(json(["outcomes": [["id": ids[0], "outcome": "stored"], ["id": ids[1], "outcome": "sense_off"]]]))
-        exchange.enqueue(json(["outcomes": [["id": ids[2], "outcome": "limit_reached"]]]))
+        exchange.enqueue(json(["outcomes": [["id": ids[0], "outcome": "stored"], ["id": ids[1], "outcome": "sense_off"]], "reached": [String]()]))
+        exchange.enqueue(json(["outcomes": [["id": ids[2], "outcome": "limit_reached"]], "reached": [String]()]))
         let report = await queue.flush(configuration: configuration(), today: "2027-01-15")
         #expect(report.stored == 1)
         #expect(report.turnedAway == 1)
@@ -189,7 +189,7 @@ import Testing
         }
         exchange.enqueue(HTTPExchangeResponse(status: 400, body: Data(#"{"error":{"code":"DEVICE_REQUEST_INVALID"}}"#.utf8)))
         exchange.enqueue(HTTPExchangeResponse(status: 400, body: Data(#"{"error":{"code":"DEVICE_REQUEST_INVALID"}}"#.utf8)))
-        exchange.enqueue(json(["outcomes": [["id": ids[1], "outcome": "stored"]]]))
+        exchange.enqueue(json(["outcomes": [["id": ids[1], "outcome": "stored"]], "reached": [String]()]))
         let report = await queue.flush(configuration: configuration(), today: "2027-01-15")
         #expect(report.malformed == 1)
         #expect(report.stored == 1)

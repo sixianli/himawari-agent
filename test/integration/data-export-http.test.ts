@@ -25,6 +25,33 @@ import {
   seedMemory,
 } from "./data-export-fixture.ts";
 
+function pausedAt(side: Side, ref: string) {
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let reached = () => {};
+  const arrived = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  let calls = 0;
+  const protector = new Proxy(side.protector, {
+    get(target, property, receiver) {
+      if (property === "unprotect")
+        return async (...arguments_: Parameters<Side["protector"]["unprotect"]>) => {
+          calls += 1;
+          if (arguments_[0].payload.ref === ref) {
+            reached();
+            await gate;
+          }
+          return target.unprotect(...arguments_);
+        };
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  return { protector, arrived, release, calls: () => calls };
+}
+
 const open: Array<{ close: () => Promise<unknown> }> = [];
 
 afterEach(async () => {
@@ -81,6 +108,8 @@ async function gateway(
       ...(kind === "command" ? { idempotencyKey: key } : {}),
       payload,
     });
+  const cancel = (exportId: string) =>
+    control.execute(message("command", "data.export.cancel", { exportId }) as never);
   const startWith = (key: string) =>
     control.execute(message("command", "data.export.start", {}, "owner", key) as never);
   const start = async (actorType = "owner") =>
@@ -129,7 +158,7 @@ async function gateway(
     jobs,
   });
   open.push(app);
-  return { app, start, startWith, status, settled };
+  return { app, jobs, start, startWith, cancel, status, settled };
 }
 
 const asOwner = { cookie: "himawari_session=owner-session" };
@@ -582,5 +611,119 @@ describe("[P1-6] 网页导出接口", () => {
     expect(fresh.statusCode).toBe(200);
     expect(Number(fresh.headers["x-himawari-export-memories"])).toBe(ready.result.memories + 1);
     expect(await status(first.resultRef)).toMatchObject({ state: "ready" });
+  });
+
+  it("[iOS] 生成中的进度是真实计数：已读出几段文字、一共几段，结束后不再给进度", async () => {
+    const side = await openSide("gateway-progress");
+    await seedEverything(side);
+    const paused = pausedAt(side, "payload-m-plain");
+    const { start, status, settled } = await gateway(side, paused.protector);
+    const exportId = await start();
+    await paused.arrived;
+    const running = await status(exportId);
+    expect(running.state).toBe("running");
+    expect(running.result).toBeNull();
+    if (!running.progress) throw new Error("progress");
+    expect(running.progress.textsTotal).toBeGreaterThan(running.progress.textsRead);
+    expect(running.progress.textsRead).toBe(paused.calls() - 1);
+    paused.release();
+    const ready = await settled(exportId);
+    expect(ready.state).toBe("ready");
+    expect(ready.progress).toBeNull();
+  });
+
+  it("[iOS] 取消正在生成的导出：状态变成 cancelled，不再解密，放开后也不会变回 ready；重发取消是 replayed，之后能重新开始", async () => {
+    const side = await openSide("gateway-cancel");
+    await seedEverything(side);
+    const paused = pausedAt(side, "payload-m-plain");
+    const { app, jobs, start, cancel, status, settled } = await gateway(side, paused.protector);
+    const exportId = await start();
+    await paused.arrived;
+    expect(await cancel(exportId)).toEqual({ resultRef: exportId, replayed: false });
+    const callsAtCancel = paused.calls();
+    expect(await status(exportId)).toMatchObject({
+      state: "cancelled",
+      progress: null,
+      result: null,
+      finishedAt: "2026-11-02T00:00:00.000Z",
+    });
+    paused.release();
+    for (let attempt = 0; attempt < 200 && jobs.busy; attempt += 1)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(jobs.busy).toBe(false);
+    expect(paused.calls()).toBe(callsAtCancel);
+    expect((await status(exportId)).state).toBe("cancelled");
+    expect(await cancel(exportId)).toEqual({ resultRef: exportId, replayed: true });
+    const download = await app.inject({
+      method: "GET",
+      url: `${DATA_EXPORT_PATH}?exportId=${encodeURIComponent(exportId)}`,
+      headers: asOwner,
+    });
+    expect(download.statusCode).toBe(404);
+    const again = await start();
+    expect(again).not.toBe(exportId);
+    const ready = await settled(again);
+    if (!ready.result) throw new Error("result");
+    expect(await cancel(again)).toEqual({ resultRef: again, replayed: false });
+    expect(await status(again)).toMatchObject({ state: "cancelled", result: null });
+    const dropped = await app.inject({
+      method: "GET",
+      url: ready.result.downloadPath,
+      headers: asOwner,
+    });
+    expect(dropped.statusCode).toBe(404);
+  });
+
+  it("[iOS] 反向：取消不认识的编号是 404，取消已失败的是冲突", async () => {
+    const side = await openSide("gateway-cancel-negative");
+    await seedEverything(side);
+    const broken = new Proxy(side.protector, {
+      get(target, property, receiver) {
+        if (property === "unprotect")
+          return async () => {
+            throw new Error("DATA_EXPORT_PAYLOAD_UNAVAILABLE");
+          };
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const { start, cancel, settled } = await gateway(side, broken);
+    await expect(cancel("data-export:AAAAAAAAAAAAAAAAAAAAAA")).rejects.toMatchObject({
+      code: PORT_ERROR_CODES.NOT_FOUND,
+    });
+    const failed = await start();
+    expect((await settled(failed)).state).toBe("failed");
+    await expect(cancel(failed)).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
+    expect((await settled(failed)).state).toBe("failed");
+  });
+
+  it("[iOS] 读完文字后才取消（例如正在打包），生成完的结果也不会把状态改回 ready", async () => {
+    let finish = () => {};
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const jobs = new DataExportJobs({
+      ownerId: "owner" as never,
+      agentId: "agent" as never,
+      databasePath: "unused",
+      protector: {} as never,
+      now: () => "2026-11-02T00:00:00.000Z",
+      build: async () => {
+        await finished;
+        return {
+          archive: Buffer.from("zip"),
+          fileName: "himawari-export-2026-11-02.zip",
+          sha256: "0".repeat(64),
+          memories: 1,
+          rules: 0,
+          withheld: 0,
+        };
+      },
+    });
+    const { exportId } = jobs.start("key-1");
+    expect(jobs.cancel(exportId)).toEqual({ exportId, replayed: false });
+    finish();
+    for (let attempt = 0; attempt < 100 && jobs.busy; attempt += 1)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(jobs.view(exportId)).toMatchObject({ state: "cancelled", built: null, progress: null });
   });
 });

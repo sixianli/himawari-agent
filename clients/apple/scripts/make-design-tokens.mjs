@@ -100,6 +100,7 @@ export function generate(tokens) {
   scalars("Scanner", tokens.scanner ?? {});
   scalars("Senses", tokens.senses ?? {});
   scalars("Handover", tokens.handover ?? {});
+  scalars("Mac", tokens.mac ?? {});
   lines.push("    public enum TypeScale {");
   for (const name of Object.keys(tokens.type).sort()) {
     const value = tokens.type[name];

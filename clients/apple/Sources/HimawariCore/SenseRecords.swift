@@ -49,7 +49,7 @@ public enum SenseRecordBuilder {
             text = nil
         default:
             let trimmed = observation.text.flatMap { $0.isEmpty ? nil : $0 }
-            text = trimmed.map { value in textLimit.map { TextBudget.utf16Prefix(value, limit: $0).text } ?? value }
+            text = trimmed.map { value in textLimit.map { TextBudget.scalarPrefix(value, limit: $0) } ?? value }
             if rule.text == "required", text == nil { throw SenseRecordError.textMissing }
         }
         return PerceptionRecordUpload(

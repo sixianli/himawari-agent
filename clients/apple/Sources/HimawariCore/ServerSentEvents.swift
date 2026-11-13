@@ -13,7 +13,8 @@ public struct ServerSentEvent: Sendable, Equatable {
 }
 
 public struct ServerSentEventParser: Sendable {
-    private var buffer = ""
+    private var buffer = String.UnicodeScalarView()
+    private var skipLineFeed = false
     private var eventName = ""
     private var dataLines: [String] = []
     private var eventId: String?
@@ -22,20 +23,21 @@ public struct ServerSentEventParser: Sendable {
     public init() {}
 
     public mutating func feed(_ chunk: String) -> [ServerSentEvent] {
-        buffer += chunk
         var events: [ServerSentEvent] = []
-        var scalars = buffer.unicodeScalars[...]
-        while let end = scalars.firstIndex(where: { $0 == "\n" || $0 == "\r" }) {
-            var rest = scalars.index(after: end)
-            if scalars[end] == "\r" {
-                if rest == scalars.endIndex { break }
-                if scalars[rest] == "\n" { rest = scalars.index(after: rest) }
+        for scalar in chunk.unicodeScalars {
+            if skipLineFeed {
+                skipLineFeed = false
+                if scalar == "\n" { continue }
             }
-            let line = String(scalars[..<end])
-            scalars = scalars[rest...]
+            guard scalar == "\n" || scalar == "\r" else {
+                buffer.append(scalar)
+                continue
+            }
+            skipLineFeed = scalar == "\r"
+            let line = String(buffer)
+            buffer = String.UnicodeScalarView()
             if let event = consume(line: line) { events.append(event) }
         }
-        buffer = String(scalars)
         return events
     }
 

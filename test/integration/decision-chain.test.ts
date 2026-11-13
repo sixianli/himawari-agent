@@ -858,7 +858,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
       f.sql((database) => {
         database
           .prepare(
-            "UPDATE rule_book_rules SET source_memory_id = 'memory-a', status = 'needs_review' WHERE rule_id = 'floor_important_sender'",
+            "UPDATE rule_book_rules SET source_memory_id = 'memory-a', status = 'needs_review', review_after = updated_at WHERE rule_id = 'floor_important_sender'",
           )
           .run();
       });

@@ -49,6 +49,7 @@ import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
   PROACTIVE_GOOGLE_START_PATH,
   ProductionProactive,
+  type ProductionProactiveOptions,
 } from "../../apps/agent-service/src/production-proactive.ts";
 import {
   ProductionWebPush,
@@ -183,7 +184,12 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function setup(options: { readonly demoInbox?: "ja" | "en" } = {}) {
+  async function setup(
+    options: {
+      readonly demoInbox?: "ja" | "en";
+      readonly ruleReview?: ProductionProactiveOptions["ruleReview"];
+    } = {},
+  ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-proactive-production-"));
     directories.push(stateRoot);
     const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
@@ -333,6 +339,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       feedback: (sentFrom) => webPushStore.listFeedback({ ...scope, sentFrom, limit: 500 }),
       clock,
       ids,
+      ...(options.ruleReview ? { ruleReview: options.ruleReview } : {}),
       onFailure: (error) => failures.push(error),
     });
     const sent: WebPushSendRequest[] = [];
@@ -352,6 +359,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       memories: { readMany: async () => [] },
       readMemoryText: async () => undefined,
       listApprovals: async () => [],
+      awaitingCount: async () => 0,
       runThread: async () => null,
       threadTitle: async () => null,
       proactive: createProactivePushSource({ scope, store, seal }),
@@ -1011,6 +1019,31 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     expect(h.prompts[0]).not.toContain("全品20%OFF");
     expect(h.google.calls).toEqual([]);
     expect(h.failures).toEqual([]);
+  });
+
+  it("[P4-1] rechecks rules whose source memory changed before each mail check, and a failed recheck does not stop the check", async () => {
+    const seen: string[] = [];
+    let fail = false;
+    const h = await setup({
+      demoInbox: "ja",
+      ruleReview: {
+        run: async () => {
+          seen.push(`review:${(await h.overview()).decisions.length}`);
+          if (fail) throw new Error("RULE_REVIEW_BROKEN");
+          return [];
+        },
+      },
+    });
+    await h.proactive.seedDemoInbox();
+    await h.proactive.tick();
+    expect(seen).toEqual(["review:0"]);
+    expect((await h.overview()).decisions).toHaveLength(1);
+    fail = true;
+    h.clock.advance(40 * 60_000);
+    await h.proactive.tick();
+    expect(seen).toEqual(["review:0", "review:1"]);
+    expect((await h.overview()).decisions).toHaveLength(2);
+    expect(h.failures.map((error) => (error as Error).message)).toEqual(["RULE_REVIEW_BROKEN"]);
   });
 
   it("[P6-demo] [reverse] a fake-inbox service cannot be pointed at a real mailbox, and reconnecting only restores the fake inbox", async () => {

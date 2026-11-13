@@ -7,6 +7,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case affiliate
     case alertCircle = "alert-circle"
     case alertCircleLarge = "alert-circle-large"
+    case appWindow = "app-window"
     case arrowUp = "arrow-up"
     case bell
     case brandSafari = "brand-safari"
@@ -28,6 +29,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case clock
     case compass
     case cloud
+    case code
     case creditCard = "credit-card"
     case currentLocation = "current-location"
     case deviceMobile = "device-mobile"
@@ -35,7 +37,11 @@ public enum IconName: String, CaseIterable, Sendable {
     case ear
     case eye
     case filePencil = "file-pencil"
+    case fileSpreadsheet = "file-spreadsheet"
     case fileText = "file-text"
+    case fingerprint
+    case folder
+    case folderSymlink = "folder-symlink"
     case handStop = "hand-stop"
     case heartbeat
     case heartbeatLarge = "heartbeat-large"
@@ -52,6 +58,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case number1 = "number-1"
     case number2 = "number-2"
     case number3 = "number-3"
+    case pencil
     case pencilPlus = "pencil-plus"
     case phone
     case photo
@@ -64,11 +71,13 @@ public enum IconName: String, CaseIterable, Sendable {
     case server
     case serverLarge = "server-large"
     case share2 = "share-2"
+    case settings
     case stack2 = "stack-2"
     case table
     case terminal2 = "terminal-2"
     case puzzle
     case train
+    case trash
     case user
     case users
     case walk

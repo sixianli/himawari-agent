@@ -10,6 +10,7 @@ import {
   OWNER_RULE_SUMMARY_LIMIT,
   type OwnerRuleReplayResult,
   type OwnerRuleStorePort,
+  type RuleReviewOwnerStorePort,
   ownerRuleRecord,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -261,6 +262,7 @@ export interface RulePreview {
 export interface ProductionOwnerRuleWriterOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
   readonly rules: OwnerRuleStorePort;
+  readonly reviews: Pick<RuleReviewOwnerStorePort, "act">;
   readonly memory: Pick<DurableMemoryService, "applyProposal" | "archive" | "recover">;
   readonly memories: Pick<ProductMemoryStatePort, "read">;
   readonly book: Pick<MemoryBookStorePort, "latestGeneration">;
@@ -704,22 +706,28 @@ export class ProductionOwnerRuleWriter {
       throw new OwnerRuleError("RULE_NOT_FOUND");
     const current = await this.#options.rules.read({ ...this.#scope(), ruleId });
     if (!current || current.status === "retired") throw new OwnerRuleError("RULE_NOT_FOUND");
-    if (enforceableOwnerRule(current) === undefined) throw new OwnerRuleError("RULE_UNAVAILABLE");
+    if (enforceableOwnerRule({ ...current, status: "active" }) === undefined)
+      throw new OwnerRuleError("RULE_UNAVAILABLE");
     const revivedMemory = current.sourceMemoryId
       ? await this.#reviveMemory(current.sourceMemoryId as MemoryId)
       : false;
-    const changed =
-      current.status === "needs_review"
-        ? await this.#options.rules.setStatus({
+    const latest = revivedMemory
+      ? await this.#options.rules.read({ ...this.#scope(), ruleId })
+      : current;
+    const restored =
+      latest && latest.status !== "active" && latest.status !== "retired"
+        ? await this.#options.reviews.act({
             ...this.#scope(),
             ruleId,
-            status: "active",
-            expectedRevision: current.revision,
-            reason: "owner_confirmed",
+            expectedRevision: latest.revision,
+            action: "restore",
             now: this.#options.clock.now(),
           })
-        : current;
-    if (!changed) {
+        : latest?.status === "active";
+    const changed = restored
+      ? await this.#options.rules.read({ ...this.#scope(), ruleId })
+      : undefined;
+    if (!changed || changed.status !== "active") {
       if (revivedMemory) await this.#archiveMemory(current.sourceMemoryId as MemoryId);
       throw new OwnerRuleError("RULE_UNAVAILABLE");
     }
