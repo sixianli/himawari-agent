@@ -1,7 +1,7 @@
 import { type ChildProcess, fork, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { lstat, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { connect, createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -488,6 +488,42 @@ describe("Job Host gateway process", () => {
     expect(seen.errored()).toBe(true);
     expect(await exited).toBe(0);
   });
+  it.each(["symbolic link", "missing directory"] as const)(
+    "refuses to start when the control root is a %s",
+    async (kind) => {
+      const parent = await realpath(await directory());
+      const socketPath = path.join(parent, "gateway.sock");
+      const target = path.join(parent, "target");
+      const controlRoot = path.join(parent, "root");
+      if (kind === "symbolic link") {
+        await mkdir(target);
+        await symlink(target, controlRoot);
+      }
+      const gateway = spawn(
+        process.execPath,
+        [
+          gatewayMain,
+          "--socket",
+          socketPath,
+          "--idle-exit-ms",
+          "300",
+          "--control-root",
+          controlRoot,
+        ],
+        { stdio: ["ignore", "ignore", "pipe"] },
+      );
+      cleanups.push(() => {
+        if (gateway.exitCode === null) gateway.kill("SIGKILL");
+      });
+      let stderr = "";
+      gateway.stderr?.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+      expect(await new Promise((resolve) => gateway.once("exit", resolve))).toBe(1);
+      expect(stderr).toContain("JOB_HOST_GATEWAY_CONTROL_ROOT_INVALID");
+      expect(existsSync(socketPath)).toBe(false);
+    },
+  );
 });
 
 describe("Job Host gateway control", () => {
@@ -618,6 +654,30 @@ describe("Job Host gateway control", () => {
     await expect(access.readFinalEvidence(control)).rejects.toThrow(
       "JOB_HOST_CONTROL_EVIDENCE_INVALID",
     );
+  });
+
+  it("lets the caller reject a forged control answer and never reports an unreachable gateway as missing evidence", async () => {
+    const { access, root } = await controlGateway();
+    const control = binding((await access.prepareDirectory(name)).directory);
+    const forged = createServer((socket) => {
+      socket.resume();
+      socket.end(
+        JSON.stringify({
+          body: JSON.stringify(observation(control, "running")),
+          signature: "f".repeat(64),
+        }),
+      );
+    });
+    await new Promise<void>((resolve) =>
+      forged.listen(path.join(control.directory, "control.sock"), resolve),
+    );
+    cleanups.push(() => new Promise<void>((resolve) => forged.close(() => resolve())));
+    await expect(access.query(control, "inspect")).rejects.toThrow(/^JOB_HOST_CONTROL_[A-Z_]+$/);
+    const unreachable = gatewayJobHostControlAccess(path.join(root, "missing.sock"));
+    const failure = await unreachable.readFinalEvidence(control).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe("JOB_HOST_GATEWAY_UNAVAILABLE");
+    expect(failure).not.toHaveProperty("code");
   });
 
   it("stops asking the Job Host when the caller gives up", async () => {

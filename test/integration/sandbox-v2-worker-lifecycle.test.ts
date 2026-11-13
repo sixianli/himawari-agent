@@ -96,12 +96,13 @@ it.each([
   "[I-84] resource-limit-after-exit",
   "gateway normal",
   "gateway [R2-D4] preparation-ack-blocked",
+  "gateway control-root-mismatch",
 ] as const)("v2 lifecycle: %s", async (named) => {
   const viaGateway = named.startsWith("gateway ");
-  const scenario = (viaGateway ? named.slice("gateway ".length) : named) as Exclude<
-    typeof named,
-    `gateway ${string}`
-  >;
+  const rootMismatch = named === "gateway control-root-mismatch";
+  const scenario = (
+    rootMismatch ? "normal" : viaGateway ? named.slice("gateway ".length) : named
+  ) as Exclude<typeof named, `gateway ${string}`>;
   const f = await openSandboxJournal();
   cleanups.push(f.close);
   const root = await mkdtemp(`${testTemporaryRoot()}/r4-worker-v2-`);
@@ -646,7 +647,11 @@ it.each([
     | undefined;
   if (viaGateway) {
     const gatewayServer = createServer();
-    serveJobHostGateway(gatewayServer, { idleExitMs: 60000, onIdle: () => {}, controlRoot: root });
+    const controlRoot = rootMismatch
+      ? await mkdtemp(`${testTemporaryRoot()}/r4-worker-v2-other-`)
+      : root;
+    if (rootMismatch) cleanups.push(() => rm(controlRoot, { recursive: true, force: true }));
+    serveJobHostGateway(gatewayServer, { idleExitMs: 60000, onIdle: () => {}, controlRoot });
     const socketPath = `${root}/gateway.sock`;
     await new Promise<void>((resolve) => gatewayServer.listen(socketPath, resolve));
     cleanups.push(() => new Promise<void>((resolve) => gatewayServer.close(() => resolve())));
@@ -721,6 +726,16 @@ it.each([
     },
   };
   const outcome = await worker.execute(request);
+  if (rootMismatch) {
+    expect(outcome.outcome).not.toBe("succeeded");
+    expect(diagnostics).toMatchObject([
+      { stage: "prepare", reasonCode: "SANDBOX_PREPARATION_FAILED" },
+    ]);
+    expect(controlCalls).toEqual(["prepare"]);
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    await worker.shutdown();
+    return;
+  }
   if (transportFailure) {
     if (!proxy) throw new Error("Transport fault proxy missing");
     expect(outcome.outcome).toBe("result_unknown");

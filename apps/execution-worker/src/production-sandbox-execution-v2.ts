@@ -420,9 +420,10 @@ export class ProductionSandboxExecutionV2 {
       });
       const controlAccess =
         this.options.jobHostAccount?.control ?? localJobHostControlAccess(binding.privateRoot);
-      const preparedDirectory = await controlAccess.prepareDirectory(
-        `control-${createHash("sha256").update(JSON.stringify(plan.identity)).digest("hex").slice(0, 20)}`,
-      );
+      const controlName = `control-${createHash("sha256").update(JSON.stringify(plan.identity)).digest("hex").slice(0, 20)}`;
+      const preparedDirectory = await controlAccess.prepareDirectory(controlName);
+      if (preparedDirectory.directory !== path.join(binding.privateRoot, controlName))
+        throw new Error("SANDBOX_CONTROL_ROOT_MISMATCH");
       const controlDirectory = preparedDirectory.directory;
       const stored = await this.options.payloads.readInput(entry.invocation);
       if (stored.byteLength > 49152) throw new Error("SANDBOX_INPUT_TOO_LARGE");
