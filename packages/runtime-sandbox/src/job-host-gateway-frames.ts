@@ -28,6 +28,11 @@ export function readGatewayFrames(
     if (invalid) return;
     let start = 0;
     for (let index = chunk.indexOf(10); index !== -1; index = chunk.indexOf(10, start)) {
+      if (pendingBytes + index - start > JOB_HOST_GATEWAY_FRAME_MAX_BYTES) {
+        invalid = true;
+        onInvalid();
+        return;
+      }
       pending.push(chunk.subarray(start, index));
       const line = Buffer.concat(pending).toString("utf8");
       pending = [];

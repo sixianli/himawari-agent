@@ -2,7 +2,7 @@ import type { ChildProcess } from "node:child_process";
 import { connect } from "node:net";
 import { readGatewayFrames, writeGatewayFrame } from "./job-host-gateway-frames.ts";
 import { forkJobHost } from "./job-host-messages.ts";
-import type { JobHostRequest } from "./job-host-protocol.ts";
+import { JOB_HOST_STARTUP_WINDOW_MS, type JobHostRequest } from "./job-host-protocol.ts";
 
 export interface JobHostTransport {
   readonly pid: number | undefined;
@@ -60,7 +60,10 @@ export function localJobHostTransport(child: ChildProcess): JobHostTransport {
 export const forkLocalJobHost: JobHostLauncher = (request) =>
   localJobHostTransport(forkJobHost(request));
 
-export function gatewayJobHostLauncher(socketPath: string): JobHostLauncher {
+export function gatewayJobHostLauncher(
+  socketPath: string,
+  startupWindowMs = JOB_HOST_STARTUP_WINDOW_MS,
+): JobHostLauncher {
   return (request) => {
     const socket = connect(socketPath);
     const messageListeners: Array<(value: unknown) => void> = [];
@@ -91,6 +94,7 @@ export function gatewayJobHostLauncher(socketPath: string): JobHostLauncher {
     const close = (exitCode: number | null, signal: NodeJS.Signals | null) => {
       if (closed) return;
       closed = true;
+      clearTimeout(startTimer);
       open = false;
       resolveSpawned(pid);
       exit();
@@ -103,6 +107,7 @@ export function gatewayJobHostLauncher(socketPath: string): JobHostLauncher {
         if (closed) return;
         const type = frame["type"];
         if (type === "started") {
+          clearTimeout(startTimer);
           const value = frame["pid"];
           pid =
             Number.isSafeInteger(value) && (value as number) > 1 ? (value as number) : undefined;
@@ -138,6 +143,10 @@ export function gatewayJobHostLauncher(socketPath: string): JobHostLauncher {
       if (pid === undefined) fail();
     });
     socket.once("close", () => close(null, null));
+    const startTimer = setTimeout(() => {
+      fail();
+      close(null, null);
+    }, startupWindowMs);
     writeGatewayFrame(socket, { type: "launch", request });
     return Object.freeze({
       get pid() {

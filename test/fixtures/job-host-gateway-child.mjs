@@ -9,6 +9,7 @@ process.on("message", (message) => {
   }
 });
 process.on("disconnect", () => {
+  if (process.argv.includes("--ignore-disconnect")) return;
   clearInterval(keepAlive);
   process.exit(0);
 });

@@ -11,6 +11,7 @@ import {
   parseJobHostGatewayArgs,
   serveJobHostGateway,
 } from "../../packages/runtime-sandbox/src/job-host-gateway.ts";
+import { JOB_HOST_GATEWAY_FRAME_MAX_BYTES } from "../../packages/runtime-sandbox/src/job-host-gateway-frames.ts";
 import type { JobHostRequest } from "../../packages/runtime-sandbox/src/job-host-protocol.ts";
 import {
   gatewayJobHostLauncher,
@@ -53,15 +54,15 @@ async function directory() {
   return created;
 }
 
-function forkFixture() {
-  return fork(childFixture, [], {
+function forkFixture(args: readonly string[] = []) {
+  return fork(childFixture, [...args], {
     detached: true,
     execArgv: [],
     stdio: ["ignore", "ignore", "pipe", "ipc"],
   });
 }
 
-async function startGateway(idleExitMs = 60000) {
+async function startGateway(idleExitMs = 60000, childArgs: readonly string[] = []) {
   const socketPath = path.join(await directory(), "gateway.sock");
   const server = createServer();
   const onIdle = vi.fn(() => server.close());
@@ -70,7 +71,7 @@ async function startGateway(idleExitMs = 60000) {
     idleExitMs,
     onIdle,
     fork: () => {
-      const child = forkFixture();
+      const child = forkFixture(childArgs);
       forks.push(child);
       return child;
     },
@@ -159,7 +160,9 @@ describe("Job Host gateway", () => {
   it("disconnects the Job Host when the worker connection drops", async () => {
     const { socketPath, gateway, forks } = await startGateway();
     const socket = connect(socketPath);
-    socket.write(`${JSON.stringify({ type: "launch", request: request() })}\n`);
+    socket.write(
+      `${JSON.stringify({ type: "launch", request: { ...request(), cleanupTimeoutMs: 5000 } })}\n`,
+    );
     await until(() => gateway.liveJobHosts() === 1);
     const exited = new Promise<number | null>((resolve) =>
       forks[0]?.once("exit", (code) => resolve(code)),
@@ -211,6 +214,60 @@ describe("Job Host gateway", () => {
     expect(seen.errored()).toBe(true);
     expect(await transport.spawned).toBeUndefined();
     expect(transport.connected).toBe(false);
+  });
+
+  it("kills a Job Host that ignores the disconnect once its cleanup time has passed", async () => {
+    const { socketPath, gateway, forks } = await startGateway(60000, ["--ignore-disconnect"]);
+    const socket = connect(socketPath);
+    socket.write(`${JSON.stringify({ type: "launch", request: request() })}\n`);
+    await until(() => gateway.liveJobHosts() === 1);
+    const ended = new Promise<NodeJS.Signals | null>((resolve) =>
+      forks[0]?.once("exit", (_code, signal) => resolve(signal)),
+    );
+    socket.destroy();
+    expect(await ended).toBe("SIGKILL");
+    await liveJobHostsDrain(gateway);
+  });
+
+  it("drops the connection and kills the Job Host on a second launch", async () => {
+    const { socketPath, gateway, forks } = await startGateway();
+    const socket = connect(socketPath);
+    socket.on("error", () => {});
+    socket.resume();
+    const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
+    socket.write(`${JSON.stringify({ type: "launch", request: request() })}\n`);
+    await until(() => gateway.liveJobHosts() === 1);
+    const ended = new Promise<NodeJS.Signals | null>((resolve) =>
+      forks[0]?.once("exit", (_code, signal) => resolve(signal)),
+    );
+    socket.write(`${JSON.stringify({ type: "launch", request: request() })}\n`);
+    await closed;
+    expect(await ended).toBe("SIGKILL");
+    expect(forks).toHaveLength(1);
+  });
+
+  it("drops a frame longer than the frame limit without starting a Job Host", async () => {
+    const { socketPath, forks } = await startGateway();
+    const socket = connect(socketPath);
+    const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
+    socket.on("error", () => {});
+    socket.write(`${"x".repeat(JOB_HOST_GATEWAY_FRAME_MAX_BYTES + 1)}\n`);
+    await closed;
+    expect(forks).toHaveLength(0);
+  });
+
+  it("gives up when the gateway accepts but never reports a started Job Host", async () => {
+    const socketPath = path.join(await directory(), "silent.sock");
+    const silent = createServer(() => {});
+    await new Promise<void>((resolve) => silent.listen(socketPath, resolve));
+    cleanups.push(() => {
+      silent.close();
+    });
+    const transport = gatewayJobHostLauncher(socketPath, 100)(request());
+    const seen = observe(transport);
+    expect(await seen.closed).toEqual({ exitCode: null, signal: null });
+    expect(seen.errored()).toBe(true);
+    expect(await transport.spawned).toBeUndefined();
   });
 
   it("goes idle only after every Job Host has ended", async () => {

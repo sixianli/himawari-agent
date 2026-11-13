@@ -44,6 +44,7 @@ export function serveJobHostGateway(
     connections.add(socket);
     reconsider();
     let child: ChildProcess | undefined;
+    let cleanupTimeoutMs = 0;
     let launched = false;
     const reject = () => {
       if (child) killGroup(child);
@@ -59,6 +60,7 @@ export function serveJobHostGateway(
         socket.end();
         return;
       }
+      cleanupTimeoutMs = request.cleanupTimeoutMs;
       const started = fork(request);
       child = started;
       children.add(started);
@@ -125,7 +127,14 @@ export function serveJobHostGateway(
     socket.on("error", () => {});
     socket.once("close", () => {
       connections.delete(socket);
-      if (child?.connected) child.disconnect();
+      const current = child;
+      if (current?.connected) {
+        current.disconnect();
+        const grace = setTimeout(() => {
+          if (children.has(current)) killGroup(current);
+        }, cleanupTimeoutMs);
+        current.once("exit", () => clearTimeout(grace));
+      }
       reconsider();
     });
   };
