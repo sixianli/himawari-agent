@@ -32,6 +32,7 @@ const REQUIRED_NAMES = [
   "keeps every row of every rebuilt table",
   "changes nothing in the rebuilt tables except the source name constraints",
   "keeps the triggers that protect prereviews and signals",
+  "keeps every decision kind and outcome the ledger accepted before",
   "accepts another well-formed source name and still refuses a malformed one",
   "calibration reads the registered Gmail source name",
 ];

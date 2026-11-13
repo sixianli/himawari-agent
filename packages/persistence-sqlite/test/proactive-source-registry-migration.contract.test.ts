@@ -40,6 +40,95 @@ function rows(database: Database) {
   );
 }
 
+const REVIEW_OUTCOMES = {
+  rule_review: [
+    "needs_review",
+    "suspended",
+    "cleared",
+    "recheck_failed",
+    "owner_adopted",
+    "owner_confirmed",
+    "owner_restored",
+  ],
+  memory_review: ["flagged", "owner_edited", "owner_dismissed", "owner_reported_missed"],
+} as const;
+
+function withoutReviewOutcomes(sql: string | null): string | null {
+  const quoted = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");
+  return (
+    sql
+      ?.replace(", 'memory_review'", "")
+      .replace(
+        `(kind = 'rule_review' AND outcome IN ( ${quoted(REVIEW_OUTCOMES.rule_review)} ))`,
+        "(kind = 'rule_review' AND outcome = 'needs_review')",
+      )
+      .replace(
+        ` OR (kind = 'memory_review' AND outcome IN ( ${quoted(REVIEW_OUTCOMES.memory_review)} ))`,
+        "",
+      ) ?? null
+  );
+}
+
+const LEDGER_OUTCOMES: Readonly<Record<string, readonly string[]>> = {
+  ...REVIEW_OUTCOMES,
+  memory_candidate: [
+    "kept",
+    "discarded",
+    "pending_approval",
+    "capture_retrying",
+    "capture_queued",
+    "capture_gave_up",
+  ],
+  consolidation: ["merge", "supersede", "archive", "reflect", "hold"],
+  context_truncation: ["truncated"],
+  retrieval_degrade: ["degraded"],
+  external_read: ["read"],
+  limit_change: ["changed"],
+  delivery_timing: ["delivered", "deferred", "deadline_reached", "shown_in_app"],
+  proposal: [
+    "proposed",
+    "blocked",
+    "accepted",
+    "dismissed",
+    "expired",
+    "executed",
+    "failed",
+    "undone",
+    "not_proposed",
+    "superseded",
+    "told",
+  ],
+};
+
+function insertLedgerOutcome(
+  database: Database,
+  kind: string,
+  outcome: string,
+  prefix = "before",
+): string {
+  const id = `${prefix}-${kind}-${outcome}`;
+  database
+    .prepare(
+      `INSERT INTO decision_ledger (id, owner_id, agent_id, kind, checked_at, counts, outcome,
+        reason_code, inputs, cost_micros, duration_ms)
+       VALUES (?, ?, ?, ?, ?, '{}', ?, 'FIXTURE', '{"memoryIds":[],"ruleIds":[]}', 0, 0)`,
+    )
+    .run(id, OWNER, AGENT, kind, T1, outcome);
+  return id;
+}
+
+function insertEveryAcceptedOutcome(database: Database): readonly string[] {
+  const inserted: string[] = [];
+  for (const [kind, outcomes] of Object.entries(LEDGER_OUTCOMES))
+    for (const outcome of outcomes)
+      try {
+        inserted.push(insertLedgerOutcome(database, kind, outcome));
+      } catch (error) {
+        if (!String(error).includes("CHECK constraint")) throw error;
+      }
+  return inserted;
+}
+
 function schema(database: Database) {
   return database
     .prepare(
@@ -51,7 +140,7 @@ function schema(database: Database) {
     .all(...TABLES)
     .map((row) => {
       const entry = row as { name: string; sql: string | null };
-      return { ...entry, sql: entry.sql?.replace(/\s+/gu, " ") ?? null };
+      return { ...entry, sql: withoutReviewOutcomes(entry.sql?.replace(/\s+/gu, " ") ?? null) };
     });
 }
 
@@ -151,7 +240,7 @@ function seed(database: Database) {
     .run(OWNER, AGENT, digest, T1, OWNER, AGENT, digest, T1);
 }
 
-async function openMigrated() {
+async function openMigrated(extra: (database: Database) => void = () => undefined) {
   const directory = await mkdtemp(path.join(tmpdir(), "himawari-source-registry-"));
   directories.push(directory);
   const database = openQualifiedDatabase(path.join(directory, "product.sqlite"));
@@ -160,6 +249,7 @@ async function openMigrated() {
   expect(sequence).toBeGreaterThan(0);
   applyMigrations(database, migrations.slice(0, sequence));
   seed(database);
+  extra(database);
   const before = { rows: rows(database), schema: schema(database) };
   const snapshot = await createVerifiedMigrationSnapshot(
     database,
@@ -223,6 +313,32 @@ describe("[iOS-7] proactive source registry migration", () => {
       before.schema,
     );
     expect(after.some(({ sql }) => sql?.includes("'gmail'"))).toBe(false);
+    database.close();
+  });
+
+  it("[iOS-7] keeps every decision kind and outcome the ledger accepted before, rows and all", async () => {
+    let accepted: readonly string[] = [];
+    const { database } = await openMigrated((opened) => {
+      accepted = insertEveryAcceptedOutcome(opened);
+    });
+    expect(accepted.length).toBeGreaterThan(30);
+    const kept = database
+      .prepare("SELECT id FROM decision_ledger WHERE reason_code = 'FIXTURE' ORDER BY id")
+      .pluck()
+      .all();
+    expect(kept).toEqual([...accepted].sort());
+    for (const [kind, outcome] of [
+      ["memory_review", "flagged"],
+      ["rule_review", "cleared"],
+      ["rule_review", "owner_restored"],
+    ] as const)
+      expect(
+        () => insertLedgerOutcome(database, kind, outcome, "after"),
+        `${kind}/${outcome}`,
+      ).not.toThrow();
+    expect(() => insertLedgerOutcome(database, "memory_review", "owner_forgot", "after")).toThrow(
+      /CHECK constraint/u,
+    );
     database.close();
   });
 

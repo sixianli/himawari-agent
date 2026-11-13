@@ -85,6 +85,15 @@ function dump(database: Database) {
               "PRIMARY KEY (owner_id, agent_id, source, class_key)",
               "PRIMARY KEY (owner_id, agent_id, class_key)",
             )
+            .replace(", 'memory_review'", "")
+            .replace(
+              "(kind = 'rule_review' AND outcome IN ( 'needs_review', 'suspended', 'cleared', 'recheck_failed', 'owner_adopted', 'owner_confirmed', 'owner_restored' ))",
+              "(kind = 'rule_review' AND outcome = 'needs_review')",
+            )
+            .replace(
+              " OR (kind = 'memory_review' AND outcome IN ( 'flagged', 'owner_edited', 'owner_dismissed', 'owner_reported_missed' ))",
+              "",
+            )
             .replace(", 'limit_change', 'delivery_timing', 'proposal'", "")
             .replace(
               " OR (kind = 'limit_change' AND outcome = 'changed') OR (kind = 'delivery_timing' AND outcome IN ( 'delivered', 'deferred', 'deadline_reached', 'shown_in_app' )) OR (kind = 'proposal' AND outcome IN ( 'proposed', 'blocked', 'accepted', 'dismissed', 'expired', 'executed', 'failed', 'undone', 'not_proposed', 'superseded', 'told' ))",
