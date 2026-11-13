@@ -21,7 +21,7 @@ public enum RestoreDecision: Sendable, Equatable {
 public enum PairingAttempt {
     public static func mayHavePaired(_ error: Error) -> Bool {
         if error is PairingInvitation.ParseError || error is DeviceKeyError { return false }
-        if case let .server(status, _, _)? = error as? DeviceAPIError { return status >= 500 || status == 408 || status == 429 }
+        if case let .server(status, _, _, _)? = error as? DeviceAPIError { return status >= 500 || status == 408 || status == 429 }
         return true
     }
 }
