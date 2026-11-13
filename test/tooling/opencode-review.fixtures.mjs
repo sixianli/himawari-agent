@@ -193,7 +193,10 @@ export function firstChangedMessage(earlier, later) {
 
 export function expectAppendedTo(earlier, later) {
   expect(later.tools).toEqual(earlier.tools);
-  expect(firstChangedMessage(earlier, later)).toBe("");
+  expect(
+    later.messages.slice(0, earlier.messages.length),
+    firstChangedMessage(earlier, later),
+  ).toEqual(earlier.messages);
   expect(later.messages.length).toBeGreaterThan(earlier.messages.length);
 }
 

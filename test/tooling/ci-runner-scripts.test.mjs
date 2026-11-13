@@ -2947,11 +2947,14 @@ describe("runner machine preparation", () => {
     .devDependencies["@playwright/test"];
   const value = (text, name) => text.match(new RegExp(`^${name}=(\\S+)$`, "mu"))?.[1];
 
-  it.each(["prepare-vps.sh", "prepare-arm.sh"])(
-    "%s installs the Chromium system libraries for the pinned Playwright and Node",
-    (name) => {
+  it.each([
+    ["prepare-vps.sh", "linux-x64"],
+    ["prepare-arm.sh", "linux-arm64"],
+  ])(
+    "%s installs the Chromium system libraries for the pinned Playwright and Node of %s",
+    (name, platform) => {
       const text = readFileSync(path.join(scripts, name), "utf8");
-      const platform = text.match(/node-v\$NODE_VERSION-(linux-[a-z0-9]+)\.tar\.gz/u)?.[1];
+      expect(text).toContain(`node-v$NODE_VERSION-${platform}.tar.gz`);
       const node = lock.node.releases[value(text, "NODE_VERSION")]?.artifacts[platform];
       expect(value(text, "PLAYWRIGHT_VERSION")).toBe(playwright);
       expect(node.filename).toBe(`node-v${value(text, "NODE_VERSION")}-${platform}.tar.gz`);

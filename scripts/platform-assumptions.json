@@ -79,7 +79,7 @@
     "test/qualification/evidence/hermes-web-2026-09-11/installation.json": 1,
     "test/tooling/aggregate.test.mjs": 4,
     "test/tooling/check-gitleaks.test.mjs": 3,
-    "test/tooling/ci-runner-scripts.test.mjs": 1,
+    "test/tooling/ci-runner-scripts.test.mjs": 2,
     "test/tooling/ci-summary.test.mjs": 5,
     "test/tooling/evidence.test.mjs": 2,
     "test/tooling/fixtures/ci-policy/hosted-nine-jobs-5daedc92.json": 2,
