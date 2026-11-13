@@ -10,7 +10,6 @@ import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import Database from "better-sqlite3";
 import { afterEach, expect, it } from "vitest";
 import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
-import { createProductionCapabilityLifecycle } from "../../apps/agent-service/src/production-capability-lifecycle.ts";
 import {
   AGENT_ID,
   handle,
@@ -148,11 +147,6 @@ async function fixture() {
         };
       },
     },
-    capabilityLifecycle: createProductionCapabilityLifecycle({
-      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
-      repository,
-      clock,
-    }),
   });
   const authentication = {
     ownerId: OWNER_ID,

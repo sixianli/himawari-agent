@@ -5,7 +5,6 @@ import {
   ApplicationPortError,
   ApprovalService,
   type AuthorityFence,
-  type CapabilityLifecycleService,
   type ClockPort,
   type GatewayV2AccessPolicyPort,
   type GatewayV2ControlPlanePort,
@@ -66,6 +65,7 @@ import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
   type ProductionWebPushControl,
 } from "./production-web-push-control.js";
+import { createProductionCapabilityLifecycle } from "./production-capability-lifecycle.js";
 import { PRODUCTION_COPY_OPERATIONS } from "./production-workspace-copies.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
 
@@ -101,7 +101,6 @@ export function createProductionApprovalGateway(options: {
   readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
   readonly serverStatusControl?: ProductionServerStatusControl;
-  readonly capabilityLifecycle?: CapabilityLifecycleService;
   readonly homeControl?: Pick<ProductionHomeControl, "query">;
   readonly dataExportControl?: ProductionDataExportControl;
   readonly filesControl?: ProductionFilesControl;
@@ -292,7 +291,11 @@ export function createProductionApprovalGateway(options: {
     }),
     audit: repository.auditLedger(),
     recentAuthentication: options.recentAuthentication,
-    ...(options.capabilityLifecycle ? { capabilityLifecycle: options.capabilityLifecycle } : {}),
+    capabilityLifecycle: createProductionCapabilityLifecycle({
+      configuration: options.configuration,
+      repository,
+      clock,
+    }),
   });
   return new AgentGatewayV2Service({
     installedOperations: [
@@ -308,7 +311,7 @@ export function createProductionApprovalGateway(options: {
         ? PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS
         : []),
       ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
-      ...(options.capabilityLifecycle ? PRODUCTION_CAPABILITY_OPERATIONS : []),
+      ...PRODUCTION_CAPABILITY_OPERATIONS,
       ...(options.homeControl ? PRODUCTION_HOME_OPERATIONS : []),
       ...(options.dataExportControl ? PRODUCTION_DATA_EXPORT_OPERATIONS : []),
       ...(options.filesControl ? PRODUCTION_FILES_OPERATIONS : []),

@@ -85,7 +85,6 @@ import {
   PRODUCTION_APPROVAL_OPERATIONS,
   PRODUCTION_CAPABILITY_OPERATIONS,
 } from "./production-approval-gateway.js";
-import { createProductionCapabilityLifecycle } from "./production-capability-lifecycle.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
 import {
@@ -1207,11 +1206,6 @@ export async function createProductionHttpComposition(
   });
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
-    capabilityLifecycle: createProductionCapabilityLifecycle({
-      configuration,
-      repository,
-      clock: { now: clock },
-    }),
     repository,
     access: threadAccess,
     homeControl: home,
