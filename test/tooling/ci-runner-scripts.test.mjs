@@ -2764,7 +2764,7 @@ describe("[ADR-0260] install-arm-runners.sh drives both machines from the Mac", 
     const box = orchestra();
     const result = box.go();
     expect(result.stdout).toContain(
-      "ARM_INSTALL_OK runners=ci-arm-1 ci-arm-2 label=ci-arm report_account=gh-ci-send@192.0.2.20",
+      "ARM_INSTALL_OK runners=ci-arm-1 ci-arm-2 label=ci-arm report_account=gh-ci-send@192.0.2.20; only .github/workflows/ci-arm-trial.yml uses ci-arm until the switch to ARM is merged\n",
     );
     expect(result.status).toBe(0);
     const lines = box.lines();

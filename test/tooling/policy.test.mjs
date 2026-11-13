@@ -1287,6 +1287,14 @@ describe("CI policy contract", () => {
       const command = (value) => value.steps.find((step) => step.name === "执行共享检查").run;
       expect(command(job)).toBe(command(ci.jobs[id]));
       expect(job.steps.some((step) => step.run?.includes("run-share.mjs"))).toBe(false);
+      expect(job.if).toBe(githubExpression("github.event.pull_request.draft != true"));
+      expect(job.permissions).toBeUndefined();
+      for (const step of job.steps.filter((entry) => entry.uses))
+        expect(step.uses).toMatch(/@[0-9a-f]{40}$/u);
+      expect(job.steps.find((step) => step.uses?.startsWith("actions/checkout@")).with).toEqual({
+        "fetch-depth": 0,
+        "persist-credentials": false,
+      });
     }
     expect(read("ci.yml")).not.toContain("ci-arm-trial");
     expect(read("main.yml")).not.toContain("ci-arm-trial");
