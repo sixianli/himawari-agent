@@ -167,6 +167,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
     const ownerRules = new ProductionOwnerRuleWriter({
       configuration: scope,
       rules: repository.ownerRules(),
+      reviews: repository.ruleReviews(),
       memory,
       memories: repository.productMemoryState(),
       book: repository.memoryBook(),

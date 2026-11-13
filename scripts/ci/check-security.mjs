@@ -38,6 +38,7 @@ export {
   validateSecurityExceptions,
 } from "./security-exceptions.mjs";
 
+import { runnerTracking } from "./runner-tracking.mjs";
 import { assertPublicArtifacts, redactText } from "./security-redaction.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -76,6 +77,7 @@ function git(root, args) {
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_CONFIG_GLOBAL: "/dev/null",
       GIT_PAGER: "cat",
+      ...runnerTracking(),
     },
   });
   assert(result.exitCode === 0, "SECURITY_GIT_COMMAND_FAILED");
