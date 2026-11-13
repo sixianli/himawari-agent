@@ -25,7 +25,7 @@ date: "2026-11-13"
 
 ## 背景
 
-iPhone 设置页有一行“导出全部数据”，经网关 v2 的 `data.export.start` 开始生成（[ADR 0200](0200-portable-export-of-memories-and-decisions.md) 的记忆导出）。对话导出是 [ADR 0235](0235-chat-history-export.md) 定的另一个包，只有网页的 `GET /api/data-export/v1/chats` 一个入口。iOS 设计线程要求手机上这一行导出的就是全部数据，并且要有真实计数的进度和取消。网关（gateway，手机和网页调服务器的统一接口）这一侧怎么做由本线程定。
+iOS 第 11 批正在做的 iPhone 设置页（还没合并）有一行“导出全部数据”，它要经网关 v2 的 `data.export.start` 开始生成（[ADR 0200](0200-portable-export-of-memories-and-decisions.md) 的记忆导出）。对话导出是 [ADR 0235](0235-chat-history-export.md) 定的另一个包，网页上只有 `GET /api/data-export/v1/chats` 一个入口，另有命令行 `himawari-admin data export-chats`，网关上没有。iOS 设计线程要求手机上这一行导出的就是全部数据，并且要有真实计数的进度和取消。网关（gateway，手机和网页调服务器的统一接口）这一侧怎么做由本线程定。
 
 <a id="premises"></a>
 
@@ -33,9 +33,9 @@ iPhone 设置页有一行“导出全部数据”，经网关 v2 的 `data.expor
 
 1. 记忆导出不含对话。来源：ADR 0200 第 53 行：“不导出：……对话、事件段、检索索引。”
 2. ADR 0235 当时放弃了“并进同一个包”，理由三条。来源：ADR 0235 第 77 行：“**并进记忆导出的同一个包。**会和正在改同一批文件的 PR 393 冲突，记忆包会变大，512 MB 的上限也会被聊天挤占。”
-3. 对话导出在网页上限 128 MiB 荷载，是按内存实测定的。来源：ADR 0235 第 87 行：“据此网页上限定为 128 MiB 荷载（峰值内存约 0.8 GB），超过返回 413 而不是冒着把服务撑爆的风险生成”；代码 `apps/agent-service/src/production-chat-export.ts` 第 18 行 `CHAT_EXPORT_WEB_MAXIMUM_BYTES = 128 * 1024 * 1024`。
+3. 对话导出在网页上限 128 MiB 荷载，是按内存实测定的。来源：ADR 0235 第 88 行：“据此网页上限定为 128 MiB 荷载（峰值内存约 0.8 GB），超过返回 413 而不是冒着把服务撑爆的风险生成”；代码 `apps/agent-service/src/production-chat-export.ts` 第 18 行 `CHAT_EXPORT_WEB_MAXIMUM_BYTES = 128 * 1024 * 1024`。
 4. 打包后的压缩包上限 512 MiB。来源：`apps/agent-service/src/production-data-export.ts` 第 43 行 `MAXIMUM_ARCHIVE_BYTES = 512 * 1024 * 1024`。
-5. 两种导出本来就可以同时跑、内存叠加。来源：ADR 0235 第 89 行：“网页聊天导出和记忆导出各有一个‘同时只一份’的标志，两者可以同时跑，内存会叠加”。
+5. 两种导出本来就可以同时跑、内存叠加。来源：ADR 0235 第 90 行：“网页聊天导出和记忆导出各有一个‘同时只一份’的标志，两者可以同时跑，内存会叠加”。
 6. 愿景要求数据可以完整带走。来源：`docs/product-vision.md` 第 39 行：“数据不落在任何第三方平台的 SaaS 里，且我可完整迁移、备份与删除。”
 7. 设计线程的选择（2026-11-13，iOS 设计线程回复本线程的原话）：“选 A。手机上那一行叫‘导出全部数据’，包里就应该是全部，对话不能另走一个口……结果给出对话个数和消息条数，进度里加一段‘对话’。包变大、耗时变长没关系，有进度和取消就行。”
 
@@ -54,7 +54,7 @@ iPhone 设置页有一行“导出全部数据”，经网关 v2 的 `data.expor
 ## 业界怎么做
 
 - Google Takeout（谷歌的“下载你的数据”）是异步生成：页面原话“this process could take from a few minutes to a few days”，生成好后“we'll email you a link to its location”（[Google Account Help: Download your Google data](https://support.google.com/accounts/answer/3024190)，2026-11-13 读取）。本决定同样是后台任务加下载链接；那一页没有写能不能取消，所以取消这一条不引用它。
-- 进度用真实计数而不是估算百分比，是本项目的长期规则：界面上的数字要有可验证的定义（`.claude/rules/owner-standing-rules.md` 的“界面上的数字和验收”）。
+- 进度用真实计数而不是估算百分比。依据是本项目的长期规则“界面上给 Andy 看的每个数字……都要有可以验证的定义和门槛，没有就不显示”（`.claude/rules/owner-standing-rules.md` 的“界面上的数字和验收”）；估算的百分比没有可以验证的定义。
 
 <a id="options"></a>
 
