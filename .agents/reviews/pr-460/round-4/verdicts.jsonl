@@ -1,0 +1,2 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "手写 install 少了 `binarySha256`，当前路径不用，但形状已与 `installGateway` 不完全一致", "valid": true, "class": "better", "modelSeverity": "低", "reason": "不改，列给 Andy：当前失败路径用不到 binarySha256"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "测试库用 MEMORY 日志，与生产 WAL 不同，但当前只读查询不受影响", "valid": true, "class": "better", "modelSeverity": "低", "reason": "不改，列给 Andy：改动前也没覆盖 WAL，不是本提交引入"}
