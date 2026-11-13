@@ -30,7 +30,6 @@ public struct MessageAttachment: Codable, Sendable, Equatable {
 }
 
 public enum MessageAttachments {
-    public static let messageCharacters = 64 * 1024
     public static let fallbackName = "file"
 
     public static func cleanName(_ name: String) -> String {
@@ -45,7 +44,7 @@ public enum MessageAttachments {
     }
 
     public static func fits(text: String, attachments: [MessageAttachment], limits: AttachmentLimits) -> Bool {
-        attachments.count <= limits.perMessage && compose(text: text, attachments: attachments).utf16.count <= messageCharacters
+        attachments.count <= limits.perMessage && compose(text: text, attachments: attachments).utf16.count <= limits.messageCharacters
     }
 
     public static func clip(_ content: String, characters limit: Int) -> (text: String, truncated: Bool) {

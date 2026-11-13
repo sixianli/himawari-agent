@@ -42,11 +42,13 @@ public struct AttachmentLimits: Codable, Sendable, Equatable {
     public let textCharacters: Int
     public let imageCharacters: Int
     public let perMessage: Int
+    public let messageCharacters: Int
 
-    public init(textCharacters: Int, imageCharacters: Int, perMessage: Int) {
+    public init(textCharacters: Int, imageCharacters: Int, perMessage: Int, messageCharacters: Int) {
         self.textCharacters = textCharacters
         self.imageCharacters = imageCharacters
         self.perMessage = perMessage
+        self.messageCharacters = messageCharacters
     }
 }
 
