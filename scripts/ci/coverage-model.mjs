@@ -239,10 +239,14 @@ export function analyzeCoverage({ coverage, sources, policy, root }) {
           continue;
         location(loc, lines, filename);
       }
-      assert(
-        record.b[id].every(integer),
-        `invalid branch hit count: ${filename} line ${branch.loc?.start?.line} ${branch.type} counts ${JSON.stringify(record.b[id])}`,
-      );
+      if (!record.b[id].every(integer)) {
+        const type = JSON.stringify(branch.type)?.slice(0, 40);
+        const counts = JSON.stringify(record.b[id]).slice(0, 200);
+        assert(
+          false,
+          `invalid branch hit count: ${filename} branch ${id} line ${branch.loc.start.line} type ${type} counts ${counts}`,
+        );
+      }
     }
     assert(
       Object.keys(record.statementMap).length + Object.keys(record.fnMap).length > 0 ||
