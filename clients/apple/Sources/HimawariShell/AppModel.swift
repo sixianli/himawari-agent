@@ -73,7 +73,7 @@ public final class AppModel {
         guard let record else { return }
         use(record)
         switch record.status {
-        case .pending:
+        case .pending, .unrecognized:
             phase = .waitingForConfirmation(number: record.pairingNumber)
             waitForConfirmation()
         case .active:

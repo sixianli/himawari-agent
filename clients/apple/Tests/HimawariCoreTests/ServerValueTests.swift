@@ -11,15 +11,17 @@ import Testing
         #expect(try decode([ExecutionRecordKind].self, #"["tool","handoff"]"#) == [.tool, .unrecognized])
         #expect(try decode([ExecutionPhase].self, #"["waiting","paused"]"#) == [.waiting, .unrecognized])
         #expect(try decode([ThreadStatus].self, #"["archived","snoozed"]"#) == [.archived, .active])
-        #expect(try decode([MessageRole].self, #"["agent","helper"]"#) == [.agent, .system])
+        #expect(try decode([MessageRole].self, #"["owner","helper"]"#) == [.owner, .agent])
         #expect(try decode([MessageStatus].self, #"["partial","redacted"]"#) == [.partial, .committed])
-        #expect(try decode([PairedDeviceStatus].self, #"["revoked","suspended"]"#) == [.revoked, .pending])
+        #expect(try decode([PairedDeviceStatus].self, #"["revoked","suspended"]"#) == [.revoked, .unrecognized])
+        #expect(try decode([DeviceKind].self, #"["iphone","ipad"]"#) == [.iphone, .unrecognized])
+        #expect(try decode([ReleaseChannel].self, #"["testflight","enterprise"]"#) == [.testflight, .unrecognized])
     }
 
     @Test func aMessageWithANewRoleStillDecodes() throws {
         let json = #"{"messageId":"m1","sequence":1,"role":"helper","contentRef":"c1","status":"redacted","turnId":null,"runId":null,"committedAt":"2026-11-13T00:00:00Z"}"#
         let message = try decode(ThreadMessage.self, json)
-        #expect(message.role == .system)
+        #expect(message.role == .agent)
         #expect(message.status == .committed)
     }
 
@@ -56,7 +58,41 @@ import Testing
         #expect(finished.count == 1)
     }
 
-    @Test func aPairingWithANewDeviceStatusIsNotTakenAsConnected() throws {
-        #expect(try decode(PairedDeviceStatus.self, #""suspended""#) != .active)
+    @Test func aPairingWithANewDeviceStatusIsNeitherConnectedNorRemovedAndSurvivesStorage() throws {
+        let json = #"{"id":"dev_1","revision":1,"kind":"ipad","name":"x","releaseChannel":"enterprise","status":"suspended","pairingNumber":"123456"}"#
+        let device = try decode(PairedDeviceInfo.self, json)
+        #expect(device.status == .unrecognized)
+        let record = PairingRecord(origin: URL(string: "https://example.test")!, deviceId: device.id, access: nil, status: device.status, pairingNumber: "123456")
+        let stored = try JSONDecoder().decode(PairingRecord.self, from: JSONEncoder().encode(record))
+        #expect(stored.status == .unrecognized)
+    }
+
+    private func records(_ json: String) throws -> [ExecutionRecord] {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode([ExecutionRecord].self, from: Data(json.utf8))
+    }
+
+    @Test func aNewKindOfStepNeverSpinsOrAsksForApprovalWhateverItsPhase() throws {
+        for phase in ["started", "completed", "waiting", "failed"] {
+            let list = try records(#"[{"id":"r1","sequence":1,"itemId":"a","kind":"handoff","phase":"\#(phase)","name":"交给 Mac","text":"","occurredAt":"2026-11-13T00:00:00Z"}]"#)
+            let line = ProcessLine.make(records: list, runStatus: "running")
+            guard case let .working(current, _) = line else {
+                Issue.record("phase \(phase) gave \(line)")
+                continue
+            }
+            #expect(current.phase == .unrecognized)
+            #expect(current.icon == .puzzle)
+        }
+    }
+
+    @Test func aKnownStepWithANewPhaseStopsSpinningWhileTheRunGoesOn() throws {
+        let list = try records(#"[{"id":"r1","sequence":1,"itemId":"a","kind":"tool","phase":"paused","name":"search","text":"","activity":"在查","activityIcon":"search","occurredAt":"2026-11-13T00:00:00Z"}]"#)
+        guard case let .working(current, _) = ProcessLine.make(records: list, runStatus: "running") else {
+            Issue.record("expected a working line")
+            return
+        }
+        #expect(current.phase == .unrecognized)
+        #expect(current.title == "在查")
     }
 }

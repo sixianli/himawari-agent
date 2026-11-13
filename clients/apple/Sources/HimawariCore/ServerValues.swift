@@ -24,7 +24,7 @@ extension ThreadStatus: LenientServerValue {
 }
 
 extension MessageRole: LenientServerValue {
-    public static var fallback: MessageRole { .system }
+    public static var fallback: MessageRole { .agent }
 }
 
 extension MessageStatus: LenientServerValue {
@@ -32,5 +32,13 @@ extension MessageStatus: LenientServerValue {
 }
 
 extension PairedDeviceStatus: LenientServerValue {
-    public static var fallback: PairedDeviceStatus { .pending }
+    public static var fallback: PairedDeviceStatus { .unrecognized }
+}
+
+extension DeviceKind: LenientServerValue {
+    public static var fallback: DeviceKind { .unrecognized }
+}
+
+extension ReleaseChannel: LenientServerValue {
+    public static var fallback: ReleaseChannel { .unrecognized }
 }

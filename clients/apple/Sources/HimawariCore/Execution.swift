@@ -125,7 +125,7 @@ public enum ProcessLine: Sendable, Equatable {
                 id: itemId,
                 title: last.activity ?? last.name,
                 icon: last.kind == .unrecognized ? .puzzle : ProcessIcon.chosen(last.activityIcon),
-                phase: last.phase,
+                phase: last.kind == .unrecognized ? .unrecognized : last.phase,
                 startedAt: start.occurredAt,
                 endedAt: last.occurredAt
             )
@@ -151,8 +151,8 @@ public enum ProcessLine: Sendable, Equatable {
             default: return .finished(steps: steps, seconds: seconds)
             }
         }
-        if let latest = sorted.last, latest.phase == .waiting, latest.kind != .message {
-            let step = (latest.kind == .tool || latest.kind == .unrecognized ? steps.first(where: { $0.id == latest.itemId }) : steps.last)
+        if let latest = sorted.last, latest.phase == .waiting, latest.kind == .tool || latest.kind == .status {
+            let step = (latest.kind == .tool ? steps.first(where: { $0.id == latest.itemId }) : steps.last)
                 ?? ProcessStep(id: latest.itemId, title: Self.present(latest.activity) ?? "", icon: ProcessIcon.chosen(latest.activityIcon), phase: .waiting, startedAt: latest.occurredAt, endedAt: latest.occurredAt)
             return .waiting(ProcessStep(id: step.id, title: step.title, icon: step.icon, phase: .waiting, startedAt: step.startedAt, endedAt: latest.occurredAt))
         }
