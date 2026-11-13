@@ -8,9 +8,10 @@ import { fileURLToPath } from "node:url";
 const TAG = "[P3-5]";
 const FILES = [
   "test/integration/production-memory-capture.test.ts",
+  "test/integration/sqlite-transaction-scope.test.ts",
   "packages/persistence-sqlite/test/memory-capture-backlog-migration.contract.test.ts",
 ];
-const REQUIRED = 19;
+const REQUIRED = 42;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(path.join(tmpdir(), "himawari-memory-capture-retry-"));

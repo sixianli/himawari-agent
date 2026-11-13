@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { SandboxExecutionAdmissionRecord } from "@himawari-agent/application";
@@ -73,6 +74,8 @@ function workspaceLifecycleAuditMain(
   return result.status;
 }
 
+const bytesDigest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+
 const close: (() => Promise<void>)[] = [];
 async function fixture() {
   const f = await openSandboxJournal();
@@ -107,7 +110,7 @@ it("reports queued action and next attempt without changing the database", async
       expectedRecoveryRevision: 0,
     },
   });
-  const before = f.database.serialize();
+  const before = bytesDigest(f.database.serialize());
   expect(auditWorkspaceLifecycle(f.input).rows[0]).toMatchObject({
     recoveryStatus: "scheduled",
     recoveryAction: "stop",
@@ -116,7 +119,7 @@ it("reports queued action and next attempt without changing the database", async
     activeClaims: 1,
     releaseReceiptPresent: false,
   });
-  expect(f.database.serialize()).toEqual(before);
+  expect(bytesDigest(f.database.serialize())).toBe(before);
 });
 
 describe("workspace lifecycle read-only audit", () => {
@@ -173,7 +176,7 @@ describe("workspace lifecycle read-only audit", () => {
             evidence: { ref: "protected-release-proof", digest: "a".repeat(64) },
           },
         });
-      const before = f.database.serialize();
+      const before = bytesDigest(f.database.serialize());
       const result = auditWorkspaceLifecycle({
         databasePath: path.join(f.resource.stateRoot, "product.sqlite"),
         ownerId: OWNER_ID,
@@ -192,15 +195,15 @@ describe("workspace lifecycle read-only audit", () => {
       expect(result.rows[0]?.reasons.includes("RESOURCE_RELEASE_UNCONFIRMED")).toBe(!released);
       expect(result.rows[0]?.requiredEvidence.includes("FRESH_HOST_RELEASE_PROOF")).toBe(!released);
       if (released) expect(result.rows[0]?.requiredEvidence).toEqual([]);
-      expect(f.database.serialize()).toEqual(before);
+      expect(bytesDigest(f.database.serialize())).toBe(before);
     },
   );
 
   it("reports held resources without creating release proof or changing database bytes", async () => {
     const f = await fixture();
     f.database.pragma("wal_checkpoint(TRUNCATE)");
-    const before = await readFile(f.databasePath);
-    const logicalBefore = f.database.serialize();
+    const before = bytesDigest(await readFile(f.databasePath));
+    const logicalBefore = bytesDigest(f.database.serialize());
     const result = auditWorkspaceLifecycle(f.input);
     expect(result).toMatchObject({
       mode: "read_only",
@@ -215,8 +218,8 @@ describe("workspace lifecycle read-only audit", () => {
       releaseReceiptPresent: false,
     });
     expect(result.rows[0]?.reasons).toContain("RESOURCE_RELEASE_UNCONFIRMED");
-    expect(await readFile(f.databasePath)).toEqual(before);
-    expect(f.database.serialize()).toEqual(logicalBefore);
+    expect(bytesDigest(await readFile(f.databasePath))).toBe(before);
+    expect(bytesDigest(f.database.serialize())).toBe(logicalBefore);
     expect(f.database.prepare("SELECT count(*) AS n FROM sandbox_release_receipts").get()).toEqual({
       n: 0,
     });
@@ -290,7 +293,7 @@ describe("workspace lifecycle read-only audit", () => {
       reason: "run_cancelled",
       stoppedResourceRefs: [],
     });
-    const before = f.database.serialize();
+    const before = bytesDigest(f.database.serialize());
     const input = { ...f.input, section: "environments" };
     expect(auditWorkspaceLifecycle(input).rows).toEqual([
       expect.objectContaining({
@@ -311,7 +314,7 @@ describe("workspace lifecycle read-only audit", () => {
         ],
       }),
     ]);
-    expect(f.database.serialize()).toEqual(before);
+    expect(bytesDigest(f.database.serialize())).toBe(before);
     environment("acceptRelease", {
       environmentId: "environment-audit",
       proof: { basis: "create_not_dispatched" },
@@ -343,12 +346,12 @@ describe("workspace lifecycle read-only audit", () => {
         JSON.stringify({ privateDiagnostic: "must-not-leak" }),
         JSON.stringify(SERVICE_AUTHORITY),
       );
-    const before = f.database.serialize();
+    const before = bytesDigest(f.database.serialize());
     const result = auditWorkspaceLifecycle(f.input);
     expect(result.rows[0]).toMatchObject({ resourceIncidents: 1 });
     expect(result.rows[0]?.reasons).toContain("SANDBOX_RELEASE_CONTRADICTED");
     expect(JSON.stringify(result)).not.toContain("must-not-leak");
-    expect(f.database.serialize()).toEqual(before);
+    expect(bytesDigest(f.database.serialize())).toBe(before);
   });
 
   it("finds historical released claims without treating a state label as release authority", async () => {
@@ -456,13 +459,13 @@ describe("workspace lifecycle read-only audit", () => {
       } finally {
         historical.close();
       }
-      const before = await readFile(databasePath);
+      const before = bytesDigest(await readFile(databasePath));
       for (const section of ["executions", "legacy", "queue"])
         expect(auditWorkspaceLifecycle({ ...f.input, databasePath, section })).toMatchObject({
           schemaSequence,
           rows: [],
         });
-      expect(await readFile(databasePath)).toEqual(before);
+      expect(bytesDigest(await readFile(databasePath))).toBe(before);
     },
   );
 
