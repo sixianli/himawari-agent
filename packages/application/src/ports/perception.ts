@@ -602,7 +602,12 @@ export interface PerceptionStorePort {
       readonly now: string;
       readonly items: readonly DeviceMirrorItemInput[];
     },
-  ): Promise<{ readonly applied: number; readonly stale: number; readonly removed: number }>;
+  ): Promise<{
+    readonly applied: number;
+    readonly stale: number;
+    readonly removed: number;
+    readonly active: number;
+  }>;
   listMirror(
     input: PerceptionScope & { readonly kind: DeviceMirrorKind; readonly includeDeleted: boolean },
   ): Promise<readonly DeviceMirrorItem[]>;

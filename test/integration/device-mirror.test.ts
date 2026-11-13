@@ -37,14 +37,14 @@ describe("device mirror and track", () => {
       final: true,
       items: [reminder("a", 1, "买牛奶"), reminder("b", 1, "交房租"), reminder("c", 1, "取快递")],
     });
-    expect(first.body).toEqual({ applied: 3, stale: 0, removed: 0 });
+    expect(first.body).toEqual({ applied: 3, stale: 0, removed: 0, active: 3 });
     const partial = await sync(h, client, {
       mode: "full",
       syncId: "sync-0000000000000002",
       final: false,
       items: [reminder("a", 1, "买牛奶")],
     });
-    expect(partial.body).toEqual({ applied: 0, stale: 1, removed: 0 });
+    expect(partial.body).toEqual({ applied: 0, stale: 1, removed: 0, active: 3 });
     expect(await titles(h)).toHaveLength(3);
     const last = await sync(h, client, {
       mode: "full",
@@ -52,7 +52,7 @@ describe("device mirror and track", () => {
       final: true,
       items: [reminder("b", 2, "交房租和水费")],
     });
-    expect(last.body).toEqual({ applied: 1, stale: 0, removed: 1 });
+    expect(last.body).toEqual({ applied: 1, stale: 0, removed: 1, active: 2 });
     expect(await titles(h)).toEqual([
       ["a", "买牛奶"],
       ["b", "交房租和水费"],
@@ -74,7 +74,7 @@ describe("device mirror and track", () => {
       final: true,
       items: [reminder("a", 4, "旧标题"), { externalId: "b", version: 2, deleted: true }],
     });
-    expect(stale.body).toEqual({ applied: 1, stale: 1, removed: 0 });
+    expect(stale.body).toEqual({ applied: 1, stale: 1, removed: 0, active: 1 });
     expect(await titles(h)).toEqual([["a", "新标题"]]);
   });
 
