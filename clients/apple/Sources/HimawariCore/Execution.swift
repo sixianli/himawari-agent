@@ -156,8 +156,9 @@ public enum ProcessLine: Sendable, Equatable {
                 ?? ProcessStep(id: latest.itemId, title: Self.present(latest.activity) ?? "", icon: ProcessIcon.chosen(latest.activityIcon), phase: .waiting, startedAt: latest.occurredAt, endedAt: latest.occurredAt)
             return .waiting(ProcessStep(id: step.id, title: step.title, icon: step.icon, phase: .waiting, startedAt: step.startedAt, endedAt: latest.occurredAt))
         }
-        if let latest = sorted.last, latest.phase == .unrecognized, latest.kind == .status {
-            return .working(current: ProcessStep(id: latest.itemId, title: Self.present(latest.activity) ?? latest.name, icon: .puzzle, phase: .unrecognized, startedAt: latest.occurredAt, endedAt: latest.occurredAt), setback: nil)
+        let latestUnknownStatus = sorted.last(where: { $0.kind == .status && $0.phase == .unrecognized })
+        if let unknown = latestUnknownStatus, unknown == sorted.last || steps.isEmpty {
+            return .working(current: ProcessStep(id: unknown.itemId, title: Self.present(unknown.activity) ?? unknown.name, icon: .puzzle, phase: .unrecognized, startedAt: unknown.occurredAt, endedAt: unknown.occurredAt), setback: nil)
         }
         guard let current = steps.last else { return .thinking }
         let setback = steps.dropLast().last.flatMap { $0.phase == .failed || $0.phase == .unavailable ? $0 : nil }

@@ -104,6 +104,13 @@ import Testing
         }
         #expect(current.phase == .unrecognized)
         #expect(current.title == "等你补充")
+        #expect(current.icon == .puzzle)
+        let followed = try records(#"[{"id":"r1","sequence":1,"itemId":"s","kind":"status","phase":"waiting_for_input","name":"等你补充","text":"","occurredAt":"2026-11-13T00:00:00Z"},{"id":"r2","sequence":2,"itemId":"m","kind":"message","phase":"updated","name":"answer","text":"","occurredAt":"2026-11-13T00:00:01Z"}]"#)
+        guard case let .working(later, _) = ProcessLine.make(records: followed, runStatus: "running") else {
+            Issue.record("a later message must not bring the thinking spinner back")
+            return
+        }
+        #expect(later.phase == .unrecognized)
     }
 
     @Test func waitingForAnUnknownDeviceStatusStopsOnlyWhenTheServerClearlyRefuses() {
@@ -114,5 +121,17 @@ import Testing
         #expect(!ConfirmationWait.givesUp(waitingAs: .unrecognized, after: DeviceAPIError.server(status: 429, code: nil)))
         #expect(!ConfirmationWait.givesUp(waitingAs: .unrecognized, after: URLError(.timedOut)))
         #expect(!ConfirmationWait.givesUp(waitingAs: .pending, after: refused))
+        #expect(!ConfirmationWait.givesUp(waitingAs: .unrecognized, after: DeviceAPIError.server(status: 408, code: nil)))
+        #expect(!ConfirmationWait.givesUp(waitingAs: .unrecognized, after: DeviceAPIError.server(status: 401, code: "DEVICE_SIGNATURE_INVALID")))
+        #expect(!ConfirmationWait.givesUp(waitingAs: .unrecognized, after: DeviceAPIError.server(status: 404, code: "NOT_FOUND")))
+        #expect(!ConfirmationWait.givesUp(waitingAs: .unrecognized, after: DeviceAPIError.server(status: 403, code: nil)))
+    }
+
+    @Test func recheckingAnUnknownStateOnlyLeavesThePageOnAClearAnswer() {
+        #expect(UnknownStateRecheck.outcome(of: nil) == .connected)
+        #expect(UnknownStateRecheck.outcome(of: DeviceAPIError.server(status: 403, code: "DEVICE_REVOKED")) == .removed)
+        #expect(UnknownStateRecheck.outcome(of: DeviceAPIError.server(status: 403, code: "DEVICE_PENDING")) == .waiting)
+        #expect(UnknownStateRecheck.outcome(of: DeviceAPIError.server(status: 403, code: "DEVICE_SUSPENDED")) == .stillUnknown)
+        #expect(UnknownStateRecheck.outcome(of: URLError(.timedOut)) == .stillUnknown)
     }
 }

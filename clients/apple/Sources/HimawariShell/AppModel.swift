@@ -213,7 +213,40 @@ public final class AppModel {
     }
 
     public func retryReadingKeys() {
-        restore()
+        if phase == .unpaired(.stateUnknown) {
+            recheckUnknownState()
+        } else {
+            restore()
+        }
+    }
+
+    private func recheckUnknownState() {
+        waiting?.cancel()
+        waiting = Task { [weak self] in
+            guard let self else { return }
+            var failure: Error?
+            do {
+                configuration = try await api.configuration()
+            } catch {
+                failure = error
+            }
+            guard !Task.isCancelled, phase == .unpaired(.stateUnknown) else { return }
+            switch UnknownStateRecheck.outcome(of: failure) {
+            case .connected:
+                try? save(record.map { var updated = $0; updated.status = .active; return updated })
+                Haptics.shared.report(.pairingSucceeded)
+                activate()
+            case .removed:
+                forget(problem: .removed)
+            case .waiting:
+                if let record {
+                    phase = .waitingForConfirmation(number: record.pairingNumber)
+                    waitForConfirmation()
+                }
+            case .stillUnknown:
+                break
+            }
+        }
     }
 
     public func retryPairing() {
@@ -321,7 +354,11 @@ public final class AppModel {
     }
 
     public func becameActive() {
-        if phase == .unpaired(.keysUnreadable) || phase == .unpaired(.storageUnavailable) || phase == .unpaired(.stateUnknown) {
+        if phase == .unpaired(.stateUnknown) {
+            recheckUnknownState()
+            return
+        }
+        if phase == .unpaired(.keysUnreadable) || phase == .unpaired(.storageUnavailable) {
             restore()
             return
         }
