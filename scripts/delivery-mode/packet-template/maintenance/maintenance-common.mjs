@@ -928,7 +928,15 @@ export async function readMaintenanceState(binding, prefix = newPrefix, allowSta
     const { loadBundledMigrations } = await persistence(prefix);
     const migrations = await loadBundledMigrations();
     assert(migrations.length >= ledger.length, "__PKT_LABEL_UPPER___MAINTENANCE_MIGRATIONS_TOO_OLD");
-    for (let index = 0; index < ledger.length; index += 1) for (const key of ["sequence", "name", "phase", "digest"]) assert.equal(ledger[index][key], migrations[index][key], "__PKT_LABEL_UPPER___MAINTENANCE_LEDGER_DIGEST_MISMATCH");
+    const idColumn = rows(database, "SELECT 1 AS present FROM pragma_table_info('schema_migration_ledger') WHERE name='migration_id'", []).length === 1;
+    const ledgerIds = idColumn ? rows(database, "SELECT sequence, migration_id AS id FROM schema_migration_ledger ORDER BY sequence", []) : ledger;
+    const definitions = new Map(migrations.map((migration) => [migration.id, migration]));
+    for (let index = 0; index < ledger.length; index += 1) {
+      assert.equal(ledger[index].sequence, index + 1, "__PKT_LABEL_UPPER___MAINTENANCE_LEDGER_DIGEST_MISMATCH");
+      const definition = definitions.get(ledgerIds[index].id ?? String(ledger[index].sequence).padStart(4, "0"));
+      assert(definition, "__PKT_LABEL_UPPER___MAINTENANCE_LEDGER_DIGEST_MISMATCH");
+      for (const key of ["name", "phase", "digest"]) assert.equal(ledger[index][key], definition[key], "__PKT_LABEL_UPPER___MAINTENANCE_LEDGER_DIGEST_MISMATCH");
+    }
     assert.deepEqual(rows(database, "PRAGMA integrity_check", []), [{ integrity_check: "ok" }], "__PKT_LABEL_UPPER___MAINTENANCE_INTEGRITY_FAILED");
     assert.deepEqual(rows(database, "PRAGMA foreign_key_check", []), [], "__PKT_LABEL_UPPER___MAINTENANCE_FOREIGN_KEYS_FAILED");
     database.exec("COMMIT");
