@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium, expect, webkit } from "@playwright/test";
+import { watchPageErrors } from "./browser-page-errors.mjs";
 
 const profile = process.argv[2] ?? "chromium";
 const output = path.resolve(process.argv[3] ?? `.ci-output/file-preview/${profile}`);
@@ -135,7 +136,7 @@ try {
           return original.apply(this, args);
         };
       });
-      page.on("pageerror", (error) => problems.push(`${step} pageerror: ${error.message}`));
+      watchPageErrors(page, (error) => problems.push(`${step} pageerror: ${error.message}`));
       page.on("console", (message) => {
         if (!capturing && /Content Security Policy|Refused to/i.test(message.text()))
           problems.push(`${step} csp: ${message.text()}`);

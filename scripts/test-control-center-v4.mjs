@@ -1,6 +1,7 @@
-import { expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { expect } from "@playwright/test";
+import { collectPageErrors } from "./browser-page-errors.mjs";
 
 async function qualifyImmediateStartup(browser, baseUrl, output) {
   const cases = [];
@@ -12,9 +13,8 @@ async function qualifyImmediateStartup(browser, baseUrl, output) {
       });
       const page = await context.newPage();
       const commands = [];
-      const errors = [];
+      const errors = collectPageErrors(page);
       let detailQuery;
-      page.on("pageerror", (e) => errors.push(e.message));
       page.on("request", (request) => {
         if (request.method() !== "POST") return;
         if (request.url().endsWith("/api/gateway/thread/v3/commands"))
@@ -132,8 +132,7 @@ export async function qualifyControlCenterV4(browser, baseUrl, out) {
     locale: "zh-CN",
   });
   const page = await context.newPage();
-  const errors = [];
-  page.on("pageerror", (e) => errors.push(e.message));
+  const errors = collectPageErrors(page);
   let release = () => {};
   try {
     const hold = new Promise((resolve) => {

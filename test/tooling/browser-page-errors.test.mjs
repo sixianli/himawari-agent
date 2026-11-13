@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, it } from "vitest";
 import { collectPageErrors } from "../../scripts/browser-page-errors.mjs";
 
@@ -82,4 +84,23 @@ it("把错误追加到调用方给的数组里", () => {
   expect(collectPageErrors(page, shared)).toBe(shared);
   page.fail("later");
   expect(shared).toEqual(["earlier", "later"]);
+});
+
+const scriptsDirectory = join(import.meta.dirname, "../../scripts");
+const directPageErrorListener = /\.on\(\s*["']pageerror["']/u;
+
+it("[webkit-teardown] 浏览器检查脚本都经 watchPageErrors 收页面报错，不直接监听 pageerror", () => {
+  const direct = readdirSync(scriptsDirectory)
+    .filter((name) => name.endsWith(".mjs") && name !== "browser-page-errors.mjs")
+    .filter((name) =>
+      directPageErrorListener.test(readFileSync(join(scriptsDirectory, name), "utf8")),
+    );
+  expect(direct).toEqual([]);
+});
+
+it("[webkit-teardown] 反向：直接监听 pageerror 的写法会被认出来", () => {
+  expect(directPageErrorListener.test('page.on("pageerror", (e) => errors.push(e.message));')).toBe(
+    true,
+  );
+  expect(directPageErrorListener.test('page.waitForEvent("pageerror")')).toBe(false);
 });
