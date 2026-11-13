@@ -162,9 +162,9 @@ describe("action gate", () => {
         POLICY_FACT_CODES.contextExternalContent,
       ]),
     );
-    expect(decideActionRules(judge, actionGateFacts(withExternal, "user_message"))).toEqual({
-      outcome: null,
-      hit: null,
+    expect(decideActionRules(judge, actionGateFacts(withExternal, "user_message"))).toMatchObject({
+      outcome: "ask_owner",
+      hit: { id: ACTION_RULE_IDS.askAfterExternalContent },
     });
     expect(
       decideActionRules(
@@ -172,6 +172,34 @@ describe("action gate", () => {
         actionGateFacts({ ...base, actionKind: "DELETE", finalRisk: "HIGH" }, "user_message"),
       ).outcome,
     ).toBeNull();
+  });
+
+  it("[ADR-0257] refuses a background action once external content is in context, and asks the owner in a conversation", () => {
+    for (const [source, code] of [
+      ["schedule", POLICY_FACT_CODES.runSourceSchedule],
+      ["external_event", POLICY_FACT_CODES.runSourceExternalEvent],
+    ] as const) {
+      const background = intent(
+        runtimePolicyFacts([code, POLICY_FACT_CODES.contextExternalContent]),
+      );
+      expect(decideActionRules(judge, actionGateFacts(background, source))).toMatchObject({
+        outcome: "refuse",
+        hit: { id: ACTION_RULE_IDS.refuseBackgroundAfterExternalContent },
+      });
+      expect(
+        decideActionRules(judge, actionGateFacts(intent(runtimePolicyFacts([code])), source)),
+      ).toMatchObject({ outcome: "allow_preauthorized" });
+    }
+    const ruleChange = intent(
+      runtimePolicyFacts([
+        POLICY_FACT_CODES.runSourceUserMessage,
+        POLICY_FACT_CODES.contextExternalContent,
+        POLICY_FACT_CODES.standingRuleChange,
+      ]),
+    );
+    expect(decideActionRules(judge, actionGateFacts(ruleChange, "user_message")).outcome).toBe(
+      "ask_owner",
+    );
   });
 
   it("[ADR-0257] takes the strictest outcome when several action rules hit", () => {

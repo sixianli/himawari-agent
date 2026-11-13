@@ -62,10 +62,12 @@ export class ContextProjectionService implements RuntimeProjectionPort {
       ? await this.#history.load(envelope.runtimeHistory.reference, modelVisibleCeiling())
       : undefined;
     const attachmentClassifications: DataClassification[] = [];
+    const attachments = { count: 0 };
     const history = await this.readHistory(
       input,
       envelope,
       attachmentClassifications,
+      attachments,
       nativeHistory?.coveredRunIds,
     );
     const images: { readonly mimeType: string; readonly data: string }[] = [];
@@ -73,6 +75,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
       input,
       await this.readText(input, envelope.prompt.payloadRef, "context prompt"),
       attachmentClassifications,
+      attachments,
       images,
     );
     const policyTexts = await Promise.all(
@@ -101,6 +104,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     return Object.freeze({
       systemInstruction,
       contentClassification,
+      ...(attachments.count > 0 ? { ownerAttachments: attachments.count } : {}),
       ...(answerLocale ? { answerLocaleRef: answerLocale.ref } : {}),
       ...(nativeHistory ? { nativeHistory } : {}),
       coveredRunIds: [
@@ -293,6 +297,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     input: RuntimeProjectionRequest,
     envelope: ProductContextEnvelopeV1,
     attachmentClassifications: DataClassification[],
+    attachments: { count: number },
     coveredRunIds: readonly RunId[] = [],
   ): Promise<{
     readonly messages: readonly RuntimeProjectionMessage[];
@@ -368,7 +373,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
       );
       const content =
         item.role === "owner"
-          ? await this.expandAttachments(input, stored, attachmentClassifications)
+          ? await this.expandAttachments(input, stored, attachmentClassifications, attachments)
           : stored;
       if (item.role === "owner" || item.role === "agent") {
         projected.push({
@@ -496,10 +501,12 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     input: RuntimeProjectionRequest,
     text: string,
     classifications: DataClassification[],
+    attachments: { count: number },
     images?: { readonly mimeType: string; readonly data: string }[],
   ): Promise<string> {
     const tags = [...text.matchAll(ATTACHMENT_TAG)];
     if (!tags.length) return text;
+    attachments.count += tags.length;
     const expanded = await Promise.all(
       tags.map(async ([tag, name, ref]) => {
         const payload = ref ? await this.#dependencies.payloads.get(ref as PayloadRef) : null;

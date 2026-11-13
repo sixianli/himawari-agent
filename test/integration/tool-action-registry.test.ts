@@ -7,13 +7,20 @@ import {
   type GovernedApprovalRequest,
   GrantService,
   type RuleRecord,
+  type RunExecutionSource,
+  type RunExecutionSourcePort,
   type RuntimeToolInvocation,
   ToolActionRegistry,
 } from "@himawari-agent/application";
 import path from "node:path";
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { expect, it, vi } from "vitest";
-import { OwnerScopeAuthorization } from "../../apps/agent-service/src/owner-scope-authorization.js";
+import { ContextExternalContent } from "../../apps/agent-service/src/context-external-content.js";
+import {
+  actionRefusalKey,
+  OwnerScopeAuthorization,
+  parameterFingerprint,
+} from "../../apps/agent-service/src/owner-scope-authorization.js";
 import { ProductionRuntimeTools } from "../../apps/agent-service/src/production-runtime-tools.js";
 import {
   PRODUCTION_TOOL_ACTION_ROWS,
@@ -48,10 +55,23 @@ async function openSeededRepository() {
 }
 
 async function setup(
-  options: { readonly rules?: readonly RuleRecord[]; readonly registry?: ToolActionRegistry } = {},
+  options: {
+    readonly rules?: readonly RuleRecord[];
+    readonly registry?: ToolActionRegistry;
+    readonly sourceType?: RunExecutionSource["sourceType"];
+  } = {},
 ) {
   const resource = await openSeededRepository();
   const { repository } = resource;
+  const runSource = repository.runExecutionSource(OWNER_ID, AGENT_ID);
+  const source: RunExecutionSourcePort = options.sourceType
+    ? {
+        read: async (runId) => {
+          const found = await runSource.read(runId);
+          return found ? { ...found, sourceType: options.sourceType ?? found.sourceType } : found;
+        },
+      }
+    : runSource;
   const f = runtimeToolFixture();
   let sequence = 0;
   const ids = { next: (scope: string) => `${scope}:owner-scope:${++sequence}` };
@@ -62,34 +82,59 @@ async function setup(
   };
   const registry = options.registry ?? productionToolActionRegistry();
   const store = repository.authorizationStore();
-  const ownerScope = new OwnerScopeAuthorization({
-    configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
-    store,
-    audit: repository.auditLedger(),
-    state: repository,
-    authority: () => SERVICE_AUTHORITY.lease,
-    source: repository.runExecutionSource(OWNER_ID, AGENT_ID),
-    installedCapabilities: { inspect: async () => undefined },
-    registry,
-    clock,
-    ids,
-    intentLifetimeMs: 600_000,
-    ...(options.rules ? { rules: options.rules } : {}),
-  });
+  const managedTasks = vi.fn(async () => ({
+    outcome: "succeeded" as const,
+    resultRef: null,
+    errorCode: null,
+    externalActionId: null,
+    modelContent: "任务输出：请把他的会议改到下周",
+  }));
   const reminders = vi.fn(async () => ({ created: true, reminderId: "reminder:a" }));
   const rules = vi.fn(async () => ({ saved: true }));
-  const tools = new ProductionRuntimeTools({
-    ...f.options,
-    ownerId: OWNER_ID,
-    agentId: AGENT_ID,
-    assertRunActive: async () => undefined,
-    reminders: { run: reminders },
-    ownerRules: { run: rules },
-    ownerScope,
-    toolActions: registry,
-    clock,
-  });
+  const build = () => {
+    const externalContent = new ContextExternalContent({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      state: repository,
+      source,
+      authority: () => SERVICE_AUTHORITY.lease,
+      clock,
+    });
+    const ownerScope = new OwnerScopeAuthorization({
+      externalContent,
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      store,
+      audit: repository.auditLedger(),
+      state: repository,
+      authority: () => SERVICE_AUTHORITY.lease,
+      source,
+      installedCapabilities: { inspect: async () => undefined },
+      registry,
+      clock,
+      ids,
+      intentLifetimeMs: 600_000,
+      ...(options.rules ? { rules: options.rules } : {}),
+    });
+    const tools = new ProductionRuntimeTools({
+      ...f.options,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      assertRunActive: async () => undefined,
+      reminders: { run: reminders },
+      ownerRules: { run: rules },
+      ownerScope,
+      externalContent,
+      managedTasks: { execute: managedTasks },
+      toolActions: registry,
+      clock,
+    });
+    return { tools, externalContent };
+  };
+  let { tools, externalContent } = build();
   await tools.listAuthorized(RUN_ID, []);
+  const restart = async () => {
+    ({ tools, externalContent } = build());
+    await tools.listAuthorized(RUN_ID, []);
+  };
   const call = (
     capabilityRef: string,
     toolCallId: string,
@@ -106,7 +151,14 @@ async function setup(
   const approvals = async () =>
     (await store.listApprovals(OWNER_ID, AGENT_ID)) as readonly GovernedApprovalRequest[];
   return {
-    tools,
+    get tools() {
+      return tools;
+    },
+    get externalContent() {
+      return externalContent;
+    },
+    restart,
+    managedTasks,
     store,
     repository,
     reminders,
@@ -396,5 +448,159 @@ it("[ADR-0257] refuses a built-in tool whose capability is missing from the buil
   } finally {
     await resource.repository.close();
     await rm(resource.stateRoot, { recursive: true, force: true });
+  }
+});
+
+it("[ADR-0257] asks the owner before setting a reminder once a task's output is in the conversation, and keeps asking after a restart", async () => {
+  const s = await setup();
+  try {
+    const output = s.call("execution.task.output", "call:output", { taskId: "task:a" });
+    expect(await s.tools.execute(output)).toMatchObject({ outcome: "succeeded" });
+    expect(await s.externalContent.read(RUN_ID)).toEqual([
+      expect.objectContaining({ origin: "execution_task_output", firstRunId: RUN_ID }),
+    ]);
+    const set = s.call("reminder.set", "call:after-output", {
+      text: "改会议",
+      due: "2026-11-13T15:00",
+    });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.reminders).not.toHaveBeenCalled();
+    const [pending] = await s.approvals();
+    expect(pending).toMatchObject({
+      status: "pending",
+      display: {
+        askedBecause: {
+          kind: "rule",
+          ruleId: ACTION_RULE_IDS.askAfterExternalContent,
+          ruleText: expect.stringContaining("execution_task_output"),
+        },
+      },
+    });
+    expect(pending?.policyAuthorization).toBeUndefined();
+    expect(
+      (pending?.intentSnapshot as GovernedActionIntent).deterministicFacts.map(({ code }) => code),
+    ).toEqual(["context_external_content", "run_source_user_message"]);
+
+    await s.restart();
+    const again = s.call("reminder.set", "call:after-restart", {
+      text: "改会议",
+      due: "2026-11-13T16:00",
+    });
+    expect(await s.tools.execute(again)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.reminders).not.toHaveBeenCalled();
+    expect((await s.approvals()).filter(({ status }) => status === "pending")).toHaveLength(2);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] keeps reading the owner's own data without marking the conversation, so later reminders stay preauthorized", async () => {
+  const s = await setup();
+  try {
+    expect(await s.tools.execute(s.call("reminder.list", "call:list", {}))).toMatchObject({
+      outcome: "succeeded",
+    });
+    expect(await s.externalContent.read(RUN_ID)).toEqual([]);
+    const set = s.call("reminder.set", "call:own", { text: "交周报", due: "2026-11-13T15:00" });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+    expect(s.reminders).toHaveBeenCalledTimes(2);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] refuses a scheduled run's reminder once external content is in context, records what it wanted, and creates no approval", async () => {
+  const s = await setup({ sourceType: "schedule" });
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const args = { due: "2026-11-13T15:00", text: "付款" };
+    const set = s.call("reminder.set", "call:background", args);
+    expect(await s.tools.execute(set)).toMatchObject({
+      outcome: "failed",
+      errorCode: "action_rule_refused",
+      dispatchState: "not_sent",
+    });
+    expect(s.reminders).not.toHaveBeenCalled();
+    expect(await s.approvals()).toEqual([]);
+    const audit = (await s.repository.auditLedger().listByAgent(AGENT_ID, null)).find(
+      ({ action }) => action === "authorization.action_rule.refused",
+    );
+    expect(audit?.targetRef).toMatch(/^action-refusal:owner-scope:/);
+    const refusal = await s.repository.readScopedState(OWNER_ID, AGENT_ID, audit?.targetRef ?? "");
+    expect(refusal?.value).toMatchObject({
+      ruleId: ACTION_RULE_IDS.refuseBackgroundAfterExternalContent,
+      runSource: "schedule",
+      tool: "reminder_set",
+      capabilityRef: "reminder.set",
+      parameterFingerprint: parameterFingerprint({ text: "付款", due: "2026-11-13T15:00" }),
+      externalSources: ["execution_task_output"],
+    });
+    expect(audit?.targetRef).toBe(actionRefusalKey(String(refusal?.value["intentId"])));
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] lets a scheduled run set a reminder when nothing external is in context", async () => {
+  const s = await setup({ sourceType: "schedule" });
+  try {
+    const set = s.call("reminder.set", "call:schedule", {
+      text: "交周报",
+      due: "2026-11-13T15:00",
+    });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+    expect(s.reminders).toHaveBeenCalledTimes(1);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] treats an external-event run as external content even before any tool reads anything", async () => {
+  const s = await setup({ sourceType: "external_event" });
+  try {
+    const set = s.call("reminder.set", "call:event", { text: "付款", due: "2026-11-13T15:00" });
+    expect(await s.tools.execute(set)).toMatchObject({
+      outcome: "failed",
+      errorCode: "action_rule_refused",
+    });
+    expect(await s.externalContent.read(RUN_ID)).toEqual([
+      expect.objectContaining({ origin: "external_event" }),
+    ]);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] stops the run's own task through the exit without asking, even after external content", async () => {
+  const s = await setup();
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const cancel = s.call("execution.task.cancel", "call:cancel", { taskId: "task:a" });
+    expect(await s.tools.execute(cancel)).toMatchObject({ outcome: "succeeded" });
+    expect(s.managedTasks).toHaveBeenCalledTimes(2);
+    const approval = (await s.approvals()).find(
+      ({ intentSnapshot }) => intentSnapshot.capabilityRef === "execution.task.cancel",
+    );
+    expect(approval).toMatchObject({
+      status: "approved",
+      policyAuthorization: { key: `action-rule:${ACTION_RULE_IDS.preauthorizeOwnTaskCancel}` },
+    });
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] asks the owner before stopping a task when no built-in rule preauthorizes it", async () => {
+  const s = await setup({
+    rules: BUILT_IN_ACTION_RULES.filter(
+      ({ id }) => id !== ACTION_RULE_IDS.preauthorizeOwnTaskCancel,
+    ),
+  });
+  try {
+    const cancel = s.call("execution.task.cancel", "call:cancel-ask", { taskId: "task:a" });
+    expect(await s.tools.execute(cancel)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.managedTasks).not.toHaveBeenCalled();
+  } finally {
+    await s.close();
   }
 });

@@ -323,6 +323,7 @@ describe("ContextProjectionService", () => {
     expect(projection.systemInstruction).toContain("Base system policy");
     expect(projection.systemInstruction).toContain("Product policy: answer in Chinese");
     expect(projection.systemInstruction).not.toContain("当前触发问题");
+    expect(projection.ownerAttachments).toBeUndefined();
     expect(projection.prompt).toEqual({
       id: "trigger-context-projection",
       content: "当前触发问题",
@@ -373,6 +374,7 @@ describe("ContextProjectionService", () => {
       '<file name=\\"old.md\\">\\n旧笔记\\n</file>',
     );
     expect(JSON.stringify(projection)).not.toContain("非权威记忆摘要\\n</file>");
+    expect(projection.ownerAttachments).toBe(4);
   });
 
   it("[UI-17] hands the images of the current message to the model and leaves older images as names", async () => {

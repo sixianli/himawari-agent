@@ -111,6 +111,7 @@ import {
   sandboxCeilingExceededMessage,
 } from "./production-sandbox-tool-result.js";
 import { type StageTiming, stageTiming } from "./production-stage-timing.js";
+import type { ContextExternalContent } from "./context-external-content.js";
 import type { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { beforeDeadline } from "./production-worker-deadline.js";
@@ -326,6 +327,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly toolActions?: ToolActionRegistry;
   readonly ownerScope?: Pick<OwnerScopeAuthorization, "authorize">;
+  readonly externalContent?: Pick<ContextExternalContent, "mark">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
@@ -605,6 +607,22 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       invocation.capabilityHandleRef === null &&
       MANAGED_TASK_ACTIONS.some((action) => invocation.capabilityRef === `execution.task.${action}`)
     );
+  }
+  #contentOrigin(invocation: RuntimeToolInvocation): string | null {
+    if (invocation.capabilityHandleRef !== null) return `authorized:${invocation.capabilityRef}`;
+    const named = this.#codingTool(invocation);
+    const row = named
+      ? this.#registry.forTool(named)
+      : this.#registry.forCapability(invocation.capabilityRef);
+    if (row?.resultOrigin === "owner_data") return null;
+    return row?.tool ?? `unregistered:${invocation.capabilityRef}`;
+  }
+  async #markExternalContent(invocation: RuntimeToolInvocation): Promise<void> {
+    const marker = this.#options.externalContent;
+    if (!marker) return;
+    const origin = this.#contentOrigin(invocation);
+    if (origin === null) return;
+    await marker.mark(invocation.runId, origin);
   }
   #builtinRow(invocation: RuntimeToolInvocation): ToolActionRow | undefined {
     if (invocation.capabilityHandleRef !== null) return undefined;
@@ -1187,8 +1205,16 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     signal?.throwIfAborted();
     const invocation = await this.#taskStart(value);
     signal?.throwIfAborted();
+    await this.#markExternalContent(invocation);
+    signal?.throwIfAborted();
     if (this.#isTaskManagement(invocation)) {
       await this.#options.assertRunActive(invocation.runId);
+      const taskRow = this.#registry.forCapability(invocation.capabilityRef);
+      if (taskRow?.authorization === "owner_scope") {
+        if (!this.#exposed.has(invocation.runId)) reject();
+        const stopped = await this.#ownerScopeGate(invocation, taskRow, signal)?.();
+        if (stopped) return stopped;
+      }
       if (this.#background?.manages(invocation)) {
         if (!this.#exposed.has(invocation.runId)) reject();
         const key = digest([invocation.runId, invocation.toolCallId]);

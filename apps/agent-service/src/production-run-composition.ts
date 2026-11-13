@@ -19,6 +19,7 @@ import {
   type RunExecutionPolicy,
   type RunExecutionSource,
   RuntimeContinuationService,
+  type RuntimeProjectionRequest,
   type RuntimeRequest,
   type RuntimeToolPort,
   type SandboxExecutionRecord,
@@ -30,6 +31,7 @@ import {
 import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { PiAgentRuntimeAdapter, type PiModelBindingPort } from "@himawari-agent/runtime-pi";
+import type { ContextExternalContent } from "./context-external-content.js";
 import type { ProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import type { ProductionBackgroundCommands } from "./production-background-commands.js";
 import { ProductionBackgroundRuns } from "./production-background-runs.js";
@@ -75,6 +77,7 @@ import { ProductionUploadedFiles } from "./production-uploaded-files.js";
 
 export interface ProductionRunCompositionOptions {
   readonly egress: ModelEgress;
+  readonly externalContent?: Pick<ContextExternalContent, "mark">;
   readonly generateTitle?: (
     request: RuntimeRequest,
     prompt: string,
@@ -316,7 +319,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     }),
     { form: "context.form" },
   );
-  const projection = timings.methods(
+  const resolvedProjection = timings.methods(
     new ContextProjectionService({
       ownerId,
       agentId,
@@ -335,6 +338,17 @@ export function createProductionRunComposition(options: ProductionRunComposition
       captureFinalAnswer: "pi.final_answer",
     },
   );
+  const externalContent = options.externalContent;
+  const projection: typeof resolvedProjection = externalContent
+    ? Object.assign(Object.create(resolvedProjection) as typeof resolvedProjection, {
+        resolveProjection: async (request: RuntimeProjectionRequest) => {
+          const resolved = await resolvedProjection.resolveProjection(request);
+          if (resolved.ownerAttachments)
+            await externalContent.mark(request.runId, "owner_attachment");
+          return resolved;
+        },
+      })
+    : resolvedProjection;
   const toolResultRecoveryParts = {
     ...(options.recoverMissingToolResult
       ? { recoverMissingResult: options.recoverMissingToolResult }

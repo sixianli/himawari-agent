@@ -163,6 +163,7 @@ import {
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
+import { ContextExternalContent } from "./context-external-content.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import {
@@ -1511,8 +1512,16 @@ export async function startTenantRuntime(
         configuration.ownerId,
         configuration.agentId,
       );
+      const externalContent = new ContextExternalContent({
+        configuration,
+        state: repository,
+        source: repository.runExecutionSource(configuration.ownerId, configuration.agentId),
+        authority: () => invocationAuthority().lease,
+        clock,
+      });
       const ownerScope = new OwnerScopeAuthorization({
         configuration,
+        externalContent,
         store: repository.authorizationStore(),
         audit: repository.auditLedger(),
         state: repository,
@@ -1538,6 +1547,7 @@ export async function startTenantRuntime(
         ownerRules: ownerRuleTools,
         toolActions,
         ownerScope,
+        externalContent,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -2571,6 +2581,7 @@ export async function startTenantRuntime(
       observation.start();
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
+        externalContent,
         egress: createProductionModelEgress(
           configuration,
           sources,

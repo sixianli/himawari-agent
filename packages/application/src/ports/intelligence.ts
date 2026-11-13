@@ -389,6 +389,7 @@ export interface RuntimeProjection extends RuntimeProjectionContext {
   readonly systemInstruction: string;
   readonly answerLocaleRef?: string;
   readonly contentClassification?: DataClassification;
+  readonly ownerAttachments?: number;
 }
 
 export interface RuntimeProjectionPort {
