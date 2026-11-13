@@ -113,7 +113,7 @@ struct SenseActions: View {
                 Text(primary)
             }
             .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig))
-            .disabled(busy)
+            .allowsHitTesting(!busy)
             Button(action: secondaryAction) {
                 Text(secondary)
                     .hmType(DesignTokens.TypeScale.body)

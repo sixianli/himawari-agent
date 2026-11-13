@@ -102,9 +102,10 @@ boot_device() {
 }
 boot_device
 if [ "$(xcrun simctl spawn "$udid" defaults read -g AppleLanguages 2>/dev/null | tr -d ' \n()"' | cut -d, -f1)" != "zh-Hans" ] \
-  || [ "$(xcrun simctl spawn "$udid" defaults read -g AppleLocale 2>/dev/null)" != "en_US" ]; then
+  || [ "$(xcrun simctl spawn "$udid" defaults read -g AppleICUForce12HourTime 2>/dev/null)" != "1" ]; then
   xcrun simctl spawn "$udid" defaults write -g AppleLanguages -array zh-Hans
-  xcrun simctl spawn "$udid" defaults write -g AppleLocale -string en_US
+  xcrun simctl spawn "$udid" defaults write -g AppleLocale -string zh_CN
+  xcrun simctl spawn "$udid" defaults write -g AppleICUForce12HourTime -bool true
   xcrun simctl shutdown "$udid"
   boot_device
 fi
