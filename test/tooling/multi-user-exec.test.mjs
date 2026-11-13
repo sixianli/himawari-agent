@@ -95,6 +95,11 @@ describe("multi-user exec configuration", () => {
     [{ uids: { first: 61003, last: 61001 } }, "EXEC_CONFIG_UID_INVALID $.uids"],
     [{ serviceAccount: "root" }, "EXEC_CONFIG_ACCOUNT_INVALID $.serviceAccount"],
     [{ peopleGroup: "sudo" }, "EXEC_CONFIG_ACCOUNT_INVALID $.peopleGroup"],
+    [{ peopleGroup: "hx-andyaa" }, "EXEC_CONFIG_ACCOUNT_INVALID $.peopleGroup"],
+    [
+      { socketDirectory: `/run/himawari/${"s".repeat(100)}` },
+      "EXEC_CONFIG_SOCKET_PATH_TOO_LONG $.socketDirectory",
+    ],
     [{ people: { "Bad-Slot": {} } }, "EXEC_CONFIG_SLOT_INVALID"],
     [{ people: { bobbyb: { Swap: "1G" } } }, "EXEC_CONFIG_UNKNOWN $.people.bobbyb.Swap"],
     [{ people: { bobbyb: { MemoryHigh: "9G" } } }, "EXEC_CONFIG_LIMIT_INVALID $.people.bobbyb"],

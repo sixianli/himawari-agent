@@ -159,14 +159,29 @@ try {
   rmSync(foreign);
   const ledgerText = readFileSync(files.ledger, "utf8");
   rmSync(files.ledger);
-  let reinit = false;
+  let reinit = "";
   try {
     exec("add", slots[0], "--init");
-  } catch {
-    reinit = true;
+  } catch (error) {
+    reinit = String(error.stderr ?? "");
   }
-  expectTrue(reinit && !existsSync(files.ledger), "INIT_OVER_EXISTING_ACCEPTED");
+  expectTrue(
+    reinit.includes("EXEC_INIT_OVER_EXISTING") && !existsSync(files.ledger),
+    "INIT_OVER_EXISTING_ACCEPTED",
+  );
   writeFileSync(files.ledger, ledgerText, { mode: 0o600 });
+  writeFileSync(`${files.ledger}.lock`, "2147483646\n");
+  exec("apply");
+  expectTrue(!existsSync(`${files.ledger}.lock`), "STALE_LOCK_KEPT");
+  writeFileSync(`${files.ledger}.lock`, `${process.pid}\n`);
+  let locked = "";
+  try {
+    exec("apply");
+  } catch (error) {
+    locked = String(error.stderr ?? "");
+  }
+  rmSync(`${files.ledger}.lock`, { force: true });
+  expectTrue(locked.includes("EXEC_LOCKED"), "LIVE_LOCK_IGNORED");
   const work = (slot) => path.join(base, "w", slot);
   const priv = (slot) => path.join(base, "j", slot);
   expectTrue(

@@ -79,6 +79,8 @@ function readJson(file) {
   return JSON.parse(readFileSync(file, "utf8"));
 }
 
+const OWN_UNIT = /^himawari-exec(\.slice|-[a-z][a-z0-9]{5}\.(slice|socket|service))$/;
+
 function refuseInitOverResidue(options, config) {
   const residue = [
     ...[config.privateRoots, config.workspaceRoots].flatMap((root) =>
@@ -86,11 +88,39 @@ function refuseInitOverResidue(options, config) {
     ),
     ...(existsSync(options.units)
       ? readdirSync(options.units)
-          .filter((name) => name.startsWith("himawari-exec-"))
+          .filter((name) => OWN_UNIT.test(name))
           .map((name) => path.join(options.units, name))
       : []),
+    ...run("getent", ["passwd"])
+      .split("\n")
+      .map((line) => line.split(":")[0])
+      .filter((name) => /^hx-[a-z][a-z0-9]{5}$/.test(name)),
   ];
   if (residue.length > 0) throw new Error(`EXEC_INIT_OVER_EXISTING ${residue[0]}`);
+}
+
+function acquireLock(lock) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const descriptor = openSync(lock, "wx", 0o600);
+      writeFileSync(descriptor, `${process.pid}\n`);
+      return descriptor;
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+      const owner = Number.parseInt(readFileSync(lock, "utf8"), 10);
+      let alive = true;
+      if (Number.isSafeInteger(owner) && owner > 0) {
+        try {
+          process.kill(owner, 0);
+        } catch (killError) {
+          alive = killError?.code !== "ESRCH";
+        }
+      }
+      if (alive) throw new Error(`EXEC_LOCKED ${lock} held by pid ${owner}`);
+      rmSync(lock, { force: true });
+    }
+  }
+  throw new Error(`EXEC_LOCKED ${lock}`);
 }
 
 function readLedger(file, allowMissing) {
@@ -248,17 +278,21 @@ function retire(options, config, slot) {
 }
 
 function converge(options, config, ledger) {
-  checkGatewayFiles(config);
-  for (const entry of ledger.slots)
-    if (entry.state === "active" && (entry.uid < config.uids.first || entry.uid > config.uids.last))
-      throw new Error(`EXEC_LEDGER_UID_OUTSIDE_RANGE ${entry.slot}`);
   const known = knownUnitNames(ledger);
-  const backup = backupUnits(options, known);
+  let backup;
   try {
-    ensureGroup(config);
-    for (const entry of ledger.slots) if (entry.state === "active") ensureAccount(entry);
+    backup = backupUnits(options, known);
     for (const entry of ledger.slots)
       if (entry.state === "removed") retire(options, config, entry.slot);
+    checkGatewayFiles(config);
+    for (const entry of ledger.slots)
+      if (
+        entry.state === "active" &&
+        (entry.uid < config.uids.first || entry.uid > config.uids.last)
+      )
+        throw new Error(`EXEC_LEDGER_UID_OUTSIDE_RANGE ${entry.slot}`);
+    ensureGroup(config);
+    for (const entry of ledger.slots) if (entry.state === "active") ensureAccount(entry);
     atomicWrite(options.tmpfiles, renderTmpfiles(config), 0o644);
     if (options.systemd) run("systemd-tmpfiles", ["--create", options.tmpfiles]);
     for (const entry of directoryPlan(config, ledger)) {
@@ -281,8 +315,14 @@ function converge(options, config, ledger) {
         if (entry.state === "active") run("systemctl", ["enable", "--now", socketName(entry.slot)]);
     }
   } catch (error) {
-    restoreUnits(options, known, backup);
-    const message = error instanceof Error ? error.message : String(error);
+    let message = error instanceof Error ? error.message : String(error);
+    if (backup !== undefined) {
+      try {
+        restoreUnits(options, known, backup);
+      } catch (restoreError) {
+        message += `\nEXEC_RESTORE_FAILED ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`;
+      }
+    }
     throw new Error(
       `${message}\nEXEC_APPLY_INCOMPLETE the slot ledger is kept; fix the cause and run apply again`,
     );
@@ -317,12 +357,7 @@ export function main(argv) {
   if (typeof process.getuid === "function" && process.getuid() !== 0)
     throw new Error("EXEC_ROOT_REQUIRED");
   const lock = `${options.ledger}.lock`;
-  let held;
-  try {
-    held = openSync(lock, "wx", 0o600);
-  } catch {
-    throw new Error(`EXEC_LOCKED ${lock}`);
-  }
+  const held = acquireLock(lock);
   try {
     const current = readLedger(options.ledger, options.command === "add" && options.init);
     if (options.command === "add" && options.init && !existsSync(options.ledger))
@@ -337,8 +372,8 @@ export function main(argv) {
     converge(options, config, next);
     return status(options, config, readLedger(options.ledger, false));
   } finally {
-    closeSync(held);
     rmSync(lock, { force: true });
+    closeSync(held);
   }
 }
 

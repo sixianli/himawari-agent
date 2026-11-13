@@ -16,6 +16,7 @@ const RESERVED_ACCOUNTS = new Set([
   "sys",
   "nobody",
 ]);
+const SOCKET_PATH_MAX_BYTES = 107;
 const MAX_UID = 2 ** 31 - 2;
 const SIZE = /^[1-9][0-9]{0,8}[KMGT]$/;
 const PERCENT = /^[1-9][0-9]{0,4}%$/;
@@ -122,6 +123,10 @@ export function parseExecConfig(value) {
   const socketDirectory = absolute(raw.socketDirectory, "$.socketDirectory");
   if (Buffer.byteLength(path.join(privateRoots, "a".repeat(6))) > PRIVATE_ROOT_MAX_BYTES)
     fail("EXEC_CONFIG_PRIVATE_ROOT_TOO_LONG", "$.privateRoots");
+  if (
+    Buffer.byteLength(path.join(socketDirectory, `${"a".repeat(6)}.sock`)) > SOCKET_PATH_MAX_BYTES
+  )
+    fail("EXEC_CONFIG_SOCKET_PATH_TOO_LONG", "$.socketDirectory");
   const roots = [privateRoots, workspaceRoots, socketDirectory];
   for (const [index, first] of roots.entries())
     for (const second of roots.slice(index + 1))
@@ -153,6 +158,8 @@ export function parseExecConfig(value) {
     ["$.gateway.entry", entry],
   ])
     if (roots.some((root) => inside(file, root))) fail("EXEC_CONFIG_GATEWAY_IN_PERSON_PATH", where);
+  if (/^hx-[a-z][a-z0-9]{5}$/.test(raw.peopleGroup) || raw.peopleGroup === raw.serviceAccount)
+    fail("EXEC_CONFIG_ACCOUNT_INVALID", "$.peopleGroup");
   return Object.freeze({
     privateRoots,
     workspaceRoots,
