@@ -1,0 +1,256 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { hardcodedLimits, scan } from "../../scripts/check-multi-user-exec.mjs";
+import {
+  addSlot,
+  directoryPlan,
+  emptyLedger,
+  parseExecConfig,
+  parseLedger,
+  personPaths,
+  removeSlot,
+  renderUnits,
+} from "../../scripts/operations/multi-user-exec/plan.mjs";
+
+const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const cli = path.join(repository, "scripts/operations/multi-user-exec/exec-accounts.mjs");
+
+function config(overrides = {}) {
+  return {
+    privateRoots: "/var/lib/himawari/j",
+    workspaceRoots: "/var/lib/himawari/work",
+    socketDirectory: "/run/himawari/exec",
+    serviceAccount: "himawari-prod",
+    peopleGroup: "himawari-people",
+    uids: { first: 61001, last: 61003 },
+    gateway: {
+      node: "/opt/himawari/node/bin/node",
+      entry: "/opt/himawari/gateway.js",
+      idleExitMs: 3600123,
+    },
+    allPeople: { MemoryMax: "7001M", MemoryHigh: "6002M", CPUQuota: "303%", TasksMax: "4004" },
+    person: {
+      MemoryMax: "1505M",
+      MemoryHigh: "1206M",
+      CPUQuota: "107%",
+      TasksMax: "508",
+      LimitNOFILE: "4109",
+    },
+    people: { bobbyb: { MemoryMax: "2510M", TasksMax: "611" } },
+    ...overrides,
+  };
+}
+
+function settings(text) {
+  return Object.fromEntries(
+    text
+      .split("\n")
+      .filter((line) => line.includes("="))
+      .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+  );
+}
+
+describe("multi-user exec configuration", () => {
+  it("accepts a complete configuration", () => {
+    expect(parseExecConfig(config()).person.MemoryMax).toBe("1505M");
+  });
+
+  it.each([
+    "privateRoots",
+    "workspaceRoots",
+    "socketDirectory",
+    "serviceAccount",
+    "peopleGroup",
+    "uids",
+    "gateway",
+    "allPeople",
+    "person",
+    "people",
+  ])("refuses a configuration without %s", (key) => {
+    const value = config();
+    delete value[key];
+    expect(() => parseExecConfig(value)).toThrow(`EXEC_CONFIG_MISSING $.${key}`);
+  });
+
+  it.each(["MemoryMax", "MemoryHigh", "CPUQuota", "TasksMax", "LimitNOFILE"])(
+    "refuses a person default without %s",
+    (key) => {
+      const value = config();
+      delete value.person[key];
+      expect(() => parseExecConfig(value)).toThrow(`EXEC_CONFIG_MISSING $.person.${key}`);
+    },
+  );
+
+  it.each([
+    [{ extra: 1 }, "EXEC_CONFIG_UNKNOWN $.extra"],
+    [{ privateRoots: "/var/lib/himawari/private-roots" }, "EXEC_CONFIG_PRIVATE_ROOT_TOO_LONG"],
+    [{ privateRoots: "relative" }, "EXEC_CONFIG_PATH_INVALID $.privateRoots"],
+    [{ workspaceRoots: "/var/lib/himawari/j/w" }, "EXEC_CONFIG_PATHS_OVERLAP"],
+    [{ uids: { first: 61003, last: 61001 } }, "EXEC_CONFIG_UID_INVALID $.uids"],
+    [{ people: { "Bad-Slot": {} } }, "EXEC_CONFIG_SLOT_INVALID"],
+    [{ people: { bobbyb: { Swap: "1G" } } }, "EXEC_CONFIG_UNKNOWN $.people.bobbyb.Swap"],
+    [{ people: { bobbyb: { MemoryHigh: "9G" } } }, "EXEC_CONFIG_LIMIT_INVALID $.people.bobbyb"],
+    [
+      { person: { ...config().person, CPUQuota: "1.5" } },
+      "EXEC_CONFIG_LIMIT_INVALID $.person.CPUQuota",
+    ],
+    [{ gateway: { ...config().gateway, idleExitMs: 0 } }, "EXEC_CONFIG_LIMIT_INVALID"],
+  ])("refuses %j", (change, code) => {
+    expect(() => parseExecConfig(config(change))).toThrow(code);
+  });
+});
+
+describe("multi-user exec slot ledger", () => {
+  it("gives each new slot the first unused uid and never reuses a removed slot or uid", () => {
+    const parsed = parseExecConfig(config());
+    let ledger = addSlot(emptyLedger(), parsed, "andyaa");
+    ledger = addSlot(ledger, parsed, "bobbyb");
+    ledger = removeSlot(ledger, "andyaa");
+    expect(() => addSlot(ledger, parsed, "andyaa")).toThrow("EXEC_SLOT_USED andyaa");
+    ledger = addSlot(ledger, parsed, "carolc");
+    expect(ledger.slots).toEqual([
+      { slot: "andyaa", uid: 61001, state: "removed" },
+      { slot: "bobbyb", uid: 61002, state: "active" },
+      { slot: "carolc", uid: 61003, state: "active" },
+    ]);
+    expect(() => addSlot(ledger, parsed, "davidd")).toThrow("EXEC_UIDS_EXHAUSTED");
+    expect(parseLedger(JSON.parse(JSON.stringify(ledger)))).toEqual(ledger);
+  });
+
+  it.each(["abc", "1abcde", "ABCDEF", "abcdefg", "abc-de"])("refuses slot %s", (slot) => {
+    expect(() => addSlot(emptyLedger(), parseExecConfig(config()), slot)).toThrow(
+      "EXEC_SLOT_INVALID",
+    );
+  });
+
+  it("refuses a ledger that reuses a uid", () => {
+    expect(() =>
+      parseLedger({
+        version: 1,
+        slots: [
+          { slot: "andyaa", uid: 61001, state: "removed" },
+          { slot: "bobbyb", uid: 61001, state: "active" },
+        ],
+      }),
+    ).toThrow("EXEC_LEDGER_INVALID");
+  });
+});
+
+describe("multi-user exec units", () => {
+  const parsed = parseExecConfig(config());
+  const ledger = removeSlot(
+    addSlot(addSlot(addSlot(emptyLedger(), parsed, "andyaa"), parsed, "bobbyb"), parsed, "carolc"),
+    "carolc",
+  );
+  const units = renderUnits(parsed, ledger);
+
+  it("takes every limit from the configuration, with per-person overrides", () => {
+    expect(settings(units.get("himawari-exec.slice"))).toMatchObject({
+      ...config().allPeople,
+      MemorySwapMax: "0",
+    });
+    const { LimitNOFILE, ...personSlice } = config().person;
+    expect(settings(units.get("himawari-exec-andyaa.slice"))).toMatchObject({
+      ...personSlice,
+      MemorySwapMax: "0",
+    });
+    expect(settings(units.get("himawari-exec-bobbyb.slice"))).toMatchObject({
+      ...personSlice,
+      MemoryMax: "2510M",
+      TasksMax: "611",
+    });
+    expect(settings(units.get("himawari-exec-andyaa.service")).LimitNOFILE).toBe(LimitNOFILE);
+  });
+
+  it("lets only the service account reach a person's socket and runs the gateway as that person", () => {
+    expect(settings(units.get("himawari-exec-andyaa.socket"))).toMatchObject({
+      ListenStream: "/run/himawari/exec/andyaa.sock",
+      Accept: "no",
+      SocketUser: "himawari-prod",
+      SocketGroup: "himawari-prod",
+      SocketMode: "0600",
+      Service: "himawari-exec-andyaa.service",
+    });
+    expect(settings(units.get("himawari-exec-andyaa.service"))).toMatchObject({
+      User: "hx-andyaa",
+      Group: "hx-andyaa",
+      Slice: "himawari-exec-andyaa.slice",
+      ExecStart:
+        "/opt/himawari/node/bin/node /opt/himawari/gateway.js --idle-exit-ms 3600123 --control-root /var/lib/himawari/j/andyaa",
+      KillMode: "control-group",
+      OOMPolicy: "kill",
+      ProtectSystem: "strict",
+      ReadWritePaths: "/var/lib/himawari/j/andyaa /var/lib/himawari/work/andyaa",
+    });
+  });
+
+  it("renders nothing for a removed person", () => {
+    expect([...units.keys()].filter((name) => name.includes("carolc"))).toEqual([]);
+  });
+
+  it("keeps private roots to the person and shares workspaces only with the people group", () => {
+    expect(directoryPlan(parsed, ledger)).toEqual([
+      { path: "/var/lib/himawari/j", owner: "root", group: "root", mode: "0755" },
+      { path: "/var/lib/himawari/work", owner: "root", group: "root", mode: "0755" },
+      { path: "/run/himawari/exec", owner: "root", group: "himawari-prod", mode: "0750" },
+      { path: "/var/lib/himawari/j/andyaa", owner: "hx-andyaa", group: "hx-andyaa", mode: "0700" },
+      {
+        path: "/var/lib/himawari/work/andyaa",
+        owner: "hx-andyaa",
+        group: "himawari-people",
+        mode: "2770",
+      },
+      { path: "/var/lib/himawari/j/bobbyb", owner: "hx-bobbyb", group: "hx-bobbyb", mode: "0700" },
+      {
+        path: "/var/lib/himawari/work/bobbyb",
+        owner: "hx-bobbyb",
+        group: "himawari-people",
+        mode: "2770",
+      },
+    ]);
+    expect(Buffer.byteLength(personPaths(parsed, "andyaa").privateRoot)).toBeLessThanOrEqual(27);
+  });
+
+  it("prints the plan from the command line without root", () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "multi-user-exec-"));
+    writeFileSync(path.join(directory, "exec.json"), JSON.stringify(config()));
+    writeFileSync(path.join(directory, "slots.json"), JSON.stringify(ledger));
+    const printed = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          cli,
+          "plan",
+          "--config",
+          path.join(directory, "exec.json"),
+          "--ledger",
+          path.join(directory, "slots.json"),
+        ],
+        { encoding: "utf8" },
+      ),
+    );
+    expect(printed.units["himawari-exec-bobbyb.slice"]).toBe(
+      units.get("himawari-exec-bobbyb.slice"),
+    );
+  });
+});
+
+describe("check:multi-user-exec", () => {
+  it("finds no limit written into the provisioning tool", () => {
+    expect(scan(repository)).toEqual([]);
+  });
+
+  it("catches a limit written into a unit template", () => {
+    expect(hardcodedLimits('"MemoryMax=2G",\nTasksMax=@TASKS@\nMemorySwapMax=0')).toEqual([
+      "MemoryMax=2",
+    ]);
+    expect(hardcodedLimits("CPUQuota = 150%\nLimitNOFILE=infinity")).toEqual([
+      "CPUQuota = 1",
+      "LimitNOFILE=infinity",
+    ]);
+  });
+});
