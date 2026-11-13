@@ -24,6 +24,7 @@ import {
   creditReserve,
   floorDecision,
   GATEWAY_PROVIDER_ID,
+  gatewayTiming,
   getJson,
   groupId,
   groupName,
@@ -3002,6 +3003,27 @@ export function gatewayRequested(review) {
   return Math.max(review.summary.usage.steps, allowed);
 }
 
+export function timingLine(record) {
+  const seconds = (ms) => (Number.isFinite(ms) ? Math.round(ms / 1000) : "-");
+  const timing = record.gatewayTiming;
+  return [
+    `REVIEW_TIMING ${record.model}`,
+    `selfCheck=${seconds(record.selfCheckMs)}s`,
+    `run=${seconds(record.runMs)}s`,
+    `steps=${record.steps}`,
+    ...(timing
+      ? [
+          `requests=${timing.requests}`,
+          `model=${seconds(timing.modelMs)}s`,
+          `firstToken=${seconds(timing.firstTokenMs)}s`,
+          `slowest=${seconds(timing.slowestMs)}s`,
+          `cacheMisses=${timing.cacheMisses}`,
+          `missTokens=${timing.missTokens}`,
+        ]
+      : []),
+  ].join(" ");
+}
+
 export function gatewayUsageLine(record) {
   const parts = Object.entries(record.providers ?? {}).map(
     ([provider, slot]) =>
@@ -3268,6 +3290,7 @@ async function main() {
     const removed = prepareCopy({ repo: options.repo, copy, commits, workRoot });
     if (removed.length > 0) console.log(`UNSAFE_PROJECT_FILES_REMOVED ${removed.length}`);
     const gitGuard = installGitGuard(workRoot);
+    const selfCheckStartedAt = Date.now();
     const problems = await selfCheck({
       binary,
       copy,
@@ -3282,7 +3305,8 @@ async function main() {
       process.exitCode = 3;
       return;
     }
-    console.log("SELF_CHECK_OK");
+    const selfCheckMs = Date.now() - selfCheckStartedAt;
+    console.log(`SELF_CHECK_OK ms=${selfCheckMs}`);
     if (options.selfCheckOnly) return;
     let liveGateway = null;
     if (gateway) {
@@ -3318,6 +3342,7 @@ async function main() {
       keepEarlierAttempt(roundDir, name);
       keepEarlierAttempt(roundRawDir, name, RAW_FILE_SUFFIXES);
       writeFileSync(join(roundDir, promptFileName(model)), maskSecretLike(prompt));
+      const runStartedAt = Date.now();
       const review = await reviewModel({
         binary,
         cwd: copy,
@@ -3329,8 +3354,10 @@ async function main() {
         timeoutMs,
         extraEnv: routed ? gatewayOpencodeEnv() : {},
       });
+      const runMs = Date.now() - runStartedAt;
       writeFileSync(join(roundRawDir, `${name}.jsonl`), review.stdout);
       const gatewayUsage = liveGateway ? await liveGateway.live.stableUsage() : null;
+      const timing = liveGateway ? gatewayTiming(gatewayUsage, model) : null;
       const { summary } = review;
       writeFileSync(join(roundDir, `${name}.md`), maskedRecordText(summary.text));
       if (summary.thinking)
@@ -3353,6 +3380,9 @@ async function main() {
         exitCode: review.runs.at(-1).code,
         ...summary.usage,
         toolCalls: summary.toolCalls.length,
+        selfCheckMs,
+        runMs,
+        ...(timing ? { gatewayTiming: timing } : {}),
         ...(summary.apiError ? { apiError: apiErrorText(summary.apiError) } : {}),
         ...(review.retry ? { retry: review.retry } : {}),
         ...(review.retriedAfter ? { retriedAfter: review.retriedAfter } : {}),
@@ -3416,7 +3446,9 @@ async function main() {
     for (const record of results) {
       console.log(resultLine(record));
       if (record.gateway) console.log(gatewayUsageLine(record));
+      console.log(timingLine(record));
     }
+    for (const rest of liveGateway?.live.rests() ?? []) console.log(`GATEWAY_REST ${rest}`);
     if (gateway) {
       const changed = binaryProblem(gateway.install);
       if (changed) {
