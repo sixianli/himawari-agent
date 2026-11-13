@@ -54,43 +54,17 @@ struct ApprovalRow: View {
     let respond: (Bool) -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Icon(.handStop, size: DesignTokens.IconSize.todayRow)
-                .foregroundStyle(Color.hmSun)
-                .frame(height: DesignTokens.TypeScale.body.lineHeight)
-            VStack(alignment: .leading, spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(approval.title)
-                        .hmType(DesignTokens.TypeScale.navTitle)
-                        .foregroundStyle(Color.hmText)
-                        .multilineTextAlignment(.leading)
-                    if let body = approval.display?.bodyPreview, !body.isEmpty {
-                        Text(body)
-                            .hmType(DesignTokens.TypeScale.caption)
-                            .foregroundStyle(Color.hmMuted)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                    }
-                }
-                HStack(spacing: 6) {
-                    Text(L.text("approval.title"))
-                        .hmType(DesignTokens.TypeScale.caption)
-                        .foregroundStyle(Color.hmSun)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button(ApprovalWords.decline(approval)) { respond(false) }
-                        .buttonStyle(RowPillButtonStyle(filled: false))
-                    Button(ApprovalWords.confirm(approval)) { respond(true) }
-                        .buttonStyle(RowPillButtonStyle(filled: true))
-                }
-                .disabled(busy)
-                .opacity(busy ? 0.5 : 1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.vertical, 14)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: open)
-        .accessibilityAction(named: Text(L.text("approval.open")), open)
+        DecisionRow(
+            title: approval.title,
+            detail: approval.display?.bodyPreview,
+            status: L.text("approval.title"),
+            decline: ApprovalWords.decline(approval),
+            confirm: ApprovalWords.confirm(approval),
+            openLabel: L.text("approval.open"),
+            busy: busy,
+            open: open,
+            respond: respond
+        )
     }
 }
 
