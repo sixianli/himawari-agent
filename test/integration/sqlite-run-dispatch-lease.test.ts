@@ -1257,7 +1257,15 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         await expect(recovery.listClaimable({ now: LATER, limit: 1 })).resolves.toEqual([]);
         await expect(
           recovery.listReconciliationRequired({ now: LATER, limit: 1 }),
-        ).resolves.toEqual([]);
+        ).resolves.toEqual([
+          expect.objectContaining({
+            runId: resource.runId,
+            action: "reconcile",
+            runStatus: "reconciling_external_result",
+            checkpointPhase: "reconciling_external_result",
+            runRevision: 2,
+          }),
+        ]);
         await recovery.quarantine({
           runId: resource.runId,
           expectedRunRevision: 2,

@@ -111,6 +111,7 @@ describe("rule registry", () => {
           content_folded: "",
           text_words: [],
           content_words: [],
+          money_state: "unknown",
           amount_state: "missing",
           amount_minor: 0,
           amount_currency: "",
@@ -138,6 +139,7 @@ describe("rule registry", () => {
       content_folded: "",
       text_words: [],
       content_words: [],
+      money_state: "unknown",
       amount_state: "missing",
       amount_minor: 0,
       amount_currency: "",
@@ -176,6 +178,7 @@ describe("rule registry", () => {
       content_folded: "",
       text_words: [],
       content_words: [],
+      money_state: "unknown",
       amount_state: "missing",
       amount_minor: 0,
       amount_currency: "",
@@ -197,6 +200,7 @@ describe("rule registry", () => {
       content_folded: "",
       text_words: [],
       content_words: [],
+      money_state: "unknown",
       amount_state: "missing",
       amount_minor: 0,
       amount_currency: "",
@@ -246,16 +250,19 @@ describe("rule registry", () => {
 
   it("[HR-2] always supplies the three amount fields, as missing when the model gave none", () => {
     expect(mailItemFacts(ITEM)).toMatchObject({
+      money_state: "unknown",
       amount_state: "missing",
       amount_minor: 0,
       amount_currency: "",
     });
     expect(mailItemFacts(ITEM, { state: "known", minor: 500, currency: "JPY" })).toMatchObject({
+      money_state: "unknown",
       amount_state: "known",
       amount_minor: 500,
       amount_currency: "JPY",
     });
     expect(mailItemFacts(ITEM, { state: "uncertain", minor: 500, currency: "JPY" })).toMatchObject({
+      money_state: "unknown",
       amount_state: "uncertain",
       amount_minor: 0,
       amount_currency: "JPY",

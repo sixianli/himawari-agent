@@ -945,7 +945,7 @@ export const messages = {
   "memory.page.carry.open": "見る・調整する",
   "memory.page.carry.meter": "使用中の文字数",
   "memory.page.carry.note":
-    "Himawari は回答の前に毎回これを読みます。ルール、プロフィール、好み、人間関係、目標、進行中のことから重要度の高い順に選び、{limit} 字まで入れます。健康やお金などの機微な記憶と予定は入れず、関係があるときだけ使います。記憶ごとに「毎回の会話に持っていく」をオン・オフでき、その選択が優先されます。",
+    "Himawari は回答の前に毎回これを読みます。ルール、プロフィール、好み、人間関係、目標、進行中のことから重要度の高い順に選び、{limit} 字まで入れます。健康やお金などの機微な記憶と予定はここには入れず、関係があるときだけ使います。これとは別に、日付が今後 7 日以内の記憶は、ここに入れないものも含めて、近い予定として持っていきます。記憶ごとに「毎回の会話に持っていく」をオン・オフでき、その選択が優先されます。",
   "memory.page.carry.none":
     "毎回持っていく記憶はまだありません。会話で話したプロフィール、好み、長期目標が自動で入ります。",
   "memory.page.carry.yours": "あなたが選択",
@@ -1078,13 +1078,13 @@ export const messages = {
     "このハードルールはあなたの言葉から作られました。元の記憶が変わりました。ルールはそのまま適用され、確認を待っています",
   "dailyReview.tag.captureRetrying": "記憶の抽出に失敗、再試行済み",
   "dailyReview.tag.captureQueued": "記憶の抽出に失敗、次の発言で再試行",
-  "dailyReview.tag.captureGaveUp": "このターンは記憶しきれなかった",
+  "dailyReview.tag.captureGaveUp": "このターンは記憶できなかった",
   "dailyReview.captureRetrying":
     "このターンから記憶を抽出するモデル呼び出しが一度失敗し、その場でもう一度試しました",
   "dailyReview.captureQueued":
     "このターンの記憶の抽出がうまくいかなかったため、次にメッセージを送ったときに再試行します",
   "dailyReview.captureGaveUp":
-    "このターンは 3 回再試行しても抽出できなかったか、抽出した内容を保存しきれなかったため（一部は保存されている場合があります）、これ以上は試しません",
+    "このターンは抽出と保存を 3 回試しても成功せず、何も保存されていません。これ以上は試しません",
   "dailyReview.hidden": "本文はここには表示しません",
   "dailyReview.fetched": "メール {count} 通を確認",
   "dailyReview.allFine": "このページは問題なし",
@@ -1130,14 +1130,14 @@ export const messages = {
   "decision.chain.rules": "該当したルール",
   "decision.chain.reviewRules": "再確認待ちのルール",
   "decision.chain.rule":
-    "{k, select, important_sender {重要なメールを逃さない：送信者が重要リストにある} public_domain {重要なメールを逃さない：官公庁・学校のドメインから} money_words {重要なメールを逃さない：金額に関する語がある} quiet_hours {通知しない時間帯：この時間は通知せず、終わってから送る} amount_threshold {少額は通知しない：金額が基準未満のメールは通知しない} mail_must_notify {あなたのルール：この種類のメールは必ず知らせる} mail_read_whole_thread {あなたのルール：スレッド全体を読んでから判断する} other {{id}}}",
+    "{k, select, important_sender {重要なメールを逃さない：送信者が重要リストにある} public_domain {重要なメールを逃さない：官公庁・学校のドメインから} money_words {重要なメールを逃さない：お金に関わるメールとモデルが判断した} quiet_hours {通知しない時間帯：この時間は通知せず、終わってから送る} amount_threshold {少額は通知しない：金額が基準未満のメールは通知しない} mail_must_notify {あなたのルール：この種類のメールは必ず知らせる} mail_read_whole_thread {あなたのルール：スレッド全体を読んでから判断する} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {あなたの設定} built_in {組み込みルール} other {未登録のルール}}",
   "decision.chain.ruleMails": "{count} 件のメールが該当",
   "decision.chain.ruleNeedsReview": "再確認待ち",
   "decision.chain.ruleQuote": "あなたの言葉：{text}",
   "decision.chain.ruleWording":
-    "{k, select, important_sender {{empty, select, yes {重要リストは空です} other {重要リスト：{text}}}} public_domain {ドメインの末尾：{text}} money_words {語の一覧：{text}} quiet_hours {{empty, select, yes {通知しない時間帯は未設定} other {時間帯：{text}}}} amount_threshold {基準：{text}} other {{text}}}",
+    "{k, select, important_sender {{empty, select, yes {重要リストは空です} other {重要リスト：{text}}}} public_domain {ドメインの末尾：{text}} money_words {モデルがメールごとに「支払う・引き落とされる・戻る・入金されるお金に関わるか」を判断し、はいなら該当} quiet_hours {{empty, select, yes {通知しない時間帯は未設定} other {時間帯：{text}}}} amount_threshold {基準：{text}} other {{text}}}",
   "decision.chain.ruleWordingMissing": "この版のルールの内容が見つかりません",
   "decision.chain.ruleSource": "出典：{source} · 第 {revision} 版",
   "decision.chain.ruleCurrent": "ルール名だけが記録されているため、現在の版を表示しています",

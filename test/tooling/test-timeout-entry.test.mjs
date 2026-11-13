@@ -11,6 +11,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useArtifactCapableHost } from "./artifact-host.mjs";
 
 vi.mock("../../scripts/ci/install-tools.mjs", async (original) => ({
   ...(await original()),
@@ -53,6 +54,8 @@ afterEach(() => {
   vi.unstubAllEnvs();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
+
+useArtifactCapableHost();
 
 describe("test runner timeout environment", () => {
   it.each([undefined, "30000", "00030", "", "0", "invalid"])(

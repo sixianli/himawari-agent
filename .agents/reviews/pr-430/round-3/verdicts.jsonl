@@ -1,0 +1,5 @@
+{"id": "r3-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "有正文、但封存文件里缺少摘要时，提议被静默跳过，而不是“整份拒绝”", "valid": false, "class": "error", "reason": "不成立：导入先核对封存文件条数和清单（import.ts 的“密封文件条数和清单不符”），少一条摘要就整份以 SEAL_MISMATCH 拒绝；实测删掉封存摘要后导入被拒"}
+{"id": "r3-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "导入重算摘要固定使用当前的 `proposalTextDigest`，完全忽略导出文件里的 `normalization` 字段", "valid": true, "class": "better", "reason": "现在只有一种规范化方式；等真有第二种时再按字段选算法。不改，列给 Andy"}
+{"id": "r3-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "导出端不校验库里 `text_sha256` 与正文是否一致，导入端却会校验", "valid": true, "class": "better", "reason": "唯一写入路径保证一致；让导出因此失败会挡住备份，不改，列给 Andy"}
+{"id": "r3-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新增的摘要不符反向测试只覆盖了非扣留正文", "valid": true, "class": "error", "severity": "low", "trigger": "将来有人改坏被扣留正文的摘要核对", "consequence": "测试发现不了", "modelSeverity": "低", "reason": "已补被扣留正文的封存摘要被改的反向测试，和有正文的已拒绝提议往返保留批次号的正向断言；去掉摘要核对，两条反向测试都失败"}
+{"id": "r3-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`content === null` 的提议导入时仍可携带任意 64 位十六进制摘要", "valid": true, "class": "better", "reason": "导入只进空库、由主人用自己的导出文件发起，是既有行为；不改，列给 Andy"}

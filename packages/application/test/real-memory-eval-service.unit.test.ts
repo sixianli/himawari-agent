@@ -2,6 +2,7 @@ import { createAgentId, createMemoryId, createOwnerId } from "@himawari-agent/do
 import {
   REAL_EVAL_ANSWER,
   REAL_EVAL_JUDGE,
+  REAL_EVAL_LEAK_JUDGE,
   REAL_EVAL_QUESTION,
 } from "@himawari-agent/prompt-catalog";
 import type { CalibrationDecisionRow } from "@himawari-agent/calibration";
@@ -138,6 +139,7 @@ function harness(options: {
   readonly memories: ProductMemoryRecord[];
   readonly answer?: (question: string) => string;
   readonly judge?: string;
+  readonly leak?: (question: string) => string;
   readonly decisions?: readonly CalibrationDecisionRow[];
   readonly estimateMicros?: number;
   readonly answerCostMicros?: number;
@@ -187,6 +189,11 @@ function harness(options: {
           output: options.answer ? options.answer(question) : defaultAnswer(question),
           costMicros: options.answerCostMicros ?? 100,
         };
+      }
+      if (prompt.startsWith(REAL_EVAL_LEAK_JUDGE.text)) {
+        const verdict = options.leak ? options.leak(String(data["question"])) : '{"leaks":false}';
+        if (verdict === "throw") throw new Error("RATE_LIMITED");
+        return { output: verdict, costMicros: 0 };
       }
       if (prompt.startsWith(REAL_EVAL_JUDGE.text))
         return { output: options.judge ?? '{"verdict":"correct"}', costMicros: 50 };
@@ -364,6 +371,51 @@ describe("[P4-5] real memory eval run", () => {
     expect(third.some((prompt) => prompt.includes("我不吃香菜"))).toBe(false);
   });
 
+  it("asks the leak judge about every question before it enters the bank, and keeps one it clears", async () => {
+    const test = harness({ memories: [memory("flight")] });
+    const report = await test.service.run("manual", LIMITS);
+    expect((report.summary as { rejected: Record<string, number> }).rejected).toEqual({});
+    expect(test.store.questions.map(({ kind }) => kind).sort()).toEqual(["abstain", "fact"]);
+    expect(
+      test.prompts.filter((prompt) => prompt.startsWith(REAL_EVAL_LEAK_JUDGE.text)),
+    ).toHaveLength(2);
+  });
+
+  it("REVERSE: a time written in words the n-gram check cannot see is rejected when the leak judge says it leaks", async () => {
+    const test = harness({
+      memories: [memory("flight")],
+      questionOutput:
+        '{"question":"我腊月初三要飞去哪里出差？","kind":"fact","abstainQuestion":"我同事下个月去哪儿出差？"}',
+      leak: (question) => (question.includes("腊月初三") ? '{"leaks":true}' : '{"leaks":false}'),
+    });
+    const report = await test.service.run("manual", LIMITS);
+    expect((report.summary as { rejected: Record<string, number> }).rejected).toEqual({
+      leak: 1,
+    });
+    expect(test.store.questions).toEqual([]);
+  });
+
+  it.each([
+    ["answers something other than a verdict", "不知道"],
+    ["fails", "throw"],
+  ])("REVERSE: rejects the question when the leak judge %s", async (_name, answer) => {
+    const test = harness({ memories: [memory("flight")], leak: () => answer });
+    const report = await test.service.run("manual", LIMITS);
+    expect((report.summary as { rejected: Record<string, number> }).rejected).toMatchObject({
+      leak: 1,
+    });
+    expect(test.store.questions).toEqual([]);
+  });
+
+  it("drops only the abstain question when the leak judge flags it", async () => {
+    const test = harness({
+      memories: [memory("flight")],
+      leak: (question) => (question.includes("同事") ? '{"leaks":true}' : '{"leaks":false}'),
+    });
+    await test.service.run("manual", LIMITS);
+    expect(test.store.questions.map(({ kind }) => kind)).toEqual(["fact"]);
+  });
+
   it("deletes the stored question text when the bank does not keep the question", async () => {
     const duplicate = harness({ memories: [memory("coffee")], addQuestion: "duplicate" });
     const kept = await duplicate.service.run("manual", LIMITS);
@@ -503,7 +555,11 @@ describe("[P4-5] real memory eval run", () => {
   });
 
   it("does not search when the remaining budget cannot cover the search estimate", async () => {
-    const test = harness({ memories: [memory("coffee")], recallEstimateMicros: 60 });
+    const test = harness({
+      memories: [memory("coffee")],
+      recallEstimateMicros: 60,
+      estimateMicros: 10,
+    });
     const report = await test.service.run("weekly", { capMicros: 150, newMemoriesPerRun: 10 });
     expect(report.outcome).toBe("budget_exceeded");
     expect(test.recalls).toEqual([]);
