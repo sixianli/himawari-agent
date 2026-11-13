@@ -181,24 +181,22 @@ describe("ProductionLoginDevicesControl scope", () => {
 
   it("passes a storage conflict through at once instead of retrying it as a changed device", async () => {
     const attempts: string[] = [];
+    const storageError = new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "disk headroom", {
+      reason: "disk_headroom",
+    });
     const devices = new ProductionLoginDevicesControl({
       configuration: { ownerId: OWNER, agentId: AGENT } as never,
       state: {
         listDevices: async () => [device("device-current"), device("device-laptop")],
         revokeDevice: async (id: string) => {
           attempts.push(id);
-          throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "disk headroom", {
-            reason: "disk_headroom",
-          });
+          throw storageError;
         },
       } as never,
       recentAuthentication: { assertRecentAuthentication: async () => undefined } as never,
       clock: { now: () => NOW },
     });
-    await expect(devices.execute(revokeOthers() as never)).rejects.toMatchObject({
-      code: PORT_ERROR_CODES.CONFLICT,
-      message: "disk headroom",
-    });
+    await expect(devices.execute(revokeOthers() as never)).rejects.toBe(storageError);
     expect(attempts).toEqual(["device-laptop"]);
   });
 
