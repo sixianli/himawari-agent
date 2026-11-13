@@ -1385,12 +1385,12 @@ export class ProductionMemoryControl {
       b.updatedAt.localeCompare(a.updatedAt),
     );
     for (const record of active) {
+      if (record.dataClassification === "sensitive" || record.dataClassification === "restricted")
+        continue;
       if (existing.length >= limit) {
         complete = false;
         break;
       }
-      if (record.dataClassification === "sensitive" || record.dataClassification === "restricted")
-        continue;
       const text = await this.readText(record.contentRef).catch(() => null);
       if (text) existing.push({ memoryId: record.id, text });
       else complete = false;

@@ -134,7 +134,7 @@ export class ProductionImportDuplicateChecker {
     const groups: number[][] = [];
     for (let start = 0; start < asked.length; start += this.#settings.candidatesPerRequest)
       groups.push(asked.slice(start, start + this.#settings.candidatesPerRequest));
-    const jobs = groups.flatMap((group) => chunks.map((chunk) => ({ group, chunk })));
+    const jobs = chunks.flatMap((chunk) => groups.map((group) => ({ group, chunk })));
     const best = new Map<number, ImportDuplicateAnswer>();
     const incomplete = new Set<number>();
     const run = async (job: (typeof jobs)[number]) => {
