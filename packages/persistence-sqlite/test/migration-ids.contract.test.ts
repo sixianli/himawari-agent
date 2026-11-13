@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   applyMigrations,
   assertWritableSchema,
+  bundledSchemaFingerprint,
   createVerifiedMigrationSnapshot,
   describeMigrationSet,
   LATEST_MIGRATION_SEQUENCE,
@@ -38,12 +39,7 @@ async function temporaryDatabase() {
   };
 }
 
-function timestamped(
-  id: string,
-  name: string,
-  sql: string,
-  position: number,
-): MigrationDefinition {
+function timestamped(id: string, name: string, sql: string, position: number): MigrationDefinition {
   return Object.freeze({
     id,
     sequence: position,
@@ -253,5 +249,10 @@ describe("[MIGRATION-IDS] timestamped migrations", () => {
     expect(migrationSetFingerprint([one, two])).not.toBe(
       migrationSetFingerprint([one, { ...two, digest: "c" }]),
     );
+  });
+
+  it("computes the bundled fingerprint synchronously the same way as the loaded set", async () => {
+    const migrations = await loadBundledMigrations();
+    expect(bundledSchemaFingerprint()).toBe(describeMigrationSet(migrations).fingerprint);
   });
 });

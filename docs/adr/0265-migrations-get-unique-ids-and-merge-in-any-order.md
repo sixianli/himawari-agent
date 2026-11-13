@@ -1,7 +1,7 @@
 ---
 status: active
 document_type: adr
-decision_status: proposed
+decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0018-sqlite-product-state-authority.md"

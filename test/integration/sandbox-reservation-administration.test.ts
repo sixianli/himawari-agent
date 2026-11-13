@@ -763,7 +763,13 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
       expect(
         database.prepare("SELECT max(sequence) FROM schema_migration_ledger").pluck().get(),
       ).toBe(LATEST_MIGRATION_SEQUENCE);
-      expect(database.prepare("SELECT key,value FROM schema_metadata ORDER BY key").all()).toEqual([
+      expect(
+        database
+          .prepare(
+            "SELECT key,value FROM schema_metadata WHERE key <> 'schema_fingerprint' ORDER BY key",
+          )
+          .all(),
+      ).toEqual([
         { key: "current_sequence", value: String(LATEST_MIGRATION_SEQUENCE) },
         { key: "minimum_writer_sequence", value: String(LATEST_MIGRATION_SEQUENCE) },
       ]);

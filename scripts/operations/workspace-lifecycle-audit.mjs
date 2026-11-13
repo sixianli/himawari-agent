@@ -72,7 +72,7 @@ export function auditWorkspaceLifecycle({
         version < 28 ||
         ledger.count !== version ||
         unknownLegacyLike > 0 ||
-        missingTables.length > 0
+        (version >= LEGACY_MIGRATION_COUNT && missingTables.length > 0)
       )
         throw new Error("WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED");
       let rows;

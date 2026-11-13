@@ -776,6 +776,25 @@ export function migrationSetFingerprint(
   return sha256(`himawari.migration-set.v1\n${lines.join("")}`);
 }
 
+export function bundledSchemaFingerprint(): string {
+  const entries = [
+    ...bundledMigrationFiles.map((metadata) => ({
+      id: legacyMigrationId(metadata.sequence),
+      file: metadata.file,
+    })),
+    ...readdirSync(MIGRATION_FILE_SYNC_DIRECTORY)
+      .map((file) => ({ file, match: TIMESTAMPED_MIGRATION_FILE.exec(file) }))
+      .filter((entry) => entry.match !== null)
+      .map((entry) => ({ id: (entry.match as RegExpExecArray)[1] as string, file: entry.file })),
+  ];
+  return migrationSetFingerprint(
+    entries.map((entry) => ({
+      id: entry.id,
+      digest: sha256(readFileSync(new URL(entry.file, MIGRATION_FILE_SYNC_DIRECTORY), "utf8")),
+    })),
+  );
+}
+
 export function describeMigrationSet(migrations: readonly MigrationDefinition[]): SchemaIdentity {
   return Object.freeze({
     count: migrations.length,
