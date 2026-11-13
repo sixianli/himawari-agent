@@ -2295,7 +2295,7 @@ export async function startTenantRuntime(
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
           requestTimeoutMs: configuration.deadlines.providerRequestMs,
           sources: {
-            recall: (args, within) => memoryRecall.recallOutsideRun(args, within),
+            recall: (args, within, ceiling) => memoryRecall.recallOutsideRun(args, within, ceiling),
             embedOutsideRun: (context, operation) =>
               memory.embedForExternalRead(context, operation),
             reminders: (windowMs, ceiling) => reminderWriter.list(windowMs, ceiling),
@@ -2340,6 +2340,18 @@ export async function startTenantRuntime(
                 agentId: configuration.agentId,
                 includeRetired: false,
               }),
+            memoryClassifications: async (memoryIds) =>
+              new Map(
+                (
+                  await profileState.readMany({
+                    ownerId: configuration.ownerId,
+                    agentId: configuration.agentId,
+                    memoryIds: memoryIds as Parameters<
+                      typeof profileState.readMany
+                    >[0]["memoryIds"],
+                  })
+                ).map((record) => [record.id as string, record.dataClassification]),
+              ),
             ...(memoryEpisodes
               ? {
                   summaries: async ({
