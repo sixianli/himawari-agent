@@ -38,6 +38,7 @@ import {
   ProductionMemoryCapture,
   parseMemoryCandidates,
 } from "../../apps/agent-service/src/production-memory-capture.ts";
+import { ProductionMemoryClassifier } from "../../apps/agent-service/src/production-memory-classification.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import {
   isStandingQuote,
@@ -284,7 +285,29 @@ describe("production memory capture", () => {
       protector: adapters.payloadProtector,
       clock: { now: () => clock.value },
     });
+    const classifyOutputs: string[] = [];
+    const classifyPrompts: string[] = [];
+    const classifyFailures: unknown[] = [];
+    const classifier = new ProductionMemoryClassifier({
+      model: {
+        estimateMicros: () => 10,
+        generate: async ({ prompt }) => {
+          classifyPrompts.push(prompt);
+          const output = classifyOutputs.shift();
+          if (output === undefined) throw new Error("MODEL_NOT_COMPLETED");
+          return { output, costMicros: 10 };
+        },
+      },
+      dailyLimitMicros: 1_000,
+      batchCharacters: 6000,
+      outputTokensPerItem: 60,
+      timeZone: "Asia/Shanghai",
+      now: () => clock.value,
+      newId: () => "classify",
+      onFailure: (error) => classifyFailures.push(error),
+    });
     const control = new ProductionMemoryControl({
+      classifier,
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       state: repository.productMemoryState(),
       jobs: repository.memoryProjectionJobs(),
@@ -388,6 +411,9 @@ describe("production memory capture", () => {
       failures,
       prompts,
       calls,
+      classifyOutputs,
+      classifyPrompts,
+      classifyFailures,
     };
   }
 
@@ -745,7 +771,13 @@ describe("production memory capture", () => {
     await viaGateway(
       context.control,
       "memory.create",
-      { contentRef: "payload-coffee", category: "preference", subCategory: null, pinned: false },
+      {
+        contentRef: "payload-coffee",
+        category: "preference",
+        subCategory: null,
+        topic: null,
+        pinned: false,
+      },
       "manual-coffee",
     );
     const coffee = (await gatewayOverview(context.control)).memories.find(({ text }) =>
@@ -2669,7 +2701,13 @@ describe("production memory capture", () => {
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-manual", category: "preference", subCategory: "运动", pinned: false },
+      {
+        contentRef: "payload-manual",
+        category: "preference",
+        subCategory: "运动",
+        topic: null,
+        pinned: false,
+      },
       "manual-1",
     );
     const added = (await overview(context.control)).memories.find(({ text }) =>
@@ -2688,7 +2726,13 @@ describe("production memory capture", () => {
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-card", category: "finance", subCategory: null, pinned: false },
+      {
+        contentRef: "payload-card",
+        category: "finance",
+        subCategory: null,
+        topic: null,
+        pinned: false,
+      },
       "manual-2",
     );
     expect(
@@ -2710,13 +2754,25 @@ describe("production memory capture", () => {
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-coffee", category: "preference", subCategory: null, pinned: true },
+      {
+        contentRef: "payload-coffee",
+        category: "preference",
+        subCategory: null,
+        topic: null,
+        pinned: true,
+      },
       "manual-pinned",
     );
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-run", category: "preference", subCategory: null, pinned: false },
+      {
+        contentRef: "payload-run",
+        category: "preference",
+        subCategory: null,
+        topic: null,
+        pinned: false,
+      },
       "manual-plain",
     );
     let view = await overview(context.control);
@@ -2770,7 +2826,13 @@ describe("production memory capture", () => {
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-mood", category: "health", subCategory: null, pinned: false },
+      {
+        contentRef: "payload-mood",
+        category: "health",
+        subCategory: null,
+        topic: null,
+        pinned: false,
+      },
       "manual-mood",
     );
     const mood = (await overview(context.control)).memories.find(({ text }) =>
@@ -2798,6 +2860,7 @@ describe("production memory capture", () => {
         contentRef: "payload-sister",
         category: "relationship",
         subCategory: null,
+        topic: null,
         pinned: false,
       },
       "manual-sister",
@@ -2841,13 +2904,25 @@ describe("production memory capture", () => {
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-coffee", category: "identity", subCategory: "饮食", pinned: true },
+      {
+        contentRef: "payload-coffee",
+        category: "identity",
+        subCategory: "饮食",
+        topic: null,
+        pinned: true,
+      },
       "manual-coffee",
     );
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-mood", category: "health", subCategory: null, pinned: false },
+      {
+        contentRef: "payload-mood",
+        category: "health",
+        subCategory: null,
+        topic: null,
+        pinned: false,
+      },
       "manual-mood",
     );
     const find = async (needle: string) => {
@@ -3119,7 +3194,9 @@ describe("production memory capture", () => {
       {
         batchId: "memory-import-codex-2",
         source: "codex",
-        items: [{ contentRef: "payload-import-1", category: "rule", subCategory: null }],
+        items: [
+          { contentRef: "payload-import-1", category: "rule", subCategory: null, topic: null },
+        ],
       },
       "import-p11",
     );
@@ -3274,8 +3351,13 @@ describe("production memory capture", () => {
           batchId: "memory-import-codex-1",
           source: "codex",
           items: [
-            { contentRef: "payload-import-1", category: "rule", subCategory: "回答方式" },
-            { contentRef: "payload-import-2", category: "goal", subCategory: null },
+            {
+              contentRef: "payload-import-1",
+              category: "rule",
+              subCategory: "回答方式",
+              topic: null,
+            },
+            { contentRef: "payload-import-2", category: "goal", subCategory: null, topic: null },
           ],
         },
         "import-1",
@@ -3322,7 +3404,9 @@ describe("production memory capture", () => {
       {
         batchId: "memory-import-sensitive-1",
         source: "assistant",
-        items: [{ contentRef: "payload-import-pwd", category: "other", subCategory: null }],
+        items: [
+          { contentRef: "payload-import-pwd", category: "other", subCategory: null, topic: null },
+        ],
       },
       "import-sensitive-1",
     );
@@ -3332,6 +3416,147 @@ describe("production memory capture", () => {
         .filter(({ importBatchId }) => importBatchId === "memory-import-sensitive-1")
         .map(({ dataClassification }) => dataClassification),
     ).toEqual(["sensitive"]);
+  });
+
+  it("[T5] sorts hand-added memories with the model, keeps identifiers away from it and treats a broken answer as sensitive", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.protect("payload-c1", "我不吃药，身体一直很好");
+    await context.protect("payload-c2", "每天早上吃一片降压药");
+    await context.protect("payload-c3", "我的身份证号是 110101199003071234");
+    await context.protect("payload-c4", "回答不要用表情符号");
+    const classify = async (contentRefs: readonly string[]) => {
+      const snapshot = await context.control.query({
+        ...envelope,
+        kind: "query",
+        type: "memory.classify.read",
+        payload: { contentRefs },
+      } as never);
+      if (snapshot.type !== "memory.classify.snapshot") throw new Error("snapshot");
+      return snapshot.payload.items;
+    };
+    context.classifyOutputs.push(
+      JSON.stringify({
+        items: [
+          { id: "0", category: "preference", classification: "private", topic: null },
+          { id: "1", category: "health", classification: "private", topic: null },
+          { id: "3", category: "made-up", classification: "private", topic: null },
+        ],
+      }),
+    );
+    expect(await classify(["payload-c1", "payload-c2", "payload-c3", "payload-c4"])).toEqual([
+      {
+        contentRef: "payload-c1",
+        category: "preference",
+        classification: "private",
+        topic: null,
+        failed: false,
+      },
+      {
+        contentRef: "payload-c2",
+        category: "health",
+        classification: "sensitive",
+        topic: "health",
+        failed: false,
+      },
+      {
+        contentRef: "payload-c3",
+        category: "other",
+        classification: "sensitive",
+        topic: "other",
+        failed: false,
+      },
+      {
+        contentRef: "payload-c4",
+        category: "other",
+        classification: "private",
+        topic: null,
+        failed: false,
+      },
+    ]);
+    expect(context.classifyPrompts).toHaveLength(1);
+    expect(context.classifyPrompts[0]).toContain("我不吃药，身体一直很好");
+    expect(context.classifyPrompts[0]).not.toContain("110101199003071234");
+    await context.protect("payload-c5", "我最近心情很低落", "sensitive");
+    expect(await classify(["payload-c5"])).toEqual([
+      {
+        contentRef: "payload-c5",
+        category: "other",
+        classification: "sensitive",
+        topic: "other",
+        failed: false,
+      },
+    ]);
+    expect(context.classifyPrompts).toHaveLength(1);
+    context.classifyOutputs.push("not json", '{"items":"nope"}');
+    expect(await classify(["payload-c1"])).toEqual([
+      {
+        contentRef: "payload-c1",
+        category: "other",
+        classification: "sensitive",
+        topic: "other",
+        failed: true,
+      },
+    ]);
+    expect(context.classifyFailures).toHaveLength(1);
+  });
+
+  it("[T5] stores a hand-added memory at least as sensitive as its text and category demand, whatever the page sent", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-id", "我的身份证号是 110101199003071234");
+    await context.protect("payload-bp", "每天早上吃一片降压药");
+    await context.protect("payload-bp-topic", "我在吃抗抑郁的药");
+    await context.protect("payload-plain", "我喜欢早上跑步");
+    const add = (contentRef: string, category: string, topic: string | null, key: string) =>
+      command(
+        context.control,
+        "memory.create",
+        { contentRef, category, subCategory: null, topic, pinned: false },
+        key,
+      );
+    await add("payload-id", "identity", null, "t5-id");
+    await add("payload-bp", "health", null, "t5-bp");
+    await add("payload-bp-topic", "preference", "health", "t5-topic");
+    await add("payload-plain", "preference", null, "t5-plain");
+    await context.protect("payload-belief", "我每周日去教堂");
+    context.classifyOutputs.push(
+      JSON.stringify({
+        items: [{ id: "0", category: "other", classification: "sensitive", topic: "beliefs" }],
+      }),
+    );
+    await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.classify.read",
+      payload: { contentRefs: ["payload-belief"] },
+    } as never);
+    await add("payload-belief", "other", null, "t5-judged");
+    const stored = Object.fromEntries(
+      (await overview(context.control)).memories
+        .filter(({ memoryId }) => memoryId.startsWith("memory:owner:t5-"))
+        .map(({ memoryId, dataClassification, topic, sourceRefs }) => [
+          memoryId.slice("memory:owner:".length),
+          {
+            dataClassification,
+            topic,
+            raised: sourceRefs.some((ref) => ref.startsWith("memory-raised:")),
+          },
+        ]),
+    );
+    expect(stored).toEqual({
+      "t5-id": { dataClassification: "sensitive", topic: "other", raised: true },
+      "t5-bp": { dataClassification: "sensitive", topic: "health", raised: true },
+      "t5-topic": { dataClassification: "sensitive", topic: "health", raised: true },
+      "t5-plain": { dataClassification: "private", topic: null, raised: false },
+      "t5-judged": { dataClassification: "sensitive", topic: "beliefs", raised: true },
+    });
   });
 
   const P3_5_MESSAGE = "我超想出去玩，周末去哪儿都行";
