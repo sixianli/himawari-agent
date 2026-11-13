@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import {
   type SandboxCleanupPending,
@@ -28,14 +27,11 @@ import {
 } from "@himawari-agent/execution-contracts";
 import { writeServiceDiagnostic } from "@himawari-agent/platform-node";
 import {
-  blockJobHostLaunch,
   type JobHostControlObservation,
   type JobHostLaunchEvidence,
+  type JobHostRiskControl,
+  localJobHostRiskControl,
   processGroupPresent,
-  queryJobHostControl,
-  readJobHostFinalEvidence,
-  readJobHostLaunchDecision,
-  readJobHostStartEvidence,
   readLinuxHostGroup,
   readLinuxNamespaceState,
   readProcessStartToken,
@@ -110,6 +106,7 @@ interface Options {
   readonly admit: (
     plan: SandboxExecutionPlanV2,
   ) => Promise<{ binding: SandboxHostBinding; qualification: SandboxRuntimeQualification }>;
+  readonly jobHostControl?: JobHostRiskControl;
 }
 const key = (plan: SandboxExecutionPlanV2) =>
   `sandbox-control:${createHash("sha256").update(JSON.stringify(plan.identity)).digest("hex")}`;
@@ -178,6 +175,7 @@ function neverStartedReleased(
 }
 
 export function createProductionSandboxControl(options: Options) {
+  const access = options.jobHostControl ?? localJobHostRiskControl();
   const assertStopRequestedAt = (stopRequestedAt: string | undefined): string => {
     if (
       !stopRequestedAt ||
@@ -275,12 +273,11 @@ export function createProductionSandboxControl(options: Options) {
   };
   const readControl = async (plan: SandboxExecutionPlanV2): Promise<StoredControl> => {
     const value = await readStoredControl(plan);
-    const directory = await lstat(value.control.directory);
+    const directory = await access.describeDirectory(value.control.directory);
     if (
-      !directory.isDirectory() ||
-      directory.isSymbolicLink() ||
-      String(directory.dev) !== value.directoryDevice ||
-      String(directory.ino) !== value.directoryInode
+      !directory.directory ||
+      directory.device !== value.directoryDevice ||
+      directory.inode !== value.directoryInode
     )
       throw new Error("SANDBOX_CONTROL_DIRECTORY_CHANGED");
     return value;
@@ -298,17 +295,17 @@ export function createProductionSandboxControl(options: Options) {
     )
       throw new Error("SANDBOX_CONTROL_BINDING_UNAVAILABLE");
     sandboxJobControlBindingSchema.parse(value.control);
-    const directory = await lstat(value.control.directory).catch((error: unknown) => {
-      if (errorCode(error) === "ENOENT") throw new Error("SANDBOX_CONTROL_DIRECTORY_CHANGED");
-      throw error;
-    });
+    const directory = await access
+      .describeDirectory(value.control.directory)
+      .catch((error: unknown) => {
+        if (errorCode(error) === "ENOENT") throw new Error("SANDBOX_CONTROL_DIRECTORY_CHANGED");
+        throw error;
+      });
     if (
-      !directory.isDirectory() ||
-      directory.isSymbolicLink() ||
-      String(directory.dev) !== value.directoryDevice ||
-      String(directory.ino) !== value.directoryInode ||
-      (directory.mode & 0o077) !== 0 ||
-      (typeof process.getuid === "function" && directory.uid !== process.getuid())
+      !directory.directory ||
+      directory.device !== value.directoryDevice ||
+      directory.inode !== value.directoryInode ||
+      !directory.private
     )
       throw new Error("SANDBOX_CONTROL_DIRECTORY_CHANGED");
     if (value.machineBootId !== (await options.machineBootId()))
@@ -343,7 +340,7 @@ export function createProductionSandboxControl(options: Options) {
     const artifact = await options.read(plan, `${key(plan)}:preparation:launch-blocked`);
     if (!artifact) return undefined;
     const stored = await readPreparationControl(plan);
-    const decision = await readJobHostLaunchDecision(launchContext(plan, stored));
+    const decision = await access.readLaunchDecision(launchContext(plan, stored));
     if (
       decision?.decision.kind !== "blocked" ||
       decision.decision.stopRequestedAt !== stopRequestedAt ||
@@ -363,10 +360,10 @@ export function createProductionSandboxControl(options: Options) {
     const stored = await readPreparationControl(plan);
     let observation: JobHostControlObservation;
     try {
-      observation = await queryJobHostControl(stored.control, command, 1000, signal);
+      observation = await access.query(stored.control, command, 1000, signal);
     } catch (error) {
       try {
-        observation = await readJobHostFinalEvidence(stored.control);
+        observation = await access.readFinalEvidence(stored.control);
       } catch (proofError) {
         if (errorCode(proofError) === "ENOENT") throw error;
         throw proofError;
@@ -386,10 +383,10 @@ export function createProductionSandboxControl(options: Options) {
     const stored = await readControl(plan);
     let observation: JobHostControlObservation;
     try {
-      observation = await queryJobHostControl(stored.control, command, 1000, signal);
+      observation = await access.query(stored.control, command, 1000, signal);
     } catch (requestError) {
       try {
-        observation = await readJobHostFinalEvidence(stored.control);
+        observation = await access.readFinalEvidence(stored.control);
       } catch (proofError) {
         if (errorCode(proofError) === "ENOENT") return new UnreachableHost(requestError);
         throw proofError;
@@ -425,9 +422,9 @@ export function createProductionSandboxControl(options: Options) {
     record: SandboxExecutionRecord,
   ): Promise<StoredCrash["crash"] | SandboxCleanupPending | undefined> => {
     const stored = await readControl(record.plan);
-    let start: Awaited<ReturnType<typeof readJobHostStartEvidence>>;
+    let start: Awaited<ReturnType<JobHostRiskControl["readStartEvidence"]>>;
     try {
-      start = await readJobHostStartEvidence(stored.control);
+      start = await access.readStartEvidence(stored.control);
     } catch (error) {
       if (errorCode(error) === "ENOENT") return undefined;
       throw error;
@@ -804,7 +801,7 @@ export function createProductionSandboxControl(options: Options) {
       const stored = await readControl(record.plan);
       let observation: JobHostControlObservation;
       try {
-        observation = await readJobHostFinalEvidence(stored.control);
+        observation = await access.readFinalEvidence(stored.control);
       } catch (error) {
         if (errorCode(error) === "ENOENT") return false;
         throw error;
@@ -876,7 +873,7 @@ export function createProductionSandboxControl(options: Options) {
         throw new Error("SANDBOX_CONTROL_BINDING_CHANGED");
       const { binding } = await options.admit(plan);
       if (
-        (await realpath(control.directory)) !== control.directory ||
+        !(await access.describeDirectory(control.directory)).canonical ||
         !within(binding.privateRoot, control.directory) ||
         [
           binding.runtimeRoot,
@@ -899,13 +896,8 @@ export function createProductionSandboxControl(options: Options) {
       }
       if (await options.read(plan, key(plan)))
         throw new Error("SANDBOX_CONTROL_ALREADY_REGISTERED");
-      const metadata = await lstat(control.directory);
-      if (
-        !metadata.isDirectory() ||
-        metadata.isSymbolicLink() ||
-        (metadata.mode & 0o077) !== 0 ||
-        (typeof process.getuid === "function" && metadata.uid !== process.getuid())
-      )
+      const metadata = await access.describeDirectory(control.directory);
+      if (!metadata.directory || !metadata.private)
         throw new Error("SANDBOX_CONTROL_DIRECTORY_CHANGED");
       await options.write(plan, `${key(plan)}:preparation`, {
         version: "sandbox-preparation-control.v1",
@@ -914,8 +906,8 @@ export function createProductionSandboxControl(options: Options) {
         environmentId: plan.environmentId,
         control,
         policyDigest,
-        directoryDevice: String(metadata.dev),
-        directoryInode: String(metadata.ino),
+        directoryDevice: metadata.device,
+        directoryInode: metadata.inode,
         machineBootId: await options.machineBootId(),
         executionLease: plan.executionLease,
       } satisfies StoredPreparationControl);
@@ -936,7 +928,7 @@ export function createProductionSandboxControl(options: Options) {
         return false;
       }
       if (
-        (await realpath(control.directory)) !== control.directory ||
+        !(await access.describeDirectory(control.directory)).canonical ||
         !within(binding.privateRoot, control.directory) ||
         [
           binding.runtimeRoot,
@@ -945,7 +937,7 @@ export function createProductionSandboxControl(options: Options) {
         ].some((root) => root === control.directory || within(root, control.directory))
       )
         throw new Error("SANDBOX_CONTROL_SCOPE_INVALID");
-      const observation = await queryJobHostControl(control, "inspect");
+      const observation = await access.query(control, "inspect");
       if (
         observation.phase !== "ready" ||
         observation.taskStarted ||
@@ -958,13 +950,13 @@ export function createProductionSandboxControl(options: Options) {
         if (!same(prepared.control, control) || prepared.policyDigest !== observation.policyDigest)
           throw new Error("SANDBOX_CONTROL_BINDING_CHANGED");
       }
-      const metadata = await lstat(control.directory);
+      const metadata = await access.describeDirectory(control.directory);
       await options.write(plan, key(plan), {
         fingerprint: plan.semanticFingerprint,
         environmentId: plan.environmentId,
         control,
-        directoryDevice: String(metadata.dev),
-        directoryInode: String(metadata.ino),
+        directoryDevice: metadata.device,
+        directoryInode: metadata.inode,
         bootId: observation.bootId,
         processIdentityRef: observation.processIdentityRef,
         policyDigest: observation.policyDigest,
@@ -1005,8 +997,8 @@ export function createProductionSandboxControl(options: Options) {
           const stored = await readPreparationControl(plan);
           if (signal?.aborted) throw new Error("SANDBOX_RECONCILIATION_INTERRUPTED");
           const context = launchContext(plan, stored);
-          if (await blockJobHostLaunch(context, stopRequestedAt)) {
-            const decision = await readJobHostLaunchDecision(context);
+          if (await access.blockLaunch(context, stopRequestedAt)) {
+            const decision = await access.readLaunchDecision(context);
             if (!decision || decision.decision.kind !== "blocked")
               throw new Error("SANDBOX_CONTROL_BINDING_CHANGED");
             await readPreparationControl(plan);
