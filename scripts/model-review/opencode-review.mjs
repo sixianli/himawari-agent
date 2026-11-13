@@ -1638,13 +1638,24 @@ export const STOP_REASONS = {
 
 const SKELETON_SKIPPED_SECTIONS = /必答|侧重|结论|总结|summary|conclusion/i;
 
-export function deferredLowLines({ repo, ledgerPath, records, latest }) {
+export function deferredLowLines({ repo, ledgerPath, records }) {
   const lines = [];
-  for (let round = LOW_DEFER_FROM_ROUND; round <= latest; round += 1) {
+  const rounds = [
+    ...new Set(
+      records
+        .filter((record) => record.mode === "code-review")
+        .map((record) => record.round ?? 1)
+        .filter((round) => round >= LOW_DEFER_FROM_ROUND),
+    ),
+  ].sort((a, b) => a - b);
+  for (const round of rounds) {
     if (records.some((record) => record.mode === "low-fix" && record.round === round)) continue;
     const path = `${ledgerPath}/round-${round}/verdicts.jsonl`;
     const text = showAt(repo, "HEAD", path);
-    if (text === null) continue;
+    if (text === null) {
+      lines.push(`  第 ${round} 轮 verdicts.jsonl 没有提交，列不出这一轮的低意见`);
+      continue;
+    }
     const errors = parseVerdicts(text, path).filter(
       (verdict) => verdict.valid && verdict.class === "error",
     );
@@ -1756,6 +1767,7 @@ export function finishRound({ repo, pr }) {
     )
       problems.push(`control-character ${printable(verdict.id)}`);
   }
+  if (!COMMIT_PATTERN.test(records[0].base ?? "")) problems.push("base-invalid");
   if (problems.length > 0) throw new Error(`FINISH_ROUND_REFUSED ${problems.join(" ")}`);
   const errors = verdicts.filter((verdict) => verdict.valid && verdict.class === "error");
   const high = errors.filter((verdict) => verdict.severity !== "low");
@@ -1853,7 +1865,7 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
         }),
       ];
     });
-  const deferredLines = deferredLowLines({ repo, ledgerPath, records, latest });
+  const deferredLines = deferredLowLines({ repo, ledgerPath, records });
   const overrideLines = records
     .filter((record) => record.mode === "override")
     .map(

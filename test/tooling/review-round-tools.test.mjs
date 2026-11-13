@@ -29,7 +29,7 @@ const answer = [
   "### 1. 会不会改变请求开头？",
 ].join("\n");
 
-function fixture(round, verdicts) {
+function fixture(round, verdicts, overrides = {}) {
   const repo = mkdtempSync(join(tmpdir(), "round-tools-"));
   const dir = join(repo, ".agents", "reviews", "pr-7", `round-${round}`);
   mkdirSync(dir, { recursive: true });
@@ -41,6 +41,7 @@ function fixture(round, verdicts) {
     base,
     outcome: "ok",
     cost: 0.05,
+    ...overrides,
   };
   writeFileSync(
     join(repo, ".agents", "reviews", "pr-7", "usage.jsonl"),
@@ -159,8 +160,7 @@ describe("review round tools", () => {
         const lines = deferredLowLines({
           repo,
           ledgerPath: ".agents/reviews/pr-7",
-          records: [],
-          latest: round,
+          records: [{ mode: "code-review", round }],
         });
         if (round < LOW_DEFER_FROM_ROUND) expect(lines).toEqual([]);
         else
@@ -171,10 +171,51 @@ describe("review round tools", () => {
           deferredLowLines({
             repo,
             ledgerPath: ".agents/reviews/pr-7",
-            records: [{ mode: "low-fix", round }],
-            latest: round,
+            records: [
+              { mode: "code-review", round },
+              { mode: "low-fix", round },
+            ],
           }),
         ).toEqual([]);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("[review-cost] [negative] the report says when a round's verdicts were not committed and walks only recorded rounds", () => {
+    const { repo } = fixture(LOW_DEFER_FROM_ROUND);
+    try {
+      const git = (...args) => spawnSync("git", args, { cwd: repo, encoding: "utf8" });
+      git("init", "-q");
+      git("add", ".");
+      git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x");
+      const started = Date.now();
+      expect(
+        deferredLowLines({
+          repo,
+          ledgerPath: ".agents/reviews/pr-7",
+          records: [
+            { mode: "code-review", round: LOW_DEFER_FROM_ROUND },
+            { mode: "code-review", round: Number.MAX_SAFE_INTEGER },
+          ],
+        }),
+      ).toEqual([
+        `  第 ${LOW_DEFER_FROM_ROUND} 轮 verdicts.jsonl 没有提交，列不出这一轮的低意见`,
+        `  第 ${Number.MAX_SAFE_INTEGER} 轮 verdicts.jsonl 没有提交，列不出这一轮的低意见`,
+      ]);
+      expect(Date.now() - started).toBeLessThan(10000);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("[review-cost] [negative] finishing refuses a ledger base that is not a commit", () => {
+    for (const bad of ["main; touch pwned", undefined]) {
+      const { repo, dir } = fixture(1, [high], { base: bad });
+      try {
+        expect(() => finishRound({ repo, pr: 7 })).toThrow("FINISH_ROUND_REFUSED base-invalid");
+        expect(existsSync(join(dir, "judgments.md"))).toBe(false);
       } finally {
         rmSync(repo, { recursive: true, force: true });
       }
