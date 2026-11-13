@@ -183,6 +183,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
       state: repository.productMemoryState(),
       jobs: repository.memoryProjectionJobs(),
       approvals: repository.sensitiveMemoryApprovals(),
+      unitOfWork: repository.unitOfWork(),
       memory: guarded,
       book: repository.memoryBook(),
       ledger: spiedLedger,

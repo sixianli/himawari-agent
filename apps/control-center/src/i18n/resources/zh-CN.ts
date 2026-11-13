@@ -1015,11 +1015,11 @@ export const messages = {
   "dailyReview.ruleReview": "这条硬规则来自你说过的一句话，那条记忆变了，规则照常执行，等你看一眼",
   "dailyReview.tag.captureRetrying": "记忆抽取失败，已重试",
   "dailyReview.tag.captureQueued": "记忆抽取失败，下一轮补做",
-  "dailyReview.tag.captureGaveUp": "这轮没记全",
+  "dailyReview.tag.captureGaveUp": "这轮没记下",
   "dailyReview.captureRetrying": "这轮对话后抽取记忆的模型调用失败了一次，系统当场又试了一次",
   "dailyReview.captureQueued": "这轮对话后抽取记忆没成功，系统会在你下一次发消息时补做",
   "dailyReview.captureGaveUp":
-    "这轮对话的记忆补做了 3 次仍没抽取成功，或者抽取出来后没能存完（可能已存下一部分），系统不再重试",
+    "这轮对话的记忆补做了 3 次仍没成功（抽取或保存都算），这一轮没有记下任何内容，系统不再重试",
   "dailyReview.hidden": "这里不显示原文",
   "dailyReview.fetched": "检查了 {count} 封邮件",
   "dailyReview.allFine": "这一页都没问题",
