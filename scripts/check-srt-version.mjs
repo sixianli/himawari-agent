@@ -4,6 +4,7 @@ import { existsSync, lstatSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 const HISTORICAL = [
+  ".agents/reviews/",
   "docs/",
   "test/qualification/evidence/",
   "scripts/delivery-mode/packet-template/acceptance/cloud/basis-04/",

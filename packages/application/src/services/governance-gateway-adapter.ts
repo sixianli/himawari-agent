@@ -378,6 +378,21 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
         expiresAt: approval.expiresAt,
         decidedAt: approval.decidedAt,
         grantId: approval.grantId,
+        display: approval.display
+          ? {
+              displayTitle: approval.display.displayTitle,
+              bodyPreview: approval.display.bodyPreview,
+              askedBecause:
+                approval.display.askedBecause.kind === "rule"
+                  ? {
+                      kind: "rule",
+                      ruleId: approval.display.askedBecause.ruleId,
+                      ruleText: approval.display.askedBecause.ruleText,
+                    }
+                  : { kind: "no_rule_allows", ruleId: null, ruleText: null },
+              origin: approval.display.origin,
+            }
+          : null,
         intent: {
           intentId: intent.id,
           threadId: intent.threadId,
