@@ -65,6 +65,7 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseJudgeVerdict: application.parseJudgeVerdict,
   parseLeakVerdict: application.parseLeakVerdict,
   parsePrereview: application.parsePrereview,
+  parseRuleReviewAnswer: application.parseRuleReviewAnswer,
 };
 
 const NOT_COVERED = new Set(["memory.consolidation", "memory.consolidation.format"]);
@@ -101,6 +102,7 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         "memory.conversation-review",
         "review.prereview",
         "review.typesafe-questions",
+        "rule.review",
       ].sort(),
     );
   });

@@ -202,6 +202,7 @@ function unsetFixture(): ProactiveWeekly {
         otherVersions: 0,
         groups: [],
       },
+      correction: null,
     },
     generatedAt: NOW.toISOString(),
   };
@@ -1141,6 +1142,66 @@ describe("[P0-8] calibration report tab", () => {
     expect(text('#page [aria-label="模型预评一致率"]')).toBe(
       "模型预评一致率这一周还没有模型预评过、你也打过分的决策。自动减少没有开启：「每天打分」仍给你看全部待打分的决策。",
     );
+  });
+
+  it("[P4-1] shows how often the follow-up flags after a memory edit were right, the misses and what is still open", async () => {
+    weekly = {
+      ...weekly,
+      report: {
+        ...weekly.report,
+        correction: {
+          handled: 8,
+          agreed: 6,
+          missed: 2,
+          openMemories: 3,
+          openRules: 1,
+          agreement: { successes: 6, samples: 8, enough: true, value: 0.75, low: 0.41, high: 0.93 },
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const card = text('#page [aria-label="改记忆后跟着标的一致率"]');
+    expect(card).toContain("75.0%（6/8）");
+    expect(card).toContain("系统标了 8 条，你认可 6 条");
+    expect(document.querySelector('[data-correction-tile="missed"] b')?.textContent).toBe("2");
+    expect(document.querySelector('[data-correction-tile="open"] b')?.textContent).toBe("4");
+    expect(card).toContain("没处理的不算");
+  });
+
+  it("[P4-1] [negative] says too few instead of a ratio below five handled flags, and shows no card without the numbers", async () => {
+    weekly = {
+      ...weekly,
+      report: {
+        ...weekly.report,
+        correction: {
+          handled: 3,
+          agreed: 3,
+          missed: 0,
+          openMemories: 0,
+          openRules: 0,
+          agreement: {
+            successes: 3,
+            samples: 3,
+            enough: false,
+            value: null,
+            low: null,
+            high: null,
+          },
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const card = text('#page [aria-label="改记忆后跟着标的一致率"]');
+    expect(card).toContain("样本不足（3 条）");
+    expect(card).not.toContain("%");
+    weekly = { ...weekly, report: { ...weekly.report, correction: null } };
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render();
+    await openReport();
+    expect(document.querySelector("[data-correction]")).toBeNull();
   });
 
   it("[P0-11] still counts signals on undelivered decisions when no decision sent a reminder", async () => {

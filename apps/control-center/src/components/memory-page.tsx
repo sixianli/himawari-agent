@@ -38,6 +38,7 @@ import {
 } from "./memory-panel.js";
 import { MuseReference } from "./muse-reference.js";
 import { ActionButton, Dropdown, EmptyState } from "./primitives.js";
+import { CorrectionReviewSection } from "./correction-review.js";
 import { OwnerRulesSection } from "./rule-receipt.js";
 import {
   clock,
@@ -395,6 +396,60 @@ function MemoryLine({
   );
 }
 
+function MissedReport({
+  item,
+  memory,
+  message,
+  notify,
+}: {
+  item: MemoryItem;
+  memory: MemoryModel;
+  message: Message;
+  notify: (notice: Notice) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState("");
+  const choices =
+    memory.overview?.memories.filter(
+      (other) => other.memoryId !== item.memoryId && other.status === "active" && live(other),
+    ) ?? [];
+  if (!choices.length) return null;
+  if (!open)
+    return (
+      <ActionButton variant="quiet" onClick={() => setOpen(true)}>
+        {message("memory.page.missed")}
+      </ActionButton>
+    );
+  return (
+    <div className="memory-add-options" data-missed-report="">
+      <label>
+        {message("memory.page.missedPick")}
+        <select value={picked} onChange={(event) => setPicked(event.currentTarget.value)}>
+          <option value="">-</option>
+          {choices.map((other) => (
+            <option key={other.memoryId} value={other.memoryId}>
+              {Array.from(other.text).slice(0, 60).join("")}
+            </option>
+          ))}
+        </select>
+      </label>
+      <ActionButton
+        disabled={memory.busy || !picked}
+        onClick={() =>
+          void memory.reportMissed(picked, item.memoryId).then((ok) => {
+            if (!ok) return;
+            notify({ text: message("memory.page.missedSaved") });
+            setPicked("");
+            setOpen(false);
+          })
+        }
+      >
+        {message("memory.page.missedSubmit")}
+      </ActionButton>
+    </div>
+  );
+}
+
 function MemoryDetail({
   item,
   chain,
@@ -642,6 +697,7 @@ function MemoryDetail({
               >
                 {message("memory.deleteAction")}
               </ActionButton>
+              <MissedReport item={item} memory={memory} message={message} notify={notify} />
             </>
           )}
         </div>
@@ -2399,6 +2455,14 @@ export function MemoryPage({
       <ExternalProposalsSection memory={memory} message={message} />
       <ConfirmSection memory={memory} message={message} />
       <OwnerRulesSection memory={memory} message={message} />
+      <CorrectionReviewSection
+        memory={memory}
+        message={message}
+        onOpenMemory={(memoryId) => {
+          setShowId(memoryId);
+          setTab("memories");
+        }}
+      />
       <div role="tablist" className="memory-tabs" aria-label={message("nav.memory")}>
         {tabs.map((item) => (
           <button

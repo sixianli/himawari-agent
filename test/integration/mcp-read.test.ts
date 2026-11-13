@@ -152,8 +152,8 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     const insertRule = database.prepare(
       `INSERT INTO rule_book_rules (
         owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id,
-        updated_at
-      ) VALUES (?, ?, ?, 1, ?, ?, 'chat:thread-1', ?, ?)`,
+        updated_at, review_after
+      ) VALUES (?, ?, ?, 1, ?, ?, 'chat:thread-1', ?, ?, ?)`,
     );
     const ruleSources: [string, DataClassification][] = [];
     for (const [ruleId, status, updatedAt, parameters] of [
@@ -235,6 +235,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         status,
         sourceMemoryId,
         updatedAt,
+        status === "needs_review" ? updatedAt : null,
       );
     }
     database.close();
