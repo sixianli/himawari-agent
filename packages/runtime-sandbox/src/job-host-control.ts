@@ -150,7 +150,7 @@ export async function readJobHostControlEvidenceBytes(
 ): Promise<string> {
   await validateJobHostControlBinding(binding);
   const file = path.join(binding.directory, name);
-  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const metadata = await handle.stat();
     if (!metadata.isFile() || metadata.size > maximumBytes || (metadata.mode & 0o077) !== 0)

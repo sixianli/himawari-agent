@@ -680,6 +680,19 @@ describe("Job Host gateway control", () => {
     expect(failure).not.toHaveProperty("code");
   });
 
+  it("refuses a FIFO in place of evidence without blocking the gateway", async () => {
+    const { access } = await controlGateway();
+    const control = binding((await access.prepareDirectory(name)).directory);
+    const fifo = spawn("mkfifo", ["-m", "600", path.join(control.directory, "final.json")]);
+    expect(await new Promise((resolve) => fifo.once("exit", resolve))).toBe(0);
+    await expect(access.readFinalEvidence(control)).rejects.toThrow(
+      "JOB_HOST_CONTROL_EVIDENCE_INVALID",
+    );
+    await expect(access.describeDirectory(control.directory)).resolves.toMatchObject({
+      directory: true,
+    });
+  });
+
   it("stops asking the Job Host when the caller gives up", async () => {
     const { access } = await controlGateway();
     const control = binding((await access.prepareDirectory(name)).directory);
