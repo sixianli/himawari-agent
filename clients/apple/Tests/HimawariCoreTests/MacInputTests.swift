@@ -28,19 +28,31 @@ import Testing
         #expect(MessageAttachments.cleanName("  \n ") == "file")
     }
 
-    @Test func clipsContentAtTheUploadLimitWithoutSplittingACharacter() {
-        let long = String(repeating: "葵", count: MessageAttachments.contentLimitBytes / 3 + 10)
-        let clipped = MessageAttachments.clip(long)
+    let limits = AttachmentLimits(textCharacters: 256 * 1024, imageCharacters: 1_048_576 - 1024, perMessage: 10)
+
+    @Test func clipsContentAtTheServerCharacterLimitWithoutSplittingAnEmoji() {
+        let long = String(repeating: "葵", count: 7) + "😀"
+        let clipped = MessageAttachments.clip(long, characters: 8)
         #expect(clipped.truncated)
-        #expect(clipped.text.utf8.count <= MessageAttachments.contentLimitBytes)
-        #expect(clipped.text.allSatisfy { $0 == "葵" })
-        #expect(MessageAttachments.clip("短").truncated == false)
+        #expect(clipped.text == String(repeating: "葵", count: 7))
+        #expect(MessageAttachments.clip(long, characters: 9) == (long, false))
+        #expect(MessageAttachments.clip("短", characters: 1).truncated == false)
     }
 
-    @Test func refusesMoreThanTheWebAttachmentCount() {
+    @Test func refusesMoreThanTheServersAttachmentCount() {
         let one = MessageAttachment(name: "a", ref: "r", bytes: 1, kind: .text, truncated: false)
-        #expect(MessageAttachments.fits(text: "x", attachments: Array(repeating: one, count: 10)))
-        #expect(!MessageAttachments.fits(text: "x", attachments: Array(repeating: one, count: 11)))
+        #expect(MessageAttachments.fits(text: "x", attachments: Array(repeating: one, count: 10), limits: limits))
+        #expect(!MessageAttachments.fits(text: "x", attachments: Array(repeating: one, count: 11), limits: limits))
+        let three = AttachmentLimits(textCharacters: 10, imageCharacters: 10, perMessage: 3)
+        #expect(!MessageAttachments.fits(text: "x", attachments: Array(repeating: one, count: 4), limits: three))
+    }
+
+    @Test func theConfigCarriesTheAttachmentLimitsAndAnOlderServerHasNone() throws {
+        let base = #""heartbeatSeconds":30,"connectionMaxSeconds":600,"signatureToleranceSeconds":300,"limits":[]"#
+        let newer = try JSONDecoder().decode(DeviceConfiguration.self, from: Data(("{" + base + #","attachments":{"textCharacters":262144,"imageCharacters":1047552,"perMessage":10}}"#).utf8))
+        #expect(newer.attachments == limits)
+        let older = try JSONDecoder().decode(DeviceConfiguration.self, from: Data(("{" + base + "}").utf8))
+        #expect(older.attachments == nil)
     }
 }
 
@@ -230,13 +242,16 @@ import Testing
             ContextPiece(source: .frontApp, name: "正在用：Xcode", content: "Xcode"),
             ContextPiece(source: .selection, name: "选中的 1 行", content: "let a = 1"),
         ]
-        let attachments = try await api.attach(pieces, requestId: "req1")
+        let requestId = OutgoingMessage.newId()
+        let attachments = try await api.attach(pieces, requestId: requestId, limits: AttachmentLimits(textCharacters: 4, imageCharacters: 4, perMessage: 10))
         #expect(attachments.map(\.ref) == ["pay_a", "pay_b"])
         #expect(exchange.requests.count == 2)
         #expect(exchange.requests.allSatisfy { $0.url?.path == "/api/device/v1/attachments" && $0.httpMethod == "POST" })
         let first = try JSONSerialization.jsonObject(with: try #require(exchange.requests[0].httpBody)) as? [String: String]
-        #expect(first == ["requestId": "req1.0", "content": "Xcode", "as": "text"])
-        #expect(MessageAttachments.compose(text: "为什么", attachments: attachments) == "为什么\n\n<file name=\"正在用：Xcode\" ref=\"pay_a\" bytes=\"5\" kind=\"text\"/>\n\n<file name=\"选中的 1 行\" ref=\"pay_b\" bytes=\"9\" kind=\"text\"/>")
+        #expect(first == ["requestId": "\(requestId)-0", "content": "Xcod", "as": "text"])
+        let messageIdPattern = #"^[A-Za-z0-9_-]{16,64}$"#
+        #expect(first?["requestId"]?.range(of: messageIdPattern, options: .regularExpression) != nil)
+        #expect(MessageAttachments.compose(text: "为什么", attachments: attachments) == "为什么\n\n<file name=\"正在用：Xcode\" ref=\"pay_a\" bytes=\"5\" kind=\"text\" truncated=\"1\"/>\n\n<file name=\"选中的 1 行\" ref=\"pay_b\" bytes=\"9\" kind=\"text\" truncated=\"1\"/>")
     }
 
     @Test func aRefThatWouldBreakTheTagIsRefused() async throws {

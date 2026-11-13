@@ -30,9 +30,7 @@ public struct MessageAttachment: Codable, Sendable, Equatable {
 }
 
 public enum MessageAttachments {
-    public static let maximumCount = 10
-    public static let messageLimitBytes = 64 * 1024
-    public static let contentLimitBytes = 256 * 1024
+    public static let messageCharacters = 64 * 1024
     public static let fallbackName = "file"
 
     public static func cleanName(_ name: String) -> String {
@@ -46,17 +44,17 @@ public enum MessageAttachments {
         ((text.isEmpty ? [] : [text]) + attachments.map(\.tag)).joined(separator: "\n\n")
     }
 
-    public static func fits(text: String, attachments: [MessageAttachment]) -> Bool {
-        attachments.count <= maximumCount && compose(text: text, attachments: attachments).utf8.count <= messageLimitBytes
+    public static func fits(text: String, attachments: [MessageAttachment], limits: AttachmentLimits) -> Bool {
+        attachments.count <= limits.perMessage && compose(text: text, attachments: attachments).utf16.count <= messageCharacters
     }
 
-    public static func clip(_ content: String) -> (text: String, truncated: Bool) {
-        guard content.utf8.count > contentLimitBytes else { return (content, false) }
+    public static func clip(_ content: String, characters limit: Int) -> (text: String, truncated: Bool) {
+        guard content.utf16.count > limit else { return (content, false) }
         var end = content.startIndex
         var used = 0
         for index in content.indices {
-            let size = String(content[index]).utf8.count
-            if used + size > contentLimitBytes { break }
+            let size = content[index].utf16.count
+            if used + size > limit { break }
             used += size
             end = content.index(after: index)
         }

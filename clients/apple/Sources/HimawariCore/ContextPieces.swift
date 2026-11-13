@@ -99,7 +99,7 @@ public enum ContextGathering {
         for piece in new where !result.contains(where: { $0.fileURL != nil && $0.fileURL == piece.fileURL }) {
             result.append(piece)
         }
-        return Array(result.prefix(MessageAttachments.maximumCount))
+        return result
     }
 }
 

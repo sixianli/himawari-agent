@@ -10,6 +10,7 @@ import Observation
 final class InputBarModel {
     enum Problem: Equatable {
         case tooMany
+        case attachmentsUnsupported
         case uploadFailed
         case sendFailed
     }
@@ -21,11 +22,13 @@ final class InputBarModel {
     private(set) var threadId: String?
     @ObservationIgnored private let api: DeviceAPI
     @ObservationIgnored private let chat: () -> ChatStore?
+    @ObservationIgnored private let limits: () -> AttachmentLimits?
     @ObservationIgnored private var pendingRequestId: String?
 
-    init(api: DeviceAPI, chat: @escaping () -> ChatStore?) {
+    init(api: DeviceAPI, chat: @escaping () -> ChatStore?, limits: @escaping () -> AttachmentLimits?) {
         self.api = api
         self.chat = chat
+        self.limits = limits
     }
 
     static let labels = ContextLabels(
@@ -59,9 +62,16 @@ final class InputBarModel {
     func send() {
         guard canSend else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard pieces.count <= MessageAttachments.maximumCount else {
-            problem = .tooMany
-            return
+        let limits = limits()
+        if !pieces.isEmpty {
+            guard let limits else {
+                problem = .attachmentsUnsupported
+                return
+            }
+            guard pieces.count <= limits.perMessage else {
+                problem = .tooMany
+                return
+            }
         }
         sending = true
         problem = nil
@@ -70,16 +80,18 @@ final class InputBarModel {
         let carried = pieces
         Task {
             defer { sending = false }
-            let attachments: [MessageAttachment]
-            do {
-                attachments = try await api.attach(carried, requestId: requestId)
-            } catch {
-                problem = .uploadFailed
-                return
-            }
-            guard MessageAttachments.fits(text: text, attachments: attachments) else {
-                problem = .tooMany
-                return
+            var attachments: [MessageAttachment] = []
+            if let limits, !carried.isEmpty {
+                do {
+                    attachments = try await api.attach(carried, requestId: requestId, limits: limits)
+                } catch {
+                    problem = .uploadFailed
+                    return
+                }
+                guard MessageAttachments.fits(text: text, attachments: attachments, limits: limits) else {
+                    problem = .tooMany
+                    return
+                }
             }
             guard let chat = chat() else {
                 problem = .sendFailed

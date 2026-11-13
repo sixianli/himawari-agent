@@ -22,15 +22,19 @@ extension DeviceAPI {
         return ref
     }
 
-    public func attach(_ pieces: [ContextPiece], requestId: String) async throws -> [MessageAttachment] {
+    public static func attachmentRequestId(_ requestId: String, index: Int) -> String {
+        "\(requestId)-\(index)"
+    }
+
+    public func attach(_ pieces: [ContextPiece], requestId: String, limits: AttachmentLimits) async throws -> [MessageAttachment] {
         var attachments: [MessageAttachment] = []
         for (index, piece) in pieces.enumerated() {
-            let clipped = MessageAttachments.clip(piece.content)
-            let ref = try await uploadAttachment(requestId: "\(requestId).\(index)", content: clipped.text, as: .text)
+            let clipped = MessageAttachments.clip(piece.content, characters: limits.textCharacters)
+            let ref = try await uploadAttachment(requestId: Self.attachmentRequestId(requestId, index: index), content: clipped.text, as: .text)
             attachments.append(MessageAttachment(
                 name: piece.name,
                 ref: ref,
-                bytes: piece.bytes ?? clipped.text.utf8.count,
+                bytes: piece.bytes ?? piece.content.utf8.count,
                 kind: piece.kind,
                 truncated: clipped.truncated
             ))

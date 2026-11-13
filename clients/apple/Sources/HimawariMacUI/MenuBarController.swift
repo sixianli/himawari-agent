@@ -21,7 +21,7 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
 
     init(model: MenuBarModel) {
         self.model = model
-        inputBar = InputBarWindow(model: InputBarModel(api: model.app.api, chat: { [weak app = model.app] in app?.chat }), menu: model)
+        inputBar = InputBarWindow(model: InputBarModel(api: model.app.api, chat: { [weak app = model.app] in app?.chat }, limits: { [weak app = model.app] in app?.configuration?.attachments }), menu: model)
         messages = MessagesSensor(settings: model.settings, app: model.app)
         super.init()
         configureStatusItem()

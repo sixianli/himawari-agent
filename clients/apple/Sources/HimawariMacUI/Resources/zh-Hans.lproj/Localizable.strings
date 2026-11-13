@@ -6,6 +6,7 @@
 "input.frontApp" = "正在用：%@";
 "input.selection" = "选中的 %d 行";
 "input.tooMany" = "带的东西太多了，拿掉几样再发";
+"input.attachmentsUnsupported" = "服务器还不收附件，先把带着的小条点 × 拿掉再发";
 "input.uploadFailed" = "带的东西没传上去，再试一次";
 "input.sendFailed" = "没发出去，再试一次";
 "input.offline" = "连不上服务器，连上后会自动发";

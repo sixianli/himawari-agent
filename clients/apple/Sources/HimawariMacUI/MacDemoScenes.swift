@@ -86,7 +86,7 @@ enum MacDemo {
             running: [RunningWork(id: "w", title: "整理“下载”文件夹", progress: DeviceProgress(done: 21, total: 38), progressLabel: "已移动 21 / 38")],
             shortcut: shortcut
         )
-        let input = InputBarModel(api: app.api, chat: { nil })
+        let input = InputBarModel(api: app.api, chat: { nil }, limits: { nil })
         switch scene {
         case .inputBar, .inputBarAnswer:
             input.begin(with: ContextSnapshot(frontApp: FrontApp(name: "Xcode", bundleId: "com.apple.dt.Xcode"), selection: "let request = try? await signer.sign(code)\nlet reply = await transport.send(request!)\nif reply.expired { state = .expired }\ntimer.invalidate()"), seesFrontmost: true)

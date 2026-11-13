@@ -108,6 +108,7 @@ struct InputBarView: View {
     static func text(for problem: InputBarModel.Problem) -> String {
         switch problem {
         case .tooMany: L.text("input.tooMany")
+        case .attachmentsUnsupported: L.text("input.attachmentsUnsupported")
         case .uploadFailed: L.text("input.uploadFailed")
         case .sendFailed: L.text("input.sendFailed")
         }

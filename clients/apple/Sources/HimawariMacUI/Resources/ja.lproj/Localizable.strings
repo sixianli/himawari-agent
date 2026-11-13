@@ -6,6 +6,7 @@
 "input.frontApp" = "使用中：%@";
 "input.selection" = "選択した %d 行";
 "input.tooMany" = "添付が多すぎます。いくつか外してから送ってください";
+"input.attachmentsUnsupported" = "サーバーがまだ添付を受け付けていません。× で外してから送ってください";
 "input.uploadFailed" = "添付を送れませんでした。もう一度試してください";
 "input.sendFailed" = "送れませんでした。もう一度試してください";
 "input.offline" = "サーバーにつながりません。つながったら送ります";
