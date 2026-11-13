@@ -2,22 +2,33 @@
 set -Eeuo pipefail
 
 VERSION=2.338.2
-SHA256=baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40
-URL=https://github.com/actions/runner/releases/download/v$VERSION/actions-runner-linux-x64-$VERSION.tar.gz
 HERE=.
 [[ ${BASH_SOURCE[0]} == */* ]] && HERE=${BASH_SOURCE[0]%/*}
 SRC=$(cd "$HERE" && pwd)
-SHARED=/srv/gh-runner
 UNIT_DIR=/etc/systemd/system
 SUDOERS_FILE=/etc/sudoers.d/91-gh-runner-control
 
 source "$SRC/runners.sh"
+SHARED=$RUNNER_COMMON_ROOT
+SHA256=$RUNNER_PACKAGE_SHA256
+URL=https://github.com/actions/runner/releases/download/v$VERSION/actions-runner-linux-$RUNNER_PACKAGE_ARCH-$VERSION.tar.gz
+SEND_KEYS=$RUNNER_SEND_HOME/.ssh/authorized_keys
 
 require_runner_host
 [ "$(id -u)" -eq 0 ] || { echo "run it with sudo" >&2; exit 65; }
 for tool in nft visudo useradd groupadd getent sha256sum curl ss python3; do
   command -v "$tool" > /dev/null || { echo "missing $tool" >&2; exit 66; }
 done
+
+
+SEND_KEY=""
+if [ "$RUNNER_SITE" = arm ]; then
+  command -v sshd > /dev/null || { echo "missing sshd" >&2; exit 66; }
+  SEND_KEY=${RUNNER_SEND_PUBLIC_KEY:-}
+  SEND_FROM=${RUNNER_SEND_FROM:-}
+  [[ "$SEND_KEY" =~ ^ssh-ed25519\ [A-Za-z0-9+/=]{60,100}$ ]] || { echo "RUNNER_SEND_PUBLIC_KEY must be the ssh-ed25519 public key printed by install-gate-remote.sh on the CI VPS (type and key only, no comment)" >&2; exit 64; }
+  [[ "$SEND_FROM" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || { echo "RUNNER_SEND_FROM must be the IPv4 address of the CI VPS" >&2; exit 64; }
+fi
 
 for id in $RUNNER_IDS; do
   runner_select "$id"
@@ -27,11 +38,15 @@ for id in $RUNNER_IDS; do
   fi
 done
 
-INSTALL_PATHS="$UNIT_DIR/gh-runners.slice $UNIT_DIR/ghgate.slice $UNIT_DIR/gh-runner-nft.service $UNIT_DIR/gh-runner-clean.service $UNIT_DIR/gh-runner-clean.timer /etc/gh-runner $SUDOERS_FILE $SHARED/bin"
+INSTALL_PATHS="$UNIT_DIR/gh-runner-nft.service $UNIT_DIR/gh-runner-clean.service $UNIT_DIR/gh-runner-clean.timer /etc/gh-runner $SUDOERS_FILE $SHARED/bin"
+for unit in $RUNNER_SLICE_UNITS; do
+  INSTALL_PATHS="$INSTALL_PATHS $UNIT_DIR/$unit"
+done
 for id in $RUNNER_IDS; do
   runner_select "$id"
   INSTALL_PATHS="$INSTALL_PATHS $UNIT_DIR/$RUNNER_UNIT $RUNNER_ROOT/hooks"
 done
+[ -z "$SEND_KEY" ] || INSTALL_PATHS="$INSTALL_PATHS $RUNNER_SEND_SCRIPT $SEND_KEYS"
 
 BACKUP=/var/backups/gh-runner/$(date +%Y%m%dT%H%M%S)
 install -d -m 0700 -o root -g root "$BACKUP"
@@ -99,7 +114,28 @@ install_runner_share() {
   install -d -m 2770 -o root -g "$RUNNER_SHARE_GROUP" "$RUNNER_SHARE_ROOT"
 }
 
+install_report_sender() {
+  if id "$RUNNER_SEND_USER" > /dev/null 2>&1; then
+    [ -d "$RUNNER_SEND_HOME" ] || { echo "a $RUNNER_SEND_USER user exists but $RUNNER_SEND_HOME does not; refusing to take over an account this script did not create" >&2; return 69; }
+  else
+    record_created_account "$BACKUP" "$RUNNER_SEND_USER"
+    useradd --system --user-group --groups "$RUNNER_SHARE_GROUP" --home-dir "$RUNNER_SEND_HOME" --no-create-home --shell /bin/sh "$RUNNER_SEND_USER"
+  fi
+  record_created_paths "$BACKUP" "$RUNNER_SEND_HOME" "${RUNNER_SEND_SCRIPT%/*}"
+  install -d -m 0755 -o root -g root "$RUNNER_SEND_HOME" "$RUNNER_SEND_HOME/.ssh" "${RUNNER_SEND_SCRIPT%/*}"
+  local rendered
+  rendered=$(mktemp)
+  sed -e "s|@SHARE@|$RUNNER_SHARE_ROOT|g" "$SRC/send-reports.py" > "$rendered"
+  install -m 0755 -o root -g root "$rendered" "$RUNNER_SEND_SCRIPT"
+  printf 'restrict,from="%s",command="%s" %s\n' "$SEND_FROM" "$RUNNER_SEND_SCRIPT" "$SEND_KEY" > "$rendered"
+  install -m 0644 -o root -g root "$rendered" "$SEND_KEYS"
+  rm -f "$rendered"
+}
+
 install_runner_share
+[ -z "$SEND_KEY" ] || install_report_sender
+record_created_paths "$BACKUP" "$SHARED/hooks" "$SHARED"
+install -d -m 0755 -o root -g root "$SHARED" "$SHARED/hooks"
 for id in $RUNNER_IDS; do
   runner_select "$id"
   install_runner_account
@@ -108,7 +144,11 @@ done
 rm -f -- "$SHARED/bin/runner-pause.sh" "$SHARED/bin/runner-resume.sh" "$SHARED/bin/runners.sh"
 [ ! -d "$SHARED/bin" ] || rmdir --ignore-fail-on-non-empty -- "$SHARED/bin"
 install -m 0755 -o root -g root "$SRC/clean-old.sh" "$SRC/runners.sh" "$SHARED/hooks/"
-install -m 0644 -o root -g root "$SRC/gh-runners.slice" "$SRC/ghgate.slice" "$SRC/gh-runner-nft.service" "$SRC/gh-runner-clean.service" "$SRC/gh-runner-clean.timer" "$UNIT_DIR/"
+for unit in $RUNNER_SLICE_UNITS; do
+  install -m 0644 -o root -g root "$SRC/$unit" "$UNIT_DIR/"
+done
+install -m 0644 -o root -g root "$SRC/gh-runner-nft.service" "$SRC/gh-runner-clean.service" "$SRC/gh-runner-clean.timer" "$UNIT_DIR/"
+[ "$RUNNER_SITE" = vps ] || sed -i "s|^ExecStart=|Environment=RUNNER_SITE=$RUNNER_SITE\nExecStart=|" "$UNIT_DIR/gh-runner-clean.service"
 
 apply_runner_controls
 
@@ -118,4 +158,4 @@ systemctl enable --now gh-runner-nft.service gh-runner-clean.timer
 nft list table inet gh_runner > /dev/null
 trap - ERR INT TERM HUP
 
-echo "INSTALL_OK version=$VERSION share=$RUNNER_SHARE_ROOT runner_uids=$RUNNER_CONTROL_UIDS blocked_local_ports=$RUNNER_CONTROL_PORTS backup=$BACKUP"
+echo "INSTALL_OK site=$RUNNER_SITE version=$VERSION share=$RUNNER_SHARE_ROOT runner_uids=$RUNNER_CONTROL_UIDS blocked_local_ports=$RUNNER_CONTROL_PORTS backup=$BACKUP"

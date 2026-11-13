@@ -4,20 +4,24 @@ const BUILD_PLATFORM_KEYS = Object.freeze({
   "linux-arm64": "linux-arm64",
 });
 
-export const hostPlatform = () => `${process.platform}-${process.arch}`;
+export const hostOs = () => process.platform;
+
+export const hostArch = () => process.arch;
+
+export const hostPlatform = () => `${hostOs()}-${hostArch()}`;
 
 export const supportedPlatforms = () => Object.keys(BUILD_PLATFORM_KEYS);
 
 const ARTIFACT_PLATFORM_KEYS = Object.freeze(["macos-arm64", "linux-x64"]);
 
-export function artifactPlatformKey(os = process.platform, arch = process.arch) {
+export function artifactPlatformKey(os = hostOs(), arch = hostArch()) {
   const key = buildPlatformKey(os, arch);
   if (!ARTIFACT_PLATFORM_KEYS.includes(key))
     throw new Error(`CI_ARTIFACT_PLATFORM_UNSUPPORTED: ${key}`);
   return key;
 }
 
-export function buildPlatformKey(os = process.platform, arch = process.arch) {
+export function buildPlatformKey(os = hostOs(), arch = hostArch()) {
   const platform = `${os}-${arch}`;
   if (!Object.hasOwn(BUILD_PLATFORM_KEYS, platform))
     throw new Error(`CI_PLATFORM_UNSUPPORTED: ${platform}`);
