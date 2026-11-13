@@ -1,6 +1,11 @@
-import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type {
+  ExecutionEnvironmentIdentity,
+  ExecutionEnvironmentLocator,
+} from "@himawari-agent/execution-contracts";
+import { SRT_TASK_ENVIRONMENT_BACKEND_REF } from "@himawari-agent/execution-contracts";
 import type {
   JobHostCommandOutcome,
   JobHostRequest,
@@ -10,11 +15,6 @@ import type {
   SandboxJobSessionRun,
 } from "@himawari-agent/runtime-sandbox";
 import { JobHostPreparationError } from "@himawari-agent/runtime-sandbox";
-import type {
-  ExecutionEnvironmentIdentity,
-  ExecutionEnvironmentLocator,
-} from "@himawari-agent/execution-contracts";
-import { SRT_TASK_ENVIRONMENT_BACKEND_REF } from "@himawari-agent/execution-contracts";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -108,6 +108,7 @@ function outcome(settled = true): JobHostCommandOutcome {
 
 class FakeSession implements SandboxJobSession {
   readonly pid: number | undefined = PID;
+  readonly spawned: Promise<number | undefined> = Promise.resolve(PID);
   readonly ready: Promise<SandboxJobSessionReady>;
   readonly result: Promise<JobHostResult>;
   closeCount = 0;
