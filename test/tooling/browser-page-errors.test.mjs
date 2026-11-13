@@ -1,5 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { collectPageErrors } from "../../scripts/browser-page-errors.mjs";
@@ -86,16 +87,43 @@ it("把错误追加到调用方给的数组里", () => {
   expect(shared).toEqual(["earlier", "later"]);
 });
 
-const scriptsDirectory = join(import.meta.dirname, "../../scripts");
+const repositoryRoot = join(import.meta.dirname, "../..");
 const directPageErrorListener = /\.on\(\s*["']pageerror["']/u;
+const OBSERVE_ONLY = new Set([
+  "scripts/ci/browser-observation.mjs",
+  "test/qualification/sandbox-production-browser.mjs",
+  "scripts/demo/record-email-decision.mjs",
+  "scripts/render-brand-assets.mjs",
+  "scripts/test-control-center-visual-v4.mjs",
+]);
+
+const browserSources = () =>
+  execFileSync("git", ["ls-files", "-z", "--", "scripts/*.mjs", "test/qualification/*.mjs"], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter((path) => path !== "" && path !== "scripts/browser-page-errors.mjs");
 
 it("[webkit-teardown] 浏览器检查脚本都经 watchPageErrors 收页面报错，不直接监听 pageerror", () => {
-  const direct = readdirSync(scriptsDirectory)
-    .filter((name) => name.endsWith(".mjs") && name !== "browser-page-errors.mjs")
-    .filter((name) =>
-      directPageErrorListener.test(readFileSync(join(scriptsDirectory, name), "utf8")),
-    );
+  const direct = browserSources().filter(
+    (path) =>
+      !OBSERVE_ONLY.has(path) &&
+      directPageErrorListener.test(readFileSync(join(repositoryRoot, path), "utf8")),
+  );
   expect(direct).toEqual([]);
+});
+
+it("[webkit-teardown] 启动浏览器的脚本都调用 watchPageErrors，除非明确列为只观察或只截图", () => {
+  const missing = browserSources().filter((path) => {
+    const source = readFileSync(join(repositoryRoot, path), "utf8");
+    return (
+      /\.launch\(/u.test(source) &&
+      !OBSERVE_ONLY.has(path) &&
+      !/watchPageErrors|collectPageErrors/u.test(source)
+    );
+  });
+  expect(missing).toEqual([]);
 });
 
 it("[webkit-teardown] 反向：直接监听 pageerror 的写法会被认出来", () => {

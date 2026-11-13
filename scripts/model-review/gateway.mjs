@@ -587,6 +587,7 @@ export function getJson(url, timeoutMs = 5000) {
   return new Promise((resolveGet) => {
     const request = http.get(url, { timeout: timeoutMs }, (response) => {
       let body = "";
+      response.setEncoding("utf8");
       response.on("data", (chunk) => {
         body += chunk;
       });
@@ -619,6 +620,7 @@ export function postJson(url, payload, timeoutMs = 60000) {
       },
       (response) => {
         let text = "";
+        response.setEncoding("utf8");
         response.on("data", (chunk) => {
           text += chunk;
         });

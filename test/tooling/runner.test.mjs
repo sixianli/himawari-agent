@@ -379,7 +379,7 @@ describe("required 失败证据和平台 artifact ID", () => {
   });
 });
 
-it("[ADR-0260] ARM 上的三项检查在 ARM 或应急退回的 x64 runner 上都能跑，别的检查只在 x64 上跑", () => {
+it("[ADR-0266] ARM 上的三项检查在 ARM 或应急退回的 x64 runner 上都能跑，别的检查只在 x64 上跑", () => {
   const policy = JSON.parse(readFileSync(path.join(repositoryRoot, "ci/policy.json"), "utf8"));
   const member = (id) => policy.checks.find((check) => check.id === id).members[0];
   for (const id of ["policy", "static", "security"]) {

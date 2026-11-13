@@ -39,9 +39,9 @@ import {
 import {
   CLAIM_PROBLEM_VERDICTS,
   CLAIMS_LINE_FORMAT,
-  claimsProblems,
   blobAt as claimsBlobAt,
   blobSha256 as claimsBlobSha256,
+  claimsProblems,
   parseClaims,
   safe,
   validClaimsFile,
@@ -881,6 +881,7 @@ function runOpencode({
         stopReason = marker.reason;
       resolvePromise({ stdout, stderr, stopReason, guard: marker, inFlight, ...result });
     };
+    child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
       pending += chunk;

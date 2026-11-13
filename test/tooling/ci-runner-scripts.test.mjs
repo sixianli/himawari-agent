@@ -1992,7 +1992,7 @@ const fiveRunners = (overrides = {}) =>
     ...overrides,
   });
 
-describe("[ADR-0260] the ARM machine is a second site with its own runners", () => {
+describe("[ADR-0266] the ARM machine is a second site with its own runners", () => {
   it("RUNNER_SITE=arm selects runners 4 and 5 with the ci-arm label, the arm64 package and their own slice", () => {
     const result = armShell(
       'for id in $RUNNER_IDS; do runner_select $id; echo "$RUNNER_NAME $RUNNER_USER $RUNNER_ROOT $RUNNER_UNIT $RUNNER_LABEL $RUNNER_SLICE $RUNNER_OTHER_ROOTS"; done; echo "$RUNNER_LABELS|$RUNNER_SLICE_UNITS|$RUNNER_PACKAGE_ARCH|$RUNNER_GATE_LABEL|"',
@@ -2107,7 +2107,7 @@ describe("[ADR-0260] the ARM machine is a second site with its own runners", () 
   });
 });
 
-describe("[ADR-0260] install-runner.sh on the ARM machine, run as root in a private mount namespace", () => {
+describe("[ADR-0266] install-runner.sh on the ARM machine, run as root in a private mount namespace", () => {
   const key = `ssh-ed25519 ${"B".repeat(68)}`;
   const reported = [
     "/etc/systemd/system/gh-runner-arm-1.service",
@@ -2251,7 +2251,7 @@ describe("[ADR-0260] install-runner.sh on the ARM machine, run as root in a priv
   });
 });
 
-describe("[ADR-0260] pause, resume and fallback know about both machines", () => {
+describe("[ADR-0266] pause, resume and fallback know about both machines", () => {
   const armBox = () => {
     const box = fiveRunners({ vpsNames: ["ci-arm-1", "ci-arm-2"] });
     box.set("service-states", "gh-runner-arm-1.service=active\ngh-runner-arm-2.service=active\n");
@@ -2550,7 +2550,7 @@ describe("[ADR-0260] pause, resume and fallback know about both machines", () =>
   });
 });
 
-describe("[ADR-0260] install-gate-remote.sh keeps the report key on the CI VPS", () => {
+describe("[ADR-0266] install-gate-remote.sh keeps the report key on the CI VPS", () => {
   const hostKey = `ssh-ed25519 ${"C".repeat(68)}`;
   const gateBox = () => {
     const box = sandbox();
@@ -2716,7 +2716,7 @@ describe("[ADR-0260] install-gate-remote.sh keeps the report key on the CI VPS",
   });
 });
 
-describe("[ADR-0260] install-arm-runners.sh drives both machines from the Mac", () => {
+describe("[ADR-0266] install-arm-runners.sh drives both machines from the Mac", () => {
   const sendKey = `ssh-ed25519 ${"E".repeat(68)}`;
   const hostKey = `ssh-ed25519 ${"F".repeat(68)}`;
   const orchestra = () => {
@@ -2888,7 +2888,7 @@ describe("[ADR-0260] install-arm-runners.sh drives both machines from the Mac", 
   });
 });
 
-describe("[ADR-0260] the sender and the fetcher agree, and the ARM site uninstalls cleanly", () => {
+describe("[ADR-0266] the sender and the fetcher agree, and the ARM site uninstalls cleanly", () => {
   it("send-reports.py and remote-share.mjs use the same limits and the same request shape", async () => {
     const sender = readFileSync(path.join(scripts, "send-reports.py"), "utf8");
     const number = (name) => {

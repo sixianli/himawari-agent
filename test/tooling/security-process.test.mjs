@@ -257,6 +257,15 @@ describe("安全runner的隔离外部边界", () => {
     expect(result.checks).toHaveLength(3);
     expect(result.checks.some((c) => c.status === "passed")).toBe(true);
   });
+  it("扫描器被信号杀掉时，报告里的错误写明原因而不是笼统的不可用", async () => {
+    const f = securityFixture();
+    f.mode = "semgrep-process";
+    const result = await runSecurityChecks(f);
+    const failed = result.checks.filter((c) => c.status === "infrastructure_failed");
+    expect(failed).toHaveLength(1);
+    expect(failed[0].error).toBe("SECURITY_CMD_ERROR_UNKNOWN");
+    expect(failed[0].error).not.toBe("SECURITY_SCANNER_FAILED");
+  });
   it("缺固定扫描器时明确preflight失败", async () => {
     const f = securityFixture();
     delete boundary.tools.executables.semgrep;

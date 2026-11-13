@@ -1220,7 +1220,7 @@ describe("CI policy contract", () => {
     checkOnGate.jobs.static["runs-on"] = "ci-vps-gate";
     expect(() => validateWorkflow(policy, stringify(checkOnGate), lock)).toThrow();
   });
-  it("[ADR-0260] 基准上三项检查没有 alternateArch 的策略升级成在 ci-arm 上跑，摘要仍按原始字节算", () => {
+  it("[ADR-0266] 基准上三项检查没有 alternateArch 的策略升级成在 ci-arm 上跑，摘要仍按原始字节算", () => {
     expect(armChecks).toEqual(["policy", "static", "security"]);
     const { root, git } = fixtureRepository();
     const accepted = armOnSharedRunner(clone());
@@ -1248,7 +1248,7 @@ describe("CI policy contract", () => {
       members: 10,
     });
   });
-  it("[ADR-0260] 三项检查还在共享 runner 上的写法一起升级成 ci-arm，现行策略原样返回，只有部分搬过去的混写照样被拒", () => {
+  it("[ADR-0266] 三项检查还在共享 runner 上的写法一起升级成 ci-arm，现行策略原样返回，只有部分搬过去的混写照样被拒", () => {
     expect(upgradeArmRunnerPolicy(policy)).toBe(policy);
     expect(upgradeArmRunnerPolicy(armOnSharedRunner(clone()))).toEqual(policy);
     const withAlternate = armOnSharedRunner(clone());
@@ -1270,7 +1270,7 @@ describe("CI policy contract", () => {
     ["static 放回 ci-vps", "static", { runner: "ci-vps" }],
     ["coverage 放到 ci-arm", "coverage", { runner: "ci-arm" }],
     ["policy 写成 arm64", "policy", { arch: "arm64" }],
-  ])("[ADR-0260] 策略里%s就被拒", (_label, id, change) => {
+  ])("[ADR-0266] 策略里%s就被拒", (_label, id, change) => {
     const value = clone();
     const member = value.checks.find((check) => check.id === id).members[0];
     for (const [key, entry] of Object.entries(change))
@@ -1284,12 +1284,12 @@ describe("CI policy contract", () => {
     ["policy", "ci-vps"],
     ["coverage", "ci-arm"],
     ["build", "ci-arm"],
-  ])("[ADR-0260] ci.yml 里 %s 的 runs-on 写成 %s 就被拒", (id, label) => {
+  ])("[ADR-0266] ci.yml 里 %s 的 runs-on 写成 %s 就被拒", (id, label) => {
     const value = workflow();
     value.jobs[id]["runs-on"] = label;
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
   });
-  it("[ADR-0260] 汇总作业不带 --remote-jobs 或带的检查不对就被拒", () => {
+  it("[ADR-0266] 汇总作业不带 --remote-jobs 或带的检查不对就被拒", () => {
     const find = (value) =>
       value.jobs.required.steps.find((step) => step.run?.includes("run-share.mjs collect"));
     const without = workflow();
@@ -1299,7 +1299,7 @@ describe("CI policy contract", () => {
     find(partial).run = find(partial).run.replace(/--remote-jobs \S+/u, "--remote-jobs policy");
     expect(() => validateWorkflow(policy, stringify(partial), lock)).toThrow();
   });
-  it("[ADR-0260] 试跑工作流已删除，ci.yml 和 main.yml 里没有它的痕迹", () => {
+  it("[ADR-0266] 试跑工作流已删除，ci.yml 和 main.yml 里没有它的痕迹", () => {
     const read = (name) =>
       readFileSync(path.join(repositoryRoot, ".github/workflows", name), "utf8");
     expect(existsSync(path.join(repositoryRoot, ".github/workflows/ci-arm-trial.yml"))).toBe(false);
