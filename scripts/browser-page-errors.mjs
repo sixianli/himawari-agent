@@ -1,4 +1,14 @@
-const webkitCancelledFetchMessage = / due to access control checks\.$/u;
+const webkitBlockedFetchMessage = /^\/(?<host>[^/\s]+)\/\S* due to access control checks\.$/u;
+
+function blockedSameOriginFetch(page, message) {
+  const host = webkitBlockedFetchMessage.exec(message)?.groups?.host;
+  if (!host) return false;
+  try {
+    return new URL(page.url()).host === host;
+  } catch {
+    return false;
+  }
+}
 
 export function watchPageErrors(page, onError) {
   let replacing;
@@ -12,7 +22,7 @@ export function watchPageErrors(page, onError) {
     if (frame === page.mainFrame()) replacing = undefined;
   });
   page.on("pageerror", (error) => {
-    if (replacing && webkitCancelledFetchMessage.test(error.message)) return;
+    if (replacing && blockedSameOriginFetch(page, error.message)) return;
     onError(error);
   });
 }

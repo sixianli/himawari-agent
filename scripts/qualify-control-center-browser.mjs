@@ -11,6 +11,7 @@ import { watchPageErrors } from "./browser-page-errors.mjs";
 import { createBrowserObservation } from "./ci/browser-observation.mjs";
 import { parseArguments } from "./ci/contracts.mjs";
 import { redactText } from "./ci/security-redaction.mjs";
+import { qualifyPageErrorFilter } from "./test-browser-page-errors-browser.mjs";
 import { qualifyControlCenterV4 } from "./test-control-center-v4.mjs";
 import { qualifyExecutionChainFixture } from "./test-execution-chain-browser.mjs";
 import { qualifyMobileComposer } from "./test-mobile-composer-browser.mjs";
@@ -333,6 +334,8 @@ export async function qualifyBrowser({
       ...profile.launchOptions,
     });
     const browserVersion = browser.version();
+    phase = "page-error-filter";
+    const pageErrorFilter = await qualifyPageErrorFilter(browser);
     phase = "mobile-composer";
     const mobileComposer = await qualifyMobileComposer(browser, baseUrl, reportDirectory);
     phase = "v4-startup";
@@ -1029,6 +1032,7 @@ export async function qualifyBrowser({
 
     const report = {
       schemaVersion: 2,
+      pageErrorFilter,
       mobileComposer,
       v4Journeys,
       executionChain,

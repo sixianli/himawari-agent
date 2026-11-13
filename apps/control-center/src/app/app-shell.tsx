@@ -1,5 +1,5 @@
 import type { MouseEvent, ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ControlCenterPreferences, ControlCenterUiLocale } from "../browser-storage.js";
 import { HimawariBrand } from "../components/brand.js";
 import { ActionButton, AppLink } from "../components/index.js";
@@ -97,7 +97,7 @@ export function ControlCenterShell({
   }, [showSettings]);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const routeFocusKey = `${route.surfaceId}:${route.objectId ?? ""}:${route.view}`;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (routeFocusKey) {
       headingRef.current?.focus({ preventScroll: true });
     }

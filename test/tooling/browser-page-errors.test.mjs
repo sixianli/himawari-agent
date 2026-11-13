@@ -1,9 +1,14 @@
 import { EventEmitter } from "node:events";
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
 import { expect, it } from "vitest";
 import { collectPageErrors } from "../../scripts/browser-page-errors.mjs";
 
 class Page extends EventEmitter {
   frame = {};
+  url() {
+    return "http://127.0.0.1:41013/threads/thread-main";
+  }
   mainFrame() {
     return this.frame;
   }
@@ -59,6 +64,18 @@ it("[webkit-teardown] 反向：换页期间其他报错照常记录", () => {
   ]);
 });
 
+it("[webkit-teardown] 反向：换页期间别的源被拦下的请求照常记录", () => {
+  const page = new Page();
+  const errors = collectPageErrors(page);
+  const crossOrigin = "/127.0.0.1:41014/api/gateway/v2/queries due to access control checks.";
+  const otherHost = "/evil.example/collect due to access control checks.";
+  page.navigationRequest();
+  page.fail(crossOrigin);
+  page.fail(otherHost);
+  page.fail(`prefix ${cancelled}`);
+  expect(errors).toEqual([crossOrigin, otherHost, `prefix ${cancelled}`]);
+});
+
 it("[webkit-teardown] 反向：子框架的导航请求不算换页", () => {
   const page = new Page();
   const errors = collectPageErrors(page);
@@ -82,4 +99,23 @@ it("把错误追加到调用方给的数组里", () => {
   expect(collectPageErrors(page, shared)).toBe(shared);
   page.fail("later");
   expect(shared).toEqual(["earlier", "later"]);
+});
+
+it("[webkit-teardown] 浏览器测试脚本一律经 browser-page-errors.mjs 收页面报错", async () => {
+  const scripts = path.resolve(import.meta.dirname, "../../scripts");
+  const allowed = new Set([
+    "browser-page-errors.mjs",
+    "ci/browser-observation.mjs",
+    "test-browser-page-errors-browser.mjs",
+  ]);
+  const entries = await readdir(scripts, { recursive: true, withFileTypes: true });
+  const offenders = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !/\.(?:mjs|js|ts)$/u.test(entry.name)) continue;
+    const file = path.join(entry.parentPath, entry.name);
+    const relative = path.relative(scripts, file).split(path.sep).join("/");
+    if (allowed.has(relative)) continue;
+    if (/\.on\(\s*["']pageerror["']/u.test(await readFile(file, "utf8"))) offenders.push(relative);
+  }
+  expect(offenders).toEqual([]);
 });

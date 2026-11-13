@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium, expect, webkit } from "@playwright/test";
 import { qualifyExecutionChainFixture } from "./test-execution-chain-browser.mjs";
+import { collectPageErrors } from "./browser-page-errors.mjs";
 
 const THREAD = "thread-main";
 const RUN = "run-01";
@@ -26,8 +27,7 @@ async function qualifyRunApproval(browser, baseUrl, output) {
       hasTouch: true,
     });
     const page = await context.newPage();
-    const errors = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = collectPageErrors(page);
     const post = async (route, data) => {
       const response = await page.request.post(`${baseUrl}${route}`, { data });
       assert.equal(response.ok(), true, route);
