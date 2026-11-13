@@ -106,6 +106,7 @@ describe("[P4-8] model pre-rating in the running service", () => {
     const outputs = new Map<string, string>();
     const costs = new Map<string, number>();
     const invocations: string[] = [];
+    const released: string[] = [];
     const model: ProactiveModelInvoker = {
       modelRef: MODEL_REF,
       model: {
@@ -145,7 +146,9 @@ describe("[P4-8] model pre-rating in the running service", () => {
         };
       },
       readOutput: async (ref) => outputs.get(ref) ?? "",
-      release: async () => undefined,
+      release: async (refs) => {
+        released.push(...refs);
+      },
     };
     const failures: unknown[] = [];
     const ledger = repository.decisionLedger();
@@ -270,6 +273,7 @@ describe("[P4-8] model pre-rating in the running service", () => {
       ledger,
       prompts,
       raw,
+      released,
       rows,
       service,
       skipped,
@@ -322,6 +326,19 @@ describe("[P4-8] model pre-rating in the running service", () => {
 
     expect(await proactive.prereview()).toMatchObject({ attempted: 0, recorded: 0 });
     expect(h.failures).toEqual([]);
+  });
+
+  it("[P4-8] releases the prompt and the reply of every pre-rating call, including a failed one", async () => {
+    const h = await setup();
+    await h.skipped("kept", "我最近想吃牛肉", NOV_4_10AM_JST);
+    await h.skipped("broken", "broken reply", NOV_4_10AM_JST);
+
+    expect(await h.service().prereview()).toMatchObject({ attempted: 2, recorded: 1 });
+
+    expect(h.invocations).toHaveLength(2);
+    expect([...h.released].sort()).toEqual(
+      h.invocations.flatMap((id) => [`in-${id}`, `out-${id}`]).sort(),
+    );
   });
 
   it("[P4-8] keeps the daily cap across a restart and starts again the next day", async () => {
