@@ -153,7 +153,11 @@ export function applyImportDuplicates(
       duplicate,
       duplicateCheck,
       checked:
-        item.status === "ready" && !duplicate && duplicateCheck === "clear" && !item.sensitive,
+        item.status === "ready" &&
+        !duplicate &&
+        duplicateCheck === "clear" &&
+        !item.sensitive &&
+        !item.coding,
     };
   });
 }

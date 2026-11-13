@@ -67,6 +67,9 @@ type GenerationId = Parameters<DurableMemoryService["delete"]>[1];
 type OverviewSnapshot = Extract<GatewayV2Snapshot, { type: "memory.overview.snapshot" }>;
 type BasisSnapshot = Extract<GatewayV2Snapshot, { type: "memory.basis.snapshot" }>;
 type ClassifySnapshot = Extract<GatewayV2Snapshot, { type: "memory.classify.snapshot" }>;
+type ImportDuplicateResultView = Awaited<
+  ReturnType<ProductionImportDuplicateChecker["check"]>
+>[number];
 type ImportDuplicatesSnapshot = Extract<
   GatewayV2Snapshot,
   { type: "memory.import.duplicates.snapshot" }
@@ -264,7 +267,7 @@ export class ProductionMemoryControl {
       "listPending" | "pendingSummary" | "listBatches" | "undoBatch" | "respond"
     >;
     readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
-    readonly importDuplicates?: Pick<ProductionImportDuplicateChecker, "check">;
+    readonly importDuplicates?: Pick<ProductionImportDuplicateChecker, "check" | "existingLimit">;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
 
@@ -1352,23 +1355,51 @@ export class ProductionMemoryControl {
   }
 
   async #checkImportDuplicates(
-    checker: Pick<ProductionImportDuplicateChecker, "check">,
+    checker: Pick<ProductionImportDuplicateChecker, "check" | "existingLimit">,
     refs: readonly string[],
   ) {
     const { ownerId, agentId } = this.options.configuration;
     const candidates: string[] = [];
-    for (const ref of refs) candidates.push(await this.readText(ref));
+    const sendable: number[] = [];
+    for (const [index, ref] of refs.entries()) {
+      const payload = await this.options.payloads.get(ref);
+      if (payload && classificationRank(payload.dataClassification) > classificationRank("private"))
+        candidates.push("");
+      else {
+        candidates.push(await this.readText(ref));
+        sendable.push(index);
+      }
+    }
     const existing: { memoryId: string; text: string }[] = [];
+    let complete = true;
+    const limit = checker.existingLimit;
     const active = [...(await this.options.state.listActive(ownerId, agentId))].sort((a, b) =>
       b.updatedAt.localeCompare(a.updatedAt),
     );
     for (const record of active) {
+      if (existing.length >= limit) break;
       if (record.dataClassification === "sensitive" || record.dataClassification === "restricted")
         continue;
       const text = await this.readText(record.contentRef).catch(() => null);
       if (text) existing.push({ memoryId: record.id, text });
+      else complete = false;
     }
-    return checker.check(candidates, existing);
+    const checked = await checker.check(
+      sendable.map((index) => candidates[index] ?? ""),
+      existing,
+      { complete },
+    );
+    const results = candidates.map(
+      (): ImportDuplicateResultView => ({
+        verdict: "skipped",
+        memoryId: null,
+      }),
+    );
+    for (const [position, index] of sendable.entries()) {
+      const result = checked[position];
+      if (result) results[index] = result;
+    }
+    return results;
   }
 
   async #storedAtLeast(

@@ -93,6 +93,6 @@ describe("[A4] memory import duplicate answers", () => {
     expect(
       importDuplicateVerdict({ matchKey: null, probabilityPermille: 0 }, IMPORT_DUPLICATE_DEFAULTS),
     ).toBe("different");
-    expect(importDuplicateVerdict(undefined, IMPORT_DUPLICATE_DEFAULTS)).toBe("different");
+    expect(importDuplicateVerdict(undefined, IMPORT_DUPLICATE_DEFAULTS)).toBe("skipped");
   });
 });

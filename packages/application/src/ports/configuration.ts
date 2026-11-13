@@ -300,13 +300,13 @@ export interface ImportDuplicateTuning {
   readonly candidatesPerRequest: number;
   readonly maximumExistingMemories: number;
   readonly maximumRequests: number;
+  readonly dailyMaximumRequests: number;
   readonly requestTimeoutMs: number;
 }
 
 export interface ImportDuplicateConfiguration extends ImportDuplicateTuning {
   readonly model: string;
   readonly secretRef: string;
-  readonly inputMicrosPerMillionTokens: number;
 }
 
 export const IMPORT_DUPLICATE_DEFAULTS: ImportDuplicateTuning = Object.freeze({
@@ -317,6 +317,7 @@ export const IMPORT_DUPLICATE_DEFAULTS: ImportDuplicateTuning = Object.freeze({
   candidatesPerRequest: 20,
   maximumExistingMemories: 1_000,
   maximumRequests: 150,
+  dailyMaximumRequests: 1_500,
   requestTimeoutMs: 15_000,
 });
 
@@ -330,6 +331,7 @@ export const IMPORT_DUPLICATE_RANGES: Readonly<
   candidatesPerRequest: [1, 50],
   maximumExistingMemories: [0, 5_000],
   maximumRequests: [1, 1_000],
+  dailyMaximumRequests: [1, 100_000],
   requestTimeoutMs: [1_000, 60_000],
 });
 

@@ -95,7 +95,8 @@ export function importDuplicateVerdict(
   answer: ImportDuplicateAnswer | undefined,
   thresholds: Pick<ImportDuplicateConfiguration, "yesAtLeastPermille" | "noAtMostPermille">,
 ): ImportDuplicateVerdict {
-  if (answer === undefined || answer.matchKey === null) return "different";
+  if (answer === undefined) return "skipped";
+  if (answer.matchKey === null) return "different";
   if (answer.probabilityPermille >= thresholds.yesAtLeastPermille) return "same";
   if (answer.probabilityPermille > thresholds.noAtMostPermille) return "unsure";
   return "different";

@@ -1303,7 +1303,7 @@ function parseImportDuplicates(value: unknown): ImportDuplicateConfiguration {
   const field = "configuration.runPolicy.importDuplicates";
   const input = record(value, field);
   const keys = Object.keys(IMPORT_DUPLICATE_DEFAULTS) as (keyof ImportDuplicateTuning)[];
-  rejectUnknown(input, [...keys, "model", "secretRef", "inputMicrosPerMillionTokens"], field);
+  rejectUnknown(input, [...keys, "model", "secretRef"], field);
   const tuning = Object.fromEntries(
     keys.map((key) => {
       const [minimum, maximum] = IMPORT_DUPLICATE_RANGES[key];
@@ -1321,12 +1321,6 @@ function parseImportDuplicates(value: unknown): ImportDuplicateConfiguration {
     ...tuning,
     model: safeReference(input["model"], `${field}.model`),
     secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
-    inputMicrosPerMillionTokens: integer(
-      input["inputMicrosPerMillionTokens"],
-      `${field}.inputMicrosPerMillionTokens`,
-      1,
-      100_000_000,
-    ),
   });
 }
 

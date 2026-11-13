@@ -1797,7 +1797,6 @@ it("[A4] accepts a duplicate-judgement route that names a model-auth secret, fil
   const base = {
     model: "typesafe-ai/jev",
     secretRef: modelAuth["ref"],
-    inputMicrosPerMillionTokens: 42_000,
   };
   const parse = (importDuplicates: unknown) => {
     raw["runPolicy"] = { ...policy, importDuplicates };
@@ -1812,7 +1811,8 @@ it("[A4] accepts a duplicate-judgement route that names a model-auth secret, fil
   for (const invalid of [
     withoutModel,
     { ...base, secretRef: "missing-secret" },
-    { ...base, inputMicrosPerMillionTokens: 0 },
+    { ...base, inputMicrosPerMillionTokens: 42_000 },
+    { ...base, dailyMaximumRequests: 0 },
     { ...base, yesAtLeastPermille: 400 },
     { ...base, noAtMostPermille: 800 },
     { ...base, candidatesPerRequest: 0 },

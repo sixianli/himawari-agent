@@ -90,9 +90,24 @@ export class MemoryImportDuplicateDecision implements ImportDuplicateDecisionPor
     });
     if (!response.ok)
       throw new ImportDuplicateDecisionFailure(`IMPORT_DUPLICATE_HTTP_${response.status}`);
-    const text = await response.text();
-    if (Buffer.byteLength(text, "utf8") > MAX_RESPONSE_BYTES)
+    const declared = Number(response.headers.get("content-length") ?? 0);
+    if (declared > MAX_RESPONSE_BYTES)
       throw new ImportDuplicateDecisionFailure("IMPORT_DUPLICATE_RESPONSE_TOO_LARGE");
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    const reader = response.body?.getReader();
+    if (!reader) throw new ImportDuplicateDecisionFailure("IMPORT_DUPLICATE_RESPONSE_INVALID");
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > MAX_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new ImportDuplicateDecisionFailure("IMPORT_DUPLICATE_RESPONSE_TOO_LARGE");
+      }
+      chunks.push(value);
+    }
+    const text = Buffer.concat(chunks).toString("utf8");
     let body: unknown;
     try {
       body = JSON.parse(text);

@@ -35,8 +35,15 @@ export type ImportDuplicateSettings = Pick<
   | "candidatesPerRequest"
   | "maximumExistingMemories"
   | "maximumRequests"
+  | "dailyMaximumRequests"
   | "requestTimeoutMs"
 >;
+
+export interface ImportDuplicateExistingScan {
+  readonly complete: boolean;
+}
+
+const MAXIMUM_CANDIDATE_CHARACTERS = 2000;
 
 export function importDuplicateFailureCode(error: unknown): string {
   if (error instanceof Error && /^[A-Z][A-Z0-9_]{2,63}$/u.test(error.message)) return error.message;
@@ -47,8 +54,16 @@ export class ProductionImportDuplicateChecker {
   readonly #decision: ImportDuplicateDecisionPort;
   readonly #settings: ImportDuplicateSettings;
   readonly #onFailure: (error: unknown) => void;
+  readonly #now: () => string;
+  #day = "";
+  #requestsToday = 0;
+
+  get existingLimit(): number {
+    return this.#settings.maximumExistingMemories;
+  }
 
   constructor(options: {
+    readonly now?: () => string;
     readonly decision: ImportDuplicateDecisionPort;
     readonly settings: ImportDuplicateSettings;
     readonly onFailure: (error: unknown) => void;
@@ -56,6 +71,21 @@ export class ProductionImportDuplicateChecker {
     this.#decision = options.decision;
     this.#settings = options.settings;
     this.#onFailure = options.onFailure;
+    this.#now = options.now ?? (() => new Date().toISOString());
+  }
+
+  #reserve(requests: number): number {
+    const today = this.#now().slice(0, 10);
+    if (today !== this.#day) {
+      this.#day = today;
+      this.#requestsToday = 0;
+    }
+    const granted = Math.max(
+      0,
+      Math.min(requests, this.#settings.dailyMaximumRequests - this.#requestsToday),
+    );
+    this.#requestsToday += granted;
+    return granted;
   }
 
   #chunks(existing: readonly { readonly key: string; readonly text: string }[]) {
@@ -83,6 +113,7 @@ export class ProductionImportDuplicateChecker {
   async check(
     candidates: readonly string[],
     existing: readonly ImportDuplicateExisting[],
+    scan: ImportDuplicateExistingScan = { complete: true },
   ): Promise<readonly ImportDuplicateResult[]> {
     const results: ImportDuplicateResult[] = candidates.map(() => SKIPPED);
     const asked: number[] = [];
@@ -93,7 +124,8 @@ export class ProductionImportDuplicateChecker {
       .slice(0, this.#settings.maximumExistingMemories)
       .map(({ memoryId, text }, position) => ({ key: `m${position}`, memoryId, text }));
     if (known.length === 0) {
-      for (const index of asked) results[index] = { verdict: "different", memoryId: null };
+      if (existing.length === 0 && scan.complete)
+        for (const index of asked) results[index] = { verdict: "different", memoryId: null };
       return results;
     }
     const memoryIdOf = new Map(known.map(({ key, memoryId }) => [key, memoryId] as const));
@@ -108,7 +140,9 @@ export class ProductionImportDuplicateChecker {
       try {
         const answers = await this.#decision.decide({
           existing: job.chunk,
-          candidates: job.group.map((index) => ({ text: candidates[index] ?? "" })),
+          candidates: job.group.map((index) => ({
+            text: [...(candidates[index] ?? "")].slice(0, MAXIMUM_CANDIDATE_CHARACTERS).join(""),
+          })),
           signal: AbortSignal.timeout(this.#settings.requestTimeoutMs),
         });
         for (const [position, index] of job.group.entries()) {
@@ -126,9 +160,9 @@ export class ProductionImportDuplicateChecker {
         this.#onFailure(error);
       }
     };
-    const allowed = jobs.slice(0, this.#settings.maximumRequests);
-    for (const job of jobs.slice(this.#settings.maximumRequests))
-      for (const index of job.group) incomplete.add(index);
+    const granted = this.#reserve(Math.min(jobs.length, this.#settings.maximumRequests));
+    const allowed = jobs.slice(0, granted);
+    for (const job of jobs.slice(granted)) for (const index of job.group) incomplete.add(index);
     for (let start = 0; start < allowed.length; start += CONCURRENT_REQUESTS)
       await Promise.all(allowed.slice(start, start + CONCURRENT_REQUESTS).map(run));
     for (const index of asked) {
@@ -139,7 +173,8 @@ export class ProductionImportDuplicateChecker {
           verdict,
           memoryId: answer?.matchKey ? (memoryIdOf.get(answer.matchKey) ?? null) : null,
         };
-      else if (!incomplete.has(index)) results[index] = { verdict: "different", memoryId: null };
+      else if (verdict === "different" && !incomplete.has(index) && scan.complete)
+        results[index] = { verdict: "different", memoryId: null };
     }
     return results;
   }
@@ -149,7 +184,11 @@ export function productionImportDuplicateChecker(
   configuration: ProductConfiguration,
   secretSource: HostProviderSecretSource,
   onFailure: (error: unknown) => void,
-  options: { readonly fetch?: typeof globalThis.fetch; readonly baseUrl?: string } = {},
+  options: {
+    readonly fetch?: typeof globalThis.fetch;
+    readonly baseUrl?: string;
+    readonly now?: () => string;
+  } = {},
 ): ProductionImportDuplicateChecker | undefined {
   const route = configuration.runPolicy?.importDuplicates;
   if (!route) return undefined;
@@ -179,5 +218,6 @@ export function productionImportDuplicateChecker(
     }),
     settings: route,
     onFailure,
+    now: options.now ?? (() => new Date().toISOString()),
   });
 }

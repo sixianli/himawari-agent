@@ -1995,13 +1995,25 @@ function ImportPanel({
     setError(all.length ? "" : message("memory.page.importEmpty"));
     if (!all.length) return;
     const waiting = all.filter((item) => item.status === "classifying").map((item) => item.text);
-    void Promise.all([
-      waiting.length ? memory.classify(waiting) : Promise.resolve([]),
-      memory.importDuplicates(all.map((item) => item.text)),
-    ]).then(([classifications, verdicts]) => {
-      if (round.current === current)
-        setItems(applyImportClassifications(applyImportDuplicates(all, verdicts), classifications));
-    });
+    void (async () => {
+      const classifications = waiting.length ? await memory.classify(waiting) : [];
+      if (round.current !== current) return;
+      const sorted = applyImportClassifications(all, classifications);
+      setItems(sorted);
+      const askable = sorted.filter((item) => !item.sensitive && item.status === "ready");
+      const answers = askable.length
+        ? await memory.importDuplicates(askable.map((item) => item.text))
+        : [];
+      if (round.current !== current) return;
+      let next = 0;
+      const verdicts = sorted.map((item) => {
+        if (item.sensitive || item.status !== "ready") return "skipped" as const;
+        const verdict = answers[next] ?? "skipped";
+        next += 1;
+        return verdict;
+      });
+      setItems(applyImportDuplicates(sorted, verdicts));
+    })();
   };
   const read = (files: FileList | null, parse: (name: string, text: string) => ImportParse) => {
     const list = [...(files ?? [])];

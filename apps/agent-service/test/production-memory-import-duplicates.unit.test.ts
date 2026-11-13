@@ -112,6 +112,45 @@ describe("[A4] production import duplicate checker", () => {
     expect(results.map(({ verdict }) => verdict)).toEqual(["different", "different", "skipped"]);
   });
 
+  it("REVERSE: reports skipped, not different, when existing memories could not all be read or none may be compared", async () => {
+    let calls = 0;
+    const { checker: run } = checker(async () => {
+      calls += 1;
+      return [];
+    });
+    expect(await run.check(["喝不了牛奶"], existing, { complete: false })).toEqual([
+      { verdict: "skipped", memoryId: null },
+    ]);
+    expect(
+      await run.check(["喝不了牛奶"], [{ memoryId: "memory-x", text: "密码是 hunter2" }]),
+    ).toEqual([{ verdict: "skipped", memoryId: null }]);
+    expect(calls).toBe(1);
+    const failing = checker(async (input: Input) => input.candidates.map(() => answer(null, 0)));
+    expect(await failing.checker.check(["喝不了牛奶"], existing, { complete: false })).toEqual([
+      { verdict: "skipped", memoryId: null },
+    ]);
+  });
+
+  it("stops asking once the daily request limit is used up", async () => {
+    let calls = 0;
+    const { checker: run } = checker(
+      async (input: Input) => {
+        calls += 1;
+        return input.candidates.map(() => answer(null, 0));
+      },
+      { dailyMaximumRequests: 2 },
+    );
+    const first = await run.check(["甲乙"], existing);
+    const second = await run.check(["丙丁"], existing);
+    const third = await run.check(["戊己"], existing);
+    expect([first, second, third].map(([item]) => item?.verdict)).toEqual([
+      "different",
+      "different",
+      "skipped",
+    ]);
+    expect(calls).toBe(2);
+  });
+
   it("asks nothing when there is no existing memory", async () => {
     let calls = 0;
     const { checker: run } = checker(async () => {

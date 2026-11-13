@@ -3755,6 +3755,7 @@ describe("production memory capture", () => {
     await context.protect("payload-d1", "喝不了牛奶");
     await context.protect("payload-d2", "对乳制品不耐受，每次喝都难受");
     await context.protect("payload-d3", "我的身份证号是 110101199003071234");
+    await context.protect("payload-d4", "我得了抑郁症", "sensitive");
     const duplicates = async (contentRefs: readonly string[]) => {
       const snapshot = await context.control.query({
         ...envelope,
@@ -3773,10 +3774,11 @@ describe("production memory capture", () => {
       { matchKey: "m0", probabilityPermille: 920 },
       { matchKey: null, probabilityPermille: 0 },
     );
-    expect(await duplicates(["payload-d1", "payload-d2", "payload-d3"])).toEqual([
+    expect(await duplicates(["payload-d1", "payload-d2", "payload-d3", "payload-d4"])).toEqual([
       ["payload-d1", "same", true],
       ["payload-d2", "different", null],
       ["payload-d3", "skipped", null],
+      ["payload-d4", "skipped", null],
     ]);
     expect(context.duplicateRequests).toHaveLength(1);
     const request = context.duplicateRequests[0];
@@ -3785,6 +3787,7 @@ describe("production memory capture", () => {
       "喝不了牛奶",
       "对乳制品不耐受，每次喝都难受",
     ]);
+    expect(JSON.stringify(context.duplicateRequests)).not.toContain("抑郁症");
   });
 
   it("[T5] sorts hand-added memories with the model, keeps identifiers away from it and treats a broken answer as sensitive", async () => {
