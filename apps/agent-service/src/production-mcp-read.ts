@@ -241,9 +241,15 @@ export function mcpReadToolRegistry(
       throw new Error(
         `MCP_READ_TOOL_NAME_INVALID:${entry.name.slice(0, MCP_READ_TOOL_NAME_MAXIMUM)}`,
       );
-    if (names.has(entry.name) || (MCP_WRITE_TOOL_NAMES as readonly string[]).includes(entry.name))
+    const failed = `${entry.name}${MCP_READ_FAILED_SUFFIX}`;
+    if (
+      names.has(entry.name) ||
+      names.has(failed) ||
+      (MCP_WRITE_TOOL_NAMES as readonly string[]).includes(entry.name)
+    )
       throw new Error(`MCP_READ_TOOL_DUPLICATE:${entry.name}`);
     names.add(entry.name);
+    names.add(failed);
   }
   return Object.freeze([...entries]);
 }
@@ -1454,6 +1460,7 @@ async function ruleBook({ read }: McpReadRequest): Promise<ToolOutcome> {
     output: {
       rules: [
         ...builtIn.map(({ rule, parameters }) => ({
+          ...parameters,
           id: rule.id,
           revision: rule.revision,
           gate: rule.gate,
@@ -1461,7 +1468,6 @@ async function ruleBook({ read }: McpReadRequest): Promise<ToolOutcome> {
           origin: rule.origin,
           source: rule.source,
           status: rule.status,
-          ...parameters,
         })),
         ...owned.map(ownerRuleEntry),
       ],

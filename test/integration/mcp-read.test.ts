@@ -1026,7 +1026,10 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         source: "测试用的内置规则",
         status: "active" as const,
         examples: [],
-        sharedParameters: { classification: "private" as const, values: { projects: ["京都"] } },
+        sharedParameters: {
+          classification: "private" as const,
+          values: { projects: ["京都"], id: "spoofed", revision: 9 },
+        },
       };
       const withRule: NonNullable<McpReadSources["ruleBook"]> = (settings) => [
         ...ruleBookFor(settings),
@@ -1083,6 +1086,17 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       await expect(
         setup({ readTools: [...MCP_READ_TOOLS, { ...first, name: "propose_rule" }] }),
       ).rejects.toThrow("MCP_READ_TOOL_DUPLICATE:propose_rule");
+      await expect(
+        setup({ readTools: [...MCP_READ_TOOLS, { ...first, name: "rule_book_failed" }] }),
+      ).rejects.toThrow("MCP_READ_TOOL_DUPLICATE:rule_book_failed");
+      await expect(
+        setup({
+          readTools: [
+            { ...first, name: "peek_failed" },
+            { ...first, name: "peek" },
+          ],
+        }),
+      ).rejects.toThrow("MCP_READ_TOOL_DUPLICATE:peek");
       await expect(
         setup({ readTools: [...MCP_READ_TOOLS, { ...first, name: "p".repeat(58) }] }),
       ).rejects.toThrow("MCP_READ_TOOL_NAME_INVALID");
