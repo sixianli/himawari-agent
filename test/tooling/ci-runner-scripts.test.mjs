@@ -2119,7 +2119,7 @@ describe("[ADR-0260] install-runner.sh on the ARM machine, run as root in a priv
     box.fake(
       "id",
       [
-        'case "${@: -1}" in',
+        `case "\${@: -1}" in`,
         `  gh-runner-arm-1|gh-runner-arm-2|gh-ci-send) [ -e "${box.root}/user-\${@: -1}" ] || exit 1; [ "$1" = -u ] && echo 990; [ "$1" = -nG ] && echo "\${@: -1}"; exit 0 ;;`,
         "esac",
         "echo 0",
@@ -2147,7 +2147,7 @@ describe("[ADR-0260] install-runner.sh on the ARM machine, run as root in a priv
     );
     box.fake(
       "sudo",
-      'while [ "$1" != tar ]; do shift; done; mkdir -p "${@: -1}"; echo config > "${@: -1}/config.sh"',
+      `while [ "$1" != tar ]; do shift; done; mkdir -p "\${@: -1}"; echo config > "\${@: -1}/config.sh"`,
     );
     for (const name of ["visudo", "python3", "sshd"]) box.fake(name, "exit 0");
     box.fake("sha256sum", `cat > "${box.root}/sha-input"\nexit 0`);
@@ -2432,7 +2432,7 @@ describe("[ADR-0260] install-gate-remote.sh keeps the report key on the CI VPS",
         `mkdir -p "$real/scripts" && mount --bind "${scripts}" "$real/scripts" || exit 92`,
         'mkdir -p "$real/etc" && mount --rbind /etc "$real/etc" || exit 90',
         "mount -t tmpfs tmpfs /etc || exit 91",
-        'for entry in "$real/etc"/*; do [ "${entry##*/}" = gh-runner ] || ln -s "$entry" "/etc/${entry##*/}"; done',
+        `for entry in "$real/etc"/*; do [ "\${entry##*/}" = gh-runner ] || ln -s "$entry" "/etc/\${entry##*/}"; done`,
         ...commands.map(
           (command) => `bash "$real/scripts/install-gate-remote.sh" ${command}; echo "rc=$?"`,
         ),
