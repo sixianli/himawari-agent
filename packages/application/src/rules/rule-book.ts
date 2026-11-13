@@ -1,3 +1,4 @@
+import type { DataClassification } from "../ports/common.js";
 import { currencyExponent, type MailAmount, MISSING_AMOUNT, type MoneyState } from "./amount.js";
 import { type RuleGate, ruleFields } from "./field-catalog.js";
 import { compileRuleExpression, type RuleFacts } from "./rule-expression.js";
@@ -20,6 +21,11 @@ export interface RuleExample {
   readonly hit: boolean;
 }
 
+export interface RuleSharedParameters {
+  readonly classification: Exclude<DataClassification, "restricted">;
+  readonly values: Readonly<Record<string, unknown>>;
+}
+
 export interface RuleRecord {
   readonly id: string;
   readonly revision: number;
@@ -30,6 +36,7 @@ export interface RuleRecord {
   readonly source: string;
   readonly status: RuleStatus;
   readonly examples: readonly RuleExample[];
+  readonly sharedParameters?: RuleSharedParameters;
 }
 
 export const RULE_IDS = Object.freeze({
@@ -219,6 +226,10 @@ export function importantSenderRule(senders: readonly string[], revision: number
     source: "ADR 0106 第 4 条；主人的设置“重要发件人”",
     status: "active",
     examples: importantSenderExamples(senders),
+    sharedParameters: Object.freeze({
+      classification: "private",
+      values: Object.freeze({ importantSenders: senders }),
+    }),
   });
 }
 
@@ -295,6 +306,10 @@ export function quietHoursRule(periods: readonly QuietPeriod[], revision: number
     source: "ADR 0106；主人的设置“静默时段”",
     status: "active",
     examples: quietHoursExamples(periods),
+    sharedParameters: Object.freeze({
+      classification: "private",
+      values: Object.freeze({ quietHours: periods }),
+    }),
   });
 }
 

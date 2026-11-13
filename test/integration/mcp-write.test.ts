@@ -352,9 +352,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       timeZone: TIME_ZONE,
       requestTimeoutMs: 30_000,
       sources: {
-        recall: (args, within) => recall.recallOutsideRun(args, within),
+        recall: (args, within, ceiling) => recall.recallOutsideRun(args, within, ceiling),
         embedOutsideRun: async (_context, operation) => operation(),
-        reminders: (windowMs) => reminders.list(windowMs),
+        reminders: (windowMs, ceiling) => reminders.list(windowMs, ceiling),
         settings: () => settingsStore.readSettings(scope),
       },
       ledger: realLedger,
