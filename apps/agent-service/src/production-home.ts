@@ -1,24 +1,25 @@
 import { createHash } from "node:crypto";
 import {
-  HOME_SCORING_LOCALE,
   type ApprovalRequest,
   type ClockPort,
+  classificationRank,
+  type DataClassification,
+  type GovernedActionIntent,
+  HOME_SCORING_LOCALE,
   type HomeAction,
   type HomeActionName,
+  type HomeApprovalCopy,
+  type HomeApprovalDetail,
   type HomeCandidate,
   type HomeFeedConfiguration,
   HomeFeedService,
   type HomeLocale,
   type HomeSource,
   type HomeSourceName,
-  type GovernedActionIntent,
-  type HomeApprovalCopy,
-  type HomeApprovalDetail,
   type HomeUrgencyConfiguration,
   type HomeUrgencyRunResult,
   HomeUrgencyService,
   type HomeUrgencyStorePort,
-  type DataClassification,
   type ProactiveModelInvoker,
   type ProactiveScope,
   type ProactiveSealPort,
@@ -143,7 +144,10 @@ export interface ProductionHomeOptions {
   readonly listApprovals: () => Promise<readonly ApprovalRequest[]>;
   readonly runThread: (runId: string) => Promise<string | null>;
   readonly runs?: Pick<RunLifecyclePort, "listUnattendedRuns">;
-  readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
+  readonly threadTitle: (threadId: string) => Promise<{
+    readonly title: string | null;
+    readonly dataClassification?: DataClassification;
+  } | null>;
   readonly clock: ClockPort;
   readonly onSourceFailure: (source: HomeSourceName, error: unknown) => void;
   readonly urgency?: ProductionHomeUrgencyOptions;
@@ -524,9 +528,13 @@ function approvalSource(
         if (approval.status !== "pending" || Date.parse(approval.expiresAt) <= Date.parse(now))
           continue;
         const threadId = await options.runThread(approval.runId);
-        const conversation = threadId
-          ? line((await options.threadTitle(threadId).catch(() => null))?.title, 200)
-          : null;
+        const thread = threadId ? await options.threadTitle(threadId).catch(() => null) : null;
+        const conversation =
+          thread?.dataClassification !== undefined &&
+          classificationRank(thread.dataClassification) <=
+            classificationRank(approval.intentSnapshot.dataClassification)
+            ? line(thread.title, 200)
+            : null;
         const copy = await readCopy?.({
           approvalRequestId: approval.id,
           semanticSnapshotHash: approval.semanticSnapshotHash,

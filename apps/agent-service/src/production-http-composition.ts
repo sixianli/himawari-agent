@@ -41,6 +41,7 @@ import type { SqliteProductStateRepository } from "@himawari-agent/persistence-s
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
   assertProductionSecretSource,
+  assertUnixSocketPathLength,
   authenticateHttpRequest,
   BoundedJwksFetcher,
   BrowserTextPayloadReader,
@@ -63,21 +64,20 @@ import {
   IdentityGatewayError,
   type JwksFetcher,
   OwnerBootstrapService,
-  prepareUnixSocketPath,
-  removeUnixSocketFile,
-  sealUnixSocket,
-  type UnixSocketIdentity,
-  assertUnixSocketPathLength,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
+  prepareUnixSocketPath,
   RuntimeHealthModel,
   RuntimeMetricsRegistry,
   registerBuiltInIdentityRoutes,
   registerIdentityAuthenticationRoutes,
+  removeUnixSocketFile,
   ScopedThreadSearchTokenizer,
   SessionBoundCsrfService,
+  sealUnixSocket,
   ThreadSearchBackgroundIndexer,
   ThreadSearchProjector,
+  type UnixSocketIdentity,
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
@@ -1173,6 +1173,7 @@ export async function createProductionHttpComposition(
       const payload = thread.titleRef ? await memoryPayloads.get(thread.titleRef) : undefined;
       if (!payload || payload.contentType !== "text/plain") return { title: null };
       return {
+        dataClassification: payload.dataClassification,
         title:
           new TextDecoder("utf-8", { fatal: true })
             .decode(await payloadProtector.unprotect({ ownerId, agentId, payload }))

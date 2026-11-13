@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -7,8 +8,10 @@ import {
   type DataClassification,
   DEFAULT_HOME_FEED,
   DEFAULT_HOME_URGENCY,
+  HOME_URGENCY_ITEMS_PER_READ,
   type HomeUrgencyConfiguration,
   type HomeUrgencyRunResult,
+  HomeUrgencyService,
   type HomeUrgencyStorePort,
   MODEL_USAGE_PURPOSES,
   type ModelInvocationEvent,
@@ -35,6 +38,7 @@ import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
+  SqliteGovernedDeletionAdapter,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { HOME_URGENCY } from "@himawari-agent/prompt-catalog";
@@ -112,8 +116,10 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
   });
 
   async function fixture() {
-    const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-home-urgency-"));
-    directories.push(stateRoot);
+    const deletionRoot = await mkdtemp(path.join(tmpdir(), "himawari-home-urgency-"));
+    directories.push(deletionRoot);
+    const stateRoot = path.join(deletionRoot, "data");
+    await mkdir(stateRoot);
     const file = path.join(stateRoot, "product.sqlite");
     const database = openQualifiedDatabase(file);
     applyMigrations(database, await loadBundledMigrations());
@@ -169,6 +175,7 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
     let answer: (call: Asked) => Answer = scoreAll(() => 500);
     let locale: Locale | null = "zh-CN";
     let allowed: readonly DataClassification[] = ["public", "private", "sensitive"];
+    let titleClassification: DataClassification = "private";
     const results: HomeUrgencyRunResult[] = [];
     const failures: unknown[] = [];
 
@@ -270,7 +277,10 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
         runThread: async (runId) =>
           (await repository.runLifecycle(OWNER_ID, AGENT_ID, AUTHORITY).readRun(createRunId(runId)))
             ?.run.threadId ?? null,
-        threadTitle: async () => ({ title: "和田中约时间" }),
+        threadTitle: async () => ({
+          title: "和田中约时间",
+          dataClassification: titleClassification,
+        }),
         clock,
         onSourceFailure: (source) => failures.push(source),
         urgency: {
@@ -420,7 +430,7 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
           grantId: null,
           ...extra,
         });
-      return { repository, home, read, recordMail, createApproval, close, payloads };
+      return { repository, home, read, recordMail, createApproval, close, payloads, model, seal };
     };
 
     const rows = () =>
@@ -469,6 +479,11 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
       allow: (next: readonly DataClassification[]) => {
         allowed = next;
       },
+      setTitleClassification: (next: DataClassification) => {
+        titleClassification = next;
+      },
+      deletionRoot,
+      databasePath: file,
     };
   }
 
@@ -754,7 +769,7 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
     expect(state.calls).toHaveLength(2);
   });
 
-  it("shows the model's sentence and button label for an approval, and gives push the same pair", async () => {
+  it("shows the model's sentence and button label for an approval, and approvalCopy, which push is to read, returns the same pair", async () => {
     const state = await fixture();
     const { home, read, createApproval } = await state.open();
     await createApproval("send");
@@ -1153,7 +1168,18 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
       store.recordCall({
         ...scope,
         failures: [],
-        records: [{ ...attempt, score: 5, sentenceRef: null, affirmLabel: null, copyLocale: null }],
+        records: [
+          {
+            ...attempt,
+            id: "manual-0",
+            itemKey: "insight:fresh",
+            score: 7,
+            sentenceRef: null,
+            affirmLabel: null,
+            copyLocale: null,
+          },
+          { ...attempt, score: 5, sentenceRef: null, affirmLabel: null, copyLocale: null },
+        ],
       }),
     ).rejects.toThrow();
     await expect(
@@ -1189,6 +1215,86 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
       }),
     ).rejects.toThrow();
     expect(state.rows()).toHaveLength(1);
+  });
+
+  it.each([
+    ["sensitive", null],
+    ["restricted", null],
+    ["private", "和田中约时间"],
+    ["public", "和田中约时间"],
+  ] as const)(
+    "[negative] sends the conversation title of a private approval only when the title is not classified higher (title %s)",
+    async (classification, expected) => {
+      const state = await fixture();
+      const { home, createApproval } = await state.open();
+      state.setTitleClassification(classification);
+      await createApproval("send");
+      await home.score();
+      const [call] = state.calls as [Asked];
+      expect(call.dataClassification).toBe("private");
+      expect(call.fresh[0]?.facts?.["conversation"]).toBe(expected);
+      if (expected === null) expect(call.prompt).not.toContain("和田中约时间");
+    },
+  );
+
+  it("deleting the approval's conversation removes its scores and the sealed sentence", async () => {
+    const state = await fixture();
+    const { home, createApproval, recordMail, close } = await state.open();
+    await createApproval("send");
+    await recordMail([{ id: "a", summary: "甲" }]);
+    state.answerWith((call) => ({
+      output: JSON.stringify({
+        items: call.fresh.map(({ n }) => ({ n, score: 1, sentence: "发邮件", affirm: "发出去" })),
+      }),
+    }));
+    await home.score();
+    await close();
+    const sentenceRef = state.rows().find(({ sentenceRef }) => sentenceRef !== null)?.sentenceRef;
+    expect(sentenceRef).toBeTruthy();
+    const deletion = await new SqliteGovernedDeletionAdapter({
+      stateRoot: state.deletionRoot,
+      databasePath: state.databasePath,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      now: () => NOW,
+    }).deleteImmediately({ objectType: "thread", objectId: THREAD_ID });
+    expect(deletion.lifecycle).toBe("deleted_verified");
+    expect(state.rows().map(({ itemKey }) => itemKey)).toEqual(["insight:insight-a"]);
+    expect(
+      state.sql((handle) =>
+        handle.prepare("SELECT COUNT(*) FROM payloads WHERE ref = ?").pluck().get(sentenceRef),
+      ),
+    ).toBe(0);
+  });
+
+  it("[negative] reads the scores of more open items than the store takes in one read", async () => {
+    const state = await fixture();
+    const { repository, model, seal } = await state.open();
+    const many = Array.from({ length: HOME_URGENCY_ITEMS_PER_READ + 1 }, (_, index) => ({
+      key: `insight:filler-${index}`,
+      digestBasis: `filler-${index}`,
+    }));
+    const service = new HomeUrgencyService({
+      scope,
+      store: repository.homeUrgency(),
+      seal,
+      model,
+      modelAllows: () => true,
+      settings: DEFAULT_HOME_URGENCY,
+      timeZone: "Asia/Tokyo",
+      clock: { now: () => NOW },
+      digest: (text) => createHash("sha256").update(text).digest("hex"),
+      estimateCostMicros: () => 0,
+      candidates: async () => [],
+      locale: async () => "zh-CN",
+    });
+    await expect(service.scores(many)).resolves.toEqual(new Map());
+    await expect(
+      repository.homeUrgency().listScores({
+        ...scope,
+        items: many.map(({ key }) => ({ itemKey: key, textDigest: "0".repeat(64) })),
+      }),
+    ).rejects.toThrow();
   });
 
   it("meters the new purpose, and every contract value has a place in the table or the ranking", async () => {

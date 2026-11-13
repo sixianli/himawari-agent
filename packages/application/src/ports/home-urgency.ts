@@ -3,6 +3,7 @@ import type { ProactiveScope } from "./proactive-checks.js";
 
 export const HOME_URGENCY_SCORE_MAX = 1000;
 export const HOME_URGENCY_LABEL_STORE_MAX = 64;
+export const HOME_URGENCY_ITEMS_PER_READ = 2_000;
 
 export interface HomeUrgencyItemRef {
   readonly itemKey: string;

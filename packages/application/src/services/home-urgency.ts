@@ -3,6 +3,7 @@ import { maskSensitiveText } from "@himawari-agent/sensitive-capture";
 import type { DataClassification } from "../ports/common.js";
 import type { HomeUrgencyConfiguration } from "../ports/configuration.js";
 import {
+  HOME_URGENCY_ITEMS_PER_READ,
   HOME_URGENCY_LABEL_STORE_MAX,
   HOME_URGENCY_SCORE_MAX,
   type HomeUrgencyAttempt,
@@ -140,6 +141,16 @@ export function acceptsHomeAffirmLabel(input: {
   );
 }
 
+async function inBatches<T>(
+  refs: readonly HomeUrgencyItemRef[],
+  read: (items: readonly HomeUrgencyItemRef[]) => Promise<readonly T[]>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let start = 0; start < refs.length; start += HOME_URGENCY_ITEMS_PER_READ)
+    rows.push(...(await read(refs.slice(start, start + HOME_URGENCY_ITEMS_PER_READ))));
+  return rows;
+}
+
 export interface HomeUrgencyPromptItem {
   readonly candidate: HomeUrgencyCandidate;
   readonly disclosed: boolean;
@@ -269,7 +280,9 @@ export class HomeUrgencyService {
     candidates: readonly Pick<HomeUrgencyCandidate, "key" | "digestBasis">[],
   ): Promise<ReadonlyMap<string, number>> {
     const refs = candidates.map((candidate) => this.ref(candidate));
-    const rows = await this.#options.store.listScores({ ...this.#options.scope, items: refs });
+    const rows = await inBatches(refs, (items) =>
+      this.#options.store.listScores({ ...this.#options.scope, items }),
+    );
     return new Map(rows.map((row) => [row.itemKey, row.score]));
   }
 
@@ -334,16 +347,16 @@ export class HomeUrgencyService {
     open.sort((left, right) => compare(left.candidate.key, right.candidate.key));
     const refs = open.map(({ ref }) => ref);
     const scored = new Map(
-      (await store.listScores({ ...scope, items: refs })).map((row) => [refKey(row), row.score]),
+      (await inBatches(refs, (items) => store.listScores({ ...scope, items }))).map((row) => [
+        refKey(row),
+        row.score,
+      ]),
     );
+    const since = new Date(nowMs - backoffMs).toISOString();
     const failedRecently = new Set(
-      (
-        await store.listRecentFailures({
-          ...scope,
-          items: refs,
-          since: new Date(nowMs - backoffMs).toISOString(),
-        })
-      ).map(refKey),
+      (await inBatches(refs, (items) => store.listRecentFailures({ ...scope, items, since }))).map(
+        refKey,
+      ),
     );
     const fresh = open
       .filter(
