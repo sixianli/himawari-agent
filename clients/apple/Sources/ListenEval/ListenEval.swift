@@ -476,7 +476,7 @@ struct Run {
             let embedding = try? await embedder.embedding(samples: speech, sampleRate: Audio.rate)
             let score = embedding.flatMap { voiceprint.score($0, model: embedder.model) }
             let loudness = SpeechLevel.dbfs(samples: speech, sampleRate: Audio.rate).map(VoiceScore.loudness(dbfs:))
-            let call: ListenEvalCall? = [.command, .bystander, .tvMention].contains(clip.purpose)
+            let call: ListenEvalCall? = [.command, .bystander, .tvMention, .ownerMention].contains(clip.purpose)
                 ? ListenEvalReplay.call(names: names, pieces: primary?.pieces ?? [])
                 : nil
             let observation = ListenEvalObservation(clip: clip, transcripts: transcripts, speakerModel: embedder.model, speakerScore: score, loudnessScore: loudness, call: call)

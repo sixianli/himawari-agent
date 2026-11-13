@@ -16,3 +16,4 @@
 "eval.purpose.speaker" = "Who's speaking";
 "eval.purpose.command" = "Asking it";
 "eval.purpose.mixed" = "Mixed languages";
+"eval.purpose.owner_mention" = "Mentioning it";

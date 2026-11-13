@@ -108,6 +108,19 @@ final class AudioCapture: @unchecked Sendable {
         })
     }
 
+    var playsThroughSameHeadset: Bool {
+        Self.playsThroughSameHeadset(session.currentRoute)
+    }
+
+    static func playsThroughSameHeadset(_ route: AVAudioSessionRouteDescription) -> Bool {
+        HeadphoneWear.playsThroughSameHeadset(input: route.inputs.first.map(snapshot), outputs: route.outputs.map(snapshot))
+    }
+
+    static func snapshot(_ port: AVAudioSessionPortDescription) -> AudioPortSnapshot {
+        let bluetooth: Set<AVAudioSession.Port> = [.bluetoothHFP, .bluetoothA2DP, .bluetoothLE]
+        return AudioPortSnapshot(bluetooth: bluetooth.contains(port.portType), uid: port.uid, name: port.portName)
+    }
+
     static func route(of route: AVAudioSessionRouteDescription) -> AudioInputRoute {
         guard let input = route.inputs.first else { return .deviceMicrophone }
         switch input.portType {

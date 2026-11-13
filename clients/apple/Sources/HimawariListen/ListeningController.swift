@@ -366,7 +366,7 @@ public final class ListeningController {
             await upload(heard)
             let context: CommandTriggerContext = touched
                 ? .ownerTouched
-                : .heardName(route: route, inEar: route == .airpods ? inEar.inEar() : nil, loudnessScore: loudness)
+                : .heardName(route: route, inEar: route == .airpods ? HeadphoneWear.worn(motionFresh: inEar.inEar(), playsThroughSameHeadset: capture?.playsThroughSameHeadset ?? false) : nil, loudnessScore: loudness)
             await command(request, heard: heard, evidence: SpokenTrigger.evidence(for: context, speakerScore: score))
         case let .calledOnly(heard):
             await upload(heard)

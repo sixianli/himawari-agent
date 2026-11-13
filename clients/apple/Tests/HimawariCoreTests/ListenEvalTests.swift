@@ -34,20 +34,27 @@ struct ListenEvalTests {
     @Test func theBundledKitHasTheAgreedSampleCounts() throws {
         let kit = try ListenEvalKit.decode(Self.kitData())
         let counts = Dictionary(uniqueKeysWithValues: kit.stages.map { ($0.id, $0.prompts.count) })
-        #expect(counts == ["enroll": 3, "speaker-quiet": 100, "speaker-noisy": 100, "command-airpods": 40, "command-table": 40, "command-pocket": 20, "mixed": 60])
+        #expect(counts == ["enroll": 3, "speaker-quiet": 100, "speaker-noisy": 100, "command-airpods": 40, "command-table": 40, "owner-mention": 10, "command-pocket": 20, "mixed": 85])
         #expect(kit.synthetic.bystander.count == 50)
         #expect(kit.synthetic.tvMention.count == 50)
         let ids = kit.stages.flatMap { $0.prompts.map(\.id) }
         #expect(Set(ids).count == ids.count)
-        #expect(kit.promptCount == 363)
+        #expect(kit.promptCount == 398)
     }
 
-    @Test func everyCommandPromptStartsWithTheName() throws {
+    @Test func everyCommandAndMentionSaysTheNameSomewhere() throws {
         let kit = try ListenEvalKit.decode(Self.kitData())
-        let commands = kit.stages.filter { $0.purpose == .command }.flatMap(\.prompts)
-        for prompt in commands {
-            let match = Self.names.match(prompt.text)
-            #expect(match != nil && match?.request.isEmpty == false, "\(prompt.id)")
+        let spoken = kit.stages.filter { $0.purpose == .command || $0.purpose == .ownerMention }
+        for stage in spoken {
+            for prompt in stage.prompts {
+                let folded = NameCall.fold(prompt.text)
+                #expect(Self.names.names.contains { folded.contains($0) }, "\(prompt.id)")
+            }
+        }
+        let placements = kit.stages.filter { $0.purpose == .command && $0.placement != .pocket }
+        for stage in placements {
+            let notFirst = stage.prompts.filter { !NameCall.fold($0.text).hasPrefix(NameCall.fold("Himawari")) }
+            #expect(notFirst.count == 10, "\(stage.id)")
         }
         for line in kit.synthetic.bystander {
             #expect(Self.names.match(line.text) != nil, "\(line.text)")
@@ -113,5 +120,28 @@ struct ListenEvalTests {
         ], processingSeconds: 0.3)
         #expect(transcript.text == "今天天气 不错")
         #expect(transcript.speechSpan == 0.2...2.5)
+    }
+}
+
+struct HeadphoneWearTests {
+    let airpodsMic = AudioPortSnapshot(bluetooth: true, uid: "AA:BB:CC:DD:EE:FF-tsco", name: "Andy's AirPods Pro")
+
+    @Test func wornNeedsFreshMotionAndTheSameHeadsetPlaying() {
+        let same = [AudioPortSnapshot(bluetooth: true, uid: "AA:BB:CC:DD:EE:FF-tsco", name: "Andy's AirPods Pro")]
+        let speaker = [AudioPortSnapshot(bluetooth: false, uid: "Speaker", name: "Speaker")]
+        #expect(HeadphoneWear.playsThroughSameHeadset(input: airpodsMic, outputs: same))
+        #expect(!HeadphoneWear.playsThroughSameHeadset(input: airpodsMic, outputs: speaker))
+        #expect(!HeadphoneWear.playsThroughSameHeadset(input: nil, outputs: same))
+        #expect(HeadphoneWear.worn(motionFresh: true, playsThroughSameHeadset: true) == true)
+        #expect(HeadphoneWear.worn(motionFresh: true, playsThroughSameHeadset: false) == false)
+        #expect(HeadphoneWear.worn(motionFresh: false, playsThroughSameHeadset: true) == false)
+        #expect(HeadphoneWear.worn(motionFresh: nil, playsThroughSameHeadset: true) == nil)
+    }
+
+    @Test func anotherBluetoothHeadsetDoesNotCount() {
+        let other = [AudioPortSnapshot(bluetooth: true, uid: "11:22:33:44:55:66", name: "Car Audio")]
+        #expect(!HeadphoneWear.playsThroughSameHeadset(input: airpodsMic, outputs: other))
+        let sameNameNewUID = [AudioPortSnapshot(bluetooth: true, uid: "AA:BB:CC:DD:EE:FF-tacl", name: "Andy's AirPods Pro")]
+        #expect(HeadphoneWear.playsThroughSameHeadset(input: airpodsMic, outputs: sameNameNewUID))
     }
 }

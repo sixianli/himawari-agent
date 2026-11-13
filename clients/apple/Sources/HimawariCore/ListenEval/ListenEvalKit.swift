@@ -7,6 +7,7 @@ public enum ListenEvalPurpose: String, Codable, Sendable, CaseIterable {
     case mixed
     case bystander
     case tvMention = "tv_mention"
+    case ownerMention = "owner_mention"
     case publicSpeech = "public_speech"
 }
 

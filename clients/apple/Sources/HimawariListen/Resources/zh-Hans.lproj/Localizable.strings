@@ -16,3 +16,4 @@
 "eval.purpose.speaker" = "认人";
 "eval.purpose.command" = "叫它做事";
 "eval.purpose.mixed" = "混着说";
+"eval.purpose.owner_mention" = "提到它但不是叫它";

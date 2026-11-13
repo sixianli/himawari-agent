@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "stages": [
     {
       "id": "enroll",
@@ -1048,7 +1048,7 @@
       "purpose": "command",
       "placement": "airpods",
       "condition": "everyday",
-      "setup": "戴上两只 AirPods，手机放在一边别碰。照平常叫它的样子说，先叫名字再说事。",
+      "setup": "戴上两只 AirPods，手机放在一边别碰。照平常叫它的样子说，名字在句首、句中、句尾都照屏幕读。",
       "prompts": [
         {
           "id": "command-airpods-001",
@@ -1122,133 +1122,133 @@
         },
         {
           "id": "command-airpods-015",
-          "language": "zh-Hans",
-          "text": "Himawari，帮我给小王发个消息，说我晚十分钟到。"
-        },
-        {
-          "id": "command-airpods-016",
-          "language": "zh-Hans",
-          "text": "Himawari，现在去机场要多久。"
-        },
-        {
-          "id": "command-airpods-017",
-          "language": "zh-Hans",
-          "text": "Himawari，帮我找一下上周收到的那封报价邮件。"
-        },
-        {
-          "id": "command-airpods-018",
-          "language": "zh-Hans",
-          "text": "Himawari，提醒我一个小时后关火。"
-        },
-        {
-          "id": "command-airpods-019",
-          "language": "zh-Hans",
-          "text": "Himawari，今天有什么重要的邮件吗。"
-        },
-        {
-          "id": "command-airpods-020",
-          "language": "zh-Hans",
-          "text": "Himawari，帮我把周五的晚饭订在那家烤肉店。"
-        },
-        {
-          "id": "command-airpods-021",
           "language": "ja",
           "text": "Himawari、明日の天気を教えて。"
         },
         {
-          "id": "command-airpods-022",
+          "id": "command-airpods-016",
           "language": "ja",
           "text": "Himawari、今夜九時にゴミ出しをリマインドして。"
         },
         {
-          "id": "command-airpods-023",
+          "id": "command-airpods-017",
           "language": "ja",
           "text": "Himawari、次の会議は何時から？"
         },
         {
-          "id": "command-airpods-024",
+          "id": "command-airpods-018",
           "language": "ja",
           "text": "Himawari、週末の予定を確認して。"
         },
         {
-          "id": "command-airpods-025",
+          "id": "command-airpods-019",
           "language": "ja",
           "text": "Himawari、駅までの道が混んでいるか調べて。"
         },
         {
-          "id": "command-airpods-026",
+          "id": "command-airpods-020",
           "language": "ja",
           "text": "Himawari、さっきのメモを読み上げて。"
         },
         {
-          "id": "command-airpods-027",
+          "id": "command-airpods-021",
           "language": "ja",
           "text": "Himawari、近くで開いているスーパーを探して。"
         },
         {
-          "id": "command-airpods-028",
+          "id": "command-airpods-022",
           "language": "ja",
           "text": "Himawari、明日の朝七時にアラームをセットして。"
         },
         {
-          "id": "command-airpods-029",
-          "language": "ja",
-          "text": "Himawari、今日届いたメールを要約して。"
-        },
-        {
-          "id": "command-airpods-030",
-          "language": "ja",
-          "text": "Himawari、来週の火曜日は空いてる？"
-        },
-        {
-          "id": "command-airpods-031",
+          "id": "command-airpods-023",
           "language": "en",
           "text": "Himawari, what's the weather like tomorrow morning?"
         },
         {
-          "id": "command-airpods-032",
+          "id": "command-airpods-024",
           "language": "en",
           "text": "Himawari, remind me to call the dentist at four."
         },
         {
-          "id": "command-airpods-033",
+          "id": "command-airpods-025",
           "language": "en",
           "text": "Himawari, when is my next meeting?"
         },
         {
-          "id": "command-airpods-034",
+          "id": "command-airpods-026",
           "language": "en",
           "text": "Himawari, add oat milk to my shopping list."
         },
         {
-          "id": "command-airpods-035",
+          "id": "command-airpods-027",
           "language": "en",
           "text": "Himawari, how long will it take to get to the airport?"
         },
         {
-          "id": "command-airpods-036",
+          "id": "command-airpods-028",
           "language": "en",
           "text": "Himawari, read me my to-do list for today."
         },
         {
-          "id": "command-airpods-037",
+          "id": "command-airpods-029",
           "language": "en",
           "text": "Himawari, find a pharmacy that's still open nearby."
         },
         {
-          "id": "command-airpods-038",
+          "id": "command-airpods-030",
           "language": "en",
           "text": "Himawari, what was the name of that book I wanted to buy?"
         },
         {
+          "id": "command-airpods-031",
+          "language": "zh-Hans",
+          "text": "明天早上叫我起床吧，Himawari。"
+        },
+        {
+          "id": "command-airpods-032",
+          "language": "zh-Hans",
+          "text": "帮我查查今晚的电影票，Himawari。"
+        },
+        {
+          "id": "command-airpods-033",
+          "language": "zh-Hans",
+          "text": "提醒我周五交报告，Himawari。"
+        },
+        {
+          "id": "command-airpods-034",
+          "language": "zh-Hans",
+          "text": "帮我看一下，Himawari，明天下雨吗。"
+        },
+        {
+          "id": "command-airpods-035",
+          "language": "zh-Hans",
+          "text": "那个，Himawari，我下午的会几点开始。"
+        },
+        {
+          "id": "command-airpods-036",
+          "language": "zh-Hans",
+          "text": "等一下，Himawari，帮我记一下车停在哪。"
+        },
+        {
+          "id": "command-airpods-037",
+          "language": "ja",
+          "text": "明日の天気を教えて、Himawari。"
+        },
+        {
+          "id": "command-airpods-038",
+          "language": "ja",
+          "text": "ねえ、Himawari、今日の予定は？"
+        },
+        {
           "id": "command-airpods-039",
           "language": "en",
-          "text": "Himawari, send a message to Ken saying I'm running late."
+          "text": "what's on my calendar today, Himawari?"
         },
         {
           "id": "command-airpods-040",
           "language": "en",
-          "text": "Himawari, did I pay the electricity bill this month?"
+          "text": "hey, um, Himawari, remind me to call Ken."
         }
       ]
     },
@@ -1331,133 +1331,192 @@
         },
         {
           "id": "command-table-015",
-          "language": "zh-Hans",
-          "text": "Himawari，提醒我后天给房东转房租。"
-        },
-        {
-          "id": "command-table-016",
-          "language": "zh-Hans",
-          "text": "Himawari，我昨天跑了多少公里。"
-        },
-        {
-          "id": "command-table-017",
-          "language": "zh-Hans",
-          "text": "Himawari，帮我把这周的会议都列出来。"
-        },
-        {
-          "id": "command-table-018",
-          "language": "zh-Hans",
-          "text": "Himawari，现在外面冷不冷。"
-        },
-        {
-          "id": "command-table-019",
-          "language": "zh-Hans",
-          "text": "Himawari，帮我回复一下刚才那条消息，说好的。"
-        },
-        {
-          "id": "command-table-020",
-          "language": "zh-Hans",
-          "text": "Himawari，提醒我十分钟后看一下洗衣机。"
-        },
-        {
-          "id": "command-table-021",
           "language": "ja",
           "text": "Himawari、牛乳を買うのを忘れないようにリマインドして。"
         },
         {
-          "id": "command-table-022",
+          "id": "command-table-016",
           "language": "ja",
           "text": "Himawari、今から渋谷まで何分かかる？"
         },
         {
-          "id": "command-table-023",
+          "id": "command-table-017",
           "language": "ja",
           "text": "Himawari、今月の出費を教えて。"
         },
         {
-          "id": "command-table-024",
+          "id": "command-table-018",
           "language": "ja",
           "text": "Himawari、田中さんに少し遅れるって伝えて。"
         },
         {
-          "id": "command-table-025",
+          "id": "command-table-019",
           "language": "ja",
           "text": "Himawari、この前話してたレストランの名前は何だっけ。"
         },
         {
-          "id": "command-table-026",
+          "id": "command-table-020",
           "language": "ja",
           "text": "Himawari、明日の持ち物を確認して。"
         },
         {
-          "id": "command-table-027",
+          "id": "command-table-021",
           "language": "ja",
           "text": "Himawari、三十分後に休憩するように言って。"
         },
         {
-          "id": "command-table-028",
+          "id": "command-table-022",
           "language": "ja",
           "text": "Himawari、今日の予定をまとめて。"
         },
         {
-          "id": "command-table-029",
-          "language": "ja",
-          "text": "Himawari、金曜日の飲み会の場所はどこ？"
-        },
-        {
-          "id": "command-table-030",
-          "language": "ja",
-          "text": "Himawari、家を出る前に鍵を確認するようにリマインドして。"
-        },
-        {
-          "id": "command-table-031",
+          "id": "command-table-023",
           "language": "en",
           "text": "Himawari, set a timer for twenty minutes."
         },
         {
-          "id": "command-table-032",
+          "id": "command-table-024",
           "language": "en",
           "text": "Himawari, what do I have on Friday afternoon?"
         },
         {
-          "id": "command-table-033",
+          "id": "command-table-025",
           "language": "en",
           "text": "Himawari, summarize the emails I got this morning."
         },
         {
-          "id": "command-table-034",
+          "id": "command-table-026",
           "language": "en",
           "text": "Himawari, remind me to take my passport tomorrow."
         },
         {
-          "id": "command-table-035",
+          "id": "command-table-027",
           "language": "en",
           "text": "Himawari, where did I park the car?"
         },
         {
-          "id": "command-table-036",
+          "id": "command-table-028",
           "language": "en",
           "text": "Himawari, how much have I spent on food this week?"
         },
         {
-          "id": "command-table-037",
+          "id": "command-table-029",
           "language": "en",
           "text": "Himawari, move my three o'clock meeting to Thursday."
         },
         {
-          "id": "command-table-038",
+          "id": "command-table-030",
           "language": "en",
           "text": "Himawari, find a good ramen place around here."
         },
         {
+          "id": "command-table-031",
+          "language": "zh-Hans",
+          "text": "帮我把客厅的灯关了，Himawari。"
+        },
+        {
+          "id": "command-table-032",
+          "language": "zh-Hans",
+          "text": "今天的待办念给我听，Himawari。"
+        },
+        {
+          "id": "command-table-033",
+          "language": "zh-Hans",
+          "text": "我明天几点有会，Himawari。"
+        },
+        {
+          "id": "command-table-034",
+          "language": "zh-Hans",
+          "text": "对了，Himawari，帮我订周六的餐厅。"
+        },
+        {
+          "id": "command-table-035",
+          "language": "zh-Hans",
+          "text": "我想问一下，Himawari，快递到哪了。"
+        },
+        {
+          "id": "command-table-036",
+          "language": "zh-Hans",
+          "text": "哎，Himawari，现在外面冷不冷。"
+        },
+        {
+          "id": "command-table-037",
+          "language": "ja",
+          "text": "週末の予定を確認して、Himawari。"
+        },
+        {
+          "id": "command-table-038",
+          "language": "ja",
+          "text": "あのさ、Himawari、駅まで何分かかる？"
+        },
+        {
           "id": "command-table-039",
           "language": "en",
-          "text": "Himawari, what's on my calendar this weekend?"
+          "text": "remind me to water the plants, Himawari."
         },
         {
           "id": "command-table-040",
           "language": "en",
-          "text": "Himawari, remind me to water the plants tonight."
+          "text": "okay so, Himawari, how long to the airport?"
+        }
+      ]
+    },
+    {
+      "id": "owner-mention",
+      "purpose": "owner_mention",
+      "placement": "table",
+      "condition": "everyday",
+      "setup": "手机还放在一米外的桌上。像平常跟人聊天时提到它那样说，不是在叫它做事。",
+      "prompts": [
+        {
+          "id": "owner-mention-001",
+          "language": "zh-Hans",
+          "text": "我跟你说，Himawari 昨天那个提醒挺有用的。"
+        },
+        {
+          "id": "owner-mention-002",
+          "language": "zh-Hans",
+          "text": "这个 App 叫 Himawari，是向日葵的意思。"
+        },
+        {
+          "id": "owner-mention-003",
+          "language": "zh-Hans",
+          "text": "我昨天让 Himawari 帮我订了餐厅。"
+        },
+        {
+          "id": "owner-mention-004",
+          "language": "zh-Hans",
+          "text": "Himawari 这个名字是我自己起的。"
+        },
+        {
+          "id": "owner-mention-005",
+          "language": "zh-Hans",
+          "text": "你用过 Himawari 吗？挺方便的。"
+        },
+        {
+          "id": "owner-mention-006",
+          "language": "zh-Hans",
+          "text": "向日葵今年开得特别好。"
+        },
+        {
+          "id": "owner-mention-007",
+          "language": "ja",
+          "text": "ひまわりって名前、気に入ってるんだ。"
+        },
+        {
+          "id": "owner-mention-008",
+          "language": "ja",
+          "text": "昨日ひまわり畑に行ってきたよ。"
+        },
+        {
+          "id": "owner-mention-009",
+          "language": "en",
+          "text": "I named my assistant Himawari last year."
+        },
+        {
+          "id": "owner-mention-010",
+          "language": "en",
+          "text": "Himawari helped me plan the trip yesterday."
         }
       ]
     },
@@ -1876,6 +1935,131 @@
           "id": "mixed-060",
           "language": "mixed",
           "text": "I need to renew my 在留カード next year."
+        },
+        {
+          "id": "mixed-061",
+          "language": "mixed",
+          "text": "今天的 standup 只开了十分钟。"
+        },
+        {
+          "id": "mixed-062",
+          "language": "mixed",
+          "text": "我在 Uniqlo 买了一件新的 jacket。"
+        },
+        {
+          "id": "mixed-063",
+          "language": "mixed",
+          "text": "これ、すごく cute じゃない？"
+        },
+        {
+          "id": "mixed-064",
+          "language": "mixed",
+          "text": "这周的 workout 我只去了两次。"
+        },
+        {
+          "id": "mixed-065",
+          "language": "mixed",
+          "text": "明天要去 Apple Store 修一下 AirPods。"
+        },
+        {
+          "id": "mixed-066",
+          "language": "mixed",
+          "text": "I'll text you the 地址 later."
+        },
+        {
+          "id": "mixed-067",
+          "language": "mixed",
+          "text": "这个 issue 我已经提了 pull request。"
+        },
+        {
+          "id": "mixed-068",
+          "language": "mixed",
+          "text": "帰りに Starbucks 寄っていこうか。"
+        },
+        {
+          "id": "mixed-069",
+          "language": "mixed",
+          "text": "周末的 hiking 因为下雨取消了。"
+        },
+        {
+          "id": "mixed-070",
+          "language": "mixed",
+          "text": "我把 budget 的 spreadsheet 更新了。"
+        },
+        {
+          "id": "mixed-071",
+          "language": "mixed",
+          "text": "Can we do the 打ち合わせ on Monday instead?"
+        },
+        {
+          "id": "mixed-072",
+          "language": "mixed",
+          "text": "这家店的 matcha latte 很好喝。"
+        },
+        {
+          "id": "mixed-073",
+          "language": "mixed",
+          "text": "明天の flight は朝早いです。"
+        },
+        {
+          "id": "mixed-074",
+          "language": "mixed",
+          "text": "我在 YouTube 上看到一个很好的 tutorial。"
+        },
+        {
+          "id": "mixed-075",
+          "language": "mixed",
+          "text": "He said the 资料 is on the shared drive."
+        },
+        {
+          "id": "mixed-076",
+          "language": "mixed",
+          "text": "今天 Wi-Fi 一直断，开会好麻烦。"
+        },
+        {
+          "id": "mixed-077",
+          "language": "mixed",
+          "text": "この cafe の Wi-Fi、パスワード何だっけ。"
+        },
+        {
+          "id": "mixed-078",
+          "language": "mixed",
+          "text": "我们 team 的 offsite 定在下个月。"
+        },
+        {
+          "id": "mixed-079",
+          "language": "mixed",
+          "text": "Let's book the 温泉 for the long weekend."
+        },
+        {
+          "id": "mixed-080",
+          "language": "mixed",
+          "text": "这个 deadline 有点紧，要加班了。"
+        },
+        {
+          "id": "mixed-081",
+          "language": "mixed",
+          "text": "コンビニで coffee 買ってくるね。"
+        },
+        {
+          "id": "mixed-082",
+          "language": "mixed",
+          "text": "我刚把 subscription 取消了。"
+        },
+        {
+          "id": "mixed-083",
+          "language": "mixed",
+          "text": "Could you check the 予約 for tonight?"
+        },
+        {
+          "id": "mixed-084",
+          "language": "mixed",
+          "text": "今天的 sushi 特别新鲜，omakase 很值。"
+        },
+        {
+          "id": "mixed-085",
+          "language": "mixed",
+          "text": "这个 weekend 要不要去看 fireworks。"
         }
       ]
     }

@@ -109,7 +109,7 @@ package final class ListenEvalRecorder {
 
     package func stop() async {
         guard case let .recording(since) = phase, let prompt = currentPrompt, let capture else { return }
-        let inEarNow = route == .airpods ? inEar.inEar() : nil
+        let inEarNow = route == .airpods ? HeadphoneWear.worn(motionFresh: inEar.inEar(), playsThroughSameHeadset: capture.playsThroughSameHeadset) : nil
         capture.stop(deactivate: true)
         writer?.cancel()
         await writer?.value

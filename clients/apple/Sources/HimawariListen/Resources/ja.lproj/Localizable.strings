@@ -16,3 +16,4 @@
 "eval.purpose.speaker" = "話者の識別";
 "eval.purpose.command" = "話しかける";
 "eval.purpose.mixed" = "言語を混ぜて";
+"eval.purpose.owner_mention" = "名前に触れるだけ";
