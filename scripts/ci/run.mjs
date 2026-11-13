@@ -30,6 +30,7 @@ import { prepareCoverageComparison, retainComparisonEvidence } from "./coverage-
 import { coverageProjects, strategyDigest, validateCoveragePolicy } from "./coverage-model.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
 import { isolatedEnvironment, verifyInstalledTools } from "./install-tools.mjs";
+import { artifactPlatformKey } from "./platforms.mjs";
 import { observeResources } from "./resources.mjs";
 import { redactText } from "./security-redaction.mjs";
 import { runTests } from "./test.mjs";
@@ -83,6 +84,7 @@ export async function runCheck({
     (checkId !== "coverage" || baselineCandidate !== "initial-only")
   )
     throw new Error("CI_INITIAL_BASELINE_CANDIDATE_OPTION_INVALID");
+  if (["build", "browser", "coverage"].includes(checkId)) artifactPlatformKey();
   const directory = outputPath(output, root);
   const source = resolvePolicySource({ root, base: context.baseSha });
   if (!source.policy.events.includes(context.event)) throw new Error("CI_EVENT_UNSUPPORTED");
@@ -266,6 +268,13 @@ export async function runCheck({
         failed: security.checks.filter((entry) => entry.status !== "passed").length,
         skipped: 0,
       };
+      for (const entry of security.checks)
+        if (entry.status !== "passed")
+          process.stdout.write(
+            redactText(
+              `security scan ${entry.id}: ${entry.status}${/^[A-Z_]+$/.test(entry.error ?? "") ? ` ${entry.error}` : ""}\n`,
+            ),
+          );
       if (security.status !== "passed") {
         result.status = security.status;
         throw new Error("CI_SECURITY_FAILED");
@@ -280,7 +289,7 @@ export async function runCheck({
       files.push({ path: retained, kind: "artifact" });
       result.artifacts.push({
         role: "consumed",
-        platform: process.platform === "darwin" ? "macos-arm64" : "linux-x64",
+        platform: artifactPlatformKey(),
         path: entry.path,
         sha256: entry.sha256,
       });
@@ -474,7 +483,7 @@ export async function runCheck({
           files.push({ path: retained, kind: "artifact" });
           result.artifacts.push({
             role: checkId === "build" ? "produced" : "consumed",
-            platform: process.platform === "darwin" ? "macos-arm64" : "linux-x64",
+            platform: artifactPlatformKey(),
             path: entry.path,
             sha256: entry.sha256,
           });
@@ -558,7 +567,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (args["--input"]) {
     if (artifact) throw new Error("CI_ARTIFACT_INPUT_AMBIGUOUS");
     const producer = validateRecord("CheckResult", readJson(args["--input"]));
-    const platform = process.platform === "darwin" ? "macos-arm64" : "linux-x64";
+    const platform = artifactPlatformKey();
     if (
       producer.checkId !== "build" ||
       producer.matrixKey !== platform ||

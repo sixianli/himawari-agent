@@ -370,6 +370,9 @@ describe("production HTTP composition", () => {
           "home.read",
           "data.export.start",
           "data.export.status.read",
+          "files.list.read",
+          "login.devices.read",
+          "login.device.revoke",
         ],
         healthDependenciesAvailable: true,
       });
@@ -1232,6 +1235,117 @@ describe("production HTTP composition", () => {
         headers: requestHeaders(token, "", undefined),
       });
       expect(exportWithoutSession.statusCode).toBe(401);
+      const phoneFiles = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, second.cookie),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "files.list.read"),
+          kind: "query",
+          payload: { kind: null, origin: null, before: null, limit: 20 },
+        },
+      });
+      expect(phoneFiles.statusCode, phoneFiles.body).toBe(200);
+      expect(gatewayV2MessageSchema.parseJson(phoneFiles.body)).toMatchObject({
+        type: "files.list.snapshot",
+        payload: { files: [], nextCursor: null },
+      });
+      const filesWithoutSession = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, "", undefined),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "files.list.read"),
+          kind: "query",
+          payload: { kind: null, origin: null, before: null, limit: 20 },
+        },
+      });
+      expect(filesWithoutSession.statusCode, filesWithoutSession.body).toBe(401);
+      const filesWithBadCursor = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, second.cookie),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "files.list.read"),
+          kind: "query",
+          payload: { kind: null, origin: null, before: "bm90LWEtY3Vyc29y", limit: 20 },
+        },
+      });
+      expect(filesWithBadCursor.statusCode, filesWithBadCursor.body).toBe(400);
+      const loginDevices = async () => {
+        const response = await running.composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/queries",
+          headers: requestHeaders(token, second.cookie),
+          payload: {
+            ...ownerEnvelope(second.authenticationRef, "login.devices.read"),
+            kind: "query",
+            payload: {},
+          },
+        });
+        expect(response.statusCode, response.body).toBe(200);
+        const parsed = gatewayV2MessageSchema.parseJson(response.body);
+        if (parsed.type !== "login.devices.snapshot") throw new Error(parsed.type);
+        return parsed.payload.devices;
+      };
+      const deviceState = running.repository.sessionDeviceState();
+      const latest = [...(await deviceState.listDevices(OWNER_ID as never, false))]
+        .sort((left, right) => Number(left.id > right.id) - Number(left.id < right.id))
+        .at(-1);
+      if (!latest) throw new Error("no device");
+      const { revision: latestRevision, ...latestDevice } = latest;
+      await deviceState.saveDevice(
+        { ...latestDevice, lastSeenAt: "2099-01-01T00:00:00.000Z" },
+        latestRevision,
+      );
+      const before = await loginDevices();
+      expect(before[0]?.deviceId).toBe(latest.id);
+      expect(before.length).toBeGreaterThanOrEqual(2);
+      expect(before.filter(({ current }) => current)).toHaveLength(1);
+      expect(before.map(({ deviceId }) => deviceId)).toEqual(
+        [...(await running.repository.sessionDeviceState().listDevices(OWNER_ID as never, false))]
+          .sort((left, right) =>
+            left.lastSeenAt === right.lastSeenAt
+              ? Number(left.id > right.id) - Number(left.id < right.id)
+              : Number(left.lastSeenAt < right.lastSeenAt) -
+                Number(left.lastSeenAt > right.lastSeenAt),
+          )
+          .map(({ id }) => id),
+      );
+      const current = before.find(({ current }) => current);
+      const other = before.find(({ current }) => !current);
+      const revoke = (deviceId: string, recentAuthenticationRef: string | null, key: string) =>
+        running.composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/commands",
+          headers: {
+            ...requestHeaders(token, second.cookie, second.csrf),
+            "idempotency-key": key,
+          },
+          payload: {
+            ...ownerEnvelope(second.authenticationRef, "login.device.revoke"),
+            kind: "command",
+            idempotencyKey: key,
+            payload: { deviceId, recentAuthenticationRef },
+          },
+        });
+      expect(
+        (await revoke(current?.deviceId ?? "", second.authenticationRef, "revoke-self")).statusCode,
+      ).toBe(409);
+      expect((await revoke(other?.deviceId ?? "", null, "revoke-no-recent")).statusCode).not.toBe(
+        200,
+      );
+      expect((await loginDevices()).length).toBe(before.length);
+      const revoked = await revoke(other?.deviceId ?? "", second.authenticationRef, "revoke-other");
+      expect(revoked.statusCode, revoked.body).toBe(200);
+      expect((await loginDevices()).map(({ deviceId }) => deviceId)).not.toContain(other?.deviceId);
+      const replayed = await revoke(other?.deviceId ?? "", null, "revoke-other-again");
+      expect(replayed.statusCode, replayed.body).toBe(200);
+      expect(replayed.json()).toMatchObject({ replayed: true });
+      expect((await revoke("device-missing", null, "revoke-missing")).statusCode).toBe(404);
+      expect((await loginDevices()).find(({ current }) => current)?.deviceId).toBe(
+        current?.deviceId,
+      );
       const readInterceptions = async () => {
         const response = await running.composition.app.inject({
           method: "POST",

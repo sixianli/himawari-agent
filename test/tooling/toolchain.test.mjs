@@ -77,7 +77,7 @@ describe("固定工具身份", () => {
       "ToolchainLock validation passed",
     );
   });
-  it("锁定双方平台、完整 Action SHA、扫描工具和 wheel 闭包", () => {
+  it("锁定每个平台、完整 Action SHA、扫描工具和 wheel 闭包", () => {
     const lock = loadToolchainLock(root);
     expect(validateToolchainLock(lock)).toBe(lock);
     expect(lock.actions.map((action) => action.repository).sort()).toEqual([

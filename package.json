@@ -88,7 +88,7 @@
     "test:services": "vitest run --config vitest.workspace.ts --project node-services",
     "test:unit": "vitest run --config vitest.workspace.ts --project unit",
     "test:workspace-scaffolds": "vitest run --config vitest.workspace.ts --project workspace-scaffolds",
-    "typecheck": "tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json",
+    "typecheck": "node --max-old-space-size=4096 node_modules/typescript/bin/tsc -p tsconfig.json && node --max-old-space-size=4096 node_modules/typescript/bin/tsc -p apps/control-center/tsconfig.json",
     "unlink:local-pi": "node scripts/unlink-local-pi.mjs",
     "test:tooling": "node scripts/ci/local.mjs --check policy",
     "check:ci-policy": "node scripts/ci/check-policy.mjs",
