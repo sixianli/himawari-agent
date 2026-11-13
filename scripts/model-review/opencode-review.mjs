@@ -905,6 +905,7 @@ function runOpencode({
         if (stopOnToolCall && calledTool) stop("wrap-up-tool-call");
       }
     });
+    child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
     });

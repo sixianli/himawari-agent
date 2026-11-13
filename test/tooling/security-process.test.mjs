@@ -166,6 +166,7 @@ function securityFixture() {
       const files = args.slice(args.indexOf("--json") + 1);
       if (state.mode === "semgrep-process")
         return { status: null, signal: "SIGKILL", error: new Error("synthetic kill") };
+      if (state.mode === "semgrep-signal") return { status: null, signal: "SIGKILL" };
       const results =
         state.mode === "semgrep-finding"
           ? [
@@ -257,14 +258,16 @@ describe("安全runner的隔离外部边界", () => {
     expect(result.checks).toHaveLength(3);
     expect(result.checks.some((c) => c.status === "passed")).toBe(true);
   });
-  it("扫描器被信号杀掉时，报告里的错误写明原因而不是笼统的不可用", async () => {
+  it.each([
+    ["semgrep-process", "SECURITY_CMD_ERROR_UNKNOWN"],
+    ["semgrep-signal", "SECURITY_CMD_SIGNAL_SIGKILL"],
+  ])("%s：报告里的错误写明原因而不是笼统的不可用", async (mode, expected) => {
     const f = securityFixture();
-    f.mode = "semgrep-process";
+    f.mode = mode;
     const result = await runSecurityChecks(f);
     const failed = result.checks.filter((c) => c.status === "infrastructure_failed");
     expect(failed).toHaveLength(1);
-    expect(failed[0].error).toBe("SECURITY_CMD_ERROR_UNKNOWN");
-    expect(failed[0].error).not.toBe("SECURITY_SCANNER_FAILED");
+    expect(failed[0].error).toBe(expected);
   });
   it("缺固定扫描器时明确preflight失败", async () => {
     const f = securityFixture();

@@ -585,17 +585,21 @@ export async function main(argv = process.argv.slice(2)) {
       throw new Error("CI_ARTIFACT_TRANSFER_DIGEST_MISMATCH");
   }
   const stopHostLoad = startHostLoad();
-  const result = await runCheck({
-    checkId: args["--check"],
-    matrixKey: args["--matrix"],
-    output: args["--output"],
-    toolsDirectory: path.resolve(args["--tools"]),
-    context,
-    artifact,
-    baselineCandidate: args["--baseline-candidate"],
-    comparison: args["--comparison"] && path.resolve(args["--comparison"]),
-  });
-  process.stdout.write(`${stopHostLoad()}\n`);
+  let result;
+  try {
+    result = await runCheck({
+      checkId: args["--check"],
+      matrixKey: args["--matrix"],
+      output: args["--output"],
+      toolsDirectory: path.resolve(args["--tools"]),
+      context,
+      artifact,
+      baselineCandidate: args["--baseline-candidate"],
+      comparison: args["--comparison"] && path.resolve(args["--comparison"]),
+    });
+  } finally {
+    process.stdout.write(`${stopHostLoad()}\n`);
+  }
   process.stdout.write(
     `${result.checkId}/${result.matrixKey}: ${result.status} (${result.counts.passed} passed, ${result.counts.failed} failed)\n`,
   );

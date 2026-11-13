@@ -767,6 +767,7 @@ export async function startGateway({
     child.on("error", (error) => {
       spawnError = error.message;
     });
+    child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
       stderr = `${stderr}${chunk}`.slice(-4000);
     });

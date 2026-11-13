@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0253-support-linux-arm64-for-test-and-qualification.md"
+amends: "docs/adr/0253-support-linux-arm64-for-test-and-qualification.md, docs/adr/0238-ci-job-files-stay-on-the-ci-vps.md"
 date: "2026-11-13"
 ---
 
@@ -38,7 +38,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）的检查作业原来�
 3. ADR 0238 写明只有 CI 服务器上的 runner 能跑这套 CI。来源：`docs/adr/0238-ci-job-files-stay-on-the-ci-vps.md` 第 92 行，原话“只有 CI VPS 上的 runner 能跑这套 CI”。这份 ADR 同样修订这一条。
 4. 三项检查的运行位置在 `.github/workflows/ci.yml`：policy 第 33 行、static 第 72 行、security 第 284 行，原话 `runs-on: ci-arm`。
 5. 汇总作业用 `--remote-jobs policy,static,security` 去 ARM 机器取报告。来源：`.github/workflows/ci.yml` 第 362 行，原话 `run-share.mjs collect --to .ci-output/reports --remote-jobs policy,static,security`。
-6. 策略里这三项允许的架构：`ci/policy.json` 第 14、16 行，原话 `"arch": "x64"`、`"alternateArch": "arm64"`。
+6. 策略里这三项允许的架构：`ci/policy.json` 第 15、16 行，原话 `"arch": "x64"`、`"alternateArch": "arm64"`。
 7. 未核实：ARM 机器上三项检查的真实时长和失败率。切换后的第一批运行产生数据，由日志里的 `CI_HOST_LOAD` 行和作业时长核对。
 
 <a id="owner-decisions"></a>
@@ -57,7 +57,8 @@ CI（每次推送后 GitHub Actions 自动跑的检查）的检查作业原来�
 2. 策略里这三项的成员仍写 `arch: x64`，另加 `alternateArch: arm64`。汇总时报告里的架构必须是这两个值之一；build 等其他检查不接受 arm64，也不接受其他架构。
 3. 应急用 `arm-fallback.sh on` 把 `ci-arm` 标签加到 CI 服务器的检查 runner 上，这时三项检查在 x64 上跑，汇总照样认可。这是有意保留的取舍：Oracle 机器停机时 CI 能继续，代价是汇总不能证明某次报告一定来自 ARM。“在哪种机器上跑”靠运行时的 runner 标签和日志里的 `CI_HOST_LOAD` 行核对，不靠汇总拦。
 4. 汇总作业用只读的 ssh 去 ARM 机器取这三项的报告，取回的内容照旧按摘要核对（取报告的做法见运行手册“Oracle 的 ARM 机器上的两个 runner”一节）。
-5. 不再等 20 次试跑一致才切换：Andy 明确要求现在切。试跑工作流已删除，改为用切换后的真实运行数据观察；如果三项检查在 ARM 上出现与 x64 不一致的结论，停下来带数据找 Andy。
+5. ARM 的工具链条目放在主锁文件 `ci/toolchain-lock.json` 里（里面已有 linux-arm64 的 Node、Python、actionlint、gitleaks、Semgrep），不是 ADR 0253 第 65、83 行写的独立锁文件；汇总比对锁文件摘要，只有一份锁文件才对得上。这一点也以这份 ADR 为准。
+6. 不再等 20 次试跑一致才切换：Andy 明确要求现在切。试跑工作流已删除，改为用切换后的真实运行数据观察；如果三项检查在 ARM 上出现与 x64 不一致的结论，停下来带数据找 Andy。
 
 <a id="options"></a>
 
