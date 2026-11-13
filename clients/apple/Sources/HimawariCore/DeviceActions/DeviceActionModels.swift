@@ -284,6 +284,7 @@ public enum DeviceActionTime {
     }
 
     public static func localDate(_ text: String, in timeZone: TimeZone = .current) -> Date? {
+        guard text.wholeMatch(of: /\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?/) != nil else { return nil }
         let parts = text.split(separator: "T")
         guard let day = parts.first else { return nil }
         let dayParts = day.split(separator: "-").compactMap { Int($0) }

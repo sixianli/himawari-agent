@@ -37,10 +37,16 @@ public protocol DeviceActionHandler: Sendable {
     func perform(_ delivery: DeviceActionDelivery) async throws -> JSONObject
     func readBack(_ delivery: DeviceActionDelivery, made: JSONObject?) async throws -> DeviceActionReading
     var readOnly: Set<String> { get }
+    var schemaVersions: Set<Int> { get }
 }
 
 public extension DeviceActionHandler {
     var readOnly: Set<String> { [] }
+    var schemaVersions: Set<Int> { [1] }
+
+    func handles(_ delivery: DeviceActionDelivery) -> Bool {
+        names.contains(delivery.action) && schemaVersions.contains(delivery.schemaVersion)
+    }
 }
 
 public struct DeviceActionArguments: Sendable {
@@ -138,9 +144,9 @@ public enum DeviceActionReason: Sendable, Equatable {
             let what = name.localized(locale)
             return Self.pick(
                 locale,
-                "Himawari 还没问过能不能用\(what)。在 Himawari 的设置 › 它能替你做的 里点\(what)就能允许",
-                "Himawari hasn't asked to use \(what) yet. Tap \(what) in Himawari's settings to allow it",
-                "Himawari はまだ\(what)の使用を確認していません。Himawari の設定で\(what)をタップすると許可できます"
+                "Himawari 还没问过能不能用\(what)。在 Himawari 的设置 › 系统里允许的 里点\(what)，再点“继续”",
+                "Himawari hasn't asked to use \(what) yet. In Himawari's settings, under Allowed in the system, tap \(what) and then Continue",
+                "Himawari はまだ\(what)の使用を確認していません。Himawari の設定の「システムで許可されているもの」で\(what)をタップし、「続ける」を押してください"
             )
         case let .permissionUnavailable(name):
             let what = name.localized(locale)

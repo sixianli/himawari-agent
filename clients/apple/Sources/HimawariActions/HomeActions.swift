@@ -9,6 +9,12 @@ final class HomeLoader: NSObject, HMHomeManagerDelegate {
     private var waiting: [UUID: CheckedContinuation<HMHomeManager?, Never>] = [:]
     private var loaded = false
     static let loadLimit: Duration = .seconds(30)
+    static let askedKey = "himawari.home.asked"
+
+    var asked: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.askedKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.askedKey) }
+    }
 
     func homes() async -> HMHomeManager? {
         if let manager, loaded { return manager }
@@ -35,8 +41,9 @@ final class HomeLoader: NSObject, HMHomeManagerDelegate {
         return created
     }
 
-    var status: HMHomeManagerAuthorizationStatus {
-        current.authorizationStatus
+    var status: HMHomeManagerAuthorizationStatus? {
+        guard manager != nil || asked else { return nil }
+        return current.authorizationStatus
     }
 
     nonisolated func homeManagerDidUpdateHomes(_ manager: HMHomeManager) {
@@ -72,7 +79,7 @@ public struct HomePermission: DevicePermission {
     }
 
     public func status() async -> DevicePermissionStatus {
-        let status = await loader.status
+        guard let status = await loader.status else { return .notDetermined }
         if status.contains(.authorized) { return .authorized }
         if status.contains(.restricted) { return .unavailable }
         if status.contains(.determined) { return .denied }
@@ -80,6 +87,7 @@ public struct HomePermission: DevicePermission {
     }
 
     public func request() async -> DevicePermissionStatus {
+        await MainActor.run { loader.asked = true }
         _ = await loader.homes()
         return await status()
     }
@@ -146,7 +154,7 @@ public final class HomeActions: DeviceActionHandler, @unchecked Sendable {
         for (key, wanted) in delivery.arguments where key != "accessoryId" {
             guard let control = Self.controls.first(where: { $0.key == key && Self.characteristic(accessory, $0.target) != nil }),
                   let current = Self.characteristic(accessory, control.current) else { return .unreadable }
-            try? await current.readValue()
+            guard (try? await current.readValue()) != nil else { return .unreadable }
             let now = current.value
             switch key {
             case "locked":
@@ -202,8 +210,8 @@ public final class HomeActions: DeviceActionHandler, @unchecked Sendable {
             ("locked", HMCharacteristicTypeCurrentLockMechanismState),
         ]
         for (key, type) in readable {
-            guard let characteristic = characteristic(accessory, type) else { continue }
-            try? await characteristic.readValue()
+            guard let characteristic = characteristic(accessory, type),
+                  (try? await characteristic.readValue()) != nil else { continue }
             switch characteristic.value {
             case let flag as Bool: values[key] = .bool(flag)
             case let number as NSNumber:

@@ -57,10 +57,26 @@ import Testing
     @Test func notYetAskedAndRestrictedPermissionsSayWhatIsTrue() {
         let notAsked = refusal(delivery(), permission: .notDetermined)
         #expect(notAsked == .permissionNotAsked(["zh-CN": "日历"]))
-        #expect(notAsked?.text(.chinese) == "Himawari 还没问过能不能用日历。在 Himawari 的设置 › 它能替你做的 里点日历就能允许")
+        #expect(notAsked?.text(.chinese) == "Himawari 还没问过能不能用日历。在 Himawari 的设置 › 系统里允许的 里点日历，再点“继续”")
         let restricted = refusal(delivery(), permission: .unavailable)
         #expect(restricted == .permissionUnavailable(["zh-CN": "日历"]))
         #expect(restricted?.text(.chinese).contains("设置里打开") == false)
+    }
+
+    @Test func aSchemaVersionTheHandlerWasNotWrittenForIsNotDone() throws {
+        let notes = NoteFileActions(file: FileManager.default.temporaryDirectory.appendingPathComponent("unused-\(UUID().uuidString)"))
+        let current = DeviceActionDelivery(
+            id: "dact_00000000000000000000000000000002", mode: .perform, action: "test.note.append", schemaVersion: 1,
+            arguments: ["text": .string("x")], ownerPresence: false, readBack: .readItem, snapshotBefore: false, reversible: false,
+            risk: "LOW", expiresAt: DeviceActionTime.stamp(now.addingTimeInterval(600)), detail: [:]
+        )
+        let newer = DeviceActionDelivery(
+            id: current.id, mode: .perform, action: current.action, schemaVersion: 2, arguments: current.arguments,
+            ownerPresence: false, readBack: .readItem, snapshotBefore: false, reversible: false,
+            risk: "LOW", expiresAt: current.expiresAt, detail: [:]
+        )
+        #expect(notes.handles(current))
+        #expect(!notes.handles(newer))
     }
 
     @Test func checkingOnlyKeepsEverythingButTheMode() {
@@ -79,6 +95,10 @@ import Testing
         #expect(DeviceActionTime.localText(date, in: tokyo) == "2026-11-20T15:00")
         #expect(DeviceActionTime.localDate("2026-02-30T10:00", in: tokyo) == nil)
         #expect(DeviceActionTime.localDate("2026-11-20T25:00", in: tokyo) == nil)
+        #expect(DeviceActionTime.localDate("2026-11-20T15:00:00Z", in: tokyo) == nil)
+        #expect(DeviceActionTime.localDate("2026-11-20T15:00:abc", in: tokyo) == nil)
+        #expect(DeviceActionTime.localDate("2026-11-20T15:00Z", in: tokyo) == nil)
+        #expect(DeviceActionTime.localDate("2026-11-2", in: tokyo) == nil)
         #expect(DeviceActionTime.localDate("2026-11-20", in: tokyo).map { DeviceActionTime.localText($0, in: tokyo) } == "2026-11-20T00:00")
     }
 

@@ -135,6 +135,7 @@ final class RecordingExchange: HTTPExchange, @unchecked Sendable {
         let second = try #require(exchange.requests.last?.value(forHTTPHeaderField: "Signature-Input"))
         let expected = Int64(ISO8601DateFormatter().date(from: "2027-01-15T08:00:00Z")!.timeIntervalSince1970)
         #expect(second.contains("created=\(expected);"))
+        #expect(Int64(http.correctedNow.timeIntervalSince1970.rounded(.down)) == expected)
     }
 
     @Test func repeatedSkewIsNotRetriedForever() async throws {

@@ -265,7 +265,8 @@ public final class AppModel {
             let executor = DeviceActionExecutor(
                 transport: api,
                 journal: DeviceActionJournal(store: store),
-                handlers: AppleDeviceActions.handlers()
+                handlers: AppleDeviceActions.handlers(),
+                now: { [http = api.http] in http.correctedNow }
             )
             let actions = DeviceActionsModel(api: api, executor: executor, confirm: keys.signer(.confirm), store: store)
             self.actions = actions

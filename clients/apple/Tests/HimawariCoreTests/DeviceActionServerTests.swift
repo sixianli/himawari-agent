@@ -28,7 +28,7 @@ struct AlwaysAllowed: DevicePermission {
 }
 
 final class NoteFileActions: DeviceActionHandler, @unchecked Sendable {
-    let names = ["test.note.append"]
+    let names = ["test.note.append", "test.note.touch"]
     let permission: DevicePermission = AlwaysAllowed()
     let file: URL
 
@@ -230,6 +230,26 @@ struct DeviceActionServerTests {
         #expect(await executor.run() == [.reported(id: id, outcome: .failed, readBack: true)])
         #expect(try journal.entry(id) == nil)
         #expect(setup.notes.lines.isEmpty)
+    }
+
+    @Test func anActionThatCannotBeReadBackIsNotRedoneWhenChecked() async throws {
+        let setup = try await setUp()
+        let (executor, journal) = try executor(setup)
+        await executor.run()
+        let body: [String: Any] = ["deviceId": setup.deviceId, "action": "test.note.touch", "arguments": ["text": "摸一下"], "toolCallId": "call-g"]
+        let asked = try await setup.control.call("request", body)
+        let id = try #require(asked["actionId"] as? String)
+        let claimed = try await setup.api.claimActions()
+        let delivery = try #require(claimed.first)
+        #expect(delivery.readBack == .none)
+        _ = try await setup.notes.perform(delivery)
+        try journal.update {
+            $0.entries[id] = DeviceActionJournalEntry(id: id, action: delivery.action, stage: .started, before: nil, made: nil, report: nil, updatedAt: setup.clock.now)
+        }
+        try await advance(setup, seconds: 3600)
+        let steps = await executor.run()
+        #expect(steps.first == .reported(id: id, outcome: .resultUnknown, readBack: false))
+        #expect(setup.notes.lines == ["摸一下"])
     }
 
     @Test func aDamagedJournalIsTreatedLikeAReinstall() async throws {

@@ -152,7 +152,7 @@ public actor DeviceActionExecutor {
         let permission = await handler?.permission.status()
         if let refusal = DeviceActionGate.refusal(
             delivery,
-            implemented: handler != nil,
+            implemented: handler?.handles(delivery) ?? false,
             blocked: blocked(delivery.action),
             permission: permission,
             permissionName: handler?.permission.name,
