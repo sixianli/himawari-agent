@@ -18,7 +18,6 @@ defaults:
 jobs:
   policy:
     name: arm-trial / policy
-    if: ${{ github.event.pull_request.draft != true }}
     runs-on: ci-arm
     timeout-minutes: 60
     env:
@@ -51,7 +50,6 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "arm-trial policy/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   static:
     name: arm-trial / static
-    if: ${{ github.event.pull_request.draft != true }}
     runs-on: ci-arm
     timeout-minutes: 60
     env:
@@ -86,7 +84,6 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "arm-trial static/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   security:
     name: arm-trial / security
-    if: ${{ github.event.pull_request.draft != true }}
     runs-on: ci-arm
     timeout-minutes: 60
     env:
