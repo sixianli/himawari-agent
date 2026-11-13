@@ -1,20 +1,29 @@
-import { afterAll, beforeAll } from "vitest";
-import { hostPlatform } from "../../scripts/ci/platforms.mjs";
+const realHost = { os: process.platform, arch: process.arch };
+const defaultHost =
+  realHost.os === "linux" && realHost.arch === "arm64" ? { os: "linux", arch: "x64" } : realHost;
+let simulatedHost;
 
-export function useArtifactCapableHost() {
-  const original = {};
-  beforeAll(() => {
-    if (hostPlatform() !== "linux-arm64") return;
-    for (const [key, value] of [
-      ["platform", "linux"],
-      ["arch", "x64"],
-    ]) {
-      original[key] = Object.getOwnPropertyDescriptor(process, key);
-      Object.defineProperty(process, key, { value, configurable: true, enumerable: true });
-    }
-  });
-  afterAll(() => {
-    for (const [key, descriptor] of Object.entries(original))
-      Object.defineProperty(process, key, descriptor);
-  });
+const currentHost = () => simulatedHost ?? defaultHost;
+
+export async function withHost(os, arch, action) {
+  const previous = simulatedHost;
+  simulatedHost = { os, arch };
+  try {
+    return await action();
+  } finally {
+    simulatedHost = previous;
+  }
+}
+
+export function artifactCapablePlatforms(original) {
+  return {
+    ...original,
+    hostOs: () => currentHost().os,
+    hostArch: () => currentHost().arch,
+    hostPlatform: () => `${currentHost().os}-${currentHost().arch}`,
+    artifactPlatformKey: (os = currentHost().os, arch = currentHost().arch) =>
+      original.artifactPlatformKey(os, arch),
+    buildPlatformKey: (os = currentHost().os, arch = currentHost().arch) =>
+      original.buildPlatformKey(os, arch),
+  };
 }

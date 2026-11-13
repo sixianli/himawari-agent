@@ -26,7 +26,7 @@ struct PairingView: View {
                 Button(L.text("pairing.startOver"), role: .destructive) { model.startOver() }
                 Button(L.text("pairing.cancel"), role: .cancel) {}
             }
-            .fullScreenCover(isPresented: $scanning) {
+            .hmCover(isPresented: $scanning) {
                 PairingScanner { text in
                     scanning = false
                     model.pair(scanned: text)
