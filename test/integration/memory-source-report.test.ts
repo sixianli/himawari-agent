@@ -53,7 +53,7 @@ describe("[P1-1] memory source report", () => {
       `NOT LIKE '${REMINDER_SOURCE_PREFIX}%'`,
     );
     expect(await read("apps/agent-service/src/production-reminder-writer.ts")).toContain(
-      `\`${REMINDER_SOURCE_PREFIX}\${input.key}\``,
+      `\`${REMINDER_SOURCE_PREFIX}\${key}\``,
     );
   });
 
