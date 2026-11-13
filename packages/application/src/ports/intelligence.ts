@@ -478,6 +478,7 @@ export interface RuntimeToolSettledResult {
   readonly externalActionId: string | null;
   readonly modelContent: string;
   readonly contentClassification?: DataClassification;
+  readonly refused?: true;
 }
 
 export interface RuntimeToolSuspendedResult {

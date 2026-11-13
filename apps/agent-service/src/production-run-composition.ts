@@ -25,6 +25,7 @@ import {
   type SandboxExecutionRecord,
   SessionTraceRecorder,
   ThreadPromptBundleService,
+  type ToolRefusalConfiguration,
   type TraceStorePort,
   type WorkerRunPort,
 } from "@himawari-agent/application";
@@ -78,6 +79,7 @@ import { ProductionUploadedFiles } from "./production-uploaded-files.js";
 export interface ProductionRunCompositionOptions {
   readonly egress: ModelEgress;
   readonly externalContent?: Pick<ContextExternalContent, "mark">;
+  readonly toolRefusalLimits?: ToolRefusalConfiguration;
   readonly generateTitle?: (
     request: RuntimeRequest,
     prompt: string,
@@ -439,6 +441,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
         );
   const runtime = new PiAgentRuntimeAdapter({
     egress: options.egress,
+    ...(options.toolRefusalLimits ? { toolRefusalLimits: options.toolRefusalLimits } : {}),
     continuations,
     projection,
     ...(promptBundles ? { promptBundles } : {}),

@@ -2582,6 +2582,9 @@ export async function startTenantRuntime(
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
         externalContent,
+        ...(configuration.runPolicy?.toolRefusals
+          ? { toolRefusalLimits: configuration.runPolicy.toolRefusals }
+          : {}),
         egress: createProductionModelEgress(
           configuration,
           sources,
