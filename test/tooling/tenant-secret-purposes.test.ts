@@ -47,13 +47,17 @@ describe("every secret purpose the product reads is classified as per-tenant or 
     expect([...found]).toEqual(
       expect.arrayContaining(["payload-encryption", "identity-csrf", "web-push", "gap-export"]),
     );
-    expect([...found].filter((purpose) => !(purpose in TENANT_SECRET_PURPOSE_CLASSES))).toEqual([]);
+    expect(
+      [...found].filter((purpose) => !Object.hasOwn(TENANT_SECRET_PURPOSE_CLASSES, purpose)),
+    ).toEqual([]);
   });
 
   it("flags a newly read purpose that nobody classified", () => {
-    const source = `const key = configuration.secretReferences.find(\n  ({ purpose }) => purpose === "calendar-token",\n);`;
+    const source = `const key = configuration.secretReferences.find(\n  ({ purpose }) => purpose === "calendar-token",\n);\nconst PROTOTYPE_SECRET_PURPOSE = "constructor";`;
     expect(
-      secretPurposesIn(source).filter((purpose) => !(purpose in TENANT_SECRET_PURPOSE_CLASSES)),
-    ).toEqual(["calendar-token"]);
+      secretPurposesIn(source).filter(
+        (purpose) => !Object.hasOwn(TENANT_SECRET_PURPOSE_CLASSES, purpose),
+      ),
+    ).toEqual(["calendar-token", "constructor"]);
   });
 });

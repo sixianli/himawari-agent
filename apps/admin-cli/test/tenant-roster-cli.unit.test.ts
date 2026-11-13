@@ -185,7 +185,7 @@ describe("check 7: configuration synthesis", () => {
   it("refuses an unclassified purpose even when a model uses it", async () => {
     const base = await baseConfiguration();
     for (const entry of base["secretReferences"] as { ref: string; purpose: string }[])
-      if (entry.ref === "vercel-gateway") entry.purpose = "brand-new-model-purpose";
+      if (entry.ref === "vercel-gateway") entry.purpose = "constructor";
     expect(() =>
       synthesizeTenantConfiguration({
         base,
@@ -283,17 +283,33 @@ describe("check 8: directories and keys", () => {
     });
     expect(retried).toMatchObject({ written: ["identity-csrf.v1"], kept: ["payload-key.v1"] });
     expect((await readFile(path.join(secrets, "payload-key.v1"))).equals(payloadKey)).toBe(true);
+    await writeFile(path.join(secrets, "identity-csrf.v1"), "", { mode: 0o600, flag: "w" });
+    await expect(
+      provisionTenantKeyFiles({
+        stateRoot: alice.synthesized.configuration.stateRoot,
+        configuration: alice.synthesized.configuration,
+      }),
+    ).rejects.toThrow(expect.objectContaining({ code: "HOST_SECRET_INVALID_KEY_MATERIAL" }));
     for (const ref of ["nested/key", "user@key"]) {
       const base = await baseConfiguration();
       for (const entry of base["secretReferences"] as { ref: string; purpose: string }[])
         if (entry.purpose === "identity-csrf") entry.ref = ref;
       (base["identity"] as { csrf: { keySecretRef: string } }).csrf.keySecretRef = ref;
-      const { configuration } = synthesizeTenantConfiguration({
-        base,
-        tenant: deriveTenantIdentifiers("carol"),
-        tenantsRoot,
-        now: NOW,
-      });
+      expect(() =>
+        synthesizeTenantConfiguration({
+          base,
+          tenant: deriveTenantIdentifiers("carol"),
+          tenantsRoot,
+          now: NOW,
+        }),
+      ).toThrow(expect.objectContaining({ code: "HOST_SECRET_INVALID_REFERENCE" }));
+      const configuration = {
+        ...alice.synthesized.configuration,
+        stateRoot: path.join(tenantsRoot, "carol"),
+        secretReferences: alice.synthesized.configuration.secretReferences.map((entry) =>
+          entry.purpose === "identity-csrf" ? { ...entry, ref } : entry,
+        ),
+      };
       await expect(
         provisionTenantKeyFiles({ stateRoot: configuration.stateRoot, configuration }),
       ).rejects.toThrow(expect.objectContaining({ code: "HOST_SECRET_INVALID_REFERENCE" }));

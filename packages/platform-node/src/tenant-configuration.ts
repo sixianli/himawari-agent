@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { lstat, mkdir, open } from "node:fs/promises";
+import { lstat, mkdir, open, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { ProductConfiguration } from "@himawari-agent/application";
-import { assertReferencePart } from "./host-secret-source.js";
+import { assertReferencePart, RestrictedSecretFileSource } from "./host-secret-source.js";
 import { parseProductConfiguration } from "./strict-configuration.js";
 
 export const TENANT_CONFIGURATION_ERROR_CODES = Object.freeze({
@@ -87,7 +87,9 @@ export function classifySecretReferences(
   const perTenant: { ref: string; version: string }[] = [];
   const shared: { ref: string; version: string }[] = [];
   for (const { ref, version, purpose } of configuration.secretReferences) {
-    const secretClass = TENANT_SECRET_PURPOSE_CLASSES[purpose];
+    const secretClass = Object.hasOwn(TENANT_SECRET_PURPOSE_CLASSES, purpose)
+      ? TENANT_SECRET_PURPOSE_CLASSES[purpose]
+      : undefined;
     if (secretClass === undefined)
       throw new TenantConfigurationError(
         TENANT_CONFIGURATION_ERROR_CODES.PURPOSE_UNCLASSIFIED,
@@ -166,6 +168,10 @@ export function synthesizeTenantConfiguration(
   const now = input.now ?? new Date().toISOString();
   const base = parseProductConfiguration(input.base, now);
   classifySecretReferences(base);
+  for (const { ref, version } of base.secretReferences) {
+    assertReferencePart(ref, "reference");
+    assertReferencePart(version, "version");
+  }
   const stateRoot = input.stateRoot ?? path.join(input.tenantsRoot, input.tenant.tenantId);
   assertStateRootUsable(stateRoot, input.otherStateRoots ?? []);
 
@@ -295,9 +301,12 @@ export async function provisionTenantKeyFiles(input: {
       purpose,
     ]),
   );
+  const fileNames = new Set<string>();
   for (const { ref, version } of classification.perTenant) {
     assertReferencePart(ref, "reference");
     assertReferencePart(version, "version");
+    if (fileNames.has(`${ref}.${version}`)) throw new Error("TENANT_SECRET_FILE_NAME_COLLISION");
+    fileNames.add(`${ref}.${version}`);
   }
   const written: string[] = [];
   const kept: string[] = [];
@@ -314,15 +323,7 @@ export async function provisionTenantKeyFiles(input: {
       throw error;
     });
     if (existing) {
-      if (
-        !existing.isFile() ||
-        (existing.mode & 0o077) !== 0 ||
-        (typeof process.getuid === "function" && existing.uid !== process.getuid())
-      )
-        throw new TenantConfigurationError(
-          TENANT_CONFIGURATION_ERROR_CODES.SECRET_DIRECTORY_UNSAFE,
-          "An existing tenant key file is not a private regular file",
-        );
+      await new RestrictedSecretFileSource(directory).resolve(ref, version);
       kept.push(`${ref}.${version}`);
       continue;
     }
@@ -330,9 +331,12 @@ export async function provisionTenantKeyFiles(input: {
     try {
       await file.writeFile(`${randomBytes(32).toString("base64")}\n`);
       await file.sync();
-    } finally {
+    } catch (error) {
       await file.close();
+      await unlink(target);
+      throw error;
     }
+    await file.close();
     written.push(`${ref}.${version}`);
   }
   return Object.freeze({ written, kept, needsProvisioning });
