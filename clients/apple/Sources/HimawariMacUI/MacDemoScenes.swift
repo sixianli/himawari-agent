@@ -15,6 +15,8 @@ enum MacDemoScene: String, CaseIterable {
     case panelQuiet = "mac-4b-panel-nothing-waiting"
     case settings = "mac-6-settings"
     case settingsShortcutTaken = "mac-6b-settings-shortcut-taken"
+    case settingsMessagesOn = "mac-6c-settings-messages-on"
+    case settingsMessagesNoAccess = "mac-6d-settings-messages-no-access"
     case pairing = "mac-7-pairing"
 
     static let argument = "-HimawariMacDemo"
@@ -40,7 +42,7 @@ enum MacDemo {
         return try! JSONDecoder().decode(HomeSnapshot.self, from: Data(json.utf8))
     }
 
-    static func settings() -> MacAccessSettings {
+    static func settings(seesMessages: Bool = false) -> MacAccessSettings {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return MacAccessSettings(
             folders: [
@@ -51,7 +53,8 @@ enum MacDemo {
                 AppGrant(bundleId: "com.apple.finder", name: "访达"),
                 AppGrant(bundleId: "com.apple.iCal", name: "日历"),
                 AppGrant(bundleId: "com.apple.reminders", name: "提醒事项"),
-            ]
+            ],
+            seesMessages: seesMessages
         )
     }
 
@@ -73,7 +76,8 @@ enum MacDemo {
 
     static func view(for scene: MacDemoScene) -> AnyView {
         let app = AppModel.demo(scene == .pairing ? .unpaired(nil) : .active, host: "himawari.example.com", kind: .mac)
-        let store = MacSettingsStore(demo: settings())
+        let messagesOn = scene == .settingsMessagesOn || scene == .settingsMessagesNoAccess
+        let store = MacSettingsStore(demo: settings(seesMessages: messagesOn), messagesReadable: scene != .settingsMessagesNoAccess)
         let shortcut: GlobalShortcut.State = scene == .settingsShortcutTaken ? .taken(.optionSpace) : .active(.optionSpace)
         let menu = MenuBarModel(
             demo: app,
@@ -99,7 +103,7 @@ enum MacDemo {
             return AnyView(ChecklistView(list: checklist, expanded: scene == .checklistOpen, decline: {}, approve: {}))
         case .panel, .panelQuiet:
             return AnyView(PanelView(model: menu, talk: {}, pair: {}))
-        case .settings, .settingsShortcutTaken:
+        case .settings, .settingsShortcutTaken, .settingsMessagesOn, .settingsMessagesNoAccess:
             return AnyView(MacSettingsView(store: store, shortcutState: shortcut))
         case .pairing:
             return AnyView(MacPairingView(model: app))

@@ -43,9 +43,10 @@
 "settings.sees.frontmost" = "我正在用哪个 App、哪个文件";
 "settings.sees.messages" = "Mac 上的短信";
 "settings.sees.needsAccessibility" = "要在“系统设置 › 隐私与安全性 › 辅助功能”里允许 Himawari";
-"settings.sees.openAccessibility" = "打开系统设置";
-"settings.sees.needsFullDisk" = "要在“系统设置 › 隐私与安全性 › 完全磁盘访问权限”里允许 Himawari";
-"settings.sees.openFullDisk" = "打开系统设置";
+"settings.sees.openAccessibility" = "去打开";
+"settings.sees.needsFullDisk" = "要在系统设置里给 Himawari 完全磁盘访问";
+"settings.sees.openFullDisk" = "去打开";
+"settings.sees.messages.fromNow" = "只读开启之后收到的新消息，不读以前的，也不发、不标已读";
 "settings.shortcut" = "叫它的快捷键";
 "settings.shortcut.taken" = "被别的 App 占用了，换一个";
 "settings.shortcut.record" = "按下新的快捷键";

@@ -17,10 +17,12 @@ public final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDest
     private var settingsWindow: NSWindow?
     private var pairingWindow: NSWindow?
     private var observation: Task<Void, Never>?
+    private let messages: MessagesSensor
 
     public init(model: MenuBarModel) {
         self.model = model
         inputBar = InputBarWindow(model: InputBarModel(api: model.app.api, chat: { [weak app = model.app] in app?.chat }), menu: model)
+        messages = MessagesSensor(settings: model.settings, app: model.app)
         super.init()
         configureStatusItem()
         configurePopover()
@@ -29,6 +31,7 @@ public final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDest
         model.settings.onShortcutChange = { [weak self] in self?.applyShortcut($0) }
         notices.prepare()
         model.startRefreshing()
+        messages.start()
         observeBadge()
         if model.app.phase != .active { showPairing() }
     }

@@ -43,9 +43,10 @@
 "settings.sees.frontmost" = "Which app and file I'm using";
 "settings.sees.messages" = "Messages on this Mac";
 "settings.sees.needsAccessibility" = "Allow Himawari in System Settings › Privacy & Security › Accessibility";
-"settings.sees.openAccessibility" = "Open System Settings";
-"settings.sees.needsFullDisk" = "Allow Himawari in System Settings › Privacy & Security › Full Disk Access";
-"settings.sees.openFullDisk" = "Open System Settings";
+"settings.sees.openAccessibility" = "Open";
+"settings.sees.needsFullDisk" = "Give Himawari Full Disk Access in System Settings";
+"settings.sees.openFullDisk" = "Open";
+"settings.sees.messages.fromNow" = "Only new messages from now on; nothing older, never sends or marks as read";
 "settings.shortcut" = "Shortcut to call it";
 "settings.shortcut.taken" = "Another app is using it. Pick another";
 "settings.shortcut.record" = "Press the new shortcut";

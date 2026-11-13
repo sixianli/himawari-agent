@@ -115,6 +115,7 @@ Mac 上只做原型 Version 46 画板“每一端做什么”里的六样，没�
 - 配对：Mac 不扫码。电脑网页上点“添加设备”后复制配对链接（以 `himawari-pair:` 开头），在 Mac 的配对窗口里粘贴。
 - 输入条：默认按 ⌥ 空格叫出，快捷键在设置页可改；被别的 App 占用时设置页写明。叫出的那一刻读一次前台 App、正在看的文件和选中的文字（读文件和选中文字要在“系统设置 › 隐私与安全性 › 辅助功能”里允许 Himawari），显示成可以点 × 拿掉的小条，发出前不再刷新。带着的东西先传到服务器换成引用，再照网页附件的格式（`<file name ref bytes kind/>` 标签，和 `apps/control-center/src/draft-attachments.ts` 逐字一致，固定测试数据由 `scripts/make-attachment-fixture.mjs` 从网页代码生成）接在正文后面发出。读不出文字的文件只传文件名和路径。
 - 文件夹和网址规则在 `Sources/HimawariCore/MacAccess.swift`：路径先解开符号链接和 `..` 再按路径分段和允许的文件夹比，只读文件夹不许改；网址只许 `https` 加主机名单。
+- Mac 上的短信：设置页这个开关打开、并在“系统设置 › 隐私与安全性 › 完全磁盘访问权限”里允许 Himawari 后，按心跳间隔从 `~/Library/Messages/chat.db`（信息 App 的数据库）只读地取打开之后的新消息，每条传成一条 `message.text` 感知记录（`POST perception`，每批条数取服务器配置 `device.perception.batch_records`）。打开时从最新一条开始，不补读以前的；关掉就停，并忘掉读到哪里，再打开也不补关着那段。不发消息，也不标已读。正文为空时从 `attributedBody` 列（信息 App 用 NSArchiver 存的富文本）里取。读表的代码在 `Sources/HimawariMacUI/MessagesDatabase.swift`，转成记录的规则在 `Sources/HimawariCore/MessageSensing.swift`。
 
 截图：
 

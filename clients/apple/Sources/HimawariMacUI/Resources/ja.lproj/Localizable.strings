@@ -43,9 +43,10 @@
 "settings.sees.frontmost" = "いま使っている App とファイル";
 "settings.sees.messages" = "この Mac のメッセージ";
 "settings.sees.needsAccessibility" = "「システム設定 › プライバシーとセキュリティ › アクセシビリティ」で Himawari を許可してください";
-"settings.sees.openAccessibility" = "システム設定を開く";
-"settings.sees.needsFullDisk" = "「システム設定 › プライバシーとセキュリティ › フルディスクアクセス」で Himawari を許可してください";
-"settings.sees.openFullDisk" = "システム設定を開く";
+"settings.sees.openAccessibility" = "開く";
+"settings.sees.needsFullDisk" = "システム設定で Himawari にフルディスクアクセスを許可してください";
+"settings.sees.openFullDisk" = "開く";
+"settings.sees.messages.fromNow" = "オンにした後の新しいメッセージだけ読みます。過去分は読まず、送信も既読もしません";
 "settings.shortcut" = "呼び出すショートカット";
 "settings.shortcut.taken" = "ほかの App が使っています。別のものにしてください";
 "settings.shortcut.record" = "新しいショートカットを押してください";

@@ -71,6 +71,7 @@ public struct MacAccessSettings: Codable, Sendable, Equatable {
     public var seesFrontmost: Bool
     public var seesMessages: Bool
     public var shortcut: KeyShortcut
+    public var messagesAfterRow: Int64?
 
     public init(folders: [FolderGrant] = [], apps: [AppGrant] = [], seesFrontmost: Bool = true, seesMessages: Bool = false, shortcut: KeyShortcut = .optionSpace) {
         self.folders = folders

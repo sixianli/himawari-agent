@@ -64,6 +64,11 @@ struct MacSettingsView: View {
                             Text(L.text("settings.sees.messages")).foregroundStyle(Color.hmText)
                             if store.settings.seesMessages && !store.messagesReadable {
                                 permissionHint("settings.sees.needsFullDisk", button: "settings.sees.openFullDisk", anchor: "Privacy_AllFiles")
+                            } else if store.settings.seesMessages {
+                                Text(L.text("settings.sees.messages.fromNow"))
+                                    .hmType(DesignTokens.TypeScale.macSmall)
+                                    .foregroundStyle(Color.hmMuted)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
                     } trailing: {

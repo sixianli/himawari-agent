@@ -21,10 +21,11 @@ public final class MacSettingsStore {
         settings.folders = settings.folders.map(Self.refreshed)
     }
 
-    init(demo: MacAccessSettings) {
+    init(demo: MacAccessSettings, messagesReadable: Bool = true) {
         file = nil
         settings = demo
         accessibilityAllowed = true
+        self.messagesReadable = messagesReadable
     }
 
     public static var defaultFile: URL? {
@@ -93,6 +94,13 @@ public final class MacSettingsStore {
 
     public func setSeesMessages(_ on: Bool) {
         settings.seesMessages = on
+        if !on { settings.messagesAfterRow = nil }
+        save()
+    }
+
+    public func setMessagesAfterRow(_ row: Int64?) {
+        guard settings.seesMessages else { return }
+        settings.messagesAfterRow = row
         save()
     }
 
@@ -104,12 +112,10 @@ public final class MacSettingsStore {
 
     public func refreshPermissions() {
         accessibilityAllowed = AXIsProcessTrusted()
+        messagesReadable = MessagesDatabase.readable()
     }
 
-    public var messagesReadable: Bool {
-        let database = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Messages/chat.db")
-        return FileManager.default.isReadableFile(atPath: database.path)
-    }
+    public private(set) var messagesReadable: Bool = MessagesDatabase.readable()
 
     public func askForAccessibility() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
