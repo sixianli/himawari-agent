@@ -21,7 +21,7 @@ app="$derived/Build/Products/Debug/HimawariMac.app/Contents/MacOS/HimawariMac"
 rm -rf "$out"
 mkdir -p "$out"
 "$app" -HimawariMacDemo "$out"
-scenes=$(sed -nE 's/^ *case [a-zA-Z]+ = "([^"]+)"$/\1/p' "$root/Sources/HimawariMac/MacDemoScenes.swift")
+scenes=$(sed -nE 's/^ *case [a-zA-Z]+ = "([^"]+)"$/\1/p' "$root/Sources/HimawariMacUI/MacDemoScenes.swift")
 missing=0
 for appearance in light dark; do
   for scene in $scenes; do

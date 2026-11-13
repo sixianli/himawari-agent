@@ -1,5 +1,5 @@
 import AppKit
-import HimawariMac
+import HimawariMacUI
 
 @main
 enum HimawariMacApp {

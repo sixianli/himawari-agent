@@ -32,7 +32,7 @@ let interfaceTargets: [Target] = [
         resources: [.process("Resources")]
     ),
     .target(
-        name: "HimawariMac",
+        name: "HimawariMacUI",
         dependencies: ["HimawariCore", "HimawariDesign", "HimawariChat", "HimawariShell"],
         resources: [.process("Resources")]
     ),
@@ -42,7 +42,7 @@ let interfaceProducts: [Product] = [
     .library(name: "HimawariChat", targets: ["HimawariChat"]),
     .library(name: "HimawariManage", targets: ["HimawariManage"]),
     .library(name: "HimawariShell", targets: ["HimawariShell"]),
-    .library(name: "HimawariMac", targets: ["HimawariMac"]),
+    .library(name: "HimawariMacUI", targets: ["HimawariMacUI"]),
 ]
 #endif
 

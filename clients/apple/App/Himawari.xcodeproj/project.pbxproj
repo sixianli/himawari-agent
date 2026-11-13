@@ -12,7 +12,7 @@
 		765D931A81F8F07B25AF082C /* HimawariShell in Frameworks */ = {isa = PBXBuildFile; productRef = 82EB59FFBA779388F14F89C2 /* HimawariShell */; };
 		86E21892FBDB8BFEEC9FB0E4 /* HimawariMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03208B1CC6911FDF1F876174 /* HimawariMacApp.swift */; };
 		D1215A90F81A89EE591FFCD0 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 1E17481E482E39B29BABD837 /* InfoPlist.strings */; };
-		7089A2F6E74DD9FE8ACA8EA2 /* HimawariMac in Frameworks */ = {isa = PBXBuildFile; productRef = 7A5B2B339A6D883C9F4732C3 /* HimawariMac */; };
+		7089A2F6E74DD9FE8ACA8EA2 /* HimawariMacUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7A5B2B339A6D883C9F4732C3 /* HimawariMacUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,7 +43,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				7089A2F6E74DD9FE8ACA8EA2 /* HimawariMac in Frameworks */,
+				7089A2F6E74DD9FE8ACA8EA2 /* HimawariMacUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -125,7 +125,7 @@
 			);
 			name = HimawariMac;
 			packageProductDependencies = (
-				7A5B2B339A6D883C9F4732C3 /* HimawariMac */,
+				7A5B2B339A6D883C9F4732C3 /* HimawariMacUI */,
 			);
 			productName = HimawariMac;
 			productReference = 2F90346D857B3E586AA21721 /* HimawariMac.app */;
@@ -397,10 +397,10 @@
 			package = 8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */;
 			productName = HimawariShell;
 		};
-		7A5B2B339A6D883C9F4732C3 /* HimawariMac */ = {
+		7A5B2B339A6D883C9F4732C3 /* HimawariMacUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */;
-			productName = HimawariMac;
+			productName = HimawariMacUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
