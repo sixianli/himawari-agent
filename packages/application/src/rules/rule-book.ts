@@ -8,7 +8,10 @@ export type RuleOutcome =
   | "suppress_push"
   | "require_notify"
   | "require_whole_thread"
-  | "defer_to_quiet_hours";
+  | "defer_to_quiet_hours"
+  | "allow_preauthorized"
+  | "ask_owner"
+  | "refuse";
 export type RuleOrigin = "built_in" | "owner_setting";
 export type RuleStatus = "active" | "needs_review" | "retired";
 
@@ -425,6 +428,7 @@ const GATE_OUTCOMES: Readonly<Record<RuleGate, readonly RuleOutcome[]>> = Object
     "require_whole_thread",
   ] as const),
   mail_delivery: Object.freeze(["defer_to_quiet_hours"] as const),
+  action: Object.freeze(["allow_preauthorized", "ask_owner", "refuse"] as const),
 });
 
 const AMOUNT_FIELD_NAMES: readonly string[] = ruleFields("mail_item")
