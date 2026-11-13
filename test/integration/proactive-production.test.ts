@@ -33,6 +33,7 @@ import {
   GMAIL_READONLY_SCOPE,
   readGmailAccount,
 } from "@himawari-agent/platform-node";
+import { MAIL_REFERENCE_EXTRACTION } from "@himawari-agent/prompt-catalog";
 import {
   DeterministicIdGenerator,
   DeterministicPayloadProtector,
@@ -236,6 +237,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     const outputs = new Map<string, string>();
     let scripted = new ScriptedModelPort([descriptor], []);
     const prompts: string[] = [];
+    const referencePrompts: string[] = [];
     const script = (items: readonly Record<string, unknown>[]) => {
       const ref = `output-${outputs.size + 1}`;
       outputs.set(ref, JSON.stringify({ items }));
@@ -307,7 +309,9 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
         },
         modelRef: MODEL_REF,
         async prepare({ invocationId, prompt }) {
-          prompts.push(prompt);
+          (prompt.startsWith(MAIL_REFERENCE_EXTRACTION.text) ? referencePrompts : prompts).push(
+            prompt,
+          );
           const inputRef = `input-${invocationId}`;
           await writePayload(inputRef, prompt);
           for (const [ref, content] of outputs)
@@ -418,6 +422,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       proactive,
       prompts,
       push,
+      referencePrompts,
       script,
       seal,
       sent,
@@ -509,6 +514,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       { verdict: "pushed", reasonCode: "URGENT", counts: { fetched: 2, skipped: 1, act: 1 } },
     ]);
     expect(h.prompts).toHaveLength(1);
+    expect(h.referencePrompts).toHaveLength(1);
     expect(h.prompts[0]).toContain("ご請求のお知らせ");
     expect(h.prompts[0]).not.toContain("セール");
     expect(h.prompts[0]).toContain("前回の請求は分割払いです");
@@ -549,7 +555,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     params: { senderDomains: ["smbc.co.jp"] },
   };
   const ignoreInvoice = (h: Awaited<ReturnType<typeof setup>>) =>
-    h.script([{ id: "invoice", result: "ignore", confidence: "sure", reason: "" }]);
+    h.script([{ id: "invoice", result: "ignore", confidence: "sure", money: "yes", reason: "" }]);
   const checkInbox = async (h: Awaited<ReturnType<typeof setup>>) => {
     const state = await connect(h);
     await h.app.inject({
@@ -963,6 +969,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     await h.proactive.tick();
     expect((await h.overview()).decisions).toMatchObject([{ reasonCode: "NO_NEW_MAIL" }]);
     expect(h.prompts).toEqual([]);
+    expect(h.referencePrompts).toEqual([]);
 
     h.clock.advance(40 * 60_000);
     h.script([
@@ -1182,6 +1189,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     h.script([]);
     await h.proactive.tick();
     expect(h.prompts).toEqual([]);
+    expect(h.referencePrompts).toEqual([]);
     expect(h.failures).toEqual([]);
   });
 });
