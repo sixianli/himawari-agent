@@ -19,6 +19,7 @@ import { publish, publishQuality, redactReport } from "../../scripts/ci/publish.
 import { validateQualityPolicy } from "../../scripts/ci/quality-policy.mjs";
 import { required } from "../../scripts/ci/required.mjs";
 import { reportEntry, runCheck, selectCheck } from "../../scripts/ci/run.mjs";
+import { useArtifactCapableHost } from "./artifact-host.mjs";
 
 const directories = [];
 const directory = () => {
@@ -54,6 +55,8 @@ const fixture = () => {
 afterEach(() => {
   for (const root of directories.splice(0)) rmSync(root, { recursive: true, force: true });
 });
+
+useArtifactCapableHost();
 
 describe("JSON公开报告的原始字节与脱敏", () => {
   it.each([
