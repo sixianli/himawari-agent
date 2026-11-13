@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import { DEFAULT_TOOL_REFUSALS, type ToolRefusalConfiguration } from "@himawari-agent/application";
+import {
+  DEFAULT_TOOL_REFUSALS,
+  type ToolRefusalConfiguration,
+} from "@himawari-agent/application/runtime-port";
 
 export interface PiToolProgressState {
   readonly version: "pi-tool-progress.v1";

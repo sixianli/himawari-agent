@@ -125,3 +125,7 @@ export {
   type ModelEgressSighting,
   type StreamingPlaceholderRestorer,
 } from "./services/model-egress.js";
+export {
+  DEFAULT_TOOL_REFUSALS,
+  type ToolRefusalConfiguration,
+} from "./ports/configuration.js";
