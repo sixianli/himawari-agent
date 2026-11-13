@@ -49,6 +49,8 @@ struct ProcessRowView: View {
                 }
                 if current.phase == .failed || current.phase == .unavailable {
                     ProcessLineLabel(icon: .alertCircle, text: current.title, tint: .hmMuted, shimmering: false)
+                } else if current.phase == .unrecognized {
+                    ProcessLineLabel(icon: .puzzle, text: current.title, tint: .hmMuted, shimmering: false)
                 } else {
                     ProcessLineLabel(icon: Self.icon(current.icon), text: current.title, tint: .hmMuted, shimmering: true)
                 }
@@ -128,7 +130,7 @@ struct ProcessStepsSheet: View {
                     ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
                         HStack(spacing: DesignTokens.Size.rowGap) {
                             Icon(
-                                step.phase == .failed || step.phase == .unavailable ? .alertCircle : ProcessRowView.icon(step.icon),
+                                step.phase == .failed || step.phase == .unavailable ? .alertCircle : step.phase == .unrecognized ? .puzzle : ProcessRowView.icon(step.icon),
                                 size: DesignTokens.IconSize.listRow
                             )
                             .foregroundStyle(Color.hmText)
