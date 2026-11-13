@@ -361,13 +361,23 @@ export function replayAll(entries) {
 export function checkAgainstApplied({ entries, applied, meta = {} }) {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const problems = [];
-  for (const { id, digest } of applied) {
+  for (const { id, digest, name } of applied) {
     const entry = byId.get(id);
     if (!entry) {
       problems.push(`APPLIED_ID_NOT_IN_COMMIT ${id}`);
       continue;
     }
-    if (digest && createHash("sha256").update(entry.sql).digest("hex") !== digest) {
+    if (!digest) {
+      problems.push(`APPLIED_MIGRATION_DIGEST_MISSING ${id}`);
+      continue;
+    }
+    if (name !== undefined && entry.name !== name) {
+      problems.push(
+        `APPLIED_MIGRATION_RENAMED ${id} was applied as "${name}" but the commit calls it "${entry.name}"`,
+      );
+      continue;
+    }
+    if (createHash("sha256").update(entry.sql).digest("hex") !== digest) {
       problems.push(
         `APPLIED_MIGRATION_CHANGED ${entry.file} differs from what the production database applied`,
       );

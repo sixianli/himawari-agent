@@ -124,7 +124,8 @@ date: "2026-11-14"
 
 - 记录表 `schema_migration_ledger` 加 `migration_id TEXT` 列，另建 `migration_id IS NOT NULL` 的部分唯一索引（SQLite 的 `ADD COLUMN` 不能直接带 UNIQUE）。旧的行不改写，读的时候按 `sequence` 推出 `0001`…`0095`，已有历史保持原样。`sequence` 列保留，含义变成“第几个被跑的”（仍是 1..N 连续），所以只认 `sequence` 连续的生产机脚本（前提 8）不用改语义。
 - 要跑的迁移 = 程序知道的 − 库里跑过的，按编号顺序跑；旧清单永远排在前面。库里有程序不认识的编号，照旧拒绝（`UNKNOWN_APPLIED_MIGRATION`）；每个跑过的迁移照旧核对名字、阶段和摘要（SHA-256，内容指纹）。“按下标对齐记录和定义”的地方改成按编号对齐：引擎的 `validateLedger` 和 `maintenance-common.mjs`。`S9-control-files.py` 和 `raw-copy-recovery.mjs` 只检查账本是 1 到 N 连续、前后一致，`sequence` 现在是应用顺序，晚合的小号也满足，所以不改。
-- 一个迁移的编号比库里已跑的最大编号还小时（“晚合的小号”），照跑，写日志。它能安全补跑，靠的是下一节的合并前检查。
+- 一个迁移的编号比库里已跑的最大编号还小时（“晚合的小号”），照跑；账本的 `sequence` 记下它实际的应用顺序，目前不另写日志。它能安全补跑，靠的是下一节的合并前检查。
+- 同机快照除了个数，也要带集合指纹（`schemaFingerprint`），和当前库的指纹对不上就按 `SNAPSHOT_INVALID` 拒绝。
 - 记录表的升级（加列、加索引）放在同机快照核对**之后**，和第一个待跑迁移放在同一个 `IMMEDIATE` 事务里；没有待跑迁移时什么都不写。现在的 `applyMigrations` 先 `ensureInternalSchema` 后核快照（`migration-engine.ts:980-991`），那时它只是 `CREATE TABLE IF NOT EXISTS`，没有写；加了列以后必须先核快照。
 
 ### 四、版本身份改成“个数 + 集合 + 指纹”，回滚保护不变（对应根因 2 带来的连锁）

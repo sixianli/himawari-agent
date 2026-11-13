@@ -331,6 +331,30 @@ describe("checking a commit against what production applied", () => {
     ).toEqual([]);
   });
 
+  it("rejects an applied migration whose name differs from the commit", () => {
+    expect(
+      checkAgainstApplied({
+        entries: [seed],
+        applied: [{ id: "0001", digest: sha(seed.sql), name: "other_name" }],
+      })[0],
+    ).toMatch(/^APPLIED_MIGRATION_RENAMED 0001/);
+    expect(
+      checkAgainstApplied({
+        entries: [seed],
+        applied: [{ id: "0001", digest: sha(seed.sql), name: seed.name }],
+      }),
+    ).toEqual([]);
+  });
+
+  it("rejects an applied entry that carries no digest", () => {
+    expect(checkAgainstApplied({ entries: [seed], applied: [{ id: "0001" }] })[0]).toMatch(
+      /^APPLIED_MIGRATION_DIGEST_MISSING 0001/,
+    );
+    expect(
+      checkAgainstApplied({ entries: [seed], applied: [{ id: "0001", digest: "" }] })[0],
+    ).toMatch(/^APPLIED_MIGRATION_DIGEST_MISSING 0001/);
+  });
+
   it("rejects an applied id the commit does not have", () => {
     expect(checkAgainstApplied({ entries: [seed], applied: [{ id: "0002" }] })[0]).toMatch(
       /^APPLIED_ID_NOT_IN_COMMIT/,
@@ -369,6 +393,21 @@ describe("check-migration-conflicts command", () => {
   it("replays every migration at a real commit", () => {
     const output = execFileSync("node", [script, "--commit", "HEAD"], { encoding: "utf8" });
     expect(output).toMatch(/^MIGRATION_CONFLICTS passed commit=HEAD/);
+  });
+
+  it("fails instead of comparing against a stale main when the fetch fails", () => {
+    const result = spawnSync("node", [script], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "http.proxy",
+        GIT_CONFIG_VALUE_0: "http://127.0.0.1:1",
+        GIT_TERMINAL_PROMPT: "0",
+      },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/MIGRATION_CONFLICT FETCH_FAILED/);
   });
 
   it("fails on a commit that does not exist", () => {

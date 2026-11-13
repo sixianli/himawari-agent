@@ -1339,7 +1339,7 @@ class TimestampedMigrationTests(unittest.TestCase):
     def plan(self, files, applied, current=None):
         with unittest.mock.patch.object(packet_maker, 'git', self.fake_git(files)), unittest.mock.patch.object(packet_maker, 'preserved_tables', return_value=()), unittest.mock.patch.object(packet_maker, 'check_migration_replay'):
             target = packet_maker.target_schema('c')
-            derived = packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': target}, {'schema': {'current': len(applied), 'minimumWriter': len(applied)}, 'migrationIds': applied, 'migrationDigests': ['d' + str(index) for index in range(len(applied))]})
+            derived = packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': target}, {'schema': {'current': len(applied), 'minimumWriter': len(applied)}, 'migrationIds': applied, 'migrationDigests': ['d' + str(index) for index in range(len(applied))], 'migrationNames': ['n' + str(index) for index in range(len(applied))]})
         return target, json.loads(derived['MIGRATION_LEDGER'])
 
     def test_the_real_replay_check_passes_at_the_repository_head(self):
@@ -1349,17 +1349,27 @@ class TimestampedMigrationTests(unittest.TestCase):
         files = self.LEGACY
         seen = []
         with unittest.mock.patch.object(packet_maker, 'git', self.fake_git(files)), unittest.mock.patch.object(packet_maker, 'preserved_tables', return_value=()), unittest.mock.patch.object(packet_maker, 'check_migration_replay', side_effect=lambda commit, pairs=None: seen.append(pairs)):
-            packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': 3}, {'schema': {'current': 3, 'minimumWriter': 3}, 'migrationIds': ['0001', '0002', '0003'], 'migrationDigests': ['aa', 'bb', 'cc']})
-        self.assertEqual(seen, [['0001:aa', '0002:bb', '0003:cc']])
+            packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': 3}, {'schema': {'current': 3, 'minimumWriter': 3}, 'migrationIds': ['0001', '0002', '0003'], 'migrationDigests': ['aa', 'bb', 'cc'], 'migrationNames': ['x', 'y', 'z']})
+        self.assertEqual(seen, [['0001:aa:x', '0002:bb:y', '0003:cc:z']])
 
     def test_a_missing_or_short_digest_list_is_refused_instead_of_skipping_the_check(self):
-        base = {'schema': {'current': 3, 'minimumWriter': 3}, 'migrationIds': ['0001', '0002', '0003']}
+        base = {'schema': {'current': 3, 'minimumWriter': 3}, 'migrationIds': ['0001', '0002', '0003'], 'migrationNames': ['x', 'y', 'z']}
         with unittest.mock.patch.object(packet_maker, 'git', self.fake_git(self.LEGACY)), unittest.mock.patch.object(packet_maker, 'preserved_tables', return_value=()), unittest.mock.patch.object(packet_maker, 'check_migration_replay'):
             for digests in (None, ['a', 'b'], ['a', 'b', '']):
                 state = dict(base)
                 if digests is not None:
                     state['migrationDigests'] = digests
                 with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_S0_MIGRATION_DIGESTS_INVALID'):
+                    packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': 3}, state)
+
+    def test_a_missing_or_malformed_name_list_is_refused_instead_of_skipping_the_rename_check(self):
+        base = {'schema': {'current': 3, 'minimumWriter': 3}, 'migrationIds': ['0001', '0002', '0003'], 'migrationDigests': ['a', 'b', 'c']}
+        with unittest.mock.patch.object(packet_maker, 'git', self.fake_git(self.LEGACY)), unittest.mock.patch.object(packet_maker, 'preserved_tables', return_value=()), unittest.mock.patch.object(packet_maker, 'check_migration_replay'):
+            for names in (None, ['x', 'y'], ['x', 'y', ''], ['x', 'y', 'a:b']):
+                state = dict(base)
+                if names is not None:
+                    state['migrationNames'] = names
+                with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_S0_MIGRATION_NAMES_INVALID'):
                     packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': 3}, state)
 
     def test_a_commit_whose_migrations_do_not_replay_is_refused(self):

@@ -139,6 +139,29 @@ describe("[MIGRATION-IDS] timestamped migrations", () => {
     }
   });
 
+  it("refuses a snapshot taken from a different set of migrations", async () => {
+    const { databasePath, snapshotPath } = await temporaryDatabase();
+    const database = openQualifiedDatabase(databasePath);
+    try {
+      const legacy = (await loadBundledMigrations()).slice(0, LEGACY_MIGRATION_COUNT);
+      applyMigrations(database, legacy);
+      const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+      expect(snapshot.schemaFingerprint).toBe(readSchemaIdentity(database).fingerprint);
+      expectMigrationCode(
+        () =>
+          applyMigrations(database, withNew(legacy, [first]), {
+            snapshot: { ...snapshot, schemaFingerprint: "0".repeat(64) },
+          }),
+        SQLITE_MIGRATION_ERROR_CODES.SNAPSHOT_INVALID,
+      );
+      expect(
+        applyMigrations(database, withNew(legacy, [first]), { snapshot }).appliedSequences,
+      ).toEqual([LEGACY_MIGRATION_COUNT + 1]);
+    } finally {
+      database.close();
+    }
+  });
+
   it("runs a migration that merges late with a smaller id and reaches the same set", async () => {
     const { databasePath, snapshotPath } = await temporaryDatabase();
     const database = openQualifiedDatabase(databasePath);

@@ -406,7 +406,10 @@ def schema_parameters(parameters, s0):
         digests = s0.get('migrationDigests')
         if not isinstance(digests, list) or len(digests) != len(applied_ids) or not all(isinstance(item, str) and item for item in digests):
             refuse('PACKET_S0_MIGRATION_DIGESTS_INVALID', 'ids=' + str(len(applied_ids)))
-        pairs = [identifier + ':' + digest for identifier, digest in zip(applied_ids, digests)]
+        names = s0.get('migrationNames')
+        if not isinstance(names, list) or len(names) != len(applied_ids) or not all(isinstance(item, str) and item and ':' not in item for item in names):
+            refuse('PACKET_S0_MIGRATION_NAMES_INVALID', 'ids=' + str(len(applied_ids)))
+        pairs = [identifier + ':' + digest + ':' + name for identifier, digest, name in zip(applied_ids, digests, names)]
         check_migration_replay(parameters['COMMIT'], pairs)
     ledger = migration_ledger(parameters['COMMIT'], current, target, applied_ids) if target != current or applied_ids is not None else []
     return {'CURRENT_SCHEMA': current, 'PREVIOUS_SCHEMA': current - 1, 'MIGRATION_LEDGER': json.dumps(ledger, separators=(',', ':'))}

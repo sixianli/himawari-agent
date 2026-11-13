@@ -69,6 +69,7 @@ export interface VerifiedMigrationSnapshot {
   readonly sourceDatabasePath: string;
   readonly snapshotPath: string;
   readonly schemaSequence: number;
+  readonly schemaFingerprint: string;
   readonly digest: string;
   readonly verifiedAt: string;
 }
@@ -1047,6 +1048,7 @@ function verifySnapshot(
     snapshot.host !== hostname() ||
     snapshot.sourceDatabasePath !== database.name ||
     snapshot.schemaSequence !== currentSequence ||
+    snapshot.schemaFingerprint !== readSchemaIdentity(database).fingerprint ||
     snapshotDigest !== snapshot.digest
   ) {
     throw new SqliteMigrationError(
@@ -1071,8 +1073,12 @@ function verifySnapshot(
         "The pre-migration snapshot failed integrity_check",
       );
     }
-    const snapshotSequence = readMigrationLedger(snapshotDatabase).at(-1)?.sequence ?? 0;
-    if (snapshotSequence !== snapshot.schemaSequence) {
+    const snapshotLedger = readMigrationLedger(snapshotDatabase);
+    const snapshotSequence = snapshotLedger.at(-1)?.sequence ?? 0;
+    if (
+      snapshotSequence !== snapshot.schemaSequence ||
+      migrationSetFingerprint(snapshotLedger) !== snapshot.schemaFingerprint
+    ) {
       throw new SqliteMigrationError(
         SQLITE_MIGRATION_ERROR_CODES.SNAPSHOT_INVALID,
         "The pre-migration snapshot ledger does not match its declared sequence",
@@ -1272,7 +1278,10 @@ export async function createVerifiedMigrationSnapshot(
       "Source database failed integrity_check before snapshot",
     );
   }
-  const sourceSequence = readMigrationLedger(database).at(-1)?.sequence ?? 0;
+  const sourceLedger = readMigrationLedger(database);
+  const sourceSequence = sourceLedger.at(-1)?.sequence ?? 0;
+  const sourceFingerprint = migrationSetFingerprint(sourceLedger);
+  let snapshotFingerprint = "";
   const absoluteSnapshotPath = path.resolve(snapshotPath);
   if (absoluteSnapshotPath === database.name) {
     throw new SqliteMigrationError(
@@ -1292,9 +1301,16 @@ export async function createVerifiedMigrationSnapshot(
         "Created snapshot failed integrity_check",
       );
     }
-    const snapshotSequence = readMigrationLedger(snapshotDatabase).at(-1)?.sequence ?? 0;
+    const snapshotLedger = readMigrationLedger(snapshotDatabase);
+    snapshotFingerprint = migrationSetFingerprint(snapshotLedger);
+    const snapshotSequence = snapshotLedger.at(-1)?.sequence ?? 0;
     const sourceSequenceAfterBackup = readMigrationLedger(database).at(-1)?.sequence ?? 0;
-    if (snapshotSequence !== sourceSequence || sourceSequenceAfterBackup !== sourceSequence) {
+    if (
+      snapshotSequence !== sourceSequence ||
+      sourceSequenceAfterBackup !== sourceSequence ||
+      snapshotFingerprint !== sourceFingerprint ||
+      readSchemaIdentity(database).fingerprint !== sourceFingerprint
+    ) {
       throw new SqliteMigrationError(
         SQLITE_MIGRATION_ERROR_CODES.SNAPSHOT_INVALID,
         "The source schema changed while the pre-migration snapshot was created",
@@ -1313,6 +1329,7 @@ export async function createVerifiedMigrationSnapshot(
     sourceDatabasePath: database.name,
     snapshotPath: absoluteSnapshotPath,
     schemaSequence: sourceSequence,
+    schemaFingerprint: snapshotFingerprint,
     digest: sha256(readFileSync(absoluteSnapshotPath)),
     verifiedAt: new Date().toISOString(),
   });

@@ -78,6 +78,7 @@ export function readS0State(database, expected) {
   const hasIdColumn = database.prepare("SELECT 1 FROM pragma_table_info('schema_migration_ledger') WHERE name='migration_id'").get() !== undefined;
   const migrationIds = (hasIdColumn ? database.prepare("SELECT sequence,migration_id AS id FROM schema_migration_ledger ORDER BY sequence").all() : ledger).map((row) => row.id ?? String(row.sequence).padStart(4, "0"));
   const migrationDigests = ledger.map((row) => row.digest);
+  const migrationNames = ledger.map((row) => row.name);
   assert(Number.isSafeInteger(current) && current > 0 && minimumWriter === current, "__PKT_LABEL_UPPER___DB_SCHEMA_UNSUPPORTED");
   assert(ledger.length === current && ledger.every((row, index) => row.sequence === index + 1), "__PKT_LABEL_UPPER___DB_LEDGER_INVALID");
   const deployment = one(database, "SELECT id,status,authority_epoch,fencing_token FROM deployments WHERE id=? AND owner_id=? AND agent_id=?", [expected.deploymentId, expected.ownerId, expected.agentId]);
@@ -89,6 +90,7 @@ export function readS0State(database, expected) {
     schema: { current, minimumWriter, ledgerCount: ledger.length, ledgerMax: ledger.at(-1).sequence },
     migrationIds,
     migrationDigests,
+    migrationNames,
     identity: { deploymentId: deployment.id, ownerId: expected.ownerId, agentId: expected.agentId, hostId: expected.hostId },
     authority: { deploymentId: deployment.id, ownerId: expected.ownerId, agentId: expected.agentId, status: deployment.status, authorityEpoch: deployment.authority_epoch, fencingToken: deployment.fencing_token },
     gate: {

@@ -28,7 +28,12 @@ function baseRef() {
   if (flag !== -1) return process.argv[flag + 1];
   try {
     git(["fetch", "--quiet", "origin", "main"]);
-  } catch {}
+  } catch (error) {
+    console.error(
+      `MIGRATION_CONFLICT FETCH_FAILED cannot update origin/main (${error instanceof Error ? error.message.split("\n")[0] : "unknown"}); pass --base <commit> to compare offline`,
+    );
+    process.exit(1);
+  }
   for (const candidate of ["origin/main", "main"]) {
     try {
       return git(["merge-base", "HEAD", candidate]);
@@ -173,8 +178,8 @@ function main() {
         .split(",")
         .filter(Boolean)
         .map((item) => {
-          const [id, digest] = item.split(":");
-          return { id, digest };
+          const [id, digest, name] = item.split(":");
+          return { id, digest, name };
         });
       problems.push(
         ...checkAgainstApplied({
