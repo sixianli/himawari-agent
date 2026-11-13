@@ -134,6 +134,7 @@ import {
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
 import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
+import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -1247,6 +1248,12 @@ export async function createProductionHttpComposition(
     filesControl: new ProductionFilesControl({
       configuration,
       store: repository.threadArtifacts(),
+      threadTitle: classifiedThreadTitleReader({
+        configuration,
+        threads,
+        payloads: memoryPayloads,
+        protector: payloadProtector,
+      }),
       clock: { now: clock },
     }),
     loginDevicesControl: new ProductionLoginDevicesControl({

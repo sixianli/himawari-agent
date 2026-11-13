@@ -140,6 +140,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "home.read",
   "home.snapshot",
   "data.export.start",
+  "data.export.cancel",
   "data.export.status.read",
   "data.export.status.snapshot",
   "files.list.read",
@@ -147,6 +148,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "login.devices.read",
   "login.devices.snapshot",
   "login.device.revoke",
+  "login.devices.revoke_others",
   "stream.event",
 ] as const;
 
@@ -789,7 +791,7 @@ const serverStatusSnapshotSchema = object({
     generatedAt: timestamp,
   }),
 });
-export const DATA_EXPORT_STATES = ["running", "ready", "failed", "expired"] as const;
+export const DATA_EXPORT_STATES = ["running", "ready", "failed", "cancelled", "expired"] as const;
 const patternString = (pattern: RegExp, expected: string): Schema<string> => ({
   parse(input, path = "$") {
     if (typeof input !== "string" || !pattern.test(input))
@@ -803,6 +805,10 @@ const dataExportStartCommandSchema = object({
   ...commandEnvelope("data.export.start"),
   payload: object({}),
 });
+const dataExportCancelCommandSchema = object({
+  ...commandEnvelope("data.export.cancel"),
+  payload: object({ exportId: dataExportIdSchema }),
+});
 const dataExportStatusQuerySchema = object({
   ...envelope("query", "data.export.status.read"),
   payload: object({ exportId: dataExportIdSchema }),
@@ -815,6 +821,12 @@ const dataExportStatusSnapshotObjectSchema = object({
     startedAt: nullable(timestamp),
     finishedAt: nullable(timestamp),
     failureCode: nullable(machineString),
+    progress: nullable(
+      object({
+        textsRead: integer(0),
+        textsTotal: integer(0),
+      }),
+    ),
     result: nullable(
       object({
         downloadPath: boundedString(256),
@@ -835,6 +847,19 @@ const dataExportStatusSnapshotSchema: Schema<
 > = {
   parse(input, path = "$") {
     const snapshot = dataExportStatusSnapshotObjectSchema.parse(input, path);
+    const progress = snapshot.payload.progress;
+    if (progress) {
+      if (snapshot.payload.state !== "running")
+        throw new ContractValidationError(
+          `${path}.payload.progress`,
+          "expected progress only while the export is running",
+        );
+      if (progress.textsRead > progress.textsTotal)
+        throw new ContractValidationError(
+          `${path}.payload.progress.textsRead`,
+          "expected texts read to be at most the total",
+        );
+    }
     const result = snapshot.payload.result;
     if (result) {
       const url = new URL(result.downloadPath, "http://localhost");
@@ -886,6 +911,7 @@ const filesListSnapshotSchema = object({
       object({
         fileId: machineString,
         threadId: machineString,
+        threadTitle: nullable(boundedString(256)),
         name: boundedString(256),
         kind: enumeration(FILE_LIST_KINDS),
         origin: enumeration(FILE_LIST_ORIGINS),
@@ -919,6 +945,10 @@ const loginDevicesSnapshotSchema = object({
     ),
     generatedAt: timestamp,
   }),
+});
+const loginDevicesRevokeOthersCommandSchema = object({
+  ...commandEnvelope("login.devices.revoke_others"),
+  payload: object({ recentAuthenticationRef: nullable(machineString) }),
 });
 const loginDeviceRevokeCommandSchema = object({
   ...commandEnvelope("login.device.revoke"),
@@ -2929,6 +2959,7 @@ const schemasByType = {
   "home.read": homeQuerySchema,
   "home.snapshot": homeSnapshotSchema,
   "data.export.start": dataExportStartCommandSchema,
+  "data.export.cancel": dataExportCancelCommandSchema,
   "data.export.status.read": dataExportStatusQuerySchema,
   "data.export.status.snapshot": dataExportStatusSnapshotSchema,
   "files.list.read": filesListQuerySchema,
@@ -2936,6 +2967,7 @@ const schemasByType = {
   "login.devices.read": loginDevicesQuerySchema,
   "login.devices.snapshot": loginDevicesSnapshotSchema,
   "login.device.revoke": loginDeviceRevokeCommandSchema,
+  "login.devices.revoke_others": loginDevicesRevokeOthersCommandSchema,
   "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
   "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,
   "sensitive.interceptions.clear": sensitiveInterceptionsClearCommandSchema,
