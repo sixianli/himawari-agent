@@ -29,6 +29,7 @@ import type {
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
   LedgerObservationPort,
+  McpConnectionStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
   MemoryCheckupStorePort,
@@ -77,6 +78,11 @@ import type {
   TraceStorePort,
   WebPushStorePort,
 } from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  PORT_ERROR_CODES,
+  type UnitOfWorkPort,
+} from "@himawari-agent/application";
 import type {
   AgentAuthorityLease,
   AgentId,
@@ -100,11 +106,6 @@ import {
   loadBundledMigrations,
   openQualifiedDatabase,
 } from "./migration-engine.js";
-import {
-  ApplicationPortError,
-  PORT_ERROR_CODES,
-  type UnitOfWorkPort,
-} from "@himawari-agent/application";
 import {
   SqliteExecutionContext,
   type SqliteSlowOperation,
@@ -605,6 +606,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   externalMemoryProposals(): ExternalMemoryProposalStorePort {
     return this.durable.externalMemoryProposals();
+  }
+
+  mcpConnections(): McpConnectionStorePort {
+    return this.durable.mcpConnections();
   }
 
   memoryCaptureBacklog(): MemoryCaptureBacklogPort {

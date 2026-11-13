@@ -692,6 +692,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its proposal",
   ),
   entry(
+    "mcp_connections",
+    "McpConnectionStorePort",
+    "each external agent connection the owner made: name, the SHA-256 of its random URL secret (never the secret), the capabilities ticked, the read ceiling, whether pushed memories wait for confirmation, status, and when it was last seen",
+    "metadata_only",
+    "cascade with Owner or Agent deletion; a revoked connection stays so its usage stays explained",
+  ),
+  entry(
+    "mcp_connection_usage_daily",
+    "McpConnectionStorePort",
+    "per connection, day, tool, way in and auto flag, counters that only ever add up (calls, delivered, empty, failed, rate limited)",
+    "metadata_only",
+    "cascade with its connection or with Owner or Agent deletion",
+  ),
+  entry(
     "memory_checkup_items",
     "MemoryCheckupStorePort",
     "one row per Memory picked for a week's checkup: the reason, the owner's confirm, delete or merge with the state before it so it can be undone",

@@ -71,6 +71,7 @@ import {
   MUSE_INTAKE_SECRET_PURPOSE,
   PayloadUdsServer,
   parseServiceArguments,
+  portErrorSite,
   RuntimeHealthModel,
   readAuthorityFile,
   readGmailAccount,
@@ -79,7 +80,6 @@ import {
   SERVICE_RUNTIME_ERROR_CODES,
   SystemdCredentialSecretSource,
   SystemdProviderSecretSource,
-  portErrorSite,
   stableErrorCode,
   TypeSafeJevTransport,
   writeAgentServiceBootBinding,
@@ -94,6 +94,7 @@ import {
 import { monitorFollowUpCacheHits } from "./cache-hit-monitor.js";
 import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
+import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
@@ -118,8 +119,8 @@ import {
   type ProductionMemoryComposition,
 } from "./production-memory-composition.js";
 import { quoteRefOfMemory } from "./production-memory-consolidation.js";
-import { DEFAULT_CONVERSATION_REVIEW_SETTINGS } from "./production-memory-conversation-review.js";
 import { findSourceMessageIds } from "./production-memory-control.js";
+import { DEFAULT_CONVERSATION_REVIEW_SETTINGS } from "./production-memory-conversation-review.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
@@ -163,13 +164,12 @@ import {
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
-import { productionToolActionRegistry } from "./production-tool-actions.js";
-import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import {
   createProductionSandboxServices,
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
+import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
@@ -2314,6 +2314,7 @@ export async function startTenantRuntime(
               }
             : {}),
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+          connections: repository.mcpConnections(),
           requestTimeoutMs: configuration.deadlines.providerRequestMs,
           sources: {
             recall: (args, within, ceiling) => memoryRecall.recallOutsideRun(args, within, ceiling),

@@ -735,6 +735,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0094_memory_conversation_review.sql",
   },
+  {
+    sequence: 95,
+    name: "mcp_connections",
+    changeSet: "mcp-connections",
+    phase: "expand" as const,
+    file: "0095_mcp_connections.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

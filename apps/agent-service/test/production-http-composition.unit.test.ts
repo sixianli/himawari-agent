@@ -3,7 +3,6 @@ import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import type {
   AuthorityFence,
   ProductConfiguration,
@@ -14,6 +13,7 @@ import {
   type GovernedActionIntent,
   type GovernedApprovalRequest,
 } from "@himawari-agent/application";
+import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -34,12 +34,16 @@ import {
   ProductionThreadGatewayAccessPolicy,
 } from "../src/production-http-composition.js";
 import {
+  mcpConnectionSecretDigest,
+  newMcpConnectionSecret,
+} from "../src/production-mcp-connections.js";
+import {
   MCP_READ_PATH,
   ProductionMcpRead,
   type ProductionMcpReadOptions,
 } from "../src/production-mcp-read.js";
-import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
 import { createMcpAccess } from "./fixtures/mcp-access.js";
+import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
 
 const ORIGIN = "https://agent.example.test";
 const ISSUER = "https://team.cloudflareaccess.com";
@@ -893,6 +897,7 @@ describe("production HTTP composition", () => {
       access: access.verifier,
       owners,
       timeZone: "Asia/Tokyo",
+      connections: repository.mcpConnections(),
       requestTimeoutMs: 5_000,
       sources: {
         recall: async () => ({ output: {}, contentClassification: "public", memoryIds: [] }),
@@ -918,11 +923,22 @@ describe("production HTTP composition", () => {
       now: () => new Date(NOW),
       mcpRead,
     });
+    const secret = newMcpConnectionSecret();
+    await repository.mcpConnections().create({
+      ...scope,
+      id: "conn-composition",
+      name: "composition",
+      secretSha256: mcpConnectionSecretDigest(secret),
+      capabilities: ["mcp"],
+      readCeiling: "private",
+      pushPolicy: "ask",
+      createdAt: NOW.toISOString(),
+    });
     try {
-      const call = (assertion?: string) =>
+      const call = (assertion?: string, url = `${MCP_READ_PATH}/${secret}`) =>
         composition.app.inject({
           method: "POST",
-          url: MCP_READ_PATH,
+          url,
           headers: {
             host: "agent.example.test",
             accept: "application/json, text/event-stream",
@@ -939,6 +955,14 @@ describe("production HTTP composition", () => {
         });
       const denied = await call();
       expect(denied.statusCode).toBe(401);
+      expect(recorded).toEqual([]);
+      const unknown = await call(
+        await access.sign(),
+        `${MCP_READ_PATH}/${newMcpConnectionSecret()}`,
+      );
+      expect(unknown.statusCode).toBe(404);
+      const bare = await call(await access.sign(), MCP_READ_PATH);
+      expect(bare.body).not.toContain("2026");
       expect(recorded).toEqual([]);
       const served = await call(await access.sign());
       expect(served.statusCode).toBe(200);
