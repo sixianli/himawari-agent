@@ -792,7 +792,6 @@ const serverStatusSnapshotSchema = object({
   }),
 });
 export const DATA_EXPORT_STATES = ["running", "ready", "failed", "cancelled", "expired"] as const;
-export const DATA_EXPORT_STAGES = ["reading", "packing"] as const;
 const patternString = (pattern: RegExp, expected: string): Schema<string> => ({
   parse(input, path = "$") {
     if (typeof input !== "string" || !pattern.test(input))
@@ -824,7 +823,6 @@ const dataExportStatusSnapshotObjectSchema = object({
     failureCode: nullable(machineString),
     progress: nullable(
       object({
-        stage: enumeration(DATA_EXPORT_STAGES),
         textsRead: integer(0),
         textsTotal: integer(0),
       }),

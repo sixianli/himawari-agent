@@ -125,7 +125,6 @@ export interface DataExportArchive {
 }
 
 export interface DataExportProgress {
-  readonly stage: "reading" | "packing";
   readonly textsRead: number;
   readonly textsTotal: number;
 }
@@ -316,7 +315,6 @@ export class DataExportJobs {
   async #build({ signal, onProgress }: DataExportBuildControl): Promise<DataExportArchive> {
     const database = openReadOnlyDatabase(this.#options.databasePath);
     try {
-      let read = { textsRead: 0, textsTotal: 0 };
       const result = await buildPortableExport({
         database,
         scope: { ownerId: this.#options.ownerId, agentId: this.#options.agentId },
@@ -325,15 +323,10 @@ export class DataExportJobs {
         policy: createDataExportTextPolicy(),
         now: this.#options.now,
         signal,
-        onProgress: (textsRead, textsTotal) => {
-          read = { textsRead, textsTotal };
-          onProgress({ stage: "reading", ...read });
-        },
+        onProgress: (textsRead, textsTotal) => onProgress({ textsRead, textsTotal }),
       });
-      onProgress({ stage: "packing", ...read });
       signal.throwIfAborted();
       const zip = createStoredZip(result.files, result.manifest.exportedAt);
-      signal.throwIfAborted();
       const archive = Buffer.from(zip.buffer, zip.byteOffset, zip.byteLength);
       return {
         archive,

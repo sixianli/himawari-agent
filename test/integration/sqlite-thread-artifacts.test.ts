@@ -413,6 +413,7 @@ describe("[FD-1] thread artifact storage", () => {
       "thread-private": "title-private",
       "thread-restricted": "title-restricted",
       "thread-blank": "title-blank",
+      "thread-json": "title-json",
     });
     try {
       const protector = newProtector();
@@ -421,6 +422,7 @@ describe("[FD-1] thread artifact storage", () => {
         ref: string,
         text: string,
         dataClassification: "public" | "private" | "sensitive" | "restricted",
+        contentType = "text/plain",
       ) => {
         await titles.put(
           await protector.protect({
@@ -428,7 +430,7 @@ describe("[FD-1] thread artifact storage", () => {
             agentId: AGENT_ID,
             ref,
             dataClassification,
-            contentType: "text/plain",
+            contentType,
             plaintext: new TextEncoder().encode(text),
             createdAt: T0,
           } as never),
@@ -439,6 +441,7 @@ describe("[FD-1] thread artifact storage", () => {
       await title("title-private", "体检结果", "private");
       await title("title-restricted", "体检结果", "restricted");
       await title("title-blank", "   ", "public");
+      await title("title-json", "体检结果", "public", "application/json");
       await store.register({ ...scope, artifact: artifact("w1") });
       await store.register({
         ...scope,
@@ -595,6 +598,7 @@ describe("[FD-1] thread artifact storage", () => {
       expect(await threadTitle("thread-private")).toBe("体检结果");
       expect(await threadTitle("thread-restricted")).toBeNull();
       expect(await threadTitle("thread-blank")).toBeNull();
+      expect(await threadTitle("thread-json")).toBeNull();
       expect(await threadTitle("thread-missing")).toBeNull();
       expect([...FILE_LIST_KINDS]).toEqual([...THREAD_ARTIFACT_KINDS]);
       expect([...FILE_LIST_ORIGINS]).toEqual([...THREAD_ARTIFACT_ORIGINS]);

@@ -69,7 +69,7 @@ export class ProductionFilesControl {
       });
     const titles = new Map<string, string | null>();
     for (const threadId of new Set(page.items.map((artifact) => artifact.threadId))) {
-      const title = await this.#options.threadTitle(threadId);
+      const title = await this.#options.threadTitle(threadId).catch(() => null);
       titles.set(threadId, title === null ? null : displayText(title));
     }
     return {

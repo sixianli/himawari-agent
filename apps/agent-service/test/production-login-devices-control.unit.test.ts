@@ -1,3 +1,4 @@
+import { ApplicationPortError, PORT_ERROR_CODES } from "@himawari-agent/application";
 import { describe, expect, it } from "vitest";
 import { ProductionLoginDevicesControl } from "../src/production-login-devices-control.ts";
 
@@ -32,7 +33,8 @@ function control(devices = [device("device-current"), device("device-other")]) {
     control: new ProductionLoginDevicesControl({
       configuration: { ownerId: OWNER, agentId: AGENT } as never,
       state: {
-        listDevices: async () => devices,
+        listDevices: async (_owner: string, includeRevoked: boolean) =>
+          includeRevoked ? devices : devices.filter(({ id }) => !revoked.includes(id)),
         revokeDevice: async (id: string) => {
           revoked.push(id);
           return device(id, "revoked");
@@ -126,6 +128,52 @@ describe("ProductionLoginDevicesControl scope", () => {
     expect(checks).toEqual([
       { authentication, expectedAuthenticationRef: "authentication:current" },
     ]);
+  });
+
+  it("tries again with the fresh revision when another device changed in between, and gives up after three rounds", async () => {
+    const conflict = () => new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "changed");
+    const build = (failures: number) => {
+      const active = new Map([
+        ["device-current", 1],
+        ["device-laptop", 1],
+        ["device-tablet", 1],
+      ]);
+      let left = failures;
+      const revoked: string[] = [];
+      const devices = new ProductionLoginDevicesControl({
+        configuration: { ownerId: OWNER, agentId: AGENT } as never,
+        state: {
+          listDevices: async () =>
+            [...active].map(([id, revision]) => ({ ...device(id), revision })),
+          revokeDevice: async (id: string, revision: number) => {
+            if (id === "device-laptop" && left > 0) {
+              left -= 1;
+              active.set(id, revision + 1);
+              throw conflict();
+            }
+            if (active.get(id) !== revision) throw conflict();
+            active.delete(id);
+            revoked.push(id);
+            return device(id, "revoked");
+          },
+        } as never,
+        recentAuthentication: { assertRecentAuthentication: async () => undefined } as never,
+        clock: { now: () => NOW },
+      });
+      return { devices, revoked, active };
+    };
+    const once = build(1);
+    await expect(once.devices.execute(revokeOthers() as never)).resolves.toMatchObject({
+      replayed: false,
+    });
+    expect([...once.active.keys()]).toEqual(["device-current"]);
+    expect(once.revoked.sort()).toEqual(["device-laptop", "device-tablet"]);
+    const always = build(99);
+    await expect(always.devices.execute(revokeOthers() as never)).rejects.toMatchObject({
+      code: PORT_ERROR_CODES.CONFLICT,
+      message: "LOGIN_DEVICES_STILL_CHANGING",
+    });
+    expect([...always.active.keys()]).toEqual(["device-current", "device-laptop"]);
   });
 
   it("answers replayed without asking for recent authentication when no other device is signed in", async () => {

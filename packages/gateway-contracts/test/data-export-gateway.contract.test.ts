@@ -15,7 +15,7 @@ const result = {
   expiresAt: "2026-11-12T00:10:00.000Z",
 };
 
-const progress = { stage: "reading", textsRead: 2, textsTotal: 5 };
+const progress = { textsRead: 2, textsTotal: 5 };
 
 function rejects(message: Record<string, unknown>) {
   expect(() => gatewayV2MessageSchema.parse(message)).toThrow(ContractValidationError);
@@ -47,7 +47,7 @@ describe("data export gateway messages", () => {
       snapshot({
         state: "running",
         result: null,
-        progress: { stage: "packing", textsRead: 5, textsTotal: 5 },
+        progress: { textsRead: 5, textsTotal: 5 },
       }),
     );
   });
@@ -62,10 +62,6 @@ describe("data export gateway messages", () => {
     [
       "an unknown total",
       { state: "running", result: null, progress: { ...progress, textsTotal: null } },
-    ],
-    [
-      "an unknown stage",
-      { state: "running", result: null, progress: { ...progress, stage: "uploading" } },
     ],
     [
       "a percentage instead of counts",

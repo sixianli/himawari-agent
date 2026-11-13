@@ -27,6 +27,8 @@ export interface ProductionLoginDevicesControlOptions {
   readonly clock: ClockPort;
 }
 
+const REVOKE_OTHERS_ATTEMPTS = 3;
+
 const singleLine = (value: string): string => {
   let text = "";
   for (const character of value.replace(/[\p{Cc}\u202A-\u202E\u2066-\u2069]/gu, " ").trim()) {
@@ -105,8 +107,27 @@ export class ProductionLoginDevicesControl {
         expectedAuthenticationRef: command.payload.recentAuthenticationRef,
       });
       const revokedAt = this.#options.clock.now();
-      for (const device of others)
-        await this.#options.state.revokeDevice(device.id, device.revision, revokedAt);
+      let remaining = others;
+      for (
+        let attempt = 0;
+        attempt < REVOKE_OTHERS_ATTEMPTS && remaining.length > 0;
+        attempt += 1
+      ) {
+        for (const device of remaining)
+          await this.#options.state
+            .revokeDevice(device.id, device.revision, revokedAt)
+            .catch((error: unknown) => {
+              if (
+                !(error instanceof ApplicationPortError && error.code === PORT_ERROR_CODES.CONFLICT)
+              )
+                throw error;
+            });
+        remaining = (await this.#options.state.listDevices(ownerId, false)).filter(
+          (device) => device.id !== authentication.deviceId,
+        );
+      }
+      if (remaining.length > 0)
+        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "LOGIN_DEVICES_STILL_CHANGING");
       return { resultRef: authentication.deviceId, replayed: false };
     }
     if (command.type !== "login.device.revoke")

@@ -624,7 +624,6 @@ describe("[P1-6] 网页导出接口", () => {
     expect(running.state).toBe("running");
     expect(running.result).toBeNull();
     if (!running.progress) throw new Error("progress");
-    expect(running.progress.stage).toBe("reading");
     expect(running.progress.textsTotal).toBeGreaterThan(running.progress.textsRead);
     expect(running.progress.textsRead).toBe(paused.calls() - 1);
     paused.release();
@@ -697,7 +696,7 @@ describe("[P1-6] 网页导出接口", () => {
     expect((await settled(failed)).state).toBe("failed");
   });
 
-  it("[iOS] 打包快结束时取消，生成完的结果也不会把状态改回 ready", async () => {
+  it("[iOS] 读完文字后才取消（例如正在打包），生成完的结果也不会把状态改回 ready", async () => {
     let finish = () => {};
     const finished = new Promise<void>((resolve) => {
       finish = resolve;
