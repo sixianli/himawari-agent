@@ -178,9 +178,25 @@ export function isWrapUp(request) {
   return JSON.stringify(request.messages ?? []).includes(WRAP_UP_PROMPT);
 }
 
+export function firstChangedMessage(earlier, later) {
+  const index = earlier.messages.findIndex(
+    (message, position) => JSON.stringify(message) !== JSON.stringify(later.messages[position]),
+  );
+  if (index < 0) return "";
+  const shown = (message) => JSON.stringify(message ?? null).slice(0, 2000);
+  return [
+    `message ${index} of ${earlier.messages.length} changed (later request has ${later.messages.length})`,
+    `earlier: ${shown(earlier.messages[index])}`,
+    `later:   ${shown(later.messages[index])}`,
+  ].join("\n");
+}
+
 export function expectAppendedTo(earlier, later) {
   expect(later.tools).toEqual(earlier.tools);
-  expect(later.messages.slice(0, earlier.messages.length)).toEqual(earlier.messages);
+  expect(
+    later.messages.slice(0, earlier.messages.length),
+    firstChangedMessage(earlier, later),
+  ).toEqual(earlier.messages);
   expect(later.messages.length).toBeGreaterThan(earlier.messages.length);
 }
 
