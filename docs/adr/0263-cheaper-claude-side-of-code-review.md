@@ -26,7 +26,7 @@ date: "2026-11-13"
 
 ## 背景
 
-合并前的代码复核用 `scripts/model-review/opencode-review.mjs` 经 OpenCode（一个能让模型读代码、调用工具的命令行程序）请 DeepSeek V4.1 Flash 只读复核，线程（Claude Code 的一段对话）再逐条判断、修改、再复核。2026-11-13 统计 180 个 PR 的复核记录和 4 个 PR 线程的用量（数字和取法见 [`.agents/reviews/topic-review-claude-side-cost/data.md`](../../.agents/reviews/topic-review-claude-side-cost/data.md)）：
+合并前的代码复核用 `scripts/model-review/opencode-review.mjs` 经 OpenCode（一个能让模型读代码、调用工具的命令行程序）请 DeepSeek V4.1 Flash 只读复核，线程（Claude Code 的一段对话）再逐条判断、修改、再复核。2026-11-13 统计 180 个 PR 的复核记录和 4 个 PR 线程的用量（数字和取法见 [`docs/assets/review-cost/2026-11-13-data.txt`](../assets/review-cost/2026-11-13-data.txt)）：
 
 - 钱的大头在 Claude 线程这边。4 个 PR 的整个线程按 API 价折算 39–86 美元，同一批 PR 的 DeepSeek 复核 0.4–1.4 美元。线程上下文常有 15 万到 30 万 token，每调一次工具都按缓存价重读整段上下文；一轮复核要读答案、逐条打开代码、手写 `verdicts.jsonl`（逐字抄模型原话）和 `judgments.md`、提交、跑检查，约 25–40 次调用。
 - 线程常整份读 `.agents/instructions/model-review.md`（约 8 万字节）、`docs/incidents-and-gates.md`（约 18 万）、`docs/lessons.md`（约 15 万），读进来以后每次调用都要重付。
