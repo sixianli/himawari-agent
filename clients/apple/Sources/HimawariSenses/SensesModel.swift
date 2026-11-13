@@ -173,6 +173,7 @@ public final class SensesModel {
             notice = L.format("detail.deleted", result.deleted.records + result.deleted.trackPoints)
             await loadDay(item)
             await reloadStatus()
+        } catch SensesGatewayError.confirmationCancelled {
         } catch {
             notice = L.text("detail.failed")
         }
