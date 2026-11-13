@@ -10,6 +10,7 @@ import {
   type ConfiguredMemoryRetrieval,
   type ConfiguredModelDescriptor,
   type DataClassification,
+  DEFAULT_HOME_FEED,
   DEFAULT_REVIEW_PREREVIEW,
   findEmbeddingProfile,
   GATEWAY_EMBEDDING_PROVIDER,
@@ -1326,6 +1327,32 @@ function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPu
   });
 }
 
+function parseHomeFeed(value: unknown): NonNullable<RunPolicyConfiguration["homeFeed"]> {
+  const field = "configuration.runPolicy.homeFeed";
+  const input = record(value, field);
+  const bounds = {
+    awaitingLimit: [1, 1000],
+    otherLimit: [0, 200],
+    sourceReadLimit: [1, 200],
+    deadlineLeadMinutes: [0, 43_200],
+    recentHours: [1, 720],
+    upcomingLimit: [0, 200],
+    upcomingDays: [1, 366],
+  } as const satisfies Record<keyof typeof DEFAULT_HOME_FEED, readonly [number, number]>;
+  const keys = Object.keys(bounds) as (keyof typeof bounds)[];
+  rejectUnknown(input, keys, field);
+  return Object.freeze(
+    Object.fromEntries(
+      keys.map((key) => [
+        key,
+        input[key] === undefined
+          ? DEFAULT_HOME_FEED[key]
+          : integer(input[key], `${field}.${key}`, bounds[key][0], bounds[key][1]),
+      ]),
+    ) as Record<keyof typeof bounds, number>,
+  );
+}
+
 function parseRealEval(value: unknown): NonNullable<RunPolicyConfiguration["realEval"]> {
   const field = "configuration.runPolicy.realEval";
   const input = record(value, field);
@@ -1385,6 +1412,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "publicFetch",
       "automaticReview",
       "webPush",
+      "homeFeed",
       "proactive",
       "museIntake",
       "realEval",
@@ -1437,6 +1465,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       ? {}
       : { automaticReview: parseAutomaticReview(input["automaticReview"]) }),
     ...(input["webPush"] === undefined ? {} : { webPush: parseWebPush(input["webPush"]) }),
+    ...(input["homeFeed"] === undefined ? {} : { homeFeed: parseHomeFeed(input["homeFeed"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
     ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
     ...(input["museIntake"] === undefined

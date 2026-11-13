@@ -12,6 +12,7 @@ import type {
 import {
   AgentThreadGatewayService,
   ApplicationPortError,
+  DEFAULT_HOME_FEED,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
@@ -24,6 +25,7 @@ import {
   type ProductConfiguration,
   ProductThreadGatewayAdapter,
   RecentAuthenticationGuard,
+  type RunLifecyclePort,
   readThreadExecutionEnvironment,
   type SessionDeviceStatePort,
   ThreadCommandService,
@@ -91,6 +93,7 @@ import {
   registerDataExportRoute,
 } from "./production-data-export.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
+import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
 import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import {
@@ -190,6 +193,7 @@ export interface ProductionHttpCompositionOptions {
   readonly onCommandAccepted?: (path: string) => void;
   readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
+  readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
@@ -248,6 +252,7 @@ export interface ProductionHttpComposition {
   readonly payloadAdmission: HttpGatewayPayloadAdmissionPort;
   readonly health: RuntimeHealthModel;
   readonly metrics: RuntimeMetricsRegistry;
+  readonly home: Pick<ProductionHomeControl, "awaitingCount">;
   listen(): Promise<string>;
   close(): Promise<void>;
 }
@@ -695,6 +700,7 @@ function routeOptions(
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
+        ...PRODUCTION_HOME_OPERATIONS,
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
       ],
       agentId: configuration.agentId,
@@ -1143,6 +1149,48 @@ export async function createProductionHttpComposition(
         onAudit: options.memory.onAudit,
       })
     : undefined;
+  const home = new ProductionHomeControl({
+    settings: configuration.runPolicy?.homeFeed ?? DEFAULT_HOME_FEED,
+    ...(options.proactive ? { proactive: options.proactive } : {}),
+    ...(memoryControl ? { memory: memoryControl } : {}),
+    listApprovals: () =>
+      repository.authorizationStore().listApprovals(ownerId, agentId, { status: "pending" }),
+    runThread: async (runId) =>
+      (
+        await repository
+          .runLifecycle(ownerId, agentId, authority)
+          .readRun(runId as Parameters<RunLifecyclePort["readRun"]>[0])
+      )?.run.threadId ?? null,
+    runs: repository.runLifecycle(ownerId, agentId, authority),
+    threadTitle: async (threadId) => {
+      const thread = await threads.read(
+        ownerId,
+        agentId,
+        threadId as Parameters<typeof threads.read>[2],
+      );
+      if (!thread || thread.status !== "active") return null;
+      const payload = thread.titleRef ? await memoryPayloads.get(thread.titleRef) : undefined;
+      if (!payload || payload.contentType !== "text/plain") return { title: null };
+      return {
+        title:
+          new TextDecoder("utf-8", { fatal: true })
+            .decode(await payloadProtector.unprotect({ ownerId, agentId, payload }))
+            .trim() || null,
+      };
+    },
+    clock: { now: clock },
+    onSourceFailure: (source, error) =>
+      options.onHomeDiagnostic?.({
+        event: "home.source_failed",
+        source,
+        error:
+          error instanceof ApplicationPortError
+            ? error.code
+            : error instanceof Error
+              ? error.name
+              : "unknown",
+      }),
+  });
   const dataExportJobs = new DataExportJobs({
     ownerId,
     agentId,
@@ -1154,6 +1202,7 @@ export async function createProductionHttpComposition(
     configuration,
     repository,
     access: threadAccess,
+    homeControl: home,
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
@@ -1273,6 +1322,7 @@ export async function createProductionHttpComposition(
     payloadAdmission,
     health,
     metrics,
+    home,
     listen: async () => {
       if (unixSocketPath === undefined) {
         const address = await app.listen({
