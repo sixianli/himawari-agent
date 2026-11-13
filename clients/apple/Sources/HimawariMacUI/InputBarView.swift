@@ -115,11 +115,20 @@ struct InputBarView: View {
     }
 
     static func loadFiles(_ providers: [NSItemProvider], into deliver: @escaping @MainActor ([URL]) -> Void) {
-        for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                guard let url else { return }
-                Task { @MainActor in deliver([url]) }
+        let files = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
+        guard !files.isEmpty else { return }
+        Task { @MainActor in
+            var urls: [URL] = []
+            for provider in files {
+                if let url = await fileURL(provider) { urls.append(url) }
             }
+            if !urls.isEmpty { deliver(urls) }
+        }
+    }
+
+    private static func fileURL(_ provider: NSItemProvider) async -> URL? {
+        await withCheckedContinuation { continuation in
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in continuation.resume(returning: url) }
         }
     }
 }

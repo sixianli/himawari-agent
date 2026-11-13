@@ -102,15 +102,18 @@ final class MacSettingsStore {
         save()
     }
 
+    @ObservationIgnored private(set) var messagesEpoch = 0
+
     func setSeesMessages(_ on: Bool) {
+        messagesEpoch += 1
         settings.setSeesMessages(on)
         if !on { messagesProblem = nil }
         save()
     }
 
     @discardableResult
-    func moveMessagesCursor(from expected: Int64?, to row: Int64) -> Bool {
-        guard settings.moveMessagesCursor(from: expected, to: row) else { return false }
+    func moveMessagesCursor(from expected: Int64?, to row: Int64, epoch: Int) -> Bool {
+        guard epoch == messagesEpoch, settings.moveMessagesCursor(from: expected, to: row) else { return false }
         save()
         return true
     }

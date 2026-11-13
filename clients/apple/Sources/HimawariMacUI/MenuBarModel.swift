@@ -131,8 +131,8 @@ final class MenuBarModel {
             } catch {
                 failedItem = item.key
             }
-            acting = nil
             await refresh()
+            acting = nil
         }
     }
 }

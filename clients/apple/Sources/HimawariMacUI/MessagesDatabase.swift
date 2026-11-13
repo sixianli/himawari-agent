@@ -31,9 +31,8 @@ final class MessagesDatabase {
         let database = try MessagesDatabase()
         let schema = try database.schema()
         guard schema.missing.isEmpty else { return Batch(missing: schema.missing, newest: 0, rows: []) }
-        let newest = try database.newestRow(schema)
-        guard let row else { return Batch(missing: [], newest: newest, rows: []) }
-        return Batch(missing: [], newest: newest, rows: try database.rows(after: row, limit: limit, schema: schema))
+        guard let row else { return Batch(missing: [], newest: try database.newestRow(schema), rows: []) }
+        return Batch(missing: [], newest: row, rows: try database.rows(after: row, limit: limit, schema: schema))
     }
 
     private let handle: OpaquePointer
@@ -161,6 +160,7 @@ final class MessagesSensor {
         }
         while settings.settings.seesMessages, !Task.isCancelled {
             let saved = settings.settings.messagesAfterRow
+            let epoch = settings.messagesEpoch
             let batch: MessagesDatabase.Batch
             do {
                 batch = try await Task.detached(priority: .utility) { try MessagesDatabase.batch(after: saved, limit: Int(limit)) }.value
@@ -168,12 +168,13 @@ final class MessagesSensor {
                 settings.reportMessages(.cannotRead)
                 return
             }
+            guard epoch == settings.messagesEpoch, settings.settings.seesMessages else { return }
             guard batch.missing.isEmpty else {
                 settings.reportMessages(.unknownLayout(batch.missing))
                 return
             }
             guard let saved else {
-                settings.moveMessagesCursor(from: nil, to: batch.newest)
+                settings.moveMessagesCursor(from: nil, to: batch.newest, epoch: epoch)
                 settings.reportMessages(nil)
                 return
             }
@@ -190,7 +191,7 @@ final class MessagesSensor {
                     return
                 }
             }
-            guard settings.moveMessagesCursor(from: saved, to: last.rowId) else { return }
+            guard settings.moveMessagesCursor(from: saved, to: last.rowId, epoch: epoch) else { return }
         }
     }
 }
