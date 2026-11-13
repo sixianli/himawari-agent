@@ -43,6 +43,8 @@ export class SqliteMemoryCaptureBacklogOperations {
         return this.recordAttempt(
           payload as { generationId: string; errorCode: string; updatedAt: string },
         );
+      case "memoryCaptureBacklog.has":
+        return this.has((payload as { generationId: string }).generationId);
       case "memoryCaptureBacklog.remove":
         return this.remove((payload as { generationId: string }).generationId);
       default:
@@ -126,6 +128,14 @@ export class SqliteMemoryCaptureBacklogOperations {
       | undefined;
     if (!row) return this.fail("PORT_NOT_FOUND", "Memory capture backlog entry not found");
     return row.attempts;
+  }
+
+  private has(generationId: string): boolean {
+    return (
+      this.database
+        .prepare("SELECT 1 FROM memory_capture_backlog WHERE generation_id = ?")
+        .get(generationId) !== undefined
+    );
   }
 
   private remove(generationId: string): void {

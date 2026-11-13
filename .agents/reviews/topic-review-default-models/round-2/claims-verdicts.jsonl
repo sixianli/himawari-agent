@@ -1,0 +1,1 @@
+{"id": "12", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|12|找不到|-|`allowed`（能用的模型，仍然只有项目指令第 17 条允许的两个）|-（仓库内没有项目指令第 17 条）", "outcome": "model-wrong", "evidenceFile": ".agents/instructions/model-review.md", "evidence": "能用的只有这两个模型（Andy 在项目指令第 17 条规定）"}
