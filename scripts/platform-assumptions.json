@@ -105,6 +105,7 @@
     "scripts/delivery-mode/packet-template/acceptance/helpers/collect-installer-dependencies.mjs": 1,
     "scripts/delivery-mode/packet-template/install/__PKT_LABEL__-artifact-install.mjs": 1,
     "scripts/delivery-mode/packet-template/install/collect-installer-dependencies.mjs": 1,
+    "test/tooling/artifact-host.mjs": 1,
     "test/tooling/gate-lifecycle.test.mjs": 1,
     "test/tooling/policy.test.mjs": 3
   },
