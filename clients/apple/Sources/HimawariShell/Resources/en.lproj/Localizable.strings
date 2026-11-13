@@ -38,6 +38,8 @@
 "pairing.problem.keysUnreadable" = "Your pairing and chats are still here. Unlock the phone and come back to try again automatically";
 "pairing.problem.keysUnreadable.title" = "Can’t read this iPhone’s keys right now";
 "pairing.problem.storage" = "Your pairing and chats are still here. Unlock the phone, free some space, and come back to try again automatically";
+"pairing.problem.stateUnknown" = "The server reported a status this version doesn’t recognize. Update the app and try again, or clear it and pair again";
+"pairing.problem.stateUnknown.title" = "This iPhone’s status is unknown";
 "pairing.problem.storage.title" = "Can’t open this phone’s storage right now";
 "pairing.startOver" = "Erase and pair again";
 "pairing.startOver.confirm" = "This deletes the conversations and keys stored on this iPhone. You will need to scan a code again.";

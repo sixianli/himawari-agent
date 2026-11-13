@@ -95,4 +95,24 @@ import Testing
         #expect(current.phase == .unrecognized)
         #expect(current.title == "在查")
     }
+
+    @Test func aStatusRecordWithANewPhaseStopsTheThinkingSpinner() throws {
+        let list = try records(#"[{"id":"r1","sequence":1,"itemId":"s","kind":"status","phase":"waiting_for_input","name":"等你补充","text":"","occurredAt":"2026-11-13T00:00:00Z"}]"#)
+        guard case let .working(current, _) = ProcessLine.make(records: list, runStatus: "running") else {
+            Issue.record("expected a still line, not thinking")
+            return
+        }
+        #expect(current.phase == .unrecognized)
+        #expect(current.title == "等你补充")
+    }
+
+    @Test func waitingForAnUnknownDeviceStatusStopsOnlyWhenTheServerClearlyRefuses() {
+        let refused = DeviceAPIError.server(status: 403, code: "DEVICE_SUSPENDED")
+        #expect(ConfirmationWait.givesUp(waitingAs: .unrecognized, after: refused))
+        #expect(!ConfirmationWait.givesUp(waitingAs: .unrecognized, after: DeviceAPIError.server(status: 403, code: "DEVICE_PENDING")))
+        #expect(!ConfirmationWait.givesUp(waitingAs: .unrecognized, after: DeviceAPIError.server(status: 503, code: nil)))
+        #expect(!ConfirmationWait.givesUp(waitingAs: .unrecognized, after: DeviceAPIError.server(status: 429, code: nil)))
+        #expect(!ConfirmationWait.givesUp(waitingAs: .unrecognized, after: URLError(.timedOut)))
+        #expect(!ConfirmationWait.givesUp(waitingAs: .pending, after: refused))
+    }
 }

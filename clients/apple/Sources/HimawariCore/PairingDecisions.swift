@@ -35,6 +35,13 @@ public enum ExecutionStreamPolicy {
     }
 }
 
+public enum ConfirmationWait {
+    public static func givesUp(waitingAs status: PairedDeviceStatus, after error: Error) -> Bool {
+        guard status == .unrecognized, case let .server(code, reason, _)? = error as? DeviceAPIError else { return false }
+        return (400..<500).contains(code) && code != 408 && code != 429 && reason != "DEVICE_PENDING"
+    }
+}
+
 extension LocalStore {
     public static var ownerName: String { "owner" }
 

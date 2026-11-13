@@ -38,6 +38,8 @@
 "pairing.problem.keysUnreadable" = "ペアリングと会話は残っています。ロックを解除してここに戻ると自動でやり直します";
 "pairing.problem.keysUnreadable.title" = "この iPhone の鍵が一時的に読めません";
 "pairing.problem.storage" = "ペアリングと会話は残っています。ロックを解除し空き容量を作ってここに戻ると自動でやり直します";
+"pairing.problem.stateUnknown" = "サーバーがこのバージョンでは分からない状態を返しました。アプリを更新してから再試行するか、消去してペアリングし直してください";
+"pairing.problem.stateUnknown.title" = "この iPhone の状態が分かりません";
 "pairing.problem.storage.title" = "この端末の保存領域を一時的に開けません";
 "pairing.startOver" = "消去して最初からペアリング";
 "pairing.startOver.confirm" = "消去すると、この iPhone に保存した会話と鍵が削除され、もう一度コードを読み取る必要があります。";

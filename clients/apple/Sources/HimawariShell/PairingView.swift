@@ -43,7 +43,7 @@ struct PairingView: View {
             confirmServer(host)
         case let .waitingForConfirmation(number):
             waiting(number)
-        case let .unpaired(problem?) where problem == .keysUnreadable || problem == .storageUnavailable:
+        case let .unpaired(problem?) where problem == .keysUnreadable || problem == .storageUnavailable || problem == .stateUnknown:
             problemPage(icon: .alertCircleLarge, tint: .hmMuted, problem: problem) {
                 VStack(spacing: 6) {
                     Button(L.text("pairing.retry")) { model.retryReadingKeys() }
@@ -262,6 +262,7 @@ struct PairingView: View {
         case .keysUnavailable: "keys"
         case .keysUnreadable: "keysUnreadable"
         case .storageUnavailable: "storage"
+        case .stateUnknown: "stateUnknown"
         case .removed: "removed"
         }
     }
