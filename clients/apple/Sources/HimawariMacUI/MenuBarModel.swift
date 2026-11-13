@@ -128,6 +128,9 @@ final class MenuBarModel {
             do {
                 try await app.api.act(on: item, action: action, requestId: requestId)
                 actionRequestIds[key] = nil
+            } catch let DeviceAPIError.server(status, _, _) where (400 ..< 500).contains(status) {
+                actionRequestIds[key] = nil
+                failedItem = item.key
             } catch {
                 failedItem = item.key
             }

@@ -6,6 +6,7 @@
 "input.frontApp" = "Using: %@";
 "input.selection" = "%d selected lines";
 "input.tooMany" = "Too much attached. Remove a few things and send again";
+"input.tooLong" = "This is too long to send. Shorten it and try again.";
 "input.attachmentsUnsupported" = "The server doesn’t take attachments yet; remove them with × and send again";
 "input.uploadFailed" = "The attachments didn't upload. Try again";
 "input.sendFailed" = "Not sent. Try again";

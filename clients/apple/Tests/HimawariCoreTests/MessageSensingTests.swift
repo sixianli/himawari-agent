@@ -128,7 +128,7 @@ import Testing
 
     @Test func theUsualColumnsGiveTheFullQueryWithSenderAndWithoutReactions() throws {
         let query = try #require(MessagesSchema(message: full, handle: ["ROWID", "id", "service"]).rowsQuery)
-        #expect(query == "SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.date, m.is_from_me, m.service, h.id FROM message m LEFT JOIN handle h ON h.ROWID = m.handle_id WHERE m.ROWID > ? AND m.item_type = 0 AND m.associated_message_type = 0 ORDER BY m.ROWID LIMIT ?")
+        #expect(query == "SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.date, m.is_from_me, m.service, h.id FROM message m LEFT JOIN handle h ON h.ROWID = m.handle_id WHERE m.ROWID > ? AND IFNULL(m.item_type, 0) = 0 AND IFNULL(m.associated_message_type, 0) = 0 ORDER BY m.ROWID LIMIT ?")
     }
 
     @Test func missingOptionalColumnsFallBackInsteadOfFailing() throws {

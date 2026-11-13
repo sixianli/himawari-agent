@@ -171,8 +171,8 @@ public struct MessagesSchema: Sendable, Equatable {
             joinsHandle ? "h.id" : "NULL",
         ]
         var filters = ["m.ROWID > ?"]
-        if message.contains("item_type") { filters.append("m.item_type = 0") }
-        if message.contains("associated_message_type") { filters.append("m.associated_message_type = 0") }
+        if message.contains("item_type") { filters.append("IFNULL(m.item_type, 0) = 0") }
+        if message.contains("associated_message_type") { filters.append("IFNULL(m.associated_message_type, 0) = 0") }
         var parts: [String] = ["SELECT", columns.joined(separator: ", "), "FROM message m"]
         if joinsHandle { parts.append("LEFT JOIN handle h ON h.ROWID = m.handle_id") }
         parts.append("WHERE")

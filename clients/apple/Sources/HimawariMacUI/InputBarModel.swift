@@ -10,6 +10,7 @@ import Observation
 final class InputBarModel {
     enum Problem: Equatable {
         case tooMany
+        case tooLong
         case attachmentsUnsupported
         case uploadFailed
         case sendFailed
@@ -18,6 +19,7 @@ final class InputBarModel {
     var draft = ""
     private(set) var pieces: [ContextPiece] = []
     private(set) var sending = false
+    private(set) var loading = 0
     private(set) var problem: Problem?
     private(set) var threadId: String?
     @ObservationIgnored private let api: DeviceAPI
@@ -44,19 +46,39 @@ final class InputBarModel {
         problem = nil
         threadId = nil
         pendingRequestId = nil
-        pieces = ContextGathering.pieces(from: snapshot, seesFrontmost: seesFrontmost, labels: Self.labels, readFile: ContextReader.read)
+        loading = 0
+        var shown = snapshot
+        shown.document = nil
+        pieces = ContextGathering.pieces(from: shown, seesFrontmost: seesFrontmost, labels: Self.labels, readFile: ContextReader.read)
+        if seesFrontmost, let document = snapshot.document, document.isFileURL {
+            read([document], source: .document) { [weak self] read in
+                guard let self else { return }
+                let index = pieces.firstIndex { $0.source == .selection || $0.source == .droppedFile } ?? pieces.count
+                pieces.insert(contentsOf: read, at: index)
+            }
+        }
     }
 
     func add(files urls: [URL]) {
-        let files = urls.filter(\.isFileURL)
+        var files = urls.filter(\.isFileURL)
+        if let limit = limits()?.perMessage, files.count > limit - pieces.count {
+            files = Array(files.prefix(max(0, limit - pieces.count)))
+            problem = .tooMany
+        }
         guard !files.isEmpty else { return }
+        read(files, source: .droppedFile) { [weak self] read in self?.add(pieces: read) }
+    }
+
+    private func read(_ files: [URL], source: ContextPieceSource, then place: @escaping @MainActor ([ContextPiece]) -> Void) {
         let started = session
+        loading += 1
         Task {
-            let added = await Task.detached(priority: .userInitiated) {
-                files.map { ContextGathering.filePiece($0, source: .droppedFile, reading: ContextReader.read($0)) }
+            let read = await Task.detached(priority: .userInitiated) {
+                files.map { ContextGathering.filePiece($0, source: source, reading: ContextReader.read($0)) }
             }.value
             guard started == session else { return }
-            add(pieces: added)
+            loading -= 1
+            place(read)
         }
     }
 
@@ -64,7 +86,7 @@ final class InputBarModel {
         let merged = ContextGathering.merge(pieces, adding: added, limit: limits()?.perMessage)
         if merged.pieces != pieces { pendingRequestId = nil }
         pieces = merged.pieces
-        problem = merged.overflowed ? .tooMany : nil
+        if merged.overflowed { problem = .tooMany }
     }
 
     func remove(_ pieceId: String) {
@@ -74,7 +96,7 @@ final class InputBarModel {
     }
 
     var canSend: Bool {
-        !sending && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pieces.isEmpty)
+        !sending && loading == 0 && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pieces.isEmpty)
     }
 
     func send() {
@@ -90,6 +112,10 @@ final class InputBarModel {
                 problem = .tooMany
                 return
             }
+        }
+        if let limits, !MessageAttachments.fits(text: text, attachments: [], limits: limits) {
+            problem = .tooLong
+            return
         }
         sending = true
         problem = nil
@@ -148,6 +174,7 @@ final class InputBarModel {
     func close() {
         session += 1
         sending = false
+        loading = 0
         if threadId != nil { chat()?.unwatch() }
     }
 
