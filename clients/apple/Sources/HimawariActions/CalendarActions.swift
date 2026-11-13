@@ -10,7 +10,7 @@ public final class CalendarActions: DeviceActionHandler, @unchecked Sendable {
 
     public init(store: EKEventStore) {
         self.store = store
-        permission = CalendarPermission(store: store, entity: .event)
+        permission = CalendarPermission(entity: .event)
     }
 
     static let attendees = line("日程的参与者", "event invitees", "予定の参加者")

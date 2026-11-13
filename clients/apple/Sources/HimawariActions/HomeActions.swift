@@ -112,15 +112,17 @@ public final class HomeActions: DeviceActionHandler, @unchecked Sendable {
         let encode: (JSONValue) -> Any?
     }
 
-    static let controls: [Control] = [
-        Control(key: "on", target: HMCharacteristicTypePowerState, current: HMCharacteristicTypePowerState) { $0.bool },
-        Control(key: "level", target: HMCharacteristicTypeBrightness, current: HMCharacteristicTypeBrightness) { $0.integer },
-        Control(key: "level", target: HMCharacteristicTypeTargetPosition, current: HMCharacteristicTypeCurrentPosition) { $0.integer },
-        Control(key: "targetTemperature", target: HMCharacteristicTypeTargetTemperature, current: HMCharacteristicTypeTargetTemperature) { $0.number },
-        Control(key: "locked", target: HMCharacteristicTypeTargetLockMechanismState, current: HMCharacteristicTypeCurrentLockMechanismState) { value in
-            value.bool.map { $0 ? HMCharacteristicValueLockMechanismState.secured.rawValue : HMCharacteristicValueLockMechanismState.unsecured.rawValue }
-        },
-    ]
+    static var controls: [Control] {
+        [
+            Control(key: "on", target: HMCharacteristicTypePowerState, current: HMCharacteristicTypePowerState) { $0.bool },
+            Control(key: "level", target: HMCharacteristicTypeBrightness, current: HMCharacteristicTypeBrightness) { $0.integer },
+            Control(key: "level", target: HMCharacteristicTypeTargetPosition, current: HMCharacteristicTypeCurrentPosition) { $0.integer },
+            Control(key: "targetTemperature", target: HMCharacteristicTypeTargetTemperature, current: HMCharacteristicTypeTargetTemperature) { $0.number },
+            Control(key: "locked", target: HMCharacteristicTypeTargetLockMechanismState, current: HMCharacteristicTypeCurrentLockMechanismState) { value in
+                value.bool.map { $0 ? HMCharacteristicValueLockMechanismState.secured.rawValue : HMCharacteristicValueLockMechanismState.unsecured.rawValue }
+            },
+        ]
+    }
 
     public func snapshot(_ delivery: DeviceActionDelivery) async throws -> JSONObject? {
         guard let accessory = try await accessory(delivery) else { return nil }

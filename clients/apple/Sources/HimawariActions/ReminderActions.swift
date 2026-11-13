@@ -10,7 +10,7 @@ public final class ReminderActions: DeviceActionHandler, @unchecked Sendable {
 
     public init(store: EKEventStore) {
         self.store = store
-        permission = CalendarPermission(store: store, entity: .reminder)
+        permission = CalendarPermission(entity: .reminder)
     }
 
     public func snapshot(_ delivery: DeviceActionDelivery) async throws -> JSONObject? {

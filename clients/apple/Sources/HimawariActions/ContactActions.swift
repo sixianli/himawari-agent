@@ -10,18 +10,20 @@ public final class ContactActions: DeviceActionHandler, @unchecked Sendable {
 
     public init(store: CNContactStore = CNContactStore()) {
         self.store = store
-        permission = ContactsPermission(store: store)
+        permission = ContactsPermission()
     }
 
     static let notes = line("联系人的备注", "contact notes", "連絡先のメモ")
 
-    private static let keys: [CNKeyDescriptor] = [
-        CNContactGivenNameKey as CNKeyDescriptor,
-        CNContactFamilyNameKey as CNKeyDescriptor,
-        CNContactPhoneNumbersKey as CNKeyDescriptor,
-        CNContactEmailAddressesKey as CNKeyDescriptor,
-        CNContactOrganizationNameKey as CNKeyDescriptor,
-    ]
+    private static var keys: [CNKeyDescriptor] {
+        [
+            CNContactGivenNameKey as CNKeyDescriptor,
+            CNContactFamilyNameKey as CNKeyDescriptor,
+            CNContactPhoneNumbersKey as CNKeyDescriptor,
+            CNContactEmailAddressesKey as CNKeyDescriptor,
+            CNContactOrganizationNameKey as CNKeyDescriptor,
+        ]
+    }
 
     public func snapshot(_ delivery: DeviceActionDelivery) async throws -> JSONObject? {
         try contact(delivery).map(Self.describe)

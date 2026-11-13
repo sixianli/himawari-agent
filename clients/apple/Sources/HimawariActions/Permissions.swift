@@ -14,7 +14,6 @@ enum SettingsPath {
 import EventKit
 
 public struct CalendarPermission: DevicePermission {
-    let store: EKEventStore
     let entity: EKEntityType
 
     public var id: String { entity == .event ? "calendar" : "reminders" }
@@ -46,7 +45,8 @@ public struct CalendarPermission: DevicePermission {
 
     public func request() async -> DevicePermissionStatus {
         if await status() != .notDetermined { return await status() }
-        _ = try? await (entity == .event ? store.requestFullAccessToEvents() : store.requestFullAccessToReminders())
+        let asking = EKEventStore()
+        _ = try? await (entity == .event ? asking.requestFullAccessToEvents() : asking.requestFullAccessToReminders())
         return await status()
     }
 }
@@ -56,7 +56,6 @@ public struct CalendarPermission: DevicePermission {
 import Contacts
 
 public struct ContactsPermission: DevicePermission {
-    let store: CNContactStore
 
     public var id: String { "contacts" }
     public var name: LocalizedLine { line("通讯录", "Contacts", "連絡先") }
@@ -78,7 +77,7 @@ public struct ContactsPermission: DevicePermission {
 
     public func request() async -> DevicePermissionStatus {
         if await status() != .notDetermined { return await status() }
-        _ = try? await store.requestAccess(for: .contacts)
+        _ = try? await CNContactStore().requestAccess(for: .contacts)
         return await status()
     }
 }
