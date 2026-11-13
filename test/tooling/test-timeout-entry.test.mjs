@@ -136,7 +136,10 @@ describe("test runner timeout environment", () => {
         artifact: path.join(root, "runtime.tar.gz"),
         hosted: false,
       });
-      expect(result.status).toBe("passed");
+      expect(
+        result.status,
+        readFileSync(path.join(root, ".ci-output/coverage/details.json"), "utf8"),
+      ).toBe("passed");
       expect(result.projects.map(({ id }) => id)).toEqual(Object.keys(files));
       for (const id of Object.keys(files)) {
         expect(JSON.parse(readFileSync(path.join(root, `${id}-environment.json`), "utf8"))).toEqual(
