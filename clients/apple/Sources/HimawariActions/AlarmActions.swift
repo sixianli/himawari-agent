@@ -46,7 +46,7 @@ public final class AlarmActions: DeviceActionHandler, @unchecked Sendable {
         return UUID(uuidString: parts.joined(separator: "-"))
     }
 
-    public func snapshot(_ delivery: DeviceActionDelivery) async throws -> JSONObject? { nil }
+    public func snapshot(_ delivery: DeviceActionDelivery) async throws -> JSONObject? { [:] }
 
     public func perform(_ delivery: DeviceActionDelivery) async throws -> JSONObject {
         guard let id = Self.alarmId(delivery.id) else { throw DeviceActionFailure(.badArguments) }

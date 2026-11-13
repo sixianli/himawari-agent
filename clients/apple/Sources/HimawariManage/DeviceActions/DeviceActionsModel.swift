@@ -2,7 +2,7 @@ import Foundation
 import HimawariCore
 import Observation
 
-public struct PermissionState: Identifiable, Equatable {
+public struct PermissionState: Identifiable, Equatable, Sendable {
     public let id: String
     public let name: String
     public let purpose: String
@@ -29,7 +29,6 @@ public final class DeviceActionsModel {
     @ObservationIgnored private var sources: [String: DevicePermission] = [:]
     @ObservationIgnored private var running: Task<Void, Never>?
 
-    static let seenKey = "device-actions-seen"
     static let recentWindow: TimeInterval = 24 * 3600
 
     public init(api: DeviceAPI, executor: DeviceActionExecutor, confirm: DeviceKeySigner, store: LocalStore) {
