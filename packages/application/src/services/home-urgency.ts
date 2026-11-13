@@ -124,6 +124,8 @@ export function homeAffirmLabelMax(
   return typeof limit === "number" && Number.isInteger(limit) && limit > 0 ? limit : undefined;
 }
 
+const UNSAFE_LINE_CHARACTERS = /[\p{Cc}\p{Zl}\p{Zp}\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/u;
+
 export function acceptsHomeAffirmLabel(input: {
   readonly label: string | null;
   readonly locale: string;
@@ -133,7 +135,8 @@ export function acceptsHomeAffirmLabel(input: {
   const limit = homeAffirmLabelMax(input.limits, input.locale);
   if (input.label === null || limit === undefined) return false;
   const label = input.label.trim();
-  if (label.length === 0 || label !== input.label) return false;
+  if (label.length === 0 || label !== input.label || UNSAFE_LINE_CHARACTERS.test(label))
+    return false;
   if (graphemes(label) > limit) return false;
   return (
     label.toLocaleLowerCase(input.locale) !==
@@ -196,7 +199,7 @@ export function homeUrgencyPrompt(input: {
 function line(value: unknown, max: number): string | null {
   if (typeof value !== "string") return null;
   const text = value.trim();
-  if (text.length === 0 || text.length > max || /[\p{Cc}\p{Zl}\p{Zp}]/u.test(text)) return null;
+  if (text.length === 0 || text.length > max || UNSAFE_LINE_CHARACTERS.test(text)) return null;
   return text;
 }
 
@@ -319,6 +322,10 @@ export class HomeUrgencyService {
         ? row.affirmLabel
         : null,
     };
+  }
+
+  async settled(): Promise<void> {
+    await this.#running?.catch(() => undefined);
   }
 
   run(): Promise<HomeUrgencyRunResult> {

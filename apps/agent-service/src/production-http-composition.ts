@@ -1364,7 +1364,7 @@ export async function createProductionHttpComposition(
     },
     close: async () => {
       searchIndexer.stop();
-      home.stopScoring();
+      await home.stopScoring();
       try {
         await app.close();
       } finally {

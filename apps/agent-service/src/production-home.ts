@@ -448,7 +448,7 @@ function memorySources(memory: MemorySources): HomeSource[] {
                 action(locale, "undo", "negative"),
               ],
               ruleHit: false,
-              dataClassification: "private",
+              dataClassification: rule.dataClassification,
             }),
           ),
         };
@@ -772,9 +772,10 @@ export class ProductionHomeControl {
     void this.score();
   }
 
-  stopScoring(): void {
+  async stopScoring(): Promise<void> {
     if (this.#timer) clearInterval(this.#timer);
     this.#timer = undefined;
+    await this.#urgency?.settled();
   }
 
   awaitingCount(): Promise<number | undefined> {

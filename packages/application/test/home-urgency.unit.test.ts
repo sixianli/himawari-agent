@@ -218,4 +218,16 @@ describe("[home-urgency] accepting a model-written button label", () => {
   it("counts an emoji sequence as one character", () => {
     expect(accept("发出去👨‍👩‍👧", "zh-CN")).toBe(true);
   });
+
+  it("[negative] rejects a label carrying a direction override, here or in the model's reply", () => {
+    for (const mark of ["\u202E", "\u2067", "\u200F", "\u061C"]) {
+      expect(accept(`发${mark}出去`, "zh-CN")).toBe(false);
+      expect(
+        parseHomeUrgency(
+          JSON.stringify({ items: [{ n: 1, score: 1, affirm: `发${mark}出去` }] }),
+          1,
+        ).get(1)?.affirm,
+      ).toBeNull();
+    }
+  });
 });

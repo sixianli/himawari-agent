@@ -1267,6 +1267,16 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
     ).toBe(0);
   });
 
+  it("stopping waits for a scoring call already under way", async () => {
+    const state = await fixture();
+    const { home, recordMail } = await state.open();
+    await recordMail([{ id: "a", summary: "甲" }]);
+    void home.score();
+    await home.stopScoring();
+    expect(state.results).toHaveLength(1);
+    expect(state.calls).toHaveLength(1);
+  });
+
   it("[negative] reads the scores of more open items than the store takes in one read", async () => {
     const state = await fixture();
     const { repository, model, seal } = await state.open();
@@ -1289,6 +1299,30 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
       locale: async () => "zh-CN",
     });
     await expect(service.scores(many)).resolves.toEqual(new Map());
+    const edges = [many[0], many[HOME_URGENCY_ITEMS_PER_READ]].map((item, index) => ({
+      id: `edge-${index}`,
+      invocationId: "edge",
+      itemKey: item?.key as string,
+      textDigest: createHash("sha256")
+        .update(item?.digestBasis as string)
+        .digest("hex"),
+      approvalRequestId: null,
+      modelRef: MODEL_REF,
+      promptId: "home.urgency@edge",
+      dataClassification: "private" as const,
+      costMicros: 0,
+      durationMs: 0,
+      createdAt: NOW,
+      score: 100 + index,
+      sentenceRef: null,
+      affirmLabel: null,
+      copyLocale: null,
+    }));
+    await repository.homeUrgency().recordCall({ ...scope, failures: [], records: edges });
+    expect([...(await service.scores(many)).entries()]).toEqual([
+      [many[0]?.key, 100],
+      [many[HOME_URGENCY_ITEMS_PER_READ]?.key, 101],
+    ]);
     await expect(
       repository.homeUrgency().listScores({
         ...scope,
