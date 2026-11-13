@@ -30,6 +30,7 @@ enum MacDemoScene: String, CaseIterable {
 
 @MainActor
 enum MacDemo {
+    static let answerSentence = "配对超时后 transport 先把 request 置空，第二行的强制解包 request! 就在空值上崩了。把 sign 的结果用 guard let 接住，失败时直接把状态改成 .expired 再返回。"
     static let sentence = "田中把周五的会改到 15:00\n出门提醒要跟着改吗"
 
     static func home() -> HomeSnapshot {
@@ -47,7 +48,7 @@ enum MacDemo {
         return MacAccessSettings(
             folders: [
                 FolderGrant(id: "d", path: home.appendingPathComponent("Downloads").path, access: .readWrite),
-                FolderGrant(id: "w", path: home.appendingPathComponent("Documents/工作").path, access: .read),
+                FolderGrant(id: "w", path: home.appendingPathComponent("Documents").path, access: .read),
             ],
             apps: [
                 AppGrant(bundleId: "com.apple.finder", name: "访达"),
@@ -91,6 +92,9 @@ enum MacDemo {
         case .inputBar, .inputBarAnswer:
             input.begin(with: ContextSnapshot(frontApp: FrontApp(name: "Xcode", bundleId: "com.apple.dt.Xcode"), selection: "let request = try? await signer.sign(code)\nlet reply = await transport.send(request!)\nif reply.expired { state = .expired }\ntimer.invalidate()"), seesFrontmost: true)
             input.draft = "这段为什么配对超时后会崩"
+            if scene == .inputBarAnswer {
+                input.preview(threadId: "demo", answer: answerSentence)
+            }
             return AnyView(InputBarView(model: input, shortcutLabel: menu.activeShortcutLabel, submit: {}))
         case .dropFile:
             let file = FileManager.default.temporaryDirectory.appendingPathComponent("报价单 11 月.xlsx")
@@ -104,7 +108,7 @@ enum MacDemo {
         case .panel, .panelQuiet:
             return AnyView(PanelView(model: menu, talk: {}, pair: {}))
         case .settings, .settingsShortcutTaken, .settingsMessagesOn, .settingsMessagesNoAccess:
-            return AnyView(MacSettingsView(store: store, shortcutState: shortcut))
+            return AnyView(MacSettingsView(store: store, shortcutState: shortcut, scrolls: false))
         case .pairing:
             return AnyView(MacPairingView(model: app))
         }
@@ -124,6 +128,7 @@ enum MacDemo {
                 window.appearance = NSAppearance(named: appearance)
                 window.contentView = host
                 host.layoutSubtreeIfNeeded()
+                window.makeFirstResponder(nil)
                 RunLoop.main.run(until: Date().addingTimeInterval(0.4))
                 guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { continue }
                 host.cacheDisplay(in: host.bounds, to: bitmap)

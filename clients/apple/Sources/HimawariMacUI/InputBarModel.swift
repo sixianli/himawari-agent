@@ -120,7 +120,15 @@ final class InputBarModel {
         if threadId != nil { chat()?.unwatch() }
     }
 
+    @ObservationIgnored private var previewAnswer: String?
+
+    func preview(threadId: String, answer: String) {
+        self.threadId = threadId
+        previewAnswer = answer
+    }
+
     var answer: String? {
+        if let previewAnswer { return previewAnswer }
         guard let threadId, let chat = chat() else { return nil }
         if let streaming = chat.streamingText(in: threadId), !streaming.isEmpty { return streaming }
         guard let last = chat.messages(in: threadId).last(where: { $0.role == .agent }) else { return nil }

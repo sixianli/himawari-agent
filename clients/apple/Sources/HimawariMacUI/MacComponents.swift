@@ -9,6 +9,7 @@ enum MacButtonRole {
 }
 
 struct MacButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
     let role: MacButtonRole
     var height: CGFloat = DesignTokens.Mac.buttonHeight
     var small = false
@@ -21,8 +22,8 @@ struct MacButtonStyle: ButtonStyle {
             .foregroundStyle(role == .primary ? Color.hmOnText : Color.hmText)
             .padding(.horizontal, DesignTokens.Mac.buttonPaddingX)
             .frame(height: height)
-            .background(Capsule().fill(role == .primary ? Color.hmSpeak : Color.hmFill))
-            .opacity(configuration.isPressed ? DesignTokens.Opacity.emptyMark : 1)
+            .background(Capsule().fill(role == .primary ? Color.hmText : Color.hmFill))
+            .opacity(configuration.isPressed || !isEnabled ? DesignTokens.Opacity.emptyMark : 1)
             .contentShape(Capsule())
     }
 }

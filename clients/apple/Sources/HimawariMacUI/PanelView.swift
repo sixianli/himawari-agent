@@ -56,7 +56,7 @@ struct PanelView: View {
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.hmFillStrong)
-                    Capsule().fill(Color.hmSpeak).frame(width: proxy.size.width * progress.fraction)
+                    Capsule().fill(Color.hmText).frame(width: proxy.size.width * progress.fraction)
                 }
             }
             .frame(height: DesignTokens.Mac.progressHeight)

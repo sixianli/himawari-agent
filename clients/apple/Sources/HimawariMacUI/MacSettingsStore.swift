@@ -18,6 +18,7 @@ final class MacSettingsStore {
     private(set) var settings: MacAccessSettings
     private(set) var accessibilityAllowed: Bool
     @ObservationIgnored private let file: URL?
+    @ObservationIgnored private var isDemo = false
     @ObservationIgnored var onShortcutChange: ((KeyShortcut) -> Void)?
 
     init(file: URL? = MacSettingsStore.defaultFile) {
@@ -30,6 +31,7 @@ final class MacSettingsStore {
 
     init(demo: MacAccessSettings, messagesReadable: Bool = true, messagesProblem: MessagesProblem? = nil) {
         file = nil
+        isDemo = true
         settings = demo
         accessibilityAllowed = true
         self.messagesReadable = messagesReadable
@@ -122,6 +124,7 @@ final class MacSettingsStore {
     }
 
     func refreshPermissions() {
+        guard !isDemo else { return }
         accessibilityAllowed = AXIsProcessTrusted()
         messagesReadable = MessagesDatabase.readable()
     }

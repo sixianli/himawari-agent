@@ -12,98 +12,108 @@ struct MacSettingsView: View {
     @State private var recordingProblem = false
     @State private var monitor: Any?
 
+    var scrolls = true
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: DesignTokens.Mac.buttonGap) {
-                header("settings.folders")
-                VStack(spacing: 0) {
-                    ForEach(store.settings.folders) { grant in
-                        folderRow(grant)
-                    }
-                    row(icon: .plus) {
-                        Button(L.text("settings.folder.add"), action: addFolders)
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Color.hmSun)
-                    } trailing: { EmptyView() }
-                }
-                header("settings.apps")
-                VStack(spacing: 0) {
-                    ForEach(store.settings.apps) { app in
-                        row(icon: .appWindow) {
-                            Text(app.name).foregroundStyle(Color.hmText)
-                        } trailing: {
-                            Button(L.text("settings.apps.remove")) { store.removeApp(app.bundleId) }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(Color.hmMuted)
-                        }
-                    }
-                    row(icon: .plus) {
-                        Button(L.text("settings.apps.add"), action: addApps)
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Color.hmSun)
-                    } trailing: {
-                        tag(store.settings.apps.isEmpty ? L.text("settings.apps.none") : L.format("settings.apps.count", store.settings.apps.count))
-                    }
-                }
-                header("settings.sees")
-                VStack(spacing: 0) {
-                    row(icon: .eye) {
-                        VStack(alignment: .leading, spacing: DesignTokens.Mac.statusBadgeGap) {
-                            Text(L.text("settings.sees.frontmost")).foregroundStyle(Color.hmText)
-                            if store.settings.seesFrontmost && !store.accessibilityAllowed {
-                                permissionHint("settings.sees.needsAccessibility", button: "settings.sees.openAccessibility", anchor: "Privacy_Accessibility")
-                            }
-                        }
-                    } trailing: {
-                        Toggle("", isOn: Binding(get: { store.settings.seesFrontmost }, set: { store.setSeesFrontmost($0) }))
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                    }
-                    row(icon: .message) {
-                        VStack(alignment: .leading, spacing: DesignTokens.Mac.statusBadgeGap) {
-                            Text(L.text("settings.sees.messages")).foregroundStyle(Color.hmText)
-                            if store.settings.seesMessages {
-                                messagesStatus
-                            }
-                        }
-                    } trailing: {
-                        Toggle("", isOn: Binding(get: { store.settings.seesMessages }, set: { store.setSeesMessages($0) }))
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                    }
-                }
-                header("settings.shortcut")
-                row(icon: .settings) {
-                    VStack(alignment: .leading, spacing: DesignTokens.Mac.statusBadgeGap) {
-                        Text(recording ? L.text("settings.shortcut.record") : GlobalShortcut.label(store.settings.shortcut))
-                            .foregroundStyle(Color.hmText)
-                        if recordingProblem {
-                            Text(L.text("settings.shortcut.needsModifier"))
-                                .hmType(DesignTokens.TypeScale.macSmall)
-                                .foregroundStyle(Color.hmDanger)
-                        } else if case .taken = shortcutState {
-                            Text(L.text("settings.shortcut.taken"))
-                                .hmType(DesignTokens.TypeScale.macSmall)
-                                .foregroundStyle(Color.hmDanger)
-                        }
-                    }
-                } trailing: {
-                    Button(recording ? L.text("pairing.cancel") : L.text("settings.shortcut.record")) { recording ? stopRecording() : startRecording() }
-                        .buttonStyle(MacButtonStyle(role: .secondary, height: DesignTokens.Mac.smallButtonHeight, small: true))
-                }
-                Text(L.text("settings.elsewhere"))
-                    .hmType(DesignTokens.TypeScale.macSmall)
-                    .foregroundStyle(Color.hmMuted)
-                    .padding(.top, DesignTokens.Mac.statusBadgeGap)
+        Group {
+            if scrolls {
+                ScrollView { content }
+                    .frame(width: DesignTokens.Mac.settingsWidth, height: DesignTokens.Mac.settingsHeight)
+            } else {
+                content.frame(width: DesignTokens.Mac.settingsWidth)
             }
-            .padding(.horizontal, DesignTokens.Mac.settingsPaddingX)
-            .padding(.vertical, DesignTokens.Mac.inputChipsTop)
         }
-        .frame(width: DesignTokens.Mac.settingsWidth, height: DesignTokens.Mac.settingsHeight)
         .background(Color.hmBackground)
         .onAppear { store.refreshPermissions() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in store.refreshPermissions() }
         .onDisappear(perform: stopRecording)
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Mac.buttonGap) {
+            header("settings.folders")
+            VStack(spacing: 0) {
+                ForEach(store.settings.folders) { grant in
+                    folderRow(grant)
+                }
+                row(icon: .plus) {
+                    Button(L.text("settings.folder.add"), action: addFolders)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.hmSun)
+                } trailing: { EmptyView() }
+            }
+            header("settings.apps")
+            VStack(spacing: 0) {
+                ForEach(store.settings.apps) { app in
+                    row(icon: .appWindow) {
+                        Text(app.name).foregroundStyle(Color.hmText)
+                    } trailing: {
+                        Button(L.text("settings.apps.remove")) { store.removeApp(app.bundleId) }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Color.hmMuted)
+                    }
+                }
+                row(icon: .plus) {
+                    Button(L.text("settings.apps.add"), action: addApps)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.hmSun)
+                } trailing: {
+                    tag(store.settings.apps.isEmpty ? L.text("settings.apps.none") : L.format("settings.apps.count", store.settings.apps.count))
+                }
+            }
+            header("settings.sees")
+            VStack(spacing: 0) {
+                row(icon: .eye) {
+                    VStack(alignment: .leading, spacing: DesignTokens.Mac.statusBadgeGap) {
+                        Text(L.text("settings.sees.frontmost")).foregroundStyle(Color.hmText)
+                        if store.settings.seesFrontmost && !store.accessibilityAllowed {
+                            permissionHint("settings.sees.needsAccessibility", button: "settings.sees.openAccessibility", anchor: "Privacy_Accessibility")
+                        }
+                    }
+                } trailing: {
+                    Toggle("", isOn: Binding(get: { store.settings.seesFrontmost }, set: { store.setSeesFrontmost($0) }))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+                row(icon: .message) {
+                    VStack(alignment: .leading, spacing: DesignTokens.Mac.statusBadgeGap) {
+                        Text(L.text("settings.sees.messages")).foregroundStyle(Color.hmText)
+                        if store.settings.seesMessages {
+                            messagesStatus
+                        }
+                    }
+                } trailing: {
+                    Toggle("", isOn: Binding(get: { store.settings.seesMessages }, set: { store.setSeesMessages($0) }))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+            }
+            header("settings.shortcut")
+            row(icon: .settings) {
+                VStack(alignment: .leading, spacing: DesignTokens.Mac.statusBadgeGap) {
+                    Text(recording ? L.text("settings.shortcut.record") : GlobalShortcut.label(store.settings.shortcut))
+                        .foregroundStyle(Color.hmText)
+                    if recordingProblem {
+                        Text(L.text("settings.shortcut.needsModifier"))
+                            .hmType(DesignTokens.TypeScale.macSmall)
+                            .foregroundStyle(Color.hmDanger)
+                    } else if case .taken = shortcutState {
+                        Text(L.text("settings.shortcut.taken"))
+                            .hmType(DesignTokens.TypeScale.macSmall)
+                            .foregroundStyle(Color.hmDanger)
+                    }
+                }
+            } trailing: {
+                Button(recording ? L.text("pairing.cancel") : L.text("settings.shortcut.record")) { recording ? stopRecording() : startRecording() }
+                    .buttonStyle(MacButtonStyle(role: .secondary, height: DesignTokens.Mac.smallButtonHeight, small: true))
+            }
+            Text(L.text("settings.elsewhere"))
+                .hmType(DesignTokens.TypeScale.macSmall)
+                .foregroundStyle(Color.hmMuted)
+                .padding(.top, DesignTokens.Mac.statusBadgeGap)
+        }
+        .padding(.horizontal, DesignTokens.Mac.settingsPaddingX)
+        .padding(.vertical, DesignTokens.Mac.inputChipsTop)
     }
 
     private func header(_ key: String) -> some View {
@@ -199,7 +209,7 @@ struct MacSettingsView: View {
     }
 
     private func permissionHint(_ key: String, button: String, anchor: String) -> some View {
-        HStack(spacing: DesignTokens.Mac.statusBadgeGap) {
+        VStack(alignment: .leading, spacing: DesignTokens.Mac.statusBadgeGap) {
             Text(L.text(key))
                 .hmType(DesignTokens.TypeScale.macSmall)
                 .foregroundStyle(Color.hmDanger)
