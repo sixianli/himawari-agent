@@ -1762,7 +1762,7 @@ export const MESSAGE_SAMPLE_VALUES: Readonly<
   "agents.stat.rules": { n: 4, limited: 2 },
   "agents.stat.failed": { n: 1 },
   "agents.stat.limited": { n: 3 },
-  "agents.limit.connections": { value: 20, used: 1 },
+  "agents.limit.connections": { value: 200, used: 1 },
   "agents.limit.name": { value: 64, used: 11 },
   "agents.limit.body": { value: 65536 },
   "agents.limit.reads": { value: 30, used: 2 },

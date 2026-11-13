@@ -6,7 +6,11 @@ import { fixture } from "../../packages/gateway-contracts/test/gateway-v2.fixtur
 describe("[P5-B] connection names", () => {
   it("the gateway and the connection store refuse exactly the same hidden characters", () => {
     const disagreements: string[] = [];
-    for (let code = 0; code <= 0xffff; code += 1) {
+    const codes = [
+      ...Array.from({ length: 0x10000 }, (_, code) => code),
+      ...Array.from({ length: 0x100 }, (_, offset) => 0xe0000 + offset - 0x10),
+    ];
+    for (const code of codes) {
       if (code >= 0xd800 && code <= 0xdfff) continue;
       const name = `a${String.fromCodePoint(code)}b`;
       let accepted = true;

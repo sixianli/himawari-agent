@@ -1,3 +1,4 @@
+import { MCP_CONNECTION_NAME_CHARACTERS } from "@himawari-agent/gateway-contracts";
 import { useEffect, useId, useState } from "react";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../gateway-client.js";
 import { useLocaleFormat } from "../i18n/locale-format.js";
@@ -19,6 +20,10 @@ type Message = (id: MessageId, values?: Record<string, string>) => string;
 
 const CAPABILITIES = ["mcp", "command_hooks", "scheduled_tasks"] as const;
 const CEILINGS = ["public", "private", "sensitive"] as const;
+
+function withinNameLimit(value: string): string {
+  return [...value].slice(0, MCP_CONNECTION_NAME_CHARACTERS).join("");
+}
 
 export function McpUsageLines({
   usage,
@@ -111,9 +116,8 @@ function ConnectionRow({
             <input
               className="setting-input"
               aria-label={message("agents.name")}
-              maxLength={64}
               value={renaming}
-              onChange={(event) => setRenaming(event.target.value)}
+              onChange={(event) => setRenaming(withinNameLimit(event.target.value))}
             />
           )}{" "}
           <span className="mcp-status">{message(`agents.status.${item.status}`)}</span>
@@ -296,9 +300,8 @@ export function McpConnectionsSettings({
           <input
             id={nameId}
             className="setting-input"
-            maxLength={64}
             value={draft.name}
-            onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+            onChange={(event) => setDraft({ ...draft, name: withinNameLimit(event.target.value) })}
           />
         </label>
         <fieldset className="setting-row">

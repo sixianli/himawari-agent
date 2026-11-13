@@ -40,7 +40,8 @@ export function mcpConnectionNameHasHiddenCharacter(name: string): boolean {
       (code >= 0x202a && code <= 0x202e) ||
       (code >= 0x2060 && code <= 0x2064) ||
       (code >= 0x2066 && code <= 0x2069) ||
-      code === 0xfeff
+      code === 0xfeff ||
+      (code >= 0xe0000 && code <= 0xe007f)
     );
   });
 }
