@@ -136,7 +136,7 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
     expect(newMcpConnectionId()).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u);
   });
 
-  it(`stops at ${MCP_CONNECTION_MAXIMUM} connections per agent`, async () => {
+  it(`stops at ${MCP_CONNECTION_MAXIMUM} connections per agent, not counting revoked ones`, async () => {
     const { store, create } = await setup();
     for (let index = 0; index < MCP_CONNECTION_MAXIMUM; index += 1)
       await create({ id: `conn-${index}` });
@@ -145,6 +145,16 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
     });
     expect(await store.list(scope)).toHaveLength(MCP_CONNECTION_MAXIMUM);
     await create({ id: "conn-other-agent", agentId: OTHER_AGENT_ID });
+    await store.change({ ...scope, id: "conn-0", status: "paused", updatedAt: LATER });
+    await expect(create({ id: "conn-paused-still-counts" })).rejects.toMatchObject({
+      code: "PORT_CONFLICT",
+    });
+    await store.change({ ...scope, id: "conn-0", status: "revoked", updatedAt: LATER });
+    await create({ id: "conn-after-revoke" });
+    await expect(create({ id: "conn-full-again" })).rejects.toMatchObject({
+      code: "PORT_CONFLICT",
+    });
+    expect(await store.list(scope)).toHaveLength(MCP_CONNECTION_MAXIMUM + 1);
   });
 
   it("renames, pauses and rotates, and refuses any change once revoked", async () => {

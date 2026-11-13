@@ -175,7 +175,16 @@ export class ProductionMcpConnectionsControl {
             value: MCP_CONNECTION_MAXIMUM,
             used: connections.filter(({ status }) => status !== "revoked").length,
           },
-          { key: "mcp.connection.name_characters", value: MCP_CONNECTION_NAME_MAXIMUM, used: null },
+          {
+            key: "mcp.connection.name_characters",
+            value: MCP_CONNECTION_NAME_MAXIMUM,
+            used: Math.max(
+              0,
+              ...connections
+                .filter(({ status }) => status !== "revoked")
+                .map(({ name }) => [...name].length),
+            ),
+          },
           { key: "mcp.request.body_bytes", value: MCP_READ_BODY_LIMIT, used: null },
           {
             key: "mcp.reads_per_minute",
@@ -202,6 +211,7 @@ export class ProductionMcpConnectionsControl {
     const now = this.#options.clock.now();
     if (command.type === "mcp.connection.create") {
       const scope = this.#scope(authentication, command.scope);
+      askFirstOnly(command.payload.pushPolicy);
       const secret = newMcpConnectionSecret();
       const record = await this.#options.store.create({
         ...scope,
@@ -219,6 +229,7 @@ export class ProductionMcpConnectionsControl {
     if (command.type === "mcp.connection.change") {
       const scope = this.#scope(authentication, command.scope);
       const { connectionId, name, capabilities, readCeiling, pushPolicy, status } = command.payload;
+      if (pushPolicy !== null) askFirstOnly(pushPolicy);
       if (
         name === null &&
         capabilities === null &&
@@ -262,6 +273,14 @@ export class ProductionMcpConnectionsControl {
     }
     throw new Error("MCP_CONNECTIONS_OPERATION_NOT_INSTALLED");
   }
+}
+
+function askFirstOnly(pushPolicy: string): void {
+  if (pushPolicy !== "ask")
+    throw new ApplicationPortError(
+      PORT_ERROR_CODES.INVALID_OPERATION,
+      "MCP_CONNECTION_PUSH_POLICY_NOT_AVAILABLE",
+    );
 }
 
 export interface McpConnectionAddressRouteOptions {

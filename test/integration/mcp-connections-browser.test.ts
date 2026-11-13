@@ -177,6 +177,8 @@ describe("[P5-B] the owner manages connected agents on the real page", () => {
       const limits = agents(page).locator(".mcp-limits");
       await uiExpect(limits).toContainText("最多 30 次，这一分钟最多的接入用了 2 次");
       await uiExpect(limits).toContainText("最多 60 次，这一分钟最多的接入用了 5 次");
+      await uiExpect(limits).toContainText("名称：最多 64 个字，现有最长的 9 个字");
+      await uiExpect(limits).toContainText("请求大小不单独记录");
       await uiExpect(agents(page)).toContainText("最近 7 天（2026-08-24 至 2026-08-30");
       await agents(page).getByText("每个数字怎么算").click();
       await uiExpect(agents(page)).toContainText("空手而归的自动搜只计数，不写决策记录");

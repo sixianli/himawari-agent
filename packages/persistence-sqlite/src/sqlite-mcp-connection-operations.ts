@@ -149,7 +149,9 @@ export class SqliteMcpConnectionOperations {
       return this.invalid();
     return this.database.transaction(() => {
       const count = this.database
-        .prepare("SELECT COUNT(*) FROM mcp_connections WHERE owner_id = ? AND agent_id = ?")
+        .prepare(
+          "SELECT COUNT(*) FROM mcp_connections WHERE owner_id = ? AND agent_id = ? AND status <> 'revoked'",
+        )
         .pluck()
         .get(input.ownerId, input.agentId) as number;
       if (count >= MCP_CONNECTION_MAXIMUM)

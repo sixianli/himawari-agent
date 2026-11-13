@@ -1616,7 +1616,7 @@ export const messages = {
     "The numbers below cover the last {days} days ({from} to {to}, in your time zone).",
   "agents.definitions": "How each number is counted",
   "agents.definitionsText":
-    "Reads: calls to read tools, split by tool in brackets. Delivered: reads that returned at least one item. Empty: reads that found nothing. Automatic searches: searches the agent's program makes on every message (with the auto argument); the number after the slash is how many delivered something. Empty automatic searches are only counted, with no decision record. Model reads: reads without the auto argument. Memory pushes: calls to the memory push tools, including failed ones. Rule proposals: calls to the rule proposal tool, with refusals for exceeding the rate in brackets. Failed: calls from a recognised connection that errored or had invalid arguments. Rate-limited: reads refused for exceeding the per-minute limit. Requests with a wrong key or no recognised connection count towards no connection.",
+    "Reads: calls to read tools, split by tool in brackets. Delivered: reads that returned at least one item. Empty: reads that found nothing. Automatic searches: searches the agent's program makes on every message (with the auto argument); the number after the slash is how many delivered something. Empty automatic searches are only counted, with no decision record. Model reads: reads without the auto argument. Memory pushes: calls to the memory push tools, including failed ones. Rule proposals: calls to the rule proposal tool, with refusals for exceeding the per-minute limit in brackets. Failed: calls from a recognised connection that errored or had invalid arguments. Rate-limited: reads and pushes (not rule proposals) refused for exceeding the per-minute limit. Requests with a wrong key or no recognised connection count towards no connection.",
   "agents.stat.reads": "Reads: {n}",
   "agents.stat.byTool": "{tool} {n}",
   "agents.stat.delivered": "Delivered: {n}",
@@ -1642,10 +1642,11 @@ export const messages = {
   "agents.limits": "Limits and current use",
   "agents.limit.connections":
     "Connections: up to {value}, {used} in use (revoked ones not counted)",
-  "agents.limit.name": "Name: up to {value} characters",
-  "agents.limit.body": "One request: up to {value} bytes",
+  "agents.limit.name": "Name: up to {value} characters; the longest current name has {used}",
+  "agents.limit.body":
+    "One request: up to {value} bytes (request sizes are not recorded, so only the limit is shown)",
   "agents.limit.reads":
-    "Reads per connection per minute: up to {value}; the busiest connection used {used} this minute",
+    "Reads and pushes per connection per minute: up to {value}; the busiest connection used {used} this minute",
   "agents.limit.hook":
     "Automatic searches per connection per minute: up to {value}; the busiest connection used {used} this minute",
   "agents.empty": "No connections yet. Enter a name above to create one.",

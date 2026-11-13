@@ -829,8 +829,9 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       started.delete(request);
       inFlight -= 1;
       const totalMs = Math.round(performance.now() - start.at);
-      const path = requestPath(request);
-      if (totalMs < SLOW_REQUEST_MILLISECONDS || STREAM_PATH.test(path)) return;
+      const raw = requestPath(request);
+      if (totalMs < SLOW_REQUEST_MILLISECONDS || STREAM_PATH.test(raw)) return;
+      const path = request.routeOptions.url ?? raw;
       const body = request.body as { readonly type?: unknown } | undefined;
       onSlowRequest({
         method: request.method,

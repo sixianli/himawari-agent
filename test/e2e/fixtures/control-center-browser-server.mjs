@@ -614,7 +614,11 @@ function mcpSnapshot() {
     window: { fromDay: "2026-08-24", toDay: "2026-08-30", days: 7 },
     limits: [
       { key: "mcp.connections", value: 20, used: live.length },
-      { key: "mcp.connection.name_characters", value: 64, used: null },
+      {
+        key: "mcp.connection.name_characters",
+        value: 64,
+        used: Math.max(0, ...live.map(({ name }) => [...name].length)),
+      },
       { key: "mcp.request.body_bytes", value: 1048576, used: null },
       {
         key: "mcp.reads_per_minute",

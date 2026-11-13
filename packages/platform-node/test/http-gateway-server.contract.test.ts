@@ -371,6 +371,39 @@ describe("HTTP Gateway contract and security boundary", () => {
       await app.close();
     }
   });
+  it("[P5-B] reports a slow request by its route, so a key in the path never reaches the log", async () => {
+    let clock = 1_000;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const slow: HttpGatewaySlowRequest[] = [];
+    const { app } = createFixture(undefined, undefined, {
+      onSlowRequest: (request) => slow.push(request),
+    });
+    const key = "k".repeat(43);
+    app.get("/api/mcp/v1/:secret", async () => {
+      clock += 2_500;
+      return { ok: true };
+    });
+    try {
+      expect(
+        (await app.inject({ url: `/api/mcp/v1/${key}?probe=1`, headers: requestHeaders() }))
+          .statusCode,
+      ).toBe(200);
+      expect(slow).toEqual([
+        {
+          method: "GET",
+          path: "/api/mcp/v1/:secret",
+          outcome: "answered",
+          statusCode: 200,
+          totalMs: 2_500,
+          concurrentRequests: 1,
+        },
+      ]);
+      expect(JSON.stringify(slow)).not.toContain(key);
+    } finally {
+      now.mockRestore();
+      await app.close();
+    }
+  });
   it("stops an already open stream before emitting another event after session revocation", async () => {
     const fixture = createFixture({
       request: async () => {

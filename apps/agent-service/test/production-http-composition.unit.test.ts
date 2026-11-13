@@ -1149,6 +1149,15 @@ describe("production HTTP composition", () => {
           },
         });
       expect((await read()).connections).toEqual([]);
+      const direct = await command("mcp.connection.create", "mcp-create-direct", {
+        name: "Direct",
+        capabilities: ["mcp"],
+        readCeiling: "private",
+        pushPolicy: "direct",
+      });
+      expect(direct.statusCode).not.toBe(200);
+      expect(direct.body).toContain("PORT_INVALID_OPERATION");
+      expect((await read()).connections).toEqual([]);
       const created = await command("mcp.connection.create", "mcp-create-01", {
         name: "  Claude Code  ",
         capabilities: ["mcp", "command_hooks"],
@@ -1180,6 +1189,11 @@ describe("production HTTP composition", () => {
         minute: { reads: 1, hookReads: 0 },
       });
       expect(snapshot.limits).toContainEqual({ key: "mcp.connections", value: 200, used: 1 });
+      expect(snapshot.limits).toContainEqual({
+        key: "mcp.connection.name_characters",
+        value: 64,
+        used: 11,
+      });
       expect(JSON.stringify(snapshot)).not.toContain(keyedPath.split("/").at(-1));
       const paused = await command("mcp.connection.change", "mcp-pause-01", {
         connectionId,
@@ -1190,6 +1204,16 @@ describe("production HTTP composition", () => {
         status: "paused",
       });
       expect(paused.statusCode, paused.body).toBe(200);
+      const toDirect = await command("mcp.connection.change", "mcp-direct-01", {
+        connectionId,
+        name: null,
+        capabilities: null,
+        readCeiling: null,
+        pushPolicy: "direct",
+        status: null,
+      });
+      expect(toDirect.statusCode).not.toBe(200);
+      expect((await read()).connections[0]).toMatchObject({ pushPolicy: "ask" });
       expect((await mcp(keyedPath)).statusCode).toBe(403);
       expect((await read()).connections[0]).toMatchObject({
         status: "paused",
