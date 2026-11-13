@@ -123,6 +123,10 @@ import {
   ProductionSensitiveInterceptionsControl,
 } from "./production-sensitive-interceptions-control.js";
 import {
+  PRODUCTION_LOGIN_DEVICE_OPERATIONS,
+  ProductionLoginDevicesControl,
+} from "./production-login-devices-control.js";
+import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
@@ -696,6 +700,7 @@ function routeOptions(
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
+        ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1192,6 +1197,12 @@ export async function createProductionHttpComposition(
     filesControl: new ProductionFilesControl({
       configuration,
       store: repository.threadArtifacts(),
+      clock: { now: clock },
+    }),
+    loginDevicesControl: new ProductionLoginDevicesControl({
+      configuration,
+      state: repository.sessionDeviceState(),
+      recentAuthentication,
       clock: { now: clock },
     }),
   });

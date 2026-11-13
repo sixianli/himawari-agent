@@ -487,6 +487,23 @@ export const governanceMessages = [
     nextCursor: "WyIyMDI2LTExLTEyVDAzOjAwOjAwLjAwMFoiLCJ0aHJlYWQtYXJ0aWZhY3Q6MDEiXQ",
     generatedAt: "2026-11-12T03:06:30.000Z",
   }),
+  fixture("query", "login.devices.read", {}),
+  fixture("snapshot", "login.devices.snapshot", {
+    devices: [
+      {
+        deviceId: "device-01",
+        label: "Andy 的 iPhone",
+        firstSeenAt: "2026-11-01T00:00:00.000Z",
+        lastSeenAt: "2026-11-12T03:00:00.000Z",
+        current: true,
+      },
+    ],
+    generatedAt: "2026-11-12T03:06:30.000Z",
+  }),
+  fixture("command", "login.device.revoke", {
+    deviceId: "device-02",
+    recentAuthenticationRef: "auth-ref-01",
+  }),
   fixture("query", "sensitive.interceptions.read", { before: null }),
   fixture("snapshot", "sensitive.interceptions.snapshot", {
     counts: { masked: 1, withheld: 0, notSaved: 0 },

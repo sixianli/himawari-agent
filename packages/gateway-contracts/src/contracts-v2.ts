@@ -142,6 +142,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "data.export.status.snapshot",
   "files.list.read",
   "files.list.snapshot",
+  "login.devices.read",
+  "login.devices.snapshot",
+  "login.device.revoke",
   "stream.event",
 ] as const;
 
@@ -774,6 +777,32 @@ const filesListSnapshotSchema = object({
     ),
     nextCursor: nullable(fileListCursorSchema),
     generatedAt: timestamp,
+  }),
+});
+const loginDevicesQuerySchema = object({
+  ...envelope("query", "login.devices.read"),
+  payload: object({}),
+});
+const loginDevicesSnapshotSchema = object({
+  ...envelope("snapshot", "login.devices.snapshot"),
+  payload: object({
+    devices: array(
+      object({
+        deviceId: machineString,
+        label: boundedString(80),
+        firstSeenAt: timestamp,
+        lastSeenAt: timestamp,
+        current: booleanValue,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const loginDeviceRevokeCommandSchema = object({
+  ...commandEnvelope("login.device.revoke"),
+  payload: object({
+    deviceId: machineString,
+    recentAuthenticationRef: nullable(machineString),
   }),
 });
 const proactiveSettingsSetCommandSchema = object({
@@ -2780,6 +2809,9 @@ const schemasByType = {
   "data.export.status.snapshot": dataExportStatusSnapshotSchema,
   "files.list.read": filesListQuerySchema,
   "files.list.snapshot": filesListSnapshotSchema,
+  "login.devices.read": loginDevicesQuerySchema,
+  "login.devices.snapshot": loginDevicesSnapshotSchema,
+  "login.device.revoke": loginDeviceRevokeCommandSchema,
   "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
   "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,
   "sensitive.interceptions.clear": sensitiveInterceptionsClearCommandSchema,
