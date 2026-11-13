@@ -2,6 +2,7 @@ import {
   ApplicationPortError,
   type ClockPort,
   classificationRank,
+  type DataClassification,
   type DecisionLedgerPort,
   type DurableMemoryService,
   isModelVisible,
@@ -38,6 +39,11 @@ import {
 import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
 import { type DecisionChainMemoryView, readDecisionChain } from "./production-decision-chain.js";
 import {
+  deterministicallySensitive,
+  type ProductionMemoryClassifier,
+  UNCLASSIFIED,
+} from "./production-memory-classification.js";
+import {
   externalProposalBatchId,
   type ProductionMcpMemoryWriter,
 } from "./production-mcp-memory-writer.js";
@@ -52,12 +58,14 @@ type MemoryId = Parameters<ProductMemoryStatePort["read"]>[0];
 type GenerationId = Parameters<DurableMemoryService["delete"]>[1];
 type OverviewSnapshot = Extract<GatewayV2Snapshot, { type: "memory.overview.snapshot" }>;
 type BasisSnapshot = Extract<GatewayV2Snapshot, { type: "memory.basis.snapshot" }>;
+type ClassifySnapshot = Extract<GatewayV2Snapshot, { type: "memory.classify.snapshot" }>;
 const BASIS_NODES_SHOWN = 200;
 type Command<T extends GatewayV2Command["type"]> = Extract<GatewayV2Command, { type: T }>;
 
 export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.overview.read",
   "memory.basis.read",
+  "memory.classify.read",
   "decision.chain.read",
   "memory.approval.respond",
   "memory.mutate",
@@ -211,6 +219,7 @@ export class ProductionMemoryControl {
       ProductionMcpMemoryWriter,
       "listPending" | "pendingSummary" | "listBatches" | "undoBatch" | "respond"
     >;
+    readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
 
@@ -740,6 +749,7 @@ export class ProductionMemoryControl {
 
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
     if (query.type === "memory.basis.read") return this.#basisChain(query);
+    if (query.type === "memory.classify.read") return this.#classify(query);
     if (query.type === "decision.chain.read") return this.#decisionChain(query);
     if (query.type === "memory.rules.read") return this.#rules(query);
     if (query.type !== "memory.overview.read") throw new Error("MEMORY_OPERATION_NOT_INSTALLED");
@@ -991,20 +1001,82 @@ export class ProductionMemoryControl {
     } as GatewayV2Snapshot;
   }
 
+  async #classify(
+    query: Extract<GatewayV2Query, { type: "memory.classify.read" }>,
+  ): Promise<ClassifySnapshot> {
+    const texts: string[] = [];
+    for (const ref of query.payload.contentRefs) texts.push(await this.readText(ref));
+    const results = this.options.classifier
+      ? await this.options.classifier.classify(texts)
+      : texts.map(() => UNCLASSIFIED);
+    return {
+      ...query,
+      kind: "snapshot",
+      type: "memory.classify.snapshot",
+      payload: {
+        items: query.payload.contentRefs.map((contentRef, index) => {
+          const result = results[index] ?? UNCLASSIFIED;
+          return {
+            contentRef,
+            category: result.category,
+            classification: result.classification,
+            topic: result.topic,
+            failed: result.failed,
+          };
+        }),
+      },
+    } as ClassifySnapshot;
+  }
+
+  async #storedAtLeast(
+    contentRef: string,
+    text: string,
+    dataClassification: DataClassification,
+  ): Promise<string> {
+    const { ownerId, agentId } = this.options.configuration;
+    const copy = await this.options.protector.protect({
+      ownerId,
+      agentId,
+      ref: `memory-raised:${dataClassification}:${contentRef}`,
+      dataClassification,
+      contentType: "text/plain",
+      plaintext: new TextEncoder().encode(text),
+      createdAt: this.options.clock.now(),
+    });
+    try {
+      await this.options.payloads.put(copy);
+    } catch (error) {
+      if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.DUPLICATE)
+        throw error;
+    }
+    return copy.ref;
+  }
+
   async #createMemory(input: {
     readonly id: MemoryId;
     readonly contentRef: string;
     readonly category: MemoryCategory;
     readonly subCategory: string | null;
+    readonly topic: SensitiveMemoryTopic | null;
     readonly policyVersion: string;
     readonly importBatchId: string | null;
   }): Promise<ProductMemoryRecord> {
     const payload = await this.options.payloads.get(input.contentRef);
     if (!payload)
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_PAYLOAD_MISSING");
-    this.assertStorable(await this.readText(input.contentRef));
+    const text = await this.readText(input.contentRef);
+    this.assertStorable(text);
     if (payload.dataClassification === "restricted")
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
+    const raised =
+      classificationRank(payload.dataClassification) < classificationRank("sensitive") &&
+      (sensitiveCategory(input.category) || deterministicallySensitive(text));
+    const dataClassification: DataClassification = raised
+      ? "sensitive"
+      : payload.dataClassification;
+    const contentRef = raised
+      ? await this.#storedAtLeast(input.contentRef, text, "sensitive")
+      : input.contentRef;
     const { ownerId, agentId } = this.options.configuration;
     const subCategory = input.subCategory?.trim() || null;
     return this.options.memory.applyProposal(
@@ -1014,10 +1086,10 @@ export class ProductionMemoryControl {
           id: input.id,
           ownerId,
           agentId,
-          contentRef: input.contentRef,
-          dataClassification: payload.dataClassification,
+          contentRef,
+          dataClassification,
           sourceThreadId: null,
-          sourceRefs: [input.contentRef],
+          sourceRefs: [contentRef],
           inference: false,
           confidencePermille: 1000,
           policyVersion: input.policyVersion,
@@ -1030,8 +1102,8 @@ export class ProductionMemoryControl {
             validTo: null,
             supersededBy: null,
             evidenceVerified: false,
-            ...(payload.dataClassification === "sensitive"
-              ? { sensitiveTopic: sensitiveTopicFor(input.category) }
+            ...(dataClassification === "sensitive"
+              ? { sensitiveTopic: input.topic ?? sensitiveTopicFor(input.category) }
               : {}),
             ...(subCategory ? { subCategory } : {}),
             ...(input.importBatchId ? { importBatchId: input.importBatchId } : {}),
@@ -1043,12 +1115,13 @@ export class ProductionMemoryControl {
   }
 
   async #create(command: Command<"memory.create">) {
-    const { contentRef, category, subCategory, pinned } = command.payload;
+    const { contentRef, category, subCategory, topic, pinned } = command.payload;
     const saved = await this.#createMemory({
       id: `memory:owner:${command.idempotencyKey}` as MemoryId,
       contentRef,
       category,
       subCategory,
+      topic,
       policyVersion: OWNER_POLICY_VERSION,
       importBatchId: null,
     });
@@ -1112,6 +1185,7 @@ export class ProductionMemoryControl {
         contentRef: item.contentRef,
         category: item.category,
         subCategory: item.subCategory,
+        topic: item.topic,
         policyVersion: IMPORT_POLICY_VERSION,
         importBatchId: batchId,
       });

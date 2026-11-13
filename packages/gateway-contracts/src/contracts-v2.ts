@@ -63,6 +63,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.overview.snapshot",
   "memory.basis.read",
   "memory.basis.snapshot",
+  "memory.classify.read",
+  "memory.classify.snapshot",
   "decision.chain.read",
   "decision.chain.snapshot",
   "decision.email.read",
@@ -1311,6 +1313,35 @@ const memoryBasisSnapshotSchema = object({
     complete: booleanValue,
   }),
 });
+export const MEMORY_CLASSIFY_MAXIMUM = 500;
+const memoryClassifyRefsSchema = array(machineString);
+const memoryClassifyQuerySchema = object({
+  ...envelope("query", "memory.classify.read"),
+  payload: object({
+    contentRefs: {
+      parse(input, path = "$.payload.contentRefs") {
+        const refs = memoryClassifyRefsSchema.parse(input, path);
+        if (refs.length < 1 || refs.length > MEMORY_CLASSIFY_MAXIMUM)
+          throw new ContractValidationError(path, "must hold 1 to 500 refs");
+        return refs;
+      },
+    },
+  }),
+});
+const memoryClassifySnapshotSchema = object({
+  ...envelope("snapshot", "memory.classify.snapshot"),
+  payload: object({
+    items: array(
+      object({
+        contentRef: machineString,
+        category: enumeration(MEMORY_CATEGORY_NAMES),
+        classification: enumeration(["private", "sensitive"]),
+        topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
+        failed: booleanValue,
+      }),
+    ),
+  }),
+});
 const decisionChainQuerySchema = object({
   ...envelope("query", "decision.chain.read"),
   payload: object({ decisionId: machineString }),
@@ -1731,6 +1762,7 @@ const memoryCreateCommandSchema = object({
     contentRef: machineString,
     category: enumeration(MEMORY_CATEGORY_NAMES),
     subCategory: nullable(memoryLabelSchema),
+    topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
     pinned: booleanValue,
   }),
 });
@@ -1759,6 +1791,7 @@ const memoryImportItemsSchema = array(
     contentRef: machineString,
     category: enumeration(MEMORY_CATEGORY_NAMES),
     subCategory: nullable(memoryLabelSchema),
+    topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
   }),
 );
 const memoryImportCommitCommandSchema = object({
@@ -2732,6 +2765,8 @@ const schemasByType = {
   "memory.overview.snapshot": memoryOverviewSnapshotSchema,
   "memory.basis.read": memoryBasisQuerySchema,
   "memory.basis.snapshot": memoryBasisSnapshotSchema,
+  "memory.classify.read": memoryClassifyQuerySchema,
+  "memory.classify.snapshot": memoryClassifySnapshotSchema,
   "decision.chain.read": decisionChainQuerySchema,
   "decision.chain.snapshot": decisionChainSnapshotSchema,
   "decision.email.read": decisionEmailQuerySchema,

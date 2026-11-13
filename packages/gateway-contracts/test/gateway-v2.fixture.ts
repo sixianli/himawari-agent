@@ -601,6 +601,25 @@ export const governanceMessages = [
       ],
     },
   }),
+  fixture("query", "memory.classify.read", { contentRefs: ["payload-05", "payload-06"] }),
+  fixture("snapshot", "memory.classify.snapshot", {
+    items: [
+      {
+        contentRef: "payload-05",
+        category: "preference",
+        classification: "private",
+        topic: null,
+        failed: false,
+      },
+      {
+        contentRef: "payload-06",
+        category: "other",
+        classification: "sensitive",
+        topic: "other",
+        failed: true,
+      },
+    ],
+  }),
   fixture("query", "memory.basis.read", { memoryId: "memory-insight" }),
   fixture("snapshot", "memory.basis.snapshot", {
     memoryId: "memory-insight",
@@ -841,6 +860,7 @@ export const governanceMessages = [
     contentRef: "payload-03",
     category: "preference",
     subCategory: "饮食",
+    topic: null,
     pinned: false,
   }),
   fixture("command", "memory.category.set", {
@@ -857,7 +877,7 @@ export const governanceMessages = [
   fixture("command", "memory.import.commit", {
     batchId: "memory-import-01",
     source: "codex",
-    items: [{ contentRef: "payload-04", category: "rule", subCategory: null }],
+    items: [{ contentRef: "payload-04", category: "rule", subCategory: null, topic: null }],
   }),
   fixture("command", "memory.import.undo", { batchId: "memory-import-01" }),
   fixture("command", "memory.external.respond", {

@@ -698,6 +698,7 @@ export const messages = {
     'Adding and importing by hand become available once Himawari learns its first memory from a conversation. Turn learning on and tell Himawari one thing about yourself (for example, "my favorite color is blue").',
   "memory.page.add": "Add",
   "memory.page.addTitle": "Tell Himawari something to remember",
+  "memory.page.autoCategory": "Let Himawari decide",
   "memory.page.addPlaceholder": "For example: no reminders before 9 am on weekends",
   "memory.page.added":
     "Saved under “{cat}”{pinned, select, true {, and brought into every conversation} other {}}. Open it to change anything that is wrong.",
@@ -783,7 +784,7 @@ export const messages = {
   "memory.page.importAgain": "Choose another source",
   "memory.page.importSummary": "{all} found, {on} selected",
   "memory.page.importFlag":
-    "{f, select, duplicate {Already remembered} sensitive {Sensitive, off by default} other {Coding notes, off by default}}",
+    "{f, select, duplicate {Already remembered} classifying {Sorting…} unclassified {Could not sort, kept private and off} sensitive {Sensitive, off by default} other {Coding notes, off by default}}",
   "memory.page.importCommit": "Import {count} selected",
   "memory.page.importDone": "Imported {count}. Undo the whole import from the timeline.",
   "memory.page.importEmpty":
