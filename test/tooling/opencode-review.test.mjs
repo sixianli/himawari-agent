@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
+import { readGatewayConfig } from "../../scripts/model-review/gateway.mjs";
 import {
   API_ERROR_MESSAGE_MAX,
   apiErrorText,
@@ -23,6 +24,7 @@ import {
   COST_LIMIT_PER_MODEL_USD,
   checkGitArgs,
   checkProbeRequests,
+  DEFAULT_REVIEW_MODELS,
   envFilesInHistory,
   expectedTools,
   FOCUS_SENTENCE,
@@ -57,19 +59,18 @@ import {
   REVIEWS_DIR,
   RULE_16_SENTENCE,
   rawDir,
+  readReviewModels,
   recordText,
   resolveCommits,
   retryAfterApiError,
   reviewConfig,
   reviewDir,
   reviewModel,
+  reviewModelsProblems,
   reviewQuestions,
   runOutcome,
   SHELL_LOG_NAME,
   SUBSTITUTES,
-  DEFAULT_REVIEW_MODELS,
-  readReviewModels,
-  reviewModelsProblems,
   spentOf,
   substituteFor,
   summarizeEvents,
@@ -77,7 +78,6 @@ import {
   WRAP_UP_RESERVE_USD,
   wrapUpReason,
 } from "../../scripts/model-review/opencode-review.mjs";
-import { readGatewayConfig } from "../../scripts/model-review/gateway.mjs";
 import { GUARD_ENV } from "../../scripts/model-review/spend-guard.mjs";
 import {
   expectAppendedTo,
@@ -513,6 +513,7 @@ describe("opencode review model list", () => {
     allowed: ["a/one", "a/two"],
     default: ["a/one"],
     substitutes: { "a/one": "a/two" },
+    lowDeferFromRound: 3,
   };
   const changed = (change) => Object.assign({}, valid, change);
 
@@ -544,6 +545,9 @@ describe("opencode review model list", () => {
       [changed({ substitutes: { "a/one": "a/three" } }), "substitutes"],
       [changed({ substitutes: { "a/one": "a/one" } }), "substitutes"],
       [changed({ substitutes: undefined }), "substitutes"],
+      [changed({ lowDeferFromRound: undefined }), "lowDeferFromRound"],
+      [changed({ lowDeferFromRound: 1 }), "lowDeferFromRound"],
+      [changed({ lowDeferFromRound: "3" }), "lowDeferFromRound"],
       [null, "allowed"],
     ];
     for (const [config, problem] of bad) expect(reviewModelsProblems(config)).toContain(problem);
