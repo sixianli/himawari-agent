@@ -85,6 +85,7 @@ export class ProductionImportDuplicateChecker {
       Math.min(requests, this.#settings.dailyMaximumRequests - this.#requestsToday),
     );
     this.#requestsToday += granted;
+    if (granted < requests) this.#onFailure(new Error("IMPORT_DUPLICATE_DAILY_LIMIT"));
     return granted;
   }
 

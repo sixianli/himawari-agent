@@ -1363,7 +1363,11 @@ export class ProductionMemoryControl {
     const sendable: number[] = [];
     for (const [index, ref] of refs.entries()) {
       const payload = await this.options.payloads.get(ref);
-      if (payload && classificationRank(payload.dataClassification) > classificationRank("private"))
+      if (
+        (payload &&
+          classificationRank(payload.dataClassification) > classificationRank("private")) ||
+        this.#sensitiveJudgments.has(ref)
+      )
         candidates.push("");
       else {
         candidates.push(await this.readText(ref));
@@ -1384,6 +1388,7 @@ export class ProductionMemoryControl {
       if (text) existing.push({ memoryId: record.id, text });
       else complete = false;
     }
+    if (existing.length === 0 && active.length > 0) complete = false;
     const checked = await checker.check(
       sendable.map((index) => candidates[index] ?? ""),
       existing,

@@ -110,4 +110,36 @@ describe("[A4] memory import duplicate decision", () => {
       "IMPORT_DUPLICATE_MODEL_MISMATCH",
     );
   });
+
+  it("REVERSE: refuses a response whose declared or streamed size is over 1 MiB", async () => {
+    const decideAgainst = async (
+      respond: (response: import("node:http").ServerResponse) => void,
+    ) => {
+      server = createServer((_request, response) => respond(response));
+      await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", resolve));
+      const decision = new MemoryImportDuplicateDecision({
+        model: "typesafe-ai/jev",
+        apiKey: async () => "k",
+        baseUrl: `http://127.0.0.1:${(server?.address() as AddressInfo).port}/v1`,
+      });
+      return decision.decide({
+        existing,
+        candidates: [{ text: "x" }],
+        signal: AbortSignal.timeout(5000),
+      });
+    };
+    await expect(
+      decideAgainst((response) => {
+        response.writeHead(200, { "content-length": String(2 * 1024 * 1024) });
+        response.end("{}");
+      }),
+    ).rejects.toThrow(/IMPORT_DUPLICATE_RESPONSE_TOO_LARGE|fetch failed|terminated/);
+    await new Promise<void>((resolve) => server?.close(() => resolve()));
+    await expect(
+      decideAgainst((response) => {
+        response.writeHead(200, { "transfer-encoding": "chunked" });
+        response.end("a".repeat(2 * 1024 * 1024));
+      }),
+    ).rejects.toThrow("IMPORT_DUPLICATE_RESPONSE_TOO_LARGE");
+  });
 });

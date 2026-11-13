@@ -3788,6 +3788,21 @@ describe("production memory capture", () => {
       "对乳制品不耐受，每次喝都难受",
     ]);
     expect(JSON.stringify(context.duplicateRequests)).not.toContain("抑郁症");
+    await context.protect("payload-d5", "我最近总睡不好");
+    context.classifyOutputs.push(
+      JSON.stringify({
+        items: [{ id: "0", category: "health", classification: "sensitive", topic: "health" }],
+      }),
+    );
+    await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.classify.read",
+      payload: { contentRefs: ["payload-d5"] },
+    } as never);
+    const before = context.duplicateRequests.length;
+    expect(await duplicates(["payload-d5"])).toEqual([["payload-d5", "skipped", null]]);
+    expect(context.duplicateRequests).toHaveLength(before);
   });
 
   it("[T5] sorts hand-added memories with the model, keeps identifiers away from it and treats a broken answer as sensitive", async () => {

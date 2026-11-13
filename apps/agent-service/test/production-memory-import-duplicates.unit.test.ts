@@ -131,6 +131,18 @@ describe("[A4] production import duplicate checker", () => {
     ]);
   });
 
+  it("reports the daily limit through onFailure once it is hit", async () => {
+    const { checker: run, failures } = checker(
+      async (input: Input) => input.candidates.map(() => answer(null, 0)),
+      { dailyMaximumRequests: 1 },
+    );
+    await run.check(["甲乙"], existing);
+    await run.check(["丙丁"], existing);
+    expect(failures.map((error) => (error as Error).message)).toEqual([
+      "IMPORT_DUPLICATE_DAILY_LIMIT",
+    ]);
+  });
+
   it("stops asking once the daily request limit is used up", async () => {
     let calls = 0;
     const { checker: run } = checker(

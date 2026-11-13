@@ -52,6 +52,7 @@ let classifyAnswers: Classified[] = [];
 let classifyFails = false;
 let duplicateAnswers: ("same" | "unsure" | "different" | "skipped")[] = [];
 let duplicatesFail = false;
+let duplicateAsked: string[][] = [];
 const classified = (
   category: ImportClassification["category"],
   classification: "private" | "sensitive" = "private",
@@ -268,8 +269,10 @@ beforeEach(() => {
   classifyFails = false;
   duplicateAnswers = [];
   duplicatesFail = false;
+  duplicateAsked = [];
   query.mockImplementation(async (request) => {
     if (request.type === "memory.import.duplicates.read") {
+      duplicateAsked.push([...request.payload.contentRefs]);
       if (duplicatesFail) throw new Error("offline");
       return {
         ...request,
@@ -1623,6 +1626,7 @@ describe("memory approval and management", () => {
     duplicateAnswers = ["same", "different", "skipped", "different"];
     await click("#settings .memory-import", "拆成一条条");
     const preview = text("#settings .memory-import");
+    expect(duplicateAsked.map((refs) => refs.length)).toEqual([2]);
     expect(preview).toContain("找到 4 条，已勾 1 条");
     expect(preview).toContain("已经记着，跳过");
     expect(preview).toContain("敏感，默认不导入");
@@ -1808,6 +1812,26 @@ describe("memory approval and management", () => {
     expect(preview).toContain("找到 2 条，已勾 0 条");
     expect(preview).toContain("没能核对是否重复，默认不导入");
     expect(button("#settings .memory-import", "导入勾选").disabled).toBe(true);
+  });
+
+  it("[MP-8][A4] never asks about entries the server could not sort, and a coding note that gets different still stays off", async () => {
+    await render();
+    classifyFails = true;
+    await click("#settings .memory-footer", "导入记忆");
+    await click("#settings .memory-sources", "ChatGPT、Claude 等其他 AI");
+    const fields = document.querySelectorAll<HTMLTextAreaElement>(
+      "#settings .memory-import textarea",
+    );
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        fields[1],
+        "- 我对青霉素过敏\n- 我住在上海",
+      );
+      fields[1]?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click("#settings .memory-import", "拆成一条条");
+    expect(duplicateAsked).toEqual([]);
+    expect(text("#settings .memory-import")).toContain("找到 2 条，已勾 0 条");
   });
 
   it("[MP-8] keeps adding and importing closed until the first memory is learned and says why", async () => {
