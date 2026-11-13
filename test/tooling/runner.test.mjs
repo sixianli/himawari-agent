@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createContext } from "../../scripts/ci/context.mjs";
 import { fileSha256, repositoryRoot, validateRecord } from "../../scripts/ci/contracts.mjs";
 import { execute, sumCounts, vitestCounts } from "../../scripts/ci/execute.mjs";
@@ -19,7 +19,10 @@ import { publish, publishQuality, redactReport } from "../../scripts/ci/publish.
 import { validateQualityPolicy } from "../../scripts/ci/quality-policy.mjs";
 import { required } from "../../scripts/ci/required.mjs";
 import { memberRunsOnHost, reportEntry, runCheck, selectCheck } from "../../scripts/ci/run.mjs";
-import { useArtifactCapableHost } from "./artifact-host.mjs";
+
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 
 const directories = [];
 const directory = () => {
@@ -55,8 +58,6 @@ const fixture = () => {
 afterEach(() => {
   for (const root of directories.splice(0)) rmSync(root, { recursive: true, force: true });
 });
-
-useArtifactCapableHost();
 
 describe("JSON公开报告的原始字节与脱敏", () => {
   it.each([

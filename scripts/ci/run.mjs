@@ -30,7 +30,7 @@ import { prepareCoverageComparison, retainComparisonEvidence } from "./coverage-
 import { coverageProjects, strategyDigest, validateCoveragePolicy } from "./coverage-model.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
 import { isolatedEnvironment, verifyInstalledTools } from "./install-tools.mjs";
-import { artifactPlatformKey } from "./platforms.mjs";
+import { artifactPlatformKey, hostArch, hostOs } from "./platforms.mjs";
 import { observeResources } from "./resources.mjs";
 import { redactText } from "./security-redaction.mjs";
 import { runTests } from "./test.mjs";
@@ -67,7 +67,7 @@ export function reportEntry(filename, kind, output) {
   };
 }
 
-export const memberRunsOnHost = (member, platform = process.platform, arch = process.arch) =>
+export const memberRunsOnHost = (member, platform = hostOs(), arch = hostArch()) =>
   member.os === platform && [member.arch, member.alternateArch].includes(arch);
 
 export async function runCheck({
@@ -108,8 +108,8 @@ export async function runCheck({
     toolchain: {
       node: process.versions.node,
       npm: "unavailable",
-      os: process.platform,
-      arch: process.arch,
+      os: hostOs(),
+      arch: hostArch(),
       abi: process.versions.modules,
       runnerImage: process.env.ImageVersion ?? "local",
     },

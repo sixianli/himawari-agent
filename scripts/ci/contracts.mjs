@@ -7,6 +7,8 @@ import Ajv from "ajv";
 export {
   artifactPlatformKey,
   buildPlatformKey,
+  hostArch,
+  hostOs,
   hostPlatform,
   supportedPlatforms,
 } from "./platforms.mjs";

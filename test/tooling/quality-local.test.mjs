@@ -11,7 +11,6 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useArtifactCapableHost } from "./artifact-host.mjs";
 
 const state = vi.hoisted(() => ({
   root: "",
@@ -46,6 +45,9 @@ const identity = () => ({
   policySha256: "c".repeat(64),
   toolchainSha256: "d".repeat(64),
 });
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 vi.mock("../../scripts/ci/contracts.mjs", async (original) => ({
   ...(await original()),
   get repositoryRoot() {
@@ -214,8 +216,6 @@ const runLocal = (extra = {}) =>
     base: "b".repeat(40),
     ...extra,
   });
-
-useArtifactCapableHost();
 
 describe("periodic quality policy and evidence", () => {
   it("preserves the process test root when only the GitHub environment is supplied", async () => {

@@ -12,7 +12,6 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useArtifactCapableHost } from "./artifact-host.mjs";
 
 const state = vi.hoisted(() => ({
   root: "",
@@ -31,6 +30,9 @@ const state = vi.hoisted(() => ({
   verified: [],
   parallel: undefined,
 }));
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 vi.mock("node:fs", async (original) => {
   const actual = await original();
   return {
@@ -303,8 +305,6 @@ const run = (checkId, extra = {}) =>
     ...(checkId === "coverage" ? { artifact: path.join(state.root, "runtime.tar.gz") } : {}),
     ...extra,
   });
-
-useArtifactCapableHost();
 
 describe("共享runner的调度、来源和失败传播", () => {
   it("passes an explicit test root and its temporary directory to child processes", async () => {
