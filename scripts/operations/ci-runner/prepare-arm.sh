@@ -4,6 +4,9 @@ umask 022
 
 NEEDRESTART_CFG=/etc/needrestart/conf.d/50ci-arm-gh-runner.conf
 MIN_FREE_GIB=40
+NODE_VERSION=22.22.3
+NODE_SHA256=cc8bc82b2dd0b595c3b95a4c3c9c8c350907cff011afbdee3d1379e812e1e3e3
+PLAYWRIGHT_VERSION=1.62.1
 
 fail() { printf 'CI_ARM_PREPARE_FAILED %s\n' "$1" >&2; exit "${2:-1}"; }
 
@@ -35,8 +38,18 @@ apt-get install -y -q nftables build-essential python3 unzip xz-utils curl git l
 install -d -m 0755 "${NEEDRESTART_CFG%/*}"
 printf '%s\n' '$nrconf{override_rc}{qr(^gh-runner)} = 0;' > "$NEEDRESTART_CFG"
 
+work=$(mktemp -d /tmp/ci-arm-prepare.XXXXXX)
+trap 'rm -rf "$work"' EXIT
+curl -fsSL --retry 3 -o "$work/node.tar.gz" "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-arm64.tar.gz"
+printf '%s  %s\n' "$NODE_SHA256" "$work/node.tar.gz" | sha256sum -c --quiet - || fail "node checksum mismatch" 74
+tar -xzf "$work/node.tar.gz" -C "$work"
+node_bin="$work/node-v$NODE_VERSION-linux-arm64/bin"
+mkdir "$work/pw"
+(cd "$work/pw" && PATH="$node_bin:$PATH" npm install --no-save --ignore-scripts --no-audit --no-fund "playwright@$PLAYWRIGHT_VERSION" > /dev/null)
+PATH="$node_bin:$PATH" node "$work/pw/node_modules/playwright/cli.js" install-deps chromium
+
 for tool in nft visudo useradd groupadd getent sha256sum curl ss python3 sshd git; do
   command -v "$tool" > /dev/null || fail "missing $tool after installing packages" 73
 done
-printf 'CI_ARM_PREPARED hostname=%s nft=%s gcc=%s python=%s\n' \
-  "$(hostname)" "$(nft --version | awk '{print $2}')" "$(gcc -dumpversion)" "$(python3 -I -c 'import platform; print(platform.python_version())')"
+printf 'CI_ARM_PREPARED hostname=%s nft=%s gcc=%s python=%s playwright_deps=%s\n' \
+  "$(hostname)" "$(nft --version | awk '{print $2}')" "$(gcc -dumpversion)" "$(python3 -I -c 'import platform; print(platform.python_version())')" "$PLAYWRIGHT_VERSION"

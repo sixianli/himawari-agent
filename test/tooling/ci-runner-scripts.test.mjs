@@ -2939,3 +2939,26 @@ describe("[ADR-0260] the sender and the fetcher agree, and the ARM site uninstal
     expect(single.status).toBe(64);
   });
 });
+
+describe("runner machine preparation", () => {
+  const repository = path.resolve(import.meta.dirname, "../..");
+  const lock = JSON.parse(readFileSync(path.join(repository, "ci/toolchain-lock.json"), "utf8"));
+  const playwright = JSON.parse(readFileSync(path.join(repository, "package.json"), "utf8"))
+    .devDependencies["@playwright/test"];
+  const value = (text, name) => text.match(new RegExp(`^${name}=(\\S+)$`, "mu"))?.[1];
+
+  it.each([
+    ["prepare-vps.sh", "linux-x64"],
+    ["prepare-arm.sh", "linux-arm64"],
+  ])(
+    "%s installs the Chromium system libraries for the pinned Playwright and Node",
+    (name, platform) => {
+      const text = readFileSync(path.join(scripts, name), "utf8");
+      const node = lock.node.releases[value(text, "NODE_VERSION")]?.artifacts[platform];
+      expect(value(text, "PLAYWRIGHT_VERSION")).toBe(playwright);
+      expect(node.filename).toBe(`node-v${value(text, "NODE_VERSION")}-${platform}.tar.gz`);
+      expect(value(text, "NODE_SHA256")).toBe(node.sha256);
+      expect(text).toMatch(/playwright\/cli\.js" install-deps chromium\b/u);
+    },
+  );
+});
