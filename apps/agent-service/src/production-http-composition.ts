@@ -95,6 +95,7 @@ import {
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
 import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
 import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
+import type { ProductionMemoryClassifier } from "./production-memory-classification.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
@@ -219,6 +220,7 @@ export interface ProductionHttpCompositionOptions {
       | "archive"
     >;
     readonly externalProposals?: ProductionMcpMemoryWriter;
+    readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
   readonly webPush?: {
@@ -1151,6 +1153,7 @@ export async function createProductionHttpComposition(
         ...(options.memory.externalProposals
           ? { externalProposals: options.memory.externalProposals }
           : {}),
+        ...(options.memory.classifier ? { classifier: options.memory.classifier } : {}),
         onAudit: options.memory.onAudit,
       })
     : undefined;
