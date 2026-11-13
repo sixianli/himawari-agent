@@ -147,7 +147,7 @@ public final class SensesGateway: Sendable {
             enum CodingKeys: String, CodingKey { case kind, types, deviceId }
         }
         struct Payload: Encodable { let target: Target }
-        let data = try await command("perception.records.delete", payload: Payload(target: Target(types: types, deviceId: deviceId)), confirm: false, reason: reason)
+        let data = try await command("perception.records.delete", payload: Payload(target: Target(types: types, deviceId: deviceId)), confirm: true, reason: reason)
         return try decodePayload(PerceptionDeleteResult.self, data)
     }
 

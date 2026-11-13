@@ -268,7 +268,7 @@ import Testing
         #expect(MirrorFields.fit(["allDay": .bool(true)], rules: rules) == nil)
     }
 
-    @Test func gatewayReadsAskForTheItemTypesAndChangesAskForFaceID() async throws {
+    @Test func gatewayReadsAskForTheItemTypesAndTurningOnOrDeletingAsksForFaceID() async throws {
         let exchange = RecordingExchange([])
         let gateway = SensesGateway(api: try api(exchange), confirmation: Confirmation(signer: try SoftwareKeySigner()))
         exchange.enqueue(json(["type": "perception.day.snapshot", "payload": ["day": "2027-01-15", "total": 1, "rows": [], "nextCursor": NSNull()]]))
@@ -298,11 +298,14 @@ import Testing
         try await gateway.setSense("vision", enabled: false, expectedRevision: 5, reason: "关掉相册")
         #expect(exchange.requests[3].value(forHTTPHeaderField: "Signature-Input")?.contains("confirm=") == false)
 
+        exchange.enqueue(json(["challenge": "DELETECHALLENGE", "expiresAt": "2027-01-15T08:06:00Z"]))
         exchange.enqueue(HTTPExchangeResponse(status: 404, body: Data(#"{"error":{"code":"DEVICE_GATEWAY_TYPE_UNKNOWN"}}"#.utf8)))
         await #expect(throws: SensesGatewayError.notInstalled) {
             _ = try await gateway.deleteRecords(types: ["location.visit"], deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA", reason: "删")
         }
-        let delete = try body(exchange.requests[4])
+        #expect(exchange.requests[4].url?.path == "/api/device/v1/approvals/challenge")
+        #expect(exchange.requests[5].value(forHTTPHeaderField: "Signature-Input")?.contains("nonce=\"DELETECHALLENGE\"") == true)
+        let delete = try body(exchange.requests[5])
         let target = try #require((delete["payload"] as? [String: Any])?["target"] as? [String: Any])
         #expect(target["kind"] as? String == "types")
         #expect(target["deviceId"] as? String == "dev_AAAAAAAAAAAAAAAAAAAAAA")
