@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analyzeMigrations } from "../../scripts/migration-conflicts/analyze.mjs";
+import { analyzeMigrations, replayAll } from "../../scripts/migration-conflicts/analyze.mjs";
 import { nextMigrationId, validName } from "../../scripts/new-migration.mjs";
 
 const base = [
@@ -104,6 +104,16 @@ describe("migration conflict analysis", () => {
       entry("20261114000002", "use_table", "INSERT INTO made VALUES (1);"),
     ];
     expect(analyzeMigrations({ base, added })[0]).toMatch(/^MIGRATION_FAILS/);
+  });
+});
+
+describe("full replay", () => {
+  it("passes an ordered set that applies and fails one that does not", () => {
+    const first = entry("0001", "start", "CREATE TABLE t (id INTEGER);");
+    const second = entry("20261114000001", "more", "ALTER TABLE t ADD COLUMN x TEXT;");
+    expect(replayAll([first, second])).toEqual([]);
+    expect(replayAll([second, first])[0]).toMatch(/^FULL_REPLAY_FAILS/);
+    expect(replayAll([first, first])[0]).toMatch(/^DUPLICATE_ID/);
   });
 });
 

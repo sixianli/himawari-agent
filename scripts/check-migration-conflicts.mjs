@@ -70,7 +70,56 @@ export function loadMeta(entries) {
   return meta;
 }
 
+export function loadEntriesFromCommit(commit) {
+  const prefix = "packages/persistence-sqlite/src/migrations/";
+  const names = git(["ls-tree", "--name-only", commit, prefix])
+    .split("\n")
+    .map((line) => line.split("/").pop());
+  const read = (file) =>
+    execFileSync("git", ["show", `${commit}:${prefix}${file}`], {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 1 << 28,
+    });
+  const toEntry = (file) => {
+    const match = TIMESTAMP_FILE.exec(file);
+    return {
+      file,
+      id: match ? match[1] : file.slice(0, 4),
+      name: match ? match[2] : file.slice(5, -4),
+      sql: read(file),
+    };
+  };
+  return {
+    legacy: names
+      .filter((name) => LEGACY_FILE.test(name))
+      .sort()
+      .map(toEntry),
+    stamped: names
+      .filter((name) => TIMESTAMP_FILE.test(name))
+      .sort()
+      .map(toEntry),
+    unknown: names.filter(
+      (name) => !LEGACY_FILE.test(name) && !TIMESTAMP_FILE.test(name) && !META_FILE.test(name),
+    ),
+  };
+}
+
 function main() {
+  const commitFlag = process.argv.indexOf("--commit");
+  if (commitFlag !== -1) {
+    const { legacy, stamped, unknown } = loadEntriesFromCommit(process.argv[commitFlag + 1]);
+    const problems = unknown.map((name) => `UNRECOGNIZED_FILE ${name}`);
+    problems.push(...replayAll([...legacy, ...stamped]));
+    if (problems.length > 0) {
+      for (const problem of problems) console.error(`MIGRATION_CONFLICT ${problem}`);
+      process.exit(1);
+    }
+    console.log(
+      `MIGRATION_CONFLICTS passed commit=${process.argv[commitFlag + 1]} migrations=${legacy.length + stamped.length}`,
+    );
+    return;
+  }
   const { legacy, stamped, unknown } = loadEntries();
   const problems = unknown.map((name) => `UNRECOGNIZED_FILE ${name}`);
   const ref = baseRef();

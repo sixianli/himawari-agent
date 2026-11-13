@@ -160,3 +160,22 @@ export function analyzeMigrations({ base, added, meta = {} }) {
   }
   return problems;
 }
+
+export function replayAll(entries) {
+  const problems = [];
+  const seen = new Set();
+  for (const entry of entries) {
+    if (seen.has(entry.id)) problems.push(`DUPLICATE_ID ${entry.id}`);
+    seen.add(entry.id);
+    for (const { pattern, label } of FORBIDDEN) {
+      if (pattern.test(entry.sql)) problems.push(`FORBIDDEN_STATEMENT ${entry.file} uses ${label}`);
+    }
+  }
+  if (problems.length > 0) return problems;
+  try {
+    cloneFrom(entries).close();
+  } catch (error) {
+    problems.push(`FULL_REPLAY_FAILS ${error.message}`);
+  }
+  return problems;
+}

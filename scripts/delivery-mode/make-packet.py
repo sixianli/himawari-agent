@@ -145,7 +145,14 @@ def target_migration_ids(commit):
     return ['%04d' % number for number in legacy] + [entry[0] for entry in timestamped]
 
 
+def check_migration_replay(commit):
+    child = subprocess.run(['node', str(REPO / 'scripts' / 'check-migration-conflicts.mjs'), '--commit', commit], capture_output=True, text=True, check=False)
+    if child.returncode != 0:
+        raise PacketError('MIGRATION_REPLAY_FAILED ' + (child.stderr or child.stdout).strip()[:400])
+
+
 def target_schema(commit):
+    check_migration_replay(commit)
     return len(target_migration_ids(commit))
 
 

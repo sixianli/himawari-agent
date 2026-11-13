@@ -486,6 +486,12 @@ class SandboxReadPathsTest(RenderedPacket):
 class DerivedExpectationsTest(RenderedPacket):
     TAG = '[PG-2]'
 
+    def setUp(self):
+        super().setUp()
+        patcher = unittest.mock.patch.object(packet_maker, 'check_migration_replay')
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_schema_comes_from_production_and_the_commit(self):
         self.assertEqual(packet_maker.target_schema(TWELFTH_COMMIT), 56)
         derived = packet_maker.schema_parameters({'COMMIT': TWELFTH_COMMIT, 'TARGET_SCHEMA': 56}, {'schema': {'current': 56, 'minimumWriter': 56}})
@@ -1327,10 +1333,16 @@ class TimestampedMigrationTests(unittest.TestCase):
         return run
 
     def plan(self, files, applied, current=None):
-        with unittest.mock.patch.object(packet_maker, 'git', self.fake_git(files)), unittest.mock.patch.object(packet_maker, 'preserved_tables', return_value=()):
+        with unittest.mock.patch.object(packet_maker, 'git', self.fake_git(files)), unittest.mock.patch.object(packet_maker, 'preserved_tables', return_value=()), unittest.mock.patch.object(packet_maker, 'check_migration_replay'):
             target = packet_maker.target_schema('c')
             derived = packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': target}, {'schema': {'current': len(applied), 'minimumWriter': len(applied)}, 'migrationIds': applied})
         return target, json.loads(derived['MIGRATION_LEDGER'])
+
+    def test_a_commit_whose_migrations_do_not_replay_is_refused(self):
+        failed = subprocess.CompletedProcess([], 1, stdout='', stderr='MIGRATION_CONFLICT FULL_REPLAY_FAILS boom')
+        with unittest.mock.patch.object(packet_maker.subprocess, 'run', return_value=failed):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'MIGRATION_REPLAY_FAILED'):
+                packet_maker.check_migration_replay('c')
 
     def test_timestamped_files_count_toward_the_target_and_are_planned_by_id(self):
         files = self.LEGACY + ['20261114010000_first.sql', '20261114020000_second.sql', '20261114020000_second.meta.json']
