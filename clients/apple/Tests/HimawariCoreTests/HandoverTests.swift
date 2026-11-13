@@ -231,4 +231,25 @@ import Testing
         #expect(HandoverContent.page(from: ["title": "没有地址"]) == nil)
         #expect(HandoverContent.page(from: ["url": 42]) == nil)
     }
+
+    @Test func theCardSaysFullTextOnlyWhenThePageTextWasReadAndStillGoesToHimawari() {
+        let words = "这一页的全文"
+        let read = HandoverContent.page(url: "https://tabelog.com/a", title: "午餐 10 选", text: "从车站走路 5 分钟")
+        #expect(read.pageSubtitle(fullText: words, outcome: nil, paired: true) == "tabelog.com · 这一页的全文")
+        #expect(read.pageSubtitle(fullText: words, outcome: .delivered(answered: true), paired: true) == "tabelog.com · 这一页的全文")
+        #expect(read.pageSubtitle(fullText: words, outcome: .queued, paired: true) == "tabelog.com · 这一页的全文")
+        let onlyAddress = HandoverContent.page(url: "https://tabelog.com/a", title: "午餐 10 选", text: nil)
+        let emptyText = HandoverContent.page(url: "https://tabelog.com/a", title: nil, text: "")
+        for subtitle in [
+            onlyAddress.pageSubtitle(fullText: words, outcome: nil, paired: true),
+            emptyText.pageSubtitle(fullText: words, outcome: nil, paired: true),
+            read.pageSubtitle(fullText: words, outcome: .entryOff(.share), paired: true),
+            read.pageSubtitle(fullText: words, outcome: .deviceRemoved, paired: true),
+            read.pageSubtitle(fullText: words, outcome: nil, paired: false),
+        ] {
+            #expect(subtitle == "tabelog.com")
+            #expect(subtitle?.contains(words) == false)
+        }
+        #expect(HandoverContent.link(url: "https://tabelog.com/a", title: nil).pageSubtitle(fullText: words, outcome: nil, paired: true) == nil)
+    }
 }

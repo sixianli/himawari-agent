@@ -91,7 +91,7 @@ public final class HandoverSheetModel {
     var cardSubtitle: String? {
         switch content {
         case .page:
-            return [content?.host, L.text("sheet.fullPage")].compactMap { $0 }.joined(separator: " · ")
+            return content?.pageSubtitle(fullText: L.text("sheet.fullPage"), outcome: phase.outcome, paired: phase != .unpaired)
         case .link:
             return content?.host
         case .text:
@@ -175,6 +175,11 @@ extension HandoverSheetPhase {
     var isDone: Bool {
         if case .finished(.delivered) = self { return true }
         return false
+    }
+
+    var outcome: HandoverOutcome? {
+        if case let .finished(outcome) = self { return outcome }
+        return nil
     }
 }
 

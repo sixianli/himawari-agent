@@ -128,6 +128,13 @@ public enum HandoverContent: Codable, Sendable, Equatable {
         }
     }
 
+    public func pageSubtitle(fullText: String, outcome: HandoverOutcome?, paired: Bool) -> String? {
+        guard case let .page(_, _, text) = self else { return nil }
+        let read = paired && !(text ?? "").isEmpty && (outcome?.keepsWhatWasRead ?? true)
+        let parts = [host, read ? fullText : nil].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     public static func page(from results: [String: Any]) -> HandoverContent? {
         guard let url = results["url"] as? String, let parsed = URL(string: url), let scheme = parsed.scheme?.lowercased(),
               ["http", "https"].contains(scheme) else { return nil }
@@ -240,6 +247,15 @@ public enum HandoverOutcome: Sendable, Equatable {
     case entryOff(HandoverEntry)
     case deviceRemoved
     case failed(HandoverProblem)
+}
+
+extension HandoverOutcome {
+    public var keepsWhatWasRead: Bool {
+        switch self {
+        case .delivered, .queued, .failed: true
+        case .entryOff, .deviceRemoved: false
+        }
+    }
 }
 
 public enum HandoverPlan: Sendable, Equatable {
