@@ -29,6 +29,7 @@ vi.mock("../../scripts/ci/install-tools.mjs", async (original) => ({
 }));
 
 import {
+  commandFailure,
   runGitleaksGate,
   runSecurityChecks,
   semgrepTimeoutMs,
@@ -421,5 +422,17 @@ describe("归档流式协议边界（不代替真实Python归档证据）", () =
     const f = streamFixture();
     f.python = "python3";
     await expect(assertPublicArtifacts(f)).rejects.toThrow("PUBLIC_ARCHIVE_LOCKED_PYTHON_REQUIRED");
+  });
+});
+
+describe("security command failures name the cause", () => {
+  it("names the signal or error code in a short code the CI summary keeps", () => {
+    expect(commandFailure("SIGNAL", "SIGKILL")).toBe("SECURITY_CMD_SIGNAL_SIGKILL");
+    expect(commandFailure("ERROR", "ENOBUFS")).toBe("SECURITY_CMD_ERROR_ENOBUFS");
+    expect(commandFailure("ERROR", undefined)).toBe("SECURITY_CMD_ERROR_UNKNOWN");
+    const long = commandFailure("ERROR", "E".repeat(80));
+    expect(long.length).toBeLessThanOrEqual(40);
+    for (const code of [long, commandFailure("SIGNAL", "sig-term 9")])
+      expect(code).toMatch(/^[A-Z_]{1,40}$/u);
   });
 });
