@@ -102,6 +102,28 @@ it("所有工作流都不用 GitHub 缓存，也不上传或下载 GitHub 产物
   }
 });
 
+it("main 的确认共用一个并发组、不掐正在跑的那次，所以连续合并时只留最新一次在等", () => {
+  const text = readFileSync(".github/workflows/main.yml", "utf8");
+  const tools = JSON.parse(readFileSync("ci/toolchain-lock.json", "utf8"));
+  expect(validateMainWorkflow(text, tools)).toEqual({ jobs: 3 });
+  expect(text).toContain("  group: main-confirmation\n  cancel-in-progress: false\n");
+  expect(() =>
+    validateMainWorkflow(
+      text.replace(
+        "group: main-confirmation\n",
+        ["group: main-confirmation-$", "{{ github.run_id }}\n"].join(""),
+      ),
+      tools,
+    ),
+  ).toThrow("concurrency");
+  expect(() =>
+    validateMainWorkflow(
+      text.replace("cancel-in-progress: false", "cancel-in-progress: true"),
+      tools,
+    ),
+  ).toThrow("concurrency");
+});
+
 it("main 工作流不能隐藏检查失败或关闭完整 CI 回退", () => {
   const text = readFileSync(".github/workflows/main.yml", "utf8");
   const tools = JSON.parse(readFileSync("ci/toolchain-lock.json", "utf8"));
