@@ -126,9 +126,14 @@ import {
   ProductionSensitiveInterceptionsControl,
 } from "./production-sensitive-interceptions-control.js";
 import {
+  PRODUCTION_LOGIN_DEVICE_OPERATIONS,
+  ProductionLoginDevicesControl,
+} from "./production-login-devices-control.js";
+import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
+import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -702,6 +707,8 @@ function routeOptions(
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
         ...PRODUCTION_HOME_OPERATIONS,
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
+        ...PRODUCTION_FILES_OPERATIONS,
+        ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1238,6 +1245,17 @@ export async function createProductionHttpComposition(
     dataExportControl: new ProductionDataExportControl({
       configuration,
       jobs: dataExportJobs,
+      clock: { now: clock },
+    }),
+    filesControl: new ProductionFilesControl({
+      configuration,
+      store: repository.threadArtifacts(),
+      clock: { now: clock },
+    }),
+    loginDevicesControl: new ProductionLoginDevicesControl({
+      configuration,
+      state: repository.sessionDeviceState(),
+      recentAuthentication,
       clock: { now: clock },
     }),
   });
