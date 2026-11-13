@@ -4,7 +4,8 @@ function blockedSameOriginFetch(page, message) {
   const host = webkitBlockedFetchMessage.exec(message)?.groups?.host;
   if (!host) return false;
   try {
-    return new URL(page.url()).host === host;
+    const url = new URL(page.url());
+    return url.port !== "" && url.host === host;
   } catch {
     return false;
   }

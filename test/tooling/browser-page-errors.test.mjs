@@ -76,6 +76,16 @@ it("[webkit-teardown] 反向：换页期间别的源被拦下的请求照常记�
   expect(errors).toEqual([crossOrigin, otherHost, `prefix ${cancelled}`]);
 });
 
+it("[webkit-teardown] 反向：页面地址没写端口时看不出协议，同主机的报错照常记录", () => {
+  const page = new Page();
+  page.url = () => "https://himawari.example/threads";
+  const errors = collectPageErrors(page);
+  const sameHost = "/himawari.example/api/gateway/v2/queries due to access control checks.";
+  page.navigationRequest();
+  page.fail(sameHost);
+  expect(errors).toEqual([sameHost]);
+});
+
 it("[webkit-teardown] 反向：子框架的导航请求不算换页", () => {
   const page = new Page();
   const errors = collectPageErrors(page);
@@ -115,7 +125,12 @@ it("[webkit-teardown] 浏览器测试脚本一律经 browser-page-errors.mjs 收
     const file = path.join(entry.parentPath, entry.name);
     const relative = path.relative(scripts, file).split(path.sep).join("/");
     if (allowed.has(relative)) continue;
-    if (/\.on\(\s*["']pageerror["']/u.test(await readFile(file, "utf8"))) offenders.push(relative);
+    if (
+      /\.(?:on|once|addListener|prependListener)\(\s*["']pageerror["']/u.test(
+        await readFile(file, "utf8"),
+      )
+    )
+      offenders.push(relative);
   }
   expect(offenders).toEqual([]);
 });

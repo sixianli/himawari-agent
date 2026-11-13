@@ -1010,14 +1010,15 @@ export async function qualifyBrowser({
       .filter({ visible: true })
       .first()
       .waitFor();
+    const fixtureHost = new URL(baseUrl).host;
     const expectedOfflineBrowserError = (error) =>
-      error.includes("access control checks") &&
+      error.endsWith(" due to access control checks.") &&
       [
         "/api/gateway/v2/events",
         "/api/gateway/thread/v3/events",
         "/api/gateway/thread/v3/execution-events",
         "/api/gateway/thread/v3/queries",
-      ].some((path) => error.includes(path));
+      ].some((path) => error.startsWith(`/${fixtureHost}${path}`));
     if (requestErrors.length)
       throw new Error(`CONTROL_CENTER_CRITICAL_REQUEST_FAILED:${JSON.stringify(requestErrors)}`);
     const unexpectedBrowserErrors = browserErrors.filter(
