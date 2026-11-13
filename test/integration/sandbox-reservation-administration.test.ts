@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, rename, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, symlink, writeFile } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
 import path from "node:path";
 import { Writable } from "node:stream";
@@ -23,8 +23,8 @@ import BetterSqlite3 from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { runAdminCli } from "../../apps/admin-cli/src/index.ts";
 import { LATEST_MIGRATION_SEQUENCE } from "../../packages/persistence-sqlite/src/migration-engine.ts";
-import { RUN_RESOURCES_RELEASED_SQL } from "../../packages/persistence-sqlite/src/sqlite-run-resource-guard.ts";
 import { SqliteRunDispatchOperations } from "../../packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts";
+import { RUN_RESOURCES_RELEASED_SQL } from "../../packages/persistence-sqlite/src/sqlite-run-resource-guard.ts";
 import { SANDBOX_RESERVATION_NEVER_STARTED_SQL } from "../../packages/persistence-sqlite/src/sqlite-sandbox-reservation-never-started.ts";
 import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
@@ -739,7 +739,13 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
       expect(saved.prepare("SELECT max(sequence) FROM schema_migration_ledger").pluck().get()).toBe(
         49,
       );
-      expect(saved.prepare("SELECT key,value FROM schema_metadata ORDER BY key").all()).toEqual([
+      expect(
+        saved
+          .prepare(
+            "SELECT key,value FROM schema_metadata WHERE key <> 'schema_fingerprint' ORDER BY key",
+          )
+          .all(),
+      ).toEqual([
         { key: "current_sequence", value: "49" },
         { key: "minimum_writer_sequence", value: "49" },
       ]);
