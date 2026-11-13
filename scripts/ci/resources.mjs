@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { hostArch, hostOs } from "./platforms.mjs";
 import { redactText } from "./redact-text.mjs";
 
 const run = promisify(execFile);
@@ -44,8 +45,8 @@ export async function observeResources({
     intervalMs,
     peakIsLowerBound: true,
     hardware: {
-      platform: process.platform,
-      arch: process.arch,
+      platform: hostOs(),
+      arch: hostArch(),
       cpus: os.cpus().length,
       cpuModel: os.cpus()[0]?.model ?? "unavailable",
       memoryBytes: os.totalmem(),

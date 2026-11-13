@@ -735,6 +735,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0094_memory_conversation_review.sql",
   },
+  {
+    sequence: 95,
+    name: "correction_propagation",
+    changeSet: "correction-propagation",
+    phase: "expand" as const,
+    file: "0095_correction_propagation.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

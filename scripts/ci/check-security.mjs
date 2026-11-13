@@ -43,6 +43,7 @@ import { assertPublicArtifacts, redactText } from "./security-redaction.mjs";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const syntheticMarker = "HIMAWARISYNTHETICONLY";
+export const semgrepTimeoutMs = 15 * 60_000;
 
 function exactPath(path) {
   return safeRelativePath(path) && !/[*?[\]{}]/.test(path);
@@ -530,7 +531,7 @@ function scanSemgrep({ executable, snapshot, env, files, ruleIds, config }) {
       "--json",
       ...targets,
     ],
-    { root: snapshot, env },
+    { root: snapshot, env, timeout: semgrepTimeoutMs },
   );
   return {
     scannedCount: targets.length,

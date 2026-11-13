@@ -1,0 +1,43 @@
+{
+  "source": "apps/control-center/src/draft-attachments.ts joinDraft",
+  "vectors": [
+    {
+      "text": "这段为什么配对超时后会崩",
+      "files": [],
+      "joined": "这段为什么配对超时后会崩"
+    },
+    {
+      "text": "和上个月的差在哪",
+      "files": [
+        {
+          "name": "报价单 11 月.xlsx",
+          "ref": "pay_01",
+          "bytes": 18234,
+          "kind": "text",
+          "truncated": false
+        }
+      ],
+      "joined": "和上个月的差在哪\n\n<file name=\"报价单 11 月.xlsx\" ref=\"pay_01\" bytes=\"18234\" kind=\"text\"/>"
+    },
+    {
+      "text": "",
+      "files": [
+        {
+          "name": "正在用：Xcode",
+          "ref": "pay_02",
+          "bytes": 28,
+          "kind": "text",
+          "truncated": false
+        },
+        {
+          "name": "PairingView.swift",
+          "ref": "pay_03",
+          "bytes": 262144,
+          "kind": "text",
+          "truncated": true
+        }
+      ],
+      "joined": "<file name=\"正在用：Xcode\" ref=\"pay_02\" bytes=\"28\" kind=\"text\"/>\n\n<file name=\"PairingView.swift\" ref=\"pay_03\" bytes=\"262144\" kind=\"text\" truncated=\"1\"/>"
+    }
+  ]
+}

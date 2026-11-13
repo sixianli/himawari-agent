@@ -253,3 +253,13 @@ public struct EdgeFade: View {
         .allowsHitTesting(false)
     }
 }
+
+extension View {
+    public func hmCover<Cover: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Cover) -> some View {
+        #if os(iOS)
+        fullScreenCover(isPresented: isPresented, content: content)
+        #else
+        sheet(isPresented: isPresented, content: content)
+        #endif
+    }
+}

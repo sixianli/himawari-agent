@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
+amended_by: "docs/adr/0232-memory-corrections-flag-derived-memories-and-recheck-rules.md"
 date: "2026-11-11"
 ---
 
@@ -104,5 +105,6 @@ date: "2026-11-11"
 - [ADR 0165](0165-freeze-the-request-head-per-conversation.md)：系统提示和工具按对话冻结。
 - [Agent 规则清单](../agent-rulebook-inventory.md)：M-1 到 M-3 是规则类记忆的现状。
 - [ADR 0233](0233-rule-book-joins-the-data-export.md)：规则手册进入数据导出（后续）。
+- [ADR 0232](0232-memory-corrections-flag-derived-memories-and-recheck-rules.md)：来源记忆恢复也触发待重审，待重审的规则由模型自动核对，对不上就暂停（后续）。
 
 [返回阅读导航](#contents)
