@@ -317,6 +317,7 @@ describe("production memory capture", () => {
       existing: readonly { key: string; text: string }[];
       candidates: readonly { text: string }[];
     }[] = [];
+    const duplicateSettings = { ...IMPORT_DUPLICATE_DEFAULTS };
     const importDuplicates = new ProductionImportDuplicateChecker({
       decision: {
         decide: async ({ existing, candidates }) => {
@@ -324,7 +325,7 @@ describe("production memory capture", () => {
           return candidates.map(() => duplicateAnswers.shift());
         },
       },
-      settings: IMPORT_DUPLICATE_DEFAULTS,
+      settings: duplicateSettings,
       onFailure: () => {},
     });
     const control = new ProductionMemoryControl({
@@ -439,6 +440,7 @@ describe("production memory capture", () => {
       classifyFailures,
       duplicateAnswers,
       duplicateRequests,
+      duplicateSettings,
     };
   }
 
@@ -3803,6 +3805,38 @@ describe("production memory capture", () => {
     const before = context.duplicateRequests.length;
     expect(await duplicates(["payload-d5"])).toEqual([["payload-d5", "skipped", null]]);
     expect(context.duplicateRequests).toHaveLength(before);
+  });
+
+  it("[A4] never calls an entry different when older memories were left out of the comparison", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-t1", "每周跑三次步");
+    await command(
+      context.control,
+      "memory.import.commit",
+      {
+        batchId: "memory-import-two",
+        source: "assistant",
+        items: [{ contentRef: "payload-t1", category: "other", subCategory: null, topic: null }],
+      },
+      "import-two",
+    );
+    context.duplicateSettings.maximumExistingMemories = 1;
+    await context.protect("payload-t2", "喜欢吃辣");
+    context.duplicateAnswers.push({ matchKey: null, probabilityPermille: 0 });
+    const snapshot = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.import.duplicates.read",
+      payload: { contentRefs: ["payload-t2"] },
+    } as never);
+    if (snapshot.type !== "memory.import.duplicates.snapshot") throw new Error("snapshot");
+    expect(snapshot.payload.items.map(({ verdict }) => verdict)).toEqual(["skipped"]);
+    expect(context.duplicateRequests[0]?.existing).toHaveLength(1);
   });
 
   it("[A4] reports skipped, and asks nothing, when every existing memory is sensitive", async () => {

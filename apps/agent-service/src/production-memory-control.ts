@@ -1385,7 +1385,10 @@ export class ProductionMemoryControl {
       b.updatedAt.localeCompare(a.updatedAt),
     );
     for (const record of active) {
-      if (existing.length >= limit) break;
+      if (existing.length >= limit) {
+        complete = false;
+        break;
+      }
       if (record.dataClassification === "sensitive" || record.dataClassification === "restricted")
         continue;
       const text = await this.readText(record.contentRef).catch(() => null);

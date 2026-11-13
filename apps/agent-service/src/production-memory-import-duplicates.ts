@@ -164,8 +164,11 @@ export class ProductionImportDuplicateChecker {
     const granted = this.#reserve(Math.min(jobs.length, this.#settings.maximumRequests));
     const allowed = jobs.slice(0, granted);
     for (const job of jobs.slice(granted)) for (const index of job.group) incomplete.add(index);
-    for (let start = 0; start < allowed.length; start += CONCURRENT_REQUESTS)
-      await Promise.all(allowed.slice(start, start + CONCURRENT_REQUESTS).map(run));
+    const first = allowed[0];
+    if (first) await run(first);
+    const rest = allowed.slice(1);
+    for (let start = 0; start < rest.length; start += CONCURRENT_REQUESTS)
+      await Promise.all(rest.slice(start, start + CONCURRENT_REQUESTS).map(run));
     for (const index of asked) {
       const answer = best.get(index);
       const verdict = importDuplicateVerdict(answer, this.#settings);

@@ -2007,9 +2007,10 @@ describe("memory import parsing", () => {
       "## General Tips\n- 提交前先跑文档严格校验",
     );
     expect(parsed.items[0]).toMatchObject({ coding: true });
-    const sorted = applyImportClassifications(applyImportDuplicates(parsed.items, ["different"]), [
-      classified("project"),
-    ]);
+    const sorted = applyImportDuplicates(
+      applyImportClassifications(parsed.items, [classified("project")]),
+      ["different"],
+    );
     expect(sorted[0]).toMatchObject({ duplicateCheck: "clear", status: "ready", checked: false });
   });
 

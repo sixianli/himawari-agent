@@ -33,6 +33,14 @@ export function importDuplicateRequestBody(
   ];
   return JSON.stringify({
     model,
+    questions: input.candidates.map((_, index) => ({
+      type: "choice",
+      name: importDuplicateCandidateName(index),
+      instructions: renderPrompt(MEMORY_IMPORT_DUPLICATE_QUESTION, {
+        candidateId: importDuplicateCandidateName(index),
+      }),
+      choices,
+    })),
     input: [
       {
         role: "user",
@@ -53,14 +61,6 @@ export function importDuplicateRequestBody(
         ],
       },
     ],
-    questions: input.candidates.map((_, index) => ({
-      type: "choice",
-      name: importDuplicateCandidateName(index),
-      instructions: renderPrompt(MEMORY_IMPORT_DUPLICATE_QUESTION, {
-        candidateId: importDuplicateCandidateName(index),
-      }),
-      choices,
-    })),
     providerOptions: { gateway: { zeroDataRetention: true } },
   });
 }
