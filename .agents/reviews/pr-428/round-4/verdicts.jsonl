@@ -1,0 +1,5 @@
+{"id": "R4-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### [中] 生产端与网关端的长度上限各自定义，没有共享常量，也没有跨端自动用例（I-73 类风险）", "valid": true, "class": "better"}
+{"id": "R4-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### [中] 新增的关键行为缺少反向自动用例", "valid": true, "class": "better"}
+{"id": "R4-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### [低] 策略层不校验展示字段，坏数据要等到读取网关快照时才炸", "valid": true, "class": "better"}
+{"id": "R4-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### [低] 文档只描述了 `bodyPreview`，没有写 `origin.threadTitle`，也没写 2000+1 的关系", "valid": true, "class": "better"}
+{"id": "R4-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### [低-推测] 重查递归传入的是未冻结的 `source`，与其它递归不一致", "valid": true, "class": "error", "severity": "low", "trigger": "调用方在展示字段构造期间改动传入的 source 对象", "consequence": "第二轮评估基于改动后的对象重新冻结，可能与生成展示字段时不是同一个 intent；现有调用方都传普通对象且不并发修改，已改成传已冻结的 intent", "modelSeverity": "低", "reason": "潜在不一致，当前无调用方触发"}
