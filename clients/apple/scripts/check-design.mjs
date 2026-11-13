@@ -10,6 +10,7 @@ export const PAGE_DIRECTORIES = [
   "Sources/HimawariChat",
   "Sources/HimawariShell",
   "Sources/HimawariManage",
+  "Sources/HimawariMacUI",
   "App",
 ];
 

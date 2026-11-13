@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -13,7 +12,9 @@ import {
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { isolatedEnvironment, loadToolchainLock, verifyInstalledTools } from "./install-tools.mjs";
+import { hostArch, hostOs, hostPlatform } from "./platforms.mjs";
 import { observeResources } from "./resources.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -149,7 +150,7 @@ function platformMatches(entry, platform, arch) {
 export function auditInstalledDependencies(
   root,
   toolchain = loadToolchainLock(root),
-  { platform = process.platform, arch = process.arch } = {},
+  { platform = hostOs(), arch = hostArch() } = {},
 ) {
   const realRoot = realpathSync(root);
   const lock = json(join(root, "package-lock.json"));
@@ -280,7 +281,7 @@ export async function installDependencies({
   assert(toolsDirectory && evidenceDirectory, "必须指定 --tools 和 --evidence 目录");
   const lock = loadToolchainLock(root);
   const installation = verifyInstalledTools({ directory: toolsDirectory, root });
-  assert(installation.platform === `${process.platform}-${process.arch}`, "工具安装来自其他平台");
+  assert(installation.platform === hostPlatform(), "工具安装来自其他平台");
   const { node, npmCli, nodeGyp, python, nodeHeaders } = installation.executables;
   for (const executable of [node, npmCli, nodeGyp, python, nodeHeaders])
     assert(
