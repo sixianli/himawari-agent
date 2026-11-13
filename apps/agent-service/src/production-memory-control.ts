@@ -1374,6 +1374,10 @@ export class ProductionMemoryControl {
         sendable.push(index);
       }
     }
+    if (sendable.length === 0)
+      return candidates.map(
+        (): ImportDuplicateResultView => ({ verdict: "skipped", memoryId: null }),
+      );
     const existing: { memoryId: string; text: string }[] = [];
     let complete = true;
     const limit = checker.existingLimit;

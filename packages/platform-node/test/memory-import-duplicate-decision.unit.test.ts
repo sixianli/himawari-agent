@@ -128,13 +128,15 @@ describe("[A4] memory import duplicate decision", () => {
         signal: AbortSignal.timeout(5000),
       });
     };
+    const declared = new MemoryImportDuplicateDecision({
+      model: "typesafe-ai/jev",
+      apiKey: async () => "k",
+      fetch: async () =>
+        new Response("{}", { status: 200, headers: { "content-length": String(2 * 1024 * 1024) } }),
+    });
     await expect(
-      decideAgainst((response) => {
-        response.writeHead(200, { "content-length": String(2 * 1024 * 1024) });
-        response.end("{}");
-      }),
-    ).rejects.toThrow(/IMPORT_DUPLICATE_RESPONSE_TOO_LARGE|fetch failed|terminated/);
-    await new Promise<void>((resolve) => server?.close(() => resolve()));
+      declared.decide({ existing, candidates: [{ text: "x" }], signal: AbortSignal.timeout(5000) }),
+    ).rejects.toThrow("IMPORT_DUPLICATE_RESPONSE_TOO_LARGE");
     await expect(
       decideAgainst((response) => {
         response.writeHead(200, { "transfer-encoding": "chunked" });

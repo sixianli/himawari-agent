@@ -3805,6 +3805,38 @@ describe("production memory capture", () => {
     expect(context.duplicateRequests).toHaveLength(before);
   });
 
+  it("[A4] reports skipped, and asks nothing, when every existing memory is sensitive", async () => {
+    const context = await setup(
+      "我月薪三万。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950,"quote":"我月薪三万"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-s1", "我每周日去教堂", "sensitive");
+    await command(
+      context.control,
+      "memory.import.commit",
+      {
+        batchId: "memory-import-sensitive-only",
+        source: "assistant",
+        items: [
+          { contentRef: "payload-s1", category: "other", subCategory: null, topic: "beliefs" },
+        ],
+      },
+      "import-sensitive-only",
+    );
+    await context.protect("payload-s2", "喜欢蓝色");
+    const snapshot = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.import.duplicates.read",
+      payload: { contentRefs: ["payload-s2"] },
+    } as never);
+    if (snapshot.type !== "memory.import.duplicates.snapshot") throw new Error("snapshot");
+    expect(snapshot.payload.items.map(({ verdict }) => verdict)).toEqual(["skipped"]);
+    expect(context.duplicateRequests).toHaveLength(0);
+  });
+
   it("[T5] sorts hand-added memories with the model, keeps identifiers away from it and treats a broken answer as sensitive", async () => {
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",

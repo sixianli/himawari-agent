@@ -1814,7 +1814,7 @@ describe("memory approval and management", () => {
     expect(button("#settings .memory-import", "导入勾选").disabled).toBe(true);
   });
 
-  it("[MP-8][A4] never asks about entries the server could not sort, and a coding note that gets different still stays off", async () => {
+  it("[MP-8][A4] never asks about entries the server could not sort", async () => {
     await render();
     classifyFails = true;
     await click("#settings .memory-footer", "导入记忆");
@@ -1999,6 +1999,18 @@ describe("memory import parsing", () => {
       duplicateCheck: "unchecked",
       checked: false,
     });
+  });
+
+  it("[MP-8][A4] keeps a coding note off even when the server says it is not a duplicate", () => {
+    const parsed = parseMemoryText(
+      "memory_summary.md",
+      "## General Tips\n- 提交前先跑文档严格校验",
+    );
+    expect(parsed.items[0]).toMatchObject({ coding: true });
+    const sorted = applyImportClassifications(applyImportDuplicates(parsed.items, ["different"]), [
+      classified("project"),
+    ]);
+    expect(sorted[0]).toMatchObject({ duplicateCheck: "clear", status: "ready", checked: false });
   });
 
   it("[MP-8][A4] keeps an export entry off until the server has checked it, and leaves a failed check off", () => {
