@@ -312,7 +312,7 @@ export class HomeUrgencyService {
         ? undefined
         : await seal.open({ ...scope, ref: row.sentenceRef }).catch(() => undefined);
     return {
-      sentence: sentence ?? null,
+      sentence: line(sentence, HOME_URGENCY_SENTENCE_STORE_MAX),
       affirmLabel: acceptsHomeAffirmLabel({
         label: row.affirmLabel,
         locale: input.locale,

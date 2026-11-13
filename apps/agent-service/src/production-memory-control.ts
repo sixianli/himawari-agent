@@ -25,8 +25,8 @@ import {
   type ProductMemoryStatePort,
   reviewMemoryVisible,
   type SensitiveMemoryApprovalStatePort,
-  type UnitOfWorkPort,
   type SensitiveMemoryTopic,
+  type UnitOfWorkPort,
 } from "@himawari-agent/application";
 import {
   type GatewayV2Command,
@@ -443,7 +443,15 @@ export class ProductionMemoryControl {
     const record = sourceMemoryId
       ? await this.options.state.read(sourceMemoryId as MemoryId).catch(() => undefined)
       : undefined;
-    if (!record || record.ownerId !== ownerId || record.agentId !== agentId) return "sensitive";
+    if (
+      !record ||
+      record.ownerId !== ownerId ||
+      record.agentId !== agentId ||
+      record.status === "trashed" ||
+      record.status === "deletion_pending" ||
+      record.status === "deleted_verified"
+    )
+      return "sensitive";
     return classificationRank(record.dataClassification) > classificationRank("private")
       ? record.dataClassification
       : "private";

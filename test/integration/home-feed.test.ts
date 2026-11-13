@@ -932,6 +932,13 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
         .prepare("UPDATE memory_records SET classification = 'private' WHERE id = ?")
         .run("memory-rule-immigration"),
     );
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("private");
+    f.sql((handle) =>
+      handle
+        .prepare("UPDATE memory_records SET status = 'trashed' WHERE id = ?")
+        .run("memory-rule-immigration"),
+    );
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("sensitive");
     f.sql((handle) =>
       handle
         .prepare("UPDATE rule_book_rules SET source_memory_id = NULL WHERE rule_id = ?")

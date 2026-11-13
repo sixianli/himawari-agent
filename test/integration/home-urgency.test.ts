@@ -1280,6 +1280,57 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
     expect(state.released.filter((ref) => ref.startsWith("out-"))).toHaveLength(1);
   });
 
+  it("releases the prompt when the model call fails", async () => {
+    const state = await fixture();
+    const { home, recordMail } = await state.open();
+    await recordMail([{ id: "a", summary: "甲" }]);
+    state.answerWith(() => ({ fail: "MODEL_DOWN" }));
+    await home.score();
+    expect(state.released.filter((ref) => ref.startsWith("in-"))).toHaveLength(1);
+  });
+
+  it("[negative] approvalCopy drops a stored sentence that would not pass the reply checks", async () => {
+    const state = await fixture();
+    const { home, repository, seal, createApproval } = await state.open();
+    await createApproval("send");
+    const sentenceRef = await seal.seal({
+      ...scope,
+      text: "发\u202E出去",
+      at: NOW,
+      dataClassification: "private",
+    });
+    await repository.homeUrgency().recordCall({
+      ...scope,
+      failures: [],
+      records: [
+        {
+          id: "manual-copy",
+          invocationId: "manual-copy",
+          itemKey: "approval:send",
+          textDigest: createHash("sha256").update("hash-send").digest("hex"),
+          approvalRequestId: "send",
+          modelRef: MODEL_REF,
+          promptId: "home.urgency@manual",
+          dataClassification: "private",
+          costMicros: 0,
+          durationMs: 0,
+          createdAt: NOW,
+          score: 5,
+          sentenceRef,
+          affirmLabel: "发出去",
+          copyLocale: "zh-CN",
+        },
+      ],
+    });
+    expect(
+      await home.approvalCopy({
+        approvalRequestId: "send",
+        semanticSnapshotHash: "hash-send",
+        locale: "zh-CN",
+      }),
+    ).toEqual({ sentence: null, affirmLabel: "发出去" });
+  });
+
   it("stopping waits for a scoring call already under way", async () => {
     const state = await fixture();
     const { home, recordMail } = await state.open();
