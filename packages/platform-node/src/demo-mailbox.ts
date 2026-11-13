@@ -86,12 +86,13 @@ export function createDemoMailReader(options: {
 }): ProactiveSourceReader {
   return Object.freeze<ProactiveSourceReader>({
     source: "gmail",
-    async related({ token, items, limits, wholeThread, signal }) {
+    async related({ token, items, limits, wholeThread, references, signal }) {
       const pool = arrived(token, Date.parse(options.now()), options.timeZone)?.items ?? [];
       return findRelatedMail({
         items,
         limits,
         ...(wholeThread ? { wholeThread } : {}),
+        ...(references ? { references } : {}),
         signal,
         transport: {
           async thread(threadId) {

@@ -35,7 +35,11 @@ import {
   type UnitOfWorkPort,
 } from "@himawari-agent/application";
 import { localDayStart } from "@himawari-agent/memory-engine";
-import { MEMORY_CAPTURE, TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
+import {
+  MEMORY_CAPTURE,
+  MEMORY_CONFIRMATION_JUDGE,
+  TRUSTED_PROMPT_TEXTS,
+} from "@himawari-agent/prompt-catalog";
 import {
   classificationWithIdentifiers,
   type EgressPlaceholderKind,
@@ -43,6 +47,7 @@ import {
   placeholderTable,
   restorePlaceholders,
 } from "@himawari-agent/sensitive-capture";
+import { judgeOrDefault } from "./auxiliary-judgment.js";
 
 type MemoryId = NonNullable<ExtractedMemoryCandidate["existingMemoryId"]>;
 type ProductThreadMessage = Awaited<
@@ -71,6 +76,10 @@ const MAXIMUM_RELEVANT_MEMORIES = 10;
 const MAXIMUM_CONTEXT_CHARACTERS = 1500;
 const MAXIMUM_CANDIDATES = 8;
 const MAXIMUM_MEMORY_CHARACTERS = 500;
+const MAXIMUM_SUPPORT_CACHE = 500;
+const SUPPORT_JUDGE_VERSION = createHash("sha256")
+  .update(MEMORY_CONFIRMATION_JUDGE.text)
+  .digest("hex");
 const CLASSIFICATION_RANK: Record<DataClassification, number> = {
   public: 0,
   private: 1,
@@ -127,6 +136,7 @@ export interface ParsedMemoryCandidates {
   readonly rejectedCandidates: readonly ExtractedMemoryCandidate[];
   readonly invalidCandidates: number;
   readonly returnedNone: boolean;
+  readonly supportChecks: readonly SupportCheck[];
 }
 
 function evidenceText(text: string): string {
@@ -146,35 +156,56 @@ export function quoteFromOwnerMessage(quote: string, ownerMessage: string): bool
   );
 }
 
-const GENERIC_TERMS =
-  /主人|用户|喜欢|偏好|喜爱|好像|可能|经常|一直|比较|觉得|今天|现在|明天|昨天|一下|这个|那个|什么|没有|可以|知道|时候|因为|所以|但是|还是|这样|那样|以后|之前|已经|一定|顺便|帮我|[的了是我你他她它在有和与就也都还很不最想要又]/gu;
-
-function relevanceTokens(text: string): Set<string> {
-  const tokens = new Set<string>();
-  const runs = text
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(GENERIC_TERMS, " ")
-    .split(/[^\p{L}\p{N}]+/u);
-  for (const run of runs) {
-    if (/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+$/u.test(run)) {
-      const chars = [...run];
-      for (let index = 0; index + 1 < chars.length; index += 1) {
-        tokens.add(`${chars[index]}${chars[index + 1]}`);
-      }
-    } else if ([...run].length >= 2) {
-      tokens.add(run);
-    }
-  }
-  return tokens;
+export interface SupportCheck {
+  readonly key: string;
+  readonly memoryText: string;
+  readonly quote: string;
 }
 
-export function quoteRelatesToMemory(quote: string, memoryTexts: readonly string[]): boolean {
-  const quoted = relevanceTokens(quote);
-  return memoryTexts.some((text) => {
-    for (const token of relevanceTokens(text)) if (quoted.has(token)) return true;
-    return false;
-  });
+export class SupportVerdictCache {
+  readonly #known = new Map<string, boolean>();
+
+  get(check: SupportCheck, classification: DataClassification): boolean | undefined {
+    return this.#known.get(this.#key(check, classification));
+  }
+
+  set(check: SupportCheck, classification: DataClassification, verdict: boolean): void {
+    if (this.#known.size >= MAXIMUM_SUPPORT_CACHE) this.#known.clear();
+    this.#known.set(this.#key(check, classification), verdict);
+  }
+
+  #key(check: SupportCheck, classification: DataClassification): string {
+    return createHash("sha256")
+      .update(
+        `${SUPPORT_JUDGE_VERSION}\u0000${classification}\u0000${check.memoryText}\u0000${check.quote}`,
+      )
+      .digest("hex");
+  }
+}
+
+export function supportCheckKey(memoryId: string, quote: string): string {
+  return `${memoryId}\u0000${quote}`;
+}
+
+export function memoryConfirmationJudgePrompt(memoryText: string, quote: string): string {
+  return [
+    MEMORY_CONFIRMATION_JUDGE.text,
+    JSON.stringify({
+      pendingMemory: memoryText.slice(0, MAXIMUM_MEMORY_CHARACTERS),
+      ownerQuote: quote.slice(0, MAXIMUM_SOURCE_CHARACTERS),
+    }),
+  ].join("\n");
+}
+
+export function parseSupportVerdict(output: string): boolean {
+  const parsed = jsonObject(output);
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    typeof (parsed as { supports?: unknown }).supports !== "boolean"
+  )
+    throw new Error("MEMORY_CAPTURE_RESPONSE_INVALID");
+  return (parsed as { supports: boolean }).supports;
 }
 
 export function memoryCapturePrompt(
@@ -267,6 +298,7 @@ export function parseMemoryCandidates(input: {
     { readonly text: string; readonly category: MemoryCategory }
   >;
   readonly ownerMessage?: string;
+  readonly supportVerdicts?: ReadonlyMap<string, boolean>;
   readonly sentAt?: string;
   readonly timeZone?: string;
   readonly subCategories?: Readonly<Record<string, readonly string[]>>;
@@ -310,6 +342,7 @@ export function parseMemoryCandidates(input: {
   let explicitOrdinal: number | null = null;
   let unverifiedEvidence = 0;
   let invalidCandidates = 0;
+  const supportChecks: SupportCheck[] = [];
   for (const item of items.slice(0, MAXIMUM_CANDIDATES)) {
     if (typeof item !== "object" || item === null) {
       invalidCandidates += 1;
@@ -360,14 +393,19 @@ export function parseMemoryCandidates(input: {
       existing !== null &&
       input.tentativeMemories?.has(existing) === true &&
       (decision === "unchanged" || decision === "update" || decision === "merge");
+    const supportKey = existing === null ? "" : supportCheckKey(existing, quote);
+    if (confirmsTentative && evidenceVerified && !input.supportVerdicts?.has(supportKey))
+      supportChecks.push({
+        key: supportKey,
+        memoryText: input.tentativeMemories?.get(existing)?.text ?? "",
+        quote,
+      });
     const evidenceRejected =
       (input.ownerMessage !== undefined &&
         decision !== "unchanged" &&
         dataClassification !== "restricted" &&
         !evidenceVerified) ||
-      (confirmsTentative &&
-        (!evidenceVerified ||
-          !quoteRelatesToMemory(quote, [input.tentativeMemories?.get(existing)?.text ?? ""])));
+      (confirmsTentative && (!evidenceVerified || input.supportVerdicts?.get(supportKey) !== true));
     const category = (
       typeof value["category"] === "string" && CATEGORIES.has(value["category"])
         ? value["category"]
@@ -509,6 +547,7 @@ export function parseMemoryCandidates(input: {
     rejectedCandidates,
     invalidCandidates,
     returnedNone: items.length === 0,
+    supportChecks,
   };
 }
 
@@ -737,6 +776,7 @@ export class ProductionMemoryCapture {
   readonly #pending = new Map<string, { work: Promise<void>; admitted: Promise<void> }>();
   readonly #captured = new Set<string>();
   readonly #busy = new Set<string>();
+  readonly #supportCache = new SupportVerdictCache();
   readonly #settled = new Set<string>();
   #stopping = false;
   private readonly options: ProductionMemoryCaptureOptions;
@@ -1167,6 +1207,41 @@ export class ProductionMemoryCapture {
     };
   }
 
+  async #judgeSupport(
+    plan: CapturePlan,
+    call: MemoryCaptureCall,
+    checks: readonly SupportCheck[],
+  ): Promise<ReadonlyMap<string, boolean>> {
+    const verdicts = new Map<string, boolean>();
+    for (const [index, check] of checks.entries()) {
+      const known = this.#supportCache.get(check, plan.request.dataClassification);
+      if (known !== undefined) {
+        verdicts.set(check.key, known);
+        continue;
+      }
+      const prompt = memoryConfirmationJudgePrompt(check.memoryText, check.quote);
+      let settled = true;
+      const verdict = await judgeOrDefault(
+        {
+          ask: (attempt) =>
+            this.options.generate(plan.request, prompt, () => {}, {
+              invocationId: `${call.invocationId}:support:${index}:${attempt}`,
+              retryToolCall: false,
+            }),
+          parse: parseSupportVerdict,
+        },
+        false,
+        (error) => {
+          settled = false;
+          this.options.onFailure(error);
+        },
+      );
+      if (settled) this.#supportCache.set(check, plan.request.dataClassification, verdict);
+      verdicts.set(check.key, verdict);
+    }
+    return verdicts;
+  }
+
   async #extract(
     plan: CapturePlan,
     onAdmitted: () => void,
@@ -1181,26 +1256,31 @@ export class ProductionMemoryCapture {
         jsonEmbedded: true,
       });
       const { existing } = plan;
-      return parseMemoryCandidates({
-        output,
-        sourceRef: plan.input.sourceRef,
-        sourceClassification: plan.input.sourceClassification,
-        existingIds: new Set(existing.map(({ id }) => id)),
-        tentativeMemories: new Map(
-          existing
-            .filter(({ tentative }) => tentative)
-            .map(({ id, text, category }) => [
-              id,
-              { text, category: category ?? DEFAULT_MEMORY_ATTRIBUTES.category },
-            ]),
-        ),
-        ownerMessage: plan.message,
-        ...(plan.committedAt ? { sentAt: plan.committedAt } : {}),
-        timeZone: this.options.timeZone ?? "UTC",
-        subCategories: plan.subCategories,
-        knownPersonIds: new Set(plan.people.map(({ id }) => id)),
-        restore: (text: string) => restorePlaceholders(text, table),
-      });
+      const parseWith = (supportVerdicts: ReadonlyMap<string, boolean>) =>
+        parseMemoryCandidates({
+          output,
+          sourceRef: plan.input.sourceRef,
+          sourceClassification: plan.input.sourceClassification,
+          existingIds: new Set(existing.map(({ id }) => id)),
+          tentativeMemories: new Map(
+            existing
+              .filter(({ tentative }) => tentative)
+              .map(({ id, text, category }) => [
+                id,
+                { text, category: category ?? DEFAULT_MEMORY_ATTRIBUTES.category },
+              ]),
+          ),
+          supportVerdicts,
+          ownerMessage: plan.message,
+          ...(plan.committedAt ? { sentAt: plan.committedAt } : {}),
+          timeZone: this.options.timeZone ?? "UTC",
+          subCategories: plan.subCategories,
+          knownPersonIds: new Set(plan.people.map(({ id }) => id)),
+          restore: (text: string) => restorePlaceholders(text, table),
+        });
+      const first = parseWith(new Map());
+      if (first.supportChecks.length === 0) return first;
+      return parseWith(await this.#judgeSupport(plan, call, first.supportChecks));
     } catch (error) {
       plan.audit("extraction_failed");
       throw error;
