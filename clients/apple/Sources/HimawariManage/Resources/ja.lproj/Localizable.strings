@@ -26,7 +26,8 @@
 "result.notDone" = "できませんでした";
 "result.checking" = "実行されたか分からないため確認中";
 "result.waiting" = "承認待ち";
-"result.other" = "このバージョンではまだ知らない状態です";
+"result.other" = "このバージョンのアプリではこの結果を表示できません";
+"result.other.update" = "アプリを更新すると見られます";
 "abilities.title" = "代わりにできること";
 "abilities.system" = "システムで許可されているもの";
 "permission.status.authorized" = "許可済み";
@@ -55,3 +56,4 @@
 "device.channel.app_store" = "App Store";
 "device.channel.mac_direct" = "個人用インストール";
 "result.withReason" = "%@。%@";
+"device.pairedAt.pattern" = "M月d日";

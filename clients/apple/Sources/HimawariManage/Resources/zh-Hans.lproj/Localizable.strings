@@ -26,7 +26,8 @@
 "result.notDone" = "没做成";
 "result.checking" = "不确定做没做成，正在核对";
 "result.waiting" = "等你点头";
-"result.other" = "这件事的状态这个版本还不认识";
+"result.other" = "这个版本的 App 显示不了这件事的结果";
+"result.other.update" = "更新 App 后能看到";
 "abilities.title" = "它能替你做的";
 "abilities.system" = "系统里允许的";
 "permission.status.authorized" = "已允许";
@@ -55,3 +56,4 @@
 "device.channel.app_store" = "App Store";
 "device.channel.mac_direct" = "自用直装";
 "result.withReason" = "%@。%@";
+"device.pairedAt.pattern" = "M 月 d 日";

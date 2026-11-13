@@ -26,7 +26,8 @@
 "result.notDone" = "Not done";
 "result.checking" = "Not sure it was done, checking";
 "result.waiting" = "Needs your OK";
-"result.other" = "This version doesn't know this state yet";
+"result.other" = "This version of the app can't show this result";
+"result.other.update" = "You'll see it after updating the app";
 "abilities.title" = "What it can do for you";
 "abilities.system" = "Allowed in the system";
 "permission.status.authorized" = "Allowed";
@@ -55,3 +56,4 @@
 "device.channel.app_store" = "App Store";
 "device.channel.mac_direct" = "Personal install";
 "result.withReason" = "%@. %@";
+"device.pairedAt.pattern" = "MMM d";

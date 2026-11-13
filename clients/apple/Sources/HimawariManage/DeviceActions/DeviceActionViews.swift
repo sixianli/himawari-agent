@@ -105,6 +105,7 @@ struct DeviceActionResultRow: View {
 
     static func description(_ view: DeviceActionView, _ kind: DeviceActionResultKind) -> String {
         let detail = view.detail.localized()
+        if kind == .other { return detail.isEmpty ? L.text("result.other.update") : detail }
         guard kind == .notDone, let reason = view.reason, !reason.isEmpty else { return detail }
         return L.format("result.withReason", detail, reason)
     }
@@ -126,7 +127,7 @@ struct DeviceActionResultRow: View {
         case .notDone: Icon(.alertCircle, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmDanger)
         case .checking: ProgressView().tint(Color.hmMuted)
         case .waiting: Icon(.handStop, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmSun)
-        case .other: Icon(.deviceMobile, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmMuted)
+        case .other: Icon(.infoCircle, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmMuted)
         }
     }
 }
@@ -452,6 +453,15 @@ public struct ThisDevice: Equatable, Sendable {
         #endif
     }
 
+    static func dayText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.setLocalizedDateFormatFromTemplate("MMMd")
+        let pattern = L.text("device.pairedAt.pattern")
+        if pattern != "device.pairedAt.pattern", !pattern.isEmpty { formatter.dateFormat = pattern }
+        return formatter.string(from: date)
+    }
+
     public static func version(_ short: String, channel: String) -> String {
         L.format("device.version.value", short, L.text("device.channel.\(channel)"))
     }
@@ -486,7 +496,7 @@ public struct ThisDeviceView: View {
                         valueRow(L.text("device.link"), Text(L.text("device.link.\(device.link.rawValue)")), color: device.link == .online ? Color.hmSuccess : Color.hmMuted)
                         if let pairedAt = device.pairedAt {
                             RowSeparator()
-                            valueRow(L.text("device.pairedAt"), Text(pairedAt, format: .dateTime.month().day()))
+                            valueRow(L.text("device.pairedAt"), Text(ThisDevice.dayText(pairedAt)))
                         }
                         RowSeparator()
                         valueRow(L.text("device.version"), Text(device.version))
