@@ -2,6 +2,7 @@
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
   type CapabilityDeploymentConfiguration,
   type ConfigurationPort,
   type ConfiguredCompletionsGenerationModelDescriptor,
@@ -18,8 +19,11 @@ import {
   type IdentityBootstrapConfiguration,
   type IdentityConfiguration,
   type IdentityCsrfConfiguration,
+  IMPORT_DUPLICATE_DEFAULTS,
+  IMPORT_DUPLICATE_RANGES,
+  type ImportDuplicateConfiguration,
+  type ImportDuplicateTuning,
   isWebProviderId,
-  APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
   LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
   type ModelProviderRouting,
@@ -1295,6 +1299,37 @@ function parseMuseIntake(value: unknown): NonNullable<RunPolicyConfiguration["mu
   });
 }
 
+function parseImportDuplicates(value: unknown): ImportDuplicateConfiguration {
+  const field = "configuration.runPolicy.importDuplicates";
+  const input = record(value, field);
+  const keys = Object.keys(IMPORT_DUPLICATE_DEFAULTS) as (keyof ImportDuplicateTuning)[];
+  rejectUnknown(input, [...keys, "model", "secretRef", "inputMicrosPerMillionTokens"], field);
+  const tuning = Object.fromEntries(
+    keys.map((key) => {
+      const [minimum, maximum] = IMPORT_DUPLICATE_RANGES[key];
+      return [
+        key,
+        input[key] === undefined
+          ? IMPORT_DUPLICATE_DEFAULTS[key]
+          : integer(input[key], `${field}.${key}`, minimum, maximum),
+      ];
+    }),
+  ) as unknown as ImportDuplicateTuning;
+  if (tuning.noAtMostPermille >= tuning.yesAtLeastPermille)
+    throw invalid(`${field}.noAtMostPermille`, "must be smaller than yesAtLeastPermille");
+  return Object.freeze({
+    ...tuning,
+    model: safeReference(input["model"], `${field}.model`),
+    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
+    inputMicrosPerMillionTokens: integer(
+      input["inputMicrosPerMillionTokens"],
+      `${field}.inputMicrosPerMillionTokens`,
+      1,
+      100_000_000,
+    ),
+  });
+}
+
 function parseMcpRead(value: unknown): NonNullable<RunPolicyConfiguration["mcpRead"]> {
   const field = "configuration.runPolicy.mcpRead";
   const input = record(value, field);
@@ -1399,6 +1434,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "homeFeed",
       "proactive",
       "museIntake",
+      "importDuplicates",
       "realEval",
       "mcpRead",
     ],
@@ -1453,6 +1489,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       ? {}
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
     ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
+    ...(input["importDuplicates"] === undefined
+      ? {}
+      : { importDuplicates: parseImportDuplicates(input["importDuplicates"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
     ...(input["freezeThreadPrompts"] === undefined
@@ -1729,6 +1768,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       runPolicy.webPush.secretRef,
       WEB_PUSH_SECRET_PURPOSE,
       "configuration.runPolicy.webPush.secretRef",
+    );
+  if (runPolicy?.importDuplicates)
+    assertIdentitySecretReference(
+      secretReferences,
+      runPolicy.importDuplicates.secretRef,
+      "model-auth",
+      "configuration.runPolicy.importDuplicates.secretRef",
     );
   if (runPolicy?.museIntake)
     assertIdentitySecretReference(

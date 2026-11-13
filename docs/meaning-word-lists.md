@@ -43,7 +43,6 @@ Andy 在 2026-11-12 定的原则（[ADR 0249](adr/0249-the-model-judges-meaning-
 | `apps/agent-service/src/production-owner-rules.ts` | `STANDING_STARTS` | 待删除 | 同上 | 2026-11-30 |
 | `apps/agent-service/src/production-owner-rules.ts` | `QUIET_REQUEST_MARKERS` | 待删除 | PR 414 新增，同上，随 ADR 0252 一起删 | 2026-11-30 |
 | `apps/agent-service/src/production-owner-rules.ts` | `RECURRING_TIME_MARKERS` | 待删除 | PR 414 新增，同上 | 2026-11-30 |
-| `apps/control-center/src/memory-import.ts` | `normalizeMemoryText` | 待删除 | 判断导入的记忆是不是已有记忆的重复，靠字符串相等或包含，换了说法就漏，标成重复还会让这条无法勾选；服务器的 `memory.import.commit` 不做任何判重；改成服务器模型判断 | 2026-12-15 |
 | `packages/sensitive-capture/src/external.ts` | `PLACEHOLDER` | 格式解析 | 认出我们自己生成的占位符 | |
 | `packages/sensitive-capture/src/secret-like.ts` | `PLACEHOLDER` | 格式解析 | 同上 | |
 | `packages/sensitive-capture/src/redaction.ts` | `EGRESS_PLACEHOLDER_PATTERN` | 格式解析 | 同上 | |
