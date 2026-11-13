@@ -13,24 +13,37 @@ import Testing
         HeardSpeech(text: text, startedAt: t0, duration: 2.5, language: "zh-CN", confidence: 0.9, source: .deviceMicrophone, ownerScore: score)
     }
 
-    @Test func sendsHalfSentencesOnlyAfterItsNameAndOnlyTheRequest() {
+    @Test func sendsTheWholeSentenceOnceItsNameIsHeard() {
         var flow = UtteranceFlow(names: names, policy: SpokenRequestPolicy(partialInterval: 0.4, partialMinimumCharacters: 2, followUpSeconds: 8))
         flow.begin(.heard, at: t0, utteranceId: "utt-1")
         #expect(flow.partial("今天", at: t0).isEmpty)
         #expect(flow.partial("Himawari", at: t0) == [.heardName])
-        #expect(flow.partial("Himawari，帮我", at: t0.addingTimeInterval(0.1)) == [.prepare(utteranceId: "utt-1", text: "帮我")])
+        #expect(flow.partial("Himawari，帮我", at: t0.addingTimeInterval(0.1)) == [.prepare(utteranceId: "utt-1", text: "Himawari，帮我")])
         #expect(flow.partial("Himawari，帮我约", at: t0.addingTimeInterval(0.2)).isEmpty)
-        #expect(flow.partial("Himawari，帮我约田中", at: t0.addingTimeInterval(0.6)) == [.prepare(utteranceId: "utt-1", text: "帮我约田中")])
+        #expect(flow.partial("Himawari，帮我约田中", at: t0.addingTimeInterval(0.6)) == [.prepare(utteranceId: "utt-1", text: "Himawari，帮我约田中")])
         #expect(flow.partial("Himawari，帮我约田中", at: t0.addingTimeInterval(1.2)).isEmpty)
-        guard case let .command(request, heard, touched) = flow.finish(speech("Himawari，帮我约田中十点"), mode: .full, at: t0) else {
+        guard case let .command(request, heard, touched, heardName) = flow.finish(speech("Himawari，帮我约田中十点"), mode: .full, at: t0) else {
             Issue.record("expected a command")
             return
         }
-        #expect(request == "帮我约田中十点")
+        #expect(request == "Himawari，帮我约田中十点")
+        #expect(heardName == "Himawari")
         #expect(heard.utteranceId == "utt-1")
         #expect(heard.speaker == HeardSpeaker(kind: .owner, score: 640))
         #expect(!touched)
         #expect(flow.utteranceId != "utt-1")
+    }
+
+    @Test func sendsTheSentenceWhenTheNameComesLast() {
+        var flow = UtteranceFlow(names: names)
+        flow.begin(.heard, at: t0, utteranceId: "utt-5")
+        #expect(flow.partial("帮我订个会议室", at: t0).isEmpty)
+        guard case let .command(request, _, _, heardName) = flow.finish(speech("帮我订个会议室，向日葵"), mode: .nameOnly, at: t0) else {
+            Issue.record("expected a command")
+            return
+        }
+        #expect(request == "帮我订个会议室，向日葵")
+        #expect(heardName == "向日葵")
     }
 
     @Test func treatsEverythingAsTheRequestWhenTheOwnerTouchedIt() {
@@ -40,7 +53,8 @@ import Testing
         #expect(flow.finish(speech("帮我订会议室"), mode: .nameOnly, at: t0) == .command(
             request: "帮我订会议室",
             heard: HeardUtterance(utteranceId: "utt-2", text: "帮我订会议室", startedAt: t0, duration: 2.5, language: "zh-CN", confidence: 0.9, source: .deviceMicrophone, speaker: HeardSpeaker(kind: .owner, score: 640)),
-            touched: true
+            touched: true,
+            heardName: nil
         ))
     }
 
@@ -54,11 +68,12 @@ import Testing
         flow.begin(.heard, at: t0.addingTimeInterval(3), utteranceId: "utt-3")
         #expect(flow.isCommandCandidate)
         #expect(flow.partial("几点了", at: t0.addingTimeInterval(3)) == [.prepare(utteranceId: "utt-3", text: "几点了")])
-        guard case let .command(request, _, _) = flow.finish(speech("几点了"), mode: .full, at: t0.addingTimeInterval(4)) else {
+        guard case let .command(request, _, _, heardName) = flow.finish(speech("几点了"), mode: .full, at: t0.addingTimeInterval(4)) else {
             Issue.record("expected a command")
             return
         }
         #expect(request == "几点了")
+        #expect(heardName == nil)
     }
 
     @Test func forgetsTheNameWhenTheNextSentenceComesTooLate() {

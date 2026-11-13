@@ -73,12 +73,12 @@ public struct ListenEvalTranscript: Codable, Sendable, Equatable {
 }
 
 public struct ListenEvalCall: Codable, Sendable, Equatable {
-    public let heardName: Bool
+    public let nameHeard: Bool
     public let request: String?
     public let prepared: [String]
 
-    public init(heardName: Bool, request: String?, prepared: [String]) {
-        self.heardName = heardName
+    public init(nameHeard: Bool, request: String?, prepared: [String]) {
+        self.nameHeard = nameHeard
         self.request = request
         self.prepared = prepared
     }
@@ -108,7 +108,7 @@ public enum ListenEvalReplay {
         var flow = UtteranceFlow(names: names, policy: policy)
         var open = false
         var prepared: [String] = []
-        var heardName = false
+        var nameHeard = false
         for piece in pieces {
             let now = origin.addingTimeInterval(piece.at)
             if !open {
@@ -119,7 +119,7 @@ public enum ListenEvalReplay {
             if !piece.isFinal {
                 for step in flow.partial(piece.text, at: now) {
                     switch step {
-                    case .heardName: heardName = true
+                    case .heardName: nameHeard = true
                     case let .prepare(_, text): prepared.append(text)
                     }
                 }
@@ -128,14 +128,14 @@ public enum ListenEvalReplay {
             open = false
             let speech = HeardSpeech(text: piece.text, startedAt: origin.addingTimeInterval(piece.start), duration: max(0, piece.at - piece.start), language: nil, confidence: 0, source: .deviceMicrophone, ownerScore: nil)
             switch flow.finish(speech, mode: .nameOnly, at: now) {
-            case let .command(request, _, _):
-                return ListenEvalCall(heardName: true, request: request, prepared: prepared)
+            case let .command(request, _, _, _):
+                return ListenEvalCall(nameHeard: true, request: request, prepared: prepared)
             case .calledOnly:
-                heardName = true
+                nameHeard = true
             case .record, .nothing:
                 break
             }
         }
-        return ListenEvalCall(heardName: heardName, request: nil, prepared: [])
+        return ListenEvalCall(nameHeard: nameHeard, request: nil, prepared: [])
     }
 }

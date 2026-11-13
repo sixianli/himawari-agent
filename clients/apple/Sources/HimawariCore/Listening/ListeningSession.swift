@@ -135,14 +135,14 @@ public enum CommandTriggerContext: Sendable, Equatable {
 }
 
 public enum SpokenTrigger {
-    public static func evidence(for context: CommandTriggerContext, speakerScore: Int?) -> VoiceEvidence {
+    public static func evidence(for context: CommandTriggerContext, speakerScore: Int?, heardName: String? = nil) -> VoiceEvidence {
         switch context {
         case .ownerTouched:
             VoiceEvidence(trigger: .handsOn, speakerScore: speakerScore)
         case let .heardName(.airpods, inEar, loudness):
-            VoiceEvidence(trigger: .airpodsName, speakerScore: speakerScore, inputRoute: .airpods, inEar: inEar, loudnessScore: loudness)
+            VoiceEvidence(trigger: .airpodsName, speakerScore: speakerScore, inputRoute: .airpods, inEar: inEar, loudnessScore: loudness, heardName: heardName)
         case let .heardName(route, _, loudness):
-            VoiceEvidence(trigger: .ambientName, speakerScore: speakerScore, inputRoute: route, loudnessScore: loudness)
+            VoiceEvidence(trigger: .ambientName, speakerScore: speakerScore, inputRoute: route, loudnessScore: loudness, heardName: heardName)
         }
     }
 }

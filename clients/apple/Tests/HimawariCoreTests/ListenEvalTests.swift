@@ -85,13 +85,13 @@ struct ListenEvalTests {
             ListenEvalPiece(at: 1.9, start: 0, text: "Himawari 帮我看天气", isFinal: true),
         ]
         let call = ListenEvalReplay.call(names: Self.names, pieces: pieces)
-        #expect(call == ListenEvalCall(heardName: true, request: "帮我看天气", prepared: ["帮我", "帮我看天气"]))
+        #expect(call == ListenEvalCall(nameHeard: true, request: "Himawari 帮我看天气", prepared: ["Himawari 帮我", "Himawari 帮我看天气"]))
 
         var changed = pieces
         changed[3] = ListenEvalPiece(at: 1.9, start: 0, text: "Himawari，帮我看天气。", isFinal: true)
         let punctuated = ListenEvalReplay.call(names: Self.names, pieces: changed)
-        #expect(punctuated.request == "帮我看天气。")
-        #expect(punctuated.prepared.last == "帮我看天气")
+        #expect(punctuated.request == "Himawari，帮我看天气。")
+        #expect(punctuated.prepared.last == "Himawari 帮我看天气")
     }
 
     @Test func replayFollowsANameOnlyCallIntoTheNextSentence() {
@@ -101,7 +101,7 @@ struct ListenEvalTests {
             ListenEvalPiece(at: 2.6, start: 1.2, text: "明日の天気", isFinal: true),
         ]
         let call = ListenEvalReplay.call(names: Self.names, pieces: pieces)
-        #expect(call == ListenEvalCall(heardName: true, request: "明日の天気", prepared: ["明日の天気"]))
+        #expect(call == ListenEvalCall(nameHeard: true, request: "明日の天気", prepared: ["明日の天気"]))
     }
 
     @Test func replayReportsNothingWhenTheNameIsNotCalled() {
@@ -109,7 +109,7 @@ struct ListenEvalTests {
             ListenEvalPiece(at: 0.4, start: 0, text: "今天天气", isFinal: false),
             ListenEvalPiece(at: 1.0, start: 0, text: "今天天气不错", isFinal: true),
         ]
-        #expect(ListenEvalReplay.call(names: Self.names, pieces: pieces) == ListenEvalCall(heardName: false, request: nil, prepared: []))
+        #expect(ListenEvalReplay.call(names: Self.names, pieces: pieces) == ListenEvalCall(nameHeard: false, request: nil, prepared: []))
     }
 
     @Test func transcriptJoinsFinalPiecesAndSpansTheSpeech() {

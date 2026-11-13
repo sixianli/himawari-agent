@@ -2,32 +2,40 @@ import Foundation
 
 public struct NameCall: Sendable, Equatable {
     public let names: [String]
+    private let spellings: [String]
 
     public init(names: [String]) {
         var seen = Set<String>()
-        self.names = names
-            .map(Self.fold)
-            .filter { !$0.isEmpty && seen.insert($0).inserted }
+        var folded: [String] = []
+        var spellings: [String] = []
+        for name in names {
+            let key = Self.fold(name)
+            guard !key.isEmpty, seen.insert(key).inserted else { continue }
+            folded.append(key)
+            spellings.append(name.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        self.names = folded
+        self.spellings = spellings
     }
 
     public struct Match: Sendable, Equatable {
-        public let request: String
+        public let name: String
+        public let text: String
+        public let saysMoreThanTheName: Bool
     }
 
     public func match(_ transcript: String) -> Match? {
         let folded = Self.fold(transcript)
         guard !folded.isEmpty else { return nil }
-        for name in names {
-            guard let range = folded.range(of: name) else { continue }
-            let before = folded[..<range.lowerBound]
-            guard before.count <= Self.leadingAllowance else { continue }
-            let request = Self.request(in: transcript, after: name)
-            return Match(request: request)
+        for (index, name) in names.enumerated() where folded.contains(name) {
+            return Match(
+                name: spellings[index],
+                text: transcript.trimmingCharacters(in: .whitespacesAndNewlines),
+                saysMoreThanTheName: !folded.replacingOccurrences(of: name, with: "").isEmpty
+            )
         }
         return nil
     }
-
-    static let leadingAllowance = 4
 
     static func fold(_ text: String) -> String {
         text.precomposedStringWithCompatibilityMapping
@@ -36,18 +44,5 @@ public struct NameCall: Sendable, Equatable {
             .filter { !CharacterSet.punctuationCharacters.contains($0) && !CharacterSet.symbols.contains($0) && !CharacterSet.whitespacesAndNewlines.contains($0) }
             .map(String.init)
             .joined()
-    }
-
-    static func request(in transcript: String, after name: String) -> String {
-        var folded = ""
-        for (offset, character) in transcript.enumerated() {
-            folded += fold(String(character))
-            if folded.hasSuffix(name) {
-                let leading = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
-                let rest = transcript.dropFirst(offset + 1).drop { $0.unicodeScalars.allSatisfy(leading.contains) }
-                return String(rest).trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-        }
-        return transcript
     }
 }

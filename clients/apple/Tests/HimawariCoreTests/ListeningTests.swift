@@ -80,6 +80,9 @@ import Testing
         #expect(SpokenTrigger.evidence(for: .ownerTouched, speakerScore: nil) == VoiceEvidence(trigger: .handsOn))
         #expect(SpokenTrigger.evidence(for: .heardName(route: .airpods, inEar: true, loudnessScore: 800), speakerScore: 300) == VoiceEvidence(trigger: .airpodsName, speakerScore: 300, inputRoute: .airpods, inEar: true, loudnessScore: 800))
         #expect(SpokenTrigger.evidence(for: .heardName(route: .deviceMicrophone, inEar: nil, loudnessScore: 500), speakerScore: 700) == VoiceEvidence(trigger: .ambientName, speakerScore: 700, inputRoute: .deviceMicrophone, loudnessScore: 500))
+        #expect(SpokenTrigger.evidence(for: .heardName(route: .deviceMicrophone, inEar: nil, loudnessScore: 500), speakerScore: 700, heardName: "Himawari").heardName == "Himawari")
+        #expect(SpokenTrigger.evidence(for: .ownerTouched, speakerScore: 700, heardName: "Himawari").heardName == nil)
+        #expect(VoiceEvidence(trigger: .ambientName, heardName: String(repeating: "a", count: 80)).heardName?.count == VoiceEvidence.heardNameMaximumCharacters)
     }
 
     @Test func halfSentencesGoToTheirOwnRoute() async throws {
@@ -151,21 +154,27 @@ import Testing
 @Suite struct NameCallTests {
     private let call = NameCall(names: ["Himawari", "ひまわり", "向日葵"])
 
-    @Test func findsTheNameAtTheStartAndTakesWhatFollows() {
-        #expect(call.match("Himawari，帮我订会议室")?.request == "帮我订会议室")
-        #expect(call.match("嘿 himawari, what's the time?")?.request == "what's the time?")
-        #expect(call.match("ねえ、ひまわり、明日の天気は？")?.request == "明日の天気は？")
-        #expect(call.match("ＨＩＭＡＷＡＲＩ 几点了")?.request == "几点了")
+    @Test func findsTheNameWhereverItIsAndKeepsTheWholeSentence() {
+        #expect(call.match("Himawari，帮我订会议室") == NameCall.Match(name: "Himawari", text: "Himawari，帮我订会议室", saysMoreThanTheName: true))
+        #expect(call.match("帮我订个会议室，Himawari")?.text == "帮我订个会议室，Himawari")
+        #expect(call.match("我跟你说，himawari 帮我查天气")?.name == "Himawari")
+        #expect(call.match("ねえ、ひまわり、明日の天気は？")?.name == "ひまわり")
+        #expect(call.match("ＨＩＭＡＷＡＲＩ 几点了")?.name == "Himawari")
     }
 
-    @Test func ignoresTheNameDeepInsideOtherTalk() {
-        #expect(call.match("昨天我们去公园看了很多向日葵") == nil)
+    @Test func leavesWhetherItIsBeingAddressedToTheServer() {
+        #expect(call.match("我昨天让 Himawari 订了会议室")?.saysMoreThanTheName == true)
+        #expect(call.match("昨天我们去公园看了很多向日葵")?.name == "向日葵")
+    }
+
+    @Test func tellsWhenOnlyTheNameWasSaid() {
+        #expect(call.match("Himawari？")?.saysMoreThanTheName == false)
         #expect(call.match("今天天气不错") == nil)
         #expect(call.match("") == nil)
     }
 
     @Test func takesItsNamesFromWhereverTheyAreGiven() {
-        #expect(NameCall(names: ["Sunny"]).match("Sunny 开灯")?.request == "开灯")
+        #expect(NameCall(names: ["Sunny"]).match("开灯 Sunny")?.name == "Sunny")
         #expect(NameCall(names: ["Sunny"]).match("Himawari 开灯") == nil)
     }
 }

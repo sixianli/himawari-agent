@@ -18,13 +18,17 @@ public struct VoiceEvidence: Codable, Sendable, Equatable {
     public let inputRoute: AudioInputRoute?
     public let inEar: Bool?
     public let loudnessScore: Int?
+    public let heardName: String?
 
-    public init(trigger: VoiceTrigger, speakerScore: Int? = nil, inputRoute: AudioInputRoute? = nil, inEar: Bool? = nil, loudnessScore: Int? = nil) {
+    public static let heardNameMaximumCharacters = 64
+
+    public init(trigger: VoiceTrigger, speakerScore: Int? = nil, inputRoute: AudioInputRoute? = nil, inEar: Bool? = nil, loudnessScore: Int? = nil, heardName: String? = nil) {
         self.trigger = trigger
         self.speakerScore = speakerScore.map(VoiceScore.clamp)
         self.inputRoute = inputRoute
         self.inEar = inEar
         self.loudnessScore = loudnessScore.map(VoiceScore.clamp)
+        self.heardName = trigger == .handsOn ? nil : heardName.map { String($0.prefix(Self.heardNameMaximumCharacters)) }.flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 

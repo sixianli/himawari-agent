@@ -45,7 +45,7 @@ public struct HeardSpeech: Sendable, Equatable {
 }
 
 public enum UtteranceResult: Sendable, Equatable {
-    case command(request: String, heard: HeardUtterance, touched: Bool)
+    case command(request: String, heard: HeardUtterance, touched: Bool, heardName: String?)
     case calledOnly(HeardUtterance)
     case record(HeardUtterance)
     case nothing
@@ -88,12 +88,11 @@ public struct UtteranceFlow: Sendable, Equatable {
             nameAnnounced = true
             steps.append(.heardName)
         }
-        let trimmed = request.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= policy.partialMinimumCharacters, trimmed != lastSent else { return steps }
+        guard request.saysMore, request.text.count >= policy.partialMinimumCharacters, request.text != lastSent else { return steps }
         if let lastSentAt, now.timeIntervalSince(lastSentAt) < policy.partialInterval { return steps }
-        lastSent = trimmed
+        lastSent = request.text
         lastSentAt = now
-        steps.append(.prepare(utteranceId: utteranceId, text: trimmed))
+        steps.append(.prepare(utteranceId: utteranceId, text: request.text))
         return steps
     }
 
@@ -110,9 +109,8 @@ public struct UtteranceFlow: Sendable, Equatable {
         )
         defer { utteranceId = HeardUtterance.newUtteranceId() }
         if let request = request(in: speech.text) {
-            let trimmed = request.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                return .command(request: trimmed, heard: heard, touched: start == .ownerTouched)
+            if request.saysMore {
+                return .command(request: request.text, heard: heard, touched: start == .ownerTouched, heardName: request.name)
             }
             if start == .heard && !followsName {
                 awaitingRequestUntil = now.addingTimeInterval(policy.followUpSeconds)
@@ -123,8 +121,11 @@ public struct UtteranceFlow: Sendable, Equatable {
         return .record(heard)
     }
 
-    private func request(in text: String) -> String? {
-        if start == .ownerTouched || followsName { return text }
-        return names.match(text)?.request
+    private func request(in text: String) -> (text: String, name: String?, saysMore: Bool)? {
+        if start == .ownerTouched || followsName {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (trimmed, nil, !trimmed.isEmpty)
+        }
+        return names.match(text).map { ($0.text, $0.name, $0.saysMoreThanTheName) }
     }
 }

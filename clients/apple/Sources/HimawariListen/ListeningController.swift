@@ -362,12 +362,12 @@ public final class ListeningController {
         let result = flow.finish(speech, mode: mode, at: now)
         utteranceOpen = false
         switch result {
-        case let .command(request, heard, touched):
+        case let .command(request, heard, touched, heardName):
             await upload(heard)
             let context: CommandTriggerContext = touched
                 ? .ownerTouched
                 : .heardName(route: route, inEar: route == .airpods ? HeadphoneWear.worn(motionFresh: inEar.inEar(), playsThroughSameHeadset: capture?.playsThroughSameHeadset ?? false) : nil, loudnessScore: loudness)
-            await command(request, heard: heard, evidence: SpokenTrigger.evidence(for: context, speakerScore: score))
+            await command(request, heard: heard, evidence: SpokenTrigger.evidence(for: context, speakerScore: score, heardName: heardName))
         case let .calledOnly(heard):
             await upload(heard)
         case let .record(heard):
