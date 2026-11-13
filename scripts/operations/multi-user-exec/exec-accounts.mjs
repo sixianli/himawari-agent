@@ -9,6 +9,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -20,16 +21,16 @@ import {
   addSlot,
   directoryPlan,
   emptyLedger,
+  knownUnitNames,
   parseExecConfig,
   parseLedger,
   personPaths,
   removeSlot,
+  renderTmpfiles,
   renderUnits,
   serviceName,
   socketName,
 } from "./plan.mjs";
-
-const UNIT_PREFIX = "himawari-exec";
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
@@ -40,6 +41,8 @@ function parseArgs(argv) {
     ledger: "/etc/himawari/exec-slots.json",
     units: "/etc/systemd/system",
     backups: "/var/backups/himawari-exec",
+    tmpfiles: "/etc/tmpfiles.d/himawari-exec.conf",
+    init: false,
     systemd: true,
   };
   for (let index = 0; index < rest.length; index += 1) {
@@ -55,6 +58,8 @@ function parseArgs(argv) {
     else if (key === "--ledger") options.ledger = take();
     else if (key === "--units") options.units = take();
     else if (key === "--backups") options.backups = take();
+    else if (key === "--tmpfiles") options.tmpfiles = take();
+    else if (key === "--init") options.init = true;
     else if (key === "--without-systemd") options.systemd = false;
     else if (!key.startsWith("--") && options.slot === undefined) options.slot = key;
     else throw new Error(`EXEC_ARG_UNKNOWN ${key}`);
@@ -70,8 +75,10 @@ function readJson(file) {
   return JSON.parse(readFileSync(file, "utf8"));
 }
 
-function readLedger(file) {
-  return existsSync(file) ? parseLedger(readJson(file)) : emptyLedger();
+function readLedger(file, allowMissing) {
+  if (existsSync(file)) return parseLedger(readJson(file));
+  if (!allowMissing) throw new Error(`EXEC_LEDGER_MISSING ${file}`);
+  return emptyLedger();
 }
 
 function run(command, args) {
@@ -148,40 +155,85 @@ function ensureDirectory(entry) {
   chmodSync(entry.path, Number.parseInt(entry.mode, 8));
 }
 
-function ownedUnits(directory) {
-  return existsSync(directory)
-    ? readdirSync(directory).filter((name) => name.startsWith(UNIT_PREFIX))
-    : [];
+function presentUnits(directory, known) {
+  return existsSync(directory) ? readdirSync(directory).filter((name) => known.has(name)) : [];
 }
 
-function backupUnits(options) {
+function backupUnits(options, known) {
   const target = path.join(
     options.backups,
-    new Date().toISOString().replaceAll(":", "").replace(/\..*/, ""),
+    `${new Date().toISOString().replaceAll(":", "").replace(/\..*/, "")}-${process.pid}`,
   );
   mkdirSync(target, { recursive: true, mode: 0o700 });
-  for (const name of ownedUnits(options.units))
+  for (const name of presentUnits(options.units, known))
     copyFileSync(path.join(options.units, name), path.join(target, name));
-  if (existsSync(options.ledger))
-    copyFileSync(options.ledger, path.join(target, "exec-slots.json"));
   return target;
 }
 
-function restoreUnits(options, backup) {
-  for (const name of ownedUnits(options.units)) rmSync(path.join(options.units, name));
-  for (const name of readdirSync(backup).filter((item) => item.startsWith(UNIT_PREFIX)))
+function restoreUnits(options, known, backup) {
+  for (const name of presentUnits(options.units, known)) rmSync(path.join(options.units, name));
+  for (const name of readdirSync(backup))
     copyFileSync(path.join(backup, name), path.join(options.units, name));
   if (options.systemd) quiet("systemctl", ["daemon-reload"]);
 }
 
-function apply(options, config, ledger, previous) {
-  const backup = backupUnits(options);
+function checkGatewayFiles(config) {
+  for (const [file, executable] of [
+    [config.gateway.node, true],
+    [config.gateway.entry, false],
+  ]) {
+    const metadata = lstatSync(file);
+    if (
+      !metadata.isFile() ||
+      metadata.uid !== 0 ||
+      (metadata.mode & 0o022) !== 0 ||
+      (executable && (metadata.mode & 0o111) === 0)
+    )
+      throw new Error(`EXEC_GATEWAY_FILE_UNSAFE ${file}`);
+  }
+}
+
+function retire(options, config, slot) {
+  if (options.systemd) {
+    quiet("systemctl", ["disable", "--now", socketName(slot)]);
+    quiet("systemctl", ["stop", serviceName(slot)]);
+  }
+  const stamp = new Date().toISOString().replaceAll(":", "").replace(/\..*/, "");
+  const paths = personPaths(config, slot);
+  for (const directory of [paths.privateRoot, paths.workspace]) {
+    if (!existsSync(directory)) continue;
+    if (lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory())
+      throw new Error(`EXEC_DIRECTORY_NOT_PLAIN ${directory}`);
+    const retired = `${directory}.removed-${stamp}`;
+    renameSync(directory, retired);
+    chownSync(retired, 0, 0);
+    chmodSync(retired, 0o700);
+  }
+  if (quiet("id", [accountName(slot)]))
+    run("usermod", ["--lock", "--expiredate", "1", accountName(slot)]);
+}
+
+function converge(options, config, ledger) {
+  checkGatewayFiles(config);
+  for (const entry of ledger.slots)
+    if (entry.state === "active" && (entry.uid < config.uids.first || entry.uid > config.uids.last))
+      throw new Error(`EXEC_LEDGER_UID_OUTSIDE_RANGE ${entry.slot}`);
+  const known = knownUnitNames(ledger);
+  const backup = backupUnits(options, known);
   try {
     ensureGroup(config);
     for (const entry of ledger.slots) if (entry.state === "active") ensureAccount(entry);
-    for (const entry of directoryPlan(config, ledger)) ensureDirectory(entry);
+    for (const entry of ledger.slots)
+      if (entry.state === "removed") retire(options, config, entry.slot);
+    atomicWrite(options.tmpfiles, renderTmpfiles(config), 0o644);
+    if (options.systemd) run("systemd-tmpfiles", ["--create", options.tmpfiles]);
+    for (const entry of directoryPlan(config, ledger)) {
+      ensureDirectory(entry);
+      if (realpathSync(entry.path) !== entry.path)
+        throw new Error(`EXEC_DIRECTORY_NOT_CANONICAL ${entry.path}`);
+    }
     const units = renderUnits(config, ledger);
-    for (const name of ownedUnits(options.units))
+    for (const name of presentUnits(options.units, known))
       if (!units.has(name)) rmSync(path.join(options.units, name));
     for (const [name, content] of units)
       atomicWrite(path.join(options.units, name), content, 0o644);
@@ -194,30 +246,13 @@ function apply(options, config, ledger, previous) {
       for (const entry of ledger.slots)
         if (entry.state === "active") run("systemctl", ["enable", "--now", socketName(entry.slot)]);
     }
-    atomicWrite(options.ledger, `${JSON.stringify(ledger, null, 2)}\n`, 0o600);
   } catch (error) {
-    restoreUnits(options, backup);
-    if (previous) atomicWrite(options.ledger, `${JSON.stringify(previous, null, 2)}\n`, 0o600);
-    throw error;
+    restoreUnits(options, known, backup);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `${message}\nEXEC_APPLY_INCOMPLETE the slot ledger is kept; fix the cause and run apply again`,
+    );
   }
-}
-
-function remove(options, config, ledger, slot) {
-  const next = removeSlot(ledger, slot);
-  if (options.systemd) {
-    quiet("systemctl", ["disable", "--now", socketName(slot)]);
-    quiet("systemctl", ["stop", serviceName(slot)]);
-  }
-  const stamp = new Date().toISOString().replaceAll(":", "").replace(/\..*/, "");
-  const paths = personPaths(config, slot);
-  for (const directory of [paths.privateRoot, paths.workspace])
-    if (existsSync(directory) && !lstatSync(directory).isSymbolicLink()) {
-      renameSync(directory, `${directory}.removed-${stamp}`);
-      chownSync(`${directory}.removed-${stamp}`, 0, 0);
-      chmodSync(`${directory}.removed-${stamp}`, 0o700);
-    }
-  quiet("usermod", ["--lock", "--expiredate", "1", accountName(slot)]);
-  apply(options, config, next, ledger);
 }
 
 function status(options, config, ledger) {
@@ -236,7 +271,10 @@ function status(options, config, ledger) {
 export function main(argv) {
   const options = parseArgs(argv);
   const config = parseExecConfig(readJson(options.config));
-  const ledger = readLedger(options.ledger);
+  const ledger = readLedger(
+    options.ledger,
+    ["plan", "status"].includes(options.command) || (options.command === "add" && options.init),
+  );
   if (options.command === "plan")
     return {
       units: Object.fromEntries(renderUnits(config, ledger)),
@@ -245,11 +283,15 @@ export function main(argv) {
   if (options.command === "status") return status(options, config, ledger);
   if (typeof process.getuid === "function" && process.getuid() !== 0)
     throw new Error("EXEC_ROOT_REQUIRED");
-  if (options.command === "add")
-    apply(options, config, addSlot(ledger, config, options.slot), ledger);
-  else if (options.command === "apply") apply(options, config, ledger, ledger);
-  else remove(options, config, ledger, options.slot);
-  return status(options, config, readLedger(options.ledger));
+  const next =
+    options.command === "add"
+      ? addSlot(ledger, config, options.slot)
+      : options.command === "remove"
+        ? removeSlot(ledger, options.slot)
+        : ledger;
+  if (next !== ledger) atomicWrite(options.ledger, `${JSON.stringify(next, null, 2)}\n`, 0o600);
+  converge(options, config, next);
+  return status(options, config, readLedger(options.ledger, false));
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

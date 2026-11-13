@@ -12,14 +12,22 @@ export function hardcodedLimits(text) {
     .filter((found) => !/^MemorySwapMax\s*=\s*0$/.test(found));
 }
 
+function files(root, directory) {
+  return readdirSync(path.join(root, directory), { withFileTypes: true })
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .flatMap((entry) =>
+      entry.isDirectory()
+        ? files(root, path.join(directory, entry.name))
+        : [path.join(directory, entry.name)],
+    );
+}
+
 export function scan(repository) {
   const problems = [];
   for (const directory of SCANNED)
-    for (const name of readdirSync(path.join(repository, directory)).sort()) {
-      const file = path.join(directory, name);
+    for (const file of files(repository, directory))
       for (const found of hardcodedLimits(readFileSync(path.join(repository, file), "utf8")))
         problems.push(`MULTI_USER_EXEC_LIMIT_HARDCODED ${file} ${found}`);
-    }
   return problems;
 }
 

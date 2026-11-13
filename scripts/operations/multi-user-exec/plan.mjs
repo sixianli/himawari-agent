@@ -3,6 +3,8 @@ import path from "node:path";
 export const SLOT_PATTERN = /^[a-z][a-z0-9]{5}$/;
 export const PRIVATE_ROOT_MAX_BYTES = 27;
 export const SLICE = "himawari-exec.slice";
+export const MIN_UID = 1000;
+const IDLE_EXIT_MS = /^[1-9][0-9]{0,8}$/;
 const ACCOUNT = /^[a-z_][a-z0-9_-]{0,31}$/;
 const SIZE = /^[1-9][0-9]{0,8}[KMGT]$/;
 const PERCENT = /^[1-9][0-9]{0,4}%$/;
@@ -52,7 +54,7 @@ function account(value, where) {
 }
 
 function uid(value, where) {
-  if (!Number.isSafeInteger(value) || value < 1000 || value > 2 ** 31 - 2)
+  if (!Number.isSafeInteger(value) || value < MIN_UID || value > 2 ** 31 - 2)
     fail("EXEC_CONFIG_UID_INVALID", where);
   return value;
 }
@@ -74,9 +76,15 @@ function bytes(size) {
   return BigInt(size.slice(0, -1)) * UNITS_IN_BYTES[size.slice(-1)];
 }
 
-function memoryOrdered(set, where) {
+function memoryOrdered(set, where, ceiling) {
   if (bytes(set.MemoryHigh) > bytes(set.MemoryMax))
     fail("EXEC_CONFIG_LIMIT_INVALID", `${where}.MemoryHigh`);
+  if (ceiling && bytes(set.MemoryMax) > bytes(ceiling.MemoryMax))
+    fail("EXEC_CONFIG_LIMIT_INVALID", `${where}.MemoryMax`);
+}
+
+function inside(child, parent) {
+  return child === parent || child.startsWith(`${parent}/`);
 }
 
 export function parseExecConfig(value) {
@@ -113,7 +121,7 @@ export function parseExecConfig(value) {
     fail("EXEC_CONFIG_UID_INVALID", "$.uids");
   const gateway = record(raw.gateway, "$.gateway");
   exactKeys(gateway, ["node", "entry", "idleExitMs"], "$.gateway");
-  if (!Number.isSafeInteger(gateway.idleExitMs) || gateway.idleExitMs <= 0)
+  if (!Number.isSafeInteger(gateway.idleExitMs) || !IDLE_EXIT_MS.test(String(gateway.idleExitMs)))
     fail("EXEC_CONFIG_LIMIT_INVALID", "$.gateway.idleExitMs");
   const allPeople = limits(raw.allPeople, ALL_PEOPLE_LIMITS, "$.allPeople", false);
   memoryOrdered(allPeople, "$.allPeople");
@@ -123,9 +131,16 @@ export function parseExecConfig(value) {
   for (const [slot, override] of Object.entries(people)) {
     if (!SLOT_PATTERN.test(slot)) fail("EXEC_CONFIG_SLOT_INVALID", `$.people.${slot}`);
     overrides[slot] = limits(override, PERSON_LIMITS, `$.people.${slot}`, true);
-    memoryOrdered({ ...person, ...overrides[slot] }, `$.people.${slot}`);
+    memoryOrdered({ ...person, ...overrides[slot] }, `$.people.${slot}`, allPeople);
   }
-  memoryOrdered(person, "$.person");
+  memoryOrdered(person, "$.person", allPeople);
+  const node = absolute(gateway.node, "$.gateway.node");
+  const entry = absolute(gateway.entry, "$.gateway.entry");
+  for (const [where, file] of [
+    ["$.gateway.node", node],
+    ["$.gateway.entry", entry],
+  ])
+    if (roots.some((root) => inside(file, root))) fail("EXEC_CONFIG_GATEWAY_IN_PERSON_PATH", where);
   return Object.freeze({
     privateRoots,
     workspaceRoots,
@@ -134,8 +149,8 @@ export function parseExecConfig(value) {
     peopleGroup: account(raw.peopleGroup, "$.peopleGroup"),
     uids: Object.freeze({ first: uids.first, last: uids.last }),
     gateway: Object.freeze({
-      node: absolute(gateway.node, "$.gateway.node"),
-      entry: absolute(gateway.entry, "$.gateway.entry"),
+      node,
+      entry,
       idleExitMs: gateway.idleExitMs,
     }),
     allPeople,
@@ -160,6 +175,7 @@ export function parseLedger(value) {
     if (
       !SLOT_PATTERN.test(item.slot) ||
       !Number.isSafeInteger(item.uid) ||
+      item.uid < MIN_UID ||
       !["active", "removed"].includes(item.state) ||
       seenSlots.has(item.slot) ||
       seenUids.has(item.uid)
@@ -318,4 +334,19 @@ export function directoryPlan(config, ledger) {
     plan.push({ path: paths.workspace, owner: user, group: config.peopleGroup, mode: "2770" });
   }
   return plan;
+}
+
+export function knownUnitNames(ledger) {
+  return new Set([
+    SLICE,
+    ...ledger.slots.flatMap((entry) => [
+      sliceName(entry.slot),
+      socketName(entry.slot),
+      serviceName(entry.slot),
+    ]),
+  ]);
+}
+
+export function renderTmpfiles(config) {
+  return `d ${config.socketDirectory} 0750 root ${config.serviceAccount} -\n`;
 }

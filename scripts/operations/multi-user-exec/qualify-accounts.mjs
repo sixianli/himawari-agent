@@ -28,6 +28,7 @@ const files = {
   ledger: path.join(base, "slots.json"),
   units: path.join(base, "units"),
   backups: path.join(base, "backups"),
+  tmpfiles: path.join(base, "himawari-exec.conf"),
 };
 
 function sh(command, args, options = {}) {
@@ -69,6 +70,8 @@ function exec(...args) {
       files.units,
       "--backups",
       files.backups,
+      "--tmpfiles",
+      files.tmpfiles,
       "--without-systemd",
     ]),
   );
@@ -107,7 +110,11 @@ try {
       serviceAccount,
       peopleGroup,
       uids: freeUidRange(),
-      gateway: { node: process.execPath, entry: path.join(base, "gateway.js"), idleExitMs: 1 },
+      gateway: {
+        node: process.execPath,
+        entry: path.resolve(here, "../../../packages/runtime-sandbox/src/job-host-gateway-main.ts"),
+        idleExitMs: 1,
+      },
       allPeople: { MemoryMax: "2G", MemoryHigh: "1G", CPUQuota: "100%", TasksMax: "10" },
       person: {
         MemoryMax: "1G",
@@ -119,7 +126,15 @@ try {
       people: {},
     }),
   );
-  for (const slot of slots) exec("add", slot);
+  let refused = false;
+  try {
+    exec("add", slots[0]);
+  } catch {
+    refused = true;
+  }
+  expectTrue(refused && !existsSync(files.ledger), "MISSING_LEDGER_ACCEPTED");
+  exec("add", slots[0], "--init");
+  exec("add", slots[1]);
   const [a, b] = slots;
   const work = (slot) => path.join(base, "w", slot);
   const priv = (slot) => path.join(base, "j", slot);

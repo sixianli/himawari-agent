@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,10 +9,12 @@ import {
   addSlot,
   directoryPlan,
   emptyLedger,
+  knownUnitNames,
   parseExecConfig,
   parseLedger,
   personPaths,
   removeSlot,
+  renderTmpfiles,
   renderUnits,
 } from "../../scripts/operations/multi-user-exec/plan.mjs";
 
@@ -99,6 +101,22 @@ describe("multi-user exec configuration", () => {
       "EXEC_CONFIG_LIMIT_INVALID $.person.CPUQuota",
     ],
     [{ gateway: { ...config().gateway, idleExitMs: 0 } }, "EXEC_CONFIG_LIMIT_INVALID"],
+    [
+      { gateway: { ...config().gateway, idleExitMs: 1_000_000_000 } },
+      "EXEC_CONFIG_LIMIT_INVALID $.gateway.idleExitMs",
+    ],
+    [
+      { gateway: { ...config().gateway, entry: "/var/lib/himawari/work/andyaa/gateway.js" } },
+      "EXEC_CONFIG_GATEWAY_IN_PERSON_PATH $.gateway.entry",
+    ],
+    [
+      { person: { ...config().person, MemoryMax: "8G" } },
+      "EXEC_CONFIG_LIMIT_INVALID $.person.MemoryMax",
+    ],
+    [
+      { people: { bobbyb: { MemoryMax: "8G" } } },
+      "EXEC_CONFIG_LIMIT_INVALID $.people.bobbyb.MemoryMax",
+    ],
   ])("refuses %j", (change, code) => {
     expect(() => parseExecConfig(config(change))).toThrow(code);
   });
@@ -125,6 +143,12 @@ describe("multi-user exec slot ledger", () => {
     expect(() => addSlot(emptyLedger(), parseExecConfig(config()), slot)).toThrow(
       "EXEC_SLOT_INVALID",
     );
+  });
+
+  it("refuses a ledger uid below the system range", () => {
+    expect(() =>
+      parseLedger({ version: 1, slots: [{ slot: "andyaa", uid: 0, state: "active" }] }),
+    ).toThrow("EXEC_LEDGER_INVALID");
   });
 
   it("refuses a ledger that reuses a uid", () => {
@@ -188,8 +212,22 @@ describe("multi-user exec units", () => {
     });
   });
 
-  it("renders nothing for a removed person", () => {
+  it("renders nothing for a removed person but still knows its unit names", () => {
     expect([...units.keys()].filter((name) => name.includes("carolc"))).toEqual([]);
+    expect(knownUnitNames(ledger)).toEqual(
+      new Set([
+        "himawari-exec.slice",
+        ...["andyaa", "bobbyb", "carolc"].flatMap((slot) => [
+          `himawari-exec-${slot}.slice`,
+          `himawari-exec-${slot}.socket`,
+          `himawari-exec-${slot}.service`,
+        ]),
+      ]),
+    );
+  });
+
+  it("recreates the socket directory for the service account after a reboot", () => {
+    expect(renderTmpfiles(parsed)).toBe("d /run/himawari/exec 0750 root himawari-prod -\n");
   });
 
   it("keeps private roots to the person and shares workspaces only with the people group", () => {
@@ -237,11 +275,41 @@ describe("multi-user exec units", () => {
       units.get("himawari-exec-bobbyb.slice"),
     );
   });
+
+  it("refuses to change anything when the slot ledger is missing", () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "multi-user-exec-"));
+    writeFileSync(path.join(directory, "exec.json"), JSON.stringify(config()));
+    const missing = path.join(directory, "slots.json");
+    for (const command of [["apply"], ["remove", "andyaa"], ["add", "andyaa"]])
+      expect(() =>
+        execFileSync(
+          process.execPath,
+          [cli, ...command, "--config", path.join(directory, "exec.json"), "--ledger", missing],
+          { encoding: "utf8", stdio: "pipe" },
+        ),
+      ).toThrow(`EXEC_LEDGER_MISSING ${missing}`);
+  });
 });
 
 describe("check:multi-user-exec", () => {
   it("finds no limit written into the provisioning tool", () => {
     expect(scan(repository)).toEqual([]);
+  });
+
+  it("finds a limit written into any file under the tool, nested ones included", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "multi-user-exec-scan-"));
+    mkdirSync(path.join(root, "scripts/operations/multi-user-exec/templates"), { recursive: true });
+    writeFileSync(
+      path.join(root, "scripts/operations/multi-user-exec/plan.mjs"),
+      "MemorySwapMax=0\n",
+    );
+    writeFileSync(
+      path.join(root, "scripts/operations/multi-user-exec/templates/person.slice"),
+      "[Slice]\nMemoryMax=2G\n",
+    );
+    expect(scan(root)).toEqual([
+      "MULTI_USER_EXEC_LIMIT_HARDCODED scripts/operations/multi-user-exec/templates/person.slice MemoryMax=2",
+    ]);
   });
 
   it("catches a limit written into a unit template", () => {
