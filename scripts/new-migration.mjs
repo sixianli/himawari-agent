@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,13 +26,31 @@ export function validName(name) {
   return typeof name === "string" && /^[a-z][a-z0-9_]*$/.test(name);
 }
 
+function mainNames() {
+  try {
+    return execFileSync(
+      "git",
+      ["ls-tree", "--name-only", "origin/main", "packages/persistence-sqlite/src/migrations/"],
+      {
+        cwd: join(directory, "../../../.."),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    )
+      .split("\n")
+      .map((line) => line.split("/").pop());
+  } catch {
+    return [];
+  }
+}
+
 function main() {
   const name = process.argv[2];
   if (!validName(name)) {
     console.error("Usage: npm run migration:new -- <snake_case_name>");
     process.exit(2);
   }
-  const id = nextMigrationId(readdirSync(directory));
+  const id = nextMigrationId([...readdirSync(directory), ...mainNames()]);
   const file = join(directory, `${id}_${name}.sql`);
   writeFileSync(file, "", { flag: "wx" });
   console.log(file);

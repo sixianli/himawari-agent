@@ -1338,6 +1338,9 @@ class TimestampedMigrationTests(unittest.TestCase):
             derived = packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': target}, {'schema': {'current': len(applied), 'minimumWriter': len(applied)}, 'migrationIds': applied})
         return target, json.loads(derived['MIGRATION_LEDGER'])
 
+    def test_the_real_replay_check_passes_at_the_repository_head(self):
+        packet_maker.check_migration_replay('HEAD')
+
     def test_a_commit_whose_migrations_do_not_replay_is_refused(self):
         failed = subprocess.CompletedProcess([], 1, stdout='', stderr='MIGRATION_CONFLICT FULL_REPLAY_FAILS boom')
         with unittest.mock.patch.object(packet_maker.subprocess, 'run', return_value=failed):

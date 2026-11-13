@@ -2,11 +2,13 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { LEGACY_MIGRATION_COUNT } from "./operations/workspace-lifecycle-audit.mjs";
 import {
   LEGACY_FILE,
   META_FILE,
   TIMESTAMP_FILE,
   analyzeMigrations,
+  replayAll,
 } from "./migration-conflicts/analyze.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -23,16 +25,21 @@ function git(args) {
 function baseRef() {
   const flag = process.argv.indexOf("--base");
   if (flag !== -1) return process.argv[flag + 1];
+  try {
+    git(["fetch", "--quiet", "origin", "main"]);
+  } catch {}
   for (const candidate of ["origin/main", "main"]) {
     try {
       return git(["merge-base", "HEAD", candidate]);
     } catch {}
   }
-  return null;
+  console.error(
+    "MIGRATION_CONFLICT BASE_UNKNOWN no origin/main or main to compare against; pass --base <commit>",
+  );
+  process.exit(1);
 }
 
 function baseFileNames(ref) {
-  if (!ref) return null;
   const listing = git([
     "ls-tree",
     "--name-only",
@@ -110,6 +117,10 @@ function main() {
   if (commitFlag !== -1) {
     const { legacy, stamped, unknown } = loadEntriesFromCommit(process.argv[commitFlag + 1]);
     const problems = unknown.map((name) => `UNRECOGNIZED_FILE ${name}`);
+    if (legacy.length !== LEGACY_MIGRATION_COUNT)
+      problems.push(
+        `LEGACY_SET_CHANGED expected ${LEGACY_MIGRATION_COUNT} numbered files, found ${legacy.length}`,
+      );
     problems.push(...replayAll([...legacy, ...stamped]));
     if (problems.length > 0) {
       for (const problem of problems) console.error(`MIGRATION_CONFLICT ${problem}`);
@@ -122,10 +133,14 @@ function main() {
   }
   const { legacy, stamped, unknown } = loadEntries();
   const problems = unknown.map((name) => `UNRECOGNIZED_FILE ${name}`);
+  if (legacy.length !== LEGACY_MIGRATION_COUNT)
+    problems.push(
+      `LEGACY_SET_CHANGED expected ${LEGACY_MIGRATION_COUNT} numbered files, found ${legacy.length}`,
+    );
   const ref = baseRef();
   const known = baseFileNames(ref);
-  const base = [...legacy, ...(known ? stamped.filter((entry) => known.has(entry.file)) : [])];
-  const added = known ? stamped.filter((entry) => !known.has(entry.file)) : stamped;
+  const base = [...legacy, ...stamped.filter((entry) => known.has(entry.file))];
+  const added = stamped.filter((entry) => !known.has(entry.file));
   problems.push(...analyzeMigrations({ base, added, meta: loadMeta(added) }));
   if (problems.length > 0) {
     for (const problem of problems) console.error(`MIGRATION_CONFLICT ${problem}`);
