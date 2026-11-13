@@ -76,6 +76,7 @@ export interface DeviceActionRegistration {
   readonly reversible: boolean;
   readonly untrustedOriginAllowed: boolean;
   readonly usage?: string;
+  readonly confirmLabel: DeviceActionDetail;
   readonly detail: (
     args: DeviceActionArguments,
     context: DeviceActionContext,
@@ -204,6 +205,9 @@ export class DeviceActionRegistry {
         registration.schemaVersion < 1 ||
         registration.deviceKinds.length === 0 ||
         registration.deviceKinds.some((kind) => !PAIRED_DEVICE_KINDS.includes(kind)) ||
+        DEVICE_ACTION_LOCALES.some(
+          (locale) => (registration.confirmLabel?.[locale] ?? "").trim().length === 0,
+        ) ||
         byName.has(registration.name)
       )
         throw new Error(`DEVICE_ACTION_REGISTRATION_INVALID ${registration.name}`);
@@ -376,6 +380,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: false,
     reversible: true,
     untrustedOriginAllowed: true,
+    confirmLabel: label("设闹钟", "Set alarm", "アラームを設定"),
     detail: (args) =>
       detail((locale) => {
         const at = shownTime(String(args["time"]));
@@ -409,6 +414,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: false,
     reversible: true,
     untrustedOriginAllowed: false,
+    confirmLabel: label("加进日历", "Add", "追加"),
     detail: (args) =>
       detail((locale) => {
         const people = list(args["attendees"]);
@@ -453,6 +459,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: true,
     reversible: true,
     untrustedOriginAllowed: false,
+    confirmLabel: label("删掉", "Delete", "削除"),
     detail: (_args, context) =>
       detail((locale) => {
         const title = named(context, "title");
@@ -485,6 +492,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: true,
     reversible: true,
     untrustedOriginAllowed: false,
+    confirmLabel: label("改掉", "Change", "変更"),
     detail: (args, context) =>
       detail((locale) => {
         const title = named(context, "title");
@@ -520,6 +528,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: true,
     reversible: true,
     untrustedOriginAllowed: false,
+    confirmLabel: label("改掉", "Change", "変更"),
     detail: (args, context) =>
       detail((locale) => {
         const name = named(context, "name");
@@ -545,6 +554,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     reversible: true,
     untrustedOriginAllowed: true,
     usage: TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER.text,
+    confirmLabel: label("标成完成", "Mark done", "完了にする"),
     detail: (_args, context) =>
       detail((locale) => {
         const title = named(context, "title");
@@ -574,6 +584,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     reversible: true,
     untrustedOriginAllowed: true,
     usage: TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER.text,
+    confirmLabel: label("新建", "Create", "作成"),
     detail: (args) =>
       detail((locale) => {
         const rest = changes(args, REMINDER_LABELS, locale);
@@ -604,6 +615,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: false,
     reversible: false,
     untrustedOriginAllowed: false,
+    confirmLabel: label("照做", "Do it", "実行"),
     detail: (args, context) =>
       detail((locale) => {
         const name = joined([named(context, "room"), named(context, "name")], " ");
@@ -628,6 +640,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: false,
     reversible: true,
     untrustedOriginAllowed: true,
+    confirmLabel: label("读取", "Read", "読み取る"),
     detail: (args, context) =>
       detail((locale) => {
         const where = named(context, "name") || ((args["room"] as string | undefined) ?? "");

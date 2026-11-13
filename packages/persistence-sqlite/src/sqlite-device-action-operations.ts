@@ -206,7 +206,8 @@ export class SqliteDeviceActionOperations {
       input.states.some((state) => !STATES.includes(state)) ||
       !Number.isSafeInteger(input.limit) ||
       input.limit < 1 ||
-      input.limit > 500
+      input.limit > 500 ||
+      (input.finishedSince !== undefined && !validTime(input.finishedSince))
     )
       this.fail("PORT_INVALID_OPERATION", "Device action listing is invalid");
     if (input.states.length === 0) return [];
@@ -214,9 +215,12 @@ export class SqliteDeviceActionOperations {
     return (
       this.database
         .prepare(
-          `SELECT ${columns} FROM device_actions
+          `SELECT ${columns},
+              (SELECT thread_id FROM runs WHERE runs.id = device_actions.run_id) AS threadId
+            FROM device_actions
             WHERE owner_id = ? AND agent_id = ? AND (? IS NULL OR device_id = ?)
               AND state IN (${marks})
+              AND (? IS NULL OR state IN (${OPEN_STATES}) OR finished_at >= ?)
             ORDER BY created_at, id LIMIT ?`,
         )
         .all(
@@ -225,6 +229,8 @@ export class SqliteDeviceActionOperations {
           input.deviceId,
           input.deviceId,
           ...input.states,
+          input.finishedSince ?? null,
+          input.finishedSince ?? null,
           input.limit,
         ) as Row[]
     ).map(toRecord);

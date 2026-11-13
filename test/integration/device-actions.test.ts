@@ -308,6 +308,7 @@ describe("[iOS-9A] device_action describe is computed from the registry, the dev
           snapshotBefore: false,
           reversible: true,
           untrustedOriginAllowed: true,
+          confirmLabel: { "zh-CN": "回声", en: "Echo", ja: "エコー" },
           detail: (args) => ({
             "zh-CN": `回声：${args["word"]}`,
             en: `Echo: ${args["word"]}`,
@@ -374,6 +375,7 @@ describe("[iOS-9A] an action goes from the model to the device and its result co
       ownerPresence: false,
       readBack: "none",
       risk: "LOW",
+      confirmLabel: { "zh-CN": "读取", en: "Read", ja: "読み取る" },
       detail: {
         "zh-CN": "读取家居状态：落地灯",
         en: "Read home state: 落地灯",
@@ -931,6 +933,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       await h.actions.service.decide({ actionId: second.id, approved: true, ownerPresent: true }),
     ).toBe("queued");
     expect(h.actions.openRequests.map(({ id }) => id)).toEqual([second.id]);
+    const cut = h.clock.now();
     const view = (await deviceGet(h, client, "actions")).body["actions"] as Record<
       string,
       unknown
@@ -938,10 +941,14 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     expect(view).toMatchObject([
       {
         id: second.id,
+        action: "calendar.delete",
+        runId: "run-1",
+        threadId: null,
         state: "queued",
         risk: "HIGH",
         ownerPresence: true,
         detail: { "zh-CN": "删除日程“牙医复诊”：2026-11-13 15:00–16:00" },
+        confirmLabel: { "zh-CN": "删掉", en: "Delete", ja: "削除" },
       },
     ]);
     h.clock.advance(121_000);
@@ -953,6 +960,25 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       ["rejected", "owner_presence_unproven", null],
       ["expired", "not_delivered_in_time", null],
     ]);
+    const since = async (value: string) =>
+      (
+        (await deviceGet(h, client, `actions?finishedSince=${encodeURIComponent(value)}`)).body[
+          "actions"
+        ] as { id: string; state: string }[]
+      ).map(({ id, state }) => [id, state]);
+    expect(await since(cut)).toEqual([[second.id, "expired"]]);
+    expect((await since("1970-01-01T00:00:00.000Z")).map(([, state]) => state)).toEqual([
+      "rejected",
+      "rejected",
+      "expired",
+    ]);
+    expect((await deviceGet(h, client, "actions")).body).toEqual({ actions: [] });
+    for (const bad of [
+      "actions?finishedSince=yesterday",
+      "actions?finishedSince=2026-13-45T99:99:99.999Z",
+      "actions?all=1",
+    ])
+      expect((await deviceGet(h, client, bad)).status).toBe(400);
     await h.repository.close();
   });
 
@@ -985,6 +1011,21 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       { actionKind: "PHYSICAL_SAFETY", risk: "CRITICAL", ownerPresence: true, state: "rejected" },
     ]);
     await h.repository.close();
+  });
+});
+
+describe("[iOS-9A] every action carries the words for its confirm button", () => {
+  it("[reverse] a registration without a confirm label in every language is refused", () => {
+    const [base] = DEVICE_ACTION_REGISTRATIONS;
+    if (!base) throw new Error("registry is empty");
+    for (const confirmLabel of [
+      undefined,
+      { "zh-CN": "删掉", en: "Delete", ja: " " },
+      { "zh-CN": "删掉", en: "Delete" },
+    ])
+      expect(() => new DeviceActionRegistry([{ ...base, confirmLabel } as typeof base])).toThrow(
+        "DEVICE_ACTION_REGISTRATION_INVALID",
+      );
   });
 });
 

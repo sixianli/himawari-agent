@@ -7,6 +7,7 @@ import {
   type AgentThreadGatewayPort,
   ApplicationPortError,
   DEVICE_ACTION_OPEN_STATES,
+  DEVICE_ACTION_RECORD_STATES,
   DEVICE_HARD_LIMIT_KEYS,
   DEVICE_HARD_LIMITS,
   type DeviceActionService,
@@ -88,6 +89,7 @@ const DEVICE_ROUTE_PATTERNS = DEVICE_API_ROUTES.map((route) => ({
 
 export const DEVICE_PAYLOAD_TEXT_MAXIMUM_REFS = 100;
 export const DEVICE_ACTION_VIEW_LIMIT = 100;
+const DEVICE_ACTION_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 export const DEVICE_PAYLOAD_TEXT_RESPONSE_BYTES = 4 * 1024 * 1024;
 
 export const DEVICE_THREAD_EVENT_TYPES: ReadonlySet<string> = new Set([
@@ -606,11 +608,22 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
 
       device.get("/actions", async (request, reply) => {
         const authenticated = await authenticate(request);
+        const query = new URLSearchParams(rawQuery(request));
+        const finishedSince = query.get("finishedSince");
+        if (
+          [...query.keys()].some((key) => key !== "finishedSince") ||
+          (finishedSince !== null &&
+            (!DEVICE_ACTION_TIMESTAMP.test(finishedSince) ||
+              Number.isNaN(Date.parse(finishedSince))))
+        )
+          options.rejectBody(400);
         return options.sendJson(reply, 200, {
           actions: await actions(authenticated).views({
             deviceId: authenticated.device.id,
-            states: DEVICE_ACTION_OPEN_STATES,
             limit: DEVICE_ACTION_VIEW_LIMIT,
+            ...(finishedSince === null
+              ? { states: DEVICE_ACTION_OPEN_STATES }
+              : { states: DEVICE_ACTION_RECORD_STATES, finishedSince }),
           }),
         });
       });

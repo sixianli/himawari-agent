@@ -139,13 +139,18 @@ export interface DeviceActionDelivery {
   readonly risk: ActionRiskLevel;
   readonly expiresAt: string;
   readonly detail: DeviceActionDetail;
+  readonly confirmLabel: DeviceActionDetail;
 }
 
 export interface DeviceActionView {
   readonly id: string;
   readonly deviceId: string;
+  readonly action: string;
+  readonly runId: string;
+  readonly threadId: string | null;
   readonly state: DeviceActionRecordState;
   readonly detail: DeviceActionDetail;
+  readonly confirmLabel: DeviceActionDetail;
   readonly risk: ActionRiskLevel;
   readonly ownerPresence: boolean;
   readonly reversible: boolean;
@@ -534,6 +539,7 @@ export class DeviceActionService {
       risk: record.risk,
       expiresAt: record.expiresAt,
       detail,
+      confirmLabel: registration.confirmLabel,
     });
   }
 
@@ -760,6 +766,7 @@ export class DeviceActionService {
     readonly deviceId: string | null;
     readonly states: readonly DeviceActionRecordState[];
     readonly limit: number;
+    readonly finishedSince?: string;
   }): Promise<readonly DeviceActionView[]> {
     await this.settle();
     const records = await this.#options.store.list({ ...this.#options.scope, ...input });
@@ -772,7 +779,11 @@ export class DeviceActionService {
           id: record.id,
           deviceId: record.deviceId,
           state: record.state,
+          action: record.action,
+          runId: record.runId,
+          threadId: record.threadId ?? null,
           detail: outcome.detail,
+          confirmLabel: this.#options.registry.get(record.action)?.confirmLabel ?? EMPTY_DETAIL,
           risk: record.risk,
           ownerPresence: record.ownerPresence,
           reversible: this.#options.registry.get(record.action)?.reversible ?? false,

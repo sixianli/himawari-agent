@@ -67,6 +67,7 @@ export interface DeviceActionRecord extends PairedDeviceScope {
   readonly deliveredAt: string | null;
   readonly finishedAt: string | null;
   readonly updatedAt: string;
+  readonly threadId?: string | null;
 }
 
 export interface DeviceActionInsert extends PairedDeviceScope {
@@ -138,6 +139,7 @@ export interface DeviceActionStorePort {
       readonly deviceId: string | null;
       readonly states: readonly DeviceActionRecordState[];
       readonly limit: number;
+      readonly finishedSince?: string;
     },
   ): Promise<readonly DeviceActionRecord[]>;
   settleDue(input: PairedDeviceScope & { readonly now: string }): Promise<DeviceActionSettlement>;
