@@ -30,6 +30,7 @@ import { prepareCoverageComparison, retainComparisonEvidence } from "./coverage-
 import { coverageProjects, strategyDigest, validateCoveragePolicy } from "./coverage-model.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
 import { isolatedEnvironment, verifyInstalledTools } from "./install-tools.mjs";
+import { artifactPlatformKey, hostArch, hostOs } from "./platforms.mjs";
 import { observeResources } from "./resources.mjs";
 import { redactText } from "./security-redaction.mjs";
 import { runTests } from "./test.mjs";
@@ -66,6 +67,9 @@ export function reportEntry(filename, kind, output) {
   };
 }
 
+export const memberRunsOnHost = (member, platform = hostOs(), arch = hostArch()) =>
+  member.os === platform && [member.arch, member.alternateArch].includes(arch);
+
 export async function runCheck({
   root = repositoryRoot,
   checkId,
@@ -83,6 +87,7 @@ export async function runCheck({
     (checkId !== "coverage" || baselineCandidate !== "initial-only")
   )
     throw new Error("CI_INITIAL_BASELINE_CANDIDATE_OPTION_INVALID");
+  if (["build", "browser", "coverage"].includes(checkId)) artifactPlatformKey();
   const directory = outputPath(output, root);
   const source = resolvePolicySource({ root, base: context.baseSha });
   if (!source.policy.events.includes(context.event)) throw new Error("CI_EVENT_UNSUPPORTED");
@@ -103,8 +108,8 @@ export async function runCheck({
     toolchain: {
       node: process.versions.node,
       npm: "unavailable",
-      os: process.platform,
-      arch: process.arch,
+      os: hostOs(),
+      arch: hostArch(),
       abi: process.versions.modules,
       runnerImage: process.env.ImageVersion ?? "local",
     },
@@ -128,8 +133,7 @@ export async function runCheck({
   const temporaryDirectory = mkdtempSync(`${testTemporaryRoot()}/hci-`);
   const resourceObserver = await observeResources({ root, toolsDirectory, temporaryDirectory });
   try {
-    if (hosted && (member.os !== process.platform || member.arch !== process.arch))
-      throw new Error("CI_RUNNER_PLATFORM_MISMATCH");
+    if (hosted && !memberRunsOnHost(member)) throw new Error("CI_RUNNER_PLATFORM_MISMATCH");
     const installation = await verifyInstalledTools({ directory: toolsDirectory, root });
     const tools = installation.executables;
     const env = {
@@ -247,6 +251,7 @@ export async function runCheck({
         ".github/workflows/ci.yml",
         ".github/workflows/quality.yml",
         ".github/workflows/main.yml",
+        ".github/workflows/ci-arm-trial.yml",
       ]);
       await command("diff", "git", ["diff", "--check"]);
       result.counts = { files: 3, executed: 3, passed: 3, failed: 0, skipped: 0 };
@@ -266,6 +271,13 @@ export async function runCheck({
         failed: security.checks.filter((entry) => entry.status !== "passed").length,
         skipped: 0,
       };
+      for (const entry of security.checks)
+        if (entry.status !== "passed")
+          process.stdout.write(
+            redactText(
+              `security scan ${entry.id}: ${entry.status}${/^[A-Z_]+$/.test(entry.error ?? "") ? ` ${entry.error}` : ""}\n`,
+            ),
+          );
       if (security.status !== "passed") {
         result.status = security.status;
         throw new Error("CI_SECURITY_FAILED");
@@ -280,7 +292,7 @@ export async function runCheck({
       files.push({ path: retained, kind: "artifact" });
       result.artifacts.push({
         role: "consumed",
-        platform: process.platform === "darwin" ? "macos-arm64" : "linux-x64",
+        platform: artifactPlatformKey(),
         path: entry.path,
         sha256: entry.sha256,
       });
@@ -474,7 +486,7 @@ export async function runCheck({
           files.push({ path: retained, kind: "artifact" });
           result.artifacts.push({
             role: checkId === "build" ? "produced" : "consumed",
-            platform: process.platform === "darwin" ? "macos-arm64" : "linux-x64",
+            platform: artifactPlatformKey(),
             path: entry.path,
             sha256: entry.sha256,
           });
@@ -558,7 +570,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (args["--input"]) {
     if (artifact) throw new Error("CI_ARTIFACT_INPUT_AMBIGUOUS");
     const producer = validateRecord("CheckResult", readJson(args["--input"]));
-    const platform = process.platform === "darwin" ? "macos-arm64" : "linux-x64";
+    const platform = artifactPlatformKey();
     if (
       producer.checkId !== "build" ||
       producer.matrixKey !== platform ||

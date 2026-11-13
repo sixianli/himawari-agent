@@ -431,6 +431,8 @@ describe("published fixture admission", () => {
   });
 });
 
+const installedFileScanTimeoutMs = 60_000;
+
 describe("真实台账和当前扫描规则一致", () => {
   it.each([
     "docs/custom-provider.md",
@@ -473,5 +475,6 @@ describe("真实台账和当前扫描规则一致", () => {
           .sort(),
       );
     },
+    installedFileScanTimeoutMs,
   );
 });

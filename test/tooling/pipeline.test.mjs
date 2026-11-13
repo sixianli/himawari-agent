@@ -17,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   config: vi.fn(),
   context: vi.fn(),
 }));
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 vi.mock("../../scripts/ci/context.mjs", () => ({
   verifyContext: mocks.context,
   outputPath: (output, root) => path.resolve(root, output),

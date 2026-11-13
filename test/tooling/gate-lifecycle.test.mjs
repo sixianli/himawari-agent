@@ -33,6 +33,9 @@ const write = (filename, value) => {
   return filename;
 };
 const count = () => ({ files: 1, executed: 1, passed: 1, failed: 0, skipped: 0 });
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 vi.mock("../../scripts/ci/contracts.mjs", async (original) => ({
   ...(await original()),
   get repositoryRoot() {

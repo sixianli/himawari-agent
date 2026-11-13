@@ -193,15 +193,18 @@ export function OwnerRulesSection({
             {message("rules.type", { t: rule.type })}
           </span>
           {rule.status === "needs_review" ? <small> {message("rules.needsReview")}</small> : null}
-          {rule.enforced ? null : <small> {message("rules.notEnforced")}</small>}
+          {rule.status === "suspended" ? <small> {message("rules.suspended")}</small> : null}
+          {rule.enforced || rule.status === "suspended" ? null : (
+            <small> {message("rules.notEnforced")}</small>
+          )}
           <p className="memory-text">{rule.summary}</p>
           <div className="actions">
-            {rule.status === "needs_review" && rule.enforced ? (
+            {(rule.status === "needs_review" && rule.enforced) || rule.status === "suspended" ? (
               <ActionButton
                 disabled={memory.busy}
                 onClick={() => void memory.respondRule(rule.ruleId, "reconfirm")}
               >
-                {message("rules.reconfirm")}
+                {message(rule.status === "suspended" ? "rules.resume" : "rules.reconfirm")}
               </ActionButton>
             ) : null}
             <ActionButton

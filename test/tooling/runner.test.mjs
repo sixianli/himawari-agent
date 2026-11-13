@@ -11,14 +11,18 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createContext } from "../../scripts/ci/context.mjs";
 import { fileSha256, repositoryRoot, validateRecord } from "../../scripts/ci/contracts.mjs";
 import { execute, sumCounts, vitestCounts } from "../../scripts/ci/execute.mjs";
 import { publish, publishQuality, redactReport } from "../../scripts/ci/publish.mjs";
 import { validateQualityPolicy } from "../../scripts/ci/quality-policy.mjs";
 import { required } from "../../scripts/ci/required.mjs";
-import { reportEntry, runCheck, selectCheck } from "../../scripts/ci/run.mjs";
+import { memberRunsOnHost, reportEntry, runCheck, selectCheck } from "../../scripts/ci/run.mjs";
+
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 
 const directories = [];
 const directory = () => {
@@ -352,4 +356,19 @@ describe("required 失败证据和平台 artifact ID", () => {
     ])
       expect(() => validateQualityPolicy(value)).toThrow();
   });
+});
+
+it("[ADR-0260] ARM 上的三项检查在 ARM 或应急退回的 x64 runner 上都能跑，别的检查只在 x64 上跑", () => {
+  const policy = JSON.parse(readFileSync(path.join(repositoryRoot, "ci/policy.json"), "utf8"));
+  const member = (id) => policy.checks.find((check) => check.id === id).members[0];
+  for (const id of ["policy", "static", "security"]) {
+    expect(memberRunsOnHost(member(id), "linux", "arm64")).toBe(true);
+    expect(memberRunsOnHost(member(id), "linux", "x64")).toBe(true);
+    expect(memberRunsOnHost(member(id), "darwin", "arm64")).toBe(false);
+    expect(memberRunsOnHost(member(id), "linux", "ia32")).toBe(false);
+  }
+  for (const id of ["build", "coverage", "required"]) {
+    expect(memberRunsOnHost(member(id), "linux", "x64")).toBe(true);
+    expect(memberRunsOnHost(member(id), "linux", "arm64")).toBe(false);
+  }
 });

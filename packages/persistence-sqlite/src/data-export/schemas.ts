@@ -271,6 +271,7 @@ export const DECISION_SCHEMA: JsonSchema = objectOf(
       "retrieval_degrade",
       "external_read",
       "rule_review",
+      "memory_review",
     ]),
     scenario: nullable(enumOf(["gmail"])),
     checkedAt: timestamp,
@@ -309,7 +310,12 @@ export const DECISION_SCHEMA: JsonSchema = objectOf(
   "一条决策记录：系统每次由模型做出的门槛决策，以及你的评价和之后的反应。成本和耗时对应模型调用部分：costMicros 是这次调用的花费（百万分之一美元），durationMs 是耗时；模型输入输出原文属于证据，默认不导出。",
 );
 
-const RULE_STATUSES = ["active", "needs_review", "retired"] as const;
+const RULE_STATUSES = ["active", "needs_review", "suspended", "retired"] as const;
+const RULE_SUSPEND_REASONS = [
+  "source_removed",
+  "no_longer_standing",
+  "parameters_changed",
+] as const;
 export const RULE_PARAMETERS_MAXIMUM_LENGTH = 262_144;
 export const MAXIMUM_LINE_LENGTH = 64 * 1024 * 1024;
 
@@ -327,6 +333,7 @@ export const RULE_SCHEMA: JsonSchema = objectOf(
     ruleId: text(1, 64),
     ...ruleVersionFields,
     updatedAt: timestamp,
+    suspendReason: enumOf(RULE_SUSPEND_REASONS),
     history: {
       type: "array",
       items: objectOf(
@@ -339,8 +346,8 @@ export const RULE_SCHEMA: JsonSchema = objectOf(
       ),
     },
   },
-  ["withheld"],
-  "规则手册里存下来的一条规则：当前版本加全部修订历史（历史最后一版就是当前版本）。parameters 是规则参数在库里存的 JSON 原文（逐字保留，用 JSON 解析即可读）；表达式由程序按参数生成，所以不导出表达式。withheld 为 true 时参数里有机密，或者库里存的原文不是写规则的程序会写出的形式（例如带重复的键），parameters 是遮盖后的 JSON，原文在密封文件里（key 为 rule/<ruleId>/parameters 和 rule/<ruleId>/history/<revision>/parameters）。产品自带的规则随版本发布，不在这里。",
+  ["withheld", "suspendReason"],
+  "规则手册里存下来的一条规则：当前版本加全部修订历史（历史最后一版就是当前版本）。parameters 是规则参数在库里存的 JSON 原文（逐字保留，用 JSON 解析即可读）；表达式由程序按参数生成，所以不导出表达式。withheld 为 true 时参数里有机密，或者库里存的原文不是写规则的程序会写出的形式（例如带重复的键），parameters 是遮盖后的 JSON，原文在密封文件里（key 为 rule/<ruleId>/parameters 和 rule/<ruleId>/history/<revision>/parameters）。产品自带的规则随版本发布，不在这里。status 为 suspended 时规则已暂停、不执行，suspendReason 写明原因（source_removed 出处记忆没了，no_longer_standing 主人改口不要了，parameters_changed 主人改了条件）；挂起时系统算出的建议值不导出。",
 );
 
 const payloadText = EXPORTED_TEXT_SCHEMA;

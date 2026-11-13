@@ -7,6 +7,7 @@ import { collectArtifactFiles, contentDigest, digestFile } from "./artifact-file
 import { outputPath, verifyContext } from "./context.mjs";
 import { fileSha256, parseArguments, repositoryRoot } from "./contracts.mjs";
 import { execute } from "./execute.mjs";
+import { artifactPlatformKey, hostArch, hostOs } from "./platforms.mjs";
 import { redactText } from "./redact-text.mjs";
 import {
   assertArtifactRecord,
@@ -106,7 +107,7 @@ export async function build({
     const record = assertArtifactRecord({
       schemaVersion: 1,
       context,
-      platform: { os: process.platform, arch: process.arch, abi: process.versions.modules },
+      platform: { os: hostOs(), arch: hostArch(), abi: process.versions.modules },
       node: process.versions.node,
       lockSha256: fileSha256(path.join(root, "package-lock.json")),
       sourceTreeSha256: before,
@@ -130,7 +131,7 @@ export async function build({
     );
     await verifyExtractedArtifact(payload, { root, context });
     checks.push("complete-content-verification");
-    const platform = process.platform === "darwin" ? "macos-arm64" : "linux-x64";
+    const platform = artifactPlatformKey();
     const archive = path.join(
       destination,
       `${platform}-abi${process.versions.modules}-${context.testedSha}-${context.runId}-${context.attempt}.tar.gz`,
