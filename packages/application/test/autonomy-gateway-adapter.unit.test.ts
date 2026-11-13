@@ -378,5 +378,26 @@ describe("Autonomy Gateway v2 adapters", () => {
       type: "suggestion.snapshot",
       payload: { status: "approved", taskRef: `task:${proposed.candidate.id}` },
     });
+    const forwarded: unknown[] = [];
+    const forwarding = new AutonomyGatewayV2ReadModel({
+      delegate: {
+        query: async (_query, context) => {
+          forwarded.push(context);
+          throw new Error("forwarded");
+        },
+        async *subscribe() {},
+      },
+      proactivity: restoredState,
+      delegations: new DurableDelegationStateAdapter(store),
+      improvements: new DurableImprovementStateAdapter(store),
+      protectJson: async () => "payload:json",
+      clock: { now: () => now },
+      ownerId,
+      agentId,
+    });
+    await expect(
+      forwarding.query(query("login.devices.read", {}), { authentication }),
+    ).rejects.toThrow("forwarded");
+    expect(forwarded).toEqual([{ authentication }]);
   });
 });

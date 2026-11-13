@@ -1,7 +1,7 @@
 import {
+  classificationRank,
   type DataClassification,
   highestClassification,
-  isModelVisible,
   type MemoryProviderProjectionPort,
   type MemoryTimeScope,
   modelVisibleClassifications,
@@ -117,14 +117,16 @@ export class ProductionMemoryRecall {
   recallOutsideRun(
     args: RuntimeToolInvocation["arguments"],
     within: <T>(slot: string, operation: () => Promise<T>) => Promise<T>,
+    ceiling: DataClassification,
   ): Promise<RecallResult> {
-    return this.#recall(args, "public", within);
+    return this.#recall(args, "public", within, ceiling);
   }
 
   async #recall(
     args: RuntimeToolInvocation["arguments"],
     requestClassification: DataClassification,
     within: <T>(slot: string, operation: () => Promise<T>) => Promise<T>,
+    ceiling?: DataClassification,
   ): Promise<RecallResult> {
     const input = argumentsOf(args);
     const timeZone = this.#options.timeZone ?? "UTC";
@@ -137,7 +139,10 @@ export class ProductionMemoryRecall {
         throw new Error("MEMORY_RECALL_INPUT_INVALID");
       throw error;
     }
-    const allowed = modelVisibleClassifications();
+    const allowed = modelVisibleClassifications().filter(
+      (classification) =>
+        ceiling === undefined || classificationRank(classification) <= classificationRank(ceiling),
+    );
     const shown: DataClassification[] = [];
     const shownIds: string[] = [];
     const tentativeLimit = Math.floor(input.limit / 2);
@@ -208,7 +213,7 @@ export class ProductionMemoryRecall {
         !memory ||
         memory.status !== "active" ||
         memory.providerRecordId !== hit.providerRecordId ||
-        !isModelVisible(memory.dataClassification) ||
+        !allowed.includes(memory.dataClassification) ||
         (memory.attributes?.tentative === true) !== (wanted === "tentative")
       )
         return undefined;

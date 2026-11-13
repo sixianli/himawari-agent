@@ -96,6 +96,14 @@ export interface BackgroundRunRecord {
   readonly resourcesReleased: boolean;
 }
 
+export interface UnattendedRunRecord {
+  readonly runId: RunId;
+  readonly threadId: string | null;
+  readonly state: "running" | "failed";
+  readonly startedAt: string;
+  readonly updatedAt: string;
+}
+
 export interface RunLifecyclePort {
   readRun(runId: RunId): Promise<StoredRun | undefined>;
   transitionRun(input: TransitionRunStateInput): Promise<RunTransitionReceipt>;
@@ -103,4 +111,8 @@ export interface RunLifecyclePort {
   completeRun(input: RunCompletionInput): Promise<RunTransitionReceipt>;
   finishBackgroundRun?(input: FinishBackgroundRunInput): Promise<FinishBackgroundRunResult>;
   listBackgroundRuns?(): Promise<readonly BackgroundRunRecord[]>;
+  listUnattendedRuns?(input: {
+    readonly failedSince: string;
+    readonly limit: number;
+  }): Promise<readonly UnattendedRunRecord[]>;
 }

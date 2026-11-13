@@ -389,7 +389,7 @@ it("[P5-1] reports a failed confirmed search only after the tentative search has
     timeZone: "Asia/Tokyo",
   });
   await expect(
-    service.recallOutsideRun({ query: "x", limit: 4 }, (_slot, op) => op()),
+    service.recallOutsideRun({ query: "x", limit: 4 }, (_slot, op) => op(), "sensitive"),
   ).rejects.toThrow("VECTOR_INDEX_DOWN");
   expect(finished).toEqual(["tentative"]);
 });

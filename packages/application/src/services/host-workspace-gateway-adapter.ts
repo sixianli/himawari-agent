@@ -11,6 +11,7 @@ import {
   type GatewayCommandResult,
   type GatewayV2CommandExecution,
   type GatewayV2ControlPlanePort,
+  type GatewayV2QueryContext,
   type GatewayV2ReadModelPort,
   type GatewayV2StreamItem,
   type GovernanceMutationReceipt,
@@ -622,8 +623,8 @@ export class HostWorkspaceGatewayV2ReadModel implements GatewayV2ReadModelPort {
     this.#dependencies = dependencies;
   }
 
-  async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
-    if (!QUERIES.has(query.type)) return this.#dependencies.delegate.query(query);
+  async query(query: GatewayV2Query, context?: GatewayV2QueryContext): Promise<GatewayV2Snapshot> {
+    if (!QUERIES.has(query.type)) return this.#dependencies.delegate.query(query, context);
     const hostQuery = query as HostQuery;
     this.#assertScope(hostQuery);
     if (hostQuery.type === "workspace.list") return this.#workspaceList(hostQuery);
