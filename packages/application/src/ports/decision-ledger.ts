@@ -291,6 +291,13 @@ export interface MailTrace {
   readonly museEntries: readonly MailTraceMuseEntry[];
 }
 
+export interface RuleLastUse {
+  readonly ruleId: string;
+  readonly decisionId: string;
+  readonly kind: DecisionKind;
+  readonly decidedAt: string;
+}
+
 export interface DecisionLedgerScope {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
@@ -348,6 +355,9 @@ export interface DecisionLedgerPort {
   listMuse(
     input: DecisionLedgerScope & { readonly since: string; readonly limit: number },
   ): Promise<readonly MuseReferenceEntry[]>;
+  lastRuleUses(
+    input: DecisionLedgerScope & { readonly ruleIds: readonly string[] },
+  ): Promise<readonly RuleLastUse[]>;
   readMailTrace(input: DecisionLedgerScope & { readonly messageId: string }): Promise<MailTrace>;
   readGapCandidates(input: {
     readonly ownerId: OwnerId;

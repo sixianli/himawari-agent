@@ -1055,8 +1055,10 @@ export async function startTenantRuntime(
     });
     const hostReadOnlyPort = new DescriptorRelativeReadOnly();
     let externalEgress: ReturnType<typeof createProductionModelEgress> | undefined;
+    let approvalThreadTitle: ((threadId: string) => Promise<string | null>) | undefined;
     const fileReadServices = createProductionFileReadServices({
       configuration,
+      threadTitle: async (threadId) => (approvalThreadTitle ? approvalThreadTitle(threadId) : null),
       repository,
       authority: invocationAuthority,
       clock,
@@ -1583,6 +1585,36 @@ export async function startTenantRuntime(
       governedMemory = memory;
       const episodePayloads = repository.payloadStore(configuration.ownerId, configuration.agentId);
       const episodeProtector = protector;
+      if (episodeProtector) {
+        const titleRepository = repository;
+        approvalThreadTitle = async (threadId) => {
+          const thread = await titleRepository
+            .threadRepository()
+            .read(
+              configuration.ownerId,
+              configuration.agentId,
+              threadId as Parameters<
+                ReturnType<typeof titleRepository.threadRepository>["read"]
+              >[2],
+            );
+          if (!thread?.titleRef) return null;
+          const payload = await episodePayloads.get(thread.titleRef);
+          if (
+            !payload ||
+            payload.contentType !== "text/plain" ||
+            !["public", "private"].includes(payload.dataClassification)
+          )
+            return null;
+          const title = new TextDecoder("utf-8", { fatal: true }).decode(
+            await episodeProtector.unprotect({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              payload,
+            }),
+          );
+          return title.trim() || null;
+        };
+      }
       const memoryEpisodes =
         memoryComposition && episodeProtector
           ? new MemoryEpisodeService({

@@ -237,6 +237,8 @@ export interface ListedOwnerRule {
   readonly status: StoredOwnerRule["status"];
   readonly enforced: boolean;
   readonly updatedAt: string;
+  readonly revision: number;
+  readonly sourceMemoryId: string | null;
 }
 
 interface Proposal {
@@ -693,6 +695,8 @@ export class ProductionOwnerRuleWriter {
         status: row.status,
         enforced: enforceableOwnerRule(row) !== undefined,
         updatedAt: row.updatedAt,
+        revision: row.revision,
+        sourceMemoryId: row.sourceMemoryId,
       });
     });
   }
@@ -735,6 +739,8 @@ export class ProductionOwnerRuleWriter {
       status: changed.status,
       enforced: true,
       updatedAt: changed.updatedAt,
+      revision: changed.revision,
+      sourceMemoryId: changed.sourceMemoryId,
     });
   }
 
@@ -792,9 +798,17 @@ export class ProductionOwnerRuleWriter {
       status: "retired",
       enforced: false,
       updatedAt: this.#options.clock.now(),
+      revision: latest.revision,
+      sourceMemoryId: latest.sourceMemoryId,
     });
   }
 }
+
+const modelVisibleRule = ({
+  revision: _revision,
+  sourceMemoryId: _sourceMemoryId,
+  ...rule
+}: ListedOwnerRule) => rule;
 
 export class ProductionOwnerRuleTools {
   readonly #writer: Pick<ProductionOwnerRuleWriter, "create" | "list" | "undo">;
@@ -808,13 +822,13 @@ export class ProductionOwnerRuleTools {
     const names = Object.keys(args);
     if (invocation.capabilityRef === RULE_LIST_CAPABILITY_REF) {
       if (names.length > 0) throw new OwnerRuleError("RULE_INPUT_INVALID");
-      return { rules: await this.#writer.list() };
+      return { rules: (await this.#writer.list()).map(modelVisibleRule) };
     }
     if (invocation.capabilityRef === RULE_UNDO_CAPABILITY_REF) {
       const ruleId = args["ruleId"];
       if (typeof ruleId !== "string" || names.some((name) => name !== "ruleId"))
         throw new OwnerRuleError("RULE_INPUT_INVALID");
-      return { undone: await this.#writer.undo(ruleId) };
+      return { undone: modelVisibleRule(await this.#writer.undo(ruleId)) };
     }
     if (invocation.capabilityRef !== RULE_SET_CAPABILITY_REF)
       throw new OwnerRuleError("RULE_INPUT_INVALID");
