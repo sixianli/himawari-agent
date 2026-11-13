@@ -101,6 +101,7 @@ import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
+import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
 import { ProductionGapExport } from "./production-gap-export.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
@@ -1614,34 +1615,12 @@ export async function startTenantRuntime(
       const episodePayloads = repository.payloadStore(configuration.ownerId, configuration.agentId);
       const episodeProtector = protector;
       if (episodeProtector) {
-        const titleRepository = repository;
-        approvalThreadTitle = async (threadId) => {
-          const thread = await titleRepository
-            .threadRepository()
-            .read(
-              configuration.ownerId,
-              configuration.agentId,
-              threadId as Parameters<
-                ReturnType<typeof titleRepository.threadRepository>["read"]
-              >[2],
-            );
-          if (!thread?.titleRef) return null;
-          const payload = await episodePayloads.get(thread.titleRef);
-          if (
-            !payload ||
-            payload.contentType !== "text/plain" ||
-            !["public", "private"].includes(payload.dataClassification)
-          )
-            return null;
-          const title = new TextDecoder("utf-8", { fatal: true }).decode(
-            await episodeProtector.unprotect({
-              ownerId: configuration.ownerId,
-              agentId: configuration.agentId,
-              payload,
-            }),
-          );
-          return title.trim() || null;
-        };
+        approvalThreadTitle = classifiedThreadTitleReader({
+          configuration,
+          threads: repository.threadRepository(),
+          payloads: episodePayloads,
+          protector: episodeProtector,
+        });
       }
       const memoryEpisodes =
         memoryComposition && episodeProtector

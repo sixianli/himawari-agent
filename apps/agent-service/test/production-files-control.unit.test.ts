@@ -12,6 +12,7 @@ describe("ProductionFilesControl", () => {
           nextCursor: null,
         }),
       } as never,
+      threadTitle: async () => `\u202E${"t".repeat(300)}`,
       clock: { now: () => "2026-11-13T00:00:00.000Z" },
     });
     const snapshot = await control.query(
@@ -20,7 +21,10 @@ describe("ProductionFilesControl", () => {
     );
     if (snapshot.type !== "files.list.snapshot") throw new Error(snapshot.type);
     const [entry] = snapshot.payload.files;
-    expect([entry?.name.length, entry?.mediaType.length]).toEqual([256, 128]);
+    expect([entry?.name.length, entry?.mediaType.length, entry?.threadTitle?.length]).toEqual([
+      256, 128, 256,
+    ]);
+    expect(entry?.threadTitle?.startsWith("\uFFFDt")).toBe(true);
     expect(entry?.name.startsWith("\uFFFDn")).toBe(true);
   });
 });

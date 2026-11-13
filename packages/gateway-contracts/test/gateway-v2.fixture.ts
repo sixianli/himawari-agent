@@ -437,6 +437,7 @@ export const governanceMessages = [
     expectedRevision: 2,
   }),
   fixture("command", "data.export.start", {}),
+  fixture("command", "data.export.cancel", { exportId: "data-export:AAAAAAAAAAAAAAAAAAAAAA" }),
   fixture("query", "data.export.status.read", { exportId: "data-export:AAAAAAAAAAAAAAAAAAAAAA" }),
   fixture("snapshot", "data.export.status.snapshot", {
     exportId: "data-export:AAAAAAAAAAAAAAAAAAAAAA",
@@ -444,6 +445,7 @@ export const governanceMessages = [
     startedAt: "2026-11-12T00:00:00.000Z",
     finishedAt: "2026-11-12T00:00:02.000Z",
     failureCode: null,
+    progress: null,
     result: {
       downloadPath: `/api/data-export/v1/archive?exportId=${encodeURIComponent("data-export:AAAAAAAAAAAAAAAAAAAAAA")}`,
       fileName: "himawari-export-2026-11-12.zip",
@@ -451,6 +453,8 @@ export const governanceMessages = [
       sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       memories: 12,
       rules: 3,
+      conversations: 40,
+      messages: 812,
       withheld: 1,
       expiresAt: "2026-11-12T00:10:02.000Z",
     },
@@ -473,6 +477,7 @@ export const governanceMessages = [
       {
         fileId: "thread-artifact:01",
         threadId: "thread-1",
+        threadTitle: "周五去大阪",
         name: "report.pdf",
         kind: "pdf",
         origin: "uploaded",
@@ -504,6 +509,7 @@ export const governanceMessages = [
     deviceId: "device-02",
     recentAuthenticationRef: "auth-ref-01",
   }),
+  fixture("command", "login.devices.revoke_others", { recentAuthenticationRef: "auth-ref-01" }),
   fixture("query", "home.read", { locale: "zh-CN" }),
   fixture("snapshot", "home.snapshot", {
     items: [

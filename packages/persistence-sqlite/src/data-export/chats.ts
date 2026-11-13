@@ -29,6 +29,8 @@ export interface ChatExportOptions extends PortableTextDependencies {
   readonly now: () => string;
   readonly sealPassphrase?: string;
   readonly maximumBytes?: number;
+  readonly onProgress?: (textsRead: number, textsTotal: number) => void;
+  readonly signal?: AbortSignal;
 }
 
 export const CHAT_EXPORT_TOO_LARGE = "CHAT_EXPORT_TOO_LARGE";
@@ -290,8 +292,16 @@ function renderThread(thread: ChatThreadLine): string {
 export async function buildChatExport(options: ChatExportOptions): Promise<ChatExportResult> {
   const snapshot = readChatSnapshot(options.database, options.scope, options.maximumBytes);
   const texts = new Map<string, string>();
+  let textsRead = 0;
+  options.signal?.throwIfAborted();
+  options.onProgress?.(textsRead, snapshot.payloads.size);
   for (const [ref, payload] of snapshot.payloads) {
-    if ("unavailable" in payload) continue;
+    options.signal?.throwIfAborted();
+    textsRead += 1;
+    if ("unavailable" in payload) {
+      options.onProgress?.(textsRead, snapshot.payloads.size);
+      continue;
+    }
     texts.set(
       ref,
       decoder.decode(
@@ -302,7 +312,9 @@ export async function buildChatExport(options: ChatExportOptions): Promise<ChatE
         }),
       ),
     );
+    options.onProgress?.(textsRead, snapshot.payloads.size);
   }
+  options.signal?.throwIfAborted();
   const originals: { [key: string]: JsonValue } = {};
   const withheldKeys = new Set<string>();
   const withheldThreads = new Set<string>();

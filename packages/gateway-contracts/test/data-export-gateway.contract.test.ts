@@ -11,9 +11,26 @@ const result = {
   sha256: "0".repeat(64),
   memories: 0,
   rules: 0,
+  conversations: 0,
+  messages: 0,
   withheld: 0,
   expiresAt: "2026-11-12T00:10:00.000Z",
 };
+
+const progress = {
+  stage: "memories",
+  sections: [
+    { section: "memories", textsRead: 2, textsTotal: 5 },
+    { section: "conversations", textsRead: 0, textsTotal: null },
+  ],
+};
+
+const withSection = (index: number, overrides: Record<string, unknown>) => ({
+  ...progress,
+  sections: progress.sections.map((section, position) =>
+    position === index ? { ...section, ...overrides } : section,
+  ),
+});
 
 function rejects(message: Record<string, unknown>) {
   expect(() => gatewayV2MessageSchema.parse(message)).toThrow(ContractValidationError);
@@ -26,6 +43,7 @@ const snapshot = (overrides: Record<string, unknown>) =>
     startedAt: "2026-11-12T00:00:00.000Z",
     finishedAt: "2026-11-12T00:00:01.000Z",
     failureCode: null,
+    progress: null,
     result,
     generatedAt: "2026-11-12T00:00:02.000Z",
     ...overrides,
@@ -33,9 +51,74 @@ const snapshot = (overrides: Record<string, unknown>) =>
 
 describe("data export gateway messages", () => {
   it("accepts every state, with and without a result", () => {
-    for (const state of ["running", "ready", "failed", "expired"])
+    for (const state of ["running", "ready", "failed", "cancelled", "expired"])
       gatewayV2MessageSchema.parse(snapshot({ state, result: null }));
     expect(gatewayV2MessageSchema.parse(snapshot({})).type).toBe("data.export.status.snapshot");
+  });
+
+  it("accepts real progress while running: a section not started yet has no total", () => {
+    gatewayV2MessageSchema.parse(snapshot({ state: "running", result: null, progress }));
+    gatewayV2MessageSchema.parse(
+      snapshot({
+        state: "running",
+        result: null,
+        progress: {
+          stage: "packing",
+          sections: [
+            { section: "memories", textsRead: 5, textsTotal: 5 },
+            { section: "conversations", textsRead: 0, textsTotal: 0 },
+          ],
+        },
+      }),
+    );
+  });
+
+  it.each([
+    ["progress after the export is ready", { progress }],
+    ["progress on a cancelled export", { state: "cancelled", result: null, progress }],
+    [
+      "more texts read than the total",
+      { state: "running", result: null, progress: withSection(0, { textsRead: 6 }) },
+    ],
+    [
+      "texts read before the total is known",
+      { state: "running", result: null, progress: withSection(1, { textsRead: 1 }) },
+    ],
+    [
+      "sections out of order",
+      {
+        state: "running",
+        result: null,
+        progress: { ...progress, sections: [...progress.sections].reverse() },
+      },
+    ],
+    [
+      "a missing section",
+      {
+        state: "running",
+        result: null,
+        progress: { ...progress, sections: [progress.sections[0]] },
+      },
+    ],
+    [
+      "an unknown stage",
+      { state: "running", result: null, progress: { ...progress, stage: "uploading" } },
+    ],
+    [
+      "a percentage instead of counts",
+      { state: "running", result: null, progress: { ...progress, percent: 40 } },
+    ],
+    ["a result without a conversation count", { result: { ...result, conversations: undefined } }],
+    ["a negative message count", { result: { ...result, messages: -1 } }],
+  ])("rejects a snapshot with %s", (_name, overrides) => {
+    rejects(snapshot(overrides));
+  });
+
+  it("accepts a cancel command for one export and rejects it without a valid id", () => {
+    gatewayV2MessageSchema.parse(fixture("command", "data.export.cancel", { exportId }));
+    rejects(fixture("command", "data.export.cancel", {}));
+    rejects(fixture("command", "data.export.cancel", { exportId: "not-an-id" }));
+    rejects(fixture("command", "data.export.cancel", { exportId, reason: "slow" }));
   });
 
   it.each([

@@ -25,8 +25,10 @@ const device = (id: string, status: "active" | "revoked" = "active") => ({
 
 function control(devices = [device("device-current"), device("device-other")]) {
   const revoked: string[] = [];
+  const checks: unknown[] = [];
   return {
     revoked,
+    checks,
     control: new ProductionLoginDevicesControl({
       configuration: { ownerId: OWNER, agentId: AGENT } as never,
       state: {
@@ -36,7 +38,11 @@ function control(devices = [device("device-current"), device("device-other")]) {
           return device(id, "revoked");
         },
       } as never,
-      recentAuthentication: { assertRecentAuthentication: async () => undefined } as never,
+      recentAuthentication: {
+        assertRecentAuthentication: async (input: unknown) => {
+          checks.push(input);
+        },
+      } as never,
       clock: { now: () => NOW },
     }),
   };
@@ -92,6 +98,70 @@ describe("ProductionLoginDevicesControl scope", () => {
     );
     if (snapshot.type !== "login.devices.snapshot") throw new Error(snapshot.type);
     expect(snapshot.payload.devices.map(({ label }) => label)).toEqual(["a".repeat(80), "enohp x"]);
+  });
+
+  const revokeOthers = (
+    agentId = AGENT,
+    recentAuthenticationRef: string | null = "authentication:current",
+  ) => ({
+    authentication,
+    command: {
+      type: "login.devices.revoke_others",
+      scope: scope(agentId),
+      payload: { recentAuthenticationRef },
+    },
+  });
+
+  it("signs out every other device after one recent authentication and keeps the current one", async () => {
+    const {
+      control: devices,
+      revoked,
+      checks,
+    } = control([device("device-current"), device("device-laptop"), device("device-tablet")]);
+    await expect(devices.execute(revokeOthers() as never)).resolves.toEqual({
+      resultRef: "device-current",
+      replayed: false,
+    });
+    expect(revoked).toEqual(["device-laptop", "device-tablet"]);
+    expect(checks).toEqual([
+      { authentication, expectedAuthenticationRef: "authentication:current" },
+    ]);
+  });
+
+  it("answers replayed without asking for recent authentication when no other device is signed in", async () => {
+    const { control: devices, revoked, checks } = control([device("device-current")]);
+    await expect(devices.execute(revokeOthers(AGENT, null) as never)).resolves.toEqual({
+      resultRef: "device-current",
+      replayed: true,
+    });
+    expect([revoked, checks]).toEqual([[], []]);
+  });
+
+  it("signs out no device when recent authentication fails or the agent is another one", async () => {
+    const { control: devices, revoked } = control();
+    await expect(devices.execute(revokeOthers("agent-other") as never)).rejects.toMatchObject({
+      code: "PORT_NOT_AUTHORITATIVE",
+    });
+    const strict = new ProductionLoginDevicesControl({
+      configuration: { ownerId: OWNER, agentId: AGENT } as never,
+      state: {
+        listDevices: async () => [device("device-current"), device("device-other")],
+        revokeDevice: async (id: string) => {
+          revoked.push(id);
+          return device(id, "revoked");
+        },
+      } as never,
+      recentAuthentication: {
+        assertRecentAuthentication: async () => {
+          throw new Error("RECENT_AUTHENTICATION_REQUIRED");
+        },
+      } as never,
+      clock: { now: () => NOW },
+    });
+    await expect(strict.execute(revokeOthers(AGENT, null) as never)).rejects.toThrow(
+      "RECENT_AUTHENTICATION_REQUIRED",
+    );
+    expect(revoked).toEqual([]);
   });
 
   it("refuses a device list and a revoke without a signed-in owner", async () => {

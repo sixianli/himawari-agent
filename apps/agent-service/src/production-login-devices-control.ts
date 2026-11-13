@@ -17,6 +17,7 @@ import type {
 export const PRODUCTION_LOGIN_DEVICE_OPERATIONS = Object.freeze([
   "login.devices.read",
   "login.device.revoke",
+  "login.devices.revoke_others",
 ] as const);
 
 export interface ProductionLoginDevicesControlOptions {
@@ -93,6 +94,21 @@ export class ProductionLoginDevicesControl {
     readonly command: GatewayV2Command;
   }): Promise<{ resultRef: string; replayed: boolean }> {
     const { authentication, command } = input;
+    if (command.type === "login.devices.revoke_others") {
+      const ownerId = this.#owner(authentication, command.scope);
+      const others = (await this.#options.state.listDevices(ownerId, false)).filter(
+        (device) => device.id !== authentication.deviceId,
+      );
+      if (others.length === 0) return { resultRef: authentication.deviceId, replayed: true };
+      await this.#options.recentAuthentication.assertRecentAuthentication({
+        authentication,
+        expectedAuthenticationRef: command.payload.recentAuthenticationRef,
+      });
+      const revokedAt = this.#options.clock.now();
+      for (const device of others)
+        await this.#options.state.revokeDevice(device.id, device.revision, revokedAt);
+      return { resultRef: authentication.deviceId, replayed: false };
+    }
     if (command.type !== "login.device.revoke")
       throw new Error("LOGIN_DEVICES_OPERATION_NOT_INSTALLED");
     const ownerId = this.#owner(authentication, command.scope);
