@@ -72,7 +72,7 @@ public enum MessageSensing {
     }
 
     public static func record(_ row: MessageRow) -> PerceptionRecordBody? {
-        guard let service = service(row.service) else { return nil }
+        guard !row.guid.isEmpty, let service = service(row.service) else { return nil }
         guard let text = row.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
         var evidence = ["service": service, "direction": row.fromMe ? "outgoing" : "incoming"]
         if let sender = row.sender?.trimmingCharacters(in: .whitespacesAndNewlines), !sender.isEmpty {
@@ -133,5 +133,53 @@ extension DeviceAPI {
         struct Body: Encodable { let records: [PerceptionRecordBody] }
         let data = try await http.send(DeviceRequest(method: "POST", path: "perception", body: try JSONEncoder().encode(Body(records: records))))
         return try decode(PerceptionIngestReply.self, data)
+    }
+}
+
+public struct MessagesSchema: Sendable, Equatable {
+    public static let requiredMessageColumns = ["guid", "date", "service"]
+
+    public let message: Set<String>
+    public let handle: Set<String>
+
+    public init(message: [String], handle: [String]) {
+        self.message = Set(message.map { $0.lowercased() })
+        self.handle = Set(handle.map { $0.lowercased() })
+    }
+
+    public var missing: [String] {
+        Self.requiredMessageColumns.filter { !message.contains($0) }
+    }
+
+    public var newestQuery: String {
+        "SELECT IFNULL(MAX(ROWID), 0) FROM message"
+    }
+
+    public var rowsQuery: String? {
+        guard missing.isEmpty else { return nil }
+        let joinsHandle = message.contains("handle_id") && handle.contains("id")
+        let columns: [String] = [
+            "m.ROWID",
+            "m.guid",
+            column("text", fallback: "NULL"),
+            column("attributedbody", fallback: "NULL", name: "attributedBody"),
+            "m.date",
+            column("is_from_me", fallback: "0"),
+            "m.service",
+            joinsHandle ? "h.id" : "NULL",
+        ]
+        var filters = ["m.ROWID > ?"]
+        if message.contains("item_type") { filters.append("m.item_type = 0") }
+        if message.contains("associated_message_type") { filters.append("m.associated_message_type = 0") }
+        var parts: [String] = ["SELECT", columns.joined(separator: ", "), "FROM message m"]
+        if joinsHandle { parts.append("LEFT JOIN handle h ON h.ROWID = m.handle_id") }
+        parts.append("WHERE")
+        parts.append(filters.joined(separator: " AND "))
+        parts.append("ORDER BY m.ROWID LIMIT ?")
+        return parts.joined(separator: " ")
+    }
+
+    private func column(_ key: String, fallback: String, name: String? = nil) -> String {
+        message.contains(key) ? "m." + (name ?? key) : fallback
     }
 }

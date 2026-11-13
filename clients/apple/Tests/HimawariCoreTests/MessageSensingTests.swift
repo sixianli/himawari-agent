@@ -36,6 +36,7 @@ import Testing
         #expect(MessageSensing.record(MessageRow(rowId: 1, guid: "a", text: "hi", appleDate: 0, fromMe: false, service: "Satellite", sender: nil)) == nil)
         #expect(MessageSensing.record(MessageRow(rowId: 1, guid: "a", text: " \n", appleDate: 0, fromMe: false, service: "iMessage", sender: nil)) == nil)
         #expect(MessageSensing.record(MessageRow(rowId: 1, guid: "a", text: nil, appleDate: 0, fromMe: false, service: "iMessage", sender: nil)) == nil)
+        #expect(MessageSensing.record(MessageRow(rowId: 1, guid: "", text: "hi", appleDate: 0, fromMe: false, service: "iMessage", sender: nil)) == nil)
     }
 
     @Test func longTextAndSenderAreCutByUtf16LengthWithoutSplittingAnEmoji() throws {
@@ -83,5 +84,25 @@ import Testing
         let exchange = RecordingExchange([HTTPExchangeResponse(status: 503, body: Data())])
         let api = DeviceAPI(http: try uploadClient(exchange))
         await #expect(throws: DeviceAPIError.self) { try await api.perceiveSkippingInvalid([record]) }
+    }
+}
+
+@Suite struct MessagesSchemaTests {
+    let full = ["ROWID", "guid", "text", "attributedBody", "handle_id", "service", "date", "is_from_me", "item_type", "associated_message_type"]
+
+    @Test func theUsualColumnsGiveTheFullQueryWithSenderAndWithoutReactions() throws {
+        let query = try #require(MessagesSchema(message: full, handle: ["ROWID", "id", "service"]).rowsQuery)
+        #expect(query == "SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.date, m.is_from_me, m.service, h.id FROM message m LEFT JOIN handle h ON h.ROWID = m.handle_id WHERE m.ROWID > ? AND m.item_type = 0 AND m.associated_message_type = 0 ORDER BY m.ROWID LIMIT ?")
+    }
+
+    @Test func missingOptionalColumnsFallBackInsteadOfFailing() throws {
+        let query = try #require(MessagesSchema(message: ["ROWID", "GUID", "date", "service"], handle: []).rowsQuery)
+        #expect(query == "SELECT m.ROWID, m.guid, NULL, NULL, m.date, 0, m.service, NULL FROM message m WHERE m.ROWID > ? ORDER BY m.ROWID LIMIT ?")
+    }
+
+    @Test func aMissingRequiredColumnIsNamedAndNothingIsRead() {
+        let schema = MessagesSchema(message: ["ROWID", "text", "service"], handle: ["id"])
+        #expect(schema.missing == ["guid", "date"])
+        #expect(schema.rowsQuery == nil)
     }
 }

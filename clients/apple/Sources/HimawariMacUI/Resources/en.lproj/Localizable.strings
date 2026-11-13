@@ -44,8 +44,16 @@
 "settings.sees.messages" = "Messages on this Mac";
 "settings.sees.needsAccessibility" = "Allow Himawari in System Settings › Privacy & Security › Accessibility";
 "settings.sees.openAccessibility" = "Open";
-"settings.sees.needsFullDisk" = "Give Himawari Full Disk Access in System Settings";
+"settings.sees.needsFullDisk" = "Himawari doesn’t have Full Disk Access yet, so it can’t read Messages";
 "settings.sees.openFullDisk" = "Open";
+"settings.sees.fullDisk.step1" = "1. Click Open to go to System Settings › Privacy & Security › Full Disk Access";
+"settings.sees.fullDisk.step2" = "2. Click + under the list and choose Himawari in Applications (or click Show in Finder and drag it into the list)";
+"settings.sees.fullDisk.step3" = "3. Turn Himawari on; if macOS asks to Quit & Reopen, click it and this line will update";
+"settings.sees.revealApp" = "Show in Finder";
+"settings.sees.messages.serverNotReady" = "The server doesn’t take messages yet; this starts by itself after it updates";
+"settings.sees.messages.cannotRead" = "Couldn’t open the Messages database; will try again";
+"settings.sees.messages.unknownLayout" = "This Mac’s Messages database looks different (missing %@), so it isn’t read";
+"settings.sees.messages.cannotSend" = "Messages weren’t sent; they’ll go up once the server is reachable, nothing is skipped";
 "settings.sees.messages.fromNow" = "Only new messages from now on; nothing older, never sends or marks as read";
 "settings.shortcut" = "Shortcut to call it";
 "settings.shortcut.taken" = "Another app is using it. Pick another";

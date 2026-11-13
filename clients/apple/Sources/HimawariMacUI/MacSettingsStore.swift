@@ -5,6 +5,13 @@ import Foundation
 import HimawariCore
 import Observation
 
+enum MessagesProblem: Equatable {
+    case serverNotReady
+    case cannotRead
+    case unknownLayout([String])
+    case cannotSend
+}
+
 @MainActor
 @Observable
 final class MacSettingsStore {
@@ -21,11 +28,12 @@ final class MacSettingsStore {
         settings.folders = settings.folders.map(Self.refreshed)
     }
 
-    init(demo: MacAccessSettings, messagesReadable: Bool = true) {
+    init(demo: MacAccessSettings, messagesReadable: Bool = true, messagesProblem: MessagesProblem? = nil) {
         file = nil
         settings = demo
         accessibilityAllowed = true
         self.messagesReadable = messagesReadable
+        self.messagesProblem = messagesProblem
     }
 
     static var defaultFile: URL? {
@@ -94,7 +102,10 @@ final class MacSettingsStore {
 
     func setSeesMessages(_ on: Bool) {
         settings.seesMessages = on
-        if !on { settings.messagesAfterRow = nil }
+        if !on {
+            settings.messagesAfterRow = nil
+            messagesProblem = nil
+        }
         save()
     }
 
@@ -116,10 +127,20 @@ final class MacSettingsStore {
     }
 
     private(set) var messagesReadable: Bool = MessagesDatabase.readable()
+    private(set) var messagesProblem: MessagesProblem? = nil
+
+    func reportMessages(_ problem: MessagesProblem?) {
+        guard messagesProblem != problem else { return }
+        messagesProblem = problem
+    }
 
     func askForAccessibility() {
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         accessibilityAllowed = AXIsProcessTrustedWithOptions(options)
+    }
+
+    static func revealApp() {
+        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
     }
 
     static func openPrivacyPane(_ anchor: String) {

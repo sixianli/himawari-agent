@@ -62,13 +62,8 @@ struct MacSettingsView: View {
                     row(icon: .message) {
                         VStack(alignment: .leading, spacing: DesignTokens.Mac.statusBadgeGap) {
                             Text(L.text("settings.sees.messages")).foregroundStyle(Color.hmText)
-                            if store.settings.seesMessages && !store.messagesReadable {
-                                permissionHint("settings.sees.needsFullDisk", button: "settings.sees.openFullDisk", anchor: "Privacy_AllFiles")
-                            } else if store.settings.seesMessages {
-                                Text(L.text("settings.sees.messages.fromNow"))
-                                    .hmType(DesignTokens.TypeScale.macSmall)
-                                    .foregroundStyle(Color.hmMuted)
-                                    .fixedSize(horizontal: false, vertical: true)
+                            if store.settings.seesMessages {
+                                messagesStatus
                             }
                         }
                     } trailing: {
@@ -162,6 +157,44 @@ struct MacSettingsView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+        }
+    }
+
+    @ViewBuilder
+    private var messagesStatus: some View {
+        if !store.messagesReadable {
+            VStack(alignment: .leading, spacing: DesignTokens.Mac.statusBadgeGap) {
+                small(L.text("settings.sees.needsFullDisk"), color: Color.hmDanger)
+                small(L.text("settings.sees.fullDisk.step1"), color: Color.hmMuted)
+                small(L.text("settings.sees.fullDisk.step2"), color: Color.hmMuted)
+                small(L.text("settings.sees.fullDisk.step3"), color: Color.hmMuted)
+                HStack(spacing: DesignTokens.Mac.buttonGap) {
+                    Button(L.text("settings.sees.openFullDisk")) { MacSettingsStore.openPrivacyPane("Privacy_AllFiles") }
+                        .buttonStyle(MacButtonStyle(role: .primary, height: DesignTokens.Mac.smallButtonHeight, small: true))
+                    Button(L.text("settings.sees.revealApp")) { MacSettingsStore.revealApp() }
+                        .buttonStyle(MacButtonStyle(role: .secondary, height: DesignTokens.Mac.smallButtonHeight, small: true))
+                }
+            }
+        } else if let problem = store.messagesProblem {
+            small(Self.text(for: problem), color: Color.hmDanger)
+        } else {
+            small(L.text("settings.sees.messages.fromNow"), color: Color.hmMuted)
+        }
+    }
+
+    private func small(_ text: String, color: Color) -> some View {
+        Text(text)
+            .hmType(DesignTokens.TypeScale.macSmall)
+            .foregroundStyle(color)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    static func text(for problem: MessagesProblem) -> String {
+        switch problem {
+        case .serverNotReady: L.text("settings.sees.messages.serverNotReady")
+        case .cannotRead: L.text("settings.sees.messages.cannotRead")
+        case let .unknownLayout(missing): L.format("settings.sees.messages.unknownLayout", missing.joined(separator: ", "))
+        case .cannotSend: L.text("settings.sees.messages.cannotSend")
         }
     }
 

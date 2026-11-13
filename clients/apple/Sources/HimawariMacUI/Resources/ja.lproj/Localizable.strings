@@ -44,8 +44,16 @@
 "settings.sees.messages" = "この Mac のメッセージ";
 "settings.sees.needsAccessibility" = "「システム設定 › プライバシーとセキュリティ › アクセシビリティ」で Himawari を許可してください";
 "settings.sees.openAccessibility" = "開く";
-"settings.sees.needsFullDisk" = "システム設定で Himawari にフルディスクアクセスを許可してください";
+"settings.sees.needsFullDisk" = "フルディスクアクセスがまだないため、メッセージを読めません";
 "settings.sees.openFullDisk" = "開く";
+"settings.sees.fullDisk.step1" = "1.「開く」で「システム設定 › プライバシーとセキュリティ › フルディスクアクセス」を開きます";
+"settings.sees.fullDisk.step2" = "2. リストの下の + を押し、「アプリケーション」の Himawari を選びます（「Finder で表示」からリストへドラッグしても可）";
+"settings.sees.fullDisk.step3" = "3. Himawari をオンにします。「終了して再度開く」と出たら押してください。この行が切り替わります";
+"settings.sees.revealApp" = "Finder で表示";
+"settings.sees.messages.serverNotReady" = "サーバーがまだメッセージを受け付けていません。更新後に自動で始まります";
+"settings.sees.messages.cannotRead" = "メッセージのデータベースを開けませんでした。あとで再試行します";
+"settings.sees.messages.unknownLayout" = "この Mac のメッセージのデータベースは形式が違うため（%@ がない）、読みません";
+"settings.sees.messages.cannotSend" = "メッセージを送れませんでした。サーバーにつながったら続きから送ります";
 "settings.sees.messages.fromNow" = "オンにした後の新しいメッセージだけ読みます。過去分は読まず、送信も既読もしません";
 "settings.shortcut" = "呼び出すショートカット";
 "settings.shortcut.taken" = "ほかの App が使っています。別のものにしてください";

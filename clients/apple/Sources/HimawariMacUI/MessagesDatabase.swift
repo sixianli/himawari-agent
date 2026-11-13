@@ -39,20 +39,33 @@ final class MessagesDatabase {
         sqlite3_close(handle)
     }
 
-    func newestRow() throws -> Int64 {
-        let statement = try prepare("SELECT IFNULL(MAX(ROWID), 0) FROM message")
+    func schema() throws -> MessagesSchema {
+        MessagesSchema(message: try columns("message"), handle: try columns("handle"))
+    }
+
+    private func columns(_ table: String) throws -> [String] {
+        let statement = try prepare("PRAGMA table_info(\(table))")
+        defer { sqlite3_finalize(statement) }
+        var names: [String] = []
+        while true {
+            let step = sqlite3_step(statement)
+            if step == SQLITE_DONE { break }
+            guard step == SQLITE_ROW else { throw MessagesDatabaseError.query(lastError) }
+            if let name = string(statement, 1) { names.append(name) }
+        }
+        return names
+    }
+
+    func newestRow(_ schema: MessagesSchema) throws -> Int64 {
+        let statement = try prepare(schema.newestQuery)
         defer { sqlite3_finalize(statement) }
         guard sqlite3_step(statement) == SQLITE_ROW else { throw MessagesDatabaseError.query(lastError) }
         return sqlite3_column_int64(statement, 0)
     }
 
-    func rows(after row: Int64, limit: Int) throws -> [MessageRow] {
-        let statement = try prepare("""
-            SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.date, m.is_from_me, m.service, h.id
-            FROM message m LEFT JOIN handle h ON h.ROWID = m.handle_id
-            WHERE m.ROWID > ? AND m.item_type = 0 AND m.associated_message_type = 0
-            ORDER BY m.ROWID LIMIT ?
-            """)
+    func rows(after row: Int64, limit: Int, schema: MessagesSchema) throws -> [MessageRow] {
+        guard let query = schema.rowsQuery else { return [] }
+        let statement = try prepare(query)
         defer { sqlite3_finalize(statement) }
         sqlite3_bind_int64(statement, 1, row)
         sqlite3_bind_int64(statement, 2, Int64(limit))
@@ -64,7 +77,7 @@ final class MessagesDatabase {
             rows.append(MessageRow(
                 rowId: sqlite3_column_int64(statement, 0),
                 guid: string(statement, 1) ?? "",
-                text: string(statement, 2) ?? Self.attributedText(blob(statement, 3)),
+                text: string(statement, 2).flatMap { $0.isEmpty ? nil : $0 } ?? Self.attributedText(blob(statement, 3)),
                 appleDate: sqlite3_column_int64(statement, 4),
                 fromMe: sqlite3_column_int64(statement, 5) != 0,
                 service: string(statement, 6),
@@ -132,21 +145,53 @@ final class MessagesSensor {
         guard settings.settings.seesMessages, app.phase == .active else { return }
         settings.refreshPermissions()
         guard settings.messagesReadable else { return }
-        guard let batch = app.configuration?.limit(MessageSensing.batchLimitKey), batch > 0 else { return }
-        guard let database = try? MessagesDatabase() else { return }
-        guard let newest = try? database.newestRow(),
+        guard let batch = app.configuration?.limit(MessageSensing.batchLimitKey), batch > 0 else {
+            settings.reportMessages(.serverNotReady)
+            return
+        }
+        let database: MessagesDatabase
+        let schema: MessagesSchema
+        do {
+            database = try MessagesDatabase()
+            schema = try database.schema()
+        } catch {
+            settings.reportMessages(.cannotRead)
+            return
+        }
+        guard schema.missing.isEmpty else {
+            settings.reportMessages(.unknownLayout(schema.missing))
+            return
+        }
+        guard let newest = try? database.newestRow(schema),
               let start = MessageSensing.startingRow(enabled: true, saved: settings.settings.messagesAfterRow, newest: newest)
-        else { return }
+        else {
+            settings.reportMessages(.cannotRead)
+            return
+        }
         if settings.settings.messagesAfterRow == nil {
             settings.setMessagesAfterRow(start)
+            settings.reportMessages(nil)
             return
         }
         var after = start
         while settings.settings.seesMessages, !Task.isCancelled {
-            guard let rows = try? database.rows(after: after, limit: Int(batch)), let last = rows.last else { return }
+            let rows: [MessageRow]
+            do {
+                rows = try database.rows(after: after, limit: Int(batch), schema: schema)
+            } catch {
+                settings.reportMessages(.cannotRead)
+                return
+            }
+            guard let last = rows.last else {
+                settings.reportMessages(nil)
+                return
+            }
             let records = rows.compactMap(MessageSensing.record)
             if !records.isEmpty {
-                guard (try? await app.api.perceiveSkippingInvalid(records)) != nil else { return }
+                guard (try? await app.api.perceiveSkippingInvalid(records)) != nil else {
+                    settings.reportMessages(.cannotSend)
+                    return
+                }
             }
             guard settings.settings.seesMessages else { return }
             after = last.rowId
