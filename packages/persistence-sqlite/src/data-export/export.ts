@@ -48,6 +48,8 @@ export interface ExportOptions extends PortableTextDependencies {
   readonly now: () => string;
   readonly sealPassphrase?: string;
   readonly withEvidence?: boolean;
+  readonly onProgress?: (textsRead: number, textsTotal: number) => void;
+  readonly signal?: AbortSignal;
 }
 
 export interface ExportResult {
@@ -92,9 +94,15 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     snapshot.restrictedMemoryTexts.map((row) => str(row["content_ref"])),
   );
   let unreadableRestricted = 0;
+  let textsRead = 0;
+  options.signal?.throwIfAborted();
+  options.onProgress?.(textsRead, snapshot.payloads.size);
   for (const [ref, payload] of snapshot.payloads) {
+    options.signal?.throwIfAborted();
+    textsRead += 1;
     if ("unavailable" in payload) {
       if (restrictedRefs.has(ref)) unreadableRestricted += 1;
+      options.onProgress?.(textsRead, snapshot.payloads.size);
       continue;
     }
     const read = async () =>
@@ -111,7 +119,9 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       if (text === null) unreadableRestricted += 1;
       else texts.set(ref, text);
     }
+    options.onProgress?.(textsRead, snapshot.payloads.size);
   }
+  options.signal?.throwIfAborted();
   const restrictedDigests = new Set<string>();
   for (const row of snapshot.restrictedMemoryTexts) {
     const text = texts.get(str(row["content_ref"]));

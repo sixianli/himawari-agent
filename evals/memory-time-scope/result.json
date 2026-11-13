@@ -1,0 +1,925 @@
+{
+  "now": "2026-10-25T12:00:00.000Z",
+  "timeZone": "Asia/Tokyo",
+  "spentUsd": 0.009947256,
+  "usage": {
+    "deepseek-v4.1-flash": {
+      "prompt": 161500,
+      "cached": 154752,
+      "completion": 14118,
+      "calls": 90
+    }
+  },
+  "agreement": [
+    {
+      "model": "deepseek-v4.1-flash",
+      "sameAcrossRuns": 30,
+      "total": 45
+    }
+  ],
+  "outcomes": [
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q100",
+      "called": true,
+      "scope": {
+        "from": "2026-10-15",
+        "to": "2026-11-05"
+      },
+      "query": "出差 行程 酒店 机票 外地"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q101",
+      "called": true,
+      "scope": {},
+      "query": "小葵 放假 学校 假期安排"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q102",
+      "called": true,
+      "scope": {},
+      "query": "身体状况、体检、生病、症状"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q103",
+      "called": true,
+      "scope": {
+        "from": "2026-10-01",
+        "to": "2026-10-25"
+      },
+      "query": "这个月在忙的事、项目、安排"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q104",
+      "called": true,
+      "scope": {},
+      "query": "现在住在哪里 住址 家 搬家"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q105",
+      "called": true,
+      "scope": {},
+      "query": "团子 在哪 位置"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q106",
+      "called": true,
+      "scope": {},
+      "query": "游泳 每天早上 运动安排"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q107",
+      "called": true,
+      "scope": {},
+      "query": "学校活动 家长会 校园活动 孩子学校安排"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q108",
+      "called": true,
+      "scope": {},
+      "query": "CI 状态、CI 故障/不可用、CI 配置"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q109",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "咖啡 喝咖啡 咖啡因"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q110",
+      "called": true,
+      "scope": {},
+      "query": "量血压的习惯 时间 血压记录"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q111",
+      "called": true,
+      "scope": {},
+      "query": "首尔 出差 旅行 行程"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q112",
+      "called": true,
+      "scope": {},
+      "query": "京都 行程 出差 旅行 安排"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q113",
+      "called": true,
+      "scope": {},
+      "query": "主人现在所在城市 住址 大阪 出差 旅行 行程"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q114",
+      "called": true,
+      "scope": {},
+      "query": "感冒 生病 身体不舒服"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q200",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "早上喝的咖啡"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q201",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "以前用的手机 型号 换手机"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q202",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "Himawari 主力模型 更换 模型版本"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q203",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "小葵 钢琴老师"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q204",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "上班 通勤 交通工具 路线"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q205",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "体重 多重 公斤 减肥"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q206",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "开什么车 车辆 汽车 车型 换车"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q207",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "Himawari 前端框架"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q208",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "Cindy 工作 公司 以前"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q209",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "老周 工作 上班 公司"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q210",
+      "called": true,
+      "scope": {
+        "from": "2026-09-08",
+        "to": "2026-09-22"
+      },
+      "query": "出差"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q211",
+      "called": true,
+      "scope": {
+        "from": "2026-08-01",
+        "to": "2026-08-31"
+      },
+      "query": "小葵 八月 在做什么"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q212",
+      "called": true,
+      "scope": {
+        "from": "2026-07-01",
+        "to": "2026-07-31",
+        "includeHistory": true
+      },
+      "query": "七月住在哪里 住所 住处 搬家"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q213",
+      "called": true,
+      "scope": {
+        "from": "2026-10-01",
+        "to": "2026-10-10",
+        "includeHistory": true
+      },
+      "query": "生病、发烧、感冒、身体不舒服、看病"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q214",
+      "called": true,
+      "scope": {
+        "from": "2026-05-25",
+        "to": "2026-07-05"
+      },
+      "query": "六月 京都 行程 出差 旅行"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q215",
+      "called": true,
+      "scope": {
+        "from": "2026-06-01",
+        "to": "2026-09-05"
+      },
+      "query": "早上运动 晨练 跑步 锻炼"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q216",
+      "called": true,
+      "scope": {
+        "from": "2026-04-01",
+        "to": "2026-04-30"
+      },
+      "query": "四月 戒 戒掉 戒除"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q217",
+      "called": true,
+      "scope": {
+        "from": "2026-10-01",
+        "to": "2026-10-10",
+        "includeHistory": true
+      },
+      "query": "团子"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q218",
+      "called": true,
+      "scope": {
+        "from": "2026-09-28",
+        "to": "2026-10-12"
+      },
+      "query": "首尔 出差 旅行"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q219",
+      "called": true,
+      "scope": {
+        "from": "2026-05-01",
+        "to": "2026-05-31",
+        "includeHistory": true
+      },
+      "query": "手机 型号 换手机"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q220",
+      "called": true,
+      "scope": {
+        "from": "2026-05-01",
+        "to": "2026-05-31",
+        "includeHistory": true
+      },
+      "query": "五月 开什么车 车辆"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q221",
+      "called": true,
+      "scope": {
+        "from": "2026-05-01",
+        "to": "2026-05-31"
+      },
+      "query": "五月 每天写代码到几点 编程 工作时间"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q230",
+      "called": true,
+      "scope": {
+        "from": "2026-10-23",
+        "to": "2026-10-23"
+      },
+      "query": "吃饭 晚饭 聚餐 和谁"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q231",
+      "called": true,
+      "scope": {
+        "from": "2026-10-24",
+        "to": "2026-10-24"
+      },
+      "query": "排查问题"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q232",
+      "called": true,
+      "scope": {
+        "from": "2026-10-11",
+        "to": "2026-10-25"
+      },
+      "query": "小葵 周六 上课 课程 补习"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q233",
+      "called": true,
+      "scope": {
+        "from": "2026-10-08",
+        "to": "2026-10-12"
+      },
+      "query": "团子 去医院 检查"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q234",
+      "called": true,
+      "scope": {
+        "from": "2026-09-10",
+        "to": "2026-09-25"
+      },
+      "query": "九月中旬出差 和客户谈了什么"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q235",
+      "called": true,
+      "scope": {
+        "from": "2026-09-27",
+        "to": "2026-10-11",
+        "includeHistory": true
+      },
+      "query": "记忆系统 方案 讨论"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q236",
+      "called": true,
+      "scope": {
+        "from": "2026-08-01",
+        "to": "2026-08-31"
+      },
+      "query": "八月 一家 出去玩 旅行"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 1,
+      "questionId": "q237",
+      "called": true,
+      "scope": {
+        "from": "2026-10-19",
+        "to": "2026-10-19"
+      },
+      "query": "帮忙写的东西"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q100",
+      "called": true,
+      "scope": {},
+      "query": "出差 行程 旅行 安排"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q101",
+      "called": true,
+      "scope": {},
+      "query": "小葵 放假 假期 学校 日程"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q102",
+      "called": true,
+      "scope": {},
+      "query": "身体状况 健康 体检 不舒服 生病 医院"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q103",
+      "called": true,
+      "scope": {
+        "from": "2026-10-01",
+        "to": "2026-10-31"
+      },
+      "query": "这个月在忙什么 工作安排 项目 待办"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q104",
+      "called": true,
+      "scope": {},
+      "query": "现在住在哪里 住址 家"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q105",
+      "called": true,
+      "scope": {},
+      "query": "团子 是谁 现在在哪"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q106",
+      "called": true,
+      "scope": {},
+      "query": "游泳 早上 每天 运动习惯"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q107",
+      "called": true,
+      "scope": {},
+      "query": "学校活动 参加 日程安排"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q108",
+      "called": true,
+      "scope": {},
+      "query": "CI 流水线 构建 状态"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q109",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "咖啡 喝咖啡 习惯 戒掉"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q110",
+      "called": true,
+      "scope": {},
+      "query": "量血压的习惯 血压测量 时间 频率 记录"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q111",
+      "called": true,
+      "scope": {
+        "from": "2026-10-20",
+        "to": "2026-11-05"
+      },
+      "query": "首尔 出差 旅行 行程 安排"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q112",
+      "called": true,
+      "scope": {},
+      "query": "京都 行程 出差 旅行"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q113",
+      "called": true,
+      "scope": {},
+      "query": "大阪 行程 出差 旅行 位置"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q114",
+      "called": true,
+      "scope": {},
+      "query": "感冒 身体不舒服 生病"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q200",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "早上喝的咖啡 咖啡习惯"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q201",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "以前用的手机 换手机 旧手机型号"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q202",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "Himawari 主力模型 以前用的模型"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q203",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "小葵 钢琴老师"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q204",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "上班 通勤 交通方式 怎么去公司"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q205",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "体重"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q206",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "开什么车 汽车 车型"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q207",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "Himawari 前端 框架"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q208",
+      "called": true,
+      "scope": {},
+      "query": "Cindy 工作经历 之前的工作"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q209",
+      "called": true,
+      "scope": {
+        "includeHistory": true
+      },
+      "query": "老周 工作 单位 公司 上班"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q210",
+      "called": true,
+      "scope": {
+        "from": "2026-09-08",
+        "to": "2026-09-22"
+      },
+      "query": "九月中旬出差"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q211",
+      "called": true,
+      "scope": {
+        "from": "2026-08-01",
+        "to": "2026-08-31"
+      },
+      "query": "小葵 八月 在做什么"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q212",
+      "called": true,
+      "scope": {
+        "from": "2026-07-01",
+        "to": "2026-07-31"
+      },
+      "query": "七月 住处 住在哪里 搬家"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q213",
+      "called": true,
+      "scope": {
+        "from": "2026-09-28",
+        "to": "2026-10-15"
+      },
+      "query": "十月初生病 发烧 感冒 身体不舒服"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q214",
+      "called": true,
+      "scope": {
+        "from": "2026-06-01",
+        "to": "2026-06-30"
+      },
+      "query": "六月 京都 行程"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q215",
+      "called": true,
+      "scope": {
+        "from": "2026-06-01",
+        "to": "2026-08-31"
+      },
+      "query": "早上运动 晨跑 锻炼 习惯"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q216",
+      "called": true,
+      "scope": {
+        "from": "2026-04-01",
+        "to": "2026-04-30",
+        "includeHistory": true
+      },
+      "query": "四月在戒的东西、戒除习惯"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q217",
+      "called": true,
+      "scope": {
+        "from": "2026-10-01",
+        "to": "2026-10-10"
+      },
+      "query": "团子 身体 生病 医院 情况"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q218",
+      "called": true,
+      "scope": {
+        "from": "2026-10-01",
+        "to": "2026-10-10"
+      },
+      "query": "首尔"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q219",
+      "called": true,
+      "scope": {
+        "from": "2026-05-01",
+        "to": "2026-05-31",
+        "includeHistory": true
+      },
+      "query": "手机 换手机 使用的手机型号"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q220",
+      "called": true,
+      "scope": {
+        "from": "2026-05-01",
+        "to": "2026-05-31",
+        "includeHistory": true
+      },
+      "query": "五月 开车 车 车型"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q221",
+      "called": true,
+      "scope": {
+        "from": "2026-05-01",
+        "to": "2026-05-31"
+      },
+      "query": "五月 每天写代码 到几点 熬夜 编程"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q230",
+      "called": true,
+      "scope": {
+        "from": "2026-10-23",
+        "to": "2026-10-23"
+      },
+      "query": "吃饭 晚餐 聚餐 和谁"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q231",
+      "called": true,
+      "scope": {
+        "from": "2026-10-24",
+        "to": "2026-10-24"
+      },
+      "query": "排查问题"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q232",
+      "called": true,
+      "scope": {
+        "from": "2026-10-24",
+        "to": "2026-10-24"
+      },
+      "query": "小葵 上课 课程"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q233",
+      "called": true,
+      "scope": {
+        "from": "2026-10-10",
+        "to": "2026-10-10"
+      },
+      "query": "团子 医院 检查"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q234",
+      "called": true,
+      "scope": {
+        "from": "2026-09-08",
+        "to": "2026-09-22"
+      },
+      "query": "出差 客户 洽谈 会议"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q235",
+      "called": true,
+      "scope": {
+        "from": "2026-09-27",
+        "to": "2026-10-11"
+      },
+      "query": "记忆系统方案 讨论"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q236",
+      "called": true,
+      "scope": {
+        "from": "2026-08-01",
+        "to": "2026-08-31"
+      },
+      "query": "八月 一家 旅行 出游 旅游"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "run": 2,
+      "questionId": "q237",
+      "called": true,
+      "scope": {
+        "from": "2026-10-19",
+        "to": "2026-10-19"
+      },
+      "query": "帮忙写 写东西 撰写"
+    }
+  ]
+}
