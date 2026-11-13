@@ -31,7 +31,7 @@ import {
 import { TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
 import { redactForEgress } from "@himawari-agent/sensitive-capture";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   type MemoryCaptureCall,
   memoryCapturePrompt,
@@ -244,6 +244,7 @@ describe("production memory capture", () => {
       book: repository.memoryBook(),
       ledger: repository.decisionLedger(),
       backlog: repository.memoryCaptureBacklog(),
+      unitOfWork: repository.unitOfWork(),
       timeZone: "Asia/Shanghai",
       payloads,
       protector: adapters.payloadProtector,
@@ -288,6 +289,7 @@ describe("production memory capture", () => {
       state: repository.productMemoryState(),
       jobs: repository.memoryProjectionJobs(),
       approvals: repository.sensitiveMemoryApprovals(),
+      unitOfWork: repository.unitOfWork(),
       memory,
       reminders: repository.memoryReminders(),
       ownerRules: ruleWriter,
@@ -329,11 +331,12 @@ describe("production memory capture", () => {
       ref: string,
       text: string,
       dataClassification: "private" | "sensitive" = "private",
+      agentId: string = AGENT_ID,
     ) =>
-      payloads.put(
+      (agentId === AGENT_ID ? payloads : repository.payloadStore(OWNER_ID, agentId as never)).put(
         await adapters.payloadProtector.protect({
           ownerId: OWNER_ID,
-          agentId: AGENT_ID,
+          agentId: agentId as never,
           ref,
           dataClassification,
           contentType: "text/plain",
@@ -1086,6 +1089,72 @@ describe("production memory capture", () => {
     expect(await overview(context.control)).toMatchObject({ memories: [], pending: [] });
   });
 
+  it("[P3-5] rolls a sensitive approval back completely when its last write fails, and lets the Owner approve it again", async () => {
+    const context = await setup(
+      "我月薪三万。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950,"quote":"我月薪三万"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const [pending] = (await overview(context.control)).pending;
+    if (!pending) throw new Error("pending");
+    const options = (
+      context.control as unknown as {
+        options: ConstructorParameters<typeof ProductionMemoryControl>[0];
+      }
+    ).options;
+    const failing = new ProductionMemoryControl({
+      ...options,
+      approvals: {
+        ...options.approvals,
+        markCommitted: async () => {
+          throw new Error("PORT_UNAVAILABLE");
+        },
+      },
+    });
+    await expect(respond(failing, pending.requestId, "approved")).rejects.toThrow(
+      "PORT_UNAVAILABLE",
+    );
+    expect(await activeMemories(context)).toEqual([]);
+    expect((await overview(context.control)).pending.map(({ requestId }) => requestId)).toEqual([
+      pending.requestId,
+    ]);
+    await respond(context.control, pending.requestId, "approved");
+    expect(await activeMemories(context)).toHaveLength(1);
+    expect((await overview(context.control)).pending).toEqual([]);
+  });
+
+  it("[P3-5] sends no approval audit record when the approval's transaction is rolled back", async () => {
+    const context = await setup(
+      "我月薪三万。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950,"quote":"我月薪三万"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const [pending] = (await overview(context.control)).pending;
+    if (!pending) throw new Error("pending");
+    const options = (
+      context.control as unknown as {
+        options: ConstructorParameters<typeof ProductionMemoryControl>[0];
+      }
+    ).options;
+    const sent: MemoryExtractionAuditRecord[] = [];
+    const rolledBack = new ProductionMemoryControl({
+      ...options,
+      onAudit: (record) => sent.push(record),
+      unitOfWork: {
+        run: (work) =>
+          options.unitOfWork.run(async () => {
+            await work();
+            throw new Error("COMMIT_LOST");
+          }),
+      },
+    });
+    await expect(respond(rolledBack, pending.requestId, "approved")).rejects.toThrow("COMMIT_LOST");
+    expect(sent).toEqual([]);
+    expect(await activeMemories(context)).toEqual([]);
+  });
+
   it("[mask-not-block] tells the model to mark passwords, keys, identity and card numbers sensitive and to skip one-time codes", () => {
     const prompt = memoryCapturePrompt("记住我的密码是 abc12345", [], null, null, null);
     expect(prompt).toContain("证件号码、银行卡或账户号码、密码、密钥用 sensitive");
@@ -1404,9 +1473,14 @@ describe("production memory capture", () => {
           },
         ],
       });
-    const round = async (runId: string, ownerText: string, output: string) => {
+    const round = async (
+      runId: string,
+      ownerText: string,
+      output: string,
+      ...judge: readonly string[]
+    ) => {
       await context.turn("owner", ownerText, runId);
-      context.outputs.push(output);
+      context.outputs.push(output, ...judge);
       const capture = new ProductionMemoryCapture(options);
       await capture.start(context.requestFor(runId));
       await capture.stop();
@@ -1414,10 +1488,33 @@ describe("production memory capture", () => {
     await round("run-pa2-2", "今天天气不错", unchanged("明治"));
     expect((await tentativeState()).attributes?.tentative).toBe(true);
     expect(context.audits.map(({ outcome }) => outcome)).toContain("evidence_unverified");
-    await round("run-pa2-unrelated", "明天下午三点开会", unchanged("明天下午三点开会"));
+    const callsBefore = context.calls.length;
+    await round(
+      "run-pa2-unrelated",
+      "明天下午三点开会",
+      unchanged("明天下午三点开会"),
+      '{"supports":false}',
+    );
+    expect(context.calls.length - callsBefore).toBe(2);
     expect((await tentativeState()).attributes?.tentative).toBe(true);
-    await round("run-pa2-3", "我又买了明治的牛奶", unchanged("我又买了明治的牛奶"));
+    await round(
+      "run-pa2-judge-down",
+      "我又买了明治的牛奶",
+      unchanged("我又买了明治的牛奶"),
+      "not json",
+      "still not json",
+    );
+    expect((await tentativeState()).attributes?.tentative).toBe(true);
+    expect(context.failures).toHaveLength(1);
+    context.failures.length = 0;
+    await round(
+      "run-pa2-3",
+      "我又买了明治的牛奶",
+      unchanged("我又买了明治的牛奶"),
+      '{"supports":true}',
+    );
     expect((await tentativeState()).attributes?.tentative).not.toBe(true);
+    expect(context.prompts.at(-1)).toContain("ownerQuote");
     const confirmed = (await context.ledgerEntries()).filter(
       ({ reasonCode }) => reasonCode === "tentative_confirmed",
     );
@@ -2239,6 +2336,131 @@ describe("production memory capture", () => {
         ?.status,
     ).toBe("deletion_pending");
     expect(await listed()).toEqual([]);
+  });
+
+  it("[iOS] 规则引用的记忆后来被新记忆取代时，照样给出引用并标明，给出最新那条记忆；归档的不标", async () => {
+    const sentence = "日本入管局相关的邮件以后必须通知我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const created = (await context.ruleTools.run({
+      runId: createRunId("run-rule-superseded"),
+      toolCallId: "call-superseded",
+      capabilityRef: "rule.set",
+      capabilityHandleRef: null,
+      arguments: {
+        quote: sentence,
+        inferred: false,
+        type: "mail_must_notify",
+        summary: "入管局的邮件一律提醒",
+        params: { senderDomains: ["isa.go.jp"] },
+      },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never)) as Record<string, unknown>;
+    const state = context.repository.productMemoryState();
+    const sourceId = created["memoryId"] as never;
+    const newer = (await state.listActive(OWNER_ID, AGENT_ID)).find(({ id }) => id !== sourceId);
+    if (!newer) throw new Error("newer memory");
+    const listed = async () => {
+      const snapshot = await context.control.query({
+        ...envelope,
+        kind: "query",
+        type: "memory.rules.read",
+        payload: {},
+      } as never);
+      if (snapshot.type !== "memory.rules.snapshot") throw new Error("snapshot");
+      const { idempotencyKey: _, ...parsable } = snapshot as Record<string, unknown>;
+      gatewayV2MessageSchema.parse(parsable);
+      return snapshot.payload.rules.find(({ ruleId }) => ruleId === created["ruleId"]);
+    };
+    const generation = async () =>
+      (await context.repository.memoryBook().latestGeneration({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+      } as never)) as never;
+    const revise = async (memoryId: never, change: Record<string, unknown>) =>
+      context.memory.revise({
+        memoryId,
+        expectedRevision: (await state.read(memoryId))?.revision ?? 0,
+        generationId: await generation(),
+        ...change,
+      } as never);
+
+    expect(await listed()).toMatchObject({
+      quote: sentence,
+      quoteSuperseded: false,
+      quoteLatestMemoryId: null,
+    });
+    await revise(sourceId, { attributes: { supersededBy: newer.id } });
+    expect(await listed()).toMatchObject({
+      quote: sentence,
+      quoteSuperseded: true,
+      quoteLatestMemoryId: newer.id,
+    });
+    await revise(newer.id as never, { status: "archived" });
+    expect(await listed()).toMatchObject({
+      quote: sentence,
+      quoteSuperseded: true,
+      quoteLatestMemoryId: null,
+    });
+    await revise(newer.id as never, { status: "active" });
+    await revise(newer.id as never, { attributes: { supersededBy: sourceId } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: null });
+    await revise(newer.id as never, { attributes: { supersededBy: null } });
+    await revise(sourceId, { status: "archived" });
+    expect(await listed()).toMatchObject({
+      quote: sentence,
+      quoteSuperseded: false,
+      quoteLatestMemoryId: null,
+    });
+    await revise(sourceId, { status: "active" });
+    const chain: string[] = [];
+    for (let index = 1; index <= 9; index += 1) {
+      await context.protect(`payload-chain-${index}`, `主人的第 ${index} 版说法`);
+      await context.control.execute({
+        ...envelope,
+        idempotencyKey: `chain-${index}`,
+        kind: "command",
+        type: "memory.create",
+        payload: {
+          contentRef: `payload-chain-${index}`,
+          category: "preference",
+          subCategory: "其他",
+          pinned: false,
+        },
+      } as never);
+      chain.push(`memory:owner:chain-${index}`);
+    }
+    await revise(sourceId, { attributes: { supersededBy: chain[0] } });
+    for (let index = 0; index < 8; index += 1)
+      await revise(chain[index] as never, { attributes: { supersededBy: chain[index + 1] } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: null });
+    await revise(chain[7] as never, { attributes: { supersededBy: null } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: chain[7] });
+    context.sql((database) =>
+      database
+        .prepare("INSERT INTO agents (id, owner_id, revision) VALUES ('agent-other', ?, 0)")
+        .run(OWNER_ID),
+    );
+    await context.protect("payload-other-agent", "主人的另一版说法", "private", "agent-other");
+    const foreign = await state.save(
+      {
+        ...((await state.read(newer.id as never)) as object),
+        contentRef: "payload-other-agent",
+        sourceThreadId: null,
+        id: "memory:other-agent-latest",
+        agentId: "agent-other",
+        revision: 1,
+      } as never,
+      null,
+    );
+    await revise(sourceId, { attributes: { supersededBy: foreign.id } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: null });
   });
 
   it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {
@@ -3196,6 +3418,45 @@ describe("production memory capture", () => {
     expect(backlogRows(context)).toEqual([]);
   });
 
+  it("[P3-5] still sends the audit records when the transaction committed but its answer was lost", async () => {
+    const context = await setup(P3_5_MESSAGE, P3_5_MEMORY);
+    const options = optionsOf(context);
+    const lost = new ProductionMemoryCapture({
+      ...options,
+      unitOfWork: {
+        run: async (work) => {
+          await options.unitOfWork.run(work);
+          throw new Error("COMMIT_ANSWER_LOST");
+        },
+      },
+    });
+    await lost.start(context.request);
+    await lost.stop();
+    expect(await activeMemories(context)).toHaveLength(1);
+    expect(context.audits.length).toBeGreaterThan(0);
+    expect(backlogRows(context)).toEqual([]);
+  });
+
+  it("[P3-5] keeps saving and keeps the turn queued when the queue cannot be read", async () => {
+    const context = await setup(P3_5_MESSAGE, P3_5_MEMORY);
+    const options = failingWrites(context);
+    const backlog = options.backlog;
+    if (!backlog) throw new Error("backlog");
+    const blind = new ProductionMemoryCapture({
+      ...options,
+      backlog: {
+        ...backlog,
+        has: async () => {
+          throw new Error("PORT_UNAVAILABLE");
+        },
+      },
+    });
+    await blind.start(context.request);
+    await blind.stop();
+    expect(await activeMemories(context)).toEqual([]);
+    expect(backlogRows(context).map((row) => (row as { attempts: number }).attempts)).toEqual([1]);
+  });
+
   it("[P3-5] retries an answer that is not valid JSON and records the failure", async () => {
     const context = await setup(P3_5_MESSAGE, "好的，我记住了。");
     context.outputs.push(P3_5_MEMORY);
@@ -3275,6 +3536,29 @@ describe("production memory capture", () => {
     ]);
     await nextTurn(context, "run-d", ['{"memories":[]}']);
     expect(context.calls.at(-1)?.invocationId).toBe("memory-capture:run-d");
+    expect(await activeMemories(context)).toEqual([]);
+  });
+
+  it("[P3-5] does not ask the model again for a turn that was given up when its queued row could not be removed", async () => {
+    const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    context.outputs.push(new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    for (const runId of ["run-a", "run-b"])
+      await nextTurn(context, runId, ['{"memories":[]}', "不是 JSON"]);
+    const removing = removeFailingOnce(context, 1);
+    await context.turn("owner", "今天 run-c 轮，随便聊聊。", "run-c");
+    context.outputs.push('{"memories":[]}', "不是 JSON");
+    const failing = new ProductionMemoryCapture(removing.options);
+    await failing.start(context.requestFor("run-c"));
+    await failing.stop();
+    expect(backlogRows(context).map((row) => (row as { attempts: number }).attempts)).toEqual([3]);
+    const before = context.calls.length;
+    await nextTurn(context, "run-d", ['{"memories":[]}']);
+    expect(context.calls.slice(before)).toEqual([
+      { invocationId: "memory-capture:run-d", retryToolCall: false },
+    ]);
+    expect(backlogRows(context)).toEqual([]);
     expect(await activeMemories(context)).toEqual([]);
   });
 
@@ -3398,7 +3682,7 @@ describe("production memory capture", () => {
     } as ConstructorParameters<typeof ProductionMemoryCapture>[0];
   };
 
-  it("[P3-5] records a turn whose memories could not be written, without asking the model again or queueing it", async () => {
+  it("[P3-5] keeps a turn whose memories could not be written in the queue, after saving it twice without asking the model again", async () => {
     const context = await setup(P3_5_MESSAGE, P3_5_MEMORY);
     context.outputs.push(P3_5_MEMORY);
     const capture = new ProductionMemoryCapture(failingWrites(context));
@@ -3410,120 +3694,116 @@ describe("production memory capture", () => {
     expect(await activeMemories(context)).toEqual([]);
     expect(
       (await captureFailures(context)).map(({ outcome, reasonCode }) => [outcome, reasonCode]),
-    ).toEqual([["capture_gave_up", "PORT_CONFLICT"]]);
-    expect(backlogRows(context)).toEqual([]);
+    ).toEqual([["capture_queued", "PORT_CONFLICT"]]);
+    expect(backlogRows(context)).toEqual([
+      {
+        generationId: "memory-capture:run-memory-capture",
+        attempts: 1,
+        lastErrorCode: "PORT_CONFLICT",
+      },
+    ]);
     expect(context.failures).toHaveLength(1);
   });
 
-  it("[P3-5] gives up a replayed turn whose memories cannot be written, and does not replay it again when the row could not be removed", async () => {
+  it("[P3-5] gives up a turn whose memories cannot be written after the third failed save, and drops it from the queue", async () => {
     const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
     context.outputs.push(new Error("AI_GATEWAY_REQUEST_TIMEOUT"));
     await context.capture.start(context.request);
     await context.capture.stop();
-    const options = failingWrites(context);
-    const backlog = options.backlog;
-    if (!backlog) throw new Error("backlog");
-    let removeFailures = 1;
-    const capture = new ProductionMemoryCapture({
-      ...options,
-      backlog: {
-        ...backlog,
-        enqueue: (entry) => backlog.enqueue(entry),
-        oldest: (query) => backlog.oldest(query),
-        recordAttempt: (attempt) => backlog.recordAttempt(attempt),
-        remove: async (generationId) => {
-          if (generationId === "memory-capture:run-memory-capture" && removeFailures > 0) {
-            removeFailures -= 1;
-            throw new Error("PORT_UNAVAILABLE");
-          }
-          return backlog.remove(generationId);
-        },
-      },
-    });
-    await context.turn("owner", "今天第二轮，随便聊聊。", "run-save-fails");
-    context.outputs.push('{"memories":[]}', P3_5_MEMORY);
-    await capture.start(context.requestFor("run-save-fails"));
-    await vi.waitFor(() =>
-      expect(
-        context.failures.some(
-          (error) => error instanceof Error && error.message === "PORT_UNAVAILABLE",
-        ),
-      ).toBe(true),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(removeFailures).toBe(0);
-    expect(backlogRows(context)).toHaveLength(1);
-    expect(
-      (await captureFailures(context)).filter(({ outcome }) => outcome === "capture_gave_up"),
-    ).toHaveLength(1);
-    await context.turn("owner", "今天第三轮，随便聊聊。", "run-after");
-    context.outputs.push('{"memories":[]}');
-    await capture.start(context.requestFor("run-after"));
-    await capture.stop();
-    expect(context.calls.map(({ invocationId }) => invocationId).slice(2)).toEqual([
-      "memory-capture:run-save-fails",
-      "memory-capture:run-save-fails:backlog",
-      "memory-capture:run-after",
-    ]);
-    expect(await activeMemories(context)).toEqual([]);
+    for (const run of ["run-save-a", "run-save-b", "run-save-c"]) {
+      await context.turn("owner", `今天 ${run} 轮，随便聊聊。`, run);
+      context.outputs.push('{"memories":[]}', P3_5_MEMORY);
+      const capture = new ProductionMemoryCapture(failingWrites(context));
+      await capture.start(context.requestFor(run));
+      await capture.stop();
+      expect(await activeMemories(context)).toEqual([]);
+    }
     expect(backlogRows(context)).toEqual([]);
     expect(
       (await captureFailures(context))
         .filter(({ reasonCode }) => reasonCode === "PORT_CONFLICT")
-        .map(({ outcome }) => outcome),
-    ).toEqual(["capture_gave_up"]);
+        .map(({ outcome }) => outcome)
+        .sort(),
+    ).toEqual(["capture_gave_up", "capture_queued", "capture_queued"]);
   });
 
-  it("[P3-5] does not replay a turn again after its memories were saved but its row could not be removed", async () => {
+  const removeFailingOnce = (context: Awaited<ReturnType<typeof setup>>, failures: number) => {
+    const options = optionsOf(context);
+    const backlog = options.backlog;
+    if (!backlog) throw new Error("backlog");
+    const state = { remaining: failures };
+    return {
+      state,
+      options: {
+        ...options,
+        backlog: {
+          ...backlog,
+          remove: async (generationId: string) => {
+            if (generationId === "memory-capture:run-memory-capture" && state.remaining > 0) {
+              state.remaining -= 1;
+              throw new Error("PORT_UNAVAILABLE");
+            }
+            return backlog.remove(generationId);
+          },
+        },
+      } as ConstructorParameters<typeof ProductionMemoryCapture>[0],
+    };
+  };
+
+  it("[P3-5] saves the memories and removes the queued row in one transaction: a failed removal rolls the save back, and the second save writes everything once", async () => {
     const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
     context.outputs.push(new Error("AI_GATEWAY_REQUEST_TIMEOUT"));
     await context.capture.start(context.request);
     await context.capture.stop();
-    const options = optionsOf(context);
-    const backlog = options.backlog;
-    if (!backlog) throw new Error("backlog");
-    let removeFailures = 1;
-    const capture = new ProductionMemoryCapture({
-      ...options,
-      backlog: {
-        ...backlog,
-        enqueue: (entry) => backlog.enqueue(entry),
-        oldest: (query) => backlog.oldest(query),
-        recordAttempt: (attempt) => backlog.recordAttempt(attempt),
-        remove: async (generationId) => {
-          if (generationId === "memory-capture:run-memory-capture" && removeFailures > 0) {
-            removeFailures -= 1;
-            throw new Error("PORT_UNAVAILABLE");
-          }
-          return backlog.remove(generationId);
-        },
-      },
-    });
+    const { state, options } = removeFailingOnce(context, 1);
     await context.turn("owner", "今天第二轮，随便聊聊。", "run-saved");
     context.outputs.push('{"memories":[]}', P3_5_MEMORY);
+    const capture = new ProductionMemoryCapture(options);
     await capture.start(context.requestFor("run-saved"));
-    await vi.waitFor(() =>
-      expect(
-        context.failures.some(
-          (error) => error instanceof Error && error.message === "PORT_UNAVAILABLE",
-        ),
-      ).toBe(true),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(backlogRows(context)).toHaveLength(1);
-    await context.turn("owner", "今天第三轮，随便聊聊。", "run-after");
-    context.outputs.push('{"memories":[]}');
-    await capture.start(context.requestFor("run-after"));
     await capture.stop();
-    expect(context.calls.map(({ invocationId }) => invocationId).slice(2)).toEqual([
-      "memory-capture:run-saved",
-      "memory-capture:run-saved:backlog",
-      "memory-capture:run-after",
-    ]);
+    expect(state.remaining).toBe(0);
     expect((await activeMemories(context)).map(({ id }) => id)).toEqual([
       "memory:memory-capture:run-memory-capture:0",
     ]);
+    expect(
+      await context.repository.productMemoryState().listHistory({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        memoryIds: ["memory:memory-capture:run-memory-capture:0" as never],
+      }),
+    ).toHaveLength(1);
     expect(backlogRows(context)).toEqual([]);
+  });
+
+  it("[P3-5] leaves nothing behind when the queued row cannot be removed twice, and keeps the turn queued", async () => {
+    const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    context.outputs.push(new Error("AI_GATEWAY_REQUEST_TIMEOUT"));
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const { options } = removeFailingOnce(context, 2);
+    await context.turn("owner", "今天第二轮，随便聊聊。", "run-rolled-back");
+    context.outputs.push('{"memories":[]}', P3_5_MEMORY);
+    const capture = new ProductionMemoryCapture(options);
+    await capture.start(context.requestFor("run-rolled-back"));
+    await capture.stop();
+    expect(await activeMemories(context)).toEqual([]);
+    expect(
+      await context.repository
+        .decisionLedger()
+        .list({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          kind: "memory_candidate",
+          since: "2000-01-01T00:00:00.000Z",
+          limit: 100,
+        } as never)
+        .then((rows) => rows.filter(({ outcome }) => outcome === "kept")),
+    ).toEqual([]);
+    expect(backlogRows(context)).toHaveLength(1);
+    expect(backlogRows(context)[0]).toMatchObject({
+      attempts: 1,
+      lastErrorCode: "PORT_UNAVAILABLE",
+    });
   });
 
   it("[P3-5] does not replay a turn that another run is still retrying", async () => {

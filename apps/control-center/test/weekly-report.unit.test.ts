@@ -1352,15 +1352,15 @@ describe("[P1-5] email decision detail page", () => {
       items: [
         {
           ruleId: "floor_money_words",
-          revision: 1,
-          current: false,
+          revision: 2,
+          current: true,
           kind: "money_words",
           origin: "built_in",
-          source: "ADR 0106",
+          source: "ADR 0106；ADR 0248",
           status: "active",
           changedAt: null,
           memory: null,
-          wording: { values: ["invoice"], quietHours: [], amount: null },
+          wording: { values: [], quietHours: [], amount: null },
           tests: { state: "passed", total: 5, failedAt: null },
           mailCount: 1,
         },
@@ -1507,7 +1507,7 @@ describe("[P1-5] email decision detail page", () => {
     expect(page).toContain("不用管");
     expect(page).toContain("命中规则 1 条 · 用到记忆 1 条 · 相关邮件 无记录 封");
     expect(page).toContain("内置规则 · 这封邮件用到");
-    expect(page).toContain("出处：ADR 0106 · 第 1 版");
+    expect(page).toContain("出处：ADR 0106；ADR 0248 · 第 2 版");
     expect(page).toContain("记忆 memory-a");
     expect(page).toContain("发票到期 · 明天截止");
     expect(page).toContain("只有 Muse 提醒了你，Himawari 没有");

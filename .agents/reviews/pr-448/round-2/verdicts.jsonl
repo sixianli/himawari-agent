@@ -1,0 +1,4 @@
+{"id": "1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 中：`allowed` 不再被限制为项目规则批准的两个模型", "valid": false, "class": "error"}
+{"id": "2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 低：`covering` 仍把带 `substitute` 字段但值不是 `true` 的记录当作直接覆盖", "valid": true, "class": "error", "severity": "low", "trigger": "手写或损坏的账本里，同一轮既有一条正常的 ok 记录，又有一条 substitute 字段不是 true 也不是缺省、且提交不同的记录", "consequence": "合并前检查以 REVIEW_ROUND_HEADS_DIFFER 报错停下，不会放过未复核的改动", "modelSeverity": "低"}
+{"id": "3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 低：文档措辞与代码不一致", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 0255 第 2 条或 model-review.md 第 6 步的人按字面理解 substitutes 不能为空、substitute 为 false 的记录算要跑的模型", "consequence": "文字不准，但照着做不会做错事：配置照样被校验，合并前检查照样按代码判断", "modelSeverity": "低"}
+{"id": "4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. 低：delegate 写的是本地默认模型，远端分支配置可能不同", "valid": false, "class": "error"}

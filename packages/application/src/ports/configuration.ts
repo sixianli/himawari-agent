@@ -228,6 +228,16 @@ export interface WebPushConfiguration {
   readonly subject: string;
 }
 
+export interface HomeFeedConfiguration {
+  readonly awaitingLimit: number;
+  readonly otherLimit: number;
+  readonly sourceReadLimit: number;
+  readonly deadlineLeadMinutes: number;
+  readonly recentHours: number;
+  readonly upcomingLimit: number;
+  readonly upcomingDays: number;
+}
+
 export interface ProactiveGmailConfiguration {
   readonly clientId: string;
   readonly clientSecretRef: string;
@@ -301,10 +311,12 @@ export interface McpReadConfiguration {
 
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly approvalBodyPreviewCharacters?: number;
   readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
   readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;
+  readonly homeFeed?: HomeFeedConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;

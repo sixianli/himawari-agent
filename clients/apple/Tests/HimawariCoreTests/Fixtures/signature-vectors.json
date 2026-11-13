@@ -1,0 +1,43 @@
+{
+  "device": {
+    "scalar": "1ojTeVqUXbTM2SWzRa7Z1bCuEbdiBLevHI+ds1RwZ6Q=",
+    "spki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEgklbiEIaFeLcnBEGAX7ylAer27+O2cTirMqxkCXdrVByTm3MKdNuMjj5/bP+2kvVyfMc8phPkVYkp3O26tsqdw=="
+  },
+  "confirm": {
+    "scalar": "6AuW4oGgOqgz8h6LgyvDsGC7nhXam/KBUo7dSM9QDSw=",
+    "spki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEXt1kon6XViA/rbf1ELwj8N+xpbfJo0QbgAcAV8UD0y6+6C8fFDjS+K79AL4uj+Us/PpsJx6BVgjzgPFJKtg10g=="
+  },
+  "pairingNumber": "971525",
+  "cases": [
+    {
+      "method": "GET",
+      "authority": "himawari.example.test",
+      "path": "/api/device/v1/threads",
+      "rawQuery": "after=cursor_1",
+      "body": null,
+      "contentType": null,
+      "deviceId": "dev_AAAAAAAAAAAAAAAAAAAAAA",
+      "created": 1800000000,
+      "nonce": "bm9uY2Utbm9uY2Utbm9uY2U",
+      "signatureBase": "\"@method\": GET\n\"@authority\": himawari.example.test\n\"@path\": /api/device/v1/threads\n\"@query\": ?after=cursor_1\n\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"@query\");created=1800000000;nonce=\"bm9uY2Utbm9uY2Utbm9uY2U\";keyid=\"dev_AAAAAAAAAAAAAAAAAAAAAA\";alg=\"ecdsa-p256-sha256\";tag=\"himawari-device-v1\"",
+      "signatureInput": "device=(\"@method\" \"@authority\" \"@path\" \"@query\");created=1800000000;nonce=\"bm9uY2Utbm9uY2Utbm9uY2U\";keyid=\"dev_AAAAAAAAAAAAAAAAAAAAAA\";alg=\"ecdsa-p256-sha256\";tag=\"himawari-device-v1\"",
+      "signature": "2Rymrk91+1xkvXNmzc5yZydyn3QapT4Iiip/THqGwbkE/+h955aSnT1l+RJ+YM1mlL94gulhfxwx1jJmfQRqMQ==",
+      "contentDigest": null
+    },
+    {
+      "method": "POST",
+      "authority": "himawari.example.test:8443",
+      "path": "/api/device/v1/messages",
+      "rawQuery": "",
+      "body": "{\"messageId\":\"msg_0123456789abcdef\",\"threadId\":\"thread_1\",\"expectedRevision\":3,\"text\":\"周五去大阪\"}",
+      "contentType": "application/json",
+      "deviceId": "dev_AAAAAAAAAAAAAAAAAAAAAA",
+      "created": 1800000060,
+      "nonce": "c2Vjb25kLW5vbmNlLXZhbHVl",
+      "signatureBase": "\"@method\": POST\n\"@authority\": himawari.example.test:8443\n\"@path\": /api/device/v1/messages\n\"@query\": ?\n\"content-digest\": sha-256=:CMy5qY6JA7lPraBUa6BZjUQLKuUSMDk2p/ILmWS3vrc=:\n\"content-type\": application/json\n\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"content-type\");created=1800000060;nonce=\"c2Vjb25kLW5vbmNlLXZhbHVl\";keyid=\"dev_AAAAAAAAAAAAAAAAAAAAAA\";alg=\"ecdsa-p256-sha256\";tag=\"himawari-device-v1\"",
+      "signatureInput": "device=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"content-type\");created=1800000060;nonce=\"c2Vjb25kLW5vbmNlLXZhbHVl\";keyid=\"dev_AAAAAAAAAAAAAAAAAAAAAA\";alg=\"ecdsa-p256-sha256\";tag=\"himawari-device-v1\"",
+      "signature": "sMqhuNugtf35mEKSJi1rT/ftnlWDC62PMRYGFg63jPIM6hcWNNzmGvmnzjIt2D1OCrq4sMvoDKliAgQg+dDxxw==",
+      "contentDigest": "sha-256=:CMy5qY6JA7lPraBUa6BZjUQLKuUSMDk2p/ILmWS3vrc=:"
+    }
+  ]
+}
