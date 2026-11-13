@@ -32,7 +32,10 @@ import {
 import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { PiAgentRuntimeAdapter, type PiModelBindingPort } from "@himawari-agent/runtime-pi";
-import type { ContextExternalContent } from "./context-external-content.js";
+import {
+  type ContextExternalContent,
+  markRecalledExternalRecords,
+} from "./context-external-content.js";
 import type { ProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import type { ProductionBackgroundCommands } from "./production-background-commands.js";
 import { ProductionBackgroundRuns } from "./production-background-runs.js";
@@ -255,6 +258,15 @@ export function createProductionRunComposition(options: ProductionRunComposition
       const found = await timings.measure(request.runId, "memory.search", () =>
         options.memory.search(request),
       );
+      if (options.externalContent && request.runId)
+        await markRecalledExternalRecords({
+          marker: options.externalContent,
+          state: repository.productMemoryState(),
+          runId: request.runId,
+          ownerId: request.ownerId,
+          agentId: request.agentId,
+          memoryIds: found.map(({ id }) => id),
+        });
       if (options.memoryCapture && request.runId) {
         recalled.delete(request.runId);
         recalled.set(

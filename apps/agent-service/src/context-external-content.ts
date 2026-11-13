@@ -4,17 +4,38 @@ import type {
   ClockPort,
   IdempotentAgentCommand,
   ProductConfiguration,
+  ProductMemoryRecord,
+  ProductMemoryStatePort,
   RunExecutionSource,
   RunExecutionSourcePort,
 } from "@himawari-agent/application";
 
 type RunId = RunExecutionSource["runId"];
+import { EXTERNAL_CONTENT_SOURCE_REF_PREFIX } from "@himawari-agent/gateway-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 export const CONTEXT_EXTERNAL_CONTENT_KEY_PREFIX = "context-external-content:";
 const WRITE_ATTEMPTS = 5;
+export const RECALLED_EXTERNAL_RECORD_ORIGIN = "recalled_external_record";
+
+export function externalContentSourceRefs(
+  recordId: string,
+  origins: readonly string[],
+): readonly string[] {
+  return [...new Set(origins)]
+    .sort((left, right) => left.localeCompare(right, "en"))
+    .map((origin) => `${EXTERNAL_CONTENT_SOURCE_REF_PREFIX}${recordId}|${origin}`.slice(0, 512));
+}
+
+export function isExternalContentSourceRef(ref: string): boolean {
+  return ref.startsWith(EXTERNAL_CONTENT_SOURCE_REF_PREFIX);
+}
+
+export function carriesExternalContent(sourceRefs: readonly string[]): boolean {
+  return sourceRefs.some(isExternalContentSourceRef);
+}
 
 export interface ExternalContentSource {
   readonly origin: string;
@@ -44,6 +65,25 @@ function sourcesOf(value: Readonly<Record<string, unknown>> | undefined) {
       typeof (source as ExternalContentSource).firstRunId === "string" &&
       typeof (source as ExternalContentSource).firstSeenAt === "string",
   );
+}
+
+export async function markRecalledExternalRecords(input: {
+  readonly marker: Pick<ContextExternalContent, "mark">;
+  readonly state: Pick<ProductMemoryStatePort, "readMany">;
+  readonly runId: RunId;
+  readonly ownerId: ProductMemoryRecord["ownerId"];
+  readonly agentId: ProductMemoryRecord["agentId"];
+  readonly memoryIds: readonly string[];
+}): Promise<boolean> {
+  if (input.memoryIds.length === 0) return false;
+  const records = await input.state.readMany({
+    ownerId: input.ownerId,
+    agentId: input.agentId,
+    memoryIds: input.memoryIds as readonly ProductMemoryRecord["id"][],
+  });
+  if (!records.some(({ sourceRefs }) => carriesExternalContent(sourceRefs))) return false;
+  await input.marker.mark(input.runId, RECALLED_EXTERNAL_RECORD_ORIGIN);
+  return true;
 }
 
 export class ContextExternalContent {

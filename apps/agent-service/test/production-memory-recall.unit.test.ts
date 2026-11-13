@@ -393,3 +393,24 @@ it("[P5-1] reports a failed confirmed search only after the tentative search has
   ).rejects.toThrow("VECTOR_INDEX_DOWN");
   expect(finished).toEqual(["tentative"]);
 });
+
+it("[ADR-0257] reports a shown memory that was written with external content in context, and only then", async () => {
+  const marked = recallWith([
+    {
+      id: "a",
+      text: "群里说下周改会议",
+      score: 2,
+      sourceRefs: ["m1", "external-content:a|web_fetch"],
+    },
+    { id: "b", text: "主人住在杭州", score: 1 },
+  ]);
+  expect(
+    (await marked.service.recallWithClassification(call({ query: "会议", limit: 4 })))
+      .externalContent,
+  ).toBe(true);
+  const plain = recallWith([{ id: "b", text: "主人住在杭州", score: 1 }]);
+  expect(
+    (await plain.service.recallWithClassification(call({ query: "杭州", limit: 4 })))
+      .externalContent,
+  ).toBe(false);
+});

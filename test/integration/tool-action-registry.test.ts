@@ -59,6 +59,7 @@ async function setup(
     readonly rules?: readonly RuleRecord[];
     readonly registry?: ToolActionRegistry;
     readonly sourceType?: RunExecutionSource["sourceType"];
+    readonly recalledExternal?: boolean;
   } = {},
 ) {
   const resource = await openSeededRepository();
@@ -91,6 +92,12 @@ async function setup(
   }));
   const reminders = vi.fn(async () => ({ created: true, reminderId: "reminder:a" }));
   const rules = vi.fn(async () => ({ saved: true }));
+  const recall = vi.fn(async () => ({
+    output: { memories: [{ text: "群里有人说下周改会议" }] },
+    contentClassification: "private" as const,
+    memoryIds: ["memory:reminder:x"],
+    externalContent: options.recalledExternal === true,
+  }));
   const build = () => {
     const externalContent = new ContextExternalContent({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
@@ -121,6 +128,7 @@ async function setup(
       assertRunActive: async () => undefined,
       reminders: { run: reminders },
       ownerRules: { run: rules },
+      memoryRecall: { recallWithClassification: recall },
       ownerScope,
       externalContent,
       managedTasks: { execute: managedTasks },
@@ -163,6 +171,7 @@ async function setup(
     repository,
     reminders,
     rules,
+    recall,
     call,
     approvals,
     clock,
@@ -173,6 +182,43 @@ async function setup(
       await rm(resource.stateRoot, { recursive: true, force: true });
     },
   };
+}
+
+async function approve(
+  s: Awaited<ReturnType<typeof setup>>,
+  pending: GovernedApprovalRequest | undefined,
+) {
+  if (!pending) throw new Error("approval expected");
+  const intent = pending.intentSnapshot as GovernedActionIntent;
+  const grant = new GrantService({ store: s.store, clock: s.clock, ids: s.ids }).create({
+    kind: "one_time",
+    intent,
+    approvalRequestId: pending.id,
+    expiresAt: intent.expiresAt,
+    maxUses: 1,
+    maxTotalCostMicros: 0,
+    scope: {
+      capabilityRef: intent.capabilityRef,
+      capabilityVersion: intent.capabilityVersion,
+      operations: [intent.operation],
+      exactResourceRef: intent.resourceRef,
+      resourceIdentities: [...intent.resourceRefs],
+      resourcePrefixes: [],
+      maxDataClassification: intent.dataClassification,
+      sideEffects: [intent.sideEffect],
+      maxCostMicrosPerUse: 0,
+      maxFrequency: intent.frequency,
+      disclosure: intent.disclosure,
+      recipients: [...intent.recipients],
+      credentialOrAccessChange: false,
+    },
+  });
+  await new ApprovalService({ store: s.store, clock: s.clock }).respond({
+    approvalRequestId: pending.id,
+    expectedRevision: pending.revision,
+    semanticSnapshotHash: pending.semanticSnapshotHash,
+    response: { decision: "approved", grant, recentAuthenticationRef: null },
+  });
 }
 
 it("[ADR-0257] sets a reminder and a rule through the permission engine, preauthorized by the built-in action rule and recorded", async () => {
@@ -247,37 +293,7 @@ it("[ADR-0257] waits for the owner when no rule preauthorizes the action, and ru
     expect(await s.approvals()).toHaveLength(1);
     expect(pending).toMatchObject({ status: "pending", recentAuthenticationRequired: false });
     expect(pending?.policyAuthorization).toBeUndefined();
-    if (!pending) throw new Error("approval expected");
-    const intent = pending.intentSnapshot as GovernedActionIntent;
-    const grant = new GrantService({ store: s.store, clock: s.clock, ids: s.ids }).create({
-      kind: "one_time",
-      intent,
-      approvalRequestId: pending.id,
-      expiresAt: intent.expiresAt,
-      maxUses: 1,
-      maxTotalCostMicros: 0,
-      scope: {
-        capabilityRef: intent.capabilityRef,
-        capabilityVersion: intent.capabilityVersion,
-        operations: [intent.operation],
-        exactResourceRef: intent.resourceRef,
-        resourceIdentities: [...intent.resourceRefs],
-        resourcePrefixes: [],
-        maxDataClassification: intent.dataClassification,
-        sideEffects: [intent.sideEffect],
-        maxCostMicrosPerUse: 0,
-        maxFrequency: intent.frequency,
-        disclosure: intent.disclosure,
-        recipients: [...intent.recipients],
-        credentialOrAccessChange: false,
-      },
-    });
-    await new ApprovalService({ store: s.store, clock: s.clock }).respond({
-      approvalRequestId: pending.id,
-      expectedRevision: pending.revision,
-      semanticSnapshotHash: pending.semanticSnapshotHash,
-      response: { decision: "approved", grant, recentAuthenticationRef: null },
-    });
+    await approve(s, pending);
     s.advance(5_000);
     const done = await s.tools.execute(set);
     expect(done).toMatchObject({ outcome: "succeeded" });
@@ -600,6 +616,78 @@ it("[ADR-0257] asks the owner before stopping a task when no built-in rule preau
     const cancel = s.call("execution.task.cancel", "call:cancel-ask", { taskId: "task:a" });
     expect(await s.tools.execute(cancel)).toMatchObject({ outcome: "awaiting_approval" });
     expect(s.managedTasks).not.toHaveBeenCalled();
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] hands the conversation's external sources to the reminder it sets after the owner approves", async () => {
+  const s = await setup();
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const set = s.call("reminder.set", "call:approved", {
+      text: "改会议",
+      due: "2026-11-13T15:00",
+    });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "awaiting_approval" });
+    await approve(s, (await s.approvals())[0]);
+    s.advance(5_000);
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+    expect(s.reminders).toHaveBeenCalledWith(
+      expect.objectContaining({ toolCallId: "call:approved" }),
+      {
+        externalOrigins: ["execution_task_output"],
+      },
+    );
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] gives the owner's own reminders no external sources when nothing external was read", async () => {
+  const s = await setup();
+  try {
+    const set = s.call("reminder.set", "call:own", { text: "交周报", due: "2026-11-13T15:00" });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+    expect(s.reminders).toHaveBeenCalledWith(
+      expect.objectContaining({ toolCallId: "call:own" }),
+      {},
+    );
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] counts a recalled memory written from external content as external, so the next reminder asks", async () => {
+  const s = await setup({ recalledExternal: true });
+  try {
+    const recalled = s.call("memory.recall", "call:recall", { query: "会议", limit: 3 });
+    expect(await s.tools.execute(recalled)).toMatchObject({ outcome: "succeeded" });
+    expect(await s.externalContent.read(RUN_ID)).toEqual([
+      expect.objectContaining({ origin: "recalled_external_record" }),
+    ]);
+    const set = s.call("reminder.set", "call:after-recall", {
+      text: "改会议",
+      due: "2026-11-13T15:00",
+    });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.reminders).not.toHaveBeenCalled();
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] leaves the conversation unmarked when recalled memories carry no external source", async () => {
+  const s = await setup({ recalledExternal: false });
+  try {
+    const recalled = s.call("memory.recall", "call:recall", { query: "会议", limit: 3 });
+    expect(await s.tools.execute(recalled)).toMatchObject({ outcome: "succeeded" });
+    expect(await s.externalContent.read(RUN_ID)).toEqual([]);
+    const set = s.call("reminder.set", "call:after-recall", {
+      text: "交周报",
+      due: "2026-11-13T15:00",
+    });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
   } finally {
     await s.close();
   }

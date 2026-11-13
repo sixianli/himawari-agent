@@ -111,7 +111,10 @@ import {
   sandboxCeilingExceededMessage,
 } from "./production-sandbox-tool-result.js";
 import { type StageTiming, stageTiming } from "./production-stage-timing.js";
-import type { ContextExternalContent } from "./context-external-content.js";
+import {
+  type ContextExternalContent,
+  RECALLED_EXTERNAL_RECORD_ORIGIN,
+} from "./context-external-content.js";
 import type { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { beforeDeadline } from "./production-worker-deadline.js";
@@ -327,7 +330,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly toolActions?: ToolActionRegistry;
   readonly ownerScope?: Pick<OwnerScopeAuthorization, "authorize">;
-  readonly externalContent?: Pick<ContextExternalContent, "mark">;
+  readonly externalContent?: Pick<ContextExternalContent, "mark" | "read">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
@@ -617,6 +620,14 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (row?.resultOrigin === "owner_data") return null;
     return row?.tool ?? `unregistered:${invocation.capabilityRef}`;
   }
+  async #provenance(
+    invocation: RuntimeToolInvocation,
+  ): Promise<{ readonly externalOrigins?: readonly string[] }> {
+    const sources = (await this.#options.externalContent?.read(invocation.runId)) ?? [];
+    return sources.length === 0
+      ? {}
+      : { externalOrigins: [...new Set(sources.map(({ origin }) => origin))] };
+  }
   async #markExternalContent(invocation: RuntimeToolInvocation): Promise<void> {
     const marker = this.#options.externalContent;
     if (!marker) return;
@@ -707,7 +718,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       invocation,
       "rule",
       gate,
-      rules ? async (call) => ({ value: await rules.run(call) }) : undefined,
+      rules
+        ? async (call) => ({ value: await rules.run(call, await this.#provenance(call)) })
+        : undefined,
       (error) => ({
         errorCode: error instanceof OwnerRuleError ? error.code : "RULE_UNAVAILABLE",
         note:
@@ -728,7 +741,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       gate,
       recall
         ? async (call) => {
-            const { output, contentClassification } = await recall.recallWithClassification(call);
+            const { output, contentClassification, externalContent } =
+              await recall.recallWithClassification(call);
+            if (externalContent)
+              await this.#options.externalContent?.mark(
+                call.runId,
+                RECALLED_EXTERNAL_RECORD_ORIGIN,
+              );
             return { value: output, contentClassification };
           }
         : undefined,
@@ -753,7 +772,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       invocation,
       "reminder",
       gate,
-      reminders ? async (call) => ({ value: await reminders.run(call) }) : undefined,
+      reminders
+        ? async (call) => ({ value: await reminders.run(call, await this.#provenance(call)) })
+        : undefined,
       (error) => {
         const errorCode = error instanceof ReminderInputError ? error.code : "REMINDER_UNAVAILABLE";
         return {
