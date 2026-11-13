@@ -613,7 +613,7 @@ function mcpSnapshot() {
     connections: mcpFixtureState.connections,
     window: { fromDay: "2026-08-24", toDay: "2026-08-30", days: 7 },
     limits: [
-      { key: "mcp.connections", value: 20, used: live.length },
+      { key: "mcp.connections", value: 200, used: live.length },
       {
         key: "mcp.connection.name_characters",
         value: 64,

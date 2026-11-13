@@ -12,6 +12,7 @@ import {
   actionIntentFingerprint,
   type GovernedActionIntent,
   type GovernedApprovalRequest,
+  MCP_CONNECTION_MAXIMUM,
 } from "@himawari-agent/application";
 import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import {
@@ -38,6 +39,7 @@ import {
   newMcpConnectionSecret,
 } from "../src/production-mcp-connections.js";
 import {
+  MCP_READ_BODY_LIMIT,
   MCP_READ_PATH,
   ProductionMcpRead,
   type ProductionMcpReadOptions,
@@ -1174,7 +1176,7 @@ describe("production HTTP composition", () => {
         pushPolicy: "ask",
       });
       expect(again.statusCode, again.body).toBe(200);
-      expect((again.json() as { resultRef: string }).resultRef).toBe(connectionId);
+      expect(again.json()).toEqual({ resultRef: connectionId, replayed: true });
       expect((await read()).connections).toHaveLength(1);
       expect((await address(connectionId, "")).statusCode).toBe(401);
       const shown = await address(connectionId);
@@ -1197,7 +1199,16 @@ describe("production HTTP composition", () => {
         usage: { reads: 1, delivered: 1, empty: 0, failed: 0, modelReads: 1, autoReads: 0 },
         minute: { reads: 1, hookReads: 0 },
       });
-      expect(snapshot.limits).toContainEqual({ key: "mcp.connections", value: 200, used: 1 });
+      expect(snapshot.limits).toContainEqual({
+        key: "mcp.connections",
+        value: MCP_CONNECTION_MAXIMUM,
+        used: 1,
+      });
+      expect(snapshot.limits).toContainEqual({
+        key: "mcp.request.body_bytes",
+        value: MCP_READ_BODY_LIMIT,
+        used: null,
+      });
       expect(snapshot.limits).toContainEqual({
         key: "mcp.connection.name_characters",
         value: 64,
@@ -1267,6 +1278,20 @@ describe("production HTTP composition", () => {
         (await command("mcp.connection.rotate", "mcp-rotate-03", { connectionId: "conn-missing" }))
           .statusCode,
       ).toBe(404);
+      const twice = await Promise.all(
+        [0, 1].map(() =>
+          command("mcp.connection.create", "mcp-create-race", {
+            name: "Codex",
+            capabilities: ["mcp"],
+            readCeiling: "private",
+            pushPolicy: "ask",
+          }),
+        ),
+      );
+      expect(twice.map((reply) => reply.statusCode)).toEqual([200, 200]);
+      const raced = twice.map((reply) => (reply.json() as { resultRef: string }).resultRef);
+      expect(raced[0]).toBe(raced[1]);
+      expect((await read()).connections.filter(({ id }) => id === raced[0])).toHaveLength(1);
     } finally {
       await composition.close();
       await repository.close();

@@ -402,12 +402,20 @@ describe("HTTP Gateway contract and security boundary", () => {
         clock += 2_500;
         return clock;
       });
-      const unmatched = await app.inject({
+      const fallback = await app.inject({
         url: `/api/mcp/v1/${key}/extra`,
         headers: requestHeaders(),
       });
-      expect(unmatched.statusCode).toBe(404);
+      expect(fallback.statusCode).toBe(404);
       expect(slow.at(-1)).toMatchObject({ method: "GET", path: "/*", statusCode: 404 });
+      const unmatched = await app.inject({
+        method: "POST",
+        url: `/api/mcp/v1/${key}/extra`,
+        headers: { ...requestHeaders(), "content-type": "application/json" },
+        payload: {},
+      });
+      expect(unmatched.statusCode).toBe(404);
+      expect(slow.at(-1)).toMatchObject({ method: "POST", path: "(no route)", statusCode: 404 });
       expect(JSON.stringify(slow)).not.toContain(key);
     } finally {
       now.mockRestore();

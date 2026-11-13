@@ -213,19 +213,26 @@ export class ProductionMcpConnectionsControl {
       const scope = this.#scope(authentication, command.scope);
       askFirstOnly(command.payload.pushPolicy);
       const id = mcpConnectionIdFor(scope, command.idempotencyKey);
-      if ((await this.#options.store.list(scope)).some((connection) => connection.id === id))
-        return { resultRef: id, replayed: true };
+      const created = async () =>
+        (await this.#options.store.list(scope)).some((connection) => connection.id === id);
+      if (await created()) return { resultRef: id, replayed: true };
       const secret = newMcpConnectionSecret();
-      const record = await this.#options.store.create({
-        ...scope,
-        id,
-        name: command.payload.name,
-        secretSha256: mcpConnectionSecretDigest(secret),
-        capabilities: command.payload.capabilities,
-        readCeiling: command.payload.readCeiling,
-        pushPolicy: command.payload.pushPolicy,
-        createdAt: now,
-      });
+      const record = await this.#options.store
+        .create({
+          ...scope,
+          id,
+          name: command.payload.name,
+          secretSha256: mcpConnectionSecretDigest(secret),
+          capabilities: command.payload.capabilities,
+          readCeiling: command.payload.readCeiling,
+          pushPolicy: command.payload.pushPolicy,
+          createdAt: now,
+        })
+        .catch(async (error: unknown) => {
+          if (await created()) return null;
+          throw error;
+        });
+      if (record === null) return { resultRef: id, replayed: true };
       this.#options.addresses.hold(record.id, secret);
       return { resultRef: record.id, replayed: false };
     }

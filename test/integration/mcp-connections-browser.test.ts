@@ -133,7 +133,7 @@ describe("[P5-B] the owner manages connected agents on the real page", () => {
       const address = view.getByTestId("mcp-address");
       await uiExpect(address).toHaveText(`${base}/api/mcp/v1/fixture-key-1-${"x".repeat(24)}`);
       await uiExpect(view).toContainText("只显示这一次");
-      await uiExpect(view.locator(".mcp-limits")).toContainText("接入个数：最多 20 个，已用 1 个");
+      await uiExpect(view.locator(".mcp-limits")).toContainText("接入个数：最多 200 个，已用 1 个");
       await uiExpect(view.locator(".mcp-connection")).toContainText("还没用过");
       const recorded = await fixtureState();
       expect(recorded.commands).toEqual([

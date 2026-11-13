@@ -1624,6 +1624,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
           body: JSON.stringify({ padding: "x".repeat(70_000) }),
         }),
       ];
+      expect(replies.at(-1)?.status).toBe(413);
       const bodies = await Promise.all(replies.map(async (reply) => reply.text()));
       await f.connections.change({ ...scope, id: CONNECTION_ID, updatedAt: NOW, status: "paused" });
       bodies.push(await (await post(f.url, owner, listTools)).text());
