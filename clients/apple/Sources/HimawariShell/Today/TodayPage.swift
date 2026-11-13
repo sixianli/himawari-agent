@@ -13,6 +13,7 @@ struct TodayPage: View {
     @State private var opened: PendingApproval?
     @State private var scrolled = false
     @Environment(\.listClock) private var listClock
+    @Environment(\.stillFrames) private var stillFrames
 
     var body: some View {
         GeometryReader { proxy in
@@ -168,6 +169,7 @@ struct TodayPage: View {
             .padding(.bottom, DesignTokens.Size.rowGap)
             .transition(.move(edge: .bottom).combined(with: .opacity))
             .task(id: toast.id) {
+                guard !stillFrames else { return }
                 try? await Task.sleep(for: .seconds(HomeToastView.seconds))
                 withAnimation(.snappy) { feed.dismiss(toast) }
             }
