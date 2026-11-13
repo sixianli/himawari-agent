@@ -183,11 +183,16 @@ export function firstChangedMessage(earlier, later) {
     (message, position) => JSON.stringify(message) !== JSON.stringify(later.messages[position]),
   );
   if (index < 0) return "";
-  const shown = (message) => JSON.stringify(message ?? null).slice(0, 2000);
+  const before = JSON.stringify(earlier.messages[index] ?? null);
+  const after = JSON.stringify(later.messages[index] ?? null);
+  let at = 0;
+  while (at < before.length && before[at] === after[at]) at += 1;
+  const start = Math.max(0, at - 300);
+  const shown = (text) => `${start > 0 ? "…" : ""}${text.slice(start, at + 1200)}`;
   return [
-    `message ${index} of ${earlier.messages.length} changed (later request has ${later.messages.length})`,
-    `earlier: ${shown(earlier.messages[index])}`,
-    `later:   ${shown(later.messages[index])}`,
+    `message ${index} of ${earlier.messages.length} changed (later request has ${later.messages.length}); first difference at character ${at} of ${before.length} (later ${after.length})`,
+    `earlier: ${shown(before)}`,
+    `later:   ${shown(after)}`,
   ].join("\n");
 }
 

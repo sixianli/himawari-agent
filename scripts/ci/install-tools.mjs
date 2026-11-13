@@ -13,6 +13,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hostPlatform, supportedPlatforms } from "./platforms.mjs";
+import { runnerTracking } from "./runner-tracking.mjs";
 import {
   cacheEnvironmentKey,
   downloadVerified,
@@ -357,6 +358,7 @@ export function isolatedEnvironment(directory, binDirectory, { temporaryDirector
     PIP_DISABLE_PIP_VERSION_CHECK: "1",
     SEMGREP_SEND_METRICS: "off",
     SEMGREP_ENABLE_VERSION_CHECK: "0",
+    ...runnerTracking(),
   };
 }
 
