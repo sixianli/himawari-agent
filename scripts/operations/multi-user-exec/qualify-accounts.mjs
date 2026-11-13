@@ -245,6 +245,21 @@ try {
         .length === 1,
     "APPLY_AFTER_REMOVE_CHANGED",
   );
+  const retired = readdirSync(path.join(base, "w")).find((name) =>
+    name.startsWith(`${b}.removed-`),
+  );
+  const retiredStat = statSync(path.join(base, "w", retired));
+  expectTrue(
+    retiredStat.uid === 0 && retiredStat.gid === 0 && (retiredStat.mode & 0o777) === 0o700,
+    "RETIRED_DIRECTORY_NOT_ROOT_ONLY",
+  );
+  let initAgain = "";
+  try {
+    exec("add", slots[0], "--init");
+  } catch (error) {
+    initAgain = String(error.stderr ?? "");
+  }
+  expectTrue(initAgain.includes("EXEC_INIT_LEDGER_NOT_EMPTY"), "INIT_ON_NONEMPTY_LEDGER");
   const status = exec("status");
   expectTrue(
     status.find((entry) => entry.slot === b)?.state === "removed" &&

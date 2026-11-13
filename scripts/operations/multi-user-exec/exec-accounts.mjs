@@ -324,8 +324,9 @@ function converge(options, config, ledger) {
       run("systemctl", ["daemon-reload"]);
       for (const entry of ledger.slots)
         if (entry.state === "active") {
+          const wasActive = quiet("systemctl", ["is-active", "--quiet", socketName(entry.slot)]);
           run("systemctl", ["enable", "--now", socketName(entry.slot)]);
-          enabled.push(entry.slot);
+          if (!wasActive) enabled.push(entry.slot);
         }
     }
   } catch (error) {
@@ -390,7 +391,7 @@ export function main(argv) {
     converge(options, config, next);
     return status(options, config, readLedger(options.ledger, false));
   } finally {
-    rmSync(lock, { force: true });
+    if (readFileSync(lock, "utf8") === `${process.pid}\n`) rmSync(lock, { force: true });
     closeSync(held);
   }
 }
