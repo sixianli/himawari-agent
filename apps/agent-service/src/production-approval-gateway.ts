@@ -49,6 +49,10 @@ import {
   type ProductionDataExportControl,
 } from "./production-data-export.js";
 import {
+  PRODUCTION_FILES_OPERATIONS,
+  type ProductionFilesControl,
+} from "./production-files-control.js";
+import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   type ProductionServerStatusControl,
 } from "./production-server-status-control.js";
@@ -86,6 +90,7 @@ export function createProductionApprovalGateway(options: {
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
   readonly serverStatusControl?: ProductionServerStatusControl;
   readonly dataExportControl?: ProductionDataExportControl;
+  readonly filesControl?: ProductionFilesControl;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -132,7 +137,9 @@ export function createProductionApprovalGateway(options: {
                         ? options.serverStatusControl.query(query)
                         : query.type.startsWith("data.export.") && options.dataExportControl
                           ? options.dataExportControl.query(query)
-                          : searchAuthorization.query(query),
+                          : query.type.startsWith("files.") && options.filesControl
+                            ? options.filesControl.query(query)
+                            : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -277,6 +284,7 @@ export function createProductionApprovalGateway(options: {
         : []),
       ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
       ...(options.dataExportControl ? PRODUCTION_DATA_EXPORT_OPERATIONS : []),
+      ...(options.filesControl ? PRODUCTION_FILES_OPERATIONS : []),
     ],
     reads,
     controlPlane,

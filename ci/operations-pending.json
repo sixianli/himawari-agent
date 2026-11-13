@@ -10,6 +10,7 @@
     "device.pairing.start": "iOS 设备管理：合约先行，处理程序和 paired_devices 表在 iOS 第 1 批 PR 404，调用方是 iOS 第 11 批原生页（缺：后端实现、调用方、测试）。PR 404 补后端和测试、iOS 第 11 批补调用方，三项都齐后移出名单",
     "device.rename": "iOS 设备管理：合约先行，处理程序和 paired_devices 表在 iOS 第 1 批 PR 404，调用方是 iOS 第 11 批原生页（缺：后端实现、调用方、测试）。PR 404 补后端和测试、iOS 第 11 批补调用方，三项都齐后移出名单",
     "device.revoke": "iOS 设备管理：合约先行，处理程序和 paired_devices 表在 iOS 第 1 批 PR 404，调用方是 iOS 第 11 批原生页（缺：后端实现、调用方、测试）。PR 404 补后端和测试、iOS 第 11 批补调用方，三项都齐后移出名单",
+    "files.list.read": "iOS 文件列表：网关查询已实现并有测试，文件内容仍走网页会话的 /api/files/v1/content，调用方是 iOS 第 11 批原生页（缺：调用方）。iOS 第 11 批接上后移出名单",
     "github.monitor.set_state": "GitHub 监控开关：integration-github 的 monitor-control 已实现并有测试，生产没有装配，前端没有页面（缺：调用方）。做监控页面时移出名单",
     "host.directory.detail": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "host.file.execute": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",

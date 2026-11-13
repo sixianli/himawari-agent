@@ -140,6 +140,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "data.export.start",
   "data.export.status.read",
   "data.export.status.snapshot",
+  "files.list.read",
+  "files.list.snapshot",
   "stream.event",
 ] as const;
 
@@ -725,6 +727,55 @@ const dataExportStatusSnapshotSchema: Schema<
     return snapshot;
   },
 };
+export const FILE_LIST_KINDS = [
+  "document",
+  "code",
+  "web",
+  "image",
+  "pdf",
+  "data",
+  "other",
+] as const;
+export const FILE_LIST_ORIGINS = ["uploaded", "generated"] as const;
+export const FILE_LIST_PAGE_LIMIT = 100;
+const fileListCursorSchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !/^[A-Za-z0-9_-]{1,512}$/u.test(input))
+      throw new ContractValidationError(path, "expected a file list cursor");
+    return input;
+  },
+};
+const filesListQuerySchema = object({
+  ...envelope("query", "files.list.read"),
+  payload: object({
+    kind: nullable(enumeration(FILE_LIST_KINDS)),
+    origin: nullable(enumeration(FILE_LIST_ORIGINS)),
+    before: nullable(fileListCursorSchema),
+    limit: integer(1, FILE_LIST_PAGE_LIMIT),
+  }),
+});
+const filesListSnapshotSchema = object({
+  ...envelope("snapshot", "files.list.snapshot"),
+  payload: object({
+    files: array(
+      object({
+        fileId: machineString,
+        threadId: machineString,
+        name: boundedString(256),
+        kind: enumeration(FILE_LIST_KINDS),
+        origin: enumeration(FILE_LIST_ORIGINS),
+        mediaType: boundedString(128),
+        sizeBytes: integer(0),
+        version: integer(1),
+        createdAt: timestamp,
+        deleted: booleanValue,
+        contentPath: nullable(boundedString(256)),
+      }),
+    ),
+    nextCursor: nullable(fileListCursorSchema),
+    generatedAt: timestamp,
+  }),
+});
 const proactiveSettingsSetCommandSchema = object({
   ...commandEnvelope("proactive.settings.set"),
   payload: object({
@@ -2727,6 +2778,8 @@ const schemasByType = {
   "data.export.start": dataExportStartCommandSchema,
   "data.export.status.read": dataExportStatusQuerySchema,
   "data.export.status.snapshot": dataExportStatusSnapshotSchema,
+  "files.list.read": filesListQuerySchema,
+  "files.list.snapshot": filesListSnapshotSchema,
   "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
   "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,
   "sensitive.interceptions.clear": sensitiveInterceptionsClearCommandSchema,

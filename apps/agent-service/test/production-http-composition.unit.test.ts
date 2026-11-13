@@ -369,6 +369,7 @@ describe("production HTTP composition", () => {
           "server.status.read",
           "data.export.start",
           "data.export.status.read",
+          "files.list.read",
         ],
         healthDependenciesAvailable: true,
       });
@@ -1208,6 +1209,32 @@ describe("production HTTP composition", () => {
         headers: requestHeaders(token, "", undefined),
       });
       expect(exportWithoutSession.statusCode).toBe(401);
+      const phoneFiles = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, second.cookie),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "files.list.read"),
+          kind: "query",
+          payload: { kind: null, origin: null, before: null, limit: 20 },
+        },
+      });
+      expect(phoneFiles.statusCode, phoneFiles.body).toBe(200);
+      expect(gatewayV2MessageSchema.parseJson(phoneFiles.body)).toMatchObject({
+        type: "files.list.snapshot",
+        payload: { files: [], nextCursor: null },
+      });
+      const filesWithoutSession = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, "", undefined),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "files.list.read"),
+          kind: "query",
+          payload: { kind: null, origin: null, before: null, limit: 20 },
+        },
+      });
+      expect(filesWithoutSession.statusCode, filesWithoutSession.body).toBe(401);
       const readInterceptions = async () => {
         const response = await running.composition.app.inject({
           method: "POST",

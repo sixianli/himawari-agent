@@ -16,7 +16,9 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { BrowserThreadFiles } from "@himawari-agent/platform-node";
+import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import { afterEach, describe, expect, it } from "vitest";
+import { ProductionFilesControl } from "../../apps/agent-service/src/production-files-control.ts";
 import { ProductionThreadArtifacts } from "../../apps/agent-service/src/production-thread-artifacts.ts";
 import { ProductionUploadedFiles } from "../../apps/agent-service/src/production-uploaded-files.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
@@ -387,6 +389,136 @@ describe("[FD-1] thread artifact storage", () => {
       await expect(
         store.list({ ...scope, threadId: null, kind: null, search: null, before: "x", limit: 10 }),
       ).rejects.toThrow();
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[iOS] 网关文件列表：主人全部对话的文件按时间从新到旧分页，和网页文件列表同一份数据", async () => {
+    const { repository, store } = await open();
+    try {
+      await store.register({ ...scope, artifact: artifact("w1") });
+      await store.register({
+        ...scope,
+        artifact: artifact("u1", {
+          source: "upload",
+          path: "uploads/bad\u0007name.png",
+          kind: "image",
+          mediaType: "image/png",
+          copyRef: null,
+          createdAt: "2026-10-28T05:01:00.000Z",
+        }),
+      });
+      await store.register({
+        ...scope,
+        artifact: artifact("d1", {
+          runId: "run-3",
+          threadId: "thread-2",
+          path: "notes/plan.md",
+          kind: "document",
+          mediaType: "text/markdown",
+          createdAt: "2026-10-28T05:02:00.000Z",
+        }),
+      });
+      await store.markDeleted({
+        ...scope,
+        threadId: "thread-2",
+        paths: ["notes/plan.md"],
+        deletedAt: "2026-10-28T05:03:00.000Z",
+      });
+      const control = new ProductionFilesControl({
+        configuration: scope,
+        store,
+        clock: { now: () => T0 },
+      });
+      const query = (payload: Record<string, unknown>, ownerId: string = OWNER_ID) =>
+        gatewayV2MessageSchema.parse({
+          schemaVersion: "gateway.v2",
+          kind: "query",
+          type: "files.list.read",
+          messageId: "message-files",
+          correlationId: "correlation-files",
+          causationId: null,
+          dataClassification: "private",
+          risk: "low",
+          authorizationRef: null,
+          scope: { ownerId, agentId: AGENT_ID },
+          authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+          actor: { actorType: "owner", actorId: ownerId },
+          payload: { kind: null, origin: null, before: null, limit: 2, ...payload },
+        });
+      const read = async (payload: Record<string, unknown>) => {
+        const snapshot = gatewayV2MessageSchema.parse(await control.query(query(payload) as never));
+        if (snapshot.type !== "files.list.snapshot") throw new Error("snapshot");
+        return snapshot.payload;
+      };
+      const first = await read({});
+      expect(first.files).toEqual([
+        {
+          fileId: "d1",
+          threadId: "thread-2",
+          name: "plan.md",
+          kind: "document",
+          origin: "generated",
+          mediaType: "text/markdown",
+          sizeBytes: 10,
+          version: 1,
+          createdAt: "2026-10-28T05:02:00.000Z",
+          deleted: true,
+          contentPath: "/api/files/v1/content/d1",
+        },
+        {
+          fileId: "u1",
+          threadId: "thread-1",
+          name: "bad\uFFFDname.png",
+          kind: "image",
+          origin: "uploaded",
+          mediaType: "image/png",
+          sizeBytes: 10,
+          version: 1,
+          createdAt: "2026-10-28T05:01:00.000Z",
+          deleted: false,
+          contentPath: null,
+        },
+      ]);
+      expect(first.nextCursor).not.toBeNull();
+      const rest = await read({ before: first.nextCursor });
+      expect(rest.files.map(({ fileId }) => fileId)).toEqual(["w1"]);
+      expect(rest.nextCursor).toBeNull();
+      expect((await read({ kind: "image", limit: 10 })).files.map(({ fileId }) => fileId)).toEqual([
+        "u1",
+      ]);
+      expect(
+        (await read({ origin: "generated", limit: 10 })).files.map(({ fileId }) => fileId),
+      ).toEqual(["d1", "w1"]);
+      const web = new BrowserThreadFiles({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        store,
+        payloads: () => ({}) as PayloadStorePort,
+        protector: {} as PayloadProtectorPort,
+        ticketKey: new Uint8Array(32).fill(7),
+        now: () => T0,
+      });
+      const webPage = await web.list({
+        authentication: { ownerId: OWNER_ID } as unknown as GatewayAuthenticationContext,
+        agentId: AGENT_ID,
+        threadId: null,
+        kind: null,
+        origin: null,
+        search: null,
+        before: null,
+        limit: 10,
+      });
+      expect((await read({ limit: 10 })).files.map(({ fileId }) => fileId)).toEqual(
+        webPage.items.map(({ id }) => id),
+      );
+      await expect(control.query(query({}, "someone-else") as never)).rejects.toMatchObject({
+        code: "PORT_NOT_AUTHORITATIVE",
+      });
+      expect(() => query({ before: "not a cursor" })).toThrow();
+      expect(() => query({ limit: 101 })).toThrow();
+      expect(() => query({ kind: "video" })).toThrow();
     } finally {
       await repository.close();
     }

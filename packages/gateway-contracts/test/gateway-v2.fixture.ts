@@ -467,6 +467,26 @@ export const governanceMessages = [
     ],
     generatedAt: "2026-11-12T03:06:30.000Z",
   }),
+  fixture("query", "files.list.read", { kind: null, origin: "uploaded", before: null, limit: 50 }),
+  fixture("snapshot", "files.list.snapshot", {
+    files: [
+      {
+        fileId: "thread-artifact:01",
+        threadId: "thread-1",
+        name: "report.pdf",
+        kind: "pdf",
+        origin: "uploaded",
+        mediaType: "application/pdf",
+        sizeBytes: 2048,
+        version: 1,
+        createdAt: "2026-11-12T03:00:00.000Z",
+        deleted: false,
+        contentPath: "/api/files/v1/content/thread-artifact%3A01",
+      },
+    ],
+    nextCursor: "WyIyMDI2LTExLTEyVDAzOjAwOjAwLjAwMFoiLCJ0aHJlYWQtYXJ0aWZhY3Q6MDEiXQ",
+    generatedAt: "2026-11-12T03:06:30.000Z",
+  }),
   fixture("query", "sensitive.interceptions.read", { before: null }),
   fixture("snapshot", "sensitive.interceptions.snapshot", {
     counts: { masked: 1, withheld: 0, notSaved: 0 },
