@@ -49,6 +49,7 @@ type Settings = Partial<Omit<ReviewPrereviewConfiguration, "reduction">> & {
 
 function reply(prompt: string): { output: string; costMicros: number } {
   const data = JSON.parse(prompt.slice(prompt.lastIndexOf("\n") + 1)) as { text: string };
+  if (data.text.includes("down")) return { output: "MODEL_DOWN", costMicros: 0 };
   if (data.text.includes("broken")) return { output: "not a rating", costMicros: 700 };
   if (data.text.includes("unsure"))
     return { output: '{"rating":"unsure","confidence":0}', costMicros: 300 };
@@ -107,6 +108,7 @@ describe("[P4-8] model pre-rating in the running service", () => {
     const costs = new Map<string, number>();
     const invocations: string[] = [];
     const released: string[] = [];
+    const releaseFails = { input: false };
     const model: ProactiveModelInvoker = {
       modelRef: MODEL_REF,
       model: {
@@ -121,6 +123,17 @@ describe("[P4-8] model pre-rating in the running service", () => {
             payloadRef: `out-${request.invocationId}`,
             occurredAt: at,
           };
+          if (outputs.get(`out-${request.invocationId}`) === "MODEL_DOWN") {
+            yield {
+              type: "model.failed",
+              invocationId: request.invocationId,
+              errorCode: "PROVIDER_DOWN",
+              retryable: true,
+              latencyMs: 5,
+              occurredAt: at,
+            };
+            return;
+          }
           yield {
             type: "model.completed",
             invocationId: request.invocationId,
@@ -147,7 +160,10 @@ describe("[P4-8] model pre-rating in the running service", () => {
       },
       readOutput: async (ref) => outputs.get(ref) ?? "",
       release: async (refs) => {
-        released.push(...refs);
+        for (const ref of refs) {
+          if (releaseFails.input && ref.startsWith("in-")) throw new Error("EIO");
+          released.push(ref);
+        }
       },
     };
     const failures: unknown[] = [];
@@ -274,6 +290,7 @@ describe("[P4-8] model pre-rating in the running service", () => {
       prompts,
       raw,
       released,
+      releaseFails,
       rows,
       service,
       skipped,
@@ -328,17 +345,22 @@ describe("[P4-8] model pre-rating in the running service", () => {
     expect(h.failures).toEqual([]);
   });
 
-  it("[P4-8] releases the prompt and the reply of every pre-rating call, including a failed one", async () => {
+  it("[P4-8] releases the prompt and the reply of every pre-rating call, even when the model fails or one release fails", async () => {
     const h = await setup();
     await h.skipped("kept", "我最近想吃牛肉", NOV_4_10AM_JST);
     await h.skipped("broken", "broken reply", NOV_4_10AM_JST);
+    await h.skipped("down", "provider down", NOV_4_10AM_JST);
+    h.releaseFails.input = true;
 
-    expect(await h.service().prereview()).toMatchObject({ attempted: 2, recorded: 1 });
+    expect(await h.service().prereview()).toMatchObject({ attempted: 3, recorded: 1 });
 
-    expect(h.invocations).toHaveLength(2);
-    expect([...h.released].sort()).toEqual(
-      h.invocations.flatMap((id) => [`in-${id}`, `out-${id}`]).sort(),
-    );
+    expect(h.invocations).toHaveLength(3);
+    expect([...h.released].sort()).toEqual(h.invocations.map((id) => `out-${id}`).sort());
+    h.releaseFails.input = false;
+    await h.skipped("later", "想记住的事", NOV_4_10AM_JST);
+    await h.service().prereview();
+    const last = h.invocations.at(-1);
+    expect(h.released.slice(-2).sort()).toEqual([`in-${last}`, `out-${last}`]);
   });
 
   it("[P4-8] keeps the daily cap across a restart and starts again the next day", async () => {
