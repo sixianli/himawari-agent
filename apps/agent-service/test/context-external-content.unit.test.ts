@@ -65,6 +65,10 @@ it("[ADR-0257] keeps the source name readable in a mark even when the record id 
   for (const ref of refs) expect(ref.length).toBeLessThanOrEqual(512);
   expect(refs.some((ref) => ref.endsWith("|web_fetch"))).toBe(true);
   expect(refs.every((ref) => ref.includes("|"))).toBe(true);
+  const [a] = externalContentSourceRefs(`${"r".repeat(600)}a`, [`${"o".repeat(300)}a`]);
+  const [b] = externalContentSourceRefs(`${"r".repeat(600)}b`, [`${"o".repeat(300)}b`]);
+  expect(a).not.toBe(b);
+  expect(a?.length).toBeLessThanOrEqual(512);
 });
 
 function content(
@@ -126,6 +130,14 @@ it("[ADR-0257] reports a mark that could not be written apart from a mark state 
   await expect(failingWrite.mark("run-a" as never, "web_fetch")).rejects.toBeInstanceOf(
     ExternalContentMarkNotWrittenError,
   );
+  let down = true;
+  const recovering = content({}, { "run-a": "thread-a" }, async () => {
+    if (down) throw new Error("DISK_DOWN");
+    return undefined as never;
+  });
+  await expect(recovering.mark("run-a" as never, "web_fetch")).rejects.toThrow();
+  down = false;
+  await expect(recovering.mark("run-a" as never, "web_search")).resolves.toBeUndefined();
   const unreadable = new ContextExternalContent({
     configuration: { ownerId: "owner" as never, agentId: "agent" as never },
     state: {

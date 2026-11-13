@@ -1230,6 +1230,12 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       await this.#markExternalContent(invocation);
     } catch (error) {
       if (!(error instanceof ExternalContentMarkNotWrittenError)) throw error;
+      const dispatched = await this.#options.artifacts.lookup({
+        runId: invocation.runId,
+        purpose: "trace",
+        operationKey: `runtime-tool-intent:${digest([invocation.runId, invocation.toolCallId])}`,
+      });
+      if (dispatched) throw error;
       await this.#options.assertRunActive(invocation.runId);
       signal?.throwIfAborted();
       await this.#writeJson(

@@ -34,11 +34,23 @@ export function externalContentSourceRefs(
   recordId: string,
   origins: readonly string[],
 ): readonly string[] {
-  return [...new Set(origins.map((origin) => origin.slice(0, ORIGIN_IN_REF_LIMIT)))]
+  return [
+    ...new Set(
+      origins.map((origin) =>
+        origin.length <= ORIGIN_IN_REF_LIMIT
+          ? origin
+          : `${origin.slice(0, ORIGIN_IN_REF_LIMIT - 17)}~${digest(origin).slice(0, 16)}`,
+      ),
+    ),
+  ]
     .sort((left, right) => left.localeCompare(right, "en"))
     .map((origin) => {
       const room = SOURCE_REF_LIMIT - EXTERNAL_CONTENT_SOURCE_REF_PREFIX.length - 1 - origin.length;
-      return `${EXTERNAL_CONTENT_SOURCE_REF_PREFIX}${recordId.slice(0, room)}|${origin}`;
+      const record =
+        recordId.length <= room
+          ? recordId
+          : `${recordId.slice(0, room - 17)}~${digest(recordId).slice(0, 16)}`;
+      return `${EXTERNAL_CONTENT_SOURCE_REF_PREFIX}${record}|${origin}`;
     });
 }
 

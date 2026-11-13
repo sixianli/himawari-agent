@@ -947,13 +947,28 @@ it("[ADR-0257] does not run an outside-content tool whose mark cannot be written
   }
 });
 
-it("[ADR-0257] REVERSE: a replayed call whose marks cannot be read is not reported as never sent, because it may have run before", async () => {
+it("[ADR-0257] REVERSE: a replayed call whose marks cannot be read or written is not reported as never sent, because it may have run before", async () => {
   const s = await setup();
   try {
     const output = s.call("execution.task.output", "call:replayed-output", { taskId: "task:a" });
     expect(await s.tools.execute(output)).toMatchObject({ outcome: "succeeded" });
     s.markFaults.read = true;
     await expect(s.tools.execute(output)).rejects.toThrow("STATE_READ_DOWN");
+    expect(s.managedTasks).toHaveBeenCalledTimes(1);
+    const key = externalContentKey({ threadId: "thread-capability-invocation", runId: RUN_ID });
+    const marks = await s.repository.readScopedState(OWNER_ID, AGENT_ID, key);
+    await s.repository.commitStateAndEvents({
+      command: {
+        ...{ ownerId: OWNER_ID, agentId: AGENT_ID, commandType: "context.external_content.mark" },
+        ...{ idempotencyKey: "test:lost-marks" as never, commandFingerprint: "lost" },
+        authority: SERVICE_AUTHORITY.lease,
+      },
+      state: { key, expectedRevision: marks?.revision ?? null, value: { sources: [] } },
+      ...{ events: [], resultRef: key, committedAt: T1 },
+    });
+    s.markFaults.read = false;
+    s.markFaults.write = true;
+    await expect(s.tools.execute(output)).rejects.toThrow("EXTERNAL_CONTENT_MARK_NOT_WRITTEN");
     expect(s.managedTasks).toHaveBeenCalledTimes(1);
   } finally {
     await s.close();
