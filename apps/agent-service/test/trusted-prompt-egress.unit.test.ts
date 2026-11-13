@@ -6,7 +6,12 @@ import {
 } from "@himawari-agent/application/runtime-port";
 import type { PromptEntry } from "@himawari-agent/prompt-catalog";
 import * as catalog from "@himawari-agent/prompt-catalog";
-import { MEMORY_CAPTURE, renderPrompt, TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
+import {
+  CHAT_IDENTITY,
+  MEMORY_CAPTURE,
+  renderPrompt,
+  TRUSTED_PROMPT_TEXTS,
+} from "@himawari-agent/prompt-catalog";
 import { describe, expect, it } from "vitest";
 import { memoryCapturePrompt } from "../src/production-memory-capture.js";
 import { createProductionModelEgress } from "../src/production-model-egress.js";
@@ -107,6 +112,20 @@ describe("Himawari's own fixed prompt text on the way to the model", () => {
     expect(reports.map(({ category, part }) => [category, part])).toEqual([
       ["verification-code", "owner_message"],
     ]);
+  });
+
+  it("sends the chat identity from before the look-it-up-first sentence unchanged, so conversations frozen with it keep their request head", async () => {
+    const added =
+      "\n- 提下一步之前，能用本轮的工具查清楚的先查，再提一个主人可以直接点头的具体做法，并说出依据；查不到依据的不提。";
+    expect(CHAT_IDENTITY.text).toContain(added);
+    const previous = CHAT_IDENTITY.text.replace(added, "");
+    expect(TRUSTED_PROMPT_TEXTS).not.toContain(previous);
+    const { messages, reports } = await sent([
+      { role: "system", content: previous },
+      { role: "user", content: "明天天气怎么样" },
+    ]);
+    expect(messages[0]?.content).toBe(previous);
+    expect(reports).toEqual([]);
   });
 
   it("[I-78] sends every catalog entry unchanged, as a system message and as a user message", async () => {
