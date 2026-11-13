@@ -1709,6 +1709,8 @@ const memoryRulesSnapshotSchema = object({
         enforced: booleanValue,
         updatedAt: timestamp,
         quote: nullable(boundedString(500)),
+        quoteSuperseded: booleanValue,
+        quoteLatestMemoryId: nullable(machineString),
         changes: integer(0),
         lastUsed: nullable(
           object({ at: timestamp, kind: machineString, decisionId: machineString }),

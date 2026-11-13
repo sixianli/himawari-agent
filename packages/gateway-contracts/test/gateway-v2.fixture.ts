@@ -823,6 +823,8 @@ export const governanceMessages = [
         enforced: true,
         updatedAt: "2026-11-11T00:00:00.000Z",
         quote: "以后日本入管局的邮件一律提醒我",
+        quoteSuperseded: true,
+        quoteLatestMemoryId: "memory-02",
         changes: 2,
         lastUsed: {
           at: "2026-11-11T08:00:00.000Z",
