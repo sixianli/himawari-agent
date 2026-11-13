@@ -154,3 +154,16 @@ import Testing
         #expect(plain.start == nil)
     }
 }
+
+@Suite struct DeviceActionSourceTests {
+    @Test func eachActionNamesThePermissionItNeeds() async {
+        let executor = DeviceActionExecutor(
+            transport: DeviceAPI(http: DeviceHTTPClient()),
+            journal: DeviceActionJournal(store: MemoryLocalStore()),
+            handlers: [NoteFileActions(file: FileManager.default.temporaryDirectory.appendingPathComponent("unused-notes"))]
+        )
+        let ids = await executor.permissionIds()
+        #expect(ids == ["test.note.append": "notes", "test.note.touch": "notes", "test.note.v2": "notes"])
+        #expect(ids["calendar.delete"] == nil)
+    }
+}

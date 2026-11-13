@@ -19,6 +19,7 @@ public final class DeviceActionsModel {
     public internal(set) var recent: [DeviceActionView] = []
     public internal(set) var policy: DevicePolicyView?
     public internal(set) var permissions: [PermissionState] = []
+    public internal(set) var sourceNames: [String: String] = [:]
     public internal(set) var approvalsAvailable = true
     public internal(set) var busy: Set<String> = []
     public internal(set) var problem: String?
@@ -39,7 +40,7 @@ public final class DeviceActionsModel {
         self.store = store
     }
 
-    init(pending: [PendingApproval], handled: [PendingApproval], recent: [DeviceActionView], policy: DevicePolicyView?, permissions: [PermissionState]) {
+    init(pending: [PendingApproval], handled: [PendingApproval], recent: [DeviceActionView], policy: DevicePolicyView?, permissions: [PermissionState], sourceNames: [String: String] = [:]) {
         api = nil
         executor = nil
         confirm = nil
@@ -49,9 +50,14 @@ public final class DeviceActionsModel {
         self.recent = recent
         self.policy = policy
         self.permissions = permissions
+        self.sourceNames = sourceNames
     }
 
     public var waitingCount: Int { pending.count }
+
+    public func source(of approval: PendingApproval) -> String? {
+        sourceNames[approval.intent.operation]
+    }
 
     public func deviceActionsChanged() {
         guard let executor else { return }
@@ -100,6 +106,8 @@ public final class DeviceActionsModel {
             ))
         }
         permissions = states
+        let names = Dictionary(uniqueKeysWithValues: states.map { ($0.id, $0.name) })
+        sourceNames = await executor.permissionIds().compactMapValues { names[$0] }
     }
 
     public func request(_ permissionId: String) async {

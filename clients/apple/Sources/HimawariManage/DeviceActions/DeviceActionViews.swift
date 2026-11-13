@@ -7,21 +7,14 @@ import SwiftUI
 
 struct ApprovalCard: View {
     let approval: PendingApproval
-    let kicker: Bool
     let busy: Bool
     let open: () -> Void
     let respond: (Bool) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Button(action: open) {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    if kicker {
-                        Text(L.text("approval.title"))
-                            .hmType(DesignTokens.TypeScale.caption)
-                            .foregroundStyle(Color.hmDanger)
-                            .padding(.bottom, 2)
-                    }
                     Text(approval.title)
                         .hmType(DesignTokens.TypeScale.navTitle)
                         .foregroundStyle(Color.hmText)
@@ -35,12 +28,10 @@ struct ApprovalCard: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
+                    .foregroundStyle(Color.hmMuted)
             }
-            .buttonStyle(.plain)
             HStack(spacing: 8) {
-                Button(L.text("approval.open"), action: open)
-                    .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pill))
                 Button(ApprovalWords.decline(approval)) { respond(false) }
                     .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pill))
                 Button(ApprovalWords.confirm(approval)) { respond(true) }
@@ -50,6 +41,56 @@ struct ApprovalCard: View {
             .opacity(busy ? 0.5 : 1)
         }
         .himawariCard(padding: EdgeInsets(top: 18, leading: 18, bottom: 18, trailing: 18))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: open)
+        .accessibilityAction(named: Text(L.text("approval.open")), open)
+    }
+}
+
+struct ApprovalRow: View {
+    let approval: PendingApproval
+    let busy: Bool
+    let open: () -> Void
+    let respond: (Bool) -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Icon(.handStop, size: DesignTokens.IconSize.todayRow)
+                .foregroundStyle(Color.hmSun)
+                .frame(height: DesignTokens.TypeScale.body.lineHeight)
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(approval.title)
+                        .hmType(DesignTokens.TypeScale.navTitle)
+                        .foregroundStyle(Color.hmText)
+                        .multilineTextAlignment(.leading)
+                    if let body = approval.display?.bodyPreview, !body.isEmpty {
+                        Text(body)
+                            .hmType(DesignTokens.TypeScale.caption)
+                            .foregroundStyle(Color.hmMuted)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+                HStack(spacing: 6) {
+                    Text(L.text("approval.title"))
+                        .hmType(DesignTokens.TypeScale.caption)
+                        .foregroundStyle(Color.hmSun)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button(ApprovalWords.decline(approval)) { respond(false) }
+                        .buttonStyle(RowPillButtonStyle(filled: false))
+                    Button(ApprovalWords.confirm(approval)) { respond(true) }
+                        .buttonStyle(RowPillButtonStyle(filled: true))
+                }
+                .disabled(busy)
+                .opacity(busy ? 0.5 : 1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 14)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: open)
+        .accessibilityAction(named: Text(L.text("approval.open")), open)
     }
 }
 
@@ -70,28 +111,28 @@ struct DeviceActionResultRow: View {
 
     var body: some View {
         let kind = DeviceActionResultKind(view)
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: 12) {
             icon(kind)
-                .frame(width: DesignTokens.IconSize.listRow, height: DesignTokens.IconSize.listRow)
-            VStack(alignment: .leading, spacing: 4) {
+                .frame(width: DesignTokens.IconSize.todayRow, height: DesignTokens.TypeScale.secondary.lineHeight)
+            VStack(alignment: .leading, spacing: 2) {
                 Text(L.text(Self.headline(kind)))
-                    .hmType(DesignTokens.TypeScale.navTitle)
+                    .hmType(DesignTokens.TypeScale.rowAction)
                     .foregroundStyle(Color.hmText)
-                Text(view.detail.localized())
-                    .hmType(DesignTokens.TypeScale.secondary)
+                Text(Self.description(view, kind))
+                    .hmType(DesignTokens.TypeScale.caption)
                     .foregroundStyle(Color.hmMuted)
                     .multilineTextAlignment(.leading)
-                if kind == .notDone, let reason = view.reason, !reason.isEmpty {
-                    Text(reason)
-                        .hmType(DesignTokens.TypeScale.caption)
-                        .foregroundStyle(Color.hmMuted)
-                        .multilineTextAlignment(.leading)
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 16)
+        .padding(.vertical, 14)
         .accessibilityElement(children: .combine)
+    }
+
+    static func description(_ view: DeviceActionView, _ kind: DeviceActionResultKind) -> String {
+        let detail = view.detail.localized()
+        guard kind == .notDone, let reason = view.reason, !reason.isEmpty else { return detail }
+        return L.format("result.withReason", detail, reason)
     }
 
     static func headline(_ kind: DeviceActionResultKind) -> String {
@@ -107,11 +148,11 @@ struct DeviceActionResultRow: View {
     @ViewBuilder
     private func icon(_ kind: DeviceActionResultKind) -> some View {
         switch kind {
-        case .done: Icon(.circleCheck, size: DesignTokens.IconSize.listRow).foregroundStyle(Color.hmSuccess)
-        case .notDone: Icon(.alertCircle, size: DesignTokens.IconSize.listRow).foregroundStyle(Color.hmDanger)
+        case .done: Icon(.circleCheck, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmSuccess)
+        case .notDone: Icon(.alertCircle, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmDanger)
         case .checking: ProgressView().tint(Color.hmMuted)
-        case .waiting: Icon(.handStop, size: DesignTokens.IconSize.listRow).foregroundStyle(Color.hmSun)
-        case .other: Icon(.deviceMobile, size: DesignTokens.IconSize.listRow).foregroundStyle(Color.hmMuted)
+        case .waiting: Icon(.handStop, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmSun)
+        case .other: Icon(.deviceMobile, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmMuted)
         }
     }
 }
@@ -128,10 +169,16 @@ public struct TodayDeviceActionsCard: View {
     public var body: some View {
         let results = model.recent.filter { $0.state != .waitingOwner }
         VStack(spacing: 12) {
-            ForEach(model.pending) { approval in
-                ApprovalCard(approval: approval, kicker: true, busy: model.busy.contains(approval.id), open: { openApproval(approval) }) { approved in
-                    Task { await model.respond(approval, approved: approved) }
+            if !model.pending.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(model.pending.enumerated()), id: \.element.id) { index, approval in
+                        ApprovalRow(approval: approval, busy: model.busy.contains(approval.id), open: { openApproval(approval) }) { approved in
+                            Task { await model.respond(approval, approved: approved) }
+                        }
+                        if index < model.pending.count - 1 { RowSeparator() }
+                    }
                 }
+                .himawariCard(padding: EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 14))
             }
             if !results.isEmpty {
                 VStack(spacing: 0) {
@@ -140,7 +187,7 @@ public struct TodayDeviceActionsCard: View {
                         if index < results.count - 1 { RowSeparator() }
                     }
                 }
-                .himawariCard(padding: EdgeInsets(top: 0, leading: 18, bottom: 0, trailing: 18))
+                .himawariCard(padding: EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 14))
             }
         }
     }
@@ -195,19 +242,21 @@ struct SegmentPicker: View {
 
 public struct ApprovalsView: View {
     let model: DeviceActionsModel
+    let openThread: ((String) -> Void)?
     let close: () -> Void
     @State private var segment = 0
     @State private var opened: PendingApproval?
 
-    public init(model: DeviceActionsModel, close: @escaping () -> Void) {
+    public init(model: DeviceActionsModel, openThread: ((String) -> Void)? = nil, close: @escaping () -> Void) {
         self.model = model
+        self.openThread = openThread
         self.close = close
     }
 
     public var body: some View {
         ZStack {
             if let opened {
-                ApprovalDetailView(model: model, approval: opened) { withAnimation(.snappy) { self.opened = nil } }
+                ApprovalDetailView(model: model, approval: opened, openThread: openThread) { withAnimation(.snappy) { self.opened = nil } }
                     .transition(.move(edge: .trailing))
             } else {
                 list.transition(.opacity)
@@ -236,7 +285,7 @@ public struct ApprovalsView: View {
                                 .frame(minHeight: DesignTokens.Size.emptyMinHeight)
                         }
                         ForEach(model.pending) { approval in
-                            ApprovalCard(approval: approval, kicker: false, busy: model.busy.contains(approval.id), open: { open(approval) }) { approved in
+                            ApprovalCard(approval: approval, busy: model.busy.contains(approval.id), open: { open(approval) }) { approved in
                                 Task { await model.respond(approval, approved: approved) }
                             }
                         }
@@ -293,11 +342,13 @@ public struct ApprovalsView: View {
 public struct ApprovalDetailView: View {
     let model: DeviceActionsModel
     let approval: PendingApproval
+    let openThread: ((String) -> Void)?
     let back: () -> Void
 
-    public init(model: DeviceActionsModel, approval: PendingApproval, back: @escaping () -> Void) {
+    public init(model: DeviceActionsModel, approval: PendingApproval, openThread: ((String) -> Void)? = nil, back: @escaping () -> Void) {
         self.model = model
         self.approval = approval
+        self.openThread = openThread
         self.back = back
     }
 
@@ -305,22 +356,17 @@ public struct ApprovalDetailView: View {
         VStack(alignment: .leading, spacing: 16) {
             NavigationHeader(title: Text(""), back: back)
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 20) {
                     Text(approval.title)
                         .hmType(DesignTokens.TypeScale.emptyTitle)
                         .foregroundStyle(Color.hmText)
-                    if let body = approval.display?.bodyPreview {
-                        Text(body)
-                            .hmType(DesignTokens.TypeScale.body)
-                            .foregroundStyle(Color.hmText)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .himawariCard()
-                    }
+                        .padding(.horizontal, 4)
+                    content
                     VStack(spacing: 0) {
                         reasonRow
                         if let origin = approval.display?.origin {
                             RowSeparator()
-                            infoRow(L.text("approval.from"), origin.threadTitle.map { L.format("approval.from.thread", $0) } ?? L.text("approval.from.unnamed"))
+                            originRow(origin)
                         }
                     }
                     .himawariCard(padding: EdgeInsets(top: 0, leading: 18, bottom: 0, trailing: 18))
@@ -329,7 +375,7 @@ public struct ApprovalDetailView: View {
             }
             .scrollIndicators(.hidden)
             if approval.status == ApprovalStatus.pending.rawValue && model.pending.contains(where: { $0.id == approval.id }) {
-                HStack(spacing: 12) {
+                HStack(spacing: 8) {
                     Button(ApprovalWords.decline(approval)) { decide(false) }
                         .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pillBig))
                     Button(ApprovalWords.confirm(approval)) { decide(true) }
@@ -343,22 +389,65 @@ public struct ApprovalDetailView: View {
         .himawariScreenBackground()
     }
 
+    @ViewBuilder
+    private var content: some View {
+        let source = model.source(of: approval)
+        let body = approval.display?.bodyPreview
+        if source != nil || body != nil {
+            VStack(alignment: .leading, spacing: 10) {
+                if let source {
+                    Text(source)
+                        .hmType(DesignTokens.TypeScale.caption)
+                        .foregroundStyle(Color.hmMuted)
+                }
+                if let body {
+                    Text(body)
+                        .hmType(DesignTokens.TypeScale.body)
+                        .foregroundStyle(Color.hmText)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .himawariCard(padding: EdgeInsets(top: 18, leading: 20, bottom: 18, trailing: 20))
+        }
+    }
+
     private var reasonRow: some View {
         let because = approval.display?.askedBecause
         let text = because?.ruleText.map { L.format("approval.why.rule", $0) } ?? L.text("approval.why.noRule")
-        return infoRow(L.text("approval.why"), text)
+        return infoRow(L.text("approval.why"), text, chevron: false)
     }
 
-    private func infoRow(_ title: String, _ detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .hmType(DesignTokens.TypeScale.body)
-                .foregroundStyle(Color.hmText)
-            Text(detail)
-                .hmType(DesignTokens.TypeScale.caption)
-                .foregroundStyle(Color.hmMuted)
+    @ViewBuilder
+    private func originRow(_ origin: PendingApproval.Origin) -> some View {
+        let text = origin.threadTitle.map { L.format("approval.from.thread", $0) } ?? L.text("approval.from.unnamed")
+        if let openThread {
+            Button { openThread(origin.threadId) } label: {
+                infoRow(L.text("approval.from"), text, chevron: true)
+            }
+            .buttonStyle(.plain)
+        } else {
+            infoRow(L.text("approval.from"), text, chevron: false)
         }
-        .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.rowMinHeight, alignment: .leading)
+    }
+
+    private func infoRow(_ title: String, _ detail: String, chevron: Bool) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .hmType(DesignTokens.TypeScale.body)
+                    .foregroundStyle(Color.hmText)
+                Text(detail)
+                    .hmType(DesignTokens.TypeScale.caption)
+                    .foregroundStyle(Color.hmMuted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if chevron {
+                Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
+                    .foregroundStyle(Color.hmMuted)
+            }
+        }
+        .frame(minHeight: DesignTokens.Size.rowMinHeight)
+        .contentShape(Rectangle())
     }
 
     private func decide(_ approved: Bool) {
@@ -366,6 +455,91 @@ public struct ApprovalDetailView: View {
             await model.respond(approval, approved: approved)
             back()
         }
+    }
+}
+
+public struct ThisDevice: Equatable, Sendable {
+    public enum Link: String, Equatable, Sendable {
+        case online
+        case connecting
+        case offline
+    }
+
+    public let name: String
+    public let link: Link
+    public let pairedAt: Date?
+    public let version: String
+
+    public static var title: String {
+        #if os(macOS)
+        L.text("device.this.mac")
+        #else
+        L.text("device.this.iphone")
+        #endif
+    }
+
+    public static func version(_ short: String, channel: String) -> String {
+        L.format("device.version.value", short, L.text("device.channel.\(channel)"))
+    }
+
+    public init(name: String, link: Link, pairedAt: Date?, version: String) {
+        self.name = name
+        self.link = link
+        self.pairedAt = pairedAt
+        self.version = version
+    }
+}
+
+public struct ThisDeviceView: View {
+    let device: ThisDevice
+    let model: DeviceActionsModel
+    let back: () -> Void
+
+    public init(device: ThisDevice, model: DeviceActionsModel, back: @escaping () -> Void) {
+        self.device = device
+        self.model = model
+        self.back = back
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            NavigationHeader(title: Text(ThisDevice.title), back: back)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    GroupedSection {
+                        valueRow(L.text("device.name"), Text(device.name))
+                        RowSeparator()
+                        valueRow(L.text("device.link"), Text(L.text("device.link.\(device.link.rawValue)")), color: device.link == .online ? Color.hmSuccess : Color.hmMuted)
+                        if let pairedAt = device.pairedAt {
+                            RowSeparator()
+                            valueRow(L.text("device.pairedAt"), Text(pairedAt, format: .dateTime.month().day()))
+                        }
+                        RowSeparator()
+                        valueRow(L.text("device.version"), Text(device.version))
+                    }
+                    DeviceAbilitiesSection(model: model)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 40)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .himawariScreenBackground()
+    }
+
+    private func valueRow(_ title: String, _ value: Text, color: Color = Color.hmMuted) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .hmType(DesignTokens.TypeScale.body)
+                .foregroundStyle(Color.hmText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            value
+                .hmType(DesignTokens.TypeScale.body)
+                .foregroundStyle(color)
+                .lineLimit(1)
+        }
+        .frame(minHeight: DesignTokens.Size.rowMinHeight)
     }
 }
 
@@ -378,7 +552,7 @@ public struct DeviceAbilitiesSection: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 22) {
             if let policy = model.policy, !policy.actions.isEmpty {
                 GroupedSection(Text(L.text("abilities.title"))) {
                     ForEach(Array(policy.actions.enumerated()), id: \.element.id) { index, entry in
@@ -438,9 +612,13 @@ public struct PermissionPrimerView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 18) {
+            GlassCircleButton(Text(L.text("common.close")), action: close) {
+                Icon(.x, size: DesignTokens.IconSize.glassButton)
+            }
             Text(L.format("permission.title", permission.name))
-                .hmType(DesignTokens.TypeScale.sheetTitle)
+                .hmType(DesignTokens.TypeScale.emptyTitle)
                 .foregroundStyle(Color.hmText)
+                .padding(.top, 6)
             Text(permission.purpose)
                 .hmType(DesignTokens.TypeScale.body)
                 .foregroundStyle(Color.hmText)

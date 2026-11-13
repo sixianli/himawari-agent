@@ -12,7 +12,8 @@ public extension DeviceActionsModel {
             handled: DeviceActionsDemo.handled,
             recent: DeviceActionsDemo.recent,
             policy: DeviceActionsDemo.policy,
-            permissions: DeviceActionsDemo.permissions
+            permissions: DeviceActionsDemo.permissions,
+            sourceNames: DeviceActionsDemo.sourceNames
         )
     }
 
@@ -89,6 +90,15 @@ enum DeviceActionsDemo {
       {"name":"alarm.set","allowed":true,"title":{"zh-CN":"定闹钟","en":"Set alarms","ja":"アラームをセット"}}
     ]}
     """)
+
+    static let sourceNames: [String: String] = [
+        "alarm.set": "闹钟",
+        "calendar.create": "日历",
+        "calendar.delete": "日历",
+        "device_reminder.create": "提醒事项",
+        "contact.update": "通讯录",
+        "home.control": "家庭",
+    ]
 
     static let permissions: [PermissionState] = [
         PermissionState(id: "calendar", name: "日历", purpose: "Himawari 替你在日历里加事、改时间、删掉取消的安排。做之前会先读一遍，做完再读回来确认真的改好了。", settingsPath: "“设置 › 隐私与安全性 › 日历”", status: .notDetermined),

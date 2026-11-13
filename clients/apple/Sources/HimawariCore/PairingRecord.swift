@@ -6,13 +6,15 @@ public struct PairingRecord: Codable, Sendable, Equatable {
     public let access: ServiceAccessToken?
     public var status: PairedDeviceStatus
     public let pairingNumber: String
+    public let pairedAt: Date?
 
-    public init(origin: URL, deviceId: String, access: ServiceAccessToken?, status: PairedDeviceStatus, pairingNumber: String) {
+    public init(origin: URL, deviceId: String, access: ServiceAccessToken?, status: PairedDeviceStatus, pairingNumber: String, pairedAt: Date? = nil) {
         self.origin = origin
         self.deviceId = deviceId
         self.access = access
         self.status = status
         self.pairingNumber = pairingNumber
+        self.pairedAt = pairedAt
     }
 }
 

@@ -46,6 +46,10 @@ public actor DeviceActionExecutor {
         return Array(Set(names)).sorted()
     }
 
+    public func permissionIds() -> [String: String] {
+        handlers.mapValues(\.permission.id)
+    }
+
     public func permissions() -> [DevicePermission] {
         var seen = Set<String>()
         return allHandlers.map(\.permission).filter { seen.insert($0.id).inserted }

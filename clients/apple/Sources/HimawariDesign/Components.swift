@@ -53,6 +53,27 @@ public struct CapsuleButtonStyle: ButtonStyle {
     }
 }
 
+public struct RowPillButtonStyle: ButtonStyle {
+    private let filled: Bool
+
+    public init(filled: Bool) {
+        self.filled = filled
+    }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .hmType(filled ? DesignTokens.TypeScale.rowAction : DesignTokens.TypeScale.secondary)
+            .foregroundStyle(filled ? Color.hmText : Color.hmMuted)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 14)
+            .frame(minHeight: DesignTokens.Size.pillSmall)
+            .background(filled ? Color.hmFillStrong : Color.clear, in: Capsule())
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .contentShape(Capsule())
+    }
+}
+
 public struct GlassCircleButton<Leading: View>: View {
     private let label: Text
     private let size: CGFloat
@@ -150,7 +171,7 @@ public struct ToggleRow<Leading: View>: View {
                 }
             }
         }
-        .tint(Color.hmSunBright)
+        .tint(Color.hmSuccess)
         .frame(minHeight: DesignTokens.Size.rowMinHeight)
     }
 }

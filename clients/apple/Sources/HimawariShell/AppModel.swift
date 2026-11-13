@@ -24,11 +24,13 @@ public final class AppModel {
     public private(set) var chat: ChatStore?
     public private(set) var actions: DeviceActionsModel?
     public private(set) var configuration: DeviceConfiguration?
+    public private(set) var pairedAt: Date?
 
     @ObservationIgnored public let api: DeviceAPI
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel
+    @ObservationIgnored private let shortVersion: String
     @ObservationIgnored private var store: FileLocalStore?
     @ObservationIgnored private var waiting: Task<Void, Never>?
     @ObservationIgnored private let heartbeat = HeartbeatSetting()
@@ -48,6 +50,7 @@ public final class AppModel {
         keychain = KeychainValueStore(service: service)
         let channel = bundle.object(forInfoDictionaryKey: "HimawariReleaseChannel") as? String
         releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)) ?? .direct
+        shortVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
         api = DeviceAPI(http: DeviceHTTPClient())
         if restoring { restore() }
     }
@@ -87,6 +90,7 @@ public final class AppModel {
     }
 
     private func use(_ record: PairingRecord) {
+        pairedAt = record.pairedAt
         api.http.use(DeviceCredentials(origin: record.origin, deviceId: record.deviceId, access: record.access, deviceKey: keys.signer(.device)))
     }
 
@@ -164,7 +168,7 @@ public final class AppModel {
                     throw DeviceAPIError.invalidResponse
                 }
                 let number = PairingNumber.display(devicePublicKey: devicePublicKey, confirmPublicKey: confirmPublicKey)
-                let record = PairingRecord(origin: invitation.origin, deviceId: device.id, access: invitation.access, status: device.status, pairingNumber: number)
+                let record = PairingRecord(origin: invitation.origin, deviceId: device.id, access: invitation.access, status: device.status, pairingNumber: number, pairedAt: Date())
                 try save(record)
                 use(record)
                 if device.status == .active {
@@ -341,12 +345,17 @@ public final class AppModel {
         configurationRetry = nil
         let emptied = emptyStore()
         configuration = nil
+        pairedAt = nil
         store = nil
         try? keys.delete(.device)
         try? keys.delete(.confirm)
         try? save(nil)
         api.http.use(nil)
         phase = .unpaired(ForgetOutcome.problem(wanted: problem, storeEmptied: emptied))
+    }
+
+    public var versionLine: String {
+        ThisDevice.version(shortVersion, channel: releaseChannel.rawValue)
     }
 
     static var deviceName: String {

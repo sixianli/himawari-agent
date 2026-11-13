@@ -89,15 +89,29 @@ struct MainTabsView: View {
             }
         }
         .fullScreenCover(isPresented: $settingsOpen) {
-            SettingsRootView(api: model.api, actions: actions) { settingsOpen = false }
+            SettingsRootView(actions: actions, device: thisDevice, openThread: { threadId in
+                settingsOpen = false
+                withAnimation(.snappy) { openThread = OpenThread(threadId: threadId) }
+            }) { settingsOpen = false }
         }
+    }
+
+    private var thisDevice: ThisDevice {
+        let link: ThisDevice.Link = switch chat.connection {
+        case .online: .online
+        case .connecting: .connecting
+        case .offline: .offline
+        }
+        return ThisDevice(name: AppModel.deviceName, link: link, pairedAt: model.pairedAt, version: model.versionLine)
     }
 
     @ViewBuilder
     private var content: some View {
         switch tab {
         case .today:
-            TodayView(actions: actions) { settingsOpen = true }
+            TodayView(actions: actions, openSettings: { settingsOpen = true }) { threadId in
+                withAnimation(.snappy) { openThread = OpenThread(threadId: threadId) }
+            }
         case .chats:
             ChatListView(store: chat) { threadId in
                 withAnimation(.snappy) { openThread = OpenThread(threadId: threadId) }
@@ -137,12 +151,13 @@ struct MainTabsView: View {
 struct TodayView: View {
     let actions: DeviceActionsModel
     let openSettings: () -> Void
+    let openThread: (String) -> Void
     @State private var opened: PendingApproval?
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             if let opened {
-                ApprovalDetailView(model: actions, approval: opened) { withAnimation(.snappy) { self.opened = nil } }
+                ApprovalDetailView(model: actions, approval: opened, openThread: openThread) { withAnimation(.snappy) { self.opened = nil } }
                     .transition(.move(edge: .trailing))
                     .zIndex(1)
             }

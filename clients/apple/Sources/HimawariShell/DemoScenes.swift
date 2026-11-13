@@ -39,6 +39,12 @@ enum DemoScene: String, CaseIterable {
     static let argument = "-HimawariDemoScene"
     static let demoHost = "himawari.example.com"
     static let shownMarker = "himawari-demo-scene-shown"
+    static let thisDevice = ThisDevice(
+        name: "我的 iPhone",
+        link: .online,
+        pairedAt: DemoChatFixtures.now.addingTimeInterval(-11 * 86_400),
+        version: ThisDevice.version("1.0", channel: ReleaseChannel.direct.rawValue)
+    )
 
     static var requested: DemoScene? {
         let arguments = ProcessInfo.processInfo.arguments
@@ -87,9 +93,9 @@ struct DemoSceneView: View {
         case .actionsDetailFace:
             approvalDetail(at: 1)
         case .actionsApprovals:
-            ApprovalsView(model: .demo()) {}
+            ApprovalsView(model: .demo(), openThread: { _ in }) {}
         case .actionsAbilities:
-            SettingsRootView(api: AppModel.demo(.active).api, actions: .demo()) {}
+            ThisDeviceView(device: DemoScene.thisDevice, model: .demo()) {}
         case .actionsPrimer:
             PermissionPrimerView(permission: DeviceActionsModel.demoPermission, ask: {}, close: {})
                 .himawariScreenBackground()
@@ -138,7 +144,7 @@ struct DemoSceneView: View {
 
     private func approvalDetail(at index: Int) -> some View {
         let actions = DeviceActionsModel.demo()
-        return ApprovalDetailView(model: actions, approval: actions.pending[index]) {}
+        return ApprovalDetailView(model: actions, approval: actions.pending[index], openThread: { _ in }) {}
     }
 
     private func chat(_ state: DemoChatState) -> some View {
