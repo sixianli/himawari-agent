@@ -304,15 +304,20 @@
     "changedIn": "ADR 0219",
     "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
   },
+  "eval.real-memory.leak-judge": {
+    "sha256": "28918cd7f5c42b965548321deb7f78a7f882af0bcb2bcf5751bebec1a1905c02",
+    "changedIn": "ADR 0249",
+    "reason": "新增：评测出题后判断题干有没有透露答案，取代日期数字词表"
+  },
   "eval.real-memory.question": {
     "sha256": "bd9ec88d02e4d3c4b6f21b5dab89941946a27e7727395de39d6489a43a1e2fd8",
     "changedIn": "ADR 0219",
     "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
   },
   "mail.judgment": {
-    "sha256": "6828d0988462d4e491a4b7036b8a1f0fc3985ec859ddf79d6a2d10fdedc55f99",
-    "changedIn": "HR-2",
-    "reason": "邮件判断可选写主金额 amount（value、currency、confidence），供主人的金额规则使用；追加在固定文字末尾，不改前面的字节",
+    "sha256": "c767cda2aae0c4a1ab7766043e35e2fda02ef76a079d4fd9004767e543189f77",
+    "changedIn": "ADR 0248",
+    "reason": "每封邮件（含 ignore）多写 money=yes/no，供涉钱地板规则读取；只在后台邮件判断调用里，不属于对话请求开头",
     "emphasis": {
       "kind": "deferred",
       "batch": "第 3 批 W-06、W-11/W-19",
@@ -343,6 +348,11 @@
     "sha256": "72da4d7216f9b1ee3fe8dd3258d4e3f8882c900d814c4f8fc3e0035a0ae3ac16",
     "changedIn": "ADR 0179",
     "reason": "新增：邮件判断里有待确认记忆时，说明它们只是线索，不是事实"
+  },
+  "mail.reference-extraction": {
+    "sha256": "d2b0bb030eb725e1aa8169f3d92d12db31008af3a84db135787563fda757ab51",
+    "changedIn": "ADR 0249",
+    "reason": "新增：从新邮件里抽取订单号等单号，取代关键词正则"
   },
   "mcp.find-memories": {
     "sha256": "b237866524c80554f6c6b7196603727f09c43dd92f6e05fe7ea57f173a916fa6",
@@ -562,6 +572,11 @@
       ],
       "reason": "解析函数的硬要求：非 create 的候选没有有效的 existingMemoryId 整条作废；非 unchanged、非 restricted 的候选 quote 对不上原话会被拒。“unchanged 也要填”是给模型的统一要求，代码对 unchanged 和 restricted 不拦"
     }
+  },
+  "memory.confirmation-judge": {
+    "sha256": "34cc58d299f3339aa04ce8615462b94478c0393c43191021d05ed7f592b65732",
+    "changedIn": "ADR 0249",
+    "reason": "新增：判断主人原话是否确认待确认规矩的裁判提示词"
   },
   "memory.consolidation": {
     "sha256": "94e2bac81138bc9b4b4c30556d3a29a9b0dc7be2c5dee422a3d905b2f6fab83d",
