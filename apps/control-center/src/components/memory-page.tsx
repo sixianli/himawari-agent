@@ -2,7 +2,6 @@ import {
   MEMORY_CATEGORY_NAMES,
   MEMORY_SENSITIVE_CATEGORY_NAMES,
 } from "@himawari-agent/gateway-contracts";
-import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { requestChatExport, requestDataExport } from "../data-export.js";
 import { DEFAULT_UI_LOCALE, useLocaleFormat } from "../i18n/locale-format.js";
@@ -17,7 +16,7 @@ import {
   stanceChart,
 } from "../memory-history.js";
 import {
-  guessCategory,
+  applyImportClassifications,
   type ImportCandidate,
   type ImportParse,
   type MemoryCategory,
@@ -1990,10 +1989,17 @@ function ImportPanel({
   const existing = (memory.overview?.memories ?? [])
     .filter((item) => item.status !== "trashed")
     .map((item) => item.text);
+  const round = useRef(0);
   const load = (parsed: readonly ImportParse[]) => {
     const all = parsed.flatMap((entry) => entry.items).slice(0, MAXIMUM_IMPORT_ITEMS);
+    const current = ++round.current;
     setItems(all);
     setError(all.length ? "" : message("memory.page.importEmpty"));
+    const waiting = all.filter((item) => item.status === "classifying").map((item) => item.text);
+    if (!waiting.length) return;
+    void memory.classify(waiting).then((results) => {
+      if (round.current === current) setItems(applyImportClassifications(all, results));
+    });
   };
   const read = (files: FileList | null, parse: (name: string, text: string) => ImportParse) => {
     const list = [...(files ?? [])];
@@ -2006,12 +2012,14 @@ function ImportPanel({
       .catch(() => setError(message("memory.page.importUnreadable")));
   };
   const reset = () => {
+    round.current += 1;
     setSource(null);
     setItems([]);
     setError("");
     setPasted("");
   };
   const chosen = items.filter((item) => item.checked);
+  const classifying = items.some((item) => item.status === "classifying");
   const prompt = message("memory.page.aiPrompt");
   return (
     <section className="memory-card memory-import" ref={reveal}>
@@ -2036,7 +2044,7 @@ function ImportPanel({
                   <input
                     type="checkbox"
                     checked={item.checked}
-                    disabled={item.duplicate}
+                    disabled={item.duplicate || item.status === "classifying"}
                     onChange={() =>
                       setItems(
                         items.map((entry, position) =>
@@ -2052,14 +2060,21 @@ function ImportPanel({
                         {message("memory.cat", { c: item.category })}
                         {item.subCategory ? ` · ${item.subCategory}` : ""}
                       </span>
-                      {item.sensitive || item.duplicate || item.coding ? (
+                      {item.sensitive ||
+                      item.duplicate ||
+                      item.coding ||
+                      item.status === "classifying" ? (
                         <span className="memory-tag" data-kind="sensitive">
                           {message("memory.page.importFlag", {
                             f: item.duplicate
                               ? "duplicate"
-                              : item.sensitive
-                                ? "sensitive"
-                                : "coding",
+                              : item.status === "classifying"
+                                ? "classifying"
+                                : item.status === "unclassified"
+                                  ? "unclassified"
+                                  : item.sensitive
+                                    ? "sensitive"
+                                    : "coding",
                           })}
                         </span>
                       ) : null}
@@ -2072,7 +2087,7 @@ function ImportPanel({
           </ul>
           <div className="actions">
             <ActionButton
-              disabled={memory.busy || !chosen.length || !source}
+              disabled={memory.busy || classifying || !chosen.length || !source}
               onClick={() =>
                 source &&
                 void memory.importCommit(source, chosen).then((ok) => {
@@ -2307,23 +2322,20 @@ function AddForm({
   const [text, setText] = useState("");
   const [picked, setPicked] = useState<MemoryCategory | null>(null);
   const [pinned, setPinned] = useState(false);
-  const category = picked ?? guessCategory(text).category;
-  const sensitive =
-    category === "health" ||
-    category === "finance" ||
-    classificationWithIdentifiers(text, "private") === "sensitive";
-  const pinnable = PINNABLE.has(category);
+  const pinnable = picked === null || PINNABLE.has(picked);
   const save = () =>
-    void memory.create(text.trim(), category, sensitive, pinned && pinnable).then((ok) => {
-      if (!ok) return;
-      notify({
-        text: message("memory.page.added", {
-          cat: message("memory.cat", { c: category }),
-          pinned: String(pinned && pinnable),
-        }),
+    void memory
+      .create(text.trim(), picked, (category) => pinned && PINNABLE.has(category))
+      .then((category) => {
+        if (category === null) return;
+        notify({
+          text: message("memory.page.added", {
+            cat: message("memory.cat", { c: category }),
+            pinned: String(pinned && PINNABLE.has(category)),
+          }),
+        });
+        onDone();
       });
-      onDone();
-    });
   return (
     <section className="memory-card" data-kind="add">
       <strong>{message("memory.page.addTitle")}</strong>
@@ -2339,9 +2351,16 @@ function AddForm({
           <label>
             {message("memory.page.topic")}
             <select
-              value={category}
-              onChange={(event) => setPicked(event.currentTarget.value as MemoryCategory)}
+              value={picked ?? ""}
+              onChange={(event) =>
+                setPicked(
+                  event.currentTarget.value === ""
+                    ? null
+                    : (event.currentTarget.value as MemoryCategory),
+                )
+              }
             >
+              <option value="">{message("memory.page.autoCategory")}</option>
               {MEMORY_CATEGORY_NAMES.map((key) => (
                 <option key={key} value={key}>
                   {message("memory.cat", { c: key })}

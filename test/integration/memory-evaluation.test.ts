@@ -6,6 +6,7 @@ import {
   DurableMemoryService,
   embeddingQueryText,
   type MemoryCategory,
+  type MemoryTimeScope,
   QWEN3_EMBEDDING_8B_PROFILE,
 } from "@himawari-agent/application";
 import {
@@ -20,7 +21,7 @@ import {
   HybridMemoryProvider,
   indexTerms,
   MemoryEpisodeService,
-  parseTimeScope,
+  requestedTimeScope,
 } from "@himawari-agent/memory-engine";
 import {
   applyMigrations,
@@ -90,6 +91,22 @@ const PHASE_TWO_QUESTIONS = dataset.questions.filter(({ phase }) => phase === 2)
 const ABILITIES = [...new Set(PHASE_ONE_QUESTIONS.map(({ ability }) => ability))];
 const PHASE_TWO_ABILITIES = [...new Set(PHASE_TWO_QUESTIONS.map(({ ability }) => ability))];
 const PRESENT_SCOPE = Object.freeze({ includeHistory: false, from: null, to: null });
+const MODEL_SCOPES = JSON.parse(
+  readFileSync(path.join(FIXTURE_ROOT, "model-time-scopes.json"), "utf8"),
+) as {
+  readonly now: string;
+  readonly timeZone: string;
+  readonly scopes: Readonly<
+    Record<string, { from?: string; to?: string; includeHistory?: boolean } | null>
+  >;
+};
+
+function modelScope(question: DatasetQuestion): MemoryTimeScope | undefined {
+  const asked = MODEL_SCOPES.scopes[question.id];
+  return asked
+    ? requestedTimeScope({ ...asked, includeHistory: asked.includeHistory === true }, TIME_ZONE)
+    : undefined;
+}
 
 function float32(half: number): number {
   const sign = half & 0x8000 ? -1 : 1;
@@ -428,7 +445,11 @@ describe("memory retrieval evaluation", () => {
     return { repository, embedder, provider, episodes, episodeIds, instructed };
   }
 
-  async function evaluate(dimensions: number, vectors: ReadonlyMap<string, Float32Array> | null) {
+  async function evaluate(
+    dimensions: number,
+    vectors: ReadonlyMap<string, Float32Array> | null,
+    scopeFor: (question: DatasetQuestion) => MemoryTimeScope | undefined = modelScope,
+  ) {
     const current = await prepare(dimensions, vectors, { supersession: true, episodes: false });
     const phaseOne = await prepare(dimensions, vectors, { supersession: false, episodes: false });
     try {
@@ -442,7 +463,7 @@ describe("memory retrieval evaluation", () => {
       const previous = new Map<string, readonly string[]>();
       const baseline = new Map<string, readonly string[]>();
       for (const question of PHASE_ONE_QUESTIONS) {
-        const search = (resource: typeof current, scope?: typeof PRESENT_SCOPE) =>
+        const search = (resource: typeof current, scope?: MemoryTimeScope) =>
           resource.provider
             .search({
               ownerId: OWNER_ID,
@@ -452,7 +473,7 @@ describe("memory retrieval evaluation", () => {
               ...(scope ? { scope } : {}),
             })
             .then((hits) => hits.map(({ productMemoryId }) => productMemoryId as string));
-        engine.set(question.id, await search(current));
+        engine.set(question.id, await search(current, scopeFor(question)));
         previous.set(question.id, await search(phaseOne, PRESENT_SCOPE));
         const query = await current.embedder.embed(question.query);
         baseline.set(
@@ -490,6 +511,7 @@ describe("memory retrieval evaluation", () => {
   async function evaluatePhaseTwo(
     dimensions: number,
     vectors: ReadonlyMap<string, Float32Array> | null,
+    scopeFor: (question: DatasetQuestion) => MemoryTimeScope | undefined = modelScope,
   ) {
     const current = await prepare(dimensions, vectors, { supersession: true, episodes: true });
     const phaseOne = await prepare(dimensions, vectors, { supersession: false, episodes: false });
@@ -502,7 +524,7 @@ describe("memory retrieval evaluation", () => {
             ownerId: OWNER_ID,
             agentId: AGENT_ID,
             query: question.query,
-            scope: parseTimeScope(question.query, dataset.now, TIME_ZONE),
+            scope: scopeFor(question) ?? null,
             allowedClassifications: ["public", "private"],
             limit: TOP_K,
           });
@@ -513,7 +535,7 @@ describe("memory retrieval evaluation", () => {
           previous.set(question.id, []);
           continue;
         }
-        const search = (resource: typeof current, scope?: typeof PRESENT_SCOPE) =>
+        const search = (resource: typeof current, scope?: MemoryTimeScope) =>
           resource.provider
             .search({
               ownerId: OWNER_ID,
@@ -523,7 +545,7 @@ describe("memory retrieval evaluation", () => {
               ...(scope ? { scope } : {}),
             })
             .then((hits) => hits.map(({ productMemoryId }) => productMemoryId as string));
-        engine.set(question.id, await search(current));
+        engine.set(question.id, await search(current, scopeFor(question)));
         previous.set(question.id, await search(phaseOne, PRESENT_SCOPE));
       }
       return {
@@ -572,6 +594,7 @@ describe("memory retrieval evaluation", () => {
       "temporal",
     ]);
     expect([...PHASE_TWO_ABILITIES].sort()).toEqual(["episode", "history", "time_window"]);
+    expect([MODEL_SCOPES.now, MODEL_SCOPES.timeZone]).toEqual([dataset.now, TIME_ZONE]);
     expect(dataset.memories.length).toBeGreaterThanOrEqual(150);
     expect(PHASE_ONE_QUESTIONS.length).toBeGreaterThanOrEqual(100);
     expect(PHASE_TWO_QUESTIONS.length).toBeGreaterThanOrEqual(30);
@@ -634,5 +657,14 @@ describe("memory retrieval evaluation", () => {
         0.75,
       );
     }
-  }, 120_000);
+    const scoped = await evaluatePhaseTwo(HASH_DIMENSIONS, null);
+    const unscoped = await evaluatePhaseTwo(HASH_DIMENSIONS, null, () => undefined);
+    report["phase-two-without-model-time-scope"] = unscoped.engine;
+    expect(unscoped.engine["time_window"]?.recallAt5 ?? 0).toBeLessThan(
+      (scoped.engine["time_window"]?.recallAt5 ?? 0) - 0.3,
+    );
+    expect(unscoped.engine["history"]?.recallAt5 ?? 0).toBeLessThan(
+      scoped.engine["history"]?.recallAt5 ?? 0,
+    );
+  }, 180_000);
 });

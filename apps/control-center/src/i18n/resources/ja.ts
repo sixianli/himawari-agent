@@ -705,6 +705,7 @@ export const messages = {
     "手動追加とインポートは、会話から最初の記憶ができてから使えます。自動記憶をオンにして、自分のことを一つ話してください（例：「好きな色は青」）。",
   "memory.page.add": "追加",
   "memory.page.addTitle": "Himawari に覚えてほしいこと",
+  "memory.page.autoCategory": "Himawari に任せる",
   "memory.page.addPlaceholder": "例：週末の朝 9 時前は通知しないで",
   "memory.page.added":
     "「{cat}」に記憶しました{pinned, select, true {。今後は毎回の会話に持っていきます} other {}}。違う場合は開いて直せます。",
@@ -790,7 +791,7 @@ export const messages = {
   "memory.page.importAgain": "別の取り込み元",
   "memory.page.importSummary": "{all} 件中 {on} 件を選択",
   "memory.page.importFlag":
-    "{f, select, duplicate {記憶済み} sensitive {機微な情報のため既定でオフ} other {コーディングのメモのため既定でオフ}}",
+    "{f, select, duplicate {記憶済み} classifying {分類中…} unclassified {分類できなかったため非公開・既定でオフ} sensitive {機微な情報のため既定でオフ} other {コーディングのメモのため既定でオフ}}",
   "memory.page.importCommit": "選んだ {count} 件をインポート",
   "memory.page.importDone":
     "{count} 件をインポートしました。タイムラインからまとめて取り消せます。",

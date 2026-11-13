@@ -629,6 +629,7 @@ export const MESSAGE_IDS = [
   "memory.page.notReady",
   "memory.page.add",
   "memory.page.addTitle",
+  "memory.page.autoCategory",
   "memory.page.addPlaceholder",
   "memory.page.added",
   "memory.page.tab",

@@ -655,6 +655,7 @@ export const messages = {
     "要先从对话里记下第一条记忆，才能手动添加和导入。打开自动记忆后，和 Himawari 说一件关于你的事（比如“我最喜欢蓝色”）就可以了。",
   "memory.page.add": "添加",
   "memory.page.addTitle": "让 Himawari 记住一件事",
+  "memory.page.autoCategory": "让 Himawari 判断",
   "memory.page.addPlaceholder": "例如：周末早上 9 点前不要提醒我",
   "memory.page.added":
     "已记住，归到“{cat}”{pinned, select, true {，以后每次对话都会带上} other {}}；分错了可以点开这条修改",
@@ -739,7 +740,7 @@ export const messages = {
   "memory.page.importAgain": "换个来源",
   "memory.page.importSummary": "找到 {all} 条，已勾 {on} 条",
   "memory.page.importFlag":
-    "{f, select, duplicate {已经记着，跳过} sensitive {敏感，默认不导入} other {写代码的经验，默认不导入}}",
+    "{f, select, duplicate {已经记着，跳过} classifying {分类中…} unclassified {分类失败，已先保密，默认不导入} sensitive {敏感，默认不导入} other {写代码的经验，默认不导入}}",
   "memory.page.importCommit": "导入勾选的 {count} 条",
   "memory.page.importDone": "已导入 {count} 条；在时间线里可以整批撤销",
   "memory.page.importEmpty": "没有找到可以导入的内容。确认选对了文件，或贴的是那个 AI 的回答。",
