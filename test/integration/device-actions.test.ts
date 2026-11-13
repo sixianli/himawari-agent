@@ -308,6 +308,7 @@ describe("[iOS-9A] device_action describe is computed from the registry, the dev
           snapshotBefore: false,
           reversible: true,
           untrustedOriginAllowed: true,
+          title: { "zh-CN": "回声", en: "Echo", ja: "エコー" },
           confirmLabel: { "zh-CN": "回声", en: "Echo", ja: "エコー" },
           detail: (args) => ({
             "zh-CN": `回声：${args["word"]}`,
@@ -1070,6 +1071,10 @@ describe("[iOS-9A] every action carries the words for its confirm button", () =>
       expect(() => new DeviceActionRegistry([{ ...base, confirmLabel } as typeof base])).toThrow(
         "DEVICE_ACTION_REGISTRATION_INVALID",
       );
+    for (const title of [undefined, { "zh-CN": "删除日程", en: "", ja: "予定を削除" }])
+      expect(() => new DeviceActionRegistry([{ ...base, title } as typeof base])).toThrow(
+        "DEVICE_ACTION_REGISTRATION_INVALID",
+      );
   });
 });
 
@@ -1081,8 +1086,20 @@ describe("[iOS-9A] each device has its own policy and a revoked device gets noth
     expect((await deviceGet(h, client, "actions/policy")).body).toEqual({
       revision: 0,
       actions: [
-        { name: "device_reminder.create", allowed: true },
-        { name: "home.read", allowed: true },
+        {
+          name: "device_reminder.create",
+          title: {
+            "zh-CN": "在“提醒事项”里新建",
+            en: "Create in Reminders",
+            ja: "「リマインダー」に作成",
+          },
+          allowed: true,
+        },
+        {
+          name: "home.read",
+          title: { "zh-CN": "读取家居状态", en: "Read home state", ja: "家の状態を読む" },
+          allowed: true,
+        },
       ],
     });
     const unsigned = await changePolicy(
@@ -1115,8 +1132,8 @@ describe("[iOS-9A] each device has its own policy and a revoked device gets noth
       {
         revision: 1,
         actions: [
-          { name: "device_reminder.create", allowed: true },
-          { name: "home.read", allowed: false },
+          expect.objectContaining({ name: "device_reminder.create", allowed: true }),
+          expect.objectContaining({ name: "home.read", allowed: false }),
         ],
       },
     ]);

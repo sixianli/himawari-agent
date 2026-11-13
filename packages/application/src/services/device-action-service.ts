@@ -677,7 +677,11 @@ export class DeviceActionService {
 
   async policy(device: PairedDevice): Promise<{
     readonly revision: number;
-    readonly actions: readonly { readonly name: string; readonly allowed: boolean }[];
+    readonly actions: readonly {
+      readonly name: string;
+      readonly title: DeviceActionDetail;
+      readonly allowed: boolean;
+    }[];
   }> {
     const policy = await this.#options.store.readPolicy({
       ...this.#options.scope,
@@ -687,7 +691,11 @@ export class DeviceActionService {
       revision: policy.revision,
       actions: this.#options.registry
         .supportedBy(device.kind, device.supportedActions)
-        .map((name) => ({ name, allowed: !policy.blockedActions.includes(name) })),
+        .map((name) => ({
+          name,
+          title: this.#options.registry.get(name)?.title ?? EMPTY_DETAIL,
+          allowed: !policy.blockedActions.includes(name),
+        })),
     };
   }
 

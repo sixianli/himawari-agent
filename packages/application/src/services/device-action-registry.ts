@@ -76,6 +76,7 @@ export interface DeviceActionRegistration {
   readonly reversible: boolean;
   readonly untrustedOriginAllowed: boolean;
   readonly usage?: string;
+  readonly title: DeviceActionDetail;
   readonly confirmLabel: DeviceActionDetail;
   readonly detail: (
     args: DeviceActionArguments,
@@ -206,7 +207,9 @@ export class DeviceActionRegistry {
         registration.deviceKinds.length === 0 ||
         registration.deviceKinds.some((kind) => !PAIRED_DEVICE_KINDS.includes(kind)) ||
         DEVICE_ACTION_LOCALES.some(
-          (locale) => (registration.confirmLabel?.[locale] ?? "").trim().length === 0,
+          (locale) =>
+            (registration.confirmLabel?.[locale] ?? "").trim().length === 0 ||
+            (registration.title?.[locale] ?? "").trim().length === 0,
         ) ||
         byName.has(registration.name)
       )
@@ -387,6 +390,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: false,
     reversible: true,
     untrustedOriginAllowed: true,
+    title: label("设闹钟", "Set alarms", "アラームを設定"),
     confirmLabel: label("设闹钟", "Set alarm", "アラームを設定"),
     detail: (args) =>
       detail((locale) => {
@@ -420,6 +424,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: false,
     reversible: true,
     untrustedOriginAllowed: false,
+    title: label("新建日程", "Create events", "予定を作成"),
     confirmLabel: label("加进日历", "Add", "追加"),
     detail: (args) =>
       detail((locale) => {
@@ -444,6 +449,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: true,
     reversible: true,
     untrustedOriginAllowed: false,
+    title: label("删除日程", "Delete events", "予定を削除"),
     confirmLabel: label("删掉", "Delete", "削除"),
     detail: (args, context) =>
       detail((locale) => {
@@ -477,6 +483,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: true,
     reversible: true,
     untrustedOriginAllowed: false,
+    title: label("修改日程", "Change events", "予定を変更"),
     confirmLabel: label("改掉", "Change", "変更"),
     detail: (args, context) =>
       detail((locale) => {
@@ -512,6 +519,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: true,
     reversible: true,
     untrustedOriginAllowed: false,
+    title: label("修改联系人", "Change contacts", "連絡先を変更"),
     confirmLabel: label("改掉", "Change", "変更"),
     detail: (args, context) =>
       detail((locale) => {
@@ -538,6 +546,11 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     reversible: true,
     untrustedOriginAllowed: true,
     usage: TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER.text,
+    title: label(
+      "在“提醒事项”里标成完成",
+      "Mark done in Reminders",
+      "「リマインダー」で完了にする",
+    ),
     confirmLabel: label("标成完成", "Mark done", "完了にする"),
     detail: (_args, context) =>
       detail((locale) => {
@@ -568,6 +581,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     reversible: true,
     untrustedOriginAllowed: true,
     usage: TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER.text,
+    title: label("在“提醒事项”里新建", "Create in Reminders", "「リマインダー」に作成"),
     confirmLabel: label("新建", "Create", "作成"),
     detail: (args) =>
       detail((locale) => {
@@ -599,6 +613,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: false,
     reversible: false,
     untrustedOriginAllowed: false,
+    title: label("控制家居", "Control home accessories", "家の機器を操作"),
     confirmLabel: label("照做", "Do it", "実行"),
     detail: (args, context) =>
       detail((locale) => {
@@ -624,6 +639,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: false,
     reversible: true,
     untrustedOriginAllowed: true,
+    title: label("读取家居状态", "Read home state", "家の状態を読む"),
     confirmLabel: label("读取", "Read", "読み取る"),
     detail: (args, context) =>
       detail((locale) => {
