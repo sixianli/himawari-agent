@@ -348,6 +348,30 @@ describe("Job Host gateway", () => {
     expect(state).not.toBe("Z");
   });
 
+  it("reports a Job Host that let go of its channel as no longer connected", async () => {
+    const { socketPath, gateway } = await startGateway(60000, [
+      "--disconnect-self",
+      "--ignore-disconnect",
+    ]);
+    const transport = gatewayJobHostLauncher(socketPath)(request());
+    const seen = observe(transport);
+    let closed = false;
+    void seen.closed.then(() => {
+      closed = true;
+    });
+    await transport.spawned;
+    await until(() => !transport.connected);
+    expect(seen.errored()).toBe(false);
+    expect(seen.exited()).toBe(false);
+    expect(closed).toBe(false);
+    transport.send({ type: "heartbeat" }, () => {});
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(gateway.liveJobHosts()).toBe(1);
+    expect(closed).toBe(false);
+    transport.killGroup();
+    await seen.closed;
+  });
+
   it("goes idle only after every Job Host has ended", async () => {
     const { socketPath, gateway, onIdle } = await startGateway(50);
     const transport = gatewayJobHostLauncher(socketPath)(request());

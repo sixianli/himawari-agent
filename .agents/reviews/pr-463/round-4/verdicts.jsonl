@@ -1,0 +1,8 @@
+{"id": "R4-ds1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 中：资格脚本在失败路径可能永久挂起，既不非零退出，也不清理", "valid": true, "class": "error", "severity": "low", "trigger": "root 手动跑资格脚本时网关不回 close", "consequence": "脚本一直不结束，网关和临时目录留下", "modelSeverity": "中", "reason": "只是 root 手动跑的验证脚本，不进 CI 和生产；改法是加总超时"}
+{"id": "R4-ds2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低：失败清理只杀网关，不兜底杀 Job Host；Job Host 若在断线后不退，会遗留", "valid": true, "class": "error", "severity": "low", "trigger": "资格脚本失败且 Job Host 不在断线后退出", "consequence": "留下脱离的 Job Host 进程", "modelSeverity": "低"}
+{"id": "R4-ds3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低：跨账号脚本绕开真实入口和 0600 套接字", "valid": true, "class": "better"}
+{"id": "R4-ds4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低：网关把“发给已断开 Job Host 的消息”当作杀进程组信号，和本机 transport 语义不同", "valid": true, "class": "error", "severity": "low", "trigger": "Job Host 正常收尾先断开通道，Worker 此时发心跳", "consequence": "正在正常退出的 Job Host 被 SIGKILL，退出状态和本机通道不一致", "modelSeverity": "低"}
+{"id": "R4-ds5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低：跨账号验证没有自动检查，也没有文档入口", "valid": true, "class": "better"}
+{"id": "R4-ds6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低：脚本的 pid/uid 断言使用宽松相等", "valid": true, "class": "error", "severity": "low", "trigger": "子进程把 uid 报成字符串", "consequence": "资格断言仍通过", "modelSeverity": "低"}
+{"id": "R4-ds7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低：新集成测试依赖 `/proc`，未按平台跳过", "valid": false, "class": "better"}
+{"id": "R4-ds8", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低：作者说法与代码/材料不一致", "valid": false, "class": "better"}

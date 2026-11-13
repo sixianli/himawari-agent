@@ -100,6 +100,7 @@ export function serveJobHostGateway(
         stderrDone = true;
         finishAfterExit();
       });
+      started.once("disconnect", () => writeGatewayFrame(socket, { type: "disconnect" }));
       started.once("exit", (exitCode: number | null, signal: NodeJS.Signals | null) => {
         exitStatus = { exitCode, signal };
         writeGatewayFrame(socket, { type: "exit" });
@@ -124,7 +125,7 @@ export function serveJobHostGateway(
         if (frame["type"] !== "message") return reject();
         const message = frame["message"];
         if (!message || typeof message !== "object" || Array.isArray(message)) return reject();
-        if (!current.connected) return killGroup(current);
+        if (!current.connected) return;
         current.send(message, (error) => {
           if (error) killGroup(current);
         });

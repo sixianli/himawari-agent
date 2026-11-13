@@ -123,6 +123,8 @@ export function gatewayJobHostLauncher(
         } else if (type === "stderr" && typeof frame["data"] === "string") {
           const chunk = Buffer.from(frame["data"], "base64");
           for (const listener of stderrListeners) listener(chunk);
+        } else if (type === "disconnect") {
+          open = false;
         } else if (type === "exit") {
           open = false;
           exit();

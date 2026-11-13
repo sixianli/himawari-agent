@@ -14,6 +14,17 @@ const hostFixture = path.join(repository, "test/fixtures/job-host-gateway-host.m
 const gatewaySource = path.join(repository, "packages/runtime-sandbox/src/job-host-gateway.ts");
 const root = await mkdtemp(path.join(tmpdir(), "hjg-"));
 let host;
+let jobHostPid;
+const giveUp = setTimeout(() => {
+  for (const group of [jobHostPid, host?.pid])
+    if (group)
+      try {
+        process.kill(-group, "SIGKILL");
+      } catch {}
+  host?.kill("SIGKILL");
+  process.stderr.write("QUALIFY_TIMEOUT\n");
+  process.exit(1);
+}, 30000);
 try {
   await chown(root, execUid, execUid);
   await chmod(root, 0o700);
@@ -63,16 +74,18 @@ try {
     transport.onceClose((exitCode, signal) => resolve({ exitCode, signal })),
   );
   const pid = await transport.spawned;
+  jobHostPid = pid;
   transport.send({ type: "ping" }, () => {});
   const deadline = Date.now() + 5000;
   while (messages.length === 0 && Date.now() < deadline)
     await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.equal(messages[0]?.pid, pid, "QUALIFY_JOB_HOST_PID_MISMATCH");
-  assert.equal(messages[0]?.uid, execUid, "QUALIFY_JOB_HOST_UID_MISMATCH");
+  assert.strictEqual(messages[0]?.pid, pid, "QUALIFY_JOB_HOST_PID_MISMATCH");
+  assert.strictEqual(messages[0]?.uid, execUid, "QUALIFY_JOB_HOST_UID_MISMATCH");
   transport.killGroup();
   assert.deepEqual(await closed, { exitCode: null, signal: "SIGKILL" }, "QUALIFY_KILL_FAILED");
   process.stdout.write(`${JSON.stringify({ status: "passed", execUid, jobHostPid: pid })}\n`);
 } finally {
+  clearTimeout(giveUp);
   if (host && host.exitCode === null) host.kill("SIGKILL");
   await rm(root, { recursive: true, force: true });
 }
