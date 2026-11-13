@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, lstat, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -22,6 +22,7 @@ import {
 export const TENANT_COMMAND_ERROR_CODES = Object.freeze({
   ARGUMENT_INVALID: "TENANT_ARGUMENT_INVALID",
   ROSTER_MISSING: "TENANT_ROSTER_MISSING",
+  ROSTER_UNSAFE: "TENANT_ROSTER_UNSAFE",
   NOT_FOUND: "TENANT_NOT_FOUND",
   NOT_PROVISIONED: "TENANT_NOT_PROVISIONED",
   CONFIGURATION_MISMATCH: "TENANT_CONFIGURATION_MISMATCH",
@@ -51,11 +52,16 @@ function absolutePathArgument(value: string | undefined): string {
 
 async function openExistingRoster(sharedRoot: string): Promise<RosterStore> {
   const { rosterPath } = tenantHostLayout(sharedRoot);
-  try {
-    await access(rosterPath);
-  } catch {
-    throw new Error(TENANT_COMMAND_ERROR_CODES.ROSTER_MISSING);
-  }
+  const info = await lstat(rosterPath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") throw new Error(TENANT_COMMAND_ERROR_CODES.ROSTER_MISSING);
+    throw error;
+  });
+  if (
+    !info.isFile() ||
+    (info.mode & 0o022) !== 0 ||
+    (typeof process.getuid === "function" && info.uid !== process.getuid())
+  )
+    throw new Error(TENANT_COMMAND_ERROR_CODES.ROSTER_UNSAFE);
   return RosterStore.open(rosterPath);
 }
 
@@ -73,11 +79,10 @@ async function requireTenant(sharedRoot: string, tenantId: string): Promise<Tena
 async function tenantConfigurationPath(sharedRoot: string, tenant: TenantRecord): Promise<string> {
   const stateRoot = tenantStateRoot(sharedRoot, tenant.tenantId);
   const configurationPath = path.join(stateRoot, "configuration.json");
-  try {
-    await access(configurationPath);
-  } catch {
-    throw new Error(TENANT_COMMAND_ERROR_CODES.NOT_PROVISIONED);
-  }
+  await access(configurationPath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") throw new Error(TENANT_COMMAND_ERROR_CODES.NOT_PROVISIONED);
+    throw error;
+  });
   const stored = await new JsonFileConfigurationPort(configurationPath).load();
   if (
     stored.stateRoot !== stateRoot ||
@@ -204,7 +209,10 @@ export async function runTenantCommand(arguments_: readonly string[]): Promise<u
     const storedPath = path.join(synthesized.configuration.stateRoot, "configuration.json");
     const stored = await readFile(storedPath, "utf8").then(
       (text) => JSON.parse(text) as unknown,
-      () => undefined,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      },
     );
     return Object.freeze({
       schemaVersion: 1,

@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { lstat, mkdir, open } from "node:fs/promises";
 import path from "node:path";
 import type { ProductConfiguration } from "@himawari-agent/application";
+import { assertReferencePart } from "./host-secret-source.js";
 import { parseProductConfiguration } from "./strict-configuration.js";
 
 export const TENANT_CONFIGURATION_ERROR_CODES = Object.freeze({
@@ -86,18 +87,16 @@ export function classifySecretReferences(
   const perTenant: { ref: string; version: string }[] = [];
   const shared: { ref: string; version: string }[] = [];
   for (const { ref, version, purpose } of configuration.secretReferences) {
-    const registered = TENANT_SECRET_PURPOSE_CLASSES[purpose];
-    const usedByModel = modelSecretRefs.has(ref);
-    if (usedByModel && registered === "per-tenant")
-      throw new TenantConfigurationError(
-        TENANT_CONFIGURATION_ERROR_CODES.PURPOSE_CONFLICT,
-        `Secret ${ref} is a per-tenant purpose but a model uses it`,
-      );
-    const secretClass: TenantSecretClass | undefined = usedByModel ? "shared" : registered;
+    const secretClass = TENANT_SECRET_PURPOSE_CLASSES[purpose];
     if (secretClass === undefined)
       throw new TenantConfigurationError(
         TENANT_CONFIGURATION_ERROR_CODES.PURPOSE_UNCLASSIFIED,
         `Secret purpose ${purpose} is not classified as per-tenant or shared`,
+      );
+    if (modelSecretRefs.has(ref) && secretClass !== "shared")
+      throw new TenantConfigurationError(
+        TENANT_CONFIGURATION_ERROR_CODES.PURPOSE_CONFLICT,
+        `Secret ${ref} is a per-tenant purpose but a model uses it`,
       );
     (secretClass === "shared" ? shared : perTenant).push({ ref, version });
   }
@@ -268,6 +267,7 @@ function flattenLeaves(value: unknown, prefix = "$", out = new Map<string, strin
 
 export interface ProvisionedTenantKeys {
   readonly written: readonly string[];
+  readonly kept: readonly string[];
   readonly needsProvisioning: readonly string[];
 }
 
@@ -295,7 +295,12 @@ export async function provisionTenantKeyFiles(input: {
       purpose,
     ]),
   );
+  for (const { ref, version } of classification.perTenant) {
+    assertReferencePart(ref, "reference");
+    assertReferencePart(version, "version");
+  }
   const written: string[] = [];
+  const kept: string[] = [];
   const needsProvisioning: string[] = [];
   for (const { ref, version } of classification.perTenant) {
     const purpose = purposeByRef.get(`${ref}@${version}`) ?? "";
@@ -303,7 +308,25 @@ export async function provisionTenantKeyFiles(input: {
       needsProvisioning.push(`${ref}.${version}`);
       continue;
     }
-    const file = await open(path.join(directory, `${ref}.${version}`), "wx", 0o600);
+    const target = path.join(directory, `${ref}.${version}`);
+    const existing = await lstat(target).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (existing) {
+      if (
+        !existing.isFile() ||
+        (existing.mode & 0o077) !== 0 ||
+        (typeof process.getuid === "function" && existing.uid !== process.getuid())
+      )
+        throw new TenantConfigurationError(
+          TENANT_CONFIGURATION_ERROR_CODES.SECRET_DIRECTORY_UNSAFE,
+          "An existing tenant key file is not a private regular file",
+        );
+      kept.push(`${ref}.${version}`);
+      continue;
+    }
+    const file = await open(target, "wx", 0o600);
     try {
       await file.writeFile(`${randomBytes(32).toString("base64")}\n`);
       await file.sync();
@@ -312,5 +335,5 @@ export async function provisionTenantKeyFiles(input: {
     }
     written.push(`${ref}.${version}`);
   }
-  return Object.freeze({ written, needsProvisioning });
+  return Object.freeze({ written, kept, needsProvisioning });
 }

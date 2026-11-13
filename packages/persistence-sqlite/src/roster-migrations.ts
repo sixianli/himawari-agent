@@ -35,7 +35,7 @@ CREATE UNIQUE INDEX limits_scope_metric ON limits (scope_kind, ifnull(tenant_id,
 
 CREATE TABLE usage_monthly (
   tenant_id TEXT NOT NULL REFERENCES tenants (tenant_id) ON DELETE CASCADE,
-  month TEXT NOT NULL CHECK (month GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]'),
+  month TEXT NOT NULL CHECK (month GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]' AND substr(month, 6, 2) BETWEEN '01' AND '12'),
   calls INTEGER NOT NULL DEFAULT 0 CHECK (calls >= 0),
   input_tokens INTEGER NOT NULL DEFAULT 0 CHECK (input_tokens >= 0),
   output_tokens INTEGER NOT NULL DEFAULT 0 CHECK (output_tokens >= 0),

@@ -1,11 +1,14 @@
 import {
+  chmod,
   lstat,
   mkdir,
   mkdtemp,
   readdir,
   readFile,
   realpath,
+  rename,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -179,6 +182,20 @@ describe("check 7: configuration synthesis", () => {
     ).toThrow(expect.objectContaining({ code: "TENANT_SECRET_PURPOSE_UNCLASSIFIED" }));
   });
 
+  it("refuses an unclassified purpose even when a model uses it", async () => {
+    const base = await baseConfiguration();
+    for (const entry of base["secretReferences"] as { ref: string; purpose: string }[])
+      if (entry.ref === "vercel-gateway") entry.purpose = "brand-new-model-purpose";
+    expect(() =>
+      synthesizeTenantConfiguration({
+        base,
+        tenant: deriveTenantIdentifiers("alice"),
+        tenantsRoot,
+        now: NOW,
+      }),
+    ).toThrow(expect.objectContaining({ code: "TENANT_SECRET_PURPOSE_UNCLASSIFIED" }));
+  });
+
   it("refuses a per-tenant purpose that a model would share", async () => {
     const base = await baseConfiguration();
     const [primary] = base["modelDescriptors"] as { secretRef: string }[];
@@ -255,14 +272,33 @@ describe("check 8: directories and keys", () => {
     ).rejects.toThrow();
   });
 
-  it("will not overwrite a key that already exists", async () => {
+  it("keeps existing keys, fills only the missing ones and refuses unsafe names", async () => {
     const alice = await provision(deriveTenantIdentifiers("alice"));
-    await expect(
-      provisionTenantKeyFiles({
-        stateRoot: alice.synthesized.configuration.stateRoot,
-        configuration: alice.synthesized.configuration,
-      }),
-    ).rejects.toThrow(/EEXIST/);
+    const secrets = path.join(alice.synthesized.configuration.stateRoot, "secrets");
+    const payloadKey = await readFile(path.join(secrets, "payload-key.v1"));
+    await rm(path.join(secrets, "identity-csrf.v1"));
+    const retried = await provisionTenantKeyFiles({
+      stateRoot: alice.synthesized.configuration.stateRoot,
+      configuration: alice.synthesized.configuration,
+    });
+    expect(retried).toMatchObject({ written: ["identity-csrf.v1"], kept: ["payload-key.v1"] });
+    expect((await readFile(path.join(secrets, "payload-key.v1"))).equals(payloadKey)).toBe(true);
+    for (const ref of ["nested/key", "user@key"]) {
+      const base = await baseConfiguration();
+      for (const entry of base["secretReferences"] as { ref: string; purpose: string }[])
+        if (entry.purpose === "identity-csrf") entry.ref = ref;
+      (base["identity"] as { csrf: { keySecretRef: string } }).csrf.keySecretRef = ref;
+      const { configuration } = synthesizeTenantConfiguration({
+        base,
+        tenant: deriveTenantIdentifiers("carol"),
+        tenantsRoot,
+        now: NOW,
+      });
+      await expect(
+        provisionTenantKeyFiles({ stateRoot: configuration.stateRoot, configuration }),
+      ).rejects.toThrow(expect.objectContaining({ code: "HOST_SECRET_INVALID_REFERENCE" }));
+    }
+    expect(await readdir(path.join(tenantsRoot, "carol", "secrets"))).toEqual([]);
   });
 });
 
@@ -407,5 +443,40 @@ describe("admin commands for one named person", () => {
     expect(
       (await admin(["db", "status", "--tenant", "alice", "--shared-root", sharedRoot])).error,
     ).toEqual({ error: { code: "TENANT_CONFIGURATION_MISMATCH" } });
+    const listed = await admin([
+      "sandbox",
+      "list-unconfirmed",
+      "--tenant",
+      "bob",
+      "--shared-root",
+      sharedRoot,
+    ]);
+    expect(listed.error).toEqual({ error: { code: "TENANT_NOT_PROVISIONED" } });
+    const rosterPath = path.join(sharedRoot, "roster.sqlite");
+    await chmod(rosterPath, 0o620);
+    expect((await admin(["tenant", "list", "--shared-root", sharedRoot])).error).toEqual({
+      error: { code: "TENANT_ROSTER_UNSAFE" },
+    });
+    await chmod(rosterPath, 0o600);
+    await rename(rosterPath, `${rosterPath}.real`);
+    await symlink(`${rosterPath}.real`, rosterPath);
+    expect((await admin(["tenant", "list", "--shared-root", sharedRoot])).error).toEqual({
+      error: { code: "TENANT_ROSTER_UNSAFE" },
+    });
+  });
+
+  it("runs commands that read --config by position for the named person", async () => {
+    await rosterWith("alice");
+    await provision(deriveTenantIdentifiers("alice"));
+    const listed = await admin([
+      "sandbox",
+      "list-unconfirmed",
+      "--tenant",
+      "alice",
+      "--shared-root",
+      sharedRoot,
+    ]);
+    expect(listed.error).toBeUndefined();
+    expect(listed.output).toMatchObject({ command: "sandbox.list-unconfirmed" });
   });
 });

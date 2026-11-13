@@ -177,6 +177,13 @@ describe("roster store", () => {
       expect(() => insertTenant.run("Amy", "a@x", "active")).toThrow(/CHECK/);
       expect(() => insertTenant.run("a@b", "a@x", "active")).toThrow(/CHECK/);
       expect(() => insertTenant.run("amy", "a@x", "deleted")).toThrow(/CHECK/);
+      insertTenant.run("amy", "a@x", "active");
+      const insertUsage = database.prepare(
+        "INSERT INTO usage_monthly (tenant_id, month) VALUES ('amy', ?)",
+      );
+      expect(() => insertUsage.run("2026-13")).toThrow(/CHECK/);
+      expect(() => insertUsage.run("2026-00")).toThrow(/CHECK/);
+      insertUsage.run("2026-12");
     } finally {
       database.close();
     }

@@ -62,7 +62,7 @@ export class HostSecretError extends Error {
   }
 }
 
-function assertReferencePart(value: string, label: string): void {
+export function assertReferencePart(value: string, label: string): void {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) {
     throw new HostSecretError(
       HOST_SECRET_ERROR_CODES.INVALID_REFERENCE,
