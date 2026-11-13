@@ -92,4 +92,22 @@ describe("ProductionLoginDevicesControl scope", () => {
     if (snapshot.type !== "login.devices.snapshot") throw new Error(snapshot.type);
     expect(snapshot.payload.devices.map(({ label }) => label)).toEqual(["a".repeat(80)]);
   });
+
+  it("refuses a device list and a revoke without a signed-in owner", async () => {
+    const { control: devices, revoked } = control();
+    await expect(
+      devices.query({ type: "login.devices.read", scope: scope(AGENT), payload: {} } as never),
+    ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+    await expect(
+      devices.execute({
+        authentication: { ...authentication, ownerId: "owner-other" },
+        command: {
+          type: "login.device.revoke",
+          scope: scope(AGENT),
+          payload: { deviceId: "device-other", recentAuthenticationRef: "authentication:current" },
+        },
+      } as never),
+    ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+    expect(revoked).toEqual([]);
+  });
 });
