@@ -489,7 +489,7 @@ export class SqliteExternalMemoryProposalOperations {
         contentRef: string;
       }[];
       const clear = this.database.prepare(
-        "UPDATE external_memory_proposals SET content_ref = NULL WHERE id = ?",
+        "UPDATE external_memory_proposals SET content_ref = NULL, batch_id = NULL WHERE id = ?",
       );
       const used = this.database.prepare(
         "SELECT 1 FROM external_memory_proposals WHERE content_ref = ? LIMIT 1",

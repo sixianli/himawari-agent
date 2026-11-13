@@ -2,6 +2,7 @@
 import { chmod, lstat, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DEFAULT_HOME_FEED } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -1059,6 +1060,36 @@ it("validates the versioned Run policy and rejects inconsistent Memory bounds", 
     allowUntrustedTools: true,
   };
   expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+});
+
+it("[HOME-settings] fills home feed settings from the defaults and rejects values outside their bounds", () => {
+  const raw = config("/tmp/himawari-home-feed-config");
+  const policy = {
+    version: "policy-v1",
+    systemInstruction: "可信指令",
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+  };
+  raw["runPolicy"] = policy;
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.homeFeed,
+  ).toBeUndefined();
+  raw["runPolicy"] = { ...policy, homeFeed: { deadlineLeadMinutes: 0, awaitingLimit: 50 } };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.homeFeed).toEqual({
+    ...DEFAULT_HOME_FEED,
+    deadlineLeadMinutes: 0,
+    awaitingLimit: 50,
+  });
+  for (const homeFeed of [
+    { awaitingLimit: 0 },
+    { sourceReadLimit: 201 },
+    { recentHours: 1.5 },
+    { deadlineLeadMinutes: -1 },
+    { unknownSetting: 1 },
+  ]) {
+    raw["runPolicy"] = { ...policy, homeFeed };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
 });
 
 it("[RULE-memory-visible] accepts the retired maxMemoryClassification key without letting it limit Memory", () => {

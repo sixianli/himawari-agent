@@ -39,6 +39,8 @@ export class SqliteMemoryReminderOperations {
         return this.listDue(
           payload as { ownerId: OwnerId; agentId: AgentId; now: string; limit: number },
         );
+      case "memoryReminder.countDue":
+        return this.countDue(payload as { ownerId: OwnerId; agentId: AgentId; now: string });
       case "memoryReminder.listUpcoming":
         return this.listUpcoming(
           payload as {
@@ -47,6 +49,7 @@ export class SqliteMemoryReminderOperations {
             from: string;
             to: string;
             limit: number;
+            remindAfter?: string;
           },
         );
       case "memoryReminder.read":
@@ -128,22 +131,42 @@ export class SqliteMemoryReminderOperations {
       .all(input.ownerId, input.agentId, input.now, input.limit) as MemoryReminder[];
   }
 
+  private countDue(input: { ownerId: OwnerId; agentId: AgentId; now: string }): number {
+    return this.database
+      .prepare(
+        `SELECT COUNT(*) FROM memory_reminders r ${liveMemory}
+        WHERE r.owner_id = ? AND r.agent_id = ? AND r.status = 'scheduled' AND r.remind_at <= ?`,
+      )
+      .pluck()
+      .get(input.ownerId, input.agentId, input.now) as number;
+  }
+
   private listUpcoming(input: {
     ownerId: OwnerId;
     agentId: AgentId;
     from: string;
     to: string;
     limit: number;
+    remindAfter?: string;
   }): readonly MemoryReminder[] {
     this.limit(input.limit);
+    const remindAfter = input.remindAfter ?? null;
     return this.database
       .prepare(
         `${reminderSelect} ${liveMemory}
         WHERE r.owner_id = ? AND r.agent_id = ? AND r.status = 'scheduled'
-          AND r.due_at >= ? AND r.due_at <= ?
+          AND r.due_at >= ? AND r.due_at <= ? AND (? IS NULL OR r.remind_at > ?)
         ORDER BY r.due_at, r.id LIMIT ?`,
       )
-      .all(input.ownerId, input.agentId, input.from, input.to, input.limit) as MemoryReminder[];
+      .all(
+        input.ownerId,
+        input.agentId,
+        input.from,
+        input.to,
+        remindAfter,
+        remindAfter,
+        input.limit,
+      ) as MemoryReminder[];
   }
 
   private read(id: string): MemoryReminder | undefined {

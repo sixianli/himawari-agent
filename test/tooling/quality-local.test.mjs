@@ -11,6 +11,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useArtifactCapableHost } from "./artifact-host.mjs";
 
 const state = vi.hoisted(() => ({
   root: "",
@@ -213,6 +214,8 @@ const runLocal = (extra = {}) =>
     base: "b".repeat(40),
     ...extra,
   });
+
+useArtifactCapableHost();
 
 describe("periodic quality policy and evidence", () => {
   it("preserves the process test root when only the GitHub environment is supplied", async () => {
@@ -493,6 +496,10 @@ describe("periodic quality policy and evidence", () => {
       "node-browser-typecheck",
       "node-tooling",
     ]);
+    for (const name of ["node-typecheck", "node-browser-typecheck"])
+      expect(state.calls.find((entry) => entry.name === name).args[0]).toBe(
+        "--max-old-space-size=4096",
+      );
     expect(state.calls[0].artifact.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(report.observations[0]).toMatchObject({
       productSupported: false,
@@ -555,7 +562,7 @@ describe("local shared-runner boundary", () => {
     try {
       for (const [os, cpu] of [
         ["darwin", "x64"],
-        ["linux", "arm64"],
+        ["linux", "riscv64"],
         ["win32", "x64"],
       ]) {
         Object.defineProperty(process, "platform", { value: os });
@@ -563,6 +570,32 @@ describe("local shared-runner boundary", () => {
         await expect(runLocal()).rejects.toThrow("PLATFORM_UNSUPPORTED");
       }
       expect(state.calls).toEqual([]);
+    } finally {
+      Object.defineProperty(process, "platform", platform);
+      Object.defineProperty(process, "arch", arch);
+    }
+  });
+  it("on linux-arm64 runs the three checks that need no build artifact and labels them linux-arm64", async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, "platform");
+    const arch = Object.getOwnPropertyDescriptor(process, "arch");
+    try {
+      Object.defineProperty(process, "platform", { value: "linux" });
+      Object.defineProperty(process, "arch", { value: "arm64" });
+      for (const check of ["policy", "static", "security"]) {
+        state.calls.length = 0;
+        const summary = await runLocal({ check, output: `.ci-output/local-${check}` });
+        expect(summary.platform).toBe("linux-arm64");
+        expect(
+          state.calls.filter((entry) => entry.name === "check").map((entry) => entry.checkId),
+        ).toEqual([check]);
+      }
+      state.calls.length = 0;
+      for (const check of [undefined, "build", "coverage"])
+        await expect(
+          runLocal({ check, output: `.ci-output/local-refused-${check}` }),
+        ).rejects.toThrow("CI_ARTIFACT_PLATFORM_UNSUPPORTED: linux-arm64");
+      expect(state.calls).toEqual([]);
+      expect(existsSync(path.join(state.root, ".ci-output/local-refused-build"))).toBe(false);
     } finally {
       Object.defineProperty(process, "platform", platform);
       Object.defineProperty(process, "arch", arch);
