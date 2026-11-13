@@ -1,0 +1,3 @@
+# PR 481 第 6 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）不成立：### 1. 低：作者说合并后只差 import 顺序，但合并还带入了 main 的新用例。材料那句话说的是“本 PR 的改动”只差 import 先后，模型自己也核实 lowDeferFromRound 用例 517、549-551 合并前后逐字相同；多出的 firstChangedMessage import 和 append-only failure message 用例（1990-2015）是 main 的改动，git diff b3519e0cb 779ef1b22 -- test/tooling/opencode-review.test.mjs 只显示这两处，材料同时写了“合入 origin/main”“main 自己的改动不用复核”；材料文件不在仓库里，不进任何代码或文档，没有会因此出错的输入；实跑 vitest test/tooling/opencode-review.test.mjs 和 review-round-tools.test.mjs 97 项全过，main 新用例和本 PR 用例同时成立
