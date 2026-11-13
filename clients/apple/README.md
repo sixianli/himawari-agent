@@ -112,7 +112,7 @@ clients/apple/scripts/ui-review.sh --approve
 
 Mac 上只做原型 Version 46 画板“每一端做什么”里的六样，没有主窗口、聊天窗口和管理页。Xcode 工程里的 `HimawariMac` 目标就是它，入口文件 `App/macOS/HimawariMacApp.swift`，其余代码在 `Sources/HimawariMacUI/`。
 
-- 配对：Mac 不扫码。电脑网页上点“添加设备”后复制配对链接（以 `himawari-pair:` 开头），在 Mac 的配对窗口里粘贴。
+- 配对：Mac 不扫码。在 iPhone 的 Himawari 里“设置 → 设备 → 添加一台 Mac”，把配对链接（以 `himawari-pair:` 开头）发到 Mac 上，粘贴进配对窗口；窗口出现或 App 回到前台时，剪贴板里正好是配对链接就自动填进去。没有 iPhone 时也可以在网页设置里添加。
 - 输入条：默认按 ⌥ 空格叫出，快捷键在设置页可改；被别的 App 占用时设置页写明。叫出的那一刻读一次前台 App、正在看的文件和选中的文字（读文件和选中文字要在“系统设置 › 隐私与安全性 › 辅助功能”里允许 Himawari），显示成可以点 × 拿掉的小条，发出前不再刷新。带着的东西先传到服务器换成引用，再照网页附件的格式（`<file name ref bytes kind/>` 标签，和 `apps/control-center/src/draft-attachments.ts` 逐字一致，固定测试数据由 `scripts/make-attachment-fixture.mjs` 从网页代码生成）接在正文后面发出。读不出文字的文件只传文件名和路径。
 - 文件夹和网址规则在 `Sources/HimawariCore/MacAccess.swift`：路径先解开符号链接和 `..` 再按路径分段和允许的文件夹比，只读文件夹不许改；网址只许 `https` 加主机名单。
 - Mac 上的短信：设置页这个开关打开、并在“系统设置 › 隐私与安全性 › 完全磁盘访问权限”里允许 Himawari 后，按心跳间隔从 `~/Library/Messages/chat.db`（信息 App 的数据库）只读地取打开之后的新消息，每条传成一条 `message.text` 感知记录（`POST perception`，每批条数取服务器配置 `device.perception.batch_records`）。打开时从最新一条开始，不补读以前的；关掉就停，并忘掉读到哪里，再打开也不补关着那段。不发消息，也不标已读。正文为空时从 `attributedBody` 列（信息 App 用 NSArchiver 存的富文本）里取。表结构不事先假定：每次先用 `PRAGMA table_info` 读出 `message`、`handle` 两张表有哪些列，可有可无的列缺了就退一步（例如没有 `handle` 就不带发件人），`guid`、`date`、`service` 缺了就不读，并在设置页写明缺哪几列。没有完全磁盘访问权限、打不开数据库、传不上去、服务器还不收，设置页那一行都写明，不静默失败。读表的代码在 `Sources/HimawariMacUI/MessagesDatabase.swift`，转成记录的规则在 `Sources/HimawariCore/MessageSensing.swift`。

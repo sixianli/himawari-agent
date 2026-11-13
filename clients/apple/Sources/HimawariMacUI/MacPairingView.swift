@@ -21,6 +21,13 @@ struct MacPairingView: View {
         .frame(width: DesignTokens.Mac.pairingWidth, alignment: .leading)
         .background(Color.hmBackground)
         .animation(.easeInOut, value: model.phase)
+        .onAppear(perform: fillFromClipboard)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in fillFromClipboard() }
+    }
+
+    private func fillFromClipboard() {
+        guard link.isEmpty, let text = NSPasteboard.general.string(forType: .string), (try? PairingInvitation.parse(text)) != nil else { return }
+        link = text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     @ViewBuilder
@@ -49,21 +56,21 @@ struct MacPairingView: View {
         case .active:
             EmptyView()
         case let .unpaired(problem):
-            Text(L.text("pairing.step1")).hmType(DesignTokens.TypeScale.macRow).foregroundStyle(Color.hmText)
-            Text(L.text("pairing.step2")).hmType(DesignTokens.TypeScale.macRow).foregroundStyle(Color.hmText)
+            Text(L.text("pairing.step1"))
+                .hmType(DesignTokens.TypeScale.macRow)
+                .foregroundStyle(Color.hmText)
+                .fixedSize(horizontal: false, vertical: true)
             TextField(L.text("pairing.paste"), text: $link)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { model.pair(scanned: link) }
             if problem != nil {
                 Text(L.text("pairing.problem")).hmType(DesignTokens.TypeScale.macSmall).foregroundStyle(Color.hmDanger)
             }
+            Text(L.text("pairing.step2"))
+                .hmType(DesignTokens.TypeScale.macSmall)
+                .foregroundStyle(Color.hmMuted)
             HStack(spacing: DesignTokens.Mac.buttonGap) {
                 Spacer()
-                Button(L.text("pairing.paste")) {
-                    link = NSPasteboard.general.string(forType: .string) ?? ""
-                    model.pair(scanned: link)
-                }
-                .buttonStyle(MacButtonStyle(role: .secondary))
                 Button(L.text("pairing.connect")) { model.pair(scanned: link) }
                     .buttonStyle(MacButtonStyle(role: .primary))
                     .disabled(link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

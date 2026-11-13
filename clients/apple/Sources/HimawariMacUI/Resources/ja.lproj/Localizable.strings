@@ -48,9 +48,8 @@
 "settings.sees.needsFullDisk" = "フルディスクアクセスがまだないため、メッセージを読めません";
 "settings.sees.openFullDisk" = "開く";
 "settings.sees.fullDisk.step1" = "1.「開く」で「システム設定 › プライバシーとセキュリティ › フルディスクアクセス」を開きます";
-"settings.sees.fullDisk.step2" = "2. リストの下の + を押し、「アプリケーション」の Himawari を選びます（「Finder で表示」からリストへドラッグしても可）";
+"settings.sees.fullDisk.step2" = "2. リストの下の + を押し、「アプリケーション」の Himawari を選びます。[Finder で表示](himawari-reveal:app)してリストへドラッグしても構いません";
 "settings.sees.fullDisk.step3" = "3. Himawari をオンにします。「終了して再度開く」と出たら押してください。この行が切り替わります";
-"settings.sees.revealApp" = "Finder で表示";
 "settings.sees.messages.serverNotReady" = "サーバーがまだメッセージを受け付けていません。更新後に自動で始まります";
 "settings.sees.messages.cannotRead" = "メッセージのデータベースを開けませんでした。あとで再試行します";
 "settings.sees.messages.unknownLayout" = "この Mac のメッセージのデータベースは形式が違うため（%@ がない）、読みません";
@@ -63,12 +62,12 @@
 "settings.elsewhere" = "記憶・ルール・リマインダーは iPhone で管理します。";
 "key.space" = "スペース";
 "pairing.title" = "この Mac を Himawari につなぐ";
-"pairing.step1" = "Web の Himawari で設定を開き、「デバイスを追加」を押す";
-"pairing.step2" = "出てきたペアリングリンクをコピーして、下に貼り付ける";
+"pairing.step1" = "iPhone の Himawari で 設定 → デバイス → Mac を追加 を開き、ペアリングリンクをこの Mac に送って下に貼り付けてください";
+"pairing.step2" = "iPhone がない場合は、Web の設定からも追加できます";
 "pairing.paste" = "ペアリングリンクを貼り付け";
 "pairing.connect" = "接続";
 "pairing.server" = "リンクに書かれたサーバー";
-"pairing.waiting" = "数字が同じなら、\nWeb のほうで確認を押してください";
+"pairing.waiting" = "iPhone（または Web）の数字と同じなら、\nそちらで確認してください";
 "pairing.cancel" = "キャンセル";
 "pairing.retry" = "もう一度";
-"pairing.problem" = "つながりませんでした。Web で「デバイスを追加」をもう一度押し、新しいリンクをコピーしてください";
+"pairing.problem" = "接続できませんでした。iPhone でもう一度 Mac を追加し、新しいリンクを送ってください";
