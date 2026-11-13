@@ -64,6 +64,7 @@ async function setup(
     readonly registry?: ToolActionRegistry;
     readonly sourceType?: RunExecutionSource["sourceType"];
     readonly recalledExternal?: boolean;
+    readonly failMark?: boolean;
   } = {},
 ) {
   const resource = await openSeededRepository();
@@ -134,7 +135,15 @@ async function setup(
       ownerRules: { run: rules },
       memoryRecall: { recallWithClassification: recall },
       ownerScope,
-      externalContent,
+      externalContent: options.failMark
+        ? {
+            read: (runId: Parameters<ContextExternalContent["read"]>[0]) =>
+              externalContent.read(runId),
+            mark: async () => {
+              throw new Error("MARK_DOWN");
+            },
+          }
+        : externalContent,
       managedTasks: { execute: managedTasks },
       toolActions: registry,
       clock,
@@ -881,3 +890,64 @@ function unmarkedTaskOutputRegistry() {
     ),
   );
 }
+
+it("[ADR-0257] refuses the same background call again on replay without turning it into an authorization error", async () => {
+  const s = await setup({ sourceType: "schedule" });
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const set = s.call("reminder.set", "call:replayed", { due: "2026-11-13T15:00", text: "付款" });
+    const refused = {
+      outcome: "failed",
+      errorCode: "action_rule_refused",
+      dispatchState: "not_sent",
+    };
+    expect(await s.tools.execute(set)).toMatchObject(refused);
+    s.advance(5_000);
+    expect(await s.tools.execute(set)).toMatchObject(refused);
+    const audits = (await s.repository.auditLedger().listByAgent(AGENT_ID, null)).filter(
+      ({ action }) => action === "authorization.action_rule.refused",
+    );
+    expect(audits).toHaveLength(1);
+    expect(s.reminders).not.toHaveBeenCalled();
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] does not run an outside-content tool whose mark cannot be written, and says it was not sent", async () => {
+  const s = await setup({ failMark: true });
+  try {
+    expect(
+      await s.tools.execute(
+        s.call("execution.task.output", "call:unmarkable", { taskId: "task:a" }),
+      ),
+    ).toMatchObject({
+      outcome: "failed",
+      dispatchState: "not_sent",
+      errorCode: "external_content_mark_failed",
+    });
+    expect(s.managedTasks).not.toHaveBeenCalled();
+    expect(await s.tools.execute(s.call("reminder.list", "call:owner-data", {}))).toMatchObject({
+      outcome: "succeeded",
+    });
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] keeps the card's reason short when many outside sources were read", async () => {
+  const s = await setup();
+  try {
+    for (let index = 0; index < 7; index += 1)
+      await s.externalContent.mark(RUN_ID, `source_${index}_${"x".repeat(200)}`);
+    const set = s.call("reminder.set", "call:many", { text: "改会议", due: "2026-11-13T15:00" });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "awaiting_approval" });
+    const reason = (await s.approvals())[0]?.display?.askedBecause;
+    expect(reason).toMatchObject({ kind: "rule" });
+    const text = reason && "ruleText" in reason ? String(reason.ruleText) : "";
+    expect(text).toContain("等 7 个来源");
+    expect(text.length).toBeLessThan(600);
+  } finally {
+    await s.close();
+  }
+});

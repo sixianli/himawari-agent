@@ -2195,6 +2195,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               reasonCode: decision.reasonCode,
               productOutcome: "failed",
               dispatchState: "not_sent",
+              refused: true,
             },
             isError: true,
           };

@@ -10,6 +10,7 @@ import {
   type RuleRecord,
 } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import { isConflict } from "./context-external-content.js";
 import { actionRuleAuthorizationKey } from "./owner-scope-authorization.js";
 
 export interface BuiltInActionRuleView {
@@ -20,6 +21,8 @@ export interface BuiltInActionRuleView {
   readonly examplesMiss: number;
   readonly askFirst: boolean | null;
 }
+
+const SWITCH_ATTEMPTS = 3;
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
@@ -79,6 +82,18 @@ export class BuiltInActionRuleSwitches {
         PORT_ERROR_CODES.INVALID_OPERATION,
         "ACTION_RULE_HAS_NO_SWITCH",
       );
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await this.#write(rule, askFirst);
+        return;
+      } catch (error) {
+        if (!isConflict(error) || attempt >= SWITCH_ATTEMPTS - 1) throw error;
+      }
+    }
+  }
+
+  async #write(rule: RuleRecord, askFirst: boolean): Promise<void> {
+    const ruleId = rule.id;
     const { ownerId, agentId } = this.#configuration;
     const key = actionRuleAuthorizationKey(ruleId);
     const record = await this.#read(ruleId);

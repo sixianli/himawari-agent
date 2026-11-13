@@ -113,6 +113,7 @@ import {
 import { type StageTiming, stageTiming } from "./production-stage-timing.js";
 import {
   type ContextExternalContent,
+  originsOf,
   RECALLED_EXTERNAL_RECORD_ORIGIN,
 } from "./context-external-content.js";
 import type { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
@@ -623,10 +624,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   async #provenance(
     invocation: RuntimeToolInvocation,
   ): Promise<{ readonly externalOrigins?: readonly string[] }> {
-    const sources = (await this.#options.externalContent?.read(invocation.runId)) ?? [];
-    return sources.length === 0
-      ? {}
-      : { externalOrigins: [...new Set(sources.map(({ origin }) => origin))] };
+    const origins = originsOf(await this.#options.externalContent?.read(invocation.runId));
+    return origins.length === 0 ? {} : { externalOrigins: origins };
   }
   async #markExternalContent(invocation: RuntimeToolInvocation): Promise<void> {
     const marker = this.#options.externalContent;
@@ -1226,7 +1225,29 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     signal?.throwIfAborted();
     const invocation = await this.#taskStart(value);
     signal?.throwIfAborted();
-    await this.#markExternalContent(invocation);
+    try {
+      await this.#markExternalContent(invocation);
+    } catch (error) {
+      await this.#options.assertRunActive(invocation.runId);
+      signal?.throwIfAborted();
+      await this.#writeJson(
+        invocation,
+        `runtime-tool-diagnostic:${digest([invocation.runId, invocation.toolCallId, "external-content-mark"])}`,
+        {
+          stage: "not_dispatched",
+          reasonCode: "external_content_mark_failed",
+          cause: error instanceof Error ? error.name : "unknown",
+        },
+      ).catch(() => undefined);
+      return {
+        dispatchState: "not_sent",
+        outcome: "failed",
+        resultRef: null,
+        errorCode: "external_content_mark_failed",
+        externalActionId: null,
+        modelContent: JSON.stringify({ error: "external_content_mark_failed" }),
+      };
+    }
     signal?.throwIfAborted();
     if (this.#isTaskManagement(invocation)) {
       await this.#options.assertRunActive(invocation.runId);

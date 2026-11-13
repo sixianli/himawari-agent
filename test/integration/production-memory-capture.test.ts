@@ -210,6 +210,7 @@ describe("production memory capture", () => {
     const calls: MemoryCaptureCall[] = [];
     const outputs: (string | Error)[] = [output];
     const relevant: string[] = [];
+    let externalOrigins: readonly string[] = [];
     const capture = new ProductionMemoryCapture({
       sources: {
         read: async (runId) => {
@@ -239,6 +240,7 @@ describe("production memory capture", () => {
       generations: repository.threadDistillationState(),
       state: repository.productMemoryState(),
       relevantMemoryIds: () => relevant as never,
+      externalOrigins: async () => externalOrigins,
       product: memory,
       approvals: repository.sensitiveMemoryApprovals(),
       reminders: repository.memoryReminders(),
@@ -391,6 +393,9 @@ describe("production memory capture", () => {
       capture,
       control,
       actionRules,
+      setExternalOrigins: (origins: readonly string[]) => {
+        externalOrigins = origins;
+      },
       reminderTools,
       ruleTools: new ProductionOwnerRuleTools(ruleWriter),
       protect,
@@ -1974,6 +1979,24 @@ describe("production memory capture", () => {
     expect(
       await context.repository.productMemoryState().read(withPassword["memoryId"] as never),
     ).toMatchObject({ status: "active", dataClassification: "sensitive" });
+  });
+
+  it("[ADR-0257] marks a memory captured from a conversation that read outside content, and leaves others unmarked", async () => {
+    const output =
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}';
+    const marked = await setup("请记住，我最喜欢的颜色是蓝色。", output);
+    marked.setExternalOrigins(["web_fetch"]);
+    await marked.capture.start(marked.request);
+    await marked.capture.stop();
+    const [captured] = await marked.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    expect(captured?.sourceRefs).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^external-content:.*\|web_fetch$/u)]),
+    );
+    const plain = await setup("请记住，我最喜欢的颜色是蓝色。", output);
+    await plain.capture.start(plain.request);
+    await plain.capture.stop();
+    const [unmarked] = await plain.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    expect(unmarked?.sourceRefs.some((ref) => ref.startsWith("external-content:"))).toBe(false);
   });
 
   it("[ADR-0257] marks a reminder and a rule written with external content in context, and keeps the reminder's source readable", async () => {

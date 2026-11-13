@@ -50,6 +50,7 @@ import {
   type SupportCheck,
   SupportVerdictCache,
 } from "./production-memory-capture.js";
+import { externalContentSourceRefs } from "./context-external-content.js";
 
 type MemoryId = ProductMemoryRecord["id"];
 type ProductThreadMessage = Awaited<ReturnType<ThreadRepositoryPort["listMessages"]>>[number];
@@ -209,6 +210,7 @@ export function parseConversationReview(input: {
   readonly newMemoriesAllowed: number;
   readonly restore?: (text: string) => string;
   readonly supportVerdicts?: ReadonlyMap<string, boolean>;
+  readonly externalOrigins?: readonly string[];
 }): ParsedConversationReview {
   const parsed = jsonObject(input.output);
   if (typeof parsed !== "object" || parsed === null || !("memories" in parsed))
@@ -279,6 +281,10 @@ export function parseConversationReview(input: {
     const parsedGroup = parseMemoryCandidates({
       output: JSON.stringify({ memories: raw }),
       sourceRef: source.message.contentRef,
+      extraSourceRefs: externalContentSourceRefs(
+        source.message.contentRef,
+        input.externalOrigins ?? [],
+      ),
       sourceClassification: source.message.dataClassification,
       existingIds: new Set(existing.keys()),
       tentativeMemories,
@@ -386,6 +392,7 @@ export interface ProductionMemoryConversationReviewOptions {
   >;
   readonly ledger?: DecisionLedgerPort;
   readonly timeZone?: string;
+  readonly externalOrigins?: (threadId: string) => Promise<readonly string[]>;
   readonly assertActive: () => Promise<void>;
   readonly externalTag: () => Promise<(kind: EgressPlaceholderKind, value: string) => string>;
   readonly generate: (
@@ -724,6 +731,7 @@ export class ProductionMemoryConversationReview {
     if (!plan) return { reviewId: review.id, changes: [], skipped: emptySkips() };
     const output = await this.#output(plan, settings, onAdmitted);
     const tag = await this.#options.externalTag();
+    const externalOrigins = (await this.#options.externalOrigins?.(episode.threadId)) ?? [];
     const table = placeholderTable(plan.prompt, tag, {
       trusted: TRUSTED_PROMPT_TEXTS,
       jsonEmbedded: true,
@@ -738,6 +746,7 @@ export class ProductionMemoryConversationReview {
         knownPersonIds: new Set(plan.people.map(({ id }) => id)),
         newMemoriesAllowed: plan.newMemoriesAllowed,
         restore: (text) => restorePlaceholders(text, table),
+        externalOrigins,
         ...(supportVerdicts ? { supportVerdicts } : {}),
       });
     const first = parse();

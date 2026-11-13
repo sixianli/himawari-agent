@@ -3631,6 +3631,43 @@ it("[ADR-0257] stops the run after the configured refusals in a row, even when e
   expect(JSON.stringify(projection.captures)).toContain("The owner should decide");
 });
 
+it("[ADR-0257] counts a call the tool layer refuses before dispatch toward the refusal limit", async () => {
+  const calls = Array.from({ length: 3 }, (_, index) => ({
+    name: "restaurant_search",
+    id: `preflight-refused-${index}`,
+    arguments: { query: `different request ${index}` },
+  }));
+  const model = await createFauxModelFixture(
+    "Nothing was allowed",
+    calls[0],
+    calls.slice(1).map((call) => [call]),
+  );
+  const tools = new RecordingRuntimeTools();
+  tools.preflight.mockImplementation(async () => ({
+    allowed: false,
+    permissionDecisionRef: "denied",
+    reasonCode: "OWNER_SCOPE",
+  }));
+  const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
+    projection: new HistoryRecordingProjection(),
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `preflight-refused:${ordinal}`,
+    toolRefusalLimits: { consecutive: 3, total: 20 },
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(events.at(-1)).toMatchObject({
+    type: "runtime.failed",
+    errorCode: "PI_TOOL_LOOP_DETECTED",
+  });
+  expect(tools.preflight).toHaveBeenCalledTimes(3);
+  expect(tools.execute).not.toHaveBeenCalled();
+});
+
 it("[ADR-0257] keeps going below the refusal limit", async () => {
   const calls = Array.from({ length: 2 }, (_, index) => ({
     name: "restaurant_search",

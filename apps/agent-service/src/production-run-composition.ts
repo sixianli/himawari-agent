@@ -35,6 +35,7 @@ import { PiAgentRuntimeAdapter, type PiModelBindingPort } from "@himawari-agent/
 import {
   type ContextExternalContent,
   markRecalledExternalRecords,
+  originsOf,
 } from "./context-external-content.js";
 import type { ProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import type { ProductionBackgroundCommands } from "./production-background-commands.js";
@@ -81,7 +82,7 @@ import { ProductionUploadedFiles } from "./production-uploaded-files.js";
 
 export interface ProductionRunCompositionOptions {
   readonly egress: ModelEgress;
-  readonly externalContent?: Pick<ContextExternalContent, "mark">;
+  readonly externalContent?: Pick<ContextExternalContent, "mark" | "read" | "readThread">;
   readonly toolRefusalLimits?: ToolRefusalConfiguration;
   readonly generateTitle?: (
     request: RuntimeRequest,
@@ -552,6 +553,12 @@ export function createProductionRunComposition(options: ProductionRunComposition
         generations: repository.threadDistillationState(),
         state: repository.productMemoryState(),
         relevantMemoryIds: (runId) => recalled.get(runId) ?? [],
+        ...(options.externalContent
+          ? {
+              externalOrigins: async (runId: RuntimeRequest["runId"]) =>
+                originsOf(await externalContent?.read(runId)),
+            }
+          : {}),
         product: memoryCaptureOptions.product,
         approvals: memoryCaptureOptions.approvals,
         reminders: repository.memoryReminders(),
@@ -612,6 +619,12 @@ export function createProductionRunComposition(options: ProductionRunComposition
           reminders: repository.memoryReminders(),
           book: repository.memoryBook(),
           ledger: repository.decisionLedger(),
+          ...(options.externalContent
+            ? {
+                externalOrigins: async (threadId: string) =>
+                  originsOf(await externalContent?.readThread(threadId)),
+              }
+            : {}),
           ...(memoryCaptureOptions.timeZone ? { timeZone: memoryCaptureOptions.timeZone } : {}),
           payloads,
           protector,

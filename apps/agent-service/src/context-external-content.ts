@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { PORT_ERROR_CODES } from "@himawari-agent/application";
 import type {
   AuthorityFence,
   ClockPort,
@@ -27,6 +28,20 @@ export function externalContentSourceRefs(
   return [...new Set(origins)]
     .sort((left, right) => left.localeCompare(right, "en"))
     .map((origin) => `${EXTERNAL_CONTENT_SOURCE_REF_PREFIX}${recordId}|${origin}`.slice(0, 512));
+}
+
+export function isConflict(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { readonly code?: unknown }).code === PORT_ERROR_CODES.CONFLICT
+  );
+}
+
+export function originsOf(
+  sources: readonly ExternalContentSource[] | undefined,
+): readonly string[] {
+  return [...new Set((sources ?? []).map(({ origin }) => origin))];
 }
 
 export function isExternalContentSourceRef(ref: string): boolean {
@@ -117,6 +132,15 @@ export class ContextExternalContent {
       : [{ threadId: null, runId }];
   }
 
+  async readThread(threadId: string): Promise<readonly ExternalContentSource[]> {
+    const record = await this.#state.readScopedState(
+      this.#configuration.ownerId,
+      this.#configuration.agentId,
+      externalContentKey({ threadId, runId: "" }),
+    );
+    return sourcesOf(record?.value);
+  }
+
   async read(runId: RunId): Promise<readonly ExternalContentSource[]> {
     const found: ExternalContentSource[] = [];
     for (const scope of await this.#scopes(runId)) {
@@ -163,6 +187,7 @@ export class ContextExternalContent {
         });
         return;
       } catch (error) {
+        if (!isConflict(error)) throw error;
         lastError = error;
       }
     }

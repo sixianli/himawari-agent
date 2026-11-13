@@ -58,6 +58,8 @@ export interface OwnerScopeDecisionContext {
   readonly externalSources: readonly string[];
 }
 
+const ASKED_BECAUSE_SOURCES = 5;
+
 export const OWNER_SCOPE_POLICY_VERSION = "owner-scope.v1";
 
 export function actionRefusalKey(intentId: string): string {
@@ -89,7 +91,10 @@ export interface OwnerScopeFreeze {
 }
 
 function askedBecause(hit: RuleHit, externalSources: readonly string[]): ApprovalAskedBecause {
-  const sources = externalSources.length > 0 ? `（${externalSources.join("、")}）` : "";
+  const shown = externalSources.slice(0, ASKED_BECAUSE_SOURCES);
+  const more = externalSources.length > shown.length ? `等 ${externalSources.length} 个来源` : "";
+  const sources =
+    shown.length > 0 ? `（${shown.map((source) => source.slice(0, 80)).join("、")}${more}）` : "";
   return Object.freeze({
     kind: "rule" as const,
     ruleId: hit.id,
@@ -317,6 +322,7 @@ export class OwnerScopeAuthorization {
   ): Promise<void> {
     const { configuration, state, clock } = this.#options;
     const key = actionRefusalKey(intent.id);
+    const refusedAt = clock.now();
     const value = {
       intentId: intent.id,
       runId: intent.runId,
@@ -327,23 +333,32 @@ export class OwnerScopeAuthorization {
       capabilityRef: intent.capabilityRef,
       parameterFingerprint: context?.parameterFingerprint ?? null,
       externalSources: [...(context?.externalSources ?? [])],
+      refusedAt,
     };
-    const existing = await state.readScopedState(configuration.ownerId, configuration.agentId, key);
-    if (!existing)
-      await state.commitStateAndEvents({
-        command: {
-          ownerId: configuration.ownerId,
-          agentId: configuration.agentId,
-          commandType: "authorization.action_rule.refused",
-          idempotencyKey: key as IdempotentAgentCommand["idempotencyKey"],
-          commandFingerprint: digest(value),
-          authority: this.#options.authority(),
-        },
-        state: { key, expectedRevision: null, value },
-        events: [],
-        resultRef: key,
-        committedAt: clock.now(),
-      });
+    const read = () => state.readScopedState(configuration.ownerId, configuration.agentId, key);
+    let existing = await read();
+    if (!existing) {
+      await state
+        .commitStateAndEvents({
+          command: {
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+            commandType: "authorization.action_rule.refused",
+            idempotencyKey: key as IdempotentAgentCommand["idempotencyKey"],
+            commandFingerprint: digest(value),
+            authority: this.#options.authority(),
+          },
+          state: { key, expectedRevision: null, value },
+          events: [],
+          resultRef: key,
+          committedAt: refusedAt,
+        })
+        .catch(async (error: unknown) => {
+          if (!(await read())) throw error;
+        });
+      existing = await read();
+    }
+    const recorded = existing?.value["refusedAt"];
     await appendAuditRecord(this.#options.audit, {
       id: `owner-scope-rule:${digest([intent.id, `refused:${hit?.id ?? ""}`])}`,
       ownerId: intent.ownerId,
@@ -351,7 +366,7 @@ export class OwnerScopeAuthorization {
       action: "authorization.action_rule.refused",
       targetRef: key,
       outcome: "rejected",
-      occurredAt: clock.now(),
+      occurredAt: typeof recorded === "string" ? recorded : refusedAt,
     });
   }
 }
