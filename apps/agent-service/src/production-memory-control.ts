@@ -167,6 +167,8 @@ export type OwnerRuleControl = Pick<
   "list" | "undo" | "confirm" | "reconfirm"
 >;
 
+const RULE_QUOTE_CHAIN_MAX_DEPTH = 8;
+
 export class ProductionMemoryControl {
   private readonly options: {
     readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
@@ -541,7 +543,7 @@ export class ProductionMemoryControl {
     const seen = new Set<MemoryId>([sourceId]);
     let next: MemoryId = first;
     for (;;) {
-      if (seen.has(next)) return null;
+      if (seen.has(next) || seen.size > RULE_QUOTE_CHAIN_MAX_DEPTH) return null;
       seen.add(next);
       const record = await this.options.state.read(next);
       if (!record || !this.#quotable(record)) return null;

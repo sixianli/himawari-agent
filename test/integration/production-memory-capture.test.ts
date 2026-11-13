@@ -2321,6 +2321,30 @@ describe("production memory capture", () => {
       quoteSuperseded: false,
       quoteLatestMemoryId: null,
     });
+    await revise(sourceId, { status: "active" });
+    const chain: string[] = [];
+    for (let index = 1; index <= 9; index += 1) {
+      await context.protect(`payload-chain-${index}`, `主人的第 ${index} 版说法`);
+      await context.control.execute({
+        ...envelope,
+        idempotencyKey: `chain-${index}`,
+        kind: "command",
+        type: "memory.create",
+        payload: {
+          contentRef: `payload-chain-${index}`,
+          category: "preference",
+          subCategory: "其他",
+          pinned: false,
+        },
+      } as never);
+      chain.push(`memory:owner:chain-${index}`);
+    }
+    await revise(sourceId, { attributes: { supersededBy: chain[0] } });
+    for (let index = 0; index < 8; index += 1)
+      await revise(chain[index] as never, { attributes: { supersededBy: chain[index + 1] } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: null });
+    await revise(chain[7] as never, { attributes: { supersededBy: null } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: chain[7] });
   });
 
   it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {

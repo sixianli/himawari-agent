@@ -46,6 +46,16 @@ describe("files list gateway messages", () => {
     for (const origin of ["uploaded", "generated"]) gatewayV2MessageSchema.parse(query({ origin }));
     gatewayV2MessageSchema.parse(snapshot({}));
     gatewayV2MessageSchema.parse(snapshot({ files: [], nextCursor: "abc_-1" }));
+    gatewayV2MessageSchema.parse(
+      snapshot({
+        files: [
+          {
+            ...file,
+            contentPath: `/api/files/v1/content/${encodeURIComponent(":".repeat(128))}`,
+          },
+        ],
+      }),
+    );
   });
 
   it.each([

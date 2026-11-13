@@ -772,7 +772,7 @@ const filesListSnapshotSchema = object({
         version: integer(1),
         createdAt: timestamp,
         deleted: booleanValue,
-        contentPath: nullable(boundedString(256)),
+        contentPath: nullable(boundedString(512)),
       }),
     ),
     nextCursor: nullable(fileListCursorSchema),

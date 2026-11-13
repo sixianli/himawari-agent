@@ -59,7 +59,8 @@ export class ProductionLoginDevicesControl {
     const ownerId = this.#owner(authentication, query.scope.ownerId);
     const devices = [...(await this.#options.state.listDevices(ownerId, false))].sort(
       (left, right) =>
-        right.lastSeenAt.localeCompare(left.lastSeenAt) || left.id.localeCompare(right.id),
+        (right.lastSeenAt > left.lastSeenAt ? 1 : right.lastSeenAt < left.lastSeenAt ? -1 : 0) ||
+        (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
     );
     return {
       ...query,
@@ -89,15 +90,15 @@ export class ProductionLoginDevicesControl {
     const ownerId = this.#owner(authentication, command.scope.ownerId);
     if (command.payload.deviceId === authentication.deviceId)
       throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "LOGIN_DEVICE_IS_CURRENT");
-    await this.#options.recentAuthentication.assertRecentAuthentication({
-      authentication,
-      expectedAuthenticationRef: command.payload.recentAuthenticationRef,
-    });
     const all = await this.#options.state.listDevices(ownerId, true);
     const device = all.find((entry) => entry.id === command.payload.deviceId);
     if (!device)
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "LOGIN_DEVICE_NOT_FOUND");
     if (device.status === "revoked") return { resultRef: device.id, replayed: true };
+    await this.#options.recentAuthentication.assertRecentAuthentication({
+      authentication,
+      expectedAuthenticationRef: command.payload.recentAuthenticationRef,
+    });
     await this.#options.state.revokeDevice(device.id, device.revision, this.#options.clock.now());
     return { resultRef: device.id, replayed: false };
   }

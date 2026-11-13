@@ -1253,18 +1253,14 @@ describe("production HTTP composition", () => {
         if (parsed.type !== "login.devices.snapshot") throw new Error(parsed.type);
         return parsed.payload.devices;
       };
-      const webDevices = await running.composition.app.inject({
-        method: "GET",
-        url: "/api/identity/v1/devices",
-        headers: requestHeaders(token, second.cookie),
-      });
       const before = await loginDevices();
       expect(before.length).toBeGreaterThanOrEqual(2);
       expect(before.filter(({ current }) => current)).toHaveLength(1);
-      if (webDevices.statusCode === 200)
-        expect(before.map(({ deviceId }) => deviceId).sort()).toEqual(
-          (webDevices.json() as { devices: { id: string }[] }).devices.map(({ id }) => id).sort(),
-        );
+      expect(before.map(({ deviceId }) => deviceId).sort()).toEqual(
+        (await running.repository.sessionDeviceState().listDevices(OWNER_ID as never, false))
+          .map(({ id }) => id)
+          .sort(),
+      );
       const current = before.find(({ current }) => current);
       const other = before.find(({ current }) => !current);
       const revoke = (deviceId: string, recentAuthenticationRef: string | null, key: string) =>
@@ -1292,6 +1288,12 @@ describe("production HTTP composition", () => {
       const revoked = await revoke(other?.deviceId ?? "", second.authenticationRef, "revoke-other");
       expect(revoked.statusCode, revoked.body).toBe(200);
       expect((await loginDevices()).map(({ deviceId }) => deviceId)).not.toContain(other?.deviceId);
+      const replayed = await revoke(other?.deviceId ?? "", null, "revoke-other-again");
+      expect(replayed.statusCode, replayed.body).toBe(200);
+      expect(replayed.json()).toMatchObject({ replayed: true });
+      expect(
+        (await revoke("device-missing", second.authenticationRef, "revoke-missing")).statusCode,
+      ).toBe(404);
       expect((await loginDevices()).find(({ current }) => current)?.deviceId).toBe(
         current?.deviceId,
       );
