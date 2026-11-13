@@ -26,9 +26,11 @@ import {
   gatewayV2MessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import { afterEach, describe, expect, it } from "vitest";
+import { classifiedThreadTitleReader } from "../../apps/agent-service/src/classified-thread-title.ts";
 import { ProductionFilesControl } from "../../apps/agent-service/src/production-files-control.ts";
 import { ProductionThreadArtifacts } from "../../apps/agent-service/src/production-thread-artifacts.ts";
 import { ProductionUploadedFiles } from "../../apps/agent-service/src/production-uploaded-files.ts";
+import { newProtector } from "./data-export-fixture.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-thread-artifacts");
@@ -67,7 +69,7 @@ describe("[FD-1] thread artifact storage", () => {
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function open() {
+  async function open(titleRefs: Readonly<Record<string, string>> = {}) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-thread-artifacts-"));
     directories.push(stateRoot);
     const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
@@ -76,7 +78,7 @@ describe("[FD-1] thread artifact storage", () => {
     database
       .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
       .run(AGENT_ID, OWNER_ID);
-    for (const thread of ["thread-1", "thread-2"])
+    for (const thread of new Set(["thread-1", "thread-2", ...Object.keys(titleRefs)]))
       database
         .prepare(
           `INSERT INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at)
@@ -84,6 +86,8 @@ describe("[FD-1] thread artifact storage", () => {
         )
         .run(thread, OWNER_ID, AGENT_ID, T0, T0);
     database.pragma("foreign_keys = OFF");
+    for (const [thread, ref] of Object.entries(titleRefs))
+      database.prepare("UPDATE threads SET title_ref = ? WHERE id = ?").run(ref, thread);
     for (const [run, thread] of [
       ["run-1", "thread-1"],
       ["run-2", "thread-1"],
@@ -403,8 +407,41 @@ describe("[FD-1] thread artifact storage", () => {
   });
 
   it("[iOS] 网关文件列表：主人全部对话的文件按时间从新到旧分页，和网页文件列表同一份数据", async () => {
-    const { repository, store } = await open();
+    const { repository, store } = await open({
+      "thread-1": "title-thread-1",
+      "thread-2": "title-thread-2",
+      "thread-private": "title-private",
+      "thread-restricted": "title-restricted",
+      "thread-blank": "title-blank",
+      "thread-json": "title-json",
+    });
     try {
+      const protector = newProtector();
+      const titles = repository.payloadStore(OWNER_ID, AGENT_ID);
+      const title = async (
+        ref: string,
+        text: string,
+        dataClassification: "public" | "private" | "sensitive" | "restricted",
+        contentType = "text/plain",
+      ) => {
+        await titles.put(
+          await protector.protect({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            ref,
+            dataClassification,
+            contentType,
+            plaintext: new TextEncoder().encode(text),
+            createdAt: T0,
+          } as never),
+        );
+      };
+      await title("title-thread-1", "  周五\u0007去大阪  ", "public");
+      await title("title-thread-2", "体检结果", "sensitive");
+      await title("title-private", "体检结果", "private");
+      await title("title-restricted", "体检结果", "restricted");
+      await title("title-blank", "   ", "public");
+      await title("title-json", "体检结果", "public", "application/json");
       await store.register({ ...scope, artifact: artifact("w1") });
       await store.register({
         ...scope,
@@ -434,9 +471,16 @@ describe("[FD-1] thread artifact storage", () => {
         paths: ["notes/plan.md"],
         deletedAt: "2026-10-28T05:03:00.000Z",
       });
+      const threadTitle = classifiedThreadTitleReader({
+        configuration: scope,
+        threads: repository.threadRepository(),
+        payloads: titles,
+        protector,
+      });
       const control = new ProductionFilesControl({
         configuration: scope,
         store,
+        threadTitle,
         clock: { now: () => T0 },
       });
       const signedIn = {
@@ -476,6 +520,7 @@ describe("[FD-1] thread artifact storage", () => {
         {
           fileId: "d1",
           threadId: "thread-2",
+          threadTitle: null,
           name: "plan.md",
           kind: "document",
           origin: "generated",
@@ -489,6 +534,7 @@ describe("[FD-1] thread artifact storage", () => {
         {
           fileId: "u1",
           threadId: "thread-1",
+          threadTitle: "周五\uFFFD去大阪",
           name: "bad\uFFFDname.png",
           kind: "image",
           origin: "uploaded",
@@ -549,6 +595,11 @@ describe("[FD-1] thread artifact storage", () => {
       await expect(control.query(otherAgent as never, signedIn)).rejects.toMatchObject({
         code: "PORT_NOT_AUTHORITATIVE",
       });
+      expect(await threadTitle("thread-private")).toBe("体检结果");
+      expect(await threadTitle("thread-restricted")).toBeNull();
+      expect(await threadTitle("thread-blank")).toBeNull();
+      expect(await threadTitle("thread-json")).toBeNull();
+      expect(await threadTitle("thread-missing")).toBeNull();
       expect([...FILE_LIST_KINDS]).toEqual([...THREAD_ARTIFACT_KINDS]);
       expect([...FILE_LIST_ORIGINS]).toEqual([...THREAD_ARTIFACT_ORIGINS]);
       expect(FILE_LIST_PAGE_LIMIT).toBeLessThanOrEqual(THREAD_ARTIFACT_LIST_LIMIT);
