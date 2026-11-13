@@ -37,7 +37,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   MCP_READ_PATH,
   MCP_READ_TOOL_CEILING_MISSING,
-  MCP_READ_TOOL_NAMES,
   MCP_READ_TOOLS,
   type McpReadSources,
   type McpReadToolEntry,
@@ -573,7 +572,12 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       const f = await setup();
       const client = await f.connect(era);
       const { tools } = await client.listTools();
-      expect(tools.map(({ name }) => name)).toEqual([...MCP_READ_TOOL_NAMES]);
+      expect(tools.map(({ name }) => name)).toEqual([
+        "start_here",
+        "find_memories",
+        "today_context",
+        "rule_book",
+      ]);
       expect(tools.every(({ annotations }) => annotations?.readOnlyHint === true)).toBe(true);
     },
   );
@@ -1070,6 +1074,27 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       ).rejects.toThrow(MCP_READ_TOOL_CEILING_MISSING);
     });
 
+    it("refuses a read tool whose name is reused, taken by a write tool or cannot be recorded", async () => {
+      const [first] = MCP_READ_TOOLS;
+      if (!first) throw new Error("MCP_READ_TOOLS_EMPTY");
+      await expect(setup({ readTools: [...MCP_READ_TOOLS, first] })).rejects.toThrow(
+        "MCP_READ_TOOL_DUPLICATE:start_here",
+      );
+      await expect(
+        setup({ readTools: [...MCP_READ_TOOLS, { ...first, name: "propose_rule" }] }),
+      ).rejects.toThrow("MCP_READ_TOOL_DUPLICATE:propose_rule");
+      await expect(
+        setup({ readTools: [...MCP_READ_TOOLS, { ...first, name: "p".repeat(58) }] }),
+      ).rejects.toThrow("MCP_READ_TOOL_NAME_INVALID");
+      await expect(
+        setup({ readTools: [...MCP_READ_TOOLS, { ...first, name: "Peek Tool" }] }),
+      ).rejects.toThrow("MCP_READ_TOOL_NAME_INVALID");
+      const longest = { ...first, name: "p".repeat(57) };
+      const f = await setup({ readTools: [...MCP_READ_TOOLS, longest] });
+      const client = await f.connect("modern");
+      expect((await client.listTools()).tools.map(({ name }) => name)).toContain(longest.name);
+    });
+
     it("a newly registered read tool reads only through its declared sources, bounded by the ceiling", async () => {
       const peek: McpReadToolEntry = {
         name: "peek",
@@ -1277,6 +1302,23 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       expect(row).toMatchObject({ reasonCode: "start_here_failed", outcome: "read" });
       expect(row?.inputs.memoryIds).toEqual([]);
       expect(f.failures.length).toBeGreaterThan(0);
+    });
+
+    it("keeps a value masked by today's part out of the profile version", async () => {
+      const versionFor = async (code: string, named: boolean) => {
+        const f = await setup({ readCeiling: "sensitive" });
+        await f.seedProfile("memory-number", "preference", 900, `常用的号码 ${code}`);
+        await f.writer.create({
+          key: "login-code",
+          text: named ? `登录验证码是 ${code}` : "明天登录一下网银",
+          due: "2026-11-12T09:00",
+          repeat: "none",
+        });
+        const client = await f.connect("modern");
+        return (JSON.parse((await f.call(client, "start_here")).text) as StartHere).profile.version;
+      };
+      expect(await versionFor("482913", true)).toBe(await versionFor("517204", true));
+      expect(await versionFor("482913", false)).not.toBe(await versionFor("517204", false));
     });
 
     it("masks a code named in today's part where the same value stands alone in the profile, through a real start_here call", async () => {

@@ -62,7 +62,6 @@ import {
   MCP_PROPOSAL_CONFIRM_KEY,
   MCP_PROPOSAL_UNSEEN_ANSWER_MS,
   MCP_READ_PATH,
-  MCP_READ_TOOL_NAMES,
   MCP_WRITE_TOOL_NAMES,
   mcpProposalAnswer,
   ProductionMcpRead,
@@ -80,6 +79,7 @@ import { ProductionReminderWriter } from "../../apps/agent-service/src/productio
 import { createMcpAccess } from "../../apps/agent-service/test/fixtures/mcp-access.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
+const READ_TOOL_NAMES = ["start_here", "find_memories", "today_context", "rule_book"];
 const OWNER_ID = createOwnerId("owner-mcp-write");
 const AGENT_ID = createAgentId("agent-mcp-write");
 const THREAD_ID = createThreadId("thread-mcp-write");
@@ -498,21 +498,14 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
   it("shows the write tool only when proposals are turned on, and only on a modern connection", async () => {
     const readOnly = await setup({ readOnly: true });
     const reader = await readOnly.connect();
-    expect((await reader.listTools()).tools.map(({ name }) => name)).toEqual([
-      ...MCP_READ_TOOL_NAMES,
-    ]);
+    expect((await reader.listTools()).tools.map(({ name }) => name)).toEqual([...READ_TOOL_NAMES]);
     const f = await setup();
     const writer = await f.connect();
     const tools = (await writer.listTools()).tools;
-    expect(tools.map(({ name }) => name)).toEqual([
-      ...MCP_READ_TOOL_NAMES,
-      ...MCP_WRITE_TOOL_NAMES,
-    ]);
+    expect(tools.map(({ name }) => name)).toEqual([...READ_TOOL_NAMES, ...MCP_WRITE_TOOL_NAMES]);
     expect(tools.at(-1)?.annotations).toMatchObject({ readOnlyHint: false, idempotentHint: false });
     const legacy = await f.connect({ era: "legacy" });
-    expect((await legacy.listTools()).tools.map(({ name }) => name)).toEqual([
-      ...MCP_READ_TOOL_NAMES,
-    ]);
+    expect((await legacy.listTools()).tools.map(({ name }) => name)).toEqual([...READ_TOOL_NAMES]);
     await expect(
       legacy.callTool({ name: "propose_memory", arguments: { text: COFFEE } }),
     ).rejects.toThrow();

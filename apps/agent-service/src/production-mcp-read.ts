@@ -220,6 +220,9 @@ export interface McpReadToolEntry {
 }
 
 export const MCP_READ_TOOL_CEILING_MISSING = "MCP_READ_TOOL_CEILING_MISSING";
+const MCP_READ_FAILED_SUFFIX = "_failed";
+const MCP_READ_TOOL_NAME_MAXIMUM = 64 - MCP_READ_FAILED_SUFFIX.length;
+const MCP_READ_TOOL_NAME = new RegExp(`^[a-z][a-z0-9_]{0,${MCP_READ_TOOL_NAME_MAXIMUM - 1}}$`, "u");
 
 export function mcpReadToolRegistry(
   entries: readonly McpReadToolEntry[],
@@ -234,7 +237,12 @@ export function mcpReadToolRegistry(
       !sources.every((source) => (MCP_READ_SOURCE_NAMES as readonly unknown[]).includes(source))
     )
       throw new Error(`${MCP_READ_TOOL_CEILING_MISSING}:${entry.name}`);
-    if (names.has(entry.name)) throw new Error(`MCP_READ_TOOL_DUPLICATE:${entry.name}`);
+    if (!MCP_READ_TOOL_NAME.test(entry.name))
+      throw new Error(
+        `MCP_READ_TOOL_NAME_INVALID:${entry.name.slice(0, MCP_READ_TOOL_NAME_MAXIMUM)}`,
+      );
+    if (names.has(entry.name) || (MCP_WRITE_TOOL_NAMES as readonly string[]).includes(entry.name))
+      throw new Error(`MCP_READ_TOOL_DUPLICATE:${entry.name}`);
     names.add(entry.name);
   }
   return Object.freeze([...entries]);
@@ -1190,7 +1198,7 @@ export class ProductionMcpRead {
       kind: "external_read",
       decidedAt,
       outcome: "read",
-      reasonCode: memoryIds ? name : `${name}_failed`,
+      reasonCode: memoryIds ? name : `${name}${MCP_READ_FAILED_SUFFIX}`,
       subjectRef: `mcp-client:${client}`,
       inputs: {
         memoryIds: memoryIds ?? [],
@@ -1384,15 +1392,6 @@ async function startHere(request: McpReadRequest): Promise<ToolOutcome> {
     items: lines.map(({ text }) => text),
   }));
   const omittedProfile = outline?.usage.queued.length ?? 0;
-  const versionBase = JSON.stringify(maskForExternalRead([requirements, sections, omittedProfile]));
-  const profile = {
-    version: createHash("sha256").update(versionBase).digest("hex").slice(0, 12),
-    requirements,
-    sections,
-    ...(omittedProfile > 0
-      ? { omitted: renderPrompt(MCP_START_HERE_OMITTED, { count: String(omittedProfile) }) }
-      : {}),
-  };
   const owned = await declaredSource(read, "ownerRules")();
   const summaries = owned.flatMap((row) => {
     const summary = enforcedOwnerRule(row)?.summary.replace(/\s+/gu, " ").trim();
@@ -1415,6 +1414,23 @@ async function startHere(request: McpReadRequest): Promise<ToolOutcome> {
       : {}),
   };
   const today = await todayContext(request);
+  const [maskedRequirements, maskedSections] = maskForExternalRead([
+    requirements,
+    sections,
+    rules,
+    today.output,
+  ]) as [unknown, unknown];
+  const profile = {
+    version: createHash("sha256")
+      .update(JSON.stringify([maskedRequirements, maskedSections, omittedProfile]))
+      .digest("hex")
+      .slice(0, 12),
+    requirements,
+    sections,
+    ...(omittedProfile > 0
+      ? { omitted: renderPrompt(MCP_START_HERE_OMITTED, { count: String(omittedProfile) }) }
+      : {}),
+  };
   const memoryIds = [
     ...new Set([
       ...(outline?.rules ?? []).map(({ memoryId }) => memoryId as string),
