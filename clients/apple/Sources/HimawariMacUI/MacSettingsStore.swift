@@ -118,7 +118,7 @@ final class MacSettingsStore {
     private(set) var messagesReadable: Bool = MessagesDatabase.readable()
 
     func askForAccessibility() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         accessibilityAllowed = AXIsProcessTrustedWithOptions(options)
     }
 
