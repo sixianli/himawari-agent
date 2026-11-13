@@ -1768,6 +1768,11 @@ describe("production memory capture", () => {
       `page-${"k".repeat(122)}x`,
     );
     expect(other.resultRef).not.toBe(created.resultRef);
+    const shortened = String(created.resultRef).slice("reminder:memory:reminder:owner:".length);
+    expect(shortened).toMatch(/\.[0-9a-f]{64}$/u);
+    const lookalike = await command(context.control, "memory.reminder.create", page, shortened);
+    expect(lookalike.resultRef).not.toBe(created.resultRef);
+    expect(String(lookalike.resultRef).length).toBeLessThanOrEqual(128);
     const tool = (await context.reminderTools.run({
       runId: createRunId(`run-${"r".repeat(120)}`),
       toolCallId: `call-${"c".repeat(120)}`,
@@ -1790,7 +1795,7 @@ describe("production memory capture", () => {
     const parsed = gatewayV2MessageSchema.parse(message);
     if (parsed.type !== "memory.overview.snapshot") throw new Error("snapshot");
     expect(parsed.payload.upcoming.map(({ reminderId }) => reminderId).sort()).toEqual(
-      [created.resultRef, other.resultRef, tool.reminderId].sort(),
+      [created.resultRef, other.resultRef, lookalike.resultRef, tool.reminderId].sort(),
     );
     await context.control.execute({
       ...envelope,

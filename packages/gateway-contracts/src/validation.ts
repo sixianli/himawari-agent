@@ -55,7 +55,7 @@ export const machineString: Schema<string> = {
       input.length > MACHINE_STRING_MAX_LENGTH ||
       !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(input)
     ) {
-      fail(path, "expected a 1-128 character machine string");
+      fail(path, `expected a 1-${MACHINE_STRING_MAX_LENGTH} character machine string`);
     }
     return input;
   },

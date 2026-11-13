@@ -42,8 +42,14 @@ const CEILING_SCAN_LIMIT = 200;
 const MEMORY_ID_PREFIX = "memory:reminder:";
 const REMINDER_ID_PREFIX = `reminder:${MEMORY_ID_PREFIX}`;
 
+const SHORTENED_KEY = /\.[0-9a-f]{64}$/u;
+
 function reminderKey(key: string): string {
-  if (REMINDER_ID_PREFIX.length + key.length <= MACHINE_STRING_MAX_LENGTH) return key;
+  if (
+    REMINDER_ID_PREFIX.length + key.length <= MACHINE_STRING_MAX_LENGTH &&
+    !SHORTENED_KEY.test(key)
+  )
+    return key;
   const digest = createHash("sha256").update(key, "utf8").digest("hex");
   const kept = MACHINE_STRING_MAX_LENGTH - REMINDER_ID_PREFIX.length - digest.length - 1;
   return `${key.slice(0, kept)}.${digest}`;
