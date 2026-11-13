@@ -108,7 +108,7 @@ describe("[P4-8] model pre-rating in the running service", () => {
     const costs = new Map<string, number>();
     const invocations: string[] = [];
     const released: string[] = [];
-    const releaseFails = { input: false };
+    const releaseFails = { input: false, output: false };
     const model: ProactiveModelInvoker = {
       modelRef: MODEL_REF,
       model: {
@@ -162,6 +162,7 @@ describe("[P4-8] model pre-rating in the running service", () => {
       release: async (refs) => {
         for (const ref of refs) {
           if (releaseFails.input && ref.startsWith("in-")) throw new Error("EIO");
+          if (releaseFails.output && ref.startsWith("out-")) throw new Error("EIO");
           released.push(ref);
         }
       },
@@ -361,6 +362,10 @@ describe("[P4-8] model pre-rating in the running service", () => {
     await h.service().prereview();
     const last = h.invocations.at(-1);
     expect(h.released.slice(-2).sort()).toEqual([`in-${last}`, `out-${last}`]);
+    h.releaseFails.output = true;
+    await h.skipped("output-stuck", "想买一本书", NOV_4_10AM_JST);
+    await h.service().prereview();
+    expect(h.released.at(-1)).toBe(`in-${h.invocations.at(-1)}`);
   });
 
   it("[P4-8] keeps the daily cap across a restart and starts again the next day", async () => {
