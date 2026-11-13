@@ -625,29 +625,22 @@ describe("[iOS-9A] an action whose result is unknown is never done twice", () =>
 });
 
 describe("[iOS-9A] review round 1: the same action is recognised however it is asked again", () => {
-  it("[reverse] listing the same attendees in another order while the result is unknown does not send the action again", async () => {
+  it("[reverse] listing the same phone numbers in another order while the result is unknown does not send the action again", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
-    await supports(h, client, ["calendar.create"]);
-    h.actions.authorization.current = ownerAllows(true);
+    await supports(h, client, ["contact.update"]);
+    await mirror(h, client, "contact", [{ externalId: "c-1", data: { name: "林一" } }]);
+    h.actions.authorization.current = ownerAllows(false);
     noWaiting(h);
     const device = await connectDevice(h, client);
     const { act } = setup(h);
     await addRun(h, "run-1");
-    const invite = (attendees: string[]) =>
-      act("run-1", {
-        action: "calendar.create",
-        arguments: {
-          title: "周会",
-          start: "2026-11-13T15:00",
-          end: "2026-11-13T16:00",
-          attendees,
-        },
-      });
-    await invite(["lin@example.com", "chen@example.com"]);
+    const update = (phones: string[]) =>
+      act("run-1", { action: "contact.update", arguments: { contactId: "c-1", phones } });
+    await update(["+81 90 1111 2222", "+81 3 3333 4444"]);
     await until(() => device.claimed.length === 1);
-    h.clock.advance(121_000);
-    expect(await invite(["chen@example.com", "lin@example.com"])).toMatchObject({
+    h.clock.advance(601_000);
+    expect(await update(["+81 3 3333 4444", "+81 90 1111 2222"])).toMatchObject({
       done: false,
       state: "result_unknown",
     });
@@ -655,6 +648,57 @@ describe("[iOS-9A] review round 1: the same action is recognised however it is a
     expect(await rows(h)).toHaveLength(1);
     expect(device.claimed.filter(({ mode }) => mode === "perform")).toHaveLength(1);
     await device.close();
+    await h.repository.close();
+  });
+
+  it("[reverse] fields the iPhone cannot write are not offered, and one occurrence of a repeating event is named as such", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, [
+      "calendar.create",
+      "calendar.update",
+      "calendar.delete",
+      "contact.update",
+    ]);
+    await mirror(h, client, "calendar_event", [DENTIST]);
+    h.actions.authorization.current = ownerAllows(true);
+    noWaiting(h);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    const described = (await act("run-1", { action: "describe" })) as {
+      actions: { name: string; parameters: Record<string, unknown> }[];
+    };
+    const fields = Object.fromEntries(
+      described.actions.map(({ name, parameters }) => [name, Object.keys(parameters)]),
+    );
+    expect(fields["calendar.create"]).not.toContain("attendees");
+    expect(fields["calendar.update"]).not.toContain("attendees");
+    expect(fields["contact.update"]).not.toContain("notes");
+    expect(fields["calendar.delete"]).toContain("occurrenceStart");
+    await expect(
+      act("run-1", {
+        action: "calendar.create",
+        arguments: {
+          title: "周会",
+          start: "2026-11-13T15:00",
+          end: "2026-11-13T16:00",
+          attendees: ["lin@example.com"],
+        },
+      }),
+    ).rejects.toMatchObject({ code: "DEVICE_ACTION_INPUT_INVALID" });
+    expect(await rows(h)).toHaveLength(0);
+    await act("run-1", {
+      action: "calendar.delete",
+      arguments: { eventId: "evt-1", occurrenceStart: "2026-11-20T15:00" },
+    });
+    const [single] = (await deviceGet(h, client, "actions")).body["actions"] as {
+      detail: Record<string, string>;
+    }[];
+    expect(single?.detail).toEqual({
+      "zh-CN": "删除日程“牙医复诊”：2026-11-20 15:00（只删这一次）",
+      en: 'Delete event "牙医复诊": 2026-11-20 15:00 (this occurrence only)',
+      ja: "予定「牙医复诊」を削除：2026-11-20 15:00（この回だけ）",
+    });
     await h.repository.close();
   });
 

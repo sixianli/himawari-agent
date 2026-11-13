@@ -261,10 +261,6 @@ export const HOME_ROUTINE_CATEGORIES: readonly string[] = Object.freeze([
   "window_covering",
 ]);
 
-function list(values: unknown): readonly string[] {
-  return Array.isArray(values) ? (values as string[]) : [];
-}
-
 function joined(parts: readonly (string | false | undefined)[], separator: string): string {
   return parts
     .filter((part): part is string => typeof part === "string" && part.length > 0)
@@ -312,7 +308,6 @@ const CALENDAR_LABELS = Object.freeze({
   end: label("结束", "end", "終了"),
   location: label("地点", "location", "場所"),
   notes: label("备注", "notes", "メモ"),
-  attendees: label("参与者", "attendees", "参加者"),
 });
 
 const REMINDER_LABELS = Object.freeze({
@@ -327,7 +322,6 @@ const CONTACT_LABELS = Object.freeze({
   phones: label("电话", "phones", "電話"),
   emails: label("邮箱", "emails", "メール"),
   organization: label("公司", "organization", "会社"),
-  notes: label("备注", "notes", "メモ"),
 });
 
 const HOME_LABELS = Object.freeze({
@@ -351,9 +345,24 @@ function eventPeriod(context: DeviceActionContext): string {
   );
 }
 
-function invites(args: DeviceActionArguments, context: DeviceActionContext): boolean {
+function invites(context: DeviceActionContext): boolean {
   const known = context.target?.["attendeeCount"];
-  return list(args["attendees"]).length > 0 || (typeof known === "number" && known > 0);
+  return typeof known === "number" && known > 0;
+}
+
+const ONLY_CHANGE = label("只改这一次", "this occurrence only", "この回だけ");
+const ONLY_DELETE = label("只删这一次", "this occurrence only", "この回だけ");
+
+function occurrence(
+  args: DeviceActionArguments,
+  context: DeviceActionContext,
+  locale: DeviceActionLocale,
+  only: DeviceActionDetail,
+): string {
+  const single = args["occurrenceStart"];
+  if (typeof single !== "string") return eventPeriod(context);
+  const shown = shownTime(single);
+  return locale === "en" ? `${shown} (${only.en})` : `${shown}（${only[locale]}）`;
 }
 
 function homeSafety(_args: DeviceActionArguments, context: DeviceActionContext): boolean {
@@ -362,8 +371,6 @@ function homeSafety(_args: DeviceActionArguments, context: DeviceActionContext):
 
 const APPLE_DEVICES: readonly PairedDeviceKind[] = ["iphone", "mac"];
 const PHONE_AND_WATCH: readonly PairedDeviceKind[] = ["iphone", "watch"];
-const ATTENDEES = { type: "string_list", required: false, maxItems: 50, maxLength: 254 } as const;
-
 export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = Object.freeze([
   {
     name: "alarm.set",
@@ -402,13 +409,12 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
       calendar: text(120, false),
       location: text(200, false),
       notes: text(2000, false),
-      attendees: ATTENDEES,
     },
     target: null,
     actionKind: "CREATE_OR_UPDATE",
-    escalation: (args, context) => (invites(args, context) ? "COMMUNICATE" : null),
-    ownerPresence: invites,
-    recipients: (args) => list(args["attendees"]),
+    escalation: null,
+    ownerPresence: never,
+    recipients: null,
     resultOrigin: "owner",
     readBack: "read_item",
     snapshotBefore: false,
@@ -417,38 +423,17 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     confirmLabel: label("加进日历", "Add", "追加"),
     detail: (args) =>
       detail((locale) => {
-        const people = list(args["attendees"]);
         const when = period(shownTime(String(args["start"])), shownTime(String(args["end"])));
-        if (locale === "en")
-          return joined(
-            [
-              `Create event "${args["title"]}": ${when}`,
-              people.length > 0 && `invites ${people.join(", ")}`,
-            ],
-            "; ",
-          );
-        if (locale === "ja")
-          return joined(
-            [
-              `予定「${args["title"]}」を作成：${when}`,
-              people.length > 0 && `招待：${people.join("、")}`,
-            ],
-            "；",
-          );
-        return joined(
-          [
-            `新建日程“${args["title"]}”：${when}`,
-            people.length > 0 && `邀请：${people.join("、")}`,
-          ],
-          "；",
-        );
+        if (locale === "en") return `Create event "${args["title"]}": ${when}`;
+        if (locale === "ja") return `予定「${args["title"]}」を作成：${when}`;
+        return `新建日程“${args["title"]}”：${when}`;
       }),
   },
   {
     name: "calendar.delete",
     schemaVersion: 1,
     deviceKinds: APPLE_DEVICES,
-    parameters: { eventId: text(256) },
+    parameters: { eventId: text(256), occurrenceStart: localTime(false) },
     target: { mirrorKind: "calendar_event", idKey: "eventId" },
     actionKind: "DELETE",
     escalation: null,
@@ -460,10 +445,10 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     reversible: true,
     untrustedOriginAllowed: false,
     confirmLabel: label("删掉", "Delete", "削除"),
-    detail: (_args, context) =>
+    detail: (args, context) =>
       detail((locale) => {
         const title = named(context, "title");
-        const at = eventPeriod(context);
+        const at = occurrence(args, context, locale, ONLY_DELETE);
         if (locale === "en") return joined([`Delete event "${title}"`, at], ": ");
         if (locale === "ja") return joined([`予定「${title}」を削除`, at], "：");
         return joined([`删除日程“${title}”`, at], "：");
@@ -475,18 +460,18 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     deviceKinds: APPLE_DEVICES,
     parameters: {
       eventId: text(256),
+      occurrenceStart: localTime(false),
       title: text(200, false),
       start: localTime(false),
       end: localTime(false),
       location: text(200, false),
       notes: text(2000, false),
-      attendees: ATTENDEES,
     },
     target: { mirrorKind: "calendar_event", idKey: "eventId" },
     actionKind: "CREATE_OR_UPDATE",
-    escalation: (args, context) => (invites(args, context) ? "COMMUNICATE" : null),
-    ownerPresence: invites,
-    recipients: (args) => list(args["attendees"]),
+    escalation: (_args, context) => (invites(context) ? "COMMUNICATE" : null),
+    ownerPresence: (_args, context) => invites(context),
+    recipients: null,
     resultOrigin: "owner",
     readBack: "read_item",
     snapshotBefore: true,
@@ -496,7 +481,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     detail: (args, context) =>
       detail((locale) => {
         const title = named(context, "title");
-        const at = eventPeriod(context);
+        const at = occurrence(args, context, locale, ONLY_CHANGE);
         const changed = changes(args, CALENDAR_LABELS, locale);
         if (locale === "en")
           return joined([joined([`Change event "${title}"`, at && `(${at})`], " "), changed], ": ");
@@ -516,7 +501,6 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
       phones: { type: "string_list", required: false, maxItems: 20, maxLength: 64 },
       emails: { type: "string_list", required: false, maxItems: 20, maxLength: 254 },
       organization: text(200, false),
-      notes: text(2000, false),
     },
     target: { mirrorKind: "contact", idKey: "contactId" },
     actionKind: "CREATE_OR_UPDATE",
