@@ -1783,7 +1783,10 @@ describe("production memory capture", () => {
       type: "memory.overview.read",
       payload: {},
     } as never);
-    const { idempotencyKey: _queryKey, ...message } = snapshot as unknown as Record<string, unknown>;
+    const { idempotencyKey: _queryKey, ...message } = snapshot as unknown as Record<
+      string,
+      unknown
+    >;
     const parsed = gatewayV2MessageSchema.parse(message);
     if (parsed.type !== "memory.overview.snapshot") throw new Error("snapshot");
     expect(parsed.payload.upcoming.map(({ reminderId }) => reminderId).sort()).toEqual(
