@@ -93,6 +93,8 @@ describe("multi-user exec configuration", () => {
     [{ privateRoots: "relative" }, "EXEC_CONFIG_PATH_INVALID $.privateRoots"],
     [{ workspaceRoots: "/var/lib/himawari/j/w" }, "EXEC_CONFIG_PATHS_OVERLAP"],
     [{ uids: { first: 61003, last: 61001 } }, "EXEC_CONFIG_UID_INVALID $.uids"],
+    [{ serviceAccount: "root" }, "EXEC_CONFIG_ACCOUNT_INVALID $.serviceAccount"],
+    [{ peopleGroup: "sudo" }, "EXEC_CONFIG_ACCOUNT_INVALID $.peopleGroup"],
     [{ people: { "Bad-Slot": {} } }, "EXEC_CONFIG_SLOT_INVALID"],
     [{ people: { bobbyb: { Swap: "1G" } } }, "EXEC_CONFIG_UNKNOWN $.people.bobbyb.Swap"],
     [{ people: { bobbyb: { MemoryHigh: "9G" } } }, "EXEC_CONFIG_LIMIT_INVALID $.people.bobbyb"],
@@ -148,6 +150,12 @@ describe("multi-user exec slot ledger", () => {
   it("refuses a ledger uid below the system range", () => {
     expect(() =>
       parseLedger({ version: 1, slots: [{ slot: "andyaa", uid: 0, state: "active" }] }),
+    ).toThrow("EXEC_LEDGER_INVALID");
+  });
+
+  it("refuses a ledger uid above the system range", () => {
+    expect(() =>
+      parseLedger({ version: 1, slots: [{ slot: "andyaa", uid: 2 ** 31, state: "removed" }] }),
     ).toThrow("EXEC_LEDGER_INVALID");
   });
 

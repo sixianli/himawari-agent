@@ -1,7 +1,17 @@
 #!/usr/bin/env node
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,7 +29,7 @@ if (process.getuid?.() !== 0) {
 }
 
 const tag = randomBytes(3).toString("hex");
-const base = `/tmp/hxq${tag}`;
+const base = mkdtempSync("/tmp/q");
 const serviceAccount = `hxq${tag}s`;
 const peopleGroup = `hxq${tag}p`;
 const slots = [`qa${tag.slice(0, 4)}`, `qb${tag.slice(0, 4)}`];
@@ -98,7 +108,7 @@ function expectTrue(condition, code) {
 }
 
 try {
-  mkdirSync(base, { mode: 0o755 });
+  chmodSync(base, 0o755);
   mkdirSync(files.units);
   sh("useradd", ["--system", "--no-create-home", "--shell", "/usr/sbin/nologin", serviceAccount]);
   writeFileSync(
@@ -136,6 +146,27 @@ try {
   exec("add", slots[0], "--init");
   exec("add", slots[1]);
   const [a, b] = slots;
+  const foreign = path.join(files.units, "himawari-exec-zzzzzz.service");
+  writeFileSync(foreign, "[Service]\n");
+  const unitText = readFileSync(path.join(files.units, `himawari-exec-${a}.service`), "utf8");
+  exec("apply");
+  exec("apply");
+  expectTrue(existsSync(foreign), "FOREIGN_UNIT_DELETED");
+  expectTrue(
+    readFileSync(path.join(files.units, `himawari-exec-${a}.service`), "utf8") === unitText,
+    "APPLY_NOT_IDEMPOTENT",
+  );
+  rmSync(foreign);
+  const ledgerText = readFileSync(files.ledger, "utf8");
+  rmSync(files.ledger);
+  let reinit = false;
+  try {
+    exec("add", slots[0], "--init");
+  } catch {
+    reinit = true;
+  }
+  expectTrue(reinit && !existsSync(files.ledger), "INIT_OVER_EXISTING_ACCEPTED");
+  writeFileSync(files.ledger, ledgerText, { mode: 0o600 });
   const work = (slot) => path.join(base, "w", slot);
   const priv = (slot) => path.join(base, "j", slot);
   expectTrue(
@@ -179,6 +210,13 @@ try {
   expectTrue(
     !existsSync(path.join(files.units, `himawari-exec-${b}.service`)),
     "REMOVED_UNIT_KEPT",
+  );
+  exec("apply");
+  expectTrue(
+    !existsSync(path.join(files.units, `himawari-exec-${b}.service`)) &&
+      readdirSync(path.join(base, "w")).filter((name) => name.startsWith(`${b}.removed-`))
+        .length === 1,
+    "APPLY_AFTER_REMOVE_CHANGED",
   );
   const status = exec("status");
   expectTrue(

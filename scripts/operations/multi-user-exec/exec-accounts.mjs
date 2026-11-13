@@ -2,11 +2,15 @@
 import { execFileSync } from "node:child_process";
 import {
   chmodSync,
-  chownSync,
+  closeSync,
+  constants,
   copyFileSync,
   existsSync,
+  fchmodSync,
+  fchownSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -75,6 +79,20 @@ function readJson(file) {
   return JSON.parse(readFileSync(file, "utf8"));
 }
 
+function refuseInitOverResidue(options, config) {
+  const residue = [
+    ...[config.privateRoots, config.workspaceRoots].flatMap((root) =>
+      existsSync(root) ? readdirSync(root).map((name) => path.join(root, name)) : [],
+    ),
+    ...(existsSync(options.units)
+      ? readdirSync(options.units)
+          .filter((name) => name.startsWith("himawari-exec-"))
+          .map((name) => path.join(options.units, name))
+      : []),
+  ];
+  if (residue.length > 0) throw new Error(`EXEC_INIT_OVER_EXISTING ${residue[0]}`);
+}
+
 function readLedger(file, allowMissing) {
   if (existsSync(file)) return parseLedger(readJson(file));
   if (!allowMissing) throw new Error(`EXEC_LEDGER_MISSING ${file}`);
@@ -112,7 +130,22 @@ function groupId(name) {
   return Number(run("getent", ["group", name]).split(":")[2]);
 }
 
+function setOwnerAndMode(directory, uid, gid, mode) {
+  const descriptor = openSync(
+    directory,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  try {
+    fchownSync(descriptor, uid, gid);
+    fchmodSync(descriptor, mode);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
 function ensureGroup(config) {
+  if (!quiet("getent", ["group", config.serviceAccount]))
+    throw new Error(`EXEC_SERVICE_GROUP_MISSING ${config.serviceAccount}`);
   if (!quiet("getent", ["group", config.peopleGroup]))
     run("groupadd", ["--system", config.peopleGroup]);
   const members = run("id", ["-nG", config.serviceAccount]).trim().split(/\s+/);
@@ -151,8 +184,7 @@ function ensureDirectory(entry) {
   }
   const uid = entry.owner === "root" ? 0 : ids(entry.owner).uid;
   const gid = entry.group === "root" ? 0 : groupId(entry.group);
-  chownSync(entry.path, uid, gid);
-  chmodSync(entry.path, Number.parseInt(entry.mode, 8));
+  setOwnerAndMode(entry.path, uid, gid, Number.parseInt(entry.mode, 8));
 }
 
 function presentUnits(directory, known) {
@@ -197,6 +229,9 @@ function retire(options, config, slot) {
   if (options.systemd) {
     quiet("systemctl", ["disable", "--now", socketName(slot)]);
     quiet("systemctl", ["stop", serviceName(slot)]);
+    for (const unit of [socketName(slot), serviceName(slot)])
+      if (quiet("systemctl", ["is-active", "--quiet", unit]))
+        throw new Error(`EXEC_UNIT_STILL_ACTIVE ${unit}`);
   }
   const stamp = new Date().toISOString().replaceAll(":", "").replace(/\..*/, "");
   const paths = personPaths(config, slot);
@@ -206,8 +241,7 @@ function retire(options, config, slot) {
       throw new Error(`EXEC_DIRECTORY_NOT_PLAIN ${directory}`);
     const retired = `${directory}.removed-${stamp}`;
     renameSync(directory, retired);
-    chownSync(retired, 0, 0);
-    chmodSync(retired, 0o700);
+    setOwnerAndMode(retired, 0, 0, 0o700);
   }
   if (quiet("id", [accountName(slot)]))
     run("usermod", ["--lock", "--expiredate", "1", accountName(slot)]);
@@ -261,10 +295,9 @@ function status(options, config, ledger) {
     uid: entry.uid,
     state: entry.state,
     ...personPaths(config, entry.slot),
-    socketActive:
-      entry.state === "active" && options.systemd
-        ? quiet("systemctl", ["is-active", "--quiet", socketName(entry.slot)])
-        : null,
+    socketActive: options.systemd
+      ? quiet("systemctl", ["is-active", "--quiet", socketName(entry.slot)])
+      : null,
   }));
 }
 
@@ -283,15 +316,30 @@ export function main(argv) {
   if (options.command === "status") return status(options, config, ledger);
   if (typeof process.getuid === "function" && process.getuid() !== 0)
     throw new Error("EXEC_ROOT_REQUIRED");
-  const next =
-    options.command === "add"
-      ? addSlot(ledger, config, options.slot)
-      : options.command === "remove"
-        ? removeSlot(ledger, options.slot)
-        : ledger;
-  if (next !== ledger) atomicWrite(options.ledger, `${JSON.stringify(next, null, 2)}\n`, 0o600);
-  converge(options, config, next);
-  return status(options, config, readLedger(options.ledger, false));
+  const lock = `${options.ledger}.lock`;
+  let held;
+  try {
+    held = openSync(lock, "wx", 0o600);
+  } catch {
+    throw new Error(`EXEC_LOCKED ${lock}`);
+  }
+  try {
+    const current = readLedger(options.ledger, options.command === "add" && options.init);
+    if (options.command === "add" && options.init && !existsSync(options.ledger))
+      refuseInitOverResidue(options, config);
+    const next =
+      options.command === "add"
+        ? addSlot(current, config, options.slot)
+        : options.command === "remove"
+          ? removeSlot(current, options.slot)
+          : current;
+    if (next !== current) atomicWrite(options.ledger, `${JSON.stringify(next, null, 2)}\n`, 0o600);
+    converge(options, config, next);
+    return status(options, config, readLedger(options.ledger, false));
+  } finally {
+    closeSync(held);
+    rmSync(lock, { force: true });
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

@@ -6,6 +6,17 @@ export const SLICE = "himawari-exec.slice";
 export const MIN_UID = 1000;
 const IDLE_EXIT_MS = /^[1-9][0-9]{0,8}$/;
 const ACCOUNT = /^[a-z_][a-z0-9_-]{0,31}$/;
+const RESERVED_ACCOUNTS = new Set([
+  "root",
+  "sudo",
+  "wheel",
+  "adm",
+  "daemon",
+  "bin",
+  "sys",
+  "nobody",
+]);
+const MAX_UID = 2 ** 31 - 2;
 const SIZE = /^[1-9][0-9]{0,8}[KMGT]$/;
 const PERCENT = /^[1-9][0-9]{0,4}%$/;
 const COUNT = /^[1-9][0-9]{0,8}$/;
@@ -49,12 +60,13 @@ function absolute(value, where) {
 }
 
 function account(value, where) {
-  if (typeof value !== "string" || !ACCOUNT.test(value)) fail("EXEC_CONFIG_ACCOUNT_INVALID", where);
+  if (typeof value !== "string" || !ACCOUNT.test(value) || RESERVED_ACCOUNTS.has(value))
+    fail("EXEC_CONFIG_ACCOUNT_INVALID", where);
   return value;
 }
 
 function uid(value, where) {
-  if (!Number.isSafeInteger(value) || value < MIN_UID || value > 2 ** 31 - 2)
+  if (!Number.isSafeInteger(value) || value < MIN_UID || value > MAX_UID)
     fail("EXEC_CONFIG_UID_INVALID", where);
   return value;
 }
@@ -176,6 +188,7 @@ export function parseLedger(value) {
       !SLOT_PATTERN.test(item.slot) ||
       !Number.isSafeInteger(item.uid) ||
       item.uid < MIN_UID ||
+      item.uid > MAX_UID ||
       !["active", "removed"].includes(item.state) ||
       seenSlots.has(item.slot) ||
       seenUids.has(item.uid)
