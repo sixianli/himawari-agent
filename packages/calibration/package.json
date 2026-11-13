@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./prereview": "./src/prereview.ts"
+    "./prereview": "./src/prereview.ts",
+    "./mcp-connections": "./src/mcp-connections.ts"
   }
 }

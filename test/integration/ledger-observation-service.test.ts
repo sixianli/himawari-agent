@@ -101,6 +101,81 @@ describe.each(["worker", "direct"] as const)(
     const weekly = (end: string | null = null) =>
       message("query", "proactive.weekly.read", { end }) as GatewayV2Query;
 
+    it("[P5-B] adds each connection's numbers for the report week, from the same counts the page uses", async () => {
+      const { repository, setNow } = await fixture();
+      try {
+        const store = repository.mcpConnections();
+        const service = new ProductionObservation({
+          scope,
+          observation: repository.ledgerObservation(),
+          ledger: repository.decisionLedger(),
+          mcpConnections: store,
+          clock: { now: () => "2026-11-13T03:00:00.000Z" },
+          schedule: { configured: false, intervalMs: 0, perCheckMs: 0 },
+          serviceRevision: "41a6ce3",
+        });
+        setNow("2026-11-13T03:00:00.000Z");
+        await store.create({
+          ...scope,
+          id: "conn-weekly",
+          name: "Claude Code",
+          secretSha256: "a".repeat(64),
+          capabilities: ["mcp"],
+          readCeiling: "private",
+          pushPolicy: "ask",
+          createdAt: "2026-11-05T03:00:00.000Z",
+        });
+        const add = (day: string, counts: Record<string, number>, auto = false) =>
+          store.addUsage({
+            ...scope,
+            connectionId: "conn-weekly",
+            day,
+            tool: "find_memories",
+            entry: "oauth",
+            auto,
+            counts,
+          });
+        await add("2026-11-06", { calls: 2, delivered: 1, empty: 1 }, true);
+        await add("2026-11-12", { calls: 1, failed: 1 });
+        await add("2026-11-05", { calls: 50 });
+        await add("2026-11-13", { calls: 70 });
+        const snapshot = await service.query(
+          message("query", "proactive.weekly.read", { end: "2026-11-13" }) as GatewayV2Query,
+        );
+        gatewayV2MessageSchema.parse(snapshot);
+        const report = (snapshot as Extract<typeof snapshot, { type: "proactive.weekly.snapshot" }>)
+          .payload.report;
+        expect(report.mcpConnections).toMatchObject({
+          fromDay: "2026-11-06",
+          toDay: "2026-11-12",
+          connections: [
+            {
+              id: "conn-weekly",
+              name: "Claude Code",
+              status: "active",
+              usage: { reads: 3, autoReads: 2, delivered: 1, empty: 1, failed: 1, modelReads: 1 },
+            },
+          ],
+        });
+        const without = await new ProductionObservation({
+          scope,
+          observation: repository.ledgerObservation(),
+          ledger: repository.decisionLedger(),
+          clock: { now: () => "2026-11-13T03:00:00.000Z" },
+          schedule: { configured: false, intervalMs: 0, perCheckMs: 0 },
+          serviceRevision: "41a6ce3",
+        }).query(
+          message("query", "proactive.weekly.read", { end: "2026-11-13" }) as GatewayV2Query,
+        );
+        expect(
+          (without as Extract<typeof without, { type: "proactive.weekly.snapshot" }>).payload.report
+            .mcpConnections,
+        ).toBeNull();
+      } finally {
+        await repository.close();
+      }
+    });
+
     it("only lets the owner start from the day after the first start, once", async () => {
       const { repository, service, setNow } = await fixture();
       try {

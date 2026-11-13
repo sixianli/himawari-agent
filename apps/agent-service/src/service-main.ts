@@ -2540,6 +2540,9 @@ export async function startTenantRuntime(
         observation: repository.ledgerObservation(),
         ledger: repository.decisionLedger(),
         marks: repository.gapCaseMarks(),
+        ...(configuration.runPolicy?.mcpRead
+          ? { mcpConnections: repository.mcpConnections() }
+          : {}),
         ...(protector
           ? {
               seal: createProactiveSeal({

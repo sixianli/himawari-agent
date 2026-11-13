@@ -147,6 +147,11 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "login.devices.read",
   "login.devices.snapshot",
   "login.device.revoke",
+  "mcp.connections.read",
+  "mcp.connections.snapshot",
+  "mcp.connection.create",
+  "mcp.connection.change",
+  "mcp.connection.rotate",
   "stream.event",
 ] as const;
 
@@ -927,6 +932,121 @@ const loginDeviceRevokeCommandSchema = object({
     recentAuthenticationRef: nullable(machineString),
   }),
 });
+export const MCP_CONNECTION_STATUS_NAMES = ["active", "paused", "revoked"] as const;
+export const MCP_CONNECTION_READ_CEILING_NAMES = ["public", "private", "sensitive"] as const;
+export const MCP_CONNECTION_PUSH_POLICY_NAMES = ["ask", "direct"] as const;
+export const MCP_CONNECTION_CAPABILITY_NAMES = ["command_hooks", "mcp", "scheduled_tasks"] as const;
+export const MCP_CONNECTION_LIMIT_KEYS = [
+  "mcp.connections",
+  "mcp.connection.name_characters",
+  "mcp.request.body_bytes",
+  "mcp.reads_per_minute",
+  "mcp.hook_reads_per_minute",
+] as const;
+export const MCP_CONNECTION_NAME_CHARACTERS = 64;
+const mcpConnectionNameSchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string")
+      throw new ContractValidationError(path, "expected a connection name");
+    const trimmed = input.trim();
+    const characters = [...trimmed];
+    if (
+      characters.length < 1 ||
+      characters.length > MCP_CONNECTION_NAME_CHARACTERS ||
+      characters.some((character) => isHiddenNameCharacter(character.codePointAt(0) ?? 0))
+    )
+      throw new ContractValidationError(
+        path,
+        `expected a 1-${MCP_CONNECTION_NAME_CHARACTERS} character connection name`,
+      );
+    return trimmed;
+  },
+};
+const mcpConnectionCapabilitiesSchema: Schema<
+  readonly (typeof MCP_CONNECTION_CAPABILITY_NAMES)[number][]
+> = {
+  parse(input, path = "$") {
+    const values = array(enumeration(MCP_CONNECTION_CAPABILITY_NAMES)).parse(input, path);
+    if (new Set(values).size !== values.length)
+      throw new ContractValidationError(path, "expected each capability once");
+    return values;
+  },
+};
+const mcpUsageDaySchema = patternString(/^\d{4}-\d{2}-\d{2}$/u, "expected a YYYY-MM-DD day");
+const mcpConnectionUsageSchema = object({
+  reads: integer(0),
+  readsByTool: array(object({ tool: boundedString(64), calls: integer(0) })),
+  delivered: integer(0),
+  empty: integer(0),
+  autoReads: integer(0),
+  autoDelivered: integer(0),
+  modelReads: integer(0),
+  memoryPushes: integer(0),
+  ruleProposals: integer(0),
+  ruleProposalsRateLimited: integer(0),
+  failed: integer(0),
+  rateLimited: integer(0),
+});
+const mcpConnectionsQuerySchema = object({
+  ...envelope("query", "mcp.connections.read"),
+  payload: object({}),
+});
+const mcpConnectionsSnapshotSchema = object({
+  ...envelope("snapshot", "mcp.connections.snapshot"),
+  payload: object({
+    connections: array(
+      object({
+        id: machineString,
+        name: mcpConnectionNameSchema,
+        capabilities: mcpConnectionCapabilitiesSchema,
+        readCeiling: enumeration(MCP_CONNECTION_READ_CEILING_NAMES),
+        pushPolicy: enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES),
+        status: enumeration(MCP_CONNECTION_STATUS_NAMES),
+        reportedClient: nullable(boundedString(64)),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        secretRotatedAt: nullable(timestamp),
+        lastSeenAt: nullable(timestamp),
+        minute: object({ reads: integer(0), hookReads: integer(0) }),
+        usage: mcpConnectionUsageSchema,
+      }),
+    ),
+    window: object({ fromDay: mcpUsageDaySchema, toDay: mcpUsageDaySchema, days: integer(1) }),
+    limits: array(
+      object({
+        key: enumeration(MCP_CONNECTION_LIMIT_KEYS),
+        value: integer(0),
+        used: nullable(integer(0)),
+      }),
+    ),
+    addressPath: boundedString(256),
+    generatedAt: timestamp,
+  }),
+});
+const mcpConnectionCreateCommandSchema = object({
+  ...commandEnvelope("mcp.connection.create"),
+  payload: object({
+    name: mcpConnectionNameSchema,
+    capabilities: mcpConnectionCapabilitiesSchema,
+    readCeiling: enumeration(MCP_CONNECTION_READ_CEILING_NAMES),
+    pushPolicy: enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES),
+  }),
+});
+const mcpConnectionChangeCommandSchema = object({
+  ...commandEnvelope("mcp.connection.change"),
+  payload: object({
+    connectionId: machineString,
+    name: nullable(mcpConnectionNameSchema),
+    capabilities: nullable(mcpConnectionCapabilitiesSchema),
+    readCeiling: nullable(enumeration(MCP_CONNECTION_READ_CEILING_NAMES)),
+    pushPolicy: nullable(enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES)),
+    status: nullable(enumeration(MCP_CONNECTION_STATUS_NAMES)),
+  }),
+});
+const mcpConnectionRotateCommandSchema = object({
+  ...commandEnvelope("mcp.connection.rotate"),
+  payload: object({ connectionId: machineString }),
+});
 const proactiveSettingsSetCommandSchema = object({
   ...commandEnvelope("proactive.settings.set"),
   payload: object({
@@ -1380,6 +1500,21 @@ const proactiveWeeklySnapshotSchema = object({
           }),
         ),
       }),
+      mcpConnections: nullable(
+        object({
+          fromDay: mcpUsageDaySchema,
+          toDay: mcpUsageDaySchema,
+          connections: array(
+            object({
+              id: machineString,
+              name: mcpConnectionNameSchema,
+              status: enumeration(MCP_CONNECTION_STATUS_NAMES),
+              lastSeenAt: nullable(timestamp),
+              usage: mcpConnectionUsageSchema,
+            }),
+          ),
+        }),
+      ),
       prereview: object({
         agreementPermille: integer(0, 1000),
         confidencePermille: integer(0, 1000),
@@ -2936,6 +3071,11 @@ const schemasByType = {
   "login.devices.read": loginDevicesQuerySchema,
   "login.devices.snapshot": loginDevicesSnapshotSchema,
   "login.device.revoke": loginDeviceRevokeCommandSchema,
+  "mcp.connections.read": mcpConnectionsQuerySchema,
+  "mcp.connections.snapshot": mcpConnectionsSnapshotSchema,
+  "mcp.connection.create": mcpConnectionCreateCommandSchema,
+  "mcp.connection.change": mcpConnectionChangeCommandSchema,
+  "mcp.connection.rotate": mcpConnectionRotateCommandSchema,
   "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
   "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,
   "sensitive.interceptions.clear": sensitiveInterceptionsClearCommandSchema,

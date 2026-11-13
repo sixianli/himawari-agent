@@ -41,6 +41,7 @@ import type { SqliteProductStateRepository } from "@himawari-agent/persistence-s
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
   assertProductionSecretSource,
+  assertUnixSocketPathLength,
   authenticateHttpRequest,
   BoundedJwksFetcher,
   BrowserTextPayloadReader,
@@ -63,21 +64,20 @@ import {
   IdentityGatewayError,
   type JwksFetcher,
   OwnerBootstrapService,
-  prepareUnixSocketPath,
-  removeUnixSocketFile,
-  sealUnixSocket,
-  type UnixSocketIdentity,
-  assertUnixSocketPathLength,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
+  prepareUnixSocketPath,
   RuntimeHealthModel,
   RuntimeMetricsRegistry,
   registerBuiltInIdentityRoutes,
   registerIdentityAuthenticationRoutes,
+  removeUnixSocketFile,
   ScopedThreadSearchTokenizer,
   SessionBoundCsrfService,
+  sealUnixSocket,
   ThreadSearchBackgroundIndexer,
   ThreadSearchProjector,
+  type UnixSocketIdentity,
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
@@ -92,8 +92,19 @@ import {
   ProductionDataExportControl,
   registerDataExportRoute,
 } from "./production-data-export.js";
+import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
 import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
+import {
+  PRODUCTION_LOGIN_DEVICE_OPERATIONS,
+  ProductionLoginDevicesControl,
+} from "./production-login-devices-control.js";
+import {
+  McpConnectionAddresses,
+  PRODUCTION_MCP_CONNECTION_OPERATIONS,
+  ProductionMcpConnectionsControl,
+  registerMcpConnectionAddressRoute,
+} from "./production-mcp-connections-control.js";
 import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import {
@@ -126,14 +137,9 @@ import {
   ProductionSensitiveInterceptionsControl,
 } from "./production-sensitive-interceptions-control.js";
 import {
-  PRODUCTION_LOGIN_DEVICE_OPERATIONS,
-  ProductionLoginDevicesControl,
-} from "./production-login-devices-control.js";
-import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
-import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -666,6 +672,7 @@ function routeOptions(
   proactiveAvailable: boolean,
   museAvailable: boolean,
   observationAvailable: boolean,
+  mcpConnectionsAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -707,6 +714,7 @@ function routeOptions(
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
+        ...(mcpConnectionsAvailable ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1195,6 +1203,7 @@ export async function createProductionHttpComposition(
               : "unknown",
       }),
   });
+  const mcpConnectionAddresses = new McpConnectionAddresses({ now: clock });
   const dataExportJobs = new DataExportJobs({
     ownerId,
     agentId,
@@ -1255,6 +1264,23 @@ export async function createProductionHttpComposition(
       recentAuthentication,
       clock: { now: clock },
     }),
+    ...(options.mcpRead
+      ? {
+          mcpConnectionsControl: new ProductionMcpConnectionsControl({
+            configuration,
+            store: repository.mcpConnections(),
+            addresses: mcpConnectionAddresses,
+            minute: (connectionId) =>
+              options.mcpRead?.minuteUsage(connectionId) ?? {
+                reads: 0,
+                hookReads: 0,
+              },
+            hookReadsPerMinute: options.mcpRead.hookReadsPerMinute,
+            timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+            clock: { now: clock },
+          }),
+        }
+      : {}),
   });
   const app = buildHttpGatewayServer({
     ...routeOptions(
@@ -1276,6 +1302,7 @@ export async function createProductionHttpComposition(
       Boolean(options.proactive),
       Boolean(options.museControl),
       Boolean(options.observation),
+      Boolean(options.mcpRead),
     ),
     gatewayV2,
     threadSearch,
@@ -1311,7 +1338,15 @@ export async function createProductionHttpComposition(
   });
   if (options.museIntake) registerMuseIntakeRoute(app, options.museIntake);
   if (options.gapExport) registerGapExportRoute(app, options.gapExport);
-  if (options.mcpRead) registerMcpReadRoute(app, options.mcpRead);
+  if (options.mcpRead) {
+    registerMcpReadRoute(app, options.mcpRead);
+    registerMcpConnectionAddressRoute(app, {
+      authentication,
+      sessionCookieName: httpConfiguration.sessionCookieName,
+      ownerId,
+      addresses: mcpConnectionAddresses,
+    });
+  }
   registerAuthentication(app, csrf, recentAuthentication);
   const onCommandAccepted = options.onCommandAccepted;
   if (onCommandAccepted)

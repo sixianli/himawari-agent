@@ -656,6 +656,15 @@ export class ProductionMcpRead {
     };
   }
 
+  minuteUsage(connectionId: string): { readonly reads: number; readonly hookReads: number } {
+    const windows = this.#connectionWindows.get(connectionId);
+    return { reads: windows?.regular.used() ?? 0, hookReads: windows?.hook.used() ?? 0 };
+  }
+
+  get hookReadsPerMinute(): number {
+    return this.#options.hookReadsPerMinute ?? MCP_HOOK_READS_PER_MINUTE;
+  }
+
   async finish(authInfo: AuthInfo): Promise<void> {
     const callKey = authInfo.extra?.[CALL_KEY];
     if (typeof callKey !== "string") return;

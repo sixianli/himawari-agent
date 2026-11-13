@@ -18,6 +18,11 @@ export class AdmissionWindows {
     this.authorizedPerMinute = authorizedPerMinute;
   }
 
+  used(): number {
+    const now = Date.parse(this.clock.now());
+    return this.authorized.filter((at) => now - at < WINDOW_MS).length;
+  }
+
   admit(matches: boolean): BearerAdmission {
     const now = Date.parse(this.clock.now());
     const window = matches ? this.authorized : this.unauthorized;
