@@ -1,0 +1,3 @@
+{"id": "1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 中：只有一条替补记录、没有失败原模型记录的轮次也能起链/算数", "valid": true, "class": "error", "severity": "medium-high", "trigger": "账本里一轮只有一条替补记录，没有被替补模型的失败记录（手写或缺行的账本）", "consequence": "这一轮被当成完整复核并成为链起点，合并前检查被绕过", "modelSeverity": "中"}
+{"id": "2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 中：ADR 0259 说「只改 default 即可」，但测试硬编码了默认值，改配置必然红", "valid": true, "class": "error", "severity": "medium-high", "trigger": "有人照 ADR 0259 和 model-review.md 的说法只改 review-models.json 的 default", "consequence": "三处按现在的默认值写的测试断言失败，文档说只改一个文件与事实不符", "modelSeverity": "中"}
+{"id": "3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 低：ADR 0175 正文仍写着旧规则，只在 frontmatter 加了 amended_by", "valid": false, "class": "error"}

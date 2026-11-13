@@ -1,0 +1,2 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`singleLine` 先按 Unicode 码点截到 2000，再 `join`；但 `boundedString(2000)` 校验的是 UTF-16 `length`。", "valid": false, "class": "error"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "这是 main 带来的测试；在负载高的 CI 上，构建耗时超过 3 秒会偶发失败。", "valid": false, "class": "error"}

@@ -26,6 +26,7 @@ import {
 import {
   REAL_EVAL_ANSWER,
   REAL_EVAL_JUDGE,
+  REAL_EVAL_LEAK_JUDGE,
   REAL_EVAL_QUESTION,
 } from "@himawari-agent/prompt-catalog";
 import { afterEach, describe, expect, it } from "vitest";
@@ -259,6 +260,8 @@ describe.each(["worker", "direct"] as const)("[P4-5] real memory eval through %s
                 : "wrong";
           return { output: JSON.stringify({ verdict }), costMicros: 10 };
         }
+        if (prompt.startsWith(REAL_EVAL_LEAK_JUDGE.text))
+          return { output: '{"leaks":false}', costMicros: 5 };
         throw new Error("UNEXPECTED_PROMPT");
       },
     };
@@ -331,6 +334,7 @@ describe.each(["worker", "direct"] as const)("[P4-5] real memory eval through %s
 
     expect(report.outcome).toBe("completed");
     expect(prompts.some((prompt) => prompt.includes("最近有点想换工作"))).toBe(false);
+    expect(prompts.some((prompt) => prompt.startsWith(REAL_EVAL_LEAK_JUDGE.text))).toBe(true);
     const questions = await resource.repository
       .realEval()
       .listQuestions({ ownerId: OWNER_ID, agentId: AGENT_ID });

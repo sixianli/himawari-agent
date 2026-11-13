@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
+amended_by: "docs/adr/0261-external-proposals-follow-restricted-deletion-and-expiry.md"
 date: "2026-11-12"
 ---
 
@@ -87,6 +88,7 @@ date: "2026-11-12"
 - 旧的 v2 导出文件不能再导入，要用新版重新导出一次。网页导出不设口令，所以像机密的提议在网页导出里只能看，不能导入。
 - ADR 0228 留给下一个 PR 的三件事都做完了；上线前 PR A 和本 PR 都要合并。[ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 的任务 C 会在这一节上按接入、项目分组，沿用这里的整批确认和撤销。
 - 待确认的提议不进任何发给模型的请求，本 ADR 不改模型请求。
+  - 2026-11-12 补：[ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 9 的“先帮我筛一遍”是例外，见 [ADR 0228](0228-external-memory-proposals-wait-for-owner-confirmation.md) 决定 1 下面的补注。
 - 事故清单不加行：这是新功能，不是事故修复。
 
 <a id="references"></a>
