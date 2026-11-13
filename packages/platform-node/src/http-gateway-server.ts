@@ -201,6 +201,7 @@ const IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+
 const DEFAULT_HEARTBEAT_MILLISECONDS = 15_000;
 const SLOW_REQUEST_MILLISECONDS = 2_000;
 const STREAM_PATH = /\/(?:execution-)?events$/;
+const UNMATCHED_ROUTE = "(no route)";
 
 class HttpGatewayError extends Error {
   readonly code: string;
@@ -831,7 +832,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       const totalMs = Math.round(performance.now() - start.at);
       const raw = requestPath(request);
       if (totalMs < SLOW_REQUEST_MILLISECONDS || STREAM_PATH.test(raw)) return;
-      const path = request.routeOptions.url ?? raw;
+      const path = request.routeOptions.url ?? UNMATCHED_ROUTE;
       const body = request.body as { readonly type?: unknown } | undefined;
       onSlowRequest({
         method: request.method,

@@ -398,6 +398,16 @@ describe("HTTP Gateway contract and security boundary", () => {
           concurrentRequests: 1,
         },
       ]);
+      now.mockImplementation(() => {
+        clock += 2_500;
+        return clock;
+      });
+      const unmatched = await app.inject({
+        url: `/api/mcp/v1/${key}/extra`,
+        headers: requestHeaders(),
+      });
+      expect(unmatched.statusCode).toBe(404);
+      expect(slow.at(-1)).toMatchObject({ method: "GET", path: "/*", statusCode: 404 });
       expect(JSON.stringify(slow)).not.toContain(key);
     } finally {
       now.mockRestore();

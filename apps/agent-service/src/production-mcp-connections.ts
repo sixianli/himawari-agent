@@ -23,6 +23,16 @@ export function newMcpConnectionId(): string {
   return `conn-${randomBytes(12).toString("hex")}`;
 }
 
+export function mcpConnectionIdFor(
+  scope: { readonly ownerId: string; readonly agentId: string },
+  idempotencyKey: string,
+): string {
+  const digest = createHash("sha256")
+    .update(`${scope.ownerId}\u0000${scope.agentId}\u0000${idempotencyKey}`)
+    .digest("hex");
+  return `conn-${digest.slice(0, 24)}`;
+}
+
 export function mcpConnectionSubject(connectionId: string): string {
   return `${MCP_CONNECTION_SUBJECT_PREFIX}${connectionId}`;
 }

@@ -30,6 +30,21 @@ export const MCP_CONNECTION_MAXIMUM = 200;
 export const MCP_CONNECTION_NAME_MAXIMUM = 64;
 export const MCP_CONNECTION_REPORTED_CLIENT_MAXIMUM = 64;
 
+export function mcpConnectionNameHasHiddenCharacter(name: string): boolean {
+  return [...name].some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return (
+      code < 0x20 ||
+      (code >= 0x7f && code <= 0x9f) ||
+      (code >= 0x200b && code <= 0x200f) ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2060 && code <= 0x2064) ||
+      (code >= 0x2066 && code <= 0x2069) ||
+      code === 0xfeff
+    );
+  });
+}
+
 export interface McpConnectionScope {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;

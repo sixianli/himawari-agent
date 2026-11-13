@@ -179,9 +179,14 @@ describe("[P5-B] the owner manages connected agents on the real page", () => {
       await uiExpect(limits).toContainText("最多 60 次，这一分钟最多的接入用了 5 次");
       await uiExpect(limits).toContainText("名称：最多 64 个字，现有最长的 9 个字");
       await uiExpect(limits).toContainText("请求大小不单独记录");
+      await uiExpect(limits).toContainText("单次请求：最多 65536 字节");
+      await uiExpect(limits).toContainText("每个接入每分钟请求（自动搜另算）：最多 30 次");
       await uiExpect(agents(page)).toContainText("最近 7 天（2026-08-24 至 2026-08-30");
       await agents(page).getByText("每个数字怎么算").click();
       await uiExpect(agents(page)).toContainText("空手而归的自动搜只计数，不写决策记录");
+      await uiExpect(agents(page)).toContainText(
+        "被限流：除规则提议外，工具调用因为超过每分钟上限被拒的次数",
+      );
       await uiExpect(agents(page).getByRole("link", { name: "Logpush 字段说明" })).toHaveAttribute(
         "href",
         /logpush.*http_requests/,

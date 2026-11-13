@@ -1167,6 +1167,15 @@ describe("production HTTP composition", () => {
       expect(created.statusCode, created.body).toBe(200);
       const connectionId = (created.json() as { resultRef: string }).resultRef;
       expect(connectionId).toMatch(/^conn-[0-9a-f]{24}$/u);
+      const again = await command("mcp.connection.create", "mcp-create-01", {
+        name: "  Claude Code  ",
+        capabilities: ["mcp", "command_hooks"],
+        readCeiling: "private",
+        pushPolicy: "ask",
+      });
+      expect(again.statusCode, again.body).toBe(200);
+      expect((again.json() as { resultRef: string }).resultRef).toBe(connectionId);
+      expect((await read()).connections).toHaveLength(1);
       expect((await address(connectionId, "")).statusCode).toBe(401);
       const shown = await address(connectionId);
       expect(shown.statusCode).toBe(200);
@@ -1234,6 +1243,11 @@ describe("production HTTP composition", () => {
       });
       expect(revoked.statusCode, revoked.body).toBe(200);
       expect((await mcp(rotatedPath)).statusCode).toBe(404);
+      expect((await read()).limits).toContainEqual({
+        key: "mcp.connection.name_characters",
+        value: 64,
+        used: 0,
+      });
       expect(
         (
           await command("mcp.connection.change", "mcp-empty-01", {

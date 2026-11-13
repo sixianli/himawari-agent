@@ -14,6 +14,7 @@ import {
   type McpConnectionScope,
   type McpConnectionUsageAdd,
   type McpConnectionUsageRow,
+  mcpConnectionNameHasHiddenCharacter,
 } from "@himawari-agent/application/mcp-connections";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
@@ -50,6 +51,10 @@ function instant(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
+function name(value: unknown): value is string {
+  return text(value, MCP_CONNECTION_NAME_MAXIMUM) && !mcpConnectionNameHasHiddenCharacter(value);
 }
 
 function text(value: unknown, maximum: number): value is string {
@@ -138,7 +143,7 @@ export class SqliteMcpConnectionOperations {
     if (
       typeof input.id !== "string" ||
       !CONNECTION_ID.test(input.id) ||
-      !text(input.name, MCP_CONNECTION_NAME_MAXIMUM) ||
+      !name(input.name) ||
       typeof input.secretSha256 !== "string" ||
       !DIGEST.test(input.secretSha256) ||
       !capabilitiesValid(input.capabilities) ||
@@ -209,7 +214,7 @@ export class SqliteMcpConnectionOperations {
     this.assertDiskHeadroom();
     if (
       !instant(input.updatedAt) ||
-      (input.name !== undefined && !text(input.name, MCP_CONNECTION_NAME_MAXIMUM)) ||
+      (input.name !== undefined && !name(input.name)) ||
       (input.capabilities !== undefined && !capabilitiesValid(input.capabilities)) ||
       (input.readCeiling !== undefined &&
         !oneOf(MCP_CONNECTION_READ_CEILINGS, input.readCeiling)) ||

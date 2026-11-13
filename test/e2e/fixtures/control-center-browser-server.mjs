@@ -619,7 +619,7 @@ function mcpSnapshot() {
         value: 64,
         used: Math.max(0, ...live.map(({ name }) => [...name].length)),
       },
-      { key: "mcp.request.body_bytes", value: 1048576, used: null },
+      { key: "mcp.request.body_bytes", value: 65536, used: null },
       {
         key: "mcp.reads_per_minute",
         value: 30,

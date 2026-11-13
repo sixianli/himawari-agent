@@ -23,10 +23,10 @@ import {
 import type { FastifyInstance } from "fastify";
 import { AUTHORIZED_PER_MINUTE } from "./bearer-admission.js";
 import {
+  mcpConnectionIdFor,
   mcpConnectionSecretDigest,
   mcpConnectionView,
   mcpUsageDay,
-  newMcpConnectionId,
   newMcpConnectionSecret,
 } from "./production-mcp-connections.js";
 import {
@@ -212,10 +212,13 @@ export class ProductionMcpConnectionsControl {
     if (command.type === "mcp.connection.create") {
       const scope = this.#scope(authentication, command.scope);
       askFirstOnly(command.payload.pushPolicy);
+      const id = mcpConnectionIdFor(scope, command.idempotencyKey);
+      if ((await this.#options.store.list(scope)).some((connection) => connection.id === id))
+        return { resultRef: id, replayed: true };
       const secret = newMcpConnectionSecret();
       const record = await this.#options.store.create({
         ...scope,
-        id: newMcpConnectionId(),
+        id,
         name: command.payload.name,
         secretSha256: mcpConnectionSecretDigest(secret),
         capabilities: command.payload.capabilities,

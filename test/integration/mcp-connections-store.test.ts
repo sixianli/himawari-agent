@@ -108,7 +108,7 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
     expect(await store.list({ ownerId: OWNER_ID, agentId: OTHER_AGENT_ID })).toEqual([]);
   });
 
-  it("refuses ids that do not start with a letter or digit, names that are too long and unknown settings", async () => {
+  it("refuses ids that do not start with a letter or digit, names that are too long or hide characters, and unknown settings", async () => {
     const { store } = await setup();
     const base = {
       ...scope,
@@ -125,6 +125,8 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
       { ...base, id: "conn a" },
       { ...base, id: "conn-ok", name: "" },
       { ...base, id: "conn-ok", name: "n".repeat(65) },
+      { ...base, id: "conn-ok", name: "Claude\u200bCode" },
+      { ...base, id: "conn-ok", name: "Claude\u202eCode" },
       { ...base, id: "conn-ok", readCeiling: "restricted" },
       { ...base, id: "conn-ok", capabilities: ["mcp", "mcp"] },
       { ...base, id: "conn-ok", secretSha256: "not-a-digest" },
