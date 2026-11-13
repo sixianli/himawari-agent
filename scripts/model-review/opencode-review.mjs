@@ -1406,7 +1406,23 @@ export function lowFixChecker({ repo, ledgerPath, mainRef, skip }) {
 }
 
 export function previousProblem({ records, round, head, previous, isAncestor, lowFixCheck }) {
-  const given = previous ?? null;
+  const joins = (given) => {
+    if (!given) return null;
+    const earlier = records.filter((record) => (record.round ?? 1) < round);
+    const next = { round, head, previous: given, by: "requested" };
+    const { accepted, broken } = walkChain([...coveragePoints(earlier), next], {
+      isAncestor,
+      lowFixCheck,
+    });
+    if (accepted.at(-1) === next) return null;
+    if (broken && broken.point !== next)
+      return `chain-already-broken round=${broken.point.round} ${broken.point.head} ${broken.problems.join(",")} use=no-previous`;
+    const covered = accepted.at(-1)?.head;
+    if (!covered) return "no-accepted-round use=no-previous";
+    if (!isAncestor(covered, head))
+      return `head-not-after-accepted ${covered} head=${head} use=no-previous`;
+    return `chain-broken previous=${given} use=--previous ${covered}`;
+  };
   const sameRound = [
     ...new Set(
       records
@@ -1419,23 +1435,18 @@ export function previousProblem({ records, round, head, previous, isAncestor, lo
         .map((record) => record.previous ?? null),
     ),
   ];
-  if (sameRound.length > 0 && sameRound.some((recorded) => recorded !== given))
-    return `REVIEW_PREVIOUS_REFUSED round-previous-differs round=${round} use=${sameRound[0] === null ? "no-previous" : `--previous ${sameRound[0]}`}`;
-  if (!previous) return null;
-  const earlier = records.filter((record) => (record.round ?? 1) < round);
-  const next = { round, head, previous, by: "requested" };
-  const { accepted, broken } = walkChain([...coveragePoints(earlier), next], {
-    isAncestor,
-    lowFixCheck,
-  });
-  if (accepted.at(-1) === next) return null;
-  if (broken && broken.point !== next)
-    return `REVIEW_PREVIOUS_REFUSED chain-already-broken round=${broken.point.round} ${broken.point.head} ${broken.problems.join(",")} use=no-previous`;
-  const covered = accepted.at(-1)?.head;
-  if (!covered) return "REVIEW_PREVIOUS_REFUSED no-accepted-round use=no-previous";
-  if (!isAncestor(covered, head))
-    return `REVIEW_PREVIOUS_REFUSED head-not-after-accepted ${covered} head=${head} use=no-previous`;
-  return `REVIEW_PREVIOUS_REFUSED chain-broken previous=${previous} use=--previous ${covered}`;
+  if (sameRound.length > 0 && sameRound.some((recorded) => recorded !== (previous ?? null))) {
+    const [recorded] = sameRound;
+    const use =
+      sameRound.length > 1 || joins(recorded)
+        ? "new-round"
+        : recorded === null
+          ? "no-previous"
+          : `--previous ${recorded}`;
+    return `REVIEW_PREVIOUS_REFUSED round-previous-differs round=${round} use=${use}`;
+  }
+  const problem = joins(previous);
+  return problem ? `REVIEW_PREVIOUS_REFUSED ${problem}` : null;
 }
 
 function gitStatus(args, cwd) {
@@ -3281,16 +3292,18 @@ async function main() {
       });
   if (options.mode === "code-review" && !options.selfCheckOnly) {
     const ledgerPath = `${REVIEWS_DIR}/${reviewKey(options)}`;
-    const claimsOwned = new Set(
-      claimsProblems({
-        repo: options.repo,
-        head: commits.head,
-        mainRef: "origin/main",
-        reviewsDir: REVIEWS_DIR,
-        parseUsage,
-        looksSecret: claimsFileSecretLike,
-      }).files,
-    );
+    let claimsOwned;
+    const skip = () =>
+      (claimsOwned ??= new Set(
+        claimsProblems({
+          repo: options.repo,
+          head: commits.head,
+          mainRef: "origin/main",
+          reviewsDir: REVIEWS_DIR,
+          parseUsage,
+          looksSecret: claimsFileSecretLike,
+        }).files,
+      ));
     const refused = previousProblem({
       records,
       round,
@@ -3298,12 +3311,10 @@ async function main() {
       previous: commits.previous,
       isAncestor: (from, to) =>
         gitStatus(["merge-base", "--is-ancestor", from, to], options.repo).status === 0,
-      lowFixCheck: lowFixChecker({
-        repo: options.repo,
-        ledgerPath,
-        mainRef: "origin/main",
-        skip: claimsOwned,
-      }),
+      lowFixCheck: (point) =>
+        lowFixChecker({ repo: options.repo, ledgerPath, mainRef: "origin/main", skip: skip() })(
+          point,
+        ),
     });
     if (refused) throw new Error(refused);
   }

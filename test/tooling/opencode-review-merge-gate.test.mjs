@@ -1678,6 +1678,11 @@ describe("opencode review merge gate", () => {
       expect(f.ask(f.fixed, { records: fresh })).toBe(
         "REVIEW_PREVIOUS_REFUSED round-previous-differs round=2 use=no-previous",
       );
+      const invalid = [...f.first.slice(0, 2), { ...f.first[2], findings: ["V9"] }];
+      const stuck = [...invalid, ok(2, f.ledgerCommit, deepseek, { previous: f.fixed })];
+      expect(f.ask(undefined, { records: stuck })).toBe(
+        "REVIEW_PREVIOUS_REFUSED round-previous-differs round=2 use=new-round",
+      );
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -1741,6 +1746,13 @@ describe("opencode review merge gate", () => {
       expect(right.stdout).toContain("REVIEW_PID");
       expect(readFileSync(join(f.repo, f.ledger), "utf8")).toBe(
         f.first.map((r) => `${JSON.stringify(r)}\n`).join(""),
+      );
+      const invalid = [...f.first.slice(0, 2), { ...f.first[2], findings: ["V9"] }];
+      writeFileSync(join(f.repo, f.ledger), invalid.map((r) => `${JSON.stringify(r)}\n`).join(""));
+      const untrusted = run(f.fixed);
+      expect(untrusted.status).toBe(2);
+      expect(untrusted.stderr.trim()).toBe(
+        `REVIEW_PREVIOUS_REFUSED chain-already-broken round=1 ${f.fixed} findings-differ use=no-previous`,
       );
     } finally {
       rmSync(f.root, { recursive: true, force: true });
