@@ -796,7 +796,10 @@ describe("job log records how busy the machine was", () => {
       freeMemory: () => 6 * 1024 ** 3,
       totalMemory: () => 8 * 1024 ** 3,
       cpuCount: () => 4,
-      now: () => (clock += 30_000),
+      now: () => {
+        clock += 30_000;
+        return clock;
+      },
     });
     expect(stop()).toBe(
       "CI_HOST_LOAD cpus=4 loadAvg1Mean=2.00 loadAvg1Peak=3.00 loadPerCpuMean=0.50 memUsedPeakMiB=2048 memTotalMiB=8192 samples=2 seconds=30",
