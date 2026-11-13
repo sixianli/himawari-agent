@@ -466,20 +466,25 @@ describe("HTTP Gateway contract and security boundary", () => {
       },
       async *subscribe() {},
     });
-    const query = () =>
-      app.inject({
+    let attempt = 0;
+    const query = () => {
+      attempt += 1;
+      const idempotencyKey = `idempotency-reason-${attempt}`;
+      return app.inject({
         method: "POST",
-        url: "/api/gateway/v2/queries",
-        headers: requestHeaders(),
+        url: "/api/gateway/v2/commands",
+        headers: requestHeaders(idempotencyKey),
         payload: {
-          ...envelope("query", "workspace.list"),
+          ...envelope("command", "login.devices.revoke_others"),
           schemaVersion: "gateway.v2",
           risk: "low",
           authorizationRef: null,
           authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
-          payload: { afterCursor: null, limit: 10 },
+          idempotencyKey,
+          payload: { recentAuthenticationRef: null },
         },
       });
+    };
     try {
       const machine = await query();
       expect(machine.statusCode).toBe(409);
