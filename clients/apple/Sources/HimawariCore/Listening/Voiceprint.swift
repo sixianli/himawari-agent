@@ -90,7 +90,7 @@ public final class FileVoiceprintStore: VoiceprintStore, @unchecked Sendable {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             var options: Data.WritingOptions = [.atomic]
             #if os(iOS) || os(watchOS)
-            options.insert(.completeFileProtection)
+            options.insert(.completeFileProtectionUntilFirstUserAuthentication)
             #endif
             try JSONEncoder().encode(voiceprint).write(to: url, options: options)
             var values = URLResourceValues()

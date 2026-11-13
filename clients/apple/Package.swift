@@ -21,14 +21,18 @@ let coreTargets: [Target] = [
 #if os(Linux)
 let interfaceTargets: [Target] = []
 let interfaceProducts: [Product] = []
+let interfaceDependencies: [Package.Dependency] = []
 #else
+let interfaceDependencies: [Package.Dependency] = [
+    .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.18.3", traits: ["Diarizer"]),
+]
 let interfaceTargets: [Target] = [
     .target(name: "HimawariDesign", dependencies: ["HimawariCore"], resources: [.process("Resources")]),
     .target(name: "HimawariChat", dependencies: ["HimawariCore", "HimawariDesign"], resources: [.process("Resources")]),
     .target(name: "HimawariManage", dependencies: ["HimawariCore", "HimawariDesign"]),
     .target(
         name: "HimawariShell",
-        dependencies: ["HimawariCore", "HimawariDesign", "HimawariChat", "HimawariManage"],
+        dependencies: ["HimawariCore", "HimawariDesign", "HimawariChat", "HimawariManage", "HimawariListen", "HimawariListenUI"],
         resources: [.process("Resources")]
     ),
     .target(
@@ -37,6 +41,18 @@ let interfaceTargets: [Target] = [
         resources: [.process("Resources")]
     ),
     .testTarget(name: "HimawariMacUITests", dependencies: ["HimawariMacUI", "HimawariCore"]),
+    .target(name: "HimawariListenUI", dependencies: ["HimawariCore", "HimawariDesign"], resources: [.process("Resources")]),
+    .target(
+        name: "HimawariListen",
+        dependencies: [
+            "HimawariCore",
+            "HimawariDesign",
+            "HimawariChat",
+            "HimawariListenUI",
+            .product(name: "FluidAudio", package: "FluidAudio", condition: .when(platforms: [.iOS])),
+        ],
+        resources: [.process("Resources")]
+    ),
 ]
 let interfaceProducts: [Product] = [
     .library(name: "HimawariDesign", targets: ["HimawariDesign"]),
@@ -44,6 +60,8 @@ let interfaceProducts: [Product] = [
     .library(name: "HimawariManage", targets: ["HimawariManage"]),
     .library(name: "HimawariShell", targets: ["HimawariShell"]),
     .library(name: "HimawariMacUI", targets: ["HimawariMacUI"]),
+    .library(name: "HimawariListenUI", targets: ["HimawariListenUI"]),
+    .library(name: "HimawariListen", targets: ["HimawariListen"]),
 ]
 #endif
 
@@ -54,6 +72,6 @@ let package = Package(
     products: [.library(name: "HimawariCore", targets: ["HimawariCore"])] + interfaceProducts,
     dependencies: [
         .package(url: "https://github.com/apple/swift-crypto.git", "3.12.0"..<"4.0.0"),
-    ],
+    ] + interfaceDependencies,
     targets: coreTargets + interfaceTargets
 )
