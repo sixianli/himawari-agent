@@ -46,18 +46,33 @@ public enum ListenCommand: String, Sendable {
     case resume
     case notMe
     case itsMe
+    case openRecordingKit
 }
 
 @MainActor
 public final class ListenCommandCenter {
     public static let shared = ListenCommandCenter()
 
-    public var handler: (@MainActor (ListenCommand) async -> Void)?
+    public var handler: (@MainActor (ListenCommand) async -> Void)? {
+        didSet { deliverPending() }
+    }
+
+    private var pending: ListenCommand?
 
     private init() {}
 
     public func perform(_ command: ListenCommand) async {
-        await handler?(command)
+        guard let handler else {
+            if command == .openRecordingKit { pending = command }
+            return
+        }
+        await handler(command)
+    }
+
+    private func deliverPending() {
+        guard let handler, let command = pending else { return }
+        pending = nil
+        Task { await handler(command) }
     }
 }
 
@@ -125,6 +140,20 @@ public struct ItsMeIntent: LiveActivityIntent {
 
     public func perform() async throws -> some IntentResult {
         await ListenCommandCenter.shared.perform(.itsMe)
+        return .result()
+    }
+}
+
+public struct OpenListenRecordingKitIntent: AppIntent {
+    public static let title: LocalizedStringResource = "Record listening samples"
+    public static let description = IntentDescription("Opens the recording kit for the listening evaluation.")
+    public static let openAppWhenRun = true
+
+    public init() {}
+
+    @MainActor
+    public func perform() async throws -> some IntentResult {
+        await ListenCommandCenter.shared.perform(.openRecordingKit)
         return .result()
     }
 }

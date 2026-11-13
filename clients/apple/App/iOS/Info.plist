@@ -40,6 +40,10 @@
 	<string>判断 AirPods 是不是戴在耳朵上，好知道是不是你在叫它</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>在这台 iPhone 上把听到的话转成字</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>

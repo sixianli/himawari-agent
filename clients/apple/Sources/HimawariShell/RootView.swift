@@ -104,6 +104,11 @@ struct MainTabsView: View {
                     .presentationCornerRadius(DesignTokens.Radius.sheetTop)
             }
         }
+        #if os(iOS)
+        .hmCover(isPresented: Binding(get: { listening?.recordingKitOpen ?? false }, set: { listening?.recordingKitOpen = $0 })) {
+            ListenEvalKitView { listening?.recordingKitOpen = false }
+        }
+        #endif
         .onAppear {
             if listening == nil, model.phase == .active {
                 listening = ListeningController(api: model.api, chat: chat)

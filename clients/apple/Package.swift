@@ -49,10 +49,19 @@ let interfaceTargets: [Target] = [
             "HimawariDesign",
             "HimawariChat",
             "HimawariListenUI",
-            .product(name: "FluidAudio", package: "FluidAudio", condition: .when(platforms: [.iOS])),
+            .target(name: "HimawariListenEngine", condition: .when(platforms: [.iOS])),
         ],
         resources: [.process("Resources")]
     ),
+    .target(
+        name: "HimawariListenEngine",
+        dependencies: [
+            "HimawariCore",
+            .product(name: "FluidAudio", package: "FluidAudio", condition: .when(platforms: [.iOS, .macOS])),
+        ],
+        resources: [.process("Resources")]
+    ),
+    .executableTarget(name: "ListenEval", dependencies: ["HimawariCore", "HimawariListenEngine"]),
 ]
 let interfaceProducts: [Product] = [
     .library(name: "HimawariDesign", targets: ["HimawariDesign"]),
@@ -62,6 +71,7 @@ let interfaceProducts: [Product] = [
     .library(name: "HimawariMacUI", targets: ["HimawariMacUI"]),
     .library(name: "HimawariListenUI", targets: ["HimawariListenUI"]),
     .library(name: "HimawariListen", targets: ["HimawariListen"]),
+    .executable(name: "himawari-listen-eval", targets: ["ListenEval"]),
 ]
 #endif
 

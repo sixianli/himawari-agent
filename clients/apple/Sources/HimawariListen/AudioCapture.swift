@@ -18,11 +18,9 @@ enum CaptureEvent: Sendable {
 final class AudioCapture: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let session = AVAudioSession.sharedInstance()
-    private let lock = NSLock()
     private var bufferContinuation: AsyncStream<CapturedBuffer>.Continuation?
     private var eventContinuation: AsyncStream<CaptureEvent>.Continuation?
     private var observers: [NSObjectProtocol] = []
-    private var loudness: Double = -160
 
     let buffers: AsyncStream<CapturedBuffer>
     let events: AsyncStream<CaptureEvent>
@@ -47,10 +45,6 @@ final class AudioCapture: @unchecked Sendable {
 
     var currentRoute: AudioInputRoute {
         Self.route(of: session.currentRoute)
-    }
-
-    var recentLoudnessDBFS: Double {
-        lock.withLock { loudness }
     }
 
     func configureSession() throws {
@@ -85,9 +79,6 @@ final class AudioCapture: @unchecked Sendable {
     }
 
     private func receive(_ buffer: AVAudioPCMBuffer) {
-        if let level = Self.dbfs(buffer) {
-            lock.withLock { loudness = level }
-        }
         bufferContinuation?.yield(CapturedBuffer(buffer: buffer, hostTime: Date()))
     }
 
@@ -137,69 +128,6 @@ final class AudioCapture: @unchecked Sendable {
         let rms = (sum / Float(count)).squareRoot()
         guard rms > 0 else { return -160 }
         return Double(20 * log10(rms))
-    }
-}
-
-final class SpeakerAudioWindow: @unchecked Sendable {
-    static let sampleRate: Double = 16_000
-
-    private let lock = NSLock()
-    private var samples: [Float] = []
-    private var firstSampleTime: TimeInterval = 0
-    private let capacity: Int
-    private var converter: AVAudioConverter?
-    private let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: SpeakerAudioWindow.sampleRate, channels: 1, interleaved: false)
-
-    init(seconds: Double) {
-        capacity = Int(seconds * Self.sampleRate)
-    }
-
-    func reset(at time: TimeInterval) {
-        lock.withLock {
-            samples.removeAll(keepingCapacity: true)
-            firstSampleTime = time
-        }
-    }
-
-    func append(_ buffer: AVAudioPCMBuffer) {
-        guard let target else { return }
-        if converter == nil || converter?.inputFormat != buffer.format {
-            converter = AVAudioConverter(from: buffer.format, to: target)
-        }
-        guard let converter else { return }
-        let ratio = target.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 32)
-        guard let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return }
-        nonisolated(unsafe) var supplied = false
-        var error: NSError?
-        converter.convert(to: output, error: &error) { _, status in
-            if supplied {
-                status.pointee = .noDataNow
-                return nil
-            }
-            supplied = true
-            status.pointee = .haveData
-            return buffer
-        }
-        guard error == nil, let channel = output.floatChannelData?[0] else { return }
-        let fresh = Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength)))
-        lock.withLock {
-            samples.append(contentsOf: fresh)
-            let overflow = samples.count - self.capacity
-            if overflow > 0 {
-                samples.removeFirst(overflow)
-                firstSampleTime += Double(overflow) / Self.sampleRate
-            }
-        }
-    }
-
-    func slice(from start: TimeInterval, to end: TimeInterval) -> [Float] {
-        lock.withLock {
-            let lower = max(0, Int(((start - firstSampleTime) * Self.sampleRate).rounded(.down)))
-            let upper = min(samples.count, Int(((end - firstSampleTime) * Self.sampleRate).rounded(.up)))
-            guard upper > lower else { return [] }
-            return Array(samples[lower..<upper])
-        }
     }
 }
 #endif

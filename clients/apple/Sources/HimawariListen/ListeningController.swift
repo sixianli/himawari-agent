@@ -6,6 +6,7 @@ import HimawariListenUI
 import Observation
 #if os(iOS)
 @preconcurrency import AVFoundation
+import HimawariListenEngine
 import Speech
 import UIKit
 #endif
@@ -26,6 +27,7 @@ public final class ListeningController {
     public private(set) var hasVoiceprint = false
     public private(set) var problem: String?
     public var introShown = false
+    public var recordingKitOpen = false
 
     @ObservationIgnored private let api: DeviceAPI
     @ObservationIgnored private let chat: ChatStore
@@ -79,13 +81,11 @@ public final class ListeningController {
     }
 
     public static func bundledNames() -> [String] {
-        struct File: Decodable { let names: [String] }
-        guard
-            let url = Bundle.module.url(forResource: "listen-names", withExtension: "json"),
-            let data = try? Data(contentsOf: url),
-            let file = try? JSONDecoder().decode(File.self, from: data)
-        else { return [] }
-        return file.names
+        #if os(iOS)
+        ListenResources.names()
+        #else
+        []
+        #endif
     }
 
     static func day(_ date: Date) -> String {
@@ -106,6 +106,9 @@ public final class ListeningController {
         case .resume: await start()
         case .notMe: notMe()
         case .itsMe: await itsMe()
+        case .openRecordingKit:
+            if isListening { stop() }
+            recordingKitOpen = true
         }
     }
 
@@ -344,7 +347,9 @@ public final class ListeningController {
         }
         guard case let .listening(_, mode, _) = session.state else { return }
         let route = capture?.currentRoute ?? .deviceMicrophone
-        let score = await ownerScore(start: piece.start, end: piece.end)
+        let samples = window.slice(from: piece.start, to: piece.end)
+        let score = await ownerScore(samples)
+        let loudness = VoiceScore.loudness(dbfs: SpeechLevel.dbfs(samples: samples, sampleRate: FluidSpeakerEmbedder.sampleRate) ?? SpeechLevel.silence)
         let speech = HeardSpeech(
             text: piece.text,
             startedAt: now.addingTimeInterval(-(piece.end - piece.start)),
@@ -361,7 +366,7 @@ public final class ListeningController {
             await upload(heard)
             let context: CommandTriggerContext = touched
                 ? .ownerTouched
-                : .heardName(route: route, inEar: route == .airpods ? inEar.inEar() : nil, loudnessScore: VoiceScore.loudness(dbfs: capture?.recentLoudnessDBFS ?? -160))
+                : .heardName(route: route, inEar: route == .airpods ? inEar.inEar() : nil, loudnessScore: loudness)
             await command(request, heard: heard, evidence: SpokenTrigger.evidence(for: context, speakerScore: score))
         case let .calledOnly(heard):
             await upload(heard)
@@ -375,7 +380,7 @@ public final class ListeningController {
     private func enroll(start: TimeInterval, end: TimeInterval) async {
         guard var draft = enrollmentDraft else { return }
         let samples = window.slice(from: start, to: end)
-        guard let embedding = try? await embedder.embedding(samples: samples, sampleRate: SpeakerAudioWindow.sampleRate) else { return }
+        guard let embedding = try? await embedder.embedding(samples: samples, sampleRate: FluidSpeakerEmbedder.sampleRate) else { return }
         draft.add(embedding)
         if let next = draft.currentIndex {
             enrollmentDraft = draft
@@ -397,10 +402,9 @@ public final class ListeningController {
         }
     }
 
-    private func ownerScore(start: TimeInterval, end: TimeInterval) async -> Int? {
+    private func ownerScore(_ samples: [Float]) async -> Int? {
         guard let voiceprint else { return nil }
-        let samples = window.slice(from: start, to: end)
-        guard let embedding = try? await embedder.embedding(samples: samples, sampleRate: SpeakerAudioWindow.sampleRate) else { return nil }
+        guard let embedding = try? await embedder.embedding(samples: samples, sampleRate: FluidSpeakerEmbedder.sampleRate) else { return nil }
         return voiceprint.score(embedding, model: embedder.model)
     }
 
