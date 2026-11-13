@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import type {
+  CapabilityManifest,
   ModelInvocationAdmissionResolver,
   PayloadProtectorPort,
   ProductMemoryRecord,
@@ -162,6 +163,8 @@ import {
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
+import { productionToolActionRegistry } from "./production-tool-actions.js";
+import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import {
   createProductionSandboxServices,
   type ProductionTaskEnvironments,
@@ -1053,8 +1056,10 @@ export async function startTenantRuntime(
     });
     const hostReadOnlyPort = new DescriptorRelativeReadOnly();
     let externalEgress: ReturnType<typeof createProductionModelEgress> | undefined;
+    let approvalThreadTitle: ((threadId: string) => Promise<string | null>) | undefined;
     const fileReadServices = createProductionFileReadServices({
       configuration,
+      threadTitle: async (threadId) => (approvalThreadTitle ? approvalThreadTitle(threadId) : null),
       repository,
       authority: invocationAuthority,
       clock,
@@ -1501,10 +1506,38 @@ export async function startTenantRuntime(
           proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
       });
       const ownerRuleTools = new ProductionOwnerRuleTools(ownerRuleWriter);
+      const toolActions = productionToolActionRegistry();
+      const installedCapabilities = repository.capabilityStore(
+        configuration.ownerId,
+        configuration.agentId,
+      );
+      const ownerScope = new OwnerScopeAuthorization({
+        configuration,
+        store: repository.authorizationStore(),
+        audit: repository.auditLedger(),
+        state: repository,
+        authority: () => invocationAuthority().lease,
+        source: repository.runExecutionSource(configuration.ownerId, configuration.agentId),
+        installedCapabilities: {
+          inspect: async (ref) => {
+            const record = await installedCapabilities.get(ref);
+            const manifest = record?.declaration as CapabilityManifest | undefined;
+            return record && manifest?.manifestVersion === "capability.v2"
+              ? { lifecycle: record.lifecycle, manifest }
+              : undefined;
+          },
+        },
+        registry: toolActions,
+        clock,
+        ids,
+        intentLifetimeMs: configuration.deadlines.workerRequestMs,
+      });
       const tools = new ProductionRuntimeTools({
         memoryRecall,
         reminders: reminderTools,
         ownerRules: ownerRuleTools,
+        toolActions,
+        ownerScope,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -1580,6 +1613,36 @@ export async function startTenantRuntime(
       governedMemory = memory;
       const episodePayloads = repository.payloadStore(configuration.ownerId, configuration.agentId);
       const episodeProtector = protector;
+      if (episodeProtector) {
+        const titleRepository = repository;
+        approvalThreadTitle = async (threadId) => {
+          const thread = await titleRepository
+            .threadRepository()
+            .read(
+              configuration.ownerId,
+              configuration.agentId,
+              threadId as Parameters<
+                ReturnType<typeof titleRepository.threadRepository>["read"]
+              >[2],
+            );
+          if (!thread?.titleRef) return null;
+          const payload = await episodePayloads.get(thread.titleRef);
+          if (
+            !payload ||
+            payload.contentType !== "text/plain" ||
+            !["public", "private"].includes(payload.dataClassification)
+          )
+            return null;
+          const title = new TextDecoder("utf-8", { fatal: true }).decode(
+            await episodeProtector.unprotect({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              payload,
+            }),
+          );
+          return title.trim() || null;
+        };
+      }
       const memoryEpisodes =
         memoryComposition && episodeProtector
           ? new MemoryEpisodeService({

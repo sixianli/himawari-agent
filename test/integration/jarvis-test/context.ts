@@ -197,7 +197,7 @@ export async function assembleContext(
             category: memory.category,
             importancePermille: memory.importance,
             entities: memory.entities ?? [],
-            validFrom: memory.recordedAt,
+            validFrom: memory.validFrom ?? memory.recordedAt,
             validTo: null,
             supersededBy: null,
             evidenceVerified: true,
@@ -213,6 +213,7 @@ export async function assembleContext(
 
   const ownerProfile = new OwnerProfileService({
     state: repository.productMemoryState(),
+    reminders: repository.memoryReminders(),
     readText: async (record) => texts.get(record.contentRef),
     storeText: (input) => storeText(input.ref, input.text),
     digest: (text) => createHash("sha256").update(text).digest("hex"),

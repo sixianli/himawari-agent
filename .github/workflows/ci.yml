@@ -324,7 +324,7 @@ jobs:
   required:
     name: ci/required
     if: always()
-    runs-on: ci-vps
+    runs-on: ci-vps-gate
     needs:
       - policy
       - static

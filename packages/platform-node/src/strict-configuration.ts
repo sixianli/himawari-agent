@@ -19,6 +19,7 @@ import {
   type IdentityConfiguration,
   type IdentityCsrfConfiguration,
   isWebProviderId,
+  APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
   LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
   type ModelProviderRouting,
@@ -1383,6 +1384,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     [
       "version",
       "timeZone",
+      "approvalBodyPreviewCharacters",
       "systemInstruction",
       "freezeThreadPrompts",
       "memoryLimit",
@@ -1422,6 +1424,16 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   }
   return Object.freeze({
     ...(timeZone === undefined ? {} : { timeZone }),
+    ...(input["approvalBodyPreviewCharacters"] === undefined
+      ? {}
+      : {
+          approvalBodyPreviewCharacters: integer(
+            input["approvalBodyPreviewCharacters"],
+            "configuration.runPolicy.approvalBodyPreviewCharacters",
+            1,
+            APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
+          ),
+        }),
     ...(input["publicSearch"] === undefined
       ? {}
       : { publicSearch: parsePublicSearchRoute(input["publicSearch"]) }),

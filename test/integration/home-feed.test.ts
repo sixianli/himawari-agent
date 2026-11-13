@@ -190,6 +190,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       configuration: scope,
       state: repository.productMemoryState(),
       jobs: repository.memoryProjectionJobs(),
+      unitOfWork: repository.unitOfWork(),
       approvals: repository.sensitiveMemoryApprovals(),
       memory,
       book: repository.memoryBook(),

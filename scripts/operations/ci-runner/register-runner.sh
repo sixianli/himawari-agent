@@ -9,8 +9,8 @@ require_runner_host
 command -v python3 > /dev/null || { echo "missing python3" >&2; exit 66; }
 [ "$(id -u)" -eq 0 ] || { echo "run it with sudo" >&2; exit 65; }
 case "${1:-}" in
-  1|2) runner_select "$1" ;;
-  *) echo "usage: sudo bash register-runner.sh <1|2> with the registration token on stdin" >&2; exit 64 ;;
+  1|2|3) runner_select "$1" ;;
+  *) echo "usage: sudo bash register-runner.sh <1|2|3> with the registration token on stdin" >&2; exit 64 ;;
 esac
 ACTIONS_RUNNER_INPUT_TOKEN=""
 IFS= read -r ACTIONS_RUNNER_INPUT_TOKEN || true

@@ -1,4 +1,5 @@
 export * from "./action-policy-service.js";
+export * from "./approval-display.js";
 export * from "./agent-gateway-service.js";
 export * from "./agent-gateway-v2-service.js";
 export * from "./agent-thread-gateway-service.js";
@@ -48,6 +49,7 @@ export * from "./permission-service.js";
 export * from "./proactive-mail-body.js";
 export * from "./proactive-mail-check-service.js";
 export * from "./proactive-overview.js";
+export * from "./proactive-references.js";
 export * from "./proactive-rules.js";
 export * from "./proactive-seal.js";
 export * from "./product-thread-gateway-adapter.js";
@@ -63,7 +65,9 @@ export * from "./run-execution-input-service.js";
 export * from "./run-state-commit-coordinator.js";
 export * from "./runtime-continuation-service.js";
 export * from "./runtime-history-service.js";
+export * from "./policy-fact-registry.js";
 export * from "./runtime-tool-authorization.js";
+export * from "./tool-action-registry.js";
 export * from "./same-source-dedupe.js";
 export * from "./sandbox-action-grant.js";
 export {

@@ -139,6 +139,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "server.status.snapshot",
   "home.read",
   "home.snapshot",
+  "data.export.start",
+  "data.export.status.read",
+  "data.export.status.snapshot",
   "stream.event",
 ] as const;
 
@@ -781,6 +784,69 @@ const serverStatusSnapshotSchema = object({
     generatedAt: timestamp,
   }),
 });
+export const DATA_EXPORT_STATES = ["running", "ready", "failed", "expired"] as const;
+const patternString = (pattern: RegExp, expected: string): Schema<string> => ({
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !pattern.test(input))
+      throw new ContractValidationError(path, expected);
+    return input;
+  },
+});
+export const DATA_EXPORT_ID_PATTERN = /^data-export:[A-Za-z0-9_-]{22}$/u;
+const dataExportIdSchema = patternString(DATA_EXPORT_ID_PATTERN, "expected a data export id");
+const dataExportStartCommandSchema = object({
+  ...commandEnvelope("data.export.start"),
+  payload: object({}),
+});
+const dataExportStatusQuerySchema = object({
+  ...envelope("query", "data.export.status.read"),
+  payload: object({ exportId: dataExportIdSchema }),
+});
+const dataExportStatusSnapshotObjectSchema = object({
+  ...envelope("snapshot", "data.export.status.snapshot"),
+  payload: object({
+    exportId: dataExportIdSchema,
+    state: enumeration(DATA_EXPORT_STATES),
+    startedAt: nullable(timestamp),
+    finishedAt: nullable(timestamp),
+    failureCode: nullable(machineString),
+    result: nullable(
+      object({
+        downloadPath: boundedString(256),
+        fileName: boundedString(128),
+        sizeBytes: integer(1),
+        sha256: patternString(/^[0-9a-f]{64}$/u, "expected a SHA-256 hex digest"),
+        memories: integer(0),
+        rules: integer(0),
+        withheld: integer(0),
+        expiresAt: timestamp,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const dataExportStatusSnapshotSchema: Schema<
+  ReturnType<typeof dataExportStatusSnapshotObjectSchema.parse>
+> = {
+  parse(input, path = "$") {
+    const snapshot = dataExportStatusSnapshotObjectSchema.parse(input, path);
+    const result = snapshot.payload.result;
+    if (result) {
+      const url = new URL(result.downloadPath, "http://localhost");
+      if (
+        !result.downloadPath.startsWith("/api/data-export/v1/archive?") ||
+        url.origin !== "http://localhost" ||
+        url.hash !== "" ||
+        url.searchParams.getAll("exportId").join("\n") !== snapshot.payload.exportId
+      )
+        throw new ContractValidationError(
+          `${path}.payload.result.downloadPath`,
+          "expected the download path of this export",
+        );
+    }
+    return snapshot;
+  },
+};
 const proactiveSettingsSetCommandSchema = object({
   ...commandEnvelope("proactive.settings.set"),
   payload: object({
@@ -1764,6 +1830,11 @@ const memoryRulesSnapshotSchema = object({
         status: enumeration(["active", "needs_review"]),
         enforced: booleanValue,
         updatedAt: timestamp,
+        quote: nullable(boundedString(500)),
+        changes: integer(0),
+        lastUsed: nullable(
+          object({ at: timestamp, kind: machineString, decisionId: machineString }),
+        ),
       }),
     ),
     generatedAt: timestamp,
@@ -2330,6 +2401,43 @@ const frequencySnapshotSchema = object({
   intervalMs: nullable(integer(1)),
 });
 
+const approvalDisplayText = (maximum: number): Schema<string> => ({
+  parse(input, path = "$") {
+    if (
+      typeof input !== "string" ||
+      input.length === 0 ||
+      [...input].length > maximum ||
+      [...input].some((character) => {
+        const code = character.charCodeAt(0);
+        return (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) || code === 0x7f;
+      })
+    )
+      throw new ContractValidationError(
+        path,
+        `expected a 1-${maximum} character string without control characters other than tab, newline and carriage return`,
+      );
+    return input;
+  },
+});
+
+export const APPROVAL_DISPLAY_BODY_MAX_CHARACTERS = 2001;
+
+const approvalDisplaySchema = object({
+  displayTitle: nullable(approvalDisplayText(301)),
+  bodyPreview: nullable(approvalDisplayText(APPROVAL_DISPLAY_BODY_MAX_CHARACTERS)),
+  askedBecause: object({
+    kind: enumeration(["rule", "no_rule_allows"]),
+    ruleId: nullable(machineString),
+    ruleText: nullable(approvalDisplayText(2001)),
+  }),
+  origin: nullable(
+    object({
+      threadId: machineString,
+      threadTitle: nullable(approvalDisplayText(121)),
+    }),
+  ),
+});
+
 export const approvalSnapshotSchema = object({
   ...envelope("snapshot", "approval.snapshot"),
   payload: object({
@@ -2345,6 +2453,7 @@ export const approvalSnapshotSchema = object({
     expiresAt: timestamp,
     decidedAt: nullable(timestamp),
     grantId: nullable(machineString),
+    display: nullable(approvalDisplaySchema),
     intent: object({
       intentId: machineString,
       threadId: machineString,
@@ -2737,6 +2846,9 @@ const schemasByType = {
   "server.status.snapshot": serverStatusSnapshotSchema,
   "home.read": homeQuerySchema,
   "home.snapshot": homeSnapshotSchema,
+  "data.export.start": dataExportStartCommandSchema,
+  "data.export.status.read": dataExportStatusQuerySchema,
+  "data.export.status.snapshot": dataExportStatusSnapshotSchema,
   "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
   "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,
   "sensitive.interceptions.clear": sensitiveInterceptionsClearCommandSchema,

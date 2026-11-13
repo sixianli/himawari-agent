@@ -368,6 +368,8 @@ describe("production HTTP composition", () => {
           "sensitive.interceptions.clear",
           "server.status.read",
           "home.read",
+          "data.export.start",
+          "data.export.status.read",
         ],
         healthDependenciesAvailable: true,
       });
@@ -1177,6 +1179,59 @@ describe("production HTTP composition", () => {
         homeSnapshot.payload.awaitingCount,
       );
       expect((await homeQuery("")).statusCode).toBe(401);
+      const exportStart = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/commands",
+        headers: {
+          ...requestHeaders(token, second.cookie, second.csrf),
+          "idempotency-key": "data-export-settings-01",
+        },
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "data.export.start"),
+          kind: "command",
+          idempotencyKey: "data-export-settings-01",
+          payload: {},
+        },
+      });
+      expect(exportStart.statusCode, exportStart.body).toBe(200);
+      const exportId = (exportStart.json() as { resultRef: string }).resultRef;
+      expect(exportId).toMatch(/^data-export:[A-Za-z0-9_-]{22}$/u);
+      let exported: { state: string; result: { downloadPath: string; sizeBytes: number } | null } =
+        {
+          state: "running",
+          result: null,
+        };
+      for (let attempt = 0; attempt < 300 && exported.state === "running"; attempt += 1) {
+        const status = await running.composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/queries",
+          headers: requestHeaders(token, second.cookie),
+          payload: {
+            ...ownerEnvelope(second.authenticationRef, "data.export.status.read"),
+            kind: "query",
+            payload: { exportId },
+          },
+        });
+        expect(status.statusCode, status.body).toBe(200);
+        const parsed = gatewayV2MessageSchema.parseJson(status.body);
+        if (parsed.type !== "data.export.status.snapshot") throw new Error("snapshot");
+        exported = parsed.payload;
+        if (exported.state === "running") await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(exported.state).toBe("ready");
+      const archive = await running.composition.app.inject({
+        method: "GET",
+        url: exported.result?.downloadPath ?? "",
+        headers: requestHeaders(token, second.cookie),
+      });
+      expect(archive.statusCode).toBe(200);
+      expect(archive.rawPayload.byteLength).toBe(exported.result?.sizeBytes);
+      const exportWithoutSession = await running.composition.app.inject({
+        method: "GET",
+        url: exported.result?.downloadPath ?? "",
+        headers: requestHeaders(token, "", undefined),
+      });
+      expect(exportWithoutSession.statusCode).toBe(401);
       const readInterceptions = async () => {
         const response = await running.composition.app.inject({
           method: "POST",
