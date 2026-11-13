@@ -230,5 +230,25 @@ describe("host workspace Gateway v2", () => {
         trashRecordRefs: [result.resultRef.replace("host-trash:", "")],
       },
     });
+    const forwarded: unknown[] = [];
+    const forwarding = new HostWorkspaceGatewayV2ReadModel({
+      delegate: {
+        query: async (_query, context) => {
+          forwarded.push(context);
+          throw new Error("forwarded");
+        },
+        async *subscribe() {},
+      },
+      hostState: state,
+      workspaceState: state,
+      projections,
+      clock,
+      ownerId,
+      agentId,
+    });
+    await expect(
+      forwarding.query(query("login.devices.read", {}), { authentication }),
+    ).rejects.toThrow("forwarded");
+    expect(forwarded).toEqual([{ authentication }]);
   });
 });
