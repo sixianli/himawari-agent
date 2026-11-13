@@ -1,8 +1,14 @@
 import { EventEmitter } from "node:events";
-import { readdir, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { collectPageErrors } from "../../scripts/browser-page-errors.mjs";
+import {
+  collectPageErrors,
+  directPageErrorListener,
+  expectedOfflineTransportError,
+  findDirectPageErrorListeners,
+} from "../../scripts/browser-page-errors.mjs";
 
 class Page extends EventEmitter {
   frame = {};
@@ -111,9 +117,6 @@ it("把错误追加到调用方给的数组里", () => {
   expect(shared).toEqual(["earlier", "later"]);
 });
 
-const directPageErrorListener =
-  /\.(?:on|once|addListener|prependListener|prependOnceListener)\(\s*["']pageerror["']/u;
-
 it("[webkit-teardown] 直接监听 pageerror 的各种写法都认得出，等待注入的错误不算", () => {
   for (const source of [
     'page.on("pageerror", collect)',
@@ -131,21 +134,54 @@ it("[webkit-teardown] 直接监听 pageerror 的各种写法都认得出，等�
     expect(directPageErrorListener.test(source)).toBe(false);
 });
 
+const allowedDirectListeners = new Set([
+  "browser-page-errors.mjs",
+  "ci/browser-observation.mjs",
+  "test-browser-page-errors-browser.mjs",
+]);
+
+it("[webkit-teardown] 扫描能找出放进目录里的直接监听，允许名单里的不算", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "page-error-scan-"));
+  try {
+    await mkdir(path.join(root, "ci"));
+    await writeFile(path.join(root, "bad.mjs"), 'page.on("pageerror", collect);\n');
+    await writeFile(path.join(root, "ci", "nested.mjs"), "page.once('pageerror', collect);\n");
+    await writeFile(
+      path.join(root, "ci", "browser-observation.mjs"),
+      'page.on("pageerror", record);\n',
+    );
+    await writeFile(path.join(root, "good.mjs"), "watchPageErrors(page, collect);\n");
+    await writeFile(path.join(root, "notes.md"), 'page.on("pageerror", x)\n');
+    expect(await findDirectPageErrorListeners(root, allowedDirectListeners)).toEqual([
+      "bad.mjs",
+      "ci/nested.mjs",
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it("[webkit-teardown] 浏览器测试脚本一律经 browser-page-errors.mjs 收页面报错", async () => {
   const scripts = path.resolve(import.meta.dirname, "../../scripts");
-  const allowed = new Set([
-    "browser-page-errors.mjs",
-    "ci/browser-observation.mjs",
-    "test-browser-page-errors-browser.mjs",
-  ]);
-  const entries = await readdir(scripts, { recursive: true, withFileTypes: true });
-  const offenders = [];
-  for (const entry of entries) {
-    if (!entry.isFile() || !/\.(?:mjs|js|ts)$/u.test(entry.name)) continue;
-    const file = path.join(entry.parentPath, entry.name);
-    const relative = path.relative(scripts, file).split(path.sep).join("/");
-    if (allowed.has(relative)) continue;
-    if (directPageErrorListener.test(await readFile(file, "utf8"))) offenders.push(relative);
-  }
-  expect(offenders).toEqual([]);
+  expect(await findDirectPageErrorListeners(scripts, allowedDirectListeners)).toEqual([]);
+});
+
+it("[webkit-teardown] 断网阶段只放过夹具主机上那几个路径的 access control 报错", () => {
+  const base = "http://127.0.0.1:41013";
+  const paths = ["/api/gateway/v2/events", "/api/gateway/thread/v3/events"];
+  const ok = "/127.0.0.1:41013/api/gateway/v2/events due to access control checks.";
+  const withQuery =
+    "/127.0.0.1:41013/api/gateway/v2/events?afterCursor=c-1 due to access control checks.";
+  expect(expectedOfflineTransportError(ok, base, paths)).toBe(true);
+  expect(expectedOfflineTransportError(withQuery, base, paths)).toBe(true);
+  for (const message of [
+    "/127.0.0.1:41014/api/gateway/v2/events due to access control checks.",
+    "/evil.example/api/gateway/v2/events due to access control checks.",
+    "/127.0.0.1:41013/api/gateway/v2/queries due to access control checks.",
+    "/127.0.0.1:41013/api/gateway/v2/events-extra due to access control checks.",
+    "/127.0.0.1:41013/api/gateway/thread/v3/events-other due to access control checks.",
+    "TypeError: /127.0.0.1:41013/api/gateway/v2/events failed",
+    `prefix ${ok}`,
+  ])
+    expect(expectedOfflineTransportError(message, base, paths)).toBe(false);
 });

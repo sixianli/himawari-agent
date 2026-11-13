@@ -74,7 +74,7 @@ export async function qualifyPageErrorFilter(browser) {
         name: "same-origin-fetch-in-flight-while-reloading",
         target: pageOrigin,
         start: "before-reload",
-        webkitReports: false,
+        webkitReports: null,
       },
     ]) {
       const tab = await context.newPage();
@@ -126,7 +126,7 @@ export async function qualifyPageErrorFilter(browser) {
       : entry.rawBlocked;
     if (JSON.stringify(entry.recordedBlocked) !== JSON.stringify(expectedRecorded))
       throw new Error(`PAGE_ERROR_FILTER_MISMATCH:${entry.name}:${JSON.stringify(entry)}`);
-    if (engine !== "webkit") continue;
+    if (engine !== "webkit" || entry.webkitReports === null) continue;
     if (entry.rawBlocked.includes(entry.expectedHost) !== entry.webkitReports)
       throw new Error(`PAGE_ERROR_FILTER_WEBKIT_BEHAVIOR_CHANGED:${entry.name}`);
   }

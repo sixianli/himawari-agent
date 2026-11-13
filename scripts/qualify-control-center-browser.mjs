@@ -7,7 +7,7 @@ import { chromium, devices, expect, firefox, webkit } from "@playwright/test";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-import { watchPageErrors } from "./browser-page-errors.mjs";
+import { expectedOfflineTransportError, watchPageErrors } from "./browser-page-errors.mjs";
 import { createBrowserObservation } from "./ci/browser-observation.mjs";
 import { parseArguments } from "./ci/contracts.mjs";
 import { redactText } from "./ci/security-redaction.mjs";
@@ -1010,15 +1010,13 @@ export async function qualifyBrowser({
       .filter({ visible: true })
       .first()
       .waitFor();
-    const fixtureHost = new URL(baseUrl).host;
     const expectedOfflineBrowserError = (error) =>
-      error.endsWith(" due to access control checks.") &&
-      [
+      expectedOfflineTransportError(error, baseUrl, [
         "/api/gateway/v2/events",
         "/api/gateway/thread/v3/events",
         "/api/gateway/thread/v3/execution-events",
         "/api/gateway/thread/v3/queries",
-      ].some((path) => error.startsWith(`/${fixtureHost}${path}`));
+      ]);
     if (requestErrors.length)
       throw new Error(`CONTROL_CENTER_CRITICAL_REQUEST_FAILED:${JSON.stringify(requestErrors)}`);
     const unexpectedBrowserErrors = browserErrors.filter(
