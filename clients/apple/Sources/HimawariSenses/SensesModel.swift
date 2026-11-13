@@ -112,9 +112,9 @@ public final class SensesModel {
         guard working == nil else { return }
         working = item
         defer { working = nil }
-        update(item) { $0.introSeen = true }
         var authorization = await service.authorization(item)
         if authorization == .notAsked { authorization = await service.requestAuthorization(item) }
+        update(item) { $0.introSeen = true }
         authorizations[item] = authorization
         always[item] = service.alwaysAllowed(item)
         guard authorization == .allowed || authorization == .limited else { return }
