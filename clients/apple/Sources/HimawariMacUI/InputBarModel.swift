@@ -7,33 +7,33 @@ import Observation
 
 @MainActor
 @Observable
-public final class InputBarModel {
-    public enum Problem: Equatable {
+final class InputBarModel {
+    enum Problem: Equatable {
         case tooMany
         case uploadFailed
         case sendFailed
     }
 
-    public var draft = ""
-    public private(set) var pieces: [ContextPiece] = []
-    public private(set) var sending = false
-    public private(set) var problem: Problem?
-    public private(set) var threadId: String?
+    var draft = ""
+    private(set) var pieces: [ContextPiece] = []
+    private(set) var sending = false
+    private(set) var problem: Problem?
+    private(set) var threadId: String?
     @ObservationIgnored private let api: DeviceAPI
     @ObservationIgnored private let chat: () -> ChatStore?
     @ObservationIgnored private var pendingRequestId: String?
 
-    public init(api: DeviceAPI, chat: @escaping () -> ChatStore?) {
+    init(api: DeviceAPI, chat: @escaping () -> ChatStore?) {
         self.api = api
         self.chat = chat
     }
 
-    public static let labels = ContextLabels(
+    static let labels = ContextLabels(
         frontApp: { L.format("input.frontApp", $0.name) },
         selection: { L.format("input.selection", $0) }
     )
 
-    public func begin(with snapshot: ContextSnapshot, seesFrontmost: Bool) {
+    func begin(with snapshot: ContextSnapshot, seesFrontmost: Bool) {
         draft = ""
         problem = nil
         threadId = nil
@@ -41,22 +41,22 @@ public final class InputBarModel {
         pieces = ContextGathering.pieces(from: snapshot, seesFrontmost: seesFrontmost, labels: Self.labels, readFile: ContextReader.read)
     }
 
-    public func add(files urls: [URL]) {
+    func add(files urls: [URL]) {
         let added = urls.filter(\.isFileURL).map { ContextGathering.filePiece($0, source: .droppedFile, reading: ContextReader.read($0)) }
         pieces = ContextGathering.merge(pieces, adding: added)
         problem = nil
     }
 
-    public func remove(_ pieceId: String) {
+    func remove(_ pieceId: String) {
         pieces.removeAll { $0.id == pieceId }
         if problem == .tooMany { problem = nil }
     }
 
-    public var canSend: Bool {
+    var canSend: Bool {
         !sending && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    public func send() {
+    func send() {
         guard canSend else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard pieces.count <= MessageAttachments.maximumCount else {
@@ -104,24 +104,24 @@ public final class InputBarModel {
         }
     }
 
-    public func close() {
+    func close() {
         if threadId != nil { chat()?.unwatch() }
     }
 
-    public var answer: String? {
+    var answer: String? {
         guard let threadId, let chat = chat() else { return nil }
         if let streaming = chat.streamingText(in: threadId), !streaming.isEmpty { return streaming }
         guard let last = chat.messages(in: threadId).last(where: { $0.role == .agent }) else { return nil }
         return chat.texts[last.contentRef]
     }
 
-    public var runningProcess: ProcessLine? {
+    var runningProcess: ProcessLine? {
         guard let threadId, let chat = chat() else { return nil }
         guard let run = chat.details[threadId]?.runs.last(where: { !ProcessLine.terminalRunStatuses.contains($0.status) }) else { return nil }
         return chat.processLine(for: run.runId, in: threadId)
     }
 
-    public var queuedOffline: Bool {
+    var queuedOffline: Bool {
         guard let threadId, let chat = chat() else { return false }
         return !chat.queuedMessages(in: threadId).isEmpty && chat.connection != .online
     }

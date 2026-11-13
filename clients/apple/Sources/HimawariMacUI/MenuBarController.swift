@@ -7,8 +7,8 @@ import SwiftUI
 import UserNotifications
 
 @MainActor
-public final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination {
-    public let model: MenuBarModel
+final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination {
+    let model: MenuBarModel
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
     private let inputBar: InputBarWindow
@@ -19,7 +19,7 @@ public final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDest
     private var observation: Task<Void, Never>?
     private let messages: MessagesSensor
 
-    public init(model: MenuBarModel) {
+    init(model: MenuBarModel) {
         self.model = model
         inputBar = InputBarWindow(model: InputBarModel(api: model.app.api, chat: { [weak app = model.app] in app?.chat }), menu: model)
         messages = MessagesSensor(settings: model.settings, app: model.app)
@@ -165,7 +165,7 @@ public final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDest
         pairingWindow?.makeKeyAndOrderFront(nil)
     }
 
-    public func windowWillClose(_ notification: Notification) {
+    func windowWillClose(_ notification: Notification) {
         if (notification.object as? NSWindow) === pairingWindow { pairingWindow = nil }
     }
 
@@ -173,11 +173,11 @@ public final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDest
         NSApp.terminate(nil)
     }
 
-    public func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+    func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         Self.fileURLs(sender).isEmpty ? [] : .link
     }
 
-    public func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let urls = Self.fileURLs(sender)
         guard !urls.isEmpty else { return false }
         summonInputBar(files: urls)

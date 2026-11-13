@@ -6,13 +6,13 @@ import HimawariCore
 import HimawariShell
 import Observation
 
-public struct RunningWork: Identifiable, Equatable, Sendable {
-    public let id: String
-    public let title: String
-    public let progress: DeviceProgress?
-    public let progressLabel: String?
+struct RunningWork: Identifiable, Equatable, Sendable {
+    let id: String
+    let title: String
+    let progress: DeviceProgress?
+    let progressLabel: String?
 
-    public init(id: String, title: String, progress: DeviceProgress?, progressLabel: String?) {
+    init(id: String, title: String, progress: DeviceProgress?, progressLabel: String?) {
         self.id = id
         self.title = title
         self.progress = progress
@@ -21,25 +21,25 @@ public struct RunningWork: Identifiable, Equatable, Sendable {
 }
 
 @MainActor
-public protocol MacWorkControl: AnyObject {
+protocol MacWorkControl: AnyObject {
     func stop(_ workId: String) async
 }
 
 @MainActor
 @Observable
-public final class MenuBarModel {
-    public let app: AppModel
-    public let settings: MacSettingsStore
-    public private(set) var home: HomeSnapshot?
-    public private(set) var running: [RunningWork] = []
-    public private(set) var acting: String?
-    public private(set) var shortcutState: GlobalShortcut.State?
-    @ObservationIgnored public weak var work: MacWorkControl?
+final class MenuBarModel {
+    let app: AppModel
+    let settings: MacSettingsStore
+    private(set) var home: HomeSnapshot?
+    private(set) var running: [RunningWork] = []
+    private(set) var acting: String?
+    private(set) var shortcutState: GlobalShortcut.State?
+    @ObservationIgnored weak var work: MacWorkControl?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var serverActions: [DeviceActionSummary] = []
     @ObservationIgnored private var localProgress: [String: DeviceProgress] = [:]
 
-    public init(app: AppModel, settings: MacSettingsStore) {
+    init(app: AppModel, settings: MacSettingsStore) {
         self.app = app
         self.settings = settings
     }
@@ -52,19 +52,19 @@ public final class MenuBarModel {
         shortcutState = shortcut
     }
 
-    public var awaitingCount: Int { home?.awaitingCount ?? 0 }
-    public var mostPressing: HomeItem? { home?.mostPressing }
+    var awaitingCount: Int { home?.awaitingCount ?? 0 }
+    var mostPressing: HomeItem? { home?.mostPressing }
 
     func shortcutChanged(_ state: GlobalShortcut.State?) {
         shortcutState = state
     }
 
-    public var activeShortcutLabel: String? {
+    var activeShortcutLabel: String? {
         if case let .active(shortcut) = shortcutState { return GlobalShortcut.label(shortcut) }
         return nil
     }
 
-    public func startRefreshing() {
+    func startRefreshing() {
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -76,7 +76,7 @@ public final class MenuBarModel {
         }
     }
 
-    public func refresh() async {
+    func refresh() async {
         guard app.phase == .active else {
             home = nil
             running = []
@@ -90,7 +90,7 @@ public final class MenuBarModel {
         }
     }
 
-    public func report(progress: DeviceProgress?, for actionId: String) {
+    func report(progress: DeviceProgress?, for actionId: String) {
         localProgress[actionId] = progress
         rebuildRunning()
     }
@@ -107,11 +107,11 @@ public final class MenuBarModel {
         }
     }
 
-    public func stop(_ workId: String) {
+    func stop(_ workId: String) {
         Task { await work?.stop(workId) }
     }
 
-    public func respond(_ item: HomeItem, with action: HomeAction) {
+    func respond(_ item: HomeItem, with action: HomeAction) {
         guard acting == nil else { return }
         acting = item.key
         Task {
