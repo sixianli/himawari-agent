@@ -55,20 +55,6 @@ function fingerprintSuffix(value: unknown): string {
   return threadCommandFingerprint(value).split(":").at(-1) ?? "invalid";
 }
 
-/** Parse only an explicit Owner request to change the Thread answer-language setting. */
-export function parseAnswerLocaleSettingIntent(input: string): AnswerLocale | null {
-  const normalized = input.normalize("NFKC").trim().toLowerCase();
-  const explicit =
-    /(?:回答|回复|回覆|応答|返信|answer|reply|respond)(?:语言|語言|言語| language)?[\s，,：:を]*(?:设置|設定|改|切换|切換|変更|にして|で|set|switch|change|in|to)?[\s，,：:为成を]*(简体中文|中文|中国語|英文|英语|英語|日文|日语|日本語|chinese|english|japanese)/u.exec(
-      normalized,
-    );
-  const language = explicit?.[1];
-  if (!language) return null;
-  if (["简体中文", "中文", "中国語", "chinese"].includes(language)) return "zh-CN";
-  if (["英文", "英语", "英語", "english"].includes(language)) return "en";
-  return "ja";
-}
-
 export interface ThreadCommandServiceDependencies {
   readonly repository: ThreadRepositoryPort;
   readonly clock: ClockPort;
