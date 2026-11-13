@@ -45,6 +45,7 @@ function fixture() {
     "console.error('BOUNDARY_STUB_RAN');\nprocess.exit(0);\n",
   );
   write(root, "scripts/check-format.mjs", "console.error('FORMAT_STUB_RAN');\nprocess.exit(0);\n");
+  write(root, "scripts/check-lint.mjs", "console.error('LINT_STUB_RAN');\nprocess.exit(0);\n");
   write(
     root,
     "scripts/scan-machine-secrets.mjs",
@@ -153,6 +154,7 @@ describe("Layer 0 hooks from the repository", () => {
     expect(pushed.status).toBe(0);
     expect(pushed.stderr).toContain("BOUNDARY_STUB_RAN");
     expect(pushed.stderr).toContain("FORMAT_STUB_RAN");
+    expect(pushed.stderr).toContain("LINT_STUB_RAN");
     expect(pushed.stderr).toContain("SECRETS_STUB_RAN");
   });
 
@@ -161,6 +163,7 @@ describe("Layer 0 hooks from the repository", () => {
       readFileSync(path.join(repositoryRoot, "package.json"), "utf8"),
     ).scripts;
     expect(scripts["format:check"]).toBe("node scripts/check-format.mjs");
+    expect(scripts.lint).toBe("node scripts/check-lint.mjs");
     expect(scripts["check:secrets"]).toBe("node scripts/scan-machine-secrets.mjs");
   });
 
@@ -220,6 +223,7 @@ describe("Layer 0 hooks from the repository", () => {
 
   for (const [script, code] of [
     ["scripts/check-format.mjs", "PUSH_FORMAT_CHECK_FAILED"],
+    ["scripts/check-lint.mjs", "PUSH_LINT_CHECK_FAILED"],
     ["scripts/scan-machine-secrets.mjs", "PUSH_SECRET_SCAN_FAILED"],
   ]) {
     it(`refuses at push when ${script} fails or is missing`, () => {
