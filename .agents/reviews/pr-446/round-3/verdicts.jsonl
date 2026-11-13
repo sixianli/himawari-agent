@@ -1,0 +1,5 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "这样的提醒在首页 upcoming 会被新过滤掉并标记 `incompleteSources: [\"upcoming\"]`；在记忆页仍原样输出，可能直接触发合约校验失败", "valid": false, "class": "error"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "现有用例能覆盖“过滤条件存在”，但不能覆盖“过滤发生在 LIMIT 之前”这一真正要防的回归", "valid": true, "class": "error", "severity": "low", "trigger": "以后有人把已到点的过滤改回 LIMIT 之后", "consequence": "回归没有测试拦住；现在的代码行为是对的", "modelSeverity": "中低", "reason": "这是缺一条测试，不是现有代码会给出错误结果；SQL 条件已在 LIMIT 之前，模型自己也确认 SQL 对"}
+{"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "运行时目前没问题：`as` 只影响类型，`postMessage` 的结构化克隆会保留该属性", "valid": true, "class": "better"}
+{"id": "ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "没有任何测试断言诊断里的 `error.name`", "valid": true, "class": "error", "severity": "low", "trigger": "以后有人把 notShowable() 改回普通 Error", "consequence": "诊断日志又只剩 Error，没有测试拦住", "modelSeverity": "低"}
+{"id": "ds-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "它没有传 `remindAfter`，SQL 的 `(? IS NULL OR ...)` 分支为真，因此结果确实不变；但作者的说法不完整", "valid": false, "class": "error"}

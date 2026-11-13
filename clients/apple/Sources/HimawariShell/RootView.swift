@@ -102,7 +102,7 @@ struct MainTabsView: View {
                 withAnimation(.snappy) { tab = next }
             }
         }
-        .fullScreenPresentation(isPresented: $settingsOpen) {
+        .hmCover(isPresented: $settingsOpen) {
             SettingsRootView(api: model.api) { settingsOpen = false }
         }
     }

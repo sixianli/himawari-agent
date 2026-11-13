@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import {
   ApplicationPortError,
+  type CorrectionAgreementCounts,
   type DecisionLedgerPort,
   daysDue,
   dayWindow,
@@ -27,6 +28,7 @@ import {
   type MuseSummary,
   mailComparisonBucket,
   pairEntriesByMail,
+  proportion,
   resolveWindow,
   summarizeDecisions,
   summarizeGap,
@@ -87,6 +89,7 @@ export interface ProductionObservationOptions {
   readonly serviceRevision: string;
   readonly tickMs?: number;
   readonly onFailure?: (error: unknown) => void;
+  readonly correction?: () => Promise<CorrectionAgreementCounts>;
   readonly prereview?: {
     readonly version?: { readonly modelRef: string; readonly promptId: string };
     readonly agreementPermille: number;
@@ -243,6 +246,7 @@ export class ProductionObservation {
       prereviewSettings,
       this.#options.prereview?.version,
     );
+    const correction = this.#options.correction ? await this.#options.correction() : null;
     const summary = start
       ? summarizeObservation({ start, checks: await observation.listChecks(scope), now })
       : null;
@@ -346,6 +350,12 @@ export class ProductionObservation {
               gate: complete ? { ...group.gate } : null,
             })),
           },
+          correction: correction
+            ? {
+                ...correction,
+                agreement: proportion(correction.agreed, correction.handled),
+              }
+            : null,
         },
         generatedAt: now,
       },

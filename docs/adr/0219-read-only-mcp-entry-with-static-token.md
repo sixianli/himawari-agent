@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amended_by: "docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md"
+amended_by: "docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md, docs/adr/0232-memory-corrections-flag-derived-memories-and-recheck-rules.md"
 date: "2026-11-11"
 ---
 
@@ -69,6 +69,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - **`rule_book`（规则手册）**：返回 `ruleBookFor(settings)` 列出的每条规则，包括编号、版本、作用在哪一步、结果、来源、状态。主人自己设的规则还带上设置值，即重要发件人名单和静默时段。
      - 不返回规则的表达式。理由是 [ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md) 原话 “用户在界面看到的是试算例子，不是代码”。
    - 2026-11-12 起：[ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 2、3 在这三个工具之外加 `start_here`，并给 `find_memories` 加 `project`、`auto` 两个可选参数；决定 4 给每个接入加读取级别上限，连同 `today_context` 在内的四个读工具都受它管。`start_here` 和 `auto` 已经做出来（PR 413，2026-11-12 合并），`start_here` 按读取上限过滤，默认到 private；`project` 参数和另外三个读工具的上限，在对应的编码任务合并之前仍按本条。本条原文保留不改。
+   - 2026-11-13 起：P 系列任务 B 第一部分（PR 469）让 `find_memories`、`today_context`、`rule_book` 也按读取上限过滤，默认到 private：找记忆只给不高于上限的记忆和摘要，今日上下文的提醒和摘要同样，规则手册里主人规则按出处那条记忆的分级过滤，出处找不到的不给，内置规则只在它声明的参数分级不高于上限时带参数。读工具在一处登记，每个都必须写明要读哪些数据源，只拿到按上限绑定好的那几个。上限仍是全局的一个值，按接入分开的上限等第二部分。本条原文保留不改。
 4. **返回给外部之前，先遮掉敏感内容。** 返回值里的全部文字一起交给新加的 `maskSensitiveTexts` 遮好再发出去。这个函数在专门识别敏感内容的包 `@himawari-agent/sensitive-capture`，内部调用 `redactForEgress`，和 Himawari 自己发给模型的出口用同一套规则：机器密钥、密码、验证码、银行卡号、证件号。
    - 一次返回里先过一遍所有文字，记下认出的密码、验证码，再遮第二遍。这样同一个密码在一段里被点名、在另一段里单独出现时，两处都遮掉，和模型出口记住已点名值的做法一致。返回给对方的占位符只写类别（例如 `[密码]`），不带序号，所以同一段文字的遮法不随这次一起返回的其他无关内容变化。银行卡照现有规则保留尾号四位（`[银行卡 尾号1234]`），其余类别不含原值的任何信息。
    - 限制：只有这次返回的文字里有一处把这个值点名为密码或验证码，别处单独出现的同一个值才会被遮。一条记忆里只写了值、没写「密码」之类的字样，又没有和点名的那条一起返回时，它原样发出；这和 Himawari 自己的模型出口按对话记住点名值是同一种限制，只是这里的范围是一次返回。
@@ -92,6 +93,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - [ADR 0213](0213-owner-sentence-becomes-a-standing-rule.md) 决定 4 把这些规则存在 `rule_book_rules`，编号以 `owner:` 开头；Gmail 检查每次都读它们并执行。外部程序替主人做判断时同样要知道这些规矩，所以 `rule_book` 在内置规则之后按编号顺序列出生效中和待重新确认的主人规则，不列已撤销的。
    - 每条带编号、版本、出处、状态、类型、一句话说明，以及是否正在执行（`enforced`）。能执行的再带作用在哪一步、结果和参数（发件域名、词语这些）；参数不合法或类型不认识的，和规则列表一样标 `enforced: false`，不给参数。
    - 和内置规则一样不给表达式，返回内容整体遮盖。
+   - 2026-11-13 起：按决定 3 的 2026-11-13 补充，主人规则只在出处记忆的分级不高于读取上限时列出，出处找不到的不列；内置规则带参数改为由规则自己声明参数和分级（`RuleRecord.sharedParameters`），不再按规则编号写死。已知缺口：规则出处记忆的分级目前只在含证件号或凭据时升到 sensitive，健康、财务这类规则仍是 private，默认上限下照样列出；所有写入点改用模型判断定级另作一项处理。本条原文保留不改。
 
 [返回阅读导航](#contents)
 
@@ -143,5 +145,6 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
 - [ADR 0143：模型门槛决策的决策记录](0143-decision-ledger-for-model-gate-decisions.md)
 - [ADR 0209：规则手册用 CEL 表达式，由一个裁判计算](0209-rule-book-with-cel-expressions-and-judge.md)
 - [决策记录写入约定](../execution/specs/2026-11-09-decision-record-write-convention.md)
+- [ADR 0232](0232-memory-corrections-flag-derived-memories-and-recheck-rules.md)：`rule_book` 里的规则可以是已暂停（`suspended`），此时不执行（后续）。
 
 [返回阅读导航](#contents)

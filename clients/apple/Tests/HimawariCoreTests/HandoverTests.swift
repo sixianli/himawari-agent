@@ -8,7 +8,7 @@ import Testing
 @Suite struct HandoverTests {
     private let moment = Date(timeIntervalSince1970: 1_800_000_000)
 
-    private func configuration(attachments: AttachmentLimits? = AttachmentLimits(textCharacters: 40, imageCharacters: 80, perMessage: 10), textLimit: Int? = 12) -> DeviceConfiguration {
+    private func configuration(attachments: AttachmentLimits? = AttachmentLimits(textCharacters: 40, imageCharacters: 80, perMessage: 10, messageCharacters: 65536), textLimit: Int? = 12) -> DeviceConfiguration {
         let types: [String: PerceptionTypeRule] = [
             "web.page": PerceptionTypeRule(sense: "reading", text: "optional", evidence: [
                 "url": PerceptionFieldRule(kind: "string", maximum: 30, optional: nil),
@@ -35,22 +35,18 @@ import Testing
         Handover(id: "AAAAAAAAAAAAAAAAAAAAAAAA", entry: entry, content: content, request: request, sourceApp: sourceApp, createdAt: moment, answerLocale: .japanese)
     }
 
-    @Test func joinedDraftMatchesTheWebFormatAndSplitsBack() throws {
-        let tag = AttachmentTag(name: "a\"b<c>\nd", ref: "payload:1", bytes: 12, kind: .text, truncated: true)
-        let draft = MessageDraft.join("帮我挑", [tag])
-        #expect(draft == "帮我挑\n\n<file name=\"abcd\" ref=\"payload:1\" bytes=\"12\" kind=\"text\" truncated=\"1\"/>")
-        let split = MessageDraft.split(draft)
-        #expect(split.text == "帮我挑")
-        #expect(split.tags == [tag])
-        #expect(MessageDraft.join("", [tag]) == tag.text)
-        #expect(AttachmentTag(name: "  ", ref: "r", bytes: 1, kind: .image, truncated: false).name == "file")
+    @Test func aHandedPageJoinsTheRequestInTheWebAttachmentFormat() {
+        let tag = MessageAttachment(name: "a\"b<c>\nd", ref: "payload:1", bytes: 12, kind: .text, truncated: true)
+        #expect(MessageAttachments.compose(text: "帮我挑", attachments: [tag]) == "帮我挑\n\n<file name=\"abcd\" ref=\"payload:1\" bytes=\"12\" kind=\"text\" truncated=\"1\"/>")
+        #expect(MessageAttachments.compose(text: "", attachments: [tag]) == tag.tag)
+        #expect(MessageAttachment(name: "  ", ref: "r", bytes: 1, kind: .image, truncated: false).name == "file")
     }
 
     @Test func truncationCountsUTF16LikeTheServerAndNeverSplitsACharacter() {
-        let (kept, truncated) = TextBudget.utf16Prefix("ab😀c", limit: 3)
+        let (kept, truncated) = MessageAttachments.clip("ab😀c", characters: 3)
         #expect(kept == "ab")
         #expect(truncated)
-        #expect(TextBudget.utf16Prefix("ab😀c", limit: 5) == ("ab😀c", false))
+        #expect(MessageAttachments.clip("ab😀c", characters: 5) == ("ab😀c", false))
         #expect(TextBudget.scalarPrefix("日本語です", limit: 3) == "日本語")
     }
 
@@ -108,7 +104,7 @@ import Testing
     private func configJSON() -> String {
         """
         {"heartbeatSeconds":25,"connectionMaxSeconds":3600,"signatureToleranceSeconds":300,"limits":[],"streamConnections":2,
-         "attachments":{"textCharacters":1000,"imageCharacters":1000,"perMessage":10},
+         "attachments":{"textCharacters":1000,"imageCharacters":1000,"perMessage":10,"messageCharacters":65536},
          "perception":{"recordTextCharacters":1000,"recordTypes":{"share.item":{"sense":"vision","text":"optional","evidence":{"url":{"kind":"string","maximum":2048,"optional":true}}}}}}
         """
     }
@@ -211,7 +207,7 @@ import Testing
 
     @Test func aLargeImageIsShrunkToWhatTheServerAcceptsBeforePlanning() throws {
         let item = handover(.image(data: Data(repeating: 7, count: 500), mimeType: "image/png", name: "截图"), request: "这是什么")
-        let config = configuration(attachments: AttachmentLimits(textCharacters: 40, imageCharacters: 123, perMessage: 10))
+        let config = configuration(attachments: AttachmentLimits(textCharacters: 40, imageCharacters: 123, perMessage: 10, messageCharacters: 65536))
         let http = DeviceHTTPClient(exchange: RecordingExchange([]))
         let fitted = HandoverCourier(api: DeviceAPI(http: http), images: HalvingFitter()).fitted(item, configuration: config)
         guard case let .image(data, mimeType, name) = fitted.content else { Issue.record("not an image"); return }

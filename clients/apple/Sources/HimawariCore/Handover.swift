@@ -3,85 +3,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-public enum AttachmentKind: String, Codable, Sendable {
-    case text
-    case image
-}
-
-public struct AttachmentTag: Sendable, Equatable {
-    public let name: String
-    public let ref: String
-    public let bytes: Int
-    public let kind: AttachmentKind
-    public let truncated: Bool
-
-    public init(name: String, ref: String, bytes: Int, kind: AttachmentKind, truncated: Bool) {
-        self.name = AttachmentTag.cleanName(name)
-        self.ref = ref
-        self.bytes = bytes
-        self.kind = kind
-        self.truncated = truncated
-    }
-
-    public var text: String {
-        "<file name=\"\(name)\" ref=\"\(ref)\" bytes=\"\(bytes)\" kind=\"\(kind.rawValue)\"\(truncated ? " truncated=\"1\"" : "")/>"
-    }
-
-    static func cleanName(_ name: String) -> String {
-        let cleaned = String(name.unicodeScalars.filter { !"\"<>\r\n".unicodeScalars.contains($0) }).trimmingCharacters(in: .whitespaces)
-        return cleaned.isEmpty ? "file" : cleaned
-    }
-}
-
-public enum MessageDraft {
-    public static let separator = "\n\n"
-
-    public static func join(_ text: String, _ tags: [AttachmentTag]) -> String {
-        ((text.isEmpty ? [] : [text]) + tags.map(\.text)).joined(separator: separator)
-    }
-
-    public static func split(_ draft: String) -> (text: String, tags: [AttachmentTag]) {
-        var tags: [AttachmentTag] = []
-        var rest = draft
-        while rest.hasSuffix("/>"), let start = rest.range(of: "<file name=\"", options: .backwards) {
-            let before = String(rest[rest.startIndex..<start.lowerBound])
-            guard let tag = parse(String(rest[start.lowerBound...])), before.isEmpty || before.hasSuffix(separator) else { break }
-            tags.insert(tag, at: 0)
-            rest = before.isEmpty ? "" : String(before.dropLast(separator.count))
-        }
-        return (rest, tags)
-    }
-
-    static func parse(_ text: String) -> AttachmentTag? {
-        let pattern = #"^<file name="([^"<>\n]*)" ref="([^"<>\s]+)" bytes="(\d+)" kind="([a-z]+)"( truncated="1")?/>$"#
-        guard let expression = try? NSRegularExpression(pattern: pattern) else { return nil }
-        let range = NSRange(text.startIndex..., in: text)
-        guard let match = expression.firstMatch(in: text, range: range), match.range == range else { return nil }
-        func group(_ index: Int) -> String? {
-            Range(match.range(at: index), in: text).map { String(text[$0]) }
-        }
-        guard
-            let name = group(1), let ref = group(2), let bytes = group(3).flatMap(Int.init),
-            let kind = group(4).flatMap(AttachmentKind.init(rawValue:))
-        else { return nil }
-        return AttachmentTag(name: name, ref: ref, bytes: bytes, kind: kind, truncated: group(5) != nil)
-    }
-}
-
 public enum TextBudget {
-    public static func utf16Prefix(_ text: String, limit: Int) -> (text: String, truncated: Bool) {
-        guard text.utf16.count > limit else { return (text, false) }
-        var count = 0
-        var kept = String.UnicodeScalarView()
-        for character in text {
-            let size = character.utf16.count
-            if count + size > limit { break }
-            kept.append(contentsOf: character.unicodeScalars)
-            count += size
-        }
-        return (String(kept), true)
-    }
-
     public static func scalarPrefix(_ text: String, limit: Int) -> String {
         guard text.unicodeScalars.count > limit else { return text }
         var count = 0
@@ -194,10 +116,19 @@ public struct PerceptionTypeRule: Codable, Sendable, Equatable {
     public let evidence: [String: PerceptionFieldRule]
 }
 
-public enum JSONScalar: Codable, Sendable, Equatable {
+public enum JSONScalar: Codable, Sendable, Equatable, ExpressibleByStringLiteral {
     case string(String)
     case number(Double)
     case bool(Bool)
+
+    public init(stringLiteral value: String) {
+        self = .string(value)
+    }
+
+    public var string: String? {
+        if case let .string(value) = self { return value }
+        return nil
+    }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
@@ -291,14 +222,14 @@ public enum HandoverPlanner {
             let head = [title, url].compactMap { $0.flatMap { $0.isEmpty ? nil : $0 } }.joined(separator: "\n")
             let body = text.flatMap { $0.isEmpty ? nil : $0 }
             let full = body.map { head + "\n\n" + $0 } ?? head
-            let (kept, truncated) = TextBudget.utf16Prefix(full, limit: limits.textCharacters)
+            let (kept, truncated) = MessageAttachments.clip(full, characters: limits.textCharacters)
             return .conversation(attachment: kept, kind: .text, name: name, truncated: truncated)
         case let .link(url, title):
             let full = [title, url].compactMap { $0.flatMap { $0.isEmpty ? nil : $0 } }.joined(separator: "\n")
-            let (kept, truncated) = TextBudget.utf16Prefix(full, limit: limits.textCharacters)
+            let (kept, truncated) = MessageAttachments.clip(full, characters: limits.textCharacters)
             return .conversation(attachment: kept, kind: .text, name: name, truncated: truncated)
         case let .text(text):
-            let (kept, truncated) = TextBudget.utf16Prefix(text, limit: limits.textCharacters)
+            let (kept, truncated) = MessageAttachments.clip(text, characters: limits.textCharacters)
             return .conversation(attachment: kept, kind: .text, name: name, truncated: truncated)
         }
     }
@@ -352,7 +283,7 @@ public enum HandoverPlanner {
         default:
             let trimmed = text.flatMap { $0.isEmpty ? nil : $0 }
             if let trimmed, let textLimit {
-                bodyText = TextBudget.utf16Prefix(trimmed, limit: textLimit).text
+                bodyText = MessageAttachments.clip(trimmed, characters: textLimit).text
             } else {
                 bodyText = trimmed
             }
@@ -440,14 +371,14 @@ public final class HandoverCourier: Sendable {
             let handover = fitted(original, configuration: configuration)
             switch try HandoverPlanner.plan(handover, configuration: configuration) {
             case let .conversation(attachment, kind, name, truncated):
-                let ref = try await api.storeAttachment(requestId: handover.attachmentRequestId, content: attachment, as: kind)
-                let tag = AttachmentTag(name: name, ref: ref, bytes: Data(attachment.utf8).count, kind: kind, truncated: truncated)
+                let ref = try await api.uploadAttachment(requestId: handover.attachmentRequestId, content: attachment, as: kind == .image ? .image : .text)
+                let tag = MessageAttachment(name: name, ref: ref, bytes: Data(attachment.utf8).count, kind: kind, truncated: truncated)
                 let created = try await api.createThread(requestId: handover.threadRequestId, answerLocale: handover.answerLocale)
                 let message = OutgoingMessage(
                     messageId: handover.messageId,
                     threadId: created.threadId,
                     expectedRevision: created.threadRevision,
-                    text: MessageDraft.join(handover.request ?? "", [tag]),
+                    text: MessageAttachments.compose(text: handover.request ?? "", attachments: [tag]),
                     createdAt: handover.createdAt
                 )
                 switch try await api.send(message) {
