@@ -738,9 +738,9 @@
     "reason": "聊天检索返回待确认记忆时附一句说明（PA-2）"
   },
   "tool-result.recall-input-invalid": {
-    "sha256": "03c389eca813d4a32cd11230d84f1620d85b476f8fa0d873c07d44404f8a8a96",
+    "sha256": "d2c78196e63aa1d82083fba11d56b17377113aef7932fa45f71d69d768f85d86",
     "changedIn": "ADR 0262",
-    "reason": "新增：查记忆的日期不存在或先后颠倒时，告诉模型怎么改正后重查"
+    "reason": "新增：查记忆的参数不对（日期不存在、先后颠倒等）时，告诉模型怎么改正后重查"
   },
   "tool-result.recall-unavailable": {
     "sha256": "bcd38ff5486a41c8d382801b937786f04703b86ccc08383e21126e5be4364a52",

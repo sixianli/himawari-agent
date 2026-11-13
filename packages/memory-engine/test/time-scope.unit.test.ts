@@ -49,6 +49,42 @@ describe("[T6] time scope the model asked for", () => {
     },
   );
 
+  it("starts every daylight-saving switch day of 2026 at its first local moment, in every time zone", () => {
+    const dateIn = (timeZone: string) => {
+      const format = new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      return (instant: number) => format.format(new Date(instant));
+    };
+    const offsetIn = (timeZone: string) => {
+      const format = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" });
+      return (instant: number) =>
+        format.formatToParts(new Date(instant)).find(({ type }) => type === "timeZoneName")?.value;
+    };
+    const wrong: string[] = [];
+    let switchDays = 0;
+    for (const timeZone of Intl.supportedValuesOf("timeZone")) {
+      const offset = offsetIn(timeZone);
+      const months = Array.from({ length: 13 }, (_, month) => offset(Date.UTC(2026, month, 1)));
+      if (months.every((value) => value === months[0])) continue;
+      const date = dateIn(timeZone);
+      for (let noon = Date.UTC(2026, 0, 1, 12); noon < Date.UTC(2027, 0, 1); noon += 86_400_000) {
+        if (offset(noon - 86_400_000) === offset(noon + 86_400_000)) continue;
+        for (const shift of [-1, 0, 1]) {
+          const day = new Date(noon + shift * 86_400_000).toISOString().slice(0, 10);
+          switchDays += 1;
+          const start = Date.parse(localDayStart(day, timeZone) ?? "");
+          if (date(start) !== day || date(start - 1) === day) wrong.push(`${timeZone} ${day}`);
+        }
+      }
+    }
+    expect(switchDays).toBeGreaterThan(300);
+    expect(wrong).toEqual([]);
+  }, 60_000);
+
   it("finds the start of a local day and refuses impossible days", () => {
     expect(localDayStart("2026-10-25", "Asia/Tokyo")).toBe("2026-10-24T15:00:00.000Z");
     expect(localDayStart("2028-02-29", "UTC")).toBe("2028-02-29T00:00:00.000Z");

@@ -34,9 +34,9 @@ Andy 在 2026-11-12 定的原则是：理解用户的意思一律交给模型判
 
 ## 前提
 
-1. 正则的两处生产调用：改动前 `apps/agent-service/src/production-memory-recall.ts` 第 159 行 `const parsed = parseTimeScope(input.query, now, timeZone);`（工具没填日期时兜底），`packages/memory-engine/src/hybrid-memory-provider.ts` 第 166 行 `const scope = input.scope ?? parseTimeScope(...)`（调用方没给范围时兜底，每轮自动召回也走这里）。
-2. recall 工具早已让模型填日期：`packages/prompt-catalog/src/tools.ts` 的 `TOOL_RECALL` 原话“问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）；问以前的情况时 includeHistory 填 true”。
-3. 对外 MCP 工具 `find_memories` 已有 from、to，没有 includeHistory：`apps/agent-service/src/production-mcp-read.ts` 第 501 行起的参数定义。
+1. 删除之后，recall 不再从问题文字推时间：`apps/agent-service/test/production-memory-recall.unit.test.ts` 的用例“[T6] reads the time window only from what the model filled, never from the words of the query”，查询“我以前用什么手机，昨天说过的”时检索范围是 `{ includeHistory: false, from: null, to: null }`。
+2. recall 工具早已让模型填日期：`packages/prompt-catalog/src/tools.ts` 的 `TOOL_RECALL` 在本 ADR 之前就有“问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）”。
+3. 对外 MCP 工具 `find_memories` 在本 ADR 之前已有 from、to（`apps/agent-service/src/production-mcp-read.ts` 第 501 行起的参数定义），本 ADR 加上 includeHistory。
 4. 改提示词文字只对新对话生效：`.claude/rules/prompt-prefix.md` 第 43 行“改了提示词文字，**只对新对话生效**”。老对话里冻结的旧文字从此按外来内容检查（同文件第 53 行），旧 recall 说明里没有会被认成敏感信息的数字。
 5. 检索评测集：`test/fixtures/memory-evaluation/dataset.json`，时间相关的题是 temporal 15 题、history 10 题、time_window 12 题、episode 8 题；第二阶段关口在 `test/integration/memory-evaluation.test.ts` 的“answers history, time-window and past-conversation questions”用例。
 
@@ -47,7 +47,7 @@ Andy 在 2026-11-12 定的原则是：理解用户的意思一律交给模型判
 ## 决定
 
 1. **删掉 `parseTimeScope` 和它的两处调用。**recall 工具只用模型填的 from、to、includeHistory：填了日期时一并看历史（沿用原来的做法，某段时间里当时有效、现在已失效的记忆也要找得到）；只填 includeHistory 时按它；都没填就不按时间过滤，也不看历史。每轮自动召回不再猜时间，纯按意思召回；要按时间找时由模型自己调 recall。
-2. **日期的历法校验。**新函数 `requestedTimeScope`（`packages/memory-engine/src/time-scope.ts`）把模型给的本地日期换成主人时区的整天范围；`2026-13-40`、`2026-02-30` 这类不存在的日期，或 from 晚于 to，一律拒绝，recall 回 `MEMORY_RECALL_INPUT_INVALID`，工具结果的说明告诉模型怎么改正后重查（新提示词 `tool-result.recall-input-invalid`，MCP `find_memories` 同样回这句），不再悄悄换算成别的日子或空窗口。`localDayStart` 同样拒绝不存在的日期。整天的起点取当地日期的第一个时刻，夏令时在午夜切换的时区（例如 America/Santiago）不会多算前一天的最后一小时。
+2. **日期的历法校验。**新函数 `requestedTimeScope`（`packages/memory-engine/src/time-scope.ts`）把模型给的本地日期换成主人时区的整天范围；`2026-13-40`、`2026-02-30` 这类不存在的日期，或 from 晚于 to，一律拒绝，recall 回 `MEMORY_RECALL_INPUT_INVALID`，工具结果的说明告诉模型怎么改正后重查（新提示词 `tool-result.recall-input-invalid`，MCP `find_memories` 同样回这句），不再悄悄换算成别的日子或空窗口。`localDayStart` 同样拒绝不存在的日期。整天的起点取当地日期的第一个时刻，夏令时在午夜切换的时区（例如 America/Santiago）不会多算前一天的最后一小时；`packages/memory-engine/test/time-scope.unit.test.ts` 逐个时区核对 2026 年每个切换日前后三天。
 3. **MCP `find_memories` 加 includeHistory。**外部 agent 的模型也能自己说“要看旧情况”；工具说明同步补一句。
 4. **recall 工具说明补一句。**“问以前的情况（已经变了的旧情况）时 includeHistory 填 true，问现在的情况时不填。”整合方案原本不打算改这段文字，补之前的实测里模型常在问“现在”时也填 true，补这一句后改善（见[实测](#evaluation)）。只对新对话生效。
 5. **评测改用模型的真实回答。**`scripts/evals/memory-time-scope-live.eval.ts` 用 recall 工具的真实定义和每轮的时间说明请模型填参数，结果存进 `test/fixtures/memory-evaluation/model-time-scopes.json`；检索评测用这份记录代替正则，并加一条反向检查：不给时间范围时，“某段时间”和“问以前”两类必须明显变差。
@@ -58,7 +58,7 @@ Andy 在 2026-11-12 定的原则是：理解用户的意思一律交给模型判
 
 ## 实测
 
-模型：`deepseek-v4.1-flash`（OpenCode Go 套餐），45 道时间类题每题两遍。下表是补一句说明之后的实测，模型回答记在 `evals/memory-time-scope/result.json`（90 次调用、约 0.01 美元）。补说明之前另跑过一次，记录被这次覆盖，过程写在 PR 467 的说明里。检索用评测集自带的 4096 维真实向量，数字是前 5 条召回率（括号里是“问现在时旧记忆没排到前面”的比例）。
+模型：`deepseek-v4.1-flash`（OpenCode Go 套餐），45 道时间类题每题两遍。下表是补一句说明之后的实测，模型回答记在 `evals/memory-time-scope/result.json`（90 次调用、约 0.01 美元），检索对比记在 `evals/memory-time-scope/retrieval-comparison.json`（`qwen4096/*` 四组）。检索用评测集自带的 4096 维真实向量，数字是前 5 条召回率（括号里是“问现在时旧记忆没排到前面”的比例，即 staleFree）。
 
 | 做法 | 问现在 | 问以前 | 某段时间 | 对话摘要 |
 | --- | --- | --- | --- | --- |

@@ -132,8 +132,10 @@ export class ProductionMemoryRecall {
     let scope: MemoryTimeScope;
     try {
       scope = requestedTimeScope(input, timeZone);
-    } catch {
-      throw new Error("MEMORY_RECALL_INPUT_INVALID");
+    } catch (error) {
+      if (error instanceof RangeError && error.message === "MEMORY_TIME_SCOPE_INVALID")
+        throw new Error("MEMORY_RECALL_INPUT_INVALID");
+      throw error;
     }
     const allowed = modelVisibleClassifications();
     const shown: DataClassification[] = [];

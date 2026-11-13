@@ -195,7 +195,7 @@ export const TOOL_RESULT_RECALL_INPUT_INVALID = fixedPrompt({
   ],
   layer: "tool-result",
   output: "free-text",
-  text: "参数不对，没有查。from、to 要写日历上真实存在的日期（YYYY-MM-DD），from 不能晚于 to；改正后再查一次。",
+  text: "参数不对，没有查。query 不能为空；from、to 要写日历上真实存在的日期（YYYY-MM-DD），from 不能晚于 to；只能用工具定义里列出的参数。改正后再查一次。",
 });
 
 export const TOOL_RESULT_REMINDER_MEMORY_NOT_READY = fixedPrompt({

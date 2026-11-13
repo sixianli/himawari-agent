@@ -849,6 +849,28 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(f.failures.length).toBeGreaterThan(0);
   });
 
+  it("[T6] tells the caller how to fix a date that is not on the calendar and records the read as failed", async () => {
+    const f = await setup();
+    const client = await f.connect("modern");
+    const fixed = await f.call(client, "find_memories", {
+      query: "牙医",
+      from: "2026-02-30",
+      to: "2026-03-02",
+    });
+    expect(fixed.result.isError).toBe(true);
+    expect(fixed.text).toContain("MEMORY_RECALL_INPUT_INVALID");
+    expect(fixed.text).toContain("改正后再查一次");
+    expect((await f.ledger()).map(({ reasonCode, outcome }) => [reasonCode, outcome])).toEqual([
+      ["find_memories_failed", "read"],
+    ]);
+    const history = await f.call(client, "find_memories", { query: "牙医", includeHistory: true });
+    expect(history.result.isError).not.toBe(true);
+    expect((await f.ledger()).map(({ reasonCode }) => reasonCode).sort()).toEqual([
+      "find_memories",
+      "find_memories_failed",
+    ]);
+  });
+
   it("withholds the result when the read cannot be recorded", async () => {
     const f = await setup({ failLedger: true });
     const client = await f.connect("modern");

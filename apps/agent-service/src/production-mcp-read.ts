@@ -254,6 +254,7 @@ interface ToolOutcome {
   readonly output: Record<string, unknown>;
   readonly memoryIds: readonly string[];
   readonly summaries?: SummaryRead;
+  readonly rejected?: true;
 }
 
 const SUMMARIES_FAILED: SummaryRead = Object.freeze({
@@ -1061,16 +1062,18 @@ export class ProductionMcpRead {
     let delivered:
       | {
           readonly text: string;
-          readonly memoryIds: readonly string[];
+          readonly memoryIds: readonly string[] | undefined;
           readonly summaries?: SummaryRead;
+          readonly rejected?: true;
         }
       | undefined;
     try {
       const outcome = await run(args, signal, trace);
       delivered = {
         text: JSON.stringify(maskForExternalRead(outcome.output)),
-        memoryIds: outcome.memoryIds,
+        memoryIds: outcome.rejected ? undefined : outcome.memoryIds,
         ...(outcome.summaries ? { summaries: outcome.summaries } : {}),
+        ...(outcome.rejected ? { rejected: true as const } : {}),
       };
     } catch (error) {
       this.#options.onFailure(error);
@@ -1086,7 +1089,10 @@ export class ProductionMcpRead {
       delivered = undefined;
     }
     return delivered
-      ? { content: [{ type: "text", text: delivered.text }] }
+      ? {
+          content: [{ type: "text", text: delivered.text }],
+          ...(delivered.rejected ? { isError: true } : {}),
+        }
       : { content: [{ type: "text", text: MCP_TOOL_RESULT_FAILED.text }], isError: true };
   }
 
@@ -1175,6 +1181,7 @@ export class ProductionMcpRead {
             note: TOOL_RESULT_RECALL_INPUT_INVALID.text,
           },
           memoryIds: [],
+          rejected: true,
         };
       throw error;
     } finally {
