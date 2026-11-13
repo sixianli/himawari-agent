@@ -467,6 +467,43 @@ export const governanceMessages = [
     ],
     generatedAt: "2026-11-12T03:06:30.000Z",
   }),
+  fixture("query", "files.list.read", { kind: null, origin: "uploaded", before: null, limit: 50 }),
+  fixture("snapshot", "files.list.snapshot", {
+    files: [
+      {
+        fileId: "thread-artifact:01",
+        threadId: "thread-1",
+        name: "report.pdf",
+        kind: "pdf",
+        origin: "uploaded",
+        mediaType: "application/pdf",
+        sizeBytes: 2048,
+        version: 1,
+        createdAt: "2026-11-12T03:00:00.000Z",
+        deleted: false,
+        contentPath: "/api/files/v1/content/thread-artifact%3A01",
+      },
+    ],
+    nextCursor: "WyIyMDI2LTExLTEyVDAzOjAwOjAwLjAwMFoiLCJ0aHJlYWQtYXJ0aWZhY3Q6MDEiXQ",
+    generatedAt: "2026-11-12T03:06:30.000Z",
+  }),
+  fixture("query", "login.devices.read", {}),
+  fixture("snapshot", "login.devices.snapshot", {
+    devices: [
+      {
+        deviceId: "device-01",
+        label: "Andy 的 iPhone",
+        firstSeenAt: "2026-11-01T00:00:00.000Z",
+        lastSeenAt: "2026-11-12T03:00:00.000Z",
+        current: true,
+      },
+    ],
+    generatedAt: "2026-11-12T03:06:30.000Z",
+  }),
+  fixture("command", "login.device.revoke", {
+    deviceId: "device-02",
+    recentAuthenticationRef: "auth-ref-01",
+  }),
   fixture("query", "home.read", { locale: "zh-CN" }),
   fixture("snapshot", "home.snapshot", {
     items: [
@@ -882,6 +919,8 @@ export const governanceMessages = [
         enforced: true,
         updatedAt: "2026-11-11T00:00:00.000Z",
         quote: "以后日本入管局的邮件一律提醒我",
+        quoteSuperseded: true,
+        quoteLatestMemoryId: "memory-02",
         changes: 2,
         lastUsed: {
           at: "2026-11-11T08:00:00.000Z",

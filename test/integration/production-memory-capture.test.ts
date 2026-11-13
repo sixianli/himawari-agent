@@ -331,11 +331,12 @@ describe("production memory capture", () => {
       ref: string,
       text: string,
       dataClassification: "private" | "sensitive" = "private",
+      agentId: string = AGENT_ID,
     ) =>
-      payloads.put(
+      (agentId === AGENT_ID ? payloads : repository.payloadStore(OWNER_ID, agentId as never)).put(
         await adapters.payloadProtector.protect({
           ownerId: OWNER_ID,
-          agentId: AGENT_ID,
+          agentId: agentId as never,
           ref,
           dataClassification,
           contentType: "text/plain",
@@ -2395,6 +2396,131 @@ describe("production memory capture", () => {
         ?.status,
     ).toBe("deletion_pending");
     expect(await listed()).toEqual([]);
+  });
+
+  it("[iOS] 规则引用的记忆后来被新记忆取代时，照样给出引用并标明，给出最新那条记忆；归档的不标", async () => {
+    const sentence = "日本入管局相关的邮件以后必须通知我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const created = (await context.ruleTools.run({
+      runId: createRunId("run-rule-superseded"),
+      toolCallId: "call-superseded",
+      capabilityRef: "rule.set",
+      capabilityHandleRef: null,
+      arguments: {
+        quote: sentence,
+        inferred: false,
+        type: "mail_must_notify",
+        summary: "入管局的邮件一律提醒",
+        params: { senderDomains: ["isa.go.jp"] },
+      },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never)) as Record<string, unknown>;
+    const state = context.repository.productMemoryState();
+    const sourceId = created["memoryId"] as never;
+    const newer = (await state.listActive(OWNER_ID, AGENT_ID)).find(({ id }) => id !== sourceId);
+    if (!newer) throw new Error("newer memory");
+    const listed = async () => {
+      const snapshot = await context.control.query({
+        ...envelope,
+        kind: "query",
+        type: "memory.rules.read",
+        payload: {},
+      } as never);
+      if (snapshot.type !== "memory.rules.snapshot") throw new Error("snapshot");
+      const { idempotencyKey: _, ...parsable } = snapshot as Record<string, unknown>;
+      gatewayV2MessageSchema.parse(parsable);
+      return snapshot.payload.rules.find(({ ruleId }) => ruleId === created["ruleId"]);
+    };
+    const generation = async () =>
+      (await context.repository.memoryBook().latestGeneration({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+      } as never)) as never;
+    const revise = async (memoryId: never, change: Record<string, unknown>) =>
+      context.memory.revise({
+        memoryId,
+        expectedRevision: (await state.read(memoryId))?.revision ?? 0,
+        generationId: await generation(),
+        ...change,
+      } as never);
+
+    expect(await listed()).toMatchObject({
+      quote: sentence,
+      quoteSuperseded: false,
+      quoteLatestMemoryId: null,
+    });
+    await revise(sourceId, { attributes: { supersededBy: newer.id } });
+    expect(await listed()).toMatchObject({
+      quote: sentence,
+      quoteSuperseded: true,
+      quoteLatestMemoryId: newer.id,
+    });
+    await revise(newer.id as never, { status: "archived" });
+    expect(await listed()).toMatchObject({
+      quote: sentence,
+      quoteSuperseded: true,
+      quoteLatestMemoryId: null,
+    });
+    await revise(newer.id as never, { status: "active" });
+    await revise(newer.id as never, { attributes: { supersededBy: sourceId } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: null });
+    await revise(newer.id as never, { attributes: { supersededBy: null } });
+    await revise(sourceId, { status: "archived" });
+    expect(await listed()).toMatchObject({
+      quote: sentence,
+      quoteSuperseded: false,
+      quoteLatestMemoryId: null,
+    });
+    await revise(sourceId, { status: "active" });
+    const chain: string[] = [];
+    for (let index = 1; index <= 9; index += 1) {
+      await context.protect(`payload-chain-${index}`, `主人的第 ${index} 版说法`);
+      await context.control.execute({
+        ...envelope,
+        idempotencyKey: `chain-${index}`,
+        kind: "command",
+        type: "memory.create",
+        payload: {
+          contentRef: `payload-chain-${index}`,
+          category: "preference",
+          subCategory: "其他",
+          pinned: false,
+        },
+      } as never);
+      chain.push(`memory:owner:chain-${index}`);
+    }
+    await revise(sourceId, { attributes: { supersededBy: chain[0] } });
+    for (let index = 0; index < 8; index += 1)
+      await revise(chain[index] as never, { attributes: { supersededBy: chain[index + 1] } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: null });
+    await revise(chain[7] as never, { attributes: { supersededBy: null } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: chain[7] });
+    context.sql((database) =>
+      database
+        .prepare("INSERT INTO agents (id, owner_id, revision) VALUES ('agent-other', ?, 0)")
+        .run(OWNER_ID),
+    );
+    await context.protect("payload-other-agent", "主人的另一版说法", "private", "agent-other");
+    const foreign = await state.save(
+      {
+        ...((await state.read(newer.id as never)) as object),
+        contentRef: "payload-other-agent",
+        sourceThreadId: null,
+        id: "memory:other-agent-latest",
+        agentId: "agent-other",
+        revision: 1,
+      } as never,
+      null,
+    );
+    await revise(sourceId, { attributes: { supersededBy: foreign.id } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: null });
   });
 
   it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {

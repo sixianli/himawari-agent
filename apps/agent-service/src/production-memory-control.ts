@@ -168,6 +168,8 @@ export type OwnerRuleControl = Pick<
   "list" | "undo" | "confirm" | "reconfirm"
 >;
 
+const RULE_QUOTE_CHAIN_MAX_DEPTH = 8;
+
 export class ProductionMemoryControl {
   private readonly options: {
     readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
@@ -734,22 +736,57 @@ export class ProductionMemoryControl {
     };
   }
 
-  async #ruleQuote(sourceMemoryId: string | null, summary: string): Promise<string | null> {
-    if (!sourceMemoryId) return null;
+  async #ruleQuote(
+    sourceMemoryId: string | null,
+    summary: string,
+  ): Promise<{
+    readonly quote: string | null;
+    readonly quoteSuperseded: boolean;
+    readonly quoteLatestMemoryId: string | null;
+  }> {
+    const none = { quote: null, quoteSuperseded: false, quoteLatestMemoryId: null };
+    if (!sourceMemoryId) return none;
     const record = await this.options.state.read(sourceMemoryId as MemoryId);
-    if (!record || record.ownerId !== this.options.configuration.ownerId) return null;
-    if (
-      record.status === "deletion_pending" ||
-      record.status === "deleted_verified" ||
-      record.status === "trashed" ||
-      !reviewMemoryVisible(record.dataClassification)
-    )
-      return null;
+    if (!record || !this.#quotable(record)) return none;
     const text = await this.readText(record.contentRef).catch(() => null);
     const suffix = `\n${summary}`;
-    if (text === null || !text.endsWith(suffix)) return null;
+    if (text === null || !text.endsWith(suffix)) return none;
     const quote = singleLine(text.slice(0, text.length - suffix.length));
-    return quote.length > 0 && quote.length <= 500 ? quote : null;
+    if (quote.length === 0 || quote.length > 500) return none;
+    const supersededBy = record.attributes?.supersededBy ?? null;
+    if (record.status !== "active" || supersededBy === null)
+      return { quote, quoteSuperseded: false, quoteLatestMemoryId: null };
+    return {
+      quote,
+      quoteSuperseded: true,
+      quoteLatestMemoryId: await this.#latestVersion(supersededBy as MemoryId, record.id),
+    };
+  }
+
+  #quotable(record: ProductMemoryRecord): boolean {
+    const { ownerId, agentId } = this.options.configuration;
+    return (
+      record.ownerId === ownerId &&
+      record.agentId === agentId &&
+      record.status !== "deletion_pending" &&
+      record.status !== "deleted_verified" &&
+      record.status !== "trashed" &&
+      reviewMemoryVisible(record.dataClassification)
+    );
+  }
+
+  async #latestVersion(first: MemoryId, sourceId: MemoryId): Promise<string | null> {
+    const seen = new Set<MemoryId>([sourceId]);
+    let next: MemoryId = first;
+    for (;;) {
+      if (seen.has(next) || seen.size > RULE_QUOTE_CHAIN_MAX_DEPTH) return null;
+      seen.add(next);
+      const record = await this.options.state.read(next);
+      if (!record || !this.#quotable(record)) return null;
+      const after = (record.attributes?.supersededBy ?? null) as MemoryId | null;
+      if (after === null) return record.status === "active" ? record.id : null;
+      next = after;
+    }
   }
 
   async #ruleLastUsed(
@@ -797,7 +834,7 @@ export class ProductionMemoryControl {
           status: rule.status as "active" | "needs_review",
           enforced: rule.enforced,
           updatedAt: rule.updatedAt,
-          quote: await this.#ruleQuote(rule.sourceMemoryId, rule.summary),
+          ...(await this.#ruleQuote(rule.sourceMemoryId, rule.summary)),
           changes: Math.max(0, rule.revision - 1),
           lastUsed: lastUsed.get(rule.ruleId) ?? null,
         };
