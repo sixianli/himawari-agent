@@ -96,6 +96,8 @@ describe("multi-user exec configuration", () => {
     [{ serviceAccount: "root" }, "EXEC_CONFIG_ACCOUNT_INVALID $.serviceAccount"],
     [{ peopleGroup: "sudo" }, "EXEC_CONFIG_ACCOUNT_INVALID $.peopleGroup"],
     [{ peopleGroup: "hx-andyaa" }, "EXEC_CONFIG_ACCOUNT_INVALID $.peopleGroup"],
+    [{ peopleGroup: "docker" }, "EXEC_CONFIG_ACCOUNT_INVALID $.peopleGroup"],
+    [{ serviceAccount: "hx-andyaa" }, "EXEC_CONFIG_ACCOUNT_INVALID $.serviceAccount"],
     [
       { socketDirectory: `/run/himawari/${"s".repeat(100)}` },
       "EXEC_CONFIG_SOCKET_PATH_TOO_LONG $.socketDirectory",

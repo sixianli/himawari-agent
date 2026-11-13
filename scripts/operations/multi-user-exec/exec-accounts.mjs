@@ -16,6 +16,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
@@ -115,6 +116,8 @@ function acquireLock(lock) {
         } catch (killError) {
           alive = killError?.code !== "ESRCH";
         }
+      } else {
+        alive = Date.now() - statSync(lock).mtimeMs < 10_000;
       }
       if (alive) throw new Error(`EXEC_LOCKED ${lock} held by pid ${owner}`);
       rmSync(lock, { force: true });
@@ -178,6 +181,13 @@ function ensureGroup(config) {
     throw new Error(`EXEC_SERVICE_GROUP_MISSING ${config.serviceAccount}`);
   if (!quiet("getent", ["group", config.peopleGroup]))
     run("groupadd", ["--system", config.peopleGroup]);
+  const groupMembers = run("getent", ["group", config.peopleGroup])
+    .trim()
+    .split(":")[3]
+    .split(",")
+    .filter((name) => name !== "");
+  const stranger = groupMembers.find((name) => name !== config.serviceAccount);
+  if (stranger !== undefined) throw new Error(`EXEC_PEOPLE_GROUP_SHARED ${stranger}`);
   const members = run("id", ["-nG", config.serviceAccount]).trim().split(/\s+/);
   if (!members.includes(config.peopleGroup))
     run("usermod", ["--append", "--groups", config.peopleGroup, config.serviceAccount]);
@@ -249,7 +259,8 @@ function checkGatewayFiles(config) {
       !metadata.isFile() ||
       metadata.uid !== 0 ||
       (metadata.mode & 0o022) !== 0 ||
-      (executable && (metadata.mode & 0o111) === 0)
+      (metadata.mode & 0o004) === 0 ||
+      (executable && (metadata.mode & 0o001) === 0)
     )
       throw new Error(`EXEC_GATEWAY_FILE_UNSAFE ${file}`);
   }
@@ -269,9 +280,8 @@ function retire(options, config, slot) {
     if (!existsSync(directory)) continue;
     if (lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory())
       throw new Error(`EXEC_DIRECTORY_NOT_PLAIN ${directory}`);
-    const retired = `${directory}.removed-${stamp}`;
-    renameSync(directory, retired);
-    setOwnerAndMode(retired, 0, 0, 0o700);
+    setOwnerAndMode(directory, 0, 0, 0o700);
+    renameSync(directory, `${directory}.removed-${stamp}`);
   }
   if (quiet("id", [accountName(slot)]))
     run("usermod", ["--lock", "--expiredate", "1", accountName(slot)]);
@@ -279,6 +289,7 @@ function retire(options, config, slot) {
 
 function converge(options, config, ledger) {
   const known = knownUnitNames(ledger);
+  const enabled = [];
   let backup;
   try {
     backup = backupUnits(options, known);
@@ -312,10 +323,15 @@ function converge(options, config, ledger) {
       ]);
       run("systemctl", ["daemon-reload"]);
       for (const entry of ledger.slots)
-        if (entry.state === "active") run("systemctl", ["enable", "--now", socketName(entry.slot)]);
+        if (entry.state === "active") {
+          run("systemctl", ["enable", "--now", socketName(entry.slot)]);
+          enabled.push(entry.slot);
+        }
     }
   } catch (error) {
     let message = error instanceof Error ? error.message : String(error);
+    if (options.systemd)
+      for (const slot of enabled) quiet("systemctl", ["disable", "--now", socketName(slot)]);
     if (backup !== undefined) {
       try {
         restoreUnits(options, known, backup);
@@ -360,8 +376,10 @@ export function main(argv) {
   const held = acquireLock(lock);
   try {
     const current = readLedger(options.ledger, options.command === "add" && options.init);
-    if (options.command === "add" && options.init && !existsSync(options.ledger))
+    if (options.command === "add" && options.init) {
+      if (current.slots.length > 0) throw new Error("EXEC_INIT_LEDGER_NOT_EMPTY");
       refuseInitOverResidue(options, config);
+    }
     const next =
       options.command === "add"
         ? addSlot(current, config, options.slot)

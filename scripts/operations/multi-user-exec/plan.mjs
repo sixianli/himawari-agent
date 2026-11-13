@@ -15,6 +15,12 @@ const RESERVED_ACCOUNTS = new Set([
   "bin",
   "sys",
   "nobody",
+  "docker",
+  "lxd",
+  "disk",
+  "shadow",
+  "staff",
+  "systemd-journal",
 ]);
 const SOCKET_PATH_MAX_BYTES = 107;
 const MAX_UID = 2 ** 31 - 2;
@@ -160,6 +166,8 @@ export function parseExecConfig(value) {
     if (roots.some((root) => inside(file, root))) fail("EXEC_CONFIG_GATEWAY_IN_PERSON_PATH", where);
   if (/^hx-[a-z][a-z0-9]{5}$/.test(raw.peopleGroup) || raw.peopleGroup === raw.serviceAccount)
     fail("EXEC_CONFIG_ACCOUNT_INVALID", "$.peopleGroup");
+  if (/^hx-[a-z][a-z0-9]{5}$/.test(raw.serviceAccount))
+    fail("EXEC_CONFIG_ACCOUNT_INVALID", "$.serviceAccount");
   return Object.freeze({
     privateRoots,
     workspaceRoots,

@@ -10,6 +10,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
@@ -173,6 +174,17 @@ try {
   writeFileSync(`${files.ledger}.lock`, "2147483646\n");
   exec("apply");
   expectTrue(!existsSync(`${files.ledger}.lock`), "STALE_LOCK_KEPT");
+  writeFileSync(`${files.ledger}.lock`, "");
+  let fresh = "";
+  try {
+    exec("apply");
+  } catch (error) {
+    fresh = String(error.stderr ?? "");
+  }
+  expectTrue(fresh.includes("EXEC_LOCKED"), "FRESH_EMPTY_LOCK_TAKEN");
+  utimesSync(`${files.ledger}.lock`, 1, 1);
+  exec("apply");
+  expectTrue(!existsSync(`${files.ledger}.lock`), "EMPTY_LOCK_KEPT");
   writeFileSync(`${files.ledger}.lock`, `${process.pid}\n`);
   let locked = "";
   try {
