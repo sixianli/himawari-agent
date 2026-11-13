@@ -12,6 +12,7 @@ derived="$root/ui-review/DerivedData"
 only=""
 calm_below=40
 calm_patience=600
+prompt_wait=5
 
 usage() {
   echo "usage: clients/apple/scripts/ui-review.sh [--check | --approve] [--out DIR] [--only SCENE,SCENE]" >&2
@@ -159,9 +160,9 @@ marker="$(xcrun simctl get_app_container "$udid" "$bundle" data)/tmp/$(sed -nE '
 case "$marker" in */tmp/?*) ;; *) echo "UI_REVIEW_FAILED cannot locate the scene marker" >&2; exit 1 ;; esac
 
 settle() {
-  local scene="$1" file="$2" previous="" current="" tries=0 launches=1
+  local scene="$1" file="$2" marked="${3:-marked}" previous="" current="" tries=0 launches=1
   while :; do
-    if shown "$scene" && calm; then
+    if { [ "$marked" = "unmarked" ] || shown "$scene"; } && calm; then
       xcrun simctl io "$udid" screenshot --type=png "$file" >/dev/null
       current="$(shasum -a 256 "$file" | cut -d' ' -f1)"
       if [ "$current" = "$previous" ] && [ "$current" != "$last_shot" ]; then
@@ -230,7 +231,8 @@ for appearance in light dark; do
         xcrun simctl privacy "$udid" reset all "$bundle"
         launch "$scene"
         file="$shots/$scene-$appearance.png"
-        settle "$scene" "$file"
+        sleep "$prompt_wait"
+        settle "$scene" "$file" unmarked
         restart_device "$appearance"
         width="$(sips -g pixelWidth "$file" | awk '/pixelWidth/ {print $2}')"
         [ "$width" = "$expected_width" ] || { echo "UI_REVIEW_FAILED $file is $width px wide, expected $expected_width (390 pt at 3x)" >&2; exit 1; }

@@ -110,7 +110,7 @@ struct SenseActions: View {
     var body: some View {
         VStack(spacing: DesignTokens.Senses.actionGap) {
             Button(action: primaryAction) {
-                if busy { ProgressView() } else { Text(primary) }
+                Text(primary)
             }
             .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig))
             .disabled(busy)
