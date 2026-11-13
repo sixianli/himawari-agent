@@ -81,6 +81,11 @@ export function readSnapshot(
         JOIN memory_records memory ON memory.id = history.memory_id
         WHERE memory.owner_id = @ownerId AND memory.agent_id = @agentId
           AND memory.classification = 'restricted' AND history.content_ref IS NOT NULL
+        UNION
+        SELECT history.quote_ref FROM memory_history_events history
+        JOIN memory_records memory ON memory.id = history.memory_id
+        WHERE memory.owner_id = @ownerId AND memory.agent_id = @agentId
+          AND memory.classification = 'restricted' AND history.quote_ref IS NOT NULL
         ORDER BY content_ref`,
       );
       const externalProposals = all(

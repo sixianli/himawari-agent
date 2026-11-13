@@ -177,6 +177,8 @@ export class SqliteDurableAdapters {
         }),
       listBackgroundRuns: () =>
         this.context.read("runLifecycle.listBackground", { ownerId, agentId, now: now() }),
+      listUnattendedRuns: (input) =>
+        this.context.read("runLifecycle.listUnattended", { ownerId, agentId, ...input }),
     });
   }
 
@@ -1074,6 +1076,7 @@ export class SqliteDurableAdapters {
     return Object.freeze<MemoryReminderStorePort>({
       schedule: (reminder) => this.context.write("memoryReminder.schedule", { reminder }),
       listDue: (input) => this.context.read("memoryReminder.listDue", input),
+      countDue: (input) => this.context.read("memoryReminder.countDue", input),
       listUpcoming: (input) => this.context.read("memoryReminder.listUpcoming", input),
       read: (id) => this.context.read("memoryReminder.read", { id }),
       update: (input) => this.context.write("memoryReminder.update", input),

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import type {
+  CapabilityManifest,
   ModelInvocationAdmissionResolver,
   PayloadProtectorPort,
   ProductMemoryRecord,
@@ -164,6 +165,8 @@ import {
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
+import { productionToolActionRegistry } from "./production-tool-actions.js";
+import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import {
   createProductionSandboxServices,
   type ProductionTaskEnvironments,
@@ -1506,10 +1509,38 @@ export async function startTenantRuntime(
           proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
       });
       const ownerRuleTools = new ProductionOwnerRuleTools(ownerRuleWriter);
+      const toolActions = productionToolActionRegistry();
+      const installedCapabilities = repository.capabilityStore(
+        configuration.ownerId,
+        configuration.agentId,
+      );
+      const ownerScope = new OwnerScopeAuthorization({
+        configuration,
+        store: repository.authorizationStore(),
+        audit: repository.auditLedger(),
+        state: repository,
+        authority: () => invocationAuthority().lease,
+        source: repository.runExecutionSource(configuration.ownerId, configuration.agentId),
+        installedCapabilities: {
+          inspect: async (ref) => {
+            const record = await installedCapabilities.get(ref);
+            const manifest = record?.declaration as CapabilityManifest | undefined;
+            return record && manifest?.manifestVersion === "capability.v2"
+              ? { lifecycle: record.lifecycle, manifest }
+              : undefined;
+          },
+        },
+        registry: toolActions,
+        clock,
+        ids,
+        intentLifetimeMs: configuration.deadlines.workerRequestMs,
+      });
       const tools = new ProductionRuntimeTools({
         memoryRecall,
         reminders: reminderTools,
         ownerRules: ownerRuleTools,
+        toolActions,
+        ownerScope,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -2321,7 +2352,7 @@ export async function startTenantRuntime(
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
           requestTimeoutMs: configuration.deadlines.providerRequestMs,
           sources: {
-            recall: (args, within) => memoryRecall.recallOutsideRun(args, within),
+            recall: (args, within, ceiling) => memoryRecall.recallOutsideRun(args, within, ceiling),
             embedOutsideRun: (context, operation) =>
               memory.embedForExternalRead(context, operation),
             reminders: (windowMs, ceiling) => reminderWriter.list(windowMs, ceiling),
@@ -2366,6 +2397,18 @@ export async function startTenantRuntime(
                 agentId: configuration.agentId,
                 includeRetired: false,
               }),
+            memoryClassifications: async (memoryIds) =>
+              new Map(
+                (
+                  await profileState.readMany({
+                    ownerId: configuration.ownerId,
+                    agentId: configuration.agentId,
+                    memoryIds: memoryIds as Parameters<
+                      typeof profileState.readMany
+                    >[0]["memoryIds"],
+                  })
+                ).map((record) => [record.id as string, record.dataClassification]),
+              ),
             ...(memoryEpisodes
               ? {
                   summaries: async ({
@@ -2461,6 +2504,7 @@ export async function startTenantRuntime(
               .listApprovals(configuration.ownerId, configuration.agentId, {
                 status: "pending",
               }),
+          awaitingCount: async () => http?.home.awaitingCount(),
           ...(museIntake
             ? {
                 museChannel: createMuseChannelPushSource({
@@ -2904,6 +2948,11 @@ export async function startTenantRuntime(
             ...request,
           }),
         onSearchIndexDiagnostic: (diagnostic) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            ...diagnostic,
+          }),
+        onHomeDiagnostic: (diagnostic) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
             ...diagnostic,

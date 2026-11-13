@@ -5,6 +5,7 @@ import { digestFile } from "./artifact-files.mjs";
 import { outputPath, verifyContext } from "./context.mjs";
 import { parseArguments, repositoryRoot } from "./contracts.mjs";
 import { execute } from "./execute.mjs";
+import { artifactPlatformKey } from "./platforms.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
 
 export async function browserReportFiles(directory) {
@@ -125,7 +126,10 @@ export async function runBrowser({
       artifact: {
         path: archive,
         sha256: verified.sha256,
-        platform: verified.manifest.platform.os === "darwin" ? "macos-arm64" : "linux-x64",
+        platform: artifactPlatformKey(
+          verified.manifest.platform.os,
+          verified.manifest.platform.arch,
+        ),
       },
       exitCode: outcome.exitCode,
     };

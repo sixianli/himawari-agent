@@ -565,11 +565,292 @@ describe("owner agenda", () => {
     });
     expect(windows).toEqual([{ from: NOW, to: "2026-11-01T12:00:00.000Z" }]);
     const agenda = result.blocks.find(({ kind }) => kind === "owner-agenda");
-    expect(agenda?.memoryIds).toEqual(["memory-trip", "memory-allergy"]);
+    expect(agenda?.memoryIds).toEqual(["memory-allergy", "memory-trip"]);
     expect(agenda?.dataClassification).toBe("sensitive");
     const text = stored.find(({ ref }) => ref === agenda?.payloadRef)?.text ?? "";
     expect(text).toContain("Asia/Shanghai");
     expect(text).toContain("15:00：主人这周在东京出差");
     expect(text).toContain("主人对青霉素过敏");
+  });
+
+  const dated = (
+    id: string,
+    validFrom: string | null,
+    validTo: string | null = null,
+    overrides: Partial<ProductMemoryRecord> = {},
+    category: MemoryCategory = "event",
+  ): ProductMemoryRecord => ({
+    ...memory(id, category, 300),
+    attributes: {
+      ...DEFAULT_MEMORY_ATTRIBUTES,
+      category,
+      importancePermille: 300,
+      validFrom,
+      validTo,
+    },
+    ...overrides,
+  });
+  const AGENDA_TEXT: Record<string, string> = {
+    "memory-laundry": "主人打算洗衣服晾衣服",
+    "memory-visa": "主人的在留卡在办续签",
+    "memory-move": "主人搬到杭州",
+    "memory-past": "主人上周去了箱根",
+    "memory-past-instant": "主人今天上午去了区役所",
+    "memory-far": "主人下个月去北海道",
+    "memory-dentist": "主人去看牙医",
+    "memory-secret": "主人的体检复查",
+  };
+  const agendaService = (
+    records: readonly ProductMemoryRecord[],
+    options: {
+      readonly reminders?: readonly { memoryId: string; dueAt: string; id?: string }[];
+      readonly agendaCharacterBudget?: number;
+      readonly pins?: readonly (readonly [string, boolean])[];
+    } = {},
+  ) => {
+    const stored: { ref: string; text: string }[] = [];
+    const profile = new OwnerProfileService({
+      state: { listActive: async () => records },
+      readText: async (record) => AGENDA_TEXT[record.id] ?? TEXT[record.id],
+      storeText: async ({ ref, text }) => {
+        stored.push({ ref, text });
+      },
+      digest: (text) => `digest-${text.length}-${text}`,
+      timeZone: "Asia/Tokyo",
+      ...(options.pins
+        ? {
+            pins: {
+              listProfilePins: async () =>
+                (options.pins ?? []).map(([memoryId, pinned]) => ({
+                  memoryId: createMemoryId(memoryId),
+                  pinned,
+                  updatedAt: NOW,
+                })),
+            },
+          }
+        : {}),
+      ...(options.agendaCharacterBudget === undefined
+        ? {}
+        : { agendaCharacterBudget: options.agendaCharacterBudget }),
+      ...(options.reminders
+        ? {
+            reminders: {
+              listUpcoming: async () =>
+                (options.reminders ?? []).map(({ memoryId, dueAt, id }) => ({
+                  id: id ?? `reminder:${memoryId}`,
+                  ownerId: OWNER_ID,
+                  agentId: AGENT_ID,
+                  memoryId: createMemoryId(memoryId),
+                  dueAt,
+                  remindAt: dueAt,
+                  repeat: "none" as const,
+                  status: "scheduled" as const,
+                  dismissedAt: null,
+                  createdAt: NOW,
+                  updatedAt: NOW,
+                })),
+            },
+          }
+        : {}),
+    });
+    const agendaText = async (maxClassification: "private" | "sensitive" = "private") => {
+      const result = await profile.compose({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        maxClassification,
+        now: NOW,
+      });
+      const agenda = result.blocks.find(({ kind }) => kind === "owner-agenda");
+      return {
+        agenda,
+        text: stored.find(({ ref }) => ref === agenda?.payloadRef)?.text ?? "",
+      };
+    };
+    return { agendaText };
+  };
+
+  it("lists a memory dated inside the next seven days even when it has no reminder and no reminder store is wired", async () => {
+    const { agendaText } = agendaService([dated("memory-laundry", "2026-10-26")]);
+    const { agenda, text } = await agendaText();
+    expect(agenda?.memoryIds).toEqual(["memory-laundry"]);
+    expect(text).toBe(
+      [
+        "主人接下来 7 天的安排（时间为主人当地时间，Asia/Tokyo）：",
+        "- 10/26周一：主人打算洗衣服晾衣服",
+      ].join("\n"),
+    );
+  });
+
+  it("says a dated memory has no reminder only when every reminder of the seven days was read", async () => {
+    const records = [
+      dated("memory-laundry", "2026-10-26"),
+      dated("memory-visa", null, "2026-10-30"),
+    ];
+    const complete = await agendaService(records, { reminders: [] }).agendaText();
+    expect(complete.text.split("\n").slice(1)).toEqual([
+      "- 10/26周一（这 7 天里没有提醒）：主人打算洗衣服晾衣服",
+      "- 10/30周五截止（这 7 天里没有提醒）：主人的在留卡在办续签",
+    ]);
+  });
+
+  it("REVERSE: does not say there is no reminder when no reminder store is wired or the reminder list was cut off", async () => {
+    const records = [
+      dated("memory-laundry", "2026-10-26"),
+      dated("memory-visa", null, "2026-10-30"),
+    ];
+    const plain = ["- 10/26周一：主人打算洗衣服晾衣服", "- 10/30周五截止：主人的在留卡在办续签"];
+    const unwired = await agendaService(records).agendaText();
+    expect(unwired.text.split("\n").slice(1)).toEqual(plain);
+    const cut = await agendaService(records, {
+      reminders: Array.from({ length: 100 }, (_, index) => ({
+        memoryId: `memory-unknown-${index}`,
+        dueAt: "2026-10-27T06:00:00.000Z",
+      })),
+    }).agendaText();
+    expect(cut.text.split("\n").slice(1)).toEqual(plain);
+    const belowLimit = await agendaService(records, {
+      reminders: Array.from({ length: 99 }, (_, index) => ({
+        memoryId: `memory-unknown-${index}`,
+        dueAt: "2026-10-27T06:00:00.000Z",
+      })),
+    }).agendaText();
+    expect(belowLimit.text).toContain("10/26周一（这 7 天里没有提醒）");
+  });
+
+  it("REVERSE: leaves out memories dated before today, after the seven days, undated, or above the classification ceiling", async () => {
+    const { agendaText } = agendaService([
+      dated("memory-past", "2026-10-24"),
+      dated("memory-past-instant", "2026-10-25T11:59:59.000Z"),
+      dated("memory-far", "2026-11-02"),
+      dated("memory-coffee", null),
+      dated("memory-secret", "2026-10-27", null, { dataClassification: "sensitive" }),
+    ]);
+    expect((await agendaText()).agenda).toBeUndefined();
+    for (const [id, date] of [
+      ["memory-past", "2026-10-24"],
+      ["memory-past-instant", "2026-10-25T11:59:59.000Z"],
+      ["memory-far", "2026-11-02"],
+    ] as const)
+      expect((await agendaService([dated(id, date)]).agendaText()).agenda, id).toBeUndefined();
+    const pastInstant = agendaService([
+      dated("memory-past-instant", "2026-10-25T11:59:59.000Z"),
+      dated("memory-laundry", "2026-10-26"),
+    ]);
+    expect((await pastInstant.agendaText()).agenda?.memoryIds).toEqual(["memory-laundry"]);
+  });
+
+  it("REVERSE: leaves out a dated memory the Owner switched off from every conversation, and keeps one switched on", async () => {
+    const records = [
+      dated("memory-laundry", "2026-10-26", null, {}, "project"),
+      dated("memory-move", "2026-10-28", null, {}, "project"),
+    ];
+    const { agenda } = await agendaService(records, {
+      pins: [
+        ["memory-laundry", false],
+        ["memory-move", true],
+      ],
+    }).agendaText();
+    expect(agenda?.memoryIds).toEqual(["memory-move"]);
+  });
+
+  it("lists a dated memory classified sensitive when the turn allows sensitive, and leaves it out when it does not", async () => {
+    const { agendaText } = agendaService([
+      dated("memory-secret", "2026-10-27", null, { dataClassification: "sensitive" }, "health"),
+    ]);
+    const allowed = await agendaText("sensitive");
+    expect(allowed.agenda?.memoryIds).toEqual(["memory-secret"]);
+    expect(allowed.agenda?.dataClassification).toBe("sensitive");
+    expect((await agendaText("private")).agenda).toBeUndefined();
+  });
+
+  it("keeps the reminder of a memory the Owner switched off from every conversation", async () => {
+    const { agenda, text } = await agendaService(
+      [dated("memory-dentist", "2026-10-27", null, {}, "project")],
+      {
+        pins: [["memory-dentist", false]],
+        reminders: [{ memoryId: "memory-dentist", dueAt: "2026-10-27T06:00:00.000Z" }],
+      },
+    ).agendaText();
+    expect(agenda?.memoryIds).toEqual(["memory-dentist"]);
+    expect(text.split("\n").slice(1)).toEqual(["- 10/27周二 15:00：主人去看牙医"]);
+  });
+
+  it("lists dated health and finance memories like events, inside the classification ceiling", async () => {
+    const records = [
+      dated("memory-dentist", "2026-10-27", null, {}, "health"),
+      dated("memory-visa", null, "2026-10-30", {}, "finance"),
+    ];
+    expect((await agendaService(records).agendaText()).agenda?.memoryIds).toEqual([
+      "memory-dentist",
+      "memory-visa",
+    ]);
+  });
+
+  it("orders reminders due at the same moment by reminder id in code-unit order, however the store returns them", async () => {
+    const records = [dated("memory-move", null), dated("memory-dentist", null)];
+    const reminders = [
+      { memoryId: "memory-move", dueAt: "2026-10-27T06:00:00.000Z", id: "reminder:B" },
+      { memoryId: "memory-dentist", dueAt: "2026-10-27T06:00:00.000Z", id: "reminder:a" },
+    ];
+    const first = await agendaService(records, { reminders }).agendaText();
+    const reversed = await agendaService(records, {
+      reminders: [...reminders].reverse(),
+    }).agendaText();
+    expect(first.agenda?.memoryIds).toEqual(["memory-move", "memory-dentist"]);
+    expect(reversed.text).toBe(first.text);
+  });
+
+  it("counts the seven days in the Owner's local dates and includes both ends", async () => {
+    const { agendaText } = agendaService([
+      dated("memory-laundry", "2026-10-25"),
+      dated("memory-move", "2026-11-01"),
+      dated("memory-dentist", "2026-10-25T15:30:00.000Z"),
+    ]);
+    const { text } = await agendaText();
+    expect(text.split("\n").slice(1)).toEqual([
+      "- 10/25周日：主人打算洗衣服晾衣服",
+      "- 10/26周一：主人去看牙医",
+      "- 11/1周日：主人搬到杭州",
+    ]);
+  });
+
+  it("marks a memory whose validity ends inside the seven days as ending that day", async () => {
+    const { agendaText } = agendaService([dated("memory-visa", null, "2026-10-30")]);
+    expect((await agendaText()).text).toContain("- 10/30周五截止：主人的在留卡在办续签");
+  });
+
+  it("shows a memory once when it already has a reminder, and orders reminders and dated memories by day", async () => {
+    const records = [
+      dated("memory-move", "2026-10-28"),
+      dated("memory-laundry", "2026-10-26"),
+      dated("memory-dentist", "2026-10-27"),
+    ];
+    const reminders = [{ memoryId: "memory-dentist", dueAt: "2026-10-27T06:00:00.000Z" }];
+    const first = await agendaService(records, { reminders }).agendaText();
+    expect(first.text.split("\n").slice(1)).toEqual([
+      "- 10/26周一（这 7 天里没有提醒）：主人打算洗衣服晾衣服",
+      "- 10/27周二 15:00：主人去看牙医",
+      "- 10/28周三（这 7 天里没有提醒）：主人搬到杭州",
+    ]);
+    expect(first.agenda?.memoryIds).toEqual(["memory-laundry", "memory-dentist", "memory-move"]);
+    const shuffled = await agendaService([...records].reverse(), { reminders }).agendaText();
+    expect(shuffled.text).toBe(first.text);
+  });
+
+  it("says how many entries were left out when the agenda does not fit", async () => {
+    const records = [
+      dated("memory-laundry", "2026-10-26"),
+      dated("memory-dentist", "2026-10-27"),
+      dated("memory-move", "2026-10-28"),
+    ];
+    const { text } = await agendaService(records, { agendaCharacterBudget: 27 }).agendaText();
+    expect(text.split("\n").slice(1)).toEqual([
+      "- 10/26周一：主人打算洗衣服晾衣服",
+      "（另有 2 项因篇幅没有列出。）",
+    ]);
+    const roomy = await agendaService(records).agendaText();
+    expect(roomy.text).not.toContain("没有列出");
+    const none = await agendaService(records, { agendaCharacterBudget: 5 }).agendaText();
+    expect(none.text.split("\n").slice(1)).toEqual(["（另有 3 项因篇幅没有列出。）"]);
   });
 });
