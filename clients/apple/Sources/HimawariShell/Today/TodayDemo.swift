@@ -15,6 +15,7 @@ struct DemoHomeSource: HomeFeedSource {
     }
 }
 
+@MainActor
 enum TodayDemo {
     static let deviceApprovalId = "apr_demo_alarm"
 
