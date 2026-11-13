@@ -26,14 +26,14 @@ date: "2026-11-13"
 
 ## 背景
 
-合并前的代码复核用 `scripts/model-review/opencode-review.mjs` 经 OpenCode（一个能让模型读代码、调用工具的命令行程序）请 DeepSeek V4.1 Flash 只读复核，线程（Claude Code 的一段对话）再逐条判断、修改、再复核。2026-11-13 统计 180 个 PR 的复核记录和 4 个 PR 线程的用量：
+合并前的代码复核用 `scripts/model-review/opencode-review.mjs` 经 OpenCode（一个能让模型读代码、调用工具的命令行程序）请 DeepSeek V4.1 Flash 只读复核，线程（Claude Code 的一段对话）再逐条判断、修改、再复核。2026-11-13 统计 180 个 PR 的复核记录和 4 个 PR 线程的用量（数字和取法见 [`.agents/reviews/topic-review-claude-side-cost/data.md`](../../.agents/reviews/topic-review-claude-side-cost/data.md)）：
 
 - 钱的大头在 Claude 线程这边。4 个 PR 的整个线程按 API 价折算 39–86 美元，同一批 PR 的 DeepSeek 复核 0.4–1.4 美元。线程上下文常有 15 万到 30 万 token，每调一次工具都按缓存价重读整段上下文；一轮复核要读答案、逐条打开代码、手写 `verdicts.jsonl`（逐字抄模型原话）和 `judgments.md`、提交、跑检查，约 25–40 次调用。
 - 线程常整份读 `.agents/instructions/model-review.md`（约 8 万字节）、`docs/incidents-and-gates.md`（约 18 万）、`docs/lessons.md`（约 15 万），读进来以后每次调用都要重付。
-- 增量轮（带 `--previous`）中位 53 步，和第 1 轮的 57 步差不多：提示原话是“先看 git diff 的增量，但可以读任何文件”，模型每轮都把整个 PR 重查一遍。
+- 2026-11-11 起，增量轮（带 `--previous`）中位 53 步，和第 1 轮的 57 步差不多：提示原话是“这一轮先看 git diff 的增量，但可以读任何文件”，步数说明模型每轮基本把整个 PR 重查一遍。
 - 各轮成立的中高意见：第 1 轮 460 条、第 2 轮 195、第 3 轮 107、第 4 轮 57、第 5 轮 34、6 轮以上 51。第 3 轮以后的回报明显变少，而按 [ADR 0175](0175-cheaper-code-review-rounds.md) 第 5 条，低严重度意见要修改、补测试后用 `--accept-low` 记进账本，每轮都这样。
 
-数据和图表见线程文档“复核省 token 和提速：数据与结论”。
+图表和逐项解释见线程文档“复核省 token 和提速：数据与结论”。
 
 [↑ 返回阅读导航](#contents)
 
