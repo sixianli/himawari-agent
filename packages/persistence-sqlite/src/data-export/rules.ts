@@ -62,7 +62,7 @@ const STORED_KINDS: readonly RuleKind[] = [
 const KIND_LABELS: Readonly<Record<RuleKind, string>> = Object.freeze({
   important_sender: "重要发件人：命中的邮件至少算“值得知道”",
   public_domain: "公共机构域名：命中的邮件至少算“值得知道”",
-  money_words: "钱相关词：命中的邮件至少算“值得知道”",
+  money_words: "涉钱邮件（模型逐封判断）：命中的邮件至少算“值得知道”",
   quiet_hours: "静默时段：这段时间不推送，结束后合并成一条",
   amount_threshold: "小额不推送：金额低于门槛的邮件不推送",
   mail_must_notify: "一定提醒：命中的邮件一定交给你看并推送",

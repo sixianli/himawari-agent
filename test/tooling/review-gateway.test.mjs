@@ -817,10 +817,11 @@ describe("review gateway round 4 fixes", () => {
 
 describe("review gateway round 3 fixes", () => {
   it("[gateway] reserves credits for GLM too when it may stand in for DeepSeek", () => {
-    expect(reserveModels({ mode: "code-review", previous: "abc", models: [deepseek] })).toEqual([
-      deepseek,
-      glm,
-    ]);
+    for (const previous of ["abc", undefined])
+      expect(reserveModels({ mode: "code-review", previous, models: [deepseek] })).toEqual([
+        deepseek,
+        glm,
+      ]);
     expect(
       reserveModels({ mode: "code-review", previous: undefined, models: REVIEW_MODELS }),
     ).toEqual(REVIEW_MODELS);

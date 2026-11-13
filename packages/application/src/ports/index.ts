@@ -66,6 +66,7 @@ export * from "./thread-artifacts.js";
 export * from "./thread-prompt-bundles.js";
 export * from "./thread-search-projection.js";
 export * from "./threads.js";
+export * from "./unit-of-work.js";
 export * from "./web.js";
 export * from "./web-providers.js";
 export * from "./web-push.js";

@@ -1044,11 +1044,11 @@ export const messages = {
   "dailyReview.ruleReview": "这条硬规则来自你说过的一句话，那条记忆变了，规则照常执行，等你看一眼",
   "dailyReview.tag.captureRetrying": "记忆抽取失败，已重试",
   "dailyReview.tag.captureQueued": "记忆抽取失败，下一轮补做",
-  "dailyReview.tag.captureGaveUp": "这轮没记全",
+  "dailyReview.tag.captureGaveUp": "这轮没记下",
   "dailyReview.captureRetrying": "这轮对话后抽取记忆的模型调用失败了一次，系统当场又试了一次",
   "dailyReview.captureQueued": "这轮对话后抽取记忆没成功，系统会在你下一次发消息时补做",
   "dailyReview.captureGaveUp":
-    "这轮对话的记忆补做了 3 次仍没抽取成功，或者抽取出来后没能存完（可能已存下一部分），系统不再重试",
+    "这轮对话的记忆补做了 3 次仍没成功（抽取或保存都算），这一轮没有记下任何内容，系统不再重试",
   "dailyReview.hidden": "这里不显示原文",
   "dailyReview.fetched": "检查了 {count} 封邮件",
   "dailyReview.allFine": "这一页都没问题",
@@ -1093,7 +1093,7 @@ export const messages = {
   "decision.chain.rules": "命中的规则",
   "decision.chain.reviewRules": "待重审的规则",
   "decision.chain.rule":
-    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：邮件里有金额相关的词} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} mail_must_notify {你立的规则：这类邮件必须提醒你} mail_read_whole_thread {你立的规则：先看整个邮件串再判断} other {{id}}}",
+    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：模型判断这封邮件涉及钱款} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} mail_must_notify {你立的规则：这类邮件必须提醒你} mail_read_whole_thread {你立的规则：先看整个邮件串再判断} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {你设定的} built_in {内置规则} other {未登记的规则}}",
   "decision.chain.ruleMails": "命中 {count} 封邮件",
@@ -1101,7 +1101,7 @@ export const messages = {
   "decision.chain.ruleSuspended": "已暂停",
   "decision.chain.ruleQuote": "原话：{text}",
   "decision.chain.ruleWording":
-    "{k, select, important_sender {{empty, select, yes {重要名单是空的} other {重要名单：{text}}}} public_domain {域名后缀：{text}} money_words {词表：{text}} quiet_hours {{empty, select, yes {没有设静默时段} other {时段：{text}}}} amount_threshold {门槛：{text}} other {{text}}}",
+    "{k, select, important_sender {{empty, select, yes {重要名单是空的} other {重要名单：{text}}}} public_domain {域名后缀：{text}} money_words {模型逐封判断“是否涉及你要付出、被扣、可收回或已入账的钱款”，答是就命中} quiet_hours {{empty, select, yes {没有设静默时段} other {时段：{text}}}} amount_threshold {门槛：{text}} other {{text}}}",
   "decision.chain.ruleWordingMissing": "这一版的规则内容查不到",
   "decision.chain.ruleSource": "出处：{source} · 第 {revision} 版",
   "decision.chain.ruleCurrent": "只记了规则名，显示的是现在的版本",

@@ -29,6 +29,7 @@ import {
   type RuleReviewOwnerStorePort,
   reviewMemoryVisible,
   type SensitiveMemoryApprovalStatePort,
+  type UnitOfWorkPort,
   type SensitiveMemoryTopic,
 } from "@himawari-agent/application";
 import {
@@ -202,6 +203,7 @@ export class ProductionMemoryControl {
     readonly state: ProductMemoryStatePort;
     readonly jobs: Pick<MemoryProjectionJobStatePort, "listByMemory">;
     readonly approvals: SensitiveMemoryApprovalStatePort;
+    readonly unitOfWork: UnitOfWorkPort;
     readonly memory: Pick<
       DurableMemoryService,
       | "applyProposal"
@@ -1339,6 +1341,7 @@ export class ProductionMemoryControl {
           throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
         this.assertStorable(editedText);
       }
+      const buffered: MemoryExtractionAuditRecord[] = [];
       const resolver = createProductionAutomaticMemory({
         product: this.options.memory,
         approvals: this.options.approvals,
@@ -1350,13 +1353,21 @@ export class ProductionMemoryControl {
         ...(this.options.ledger ? { ledger: this.options.ledger } : {}),
         extract: async () => [],
         readSourceText: (ref) => this.readText(ref),
-        onAudit: this.options.onAudit,
+        onAudit: (record) => {
+          buffered.push(record);
+        },
       });
-      const committed = await resolver.resolveSensitive(
-        resolution === "edited"
-          ? { requestId, resolution, editedText: editedText ?? "" }
-          : { requestId, resolution },
+      const committed = await this.options.unitOfWork.run(() =>
+        resolver.resolveSensitive(
+          resolution === "edited"
+            ? { requestId, resolution, editedText: editedText ?? "" }
+            : { requestId, resolution },
+        ),
       );
+      for (const record of buffered)
+        try {
+          this.options.onAudit(record);
+        } catch {}
       return { resultRef: committed ?? requestId, replayed: false };
     }
     if (command.type === "memory.reminder.create") {

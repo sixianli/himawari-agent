@@ -36,6 +36,7 @@ import {
   killProcessGroup,
   MIN_OUTPUT_TOKENS,
   MODEL_LENSES,
+  MODEL_OUTPUT_LIMITS,
   OPENCODE_KEPT_ENV,
   OPENCODE_LOCK_DIR,
   OPENCODE_VERSION,
@@ -66,6 +67,9 @@ import {
   runOutcome,
   SHELL_LOG_NAME,
   SUBSTITUTES,
+  DEFAULT_REVIEW_MODELS,
+  readReviewModels,
+  reviewModelsProblems,
   spentOf,
   substituteFor,
   summarizeEvents,
@@ -73,6 +77,7 @@ import {
   WRAP_UP_RESERVE_USD,
   wrapUpReason,
 } from "../../scripts/model-review/opencode-review.mjs";
+import { readGatewayConfig } from "../../scripts/model-review/gateway.mjs";
 import { GUARD_ENV } from "../../scripts/model-review/spend-guard.mjs";
 import {
   expectAppendedTo,
@@ -503,6 +508,57 @@ describe("opencode review output", () => {
   });
 });
 
+describe("opencode review model list", () => {
+  const valid = {
+    allowed: ["a/one", "a/two"],
+    default: ["a/one"],
+    substitutes: { "a/one": "a/two" },
+  };
+  const changed = (change) => Object.assign({}, valid, change);
+
+  it("[review models] reads the allowed, default and substitute models from the committed file", () => {
+    const config = readReviewModels();
+    expect(REVIEW_MODELS).toEqual(config.allowed);
+    expect(DEFAULT_REVIEW_MODELS).toEqual(config.default);
+    expect(SUBSTITUTES).toEqual(config.substitutes);
+    expect(DEFAULT_REVIEW_MODELS).toEqual(["opencode-go/deepseek-v4.1-flash"]);
+    for (const model of REVIEW_MODELS) {
+      const name = model.split("/").pop();
+      expect(MODEL_LENSES[name]).toEqual(expect.any(String));
+      expect(MODEL_OUTPUT_LIMITS[name]).toEqual(expect.any(Number));
+      expect(readGatewayConfig(undefined, REVIEW_MODELS).models[model]).toBeDefined();
+    }
+    expect(reviewModelsProblems(valid)).toEqual([]);
+    expect(reviewModelsProblems(changed({ default: valid.allowed, substitutes: {} }))).toEqual([]);
+  });
+
+  it("[review models] refuses a list that is empty, repeats, or names a model outside the allowed ones", () => {
+    const bad = [
+      [changed({ allowed: [] }), "allowed"],
+      [changed({ allowed: ["a/one", "a/one"] }), "allowed"],
+      [changed({ allowed: ["a/one", "b/one"], substitutes: {} }), "allowed.short-name-repeats"],
+      [changed({ allowed: ["one"] }), "allowed"],
+      [changed({ default: [] }), "default"],
+      [changed({ default: ["a/three"] }), "default"],
+      [changed({ default: "a/one" }), "default"],
+      [changed({ substitutes: { "a/one": "a/three" } }), "substitutes"],
+      [changed({ substitutes: { "a/one": "a/one" } }), "substitutes"],
+      [changed({ substitutes: undefined }), "substitutes"],
+      [null, "allowed"],
+    ];
+    for (const [config, problem] of bad) expect(reviewModelsProblems(config)).toContain(problem);
+    const dir = mkdtempSync(join(tmpdir(), "review-models-"));
+    try {
+      const path = join(dir, "review-models.json");
+      expect(() => readReviewModels(path)).toThrow("REVIEW_MODELS_CONFIG_INVALID unreadable");
+      writeFileSync(path, JSON.stringify(changed({ default: [] })));
+      expect(() => readReviewModels(path)).toThrow("REVIEW_MODELS_CONFIG_INVALID default");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("opencode review retry and substitute", () => {
   const failed = (apiError, usage = { cost: 0.01 }) => ({
     outcome: "api-error",
@@ -530,12 +586,13 @@ describe("opencode review retry and substitute", () => {
   const glm = REVIEW_MODELS[1];
   const later = { mode: "code-review", previous: "a".repeat(40), models: [deepseek] };
 
-  it("[substitute] lets GLM take a later code-review round only when DeepSeek's service refused", () => {
+  it("[substitute] lets GLM take a code-review round, the first included, only when DeepSeek's service refused", () => {
     expect(SUBSTITUTES).toEqual({ [deepseek]: glm });
-    expect(substituteFor({ ...later, runs: [run("api-error", busy)] })).toEqual({
-      model: glm,
-      for: deepseek,
-    });
+    for (const options of [later, { ...later, previous: undefined }])
+      expect(substituteFor({ ...options, runs: [run("api-error", busy)] })).toEqual({
+        model: glm,
+        for: deepseek,
+      });
     const none = [
       { ...later, runs: [run("ok", null)] },
       { ...later, runs: [run("timeout", null)] },
@@ -543,7 +600,6 @@ describe("opencode review retry and substitute", () => {
       { ...later, runs: [run("api-error", busy, "no-time")] },
       { ...later, runs: [run("api-error", busy, "no-budget")] },
       { ...later, runs: [run("api-error", busy, null)] },
-      { ...later, previous: undefined, runs: [run("api-error", busy)] },
       { ...later, mode: "plan-review", runs: [run("api-error", busy)] },
       { ...later, models: [glm], runs: [run("api-error", busy)] },
       {

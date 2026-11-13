@@ -545,7 +545,52 @@ export class SqliteDurableOperations {
     );
   }
 
+  private transactionScopeOpen = false;
+  private transactionScopeLost = false;
+
+  private transactionScopeAborted(): never {
+    this.transactionScopeLost = true;
+    return this.fail("PORT_CONFLICT", "The transaction scope was rolled back", {
+      reason: "TRANSACTION_ABORTED",
+    });
+  }
+
+  private executeTransactionScope(operation: string): null | undefined {
+    switch (operation) {
+      case "transaction.begin":
+        if (this.database.inTransaction)
+          this.fail("PORT_INVALID_OPERATION", "A transaction scope is already open");
+        this.database.exec("BEGIN IMMEDIATE");
+        this.transactionScopeLost = false;
+        this.transactionScopeOpen = true;
+        return null;
+      case "transaction.commit":
+        if (this.transactionScopeLost || !this.transactionScopeOpen || !this.database.inTransaction)
+          this.transactionScopeAborted();
+        this.transactionScopeOpen = false;
+        this.database.exec("COMMIT");
+        return null;
+      case "transaction.rollback":
+        this.transactionScopeOpen = false;
+        this.transactionScopeLost = false;
+        if (this.database.inTransaction) this.database.exec("ROLLBACK");
+        return null;
+      default:
+        return undefined;
+    }
+  }
+
   execute(operation: string, payload: unknown): unknown {
+    const scoped = this.executeTransactionScope(operation);
+    if (scoped !== undefined) return scoped;
+    if (this.transactionScopeLost) this.transactionScopeAborted();
+    if (this.transactionScopeOpen && !this.database.inTransaction) this.transactionScopeAborted();
+    const value = this.executeUnscoped(operation, payload);
+    if (this.transactionScopeOpen && !this.database.inTransaction) this.transactionScopeAborted();
+    return value;
+  }
+
+  private executeUnscoped(operation: string, payload: unknown): unknown {
     if (this.database.inTransaction || !isProcessRecordWrite(operation, payload))
       return this.executeOperation(operation, payload);
     this.database.pragma("synchronous = NORMAL");
