@@ -32,6 +32,7 @@ import {
   parseArgs,
   parseUsage,
   parseVerdicts,
+  previousProblem,
   proxyCredentialProblems,
   RAW_FILE_SUFFIXES,
   RECORD_SECRET_RULES,
@@ -1592,6 +1593,127 @@ describe("opencode review merge gate", () => {
       rmSync(g.root, { recursive: true, force: true });
     }
   });
+
+  const lowFixedChain = () => {
+    const f = lowFixFixture();
+    const fixed = f.commit({ "code.txt": "fixed\n", "test/code.test.mjs": "check\n" }, "fix");
+    const lowFix = {
+      at: "t",
+      mode: "low-fix",
+      cost: 0,
+      round: 1,
+      head: fixed,
+      from: f.reviewed,
+      files: ["code.txt", "test/code.test.mjs"],
+      findings: ["V1"],
+    };
+    const first = [ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm), lowFix];
+    const ledgerCommit = f.writeLedger(first);
+    const isAncestor = (from, to) =>
+      spawnSync("git", ["merge-base", "--is-ancestor", from, to], { cwd: f.repo }).status === 0;
+    return { ...f, fixed, first, ledgerCommit, isAncestor };
+  };
+
+  it("[I-98] refuses a --previous that skips the accepted low-fix head and names the right one", () => {
+    const f = lowFixedChain();
+    try {
+      const ask = (previous, records = f.first) =>
+        previousProblem({
+          records,
+          round: 2,
+          head: f.ledgerCommit,
+          previous,
+          isAncestor: f.isAncestor,
+        });
+      expect(ask(f.ledgerCommit)).toBe(
+        `REVIEW_PREVIOUS_REFUSED chain-broken previous=${f.ledgerCommit} use=--previous ${f.fixed}`,
+      );
+      expect(ask(f.fixed)).toBeNull();
+      expect(ask(f.reviewed)).toBeNull();
+      expect(ask(undefined)).toBeNull();
+      expect(ask(f.fixed, [])).toBe("REVIEW_PREVIOUS_REFUSED no-accepted-round use=no-previous");
+      f.writeLedger([...f.first, ok(2, f.ledgerCommit, deepseek, { previous: f.ledgerCommit })]);
+      expect(f.check().problems).toEqual([`chain-broken round=2 ${f.ledgerCommit}`]);
+      f.writeLedger([...f.first, ok(2, f.ledgerCommit, deepseek, { previous: f.fixed })]);
+      expect(f.check()).toMatchObject({ round: 2, reviewed: f.ledgerCommit, problems: [] });
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[I-98] refuses any --previous once an earlier round already broke the chain", () => {
+    const f = lowFixedChain();
+    try {
+      const broken = [...f.first, ok(2, f.ledgerCommit, deepseek, { previous: f.ledgerCommit })];
+      const later = f.commit({ "code.txt": "later\n" }, "later");
+      const ask = (previous, round = 3) =>
+        previousProblem({
+          records: broken,
+          round,
+          head: later,
+          previous,
+          isAncestor: f.isAncestor,
+        });
+      expect(ask(f.ledgerCommit)).toBe(
+        `REVIEW_PREVIOUS_REFUSED chain-already-broken round=2 ${f.ledgerCommit} use=no-previous`,
+      );
+      expect(ask(undefined)).toBeNull();
+      expect(ask(f.fixed, 2)).toBeNull();
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[I-98] the script refuses a wrong --previous before installing opencode or spending", () => {
+    const f = lowFixedChain();
+    try {
+      const questions = readFileSync(".agents/instructions/model-review.md", "utf8");
+      const head = f.commit({ ".agents/instructions/model-review.md": questions }, "questions");
+      const brief = join(f.root, "brief.md");
+      writeFileSync(brief, "brief\n");
+      const run = (previous) =>
+        spawnSync(
+          process.execPath,
+          [
+            "scripts/model-review/opencode-review.mjs",
+            "--mode",
+            "code-review",
+            "--pr",
+            "7",
+            "--repo",
+            f.repo,
+            "--head",
+            head,
+            "--base",
+            f.main,
+            "--previous",
+            previous,
+            "--questions-ref",
+            head,
+            "--brief",
+            brief,
+          ],
+          {
+            encoding: "utf8",
+            env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+          },
+        );
+      const wrong = run(f.ledgerCommit);
+      expect(wrong.status).toBe(2);
+      expect(wrong.stderr.trim()).toBe(
+        `REVIEW_PREVIOUS_REFUSED chain-broken previous=${f.ledgerCommit} use=--previous ${f.fixed}`,
+      );
+      expect(wrong.stdout).not.toContain("REVIEW_PID");
+      const right = run(f.fixed);
+      expect(right.stderr).not.toContain("REVIEW_PREVIOUS_REFUSED");
+      expect(right.stdout).toContain("REVIEW_PID");
+      expect(readFileSync(join(f.repo, f.ledger), "utf8")).toBe(
+        f.first.map((r) => `${JSON.stringify(r)}\n`).join(""),
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  }, 60000);
 
   it("[low fix] a refused --accept-low exits non-zero even when nothing is unreviewed", () => {
     const f = lowFixFixture();

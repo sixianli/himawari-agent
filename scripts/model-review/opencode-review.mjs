@@ -1367,6 +1367,25 @@ export function walkChain(points, { isAncestor, lowFixCheck }) {
   return { accepted, broken };
 }
 
+export function previousProblem({ records, round, head, previous, isAncestor }) {
+  if (!previous) return null;
+  const earlier = records.filter((record) => (record.round ?? 1) < round);
+  const points = coveragePoints(earlier);
+  const next = { round, head, previous, by: "requested" };
+  const { accepted, broken } = walkChain([...points, next], {
+    isAncestor,
+    lowFixCheck: () => [],
+  });
+  if (accepted.at(-1) === next) return null;
+  if (broken && broken.point !== next)
+    return `REVIEW_PREVIOUS_REFUSED chain-already-broken round=${broken.point.round} ${broken.point.head} use=no-previous`;
+  const covered = accepted.at(-1)?.head;
+  if (!covered) return `REVIEW_PREVIOUS_REFUSED no-accepted-round use=no-previous`;
+  if (!isAncestor(covered, head))
+    return `REVIEW_PREVIOUS_REFUSED head-not-after-accepted ${covered} head=${head} use=no-previous`;
+  return `REVIEW_PREVIOUS_REFUSED chain-broken previous=${previous} use=--previous ${covered}`;
+}
+
 function gitStatus(args, cwd) {
   return spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
 }
@@ -3241,6 +3260,17 @@ async function main() {
           options.models.map((model) => [model, promptOnDisk(model)]),
         ),
       });
+  if (options.mode === "code-review" && !options.selfCheckOnly) {
+    const refused = previousProblem({
+      records,
+      round,
+      head: commits.head,
+      previous: commits.previous,
+      isAncestor: (from, to) =>
+        gitStatus(["merge-base", "--is-ancestor", from, to], options.repo).status === 0,
+    });
+    if (refused) throw new Error(refused);
+  }
   const binary = opencodeBinary();
   const gateway = gatewayConfig ? { install: installGateway(), config: gatewayConfig } : null;
   if (gateway) {
