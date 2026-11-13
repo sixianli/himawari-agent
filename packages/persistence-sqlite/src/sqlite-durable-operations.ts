@@ -79,6 +79,7 @@ import { SqliteAutomaticActionReview } from "./sqlite-automatic-action-review.ts
 import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
 import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invocation-operations.ts";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
+import { SqliteCorrectionReviewOperations } from "./sqlite-correction-review-operations.ts";
 import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
 import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory-proposal-operations.ts";
 import { SqliteMcpConnectionOperations } from "./sqlite-mcp-connection-operations.ts";
@@ -367,6 +368,7 @@ export class SqliteDurableOperations {
   private readonly memoryConsolidation: SqliteMemoryConsolidationOperations;
   private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly ownerRules: SqliteOwnerRuleOperations;
+  private readonly correctionReview: SqliteCorrectionReviewOperations;
   private readonly memoryCaptureBacklog: SqliteMemoryCaptureBacklogOperations;
   private readonly memoryCheckup: SqliteMemoryCheckupOperations;
   private readonly memoryConversationReview: SqliteMemoryConversationReviewOperations;
@@ -453,6 +455,11 @@ export class SqliteDurableOperations {
     );
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
     this.ownerRules = new SqliteOwnerRuleOperations(database, fail, assertDiskHeadroom);
+    this.correctionReview = new SqliteCorrectionReviewOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.memoryCaptureBacklog = new SqliteMemoryCaptureBacklogOperations(
       database,
       fail,
@@ -658,6 +665,8 @@ export class SqliteDurableOperations {
       return this.mcpConnections.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
     if (operation.startsWith("ownerRule.")) return this.ownerRules.execute(operation, payload);
+    if (operation.startsWith("ruleReview.") || operation.startsWith("memoryReview."))
+      return this.correctionReview.execute(operation, payload);
     if (operation.startsWith("decisionLedger."))
       return this.decisionLedger.execute(operation, payload);
     if (operation.startsWith("museIntake.")) return this.museIntake.execute(operation, payload);

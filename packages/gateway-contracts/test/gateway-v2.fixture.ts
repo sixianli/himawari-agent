@@ -329,6 +329,21 @@ export const governanceMessages = [
         otherVersions: 0,
         groups: [],
       },
+      correction: {
+        handled: 3,
+        agreed: 2,
+        missed: 1,
+        openMemories: 2,
+        openRules: 0,
+        agreement: {
+          successes: 2,
+          samples: 3,
+          enough: false,
+          value: null,
+          low: null,
+          high: null,
+        },
+      },
     },
     generatedAt: "2026-11-04T01:00:00.000Z",
   }),
@@ -438,6 +453,7 @@ export const governanceMessages = [
     expectedRevision: 2,
   }),
   fixture("command", "data.export.start", {}),
+  fixture("command", "data.export.cancel", { exportId: "data-export:AAAAAAAAAAAAAAAAAAAAAA" }),
   fixture("query", "data.export.status.read", { exportId: "data-export:AAAAAAAAAAAAAAAAAAAAAA" }),
   fixture("snapshot", "data.export.status.snapshot", {
     exportId: "data-export:AAAAAAAAAAAAAAAAAAAAAA",
@@ -445,6 +461,7 @@ export const governanceMessages = [
     startedAt: "2026-11-12T00:00:00.000Z",
     finishedAt: "2026-11-12T00:00:02.000Z",
     failureCode: null,
+    progress: null,
     result: {
       downloadPath: `/api/data-export/v1/archive?exportId=${encodeURIComponent("data-export:AAAAAAAAAAAAAAAAAAAAAA")}`,
       fileName: "himawari-export-2026-11-12.zip",
@@ -474,6 +491,7 @@ export const governanceMessages = [
       {
         fileId: "thread-artifact:01",
         threadId: "thread-1",
+        threadTitle: "周五去大阪",
         name: "report.pdf",
         kind: "pdf",
         origin: "uploaded",
@@ -559,6 +577,7 @@ export const governanceMessages = [
   fixture("command", "mcp.connection.rotate", {
     connectionId: "conn-0123456789abcdef01234567",
   }),
+  fixture("command", "login.devices.revoke_others", { recentAuthenticationRef: "auth-ref-01" }),
   fixture("query", "home.read", { locale: "zh-CN" }),
   fixture("snapshot", "home.snapshot", {
     items: [
@@ -751,6 +770,25 @@ export const governanceMessages = [
         },
       ],
     },
+  }),
+  fixture("query", "memory.classify.read", { contentRefs: ["payload-05", "payload-06"] }),
+  fixture("snapshot", "memory.classify.snapshot", {
+    items: [
+      {
+        contentRef: "payload-05",
+        category: "preference",
+        classification: "private",
+        topic: null,
+        failed: false,
+      },
+      {
+        contentRef: "payload-06",
+        category: "other",
+        classification: "sensitive",
+        topic: "other",
+        failed: true,
+      },
+    ],
   }),
   fixture("query", "memory.basis.read", { memoryId: "memory-insight" }),
   fixture("snapshot", "memory.basis.snapshot", {
@@ -990,10 +1028,51 @@ export const governanceMessages = [
     target: "owner:0123456789abcdef01234567",
     action: "undo",
   }),
+  fixture("query", "memory.review.read", {}),
+  fixture("snapshot", "memory.review.snapshot", {
+    memories: [
+      {
+        memoryId: "memory-02",
+        text: "每周一早上提醒 Andy 看日本入管局的邮件",
+        upstreamMemoryId: "memory-01",
+        upstreamText: "Andy 在办日本签证续签",
+        reason: "memory_edited",
+        depth: 1,
+        truncated: false,
+        flaggedAt: "2026-11-11T00:00:00.000Z",
+      },
+    ],
+    rules: [
+      {
+        ruleId: "owner:0123456789abcdef01234567",
+        revision: 3,
+        status: "suspended",
+        summary: "日本入管局相关的邮件一律提醒",
+        suggestion: "日本和韩国入管局相关的邮件一律提醒",
+        suggestionConditions: [{ field: "senderDomains", values: ["moj.go.jp", "moj.go.kr"] }],
+        suspendReason: "parameters_changed",
+        rechecking: false,
+        sourceMemoryId: "memory-01",
+        updatedAt: "2026-11-11T00:00:00.000Z",
+      },
+    ],
+    agreement: { handled: 4, agreed: 3, missed: 1, openMemories: 1, openRules: 1 },
+    generatedAt: "2026-11-11T00:00:00.000Z",
+  }),
+  fixture("command", "memory.review.respond", {
+    target: "owner:0123456789abcdef01234567",
+    action: "adopt",
+    expectedRevision: 3,
+  }),
+  fixture("command", "memory.review.reportMissed", {
+    memoryId: "memory-03",
+    upstreamMemoryId: "memory-01",
+  }),
   fixture("command", "memory.create", {
     contentRef: "payload-03",
     category: "preference",
     subCategory: "饮食",
+    topic: null,
     pinned: false,
   }),
   fixture("command", "memory.category.set", {
@@ -1010,7 +1089,7 @@ export const governanceMessages = [
   fixture("command", "memory.import.commit", {
     batchId: "memory-import-01",
     source: "codex",
-    items: [{ contentRef: "payload-04", category: "rule", subCategory: null }],
+    items: [{ contentRef: "payload-04", category: "rule", subCategory: null, topic: null }],
   }),
   fixture("command", "memory.import.undo", { batchId: "memory-import-01" }),
   fixture("command", "memory.external.respond", {

@@ -737,10 +737,17 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 95,
+    name: "correction_propagation",
+    changeSet: "correction-propagation",
+    phase: "expand" as const,
+    file: "0095_correction_propagation.sql",
+  },
+  {
+    sequence: 96,
     name: "mcp_connections",
     changeSet: "mcp-connections",
     phase: "expand" as const,
-    file: "0095_mcp_connections.sql",
+    file: "0096_mcp_connections.sql",
   },
 ] as const;
 
