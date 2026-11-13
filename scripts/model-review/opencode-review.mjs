@@ -49,7 +49,52 @@ import {
 import { GUARD_ENV } from "./spend-guard.mjs";
 
 export const OPENCODE_VERSION = "1.19.5";
-export const REVIEW_MODELS = ["opencode-go/deepseek-v4.1-flash", "opencode-go/glm-5.3-flash"];
+export const REVIEW_MODELS_CONFIG_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "review-models.json",
+);
+
+export function reviewModelsProblems(config) {
+  const problems = [];
+  const names = (list) =>
+    Array.isArray(list) &&
+    list.length > 0 &&
+    list.every((name) => typeof name === "string" && /^[\w.-]+\/[\w.-]+$/.test(name)) &&
+    new Set(list).size === list.length;
+  if (!names(config?.allowed)) problems.push("allowed");
+  const allowed = names(config?.allowed) ? config.allowed : [];
+  const shortNames = allowed.map((name) => name.split("/").pop());
+  if (new Set(shortNames).size !== shortNames.length) problems.push("allowed.short-name-repeats");
+  if (!names(config?.default) || config.default.some((name) => !allowed.includes(name)))
+    problems.push("default");
+  const substitutes = config?.substitutes;
+  if (
+    substitutes === null ||
+    typeof substitutes !== "object" ||
+    Array.isArray(substitutes) ||
+    Object.entries(substitutes).some(
+      ([from, to]) => !allowed.includes(from) || !allowed.includes(to) || from === to,
+    )
+  )
+    problems.push("substitutes");
+  return problems;
+}
+
+export function readReviewModels(path = REVIEW_MODELS_CONFIG_PATH) {
+  let config;
+  try {
+    config = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    throw new Error(`REVIEW_MODELS_CONFIG_INVALID unreadable ${error.message}`);
+  }
+  const problems = reviewModelsProblems(config);
+  if (problems.length > 0) throw new Error(`REVIEW_MODELS_CONFIG_INVALID ${problems.join(",")}`);
+  return config;
+}
+
+const reviewModels = readReviewModels();
+export const REVIEW_MODELS = reviewModels.allowed;
+export const DEFAULT_REVIEW_MODELS = reviewModels.default;
 export const REASONING_VARIANT = "high";
 export const OUTPUT_TOKEN_MAX = 200000;
 export const MIN_OUTPUT_TOKENS = 100000;
@@ -926,14 +971,14 @@ export function wrapUpReason(summary, run) {
 }
 
 export const API_ERROR_RETRY_WAIT_MS = 60000;
-export const SUBSTITUTES = { [REVIEW_MODELS[0]]: REVIEW_MODELS[1] };
+export const SUBSTITUTES = reviewModels.substitutes;
 
 export function apiErrorText(apiError) {
   return `${apiError.statusCode ?? "-"} ${apiError.message}`;
 }
 
-export function substituteFor({ mode, previous, models, runs }) {
-  if (mode !== "code-review" || !previous || models.length !== 1) return null;
+export function substituteFor({ mode, models, runs }) {
+  if (mode !== "code-review" || models.length !== 1) return null;
   const replacement = SUBSTITUTES[models[0]];
   const [run] = runs;
   if (!replacement || run.record.outcome !== "api-error" || run.review.retry !== "retried")
@@ -1232,26 +1277,52 @@ export function coveragePoints(records) {
     const passed = reviews.filter(
       (record) => (record.round ?? 1) === round && record.outcome === "ok",
     );
-    const both = REVIEW_MODELS.every((model) => passed.some((record) => record.model === model));
-    const covering = both
-      ? passed
-      : passed.filter(
-          (record) =>
-            record.model === REVIEW_MODELS[0] ||
-            (record.substitute === true &&
-              record.substituteFor === REVIEW_MODELS[0] &&
-              record.model === SUBSTITUTES[REVIEW_MODELS[0]]),
-        );
+    const inRound = reviews.filter((record) => (record.round ?? 1) === round);
+    const direct = (model) =>
+      passed.some((record) => record.model === model && record.substitute === undefined);
+    const stoodIn = (model) =>
+      inRound.some(
+        (record) =>
+          record.model === model && record.substitute === undefined && record.outcome !== "ok",
+      ) &&
+      passed.some(
+        (record) =>
+          record.substitute === true &&
+          record.substituteFor === model &&
+          record.model === SUBSTITUTES[model],
+      );
+    const requested = [
+      ...new Set(
+        inRound
+          .filter(
+            (record) => record.substitute === undefined && REVIEW_MODELS.includes(record.model),
+          )
+          .map((record) => record.model),
+      ),
+    ];
+    const complete = (models) =>
+      models.length > 0 && models.every((model) => direct(model) || stoodIn(model));
+    const needed = complete(requested)
+      ? requested
+      : complete(DEFAULT_REVIEW_MODELS)
+        ? DEFAULT_REVIEW_MODELS
+        : [];
+    const covering = passed.filter((record) =>
+      record.substitute === true
+        ? needed.includes(record.substituteFor) &&
+          record.model === SUBSTITUTES[record.substituteFor]
+        : record.substitute === undefined && needed.includes(record.model),
+    );
     if (covering.length === 0) continue;
     const heads = [...new Set(covering.map((record) => record.head))];
     if (heads.length !== 1)
       throw new Error(`REVIEW_ROUND_HEADS_DIFFER ${round} ${heads.join(",")}`);
     const previous = [...new Set(covering.map((record) => record.previous ?? null))];
-    const by = both
-      ? "both"
-      : covering.some((record) => record.model === REVIEW_MODELS[0])
-        ? "deepseek"
-        : "substitute";
+    const by = needed.some((model) => !direct(model))
+      ? "substitute"
+      : needed === requested
+        ? "requested"
+        : "default";
     points.push({ round, head: heads[0], previous: previous.length === 1 ? previous[0] : "", by });
     for (const [index, record] of records.entries())
       if (record.mode === "low-fix" && record.round === round)
@@ -1272,7 +1343,7 @@ export function walkChain(points, { isAncestor, lowFixCheck }) {
   let accepted = [];
   let broken = null;
   for (const point of points) {
-    if (point.by === "both" && point.previous === null) {
+    if (point.by !== "low-fix" && point.previous === null) {
       accepted = [point];
       broken = null;
       continue;
@@ -2745,7 +2816,7 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     mode: "code-review",
     repo: repoRoot,
     timeoutMinutes: 25,
-    models: REVIEW_MODELS,
+    models: DEFAULT_REVIEW_MODELS,
   };
   const given = new Set();
   for (let index = 0; index < argv.length; index += 1) {
@@ -2869,17 +2940,10 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
   if (claimsMode && options.brief) throw new Error("ARG_BRIEF_NOT_FOR_PLAN_CLAIMS");
   if (!claimsMode && options.claimsFile) throw new Error("ARG_CLAIMS_FILE_ONLY_FOR_PLAN_CLAIMS");
   if (claimsMode && !options.claimsFile) throw new Error("ARG_REQUIRED --claims-file");
-  if (claimsMode && !given.has("--models")) options.models = [REVIEW_MODELS[0]];
   for (const required of claimsMode ? ["head"] : ["head", "brief"]) {
     if (!options[required]) throw new Error(`ARG_REQUIRED --${required}`);
   }
   if (options.mode === "code-review" && !options.base) throw new Error("ARG_REQUIRED --base");
-  if (options.mode === "code-review" && !options.selfCheckOnly) {
-    const firstRound = !options.previous && options.round === undefined;
-    if (firstRound && options.models.length !== REVIEW_MODELS.length)
-      throw new Error("ARG_FIRST_ROUND_NEEDS_BOTH_MODELS");
-    if (options.previous && !given.has("--models")) options.models = [REVIEW_MODELS[0]];
-  }
   if (!options.selfCheckOnly) {
     if (options.out !== undefined) throw new Error("ARG_OUT_ONLY_FOR_SELF_CHECK");
     if (options.pr !== undefined && options.topic !== undefined)
@@ -2949,10 +3013,9 @@ export function gatewayUsageLine(record) {
   return `GATEWAY_USAGE ${record.model} ${parts.length ? parts.join(" ; ") : "none"}${dropped}`;
 }
 
-export function reserveModels({ mode, previous, models }) {
+export function reserveModels({ mode, models }) {
   const substitute = SUBSTITUTES[models[0]];
-  if (mode === "code-review" && previous && models.length === 1 && substitute)
-    return [...models, substitute];
+  if (mode === "code-review" && models.length === 1 && substitute) return [...models, substitute];
   return models;
 }
 

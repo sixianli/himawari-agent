@@ -1,4 +1,5 @@
 export * from "./action-policy-service.js";
+export * from "./approval-display.js";
 export * from "./agent-gateway-service.js";
 export * from "./agent-gateway-v2-service.js";
 export * from "./agent-thread-gateway-service.js";
@@ -47,6 +48,7 @@ export * from "./permission-service.js";
 export * from "./proactive-mail-body.js";
 export * from "./proactive-mail-check-service.js";
 export * from "./proactive-overview.js";
+export * from "./proactive-references.js";
 export * from "./proactive-rules.js";
 export * from "./proactive-seal.js";
 export * from "./product-thread-gateway-adapter.js";
