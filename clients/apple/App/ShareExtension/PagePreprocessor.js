@@ -1,14 +1,10 @@
-var HimawariPage = function () {};
-
-HimawariPage.prototype = {
-  run: function (parameters) {
+globalThis.ExtensionPreprocessingJS = {
+  run: (parameters) => {
     parameters.completionFunction({
       url: document.URL,
       title: document.title,
       text: document.body ? document.body.innerText : "",
     });
   },
-  finalize: function () {},
+  finalize: () => {},
 };
-
-var ExtensionPreprocessingJS = new HimawariPage();

@@ -13,6 +13,11 @@ import { launchChromium } from "../fixtures/chromium-launch.ts";
 const words = strings("zh-Hans");
 const unreachable = unreachableWord();
 const all = scenes(words);
+const scene = (name: string) => {
+  const found = all[name];
+  if (!found) throw new Error(`no scene ${name}`);
+  return found;
+};
 let browser: Browser;
 let context: BrowserContext;
 
@@ -30,7 +35,7 @@ const visible = (tab: Awaited<ReturnType<typeof openPanel>>, selector: string) =
   tab.locator(selector).isVisible();
 
 it("shows the page card, the request field and one send button before anything is handed over", async () => {
-  const tab = await openPanel(context, all["22-gaps-2-safari-panel"], words, unreachable);
+  const tab = await openPanel(context, scene("22-gaps-2-safari-panel"), words, unreachable);
   expect(await tab.locator(".card-title").textContent()).toBe("新大阪站周边午餐 10 选");
   expect(await tab.locator(".card-subtitle").textContent()).toBe(
     `tabelog.com · ${words["sheet.fullPage"]}`,
@@ -44,7 +49,7 @@ it("shows the page card, the request field and one send button before anything i
 it("sends the typed request with the page and shows the check only when it was delivered", async () => {
   const tab = await openPanel(
     context,
-    { ...all["22-gaps-2c-safari-answered"], typed: "挑一家安静的" },
+    { ...scene("22-gaps-2c-safari-answered"), typed: "挑一家安静的" },
     words,
     unreachable,
   );
@@ -53,7 +58,7 @@ it("sends the typed request with the page and shows the check only when it was d
   );
   expect(calls).toContainEqual({
     kind: "hand",
-    page: all["22-gaps-2c-safari-answered"].page,
+    page: scene("22-gaps-2c-safari-answered").page,
     request: "挑一家安静的",
   });
   expect(await tab.locator(".outcome-text").textContent()).toBe(words["outcome.answered"]);
@@ -64,7 +69,7 @@ it("sends the typed request with the page and shows the check only when it was d
   expect(await visible(tab, ".sent-request")).toBe(true);
   await tab.close();
 
-  const queued = await openPanel(context, all["22-gaps-2d-safari-queued"], words, unreachable);
+  const queued = await openPanel(context, scene("22-gaps-2d-safari-queued"), words, unreachable);
   expect(await queued.locator(".outcome-text").textContent()).toBe(words["outcome.queued"]);
   expect(await visible(queued, ".done")).toBe(false);
   expect(await visible(queued, ".follow-up")).toBe(false);
@@ -73,12 +78,12 @@ it("sends the typed request with the page and shows the check only when it was d
 });
 
 it("offers exactly one follow-up that opens the matching page in the App", async () => {
-  const tab = await openPanel(context, all["22-gaps-2e-safari-entry-off"], words, unreachable);
+  const tab = await openPanel(context, scene("22-gaps-2e-safari-entry-off"), words, unreachable);
   expect(await tab.locator("button:visible").allTextContents()).toEqual([
     words["outcome.off.button"],
   ]);
   await tab.evaluate(() => {
-    window.close = () => {};
+    (globalThis as unknown as { close: () => void }).close = () => {};
   });
   await tab.click(".follow-up");
   const calls = await tab.evaluate(
@@ -89,20 +94,32 @@ it("offers exactly one follow-up that opens the matching page in the App", async
 });
 
 it("offers to hand over just the address when the page text cannot be read", async () => {
-  const scene = all["22-gaps-2h-safari-text-unreadable"];
-  const tab = await openPanel(context, { ...scene, typed: "这家几点开门" }, words, unreachable);
+  const unreadable = scene("22-gaps-2h-safari-text-unreadable");
+  const tab = await openPanel(
+    context,
+    { ...unreadable, typed: "这家几点开门" },
+    words,
+    unreachable,
+  );
   expect(await tab.locator(".card-title").textContent()).toBe("新大阪站周边午餐 10 选");
   expect(await tab.locator(".card-subtitle").textContent()).toBe(words["sheet.textUnreadable"]);
   expect(await tab.locator(".note").textContent()).toBe(words["sheet.note.urlOnly"]);
   expect(await tab.locator("button:visible").allTextContents()).toEqual([words["sheet.sendUrl"]]);
   await tab.click(".send");
-  await tab.waitForFunction(() => !document.querySelector(".outcome")?.hasAttribute("hidden"));
+  await tab.waitForFunction(() => {
+    const page = (
+      globalThis as unknown as {
+        document: { querySelector(s: string): { hasAttribute(n: string): boolean } | null };
+      }
+    ).document;
+    return !page.querySelector(".outcome")?.hasAttribute("hidden");
+  });
   const calls = await tab.evaluate(
     () => (globalThis as unknown as { panelCalls: unknown[] }).panelCalls,
   );
   expect(calls).toContainEqual({
     kind: "hand",
-    page: { url: scene.tab.url, title: scene.tab.title, text: "" },
+    page: { url: unreadable.tab?.url, title: unreadable.tab?.title, text: "" },
     request: "这家几点开门",
   });
   await tab.close();
@@ -111,7 +128,7 @@ it("offers to hand over just the address when the page text cannot be read", asy
 it("does not offer to send when there is no web page or the phone is not paired", async () => {
   const unreadable = await openPanel(
     context,
-    all["22-gaps-2i-safari-unreadable"],
+    scene("22-gaps-2i-safari-unreadable"),
     words,
     unreachable,
   );
@@ -124,7 +141,12 @@ it("does not offer to send when there is no web page or the phone is not paired"
   expect(calls).toContainEqual({ kind: "hand", page: null });
   await unreadable.close();
 
-  const unpaired = await openPanel(context, all["22-gaps-2g-safari-unpaired"], words, unreachable);
+  const unpaired = await openPanel(
+    context,
+    scene("22-gaps-2g-safari-unpaired"),
+    words,
+    unreachable,
+  );
   expect(await visible(unpaired, ".send")).toBe(false);
   expect(await visible(unpaired, ".field")).toBe(false);
   expect(await unpaired.locator(".card-title").textContent()).toBe("新大阪站周边午餐 10 选");
