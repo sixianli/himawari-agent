@@ -1013,10 +1013,9 @@ export class ProductionMemoryControl {
     const pending: { index: number; text: string }[] = [];
     for (const [index, ref] of query.payload.contentRefs.entries()) {
       const payload = await this.options.payloads.get(ref);
-      const text = await this.readText(ref);
       if (payload && classificationRank(payload.dataClassification) > classificationRank("private"))
         results[index] = DETERMINISTIC_SENSITIVE;
-      else pending.push({ index, text });
+      else pending.push({ index, text: await this.readText(ref) });
     }
     const judged = this.options.classifier
       ? await this.options.classifier.classify(pending.map(({ text }) => text))

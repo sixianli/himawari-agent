@@ -594,6 +594,7 @@ describe("memory retrieval evaluation", () => {
       "temporal",
     ]);
     expect([...PHASE_TWO_ABILITIES].sort()).toEqual(["episode", "history", "time_window"]);
+    expect([MODEL_SCOPES.now, MODEL_SCOPES.timeZone]).toEqual([dataset.now, TIME_ZONE]);
     expect(dataset.memories.length).toBeGreaterThanOrEqual(150);
     expect(PHASE_ONE_QUESTIONS.length).toBeGreaterThanOrEqual(100);
     expect(PHASE_TWO_QUESTIONS.length).toBeGreaterThanOrEqual(30);
@@ -656,13 +657,14 @@ describe("memory retrieval evaluation", () => {
         0.75,
       );
     }
+    const scoped = await evaluatePhaseTwo(HASH_DIMENSIONS, null);
     const unscoped = await evaluatePhaseTwo(HASH_DIMENSIONS, null, () => undefined);
     report["phase-two-without-model-time-scope"] = unscoped.engine;
     expect(unscoped.engine["time_window"]?.recallAt5 ?? 0).toBeLessThan(
-      (results.at(-1)?.engine["time_window"]?.recallAt5 ?? 0) - 0.3,
+      (scoped.engine["time_window"]?.recallAt5 ?? 0) - 0.3,
     );
     expect(unscoped.engine["history"]?.recallAt5 ?? 0).toBeLessThan(
-      results.at(-1)?.engine["history"]?.recallAt5 ?? 0,
+      scoped.engine["history"]?.recallAt5 ?? 0,
     );
   }, 180_000);
 });

@@ -1,7 +1,4 @@
-import {
-  MEMORY_CATEGORY_NAMES,
-  type MEMORY_SENSITIVE_TOPICS,
-} from "@himawari-agent/gateway-contracts";
+import { MEMORY_CATEGORY_NAMES, MEMORY_SENSITIVE_TOPICS } from "@himawari-agent/gateway-contracts";
 
 export type MemoryCategory = (typeof MEMORY_CATEGORY_NAMES)[number];
 export type MemoryTopic = (typeof MEMORY_SENSITIVE_TOPICS)[number];
@@ -140,13 +137,17 @@ export function parseMemoryExport(
       ? (entry["category"] as MemoryCategory)
       : "other";
     const sensitive = entry["sensitive"] === true;
+    const topic = entry["sensitiveTopic"];
     const sub = entry["subCategory"];
     const duplicate = isDuplicate(normalizeMemoryText(memoryText), existing);
     items.push({
       text: memoryText,
       category,
       subCategory: typeof sub === "string" && sub ? sub.slice(0, 32) : null,
-      topic: null,
+      topic:
+        sensitive && MEMORY_SENSITIVE_TOPICS.includes(topic as MemoryTopic)
+          ? (topic as MemoryTopic)
+          : null,
       sensitive,
       duplicate,
       coding: false,

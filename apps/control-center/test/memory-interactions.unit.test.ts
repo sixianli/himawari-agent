@@ -1937,11 +1937,32 @@ describe("memory import parsing", () => {
         { text: "喜欢蓝色", category: "preference", status: "archived" },
         { text: "对青霉素过敏", category: "health", sensitive: true, status: "active" },
         { text: "旧说法", category: "unknown", status: "superseded" },
+        {
+          text: "每周日去教堂",
+          category: "other",
+          sensitive: true,
+          sensitiveTopic: "beliefs",
+          status: "active",
+        },
+        {
+          text: "常去的那家店",
+          category: "other",
+          sensitive: true,
+          sensitiveTopic: "made-up",
+          status: "active",
+        },
       ],
     });
     expect(parseMemoryExport("himawari-memories.json", exported, []).items).toEqual([
-      expect.objectContaining({ text: "不吃香菜", subCategory: "饮食", checked: true }),
+      expect.objectContaining({
+        text: "不吃香菜",
+        subCategory: "饮食",
+        checked: true,
+        topic: null,
+      }),
       expect.objectContaining({ text: "对青霉素过敏", category: "health", checked: false }),
+      expect.objectContaining({ text: "每周日去教堂", topic: "beliefs", sensitive: true }),
+      expect.objectContaining({ text: "常去的那家店", topic: null, sensitive: true }),
     ]);
     expect(() => parseMemoryExport("x.json", "{}", [])).toThrow("MEMORY_EXPORT_INVALID");
   });

@@ -37,7 +37,7 @@ Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户的意思�
 2. 记忆的敏感级别在浏览器调用 `protectText` 时就定了，`memory.create` 和 `memory.import.commit` 的契约原先没有 topic 字段（`packages/gateway-contracts/src/contracts-v2.ts` 的 `memoryCreateCommandSchema`、`memoryImportItemsSchema`），服务端存敏感记忆时只能按类别推 topic（`production-memory-control.ts` 的 `sensitiveTopicFor`，健康和财务以外都成了 other）。
 3. 敏感记忆不能改类别：`production-memory-control.ts` 的 `#setCategory` 抛 `MEMORY_CATEGORY_LOCKED`。所以类别和敏感级别必须在保存前定好。
 4. 对话里自动记下的记忆，敏感级别由模型给、程序再用 `classificationWithIdentifiers` 取高：`apps/agent-service/src/production-memory-capture.ts` 的 `parseMemoryCandidates`，“classification”和“topic”的写法在 `packages/prompt-catalog/src/memory.ts` 的 `MEMORY_FIELD_RULES`。
-5. 证件号、银行卡号、密码、密钥的确定性检测是安全过滤，整合方案写明保留：`packages/sensitive-capture/src/identifiers.ts` 的 `classificationWithIdentifiers`、`mentionsSensitiveMaterial`。
+5. 证件号、银行卡号、密码、密钥的确定性检测是程序做的安全过滤：`packages/sensitive-capture/src/identifiers.ts` 的 `classificationWithIdentifiers`、`mentionsSensitiveMaterial`。
 6. 网页这一侧的服务进程里，后台模型调用的现成做法是 `proactiveModel` 加 `createRealEvalModel`：`apps/agent-service/src/service-main.ts`、`apps/agent-service/src/production-real-eval.ts`；它们经同一条模型传输层发出，出口遮盖在 `packages/runtime-pi/src/pi-model-transport.ts` 的 `exchange.wrapFetch`。
 7. 模型用量表 `model_usage_observations` 的 `purpose` 列有 CHECK 约束，只认现有的几个值：`packages/persistence-sqlite/src/migrations/0091_decision_prereviews.sql`。新加一个值要改表，改表要排队。
 8. 请求开头只追加：`.claude/rules/prompt-prefix.md` 第 4、6 条。本 ADR 的分类调用是后台单独调用，不改任何对话请求的系统提示和工具定义。

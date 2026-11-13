@@ -186,6 +186,18 @@ export const TOOL_RESULT_RECALL_UNAVAILABLE = fixedPrompt({
   text: "记忆暂时查不到。不要编造，告诉主人现在查不了记忆。",
 });
 
+export const TOOL_RESULT_RECALL_INPUT_INVALID = fixedPrompt({
+  id: "tool-result.recall-input-invalid",
+  purpose: "查记忆的参数不对时工具结果里的说明：告诉模型怎么改正后重查",
+  usedBy: [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    "apps/agent-service/src/production-mcp-read.ts",
+  ],
+  layer: "tool-result",
+  output: "free-text",
+  text: "参数不对，没有查。from、to 要写日历上真实存在的日期（YYYY-MM-DD），from 不能晚于 to；改正后再查一次。",
+});
+
 export const TOOL_RESULT_REMINDER_MEMORY_NOT_READY = fixedPrompt({
   id: "tool-result.reminder-memory-not-ready",
   purpose: "设提醒失败：主人还没有任何记忆",

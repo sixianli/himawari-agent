@@ -1497,6 +1497,11 @@ it("answers recall from owner memory, replays the saved result and reports failu
   const failed = await tools.execute({ ...call, toolCallId: "recall-failed" });
   expect(failed).toMatchObject({ outcome: "failed", errorCode: "MEMORY_RECALL_UNAVAILABLE" });
   expect(failed.modelContent).toContain("不要编造");
+  recall.mockRejectedValueOnce(new Error("MEMORY_RECALL_INPUT_INVALID"));
+  const invalid = await tools.execute({ ...call, toolCallId: "recall-invalid" });
+  expect(invalid).toMatchObject({ outcome: "failed", errorCode: "MEMORY_RECALL_INPUT_INVALID" });
+  expect(invalid.modelContent).toContain("改正后再查一次");
+  expect(invalid.modelContent).not.toContain("查不了记忆");
 });
 
 it("offers reminder tools last, runs them once per call and tells the model why a reminder failed", async () => {

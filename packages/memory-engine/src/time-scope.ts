@@ -44,8 +44,21 @@ function calendarDay(day: string): number | null {
     : null;
 }
 
+function localDate(instant: number, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(instant));
+}
+
 function startOfLocalDay(utcMidnight: number, timeZone: string): number {
-  return utcMidnight - offsetMs(utcMidnight - offsetMs(utcMidnight, timeZone), timeZone);
+  const before = utcMidnight - offsetMs(utcMidnight, timeZone);
+  const after = utcMidnight - offsetMs(before, timeZone);
+  const day = new Date(utcMidnight).toISOString().slice(0, 10);
+  const onTheDay = [before, after].filter((instant) => localDate(instant, timeZone) === day);
+  return onTheDay.length > 0 ? Math.min(...onTheDay) : after;
 }
 
 export function localDayStart(day: string, timeZone = "UTC"): string | null {

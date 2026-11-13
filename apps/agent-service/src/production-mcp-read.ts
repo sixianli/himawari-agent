@@ -56,6 +56,7 @@ import {
   MCP_TOOL_START_HERE,
   MCP_TOOL_TODAY_CONTEXT,
   renderPrompt,
+  TOOL_RESULT_RECALL_INPUT_INVALID,
 } from "@himawari-agent/prompt-catalog";
 import { maskSensitiveTexts } from "@himawari-agent/sensitive-capture";
 import {
@@ -1166,6 +1167,16 @@ export class ProductionMcpRead {
         return { output: rest, memoryIds: result.memoryIds };
       }
       return { output: result.output, memoryIds: result.memoryIds };
+    } catch (error) {
+      if (error instanceof Error && error.message === "MEMORY_RECALL_INPUT_INVALID")
+        return {
+          output: {
+            error: "MEMORY_RECALL_INPUT_INVALID",
+            note: TOOL_RESULT_RECALL_INPUT_INVALID.text,
+          },
+          memoryIds: [],
+        };
+      throw error;
     } finally {
       trace.costMicros = context.costMicros;
     }

@@ -53,6 +53,10 @@ describe("[T6] time scope the model asked for", () => {
     expect(localDayStart("2026-10-25", "Asia/Tokyo")).toBe("2026-10-24T15:00:00.000Z");
     expect(localDayStart("2028-02-29", "UTC")).toBe("2028-02-29T00:00:00.000Z");
     expect(localDayStart("2026-02-29", "UTC")).toBeNull();
+    expect(localDayStart("2026-09-06", "America/Santiago")).toBe("2026-09-06T04:00:00.000Z");
+    expect(localDayStart("2026-04-05", "America/Santiago")).toBe("2026-04-05T04:00:00.000Z");
+    expect(localDayStart("2026-03-29", "Asia/Beirut")).toBe("2026-03-28T22:00:00.000Z");
+    expect(localDayStart("2026-03-08", "America/New_York")).toBe("2026-03-08T05:00:00.000Z");
     expect(localDayStart("2026-13-01", "UTC")).toBeNull();
   });
 });
