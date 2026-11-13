@@ -31,6 +31,7 @@ import {
   OWNER_STOPPED,
   parseArgs,
   parseUsage,
+  lowFixChecker,
   parseVerdicts,
   previousProblem,
   proxyCredentialProblems,
@@ -1611,27 +1612,29 @@ describe("opencode review merge gate", () => {
     const ledgerCommit = f.writeLedger(first);
     const isAncestor = (from, to) =>
       spawnSync("git", ["merge-base", "--is-ancestor", from, to], { cwd: f.repo }).status === 0;
-    return { ...f, fixed, first, ledgerCommit, isAncestor };
+    const lowFixCheck = lowFixChecker({
+      repo: f.repo,
+      ledgerPath: `${REVIEWS_DIR}/pr-7`,
+      mainRef: "origin/main",
+      skip: new Set(),
+    });
+    const ask = (previous, { records = first, round = 2, head = ledgerCommit } = {}) =>
+      previousProblem({ records, round, head, previous, isAncestor, lowFixCheck });
+    return { ...f, fixed, first, ledgerCommit, ask };
   };
 
   it("[I-98] refuses a --previous that skips the accepted low-fix head and names the right one", () => {
     const f = lowFixedChain();
     try {
-      const ask = (previous, records = f.first) =>
-        previousProblem({
-          records,
-          round: 2,
-          head: f.ledgerCommit,
-          previous,
-          isAncestor: f.isAncestor,
-        });
-      expect(ask(f.ledgerCommit)).toBe(
+      expect(f.ask(f.ledgerCommit)).toBe(
         `REVIEW_PREVIOUS_REFUSED chain-broken previous=${f.ledgerCommit} use=--previous ${f.fixed}`,
       );
-      expect(ask(f.fixed)).toBeNull();
-      expect(ask(f.reviewed)).toBeNull();
-      expect(ask(undefined)).toBeNull();
-      expect(ask(f.fixed, [])).toBe("REVIEW_PREVIOUS_REFUSED no-accepted-round use=no-previous");
+      expect(f.ask(f.fixed)).toBeNull();
+      expect(f.ask(f.reviewed)).toBeNull();
+      expect(f.ask(undefined)).toBeNull();
+      expect(f.ask(f.fixed, { records: [] })).toBe(
+        "REVIEW_PREVIOUS_REFUSED no-accepted-round use=no-previous",
+      );
       f.writeLedger([...f.first, ok(2, f.ledgerCommit, deepseek, { previous: f.ledgerCommit })]);
       expect(f.check().problems).toEqual([`chain-broken round=2 ${f.ledgerCommit}`]);
       f.writeLedger([...f.first, ok(2, f.ledgerCommit, deepseek, { previous: f.fixed })]);
@@ -1646,19 +1649,48 @@ describe("opencode review merge gate", () => {
     try {
       const broken = [...f.first, ok(2, f.ledgerCommit, deepseek, { previous: f.ledgerCommit })];
       const later = f.commit({ "code.txt": "later\n" }, "later");
-      const ask = (previous, round = 3) =>
-        previousProblem({
-          records: broken,
-          round,
-          head: later,
-          previous,
-          isAncestor: f.isAncestor,
-        });
+      const ask = (previous) => f.ask(previous, { records: broken, round: 3, head: later });
       expect(ask(f.ledgerCommit)).toBe(
-        `REVIEW_PREVIOUS_REFUSED chain-already-broken round=2 ${f.ledgerCommit} use=no-previous`,
+        `REVIEW_PREVIOUS_REFUSED chain-already-broken round=2 ${f.ledgerCommit} chain-broken use=no-previous`,
       );
       expect(ask(undefined)).toBeNull();
-      expect(ask(f.fixed, 2)).toBeNull();
+      const invalid = [...f.first.slice(0, 2), { ...f.first[2], findings: ["V9"] }];
+      expect(f.ask(f.fixed, { records: invalid })).toBe(
+        `REVIEW_PREVIOUS_REFUSED chain-already-broken round=1 ${f.fixed} findings-differ use=no-previous`,
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[I-98] a rerun of a round must pass the --previous the round already used", () => {
+    const f = lowFixedChain();
+    try {
+      const done = [...f.first, ok(2, f.ledgerCommit, deepseek, { previous: f.fixed })];
+      expect(f.ask(f.fixed, { records: done })).toBeNull();
+      expect(f.ask(f.reviewed, { records: done })).toBe(
+        `REVIEW_PREVIOUS_REFUSED round-previous-differs round=2 use=--previous ${f.fixed}`,
+      );
+      expect(f.ask(undefined, { records: done })).toBe(
+        `REVIEW_PREVIOUS_REFUSED round-previous-differs round=2 use=--previous ${f.fixed}`,
+      );
+      const fresh = [...f.first, ok(2, f.ledgerCommit, deepseek)];
+      expect(f.ask(f.fixed, { records: fresh })).toBe(
+        "REVIEW_PREVIOUS_REFUSED round-previous-differs round=2 use=no-previous",
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[I-98] refuses a --previous when the head does not contain the accepted point", () => {
+    const f = lowFixedChain();
+    try {
+      f.git("checkout", "--quiet", "-b", "side", f.main);
+      const side = f.commit({ "code.txt": "side\n" }, "side");
+      expect(f.ask(f.reviewed, { head: side })).toBe(
+        `REVIEW_PREVIOUS_REFUSED head-not-after-accepted ${f.fixed} head=${side} use=no-previous`,
+      );
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }

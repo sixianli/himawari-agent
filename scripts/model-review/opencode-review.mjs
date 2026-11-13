@@ -1367,20 +1367,72 @@ export function walkChain(points, { isAncestor, lowFixCheck }) {
   return { accepted, broken };
 }
 
-export function previousProblem({ records, round, head, previous, isAncestor }) {
+const sameList = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+
+export function lowFixChecker({ repo, ledgerPath, mainRef, skip }) {
+  return (point) => {
+    const check = lowFixProblems({
+      repo,
+      ledgerPath,
+      round: point.round,
+      from: point.from,
+      to: point.head,
+      mainRef,
+      skip,
+    });
+    const problems = [...check.problems];
+    if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike))) {
+      const legacy = lowFixProblems({
+        repo,
+        ledgerPath,
+        round: point.round,
+        from: point.from,
+        to: point.head,
+        skip,
+      });
+      if (legacy.problems.length > 0 || !sameList(point.files, legacy.files.map(maskSecretLike)))
+        problems.push("files-differ");
+    }
+    if (
+      check.problems.length === 0 &&
+      !sameList(
+        point.findings,
+        check.errors.map((verdict) => maskSecretLike(verdict.id)),
+      )
+    )
+      problems.push("findings-differ");
+    return problems;
+  };
+}
+
+export function previousProblem({ records, round, head, previous, isAncestor, lowFixCheck }) {
+  const given = previous ?? null;
+  const sameRound = [
+    ...new Set(
+      records
+        .filter(
+          (record) =>
+            record.mode === "code-review" &&
+            (record.round ?? 1) === round &&
+            record.outcome === "ok",
+        )
+        .map((record) => record.previous ?? null),
+    ),
+  ];
+  if (sameRound.length > 0 && sameRound.some((recorded) => recorded !== given))
+    return `REVIEW_PREVIOUS_REFUSED round-previous-differs round=${round} use=${sameRound[0] === null ? "no-previous" : `--previous ${sameRound[0]}`}`;
   if (!previous) return null;
   const earlier = records.filter((record) => (record.round ?? 1) < round);
-  const points = coveragePoints(earlier);
   const next = { round, head, previous, by: "requested" };
-  const { accepted, broken } = walkChain([...points, next], {
+  const { accepted, broken } = walkChain([...coveragePoints(earlier), next], {
     isAncestor,
-    lowFixCheck: () => [],
+    lowFixCheck,
   });
   if (accepted.at(-1) === next) return null;
   if (broken && broken.point !== next)
-    return `REVIEW_PREVIOUS_REFUSED chain-already-broken round=${broken.point.round} ${broken.point.head} use=no-previous`;
+    return `REVIEW_PREVIOUS_REFUSED chain-already-broken round=${broken.point.round} ${broken.point.head} ${broken.problems.join(",")} use=no-previous`;
   const covered = accepted.at(-1)?.head;
-  if (!covered) return `REVIEW_PREVIOUS_REFUSED no-accepted-round use=no-previous`;
+  if (!covered) return "REVIEW_PREVIOUS_REFUSED no-accepted-round use=no-previous";
   if (!isAncestor(covered, head))
     return `REVIEW_PREVIOUS_REFUSED head-not-after-accepted ${covered} head=${head} use=no-previous`;
   return `REVIEW_PREVIOUS_REFUSED chain-broken previous=${previous} use=--previous ${covered}`;
@@ -1472,40 +1524,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     unreviewedFiles(repo, from, to, ledgerPath, mainRef).filter((file) => !claimsOwned.has(file));
   const isAncestor = (from, to) =>
     gitStatus(["merge-base", "--is-ancestor", from, to], repo).status === 0;
-  const sameList = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
-  const lowFixCheck = (point) => {
-    const check = lowFixProblems({
-      repo,
-      ledgerPath,
-      round: point.round,
-      from: point.from,
-      to: point.head,
-      mainRef,
-      skip: claimsOwned,
-    });
-    const problems = [...check.problems];
-    if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike))) {
-      const legacy = lowFixProblems({
-        repo,
-        ledgerPath,
-        round: point.round,
-        from: point.from,
-        to: point.head,
-        skip: claimsOwned,
-      });
-      if (legacy.problems.length > 0 || !sameList(point.files, legacy.files.map(maskSecretLike)))
-        problems.push("files-differ");
-    }
-    if (
-      check.problems.length === 0 &&
-      !sameList(
-        point.findings,
-        check.errors.map((verdict) => maskSecretLike(verdict.id)),
-      )
-    )
-      problems.push("findings-differ");
-    return problems;
-  };
+  const lowFixCheck = lowFixChecker({ repo, ledgerPath, mainRef, skip: claimsOwned });
   const points = records ? coveragePoints(records) : [];
   const { accepted, broken } = walkChain(points, { isAncestor, lowFixCheck });
   const complete = accepted.at(-1) ?? null;
@@ -3261,6 +3280,17 @@ async function main() {
         ),
       });
   if (options.mode === "code-review" && !options.selfCheckOnly) {
+    const ledgerPath = `${REVIEWS_DIR}/${reviewKey(options)}`;
+    const claimsOwned = new Set(
+      claimsProblems({
+        repo: options.repo,
+        head: commits.head,
+        mainRef: "origin/main",
+        reviewsDir: REVIEWS_DIR,
+        parseUsage,
+        looksSecret: claimsFileSecretLike,
+      }).files,
+    );
     const refused = previousProblem({
       records,
       round,
@@ -3268,6 +3298,12 @@ async function main() {
       previous: commits.previous,
       isAncestor: (from, to) =>
         gitStatus(["merge-base", "--is-ancestor", from, to], options.repo).status === 0,
+      lowFixCheck: lowFixChecker({
+        repo: options.repo,
+        ledgerPath,
+        mainRef: "origin/main",
+        skip: claimsOwned,
+      }),
     });
     if (refused) throw new Error(refused);
   }
