@@ -44,6 +44,12 @@ export const RULE_FIELD_CATALOG: Readonly<Record<RuleGate, readonly RuleFieldDef
         description: "content_folded 里每一段连续的英文字母、数字、下划线，去掉重复",
       }),
       Object.freeze({
+        name: "money_state",
+        type: "string",
+        description:
+          "模型判断这封邮件是不是涉及主人要付出、被扣、可收回或已入账的具体钱款事项：yes 是，no 不是，unknown 是模型没给出或答案格式不对（这个字段永远存在，判断之前也是 unknown）",
+      }),
+      Object.freeze({
         name: "amount_state",
         type: "string",
         description:

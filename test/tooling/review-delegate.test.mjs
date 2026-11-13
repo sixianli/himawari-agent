@@ -14,7 +14,11 @@ import {
   validateTask,
   waitForBranch,
 } from "../../scripts/model-review/delegate.mjs";
-import { REVIEW_MODELS } from "../../scripts/model-review/opencode-review.mjs";
+import {
+  DEFAULT_REVIEW_MODELS,
+  parseArgs,
+  REVIEW_MODELS,
+} from "../../scripts/model-review/opencode-review.mjs";
 
 const [deepseek, glm] = REVIEW_MODELS;
 const KEY = "pr-7";
@@ -66,6 +70,7 @@ function fixture() {
     pr: 7,
     base,
     head,
+    models: REVIEW_MODELS.map((model) => model.split("/").pop()),
     providers: ["workbuddy-ai", "opendesign", "opencode-go"],
   };
   task.brief = briefPathFor(task);
@@ -204,6 +209,8 @@ describe("review delegation prompt", () => {
       "feature",
       "--tip",
       task.tip,
+      "--models",
+      task.models.join(","),
       "--providers",
       "workbuddy-ai,opendesign,opencode-go",
     ]);
@@ -498,6 +505,8 @@ describe("review delegation command line", () => {
         t.branch,
         "--tip",
         t.tip,
+        "--models",
+        t.models.join(","),
         ...extra,
       ],
       { encoding: "utf8" },
@@ -816,9 +825,38 @@ describe("review delegation result check, legitimate edge cases", () => {
   );
 
   it(
+    "[delegate] expects only the configured default models when the task names none, first round included",
+    withFixture((f) => {
+      const task = { ...f.task, models: undefined };
+      expect(parseArgs(reviewArgv(task)).models).toEqual(DEFAULT_REVIEW_MODELS);
+      expect(reviewArgv(task).join(" ")).toContain(
+        `--models ${DEFAULT_REVIEW_MODELS.map((model) => model.split("/").pop()).join(",")} `,
+      );
+      cloudFiles(f, {
+        [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger(
+          DEFAULT_REVIEW_MODELS.map((m) => f.record(m)),
+        ),
+        ...f.files(DEFAULT_REVIEW_MODELS),
+      });
+      commitCloud(f, "default models only");
+      expect(checkResult(task, { repo: f.mac })).toMatchObject({ status: "ok", notOk: [] });
+      const unasked = REVIEW_MODELS.find((model) => !DEFAULT_REVIEW_MODELS.includes(model));
+      cloudFiles(f, {
+        [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([
+          ...DEFAULT_REVIEW_MODELS.map((m) => f.record(m)),
+          f.record(unasked),
+        ]),
+        ...f.files([unasked]),
+      });
+      commitCloud(f, "a model nobody asked for");
+      expect(checkResult(task, { repo: f.mac }).reason).toContain(`model=${unasked}`);
+    }),
+  );
+
+  it(
     "[delegate] does not call a result incomplete when a substitute covered the failed model, and survives an odd model name",
     withFixture((f) => {
-      const task = { ...f.task, previous: f.task.base };
+      const task = { ...f.task, previous: f.task.base, models: undefined };
       const base = { previous: f.task.base };
       cloudFiles(f, {
         [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([

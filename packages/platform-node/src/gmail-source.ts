@@ -250,7 +250,7 @@ export function createGmailReader(options: {
   const send = options.fetch ?? ((url, init) => fetch(url, init));
   return Object.freeze<ProactiveSourceReader>({
     source: "gmail",
-    async related({ token, items, limits, wholeThread, signal }) {
+    async related({ token, items, limits, wholeThread, references, signal }) {
       const access = await options.oauth.accessToken(token, signal);
       const get = async <T>(url: string): Promise<T | undefined> => {
         const response = await send(url, {
@@ -266,6 +266,7 @@ export function createGmailReader(options: {
         items,
         limits,
         ...(wholeThread ? { wholeThread } : {}),
+        ...(references ? { references } : {}),
         signal,
         transport: {
           async thread(threadId) {
