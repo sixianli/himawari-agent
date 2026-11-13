@@ -5,6 +5,7 @@ import { join } from "node:path";
 import Ajv from "ajv";
 import { resolvePolicySource } from "./check-policy.mjs";
 import { repositoryRoot, safeRelativePath } from "./contracts.mjs";
+import { runnerTracking } from "./runner-tracking.mjs";
 import { loadOwnerReview } from "./security-owner-review.mjs";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -26,6 +27,7 @@ function git(root, args) {
         GIT_CONFIG_NOSYSTEM: "1",
         GIT_CONFIG_GLOBAL: "/dev/null",
         GIT_PAGER: "cat",
+        ...runnerTracking(),
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

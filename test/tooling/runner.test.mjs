@@ -183,6 +183,27 @@ describe("受控子进程与真实报告", () => {
       }),
     ).toMatchObject({ termination: "timeout", exitCode: 128 });
   });
+  it("子进程环境带上 runner 的进程追踪号，runner 结束作业时能认出它", async () => {
+    const root = directory();
+    const log = path.join(root, "tracking.log");
+    const previous = process.env.RUNNER_TRACKING_ID;
+    process.env.RUNNER_TRACKING_ID = "github_tracking_fixture";
+    try {
+      await execute(
+        process.execPath,
+        ["-e", "process.stdout.write(['id', process.env.RUNNER_TRACKING_ID].join('='))"],
+        {
+          cwd: root,
+          env: { PATH: process.env.PATH },
+          log,
+        },
+      );
+    } finally {
+      if (previous === undefined) delete process.env.RUNNER_TRACKING_ID;
+      else process.env.RUNNER_TRACKING_ID = previous;
+    }
+    expect(readFileSync(log, "utf8")).toContain("id=github_tracking_fixture");
+  });
   it("输出过大不能吞掉资源失败", async () => {
     const root = directory();
     expect(

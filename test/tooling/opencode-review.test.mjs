@@ -81,6 +81,7 @@ import {
 import { GUARD_ENV } from "../../scripts/model-review/spend-guard.mjs";
 import {
   expectAppendedTo,
+  firstChangedMessage,
   instructions,
   isWrapUp,
   lstatExists,
@@ -1984,4 +1985,31 @@ describe("opencode review wrap-up", () => {
       rmSync(slow, { recursive: true, force: true });
     }
   }, 120000);
+});
+
+describe("append-only failure message", () => {
+  it("points at the first differing character, even deep inside a long message", () => {
+    const long = "x".repeat(5000);
+    const earlier = {
+      messages: [
+        { role: "user", content: "a" },
+        { role: "tool", content: `${long}OLD` },
+      ],
+    };
+    const later = {
+      messages: [
+        { role: "user", content: "a" },
+        { role: "tool", content: `${long}NEW` },
+        { role: "user", content: "b" },
+      ],
+    };
+    const message = firstChangedMessage(earlier, later);
+    expect(message).toContain("message 1 of 2 changed (later request has 3)");
+    expect(message).toContain("first difference at character 5026");
+    expect(message).toContain("OLD");
+    expect(message).toContain("NEW");
+    expect(
+      firstChangedMessage(earlier, { messages: [...earlier.messages, { role: "user" }] }),
+    ).toBe("");
+  });
 });
