@@ -331,6 +331,11 @@ describe("source-mapped coverage contract", () => {
       b: {},
     };
     expect(() => analyze({ [filename]: empty })).toThrow("empty executable denominator");
+    const negative = record();
+    negative.b[0][1] = -2;
+    expect(() => analyze({ [filename]: negative })).toThrow(
+      `invalid branch hit count: ${filename} line 2 cond-expr counts [1,-2]`,
+    );
     expect(() =>
       analyze({ [filename]: empty }, new Map([[filename, "export type Nothing = string;\n"]])),
     ).toThrow("all production executable denominators");
