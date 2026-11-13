@@ -94,12 +94,12 @@ date: "2026-11-14"
 | goose | 时间戳或序号 | 版本表 | 默认不能；`-allow-missing` 能。维护者原先推荐“开发用时间戳、合并后由 CI 改成序号”，后来因为社区反馈放宽 | 无 | [goose 博客](https://pressly.github.io/goose/blog/2021/out-of-order-migrations) |
 | Atlas | 时间戳 | 版本表 | 默认 `linear` 不能；`non-linear` 能，但文档不建议用于生产 | 故意用 `atlas.sum` 制造 git 冲突，强迫线性；用 `atlas migrate rebase` 解决 | [Atlas apply](https://atlasgo.io/versioned/apply)、[目录完整性](https://atlasgo.io/concepts/migration-directory-integrity) |
 
-共同点：**编号只负责“唯一”，不负责“排队”**；库里按“跑过哪些”记，而不是按“跑到第几号”记。分歧在于“晚合的小号”怎么办：Rails、GitLab 直接补跑；Atlas、Flyway 默认拒绝，是因为它们不知道两个迁移是否互不影响。我们的做法是：允许补跑，但由合并前的自动检查保证补跑的迁移和已上线的迁移互不影响，这样既不排队，也不靠运气。
+共同点：**编号只负责“彼此不同”，不负责“排队”**；库里按“跑过哪些”记，而不是按“跑到第几号”记。分歧在于“晚合的小号”怎么办：Rails、GitLab 直接补跑；Atlas、Flyway 默认拒绝，是因为它们不知道两个迁移是否互不影响。我们的做法是：允许补跑，但由合并前的自动检查保证补跑的迁移和已上线的迁移互不影响、新迁移不悄悄去掉已有结构，这样既不排队，也不靠运气。
 
 **两个对标问题的回答：**
 
 1. 大公司遇到同样问题怎么做、用户看到什么：GitLab 上千人同时提交迁移，用时间戳 + 每迁移一个文件 + CI 检查，开发者从不需要别人分号；最终用户什么都看不到，上线照常。
-2. 这是根因还是表面修补：根因。四个原因各有对应的改法（见下文），改完后只有真正改同一张表的两个 PR 需要先后处理，而且由检查自动指出，不再靠人排队。
+2. 这是根因还是表面修补：根因。四个原因各有对应的改法（见下文），改完后只有真正改动同一处已有结构的 PR 需要先后处理，而且由检查自动指出，不再靠人排队。
 
 [返回阅读导航](#contents)
 
@@ -109,40 +109,45 @@ date: "2026-11-14"
 
 ### 一、编号：UTC 时间戳加名字，由脚本生成
 
-- 新迁移的文件名是 `<14 位 UTC 时间戳>_<名字>.sql`，例如 `20261114013000_device_actions.sql`。时间戳只保证唯一和大致的先后，不代表“排第几”。
-- 用 `npm run migration:new -- <名字>` 生成文件（取当前 UTC 时间），不手打，避免 GitLab 说的手打撞号。
-- 默认 `phase` 是 `expand`、`changeSet` 是名字换连字符（0052 以后的 44 个迁移全是这样）。少数需要别的阶段时，在同名 `.meta.json` 里写，例如 `20261114013000_x.meta.json`。
+- 新迁移的文件名是 `<14 位 UTC 时间戳>_<名字>.sql`，例如 `20261114013000_device_actions.sql`。时间戳只负责“彼此不同”和大致先后，不代表“排第几”。
+- 用 `npm run migration:new -- <名字>` 生成：取当前 UTC 时间；名字只许 `^[a-z][a-z0-9_]*$`；生成前对照本地目录和 `origin/main` 的迁移目录，同一秒已有就顺延一秒；以“文件不存在才创建”的方式写入。时间戳不能百分之百保证唯一（两个分支同一秒生成仍会相同），撞了的后果是后合的那个 PR 的检查报“编号重复”，换个号即可，不会进 main。
+- 默认 `phase` 是 `expand`、`changeSet` 是名字换连字符（0052 以后的 44 个迁移全是这样）。少数需要别的阶段时，在同名 `.meta.json` 里写，只认已知字段。
 
 ### 二、每加一个迁移只新增文件，不改任何共用的行（对应根因 3）
 
-- 引擎启动时扫描迁移目录得到清单，不再手写数组。0001–0095 的数组原样冻结成“旧清单”，以后不再往里加；检查拒绝新增四位编号文件。
-- `SUPPORTED_SCHEMA_MAX` 改成按内容判断：审计脚本声明它读哪些表；只有碰到这些表的迁移才需要在审计脚本里登记“已看过”（I-46 的本意是“新迁移改了审计读的表时要有人看过”，这样只在真改到时才要动）。审计脚本运行时遇到“碰了它读的表但没登记”的迁移就拒绝，和现在遇到更高版本就拒绝的效果相同。
-- 写死版本号的测试改成从清单推算（`docs/lessons.md:667` 已建议的方向）；`check:migration-conflicts`（见下文）同时检查测试和脚本里不再出现写死的最新号。
+- 引擎启动时扫描迁移目录，和冻结的旧清单合成一份清单，这是唯一的来源。0001 到冻结时 main 上最后一个四位号的数组原样冻结成“旧清单”，以后不再往里加；`LATEST_MIGRATION_SEQUENCE` 改成这份合成清单的个数（现在取数组最后一项，`migration-engine.ts:747`，冻结后就不会再变，必须改）。
+- 所有扫描迁移目录的脚本（`make-packet.py`、`check-audit-schema-range.mjs` 等）遇到既不是旧四位格式、也不是新时间戳格式的文件一律报错，不许静默跳过。现在它们只认四位号，新文件会被悄悄忽略，打包会以为没有新迁移。
+- 审计脚本 `workspace-lifecycle-audit.mjs` 不再按版本号判断：删掉 `SUPPORTED_SCHEMA_MAX` 和 `version >= 33` 这类按号开关，改成直接查表结构（`pragma_table_info`、`sqlite_schema`）看它要读的列在不在；缺列就拒绝，等同现在“版本太高就拒绝”。它声明自己读哪些表和列，`check-audit-schema-range.mjs` 改成核对这些表和列在最新结构里都存在（I-46 要防的就是“新迁移改了审计读的表”）。
+- 写死版本号的测试改成从清单推算（`docs/lessons.md:667` 已建议的方向）。
 
 ### 三、库里按“跑过哪些”记，晚合的也能补跑（对应根因 1、2）
 
-- 记录表 `schema_migration_ledger` 加一列 `migration_id`（只对非空值唯一）。旧的 95 行不改写，读的时候按 `sequence` 推出 `0001`…`0095`，已有历史保持原样。`sequence` 列保留，含义变成“第几个被跑的”（仍是 1..N 连续），所以生产机上只认 `sequence` 的老脚本（前提 8）不用跟着改语义。
-- 要跑的迁移 = 程序知道的 − 库里跑过的，按编号顺序跑；旧清单永远排在前面。库里有程序不认识的编号，照旧拒绝（`UNKNOWN_APPLIED_MIGRATION`）；每个跑过的迁移照旧核对名字、阶段和摘要（SHA-256，内容指纹）。
-- 一个迁移的编号比库里已跑的最大编号还小时（“晚合的小号”），照跑，但在记录里标 `out_of_order = 1`、写日志，方便事后查。它能安全补跑，靠的是下一节的合并前检查。
-- 迁移前同机快照、一次一个迁移一个事务，这些都不变（前提 5）。
+- 记录表 `schema_migration_ledger` 加 `migration_id TEXT` 列，另建 `migration_id IS NOT NULL` 的部分唯一索引（SQLite 的 `ADD COLUMN` 不能直接带 UNIQUE）。旧的行不改写，读的时候按 `sequence` 推出 `0001`…`0095`，已有历史保持原样。`sequence` 列保留，含义变成“第几个被跑的”（仍是 1..N 连续），所以只认 `sequence` 连续的生产机脚本（前提 8）不用改语义。
+- 要跑的迁移 = 程序知道的 − 库里跑过的，按编号顺序跑；旧清单永远排在前面。库里有程序不认识的编号，照旧拒绝（`UNKNOWN_APPLIED_MIGRATION`）；每个跑过的迁移照旧核对名字、阶段和摘要（SHA-256，内容指纹）。所有“按下标对齐记录和定义”的地方改成按编号对齐：引擎的 `validateLedger`、`maintenance-common.mjs:927-931`、`S9-control-files.py:236`、`raw-copy-recovery.mjs`。
+- 一个迁移的编号比库里已跑的最大编号还小时（“晚合的小号”），照跑，写日志。它能安全补跑，靠的是下一节的合并前检查。
+- 记录表的升级（加列、加索引、写指纹）放在同机快照核对**之后**，和第一个待跑迁移放在同一个 `IMMEDIATE` 事务里；没有待跑迁移时在单独的事务里做。现在的 `applyMigrations` 先 `ensureInternalSchema` 后核快照（`migration-engine.ts:980-991`），那时它只是 `CREATE TABLE IF NOT EXISTS`，没有写；加了列以后必须先核快照。
 
-### 四、回滚保护改成按集合比（对应根因 2 带来的连锁）
+### 四、版本身份改成“个数 + 集合 + 指纹”，回滚保护不变（对应根因 2 带来的连锁）
 
-- 程序能写库的条件从“库的最大号 = 我的最大号”改成“库跑过的集合 = 我知道的集合”。老程序（回滚后）遇到库里有它不认识的迁移，照旧以 `WRITER_TOO_OLD` 拒绝写入，效果和现在一样。
-- `schema_metadata` 新增 `schema_fingerprint`：对“跑过的编号排序后”算 SHA-256。`current_sequence`、`minimum_writer_sequence` 继续写，值是“跑过的个数”，供 `sqlite-worker.ts`、生产机脚本这类只比整数的地方用；需要判断“是不是同一套结构”的地方（工作进程、备份恢复、权限转移）同时比指纹，这样测试服务器跑分支版本时个数相同、集合不同也能被认出来。
-- 备份清单（恢复点、权限转移）加 `schemaFingerprint`。改动前做的备份没有这个字段，按个数比（那时只有旧清单，个数相同就是同一套）。
-- 其他读整数版本的地方一并改成同一个读取函数（`readSchemaIdentity`，返回个数、编号集合和指纹），不许各自 `MAX(sequence)`：数据导出和聊天导出的清单（`apps/agent-service/src/production-data-export.ts:321`、`production-chat-export.ts:53` 现在写 `migrationSequence: LATEST_MIGRATION_SEQUENCE`）、管理命令（`apps/admin-cli/src/` 的 data、memory、thread 命令和 `index.ts`）、沙箱预留管理（`sqlite-sandbox-reservation-administration.ts`）、生产机上的恢复脚本（`raw-copy-recovery.mjs`）。导出清单加指纹，导入时两项都比；旧导出没有指纹，按个数比。
+- 新增一个读取函数 `readSchemaIdentity`，返回 `{ 个数, 排好序的编号, 指纹 }`。指纹 = 对“每行 `<编号> <摘要>`，按编号排序、换行连接”算 SHA-256，不含跑的时间和先后。所有读版本的地方只用它，不再各自 `MAX(sequence)`：引擎的 `assertWritableSchema`（现在只收一个整数，改成收期望的身份）、`sqlite-worker.ts`、恢复点、权限转移、数据导出和聊天导出的清单（`production-data-export.ts:321`、`production-chat-export.ts:53`）、管理命令（`apps/admin-cli/src/` 的 data、memory、thread 命令和 `index.ts`）、沙箱预留管理。
+- `schema_metadata` 的 `current_sequence`、`minimum_writer_sequence` 继续写，值是个数，供只比整数的老代码用；新增 `schema_fingerprint`。
+- 回滚保护：服务启动时会先跑 `applyMigrations`（`product-state-repository.ts:278`），老程序遇到库里有它不认识的迁移，在 `validateLedger` 报 `UNKNOWN_APPLIED_MIGRATION`、拒绝启动；这和今天回滚跨过一个迁移时完全一样，回滚靠的是上线前的快照。新程序在“个数相同、集合不同”（测试服务器跑过分支版本）时同样拒绝。
+- 备份清单（恢复点、权限转移）和导出清单加可选字段 `schemaFingerprint`，参与原有的认证；改动前的清单没有这个字段，按个数比（那时只有旧清单，个数相同就是同一套）。
 
-### 五、上线打包脚本改成按集合算（前提 7、8）
+### 五、上线打包脚本：整数照旧，另传集合（前提 7、8）
 
-- `make-packet.py` 的目标版本改成“这个提交里的迁移编号集合”（旧清单解析 + 目录扫描），待跑清单 = 目标集合 − 生产库跑过的集合（S0 阶段读库时一并读出 `migration_id`）。生产库有、提交里没有的，拒绝打包（等同现在的 `PACKET_COMMIT_OLDER_THAN_PRODUCTION_SCHEMA`）。
+- `TARGET_SCHEMA` 继续是整数（目标个数），因为它贯穿 `S7-switch-start-readback.py:239`、`run-packet-checks.py:53-58`、`raw-copy-recovery.mjs`、`bindings.draft.json` 和测试，改成集合会把这一串全打穿。另外新增 `TARGET_MIGRATION_IDS` 和目标指纹。
+- 待跑清单 = 目标集合 − 生产库集合（S0 阶段读库时一并读出 `migration_id`），按编号排序；生产库有、提交里没有的，拒绝打包。`MIGRATION_LEDGER` 里每项带编号，期望的 `sequence` 按“应用顺序”填。
 - 受保护表检查照旧逐个迁移做。
-- 生产机上的维护脚本（`maintenance-common.mjs`、`S9-control-files.py`）按 `migration_id` 而不是下标核对记录。
+- 打包时在目标提交上再跑一遍迁移冲突检查（下一节），不过就拒绝打包。这是“合并后、上线前”的硬门槛，弥补合并前检查和合并之间 main 又变了的空档。
+- 生产机脚本和它们的测试数据（`verify-fixtures.mjs`、`verify-raw-copy-fixtures.mjs`、`verify-migrate-fixtures.mjs`、`verify-sidecar-tidy-fixtures.mjs` 里手建的 5 列记录表）一起改。
 
 ### 六、`decision_ledger.kind` 改成参照表（对应根因 4，单独 PR，要 Andy 同意改表）
 
-- 新建 `decision_ledger_kinds(kind TEXT PRIMARY KEY)` 和 `decision_ledger_outcomes(kind, outcome)`（同一文件第 67 行起还有一条“哪种决定允许哪些结果”的大 CHECK，也随种类增长）。`decision_ledger.kind` 引用前者，`(kind, outcome)` 引用后者（`proactive` 的 outcome 是空值，SQLite 不检查含空值的外键，原有的 `(kind = 'proactive') = (outcome IS NULL)` 这类不会增长的约束保留）。这需要最后一次整表重建（和现在的做法相同，只做这一次），种子数据取程序里已有的 `DECISION_KINDS`、`DECISION_OUTCOMES`（`packages/persistence-sqlite/src/sqlite-decision-ledger-operations.ts`）。
-- 以后加一种决定只要两三行 `INSERT`，两个 PR 各加各的不冲突。数据库照样拒绝不认识的种类和结果，可靠性不降。
+- 新建 `decision_ledger_kinds(kind TEXT PRIMARY KEY)` 和 `decision_ledger_outcomes(kind, outcome)`（同一文件第 67 行起还有一条“哪种决定允许哪些结果”的大 CHECK，也随种类增长）。`decision_ledger.kind`、`(kind, outcome)` 分别引用它们；`(kind = 'proactive') = (outcome IS NULL)` 这类不会增长的约束保留。
+- SQLite 的外键默认关闭、要每个连接自己打开（[SQLite 外键](https://www.sqlite.org/foreignkeys.html)：“Foreign key constraints are disabled by default … must be enabled separately for each database connection”）。为了在维护脚本这类不开外键的连接里也照样拦住，再加 `BEFORE INSERT`、`BEFORE UPDATE` 触发器：种类或结果不在参照表里就 `RAISE(ABORT)`。
+- 这需要最后一次整表重建（和现在的做法相同，只做这一次）。种子数据取程序里已有的 `DECISION_KINDS`、`DECISION_OUTCOMES`（`packages/persistence-sqlite/src/sqlite-decision-ledger-operations.ts`），并加测试核对参照表和这两个常量一致，防止两边漂移。
+- 以后加一种决定只要两三行 `INSERT`，两个 PR 各加各的不冲突。
 - 写进开发规则：会不断增加取值的字段不用 CHECK 枚举，用参照表；取值固定的小枚举（例如 `('useful', 'unneeded', 'missed')`）可以继续用 CHECK。
 
 [返回阅读导航](#contents)
@@ -151,21 +156,20 @@ date: "2026-11-14"
 
 ## 冲突怎样自动发现
 
-新增检查 `npm run check:migration-conflicts`，放进 `npm run check`（合并前必过，前提 12）和 CI。它只读 SQL、在内存里建空库，几秒钟跑完，不用重跑整套 CI。
+新增检查 `npm run check:migration-conflicts`，加进 `package.json` 的 `check:steps`（`npm run check` 只跑这里列出的步骤，`scripts/run-all-checks.mjs:31`）、CI 和打包（见上一节）。它在内存里建库跑迁移，有超时；耗时在实施时实测后写进本节。
 
-1. **格式和唯一性**：文件名格式、编号不重复、没有新增四位编号、`.meta.json` 合法。
-2. **按表比对“同时进行”的迁移**：
-   - “同时进行的迁移” = 现在 `origin/main` 上有、但本 PR 的分叉点（`git merge-base`）上没有的迁移，也就是本 PR 写代码时看不到的那些。
-   - 从 SQL 里认出每个迁移碰了哪些表，并分三种：改结构（建表、改表、删表、重建、建索引和触发器）、改数据（`UPDATE`、`DELETE`、`INSERT … SELECT`）、只追加行（`INSERT … VALUES`）。外键 `REFERENCES` 指向的表算“读结构”。
-   - 本 PR 的迁移和任何一个“同时进行的迁移”在同一张表上，一方改结构、或双方都改数据，就失败，并打印两边的文件和表名：先把 main 并进来，再按最新的表定义重写自己的迁移。双方都只追加行（例如各自往 `decision_ledger_kinds` 加一种）不算冲突。
-   - 并进 main 以后，那个迁移就不再是“同时进行的”，检查自然通过；不需要人登记“已解决”。
-   - 这一步能拦下上面 `perception_records` 的例子：它和 `0095_correction_propagation` 都重建 `decision_ledger`。
-3. **两种顺序跑出的结构必须相同**：在空库里按两种顺序各跑一遍，比较规范化后的表结构（`sqlite_schema` 和每张表的列、索引、外键）：
+起初的设计是“只和本 PR 写代码时看不到的迁移比”（按 `git merge-base` 划分）。DeepSeek 审核指出：PR 只要把 main 并进来，旧的迁移就不再算“看不到的”，过时的重建照样能过；空库里又没有数据，暴露不了“搬旧数据时违反新约束”。所以改成下面三条，都不依赖 PR 什么时候并过 main：
+
+1. **新迁移默认只许“只增不减”**：在影子库（只用于检查的临时库）里跑每个新迁移，比较它前后的 `sqlite_schema` 和每张表的列、索引、外键、CHECK，并用临时触发器记下它写了哪些表的数据。允许的只有：建新表、加列、建索引、往参照表插入新行。删表、删列、改名、重建、改或删已有数据、改约束，都算“改动已有结构”，必须在 `.meta.json` 里写明要改哪些表、要去掉什么，否则失败。判断靠 SQLite 自己跑出来的结果，不靠正则读 SQL。迁移里出现 `ATTACH`、`VACUUM INTO`、加载扩展直接拒绝。
+2. **不许悄悄去掉东西**：对声明了“改动已有结构”的迁移，在 main 当前的结构上跑它，凡是被去掉的列、索引、约束、CHECK 里的取值，必须在 `.meta.json` 的“要去掉的”里逐项列出，否则失败。上面 `perception_records` 的例子：它在今天的 main 上会去掉 `memory_review`，而它没有声明，所以失败；把 main 并进来也照样失败。
+3. **两种顺序跑出的结果必须相同**：在空库里按两种顺序各跑一遍，比较规范化后的结构（`sqlite_schema` 和每张表的列、索引、外键）、参照表这类迁移自己写进去的数据（按主键排序后算摘要，跑出随机值和当前时间的列不比），各跑 `PRAGMA integrity_check`、`PRAGMA foreign_key_check`：
    - 顺序甲：先跑 main 上的全部，再跑本 PR 的（模拟生产库的实际顺序）；
    - 顺序乙：全部按编号排序跑（模拟新装的库）。
-   - 两种顺序还要比较参照表这类迁移自己写进去的数据（按主键排序后算摘要），并各跑一遍 `PRAGMA integrity_check`、`PRAGMA foreign_key_check`。
-   - 不同就失败。这保证“晚合的小号”在生产库和新库上得到同一套结构。例如两个迁移都给同一张表 `ADD COLUMN`，两种顺序列的先后不同，会被拦下。
-4. **合并后的兜底**：main 上每次合并后 CI 再跑一次第 3 步，顺序甲改为“按迁移文件进入 main 的先后”（从 git 历史取）。正常情况下前三步已经挡住；这一步只防“PR 的 CI 跑完以后 main 又变了，合并前又没跑本地检查”这种漏网。
+   - 不同就失败。例如两个迁移都给同一张表 `ADD COLUMN`、而本 PR 的编号更小，两种顺序列的先后不同，会被拦下。
+
+另外，main 上每次合并后 CI 再跑一次第 3 条，顺序甲改为“按迁移文件进入 main 的先后”（从 git 历史取）；打包时在目标提交上再跑一次（硬门槛，不过不打包）。
+
+反向用例（实施时先在未修复的代码上证明会失败）：`perception_records` 场景必须失败，并进 main 后仍必须失败；合法的晚合小号必须通过；编号重复必须失败；两个迁移给同一参照表插不同行必须通过；老程序遇到新记录表的错误码；个数相同、集合不同必须被拒；旧备份、旧导出、打包、S0、S7、S9、raw-copy 的兼容。
 
 这一检查本身就是给根因 4 上的自动门槛，按[每个事故都要有自动门槛](../../.claude/rules/incident-gates.md#incidents-get-automatic-gates)记一行（写死迁移号这一类已经出现 I-46、I-61 和 lessons 第 667 行三次）。
 
@@ -176,10 +180,11 @@ date: "2026-11-14"
 ## 过渡：0001–0095 和生产库
 
 1. **引擎 PR（不改业务表）**：做[决定](#decision)的一到五节和冲突检查。旧清单冻结在这个 PR 合并时 main 上的最后一个四位号（如果 PR 414 先合，就到 0096）。
-2. **第一次上线**：启动时引擎给记录表加 `migration_id`、`out_of_order` 两列并补齐旧行（补的值由旧清单按 `sequence` 对上名字和摘要，对不上就拒绝启动），算出指纹写进 `schema_metadata`。这一步只动迁移自己的记录表，不跑任何业务 SQL；仍在迁移前做同机快照。
-3. **回滚**：回到引擎 PR 之前的版本时，老程序只按列名读 `sequence, name, phase, digest, applied_at`，多出的两列不影响它；只要还没有跑过新编号的迁移，老程序照常工作；跑过以后，老程序以 `WRITER_TOO_OLD` 拒绝写入，和今天回滚跨过一个迁移时一样。
-4. **第二个 PR**：`decision_ledger_kinds` 参照表，用新编号，是第一个新式迁移。
-5. **验收**：在 Hermes 测试服务器上用一份生产库副本走一遍：旧库升级、两个“晚合小号”迁移补跑、回滚到老程序被拒绝写入、备份恢复的指纹核对。
+2. **第一次上线**：引擎核对同机快照后，在一个事务里给记录表加 `migration_id` 列和部分唯一索引，算出指纹写进 `schema_metadata`。旧行不改写，不跑任何业务 SQL。加测试：快照不匹配时，库文件一个字节都不变。
+3. **回滚**：回到引擎 PR 之前的版本时，老程序只按列名读 `sequence, name, phase, digest, applied_at`，多出的列不影响它；只要还没有跑过新编号的迁移，老程序照常工作；跑过以后，老程序启动时报 `UNKNOWN_APPLIED_MIGRATION` 拒绝启动，要用上线前的快照回滚，和今天回滚跨过一个迁移时一样。
+4. **第二个 PR**：`decision_ledger` 参照表，用新编号，是第一个新式迁移。
+5. **测试服务器**：它的库是一次性的。跑过分支版本后再切别的版本，会因为库里有不认识的迁移而拒绝启动（安全的失败）；切换前从生产副本重置，重置命令只许在非生产环境运行。
+6. **验收**：在 Hermes 测试服务器上用一份生产库副本走一遍：旧库升级、两个“晚合小号”迁移补跑、回滚到老程序被拒绝启动、备份恢复和导出导入的指纹核对。
 
 [返回阅读导航](#contents)
 
@@ -190,8 +195,8 @@ date: "2026-11-14"
 引擎 PR 合并后，每个排队的 PR 做一次（各自线程做，互不等待）：
 
 1. 把自己的 `00NN_x.sql` 用 `npm run migration:new` 换成新编号文件，内容不变；删掉自己在 `bundledMigrationFiles`、`SUPPORTED_SCHEMA_MAX`、测试里加的那几行。
-2. 重建 `decision_ledger` 只为加种类的（web_push_gate、perception_records、proactive_source_registry、device_actions），等参照表 PR 合并后，把 600 多行的重建换成一行 `INSERT`。
-3. 跑 `npm run check:migration-conflicts`。通过就按平常流程合并，不用再找协调者要号；失败就按提示和对方协调，这时只有这两个 PR 需要先后处理。
+2. 重建 `decision_ledger` 只为加种类的（web_push_gate、perception_records、proactive_source_registry、device_actions），等参照表 PR 合并后，把 600 多行的重建换成几行 `INSERT`。
+3. 跑 `npm run check:migration-conflicts`。通过就按平常流程合并，不用再找协调者要号；失败就按提示处理，这时只有真正碰同一处的 PR 需要先后处理。
 
 叠在别的 PR 上的分支（例如 `paired_devices` 出现在 6 个分支里）不受影响：编号在写的时候就定下，叠多少层都不会变。
 
@@ -205,10 +210,12 @@ date: "2026-11-14"
 - **合并时由机器人统一改号（goose 原先推荐的混合做法）**：要有程序在合并后往 main 推提交，或改写合并提交；改号后迁移文件的内容摘要和测试服务器上已跑的记录对不上。goose 的维护者自己后来也放宽了这个要求。
 - **GitHub 合并队列**：个人账号的私有仓库用不了（前提 15），而且它只是把排队自动化，不消除排队。
 - **Atlas 式校验和文件**：它的设计目的就是让两个加迁移的分支在 git 上冲突、强迫线性，正好和目标相反。
-- **Django 式依赖图**：每两个并行的迁移都要人线性化或生成合并迁移，仪式比现在少不了多少；我们用“碰了哪些表”自动判断，只有真冲突才要人处理。
+- **Django 式依赖图**：每两个并行的迁移都要人线性化或生成合并迁移，仪式比现在少不了多少；我们用“只增不减 + 两种顺序结果相同”自动判断，只有真冲突才要人处理。
+- **按 `git merge-base` 划分“同时进行的迁移”、按表名比对**：线程自己的第一版。DeepSeek 审核指出并进 main 就能绕过，换成了上面不依赖合并时机的三条。
+- **要求 PR 合并前必须先并入最新 main（GitHub 分支保护的“分支必须是最新的”）**：DeepSeek 独立方案提出过。它等于每合一个 PR，其他所有 PR 都要并入 main、重跑整套 CI，又回到排队。我们改为合并前本地检查、合并后 CI 兜底、打包前硬门槛。
+- **用 ULID（时间加随机数的编号）代替时间戳**：DeepSeek 两次提出，理由是同一秒生成会撞号。撞号的后果只是后合的 PR 的检查报“编号重复”、换一个号，不会进 main；生成器已对照 `origin/main` 顺延；时间戳更好读，和 Rails、GitLab 一致，所以不换。
+- **`TARGET_SCHEMA` 改成编号集合**：会打穿 S7、run-packet-checks、raw-copy 等一串只认整数的脚本；保留整数个数、另传集合，改动面小得多。
 - **用 `PRAGMA writable_schema` 直接改 CHECK 定义**：SQLite 官方只把它用于“删掉”约束，而且警告语法错误会让库损坏、无法读取；加新种类不适用。
-- **要求 PR 合并前必须先并入最新 main（GitHub 分支保护的“分支必须是最新的”）**：DeepSeek 独立方案提出过。它等于每合一个 PR，其他所有 PR 都要并入 main、重跑整套 CI，又回到排队。我们改为合并前在本地跑几秒钟的冲突检查（前提 12），加上合并后的兜底。
-- **用 ULID（时间加随机数的编号）代替时间戳**：DeepSeek 独立方案提出，理由是同一秒生成会撞号。撞号的后果只是第二个 PR 的冲突检查报“编号重复”、换一个号，不会进 main；时间戳更好读，和 Rails、GitLab 一致，所以不换。
 - **种类只在程序里校验、库里不设约束**：省掉参照表，但库里能写进任意种类，违反数据可靠性优先于效率的顺序。
 
 [返回阅读导航](#contents)
@@ -217,11 +224,12 @@ date: "2026-11-14"
 
 ## 后果和风险
 
-- 好处：改表的 PR 不再要号、不再排队；只有真冲突的两个 PR 需要先后处理，并由检查指出是哪张表。迁移文件和 `decision_ledger` 的重建大幅减少。
-- 生产库的跑法和新库可能不同顺序（晚合的小号）。靠冲突检查第 2、3 步保证结构相同；结构相同但数据结果依赖顺序的情况（例如两个迁移都 `UPDATE` 同一张表）由“双方都改数据就算冲突”挡住。检查认表靠解析 SQL，遇到它认不出的写法（例如动态拼的表名）时按“碰了所有表”处理，宁可多报。
-- 记录表多两列；生产机上的脚本要跟着改（打包、S0、S9、维护脚本），这些都在引擎 PR 里，并由现有的打包检查（`run-packet-checks.py`、`make-packet.py` 的拒绝）覆盖。
+- 好处：改表的 PR 不再要号、不再排队；只有真正改动同一处已有结构的 PR 需要先后处理，并由检查指出是哪张表、去掉了什么。`decision_ledger` 的 600 行重建不再出现。
+- 生产库和新库可能按不同顺序跑（晚合的小号）。靠冲突检查第 3 条保证两种顺序结构和参照数据相同；“改动已有结构”必须声明，且不许悄悄去掉东西（第 1、2 条）。
+- 新迁移多了一道约束：改动已有结构要写 `.meta.json`。这是有意的：这类迁移正是会出事的那类，值得多写两行。
+- 改动面不小：引擎、`readSchemaIdentity` 的十几个使用方、打包和生产机脚本及其测试数据、审计脚本、管理命令、导出导入、冲突检查和反向用例，都在引擎 PR 里一次改完，由现有的打包检查（`run-packet-checks.py`、`make-packet.py` 的拒绝）和新加的测试覆盖。
 - 合并前本地检查依赖 `origin/main` 是最新的；检查开头自动 `git fetch origin main`，拿不到就失败，不默默放行。
-- 工作量：引擎 PR 是一个中等改动（引擎、打包脚本、维护脚本、审计脚本、检查脚本、测试），参照表 PR 是一次常规重建。
+- 与发给模型的内容无关：迁移编号、指纹都不进模型请求，不影响 KV 缓存（DeepSeek 审核已核对 `packages/prompt-catalog` 和 Pi 适配器不读这些值）。
 
 [返回阅读导航](#contents)
 
