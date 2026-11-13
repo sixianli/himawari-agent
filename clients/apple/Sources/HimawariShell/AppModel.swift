@@ -1,7 +1,9 @@
 import Foundation
 import HimawariChat
 import HimawariCore
+import HimawariActions
 import HimawariDesign
+import HimawariManage
 import Observation
 #if canImport(UIKit)
 import UIKit
@@ -20,6 +22,7 @@ public enum AppPhase: Equatable {
 public final class AppModel {
     public private(set) var phase: AppPhase = .unpaired(nil)
     public private(set) var chat: ChatStore?
+    public private(set) var actions: DeviceActionsModel?
     public private(set) var configuration: DeviceConfiguration?
 
     @ObservationIgnored public let api: DeviceAPI
@@ -199,6 +202,7 @@ public final class AppModel {
     private func emptyStore() -> Bool {
         chat?.stop()
         chat = nil
+        actions = nil
         do {
             try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
             return true
@@ -258,15 +262,24 @@ public final class AppModel {
             try store.claim(for: record.deviceId)
             self.store = store
             let heartbeat = heartbeat
+            let executor = DeviceActionExecutor(
+                transport: api,
+                journal: DeviceActionJournal(store: store),
+                handlers: AppleDeviceActions.handlers()
+            )
+            let actions = DeviceActionsModel(api: api, executor: executor, confirm: keys.signer(.confirm), store: store)
+            self.actions = actions
             let chat = ChatStore(
                 api: api,
                 store: store,
                 heartbeatSeconds: { heartbeat.seconds },
-                onSessionInvalid: { [weak self] in self?.checkRevoked() }
+                onSessionInvalid: { [weak self] in self?.checkRevoked() },
+                onDeviceActions: { [weak actions] in actions?.deviceActionsChanged() }
             )
             self.chat = chat
             phase = .active
             chat.start()
+            actions.deviceActionsChanged()
             Task { await refreshConfiguration() }
         } catch {
             phase = .unpaired(.storageUnavailable)
@@ -317,6 +330,7 @@ public final class AppModel {
         }
         guard phase == .active else { return }
         chat?.reconnect()
+        actions?.deviceActionsChanged()
         Task { await refreshConfiguration() }
     }
 

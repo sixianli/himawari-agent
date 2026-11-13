@@ -4,20 +4,44 @@ import SwiftUI
 
 public struct SettingsRootView: View {
     private let api: DeviceAPI
+    private let actions: DeviceActionsModel
     private let close: () -> Void
+    @State private var approvalsOpen = false
 
-    public init(api: DeviceAPI, close: @escaping () -> Void) {
+    public init(api: DeviceAPI, actions: DeviceActionsModel, close: @escaping () -> Void) {
         self.api = api
+        self.actions = actions
         self.close = close
     }
 
     public var body: some View {
         ZStack(alignment: .topLeading) {
-            EmptyStateView(Text(PlaceholderText.notConnected))
-            GlassCircleButton(Text(PlaceholderText.close), action: close) {
-                Icon(.x, size: DesignTokens.IconSize.glassButton)
+            if approvalsOpen {
+                ApprovalsView(model: actions) { withAnimation(.snappy) { approvalsOpen = false } }
+                    .transition(.move(edge: .trailing))
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        GroupedSection {
+                            Button { withAnimation(.snappy) { approvalsOpen = true } } label: {
+                                GroupedRow(Text(L.text("approval.title")), icon: { Icon(.handStop, size: DesignTokens.IconSize.listRow) }) {
+                                    if actions.waitingCount > 0 { Text(actions.waitingCount, format: .number) }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        DeviceAbilitiesSection(model: actions)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, DesignTokens.Size.navBarHeight + 16)
+                    .padding(.bottom, 40)
+                }
+                .scrollIndicators(.hidden)
+                GlassCircleButton(Text(PlaceholderText.close), action: close) {
+                    Icon(.x, size: DesignTokens.IconSize.glassButton)
+                }
+                .padding(16)
             }
-            .padding(16)
         }
         .himawariScreenBackground()
     }

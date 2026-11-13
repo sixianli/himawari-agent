@@ -3,6 +3,7 @@ import Foundation
 import HimawariChat
 import HimawariCore
 import HimawariDesign
+import HimawariManage
 import SwiftUI
 
 enum DemoScene: String, CaseIterable {
@@ -22,6 +23,14 @@ enum DemoScene: String, CaseIterable {
     case chatAnswering = "16-chat-states-5-answering"
     case chatSteps = "16-chat-states-6-steps"
     case tabTodayOneDigit = "tab-today-1-digit"
+    case actionsToday = "01-today-device-actions"
+    case actionsDetail = "17-today-more-2-detail"
+    case actionsDetailFace = "17-today-more-3-detail-face-id"
+    case actionsApprovals = "17-today-more-1-approvals"
+    case actionsAbilities = "19-settings-more-1-abilities"
+    case actionsPrimer = "19-settings-more-2-permission-primer"
+    case actionsPrimerDenied = "19-settings-more-3-permission-denied"
+    case actionsTodayEmpty = "01-today-device-actions-empty"
     case motionShimmer = "motion-shimmer"
     case motionTabs = "motion-tab-switch"
     case motionSheet = "motion-sheet"
@@ -69,6 +78,24 @@ struct DemoSceneView: View {
         case .motionTabs:
             tabs(DemoChatFixtures.chatList())
                 .environment(\.tabsCycleEvery, 3)
+        case .actionsToday:
+            tabs(DemoChatFixtures.chatList(), tab: .today)
+        case .actionsTodayEmpty:
+            tabs(DemoChatFixtures.chatList(), tab: .today, actions: .demo(empty: true))
+        case .actionsDetail:
+            approvalDetail(at: 0)
+        case .actionsDetailFace:
+            approvalDetail(at: 1)
+        case .actionsApprovals:
+            ApprovalsView(model: .demo()) {}
+        case .actionsAbilities:
+            SettingsRootView(api: AppModel.demo(.active).api, actions: .demo()) {}
+        case .actionsPrimer:
+            PermissionPrimerView(permission: DeviceActionsModel.demoPermission, ask: {}, close: {})
+                .himawariScreenBackground()
+        case .actionsPrimerDenied:
+            PermissionPrimerView(permission: DeviceActionsModel.demoDeniedPermission, ask: {}, close: {})
+                .himawariScreenBackground()
         case .chat:
             chat(DemoChatFixtures.answered())
         case .chatNew:
@@ -105,8 +132,13 @@ struct DemoSceneView: View {
         }
     }
 
-    private func tabs(_ state: DemoChatState) -> some View {
-        MainTabsView(model: .demo(.active), chat: .demo(state))
+    private func tabs(_ state: DemoChatState, tab: MainTab = .chats, actions: DeviceActionsModel = .demo()) -> some View {
+        MainTabsView(model: .demo(.active), chat: .demo(state), actions: actions, tab: tab)
+    }
+
+    private func approvalDetail(at index: Int) -> some View {
+        let actions = DeviceActionsModel.demo()
+        return ApprovalDetailView(model: actions, approval: actions.pending[index]) {}
     }
 
     private func chat(_ state: DemoChatState) -> some View {

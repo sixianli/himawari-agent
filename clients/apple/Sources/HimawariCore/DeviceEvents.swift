@@ -6,6 +6,7 @@ public enum DeviceStreamEvent: Sendable, Equatable {
     case executionText(ExecutionText)
     case executionChanged(threadId: String, runId: String)
     case resyncRequired
+    case deviceActions
     case sessionInvalid
     case unavailable
     case disconnected
@@ -31,6 +32,8 @@ public enum DeviceEventDecoder {
             default:
                 return nil
             }
+        case "device.actions":
+            return .deviceActions
         case "thread.snapshot_required":
             return .resyncRequired
         case "thread.execution_unavailable":
