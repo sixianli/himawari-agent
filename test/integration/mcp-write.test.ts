@@ -1305,6 +1305,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       protector: f.protector,
       clock: f.clock,
       externalProposals: f.writer,
+      unitOfWork: f.repository.unitOfWork(),
       onAudit: () => {},
     });
     return {

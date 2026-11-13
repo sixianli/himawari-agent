@@ -1020,6 +1020,7 @@ export class SqliteDurableAdapters {
       enqueue: (entry) => this.context.write("memoryCaptureBacklog.enqueue", { entry }),
       oldest: (input) => this.context.read("memoryCaptureBacklog.oldest", input),
       recordAttempt: (input) => this.context.write("memoryCaptureBacklog.recordAttempt", input),
+      has: (generationId) => this.context.read("memoryCaptureBacklog.has", { generationId }),
       remove: (generationId) => this.context.write("memoryCaptureBacklog.remove", { generationId }),
     });
   }
@@ -1112,6 +1113,7 @@ export class SqliteDurableAdapters {
       rateMany: (input) => this.context.write("decisionLedger.rateMany", input),
       recordMuse: (input) => this.context.write("decisionLedger.recordMuse", input),
       listMuse: (input) => this.context.read("decisionLedger.listMuse", input),
+      lastRuleUses: (input) => this.context.read("decisionLedger.lastRuleUses", input),
       listSignals: (input) => this.context.read("decisionLedger.listSignals", input),
       readCalibrationRows: (input) =>
         this.context.read("decisionLedger.readCalibrationRows", input),

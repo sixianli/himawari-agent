@@ -25,6 +25,7 @@ import {
   type ProductMemoryStatePort,
   reviewMemoryVisible,
   type SensitiveMemoryApprovalStatePort,
+  type UnitOfWorkPort,
   type SensitiveMemoryTopic,
 } from "@himawari-agent/application";
 import {
@@ -173,6 +174,7 @@ export class ProductionMemoryControl {
     readonly state: ProductMemoryStatePort;
     readonly jobs: Pick<MemoryProjectionJobStatePort, "listByMemory">;
     readonly approvals: SensitiveMemoryApprovalStatePort;
+    readonly unitOfWork: UnitOfWorkPort;
     readonly memory: Pick<
       DurableMemoryService,
       | "applyProposal"
@@ -498,6 +500,48 @@ export class ProductionMemoryControl {
     };
   }
 
+  async #ruleQuote(sourceMemoryId: string | null, summary: string): Promise<string | null> {
+    if (!sourceMemoryId) return null;
+    const record = await this.options.state.read(sourceMemoryId as MemoryId);
+    if (!record || record.ownerId !== this.options.configuration.ownerId) return null;
+    if (
+      record.status === "deletion_pending" ||
+      record.status === "deleted_verified" ||
+      record.status === "trashed" ||
+      !reviewMemoryVisible(record.dataClassification)
+    )
+      return null;
+    const text = await this.readText(record.contentRef).catch(() => null);
+    const suffix = `\n${summary}`;
+    if (text === null || !text.endsWith(suffix)) return null;
+    const quote = singleLine(text.slice(0, text.length - suffix.length));
+    return quote.length > 0 && quote.length <= 500 ? quote : null;
+  }
+
+  async #ruleLastUsed(
+    ruleIds: ReadonlySet<string>,
+  ): Promise<
+    Map<string, { readonly at: string; readonly kind: string; readonly decisionId: string }>
+  > {
+    const found = new Map<
+      string,
+      { readonly at: string; readonly kind: string; readonly decisionId: string }
+    >();
+    const ledger = this.options.ledger;
+    if (!ledger || ruleIds.size === 0) return found;
+    const { ownerId, agentId } = this.options.configuration;
+    const all = [...ruleIds];
+    for (let start = 0; start < all.length; start += 64)
+      for (const use of await ledger.lastRuleUses({
+        ownerId,
+        agentId,
+        ruleIds: all.slice(start, start + 64),
+      }))
+        if (/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(use.decisionId))
+          found.set(use.ruleId, { at: use.decidedAt, kind: use.kind, decisionId: use.decisionId });
+    return found;
+  }
+
   async #rules(
     query: Extract<GatewayV2Query, { type: "memory.rules.read" }>,
   ): Promise<GatewayV2Snapshot> {
@@ -507,19 +551,23 @@ export class ProductionMemoryControl {
         PORT_ERROR_CODES.INVALID_OPERATION,
         "MEMORY_OPERATION_NOT_INSTALLED",
       );
-    const rules = (await control.list()).flatMap((rule) =>
-      rule.status === "retired"
-        ? []
-        : [
-            {
-              ruleId: rule.ruleId,
-              type: rule.type.slice(0, 64),
-              summary: Array.from(rule.summary).slice(0, 200).join(""),
-              status: rule.status,
-              enforced: rule.enforced,
-              updatedAt: rule.updatedAt,
-            },
-          ],
+    const listed = (await control.list()).filter((rule) => rule.status !== "retired");
+    const lastUsed = await this.#ruleLastUsed(new Set(listed.map(({ ruleId }) => ruleId)));
+    const rules = await Promise.all(
+      listed.map(async (rule) => {
+        const summary = Array.from(rule.summary).slice(0, 200).join("");
+        return {
+          ruleId: rule.ruleId,
+          type: rule.type.slice(0, 64),
+          summary,
+          status: rule.status as "active" | "needs_review",
+          enforced: rule.enforced,
+          updatedAt: rule.updatedAt,
+          quote: await this.#ruleQuote(rule.sourceMemoryId, rule.summary),
+          changes: Math.max(0, rule.revision - 1),
+          lastUsed: lastUsed.get(rule.ruleId) ?? null,
+        };
+      }),
     );
     return {
       ...query,
@@ -1167,6 +1215,7 @@ export class ProductionMemoryControl {
           throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
         this.assertStorable(editedText);
       }
+      const buffered: MemoryExtractionAuditRecord[] = [];
       const resolver = createProductionAutomaticMemory({
         product: this.options.memory,
         approvals: this.options.approvals,
@@ -1178,13 +1227,21 @@ export class ProductionMemoryControl {
         ...(this.options.ledger ? { ledger: this.options.ledger } : {}),
         extract: async () => [],
         readSourceText: (ref) => this.readText(ref),
-        onAudit: this.options.onAudit,
+        onAudit: (record) => {
+          buffered.push(record);
+        },
       });
-      const committed = await resolver.resolveSensitive(
-        resolution === "edited"
-          ? { requestId, resolution, editedText: editedText ?? "" }
-          : { requestId, resolution },
+      const committed = await this.options.unitOfWork.run(() =>
+        resolver.resolveSensitive(
+          resolution === "edited"
+            ? { requestId, resolution, editedText: editedText ?? "" }
+            : { requestId, resolution },
+        ),
       );
+      for (const record of buffered)
+        try {
+          this.options.onAudit(record);
+        } catch {}
       return { resultRef: committed ?? requestId, replayed: false };
     }
     if (command.type === "memory.reminder.create") {

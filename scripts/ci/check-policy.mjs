@@ -8,6 +8,7 @@ import {
   activeMembers,
   fileSha256,
   githubExpression,
+  gateRunnerLabel,
   linuxRunnerLabel,
   parseArguments,
   readJson,
@@ -187,6 +188,24 @@ export function upgradeRetiredTestChecks(policy) {
   return upgraded;
 }
 
+const runnerLabelFor = (checkId) => (checkId === "required" ? gateRunnerLabel : linuxRunnerLabel);
+
+export function upgradeGateRunnerPolicy(policy) {
+  const checks = policy?.checks ?? [];
+  const required = checks.find((check) => check.id === "required");
+  const sharedRunner =
+    sameSet(
+      checks.map((check) => check.id),
+      jobIds,
+    ) &&
+    required.members?.length === 1 &&
+    required.members[0].runner === linuxRunnerLabel;
+  if (!sharedRunner) return policy;
+  const upgraded = structuredClone(policy);
+  upgraded.checks.find((check) => check.id === "required").members[0].runner = gateRunnerLabel;
+  return upgraded;
+}
+
 export function upgradeArtifactRetention(policy) {
   const retention = policy?.retentionDays;
   const accepted =
@@ -320,7 +339,7 @@ export function validatePolicy(
       assert(
         member.os === (mac ? "darwin" : "linux") &&
           member.arch === (mac ? "arm64" : "x64") &&
-          member.runner === (mac ? "macos-15" : linuxRunnerLabel),
+          member.runner === (mac ? "macos-15" : runnerLabelFor(check.id)),
         `Incorrect platform: ${check.id}/${member.key}`,
       );
       assert(mac || member.paused === undefined, `Only macOS members may pause: ${check.id}`);
@@ -560,7 +579,7 @@ export function validateWorkflow(policy, source, toolchain) {
         summaries.length === 1 &&
           summaries[0].if === githubExpression("always() && steps.publish.outcome == 'success'") &&
           summaries[0].run ===
-            `.ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "${check.id}/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics`,
+            `.ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "${check.id}/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports`,
         `Job must write its diagnostics into the job summary exactly once: ${check.id}`,
       );
       const members = activeMembers(check)
@@ -1187,8 +1206,10 @@ export function resolvePolicySource({
     ? git(["show", `${baseSha}:${policyPath}`])
     : readFileSync(path.join(root, policyPath), "utf8");
   const policy = validatePolicy(
-    upgradeRetiredTestChecks(
-      upgradeArtifactRetention(upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes)))),
+    upgradeGateRunnerPolicy(
+      upgradeRetiredTestChecks(
+        upgradeArtifactRetention(upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes)))),
+      ),
     ),
     {
       allowLegacyCoverage: true,

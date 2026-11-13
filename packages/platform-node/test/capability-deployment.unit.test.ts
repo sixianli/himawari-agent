@@ -506,6 +506,43 @@ describe("capability deployment snapshot loader", () => {
     );
   });
 
+  it.each([
+    [
+      "a kernel resource ceiling",
+      (qualification: JsonObject) => {
+        (qualification["enforcement"] as JsonObject)["resourceCeilings"] = true;
+      },
+    ],
+    [
+      "verified termination on Mac",
+      (qualification: JsonObject) => {
+        (qualification["enforcement"] as JsonObject)["termination"] = true;
+      },
+    ],
+    [
+      "another runtime identity",
+      (qualification: JsonObject) => {
+        qualification["runtimeIdentity"] = `srt:${SANDBOX_RUNTIME_VERSION}-other`;
+      },
+    ],
+    [
+      "evidence from another platform",
+      (qualification: JsonObject) => {
+        qualification["sandbox"] = (sandboxEntry("linux")["qualification"] as JsonObject)[
+          "sandbox"
+        ];
+      },
+    ],
+  ] as const)("rejects sandbox qualification that claims %s", async (_name, change) => {
+    const entry = sandboxEntry();
+    change(entry["qualification"] as JsonObject);
+    const value = await writeSnapshot(snapshot([entry]));
+    await expectDeploymentError(
+      loader(value.snapshotPath, value.digest, { platform: "darwin" }).load(),
+      CAPABILITY_DEPLOYMENT_ERROR_CODES.QUALIFICATION_INVALID,
+    );
+  });
+
   it("rejects tampered bytes and unsafe snapshot metadata", async () => {
     const value = await writeSnapshot(snapshot());
     await writeFile(value.snapshotPath, `${JSON.stringify(snapshot())}\n`, { mode: 0o600 });

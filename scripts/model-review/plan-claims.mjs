@@ -123,16 +123,39 @@ function stripQuoteMarks(text) {
   return text.replace(/^[\s`'"“”‘’]+|[\s`'"“”‘’]+$/g, "");
 }
 
-export function quoteInText(quote, text) {
-  const haystack = collapse(text);
-  const fragments = stripQuoteMarks(quote)
-    .split(/…|\.\.\./)
+function quoteFragments(quote, separator) {
+  return stripQuoteMarks(quote)
+    .split(separator)
     .map((fragment) => collapse(stripQuoteMarks(fragment)))
     .filter((fragment) => fragment !== "");
-  return (
-    fragments.length > 0 &&
-    fragments.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))
-  );
+}
+
+function fragmentsInOrder(fragments, haystack) {
+  let from = 0;
+  for (const fragment of fragments) {
+    const at = fragment.length >= 4 ? haystack.indexOf(fragment, from) : -1;
+    if (at === -1) return false;
+    from = at + fragment.length;
+  }
+  return fragments.length > 0;
+}
+
+export function quoteInText(quote, text) {
+  const haystack = collapse(text);
+  const elided = quoteFragments(quote, /…|\.\.\./);
+  if (
+    elided.length > 0 &&
+    elided.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))
+  )
+    return true;
+  if (elided.length > 1) {
+    const pieces = quoteFragments(quote, /…|\.\.\.|；/);
+    return (
+      pieces.length > 0 &&
+      pieces.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))
+    );
+  }
+  return fragmentsInOrder(quoteFragments(quote, /；/), haystack);
 }
 
 function claimEvidenceProblem(repo, head, claim) {
