@@ -1237,6 +1237,17 @@ describe("production HTTP composition", () => {
         },
       });
       expect(filesWithoutSession.statusCode, filesWithoutSession.body).toBe(401);
+      const filesWithBadCursor = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, second.cookie),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "files.list.read"),
+          kind: "query",
+          payload: { kind: null, origin: null, before: "bm90LWEtY3Vyc29y", limit: 20 },
+        },
+      });
+      expect(filesWithBadCursor.statusCode, filesWithBadCursor.body).toBe(400);
       const loginDevices = async () => {
         const response = await running.composition.app.inject({
           method: "POST",

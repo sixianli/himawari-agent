@@ -42,9 +42,17 @@ export class ProductionLoginDevicesControl {
     this.#options = options;
   }
 
-  #owner(authentication: GatewayAuthenticationContext | undefined, scopeOwnerId: string) {
-    const { ownerId } = this.#options.configuration;
-    if (!authentication || authentication.ownerId !== ownerId || scopeOwnerId !== ownerId)
+  #owner(
+    authentication: GatewayAuthenticationContext | undefined,
+    scope: { readonly ownerId: string; readonly agentId: string },
+  ) {
+    const { ownerId, agentId } = this.#options.configuration;
+    if (
+      !authentication ||
+      authentication.ownerId !== ownerId ||
+      scope.ownerId !== ownerId ||
+      scope.agentId !== agentId
+    )
       throw new ApplicationPortError(
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
         "LOGIN_DEVICES_OWNER_REQUIRED",
@@ -56,7 +64,7 @@ export class ProductionLoginDevicesControl {
     if (query.type !== "login.devices.read")
       throw new Error("LOGIN_DEVICES_OPERATION_NOT_INSTALLED");
     const authentication = context?.authentication;
-    const ownerId = this.#owner(authentication, query.scope.ownerId);
+    const ownerId = this.#owner(authentication, query.scope);
     const devices = [...(await this.#options.state.listDevices(ownerId, false))].sort(
       (left, right) =>
         (right.lastSeenAt > left.lastSeenAt ? 1 : right.lastSeenAt < left.lastSeenAt ? -1 : 0) ||
@@ -87,7 +95,7 @@ export class ProductionLoginDevicesControl {
     const { authentication, command } = input;
     if (command.type !== "login.device.revoke")
       throw new Error("LOGIN_DEVICES_OPERATION_NOT_INSTALLED");
-    const ownerId = this.#owner(authentication, command.scope.ownerId);
+    const ownerId = this.#owner(authentication, command.scope);
     if (command.payload.deviceId === authentication.deviceId)
       throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "LOGIN_DEVICE_IS_CURRENT");
     const all = await this.#options.state.listDevices(ownerId, true);

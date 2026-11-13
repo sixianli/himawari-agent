@@ -5,7 +5,11 @@ import {
   type ProductConfiguration,
   type ThreadArtifactStorePort,
 } from "@himawari-agent/application";
-import type { GatewayV2Query, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
+import {
+  ContractValidationError,
+  type GatewayV2Query,
+  type GatewayV2Snapshot,
+} from "@himawari-agent/gateway-contracts";
 
 export const PRODUCTION_FILES_OPERATIONS = Object.freeze(["files.list.read"] as const);
 
@@ -38,16 +42,25 @@ export class ProductionFilesControl {
     const { ownerId, agentId } = this.#options.configuration;
     if (query.scope.ownerId !== ownerId || query.scope.agentId !== agentId)
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_AUTHORITATIVE, "FILES_SCOPE_MISMATCH");
-    const page = await this.#options.store.list({
-      ownerId,
-      agentId,
-      threadId: null,
-      kind: query.payload.kind,
-      origin: query.payload.origin,
-      search: null,
-      before: query.payload.before,
-      limit: query.payload.limit,
-    });
+    const page = await this.#options.store
+      .list({
+        ownerId,
+        agentId,
+        threadId: null,
+        kind: query.payload.kind,
+        origin: query.payload.origin,
+        search: null,
+        before: query.payload.before,
+        limit: query.payload.limit,
+      })
+      .catch((error: unknown) => {
+        if (
+          error instanceof ApplicationPortError &&
+          error.code === PORT_ERROR_CODES.INVALID_OPERATION
+        )
+          throw new ContractValidationError("payload", "file list page is invalid");
+        throw error;
+      });
     return {
       ...query,
       kind: "snapshot",
