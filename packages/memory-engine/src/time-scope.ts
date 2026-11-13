@@ -18,15 +18,10 @@ function offsetMs(instant: number, timeZone: string): number {
       .formatToParts(new Date(instant))
       .map(({ type, value }) => [type, Number(value)]),
   );
-  const local = Date.UTC(
-    parts["year"] ?? 1970,
-    (parts["month"] ?? 1) - 1,
-    parts["day"] ?? 1,
-    parts["hour"] ?? 0,
-    parts["minute"] ?? 0,
-    parts["second"] ?? 0,
-  );
-  return local - Math.floor(instant / 1000) * 1000;
+  const local = new Date(0);
+  local.setUTCFullYear(parts["year"] ?? 1970, (parts["month"] ?? 1) - 1, parts["day"] ?? 1);
+  local.setUTCHours(parts["hour"] ?? 0, parts["minute"] ?? 0, parts["second"] ?? 0);
+  return local.getTime() - Math.floor(instant / 1000) * 1000;
 }
 
 function calendarDay(day: string): number | null {
@@ -35,8 +30,9 @@ function calendarDay(day: string): number | null {
   const year = Number(match[1]);
   const month = Number(match[2]);
   const date = Number(match[3]);
-  const instant = Date.UTC(year, month - 1, date);
-  const parsed = new Date(instant);
+  const parsed = new Date(0);
+  parsed.setUTCFullYear(year, month - 1, date);
+  const instant = parsed.getTime();
   return parsed.getUTCFullYear() === year &&
     parsed.getUTCMonth() === month - 1 &&
     parsed.getUTCDate() === date

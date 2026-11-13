@@ -397,22 +397,25 @@ it("[P5-1] reports a failed confirmed search only after the tentative search has
 it("[T6] reads the time window only from what the model filled, never from the words of the query", async () => {
   const f = recall();
   await f.service.recallWithClassification(call({ query: "我以前用什么手机，昨天说过的" }));
-  expect(f.search).toHaveBeenCalledWith(
-    expect.objectContaining({ scope: { includeHistory: false, from: null, to: null } }),
-  );
+  expect(f.search.mock.calls.length).toBeGreaterThan(0);
+  for (const [request] of f.search.mock.calls as unknown as [{ scope: unknown }][])
+    expect(request.scope).toEqual({ includeHistory: false, from: null, to: null });
+  f.search.mockClear();
+  await f.service.recallWithClassification(call({ query: "手机", includeHistory: true }));
+  expect(f.search.mock.calls.length).toBeGreaterThan(0);
+  for (const [request] of f.search.mock.calls as unknown as [{ scope: unknown }][])
+    expect(request.scope).toEqual({ includeHistory: true, from: null, to: null });
   f.search.mockClear();
   await f.service.recallWithClassification(
     call({ query: "手机", from: "2026-10-23", to: "2026-10-24" }),
   );
-  expect(f.search).toHaveBeenCalledWith(
-    expect.objectContaining({
-      scope: {
-        includeHistory: true,
-        from: "2026-10-22T15:00:00.000Z",
-        to: "2026-10-24T14:59:59.999Z",
-      },
-    }),
-  );
+  expect(f.search.mock.calls.length).toBeGreaterThan(0);
+  for (const [request] of f.search.mock.calls as unknown as [{ scope: unknown }][])
+    expect(request.scope).toEqual({
+      includeHistory: true,
+      from: "2026-10-22T15:00:00.000Z",
+      to: "2026-10-24T14:59:59.999Z",
+    });
   for (const dates of [
     { from: "2026-13-40" },
     { from: "2026-02-30" },
