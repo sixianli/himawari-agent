@@ -111,6 +111,26 @@ it("把错误追加到调用方给的数组里", () => {
   expect(shared).toEqual(["earlier", "later"]);
 });
 
+const directPageErrorListener =
+  /\.(?:on|once|addListener|prependListener|prependOnceListener)\(\s*["']pageerror["']/u;
+
+it("[webkit-teardown] 直接监听 pageerror 的各种写法都认得出，等待注入的错误不算", () => {
+  for (const source of [
+    'page.on("pageerror", collect)',
+    "page.once('pageerror', collect)",
+    'page.addListener( "pageerror", collect)',
+    'page.prependListener("pageerror", collect)',
+    'page.prependOnceListener("pageerror", collect)',
+  ])
+    expect(directPageErrorListener.test(source)).toBe(true);
+  for (const source of [
+    'page.waitForEvent("pageerror")',
+    'page.on("console", collect)',
+    "watchPageErrors(page, collect)",
+  ])
+    expect(directPageErrorListener.test(source)).toBe(false);
+});
+
 it("[webkit-teardown] 浏览器测试脚本一律经 browser-page-errors.mjs 收页面报错", async () => {
   const scripts = path.resolve(import.meta.dirname, "../../scripts");
   const allowed = new Set([
@@ -125,12 +145,7 @@ it("[webkit-teardown] 浏览器测试脚本一律经 browser-page-errors.mjs 收
     const file = path.join(entry.parentPath, entry.name);
     const relative = path.relative(scripts, file).split(path.sep).join("/");
     if (allowed.has(relative)) continue;
-    if (
-      /\.(?:on|once|addListener|prependListener)\(\s*["']pageerror["']/u.test(
-        await readFile(file, "utf8"),
-      )
-    )
-      offenders.push(relative);
+    if (directPageErrorListener.test(await readFile(file, "utf8"))) offenders.push(relative);
   }
   expect(offenders).toEqual([]);
 });
