@@ -5,8 +5,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   readlinkSync,
   rmSync,
   symlinkSync,
@@ -16,7 +16,8 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { linuxRunnerLabel } from "../../scripts/ci/contracts.mjs";
+import { parse } from "yaml";
+import { gateRunnerLabel, linuxRunnerLabel } from "../../scripts/ci/contracts.mjs";
 
 const scripts = path.resolve(import.meta.dirname, "../../scripts/operations/ci-runner");
 const asRootInPrivateMounts = (script) => [
@@ -66,7 +67,7 @@ const sandbox = () => {
 };
 
 const fakeRunnerAccounts = (box, present) => {
-  const uids = { "gh-runner": 996, "gh-runner-2": 995 };
+  const uids = { "gh-runner": 996, "gh-runner-2": 995, "gh-runner-gate": 994 };
   const lines = Object.entries(uids).map(
     ([user, uid]) =>
       `if [ "\${@: -1}" = ${user} ]; then [ -e "${box.root}/gone-${user}" ] && exit 1; ${
@@ -201,6 +202,32 @@ describe("runner-pause.sh", () => {
     expect(calls("sudo-calls")).toBe("-n /usr/bin/systemctl stop gh-runner.service\n");
   });
 
+  it("lists and stops the gate runner together with the two check runners", () => {
+    const accounts = ["gh-runner", "gh-runner-2", "gh-runner-gate"];
+    const listed = pauseBox({ accounts });
+    for (const unit of ["gh-runner.service", "gh-runner-2.service", "gh-runner-gate.service"])
+      writeFileSync(path.join(listed.root, `enabled-${unit}`), "");
+    expect(listed.run("runner-pause.sh", ["--list"]).stdout).toBe(
+      "ci-vps-1\nci-vps-2\nci-vps-gate\n",
+    );
+    const stopped = pauseBox({ accounts });
+    expect(stopped.run("runner-pause.sh", ["--labels-removed", "10"]).status).toBe(0);
+    expect(stopped.calls("sudo-calls")).toBe(
+      "-n /usr/bin/systemctl stop gh-runner.service\n-n /usr/bin/systemctl stop gh-runner-2.service\n-n /usr/bin/systemctl stop gh-runner-gate.service\n",
+    );
+  });
+
+  it("leaves every runner running when the gate runner is still writing a verdict", () => {
+    const { run, calls } = pauseBox({
+      accounts: ["gh-runner", "gh-runner-2", "gh-runner-gate"],
+      pgrep: '[ "$2" = gh-runner-gate ] && exit 0\nexit 1',
+    });
+    const result = run("runner-pause.sh", ["--labels-removed", "30"]);
+    expect(result.status).toBe(2);
+    expect(result.stdout).toContain("RUNNER_STILL_BUSY gh-runner-gate");
+    expect(calls("sudo-calls")).toBe("");
+  });
+
   it("leaves both runners running when a job shows up during the quiet window", () => {
     const { run, calls } = pauseBox({
       pgrep: `[ "$(grep -c . "${"$"}{HOME}/pgrep-calls")" -ge 5 ] && [ "$2" = gh-runner-2 ] && exit 0\nexit 1`,
@@ -230,14 +257,18 @@ const macBox = ({
 } = {}) => {
   const box = sandbox();
   const R = box.root;
-  const labels = (on) => `self-hosted,Linux,X64${on ? ",ci-vps" : ""}`;
+  const ownLabel = (name) => (name === "ci-vps-gate" ? "ci-vps-gate" : "ci-vps");
+  const labels = (name, extra) =>
+    ["self-hosted", "Linux", "X64", ...(extra ?? (labelled ? [ownLabel(name)] : []))].join(",");
   writeFileSync(
     path.join(R, "runners.tsv"),
-    runners.map(([id, name]) => `${id}\t${name}\toffline\tfalse\t${labels(labelled)}\n`).join(""),
+    runners
+      .map(([id, name, extra]) => `${id}\t${name}\toffline\tfalse\t${labels(name, extra)}\n`)
+      .join(""),
   );
   writeFileSync(path.join(R, "vps-names"), vpsNames.map((name) => `${name}\n`).join(""));
   const relabel = (on) =>
-    `awk -F'\\t' -v OFS='\\t' -v id="$id" '$1 == id { $5 = "${labels(on)}" } 1' "${R}/runners.tsv" > "${R}/t" && mv "${R}/t" "${R}/runners.tsv"`;
+    `awk -F'\\t' -v OFS='\\t' -v id="$id" -v label="$label" -v on=${on ? 1 : 0} '$1 == id { n = split($5, have, ","); kept = ""; for (i = 1; i <= n; i++) if (have[i] != label) kept = kept (kept == "" ? "" : ",") have[i]; $5 = on ? kept "," label : kept } 1' "${R}/runners.tsv" > "${R}/t" && mv "${R}/t" "${R}/runners.tsv"`;
   box.fake(
     "gh",
     [
@@ -246,12 +277,14 @@ const macBox = ({
       "if [[ $args == */labels* ]]; then",
       `  id=$(sed -E 's#.*/runners/([0-9]+)/labels.*#\\1#' <<< "$args")`,
       '  if [[ $args == *"-X DELETE"* ]]; then',
+      `    label=$(sed -E 's#.*/labels/([^ ]+).*#\\1#' <<< "$args")`,
       `    [ -e "${R}/interrupt-delete-$id" ] && { kill -TERM $PPID; exit 1; }`,
       `    [ -e "${R}/fail-delete-$id" ] && exit 1`,
       `    [ -e "${R}/ignore-delete-$id" ] && exit 0`,
       `    ${relabel(false)}`,
       `    [ -e "${R}/interrupt-after-delete-$id" ] && kill -TERM $PPID`,
       "  else",
+      `    label=$(sed -E 's#.*labels\\[\\]=([^ ]+).*#\\1#' <<< "$args")`,
       `    [ -e "${R}/fail-add-$id" ] && exit 1`,
       `    ${relabel(true)}`,
       `    [ -e "${R}/interrupt-after-add-$id" ] && kill -TERM $PPID`,
@@ -312,23 +345,34 @@ const macBox = ({
         .map((line) => line.split("\t"))
         .map(([, name, , , l]) => [name, l.split(",").includes("ci-vps")]),
     );
+  const managedLabels = () =>
+    Object.fromEntries(
+      readFileSync(path.join(R, "runners.tsv"), "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => line.split("\t"))
+        .map(([, name, , , l]) => [
+          name,
+          l.split(",").filter((label) => label.startsWith("ci-vps")),
+        ]),
+    );
   const lines = () => box.calls().split("\n").filter(Boolean);
-  return { ...box, set, late, mac, labelState, lines };
+  return { ...box, set, late, mac, labelState, managedLabels, lines };
 };
 
 describe("[HR-11] runner 名字和标签", () => {
   it("注册用的标签和主机就是 CI 工作流要的 ci-vps", () => {
     const runners = readFileSync(path.join(scripts, "runners.sh"), "utf8");
-    expect(runners).toContain(`RUNNER_LABEL=${linuxRunnerLabel}\n`);
+    expect(runners).toContain(`RUNNER_CHECK_LABEL=${linuxRunnerLabel}\n`);
     expect(runners).toContain("RUNNER_HOST=ci-vps\n");
     expect(runners).toContain("RUNNER_NAME=ci-vps-1\n");
     expect(runners).toContain("RUNNER_NAME=ci-vps-2\n");
     expect(readFileSync(path.join(scripts, "register-runner.sh"), "utf8")).toContain(
       '--labels "$RUNNER_LABEL"',
     );
-    expect(readFileSync(path.join(scripts, "mac-runners.sh"), "utf8")).toContain(
-      "LABEL=$RUNNER_LABEL\n",
-    );
+    expect(
+      shell("runner_select 1; echo $RUNNER_LABEL; runner_select 2; echo $RUNNER_LABEL").stdout,
+    ).toBe(`${linuxRunnerLabel}\n${linuxRunnerLabel}\n`);
   });
 });
 
@@ -361,6 +405,17 @@ describe("pause-runners.sh", () => {
     const stop = order.findIndex((line) => line.includes("--labels-removed"));
     const listsBefore = order.slice(0, stop).filter((line) => line.endsWith("@tsv"));
     expect(listsBefore.length).toBeGreaterThanOrEqual(5);
+    const waiting = result.stdout
+      .split("\n")
+      .filter((line) => line.startsWith("RUNNER_PAUSE_WAITING"));
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0]).toContain("for: ci-vps-1 ci-vps-2;");
+  });
+
+  it("says nothing about waiting when the runners are idle from the start", () => {
+    const result = macBox().mac("pause-runners.sh");
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain("RUNNER_PAUSE_WAITING");
   });
 
   it("asks the VPS again when a job was still finishing there", () => {
@@ -402,7 +457,7 @@ describe("pause-runners.sh", () => {
     const result = box.mac("pause-runners.sh");
     expect(result.status).toBe(1);
     expect(result.stdout).toContain(
-      "RUNNER_PAUSE_FAILED ci-vps still on: ci-vps-2; put back on: 11",
+      "RUNNER_PAUSE_FAILED a runner label is still on: ci-vps-2; put back on: 11",
     );
     expect(box.labelState()).toEqual({ "ci-vps-1": true, "ci-vps-2": true });
     expect(box.lines().some((line) => line.includes("--labels-removed"))).toBe(false);
@@ -744,10 +799,12 @@ describe("runner units and shared limits", () => {
   const render = (id) => shell(`render_runner_unit ${id} "${template}"`);
   const slice = () => unitSettings(readFileSync(path.join(scripts, "gh-runners.slice"), "utf8"));
 
-  it("gives both runners all cores and 20 GB together with default priority on a CI-only host", () => {
+  const gateSlice = () => unitSettings(readFileSync(path.join(scripts, "ghgate.slice"), "utf8"));
+
+  it("gives both check runners all cores and 18 GB together with default priority on a CI-only host", () => {
     expect(slice()).toMatchObject({
-      MemoryHigh: "19G",
-      MemoryMax: "20G",
+      MemoryHigh: "17G",
+      MemoryMax: "18G",
       MemorySwapMax: "0",
       TasksMax: "4096",
     });
@@ -755,6 +812,50 @@ describe("runner units and shared limits", () => {
       expect(slice()).not.toHaveProperty(key);
     }
     expect(bytes(slice().MemoryHigh)).toBeLessThan(bytes(slice().MemoryMax));
+  });
+
+  it("reserves 2 GB for the gate runner outside the check runners' pool, and both pools fit in the 22 GB host", () => {
+    expect(gateSlice()).toMatchObject({
+      MemoryMin: "2G",
+      MemoryHigh: "2G",
+      MemoryMax: "2G",
+      MemorySwapMax: "0",
+      TasksMax: "1024",
+    });
+    expect(bytes(slice().MemoryMax) + bytes(gateSlice().MemoryMax)).toBeLessThanOrEqual(
+      bytes("20G"),
+    );
+    const unit = unitSettings(render(3).stdout);
+    expect(unit).toMatchObject({
+      Slice: "ghgate.slice",
+      User: "gh-runner-gate",
+      Group: "gh-runner-gate",
+      WorkingDirectory: "/srv/gh-runner-gate/runner",
+      MemoryMin: "2G",
+      MemoryHigh: "2G",
+      MemoryMax: "2G",
+      MemorySwapMax: "0",
+      TasksMax: "1024",
+      ReadWritePaths:
+        "/srv/gh-runner-gate/runner /srv/gh-runner-gate/home /srv/gh-runner-gate/logs /srv/gh-runner-share",
+      SupplementaryGroups: "gh-ci-share",
+    });
+    expect(unit.Description).toContain("ci-vps-gate");
+    expect(render(3).stdout).not.toContain("@");
+  });
+
+  it("the gate slice name has no dash, so systemd does not nest it under a parent slice without a reservation", () => {
+    expect(shell("runner_select 3; echo $RUNNER_SLICE").stdout.trim()).toMatch(/^[a-z]+\.slice$/);
+  });
+
+  it.each([
+    [1, ["/srv/gh-runner-2", "/srv/gh-runner-gate"]],
+    [2, ["/srv/gh-runner", "/srv/gh-runner-gate"]],
+    [3, ["/srv/gh-runner", "/srv/gh-runner-2"]],
+  ])("runner %s cannot see the directories of the other two runners", (id, others) => {
+    const hidden = unitSettings(render(id).stdout).InaccessiblePaths.split(" ");
+    for (const other of others) expect(hidden).toContain(`-${other}`);
+    expect(hidden).toHaveLength(4);
   });
 
   it.each([
@@ -772,6 +873,7 @@ describe("runner units and shared limits", () => {
         User: user,
         Group: user,
         WorkingDirectory: `${root}/runner`,
+        MemoryMin: "0",
         MemoryHigh: "14G",
         MemoryMax: "15G",
         MemorySwapMax: "0",
@@ -792,7 +894,7 @@ describe("runner units and shared limits", () => {
     },
   );
 
-  it.each([1, 2])(
+  it.each([1, 2, 3])(
     "runner %s puts no read-only mounts under /proc, so the job sandbox can mount a fresh /proc",
     (id) => {
       const result = render(id);
@@ -816,14 +918,31 @@ describe("runner units and shared limits", () => {
         .replace(id === 1 ? /\/srv\/gh-runner(?!-)/g : /\/srv\/gh-runner-2/g, "ROOT");
     const first = render(1).stdout;
     const second = render(2).stdout;
-    const swapOther = (text) => text.replace(/-\/srv\/gh-runner(-2)?$/m, "-OTHER");
+    const swapOther = (text) =>
+      text.replace(/-\/srv\/gh-runner(-2)? -\/srv\/gh-runner-gate$/m, "-OTHER");
     expect(swapOther(normalize(1, first)).replace(/User=gh-runner\n|Group=gh-runner\n/g, "")).toBe(
       swapOther(normalize(2, second)).replace(/User=gh-runner-2\n|Group=gh-runner-2\n/g, ""),
     );
   });
 
+  it("gives the gate runner the same hardening as a check runner apart from its pool, paths and names", () => {
+    const strip = (text) =>
+      text
+        .split("\n")
+        .filter(
+          (line) =>
+            !/^(Description|Slice|User|Group|WorkingDirectory|ExecStart|Environment|MemoryMin|MemoryHigh|MemoryMax|TasksMax|ReadWritePaths|InaccessiblePaths)=/.test(
+              line,
+            ),
+        )
+        .join("\n");
+    expect(strip(render(3).stdout)).toBe(strip(render(1).stdout));
+    expect(strip(render(1).stdout)).toContain("NoNewPrivileges=yes");
+  });
+
   it("rejects an unknown runner number", () => {
-    expect(render(3).status).not.toBe(0);
+    expect(render(4).status).not.toBe(0);
+    expect(render(0).status).not.toBe(0);
   });
 
   it("firewall rules apply to every runner account", () => {
@@ -911,6 +1030,12 @@ describe("register-runner.sh arguments", () => {
     expect(result.status).toBe(64);
     expect(result.stderr).toContain("no registration token");
     expect(calls()).toBe("");
+  });
+
+  it("accepts the gate runner as number 3 and nothing above it", () => {
+    const { run } = registerBox();
+    expect(run("register-runner.sh", ["3"]).stderr).toContain("no registration token");
+    expect(run("register-runner.sh", ["4"], { input: "token\n" }).stderr).toContain("usage");
   });
 });
 
@@ -1142,7 +1267,9 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
   const reported = [
     "/etc/systemd/system/gh-runner.service",
     "/etc/systemd/system/gh-runner-2.service",
+    "/etc/systemd/system/gh-runner-gate.service",
     "/etc/systemd/system/gh-runners.slice",
+    "/etc/systemd/system/ghgate.slice",
     "/etc/systemd/system/gh-runner-nft.service",
     "/etc/sudoers.d/91-gh-runner-control",
     "/etc/gh-runner/nft.rules",
@@ -1155,6 +1282,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     "/srv/gh-runner/runner/config.sh",
     "/srv/gh-runner/home",
     "/srv/gh-runner-2",
+    "/srv/gh-runner-gate",
     "/srv/gh-runner-share",
     "/srv/gh-runner-share/43003101968-1",
   ];
@@ -1168,11 +1296,12 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
         `case "\${@: -1}" in`,
         '  gh-runner) [ "$1" = -u ] && echo 996; [ "$1" = -nG ] && echo gh-runner; exit 0 ;;',
         `  gh-runner-2) [ -e "${box.root}/user-gh-runner-2" ] || exit 1; [ "$1" = -u ] && echo 995; [ "$1" = -nG ] && echo gh-runner-2; exit 0 ;;`,
+        `  gh-runner-gate) [ -e "${box.root}/user-gh-runner-gate" ] || exit 1; [ "$1" = -u ] && echo 994; [ "$1" = -nG ] && echo gh-runner-gate; exit 0 ;;`,
         "esac",
         "echo 0",
       ].join("\n"),
     );
-    box.fake("useradd", `${box.record("useradd")}\ntouch "${box.root}/user-gh-runner-2"`);
+    box.fake("useradd", `${box.record("useradd")}\ntouch "${box.root}/user-\${@: -1}"`);
     box.fake("userdel", `${box.record("userdel")}\nrm -f "${box.root}/user-$1"`);
     box.fake("pkill", `${box.record("pkill")}\nexit 1`);
     box.fake("getent", '[ -e "/etc/fake-group-$2" ] && exit 0\nexit 2');
@@ -1302,6 +1431,9 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     expect(state["/srv/gh-runner/bin/runner-resume.sh"]).toBe("MISSING");
     expect(state["/srv/gh-runner/hooks/job-started.sh"]).not.toBe("old-hook");
     expect(state["/srv/gh-runner/bin"]).toBe("MISSING");
+    expect(state["/srv/gh-runner-gate"]).toBe("DIR");
+    expect(state["/etc/systemd/system/gh-runner-gate.service"]).toBe("[Unit]");
+    expect(state["/etc/systemd/system/ghgate.slice"]).toBe("[Unit]");
     expect(state["/srv/gh-runner-share"]).toBe("DIR");
     expect(box.calls()).toMatch(/^groupadd --system gh-ci-share$/m);
   });
@@ -1323,13 +1455,17 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     expect(box.calls()).not.toMatch(/^systemctl (enable|is-enabled) /m);
     expect(box.calls()).toMatch(/^useradd .*gh-runner-2$/m);
     expect(box.calls()).toMatch(/^userdel gh-runner-2$/m);
+    expect(box.calls()).toMatch(/^useradd .*gh-runner-gate$/m);
+    expect(box.calls()).toMatch(/^userdel gh-runner-gate$/m);
     expect(box.calls()).toMatch(/^nft -f \/etc\/gh-runner\/nft.rules$/m);
     expect(box.calls()).toMatch(/^groupadd --system gh-ci-share$/m);
     expect(state).toEqual({
       rc: code,
       "/etc/systemd/system/gh-runner.service": "old-unit",
       "/etc/systemd/system/gh-runner-2.service": "MISSING",
+      "/etc/systemd/system/gh-runner-gate.service": "MISSING",
       "/etc/systemd/system/gh-runners.slice": "MISSING",
+      "/etc/systemd/system/ghgate.slice": "MISSING",
       "/etc/systemd/system/gh-runner-nft.service": "MISSING",
       "/etc/sudoers.d/91-gh-runner-control": "old-sudoers",
       "/etc/gh-runner/nft.rules": "old-rules",
@@ -1342,6 +1478,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       "/srv/gh-runner/runner/config.sh": "config",
       "/srv/gh-runner/home": "MISSING",
       "/srv/gh-runner-2": "MISSING",
+      "/srv/gh-runner-gate": "MISSING",
       "/srv/gh-runner-share": "MISSING",
       "/srv/gh-runner-share/43003101968-1": "MISSING",
     });
@@ -1456,5 +1593,334 @@ describe("uninstall-runner.sh", () => {
     expect(readFileSync(path.join(box.root, "sudoers-checked"), "utf8")).toBe(
       "ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start gh-runner.service, /usr/bin/systemctl stop gh-runner.service, /usr/bin/systemctl restart gh-runner.service\n",
     );
+  });
+});
+
+const threeRunners = (overrides = {}) =>
+  macBox({
+    runners: [
+      [11, "ci-vps-1"],
+      [12, "ci-vps-2"],
+      [13, "ci-vps-gate"],
+    ],
+    vpsNames: ["ci-vps-1", "ci-vps-2", "ci-vps-gate"],
+    ...overrides,
+  });
+
+describe("[HR-11] the gate runner keeps its own label", () => {
+  const read = (relative) =>
+    readFileSync(path.resolve(import.meta.dirname, "../..", relative), "utf8");
+
+  it("runners.sh gives the two check runners the workflow label and the gate runner only ci-vps-gate", () => {
+    const result = shell(
+      'for id in $RUNNER_IDS; do runner_select $id; echo "$RUNNER_NAME=$RUNNER_LABEL"; done; echo "$RUNNER_LABELS"',
+    );
+    expect(result.stdout).toBe(
+      `ci-vps-1=${linuxRunnerLabel}\nci-vps-2=${linuxRunnerLabel}\nci-vps-gate=ci-vps-gate\n${linuxRunnerLabel} ci-vps-gate\n`,
+    );
+    expect(shell("runner_label_for_name ci-vps-gate").stdout).toBe("ci-vps-gate\n");
+    expect(shell("runner_label_for_name ci-vps-9").status).not.toBe(0);
+  });
+
+  it("only the required job runs on the gate label, and ci/policy.json, ci.yml, actionlint, the schema and runners.sh all name the same two labels", () => {
+    const gateLabel = shell('printf "%s" "$RUNNER_GATE_LABEL"').stdout;
+    expect(gateLabel).toBe(gateRunnerLabel);
+    expect(shell('printf "%s" "$RUNNER_CHECK_LABEL"').stdout).toBe(linuxRunnerLabel);
+    const policy = JSON.parse(read("ci/policy.json"));
+    for (const check of policy.checks)
+      for (const member of check.members) {
+        if (member.os !== "linux") continue;
+        expect([check.id, member.runner]).toEqual([
+          check.id,
+          check.id === "required" ? gateRunnerLabel : linuxRunnerLabel,
+        ]);
+      }
+    const actionlint = read(".github/actionlint.yaml");
+    expect(actionlint).toContain(`- ${linuxRunnerLabel}\n`);
+    expect(actionlint).toContain(`- ${gateRunnerLabel}\n`);
+    const schema = read("ci/policy.schema.json");
+    expect(schema).toContain(`"${linuxRunnerLabel}"`);
+    expect(schema).toContain(`"${gateRunnerLabel}"`);
+    const workflow = parse(read(".github/workflows/ci.yml"));
+    const fixed = Object.entries(workflow.jobs)
+      .filter(([, job]) => !String(job["runs-on"]).startsWith("$"))
+      .map(([id, job]) => [id, job["runs-on"]]);
+    expect(fixed.length).toBeGreaterThan(1);
+    for (const [id, label] of fixed)
+      expect([id, label]).toEqual([id, id === "required" ? gateRunnerLabel : linuxRunnerLabel]);
+    expect(Object.fromEntries(fixed).required).toBe(gateRunnerLabel);
+    const matrixRunners = Object.values(workflow.jobs).flatMap((job) =>
+      (job.strategy?.matrix?.include ?? []).map((entry) => entry.runner),
+    );
+    expect(matrixRunners.length).toBeGreaterThan(0);
+    expect(matrixRunners).not.toContain(gateRunnerLabel);
+  });
+
+  it("register-runner.sh registers each runner with the label runners.sh selected for it", () => {
+    const text = read("scripts/operations/ci-runner/register-runner.sh");
+    expect(text).toContain('1|2|3) runner_select "$1" ;;');
+    expect(text).toContain('--labels "$RUNNER_LABEL"');
+  });
+});
+
+describe("pause and resume with the gate runner", () => {
+  it("pause removes ci-vps from the check runners and ci-vps-gate from the gate runner", () => {
+    const box = threeRunners();
+    const result = box.mac("pause-runners.sh");
+    expect(result.stdout).toContain("RUNNER_PAUSED");
+    expect(result.status).toBe(0);
+    expect(box.managedLabels()).toEqual({ "ci-vps-1": [], "ci-vps-2": [], "ci-vps-gate": [] });
+    const removals = box.lines().filter((line) => line.includes("-X DELETE"));
+    expect(removals).toEqual([
+      "gh api -X DELETE repos/sixianli/himawari-agent/actions/runners/11/labels/ci-vps",
+      "gh api -X DELETE repos/sixianli/himawari-agent/actions/runners/12/labels/ci-vps",
+      "gh api -X DELETE repos/sixianli/himawari-agent/actions/runners/13/labels/ci-vps-gate",
+    ]);
+  });
+
+  it("pause also removes the fallback gate label from the first check runner", () => {
+    const box = threeRunners({
+      runners: [
+        [11, "ci-vps-1", ["ci-vps", "ci-vps-gate"]],
+        [12, "ci-vps-2"],
+        [13, "ci-vps-gate"],
+      ],
+    });
+    expect(box.mac("pause-runners.sh").status).toBe(0);
+    expect(box.managedLabels()["ci-vps-1"]).toEqual([]);
+  });
+
+  it("pause refuses to stop services while the gate label could not be removed, and puts every label back", () => {
+    const box = threeRunners();
+    box.set("ignore-delete-13", "");
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("RUNNER_PAUSE_FAILED a runner label is still on: ci-vps-gate");
+    expect(box.managedLabels()).toEqual({
+      "ci-vps-1": ["ci-vps"],
+      "ci-vps-2": ["ci-vps"],
+      "ci-vps-gate": ["ci-vps-gate"],
+    });
+    expect(box.lines().some((line) => line.includes("--labels-removed"))).toBe(false);
+  });
+
+  it("resume gives every runner back its own label and never puts ci-vps on the gate runner", () => {
+    const box = threeRunners({ labelled: false });
+    box.set("online-from", 1);
+    const result = box.mac("resume-runners.sh");
+    expect(result.stdout).toContain("RUNNER_RESUMED");
+    expect(result.status).toBe(0);
+    expect(box.managedLabels()).toEqual({
+      "ci-vps-1": ["ci-vps"],
+      "ci-vps-2": ["ci-vps"],
+      "ci-vps-gate": ["ci-vps-gate"],
+    });
+  });
+
+  it("resume does not start services while the gate runner carries only the check label", () => {
+    const box = threeRunners({
+      runners: [
+        [11, "ci-vps-1"],
+        [12, "ci-vps-2"],
+        [13, "ci-vps-gate", ["ci-vps"]],
+      ],
+    });
+    box.set("fail-add-13", "");
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("ci-vps-gate=foreign");
+    expect(box.lines().some((line) => /^ssh .*runner-resume\.sh/.test(line))).toBe(false);
+  });
+
+  it.each([
+    [
+      "the gate runner also carries the check label",
+      [
+        [11, "ci-vps-1"],
+        [12, "ci-vps-2"],
+        [13, "ci-vps-gate", ["ci-vps-gate", "ci-vps"]],
+      ],
+      "ci-vps-gate=mixed",
+    ],
+    [
+      "the second check runner also carries the gate label",
+      [
+        [11, "ci-vps-1"],
+        [12, "ci-vps-2", ["ci-vps", "ci-vps-gate"]],
+        [13, "ci-vps-gate"],
+      ],
+      "ci-vps-2=mixed",
+    ],
+  ])("resume does not start services while %s", (_, runners, state) => {
+    const box = threeRunners({ runners });
+    box.set("online-from", 1);
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(state);
+    expect(result.stdout).toContain("RUNNER_RESUME_INCOMPLETE");
+    expect(box.lines().some((line) => /^ssh .*runner-resume\.sh/.test(line))).toBe(false);
+  });
+
+  it("resume starts services while the first check runner carries the fallback gate label", () => {
+    const box = threeRunners({
+      runners: [
+        [11, "ci-vps-1", ["ci-vps", "ci-vps-gate"]],
+        [12, "ci-vps-2"],
+        [13, "ci-vps-gate"],
+      ],
+    });
+    box.set("online-from", 1);
+    const result = box.mac("resume-runners.sh");
+    expect(result.stdout).toContain("RUNNER_RESUMED");
+    expect(result.status).toBe(0);
+  });
+
+  it("pause and resume refuse to act when GitHub has a ci-vps-gate runner that is not on the VPS", () => {
+    const box = threeRunners({ vpsNames: ["ci-vps-1", "ci-vps-2"] });
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("ci-vps-gate carries ci-vps-gate but is not installed");
+    expect(box.lines().some((line) => line.includes("-X DELETE"))).toBe(false);
+  });
+});
+
+describe("gate-fallback.sh", () => {
+  const fallback = (box, ...args) =>
+    spawnSync("/bin/bash", [path.join(scripts, "gate-fallback.sh"), ...args], {
+      encoding: "utf8",
+      env: {
+        PATH: `${box.root}/bin:${process.env.PATH}`,
+        HOME: box.root,
+        RUNNER_LOCK_DIR: path.join(box.root, "lock"),
+      },
+    });
+
+  it("asks for on or off and touches nothing otherwise", () => {
+    const box = threeRunners();
+    const result = fallback(box);
+    expect(result.status).toBe(64);
+    expect(result.stdout).toContain("usage");
+    expect(box.calls()).toBe("");
+  });
+
+  it("on adds ci-vps-gate to the first check runner only, off takes it away again", () => {
+    const box = threeRunners();
+    box.set("online-from", 1);
+    const on = fallback(box, "on");
+    expect(on.stdout).toContain("GATE_FALLBACK_ON ci-vps-1");
+    expect(on.status).toBe(0);
+    expect(box.managedLabels()).toEqual({
+      "ci-vps-1": ["ci-vps", "ci-vps-gate"],
+      "ci-vps-2": ["ci-vps"],
+      "ci-vps-gate": ["ci-vps-gate"],
+    });
+    const off = fallback(box, "off");
+    expect(off.stdout).toContain("GATE_FALLBACK_OFF ci-vps-1");
+    expect(off.status).toBe(0);
+    expect(box.managedLabels()["ci-vps-1"]).toEqual(["ci-vps"]);
+    expect(existsSync(path.join(box.root, "lock"))).toBe(false);
+  });
+
+  it("on is refused while the first check runner is offline, because it could not take the jobs either", () => {
+    const box = threeRunners();
+    box.set("online-from", 99);
+    const result = fallback(box, "on");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("GATE_FALLBACK_FAILED ci-vps-1 is offline");
+    expect(box.managedLabels()["ci-vps-1"]).toEqual(["ci-vps"]);
+  });
+
+  it("on warns when the gate runner is still online, and says nothing extra when it is offline", () => {
+    const online = threeRunners();
+    online.set("online-from", 1);
+    expect(fallback(online, "on").stdout).toContain("note: ci-vps-gate is online");
+    const offline = threeRunners();
+    writeFileSync(
+      path.join(offline.root, "bin", "gh"),
+      readFileSync(path.join(offline.root, "bin", "gh"), "utf8").replace(
+        '(n >= o) ? "online" : "offline"',
+        '($2 == "ci-vps-gate") ? "offline" : "online"',
+      ),
+    );
+    const result = fallback(offline, "on");
+    expect(result.stdout).toContain("GATE_FALLBACK_ON ci-vps-1");
+    expect(result.stdout).not.toContain("note:");
+  });
+
+  it("on is refused while the runners are paused", () => {
+    const box = threeRunners({ labelled: false });
+    const result = fallback(box, "on");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("run resume-runners.sh first");
+    expect(box.managedLabels()["ci-vps-1"]).toEqual([]);
+  });
+
+  it("on reports failure when GitHub did not take the label", () => {
+    const box = threeRunners();
+    box.set("online-from", 1);
+    box.set("fail-add-11", "");
+    const result = fallback(box, "on");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("GATE_FALLBACK_FAILED ci-vps-gate is not on ci-vps-1");
+  });
+
+  it("off reports failure when the label is still there", () => {
+    const box = threeRunners({
+      runners: [
+        [11, "ci-vps-1", ["ci-vps", "ci-vps-gate"]],
+        [12, "ci-vps-2"],
+        [13, "ci-vps-gate"],
+      ],
+    });
+    box.set("ignore-delete-11", "");
+    const result = fallback(box, "off");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("GATE_FALLBACK_FAILED ci-vps-gate is still on ci-vps-1");
+  });
+
+  it("changes nothing when GitHub cannot be read", () => {
+    const box = threeRunners();
+    box.set("fail-list-from", 1);
+    const result = fallback(box, "on");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("labels untouched");
+    expect(box.lines().some((line) => line.includes("/labels"))).toBe(false);
+  });
+});
+
+describe("uninstall-runner.sh with the gate runner", () => {
+  const box3 = () => {
+    const box = sandbox();
+    box.fake("hostname", "echo ci-vps");
+    for (const name of ["systemctl", "rm", "pkill", "groupdel"])
+      box.fake(name, `${box.record(name)}\nexit 0`);
+    box.fake("getent", "exit 2");
+    box.fake("nft", '[ "$1" = list ] && exit 1\nexit 0');
+    box.fake("userdel", `${box.record("userdel")}\ntouch "${box.root}/gone-$1"\nexit 0`);
+    return box;
+  };
+
+  it("all removes the gate runner, its unit, its directory and its slice", () => {
+    const box = box3();
+    box.fake(
+      "id",
+      `[ -e "${box.root}/gone-\${@: -1}" ] && exit 1\n[ "$1" = -u ] && echo 0\nexit 0`,
+    );
+    const result = box.run("uninstall-runner.sh", ["all"]);
+    const calls = box.calls();
+    expect(calls).toContain("systemctl disable --now gh-runner-gate.service\n");
+    expect(calls).toContain("userdel gh-runner-gate\n");
+    expect(calls).toContain("rm -rf /srv/gh-runner-gate\n");
+    expect(calls).toMatch(/^rm -f .*\/etc\/systemd\/system\/ghgate\.slice/m);
+    expect(result.stdout).toContain("UNINSTALL_OK removed: ci-vps-1 ci-vps-2 ci-vps-gate;");
+    expect(result.status).toBe(0);
+  });
+
+  it("the usage text offers removing only the gate runner", () => {
+    const box = box3();
+    box.fake("id", "echo 0");
+    const result = box.run("uninstall-runner.sh", ["1"]);
+    expect(result.status).toBe(64);
+    expect(result.stderr).toContain("<2|3|all>");
   });
 });

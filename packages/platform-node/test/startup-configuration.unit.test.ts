@@ -1939,3 +1939,35 @@ it("[P4-5] accepts a real memory eval with a model that may see private and sens
     }),
   );
 });
+
+it("accepts the approval preview length only from 1 to 2000 characters and leaves it unset by default", () => {
+  const raw = config("/tmp/himawari-approval-preview-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  raw["runPolicy"] = { ...policy };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy
+      ?.approvalBodyPreviewCharacters,
+  ).toBeUndefined();
+  for (const value of [1, 300, 2000]) {
+    raw["runPolicy"] = { ...policy, approvalBodyPreviewCharacters: value };
+    expect(
+      parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy
+        ?.approvalBodyPreviewCharacters,
+    ).toBe(value);
+  }
+  for (const value of [0, 2001, -1, 1.5, "300", null]) {
+    raw["runPolicy"] = { ...policy, approvalBodyPreviewCharacters: value };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow(
+      expect.objectContaining({
+        details: expect.objectContaining({
+          field: "configuration.runPolicy.approvalBodyPreviewCharacters",
+        }),
+      }),
+    );
+  }
+});

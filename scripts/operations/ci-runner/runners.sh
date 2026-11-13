@@ -1,6 +1,8 @@
-RUNNER_IDS="1 2"
+RUNNER_IDS="1 2 3"
 RUNNER_HOST=ci-vps
-RUNNER_LABEL=ci-vps
+RUNNER_CHECK_LABEL=ci-vps
+RUNNER_GATE_LABEL=ci-vps-gate
+RUNNER_LABELS="$RUNNER_CHECK_LABEL $RUNNER_GATE_LABEL"
 RUNNER_CONTROLLER=ubuntu
 RUNNER_SHARE_ROOT=/srv/gh-runner-share
 RUNNER_SHARE_GROUP=gh-ci-share
@@ -13,20 +15,51 @@ runner_select() {
       RUNNER_ROOT=/srv/gh-runner
       RUNNER_UNIT=gh-runner.service
       RUNNER_NAME=ci-vps-1
-      RUNNER_OTHER_ROOT=/srv/gh-runner-2
+      RUNNER_OTHER_ROOTS="/srv/gh-runner-2 /srv/gh-runner-gate"
       ;;
     2)
       RUNNER_USER=gh-runner-2
       RUNNER_ROOT=/srv/gh-runner-2
       RUNNER_UNIT=gh-runner-2.service
       RUNNER_NAME=ci-vps-2
-      RUNNER_OTHER_ROOT=/srv/gh-runner
+      RUNNER_OTHER_ROOTS="/srv/gh-runner /srv/gh-runner-gate"
+      ;;
+    3)
+      RUNNER_USER=gh-runner-gate
+      RUNNER_ROOT=/srv/gh-runner-gate
+      RUNNER_UNIT=gh-runner-gate.service
+      RUNNER_NAME=ci-vps-gate
+      RUNNER_OTHER_ROOTS="/srv/gh-runner /srv/gh-runner-2"
       ;;
     *)
-      echo "unknown runner: ${1:-} (expected 1 or 2)" >&2
+      echo "unknown runner: ${1:-} (expected 1, 2 or 3)" >&2
       return 64
       ;;
   esac
+  if [ "$1" = 3 ]; then
+    RUNNER_LABEL=$RUNNER_GATE_LABEL
+    RUNNER_SLICE=ghgate.slice
+    RUNNER_MEMORY_MIN=2G
+    RUNNER_MEMORY_HIGH=2G
+    RUNNER_MEMORY_MAX=2G
+    RUNNER_TASKS_MAX=1024
+  else
+    RUNNER_LABEL=$RUNNER_CHECK_LABEL
+    RUNNER_SLICE=gh-runners.slice
+    RUNNER_MEMORY_MIN=0
+    RUNNER_MEMORY_HIGH=14G
+    RUNNER_MEMORY_MAX=15G
+    RUNNER_TASKS_MAX=2048
+  fi
+}
+
+runner_label_for_name() {
+  local id
+  for id in $RUNNER_IDS; do
+    runner_select "$id"
+    [ "$RUNNER_NAME" = "$1" ] && { printf '%s\n' "$RUNNER_LABEL"; return 0; }
+  done
+  return 1
 }
 
 require_runner_host() {
@@ -51,7 +84,12 @@ render_runner_unit() {
   sed -e "s|@USER@|$RUNNER_USER|g" \
     -e "s|@ROOT@|$RUNNER_ROOT|g" \
     -e "s|@NAME@|$RUNNER_NAME|g" \
-    -e "s|@OTHER_ROOT@|$RUNNER_OTHER_ROOT|g" \
+    -e "s|@OTHER_ROOTS@|$(printf ' -%s' $RUNNER_OTHER_ROOTS)|g" \
+    -e "s|@SLICE@|$RUNNER_SLICE|g" \
+    -e "s|@MEMORY_MIN@|$RUNNER_MEMORY_MIN|g" \
+    -e "s|@MEMORY_HIGH@|$RUNNER_MEMORY_HIGH|g" \
+    -e "s|@MEMORY_MAX@|$RUNNER_MEMORY_MAX|g" \
+    -e "s|@TASKS_MAX@|$RUNNER_TASKS_MAX|g" \
     -e "s|@SHARE@|$RUNNER_SHARE_ROOT|g" \
     -e "s|@SHARE_GROUP@|$RUNNER_SHARE_GROUP|g" "$2"
 }

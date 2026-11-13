@@ -131,7 +131,7 @@
       "members": [
         {
           "key": "default",
-          "runner": "ci-vps",
+          "runner": "ci-vps-gate",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3"

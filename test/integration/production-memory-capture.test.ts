@@ -291,6 +291,7 @@ describe("production memory capture", () => {
       memory,
       reminders: repository.memoryReminders(),
       ownerRules: ruleWriter,
+      ledger: repository.decisionLedger(),
       book: repository.memoryBook(),
       profile: new OwnerProfileService({
         state: repository.productMemoryState(),
@@ -1872,6 +1873,7 @@ describe("production memory capture", () => {
     await context.capture.start(context.request);
     await context.capture.stop();
     await context.turn("owner", sentence, null);
+    await context.turn("owner", "日本入管局相关的邮件\n以后必须通知我", null);
     const immigration = { senderDomains: ["isa.go.jp"], phrases: ["在留資格"] };
     const tool = (capabilityRef: string, args: Record<string, unknown>, id: string) =>
       context.ruleTools.run({
@@ -1897,6 +1899,8 @@ describe("production memory capture", () => {
         payload: {},
       } as never);
       if (snapshot.type !== "memory.rules.snapshot") throw new Error("snapshot");
+      const { idempotencyKey: _, ...parsable } = snapshot as Record<string, unknown>;
+      gatewayV2MessageSchema.parse(parsable);
       return snapshot.payload.rules;
     };
 
@@ -1904,6 +1908,81 @@ describe("production memory capture", () => {
     expect(created).toMatchObject({ status: "active", type: "mail_must_notify", replayed: false });
     expect(created["ruleId"]).toMatch(/^owner:[0-9a-f]{24}$/u);
     expect((created["trials"] as unknown[]).length).toBeGreaterThanOrEqual(3);
+    const detail = (await listed()).find(({ ruleId }) => ruleId === created["ruleId"]);
+    expect(detail).toMatchObject({ quote: sentence, changes: 0, lastUsed: null });
+    await context.repository.decisionLedger().append({
+      id: "rule-review-1",
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      kind: "rule_review",
+      decidedAt: "2026-11-11T09:00:00.000Z",
+      outcome: "needs_review",
+      reasonCode: "source_memory_changed",
+      subjectRef: null,
+      inputs: { memoryIds: [], ruleIds: [created["ruleId"]] },
+      reasonRef: null,
+      contentRef: null,
+      costMicros: 0,
+      durationMs: 0,
+    } as never);
+    expect(
+      (await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.lastUsed,
+    ).toBeNull();
+    const recordUse = (id: string, checkedAt: string) =>
+      context.repository.proactive().record({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        decision: {
+          id,
+          scenario: "gmail",
+          checkedAt,
+          counts: {
+            fetched: 0,
+            skipped: 0,
+            judged: 0,
+            act: 0,
+            know: 0,
+            check: 0,
+            ignore: 0,
+            floorRaised: 0,
+            pushed: 0,
+          },
+          verdict: "silent",
+          reasonCode: "nothing_new",
+          pushSourceKey: null,
+          costMicros: 0,
+          durationMs: 1,
+          ownerRating: null,
+          ratedAt: null,
+        },
+        inputs: {
+          ruleIds: [`${created["ruleId"]}@1`],
+          sourceIds: [],
+          floorHits: {},
+          memoryInjected: false,
+          memoryIds: [],
+          usedMemoryIds: [],
+          tentativeMemoryIds: [],
+          memoryByMail: {},
+          memoryRecall: "off",
+        },
+        modelPayloads: [],
+        processed: [],
+        insights: [],
+        repliedThreads: [],
+        push: null,
+        cursor: null,
+      } as never);
+    await recordUse("rule-used-1", "2026-11-11T08:00:00.000Z");
+    expect((await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.lastUsed).toEqual({
+      at: "2026-11-11T08:00:00.000Z",
+      kind: "proactive",
+      decisionId: "rule-used-1",
+    });
+    await recordUse("-1", "2026-11-11T10:00:00.000Z");
+    expect(
+      (await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.lastUsed,
+    ).toBeNull();
     const ruleMemory = await context.repository
       .productMemoryState()
       .read(created["memoryId"] as never);
@@ -2098,6 +2177,33 @@ describe("production memory capture", () => {
     expect(
       (await tool("rule.list", {}, "call-list"))["rules"] as { ruleId: string }[],
     ).toHaveLength(1);
+    const listedRules = (await tool("rule.list", {}, "call-list-shape"))["rules"] as Record<
+      string,
+      unknown
+    >[];
+    expect(Object.keys(listedRules[0] ?? {})).not.toEqual(expect.arrayContaining(["revision"]));
+    expect(Object.keys(listedRules[0] ?? {})).not.toContain("sourceMemoryId");
+    const multiline = await set(
+      { quote: "日本入管局相关的邮件\n以后必须通知我", params: immigration },
+      "call-multiline",
+    );
+    const multilineDetail = (await listed()).find(({ ruleId }) => ruleId === multiline["ruleId"]);
+    expect(multilineDetail?.quote).toBe("日本入管局相关的邮件 以后必须通知我");
+    await context.memory.delete(
+      multiline["memoryId"] as never,
+      (await context.repository.memoryBook().latestGeneration({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+      } as never)) as never,
+    );
+    const afterDelete = (await listed()).find(({ ruleId }) => ruleId === multiline["ruleId"]);
+    expect(afterDelete).toMatchObject({ status: "needs_review", quote: null });
+    const undone = (
+      await tool("rule.undo", { ruleId: multiline["ruleId"] }, "call-undo-multiline")
+    )["undone"] as Record<string, unknown>;
+    expect(undone).toMatchObject({ ruleId: multiline["ruleId"], status: "retired" });
+    expect(Object.keys(undone)).not.toContain("revision");
+    expect(Object.keys(undone)).not.toContain("sourceMemoryId");
     await expect(
       command(
         context.control,

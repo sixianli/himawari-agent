@@ -46,6 +46,10 @@ import {
   type ProductionSensitiveInterceptionsControl,
 } from "./production-sensitive-interceptions-control.js";
 import {
+  PRODUCTION_DATA_EXPORT_OPERATIONS,
+  type ProductionDataExportControl,
+} from "./production-data-export.js";
+import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   type ProductionServerStatusControl,
 } from "./production-server-status-control.js";
@@ -83,6 +87,7 @@ export function createProductionApprovalGateway(options: {
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
   readonly serverStatusControl?: ProductionServerStatusControl;
   readonly homeControl?: Pick<ProductionHomeControl, "query">;
+  readonly dataExportControl?: ProductionDataExportControl;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -129,7 +134,9 @@ export function createProductionApprovalGateway(options: {
                         ? options.sensitiveInterceptionsControl.query(query)
                         : query.type.startsWith("server.status.") && options.serverStatusControl
                           ? options.serverStatusControl.query(query)
-                          : searchAuthorization.query(query),
+                          : query.type.startsWith("data.export.") && options.dataExportControl
+                            ? options.dataExportControl.query(query)
+                            : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -237,6 +244,8 @@ export function createProductionApprovalGateway(options: {
           return options.museControl.execute(command);
         if (command.type.startsWith("owner.preferences.") && options.ownerPreferencesControl)
           return options.ownerPreferencesControl.execute(command);
+        if (command.type.startsWith("data.export.") && options.dataExportControl)
+          return options.dataExportControl.execute(command);
         if (
           command.type.startsWith("sensitive.interceptions.") &&
           options.sensitiveInterceptionsControl
@@ -272,6 +281,7 @@ export function createProductionApprovalGateway(options: {
         : []),
       ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
       ...(options.homeControl ? PRODUCTION_HOME_OPERATIONS : []),
+      ...(options.dataExportControl ? PRODUCTION_DATA_EXPORT_OPERATIONS : []),
     ],
     reads,
     controlPlane,

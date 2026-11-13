@@ -86,7 +86,12 @@ import {
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
-import { registerDataExportRoute } from "./production-data-export.js";
+import {
+  DataExportJobs,
+  PRODUCTION_DATA_EXPORT_OPERATIONS,
+  ProductionDataExportControl,
+  registerDataExportRoute,
+} from "./production-data-export.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
 import {
   PRODUCTION_HOME_OPERATIONS,
@@ -699,6 +704,7 @@ function routeOptions(
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
         ...PRODUCTION_HOME_OPERATIONS,
+        ...PRODUCTION_DATA_EXPORT_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1200,6 +1206,13 @@ export async function createProductionHttpComposition(
         }
       : {}),
   });
+  const dataExportJobs = new DataExportJobs({
+    ownerId,
+    agentId,
+    databasePath: repository.databasePath,
+    protector: payloadProtector,
+    now: clock,
+  });
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     repository,
@@ -1235,6 +1248,11 @@ export async function createProductionHttpComposition(
     serverStatusControl: new ProductionServerStatusControl({
       configuration,
       health,
+      clock: { now: clock },
+    }),
+    dataExportControl: new ProductionDataExportControl({
+      configuration,
+      jobs: dataExportJobs,
       clock: { now: clock },
     }),
   });
@@ -1280,10 +1298,7 @@ export async function createProductionHttpComposition(
     authentication,
     sessionCookieName: httpConfiguration.sessionCookieName,
     ownerId,
-    agentId,
-    databasePath: repository.databasePath,
-    protector: payloadProtector,
-    now: clock,
+    jobs: dataExportJobs,
   });
   registerChatExportRoute(app, {
     authentication,
