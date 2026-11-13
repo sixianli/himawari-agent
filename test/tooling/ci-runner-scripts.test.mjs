@@ -2426,12 +2426,20 @@ describe("[ADR-0260] pause, resume and fallback know about both machines", () =>
       ],
       vpsNames: ["ci-vps-gate"],
     });
+    const strayOnly = allGone.mac("arm-fallback.sh", ["on"]);
+    expect(strayOnly.status).toBe(1);
+    expect(strayOnly.stdout).toContain(
+      "ARM_FALLBACK_FAILED ci-vps-1 carries ci-arm but is not installed on ci-vps; run arm-fallback.sh off first",
+    );
     const cleared = allGone.mac("arm-fallback.sh", ["off"]);
     expect(cleared.status).toBe(0);
     expect(cleared.stdout).toContain(
       "not installed on ci-vps, left out: ci-vps-1 ci-vps-2 ci-vps-3",
     );
     expect(allGone.managedLabels()["ci-vps-1"]).toEqual(["ci-vps"]);
+    expect(cleared.stdout).toContain(
+      "ARM_FALLBACK_OFF no check runner is installed on ci-vps and none carries ci-arm",
+    );
   });
 
   it.each([

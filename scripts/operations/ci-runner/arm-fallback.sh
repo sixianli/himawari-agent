@@ -44,7 +44,6 @@ carrying() {
 }
 
 if [ "$WANTED" = on ]; then
-  [ -n "$FALLBACKS" ] || { echo "ARM_FALLBACK_FAILED $RUNNER_HOST has no check runner installed; labels untouched"; exit 1; }
   STRAY=""
   for name in $(carrying "$TABLE"); do
     case " $(echo $FALLBACKS) " in
@@ -53,6 +52,7 @@ if [ "$WANTED" = on ]; then
     esac
   done
   [ -z "$STRAY" ] || { echo "ARM_FALLBACK_FAILED$STRAY carries $RUNNER_ARM_LABEL but is not installed on $RUNNER_HOST; run arm-fallback.sh off first; labels untouched"; exit 1; }
+  [ -n "$FALLBACKS" ] || { echo "ARM_FALLBACK_FAILED $RUNNER_HOST has no check runner installed; labels untouched"; exit 1; }
   for name in $FALLBACKS; do
     has_label "$(runner_field "$TABLE" "$name" 5)" "$RUNNER_CHECK_LABEL" || {
       echo "ARM_FALLBACK_FAILED $name does not carry $RUNNER_CHECK_LABEL, so the CI VPS runners are paused; run resume-runners.sh first; labels untouched"
@@ -81,10 +81,11 @@ fi
 for name in $(carrying "$TABLE"); do
   remove_label "$(runner_field "$TABLE" "$name" 1)" "$RUNNER_ARM_LABEL" || echo "could not remove $RUNNER_ARM_LABEL from $name"
 done
-TABLE=$(github_runners) || { echo "ARM_FALLBACK_FAILED could not read GitHub back; check the labels of$FALLBACKS"; exit 1; }
+TABLE=$(github_runners) || { echo "ARM_FALLBACK_FAILED could not read GitHub back; check the labels of:$CHECKS"; exit 1; }
 for name in $FALLBACKS; do
   [ "$(runner_field "$TABLE" "$name" 1 | grep -c .)" = 1 ] || { echo "ARM_FALLBACK_FAILED could not read $name back"; exit 1; }
 done
 LEFT=$(carrying "$TABLE")
 [ -z "$LEFT" ] || { echo "ARM_FALLBACK_FAILED $RUNNER_ARM_LABEL is still on: $LEFT"; exit 1; }
+[ -n "$FALLBACKS" ] || { echo "ARM_FALLBACK_OFF no check runner is installed on $RUNNER_HOST and none carries $RUNNER_ARM_LABEL"; exit 0; }
 echo "ARM_FALLBACK_OFF$FALLBACKS take only $RUNNER_CHECK_LABEL jobs"

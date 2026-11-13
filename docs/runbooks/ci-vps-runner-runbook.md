@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:e5f51ccc63e7e38fcbf3096c8c6f969669e77c159c6f4ae6289568aa581306f0"
+contract_sha256: "sha256:7b1a65a4bcd3cb89394cc7a42091502f1dc6d1cad52a8c5f0e8e2828cd8d4a2d"
 supersedes: "docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md"
 superseded_by: ""
 date: "2026-11-07"
@@ -133,7 +133,7 @@ date: "2026-11-07"
 2. 有 runner 服务在运行时安装脚本以退出码 70 拒绝，所以重装前先按[暂停和恢复](#pause-and-resume)在 Mac 上运行 `pause-runners.sh`。
 3. `sudo bash /home/ubuntu/ci-runner/install-runner.sh`。脚本会：确认主机名是 `ci-vps`（否则以退出码 68 拒绝）；把要改动的服务文件、slice、`/etc/gh-runner/`、窄 sudo 规则和各个 runner 的 `hooks/` 目录复制到 `/var/backups/gh-runner/<时间>/`，并记下哪些原来不存在；之后任何一步失败或脚本被中断（`Ctrl-C`、`TERM`、`HUP`），都会把原有的放回、把这次新建的文件、用户、组和目录删掉，撤销这次新启用的开机启动，重新加载防火墙规则，并打印 `INSTALL_FAILED`；某一步出错时，先打印一行 `INSTALL_STEP_FAILED line <行号> exit <退出码>: <出错的命令>`，指出是哪一步；回滚期间忽略 `PIPE` 信号（读输出的一方已退出时系统发出的信号），所以标准错误被关掉、或接收输出的程序已经退出时，回滚也会放回全部文件，不会中途停下；有放不回去的会打印 `RESTORE_INCOMPLETE`，列出是哪几项和备份目录；建 `gh-runner`、`gh-runner-2`、`gh-runner-3`、`gh-runner-gate` 四个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝），建系统组 `gh-ci-share` 和共享目录 `/srv/gh-runner-share`（`2770`，属主 root；组不存在而目录已存在时以退出码 71 拒绝，不接管别人建的目录），建四个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、两个 slice 和服务（服务文件每次都全部重新生成，所以给已有的机器加 runner 时，原有 runner 的服务文件也会换成新的），按端口名单和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每小时清理定时器。成功时打印 `INSTALL_OK`，同时打印共享目录、 runner 账号的 uid、拦住的本机端口和备份目录。
 4. 重装时最后在 Mac 上运行 `resume-runners.sh`；第一次安装要先按[注册](#register)注册。
-5. 在已经有两个检查 runner 的机器上加汇总 runner：第 2 步暂停，第 1 步上传，第 3 步安装（看到 `INSTALL_OK`，`runner_uids` 里有三个 uid），按[注册](#register)注册汇总 runner（`register-runner.sh 3`），再运行 `resume-runners.sh`，最后按 [Live-State Preflight](#live-state-preflight) 第 4、5、7、8 项核对。恢复脚本只给已注册的 runner 加标签，所以要先注册再恢复。
+5. 在已经有两个检查 runner 的机器上加汇总 runner：第 2 步暂停，第 1 步上传，第 3 步安装（看到 `INSTALL_OK`，`runner_uids` 里有四个 uid：安装脚本按 `runners.sh` 的名单一起建好第 3 个检查 runner 的账号和服务，只是不注册），按[注册](#register)注册汇总 runner（`register-runner.sh 3`），再运行 `resume-runners.sh`，最后按 [Live-State Preflight](#live-state-preflight) 第 4、5、7、8 项核对。恢复脚本只给已注册的 runner 加标签，所以要先注册再恢复。
 6. 加第 3 个检查 runner `ci-vps-3`（编号 6，账号 `gh-runner-3`，目录 `/srv/gh-runner-3/`，服务 `gh-runner-3.service`，标签 `ci-vps`，和前两个检查 runner 共用 `gh-runners.slice` 的 18 GB 内存池）：做法同第 5 条，注册时用 `register-runner.sh 6`。2026-11-13 量过：两个检查 runner 都在跑作业时，CPU 平均空着 37%，内存实际只用了 4 GB（其余是可回收的文件缓存），所以加第 3 个。三个检查作业同时吃满内存时，内存池上限会让其中一个作业被系统杀掉、作业失败，这时按 [Rollback](#rollback) 里“只卸第 3 个检查 runner”卸掉它。
 
 <a id="register"></a>
@@ -196,7 +196,7 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 
 **暂停和恢复**：在 Mac 上运行 `RUNNER_SITE=arm scripts/operations/ci-runner/pause-runners.sh` 和 `RUNNER_SITE=arm scripts/operations/ci-runner/resume-runners.sh`，行为和上面[暂停和恢复](#pause-and-resume)一节相同，只是对象换成 ARM 机器上的两个 runner 和 `ci-arm` 标签。两处各有各的锁，暂停一处不影响另一处。
 
-**ARM 机器不在时的应急**：`ci-arm` 的任务会一直排队，不会被当成通过。在 Mac 上运行 `scripts/operations/ci-runner/arm-fallback.sh on`，先从 CI VPS 读出装了哪些 runner，把 `ci-arm` 标签加到已装的检查 runner（`ci-vps-1`、`ci-vps-2`、`ci-vps-3`；还没装的跳过，并打印 `not installed on ci-vps, left out:`）上，这些任务改由 CI VPS 接（`ARM_FALLBACK_ON`）；ARM 机器恢复后运行 `arm-fallback.sh off`（`ARM_FALLBACK_OFF`）。连不上 CI VPS、一个检查 runner 都没装、已装的 runner 在 GitHub 上找不到或重名、它们不带 `ci-vps` 标签（暂停中）或都不在线时拒绝，标签不动。`on` 时如果有没装的检查 runner 还带着 `ci-arm`（以前的应急没关就卸掉了），先拒绝并提示运行 `off`。`off` 会去掉所有检查 runner 身上的 `ci-arm`，包括已经卸掉、但 GitHub 上还留着的；一个检查 runner 都没装时 `off` 也照样清理。应急开着的时候，两处的 `pause-runners.sh` 都会拒绝运行并提示先 `arm-fallback.sh off`：否则 GitHub 会继续把 `ci-arm` 的任务派给正要停的 runner。
+**ARM 机器不在时的应急**：`ci-arm` 的任务会一直排队，不会被当成通过。在 Mac 上运行 `scripts/operations/ci-runner/arm-fallback.sh on`，先从 CI VPS 读出装了哪些 runner，把 `ci-arm` 标签加到已装的检查 runner（`ci-vps-1`、`ci-vps-2`、`ci-vps-3`；还没装的跳过，并打印 `not installed on ci-vps, left out:`）上，这些任务改由 CI VPS 接（`ARM_FALLBACK_ON`）；ARM 机器恢复后运行 `arm-fallback.sh off`（`ARM_FALLBACK_OFF`）。连不上 CI VPS、一个检查 runner 都没装、已装的 runner 在 GitHub 上找不到或重名、它们不带 `ci-vps` 标签（暂停中）或都不在线时拒绝，标签不动。`on` 时如果有没装的检查 runner 还带着 `ci-arm`（以前的应急没关就卸掉了），不论还装着几个，都先拒绝并提示运行 `off`。`off` 会去掉所有检查 runner 身上的 `ci-arm`，包括已经卸掉、但 GitHub 上还留着的；一个检查 runner 都没装时 `off` 也照样清理。应急开着的时候，两处的 `pause-runners.sh` 都会拒绝运行并提示先 `arm-fallback.sh off`：否则 GitHub 会继续把 `ci-arm` 的任务派给正要停的 runner。
 
 **卸载**：在 ARM 机器上 `sudo RUNNER_SITE=arm bash /home/ubuntu/ci-runner/uninstall-runner.sh all`（先在 Mac 上暂停），它删掉两个 runner、交报告的账号和脚本、防火墙规则和共享目录；`5` 只删第 2 个。CI VPS 上取报告的钥匙用 `sudo bash /home/ubuntu/ci-runner/install-gate-remote.sh remove` 删。GitHub 上的 runner 记录照[全部卸载](#rollback)一节的做法另删。
 
@@ -255,7 +255,7 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 **只卸第 2 个 runner**：
 
 1. 先在 Mac 上运行 `pause-runners.sh`，再在 VPS 上运行 `sudo bash /home/ubuntu/ci-runner/uninstall-runner.sh 2`。它停掉并删除 `gh-runner-2.service`、结束 `gh-runner-2` 的进程、删除 `/srv/gh-runner-2/`、删除 `gh-runner-2` 用户和组，再按仍装着的 runner 重新生成防火墙规则和窄 sudo 规则（端口名单沿用上一份规则里的端口，再加上当时在监听的）。其他 runner 的服务、目录、账号不动。全部删干净才打印 `UNINSTALL_OK`；还有残留时打印 `UNINSTALL_INCOMPLETE` 和残留清单，并以退出码 1 结束。
-2. 在 Mac 上运行 `resume-runners.sh` 加回第 1 个 runner 的标签并启动它。
+2. 在 Mac 上运行 `resume-runners.sh` 加回其余仍安装的 runner 的标签并启动它们。
 3. 在 Mac 上从 GitHub 删除 `ci-vps-2`：先用 `gh api repos/sixianli/himawari-agent/actions/runners --jq '.runners[]|{id,name}'` 查到编号，再运行 `gh api -X DELETE repos/sixianli/himawari-agent/actions/runners/<编号>`。
 4. 验证：`id gh-runner-2` 报用户不存在，`/srv/gh-runner-2` 不存在，`sudo -n nft list table inet gh_runner` 的规则里没有 `gh-runner-2` 的 uid、只有仍装着的 runner 账号的 uid，其他 runner 仍为 `online`。
 
