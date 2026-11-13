@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdtemp, rm, rmdir } from "node:fs/promises";
-import { afterEach, expect, it, vi } from "vitest";
+import { createServer } from "node:net";
 import { PayloadUdsServer } from "@himawari-agent/platform-node";
+import { afterEach, expect, it, vi } from "vitest";
 import { ProductionPayloadBrokerClient } from "../../apps/execution-worker/src/production-payload-broker-client.ts";
 
 const mocks = vi.hoisted(() => ({
@@ -24,8 +25,6 @@ vi.mock("@himawari-agent/platform-node", async (original) => ({
   verifySandboxHost: mocks.verify,
 }));
 
-import { ProductionSandboxExecutionV2 } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
-import { parseJobHostRequest } from "../../packages/runtime-sandbox/src/job-host-protocol.ts";
 import {
   isSandboxBoundedToolFailure,
   SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
@@ -37,13 +36,21 @@ import {
   type JobHostControlBinding,
 } from "@himawari-agent/runtime-sandbox/control";
 import { udsFaultProxy } from "@himawari-agent/testing";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import { ProductionSandboxExecutionV2 } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
+import {
+  gatewayJobHostControlAccess,
+  type JobHostControlAccess,
+} from "../../packages/runtime-sandbox/src/job-host-control-access.ts";
+import { serveJobHostGateway } from "../../packages/runtime-sandbox/src/job-host-gateway.ts";
+import { parseJobHostRequest } from "../../packages/runtime-sandbox/src/job-host-protocol.ts";
+import { gatewayJobHostLauncher } from "../../packages/runtime-sandbox/src/job-host-transport.ts";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
   openSandboxJournal,
   serviceRequest,
   T1,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
-import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -87,7 +94,14 @@ it.each([
   "[I-84] output-limit",
   "[I-84] output-limit-after-exit",
   "[I-84] resource-limit-after-exit",
-] as const)("v2 lifecycle: %s", async (scenario) => {
+  "gateway normal",
+  "gateway [R2-D4] preparation-ack-blocked",
+] as const)("v2 lifecycle: %s", async (named) => {
+  const viaGateway = named.startsWith("gateway ");
+  const scenario = (viaGateway ? named.slice("gateway ".length) : named) as Exclude<
+    typeof named,
+    `gateway ${string}`
+  >;
   const f = await openSandboxJournal();
   cleanups.push(f.close);
   const root = await mkdtemp(`${testTemporaryRoot()}/r4-worker-v2-`);
@@ -626,7 +640,34 @@ it.each([
     if (scenario === "diagnostic-handshake-rejected") proxy.blockHandshakes(true);
     proxy.releaseHandshakes();
   }
+  const controlCalls: string[] = [];
+  let jobHostAccount:
+    | { launcher: ReturnType<typeof gatewayJobHostLauncher>; control: JobHostControlAccess }
+    | undefined;
+  if (viaGateway) {
+    const gatewayServer = createServer();
+    serveJobHostGateway(gatewayServer, { idleExitMs: 60000, onIdle: () => {}, controlRoot: root });
+    const socketPath = `${root}/gateway.sock`;
+    await new Promise<void>((resolve) => gatewayServer.listen(socketPath, resolve));
+    cleanups.push(() => new Promise<void>((resolve) => gatewayServer.close(() => resolve())));
+    const gateway = gatewayJobHostControlAccess(socketPath);
+    jobHostAccount = {
+      launcher: gatewayJobHostLauncher(socketPath),
+      control: {
+        ...gateway,
+        prepareDirectory: (name) => {
+          controlCalls.push("prepare");
+          return gateway.prepareDirectory(name);
+        },
+        claimLaunch: (context) => {
+          controlCalls.push("claim");
+          return gateway.claimLaunch(context);
+        },
+      },
+    };
+  }
   const worker = new ProductionSandboxExecutionV2({
+    ...(jobHostAccount ? { jobHostAccount } : {}),
     configuration: { capabilityDeployment: {} as never },
     peer: { workerInstanceId: "worker" } as never,
     payloads,
@@ -850,6 +891,10 @@ it.each([
     expect(mocks.prepare).not.toHaveBeenCalled();
     expect(host.cancel).not.toHaveBeenCalled();
   } else expect(host.cancel).toHaveBeenCalled();
+  if (jobHostAccount) {
+    expect(controlCalls).toEqual(launchBlocked ? ["prepare", "claim"] : ["prepare"]);
+    if (!launchBlocked) expect(mocks.prepare.mock.calls[0]?.[4]).toBe(jobHostAccount.launcher);
+  }
   if (launchBlocked) {
     expect(calls.indexOf("launch-blocked")).toBeLessThan(calls.indexOf("preparation-acknowledged"));
     expect(host.start).not.toHaveBeenCalled();

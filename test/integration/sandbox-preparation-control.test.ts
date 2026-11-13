@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
@@ -90,6 +90,7 @@ import { prepareSandboxJobHost } from "../../packages/runtime-sandbox/src/job-ho
 import { readJobHostFinalEvidence } from "../../packages/runtime-sandbox/src/job-host-control.ts";
 import {
   gatewayJobHostControlAccess,
+  type JobHostControlAccess,
   localJobHostControlAccess,
 } from "../../packages/runtime-sandbox/src/job-host-control-access.ts";
 import { serveJobHostGateway } from "../../packages/runtime-sandbox/src/job-host-gateway.ts";
@@ -473,21 +474,7 @@ it.for(["local", "gateway"] as const)(
     const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
     cleanups.push(() => rm(root, { recursive: true, force: true }));
     await configureSdkLoad(root, { delayMs: 0, changePolicyText: true });
-    let access = localJobHostControlAccess(root);
-    let launcher: JobHostLauncher | undefined;
-    if (route === "gateway") {
-      const gatewayServer = createServer();
-      serveJobHostGateway(gatewayServer, {
-        idleExitMs: 60000,
-        onIdle: () => {},
-        controlRoot: root,
-      });
-      const socketPath = path.join(root, "gateway.sock");
-      await new Promise<void>((resolve) => gatewayServer.listen(socketPath, resolve));
-      cleanups.push(() => new Promise<void>((resolve) => gatewayServer.close(() => resolve())));
-      access = gatewayJobHostControlAccess(socketPath);
-      launcher = gatewayJobHostLauncher(socketPath);
-    }
+    const { access, launcher } = await controlRoute(route, root);
     const prepared = await access.prepareDirectory(`control-${"0".repeat(20)}`);
     const directory = prepared.directory;
     const plan = {
@@ -591,6 +578,99 @@ it.for(["local", "gateway"] as const)(
       srtReset: true,
     });
     Object.assign(context.task.meta, { cleanupReadback: { observed, release } });
+  },
+);
+
+async function controlRoute(
+  route: "local" | "gateway",
+  root: string,
+): Promise<{ access: JobHostControlAccess; launcher: JobHostLauncher | undefined }> {
+  if (route === "local") return { access: localJobHostControlAccess(root), launcher: undefined };
+  const gatewayServer = createServer();
+  serveJobHostGateway(gatewayServer, {
+    idleExitMs: 60000,
+    onIdle: () => {},
+    controlRoot: root,
+  });
+  const socketPath = path.join(root, "gateway.sock");
+  await new Promise<void>((resolve) => gatewayServer.listen(socketPath, resolve));
+  cleanups.push(() => new Promise<void>((resolve) => gatewayServer.close(() => resolve())));
+  return {
+    access: gatewayJobHostControlAccess(socketPath),
+    launcher: gatewayJobHostLauncher(socketPath),
+  };
+}
+
+it.for(["local", "gateway"] as const)(
+  "blocks an unclaimed launch and proves release from the signed block decision (%s)",
+  async (route) => {
+    const f = await openSandboxJournal();
+    cleanups.push(f.close);
+    const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    const { access } = await controlRoute(route, root);
+    const prepared = await access.prepareDirectory(`control-${"0".repeat(20)}`);
+    const plan = {
+      ...sandboxV2Call(f, "admit", sandboxV2Admission(f)).record.plan,
+      backendRef: "srt",
+      preparationProtocol: "launch-or-block.v2" as const,
+    };
+    const control: SandboxJobControlBinding = {
+      directory: prepared.directory,
+      token: randomBytes(32).toString("hex"),
+      sessionId: randomUUID(),
+      jobId: plan.identity.jobId,
+      attemptId: plan.identity.attemptId,
+    };
+    const policyDigest = "e".repeat(64);
+    const stored = new Map<string, { ref: string; digest: string; value: unknown }>();
+    const hostInfo = async () => ({
+      binding: {
+        privateRoot: root,
+        runtimeRoot: "/runtime",
+        readOnlyToolchainPaths: [],
+        roots: [],
+      } as unknown as SandboxHostBinding,
+      qualification: { platform: process.platform } as SandboxRuntimeQualification,
+    });
+    const options = {
+      jobHostControl: access,
+      now: () => new Date().toISOString(),
+      machineBootId: async () => "machine-boot",
+      host: hostInfo,
+      admit: hostInfo,
+      read: async (_plan: unknown, key: string) => stored.get(key),
+      write: async (_plan: unknown, key: string, value: unknown) => {
+        if (stored.has(key)) throw new Error("duplicate artifact");
+        const artifact = {
+          ref: key,
+          digest: createHash("sha256").update(JSON.stringify(value)).digest("hex"),
+          value: structuredClone(value),
+        };
+        stored.set(key, artifact);
+        return artifact;
+      },
+    };
+    const launchContext = {
+      plan,
+      control,
+      policyDigest,
+      directoryDevice: prepared.device,
+      directoryInode: prepared.inode,
+    };
+    await createProductionSandboxControl(options).registerPreparation(plan, control, policyDigest);
+    expect(await access.readLaunchDecision(launchContext)).toBeUndefined();
+    const stopRequestedAt = options.now();
+    const restarted = createProductionSandboxControl(options);
+    await restarted.stopPreparation(plan, undefined, stopRequestedAt);
+    expect(await access.readLaunchDecision(launchContext)).toMatchObject({
+      decision: { kind: "blocked", stopRequestedAt },
+    });
+    expect(await access.claimLaunch(launchContext)).toBe(false);
+    expect(await restarted.verifyReservationRelease(plan, stopRequestedAt)).toMatchObject({
+      basis: "preparation_launch_blocked",
+      identity: plan.identity,
+    });
   },
 );
 

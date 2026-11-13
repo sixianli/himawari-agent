@@ -24,7 +24,11 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 function controlDirectory(controlRoot: string, directory: unknown): string {
-  if (typeof directory !== "string" || path.dirname(directory) !== controlRoot)
+  if (
+    typeof directory !== "string" ||
+    path.resolve(directory) !== directory ||
+    path.dirname(directory) !== controlRoot
+  )
     throw new Error("JOB_HOST_GATEWAY_CONTROL_OUTSIDE_ROOT");
   validateJobHostControlDirectoryName(path.basename(directory));
   return directory;

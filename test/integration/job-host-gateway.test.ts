@@ -20,6 +20,7 @@ import {
   serveJobHostGateway,
 } from "../../packages/runtime-sandbox/src/job-host-gateway.ts";
 import { JOB_HOST_GATEWAY_FRAME_MAX_BYTES } from "../../packages/runtime-sandbox/src/job-host-gateway-frames.ts";
+import type { JobHostLaunchContext } from "../../packages/runtime-sandbox/src/job-host-launch-decision.ts";
 import type { JobHostRequest } from "../../packages/runtime-sandbox/src/job-host-protocol.ts";
 import {
   gatewayJobHostLauncher,
@@ -558,6 +559,21 @@ describe("Job Host gateway control", () => {
     await expect(access.readFinalEvidence(binding(elsewhere))).rejects.toThrow(
       "JOB_HOST_GATEWAY_CONTROL_OUTSIDE_ROOT",
     );
+    await expect(access.describeDirectory(`${prepared.directory}/`)).rejects.toThrow(
+      "JOB_HOST_GATEWAY_CONTROL_OUTSIDE_ROOT",
+    );
+    await expect(
+      access.blockLaunch(
+        {
+          plan: {} as JobHostLaunchContext["plan"],
+          control: binding(elsewhere),
+          policyDigest: "c".repeat(64),
+          directoryDevice: prepared.device,
+          directoryInode: prepared.inode,
+        },
+        new Date().toISOString(),
+      ),
+    ).rejects.toThrow("JOB_HOST_GATEWAY_CONTROL_OUTSIDE_ROOT");
     await expect(
       access.describeDirectory(path.join(root, `control-${"1".repeat(20)}`)),
     ).rejects.toMatchObject({ code: "ENOENT" });
