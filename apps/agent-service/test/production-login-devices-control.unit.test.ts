@@ -140,12 +140,14 @@ describe("ProductionLoginDevicesControl scope", () => {
       ]);
       let left = failures;
       const revoked: string[] = [];
+      const attempts: string[] = [];
       const devices = new ProductionLoginDevicesControl({
         configuration: { ownerId: OWNER, agentId: AGENT } as never,
         state: {
           listDevices: async () =>
             [...active].map(([id, revision]) => ({ ...device(id), revision })),
           revokeDevice: async (id: string, revision: number) => {
+            attempts.push(id);
             if (id === "device-laptop" && left > 0) {
               left -= 1;
               active.set(id, revision + 1);
@@ -160,7 +162,7 @@ describe("ProductionLoginDevicesControl scope", () => {
         recentAuthentication: { assertRecentAuthentication: async () => undefined } as never,
         clock: { now: () => NOW },
       });
-      return { devices, revoked, active };
+      return { devices, revoked, active, attempts };
     };
     const once = build(1);
     await expect(once.devices.execute(revokeOthers() as never)).resolves.toMatchObject({
@@ -174,6 +176,30 @@ describe("ProductionLoginDevicesControl scope", () => {
       message: "LOGIN_DEVICES_STILL_CHANGING",
     });
     expect([...always.active.keys()]).toEqual(["device-current", "device-laptop"]);
+    expect(always.attempts.filter((id) => id === "device-laptop")).toHaveLength(3);
+  });
+
+  it("passes a storage conflict through at once instead of retrying it as a changed device", async () => {
+    const attempts: string[] = [];
+    const devices = new ProductionLoginDevicesControl({
+      configuration: { ownerId: OWNER, agentId: AGENT } as never,
+      state: {
+        listDevices: async () => [device("device-current"), device("device-laptop")],
+        revokeDevice: async (id: string) => {
+          attempts.push(id);
+          throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "disk headroom", {
+            reason: "disk_headroom",
+          });
+        },
+      } as never,
+      recentAuthentication: { assertRecentAuthentication: async () => undefined } as never,
+      clock: { now: () => NOW },
+    });
+    await expect(devices.execute(revokeOthers() as never)).rejects.toMatchObject({
+      code: PORT_ERROR_CODES.CONFLICT,
+      message: "disk headroom",
+    });
+    expect(attempts).toEqual(["device-laptop"]);
   });
 
   it("answers replayed without asking for recent authentication when no other device is signed in", async () => {

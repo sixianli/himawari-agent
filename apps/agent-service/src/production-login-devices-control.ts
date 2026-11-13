@@ -113,6 +113,7 @@ export class ProductionLoginDevicesControl {
         attempt < REVOKE_OTHERS_ATTEMPTS && remaining.length > 0;
         attempt += 1
       ) {
+        const conflicts = new Map<string, { revision: number; error: unknown }>();
         for (const device of remaining)
           await this.#options.state
             .revokeDevice(device.id, device.revision, revokedAt)
@@ -121,10 +122,15 @@ export class ProductionLoginDevicesControl {
                 !(error instanceof ApplicationPortError && error.code === PORT_ERROR_CODES.CONFLICT)
               )
                 throw error;
+              conflicts.set(device.id, { revision: device.revision, error });
             });
         remaining = (await this.#options.state.listDevices(ownerId, false)).filter(
           (device) => device.id !== authentication.deviceId,
         );
+        for (const device of remaining) {
+          const conflict = conflicts.get(device.id);
+          if (conflict && conflict.revision === device.revision) throw conflict.error;
+        }
       }
       if (remaining.length > 0)
         throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "LOGIN_DEVICES_STILL_CHANGING");
