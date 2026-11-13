@@ -2213,6 +2213,43 @@ const frequencySnapshotSchema = object({
   intervalMs: nullable(integer(1)),
 });
 
+const approvalDisplayText = (maximum: number): Schema<string> => ({
+  parse(input, path = "$") {
+    if (
+      typeof input !== "string" ||
+      input.length === 0 ||
+      [...input].length > maximum ||
+      [...input].some((character) => {
+        const code = character.charCodeAt(0);
+        return (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) || code === 0x7f;
+      })
+    )
+      throw new ContractValidationError(
+        path,
+        `expected a 1-${maximum} character string without control characters other than tab, newline and carriage return`,
+      );
+    return input;
+  },
+});
+
+export const APPROVAL_DISPLAY_BODY_MAX_CHARACTERS = 2001;
+
+const approvalDisplaySchema = object({
+  displayTitle: nullable(approvalDisplayText(301)),
+  bodyPreview: nullable(approvalDisplayText(APPROVAL_DISPLAY_BODY_MAX_CHARACTERS)),
+  askedBecause: object({
+    kind: enumeration(["rule", "no_rule_allows"]),
+    ruleId: nullable(machineString),
+    ruleText: nullable(approvalDisplayText(2001)),
+  }),
+  origin: nullable(
+    object({
+      threadId: machineString,
+      threadTitle: nullable(approvalDisplayText(121)),
+    }),
+  ),
+});
+
 export const approvalSnapshotSchema = object({
   ...envelope("snapshot", "approval.snapshot"),
   payload: object({
@@ -2228,6 +2265,7 @@ export const approvalSnapshotSchema = object({
     expiresAt: timestamp,
     decidedAt: nullable(timestamp),
     grantId: nullable(machineString),
+    display: nullable(approvalDisplaySchema),
     intent: object({
       intentId: machineString,
       threadId: machineString,
