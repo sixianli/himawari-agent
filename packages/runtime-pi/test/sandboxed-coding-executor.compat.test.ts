@@ -72,6 +72,28 @@ async function nativePiBashFailureText(
   throw new Error("NATIVE_PI_BASH_DID_NOT_FAIL");
 }
 
+it("reports a nonzero command exit as a failed tool result, as Pi's bash tool does", async () => {
+  const run = (exitCode: number) =>
+    executeSandboxedPiCodingTool({
+      name: "bash",
+      toolCallId: `fixture:exit-${exitCode}`,
+      cwd: "/workspace",
+      parameters: { command: "npm test" },
+      operations: commandOperations(async ({ onData }) => {
+        onData(new TextEncoder().encode("not ok 4 - rounds totals\n"));
+        return { exitCode };
+      }),
+    });
+  const failed = await run(3);
+  expect(failed.isError).toBe(true);
+  const [part] = failed.content;
+  const text = part?.type === "text" ? part.text : "";
+  expect(text).toContain("not ok 4 - rounds totals");
+  expect(text.endsWith("Command exited with code 3")).toBe(true);
+  const passed = await run(0);
+  expect(passed.isError).toBe(false);
+});
+
 it("[R2-T14] keeps the output before a command timeout in Pi's timeout result", async () => {
   const output = "R2T14-BEFORE-TIMEOUT\n";
   const parameters = { command: "sleep 30", timeout: 2 };
