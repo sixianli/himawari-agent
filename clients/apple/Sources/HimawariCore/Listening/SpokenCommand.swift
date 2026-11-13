@@ -67,6 +67,11 @@ public enum SpokenCommandRefusal: String, Sendable, Equatable {
     case airpodsNotInEar = "airpods_not_in_ear"
     case airpodsFar = "airpods_far"
     case speakerUnconfirmed = "speaker_unconfirmed"
+    case notAddressed = "not_addressed"
+    case addressedUnsure = "addressed_unsure"
+    case addressedBudget = "addressed_budget"
+
+    public var asksOwner: Bool { self != .notAddressed }
 }
 
 public enum SpokenCommandOutcome: Sendable, Equatable {

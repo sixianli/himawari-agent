@@ -454,6 +454,8 @@ public final class ListeningController {
             case .sent:
                 returnToListening()
                 await readReply(threadId: spoken.message.threadId)
+            case let .askFirst(reason) where !reason.asksOwner:
+                returnToListening()
             case let .askFirst(reason):
                 pendingAsk = (spoken, heard)
                 guard var live else { return }

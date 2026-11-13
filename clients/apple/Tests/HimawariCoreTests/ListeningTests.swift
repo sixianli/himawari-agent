@@ -58,6 +58,21 @@ import Testing
         #expect(outcome == .askFirst(.speakerUnconfirmed))
     }
 
+    @Test func readsTheDecisionModelsThreeRefusalsAndOnlyAsksWhenItShould() async throws {
+        for (reason, expected, asks) in [
+            ("not_addressed", SpokenCommandRefusal.notAddressed, false),
+            ("addressed_unsure", .addressedUnsure, true),
+            ("addressed_budget", .addressedBudget, true),
+        ] {
+            let refusal = #"{"error":{"code":"VOICE_COMMAND_UNCONFIRMED","reason":""# + reason + #""}}"#
+            let exchange = RecordingExchange([HTTPExchangeResponse(status: 409, body: Data(refusal.utf8))])
+            let outcome = try await api(exchange).send(spoken(VoiceEvidence(trigger: .ambientName, speakerScore: 990, heardName: "Himawari")))
+            #expect(outcome == .askFirst(expected))
+            #expect(expected.asksOwner == asks)
+        }
+        #expect(SpokenCommandRefusal.speakerUnconfirmed.asksOwner)
+    }
+
     @Test func otherConflictsAreStillErrors() async throws {
         let other = #"{"error":{"code":"THREAD_REVISION_CONFLICT"}}"#
         let exchange = RecordingExchange([HTTPExchangeResponse(status: 409, body: Data(other.utf8))])

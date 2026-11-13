@@ -45,6 +45,8 @@
 "ask.reason.airpods_not_in_ear" = "AirPods 好像没戴在耳朵上";
 "ask.reason.airpods_far" = "声音离耳机有点远";
 "ask.reason.airpods_route_mismatch" = "声音不是从 AirPods 传来的";
+"ask.reason.addressed_unsure" = "不太确定你是不是在叫我";
+"ask.reason.addressed_budget" = "今天用来判断的费用已经到上限了";
 "sensing.title" = "正在感知";
 "sensing.pausedTitle" = "感知已暂停";
 "sensing.pauseHour" = "暂停 1 小时";
