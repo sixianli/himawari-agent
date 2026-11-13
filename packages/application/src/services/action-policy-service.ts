@@ -2,6 +2,8 @@ import type {
   ActionKind,
   AutomaticActionReviewPort,
   ActionRiskLevel,
+  ApprovalDisplay,
+  ApprovalDisplayInput,
   ApprovalRequest,
   AuthorizationReservation,
   AuthorizationStorePort,
@@ -278,6 +280,7 @@ export class ActionPolicyService {
     options: {
       readonly uiAvailable: boolean;
       readonly approvalExpiresAt: string;
+      readonly display?: () => Promise<ApprovalDisplayInput>;
       readonly signal?: AbortSignal;
     },
   ): Promise<PermissionDecision> {
@@ -297,6 +300,8 @@ export class ActionPolicyService {
     options: {
       readonly uiAvailable: boolean;
       readonly approvalExpiresAt: string;
+      readonly display?: () => Promise<ApprovalDisplayInput>;
+      builtDisplay?: ApprovalDisplay;
       readonly signal?: AbortSignal;
     },
     allowReview: boolean,
@@ -485,8 +490,15 @@ export class ActionPolicyService {
         return this.evaluateCurrent(intent, options, false);
       }
       options.signal?.throwIfAborted();
+      if (!options.builtDisplay) {
+        options.builtDisplay = await this.approvalDisplay(options.display);
+        options.signal?.throwIfAborted();
+        return this.evaluateCurrent(intent, options, allowReview);
+      }
+      const display = options.builtDisplay;
       const request: GovernedApprovalRequest = Object.freeze({
         id: this.dependencies.ids.next("approval"),
+        display,
         revision: 1,
         ownerId: intent.ownerId,
         agentId: intent.agentId,
@@ -520,6 +532,25 @@ export class ActionPolicyService {
         alternativesAllowed: false,
       });
     }
+  }
+
+  private async approvalDisplay(
+    build: (() => Promise<ApprovalDisplayInput>) | undefined,
+  ): Promise<ApprovalDisplay> {
+    let input: ApprovalDisplayInput = { displayTitle: null, bodyPreview: null, origin: null };
+    if (build) {
+      try {
+        input = await build();
+      } catch {
+        // Display facts are never authority; a failed lookup leaves them empty.
+      }
+    }
+    return Object.freeze({
+      displayTitle: input.displayTitle,
+      bodyPreview: input.bodyPreview,
+      origin: input.origin,
+      askedBecause: Object.freeze({ kind: "no_rule_allows" as const }),
+    });
   }
 
   private capabilityDenial(
