@@ -404,7 +404,9 @@ def schema_parameters(parameters, s0):
     applied_ids = s0.get('migrationIds')
     if applied_ids is not None:
         digests = s0.get('migrationDigests')
-        pairs = [identifier + ':' + digest for identifier, digest in zip(applied_ids, digests)] if isinstance(digests, list) and len(digests) == len(applied_ids) else applied_ids
+        if not isinstance(digests, list) or len(digests) != len(applied_ids) or not all(isinstance(item, str) and item for item in digests):
+            refuse('PACKET_S0_MIGRATION_DIGESTS_INVALID', 'ids=' + str(len(applied_ids)))
+        pairs = [identifier + ':' + digest for identifier, digest in zip(applied_ids, digests)]
         check_migration_replay(parameters['COMMIT'], pairs)
     ledger = migration_ledger(parameters['COMMIT'], current, target, applied_ids) if target != current or applied_ids is not None else []
     return {'CURRENT_SCHEMA': current, 'PREVIOUS_SCHEMA': current - 1, 'MIGRATION_LEDGER': json.dumps(ledger, separators=(',', ':'))}

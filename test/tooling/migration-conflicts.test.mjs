@@ -316,6 +316,21 @@ describe("checking a commit against what production applied", () => {
     ).toEqual([]);
   });
 
+  it("treats pending numbered migrations as the approved baseline, not as new ones", () => {
+    const second = entry(
+      "0002",
+      "second",
+      "DROP TABLE t; CREATE TABLE t (id INTEGER, extra TEXT);",
+    );
+    const stamped = entry("20261114000001", "more", "CREATE TABLE more (id INTEGER);");
+    expect(
+      checkAgainstApplied({
+        entries: [seed, second, stamped],
+        applied: [{ id: "0001", digest: sha(seed.sql) }],
+      }),
+    ).toEqual([]);
+  });
+
   it("rejects an applied id the commit does not have", () => {
     expect(checkAgainstApplied({ entries: [seed], applied: [{ id: "0002" }] })[0]).toMatch(
       /^APPLIED_ID_NOT_IN_COMMIT/,

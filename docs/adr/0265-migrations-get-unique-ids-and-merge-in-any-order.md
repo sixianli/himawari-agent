@@ -125,7 +125,7 @@ date: "2026-11-14"
 - 记录表 `schema_migration_ledger` 加 `migration_id TEXT` 列，另建 `migration_id IS NOT NULL` 的部分唯一索引（SQLite 的 `ADD COLUMN` 不能直接带 UNIQUE）。旧的行不改写，读的时候按 `sequence` 推出 `0001`…`0095`，已有历史保持原样。`sequence` 列保留，含义变成“第几个被跑的”（仍是 1..N 连续），所以只认 `sequence` 连续的生产机脚本（前提 8）不用改语义。
 - 要跑的迁移 = 程序知道的 − 库里跑过的，按编号顺序跑；旧清单永远排在前面。库里有程序不认识的编号，照旧拒绝（`UNKNOWN_APPLIED_MIGRATION`）；每个跑过的迁移照旧核对名字、阶段和摘要（SHA-256，内容指纹）。“按下标对齐记录和定义”的地方改成按编号对齐：引擎的 `validateLedger` 和 `maintenance-common.mjs`。`S9-control-files.py` 和 `raw-copy-recovery.mjs` 只检查账本是 1 到 N 连续、前后一致，`sequence` 现在是应用顺序，晚合的小号也满足，所以不改。
 - 一个迁移的编号比库里已跑的最大编号还小时（“晚合的小号”），照跑，写日志。它能安全补跑，靠的是下一节的合并前检查。
-- 记录表的升级（加列、加索引、写指纹）放在同机快照核对**之后**，和第一个待跑迁移放在同一个 `IMMEDIATE` 事务里；没有待跑迁移时什么都不写。现在的 `applyMigrations` 先 `ensureInternalSchema` 后核快照（`migration-engine.ts:980-991`），那时它只是 `CREATE TABLE IF NOT EXISTS`，没有写；加了列以后必须先核快照。
+- 记录表的升级（加列、加索引）放在同机快照核对**之后**，和第一个待跑迁移放在同一个 `IMMEDIATE` 事务里；没有待跑迁移时什么都不写。现在的 `applyMigrations` 先 `ensureInternalSchema` 后核快照（`migration-engine.ts:980-991`），那时它只是 `CREATE TABLE IF NOT EXISTS`，没有写；加了列以后必须先核快照。
 
 ### 四、版本身份改成“个数 + 集合 + 指纹”，回滚保护不变（对应根因 2 带来的连锁）
 
@@ -140,7 +140,7 @@ date: "2026-11-14"
 - 待跑清单 = 目标集合 − 生产库集合（S0 阶段读库时一并读出 `migration_id`），按编号排序；生产库有、提交里没有的，拒绝打包。`MIGRATION_LEDGER` 里每项仍是 `sequence`、`name`、`phase`，期望的 `sequence` 按“应用顺序”填；编号和摘要只用于打包时的规划和核对：S0 带上 `migrationIds` 和 `migrationDigests`，打包前核对已应用的迁移文件没被改过，并对待跑的迁移做完整的冲突分析。
 - 受保护表检查照旧逐个迁移做。
 - 打包时在目标提交上再跑一遍迁移冲突检查（下一节），不过就拒绝打包。这是“合并后、上线前”的硬门槛，弥补合并前检查和合并之间 main 又变了的空档。
-- 生产机脚本和它们的测试数据（`verify-fixtures.mjs`、`verify-raw-copy-fixtures.mjs`、`verify-migrate-fixtures.mjs`、`verify-sidecar-tidy-fixtures.mjs` 里手建的 5 列记录表）一起改。
+- 生产机脚本的测试数据（`verify-fixtures.mjs`、`verify-raw-copy-fixtures.mjs`、`verify-migrate-fixtures.mjs`、`verify-sidecar-tidy-fixtures.mjs` 里手建的 5 列记录表）不改：它们代表还没有时间戳迁移的老库；6 列的新库由引擎的集成测试和打包的 Python 测试覆盖。
 
 ### 六、`decision_ledger.kind` 改成参照表（对应根因 4，单独 PR，要 Andy 同意改表）
 

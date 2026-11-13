@@ -761,9 +761,13 @@ class PacketChecksRunnerTest(unittest.TestCase):
         self.assertIsNone(checks_runner.audit_script_problem(self.packet, 57))
 
     def test_a_packet_whose_audit_script_reads_the_schema_by_introspection_passes_for_any_target(self):
-        self.write_audit_copy('export const LEGACY_MIGRATION_COUNT = 95;\nexport const AUDIT_READ_TABLES = Object.freeze([]);\n')
+        self.write_audit_copy('export const LEGACY_MIGRATION_COUNT = 95;\nexport const AUDIT_READ_TABLES = Object.freeze([\n  "runs",\n]);\n')
         self.assertIsNone(checks_runner.audit_script_problem(self.packet, 96))
         self.assertIsNone(checks_runner.audit_script_problem(self.packet, 500))
+
+    def test_a_packet_whose_audit_script_lists_no_tables_is_refused(self):
+        self.write_audit_copy('export const LEGACY_MIGRATION_COUNT = 95;\nexport const AUDIT_READ_TABLES = Object.freeze([]);\n')
+        self.assertIsNotNone(checks_runner.audit_script_problem(self.packet, 96))
 
     def test_a_packet_with_an_audit_script_without_a_declared_limit_or_without_the_script_is_refused(self):
         self.assertEqual(checks_runner.audit_script_problem(self.packet, 68), 'PACKET_CHECKS_AUDIT_SCRIPT_MISSING ' + checks_runner.AUDIT_COPY)
@@ -1335,7 +1339,7 @@ class TimestampedMigrationTests(unittest.TestCase):
     def plan(self, files, applied, current=None):
         with unittest.mock.patch.object(packet_maker, 'git', self.fake_git(files)), unittest.mock.patch.object(packet_maker, 'preserved_tables', return_value=()), unittest.mock.patch.object(packet_maker, 'check_migration_replay'):
             target = packet_maker.target_schema('c')
-            derived = packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': target}, {'schema': {'current': len(applied), 'minimumWriter': len(applied)}, 'migrationIds': applied})
+            derived = packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': target}, {'schema': {'current': len(applied), 'minimumWriter': len(applied)}, 'migrationIds': applied, 'migrationDigests': ['d' + str(index) for index in range(len(applied))]})
         return target, json.loads(derived['MIGRATION_LEDGER'])
 
     def test_the_real_replay_check_passes_at_the_repository_head(self):
@@ -1347,6 +1351,16 @@ class TimestampedMigrationTests(unittest.TestCase):
         with unittest.mock.patch.object(packet_maker, 'git', self.fake_git(files)), unittest.mock.patch.object(packet_maker, 'preserved_tables', return_value=()), unittest.mock.patch.object(packet_maker, 'check_migration_replay', side_effect=lambda commit, pairs=None: seen.append(pairs)):
             packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': 3}, {'schema': {'current': 3, 'minimumWriter': 3}, 'migrationIds': ['0001', '0002', '0003'], 'migrationDigests': ['aa', 'bb', 'cc']})
         self.assertEqual(seen, [['0001:aa', '0002:bb', '0003:cc']])
+
+    def test_a_missing_or_short_digest_list_is_refused_instead_of_skipping_the_check(self):
+        base = {'schema': {'current': 3, 'minimumWriter': 3}, 'migrationIds': ['0001', '0002', '0003']}
+        with unittest.mock.patch.object(packet_maker, 'git', self.fake_git(self.LEGACY)), unittest.mock.patch.object(packet_maker, 'preserved_tables', return_value=()), unittest.mock.patch.object(packet_maker, 'check_migration_replay'):
+            for digests in (None, ['a', 'b'], ['a', 'b', '']):
+                state = dict(base)
+                if digests is not None:
+                    state['migrationDigests'] = digests
+                with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_S0_MIGRATION_DIGESTS_INVALID'):
+                    packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': 3}, state)
 
     def test_a_commit_whose_migrations_do_not_replay_is_refused(self):
         failed = subprocess.CompletedProcess([], 1, stdout='', stderr='MIGRATION_CONFLICT FULL_REPLAY_FAILS boom')

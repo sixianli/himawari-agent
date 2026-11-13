@@ -66,7 +66,7 @@ def audit_script_problem(packet, target):
     if not path.is_file():
         return 'PACKET_CHECKS_AUDIT_SCRIPT_MISSING ' + AUDIT_COPY
     text = path.read_text()
-    if len(re.findall(r'^export const LEGACY_MIGRATION_COUNT = [0-9]+;$', text, re.M)) == 1 and 'export const AUDIT_READ_TABLES' in text:
+    if len(re.findall(r'^export const LEGACY_MIGRATION_COUNT = [0-9]+;$', text, re.M)) == 1 and re.search(r'^export const AUDIT_READ_TABLES = Object\.freeze\(\[\s*"', text, re.M):
         return None
     found = re.findall(r'^export const SUPPORTED_SCHEMA_MAX = ([0-9]+);$', text, re.M)
     if len(found) != 1:

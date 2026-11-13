@@ -807,7 +807,7 @@ export function bundledSchemaFingerprint(directory: URL = MIGRATION_FILE_SYNC_DI
 export function describeMigrationSet(migrations: readonly MigrationDefinition[]): SchemaIdentity {
   return Object.freeze({
     count: migrations.length,
-    ids: Object.freeze(migrations.map((migration) => migration.id)),
+    ids: Object.freeze(migrations.map((migration) => migration.id).sort()),
     fingerprint: migrationSetFingerprint(migrations),
   });
 }

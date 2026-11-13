@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -266,6 +266,58 @@ describe("[MIGRATION-IDS] timestamped migrations", () => {
       );
     } finally {
       await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("writes nothing when the snapshot is missing and a new migration is waiting", async () => {
+    const { databasePath } = await temporaryDatabase();
+    const database = openQualifiedDatabase(databasePath);
+    try {
+      const legacy = (await loadBundledMigrations()).slice(0, LEGACY_MIGRATION_COUNT);
+      applyMigrations(database, legacy);
+      database.exec("DROP INDEX schema_migration_ledger_migration_id");
+      database.exec("ALTER TABLE schema_migration_ledger DROP COLUMN migration_id");
+      database.pragma("wal_checkpoint(TRUNCATE)");
+      const before = await readFile(databasePath);
+      expectMigrationCode(
+        () => applyMigrations(database, withNew(legacy, [first])),
+        SQLITE_MIGRATION_ERROR_CODES.SNAPSHOT_REQUIRED,
+      );
+      database.pragma("wal_checkpoint(TRUNCATE)");
+      expect((await readFile(databasePath)).equals(before)).toBe(true);
+      expect(
+        database
+          .prepare(
+            "SELECT 1 FROM pragma_table_info('schema_migration_ledger') WHERE name = 'migration_id'",
+          )
+          .get(),
+      ).toBeUndefined();
+    } finally {
+      database.close();
+    }
+  });
+
+  it("does not add the id column to an old database while nothing is waiting", async () => {
+    const { databasePath } = await temporaryDatabase();
+    const database = openQualifiedDatabase(databasePath);
+    try {
+      const legacy = (await loadBundledMigrations()).slice(0, LEGACY_MIGRATION_COUNT);
+      applyMigrations(database, legacy);
+      database.exec("DROP INDEX schema_migration_ledger_migration_id");
+      database.exec("ALTER TABLE schema_migration_ledger DROP COLUMN migration_id");
+      database.pragma("wal_checkpoint(TRUNCATE)");
+      const before = await readFile(databasePath);
+      expect(applyMigrations(database, legacy)).toEqual({
+        appliedSequences: [],
+        currentSequence: LEGACY_MIGRATION_COUNT,
+      });
+      database.pragma("wal_checkpoint(TRUNCATE)");
+      expect((await readFile(databasePath)).equals(before)).toBe(true);
+      expect(readSchemaIdentity(database).ids.at(-1)).toBe(
+        String(LEGACY_MIGRATION_COUNT).padStart(4, "0"),
+      );
+    } finally {
+      database.close();
     }
   });
 });

@@ -377,10 +377,12 @@ export function checkAgainstApplied({ entries, applied, meta = {} }) {
   const appliedIds = applied.map((item) => item.id);
   const appliedSet = new Set(appliedIds);
   problems.push(...compareOrders({ entries, appliedIds }));
-  const base = appliedIds.map((id) => byId.get(id));
-  const added = entries
+  const pending = entries
     .filter((entry) => !appliedSet.has(entry.id))
     .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+  const isLegacy = (entry) => /^\d{4}$/.test(entry.id);
+  const base = [...appliedIds.map((id) => byId.get(id)), ...pending.filter(isLegacy)];
+  const added = pending.filter((entry) => !isLegacy(entry));
   problems.push(...analyzeMigrations({ base, added, meta }));
   return problems;
 }
