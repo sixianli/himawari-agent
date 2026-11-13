@@ -6,6 +6,9 @@
 "sheet.fullPage" = "Full text of this page";
 "sheet.text" = "Some text";
 "sheet.image" = "An image";
+"sheet.textUnreadable" = "Can't read this page's text";
+"sheet.note.urlOnly" = "Some pages don't let extensions read them. You can give it just the address and it will open the page itself.";
+"sheet.sendUrl" = "Give just the address";
 "sheet.send" = "Give it";
 "sheet.sending" = "Giving";
 "outcome.delivered" = "Done";

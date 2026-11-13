@@ -6,6 +6,9 @@
 "sheet.fullPage" = "このページの全文";
 "sheet.text" = "テキスト";
 "sheet.image" = "画像";
+"sheet.textUnreadable" = "このページの文字を読み取れません";
+"sheet.note.urlOnly" = "拡張機能に読ませないページもあります。アドレスだけ渡せば、Himawari が自分で開きます。";
+"sheet.sendUrl" = "アドレスだけ渡す";
 "sheet.send" = "渡す";
 "sheet.sending" = "渡しています";
 "outcome.delivered" = "渡しました";

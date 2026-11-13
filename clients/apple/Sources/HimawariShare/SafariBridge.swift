@@ -4,7 +4,8 @@ import HimawariCore
 @MainActor
 public enum SafariBridge {
     public static let wordKeys = [
-        "sheet.title", "sheet.close", "sheet.placeholder", "sheet.note.page", "sheet.fullPage", "sheet.send", "sheet.sending",
+        "sheet.title", "sheet.close", "sheet.placeholder", "sheet.note.page", "sheet.note.urlOnly", "sheet.fullPage",
+        "sheet.textUnreadable", "sheet.send", "sheet.sendUrl", "sheet.sending",
     ]
 
     public static func reply(

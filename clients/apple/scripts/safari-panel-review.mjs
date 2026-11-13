@@ -44,6 +44,7 @@ export function scenes(words) {
     "22-gaps-2c-safari-answered": {
       open: { phase: "editing" },
       page,
+      typed: "周五和田中吃饭，帮我挑一家安静的",
       hand: finished(words, "outcome.answered", { done: true }),
     },
     "22-gaps-2d-safari-queued": {
@@ -76,15 +77,22 @@ export function scenes(words) {
       },
       page,
     },
-    "22-gaps-2h-safari-unreadable": {
+    "22-gaps-2h-safari-text-unreadable": {
       open: { phase: "editing" },
       page: null,
+      tab: page,
+      hand: finished(words, "outcome.delivered", { done: true }),
+    },
+    "22-gaps-2i-safari-unreadable": {
+      open: { phase: "editing" },
+      page: null,
+      tab: { url: "about:blank", title: "" },
       hand: { phase: "unreadable", done: false, line: words["outcome.unreadable"] },
     },
   };
 }
 
-function mockBrowser({ open, page: current, hand, words, unreachable }) {
+function mockBrowser({ open, page: current, tab, hand, words, unreachable }) {
   globalThis.panelCalls = [];
   globalThis.browser = {
     runtime: {
@@ -96,7 +104,7 @@ function mockBrowser({ open, page: current, hand, words, unreachable }) {
       },
     },
     tabs: {
-      query: async () => [{ id: 1 }],
+      query: async () => [{ id: 1, url: (current ?? tab)?.url, title: (current ?? tab)?.title }],
       create: async (options) => {
         globalThis.panelCalls.push({ kind: "tab", ...options });
         return {};
@@ -129,7 +137,13 @@ export async function routePanel(context) {
 
 export async function openPanel(context, scene, words, unreachable) {
   const tab = await context.newPage();
-  await tab.addInitScript(mockBrowser, { ...scene, words, unreachable, hand: scene.hand ?? null });
+  await tab.addInitScript(mockBrowser, {
+    ...scene,
+    words,
+    unreachable,
+    tab: scene.tab ?? null,
+    hand: scene.hand ?? null,
+  });
   await tab.goto("http://panel.test/popup.html");
   await tab.waitForFunction(() => document.querySelector(".panel").dataset.phase !== "loading");
   if (scene.typed) await tab.fill(".field", scene.typed);

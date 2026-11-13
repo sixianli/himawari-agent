@@ -123,6 +123,11 @@ public final class HandoverSheetModel {
     var followUpTitle: String? { phase.followUpTitle }
 
     var isDone: Bool { phase.isDone }
+
+    var sentRequest: String? {
+        let trimmed = request.trimmingCharacters(in: .whitespacesAndNewlines)
+        return isDone && !trimmed.isEmpty ? trimmed : nil
+    }
 }
 
 extension HandoverSheetPhase {
@@ -188,6 +193,13 @@ public struct HandoverSheet: View {
                 card
                 if model.phase == .editing || model.phase == .sending {
                     field
+                } else if let sent = model.sentRequest {
+                    Text(sent)
+                        .hmType(DesignTokens.TypeScale.bubble)
+                        .foregroundStyle(Color.hmMuted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(EdgeInsets(top: DesignTokens.Handover.fieldPaddingVertical, leading: DesignTokens.Handover.fieldPaddingHorizontal, bottom: DesignTokens.Handover.fieldPaddingVertical, trailing: DesignTokens.Handover.fieldPaddingHorizontal))
+                        .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Handover.fieldRadius, style: .continuous))
                 }
                 Text(model.note)
                     .hmType(DesignTokens.TypeScale.caption)

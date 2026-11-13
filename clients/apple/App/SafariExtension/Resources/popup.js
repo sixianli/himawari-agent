@@ -3,12 +3,14 @@ const card = document.querySelector(".card");
 const field = document.querySelector(".field");
 const note = document.querySelector(".note");
 const send = document.querySelector(".send");
+const sentRequest = document.querySelector(".sent-request");
 const outcome = document.querySelector(".outcome");
 const outcomeText = document.querySelector(".outcome-text");
 const doneMark = document.querySelector(".done");
 const followUp = document.querySelector(".follow-up");
 
 let page = null;
+let textRead = false;
 let words = {};
 
 const ask = (message) =>
@@ -16,6 +18,8 @@ const ask = (message) =>
     (reply) => reply ?? { phase: "unreachable" },
     () => ({ phase: "unreachable" }),
   );
+
+const isWebAddress = (url) => typeof url === "string" && /^https?:/iu.test(url);
 
 function hostOf(url) {
   try {
@@ -33,25 +37,35 @@ function applyWords() {
   document.title = words["sheet.title"] ?? "";
 }
 
+function showCard() {
+  card.hidden = page === null;
+  if (page === null) return;
+  card.querySelector(".card-title").textContent = page.title || hostOf(page.url) || page.url;
+  card.querySelector(".card-subtitle").textContent = textRead
+    ? [hostOf(page.url), words["sheet.fullPage"]].filter(Boolean).join(" · ")
+    : words["sheet.textUnreadable"];
+}
+
 function showEditing() {
   panel.dataset.phase = "editing";
-  card.hidden = false;
+  showCard();
   field.hidden = false;
   note.hidden = false;
+  note.textContent = words[textRead ? "sheet.note.page" : "sheet.note.urlOnly"] ?? "";
   send.hidden = false;
+  send.textContent = words[textRead ? "sheet.send" : "sheet.sendUrl"] ?? "";
   outcome.hidden = true;
-  card.querySelector(".card-title").textContent = page.title || hostOf(page.url) || page.url;
-  card.querySelector(".card-subtitle").textContent = [hostOf(page.url), words["sheet.fullPage"]]
-    .filter(Boolean)
-    .join(" · ");
 }
 
 function showOutcome(reply) {
   panel.dataset.phase = reply.phase;
+  const request = field.value.trim();
   field.hidden = true;
   send.hidden = true;
-  card.hidden = page === null;
-  note.hidden = page === null;
+  showCard();
+  note.hidden = page === null || !textRead;
+  sentRequest.hidden = !(reply.done === true && request.length > 0);
+  sentRequest.textContent = request;
   outcome.hidden = false;
   doneMark.toggleAttribute("hidden", reply.done !== true);
   outcomeText.textContent =
@@ -66,19 +80,30 @@ function showOutcome(reply) {
 }
 
 async function readPage() {
+  let tab;
   try {
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-    if (!tab) return null;
+    [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  } catch {
+    return { page: null, textRead: false };
+  }
+  if (!tab) return { page: null, textRead: false };
+  try {
     const [result] = await browser.scripting.executeScript({
       target: { tabId: tab.id },
       files: ["page.js"],
     });
     const value = result?.result;
-    return value && typeof value.url === "string" && /^https?:/iu.test(value.url) ? value : null;
-  } catch {
-    return null;
-  }
+    if (value && isWebAddress(value.url)) return { page: value, textRead: true };
+  } catch {}
+  return isWebAddress(tab.url)
+    ? { page: { url: tab.url, title: tab.title ?? "", text: "" }, textRead: false }
+    : { page: null, textRead: false };
 }
+
+field.addEventListener("input", () => {
+  field.style.height = "auto";
+  field.style.height = `${field.scrollHeight}px`;
+});
 
 send.addEventListener("click", async () => {
   send.disabled = true;
@@ -88,10 +113,11 @@ send.addEventListener("click", async () => {
   showOutcome(await ask({ kind: "hand", page, request: field.value }));
 });
 
-const [opening, readResult] = await Promise.all([ask({ kind: "open" }), readPage()]);
+const [opening, read] = await Promise.all([ask({ kind: "open" }), readPage()]);
 words = opening.words ?? {};
 applyWords();
-page = readResult;
+page = read.page;
+textRead = read.textRead;
 if (opening.phase !== "editing") showOutcome(opening);
 else if (page === null) showOutcome(await ask({ kind: "hand", page: null }));
 else showEditing();

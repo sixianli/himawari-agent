@@ -60,12 +60,15 @@ it("sends the typed request with the page and shows the check only when it was d
   expect(await visible(tab, ".done")).toBe(true);
   expect(await visible(tab, ".follow-up")).toBe(false);
   expect(await visible(tab, ".field")).toBe(false);
+  expect(await tab.locator(".sent-request").textContent()).toBe("挑一家安静的");
+  expect(await visible(tab, ".sent-request")).toBe(true);
   await tab.close();
 
   const queued = await openPanel(context, all["22-gaps-2d-safari-queued"], words, unreachable);
   expect(await queued.locator(".outcome-text").textContent()).toBe(words["outcome.queued"]);
   expect(await visible(queued, ".done")).toBe(false);
   expect(await visible(queued, ".follow-up")).toBe(false);
+  expect(await visible(queued, ".sent-request")).toBe(false);
   await queued.close();
 });
 
@@ -85,10 +88,30 @@ it("offers exactly one follow-up that opens the matching page in the App", async
   await tab.close();
 });
 
-it("does not offer to send when the page could not be read or the phone is not paired", async () => {
+it("offers to hand over just the address when the page text cannot be read", async () => {
+  const scene = all["22-gaps-2h-safari-text-unreadable"];
+  const tab = await openPanel(context, { ...scene, typed: "这家几点开门" }, words, unreachable);
+  expect(await tab.locator(".card-title").textContent()).toBe("新大阪站周边午餐 10 选");
+  expect(await tab.locator(".card-subtitle").textContent()).toBe(words["sheet.textUnreadable"]);
+  expect(await tab.locator(".note").textContent()).toBe(words["sheet.note.urlOnly"]);
+  expect(await tab.locator("button:visible").allTextContents()).toEqual([words["sheet.sendUrl"]]);
+  await tab.click(".send");
+  await tab.waitForFunction(() => !document.querySelector(".outcome")?.hasAttribute("hidden"));
+  const calls = await tab.evaluate(
+    () => (globalThis as unknown as { panelCalls: unknown[] }).panelCalls,
+  );
+  expect(calls).toContainEqual({
+    kind: "hand",
+    page: { url: scene.tab.url, title: scene.tab.title, text: "" },
+    request: "这家几点开门",
+  });
+  await tab.close();
+});
+
+it("does not offer to send when there is no web page or the phone is not paired", async () => {
   const unreadable = await openPanel(
     context,
-    all["22-gaps-2h-safari-unreadable"],
+    all["22-gaps-2i-safari-unreadable"],
     words,
     unreachable,
   );
@@ -104,6 +127,7 @@ it("does not offer to send when the page could not be read or the phone is not p
   const unpaired = await openPanel(context, all["22-gaps-2g-safari-unpaired"], words, unreachable);
   expect(await visible(unpaired, ".send")).toBe(false);
   expect(await visible(unpaired, ".field")).toBe(false);
+  expect(await unpaired.locator(".card-title").textContent()).toBe("新大阪站周边午餐 10 选");
   expect(await unpaired.locator(".outcome-text").textContent()).toBe(words["outcome.unpaired"]);
   expect(await unpaired.locator("button:visible").allTextContents()).toEqual([
     words["outcome.open"],
