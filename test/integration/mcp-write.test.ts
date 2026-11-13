@@ -31,10 +31,10 @@ import {
   MCP_PROPOSE_MEMORY_CHANGED,
   MCP_PROPOSE_MEMORY_DECLINED,
   MCP_PROPOSE_MEMORY_FAILED,
+  MCP_PROPOSE_MEMORY_FULL,
   MCP_PROPOSE_MEMORY_INVALID,
   MCP_PROPOSE_MEMORY_PENDING,
   MCP_PROPOSE_MEMORY_SAVED,
-  MCP_PROPOSE_MEMORY_FULL,
   MCP_PROPOSE_MEMORY_SECRET,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
   MCP_PROPOSE_NOT_SHOWN,
@@ -1571,6 +1571,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.writer.dropExpiredDiscardedText()).toBe(0);
     f.clock.advance(2 * 86_400_000);
     expect(await f.writer.dropExpiredDiscardedText()).toBe(1);
+    expect(await f.writer.listBatches(10)).toEqual([]);
     const later = await f.connect({ elicitation: false, name: "muse" });
     expect(await f.writer.read(waiting?.id ?? "")).toMatchObject({
       status: "rejected",
@@ -1579,7 +1580,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.payloads.get(waiting?.contentRef ?? "")).toBeUndefined();
     expect((await f.propose(later, { text: RAIN })).text).toBe(MCP_PROPOSE_MEMORY_DECLINED.text);
     expect(await f.payloads.get(waiting?.contentRef ?? "")).toBeUndefined();
-    expect(await f.writer.undoBatch("external-batch-rain", async () => undefined)).toEqual([]);
+    expect(await f.writer.undoBatch("external-batch-rain", async () => undefined)).toBeUndefined();
     expect(await f.writer.listBatch("external-batch-rain")).toEqual([]);
   });
 
