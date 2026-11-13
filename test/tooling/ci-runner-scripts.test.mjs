@@ -1919,10 +1919,21 @@ describe("uninstall-runner.sh with the gate runner", () => {
     });
     const calls = box.calls();
     expect(result.stderr, result.stderr).not.toContain("UNINSTALL_INCOMPLETE");
-    expect(calls).toContain("systemctl disable --now gh-runner-gate.service\n");
-    expect(calls).toContain("userdel gh-runner-gate\n");
-    expect(calls).toContain("rm -rf /srv/gh-runner-gate\n");
-    expect(calls).toMatch(/^rm -f .*\/etc\/systemd\/system\/ghgate\.slice/m);
+    for (const [user, unit, root] of [
+      ["gh-runner", "gh-runner.service", "/srv/gh-runner"],
+      ["gh-runner-2", "gh-runner-2.service", "/srv/gh-runner-2"],
+      ["gh-runner-gate", "gh-runner-gate.service", "/srv/gh-runner-gate"],
+    ]) {
+      expect(calls).toContain(`systemctl disable --now ${unit}\n`);
+      expect(calls).toContain(`rm -f /etc/systemd/system/${unit}\n`);
+      expect(calls).toContain(`rm -rf ${root}\n`);
+      expect(calls).toContain(`userdel ${user}\n`);
+    }
+    expect(calls).toContain(
+      "rm -f /etc/systemd/system/gh-runners.slice /etc/systemd/system/ghgate.slice /etc/systemd/system/gh-runner-nft.service /etc/systemd/system/gh-runner-clean.service /etc/systemd/system/gh-runner-clean.timer\n",
+    );
+    expect(calls).toContain("rm -f /etc/sudoers.d/91-gh-runner-control\n");
+    expect(calls).toContain("rm -rf /etc/gh-runner /srv/gh-runner-share\n");
     expect(result.stdout).toContain("UNINSTALL_OK removed: ci-vps-1 ci-vps-2 ci-vps-gate;");
     expect(result.status).toBe(0);
   });
