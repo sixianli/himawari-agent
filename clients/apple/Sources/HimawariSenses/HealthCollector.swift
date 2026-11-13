@@ -40,7 +40,7 @@ public final class HealthCollector: SenseCollector {
         try? await store.requestAuthorization(toShare: [], read: readTypes)
         if CMMotionActivityManager.isActivityAvailable(), CMMotionActivityManager.authorizationStatus() == .notDetermined {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                motion.queryActivityStarting(from: Date().addingTimeInterval(-60), to: Date(), to: .main) { _, _ in
+                motion.queryActivityStarting(from: Date().addingTimeInterval(-60), to: Date(), to: .main) { @Sendable _, _ in
                     continuation.resume()
                 }
             }
@@ -53,10 +53,11 @@ public final class HealthCollector: SenseCollector {
         if sink.localStore.read(Self.anchorName) == nil { save(Date(), Self.anchorName) }
         if sink.localStore.read(Self.motionName) == nil { save(Date(), Self.motionName) }
         for type in [HKQuantityType(.stepCount), HKQuantityType(.heartRate), HKCategoryType(.sleepAnalysis), HKObjectType.workoutType()] as [HKSampleType] {
-            let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, completion, _ in
+            let query = HKObserverQuery(sampleType: type, predicate: nil) { @Sendable [weak self] _, completion, _ in
+                let finished = ObserverCompletion(completion)
                 Task { @MainActor in
                     await self?.collect()
-                    completion()
+                    finished.call()
                 }
             }
             store.execute(query)
@@ -131,26 +132,24 @@ public final class HealthCollector: SenseCollector {
     private func collectMotion() async {
         guard CMMotionActivityManager.isActivityAvailable(), CMMotionActivityManager.authorizationStatus() == .authorized, let since = load(Self.motionName) else { return }
         let now = Date()
-        let activities: [CMMotionActivity] = await withCheckedContinuation { continuation in
-            motion.queryActivityStarting(from: since, to: now, to: .main) { activities, _ in
-                continuation.resume(returning: activities ?? [])
+        let samples: [MotionSample] = await withCheckedContinuation { continuation in
+            motion.queryActivityStarting(from: since, to: now, to: .main) { @Sendable activities, _ in
+                continuation.resume(returning: (activities ?? []).compactMap(MotionSample.init))
             }
         }
         var previous: SenseObservations.Activity?
-        for activity in activities {
-            guard let kind = Self.kind(activity), kind != previous, activity.confidence != .low else { continue }
-            previous = kind
-            let certainty: SenseObservations.Certainty = activity.confidence == .high ? .high : .medium
+        for sample in samples where sample.kind != previous {
+            previous = sample.kind
             sink?.record(
-                SenseObservations.motion(kind, certainty: certainty, at: activity.startDate),
-                id: SenseRecordBuilder.stableId(["motion", kind.rawValue, String(activity.startDate.timeIntervalSince1970)]),
+                SenseObservations.motion(sample.kind, certainty: sample.certainty, at: sample.start),
+                id: SenseRecordBuilder.stableId(["motion", sample.kind.rawValue, String(sample.start.timeIntervalSince1970)]),
                 captureSource: SenseRecordBuilder.sensorSource
             )
         }
         save(now, Self.motionName)
     }
 
-    static func kind(_ activity: CMMotionActivity) -> SenseObservations.Activity? {
+    nonisolated static func kind(_ activity: CMMotionActivity) -> SenseObservations.Activity? {
         if activity.automotive { return .driving }
         if activity.cycling { return .cycling }
         if activity.running { return .running }
@@ -169,6 +168,27 @@ public final class HealthCollector: SenseCollector {
 
     private func save(_ date: Date, _ name: String) {
         try? sink?.localStore.write(name, Data(String(date.timeIntervalSince1970).utf8))
+    }
+}
+
+struct MotionSample: Sendable {
+    let kind: SenseObservations.Activity
+    let certainty: SenseObservations.Certainty
+    let start: Date
+
+    init?(_ activity: CMMotionActivity) {
+        guard activity.confidence != .low, let kind = HealthCollector.kind(activity) else { return nil }
+        self.kind = kind
+        certainty = activity.confidence == .high ? .high : .medium
+        start = activity.startDate
+    }
+}
+
+struct ObserverCompletion: @unchecked Sendable {
+    let call: () -> Void
+
+    init(_ call: @escaping () -> Void) {
+        self.call = call
     }
 }
 #endif
