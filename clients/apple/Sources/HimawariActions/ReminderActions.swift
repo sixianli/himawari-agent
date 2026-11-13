@@ -14,7 +14,7 @@ public final class ReminderActions: DeviceActionHandler, @unchecked Sendable {
     }
 
     public func snapshot(_ delivery: DeviceActionDelivery) async throws -> JSONObject? {
-        guard delivery.action == "device_reminder.complete" else { return nil }
+        guard delivery.action == "device_reminder.complete" else { return [:] }
         return try reminder(delivery).map(Self.describe)
     }
 

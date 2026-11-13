@@ -6,23 +6,37 @@ import HomeKit
 @MainActor
 final class HomeLoader: NSObject, HMHomeManagerDelegate {
     private var manager: HMHomeManager?
-    private var waiting: [CheckedContinuation<HMHomeManager, Never>] = []
+    private var waiting: [UUID: CheckedContinuation<HMHomeManager?, Never>] = [:]
     private var loaded = false
+    static let loadLimit: Duration = .seconds(30)
 
-    func homes() async -> HMHomeManager {
+    func homes() async -> HMHomeManager? {
         if let manager, loaded { return manager }
+        let ticket = UUID()
+        let manager = current
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.loadLimit)
+            self?.waiting.removeValue(forKey: ticket)?.resume(returning: nil)
+        }
         return await withCheckedContinuation { continuation in
-            waiting.append(continuation)
-            if manager == nil {
-                let created = HMHomeManager()
-                created.delegate = self
-                manager = created
+            if loaded {
+                continuation.resume(returning: manager)
+            } else {
+                waiting[ticket] = continuation
             }
         }
     }
 
+    private var current: HMHomeManager {
+        if let manager { return manager }
+        let created = HMHomeManager()
+        created.delegate = self
+        manager = created
+        return created
+    }
+
     var status: HMHomeManagerAuthorizationStatus {
-        manager?.authorizationStatus ?? HMHomeManager().authorizationStatus
+        current.authorizationStatus
     }
 
     nonisolated func homeManagerDidUpdateHomes(_ manager: HMHomeManager) {
@@ -37,11 +51,13 @@ final class HomeLoader: NSObject, HMHomeManagerDelegate {
 
     private func finish(_ manager: HMHomeManager) {
         loaded = true
-        let pending = waiting
+        let pending = waiting.values
         waiting.removeAll()
         pending.forEach { $0.resume(returning: manager) }
     }
 }
+
+struct HomeUnavailable: Error {}
 
 public struct HomePermission: DevicePermission {
     let loader: HomeLoader
@@ -71,6 +87,7 @@ public struct HomePermission: DevicePermission {
 
 public final class HomeActions: DeviceActionHandler, @unchecked Sendable {
     public let names = ["home.control", "home.read"]
+    public let readOnly: Set<String> = ["home.read"]
     private let loader: HomeLoader
     public let permission: DevicePermission
 
@@ -106,15 +123,19 @@ public final class HomeActions: DeviceActionHandler, @unchecked Sendable {
         if delivery.action == "home.read" { return try await read(delivery) }
         guard let accessory = try await accessory(delivery) else { throw DeviceActionFailure(.targetMissing) }
         guard accessory.isReachable else { throw DeviceActionFailure(.targetMissing) }
-        var wrote: JSONObject = [:]
-        for (key, value) in delivery.arguments where key != "accessoryId" {
+        var writes: [(key: String, value: JSONValue, characteristic: HMCharacteristic, encoded: Any)] = []
+        for (key, value) in delivery.arguments.sorted(by: { $0.key < $1.key }) where key != "accessoryId" {
             guard let control = Self.controls.first(where: { $0.key == key && Self.characteristic(accessory, $0.target) != nil }),
                   let characteristic = Self.characteristic(accessory, control.target),
                   let encoded = control.encode(value) else {
                 throw DeviceActionFailure(.cannotChange(line("这个配件的“\(key)”", "this accessory's \"\(key)\"", "このアクセサリの「\(key)」")))
             }
-            try await characteristic.writeValue(encoded)
-            wrote[key] = value
+            writes.append((key, value, characteristic, encoded))
+        }
+        var wrote: JSONObject = [:]
+        for write in writes {
+            try await write.characteristic.writeValue(write.encoded)
+            wrote[write.key] = write.value
         }
         return ["accessoryId": .string(accessory.uniqueIdentifier.uuidString), "wrote": .object(wrote)]
     }
@@ -144,7 +165,7 @@ public final class HomeActions: DeviceActionHandler, @unchecked Sendable {
     }
 
     private func read(_ delivery: DeviceActionDelivery) async throws -> JSONObject {
-        let manager = await loader.homes()
+        guard let manager = await loader.homes() else { throw HomeUnavailable() }
         let args = delivery.args
         let wantedId = try args.optionalString("accessoryId")
         let wantedRoom = try args.optionalString("room")
@@ -162,7 +183,7 @@ public final class HomeActions: DeviceActionHandler, @unchecked Sendable {
 
     private func accessory(_ delivery: DeviceActionDelivery) async throws -> HMAccessory? {
         let id = try delivery.args.string("accessoryId")
-        let manager = await loader.homes()
+        guard let manager = await loader.homes() else { throw HomeUnavailable() }
         return await MainActor.run { manager.homes.flatMap(\.accessories).first { $0.uniqueIdentifier.uuidString == id } }
     }
 

@@ -5,7 +5,7 @@ import Testing
 @Suite struct DeviceActionGateTests {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
 
-    func delivery(expiresIn seconds: TimeInterval = 600, action: String = "calendar.delete") -> DeviceActionDelivery {
+    func delivery(expiresIn seconds: TimeInterval = 600, action: String = "calendar.delete", expiresAt: String? = nil) -> DeviceActionDelivery {
         DeviceActionDelivery(
             id: "dact_00000000000000000000000000000001",
             mode: .perform,
@@ -17,7 +17,7 @@ import Testing
             snapshotBefore: true,
             reversible: true,
             risk: "HIGH",
-            expiresAt: DeviceActionTime.stamp(now.addingTimeInterval(seconds)),
+            expiresAt: expiresAt ?? DeviceActionTime.stamp(now.addingTimeInterval(seconds)),
             detail: ["zh-CN": "删除日程“周会”"]
         )
     }
@@ -43,11 +43,33 @@ import Testing
         #expect(refusal(delivery(expiresIn: 0)) == .expired)
     }
 
+    @Test func anExpiryThatCannotBeReadCountsAsExpired() {
+        #expect(refusal(delivery(expiresAt: "")) == .expired)
+        #expect(refusal(delivery(expiresAt: "tomorrow")) == .expired)
+    }
+
     @Test func withoutSystemPermissionItSaysWhereToTurnItOn() {
         let reason = refusal(delivery(), permission: .denied)
         #expect(reason == .permission(["zh-CN": "日历"], settings: ["zh-CN": "设置"]))
         #expect(reason?.text(.chinese) == "系统里没允许 Himawari 使用日历，可以在设置里打开")
-        #expect(refusal(delivery(), permission: .notDetermined) != nil)
+    }
+
+    @Test func notYetAskedAndRestrictedPermissionsSayWhatIsTrue() {
+        let notAsked = refusal(delivery(), permission: .notDetermined)
+        #expect(notAsked == .permissionNotAsked(["zh-CN": "日历"]))
+        #expect(notAsked?.text(.chinese) == "Himawari 还没问过能不能用日历。在 Himawari 的设置 › 它能替你做的 里点日历就能允许")
+        let restricted = refusal(delivery(), permission: .unavailable)
+        #expect(restricted == .permissionUnavailable(["zh-CN": "日历"]))
+        #expect(restricted?.text(.chinese).contains("设置里打开") == false)
+    }
+
+    @Test func checkingOnlyKeepsEverythingButTheMode() {
+        let original = delivery()
+        let checking = original.checkingOnly
+        #expect(checking.mode == .verify)
+        #expect(checking.id == original.id)
+        #expect(checking.arguments == original.arguments)
+        #expect(checking.readBack == original.readBack)
     }
 
     @Test func localTimesAreReadInTheDeviceTimeZoneAndRejectImpossibleDates() throws {

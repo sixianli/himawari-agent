@@ -16,7 +16,7 @@ public final class CalendarActions: DeviceActionHandler, @unchecked Sendable {
     static let attendees = line("日程的参与者", "event invitees", "予定の参加者")
 
     public func snapshot(_ delivery: DeviceActionDelivery) async throws -> JSONObject? {
-        guard delivery.action != "calendar.create" else { return nil }
+        guard delivery.action != "calendar.create" else { return [:] }
         return try event(delivery).map(Self.describe)
     }
 

@@ -69,15 +69,18 @@ public actor DeviceActionExecutor {
 
     private func pass() async {
         do {
-            if !journal.exists {
+            var seen = Set<String>()
+            if journal.lost {
                 let reopened = try await transport.reopenActions()
                 try journal.save(DeviceActionJournalFile())
-                for delivery in reopened { await process(delivery) }
+                for delivery in reopened {
+                    seen.insert(delivery.id)
+                    await process(delivery.checkingOnly)
+                }
             }
             await announceSupported()
             await refreshPolicy()
             await resendFinished()
-            var seen = Set<String>()
             while true {
                 let claimed = try await transport.claimActions()
                 let fresh = claimed.filter { !seen.contains($0.id) }
@@ -108,7 +111,14 @@ public actor DeviceActionExecutor {
 
     private func resendFinished() async {
         guard let entries = try? journal.entries() else { return }
+        let current = now()
         for entry in entries where entry.stage == .finished {
+            if entry.refused {
+                if let keepUntil = entry.keepUntil, keepUntil < current {
+                    try? journal.update { $0.entries[entry.id] = nil }
+                }
+                continue
+            }
             if let report = entry.report { await send(report) }
         }
     }
@@ -187,6 +197,9 @@ public actor DeviceActionExecutor {
             return await finish(delivery, .resultUnknown, readBack: false, evidence: nil, reason: .cannotCheck)
         }
         if delivery.readBack == .none {
+            guard handler.readOnly.contains(delivery.action) else {
+                return await finish(delivery, .resultUnknown, readBack: false, evidence: Self.evidence(made: made, before: before), reason: .cannotCheck)
+            }
             do {
                 let result = try await handler.perform(delivery)
                 return await finish(delivery, .succeeded, readBack: true, evidence: Self.evidence(made: result, before: nil), reason: nil)
@@ -246,6 +259,7 @@ public actor DeviceActionExecutor {
                 )
                 entry.stage = .finished
                 entry.report = report
+                entry.keepUntil = delivery.expiry
                 entry.updatedAt = now()
                 file.entries[delivery.id] = entry
             }
@@ -259,12 +273,17 @@ public actor DeviceActionExecutor {
 
     private func send(_ report: DeviceActionReport) async {
         do {
-            let reply = try await transport.reportAction(report)
+            var reply = try await transport.reportAction(report)
             if case .refused(status: 400, _) = reply, report.evidence != nil {
                 let lean = DeviceActionReport(id: report.id, outcome: report.outcome, readBack: report.readBack, evidence: nil, reason: report.reason)
-                _ = try await transport.reportAction(lean)
+                reply = try await transport.reportAction(lean)
             }
-            try? journal.update { $0.entries[report.id] = nil }
+            switch reply {
+            case .recorded:
+                try? journal.update { $0.entries[report.id] = nil }
+            case .refused:
+                try? journal.update { $0.entries[report.id]?.refused = true }
+            }
         } catch {}
     }
 }
@@ -281,8 +300,12 @@ public enum DeviceActionGate {
     ) -> DeviceActionReason? {
         if !implemented { return .notSupported }
         if blocked { return .blockedByPolicy }
-        if let expiry = delivery.expiry, expiry <= now { return .expired }
-        if permission != .authorized { return .permission(permissionName ?? [:], settings: settingsPath ?? [:]) }
-        return nil
+        guard let expiry = delivery.expiry, expiry > now else { return .expired }
+        switch permission {
+        case .authorized: return nil
+        case .notDetermined: return .permissionNotAsked(permissionName ?? [:])
+        case .unavailable: return .permissionUnavailable(permissionName ?? [:])
+        case .denied, nil: return .permission(permissionName ?? [:], settings: settingsPath ?? [:])
+        }
     }
 }

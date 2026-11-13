@@ -202,4 +202,50 @@ struct DeviceActionServerTests {
         #expect((after["evidence"] as? [String: Any])?["note"] as? String == "earlier")
         #expect(try journal.entry(delivery.id) == nil)
     }
+
+    @Test func aReportTheServerRefusesIsKeptSoTheActionIsNeverRedone() async throws {
+        let setup = try await setUp()
+        let (executor, journal) = try executor(setup)
+        await executor.run()
+        let asked = try await ask(setup, "取快递", call: "call-e")
+        let id = try #require(asked["actionId"] as? String)
+        let claimed = try await setup.api.claimActions()
+        #expect(claimed.map(\.id) == [id])
+        try await advance(setup, seconds: 3600)
+        let reclaimed = try await setup.api.claimActions()
+        #expect(reclaimed.map(\.mode) == [.verify])
+        let unchecked = DeviceActionReport(id: id, outcome: .failed, readBack: false, evidence: nil, reason: "没有核对")
+        try journal.update {
+            var entry = DeviceActionJournalEntry(id: id, action: "test.note.append", stage: .finished, before: nil, made: nil, report: unchecked, updatedAt: setup.clock.now)
+            entry.keepUntil = setup.clock.now.addingTimeInterval(600)
+            $0.entries[id] = entry
+        }
+        #expect(await executor.run() == [.replayed(id: id)])
+        let kept = try #require(try journal.entry(id))
+        #expect(kept.refused)
+        #expect(kept.report == unchecked)
+        #expect(await executor.run() == [.replayed(id: id)])
+        #expect(setup.notes.lines.isEmpty)
+        try await advance(setup, seconds: 3600)
+        #expect(await executor.run() == [.reported(id: id, outcome: .failed, readBack: true)])
+        #expect(try journal.entry(id) == nil)
+        #expect(setup.notes.lines.isEmpty)
+    }
+
+    @Test func aDamagedJournalIsTreatedLikeAReinstall() async throws {
+        let setup = try await setUp()
+        let store = try FileLocalStore(directory: setup.directory.appendingPathComponent("damaged"))
+        let journal = DeviceActionJournal(store: store)
+        let executor = DeviceActionExecutor(transport: setup.api, journal: journal, handlers: [setup.notes], locale: .chinese, now: { setup.clock.now })
+        await executor.run()
+        _ = try await ask(setup, "寄明信片", call: "call-f")
+        let claimed = try await setup.api.claimActions()
+        let delivery = try #require(claimed.first)
+        try store.write(DeviceActionJournal.fileName, Data("{not json".utf8))
+        #expect(journal.lost)
+        let steps = await executor.run()
+        #expect(steps == [.reported(id: delivery.id, outcome: .failed, readBack: true)])
+        #expect(setup.notes.lines.isEmpty)
+        #expect(!journal.lost)
+    }
 }

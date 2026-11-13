@@ -36,6 +36,11 @@ public protocol DeviceActionHandler: Sendable {
     func snapshot(_ delivery: DeviceActionDelivery) async throws -> JSONObject?
     func perform(_ delivery: DeviceActionDelivery) async throws -> JSONObject
     func readBack(_ delivery: DeviceActionDelivery, made: JSONObject?) async throws -> DeviceActionReading
+    var readOnly: Set<String> { get }
+}
+
+public extension DeviceActionHandler {
+    var readOnly: Set<String> { [] }
 }
 
 public struct DeviceActionArguments: Sendable {
@@ -101,6 +106,8 @@ public enum DeviceActionReason: Sendable, Equatable {
     case blockedByPolicy
     case expired
     case permission(LocalizedLine, settings: LocalizedLine)
+    case permissionNotAsked(LocalizedLine)
+    case permissionUnavailable(LocalizedLine)
     case badArguments
     case targetMissing
     case snapshotFailed
@@ -126,6 +133,22 @@ public enum DeviceActionReason: Sendable, Equatable {
                 "系统里没允许 Himawari 使用\(what)，可以在\(path)里打开",
                 "Himawari isn't allowed to use \(what). You can turn it on in \(path)",
                 "Himawari に\(what)の使用が許可されていません。\(path)でオンにできます"
+            )
+        case let .permissionNotAsked(name):
+            let what = name.localized(locale)
+            return Self.pick(
+                locale,
+                "Himawari 还没问过能不能用\(what)。在 Himawari 的设置 › 它能替你做的 里点\(what)就能允许",
+                "Himawari hasn't asked to use \(what) yet. Tap \(what) in Himawari's settings to allow it",
+                "Himawari はまだ\(what)の使用を確認していません。Himawari の設定で\(what)をタップすると許可できます"
+            )
+        case let .permissionUnavailable(name):
+            let what = name.localized(locale)
+            return Self.pick(
+                locale,
+                "这台设备上\(what)用不了，可能被屏幕使用时间或描述文件限制了",
+                "\(what) isn't available on this device; Screen Time or a profile may restrict it",
+                "この端末では\(what)を使えません。スクリーンタイムやプロファイルで制限されている可能性があります"
             )
         case .badArguments:
             return Self.pick(locale, "要做的内容这台设备读不懂，没有做", "This device couldn't read what to do, so nothing was done", "内容を読み取れなかったので、何もしていません")

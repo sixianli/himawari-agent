@@ -42,7 +42,7 @@ enum DeviceActionsDemo {
        "display":{"displayTitle":"删掉日历里 11 月 14 日 15:00 的“牙医复诊”","bodyPreview":"这一次，不动以后的",
                   "askedBecause":{"kind":"rule","ruleText":"删日历上的事要先问我"},
                   "origin":{"threadId":"thr_demo_dentist","threadTitle":"改牙医时间"}},
-       "intent":{"capabilityRef":"device:calendar.delete_event","operation":"calendar.delete_event","threadId":"thr_demo_dentist","runId":"run_demo2"},
+       "intent":{"capabilityRef":"device:calendar.delete","operation":"calendar.delete","threadId":"thr_demo_dentist","runId":"run_demo2"},
        "confirmLabel":{"zh-CN":"删掉","en":"Delete","ja":"削除"},
        "declineLabel":{"zh-CN":"不删","en":"Keep it","ja":"残す"}}
     ]
@@ -81,8 +81,8 @@ enum DeviceActionsDemo {
 
     static let policy: DevicePolicyView = decode("""
     {"revision":3,"actions":[
-      {"name":"calendar.create_event","allowed":true,"title":{"zh-CN":"在日历里加事","en":"Add calendar events","ja":"カレンダーに予定を追加"}},
-      {"name":"calendar.delete_event","allowed":false,"title":{"zh-CN":"删日历里的事","en":"Delete calendar events","ja":"カレンダーの予定を削除"}},
+      {"name":"calendar.create","allowed":true,"title":{"zh-CN":"在日历里加事","en":"Add calendar events","ja":"カレンダーに予定を追加"}},
+      {"name":"calendar.delete","allowed":false,"title":{"zh-CN":"删日历里的事","en":"Delete calendar events","ja":"カレンダーの予定を削除"}},
       {"name":"device_reminder.create","allowed":true,"title":{"zh-CN":"在提醒事项里加一条","en":"Add reminders","ja":"リマインダーを追加"}},
       {"name":"contact.update","allowed":true,"title":{"zh-CN":"改通讯录里的电话和邮箱","en":"Edit contact phones and emails","ja":"連絡先の電話とメールを変更"}},
       {"name":"home.control","allowed":true,"title":{"zh-CN":"开关家里的灯和设备","en":"Control home devices","ja":"家のデバイスを操作"}},

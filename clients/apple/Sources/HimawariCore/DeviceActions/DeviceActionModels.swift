@@ -73,6 +73,14 @@ public struct DeviceActionDelivery: Codable, Sendable, Equatable, Identifiable {
     }
 
     public var expiry: Date? { DeviceActionTime.parse(expiresAt) }
+
+    public var checkingOnly: DeviceActionDelivery {
+        DeviceActionDelivery(
+            id: id, mode: .verify, action: action, schemaVersion: schemaVersion, arguments: arguments,
+            ownerPresence: ownerPresence, readBack: readBack, snapshotBefore: snapshotBefore, reversible: reversible,
+            risk: risk, expiresAt: expiresAt, detail: detail, confirmLabel: confirmLabel, declineLabel: declineLabel
+        )
+    }
 }
 
 public enum DeviceActionOutcome: String, Codable, Sendable {
