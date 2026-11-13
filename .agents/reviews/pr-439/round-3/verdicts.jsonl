@@ -1,0 +1,1 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "两处把 `srt:0.0.0-other` 改成 `other-runtime`", "valid": true, "class": "error", "severity": "low", "trigger": "以后有人把运行时身份的比较写成只看 srt: 前缀", "consequence": "用 other-runtime 的两条用例仍通过，发现不了；现在的比较是严格相等，行为是对的", "modelSeverity": "低"}

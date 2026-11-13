@@ -16,8 +16,8 @@ REASON=$(reconcile_runners "$NAMES" "$TABLE") || { echo "RUNNER_PAUSE_FAILED $RE
 
 put_labels_back() {
   RESTORED=""
-  for id in $REMOVED; do
-    add_label "$id" && RESTORED="$RESTORED $id" || echo "could not put $LABEL back on runner $id"
+  for entry in $REMOVED; do
+    add_label "${entry%%:*}" "${entry#*:}" && RESTORED="$RESTORED ${entry%%:*}" || echo "could not put ${entry#*:} back on runner ${entry%%:*}"
   done
 }
 
@@ -34,11 +34,14 @@ interrupted_while_waiting() {
 
 REMOVED=""
 trap interrupted_while_removing INT TERM HUP
+FAILED_REMOVAL=""
 for name in $NAMES; do
   id=$(runner_field "$TABLE" "$name" 1)
-  has_label "$(runner_field "$TABLE" "$name" 5)" || continue
-  REMOVED="$REMOVED $id"
-  remove_label "$id" || { echo "could not remove $LABEL from $name"; break; }
+  for label in $(managed_labels_on "$(runner_field "$TABLE" "$name" 5)"); do
+    REMOVED="$REMOVED $id:$label"
+    remove_label "$id" "$label" || { echo "could not remove $label from $name"; FAILED_REMOVAL=yes; break; }
+  done
+  [ -z "$FAILED_REMOVAL" ] || break
 done
 
 TABLE=$(github_runners) || TABLE=""
@@ -52,7 +55,7 @@ for state in $(label_states "$NAMES" "$TABLE"); do
 done
 if [ -n "$LEFT" ]; then
   put_labels_back
-  echo "RUNNER_PAUSE_FAILED $LABEL still on:$LEFT; put back on:${RESTORED:- none}; services untouched"
+  echo "RUNNER_PAUSE_FAILED a runner label is still on:$LEFT; put back on:${RESTORED:- none}; services untouched"
   exit 1
 fi
 trap interrupted_while_waiting INT TERM HUP
@@ -80,6 +83,11 @@ while :; do
   if [ "$(date +%s)" -ge "$DEADLINE" ]; then
     echo "RUNNER_PAUSE_INCOMPLETE labels=removed services=$(service_states) busy:${BUSY:- none}; run pause-runners.sh again, or resume-runners.sh to undo"
     exit 2
+  fi
+  WAITING=${BUSY:- a job the VPS still sees}
+  if [ "$WAITING" != "${REPORTED:-}" ]; then
+    echo "RUNNER_PAUSE_WAITING for:$WAITING; jobs already running finish first, up to $(((DEADLINE - $(date +%s)) / 60)) more minutes; Ctrl-C keeps the labels removed"
+    REPORTED=$WAITING
   fi
   sleep "$POLL"
 done

@@ -195,7 +195,28 @@ export interface ApprovalChangeMarker {
   readonly pending: readonly { readonly id: string; readonly expiresAt: string }[];
 }
 
+export type ApprovalAskedBecause =
+  | { readonly kind: "no_rule_allows" }
+  | { readonly kind: "rule"; readonly ruleId: string; readonly ruleText: string };
+
+export interface ApprovalDisplayOrigin {
+  readonly threadId: string;
+  readonly threadTitle: string | null;
+}
+
+/** Owner-readable facts frozen when the approval is requested. Later rule or thread renames
+ * never rewrite them. Approvals created before this field existed carry none. */
+export interface ApprovalDisplay {
+  readonly displayTitle: string | null;
+  readonly bodyPreview: string | null;
+  readonly askedBecause: ApprovalAskedBecause;
+  readonly origin: ApprovalDisplayOrigin | null;
+}
+
+export type ApprovalDisplayInput = Omit<ApprovalDisplay, "askedBecause">;
+
 export interface GovernedApprovalRequest extends ApprovalRequest {
+  readonly display?: ApprovalDisplay;
   readonly intentSnapshot: GovernedActionIntent;
   readonly finalRisk: ActionRiskLevel;
   readonly recentAuthenticationRequired: boolean;

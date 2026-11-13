@@ -174,6 +174,8 @@ export class SqliteDurableAdapters {
         }),
       listBackgroundRuns: () =>
         this.context.read("runLifecycle.listBackground", { ownerId, agentId, now: now() }),
+      listUnattendedRuns: (input) =>
+        this.context.read("runLifecycle.listUnattended", { ownerId, agentId, ...input }),
     });
   }
 
@@ -1022,6 +1024,7 @@ export class SqliteDurableAdapters {
       enqueue: (entry) => this.context.write("memoryCaptureBacklog.enqueue", { entry }),
       oldest: (input) => this.context.read("memoryCaptureBacklog.oldest", input),
       recordAttempt: (input) => this.context.write("memoryCaptureBacklog.recordAttempt", input),
+      has: (generationId) => this.context.read("memoryCaptureBacklog.has", { generationId }),
       remove: (generationId) => this.context.write("memoryCaptureBacklog.remove", { generationId }),
     });
   }
@@ -1051,6 +1054,7 @@ export class SqliteDurableAdapters {
     return Object.freeze<MemoryReminderStorePort>({
       schedule: (reminder) => this.context.write("memoryReminder.schedule", { reminder }),
       listDue: (input) => this.context.read("memoryReminder.listDue", input),
+      countDue: (input) => this.context.read("memoryReminder.countDue", input),
       listUpcoming: (input) => this.context.read("memoryReminder.listUpcoming", input),
       read: (id) => this.context.read("memoryReminder.read", { id }),
       update: (input) => this.context.write("memoryReminder.update", input),
@@ -1114,6 +1118,7 @@ export class SqliteDurableAdapters {
       rateMany: (input) => this.context.write("decisionLedger.rateMany", input),
       recordMuse: (input) => this.context.write("decisionLedger.recordMuse", input),
       listMuse: (input) => this.context.read("decisionLedger.listMuse", input),
+      lastRuleUses: (input) => this.context.read("decisionLedger.lastRuleUses", input),
       listSignals: (input) => this.context.read("decisionLedger.listSignals", input),
       readCalibrationRows: (input) =>
         this.context.read("decisionLedger.readCalibrationRows", input),
