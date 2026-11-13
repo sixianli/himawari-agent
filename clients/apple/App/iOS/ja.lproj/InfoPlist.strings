@@ -1,2 +1,9 @@
 "NSCameraUsageDescription" = "パソコンの Himawari 設定に表示されたペアリングコードを読み取ります。";
 "NSFaceIDUsageDescription" = "Himawari の設定や記憶を変える前に、本人であることを確認します。";
+"NSLocationWhenInUseUsageDescription" = "どこに着いて、どのくらいいたかを記録し、あなた自身のサーバーに保存します。";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Himawari を開いていなくても、どこに着いてどのくらいいたかを記録し、あなた自身のサーバーに保存します。";
+"NSCalendarsFullAccessUsageDescription" = "カレンダーの予定をあなた自身のサーバーに同期します。カレンダーで削除した予定はそちらでも削除されます。";
+"NSHealthShareUsageDescription" = "歩数、睡眠、心拍数、ワークアウトを読み取り、あなた自身のサーバーに保存します。";
+"NSMotionUsageDescription" = "歩いているか、走っているか、運転しているかを記録し、あなた自身のサーバーに保存します。";
+"NSContactsUsageDescription" = "連絡先の名前、電話番号、メール、誕生日をあなた自身のサーバーに同期し、知り合いを覚えられるようにします。";
+"NSPhotoLibraryUsageDescription" = "新しく撮った写真とスクリーンショットの日時と場所を記録します。写真そのものはアップロードしません。";

@@ -2,6 +2,7 @@ import Foundation
 import HimawariChat
 import HimawariCore
 import HimawariDesign
+import HimawariSenses
 import Observation
 #if canImport(UIKit)
 import UIKit
@@ -21,6 +22,7 @@ public final class AppModel {
     public private(set) var phase: AppPhase = .unpaired(nil)
     public private(set) var chat: ChatStore?
     public private(set) var configuration: DeviceConfiguration?
+    public private(set) var senses: SensesModel?
 
     @ObservationIgnored public let api: DeviceAPI
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
@@ -199,6 +201,8 @@ public final class AppModel {
     private func emptyStore() -> Bool {
         chat?.stop()
         chat = nil
+        senses?.suspend()
+        senses = nil
         do {
             try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
             return true
@@ -265,9 +269,22 @@ public final class AppModel {
                 onSessionInvalid: { [weak self] in self?.checkRevoked() }
             )
             self.chat = chat
+            let service = LiveSensesService(
+                api: api,
+                store: store,
+                deviceId: record.deviceId,
+                confirmation: EnclaveConfirmation(keys: keys),
+                operations: [],
+                configuration: { [weak self] in self?.configuration }
+            )
+            let senses = SensesModel(service: service, store: store)
+            self.senses = senses
             phase = .active
             chat.start()
-            Task { await refreshConfiguration() }
+            Task {
+                await refreshConfiguration()
+                await senses.refresh()
+            }
         } catch {
             phase = .unpaired(.storageUnavailable)
         }
@@ -317,7 +334,10 @@ public final class AppModel {
         }
         guard phase == .active else { return }
         chat?.reconnect()
-        Task { await refreshConfiguration() }
+        Task {
+            await refreshConfiguration()
+            await senses?.refresh()
+        }
     }
 
     private func forget(problem: PairingProblem?) {
@@ -340,6 +360,14 @@ public final class AppModel {
         #else
         PairingRequestLimits.deviceName(Host.current().localizedName ?? "", fallback: "Mac")
         #endif
+    }
+}
+
+struct EnclaveConfirmation: ConfirmationSigner {
+    let keys: SecureEnclaveKeyStore
+
+    func confirmKey() -> DeviceKeySigner {
+        keys.signer(.confirm)
     }
 }
 

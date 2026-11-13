@@ -20,7 +20,8 @@
 | `HimawariCore` | 设备签名（按 RFC 9421，一种给 HTTP 请求签名的标准）、密钥（存在手机的安全芯片里）、配对、和服务器通信、事件流、待发消息队列、本地缓存。只用 Foundation，能在 Linux 上编译和测试 | 第 2 批 |
 | `HimawariDesign` | 颜色（浅色深色两套）、Himawari 说的话用的衬线字、卡片、胶囊按钮、玻璃圆钮、页签栏、葵盘标志、图标 | 第 2 批；别的批要加共用组件先找第 2 批线程 |
 | `HimawariChat` | 对话列表和聊天 | 第 2 批 |
-| `HimawariManage` | 记忆、设置等管理页面；现在只有两个入口占位 | 第 11 批 |
+| `HimawariManage` | 记忆、设置等管理页面；现在只有两个入口占位，设置页里多了一行“让 Himawari 感知” | 第 11 批 |
+| `HimawariSenses` | 让 Himawari 感知：位置、日程、健康和运动、通讯录、相册、剪贴板六项的采集（只在 iPhone 上编译），以及总览、介绍、系统没允许、开着的一项这几屏。示例场景 `19-senses-1-overview` 到 `19-senses-5-denied`；`19-senses-3-system-prompt` 会真的弹出系统的位置询问，要在没装过 App 的模拟器上截 | 第 6 批 |
 | `HimawariShell` | 三页签外壳、配对页、整个 App 的状态 | 第 2 批 |
 
 `App/Himawari.xcodeproj` 是 App 本身的 Xcode 工程，只有一个入口文件 `App/iOS/HimawariApp.swift`，其余代码都从上面的包里来。

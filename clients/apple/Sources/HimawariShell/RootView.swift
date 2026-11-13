@@ -2,6 +2,7 @@ import HimawariChat
 import HimawariCore
 import HimawariDesign
 import HimawariManage
+import HimawariSenses
 import SwiftUI
 
 public struct HimawariRootView: View {
@@ -87,7 +88,11 @@ struct MainTabsView: View {
             }
         }
         .fullScreenCover(isPresented: $settingsOpen) {
-            SettingsRootView(api: model.api) { settingsOpen = false }
+            SettingsRootView(api: model.api, close: { settingsOpen = false }) {
+                model.senses.map { senses in
+                    SensesView(model: senses) { HandoverPlaceholderRows() }
+                }
+            }
         }
     }
 

@@ -14,6 +14,7 @@
 
 /* Begin PBXFileReference section */
 		ADF293663ED8D3B76E120EFA /* HimawariApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HimawariApp.swift; sourceTree = "<group>"; };
+		5E1A7C3B9D2F4E6A8B0C1D2E /* Himawari.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Himawari.entitlements; sourceTree = "<group>"; };
 		7AD8A95A623F32E0346C679A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		D29F15F0F29D9798EE7D81B8 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		BFC2A0D3172D5AF6A036310B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -54,6 +55,7 @@
 			children = (
 				ADF293663ED8D3B76E120EFA /* HimawariApp.swift */,
 				7AD8A95A623F32E0346C679A /* Info.plist */,
+				5E1A7C3B9D2F4E6A8B0C1D2E /* Himawari.entitlements */,
 				A84F66C1F7B74AA353331800 /* InfoPlist.strings */,
 			);
 			path = iOS;
@@ -181,6 +183,7 @@
 		0DC93FEAAF4F00EADF729573 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = iOS/Himawari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -205,6 +208,7 @@
 		7C09E8D96A99A2ABD74DD0AF /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = iOS/Himawari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";

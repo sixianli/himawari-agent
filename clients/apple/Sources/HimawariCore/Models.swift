@@ -62,6 +62,7 @@ public struct PerceptionSummary: Codable, Sendable, Equatable {
     public let pausedUntil: String?
     public let senses: [PerceptionSenseSwitch]?
     public let retentionDays: [String: Int]?
+    public let mirrorKinds: [String: [String: PerceptionFieldRule]]?
 
     public init(
         recordTextCharacters: Int? = nil,
@@ -69,7 +70,8 @@ public struct PerceptionSummary: Codable, Sendable, Equatable {
         state: String? = nil,
         pausedUntil: String? = nil,
         senses: [PerceptionSenseSwitch]? = nil,
-        retentionDays: [String: Int]? = nil
+        retentionDays: [String: Int]? = nil,
+        mirrorKinds: [String: [String: PerceptionFieldRule]]? = nil
     ) {
         self.recordTextCharacters = recordTextCharacters
         self.recordTypes = recordTypes
@@ -77,6 +79,7 @@ public struct PerceptionSummary: Codable, Sendable, Equatable {
         self.pausedUntil = pausedUntil
         self.senses = senses
         self.retentionDays = retentionDays
+        self.mirrorKinds = mirrorKinds
     }
 }
 

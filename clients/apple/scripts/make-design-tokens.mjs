@@ -98,6 +98,7 @@ export function generate(tokens) {
   scalars("Opacity", tokens.opacity, "Double");
   scalars("Pairing", tokens.pairing ?? {});
   scalars("Scanner", tokens.scanner ?? {});
+  scalars("Senses", tokens.senses ?? {});
   lines.push("    public enum TypeScale {");
   for (const name of Object.keys(tokens.type).sort()) {
     const value = tokens.type[name];

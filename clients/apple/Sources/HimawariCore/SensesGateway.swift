@@ -4,6 +4,12 @@ public struct PerceptionRetentionSetting: Codable, Sendable, Equatable {
     public let key: String
     public let days: Int
     public let defaultDays: Int
+    public let minDays: Int?
+    public let maxDays: Int?
+
+    public func accepts(_ value: Int) -> Bool {
+        value >= (minDays ?? 1) && maxDays.map { value <= $0 } ?? true
+    }
 }
 
 public struct PerceptionStatusSnapshot: Codable, Sendable, Equatable {

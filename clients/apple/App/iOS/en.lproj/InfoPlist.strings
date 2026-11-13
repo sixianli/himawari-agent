@@ -1,2 +1,9 @@
 "NSCameraUsageDescription" = "Scan the pairing code shown in Himawari settings on your computer.";
 "NSFaceIDUsageDescription" = "Confirm it is you before changing Himawari settings or memories.";
+"NSLocationWhenInUseUsageDescription" = "Records where you arrive and how long you stay, stored on your own server.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Records where you arrive and how long you stay even when Himawari is closed, stored on your own server.";
+"NSCalendarsFullAccessUsageDescription" = "Syncs your calendar events to your own server. Events deleted in Calendar are deleted there too.";
+"NSHealthShareUsageDescription" = "Reads steps, sleep, heart rate and workouts, stored on your own server.";
+"NSMotionUsageDescription" = "Records whether you're walking, running or driving, stored on your own server.";
+"NSContactsUsageDescription" = "Syncs contact names, phone numbers, emails and birthdays to your own server so it knows the people you know.";
+"NSPhotoLibraryUsageDescription" = "Records when and where new photos and screenshots were taken. The photos themselves are not uploaded.";

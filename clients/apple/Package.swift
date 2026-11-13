@@ -26,16 +26,19 @@ let interfaceTargets: [Target] = [
     .target(name: "HimawariDesign", dependencies: ["HimawariCore"], resources: [.process("Resources")]),
     .target(name: "HimawariChat", dependencies: ["HimawariCore", "HimawariDesign"], resources: [.process("Resources")]),
     .target(name: "HimawariManage", dependencies: ["HimawariCore", "HimawariDesign"]),
+    .target(name: "HimawariSenses", dependencies: ["HimawariCore", "HimawariDesign"], resources: [.process("Resources")]),
     .target(
         name: "HimawariShell",
-        dependencies: ["HimawariCore", "HimawariDesign", "HimawariChat", "HimawariManage"],
+        dependencies: ["HimawariCore", "HimawariDesign", "HimawariChat", "HimawariManage", "HimawariSenses"],
         resources: [.process("Resources")]
     ),
+    .testTarget(name: "HimawariSensesTests", dependencies: ["HimawariCore", "HimawariSenses"]),
 ]
 let interfaceProducts: [Product] = [
     .library(name: "HimawariDesign", targets: ["HimawariDesign"]),
     .library(name: "HimawariChat", targets: ["HimawariChat"]),
     .library(name: "HimawariManage", targets: ["HimawariManage"]),
+    .library(name: "HimawariSenses", targets: ["HimawariSenses"]),
     .library(name: "HimawariShell", targets: ["HimawariShell"]),
 ]
 #endif

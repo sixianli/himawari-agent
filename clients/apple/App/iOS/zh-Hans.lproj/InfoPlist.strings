@@ -1,2 +1,9 @@
 "NSCameraUsageDescription" = "扫电脑上 Himawari 设置里的配对码";
 "NSFaceIDUsageDescription" = "改动 Himawari 里的设置和记忆前确认是你本人";
+"NSLocationWhenInUseUsageDescription" = "到了一个地方、停了多久会记下来，存在你自己的服务器上。";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "不打开 Himawari 也记下你到了哪、停了多久，存在你自己的服务器上。";
+"NSCalendarsFullAccessUsageDescription" = "把日历里的安排同步到你自己的服务器上，日历里删了，那边也删。";
+"NSHealthShareUsageDescription" = "读步数、睡眠、心率和锻炼，存在你自己的服务器上。";
+"NSMotionUsageDescription" = "记下你在走路、跑步还是开车，存在你自己的服务器上。";
+"NSContactsUsageDescription" = "把联系人的名字、电话、邮箱和生日同步到你自己的服务器上，让它认得你认识的人。";
+"NSPhotoLibraryUsageDescription" = "记下新拍的照片和截屏的时间、地点，不传照片本身。";
