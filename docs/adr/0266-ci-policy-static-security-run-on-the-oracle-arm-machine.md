@@ -76,7 +76,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）的检查作业原来�
 ## 后果
 
 - 必过检查开始依赖 Oracle 这台机器。它停机时三项检查排队，直到有人在 Mac 上运行 `arm-fallback.sh on`。
-- Oracle 机器同时是测试机；runner 账号被限制成读不到测试数据，但挡不住有人存心利用系统漏洞。仓库私有、只有 Andy 和他的代理提交，这和 CI 服务器接受的前提相同。
+- Oracle 机器同时是测试机；runner 的服务单元设了 `ProtectHome=yes`（来源：`scripts/operations/ci-runner/gh-runner.service.in` 第 33 行），看不到 `/home`；测试数据放在哪些目录、是否读得到，要等安装脚本在机器上实查，这份 ADR 不保证。这也挡不住有人存心利用系统漏洞。仓库私有、只有 Andy 和他的代理提交，这和 CI 服务器接受的前提相同。
 - 汇总不区分 ARM 和应急时的 x64，见决定第 3 条。
 - GitHub 上不花钱。
 
