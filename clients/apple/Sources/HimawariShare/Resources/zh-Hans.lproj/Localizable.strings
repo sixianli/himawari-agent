@@ -7,7 +7,7 @@
 "sheet.text" = "一段文字";
 "sheet.image" = "一张图片";
 "sheet.textUnreadable" = "读不到这一页的文字";
-"sheet.note.urlOnly" = "有的网页不让扩展读。可以只把网址交给它，它自己去打开。";
+"sheet.note.urlOnly" = "有的网页不让扩展读，可以只交网址，它自己去打开。";
 "sheet.sendUrl" = "只交网址";
 "sheet.send" = "交给它";
 "sheet.sending" = "正在交";
