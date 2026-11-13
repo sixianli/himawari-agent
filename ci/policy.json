@@ -10,7 +10,7 @@
       "members": [
         {
           "key": "default",
-          "runner": "ci-vps",
+          "runner": "ci-arm",
           "os": "linux",
           "arch": "x64",
           "alternateArch": "arm64",
@@ -27,7 +27,7 @@
       "members": [
         {
           "key": "default",
-          "runner": "ci-vps",
+          "runner": "ci-arm",
           "os": "linux",
           "arch": "x64",
           "alternateArch": "arm64",
@@ -117,7 +117,7 @@
       "members": [
         {
           "key": "default",
-          "runner": "ci-vps",
+          "runner": "ci-arm",
           "os": "linux",
           "arch": "x64",
           "alternateArch": "arm64",

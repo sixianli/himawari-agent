@@ -251,7 +251,6 @@ export async function runCheck({
         ".github/workflows/ci.yml",
         ".github/workflows/quality.yml",
         ".github/workflows/main.yml",
-        ".github/workflows/ci-arm-trial.yml",
       ]);
       await command("diff", "git", ["diff", "--check"]);
       result.counts = { files: 3, executed: 3, passed: 3, failed: 0, skipped: 0 };

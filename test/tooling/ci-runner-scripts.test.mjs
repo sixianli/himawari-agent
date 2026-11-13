@@ -1638,12 +1638,17 @@ describe("[HR-11] the gate runner keeps its own label", () => {
     expect(shell("runner_label_for_name ci-vps-9").status).not.toBe(0);
   });
 
-  it("only the required job runs on the gate label, the ARM trial jobs on the ARM label, and ci/policy.json, ci.yml, the trial workflow, actionlint, the schema and runners.sh agree on the labels", () => {
+  it("only the required job runs on the gate label, the policy, static and security jobs on the ARM label, and ci/policy.json, ci.yml, actionlint, the schema and runners.sh agree on the labels", () => {
     const gateLabel = shell('printf "%s" "$RUNNER_GATE_LABEL"').stdout;
     expect(gateLabel).toBe(gateRunnerLabel);
     expect(shell('printf "%s" "$RUNNER_CHECK_LABEL"').stdout).toBe(linuxRunnerLabel);
     expect(shell('printf "%s" "$RUNNER_ARM_LABEL"').stdout).toBe(armRunnerLabel);
-    const labelFor = (id) => (id === "required" ? gateRunnerLabel : linuxRunnerLabel);
+    const labelFor = (id) =>
+      id === "required"
+        ? gateRunnerLabel
+        : armChecks.includes(id)
+          ? armRunnerLabel
+          : linuxRunnerLabel;
     const policy = JSON.parse(read("ci/policy.json"));
     for (const check of policy.checks)
       for (const member of check.members) {
@@ -1664,9 +1669,8 @@ describe("[HR-11] the gate runner keeps its own label", () => {
     expect(fixed.length).toBeGreaterThan(1);
     for (const [id, label] of fixed) expect([id, label]).toEqual([id, labelFor(id)]);
     expect(Object.fromEntries(fixed).required).toBe(gateRunnerLabel);
-    const trial = parse(read(".github/workflows/ci-arm-trial.yml"));
-    expect(Object.keys(trial.jobs)).toEqual(armChecks);
-    for (const job of Object.values(trial.jobs)) expect(job["runs-on"]).toBe(armRunnerLabel);
+    for (const id of armChecks) expect(workflow.jobs[id]["runs-on"]).toBe(armRunnerLabel);
+    expect(existsSync(".github/workflows/ci-arm-trial.yml")).toBe(false);
     const matrixRunners = Object.values(workflow.jobs).flatMap((job) =>
       (job.strategy?.matrix?.include ?? []).map((entry) => entry.runner),
     );
@@ -2764,7 +2768,7 @@ describe("[ADR-0260] install-arm-runners.sh drives both machines from the Mac", 
     const box = orchestra();
     const result = box.go();
     expect(result.stdout).toContain(
-      "ARM_INSTALL_OK runners=ci-arm-1 ci-arm-2 label=ci-arm report_account=gh-ci-send@192.0.2.20; only .github/workflows/ci-arm-trial.yml uses ci-arm until the switch to ARM is merged\n",
+      "ARM_INSTALL_OK runners=ci-arm-1 ci-arm-2 label=ci-arm report_account=gh-ci-send@192.0.2.20; .github/workflows/ci.yml runs policy, static and security on it\n",
     );
     expect(result.status).toBe(0);
     const lines = box.lines();
