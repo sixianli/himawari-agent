@@ -188,11 +188,13 @@ export async function quality({
       }).trim();
       if (actual !== `v${observation.version}`) throw new Error("CI_OBSERVATION_VERSION_MISMATCH");
       await run("node-typecheck", executable, [
+        "--max-old-space-size=4096",
         "node_modules/typescript/bin/tsc",
         "-p",
         "tsconfig.json",
       ]);
       await run("node-browser-typecheck", executable, [
+        "--max-old-space-size=4096",
         "node_modules/typescript/bin/tsc",
         "-p",
         "apps/control-center/tsconfig.json",

@@ -137,9 +137,16 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "device.revoke",
   "server.status.read",
   "server.status.snapshot",
+  "home.read",
+  "home.snapshot",
   "data.export.start",
   "data.export.status.read",
   "data.export.status.snapshot",
+  "files.list.read",
+  "files.list.snapshot",
+  "login.devices.read",
+  "login.devices.snapshot",
+  "login.device.revoke",
   "stream.event",
 ] as const;
 
@@ -641,6 +648,126 @@ const deviceRenameCommandSchema = object({
 });
 export const SERVER_STATUS_OVERALL = ["healthy", "degraded", "not_ready", "not_live"] as const;
 export const SERVER_STATUS_DEPENDENCY = ["healthy", "degraded", "blocked", "unavailable"] as const;
+export const HOME_KEY_MAXIMUM = 160;
+export const HOME_ITEM_KINDS = [
+  "heads_up",
+  "approval",
+  "memory_confirm",
+  "done",
+  "running",
+  "problem",
+] as const;
+export const HOME_SENTENCE_BASES = ["recorded", "catalog", "none"] as const;
+export const HOME_RANKS = ["rule", "deadline", "unscored", "recency"] as const;
+export const HOME_TARGET_TYPES = [
+  "mail",
+  "memory",
+  "thread",
+  "approval",
+  "memory_request",
+  "external_proposal",
+  "rule",
+  "connection",
+] as const;
+export const HOME_ORIGIN_TYPES = [
+  "mail",
+  "memory",
+  "conversation",
+  "agent",
+  "rule",
+  "connection",
+] as const;
+export const HOME_SOURCE_NAMES = [
+  "mail",
+  "reminders",
+  "approvals",
+  "memory_requests",
+  "external_proposals",
+  "rules",
+  "done",
+  "runs",
+  "upcoming",
+] as const;
+export const HOME_LOCALES = ["zh-CN", "en", "ja"] as const;
+export const HOME_ACTIONS = [
+  "done",
+  "mute",
+  "dismiss",
+  "snooze",
+  "cancel",
+  "approved",
+  "denied",
+  "rejected",
+  "keep",
+  "reject",
+  "reconfirm",
+  "undo",
+  "reconnect",
+] as const;
+export const HOME_LABEL_BASES = ["catalog"] as const;
+export const HOME_POLARITIES = ["positive", "negative", "neutral"] as const;
+const homeQuerySchema = object({
+  ...envelope("query", "home.read"),
+  payload: object({ locale: enumeration(HOME_LOCALES) }),
+});
+const homeSnapshotSchema = object({
+  ...envelope("snapshot", "home.snapshot"),
+  payload: object({
+    items: array(
+      object({
+        key: boundedString(HOME_KEY_MAXIMUM),
+        kind: enumeration(HOME_ITEM_KINDS),
+        awaitsOwner: booleanValue,
+        sentence: nullable(boundedString(2000)),
+        sentenceBasis: enumeration(HOME_SENTENCE_BASES),
+        target: object({
+          type: enumeration(HOME_TARGET_TYPES),
+          id: nullable(machineString),
+          threadId: nullable(machineString),
+          link: nullable(boundedString(512)),
+        }),
+        source: object({
+          type: enumeration(HOME_ORIGIN_TYPES),
+          from: nullable(boundedString(320)),
+          label: nullable(boundedString(500)),
+          threadId: nullable(machineString),
+          decisionId: nullable(machineString),
+          at: timestamp,
+        }),
+        deadline: nullable(timestamp),
+        createdAt: timestamp,
+        actions: array(
+          object({
+            action: enumeration(HOME_ACTIONS),
+            label: boundedString(64),
+            labelBasis: enumeration(HOME_LABEL_BASES),
+            polarity: enumeration(HOME_POLARITIES),
+            ownerPresence: booleanValue,
+            reviewLabel: nullable(boundedString(64)),
+          }),
+        ),
+        rank: enumeration(HOME_RANKS),
+        dataClassification: classificationSchema,
+      }),
+    ),
+    awaitingCount: integer(0),
+    awaitingTruncated: booleanValue,
+    incompleteSources: array(enumeration(HOME_SOURCE_NAMES)),
+    upcoming: array(
+      object({
+        reminderId: machineString,
+        memoryId: machineString,
+        text: boundedString(2000),
+        dueAt: timestamp,
+        repeat: enumeration(["none", "yearly"]),
+        sourceThreadId: nullable(machineString),
+        dataClassification: classificationSchema,
+      }),
+    ),
+    revision: machineString,
+    generatedAt: timestamp,
+  }),
+});
 const serverStatusQuerySchema = object({
   ...envelope("query", "server.status.read"),
   payload: object({}),
@@ -725,6 +852,81 @@ const dataExportStatusSnapshotSchema: Schema<
     return snapshot;
   },
 };
+export const FILE_LIST_KINDS = [
+  "document",
+  "code",
+  "web",
+  "image",
+  "pdf",
+  "data",
+  "other",
+] as const;
+export const FILE_LIST_ORIGINS = ["uploaded", "generated"] as const;
+export const FILE_LIST_PAGE_LIMIT = 100;
+const fileListCursorSchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !/^[A-Za-z0-9_-]{1,512}$/u.test(input))
+      throw new ContractValidationError(path, "expected a file list cursor");
+    return input;
+  },
+};
+const filesListQuerySchema = object({
+  ...envelope("query", "files.list.read"),
+  payload: object({
+    kind: nullable(enumeration(FILE_LIST_KINDS)),
+    origin: nullable(enumeration(FILE_LIST_ORIGINS)),
+    before: nullable(fileListCursorSchema),
+    limit: integer(1, FILE_LIST_PAGE_LIMIT),
+  }),
+});
+const filesListSnapshotSchema = object({
+  ...envelope("snapshot", "files.list.snapshot"),
+  payload: object({
+    files: array(
+      object({
+        fileId: machineString,
+        threadId: machineString,
+        name: boundedString(256),
+        kind: enumeration(FILE_LIST_KINDS),
+        origin: enumeration(FILE_LIST_ORIGINS),
+        mediaType: boundedString(128),
+        sizeBytes: integer(0),
+        version: integer(1),
+        createdAt: timestamp,
+        deleted: booleanValue,
+        contentPath: nullable(boundedString(512)),
+      }),
+    ),
+    nextCursor: nullable(fileListCursorSchema),
+    generatedAt: timestamp,
+  }),
+});
+const loginDevicesQuerySchema = object({
+  ...envelope("query", "login.devices.read"),
+  payload: object({}),
+});
+const loginDevicesSnapshotSchema = object({
+  ...envelope("snapshot", "login.devices.snapshot"),
+  payload: object({
+    devices: array(
+      object({
+        deviceId: machineString,
+        label: boundedString(80),
+        firstSeenAt: timestamp,
+        lastSeenAt: timestamp,
+        current: booleanValue,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const loginDeviceRevokeCommandSchema = object({
+  ...commandEnvelope("login.device.revoke"),
+  payload: object({
+    deviceId: machineString,
+    recentAuthenticationRef: nullable(machineString),
+  }),
+});
 const proactiveSettingsSetCommandSchema = object({
   ...commandEnvelope("proactive.settings.set"),
   payload: object({
@@ -1709,6 +1911,8 @@ const memoryRulesSnapshotSchema = object({
         enforced: booleanValue,
         updatedAt: timestamp,
         quote: nullable(boundedString(500)),
+        quoteSuperseded: booleanValue,
+        quoteLatestMemoryId: nullable(machineString),
         changes: integer(0),
         lastUsed: nullable(
           object({ at: timestamp, kind: machineString, decisionId: machineString }),
@@ -2722,9 +2926,16 @@ const schemasByType = {
   "device.revoke": deviceRevokeCommandSchema,
   "server.status.read": serverStatusQuerySchema,
   "server.status.snapshot": serverStatusSnapshotSchema,
+  "home.read": homeQuerySchema,
+  "home.snapshot": homeSnapshotSchema,
   "data.export.start": dataExportStartCommandSchema,
   "data.export.status.read": dataExportStatusQuerySchema,
   "data.export.status.snapshot": dataExportStatusSnapshotSchema,
+  "files.list.read": filesListQuerySchema,
+  "files.list.snapshot": filesListSnapshotSchema,
+  "login.devices.read": loginDevicesQuerySchema,
+  "login.devices.snapshot": loginDevicesSnapshotSchema,
+  "login.device.revoke": loginDeviceRevokeCommandSchema,
   "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
   "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,
   "sensitive.interceptions.clear": sensitiveInterceptionsClearCommandSchema,
