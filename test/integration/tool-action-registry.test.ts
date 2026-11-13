@@ -15,6 +15,7 @@ import {
 import path from "node:path";
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { expect, it, vi } from "vitest";
+import { BuiltInActionRuleSwitches } from "../../apps/agent-service/src/action-rule-switches.js";
 import { ContextExternalContent } from "../../apps/agent-service/src/context-external-content.js";
 import {
   actionRefusalKey,
@@ -688,6 +689,69 @@ it("[ADR-0257] leaves the conversation unmarked when recalled memories carry no 
       due: "2026-11-13T15:00",
     });
     expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] lets the owner switch a just-do-it built-in rule to ask every time and back, never loosening the others", async () => {
+  const s = await setup();
+  try {
+    const switches = new BuiltInActionRuleSwitches({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      state: s.repository,
+      authority: () => SERVICE_AUTHORITY.lease,
+      clock: s.clock,
+    });
+    expect(
+      (await switches.list()).map(({ ruleId, outcome, askFirst }) => ({
+        ruleId,
+        outcome,
+        askFirst,
+      })),
+    ).toEqual([
+      {
+        ruleId: ACTION_RULE_IDS.preauthorizeOwnerData,
+        outcome: "allow_preauthorized",
+        askFirst: false,
+      },
+      { ruleId: ACTION_RULE_IDS.askAfterExternalContent, outcome: "ask_owner", askFirst: null },
+      {
+        ruleId: ACTION_RULE_IDS.refuseBackgroundAfterExternalContent,
+        outcome: "refuse",
+        askFirst: null,
+      },
+      {
+        ruleId: ACTION_RULE_IDS.preauthorizeOwnTaskCancel,
+        outcome: "allow_preauthorized",
+        askFirst: false,
+      },
+    ]);
+    await expect(
+      switches.setAskFirst(ACTION_RULE_IDS.askAfterExternalContent, false),
+    ).rejects.toThrow("ACTION_RULE_HAS_NO_SWITCH");
+    await expect(switches.setAskFirst("action_made_up", true)).rejects.toThrow(
+      "ACTION_RULE_NOT_FOUND",
+    );
+
+    await switches.setAskFirst(ACTION_RULE_IDS.preauthorizeOwnerData, true);
+    await switches.setAskFirst(ACTION_RULE_IDS.preauthorizeOwnerData, true);
+    expect((await switches.list())[0]?.askFirst).toBe(true);
+    const asked = s.call("reminder.set", "call:switched-off", {
+      text: "交周报",
+      due: "2026-11-13T15:00",
+    });
+    expect(await s.tools.execute(asked)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.reminders).not.toHaveBeenCalled();
+
+    await switches.setAskFirst(ACTION_RULE_IDS.preauthorizeOwnerData, false);
+    expect((await switches.list())[0]?.askFirst).toBe(false);
+    const direct = s.call("reminder.set", "call:switched-on", {
+      text: "交周报",
+      due: "2026-11-13T16:00",
+    });
+    expect(await s.tools.execute(direct)).toMatchObject({ outcome: "succeeded" });
+    expect(s.reminders).toHaveBeenCalledTimes(1);
   } finally {
     await s.close();
   }

@@ -47,6 +47,7 @@ import {
 } from "./production-memory-capture.js";
 import { OwnerRuleError, type ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { ProductionReminderWriter, ReminderInputError } from "./production-reminder-writer.js";
+import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
 
 type MemoryId = Parameters<ProductMemoryStatePort["read"]>[0];
 type GenerationId = Parameters<DurableMemoryService["delete"]>[1];
@@ -203,6 +204,7 @@ export class ProductionMemoryControl {
       "schedule" | "listDue" | "listUpcoming" | "read" | "update"
     >;
     readonly ownerRules?: OwnerRuleControl;
+    readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
     readonly payloads: PayloadStorePort;
     readonly protector: PayloadProtectorPort;
     readonly clock: ClockPort;
@@ -573,7 +575,11 @@ export class ProductionMemoryControl {
       ...query,
       kind: "snapshot",
       type: "memory.rules.snapshot",
-      payload: { rules, generatedAt: this.options.clock.now() },
+      payload: {
+        rules,
+        builtIn: [...((await this.options.actionRules?.list()) ?? [])],
+        generatedAt: this.options.clock.now(),
+      },
     };
   }
 
@@ -1274,6 +1280,19 @@ export class ProductionMemoryControl {
           throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, error.code);
         throw error;
       }
+    }
+    if (
+      command.type === "memory.rule.respond" &&
+      (command.payload.action === "ask_first" || command.payload.action === "allow_directly")
+    ) {
+      const switches = this.options.actionRules;
+      if (!switches)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "MEMORY_OPERATION_NOT_INSTALLED",
+        );
+      await switches.setAskFirst(command.payload.target, command.payload.action === "ask_first");
+      return { resultRef: command.payload.target, replayed: false };
     }
     if (command.type === "memory.rule.respond") {
       const control = this.options.ownerRules;

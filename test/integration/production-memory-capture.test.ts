@@ -32,7 +32,7 @@ import {
 import { TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
 import { redactForEgress } from "@himawari-agent/sensitive-capture";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type MemoryCaptureCall,
   memoryCapturePrompt,
@@ -285,11 +285,25 @@ describe("production memory capture", () => {
       protector: adapters.payloadProtector,
       clock: { now: () => clock.value },
     });
+    const actionRules = {
+      list: vi.fn(async () => [
+        {
+          ruleId: "action_preauthorize_owner_data",
+          revision: 1,
+          outcome: "allow_preauthorized" as const,
+          examplesHit: 2,
+          examplesMiss: 6,
+          askFirst: false,
+        },
+      ]),
+      setAskFirst: vi.fn(async () => undefined),
+    };
     const control = new ProductionMemoryControl({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       state: repository.productMemoryState(),
       jobs: repository.memoryProjectionJobs(),
       approvals: repository.sensitiveMemoryApprovals(),
+      actionRules,
       unitOfWork: repository.unitOfWork(),
       memory,
       reminders: repository.memoryReminders(),
@@ -376,6 +390,7 @@ describe("production memory capture", () => {
       plaintext,
       capture,
       control,
+      actionRules,
       reminderTools,
       ruleTools: new ProductionOwnerRuleTools(ruleWriter),
       protect,
@@ -2037,6 +2052,41 @@ describe("production memory capture", () => {
       .productMemoryState()
       .read((plain["reminderId"] as string).replace(/^reminder:/u, "") as never);
     expect(plainMemory?.sourceRefs).toEqual([expect.stringMatching(/^memory-content:reminder:/u)]);
+  });
+
+  it("[ADR-0257] shows the built-in action rules on the rule list and switches one through the rule command", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    const snapshot = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.rules.read",
+      payload: {},
+    } as never);
+    if (snapshot.type !== "memory.rules.snapshot") throw new Error("snapshot");
+    const { idempotencyKey: _, ...parsable } = snapshot as Record<string, unknown>;
+    gatewayV2MessageSchema.parse(parsable);
+    expect(snapshot.payload.builtIn).toEqual([
+      expect.objectContaining({ ruleId: "action_preauthorize_owner_data", askFirst: false }),
+    ]);
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: "action_preauthorize_owner_data", action: "ask_first" },
+      "ask-first",
+    );
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: "action_preauthorize_owner_data", action: "allow_directly" },
+      "allow-directly",
+    );
+    expect(context.actionRules.setAskFirst.mock.calls).toEqual([
+      ["action_preauthorize_owner_data", true],
+      ["action_preauthorize_owner_data", false],
+    ]);
   });
 
   it("[P2-3] turns the owner's standing sentence into an enforced rule, keeps inferred ones as proposals, and undoes one from the page", async () => {

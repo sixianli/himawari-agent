@@ -39,7 +39,7 @@ import {
 } from "./memory-panel.js";
 import { MuseReference } from "./muse-reference.js";
 import { ActionButton, Dropdown, EmptyState } from "./primitives.js";
-import { OwnerRulesSection } from "./rule-receipt.js";
+import { BuiltInActionRulesSection, OwnerRulesSection } from "./rule-receipt.js";
 import {
   clock,
   dayAndClock,
@@ -2380,6 +2380,7 @@ export function MemoryPage({
       <ExternalProposalsSection memory={memory} message={message} />
       <ConfirmSection memory={memory} message={message} />
       <OwnerRulesSection memory={memory} message={message} />
+      <BuiltInActionRulesSection memory={memory} message={message} />
       <div role="tablist" className="memory-tabs" aria-label={message("nav.memory")}>
         {tabs.map((item) => (
           <button

@@ -182,6 +182,7 @@ import {
   resolveCodingNetworkFacts,
   WorkspaceAutoAuthorization,
 } from "./workspace-auto-authorization.js";
+import { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
 
 function siteField(error: unknown): { readonly site?: string } {
   const site = portErrorSite(error);
@@ -2877,6 +2878,12 @@ export async function startTenantRuntime(
         memory: {
           service: activeDurableMemory,
           externalProposals,
+          actionRules: new BuiltInActionRuleSwitches({
+            configuration,
+            state: repository,
+            authority: () => invocationAuthority().lease,
+            clock,
+          }),
           onAudit: (record) => {
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",

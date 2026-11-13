@@ -135,6 +135,7 @@ import {
   createProductionWorkspaceCopies,
   PRODUCTION_COPY_OPERATIONS,
 } from "./production-workspace-copies.js";
+import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
 
 type OwnerId = PayloadProtectionRequest["ownerId"];
 type AgentId = PayloadProtectionRequest["agentId"];
@@ -209,6 +210,7 @@ export interface ProductionHttpCompositionOptions {
       | "archive"
     >;
     readonly externalProposals?: ProductionMcpMemoryWriter;
+    readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
   readonly webPush?: {
@@ -1128,6 +1130,7 @@ export async function createProductionHttpComposition(
         }),
         book: repository.memoryBook(),
         ledger: repository.decisionLedger(),
+        ...(options.memory.actionRules ? { actionRules: options.memory.actionRules } : {}),
         payloads: memoryPayloads,
         protector: payloadProtector,
         clock: { now: clock },
