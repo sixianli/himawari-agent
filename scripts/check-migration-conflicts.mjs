@@ -8,7 +8,7 @@ import {
   META_FILE,
   TIMESTAMP_FILE,
   analyzeMigrations,
-  compareOrders,
+  checkAgainstApplied,
   replayAll,
 } from "./migration-conflicts/analyze.mjs";
 
@@ -105,6 +105,23 @@ export function loadMeta(entries) {
   return meta;
 }
 
+export function loadMetaFromCommit(commit, entries) {
+  const prefix = "packages/persistence-sqlite/src/migrations/";
+  const meta = {};
+  for (const entry of entries) {
+    try {
+      meta[entry.id] = JSON.parse(
+        execFileSync("git", ["show", `${commit}:${prefix}${entry.id}_${entry.name}.meta.json`], {
+          cwd: root,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        }),
+      );
+    } catch {}
+  }
+  return meta;
+}
+
 export function loadEntriesFromCommit(commit) {
   const prefix = "packages/persistence-sqlite/src/migrations/";
   const names = git(["ls-tree", "--name-only", commit, prefix])
@@ -151,13 +168,22 @@ function main() {
       );
     problems.push(...replayAll([...legacy, ...stamped]));
     const appliedFlag = process.argv.indexOf("--applied");
-    if (appliedFlag !== -1)
+    if (appliedFlag !== -1) {
+      const applied = process.argv[appliedFlag + 1]
+        .split(",")
+        .filter(Boolean)
+        .map((item) => {
+          const [id, digest] = item.split(":");
+          return { id, digest };
+        });
       problems.push(
-        ...compareOrders({
+        ...checkAgainstApplied({
           entries: [...legacy, ...stamped],
-          appliedIds: process.argv[appliedFlag + 1].split(",").filter(Boolean),
+          applied,
+          meta: loadMetaFromCommit(process.argv[commitFlag + 1], stamped),
         }),
       );
+    }
     if (problems.length > 0) {
       for (const problem of problems) console.error(`MIGRATION_CONFLICT ${problem}`);
       process.exit(1);

@@ -1341,6 +1341,13 @@ class TimestampedMigrationTests(unittest.TestCase):
     def test_the_real_replay_check_passes_at_the_repository_head(self):
         packet_maker.check_migration_replay('HEAD')
 
+    def test_the_packet_passes_the_applied_digests_to_the_replay_check(self):
+        files = self.LEGACY
+        seen = []
+        with unittest.mock.patch.object(packet_maker, 'git', self.fake_git(files)), unittest.mock.patch.object(packet_maker, 'preserved_tables', return_value=()), unittest.mock.patch.object(packet_maker, 'check_migration_replay', side_effect=lambda commit, pairs=None: seen.append(pairs)):
+            packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': 3}, {'schema': {'current': 3, 'minimumWriter': 3}, 'migrationIds': ['0001', '0002', '0003'], 'migrationDigests': ['aa', 'bb', 'cc']})
+        self.assertEqual(seen, [['0001:aa', '0002:bb', '0003:cc']])
+
     def test_a_commit_whose_migrations_do_not_replay_is_refused(self):
         failed = subprocess.CompletedProcess([], 1, stdout='', stderr='MIGRATION_CONFLICT FULL_REPLAY_FAILS boom')
         with unittest.mock.patch.object(packet_maker.subprocess, 'run', return_value=failed):

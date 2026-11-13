@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import BetterSqlite3 from "better-sqlite3";
 
 const FORBIDDEN = [
@@ -62,12 +63,11 @@ function tableRows(database) {
     const quoted = `"${name.replace(/"/g, '""')}"`;
     rows.set(
       name,
-      new Set(
-        database
-          .prepare(`SELECT * FROM ${quoted}`)
-          .all()
-          .map((row) => JSON.stringify(row)),
-      ),
+      database
+        .prepare(`SELECT * FROM ${quoted}`)
+        .all()
+        .map((row) => JSON.stringify(row))
+        .sort(),
     );
   }
   return rows;
@@ -111,7 +111,7 @@ export function diffSnapshots(before, after) {
 function schemaDump(database, tables = []) {
   const structure = [...snapshot(database)].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   const rows = tableRows(database);
-  const data = [...tables].sort().map((name) => [name, [...(rows.get(name) ?? [])].sort()]);
+  const data = [...tables].sort().map((name) => [name, rows.get(name) ?? []]);
   return JSON.stringify([structure, data]);
 }
 
@@ -119,7 +119,10 @@ function writtenTables(before, after, created) {
   const written = new Set(created);
   for (const [name, rows] of after) {
     const previous = before.get(name);
-    if (!previous || [...rows].some((row) => !previous.has(row))) written.add(name);
+    if (!previous || JSON.stringify(previous) !== JSON.stringify(rows)) written.add(name);
+  }
+  for (const name of before.keys()) {
+    if (!after.has(name)) written.add(name);
   }
   return written;
 }
@@ -136,7 +139,7 @@ function integrityProblems(database, label) {
 
 function open() {
   const database = new BetterSqlite3(":memory:");
-  database.pragma("foreign_keys = OFF");
+  database.pragma("foreign_keys = ON");
   return database;
 }
 
@@ -210,7 +213,10 @@ export function analyzeMigrations({ base, added, meta = {} }) {
     const changedExisting = new Set([...diff.altered, ...diff.dropped].map(tableOf));
     for (const [name, before] of rowsBefore) {
       const after = rowsAfter.get(name);
-      if (after && [...before].some((row) => !after.has(row))) changedExisting.add(name);
+      if (after) {
+        const kept = new Set(after);
+        if (before.some((row) => !kept.has(row))) changedExisting.add(name);
+      }
     }
     for (const name of changedExisting) {
       if (!declared.has(name)) {
@@ -349,5 +355,32 @@ export function replayAll(entries) {
   } catch (error) {
     problems.push(`FULL_REPLAY_FAILS ${error.message}`);
   }
+  return problems;
+}
+
+export function checkAgainstApplied({ entries, applied, meta = {} }) {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const problems = [];
+  for (const { id, digest } of applied) {
+    const entry = byId.get(id);
+    if (!entry) {
+      problems.push(`APPLIED_ID_NOT_IN_COMMIT ${id}`);
+      continue;
+    }
+    if (digest && createHash("sha256").update(entry.sql).digest("hex") !== digest) {
+      problems.push(
+        `APPLIED_MIGRATION_CHANGED ${entry.file} differs from what the production database applied`,
+      );
+    }
+  }
+  if (problems.length > 0) return problems;
+  const appliedIds = applied.map((item) => item.id);
+  const appliedSet = new Set(appliedIds);
+  problems.push(...compareOrders({ entries, appliedIds }));
+  const base = appliedIds.map((id) => byId.get(id));
+  const added = entries
+    .filter((entry) => !appliedSet.has(entry.id))
+    .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+  problems.push(...analyzeMigrations({ base, added, meta }));
   return problems;
 }

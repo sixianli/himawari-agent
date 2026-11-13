@@ -403,7 +403,9 @@ def schema_parameters(parameters, s0):
         refuse('PACKET_COMMIT_OLDER_THAN_PRODUCTION_SCHEMA', 'production=' + str(current) + ' commit=' + str(target))
     applied_ids = s0.get('migrationIds')
     if applied_ids is not None:
-        check_migration_replay(parameters['COMMIT'], applied_ids)
+        digests = s0.get('migrationDigests')
+        pairs = [identifier + ':' + digest for identifier, digest in zip(applied_ids, digests)] if isinstance(digests, list) and len(digests) == len(applied_ids) else applied_ids
+        check_migration_replay(parameters['COMMIT'], pairs)
     ledger = migration_ledger(parameters['COMMIT'], current, target, applied_ids) if target != current or applied_ids is not None else []
     return {'CURRENT_SCHEMA': current, 'PREVIOUS_SCHEMA': current - 1, 'MIGRATION_LEDGER': json.dumps(ledger, separators=(',', ':'))}
 

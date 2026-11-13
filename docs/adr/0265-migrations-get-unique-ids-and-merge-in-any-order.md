@@ -123,21 +123,21 @@ date: "2026-11-14"
 ### 三、库里按“跑过哪些”记，晚合的也能补跑（对应根因 1、2）
 
 - 记录表 `schema_migration_ledger` 加 `migration_id TEXT` 列，另建 `migration_id IS NOT NULL` 的部分唯一索引（SQLite 的 `ADD COLUMN` 不能直接带 UNIQUE）。旧的行不改写，读的时候按 `sequence` 推出 `0001`…`0095`，已有历史保持原样。`sequence` 列保留，含义变成“第几个被跑的”（仍是 1..N 连续），所以只认 `sequence` 连续的生产机脚本（前提 8）不用改语义。
-- 要跑的迁移 = 程序知道的 − 库里跑过的，按编号顺序跑；旧清单永远排在前面。库里有程序不认识的编号，照旧拒绝（`UNKNOWN_APPLIED_MIGRATION`）；每个跑过的迁移照旧核对名字、阶段和摘要（SHA-256，内容指纹）。所有“按下标对齐记录和定义”的地方改成按编号对齐：引擎的 `validateLedger`、`maintenance-common.mjs:927-931`、`S9-control-files.py:236`、`raw-copy-recovery.mjs`。
+- 要跑的迁移 = 程序知道的 − 库里跑过的，按编号顺序跑；旧清单永远排在前面。库里有程序不认识的编号，照旧拒绝（`UNKNOWN_APPLIED_MIGRATION`）；每个跑过的迁移照旧核对名字、阶段和摘要（SHA-256，内容指纹）。“按下标对齐记录和定义”的地方改成按编号对齐：引擎的 `validateLedger` 和 `maintenance-common.mjs`。`S9-control-files.py` 和 `raw-copy-recovery.mjs` 只检查账本是 1 到 N 连续、前后一致，`sequence` 现在是应用顺序，晚合的小号也满足，所以不改。
 - 一个迁移的编号比库里已跑的最大编号还小时（“晚合的小号”），照跑，写日志。它能安全补跑，靠的是下一节的合并前检查。
-- 记录表的升级（加列、加索引、写指纹）放在同机快照核对**之后**，和第一个待跑迁移放在同一个 `IMMEDIATE` 事务里；没有待跑迁移时在单独的事务里做。现在的 `applyMigrations` 先 `ensureInternalSchema` 后核快照（`migration-engine.ts:980-991`），那时它只是 `CREATE TABLE IF NOT EXISTS`，没有写；加了列以后必须先核快照。
+- 记录表的升级（加列、加索引、写指纹）放在同机快照核对**之后**，和第一个待跑迁移放在同一个 `IMMEDIATE` 事务里；没有待跑迁移时什么都不写。现在的 `applyMigrations` 先 `ensureInternalSchema` 后核快照（`migration-engine.ts:980-991`），那时它只是 `CREATE TABLE IF NOT EXISTS`，没有写；加了列以后必须先核快照。
 
 ### 四、版本身份改成“个数 + 集合 + 指纹”，回滚保护不变（对应根因 2 带来的连锁）
 
-- 新增一个读取函数 `readSchemaIdentity`，返回 `{ 个数, 排好序的编号, 指纹 }`。指纹 = 对“每行 `<编号> <摘要>`，按编号排序、换行连接”算 SHA-256，不含跑的时间和先后。所有读版本的地方只用它，不再各自 `MAX(sequence)`：引擎的 `assertWritableSchema`（现在只收一个整数，改成收期望的身份）、`sqlite-worker.ts`、恢复点、权限转移、数据导出和聊天导出的清单（`production-data-export.ts:321`、`production-chat-export.ts:53`）、管理命令（`apps/admin-cli/src/` 的 data、memory、thread 命令和 `index.ts`）、沙箱预留管理。
+- 新增一个读取函数 `readSchemaIdentity`，返回 `{ 个数, 排好序的编号, 指纹 }`。指纹 = 对“每行 `<编号> <摘要>`，按编号排序、换行连接”算 SHA-256，不含跑的时间和先后。写库或接收外来库之前要核对集合的地方用它：引擎的 `assertWritableSchema`（多收一个期望指纹）、管理命令（`apps/admin-cli/src/` 的 data、memory、thread 命令）、恢复点（`expectedSchemaFingerprint`）、权限转移导入、沙箱预留管理的写命令。`sqlite-worker.ts` 仍只比整数，因为服务启动时 `applyMigrations` 已经核对过集合；数据导出和聊天导出清单只记整数，原因见“后果和风险”。
 - `schema_metadata` 的 `current_sequence`、`minimum_writer_sequence` 继续写，值是个数，供只比整数的老代码用。指纹不另存一份：每次都从记录表里的编号和摘要现算（`readSchemaIdentity`），存下来的副本没人读，只会过期。
 - 回滚保护：服务启动时会先跑 `applyMigrations`（`product-state-repository.ts:278`），老程序遇到库里有它不认识的迁移，在 `validateLedger` 报 `UNKNOWN_APPLIED_MIGRATION`、拒绝启动；这和今天回滚跨过一个迁移时完全一样，回滚靠的是上线前的快照。新程序在“个数相同、集合不同”（测试服务器跑过分支版本）时同样拒绝。
-- 备份清单（恢复点、权限转移）和导出清单加可选字段 `schemaFingerprint`，参与原有的认证；改动前的清单没有这个字段，按个数比（那时只有旧清单，个数相同就是同一套）。
+- 恢复点和权限转移的清单不加字段：恢复或导入时，把解出来的库里的指纹和当前程序的指纹比较，不一致就拒绝。清单里仍只有个数，旧清单照常能用。
 
 ### 五、上线打包脚本：整数照旧，另传集合（前提 7、8）
 
-- `TARGET_SCHEMA` 继续是整数（目标个数），因为它贯穿 `S7-switch-start-readback.py:239`、`run-packet-checks.py:53-58`、`raw-copy-recovery.mjs`、`bindings.draft.json` 和测试，改成集合会把这一串全打穿。另外新增 `TARGET_MIGRATION_IDS` 和目标指纹。
-- 待跑清单 = 目标集合 − 生产库集合（S0 阶段读库时一并读出 `migration_id`），按编号排序；生产库有、提交里没有的，拒绝打包。`MIGRATION_LEDGER` 里每项带编号，期望的 `sequence` 按“应用顺序”填。
+- `TARGET_SCHEMA` 继续是整数（目标个数），因为它贯穿 `S7-switch-start-readback.py:239`、`run-packet-checks.py:53-58`、`raw-copy-recovery.mjs`、`bindings.draft.json` 和测试，改成集合会把这一串全打穿。目标集合不另存一份：打包时直接读目标提交的迁移目录。
+- 待跑清单 = 目标集合 − 生产库集合（S0 阶段读库时一并读出 `migration_id`），按编号排序；生产库有、提交里没有的，拒绝打包。`MIGRATION_LEDGER` 里每项仍是 `sequence`、`name`、`phase`，期望的 `sequence` 按“应用顺序”填；编号和摘要只用于打包时的规划和核对：S0 带上 `migrationIds` 和 `migrationDigests`，打包前核对已应用的迁移文件没被改过，并对待跑的迁移做完整的冲突分析。
 - 受保护表检查照旧逐个迁移做。
 - 打包时在目标提交上再跑一遍迁移冲突检查（下一节），不过就拒绝打包。这是“合并后、上线前”的硬门槛，弥补合并前检查和合并之间 main 又变了的空档。
 - 生产机脚本和它们的测试数据（`verify-fixtures.mjs`、`verify-raw-copy-fixtures.mjs`、`verify-migrate-fixtures.mjs`、`verify-sidecar-tidy-fixtures.mjs` 里手建的 5 列记录表）一起改。
@@ -180,7 +180,7 @@ date: "2026-11-14"
 ## 过渡：0001–0095 和生产库
 
 1. **引擎 PR（不改业务表）**：做[决定](#decision)的一到五节和冲突检查。旧清单冻结在这个 PR 合并时 main 上的最后一个四位号（如果 PR 414 先合，就到 0096）。
-2. **第一次上线**：引擎在第一个新迁移的事务里（已核对同机快照）给记录表加 `migration_id` 列和部分唯一索引，算出指纹写进 `schema_metadata`。库里还没有新迁移时不写任何东西：缺列时按 `sequence` 推出 `0001`…`0095`，缺指纹时由 `readSchemaIdentity` 从账本里的摘要现算。旧行不改写，不跑任何业务 SQL。加测试：快照不匹配时，库文件一个字节都不变。
+2. **第一次上线**：引擎在第一个新迁移的事务里（已核对同机快照）给记录表加 `migration_id` 列和部分唯一索引。库里还没有新迁移时不写任何东西：缺列时按 `sequence` 推出 `0001`…`0095`，缺指纹时由 `readSchemaIdentity` 从账本里的摘要现算。旧行不改写，不跑任何业务 SQL。加测试：快照不匹配时，库文件一个字节都不变。
 3. **回滚**：回到引擎 PR 之前的版本时，老程序只按列名读 `sequence, name, phase, digest, applied_at`，多出的列不影响它；只要还没有跑过新编号的迁移，老程序照常工作；跑过以后，老程序启动时报 `UNKNOWN_APPLIED_MIGRATION` 拒绝启动，要用上线前的快照回滚，和今天回滚跨过一个迁移时一样。
 4. **第二个 PR**：`decision_ledger` 参照表，用新编号，是第一个新式迁移。
 5. **测试服务器**：它的库是一次性的。跑过分支版本后再切别的版本，会因为库里有不认识的迁移而拒绝启动（安全的失败）；切换前从生产副本重置，重置命令只许在非生产环境运行。

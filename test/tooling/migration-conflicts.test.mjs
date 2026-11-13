@@ -1,4 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +7,7 @@ import { changedExistingFiles } from "../../scripts/check-migration-conflicts.mj
 import { describe, expect, it } from "vitest";
 import {
   analyzeMigrations,
+  checkAgainstApplied,
   compareOrders,
   replayAll,
 } from "../../scripts/migration-conflicts/analyze.mjs";
@@ -233,6 +235,40 @@ describe("data, string literals and the production order", () => {
     ).toEqual([]);
   });
 
+  it("catches a late small migration that only deletes rows", () => {
+    const seed = entry("0001", "start", "CREATE TABLE t (id INTEGER PRIMARY KEY);");
+    const later = entry("20261114000009", "insert_row", "INSERT INTO t VALUES (1);");
+    const early = entry("20261114000001", "delete_row", "DELETE FROM t WHERE id = 1;");
+    const problems = compareOrders({
+      entries: [seed, early, later],
+      appliedIds: ["0001", "20261114000009"],
+    });
+    expect(problems[0]).toMatch(/^ORDER_DEPENDENT/);
+  });
+
+  it("counts duplicate rows when comparing data", () => {
+    const seed = entry("0001", "start", "CREATE TABLE t (v TEXT); INSERT INTO t VALUES ('a');");
+    const later = entry("20261114000009", "insert_row", "INSERT INTO t VALUES ('a');");
+    const early = entry("20261114000001", "delete_row", "DELETE FROM t WHERE v = 'a';");
+    expect(
+      compareOrders({ entries: [seed, early, later], appliedIds: ["0001", "20261114000009"] })[0],
+    ).toMatch(/^ORDER_DEPENDENT/);
+  });
+
+  it("enforces foreign keys the way production does", () => {
+    const seed = entry(
+      "0001",
+      "start",
+      "CREATE TABLE parent (id INTEGER PRIMARY KEY); CREATE TABLE child (id INTEGER, p INTEGER REFERENCES parent(id));",
+    );
+    const bad = entry(
+      "20261114000001",
+      "child_first",
+      "INSERT INTO child VALUES (1, 7); INSERT INTO parent VALUES (7);",
+    );
+    expect(analyzeMigrations({ base: [seed], added: [bad] })[0]).toMatch(/^MIGRATION_FAILS/);
+  });
+
   it("rejects a production order that differs from a fresh database", () => {
     const first = entry("20261114000001", "add_label", "ALTER TABLE kinds ADD COLUMN extra TEXT;");
     const second = entry(
@@ -246,6 +282,42 @@ describe("data, string literals and the production order", () => {
     );
     expect(compareOrders({ entries, appliedIds: ["0001", "20261114000001"] })).toEqual([]);
     expect(compareOrders({ entries, appliedIds: ["0001", "99999999999999"] })[0]).toMatch(
+      /^APPLIED_ID_NOT_IN_COMMIT/,
+    );
+  });
+});
+
+describe("checking a commit against what production applied", () => {
+  const seed = entry("0001", "start", "CREATE TABLE t (id INTEGER PRIMARY KEY);");
+  const sha = (text) => createHash("sha256").update(text).digest("hex");
+
+  it("rejects a commit whose already-applied migration was edited", () => {
+    const problems = checkAgainstApplied({
+      entries: [{ ...seed, sql: `${seed.sql} -- edited` }],
+      applied: [{ id: "0001", digest: sha(seed.sql) }],
+    });
+    expect(problems[0]).toMatch(/^APPLIED_MIGRATION_CHANGED/);
+  });
+
+  it("accepts the same bytes and runs the pending migrations through the full analysis", () => {
+    const pendingBad = entry("20261114000001", "alter_t", "ALTER TABLE t ADD COLUMN x TEXT;");
+    expect(
+      checkAgainstApplied({
+        entries: [seed, pendingBad],
+        applied: [{ id: "0001", digest: sha(seed.sql) }],
+      })[0],
+    ).toMatch(/^UNDECLARED_ALTERATION/);
+    expect(
+      checkAgainstApplied({
+        entries: [seed, pendingBad],
+        applied: [{ id: "0001", digest: sha(seed.sql) }],
+        meta: { 20261114000001: { alters: ["t"] } },
+      }),
+    ).toEqual([]);
+  });
+
+  it("rejects an applied id the commit does not have", () => {
+    expect(checkAgainstApplied({ entries: [seed], applied: [{ id: "0002" }] })[0]).toMatch(
       /^APPLIED_ID_NOT_IN_COMMIT/,
     );
   });
