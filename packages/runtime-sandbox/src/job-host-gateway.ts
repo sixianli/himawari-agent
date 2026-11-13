@@ -16,7 +16,7 @@ export interface JobHostGateway {
 }
 
 function killGroup(child: ChildProcess): void {
-  if (child.pid)
+  if (child.pid && child.exitCode === null && child.signalCode === null)
     try {
       process.kill(-child.pid, "SIGKILL");
     } catch {}

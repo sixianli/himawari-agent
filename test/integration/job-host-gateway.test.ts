@@ -1,5 +1,5 @@
 import { type ChildProcess, fork, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -325,6 +325,27 @@ describe("Job Host gateway", () => {
     expect(await seen.closed).toEqual({ exitCode: null, signal: null });
     expect(seen.errored()).toBe(true);
     expect(await transport.spawned).toBeUndefined();
+  });
+
+  it("does not signal the process group of a Job Host that has already exited", async () => {
+    const { socketPath } = await startGateway(60000, ["--hold-stderr"]);
+    const transport = gatewayJobHostLauncher(socketPath)(request());
+    const seen = observe(transport);
+    const pid = await transport.spawned;
+    transport.send({ type: "ping" }, () => {});
+    await until(() => seen.messages.length > 0);
+    const holder = (seen.messages[0] as { holder: number }).holder;
+    cleanups.push(() => {
+      try {
+        process.kill(-(pid as number), "SIGKILL");
+      } catch {}
+    });
+    transport.send({ type: "exit" }, () => {});
+    await until(() => seen.exited());
+    transport.killGroup();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const state = readFileSync(`/proc/${holder}/stat`, "utf8").split(") ").at(1)?.at(0);
+    expect(state).not.toBe("Z");
   });
 
   it("goes idle only after every Job Host has ended", async () => {

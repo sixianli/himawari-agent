@@ -115,6 +115,9 @@ export function gatewayJobHostLauncher(
           clearTimeout(startTimer);
           pid = value as number;
           resolveSpawned(pid);
+        } else if (pid === undefined) {
+          fail();
+          close(null, null);
         } else if (type === "message") {
           for (const listener of messageListeners) listener(frame["message"]);
         } else if (type === "stderr" && typeof frame["data"] === "string") {

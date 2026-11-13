@@ -1,11 +1,19 @@
 import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prepareSandboxJobHost } from "../src/job-host.ts";
 import type { JobHostRequest } from "../src/job-host-protocol.ts";
 import { prepareSandboxJobSession } from "../src/job-host-session.ts";
-import { type JobHostTransport, localJobHostTransport } from "../src/job-host-transport.ts";
+import {
+  gatewayJobHostLauncher,
+  type JobHostTransport,
+  localJobHostTransport,
+} from "../src/job-host-transport.ts";
 
 function request(): JobHostRequest {
   return {
@@ -228,5 +236,23 @@ describe("local Job Host transport", () => {
     expect(await localJobHostTransport(localChild(4242) as unknown as ChildProcess).spawned).toBe(
       4242,
     );
+  });
+});
+
+describe("gateway Job Host transport", () => {
+  it("gives up when the gateway relays a message before reporting a started Job Host", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "hjt-"));
+    const early = createServer((socket) => {
+      socket.write(`${JSON.stringify({ type: "message", message: { type: "ready" } })}\n`);
+    });
+    await new Promise<void>((resolve) => early.listen(path.join(directory, "g.sock"), resolve));
+    const transport = gatewayJobHostLauncher(path.join(directory, "g.sock"), 60000)(request());
+    const messages: unknown[] = [];
+    transport.onMessage((value) => messages.push(value));
+    const closed = new Promise((resolve) => transport.onceClose(() => resolve(true)));
+    expect(await closed).toBe(true);
+    expect(messages).toEqual([]);
+    early.close();
+    await rm(directory, { recursive: true, force: true });
   });
 });
