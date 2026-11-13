@@ -7,6 +7,8 @@ public enum IconName: String, CaseIterable, Sendable {
     case alertCircleLarge = "alert-circle-large"
     case arrowUp = "arrow-up"
     case bell
+    case brandSafari = "brand-safari"
+    case brandSafariLarge = "brand-safari-large"
     case bulb
     case calculator
     case calendar
@@ -38,6 +40,9 @@ public enum IconName: String, CaseIterable, Sendable {
     case message2 = "message-2"
     case messagePlus = "message-plus"
     case microphone
+    case number1 = "number-1"
+    case number2 = "number-2"
+    case number3 = "number-3"
     case pencilPlus = "pencil-plus"
     case phone
     case photo
@@ -48,6 +53,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case search
     case server
     case serverLarge = "server-large"
+    case share2 = "share-2"
     case stack2 = "stack-2"
     case table
     case terminal2 = "terminal-2"

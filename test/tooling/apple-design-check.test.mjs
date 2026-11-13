@@ -2,8 +2,16 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { checkDesign, findViolations } from "../../clients/apple/scripts/check-design.mjs";
-import { generate, parseColor } from "../../clients/apple/scripts/make-design-tokens.mjs";
+import {
+  checkDesign,
+  findViolations,
+  findWebViolations,
+} from "../../clients/apple/scripts/check-design.mjs";
+import {
+  generate,
+  generateCss,
+  parseColor,
+} from "../../clients/apple/scripts/make-design-tokens.mjs";
 
 it("rejects color literals in page code", () => {
   for (const line of [
@@ -126,6 +134,57 @@ it("fails when page code has a literal and when generated tokens are stale", asy
       JSON.stringify({ ...tokens, radius: { card: 30 } }),
     );
     expect(checkDesign(apple, repo).problems.map((p) => p.code)).toEqual(["tokens-stale"]);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+it("rejects literal colors and sizes in the Safari panel and keeps its token CSS fresh", async () => {
+  expect(findWebViolations("color: #fff;", "popup.css").map((v) => v.code)).toEqual([
+    "web-color-literal",
+  ]);
+  expect(
+    findWebViolations("el.style.color = 'rgba(0,0,0,1)'", "popup.js").map((v) => v.code),
+  ).toEqual(["web-color-literal"]);
+  expect(findWebViolations("padding: 14px;", "popup.css").map((v) => v.code)).toEqual([
+    "web-number-literal",
+  ]);
+  expect(findWebViolations("padding: var(--handover-card-padding);", "popup.css")).toEqual([]);
+  expect(findWebViolations("margin: 0; flex: 1 1 auto;", "popup.css")).toEqual([]);
+  const css = generateCss(tokens);
+  expect(css).toContain("--color-bg: rgba(252, 252, 251, 1);");
+  expect(css).toContain("--size-switch: 52px 32px;");
+  expect(css).toContain("--type-body-line-height: 1.35;");
+  expect(css).toContain("--type-title-1-line-height: 44px;");
+  expect(css).toMatch(
+    /@media \(prefers-color-scheme: dark\) \{\n {2}:root \{\n {4}--color-bg: rgba\(30, 30, 30, 1\);/u,
+  );
+
+  const repo = await mkdtemp(path.join(os.tmpdir(), "himawari-apple-web-"));
+  try {
+    const apple = path.join(repo, "clients/apple");
+    const web = path.join(apple, "App/SafariExtension/Resources");
+    await mkdir(web, { recursive: true });
+    await mkdir(path.join(apple, "Sources/HimawariDesign/Generated"), { recursive: true });
+    await mkdir(path.join(repo, "docs/assets/apple-clients/2026-11-12-v2"), { recursive: true });
+    await writeFile(
+      path.join(repo, "docs/assets/apple-clients/2026-11-12-v2/tokens.json"),
+      JSON.stringify(tokens),
+    );
+    await writeFile(
+      path.join(apple, "Sources/HimawariDesign/Generated/DesignTokens.swift"),
+      generate(tokens),
+    );
+    await writeFile(path.join(web, "tokens.css"), css);
+    await writeFile(path.join(web, "popup.css"), "body { background: var(--color-bg); }\n");
+    expect(checkDesign(apple, repo)).toEqual({ problems: [], tokensChecked: true });
+    await writeFile(path.join(web, "tokens.css"), "");
+    await writeFile(path.join(web, "popup.css"), "body { background: #fff; }\n");
+    expect(
+      checkDesign(apple, repo)
+        .problems.map((p) => p.code)
+        .sort(),
+    ).toEqual(["tokens-stale", "web-color-literal"]);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

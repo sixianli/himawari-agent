@@ -1,0 +1,14 @@
+{
+  "extension_name": {
+    "message": "Himawari"
+  },
+  "extension_description": {
+    "message": "在你点它的那一页，把这一页交给 Himawari。"
+  },
+  "action_title": {
+    "message": "交给 Himawari"
+  },
+  "unreachable": {
+    "message": "没交成"
+  }
+}

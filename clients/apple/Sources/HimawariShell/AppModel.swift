@@ -23,6 +23,7 @@ public final class AppModel {
     public private(set) var configuration: DeviceConfiguration?
 
     @ObservationIgnored public let api: DeviceAPI
+    @ObservationIgnored public let vault: SharedVault
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel
@@ -33,16 +34,17 @@ public final class AppModel {
     @ObservationIgnored private var keysMadeFor: String?
     @ObservationIgnored private var configurationRetry: Task<Void, Never>?
 
-    private static let recordAccount = "pairing-record"
+    private static let recordAccount = SharedVault.recordAccount
 
     public convenience init(bundle: Bundle = .main) {
         self.init(bundle: bundle, restoring: true)
     }
 
     init(bundle: Bundle = .main, restoring: Bool) {
-        let service = (bundle.bundleIdentifier ?? "himawari") + ".device"
-        keys = SecureEnclaveKeyStore(service: service + ".keys")
-        keychain = KeychainValueStore(service: service)
+        let vault = SharedVault(bundle: bundle)
+        self.vault = vault
+        keys = vault.keys
+        keychain = vault.keychain
         let channel = bundle.object(forInfoDictionaryKey: "HimawariReleaseChannel") as? String
         releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)) ?? .direct
         api = DeviceAPI(http: DeviceHTTPClient())
@@ -268,6 +270,7 @@ public final class AppModel {
             phase = .active
             chat.start()
             Task { await refreshConfiguration() }
+            deliverWaitingHandovers()
         } catch {
             phase = .unpaired(.storageUnavailable)
         }
@@ -306,6 +309,21 @@ public final class AppModel {
         }
     }
 
+    @ObservationIgnored private var handoverDrain: Task<Void, Never>?
+
+    private func deliverWaitingHandovers() {
+        guard handoverDrain == nil, let store = try? vault.handoverStore() else { return }
+        let queue = HandoverQueue(store: store)
+        guard !queue.pending().isEmpty else { return }
+        let courier = HandoverCourier(api: api)
+        handoverDrain = Task { [weak self] in
+            let results = await queue.drain(using: courier)
+            guard let self else { return }
+            handoverDrain = nil
+            if results.values.contains(.deviceRemoved) { checkRevoked() }
+        }
+    }
+
     private func checkRevoked() {
         Task { await refreshConfiguration() }
     }
@@ -317,6 +335,7 @@ public final class AppModel {
         }
         guard phase == .active else { return }
         chat?.reconnect()
+        deliverWaitingHandovers()
         Task { await refreshConfiguration() }
     }
 
