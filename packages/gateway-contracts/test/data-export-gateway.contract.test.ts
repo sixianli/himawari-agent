@@ -65,6 +65,14 @@ describe("data export gateway messages", () => {
       },
     ],
     [
+      "an absolute download url",
+      { result: { ...result, downloadPath: `https://evil.example${result.downloadPath}` } },
+    ],
+    [
+      "a download path with the id only in a fragment",
+      { result: { ...result, downloadPath: `/api/data-export/v1/archive#?exportId=${exportId}` } },
+    ],
+    [
       "a download path without the export id",
       { result: { ...result, downloadPath: "/api/data-export/v1/archive" } },
     ],

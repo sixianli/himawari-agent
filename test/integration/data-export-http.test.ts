@@ -549,7 +549,7 @@ describe("[P1-6] 网页导出接口", () => {
     expect((await settled(first.resultRef)).state).toBe("ready");
   });
 
-  it("[iOS] 已生成的网关导出在保留期内不被网页直接下载作废：网页直接拿这一份，过期后才重新生成", async () => {
+  it("[iOS] 已生成的网关导出不被网页直接下载作废：网页每次重新生成最新的一份，失败也不影响它", async () => {
     const side = await openSide("gateway-direct-keeps");
     await seedEverything(side);
     let now = "2026-11-02T00:00:00.000Z";
@@ -572,15 +572,15 @@ describe("[P1-6] 网页导出接口", () => {
     const ready = await settled(first.resultRef);
     if (!ready.result) throw new Error("result");
     failures = 1;
-    const direct = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
-    expect(direct.statusCode).toBe(200);
-    expect(createHash("sha256").update(direct.rawPayload).digest("hex")).toBe(ready.result.sha256);
-    expect(await status(first.resultRef)).toMatchObject({ state: "ready" });
-    expect(await startWith("key-a")).toEqual({ resultRef: first.resultRef, replayed: true });
-    now = "2026-11-02T00:10:00.000Z";
     const failed = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
     expect(failed.statusCode).toBe(500);
+    expect(await status(first.resultRef)).toMatchObject({ state: "ready" });
+    expect(await startWith("key-a")).toEqual({ resultRef: first.resultRef, replayed: true });
+    await seedMemory(side, { id: "memory-after-export", text: "导出之后新记下的一条" });
+    now = "2026-11-02T00:05:00.000Z";
     const fresh = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
     expect(fresh.statusCode).toBe(200);
+    expect(Number(fresh.headers["x-himawari-export-memories"])).toBe(ready.result.memories + 1);
+    expect(await status(first.resultRef)).toMatchObject({ state: "ready" });
   });
 });

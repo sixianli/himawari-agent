@@ -173,16 +173,7 @@ export class DataExportJobs {
 
   async buildNow(): Promise<DataExportArchive> {
     if (this.#building) throw new Error(DATA_EXPORT_BUSY);
-    const held = this.#job;
-    if (
-      held?.state === "ready" &&
-      held.built &&
-      held.expiresAt !== null &&
-      Date.parse(this.#options.now()) < Date.parse(held.expiresAt)
-    )
-      return held.built;
     this.#building = true;
-    if (held && held.state !== "running") this.#discard();
     try {
       return await (this.#options.build ?? (() => this.#build()))();
     } finally {

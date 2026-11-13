@@ -710,8 +710,13 @@ const dataExportStatusSnapshotSchema: Schema<
     const snapshot = dataExportStatusSnapshotObjectSchema.parse(input, path);
     const result = snapshot.payload.result;
     if (result) {
-      const query = result.downloadPath.split("?")[1] ?? "";
-      if (new URLSearchParams(query).getAll("exportId").join("\n") !== snapshot.payload.exportId)
+      const url = new URL(result.downloadPath, "http://localhost");
+      if (
+        !result.downloadPath.startsWith("/api/data-export/v1/archive?") ||
+        url.origin !== "http://localhost" ||
+        url.hash !== "" ||
+        url.searchParams.getAll("exportId").join("\n") !== snapshot.payload.exportId
+      )
         throw new ContractValidationError(
           `${path}.payload.result.downloadPath`,
           "expected the download path of this export",
