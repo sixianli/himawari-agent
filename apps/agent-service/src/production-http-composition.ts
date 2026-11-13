@@ -1083,6 +1083,7 @@ export async function createProductionHttpComposition(
         state: repository.productMemoryState(),
         jobs: repository.memoryProjectionJobs(),
         approvals: repository.sensitiveMemoryApprovals(),
+        unitOfWork: repository.unitOfWork(),
         memory: options.memory.service,
         profile: new OwnerProfileService({
           state: repository.productMemoryState(),

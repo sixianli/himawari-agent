@@ -1,0 +1,1 @@
+{"id": "22", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|22|不一致|apps/agent-service/src/production-memory-capture.ts:164-165|结果按（规矩文本、引用、提示词版本）在进程内复用|  return `${memoryId}\\u0000${quote}`;", "outcome": "model-wrong", "evidenceFile": "apps/agent-service/src/production-memory-capture.ts", "evidence": "readonly #supportCache = new Map<string, boolean>();"}

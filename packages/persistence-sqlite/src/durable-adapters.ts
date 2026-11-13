@@ -1032,6 +1032,7 @@ export class SqliteDurableAdapters {
       enqueue: (entry) => this.context.write("memoryCaptureBacklog.enqueue", { entry }),
       oldest: (input) => this.context.read("memoryCaptureBacklog.oldest", input),
       recordAttempt: (input) => this.context.write("memoryCaptureBacklog.recordAttempt", input),
+      has: (generationId) => this.context.read("memoryCaptureBacklog.has", { generationId }),
       remove: (generationId) => this.context.write("memoryCaptureBacklog.remove", { generationId }),
     });
   }

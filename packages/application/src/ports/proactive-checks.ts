@@ -488,6 +488,7 @@ export interface ProactiveSourceReader {
         readonly items: readonly ProactiveSourceItem[];
         readonly limits: ProactiveRelatedLimits;
         readonly wholeThread?: ReadonlySet<string>;
+        readonly references?: ReadonlyMap<string, readonly string[]>;
         readonly signal: AbortSignal;
       }) => Promise<ProactiveRelatedFetch>)
     | undefined;
